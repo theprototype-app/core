@@ -1,6 +1,7 @@
 import Peer from 'peerjs';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters } from './commandsHandler.svelte';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
+import { sendNodes, applyNodesSnapshot, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges } from '$lib/nodesHandler';
 import { lockedObjects, selectedObject } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -149,6 +150,22 @@ export class PeerConnection {
 					createLoader(data.count, data.uuids);
 				} else if(data.type == 'disconnected') {
 					handleDisconnected(data.peerId);
+				} else if(data.type == 'getnodes') {
+					sendNodes(data.sender);
+				} else if(data.type == 'nodes') {
+					applyNodesSnapshot(data.nodes, data.edges);
+				} else if(data.type == 'nodecreate') {
+					createFlowNode(data.node);
+				} else if(data.type == 'nodemove') {
+					moveFlowNode(data.id, data.position);
+				} else if(data.type == 'nodedata') {
+					updateFlowNodeData(data.id, data.data);
+				} else if(data.type == 'nodedelete') {
+					deleteFlowNodes(data.ids);
+				} else if(data.type == 'edgecreate') {
+					createFlowEdge(data.edge);
+				} else if(data.type == 'edgedelete') {
+					deleteFlowEdges(data.ids);
 				} else if(data.startsWith('/')) {
 					sceneCommand(data);
 				}
@@ -192,6 +209,7 @@ export class PeerConnection {
 				this.connections[peerId].send({type: 'hosts', hosts: hosts})
 				this.connections[peerId].send({type: 'userdata', userdata: users})
 				if (getobjects) this.connections[peerId].send({type: 'getobjects', sender: this.peer.id})
+				if (getobjects) this.connections[peerId].send({type: 'getnodes', sender: this.peer.id})
 				}, 500);
         } else {
 			if (this.connections[peerId].peer == peerId) {
@@ -215,6 +233,7 @@ export class PeerConnection {
 				 		this.connections[peerId].send({type: 'hosts', hosts: hosts})
 						 this.connections[peerId].send({type: 'userdata', userdata: users})
 						if (getobjects) this.connections[peerId].send({type: 'getobjects', sender: this.peer.id})
+						if (getobjects) this.connections[peerId].send({type: 'getnodes', sender: this.peer.id})
 				 	}, 500);
 				}
 

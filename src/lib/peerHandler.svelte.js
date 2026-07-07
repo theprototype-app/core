@@ -64,7 +64,32 @@ export class PeerConnection {
 		});
 
 		this.peer.on('close', function() { console.log('server closed') });
-		this.peer.on('disconnected', function() { console.log('server disconnected') });
+
+		// Surface signaling-server problems to the user
+		this.reconnectAttempts = 0;
+		this.peer.on('disconnected', () => {
+			console.log('server disconnected');
+			if (this.peer.destroyed) return;
+			if (this.reconnectAttempts < 3) {
+				this.reconnectAttempts++;
+				showToast('Lost connection to the peer server, reconnecting... (' + this.reconnectAttempts + '/3)');
+				this.peer.reconnect();
+			} else {
+				showToast('Could not reach the peer server. Please reload the page.');
+			}
+		});
+		this.peer.on('error', (err) => {
+			console.log('peer error: ' + err.type, err);
+			if (err.type === 'peer-unavailable') {
+				showToast('Peer is unreachable. Check the ID and ask them to stay online.');
+			} else if (err.type === 'unavailable-id') {
+				showToast('Your session ID is already in use. Please reload the page.');
+			} else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
+				showToast('Cannot reach the peer server. Retrying...');
+			} else {
+				showToast('Connection error: ' + err.type);
+			}
+		});
 
 		this.peer.on('connection', handleConnection.bind(this));
 

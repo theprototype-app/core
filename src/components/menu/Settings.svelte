@@ -1,14 +1,7 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox } from 'flowbite-svelte';
 	import { showGrid, vrOverride } from '../../stores/sceneStore.js';
-	import {
-		settingsOpen,
-		closeMenu,
-		scenePropertiesClose,
-		lightPropertiesClose,
-		propertiesClose,
-		libraryClose
-	} from '../../stores/appStore.js';
+	import { settingsOpen, hidePanels, restorePanels } from '../../stores/appStore.js';
 
 	//Rounded corners for options
 	let coverClass =
@@ -26,57 +19,16 @@
 		coverClass;
 	let bottomCoverDescription = 'w-full px-5 rounded-br-lg ' + coverClass;
 
-	let status = [];
+	// Hide open panels while settings is shown, restore them after (initial value is null,
+	// so nothing happens until the modal is opened the first time)
+	$: if ($settingsOpen) hidePanels();
+	else if ($settingsOpen === false) restorePanels();
 </script>
 
 <Modal
 	title="Settings"
 	bind:open={$settingsOpen}
 	outsideclose
-	onopen={() => {
-		if (!$closeMenu) {
-			$closeMenu = true;
-			status[0] = true;
-		}
-		if (!$libraryClose) {
-			status[1] = true;
-			$libraryClose = true;
-		}
-		if (!$lightPropertiesClose) {
-			status[2] = true;
-			$lightPropertiesClose = true;
-		}
-		if (!$scenePropertiesClose) {
-			status[3] = true;
-			$scenePropertiesClose = true;
-		}
-		if (!$propertiesClose) {
-			status[4] = true;
-			$propertiesClose = true;
-		}
-	}}
-	onclose={() => {
-		if (status[0]) {
-			$closeMenu = false;
-			status[0] = false;
-		}
-		if (status[1]) {
-			$libraryClose = false;
-			status[1] = false;
-		}
-		if (status[2]) {
-			status[2] = false;
-			$lightPropertiesClose = false;
-		}
-		if (status[3]) {
-			status[3] = false;
-			$scenePropertiesClose = false;
-		}
-		if (status[4]) {
-			status[4] = false;
-			$propertiesClose = false;
-		}
-	}}
 >
 	<div class="modal-content max-h-[90vh] overflow-y-auto p-4">
 		<Accordion>

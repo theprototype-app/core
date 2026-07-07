@@ -12,7 +12,6 @@
 
 <Drawer
 	id="flow-list"
-	class="hidden"
 	backdrop={false}
 	activateClickOutside={false}
 	bottomOffset="w-full bottom-0"

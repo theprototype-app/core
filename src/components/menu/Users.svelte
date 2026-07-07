@@ -20,7 +20,8 @@
 		specatorMode,
 		username,
 		userdata,
-		peers
+		peers,
+		hidePanels
 	} from '../../stores/appStore.js';
 	import { globalScene, globalCamera, camSave } from '../../stores/sceneStore.js';
 
@@ -71,6 +72,8 @@
 		if($specatorMode)
 			return;
 		$specatorMode = user;
+		// hide the editing panels while spectating, chat and flow stay available
+		hidePanels(['chat', 'flow']);
 		$camSave = new THREE.PerspectiveCamera();
 		$camSave.position.copy($globalCamera.position)
 		$camSave.rotation.copy($globalCamera.rotation)

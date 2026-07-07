@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode } from '../../stores/appStore'
+    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels } from '../../stores/appStore'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
 	import { Progressbar, Toast, Button } from 'flowbite-svelte';
@@ -191,6 +191,8 @@ style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: tr
                 $peers.send({ type: 'camera', peerId: $peers.peer.id, position: $globalCamera.position.toArray(), rotation: $globalCamera.rotation.toArray() });
                 $peers.send({ type: 'specator', peerId: $peers.peer.id, watching: 'false' });
                 // $globalCamera.zoom = $camSave.zoom
+                // bring back the panels hidden when spectating started
+                restorePanels();
             }}
             >Exit</Button
         >

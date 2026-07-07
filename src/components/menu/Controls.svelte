@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, isLocked, isVRMode } from '../../stores/sceneStore';
-	import { chatHidden } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, objectListClose } from '../../stores/appStore.js';
 	import Objects from './Objects.svelte';
 	import { VRButton } from '@threlte/xr'
 
@@ -112,13 +112,13 @@
 
 	<p
 		class={classActive}
-		on:click={() => document.getElementById('object-list').classList.toggle('hidden')}
+		on:click={() => objectListClose.update((value) => !value)}
 	>
 		<i class="fas fa-list-ul text-black dark:text-slate-200"></i>
 	</p>
 	<p
 		class={classActive}
-		on:click={() => document.getElementById('flow-list').classList.toggle('hidden')}
+		on:click={() => flowGraphClose.update((value) => !value)}
 	>
 		<i class="fas fa-circle-nodes text-black dark:text-slate-200"></i>
 	</p>
@@ -148,7 +148,7 @@
 	<VRButton />
 </div>
 
-<div id="object-list" class="hidden" use:dragMe style="z-index: 1; max-height: 70%; max-width: 50%; min-width: 250px;">
+<div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe style="z-index: 1; max-height: 70%; max-width: 50%; min-width: 250px;">
 	<Listgroup class="move-handle p-1 text-center text-xl font-medium text-gray-900 dark:text-gray-400 -rounded rounded-tr rounded-tl cursor-move">
 		List of objects
 	</Listgroup>

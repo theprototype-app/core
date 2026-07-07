@@ -1,10 +1,11 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 
 export const settingsOpen = writable(null);
 export const propertiesClose = writable(true);
 export const scenePropertiesClose = writable(true);
 export const lightPropertiesClose = writable(true);
-export const flowGraphClose = writable(false);
+export const flowGraphClose = writable(true);
+export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 export const libraryClose = writable(true);
 export const userdata = writable([]);
@@ -30,6 +31,48 @@ export function showSidebar(store) {
 		// if (store === null) {}
 	}, 50);
   }
+
+// Snapshot/restore of panel visibility, used when opening Settings or entering
+// spectate mode. A single snapshot slot: hidePanels() while already hidden is a
+// no-op, so nested calls (settings during spectate) don't clobber the snapshot.
+/** @type {any} */
+let panelSnapshot = null;
+
+/** @param {string[]} keep - panel keys to leave untouched: 'menu' | 'library' | 'light' | 'sceneProps' | 'properties' | 'flow' | 'objectList' | 'chat' */
+export function hidePanels(keep = []) {
+	if (panelSnapshot) return;
+	panelSnapshot = {
+		menu: get(closeMenu),
+		library: get(libraryClose),
+		light: get(lightPropertiesClose),
+		sceneProps: get(scenePropertiesClose),
+		properties: get(propertiesClose),
+		flow: get(flowGraphClose),
+		objectList: get(objectListClose),
+		chat: get(chatHidden)
+	};
+	if (!keep.includes('menu')) closeMenu.set(true);
+	if (!keep.includes('library')) libraryClose.set(true);
+	if (!keep.includes('light')) lightPropertiesClose.set(true);
+	if (!keep.includes('sceneProps')) scenePropertiesClose.set(true);
+	if (!keep.includes('properties')) propertiesClose.set(true);
+	if (!keep.includes('flow')) flowGraphClose.set(true);
+	if (!keep.includes('objectList')) objectListClose.set(true);
+	if (!keep.includes('chat')) chatHidden.set('hidden');
+}
+
+export function restorePanels() {
+	if (!panelSnapshot) return;
+	closeMenu.set(panelSnapshot.menu);
+	libraryClose.set(panelSnapshot.library);
+	lightPropertiesClose.set(panelSnapshot.light);
+	scenePropertiesClose.set(panelSnapshot.sceneProps);
+	propertiesClose.set(panelSnapshot.properties);
+	flowGraphClose.set(panelSnapshot.flow);
+	objectListClose.set(panelSnapshot.objectList);
+	chatHidden.set(panelSnapshot.chat);
+	panelSnapshot = null;
+}
 
 export const fixLight = writable(false);
 export const pendingApprovals = writable([]);

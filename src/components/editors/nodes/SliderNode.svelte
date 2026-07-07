@@ -9,14 +9,19 @@
 
 	const min = 0;
 	const max = 40;
-
-	let value = data.value ?? 20;
-	// Local change -> replicate to peers; remote change -> update local input
-	$: if (value !== data.value) setNodeData(id, { value: value });
-	$: if (data.value !== undefined && data.value !== value) value = data.value;
+	// One-way flow: render from data, write through setNodeData (replicates to peers).
+	// A local bind:value would get clobbered by the store round-trip.
 </script>
 
 <NodeWrapper type={data.type}>
 	<Handle type="source" position={Position.Right} />
-	<input class="nodrag accent-[#ff4000]" style="direction: rtl;" type="range" {min} {max} bind:value />
+	<input
+		class="nodrag accent-[#ff4000]"
+		style="direction: rtl;"
+		type="range"
+		{min}
+		{max}
+		value={data.value ?? 20}
+		on:input={(e) => setNodeData(id, { value: +e.currentTarget.value })}
+	/>
 </NodeWrapper>

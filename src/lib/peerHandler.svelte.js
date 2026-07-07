@@ -174,43 +174,49 @@ export class PeerConnection {
 		}
 	}
 
+	// Send the initial handshake (locks, known hosts, whitelist, object/node sync requests).
+	// Must only be called once the connection is open — messages sent earlier are dropped by peerjs.
+	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id */
+	sendHandshake(conn, peerId, getobjects, id) {
+		let hosts = [id];
+		Object.keys(this.connections).forEach(element => {
+			if(element != peerId)
+			hosts.push(element)
+		});
+		console.log("sending to " + peerId + "  remote " + hosts)
+		let locks = [...locked];
+		if(typeof selected.uuid != 'undefined' && selected.uuid) locks.push([id, selected.uuid]);
+		conn.send({type: 'locked', lockeditems: locks})
+		conn.send({type: 'hosts', hosts: hosts})
+		conn.send({type: 'userdata', userdata: users})
+		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
+	}
+
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {
 		if (!this.connections[peerId]) {
 			console.log("Connecting to " + peerId);
             const conn = this.peer.connect(peerId);
             this.connections[peerId] = conn;
 
-			conn.on('close', () => { 
-				console.log("close");	
-				// console.log(data);	
+			conn.on('close', () => {
+				console.log("close");
+				// console.log(data);
 
 				checkLocks()
 			});
-			conn.on('disconnected', () => { 
+			conn.on('disconnected', () => {
 				console.log("disconnected");
 				// console.log(data);
 				checkLocks()
 			});
-	
+
             conn.on('open', () => {
-				 console.log('Connection to ' + peerId + ' established')});
+				console.log('Connection to ' + peerId + ' established');
 				//Trigger reactivity for UI list of objects
 				peers.update((value) => value);
-				 let hosts = [id];
-				 Object.keys(this.connections).forEach(element => {
-					if(element != peerId)
-					hosts.push(element)
-				});
-				console.log("sending to " + peerId + "  remote " + hosts)
-				setTimeout(() => {
-				let locks = [...locked];
-				if(typeof selected.uuid != 'undefined' && selected.uuid) locks.push([id, selected.uuid]);
-				this.connections[peerId].send({type: 'locked', lockeditems: locks})
-				this.connections[peerId].send({type: 'hosts', hosts: hosts})
-				this.connections[peerId].send({type: 'userdata', userdata: users})
-				if (getobjects) this.connections[peerId].send({type: 'getobjects', sender: this.peer.id})
-				if (getobjects) this.connections[peerId].send({type: 'getnodes', sender: this.peer.id})
-				}, 500);
+				this.sendHandshake(conn, peerId, getobjects, id);
+			});
         } else {
 			if (this.connections[peerId].peer == peerId) {
 				console.log(`Peer ${peerId} is already connected or has a pending request. Connection status: ${this.connections[peerId].open}`)
@@ -219,26 +225,14 @@ export class PeerConnection {
 					const conn = this.peer.connect(peerId);
            	 		this.connections[peerId] = conn;
             		conn.on('open', () => {
-					 console.log('Connection to ' + peerId + ' restored')});
-					let hosts = [id];
-				 	Object.keys(this.connections).forEach(element => {
-						if(element != peerId)
-						hosts.push(element)
+						console.log('Connection to ' + peerId + ' restored');
+						peers.update((value) => value);
+						this.sendHandshake(conn, peerId, getobjects, id);
 					});
-				 	console.log("sending to " + peerId + "  remote " + hosts)
-				 	setTimeout(() => {
-						let locks = [...locked];
-						if(selected.uuid) locks.push([id, selected.uuid]);
-						this.connections[peerId].send({type: 'locked', lockeditems: locks})
-				 		this.connections[peerId].send({type: 'hosts', hosts: hosts})
-						 this.connections[peerId].send({type: 'userdata', userdata: users})
-						if (getobjects) this.connections[peerId].send({type: 'getobjects', sender: this.peer.id})
-						if (getobjects) this.connections[peerId].send({type: 'getnodes', sender: this.peer.id})
-				 	}, 500);
 				}
 
 			}
-			
+
 		}
     }
 

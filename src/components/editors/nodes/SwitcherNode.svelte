@@ -8,11 +8,7 @@
 	export let data;
 
 	const options = ['cube', 'pyramid'];
-
-	let selectedShape = data.shape ?? options[0];
-	// Local change -> replicate to peers; remote change -> update local input
-	$: if (selectedShape !== data.shape) setNodeData(id, { shape: selectedShape });
-	$: if (data.shape && data.shape !== selectedShape) selectedShape = data.shape;
+	// One-way flow: render from data, write through setNodeData (replicates to peers)
 </script>
 
 <NodeWrapper type={data.type}>
@@ -20,7 +16,14 @@
 	<div class="nodrag flex flex-col">
 		{#each options as option}
 			<label class="flex">
-				<input bind:group={selectedShape} class="accent-[#ff4000]" type="radio" value={option} />
+				<input
+					class="accent-[#ff4000]"
+					type="radio"
+					name={`shape-${id}`}
+					value={option}
+					checked={(data.shape ?? 'cube') === option}
+					on:change={() => setNodeData(id, { shape: option })}
+				/>
 				<span class="ml-2">{option}</span>
 			</label>
 		{/each}

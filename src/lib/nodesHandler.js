@@ -81,21 +81,24 @@ export function setNodeData(id, data) {
 }
 
 /**
- * Sends the whole node graph to the given peer (mirrors sendObjects).
+ * Sends the whole node graph to the given peer.
+ * Waits for our outgoing connection to exist and open — messages sent earlier are dropped by peerjs.
  * @param {string} peerId - The ID of the peer to send the nodes to.
  */
-export function sendNodes(peerId) {
+export function sendNodes(peerId, attempt = 0) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (!peer) return;
 	const nodes = get(flowNodes).map(serializeNode);
 	const edges = get(flowEdges).map(serializeEdge);
 	if (nodes.length === 0 && edges.length === 0) return;
-	// Wait 500ms to ensure the connection is established before sending
-	setTimeout(() => {
-		const conn = peer.connections[peerId];
-		if (!conn) return;
-		console.log('Sending ' + nodes.length + ' nodes and ' + edges.length + ' edges to ' + peerId);
-		conn.send({ type: 'nodes', nodes: nodes, edges: edges });
-	}, 500);
+
+	// our connection back to this peer may still be getting (re)established — retry until it is open
+	const conn = peer.connections[peerId];
+	if (!conn || !conn.open) {
+		if (attempt < 20) setTimeout(() => sendNodes(peerId, attempt + 1), 500);
+		return;
+	}
+	console.log('Sending ' + nodes.length + ' nodes and ' + edges.length + ' edges to ' + peerId);
+	conn.send({ type: 'nodes', nodes: nodes, edges: edges });
 }

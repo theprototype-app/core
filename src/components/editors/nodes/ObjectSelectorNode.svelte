@@ -15,16 +15,16 @@
 	$: items = sceneObjects
 		? sceneObjects.children.map((child: any) => ({ id: child.uuid, name: child.name || child.type }))
 		: [];
-
-	let selected = data.selected ?? '-None-';
-	// Local change -> replicate to peers; remote change -> update local input
-	$: if (selected !== data.selected) setNodeData(id, { selected: selected });
-	$: if (data.selected && data.selected !== selected) selected = data.selected;
+	// One-way flow: render from data, write through setNodeData (replicates to peers)
 </script>
 
 <NodeWrapper type={data.type}>
 	<div class="flex items-center space-x-2">
-		<select bind:value={selected} class="nodrag">
+		<select
+			class="nodrag"
+			value={data.selected ?? '-None-'}
+			on:change={(e) => setNodeData(id, { selected: e.currentTarget.value })}
+		>
 			<option>-None-</option>
 			{#each items as option}
 				<option value={option.id}>{option.name}</option>

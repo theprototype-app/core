@@ -438,6 +438,35 @@ function sendTransformUpdate() {
             }}
         />
         {/if}
+        c
+        {#if $selectedObject.material.type === "MeshBasicMaterial"}
+        <p class="mb-4 font-semibold text-gray-900 dark:text-white">Color</p>
+        <ColorPicker
+        label="test"
+        isAlpha={false}
+        isTextInput={false}
+        isDialog={false}
+        components={{...ChromeVariant, wrapper: CustomWrapper}} 
+        isOpen={true}
+        sliderDirection="horizontal"
+        --picker-indicator-size="20px"
+        --cp-bg-color="#1f2937"
+        --cp-border-color="#353f4e"
+        --picker-height="70px"
+        --picker-width="50px"
+        --slider-width="10px"    
+        bind:value={color}
+        on:input={(event) => {
+            $selectedObject.material.color.set(event.detail.hex);
+            color = event.detail.hex;
+            sendUpdate();
+        }}
+        />
+        <p class="mb-4 font-semibold text-gray-900 dark:text-white">Opacity</p>
+        <Range id="posx" step="0.1" min={0} max={1} bind:value={$selectedObject.material.opacity}
+        onchange={() => { sendUpdate('opacity'); }}
+        />
+        {/if}
         <br />
         <p class="mb-4 font-semibold text-gray-900 dark:text-white">Shadow</p>
         <ul class="items-center w-full rounded-lg border border-gray-200 sm:flex dark:bg-gray-800 dark:border-gray-600 divide-x rtl:divide-x-reverse divide-gray-200 dark:divide-gray-600">

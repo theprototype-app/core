@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, isLocked, isVRMode } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, objectListClose } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject } from '../../stores/appStore.js';
+	import { mutedFlowObjects } from '../../stores/flowStore';
+	import { focusObject, duplicateObject, toggleObjectVisibility } from '$lib/objectActions';
 	import Objects from './Objects.svelte';
+	import ContextMenu from '../ContextMenu.svelte';
 	import { VRButton } from '@threlte/xr'
 
 	let allowPlay = true;
@@ -62,6 +65,36 @@
 			moving = false;
 			resizing = false;
 		});
+	}
+
+	// Right-click menu for object list rows (Objects.svelte sets $objectContextMenu)
+	function objectMenuItems(menu) {
+		const object = $objectsGroup?.getObjectByProperty('uuid', menu.uuid);
+		const muted = $mutedFlowObjects.includes(menu.uuid);
+		const lockedTooltip = menu.locked ? 'Locked by another peer' : '';
+		return [
+			{ label: 'Focus camera', action: () => focusObject(menu.uuid) },
+			{ label: 'Duplicate', action: () => duplicateObject(menu.uuid) },
+			{
+				label: 'Rename',
+				disabled: menu.locked,
+				tooltip: lockedTooltip,
+				action: () => renamingObject.set(menu.uuid)
+			},
+			{
+				label: object?.visible === false ? 'Show' : 'Hide',
+				disabled: menu.locked,
+				tooltip: lockedTooltip,
+				action: () => toggleObjectVisibility(menu.uuid)
+			},
+			{
+				label: muted ? 'Enable flow effects' : 'Disable flow effects',
+				action: () =>
+					mutedFlowObjects.update((list) =>
+						muted ? list.filter((uuid) => uuid !== menu.uuid) : [...list, menu.uuid]
+					)
+			}
+		];
 	}
 
 	function checkPlay() {
@@ -169,3 +202,12 @@
 	</Listgroup>
 	<div class="resize-handle" style="position: absolute; bottom: -38px; right: 0; width: 10px; height: 10px; background-color: #ccc; cursor: se-resize;"></div>
 </div>
+
+{#if $objectContextMenu}
+	<ContextMenu
+		x={$objectContextMenu.x}
+		y={$objectContextMenu.y}
+		items={objectMenuItems($objectContextMenu)}
+		on:close={() => ($objectContextMenu = null)}
+	/>
+{/if}

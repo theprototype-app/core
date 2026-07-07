@@ -7,7 +7,7 @@ import {
 	settingsOpen,
 	settingsSection
 } from '../stores/appStore';
-import { focusObject } from './objectActions';
+import { focusObject, duplicateObject } from './objectActions';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
 // and renders the list in Settings -> Shortcuts. Other modules push entries via
@@ -40,6 +40,12 @@ export const shortcuts = [
 		group: 'Camera',
 		label: 'Focus selected object',
 		action: () => focusObject()
+	},
+	{
+		keys: 'Ctrl+D',
+		group: 'Objects',
+		label: 'Duplicate selected object',
+		action: () => duplicateObject()
 	},
 	{
 		keys: 'O',

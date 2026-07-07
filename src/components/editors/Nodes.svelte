@@ -11,7 +11,7 @@
 	// 👇 this is important! You need to import the styles for Svelte Flow to work
 	import '@xyflow/svelte/dist/style.css';
 	import Sidebar from './Sidebar.svelte';
-	import ContextMenu from './ContextMenu.svelte';
+	import ContextMenu from '../ContextMenu.svelte';
 	import ColorPickerNode from './nodes/ColorPickerNode.svelte';
 	import SliderNode from './nodes/SliderNode.svelte';
 	import SwitcherNode from './nodes/SwitcherNode.svelte';
@@ -19,7 +19,7 @@
 	import AnimationNode from './nodes/AnimationNode.svelte';
 	import { flowNodes as nodes, flowEdges as edges } from '../../stores/flowStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges } from '$lib/nodesHandler';
-	import { findNodeSpec } from '$lib/nodeCatalog';
+	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { peers } from '../../stores/appStore';
 
 	const nodeTypes = {
@@ -42,7 +42,7 @@
 	let peer: any;
 	$: peer = $peers;
 
-	// active context menu: { kind: 'pane'|'node'|'edge', x, y, flowPos?, targetId? }
+	// active context menu: { x, y, items }
 	let menu: any = null;
 
 	function addNode(type: string, label: string, position: { x: number; y: number }) {
@@ -112,65 +112,63 @@
 
 	// --- context menus ---
 
-	const onPaneContextMenu = (event: CustomEvent<{ event: MouseEvent }>) => {
-		const e = event.detail.event;
-		e.preventDefault();
-		menu = {
-			kind: 'pane',
-			x: e.clientX,
-			y: e.clientY,
-			flowPos: screenToFlowPosition({ x: e.clientX, y: e.clientY })
-		};
-	};
-
-	const onNodeContextMenu = (event: CustomEvent<{ event: MouseEvent; node: Node }>) => {
-		event.detail.event.preventDefault();
-		menu = {
-			kind: 'node',
-			x: event.detail.event.clientX,
-			y: event.detail.event.clientY,
-			targetId: event.detail.node.id
-		};
-	};
-
-	const onEdgeContextMenu = (event: CustomEvent<{ event: MouseEvent; edge: Edge }>) => {
-		event.detail.event.preventDefault();
-		menu = {
-			kind: 'edge',
-			x: event.detail.event.clientX,
-			y: event.detail.event.clientY,
-			targetId: event.detail.edge.id
-		};
-	};
-
-	function menuAddNode(item: any) {
-		addNode(item.type, item.label, menu.flowPos);
-		menu = null;
+	function deleteNode(id: string) {
+		deleteFlowNodes([id]);
+		peer?.send({ type: 'nodedelete', ids: [id] });
 	}
 
-	function menuDeleteNode() {
-		const ids = [menu.targetId];
-		deleteFlowNodes(ids);
-		peer?.send({ type: 'nodedelete', ids: ids });
-		menu = null;
-	}
-
-	function menuDisconnectNode() {
-		const id = menu.targetId;
+	function disconnectNode(id: string) {
 		const ids = $edges.filter((e) => e.source === id || e.target === id).map((e) => e.id);
 		if (ids.length) {
 			deleteFlowEdges(ids);
 			peer?.send({ type: 'edgedelete', ids: ids });
 		}
-		menu = null;
 	}
 
-	function menuDeleteEdge() {
-		const ids = [menu.targetId];
-		deleteFlowEdges(ids);
-		peer?.send({ type: 'edgedelete', ids: ids });
-		menu = null;
+	function deleteEdge(id: string) {
+		deleteFlowEdges([id]);
+		peer?.send({ type: 'edgedelete', ids: [id] });
 	}
+
+	const onPaneContextMenu = (event: CustomEvent<{ event: MouseEvent }>) => {
+		const e = event.detail.event;
+		e.preventDefault();
+		const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: nodeCatalog.map((group) => ({
+				label: group.group,
+				children: group.items.map((item) => ({
+					label: item.label,
+					action: () => addNode(item.type, item.label, flowPos)
+				}))
+			}))
+		};
+	};
+
+	const onNodeContextMenu = (event: CustomEvent<{ event: MouseEvent; node: Node }>) => {
+		event.detail.event.preventDefault();
+		const id = event.detail.node.id;
+		menu = {
+			x: event.detail.event.clientX,
+			y: event.detail.event.clientY,
+			items: [
+				{ label: 'Disconnect all', action: () => disconnectNode(id) },
+				{ label: 'Delete node', danger: true, action: () => deleteNode(id) }
+			]
+		};
+	};
+
+	const onEdgeContextMenu = (event: CustomEvent<{ event: MouseEvent; edge: Edge }>) => {
+		event.detail.event.preventDefault();
+		const id = event.detail.edge.id;
+		menu = {
+			x: event.detail.event.clientX,
+			y: event.detail.event.clientY,
+			items: [{ label: 'Disconnect', action: () => deleteEdge(id) }]
+		};
+	};
 </script>
 
 <div class="flex h-full w-full">
@@ -203,14 +201,7 @@
 </div>
 
 {#if menu}
-	<ContextMenu
-		{menu}
-		on:close={() => (menu = null)}
-		on:addnode={(e) => menuAddNode(e.detail)}
-		on:deletenode={menuDeleteNode}
-		on:disconnectnode={menuDisconnectNode}
-		on:deleteedge={menuDeleteEdge}
-	/>
+	<ContextMenu x={menu.x} y={menu.y} items={menu.items} on:close={() => (menu = null)} />
 {/if}
 
 <style>

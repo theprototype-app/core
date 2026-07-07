@@ -3,10 +3,10 @@
     let isExpanded = $state(false);
     let previouslySelectedObject;
     import { Tooltip, ListgroupItem } from 'flowbite-svelte';
-    import { toggleExpand, lightPropertiesClose, scenePropertiesClose} from '../../stores/appStore';
+    import { toggleExpand, lightPropertiesClose, scenePropertiesClose, objectContextMenu, renamingObject } from '../../stores/appStore';
     import { objectsGroup, TControls, selectedObject, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
-    import { selectObject } from '$lib/objectActions';
+    import { selectObject, renameObject } from '$lib/objectActions';
     import {
         showSidebar,
 		propertiesClose,
@@ -63,6 +63,22 @@
         selectObject(item.uuid, true);
 	}
 
+    function openContextMenu(event) {
+        event.preventDefault();
+        $objectContextMenu = {
+            x: event.clientX,
+            y: event.clientY,
+            uuid: element.uuid,
+            locked: !!$lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid)
+        };
+    }
+
+    function commitRename(event) {
+        const name = event.target.value.trim();
+        if (name && name !== element.name) renameObject(element.uuid, name);
+        $renamingObject = null;
+    }
+
 	function deleteItem(item) {
 			// console.log(previouslySelectedObject.name);
 			if (
@@ -98,7 +114,7 @@
 
 
 
-    <p id={element.uuid}>
+    <p id={element.uuid} oncontextmenu={openContextMenu}>
     <ListgroupItem itemDefaultClass="flex items-center text-overflow-ellipsis w-full overflow-hidden inline-flex" >
             <div class="inline-flex text-overflow-ellipsis w-full overflow-hidden items-center grid grid-cols-12">
                 <div class="flex inline-flex justify-start items-center col-span-9" onclick={() => { select(element.uuid); }}>
@@ -117,7 +133,19 @@
                     {:else}
                         <i class="fa-solid fa-cube pr-2" title="Object"></i>
                     {/if}
-                    <p class={`overflow-hidden whitespace-nowrap ${$selectedObject && $selectedObject.uuid === element.uuid ? 'text-blue-200' : ''}`}>{element.name}</p>
+                    {#if $renamingObject === element.uuid}
+                        <!-- svelte-ignore a11y_autofocus -->
+                        <input
+                            class="w-full rounded border border-gray-400 bg-transparent px-1 text-sm"
+                            value={element.name}
+                            autofocus
+                            onkeydown={(e) => { if (e.key === 'Enter') commitRename(e); if (e.key === 'Escape') $renamingObject = null; }}
+                            onblur={commitRename}
+                            onclick={(e) => e.stopPropagation()}
+                        />
+                    {:else}
+                        <p class={`overflow-hidden whitespace-nowrap ${$selectedObject && $selectedObject.uuid === element.uuid ? 'text-blue-200' : ''}`}>{element.name}</p>
+                    {/if}
                 </div>
                 {#if $lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid)}
                     <div class="flex inline-flex justify-end col-span-3">

@@ -41,8 +41,10 @@ if (--counter > 0) return setTimeout(timeout, 4000);
 toastStatus = false;
 }
 </script>
-<div class="my-4"
-style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: 40;"
+<!-- pointer-events: none lets clicks pass through the (invisible) container area;
+     each toast re-enables them for itself -->
+<div class="my-4 toasts-container"
+style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: 40; pointer-events: none;"
 >
 {#if showToast}
 {#if $loadingcount > 0}
@@ -273,3 +275,10 @@ style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: tr
 {/each}
 
 </div>
+
+<style>
+    /* toasts stay clickable while the empty container area passes clicks through */
+    :global(.toasts-container > div) {
+        pointer-events: auto;
+    }
+</style>

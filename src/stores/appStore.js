@@ -76,6 +76,11 @@ export function restorePanels() {
 	panelSnapshot = null;
 }
 
+// context menu state for the object list: { x, y, uuid, locked } | null
+export const objectContextMenu = writable(null);
+// uuid of the object being renamed inline in the object list
+export const renamingObject = writable(null);
+
 export const fixLight = writable(false);
 export const pendingApprovals = writable([]);
 export const waitingForApproval = writable([]);

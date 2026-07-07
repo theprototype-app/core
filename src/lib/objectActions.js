@@ -72,6 +72,106 @@ export function topLevelObjectOf(object) {
 	return current.parent === group ? current : null;
 }
 
+/** Collect an object and all descendants in a stable depth-first order @param {any} object @param {any[]} list */
+function collectTree(object, list = []) {
+	list.push(object);
+	object.children.forEach((child) => collectTree(child, list));
+	return list;
+}
+
+/** @param {any} clone - give cloned meshes their own materials (three's clone() shares them) */
+function detachMaterials(clone) {
+	collectTree(clone).forEach((node) => {
+		if (node.material)
+			node.material = Array.isArray(node.material)
+				? node.material.map((m) => m.clone())
+				: node.material.clone();
+	});
+}
+
+/**
+ * Duplicate an object (Ctrl+D / context menu) and replicate the copy to peers.
+ * Peers clone their own instance of the source, so no geometry re-export is needed.
+ * @param {string=} uuid - defaults to the selected object
+ */
+export function duplicateObject(uuid) {
+	const group = get(objectsGroup);
+	const targetUuid = uuid ?? get(selectedObject)?.uuid;
+	const source = targetUuid ? group?.getObjectByProperty('uuid', targetUuid) : null;
+	if (!source) {
+		showToast('Nothing selected to duplicate');
+		return null;
+	}
+	const clone = source.clone(true);
+	detachMaterials(clone);
+	const cloneNodes = collectTree(clone);
+	cloneNodes.forEach((node) => (node.uuid = crypto.randomUUID()));
+	clone.name = (source.name || source.type) + ' copy';
+	clone.position.x += 0.5;
+	clone.position.z += 0.5;
+	source.parent.add(clone);
+	objectsGroup.update((value) => value);
+
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer)
+		peer.send({
+			type: 'duplicate',
+			sourceUuid: source.uuid,
+			uuids: cloneNodes.map((node) => node.uuid),
+			name: clone.name,
+			pos: clone.position.toArray()
+		});
+
+	selectObject(clone.uuid);
+	return clone;
+}
+
+/**
+ * Apply a duplicate made by a peer: clone the same source locally and assign
+ * the uuids the originator generated (same depth-first order on both sides).
+ * @param {string} sourceUuid @param {string[]} uuids @param {string} name @param {number[]} pos
+ */
+export function applyRemoteDuplicate(sourceUuid, uuids, name, pos) {
+	const group = get(objectsGroup);
+	const source = group?.getObjectByProperty('uuid', sourceUuid);
+	if (!source) return;
+	const clone = source.clone(true);
+	detachMaterials(clone);
+	collectTree(clone).forEach((node, index) => {
+		if (uuids[index]) node.uuid = uuids[index];
+	});
+	clone.name = name;
+	clone.position.fromArray(pos);
+	source.parent.add(clone);
+	objectsGroup.update((value) => value);
+}
+
+/** Toggle visibility and replicate (same message Properties uses) @param {string} uuid */
+export function toggleObjectVisibility(uuid) {
+	const group = get(objectsGroup);
+	const object = group?.getObjectByProperty('uuid', uuid);
+	if (!object) return;
+	object.visible = !object.visible;
+	objectsGroup.update((value) => value);
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer)
+		peer.send({ type: 'objectParameters', parameter: 'visible', uuid: uuid, visible: object.visible });
+}
+
+/** Rename an object and replicate @param {string} uuid @param {string} name */
+export function renameObject(uuid, name) {
+	const group = get(objectsGroup);
+	const object = group?.getObjectByProperty('uuid', uuid);
+	if (!object || !name) return;
+	object.name = name;
+	objectsGroup.update((value) => value);
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) peer.send({ type: 'name', uuid: uuid, name: name });
+}
+
 let focusAnimation = 0;
 
 /**

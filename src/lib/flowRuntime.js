@@ -1,4 +1,4 @@
-import { flowNodes, flowEdges } from '../stores/flowStore';
+import { flowNodes, flowEdges, mutedFlowObjects } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { animationTypes } from './nodeCatalog';
 
@@ -11,6 +11,7 @@ let started = false;
 /** @type {any[]} */ let nodes = [];
 /** @type {any[]} */ let edges = [];
 /** @type {any} */ let sceneObjects = null;
+/** @type {string[]} */ let muted = [];
 
 // objectUuid -> captured base transform, restored when its animations are removed
 const baseState = new Map();
@@ -40,7 +41,10 @@ function targetUuidOf(edge) {
 	const target = nodes.find((n) => n.id === edge.target);
 	if (target?.type !== 'objectselector') return null;
 	const selected = target.data?.selected;
-	return selected && selected !== '-None-' ? selected : null;
+	if (!selected || selected === '-None-') return null;
+	// per-object mute from the object list context menu
+	if (muted.includes(selected)) return null;
+	return selected;
 }
 
 function applyColors() {
@@ -145,6 +149,10 @@ export function startFlowRuntime() {
 	});
 	objectsGroup.subscribe((value) => {
 		sceneObjects = value;
+	});
+	mutedFlowObjects.subscribe((value) => {
+		muted = value;
+		applyColors();
 	});
 
 	requestAnimationFrame(tick);

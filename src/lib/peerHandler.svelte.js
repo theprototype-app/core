@@ -2,6 +2,7 @@ import Peer from 'peerjs';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters } from './commandsHandler.svelte';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges } from '$lib/nodesHandler';
+import { applyRemoteDuplicate } from '$lib/objectActions';
 import { lockedObjects, selectedObject } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -167,6 +168,8 @@ export class PeerConnection {
 					createObject(data, data.uuids, data.override, data.groupuuid, data.pos, data.rot, data.scale);
 				} else if(data.type == 'objectParameters') {
 					objectParameters(data);
+				} else if(data.type == 'duplicate') {
+					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos);
 				} else if(data.type == 'delete') {
 					deleteObject(data.uuid);
 				} else if(data.type == 'color') {

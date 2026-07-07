@@ -6,8 +6,9 @@
 	import { XR, Controller, Hand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
 	import { peers, username,userdata, specatorMode } from '../stores/appStore';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, vrOverride, specators, globalCamera, orbitControls } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
 	import { selectObject, deselectObject, topLevelObjectOf } from '$lib/objectActions';
+	import { recordTransform } from '$lib/history';
 	import Grid from '../extensions/Grid.svelte';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
@@ -17,6 +18,7 @@
 	let { scene, camera, renderer } = useThrelte();
 
 	$globalScene = scene; // console.log($globalScene)
+	$globalRenderer = renderer;
 
 	$globalScene.background = new THREE.Color(0x101010);
 
@@ -73,6 +75,35 @@
 			}
 		}
 	});
+
+	// --- undo/redo: record one history entry per gizmo drag ---
+	let dragStartState = null;
+	let hookedControls = null;
+	$: if ($TControls && $TControls !== hookedControls) {
+		hookedControls = $TControls;
+		$TControls.addEventListener('dragging-changed', (event) => {
+			const object = hookedControls.object;
+			if (!object) return;
+			if (event.value) {
+				dragStartState = {
+					uuid: object.uuid,
+					pos: object.position.toArray(),
+					rot: object.rotation.toArray(),
+					scale: object.scale.toArray()
+				};
+			} else if (dragStartState && dragStartState.uuid === object.uuid) {
+				const after = {
+					pos: object.position.toArray(),
+					rot: object.rotation.toArray(),
+					scale: object.scale.toArray()
+				};
+				const before = { pos: dragStartState.pos, rot: dragStartState.rot, scale: dragStartState.scale };
+				if (JSON.stringify(before) !== JSON.stringify(after))
+					recordTransform({ uuid: object.uuid, before: before, after: after });
+				dragStartState = null;
+			}
+		});
+	}
 
 	// --- viewport click selection (desktop) and controller ray selection (VR) ---
 	const selectionRaycaster = new THREE.Raycaster();

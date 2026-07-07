@@ -7,6 +7,7 @@
   import { isLocked } from './stores/sceneStore'
   import { startFlowRuntime } from '$lib/flowRuntime'
   import { startShortcuts } from '$lib/shortcuts'
+  import { startSnapping } from '$lib/snapping'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast } from './stores/appStore'
 
@@ -14,6 +15,7 @@
   onMount(() => {
     startFlowRuntime()
     startShortcuts()
+    startSnapping()
   })
 
   // drop 3d files anywhere on the viewport to import them

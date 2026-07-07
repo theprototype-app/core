@@ -8,6 +8,7 @@ import {
 	settingsSection
 } from '../stores/appStore';
 import { focusObject, duplicateObject } from './objectActions';
+import { undo, redo } from './history';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
 // and renders the list in Settings -> Shortcuts. Other modules push entries via
@@ -64,6 +65,24 @@ export const shortcuts = [
 		group: 'Panels',
 		label: 'Toggle chat',
 		action: () => chatHidden.update((value) => (value === 'hidden' ? '' : 'hidden'))
+	},
+	{
+		keys: 'Ctrl+Z',
+		group: 'History',
+		label: 'Undo (object transforms)',
+		action: () => undo()
+	},
+	{
+		keys: 'Ctrl+Y',
+		group: 'History',
+		label: 'Redo (object transforms)',
+		action: () => redo()
+	},
+	{
+		keys: 'Ctrl+Shift+Z',
+		group: 'History',
+		label: 'Redo (alternative)',
+		action: () => redo()
 	},
 	{
 		keys: 'Ctrl+/',

@@ -8,6 +8,7 @@
 	import PropertiesLight from './menu/PropertiesLight.svelte';
 	import MenuSidebar from './menu/Sidebar.svelte';
 	import MenuSettings from './menu/Settings.svelte';
+	import ViewportMenu from './menu/ViewportMenu.svelte';
 	import Library from './menu/Library.svelte';
 	import { DarkMode } from 'flowbite-svelte';
 	import Users from './menu/Users.svelte';
@@ -27,6 +28,7 @@
 <PropertiesScene />
 <PropertiesLight />
 <MenuSettings />
+<ViewportMenu />
 <Library />
 <Toasts />
 <Users />

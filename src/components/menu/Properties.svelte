@@ -10,8 +10,10 @@ import {
 	CloseButton,
 	NumberInput,
 	Input,
-	Range
+	Range,
+	Button
 } from 'flowbite-svelte';
+import { setObjectTexture, removeObjectTexture, setMaterialParam, switchMaterialType } from '$lib/materialsHandler';
 import { objectsGroup, TControls, selectedObject } from '../../stores/sceneStore';
 import { peers, chatHidden, propertiesClose, toggleExpand } from '../../stores/appStore.js';
 import ColorPicker,{ ChromeVariant }  from 'svelte-awesome-color-picker';
@@ -430,15 +432,57 @@ function sendTransformUpdate() {
         <p class="mb-4 font-semibold text-gray-900 dark:text-white" style="margin-bottom: -40px;">{$selectedObject.material.type}</p>
         <Select id="select-underline" underline class="mt-2" items={materials} bind:value={selectedMaterial}
             on:change={(event) => {
-                console.log("bind:value={ " + $selectedObject.material.type )
-                // console.log(event.srcElement.value);
-                $selectedObject.material = new THREE[event.srcElement.value];
+                // switches type but keeps color/texture/opacity, locally and on peers
+                switchMaterialType($selectedObject.uuid, event.srcElement.value);
+                $selectedObject = $selectedObject; // trigger reactivity
                 selectedMaterial = null;
-                sendUpdate('material');
             }}
         />
         {/if}
-        c
+
+        <!-- materials supporting textures initialize map to null; ShadowMaterial has no map at all -->
+        {#if $selectedObject.material && !Array.isArray($selectedObject.material) && typeof $selectedObject.material.map !== "undefined"}
+        <p class="mb-2 mt-4 font-semibold text-gray-900 dark:text-white">Texture</p>
+        <input type="file" id="texture-file" accept="image/png, image/jpeg, image/webp" style="display: none"
+            on:change={(e) => {
+                const file = e.target.files?.[0];
+                if (file) setObjectTexture($selectedObject.uuid, file).then(() => { $selectedObject = $selectedObject; });
+                e.target.value = '';
+            }} />
+        <div class="flex items-center gap-3">
+            {#if $selectedObject.material.userData?.mapDataUrl}
+                <img src={$selectedObject.material.userData.mapDataUrl} alt="texture"
+                    class="h-10 w-10 cursor-pointer rounded border border-gray-500 object-cover"
+                    on:click={() => document.getElementById('texture-file').click()} />
+                <Button size="xs" color="alternative"
+                    onclick={() => { removeObjectTexture($selectedObject.uuid); $selectedObject = $selectedObject; }}>Remove</Button>
+            {:else}
+                <Button size="xs" color="alternative"
+                    onclick={() => document.getElementById('texture-file').click()}>Set texture...</Button>
+            {/if}
+        </div>
+        {/if}
+
+        {#if $selectedObject.material?.type === "MeshStandardMaterial"}
+        <p class="mb-2 mt-4 font-semibold text-gray-900 dark:text-white">Roughness</p>
+        <Range id="mat-roughness" step="0.05" min={0} max={1} value={$selectedObject.material.roughness}
+            onchange={(e) => setMaterialParam($selectedObject.uuid, 'roughness', +e.target.value)} />
+        <p class="mb-2 mt-4 font-semibold text-gray-900 dark:text-white">Metalness</p>
+        <Range id="mat-metalness" step="0.05" min={0} max={1} value={$selectedObject.material.metalness}
+            onchange={(e) => setMaterialParam($selectedObject.uuid, 'metalness', +e.target.value)} />
+        {/if}
+        {#if $selectedObject.material?.type === "MeshPhongMaterial"}
+        <p class="mb-2 mt-4 font-semibold text-gray-900 dark:text-white">Shininess</p>
+        <Range id="mat-shininess" step="1" min={0} max={100} value={$selectedObject.material.shininess}
+            onchange={(e) => setMaterialParam($selectedObject.uuid, 'shininess', +e.target.value)} />
+        {/if}
+        {#if $selectedObject.material && typeof $selectedObject.material.wireframe !== "undefined"}
+        <p class="mb-2 mt-4 font-semibold text-gray-900 dark:text-white">
+            <Checkbox checked={$selectedObject.material.wireframe}
+                onchange={(e) => setMaterialParam($selectedObject.uuid, 'wireframe', e.target.checked)}>Wireframe</Checkbox>
+        </p>
+        {/if}
+
         {#if $selectedObject.material.type === "MeshBasicMaterial"}
         <p class="mb-4 font-semibold text-gray-900 dark:text-white">Color</p>
         <ColorPicker

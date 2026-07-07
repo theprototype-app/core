@@ -3,6 +3,7 @@ import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selected
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
+import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
 
@@ -271,15 +272,13 @@ export async function objectParameters(data) {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.visible = data.visible;
     } else if (data.parameter == 'material') {
+        // carries over color/map/opacity from the previous material
+        switchMaterialType(data.uuid, data.material, false);
+    } else if (data.parameter == 'map') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
-        if (mesh) {
-            if (data.material == 'MeshBasicMaterial') mesh.material = new THREE.MeshBasicMaterial();
-            if (data.material == 'MeshStandardMaterial') mesh.material = new THREE.MeshStandardMaterial();
-            if (data.material == 'MeshPhongMaterial') mesh.material = new THREE.MeshPhongMaterial();
-            if (data.material == 'MeshToonMaterial') mesh.material = new THREE.MeshToonMaterial();
-            if (data.material == 'ShadowMaterial') mesh.material = new THREE.ShadowMaterial();
-        }
-            
+        if (mesh) applyMap(mesh, data.map);
+    } else if (data.parameter == 'materialParam') {
+        setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'castShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.castShadow = data.castShadow;

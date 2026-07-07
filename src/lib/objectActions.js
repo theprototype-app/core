@@ -75,7 +75,7 @@ export function topLevelObjectOf(object) {
 /** Collect an object and all descendants in a stable depth-first order @param {any} object @param {any[]} list */
 function collectTree(object, list = []) {
 	list.push(object);
-	object.children.forEach((child) => collectTree(child, list));
+	object.children.forEach((/** @type {any} */ child) => collectTree(child, list));
 	return list;
 }
 
@@ -84,7 +84,7 @@ function detachMaterials(clone) {
 	collectTree(clone).forEach((node) => {
 		if (node.material)
 			node.material = Array.isArray(node.material)
-				? node.material.map((m) => m.clone())
+				? node.material.map((/** @type {any} */ m) => m.clone())
 				: node.material.clone();
 	});
 }
@@ -209,6 +209,7 @@ export function focusObject(uuid) {
 	const started = performance.now();
 	const token = ++focusAnimation; // cancel a previous focus animation
 
+	/** @param {number} now */
 	function step(now) {
 		if (token !== focusAnimation) return;
 		const t = Math.min((now - started) / duration, 1);

@@ -1,10 +1,16 @@
 import { writable } from 'svelte/store';
 
+/** @type {import('svelte/store').Writable<any>} */
 export const globalScene = writable(null);
+/** @type {import('svelte/store').Writable<any>} */
 export const objectsGroup = writable(null);
+/** @type {import('svelte/store').Writable<any>} */
 export const showGrid = writable(null);
+/** @type {import('svelte/store').Writable<any>} */
 export const TControls = writable(null);
+/** @type {import('svelte/store').Writable<any[]>} */
 export const lockedObjects = writable([]);
+/** @type {import('svelte/store').Writable<any>} */
 export const selectedObject = writable([]);
 export const backgroundColor = writable('#ffffff');
 export const isLocked = writable(null);
@@ -13,7 +19,11 @@ export const vrOverride = writable(false);
 export const playerCam = writable(false);
 export const editorCam = writable(false);
 export const specators = writable([]);
+/** @type {import('svelte/store').Writable<any>} */
 export const globalCamera = writable(null);
-export const globalRenderer = writable(null);
+/** @type {import('svelte/store').Writable<any>} */
 export const camSave = writable(null);
+/** @type {import('svelte/store').Writable<any>} */
+export const globalRenderer = writable(null);
+/** @type {import('svelte/store').Writable<any>} */
 export const orbitControls = writable(null);

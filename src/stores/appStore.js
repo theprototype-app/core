@@ -1,7 +1,9 @@
 import { writable, get } from 'svelte/store';
 
+/** @type {import('svelte/store').Writable<any>} */
 export const settingsOpen = writable(null);
 // section to expand when the settings modal opens (e.g. 'shortcuts' via Ctrl+/)
+/** @type {import('svelte/store').Writable<any>} */
 export const settingsSection = writable(null);
 export const propertiesClose = writable(true);
 export const scenePropertiesClose = writable(true);
@@ -77,8 +79,10 @@ export function restorePanels() {
 }
 
 // context menu state for the object list: { x, y, uuid, locked } | null
+/** @type {import('svelte/store').Writable<any>} */
 export const objectContextMenu = writable(null);
 // uuid of the object being renamed inline in the object list
+/** @type {import('svelte/store').Writable<any>} */
 export const renamingObject = writable(null);
 
 export const fixLight = writable(false);

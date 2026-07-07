@@ -1,4 +1,5 @@
 <script>
+    /** @type {{ element: any }} */
     let { element } = $props();
     let isExpanded = $state(false);
     let previouslySelectedObject;
@@ -63,6 +64,7 @@
         selectObject(item.uuid, true);
 	}
 
+    /** @param {any} event */
     function openContextMenu(event) {
         event.preventDefault();
         $objectContextMenu = {

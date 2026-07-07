@@ -1,6 +1,8 @@
 import { writable, get } from 'svelte/store';
 
 export const settingsOpen = writable(null);
+// section to expand when the settings modal opens (e.g. 'shortcuts' via Ctrl+/)
+export const settingsSection = writable(null);
 export const propertiesClose = writable(true);
 export const scenePropertiesClose = writable(true);
 export const lightPropertiesClose = writable(true);

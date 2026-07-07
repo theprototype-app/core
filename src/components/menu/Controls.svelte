@@ -94,14 +94,14 @@
 	classOuter="h-10 w-70 bg-white rounded-full dark:bg-gray-700 z-10"
 	classInner="grid-cols-7"
 >
-	<p class={classActive + ' rounded-l-full'} on:click={(event) => $TControls.setMode('translate')}>
+	<p class={classActive + ' rounded-l-full'} title="Move (W)" on:click={(event) => $TControls.setMode('translate')}>
 		<i class="fas fa-arrows-alt text-black dark:text-slate-200"></i>
 	</p>
-	<p class={classActive} on:click={(event) => $TControls.setMode('rotate')}>
+	<p class={classActive} title="Rotate (E)" on:click={(event) => $TControls.setMode('rotate')}>
 		<i class="fas fa-rotate-left text-black dark:text-slate-200"></i>
 	</p>
 
-	<p class={classActive} on:click={(event) => $TControls.setMode('scale')}>
+	<p class={classActive} title="Scale (R)" on:click={(event) => $TControls.setMode('scale')}>
 		<i class="fas fa-expand-arrows-alt text-black dark:text-slate-200"></i>
 	</p>
 	<div class="flex items-center justify-center">
@@ -112,18 +112,21 @@
 
 	<p
 		class={classActive}
+		title="Object list (O)"
 		on:click={() => objectListClose.update((value) => !value)}
 	>
 		<i class="fas fa-list-ul text-black dark:text-slate-200"></i>
 	</p>
 	<p
 		class={classActive}
+		title="Node editor (N)"
 		on:click={() => flowGraphClose.update((value) => !value)}
 	>
 		<i class="fas fa-circle-nodes text-black dark:text-slate-200"></i>
 	</p>
 	<p
 		class={classActive + ' rounded-r-full'}
+		title="Chat (C)"
 		on:click={(event) => {
 			chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden');
 		}}

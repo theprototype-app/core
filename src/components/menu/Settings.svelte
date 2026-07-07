@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox } from 'flowbite-svelte';
 	import { showGrid, vrOverride } from '../../stores/sceneStore.js';
-	import { settingsOpen, hidePanels, restorePanels } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels } from '../../stores/appStore.js';
+	import { shortcuts } from '$lib/shortcuts';
+
+	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
+	let shortcutsExpanded = false;
 
 	//Rounded corners for options
 	let coverClass =
@@ -21,8 +25,15 @@
 
 	// Hide open panels while settings is shown, restore them after (initial value is null,
 	// so nothing happens until the modal is opened the first time)
-	$: if ($settingsOpen) hidePanels();
-	else if ($settingsOpen === false) restorePanels();
+	$: if ($settingsOpen) {
+		hidePanels();
+		// refresh the group list — later phases register more shortcuts at runtime
+		shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
+		shortcutsExpanded = $settingsSection === 'shortcuts';
+	} else if ($settingsOpen === false) {
+		restorePanels();
+		$settingsSection = null;
+	}
 </script>
 
 <Modal
@@ -58,6 +69,21 @@
 					</p>
 					<p class={bottomCoverDescription}>Display grid on floor</p>
 				</div>
+			</AccordionItem>
+			<AccordionItem bind:open={shortcutsExpanded}>
+				<svelte:fragment slot="header">Shortcuts</svelte:fragment>
+				{#each shortcutGroups as group, groupIndex}
+					<p class="mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
+					{#each shortcuts.filter((s) => s.group === group) as shortcut}
+						<div class="flex items-center gap-3 py-1">
+							<kbd
+								class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100"
+								>{shortcut.keys}</kbd
+							>
+							<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
+						</div>
+					{/each}
+				{/each}
 			</AccordionItem>
 			<AccordionItem>
 				<svelte:fragment slot="header">About</svelte:fragment>

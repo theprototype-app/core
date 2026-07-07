@@ -6,9 +6,13 @@
   import Flow from './components/Flow.svelte'
   import { isLocked } from './stores/sceneStore'
   import { startFlowRuntime } from '$lib/flowRuntime'
+  import { startShortcuts } from '$lib/shortcuts'
 
   // node graph animations keep running even when the flow drawer is closed
-  onMount(() => startFlowRuntime())
+  onMount(() => {
+    startFlowRuntime()
+    startShortcuts()
+  })
 </script>
 
 {#if !$isLocked}

@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { flowNodes, flowEdges } from '../stores/flowStore';
+import { flowNodes, flowEdges, flowCursors } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
 
 // Strip runtime-only fields (computed, selected, dragging) so the node is serializable for peerjs
@@ -60,6 +60,16 @@ export function createFlowEdge(edge) {
 /** @param {string[]} ids */
 export function deleteFlowEdges(ids) {
 	flowEdges.update((edges) => edges.filter((e) => !ids.includes(e.id)));
+}
+
+/** Apply a peer's flow-editor cursor position (or remove it on leave) @param {any} data */
+export function applyFlowCursor(data) {
+	flowCursors.update((map) => {
+		const next = { ...map };
+		if (data.leave) delete next[data.id];
+		else next[data.id] = { x: data.x, y: data.y, name: data.name, ts: Date.now() };
+		return next;
+	});
 }
 
 // Merge a full snapshot received from a peer

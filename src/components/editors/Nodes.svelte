@@ -10,7 +10,9 @@
 	} from '@xyflow/svelte';
 	// 👇 this is important! You need to import the styles for Svelte Flow to work
 	import '@xyflow/svelte/dist/style.css';
+	import { writable } from 'svelte/store';
 	import Sidebar from './Sidebar.svelte';
+	import PeerCursors from './PeerCursors.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ColorPickerNode from './nodes/ColorPickerNode.svelte';
 	import SliderNode from './nodes/SliderNode.svelte';
@@ -20,7 +22,7 @@
 	import { flowNodes as nodes, flowEdges as edges } from '../../stores/flowStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges } from '$lib/nodesHandler';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
-	import { peers } from '../../stores/appStore';
+	import { peers, username } from '../../stores/appStore';
 
 	const nodeTypes = {
 		colorpicker: ColorPickerNode,
@@ -38,9 +40,32 @@
 	const snapGrid: [number, number] = [25, 25];
 	const { screenToFlowPosition } = useSvelteFlow();
 
+	// shared with <SvelteFlow> so peer cursors can be projected to screen space
+	const viewport = writable({ x: 0, y: 0, zoom: 1 });
+
 	// Stores are initialized with null, so their inferred type is unusable here
 	let peer: any;
 	$: peer = $peers;
+
+	// broadcast the local cursor position in flow coordinates (throttled)
+	let lastCursorSent = 0;
+	const onPointerMoveCursor = (event: PointerEvent) => {
+		if (!peer) return;
+		const now = Date.now();
+		if (now - lastCursorSent < 50) return;
+		lastCursorSent = now;
+		const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+		peer.send({
+			type: 'flowcursor',
+			id: peer.peer.id,
+			name: $username || peer.peer.id,
+			x: position.x,
+			y: position.y
+		});
+	};
+	const onPointerLeaveCursor = () => {
+		if (peer) peer.send({ type: 'flowcursor', id: peer.peer.id, leave: true });
+	};
 
 	// active context menu: { x, y, items }
 	let menu: any = null;
@@ -175,12 +200,18 @@
 	<div class="h-full w-40 shrink-0 overflow-y-auto">
 		<Sidebar />
 	</div>
-	<div class="svelteFlow h-full grow">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="svelteFlow relative h-full grow"
+		on:pointermove={onPointerMoveCursor}
+		on:pointerleave={onPointerLeaveCursor}
+	>
 		<SvelteFlow
 			{nodes}
 			{nodeTypes}
 			{edges}
 			{snapGrid}
+			{viewport}
 			{onedgecreate}
 			{ondelete}
 			deleteKey={['Backspace', 'Delete']}
@@ -197,6 +228,7 @@
 		>
 			<Background bgColor="transparent" variant={BackgroundVariant.Dots} />
 		</SvelteFlow>
+		<PeerCursors {viewport} />
 	</div>
 </div>
 

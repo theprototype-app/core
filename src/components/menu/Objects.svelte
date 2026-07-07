@@ -6,6 +6,7 @@
     import { toggleExpand, lightPropertiesClose, scenePropertiesClose} from '../../stores/appStore';
     import { objectsGroup, TControls, selectedObject, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
+    import { selectObject } from '$lib/objectActions';
     import {
         showSidebar,
 		propertiesClose,
@@ -52,35 +53,14 @@
     });
 
     function select(uuid) {
-
-        if (!$lockedObjects.find((lockedUuid) => lockedUuid[1] === uuid)) {
-            // showSidebar(null);
-            previouslySelectedObject = $selectedObject;
-            selectedObject.set($objectsGroup.getObjectByProperty('uuid', uuid));
-            $TControls.attach($objectsGroup.getObjectByProperty('uuid', uuid));
-            $peers.send({ type: 'lock', uuid: uuid, peerId: $peers.peer.id });
-        } else {
-            $TControls.detach();
-            selectedObject.set($objectsGroup.getObjectByProperty('uuid', uuid));
-        }
-
-        // Ensure the correct sidebar properties are open
-        if (!$lightPropertiesClose || !$propertiesClose)
-        configure($selectedObject, 1);
-
+        previouslySelectedObject = $selectedObject;
+        // shared selection logic (gizmo attach, lock broadcast, properties refresh)
+        selectObject(uuid);
     }
 
 	function configure(item, selected) {
-        // The delay adds cool effect
-        // setTimeout(() => {
-            if (!selected) select(item.uuid)
-			if (item.type.endsWith('Light')) {
-                showSidebar('lightProperties');
-			} else {
-                showSidebar('properties');
-			}
-        // }, delay)
-        // propertiesClose.set(false);
+        if (!selected) previouslySelectedObject = $selectedObject;
+        selectObject(item.uuid, true);
 	}
 
 	function deleteItem(item) {

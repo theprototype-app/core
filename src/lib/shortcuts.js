@@ -7,6 +7,7 @@ import {
 	settingsOpen,
 	settingsSection
 } from '../stores/appStore';
+import { focusObject } from './objectActions';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
 // and renders the list in Settings -> Shortcuts. Other modules push entries via
@@ -33,6 +34,12 @@ export const shortcuts = [
 		group: 'Transform',
 		label: 'Scale',
 		action: () => get(TControls)?.setMode('scale')
+	},
+	{
+		keys: 'F',
+		group: 'Camera',
+		label: 'Focus selected object',
+		action: () => focusObject()
 	},
 	{
 		keys: 'O',

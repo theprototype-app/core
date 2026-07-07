@@ -1,18 +1,20 @@
 <script lang="ts">
 	import * as THREE from 'three';
+	import { onMount } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core';
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
 	import { peers, username,userdata, specatorMode } from '../stores/appStore';
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, vrOverride, specators, globalCamera, orbitControls } from '../stores/sceneStore';
+	import { selectObject, deselectObject, topLevelObjectOf } from '$lib/objectActions';
 	import Grid from '../extensions/Grid.svelte';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
 	import { Mesh, Vector3 } from 'three'
 
 
-	let { scene, camera } = useThrelte();
+	let { scene, camera, renderer } = useThrelte();
 
 	$globalScene = scene; // console.log($globalScene)
 
@@ -70,6 +72,78 @@
 				lastCameraQuaternion.copy(camera.current.quaternion);
 			}
 		}
+	});
+
+	// --- viewport click selection (desktop) and controller ray selection (VR) ---
+	const selectionRaycaster = new THREE.Raycaster();
+
+	function raycastSelect() {
+		const hits = selectionRaycaster.intersectObjects($objectsGroup.children, true);
+		if (hits.length > 0) {
+			const target = topLevelObjectOf(hits[0].object);
+			if (target) {
+				selectObject(target.uuid, true);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	onMount(() => {
+		const element = renderer.domElement;
+		let downPosition = null;
+		let downTime = 0;
+
+		const onPointerDown = (event) => {
+			if (event.button !== 0) return;
+			downPosition = [event.clientX, event.clientY];
+			downTime = Date.now();
+		};
+
+		const onPointerUp = (event) => {
+			if (event.button !== 0 || !downPosition) return;
+			const moved = Math.hypot(event.clientX - downPosition[0], event.clientY - downPosition[1]);
+			downPosition = null;
+			// only a short, stationary click selects — dragging orbits the camera
+			if (moved > 5 || Date.now() - downTime > 400) return;
+			if ($isLocked || $isVRMode || $specatorMode) return;
+			// ignore clicks on the transform gizmo (axis is set while hovering a handle)
+			if ($TControls && ($TControls.dragging || $TControls.axis)) return;
+			if (!$objectsGroup) return;
+
+			const rect = element.getBoundingClientRect();
+			const ndc = new THREE.Vector2(
+				((event.clientX - rect.left) / rect.width) * 2 - 1,
+				-((event.clientY - rect.top) / rect.height) * 2 + 1
+			);
+			selectionRaycaster.setFromCamera(ndc, camera.current);
+			if (!raycastSelect()) deselectObject();
+		};
+
+		// pointerdown on the canvas proves the gesture started in the viewport;
+		// pointerup is captured on window because the canvas can lose hit-testing
+		// mid-gesture (the Canvas wrapper div swallows the up event)
+		element.addEventListener('pointerdown', onPointerDown);
+		window.addEventListener('pointerup', onPointerUp);
+
+		// VR: trigger press selects the object the controller points at
+		const tempMatrix = new THREE.Matrix4();
+		const onXRSelect = (event) => {
+			const controller = event.target;
+			if (!$objectsGroup) return;
+			tempMatrix.identity().extractRotation(controller.matrixWorld);
+			selectionRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+			selectionRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+			raycastSelect();
+		};
+		const xrControllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
+		xrControllers.forEach((controller) => controller.addEventListener('select', onXRSelect));
+
+		return () => {
+			element.removeEventListener('pointerdown', onPointerDown);
+			window.removeEventListener('pointerup', onPointerUp);
+			xrControllers.forEach((controller) => controller.removeEventListener('select', onXRSelect));
+		};
 	});
 
 	function oncreate() { $TControls.visible = false; }

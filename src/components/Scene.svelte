@@ -50,6 +50,42 @@
 	let rotation = 0;
 	let lastCameraPosition = new THREE.Vector3();
 	let lastCameraQuaternion = new THREE.Quaternion();
+
+	// --- VR presence: broadcast controller poses while in a session ---
+	const handPosition = new THREE.Vector3();
+	const handQuaternion = new THREE.Quaternion();
+	const handEuler = new THREE.Euler();
+	const lastHandPositions = [new THREE.Vector3(1e9, 0, 0), new THREE.Vector3(1e9, 0, 0)];
+
+	function readControllerPose(index) {
+		const controller = renderer.xr.getController(index);
+		controller.getWorldPosition(handPosition);
+		controller.getWorldQuaternion(handQuaternion);
+		handEuler.setFromQuaternion(handQuaternion);
+		return { pos: handPosition.toArray(), rot: [handEuler.x, handEuler.y, handEuler.z] };
+	}
+
+	function broadcastVRHands() {
+		const session = renderer.xr.getSession();
+		if (!session) return;
+		let moved = false;
+		const poses = [readControllerPose(0), readControllerPose(1)];
+		for (let i = 0; i < 2; i++) {
+			const position = new THREE.Vector3().fromArray(poses[i].pos);
+			if (position.distanceTo(lastHandPositions[i]) > 0.005) moved = true;
+		}
+		if (!moved) return;
+		lastHandPositions[0].fromArray(poses[0].pos);
+		lastHandPositions[1].fromArray(poses[1].pos);
+
+		const hands = { left: null, right: null };
+		[...session.inputSources].forEach((source, index) => {
+			if (index < 2 && (source.handedness === 'left' || source.handedness === 'right'))
+				hands[source.handedness] = poses[index];
+		});
+		$peers.send({ type: 'vrhands', peerId: $peers.peer.id, left: hands.left, right: hands.right, active: true });
+	}
+
 	useTask((delta) => {
 		rotation += 0.25 * delta;
 		// console.log(camera.current.lookAt.)
@@ -75,6 +111,7 @@
 				lastCameraQuaternion.copy(camera.current.quaternion);
 			}
 		}
+		if (renderer.xr.isPresenting) broadcastVRHands();
 	});
 
 	// --- undo/redo: record one history entry per gizmo drag ---
@@ -122,6 +159,12 @@
 	}
 
 	onMount(() => {
+		// tell peers our controllers are gone when the VR session ends
+		const onSessionEnd = () => {
+			$peers?.send({ type: 'vrhands', peerId: $peers.peer.id, left: null, right: null, active: false });
+		};
+		renderer.xr.addEventListener('sessionend', onSessionEnd);
+
 		const element = renderer.domElement;
 		let downPosition = null;
 		let downTime = 0;
@@ -175,6 +218,7 @@
 			element.removeEventListener('pointerdown', onPointerDown);
 			window.removeEventListener('pointerup', onPointerUp);
 			xrControllers.forEach((controller) => controller.removeEventListener('select', onXRSelect));
+			renderer.xr.removeEventListener('sessionend', onSessionEnd);
 		};
 	});
 

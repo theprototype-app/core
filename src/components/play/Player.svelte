@@ -3,11 +3,13 @@
     import { Vector3 } from 'three'
     import VRControls from './VRControls.svelte'
     import PointerLockControls from './PointerLockControls.svelte'
-    import { playerCam } from '../../stores/sceneStore'
+    import { playerCam, peerHands } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
     import { Text } from '@threlte/extras'
-  
+
     export let position: [x: number, y: number, z: number] = [0, 0, 0]
+
+    const handColors: Record<string, number> = { left: 0x4f83cc, right: 0xcc784f }
   </script>
     
   <VRControls />
@@ -47,6 +49,29 @@
           <T.SphereGeometry args={[0.59, 6]} />
           <T.MeshNormalMaterial />
         </T.Mesh>
+
+        <!-- VR controller markers while this peer is in a session -->
+        {#if $peerHands[user[0]]?.active}
+          {#each ['left', 'right'] as side}
+            {#if $peerHands[user[0]][side]}
+              <T.Group
+                name={`${user[0]}-hand-${side}`}
+                position={$peerHands[user[0]][side].pos}
+                rotation={$peerHands[user[0]][side].rot}
+              >
+                <T.Mesh>
+                  <T.BoxGeometry args={[0.06, 0.06, 0.14]} />
+                  <T.MeshStandardMaterial color={handColors[side]} />
+                </T.Mesh>
+                <!-- short pointer so the aiming direction is readable -->
+                <T.Mesh position={[0, 0, -0.12]} rotation={[Math.PI / 2, 0, 0]}>
+                  <T.CylinderGeometry args={[0.006, 0.006, 0.1]} />
+                  <T.MeshStandardMaterial color={0xffffff} />
+                </T.Mesh>
+              </T.Group>
+            {/if}
+          {/each}
+        {/if}
       </T.Group>
       {/if}
   {/each}

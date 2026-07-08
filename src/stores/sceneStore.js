@@ -27,3 +27,6 @@ export const camSave = writable(null);
 export const globalRenderer = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const orbitControls = writable(null);
+// peers' VR controller poses: peerId -> { left, right, active, ts }
+/** @type {import('svelte/store').Writable<Record<string, any>>} */
+export const peerHands = writable({});

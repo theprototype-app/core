@@ -3,7 +3,7 @@ import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, delet
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { applyRemoteDuplicate } from '$lib/objectActions';
-import { lockedObjects, selectedObject } from '../stores/sceneStore';
+import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
 
@@ -196,6 +196,11 @@ export class PeerConnection {
 					deleteFlowEdges(data.ids);
 				} else if(data.type == 'flowcursor') {
 					applyFlowCursor(data);
+				} else if(data.type == 'vrhands') {
+					peerHands.update((map) => ({
+						...map,
+						[data.peerId]: { left: data.left, right: data.right, active: data.active !== false, ts: Date.now() }
+					}));
 				} else if(data.startsWith('/')) {
 					sceneCommand(data);
 				}

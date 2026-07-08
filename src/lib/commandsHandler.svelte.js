@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera } from '../stores/sceneStore.js';
+import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands } from '../stores/sceneStore.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
@@ -199,7 +199,12 @@ export function handleDisconnected(peerId) {
     users = users.filter(u => u[0] !== peerId);
     userdata.set(users);
     userdata.update((value) => value);
-
+    // drop their VR hand markers
+    peerHands.update((map) => {
+        const next = { ...map };
+        delete next[peerId];
+        return next;
+    });
 }
 
 export function checkLocks(data) {

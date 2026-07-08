@@ -5,7 +5,8 @@
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
-	import { peers, username,userdata, specatorMode } from '../stores/appStore';
+	import { peers, username,userdata, specatorMode, avatarConfig } from '../stores/appStore';
+	import { get } from 'svelte/store';
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
 	import { selectObject, deselectObject, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
@@ -25,7 +26,7 @@
 	$globalScene.background = new THREE.Color(0x101010);
 
 	$username = localStorage.getItem('username');
-	$userdata.push([$peers.peer.id, localStorage.getItem('username'), localStorage.getItem('avatar')]);
+	$userdata.push([$peers.peer.id, localStorage.getItem('username'), localStorage.getItem('avatar'), null, null, get(avatarConfig)]);
 	$userdata = $userdata;
 
 	$showGrid = localStorage.getItem('showGrid') === 'false' ? false : true;

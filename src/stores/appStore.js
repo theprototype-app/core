@@ -14,6 +14,15 @@ export const chatHidden = writable('hidden');
 export const libraryClose = writable(true);
 export const userdata = writable([]);
 export const username = writable(null);
+
+// local player's avatar configuration (userdata slot 5, replicated to peers)
+const storedAvatarConfig =
+	typeof localStorage !== 'undefined' ? localStorage.getItem('avatarConfig') : null;
+/** @type {import('svelte/store').Writable<{body: string, hat: string, face: string}>} */
+export const avatarConfig = writable(
+	storedAvatarConfig ? JSON.parse(storedAvatarConfig) : { body: '#4f83cc', hat: 'none', face: 'label' }
+);
+export const characterModalOpen = writable(false);
 export const peers = writable(null);
 export const toggleExpand = writable(null);
 export const closeMenu = writable(true);

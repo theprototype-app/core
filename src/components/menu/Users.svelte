@@ -21,7 +21,8 @@
 		username,
 		userdata,
 		peers,
-		hidePanels
+		hidePanels,
+		characterModalOpen
 	} from '../../stores/appStore.js';
 	import { globalScene, globalCamera, camSave } from '../../stores/sceneStore.js';
 
@@ -262,9 +263,12 @@
 		<span class="block text-lg">{localStorage.getItem('username') ? localStorage.getItem('username') : 'Anonymous'}</span>
 		<DropdownDivider />
 	</DropdownHeader>
-	<DropdownItem>
-		<p class="text-gray-500 dark:text-gray-400">Customize Character</p>
-	</DropdownItem>
+	<DropdownItem
+		onclick={() => {
+			characterModalOpen.set(true);
+			openDropdown = false;
+		}}>Customize Character</DropdownItem
+	>
 	<DropdownItem
 		onclick={() => {
 			profileSettingsModal = true;

@@ -57,6 +57,8 @@ export function userData(data) {
             let index = users.findIndex(u => u[0] === element[0]);
             if (element[1] != '') users[index][1] = element[1];
             if (element[2] != '') users[index][2] = element[2];
+            // avatar config (slot 5) from newer clients
+            if (element[5]) users[index][5] = element[5];
         }
 
     })

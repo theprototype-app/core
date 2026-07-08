@@ -8,6 +8,7 @@
 	import PropertiesLight from './menu/PropertiesLight.svelte';
 	import MenuSidebar from './menu/Sidebar.svelte';
 	import MenuSettings from './menu/Settings.svelte';
+	import CharacterModal from './menu/CharacterModal.svelte';
 	import ViewportMenu from './menu/ViewportMenu.svelte';
 	import Library from './menu/Library.svelte';
 	import { DarkMode } from 'flowbite-svelte';
@@ -28,6 +29,7 @@
 <PropertiesScene />
 <PropertiesLight />
 <MenuSettings />
+<CharacterModal />
 <ViewportMenu />
 <Library />
 <Toasts />

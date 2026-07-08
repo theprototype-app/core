@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { toggleExpand, fixLight } from '../stores/appStore.js';
+import { customGeometryBuilders } from '$lib/customGeometries';
 import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject } from '../stores/sceneStore.js';
 
 //Access scene Store
@@ -33,8 +34,10 @@ export function createGeometry(command, uuid) {
     geometry = geometry.charAt(0).toUpperCase() + geometry.slice(1)
     let options = [command.split(' ')[2],command.split(' ')[3],command.split(' ')[4],command.split(' ')[5]]
     let geometryList = ["Box","Capsule","Circle","Cone","Cylinder","Dodecahedron","Edges","Extrude","Icosahedron","Lathe","Octahedron","Plane","Polyhedron","Ring","Shape","Sphere","Tetrahedron","Torus","TorusKnot","Tube","Wireframe"]
-    if (geometryList.includes(geometry)) {
-        let mesh = new THREE[geometry+'Geometry'](options[0],options[1],options[2],options[3]);
+    if (customGeometryBuilders[geometry] || geometryList.includes(geometry)) {
+        let mesh = customGeometryBuilders[geometry]
+            ? customGeometryBuilders[geometry](options[0],options[1],options[2],options[3])
+            : new (/** @type {any} */ (THREE))[geometry+'Geometry'](options[0],options[1],options[2],options[3]);
         let material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
         let object = new THREE.Mesh(mesh, material);
         if (uuid) object.uuid = uuid

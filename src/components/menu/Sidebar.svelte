@@ -11,6 +11,7 @@
 	} from '../../stores/appStore.js';
 	import { backgroundColor } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
+	import { primitivesCatalog } from '$lib/primitivesCatalog';
 	import { sineIn } from 'svelte/easing';
 
 	import {
@@ -86,7 +87,8 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 <Sidebar>
 	<SidebarWrapper>
 		<SidebarGroup>
-			<SidebarDropdownWrapper label="Primitives">
+			{#each primitivesCatalog as catalogGroup}
+			<SidebarDropdownWrapper label={catalogGroup.group}>
 				<svelte:fragment slot="arrowup">
 					<svg
 						style="transform: rotate(180deg);"
@@ -118,34 +120,19 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 						<polyline points="18 9 12 15 6 9"></polyline>
 					</svg>
 				</svelte:fragment>
+				{#each catalogGroup.items as primitive}
 				<SidebarDropdownItem
-				label="Cube"
-				on:click={() => {
-					showSidebar('properties');
-					sceneCommand('/create Box 2 2 2');
-				}}
-			>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-				<SidebarDropdownItem
-					label="Cone"
+					label={primitive.label}
 					on:click={() => {
 						showSidebar('properties');
-						sceneCommand('/create Cone 1');
+						sceneCommand(primitive.command);
 					}}
 				>
 					<svelte:fragment slot="icon"></svelte:fragment>
 				</SidebarDropdownItem>
-				<SidebarDropdownItem
-					label="Sphere"
-					on:click={() => {
-						showSidebar('properties');
-						sceneCommand('/create Sphere 1');
-					}}
-				>
-				<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
+				{/each}
 			</SidebarDropdownWrapper>
+			{/each}
 
 			<SidebarDropdownWrapper label="Lights">
 				<svelte:fragment slot="arrowup">

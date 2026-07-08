@@ -13,8 +13,10 @@
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
 	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
+	import { measureMode, measureClick } from '$lib/measure';
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
+	import MeasureOverlay from './MeasureOverlay.svelte';
 	import Grid from '../extensions/Grid.svelte';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
@@ -205,6 +207,11 @@
 				-((event.clientY - rect.top) / rect.height) * 2 + 1
 			);
 			selectionRaycaster.setFromCamera(ndc, camera.current);
+			// measure mode captures clicks entirely
+			if ($measureMode) {
+				measureClick(selectionRaycaster, $objectsGroup);
+				return;
+			}
 			// while editing a mesh, clicks pick vertex handles instead of objects
 			if ($editingObject) {
 				raycastHandles(selectionRaycaster);
@@ -344,6 +351,8 @@ position={[0, 2, 3]}
 />
 
 <VRMenu />
+
+<MeasureOverlay />
 
 <XR>
 	<Controller left />

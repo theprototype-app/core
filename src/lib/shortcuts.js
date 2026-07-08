@@ -10,6 +10,7 @@ import {
 import { focusObject, duplicateObject } from './objectActions';
 import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
+import { recallBookmark } from './cameraBookmarks';
 import { selectedObject } from '../stores/sceneStore';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
@@ -95,6 +96,12 @@ export const shortcuts = [
 		label: 'Redo (alternative)',
 		action: () => redo()
 	},
+	...[1, 2, 3, 4, 5].map((slot) => ({
+		keys: `Shift+${slot}`,
+		group: 'Camera',
+		label: `Recall camera bookmark ${slot}`,
+		action: () => recallBookmark(slot - 1)
+	})),
 	{
 		keys: 'Ctrl+/',
 		group: 'Help',
@@ -113,7 +120,12 @@ export function registerShortcut(shortcut) {
 
 /** @param {KeyboardEvent} event */
 function comboOf(event) {
-	const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+	// digits by code so Shift+1 stays "Shift+1" instead of layout characters like "!"
+	const key = event.code?.startsWith('Digit')
+		? event.code.slice(5)
+		: event.key.length === 1
+			? event.key.toUpperCase()
+			: event.key;
 	return (event.ctrlKey || event.metaKey ? 'Ctrl+' : '') + (event.shiftKey ? 'Shift+' : '') + key;
 }
 

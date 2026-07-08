@@ -6,6 +6,8 @@
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { focusObject, duplicateObject, alignToGround } from '$lib/objectActions';
 	import { editingObject, enterEditMode, exitEditMode } from '$lib/meshEdit';
+	import { measureMode, toggleMeasure } from '$lib/measure';
+	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
 	import { showGrid, isLocked, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
 	import { specatorMode } from '../../stores/appStore';
 
@@ -62,8 +64,6 @@
 			URL.revokeObjectURL(a.href);
 		});
 	}
-
-	const tbi = 'to be implemented';
 
 	function snapSizeItem(key: 'translate' | 'scale', value: number, label: string) {
 		return {
@@ -136,7 +136,23 @@
 			tooltip: 'Drop the selected object onto the surface below (undoable)',
 			action: () => alignToGround()
 		},
-		{ label: 'Measure distance', disabled: true, tooltip: tbi }
+		{
+			label: $measureMode ? 'Stop measuring' : 'Measure distance',
+			tooltip: 'Click two points; Esc stops',
+			action: () => toggleMeasure()
+		},
+		{
+			label: 'Camera bookmarks',
+			children: [
+				{ label: 'Save current view', action: () => saveBookmark() },
+				...$bookmarks.map((bookmark, index) => ({
+					label: `View ${index + 1} — ${new Date(bookmark.ts).toLocaleTimeString()}`,
+					tooltip: `Shift+${index + 1}`,
+					action: () => recallBookmark(index)
+				})),
+				{ label: 'Clear bookmarks', disabled: $bookmarks.length === 0, action: () => clearBookmarks() }
+			]
+		}
 	];
 </script>
 

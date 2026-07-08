@@ -254,6 +254,40 @@ export function alignToGround(uuid) {
 let focusAnimation = 0;
 
 /**
+ * Smoothly move the editor camera (position + orbit target). Used by focus,
+ * camera bookmarks and annotation jumps.
+ * @param {number[] | THREE.Vector3} position @param {number[] | THREE.Vector3} target
+ */
+export function flyTo(position, target, duration = 400) {
+	if (get(specatorMode) || get(isVRMode)) return;
+	/** @type {any} */
+	const camera = get(globalCamera);
+	/** @type {any} */
+	const controls = get(orbitControls);
+	if (!camera || !controls) return;
+
+	const endPosition = Array.isArray(position) ? new THREE.Vector3().fromArray(position) : position.clone();
+	const endTarget = Array.isArray(target) ? new THREE.Vector3().fromArray(target) : target.clone();
+	const startPosition = camera.position.clone();
+	const startTarget = controls.target.clone();
+
+	const started = performance.now();
+	const token = ++focusAnimation; // cancel a previous camera animation
+
+	/** @param {number} now */
+	function step(now) {
+		if (token !== focusAnimation) return;
+		const t = Math.min((now - started) / duration, 1);
+		const ease = 1 - Math.pow(1 - t, 3);
+		camera.position.lerpVectors(startPosition, endPosition, ease);
+		controls.target.lerpVectors(startTarget, endTarget, ease);
+		controls.update();
+		if (t < 1) requestAnimationFrame(step);
+	}
+	requestAnimationFrame(step);
+}
+
+/**
  * Smoothly pan/zoom the editor camera to frame an object (F key).
  * @param {string=} uuid - defaults to the selected object
  */
@@ -281,22 +315,5 @@ export function focusObject(uuid) {
 	// keep the current view direction: pan the target, dolly to framing distance
 	const direction = camera.position.clone().sub(controls.target).normalize();
 	const endPosition = center.clone().add(direction.multiplyScalar(distance));
-	const startPosition = camera.position.clone();
-	const startTarget = controls.target.clone();
-
-	const duration = 400;
-	const started = performance.now();
-	const token = ++focusAnimation; // cancel a previous focus animation
-
-	/** @param {number} now */
-	function step(now) {
-		if (token !== focusAnimation) return;
-		const t = Math.min((now - started) / duration, 1);
-		const ease = 1 - Math.pow(1 - t, 3);
-		camera.position.lerpVectors(startPosition, endPosition, ease);
-		controls.target.lerpVectors(startTarget, center, ease);
-		controls.update();
-		if (t < 1) requestAnimationFrame(step);
-	}
-	requestAnimationFrame(step);
+	flyTo(endPosition, center);
 }

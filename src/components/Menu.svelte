@@ -11,6 +11,7 @@
 	import CharacterModal from './menu/CharacterModal.svelte';
 	import ViewportMenu from './menu/ViewportMenu.svelte';
 	import VoiceChat from './menu/VoiceChat.svelte';
+	import AnnotationPopover from './menu/AnnotationPopover.svelte';
 	import Library from './menu/Library.svelte';
 	import { DarkMode } from 'flowbite-svelte';
 	import Users from './menu/Users.svelte';
@@ -33,6 +34,7 @@
 <CharacterModal />
 <ViewportMenu />
 <VoiceChat />
+<AnnotationPopover />
 <Library />
 <Toasts />
 <Users />

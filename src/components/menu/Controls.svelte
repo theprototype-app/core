@@ -5,6 +5,7 @@
 	import { mutedFlowObjects } from '../../stores/flowStore';
 	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup } from '$lib/objectActions';
 	import { enterEditMode } from '$lib/meshEdit';
+	import { addAnnotation } from '$lib/annotationsHandler';
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { VRButton } from '@threlte/xr'
@@ -82,6 +83,7 @@
 				tooltip: menu.locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
 				action: () => enterEditMode(menu.uuid)
 			},
+			{ label: 'Add note', tooltip: 'Pin a synced note to this object', action: () => addAnnotation(menu.uuid) },
 			{
 				label: 'Rename',
 				disabled: menu.locked,
@@ -134,14 +136,14 @@
 	classOuter="h-10 w-70 bg-white rounded-full dark:bg-gray-700 z-10"
 	classInner="grid-cols-7"
 >
-	<p class={classActive + ' rounded-l-full'} title="Move (W)" on:click={(event) => $TControls.setMode('translate')}>
+	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={(event) => $TControls.setMode('translate')}>
 		<i class="fas fa-arrows-alt text-black dark:text-slate-200"></i>
 	</p>
-	<p class={classActive} title="Rotate (E)" on:click={(event) => $TControls.setMode('rotate')}>
+	<p class={classActive} title="Rotate (2)" on:click={(event) => $TControls.setMode('rotate')}>
 		<i class="fas fa-rotate-left text-black dark:text-slate-200"></i>
 	</p>
 
-	<p class={classActive} title="Scale (R)" on:click={(event) => $TControls.setMode('scale')}>
+	<p class={classActive} title="Scale (3)" on:click={(event) => $TControls.setMode('scale')}>
 		<i class="fas fa-expand-arrows-alt text-black dark:text-slate-200"></i>
 	</p>
 	<div class="flex items-center justify-center">

@@ -8,6 +8,7 @@
 	import { editingObject, enterEditMode, exitEditMode } from '$lib/meshEdit';
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
+	import { addAnnotation } from '$lib/annotationsHandler';
 	import { showGrid, isLocked, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
 	import { specatorMode } from '../../stores/appStore';
 
@@ -120,6 +121,12 @@
 			disabled: !$editingObject && !$selectedObject?.geometry?.attributes?.position,
 			tooltip: $editingObject ? 'Esc' : 'Drag vertex handles of the selected mesh',
 			action: () => ($editingObject ? exitEditMode() : enterEditMode($selectedObject.uuid))
+		},
+		{
+			label: 'Add note',
+			disabled: !$selectedObject?.uuid,
+			tooltip: 'Pin a synced note to the selected object',
+			action: () => addAnnotation()
 		},
 		{
 			label: $showGrid ? 'Hide grid' : 'Show grid',

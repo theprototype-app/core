@@ -27,9 +27,10 @@
         import('./lib/meshEdit'),
         import('./lib/vrControls'),
         import('./lib/autosave'),
-        import('./lib/voiceChat')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat }
+        import('./lib/voiceChat'),
+        import('./lib/annotationsHandler')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler }
       })
     }
   })

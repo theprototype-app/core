@@ -5,6 +5,7 @@ import { sendNodes, applyNodesSnapshot, createFlowNode, moveFlowNode, updateFlow
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
 import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
+import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -200,6 +201,12 @@ export class PeerConnection {
 					deleteFlowEdges(data.ids);
 				} else if(data.type == 'flowcursor') {
 					applyFlowCursor(data);
+				} else if(data.type == 'annotation') {
+					applyAnnotation(data);
+				} else if(data.type == 'annotations') {
+					applyAnnotationsSnapshot(data.annotations);
+				} else if(data.type == 'getannotations') {
+					sendAnnotations(data.sender);
 				} else if(data.type == 'verts') {
 					applyVerts(data.uuid, data.indices, data.position);
 				} else if(data.type == 'vrhands') {
@@ -232,6 +239,7 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users})
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
 	}

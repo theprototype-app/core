@@ -14,9 +14,13 @@
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
 	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
 	import { measureMode, measureClick } from '$lib/measure';
+	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
+	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
+	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
 	import MeasureOverlay from './MeasureOverlay.svelte';
+	import AnnotationPins from './AnnotationPins.svelte';
 	import Grid from '../extensions/Grid.svelte';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
@@ -122,6 +126,8 @@
 			broadcastVRHands();
 			updateVRControls();
 		}
+		updateLightHelpers();
+		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);
 	});
 
 	// --- undo/redo: record one history entry per gizmo drag ---
@@ -174,6 +180,8 @@
 	}
 
 	onMount(() => {
+		startLightHelpers();
+		startEditorNavigation();
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
 			$peers?.send({ type: 'vrhands', peerId: $peers.peer.id, left: null, right: null, active: false });
@@ -216,6 +224,25 @@
 			if ($editingObject) {
 				raycastHandles(selectionRaycaster);
 				return;
+			}
+			// light pick-proxies select their light (lights have no raycastable geometry)
+			if ($lightProxiesGroup) {
+				const proxyHits = selectionRaycaster.intersectObject($lightProxiesGroup, true);
+				const proxyHit = proxyHits.find((hit) => hit.object.userData.lightUuid && hit.object.visible);
+				if (proxyHit) {
+					selectObject(proxyHit.object.userData.lightUuid, true);
+					return;
+				}
+			}
+			// note pins take priority over object selection
+			if ($pinsGroup) {
+				const pinHits = selectionRaycaster.intersectObject($pinsGroup, true);
+				let pinNode = pinHits[0]?.object;
+				while (pinNode && !pinNode.name?.startsWith('pin-')) pinNode = pinNode.parent;
+				if (pinNode) {
+					openAnnotation(pinNode.name.slice(4));
+					return;
+				}
 			}
 			if (!raycastSelect()) deselectObject();
 		};
@@ -353,6 +380,8 @@ position={[0, 2, 3]}
 <VRMenu />
 
 <MeasureOverlay />
+
+<AnnotationPins />
 
 <XR>
 	<Controller left />

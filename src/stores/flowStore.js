@@ -15,3 +15,9 @@ export const mutedFlowObjects = writable([]);
 // live peer cursors in the flow editor: peerId -> { x, y, name, ts } (flow coordinates)
 /** @type {import('svelte/store').Writable<Record<string, any>>} */
 export const flowCursors = writable({});
+
+// animations use wall-clock time so phases match across peers (NTP keeps
+// machines within tens of ms); off = local page time like before
+export const syncedAnimations = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('syncedAnimations') !== 'false'
+);

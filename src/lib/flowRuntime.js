@@ -1,4 +1,4 @@
-import { flowNodes, flowEdges, mutedFlowObjects } from '../stores/flowStore';
+import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { animationTypes } from './nodeCatalog';
 
@@ -12,6 +12,7 @@ let started = false;
 /** @type {any[]} */ let edges = [];
 /** @type {any} */ let sceneObjects = null;
 /** @type {string[]} */ let muted = [];
+let synced = true;
 
 // objectUuid -> captured base transform, restored when its animations are removed
 const baseState = new Map();
@@ -95,7 +96,8 @@ function applyAnimation(object, base, anim, time) {
 
 /** @param {number} now */
 function tick(now) {
-	const time = now / 1000;
+	// wall clock (wrapped daily to keep float noise low) -> same phase on every peer
+	const time = synced ? (Date.now() % 86400000) / 1000 : now / 1000;
 
 	// collect active animations per scene object
 	const active = new Map(); // uuid -> anim nodes
@@ -153,6 +155,10 @@ export function startFlowRuntime() {
 	mutedFlowObjects.subscribe((value) => {
 		muted = value;
 		applyColors();
+	});
+	syncedAnimations.subscribe((value) => {
+		synced = value;
+		if (typeof localStorage !== 'undefined') localStorage.setItem('syncedAnimations', String(value));
 	});
 
 	requestAnimationFrame(tick);

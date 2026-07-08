@@ -2,6 +2,7 @@
 	import { Accordion, AccordionItem, Modal, Button, Checkbox } from 'flowbite-svelte';
 	import { showGrid, vrOverride } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels } from '../../stores/appStore.js';
+	import { syncedAnimations } from '../../stores/flowStore';
 	import { shortcuts } from '$lib/shortcuts';
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
@@ -58,7 +59,7 @@
 					<p class={topcoverDescription}>Forces normal play even if immersive-vr is enabled</p>
 				</div>
 				<div class="flex">
-					<p class={bottomCoverName}>
+					<p class={middlecoverName}>
 						<Checkbox
 							bind:checked={$showGrid}
 							onclick={() => {
@@ -67,7 +68,13 @@
 							}}>&nbsp;Show grid</Checkbox
 						>
 					</p>
-					<p class={bottomCoverDescription}>Display grid on floor</p>
+					<p class={middlecoverDescription}>Display grid on floor</p>
+				</div>
+				<div class="flex">
+					<p class={bottomCoverName}>
+						<Checkbox bind:checked={$syncedAnimations}>&nbsp;Sync animations</Checkbox>
+					</p>
+					<p class={bottomCoverDescription}>Node animations use wall-clock time so all peers see the same phase</p>
 				</div>
 			</AccordionItem>
 			<AccordionItem bind:open={shortcutsExpanded}>

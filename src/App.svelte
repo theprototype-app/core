@@ -22,9 +22,10 @@
         import('./stores/sceneStore'),
         import('./stores/appStore'),
         import('./stores/flowStore'),
-        import('./lib/meshEdit')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit }
+        import('./lib/meshEdit'),
+        import('./lib/vrControls')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls }
       })
     }
   })

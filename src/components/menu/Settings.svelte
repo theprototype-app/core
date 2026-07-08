@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox } from 'flowbite-svelte';
-	import { showGrid, vrOverride } from '../../stores/sceneStore.js';
+	import { showGrid, vrOverride, vrMenuHand } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { shortcuts } from '$lib/shortcuts';
@@ -71,10 +71,23 @@
 					<p class={middlecoverDescription}>Display grid on floor</p>
 				</div>
 				<div class="flex">
-					<p class={bottomCoverName}>
+					<p class={middlecoverName}>
 						<Checkbox bind:checked={$syncedAnimations}>&nbsp;Sync animations</Checkbox>
 					</p>
-					<p class={bottomCoverDescription}>Node animations use wall-clock time so all peers see the same phase</p>
+					<p class={middlecoverDescription}>Node animations use wall-clock time so all peers see the same phase</p>
+				</div>
+				<div class="flex">
+					<p class={bottomCoverName}>
+						<Checkbox
+							checked={$vrMenuHand === 'left'}
+							onclick={() => {
+								const next = $vrMenuHand === 'left' ? 'right' : 'left';
+								$vrMenuHand = next;
+								localStorage.setItem('vrMenuHand', next);
+							}}>&nbsp;VR menu on left</Checkbox
+						>
+					</p>
+					<p class={bottomCoverDescription}>Which controller opens the VR quick-menu (the other hand points)</p>
 				</div>
 			</AccordionItem>
 			<AccordionItem bind:open={shortcutsExpanded}>

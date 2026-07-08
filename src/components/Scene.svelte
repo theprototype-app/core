@@ -12,6 +12,9 @@
 	import { recordTransform } from '$lib/history';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
+	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
+	import { vrMenuOpen } from '../stores/sceneStore';
+	import VRMenu from './play/VRMenu.svelte';
 	import Grid from '../extensions/Grid.svelte';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
@@ -113,7 +116,10 @@
 				lastCameraQuaternion.copy(camera.current.quaternion);
 			}
 		}
-		if (renderer.xr.isPresenting) broadcastVRHands();
+		if (renderer.xr.isPresenting) {
+			broadcastVRHands();
+			updateVRControls();
+		}
 	});
 
 	// --- undo/redo: record one history entry per gizmo drag ---
@@ -213,17 +219,26 @@
 		element.addEventListener('pointerdown', onPointerDown);
 		window.addEventListener('pointerup', onPointerUp);
 
-		// VR: trigger press selects the object the controller points at
+		// VR: trigger press activates a quick-menu tile, otherwise selects
+		// the object the controller points at
+		initVRControls(renderer);
 		const tempMatrix = new THREE.Matrix4();
+		const xrControllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
 		const onXRSelect = (event) => {
 			const controller = event.target;
+			if ($vrMenuOpen) {
+				const action = raycastMenu(xrControllers.indexOf(controller));
+				if (action) {
+					executeVRMenuAction(action);
+					return;
+				}
+			}
 			if (!$objectsGroup) return;
 			tempMatrix.identity().extractRotation(controller.matrixWorld);
 			selectionRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 			selectionRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 			raycastSelect();
 		};
-		const xrControllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
 		xrControllers.forEach((controller) => controller.addEventListener('select', onXRSelect));
 
 		return () => {
@@ -327,6 +342,8 @@
 bind:playerMesh
 position={[0, 2, 3]}
 />
+
+<VRMenu />
 
 <XR>
 	<Controller left />

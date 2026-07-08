@@ -12,6 +12,7 @@ const num = (a, fallback) => {
 };
 
 /** Triangular prism ramp: width x, height y, depth z */
+/** @param {any=} a @param {any=} b @param {any=} c */
 function wedge(a, b, c) {
 	const w = num(a, 2), h = num(b, 1), d = num(c, 2);
 	const shape = new THREE.Shape();
@@ -25,6 +26,7 @@ function wedge(a, b, c) {
 }
 
 /** Staircase: width, total height, total depth, step count */
+/** @param {any=} a @param {any=} b @param {any=} c @param {any=} s */
 function stairs(a, b, c, s) {
 	const w = num(a, 2), h = num(b, 1.5), d = num(c, 2);
 	const steps = Math.min(Math.max(Math.round(num(s, 6)), 2), 32);
@@ -44,6 +46,7 @@ function stairs(a, b, c, s) {
 }
 
 /** Wall with an arched opening: width, height, thickness */
+/** @param {any=} a @param {any=} b @param {any=} c */
 function arch(a, b, c) {
 	const w = num(a, 2), h = num(b, 2), d = num(c, 0.5);
 	const r = Math.min(w * 0.3, h * 0.45);
@@ -64,6 +67,7 @@ function arch(a, b, c) {
 }
 
 /** L-shaped corner wall: side length, height, thickness */
+/** @param {any=} a @param {any=} b @param {any=} c */
 function corner(a, b, c) {
 	const w = num(a, 2), h = num(b, 2), t = Math.min(num(c, 0.25), w);
 	const shape = new THREE.Shape();

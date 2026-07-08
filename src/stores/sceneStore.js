@@ -30,3 +30,12 @@ export const orbitControls = writable(null);
 // peers' VR controller poses: peerId -> { left, right, active, ts }
 /** @type {import('svelte/store').Writable<Record<string, any>>} */
 export const peerHands = writable({});
+
+// --- VR control suite ---
+// which hand carries the quick-menu (the other hand is the pointer)
+export const vrMenuHand = writable(
+	typeof localStorage !== 'undefined' ? localStorage.getItem('vrMenuHand') || 'right' : 'right'
+);
+export const vrMenuOpen = writable(false);
+/** @type {import('svelte/store').Writable<'move' | 'rotate'>} grab behavior; scale is always two-handed */
+export const vrTransformMode = writable('move');

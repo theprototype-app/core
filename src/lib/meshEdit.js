@@ -19,6 +19,7 @@ export const editingObject = writable(null);
 /** @type {any} */ let overlay = null; // wireframe overlay child
 /** @type {any} */ let proxy = null; // gizmo target for the selected handle
 let selectedHandle = -1;
+/** @type {number[] | null} */
 let dragStartLocal = null;
 let lastSent = 0;
 
@@ -36,15 +37,17 @@ function buildHandles(geometry) {
 		const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
 		const key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
 		if (!map.has(key)) map.set(key, { indices: [], position: new THREE.Vector3(x, y, z) });
-		map.get(key).indices.push(i);
+		/** @type {any} */ (map.get(key)).indices.push(i);
 	}
 	return [...map.values()];
 }
 
+/** @param {number} index @param {any} target */
 function handleWorldPosition(index, target) {
 	return edited.localToWorld(target.copy(handles[index].position));
 }
 
+/** @param {number} index */
 function refreshHandleMatrix(index) {
 	handleWorldPosition(index, tempVector);
 	tempMatrix.makeTranslation(tempVector.x, tempVector.y, tempVector.z);
@@ -160,7 +163,7 @@ export function raycastHandles(raycaster) {
 	if (!handleMesh) return false;
 	const hits = raycaster.intersectObject(handleMesh);
 	if (hits.length === 0) return false;
-	selectHandle(hits[0].instanceId);
+	selectHandle(/** @type {number} */ (hits[0].instanceId));
 	return true;
 }
 
@@ -204,6 +207,7 @@ export function onProxyMoved() {
 	broadcastSelected(local);
 }
 
+/** @param {any} local */
 function broadcastSelected(local) {
 	/** @type {any} */
 	const peer = get(peers);

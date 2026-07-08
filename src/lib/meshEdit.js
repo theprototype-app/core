@@ -179,13 +179,23 @@ export function selectHandle(index) {
 	controls.attach(proxy);
 }
 
-/** Write the (world-space) proxy position through to every index of the selected handle */
+// dedicated vector for the write path: refreshHandleMatrix reuses tempVector,
+// so returning/aliasing tempVector here corrupted broadcasts with WORLD
+// coordinates whenever the object was not at the origin
+const writeVector = new THREE.Vector3();
+
+/**
+ * Write the (world-space) proxy position through to every index of the selected handle.
+ * @returns {number[]} the resulting LOCAL position, safe to keep (plain array)
+ */
 function writeSelectedHandle() {
 	const handle = handles[selectedHandle];
-	const local = edited.worldToLocal(tempVector.copy(proxy.position));
+	const local = edited.worldToLocal(writeVector.copy(proxy.position));
 	handle.position.copy(local);
+	// capture before refreshHandleMatrix runs — it mutates shared temp vectors
+	const result = [local.x, local.y, local.z];
 	const position = edited.geometry.attributes.position;
-	handle.indices.forEach((/** @type {number} */ i) => position.setXYZ(i, local.x, local.y, local.z));
+	handle.indices.forEach((/** @type {number} */ i) => position.setXYZ(i, result[0], result[1], result[2]));
 	position.needsUpdate = true;
 	edited.geometry.computeVertexNormals();
 	edited.geometry.computeBoundingSphere();
@@ -194,21 +204,24 @@ function writeSelectedHandle() {
 		overlay.geometry.dispose();
 		overlay.geometry = new THREE.WireframeGeometry(edited.geometry);
 	}
-	return local;
+	return result;
 }
 
 /** Called from Scene.svelte's gizmo onchange when the vertex proxy moves */
 export function onProxyMoved() {
 	if (!edited || selectedHandle < 0) return;
-	const local = writeSelectedHandle();
+	// attaching the gizmo fires a change event without an actual move — ignore it
+	const local = edited.worldToLocal(writeVector.copy(proxy.position));
+	if (local.distanceToSquared(handles[selectedHandle].position) < 1e-12) return;
+	const result = writeSelectedHandle();
 	const now = Date.now();
 	if (now - lastSent < 80) return;
 	lastSent = now;
-	broadcastSelected(local);
+	broadcastSelected(result);
 }
 
-/** @param {any} local */
-function broadcastSelected(local) {
+/** @param {number[]} positionArray - LOCAL coordinates */
+function broadcastSelected(positionArray) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer && edited)
@@ -216,7 +229,7 @@ function broadcastSelected(local) {
 			type: 'verts',
 			uuid: edited.uuid,
 			indices: handles[selectedHandle].indices,
-			position: [local.x, local.y, local.z]
+			position: positionArray
 		});
 }
 
@@ -226,9 +239,8 @@ export function onProxyDragChanged(dragging) {
 	if (dragging) {
 		dragStartLocal = handles[selectedHandle].position.toArray();
 	} else if (dragStartLocal) {
-		const local = writeSelectedHandle();
-		broadcastSelected(local); // final unthrottled state
-		const after = [local.x, local.y, local.z];
+		const after = writeSelectedHandle();
+		broadcastSelected(after); // final unthrottled state
 		if (JSON.stringify(dragStartLocal) !== JSON.stringify(after)) {
 			recordEntry({
 				kind: 'verts',

@@ -5,6 +5,7 @@
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { focusObject, duplicateObject, alignToGround } from '$lib/objectActions';
+	import { editingObject, enterEditMode, exitEditMode } from '$lib/meshEdit';
 	import { showGrid, isLocked, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
 	import { specatorMode } from '../../stores/appStore';
 
@@ -113,6 +114,12 @@
 			disabled: !$selectedObject?.uuid,
 			tooltip: 'Ctrl+D',
 			action: () => duplicateObject()
+		},
+		{
+			label: $editingObject ? 'Finish mesh edit' : 'Edit mesh',
+			disabled: !$editingObject && !$selectedObject?.geometry?.attributes?.position,
+			tooltip: $editingObject ? 'Esc' : 'Drag vertex handles of the selected mesh',
+			action: () => ($editingObject ? exitEditMode() : enterEditMode($selectedObject.uuid))
 		},
 		{
 			label: $showGrid ? 'Hide grid' : 'Show grid',

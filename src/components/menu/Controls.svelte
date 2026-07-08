@@ -4,6 +4,7 @@
 	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject } from '../../stores/appStore.js';
 	import { mutedFlowObjects } from '../../stores/flowStore';
 	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup } from '$lib/objectActions';
+	import { enterEditMode } from '$lib/meshEdit';
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { VRButton } from '@threlte/xr'
@@ -75,6 +76,12 @@
 		return [
 			{ label: 'Focus camera', action: () => focusObject(menu.uuid) },
 			{ label: 'Duplicate', action: () => duplicateObject(menu.uuid) },
+			{
+				label: 'Edit mesh',
+				disabled: menu.locked || !object?.geometry?.attributes?.position,
+				tooltip: menu.locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
+				action: () => enterEditMode(menu.uuid)
+			},
 			{
 				label: 'Rename',
 				disabled: menu.locked,

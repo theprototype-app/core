@@ -21,9 +21,10 @@
       Promise.all([
         import('./stores/sceneStore'),
         import('./stores/appStore'),
-        import('./stores/flowStore')
-      ]).then(([sceneStore, appStore, flowStore]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore }
+        import('./stores/flowStore'),
+        import('./lib/meshEdit')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit }
       })
     }
   })

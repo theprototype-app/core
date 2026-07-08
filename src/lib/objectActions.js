@@ -82,13 +82,15 @@ function collectTree(object, list = []) {
 	return list;
 }
 
-/** @param {any} clone - give cloned meshes their own materials (three's clone() shares them) */
+/** @param {any} clone - give cloned meshes their own materials and geometry (three's clone() shares both) */
 function detachMaterials(clone) {
 	collectTree(clone).forEach((node) => {
 		if (node.material)
 			node.material = Array.isArray(node.material)
 				? node.material.map((/** @type {any} */ m) => m.clone())
 				: node.material.clone();
+		// own geometry so vertex edits on the copy don't deform the original
+		if (node.geometry) node.geometry = node.geometry.clone();
 	});
 }
 

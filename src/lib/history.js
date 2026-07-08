@@ -2,12 +2,21 @@ import { writable, derived, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 
-// Transform-only undo/redo. Entries are recorded from local gizmo drags
-// (Scene.svelte hooks TransformControls' dragging-changed); remote peers'
-// moves are not recorded, so histories stay per-user.
-// entry: { uuid, before: {pos, rot, scale}, after: {pos, rot, scale} }
+// Undo/redo for local edits; remote peers' changes are not recorded, so
+// histories stay per-user.
+// - transform entries (default): { uuid, before: {pos,rot,scale}, after: {...} }
+// - other kinds (e.g. 'verts' from mesh editing) register an applier via
+//   registerHistoryKind(kind, apply(entry, state) => boolean)
 
 const LIMIT = 50;
+
+/** @type {Record<string, (entry: any, state: any) => boolean>} */
+const kindHandlers = {};
+
+/** @param {string} kind @param {(entry: any, state: any) => boolean} apply */
+export function registerHistoryKind(kind, apply) {
+	kindHandlers[kind] = apply;
+}
 
 /** @type {import('svelte/store').Writable<any[]>} */
 const undoStack = writable([]);
@@ -18,7 +27,7 @@ export const canUndo = derived(undoStack, (stack) => stack.length > 0);
 export const canRedo = derived(redoStack, (stack) => stack.length > 0);
 
 /** @param {any} entry */
-export function recordTransform(entry) {
+export function recordEntry(entry) {
 	undoStack.update((stack) => {
 		const next = [...stack, entry];
 		if (next.length > LIMIT) next.shift();
@@ -27,10 +36,17 @@ export function recordTransform(entry) {
 	redoStack.set([]);
 }
 
-/** @param {string} uuid @param {any} state */
-function applyState(uuid, state) {
+/** @param {any} entry */
+export function recordTransform(entry) {
+	recordEntry(entry);
+}
+
+/** @param {any} entry @param {any} state */
+function applyState(entry, state) {
+	if (entry.kind && kindHandlers[entry.kind]) return kindHandlers[entry.kind](entry, state);
+
 	const group = get(objectsGroup);
-	const object = group?.getObjectByProperty('uuid', uuid);
+	const object = group?.getObjectByProperty('uuid', entry.uuid);
 	if (!object) {
 		showToast('Cannot undo/redo: the object no longer exists');
 		return false;
@@ -41,7 +57,7 @@ function applyState(uuid, state) {
 	objectsGroup.update((value) => value);
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'move', uuid: uuid, pos: state.pos, rot: state.rot, scale: state.scale });
+	if (peer) peer.send({ type: 'move', uuid: entry.uuid, pos: state.pos, rot: state.rot, scale: state.scale });
 	return true;
 }
 
@@ -53,7 +69,7 @@ export function undo() {
 	}
 	const entry = stack[stack.length - 1];
 	undoStack.update((s) => s.slice(0, -1));
-	if (applyState(entry.uuid, entry.before)) redoStack.update((s) => [...s, entry]);
+	if (applyState(entry, entry.before)) redoStack.update((s) => [...s, entry]);
 }
 
 export function redo() {
@@ -64,5 +80,5 @@ export function redo() {
 	}
 	const entry = stack[stack.length - 1];
 	redoStack.update((s) => s.slice(0, -1));
-	if (applyState(entry.uuid, entry.after)) undoStack.update((s) => [...s, entry]);
+	if (applyState(entry, entry.after)) undoStack.update((s) => [...s, entry]);
 }

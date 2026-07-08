@@ -10,6 +10,7 @@
 	import { selectObject, deselectObject, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
+	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
 	import Grid from '../extensions/Grid.svelte';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
@@ -122,6 +123,11 @@
 		$TControls.addEventListener('dragging-changed', (event) => {
 			const object = hookedControls.object;
 			if (!object) return;
+			// vertex handles record their own history entries
+			if (object.userData?.isVertexProxy) {
+				onProxyDragChanged(event.value);
+				return;
+			}
 			if (event.value) {
 				dragStartState = {
 					uuid: object.uuid,
@@ -192,6 +198,11 @@
 				-((event.clientY - rect.top) / rect.height) * 2 + 1
 			);
 			selectionRaycaster.setFromCamera(ndc, camera.current);
+			// while editing a mesh, clicks pick vertex handles instead of objects
+			if ($editingObject) {
+				raycastHandles(selectionRaycaster);
+				return;
+			}
 			if (!raycastSelect()) deselectObject();
 		};
 
@@ -224,6 +235,12 @@
 
 	function oncreate() { $TControls.visible = false; }
 	function onchange() {
+		// vertex-edit proxy: write through to the geometry, never broadcast a move
+		if ($TControls.object?.userData?.isVertexProxy) {
+			$TControls.visible = true;
+			onProxyMoved();
+			return;
+		}
 		//This would update reactively the object properties UI
 		$selectedObject = $selectedObject // Trigger reactivity
 		if (typeof $TControls.object !== 'undefined')

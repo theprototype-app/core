@@ -9,6 +9,8 @@ import {
 } from '../stores/appStore';
 import { focusObject, duplicateObject } from './objectActions';
 import { undo, redo } from './history';
+import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
+import { selectedObject } from '../stores/sceneStore';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
 // and renders the list in Settings -> Shortcuts. Other modules push entries via
@@ -47,6 +49,15 @@ export const shortcuts = [
 		group: 'Objects',
 		label: 'Duplicate selected object',
 		action: () => duplicateObject()
+	},
+	{
+		keys: 'Tab',
+		group: 'Objects',
+		label: 'Toggle mesh edit mode (Esc also exits)',
+		action: () => {
+			if (get(editingObject)) exitEditMode();
+			else if (get(selectedObject)?.uuid) enterEditMode(get(selectedObject).uuid);
+		}
 	},
 	{
 		keys: 'O',

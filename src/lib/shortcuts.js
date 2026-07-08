@@ -103,6 +103,12 @@ export const shortcuts = [
 		action: () => recallBookmark(slot - 1)
 	})),
 	{
+		keys: 'V (hold)',
+		group: 'Voice',
+		label: 'Push to talk while the mic toggle is off'
+		// handled by voiceChat.js (needs keyup); listed here for discoverability
+	},
+	{
 		keys: 'Ctrl+/',
 		group: 'Help',
 		label: 'Show this shortcut list',

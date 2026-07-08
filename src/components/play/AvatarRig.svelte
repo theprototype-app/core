@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { T } from '@threlte/core'
+	// @ts-ignore - Text typing clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
 	import * as THREE from 'three'
+	import { speakingPeers } from '$lib/voiceChat'
 
 	// Builds a peer's character from their replicated avatar config
 	// (userdata slot 5: { body, hat, face }). The root group keeps the peer id
@@ -37,6 +39,14 @@
 		<T.SphereGeometry args={[0.59, 16, 12]} />
 		<T.MeshBasicMaterial color={config.body} />
 	</T.Mesh>
+
+	<!-- speaking indicator -->
+	{#if $speakingPeers.includes(user[0])}
+		<T.Mesh rotation.x={-Math.PI / 2} position.y={-0.55} name={`${user[0]}-speaking`}>
+			<T.RingGeometry args={[0.62, 0.78, 24]} />
+			<T.MeshBasicMaterial color="#22c55e" side={THREE.DoubleSide} />
+		</T.Mesh>
+	{/if}
 
 	<!-- face: the avatar photo on the front, when chosen and available -->
 	{#if config.face === 'image' && faceTexture}

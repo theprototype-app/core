@@ -4,6 +4,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
 import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
+import { voicePeerDisconnected } from '$lib/voiceChat'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
 
@@ -207,6 +208,7 @@ export function handleDisconnected(peerId) {
         delete next[peerId];
         return next;
     });
+    voicePeerDisconnected(peerId);
 }
 
 export function checkLocks(data) {

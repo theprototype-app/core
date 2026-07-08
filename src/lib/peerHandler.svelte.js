@@ -4,6 +4,7 @@ import { createGeometry, createLight, createGroup, changeName, moveGeometry, loc
 import { sendNodes, applyNodesSnapshot, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
+import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
 import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -44,6 +45,8 @@ export class PeerConnection {
 		});} else {
 			this.peer = new Peer(id)
 		}
+
+		initVoiceChat(this);
 
 		this.peer.on('open', (id) => {
 			console.log(id);
@@ -229,6 +232,8 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users})
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
+		// join them into the voice mesh if our mic is live
+		voicePeerConnected(peerId);
 	}
 
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {

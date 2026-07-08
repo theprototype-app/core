@@ -25,9 +25,17 @@
 		characterModalOpen
 	} from '../../stores/appStore.js';
 	import { globalScene, globalCamera, camSave } from '../../stores/sceneStore.js';
+	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
+	import ContextMenu from '../ContextMenu.svelte';
 
     let openDropdown = $state(false);
   	let profileSettingsModal = $state(false);
+	let muteMenu = $state(null);
+
+	function openMuteMenu(event, peerId) {
+		event.preventDefault();
+		muteMenu = { x: event.clientX, y: event.clientY, peerId };
+	}
 
 	// $effect(() => {
 	// 	Object.keys($peers.connections).forEach((element) => {
@@ -114,6 +122,7 @@
 {#if i > 0}
 		<Avatar href="/" stacked src={user[2]}
 			onclick={() => { if (!user[3]) specate(user[0]); } }
+			oncontextmenu={(e) => openMuteMenu(e, user[0])}
 		/>
 		<Tooltip placement="top" arrow={false}>
 			<div style="display: flex; align-items: center;">
@@ -278,6 +287,20 @@
 </div>
 
 
+
+{#if muteMenu}
+	<ContextMenu
+		x={muteMenu.x}
+		y={muteMenu.y}
+		items={[
+			{
+				label: $mutedPeers.includes(muteMenu.peerId) ? 'Unmute voice' : 'Mute voice',
+				action: () => toggleMutePeer(muteMenu.peerId)
+			}
+		]}
+		on:close={() => (muteMenu = null)}
+	/>
+{/if}
 
 <Modal title="" bind:open={profileSettingsModal} outsideclose>
 

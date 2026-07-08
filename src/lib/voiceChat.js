@@ -139,6 +139,7 @@ function watchStream(id, stream) {
 }
 
 function pollSpeaking() {
+	/** @type {string[]} */
 	const talking = [];
 	const transmitting = get(micActive) || pttHeld;
 	Object.entries(analysers).forEach(([id, entry]) => {

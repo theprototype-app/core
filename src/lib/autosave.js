@@ -19,6 +19,7 @@ export const autosaveEnabled = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('autosave') !== 'false'
 );
 /** restore offer for the toast: { ts, objects, snapshot } | null */
+/** @type {import('svelte/store').Writable<any>} */
 export const restoreAvailable = writable(null);
 
 let started = false;

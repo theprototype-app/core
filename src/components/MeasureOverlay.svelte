@@ -10,10 +10,12 @@
 
 	const { camera } = useThrelte()
 
-	$: a = $measurement?.a ?? null
-	$: b = $measurement?.b ?? null
+	$: a = ($measurement?.a ?? null) as [number, number, number] | null
+	$: b = ($measurement?.b ?? null) as [number, number, number] | null
 	$: distance = a && b ? new THREE.Vector3().fromArray(a).distanceTo(new THREE.Vector3().fromArray(b)) : 0
-	$: mid = a && b ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + 0.25, (a[2] + b[2]) / 2] : [0, 0, 0]
+	$: mid = (a && b
+		? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + 0.25, (a[2] + b[2]) / 2]
+		: [0, 0, 0]) as [number, number, number]
 	$: lineGeometry = (() => {
 		const geometry = new THREE.BufferGeometry()
 		if (a && b)

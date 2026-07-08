@@ -142,7 +142,8 @@ export function openAnnotation(id) {
 /** World position of a pin right now (for the popover projection) @param {string} id */
 export function annotationWorldPosition(id) {
 	const annotation = get(annotations).find((a) => a.id === id);
-	const object = annotation ? objectOf(annotation.objectUuid) : null;
+	if (!annotation) return null;
+	const object = objectOf(annotation.objectUuid);
 	if (!object) return null;
 	return object.localToWorld(new THREE.Vector3().fromArray(annotation.offset));
 }

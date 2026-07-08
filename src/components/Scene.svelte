@@ -9,6 +9,7 @@
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
 	import { selectObject, deselectObject, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
+	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import Grid from '../extensions/Grid.svelte';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
@@ -184,6 +185,17 @@
 		if (typeof $TControls.object !== 'undefined')
 			if (typeof $TControls.object.parent !== 'undefined')
 				if (typeof $TControls.object.uuid !== 'undefined') {
+					// surface snap: keep the dragged object resting on whatever is below
+					// (skipped when dragging the Y axis on purpose — that's a lift)
+					if (
+						$surfaceSnap &&
+						$TControls.dragging &&
+						$TControls.mode === 'translate' &&
+						['X', 'Z', 'XZ', 'XYZ'].includes($TControls.axis) &&
+						$objectsGroup
+					) {
+						dropToSurface($TControls.object, $objectsGroup);
+					}
 					$TControls.visible = true;
 					$peers.send({
 						type: 'move',

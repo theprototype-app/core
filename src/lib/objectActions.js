@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
+import { dropToSurface } from './snapping';
+import { recordTransform } from './history';
 import {
 	objectsGroup,
 	TControls,
@@ -170,6 +172,38 @@ export function renameObject(uuid, name) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'name', uuid: uuid, name: name });
+}
+
+/**
+ * One-shot "Align to ground": drop the selected object onto the surface below,
+ * replicate and record an undoable history entry.
+ * @param {string=} uuid - defaults to the selected object
+ */
+export function alignToGround(uuid) {
+	const group = get(objectsGroup);
+	const targetUuid = uuid ?? get(selectedObject)?.uuid;
+	const object = targetUuid ? group?.getObjectByProperty('uuid', targetUuid) : null;
+	if (!object) {
+		showToast('Nothing selected to align');
+		return;
+	}
+	const before = {
+		pos: object.position.toArray(),
+		rot: object.rotation.toArray(),
+		scale: object.scale.toArray()
+	};
+	if (!dropToSurface(object, group)) return;
+	const after = {
+		pos: object.position.toArray(),
+		rot: object.rotation.toArray(),
+		scale: object.scale.toArray()
+	};
+	recordTransform({ uuid: object.uuid, before: before, after: after });
+	objectsGroup.update((value) => value);
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer)
+		peer.send({ type: 'move', uuid: object.uuid, pos: after.pos, rot: after.rot, scale: after.scale });
 }
 
 let focusAnimation = 0;

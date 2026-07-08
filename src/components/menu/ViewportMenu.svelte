@@ -3,8 +3,8 @@
 	import { get } from 'svelte/store';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
-	import { snapEnabled, snapSettings } from '$lib/snapping';
-	import { focusObject, duplicateObject } from '$lib/objectActions';
+	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
+	import { focusObject, duplicateObject, alignToGround } from '$lib/objectActions';
 	import { showGrid, isLocked, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
 	import { specatorMode } from '../../stores/appStore';
 
@@ -95,7 +95,11 @@
 				snapRotItem(45),
 				snapSizeItem('scale', 0.05, 'Scale 0.05'),
 				snapSizeItem('scale', 0.1, 'Scale 0.1'),
-				{ label: 'Snap to surface', disabled: true, tooltip: tbi }
+				{
+					label: ($surfaceSnap ? '● ' : '') + 'Snap to surface',
+					tooltip: 'Dragged objects rest on whatever is underneath',
+					action: () => surfaceSnap.update((v) => !v)
+				}
 			]
 		},
 		{
@@ -119,8 +123,13 @@
 			}
 		},
 		{ label: 'Screenshot', action: screenshot },
-		{ label: 'Measure distance', disabled: true, tooltip: tbi },
-		{ label: 'Align to ground', disabled: true, tooltip: tbi }
+		{
+			label: 'Align to ground',
+			disabled: !$selectedObject?.uuid,
+			tooltip: 'Drop the selected object onto the surface below (undoable)',
+			action: () => alignToGround()
+		},
+		{ label: 'Measure distance', disabled: true, tooltip: tbi }
 	];
 </script>
 

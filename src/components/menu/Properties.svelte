@@ -14,6 +14,7 @@ import {
 	Button
 } from 'flowbite-svelte';
 import { setObjectTexture, removeObjectTexture, setMaterialParam, switchMaterialType } from '$lib/materialsHandler';
+import { moveObjectToGroup } from '$lib/objectActions';
 import { objectsGroup, TControls, selectedObject } from '../../stores/sceneStore';
 import { peers, chatHidden, propertiesClose, toggleExpand } from '../../stores/appStore.js';
 import ColorPicker,{ ChromeVariant }  from 'svelte-awesome-color-picker';
@@ -234,20 +235,10 @@ function sendTransformUpdate() {
     {#key rerenderSelectGroup}
     <Select id="select-group" underline class="mt-2" items={groups} placeholder="Move to group"
     on:change={(event) => {
-        let selectedGroup = $objectsGroup.getObjectByProperty('uuid', event.srcElement.value);
-
         let selected = groups.find(item => item.value === event.srcElement.value)
-
-        if (selected.name === "Level Up") {
-            $toggleExpand = $selectedObject.parent.uuid;
-            $peers.send({ type: 'group', uuid: $selectedObject.uuid, group: 'up' });
-        } else {
-            $toggleExpand = selectedGroup.uuid;
-            $peers.send({ type: 'group', uuid: $selectedObject.uuid, group: selectedGroup.uuid });
-        }
-        selectedGroup.attach($selectedObject);
+        moveObjectToGroup($selectedObject.uuid, selected.name === "Level Up" ? 'up' : event.srcElement.value);
         $objectsGroup = $objectsGroup;
-        
+
         // Trigger to refresh the select group as it have only on change
 		// and we want to run event even if the same value is selected
         rerenderSelectGroup = rerenderSelectGroup ? false : true

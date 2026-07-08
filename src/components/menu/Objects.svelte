@@ -7,7 +7,7 @@
     import { toggleExpand, lightPropertiesClose, scenePropertiesClose, objectContextMenu, renamingObject } from '../../stores/appStore';
     import { objectsGroup, TControls, selectedObject, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
-    import { selectObject, renameObject } from '$lib/objectActions';
+    import { selectObject, renameObject, moveObjectToGroup } from '$lib/objectActions';
     import {
         showSidebar,
 		propertiesClose,
@@ -81,6 +81,36 @@
         $renamingObject = null;
     }
 
+    // --- drag rows into groups ---
+    let dropHover = $state(false);
+
+    function onRowDragStart(event) {
+        event.dataTransfer.setData('application/x-object-uuid', element.uuid);
+        event.dataTransfer.effectAllowed = 'move';
+        // rows live inside the draggable object-list window; don't drag the window too
+        event.stopPropagation();
+    }
+
+    function onRowDragOver(event) {
+        if (element.type !== 'Group') return;
+        if (!event.dataTransfer.types.includes('application/x-object-uuid')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = 'move';
+        dropHover = true;
+    }
+
+    function onRowDrop(event) {
+        dropHover = false;
+        if (element.type !== 'Group') return;
+        const uuid = event.dataTransfer.getData('application/x-object-uuid');
+        if (!uuid || uuid === element.uuid) return;
+        event.preventDefault();
+        event.stopPropagation();
+        moveObjectToGroup(uuid, element.uuid);
+        isExpanded = true;
+    }
+
 	function deleteItem(item) {
 			// console.log(previouslySelectedObject.name);
 			if (
@@ -116,7 +146,13 @@
 
 
 
-    <p id={element.uuid} oncontextmenu={openContextMenu}>
+    <p id={element.uuid} oncontextmenu={openContextMenu}
+        class={dropHover ? 'rounded outline outline-1 outline-blue-400' : ''}
+        draggable={!$lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid)}
+        ondragstart={onRowDragStart}
+        ondragover={onRowDragOver}
+        ondragleave={() => dropHover = false}
+        ondrop={onRowDrop}>
     <ListgroupItem itemDefaultClass="flex items-center text-overflow-ellipsis w-full overflow-hidden inline-flex" >
             <div class="inline-flex text-overflow-ellipsis w-full overflow-hidden items-center grid grid-cols-12">
                 <div class="flex inline-flex justify-start items-center col-span-9" onclick={() => { select(element.uuid); }}>

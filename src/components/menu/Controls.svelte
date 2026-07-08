@@ -3,7 +3,7 @@
 	import { objectsGroup, TControls, isLocked, isVRMode } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject } from '../../stores/appStore.js';
 	import { mutedFlowObjects } from '../../stores/flowStore';
-	import { focusObject, duplicateObject, toggleObjectVisibility } from '$lib/objectActions';
+	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup } from '$lib/objectActions';
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { VRButton } from '@threlte/xr'
@@ -185,9 +185,19 @@
 </div>
 
 <div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe style="z-index: 1; max-height: 70%; max-width: 50%; min-width: 250px;">
+	<!-- dropping a row on the header moves the object back to the scene root -->
+	<div
+		role="list"
+		on:dragover={(e) => { if (e.dataTransfer?.types.includes('application/x-object-uuid')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
+		on:drop={(e) => {
+			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
+			if (uuid) { e.preventDefault(); moveObjectToGroup(uuid, 'root'); }
+		}}
+	>
 	<Listgroup class="move-handle p-1 text-center text-xl font-medium text-gray-900 dark:text-gray-400 -rounded rounded-tr rounded-tl cursor-move">
 		List of objects
 	</Listgroup>
+	</div>
 	<Listgroup active class="h-full overflow-y-scroll -rounded rounded-br rounded-bl">
 		<div class="container">
 			<!-- style="max-height: 300px;" -->

@@ -17,7 +17,8 @@ import {
 	propertiesClose,
 	lightPropertiesClose,
 	specatorMode,
-	showToast
+	showToast,
+	toggleExpand
 } from '../stores/appStore';
 
 // Shared object selection used by the object list, viewport clicks and VR rays.
@@ -172,6 +173,48 @@ export function renameObject(uuid, name) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'name', uuid: uuid, name: name });
+}
+
+/**
+ * Move an object into a group ('up' = one level up, 'root' = all the way to
+ * the scene root). Replicates through the existing `group` message; the root
+ * case walks up one replicated hop at a time because the root group's uuid
+ * differs per client.
+ * @param {string} uuid @param {string} target - group uuid | 'up' | 'root'
+ */
+export function moveObjectToGroup(uuid, target) {
+	const group = get(objectsGroup);
+	const object = group?.getObjectByProperty('uuid', uuid);
+	if (!object) return;
+	/** @type {any} */
+	const peer = get(peers);
+
+	if (target === 'root') {
+		while (object.parent && object.parent !== group) {
+			const destination = object.parent.parent;
+			if (peer) peer.send({ type: 'group', uuid: uuid, group: 'up' });
+			destination.attach(object);
+		}
+	} else if (target === 'up') {
+		if (!object.parent || object.parent === group) return;
+		toggleExpand.set(object.parent.uuid);
+		if (peer) peer.send({ type: 'group', uuid: uuid, group: 'up' });
+		object.parent.parent.attach(object);
+	} else {
+		const destination = group.getObjectByProperty('uuid', target);
+		if (!destination || destination.type !== 'Group') return;
+		if (destination.uuid === object.uuid || object.parent === destination) return;
+		// never drop a group into its own descendant
+		let ancestor = destination;
+		while (ancestor) {
+			if (ancestor === object) return;
+			ancestor = ancestor.parent;
+		}
+		toggleExpand.set(destination.uuid);
+		if (peer) peer.send({ type: 'group', uuid: uuid, group: destination.uuid });
+		destination.attach(object);
+	}
+	objectsGroup.update((value) => value);
 }
 
 /**

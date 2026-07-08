@@ -1,8 +1,9 @@
 <script>
 	import * as THREE from 'three';
-	import { Drawer, Button, CloseButton, NumberInput, Input, Range } from 'flowbite-svelte';
+	import { Drawer, Button, CloseButton, NumberInput, Input, Range, Checkbox } from 'flowbite-svelte';
 	import { globalScene, objectsGroup, TControls, selectedObject, backgroundColor, globalCamera } from '../../stores/sceneStore';
 	import { peers, chatHidden, scenePropertiesClose } from '../../stores/appStore.js';
+	import { showLightHelpers } from '$lib/lightHelpers';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
 	import { sineIn } from 'svelte/easing';
@@ -80,6 +81,10 @@
 			class="mb-4 dark:text-white"
 		/>
 	</div>
+
+	<p class="mb-4 text-white dark:text-slate-200">
+		<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
+	</p>
 
 	<p class="text-white dark:text-slate-200">Camera Field of View:</p>
 	<Range id="near" step="1" min="15" max="120" 

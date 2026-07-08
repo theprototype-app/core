@@ -21,24 +21,28 @@ import { selectedObject } from '../stores/sceneStore';
 
 /** @type {Shortcut[]} */
 export const shortcuts = [
+	// transform hotkeys live on 1/2/3 — W/E/R belong to fly navigation now
 	{
-		keys: 'W',
+		keys: '1',
 		group: 'Transform',
 		label: 'Move (translate)',
 		action: () => get(TControls)?.setMode('translate')
 	},
 	{
-		keys: 'E',
+		keys: '2',
 		group: 'Transform',
 		label: 'Rotate',
 		action: () => get(TControls)?.setMode('rotate')
 	},
 	{
-		keys: 'R',
+		keys: '3',
 		group: 'Transform',
 		label: 'Scale',
 		action: () => get(TControls)?.setMode('scale')
 	},
+	{ keys: 'W A S D', group: 'Movement', label: 'Fly the camera (horizontal)' },
+	{ keys: 'Q / E', group: 'Movement', label: 'Fly down / up' },
+	{ keys: 'Shift (hold)', group: 'Movement', label: 'Fly 3x faster' },
 	{
 		keys: 'F',
 		group: 'Camera',

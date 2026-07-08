@@ -8,6 +8,7 @@
   import { startFlowRuntime } from '$lib/flowRuntime'
   import { startShortcuts } from '$lib/shortcuts'
   import { startSnapping } from '$lib/snapping'
+  import { startAutosave } from '$lib/autosave'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast } from './stores/appStore'
 
@@ -16,6 +17,7 @@
     startFlowRuntime()
     startShortcuts()
     startSnapping()
+    startAutosave()
     // store access for automated tests, opt-in via localStorage
     if (localStorage.getItem('debugStores')) {
       Promise.all([
@@ -23,9 +25,10 @@
         import('./stores/appStore'),
         import('./stores/flowStore'),
         import('./lib/meshEdit'),
-        import('./lib/vrControls')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls }
+        import('./lib/vrControls'),
+        import('./lib/autosave')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave }
       })
     }
   })

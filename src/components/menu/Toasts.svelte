@@ -1,5 +1,6 @@
 <script lang="ts">
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels } from '../../stores/appStore'
+    import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
 	import { Progressbar, Toast, Button } from 'flowbite-svelte';
@@ -132,6 +133,30 @@ style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: tr
 {/if}
 </div>
 {/each}
+
+{#if $restoreAvailable}
+<div class="my-1">
+    <Toast dismissable={false} transition={fly} class="p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-blue-500" divClass="flex items-center gap-3">
+        <div style="position: relative; left: 50%; transform: translate(-25%, -50%);"></div>
+        <div class="mb-1 inline-flex items-center text-base font-medium">
+            <p class="max-w-80 overflow-hidden pr-4 text-sm font-medium text-gray-500 dark:text-gray-200">
+                Restore previous session?<br />
+                {$restoreAvailable.objects} objects, saved {new Date($restoreAvailable.ts).toLocaleTimeString()}
+            </p>
+            <Button
+                color="primary"
+                class="nob rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
+                onclick={() => restoreSnapshot()}>Restore</Button
+            >
+            <Button
+                color="alternative"
+                class="nob ml-2 rounded"
+                onclick={() => dismissRestore()}>Dismiss</Button
+            >
+        </div>
+    </Toast>
+</div>
+{/if}
 
 {#if (typeof localStorage !== 'undefined' && !localStorage.getItem('hasSeenDisclaimer'))}
 <div class="my-1">

@@ -3,6 +3,7 @@
 	import { showGrid, vrOverride, vrMenuHand } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
+	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
 	import { shortcuts } from '$lib/shortcuts';
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
@@ -77,6 +78,12 @@
 					<p class={middlecoverDescription}>Node animations use wall-clock time so all peers see the same phase</p>
 				</div>
 				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox bind:checked={$autosaveEnabled}>&nbsp;Autosave</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Keep a local session snapshot (restore offered after a crash/reload)</p>
+				</div>
+				<div class="flex">
 					<p class={bottomCoverName}>
 						<Checkbox
 							checked={$vrMenuHand === 'left'}
@@ -131,5 +138,6 @@
 	</div>
 	<svelte:fragment slot="footer">
 		<Button onclick={() => localStorage.clear()}>Reset settings</Button>
+		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
 	</svelte:fragment>
 </Modal>

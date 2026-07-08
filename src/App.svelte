@@ -16,6 +16,16 @@
     startFlowRuntime()
     startShortcuts()
     startSnapping()
+    // store access for automated tests, opt-in via localStorage
+    if (localStorage.getItem('debugStores')) {
+      Promise.all([
+        import('./stores/sceneStore'),
+        import('./stores/appStore'),
+        import('./stores/flowStore')
+      ]).then(([sceneStore, appStore, flowStore]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore }
+      })
+    }
   })
 
   // drop 3d files anywhere on the viewport to import them
@@ -25,14 +35,15 @@
     const files = [...(event.dataTransfer?.files ?? [])]
     if (files.length === 0) return
     const skipped = []
+    const modelExt = /\.(glb|gltf|obj|stl|fbx)$/
     files.forEach((file) => {
       const name = file.name.toLowerCase()
-      if (name.endsWith('.glb') || name.endsWith('.gltf')) importFile(file, file.name.replace(/\.(glb|gltf)$/, ''))
+      if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''))
       else if (name.endsWith('.json')) load(file)
       else skipped.push(file.name)
     })
     if (skipped.length > 0)
-      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf (models), .json (scene)')
+      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .json (scene)')
   }
 </script>
 

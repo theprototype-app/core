@@ -228,7 +228,7 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 				</SidebarItem>
 		</SidebarGroup>
 		{#key rerenderInput}
-			<input type="file" id="import-file" style="display: none" on:input={e => { console.log('test') ; importFile(e.target.files[0])}} accept=".gltf, .glb" />
+			<input type="file" id="import-file" style="display: none" on:input={e => { importFile(e.target.files[0])}} accept=".gltf, .glb, .obj, .stl, .fbx" />
 			<input type="file" id="load-file" style="display: none" on:input={e => load(e.target.files[0])} accept=".json, .gltf, .scene" />
 		{/key}
 		<SidebarGroup border>

@@ -1,8 +1,12 @@
+import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
-import { peers, fixLight, loadingFile } from '../stores/appStore';
+import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 
 //Access objects Store
 let sceneObjects = $state();
@@ -57,7 +61,7 @@ export async function loadFile(url, name) {
 			} else if (url.endsWith('.html')) {
 				resolve(event.target.result);
 			} else if (url.endsWith('.glb')) {
-				importFile(blob, name);
+				importFile(blob, name, 'glb');
 			} else {
 				console.error(`Unsupported file type: ${url}`);
 				reject(new Error(`Unsupported file type: ${url}`));
@@ -72,41 +76,71 @@ export async function loadFile(url, name) {
 		
 }
 
-export async function importFile(file, name) {
-	try {
+/** Shared tail for every import format: add to the scene, select, replicate. @param {any} imported @param {string=} name */
+function addImported(imported, name) {
+	if (name) imported.name = name;
+	sceneObjects.add(imported);
+	//Trigger reactivity for UI list of objects
+	objectsGroup.update((value) => value);
+	controls.attach(imported);
+	sendObjects(/** @type {any} */ (null), imported);
+
+	selectedObject.set(sceneObjects.getObjectByProperty('uuid', imported.uuid));
+	peer.send({ type: 'lock', uuid: imported.uuid, peerId: peer.peer.id });
+
+	fixLight.set(true);
+	sceneObjects.traverse((/** @type {any} */ object) => {
+		if (object.isLight) {
+			fixLight.set(false);
+		}
+	});
+}
+
+/** @param {any} file @param {'text' | 'buffer'} mode */
+function readAs(file, mode) {
+	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
-		reader.readAsArrayBuffer(file);
-		await new Promise((resolve, reject) => {
-			reader.onload = () => resolve(reader.result);
-			reader.onerror = () => reject(reader.error);
-		});
+		reader.onload = () => resolve(reader.result);
+		reader.onerror = () => reject(reader.error);
+		if (mode === 'text') reader.readAsText(file);
+		else reader.readAsArrayBuffer(file);
+	});
+}
 
-		// const json = JSON.parse(reader.result);
-		const loader = new GLTFLoader();
-
-		loader.parse(reader.result, '', function (result) {
-			const scene = result.scene;
-			if (name) scene.name = name;
-			sceneObjects.add(scene);
-			// scene.position.set(1, 1, 1);
-			//Trigger reactivity for UI list of objects
-			objectsGroup.update((value) => value);
-			controls.attach(scene);
-			sendObjects(null, scene);
-			
-			selectedObject.set(sceneObjects.getObjectByProperty('uuid', scene.uuid));
-            peer.send({ type: 'lock', uuid: scene.uuid, peerId: peer.peer.id });
-
-			fixLight.set(true);
-			sceneObjects.traverse((object) => {
-				if (object.isLight) {
-				  fixLight.set(false);
+/**
+ * Import a 3d file into the scene. GLB/GLTF, OBJ (no .mtl), STL and FBX (static meshes).
+ * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
+ */
+export async function importFile(file, name, ext) {
+	const extension = String(ext ?? file.name ?? '').toLowerCase().split('.').pop();
+	try {
+		if (extension === 'obj') {
+			const object = new OBJLoader().parse(await readAs(file, 'text'));
+			addImported(object, name ?? 'OBJ');
+		} else if (extension === 'stl') {
+			const geometry = new STLLoader().parse(await readAs(file, 'buffer'));
+			geometry.computeVertexNormals();
+			const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+			addImported(mesh, name ?? 'STL');
+		} else if (extension === 'fbx') {
+			const object = new FBXLoader().parse(await readAs(file, 'buffer'), '');
+			addImported(object, name ?? 'FBX');
+		} else {
+			// glb/gltf (default)
+			const buffer = await readAs(file, 'buffer');
+			new GLTFLoader().parse(
+				buffer,
+				'',
+				(result) => addImported(result.scene, name),
+				(error) => {
+					console.error('Error importing file:', error);
+					showToast('Could not import ' + (name ?? file.name ?? 'file'));
 				}
-			  });
-			
-		});
+			);
+		}
 	} catch (error) {
 		console.error('Error importing file:', error);
+		showToast('Could not import ' + (name ?? file.name ?? 'file') + ' — the file may be corrupt or an unsupported version');
 	}
 }
 

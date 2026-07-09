@@ -37,5 +37,9 @@ export const vrMenuHand = writable(
 	typeof localStorage !== 'undefined' ? localStorage.getItem('vrMenuHand') || 'right' : 'right'
 );
 export const vrMenuOpen = writable(false);
+// snap-turn angle in degrees (15 / 30 / 45)
+export const vrSnapAngle = writable(
+	typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('vrSnapAngle') || '45') : 45
+);
 /** @type {import('svelte/store').Writable<'move' | 'rotate'>} grab behavior; scale is always two-handed */
 export const vrTransformMode = writable('move');

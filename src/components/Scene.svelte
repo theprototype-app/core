@@ -122,10 +122,8 @@
 				lastCameraQuaternion.copy(camera.current.quaternion);
 			}
 		}
-		if (renderer.xr.isPresenting) {
-			broadcastVRHands();
-			updateVRControls();
-		}
+		if (renderer.xr.isPresenting) broadcastVRHands();
+		updateVRControls(); // also manages ray/hover visibility outside sessions
 		updateLightHelpers();
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);
 	});

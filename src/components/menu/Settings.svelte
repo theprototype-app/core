@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Accordion, AccordionItem, Modal, Button, Checkbox } from 'flowbite-svelte';
-	import { showGrid, vrOverride, vrMenuHand } from '../../stores/sceneStore.js';
+	import { Accordion, AccordionItem, Modal, Button, Checkbox, Select } from 'flowbite-svelte';
+	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
@@ -84,7 +84,7 @@
 					<p class={middlecoverDescription}>Keep a local session snapshot (restore offered after a crash/reload)</p>
 				</div>
 				<div class="flex">
-					<p class={bottomCoverName}>
+					<p class={middlecoverName}>
 						<Checkbox
 							checked={$vrMenuHand === 'left'}
 							onclick={() => {
@@ -94,7 +94,25 @@
 							}}>&nbsp;VR menu on left</Checkbox
 						>
 					</p>
-					<p class={bottomCoverDescription}>Which controller opens the VR quick-menu (the other hand points)</p>
+					<p class={middlecoverDescription}>Which controller opens the VR quick-menu (the other hand points)</p>
+				</div>
+				<div class="flex">
+					<p class={bottomCoverName}>
+						<Select
+							class="border-0 bg-transparent p-0 text-sm dark:bg-transparent"
+							items={[
+								{ value: 15, name: 'Snap turn 15°' },
+								{ value: 30, name: 'Snap turn 30°' },
+								{ value: 45, name: 'Snap turn 45°' }
+							]}
+							value={$vrSnapAngle}
+							on:change={(e) => {
+								$vrSnapAngle = parseInt(e.srcElement.value);
+								localStorage.setItem('vrSnapAngle', String($vrSnapAngle));
+							}}
+						/>
+					</p>
+					<p class={bottomCoverDescription}>VR thumbstick flick rotation angle</p>
 				</div>
 			</AccordionItem>
 			<AccordionItem bind:open={shortcutsExpanded}>

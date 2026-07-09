@@ -8,6 +8,7 @@ import {
 	vrMenuHand,
 	vrMenuOpen,
 	vrTransformMode,
+	vrSnapAngle,
 	selectedObject
 } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
@@ -41,6 +42,100 @@ let grab = null;
 /** @type {any} two-hand scale: { object, startDistance, startScale, before } */
 let scaleGrab = null;
 let lastMoveSent = 0;
+
+// --- clarity pack: controller rays, hover highlight, snap turn ---
+/** @type {any[]} */ let rayLines = [];
+/** @type {any} */ let hoveredObject = null;
+let hoveredEmissive = 0;
+let snapArmed = true;
+
+function ensureRayLines() {
+	if (rayLines.length > 0 || !renderer) return;
+	for (let i = 0; i < 2; i++) {
+		const geometry = new THREE.BufferGeometry().setFromPoints([
+			new THREE.Vector3(0, 0, 0),
+			new THREE.Vector3(0, 0, -1)
+		]);
+		const line = new THREE.Line(
+			geometry,
+			new THREE.LineBasicMaterial({ color: 0x8ab4ff, transparent: true, opacity: 0.7 })
+		);
+		line.name = 'vr-ray';
+		line.scale.z = 5;
+		renderer.xr.getController(i).add(line);
+		rayLines.push(line);
+	}
+}
+
+function setHovered(object) {
+	if (hoveredObject === object) return;
+	// restore the previous highlight
+	if (hoveredObject?.material?.emissive) hoveredObject.material.emissive.setHex(hoveredEmissive);
+	hoveredObject = null;
+	if (object) {
+		// tint the first emissive-capable mesh in the subtree
+		let target = null;
+		object.traverse((/** @type {any} */ node) => {
+			if (!target && node.material?.emissive) target = node;
+		});
+		if (target) {
+			hoveredObject = target;
+			hoveredEmissive = target.material.emissive.getHex();
+			target.material.emissive.setHex(0x2f4f9f);
+		}
+	}
+}
+
+/** Rays follow hits, pointed object glows @param {boolean} presenting */
+function updateRaysAndHover(presenting) {
+	ensureRayLines();
+	rayLines.forEach((line) => (line.visible = presenting));
+	if (!presenting) {
+		setHovered(null);
+		return;
+	}
+	const group = get(objectsGroup);
+	const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+	for (let i = 0; i < 2; i++) {
+		let distance = 5;
+		let hitObject = null;
+		if (group) {
+			const hits = controllerRay(i).intersectObjects(group.children, true);
+			if (hits.length > 0) {
+				distance = hits[0].distance;
+				hitObject = topLevelObjectOf(hits[0].object);
+			}
+		}
+		if (rayLines[i]) rayLines[i].scale.z = distance;
+		if (i === pointerIndex) setHovered(get(vrMenuOpen) ? null : hitObject);
+	}
+}
+
+/** Thumbstick flick on the pointer hand rotates the rig in snaps around the viewer */
+function updateSnapTurn(session) {
+	const pointerHand = get(vrMenuHand) === 'right' ? 'left' : 'right';
+	const source = [...session.inputSources].find((s) => s.handedness === pointerHand);
+	const x = source?.gamepad?.axes?.[2] ?? 0;
+	if (Math.abs(x) < 0.4) {
+		snapArmed = true;
+		return;
+	}
+	if (!snapArmed || Math.abs(x) < 0.7) return;
+	snapArmed = false;
+
+	const frame = renderer.xr.getFrame?.();
+	const space = renderer.xr.getReferenceSpace();
+	const pose = frame?.getViewerPose?.(space);
+	if (!pose || !space) return;
+	const p = pose.transform.position;
+	const angle = THREE.MathUtils.degToRad(get(vrSnapAngle)) * (x > 0 ? -1 : 1);
+	const s = Math.sin(angle);
+	const c = Math.cos(angle);
+	// rotate the reference space about the viewer position (turn in place)
+	const q = { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) };
+	const t = { x: p.x - (c * p.x + s * p.z), y: 0, z: p.z - (-s * p.x + c * p.z) };
+	renderer.xr.setReferenceSpace(space.getOffsetReferenceSpace(new XRRigidTransform(t, q)));
+}
 
 /** @param {any} r */
 export function initVRControls(r) {
@@ -237,7 +332,9 @@ export function executeVRMenuAction(name) {
 /** Per-frame update while presenting (called from Scene's useTask) */
 export function updateVRControls() {
 	const session = renderer?.xr.getSession();
+	updateRaysAndHover(!!session);
 	if (!session) return;
+	updateSnapTurn(session);
 
 	[...session.inputSources].forEach((source, index) => {
 		if (index > 1 || !source.gamepad) return;

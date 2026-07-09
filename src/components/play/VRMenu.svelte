@@ -6,6 +6,7 @@
 	import { vrMenuOpen, vrMenuHand, vrTransformMode, showGrid } from '../../stores/sceneStore'
 	import { snapEnabled } from '$lib/snapping'
 	import { drawMode } from '$lib/drawMode'
+	import { vrMicMode, micActive } from '$lib/voiceChat'
 	import { vrHovered, vrMenuGroup } from '$lib/vrControls'
 
 	// The in-world quick-menu: a small tile panel floating above the menu-hand
@@ -30,6 +31,7 @@
 		{ name: 'wedge', label: '+ Wedge', active: false },
 		{ name: 'stairs', label: '+ Stairs', active: false },
 		{ name: 'draw', label: 'Draw', active: $drawMode },
+		{ name: 'mic', label: 'Mic: ' + ($vrMicMode === 'ptt' ? 'PTT' : $vrMicMode === 'open' ? 'Open' : 'Off'), active: $micActive },
 		{ name: 'hand', label: $vrMenuHand === 'right' ? 'To left' : 'To right', active: false },
 		{ name: 'exitvr', label: 'Exit VR', active: false },
 		{ name: 'close', label: 'Close', active: false }

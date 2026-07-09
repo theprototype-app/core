@@ -21,6 +21,7 @@ import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing } from './ping';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
+import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
 
 // VR interactions (all gated on an active XR session):
 // - A/X button on the menu hand toggles the quick-menu
@@ -36,7 +37,7 @@ export const vrHovered = writable(null);
 export const vrMenuGroup = writable(null);
 
 /** @type {any} */ let renderer = null;
-/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean}[]} */
+/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean}[]} */
 const previousButtons = [{}, {}];
 const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
@@ -315,6 +316,29 @@ function updateTeleport(session) {
 	showArc(lastArc.points, !!lastArc.target, lastArc.target);
 }
 
+/** @type {any} */ let micHud = null;
+
+/** Small camera-locked dot, top right: green = transmitting, grey = muted */
+function updateMicHud(presenting) {
+	const camera = get(globalCamera);
+	if (!camera) return;
+	if (!micHud) {
+		micHud = new THREE.Mesh(
+			new THREE.CircleGeometry(0.012, 16),
+			new THREE.MeshBasicMaterial({ color: 0x555b66, transparent: true, opacity: 0.9, depthTest: false })
+		);
+		micHud.renderOrder = 998;
+		micHud.position.set(0.28, 0.18, -0.8);
+	}
+	const show = presenting && get(vrMicMode) !== 'off';
+	micHud.visible = show;
+	if (show) {
+		if (micHud.parent !== camera) camera.add(micHud);
+		const transmitting = get(micActive) || get(pttActive);
+		micHud.material.color.setHex(transmitting ? 0x22cc55 : 0x555b66);
+	}
+}
+
 function updateBlink() {
 	if (!blinkSphere || !blinkSphere.visible) return;
 	blinkSphere.material.opacity -= 0.12;
@@ -568,6 +592,8 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'draw') {
 		toggleDrawMode();
 		vrMenuOpen.set(false);
+	} else if (name === 'mic') {
+		cycleMicMode();
 	} else if (name === 'exitvr') {
 		vrMenuOpen.set(false);
 		isVRMode.set(false);
@@ -580,6 +606,7 @@ export function updateVRControls() {
 	const session = renderer?.xr.getSession();
 	updateRaysAndHover(!!session);
 	updateBlink();
+	updateMicHud(!!session);
 	if (!session) {
 		hideArc();
 		teleportEngaged = false;
@@ -598,6 +625,11 @@ export function updateVRControls() {
 		if (menuPressed && !prev.menu && source.handedness === get(vrMenuHand))
 			vrMenuOpen.update((v) => !v);
 		prev.menu = menuPressed;
+
+		// right A held = push-to-talk
+		const aPressed = !!buttons[4]?.pressed;
+		if (source.handedness === 'right' && aPressed !== !!prev.a) setPttHeld(aPressed);
+		prev.a = aPressed;
 
 		// squeeze grabs
 		const squeezePressed = !!buttons[1]?.pressed;

@@ -16,6 +16,8 @@ export const pttActive = writable(false);
 export const spatialVoice = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('spatialVoice') !== 'false'
 );
+/** @type {import('svelte/store').Writable<'ptt' | 'open' | 'off'>} VR mic mode (quick-menu tile) */
+export const vrMicMode = writable('ptt');
 /** @type {import('svelte/store').Writable<Record<string, MediaStream>>} */
 export const remoteStreams = writable({});
 /** @type {import('svelte/store').Writable<string[]>} peer ids currently talking ('self' mapped to own id) */
@@ -196,6 +198,32 @@ export async function toggleMic() {
 	applyTrackState();
 }
 
+/** VR A-button push-to-talk (same track path as hold-V) @param {boolean} held */
+export async function setPttHeld(held) {
+	if (get(vrMicMode) === 'off' || get(micActive)) return;
+	pttHeld = held;
+	if (held) {
+		if (await ensureStream()) applyTrackState();
+		else pttHeld = false;
+	} else applyTrackState();
+}
+
+/** Quick-menu tile: PTT -> Open -> Off -> PTT */
+export async function cycleMicMode() {
+	const mode = get(vrMicMode);
+	if (mode === 'ptt') {
+		vrMicMode.set('open');
+		if (!get(micActive)) await toggleMic();
+	} else if (mode === 'open') {
+		vrMicMode.set('off');
+		if (get(micActive)) await toggleMic();
+		pttHeld = false;
+		applyTrackState();
+	} else {
+		vrMicMode.set('ptt');
+	}
+}
+
 // --- push to talk (hold V while the toggle is off) ---
 /** @param {KeyboardEvent} event */
 function keyGuard(event) {
@@ -214,7 +242,7 @@ function keyGuard(event) {
 /** @param {KeyboardEvent} event */
 async function onKeydown(event) {
 	if (event.key.toLowerCase() !== 'v' || event.repeat || keyGuard(event)) return;
-	if (get(micActive)) return;
+	if (get(micActive) || get(vrMicMode) === 'off') return;
 	pttHeld = true;
 	if (await ensureStream()) applyTrackState();
 	else pttHeld = false;

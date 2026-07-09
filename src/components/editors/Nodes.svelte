@@ -50,6 +50,9 @@
 		script: ScriptNode,
 		customnode: CustomNode,
 		pathpatrol: PathPatrolNode,
+		mass: AnimationNode,
+		bounciness: AnimationNode,
+		friction: AnimationNode,
 		...moduleTypes
 	};
 

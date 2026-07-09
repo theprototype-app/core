@@ -4,6 +4,8 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { drawMode, toggleDrawMode } from '$lib/drawMode';
+	import { simulating, remoteSimulating, toggleSimulation } from '$lib/physics';
+	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { focusObject, duplicateObject, alignToGround } from '$lib/objectActions';
 	import { editingObject, enterEditMode, exitEditMode } from '$lib/meshEdit';
@@ -87,6 +89,14 @@
 			label: ($drawMode ? '● ' : '') + 'Draw mode',
 			tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
 			action: toggleDrawMode
+		},
+		{
+			label: $simulating ? '⏹ Stop simulation' : '▶ Simulate physics',
+			disabled: !!$remoteSimulating,
+			tooltip: $remoteSimulating
+				? nameOf($remoteSimulating) + ' is simulating'
+				: 'Objects wired to a Mass node fall and collide; stop leaves one undo step',
+			action: toggleSimulation
 		},
 		{
 			label: 'Snapping',

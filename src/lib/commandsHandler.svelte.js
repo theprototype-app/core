@@ -6,6 +6,7 @@ import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte
 import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
 import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
+import { physicsPeerDisconnected } from '$lib/physics'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
 
@@ -220,6 +221,7 @@ export function handleDisconnected(peerId) {
         return next;
     });
     voicePeerDisconnected(peerId);
+    physicsPeerDisconnected(peerId);
 }
 
 export function checkLocks(data) {

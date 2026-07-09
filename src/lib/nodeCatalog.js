@@ -88,6 +88,29 @@ export const nodeCatalog = [
 		]
 	},
 	{
+		group: 'Physics',
+		items: [
+			{
+				type: 'mass',
+				label: 'Mass',
+				defaults: { kg: 1 },
+				params: [{ key: 'kg', kind: 'range', min: 0.1, max: 100, step: 0.1 }]
+			},
+			{
+				type: 'bounciness',
+				label: 'Bounciness',
+				defaults: { value: 0.3 },
+				params: [{ key: 'value', kind: 'range', min: 0, max: 1, step: 0.05 }]
+			},
+			{
+				type: 'friction',
+				label: 'Friction',
+				defaults: { value: 0.5 },
+				params: [{ key: 'value', kind: 'range', min: 0, max: 1, step: 0.05 }]
+			}
+		]
+	},
+	{
 		group: 'Effects',
 		items: [
 			{

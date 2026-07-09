@@ -5,6 +5,7 @@
 	import { Text } from '@threlte/extras'
 	import { vrMenuOpen, vrMenuHand, vrTransformMode, showGrid } from '../../stores/sceneStore'
 	import { snapEnabled } from '$lib/snapping'
+	import { drawMode } from '$lib/drawMode'
 	import { vrHovered, vrMenuGroup } from '$lib/vrControls'
 
 	// The in-world quick-menu: a small tile panel floating above the menu-hand
@@ -28,6 +29,7 @@
 		{ name: 'box', label: '+ Box', active: false },
 		{ name: 'wedge', label: '+ Wedge', active: false },
 		{ name: 'stairs', label: '+ Stairs', active: false },
+		{ name: 'draw', label: 'Draw', active: $drawMode },
 		{ name: 'hand', label: $vrMenuHand === 'right' ? 'To left' : 'To right', active: false },
 		{ name: 'close', label: 'Close', active: false }
 	].map((tile, index) => ({

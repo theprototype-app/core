@@ -3,6 +3,7 @@
 	import { get } from 'svelte/store';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
+	import { drawMode, toggleDrawMode } from '$lib/drawMode';
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { focusObject, duplicateObject, alignToGround } from '$lib/objectActions';
 	import { editingObject, enterEditMode, exitEditMode } from '$lib/meshEdit';
@@ -82,6 +83,11 @@
 	$: items = [
 		{ label: 'Undo', disabled: !$canUndo, tooltip: 'Ctrl+Z', action: undo },
 		{ label: 'Redo', disabled: !$canRedo, tooltip: 'Ctrl+Y', action: redo },
+		{
+			label: ($drawMode ? '● ' : '') + 'Draw mode',
+			tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
+			action: toggleDrawMode
+		},
 		{
 			label: 'Snapping',
 			children: [

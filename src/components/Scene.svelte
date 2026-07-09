@@ -12,6 +12,7 @@
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
+	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
 	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
@@ -216,14 +217,44 @@
 		const element = renderer.domElement;
 		let downPosition = null;
 		let downTime = 0;
+		let strokeActive = false;
+
+		const setRayFromEvent = (event) => {
+			const rect = element.getBoundingClientRect();
+			const ndc = new THREE.Vector2(
+				((event.clientX - rect.left) / rect.width) * 2 - 1,
+				-((event.clientY - rect.top) / rect.height) * 2 + 1
+			);
+			selectionRaycaster.setFromCamera(ndc, camera.current);
+		};
 
 		const onPointerDown = (event) => {
 			if (event.button !== 0) return;
+			// draw mode: dragging paints a stroke instead of orbiting
+			if ($drawMode && !$isLocked && !$isVRMode) {
+				strokeActive = true;
+				if ($orbitControls) $orbitControls.enabled = false;
+				setRayFromEvent(event);
+				strokePointFromRay(selectionRaycaster);
+				return;
+			}
 			downPosition = [event.clientX, event.clientY];
 			downTime = Date.now();
 		};
 
+		const onPointerMove = (event) => {
+			if (!strokeActive) return;
+			setRayFromEvent(event);
+			strokePointFromRay(selectionRaycaster);
+		};
+
 		const onPointerUp = (event) => {
+			if (strokeActive && event.button === 0) {
+				strokeActive = false;
+				if ($orbitControls) $orbitControls.enabled = true;
+				endStroke();
+				return;
+			}
 			if (event.button !== 0 || !downPosition) return;
 			const moved = Math.hypot(event.clientX - downPosition[0], event.clientY - downPosition[1]);
 			downPosition = null;
@@ -286,7 +317,10 @@
 		// pointerup is captured on window because the canvas can lose hit-testing
 		// mid-gesture (the Canvas wrapper div swallows the up event)
 		element.addEventListener('pointerdown', onPointerDown);
+		// window, not canvas: the Canvas wrapper swallows pointer events mid-gesture
+		window.addEventListener('pointermove', onPointerMove);
 		window.addEventListener('pointerup', onPointerUp);
+		setDrawScene(scene);
 
 		// VR: trigger press activates a quick-menu tile, otherwise selects
 		// the object the controller points at
@@ -302,6 +336,7 @@
 					return;
 				}
 			}
+			if ($drawMode) return; // VR trigger feeds the stroke poll instead
 			if (!$objectsGroup) return;
 			tempMatrix.identity().extractRotation(controller.matrixWorld);
 			selectionRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);

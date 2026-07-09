@@ -18,6 +18,7 @@ import { selectObject, topLevelObjectOf } from './objectActions';
 import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing } from './ping';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
+import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 
 // VR interactions (all gated on an active XR session):
 // - A/X button on the menu hand toggles the quick-menu
@@ -33,7 +34,7 @@ export const vrHovered = writable(null);
 export const vrMenuGroup = writable(null);
 
 /** @type {any} */ let renderer = null;
-/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean}[]} */
+/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean}[]} */
 const previousButtons = [{}, {}];
 const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
@@ -343,6 +344,9 @@ export function executeVRMenuAction(name) {
 			localStorage.setItem('vrMenuHand', next);
 			return next;
 		});
+	} else if (name === 'draw') {
+		toggleDrawMode();
+		vrMenuOpen.set(false);
 	} else if (name === 'close') vrMenuOpen.set(false);
 }
 
@@ -380,6 +384,15 @@ export function updateVRControls() {
 			sendPing(point);
 		}
 		prev.stick = stickPressed;
+
+		// draw mode: holding the trigger draws at the controller tip
+		const triggerPressed = !!buttons[0]?.pressed;
+		if (get(drawMode)) {
+			if (triggerPressed)
+				addStrokePoint(renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()));
+			if (!triggerPressed && prev.trigger) endStroke();
+		}
+		prev.trigger = triggerPressed;
 	});
 
 	if (scaleGrab) updateScaleGrab();

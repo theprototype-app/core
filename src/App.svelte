@@ -4,6 +4,7 @@
   import Scene from './components/Scene.svelte'
   import Menu from './components/Menu.svelte'
   import Flow from './components/Flow.svelte'
+  import DrawToolbar from './components/menu/DrawToolbar.svelte'
   import { isLocked } from './stores/sceneStore'
   import { startFlowRuntime } from '$lib/flowRuntime'
   import { startNodeSync } from '$lib/nodesHandler'
@@ -42,9 +43,10 @@
         import('./lib/materialsHandler'),
         import('./lib/objectActions'),
         import('./lib/commandsHandler.svelte'),
-        import('./lib/moduleSDK')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK }
+        import('./lib/moduleSDK'),
+        import('./lib/drawMode')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib }
       })
     }
   })
@@ -74,6 +76,7 @@
 <Flow />
 {/if}
 <Menu />
+<DrawToolbar />
 
 <Canvas>
   <Scene />

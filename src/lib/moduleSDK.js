@@ -31,6 +31,8 @@ export const moduleNodeComponents = {};
 export const moduleClickHandlers = [];
 /** @type {((time: number) => void)[]} */
 export const moduleFrameTasks = [];
+/** @type {string[]} scene-root group names that receive viewport clicks */
+export const moduleInteractiveGroups = [];
 
 /** @type {{id: string, name: string, version: string}[]} */
 export const loadedModules = [];
@@ -96,6 +98,14 @@ function makeApi(moduleId) {
 		/** Runs every frame with the synced time (seconds) @param {(time: number) => void} fn */
 		registerFrameTask(fn) {
 			moduleFrameTasks.push(fn);
+		},
+		/**
+		 * Click handlers only see the replicated objects root by default;
+		 * register your scene-root group's name to make it clickable too.
+		 * @param {string} name
+		 */
+		registerInteractiveGroup(name) {
+			moduleInteractiveGroups.push(name);
 		},
 		/** Handle messages other peers sent with api.send() @param {(data: any) => void} fn */
 		onMessage(fn) {

@@ -144,6 +144,19 @@ export function initVRControls(r) {
 	renderer = r;
 }
 
+/**
+ * Buzz the VR controllers if the session's gamepads support it (no-op on
+ * desktop). Used by modules for press feedback.
+ * @param {number} intensity 0..1 @param {number} durationMs
+ */
+export function hapticPulse(intensity = 0.5, durationMs = 50) {
+	const session = renderer?.xr?.getSession?.();
+	session?.inputSources?.forEach((source) => {
+		const actuator = source.gamepad?.hapticActuators?.[0];
+		actuator?.pulse?.(intensity, durationMs);
+	});
+}
+
 /** @param {'left'|'right'} handedness @returns {number} controller index or -1 */
 function controllerIndexFor(handedness) {
 	const session = renderer?.xr.getSession();

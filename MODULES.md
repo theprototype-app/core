@@ -124,6 +124,10 @@ top-level group). Return `false` to let normal selection continue.
 
 ```js
 api.registerFrameTask((time) => { /* runs every frame, synced time */ });
+
+// click handlers only see the replicated objects root by default; if your
+// module adds its own group at the scene root, register it for clicks:
+api.registerInteractiveGroup('piano-module');
 ```
 
 ### Messages and state

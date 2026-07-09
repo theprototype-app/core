@@ -11,7 +11,7 @@
 	import { selectObject, deselectObject, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
-	import { moduleClickHandlers } from '$lib/moduleSDK';
+	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
 	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
@@ -172,17 +172,29 @@
 	// --- viewport click selection (desktop) and controller ray selection (VR) ---
 	const selectionRaycaster = new THREE.Raycaster();
 
+	function runModuleClickHandlers(hit) {
+		for (const handler of moduleClickHandlers) {
+			try {
+				if (handler(hit)) return true;
+			} catch (error) {
+				console.log('module click handler failed', error);
+			}
+		}
+		return false;
+	}
+
 	function raycastSelect() {
+		// module-owned interactive groups live at the scene root (piano, pong, ...)
+		for (const name of moduleInteractiveGroups) {
+			const root = scene.getObjectByName(name);
+			if (!root) continue;
+			const moduleHits = selectionRaycaster.intersectObject(root, true);
+			if (moduleHits.length > 0 && runModuleClickHandlers(moduleHits[0].object)) return true;
+		}
 		const hits = selectionRaycaster.intersectObjects($objectsGroup.children, true);
 		if (hits.length > 0) {
 			// modules may consume the click (buttons, instruments, ...)
-			for (const handler of moduleClickHandlers) {
-				try {
-					if (handler(hits[0].object)) return true;
-				} catch (error) {
-					console.log('module click handler failed', error);
-				}
-			}
+			if (runModuleClickHandlers(hits[0].object)) return true;
 			const target = topLevelObjectOf(hits[0].object);
 			if (target) {
 				selectObject(target.uuid, true);

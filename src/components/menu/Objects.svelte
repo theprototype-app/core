@@ -3,7 +3,17 @@
     let { element } = $props();
     let isExpanded = $state(false);
     let previouslySelectedObject;
+    import { getContext } from 'svelte';
     import { Tooltip, ListgroupItem } from 'flowbite-svelte';
+
+    // search/filter from Controls: a store holding the visible-uuid set (null = all)
+    const objectFilter = getContext('objectFilter');
+    const rowVisible = $derived(!objectFilter || !$objectFilter || $objectFilter.has(element.uuid));
+    // groups on the path to a match auto-expand while filtering
+    $effect(() => {
+        if ($objectFilter && element.children.length > 0 && $objectFilter.has(element.uuid))
+            isExpanded = true;
+    });
     import { toggleExpand, lightPropertiesClose, scenePropertiesClose, objectContextMenu, renamingObject } from '../../stores/appStore';
     import { objectsGroup, TControls, selectedObject, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
@@ -146,6 +156,7 @@
 
 
 
+    {#if rowVisible}
     <p id={element.uuid} oncontextmenu={openContextMenu}
         class={dropHover ? 'rounded outline outline-1 outline-blue-400' : ''}
         draggable={!$lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid)}
@@ -206,8 +217,9 @@
     {#if isExpanded}
     {#each element.children as item}
         <p class="pl-6">
-            <svelte:self element={item} key={item.uuid} />        
+            <svelte:self element={item} key={item.uuid} />
         </p>
     {/each}
+    {/if}
     {/if}
 

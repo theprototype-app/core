@@ -8,12 +8,58 @@
 	import { addAnnotation } from '$lib/annotationsHandler';
 	import { sendPing } from '$lib/ping';
 	import * as THREE from 'three';
+	import { setContext } from 'svelte';
+	import { writable } from 'svelte/store';
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { VRButton } from '@threlte/xr'
 
 	let allowPlay = true;
 	let resizing = $state(false);
+
+	// --- object list search/filter: rows read the visible-uuid set via context ---
+	const objectFilter = writable(null); // null = no filtering
+	setContext('objectFilter', objectFilter);
+	let searchTerm = $state('');
+	let searchType = $state('');
+	let matchCount = $state(0);
+	const TYPE_TESTS = {
+		mesh: (o) => o.isMesh && o.name !== 'Stroke',
+		light: (o) => o.type.endsWith('Light'),
+		group: (o) => o.type === 'Group',
+		stroke: (o) => o.name === 'Stroke'
+	};
+	function refreshFilter() {
+		const group = $objectsGroup;
+		const term = searchTerm.trim().toLowerCase();
+		if (!group || (!term && !searchType)) {
+			matchCount = 0;
+			objectFilter.set(null);
+			return;
+		}
+		const visible = new Set();
+		let count = 0;
+		const walk = (object, ancestors) => {
+			const name = (object.name || object.type).toLowerCase();
+			const ok =
+				(!term || name.includes(term)) && (!searchType || TYPE_TESTS[searchType]?.(object));
+			if (ok) {
+				count++;
+				visible.add(object.uuid);
+				for (const ancestor of ancestors) visible.add(ancestor);
+			}
+			object.children.forEach((child) => walk(child, [...ancestors, object.uuid]));
+		};
+		group.children.forEach((child) => walk(child, []));
+		matchCount = count;
+		objectFilter.set(visible);
+	}
+	$effect(() => {
+		searchTerm;
+		searchType;
+		refreshFilter();
+	});
+	objectsGroup.subscribe(() => refreshFilter()); // re-filter on scene changes
 	let classActive =
 		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-300';
 
@@ -219,6 +265,32 @@
 	<Listgroup class="move-handle p-1 text-center text-xl font-medium text-gray-900 dark:text-gray-400 -rounded rounded-tr rounded-tl cursor-move">
 		List of objects
 	</Listgroup>
+	</div>
+	<div class="flex flex-col gap-1 bg-gray-100 p-1 text-xs dark:bg-gray-700">
+		<input
+			id="object-search"
+			class="rounded border border-gray-300 bg-white px-2 py-0.5 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+			placeholder="Search objects…"
+			value={searchTerm}
+			on:input={(e) => (searchTerm = e.currentTarget.value)}
+			on:keydown={(e) => { if (e.key === 'Escape') { searchTerm = ''; e.currentTarget.blur(); } }}
+		/>
+		<div class="flex items-center gap-1">
+			{#each [['', 'All'], ['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes']] as [value, label]}
+				<button
+					class={'rounded-full px-2 py-0.5 ' +
+						(searchType === value
+							? 'bg-primary-600 text-white'
+							: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
+					on:click={() => (searchType = value)}
+				>
+					{label}
+				</button>
+			{/each}
+			{#if $objectFilter}
+				<span class="ml-auto text-gray-500 dark:text-gray-300">{matchCount} match{matchCount === 1 ? '' : 'es'}</span>
+			{/if}
+		</div>
 	</div>
 	<Listgroup active class="h-full overflow-y-scroll -rounded rounded-br rounded-bl">
 		<div class="container">

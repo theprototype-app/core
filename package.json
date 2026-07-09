@@ -32,11 +32,13 @@
 		"vite-plugin-mkcert": "^1.17.6"
 	},
 	"dependencies": {
+		"@codemirror/lang-javascript": "^6.2.5",
 		"@fortawesome/fontawesome-free": "^6.6.0",
 		"@threlte/core": "^8.0.0-next.38",
 		"@threlte/extras": "^9.0.0-next.51",
 		"@threlte/xr": "^1.0.0-next.15",
 		"@xyflow/svelte": "^0.1.23",
+		"codemirror": "^6.0.2",
 		"invert-color": "^2.0.0",
 		"peerjs": "^1.5.4",
 		"postprocessing": "^6.36.4",

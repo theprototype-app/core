@@ -8,6 +8,8 @@
 	};
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import Nodes from './editors/Nodes.svelte';
+	import ScriptPanel from './editors/ScriptPanel.svelte';
+	import NodeDesigner from './editors/NodeDesigner.svelte';
 </script>
 
 <Drawer
@@ -27,3 +29,6 @@
 		</SvelteFlowProvider>
 	</div>
 </Drawer>
+
+<ScriptPanel />
+<NodeDesigner />

@@ -3,6 +3,8 @@ import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations } from '../sto
 import { objectsGroup } from '../stores/sceneStore';
 import { animationTypes } from './nodeCatalog';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
+import { runScript } from './scriptRuntime';
+import { findNodeDef } from './customNodes';
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
@@ -122,6 +124,15 @@ export function notifyExternalMove(uuid) {
 /** @param {any} object @param {any} base @param {any} anim @param {number} time */
 function applyAnimation(object, base, anim, time) {
 	const data = anim.data || {};
+	if (anim.type === 'script') {
+		runScript(anim.id, data.code ?? '', object, base, data, time);
+		return;
+	}
+	if (anim.type === 'customnode') {
+		const def = findNodeDef(data.defId);
+		if (def) runScript(anim.id, def.code ?? '', object, base, data, time);
+		return;
+	}
 	if (moduleEffects[anim.type]) {
 		try {
 			moduleEffects[anim.type](object, base, data, time);
@@ -171,7 +182,14 @@ function tick(now) {
 	if (sceneObjects) {
 		edges.forEach((edge) => {
 			const source = nodes.find((n) => n.id === edge.source);
-			if (!source || (!animationTypes.includes(source.type) && !moduleEffects[source.type])) return;
+			if (
+				!source ||
+				(!animationTypes.includes(source.type) &&
+					!moduleEffects[source.type] &&
+					source.type !== 'script' &&
+					source.type !== 'customnode')
+			)
+				return;
 			const uuid = targetUuidOf(edge);
 			if (!uuid) return;
 			if (!active.has(uuid)) active.set(uuid, []);

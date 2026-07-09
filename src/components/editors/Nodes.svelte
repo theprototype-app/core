@@ -19,8 +19,11 @@
 	import SwitcherNode from './nodes/SwitcherNode.svelte';
 	import ObjectSelectorNode from './nodes/ObjectSelectorNode.svelte';
 	import AnimationNode from './nodes/AnimationNode.svelte';
-	import { flowNodes as nodes, flowEdges as edges } from '../../stores/flowStore';
+	import ScriptNode from './nodes/ScriptNode.svelte';
+	import CustomNode from './nodes/CustomNode.svelte';
+	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen } from '../../stores/flowStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges } from '$lib/nodesHandler';
+	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username } from '../../stores/appStore';
@@ -43,6 +46,8 @@
 		orbit: AnimationNode,
 		pulse: AnimationNode,
 		blink: AnimationNode,
+		script: ScriptNode,
+		customnode: CustomNode,
 		...moduleTypes
 	};
 
@@ -79,7 +84,7 @@
 	// active context menu: { x, y, items }
 	let menu: any = null;
 
-	function addNode(type: string, label: string, position: { x: number; y: number }) {
+	function addNode(type: string, label: string, position: { x: number; y: number }, extraDefaults: any = null) {
 		const spec = findNodeSpec(type);
 		const newNode = {
 			id: crypto.randomUUID(),
@@ -88,7 +93,8 @@
 			data: {
 				label: label,
 				type: type,
-				...(spec?.defaults ?? {})
+				...(spec?.defaults ?? {}),
+				...(extraDefaults ?? {})
 			},
 			class: 'w-[150px]'
 		} satisfies Node;
@@ -113,6 +119,12 @@
 		if (!type) return;
 
 		const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+		// custom node defs are dragged as 'customnode:<defId>'
+		if (type.startsWith('customnode:')) {
+			const def = $customNodeDefs.find((d) => d.id === type.slice('customnode:'.length));
+			if (def) addNode('customnode', def.name, position, defDefaults(def));
+			return;
+		}
 		addNode(type, findNodeSpec(type)?.label ?? `${type} node`, position);
 	};
 
@@ -171,13 +183,25 @@
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
-			items: [...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
-				label: group.group,
-				children: group.items.map((item) => ({
-					label: item.label,
-					action: () => addNode(item.type, item.label, flowPos)
-				}))
-			}))
+			items: [
+				...[...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
+					label: group.group,
+					children: group.items.map((item) => ({
+						label: item.label,
+						action: () => addNode(item.type, item.label, flowPos)
+					}))
+				})),
+				{
+					label: 'Custom',
+					children: [
+						...$customNodeDefs.map((def) => ({
+							label: def.name,
+							action: () => addNode('customnode', def.name, flowPos, defDefaults(def))
+						})),
+						{ label: 'New custom node…', action: () => nodeDesignerOpen.set('new') }
+					]
+				}
+			]
 		};
 	};
 

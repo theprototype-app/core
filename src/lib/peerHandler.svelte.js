@@ -2,6 +2,7 @@ import Peer from 'peerjs';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters } from './commandsHandler.svelte';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
+import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs } from '$lib/customNodes';
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
 import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
@@ -191,6 +192,14 @@ export class PeerConnection {
 					applyNodesSnapshot(data.nodes, data.edges);
 				} else if(data.type == 'nodesync') {
 					applyNodeSync(data);
+				} else if(data.type == 'nodedef') {
+					applyNodeDef(data.def);
+				} else if(data.type == 'nodedefdelete') {
+					applyNodeDefDelete(data.id);
+				} else if(data.type == 'nodedefs') {
+					applyNodeDefsSnapshot(data.defs);
+				} else if(data.type == 'getnodedefs') {
+					sendNodeDefs(data.sender);
 				} else if(data.type == 'nodecreate') {
 					createFlowNode(data.node);
 				} else if(data.type == 'nodemove') {
@@ -256,6 +265,7 @@ export class PeerConnection {
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getmodulestate', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
 	}

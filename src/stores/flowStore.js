@@ -21,3 +21,19 @@ export const flowCursors = writable({});
 export const syncedAnimations = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('syncedAnimations') !== 'false'
 );
+
+// user-designed node definitions ({id, name, params, code}), replicated
+/** @type {import('svelte/store').Writable<any[]>} */
+export const customNodeDefs = writable([]);
+
+// script side panel: node id being edited (null = closed)
+/** @type {import('svelte/store').Writable<string | null>} */
+export const scriptEditorOpen = writable(null);
+
+// node designer modal: def being edited (null = closed, 'new' = create)
+/** @type {import('svelte/store').Writable<any>} */
+export const nodeDesignerOpen = writable(null);
+
+// nodeId -> last script error message (shown as a badge on the node)
+/** @type {import('svelte/store').Writable<Record<string, string>>} */
+export const scriptErrors = writable({});

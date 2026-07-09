@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { nodeCatalog } from '$lib/nodeCatalog';
 	import { moduleNodeGroups } from '$lib/moduleSDK';
+	import { customNodeDefs } from '../../stores/flowStore';
 
 	const onDragStart = (event: DragEvent, nodeType: string) => {
 		if (!event.dataTransfer) {
@@ -10,7 +11,18 @@
 		event.dataTransfer.effectAllowed = 'move';
 	};
 
-	$: catalog = [...nodeCatalog, ...$moduleNodeGroups];
+	$: catalog = [
+		...nodeCatalog,
+		...$moduleNodeGroups,
+		...($customNodeDefs.length > 0
+			? [
+					{
+						group: 'Custom',
+						items: $customNodeDefs.map((def) => ({ type: 'customnode:' + def.id, label: def.name }))
+					}
+				]
+			: [])
+	];
 </script>
 
 <aside class="flex flex-col gap-2 p-2">

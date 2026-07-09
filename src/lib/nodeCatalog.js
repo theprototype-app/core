@@ -26,6 +26,22 @@ export const nodeCatalog = [
 		items: [{ type: 'objectselector', label: 'Object Selector', defaults: { selected: '-None-' } }]
 	},
 	{
+		group: 'Logic',
+		items: [
+			{
+				type: 'script',
+				label: 'Script',
+				defaults: {
+					code:
+						'// runs every frame on every peer (keep it deterministic)\n' +
+						'// object: the connected THREE object; base: {pos, rot, scale, visible}\n' +
+						'// data: this node\'s data; time: synced seconds\n' +
+						'object.position.y = base.pos[1] + Math.sin(time * 2) * 0.5;\n'
+				}
+			}
+		]
+	},
+	{
 		group: 'Animation',
 		items: [
 			{

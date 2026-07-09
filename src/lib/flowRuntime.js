@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { animationTypes } from './nodeCatalog';
+import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
@@ -121,6 +122,14 @@ export function notifyExternalMove(uuid) {
 /** @param {any} object @param {any} base @param {any} anim @param {number} time */
 function applyAnimation(object, base, anim, time) {
 	const data = anim.data || {};
+	if (moduleEffects[anim.type]) {
+		try {
+			moduleEffects[anim.type](object, base, data, time);
+		} catch (error) {
+			console.log('module effect ' + anim.type + ' failed', error);
+		}
+		return;
+	}
 	if (anim.type === 'shake') {
 		const intensity = data.intensity ?? 0.2;
 		const speed = data.speed ?? 10;
@@ -162,7 +171,7 @@ function tick(now) {
 	if (sceneObjects) {
 		edges.forEach((edge) => {
 			const source = nodes.find((n) => n.id === edge.source);
-			if (!source || !animationTypes.includes(source.type)) return;
+			if (!source || (!animationTypes.includes(source.type) && !moduleEffects[source.type])) return;
 			const uuid = targetUuidOf(edge);
 			if (!uuid) return;
 			if (!active.has(uuid)) active.set(uuid, []);
@@ -191,6 +200,14 @@ function tick(now) {
 		// reset to base, then let each animation add its offset
 		restoreBase(object, base);
 		anims.forEach((anim) => applyAnimation(object, base, anim, time));
+	});
+
+	moduleFrameTasks.forEach((task) => {
+		try {
+			task(time);
+		} catch (error) {
+			console.log('module frame task failed', error);
+		}
 	});
 
 	requestAnimationFrame(tick);

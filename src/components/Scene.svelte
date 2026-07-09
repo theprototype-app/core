@@ -11,6 +11,7 @@
 	import { selectObject, deselectObject, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
+	import { moduleClickHandlers } from '$lib/moduleSDK';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
 	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
@@ -174,6 +175,14 @@
 	function raycastSelect() {
 		const hits = selectionRaycaster.intersectObjects($objectsGroup.children, true);
 		if (hits.length > 0) {
+			// modules may consume the click (buttons, instruments, ...)
+			for (const handler of moduleClickHandlers) {
+				try {
+					if (handler(hits[0].object)) return true;
+				} catch (error) {
+					console.log('module click handler failed', error);
+				}
+			}
 			const target = topLevelObjectOf(hits[0].object);
 			if (target) {
 				selectObject(target.uuid, true);

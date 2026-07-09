@@ -1,6 +1,10 @@
 // Catalog of all available node types, grouped for the palette and context menu.
 // `defaults` seeds node.data on creation (and gets replicated to peers with the node).
 // `params` describes the controls rendered by AnimationNode-style generic nodes.
+// Modules contribute additional groups through moduleNodeGroups (moduleSDK).
+
+import { get } from 'svelte/store';
+import { moduleNodeGroups } from './moduleSDK';
 
 /**
  * @typedef {{ key: string, kind: 'range' | 'select', min?: number, max?: number, step?: number, options?: string[] }} NodeParam
@@ -90,6 +94,10 @@ export const animationTypes = ['shake', 'spin', 'bounce', 'orbit', 'pulse', 'bli
 /** @param {string} type */
 export function findNodeSpec(type) {
 	for (const group of nodeCatalog) {
+		const item = group.items.find((i) => i.type === type);
+		if (item) return item;
+	}
+	for (const group of get(moduleNodeGroups)) {
 		const item = group.items.find((i) => i.type === type);
 		if (item) return item;
 	}

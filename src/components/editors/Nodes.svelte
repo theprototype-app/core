@@ -10,7 +10,7 @@
 	} from '@xyflow/svelte';
 	// 👇 this is important! You need to import the styles for Svelte Flow to work
 	import '@xyflow/svelte/dist/style.css';
-	import { writable } from 'svelte/store';
+	import { writable, get } from 'svelte/store';
 	import Sidebar from './Sidebar.svelte';
 	import PeerCursors from './PeerCursors.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -22,8 +22,16 @@
 	import { flowNodes as nodes, flowEdges as edges } from '../../stores/flowStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges } from '$lib/nodesHandler';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
+	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username } from '../../stores/appStore';
 
+	// module node types default to the spec-driven AnimationNode unless the
+	// module registered its own component
+	const moduleTypes = Object.fromEntries(
+		get(moduleNodeGroups)
+			.flatMap((group) => group.items)
+			.map((item) => [item.type, moduleNodeComponents[item.type] ?? AnimationNode])
+	);
 	const nodeTypes = {
 		colorpicker: ColorPickerNode,
 		slider: SliderNode,
@@ -34,7 +42,8 @@
 		bounce: AnimationNode,
 		orbit: AnimationNode,
 		pulse: AnimationNode,
-		blink: AnimationNode
+		blink: AnimationNode,
+		...moduleTypes
 	};
 
 	const snapGrid: [number, number] = [25, 25];
@@ -162,7 +171,7 @@
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
-			items: nodeCatalog.map((group) => ({
+			items: [...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
 				label: group.group,
 				children: group.items.map((item) => ({
 					label: item.label,

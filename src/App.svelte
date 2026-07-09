@@ -12,6 +12,12 @@
   import { startAutosave } from '$lib/autosave'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast } from './stores/appStore'
+  import { initModules } from '$lib/moduleSDK'
+  import { enabledModules } from './modules/index.js'
+
+  // before children mount: node components/effects must exist when the
+  // flow editor and runtime first look them up
+  initModules(enabledModules)
 
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
@@ -35,9 +41,10 @@
         import('./lib/history'),
         import('./lib/materialsHandler'),
         import('./lib/objectActions'),
-        import('./lib/commandsHandler.svelte')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler }
+        import('./lib/commandsHandler.svelte'),
+        import('./lib/moduleSDK')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK }
       })
     }
   })

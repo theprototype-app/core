@@ -12,6 +12,7 @@
 	import { backgroundColor } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
+	import { modulePrimitiveGroups, moduleMenuItems } from '$lib/moduleSDK';
 	import { sineIn } from 'svelte/easing';
 
 	import {
@@ -87,7 +88,7 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 <Sidebar>
 	<SidebarWrapper>
 		<SidebarGroup>
-			{#each primitivesCatalog as catalogGroup}
+			{#each [...primitivesCatalog, ...$modulePrimitiveGroups] as catalogGroup}
 			<SidebarDropdownWrapper label={catalogGroup.group}>
 				<svelte:fragment slot="arrowup">
 					<svg
@@ -207,12 +208,18 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 			</SidebarItem>
 			<SidebarItem
 				label="Library"
-				
+
 				on:click={() => {
 					showSidebar('library');
 				}}>
-				
+
 				</SidebarItem>
+			{#if $moduleMenuItems.length > 0}
+				<p class="mt-2 px-2 text-xs font-semibold uppercase text-gray-400">Modules</p>
+				{#each $moduleMenuItems as item}
+					<SidebarItem label={item.label} on:click={item.action}></SidebarItem>
+				{/each}
+			{/if}
 		</SidebarGroup>
 		{#key rerenderInput}
 			<input type="file" id="import-file" style="display: none" on:input={e => { importFile(e.target.files[0])}} accept=".gltf, .glb, .obj, .stl, .fbx" />

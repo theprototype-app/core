@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { nodeCatalog } from '$lib/nodeCatalog';
+	import { moduleNodeGroups } from '$lib/moduleSDK';
 
 	const onDragStart = (event: DragEvent, nodeType: string) => {
 		if (!event.dataTransfer) {
@@ -8,11 +9,13 @@
 		event.dataTransfer.setData('application/svelteflow', nodeType);
 		event.dataTransfer.effectAllowed = 'move';
 	};
+
+	$: catalog = [...nodeCatalog, ...$moduleNodeGroups];
 </script>
 
 <aside class="flex flex-col gap-2 p-2">
 	<p class="text-center text-xs italic text-gray-400">Drag a node to the canvas</p>
-	{#each nodeCatalog as group}
+	{#each catalog as group}
 		<p class="mt-1 text-xs font-semibold uppercase text-gray-400">{group.group}</p>
 		{#each group.items as node}
 			<div

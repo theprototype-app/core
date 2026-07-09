@@ -7,6 +7,7 @@ import { applyVerts } from '$lib/meshEdit';
 import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
+import { applyModuleMessage, moduleVersions, checkModuleVersions, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -206,6 +207,14 @@ export class PeerConnection {
 					applyFlowCursor(data);
 				} else if(data.type == 'ping') {
 					applyPing(data);
+				} else if(data.type == 'module') {
+					applyModuleMessage(data);
+				} else if(data.type == 'modules') {
+					checkModuleVersions(data.versions);
+				} else if(data.type == 'getmodulestate') {
+					sendModuleStates(data.sender);
+				} else if(data.type == 'modulestate') {
+					applyModuleStates(data.states);
 				} else if(data.type == 'annotation') {
 					applyAnnotation(data);
 				} else if(data.type == 'annotations') {
@@ -242,9 +251,11 @@ export class PeerConnection {
 		conn.send({type: 'locked', lockeditems: locks})
 		conn.send({type: 'hosts', hosts: hosts})
 		conn.send({type: 'userdata', userdata: users})
+		conn.send({type: 'modules', versions: moduleVersions()})
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getmodulestate', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
 	}

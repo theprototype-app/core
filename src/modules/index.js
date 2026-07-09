@@ -4,5 +4,6 @@
 
 import hello from './hello/module.js';
 import button from './button/module.js';
+import dungeon from './dungeon/module.js';
 
-export const enabledModules = [hello, button];
+export const enabledModules = [hello, button, dungeon];

@@ -41,5 +41,9 @@ export const vrMenuOpen = writable(false);
 export const vrSnapAngle = writable(
 	typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('vrSnapAngle') || '45') : 45
 );
+// VR flying: left-stick movement follows the controller aim (pitch included)
+export const vrFlying = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('vrFlying') === 'true'
+);
 /** @type {import('svelte/store').Writable<'move' | 'rotate'>} grab behavior; scale is always two-handed */
 export const vrTransformMode = writable('move');

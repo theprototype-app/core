@@ -115,10 +115,46 @@ function updateRaysAndHover(presenting) {
 	}
 }
 
-/** Thumbstick flick on the pointer hand rotates the rig in snaps around the viewer */
+/**
+ * Pure locomotion math (agreed VR map): left stick moves/strafes — toward the
+ * aim direction when flying, horizontally otherwise; holding the left grip
+ * switches the stick to the old pan/elevate behavior. Offsets follow the
+ * reference-space convention used across this file (positive = viewer moves
+ * along negative axis), matching the previous stick feel.
+ * @param {{x: number, y: number, grip: boolean, flying: boolean, aimDir: {x:number,y:number,z:number}, cameraDir: {x:number,y:number,z:number}, speed?: number}} input
+ */
+export function computeMoveOffset({ x, y, grip, flying, aimDir, cameraDir, speed = 0.05 }) {
+	const offset = { x: 0, y: 0, z: 0 };
+	const dead = (v) => (Math.abs(v) > 0.15 ? v : 0);
+	const sx = dead(x);
+	const sy = dead(y);
+	if (!sx && !sy) return offset;
+
+	if (grip) {
+		// pan/elevate (the old left-stick behavior)
+		offset.x += speed * 2 * sx * cameraDir.z;
+		offset.z += -speed * 2 * sx * cameraDir.x;
+		offset.y += speed * 2 * sy;
+		return offset;
+	}
+
+	// forward/back along the aim (fly) or the horizontal camera direction
+	// (stick up = axes[3] negative = forward, same sign rule the old code used)
+	const dir = flying ? aimDir : { x: cameraDir.x, y: 0, z: cameraDir.z };
+	const length = Math.hypot(dir.x, dir.y, dir.z) || 1;
+	const forward = { x: dir.x / length, y: dir.y / length, z: dir.z / length };
+	offset.x += speed * sy * forward.x;
+	offset.y += flying ? speed * sy * forward.y : 0;
+	offset.z += speed * sy * forward.z;
+	// strafe stays horizontal
+	offset.x += speed * sx * cameraDir.z;
+	offset.z += -speed * sx * cameraDir.x;
+	return offset;
+}
+
+/** Thumbstick flick on the RIGHT hand rotates the rig in snaps around the viewer */
 function updateSnapTurn(session) {
-	const pointerHand = get(vrMenuHand) === 'right' ? 'left' : 'right';
-	const source = [...session.inputSources].find((s) => s.handedness === pointerHand);
+	const source = [...session.inputSources].find((s) => s.handedness === 'right');
 	const x = source?.gamepad?.axes?.[2] ?? 0;
 	if (Math.abs(x) < 0.4) {
 		snapArmed = true;
@@ -219,11 +255,21 @@ function endGrab(object, before) {
 	resumeAnimation(object.uuid); // release spot becomes the new animation base
 }
 
+/** @type {{index: number, prev: any} | null} right-grip drag-the-world pan */
+let worldPan = null;
+
 /** @param {number} index */
 function onSqueezeStart(index) {
 	if (!get(objectsGroup)) return;
 	const hits = controllerRay(index).intersectObjects(get(objectsGroup).children, true);
-	if (hits.length === 0) return;
+	if (hits.length === 0) {
+		// gripping air with the RIGHT hand pans the world with the controller
+		const session = renderer?.xr.getSession();
+		const handedness = session ? [...session.inputSources][index]?.handedness : null;
+		if (handedness === 'right')
+			worldPan = { index, prev: renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()) };
+		return;
+	}
 	const object = topLevelObjectOf(hits[0].object);
 	if (!object) return;
 	if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) return;
@@ -255,6 +301,7 @@ function onSqueezeStart(index) {
 
 /** @param {number} index */
 function onSqueezeEnd(index) {
+	if (worldPan?.index === index) worldPan = null;
 	if (scaleGrab) {
 		endGrab(scaleGrab.object, scaleGrab.before);
 		scaleGrab = null;
@@ -367,8 +414,8 @@ export function updateVRControls() {
 		const buttons = source.gamepad.buttons;
 		const prev = previousButtons[index];
 
-		// A/X (or B/Y) on the menu hand toggles the quick-menu
-		const menuPressed = !!(buttons[4]?.pressed || buttons[5]?.pressed);
+		// B/Y on the menu hand toggles the quick-menu (A is push-to-talk)
+		const menuPressed = !!buttons[5]?.pressed;
 		if (menuPressed && !prev.menu && source.handedness === get(vrMenuHand))
 			vrMenuOpen.update((v) => !v);
 		prev.menu = menuPressed;
@@ -402,6 +449,20 @@ export function updateVRControls() {
 
 	if (scaleGrab) updateScaleGrab();
 	else if (grab) updateGrab();
+
+	// drag-the-world: the grabbed spot follows the hand (prev stays fixed at
+	// grab start — the applied offset self-corrects the measured delta)
+	if (worldPan) {
+		const current = renderer.xr.getController(worldPan.index).getWorldPosition(new THREE.Vector3());
+		const delta = current.sub(worldPan.prev);
+		if (delta.lengthSq() > 1e-8) {
+			const space = renderer.xr.getReferenceSpace();
+			if (space)
+				renderer.xr.setReferenceSpace(
+					space.getOffsetReferenceSpace(new XRRigidTransform({ x: delta.x, y: delta.y, z: delta.z }))
+				);
+		}
+	}
 
 	// hover highlight for menu tiles (pointer = the non-menu hand)
 	if (get(vrMenuOpen)) {

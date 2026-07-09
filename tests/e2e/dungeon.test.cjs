@@ -1,0 +1,62 @@
+﻿// Phase 33: dungeon module — identical seed-generated dungeon on peers + late joiner, clear syncs.
+const h = require('./helpers.cjs');
+
+const dungeonData = (page) =>
+	page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.globalScene.subscribe((scene) => {
+					const group = scene?.getObjectByName('dungeon-module');
+					resolve(group ? { ...group.userData } : null);
+				})();
+			})
+	);
+
+h.run(async () => {
+	const browser = await h.launch();
+	const A = await h.setupPage(browser, 'A');
+	const B = await h.setupPage(browser, 'B');
+	await h.connect(B, A);
+
+	// open the panel through the registered module menu action
+	await A.page.evaluate(() => {
+		return new Promise((resolve) => {
+			window.__stores.moduleSDK.moduleMenuItems.subscribe((items) => {
+				items.find((i) => i.label === 'Dungeon generator').action();
+				resolve();
+			})();
+		});
+	});
+	await A.page.waitForTimeout(500);
+	h.check(await A.page.locator('#dungeon-panel').isVisible(), 'dungeon panel opens from module menu');
+
+	await A.page.locator('#dungeon-seed').fill('12345');
+	await A.page.locator('#dungeon-panel input[type="range"]').first().fill('60');
+	await A.page.locator('#dungeon-generate').click();
+	await A.page.waitForTimeout(1500);
+
+	const a = await dungeonData(A.page);
+	h.check(!!a && a.rooms === 60, `dungeon generated on A (${a?.rooms} rooms)`);
+	h.check(a && a.ms < 50, `60-room generation under 50 ms (${a?.ms} ms)`);
+
+	await h.eventually(
+		() => dungeonData(B.page),
+		(b) => b && b.checksum === a.checksum,
+		`identical dungeon on B (checksum ${a?.checksum})`
+	);
+
+	const C = await h.setupPage(browser, 'C');
+	await h.connect(C, A);
+	await h.eventually(
+		() => dungeonData(C.page),
+		(c) => c && c.checksum === a.checksum,
+		'late joiner rebuilt the same dungeon from state sync',
+		15000
+	);
+
+	await A.page.locator('#dungeon-panel button:has-text("Clear")').click();
+	await h.eventually(() => dungeonData(A.page), (d) => d === null, 'clear removes it on A');
+	await h.eventually(() => dungeonData(B.page), (d) => d === null, 'clear replicates to B');
+
+	await h.finish(browser);
+});

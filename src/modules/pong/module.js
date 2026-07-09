@@ -194,6 +194,7 @@ export default {
 	id: 'pong',
 	name: 'Pong',
 	version: '1.0.0',
+	description: 'Two-player pong table: claim a paddle, spawner simulates the ball.',
 	/** @param {any} api */
 	register(api) {
 		apiRef = api;

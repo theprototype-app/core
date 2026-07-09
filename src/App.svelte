@@ -14,12 +14,14 @@
   import { startAutosave } from '$lib/autosave'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast } from './stores/appStore'
-  import { initModules } from '$lib/moduleSDK'
-  import { enabledModules } from './modules/index.js'
+  import { get } from 'svelte/store'
+  import { initModules, disabledModules } from '$lib/moduleSDK'
+  import { coreModules } from './modules/index.js'
+  import ModulesManager from './components/menu/ModulesManager.svelte'
 
   // before children mount: node components/effects must exist when the
   // flow editor and runtime first look them up
-  initModules(enabledModules)
+  initModules(coreModules.filter((mod) => !get(disabledModules).includes(mod.id)))
 
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
@@ -83,6 +85,7 @@
 {/if}
 <Menu />
 <DrawToolbar />
+<ModulesManager />
 
 <Canvas>
   <Scene />

@@ -118,6 +118,7 @@ export default {
 	id: 'dungeon',
 	name: 'Dungeon generator',
 	version: '1.0.0',
+	description: 'Seed-replicated procedural dungeon generator (rooms, corridors, torches).',
 	/** @param {any} api */
 	register(api) {
 		apiRef = api;

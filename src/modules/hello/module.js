@@ -6,6 +6,7 @@ export default {
 	id: 'hello',
 	name: 'Hello Wave',
 	version: '1.0.0',
+	description: 'Reference module: a Wave animation node that rocks objects.',
 	/** @param {any} api */
 	register(api) {
 		api.registerNodeGroup({

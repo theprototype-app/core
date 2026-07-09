@@ -12,7 +12,8 @@
 	import { backgroundColor } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
-	import { modulePrimitiveGroups, moduleMenuItems } from '$lib/moduleSDK';
+	import { modulePrimitiveGroups } from '$lib/moduleSDK';
+	import { modulesOpen } from '../../stores/appStore.js';
 	import { sineIn } from 'svelte/easing';
 
 	import {
@@ -214,12 +215,13 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 				}}>
 
 				</SidebarItem>
-			{#if $moduleMenuItems.length > 0}
-				<p class="mt-2 px-2 text-xs font-semibold uppercase text-gray-400">Modules</p>
-				{#each $moduleMenuItems as item}
-					<SidebarItem label={item.label} on:click={item.action}></SidebarItem>
-				{/each}
-			{/if}
+			<div id="open-modules-manager">
+				<SidebarItem
+					label="Modules"
+					on:click={() => {
+						modulesOpen.set(true);
+					}}></SidebarItem>
+			</div>
 		</SidebarGroup>
 		{#key rerenderInput}
 			<input type="file" id="import-file" style="display: none" on:input={e => { importFile(e.target.files[0])}} accept=".gltf, .glb, .obj, .stl, .fbx" />

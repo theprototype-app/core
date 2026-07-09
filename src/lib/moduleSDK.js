@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, modulesOpen } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
 
@@ -145,21 +145,68 @@ export function runtimeNow() {
 	return get(syncedAnimations) ? (Date.now() % 86400000) / 1000 : performance.now() / 1000;
 }
 
-let initialized = false;
-
-/** Load the enabled modules (once) @param {any[]} modules */
+/**
+ * Register modules. Re-callable: already-loaded ids are skipped, so the
+ * manager can live-enable additional modules after boot. Disabling only
+ * takes effect on reload (SDK v1 registries have no unregister).
+ * @param {any[]} modules
+ */
 export function initModules(modules) {
-	if (initialized) return;
-	initialized = true;
 	modules.forEach((mod) => {
+		if (loadedModules.some((m) => m.id === mod.id)) return;
 		try {
 			mod.register(makeApi(mod.id));
-			loadedModules.push({ id: mod.id, name: mod.name, version: mod.version });
+			loadedModules.push({ id: mod.id, name: mod.name, version: mod.version, description: mod.description });
 			console.log('module loaded: ' + mod.id + ' v' + mod.version);
 		} catch (error) {
 			console.log('module ' + mod.id + ' failed to register', error);
+			showToast('Module "' + mod.id + '" failed to load');
 		}
 	});
+	loadedModulesChanged.update((n) => n + 1);
+}
+
+/** bumps whenever loadedModules changes (loadedModules is a plain array) */
+export const loadedModulesChanged = writable(0);
+
+/** @param {string} id */
+export function isModuleLoaded(id) {
+	return loadedModules.some((m) => m.id === id);
+}
+
+// --- enable/disable (persisted; disable applies on reload) ---
+
+function readDisabled() {
+	try {
+		return JSON.parse(localStorage.getItem('disabledModules') ?? '[]');
+	} catch {
+		return [];
+	}
+}
+
+/** @type {import('svelte/store').Writable<string[]>} */
+export const disabledModules = writable(
+	typeof localStorage === 'undefined' ? [] : readDisabled()
+);
+disabledModules.subscribe((list) => {
+	if (typeof localStorage !== 'undefined')
+		localStorage.setItem('disabledModules', JSON.stringify(list));
+});
+
+/**
+ * Toggle a module. Enabling registers it live (pass the module object);
+ * disabling persists and asks for a reload.
+ * @param {any} mod @param {boolean} enabled
+ */
+export function setModuleEnabled(mod, enabled) {
+	disabledModules.update((list) =>
+		enabled ? list.filter((id) => id !== mod.id) : [...new Set([...list, mod.id])]
+	);
+	if (enabled) {
+		if (!isModuleLoaded(mod.id)) initModules([mod]);
+	} else if (isModuleLoaded(mod.id)) {
+		showToast('"' + mod.name + '" disabled — reload the page to fully remove it');
+	}
 }
 
 // --- peer plumbing (used by peerHandler) ---
@@ -182,15 +229,20 @@ export function moduleVersions() {
 /** Toast when a peer runs different modules @param {{id: string, version: string}[]} remote */
 export function checkModuleVersions(remote) {
 	if (!Array.isArray(remote)) return;
+	const openManager = [{ label: 'Modules', action: () => modulesOpen.set(true) }];
 	remote.forEach((r) => {
 		const local = loadedModules.find((m) => m.id === r.id);
-		if (!local) showToast('Peer uses module "' + r.id + '" you do not have — things may look different');
+		if (!local)
+			showToast('Peer uses module "' + r.id + '" you do not have — things may look different', openManager);
 		else if (local.version !== r.version)
-			showToast('Module "' + r.id + '" version differs (you ' + local.version + ', peer ' + r.version + ')');
+			showToast(
+				'Module "' + r.id + '" version differs (you ' + local.version + ', peer ' + r.version + ')',
+				openManager
+			);
 	});
 	loadedModules.forEach((m) => {
 		if (!remote.find((r) => r.id === m.id))
-			showToast('Peer does not have module "' + m.id + '" — things may look different');
+			showToast('Peer does not have module "' + m.id + '" — things may look different', openManager);
 	});
 }
 

@@ -100,6 +100,9 @@ export const waitingForApproval = writable([]);
 /** @type {import('svelte/store').Writable<any[]>} strings or {text, actions} */
 export const toastStore = writable([]);
 
+// modules manager modal
+export const modulesOpen = writable(false);
+
 /**
  * Plain string = 3s info toast. Pass `actions` ([{label, action}]) for a
  * sticky decision toast (15s) with buttons.

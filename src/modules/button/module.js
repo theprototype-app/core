@@ -22,6 +22,7 @@ export default {
 	id: 'button',
 	name: 'Button & door',
 	version: '1.0.0',
+	description: 'Clickable button/actuator that slides a door object through the graph.',
 	/** @param {any} api */
 	register(api) {
 		// distinctive squat button shape (base plate + cap), one mesh

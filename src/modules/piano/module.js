@@ -95,6 +95,7 @@ export default {
 	id: 'piano',
 	name: 'Piano',
 	version: '1.0.0',
+	description: 'One-octave synth keyboard - every peer hears and sees your notes.',
 	/** @param {any} api */
 	register(api) {
 		apiRef = api;

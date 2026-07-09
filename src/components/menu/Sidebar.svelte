@@ -34,6 +34,10 @@
 
 	let saveFormat = 'json';
 	let spanClass = 'flex-1 ms-3 whitespace-nowrap';
+	let sectionLabel = 'mb-1 mt-3 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400';
+	let fileButton =
+		'bg-white px-1 py-2 text-xs font-medium text-gray-900 hover:bg-gray-100 hover:text-blue-700\
+		dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 dark:hover:text-white';
 	let saveClass =
 		'px-4 py-2 text-sm font-medium text-gray-900 border-gray-200 hover:bg-gray-100\
 	hover:text-blue-700 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-800\
@@ -89,6 +93,7 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 <Sidebar>
 	<SidebarWrapper>
 		<SidebarGroup>
+			<p class={sectionLabel}>Create</p>
 			{#each [...primitivesCatalog, ...$modulePrimitiveGroups] as catalogGroup}
 			<SidebarDropdownWrapper label={catalogGroup.group}>
 				<svelte:fragment slot="arrowup">
@@ -200,27 +205,29 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 		
 			<SidebarItem
 				label="Create Group"
-				
 				on:click={() => {
 					showSidebar('properties');
 					sceneCommand('/group New');
 				}}>
-				
+				<svelte:fragment slot="icon">➕</svelte:fragment>
 			</SidebarItem>
+
+			<p class={sectionLabel}>Assets</p>
 			<SidebarItem
 				label="Library"
-
 				on:click={() => {
 					showSidebar('library');
 				}}>
-
-				</SidebarItem>
+				<svelte:fragment slot="icon">📚</svelte:fragment>
+			</SidebarItem>
 			<div id="open-modules-manager">
 				<SidebarItem
 					label="Modules"
 					on:click={() => {
 						modulesOpen.set(true);
-					}}></SidebarItem>
+					}}>
+					<svelte:fragment slot="icon">🧩</svelte:fragment>
+				</SidebarItem>
 			</div>
 		</SidebarGroup>
 		{#key rerenderInput}
@@ -229,58 +236,58 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 		{/key}
 		<SidebarGroup border>
 
-			<div class="" role="group">
-				<div class="inline-flex shadow-sm " role="group">
-				<button type="button" class={saveClass + " border rounded-tr-lg rounded-tl-lg"}
-				on:click={() => { 
+			<p class={sectionLabel}>Files</p>
+			<div
+				class="grid grid-cols-4 overflow-hidden rounded-lg border border-gray-200 shadow-sm dark:border-gray-700"
+				role="group"
+			>
+				<button type="button" class={fileButton}
+				on:click={() => {
 					document.getElementById('import-file').click()
 					// Toggle rerenderInput to refresh the input type file HTML elements
 					// and we want to load same object even if it is selected twice
         			rerenderInput = rerenderInput ? false : true
-				}
-			}>
-				  📩 Import&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+				}}>
+					📩<br />Import
 				</button>
-				</div>
-			<div class="inline-flex rounded-md shadow-sm">
-        <div class="inline-flex rounded-md shadow-sm" role="group">
-			<button type="button" class={saveClass + " border "}
-			on:click={() => document.getElementById('load-file').click()}>
-			  📁<br />Load
-			</button>
-			<button type="button" class={saveClass + " border-t border-b border-r"}
-			on:click={() => save(saveFormat)}>
-			  💾<br />Save
-			</button>
-			<button type="button" class="px-1 py-2 text-sm font-medium text-gray-900 bg-white border-t border-b border-r border-gray-200 hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:hover:text-white dark:hover:bg-gray-700 dark:focus:ring-blue-500 dark:focus:text-white"
-			>
-		   
-			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<polyline points="18 9 12 15 6 9"></polyline>
-			</svg>    
-			
-			</button>
-			<Dropdown placement='bottom' class="w-44 p-3 space-y-3 text-sm">
-			  <li>
-				<Radio name="group1" bind:group={saveFormat} value={'scene'} disabled>Scene</Radio>
-			  </li>
-			  <li>
-				<Radio name="group1" bind:group={saveFormat} value={'json'}>JSON</Radio>
-			  </li>
-			  <li>
-				<Radio name="group1" bind:group={saveFormat} value={'gltf'}>GLTF</Radio>
-			  </li>
-			</Dropdown>
-		</div>
-	</div>
-	</div>
+				<button type="button" class={fileButton + ' border-l border-gray-200 dark:border-gray-700'}
+				on:click={() => document.getElementById('load-file').click()}>
+					📁<br />Load
+				</button>
+				<button type="button" class={fileButton + ' border-l border-gray-200 dark:border-gray-700'}
+				on:click={() => save(saveFormat)}>
+					💾<br />Save
+				</button>
+				<button
+					type="button"
+					title="Save format"
+					class={fileButton + ' border-l border-gray-200 dark:border-gray-700'}
+				>
+					<span class="text-[9px] uppercase text-gray-400">{saveFormat}</span><br />▾
+				</button>
+				<Dropdown placement='bottom' class="w-44 p-3 space-y-3 text-sm">
+				  <li>
+					<Radio name="group1" bind:group={saveFormat} value={'scene'} disabled>Scene</Radio>
+				  </li>
+				  <li>
+					<Radio name="group1" bind:group={saveFormat} value={'json'}>JSON</Radio>
+				  </li>
+				  <li>
+					<Radio name="group1" bind:group={saveFormat} value={'gltf'}>GLTF</Radio>
+				  </li>
+				</Dropdown>
+			</div>
+
+			<p class={sectionLabel}>Scene</p>
 			<SidebarItem
 				label="Configure Scene"
 				{spanClass}
 				on:click={() => {
 					showSidebar('scene');
 				}}
-			></SidebarItem>
+			>
+				<svelte:fragment slot="icon">🎛️</svelte:fragment>
+			</SidebarItem>
 			<SidebarItem
 				label="Clear Scene"
 				{spanClass}
@@ -289,8 +296,11 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 					propertiesClose.set(true);
 					sceneCommand('/clear all');
 				}}
-			></SidebarItem>
+			>
+				<svelte:fragment slot="icon">🗑️</svelte:fragment>
+			</SidebarItem>
 
+			<p class={sectionLabel}>App</p>
 			<SidebarItem
 				label="Settings"
 				{spanClass}

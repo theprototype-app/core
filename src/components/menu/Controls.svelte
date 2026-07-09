@@ -279,8 +279,8 @@
 			if (uuid) { e.preventDefault(); moveObjectToGroup(uuid, 'root'); }
 		}}
 	>
-	<Listgroup class="move-handle p-1 text-center text-xl font-medium text-gray-900 dark:text-gray-400 -rounded rounded-tr rounded-tl cursor-move">
-		List of objects
+	<Listgroup class="move-handle cursor-move -rounded rounded-tl-lg rounded-tr-lg border-b border-gray-300 p-1.5 text-center text-sm font-semibold uppercase tracking-wide text-gray-700 dark:border-gray-600 dark:text-gray-200">
+		☰&nbsp; Objects
 	</Listgroup>
 	</div>
 	<div class="flex flex-col gap-1 bg-gray-100 p-1 text-xs dark:bg-gray-700">

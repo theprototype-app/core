@@ -212,11 +212,14 @@ function sendTransformUpdate() {
 	class="rounded-tl-lg"
 	id="sidebar6"
   >
-    <div class="flex items-center">
-      <h5 id="drawer-label" class="inline-flex items-center mb-4 text-base font-semibold text-gray-500 dark:text-gray-400">
-        {$selectedObject.type} Properties
+    <div class="mb-3 flex items-center">
+      <h5 id="drawer-label" class="inline-flex items-center gap-2 text-base font-semibold text-gray-600 dark:text-gray-200">
+        <span class="rounded-full bg-primary-700 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
+          {$selectedObject.type}
+        </span>
+        Properties
       </h5>
-      <CloseButton on:click={() => {(propertiesClose.set(true)); st=0}} class="mb-4 dark:text-white" />
+      <CloseButton on:click={() => {(propertiesClose.set(true)); st=0}} class="dark:text-white" />
     </div>
     {#if $selectedObject.name !== undefined}
     {st=null}
@@ -234,7 +237,7 @@ function sendTransformUpdate() {
         }} />
         <Tooltip placement='top' arrow={false} triggeredBy="#name">Name</Tooltip>
     
-    <Input id="uuid" class="text-white dark:text-slate-200 -rounded rounded-bl-lg rounded-br-lg" disabled value={$selectedObject.uuid} />
+    <Input id="uuid" class="text-xs text-gray-400 dark:text-gray-400 -rounded rounded-bl-lg rounded-br-lg" disabled value={$selectedObject.uuid} />
     <Tooltip placement='bottom' arrow={false} triggeredBy="#uuid">UUID</Tooltip>
     
     <p

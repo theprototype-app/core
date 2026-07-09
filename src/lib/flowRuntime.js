@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { animationTypes } from './nodeCatalog';
@@ -16,6 +17,8 @@ let synced = true;
 
 // objectUuid -> captured base transform, restored when its animations are removed
 const baseState = new Map();
+// animated objects whose animation is paused while the user drags them
+const suspended = new Set();
 
 /** @param {any} object */
 function captureBase(object) {
@@ -52,12 +55,67 @@ function applyColors() {
 	if (!sceneObjects) return;
 	edges.forEach((edge) => {
 		const source = nodes.find((n) => n.id === edge.source);
-		if (source?.type !== 'colorpicker' || !source.data?.color) return;
+		if (!source) return;
 		const uuid = targetUuidOf(edge);
 		if (!uuid) return;
 		const object = sceneObjects.getObjectByProperty('uuid', uuid);
-		if (object?.material?.color) object.material.color.set(source.data.color);
+		if (!object) return;
+
+		if (source.type === 'colorpicker' && source.data?.color) {
+			if (object.material?.color) object.material.color.set(source.data.color);
+		} else if (source.type === 'slider') {
+			// slider scales its target (20 = neutral 1.0); animated targets scale via their base
+			const factor = Math.min(Math.max((source.data?.value ?? 20) / 20, 0.05), 5);
+			const base = baseState.get(uuid);
+			if (base) base.scale = [factor, factor, factor];
+			else object.scale.set(factor, factor, factor);
+		} else if (source.type === 'switcher' && object.geometry) {
+			const shape = source.data?.shape ?? 'cube';
+			if (object.userData.switcherShape !== shape) {
+				object.userData.switcherShape = shape;
+				object.geometry.dispose();
+				object.geometry =
+					shape === 'pyramid' ? new THREE.ConeGeometry(1.4, 2, 4) : new THREE.BoxGeometry(2, 2, 2);
+			}
+		}
 	});
+}
+
+/** Do the edges currently animate this object? @param {string} uuid */
+export function isAnimatedTarget(uuid) {
+	return baseState.has(uuid);
+}
+
+/**
+ * Pause the animation of an object while the user drags it: the object is
+ * put back at its logical base so the gizmo edits the base transform.
+ * @param {string} uuid
+ */
+export function suspendAnimation(uuid) {
+	if (!baseState.has(uuid) || suspended.has(uuid)) return;
+	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
+	if (object) restoreBase(object, baseState.get(uuid));
+	suspended.add(uuid);
+}
+
+/** Resume after a drag: the object's current transform becomes the new base @param {string} uuid */
+export function resumeAnimation(uuid) {
+	if (!suspended.has(uuid)) return;
+	suspended.delete(uuid);
+	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
+	if (object && baseState.has(uuid)) baseState.set(uuid, captureBase(object));
+}
+
+/**
+ * An external move (remote peer, undo, align-to-ground) just wrote the intended
+ * transform directly to the object — adopt it as the new animation base instead
+ * of overwriting it on the next tick.
+ * @param {string} uuid
+ */
+export function notifyExternalMove(uuid) {
+	if (!baseState.has(uuid) || suspended.has(uuid)) return;
+	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
+	if (object) baseState.set(uuid, captureBase(object));
 }
 
 /** @param {any} object @param {any} base @param {any} anim @param {number} time */
@@ -122,6 +180,7 @@ function tick(now) {
 	});
 
 	active.forEach((anims, uuid) => {
+		if (suspended.has(uuid)) return; // user is dragging it — leave it alone
 		const object = sceneObjects.getObjectByProperty('uuid', uuid);
 		if (!object) {
 			baseState.delete(uuid);

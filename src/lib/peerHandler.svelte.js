@@ -1,7 +1,7 @@
 import Peer from 'peerjs';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters } from './commandsHandler.svelte';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
-import { sendNodes, applyNodesSnapshot, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
+import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
 import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
@@ -188,6 +188,8 @@ export class PeerConnection {
 					sendNodes(data.sender);
 				} else if(data.type == 'nodes') {
 					applyNodesSnapshot(data.nodes, data.edges);
+				} else if(data.type == 'nodesync') {
+					applyNodeSync(data);
 				} else if(data.type == 'nodecreate') {
 					createFlowNode(data.node);
 				} else if(data.type == 'nodemove') {

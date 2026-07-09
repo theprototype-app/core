@@ -6,6 +6,7 @@
   import Flow from './components/Flow.svelte'
   import { isLocked } from './stores/sceneStore'
   import { startFlowRuntime } from '$lib/flowRuntime'
+  import { startNodeSync } from '$lib/nodesHandler'
   import { startShortcuts } from '$lib/shortcuts'
   import { startSnapping } from '$lib/snapping'
   import { startAutosave } from '$lib/autosave'
@@ -15,6 +16,7 @@
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
     startFlowRuntime()
+    startNodeSync()
     startShortcuts()
     startSnapping()
     startAutosave()
@@ -28,9 +30,10 @@
         import('./lib/vrControls'),
         import('./lib/autosave'),
         import('./lib/voiceChat'),
-        import('./lib/annotationsHandler')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler }
+        import('./lib/annotationsHandler'),
+        import('./lib/flowRuntime')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime }
       })
     }
   })

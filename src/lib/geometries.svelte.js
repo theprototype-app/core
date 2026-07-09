@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
+import { notifyExternalMove } from '$lib/flowRuntime';
 import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject } from '../stores/sceneStore.js';
 
 //Access scene Store
@@ -157,6 +158,8 @@ export function moveGeometry(uuid, pos, rot, scale) {
         sceneObjects.getObjectByProperty('uuid', uuid).position.set(pos[0], pos[1], pos[2]);
         sceneObjects.getObjectByProperty('uuid', uuid).rotation.set(rot[0], rot[1], rot[2]);
         sceneObjects.getObjectByProperty('uuid', uuid).scale.set(scale[0], scale[1], scale[2]);
+        // a peer moved it: if it is animated here, this transform is the new base
+        notifyExternalMove(uuid);
     }
 }
 

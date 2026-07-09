@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
+import { notifyExternalMove } from '$lib/flowRuntime';
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
 // histories stay per-user.
@@ -54,6 +55,7 @@ function applyState(entry, state) {
 	object.position.fromArray(state.pos);
 	object.rotation.set(state.rot[0], state.rot[1], state.rot[2]);
 	object.scale.fromArray(state.scale);
+	notifyExternalMove(entry.uuid); // undoing an animated object rewrites its base
 	objectsGroup.update((value) => value);
 	/** @type {any} */
 	const peer = get(peers);

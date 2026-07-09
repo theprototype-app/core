@@ -10,6 +10,7 @@
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
 	import { selectObject, deselectObject, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
+	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
 	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
@@ -144,6 +145,8 @@
 				return;
 			}
 			if (event.value) {
+				// animated objects: park at their base so the gizmo edits the base transform
+				suspendAnimation(object.uuid);
 				dragStartState = {
 					uuid: object.uuid,
 					pos: object.position.toArray(),
@@ -151,6 +154,7 @@
 					scale: object.scale.toArray()
 				};
 			} else if (dragStartState && dragStartState.uuid === object.uuid) {
+				resumeAnimation(object.uuid);
 				const after = {
 					pos: object.position.toArray(),
 					rot: object.rotation.toArray(),

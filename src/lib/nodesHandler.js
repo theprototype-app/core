@@ -72,11 +72,76 @@ export function applyFlowCursor(data) {
 	});
 }
 
-// Merge a full snapshot received from a peer
+// Merge a full snapshot received from a peer. Nodes we already have are
+// updated in place (position + data) so drift heals when a resync arrives.
 /** @param {any[]} nodes @param {any[]} edges */
 export function applyNodesSnapshot(nodes, edges) {
-	if (Array.isArray(nodes)) nodes.forEach(createFlowNode);
+	if (Array.isArray(nodes)) {
+		flowNodes.update((current) => {
+			const incoming = new Map(nodes.map((n) => [n.id, n]));
+			const merged = current.map((n) => {
+				const update = incoming.get(n.id);
+				if (!update) return n;
+				incoming.delete(n.id);
+				return { ...n, position: update.position, data: { ...n.data, ...update.data } };
+			});
+			return [...merged, ...incoming.values()];
+		});
+	}
 	if (Array.isArray(edges)) edges.forEach(createFlowEdge);
+}
+
+// --- Drift detection: peers periodically exchange a graph hash and pull a
+// fresh snapshot when theirs differs (heals missed nodedata/move messages) ---
+
+/** djb2 over the serialized graph, order-independent via sort */
+export function graphHash() {
+	const nodes = get(flowNodes).map(serializeNode).sort((a, b) => a.id.localeCompare(b.id));
+	const edges = get(flowEdges).map(serializeEdge).sort((a, b) => a.id.localeCompare(b.id));
+	const text = JSON.stringify([nodes, edges]);
+	let hash = 5381;
+	for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
+	return hash;
+}
+
+let lastResyncRequest = 0;
+
+/**
+ * Compare a peer's graph hash with ours and pull a snapshot on mismatch.
+ * Only one direction may pull or two drifted peers would swap graphs forever:
+ * the peer with fewer nodes+edges pulls; equal counts tiebreak on peer id.
+ * @param {any} data
+ */
+export function applyNodeSync(data) {
+	if (data.hash === graphHash()) return;
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer) return;
+	const myCount = get(flowNodes).length + get(flowEdges).length;
+	if (data.count < myCount) return; // they pull from us instead
+	if (data.count === myCount && data.peerId <= peer.peer.id) return;
+	const now = Date.now();
+	if (now - lastResyncRequest < 30000) return; // resyncs are cheap but not free
+	const conn = peer.connections[data.peerId];
+	if (!conn?.open) return;
+	lastResyncRequest = now;
+	console.log('Node graph differs from ' + data.peerId + ' — requesting a snapshot');
+	conn.send({ type: 'getnodes', sender: peer.peer.id });
+}
+
+let syncTimer = null;
+
+/** Broadcast our graph hash every 10s so peers can detect drift */
+export function startNodeSync() {
+	if (syncTimer || typeof window === 'undefined') return;
+	syncTimer = setInterval(() => {
+		/** @type {any} */
+		const peer = get(peers);
+		if (!peer) return;
+		const count = get(flowNodes).length + get(flowEdges).length;
+		if (count === 0) return;
+		peer.send({ type: 'nodesync', peerId: peer.peer.id, hash: graphHash(), count: count });
+	}, 10000);
 }
 
 // --- Broadcast helpers ---

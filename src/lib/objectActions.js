@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { dropToSurface } from './snapping';
 import { recordTransform } from './history';
+import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import {
 	objectsGroup,
 	TControls,
@@ -232,18 +233,23 @@ export function alignToGround(uuid) {
 		showToast('Nothing selected to align');
 		return;
 	}
+	suspendAnimation(object.uuid); // park animated objects at their base first
 	const before = {
 		pos: object.position.toArray(),
 		rot: object.rotation.toArray(),
 		scale: object.scale.toArray()
 	};
-	if (!dropToSurface(object, group)) return;
+	if (!dropToSurface(object, group)) {
+		resumeAnimation(object.uuid);
+		return;
+	}
 	const after = {
 		pos: object.position.toArray(),
 		rot: object.rotation.toArray(),
 		scale: object.scale.toArray()
 	};
 	recordTransform({ uuid: object.uuid, before: before, after: after });
+	resumeAnimation(object.uuid); // dropped spot becomes the new animation base
 	objectsGroup.update((value) => value);
 	/** @type {any} */
 	const peer = get(peers);

@@ -17,6 +17,7 @@ import { snapEnabled, snapSettings } from './snapping';
 import { selectObject, topLevelObjectOf } from './objectActions';
 import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing } from './ping';
+import { suspendAnimation, resumeAnimation } from './flowRuntime';
 
 // VR interactions (all gated on an active XR session):
 // - A/X button on the menu hand toggles the quick-menu
@@ -200,6 +201,7 @@ function endGrab(object, before) {
 	const after = transformStateOf(object);
 	if (JSON.stringify(before) !== JSON.stringify(after))
 		recordTransform({ uuid: object.uuid, before: before, after: after });
+	resumeAnimation(object.uuid); // release spot becomes the new animation base
 }
 
 /** @param {number} index */
@@ -224,6 +226,7 @@ function onSqueezeStart(index) {
 		return;
 	}
 
+	suspendAnimation(object.uuid); // animated objects park at their base while held
 	const controller = renderer.xr.getController(index);
 	grab = {
 		object,

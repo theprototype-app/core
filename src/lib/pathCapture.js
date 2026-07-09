@@ -37,6 +37,13 @@ export function capturePathClick(raycaster) {
 		return false;
 	}
 	const group = get(objectsGroup);
+	// clicks on existing waypoint markers are drags/removals, not new points
+	const markers = group?.parent?.getObjectByName('path-waypoints');
+	if (
+		markers &&
+		raycaster.intersectObject(markers, true).some((h) => h.object.userData.wpIndex != null)
+	)
+		return true;
 	const hits = group ? raycaster.intersectObjects(group.children, true) : [];
 	const point =
 		hits[0]?.point ??

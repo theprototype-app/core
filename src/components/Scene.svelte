@@ -27,6 +27,7 @@
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
+	import PathWaypoints from './PathWaypoints.svelte';
 	import Grid from '../extensions/Grid.svelte';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
@@ -457,6 +458,7 @@ position={[0, 2, 3]}
 <AnnotationPins />
 
 <PingMarkers />
+<PathWaypoints />
 
 <XR>
 	<Controller left />

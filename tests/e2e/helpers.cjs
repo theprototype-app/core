@@ -14,8 +14,9 @@ function check(ok, label) {
 	if (!ok) failures++;
 }
 
-function launch() {
-	return chromium.launch({ headless: true });
+/** @param {any=} options e.g. {args: ['--use-fake-device-for-media-stream']} */
+function launch(options = {}) {
+	return chromium.launch({ headless: true, ...options });
 }
 
 /**

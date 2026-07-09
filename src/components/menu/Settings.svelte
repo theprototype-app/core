@@ -3,6 +3,7 @@
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
+	import { spatialVoice } from '$lib/voiceChat';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
 	import { shortcuts } from '$lib/shortcuts';
 
@@ -76,6 +77,12 @@
 						<Checkbox bind:checked={$syncedAnimations}>&nbsp;Sync animations</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Node animations use wall-clock time so all peers see the same phase</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox bind:checked={$spatialVoice}>&nbsp;Spatial voice</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Voices come from where each peer is (pan + distance falloff)</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>

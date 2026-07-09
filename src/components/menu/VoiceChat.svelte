@@ -1,23 +1,24 @@
 <script lang="ts">
-	import { remoteStreams, mutedPeers, micActive, pttActive, toggleMic } from '$lib/voiceChat';
+	import { remoteStreams, mutedPeers, micActive, pttActive, toggleMic, spatialVoice } from '$lib/voiceChat';
 
 	// hidden audio sinks for remote voices + the mic toggle button.
-	// muted is set as a property in the action — the Svelte attribute binding
-	// on media elements only applies at load time.
-	function attach(node: HTMLAudioElement, params: { stream: MediaStream; muted: boolean }) {
-		node.srcObject = params.stream;
-		node.muted = params.muted;
-		return {
-			update(next: { stream: MediaStream; muted: boolean }) {
-				if (node.srcObject !== next.stream) node.srcObject = next.stream;
-				node.muted = next.muted;
-			}
+	// muted/volume are set as properties in the action — the Svelte attribute
+	// binding on media elements only applies at load time. In spatial mode the
+	// element stays attached at volume 0 (Chrome only pumps WebRTC audio into
+	// WebAudio while a media element consumes the stream).
+	function attach(node: HTMLAudioElement, params: { stream: MediaStream; muted: boolean; spatial: boolean }) {
+		const apply = (p: { stream: MediaStream; muted: boolean; spatial: boolean }) => {
+			if (node.srcObject !== p.stream) node.srcObject = p.stream;
+			node.muted = p.muted;
+			node.volume = p.spatial ? 0 : 1;
 		};
+		apply(params);
+		return { update: apply };
 	}
 </script>
 
 {#each Object.entries($remoteStreams) as [peerId, stream] (peerId)}
-	<audio autoplay use:attach={{ stream, muted: $mutedPeers.includes(peerId) }}></audio>
+	<audio autoplay use:attach={{ stream, muted: $mutedPeers.includes(peerId), spatial: $spatialVoice }}></audio>
 {/each}
 
 <button

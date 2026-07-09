@@ -12,6 +12,10 @@ import { isLocked } from '../stores/sceneStore';
 export const micActive = writable(false);
 export const micGranted = writable(false);
 export const pttActive = writable(false);
+// positional audio: voices come from the peer's avatar (PannerNode per peer)
+export const spatialVoice = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('spatialVoice') !== 'false'
+);
 /** @type {import('svelte/store').Writable<Record<string, MediaStream>>} */
 export const remoteStreams = writable({});
 /** @type {import('svelte/store').Writable<string[]>} peer ids currently talking ('self' mapped to own id) */
@@ -33,9 +37,108 @@ function trackCall(call, direction) {
 	call.on('stream', (/** @type {MediaStream} */ stream) => {
 		remoteStreams.update((map) => ({ ...map, [call.peer]: stream }));
 		watchStream(call.peer, stream);
+		if (get(spatialVoice)) buildSpatialChain(call.peer, stream);
 	});
 	call.on('close', () => cleanupCall(call.peer, direction));
 	call.on('error', () => cleanupCall(call.peer, direction));
+}
+
+// --- spatial audio: stream -> panner (HRTF) -> gain (per-peer mute) -> out.
+// The hidden <audio> element stays attached at volume 0: Chrome only pumps
+// WebRTC audio into WebAudio while a media element consumes the stream.
+/** @type {Record<string, {source: any, panner: any, gain: any}>} */
+const spatialChains = {};
+
+/** @param {string} peerId @param {MediaStream} stream */
+function buildSpatialChain(peerId, stream) {
+	if (spatialChains[peerId]) return;
+	try {
+		audioContext ??= new (window.AudioContext || /** @type {any} */ (window).webkitAudioContext)();
+		const source = audioContext.createMediaStreamSource(stream);
+		const panner = audioContext.createPanner();
+		panner.panningModel = 'HRTF';
+		panner.distanceModel = 'inverse';
+		panner.refDistance = 2;
+		panner.maxDistance = 40;
+		panner.rolloffFactor = 1;
+		const gain = audioContext.createGain();
+		gain.gain.value = get(mutedPeers).includes(peerId) ? 0 : 1;
+		source.connect(panner).connect(gain).connect(audioContext.destination);
+		spatialChains[peerId] = { source, panner, gain };
+	} catch (error) {
+		console.log('spatial chain failed', error);
+	}
+}
+
+/** @param {string} peerId */
+function dropSpatialChain(peerId) {
+	const chain = spatialChains[peerId];
+	if (!chain) return;
+	try {
+		chain.source.disconnect();
+		chain.panner.disconnect();
+		chain.gain.disconnect();
+	} catch {}
+	delete spatialChains[peerId];
+}
+
+/** Peer ids with an active spatial chain + their panner positions (tests/UI) */
+export function spatialDebug() {
+	/** @type {Record<string, number[]>} */
+	const out = {};
+	Object.entries(spatialChains).forEach(([id, chain]) => {
+		out[id] = [chain.panner.positionX.value, chain.panner.positionY.value, chain.panner.positionZ.value];
+	});
+	return out;
+}
+
+let lastSpatialUpdate = 0;
+
+/**
+ * Called every frame from the scene: aim the listener at the camera and each
+ * panner at its peer's avatar (throttled to ~10/s).
+ * @param {any} camera @param {any} scene
+ */
+export function updateSpatialAudio(camera, scene) {
+	if (!audioContext || !get(spatialVoice) || !camera || !scene) return;
+	const now = performance.now();
+	if (now - lastSpatialUpdate < 100) return;
+	lastSpatialUpdate = now;
+
+	const listener = audioContext.listener;
+	// matrix columns instead of three helpers, so this module stays three-free
+	const world = camera.matrixWorld?.elements;
+	if (!world) return;
+	const px = world[12], py = world[13], pz = world[14];
+	const fx = -world[8], fy = -world[9], fz = -world[10]; // -Z column = forward
+	const ux = world[4], uy = world[5], uz = world[6];
+	if (listener.positionX) {
+		listener.positionX.value = px;
+		listener.positionY.value = py;
+		listener.positionZ.value = pz;
+		listener.forwardX.value = fx;
+		listener.forwardY.value = fy;
+		listener.forwardZ.value = fz;
+		listener.upX.value = ux;
+		listener.upY.value = uy;
+		listener.upZ.value = uz;
+	} else {
+		listener.setPosition(px, py, pz);
+		listener.setOrientation(fx, fy, fz, ux, uy, uz);
+	}
+
+	Object.entries(spatialChains).forEach(([peerId, chain]) => {
+		const avatar = scene.getObjectByName(peerId);
+		if (!avatar) return;
+		const m = avatar.matrixWorld.elements;
+		if (chain.panner.positionX) {
+			chain.panner.positionX.value = m[12];
+			chain.panner.positionY.value = m[13];
+			chain.panner.positionZ.value = m[14];
+		} else {
+			chain.panner.setPosition(m[12], m[13], m[14]);
+		}
+	});
 }
 
 /** @param {string} peerId @param {'in'|'out'} direction */
@@ -48,6 +151,7 @@ function cleanupCall(peerId, direction) {
 			return next;
 		});
 		delete analysers[peerId];
+		dropSpatialChain(peerId);
 	}
 }
 
@@ -159,6 +263,18 @@ export function toggleMutePeer(peerId) {
 		list.includes(peerId) ? list.filter((id) => id !== peerId) : [...list, peerId]
 	);
 }
+
+// keep the spatial chains in line with per-peer mutes and the mode toggle
+mutedPeers.subscribe((list) => {
+	Object.entries(spatialChains).forEach(([peerId, chain]) => {
+		chain.gain.gain.value = list.includes(peerId) ? 0 : 1;
+	});
+});
+spatialVoice.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('spatialVoice', String(on));
+	if (on) Object.entries(get(remoteStreams)).forEach(([peerId, stream]) => buildSpatialChain(peerId, stream));
+	else Object.keys(spatialChains).forEach(dropSpatialChain);
+});
 
 // --- lifecycle hooks called from the peer layer ---
 /** @param {any} pc - the PeerConnection instance */

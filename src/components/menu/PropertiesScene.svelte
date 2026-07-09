@@ -4,6 +4,7 @@
 	import { globalScene, objectsGroup, TControls, selectedObject, backgroundColor, globalCamera } from '../../stores/sceneStore';
 	import { peers, chatHidden, scenePropertiesClose } from '../../stores/appStore.js';
 	import { showLightHelpers } from '$lib/lightHelpers';
+	import { environment, ENVIRONMENT_PRESETS, setEnvironment } from '$lib/environment';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
 	import { sineIn } from 'svelte/easing';
@@ -81,6 +82,33 @@
 			class="mb-4 dark:text-white"
 		/>
 	</div>
+
+	<p class="mb-2 font-semibold text-white dark:text-slate-200">Environment</p>
+	<div id="environment-presets" class="mb-2 flex flex-wrap gap-1">
+		{#each Object.entries(ENVIRONMENT_PRESETS) as [key, preset]}
+			<button
+				class={'rounded-full px-2 py-0.5 text-xs ' +
+					($environment.preset === key
+						? 'bg-primary-600 text-white'
+						: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+				onclick={() => setEnvironment(key)}
+			>
+				{preset.label}
+			</button>
+		{/each}
+	</div>
+	<p class="text-xs text-white dark:text-slate-200">Exposure: {$environment.exposure.toFixed(2)}</p>
+	<Range
+		id="env-exposure"
+		step="0.05"
+		min="0.4"
+		max="2"
+		value={$environment.exposure}
+		oninput={(e) => setEnvironment($environment.preset, parseFloat(e.target.value))}
+	/>
+	<p class="mb-1 mt-2 text-xs italic text-gray-400">
+		Presets replicate to peers; your own lights automatically dim the default rig.
+	</p>
 
 	<p class="mb-4 text-white dark:text-slate-200">
 		<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>

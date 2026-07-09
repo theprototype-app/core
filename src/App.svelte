@@ -10,6 +10,7 @@
   import { startNodeSync } from '$lib/nodesHandler'
   import { startLockSweep } from '$lib/lockControl'
   import { loadUserModules } from '$lib/userModules'
+  import { startEnvironment } from '$lib/environment'
   import { startShortcuts } from '$lib/shortcuts'
   import { startSnapping } from '$lib/snapping'
   import { startAutosave } from '$lib/autosave'
@@ -30,6 +31,7 @@
     startNodeSync()
     startLockSweep()
     loadUserModules()
+    startEnvironment()
     startShortcuts()
     startSnapping()
     startAutosave()
@@ -55,9 +57,10 @@
         import('./lib/lockControl'),
         import('./lib/prefabs'),
         import('./lib/physics'),
-        import('./lib/userModules')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib }
+        import('./lib/userModules'),
+        import('./lib/environment')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib }
       })
     }
   })

@@ -9,8 +9,10 @@
       infiniteGrid
       renderOrder={9999}
       position={[0,0,0.03]}
-      cellColor={0x5f5f5f}
-      sectionColor={0x5f5f5f}
-      fadeDistance={100}
+      cellColor={0x484d55}
+      sectionColor={0x6b7280}
+      sectionThickness={1.2}
+      fadeDistance={80}
+      fadeStrength={1.5}
       />
   {/if}

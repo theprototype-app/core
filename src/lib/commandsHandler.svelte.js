@@ -7,6 +7,8 @@ import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHa
 import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected } from '$lib/physics'
+import { environment } from '$lib/environment'
+import { get } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
 
@@ -136,13 +138,16 @@ export function sceneCommand(command) {
                 }
                 peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
 
-                fixLight.set(true);
-                sceneObjects.traverse((object) => {
-                    if (object.isLight) {
-                        fixLight.set(false);
-                    }
-                    });
-    
+                // the environment rig lights every preset except Classic —
+                // only nag about missing lights in Classic
+                if (get(environment).preset === 'classic') {
+                    fixLight.set(true);
+                    sceneObjects.traverse((object) => {
+                        if (object.isLight) {
+                            fixLight.set(false);
+                        }
+                        });
+                }
         }
         else if (command.startsWith('/light')) {
                 let uuid = createLight(command);

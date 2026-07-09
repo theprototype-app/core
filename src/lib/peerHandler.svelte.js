@@ -10,6 +10,7 @@ import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib
 import { applyPing } from '$lib/ping';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
+import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -159,6 +160,10 @@ export class PeerConnection {
 					changeName(data.uuid, data.name);
 				} else if(data.type == 'move') {
 					moveGeometry(data.uuid, data.pos, data.rot, data.scale);
+				} else if(data.type == 'drawlive') {
+					applyDrawLive(data);
+				} else if(data.type == 'drawend') {
+					applyDrawEnd(data);
 				} else if(data.type == 'lockrequest') {
 					applyLockRequest(data);
 				} else if(data.type == 'unlock') {

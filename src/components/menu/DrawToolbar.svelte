@@ -1,5 +1,5 @@
 <script>
-	import { drawMode, drawColor, drawSize, toggleDrawMode } from '$lib/drawMode';
+	import { drawMode, drawColor, drawSize, liveStreaming, toggleDrawMode } from '$lib/drawMode';
 
 	function onKeydown(event) {
 		if (event.key === 'Escape' && $drawMode) toggleDrawMode();
@@ -31,6 +31,14 @@
 				value={$drawSize}
 				on:input={(e) => drawSize.set(+e.currentTarget.value)}
 			/>
+		</label>
+		<label class="flex items-center gap-1 text-xs text-gray-300" title="Peers watch the line grow while you draw">
+			<input
+				type="checkbox"
+				checked={$liveStreaming}
+				on:change={(e) => liveStreaming.set(e.currentTarget.checked)}
+			/>
+			live
 		</label>
 		<button class="rounded-full bg-[#ff4000] px-3 py-0.5" on:click={toggleDrawMode}>Done</button>
 	</div>

@@ -31,6 +31,7 @@
 		{ name: 'stairs', label: '+ Stairs', active: false },
 		{ name: 'draw', label: 'Draw', active: $drawMode },
 		{ name: 'hand', label: $vrMenuHand === 'right' ? 'To left' : 'To right', active: false },
+		{ name: 'exitvr', label: 'Exit VR', active: false },
 		{ name: 'close', label: 'Close', active: false }
 	].map((tile, index) => ({
 		...tile,

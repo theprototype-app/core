@@ -38,9 +38,12 @@
   
         $effect(() => {
       if ($isLocked) {
-        domElement.requestPointerLock({
+        // returns a promise in newer Chrome; rejection (headless, unsupported
+        // unadjustedMovement) already surfaces via the pointerlockerror event
+        const request: any = domElement.requestPointerLock({
           unadjustedMovement: true
         })
+        request?.catch?.(() => {})
       }
     })
 
@@ -109,6 +112,14 @@
         case 'KeyD': moveState.right = 1; break;
         case 'KeyQ': moveState.up = 1; break;
         case 'KeyE': moveState.down = 1; break;
+        case 'Escape':
+          // native pointer-lock Esc handles the normal case; this also rescues
+          // the stuck state where play mode engaged but the lock never did
+          if ($isLocked) {
+            if (document.pointerLockElement) document.exitPointerLock()
+            else $isLocked = false
+          }
+          break;
       }
     }
 

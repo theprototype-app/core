@@ -215,6 +215,7 @@
 		startEditorNavigation();
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
+			$isVRMode = false; // back to the editor whichever way the session ended
 			$peers?.send({ type: 'vrhands', peerId: $peers.peer.id, left: null, right: null, active: false });
 		};
 		renderer.xr.addEventListener('sessionend', onSessionEnd);

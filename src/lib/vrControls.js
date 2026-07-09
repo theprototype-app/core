@@ -9,7 +9,8 @@ import {
 	vrMenuOpen,
 	vrTransformMode,
 	vrSnapAngle,
-	selectedObject
+	selectedObject,
+	isVRMode
 } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
@@ -347,6 +348,10 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'draw') {
 		toggleDrawMode();
 		vrMenuOpen.set(false);
+	} else if (name === 'exitvr') {
+		vrMenuOpen.set(false);
+		isVRMode.set(false);
+		renderer?.xr?.getSession?.()?.end();
 	} else if (name === 'close') vrMenuOpen.set(false);
 }
 

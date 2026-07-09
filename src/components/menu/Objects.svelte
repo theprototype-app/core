@@ -176,7 +176,9 @@
                     <i class="fa-solid fa-minus pr-2 pl-2" style="opacity: 0"></i>
                     {/if}
 
-                    {#if element.type.endsWith('Group')}
+                    {#if element.userData?.animatedClips}
+                        <i class="fa-solid fa-person-running pr-2" title="Animated model"></i>
+                    {:else if element.type.endsWith('Group')}
                         <i class="fa-solid fa-layer-group pr-2" title="Group"></i>
                     {:else if element.type.endsWith('Light')}
                         <i class="fa-regular fa-sun pr-2" title="Light"></i>

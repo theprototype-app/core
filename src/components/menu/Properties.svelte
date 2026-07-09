@@ -14,6 +14,7 @@ import {
 	Button
 } from 'flowbite-svelte';
 import { setObjectTexture, removeObjectTexture, setMaterialParam, switchMaterialType, recordMaterialChange } from '$lib/materialsHandler';
+import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 import { moveObjectToGroup } from '$lib/objectActions';
 import { objectsGroup, TControls, selectedObject } from '../../stores/sceneStore';
 import { peers, chatHidden, propertiesClose, toggleExpand } from '../../stores/appStore.js';
@@ -264,6 +265,28 @@ function sendTransformUpdate() {
     {/key}
     </p>
     <Tooltip placement='bottom' arrow={false} triggeredBy="#uuid">Move to group</Tooltip>
+
+    {#if $animatedObjects[$selectedObject.uuid]}
+    {@const anim = $animatedObjects[$selectedObject.uuid]}
+    <div id="animation-controls" class="mt-2 rounded-lg border border-gray-600 p-2">
+        <p class="mb-1 text-sm font-semibold text-white dark:text-slate-200">🎞 Animation</p>
+        <Select underline class="mb-1" value={anim.clip}
+            items={anim.clips.map((clip) => ({ value: clip, name: clip }))}
+            on:change={(e) => setAnimationState($selectedObject.uuid, { clip: e.srcElement.value })} />
+        <div class="flex items-center gap-2">
+            <button
+                class="rounded bg-primary-700 px-2 py-0.5 text-sm text-white"
+                on:click={() => setAnimationState($selectedObject.uuid, { playing: !anim.playing })}>
+                {anim.playing ? '⏸ Pause' : '▶ Play'}
+            </button>
+            <span class="text-xs text-gray-400">speed {anim.speed.toFixed(1)}×</span>
+            <input type="range" class="flex-1 accent-primary-600" min="0.1" max="3" step="0.1"
+                value={anim.speed}
+                on:input={(e) => setAnimationState($selectedObject.uuid, { speed: +e.currentTarget.value })} />
+        </div>
+        <p class="pt-1 text-[10px] italic text-gray-400">Clips run on the synced clock — peers see the same pose.</p>
+    </div>
+    {/if}
 
     <div use:event>
     <Accordion class="text-white dark:text-slate-200 w-full" flush>

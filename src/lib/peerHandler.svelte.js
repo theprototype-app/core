@@ -13,6 +13,7 @@ import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate } from '$lib/physics';
 import { applyRemoteEnvironment, environmentState } from '$lib/environment';
+import { applyObjectFile } from '$lib/animatedImports';
 import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -190,6 +191,8 @@ export class PeerConnection {
 					moveCamera(data);
 				} else if(data.type == 'getobjects') {
 					sendObjects(data.sender)
+				} else if(data.type == 'objectfile') {
+					applyObjectFile(data);
 				} else if(data.type == 'object') {
 					createObject(data, data.uuids, data.override, data.groupuuid, data.pos, data.rot, data.scale);
 				} else if(data.type == 'objectParameters') {

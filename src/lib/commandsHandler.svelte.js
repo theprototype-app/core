@@ -8,6 +8,7 @@ import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected } from '$lib/physics'
 import { environment } from '$lib/environment'
+import { hasAnimatedImport, sendAnimatedImport, setAnimationState } from '$lib/animatedImports'
 import { get } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
@@ -306,6 +307,8 @@ export async function objectParameters(data) {
         if (mesh) applyMap(mesh, data.map);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
+    } else if (data.parameter == 'animation') {
+        setAnimationState(data.uuid, { clip: data.clip, playing: data.playing, speed: data.speed }, false);
     } else if (data.parameter == 'castShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.castShadow = data.castShadow;
@@ -417,7 +420,10 @@ export function sendObject(conn, element, groupuuid) {
     }
     // Iterate over all objects in the scene
     objects.forEach(element => {
-        if (element.type == "Group") {
+        if (hasAnimatedImport(element.uuid)) {
+            // rigs travel as their original file bytes, one message
+            sendAnimatedImport(conn, element);
+        } else if (element.type == "Group") {
             if (element.parent.parent.parent !== null) {
                 groupuuid = element.parent.uuid
                 // console.log("group uuid: " + groupuuid);
@@ -500,7 +506,7 @@ function countObjects(element) {
         objects = sceneObjects.children;
     }
     objects.forEach(element => {
-        if (element.type == "Group") {
+        if (element.type == "Group" && !hasAnimatedImport(element.uuid)) {
             countObjects(element);
         }
         uuids.push(element.uuid)

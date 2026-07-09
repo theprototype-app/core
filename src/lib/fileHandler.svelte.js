@@ -7,6 +7,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
 import { recordObjectPresence } from '$lib/history';
+import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
 import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 
 //Access objects Store
@@ -77,6 +78,25 @@ export async function loadFile(url, name) {
 		
 }
 
+/**
+ * Animated imports keep their file bytes and replicate as ONE objectfile
+ * message (rigs cannot survive the per-node pipeline).
+ * @param {any} result @param {ArrayBuffer} buffer @param {string=} name
+ */
+function addAnimatedImport(result, buffer, name) {
+	const root = result.scene;
+	root.name = name ?? 'Animated import';
+	sceneObjects.add(root);
+	objectsGroup.update((value) => value);
+	controls.attach(root);
+	registerAnimatedImport(root, result.animations, buffer);
+	recordAnimatedImport(root);
+	sendAnimatedImport(peer, root);
+	selectedObject.set(root);
+	peer.send({ type: 'lock', uuid: root.uuid, peerId: peer.peer.id });
+	showToast('Animated model: ' + result.animations.length + ' clip(s), playing the first');
+}
+
 /** Shared tail for every import format: add to the scene, select, replicate. @param {any} imported @param {string=} name */
 function addImported(imported, name) {
 	if (name) imported.name = name;
@@ -128,12 +148,15 @@ export async function importFile(file, name, ext) {
 			const object = new FBXLoader().parse(await readAs(file, 'buffer'), '');
 			addImported(object, name ?? 'FBX');
 		} else {
-			// glb/gltf (default)
+			// glb/gltf (default) — draco/meshopt capable
 			const buffer = await readAs(file, 'buffer');
-			new GLTFLoader().parse(
+			createGltfLoader().parse(
 				buffer,
 				'',
-				(result) => addImported(result.scene, name),
+				(result) => {
+					if (result.animations?.length > 0) addAnimatedImport(result, buffer, name);
+					else addImported(result.scene, name);
+				},
 				(error) => {
 					console.error('Error importing file:', error);
 					showToast('Could not import ' + (name ?? file.name ?? 'file'));

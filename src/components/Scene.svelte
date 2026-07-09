@@ -13,6 +13,7 @@
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
+	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
@@ -134,6 +135,7 @@
 		if (renderer.xr.isPresenting) broadcastVRHands();
 		updateVRControls(); // also manages ray/hover visibility outside sessions
 		updateSpatialAudio(camera.current, scene); // voices follow avatars (throttled)
+		tickAnimatedMixers(); // imported clips run on the synced clock
 		updateLightHelpers();
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);
 	});

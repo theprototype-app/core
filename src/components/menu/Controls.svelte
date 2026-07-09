@@ -7,6 +7,7 @@
 	import { enterEditMode } from '$lib/meshEdit';
 	import { addAnnotation } from '$lib/annotationsHandler';
 	import { requestControl, nameOf } from '$lib/lockControl';
+	import { savePrefab } from '$lib/prefabs';
 	import { sendPing } from '$lib/ping';
 	import * as THREE from 'three';
 	import { setContext } from 'svelte';
@@ -136,6 +137,11 @@
 				: []),
 			{ label: 'Focus camera', action: () => focusObject(menu.uuid) },
 			{ label: 'Duplicate', action: () => duplicateObject(menu.uuid) },
+			{
+				label: 'Save as prefab',
+				tooltip: 'Reusable copy in your Library (local, instances replicate)',
+				action: () => savePrefab(menu.uuid)
+			},
 			{
 				label: 'Edit mesh',
 				disabled: menu.locked || !object?.geometry?.attributes?.position,

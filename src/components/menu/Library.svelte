@@ -9,7 +9,24 @@
 	import { peers, chatHidden, libraryClose, toggleExpand, loadingFile } from '../../stores/appStore.js';
 	import { sineIn } from 'svelte/easing';
 	import { loadFile } from '$lib/fileHandler.svelte';
+	import { prefabs, loadPrefabs, instantiatePrefab, removePrefab, renamePrefab, exportPrefab, importPrefab } from '$lib/prefabs';
 	import { onMount } from 'svelte';
+
+	function downloadPrefab(prefab) {
+		const blob = new Blob([exportPrefab(prefab)], { type: 'application/json' });
+		const link = document.createElement('a');
+		link.href = URL.createObjectURL(blob);
+		link.download = prefab.name.replace(/[^\w-]+/g, '_') + '.prefab.json';
+		link.click();
+		URL.revokeObjectURL(link.href);
+	}
+
+	async function importPrefabFile(event) {
+		const file = event.target.files?.[0];
+		if (!file) return;
+		await importPrefab(await file.text());
+		event.target.value = '';
+	}
 
 	let item = $state();
 	let attributionModal = $state(false);
@@ -19,6 +36,7 @@
 	let attribution = $state();
 
 	onMount(async () => {
+		loadPrefabs();
 		// load library list on mount
 		libraries = await loadFile('/library/libraryList.json');
 		item = await loadFile('/library/cube_diorama/default.json');
@@ -75,6 +93,53 @@
 			}}
 			class="mb-4 dark:text-white"
 		/>
+	</div>
+
+	<div class="mb-3">
+		<div class="flex items-center justify-between">
+			<p class="text-sm font-semibold text-gray-500 dark:text-gray-300">Your prefabs</p>
+			<button
+				class="rounded bg-gray-600 px-2 py-0.5 text-xs text-white"
+				title="Import a .prefab.json file"
+				onclick={() => document.getElementById('import-prefab').click()}
+			>
+				Import
+			</button>
+			<input type="file" id="import-prefab" style="display: none" accept=".json" onchange={importPrefabFile} />
+		</div>
+		{#if $prefabs.length === 0}
+			<p class="pt-1 text-xs italic text-gray-400">
+				Right-click an object → "Save as prefab" to collect reusable assets here.
+			</p>
+		{:else}
+			<div class="grid grid-cols-3 gap-2 pt-2">
+				{#each $prefabs as prefab (prefab.id)}
+					<div class="prefab-card relative">
+						<button title="Add to scene" onclick={() => instantiatePrefab(prefab)}>
+							{#if prefab.thumbnail}
+								<img src={prefab.thumbnail} alt={prefab.name} class="h-14 w-14 rounded dark:border-gray-800" />
+							{:else}
+								<div class="flex h-14 w-14 items-center justify-center rounded bg-gray-600">📦</div>
+							{/if}
+						</button>
+						<p
+							class="max-w-14 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-white dark:text-slate-200"
+							title="Double-click to rename"
+							ondblclick={() => {
+								const name = prompt('Prefab name', prefab.name);
+								if (name) renamePrefab(prefab.id, name);
+							}}
+						>
+							{prefab.name}
+						</p>
+						<div class="absolute -right-1 -top-1 flex gap-0.5">
+							<button class="rounded bg-gray-700 px-1 text-[10px]" title="Export" onclick={() => downloadPrefab(prefab)}>⬇</button>
+							<button class="rounded bg-gray-700 px-1 text-[10px]" title="Delete" onclick={() => removePrefab(prefab.id)}>✕</button>
+						</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
 	</div>
 
 	<div class="mb-4 inline-flex w-full items-center rounded-md shadow-sm">

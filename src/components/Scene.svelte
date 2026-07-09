@@ -15,12 +15,14 @@
 	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
+	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
+	import PingMarkers from './PingMarkers.svelte';
 	import Grid from '../extensions/Grid.svelte';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
@@ -213,6 +215,16 @@
 				-((event.clientY - rect.top) / rect.height) * 2 + 1
 			);
 			selectionRaycaster.setFromCamera(ndc, camera.current);
+			// Alt+click pings the pointed spot for every peer
+			if (event.altKey) {
+				const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
+				const planePoint = new THREE.Vector3();
+				const point = hits[0]?.point ??
+					(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
+						? planePoint : null);
+				if (point) sendPing(point);
+				return;
+			}
 			// measure mode captures clicks entirely
 			if ($measureMode) {
 				measureClick(selectionRaycaster, $objectsGroup);
@@ -380,6 +392,8 @@ position={[0, 2, 3]}
 <MeasureOverlay />
 
 <AnnotationPins />
+
+<PingMarkers />
 
 <XR>
 	<Controller left />

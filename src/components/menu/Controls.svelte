@@ -6,6 +6,8 @@
 	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup } from '$lib/objectActions';
 	import { enterEditMode } from '$lib/meshEdit';
 	import { addAnnotation } from '$lib/annotationsHandler';
+	import { sendPing } from '$lib/ping';
+	import * as THREE from 'three';
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { VRButton } from '@threlte/xr'
@@ -84,6 +86,17 @@
 				action: () => enterEditMode(menu.uuid)
 			},
 			{ label: 'Add note', tooltip: 'Pin a synced note to this object', action: () => addAnnotation(menu.uuid) },
+			{
+				label: 'Ping this object',
+				tooltip: 'Everyone sees a pulse here (Alt+click pings anywhere)',
+				action: () => {
+					if (!object) return;
+					const box = new THREE.Box3().setFromObject(object);
+					const top = box.getCenter(new THREE.Vector3());
+					top.y = box.max.y;
+					sendPing(top);
+				}
+			},
 			{
 				label: 'Rename',
 				disabled: menu.locked,

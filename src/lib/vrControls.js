@@ -16,6 +16,7 @@ import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
 import { selectObject, topLevelObjectOf } from './objectActions';
 import { sceneCommand } from './commandsHandler.svelte';
+import { sendPing } from './ping';
 
 // VR interactions (all gated on an active XR session):
 // - A/X button on the menu hand toggles the quick-menu
@@ -31,7 +32,7 @@ export const vrHovered = writable(null);
 export const vrMenuGroup = writable(null);
 
 /** @type {any} */ let renderer = null;
-/** @type {{menu?: boolean, squeeze?: boolean}[]} */
+/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean}[]} */
 const previousButtons = [{}, {}];
 const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
@@ -352,6 +353,17 @@ export function updateVRControls() {
 		if (squeezePressed && !prev.squeeze) onSqueezeStart(index);
 		if (!squeezePressed && prev.squeeze) onSqueezeEnd(index);
 		prev.squeeze = squeezePressed;
+
+		// thumbstick press pings the pointed spot
+		const stickPressed = !!buttons[3]?.pressed;
+		if (stickPressed && !prev.stick) {
+			const ray = controllerRay(index);
+			const group = get(objectsGroup);
+			const hits = group ? ray.intersectObjects(group.children, true) : [];
+			const point = hits[0]?.point ?? ray.ray.at(4, new THREE.Vector3());
+			sendPing(point);
+		}
+		prev.stick = stickPressed;
 	});
 
 	if (scaleGrab) updateScaleGrab();

@@ -6,6 +6,7 @@ import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
 import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
+import { applyPing } from '$lib/ping';
 import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -201,6 +202,8 @@ export class PeerConnection {
 					deleteFlowEdges(data.ids);
 				} else if(data.type == 'flowcursor') {
 					applyFlowCursor(data);
+				} else if(data.type == 'ping') {
+					applyPing(data);
 				} else if(data.type == 'annotation') {
 					applyAnnotation(data);
 				} else if(data.type == 'annotations') {

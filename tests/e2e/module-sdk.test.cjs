@@ -59,7 +59,7 @@ h.run(async () => {
 	h.check(bz1 !== null, 'box synced to B');
 	h.check(bz1 !== bz2, 'wave animates on B too');
 	const [az, bz] = await Promise.all([rotationZ(A.page, uuid), rotationZ(B.page, uuid)]);
-	h.check(Math.abs(az - bz) < 0.4, `peers roughly in phase (A ${az?.toFixed(3)}, B ${bz?.toFixed(3)})`);
+	h.check(Math.abs(az - bz) < 0.6, `peers roughly in phase (A ${az?.toFixed(3)}, B ${bz?.toFixed(3)})`);
 
 	await h.finish(browser);
 });

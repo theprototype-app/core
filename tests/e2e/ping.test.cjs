@@ -1,13 +1,15 @@
 ﻿// Phase 28: Alt+click ping replicates with author + expires.
 const h = require('./helpers.cjs');
 
+// via the debug hook — a page-side dynamic import can get a SECOND module
+// instance once vite HMR-timestamps the app's copy (empty store, false FAIL)
 const readPings = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				import('/src/lib/ping.js').then((mod) =>
-					mod.pings.subscribe((list) => resolve(list.map((p) => ({ name: p.name, pos: p.pos }))))()
-				);
+				window.__stores.ping.pings.subscribe((list) =>
+					resolve(list.map((p) => ({ name: p.name, pos: p.pos })))
+				)();
 			})
 	);
 

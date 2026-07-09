@@ -4,6 +4,7 @@ import {
 	objectsGroup,
 	lockedObjects,
 	globalCamera,
+	globalScene,
 	showGrid,
 	vrMenuHand,
 	vrMenuOpen,
@@ -152,8 +153,180 @@ export function computeMoveOffset({ x, y, grip, flying, aimDir, cameraDir, speed
 	return offset;
 }
 
+// --- teleport: hold the right stick UP = ballistic arc, release = blink ---
+
+const arcRaycaster = new THREE.Raycaster();
+
+/**
+ * Sample a ballistic arc from origin along direction; lands on the ground
+ * plane (y=0) or an upward-facing surface of a scene object.
+ * @param {any} origin @param {any} direction @param {any=} group
+ * @returns {{points: any[], target: any | null}}
+ */
+export function computeTeleportArc(origin, direction, group) {
+	const speed = 8;
+	const gravity = -9.8;
+	const step = 1 / 12;
+	const maxT = 2.5;
+	const velocity = direction.clone().normalize().multiplyScalar(speed);
+	const points = [origin.clone()];
+	let previous = origin.clone();
+	let target = null;
+
+	for (let t = step; t <= maxT && !target; t += step) {
+		const point = new THREE.Vector3(
+			origin.x + velocity.x * t,
+			origin.y + velocity.y * t + 0.5 * gravity * t * t,
+			origin.z + velocity.z * t
+		);
+		if (group) {
+			const segment = point.clone().sub(previous);
+			const length = segment.length();
+			arcRaycaster.set(previous, segment.normalize());
+			arcRaycaster.far = length;
+			const hits = arcRaycaster.intersectObjects(group.children, true);
+			const landing = hits.find((hit) => {
+				if (!hit.face) return false;
+				const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+				return normal.y > 0.5; // only land on top-ish faces
+			});
+			if (landing) {
+				target = landing.point.clone();
+				points.push(target.clone());
+				break;
+			}
+		}
+		if (previous.y > 0 && point.y <= 0) {
+			const k = previous.y / (previous.y - point.y);
+			target = new THREE.Vector3(
+				previous.x + (point.x - previous.x) * k,
+				0,
+				previous.z + (point.z - previous.z) * k
+			);
+			points.push(target.clone());
+			break;
+		}
+		points.push(point.clone());
+		previous = point;
+	}
+	return { points, target };
+}
+
+let teleportEngaged = false;
+/** @type {any} */ let lastArc = null;
+/** @type {any} */ let arcGroup = null;
+/** @type {any} */ let arcLine = null;
+/** @type {any} */ let arcDisc = null;
+/** @type {any} */ let blinkSphere = null;
+
+function ensureArcVisuals() {
+	if (arcGroup) return;
+	const scene = get(globalScene);
+	if (!scene) return;
+	arcGroup = new THREE.Group();
+	arcGroup.name = 'teleport-arc';
+	arcLine = new THREE.Line(
+		new THREE.BufferGeometry(),
+		new THREE.LineBasicMaterial({ color: 0x22cc66, transparent: true, opacity: 0.9, depthTest: false })
+	);
+	arcDisc = new THREE.Mesh(
+		new THREE.CircleGeometry(0.35, 24),
+		new THREE.MeshBasicMaterial({ color: 0x22cc66, transparent: true, opacity: 0.5, depthTest: false, side: THREE.DoubleSide })
+	);
+	arcDisc.rotation.x = -Math.PI / 2;
+	arcGroup.add(arcLine, arcDisc);
+	arcGroup.visible = false;
+	scene.add(arcGroup);
+}
+
+/** @param {any[]} points @param {boolean} valid @param {any} target */
+function showArc(points, valid, target) {
+	ensureArcVisuals();
+	if (!arcGroup) return;
+	arcGroup.visible = true;
+	arcLine.geometry.dispose();
+	arcLine.geometry = new THREE.BufferGeometry().setFromPoints(points);
+	const color = valid ? 0x22cc66 : 0xcc3344;
+	arcLine.material.color.setHex(color);
+	arcDisc.material.color.setHex(color);
+	arcDisc.visible = !!target;
+	if (target) arcDisc.position.set(target.x, target.y + 0.02, target.z);
+}
+
+function hideArc() {
+	if (arcGroup) arcGroup.visible = false;
+}
+
+/** @param {any} target */
+function executeTeleport(target) {
+	const space = renderer?.xr.getReferenceSpace();
+	if (!space) return;
+	const viewer = renderer.xr.getCamera().getWorldPosition(new THREE.Vector3());
+	// reference-space convention: offset = -(viewer displacement); height kept
+	const t = { x: viewer.x - target.x, y: 0, z: viewer.z - target.z };
+	renderer.xr.setReferenceSpace(space.getOffsetReferenceSpace(new XRRigidTransform(t)));
+	// blink to soften the jump
+	const camera = get(globalCamera);
+	if (camera) {
+		if (!blinkSphere) {
+			blinkSphere = new THREE.Mesh(
+				new THREE.SphereGeometry(0.2, 16, 12),
+				new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, transparent: true, opacity: 1, depthTest: false })
+			);
+			blinkSphere.renderOrder = 999;
+		}
+		blinkSphere.material.opacity = 1;
+		blinkSphere.visible = true;
+		camera.add(blinkSphere);
+	}
+	hapticPulse(0.4, 60);
+}
+
+/** @param {any} session */
+function updateTeleport(session) {
+	const sources = [...session.inputSources];
+	const source = sources.find((s) => s.handedness === 'right');
+	const x = source?.gamepad?.axes?.[2] ?? 0;
+	const y = source?.gamepad?.axes?.[3] ?? 0;
+
+	if (!teleportEngaged) {
+		// stick pushed clearly UP and more up than sideways -> arm
+		if (y < -0.7 && Math.abs(y) > Math.abs(x)) teleportEngaged = true;
+		else {
+			hideArc();
+			return;
+		}
+	} else if (y > -0.4) {
+		// released -> blink if we had a valid landing
+		teleportEngaged = false;
+		if (lastArc?.target) executeTeleport(lastArc.target);
+		lastArc = null;
+		hideArc();
+		return;
+	}
+
+	const index = sources.indexOf(source);
+	const controller = renderer.xr.getController(index);
+	const origin = controller.getWorldPosition(new THREE.Vector3());
+	const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(
+		controller.getWorldQuaternion(new THREE.Quaternion())
+	);
+	lastArc = computeTeleportArc(origin, direction, get(objectsGroup));
+	showArc(lastArc.points, !!lastArc.target, lastArc.target);
+}
+
+function updateBlink() {
+	if (!blinkSphere || !blinkSphere.visible) return;
+	blinkSphere.material.opacity -= 0.12;
+	if (blinkSphere.material.opacity <= 0) {
+		blinkSphere.visible = false;
+		blinkSphere.parent?.remove(blinkSphere);
+	}
+}
+
 /** Thumbstick flick on the RIGHT hand rotates the rig in snaps around the viewer */
 function updateSnapTurn(session) {
+	if (teleportEngaged) return; // the stick is busy aiming a teleport
 	const source = [...session.inputSources].find((s) => s.handedness === 'right');
 	const x = source?.gamepad?.axes?.[2] ?? 0;
 	if (Math.abs(x) < 0.4) {
@@ -406,7 +579,13 @@ export function executeVRMenuAction(name) {
 export function updateVRControls() {
 	const session = renderer?.xr.getSession();
 	updateRaysAndHover(!!session);
-	if (!session) return;
+	updateBlink();
+	if (!session) {
+		hideArc();
+		teleportEngaged = false;
+		return;
+	}
+	updateTeleport(session);
 	updateSnapTurn(session);
 
 	[...session.inputSources].forEach((source, index) => {

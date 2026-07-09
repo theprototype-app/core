@@ -13,6 +13,7 @@
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
+	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
 	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
@@ -281,6 +282,8 @@
 				if (point) sendPing(point);
 				return;
 			}
+			// a Path patrol node capturing waypoints takes the click
+			if (capturePathClick(selectionRaycaster)) return;
 			// measure mode captures clicks entirely
 			if ($measureMode) {
 				measureClick(selectionRaycaster, $objectsGroup);

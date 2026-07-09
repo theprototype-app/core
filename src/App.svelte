@@ -44,9 +44,10 @@
         import('./lib/objectActions'),
         import('./lib/commandsHandler.svelte'),
         import('./lib/moduleSDK'),
-        import('./lib/drawMode')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib }
+        import('./lib/drawMode'),
+        import('./lib/pathCapture')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture }
       })
     }
   })

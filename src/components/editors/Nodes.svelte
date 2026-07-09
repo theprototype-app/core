@@ -21,6 +21,7 @@
 	import AnimationNode from './nodes/AnimationNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
 	import CustomNode from './nodes/CustomNode.svelte';
+	import PathPatrolNode from './nodes/PathPatrolNode.svelte';
 	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen } from '../../stores/flowStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges } from '$lib/nodesHandler';
 	import { defDefaults } from '$lib/customNodes';
@@ -48,6 +49,7 @@
 		blink: AnimationNode,
 		script: ScriptNode,
 		customnode: CustomNode,
+		pathpatrol: PathPatrolNode,
 		...moduleTypes
 	};
 

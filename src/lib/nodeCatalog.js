@@ -79,6 +79,11 @@ export const nodeCatalog = [
 					{ key: 'radius', kind: 'range', min: 0, max: 5, step: 0.05 },
 					{ key: 'speed', kind: 'range', min: -5, max: 5, step: 0.1 }
 				]
+			},
+			{
+				type: 'pathpatrol',
+				label: 'Path patrol',
+				defaults: { points: [], speed: 1, mode: 'loop' }
 			}
 		]
 	},
@@ -105,7 +110,7 @@ export const nodeCatalog = [
 ];
 
 // Node types the animation runtime evaluates every frame
-export const animationTypes = ['shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink'];
+export const animationTypes = ['shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol'];
 
 /** @param {string} type */
 export function findNodeSpec(type) {

@@ -169,6 +169,61 @@ function applyAnimation(object, base, anim, time) {
 	} else if (anim.type === 'blink') {
 		const speed = data.speed ?? 2;
 		object.visible = Math.sin(time * speed * Math.PI) > 0;
+	} else if (anim.type === 'pathpatrol') {
+		applyPathPatrol(object, data, time);
+	}
+}
+
+/**
+ * Walk the waypoint polyline at constant speed (arc-length parameterized),
+ * looping or ping-ponging, facing along the path. Waypoints are absolute
+ * world points, so the object's base position is ignored while patrolling.
+ * @param {any} object @param {any} data @param {number} time
+ */
+function applyPathPatrol(object, data, time) {
+	const points = data.points ?? [];
+	if (points.length < 2) return;
+	const speed = data.speed ?? 1;
+	const loop = (data.mode ?? 'loop') === 'loop';
+
+	// segment lengths (loop closes the polyline)
+	const segments = [];
+	let total = 0;
+	const count = loop ? points.length : points.length - 1;
+	for (let i = 0; i < count; i++) {
+		const a = points[i];
+		const b = points[(i + 1) % points.length];
+		const length = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+		segments.push({ a, b, length });
+		total += length;
+	}
+	if (total <= 0) return;
+
+	let distance;
+	let reverse = false;
+	if (loop) {
+		distance = (time * speed) % total;
+	} else {
+		const cycle = (time * speed) % (2 * total);
+		reverse = cycle > total;
+		distance = reverse ? 2 * total - cycle : cycle;
+	}
+	for (const segment of segments) {
+		if (distance > segment.length) {
+			distance -= segment.length;
+			continue;
+		}
+		const t = segment.length > 0 ? distance / segment.length : 0;
+		const { a, b } = segment;
+		object.position.set(
+			a[0] + (b[0] - a[0]) * t,
+			a[1] + (b[1] - a[1]) * t,
+			a[2] + (b[2] - a[2]) * t
+		);
+		object.rotation.y = reverse
+			? Math.atan2(a[0] - b[0], a[2] - b[2])
+			: Math.atan2(b[0] - a[0], b[2] - a[2]);
+		return;
 	}
 }
 

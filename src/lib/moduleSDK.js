@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
+import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
@@ -50,7 +51,12 @@ function makeApi(moduleId) {
 		 * @param {Record<string, any>=} components
 		 */
 		registerNodeGroup(group, components) {
-			moduleNodeGroups.update((list) => [...list, group]);
+			moduleNodeGroups.update((list) => {
+				const existing = list.find((g) => g.group === group.group);
+				if (existing)
+					return list.map((g) => (g === existing ? { ...g, items: [...g.items, ...group.items] } : g));
+				return [...list, group];
+			});
 			if (components) Object.assign(moduleNodeComponents, components);
 		},
 		/**
@@ -116,8 +122,17 @@ function makeApi(moduleId) {
 		scene: () => get(globalScene),
 		objectsGroup: () => get(objectsGroup),
 		peerId: () => /** @type {any} */ (get(peers))?.peer?.id,
-		toast: showToast
+		toast: showToast,
+		now: runtimeNow
 	};
+}
+
+/**
+ * The clock the effect runtime runs on (seconds). Stamp replicated timestamps
+ * with this so time-based effects agree across peers.
+ */
+export function runtimeNow() {
+	return get(syncedAnimations) ? (Date.now() % 86400000) / 1000 : performance.now() / 1000;
 }
 
 let initialized = false;

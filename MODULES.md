@@ -148,6 +148,8 @@ api.scene();        // THREE.Scene
 api.objectsGroup(); // the replicated objects root (add scene content here)
 api.peerId();       // our peer id (undefined before the mesh is up)
 api.toast('hi');    // toast in the corner
+api.now();          // the runtime clock in seconds — stamp replicated
+                    // timestamps with this, never Date.now() directly
 ```
 
 Objects your module adds to `objectsGroup()` are part of the shared scene:
@@ -162,6 +164,24 @@ module state — then they can't drift.
 + one effect, zero messages (fully deterministic). Open the flow editor, drag
 in **Wave (hello)** and an **Object Selector**, pick an object, connect them —
 the object rocks on every peer.
+
+## Walkthrough: build a door (button module)
+
+The button module (`src/modules/button/`) shows the interactive pattern:
+
+1. Add a **Button** from the sidebar Modules group (or use any object).
+2. Add a **Wall/Cube** where the door should be.
+3. Open the flow editor: drag in **Button trigger** and an **Object Selector**.
+4. In the Button trigger node pick the button object; in the Object Selector
+   pick the door object; connect trigger → selector.
+5. Click the button in the viewport (or pull the VR trigger on it): the door
+   slides up by `height` on every peer. Toggle mode keeps it open, push mode
+   springs back after 1.5 s.
+
+How it replicates: the click writes `{pressed, at: api.now()}` into the node's
+data (replicated like any node edit); the slide is a pure function of
+`(data, time)` running on each peer — no motion messages at all. The
+`registerClickHandler` consumes the click so pressing doesn't select the button.
 
 ## Checklist before you ship one
 

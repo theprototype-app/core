@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
+import { recordEntry, registerHistoryKind } from '$lib/history';
 
 // Custom materials and image textures for scene objects, replicated to peers
 // through the existing objectParameters message. Textures travel as dataURLs
@@ -26,6 +27,45 @@ function broadcast(data) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send(data);
+}
+
+// Undo entries replay through the same replicated actions below
+// (recordEntry no-ops while history is being applied).
+registerHistoryKind('material', (entry, state) => {
+	const object = objectOf(entry.uuid);
+	if (!object) {
+		showToast('Cannot undo/redo: the object no longer exists');
+		return false;
+	}
+	if (entry.param === 'type') {
+		switchMaterialType(entry.uuid, state.value, true);
+	} else if (entry.param === 'map') {
+		applyMap(object, state.value);
+		broadcast({ type: 'objectParameters', parameter: 'map', uuid: entry.uuid, map: state.value });
+	} else if (entry.param === 'materialParam') {
+		setMaterialParam(entry.uuid, entry.key, state.value, true);
+	} else if (entry.param === 'color') {
+		if (object.material?.color) object.material.color.set(state.value);
+		broadcast({ type: 'color', uuid: entry.uuid, color: state.value });
+	}
+	objectsGroup.update((value) => value);
+	return true;
+});
+
+/**
+ * Record one material history step (also used by the Properties color picker).
+ * @param {string} uuid @param {string} param @param {string | null} key @param {any} before @param {any} after
+ */
+export function recordMaterialChange(uuid, param, key, before, after) {
+	if (before === after) return;
+	recordEntry({
+		kind: 'material',
+		uuid,
+		param,
+		...(key ? { key } : {}),
+		before: { value: before },
+		after: { value: after }
+	});
 }
 
 /**
@@ -82,6 +122,7 @@ export async function setObjectTexture(uuid, file) {
 	}
 	try {
 		const dataURL = await downscaleImage(file, 1024);
+		recordMaterialChange(uuid, 'map', null, object.material.userData?.mapDataUrl ?? null, dataURL);
 		applyMap(object, dataURL);
 		broadcast({ type: 'objectParameters', parameter: 'map', uuid: uuid, map: dataURL });
 	} catch (error) {
@@ -94,6 +135,8 @@ export async function setObjectTexture(uuid, file) {
 export function removeObjectTexture(uuid) {
 	const object = objectOf(uuid);
 	if (!object) return;
+	const previous = object.material?.userData?.mapDataUrl ?? null;
+	if (previous) recordMaterialChange(uuid, 'map', null, previous, null);
 	applyMap(object, null);
 	broadcast({ type: 'objectParameters', parameter: 'map', uuid: uuid, map: null });
 }
@@ -107,6 +150,7 @@ export function switchMaterialType(uuid, type, replicate = true) {
 	const object = objectOf(uuid);
 	if (!object || !MATERIAL_TYPES.includes(type)) return;
 	const old = object.material;
+	if (replicate && old && !Array.isArray(old)) recordMaterialChange(uuid, 'type', null, old.type, type);
 	/** @type {any} */
 	const fresh = new (/** @type {any} */ (THREE))[type]();
 	if (old && !Array.isArray(old)) {
@@ -134,6 +178,7 @@ export function setMaterialParam(uuid, key, value, replicate = true) {
 	const object = objectOf(uuid);
 	const material = object?.material;
 	if (!material || Array.isArray(material) || !(key in material)) return;
+	if (replicate) recordMaterialChange(uuid, 'materialParam', key, material[key], value);
 	material[key] = value;
 	material.needsUpdate = true;
 	objectsGroup.update((v) => v);

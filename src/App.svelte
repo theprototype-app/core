@@ -31,9 +31,13 @@
         import('./lib/autosave'),
         import('./lib/voiceChat'),
         import('./lib/annotationsHandler'),
-        import('./lib/flowRuntime')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime }
+        import('./lib/flowRuntime'),
+        import('./lib/history'),
+        import('./lib/materialsHandler'),
+        import('./lib/objectActions'),
+        import('./lib/commandsHandler.svelte')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler }
       })
     }
   })

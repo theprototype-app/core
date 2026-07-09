@@ -13,7 +13,7 @@ import {
 	Range,
 	Button
 } from 'flowbite-svelte';
-import { setObjectTexture, removeObjectTexture, setMaterialParam, switchMaterialType } from '$lib/materialsHandler';
+import { setObjectTexture, removeObjectTexture, setMaterialParam, switchMaterialType, recordMaterialChange } from '$lib/materialsHandler';
 import { moveObjectToGroup } from '$lib/objectActions';
 import { objectsGroup, TControls, selectedObject } from '../../stores/sceneStore';
 import { peers, chatHidden, propertiesClose, toggleExpand } from '../../stores/appStore.js';
@@ -25,6 +25,20 @@ import { sendObject } from '$lib/commandsHandler.svelte';
 
 let color = $state();
 let selectedMaterial = $state(null);
+
+// one undo entry per color-drag gesture: remember where it started,
+// record 600ms after the last input
+let colorGestureStart = null;
+let colorGestureTimer;
+function trackColorGesture(uuid, hex) {
+    if (colorGestureStart == null)
+        colorGestureStart = '#' + $selectedObject.material.color.getHexString();
+    clearTimeout(colorGestureTimer);
+    colorGestureTimer = setTimeout(() => {
+        recordMaterialChange(uuid, 'color', null, colorGestureStart, hex);
+        colorGestureStart = null;
+    }, 600);
+}
 
 let moving;
 let { min_position_x, max_position_x, min_position_y, max_position_y, min_position_z, max_position_z,
@@ -272,6 +286,7 @@ function sendTransformUpdate() {
     bind:value={color}
     on:input={(event) => {
         if ($selectedObject.material.type !== "MeshNormalMaterial"){
+        trackColorGesture($selectedObject.uuid, event.detail.hex);
         $selectedObject.material.color.set(event.detail.hex);
         $peers.send({
 						type: 'color',

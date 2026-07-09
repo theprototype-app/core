@@ -85,13 +85,13 @@ export const shortcuts = [
 	{
 		keys: 'Ctrl+Z',
 		group: 'History',
-		label: 'Undo (object transforms)',
+		label: 'Undo',
 		action: () => undo()
 	},
 	{
 		keys: 'Ctrl+Y',
 		group: 'History',
-		label: 'Redo (object transforms)',
+		label: 'Redo',
 		action: () => redo()
 	},
 	{

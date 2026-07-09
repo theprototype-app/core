@@ -24,7 +24,7 @@
     $effect(() => {
         if ($toggleExpand !== null) {
             // save the uuid of the previously selected object
-            let save = $selectedObject.uuid;
+            let save = $selectedObject?.uuid;
 
             // get the element with the toggleExpand uuid
             let element = document.getElementById($toggleExpand);
@@ -44,8 +44,10 @@
                 // keep UI state for previously selected object
                 if (saved)
                 saved.querySelector("p > button > div > div")?.click();
-                if (saved?.querySelector("p > button > div > div") !== null)
-                configure($objectsGroup.getObjectByProperty('uuid', save), 1);
+                // the object may have been deleted while this timer was pending
+                let savedObject = save && $objectsGroup.getObjectByProperty('uuid', save);
+                if (saved?.querySelector("p > button > div > div") !== null && savedObject)
+                configure(savedObject, 1);
             }, 100);
 
             // reset the toggleExpand state
@@ -128,9 +130,7 @@
 			var el = $objectsGroup.getObjectByProperty('uuid', item.uuid);
 
 			if(el.parent.parent.parent !== null) {
-                // console.log("muchas")
-                // console.log(el.parent.parent.parent)
-                el.parent?.remove(el);
+                // /clear removes it from its real parent (and records the undo step)
                 sceneCommand('/clear ' + el.uuid);
 
                 isExpanded = false;

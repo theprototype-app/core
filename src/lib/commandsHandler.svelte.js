@@ -4,6 +4,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
 import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
+import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
@@ -105,7 +106,11 @@ export function sceneCommand(command) {
                 sceneObjects.clear();
             } else {
                 let object = sceneObjects.getObjectByProperty('uuid', command.split(' ')[1])
-                if (object != null) sceneObjects.remove(object);
+                if (object != null) {
+                    recordObjectPresence('delete', object);
+                    // parent-aware so nested objects are removed too
+                    (object.parent ?? sceneObjects).remove(object);
+                }
                 peer.send({type: 'delete', uuid: command.split(' ')[1], peerId: peer.peer.id});
             }
         }
@@ -124,8 +129,10 @@ export function sceneCommand(command) {
         else if (command.startsWith('/create')) {
                 let uuid = createGeometry(command);
                 console.log(uuid + ' created');
-                if(uuid != null)
+                if(uuid != null) {
                 peer.send({type: 'create', command: command, uuid: uuid});
+                recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
+                }
                 peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
 
                 fixLight.set(true);
@@ -139,15 +146,19 @@ export function sceneCommand(command) {
         else if (command.startsWith('/light')) {
                 let uuid = createLight(command);
                 console.log(uuid + ' created');
-                if(uuid != null)
+                if(uuid != null) {
                 peer.send({type: 'light', command: command, uuid: uuid});
+                recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
+                }
                 peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
         }
         else if (command.startsWith('/group')) {
                 let uuid = createGroup(command);
                 console.log(uuid + ' created');
-                if(uuid != null)
+                if(uuid != null) {
                 peer.send({type: 'group', command: command, uuid: uuid});
+                recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
+                }
                 peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
         }
         else if (command.startsWith('/transform')) {
@@ -299,8 +310,9 @@ export async function objectParameters(data) {
 
 export async function deleteObject(uuid) {
     let object = sceneObjects.getObjectByProperty('uuid', uuid)
+    if (!object) return;
     object.parent?.remove(object);
-    if(selected.uuid == uuid) controls.detach();
+    if(selected?.uuid == uuid) controls.detach();
     sceneObjects.remove(sceneObjects.getObjectByProperty('uuid', uuid));
     //Trigger reactivity for UI list of objects on remote
     objectsGroup.update((value) => value);

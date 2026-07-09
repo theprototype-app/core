@@ -6,6 +6,7 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
+import { recordObjectPresence } from '$lib/history';
 import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 
 //Access objects Store
@@ -83,6 +84,7 @@ function addImported(imported, name) {
 	//Trigger reactivity for UI list of objects
 	objectsGroup.update((value) => value);
 	controls.attach(imported);
+	recordObjectPresence('create', imported);
 	sendObjects(/** @type {any} */ (null), imported);
 
 	selectedObject.set(sceneObjects.getObjectByProperty('uuid', imported.uuid));

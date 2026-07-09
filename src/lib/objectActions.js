@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { dropToSurface } from './snapping';
-import { recordTransform } from './history';
+import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind } from './history';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import {
 	objectsGroup,
@@ -130,6 +130,7 @@ export function duplicateObject(uuid) {
 		});
 
 	selectObject(clone.uuid);
+	recordObjectPresence('create', clone);
 	return clone;
 }
 
@@ -153,11 +154,51 @@ export function applyRemoteDuplicate(sourceUuid, uuids, name, pos) {
 	objectsGroup.update((value) => value);
 }
 
+// name/visibility undo entries replay by setting the recorded value directly
+registerHistoryKind('props', (entry, state) => {
+	const group = get(objectsGroup);
+	const object = group?.getObjectByProperty('uuid', entry.uuid);
+	if (!object) {
+		showToast('Cannot undo/redo: the object no longer exists');
+		return false;
+	}
+	/** @type {any} */
+	const peer = get(peers);
+	if ('name' in state) {
+		object.name = state.name;
+		if (peer) peer.send({ type: 'name', uuid: entry.uuid, name: state.name });
+	}
+	if ('visible' in state) {
+		object.visible = state.visible;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'visible', uuid: entry.uuid, visible: state.visible });
+	}
+	objectsGroup.update((value) => value);
+	return true;
+});
+
+// group moves replay through moveObjectToGroup (recordEntry no-ops during replay)
+registerHistoryKind('group', (entry, state) => {
+	const group = get(objectsGroup);
+	if (!group?.getObjectByProperty('uuid', entry.uuid)) {
+		showToast('Cannot undo/redo: the object no longer exists');
+		return false;
+	}
+	moveObjectToGroup(entry.uuid, state.parent);
+	return true;
+});
+
 /** Toggle visibility and replicate (same message Properties uses) @param {string} uuid */
 export function toggleObjectVisibility(uuid) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
 	if (!object) return;
+	recordEntry({
+		kind: 'props',
+		uuid: uuid,
+		before: { visible: object.visible },
+		after: { visible: !object.visible }
+	});
 	object.visible = !object.visible;
 	objectsGroup.update((value) => value);
 	/** @type {any} */
@@ -171,6 +212,8 @@ export function renameObject(uuid, name) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
 	if (!object || !name) return;
+	if (object.name !== name)
+		recordEntry({ kind: 'props', uuid: uuid, before: { name: object.name }, after: { name: name } });
 	object.name = name;
 	objectsGroup.update((value) => value);
 	/** @type {any} */
@@ -191,6 +234,7 @@ export function moveObjectToGroup(uuid, target) {
 	if (!object) return;
 	/** @type {any} */
 	const peer = get(peers);
+	const fromParent = object.parent === group ? 'root' : object.parent?.uuid;
 
 	if (target === 'root') {
 		while (object.parent && object.parent !== group) {
@@ -217,6 +261,9 @@ export function moveObjectToGroup(uuid, target) {
 		if (peer) peer.send({ type: 'group', uuid: uuid, group: destination.uuid });
 		destination.attach(object);
 	}
+	const toParent = object.parent === group ? 'root' : object.parent?.uuid;
+	if (fromParent !== toParent)
+		recordEntry({ kind: 'group', uuid: uuid, before: { parent: fromParent }, after: { parent: toParent } });
 	objectsGroup.update((value) => value);
 }
 

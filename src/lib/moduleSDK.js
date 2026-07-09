@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
 import { peers, showToast, modulesOpen } from '../stores/appStore';
@@ -133,8 +134,20 @@ function makeApi(moduleId) {
 		objectsGroup: () => get(objectsGroup),
 		peerId: () => /** @type {any} */ (get(peers))?.peer?.id,
 		toast: showToast,
-		now: runtimeNow
+		now: runtimeNow,
+		// user modules are self-contained (no imports) — THREE + assets come via the api
+		THREE: THREE,
+		/** blob URL for a packaged file, e.g. api.assetUrl('assets/pling.mp3') @param {string} path */
+		assetUrl: (path) => moduleAssets[moduleId]?.[path] ?? null
 	};
+}
+
+/** @type {Record<string, Record<string, string>>} moduleId -> {path: blobUrl} */
+const moduleAssets = {};
+
+/** Used by the user-module loader to expose packaged files @param {string} id @param {Record<string, string>} assets */
+export function registerModuleAssets(id, assets) {
+	moduleAssets[id] = assets;
 }
 
 /**

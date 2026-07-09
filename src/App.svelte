@@ -9,6 +9,7 @@
   import { startFlowRuntime } from '$lib/flowRuntime'
   import { startNodeSync } from '$lib/nodesHandler'
   import { startLockSweep } from '$lib/lockControl'
+  import { loadUserModules } from '$lib/userModules'
   import { startShortcuts } from '$lib/shortcuts'
   import { startSnapping } from '$lib/snapping'
   import { startAutosave } from '$lib/autosave'
@@ -28,6 +29,7 @@
     startFlowRuntime()
     startNodeSync()
     startLockSweep()
+    loadUserModules()
     startShortcuts()
     startSnapping()
     startAutosave()
@@ -52,9 +54,10 @@
         import('./lib/pathCapture'),
         import('./lib/lockControl'),
         import('./lib/prefabs'),
-        import('./lib/physics')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics }
+        import('./lib/physics'),
+        import('./lib/userModules')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib }
       })
     }
   })

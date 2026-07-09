@@ -285,15 +285,27 @@ style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: tr
         dismissable={false}
         oncreate={setTimeout(() => {
             $toastStore = $toastStore.filter((t) => t !== toast);
-        }, 3000)}
+        }, typeof toast === 'string' ? 3000 : 15000)}
         transition={fly}
         class="dark:border-dark-700 rounded-lg border-2 border-green-500 p-2 dark:bg-green-800"
         divClass="flex items-center gap-3">
         <div style="position: relative; left: 50%; transform: translate(-25%, -50%);"></div>
         <div class="mb-1 inline-flex items-center text-base font-medium text-green-700 dark:text-green-500">
             <p class="max-w-80 overflow-hidden pr-4 text-sm font-medium text-gray-500 dark:text-gray-400">
-                {toast}
+                {typeof toast === 'string' ? toast : toast.text}
             </p>
+            {#if typeof toast !== 'string'}
+                {#each toast.actions as entry}
+                    <Button
+                        color="primary"
+                        class="nob ml-1 rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
+                        onclick={() => {
+                            entry.action();
+                            $toastStore = $toastStore.filter((t) => t !== toast);
+                        }}>{entry.label}</Button
+                    >
+                {/each}
+            {/if}
         </div>
     </Toast>
 </div>

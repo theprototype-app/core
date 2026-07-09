@@ -8,6 +8,7 @@
   import { isLocked } from './stores/sceneStore'
   import { startFlowRuntime } from '$lib/flowRuntime'
   import { startNodeSync } from '$lib/nodesHandler'
+  import { startLockSweep } from '$lib/lockControl'
   import { startShortcuts } from '$lib/shortcuts'
   import { startSnapping } from '$lib/snapping'
   import { startAutosave } from '$lib/autosave'
@@ -24,6 +25,7 @@
   onMount(() => {
     startFlowRuntime()
     startNodeSync()
+    startLockSweep()
     startShortcuts()
     startSnapping()
     startAutosave()
@@ -45,9 +47,10 @@
         import('./lib/commandsHandler.svelte'),
         import('./lib/moduleSDK'),
         import('./lib/drawMode'),
-        import('./lib/pathCapture')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture }
+        import('./lib/pathCapture'),
+        import('./lib/lockControl')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl }
       })
     }
   })

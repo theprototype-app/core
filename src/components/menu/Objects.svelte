@@ -18,6 +18,7 @@
     import { objectsGroup, TControls, selectedObject, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
     import { selectObject, renameObject, moveObjectToGroup } from '$lib/objectActions';
+    import { nameOf } from '$lib/lockControl';
     import {
         showSidebar,
 		propertiesClose,
@@ -202,7 +203,7 @@
                         <p class="configure grayscale">⚙️</p>
                         <p class="delete grayscale">✖️</p>
                     </div>
-                    <Tooltip placement='left' arrow={false}>Locked by {$lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid)[0]}</Tooltip>
+                    <Tooltip placement='left' arrow={false}>Locked by {nameOf($lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid)[0])} — right-click to request control</Tooltip>
                 {:else}
                     <div class="flex inline-flex justify-end col-span-3">
                         <!-- <li class="configure inline-flex">🔓</li> -->

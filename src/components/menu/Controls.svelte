@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
-	import { objectsGroup, TControls, isLocked, isVRMode } from '../../stores/sceneStore';
+	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject } from '../../stores/appStore.js';
 	import { mutedFlowObjects } from '../../stores/flowStore';
 	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup } from '$lib/objectActions';
 	import { enterEditMode } from '$lib/meshEdit';
 	import { addAnnotation } from '$lib/annotationsHandler';
+	import { requestControl, nameOf } from '$lib/lockControl';
 	import { sendPing } from '$lib/ping';
 	import * as THREE from 'three';
 	import { setContext } from 'svelte';
@@ -121,8 +122,18 @@
 	function objectMenuItems(menu) {
 		const object = $objectsGroup?.getObjectByProperty('uuid', menu.uuid);
 		const muted = $mutedFlowObjects.includes(menu.uuid);
-		const lockedTooltip = menu.locked ? 'Locked by another peer' : '';
+		const lockHolder = $lockedObjects.find((lock) => lock[1] === menu.uuid)?.[0];
+		const lockedTooltip = menu.locked ? 'Locked by ' + nameOf(lockHolder) : '';
 		return [
+			...(menu.locked
+				? [
+						{
+							label: 'Request control',
+							tooltip: 'Ask ' + nameOf(lockHolder) + ' to hand the object over',
+							action: () => requestControl(menu.uuid)
+						}
+					]
+				: []),
 			{ label: 'Focus camera', action: () => focusObject(menu.uuid) },
 			{ label: 'Duplicate', action: () => duplicateObject(menu.uuid) },
 			{

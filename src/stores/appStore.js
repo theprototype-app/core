@@ -97,10 +97,16 @@ export const renamingObject = writable(null);
 export const fixLight = writable(false);
 export const pendingApprovals = writable([]);
 export const waitingForApproval = writable([]);
+/** @type {import('svelte/store').Writable<any[]>} strings or {text, actions} */
 export const toastStore = writable([]);
 
-export function showToast(message) {
-  toastStore.update((toast) => [...toast, message]);
+/**
+ * Plain string = 3s info toast. Pass `actions` ([{label, action}]) for a
+ * sticky decision toast (15s) with buttons.
+ * @param {string} message @param {{label: string, action: () => void}[]=} actions
+ */
+export function showToast(message, actions) {
+  toastStore.update((toast) => [...toast, actions ? { text: message, actions } : message]);
 }
 
 export function clearToast(toast) {

@@ -9,6 +9,7 @@ import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
+import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -158,6 +159,12 @@ export class PeerConnection {
 					changeName(data.uuid, data.name);
 				} else if(data.type == 'move') {
 					moveGeometry(data.uuid, data.pos, data.rot, data.scale);
+				} else if(data.type == 'lockrequest') {
+					applyLockRequest(data);
+				} else if(data.type == 'unlock') {
+					applyUnlock(data);
+				} else if(data.type == 'lockdenied') {
+					applyLockDenied(data);
 				} else if(data.type == 'lock') {
 					lockGeometry(data.uuid, data.peerId);
 				} else if(data.type == 'locked') {

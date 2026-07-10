@@ -3,6 +3,7 @@ import { writable, get } from 'svelte/store';
 import { globalScene, globalRenderer, objectsGroup, backgroundColor } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
+import { registerSystemGroup } from './moduleSDK';
 
 // Environment presets + a default light rig. The rig lives at the SCENE root
 // with fixed names — it is never part of objectsGroup, so connecting peers
@@ -162,6 +163,8 @@ let started = false;
 export function startEnvironment() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
+	registerSystemGroup(RIG_HEMI); // advanced object-list System filter
+	registerSystemGroup(RIG_SUN);
 	environment.subscribe((state) => {
 		try {
 			localStorage.setItem('environment', JSON.stringify(state));

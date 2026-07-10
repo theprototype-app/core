@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Select } from 'flowbite-svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrFlying } from '../../stores/sceneStore.js';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
@@ -83,6 +83,12 @@
 						<Checkbox bind:checked={$spatialVoice}>&nbsp;Spatial voice</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Voices come from where each peer is (pan + distance falloff)</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox bind:checked={$advancedMode}>&nbsp;Advanced mode</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Show system objects (module content, environment rig) as a System filter in the object list</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>

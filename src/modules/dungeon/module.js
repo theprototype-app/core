@@ -123,6 +123,8 @@ export default {
 	register(api) {
 		apiRef = api;
 
+		api.registerSystemGroup(GROUP_NAME); // visible under the System filter
+
 		api.registerMenu('Dungeon generator', () => {
 			if (!panelMounted && typeof document !== 'undefined') {
 				panelMounted = true;

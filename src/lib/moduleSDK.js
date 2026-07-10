@@ -34,6 +34,13 @@ export const moduleClickHandlers = [];
 export const moduleFrameTasks = [];
 /** @type {string[]} scene-root group names that receive viewport clicks */
 export const moduleInteractiveGroups = [];
+/** @type {string[]} scene-root object names listed under the object list's System filter */
+export const systemGroupNames = [];
+
+/** @param {string} name */
+export function registerSystemGroup(name) {
+	if (!systemGroupNames.includes(name)) systemGroupNames.push(name);
+}
 /** @type {(() => void)[]} scene-clear hooks (modules remove their content) */
 const sceneClearHandlers = [];
 
@@ -121,6 +128,11 @@ function makeApi(moduleId) {
 		 */
 		registerInteractiveGroup(name) {
 			moduleInteractiveGroups.push(name);
+			registerSystemGroup(name); // clickable module content is also listable
+		},
+		/** List a scene-root group under the object list's System filter @param {string} name */
+		registerSystemGroup(name) {
+			registerSystemGroup(name);
 		},
 		/**
 		 * Runs when the scene is cleared (locally or by a peer) — remove your

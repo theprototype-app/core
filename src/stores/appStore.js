@@ -113,6 +113,15 @@ export const toastStore = writable([]);
 // modules manager modal
 export const modulesOpen = writable(false);
 
+// advanced mode: reveals system objects (module content, environment rig)
+// in the object list behind a System filter chip
+export const advancedMode = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('advancedMode') === 'true'
+);
+advancedMode.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('advancedMode', String(on));
+});
+
 /**
  * Plain string = 3s info toast. Pass `actions` ([{label, action}]) for a
  * sticky decision toast (15s) with buttons.

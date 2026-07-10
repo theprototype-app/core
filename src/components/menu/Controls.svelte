@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
-	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject } from '../../stores/appStore.js';
+	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects, globalScene } from '../../stores/sceneStore';
+	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject, advancedMode } from '../../stores/appStore.js';
+	import { systemGroupNames } from '$lib/moduleSDK';
+	import { flyTo } from '$lib/objectActions';
 	import { mutedFlowObjects } from '../../stores/flowStore';
 	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup } from '$lib/objectActions';
 	import { enterEditMode } from '$lib/meshEdit';
@@ -32,6 +34,12 @@
 		stroke: (o) => o.name === 'Stroke'
 	};
 	function refreshFilter() {
+		if (searchType === 'system') {
+			// the System view renders its own rows — normal filtering is off
+			matchCount = 0;
+			objectFilter.set(null);
+			return;
+		}
 		const group = $objectsGroup;
 		const term = searchTerm.trim().toLowerCase();
 		if (!group || (!term && !searchType)) {
@@ -62,6 +70,43 @@
 		refreshFilter();
 	});
 	objectsGroup.subscribe(() => refreshFilter()); // re-filter on scene changes
+
+	// --- advanced mode: System filter shows scene-root module/env objects ---
+	let systemRows = $state([]);
+	let systemNoticeDismissed = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem('systemNoticeDismissed') === 'true'
+	);
+	let expandedSystem = $state({});
+	function refreshSystemRows() {
+		const scene = $globalScene;
+		if (!scene) {
+			systemRows = [];
+			return;
+		}
+		systemRows = systemGroupNames
+			.map((name) => scene.getObjectByName(name))
+			.filter(Boolean)
+			.map((object) => ({
+				name: object.name,
+				type: object.type,
+				children: object.children.map((child) => child.name || child.type),
+				object
+			}));
+	}
+	// module content spawns outside the store flow — poll while the filter is active
+	$effect(() => {
+		if (searchType !== 'system') return;
+		refreshSystemRows();
+		const timer = setInterval(refreshSystemRows, 1000);
+		return () => clearInterval(timer);
+	});
+	function focusSystemObject(object) {
+		const box = new THREE.Box3().setFromObject(object);
+		if (!isFinite(box.min.x)) return;
+		const center = box.getCenter(new THREE.Vector3());
+		const size = Math.max(box.getSize(new THREE.Vector3()).length(), 2);
+		flyTo([center.x + size * 0.6, center.y + size * 0.45, center.z + size * 0.6], center.toArray());
+	}
 	let classActive =
 		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-300';
 
@@ -293,7 +338,7 @@
 			on:keydown={(e) => { if (e.key === 'Escape') { searchTerm = ''; e.currentTarget.blur(); } }}
 		/>
 		<div class="flex items-center gap-1">
-			{#each [['', 'All'], ['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes']] as [value, label]}
+			{#each [['', 'All'], ['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes'], ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
 				<button
 					class={'rounded-full px-2 py-0.5 ' +
 						(searchType === value
@@ -311,14 +356,60 @@
 	</div>
 	<Listgroup active class="h-full overflow-y-scroll -rounded rounded-br rounded-bl">
 		<div class="container">
-			<!-- style="max-height: 300px;" -->
-		  {#if $objectsGroup}
-			{#if $objectsGroup.children.length > 0}
-				{#each $objectsGroup.children as element}
-				<Objects {element} />
+			{#if searchType === 'system'}
+				{#if !systemNoticeDismissed}
+					<div class="flex items-start gap-1 bg-yellow-900/40 p-2 text-[11px] text-yellow-200">
+						<span class="flex-1">
+							System objects are managed by modules and the environment — they regenerate
+							from their state and are not editable here.
+						</span>
+						<button
+							class="rounded bg-gray-600 px-1 text-white"
+							on:click={() => {
+								systemNoticeDismissed = true;
+								localStorage.setItem('systemNoticeDismissed', 'true');
+							}}>✕</button>
+					</div>
+				{/if}
+				{#each systemRows as row (row.name)}
+					<div class="border-b border-gray-600/40 px-2 py-1 text-sm text-gray-800 dark:text-gray-200">
+						<div class="flex items-center gap-2">
+							<button
+								class="w-4 text-gray-400"
+								title="Show children"
+								on:click={() => (expandedSystem = { ...expandedSystem, [row.name]: !expandedSystem[row.name] })}
+							>
+								{expandedSystem[row.name] ? '−' : '+'}
+							</button>
+							<i class="fa-solid fa-gears text-gray-400" title="System object"></i>
+							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed by a module / the environment">
+								{row.name}
+							</span>
+							<span class="text-[10px] text-gray-400">{row.children.length}</span>
+							<button
+								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								title="Focus the camera on it"
+								on:click={() => focusSystemObject(row.object)}>👁</button>
+						</div>
+						{#if expandedSystem[row.name]}
+							{#each row.children as childName}
+								<p class="pl-8 text-xs text-gray-400">{childName}</p>
+							{/each}
+						{/if}
+					</div>
 				{/each}
+				{#if systemRows.length === 0}
+					<p class="p-2 text-xs italic text-gray-400">No system objects right now — spawn a module (piano, pong, dungeon) to see its content here.</p>
+				{/if}
+			{:else}
+			  {#if $objectsGroup}
+				{#if $objectsGroup.children.length > 0}
+					{#each $objectsGroup.children as element}
+					<Objects {element} />
+					{/each}
+				{/if}
+			  {/if}
 			{/if}
-		  {/if}
 		</div>
 	</Listgroup>
 	<div class="resize-handle" style="position: absolute; bottom: -38px; right: 0; width: 10px; height: 10px; background-color: #ccc; cursor: se-resize;"></div>

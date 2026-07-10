@@ -14,12 +14,12 @@ const rotationZ = (page, uuid) =>
 
 // Phase-lock check: sampling inside requestAnimationFrame reads the rotation
 // the runtime wrote THIS frame, so rot - sin(time*3) is the animation base
-// plus at most one frame of lag. That residual must stay constant over time
-// on a page that tracks the synced wall clock. A constant offset is expected:
-// a peer receiving the object mid-swing bakes the pose into its animation
-// base (known artifact, see backlog). Graph uses {amplitude:1, speed:3};
+// plus at most one frame of lag. Since phase 88 the sender parks animated
+// objects at their BASE pose while serializing, so a peer joining mid-swing
+// captures the true base (0 for this box): the ABSOLUTE residual must be
+// ~0 on both peers, not merely constant. Graph uses {amplitude:1, speed:3};
 // flowRuntime time = (Date.now() % 86400000) / 1000.
-const phaseDrift = (page, uuid) =>
+const phaseResidual = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
@@ -36,7 +36,11 @@ const phaseDrift = (page, uuid) =>
 				sample().then((first) =>
 					setTimeout(async () => {
 						const second = await sample();
-						resolve(first === null || second === null ? null : Math.abs(second - first));
+						resolve(
+							first === null || second === null
+								? null
+								: { drift: Math.abs(second - first), abs: Math.min(Math.abs(first), Math.abs(second)) }
+						);
 					}, 400)
 				);
 			}),
@@ -89,10 +93,16 @@ h.run(async () => {
 	const bz2 = await rotationZ(B.page, uuid);
 	h.check(bz1 !== null, 'box synced to B');
 	h.check(bz1 !== bz2, 'wave animates on B too');
-	const [da, db] = await Promise.all([phaseDrift(A.page, uuid), phaseDrift(B.page, uuid)]);
+	const [ra, rb] = await Promise.all([phaseResidual(A.page, uuid), phaseResidual(B.page, uuid)]);
 	h.check(
-		da !== null && db !== null && da < 0.25 && db < 0.25,
-		`both peers phase-lock to the synced clock (drift A ${da?.toFixed(3)}, B ${db?.toFixed(3)})`
+		ra !== null && rb !== null && ra.drift < 0.25 && rb.drift < 0.25,
+		`both peers phase-lock to the synced clock (drift A ${ra?.drift.toFixed(3)}, B ${rb?.drift.toFixed(3)})`
+	);
+	// 88: B joined mid-swing but must have captured the TRUE base (0), so the
+	// absolute poses match on both peers — no baked offset anymore
+	h.check(
+		ra !== null && rb !== null && ra.abs < 0.1 && rb.abs < 0.1,
+		`absolute poses identical, no baked mid-swing base (residual A ${ra?.abs.toFixed(3)}, B ${rb?.abs.toFixed(3)})`
 	);
 
 	await h.finish(browser);

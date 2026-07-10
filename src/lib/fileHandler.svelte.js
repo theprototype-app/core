@@ -8,6 +8,7 @@ import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore.js
 import { sendObjects } from './commandsHandler.svelte';
 import { recordObjectPresence } from '$lib/history';
 import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
+import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 
 //Access objects Store
@@ -27,12 +28,15 @@ let loadingNames = $state();
 loadingFile.subscribe(value => { loadingNames = value });
 
 export function save(format) {
-	console.log('Saving...');        
+	console.log('Saving...');
 	//This exports entire scene with all objects
+	// saves store animation BASE poses, not the current swing (88)
+	const restore = parkAnimatedAtBase();
 	const exporter = new GLTFExporter({outputEncoding: format});
 	exporter.parse(
 		sceneObjects,
 		function (result) {
+			restore();
 			var blob = new Blob([JSON.stringify(result)], { type: 'application/json' });
 			let a = document.createElement('a');
 			document.body.appendChild(a);
@@ -45,6 +49,7 @@ export function save(format) {
 			window.URL.revokeObjectURL(url);
 		},
 		function (error) {
+			restore();
 			console.log(error);
 		}
 	);

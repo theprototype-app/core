@@ -3,6 +3,7 @@ import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, orbitControls, TControls } from '../stores/sceneStore';
 import { flowNodes, flowEdges } from '../stores/flowStore';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
+import { parkAnimatedAtBase } from './flowRuntime';
 import { peers, showToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
@@ -85,20 +86,27 @@ function buildSessionPayload(name) {
 	const camera = get(globalCamera);
 	/** @type {any} */
 	const controls = get(orbitControls);
-	return {
-		id: crypto.randomUUID(),
-		name: name || 'Session ' + new Date().toLocaleString(),
-		createdAt: Date.now(),
-		count: group?.children.length ?? 0,
-		thumbnail: renderSceneThumbnail(group),
-		objects: (group?.children ?? []).map((/** @type {any} */ child) => child.toJSON()),
-		nodes: get(flowNodes).map(serializeNode),
-		edges: get(flowEdges).map(serializeEdge),
-		annotations: annotationsSnapshot(),
-		camera: camera
-			? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
-			: null
-	};
+	// sessions store animation BASE poses, not the current swing (88);
+	// toJSON + thumbnail read the graph synchronously
+	const restore = parkAnimatedAtBase();
+	try {
+		return {
+			id: crypto.randomUUID(),
+			name: name || 'Session ' + new Date().toLocaleString(),
+			createdAt: Date.now(),
+			count: group?.children.length ?? 0,
+			thumbnail: renderSceneThumbnail(group),
+			objects: (group?.children ?? []).map((/** @type {any} */ child) => child.toJSON()),
+			nodes: get(flowNodes).map(serializeNode),
+			edges: get(flowEdges).map(serializeEdge),
+			annotations: annotationsSnapshot(),
+			camera: camera
+				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
+				: null
+		};
+	} finally {
+		restore();
+	}
 }
 
 /** Persist a payload as a slot @param {any} payload */

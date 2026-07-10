@@ -9,6 +9,7 @@ import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected } from '$lib/physics'
 import { environment } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { get } from 'svelte/store'
@@ -427,7 +428,15 @@ export function sendObjects(peerId, element) {
     setTimeout(() => {
         // Send amount of objects to be sent and their uuids
         conn.send({type: 'loading', count: count, uuids: uuids});
-        sendObject(conn, element, groupid);
+        // park animated objects at their base pose so the receiver captures the
+        // TRUE animation base, not a mid-swing pose (88). The walk below reads
+        // every transform synchronously, so restore right after.
+        const restore = parkAnimatedAtBase();
+        try {
+            sendObject(conn, element, groupid);
+        } finally {
+            restore();
+        }
         uuids = [];
     }, 500);
 
@@ -493,29 +502,29 @@ export function sendObject(conn, element, groupuuid) {
             });
             sendObject(conn, element, element.uuid);
         } else {
+            // capture the transform NOW (synchronously, while animated objects
+            // are parked at their base) — the exporter callback fires later (88)
+            const pos = element.position.toArray();
+            const rot = element.rotation.toArray();
+            const scale = element.scale.toArray();
             const exporter = new GLTFExporter({outputEncoding: 'json'});
             exporter.parse(
                 element,
                 function (result) {
-                    // console.log('packing gltf');
-                    element.getWorldPosition(test);
-                    // if (element.name === "Rug001")
-                        // console.log("Rug001 pos: " + element.position.x + " " + element.position.y + " " + element.position.z)
-                    // if (groupuuid) console.log("group uuid " + groupuuid + ' ' + ' ' + element.name);
                     conn.send({
                         type: 'object',
                         element: result,
                         uuids: [element.uuid],
                         groupuuid: groupuuid,
-                        pos: element.position.toArray(),
-                        rot: element.rotation.toArray(),
-                        scale: element.scale.toArray()
+                        pos: pos,
+                        rot: rot,
+                        scale: scale
                     });
                 },
                 function (error) {
                     console.log(error);
                 }
-            );                
+            );
         }
     })
 

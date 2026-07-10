@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { objectsGroup, globalCamera, orbitControls } from '../stores/sceneStore';
 import { flowNodes, flowEdges } from '../stores/flowStore';
 import { serializeNode, serializeEdge } from './nodesHandler';
+import { parkAnimatedAtBase } from './flowRuntime';
 import { peers, showToast } from '../stores/appStore';
 import { idbGet, idbPut, idbDelete } from './idb';
 
@@ -30,10 +31,16 @@ function exportScene() {
 	return new Promise((resolve) => {
 		const group = get(objectsGroup);
 		if (!group || group.children.length === 0) return resolve(null);
+		// snapshots must store animation BASE poses, not the current swing (88)
+		const restore = parkAnimatedAtBase();
 		new GLTFExporter().parse(
 			group,
-			(result) => resolve(result),
+			(result) => {
+				restore();
+				resolve(result);
+			},
 			(error) => {
+				restore();
 				console.log('autosave export failed', error);
 				resolve(null);
 			}

@@ -39,6 +39,9 @@ function restoreBase(object, base) {
 	object.rotation.set(base.rot[0], base.rot[1], base.rot[2]);
 	object.scale.fromArray(base.scale);
 	object.visible = base.visible;
+	// serializers (toJSON/GLTFExporter) read object.matrix directly — without
+	// this they'd bake the matrix the last RENDER composed, not the base (88)
+	object.updateMatrix();
 }
 
 // Resolve which scene object a node graph edge targets:
@@ -107,6 +110,25 @@ export function resumeAnimation(uuid) {
 	suspended.delete(uuid);
 	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
 	if (object && baseState.has(uuid)) baseState.set(uuid, captureBase(object));
+}
+
+/**
+ * Park every animated object at its base pose while a serializer reads the
+ * scene (peer full sync, GLTF save, autosave, session snapshot) — otherwise
+ * the receiver/save bakes a mid-swing pose as its animation base and absolute
+ * poses differ between peers by a constant offset (phase 88).
+ * Returns an idempotent restore function; objects a gizmo drag already
+ * suspended are left alone.
+ */
+export function parkAnimatedAtBase() {
+	const parked = [...baseState.keys()].filter((uuid) => !suspended.has(uuid));
+	parked.forEach(suspendAnimation);
+	let restored = false;
+	return () => {
+		if (restored) return;
+		restored = true;
+		parked.forEach(resumeAnimation);
+	};
 }
 
 /**

@@ -433,7 +433,7 @@ export function raycastPanel(index) {
 	const panel = get(vrPanelGroup);
 	if (!panel || !get(vrObjectsPanelOpen)) return null;
 	const hits = controllerRay(index).intersectObject(panel, true);
-	const row = hits.find((h) => h.object.name?.startsWith('vrpanel-'));
+	const row = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrpanel-'));
 	return row ? 'panel:' + row.object.name.slice('vrpanel-'.length) : null;
 }
 

@@ -11,7 +11,7 @@
 	// every frame. Mesh selections share the mesh geometry; groups/lights get
 	// a bounding-box shell.
 
-	let group: any
+	let group: any = $state(null)
 	let shellMesh: any = null
 	let currentUuid = ''
 	let boxSize = new THREE.Vector3(1, 1, 1)

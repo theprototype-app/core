@@ -15,7 +15,7 @@
 
 	const { renderer } = useThrelte()
 
-	let group: any
+	let group: any = $state(null)
 	let lines = $state('')
 	let frames = 0
 	let last = typeof performance !== 'undefined' ? performance.now() : 0

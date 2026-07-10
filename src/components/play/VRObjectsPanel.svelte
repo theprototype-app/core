@@ -21,7 +21,7 @@
 	const ROW_H = 0.03
 	const WIDTH = 0.26
 
-	let group: any
+	let group: any = null
 
 	$: vrPanelGroup.set($vrObjectsPanelOpen ? group : null)
 	$: if (!$vrObjectsPanelOpen) vrPanelScroll.set(0)

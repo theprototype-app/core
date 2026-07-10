@@ -35,8 +35,11 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 
 	// click-to-front: open chat + object list, drag chat over the list, compare z
+	// (close the flow drawer first — it covers the bottom-right chat button, 93)
+	await A.page.locator('p[title="Node editor (N)"]').click();
+	await A.page.waitForTimeout(300);
 	await A.page.locator('p[title="Object list (O)"]').click();
-	await A.page.locator('p[title="Chat (C)"]').click();
+	await A.page.locator('#chat-button').click();
 	await A.page.waitForTimeout(500);
 	// move chat onto the object list (header drag)
 	const chat = await A.page.locator('#chat-window').boundingBox();
@@ -54,7 +57,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	h.check((await zOf('#object-list')) > (await zOf('#chat-window')), 'clicking the list raises it');
 
-	// delayed resize cue on the flow drawer's top edge
+	// delayed resize cue on the flow drawer's top edge (re-open the drawer —
+	// it was closed for the chat-button block above)
+	await A.page.locator('p[title="Node editor (N)"]').click();
+	await A.page.waitForTimeout(400);
 	const cue = A.page.locator('#flow-list .resize-cue').first();
 	const box = await cue.boundingBox();
 	await A.page.mouse.move(box.x + 300, box.y + 1);

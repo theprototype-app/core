@@ -9,7 +9,7 @@ h.run(async () => {
 
 	// open chat + object list
 	await A.page.locator('p[title="Object list (O)"]').click();
-	await A.page.locator('p[title="Chat (C)"]').click();
+	await A.page.locator('#chat-button').click();
 	await A.page.waitForTimeout(500);
 
 	// drag the chat by its header ONTO the object list header -> tab group
@@ -94,7 +94,7 @@ h.run(async () => {
 	// 92: merge chat INTO the list again, close the LIST (the inactive member)
 	// through its shortcut store, reopen it — it must come back (the tab group
 	// used to leave display:none behind and the window vanished until reload)
-	await A.page.locator('p[title="Chat (C)"]').click();
+	await A.page.locator('#chat-button').click();
 	await A.page.waitForTimeout(300);
 	const chat3 = await A.page.locator('#chat-window').boundingBox();
 	const list3 = await A.page.locator('#object-list').boundingBox();

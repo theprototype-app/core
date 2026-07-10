@@ -6,9 +6,10 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// open flow + chat together
+	// open chat FIRST (its button lives bottom-right under the dock tier, 93),
+	// then the flow drawer over it
+	await A.page.locator('#chat-button').click();
 	await A.page.locator('p[title="Node editor (N)"]').click();
-	await A.page.locator('p[title="Chat (C)"]').click();
 	await A.page.waitForTimeout(600);
 	h.check(await A.page.locator('#flow-list').isVisible(), 'flow drawer open');
 	h.check(await A.page.locator('#chat-window').isVisible(), 'chat window open');
@@ -19,11 +20,21 @@ h.run(async () => {
 	]);
 	h.check(zChat > zFlow, `chat (${zChat}) floats above the flow drawer (${zFlow})`);
 
-	// the toolbar (hud tier) stays clickable even under the floating chat —
-	// close the chat through it before working the flow corner
-	await A.page.locator('p[title="Chat (C)"]').click();
+	// chat still closes via its own header ✕ (the toggle button is buried by design)
+	await A.page.locator('#chat-window button[title="Close (C)"]').click();
 	await A.page.waitForTimeout(300);
-	h.check(!(await A.page.locator('#chat-window').isVisible()), 'toolbar pill closes chat above it');
+	h.check(!(await A.page.locator('#chat-window').isVisible()), 'chat closes via its header while the dock is open');
+
+	// 93: the open drawer COVERS the bottom-right mic + chat buttons
+	const stackCovered = await A.page.evaluate(() => {
+		const covered = (sel) => {
+			const r = document.querySelector(sel).getBoundingClientRect();
+			const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+			return !!at?.closest('#flow-list');
+		};
+		return covered('#chat-button');
+	});
+	h.check(stackCovered, 'flow drawer covers the bottom-right button stack (93)');
 
 	// drag-resize the flow drawer 80px taller via the top hot zone
 	const before = (await A.page.locator('#flow-list').boundingBox()).height;

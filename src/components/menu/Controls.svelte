@@ -441,16 +441,21 @@
 	>
 		<i class="fas fa-circle-nodes text-black dark:text-slate-200"></i>
 	</p>
-	<p
-		class={classActive + ' rounded-r-full'}
-		title="Chat (C)"
-		on:click={(event) => {
-			chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden');
-		}}
-	>
-		<i class="fas fa-message text-black dark:text-slate-200"></i>
-	</p>
+	<!-- chat moved to the bottom-right stack (93); the Explorer folder button
+	     takes this slot in 95 -->
+	<p class="rounded-r-full" id="explorer-slot"></p>
 </BottomNav>
+
+<!-- chat toggle lives bottom-right under the mic (93); z under the bottom
+     dock so an open flow editor / Explorer covers the stack -->
+<button
+	id="chat-button"
+	class="fixed bottom-4 right-4 z-[30] flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 shadow-lg transition-colors hover:bg-gray-600"
+	title="Chat (C)"
+	on:click={() => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')}
+>
+	<i class="fas fa-message text-white"></i>
+</button>
 
 <p
 	class={classActive + ' rounded-full bg-primary-600 font-medium dark:focus:ring-primary-800'}

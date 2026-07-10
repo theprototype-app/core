@@ -72,5 +72,56 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	h.check(true, 'typed a digit in search without errors (shortcut guard)');
 
+	// ---- 80: multi-active chips (union) + All-toggle memory ----
+	await A.page.locator('#object-search').fill(''); // drop the digit-guard leftover
+	await A.page.getByRole('button', { name: 'Lights', exact: true }).click();
+	await A.page.getByRole('button', { name: 'Groups', exact: true }).click();
+	await A.page.waitForTimeout(300);
+	rows = await visibleRows(A.page);
+	h.check(
+		rows.some((r) => r === 'Point') && rows.some((r) => r?.includes('nest')) && !rows.some((r) => r === 'Box'),
+		`two chips filter as a union (${rows.join(',')})`
+	);
+	await A.page.getByRole('button', { name: 'All', exact: true }).click();
+	await A.page.waitForTimeout(300);
+	rows = await visibleRows(A.page);
+	h.check(rows.some((r) => r === 'Box'), 'All shows everything');
+	await A.page.getByRole('button', { name: 'All', exact: true }).click();
+	await A.page.waitForTimeout(300);
+	rows = await visibleRows(A.page);
+	h.check(
+		rows.some((r) => r === 'Point') && !rows.some((r) => r === 'Box'),
+		'All again restores the previous chip set'
+	);
+
+	// ---- 80: chip visibility popup + reset all filters ----
+	await A.page.locator('#chip-config').click();
+	await A.page.locator('#chip-popup label', { hasText: 'Strokes' }).locator('input').click();
+	await A.page.waitForTimeout(200);
+	h.check(
+		!(await A.page.locator('#filter-chips').getByRole('button', { name: 'Strokes', exact: true }).isVisible().catch(() => false)),
+		'unchecked chip leaves the bar'
+	);
+	await A.page.locator('#reset-filters').click();
+	await A.page.waitForTimeout(300);
+	h.check(
+		await A.page.locator('#filter-chips').getByRole('button', { name: 'Strokes', exact: true }).isVisible(),
+		'reset restores the chips'
+	);
+	rows = await visibleRows(A.page);
+	h.check(rows.some((r) => r === 'Box'), 'reset cleared the type filters');
+
+	// ---- 80: resize persists ----
+	const before = await A.page.locator('#object-list').boundingBox();
+	const handle = await A.page.locator('#object-list .resize-handle').boundingBox();
+	await A.page.mouse.move(handle.x + 4, handle.y + 4);
+	await A.page.mouse.down();
+	await A.page.mouse.move(handle.x + 80, handle.y + 60, { steps: 6 });
+	await A.page.mouse.up();
+	const after = await A.page.locator('#object-list').boundingBox();
+	h.check(after.width > before.width + 50, `corner resize grows the window (${before.width} → ${after.width})`);
+	const savedRect = await A.page.evaluate(() => JSON.parse(localStorage.getItem('objectListRect') ?? 'null'));
+	h.check(savedRect && Math.abs(savedRect.width - after.width) < 4, 'rect persisted');
+
 	await h.finish(browser);
 });

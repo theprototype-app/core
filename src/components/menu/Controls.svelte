@@ -23,10 +23,14 @@
 	let resizing = $state(false);
 
 	// --- object list search/filter: rows read the visible-uuid set via context ---
+	// 80: type chips MULTI-select (union); All clears and, clicked again,
+	// restores the previous chip set; System/Environment are exclusive VIEWS.
 	const objectFilter = writable(null); // null = no filtering
 	setContext('objectFilter', objectFilter);
 	let searchTerm = $state('');
-	let searchType = $state('');
+	let searchTypes: Set<string> = $state(new Set());
+	let lastTypes: Set<string> = $state(new Set());
+	let viewMode = $state(''); // '' | 'system' | 'environment'
 	let matchCount = $state(0);
 	const TYPE_TESTS = {
 		mesh: (o) => o.isMesh && o.name !== 'Stroke',
@@ -34,16 +38,32 @@
 		group: (o) => o.type === 'Group',
 		stroke: (o) => o.name === 'Stroke'
 	};
+	function toggleTypeChip(value: string) {
+		viewMode = '';
+		const next = new Set(searchTypes);
+		if (next.has(value)) next.delete(value);
+		else next.add(value);
+		searchTypes = next;
+	}
+	function clickAll() {
+		viewMode = '';
+		if (searchTypes.size) {
+			lastTypes = new Set(searchTypes); // remembered for the next All click
+			searchTypes = new Set();
+		} else if (lastTypes.size) {
+			searchTypes = new Set(lastTypes);
+		}
+	}
 	function refreshFilter() {
-		if (searchType === 'system' || searchType === 'environment') {
-			// these views render their own rows — normal filtering is off
+		if (viewMode) {
+			// system/environment views render their own rows — filtering is off
 			matchCount = 0;
 			objectFilter.set(null);
 			return;
 		}
 		const group = $objectsGroup;
 		const term = searchTerm.trim().toLowerCase();
-		if (!group || (!term && !searchType)) {
+		if (!group || (!term && !searchTypes.size)) {
 			matchCount = 0;
 			objectFilter.set(null);
 			return;
@@ -52,8 +72,9 @@
 		let count = 0;
 		const walk = (object, ancestors) => {
 			const name = (object.name || object.type).toLowerCase();
-			const ok =
-				(!term || name.includes(term)) && (!searchType || TYPE_TESTS[searchType]?.(object));
+			const typeOk =
+				!searchTypes.size || [...searchTypes].some((t) => TYPE_TESTS[t]?.(object));
+			const ok = (!term || name.includes(term)) && typeOk;
 			if (ok) {
 				count++;
 				visible.add(object.uuid);
@@ -67,10 +88,75 @@
 	}
 	$effect(() => {
 		searchTerm;
-		searchType;
+		viewMode;
+		searchTypes;
 		refreshFilter();
 	});
 	objectsGroup.subscribe(() => refreshFilter()); // re-filter on scene changes
+
+	// 80.3: which chips show in the bar (⚙ popover), persisted
+	let chipPopup = $state(false);
+	let hiddenChips: Set<string> = $state(
+		new Set(
+			typeof localStorage !== 'undefined'
+				? JSON.parse(localStorage.getItem('hiddenListChips') ?? '[]')
+				: []
+		)
+	);
+	function toggleChipVisible(value: string) {
+		const next = new Set(hiddenChips);
+		if (next.has(value)) next.delete(value);
+		else {
+			next.add(value);
+			// hiding an ACTIVE chip also deactivates it
+			if (searchTypes.has(value)) toggleTypeChip(value);
+			if (viewMode === value) viewMode = '';
+		}
+		hiddenChips = next;
+		localStorage.setItem('hiddenListChips', JSON.stringify([...next]));
+	}
+	function resetAllFilters() {
+		searchTerm = '';
+		searchTypes = new Set();
+		lastTypes = new Set();
+		viewMode = '';
+		hiddenChips = new Set();
+		localStorage.setItem('hiddenListChips', '[]');
+		chipPopup = false;
+	}
+
+	// 80.2: the chip row scrolls horizontally (wheel + drag), never overflows
+	function chipScroll(node: HTMLElement) {
+		const onWheel = (e: WheelEvent) => {
+			if (!e.deltaY) return;
+			node.scrollLeft += e.deltaY;
+			e.preventDefault();
+		};
+		let dragging = false;
+		let startX = 0;
+		let startScroll = 0;
+		const down = (e: PointerEvent) => {
+			dragging = true;
+			startX = e.clientX;
+			startScroll = node.scrollLeft;
+		};
+		const move = (e: PointerEvent) => {
+			if (dragging) node.scrollLeft = startScroll - (e.clientX - startX);
+		};
+		const up = () => (dragging = false);
+		node.addEventListener('wheel', onWheel, { passive: false });
+		node.addEventListener('pointerdown', down);
+		window.addEventListener('pointermove', move);
+		window.addEventListener('pointerup', up);
+		return {
+			destroy() {
+				node.removeEventListener('wheel', onWheel);
+				node.removeEventListener('pointerdown', down);
+				window.removeEventListener('pointermove', move);
+				window.removeEventListener('pointerup', up);
+			}
+		};
+	}
 
 	// bottom status line: totals across the whole tree (N objects · M hidden)
 	let objectCount = $state(0);
@@ -110,9 +196,9 @@
 				object
 			}));
 	}
-	// module content spawns outside the store flow — poll while the filter is active
+	// module content spawns outside the store flow — poll while the view is active
 	$effect(() => {
-		if (searchType !== 'system') return;
+		if (viewMode !== 'system') return;
 		refreshSystemRows();
 		const timer = setInterval(refreshSystemRows, 1000);
 		return () => clearInterval(timer);
@@ -141,7 +227,7 @@
 		}));
 	}
 	$effect(() => {
-		if (searchType !== 'environment') return;
+		if (viewMode !== 'environment') return;
 		refreshEnvRows();
 		const timer = setInterval(refreshEnvRows, 1000);
 		return () => clearInterval(timer);
@@ -150,28 +236,40 @@
 		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-300';
 
 	function dragMe(node) {
+		// 80.1: proper resize (start-size captured, clamped) + persisted rect
+		let saved: any = null;
+		try {
+			saved = JSON.parse(localStorage.getItem('objectListRect') ?? 'null');
+		} catch {}
 		let moving = false;
-		let left = 350;
-		let top = 100;
+		let left = saved?.left ?? 350;
+		let top = saved?.top ?? 100;
 
 		let startX = 0;
 		let startY = 0;
-		let startWidth = -300;
-		let startHeight = -130;
+		let startWidth = 0;
+		let startHeight = 0;
 
 		node.style.position = 'absolute';
 		node.style.top = `${top}px`;
 		node.style.left = `${left}px`;
-		// node.style.cursor = 'move';
 		node.style.userSelect = 'none';
-		node.style.width = '300px';
-		node.style.height = '250px';
+		node.style.width = `${saved?.width ?? 300}px`;
+		node.style.height = `${saved?.height ?? 250}px`;
+
+		const persist = () =>
+			localStorage.setItem(
+				'objectListRect',
+				JSON.stringify({ left, top, width: node.offsetWidth, height: node.offsetHeight })
+			);
 
 		node.addEventListener('mousedown', (e) => {
 			if (e.target.classList.contains('resize-handle')) {
 				resizing = true;
-				startX = 0;
-				startY = 0;
+				startX = e.clientX;
+				startY = e.clientY;
+				startWidth = node.offsetWidth;
+				startHeight = node.offsetHeight;
 			}
 			if (e.target.classList.contains('move-handle')) {
 				moving = true;
@@ -182,22 +280,23 @@
 			if (moving) {
 				left += e.movementX;
 				top += e.movementY;
-				node.style.top = `${top}px`;
-				node.style.left = `${left}px`;
 				if (left < 0) left = 0;
 				if (top < 0) top = 0;
 				if (left > window.innerWidth - node.offsetWidth) left = window.innerWidth - node.offsetWidth;
 				if (top > window.innerHeight - node.offsetHeight) top = window.innerHeight - node.offsetHeight;
+				node.style.top = `${top}px`;
+				node.style.left = `${left}px`;
 			}
 			if (resizing) {
-			const width = startWidth + (e.clientX - startX);
-			const height = startHeight + (e.clientY - startY);
-			node.style.width = `${width}px`;
-			node.style.height = `${height}px`;
+				const width = Math.min(Math.max(250, startWidth + (e.clientX - startX)), window.innerWidth * 0.9);
+				const height = Math.min(Math.max(200, startHeight + (e.clientY - startY)), window.innerHeight * 0.85);
+				node.style.width = `${width}px`;
+				node.style.height = `${height}px`;
 			}
 		});
 
 		window.addEventListener('mouseup', () => {
+			if (moving || resizing) persist();
 			moving = false;
 			resizing = false;
 		});
@@ -376,26 +475,87 @@
 			on:input={(e) => (searchTerm = e.currentTarget.value)}
 			on:keydown={(e) => { if (e.key === 'Escape') { searchTerm = ''; e.currentTarget.blur(); } }}
 		/>
-		<div class="flex items-center gap-1">
-			{#each [['', 'All'], ['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes'], ...($showEnvInList ? [['environment', 'Environment']] : []), ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
+		<div class="relative flex items-center gap-1">
+			<!-- 80.2: one scrollable chip row that never overflows the window -->
+			<div id="filter-chips" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none]" use:chipScroll>
 				<button
-					class={'rounded-full px-2 py-0.5 ' +
-						(searchType === value
+					class={'shrink-0 rounded-full px-2 py-0.5 ' +
+						(!searchTypes.size && !viewMode
 							? 'bg-primary-600 text-white'
 							: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
-					on:click={() => (searchType = value)}
+					title="Show everything — click again to restore the previous chips"
+					on:click={clickAll}
 				>
-					{label}
+					All
 				</button>
-			{/each}
-			{#if $objectFilter}
-				<span class="ml-auto text-gray-500 dark:text-gray-300">{matchCount} match{matchCount === 1 ? '' : 'es'}</span>
+				{#each [['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes']] as [value, label]}
+					{#if !hiddenChips.has(value)}
+						<button
+							class={'shrink-0 rounded-full px-2 py-0.5 ' +
+								(searchTypes.has(value)
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
+							on:click={() => toggleTypeChip(value)}
+						>
+							{label}
+						</button>
+					{/if}
+				{/each}
+				{#each [...($showEnvInList ? [['environment', 'Environment']] : []), ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
+					{#if !hiddenChips.has(value)}
+						<button
+							class={'shrink-0 rounded-full px-2 py-0.5 ' +
+								(viewMode === value
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
+							on:click={() => { viewMode = viewMode === value ? '' : value; searchTypes = new Set(); }}
+						>
+							{label}
+						</button>
+					{/if}
+				{/each}
+				{#if $objectFilter}
+					<span class="shrink-0 text-gray-500 dark:text-gray-300">{matchCount} match{matchCount === 1 ? '' : 'es'}</span>
+				{/if}
+			</div>
+			<!-- 80.3: chip visibility popover + reset -->
+			<button
+				id="chip-config"
+				class="shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-gray-600 dark:bg-gray-600 dark:text-gray-200"
+				title="Choose which filters show here"
+				on:click={() => (chipPopup = !chipPopup)}
+			>
+				⚙
+			</button>
+			{#if chipPopup}
+				<div
+					id="chip-popup"
+					class="absolute right-0 top-6 z-10 flex w-44 flex-col gap-1 rounded-lg border border-gray-300 bg-white p-2 shadow-xl dark:border-gray-600 dark:bg-gray-800"
+				>
+					{#each [['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes'], ...($showEnvInList ? [['environment', 'Environment']] : []), ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
+						<label class="flex cursor-pointer items-center gap-2 text-gray-700 dark:text-gray-200">
+							<input
+								type="checkbox"
+								checked={!hiddenChips.has(value)}
+								on:change={() => toggleChipVisible(value)}
+							/>
+							{label}
+						</label>
+					{/each}
+					<button
+						id="reset-filters"
+						class="mt-1 rounded bg-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+						on:click={resetAllFilters}
+					>
+						Reset all filters
+					</button>
+				</div>
 			{/if}
 		</div>
 	</div>
 	<Listgroup active class="h-full overflow-y-scroll -rounded rounded-br rounded-bl">
 		<div class="container">
-			{#if searchType === 'system'}
+			{#if viewMode === 'system'}
 				{#if !systemNoticeDismissed}
 					<div class="flex items-start gap-1 bg-yellow-900/40 p-2 text-[11px] text-yellow-200">
 						<span class="flex-1">
@@ -440,7 +600,7 @@
 				{#if systemRows.length === 0}
 					<p class="p-2 text-xs italic text-gray-400">No system objects right now — spawn a module (piano, pong, dungeon) to see its content here.</p>
 				{/if}
-			{:else if searchType === 'environment'}
+			{:else if viewMode === 'environment'}
 				{#if !envNoticeDismissed}
 					<div class="flex items-start gap-1 bg-yellow-900/40 p-2 text-[11px] text-yellow-200">
 						<span class="flex-1">

@@ -12,7 +12,6 @@
 	import { backgroundColor } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
-	import { modulePrimitiveGroups } from '$lib/moduleSDK';
 	import { modulesOpen } from '../../stores/appStore.js';
 	import { sineIn } from 'svelte/easing';
 
@@ -94,7 +93,7 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 	<SidebarWrapper>
 		<SidebarGroup>
 			<p class={sectionLabel}>Create</p>
-			{#each [...primitivesCatalog, ...$modulePrimitiveGroups] as catalogGroup}
+			{#each primitivesCatalog as catalogGroup}
 			<SidebarDropdownWrapper label={catalogGroup.group}>
 				<svelte:fragment slot="arrowup">
 					<svg

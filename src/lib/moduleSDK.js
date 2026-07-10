@@ -78,14 +78,15 @@ function makeApi(moduleId) {
 		registerPrimitive(name, builder, entry) {
 			customGeometryBuilders[name] = builder;
 			if (!entry) return;
+			const tagged = { ...entry, moduleId };
 			modulePrimitiveGroups.update((list) => {
 				const groupName = entry.group ?? 'Modules';
 				const existing = list.find((g) => g.group === groupName);
 				if (existing)
 					return list.map((g) =>
-						g === existing ? { ...g, items: [...g.items, entry] } : g
+						g === existing ? { ...g, items: [...g.items, tagged] } : g
 					);
-				return [...list, { group: groupName, items: [entry] }];
+				return [...list, { group: groupName, items: [tagged] }];
 			});
 		},
 		/**

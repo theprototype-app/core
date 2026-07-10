@@ -17,6 +17,28 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	h.check(await A.page.locator('#module-card-piano').isVisible(), 'manager opens with module cards');
 
+	// opening the manager hides side panels like Settings (the sidebar drawer closes)
+	const menuClosed = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.closeMenu.subscribe(r)())
+	);
+	h.check(menuClosed === true, 'manager hides panels like Settings');
+
+	// module primitives spawn from their card (no Modules group in the sidebar)
+	await A.page.locator('#module-card-button').getByRole('button', { name: '+ Button' }).click();
+	await h.eventually(
+		() =>
+			A.page.evaluate(
+				() =>
+					new Promise((r) =>
+						window.__stores.objectsGroup.subscribe((g) =>
+							r(g?.children.some((c) => c.name === 'Button'))
+						)()
+					)
+			),
+		(v) => v === true,
+		'Button primitive spawns from its manager card'
+	);
+
 	// module action runs from its card
 	await A.page.locator('#module-card-piano').getByRole('button', { name: 'Piano: spawn / remove' }).click();
 	await h.eventually(

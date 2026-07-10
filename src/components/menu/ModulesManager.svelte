@@ -1,6 +1,23 @@
 <script>
 	import { Modal, Button, Toggle } from 'flowbite-svelte';
-	import { modulesOpen } from '../../stores/appStore.js';
+	import { modulesOpen, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
+	import { sceneCommand } from '$lib/commandsHandler.svelte';
+	import { modulePrimitiveGroups } from '$lib/moduleSDK';
+
+	// like Settings: side panels hide while the manager is open, restore after
+	$: if ($modulesOpen) {
+		hidePanels();
+	} else if ($modulesOpen === false) {
+		restorePanels();
+	}
+
+	// primitives registered by a module spawn from its card (not the sidebar)
+	$: primitivesByModule = $modulePrimitiveGroups
+		.flatMap((group) => group.items)
+		.reduce((map, item) => {
+			(map[item.moduleId] ??= []).push(item);
+			return map;
+		}, {});
 	import {
 		moduleMenuItems,
 		disabledModules,
@@ -17,8 +34,6 @@
 		updateUserModule,
 		removeUserModule
 	} from '$lib/userModules';
-	import { showToast } from '../../stores/appStore.js';
-
 	let tab = 'core';
 	let installUrlValue = '';
 
@@ -85,6 +100,16 @@
 							{#if isModuleLoaded(mod.id) && !$disabledModules.includes(mod.id)}
 								{#each $moduleMenuItems.filter((item) => item.moduleId === mod.id) as item}
 									<Button size="xs" on:click={item.action}>{item.label}</Button>
+								{/each}
+								{#each primitivesByModule[mod.id] ?? [] as primitive}
+									<Button
+										size="xs"
+										color="green"
+										title={primitive.command}
+										on:click={() => sceneCommand(primitive.command)}
+									>
+										+ {primitive.label}
+									</Button>
 								{/each}
 							{/if}
 							<Button size="xs" color="alternative" on:click={() => downloadModule(mod)}>

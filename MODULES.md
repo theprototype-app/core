@@ -99,7 +99,7 @@ functions of `(data, time)` stay identical everywhere. Don't accumulate
 api.registerPrimitive(
 	'Flag',                                    // capitalized: /create Flag 2 1
 	(w, h) => new THREE.PlaneGeometry(+w || 2, +h || 1),
-	{ label: 'Flag', command: '/create Flag 2 1' } // sidebar entry (group: 'Modules')
+	{ label: 'Flag', command: '/create Flag 2 1' } // spawn button on your manager card
 );
 ```
 

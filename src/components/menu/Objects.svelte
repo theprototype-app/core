@@ -18,7 +18,7 @@
     import { objectsGroup, TControls, selectedObject, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
     import { selectObject, renameObject, moveObjectToGroup, toggleObjectVisibility } from '$lib/objectActions';
-    import { nameOf } from '$lib/lockControl';
+    import { nameOf, peerColor } from '$lib/lockControl';
     import {
         showSidebar,
 		closeSelectionInspector,
@@ -38,13 +38,6 @@
 
     const isSelected = $derived($selectedObject?.uuid === element.uuid);
     const lockEntry = $derived($lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid));
-
-    /** stable per-peer color chip for lock badges @param {any} id */
-    function peerColor(id) {
-        let h = 0;
-        for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) % 360;
-        return `hsl(${h}, 70%, 55%)`;
-    }
 
     function select(uuid) {
         previouslySelectedObject = $selectedObject;

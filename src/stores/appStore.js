@@ -162,7 +162,8 @@ export function addMessage(newMessage, type, sender) {
 			id: messages.length,
 			text: newMessage.message,
 			sender: newMessage.sender,
-			type: newMessage.type
+			type: newMessage.type,
+			ts: Date.now() // local receive time — display only, never replicated
 		}
 	]);
 }

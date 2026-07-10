@@ -77,6 +77,8 @@ export const environment = writable(
 
 /** saved custom presets from IndexedDB: [{name, payload}] */
 export const envPresets = writable(/** @type {any[]} */ ([]));
+/** peers' broadcast preset libraries (86): peerId -> [{name, payload}] */
+export const peerEnvPresets = writable(/** @type {Record<string, any[]>} */ ({}));
 
 export const ENV_ROOT = 'environment-root';
 const RIG_HEMI = 'env-rig-hemi';
@@ -350,6 +352,7 @@ export async function saveEnvPreset(name) {
 	const payload = snapshotPreset(name);
 	await idbPut(PRESET_KEY + name, payload);
 	await loadEnvPresets();
+	broadcastEnvPresets();
 	return payload;
 }
 
@@ -357,6 +360,42 @@ export async function saveEnvPreset(name) {
 export async function deleteEnvPreset(name) {
 	await idbDelete(PRESET_KEY + name);
 	await loadEnvPresets();
+	broadcastEnvPresets();
+}
+
+// ---- preset LIBRARY broadcast (86): peers can apply your presets by name ---
+
+const PRESETS_BROADCAST_CAP = 2_000_000; // bytes of JSON, roughly
+
+/** the message carrying this peer's whole preset library */
+export function envPresetsState() {
+	/** @type {any} */
+	const peer = get(peers);
+	let presets = get(envPresets);
+	while (presets.length && JSON.stringify(presets).length > PRESETS_BROADCAST_CAP)
+		presets = presets.slice(0, presets.length - 1);
+	return { type: 'envpresets', from: peer?.peer?.id, presets };
+}
+
+export function broadcastEnvPresets() {
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) peer.send(envPresetsState());
+}
+
+/** receiver side @param {any} data */
+export function applyRemoteEnvPresets(data) {
+	if (!data?.from) return;
+	peerEnvPresets.update((map) => ({ ...map, [data.from]: data.presets ?? [] }));
+}
+
+/** drop a disconnected peer's library @param {string} peerId */
+export function dropPeerEnvPresets(peerId) {
+	peerEnvPresets.update((map) => {
+		const next = { ...map };
+		delete next[peerId];
+		return next;
+	});
 }
 
 /** JSON for a .envpreset.json download @param {any} payload */

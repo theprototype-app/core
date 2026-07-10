@@ -19,6 +19,7 @@
 		recordMaterialChange
 	} from '$lib/materialsHandler';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
+	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
@@ -29,6 +30,7 @@
 		ENVIRONMENT_PRESETS,
 		setEnvironment,
 		envPresets,
+		peerEnvPresets,
 		presetPayload,
 		editRigComponent,
 		addEnvLight,
@@ -318,6 +320,20 @@
 						{/each}
 					</div>
 				{/if}
+				{#each Object.entries($peerEnvPresets).filter(([, list]) => list.length) as [peerId, list] (peerId)}
+					<p class="ui-section-label">{nameOf(peerId)}'s presets</p>
+					<div class="flex flex-wrap gap-1">
+						{#each list as saved (saved.name)}
+							<button
+								class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+								title="Apply this peer preset (replicates to everyone)"
+								onclick={() => applyCustomPreset(saved.payload)}
+							>
+								{saved.name}
+							</button>
+						{/each}
+					</div>
+				{/each}
 				<div class="flex flex-wrap gap-1">
 					<button id="env-save-preset" class="ui-button-quiet" title="Save the current environment as a named preset" onclick={savePresetPrompt}>
 						💾 Save preset

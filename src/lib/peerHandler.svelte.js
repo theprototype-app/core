@@ -12,7 +12,7 @@ import { applyModuleMessage, moduleVersions, checkModuleVersions, sendModuleStat
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate } from '$lib/physics';
-import { applyRemoteEnvironment, environmentState } from '$lib/environment';
+import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
@@ -170,6 +170,8 @@ export class PeerConnection {
 					applySimulate(data);
 				} else if(data.type == 'environment') {
 					applyRemoteEnvironment(data);
+				} else if(data.type == 'envpresets') {
+					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
 					applyRemoteGeometry(data);
 				} else if(data.type == 'lighttarget') {
@@ -221,6 +223,7 @@ export class PeerConnection {
 					createLoader(data.count, data.uuids);
 				} else if(data.type == 'disconnected') {
 					handleDisconnected(data.peerId);
+					dropPeerEnvPresets(data.peerId);
 				} else if(data.type == 'getnodes') {
 					deferUntilShareChoice('nodes', data.sender);
 				} else if(data.type == 'nodes') {
@@ -297,6 +300,7 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users})
 		conn.send({type: 'modules', versions: moduleVersions()})
 		conn.send(environmentState())
+		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})

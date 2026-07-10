@@ -28,8 +28,10 @@
 	}
 
 	/** selective-import checklist: { id, name, entries, checked: Set } | null */
+	/** @type {any} */
 	let picker = null;
 
+	/** @param {any} meta */
 	async function openPicker(meta) {
 		const payload = await getSession(meta.id);
 		if (!payload) return;
@@ -42,6 +44,7 @@
 		};
 	}
 
+	/** @param {number} index */
 	function togglePick(index) {
 		if (picker.checked.has(index)) picker.checked.delete(index);
 		else picker.checked.add(index);
@@ -55,6 +58,7 @@
 		sessionsOpen.set(false);
 	}
 
+	/** @param {any} meta */
 	async function downloadSession(meta) {
 		const payload = await getSession(meta.id);
 		if (!payload) return;
@@ -66,6 +70,7 @@
 		URL.revokeObjectURL(link.href);
 	}
 
+	/** @param {any} event */
 	async function importSessionFile(event) {
 		const file = event.target.files?.[0];
 		if (!file) return;
@@ -77,6 +82,7 @@
 		event.target.value = '';
 	}
 
+	/** @param {number} ts */
 	function stamp(ts) {
 		return new Date(ts).toLocaleString([], {
 			month: 'short',

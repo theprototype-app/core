@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, globalCamera, orbitControls } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, orbitControls, TControls } from '../stores/sceneStore';
 import { flowNodes, flowEdges } from '../stores/flowStore';
-import { serializeNode, serializeEdge } from './nodesHandler';
+import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { peers, showToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
-import { sceneCommand } from './commandsHandler.svelte';
+import { sceneCommand, sendObjects } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 
@@ -78,14 +78,14 @@ export async function loadSessions() {
 	}
 }
 
-/** Snapshot the current scene into a named session @param {string} name */
-export async function saveSession(name) {
+/** Build a session payload from the current scene @param {string} name */
+function buildSessionPayload(name) {
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const camera = get(globalCamera);
 	/** @type {any} */
 	const controls = get(orbitControls);
-	const payload = {
+	return {
 		id: crypto.randomUUID(),
 		name: name || 'Session ' + new Date().toLocaleString(),
 		createdAt: Date.now(),
@@ -99,13 +99,23 @@ export async function saveSession(name) {
 			? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 			: null
 	};
+}
+
+/** Persist a payload as a slot @param {any} payload */
+async function persistSession(payload) {
 	if (JSON.stringify(payload).length > MAX_SESSION_BYTES) {
 		showToast('Scene is too large to save as a session (>50 MB)');
 		return null;
 	}
 	await idbPut(KEY + payload.id, payload);
 	await loadSessions();
-	showToast('Session saved: ' + payload.name);
+	return payload;
+}
+
+/** Snapshot the current scene into a named session @param {string} name */
+export async function saveSession(name) {
+	const payload = await persistSession(buildSessionPayload(name));
+	if (payload) showToast('Session saved: ' + payload.name);
 	return payload;
 }
 
@@ -267,6 +277,102 @@ export function applySessionProposal(data) {
 			{ label: 'Decline', action: () => answer(false) }
 		]
 	);
+}
+
+// ---- share-or-stash on connect (50.4) --------------------------------------
+// The first time another peer requests our state while we own local objects,
+// the objects/nodes replies DEFER behind a choice: share them into the joint
+// space (old behavior) or stash them to a session and join clean. Asked once
+// per app session; no choice within 14s auto-shares (the safe default).
+
+let shareChoiceMade = false;
+/** @type {{senders: {objects: Set<string>, nodes: Set<string>}, payload: any, uuids: string[], done: boolean} | null} */
+let gate = null;
+
+// sendObjects' second param only matters for the null-peerId group path —
+// the handshake reply has always called it with the sender alone
+const sendObjectsTo = /** @type {any} */ (sendObjects);
+
+/** @param {'objects'|'nodes'} kind @param {string} sender */
+function replyTo(kind, sender) {
+	if (kind === 'objects') sendObjectsTo(sender);
+	else sendNodes(sender);
+}
+
+/** How many objects we own — rides on the handshake getobjects request so the
+ * other side only asks share-or-stash when BOTH scenes are non-empty. */
+export function localSceneCount() {
+	return get(objectsGroup)?.children.length ?? 0;
+}
+
+function resolveGate() {
+	if (!gate || gate.done) return;
+	gate.done = true;
+	const pending = gate;
+	gate = null;
+	for (const sender of pending.senders.objects) sendObjectsTo(sender);
+	for (const sender of pending.senders.nodes) sendNodes(sender);
+}
+
+async function stashAndJoin() {
+	if (!gate || gate.done) return;
+	const { payload, uuids } = gate;
+	await persistSession(payload);
+	// drop OUR pre-connect objects locally WITHOUT broadcasting deletes —
+	// anything that already arrived from the peer stays untouched
+	const group = get(objectsGroup);
+	/** @type {any} */
+	const controls = get(TControls);
+	for (const uuid of uuids) {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		if (!object) continue;
+		if (controls?.object?.uuid === uuid) controls.detach();
+		object.parent?.remove(object);
+	}
+	objectsGroup.update((value) => value);
+	flowNodes.set([]);
+	flowEdges.set([]);
+	showToast('Stashed to Sessions: ' + payload.name);
+	resolveGate();
+}
+
+/**
+ * Gatekeeper for the handshake state requests. Runs the reply immediately
+ * when no choice is needed (empty scene on either side, or already answered);
+ * otherwise queues it behind the Share/Stash toast.
+ * @param {'objects'|'nodes'} kind @param {string} sender @param {number=} otherCount
+ */
+export function deferUntilShareChoice(kind, sender, otherCount = 0) {
+	const group = get(objectsGroup);
+	const count = group?.children.length ?? 0;
+	if (gate && !gate.done) {
+		gate.senders[kind].add(sender); // a dialog is already open — queue behind it
+		return;
+	}
+	// only a merge of two NON-empty scenes needs the question — a fresh viewer
+	// joining an existing scene always just receives it
+	if (shareChoiceMade || count === 0 || !otherCount) {
+		if (count > 0) shareChoiceMade = true; // we shared into the space
+		replyTo(kind, sender);
+		return;
+	}
+	shareChoiceMade = true;
+	gate = {
+		senders: { objects: new Set(), nodes: new Set() },
+		payload: buildSessionPayload('Stashed before joining ' + nameOf(sender) + ' ' + new Date().toLocaleTimeString()),
+		uuids: (group?.children ?? []).map((/** @type {any} */ child) => child.uuid),
+		done: false
+	};
+	gate.senders[kind].add(sender);
+	showToast(
+		'Share your ' + count + ' object' + (count === 1 ? '' : 's') + ' with ' + nameOf(sender) + ', or stash them to a session first?',
+		[
+			{ label: 'Share', action: () => resolveGate() },
+			{ label: 'Stash', action: () => stashAndJoin() }
+		]
+	);
+	// the toast expires after 15s — sharing is the safe default
+	setTimeout(() => resolveGate(), 14000);
 }
 
 /** Proposer side: collect answers, apply when everyone accepted @param {any} data */

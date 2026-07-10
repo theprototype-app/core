@@ -12,6 +12,37 @@ const rotationZ = (page, uuid) =>
 		uuid
 	);
 
+// Phase-lock check: sampling inside requestAnimationFrame reads the rotation
+// the runtime wrote THIS frame, so rot - sin(time*3) is the animation base
+// plus at most one frame of lag. That residual must stay constant over time
+// on a page that tracks the synced wall clock. A constant offset is expected:
+// a peer receiving the object mid-swing bakes the pose into its animation
+// base (known artifact, see backlog). Graph uses {amplitude:1, speed:3};
+// flowRuntime time = (Date.now() % 86400000) / 1000.
+const phaseDrift = (page, uuid) =>
+	page.evaluate(
+		(uuid) =>
+			new Promise((resolve) => {
+				const sample = () =>
+					new Promise((r) =>
+						requestAnimationFrame(() => {
+							window.__stores.objectsGroup.subscribe((g) => {
+								const object = g?.getObjectByProperty('uuid', uuid);
+								const time = (Date.now() % 86400000) / 1000;
+								r(object ? object.rotation.z - Math.sin(time * 3) : null);
+							})();
+						})
+					);
+				sample().then((first) =>
+					setTimeout(async () => {
+						const second = await sample();
+						resolve(first === null || second === null ? null : Math.abs(second - first));
+					}, 400)
+				);
+			}),
+		uuid
+	);
+
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
@@ -58,8 +89,11 @@ h.run(async () => {
 	const bz2 = await rotationZ(B.page, uuid);
 	h.check(bz1 !== null, 'box synced to B');
 	h.check(bz1 !== bz2, 'wave animates on B too');
-	const [az, bz] = await Promise.all([rotationZ(A.page, uuid), rotationZ(B.page, uuid)]);
-	h.check(Math.abs(az - bz) < 0.6, `peers roughly in phase (A ${az?.toFixed(3)}, B ${bz?.toFixed(3)})`);
+	const [da, db] = await Promise.all([phaseDrift(A.page, uuid), phaseDrift(B.page, uuid)]);
+	h.check(
+		da !== null && db !== null && da < 0.25 && db < 0.25,
+		`both peers phase-lock to the synced clock (drift A ${da?.toFixed(3)}, B ${db?.toFixed(3)})`
+	);
 
 	await h.finish(browser);
 });

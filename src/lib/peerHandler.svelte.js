@@ -13,7 +13,7 @@ import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate } from '$lib/physics';
 import { applyRemoteEnvironment, environmentState } from '$lib/environment';
-import { applySessionProposal, applySessionAnswer } from '$lib/sessions';
+import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyObjectFile } from '$lib/animatedImports';
 import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
@@ -195,7 +195,8 @@ export class PeerConnection {
 				} else if(data.type == 'camera') {
 					moveCamera(data);
 				} else if(data.type == 'getobjects') {
-					sendObjects(data.sender)
+					// share-or-stash (50): the reply may wait for the user's choice
+					deferUntilShareChoice('objects', data.sender, data.count ?? 0);
 				} else if(data.type == 'objectfile') {
 					applyObjectFile(data);
 				} else if(data.type == 'object') {
@@ -215,7 +216,7 @@ export class PeerConnection {
 				} else if(data.type == 'disconnected') {
 					handleDisconnected(data.peerId);
 				} else if(data.type == 'getnodes') {
-					sendNodes(data.sender);
+					deferUntilShareChoice('nodes', data.sender);
 				} else if(data.type == 'nodes') {
 					applyNodesSnapshot(data.nodes, data.edges);
 				} else if(data.type == 'nodesync') {
@@ -290,7 +291,7 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users})
 		conn.send({type: 'modules', versions: moduleVersions()})
 		conn.send(environmentState())
-		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getmodulestate', sender: this.peer.id})

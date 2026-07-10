@@ -16,7 +16,15 @@ function check(ok, label) {
 
 /** @param {any=} options e.g. {args: ['--use-fake-device-for-media-stream']} */
 function launch(options = {}) {
-	return chromium.launch({ headless: true, ...options });
+	// background pages must keep full-rate rAF — synced-clock phase checks
+	// (module-sdk wave) read stale frames on a throttled renderer otherwise
+	const noThrottle = [
+		'--disable-background-timer-throttling',
+		'--disable-renderer-backgrounding',
+		'--disable-backgrounding-occluded-windows'
+	];
+	const { args = [], ...rest } = options;
+	return chromium.launch({ headless: true, args: [...noThrottle, ...args], ...rest });
 }
 
 /**

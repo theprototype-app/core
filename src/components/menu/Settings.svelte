@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Accordion, AccordionItem, Modal, Button, Checkbox, Select } from 'flowbite-svelte';
+	import { Accordion, AccordionItem, Modal, Button, Checkbox, Select, Toggle } from 'flowbite-svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, showToast } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
@@ -172,13 +172,17 @@
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>
-						<Checkbox
+						<!-- a red SWITCH (98): reads as an armed mode, not a plain option -->
+						<Toggle
 							id="passthrough-toggle"
+							color="red"
+							size="small"
 							checked={$vrPassthrough}
 							on:change={(e: any) => {
 								$vrPassthrough = e.target.checked;
 								localStorage.setItem('vrPassthrough', String($vrPassthrough));
-							}}>&nbsp;VR passthrough</Checkbox>
+								showToast('Passthrough ' + ($vrPassthrough ? 'on' : 'off') + ' — takes effect on the next VR entry');
+							}}>Passthrough</Toggle>
 					</p>
 					<p class={middlecoverDescription}>Mixed reality: the next VR entry composites the scene over your room (immersive-ar){arSupport === false ? ' — not supported on this device' : ''}</p>
 				</div>

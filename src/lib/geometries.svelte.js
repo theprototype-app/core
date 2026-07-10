@@ -33,7 +33,13 @@ lockedObjects.subscribe(value => { locked = value });
 export function createGeometry(command, uuid) {
     let geometry = command.split(' ')[1]
     geometry = geometry.charAt(0).toUpperCase() + geometry.slice(1)
-    let options = [command.split(' ')[2],command.split(' ')[3],command.split(' ')[4],command.split(' ')[5]]
+    // numbers, not strings: geometry constructors that ADD parameters
+    // (Torus: radius + tube*cos) would string-concatenate otherwise and
+    // produce exploded meshes; missing args stay undefined for defaults
+    let options = [2, 3, 4, 5].map((index) => {
+        const value = parseFloat(command.split(' ')[index]);
+        return Number.isNaN(value) ? undefined : value;
+    });
     let geometryList = ["Box","Capsule","Circle","Cone","Cylinder","Dodecahedron","Edges","Extrude","Icosahedron","Lathe","Octahedron","Plane","Polyhedron","Ring","Shape","Sphere","Tetrahedron","Torus","TorusKnot","Tube","Wireframe"]
     if (customGeometryBuilders[geometry] || geometryList.includes(geometry)) {
         let mesh = customGeometryBuilders[geometry]

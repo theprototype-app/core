@@ -13,7 +13,6 @@
 	} from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
-	import { primitivesCatalog } from '$lib/primitivesCatalog';
 	import { modulesOpen, sessionsOpen, showToast } from '../../stores/appStore.js';
 	import { sineIn } from 'svelte/easing';
 
@@ -22,8 +21,6 @@
 		SidebarGroup,
 		SidebarItem,
 		SidebarWrapper,
-		SidebarDropdownWrapper,
-		SidebarDropdownItem,
 		Radio,
 		Dropdown,
 		Drawer
@@ -80,125 +77,7 @@ style="height: 55px; top: 5px; left: 5px;"
 <Sidebar>
 	<SidebarWrapper>
 		<SidebarGroup>
-			<p class={sectionLabel}>Create</p>
-			{#each primitivesCatalog as catalogGroup}
-			<SidebarDropdownWrapper label={catalogGroup.group}>
-				<svelte:fragment slot="arrowup">
-					<svg
-						style="transform: rotate(180deg);"
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<polyline points="18 9 12 15 6 9"></polyline>
-					</svg>
-				</svelte:fragment>
-				<svelte:fragment slot="arrowdown">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<polyline points="18 9 12 15 6 9"></polyline>
-					</svg>
-				</svelte:fragment>
-				{#each catalogGroup.items as primitive}
-				<SidebarDropdownItem
-					label={primitive.label}
-					on:click={() => {
-						showSidebar('properties');
-						sceneCommand(primitive.command);
-					}}
-				>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-				{/each}
-			</SidebarDropdownWrapper>
-			{/each}
-
-			<SidebarDropdownWrapper label="Lights">
-				<svelte:fragment slot="arrowup">
-					<svg
-						style="transform: rotate(180deg);"
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<polyline points="18 9 12 15 6 9"></polyline>
-					</svg>
-				</svelte:fragment>
-				<svelte:fragment slot="arrowdown">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<polyline points="18 9 12 15 6 9"></polyline>
-					</svg>
-				</svelte:fragment>
-				
-					<SidebarDropdownItem
-					label="Ambient"
-					on:click={() => {
-						showSidebar('lightProperties');
-						sceneCommand('/light ambient');
-					}}
-				>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-				<SidebarDropdownItem
-					label="Directional"
-					on:click={() => {
-						showSidebar('lightProperties');
-						sceneCommand('/light directional');
-					}}
-				>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-				<SidebarDropdownItem
-					label="Hemisphere"
-					on:click={() => {
-						showSidebar('lightProperties');
-						sceneCommand('/light hemisphere');
-					}}
-				>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-			</SidebarDropdownWrapper>
-		
-			<SidebarItem
-				label="Create Group"
-				on:click={() => {
-					showSidebar('properties');
-					sceneCommand('/group New');
-				}}>
-				<svelte:fragment slot="icon">➕</svelte:fragment>
-			</SidebarItem>
-
+			<!-- Create moved to the viewport right-click Add menu (phase 77) -->
 			<p class={sectionLabel}>Assets</p>
 			<SidebarItem
 				label={($libraryClose ? '' : '● ') + 'Library'}

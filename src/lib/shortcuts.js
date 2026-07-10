@@ -93,6 +93,19 @@ export const shortcuts = [
 		action: () => chatHidden.update((value) => (value === 'hidden' ? '' : 'hidden'))
 	},
 	{
+		keys: 'Shift+A',
+		group: 'Objects',
+		label: 'Open the Add menu',
+		action: () =>
+			import('../stores/appStore').then(({ addMenu }) =>
+				addMenu.set({
+					x: Math.round(window.innerWidth / 2 - 80),
+					y: Math.round(window.innerHeight * 0.35),
+					point: null // no click point — objects keep their default spot
+				})
+			)
+	},
+	{
 		keys: 'Ctrl+S',
 		group: 'Scene',
 		label: 'Save session',

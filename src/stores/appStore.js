@@ -130,6 +130,14 @@ export const modulesOpen = writable(false);
 // sessions manager modal (50)
 export const sessionsOpen = writable(false);
 
+// viewport right-click menu (77): { x, y, point: [x,y,z] } | null — rendered
+// by ViewportMenu; Scene routes right-taps here (or to objectContextMenu)
+/** @type {import('svelte/store').Writable<any>} */
+export const viewportMenu = writable(null);
+// Add-object SEARCH popover (77): { x, y, point: [x,y,z] | null } | null
+/** @type {import('svelte/store').Writable<any>} */
+export const addMenu = writable(null);
+
 // advanced mode: reveals system objects (module content, environment rig)
 // in the object list behind a System filter chip
 export const advancedMode = writable(

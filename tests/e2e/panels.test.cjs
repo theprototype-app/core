@@ -5,19 +5,23 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// sidebar: sections + files row render, actions fire
+	// sidebar: sections + files row render (Create moved to the Add menu in 77)
 	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
 	await A.page.waitForTimeout(500);
-	for (const label of ['Create', 'Assets', 'Files', 'Scene', 'App']) {
+	for (const label of ['Assets', 'Files', 'Scene', 'App']) {
 		h.check(
 			await A.page.getByText(label, { exact: true }).first().isVisible(),
 			`sidebar section "${label}" visible`
 		);
 	}
+	h.check(
+		!(await A.page.getByText('Create', { exact: true }).first().isVisible().catch(() => false)),
+		'Create section left the sidebar'
+	);
 	h.check(await A.page.getByRole('button', { name: /Import/ }).isVisible(), 'files row visible');
 
-	// create group via sidebar still works
-	await A.page.getByText('Create Group', { exact: true }).click();
+	// groups now come from the Add menu / command path
+	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/group New'));
 	await h.eventually(
 		() =>
 			A.page.evaluate(

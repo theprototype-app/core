@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
@@ -12,45 +11,15 @@
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
 	import { addAnnotation } from '$lib/annotationsHandler';
-	import { showGrid, isLocked, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
-	import { specatorMode } from '../../stores/appStore';
+	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
+	import { viewportMenu, addMenu } from '../../stores/appStore';
+	import { buildAddChildren } from '$lib/addObjects';
 
-	// Right-click on the viewport (a click, not an orbit-pan drag) opens this menu
-	let menu: any = null;
-	let downPosition: [number, number] | null = null;
-
-	onMount(() => {
-		const isViewportTarget = (target: any) => {
-			const canvas = document.querySelector('canvas');
-			if (!canvas || !target) return false;
-			return target === canvas || (target !== document.body && target.contains?.(canvas));
-		};
-
-		const onPointerDown = (event: PointerEvent) => {
-			if (event.button === 2 && isViewportTarget(event.target)) {
-				downPosition = [event.clientX, event.clientY];
-			}
-		};
-
-		const onContextMenu = (event: MouseEvent) => {
-			if (!isViewportTarget(event.target)) return;
-			event.preventDefault();
-			if (!downPosition) return;
-			const moved = Math.hypot(event.clientX - downPosition[0], event.clientY - downPosition[1]);
-			downPosition = null;
-			// right-drag pans the camera — only a stationary right-click opens the menu
-			if (moved > 5) return;
-			if ($isLocked || $specatorMode) return;
-			menu = { x: event.clientX, y: event.clientY };
-		};
-
-		window.addEventListener('pointerdown', onPointerDown, true);
-		window.addEventListener('contextmenu', onContextMenu, true);
-		return () => {
-			window.removeEventListener('pointerdown', onPointerDown, true);
-			window.removeEventListener('contextmenu', onContextMenu, true);
-		};
-	});
+	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
+	// the clicked ground point; an object under the cursor → its own context
+	// menu instead. Right-drag keeps orbiting.
+	$: menu = $viewportMenu;
+	const close = () => viewportMenu.set(null);
 
 	function screenshot() {
 		const renderer = get(globalRenderer) as any;
@@ -83,20 +52,69 @@
 	}
 
 	$: items = [
+		{
+			label: '🔍 Search objects…',
+			tooltip: 'Shift+A',
+			action: () => addMenu.set({ x: menu.x, y: menu.y, point: menu.point ?? null })
+		},
+		{
+			label: 'Add',
+			children: buildAddChildren(() => menu?.point ?? null)
+		},
 		{ label: 'Undo', disabled: !$canUndo, tooltip: 'Ctrl+Z', action: undo },
 		{ label: 'Redo', disabled: !$canRedo, tooltip: 'Ctrl+Y', action: redo },
 		{
-			label: ($drawMode ? '● ' : '') + 'Draw mode',
-			tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
-			action: toggleDrawMode
+			label: 'Focus selected',
+			disabled: !$selectedObject?.uuid,
+			tooltip: 'F',
+			action: () => focusObject()
 		},
 		{
-			label: $simulating ? '⏹ Stop simulation' : '▶ Simulate physics',
-			disabled: !!$remoteSimulating,
-			tooltip: $remoteSimulating
-				? nameOf($remoteSimulating) + ' is simulating'
-				: 'Objects wired to a Mass node fall and collide; stop leaves one undo step',
-			action: toggleSimulation
+			label: 'Duplicate selected',
+			disabled: !$selectedObject?.uuid,
+			tooltip: 'Ctrl+D',
+			action: () => duplicateObject()
+		},
+		{
+			label: 'Align to ground',
+			disabled: !$selectedObject?.uuid,
+			tooltip: 'Drop the selected object onto the surface below (undoable)',
+			action: () => alignToGround()
+		},
+		{
+			label: $editingObject ? 'Finish mesh edit' : 'Edit mesh',
+			disabled: !$editingObject && !$selectedObject?.geometry?.attributes?.position,
+			tooltip: $editingObject ? 'Esc' : 'Drag vertex handles of the selected mesh',
+			action: () => ($editingObject ? exitEditMode() : enterEditMode($selectedObject.uuid))
+		},
+		{
+			label: 'Add note',
+			disabled: !$selectedObject?.uuid,
+			tooltip: 'Pin a synced note to the selected object',
+			action: () => addAnnotation()
+		},
+		{
+			label: 'Tools',
+			children: [
+				{
+					label: ($drawMode ? '● ' : '') + 'Draw mode',
+					tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
+					action: toggleDrawMode
+				},
+				{
+					label: $measureMode ? 'Stop measuring' : 'Measure distance',
+					tooltip: 'Click two points; Esc stops',
+					action: () => toggleMeasure()
+				},
+				{
+					label: $simulating ? '⏹ Stop simulation' : '▶ Simulate physics',
+					disabled: !!$remoteSimulating,
+					tooltip: $remoteSimulating
+						? nameOf($remoteSimulating) + ' is simulating'
+						: 'Objects wired to a Mass node fall and collide; stop leaves one undo step',
+					action: toggleSimulation
+				}
+			]
 		},
 		{
 			label: 'Snapping',
@@ -121,48 +139,18 @@
 			]
 		},
 		{
-			label: 'Focus selected',
-			disabled: !$selectedObject?.uuid,
-			tooltip: 'F',
-			action: () => focusObject()
-		},
-		{
-			label: 'Duplicate selected',
-			disabled: !$selectedObject?.uuid,
-			tooltip: 'Ctrl+D',
-			action: () => duplicateObject()
-		},
-		{
-			label: $editingObject ? 'Finish mesh edit' : 'Edit mesh',
-			disabled: !$editingObject && !$selectedObject?.geometry?.attributes?.position,
-			tooltip: $editingObject ? 'Esc' : 'Drag vertex handles of the selected mesh',
-			action: () => ($editingObject ? exitEditMode() : enterEditMode($selectedObject.uuid))
-		},
-		{
-			label: 'Add note',
-			disabled: !$selectedObject?.uuid,
-			tooltip: 'Pin a synced note to the selected object',
-			action: () => addAnnotation()
-		},
-		{
-			label: $showGrid ? 'Hide grid' : 'Show grid',
-			action: () => {
-				showGrid.update((v) => !v);
-				if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
-				else localStorage.setItem('showGrid', 'false');
-			}
-		},
-		{ label: 'Screenshot', action: screenshot },
-		{
-			label: 'Align to ground',
-			disabled: !$selectedObject?.uuid,
-			tooltip: 'Drop the selected object onto the surface below (undoable)',
-			action: () => alignToGround()
-		},
-		{
-			label: $measureMode ? 'Stop measuring' : 'Measure distance',
-			tooltip: 'Click two points; Esc stops',
-			action: () => toggleMeasure()
+			label: 'View',
+			children: [
+				{
+					label: $showGrid ? 'Hide grid' : 'Show grid',
+					action: () => {
+						showGrid.update((v) => !v);
+						if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
+						else localStorage.setItem('showGrid', 'false');
+					}
+				},
+				{ label: 'Screenshot', action: screenshot }
+			]
 		},
 		{
 			label: 'Camera bookmarks',
@@ -180,5 +168,5 @@
 </script>
 
 {#if menu}
-	<ContextMenu x={menu.x} y={menu.y} {items} on:close={() => (menu = null)} />
+	<ContextMenu x={menu.x} y={menu.y} {items} on:close={close} />
 {/if}

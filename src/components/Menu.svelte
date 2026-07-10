@@ -10,6 +10,7 @@
 	import CharacterModal from './menu/CharacterModal.svelte';
 	import ViewportMenu from './menu/ViewportMenu.svelte';
 	import MarqueeOverlay from './menu/MarqueeOverlay.svelte';
+	import AddMenu from './menu/AddMenu.svelte';
 	import VoiceChat from './menu/VoiceChat.svelte';
 	import AnnotationPopover from './menu/AnnotationPopover.svelte';
 	import Library from './menu/Library.svelte';
@@ -33,6 +34,7 @@
 <CharacterModal />
 <ViewportMenu />
 <MarqueeOverlay />
+<AddMenu />
 <VoiceChat />
 <AnnotationPopover />
 <Library />

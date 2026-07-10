@@ -5,9 +5,9 @@
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
-	import { peers, username,userdata, specatorMode, avatarConfig } from '../stores/appStore';
+	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu } from '../stores/appStore';
 	import { get } from 'svelte/store';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
@@ -231,6 +231,7 @@
 		let downTime = 0;
 		let strokeActive = false;
 		let marqueeStart = null; // shift-drag box select (13)
+		let rightDown = null; // right-click TAP opens the Add/object menu (77)
 
 		const setRayFromEvent = (event) => {
 			const rect = element.getBoundingClientRect();
@@ -242,6 +243,10 @@
 		};
 
 		const onPointerDown = (event) => {
+			if (event.button === 2) {
+				rightDown = [event.clientX, event.clientY, Date.now()];
+				return;
+			}
 			if (event.button !== 0) return;
 			// draw mode: dragging paints a stroke instead of orbiting
 			if ($drawMode && !$isLocked && !$isVRMode) {
@@ -384,6 +389,40 @@
 		// window, not canvas: the Canvas wrapper swallows pointer events mid-gesture
 		window.addEventListener('pointermove', onPointerMove);
 		window.addEventListener('pointerup', onPointerUp);
+		// right-click TAP opens the Add/object menu (77). Opening happens on the
+		// contextmenu event (which trails pointerup) — opening on pointerup lets
+		// that trailing event hit the fresh menu backdrop and close it instantly.
+		const onContextMenu = (event) => {
+			event.preventDefault(); // the browser menu never belongs on the canvas
+			const down = rightDown;
+			rightDown = null;
+			if (!down) return;
+			if ($isLocked || $isVRMode || $specatorMode || $drawMode || $editingObject || $measureMode) return;
+			// only a short stationary tap opens menus — right-DRAG keeps panning
+			const moved = Math.hypot(event.clientX - down[0], event.clientY - down[1]);
+			if (moved > 5 || Date.now() - down[2] > 400) return;
+			setRayFromEvent(event);
+			const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
+			const top = hits.length ? topLevelObjectOf(hits[0].object) : null;
+			if (top) {
+				// an object under the cursor gets its regular context menu
+				$objectContextMenu = {
+					x: event.clientX,
+					y: event.clientY,
+					uuid: top.uuid,
+					locked: !!$lockedObjects.find((lock) => lock[1] === top.uuid)
+				};
+				return;
+			}
+			const planePoint = new THREE.Vector3();
+			const point =
+				hits[0]?.point ??
+				(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
+					? planePoint
+					: new THREE.Vector3());
+			viewportMenu.set({ x: event.clientX, y: event.clientY, point: point.toArray() });
+		};
+		element.addEventListener('contextmenu', onContextMenu);
 		setDrawScene(scene);
 
 		// VR: trigger press activates a quick-menu tile, otherwise selects
@@ -411,6 +450,7 @@
 
 		return () => {
 			element.removeEventListener('pointerdown', onPointerDown);
+			element.removeEventListener('contextmenu', onContextMenu);
 			window.removeEventListener('pointerup', onPointerUp);
 			xrControllers.forEach((controller) => controller.removeEventListener('select', onXRSelect));
 			renderer.xr.removeEventListener('sessionend', onSessionEnd);

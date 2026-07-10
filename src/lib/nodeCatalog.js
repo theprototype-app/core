@@ -142,9 +142,10 @@ export const animationTypes = ['shake', 'spin', 'bounce', 'orbit', 'pulse', 'bli
  * @param {string} type
  */
 export function groupOf(type) {
-	for (const group of nodeCatalog) if (group.items.some((i) => i.type === type)) return group.group;
+	for (const group of nodeCatalog)
+		if (group.items.some((/** @type {any} */ i) => i.type === type)) return group.group;
 	for (const group of get(moduleNodeGroups))
-		if (group.items.some((i) => i.type === type)) return group.group;
+		if (group.items.some((/** @type {any} */ i) => i.type === type)) return group.group;
 	return null;
 }
 

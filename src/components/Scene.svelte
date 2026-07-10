@@ -26,6 +26,7 @@
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
+	import VRStats from './play/VRStats.svelte';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
@@ -573,6 +574,7 @@ position={[0, 2, 3]}
 />
 
 <VRMenu />
+<VRStats />
 
 <XR
 	onsessionstart={() => {

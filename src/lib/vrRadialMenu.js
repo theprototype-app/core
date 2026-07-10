@@ -89,6 +89,11 @@ export function findMenuEntry(id) {
 	return null;
 }
 
+/** The stats card rides the hand OPPOSITE the menu hand (102) @param {string} menuHand */
+export function statsHand(menuHand) {
+	return menuHand === 'right' ? 'left' : 'right';
+}
+
 /**
  * The center hub doubles as Close (base ring), Object ▸ (base ring with a
  * selection) or Back (sub-rings).

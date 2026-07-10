@@ -78,3 +78,9 @@ export const vrStatsOpen = writable(
 export const passthroughActive = writable(false);
 /** @type {import('svelte/store').Writable<'move' | 'rotate'>} grab behavior; scale is always two-handed */
 export const vrTransformMode = writable('move');
+/** grab style (100): 'rigid' = controller-as-handle (default); 'move'/'rotate' = legacy gizmo grabs */
+export const vrGrabStyle = writable(
+	typeof localStorage !== 'undefined' ? localStorage.getItem('vrGrabStyle') ?? 'rigid' : 'rigid'
+);
+/** handedness currently holding a grab ('left'|'right'|null) — gates that hand's stick */
+export const vrGrabbedHand = writable(null);

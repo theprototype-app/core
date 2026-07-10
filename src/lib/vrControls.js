@@ -16,7 +16,9 @@ import {
 	vrPassthrough,
 	vrMenuHold,
 	vrObjectsPanelOpen,
-	vrStatsOpen
+	vrStatsOpen,
+	vrGrabStyle,
+	vrGrabbedHand
 } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick } from './vrRadialMenu';
 import { peers, showToast } from '../stores/appStore';
@@ -576,11 +578,32 @@ function realDeltaToRigLocal(vector) {
 	return vector.applyQuaternion(rig.quaternion.clone().invert()).divideScalar(rig.scale.x);
 }
 
+/**
+ * Which top-level object contains a world point (100.3): grabbing with the
+ * controller INSIDE an object needs no pointer. Exported for headless tests.
+ * @param {any} point THREE.Vector3 @param {any} group objectsGroup
+ */
+export function containedTopLevel(point, group) {
+	if (!group) return null;
+	const box = new THREE.Box3();
+	for (const child of group.children) {
+		box.setFromObject(child);
+		if (isFinite(box.min.x) && box.containsPoint(point)) return child;
+	}
+	return null;
+}
+
 /** @param {number} index */
 function onSqueezeStart(index) {
 	if (!get(objectsGroup)) return;
+	const controller = renderer.xr.getController(index);
 	const hits = controllerRay(index).intersectObjects(get(objectsGroup).children, true);
-	if (hits.length === 0) {
+	let object = hits.length ? topLevelObjectOf(hits[0].object) : null;
+	if (!object) {
+		// hand inside an object grabs it without a pointer (100.3)
+		object = containedTopLevel(controller.getWorldPosition(new THREE.Vector3()), get(objectsGroup));
+	}
+	if (!object) {
 		emptyAirSqueeze[index] = true;
 		// both hands gripping air -> world grab (zoom/rotate/pan the world)
 		if (emptyAirSqueeze[0] && emptyAirSqueeze[1]) {
@@ -594,8 +617,6 @@ function onSqueezeStart(index) {
 			worldPan = { index, prev: renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()) };
 		return;
 	}
-	const object = topLevelObjectOf(hits[0].object);
-	if (!object) return;
 	if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) return;
 
 	if (grab && grab.object === object && grab.index !== index) {
@@ -608,18 +629,35 @@ function onSqueezeStart(index) {
 			before: grab.before
 		};
 		grab = null;
+		vrGrabbedHand.set(null);
 		return;
 	}
 
 	suspendAnimation(object.uuid); // animated objects park at their base while held
-	const controller = renderer.xr.getController(index);
+	const cPos = controller.getWorldPosition(new THREE.Vector3());
+	const cQuat = controller.getWorldQuaternion(new THREE.Quaternion());
+	// rigid attach (100): the object's pose RELATIVE to the controller, in the
+	// object's parent space, stays constant while held — like a skewer
+	object.parent.updateMatrixWorld(true);
+	const parentQuat = object.parent.getWorldQuaternion(new THREE.Quaternion());
+	const parentInv = object.parent.matrixWorld.clone().invert();
+	const pPos = cPos.clone().applyMatrix4(parentInv);
+	const pQuat = parentQuat.clone().invert().multiply(cQuat);
 	grab = {
 		object,
 		index,
-		prevPos: controller.getWorldPosition(new THREE.Vector3()),
-		prevQuat: controller.getWorldQuaternion(new THREE.Quaternion()),
+		style: get(vrGrabStyle),
+		relPos: object.position.clone().sub(pPos).applyQuaternion(pQuat.clone().invert()),
+		relQuat: pQuat.clone().invert().multiply(object.quaternion),
+		startScale: object.scale.clone(),
+		scaleFactor: 1,
+		prevPos: cPos,
+		prevQuat: cQuat,
 		before: transformStateOf(object)
 	};
+	const session = renderer?.xr.getSession();
+	vrGrabbedHand.set(session ? ([...session.inputSources][index]?.handedness ?? null) : null);
+	hapticPulse(0.25, 30);
 	selectObject(object.uuid); // locks it for peers, updates selection state
 }
 
@@ -648,6 +686,8 @@ function onSqueezeEnd(index) {
 	if (grab && grab.index === index) {
 		endGrab(grab.object, grab.before);
 		grab = null;
+		vrGrabbedHand.set(null);
+		hapticPulse(0.18, 24);
 	}
 }
 
@@ -659,13 +699,82 @@ function controllerDistance() {
 
 const deltaQuat = new THREE.Quaternion();
 
+/**
+ * Pure rigid-grab pose (100): controller pose in the object's parent space +
+ * the constant relative offset -> object pose. Exported for headless tests.
+ * @param {any} pPos controller position (parent space) @param {any} pQuat controller quaternion (parent space)
+ * @param {any} relPos @param {any} relQuat
+ */
+export function rigidGrabPose(pPos, pQuat, relPos, relQuat) {
+	return {
+		position: pPos.clone().add(relPos.clone().applyQuaternion(pQuat)),
+		quaternion: pQuat.clone().multiply(relQuat)
+	};
+}
+
+/**
+ * One frame of stick input while gripping (100.2): forward/back reels the
+ * relative distance, left/right scales. Pure + clamped.
+ * @param {{length: number, scale: number, x: number, y: number}} input
+ */
+export function grabStickAdjust({ length, scale, x, y }) {
+	const dead = (/** @type {number} */ v) => (Math.abs(v) > 0.15 ? v : 0);
+	const reel = dead(y);
+	const grow = dead(x);
+	return {
+		// stick forward (y negative in xr-standard) pushes the object AWAY,
+		// pulling back reels it in
+		length: Math.min(Math.max(length * (1 - reel * 0.03), 0.05), 60),
+		scale: Math.min(Math.max(scale * (1 + grow * 0.025), 0.02), 25)
+	};
+}
+
 function updateGrab() {
 	const controller = renderer.xr.getController(grab.index);
 	const position = controller.getWorldPosition(new THREE.Vector3());
 	const quaternion = controller.getWorldQuaternion(new THREE.Quaternion());
 	const object = grab.object;
 
-	if (get(vrTransformMode) === 'rotate') {
+	if (grab.style === 'rigid') {
+		// controller-as-handle (100): the object keeps its grab-start offset and
+		// follows position AND rotation 1:1; the grab hand's stick reels + scales
+		object.parent.updateMatrixWorld(true);
+		const parentQuat = object.parent.getWorldQuaternion(new THREE.Quaternion());
+		const parentInv = object.parent.matrixWorld.clone().invert();
+		const pPos = position.clone().applyMatrix4(parentInv);
+		const pQuat = parentQuat.clone().invert().multiply(quaternion);
+
+		const session = renderer?.xr.getSession();
+		const axes = session ? ([...session.inputSources][grab.index]?.gamepad?.axes ?? []) : [];
+		const adjusted = grabStickAdjust({
+			length: Math.max(grab.relPos.length(), 0.05),
+			scale: grab.scaleFactor,
+			x: axes[2] ?? 0,
+			y: axes[3] ?? 0
+		});
+		if (grab.relPos.lengthSq() > 1e-8) grab.relPos.setLength(adjusted.length);
+		if (adjusted.scale !== grab.scaleFactor) {
+			grab.scaleFactor = adjusted.scale;
+			object.scale.copy(grab.startScale).multiplyScalar(grab.scaleFactor);
+		}
+
+		const pose = rigidGrabPose(pPos, pQuat, grab.relPos, grab.relQuat);
+		object.position.copy(pose.position);
+		object.quaternion.copy(pose.quaternion);
+		if (get(snapEnabled)) {
+			const step = get(snapSettings).translate;
+			object.position.x = Math.round(object.position.x / step) * step;
+			object.position.z = Math.round(object.position.z / step) * step;
+		}
+		grab.prevPos.copy(position);
+		grab.prevQuat.copy(quaternion);
+		objectsGroup.update((value) => value);
+		broadcastMove(object);
+		return;
+	}
+
+	// legacy gizmo-style grabs (vrGrabStyle 'move' / 'rotate')
+	if (grab.style === 'rotate') {
 		deltaQuat.copy(grab.prevQuat).invert().premultiply(quaternion);
 		// under a grabbed world (71) the hand delta converts into rig-local
 		const rig = get(worldRig);
@@ -780,9 +889,18 @@ export function executeVRMenuAction(name) {
 			return next;
 		});
 	} else if (name === 'grabmode') {
-		const next = get(vrTransformMode) === 'move' ? 'rotate' : 'move';
-		vrTransformMode.set(next);
-		showToast('Legacy grab mode: ' + next + ' (grip-grab always moves AND rotates)');
+		// cycle the grip style (100): rigid (default) -> legacy move -> legacy rotate
+		const order = ['rigid', 'move', 'rotate'];
+		const next = order[(order.indexOf(get(vrGrabStyle)) + 1) % order.length];
+		vrGrabStyle.set(next);
+		try {
+			localStorage.setItem('vrGrabStyle', next);
+		} catch {}
+		showToast(
+			next === 'rigid'
+				? 'Grab: rigid (controller is the handle — stick reels + scales)'
+				: 'Grab: legacy ' + next
+		);
 	} else if (name === 'snap') snapEnabled.update((v) => !v);
 	else if (name === 'grid') {
 		showGrid.update((v) => !v);
@@ -857,8 +975,9 @@ export function updateVRControls() {
 		teleportEngaged = false;
 		return;
 	}
-	// open menu/panel are modal for the sticks: sector nav / scrolling own them
-	if (!get(vrMenuOpen) && !get(vrObjectsPanelOpen)) {
+	// open menu/panel are modal for the sticks: sector nav / scrolling own them;
+	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100)
+	if (!get(vrMenuOpen) && !get(vrObjectsPanelOpen) && get(vrGrabbedHand) !== 'right') {
 		updateTeleport(session);
 		updateSnapTurn(session);
 	}

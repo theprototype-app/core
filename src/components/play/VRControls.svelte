@@ -5,7 +5,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { useThrelte, useTask } from '@threlte/core';
-	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen } from '../../stores/sceneStore';
+	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
 	import { computeMoveOffset, worldScale } from '$lib/vrControls';
 
 	const { renderer, camera, scene } = useThrelte();
@@ -33,6 +33,7 @@
 		const session = renderer.xr.getSession();
 		if (!session) return;
 		if ($vrMenuOpen || $vrObjectsPanelOpen) return; // menu/panel own the sticks (74/101)
+		if ($vrGrabbedHand === 'left') return; // a left-hand grab owns its stick (100)
 		const space = xr.getReferenceSpace();
 		if (!space) return;
 

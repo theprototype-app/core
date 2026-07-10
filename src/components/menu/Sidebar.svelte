@@ -6,6 +6,8 @@
 		settingsOpen,
 		propertiesClose,
 		lightPropertiesClose,
+		scenePropertiesClose,
+		libraryClose,
 		showSidebar,
 		closeMenu
 	} from '../../stores/appStore.js';
@@ -213,7 +215,7 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 
 			<p class={sectionLabel}>Assets</p>
 			<SidebarItem
-				label="Library"
+				label={($libraryClose ? '' : '● ') + 'Library'}
 				on:click={() => {
 					showSidebar('library');
 				}}>
@@ -279,7 +281,7 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 
 			<p class={sectionLabel}>Scene</p>
 			<SidebarItem
-				label="Configure Scene"
+				label={($scenePropertiesClose ? '' : '● ') + 'Configure Scene'}
 				{spanClass}
 				on:click={() => {
 					showSidebar('scene');

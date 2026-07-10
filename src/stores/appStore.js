@@ -30,6 +30,16 @@ export const specatorMode = writable(false);
 
 // update the sidebar visibility
 export function showSidebar(store) {
+	// Configure Scene and Library TOGGLE: a second click closes them
+	// (properties/lightProperties stay open-only — selection must never close them)
+	if (store === 'scene' && !get(scenePropertiesClose)) {
+		scenePropertiesClose.set(true);
+		return;
+	}
+	if (store === 'library' && !get(libraryClose)) {
+		libraryClose.set(true);
+		return;
+	}
 	if (store != 'library') libraryClose.set(true);
 	if (store != 'scene') scenePropertiesClose.set(true);
 	if (store != 'lightProperties') lightPropertiesClose.set(true);

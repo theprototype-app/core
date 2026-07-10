@@ -4,7 +4,7 @@
     let isExpanded = $state(false);
     let previouslySelectedObject;
     import { getContext } from 'svelte';
-    import { Tooltip, ListgroupItem } from 'flowbite-svelte';
+    import { Tooltip } from 'flowbite-svelte';
 
     // search/filter from Controls: a store holding the visible-uuid set (null = all)
     const objectFilter = getContext('objectFilter');
@@ -17,7 +17,7 @@
     import { toggleExpand, objectContextMenu, renamingObject } from '../../stores/appStore';
     import { objectsGroup, TControls, selectedObject, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
-    import { selectObject, renameObject, moveObjectToGroup } from '$lib/objectActions';
+    import { selectObject, renameObject, moveObjectToGroup, toggleObjectVisibility } from '$lib/objectActions';
     import { nameOf } from '$lib/lockControl';
     import {
         showSidebar,
@@ -26,45 +26,25 @@
 	} from '../../stores/appStore.js';
 
     /**
-     * Listens for the toggleExpand state and, when it changes, expands
-     * the corresponding group in the object list, and then selects the
-     * previously selected object.
-     * This is a brute force solution until I learn how to trigger reactivity on svelte:self
-     * @todo figure out how to re-render nested component when the state changes
+     * When a move-to-group targets this row's object, expand it so the moved
+     * child is visible (state-driven — replaces the old DOM-click dance).
      */
     $effect(() => {
-        if ($toggleExpand !== null) {
-            // save the uuid of the previously selected object
-            let save = $selectedObject?.uuid;
-
-            // get the element with the toggleExpand uuid
-            let element = document.getElementById($toggleExpand);
-
-            // toggle the expand state for collapsed group
-            element?.querySelector("button > div > i")?.click();
-
-            // wait 100ms and toggle the expand state again
-            setTimeout(() => {
-                element?.querySelector("button > div > i")?.click();
-                element?.querySelector("div > i")?.click();
-            }, 100);
-
-            // wait another 100ms and select the previously selected object
-            setTimeout(() => {
-                let saved = document.getElementById(save);
-                // keep UI state for previously selected object
-                if (saved)
-                saved.querySelector("p > button > div > div")?.click();
-                // the object may have been deleted while this timer was pending
-                let savedObject = save && $objectsGroup.getObjectByProperty('uuid', save);
-                if (saved?.querySelector("p > button > div > div") !== null && savedObject)
-                configure(savedObject, 1);
-            }, 100);
-
-            // reset the toggleExpand state
+        if ($toggleExpand === element.uuid) {
+            isExpanded = true;
             $toggleExpand = null;
         }
     });
+
+    const isSelected = $derived($selectedObject?.uuid === element.uuid);
+    const lockEntry = $derived($lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid));
+
+    /** stable per-peer color chip for lock badges @param {any} id */
+    function peerColor(id) {
+        let h = 0;
+        for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) % 360;
+        return `hsl(${h}, 70%, 55%)`;
+    }
 
     function select(uuid) {
         previouslySelectedObject = $selectedObject;
@@ -96,6 +76,8 @@
 
     // --- drag rows into groups ---
     let dropHover = $state(false);
+    /** @type {any} hovering a collapsed group while dragging opens it */
+    let hoverExpandTimer = null;
 
     function onRowDragStart(event) {
         event.dataTransfer.setData('application/x-object-uuid', element.uuid);
@@ -111,10 +93,21 @@
         event.stopPropagation();
         event.dataTransfer.dropEffect = 'move';
         dropHover = true;
+        if (!isExpanded && element.children.length > 0 && !hoverExpandTimer)
+            hoverExpandTimer = setTimeout(() => {
+                isExpanded = true;
+                hoverExpandTimer = null;
+            }, 600);
+    }
+
+    function clearHoverExpand() {
+        dropHover = false;
+        clearTimeout(hoverExpandTimer);
+        hoverExpandTimer = null;
     }
 
     function onRowDrop(event) {
-        dropHover = false;
+        clearHoverExpand();
         if (element.type !== 'Group') return;
         const uuid = event.dataTransfer.getData('application/x-object-uuid');
         if (!uuid || uuid === element.uuid) return;
@@ -158,71 +151,99 @@
 
 
     {#if rowVisible}
-    <p id={element.uuid} oncontextmenu={openContextMenu}
-        class={dropHover ? 'rounded outline outline-1 outline-blue-400' : ''}
-        draggable={!$lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid)}
+    <div id={element.uuid} oncontextmenu={openContextMenu}
+        class={'group/row select-none ' +
+            (dropHover ? 'rounded outline outline-2 outline-primary-400 bg-primary-900/20 ' : '') +
+            (lockEntry ? '' : 'cursor-grab active:cursor-grabbing')}
+        role="listitem"
+        draggable={!lockEntry}
         ondragstart={onRowDragStart}
         ondragover={onRowDragOver}
-        ondragleave={() => dropHover = false}
+        ondragleave={clearHoverExpand}
         ondrop={onRowDrop}>
-    <ListgroupItem itemDefaultClass="flex items-center text-overflow-ellipsis w-full overflow-hidden inline-flex" >
-            <div class="inline-flex text-overflow-ellipsis w-full overflow-hidden items-center grid grid-cols-12">
-                <div class="flex inline-flex justify-start items-center col-span-9" onclick={() => { select(element.uuid); }}>
-                    {#if !isExpanded && element.children.length > 0}
-                        <i class="fa-regular fa-plus pr-2 pl-2" title="Expand group" onclick={() => isExpanded = !isExpanded}></i>
-                    {:else if element.children.length > 0}
-                        <i class="fa-solid fa-minus pr-2 pl-2" title="Collapse group" onclick={() => isExpanded = !isExpanded}></i>
-                    {:else}
-                    <i class="fa-solid fa-minus pr-2 pl-2" style="opacity: 0"></i>
-                    {/if}
+        <div
+            class={'flex w-full items-center gap-1 rounded px-1 py-0.5 text-sm ' +
+                (isSelected
+                    ? 'bg-primary-900/50 text-primary-100'
+                    : 'text-gray-800 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600/50')}
+            role="presentation"
+            onclick={() => { select(element.uuid); }}
+        >
+            <!-- caret column -->
+            {#if element.children.length > 0}
+                <button
+                    class="w-4 shrink-0 text-center text-[10px] text-gray-400 hover:text-gray-100"
+                    title={isExpanded ? 'Collapse group' : 'Expand group'}
+                    onclick={(e) => { e.stopPropagation(); isExpanded = !isExpanded; }}
+                >
+                    <i class={isExpanded ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'}></i>
+                </button>
+            {:else}
+                <span class="w-4 shrink-0"></span>
+            {/if}
 
-                    {#if element.userData?.animatedClips}
-                        <i class="fa-solid fa-person-running pr-2" title="Animated model"></i>
-                    {:else if element.type.endsWith('Group')}
-                        <i class="fa-solid fa-layer-group pr-2" title="Group"></i>
-                    {:else if element.type.endsWith('Light')}
-                        <i class="fa-regular fa-sun pr-2" title="Light"></i>
-                    {:else}
-                        <i class="fa-solid fa-cube pr-2" title="Object"></i>
-                    {/if}
-                    {#if $renamingObject === element.uuid}
-                        <!-- svelte-ignore a11y_autofocus -->
-                        <input
-                            class="w-full rounded border border-gray-400 bg-transparent px-1 text-sm"
-                            value={element.name}
-                            autofocus
-                            onkeydown={(e) => { if (e.key === 'Enter') commitRename(e); if (e.key === 'Escape') $renamingObject = null; }}
-                            onblur={commitRename}
-                            onclick={(e) => e.stopPropagation()}
-                        />
-                    {:else}
-                        <p class={`overflow-hidden whitespace-nowrap ${$selectedObject && $selectedObject.uuid === element.uuid ? 'text-blue-200' : ''}`}>{element.name}</p>
-                    {/if}
-                </div>
-                {#if $lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid)}
-                    <div class="flex inline-flex justify-end col-span-3">
-                        <li class="configure inline-flex">🔒</li>
-                        <p class="configure grayscale">⚙️</p>
-                        <p class="delete grayscale">✖️</p>
-                    </div>
-                    <Tooltip placement='left' arrow={false}>Locked by {nameOf($lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid)[0])} — right-click to request control</Tooltip>
-                {:else}
-                    <div class="flex inline-flex justify-end col-span-3">
-                        <!-- <li class="configure inline-flex">🔓</li> -->
-                        <p class="configure hover:brightness-200" onclick={() => configure(element)}>⚙️</p>
-                        <p class="delete hover:brightness-200" onclick={() => deleteItem(element)}>✖️</p>
-                    </div>
-                {/if}
-            </div>
-    </ListgroupItem>
-    </p>
+            <!-- type icon column -->
+            {#if element.userData?.animatedClips}
+                <i class="fa-solid fa-person-running w-4 shrink-0 text-center text-purple-300" title="Animated model"></i>
+            {:else if element.type.endsWith('Group')}
+                <i class="fa-solid fa-layer-group w-4 shrink-0 text-center text-sky-300" title="Group"></i>
+            {:else if element.type.endsWith('Light')}
+                <i class="fa-regular fa-sun w-4 shrink-0 text-center text-yellow-300" title="Light"></i>
+            {:else}
+                <i class="fa-solid fa-cube w-4 shrink-0 text-center text-gray-400" title="Object"></i>
+            {/if}
+
+            <!-- name / inline rename -->
+            {#if $renamingObject === element.uuid}
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                    class="row-rename ui-input min-w-0 flex-1 px-1 py-0 text-sm"
+                    value={element.name}
+                    autofocus
+                    onkeydown={(e) => { if (e.key === 'Enter') commitRename(e); if (e.key === 'Escape') $renamingObject = null; }}
+                    onblur={commitRename}
+                    onclick={(e) => e.stopPropagation()}
+                />
+            {:else}
+                <p
+                    class={'row-name min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left ' +
+                        (element.visible === false ? 'italic opacity-50' : '')}
+                    title="Double-click to rename"
+                    ondblclick={() => { if (!lockEntry) $renamingObject = element.uuid; }}
+                >
+                    {element.name}
+                </p>
+            {/if}
+
+            <!-- quick actions: appear on hover; lock badge when held by a peer -->
+            {#if lockEntry}
+                <span class="flex shrink-0 items-center gap-1 pr-1">
+                    <span class="h-2 w-2 rounded-full" style={'background:' + peerColor(lockEntry[0])}></span>
+                    🔒
+                </span>
+                <Tooltip placement='left' arrow={false}>Locked by {nameOf(lockEntry[0])} — right-click to request control</Tooltip>
+            {:else}
+                <span class="hidden shrink-0 items-center gap-1.5 pr-1 group-hover/row:flex">
+                    <button
+                        class="text-gray-400 hover:text-gray-100"
+                        title={element.visible === false ? 'Show' : 'Hide'}
+                        onclick={(e) => { e.stopPropagation(); toggleObjectVisibility(element.uuid); }}
+                    >
+                        <i class={element.visible === false ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}></i>
+                    </button>
+                    <button class="configure hover:brightness-200" title="Properties" onclick={(e) => { e.stopPropagation(); configure(element); }}>⚙️</button>
+                    <button class="delete hover:brightness-200" title="Delete" onclick={(e) => { e.stopPropagation(); deleteItem(element); }}>✖️</button>
+                </span>
+            {/if}
+        </div>
+    </div>
 
     {#if isExpanded}
-    {#each element.children as item}
-        <p class="pl-6">
-            <svelte:self element={item} key={item.uuid} />
-        </p>
-    {/each}
+    <div class="ml-3 border-l border-gray-600/40 pl-1">
+        {#each element.children as item (item.uuid)}
+            <svelte:self element={item} />
+        {/each}
+    </div>
     {/if}
     {/if}
 

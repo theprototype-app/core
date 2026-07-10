@@ -71,6 +71,22 @@
 	});
 	objectsGroup.subscribe(() => refreshFilter()); // re-filter on scene changes
 
+	// bottom status line: totals across the whole tree (N objects · M hidden)
+	let objectCount = $state(0);
+	let hiddenCount = $state(0);
+	objectsGroup.subscribe((group) => {
+		let total = 0;
+		let hidden = 0;
+		const walk = (o: any) => {
+			total++;
+			if (o.visible === false) hidden++;
+			o.children.forEach(walk);
+		};
+		group?.children.forEach(walk);
+		objectCount = total;
+		hiddenCount = hidden;
+	});
+
 	// --- advanced mode: System filter shows scene-root module/env objects ---
 	let systemRows = $state([]);
 	let systemNoticeDismissed = $state(
@@ -412,6 +428,9 @@
 			{/if}
 		</div>
 	</Listgroup>
+	<div id="object-count" class="rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+		{objectCount} object{objectCount === 1 ? '' : 's'}{hiddenCount ? ' · ' + hiddenCount + ' hidden' : ''}
+	</div>
 	<div class="resize-handle" style="position: absolute; bottom: -38px; right: 0; width: 10px; height: 10px; background-color: #ccc; cursor: se-resize;"></div>
 </div>
 

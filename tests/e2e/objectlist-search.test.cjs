@@ -4,8 +4,7 @@ const h = require('./helpers.cjs');
 const visibleRows = (page) =>
 	page.evaluate(() =>
 		[...document.querySelectorAll('#object-list [id]')]
-			.filter((el) => el.querySelector('p'))
-			.map((el) => el.querySelector('.col-span-9 p:last-child, .col-span-9 input')?.textContent?.trim())
+			.map((el) => el.querySelector('.row-name, .row-rename')?.textContent?.trim())
 			.filter(Boolean)
 	);
 

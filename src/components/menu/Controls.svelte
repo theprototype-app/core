@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects, globalScene } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject, advancedMode } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
+	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
 	import { mutedFlowObjects } from '../../stores/flowStore';
 	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup } from '$lib/objectActions';
@@ -34,8 +35,8 @@
 		stroke: (o) => o.name === 'Stroke'
 	};
 	function refreshFilter() {
-		if (searchType === 'system') {
-			// the System view renders its own rows — normal filtering is off
+		if (searchType === 'system' || searchType === 'environment') {
+			// these views render their own rows — normal filtering is off
 			matchCount = 0;
 			objectFilter.set(null);
 			return;
@@ -123,6 +124,28 @@
 		const size = Math.max(box.getSize(new THREE.Vector3()).length(), 2);
 		flyTo([center.x + size * 0.6, center.y + size * 0.45, center.z + size * 0.6], center.toArray());
 	}
+
+	// --- environment filter (70.4): read-only rows for environment-root ---
+	let envRows = $state([]);
+	let envNoticeDismissed = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem('envNoticeDismissed') === 'true'
+	);
+	function refreshEnvRows() {
+		const scene = $globalScene;
+		const root = scene?.getObjectByName(ENV_ROOT);
+		envRows = (root?.children ?? []).map((object: any) => ({
+			name: object.name,
+			type: object.type,
+			visible: object.visible,
+			object
+		}));
+	}
+	$effect(() => {
+		if (searchType !== 'environment') return;
+		refreshEnvRows();
+		const timer = setInterval(refreshEnvRows, 1000);
+		return () => clearInterval(timer);
+	});
 	let classActive =
 		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-300';
 
@@ -354,7 +377,7 @@
 			on:keydown={(e) => { if (e.key === 'Escape') { searchTerm = ''; e.currentTarget.blur(); } }}
 		/>
 		<div class="flex items-center gap-1">
-			{#each [['', 'All'], ['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes'], ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
+			{#each [['', 'All'], ['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes'], ...($showEnvInList ? [['environment', 'Environment']] : []), ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
 				<button
 					class={'rounded-full px-2 py-0.5 ' +
 						(searchType === value
@@ -416,6 +439,39 @@
 				{/each}
 				{#if systemRows.length === 0}
 					<p class="p-2 text-xs italic text-gray-400">No system objects right now — spawn a module (piano, pong, dungeon) to see its content here.</p>
+				{/if}
+			{:else if searchType === 'environment'}
+				{#if !envNoticeDismissed}
+					<div class="flex items-start gap-1 bg-yellow-900/40 p-2 text-[11px] text-yellow-200">
+						<span class="flex-1">
+							Environment objects are managed from Scene settings — switching presets
+							replaces them. Edit them there, not here.
+						</span>
+						<button
+							class="rounded bg-gray-600 px-1 text-white"
+							on:click={() => {
+								envNoticeDismissed = true;
+								localStorage.setItem('envNoticeDismissed', 'true');
+							}}>✕</button>
+					</div>
+				{/if}
+				{#each envRows as row (row.name)}
+					<div class="border-b border-gray-600/40 px-2 py-1 text-sm text-gray-800 dark:text-gray-200">
+						<div class="flex items-center gap-2">
+							<i class="fa-regular fa-sun w-4 text-center text-yellow-300/80" title="Environment light"></i>
+							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed from Scene settings">
+								{row.name}
+							</span>
+							<span class="text-[10px] text-gray-400">{row.type}</span>
+							<button
+								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								title="Focus the camera on it"
+								on:click={() => focusSystemObject(row.object)}>👁</button>
+						</div>
+					</div>
+				{/each}
+				{#if envRows.length === 0}
+					<p class="p-2 text-xs italic text-gray-400">The environment group is empty — pick a preset or add environment lights in Scene settings.</p>
 				{/if}
 			{:else}
 			  {#if $objectsGroup}

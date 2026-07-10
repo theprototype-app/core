@@ -21,7 +21,25 @@
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup } from '$lib/objectActions';
 	import { showLightHelpers } from '$lib/lightHelpers';
-	import { environment, ENVIRONMENT_PRESETS, setEnvironment } from '$lib/environment';
+	import {
+		environment,
+		ENVIRONMENT_PRESETS,
+		setEnvironment,
+		envPresets,
+		presetPayload,
+		editRigComponent,
+		addEnvLight,
+		updateEnvLight,
+		removeEnvLight,
+		convertToEnvironment,
+		convertFromEnvironment,
+		snapshotPreset,
+		saveEnvPreset,
+		deleteEnvPreset,
+		exportEnvPreset,
+		importEnvPreset,
+		applyCustomPreset
+	} from '$lib/environment';
 	import {
 		globalScene,
 		objectsGroup,
@@ -29,7 +47,7 @@
 		backgroundColor,
 		globalCamera
 	} from '../../stores/sceneStore';
-	import { peers, inspectorClose, inspectorKind } from '../../stores/appStore.js';
+	import { peers, inspectorClose, inspectorKind, showToast } from '../../stores/appStore.js';
 
 	const hexColor = /^#[0-9A-F]{6}$/i;
 	const RAD_SNAP = Math.PI / 12; // Ctrl-snap rotations to 15°
@@ -155,6 +173,38 @@
 	let fogNear = $state(0);
 	/** @type {any} */
 	let fogFar = $state(50);
+
+	// ---- environment v2 (70) -------------------------------------------------
+	const envPayload = $derived(presetPayload($environment));
+	const selectedIsSceneLight = $derived(
+		!!$selectedObject?.isLight &&
+			!!$objectsGroup?.getObjectByProperty?.('uuid', $selectedObject.uuid)
+	);
+
+	function savePresetPrompt() {
+		const name = prompt('Preset name', $environment.customPreset?.label ?? 'My preset');
+		if (name) saveEnvPreset(name);
+	}
+	function exportCurrentPreset() {
+		const payload = snapshotPreset($environment.customPreset?.label ?? envPayload.label ?? 'environment');
+		const blob = new Blob([exportEnvPreset(payload)], { type: 'application/json' });
+		const link = document.createElement('a');
+		link.href = URL.createObjectURL(blob);
+		link.download = String(payload.label).replace(/[^\w-]+/g, '_') + '.envpreset.json';
+		link.click();
+		URL.revokeObjectURL(link.href);
+	}
+	/** @param {any} event */
+	async function onImportPreset(event) {
+		const file = event.target.files?.[0];
+		if (!file) return;
+		try {
+			await importEnvPreset(await file.text());
+		} catch {
+			showToast('That file is not an environment preset');
+		}
+		event.target.value = '';
+	}
 	function sendBackgroundColor() {
 		$peers.send({ type: 'color', uuid: 'background', color: $backgroundColor });
 	}
@@ -201,6 +251,17 @@
 							{preset.label}
 						</button>
 					{/each}
+					{#if $environment.customPreset}
+						<button
+							class={'ui-chip ' +
+								($environment.preset === 'custom'
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => applyCustomPreset($environment.customPreset)}
+						>
+							{$environment.customPreset.label ?? 'Custom'}
+						</button>
+					{/if}
 				</div>
 				<SliderRow
 					label="Exposure"
@@ -210,8 +271,99 @@
 					value={$environment.exposure}
 					onchange={(v) => setEnvironment($environment.preset, v)}
 				/>
+
+				{#if $envPresets.length}
+					<p class="ui-section-label">Saved presets</p>
+					<div class="flex flex-wrap gap-1">
+						{#each $envPresets as saved (saved.name)}
+							<span class="inline-flex items-center overflow-hidden rounded-full bg-gray-600">
+								<button
+									class="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-200 hover:bg-gray-500"
+									title="Apply this preset (replicates to peers)"
+									onclick={() => applyCustomPreset(saved.payload)}
+								>
+									{saved.name}
+								</button>
+								<button
+									class="px-1 text-[10px] text-gray-300 hover:bg-red-700 hover:text-white"
+									title="Delete saved preset"
+									onclick={() => deleteEnvPreset(saved.name)}>✕</button>
+							</span>
+						{/each}
+					</div>
+				{/if}
+				<div class="flex flex-wrap gap-1">
+					<button id="env-save-preset" class="ui-button-quiet" title="Save the current environment as a named preset" onclick={savePresetPrompt}>
+						💾 Save preset
+					</button>
+					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}>⬇ Export</button>
+					<button class="ui-button-quiet" title="Import a .envpreset.json file" onclick={() => document.getElementById('env-import-file')?.click()}>
+						⬆ Import
+					</button>
+					<input type="file" id="env-import-file" style="display: none" accept=".json" onchange={onImportPreset} />
+				</div>
+
+				<p class="ui-section-label">Components</p>
+				{#if envPayload.hemi}
+					<SliderRow label="Sky light" min={0} max={4} step={0.05} value={envPayload.hemi.intensity}
+						onchange={(v) => editRigComponent('hemi', { intensity: v })} />
+					<div class="ui-row">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Sky / ground</span>
+						<input type="color" class="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent" value={envPayload.hemi.sky}
+							onchange={(e) => editRigComponent('hemi', { sky: e.currentTarget.value })} />
+						<input type="color" class="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent" value={envPayload.hemi.ground}
+							onchange={(e) => editRigComponent('hemi', { ground: e.currentTarget.value })} />
+					</div>
+				{/if}
+				{#if envPayload.sun}
+					<SliderRow label="Sun" min={0} max={4} step={0.05} value={envPayload.sun.intensity}
+						onchange={(v) => editRigComponent('sun', { intensity: v })} />
+					<div class="ui-row">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Sun color</span>
+						<input type="color" class="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent" value={envPayload.sun.color}
+							onchange={(e) => editRigComponent('sun', { color: e.currentTarget.value })} />
+					</div>
+				{/if}
+
+				{#each $environment.lights ?? [] as def (def.id)}
+					<div class="env-light rounded-lg border border-gray-700/60 p-1.5">
+						<div class="flex items-center gap-1.5">
+							<span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{def.kind}</span>
+							<input type="color" class="h-5 w-7 cursor-pointer rounded border border-gray-600 bg-transparent" value={def.color}
+								onchange={(e) => updateEnvLight(def.id, { color: e.currentTarget.value })} />
+							{#if def.kind === 'hemisphere'}
+								<input type="color" class="h-5 w-7 cursor-pointer rounded border border-gray-600 bg-transparent" value={def.groundColor}
+									onchange={(e) => updateEnvLight(def.id, { groundColor: e.currentTarget.value })} />
+							{/if}
+							<span class="flex-1"></span>
+							<button class="ui-button-quiet" title="Convert back into a normal scene object"
+								onclick={() => convertFromEnvironment(def.id)}>⇱ object</button>
+							<button class="ui-button-quiet hover:bg-red-700" title="Remove"
+								onclick={() => removeEnvLight(def.id)}>✕</button>
+						</div>
+						<SliderRow label="Intensity" min={0} max={4} step={0.05} value={def.intensity}
+							onchange={(v) => updateEnvLight(def.id, { intensity: v })} />
+					</div>
+				{/each}
+				<div class="flex flex-wrap gap-1">
+					<button id="env-add-hemisphere" class="ui-button-quiet" onclick={() => addEnvLight('hemisphere')}>+ Hemisphere</button>
+					<button id="env-add-directional" class="ui-button-quiet" onclick={() => addEnvLight('directional')}>+ Directional</button>
+					<button id="env-add-point" class="ui-button-quiet" onclick={() => addEnvLight('point')}>+ Point</button>
+				</div>
+				<button
+					id="env-adopt"
+					class="ui-button-quiet disabled:cursor-not-allowed disabled:opacity-40"
+					disabled={!selectedIsSceneLight}
+					title={selectedIsSceneLight
+						? 'Move the selected light out of the scene objects into the environment'
+						: 'Select a scene light first'}
+					onclick={() => convertToEnvironment($selectedObject.uuid)}
+				>
+					⇲ Adopt selected light into environment
+				</button>
+
 				<p class="text-[10px] italic text-gray-400">
-					Presets replicate to peers; your own lights automatically dim the default rig.
+					Everything here replicates to peers; your own lights automatically dim the default rig.
 				</p>
 			</Section>
 

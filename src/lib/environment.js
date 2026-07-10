@@ -1,15 +1,18 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, globalRenderer, objectsGroup, backgroundColor } from '../stores/sceneStore';
+import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { registerSystemGroup } from './moduleSDK';
+import { createLight } from './geometries.svelte';
+import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 
-// Environment presets + a default light rig. The rig lives at the SCENE root
-// with fixed names — it is never part of objectsGroup, so connecting peers
-// can't duplicate it (the old default-light-per-user problem). Preset changes
-// replicate with a changedAt stamp: latest change wins, so two customized
-// peers converge instead of swapping.
+// Environment v2 (phase 70). Everything environmental lives under ONE group at
+// the scene root: `environment-root` — the preset rig (hemi+sun) plus any
+// user-added environment lights. Nothing in it is part of objectsGroup, so it
+// never leaks into GLTF saves or object sync. The whole environment state
+// (preset | custom payload, exposure, extra lights) replicates through the
+// existing `environment` message with a changedAt stamp: latest change wins.
 
 export const ENVIRONMENT_PRESETS = {
 	studio: {
@@ -54,37 +57,90 @@ export const ENVIRONMENT_PRESETS = {
 	}
 };
 
+/** name-indexable view of the presets @type {Record<string, any>} */
+const PRESETS = ENVIRONMENT_PRESETS;
+
+const DEFAULT_STATE = { preset: 'studio', exposure: 1, customPreset: null, lights: [], changedAt: 0 };
+
 function persisted() {
 	try {
 		const raw = localStorage.getItem('environment');
-		if (raw) return JSON.parse(raw);
+		if (raw) return { ...DEFAULT_STATE, ...JSON.parse(raw) };
 	} catch {}
-	return { preset: 'studio', exposure: 1, changedAt: 0 };
+	return { ...DEFAULT_STATE };
 }
 
-/** @type {import('svelte/store').Writable<{preset: string, exposure: number, changedAt: number}>} */
+/** @type {import('svelte/store').Writable<any>} preset|custom payload + exposure + extra lights */
 export const environment = writable(
-	typeof localStorage === 'undefined' ? { preset: 'studio', exposure: 1, changedAt: 0 } : persisted()
+	typeof localStorage === 'undefined' ? { ...DEFAULT_STATE } : persisted()
 );
 
+/** saved custom presets from IndexedDB: [{name, payload}] */
+export const envPresets = writable(/** @type {any[]} */ ([]));
+
+export const ENV_ROOT = 'environment-root';
 const RIG_HEMI = 'env-rig-hemi';
 const RIG_SUN = 'env-rig-sun';
+const EXTRA_PREFIX = 'env-extra-';
 let userLightFactor = 1;
 
+/** The payload the current state renders with @param {any=} state */
+export function presetPayload(state) {
+	state = state ?? get(environment);
+	if (state.preset === 'custom' && state.customPreset) return state.customPreset;
+	return PRESETS[state.preset] ?? ENVIRONMENT_PRESETS.studio;
+}
+
+/** @param {any} scene */
+function envRoot(scene) {
+	let root = scene.getObjectByName(ENV_ROOT);
+	if (!root) {
+		root = new THREE.Group();
+		root.name = ENV_ROOT;
+		scene.add(root);
+	}
+	return root;
+}
+
+/** @param {any} scene @param {boolean} create */
 function rigLights(scene, create) {
+	const root = envRoot(scene);
 	let hemi = scene.getObjectByName(RIG_HEMI);
 	let sun = scene.getObjectByName(RIG_SUN);
 	if (!hemi && create) {
 		hemi = new THREE.HemisphereLight(0xffffff, 0x555b66, 1);
 		hemi.name = RIG_HEMI;
-		scene.add(hemi);
+		root.add(hemi);
 	}
 	if (!sun && create) {
 		sun = new THREE.DirectionalLight(0xffffff, 1);
 		sun.name = RIG_SUN;
-		scene.add(sun);
+		root.add(sun);
 	}
 	return { hemi, sun };
+}
+
+/** Create/update/remove `env-extra-*` lights to mirror state.lights @param {any} scene @param {any[]} defs */
+function reconcileExtraLights(scene, defs) {
+	const root = envRoot(scene);
+	const wanted = new Set(defs.map((def) => EXTRA_PREFIX + def.id));
+	for (const child of [...root.children]) {
+		if (child.name.startsWith(EXTRA_PREFIX) && !wanted.has(child.name)) root.remove(child);
+	}
+	for (const def of defs) {
+		let light = root.getObjectByName(EXTRA_PREFIX + def.id);
+		if (!light) {
+			if (def.kind === 'hemisphere') light = new THREE.HemisphereLight();
+			else if (def.kind === 'point') light = new THREE.PointLight();
+			else light = new THREE.DirectionalLight();
+			light.name = EXTRA_PREFIX + def.id;
+			root.add(light);
+		}
+		light.color.set(def.color ?? '#ffffff');
+		if (def.kind === 'hemisphere' && light.groundColor) light.groundColor.set(def.groundColor ?? '#444444');
+		light.intensity = def.intensity ?? 1;
+		if (def.position) light.position.fromArray(def.position);
+	}
 }
 
 /** Re-apply the current environment to the scene/renderer */
@@ -94,7 +150,7 @@ export function applyEnvironment() {
 	const renderer = get(globalRenderer);
 	if (!scene) return;
 	const state = get(environment);
-	const preset = ENVIRONMENT_PRESETS[state.preset] ?? ENVIRONMENT_PRESETS.studio;
+	const preset = presetPayload(state);
 
 	scene.background = new THREE.Color(preset.background);
 	backgroundColor.set(preset.background);
@@ -109,7 +165,7 @@ export function applyEnvironment() {
 
 	if (renderer) {
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
-		renderer.toneMappingExposure = preset.exposure * (state.exposure ?? 1);
+		renderer.toneMappingExposure = (preset.exposure ?? 1) * (state.exposure ?? 1);
 	}
 
 	const { hemi, sun } = rigLights(scene, !!preset.hemi);
@@ -129,15 +185,13 @@ export function applyEnvironment() {
 			sun.position.fromArray(preset.sun.position);
 		} else sun.visible = false;
 	}
+
+	reconcileExtraLights(scene, state.lights ?? []);
 }
 
-/** User action: switch preset/exposure, persist and replicate @param {string} preset @param {number=} exposure */
-export function setEnvironment(preset, exposure) {
-	const state = {
-		preset: ENVIRONMENT_PRESETS[preset] ? preset : 'studio',
-		exposure: exposure ?? get(environment).exposure ?? 1,
-		changedAt: Date.now()
-	};
+/** Apply a state change locally, persist and replicate @param {any} partial */
+function commit(partial) {
+	const state = { ...get(environment), ...partial, changedAt: Date.now() };
 	environment.set(state);
 	applyEnvironment();
 	/** @type {any} */
@@ -145,11 +199,195 @@ export function setEnvironment(preset, exposure) {
 	if (peer) peer.send({ type: 'environment', ...state });
 }
 
+/** User action: switch preset/exposure (extra lights survive preset switches)
+ * @param {string} preset @param {number=} exposure */
+export function setEnvironment(preset, exposure) {
+	commit({
+		preset: PRESETS[preset] || preset === 'custom' ? preset : 'studio',
+		exposure: exposure ?? get(environment).exposure ?? 1
+	});
+}
+
+/** Apply a full custom payload (replicates the payload itself, not a key) @param {any} payload */
+export function applyCustomPreset(payload) {
+	commit({
+		preset: 'custom',
+		customPreset: payload,
+		exposure: payload.exposure ?? 1,
+		...(payload.lights ? { lights: payload.lights } : {})
+	});
+}
+
+/** Editing a rig component detaches into a live custom payload
+ * @param {'hemi'|'sun'} part @param {any} patch */
+export function editRigComponent(part, patch) {
+	const payload = JSON.parse(JSON.stringify(presetPayload()));
+	payload.label = 'Custom';
+	payload[part] = { ...(payload[part] ?? {}), ...patch };
+	commit({ preset: 'custom', customPreset: payload });
+}
+
+// ---- extra environment lights -------------------------------------------
+
+/** @param {'hemisphere'|'directional'|'point'} kind */
+export function addEnvLight(kind) {
+	const def = {
+		id: crypto.randomUUID().slice(0, 8),
+		kind,
+		color: '#ffffff',
+		...(kind === 'hemisphere' ? { groundColor: '#444444' } : {}),
+		intensity: 1,
+		position: [4, 8, 2]
+	};
+	commit({ lights: [...(get(environment).lights ?? []), def] });
+	return def.id;
+}
+
+/** @param {string} id @param {any} patch */
+export function updateEnvLight(id, patch) {
+	commit({
+		lights: (get(environment).lights ?? []).map((/** @type {any} */ def) =>
+			def.id === id ? { ...def, ...patch } : def
+		)
+	});
+}
+
+/** @param {string} id */
+export function removeEnvLight(id) {
+	commit({
+		lights: (get(environment).lights ?? []).filter((/** @type {any} */ def) => def.id !== id)
+	});
+}
+
+/** Move a normal replicated light INTO the environment: it leaves objectsGroup
+ * (delete replicates) and its parameters fold into env state. @param {string} uuid */
+export function convertToEnvironment(uuid) {
+	const group = get(objectsGroup);
+	const object = group?.getObjectByProperty('uuid', uuid);
+	if (!object || !object.isLight) return null;
+	const kind = object.isHemisphereLight
+		? 'hemisphere'
+		: object.isPointLight
+			? 'point'
+			: 'directional';
+	const def = {
+		id: crypto.randomUUID().slice(0, 8),
+		kind,
+		color: '#' + object.color.getHexString(),
+		...(object.groundColor ? { groundColor: '#' + object.groundColor.getHexString() } : {}),
+		intensity: object.intensity ?? 1,
+		position: object.position.toArray()
+	};
+	// explicit conversion — remove the replicated object (no undo entry)
+	/** @type {any} */
+	const controls = get(TControls);
+	if (controls?.object?.uuid === uuid) controls.detach();
+	object.parent?.remove(object);
+	objectsGroup.update((value) => value);
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
+	commit({ lights: [...(get(environment).lights ?? []), def] });
+	return def.id;
+}
+
+/** Convert an environment light back into a normal replicated object. @param {string} id */
+export function convertFromEnvironment(id) {
+	const def = (get(environment).lights ?? []).find((/** @type {any} */ entry) => entry.id === id);
+	if (!def) return null;
+	const command = '/light ' + def.kind;
+	const uuid = createLight(command);
+	if (!uuid) return null;
+	const group = get(objectsGroup);
+	const light = group.getObjectByProperty('uuid', uuid);
+	light.color.set(def.color ?? '#ffffff');
+	if (def.groundColor && light.groundColor) light.groundColor.set(def.groundColor);
+	light.intensity = def.intensity ?? 1;
+	if (def.position) light.position.fromArray(def.position);
+	objectsGroup.update((value) => value);
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) {
+		peer.send({ type: 'light', command, uuid });
+		peer.send({ type: 'object', element: light.toJSON(), override: true });
+	}
+	removeEnvLight(id);
+	return uuid;
+}
+
+// ---- custom presets (IndexedDB + JSON export/import) ---------------------
+
+const PRESET_KEY = 'envpreset:';
+
+/** Snapshot the current environment as a named payload @param {string} name */
+export function snapshotPreset(name) {
+	const state = get(environment);
+	return {
+		...JSON.parse(JSON.stringify(presetPayload(state))),
+		label: name,
+		exposure: state.exposure ?? 1,
+		lights: JSON.parse(JSON.stringify(state.lights ?? []))
+	};
+}
+
+export async function loadEnvPresets() {
+	try {
+		const keys = await idbKeys();
+		const names = keys.filter((/** @type {any} */ key) => String(key).startsWith(PRESET_KEY));
+		const list = [];
+		for (const key of names) {
+			const payload = await idbGet(String(key));
+			if (payload) list.push({ name: String(key).slice(PRESET_KEY.length), payload });
+		}
+		envPresets.set(list);
+	} catch {
+		envPresets.set([]);
+	}
+}
+
+/** @param {string} name */
+export async function saveEnvPreset(name) {
+	const payload = snapshotPreset(name);
+	await idbPut(PRESET_KEY + name, payload);
+	await loadEnvPresets();
+	return payload;
+}
+
+/** @param {string} name */
+export async function deleteEnvPreset(name) {
+	await idbDelete(PRESET_KEY + name);
+	await loadEnvPresets();
+}
+
+/** JSON for a .envpreset.json download @param {any} payload */
+export function exportEnvPreset(payload) {
+	return JSON.stringify(payload, null, 2);
+}
+
+/** Import a payload JSON: saves it under its label and applies it @param {string} json */
+export async function importEnvPreset(json) {
+	const payload = JSON.parse(json);
+	if (!payload || typeof payload !== 'object' || !payload.background) throw new Error('not an environment preset');
+	payload.label = payload.label || 'Imported';
+	await idbPut(PRESET_KEY + payload.label, payload);
+	await loadEnvPresets();
+	applyCustomPreset(payload);
+	return payload;
+}
+
+// ---- replication ----------------------------------------------------------
+
 /** Remote/handshake apply: newest change wins @param {any} data */
 export function applyRemoteEnvironment(data) {
 	if (!data?.preset) return;
 	if ((data.changedAt ?? 0) <= (get(environment).changedAt ?? 0)) return;
-	environment.set({ preset: data.preset, exposure: data.exposure ?? 1, changedAt: data.changedAt });
+	environment.set({
+		preset: data.preset,
+		exposure: data.exposure ?? 1,
+		customPreset: data.customPreset ?? null,
+		lights: data.lights ?? [],
+		changedAt: data.changedAt
+	});
 	applyEnvironment();
 }
 
@@ -163,8 +401,8 @@ let started = false;
 export function startEnvironment() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
-	registerSystemGroup(RIG_HEMI); // advanced object-list System filter
-	registerSystemGroup(RIG_SUN);
+	registerSystemGroup(ENV_ROOT); // advanced object-list System filter
+	loadEnvPresets();
 	environment.subscribe((state) => {
 		try {
 			localStorage.setItem('environment', JSON.stringify(state));
@@ -177,7 +415,7 @@ export function startEnvironment() {
 	objectsGroup.subscribe((group) => {
 		if (!group) return;
 		let lights = 0;
-		group.traverse((node) => {
+		group.traverse((/** @type {any} */ node) => {
 			if (node.isLight) lights++;
 		});
 		const factor = lights > 0 ? 0.25 : 1;

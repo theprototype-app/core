@@ -35,7 +35,8 @@ h.run(async () => {
 	await A.page.getByRole('button', { name: 'System', exact: true }).click();
 	await A.page.waitForTimeout(400);
 	h.check(await A.page.getByText('piano-module', { exact: true }).isVisible(), 'module content listed');
-	h.check(await A.page.getByText('env-rig-sun', { exact: true }).isVisible(), 'environment rig listed');
+	// phase 70 folded the rig lights under one environment-root group
+	h.check(await A.page.getByText('environment-root', { exact: true }).isVisible(), 'environment root listed');
 	h.check(
 		await A.page.getByText(/managed by modules and the environment/).isVisible(),
 		'disclaimer shown'

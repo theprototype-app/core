@@ -136,6 +136,14 @@ advancedMode.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('advancedMode', String(on));
 });
 
+// object list: reveal the environment group behind an Environment chip (70.4)
+export const showEnvInList = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('showEnvInList') === 'true'
+);
+showEnvInList.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('showEnvInList', String(on));
+});
+
 /**
  * Plain string = 3s info toast. Pass `actions` ([{label, action}]) for a
  * sticky decision toast (15s) with buttons.

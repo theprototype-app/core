@@ -35,6 +35,16 @@ export async function idbPut(key, value) {
 	});
 }
 
+/** All keys in the store (used to list saved environment presets) */
+export async function idbKeys() {
+	const db = await open();
+	return new Promise((resolve, reject) => {
+		const request = db.transaction(STORE).objectStore(STORE).getAllKeys();
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error);
+	});
+}
+
 /** @param {string} key */
 export async function idbDelete(key) {
 	const db = await open();

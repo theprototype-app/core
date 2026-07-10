@@ -7,8 +7,8 @@
 	import { spring } from 'svelte/motion';
 	import { peers, username,userdata, specatorMode, avatarConfig } from '../stores/appStore';
 	import { get } from 'svelte/store';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
-	import { selectObject, deselectObject, topLevelObjectOf } from '$lib/objectActions';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, marqueeRect, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
+	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
@@ -153,6 +153,8 @@
 				onProxyDragChanged(event.value);
 				return;
 			}
+			// the multi-select pivot records per-member entries (multiTransform)
+			if (object.userData?.isMultiPivot) return;
 			if (event.value) {
 				// animated objects: park at their base so the gizmo edits the base transform
 				suspendAnimation(object.uuid);
@@ -191,7 +193,7 @@
 		return false;
 	}
 
-	function raycastSelect() {
+	function raycastSelect(additive = false) {
 		// module-owned interactive groups live at the scene root (piano, pong, ...)
 		for (const name of moduleInteractiveGroups) {
 			const root = scene.getObjectByName(name);
@@ -205,7 +207,8 @@
 			if (runModuleClickHandlers(hits[0].object)) return true;
 			const target = topLevelObjectOf(hits[0].object);
 			if (target) {
-				selectObject(target.uuid, true);
+				// shift-click toggles set membership (13)
+				selectObject(target.uuid, !additive, additive);
 				return true;
 			}
 		}
@@ -226,6 +229,7 @@
 		let downPosition = null;
 		let downTime = 0;
 		let strokeActive = false;
+		let marqueeStart = null; // shift-drag box select (13)
 
 		const setRayFromEvent = (event) => {
 			const rect = element.getBoundingClientRect();
@@ -246,17 +250,66 @@
 				strokePointFromRay(selectionRaycaster);
 				return;
 			}
+			// Shift+drag = marquee select (13) — orbit pauses for the gesture
+			if (event.shiftKey && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject) {
+				marqueeStart = [event.clientX, event.clientY];
+				if ($orbitControls) $orbitControls.enabled = false;
+			}
 			downPosition = [event.clientX, event.clientY];
 			downTime = Date.now();
 		};
 
 		const onPointerMove = (event) => {
+			if (marqueeStart) {
+				$marqueeRect = {
+					x0: Math.min(marqueeStart[0], event.clientX),
+					y0: Math.min(marqueeStart[1], event.clientY),
+					x1: Math.max(marqueeStart[0], event.clientX),
+					y1: Math.max(marqueeStart[1], event.clientY)
+				};
+			}
 			if (!strokeActive) return;
 			setRayFromEvent(event);
 			strokePointFromRay(selectionRaycaster);
 		};
 
+		const marqueePick = () => {
+			// screen-project every top-level object's bounds center; inside = picked
+			const rect = element.getBoundingClientRect();
+			const area = $marqueeRect;
+			const picked = [];
+			const center = new THREE.Vector3();
+			for (const object of $objectsGroup?.children ?? []) {
+				const box = new THREE.Box3().setFromObject(object);
+				if (!isFinite(box.min.x)) continue;
+				box.getCenter(center).project(camera.current);
+				const sx = rect.left + ((center.x + 1) / 2) * rect.width;
+				const sy = rect.top + ((1 - center.y) / 2) * rect.height;
+				if (center.z < 1 && sx >= area.x0 && sx <= area.x1 && sy >= area.y0 && sy <= area.y1)
+					picked.push(object.uuid);
+			}
+			return picked;
+		};
+
 		const onPointerUp = (event) => {
+			if (marqueeStart && event.button === 0) {
+				const start = marqueeStart;
+				marqueeStart = null;
+				if ($orbitControls) $orbitControls.enabled = true;
+				const moved = Math.hypot(event.clientX - start[0], event.clientY - start[1]);
+				if ($marqueeRect && moved > 8) {
+					// marquee ADDS to the selection (it already needs Shift to start)
+					const picked = marqueePick();
+					$marqueeRect = null;
+					downPosition = null;
+					if (picked.length) {
+						applySelectionSet([...new Set([...$selectedObjects, ...picked])]);
+					}
+					return;
+				}
+				$marqueeRect = null;
+				// fall through: a stationary shift-click toggles the hit object
+			}
 			if (strokeActive && event.button === 0) {
 				strokeActive = false;
 				if ($orbitControls) $orbitControls.enabled = true;
@@ -320,7 +373,7 @@
 					return;
 				}
 			}
-			if (!raycastSelect()) deselectObject();
+			if (!raycastSelect(event.shiftKey) && !event.shiftKey) deselectObject();
 		};
 
 		// pointerdown on the canvas proves the gesture started in the viewport;
@@ -369,6 +422,13 @@
 		if ($TControls.object?.userData?.isVertexProxy) {
 			$TControls.visible = true;
 			onProxyMoved();
+			return;
+		}
+		// multi-select pivot: multiTransform drives + broadcasts the members,
+		// the pivot itself is local-only (its uuid means nothing to peers)
+		if ($TControls.object?.userData?.isMultiPivot) {
+			$TControls.visible = true;
+			$selectedObject = $selectedObject; // keep the inspector rows fresh
 			return;
 		}
 		//This would update reactively the object properties UI

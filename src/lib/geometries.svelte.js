@@ -172,31 +172,20 @@ export function moveCamera(data) {
 }
 
 /**
- * Locks an object by changing its material color and updating the locked list.
- * 
- * @param {string} uuid - The unique identifier of the geometry object to lock.
- * @param {string} peerId - The unique identifier of the peer requesting the lock.
+ * Locks objects for a peer, replacing that peer's previous lock set.
+ * Multi-select (13) sends `uuids`; single locks keep the legacy `uuid` field.
+ *
+ * @param {string} uuid - primary locked object (legacy field, always present).
+ * @param {string} peerId - the peer holding the lock.
+ * @param {string[]=} uuids - full selection set when the peer multi-selects.
  */
-export function lockGeometry(uuid, peerId) {
-    // Check if the object with the given UUID exists
-    if (sceneObjects.getObjectByProperty('uuid', uuid)) {
-        // Check if there are any currently locked objects
-        if (locked.length != 0) {
-            // Check if the peer has already locked an object
-            let existingLock = locked.find((lockedUuid) => lockedUuid[0] === peerId);
-            if (existingLock) {
-                // Update the locked array by removing the old lock and adding the new one
-                locked = locked.filter((lockedUuid) => lockedUuid[0] != peerId);
-                locked.push([peerId, uuid]);
-            } else {
-                // If the peer hasn't locked an object, lock the new one
-                locked.push([peerId, uuid]);
-            }
-        } else {
-            // If there are no locked objects, simply lock the new one
-            locked.push([peerId, uuid]);
-        }
-        // Update the locked objects store
-        lockedObjects.set(locked);
-    }
+export function lockGeometry(uuid, peerId, uuids) {
+    const wanted = (uuids && uuids.length ? uuids : [uuid]).filter((/** @type {any} */ entry) =>
+        sceneObjects.getObjectByProperty('uuid', entry)
+    );
+    if (!wanted.length) return;
+    // one lock SET per peer: drop the peer's previous locks, add the new ones
+    locked = locked.filter((/** @type {any} */ lockedUuid) => lockedUuid[0] != peerId);
+    wanted.forEach((/** @type {any} */ entry) => locked.push([peerId, entry]));
+    lockedObjects.set(locked);
 }

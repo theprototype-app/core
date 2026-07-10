@@ -7,11 +7,13 @@ import {
 	objectsGroup,
 	TControls,
 	selectedObject,
+	selectedObjects,
 	lockedObjects,
 	globalCamera,
 	orbitControls,
 	isVRMode
 } from '../stores/sceneStore';
+import { attachMultiPivot, releaseMultiPivot } from './multiTransform';
 import {
 	peers,
 	showSidebar,
@@ -26,43 +28,156 @@ import {
 // Shared object selection used by the object list, viewport clicks and VR rays.
 // Mirrors the original Objects.svelte behavior: selecting an unlocked object
 // attaches the gizmo and broadcasts a lock (peers replace this peer's previous
-// lock, so switching selection moves the lock automatically).
+// lock, so switching selection moves the lock automatically). Multi-select
+// (13): shift-click/marquee grow a set; the primary (last picked) stays in
+// selectedObject so the inspector and every existing consumer keep working.
 
-/** @param {string} uuid @param {boolean} openProperties - force the properties drawer open (list ⚙️ behavior) */
-export function selectObject(uuid, openProperties = false) {
+// member highlight: emissive tint, original colors restored on deselect
+/** @type {Map<string, any>} */
+const memberTints = new Map();
+
+/** @param {any} group @param {string[]} uuids */
+function applyMemberTints(group, uuids) {
+	// restore objects that left the set
+	for (const [uuid, original] of [...memberTints]) {
+		if (uuids.includes(uuid)) continue;
+		const object = group?.getObjectByProperty('uuid', uuid);
+		object?.traverse((/** @type {any} */ node) => {
+			if (node.material?.emissive && original[node.uuid] !== undefined)
+				node.material.emissive.setHex(original[node.uuid]);
+		});
+		memberTints.delete(uuid);
+	}
+	// a lone selection keeps the plain gizmo look — tint only real sets
+	if (uuids.length < 2) return;
+	for (const uuid of uuids) {
+		if (memberTints.has(uuid)) continue;
+		const object = group?.getObjectByProperty('uuid', uuid);
+		if (!object) continue;
+		/** @type {any} */
+		const original = {};
+		object.traverse((/** @type {any} */ node) => {
+			if (node.material?.emissive) {
+				original[node.uuid] = node.material.emissive.getHex();
+				node.material.emissive.setHex(0x2a4d8f);
+			}
+		});
+		memberTints.set(uuid, original);
+	}
+}
+
+/** Make a uuid set the current selection. Primary = last entry.
+ * @param {string[]} uuids @param {boolean=} openProperties */
+export function applySelectionSet(uuids, openProperties = false) {
+	const group = get(objectsGroup);
+	/** @type {any} */
+	const controls = get(TControls);
+	/** @type {any} */
+	const peer = get(peers);
+	const locked = get(lockedObjects);
+	// sets never contain peer-locked objects
+	const clean = uuids.filter(
+		(uuid) =>
+			group?.getObjectByProperty('uuid', uuid) &&
+			!locked.find((lockedUuid) => lockedUuid[1] === uuid)
+	);
+	applyMemberTints(group, clean);
+	selectedObjects.set(clean);
+	if (!clean.length) {
+		releaseMultiPivot();
+		if (controls && !get(isVRMode)) controls.detach();
+		return;
+	}
+	const primary = group.getObjectByProperty('uuid', clean[clean.length - 1]);
+	selectedObject.set(primary);
+	if (controls && !get(isVRMode)) {
+		if (clean.length === 1) {
+			releaseMultiPivot();
+			controls.attach(primary);
+		} else {
+			attachMultiPivot(clean);
+		}
+	}
+	// one lock message covers the whole set (receivers replace this peer's set)
+	if (peer) peer.send({ type: 'lock', uuid: clean[clean.length - 1], uuids: clean, peerId: peer.peer.id });
+	if (openProperties || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
+		showSidebar('properties');
+	}
+}
+
+/** @param {string} uuid @param {boolean} openProperties @param {boolean=} additive - shift-click toggles set membership */
+export function selectObject(uuid, openProperties = false, additive = false) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
 	if (!object) return;
 
 	/** @type {any} */
 	const controls = get(TControls);
-	/** @type {any} */
-	const peer = get(peers);
 	const locked = get(lockedObjects);
+	const isLockedByPeer = !!locked.find((lockedUuid) => lockedUuid[1] === uuid);
 
-	if (!locked.find((lockedUuid) => lockedUuid[1] === uuid)) {
-		selectedObject.set(object);
-		// the transform gizmo does not exist in VR mode
-		if (controls && !get(isVRMode)) controls.attach(object);
-		if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
-	} else {
+	if (additive) {
+		if (isLockedByPeer) return; // locked objects can't join a set
+		const current = get(selectedObjects);
+		const next = current.includes(uuid)
+			? current.filter((entry) => entry !== uuid)
+			: [...current, uuid];
+		applySelectionSet(next, openProperties);
+		return;
+	}
+
+	if (isLockedByPeer) {
+		// keep the original locked-view behavior: show it, no gizmo, no lock
+		releaseMultiPivot();
+		applyMemberTints(group, []);
+		selectedObjects.set([]);
 		if (controls && !get(isVRMode)) controls.detach();
 		selectedObject.set(object);
+		if (openProperties || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
+			showSidebar('properties');
+		}
+		return;
 	}
-
-	// open or refresh the inspector (only when it already shows a selection)
-	if (openProperties || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
-		showSidebar('properties');
-	}
+	applySelectionSet([uuid], openProperties);
 }
 
 export function deselectObject() {
 	/** @type {any} */
 	const controls = get(TControls);
+	releaseMultiPivot();
+	applyMemberTints(get(objectsGroup), []);
+	selectedObjects.set([]);
 	if (controls && !get(isVRMode)) controls.detach();
 	// selectedObject keeps the last object on purpose — the open inspector binds
 	// to $selectedObject.position/material and would crash on an empty value
 	closeSelectionInspector();
+}
+
+/** Every selected uuid (the set, or the single selection) */
+export function selectionUuids() {
+	const set = get(selectedObjects);
+	if (set.length) return [...set];
+	const primary = get(selectedObject)?.uuid;
+	return primary ? [primary] : [];
+}
+
+/** Delete the whole selection (context menu / Delete key) */
+export function deleteSelection() {
+	const uuids = selectionUuids();
+	if (!uuids.length) return 0;
+	deselectObject();
+	/** @type {any} */
+	const peer = get(peers);
+	const group = get(objectsGroup);
+	for (const uuid of uuids) {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		if (!object) continue;
+		recordObjectPresence('delete', object);
+		object.parent?.remove(object);
+		if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
+	}
+	objectsGroup.update((value) => value);
+	return uuids.length;
 }
 
 /**
@@ -132,6 +247,18 @@ export function duplicateObject(uuid) {
 	selectObject(clone.uuid);
 	recordObjectPresence('create', clone);
 	return clone;
+}
+
+/** Ctrl+D on a set: clone every member, the clones become the new selection */
+export function duplicateSelection() {
+	const uuids = selectionUuids();
+	if (uuids.length <= 1) return duplicateObject(uuids[0]);
+	const clones = uuids
+		.map((uuid) => duplicateObject(uuid))
+		.filter(Boolean)
+		.map((clone) => clone.uuid);
+	if (clones.length > 1) applySelectionSet(clones);
+	return clones;
 }
 
 /**
@@ -347,9 +474,12 @@ export function flyTo(position, target, duration = 400) {
 export function focusObject(uuid) {
 	if (get(specatorMode) || get(isVRMode)) return;
 	const group = get(objectsGroup);
-	const targetUuid = uuid ?? get(selectedObject)?.uuid;
-	const object = targetUuid ? group?.getObjectByProperty('uuid', targetUuid) : null;
-	if (!object) {
+	// a multi-selection frames the union of every member's bounds
+	const targets = uuid ? [uuid] : selectionUuids();
+	const objects = targets
+		.map((entry) => group?.getObjectByProperty('uuid', entry))
+		.filter(Boolean);
+	if (!objects.length) {
 		showToast('Nothing selected to focus on');
 		return;
 	}
@@ -359,7 +489,8 @@ export function focusObject(uuid) {
 	const controls = get(orbitControls);
 	if (!camera || !controls) return;
 
-	const box = new THREE.Box3().setFromObject(object);
+	const box = new THREE.Box3();
+	objects.forEach((object) => box.expandByObject(object));
 	const center = box.getCenter(new THREE.Vector3());
 	const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.5);
 	const fov = THREE.MathUtils.degToRad(camera.fov);

@@ -15,7 +15,7 @@
             isExpanded = true;
     });
     import { toggleExpand, objectContextMenu, renamingObject } from '../../stores/appStore';
-    import { objectsGroup, TControls, selectedObject, lockedObjects } from '../../stores/sceneStore';
+    import { objectsGroup, TControls, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
     import { selectObject, renameObject, moveObjectToGroup, toggleObjectVisibility } from '$lib/objectActions';
     import { nameOf, peerColor } from '$lib/lockControl';
@@ -36,13 +36,16 @@
         }
     });
 
-    const isSelected = $derived($selectedObject?.uuid === element.uuid);
+    const isSelected = $derived(
+        $selectedObject?.uuid === element.uuid || $selectedObjects.includes(element.uuid)
+    );
     const lockEntry = $derived($lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid));
 
-    function select(uuid) {
+    function select(uuid, additive = false) {
         previouslySelectedObject = $selectedObject;
-        // shared selection logic (gizmo attach, lock broadcast, properties refresh)
-        selectObject(uuid);
+        // shared selection logic (gizmo attach, lock broadcast, properties refresh);
+        // shift-click toggles set membership (13)
+        selectObject(uuid, false, additive);
     }
 
 	function configure(item, selected) {
@@ -160,7 +163,7 @@
                     ? 'bg-primary-900/50 text-primary-100'
                     : 'text-gray-800 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600/50')}
             role="presentation"
-            onclick={() => { select(element.uuid); }}
+            onclick={(e) => { select(element.uuid, e.shiftKey); }}
         >
             <!-- caret column -->
             {#if element.children.length > 0}

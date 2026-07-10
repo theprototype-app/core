@@ -7,7 +7,7 @@ import {
 	settingsOpen,
 	settingsSection
 } from '../stores/appStore';
-import { focusObject, duplicateObject } from './objectActions';
+import { focusObject, duplicateSelection, deleteSelection } from './objectActions';
 import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
 import { recallBookmark } from './cameraBookmarks';
@@ -52,8 +52,18 @@ export const shortcuts = [
 	{
 		keys: 'Ctrl+D',
 		group: 'Objects',
-		label: 'Duplicate selected object',
-		action: () => duplicateObject()
+		label: 'Duplicate selection (whole set)',
+		action: () => duplicateSelection()
+	},
+	{
+		keys: 'Delete',
+		group: 'Objects',
+		label: 'Delete selection',
+		action: () => {
+			// the node editor owns Delete while it is open (edge/node removal)
+			if (get(flowGraphClose) === false) return;
+			deleteSelection();
+		}
 	},
 	{
 		keys: 'Tab',

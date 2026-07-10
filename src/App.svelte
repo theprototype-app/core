@@ -14,6 +14,7 @@
   import { startSceneBounds } from '$lib/sceneBounds'
   import { startShortcuts } from '$lib/shortcuts'
   import { startSnapping } from '$lib/snapping'
+  import { startMultiTransform } from '$lib/multiTransform'
   import { startAutosave } from '$lib/autosave'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast } from './stores/appStore'
@@ -31,6 +32,7 @@
     startFlowRuntime()
     startNodeSync()
     startLockSweep()
+    startMultiTransform()
     loadUserModules()
     startEnvironment()
     startSceneBounds()

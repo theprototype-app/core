@@ -9,6 +9,7 @@
 	import SessionsManager from './menu/SessionsManager.svelte';
 	import CharacterModal from './menu/CharacterModal.svelte';
 	import ViewportMenu from './menu/ViewportMenu.svelte';
+	import MarqueeOverlay from './menu/MarqueeOverlay.svelte';
 	import VoiceChat from './menu/VoiceChat.svelte';
 	import AnnotationPopover from './menu/AnnotationPopover.svelte';
 	import Library from './menu/Library.svelte';
@@ -31,6 +32,7 @@
 <SessionsManager />
 <CharacterModal />
 <ViewportMenu />
+<MarqueeOverlay />
 <VoiceChat />
 <AnnotationPopover />
 <Library />

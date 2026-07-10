@@ -183,7 +183,7 @@ export class PeerConnection {
 				} else if(data.type == 'lockdenied') {
 					applyLockDenied(data);
 				} else if(data.type == 'lock') {
-					lockGeometry(data.uuid, data.peerId);
+					lockGeometry(data.uuid, data.peerId, data.uuids);
 				} else if(data.type == 'locked') {
 					lockRestore(data.lockeditems);
 				} else if(data.type == 'userdata') {

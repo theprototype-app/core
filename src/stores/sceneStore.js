@@ -12,6 +12,12 @@ export const TControls = writable(null);
 export const lockedObjects = writable([]);
 /** @type {import('svelte/store').Writable<any>} */
 export const selectedObject = writable([]);
+/** multi-select (13): uuids of every selected object; selectedObject stays the primary */
+/** @type {import('svelte/store').Writable<string[]>} */
+export const selectedObjects = writable([]);
+/** marquee rectangle while shift-dragging in the viewport: {x0,y0,x1,y1} | null */
+/** @type {import('svelte/store').Writable<any>} */
+export const marqueeRect = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const backgroundColor = writable('#ffffff');
 export const isLocked = writable(null);

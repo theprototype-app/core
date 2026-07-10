@@ -11,6 +11,8 @@
 		event.dataTransfer.effectAllowed = 'move';
 	};
 
+	let filter = '';
+
 	$: catalog = [
 		...nodeCatalog,
 		...$moduleNodeGroups,
@@ -22,10 +24,27 @@
 					}
 				]
 			: [])
-	];
+	]
+		.map((group) => ({
+			...group,
+			items: group.items.filter(
+				(item) =>
+					!filter.trim() ||
+					(item.label + ' ' + item.type + ' ' + group.group)
+						.toLowerCase()
+						.includes(filter.trim().toLowerCase())
+			)
+		}))
+		.filter((group) => group.items.length > 0);
 </script>
 
 <aside class="flex flex-col gap-2 p-2">
+	<input
+		id="palette-filter"
+		class="rounded border border-gray-300 bg-transparent px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:text-gray-200"
+		placeholder="Filter nodes…"
+		bind:value={filter}
+	/>
 	<p class="text-center text-xs italic text-gray-400">Drag a node to the canvas</p>
 	{#each catalog as group}
 		<p class="mt-1 text-xs font-semibold uppercase text-gray-400">{group.group}</p>

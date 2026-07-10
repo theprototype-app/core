@@ -188,7 +188,9 @@
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
+			flowPos,
 			items: [
+				{ label: '🔍 Search nodes…', action: () => openSearch('') },
 				...[...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
 					label: group.group,
 					children: group.items.map((item) => ({
@@ -232,7 +234,103 @@
 			items: [{ label: 'Disconnect', action: () => deleteEdge(id) }]
 		};
 	};
+
+	// --- node search: a box that REPLACES the pane menu at the same spot/size ---
+	let search: any = null; // {x, y, width, flowPos, query, highlight}
+	let savedMenu: any = null;
+
+	function openSearch(initial: string) {
+		if (!menu?.flowPos) return;
+		const menuEl = document.querySelector('[role="menu"]');
+		const width = Math.max(menuEl?.getBoundingClientRect().width ?? 0, 240);
+		savedMenu = menu;
+		search = { x: menu.x, y: menu.y, width, flowPos: menu.flowPos, query: initial, highlight: 0 };
+		menu = null;
+	}
+
+	/** every addable node as a flat searchable entry */
+	function searchEntries() {
+		const entries: any[] = [];
+		for (const group of [...nodeCatalog, ...$moduleNodeGroups])
+			for (const item of group.items)
+				entries.push({
+					group: group.group,
+					label: item.label,
+					add: (pos: any) => addNode(item.type, item.label, pos)
+				});
+		for (const def of $customNodeDefs)
+			entries.push({
+				group: 'Custom',
+				label: def.name,
+				add: (pos: any) => addNode('customnode', def.name, pos, defDefaults(def))
+			});
+		return entries;
+	}
+
+	function subsequence(text: string, query: string) {
+		let i = 0;
+		for (const ch of text) if (ch === query[i]) i++;
+		return i >= query.length;
+	}
+
+	function searchResults(query: string) {
+		const entries = searchEntries();
+		const q = query.trim().toLowerCase();
+		if (!q) return entries.slice(0, 8);
+		return entries
+			.map((entry) => {
+				const text = (entry.label + ' ' + entry.group).toLowerCase();
+				const rank = text.startsWith(q) ? 0 : text.includes(q) ? 1 : subsequence(text, q) ? 2 : 3;
+				return [rank, entry] as [number, any];
+			})
+			.filter(([rank]) => rank < 3)
+			.sort((a, b) => a[0] - b[0] || a[1].label.localeCompare(b[1].label))
+			.map(([, entry]) => entry)
+			.slice(0, 8);
+	}
+
+	$: results = search ? searchResults(search.query) : [];
+
+	function pickResult(entry: any) {
+		entry.add(search.flowPos);
+		search = null;
+		savedMenu = null;
+	}
+
+	function onSearchKeydown(event: KeyboardEvent) {
+		if (event.key === 'ArrowDown') {
+			search = { ...search, highlight: Math.min(search.highlight + 1, results.length - 1) };
+			event.preventDefault();
+		} else if (event.key === 'ArrowUp') {
+			search = { ...search, highlight: Math.max(search.highlight - 1, 0) };
+			event.preventDefault();
+		} else if (event.key === 'Enter') {
+			if (results[search.highlight]) pickResult(results[search.highlight]);
+			event.preventDefault();
+		} else if (event.key === 'Escape') {
+			menu = savedMenu; // back to the classic grouped menu
+			search = null;
+			event.preventDefault();
+			event.stopPropagation();
+		}
+	}
+
+	// typing while the pane menu is open jumps straight into search
+	function onWindowKeydown(event: KeyboardEvent) {
+		if (!menu?.flowPos || search) return;
+		if (event.ctrlKey || event.metaKey || event.altKey) return;
+		if (event.key.length !== 1) return;
+		openSearch(event.key);
+		event.preventDefault();
+	}
+
+	function focusInput(node: HTMLInputElement) {
+		node.focus();
+		node.setSelectionRange(node.value.length, node.value.length);
+	}
 </script>
+
+<svelte:window on:keydown={onWindowKeydown} />
 
 <div class="flex h-full w-full">
 	<div class="h-full w-40 shrink-0 overflow-y-auto">
@@ -272,6 +370,50 @@
 
 {#if menu}
 	<ContextMenu x={menu.x} y={menu.y} items={menu.items} on:close={() => (menu = null)} />
+{/if}
+
+{#if search}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0"
+		style="z-index: 999;"
+		role="presentation"
+		on:click={() => {
+			search = null;
+			savedMenu = null;
+		}}
+	></div>
+	<div
+		id="node-search-box"
+		class="fixed rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+		style="left: {search.x}px; top: {search.y}px; width: {search.width}px; z-index: 1000;"
+	>
+		<!-- svelte-ignore a11y_autofocus -->
+		<input
+			id="node-search-input"
+			use:focusInput
+			class="mx-2 mb-1 w-[calc(100%-16px)] rounded border border-gray-300 bg-transparent px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-500"
+			placeholder="Search nodes… (Esc = menu)"
+			value={search.query}
+			on:input={(e) => (search = { ...search, query: e.currentTarget.value, highlight: 0 })}
+			on:keydown={onSearchKeydown}
+		/>
+		{#each results as entry, index}
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+			<div
+				class="cursor-pointer px-3 py-1.5 {index === search.highlight
+					? 'bg-primary-600 text-white'
+					: 'hover:bg-gray-100 dark:hover:bg-gray-600'}"
+				on:mouseenter={() => (search = { ...search, highlight: index })}
+				on:click={() => pickResult(entry)}
+			>
+				<span class={index === search.highlight ? 'text-white/70' : 'text-gray-400'}>{entry.group} · </span>{entry.label}
+			</div>
+		{/each}
+		{#if results.length === 0}
+			<div class="px-3 py-1.5 text-gray-400">No matches</div>
+		{/if}
+	</div>
 {/if}
 
 <style>

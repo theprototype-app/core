@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
+import { stampGeometryParams } from '$lib/geometryEdit';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject } from '../stores/sceneStore.js';
 
@@ -49,6 +50,7 @@ export function createGeometry(command, uuid) {
         let object = new THREE.Mesh(mesh, material);
         if (uuid) object.uuid = uuid
         object.name = geometry;
+        stampGeometryParams(object); // editable params survive sync (78)
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects
         objectsGroup.update((value) => value);

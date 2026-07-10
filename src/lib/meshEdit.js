@@ -265,6 +265,7 @@ export function applyVerts(uuid, indices, positionArray) {
 	if (!position) return;
 	indices.forEach((i) => position.setXYZ(i, positionArray[0], positionArray[1], positionArray[2]));
 	position.needsUpdate = true;
+	object.userData.vertexEdited = true; // geometry-param rebuilds warn first (78)
 	object.geometry.computeVertexNormals();
 	object.geometry.computeBoundingSphere();
 	// if we are editing this object right now, keep the handles in sync

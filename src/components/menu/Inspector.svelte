@@ -18,6 +18,8 @@
 		switchMaterialType,
 		recordMaterialChange
 	} from '$lib/materialsHandler';
+	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
+	import { geometrySpec } from '$lib/geometryParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup } from '$lib/objectActions';
 	import { showLightHelpers } from '$lib/lightHelpers';
@@ -59,6 +61,29 @@
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	const isGroup = $derived($selectedObject?.type === 'Group');
+	// live geometry params (78): registry-driven rows; geoTick refreshes after edits
+	let geoTick = $state(0);
+	const geoParams = $derived.by(() => {
+		geoTick;
+		return !isLight && !isGroup && $selectedObject ? geometryParamsOf($selectedObject) : null;
+	});
+	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);
+
+	/** @param {string} key @param {any} value */
+	function editGeometry(key, value) {
+		const run = () => {
+			applyGeometry($selectedObject.uuid, { [key]: value });
+			geoTick++;
+		};
+		if ($selectedObject.userData?.vertexEdited) {
+			showToast('This mesh has vertex edits — rebuilding the geometry discards them.', [
+				{ label: 'Rebuild', action: run },
+				{ label: 'Keep edits', action: () => geoTick++ }
+			]);
+			return;
+		}
+		run();
+	}
 	const material = $derived(
 		!isLight && !isGroup && $selectedObject?.material && !Array.isArray($selectedObject.material)
 			? $selectedObject.material
@@ -582,6 +607,39 @@
 				</div>
 				<p class="text-[10px] text-gray-500">Drag to scrub — Shift fine, Ctrl snap, click to type.</p>
 			</Section>
+
+			{#if geoParams && geoSpec}
+				<Section label="Geometry">
+					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">{geoParams.gtype}</p>
+					{#if $selectedObject.userData?.vertexEdited}
+						<p class="rounded bg-yellow-900/40 px-2 py-1 text-[10px] text-yellow-200">
+							Vertex edits present — changing a parameter rebuilds and discards them.
+						</p>
+					{/if}
+					<div id="inspector-geometry" class="flex flex-col gap-1">
+						{#each geoSpec.params as spec (spec.key)}
+							{#if spec.kind === 'bool'}
+								<Checkbox
+									checked={!!geoParams.params[spec.key]}
+									onchange={(/** @type {any} */ e) => editGeometry(spec.key, e.target.checked)}
+								>
+									{spec.label}
+								</Checkbox>
+							{:else}
+								<SliderRow
+									label={spec.label}
+									min={spec.min ?? 0}
+									max={spec.max ?? 10}
+									step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
+									decimals={spec.kind === 'int' ? 0 : 2}
+									value={Number(geoParams.params[spec.key] ?? spec.def)}
+									onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
+								/>
+							{/if}
+						{/each}
+					</div>
+				</Section>
+			{/if}
 
 			{#if isGroup}
 				<Section label="Group">

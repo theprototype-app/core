@@ -2,12 +2,19 @@
    instead of re-inventing panel chrome. The app is dark-first (html.dark). */
 
 :root {
-	/* z-tiers — every layered component maps to ONE of these (phase 68) */
+	/* z-tiers — every layered component maps to ONE of these (phase 68).
+	   viewport: three.js canvas
+	   drawer: side drawers (inspector, library, sidebar menu)
+	   bottom: the docked flow editor
+	   window: floating windows (chat, object list, undocked flow, script panel)
+	   hud: toolbar pills, play button, burger — the dock, always clickable
+	   modal: flowbite modals (settings, modules, attribution)
+	   toast: notifications — above everything */
 	--z-viewport: 0;
-	--z-hud: 20;
 	--z-drawer: 30;
 	--z-bottom: 35;
 	--z-window: 40;
+	--z-hud: 45;
 	--z-modal: 50;
 	--z-toast: 60;
 }

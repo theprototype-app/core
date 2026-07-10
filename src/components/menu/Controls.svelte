@@ -270,7 +270,7 @@
 <BottomNav
 	position="absolute"
 	navType="application"
-	classOuter="h-10 w-70 bg-white rounded-full dark:bg-gray-700 z-10"
+	classOuter="h-10 w-70 bg-white rounded-full dark:bg-gray-700 z-[45]"
 	classInner="grid-cols-7"
 >
 	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={(event) => $TControls.setMode('translate')}>
@@ -316,7 +316,7 @@
 
 <p
 	class={classActive + ' rounded-full bg-primary-600 font-medium dark:focus:ring-primary-800'}
-	style="position: absolute; height: 50px; width: 50px; bottom: 10px; z-index: 11;
+	style="position: absolute; height: 50px; width: 50px; bottom: 10px; z-index: var(--z-hud);
         display: flex; left: 50%; transform: translate(-50%,0)"
 	on:click={() => {
 		checkPlay();
@@ -330,7 +330,7 @@
 	<VRButton />
 </div>
 
-<div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe style="z-index: 1; max-height: 70%; max-width: 50%; min-width: 250px;">
+<div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
 	<!-- dropping a row on the header moves the object back to the scene root -->
 	<div
 		role="list"

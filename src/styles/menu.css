@@ -2,7 +2,7 @@
 
 .burger {
 	position: absolute;
-	z-index: 3;
+	z-index: var(--z-hud);
 }
 
 /* hamburger menu — positioning only: typography belongs to the drawer
@@ -11,7 +11,7 @@
 .hamburger {
 	position: absolute;
 	cursor: pointer;
-	z-index: 2;
+	z-index: var(--z-drawer);
 	border-radius: 20px;
 	padding-top: 30px;
 }

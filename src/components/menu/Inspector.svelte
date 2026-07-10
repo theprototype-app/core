@@ -29,21 +29,15 @@
 		backgroundColor,
 		globalCamera
 	} from '../../stores/sceneStore';
-	import { peers, chatHidden, inspectorClose, inspectorKind } from '../../stores/appStore.js';
+	import { peers, inspectorClose, inspectorKind } from '../../stores/appStore.js';
 
 	const hexColor = /^#[0-9A-F]{6}$/i;
 	const RAD_SNAP = Math.PI / 12; // Ctrl-snap rotations to 15°
 
 	let transitionParamsRight = { x: 320, duration: 200, easing: sineIn };
 
-	// drawer sits above the chat when the chat is open
-	let drawerStyle = $state('');
-	$effect(() => {
-		drawerStyle =
-			$chatHidden === ''
-				? 'bottom: 350px; z-index: 48; border-bottom-left-radius: 0.5rem;'
-				: 'bottom: 0px; z-index: 48';
-	});
+	// side drawers live on the --z-drawer tier (68); chat floats on its own now
+	const drawerStyle = 'bottom: 0px; z-index: var(--z-drawer)';
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	const isGroup = $derived($selectedObject?.type === 'Group');

@@ -61,7 +61,7 @@ style="height: 55px; top: 5px; left: 5px;"
 </div>
 {#if true}
 
-<div class="hamburger" style="z-index: 49;">
+<div class="hamburger">
 <div>
 <Drawer
 	hidden={$closeMenu}

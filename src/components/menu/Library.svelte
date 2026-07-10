@@ -3,7 +3,7 @@
 	// card grid, search, skeleton loading states. All prefab/pack flows are the
 	// same functions as before — this is chrome only.
 	import { Drawer, Modal } from 'flowbite-svelte';
-	import { chatHidden, libraryClose, loadingFile } from '../../stores/appStore.js';
+	import { libraryClose, loadingFile } from '../../stores/appStore.js';
 	import { sineIn } from 'svelte/easing';
 	import { loadFile } from '$lib/fileHandler.svelte';
 	import {
@@ -88,15 +88,8 @@
 		easing: sineIn
 	};
 
-	// Drawer show full screen
-	let drawerStyle = $state();
-	$effect(() => {
-		if ($chatHidden === '') {
-			drawerStyle = 'bottom: 350px; z-index: 48; border-bottom-left-radius: 0.5rem;';
-		} else {
-			drawerStyle = 'bottom: 0px; z-index: 48';
-		}
-	});
+	// side drawers live on the --z-drawer tier (68); chat floats on its own now
+	const drawerStyle = 'bottom: 0px; z-index: var(--z-drawer)';
 
 	const tabClass = (/** @type {boolean} */ active) =>
 		'flex-1 rounded-md px-2 py-1 text-xs font-semibold ' +

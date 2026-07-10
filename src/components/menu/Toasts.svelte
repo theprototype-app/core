@@ -45,7 +45,7 @@ toastStatus = false;
 <!-- pointer-events: none lets clicks pass through the (invisible) container area;
      each toast re-enables them for itself -->
 <div class="my-4 toasts-container"
-style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: 40; pointer-events: none;"
+style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
 >
 {#if showToast}
 {#if $loadingcount > 0}

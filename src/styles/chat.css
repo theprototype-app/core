@@ -3,37 +3,6 @@ ul {
 	list-style: none;
 }
 
-/* Chat window container — placement only, surface styling lives in the component */
-#chat-window {
-	position: fixed;
-	right: 15px;
-	z-index: 2;
-	height: 300px;
-	bottom: 35px;
-	padding: 6px 4px;
-	width: 100%;
-	max-width: 500px;
-}
-
-/* Chat input row */
-#chat-input {
-	position: fixed;
-	right: 15px;
-	bottom: 15px;
-	z-index: 2;
-	padding: 8px 10px;
-	width: 80%;
-	max-width: 500px;
-	margin: auto;
-}
-
-.drag-handle {
-	cursor: ns-resize; /* Indicates that the handle can be used to resize vertically */
-	height: 5px; /* Adjust the height to make it thinner */
-	width: 100%; /* Make it span the full width of the chat window */
-	margin-top: -10.5px; /* Half the height to center it vertically */
-}
-
 .hidden {
 	display: none;
 }

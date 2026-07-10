@@ -9,7 +9,7 @@
 	// One-way flow: render from data, write through setNodeData (replicates to peers)
 </script>
 
-<NodeWrapper type={data.type}>
+<NodeWrapper type={data.type} label={data.label}>
 	<div class="flex items-center space-x-2">
 		<input
 			class="nodrag border-md h-6 w-6"

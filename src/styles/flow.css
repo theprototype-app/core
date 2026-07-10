@@ -23,6 +23,36 @@
 	box-shadow: 0 0 0 4px color-mix(in srgb, var(--node-accent, #94a3b8) 45%, transparent);
 }
 
+/* node-internal form controls (91): native selects/inputs render WHITE on the
+   dark cards — restyle them once here so every node (incl. module/custom ones)
+   gets dark fields without per-component classes */
+.node-card select,
+.node-card input[type='text'],
+.node-card input[type='number'] {
+	width: 100%;
+	background-color: rgb(17 24 39 / 0.6);
+	border: 1px solid rgb(75 85 99);
+	border-radius: 4px;
+	color: rgb(243 244 246);
+	font-size: 11px;
+	line-height: 1.4;
+	padding: 3px 6px;
+	outline: none;
+}
+.node-card select:focus,
+.node-card input[type='text']:focus,
+.node-card input[type='number']:focus {
+	border-color: var(--node-accent, #94a3b8);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-accent, #94a3b8) 55%, transparent);
+}
+.node-card select option {
+	background-color: #1f2937;
+	color: #f3f4f6;
+}
+.node-card input[type='range'] {
+	width: 100%;
+}
+
 /* edges: calmer default, thicken on hover, accent when selected */
 .svelte-flow .svelte-flow__edge-path {
 	stroke: #64748b;

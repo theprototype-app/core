@@ -13,7 +13,7 @@
 	// One-way flow: render from data, write through setNodeData (replicates to peers)
 </script>
 
-<NodeWrapper type={data.type}>
+<NodeWrapper type={data.type} label={data.label}>
 	<Handle type="source" position={Position.Right} />
 	<div class="flex w-full flex-col gap-1">
 		<span class="text-[10px] text-gray-400">

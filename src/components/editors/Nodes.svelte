@@ -256,7 +256,9 @@
 		const menuEl = document.querySelector('[role="menu"]');
 		const width = Math.max(menuEl?.getBoundingClientRect().width ?? 0, 240);
 		savedMenu = menu;
-		search = { x: menu.x, y: menu.y, width, flowPos: menu.flowPos, query: initial, highlight: 0 };
+		// clamp so the box (input + scrollable results, ~330px) stays on screen (91)
+		const y = Math.max(8, Math.min(menu.y, window.innerHeight - 330));
+		search = { x: menu.x, y, width, flowPos: menu.flowPos, query: initial, highlight: 0 };
 		menu = null;
 	}
 

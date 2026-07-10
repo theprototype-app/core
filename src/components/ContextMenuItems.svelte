@@ -28,7 +28,7 @@
 			</span>
 			{#if openSub === item.label}
 				<div
-					class="absolute min-w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
+					class="absolute max-h-[60vh] min-w-36 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
 					style="{flipX ? 'right' : 'left'}: 100%; {flipY ? 'bottom' : 'top'}: 0;"
 				>
 					<svelte:self items={item.children} {onrun} {flipX} {flipY} />

@@ -18,8 +18,8 @@
 	// One-way flow: render from data, write through setNodeData (replicates to peers)
 </script>
 
-<NodeWrapper type={data.type}>
-	<div class="flex items-center space-x-2">
+<NodeWrapper type={data.type} label={data.label}>
+	<div class="flex w-full items-center space-x-2">
 		<select
 			class="nodrag"
 			value={data.selected ?? '-None-'}

@@ -61,6 +61,11 @@ export const vrFlying = writable(
 export const vrPassthrough = writable(
 	typeof localStorage !== 'undefined' && localStorage.getItem('vrPassthrough') === 'true'
 );
+// radial menu open style (74): false = B/Y toggles (default), true = hold B/Y
+// and release over a sector to activate it
+export const vrMenuHold = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('vrMenuHold') === 'true'
+);
 // true while an AR (passthrough) session presents — a LOCAL view mode: the
 // scene background/fog go transparent so the room shows through; the
 // replicated environment state is untouched

@@ -3,15 +3,18 @@
 	import { T, useTask, useThrelte } from '@threlte/core'
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
-	import { vrMenuOpen, vrMenuHand, vrTransformMode, showGrid, vrPassthrough } from '../../stores/sceneStore'
+	import { vrMenuOpen, vrMenuHand, vrTransformMode, showGrid, vrPassthrough, vrSnapAngle, selectedObject } from '../../stores/sceneStore'
 	import { snapEnabled } from '$lib/snapping'
 	import { drawMode } from '$lib/drawMode'
 	import { vrMicMode, micActive } from '$lib/voiceChat'
+	import { environment } from '$lib/environment'
 	import { vrHovered, vrMenuGroup } from '$lib/vrControls'
+	import { activeRing, ringEntries, ringVersion, sectorLayout, hubEntry, RING_INNER, RING_OUTER, HUB_RADIUS } from '$lib/vrRadialMenu'
 
-	// The in-world quick-menu: a small tile panel floating above the menu-hand
-	// controller, facing the user. The other hand points at tiles and confirms
-	// with the trigger (routed through Scene.svelte's select handler).
+	// The in-world radial menu (74): an 8-sector base ring above the menu-hand
+	// controller with nested sub-rings; the other hand's ray or thumbstick
+	// highlights a sector, trigger or stick-click activates (vrControls routes
+	// input). The center hub is Close / Object ▸ / Back depending on context.
 
 	const { renderer, camera } = useThrelte()
 
@@ -19,37 +22,46 @@
 
 	$: vrMenuGroup.set($vrMenuOpen ? group : null)
 
-	// tiles: [action, label, row, col]; active state is derived per-frame from stores
-	$: tiles = [
-		{ name: 'move', label: 'Move', active: $vrTransformMode === 'move' },
-		{ name: 'rotate', label: 'Rotate', active: $vrTransformMode === 'rotate' },
-		{ name: 'snap', label: 'Snap', active: $snapEnabled },
-		{ name: 'grid', label: 'Grid', active: !!$showGrid },
-		{ name: 'undo', label: 'Undo', active: false },
-		{ name: 'redo', label: 'Redo', active: false },
-		{ name: 'box', label: '+ Box', active: false },
-		{ name: 'wedge', label: '+ Wedge', active: false },
-		{ name: 'stairs', label: '+ Stairs', active: false },
-		{ name: 'draw', label: 'Draw', active: $drawMode },
-		{ name: 'mic', label: 'Mic: ' + ($vrMicMode === 'ptt' ? 'PTT' : $vrMicMode === 'open' ? 'Open' : 'Off'), active: $micActive },
-		{ name: 'world', label: 'World 1:1', active: false },
-		{ name: 'hand', label: $vrMenuHand === 'right' ? 'To left' : 'To right', active: false },
-		{ name: 'passthru', label: 'Passthru', active: $vrPassthrough },
-		{ name: 'exitvr', label: 'Exit VR', active: false },
-		{ name: 'close', label: 'Close', active: false }
-	].map((tile, index) => ({
-		...tile,
-		x: ((index % 4) - 1.5) * 0.1,
-		y: 0.28 - Math.floor(index / 4) * 0.1
-	}))
+	// sectors re-derive when the registry, the ring, or any state a built-in
+	// entry displays changes (the listed stores are those states)
+	$: sectors = deriveSectors(
+		$activeRing,
+		$ringVersion,
+		$vrTransformMode,
+		$snapEnabled,
+		$showGrid,
+		$drawMode,
+		$vrMicMode,
+		$micActive,
+		$vrMenuHand,
+		$vrPassthrough,
+		$vrSnapAngle,
+		$environment,
+		$selectedObject
+	)
+	function deriveSectors(ring: string, ..._deps: any[]) {
+		const entries = ringEntries(ring)
+		return entries.map((entry: any, index: number) => ({
+			entry,
+			...sectorLayout(index, entries.length)
+		}))
+	}
 
-	function tileColor(tile: any) {
-		if ($vrHovered === tile.name) return '#ff4000'
-		return tile.active ? '#2f81f7' : '#2a2f38'
+	// selectedObject is [] when nothing is selected — presence = has a uuid
+	$: hub = hubEntry($activeRing, !!$selectedObject?.uuid)
+
+	function sectorColor(entry: any) {
+		if ($vrHovered === entry.id) return '#ff4000'
+		if (entry.color) return entry.color
+		return entry.active?.() ? '#2f81f7' : '#2a2f38'
 	}
 
 	const controllerPosition = new THREE.Vector3()
 	const cameraPosition = new THREE.Vector3()
+	const followTarget = new THREE.Vector3()
+	let snapNextFrame = true
+
+	$: if (!$vrMenuOpen) snapNextFrame = true
 
 	useTask(() => {
 		if (!group || !$vrMenuOpen || !renderer.xr.isPresenting) return
@@ -58,7 +70,12 @@
 		const index = [...session.inputSources].findIndex((s) => s.handedness === $vrMenuHand)
 		if (index < 0) return
 		renderer.xr.getController(index).getWorldPosition(controllerPosition)
-		group.position.set(controllerPosition.x, controllerPosition.y + 0.25, controllerPosition.z)
+		followTarget.set(controllerPosition.x, controllerPosition.y + 0.32, controllerPosition.z)
+		// damped follow (74.4): the ring trails the hand instead of jittering
+		if (snapNextFrame) {
+			group.position.copy(followTarget)
+			snapNextFrame = false
+		} else group.position.lerp(followTarget, 0.18)
 		camera.current.getWorldPosition(cameraPosition)
 		group.lookAt(cameraPosition)
 	})
@@ -66,26 +83,53 @@
 
 {#if $vrMenuOpen}
 	<T.Group bind:ref={group} name="vr-quick-menu">
-		<!-- backdrop panel -->
-		<T.Mesh position={[0, 0.13, -0.005]}>
-			<T.PlaneGeometry args={[0.46, 0.42]} />
-			<T.MeshBasicMaterial color="#11151c" transparent opacity={0.85} side={THREE.DoubleSide} />
+		<!-- backdrop disc -->
+		<T.Mesh position={[0, 0, -0.006]}>
+			<T.CircleGeometry args={[RING_OUTER + 0.03, 48]} />
+			<T.MeshBasicMaterial color="#11151c" transparent opacity={0.82} side={THREE.DoubleSide} />
 		</T.Mesh>
-		{#each tiles as tile (tile.name)}
-			<T.Group position={[tile.x, tile.y, 0]}>
-				<T.Mesh name={`vrmenu-${tile.name}`}>
-					<T.PlaneGeometry args={[0.09, 0.09]} />
-					<T.MeshBasicMaterial color={tileColor(tile)} side={THREE.DoubleSide} />
-				</T.Mesh>
+		{#each sectors as s (s.entry.id)}
+			<T.Mesh name={`vrmenu-${s.entry.id}`}>
+				<T.RingGeometry args={[RING_INNER, RING_OUTER, 20, 1, s.thetaStart, s.thetaLength]} />
+				<T.MeshBasicMaterial
+					color={sectorColor(s.entry)}
+					transparent
+					opacity={0.94}
+					side={THREE.DoubleSide}
+				/>
+			</T.Mesh>
+			{#if s.entry.label}
 				<Text
-					color="white"
-					fontSize={0.02}
+					text={s.entry.label}
+					color={$vrHovered === s.entry.id ? '#ffffff' : '#e8ecf2'}
+					outlineColor="#000000"
+					outlineWidth={0.0022}
+					fontSize={sectors.length > 8 ? 0.02 : 0.024}
 					anchorX="center"
 					anchorY="middle"
-					position={[0, 0, 0.004]}
-					text={tile.label}
+					position={[s.labelX, s.labelY, 0.004]}
 				/>
-			</T.Group>
+			{/if}
 		{/each}
+		<!-- center hub: Close / Object ▸ / Back -->
+		<T.Mesh name={`vrmenu-${hub.id}`}>
+			<T.CircleGeometry args={[HUB_RADIUS, 32]} />
+			<T.MeshBasicMaterial
+				color={$vrHovered === hub.id ? '#ff4000' : '#39404d'}
+				transparent
+				opacity={0.96}
+				side={THREE.DoubleSide}
+			/>
+		</T.Mesh>
+		<Text
+			text={hub.label}
+			color="#ffffff"
+			outlineColor="#000000"
+			outlineWidth={0.002}
+			fontSize={0.018}
+			anchorX="center"
+			anchorY="middle"
+			position={[0, 0, 0.004]}
+		/>
 	</T.Group>
 {/if}

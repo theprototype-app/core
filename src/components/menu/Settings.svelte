@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Select } from 'flowbite-svelte';
-	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrFlying, vrPassthrough } from '../../stores/sceneStore.js';
+	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
@@ -200,6 +200,18 @@
 						>
 					</p>
 					<p class={middlecoverDescription}>Which controller opens the VR quick-menu (the other hand points)</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox
+							id="vr-menu-hold"
+							checked={$vrMenuHold}
+							on:change={(e: any) => {
+								$vrMenuHold = e.target.checked;
+								localStorage.setItem('vrMenuHold', String($vrMenuHold));
+							}}>&nbsp;Hold-to-menu</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Hold B/Y to show the radial menu, release over a sector to pick it (off = press toggles)</p>
 				</div>
 				<div class="flex">
 					<p class={bottomCoverName}>

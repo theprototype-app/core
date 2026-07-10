@@ -164,6 +164,21 @@ function makeApi(moduleId) {
 		registerMenu(label, action) {
 			moduleMenuItems.update((list) => [...list, { moduleId, label, action }]);
 		},
+		/**
+		 * Add a sector to the VR radial menu (74). group 'root' extends the base
+		 * ring; any other group name becomes a sub-ring reachable via a nav
+		 * entry ({ring: '<group>'}).
+		 * @param {{id: string, group?: string, label: string, order?: number,
+		 *   ring?: string, action?: () => void, active?: () => boolean,
+		 *   color?: string, closes?: boolean}} entry
+		 */
+		registerVRMenuEntry(entry) {
+			// dynamic import: a static edge here closes a module cycle back into
+			// history via materialsHandler (TDZ crash at boot)
+			import('./vrRadialMenu').then((menu) =>
+				menu.registerVRMenuEntry({ ...entry, id: moduleId + ':' + entry.id })
+			);
+		},
 		scene: () => get(globalScene),
 		objectsGroup: () => get(objectsGroup),
 		peerId: () => /** @type {any} */ (get(peers))?.peer?.id,

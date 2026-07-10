@@ -13,8 +13,10 @@ import {
 	selectedObject,
 	isVRMode,
 	worldRig,
-	vrPassthrough
+	vrPassthrough,
+	vrMenuHold
 } from '../stores/sceneStore';
+import { activeRing, findMenuEntry, ringEntries, sectorFromStick } from './vrRadialMenu';
 import { peers, showToast } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
@@ -714,8 +716,30 @@ function spawnPrimitive(command) {
 	broadcastMove(object, true);
 }
 
-/** Quick-menu tile actions @param {string} name */
+/** Radial-menu sector actions (74): navigation + registry first, then the
+ * built-in switch @param {string} name */
 export function executeVRMenuAction(name) {
+	// ring navigation + close
+	if (name === 'close') {
+		vrMenuOpen.set(false);
+		return;
+	}
+	if (name === 'back') {
+		activeRing.set('root');
+		return;
+	}
+	if (name.startsWith('nav:')) {
+		activeRing.set(name.slice(4));
+		return;
+	}
+	// registry entries carry their own action (env presets, mic modes, object
+	// ops, color swatches, module-registered entries)
+	const entry = findMenuEntry(name);
+	if (entry?.action) {
+		entry.action();
+		if (entry.closes) vrMenuOpen.set(false);
+		return;
+	}
 	if (name === 'move' || name === 'rotate') vrTransformMode.set(name);
 	else if (name === 'snap') snapEnabled.update((v) => !v);
 	else if (name === 'grid') {
@@ -727,6 +751,9 @@ export function executeVRMenuAction(name) {
 	else if (name === 'box') spawnPrimitive('/create Box 1 1 1');
 	else if (name === 'wedge') spawnPrimitive('/create Wedge 1 1 1');
 	else if (name === 'stairs') spawnPrimitive('/create Stairs 1 1 1 4');
+	else if (name === 'sphere') spawnPrimitive('/create Sphere 0.7');
+	else if (name === 'cylinder') spawnPrimitive('/create Cylinder 0.5 0.5 1');
+	else if (name === 'torus') spawnPrimitive('/create Torus 0.6 0.25');
 	else if (name === 'hand') {
 		vrMenuHand.update((hand) => {
 			const next = hand === 'right' ? 'left' : 'right';
@@ -788,18 +815,32 @@ export function updateVRControls() {
 		teleportEngaged = false;
 		return;
 	}
-	updateTeleport(session);
-	updateSnapTurn(session);
+	// the open menu is modal for the sticks: sector nav owns them (74)
+	if (!get(vrMenuOpen)) {
+		updateTeleport(session);
+		updateSnapTurn(session);
+	}
 
 	[...session.inputSources].forEach((source, index) => {
 		if (index > 1 || !source.gamepad) return;
 		const buttons = source.gamepad.buttons;
 		const prev = previousButtons[index];
 
-		// B/Y on the menu hand toggles the quick-menu (A is push-to-talk)
+		// B/Y on the menu hand: toggle the radial menu, or (hold mode, 74) hold
+		// to show + release over a sector to activate it
 		const menuPressed = !!buttons[5]?.pressed;
-		if (menuPressed && !prev.menu && source.handedness === get(vrMenuHand))
-			vrMenuOpen.update((v) => !v);
+		if (source.handedness === get(vrMenuHand)) {
+			if (get(vrMenuHold)) {
+				if (menuPressed && !prev.menu) vrMenuOpen.set(true);
+				if (!menuPressed && prev.menu) {
+					const hovered = get(vrHovered);
+					vrMenuOpen.set(false);
+					if (hovered) executeVRMenuAction(hovered);
+				}
+			} else if (menuPressed && !prev.menu) {
+				vrMenuOpen.update((v) => !v);
+			}
+		}
 		prev.menu = menuPressed;
 
 
@@ -814,10 +855,16 @@ export function updateVRControls() {
 		if (!squeezePressed && prev.squeeze) onSqueezeEnd(index);
 		prev.squeeze = squeezePressed;
 
-		// RIGHT thumbstick CLICK (buttons[3] — the press, not the axes) pings
-		// the pointed spot with the v2 visual/chime + a haptic tick (87.6)
+		// thumbstick CLICK (buttons[3] — the press, not the axes): with the menu
+		// open it activates the hovered sector (74); otherwise the RIGHT stick
+		// pings the pointed spot with the v2 visual/chime + a haptic tick (87.6)
 		const stickPressed = !!buttons[3]?.pressed;
-		if (stickPressed && !prev.stick && source.handedness === 'right') pingFromController(index);
+		if (stickPressed && !prev.stick) {
+			if (get(vrMenuOpen)) {
+				const hovered = get(vrHovered);
+				if (hovered) executeVRMenuAction(hovered);
+			} else if (source.handedness === 'right') pingFromController(index);
+		}
 		prev.stick = stickPressed;
 
 		// draw mode: holding the trigger draws at the controller tip
@@ -850,10 +897,21 @@ export function updateVRControls() {
 		}
 	}
 
-	// hover highlight for menu tiles (pointer = the non-menu hand)
+	// sector highlight (74): pointer-hand ray first, thumbstick direction as
+	// the fallback; a hover change gives a small haptic tick
 	if (get(vrMenuOpen)) {
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
-		vrHovered.set(pointerIndex >= 0 ? raycastMenu(pointerIndex) : null);
+		let hovered = pointerIndex >= 0 ? raycastMenu(pointerIndex) : null;
+		if (!hovered && pointerIndex >= 0) {
+			const axes = [...session.inputSources][pointerIndex]?.gamepad?.axes ?? [];
+			const entries = ringEntries(get(activeRing));
+			const sector = sectorFromStick(axes[2] ?? 0, axes[3] ?? 0, entries.length);
+			if (sector !== null) hovered = entries[sector]?.id ?? null;
+		}
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.15, 18);
+			vrHovered.set(hovered);
+		}
 	} else if (get(vrHovered) !== null) {
 		vrHovered.set(null);
 	}

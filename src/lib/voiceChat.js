@@ -214,6 +214,12 @@ export async function setPttHeld(held) {
 	} else applyTrackState();
 }
 
+/** Radial menu (74): jump straight to a mode, reusing the cycle transitions
+ * @param {'ptt' | 'open' | 'off'} mode */
+export async function setMicMode(mode) {
+	for (let i = 0; i < 3 && get(vrMicMode) !== mode; i++) await cycleMicMode();
+}
+
 /** Quick-menu tile: PTT -> Open -> Off -> PTT */
 export async function cycleMicMode() {
 	const mode = get(vrMicMode);

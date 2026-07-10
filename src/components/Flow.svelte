@@ -9,6 +9,7 @@
 	import NodeDesigner from './editors/NodeDesigner.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
+	import { tabbable } from '$lib/windowTabs';
 	import { fly } from 'svelte/transition';
 
 	const clampH = (h: number) =>
@@ -105,6 +106,7 @@
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'flowWin', defaultRect: { left: 120, top: 90 } }}
 			use:focusStack
+			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true) }}
 			style="z-index: var(--z-window); width: {winW}px; height: {winH}px"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">

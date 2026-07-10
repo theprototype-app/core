@@ -18,6 +18,7 @@
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { focusStack } from '$lib/windowFocus';
+	import { tabbable } from '$lib/windowTabs';
 	import { VRButton } from '@threlte/xr'
 
 	let allowPlay = true;
@@ -453,7 +454,9 @@
 	<VRButton />
 </div>
 
-<div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe use:focusStack style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
+<div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe use:focusStack
+	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
+	style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
 	<!-- dropping a row on the header moves the object back to the scene root -->
 	<div
 		role="list"

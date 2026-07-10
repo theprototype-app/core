@@ -11,6 +11,7 @@
 	import ViewportMenu from './menu/ViewportMenu.svelte';
 	import MarqueeOverlay from './menu/MarqueeOverlay.svelte';
 	import AddMenu from './menu/AddMenu.svelte';
+	import TabStrips from './menu/TabStrips.svelte';
 	import VoiceChat from './menu/VoiceChat.svelte';
 	import AnnotationPopover from './menu/AnnotationPopover.svelte';
 	import Library from './menu/Library.svelte';
@@ -35,6 +36,7 @@
 <ViewportMenu />
 <MarqueeOverlay />
 <AddMenu />
+<TabStrips />
 <VoiceChat />
 <AnnotationPopover />
 <Library />

@@ -8,6 +8,7 @@
 	import { nameOf, peerColor } from '$lib/lockControl';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
+	import { tabbable } from '$lib/windowTabs';
 
 	let message = $state('');
 	let scroller: any = $state(null);
@@ -77,6 +78,7 @@
 		id="chat-window"
 		use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 } }}
 		use:focusStack
+		use:tabbable={{ key: 'chat', title: '💬 Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}
 		class="ui-panel flex h-[420px] w-[min(500px,90vw)] flex-col overflow-hidden bg-gray-900/85 backdrop-blur"
 		style="z-index: var(--z-window)"
 	>

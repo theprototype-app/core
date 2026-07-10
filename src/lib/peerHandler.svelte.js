@@ -13,6 +13,7 @@ import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate } from '$lib/physics';
 import { applyRemoteEnvironment, environmentState } from '$lib/environment';
+import { applySessionProposal, applySessionAnswer } from '$lib/sessions';
 import { applyObjectFile } from '$lib/animatedImports';
 import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
@@ -167,6 +168,10 @@ export class PeerConnection {
 					applySimulate(data);
 				} else if(data.type == 'environment') {
 					applyRemoteEnvironment(data);
+				} else if(data.type == 'sessionproposal') {
+					applySessionProposal(data);
+				} else if(data.type == 'sessionanswer') {
+					applySessionAnswer(data);
 				} else if(data.type == 'drawlive') {
 					applyDrawLive(data);
 				} else if(data.type == 'drawend') {

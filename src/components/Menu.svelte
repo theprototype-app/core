@@ -6,6 +6,7 @@
 	import Inspector from './menu/Inspector.svelte';
 	import MenuSidebar from './menu/Sidebar.svelte';
 	import MenuSettings from './menu/Settings.svelte';
+	import SessionsManager from './menu/SessionsManager.svelte';
 	import CharacterModal from './menu/CharacterModal.svelte';
 	import ViewportMenu from './menu/ViewportMenu.svelte';
 	import VoiceChat from './menu/VoiceChat.svelte';
@@ -27,6 +28,7 @@
 <Inspector />
 <MenuSidebar />
 <MenuSettings />
+<SessionsManager />
 <CharacterModal />
 <ViewportMenu />
 <VoiceChat />

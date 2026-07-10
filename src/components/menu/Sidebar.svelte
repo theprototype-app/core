@@ -14,7 +14,7 @@
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
-	import { modulesOpen, showToast } from '../../stores/appStore.js';
+	import { modulesOpen, sessionsOpen, showToast } from '../../stores/appStore.js';
 	import { sineIn } from 'svelte/easing';
 
 	import {
@@ -275,6 +275,17 @@ style="height: 55px; top: 5px; left: 5px;"
 			>
 				<svelte:fragment slot="icon">🎛️</svelte:fragment>
 			</SidebarItem>
+			<div id="open-sessions-manager">
+				<SidebarItem
+					label="Sessions"
+					{spanClass}
+					on:click={() => {
+						sessionsOpen.set(true);
+					}}
+				>
+					<svelte:fragment slot="icon">🗂️</svelte:fragment>
+				</SidebarItem>
+			</div>
 			<SidebarItem
 				label="Clear Scene"
 				{spanClass}

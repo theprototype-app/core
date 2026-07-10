@@ -127,6 +127,9 @@ export const toastStore = writable([]);
 // modules manager modal
 export const modulesOpen = writable(false);
 
+// sessions manager modal (50)
+export const sessionsOpen = writable(false);
+
 // advanced mode: reveals system objects (module content, environment rig)
 // in the object list behind a System filter chip
 export const advancedMode = writable(

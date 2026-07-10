@@ -91,6 +91,15 @@ export function registerAnnotationsPersistence(provider, restorer) {
 	annotationsRestorer = restorer;
 }
 
+/** Sessions (50) snapshot the same annotations without a hard dependency */
+export function annotationsSnapshot() {
+	return annotationsProvider ? annotationsProvider() : [];
+}
+/** @param {any[]} annotations */
+export function annotationsRestore(annotations) {
+	if (annotations?.length && annotationsRestorer) annotationsRestorer(annotations);
+}
+
 async function checkRestore() {
 	try {
 		const snapshot = await idbGet('latest');

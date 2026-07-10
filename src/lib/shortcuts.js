@@ -83,6 +83,15 @@ export const shortcuts = [
 		action: () => chatHidden.update((value) => (value === 'hidden' ? '' : 'hidden'))
 	},
 	{
+		keys: 'Ctrl+S',
+		group: 'Scene',
+		label: 'Save session',
+		action: () =>
+			import('./sessions').then(({ saveSession }) =>
+				saveSession('Session ' + new Date().toLocaleString())
+			)
+	},
+	{
 		keys: 'Ctrl+Z',
 		group: 'History',
 		label: 'Undo',

@@ -167,11 +167,19 @@ export function endStroke() {
 	}
 	if (stroke.length < 2) return;
 
+	const group = get(objectsGroup);
+	if (!group) return;
+	// points were captured in REAL space (the preview draws at the scene root);
+	// the final mesh lives in objectsGroup, which may sit under a grabbed/scaled
+	// world rig (71) — convert so the stroke lands where the hand pointed
+	group.updateMatrixWorld(true);
+	const localStroke = stroke.map((point) => group.worldToLocal(point.clone()));
+
 	const size = get(drawSize);
-	const curve = new THREE.CatmullRomCurve3(stroke);
+	const curve = new THREE.CatmullRomCurve3(localStroke);
 	const geometry = new THREE.TubeGeometry(
 		curve,
-		Math.min(Math.max(stroke.length * 4, 8), 240),
+		Math.min(Math.max(localStroke.length * 4, 8), 240),
 		size,
 		6,
 		false
@@ -182,8 +190,6 @@ export function endStroke() {
 	);
 	mesh.name = 'Stroke';
 
-	const group = get(objectsGroup);
-	if (!group) return;
 	group.add(mesh);
 	objectsGroup.update((value) => value);
 	recordObjectPresence('create', mesh);

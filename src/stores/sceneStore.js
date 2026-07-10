@@ -18,6 +18,10 @@ export const selectedObjects = writable([]);
 /** marquee rectangle while shift-dragging in the viewport: {x0,y0,x1,y1} | null */
 /** @type {import('svelte/store').Writable<any>} */
 export const marqueeRect = writable(null);
+/** VR world grab (71): the group wrapping all world content — scaled/rotated
+ * LOCALLY by the both-grips gesture, identity outside VR, never replicated */
+/** @type {import('svelte/store').Writable<any>} */
+export const worldRig = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const backgroundColor = writable('#ffffff');
 export const isLocked = writable(null);

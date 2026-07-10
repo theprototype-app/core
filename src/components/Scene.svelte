@@ -7,7 +7,7 @@
 	import { spring } from 'svelte/motion';
 	import { peers, username,userdata, specatorMode, avatarConfig } from '../stores/appStore';
 	import { get } from 'svelte/store';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, marqueeRect, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
@@ -18,7 +18,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
-	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
 	import { sendPing } from '$lib/ping';
@@ -221,6 +221,7 @@
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
 			$isVRMode = false; // back to the editor whichever way the session ended
+			resetWorldRig(); // the grabbed world snaps back to 1:1 (least surprise)
 			$peers?.send({ type: 'vrhands', peerId: $peers.peer.id, left: null, right: null, active: false });
 		};
 		renderer.xr.addEventListener('sessionend', onSessionEnd);
@@ -502,9 +503,21 @@
 	<T.MeshStandardMaterial color="white" />
 </T.Mesh> -->
 
-<T.Group bind:ref={$objectsGroup} name="sceneObjects" />
+<!-- world rig (71): everything a VR world-grab should move/scale lives here;
+     its transform is LOCAL-only (identity on desktop, reset on VR exit) -->
+<T.Group bind:ref={$worldRig} name="world-grab-rig">
+	<T.Group bind:ref={$objectsGroup} name="sceneObjects" />
 
-<Grid showGrid={$showGrid} />
+	<Grid showGrid={$showGrid} />
+
+	<MeasureOverlay />
+
+	<AnnotationPins />
+
+	<PingMarkers />
+	<PathWaypoints />
+	<LockHighlights />
+</T.Group>
 
 {#if !$isLocked && !$isVRMode}
 <TransformControls bind:controls={$TControls} {onchange} {oncreate} />
@@ -518,14 +531,6 @@ position={[0, 2, 3]}
 />
 
 <VRMenu />
-
-<MeasureOverlay />
-
-<AnnotationPins />
-
-<PingMarkers />
-<PathWaypoints />
-<LockHighlights />
 
 <XR>
 	<Controller left />

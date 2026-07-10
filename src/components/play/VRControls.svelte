@@ -6,7 +6,7 @@
 	import * as THREE from 'three';
 	import { useThrelte, useTask } from '@threlte/core';
 	import { vrFlying } from '../../stores/sceneStore';
-	import { computeMoveOffset } from '$lib/vrControls';
+	import { computeMoveOffset, worldScale } from '$lib/vrControls';
 
 	const { renderer, camera, scene } = useThrelte();
 	const { xr } = renderer;
@@ -51,7 +51,9 @@
 				grip,
 				flying: $vrFlying,
 				aimDir: { x: aimDir.x, y: aimDir.y, z: aimDir.z },
-				cameraDir: { x: cameraDir.x, y: cameraDir.y, z: cameraDir.z }
+				cameraDir: { x: cameraDir.x, y: cameraDir.y, z: cameraDir.z },
+				// grabbed-world scale (71): body-relative speed stays constant
+				speed: 0.05 * worldScale()
 			});
 			if (offset.x || offset.y || offset.z) {
 				xr.setReferenceSpace(space.getOffsetReferenceSpace(new XRRigidTransform(offset)));

@@ -11,7 +11,8 @@ import {
 	vrTransformMode,
 	vrSnapAngle,
 	selectedObject,
-	isVRMode
+	isVRMode,
+	worldRig
 } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
@@ -455,11 +456,118 @@ function endGrab(object, before) {
 /** @type {{index: number, prev: any} | null} right-grip drag-the-world pan */
 let worldPan = null;
 
+// ---- world grab (71): BOTH grips in empty air scale/rotate/pan the world ---
+// The gesture transforms the world-grab-rig LOCALLY (peers see nothing —
+// broadcasts stay in objectsGroup-local coords, which never change here).
+
+const WORLD_SCALE_MIN = 0.05;
+const WORLD_SCALE_MAX = 20;
+
+const emptyAirSqueeze = [false, false];
+/** @type {{a0: any, b0: any, rig0: {pos: any, quat: any, scale: number}} | null} */
+let worldGrab = null;
+
+/** current uniform world scale (1 outside a grab / on desktop) */
+export function worldScale() {
+	return get(worldRig)?.scale.x ?? 1;
+}
+
+/** Snap the world back to 1:1 (quick-menu tile + VR session end) */
+export function resetWorldRig() {
+	const rig = get(worldRig);
+	if (!rig) return;
+	rig.position.set(0, 0, 0);
+	rig.quaternion.identity();
+	rig.scale.set(1, 1, 1);
+	rig.updateMatrixWorld(true);
+}
+
+/**
+ * Pure gesture math (headless-testable): given both hands' start/current
+ * positions and the rig's start state, produce the rig transform that keeps
+ * the world point between the hands glued to them while scaling by the
+ * hands' distance ratio and yawing by the hands' axis rotation.
+ * @param {{a: number[], b: number[]}} start
+ * @param {{a: number[], b: number[]}} now
+ * @param {{pos: number[], quat: number[], scale: number}} rig0
+ */
+export function computeWorldGrabTransform(start, now, rig0) {
+	const a0 = new THREE.Vector3().fromArray(start.a);
+	const b0 = new THREE.Vector3().fromArray(start.b);
+	const a = new THREE.Vector3().fromArray(now.a);
+	const b = new THREE.Vector3().fromArray(now.b);
+	const mid0 = a0.clone().add(b0).multiplyScalar(0.5);
+	const mid = a.clone().add(b).multiplyScalar(0.5);
+	const d0 = Math.max(a0.distanceTo(b0), 0.05);
+	const d = Math.max(a.distanceTo(b), 0.001);
+	// clamp the TOTAL scale, then work with the relative ratio
+	const total = THREE.MathUtils.clamp(rig0.scale * (d / d0), WORLD_SCALE_MIN, WORLD_SCALE_MAX);
+	const ratio = total / rig0.scale;
+	// yaw from the hands' axis on the ground plane (angle0 - angleNow, +Y up)
+	const angle0 = Math.atan2(b0.z - a0.z, b0.x - a0.x);
+	const angle = Math.atan2(b.z - a.z, b.x - a.x);
+	const yaw = angle0 - angle;
+	const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+	const quat0 = new THREE.Quaternion().fromArray(rig0.quat);
+	// rig' = T(mid) · R(yaw) · S(ratio) · T(-mid0) applied to the rig's start
+	const pos = new THREE.Vector3()
+		.fromArray(rig0.pos)
+		.sub(mid0)
+		.multiplyScalar(ratio)
+		.applyQuaternion(qYaw)
+		.add(mid);
+	return {
+		pos: pos.toArray(),
+		quat: qYaw.multiply(quat0).toArray(),
+		scale: total
+	};
+}
+
+function beginWorldGrab() {
+	const rig = get(worldRig);
+	if (!rig) return;
+	worldPan = null; // the two-hand gesture replaces the single-hand pan
+	worldGrab = {
+		a0: renderer.xr.getController(0).getWorldPosition(new THREE.Vector3()),
+		b0: renderer.xr.getController(1).getWorldPosition(new THREE.Vector3()),
+		rig0: { pos: rig.position.toArray(), quat: rig.quaternion.toArray(), scale: rig.scale.x }
+	};
+}
+
+function updateWorldGrab() {
+	const rig = get(worldRig);
+	if (!rig || !worldGrab) return;
+	const a = renderer.xr.getController(0).getWorldPosition(new THREE.Vector3());
+	const b = renderer.xr.getController(1).getWorldPosition(tempVector);
+	const next = computeWorldGrabTransform(
+		{ a: worldGrab.a0.toArray(), b: worldGrab.b0.toArray() },
+		{ a: a.toArray(), b: b.toArray() },
+		worldGrab.rig0
+	);
+	rig.position.fromArray(next.pos);
+	rig.quaternion.fromArray(next.quat);
+	rig.scale.setScalar(next.scale);
+	rig.updateMatrixWorld(true);
+}
+
+/** convert a real-space delta vector into rig-local (grabbed objects live there) */
+function realDeltaToRigLocal(vector) {
+	const rig = get(worldRig);
+	if (!rig) return vector;
+	return vector.applyQuaternion(rig.quaternion.clone().invert()).divideScalar(rig.scale.x);
+}
+
 /** @param {number} index */
 function onSqueezeStart(index) {
 	if (!get(objectsGroup)) return;
 	const hits = controllerRay(index).intersectObjects(get(objectsGroup).children, true);
 	if (hits.length === 0) {
+		emptyAirSqueeze[index] = true;
+		// both hands gripping air -> world grab (zoom/rotate/pan the world)
+		if (emptyAirSqueeze[0] && emptyAirSqueeze[1]) {
+			beginWorldGrab();
+			return;
+		}
 		// gripping air with the RIGHT hand pans the world with the controller
 		const session = renderer?.xr.getSession();
 		const handedness = session ? [...session.inputSources][index]?.handedness : null;
@@ -498,6 +606,20 @@ function onSqueezeStart(index) {
 
 /** @param {number} index */
 function onSqueezeEnd(index) {
+	emptyAirSqueeze[index] = false;
+	if (worldGrab) {
+		// releasing either grip ends the world gesture; a still-held RIGHT grip
+		// resumes the single-hand world pan without re-squeezing
+		worldGrab = null;
+		const other = index === 0 ? 1 : 0;
+		if (emptyAirSqueeze[other]) {
+			const session = renderer?.xr.getSession();
+			const handedness = session ? [...session.inputSources][other]?.handedness : null;
+			if (handedness === 'right')
+				worldPan = { index: other, prev: renderer.xr.getController(other).getWorldPosition(new THREE.Vector3()) };
+		}
+		return;
+	}
 	if (worldPan?.index === index) worldPan = null;
 	if (scaleGrab) {
 		endGrab(scaleGrab.object, scaleGrab.before);
@@ -526,9 +648,16 @@ function updateGrab() {
 
 	if (get(vrTransformMode) === 'rotate') {
 		deltaQuat.copy(grab.prevQuat).invert().premultiply(quaternion);
+		// under a grabbed world (71) the hand delta converts into rig-local
+		const rig = get(worldRig);
+		if (rig) {
+			const rigQuat = rig.quaternion;
+			deltaQuat.premultiply(rigQuat.clone().invert()).multiply(rigQuat);
+		}
 		object.quaternion.premultiply(deltaQuat);
 	} else {
 		tempVector.copy(position).sub(grab.prevPos);
+		realDeltaToRigLocal(tempVector); // 1:1 when the world is unscaled
 		object.position.add(tempVector);
 		if (get(snapEnabled)) {
 			const step = get(snapSettings).translate;
@@ -565,7 +694,21 @@ function spawnPrimitive(command) {
 	tempVector.y = 0;
 	tempVector.normalize().multiplyScalar(2);
 	const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
-	object.position.set(cameraPosition.x + tempVector.x, object.position.y, cameraPosition.z + tempVector.z);
+	// spawn point is a REAL-space spot 2m ahead; convert into the (possibly
+	// grabbed/scaled) world before writing objectsGroup-local coords
+	const spawn = new THREE.Vector3(
+		cameraPosition.x + tempVector.x,
+		object.position.y,
+		cameraPosition.z + tempVector.z
+	);
+	const group = get(objectsGroup);
+	if (group) {
+		group.updateMatrixWorld(true);
+		const local = group.worldToLocal(spawn.clone());
+		object.position.set(local.x, object.position.y, local.z);
+	} else {
+		object.position.set(spawn.x, object.position.y, spawn.z);
+	}
 	objectsGroup.update((value) => value);
 	broadcastMove(object, true);
 }
@@ -594,6 +737,8 @@ export function executeVRMenuAction(name) {
 		vrMenuOpen.set(false);
 	} else if (name === 'mic') {
 		cycleMicMode();
+	} else if (name === 'world') {
+		resetWorldRig(); // back to 1:1 mid-session
 	} else if (name === 'exitvr') {
 		vrMenuOpen.set(false);
 		isVRMode.set(false);
@@ -660,6 +805,9 @@ export function updateVRControls() {
 
 	if (scaleGrab) updateScaleGrab();
 	else if (grab) updateGrab();
+
+	// both-grips world grab (71): scale/rotate/pan the rig around the hands
+	if (worldGrab) updateWorldGrab();
 
 	// drag-the-world: the grabbed spot follows the hand (prev stays fixed at
 	// grab start — the applied offset self-corrects the measured delta)

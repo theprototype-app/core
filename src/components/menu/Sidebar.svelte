@@ -11,7 +11,7 @@
 		showSidebar,
 		closeMenu
 	} from '../../stores/appStore.js';
-	import { backgroundColor, objectsGroup } from '../../stores/sceneStore';
+	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
 	import { modulesOpen, showToast } from '../../stores/appStore.js';
@@ -26,12 +26,9 @@
 		SidebarDropdownItem,
 		Radio,
 		Dropdown,
-		Drawer,
-		Navbar,
-		Card
+		Drawer
 	} from 'flowbite-svelte';
 	import { Hamburger } from 'svelte-hamburgers';
-	import invert from 'invert-color';
 
 	let saveFormat = 'json';
 	let spanClass = 'flex-1 ms-3 whitespace-nowrap';
@@ -56,22 +53,11 @@
 </script>
 
 <div
-class="burger inline-flex rounded-md bg-primary-700 shadow-sm"
-style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top: 5px; left: 5px;"
+class="burger inline-flex items-center gap-1 rounded-lg border border-gray-700/60 bg-gray-800/90 px-2 shadow-lg backdrop-blur"
+style="height: 55px; top: 5px; left: 5px;"
 >
-<Navbar rounded color="form">
-
-	<img src="logo.svg" alt="logo" class="h-10 w-10" />
-		<div class="" style="position: absolute; top: 0; left: 50px;">
-	<Hamburger
-		bind:open={$closeMenu}
-		--color={invert($backgroundColor)}
-		
-		type="none"
-	/>
-</div>
-
-</Navbar>
+	<img src="logo.svg" alt="logo" class="h-9 w-9" />
+	<Hamburger bind:open={$closeMenu} --color="#e5e7eb" type="squeeze" />
 </div>
 {#if true}
 
@@ -333,7 +319,6 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 				<svelte:fragment slot="icon">📖</svelte:fragment>
 			</SidebarItem>
 		</SidebarGroup>
-	<Card class="border-0"/>
 	</SidebarWrapper>
 </Sidebar>
 </Drawer>

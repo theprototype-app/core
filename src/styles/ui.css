@@ -1,0 +1,41 @@
+/* Design tokens + shared utility classes (phase 63). Components compose these
+   instead of re-inventing panel chrome. The app is dark-first (html.dark). */
+
+:root {
+	/* z-tiers — every layered component maps to ONE of these (phase 68) */
+	--z-viewport: 0;
+	--z-hud: 20;
+	--z-drawer: 30;
+	--z-bottom: 35;
+	--z-window: 40;
+	--z-modal: 50;
+	--z-toast: 60;
+}
+
+@layer components {
+	/* panel chrome */
+	.ui-panel {
+		@apply rounded-lg border border-gray-700/60 bg-gray-800 text-gray-200 shadow-xl;
+	}
+	.ui-panel-header {
+		@apply flex items-center gap-2 border-b border-gray-700/60 px-3 py-2 text-sm font-semibold text-gray-100;
+	}
+	.ui-section-label {
+		@apply mb-1 mt-3 px-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400;
+	}
+	.ui-row {
+		@apply flex items-center gap-2 px-1 py-1 text-sm text-gray-200;
+	}
+	.ui-input {
+		@apply rounded border border-gray-600 bg-gray-900/60 px-2 py-1 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500;
+	}
+	.ui-chip {
+		@apply rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider;
+	}
+	.ui-badge-type {
+		@apply ui-chip bg-primary-700 text-white;
+	}
+	.ui-button-quiet {
+		@apply rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-600;
+	}
+}

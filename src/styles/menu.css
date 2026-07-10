@@ -5,15 +5,13 @@
 	z-index: 3;
 }
 
-/* hamburger menu */
+/* hamburger menu — positioning only: typography belongs to the drawer
+   contents (the old 1.5em + letter-spacing leaked into every sidebar row) */
 
 .hamburger {
 	position: absolute;
 	cursor: pointer;
 	z-index: 2;
-	border-radius: 20px; /* Rounded corners */
+	border-radius: 20px;
 	padding-top: 30px;
-	text-align: center;
-	font-size: 1.5em;
-	letter-spacing: 0.15em;
 }

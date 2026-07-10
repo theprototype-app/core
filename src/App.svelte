@@ -77,18 +77,25 @@
         import('./lib/vrRadialMenu'),
         import('./lib/explorer'),
         import('./lib/bottomDock'),
+        import('./lib/explorerDrop'),
         import('three'),
         import('three/examples/jsm/exporters/GLTFExporter.js')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessionsLib, geometryEdit, lightParams, themesLib, vrRadialMenu, explorerLib, bottomDock, THREE, GLTFExporterModule]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessions: sessionsLib, geometryEdit, lightParams, themes: themesLib, vrRadialMenu, explorer: explorerLib, bottomDock, THREE, GLTFExporterModule }
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessionsLib, geometryEdit, lightParams, themesLib, vrRadialMenu, explorerLib, bottomDock, explorerDrop, THREE, GLTFExporterModule]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessions: sessionsLib, geometryEdit, lightParams, themes: themesLib, vrRadialMenu, explorer: explorerLib, bottomDock, explorerDrop, THREE, GLTFExporterModule }
       })
     }
   })
 
   // drop 3d files anywhere on the viewport to import them
   function handleDrop(event) {
-    // the flow editor has its own drag&drop (node palette)
-    if (event.target?.closest && event.target.closest('#flow-list')) return
+    // panels with their own drag&drop handle theirs (flow palette, Explorer)
+    if (event.target?.closest && (event.target.closest('#flow-list') || event.target.closest('#explorer-list') || event.target.closest('#explorer-window'))) return
+    // Explorer cards dropped on the viewport place/texture at the point (96)
+    const explorerPayload = event.dataTransfer?.getData('application/x-explorer-item')
+    if (explorerPayload) {
+      import('./lib/explorerDrop').then((m) => m.dropExplorerItem(JSON.parse(explorerPayload), event.clientX, event.clientY))
+      return
+    }
     const files = [...(event.dataTransfer?.files ?? [])]
     if (files.length === 0) return
     const skipped = []

@@ -11,6 +11,7 @@
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
 	import { sineIn } from 'svelte/easing';
+	import { applyExplorerImage } from '$lib/explorerDrop';
 	import {
 		setObjectTexture,
 		removeObjectTexture,
@@ -100,6 +101,9 @@
 		{ value: 'MeshToonMaterial', name: 'Toon' },
 		{ value: 'ShadowMaterial', name: 'Shadow' }
 	];
+
+	// Explorer image hovering the texture drop zone (96)
+	let textureDropActive = $state(false);
 
 	// color swatches mirror the target when the selection changes
 	/** @type {any} */
@@ -872,6 +876,27 @@
 					<!-- materials supporting textures initialize map to null; ShadowMaterial has no map at all -->
 					{#if typeof material.map !== 'undefined'}
 						<p class="ui-section-label">Texture</p>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							id="texture-drop"
+							class="rounded border border-dashed {textureDropActive ? 'border-primary-500 bg-primary-500/10' : 'border-transparent'}"
+							ondragover={(e) => {
+								if (e.dataTransfer?.types.includes('application/x-explorer-item')) {
+									e.preventDefault();
+									textureDropActive = true;
+								}
+							}}
+							ondragleave={() => (textureDropActive = false)}
+							ondrop={async (e) => {
+								const raw = e.dataTransfer?.getData('application/x-explorer-item');
+								textureDropActive = false;
+								if (!raw) return;
+								e.preventDefault();
+								e.stopPropagation();
+								const ok = await applyExplorerImage($selectedObject.uuid, JSON.parse(raw));
+								if (ok) selectedObject.update((s) => s);
+							}}
+						>
 						<input
 							type="file"
 							id="texture-file"
@@ -911,7 +936,9 @@
 								>
 									Set texture...
 								</Button>
+								<span class="text-[10px] text-gray-500">or drop an Explorer image</span>
 							{/if}
+						</div>
 						</div>
 					{/if}
 

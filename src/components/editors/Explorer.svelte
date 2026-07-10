@@ -15,7 +15,8 @@
 		moveItem,
 		importFiles,
 		deleteItem,
-		renameItem
+		renameItem,
+		itemBlob
 	} from '$lib/explorer';
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
 	import { bottomDockActive, dockShared, setDockOccupant } from '$lib/bottomDock';
@@ -167,6 +168,18 @@
 			x: e.clientX,
 			y: e.clientY,
 			items: [
+				...(item.kind === 'text'
+					? [
+							{
+								label: 'Copy contents',
+								tooltip: 'Copy the file text to the clipboard (96)',
+								action: async () => {
+									const blob = await itemBlob(item.id);
+									if (blob) navigator.clipboard?.writeText(await blob.text());
+								}
+							}
+						]
+					: []),
 				{
 					label: 'Rename',
 					action: () => {

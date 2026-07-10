@@ -102,9 +102,12 @@ function addAnimatedImport(result, buffer, name) {
 	showToast('Animated model: ' + result.animations.length + ' clip(s), playing the first');
 }
 
-/** Shared tail for every import format: add to the scene, select, replicate. @param {any} imported @param {string=} name */
-function addImported(imported, name) {
+/** Shared tail for every import format: add to the scene, select, replicate.
+ * @param {any} imported @param {string=} name @param {number[]=} position drop point (96) */
+function addImported(imported, name, position) {
 	if (name) imported.name = name;
+	// position BEFORE the sync so peers receive the placed transform (96)
+	if (position) imported.position.fromArray(position);
 	sceneObjects.add(imported);
 	//Trigger reactivity for UI list of objects
 	objectsGroup.update((value) => value);
@@ -137,21 +140,22 @@ function readAs(file, mode) {
 /**
  * Import a 3d file into the scene. GLB/GLTF, OBJ (no .mtl), STL and FBX (static meshes).
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
+ * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  */
-export async function importFile(file, name, ext) {
+export async function importFile(file, name, ext, position) {
 	const extension = String(ext ?? file.name ?? '').toLowerCase().split('.').pop();
 	try {
 		if (extension === 'obj') {
 			const object = new OBJLoader().parse(await readAs(file, 'text'));
-			addImported(object, name ?? 'OBJ');
+			addImported(object, name ?? 'OBJ', position);
 		} else if (extension === 'stl') {
 			const geometry = new STLLoader().parse(await readAs(file, 'buffer'));
 			geometry.computeVertexNormals();
 			const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
-			addImported(mesh, name ?? 'STL');
+			addImported(mesh, name ?? 'STL', position);
 		} else if (extension === 'fbx') {
 			const object = new FBXLoader().parse(await readAs(file, 'buffer'), '');
-			addImported(object, name ?? 'FBX');
+			addImported(object, name ?? 'FBX', position);
 		} else {
 			// glb/gltf (default) — draco/meshopt capable
 			const buffer = await readAs(file, 'buffer');
@@ -159,8 +163,9 @@ export async function importFile(file, name, ext) {
 				buffer,
 				'',
 				(result) => {
+					// animated rigs keep their own pipeline (raw-bytes sync) — unplaced
 					if (result.animations?.length > 0) addAnimatedImport(result, buffer, name);
-					else addImported(result.scene, name);
+					else addImported(result.scene, name, position);
 				},
 				(error) => {
 					console.error('Error importing file:', error);

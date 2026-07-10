@@ -9,10 +9,12 @@
 	import { vrMicMode, micActive } from '$lib/voiceChat'
 	import { environment } from '$lib/environment'
 	import { vrHovered, vrMenuGroup } from '$lib/vrControls'
-	import { activeRing, ringEntries, ringVersion, sectorLayout, hubEntry, RING_INNER, RING_OUTER, HUB_RADIUS } from '$lib/vrRadialMenu'
+	import { activeRing, ringEntries, ringVersion, sectorLayout, hubEntry, menuPoseFromController, RING_INNER, RING_OUTER, HUB_RADIUS } from '$lib/vrRadialMenu'
 
-	// The in-world radial menu (74): an 8-sector base ring above the menu-hand
-	// controller with nested sub-rings; the other hand's ray or thumbstick
+	// The in-world radial menu (74, anchored in 99): an 8-sector ring riding ON
+	// the menu-hand controller — centered at the thumbstick, tilted into the
+	// top-button plane, moving and rotating rigidly with the hand. It expands
+	// FROM the controller on open. The other hand's ray or thumbstick
 	// highlights a sector, trigger or stick-click activates (vrControls routes
 	// input). The center hub is Close / Object ▸ / Back depending on context.
 
@@ -57,11 +59,10 @@
 	}
 
 	const controllerPosition = new THREE.Vector3()
-	const cameraPosition = new THREE.Vector3()
-	const followTarget = new THREE.Vector3()
-	let snapNextFrame = true
+	const controllerQuaternion = new THREE.Quaternion()
+	let openedAt = 0
 
-	$: if (!$vrMenuOpen) snapNextFrame = true
+	$: if (!$vrMenuOpen) openedAt = 0
 
 	useTask(() => {
 		if (!group || !$vrMenuOpen || !renderer.xr.isPresenting) return
@@ -69,23 +70,26 @@
 		if (!session) return
 		const index = [...session.inputSources].findIndex((s) => s.handedness === $vrMenuHand)
 		if (index < 0) return
-		renderer.xr.getController(index).getWorldPosition(controllerPosition)
-		followTarget.set(controllerPosition.x, controllerPosition.y + 0.32, controllerPosition.z)
-		// damped follow (74.4): the ring trails the hand instead of jittering
-		if (snapNextFrame) {
-			group.position.copy(followTarget)
-			snapNextFrame = false
-		} else group.position.lerp(followTarget, 0.18)
-		camera.current.getWorldPosition(cameraPosition)
-		group.lookAt(cameraPosition)
+		const controller = renderer.xr.getController(index)
+		controller.getWorldPosition(controllerPosition)
+		controller.getWorldQuaternion(controllerQuaternion)
+		// rigid attach (99): center at the thumbstick, tilted to the button plane
+		const pose = menuPoseFromController(THREE, controllerPosition, controllerQuaternion)
+		group.position.copy(pose.position)
+		group.quaternion.copy(pose.quaternion)
+		// expand FROM the controller on open (~120ms ease-out)
+		if (!openedAt) openedAt = performance.now()
+		const t = Math.min(1, (performance.now() - openedAt) / 120)
+		const s = 0.05 + 0.95 * (1 - (1 - t) * (1 - t))
+		group.scale.set(s, s, s)
 	})
 </script>
 
 {#if $vrMenuOpen}
 	<T.Group bind:ref={group} name="vr-quick-menu">
 		<!-- backdrop disc -->
-		<T.Mesh position={[0, 0, -0.006]}>
-			<T.CircleGeometry args={[RING_OUTER + 0.03, 48]} />
+		<T.Mesh position={[0, 0, -0.004]}>
+			<T.CircleGeometry args={[RING_OUTER + 0.012, 48]} />
 			<T.MeshBasicMaterial color="#11151c" transparent opacity={0.82} side={THREE.DoubleSide} />
 		</T.Mesh>
 		{#each sectors as s (s.entry.id)}
@@ -103,11 +107,11 @@
 					text={s.entry.label}
 					color={$vrHovered === s.entry.id ? '#ffffff' : '#e8ecf2'}
 					outlineColor="#000000"
-					outlineWidth={0.0022}
-					fontSize={sectors.length > 8 ? 0.02 : 0.024}
+					outlineWidth={0.0012}
+					fontSize={sectors.length > 8 ? 0.0095 : 0.0115}
 					anchorX="center"
 					anchorY="middle"
-					position={[s.labelX, s.labelY, 0.004]}
+					position={[s.labelX, s.labelY, 0.003]}
 				/>
 			{/if}
 		{/each}
@@ -125,11 +129,11 @@
 			text={hub.label}
 			color="#ffffff"
 			outlineColor="#000000"
-			outlineWidth={0.002}
-			fontSize={0.018}
+			outlineWidth={0.001}
+			fontSize={0.009}
 			anchorX="center"
 			anchorY="middle"
-			position={[0, 0, 0.004]}
+			position={[0, 0, 0.003]}
 		/>
 	</T.Group>
 {/if}

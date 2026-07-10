@@ -14,7 +14,9 @@ import {
 	isVRMode,
 	worldRig,
 	vrPassthrough,
-	vrMenuHold
+	vrMenuHold,
+	vrObjectsPanelOpen,
+	vrStatsOpen
 } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick } from './vrRadialMenu';
 import { peers, showToast } from '../stores/appStore';
@@ -741,7 +743,23 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name === 'move' || name === 'rotate') vrTransformMode.set(name);
-	else if (name === 'snap') snapEnabled.update((v) => !v);
+	else if (name === 'objects') {
+		// the native VR list panel (101) replaces the menu on screen
+		vrObjectsPanelOpen.update((v) => !v);
+		vrMenuOpen.set(false);
+	} else if (name === 'stats') {
+		vrStatsOpen.update((v) => {
+			const next = !v;
+			try {
+				localStorage.setItem('vrStats', String(next));
+			} catch {}
+			return next;
+		});
+	} else if (name === 'grabmode') {
+		const next = get(vrTransformMode) === 'move' ? 'rotate' : 'move';
+		vrTransformMode.set(next);
+		showToast('Legacy grab mode: ' + next + ' (grip-grab always moves AND rotates)');
+	} else if (name === 'snap') snapEnabled.update((v) => !v);
 	else if (name === 'grid') {
 		showGrid.update((v) => !v);
 		if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');

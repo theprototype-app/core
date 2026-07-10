@@ -18,10 +18,33 @@ import { toggleObjectVisibility, duplicateObject, deleteSelection } from './obje
 // whatever ring is active. Sector-hit math is pure and exported for tests.
 
 // ---- ring geometry constants (meters, menu-local) ----
-export const RING_INNER = 0.055;
-export const RING_OUTER = 0.21;
-export const HUB_RADIUS = 0.045;
+// 99: ~50% smaller than v2 — the ring rides ON the controller now
+export const RING_INNER = 0.028;
+export const RING_OUTER = 0.105;
+export const HUB_RADIUS = 0.024;
 const SECTOR_GAP = 0.05; // radians trimmed off each sector edge
+
+// controller anchoring (99): the ring's center sits at the thumbstick and the
+// ring lies in the top-button plane, tilted back from the grip axis
+const ANCHOR_OFFSET = [0, 0.014, -0.05];
+const ANCHOR_TILT_X = -Math.PI * 0.3; // ~-54° — matches a resting controller top
+
+/**
+ * World pose for the menu given the menu-hand controller pose (99). Pure —
+ * the caller feeds THREE vectors/quaternions; tested headlessly.
+ * @param {any} THREE_NS three namespace @param {any} controllerPos @param {any} controllerQuat
+ */
+export function menuPoseFromController(THREE_NS, controllerPos, controllerQuat) {
+	const offset = new THREE_NS.Vector3(...ANCHOR_OFFSET).applyQuaternion(controllerQuat);
+	const tilt = new THREE_NS.Quaternion().setFromAxisAngle(
+		new THREE_NS.Vector3(1, 0, 0),
+		ANCHOR_TILT_X
+	);
+	return {
+		position: controllerPos.clone().add(offset),
+		quaternion: controllerQuat.clone().multiply(tilt)
+	};
+}
 
 /** the ring currently shown: 'root' or a sub-ring group name */
 export const activeRing = writable('root');
@@ -129,14 +152,14 @@ export function sectorLayout(i, count) {
 const SNAP_ANGLES = [15, 30, 45];
 
 function registerBuiltins() {
-	// base ring (8 sectors, confirmed): Move, Rotate, Add▸, Scene▸, Draw, Undo, Mic▸, System▸
-	// move/rotate/draw/undo run through executeVRMenuAction's legacy switch.
-	registerVRMenuEntry({ id: 'move', label: 'Move', order: 0 });
-	registerVRMenuEntry({ id: 'rotate', label: 'Rotate', order: 1 });
-	registerVRMenuEntry({ id: 'nav:add', label: 'Add ▸', order: 2, ring: 'add' });
-	registerVRMenuEntry({ id: 'nav:scene', label: 'Scene ▸', order: 3, ring: 'scene' });
-	registerVRMenuEntry({ id: 'draw', label: 'Draw', order: 4 });
-	registerVRMenuEntry({ id: 'undo', label: 'Undo', order: 5 });
+	// base ring (8 sectors, remapped in 99): Move/Rotate left (grip grab in 100
+	// replaces them), Objects (VR list panel, 101) and Redo (next to Undo) in.
+	registerVRMenuEntry({ id: 'objects', label: 'Objects', order: 0 });
+	registerVRMenuEntry({ id: 'nav:add', label: 'Add ▸', order: 1, ring: 'add' });
+	registerVRMenuEntry({ id: 'nav:scene', label: 'Scene ▸', order: 2, ring: 'scene' });
+	registerVRMenuEntry({ id: 'draw', label: 'Draw', order: 3 });
+	registerVRMenuEntry({ id: 'undo', label: 'Undo', order: 4 });
+	registerVRMenuEntry({ id: 'redo', label: 'Redo', order: 5 });
 	registerVRMenuEntry({ id: 'nav:mic', label: 'Mic ▸', order: 6, ring: 'mic' });
 	registerVRMenuEntry({ id: 'nav:system', label: 'System ▸', order: 7, ring: 'system' });
 
@@ -193,7 +216,8 @@ function registerBuiltins() {
 		})
 	);
 
-	// System ▸ — toggles + session controls (legacy switch ids)
+	// System ▸ — toggles + session controls (legacy switch ids; Redo moved to
+	// the base ring in 99, Statistics (102) and the legacy grab-mode toggle in)
 	registerVRMenuEntry({ id: 'snap', group: 'system', label: 'Snap', order: 0 });
 	registerVRMenuEntry({ id: 'grid', group: 'system', label: 'Grid', order: 1 });
 	registerVRMenuEntry({ id: 'world', group: 'system', label: 'World 1:1', order: 2 });
@@ -211,8 +235,9 @@ function registerBuiltins() {
 			} catch {}
 		}
 	});
-	registerVRMenuEntry({ id: 'redo', group: 'system', label: 'Redo', order: 5 });
-	registerVRMenuEntry({ id: 'exitvr', group: 'system', label: 'Exit VR', order: 6 });
+	registerVRMenuEntry({ id: 'stats', group: 'system', label: 'Statistics', order: 5 });
+	registerVRMenuEntry({ id: 'grabmode', group: 'system', label: 'Grab mode', order: 6 });
+	registerVRMenuEntry({ id: 'exitvr', group: 'system', label: 'Exit VR', order: 7 });
 
 	// Object ▸ (hub when something is selected): ops + color palette ring
 	registerVRMenuEntry({

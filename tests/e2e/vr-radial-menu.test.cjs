@@ -9,20 +9,29 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// --- pure math ---
+	// --- pure math (99 geometry: ring 0.028-0.105, hub 0.024) ---
 	const math = await A.page.evaluate(() => {
 		const m = window.__stores.vrRadialMenu;
+		const THREE = window.__stores.THREE;
+		// anchored pose: offset rides the controller rotation, tilt composes
+		const pos = new THREE.Vector3(1, 1.5, -2);
+		const quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+		const pose = m.menuPoseFromController(THREE, pos, quat);
 		return {
-			top: m.sectorFromPoint(0, 0.13, 8),
-			right: m.sectorFromPoint(0.13, 0, 8),
-			bottom: m.sectorFromPoint(0, -0.13, 8),
-			diag: m.sectorFromPoint(0.09, 0.09, 8),
-			hub: m.sectorFromPoint(0.01, 0.01, 8),
-			outside: m.sectorFromPoint(0.4, 0, 8),
+			top: m.sectorFromPoint(0, 0.065, 8),
+			right: m.sectorFromPoint(0.065, 0, 8),
+			bottom: m.sectorFromPoint(0, -0.065, 8),
+			diag: m.sectorFromPoint(0.045, 0.045, 8),
+			hub: m.sectorFromPoint(0.008, 0.008, 8),
+			outside: m.sectorFromPoint(0.2, 0, 8),
 			stickUp: m.sectorFromStick(0, -1, 8),
 			stickRight: m.sectorFromStick(1, 0, 8),
 			stickDead: m.sectorFromStick(0.1, 0.1, 8),
-			layout: m.sectorLayout(0, 8)
+			layout: m.sectorLayout(0, 8),
+			pose: {
+				pos: [pose.position.x, pose.position.y, pose.position.z],
+				quatW: pose.quaternion.w
+			}
 		};
 	});
 	h.check(
@@ -35,8 +44,15 @@ h.run(async () => {
 		`stick deflection picks sectors with a deadzone (${math.stickUp}/${math.stickRight}/${math.stickDead})`
 	);
 	h.check(
-		Math.abs(math.layout.labelX) < 0.001 && math.layout.labelY > 0.1,
-		'sector 0 label sits at 12 o clock'
+		Math.abs(math.layout.labelX) < 0.001 && math.layout.labelY > 0.05 && math.layout.labelY < 0.11,
+		'sector 0 label sits at 12 o clock inside the smaller ring'
+	);
+	// controller yawed 90°: local -Z offset lands along world -X, y offset up
+	h.check(
+		Math.abs(math.pose.pos[0] - (1 - 0.05)) < 0.001 &&
+			Math.abs(math.pose.pos[1] - 1.514) < 0.001 &&
+			Math.abs(math.pose.pos[2] - -2) < 0.02,
+		`anchor offset rides the controller pose (${math.pose.pos.map((v) => v.toFixed(3))})`
 	);
 
 	// --- registry: confirmed base ring + sub-rings + context hub ---
@@ -55,12 +71,17 @@ h.run(async () => {
 		};
 	});
 	h.check(
-		registry.root.join(',') === 'move,rotate,nav:add,nav:scene,draw,undo,nav:mic,nav:system',
-		`base ring is the confirmed 8 sectors (${registry.root.join(',')})`
+		registry.root.join(',') === 'objects,nav:add,nav:scene,draw,undo,redo,nav:mic,nav:system',
+		`base ring is the remapped 8 sectors (${registry.root.join(',')})`
 	);
 	h.check(
-		registry.system.includes('snap') && registry.system.includes('passthru') && registry.system.includes('exitvr'),
-		'System ring carries the toggles + session controls'
+		registry.system.includes('snap') &&
+			registry.system.includes('passthru') &&
+			registry.system.includes('exitvr') &&
+			registry.system.includes('stats') &&
+			registry.system.includes('grabmode') &&
+			!registry.system.includes('redo'),
+		'System ring: toggles + stats + grab mode, redo moved to the base ring'
 	);
 	h.check(registry.addCount === 6 && registry.sceneHasEnv, 'Add + Scene rings populated');
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
@@ -93,7 +114,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	let names = await meshNames();
 	h.check(
-		names.length === 9 && names.includes('move') && names.includes('close'),
+		names.length === 9 && names.includes('objects') && names.includes('close'),
 		`base ring renders 8 sectors + close hub (${names.length})`
 	);
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('nav:add'));
@@ -106,7 +127,7 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('back'));
 	await A.page.waitForTimeout(300);
 	names = await meshNames();
-	h.check(names.includes('move'), 'back returns to the base ring');
+	h.check(names.includes('objects'), 'back returns to the base ring');
 
 	// closing the menu resets navigation to root
 	await A.page.evaluate(() => {
@@ -153,6 +174,28 @@ h.run(async () => {
 			})
 	);
 	h.check(preset === 'night', `Scene ring switches the environment preset (${preset})`);
+
+	// 99: Objects sector opens the (101) panel store and closes the ring
+	await A.page.evaluate(() => {
+		window.__stores.vrMenuOpen.set(true);
+		window.__stores.vrControls.executeVRMenuAction('objects');
+	});
+	const objPanel = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				let open, menu;
+				window.__stores.vrObjectsPanelOpen.subscribe((v) => (open = v))();
+				window.__stores.vrMenuOpen.subscribe((v) => (menu = v))();
+				resolve({ open, menu });
+			})
+	);
+	h.check(objPanel.open === true && objPanel.menu === false, 'Objects sector opens the panel and closes the ring');
+	await A.page.evaluate(() => window.__stores.vrObjectsPanelOpen.set(false));
+	// 99: Statistics toggle persists (the 102 card re-attaches next session)
+	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('stats'));
+	const statsPref = await A.page.evaluate(() => localStorage.getItem('vrStats'));
+	h.check(statsPref === 'true', 'Statistics toggle persists its preference');
+	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('stats'));
 
 	// --- registry is open: a 9th root entry re-fits the ring ---
 	const extended = await A.page.evaluate(() => {

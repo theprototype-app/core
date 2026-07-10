@@ -5,6 +5,7 @@
   import Menu from './components/Menu.svelte'
   import Flow from './components/Flow.svelte'
   import Explorer from './components/editors/Explorer.svelte'
+  import DungeonMinimap from './components/play/DungeonMinimap.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
   import { isLocked } from './stores/sceneStore'
   import { startFlowRuntime } from '$lib/flowRuntime'
@@ -80,10 +81,11 @@
         import('./lib/explorerDrop'),
         import('./lib/assetShare'),
         import('./lib/soundRuntime'),
+        import('./lib/dungeonPlay'),
         import('three'),
         import('three/examples/jsm/exporters/GLTFExporter.js')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessionsLib, geometryEdit, lightParams, themesLib, vrRadialMenu, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, THREE, GLTFExporterModule]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessions: sessionsLib, geometryEdit, lightParams, themes: themesLib, vrRadialMenu, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, THREE, GLTFExporterModule }
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessionsLib, geometryEdit, lightParams, themesLib, vrRadialMenu, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, THREE, GLTFExporterModule]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessions: sessionsLib, geometryEdit, lightParams, themes: themesLib, vrRadialMenu, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, THREE, GLTFExporterModule }
       })
     }
   })
@@ -122,6 +124,7 @@
 <Menu />
 <DrawToolbar />
 <ModulesManager />
+<DungeonMinimap />
 
 <Canvas>
   <Scene />

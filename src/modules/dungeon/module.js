@@ -2,21 +2,40 @@ import * as THREE from 'three';
 import { writable } from 'svelte/store';
 import { mount } from 'svelte';
 import { generateDungeon, gridChecksum, mulberry32, FLOOR, WALL } from './generator.js';
+import { farthestRoom, roomCenter } from '../../lib/dungeonPlay.js';
 import DungeonPanel from './DungeonPanel.svelte';
 
 // Dungeon generator: only {seed, params} replicates — every peer regenerates
 // the identical dungeon locally (determinism is the netcode). The meshes live
 // in a module-owned group at the SCENE root, not in objectsGroup: the dungeon
 // regenerates wholesale and must never enter the object list / GLTF sync.
+// Playable layer (58): the group's userData.play publishes the raster for
+// collision/spawns/minimap, and a key→door objective replicates through
+// module messages ({op:'key'|'door'}) + the state sync.
 
 export const panelOpen = writable(false);
 export const panelStats = writable(null);
+/** objective state, readable by tests/UI: {keyHolder, doorOpen} */
+export const playState = writable({ keyHolder: null, doorOpen: false });
 
 /** @type {any} */ let apiRef = null;
 /** @type {any} */ let current = null; // {seed, params} of the built dungeon
 let panelMounted = false;
+let play = { keyHolder: null, doorOpen: false };
 
 const GROUP_NAME = 'dungeon-module';
+
+/** @param {{keyHolder: string | null, doorOpen: boolean}} next */
+function setPlay(next) {
+	play = next;
+	playState.set(next);
+	const scene = apiRef?.scene();
+	const group = scene?.getObjectByName(GROUP_NAME);
+	const key = group?.getObjectByName('dungeon-key');
+	if (key) key.visible = !next.keyHolder;
+	const bar = group?.getObjectByName('dungeon-door-bar');
+	if (bar) bar.visible = !next.doorOpen;
+}
 
 function clearGroup() {
 	const scene = apiRef?.scene();
@@ -83,6 +102,47 @@ function build(seed, params) {
 		group.add(light);
 	}
 
+	// objective props (58.4): the key waits in the farthest room, the exit
+	// door frame stands in the FIRST room — both seed-deterministic
+	const keyRoom = farthestRoom(result.rooms);
+	if (keyRoom) {
+		const c = roomCenter(keyRoom);
+		const key = new THREE.Mesh(
+			new THREE.OctahedronGeometry(0.22, 0),
+			new THREE.MeshStandardMaterial({ color: 0xffc93d, emissive: 0x8a6a00, emissiveIntensity: 0.8 })
+		);
+		key.name = 'dungeon-key';
+		key.position.set(c.x, 0.9, c.z);
+		group.add(key);
+	}
+	if (result.rooms.length) {
+		const c = roomCenter(result.rooms[0]);
+		const door = new THREE.Group();
+		door.name = 'dungeon-door';
+		door.position.set(c.x, 0, c.z);
+		const frameMat = new THREE.MeshStandardMaterial({ color: 0x2d3340 });
+		const left = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.2, 0.2), frameMat);
+		left.position.set(-0.7, 1.1, 0);
+		const right = left.clone();
+		right.position.x = 0.7;
+		const top = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.2, 0.2), frameMat);
+		top.position.set(0, 2.2, 0);
+		const bar = new THREE.Mesh(
+			new THREE.BoxGeometry(1.2, 2, 0.08),
+			new THREE.MeshStandardMaterial({
+				color: 0x39d0ff,
+				emissive: 0x1a6f8f,
+				emissiveIntensity: 0.9,
+				transparent: true,
+				opacity: 0.55
+			})
+		);
+		bar.name = 'dungeon-door-bar';
+		bar.position.set(0, 1.1, 0);
+		door.add(left, right, top, bar);
+		group.add(door);
+	}
+
 	const stats = {
 		rooms: result.rooms.length,
 		loops: result.loops,
@@ -91,16 +151,47 @@ function build(seed, params) {
 		floors,
 		walls
 	};
-	group.userData = { seed, params, ...stats };
+	group.userData = {
+		seed,
+		params,
+		...stats,
+		// the play contract (58): collision/spawn/minimap raster for dungeonPlay.js
+		play: { grid, width, height, minX, minY, rooms: result.rooms, floorValue: FLOOR }
+	};
 	scene.add(group);
 	current = { seed, params };
+	setPlay({ keyHolder: null, doorOpen: false });
 	panelStats.set(stats);
 }
 
 function clear() {
 	clearGroup();
 	current = null;
+	setPlay({ keyHolder: null, doorOpen: false });
 	panelStats.set(null);
+}
+
+/** Local pickup/open attempt (click handler + tests) @param {string} what */
+export function tryObjective(what) {
+	if (!apiRef || !current) return false;
+	const me = apiRef.peerId() ?? 'me';
+	if (what === 'key' && !play.keyHolder) {
+		setPlay({ ...play, keyHolder: me });
+		apiRef.send({ op: 'key', holder: me });
+		apiRef.toast('You picked up the key — find the glowing door!');
+		return true;
+	}
+	if (what === 'door' && !play.doorOpen) {
+		if (play.keyHolder !== me) {
+			apiRef.toast(play.keyHolder ? 'The key holder must open the door' : 'The door needs a key');
+			return false;
+		}
+		setPlay({ ...play, doorOpen: true });
+		apiRef.send({ op: 'door' });
+		apiRef.toast('The door opens — dungeon escaped! 🎉');
+		return true;
+	}
+	return false;
 }
 
 /** Panel action: generate locally and tell every peer @param {number} seed @param {any} params */
@@ -124,6 +215,7 @@ export default {
 		apiRef = api;
 
 		api.registerSystemGroup(GROUP_NAME); // visible under the System filter
+		api.registerInteractiveGroup(GROUP_NAME); // key/door are clickable (58.4)
 
 		api.registerMenu('Dungeon generator', () => {
 			if (!panelMounted && typeof document !== 'undefined') {
@@ -133,18 +225,35 @@ export default {
 			panelOpen.set(true);
 		});
 
-		api.onMessage((data) => {
+		// desktop click + VR trigger on the key/door (58.4)
+		api.registerClickHandler((/** @type {any} */ mesh) => {
+			if (mesh?.name === 'dungeon-key') return tryObjective('key');
+			if (mesh?.name === 'dungeon-door-bar' || mesh?.parent?.name === 'dungeon-door') return tryObjective('door');
+			return false;
+		});
+
+		api.onMessage((/** @type {any} */ data) => {
 			if (data.op === 'generate') build(data.seed, data.params);
 			else if (data.op === 'clear') clear();
+			else if (data.op === 'key') {
+				setPlay({ ...play, keyHolder: data.holder });
+				apiRef.toast('The key was picked up!');
+			} else if (data.op === 'door') {
+				setPlay({ ...play, doorOpen: true });
+				apiRef.toast('The door opens — dungeon escaped! 🎉');
+			}
 		});
 
 		api.onSceneClear(() => clear());
 
-		// late joiners rebuild from the current seed
+		// late joiners rebuild from the current seed + objective state
 		api.registerStateSync({
-			getState: () => current,
-			applyState: (state) => {
-				if (state?.seed != null) build(state.seed, state.params);
+			getState: () => (current ? { ...current, play } : null),
+			applyState: (/** @type {any} */ state) => {
+				if (state?.seed != null) {
+					build(state.seed, state.params);
+					if (state.play) setPlay(state.play);
+				}
 			}
 		});
 	}

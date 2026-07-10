@@ -7,6 +7,7 @@
 	import { useThrelte, useTask } from '@threlte/core';
 	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
 	import { computeMoveOffset, worldScale } from '$lib/vrControls';
+	import { dungeonData, slideMove } from '$lib/dungeonPlay';
 
 	const { renderer, camera, scene } = useThrelte();
 	const { xr } = renderer;
@@ -58,7 +59,17 @@
 				speed: 0.05 * worldScale()
 			});
 			if (offset.x || offset.y || offset.z) {
-				xr.setReferenceSpace(space.getOffsetReferenceSpace(new XRRigidTransform(offset)));
+				// dungeon collision (58.5): clamp the viewer displacement against
+				// the raster (offset = -(viewer displacement) per convention)
+				const data = dungeonData(scene);
+				if (data) {
+					const viewer = xr.getCamera(camera.current).position;
+					const allowed = slideMove(data, viewer.x, viewer.z, -offset.x, -offset.z, 0.3);
+					offset.x = -(allowed.x - viewer.x);
+					offset.z = -(allowed.z - viewer.z);
+				}
+				if (offset.x || offset.y || offset.z)
+					xr.setReferenceSpace(space.getOffsetReferenceSpace(new XRRigidTransform(offset)));
 			}
 		}
 	});

@@ -11,6 +11,7 @@
   import { startLockSweep } from '$lib/lockControl'
   import { loadUserModules } from '$lib/userModules'
   import { startEnvironment } from '$lib/environment'
+  import { startSceneBounds } from '$lib/sceneBounds'
   import { startShortcuts } from '$lib/shortcuts'
   import { startSnapping } from '$lib/snapping'
   import { startAutosave } from '$lib/autosave'
@@ -32,6 +33,7 @@
     startLockSweep()
     loadUserModules()
     startEnvironment()
+    startSceneBounds()
     startShortcuts()
     startSnapping()
     startAutosave()
@@ -61,11 +63,12 @@
         import('./lib/environment'),
         import('./lib/animatedImports'),
         import('./lib/fileHandler.svelte'),
+        import('./lib/sceneBounds'),
         import('./lib/ping'),
         import('three'),
         import('three/examples/jsm/exporters/GLTFExporter.js')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib, animatedImports, fileHandler, ping, THREE, GLTFExporterModule]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib, animatedImports, fileHandler, ping, THREE, GLTFExporterModule }
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib, animatedImports, fileHandler, sceneBounds, ping, THREE, GLTFExporterModule]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib, animatedImports, fileHandler, sceneBounds, ping, THREE, GLTFExporterModule }
       })
     }
   })

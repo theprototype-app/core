@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, globalRenderer, objectsGroup, backgroundColor } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
+import { sceneRadius } from './sceneBounds';
 
 // Environment presets + a default light rig. The rig lives at the SCENE root
 // with fixed names — it is never part of objectsGroup, so connecting peers
@@ -96,7 +97,14 @@ export function applyEnvironment() {
 
 	scene.background = new THREE.Color(preset.background);
 	backgroundColor.set(preset.background);
-	scene.fog = preset.fog ? new THREE.Fog(preset.fog.color, preset.fog.near, preset.fog.far) : null;
+	// fog never swallows a big scene: its reach grows with the scene bounds
+	scene.fog = preset.fog
+		? new THREE.Fog(
+				preset.fog.color,
+				preset.fog.near,
+				Math.max(preset.fog.far, sceneRadius() * 2.5)
+			)
+		: null;
 
 	if (renderer) {
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;

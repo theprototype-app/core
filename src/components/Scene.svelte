@@ -417,7 +417,7 @@
 	})
 </script>
 
-<T.PerspectiveCamera makeDefault position={[-10, 10, 10]} fov={15} bind:ref={$editorCam}>
+<T.PerspectiveCamera makeDefault position={[-10, 10, 10]} fov={15} far={5000} bind:ref={$editorCam}>
 	{#if !$specatorMode}
 		<OrbitControls bind:ref={$orbitControls} enableZoom={true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
 	{/if}

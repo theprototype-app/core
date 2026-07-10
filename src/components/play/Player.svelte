@@ -17,6 +17,7 @@
   <T.Group position.y={0.9}>
     <T.PerspectiveCamera
       fov={90}
+      far={5000}
       bind:ref={$playerCam}
       position.x={position[0]}
       position.y={position[1]}

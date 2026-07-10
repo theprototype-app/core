@@ -1,0 +1,64 @@
+/* Flow editor visual pass (phase 69) — handles, edges, controls, minimap.
+   Node cards live in NodeWrapper.svelte; handles inherit --node-accent from it. */
+
+/* handles: 10px dot + an invisible ~26px hit zone (::after), accent-colored */
+.svelte-flow .svelte-flow__handle {
+	width: 10px;
+	height: 10px;
+	background: var(--node-accent, #94a3b8);
+	border: 2px solid #111827;
+	border-radius: 9999px;
+	transition: box-shadow 0.12s ease, border-color 0.12s ease;
+}
+.svelte-flow .svelte-flow__handle::after {
+	content: '';
+	position: absolute;
+	inset: -8px;
+	border-radius: 9999px;
+}
+.svelte-flow .svelte-flow__handle:hover,
+.svelte-flow .svelte-flow__handle.connectingfrom,
+.svelte-flow .svelte-flow__handle.connectingto {
+	border-color: #f9fafb;
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--node-accent, #94a3b8) 45%, transparent);
+}
+
+/* edges: calmer default, thicken on hover, accent when selected */
+.svelte-flow .svelte-flow__edge-path {
+	stroke: #64748b;
+	stroke-width: 1.5;
+}
+.svelte-flow .svelte-flow__edge:hover .svelte-flow__edge-path {
+	stroke: #94a3b8;
+	stroke-width: 3;
+}
+.svelte-flow .svelte-flow__edge.selected .svelte-flow__edge-path {
+	stroke: #38bdf8;
+	stroke-width: 2.5;
+}
+
+/* connection preview while dragging from a handle */
+.svelte-flow .svelte-flow__connection-path {
+	stroke: #38bdf8;
+	stroke-width: 2;
+	stroke-dasharray: 6 4;
+}
+
+/* controls + minimap on the dark theme */
+.svelte-flow .svelte-flow__controls {
+	box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+}
+.svelte-flow .svelte-flow__controls-button {
+	background: #1f2937;
+	border-bottom: 1px solid #374151;
+	fill: #d1d5db;
+	color: #d1d5db;
+}
+.svelte-flow .svelte-flow__controls-button:hover {
+	background: #374151;
+}
+.svelte-flow .svelte-flow__minimap {
+	background: #111827;
+	border-radius: 8px;
+	overflow: hidden;
+}

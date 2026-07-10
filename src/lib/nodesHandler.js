@@ -21,7 +21,10 @@ export function serializeEdge(edge) {
 		source: edge.source,
 		target: edge.target,
 		...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
-		...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {})
+		...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+		// visual pass (69): edge shape + arrow replicate so graphs match
+		...(edge.type ? { type: edge.type } : {}),
+		...(edge.markerEnd ? { markerEnd: edge.markerEnd } : {})
 	};
 }
 

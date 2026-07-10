@@ -3,6 +3,9 @@
 		SvelteFlow,
 		Background,
 		BackgroundVariant,
+		Controls,
+		MiniMap,
+		MarkerType,
 		useSvelteFlow,
 		type Node,
 		type Edge,
@@ -10,6 +13,7 @@
 	} from '@xyflow/svelte';
 	// 👇 this is important! You need to import the styles for Svelte Flow to work
 	import '@xyflow/svelte/dist/style.css';
+	import '../../styles/flow.css';
 	import { writable, get } from 'svelte/store';
 	import Sidebar from './Sidebar.svelte';
 	import PeerCursors from './PeerCursors.svelte';
@@ -147,7 +151,10 @@
 			source: connection.source,
 			target: connection.target,
 			sourceHandle: connection.sourceHandle,
-			targetHandle: connection.targetHandle
+			targetHandle: connection.targetHandle,
+			// 69: readable edges — same shape on every peer via serializeEdge
+			type: 'smoothstep',
+			markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 }
 		} satisfies Edge;
 		peer?.send({ type: 'edgecreate', edge: serializeEdge(edge) });
 		return edge;
@@ -363,6 +370,15 @@
 			on:paneclick={() => (menu = null)}
 		>
 			<Background bgColor="transparent" variant={BackgroundVariant.Dots} />
+			<Controls showLock={false} />
+			<MiniMap
+				pannable
+				zoomable
+				width={140}
+				height={90}
+				nodeColor={() => '#475569'}
+				maskColor="rgb(17 24 39 / 0.65)"
+			/>
 		</SvelteFlow>
 		<PeerCursors {viewport} />
 	</div>

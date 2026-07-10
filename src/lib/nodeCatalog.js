@@ -135,6 +135,19 @@ export const nodeCatalog = [
 // Node types the animation runtime evaluates every frame
 export const animationTypes = ['shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol'];
 
+/**
+ * Palette group a node type belongs to — drives the category accent color
+ * (built-in groups by name, module groups fall back to the module accent,
+ * user-designed custom nodes return null).
+ * @param {string} type
+ */
+export function groupOf(type) {
+	for (const group of nodeCatalog) if (group.items.some((i) => i.type === type)) return group.group;
+	for (const group of get(moduleNodeGroups))
+		if (group.items.some((i) => i.type === type)) return group.group;
+	return null;
+}
+
 /** @param {string} type */
 export function findNodeSpec(type) {
 	for (const group of nodeCatalog) {

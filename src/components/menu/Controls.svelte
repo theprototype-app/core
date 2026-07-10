@@ -19,6 +19,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
+	import { dockable } from '$lib/docking';
 	import { VRButton } from '@threlte/xr'
 
 	let allowPlay = true;
@@ -456,6 +457,7 @@
 
 <div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe use:focusStack
 	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
+	use:dockable={{ key: 'objects' }}
 	style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
 	<!-- dropping a row on the header moves the object back to the scene root -->
 	<div

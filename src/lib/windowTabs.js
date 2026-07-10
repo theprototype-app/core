@@ -202,6 +202,7 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 		draggingHeader = false;
 		for (const [otherKey, other] of registry) {
 			if (otherKey === key) continue;
+			if (other.node.dataset?.docked) continue; // docked windows don't tab (81L)
 			if (!other.node.isConnected || other.node.style.display === 'none') continue;
 			if (other.node.offsetParent === null && getComputedStyle(other.node).position !== 'fixed') continue;
 			const r = other.node.getBoundingClientRect();

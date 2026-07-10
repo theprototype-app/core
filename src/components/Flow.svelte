@@ -10,6 +10,7 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
+	import { dockable } from '$lib/docking';
 	import { fly } from 'svelte/transition';
 
 	const clampH = (h: number) =>
@@ -107,6 +108,7 @@
 			use:dragWindow={{ key: 'flowWin', defaultRect: { left: 120, top: 90 } }}
 			use:focusStack
 			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true) }}
+			use:dockable={{ key: 'flow' }}
 			style="z-index: var(--z-window); width: {winW}px; height: {winH}px"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">

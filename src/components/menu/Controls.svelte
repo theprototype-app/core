@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -441,9 +441,14 @@
 	>
 		<i class="fas fa-circle-nodes text-black dark:text-slate-200"></i>
 	</p>
-	<!-- chat moved to the bottom-right stack (93); the Explorer folder button
-	     takes this slot in 95 -->
-	<p class="rounded-r-full" id="explorer-slot"></p>
+	<p
+		class={classActive + ' rounded-r-full'}
+		id="explorer-slot"
+		title="Explorer"
+		on:click={() => explorerClose.update((value) => !value)}
+	>
+		<i class="fas fa-folder-open text-black dark:text-slate-200"></i>
+	</p>
 </BottomNav>
 
 <!-- chat toggle lives bottom-right under the mic (93); z under the bottom

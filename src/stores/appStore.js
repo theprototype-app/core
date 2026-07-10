@@ -12,6 +12,8 @@ export const inspectorClose = writable(true);
 /** @type {import('svelte/store').Writable<'selection'|'scene'>} */
 export const inspectorKind = writable('selection');
 export const flowGraphClose = writable(true);
+// Explorer asset browser (95) — folder hud button toggles it
+export const explorerClose = writable(true);
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 export const libraryClose = writable(true);

@@ -11,6 +11,7 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
+	import { bottomDockActive, dockShared, setDockOccupant } from '$lib/bottomDock';
 	import { fly } from 'svelte/transition';
 
 	const clampH = (h: number) =>
@@ -31,6 +32,13 @@
 		docked = v;
 		localStorage.setItem('flowDocked', String(v));
 	}
+
+	// tabbed dock coexistence with the Explorer (95)
+	$effect(() => {
+		setDockOccupant('flow', !$flowGraphClose && docked);
+		return () => setDockOccupant('flow', false);
+	});
+	const dockVisible = $derived(!$dockShared || $bottomDockActive === 'flow');
 
 	// --- docked: top-edge resize (min 200px, max 80vh, persisted) ---
 	let resizing = $state(false);
@@ -77,7 +85,7 @@
 		<div
 			id="flow-list"
 			transition:fly={{ y: 320, duration: 200 }}
-			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800"
+			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
 			style="z-index: var(--z-bottom); height: {height}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 		>
 			<!-- top-edge resize hot zone: cursor instant, cue after a hover delay (82) -->
@@ -89,6 +97,23 @@
 				onpointermove={doResize}
 				onpointerup={endResize}
 			></div>
+			{#if $dockShared}
+				<!-- shared-dock notebook tabs (95): they sit ON the dock's top edge -->
+				<div class="absolute -top-6 left-3 z-20 flex gap-0.5">
+					<button
+						class="tab-note px-4 pb-0.5 pt-1 text-xs font-semibold {$bottomDockActive === 'flow'
+							? 'bg-gray-700 text-white'
+							: 'bg-gray-900/70 text-gray-400 hover:text-gray-200'}"
+						onclick={() => bottomDockActive.set('flow')}>Flow</button
+					>
+					<button
+						class="tab-note px-4 pb-0.5 pt-1 text-xs font-semibold {$bottomDockActive === 'explorer'
+							? 'bg-gray-700 text-white'
+							: 'bg-gray-900/70 text-gray-400 hover:text-gray-200'}"
+						onclick={() => bottomDockActive.set('explorer')}>Explorer</button
+					>
+				</div>
+			{/if}
 			<button
 				id="flow-undock"
 				class="ui-button-quiet absolute right-2 top-2 z-10"

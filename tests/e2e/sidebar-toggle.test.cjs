@@ -22,6 +22,29 @@ const isOpen = (page, store) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
+
+	// 94: the LOGO is the menu button now (no hamburger, no overlap)
+	h.check(
+		(await A.page.locator('.hamburger-inner').count()) === 0,
+		'the squeeze hamburger is gone'
+	);
+	await A.page.locator('#logo-menu').click();
+	await A.page.waitForTimeout(400);
+	let menuOpen = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.closeMenu.subscribe((v) => r(v === false))())
+	);
+	h.check(menuOpen, 'clicking the logo opens the sidebar');
+	const ringed = await A.page.evaluate(() =>
+		document.querySelector('#logo-menu')?.className.includes('ring-2')
+	);
+	h.check(!!ringed, 'open state shows the accent ring on the logo');
+	await A.page.locator('#logo-menu').click();
+	await A.page.waitForTimeout(400);
+	menuOpen = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.closeMenu.subscribe((v) => r(v === false))())
+	);
+	h.check(!menuOpen, 'clicking the logo again closes the sidebar');
+
 	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
 	await A.page.waitForTimeout(400);
 

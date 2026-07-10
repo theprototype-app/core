@@ -25,7 +25,6 @@
 		Dropdown,
 		Drawer
 	} from 'flowbite-svelte';
-	import { Hamburger } from 'svelte-hamburgers';
 
 	let saveFormat = 'json';
 	let spanClass = 'flex-1 ms-3 whitespace-nowrap';
@@ -49,13 +48,19 @@
 	};
 </script>
 
-<div
-class="burger inline-flex items-center gap-1 rounded-lg border border-gray-700/60 bg-gray-800/90 px-2 shadow-lg backdrop-blur"
-style="height: 55px; top: 5px; left: 5px;"
+<!-- 94: the logo IS the menu button — the old squeeze hamburger overlapped it
+     (and showed an X while the sidebar was closed). Open state = accent ring. -->
+<button
+	id="logo-menu"
+	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur transition-transform hover:scale-105 {$closeMenu
+		? 'border-gray-700/60'
+		: 'border-primary-500 ring-2 ring-primary-500/50'}"
+	style="height: 48px; width: 48px; top: 8px; left: 8px;"
+	title={$closeMenu ? 'Open menu' : 'Close menu'}
+	on:click={() => closeMenu.update((value) => !value)}
 >
-	<img src="logo.svg" alt="logo" class="h-9 w-9" />
-	<Hamburger bind:open={$closeMenu} --color="#e5e7eb" type="squeeze" />
-</div>
+	<img src="logo.svg" alt="menu" class="h-9 w-9" />
+</button>
 {#if true}
 
 <div class="hamburger">

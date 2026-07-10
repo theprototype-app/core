@@ -12,9 +12,10 @@ import {
 	vrSnapAngle,
 	selectedObject,
 	isVRMode,
-	worldRig
+	worldRig,
+	vrPassthrough
 } from '../stores/sceneStore';
-import { peers } from '../stores/appStore';
+import { peers, showToast } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
 import { selectObject, topLevelObjectOf } from './objectActions';
@@ -739,6 +740,14 @@ export function executeVRMenuAction(name) {
 		cycleMicMode();
 	} else if (name === 'world') {
 		resetWorldRig(); // back to 1:1 mid-session
+	} else if (name === 'passthru') {
+		// WebXR can't hot-swap session modes — the preference applies next entry
+		const next = !get(vrPassthrough);
+		vrPassthrough.set(next);
+		try {
+			localStorage.setItem('vrPassthrough', String(next));
+		} catch {}
+		showToast('Passthrough ' + (next ? 'on' : 'off') + ' — takes effect on the next VR entry');
 	} else if (name === 'exitvr') {
 		vrMenuOpen.set(false);
 		isVRMode.set(false);

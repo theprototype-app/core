@@ -7,7 +7,7 @@
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu } from '../stores/appStore';
 	import { get } from 'svelte/store';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
@@ -574,7 +574,14 @@ position={[0, 2, 3]}
 
 <VRMenu />
 
-<XR>
+<XR
+	onsessionstart={() => {
+		// passthrough (90): AR sessions blend with the room — drop the local sky
+		const session = renderer.xr.getSession();
+		passthroughActive.set(!!session && session.environmentBlendMode !== 'opaque');
+	}}
+	onsessionend={() => passthroughActive.set(false)}
+>
 	<Controller left />
 	<Controller right />
 	<Hand left />

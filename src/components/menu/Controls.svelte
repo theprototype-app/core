@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
-	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects, globalScene } from '../../stores/sceneStore';
+	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
@@ -20,7 +20,7 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
-	import { VRButton } from '@threlte/xr'
+	import { VRButton, XRButton } from '@threlte/xr'
 
 	let allowPlay = true;
 	let resizing = $state(false);
@@ -382,7 +382,8 @@
 
 	function checkPlay() {
 		const vrButton = document.getElementById('vrButton')?.querySelector('button');
-		if (vrButton?.textContent === 'Enter VR' && localStorage.getItem('vrOverride') !== 'true') {
+		// 'Enter VR' or 'Enter AR' (passthrough preference, phase 90)
+		if (vrButton?.textContent?.trim().startsWith('Enter') && localStorage.getItem('vrOverride') !== 'true') {
 			$isVRMode = true;
 			vrButton.click();
 		} else {
@@ -464,7 +465,18 @@
 </p>
 
 <div class="hidden" id="vrButton">
-	<VRButton />
+	{#if $vrPassthrough}
+		<!-- passthrough (90): same button flow, immersive-ar session -->
+		<XRButton
+			mode="immersive-ar"
+			sessionInit={{
+				requiredFeatures: [],
+				optionalFeatures: ['local-floor', 'bounded-floor', 'anchors', 'hand-tracking', 'plane-detection', 'layers', 'depth-sorted-layers', 'hit-test', 'mesh-detection']
+			}}
+		/>
+	{:else}
+		<VRButton />
+	{/if}
 </div>
 
 <div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe use:focusStack

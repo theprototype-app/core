@@ -56,5 +56,14 @@ export const vrSnapAngle = writable(
 export const vrFlying = writable(
 	typeof localStorage !== 'undefined' && localStorage.getItem('vrFlying') === 'true'
 );
+// passthrough preference (90): the VR button requests immersive-ar instead of
+// immersive-vr on the NEXT session start (WebXR can't hot-swap modes)
+export const vrPassthrough = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('vrPassthrough') === 'true'
+);
+// true while an AR (passthrough) session presents — a LOCAL view mode: the
+// scene background/fog go transparent so the room shows through; the
+// replicated environment state is untouched
+export const passthroughActive = writable(false);
 /** @type {import('svelte/store').Writable<'move' | 'rotate'>} grab behavior; scale is always two-handed */
 export const vrTransformMode = writable('move');

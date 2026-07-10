@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Select } from 'flowbite-svelte';
-	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrFlying } from '../../stores/sceneStore.js';
+	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrFlying, vrPassthrough } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
@@ -13,6 +13,15 @@
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
+
+	// passthrough capability probe (90): the setting stays visible with a hint
+	let arSupport: boolean | null = null;
+	if (typeof navigator !== 'undefined') {
+		(navigator as any).xr
+			?.isSessionSupported?.('immersive-ar')
+			.then((ok: boolean) => (arSupport = ok))
+			.catch(() => (arSupport = false));
+	}
 
 	//Rounded corners for options
 	let coverClass =
@@ -160,6 +169,18 @@
 							}}>&nbsp;VR flying</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Left-stick movement follows where the controller points (fly); off = stay level</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox
+							id="passthrough-toggle"
+							checked={$vrPassthrough}
+							on:change={(e: any) => {
+								$vrPassthrough = e.target.checked;
+								localStorage.setItem('vrPassthrough', String($vrPassthrough));
+							}}>&nbsp;VR passthrough</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Mixed reality: the next VR entry composites the scene over your room (immersive-ar){arSupport === false ? ' — not supported on this device' : ''}</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>

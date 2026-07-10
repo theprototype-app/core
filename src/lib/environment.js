@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls } from '../stores/sceneStore';
+import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { registerSystemGroup } from './moduleSDK';
@@ -154,16 +154,23 @@ export function applyEnvironment() {
 	const state = get(environment);
 	const preset = presetPayload(state);
 
-	scene.background = new THREE.Color(preset.background);
+	// passthrough (90): local view mode — the room shows through where the sky
+	// would render; the replicated env STATE keeps its colors untouched
+	if (get(passthroughActive)) {
+		scene.background = null;
+		scene.fog = null;
+	} else {
+		scene.background = new THREE.Color(preset.background);
+		// fog never swallows a big scene: its reach grows with the scene bounds
+		scene.fog = preset.fog
+			? new THREE.Fog(
+					preset.fog.color,
+					preset.fog.near,
+					Math.max(preset.fog.far, sceneRadius() * 2.5)
+				)
+			: null;
+	}
 	backgroundColor.set(preset.background);
-	// fog never swallows a big scene: its reach grows with the scene bounds
-	scene.fog = preset.fog
-		? new THREE.Fog(
-				preset.fog.color,
-				preset.fog.near,
-				Math.max(preset.fog.far, sceneRadius() * 2.5)
-			)
-		: null;
 
 	if (renderer) {
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -450,6 +457,8 @@ export function startEnvironment() {
 	// scene/renderer arrive async at boot
 	globalScene.subscribe(() => applyEnvironment());
 	globalRenderer.subscribe(() => applyEnvironment());
+	// entering/leaving a passthrough session swaps the local sky in and out
+	passthroughActive.subscribe(() => applyEnvironment());
 	// user lights dim the rig so custom lighting reads properly
 	objectsGroup.subscribe((group) => {
 		if (!group) return;

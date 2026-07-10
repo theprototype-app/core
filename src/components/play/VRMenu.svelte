@@ -3,7 +3,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core'
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
-	import { vrMenuOpen, vrMenuHand, vrTransformMode, showGrid } from '../../stores/sceneStore'
+	import { vrMenuOpen, vrMenuHand, vrTransformMode, showGrid, vrPassthrough } from '../../stores/sceneStore'
 	import { snapEnabled } from '$lib/snapping'
 	import { drawMode } from '$lib/drawMode'
 	import { vrMicMode, micActive } from '$lib/voiceChat'
@@ -34,6 +34,7 @@
 		{ name: 'mic', label: 'Mic: ' + ($vrMicMode === 'ptt' ? 'PTT' : $vrMicMode === 'open' ? 'Open' : 'Off'), active: $micActive },
 		{ name: 'world', label: 'World 1:1', active: false },
 		{ name: 'hand', label: $vrMenuHand === 'right' ? 'To left' : 'To right', active: false },
+		{ name: 'passthru', label: 'Passthru', active: $vrPassthrough },
 		{ name: 'exitvr', label: 'Exit VR', active: false },
 		{ name: 'close', label: 'Close', active: false }
 	].map((tile, index) => ({

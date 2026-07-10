@@ -127,6 +127,12 @@ export const nodeCatalog = [
 				label: 'Blink',
 				defaults: { speed: 2 },
 				params: [{ key: 'speed', kind: 'range', min: 0.2, max: 10, step: 0.1 }]
+			},
+			{
+				// spatial audio on the connected object; file from the Explorer (97)
+				type: 'sound',
+				label: 'Sound',
+				defaults: { hash: null, file: '', volume: 0.8, radius: 5, loop: true, playing: false }
 			}
 		]
 	}

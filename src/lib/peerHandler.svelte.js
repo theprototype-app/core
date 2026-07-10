@@ -8,6 +8,7 @@ import { applyVerts } from '$lib/meshEdit';
 import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
+import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
@@ -254,6 +255,13 @@ export class PeerConnection {
 					applyFlowCursor(data);
 				} else if(data.type == 'ping') {
 					applyPing(data);
+				} else if(data.type == 'assetfile') {
+					// shared Explorer bytes (97) — dedup by content hash
+					applyAssetFile(data);
+				} else if(data.type == 'getasset') {
+					// a peer is missing a hash we may hold — answer over our
+					// stable outgoing connection to them
+					answerAssetRequest(conn.peer, data);
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
 				} else if(data.type == 'modules') {

@@ -5,6 +5,7 @@ import { animationTypes } from './nodeCatalog';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { runScript } from './scriptRuntime';
 import { findNodeDef } from './customNodes';
+import { updateSounds } from './soundRuntime';
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
@@ -296,6 +297,17 @@ function tick(now) {
 		restoreBase(object, base);
 		anims.forEach((anim) => applyAnimation(object, base, anim, time));
 	});
+
+	// sound nodes keep their own audio chains (97) — hand over the live pairs
+	/** @type {{node: any, uuid: string}[]} */
+	const soundPairs = [];
+	edges.forEach((edge) => {
+		const source = nodes.find((n) => n.id === edge.source);
+		if (source?.type !== 'sound') return;
+		const uuid = targetUuidOf(edge);
+		if (uuid) soundPairs.push({ node: source, uuid });
+	});
+	updateSounds(soundPairs, sceneObjects, time);
 
 	moduleFrameTasks.forEach((task) => {
 		try {

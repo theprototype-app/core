@@ -4,9 +4,9 @@
 	import { save, load, importFile } from '$lib/fileHandler.svelte';
 	import {
 		settingsOpen,
-		propertiesClose,
-		lightPropertiesClose,
-		scenePropertiesClose,
+		inspectorClose,
+		inspectorKind,
+		closeSelectionInspector,
 		libraryClose,
 		showSidebar,
 		closeMenu
@@ -267,7 +267,7 @@ style="height: 55px; top: 5px; left: 5px;"
 
 			<p class={sectionLabel}>Scene</p>
 			<SidebarItem
-				label={($scenePropertiesClose ? '' : '● ') + 'Configure Scene'}
+				label={(!$inspectorClose && $inspectorKind === 'scene' ? '● ' : '') + 'Configure Scene'}
 				{spanClass}
 				on:click={() => {
 					showSidebar('scene');
@@ -288,8 +288,7 @@ style="height: 55px; top: 5px; left: 5px;"
 						{
 							label: 'Clear',
 							action: () => {
-								lightPropertiesClose.set(true);
-								propertiesClose.set(true);
+								closeSelectionInspector();
 								sceneCommand('/clear all');
 							}
 						},

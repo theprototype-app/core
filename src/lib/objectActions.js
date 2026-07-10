@@ -15,8 +15,9 @@ import {
 import {
 	peers,
 	showSidebar,
-	propertiesClose,
-	lightPropertiesClose,
+	inspectorClose,
+	inspectorKind,
+	closeSelectionInspector,
 	specatorMode,
 	showToast,
 	toggleExpand
@@ -49,9 +50,9 @@ export function selectObject(uuid, openProperties = false) {
 		selectedObject.set(object);
 	}
 
-	// open or refresh the matching properties drawer
-	if (openProperties || !get(propertiesClose) || !get(lightPropertiesClose)) {
-		showSidebar(object.type.endsWith('Light') ? 'lightProperties' : 'properties');
+	// open or refresh the inspector (only when it already shows a selection)
+	if (openProperties || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
+		showSidebar('properties');
 	}
 }
 
@@ -59,10 +60,9 @@ export function deselectObject() {
 	/** @type {any} */
 	const controls = get(TControls);
 	if (controls && !get(isVRMode)) controls.detach();
-	// selectedObject keeps the last object on purpose — open panels bind to
-	// $selectedObject.position/material and would crash on an empty value
-	propertiesClose.set(true);
-	lightPropertiesClose.set(true);
+	// selectedObject keeps the last object on purpose — the open inspector binds
+	// to $selectedObject.position/material and would crash on an empty value
+	closeSelectionInspector();
 }
 
 /**

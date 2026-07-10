@@ -1,6 +1,17 @@
-// Phase 72: Configure Scene / Library sidebar items toggle; selection-driven
-// panels keep open-only semantics.
+// Phase 72 + 64: Configure Scene / Library sidebar items toggle; the unified
+// inspector keeps open-only semantics for selection targets.
 const h = require('./helpers.cjs');
+
+const inspector = (page) =>
+	page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				let open, kind;
+				window.__stores.inspectorClose.subscribe((v) => (open = v === false))();
+				window.__stores.inspectorKind.subscribe((v) => (kind = v))();
+				resolve({ open, kind });
+			})
+	);
 
 const isOpen = (page, store) =>
 	page.evaluate(
@@ -17,11 +28,13 @@ h.run(async () => {
 	// Configure Scene: click opens, click again closes
 	await A.page.getByText('Configure Scene', { exact: true }).click();
 	await A.page.waitForTimeout(300);
-	h.check(await isOpen(A.page, 'scenePropertiesClose'), 'Configure Scene opens');
+	let state = await inspector(A.page);
+	h.check(state.open && state.kind === 'scene', 'Configure Scene opens the scene inspector');
 	h.check(await A.page.getByText('● Configure Scene', { exact: true }).isVisible(), 'active dot shown');
 	await A.page.getByText('● Configure Scene', { exact: true }).click();
 	await A.page.waitForTimeout(300);
-	h.check(!(await isOpen(A.page, 'scenePropertiesClose')), 'second click closes it');
+	state = await inspector(A.page);
+	h.check(!state.open, 'second click closes it');
 
 	// Library: same toggle
 	await A.page.getByText('Library', { exact: true }).click();
@@ -31,13 +44,20 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	h.check(!(await isOpen(A.page, 'libraryClose')), 'second click closes Library');
 
-	// properties stays open-only: repeated showSidebar('properties') never closes
+	// selection stays open-only: repeated showSidebar('properties') never closes
 	await A.page.evaluate(() => {
 		window.__stores.showSidebar('properties');
 		window.__stores.showSidebar('properties');
 	});
 	await A.page.waitForTimeout(300);
-	h.check(await isOpen(A.page, 'propertiesClose'), 'properties keeps open-only semantics');
+	state = await inspector(A.page);
+	h.check(state.open && state.kind === 'selection', 'selection inspector keeps open-only semantics');
+
+	// switching scene -> selection retargets the same drawer
+	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.waitForTimeout(300);
+	state = await inspector(A.page);
+	h.check(state.open && state.kind === 'scene', 'showSidebar retargets to scene');
 
 	await h.finish(browser);
 });

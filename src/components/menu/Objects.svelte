@@ -14,14 +14,14 @@
         if ($objectFilter && element.children.length > 0 && $objectFilter.has(element.uuid))
             isExpanded = true;
     });
-    import { toggleExpand, lightPropertiesClose, scenePropertiesClose, objectContextMenu, renamingObject } from '../../stores/appStore';
+    import { toggleExpand, objectContextMenu, renamingObject } from '../../stores/appStore';
     import { objectsGroup, TControls, selectedObject, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
     import { selectObject, renameObject, moveObjectToGroup } from '$lib/objectActions';
     import { nameOf } from '$lib/lockControl';
     import {
         showSidebar,
-		propertiesClose,
+		closeSelectionInspector,
 		peers
 	} from '../../stores/appStore.js';
 
@@ -135,7 +135,7 @@
 				$TControls.attach(previouslySelectedObject);
 				previouslySelectedObject = null;
 			} else {
-				propertiesClose.set(true);
+				closeSelectionInspector();
 				$TControls.detach();
 			}
 			var el = $objectsGroup.getObjectByProperty('uuid', item.uuid);

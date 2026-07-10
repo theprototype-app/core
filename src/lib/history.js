@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { writable, derived, get } from 'svelte/store';
 import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore';
-import { peers, showToast, propertiesClose, lightPropertiesClose } from '../stores/appStore';
+import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { notifyExternalMove } from '$lib/flowRuntime';
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
@@ -136,11 +136,10 @@ function applyPresence(entry, state) {
 		return false;
 	}
 	if (get(selectedObject)?.uuid === entry.uuid) {
-		// selectedObject keeps its last value on purpose (panels bind to it) —
-		// just detach the gizmo and close the panels, like deselectObject does
+		// selectedObject keeps its last value on purpose (the inspector binds to
+		// it) — just detach the gizmo and close it, like deselectObject does
 		get(TControls)?.detach();
-		propertiesClose.set(true);
-		lightPropertiesClose.set(true);
+		closeSelectionInspector();
 	}
 	existing.parent?.remove(existing);
 	objectsGroup.update((value) => value);

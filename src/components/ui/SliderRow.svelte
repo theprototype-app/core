@@ -2,6 +2,7 @@
 	// The one true slider row: label · range · number. One-way flow: render
 	// from `value`, report through `onchange(next)` (replication stays at the
 	// call site). Phase 64 layers the infinite-drag input on the label.
+	/** @type {{label?: string, value?: number, min?: number, max?: number, step?: number, decimals?: number, onchange?: (next: number) => void}} */
 	let {
 		label = '',
 		value = 0,
@@ -9,9 +10,10 @@
 		max = 1,
 		step = 0.01,
 		decimals = 2,
-		onchange = (/** @type {number} */ next) => {}
+		onchange = () => {}
 	} = $props();
 
+	/** @param {any} raw */
 	function commit(raw) {
 		const next = parseFloat(raw);
 		if (!Number.isNaN(next)) onchange(next);

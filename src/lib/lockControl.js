@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { lockedObjects, objectsGroup, TControls, selectedObject } from '../stores/sceneStore';
-import { peers, userdata, showToast, propertiesClose, lightPropertiesClose } from '../stores/appStore';
+import { peers, userdata, showToast, closeSelectionInspector } from '../stores/appStore';
 import { selectObject } from './objectActions';
 
 // Lock visibility + polite takeover: request control of a locked object, the
@@ -59,8 +59,7 @@ export function releaseLock(uuid) {
 	if (!peer) return;
 	if (get(selectedObject)?.uuid === uuid) {
 		get(TControls)?.detach();
-		propertiesClose.set(true);
-		lightPropertiesClose.set(true);
+		closeSelectionInspector();
 	}
 	lockedObjects.update((locks) => locks.filter((l) => !(l[0] === peer.peer.id && l[1] === uuid)));
 	peer.send({ type: 'unlock', peerId: peer.peer.id, uuid: uuid });

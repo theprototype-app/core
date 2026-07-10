@@ -1,7 +1,8 @@
 <script>
 	// Shared panel header: [type badge] Title ........ [actions slot] [×]
 	// onclose optional — omit it to hide the close button.
-	let { title = '', badge = '', onclose = null, children } = $props();
+	/** @type {{title?: string, badge?: string, onclose?: (() => void) | null, children?: any}} */
+	let { title = '', badge = '', onclose = null, children = null } = $props();
 </script>
 
 <div class="ui-panel-header">

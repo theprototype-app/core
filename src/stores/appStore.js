@@ -5,9 +5,12 @@ export const settingsOpen = writable(null);
 // section to expand when the settings modal opens (e.g. 'shortcuts' via Ctrl+/)
 /** @type {import('svelte/store').Writable<any>} */
 export const settingsSection = writable(null);
-export const propertiesClose = writable(true);
-export const scenePropertiesClose = writable(true);
-export const lightPropertiesClose = writable(true);
+// unified inspector (phase 64): one drawer serves the selection (mesh/light/
+// group) and the scene. `inspectorKind` picks the content, `inspectorClose`
+// the visibility — the legacy per-panel flags collapsed into this pair.
+export const inspectorClose = writable(true);
+/** @type {import('svelte/store').Writable<'selection'|'scene'>} */
+export const inspectorKind = writable('selection');
 export const flowGraphClose = writable(true);
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
@@ -23,37 +26,52 @@ export const avatarConfig = writable(
 	storedAvatarConfig ? JSON.parse(storedAvatarConfig) : { body: '#4f83cc', hat: 'none', face: 'label' }
 );
 export const characterModalOpen = writable(false);
+/** @type {import('svelte/store').Writable<any>} */
 export const peers = writable(null);
 export const toggleExpand = writable(null);
 export const closeMenu = writable(true);
 export const specatorMode = writable(false);
 
 // update the sidebar visibility
+/** @param {'properties'|'lightProperties'|'scene'|'library'} store */
 export function showSidebar(store) {
-	// Configure Scene and Library TOGGLE: a second click closes them
-	// (properties/lightProperties stay open-only — selection must never close them)
-	if (store === 'scene' && !get(scenePropertiesClose)) {
-		scenePropertiesClose.set(true);
+	if (store === 'library') {
+		// Library TOGGLES: a second click closes it
+		if (!get(libraryClose)) {
+			libraryClose.set(true);
+			return;
+		}
+		inspectorClose.set(true);
+		// The delay adds cool effect
+		setTimeout(() => libraryClose.set(false), 50);
 		return;
 	}
-	if (store === 'library' && !get(libraryClose)) {
-		libraryClose.set(true);
+	// 'properties' and 'lightProperties' are both selection targets now —
+	// the inspector derives its sections from the selected object itself
+	const kind = store === 'scene' ? 'scene' : 'selection';
+	const open = !get(inspectorClose);
+	// Configure Scene TOGGLES; selection stays open-only (clicks must never close it)
+	if (store === 'scene' && open && get(inspectorKind) === 'scene') {
+		inspectorClose.set(true);
 		return;
 	}
-	if (store != 'library') libraryClose.set(true);
-	if (store != 'scene') scenePropertiesClose.set(true);
-	if (store != 'lightProperties') lightPropertiesClose.set(true);
-	if (store != 'properties') propertiesClose.set(true);
-
+	libraryClose.set(true);
+	if (open && get(inspectorKind) === kind) return; // already showing this target
+	inspectorClose.set(true);
 	// The delay adds cool effect
-	setTimeout(() => {	
-		if (store === 'library') libraryClose.set(false);
-		if (store === 'scene') scenePropertiesClose.set(false);
-		if (store === 'lightProperties') lightPropertiesClose.set(false);
-		if (store === 'properties') propertiesClose.set(false);
-		// if (store === null) {}
+	setTimeout(() => {
+		inspectorKind.set(kind);
+		inspectorClose.set(false);
 	}, 50);
-  }
+}
+
+/**
+ * Close the inspector only when it shows the selection — deselect, lock and
+ * delete paths must not close an open scene view.
+ */
+export function closeSelectionInspector() {
+	if (get(inspectorKind) === 'selection') inspectorClose.set(true);
+}
 
 // Snapshot/restore of panel visibility, used when opening Settings or entering
 // spectate mode. A single snapshot slot: hidePanels() while already hidden is a
@@ -61,24 +79,21 @@ export function showSidebar(store) {
 /** @type {any} */
 let panelSnapshot = null;
 
-/** @param {string[]} keep - panel keys to leave untouched: 'menu' | 'library' | 'light' | 'sceneProps' | 'properties' | 'flow' | 'objectList' | 'chat' */
+/** @param {string[]} keep - panel keys to leave untouched: 'menu' | 'library' | 'inspector' | 'flow' | 'objectList' | 'chat' */
 export function hidePanels(keep = []) {
 	if (panelSnapshot) return;
 	panelSnapshot = {
 		menu: get(closeMenu),
 		library: get(libraryClose),
-		light: get(lightPropertiesClose),
-		sceneProps: get(scenePropertiesClose),
-		properties: get(propertiesClose),
+		inspector: get(inspectorClose),
+		inspectorKind: get(inspectorKind),
 		flow: get(flowGraphClose),
 		objectList: get(objectListClose),
 		chat: get(chatHidden)
 	};
 	if (!keep.includes('menu')) closeMenu.set(true);
 	if (!keep.includes('library')) libraryClose.set(true);
-	if (!keep.includes('light')) lightPropertiesClose.set(true);
-	if (!keep.includes('sceneProps')) scenePropertiesClose.set(true);
-	if (!keep.includes('properties')) propertiesClose.set(true);
+	if (!keep.includes('inspector')) inspectorClose.set(true);
 	if (!keep.includes('flow')) flowGraphClose.set(true);
 	if (!keep.includes('objectList')) objectListClose.set(true);
 	if (!keep.includes('chat')) chatHidden.set('hidden');
@@ -88,9 +103,8 @@ export function restorePanels() {
 	if (!panelSnapshot) return;
 	closeMenu.set(panelSnapshot.menu);
 	libraryClose.set(panelSnapshot.library);
-	lightPropertiesClose.set(panelSnapshot.light);
-	scenePropertiesClose.set(panelSnapshot.sceneProps);
-	propertiesClose.set(panelSnapshot.properties);
+	inspectorKind.set(panelSnapshot.inspectorKind);
+	inspectorClose.set(panelSnapshot.inspector);
 	flowGraphClose.set(panelSnapshot.flow);
 	objectListClose.set(panelSnapshot.objectList);
 	chatHidden.set(panelSnapshot.chat);

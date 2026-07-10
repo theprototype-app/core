@@ -1,6 +1,7 @@
 <script>
 	// Labelled group with an optional collapse. Content renders on the token grid.
-	let { label = '', collapsible = false, open = $bindable(true), children } = $props();
+	/** @type {{label?: string, collapsible?: boolean, open?: boolean, children?: any}} */
+	let { label = '', collapsible = false, open = $bindable(true), children = null } = $props();
 </script>
 
 <div class="border-b border-gray-700/40 pb-2">

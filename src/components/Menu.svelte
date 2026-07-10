@@ -3,9 +3,7 @@
 	import Toasts from './menu/Toasts.svelte';
 	import Connect from './menu/Connect.svelte';
 	import Controls from './menu/Controls.svelte';
-	import Properties from './menu/Properties.svelte';
-	import PropertiesScene from './menu/PropertiesScene.svelte';
-	import PropertiesLight from './menu/PropertiesLight.svelte';
+	import Inspector from './menu/Inspector.svelte';
 	import MenuSidebar from './menu/Sidebar.svelte';
 	import MenuSettings from './menu/Settings.svelte';
 	import CharacterModal from './menu/CharacterModal.svelte';
@@ -26,10 +24,8 @@
 <News />
 <Connect />
 <Controls />
-<Properties />
+<Inspector />
 <MenuSidebar />
-<PropertiesScene />
-<PropertiesLight />
 <MenuSettings />
 <CharacterModal />
 <ViewportMenu />

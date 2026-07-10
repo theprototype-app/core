@@ -12,6 +12,7 @@ export const TControls = writable(null);
 export const lockedObjects = writable([]);
 /** @type {import('svelte/store').Writable<any>} */
 export const selectedObject = writable([]);
+/** @type {import('svelte/store').Writable<any>} */
 export const backgroundColor = writable('#ffffff');
 export const isLocked = writable(null);
 export const isVRMode = writable(false);

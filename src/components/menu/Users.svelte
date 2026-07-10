@@ -14,9 +14,6 @@
 	} from 'flowbite-svelte';
 	import {
 		chatHidden,
-		propertiesClose,
-		lightPropertiesClose,
-		scenePropertiesClose,
 		specatorMode,
 		username,
 		userdata,

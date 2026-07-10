@@ -188,6 +188,10 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 			return;
 		}
 		if (!isOpen(value)) removeFromGroup(key, false);
+		// reopening must clear the inline display:none a tab group left behind —
+		// otherwise a window closed while it was an INACTIVE member never comes
+		// back (its class toggles but the inline style still hides it) (92)
+		else node.style.display = '';
 	});
 
 	// drag-merge: dropping this window's header onto another window's header

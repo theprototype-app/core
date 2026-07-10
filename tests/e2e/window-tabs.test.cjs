@@ -91,5 +91,51 @@ h.run(async () => {
 		'group dissolved after the close'
 	);
 
+	// 92: merge chat INTO the list again, close the LIST (the inactive member)
+	// through its shortcut store, reopen it — it must come back (the tab group
+	// used to leave display:none behind and the window vanished until reload)
+	await A.page.locator('p[title="Chat (C)"]').click();
+	await A.page.waitForTimeout(300);
+	const chat3 = await A.page.locator('#chat-window').boundingBox();
+	const list3 = await A.page.locator('#object-list').boundingBox();
+	await A.page.mouse.move(chat3.x + 120, chat3.y + 12);
+	await A.page.mouse.down();
+	await A.page.mouse.move(list3.x + 120, list3.y + 14, { steps: 10 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	// list is the INACTIVE member now (chat active) — toggle it closed + open
+	await A.page.evaluate(() => window.__stores.objectListClose.set(true));
+	await A.page.waitForTimeout(200);
+	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.waitForTimeout(300);
+	const listBack = await A.page.evaluate(() => {
+		const el = document.querySelector('#object-list');
+		return getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0;
+	});
+	h.check(listBack, 'inactive tab member reopens after close (92 regression)');
+
+	// 92: the corner grip resizes the floating list (chat closed so nothing
+	// overlaps the corner)
+	await A.page.evaluate(() => window.__stores.chatHidden.set('hidden'));
+	await A.page.waitForTimeout(200);
+	const before = await A.page.locator('#object-list').boundingBox();
+	await A.page.mouse.move(before.x + before.width - 6, before.y + before.height - 6);
+	await A.page.mouse.down();
+	await A.page.mouse.move(before.x + before.width + 74, before.y + before.height + 54, { steps: 8 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	const after = await A.page.locator('#object-list').boundingBox();
+	h.check(
+		after.width > before.width + 60 && after.height > before.height + 40,
+		`corner grip resizes the list (${Math.round(before.width)}x${Math.round(before.height)} → ${Math.round(after.width)}x${Math.round(after.height)})`
+	);
+	// footer stays glued to the (now taller) bottom edge
+	const footerGap = await A.page.evaluate(() => {
+		const win = document.querySelector('#object-list').getBoundingClientRect();
+		const footer = document.querySelector('#object-count').getBoundingClientRect();
+		return Math.abs(win.bottom - footer.bottom);
+	});
+	h.check(footerGap < 2, `footer fills the resized window (gap ${footerGap.toFixed(1)}px)`);
+
 	await h.finish(browser);
 });

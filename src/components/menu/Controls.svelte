@@ -479,7 +479,7 @@
 	{/if}
 </div>
 
-<div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe use:focusStack
+<div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col'} use:dragMe use:focusStack
 	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
 	use:dockable={{ key: 'objects' }}
 	style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
@@ -583,7 +583,7 @@
 			{/if}
 		</div>
 	</div>
-	<Listgroup active class="h-full overflow-y-scroll -rounded rounded-br rounded-bl">
+	<Listgroup active class="min-h-0 flex-1 overflow-y-auto -rounded rounded-br rounded-bl">
 		<div class="container">
 			{#if viewMode === 'system'}
 				{#if !systemNoticeDismissed}
@@ -686,10 +686,14 @@
 			{/if}
 		</div>
 	</Listgroup>
-	<div id="object-count" class="rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+	<div id="object-count" class="shrink-0 rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">
 		{objectCount} object{objectCount === 1 ? '' : 's'}{hiddenCount ? ' · ' + hiddenCount + ' hidden' : ''}
 	</div>
-	<div class="resize-handle" style="position: absolute; bottom: -38px; right: 0; width: 10px; height: 10px; background-color: #ccc; cursor: se-resize;"></div>
+	<!-- corner grip INSIDE the window (was parked 38px below the box and unreachable, 92) -->
+	<div
+		class="resize-handle resize-cue"
+		style="position: absolute; bottom: 0; right: 0; width: 16px; height: 16px; cursor: se-resize; border-bottom-right-radius: 0.5rem; z-index: 5;"
+	></div>
 </div>
 
 {#if $objectContextMenu}

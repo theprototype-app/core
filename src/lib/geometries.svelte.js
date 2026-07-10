@@ -1,7 +1,17 @@
 import * as THREE from 'three';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
+
+// RectAreaLight renders black on Standard/Physical materials until the
+// uniforms lib initializes — once per session is enough (79)
+let rectAreaReady = false;
+function initRectAreaUniforms() {
+    if (rectAreaReady) return;
+    rectAreaReady = true;
+    RectAreaLightUniformsLib.init();
+}
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject } from '../stores/sceneStore.js';
 
@@ -83,8 +93,10 @@ export function createLight(command, uuid) {
         light = new THREE.HemisphereLight(0xffffff, 0xffffff, 1);
         light.name = 'Hemisphere';
         if (uuid) light.uuid = uuid
-    } else if ( lightType == 'rectArea') {
-        light = new THREE.RectAreaLight(0xffffff, 1, 10, 10);
+    } else if (lightType == 'rectarea') {
+        // needs the uniforms lib once, or Standard/Physical materials render black
+        initRectAreaUniforms();
+        light = new THREE.RectAreaLight(0xffffff, 2, 4, 4);
         light.name = 'RectArea';
     } else {
         console.log('Invalid light: ' + light);

@@ -20,6 +20,7 @@
 	} from '$lib/materialsHandler';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { geometrySpec } from '$lib/geometryParams';
+	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup } from '$lib/objectActions';
 	import { showLightHelpers } from '$lib/lightHelpers';
@@ -719,20 +720,84 @@
 								}} />
 						</div>
 					</div>
-					{#if $selectedObject.type === 'DirectionalLight'}
+					{#each LIGHT_PARAMS[$selectedObject.type] ?? [] as spec (spec.key)}
+						<SliderRow
+							label={spec.label}
+							min={spec.min ?? 0}
+							max={spec.max ?? 10}
+							step={spec.step ?? 0.05}
+							value={Number($selectedObject[spec.key] ?? 0)}
+							onchange={(v) => {
+								$selectedObject[spec.key] = v;
+								selectedObject.update((s) => s);
+								sendLightUpdate();
+							}} />
+					{/each}
+
+					{#if $selectedObject.type === 'SpotLight'}
+						<p class="ui-section-label">Aim at</p>
+						<div id="inspector-spot-target" class="grid grid-cols-3 gap-1">
+							{#each ['X', 'Y', 'Z'] as axis, index (axis)}
+								<DragRow
+									label={axis}
+									accent={['text-red-400', 'text-green-400', 'text-blue-400'][index]}
+									step={0.05}
+									value={($selectedObject.userData.spotTarget ?? [0, 0, 0])[index]}
+									onchange={(v) => {
+										const target = [...($selectedObject.userData.spotTarget ?? [0, 0, 0])];
+										target[index] = v;
+										$selectedObject.userData.spotTarget = target;
+										selectedObject.update((s) => s);
+										$peers.send({ type: 'lighttarget', uuid: $selectedObject.uuid, pos: target });
+										sendLightUpdate(); // userData rides along for late joiners
+									}} />
+							{/each}
+						</div>
+					{/if}
+
+					{#if SHADOW_TYPES.includes($selectedObject.type)}
+						<p class="ui-section-label">Shadow</p>
 						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => sendLightUpdate()}>
 							Cast Shadow
 						</Checkbox>
-						<SliderRow label="Shadow" min={0} max={5} step={0.1} decimals={1}
-							value={$selectedObject.shadow.intensity}
+						<div class="ui-row">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Map size</span>
+							<Select
+								underline
+								class="flex-1"
+								items={SHADOW_SIZES.map((size) => ({ value: size, name: size + ' px' }))}
+								value={$selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x}
+								on:change={(/** @type {any} */ e) => {
+									setShadowMapSize($selectedObject, +e.srcElement.value);
+									selectedObject.update((s) => s);
+									sendLightUpdate();
+								}}
+							/>
+						</div>
+						{#if cappedShadowSize($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x) < ($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x)}
+							<p class="text-[10px] italic text-gray-400">Capped by Settings ▸ Shadow quality on this machine.</p>
+						{/if}
+						<SliderRow label="Bias" min={-0.01} max={0.01} step={0.0005} decimals={4}
+							value={$selectedObject.shadow.bias}
 							onchange={(v) => {
-								$selectedObject.shadow.intensity = v;
+								$selectedObject.shadow.bias = v;
+								sendLightUpdate();
+							}} />
+						<SliderRow label="Softness" min={0} max={10} step={0.1} decimals={1}
+							value={$selectedObject.shadow.radius}
+							onchange={(v) => {
+								$selectedObject.shadow.radius = v;
 								sendLightUpdate();
 							}} />
 					{/if}
 					<Checkbox bind:checked={$selectedObject.visible} onchange={() => sendLightUpdate()}>
 						Visible
 					</Checkbox>
+					{#if $selectedObject.type === 'RectAreaLight'}
+						<p class="text-[10px] italic text-gray-400">
+							Rect area lights only affect Standard/Physical materials and cast no shadows.
+						</p>
+					{/if}
 				</Section>
 			{/if}
 

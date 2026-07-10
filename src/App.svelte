@@ -15,6 +15,7 @@
   import { startShortcuts } from '$lib/shortcuts'
   import { startSnapping } from '$lib/snapping'
   import { startMultiTransform } from '$lib/multiTransform'
+  import { startLightParams } from '$lib/lightParams'
   import { startAutosave } from '$lib/autosave'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast } from './stores/appStore'
@@ -33,6 +34,7 @@
     startNodeSync()
     startLockSweep()
     startMultiTransform()
+    startLightParams()
     loadUserModules()
     startEnvironment()
     startSceneBounds()
@@ -69,10 +71,11 @@
         import('./lib/ping'),
         import('./lib/sessions'),
         import('./lib/geometryEdit'),
+        import('./lib/lightParams'),
         import('three'),
         import('three/examples/jsm/exporters/GLTFExporter.js')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessionsLib, geometryEdit, THREE, GLTFExporterModule]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessions: sessionsLib, geometryEdit, THREE, GLTFExporterModule }
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessionsLib, geometryEdit, lightParams, THREE, GLTFExporterModule]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib, animatedImports, fileHandler, sceneBounds, ping, sessions: sessionsLib, geometryEdit, lightParams, THREE, GLTFExporterModule }
       })
     }
   })

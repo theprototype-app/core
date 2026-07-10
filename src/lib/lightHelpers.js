@@ -86,8 +86,16 @@ function sync() {
 
 /** Per-frame from Scene's useTask: follow lights, refresh helpers */
 export function updateLightHelpers() {
-	if (!visible || entries.size === 0) return;
+	if (entries.size === 0) return;
+	const scene = get(globalScene);
 	entries.forEach((entry) => {
+		// spot aim (79): userData.spotTarget survives sync — enforce it here so
+		// late joiners aim correctly without touching the legacy object loader
+		if (entry.light.isSpotLight && entry.light.userData.spotTarget) {
+			if (!entry.light.target.parent && scene) scene.add(entry.light.target);
+			entry.light.target.position.fromArray(entry.light.userData.spotTarget);
+		}
+		if (!visible) return;
 		entry.light.getWorldPosition(tempVector);
 		entry.proxy.position.copy(tempVector);
 		entry.helper?.update?.();

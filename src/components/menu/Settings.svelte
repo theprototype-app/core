@@ -4,6 +4,7 @@
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
+	import { shadowQuality } from '$lib/lightParams';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
 	import { shortcuts } from '$lib/shortcuts';
 
@@ -95,6 +96,20 @@
 						<Checkbox bind:checked={$showEnvInList}>&nbsp;Environment in list</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Show the environment group as an Environment filter in the object list</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Select
+							size="sm"
+							items={[
+								{ value: 'low', name: 'Shadows: low' },
+								{ value: 'medium', name: 'Shadows: medium' },
+								{ value: 'high', name: 'Shadows: high' }
+							]}
+							bind:value={$shadowQuality}
+						/>
+					</p>
+					<p class={middlecoverDescription}>Caps every light's shadow map size on THIS machine (per-light sizes still replicate)</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>

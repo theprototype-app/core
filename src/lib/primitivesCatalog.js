@@ -41,8 +41,8 @@ export const primitivesCatalog = [
 			{ label: 'Directional', command: '/light directional' },
 			{ label: 'Hemisphere', command: '/light hemisphere' },
 			{ label: 'Point', command: '/light point' },
-			{ label: 'Spot', command: '/light spot' }
-			// Rect Area joins in phase 79 (needs RectAreaLightUniformsLib init)
+			{ label: 'Spot', command: '/light spot' },
+			{ label: 'Rect Area', command: '/light rectarea' }
 		]
 	}
 ];

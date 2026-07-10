@@ -5,7 +5,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { useThrelte, useTask } from '@threlte/core';
-	import { vrFlying, vrMenuOpen } from '../../stores/sceneStore';
+	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen } from '../../stores/sceneStore';
 	import { computeMoveOffset, worldScale } from '$lib/vrControls';
 
 	const { renderer, camera, scene } = useThrelte();
@@ -32,7 +32,7 @@
 
 		const session = renderer.xr.getSession();
 		if (!session) return;
-		if ($vrMenuOpen) return; // the radial menu owns the sticks while open (74)
+		if ($vrMenuOpen || $vrObjectsPanelOpen) return; // menu/panel own the sticks (74/101)
 		const space = xr.getReferenceSpace();
 		if (!space) return;
 

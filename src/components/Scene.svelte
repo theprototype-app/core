@@ -7,7 +7,7 @@
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu } from '../stores/appStore';
 	import { get } from 'svelte/store';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
@@ -18,7 +18,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
-	import { initVRControls, updateVRControls, raycastMenu, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
 	import { sendPing } from '$lib/ping';
@@ -27,6 +27,8 @@
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
 	import VRStats from './play/VRStats.svelte';
+	import VRObjectsPanel from './play/VRObjectsPanel.svelte';
+	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
@@ -442,6 +444,14 @@
 					return;
 				}
 			}
+			if ($vrObjectsPanelOpen) {
+				// objects panel rows select on trigger (101)
+				const action = raycastPanel(xrControllers.indexOf(controller));
+				if (action) {
+					executeVRMenuAction(action);
+					return;
+				}
+			}
 			if ($drawMode) return; // VR trigger feeds the stroke poll instead
 			if (!$objectsGroup) return;
 			tempMatrix.identity().extractRotation(controller.matrixWorld);
@@ -575,6 +585,8 @@ position={[0, 2, 3]}
 
 <VRMenu />
 <VRStats />
+<VRObjectsPanel />
+<VRSelectionShell />
 
 <XR
 	onsessionstart={() => {

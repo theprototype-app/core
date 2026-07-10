@@ -1,0 +1,129 @@
+// Phase 101: VR selection shell + native objects panel — the shell mirrors
+// the selection (mesh geometry / box for groups) at the scene root, the panel
+// lists top-level objects with scroll + lock chips, rows select through the
+// dispatcher and close the panel. On-device pose/feel is manual.
+const h = require('./helpers.cjs');
+
+h.run(async () => {
+	const browser = await h.launch();
+	const A = await h.setupPage(browser, 'A');
+
+	// three boxes, VR mode flagged (headless — no session needed for the shell)
+	await A.page.evaluate(async () => {
+		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__stores.commandsHandler.sceneCommand('/create cylinder');
+		window.__stores.isVRMode.set(true);
+		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const box = group.children[0];
+		box.position.set(2, 0.5, -1);
+		window.__stores.objectActions.selectObject(box.uuid);
+		window.__box = box;
+	});
+	await A.page.waitForTimeout(700);
+
+	// shell mirrors the selected mesh
+	const shell = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.globalScene.subscribe((scene) => {
+					const group = scene?.getObjectByName('vr-selection-shell');
+					const mesh = group?.getObjectByName('vr-selection-shell-mesh');
+					resolve(
+						mesh
+							? {
+									visible: group.visible,
+									pos: mesh.position.toArray().map((v) => Math.round(v * 100) / 100),
+									scale: Math.round(mesh.scale.x * 100) / 100,
+									backSide: mesh.material.side === window.__stores.THREE.BackSide,
+									inObjects: !!mesh.parent?.parent?.name?.includes('objects')
+								}
+							: null
+					);
+				})();
+			})
+	);
+	h.check(!!shell && shell.visible, 'selection shell mounts in VR mode');
+	h.check(
+		shell.pos.join(',') === '2,0.5,-1' && Math.abs(shell.scale - 1.05) < 0.01 && shell.backSide,
+		`shell hugs the selection with a BackSide inflate (${shell.pos} ×${shell.scale})`
+	);
+	h.check(!shell.inObjects, 'shell lives at the scene root (never in the GLTF sync)');
+
+	// leaving VR hides the shell
+	await A.page.evaluate(() => window.__stores.isVRMode.set(false));
+	await A.page.waitForTimeout(300);
+	const hidden = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.globalScene.subscribe((scene) =>
+					resolve(scene?.getObjectByName('vr-selection-shell')?.visible === false)
+				)();
+			})
+	);
+	h.check(hidden, 'shell hides outside VR');
+
+	// --- objects panel: rows mirror the scene, actions route ---
+	await A.page.evaluate(() => window.__stores.vrObjectsPanelOpen.set(true));
+	await A.page.waitForTimeout(500);
+	const rows = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.globalScene.subscribe((scene) => {
+					const panel = scene?.getObjectByName('vr-objects-panel');
+					const names = [];
+					panel?.traverse((o) => {
+						if (o.name?.startsWith('vrpanel-select:')) names.push(o.name.slice('vrpanel-select:'.length));
+					});
+					resolve(names);
+				})();
+			})
+	);
+	h.check(rows.length === 3, `panel lists the top-level objects (${rows.length})`);
+
+	// selecting a row through the dispatcher selects + closes
+	const picked = await A.page.evaluate(
+		(uuid) =>
+			new Promise((resolve) => {
+				window.__stores.vrControls.executeVRMenuAction('panel:select:' + uuid);
+				let selected, open;
+				window.__stores.selectedObject.subscribe((v) => (selected = v?.uuid))();
+				window.__stores.vrObjectsPanelOpen.subscribe((v) => (open = v))();
+				resolve({ selected, open });
+			}),
+		rows[1]
+	);
+	h.check(picked.selected === rows[1] && picked.open === false, 'panel row selects the object and closes');
+
+	// scroll clamps at zero and the close action works
+	await A.page.evaluate(() => {
+		window.__stores.vrObjectsPanelOpen.set(true);
+		window.__stores.vrControls.vrPanelScroll.set(5);
+	});
+	await A.page.waitForTimeout(300);
+	const clamped = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				// 3 objects, 8 rows per page -> start clamps to 0 in the panel view
+				window.__stores.globalScene.subscribe((scene) => {
+					const panel = scene?.getObjectByName('vr-objects-panel');
+					let count = 0;
+					panel?.traverse((o) => {
+						if (o.name?.startsWith('vrpanel-select:')) count++;
+					});
+					resolve(count);
+				})();
+			})
+	);
+	h.check(clamped === 3, 'scroll clamps to the list size');
+	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('panel:close'));
+	const closed = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.vrObjectsPanelOpen.subscribe((v) => resolve(v === false))();
+			})
+	);
+	h.check(closed, 'panel:close dismisses the panel');
+
+	await h.finish(browser);
+});

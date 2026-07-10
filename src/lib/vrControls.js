@@ -41,6 +41,11 @@ import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voi
 export const vrHovered = writable(null);
 /** the quick-menu THREE group, registered by VRMenu.svelte for raycasts @type {import('svelte/store').Writable<any>} */
 export const vrMenuGroup = writable(null);
+/** the objects panel THREE group (101) @type {import('svelte/store').Writable<any>} */
+export const vrPanelGroup = writable(null);
+/** objects panel scroll offset in rows (101) */
+export const vrPanelScroll = writable(0);
+let panelScrollAt = 0;
 
 /** @type {any} */ let renderer = null;
 /** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean}[]} */
@@ -423,6 +428,15 @@ export function raycastMenu(index) {
 	return tile ? tile.object.name.slice('vrmenu-'.length) : null;
 }
 
+/** Raycast the objects panel rows (101) @param {number} index @returns {string|null} panel action */
+export function raycastPanel(index) {
+	const panel = get(vrPanelGroup);
+	if (!panel || !get(vrObjectsPanelOpen)) return null;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const row = hits.find((h) => h.object.name?.startsWith('vrpanel-'));
+	return row ? 'panel:' + row.object.name.slice('vrpanel-'.length) : null;
+}
+
 /** @param {any} object */
 function transformStateOf(object) {
 	return {
@@ -742,6 +756,16 @@ export function executeVRMenuAction(name) {
 		if (entry.closes) vrMenuOpen.set(false);
 		return;
 	}
+	if (name.startsWith('panel:')) {
+		// objects panel actions (101)
+		if (name === 'panel:close') vrObjectsPanelOpen.set(false);
+		else if (name.startsWith('panel:select:')) {
+			selectObject(name.slice('panel:select:'.length));
+			vrObjectsPanelOpen.set(false);
+			hapticPulse(0.3, 40);
+		}
+		return;
+	}
 	if (name === 'move' || name === 'rotate') vrTransformMode.set(name);
 	else if (name === 'objects') {
 		// the native VR list panel (101) replaces the menu on screen
@@ -833,8 +857,8 @@ export function updateVRControls() {
 		teleportEngaged = false;
 		return;
 	}
-	// the open menu is modal for the sticks: sector nav owns them (74)
-	if (!get(vrMenuOpen)) {
+	// open menu/panel are modal for the sticks: sector nav / scrolling own them
+	if (!get(vrMenuOpen) && !get(vrObjectsPanelOpen)) {
 		updateTeleport(session);
 		updateSnapTurn(session);
 	}
@@ -849,13 +873,17 @@ export function updateVRControls() {
 		const menuPressed = !!buttons[5]?.pressed;
 		if (source.handedness === get(vrMenuHand)) {
 			if (get(vrMenuHold)) {
-				if (menuPressed && !prev.menu) vrMenuOpen.set(true);
+				if (menuPressed && !prev.menu) {
+					vrObjectsPanelOpen.set(false); // ring replaces the panel (101)
+					vrMenuOpen.set(true);
+				}
 				if (!menuPressed && prev.menu) {
 					const hovered = get(vrHovered);
 					vrMenuOpen.set(false);
 					if (hovered) executeVRMenuAction(hovered);
 				}
 			} else if (menuPressed && !prev.menu) {
+				vrObjectsPanelOpen.set(false);
 				vrMenuOpen.update((v) => !v);
 			}
 		}
@@ -878,7 +906,7 @@ export function updateVRControls() {
 		// pings the pointed spot with the v2 visual/chime + a haptic tick (87.6)
 		const stickPressed = !!buttons[3]?.pressed;
 		if (stickPressed && !prev.stick) {
-			if (get(vrMenuOpen)) {
+			if (get(vrMenuOpen) || get(vrObjectsPanelOpen)) {
 				const hovered = get(vrHovered);
 				if (hovered) executeVRMenuAction(hovered);
 			} else if (source.handedness === 'right') pingFromController(index);
@@ -929,6 +957,22 @@ export function updateVRControls() {
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.15, 18);
 			vrHovered.set(hovered);
+		}
+	} else if (get(vrObjectsPanelOpen)) {
+		// objects panel (101): ray highlights rows, pointer stick scrolls
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const hovered = pointerIndex >= 0 ? raycastPanel(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.12, 14);
+			vrHovered.set(hovered);
+		}
+		if (pointerIndex >= 0) {
+			const y = [...session.inputSources][pointerIndex]?.gamepad?.axes?.[3] ?? 0;
+			const now = Date.now();
+			if (Math.abs(y) > 0.6 && now - panelScrollAt > 220) {
+				panelScrollAt = now;
+				vrPanelScroll.update((v) => Math.max(0, v + (y > 0 ? 1 : -1)));
+			}
 		}
 	} else if (get(vrHovered) !== null) {
 		vrHovered.set(null);

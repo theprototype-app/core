@@ -214,6 +214,18 @@
 		flyTo([center.x + size * 0.6, center.y + size * 0.45, center.z + size * 0.6], center.toArray());
 	}
 
+	// system/env rows can ping too (87.5)
+	function pingObject(object: any) {
+		const box = new THREE.Box3().setFromObject(object);
+		if (!isFinite(box.min.x)) {
+			sendPing(object.getWorldPosition(new THREE.Vector3()));
+			return;
+		}
+		const top = box.getCenter(new THREE.Vector3());
+		top.y = box.max.y;
+		sendPing(top);
+	}
+
 	// --- environment filter (70.4): read-only rows for environment-root ---
 	let envRows = $state([]);
 	let envNoticeDismissed = $state(
@@ -334,7 +346,7 @@
 				tooltip: menu.locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
 				action: () => enterEditMode(menu.uuid)
 			},
-			{ label: 'Add note', tooltip: 'Pin a synced note to this object', action: () => addAnnotation(menu.uuid) },
+			{ label: 'Add note', tooltip: 'Pin a synced note exactly where you pointed', action: () => addAnnotation(menu.uuid, menu.point ?? null) },
 			{
 				label: 'Ping this object',
 				tooltip: 'Everyone sees a pulse here (Alt+click pings anywhere)',
@@ -593,6 +605,14 @@
 							<span class="text-[10px] text-gray-400">{row.children.length}</span>
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								title="Ping it for everyone"
+								on:click={() => pingObject(row.object)}>📌</button>
+							<button
+								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								title="Pin a synced note to it"
+								on:click={() => addAnnotation(row.object.uuid)}>📝</button>
+							<button
+								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"
 								on:click={() => focusSystemObject(row.object)}>👁</button>
 						</div>
@@ -629,6 +649,10 @@
 								{row.name}
 							</span>
 							<span class="text-[10px] text-gray-400">{row.type}</span>
+							<button
+								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								title="Ping it for everyone"
+								on:click={() => pingObject(row.object)}>📌</button>
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"

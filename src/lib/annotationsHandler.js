@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, selectedObject, globalCamera } from '../stores/sceneStore';
+import { objectsGroup, selectedObject, globalCamera, globalScene } from '../stores/sceneStore';
 import { peers, username, showToast } from '../stores/appStore';
 import { registerAnnotationsPersistence } from './autosave';
 import { flyTo } from './objectActions';
@@ -22,7 +22,11 @@ const tempVector = new THREE.Vector3();
 
 /** @param {string} uuid */
 function objectOf(uuid) {
-	return get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	// system/environment objects live at the scene root (annotatable per 87)
+	return (
+		get(objectsGroup)?.getObjectByProperty('uuid', uuid) ??
+		get(globalScene)?.getObjectByProperty('uuid', uuid)
+	);
 }
 
 /** @param {any} data */
@@ -93,19 +97,27 @@ export function sendAnnotations(peerId, attempt = 0) {
 }
 
 /**
- * Start a new note on an object, anchored at its bounding-box top.
+ * Start a new note on an object. Anchored at the EXACT pointed spot when a
+ * world point is given (87), otherwise at the bounding-box top.
  * @param {string=} uuid - defaults to the selected object
+ * @param {number[] | null=} worldPoint - raycast hit to pin at
  */
-export function addAnnotation(uuid) {
+export function addAnnotation(uuid, worldPoint = null) {
 	const targetUuid = uuid ?? get(selectedObject)?.uuid;
 	const object = targetUuid ? objectOf(targetUuid) : null;
 	if (!object) {
 		showToast('Select an object to annotate');
 		return;
 	}
-	const box = new THREE.Box3().setFromObject(object);
-	const worldAnchor = box.getCenter(tempVector.clone());
-	worldAnchor.y = box.max.y + 0.25;
+	let worldAnchor;
+	if (worldPoint) {
+		worldAnchor = new THREE.Vector3().fromArray(worldPoint);
+	} else {
+		const box = new THREE.Box3().setFromObject(object);
+		worldAnchor = box.getCenter(tempVector.clone());
+		worldAnchor.y = box.max.y + 0.25;
+	}
+	object.updateMatrixWorld(true);
 	const offset = object.worldToLocal(worldAnchor.clone()).toArray();
 	/** @type {any} */
 	const peer = get(peers);
@@ -153,10 +165,10 @@ let pruneTimer = /** @type {any} */ (null);
 objectsGroup.subscribe(() => {
 	clearTimeout(pruneTimer);
 	pruneTimer = setTimeout(() => {
-		const group = get(objectsGroup);
-		if (!group) return;
+		if (!get(objectsGroup)) return;
 		annotations.update((list) => {
-			const kept = list.filter((a) => group.getObjectByProperty('uuid', a.objectUuid));
+			// objectOf also sees scene-root system objects (env rig, module content)
+			const kept = list.filter((a) => objectOf(a.objectUuid));
 			return kept.length === list.length ? list : kept;
 		});
 	}, 500);

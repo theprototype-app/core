@@ -746,6 +746,28 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'close') vrMenuOpen.set(false);
 }
 
+/** Right-stick click: ping where the controller ray lands (87.6) @param {number} index */
+function pingFromController(index) {
+	const point = pingPointFromRay(controllerRay(index), get(objectsGroup));
+	if (!point) return;
+	sendPing(point);
+	hapticPulse(0.4, 60);
+}
+
+/**
+ * Where a controller ray pings: the first object hit, else where it meets the
+ * ground plane, else nowhere (aiming at the sky). Exported for headless tests.
+ * @param {THREE.Raycaster} ray @param {any} group @returns {THREE.Vector3 | null}
+ */
+export function pingPointFromRay(ray, group) {
+	const hits = group ? ray.intersectObjects(group.children, true) : [];
+	if (hits[0]) return hits[0].point;
+	const planePoint = new THREE.Vector3();
+	return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
+		? planePoint
+		: null;
+}
+
 /** Per-frame update while presenting (called from Scene's useTask) */
 export function updateVRControls() {
 	const session = renderer?.xr.getSession();
@@ -771,6 +793,7 @@ export function updateVRControls() {
 			vrMenuOpen.update((v) => !v);
 		prev.menu = menuPressed;
 
+
 		// right A held = push-to-talk
 		const aPressed = !!buttons[4]?.pressed;
 		if (source.handedness === 'right' && aPressed !== !!prev.a) setPttHeld(aPressed);
@@ -782,15 +805,10 @@ export function updateVRControls() {
 		if (!squeezePressed && prev.squeeze) onSqueezeEnd(index);
 		prev.squeeze = squeezePressed;
 
-		// thumbstick press pings the pointed spot
+		// RIGHT thumbstick CLICK (buttons[3] — the press, not the axes) pings
+		// the pointed spot with the v2 visual/chime + a haptic tick (87.6)
 		const stickPressed = !!buttons[3]?.pressed;
-		if (stickPressed && !prev.stick) {
-			const ray = controllerRay(index);
-			const group = get(objectsGroup);
-			const hits = group ? ray.intersectObjects(group.children, true) : [];
-			const point = hits[0]?.point ?? ray.ray.at(4, new THREE.Vector3());
-			sendPing(point);
-		}
+		if (stickPressed && !prev.stick && source.handedness === 'right') pingFromController(index);
 		prev.stick = stickPressed;
 
 		// draw mode: holding the trigger draws at the controller tip

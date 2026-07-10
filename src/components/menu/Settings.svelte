@@ -5,6 +5,8 @@
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
+	import { pingColor, pingSound } from '$lib/ping';
+	import { PING_SOUNDS, playPing } from '$lib/pingAudio';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
 	import { shortcuts } from '$lib/shortcuts';
 
@@ -110,6 +112,31 @@
 						/>
 					</p>
 					<p class={middlecoverDescription}>Caps every light's shadow map size on THIS machine (per-light sizes still replicate)</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName + ' gap-1'}>
+						<input
+							type="color"
+							id="ping-color"
+							class="h-6 w-8 cursor-pointer rounded border border-gray-500 bg-transparent"
+							value={$pingColor || '#4f83cc'}
+							on:change={(e) => pingColor.set(e.currentTarget.value)}
+						/>
+						<Select
+							size="sm"
+							items={PING_SOUNDS.map((s) => ({ value: s.id, name: s.name }))}
+							bind:value={$pingSound}
+						/>
+						<button
+							id="ping-preview"
+							class="rounded bg-gray-600 px-1.5 text-white"
+							title="Preview the ping chime"
+							on:click={() => playPing($pingSound)}
+						>
+							▶
+						</button>
+					</p>
+					<p class={middlecoverDescription}>Your ping color + sound — peers see and hear YOUR pings this way (color empty = your peer color)</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>

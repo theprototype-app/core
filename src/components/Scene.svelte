@@ -405,11 +405,13 @@
 			const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
 			const top = hits.length ? topLevelObjectOf(hits[0].object) : null;
 			if (top) {
-				// an object under the cursor gets its regular context menu
+				// an object under the cursor gets its regular context menu; the
+				// hit point rides along so Add note pins exactly there (87)
 				$objectContextMenu = {
 					x: event.clientX,
 					y: event.clientY,
 					uuid: top.uuid,
+					point: hits[0].point.toArray(),
 					locked: !!$lockedObjects.find((lock) => lock[1] === top.uuid)
 				};
 				return;

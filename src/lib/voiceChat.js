@@ -33,6 +33,12 @@ let pttHeld = false;
 /** @type {any} */ let audioContext = null;
 /** @type {Record<string, {analyser: any, data: Uint8Array}>} */ const analysers = {};
 
+/** Shared AudioContext (ping chimes ride the same spatial listener, 87) */
+export function ensureAudioContext() {
+	audioContext ??= new (window.AudioContext || /** @type {any} */ (window).webkitAudioContext)();
+	return audioContext;
+}
+
 /** @param {any} call @param {'in'|'out'} direction */
 function trackCall(call, direction) {
 	(direction === 'in' ? incomingCalls : outgoingCalls)[call.peer] = call;

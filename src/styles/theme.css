@@ -1,0 +1,248 @@
+/* Theme token blocks + utility remaps (phase 89).
+
+   The chrome was authored dark-first with tailwind gray-* utilities (plus
+   flowbite's own light/dark pairs). A theme is a set of semantic tokens on
+   :root[data-theme=...]; the remap layers below repaint the handful of
+   utilities the chrome actually uses from those tokens, so components don't
+   need per-theme classes.
+
+   - dark:  the authored look — no remaps at all.
+   - light: drops the .dark class (flowbite goes native light); only the
+            UNPREFIXED dark-authored utilities are remapped to light tokens
+            (dark: variants are inert without .dark and must stay that way).
+   - green / bit8 / contrast: keep .dark as base and remap both the
+            unprefixed utilities and the dark: variants. */
+
+:root[data-theme='light'] {
+	--surface-deep: #eef0f3;
+	--surface-deep-rgb: 238 240 243;
+	--surface: #ffffff;
+	--surface-rgb: 255 255 255;
+	--surface-2: #e5e7eb;
+	--surface-3: #d1d5db;
+	--field: #f9fafb;
+	--hover: #d7dade;
+	--text: #111827;
+	--text-2: #1f2937;
+	--muted: #6b7280;
+	--border: #cbd0d6;
+}
+
+:root[data-theme='green'] {
+	--surface-deep: #020f06;
+	--surface-deep-rgb: 2 15 6;
+	--surface: #04170a;
+	--surface-rgb: 4 23 10;
+	--surface-2: #06220f;
+	--surface-3: #0a3016;
+	--field: #031208;
+	--hover: #0c3a1b;
+	--text: #86ffa2;
+	--text-2: #5fe07e;
+	--muted: #3d9e58;
+	--border: #14532d;
+	--accent: #16a34a;
+	--accent-2: #15803d;
+}
+
+:root[data-theme='bit8'] {
+	--surface-deep: #16123a;
+	--surface-deep-rgb: 22 18 58;
+	--surface: #201a4e;
+	--surface-rgb: 32 26 78;
+	--surface-2: #2c2468;
+	--surface-3: #3a2f85;
+	--field: #191243;
+	--hover: #443699;
+	--text: #f8f4ff;
+	--text-2: #d9d2f5;
+	--muted: #9a8fd0;
+	--border: #6c5fc7;
+	--accent: #e11d74;
+	--accent-2: #be185f;
+}
+
+:root[data-theme='contrast'] {
+	--surface-deep: #000000;
+	--surface-deep-rgb: 0 0 0;
+	--surface: #000000;
+	--surface-rgb: 0 0 0;
+	--surface-2: #101010;
+	--surface-3: #1c1c1c;
+	--field: #000000;
+	--hover: #262626;
+	--text: #ffffff;
+	--text-2: #ffffff;
+	--muted: #d4d4d4;
+	--border: #ffffff;
+	--accent: #ffd400;
+	--accent-2: #eab308;
+}
+
+/* ---- shared remap: unprefixed dark-authored utilities (all non-dark themes) ---- */
+
+/* the rgb()/var forms keep tailwind's bg-opacity working (modal backdrops
+   are bg-gray-900 + bg-opacity-50 — a plain color would go opaque) */
+:root:not([data-theme='dark']) .bg-gray-900 {
+	background-color: rgb(var(--surface-deep-rgb) / var(--tw-bg-opacity, 1)) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-900\/60 {
+	background-color: rgb(var(--surface-deep-rgb) / 0.6) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-900\/80 {
+	background-color: rgb(var(--surface-deep-rgb) / 0.8) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-800 {
+	background-color: rgb(var(--surface-rgb) / var(--tw-bg-opacity, 1)) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-800\/70 {
+	background-color: rgb(var(--surface-rgb) / 0.7) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-800\/90 {
+	background-color: rgb(var(--surface-rgb) / 0.9) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-700,
+:root:not([data-theme='dark']) .hover\:bg-gray-700:hover {
+	background-color: var(--surface-2) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-600 {
+	background-color: var(--surface-3) !important;
+}
+:root:not([data-theme='dark']) .hover\:bg-gray-600:hover,
+:root:not([data-theme='dark']) .hover\:bg-gray-500:hover {
+	background-color: var(--hover) !important;
+}
+:root:not([data-theme='dark']) .text-gray-100,
+:root:not([data-theme='dark']) .hover\:text-white:hover {
+	color: var(--text) !important;
+}
+:root:not([data-theme='dark']) .text-gray-200,
+:root:not([data-theme='dark']) .text-gray-300,
+:root:not([data-theme='dark']) .hover\:text-gray-200:hover {
+	color: var(--text-2) !important;
+}
+:root:not([data-theme='dark']) .text-gray-400,
+:root:not([data-theme='dark']) .text-gray-500 {
+	color: var(--muted) !important;
+}
+:root:not([data-theme='dark']) .border-gray-600,
+:root:not([data-theme='dark']) .border-gray-600\/40,
+:root:not([data-theme='dark']) .border-gray-700,
+:root:not([data-theme='dark']) .border-gray-700\/60,
+:root:not([data-theme='dark']) .border-gray-500 {
+	border-color: var(--border) !important;
+}
+:root:not([data-theme='dark']) .placeholder-gray-500::placeholder {
+	color: var(--muted) !important;
+}
+
+/* light only: white text on the (now light) chrome flips to dark text, EXCEPT
+   on accent/colored buttons where white stays readable */
+:root[data-theme='light']
+	.text-white:not([class*='bg-primary']):not([class*='bg-green']):not([class*='bg-red']):not([class*='bg-blue']):not([class*='bg-orange']) {
+	color: var(--text) !important;
+}
+
+/* ---- exotic themes (base stays .dark): also remap the dark: variants and
+        flowbite's light-side leftovers ---- */
+
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:bg-gray-900 {
+	background-color: rgb(var(--surface-deep-rgb) / var(--tw-bg-opacity, 1)) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:bg-gray-900\/60 {
+	background-color: rgb(var(--surface-deep-rgb) / 0.6) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:bg-gray-800,
+:root:not([data-theme='dark']):not([data-theme='light']) .bg-white {
+	background-color: var(--surface) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:bg-gray-700,
+:root:not([data-theme='dark']):not([data-theme='light']) .bg-gray-100,
+:root:not([data-theme='dark']):not([data-theme='light']) .bg-gray-50 {
+	background-color: var(--surface-2) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:bg-gray-600,
+:root:not([data-theme='dark']):not([data-theme='light']) .bg-gray-200 {
+	background-color: var(--surface-3) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:hover\:bg-gray-600:hover,
+:root:not([data-theme='dark']):not([data-theme='light']) .hover\:bg-gray-200:hover,
+:root:not([data-theme='dark']):not([data-theme='light']) .hover\:bg-gray-100:hover,
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:hover\:bg-gray-700:hover {
+	background-color: var(--hover) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .text-white,
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:text-white,
+:root:not([data-theme='dark']):not([data-theme='light']) .text-gray-900,
+:root:not([data-theme='dark']):not([data-theme='light']) .text-gray-800,
+:root:not([data-theme='dark']):not([data-theme='light']) .text-black {
+	color: var(--text) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:text-gray-200,
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:text-gray-300,
+:root:not([data-theme='dark']):not([data-theme='light']) .text-gray-700,
+:root:not([data-theme='dark']):not([data-theme='light']) .text-gray-600 {
+	color: var(--text-2) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:text-gray-400 {
+	color: var(--muted) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:border-gray-600,
+:root:not([data-theme='dark']):not([data-theme='light']) .dark\:border-gray-700,
+:root:not([data-theme='dark']):not([data-theme='light']) .border-gray-200,
+:root:not([data-theme='dark']):not([data-theme='light']) .border-gray-300 {
+	border-color: var(--border) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .bg-primary-600,
+:root:not([data-theme='dark']):not([data-theme='light']) .bg-primary-700,
+:root:not([data-theme='dark']):not([data-theme='light']) .ui-badge-type {
+	background-color: var(--accent) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light']) .hover\:bg-primary-700:hover,
+:root:not([data-theme='dark']):not([data-theme='light']) .hover\:bg-primary-800:hover {
+	background-color: var(--accent-2) !important;
+}
+
+/* ---- theme personalities ---- */
+
+/* green console: phosphor terminal — mono type + a faint glow */
+:root[data-theme='green'] body {
+	font-family: ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+	text-shadow: 0 0 6px rgb(70 255 130 / 0.22);
+}
+
+/* 8-bit: pixel font, square corners, chunky borders. The font is huge per
+   glyph, so the root em shrinks to keep layouts intact. */
+@font-face {
+	font-family: 'Press Start 2P';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/press-start-2p-latin.woff2') format('woff2');
+}
+:root[data-theme='bit8'] {
+	font-size: 11px;
+}
+:root[data-theme='bit8'] body {
+	font-family: 'Press Start 2P', ui-monospace, monospace;
+	letter-spacing: 0;
+}
+:root[data-theme='bit8'] body *,
+:root[data-theme='bit8'] body *::before,
+:root[data-theme='bit8'] body *::after {
+	border-radius: 0 !important;
+}
+:root[data-theme='bit8'] .ui-panel,
+:root[data-theme='bit8'] .ui-input {
+	border-width: 2px;
+}
+
+/* high contrast: hard edges, no translucency on panel chrome */
+:root[data-theme='contrast'] .ui-panel {
+	border-width: 2px;
+	box-shadow: none;
+}
+:root[data-theme='contrast'] :focus-visible {
+	outline: 2px solid var(--accent) !important;
+	outline-offset: 1px;
+}

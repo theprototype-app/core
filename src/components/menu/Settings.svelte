@@ -7,6 +7,7 @@
 	import { shadowQuality } from '$lib/lightParams';
 	import { pingColor, pingSound } from '$lib/ping';
 	import { PING_SOUNDS, playPing } from '$lib/pingAudio';
+	import { THEMES, theme } from '$lib/themes';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
 	import { shortcuts } from '$lib/shortcuts';
 
@@ -53,6 +54,17 @@
 				<svelte:fragment slot="header">Scene</svelte:fragment>
 				<div class="flex">
 					<p class={topcoverName}>
+						<Select
+							id="theme-select"
+							size="sm"
+							items={THEMES.map((t) => ({ value: t.id, name: 'Theme: ' + t.name }))}
+							bind:value={$theme}
+						/>
+					</p>
+					<p class={topcoverDescription}>UI theme for THIS device (the 3D viewport follows the environment, not the theme)</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
 						<Checkbox
 							bind:checked={$vrOverride}
 							onclick={() => {

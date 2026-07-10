@@ -45,4 +45,17 @@
 	.ui-button-quiet {
 		@apply rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-600;
 	}
+	/* resize hot zones (82.4): the highlight shows only after ~600ms of hover,
+	   so casually crossing a panel edge never flashes it; cursor stays instant */
+	.resize-cue {
+		background-color: transparent;
+		transition: background-color 0.15s ease 0.6s;
+	}
+	.resize-cue:hover {
+		background-color: rgb(249 115 22 / 0.5);
+	}
+	/* notebook-tab side buttons (82): trapezoid, narrower at the outer edge */
+	.palette-tab {
+		clip-path: polygon(0 0, 100% 14%, 100% 86%, 0 100%);
+	}
 }

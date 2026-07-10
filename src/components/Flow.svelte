@@ -8,6 +8,7 @@
 	import ScriptPanel from './editors/ScriptPanel.svelte';
 	import NodeDesigner from './editors/NodeDesigner.svelte';
 	import { dragWindow } from '$lib/dragWindow';
+	import { focusStack } from '$lib/windowFocus';
 	import { fly } from 'svelte/transition';
 
 	const clampH = (h: number) =>
@@ -77,9 +78,9 @@
 			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800"
 			style="z-index: var(--z-bottom); height: {height}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 		>
-			<!-- top-edge resize hot zone: invisible, cursor + hover cue only -->
+			<!-- top-edge resize hot zone: cursor instant, cue after a hover delay (82) -->
 			<div
-				class="absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize hover:bg-primary-500/40"
+				class="resize-cue absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -103,6 +104,7 @@
 			id="flow-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'flowWin', defaultRect: { left: 120, top: 90 } }}
+			use:focusStack
 			style="z-index: var(--z-window); width: {winW}px; height: {winH}px"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
@@ -118,7 +120,7 @@
 				</SvelteFlowProvider>
 			</div>
 			<div
-				class="absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/70 hover:bg-primary-500/70"
+				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startWinResize}

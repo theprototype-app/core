@@ -63,6 +63,10 @@
 	const snapGrid: [number, number] = [25, 25];
 	const { screenToFlowPosition } = useSvelteFlow();
 
+	// palette collapse + side (82), persisted
+	let paletteOpen = typeof localStorage === 'undefined' || localStorage.getItem('flowPaletteOpen') !== 'false';
+	let paletteSide = typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteSide') ?? 'left' : 'left';
+
 	// shared with <SvelteFlow> so peer cursors can be projected to screen space
 	const viewport = writable({ x: 0, y: 0, zoom: 1 });
 
@@ -340,12 +344,42 @@
 <svelte:window on:keydown={onWindowKeydown} />
 
 <div class="flex h-full w-full">
-	<div class="h-full w-40 shrink-0 overflow-y-auto">
-		<Sidebar />
+	{#if paletteOpen}
+		<div class="h-full w-40 shrink-0 overflow-y-auto" style="order: {paletteSide === 'right' ? 3 : 1}">
+			<Sidebar />
+		</div>
+	{/if}
+	<!-- palette collapse/side controls: notebook-tab buttons on the divider (82) -->
+	<div class="relative z-10 w-0" style="order: 2">
+		<button
+			id="palette-toggle"
+			class="palette-tab absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-[10px] text-gray-200 hover:bg-gray-600"
+			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
+			title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
+			on:click={() => {
+				paletteOpen = !paletteOpen;
+				localStorage.setItem('flowPaletteOpen', String(paletteOpen));
+			}}
+		>
+			{paletteOpen ? (paletteSide === 'right' ? '▸' : '◂') : paletteSide === 'right' ? '◂' : '▸'}
+		</button>
+		<button
+			id="palette-side"
+			class="palette-tab absolute top-24 flex h-9 w-4 items-center justify-center bg-gray-700 text-[9px] text-gray-300 hover:bg-gray-600"
+			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
+			title="Move the palette to the other side"
+			on:click={() => {
+				paletteSide = paletteSide === 'right' ? 'left' : 'right';
+				localStorage.setItem('flowPaletteSide', paletteSide);
+			}}
+		>
+			⇄
+		</button>
 	</div>
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="svelteFlow relative h-full grow"
+		style="order: {paletteSide === 'right' ? 1 : 3}"
 		on:pointermove={onPointerMoveCursor}
 		on:pointerleave={onPointerLeaveCursor}
 	>

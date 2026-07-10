@@ -17,6 +17,7 @@
 	import { writable } from 'svelte/store';
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
+	import { focusStack } from '$lib/windowFocus';
 	import { VRButton } from '@threlte/xr'
 
 	let allowPlay = true;
@@ -452,7 +453,7 @@
 	<VRButton />
 </div>
 
-<div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
+<div id="object-list" class={$objectListClose ? 'hidden' : ''} use:dragMe use:focusStack style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
 	<!-- dropping a row on the header moves the object back to the scene root -->
 	<div
 		role="list"

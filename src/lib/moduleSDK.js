@@ -34,6 +34,19 @@ export const moduleClickHandlers = [];
 export const moduleFrameTasks = [];
 /** @type {string[]} scene-root group names that receive viewport clicks */
 export const moduleInteractiveGroups = [];
+/** @type {(() => void)[]} scene-clear hooks (modules remove their content) */
+const sceneClearHandlers = [];
+
+/** Called by the clear-scene path (local and remote) */
+export function runSceneClearHandlers() {
+	sceneClearHandlers.forEach((fn) => {
+		try {
+			fn();
+		} catch (error) {
+			console.log('module scene-clear handler failed', error);
+		}
+	});
+}
 
 /** @type {{id: string, name: string, version: string}[]} */
 export const loadedModules = [];
@@ -108,6 +121,14 @@ function makeApi(moduleId) {
 		 */
 		registerInteractiveGroup(name) {
 			moduleInteractiveGroups.push(name);
+		},
+		/**
+		 * Runs when the scene is cleared (locally or by a peer) — remove your
+		 * viewport content and reset module state here.
+		 * @param {() => void} fn
+		 */
+		onSceneClear(fn) {
+			sceneClearHandlers.push(fn);
 		},
 		/** Handle messages other peers sent with api.send() @param {(data: any) => void} fn */
 		onMessage(fn) {

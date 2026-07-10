@@ -9,10 +9,10 @@
 		showSidebar,
 		closeMenu
 	} from '../../stores/appStore.js';
-	import { backgroundColor } from '../../stores/sceneStore';
+	import { backgroundColor, objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
-	import { modulesOpen } from '../../stores/appStore.js';
+	import { modulesOpen, showToast } from '../../stores/appStore.js';
 	import { sineIn } from 'svelte/easing';
 
 	import {
@@ -291,9 +291,22 @@ style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top
 				label="Clear Scene"
 				{spanClass}
 				on:click={() => {
-					lightPropertiesClose.set(true);
-					propertiesClose.set(true);
-					sceneCommand('/clear all');
+					const count = $objectsGroup?.children.length ?? 0;
+					if (count === 0) {
+						sceneCommand('/clear all'); // still clears module content
+						return;
+					}
+					showToast('Clear the scene for everyone? ' + count + ' object' + (count === 1 ? '' : 's') + ' will be removed.', [
+						{
+							label: 'Clear',
+							action: () => {
+								lightPropertiesClose.set(true);
+								propertiesClose.set(true);
+								sceneCommand('/clear all');
+							}
+						},
+						{ label: 'Cancel', action: () => {} }
+					]);
 				}}
 			>
 				<svelte:fragment slot="icon">🗑️</svelte:fragment>

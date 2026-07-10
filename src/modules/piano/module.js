@@ -138,5 +138,7 @@ export default {
 				if (state?.pos) buildPiano(state.pos);
 			}
 		});
+
+		api.onSceneClear(() => removePiano());
 	}
 };

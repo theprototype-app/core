@@ -160,6 +160,13 @@ export function dropAnimatedImport(uuid) {
 	});
 }
 
+/** Scene was wiped — forget every registry entry */
+export function dropAllAnimatedImports() {
+	fileBytes.clear();
+	mixers.clear();
+	animatedObjects.set({});
+}
+
 // undo/redo: presence kind backed by the raw bytes (the ObjectLoader snapshot
 // path in history.js cannot round-trip rigs)
 registerHistoryKind('animimport', (entry, state) => {

@@ -136,6 +136,8 @@ export default {
 			else if (data.op === 'clear') clear();
 		});
 
+		api.onSceneClear(() => clear());
+
 		// late joiners rebuild from the current seed
 		api.registerStateSync({
 			getState: () => current,

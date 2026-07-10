@@ -8,7 +8,9 @@ import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected } from '$lib/physics'
 import { environment } from '$lib/environment'
-import { hasAnimatedImport, sendAnimatedImport, setAnimationState } from '$lib/animatedImports'
+import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { runSceneClearHandlers } from '$lib/moduleSDK'
+import { annotations } from '$lib/annotationsHandler'
 import { get } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
@@ -106,8 +108,8 @@ export function sceneCommand(command) {
         if (command.startsWith('/clear')) {
             if (command.split(' ')[1] == 'all')
             {
-                controls.detach();
-                sceneObjects.clear();
+                clearSceneLocal();
+                peer.send({type: 'clearscene', peerId: peer.peer.id});
             } else {
                 let object = sceneObjects.getObjectByProperty('uuid', command.split(' ')[1])
                 if (object != null) {
@@ -205,6 +207,27 @@ export function sceneCommand(command) {
     }
     //Trigger reactivity for UI list of objects
     objectsGroup.update((value) => value);
+}
+
+/**
+ * Full local scene wipe (both the local /clear all and the clearscene message):
+ * objects, module viewport content, annotations, locks and byte registries.
+ */
+export function clearSceneLocal() {
+    controls?.detach();
+    sceneObjects?.clear();
+    runSceneClearHandlers(); // modules remove their scene-root content
+    annotations.set([]);
+    lockedObjects.set([]);
+    // animated-import bytes/mixers are per-object — all gone now
+    dropAllAnimatedImports();
+    objectsGroup.update((value) => value);
+}
+
+/** A peer wiped the shared scene @param {string} peerId */
+export function applyClearScene(peerId) {
+    clearSceneLocal();
+    showToast(peerId + ' cleared the scene');
 }
 
 export function lockRestore(lockeditems) {

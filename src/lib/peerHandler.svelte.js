@@ -1,5 +1,5 @@
 import Peer from 'peerjs';
-import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters } from './commandsHandler.svelte';
+import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs } from '$lib/customNodes';
@@ -199,6 +199,8 @@ export class PeerConnection {
 					objectParameters(data);
 				} else if(data.type == 'duplicate') {
 					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos);
+				} else if(data.type == 'clearscene') {
+					applyClearScene(data.peerId);
 				} else if(data.type == 'delete') {
 					deleteObject(data.uuid);
 				} else if(data.type == 'color') {

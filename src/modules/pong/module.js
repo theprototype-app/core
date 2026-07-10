@@ -259,6 +259,8 @@ export default {
 			}
 		});
 
+		api.onSceneClear(() => removeTable());
+
 		// free paddles (or drop the table) when their peer leaves
 		userdata.subscribe((users) => {
 			if (!state) return;

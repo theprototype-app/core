@@ -31,6 +31,7 @@
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
+	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
 	import { peers, username } from '../../stores/appStore';
 
 	// module node types default to the spec-driven AnimationNode unless the
@@ -297,7 +298,7 @@
 			.filter(([rank]) => rank < 3)
 			.sort((a, b) => a[0] - b[0] || a[1].label.localeCompare(b[1].label))
 			.map(([, entry]) => entry)
-			.slice(0, 8);
+			.slice(0, 30); // the list scrolls now (84)
 	}
 
 	$: results = search ? searchResults(search.query) : [];
@@ -308,12 +309,22 @@
 		savedMenu = null;
 	}
 
+	function scrollHighlightIntoView() {
+		requestAnimationFrame(() =>
+			document
+				.querySelector('#node-search-box [data-selected="true"]')
+				?.scrollIntoView({ block: 'nearest' })
+		);
+	}
+
 	function onSearchKeydown(event: KeyboardEvent) {
 		if (event.key === 'ArrowDown') {
 			search = { ...search, highlight: Math.min(search.highlight + 1, results.length - 1) };
+			scrollHighlightIntoView();
 			event.preventDefault();
 		} else if (event.key === 'ArrowUp') {
 			search = { ...search, highlight: Math.max(search.highlight - 1, 0) };
+			scrollHighlightIntoView();
 			event.preventDefault();
 		} else if (event.key === 'Enter') {
 			if (results[search.highlight]) pickResult(results[search.highlight]);
@@ -437,32 +448,37 @@
 		id="node-search-box"
 		class="fixed rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
 		style="left: {search.x}px; top: {search.y}px; width: {search.width}px; z-index: 1000;"
+		use:rightDragMove={{ onMove: (dx, dy) => (search = { ...search, x: Math.max(0, search.x + dx), y: Math.max(0, search.y + dy) }) }}
 	>
 		<!-- svelte-ignore a11y_autofocus -->
 		<input
 			id="node-search-input"
 			use:focusInput
+			use:inputContextMenu
 			class="mx-2 mb-1 w-[calc(100%-16px)] rounded border border-gray-300 bg-transparent px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-500"
 			placeholder="Search nodes… (Esc = menu)"
 			value={search.query}
 			on:input={(e) => (search = { ...search, query: e.currentTarget.value, highlight: 0 })}
 			on:keydown={onSearchKeydown}
 		/>
-		{#each results as entry, index}
-			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-			<div
-				class="cursor-pointer px-3 py-1.5 {index === search.highlight
-					? 'bg-primary-600 text-white'
-					: 'hover:bg-gray-100 dark:hover:bg-gray-600'}"
-				on:mouseenter={() => (search = { ...search, highlight: index })}
-				on:click={() => pickResult(entry)}
-			>
-				<span class={index === search.highlight ? 'text-white/70' : 'text-gray-400'}>{entry.group} · </span>{entry.label}
-			</div>
-		{/each}
-		{#if results.length === 0}
-			<div class="px-3 py-1.5 text-gray-400">No matches</div>
-		{/if}
+		<div class="max-h-64 overflow-y-auto">
+			{#each results as entry, index}
+				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+				<div
+					class="cursor-pointer px-3 py-1.5 {index === search.highlight
+						? 'bg-primary-600 text-white'
+						: 'hover:bg-gray-100 dark:hover:bg-gray-600'}"
+					data-selected={index === search.highlight}
+					on:mouseenter={() => (search = { ...search, highlight: index })}
+					on:click={() => pickResult(entry)}
+				>
+					<span class={index === search.highlight ? 'text-white/70' : 'text-gray-400'}>{entry.group} · </span>{entry.label}
+				</div>
+			{/each}
+			{#if results.length === 0}
+				<div class="px-3 py-1.5 text-gray-400">No matches</div>
+			{/if}
+		</div>
 	</div>
 {/if}
 

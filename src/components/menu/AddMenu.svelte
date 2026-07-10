@@ -5,6 +5,7 @@
 	import { addMenu } from '../../stores/appStore.js';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
 	import { spawnAtPoint } from '$lib/addObjects';
+	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
 
 	let query = $state('');
 	let selectedIndex = $state(0);
@@ -52,10 +53,20 @@
 		} else if (event.key === 'ArrowDown') {
 			event.preventDefault();
 			selectedIndex = Math.min(selectedIndex + 1, results.length - 1);
+			scrollSelectedIntoView();
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
 			selectedIndex = Math.max(selectedIndex - 1, 0);
+			scrollSelectedIntoView();
 		}
+	}
+
+	function scrollSelectedIntoView() {
+		requestAnimationFrame(() =>
+			document
+				.querySelector('#add-search-box [data-selected="true"]')
+				?.scrollIntoView({ block: 'nearest' })
+		);
 	}
 </script>
 
@@ -65,6 +76,7 @@
 		id="add-search-box"
 		class="fixed w-64 rounded-lg border border-gray-600 bg-gray-800 p-1.5 text-xs text-gray-200 shadow-xl"
 		style="left: {Math.min($addMenu.x, window.innerWidth - 270)}px; top: {Math.min($addMenu.y, window.innerHeight - 320)}px; z-index: 1000;"
+		use:rightDragMove
 	>
 		<input
 			id="add-search-input"
@@ -73,6 +85,7 @@
 			class="ui-input w-full"
 			placeholder="Search objects…"
 			value={query}
+			use:inputContextMenu
 			oninput={(e) => { query = e.currentTarget.value; selectedIndex = 0; }}
 			onkeydown={onSearchKeydown}
 		/>
@@ -81,6 +94,7 @@
 				<button
 					class={'flex w-full items-baseline gap-2 rounded px-2 py-1 text-left ' +
 						(index === selectedIndex ? 'bg-primary-700 text-white' : 'hover:bg-gray-700')}
+					data-selected={index === selectedIndex}
 					onmouseenter={() => (selectedIndex = index)}
 					onclick={() => spawn(entry.command)}
 				>

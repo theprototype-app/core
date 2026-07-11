@@ -155,7 +155,7 @@
 					position={[WIDTH / 2 - 0.02, rowY(i), 0.002]} />
 			{:else if row === 'duplicate' || row === 'delete'}
 				<Text
-					text={row === 'duplicate' ? '⧉ Duplicate' : '🗑 Delete'}
+					text={row === 'duplicate' ? '⧉ Duplicate' : 'Delete'}
 					color={row === 'delete' ? '#e8a0a0' : '#c8d0da'}
 					fontSize={0.009}
 					anchorX="left"

@@ -19,6 +19,8 @@ import {
 	vrChatPanelOpen,
 	vrPaletteOpen,
 	vrPropsPanelOpen,
+	vrPrefabsPanelOpen,
+	vrPrefabsPinned,
 	vrWireframeSelection,
 	vrStatsOpen,
 	vrGrabStyle,
@@ -27,6 +29,7 @@ import {
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
+import { prefabs, instantiatePrefab } from './prefabs';
 import { peers, showToast } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
@@ -564,6 +567,106 @@ export function propsRowAction(row) {
 	if (row.includes(':')) return 'props:nudge:' + row + ':1';
 	return 'props:' + row;
 }
+
+// ---- VR prefabs window + ghost placement (115) ----
+/** the prefabs window THREE group @type {import('svelte/store').Writable<any>} */
+export const vrPrefabsGroup = writable(null);
+/** grid cell cursor (stick up/down) */
+export const vrPrefabsCursor = writable(0);
+/** armed prefab {id, name} while a placement ghost rides the ray, else null
+ * @type {import('svelte/store').Writable<any>} */
+export const vrPrefabGhost = writable(null);
+/** @type {any} the translucent THREE clone at the scene root */
+let ghostObject = null;
+/** @type {any} */
+let ghostPrefab = null;
+
+/** Raycast the prefabs window controls @param {number} index */
+export function raycastPrefabs(index) {
+	const panel = get(vrPrefabsGroup);
+	if (!panel || !get(vrPrefabsPanelOpen)) return null;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const control = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrprefabs-'));
+	return control ? 'prefabs:' + control.object.name.slice('vrprefabs-'.length) : null;
+}
+
+/** Arm the placement ghost for a prefab id (trigger on a cell) @param {string} id */
+function armPrefabGhost(id) {
+	const prefab = get(prefabs).find((p) => p.id === id);
+	const scene = get(globalScene);
+	if (!prefab || !scene) return;
+	cancelPrefabGhost();
+	let clone;
+	try {
+		clone = new THREE.ObjectLoader().parse(prefab.element);
+	} catch {
+		return;
+	}
+	// fresh parse = own materials, safe to fade in place
+	clone.traverse((/** @type {any} */ node) => {
+		if (node.material) {
+			node.material.transparent = true;
+			node.material.opacity = 0.35;
+			node.material.depthWrite = false;
+		}
+	});
+	clone.name = 'vr-prefab-ghost';
+	scene.add(clone);
+	ghostObject = clone;
+	ghostPrefab = prefab;
+	vrPrefabGhost.set({ id: prefab.id, name: prefab.name });
+	hapticPulse(0.2, 25);
+}
+
+/** Drop the ghost without placing (grip / panel close / menu open) */
+export function cancelPrefabGhost() {
+	if (ghostObject) {
+		ghostObject.parent?.remove(ghostObject);
+		ghostObject.traverse((/** @type {any} */ node) => node.geometry?.dispose?.());
+	}
+	ghostObject = null;
+	ghostPrefab = null;
+	vrPrefabGhost.set(null);
+}
+
+// closing the prefabs window (any path — ✕, menu open, exclusions) drops the ghost
+vrPrefabsPanelOpen.subscribe((open) => {
+	if (!open) cancelPrefabGhost();
+});
+
+/** Ghost follows the pointer ray: objects first, floor plane as fallback @param {number} index */
+function updatePrefabGhost(index) {
+	if (!ghostObject || index < 0) return;
+	const ray = controllerRay(index);
+	const group = get(objectsGroup);
+	let point = null;
+	if (group) {
+		const hits = ray
+			.intersectObjects(group.children, true)
+			.filter((/** @type {any} */ h) => h.object !== ghostObject);
+		if (hits.length) point = hits[0].point;
+	}
+	if (!point) {
+		const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+		point = ray.ray.intersectPlane(floor, new THREE.Vector3());
+	}
+	if (point) ghostObject.position.copy(point);
+}
+
+/** Trigger while the ghost is armed: instantiate at the ghost spot, stay armed.
+ * Returns true when a placement happened (Scene.svelte consumes the select). */
+export function placePrefabGhost() {
+	if (!ghostObject || !ghostPrefab) return false;
+	// picking a cell re-arms instead of placing — the panel raycast runs first
+	const group = get(objectsGroup);
+	if (!group) return false;
+	group.updateMatrixWorld(true);
+	const local = group.worldToLocal(ghostObject.position.clone());
+	const object = instantiatePrefab(ghostPrefab, local);
+	if (!object) return false;
+	hapticPulse(0.35, 40);
+	return true;
+}
 let paintGesture = /** @type {any} */ (null);
 let lastColorSent = 0;
 
@@ -779,7 +882,8 @@ function windowGroupFor(/** @type {string} */ id) {
 			objects: vrPanelGroup,
 			palette: vrPaletteGroup,
 			stats: vrStatsGroup,
-			props: vrPropsGroup
+			props: vrPropsGroup,
+			prefabs: vrPrefabsGroup
 		}[id] ?? vrMenuGroup
 	);
 }
@@ -787,7 +891,7 @@ function windowGroupFor(/** @type {string} */ id) {
 /** Which open window the controller ray lands on @param {number} index */
 function windowHitAt(index) {
 	let best = null;
-	for (const id of ['menu', 'objects', 'palette', 'stats', 'props']) {
+	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs']) {
 		const group = windowGroupFor(id);
 		if (!group) continue;
 		const hits = controllerRay(index).intersectObject(group, true);
@@ -858,6 +962,11 @@ function finishWindowAdjust() {
 
 /** @param {number} index */
 function onSqueezeStart(index) {
+	// an armed prefab ghost cancels on grip (115) — nothing else grabs
+	if (get(vrPrefabGhost)) {
+		cancelPrefabGhost();
+		return;
+	}
 	// grip on a follower window (111): hold to detach it into adjust mode
 	const windowId = windowHitAt(index);
 	if (windowId) {
@@ -1166,6 +1275,23 @@ export function executeVRMenuAction(name) {
 		handlePropsAction(name.slice('props:'.length));
 		return;
 	}
+	if (name === 'prefabs') {
+		// the thumbnail window (115) lazy-follows the view
+		vrPrefabsPanelOpen.update((v) => !v);
+		vrObjectsPanelOpen.set(false);
+		vrChatPanelOpen.set(false);
+		vrPaletteOpen.set(false);
+		vrPropsPanelOpen.set(false);
+		vrMenuOpen.set(false);
+		return;
+	}
+	if (name.startsWith('prefabs:')) {
+		const action = name.slice('prefabs:'.length);
+		if (action === 'close') vrPrefabsPanelOpen.set(false);
+		else if (action === 'pin') vrPrefabsPinned.update((v) => !v);
+		else if (action.startsWith('select:')) armPrefabGhost(action.slice('select:'.length));
+		return;
+	}
 	if (name === 'wireframe') {
 		vrWireframeSelection.update((v) => {
 			const next = !v;
@@ -1306,6 +1432,7 @@ export function updateVRControls() {
 		!get(vrMenuOpen) &&
 		!get(vrObjectsPanelOpen) &&
 		!get(vrPropsPanelOpen) &&
+		!get(vrPrefabsPanelOpen) &&
 		get(vrGrabbedHand) !== 'right'
 	) {
 		updateTeleport(session);
@@ -1376,6 +1503,11 @@ export function updateVRControls() {
 				// ray hover wins; otherwise activate the cursored row (112)
 				const action = get(vrHovered) ?? propsRowAction(PROPS_ROWS[get(vrPropsCursor)]);
 				if (action) executeVRMenuAction(action);
+			} else if (get(vrPrefabsPanelOpen)) {
+				// ray hover wins; otherwise arm the cursored cell (115)
+				const cell = get(prefabs)[get(vrPrefabsCursor)];
+				const action = get(vrHovered) ?? (cell ? 'prefabs:select:' + cell.id : null);
+				if (action) executeVRMenuAction(action);
 			} else if (source.handedness === 'right') pingFromController(index);
 		}
 		prev.stick = stickPressed;
@@ -1400,6 +1532,10 @@ export function updateVRControls() {
 	if (windowGrabPending && Date.now() - windowGrabPending.startedAt >= HOLD_MS)
 		beginWindowAdjust();
 	if (windowGrab) updateWindowAdjust();
+
+	// prefab placement ghost (115) rides the pointer-hand ray
+	if (get(vrPrefabGhost))
+		updatePrefabGhost(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
 
 	// both-grips world grab (71): scale/rotate/pan the rig around the hands
 	if (worldGrab) updateWorldGrab();
@@ -1499,6 +1635,28 @@ export function updateVRControls() {
 					row === 'opacity' ? 'props:opacity:' + sign : 'props:nudge:' + row + ':' + sign
 				);
 			}
+		}
+	} else if (get(vrPrefabsPanelOpen)) {
+		// prefabs window (115): ray highlights cells; EITHER stick moves the
+		// cell cursor, press arms the cursored prefab's ghost
+		const sources = [...session.inputSources];
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const menuIndex = sources.findIndex((s) => s.handedness === get(vrMenuHand));
+		const hovered = pointerIndex >= 0 ? raycastPrefabs(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.12, 14);
+			vrHovered.set(hovered);
+		}
+		let y = 0;
+		for (const index of [pointerIndex, menuIndex])
+			if (index >= 0 && Math.abs(sources[index]?.gamepad?.axes?.[3] ?? 0) > Math.abs(y))
+				y = sources[index].gamepad.axes[3];
+		const now = Date.now();
+		if (Math.abs(y) > 0.6 && now - panelScrollAt > 220) {
+			panelScrollAt = now;
+			hapticPulse(0.08, 10);
+			const count = get(prefabs).length;
+			vrPrefabsCursor.update((v) => Math.min(Math.max(0, v + (y > 0 ? 1 : -1)), Math.max(0, count - 1)));
 		}
 	} else if (get(vrHovered) !== null) {
 		vrHovered.set(null);

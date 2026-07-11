@@ -85,8 +85,9 @@ export async function savePrefab(uuid, name) {
 	return entry;
 }
 
-/** Add a prefab instance to the scene (fresh uuids), replicated + undoable @param {any} prefab */
-export function instantiatePrefab(prefab) {
+/** Add a prefab instance to the scene (fresh uuids), replicated + undoable.
+ * @param {any} prefab @param {any=} position optional spawn point (group-local) */
+export function instantiatePrefab(prefab, position) {
 	const group = get(objectsGroup);
 	if (!group) return null;
 	let object;
@@ -99,6 +100,7 @@ export function instantiatePrefab(prefab) {
 	}
 	object.traverse((node) => (node.uuid = crypto.randomUUID()));
 	object.name = prefab.name;
+	if (position) object.position.copy(position);
 	group.add(object);
 	objectsGroup.update((value) => value);
 	recordObjectPresence('create', object);

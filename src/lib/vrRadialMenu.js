@@ -9,6 +9,7 @@ import {
 import { environment, setEnvironment, ENVIRONMENT_PRESETS } from './environment';
 import { setMicMode, vrMicMode } from './voiceChat';
 import { toggleObjectVisibility, duplicateObject, deleteSelection } from './objectActions';
+import { savePrefab } from './prefabs';
 
 // VR radial menu v2 (74): a flat 8-sector base ring with nested sub-rings.
 // Entries live in a registry so modules and later phases can add their own
@@ -195,6 +196,8 @@ function registerBuiltins() {
 			order
 		})
 	);
+	// Prefabs opens the thumbnail window (115)
+	registerVRMenuEntry({ id: 'prefabs', group: 'add', label: 'Prefabs', order: 6 });
 
 	// Scene ▸ — environment presets + snap-turn angle
 	Object.entries(ENVIRONMENT_PRESETS).forEach(([key, preset], order) =>
@@ -300,6 +303,18 @@ function registerBuiltins() {
 	});
 	// Properties opens the core-editable-set panel (112)
 	registerVRMenuEntry({ id: 'obj:props', group: 'object', label: 'Properties', order: 5 });
+	// Save prefab (115): the selection joins the library, thumbnail included
+	registerVRMenuEntry({
+		id: 'obj:prefab',
+		group: 'object',
+		label: 'Save prefab',
+		order: 6,
+		closes: true,
+		action: () => {
+			const uuid = /** @type {any} */ (get(selectedObject))?.uuid;
+			if (uuid) savePrefab(uuid);
+		}
+	});
 }
 
 registerBuiltins();

@@ -85,14 +85,14 @@ h.run(async () => {
 		'System ring: Mic nests here, Snap left for the Edit ring'
 	);
 	h.check(registry.objectOps.includes('snap'), 'Edit ring gained Snap');
-	h.check(registry.addCount === 6 && registry.sceneHasEnv, 'Add + Scene rings populated');
+	h.check(registry.addCount === 7 && registry.sceneHasEnv, 'Add ring: 6 primitives + Prefabs (115)');
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
 	h.check(
-		registry.objectOps.slice(0, 6).join(',') ===
-			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe,obj:props' &&
-			registry.objectOps.length === 7 &&
+		registry.objectOps.slice(0, 7).join(',') ===
+			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe,obj:props,obj:prefab' &&
+			registry.objectOps.length === 8 &&
 			!registry.objectOps.some((id) => id.startsWith('color:')),
-		`Edit ring: ops + Color + Wireframe + Properties + Snap, swatches gone (${registry.objectOps.join(',')})`
+		`Edit ring: ops + Color + Wireframe + Properties + Save prefab + Snap (${registry.objectOps.join(',')})`
 	);
 	h.check(
 		registry.hubClose === 'close' && registry.hubObject === 'nav:object' && registry.hubBack === 'back',

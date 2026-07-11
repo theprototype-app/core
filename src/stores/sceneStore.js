@@ -74,6 +74,10 @@ export const vrChatPanelOpen = writable(false);
 export const vrPaletteOpen = writable(false);
 // VR properties panel (112), opened from Edit ▸ Properties
 export const vrPropsPanelOpen = writable(false);
+// VR prefabs window (115), opened from Add ▸ Prefabs
+export const vrPrefabsPanelOpen = writable(false);
+// 115: true = the prefabs window is world-fixed (📌), false = lazy-follows the view
+export const vrPrefabsPinned = writable(false);
 // VR selection indicator style (110): wireframe (default) or the shell
 export const vrWireframeSelection = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('vrWireframe') !== 'false'

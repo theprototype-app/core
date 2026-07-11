@@ -57,6 +57,7 @@
 	title="Settings"
 	bind:open={$settingsOpen}
 	outsideclose
+	size="xl"
 >
 	<div class="modal-content max-h-[90vh] overflow-y-auto p-4">
 		<Accordion>
@@ -260,18 +261,21 @@
 			</AccordionItem>
 			<AccordionItem bind:open={shortcutsExpanded}>
 				<svelte:fragment slot="header">Shortcuts</svelte:fragment>
-				{#each shortcutGroups as group, groupIndex}
-					<p class="mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
-					{#each shortcuts.filter((s) => s.group === group) as shortcut}
-						<div class="flex items-center gap-3 py-1">
-							<kbd
-								class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100"
-								>{shortcut.keys}</kbd
-							>
-							<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
-						</div>
+				<!-- 131: borderless multi-column grid; group headers span all columns -->
+				<div id="shortcut-grid" class="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+					{#each shortcutGroups as group}
+						<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
+						{#each shortcuts.filter((s) => s.group === group) as shortcut}
+							<div class="flex items-center gap-3 py-1">
+								<kbd
+									class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100"
+									>{shortcut.keys}</kbd
+								>
+								<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
+							</div>
+						{/each}
 					{/each}
-				{/each}
+				</div>
 			</AccordionItem>
 			<AccordionItem>
 				<svelte:fragment slot="header">About</svelte:fragment>

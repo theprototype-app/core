@@ -13,6 +13,8 @@
 		renameSession,
 		exportSession,
 		importSession,
+		exportSessionZip,
+		importSessionZip,
 		requestLoadSession,
 		sessionObjectList,
 		importObjects
@@ -58,14 +60,26 @@
 		sessionsOpen.set(false);
 	}
 
-	/** @param {any} meta */
-	async function downloadSession(meta) {
+	/** @param {any} meta @param {boolean=} asZip */
+	async function downloadSession(meta, asZip = false) {
 		const payload = await getSession(meta.id);
 		if (!payload) return;
+		const safe = String(meta.name).replace(/[^\w-]+/g, '_');
+		if (asZip) {
+			// 127: session.json + the scene's binary assets, portable
+			const bytes = await exportSessionZip(payload);
+			const blob = new Blob([bytes], { type: 'application/zip' });
+			const link = document.createElement('a');
+			link.href = URL.createObjectURL(blob);
+			link.download = safe + '.session.zip';
+			link.click();
+			URL.revokeObjectURL(link.href);
+			return;
+		}
 		const blob = new Blob([exportSession(payload)], { type: 'application/json' });
 		const link = document.createElement('a');
 		link.href = URL.createObjectURL(blob);
-		link.download = String(meta.name).replace(/[^\w-]+/g, '_') + '.session.json';
+		link.download = safe + '.session.json';
 		link.click();
 		URL.revokeObjectURL(link.href);
 	}
@@ -75,7 +89,9 @@
 		const file = event.target.files?.[0];
 		if (!file) return;
 		try {
-			await importSession(await file.text());
+			// 127: a .zip restores its bundled assets into the Explorer first
+			if (file.name.toLowerCase().endsWith('.zip')) await importSessionZip(await file.arrayBuffer());
+			else await importSession(await file.text());
 		} catch {
 			showToast('Not a valid session file');
 		}
@@ -107,7 +123,7 @@
 			<Button size="xs" color="alternative" onclick={() => document.getElementById('session-import-file')?.click()}>
 				⬆ Import session file
 			</Button>
-			<input type="file" id="session-import-file" style="display: none" accept=".json" onchange={importSessionFile} />
+			<input type="file" id="session-import-file" style="display: none" accept=".json,.zip" onchange={importSessionFile} />
 			<span class="text-xs text-gray-400">
 				Loading with peers connected asks everyone first; a backup session is stashed before any replace.
 			</span>
@@ -176,7 +192,8 @@
 									onclick={() => { requestLoadSession(meta.id); sessionsOpen.set(false); }}>▶ Load</button>
 								<button class="ui-button-quiet" title="Pick objects to add to the current scene"
 									onclick={() => openPicker(meta)}>⤵ Import objects…</button>
-								<button class="ui-button-quiet" title="Download as a file" onclick={() => downloadSession(meta)}>⬇</button>
+								<button class="ui-button-quiet session-download-json" title="Download as JSON" onclick={() => downloadSession(meta)}>⬇ .json</button>
+								<button class="ui-button-quiet session-download-zip" title="Download as a .zip with the scene's assets" onclick={() => downloadSession(meta, true)}>⬇ .zip</button>
 								<button class="ui-button-quiet hover:bg-red-700" title="Delete"
 									onclick={() => deleteSession(meta.id)}>✕</button>
 							</div>

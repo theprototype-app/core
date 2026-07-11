@@ -165,6 +165,68 @@ export async function importSession(json) {
 	return payload;
 }
 
+// ---- session ZIP: session.json + the scene's binary assets (127) ----
+
+/**
+ * Build a .zip Uint8Array for a session: session.json + assets/<hash>.<ext>
+ * (the 108 scene manifest's audio/config/textures) + an assets/index.json map.
+ * Portable — re-importing on a fresh machine restores the assets too.
+ * @param {any} payload
+ */
+export async function exportSessionZip(payload) {
+	const { zipSync, strToU8 } = await import('fflate');
+	const { sceneAssetList } = await import('./sceneAssets');
+	const { itemByHash, itemBlob } = await import('./explorer');
+	/** @type {Record<string, any>} */
+	const files = { 'session.json': strToU8(JSON.stringify(payload)) };
+	/** @type {Array<{hash: string, name: string, kind: string, file: string}>} */
+	const index = [];
+	const seen = new Set();
+	for (const asset of sceneAssetList()) {
+		if (!asset.hash || seen.has(asset.hash)) continue;
+		const item = /** @type {any} */ (itemByHash(asset.hash));
+		if (!item) continue;
+		const blob = await itemBlob(item.id);
+		if (!blob) continue;
+		seen.add(asset.hash);
+		const ext = (item.name?.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase();
+		const file = 'assets/' + asset.hash + ext;
+		files[file] = new Uint8Array(await blob.arrayBuffer());
+		index.push({ hash: asset.hash, name: item.name, kind: asset.kind, file });
+	}
+	files['assets/index.json'] = strToU8(JSON.stringify(index));
+	return zipSync(files, { level: 6 });
+}
+
+/**
+ * Import a session .zip: restore its bundled assets into the Explorer (Shared,
+ * hash-deduped) FIRST so sound/texture hashes resolve, then the session.json.
+ * @param {ArrayBuffer} buffer
+ */
+export async function importSessionZip(buffer) {
+	const { unzipSync, strFromU8 } = await import('fflate');
+	const entries = unzipSync(new Uint8Array(buffer));
+	const sessionBytes = entries['session.json'];
+	if (!sessionBytes) throw new Error('zip has no session.json');
+	let index = [];
+	try {
+		if (entries['assets/index.json']) index = JSON.parse(strFromU8(entries['assets/index.json']));
+	} catch {
+		index = [];
+	}
+	if (index.length) {
+		const { applyAssetFile } = await import('./assetShare');
+		for (const entry of index) {
+			const bytes = entries[entry.file];
+			if (!bytes) continue;
+			// pass the Uint8Array VIEW — applyAssetFile slices byteOffset..length
+			// so fflate's shared buffers don't corrupt the content hash
+			await applyAssetFile({ hash: entry.hash, name: entry.name, buffer: bytes });
+		}
+	}
+	return importSession(strFromU8(sessionBytes));
+}
+
 /** Top-level entries for the selective-import checklist @param {any} payload */
 export function sessionObjectList(payload) {
 	return (payload.objects ?? []).map((/** @type {any} */ element, /** @type {number} */ index) => ({

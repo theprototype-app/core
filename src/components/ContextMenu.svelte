@@ -35,8 +35,8 @@
 ></div>
 
 <div
-	class="fixed min-w-36 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-	style="left: {x}px; top: {y}px; transform: {flipY ? 'translateY(-100%)' : 'none'}; z-index: 1000; max-height: {maxHeight}px;"
+	class="fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+	style="left: {x}px; top: {y}px; transform: {flipY ? 'translateY(-100%)' : 'none'}; z-index: 1000; max-height: {maxHeight}px; scrollbar-gutter: stable;"
 	role="menu"
 >
 	<ContextMenuItems {items} onrun={run} {flipX} {flipY} />

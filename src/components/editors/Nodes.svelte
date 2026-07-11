@@ -292,7 +292,8 @@
 	function searchResults(query: string) {
 		const entries = searchEntries();
 		const q = query.trim().toLowerCase();
-		if (!q) return entries.slice(0, 8);
+		// empty query = browse everything, scrolling (viewport Add search parity, 103)
+		if (!q) return entries;
 		return entries
 			.map((entry) => {
 				const text = (entry.label + ' ' + entry.group).toLowerCase();

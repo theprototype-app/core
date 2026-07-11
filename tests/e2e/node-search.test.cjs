@@ -97,8 +97,53 @@ h.run(async () => {
 		return rect.bottom <= window.innerHeight + 1 && rect.top >= 0;
 	});
 	h.check(searchFits, 'search box clamps into the viewport near the bottom');
-	await A.page.keyboard.press('Escape');
-	await A.page.keyboard.press('Escape');
+	await A.page.keyboard.press('Escape'); // back to the grouped menu
+	await A.page.mouse.click(900, 60); // backdrop click closes it
+	await A.page.waitForTimeout(200);
+
+	// 103: submenus render FIXED (no horizontal scrollbar on the root menu)
+	// and the chevron is the small ▸, not the heavy ▶
+	await pane.click({ button: 'right', position: { x: 400, y: 100 } });
+	await A.page.waitForTimeout(300);
+	await A.page.locator('[role="menuitem"]', { hasText: 'Animation' }).first().hover();
+	await A.page.waitForTimeout(300);
+	const subState = await A.page.evaluate(() => {
+		const menu = document.querySelector('[role="menu"]');
+		const sub = [...document.querySelectorAll('div')].find(
+			(el) => getComputedStyle(el).position === 'fixed' && el.textContent?.includes('Bounce') && !el.getAttribute('role')
+		);
+		return {
+			// a horizontal scrollBAR can never render: overflow-x is hidden and
+			// submenus are fixed-positioned outside the scroll container
+			noHScroll: menu ? getComputedStyle(menu).overflowX === 'hidden' : false,
+			subFixed: !!sub,
+			subOnScreen: sub
+				? sub.getBoundingClientRect().right <= window.innerWidth + 1 && sub.getBoundingClientRect().top >= 0
+				: false,
+			chevron: (menu?.textContent ?? '').includes('▸') && !(menu?.textContent ?? '').includes('▶')
+		};
+	});
+	h.check(subState.noHScroll, 'no horizontal scrollbar with a submenu open (103)');
+	h.check(subState.subFixed && subState.subOnScreen, 'submenu renders fixed and on screen');
+	h.check(subState.chevron, 'submenu arrow is the light chevron');
+	await A.page.mouse.click(900, 60); // backdrop click closes the menu
+	await A.page.waitForTimeout(200);
+
+	// 103: empty flow search browses ALL entries (scrollable, Add-search parity)
+	await pane.click({ button: 'right', position: { x: 300, y: 100 } });
+	await A.page.waitForTimeout(200);
+	await A.page.getByText('🔍 Search nodes…').click();
+	await A.page.waitForTimeout(300);
+	const browseAll = await A.page.evaluate(() => {
+		const list = document.querySelector('#node-search-box .max-h-64');
+		return { rows: list?.children.length ?? 0, scrolls: list ? list.scrollHeight > list.clientHeight : false };
+	});
+	h.check(
+		browseAll.rows > 10 && browseAll.scrolls,
+		`empty search browses everything with a scrollbar (${browseAll.rows} rows)`
+	);
+	await A.page.keyboard.press('Escape'); // back to the grouped menu
+	await A.page.mouse.click(900, 60); // backdrop click closes it
 	await A.page.waitForTimeout(200);
 
 	// 91: node cards show their LABEL (not the raw type) and dark inputs

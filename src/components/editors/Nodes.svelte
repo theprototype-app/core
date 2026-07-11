@@ -369,7 +369,7 @@
 	<div class="relative z-10 w-0" style="order: 2">
 		<button
 			id="palette-toggle"
-			class="palette-tab absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-[10px] text-gray-200 hover:bg-gray-600"
+			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-[10px] text-gray-200 hover:bg-gray-600"
 			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
 			title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
 			on:click={() => {
@@ -381,7 +381,7 @@
 		</button>
 		<button
 			id="palette-side"
-			class="palette-tab absolute top-24 flex h-9 w-4 items-center justify-center bg-gray-700 text-[9px] text-gray-300 hover:bg-gray-600"
+			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-24 flex h-9 w-4 items-center justify-center bg-gray-700 text-[9px] text-gray-300 hover:bg-gray-600"
 			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
 			title="Move the palette to the other side"
 			on:click={() => {

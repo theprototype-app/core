@@ -54,9 +54,13 @@
 	.resize-cue:hover {
 		background-color: rgb(249 115 22 / 0.5);
 	}
-	/* notebook-tab side buttons (82): trapezoid, narrower at the outer edge */
+	/* notebook-tab side buttons (82): trapezoid, narrower at the outer edge;
+	   the shape mirrors when the palette sits on the RIGHT (105) — glyphs stay */
 	.palette-tab {
 		clip-path: polygon(0 0, 100% 14%, 100% 86%, 0 100%);
+	}
+	.palette-tab-mirrored {
+		clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%);
 	}
 	/* drag-merge feedback (104): the window you'd merge into lights up */
 	.merge-target {

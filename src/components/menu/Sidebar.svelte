@@ -72,12 +72,13 @@
 	placement="left"
 	position="fixed"
 	rightOffset="end-0 top-16"
-	leftOffset="start-0 top-16 h-full"
+	leftOffset="start-0 top-16"
 	topOffset="top-16"
 	transitionType="fly"
 	transitionParams={transitionParamsRight}
 	class="rounded-tr-lg"
 	id="sidebar70"
+	style="bottom: var(--bottom-inset, 0px); height: auto; overflow-y: auto"
 >
 <Sidebar>
 	<SidebarWrapper>

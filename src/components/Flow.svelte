@@ -33,9 +33,10 @@
 		localStorage.setItem('flowDocked', String(v));
 	}
 
-	// tabbed dock coexistence with the Explorer (95)
+	// tabbed dock coexistence with the Explorer (95); height feeds the
+	// --bottom-inset so side UI ends above the dock (105)
 	$effect(() => {
-		setDockOccupant('flow', !$flowGraphClose && docked);
+		setDockOccupant('flow', !$flowGraphClose && docked, height);
 		return () => setDockOccupant('flow', false);
 	});
 	const dockVisible = $derived(!$dockShared || $bottomDockActive === 'flow');

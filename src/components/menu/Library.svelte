@@ -88,8 +88,9 @@
 		easing: sineIn
 	};
 
-	// side drawers live on the --z-drawer tier (68); chat floats on its own now
-	const drawerStyle = 'bottom: 0px; z-index: var(--z-drawer)';
+	// side drawers live on the --z-drawer tier (68); chat floats on its own now.
+	// bottom follows the docked Flow/Explorer height (105)
+	const drawerStyle = 'bottom: var(--bottom-inset, 0px); z-index: var(--z-drawer); height: auto';
 
 	const tabClass = (/** @type {boolean} */ active) =>
 		'flex-1 rounded-md px-2 py-1 text-xs font-semibold ' +

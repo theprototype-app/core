@@ -63,7 +63,8 @@ function apply(key) {
 	node.dataset.docked = side;
 	node.style.position = 'fixed';
 	node.style.top = TOP + 'px';
-	node.style.height = `calc(100vh - ${TOP}px)`;
+	// edge-docked windows end above a docked Flow/Explorer (105)
+	node.style.height = `calc(100vh - ${TOP}px - var(--bottom-inset, 0px))`;
 	node.style.width = width + 'px';
 	node.style.maxWidth = 'none';
 	node.style.maxHeight = 'none';

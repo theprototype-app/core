@@ -60,8 +60,9 @@
 
 	let transitionParamsRight = { x: 320, duration: 200, easing: sineIn };
 
-	// side drawers live on the --z-drawer tier (68); chat floats on its own now
-	const drawerStyle = 'bottom: 0px; z-index: var(--z-drawer)';
+	// side drawers live on the --z-drawer tier (68); chat floats on its own now.
+	// bottom follows the docked Flow/Explorer height so nothing covers it (105)
+	const drawerStyle = 'bottom: var(--bottom-inset, 0px); z-index: var(--z-drawer); height: auto';
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	const isGroup = $derived($selectedObject?.type === 'Group');

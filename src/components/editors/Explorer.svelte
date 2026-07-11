@@ -48,9 +48,10 @@
 		localStorage.setItem('explorerDocked', String(v));
 	}
 
-	// tabbed dock coexistence: report "docked + open", hide when Flow owns it
+	// tabbed dock coexistence: report "docked + open" (+height for the 105
+	// --bottom-inset), hide when Flow owns it
 	$effect(() => {
-		setDockOccupant('explorer', !$explorerClose && docked);
+		setDockOccupant('explorer', !$explorerClose && docked, height);
 		return () => setDockOccupant('explorer', false);
 	});
 	const dockVisible = $derived(!$dockShared || $bottomDockActive === 'explorer');

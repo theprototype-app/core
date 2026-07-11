@@ -54,6 +54,21 @@
 	$: vrPanelCursorAction.set(
 		$vrObjectsPanelOpen && children[cursor] ? 'panel:select:' + children[cursor].uuid : null
 	)
+	// scrollbar thumb (120): the visible window over the whole list
+	$: thumbH = children.length ? Math.max(panelHeight * (ROWS / children.length), 0.02) : panelHeight
+	$: thumbY = children.length
+		? panelHeight / 2 - ((start + ROWS / 2) / children.length) * panelHeight
+		: 0
+	// cursor-row action buttons (116/120): focus, visibility, rename, props, delete
+	function rowActions(child: any) {
+		return [
+			{ act: 'focus', glyph: '⊕', base: '#39404d' },
+			{ act: 'visible', glyph: child.visible === false ? '◎' : '◉', base: '#39404d' },
+			{ act: 'rename', glyph: '✎', base: '#39404d' },
+			{ act: 'props', glyph: 'ⓘ', base: '#39404d' },
+			{ act: 'delete', glyph: '✕', base: '#5a2a2a' }
+		]
+	}
 
 	const controllerPosition = new THREE.Vector3()
 	const controllerQuaternion = new THREE.Quaternion()
@@ -114,8 +129,8 @@
 				anchorX="left"
 				anchorY="middle"
 				position={[-WIDTH / 2 + 0.012, row.y, 0.002]}
-				maxWidth={row.index === cursor ? WIDTH - 0.11 : WIDTH - 0.05}
-				clipRect={[-0.01, -ROW_H, row.index === cursor ? WIDTH - 0.11 : WIDTH - 0.05, ROW_H]}
+				maxWidth={row.index === cursor ? WIDTH - 0.135 : WIDTH - 0.05}
+				clipRect={[-0.01, -ROW_H, row.index === cursor ? WIDTH - 0.135 : WIDTH - 0.05, ROW_H]}
 			/>
 			{#if row.lock}
 				<T.Mesh position={[WIDTH / 2 - 0.016, row.y, 0.002]}>
@@ -123,27 +138,28 @@
 					<T.MeshBasicMaterial color={peerColor(row.lock)} />
 				</T.Mesh>
 			{:else if row.index === cursor}
-				<!-- row actions v2 (116): visibility · rename · delete on the cursor row -->
-				<T.Mesh name={`vrpanel-visible:${row.child.uuid}`} position={[WIDTH / 2 - 0.05, row.y, 0.001]}>
-					<T.CircleGeometry args={[0.008, 18]} />
-					<T.MeshBasicMaterial color={$vrHovered === `panel:visible:${row.child.uuid}` ? '#ff4000' : '#39404d'} side={THREE.DoubleSide} />
-				</T.Mesh>
-				<Text text={row.child.visible === false ? '◎' : '◉'} color="#e8ecf2" fontSize={0.009}
-					anchorX="center" anchorY="middle" position={[WIDTH / 2 - 0.05, row.y, 0.003]} />
-				<T.Mesh name={`vrpanel-rename:${row.child.uuid}`} position={[WIDTH / 2 - 0.03, row.y, 0.001]}>
-					<T.CircleGeometry args={[0.008, 18]} />
-					<T.MeshBasicMaterial color={$vrHovered === `panel:rename:${row.child.uuid}` ? '#ff4000' : '#39404d'} side={THREE.DoubleSide} />
-				</T.Mesh>
-				<Text text="✎" color="#e8ecf2" fontSize={0.009}
-					anchorX="center" anchorY="middle" position={[WIDTH / 2 - 0.03, row.y, 0.003]} />
-				<T.Mesh name={`vrpanel-delete:${row.child.uuid}`} position={[WIDTH / 2 - 0.01, row.y, 0.001]}>
-					<T.CircleGeometry args={[0.008, 18]} />
-					<T.MeshBasicMaterial color={$vrHovered === `panel:delete:${row.child.uuid}` ? '#ff4000' : '#5a2a2a'} side={THREE.DoubleSide} />
-				</T.Mesh>
-				<Text text="✕" color="#e8a0a0" fontSize={0.009}
-					anchorX="center" anchorY="middle" position={[WIDTH / 2 - 0.01, row.y, 0.003]} />
+				<!-- row actions (116/120): focus, visibility, rename, properties, delete -->
+				{#each rowActions(row.child) as a, bi (a.act)}
+					<T.Mesh name={`vrpanel-${a.act}:${row.child.uuid}`} position={[WIDTH / 2 - 0.09 + bi * 0.02, row.y, 0.001]}>
+						<T.CircleGeometry args={[0.008, 18]} />
+						<T.MeshBasicMaterial color={$vrHovered === `panel:${a.act}:${row.child.uuid}` ? '#ff4000' : a.base} side={THREE.DoubleSide} />
+					</T.Mesh>
+					<Text text={a.glyph} color={a.act === 'delete' ? '#e8a0a0' : '#e8ecf2'} fontSize={0.009}
+						anchorX="center" anchorY="middle" position={[WIDTH / 2 - 0.09 + bi * 0.02, row.y, 0.003]} />
+				{/each}
 			{/if}
 		{/each}
+		<!-- vertical scrollbar indicator (120): display-only track + thumb -->
+		{#if maxScroll > 0}
+			<T.Mesh position={[WIDTH / 2 + 0.006, 0, 0.001]}>
+				<T.PlaneGeometry args={[0.004, panelHeight]} />
+				<T.MeshBasicMaterial color="#2a2f38" transparent opacity={0.7} side={THREE.DoubleSide} />
+			</T.Mesh>
+			<T.Mesh position={[WIDTH / 2 + 0.006, thumbY, 0.002]}>
+				<T.PlaneGeometry args={[0.004, thumbH]} />
+				<T.MeshBasicMaterial color="#6b7482" side={THREE.DoubleSide} />
+			</T.Mesh>
+		{/if}
 		<!-- close hub under the list -->
 		<T.Mesh name="vrpanel-close" position={[0, -panelHeight / 2 - 0.018, 0]}>
 			<T.CircleGeometry args={[0.014, 24]} />

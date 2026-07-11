@@ -86,7 +86,7 @@ h.run(async () => {
 	);
 	h.check(rows.length === 3, `panel lists the top-level objects (${rows.length})`);
 
-	// selecting a row through the dispatcher selects + closes
+	// selecting a row through the dispatcher selects and (120) KEEPS the panel open
 	const picked = await A.page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
@@ -98,7 +98,7 @@ h.run(async () => {
 			}),
 		rows[1]
 	);
-	h.check(picked.selected === rows[1] && picked.open === false, 'panel row selects the object and closes');
+	h.check(picked.selected === rows[1] && picked.open === true, 'panel row selects the object and stays open (120)');
 
 	// 109.4: the row CURSOR clamps to the list, follows the stick, and its
 	// action id publishes for stick-press selection
@@ -141,9 +141,7 @@ h.run(async () => {
 				resolve({ matches: action === 'panel:select:' + selected, open });
 			})
 	);
-	h.check(cursorPick.matches && cursorPick.open === false, 'stick-press path selects the cursored row');
-	await A.page.evaluate(() => window.__stores.vrObjectsPanelOpen.set(true));
-	await A.page.waitForTimeout(200);
+	h.check(cursorPick.matches && cursorPick.open === true, 'stick-press path selects the cursored row, panel stays open (120)');
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('panel:close'));
 	const closed = await A.page.evaluate(
 		() =>

@@ -61,7 +61,8 @@ import {
 	toggleObjectVisibility,
 	duplicateObject,
 	deleteSelection,
-	renameObject
+	renameObject,
+	focusObject
 } from './objectActions';
 import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
@@ -93,6 +94,37 @@ export const vrMenuGroup = writable(null);
 export const vrPanelGroup = writable(null);
 /** objects panel row CURSOR (109.4) — the stick moves it, press selects it */
 export const vrPanelCursor = writable(0);
+/** last panel row-select {uuid, at} for double-click focus detection (120) */
+let lastPanelSelect = { uuid: '', at: 0 };
+
+/**
+ * VR focus (120): teleport the rig so the viewer frames an object — the
+ * desktop focusObject bails in VR (camera is XR-driven). Translation only
+ * (matches teleport/world-pan): keep facing, stand back a framing distance.
+ * @param {string} uuid
+ */
+export function vrFocusObject(uuid) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!object || !renderer?.xr?.isPresenting) return;
+	const box = new THREE.Box3().setFromObject(object);
+	if (!isFinite(box.min.x)) return;
+	const center = box.getCenter(new THREE.Vector3());
+	const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.3);
+	const viewer = renderer.xr.getCamera().getWorldPosition(new THREE.Vector3());
+	const dir = viewer.clone().sub(center);
+	dir.y = 0;
+	if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+	dir.normalize();
+	const desired = center.clone().add(dir.multiplyScalar(radius * 3 + 0.5));
+	desired.y = viewer.y; // keep eye height
+	const move = desired.sub(viewer); // world displacement we want for the viewer
+	const space = renderer.xr.getReferenceSpace();
+	// getOffsetReferenceSpace moves the viewer by -(offset), so negate the move
+	// @ts-ignore - XRRigidTransform is a WebXR global (no TS lib here)
+	const offset = new XRRigidTransform({ x: -move.x, y: -move.y, z: -move.z });
+	if (space) renderer.xr.setReferenceSpace(space.getOffsetReferenceSpace(offset));
+	hapticPulse(0.3, 40);
+}
 /** the cursored row's action id, published by VRObjectsPanel @type {import('svelte/store').Writable<string|null>} */
 export const vrPanelCursorAction = writable(null);
 let panelScrollAt = 0;
@@ -534,10 +566,8 @@ export const PROPS_ROWS = [
 	'scale:y',
 	'scale:z',
 	'opacity',
-	'color',
-	'visible',
-	'duplicate',
-	'delete'
+	'visible'
+	// 120: color/duplicate/delete removed — they live on the Edit ring + palette
 ];
 
 /** Raycast the props panel controls @param {number} index @returns {string|null} props action */
@@ -1461,12 +1491,33 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name.startsWith('panel:')) {
-		// objects panel actions (101) + row actions v2 (116)
+		// objects panel actions (101) + row actions v2 (116/120)
 		if (name === 'panel:close') vrObjectsPanelOpen.set(false);
 		else if (name.startsWith('panel:select:')) {
-			selectObject(name.slice('panel:select:'.length));
+			// 120: selecting no longer closes the panel; a second select on the
+			// SAME row within the double-click window focuses it instead
+			const uuid = name.slice('panel:select:'.length);
+			const now = Date.now();
+			if (uuid === lastPanelSelect.uuid && now - lastPanelSelect.at < 400) {
+				lastPanelSelect = { uuid: '', at: 0 };
+				executeVRMenuAction('panel:focus:' + uuid);
+			} else {
+				lastPanelSelect = { uuid, at: now };
+				selectObject(uuid);
+				hapticPulse(0.2, 30);
+			}
+		} else if (name.startsWith('panel:focus:')) {
+			const uuid = name.slice('panel:focus:'.length);
+			selectObject(uuid);
+			if (renderer?.xr?.isPresenting) vrFocusObject(uuid);
+			else focusObject(uuid);
+		} else if (name.startsWith('panel:props:')) {
+			// open the 112 properties panel for this row's object
+			selectObject(name.slice('panel:props:'.length));
+			vrPropsPanelOpen.set(true);
 			vrObjectsPanelOpen.set(false);
-			hapticPulse(0.3, 40);
+			vrPaletteOpen.set(false);
+			vrChatPanelOpen.set(false);
 		} else if (name.startsWith('panel:visible:')) {
 			toggleObjectVisibility(name.slice('panel:visible:'.length));
 		} else if (name.startsWith('panel:delete:')) {
@@ -1821,6 +1872,13 @@ export function updateVRControls() {
 			panelScrollAt = now;
 			hapticPulse(0.08, 10);
 			vrPanelCursor.update((v) => Math.max(0, v + (y > 0 ? 1 : -1)));
+			// 120: selection FOLLOWS the cursor (lock-respecting) so navigating
+			// the list selects live — no separate press needed
+			const children = get(objectsGroup)?.children ?? [];
+			const idx = Math.min(Math.max(0, get(vrPanelCursor)), Math.max(0, children.length - 1));
+			const target = children[idx];
+			if (target && !get(lockedObjects).find((lock) => lock[1] === target.uuid))
+				selectObject(target.uuid);
 		}
 	} else if (get(vrPropsPanelOpen)) {
 		// props panel (112): ray highlights controls; EITHER stick moves the row

@@ -21,7 +21,7 @@ h.run(async () => {
 			rows: v.PROPS_ROWS.join(','),
 			pressAxis: v.propsRowAction('pos:x'),
 			pressOpacity: v.propsRowAction('opacity'),
-			pressDelete: v.propsRowAction('delete')
+			pressVisible: v.propsRowAction('visible')
 		};
 	});
 	h.check(
@@ -34,13 +34,13 @@ h.run(async () => {
 		'rotation steps convert degrees to radians'
 	);
 	h.check(
-		steps.rows.startsWith('pos:x,pos:y,pos:z,rot:x') && steps.rows.endsWith('duplicate,delete'),
-		`row order: transforms, opacity, color, actions (${steps.rows})`
+		steps.rows.startsWith('pos:x,pos:y,pos:z,rot:x') && steps.rows.endsWith('opacity,visible'),
+		`row order: transforms, opacity, visible — 120 dropped color/dup/delete (${steps.rows})`
 	);
 	h.check(
 		steps.pressAxis === 'props:nudge:pos:x:1' &&
 			steps.pressOpacity === 'props:opacity:1' &&
-			steps.pressDelete === 'props:delete',
+			steps.pressVisible === 'props:visible',
 		'stick-press maps rows to their actions'
 	);
 
@@ -95,12 +95,11 @@ h.run(async () => {
 		names.includes('nudge:pos:x:-1') &&
 			names.includes('nudge:scale:z:1') &&
 			names.includes('opacity:1') &&
-			names.includes('color') &&
 			names.includes('visible') &&
-			names.includes('duplicate') &&
-			names.includes('delete') &&
-			names.includes('close'),
-		`panel renders the core control set (${names.length} controls)`
+			names.includes('close') &&
+			!names.includes('color') &&
+			!names.includes('delete'),
+		`panel renders the slimmed control set — no color/dup/delete (${names.length} controls)`
 	);
 
 	// --- nudges: local apply + undo entry + replicated move path ---
@@ -139,44 +138,18 @@ h.run(async () => {
 		`opacity nudges to 0.9 and arms transparency (${opacity.opacity})`
 	);
 
-	// --- visibility, color, duplicate, delete ---
+	// --- visibility (color/duplicate/delete moved to the Edit ring, 120) ---
 	const actions = await A.page.evaluate(async () => {
-		const read = (store) => {
-			let v;
-			store.subscribe((x) => (v = x))();
-			return v;
-		};
 		const s = window.__stores;
 		const v = s.vrControls;
 		const box = window.__box;
 		v.executeVRMenuAction('props:visible');
 		const hidden = box.visible === false;
 		v.executeVRMenuAction('props:visible');
-		v.executeVRMenuAction('props:color');
-		const paletteOpen = read(s.vrPaletteOpen);
-		const propsClosedByColor = read(s.vrPropsPanelOpen) === false;
-		s.vrPaletteOpen.set(false);
-		s.vrPropsPanelOpen.set(true);
-		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
-		const before = group.children.length;
-		v.executeVRMenuAction('props:duplicate');
-		const afterDup = group.children.length;
-		// delete removes the selection and closes the panel
-		v.executeVRMenuAction('props:delete');
-		const afterDelete = group.children.length;
-		const closed = read(s.vrPropsPanelOpen) === false;
-		return { hidden, paletteOpen, propsClosedByColor, before, afterDup, afterDelete, closed };
+		return { hidden };
 	});
 	h.check(actions.hidden, 'Visible row toggles the selection');
-	h.check(
-		actions.paletteOpen && actions.propsClosedByColor,
-		'Color row hands off to the palette panel'
-	);
-	h.check(
-		actions.afterDup === actions.before + 1 && actions.afterDelete === actions.afterDup - 1,
-		`Duplicate/Delete route through objectActions (${actions.before}→${actions.afterDup}→${actions.afterDelete})`
-	);
-	h.check(actions.closed, 'Delete closes the panel');
+	// color/dup/delete moved to the Edit ring (120) — covered by vr-radial + vr-palette
 
 	await h.finish(browser);
 });

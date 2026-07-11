@@ -18,7 +18,8 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, placePrefabGhost, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, placePrefabGhost, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
+	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
 	import { sendPing } from '$lib/ping';
@@ -31,6 +32,7 @@
 	import VRColorPalette from './play/VRColorPalette.svelte';
 	import VRPropertiesPanel from './play/VRPropertiesPanel.svelte';
 	import VRPrefabsPanel from './play/VRPrefabsPanel.svelte';
+	import VRKeyboard from './play/VRKeyboard.svelte';
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
@@ -440,6 +442,12 @@
 		const xrControllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
 		const onXRSelect = (event) => {
 			const controller = event.target;
+			// the keyboard is modal on top of any panel (116)
+			if ($vrKeyboardTarget) {
+				const key = raycastKeyboard(xrControllers.indexOf(controller));
+				if (key) executeVRMenuAction(key);
+				return;
+			}
 			if ($vrMenuOpen) {
 				const action = raycastMenu(xrControllers.indexOf(controller));
 				if (action) {
@@ -612,6 +620,7 @@ position={[0, 2, 3]}
 <VRColorPalette />
 <VRPropertiesPanel />
 <VRPrefabsPanel />
+<VRKeyboard />
 <VRSelectionShell />
 
 <XR

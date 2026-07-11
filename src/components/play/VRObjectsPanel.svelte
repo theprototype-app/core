@@ -114,14 +114,34 @@
 				anchorX="left"
 				anchorY="middle"
 				position={[-WIDTH / 2 + 0.012, row.y, 0.002]}
-				maxWidth={WIDTH - 0.05}
-				clipRect={[-0.01, -ROW_H, WIDTH - 0.05, ROW_H]}
+				maxWidth={row.index === cursor ? WIDTH - 0.11 : WIDTH - 0.05}
+				clipRect={[-0.01, -ROW_H, row.index === cursor ? WIDTH - 0.11 : WIDTH - 0.05, ROW_H]}
 			/>
 			{#if row.lock}
 				<T.Mesh position={[WIDTH / 2 - 0.016, row.y, 0.002]}>
 					<T.CircleGeometry args={[0.006, 16]} />
 					<T.MeshBasicMaterial color={peerColor(row.lock)} />
 				</T.Mesh>
+			{:else if row.index === cursor}
+				<!-- row actions v2 (116): visibility · rename · delete on the cursor row -->
+				<T.Mesh name={`vrpanel-visible:${row.child.uuid}`} position={[WIDTH / 2 - 0.05, row.y, 0.001]}>
+					<T.CircleGeometry args={[0.008, 18]} />
+					<T.MeshBasicMaterial color={$vrHovered === `panel:visible:${row.child.uuid}` ? '#ff4000' : '#39404d'} side={THREE.DoubleSide} />
+				</T.Mesh>
+				<Text text={row.child.visible === false ? '◎' : '◉'} color="#e8ecf2" fontSize={0.009}
+					anchorX="center" anchorY="middle" position={[WIDTH / 2 - 0.05, row.y, 0.003]} />
+				<T.Mesh name={`vrpanel-rename:${row.child.uuid}`} position={[WIDTH / 2 - 0.03, row.y, 0.001]}>
+					<T.CircleGeometry args={[0.008, 18]} />
+					<T.MeshBasicMaterial color={$vrHovered === `panel:rename:${row.child.uuid}` ? '#ff4000' : '#39404d'} side={THREE.DoubleSide} />
+				</T.Mesh>
+				<Text text="✎" color="#e8ecf2" fontSize={0.009}
+					anchorX="center" anchorY="middle" position={[WIDTH / 2 - 0.03, row.y, 0.003]} />
+				<T.Mesh name={`vrpanel-delete:${row.child.uuid}`} position={[WIDTH / 2 - 0.01, row.y, 0.001]}>
+					<T.CircleGeometry args={[0.008, 18]} />
+					<T.MeshBasicMaterial color={$vrHovered === `panel:delete:${row.child.uuid}` ? '#ff4000' : '#5a2a2a'} side={THREE.DoubleSide} />
+				</T.Mesh>
+				<Text text="✕" color="#e8a0a0" fontSize={0.009}
+					anchorX="center" anchorY="middle" position={[WIDTH / 2 - 0.01, row.y, 0.003]} />
 			{/if}
 		{/each}
 		<!-- close hub under the list -->

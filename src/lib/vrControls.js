@@ -38,8 +38,10 @@ import {
 	topLevelObjectOf,
 	toggleObjectVisibility,
 	duplicateObject,
-	deleteSelection
+	deleteSelection,
+	renameObject
 } from './objectActions';
+import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing } from './ping';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
@@ -581,6 +583,19 @@ let ghostObject = null;
 /** @type {any} */
 let ghostPrefab = null;
 
+// ---- VR keyboard (116): raycast the key grid, route presses ----
+/** the keyboard THREE group @type {import('svelte/store').Writable<any>} */
+export const vrKeyboardGroup = writable(null);
+
+/** Raycast the keyboard keys @param {number} index @returns {string|null} kbd action */
+export function raycastKeyboard(index) {
+	const panel = get(vrKeyboardGroup);
+	if (!panel || !get(vrKeyboardTarget)) return null;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const key = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrkey-'));
+	return key ? 'kbd:' + key.object.name.slice('vrkey-'.length) : null;
+}
+
 /** Raycast the prefabs window controls @param {number} index */
 export function raycastPrefabs(index) {
 	const panel = get(vrPrefabsGroup);
@@ -883,7 +898,8 @@ function windowGroupFor(/** @type {string} */ id) {
 			palette: vrPaletteGroup,
 			stats: vrStatsGroup,
 			props: vrPropsGroup,
-			prefabs: vrPrefabsGroup
+			prefabs: vrPrefabsGroup,
+			keyboard: vrKeyboardGroup
 		}[id] ?? vrMenuGroup
 	);
 }
@@ -891,7 +907,7 @@ function windowGroupFor(/** @type {string} */ id) {
 /** Which open window the controller ray lands on @param {number} index */
 function windowHitAt(index) {
 	let best = null;
-	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs']) {
+	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard']) {
 		const group = windowGroupFor(id);
 		if (!group) continue;
 		const hits = controllerRay(index).intersectObject(group, true);
@@ -1306,6 +1322,10 @@ export function executeVRMenuAction(name) {
 		vrPaletteOpen.set(false);
 		return;
 	}
+	if (name.startsWith('kbd:')) {
+		pressVRKey(name.slice('kbd:'.length));
+		return;
+	}
 	// registry entries carry their own action (env presets, mic modes, object
 	// ops, color swatches, module-registered entries)
 	const entry = findMenuEntry(name);
@@ -1315,12 +1335,36 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name.startsWith('panel:')) {
-		// objects panel actions (101)
+		// objects panel actions (101) + row actions v2 (116)
 		if (name === 'panel:close') vrObjectsPanelOpen.set(false);
 		else if (name.startsWith('panel:select:')) {
 			selectObject(name.slice('panel:select:'.length));
 			vrObjectsPanelOpen.set(false);
 			hapticPulse(0.3, 40);
+		} else if (name.startsWith('panel:visible:')) {
+			toggleObjectVisibility(name.slice('panel:visible:'.length));
+		} else if (name.startsWith('panel:delete:')) {
+			const uuid = name.slice('panel:delete:'.length);
+			if (get(lockedObjects).find((lock) => lock[1] === uuid)) {
+				showToast('That object is locked by another peer');
+			} else {
+				selectObject(uuid);
+				deleteSelection();
+			}
+		} else if (name.startsWith('panel:rename:')) {
+			const uuid = name.slice('panel:rename:'.length);
+			if (get(lockedObjects).find((lock) => lock[1] === uuid)) {
+				showToast('That object is locked by another peer');
+				return;
+			}
+			const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+			openVRKeyboard({
+				title: 'Rename object',
+				initial: object?.name ?? '',
+				onCommit: (text) => {
+					if (text.trim()) renameObject(uuid, text.trim());
+				}
+			});
 		}
 		return;
 	}
@@ -1433,6 +1477,7 @@ export function updateVRControls() {
 		!get(vrObjectsPanelOpen) &&
 		!get(vrPropsPanelOpen) &&
 		!get(vrPrefabsPanelOpen) &&
+		!get(vrKeyboardTarget) &&
 		get(vrGrabbedHand) !== 'right'
 	) {
 		updateTeleport(session);
@@ -1486,7 +1531,11 @@ export function updateVRControls() {
 		// pings the pointed spot with the v2 visual/chime + a haptic tick (87.6)
 		const stickPressed = !!buttons[3]?.pressed;
 		if (stickPressed && !prev.stick) {
-			if (get(vrMenuOpen)) {
+			if (get(vrKeyboardTarget)) {
+				// keyboard is modal on top (116): stick-press taps the hovered key
+				const hovered = get(vrHovered);
+				if (hovered) executeVRMenuAction(hovered);
+			} else if (get(vrMenuOpen)) {
 				// activate the hovered sector; a centered stick presses the HUB
 				// (the 'middle option', 109)
 				const hovered = get(vrHovered);
@@ -1557,7 +1606,16 @@ export function updateVRControls() {
 	// sector highlight (74/109): pointer-hand ray first, then the MENU hand's
 	// own thumbstick (one-handed control), then the pointer stick as fallback;
 	// a hover change gives a small haptic tick
-	if (get(vrMenuOpen)) {
+	if (get(vrKeyboardTarget)) {
+		// keyboard is modal on top (116): the pointer ray highlights keys, either
+		// stick nudges through them left-to-right / row-to-row via the raycast
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const hovered = pointerIndex >= 0 ? raycastKeyboard(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.1, 12);
+			vrHovered.set(hovered);
+		}
+	} else if (get(vrMenuOpen)) {
 		const sources = [...session.inputSources];
 		const menuIndex = sources.findIndex((s) => s.handedness === get(vrMenuHand));
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');

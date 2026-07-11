@@ -95,27 +95,50 @@ h.run(async () => {
 	);
 	h.check(picked.selected === rows[1] && picked.open === false, 'panel row selects the object and closes');
 
-	// scroll clamps at zero and the close action works
+	// 109.4: the row CURSOR clamps to the list, follows the stick, and its
+	// action id publishes for stick-press selection
 	await A.page.evaluate(() => {
 		window.__stores.vrObjectsPanelOpen.set(true);
-		window.__stores.vrControls.vrPanelScroll.set(5);
+		window.__stores.vrControls.vrPanelCursor.set(5);
 	});
 	await A.page.waitForTimeout(300);
-	const clamped = await A.page.evaluate(
+	const cursorState = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				// 3 objects, 8 rows per page -> start clamps to 0 in the panel view
+				let cursor, action;
+				window.__stores.vrControls.vrPanelCursor.subscribe((v) => (cursor = v))();
+				window.__stores.vrControls.vrPanelCursorAction.subscribe((v) => (action = v))();
 				window.__stores.globalScene.subscribe((scene) => {
 					const panel = scene?.getObjectByName('vr-objects-panel');
 					let count = 0;
 					panel?.traverse((o) => {
 						if (o.name?.startsWith('vrpanel-select:')) count++;
 					});
-					resolve(count);
+					resolve({ cursor, action, count });
 				})();
 			})
 	);
-	h.check(clamped === 3, 'scroll clamps to the list size');
+	h.check(cursorState.cursor === 2 && cursorState.count === 3, `cursor clamps to the list (${cursorState.cursor})`);
+	h.check(
+		cursorState.action?.startsWith('panel:select:'),
+		'cursored row publishes its select action for stick-press'
+	);
+	// dispatching the published action selects that row
+	const cursorPick = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				let action;
+				window.__stores.vrControls.vrPanelCursorAction.subscribe((v) => (action = v))();
+				window.__stores.vrControls.executeVRMenuAction(action);
+				let selected, open;
+				window.__stores.selectedObject.subscribe((v) => (selected = v?.uuid))();
+				window.__stores.vrObjectsPanelOpen.subscribe((v) => (open = v))();
+				resolve({ matches: action === 'panel:select:' + selected, open });
+			})
+	);
+	h.check(cursorPick.matches && cursorPick.open === false, 'stick-press path selects the cursored row');
+	await A.page.evaluate(() => window.__stores.vrObjectsPanelOpen.set(true));
+	await A.page.waitForTimeout(200);
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('panel:close'));
 	const closed = await A.page.evaluate(
 		() =>

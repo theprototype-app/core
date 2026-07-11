@@ -68,6 +68,8 @@ export const vrMenuHold = writable(
 );
 // native VR objects panel (101), opened from the radial Objects sector
 export const vrObjectsPanelOpen = writable(false);
+// VR chat panel (117), opened from the radial Chat sector
+export const vrChatPanelOpen = writable(false);
 // stats card on the pointer controller (102) — persisted so it re-attaches
 export const vrStatsOpen = writable(
 	typeof localStorage !== 'undefined' && localStorage.getItem('vrStats') === 'true'

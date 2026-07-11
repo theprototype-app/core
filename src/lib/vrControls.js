@@ -16,11 +16,12 @@ import {
 	vrPassthrough,
 	vrMenuHold,
 	vrObjectsPanelOpen,
+	vrChatPanelOpen,
 	vrStatsOpen,
 	vrGrabStyle,
 	vrGrabbedHand
 } from '../stores/sceneStore';
-import { activeRing, findMenuEntry, ringEntries, sectorFromStick } from './vrRadialMenu';
+import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, hubEntry } from './vrRadialMenu';
 import { peers, showToast } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
@@ -45,8 +46,10 @@ export const vrHovered = writable(null);
 export const vrMenuGroup = writable(null);
 /** the objects panel THREE group (101) @type {import('svelte/store').Writable<any>} */
 export const vrPanelGroup = writable(null);
-/** objects panel scroll offset in rows (101) */
-export const vrPanelScroll = writable(0);
+/** objects panel row CURSOR (109.4) — the stick moves it, press selects it */
+export const vrPanelCursor = writable(0);
+/** the cursored row's action id, published by VRObjectsPanel @type {import('svelte/store').Writable<string|null>} */
+export const vrPanelCursorAction = writable(null);
 let panelScrollAt = 0;
 
 /** @type {any} */ let renderer = null;
@@ -844,17 +847,24 @@ function spawnPrimitive(command) {
 /** Radial-menu sector actions (74): navigation + registry first, then the
  * built-in switch @param {string} name */
 export function executeVRMenuAction(name) {
-	// ring navigation + close
+	// ring navigation + close (109: a STACK — Back pops one level)
 	if (name === 'close') {
 		vrMenuOpen.set(false);
 		return;
 	}
 	if (name === 'back') {
-		activeRing.set('root');
+		popRing();
 		return;
 	}
 	if (name.startsWith('nav:')) {
-		activeRing.set(name.slice(4));
+		pushRing(name.slice(4));
+		return;
+	}
+	if (name === 'chat') {
+		// the VR chat panel (117) replaces the ring on screen
+		vrChatPanelOpen.update((v) => !v);
+		vrObjectsPanelOpen.set(false);
+		vrMenuOpen.set(false);
 		return;
 	}
 	// registry entries carry their own action (env presets, mic modes, object
@@ -1025,9 +1035,19 @@ export function updateVRControls() {
 		// pings the pointed spot with the v2 visual/chime + a haptic tick (87.6)
 		const stickPressed = !!buttons[3]?.pressed;
 		if (stickPressed && !prev.stick) {
-			if (get(vrMenuOpen) || get(vrObjectsPanelOpen)) {
+			if (get(vrMenuOpen)) {
+				// activate the hovered sector; a centered stick presses the HUB
+				// (the 'middle option', 109)
 				const hovered = get(vrHovered);
 				if (hovered) executeVRMenuAction(hovered);
+				else
+					executeVRMenuAction(
+						hubEntry(get(activeRing), !!(/** @type {any} */ (get(selectedObject))?.uuid)).id
+					);
+			} else if (get(vrObjectsPanelOpen)) {
+				// ray hover wins; otherwise the row cursor's action (109.4)
+				const action = get(vrHovered) ?? get(vrPanelCursorAction);
+				if (action) executeVRMenuAction(action);
 			} else if (source.handedness === 'right') pingFromController(index);
 		}
 		prev.stick = stickPressed;
@@ -1062,36 +1082,50 @@ export function updateVRControls() {
 		}
 	}
 
-	// sector highlight (74): pointer-hand ray first, thumbstick direction as
-	// the fallback; a hover change gives a small haptic tick
+	// sector highlight (74/109): pointer-hand ray first, then the MENU hand's
+	// own thumbstick (one-handed control), then the pointer stick as fallback;
+	// a hover change gives a small haptic tick
 	if (get(vrMenuOpen)) {
+		const sources = [...session.inputSources];
+		const menuIndex = sources.findIndex((s) => s.handedness === get(vrMenuHand));
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 		let hovered = pointerIndex >= 0 ? raycastMenu(pointerIndex) : null;
-		if (!hovered && pointerIndex >= 0) {
-			const axes = [...session.inputSources][pointerIndex]?.gamepad?.axes ?? [];
+		if (!hovered) {
 			const entries = ringEntries(get(activeRing));
-			const sector = sectorFromStick(axes[2] ?? 0, axes[3] ?? 0, entries.length);
-			if (sector !== null) hovered = entries[sector]?.id ?? null;
+			for (const index of [menuIndex, pointerIndex]) {
+				if (index < 0) continue;
+				const axes = sources[index]?.gamepad?.axes ?? [];
+				const sector = sectorFromStick(axes[2] ?? 0, axes[3] ?? 0, entries.length);
+				if (sector !== null) {
+					hovered = entries[sector]?.id ?? null;
+					break;
+				}
+			}
 		}
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.15, 18);
 			vrHovered.set(hovered);
 		}
 	} else if (get(vrObjectsPanelOpen)) {
-		// objects panel (101): ray highlights rows, pointer stick scrolls
+		// objects panel (101/109): ray highlights rows; EITHER stick moves a row
+		// cursor (scrolls with it), stick-press/trigger selects the cursored row
+		const sources = [...session.inputSources];
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const menuIndex = sources.findIndex((s) => s.handedness === get(vrMenuHand));
 		const hovered = pointerIndex >= 0 ? raycastPanel(pointerIndex) : null;
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.12, 14);
 			vrHovered.set(hovered);
 		}
-		if (pointerIndex >= 0) {
-			const y = [...session.inputSources][pointerIndex]?.gamepad?.axes?.[3] ?? 0;
-			const now = Date.now();
-			if (Math.abs(y) > 0.6 && now - panelScrollAt > 220) {
-				panelScrollAt = now;
-				vrPanelScroll.update((v) => Math.max(0, v + (y > 0 ? 1 : -1)));
-			}
+		let y = 0;
+		for (const index of [pointerIndex, menuIndex])
+			if (index >= 0 && Math.abs(sources[index]?.gamepad?.axes?.[3] ?? 0) > Math.abs(y))
+				y = sources[index].gamepad.axes[3];
+		const now = Date.now();
+		if (Math.abs(y) > 0.6 && now - panelScrollAt > 220) {
+			panelScrollAt = now;
+			hapticPulse(0.08, 10);
+			vrPanelCursor.update((v) => Math.max(0, v + (y > 0 ? 1 : -1)));
 		}
 	} else if (get(vrHovered) !== null) {
 		vrHovered.set(null);

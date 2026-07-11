@@ -51,6 +51,23 @@ export const activeRing = writable('root');
 /** bumps whenever the registry changes so the menu re-derives */
 export const ringVersion = writable(0);
 
+// navigation STACK (109): rings can nest (System ▸ Mic ▸) — Back pops one
+// level instead of teleporting to root
+let ringStack = ['root'];
+/** @param {string} ring */
+export function pushRing(ring) {
+	ringStack.push(ring);
+	activeRing.set(ring);
+}
+export function popRing() {
+	if (ringStack.length > 1) ringStack.pop();
+	activeRing.set(ringStack[ringStack.length - 1]);
+}
+export function resetRings() {
+	ringStack = ['root'];
+	activeRing.set('root');
+}
+
 /** @type {Map<string, any[]>} group -> entries */
 const registry = new Map();
 
@@ -95,13 +112,14 @@ export function statsHand(menuHand) {
 }
 
 /**
- * The center hub doubles as Close (base ring), Object ▸ (base ring with a
- * selection) or Back (sub-rings).
+ * The center hub doubles as Close (base ring), Edit ▸ (base ring with a
+ * selection — renamed from 'Object' in 109, it read too close to 'Objects')
+ * or Back (sub-rings).
  * @param {string} ring @param {boolean} hasSelection
  */
 export function hubEntry(ring, hasSelection) {
 	if (ring !== 'root') return { id: 'back', label: '←' };
-	if (hasSelection) return { id: 'nav:object', label: 'Object' };
+	if (hasSelection) return { id: 'nav:object', label: 'Edit' };
 	return { id: 'close', label: '✕' };
 }
 
@@ -157,15 +175,15 @@ export function sectorLayout(i, count) {
 const SNAP_ANGLES = [15, 30, 45];
 
 function registerBuiltins() {
-	// base ring (8 sectors, remapped in 99): Move/Rotate left (grip grab in 100
-	// replaces them), Objects (VR list panel, 101) and Redo (next to Undo) in.
+	// base ring (8 sectors; 109 remap): Redo/Undo swapped per user muscle
+	// memory, Chat replaces Mic ▸ (the mic ring nests under System now).
 	registerVRMenuEntry({ id: 'objects', label: 'Objects', order: 0 });
 	registerVRMenuEntry({ id: 'nav:add', label: 'Add ▸', order: 1, ring: 'add' });
 	registerVRMenuEntry({ id: 'nav:scene', label: 'Scene ▸', order: 2, ring: 'scene' });
 	registerVRMenuEntry({ id: 'draw', label: 'Draw', order: 3 });
-	registerVRMenuEntry({ id: 'undo', label: 'Undo', order: 4 });
-	registerVRMenuEntry({ id: 'redo', label: 'Redo', order: 5 });
-	registerVRMenuEntry({ id: 'nav:mic', label: 'Mic ▸', order: 6, ring: 'mic' });
+	registerVRMenuEntry({ id: 'redo', label: 'Redo', order: 4 });
+	registerVRMenuEntry({ id: 'undo', label: 'Undo', order: 5 });
+	registerVRMenuEntry({ id: 'chat', label: 'Chat', order: 6 });
 	registerVRMenuEntry({ id: 'nav:system', label: 'System ▸', order: 7, ring: 'system' });
 
 	// Add ▸ — ids resolve in executeVRMenuAction's switch, which spawns the
@@ -221,17 +239,16 @@ function registerBuiltins() {
 		})
 	);
 
-	// System ▸ — toggles + session controls (legacy switch ids; Redo moved to
-	// the base ring in 99, Statistics (102) and the legacy grab-mode toggle in)
-	registerVRMenuEntry({ id: 'snap', group: 'system', label: 'Snap', order: 0 });
-	registerVRMenuEntry({ id: 'grid', group: 'system', label: 'Grid', order: 1 });
-	registerVRMenuEntry({ id: 'world', group: 'system', label: 'World 1:1', order: 2 });
-	registerVRMenuEntry({ id: 'passthru', group: 'system', label: 'Passthru', order: 3 });
+	// System ▸ — toggles + session controls (109: Snap moved to the Edit ring,
+	// Mic ▸ nests here — the nav stack makes its Back return to System)
+	registerVRMenuEntry({ id: 'grid', group: 'system', label: 'Grid', order: 0 });
+	registerVRMenuEntry({ id: 'world', group: 'system', label: 'World 1:1', order: 1 });
+	registerVRMenuEntry({ id: 'passthru', group: 'system', label: 'Passthru', order: 2 });
 	registerVRMenuEntry({
 		id: 'hand',
 		group: 'system',
 		label: 'Swap hand',
-		order: 4,
+		order: 3,
 		action: () => {
 			const next = get(vrMenuHand) === 'left' ? 'right' : 'left';
 			vrMenuHand.set(/** @type {any} */ (next));
@@ -240,11 +257,13 @@ function registerBuiltins() {
 			} catch {}
 		}
 	});
-	registerVRMenuEntry({ id: 'stats', group: 'system', label: 'Statistics', order: 5 });
-	registerVRMenuEntry({ id: 'grabmode', group: 'system', label: 'Grab mode', order: 6 });
+	registerVRMenuEntry({ id: 'stats', group: 'system', label: 'Statistics', order: 4 });
+	registerVRMenuEntry({ id: 'grabmode', group: 'system', label: 'Grab mode', order: 5 });
+	registerVRMenuEntry({ id: 'nav:mic', label: 'Mic ▸', group: 'system', order: 6, ring: 'mic' });
 	registerVRMenuEntry({ id: 'exitvr', group: 'system', label: 'Exit VR', order: 7 });
 
-	// Object ▸ (hub when something is selected): ops + color palette ring
+	// Edit ▸ (hub when something is selected): ops + Snap (moved from System, 109)
+	registerVRMenuEntry({ id: 'snap', group: 'object', label: 'Snap', order: 12 });
 	registerVRMenuEntry({
 		id: 'obj:visible',
 		group: 'object',
@@ -298,5 +317,5 @@ registerBuiltins();
 
 // closing the menu (any path) resets navigation to the base ring
 vrMenuOpen.subscribe((open) => {
-	if (!open) activeRing.set('root');
+	if (!open) resetRings();
 });

@@ -71,29 +71,66 @@ h.run(async () => {
 		};
 	});
 	h.check(
-		registry.root.join(',') === 'objects,nav:add,nav:scene,draw,undo,redo,nav:mic,nav:system',
-		`base ring is the remapped 8 sectors (${registry.root.join(',')})`
+		registry.root.join(',') === 'objects,nav:add,nav:scene,draw,redo,undo,chat,nav:system',
+		`base ring is the 109 remap: redo/undo swapped, Chat in (${registry.root.join(',')})`
 	);
 	h.check(
-		registry.system.includes('snap') &&
+		registry.system.includes('nav:mic') &&
 			registry.system.includes('passthru') &&
 			registry.system.includes('exitvr') &&
 			registry.system.includes('stats') &&
 			registry.system.includes('grabmode') &&
+			!registry.system.includes('snap') &&
 			!registry.system.includes('redo'),
-		'System ring: toggles + stats + grab mode, redo moved to the base ring'
+		'System ring: Mic nests here, Snap left for the Edit ring'
 	);
+	h.check(registry.objectOps.includes('snap'), 'Edit ring gained Snap');
 	h.check(registry.addCount === 6 && registry.sceneHasEnv, 'Add + Scene rings populated');
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
 	h.check(
 		registry.objectOps.slice(0, 3).join(',') === 'obj:visible,obj:duplicate,obj:delete' &&
-			registry.objectOps.length === 11,
-		`Object ring has ops + 8 color swatches (${registry.objectOps.length})`
+			registry.objectOps.length === 12,
+		`Edit ring has ops + snap + 8 color swatches (${registry.objectOps.length})`
 	);
 	h.check(
 		registry.hubClose === 'close' && registry.hubObject === 'nav:object' && registry.hubBack === 'back',
-		'hub is context-aware (close / Object / back)'
+		'hub is context-aware (close / Edit / back)'
 	);
+	const hubLabel = await A.page.evaluate(() => window.__stores.vrRadialMenu.hubEntry('root', true).label);
+	h.check(hubLabel === 'Edit', `selection hub reads Edit, not Object (${hubLabel})`);
+
+	// 109: nav STACK — System ▸ Mic ▸ Back pops to System, then to root; the
+	// Chat sector opens its panel store and closes the ring
+	const stack = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				const v = window.__stores.vrControls;
+				const ring = () => {
+					let r;
+					window.__stores.vrRadialMenu.activeRing.subscribe((x) => (r = x))();
+					return r;
+				};
+				window.__stores.vrMenuOpen.set(true);
+				v.executeVRMenuAction('nav:system');
+				v.executeVRMenuAction('nav:mic');
+				const inMic = ring();
+				v.executeVRMenuAction('back');
+				const afterBack = ring();
+				v.executeVRMenuAction('back');
+				const atRoot = ring();
+				v.executeVRMenuAction('chat');
+				let chatOpen, menuOpen;
+				window.__stores.vrChatPanelOpen.subscribe((x) => (chatOpen = x))();
+				window.__stores.vrMenuOpen.subscribe((x) => (menuOpen = x))();
+				window.__stores.vrChatPanelOpen.set(false);
+				resolve({ inMic, afterBack, atRoot, chatOpen, menuOpen });
+			})
+	);
+	h.check(
+		stack.inMic === 'mic' && stack.afterBack === 'system' && stack.atRoot === 'root',
+		`Back pops one nav level (${stack.inMic} → ${stack.afterBack} → ${stack.atRoot})`
+	);
+	h.check(stack.chatOpen === true && stack.menuOpen === false, 'Chat sector opens the panel store and closes the ring');
 
 	// --- rendered structure + navigation ---
 	const meshNames = () =>

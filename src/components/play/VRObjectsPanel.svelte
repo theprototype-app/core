@@ -5,7 +5,7 @@
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
 	import { vrObjectsPanelOpen, vrMenuHand, objectsGroup, lockedObjects, selectedObject } from '../../stores/sceneStore'
-	import { vrHovered, vrPanelGroup, vrPanelScroll } from '$lib/vrControls'
+	import { vrHovered, vrPanelGroup, vrPanelCursor, vrPanelCursorAction } from '$lib/vrControls'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 	import { peerColor } from '$lib/lockControl'
 
@@ -24,7 +24,7 @@
 	let group: any = null
 
 	$: vrPanelGroup.set($vrObjectsPanelOpen ? group : null)
-	$: if (!$vrObjectsPanelOpen) vrPanelScroll.set(0)
+	$: if (!$vrObjectsPanelOpen) vrPanelCursor.set(0)
 
 	const TYPE_ICONS: Record<string, string> = {
 		Mesh: '▣',
@@ -38,13 +38,21 @@
 
 	$: children = ($objectsGroup?.children ?? []) as any[]
 	$: maxScroll = Math.max(0, children.length - ROWS)
-	$: start = Math.min(Math.max(0, $vrPanelScroll), maxScroll)
+	// the stick moves a ROW CURSOR (109.4); the page scrolls to keep it visible
+	$: cursor = Math.min(Math.max(0, $vrPanelCursor), Math.max(0, children.length - 1))
+	$: if ($vrPanelCursor !== cursor) vrPanelCursor.set(cursor)
+	$: start = Math.min(Math.max(0, cursor - ROWS + 1), maxScroll)
 	$: rows = children.slice(start, start + ROWS).map((child, i) => ({
 		child,
+		index: start + i,
 		y: (ROWS / 2 - i - 0.5) * ROW_H,
 		lock: $lockedObjects.find((lock: any) => lock[1] === child.uuid)?.[0] ?? null
 	}))
 	$: panelHeight = ROWS * ROW_H + 0.05
+	// publish the cursored row's action so stick-press selects it (109.4)
+	$: vrPanelCursorAction.set(
+		$vrObjectsPanelOpen && children[cursor] ? 'panel:select:' + children[cursor].uuid : null
+	)
 
 	const controllerPosition = new THREE.Vector3()
 	const controllerQuaternion = new THREE.Quaternion()
@@ -87,9 +95,11 @@
 				<T.MeshBasicMaterial
 					color={$vrHovered === `panel:select:${row.child.uuid}`
 						? '#ff4000'
-						: $selectedObject?.uuid === row.child.uuid
-							? '#2f81f7'
-							: '#242a34'}
+						: row.index === cursor
+							? '#5a3a12'
+							: $selectedObject?.uuid === row.child.uuid
+								? '#2f81f7'
+								: '#242a34'}
 					transparent
 					opacity={0.95}
 					side={THREE.DoubleSide}

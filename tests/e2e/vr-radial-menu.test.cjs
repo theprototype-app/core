@@ -88,9 +88,11 @@ h.run(async () => {
 	h.check(registry.addCount === 6 && registry.sceneHasEnv, 'Add + Scene rings populated');
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
 	h.check(
-		registry.objectOps.slice(0, 3).join(',') === 'obj:visible,obj:duplicate,obj:delete' &&
-			registry.objectOps.length === 12,
-		`Edit ring has ops + snap + 8 color swatches (${registry.objectOps.length})`
+		registry.objectOps.slice(0, 5).join(',') ===
+			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe' &&
+			registry.objectOps.length === 6 &&
+			!registry.objectOps.some((id) => id.startsWith('color:')),
+		`Edit ring: ops + Color + Wireframe + Snap, swatches gone (${registry.objectOps.join(',')})`
 	);
 	h.check(
 		registry.hubClose === 'close' && registry.hubObject === 'nav:object' && registry.hubBack === 'back',
@@ -189,16 +191,28 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(400);
 	const objectRing = await A.page.evaluate(() => {
+		const read = (store) => {
+			let v;
+			store.subscribe((x) => (v = x))();
+			return v;
+		};
 		window.__stores.vrMenuOpen.set(true);
-		window.__stores.vrControls.executeVRMenuAction('color:e63946');
-		const color = '#' + window.__box.material.color.getHexString();
+		// Color opens the continuous palette (110) instead of painting directly
+		window.__stores.vrControls.executeVRMenuAction('obj:color');
+		const paletteOpen = read(window.__stores.vrPaletteOpen);
+		const menuAfterColor = read(window.__stores.vrMenuOpen);
+		window.__stores.vrPaletteOpen.set(false);
+		window.__stores.vrMenuOpen.set(true);
 		window.__stores.vrControls.executeVRMenuAction('obj:visible');
 		const hidden = window.__box.visible === false;
 		window.__stores.vrControls.executeVRMenuAction('obj:visible');
 		window.__stores.vrMenuOpen.set(false);
-		return { color, hidden };
+		return { paletteOpen, menuAfterColor, hidden };
 	});
-	h.check(objectRing.color === '#e63946', `color swatch paints the selection (${objectRing.color})`);
+	h.check(
+		objectRing.paletteOpen === true && objectRing.menuAfterColor === false,
+		'Color opens the palette panel and closes the ring'
+	);
 	h.check(objectRing.hidden, 'Show/Hide toggles the selection');
 
 	// --- environment sector replicates through the normal env path ---

@@ -17,11 +17,15 @@ import {
 	vrMenuHold,
 	vrObjectsPanelOpen,
 	vrChatPanelOpen,
+	vrPaletteOpen,
+	vrWireframeSelection,
 	vrStatsOpen,
 	vrGrabStyle,
 	vrGrabbedHand
 } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, hubEntry } from './vrRadialMenu';
+import { paletteColorAt, barValueAt } from './vrPalette';
+import { recordMaterialChange } from './materialsHandler';
 import { peers, showToast } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
@@ -440,6 +444,67 @@ export function raycastPanel(index) {
 	const hits = controllerRay(index).intersectObject(panel, true);
 	const row = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrpanel-'));
 	return row ? 'panel:' + row.object.name.slice('vrpanel-'.length) : null;
+}
+
+/** the palette THREE group (110) @type {import('svelte/store').Writable<any>} */
+export const vrPaletteGroup = writable(null);
+
+/** True when the controller ray lands on the palette (110) — the paint loop
+ * owns that trigger, so trigger-select must not fire @param {number} index */
+export function raycastPalette(index) {
+	const palette = get(vrPaletteGroup);
+	if (!palette || !get(vrPaletteOpen)) return false;
+	const hits = controllerRay(index).intersectObject(palette, true);
+	return hits.some((/** @type {any} */ h) => h.object.name?.startsWith('vrpalette-'));
+}
+/** the live lightness (bar) value @type {import('svelte/store').Writable<number>} */
+export const vrPaletteLightness = writable(0.55);
+let paintGesture = /** @type {any} */ (null);
+let lastColorSent = 0;
+
+/** Continuous palette painting while the trigger is held (110)
+ * @param {number} index @param {boolean} triggerHeld */
+function updatePalettePaint(index, triggerHeld) {
+	const paletteGroup = get(vrPaletteGroup);
+	const object = /** @type {any} */ (get(selectedObject));
+	if (!paletteGroup || !object?.uuid || !object?.material?.color) {
+		paintGesture = null;
+		return;
+	}
+	if (!triggerHeld) {
+		if (paintGesture) {
+			// one undo entry + one final replicated color per pick gesture
+			const after = '#' + object.material.color.getHexString();
+			recordMaterialChange(object.uuid, 'color', null, paintGesture.before, after);
+			/** @type {any} */ (get(peers))?.send({ type: 'color', uuid: object.uuid, color: after });
+			paintGesture = null;
+		}
+		return;
+	}
+	const hits = controllerRay(index).intersectObject(paletteGroup, true);
+	const hit = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrpalette-'));
+	if (!hit) return;
+	if (hit.object.name === 'vrpalette-close') {
+		vrPaletteOpen.set(false);
+		paintGesture = null;
+		return;
+	}
+	if (hit.object.name === 'vrpalette-bar') {
+		vrPaletteLightness.set(barValueAt(hit.uv?.x ?? 0.5));
+		return;
+	}
+	if (hit.object.name === 'vrpalette-disc') {
+		const picked = paletteColorAt(hit.uv?.x ?? 0.5, hit.uv?.y ?? 0.5, get(vrPaletteLightness));
+		if (!picked) return;
+		if (!paintGesture)
+			paintGesture = { before: '#' + object.material.color.getHexString() };
+		object.material.color.set(picked.hex);
+		const now = Date.now();
+		if (now - lastColorSent > 120) {
+			lastColorSent = now;
+			/** @type {any} */ (get(peers))?.send({ type: 'color', uuid: object.uuid, color: picked.hex });
+		}
+	}
 }
 
 /** @param {any} object */
@@ -864,7 +929,30 @@ export function executeVRMenuAction(name) {
 		// the VR chat panel (117) replaces the ring on screen
 		vrChatPanelOpen.update((v) => !v);
 		vrObjectsPanelOpen.set(false);
+		vrPaletteOpen.set(false);
 		vrMenuOpen.set(false);
+		return;
+	}
+	if (name === 'obj:color') {
+		// the continuous palette (110) replaces the ring on screen
+		vrPaletteOpen.set(true);
+		vrObjectsPanelOpen.set(false);
+		vrChatPanelOpen.set(false);
+		vrMenuOpen.set(false);
+		return;
+	}
+	if (name === 'wireframe') {
+		vrWireframeSelection.update((v) => {
+			const next = !v;
+			try {
+				localStorage.setItem('vrWireframe', String(next));
+			} catch {}
+			return next;
+		});
+		return;
+	}
+	if (name === 'palette:close') {
+		vrPaletteOpen.set(false);
 		return;
 	}
 	// registry entries carry their own action (env presets, mic modes, object
@@ -889,6 +977,7 @@ export function executeVRMenuAction(name) {
 	else if (name === 'objects') {
 		// the native VR list panel (101) replaces the menu on screen
 		vrObjectsPanelOpen.update((v) => !v);
+		vrPaletteOpen.set(false);
 		vrMenuOpen.set(false);
 	} else if (name === 'stats') {
 		vrStatsOpen.update((v) => {
@@ -1004,6 +1093,7 @@ export function updateVRControls() {
 			if (get(vrMenuHold)) {
 				if (menuPressed && !prev.menu) {
 					vrObjectsPanelOpen.set(false); // ring replaces the panel (101)
+					vrPaletteOpen.set(false);
 					vrMenuOpen.set(true);
 				}
 				if (!menuPressed && prev.menu) {
@@ -1013,6 +1103,7 @@ export function updateVRControls() {
 				}
 			} else if (menuPressed && !prev.menu) {
 				vrObjectsPanelOpen.set(false);
+				vrPaletteOpen.set(false);
 				vrMenuOpen.update((v) => !v);
 			}
 		}
@@ -1059,6 +1150,9 @@ export function updateVRControls() {
 				addStrokePoint(renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()));
 			if (!triggerPressed && prev.trigger) endStroke();
 		}
+		// continuous palette painting (110): hold the trigger over the disc
+		if (get(vrPaletteOpen) && source.handedness !== get(vrMenuHand))
+			updatePalettePaint(index, triggerPressed);
 		prev.trigger = triggerPressed;
 	});
 

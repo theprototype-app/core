@@ -3,12 +3,11 @@ import {
 	vrMenuOpen,
 	vrMenuHand,
 	vrSnapAngle,
-	selectedObject
+	selectedObject,
+	vrWireframeSelection
 } from '../stores/sceneStore';
 import { environment, setEnvironment, ENVIRONMENT_PRESETS } from './environment';
 import { setMicMode, vrMicMode } from './voiceChat';
-import { recordMaterialChange } from './materialsHandler';
-import { peers } from '../stores/appStore';
 import { toggleObjectVisibility, duplicateObject, deleteSelection } from './objectActions';
 
 // VR radial menu v2 (74): a flat 8-sector base ring with nested sub-rings.
@@ -290,27 +289,15 @@ function registerBuiltins() {
 		closes: true,
 		action: () => deleteSelection()
 	});
-	['#e63946', '#f4a261', '#ffd166', '#2a9d8f', '#4f83cc', '#9b5de5', '#f1f1f1', '#333333'].forEach(
-		(color, order) =>
-			registerVRMenuEntry({
-				id: 'color:' + color.slice(1),
-				group: 'object',
-				label: '',
-				color,
-				order: 3 + order,
-				action: () => {
-					// same path as the Inspector picker: set + `color` message + undo
-					const object = get(selectedObject);
-					if (!object?.uuid || !object?.material?.color) return;
-					const before = '#' + object.material.color.getHexString();
-					object.material.color.set(color);
-					recordMaterialChange(object.uuid, 'color', null, before, color);
-					/** @type {any} */
-					const peer = get(peers);
-					if (peer) peer.send({ type: 'color', uuid: object.uuid, color });
-				}
-			})
-	);
+	// Color opens the continuous palette panel (110 — the 8 swatches left)
+	registerVRMenuEntry({ id: 'obj:color', group: 'object', label: 'Color', order: 3 });
+	registerVRMenuEntry({
+		id: 'wireframe',
+		group: 'object',
+		label: 'Wireframe',
+		order: 4,
+		active: () => get(vrWireframeSelection)
+	});
 }
 
 registerBuiltins();

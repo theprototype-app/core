@@ -70,6 +70,12 @@ export const vrMenuHold = writable(
 export const vrObjectsPanelOpen = writable(false);
 // VR chat panel (117), opened from the radial Chat sector
 export const vrChatPanelOpen = writable(false);
+// VR color palette (110), opened from Edit ▸ Color
+export const vrPaletteOpen = writable(false);
+// VR selection indicator style (110): wireframe (default) or the shell
+export const vrWireframeSelection = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('vrWireframe') !== 'false'
+);
 // stats card on the pointer controller (102) — persisted so it re-attaches
 export const vrStatsOpen = writable(
 	typeof localStorage !== 'undefined' && localStorage.getItem('vrStats') === 'true'

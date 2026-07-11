@@ -7,7 +7,7 @@
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu } from '../stores/appStore';
 	import { get } from 'svelte/store';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
@@ -18,7 +18,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
 	import { sendPing } from '$lib/ping';
@@ -28,6 +28,7 @@
 	import VRMenu from './play/VRMenu.svelte';
 	import VRStats from './play/VRStats.svelte';
 	import VRObjectsPanel from './play/VRObjectsPanel.svelte';
+	import VRColorPalette from './play/VRColorPalette.svelte';
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
@@ -452,6 +453,8 @@
 					return;
 				}
 			}
+			// the palette paint loop owns triggers landing on it (110)
+			if ($vrPaletteOpen && raycastPalette(xrControllers.indexOf(controller))) return;
 			if ($drawMode) return; // VR trigger feeds the stroke poll instead
 			if (!$objectsGroup) return;
 			tempMatrix.identity().extractRotation(controller.matrixWorld);
@@ -586,6 +589,7 @@ position={[0, 2, 3]}
 <VRMenu />
 <VRStats />
 <VRObjectsPanel />
+<VRColorPalette />
 <VRSelectionShell />
 
 <XR

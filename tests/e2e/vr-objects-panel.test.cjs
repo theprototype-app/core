@@ -8,11 +8,15 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// three boxes, VR mode flagged (headless — no session needed for the shell)
+	// three boxes, VR mode flagged (headless — no session needed for the shell).
+	// 110 made the two-tone WIREFRAME the default indicator (covered by the
+	// vr-palette suite) — this suite asserts the legacy BackSide shell, so opt
+	// back into it for the shell block.
 	await A.page.evaluate(async () => {
 		window.__stores.commandsHandler.sceneCommand('/create box');
 		window.__stores.commandsHandler.sceneCommand('/create sphere');
 		window.__stores.commandsHandler.sceneCommand('/create cylinder');
+		window.__stores.vrWireframeSelection.set(false);
 		window.__stores.isVRMode.set(true);
 		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
 		const box = group.children[0];
@@ -49,6 +53,7 @@ h.run(async () => {
 		`shell hugs the selection with a BackSide inflate (${shell.pos} ×${shell.scale})`
 	);
 	h.check(!shell.inObjects, 'shell lives at the scene root (never in the GLTF sync)');
+	await A.page.evaluate(() => window.__stores.vrWireframeSelection.set(true)); // back to the 110 default
 
 	// leaving VR hides the shell
 	await A.page.evaluate(() => window.__stores.isVRMode.set(false));

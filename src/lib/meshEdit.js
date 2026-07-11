@@ -185,12 +185,12 @@ export function selectHandle(index) {
 const writeVector = new THREE.Vector3();
 
 /**
- * Write the (world-space) proxy position through to every index of the selected handle.
- * @returns {number[]} the resulting LOCAL position, safe to keep (plain array)
+ * Commit a LOCAL position to every index of the selected handle + refresh the
+ * handle matrix and wireframe overlay. Shared by the desktop gizmo and the VR
+ * grab. @param {THREE.Vector3} local @returns {number[]} the LOCAL position
  */
-function writeSelectedHandle() {
+function commitSelectedLocal(local) {
 	const handle = handles[selectedHandle];
-	const local = edited.worldToLocal(writeVector.copy(proxy.position));
 	handle.position.copy(local);
 	// capture before refreshHandleMatrix runs — it mutates shared temp vectors
 	const result = [local.x, local.y, local.z];
@@ -205,6 +205,14 @@ function writeSelectedHandle() {
 		overlay.geometry = new THREE.WireframeGeometry(edited.geometry);
 	}
 	return result;
+}
+
+/**
+ * Write the (world-space) proxy position through to every index of the selected handle.
+ * @returns {number[]} the resulting LOCAL position, safe to keep (plain array)
+ */
+function writeSelectedHandle() {
+	return commitSelectedLocal(edited.worldToLocal(writeVector.copy(proxy.position)));
 }
 
 /** Called from Scene.svelte's gizmo onchange when the vertex proxy moves */
@@ -281,6 +289,80 @@ export function applyVerts(uuid, indices, positionArray) {
 		}
 	}
 	objectsGroup.update((value) => value);
+}
+
+// ---- VR vertex editing (113): drive a handle from a controller, no gizmo ----
+
+/** VR vertex-count cap — denser meshes are unwieldy with controllers */
+export const VR_VERTEX_CAP = 500;
+
+/** Is this object simple enough to vertex-edit in VR? @param {any} object */
+export function vrVertexEditable(object) {
+	const count = object?.geometry?.attributes?.position?.count;
+	return !!count && count <= VR_VERTEX_CAP;
+}
+
+/** vertices of the mesh currently in edit mode (0 if none) */
+export function editedVertexCount() {
+	return edited?.geometry?.attributes?.position?.count ?? 0;
+}
+
+/** Raycast the handles from a controller ray @param {THREE.Raycaster} raycaster @returns {number} handle index or -1 */
+export function vrRaycastHandle(raycaster) {
+	if (!handleMesh) return -1;
+	const hits = raycaster.intersectObject(handleMesh);
+	return hits.length ? /** @type {number} */ (hits[0].instanceId) : -1;
+}
+
+/**
+ * Begin a VR drag on a handle (selects it, no gizmo). Returns its current
+ * WORLD position so the caller can capture a grab offset, or null.
+ * @param {number} index
+ */
+export function vrBeginHandleDrag(index) {
+	if (!edited || index < 0 || index >= handles.length) return null;
+	selectedHandle = index;
+	refreshHandleColors();
+	dragStartLocal = handles[index].position.toArray();
+	return handleWorldPosition(index, new THREE.Vector3());
+}
+
+/**
+ * Set the selected handle to a WORLD position (throttled stream). Optional
+ * snapStep rounds the LOCAL position to a grid. @param {any} worldPos @param {number=} snapStep
+ */
+export function vrDragHandleTo(worldPos, snapStep = 0) {
+	if (!edited || selectedHandle < 0) return;
+	const local = edited.worldToLocal(writeVector.copy(worldPos));
+	if (snapStep > 0) {
+		local.x = Math.round(local.x / snapStep) * snapStep;
+		local.y = Math.round(local.y / snapStep) * snapStep;
+		local.z = Math.round(local.z / snapStep) * snapStep;
+	}
+	const result = commitSelectedLocal(local);
+	const now = Date.now();
+	if (now - lastSent < 80) return;
+	lastSent = now;
+	broadcastSelected(result);
+}
+
+/** End a VR handle drag: final broadcast + one undo entry. */
+export function vrEndHandleDrag() {
+	if (edited && selectedHandle >= 0 && dragStartLocal) {
+		const after = commitSelectedLocal(handles[selectedHandle].position.clone());
+		broadcastSelected(after);
+		if (JSON.stringify(dragStartLocal) !== JSON.stringify(after))
+			recordEntry({
+				kind: 'verts',
+				uuid: edited.uuid,
+				indices: [...handles[selectedHandle].indices],
+				before: dragStartLocal,
+				after: after
+			});
+	}
+	dragStartLocal = null;
+	selectedHandle = -1;
+	if (handleMesh) refreshHandleColors();
 }
 
 // undo/redo replays vertex entries through the same apply + broadcast path

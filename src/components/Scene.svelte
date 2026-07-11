@@ -17,7 +17,7 @@
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
-	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
+	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, placePrefabGhost, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
@@ -229,6 +229,7 @@
 		startEditorNavigation();
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
+			exitEditMode(); // leave vertex edit mode cleanly (113)
 			$isVRMode = false; // back to the editor whichever way the session ended
 			resetWorldRig(); // the grabbed world snaps back to 1:1 (least surprise)
 			$peers?.send({ type: 'vrhands', peerId: $peers.peer.id, left: null, right: null, active: false });
@@ -492,6 +493,11 @@
 			}
 			// an armed ghost places on trigger and stays armed (115)
 			if (placePrefabGhost()) return;
+			// in vertex edit mode a trigger finishes editing (handles use grip, 113)
+			if ($editingObject) {
+				exitEditMode();
+				return;
+			}
 			if ($drawMode) return; // VR trigger feeds the stroke poll instead
 			if (!$objectsGroup) return;
 			tempMatrix.identity().extractRotation(controller.matrixWorld);

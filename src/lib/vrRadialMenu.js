@@ -303,6 +303,8 @@ function registerBuiltins() {
 	});
 	// Properties opens the core-editable-set panel (112)
 	registerVRMenuEntry({ id: 'obj:props', group: 'object', label: 'Properties', order: 5 });
+	// Vertices enters mesh edit mode for simple meshes (113)
+	registerVRMenuEntry({ id: 'obj:vertices', group: 'object', label: 'Vertices', order: 7 });
 	// Save prefab (115): the selection joins the library, thumbnail included
 	registerVRMenuEntry({
 		id: 'obj:prefab',

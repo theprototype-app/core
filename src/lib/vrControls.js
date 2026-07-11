@@ -30,6 +30,16 @@ import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popR
 import { paletteColorAt, barValueAt } from './vrPalette';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
 import { prefabs, instantiatePrefab } from './prefabs';
+import {
+	editingObject,
+	enterEditMode,
+	exitEditMode,
+	vrVertexEditable,
+	vrRaycastHandle,
+	vrBeginHandleDrag,
+	vrDragHandleTo,
+	vrEndHandleDrag
+} from './meshEdit';
 import { peers, showToast, messages } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
@@ -1004,12 +1014,30 @@ function finishWindowAdjust() {
 	hapticPulse(0.3, 40);
 }
 
+/** @type {any} active VR vertex-handle drag: {index, offset} */
+let vertexGrab = null;
+
 /** @param {number} index */
 function onSqueezeStart(index) {
 	// an armed prefab ghost cancels on grip (115) — nothing else grabs
 	if (get(vrPrefabGhost)) {
 		cancelPrefabGhost();
 		return;
+	}
+	// vertex edit mode (113): grip a handle to drag its vertex
+	if (get(editingObject)) {
+		const handle = vrRaycastHandle(controllerRay(index));
+		if (handle >= 0) {
+			const handleWorld = vrBeginHandleDrag(handle);
+			if (handleWorld) {
+				const controllerPos = renderer.xr
+					.getController(index)
+					.getWorldPosition(new THREE.Vector3());
+				vertexGrab = { index, offset: handleWorld.sub(controllerPos) };
+				hapticPulse(0.3, 30);
+			}
+			return;
+		}
 	}
 	// grip on a follower window (111): hold to detach it into adjust mode
 	const windowId = windowHitAt(index);
@@ -1085,6 +1113,13 @@ function onSqueezeStart(index) {
 
 /** @param {number} index */
 function onSqueezeEnd(index) {
+	// vertex handle drag (113): release commits the pull + one undo entry
+	if (vertexGrab?.index === index) {
+		vrEndHandleDrag();
+		vertexGrab = null;
+		hapticPulse(0.18, 24);
+		return;
+	}
 	// window grab (111): a short grip is a no-op, a held one re-anchors
 	if (windowGrabPending?.index === index) {
 		windowGrabPending = null;
@@ -1325,6 +1360,18 @@ export function executeVRMenuAction(name) {
 		vrObjectsPanelOpen.set(false);
 		vrChatPanelOpen.set(false);
 		vrPaletteOpen.set(false);
+		vrMenuOpen.set(false);
+		return;
+	}
+	if (name === 'obj:vertices') {
+		// enter mesh edit mode (113): grip handles to pull vertices
+		const object = /** @type {any} */ (get(selectedObject));
+		if (!object?.uuid) return;
+		if (!vrVertexEditable(object)) {
+			showToast('Too dense for VR editing (max 500 vertices)');
+			return;
+		}
+		enterEditMode(object.uuid);
 		vrMenuOpen.set(false);
 		return;
 	}
@@ -1631,6 +1678,15 @@ export function updateVRControls() {
 	// prefab placement ghost (115) rides the pointer-hand ray
 	if (get(vrPrefabGhost))
 		updatePrefabGhost(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
+
+	// vertex handle drag (113): the gripped handle rides the controller
+	if (vertexGrab) {
+		const controllerPos = renderer.xr
+			.getController(vertexGrab.index)
+			.getWorldPosition(new THREE.Vector3());
+		const step = get(snapEnabled) ? get(snapSettings).translate : 0;
+		vrDragHandleTo(controllerPos.add(vertexGrab.offset), step);
+	}
 
 	// both-grips world grab (71): scale/rotate/pan the rig around the hands
 	if (worldGrab) updateWorldGrab();

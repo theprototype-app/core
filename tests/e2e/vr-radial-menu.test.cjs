@@ -88,11 +88,11 @@ h.run(async () => {
 	h.check(registry.addCount === 7 && registry.sceneHasEnv, 'Add ring: 6 primitives + Prefabs (115)');
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
 	h.check(
-		registry.objectOps.slice(0, 7).join(',') ===
-			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe,obj:props,obj:prefab' &&
-			registry.objectOps.length === 8 &&
+		registry.objectOps.slice(0, 8).join(',') ===
+			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe,obj:props,obj:prefab,obj:vertices' &&
+			registry.objectOps.length === 9 &&
 			!registry.objectOps.some((id) => id.startsWith('color:')),
-		`Edit ring: ops + Color + Wireframe + Properties + Save prefab + Snap (${registry.objectOps.join(',')})`
+		`Edit ring: ops + Color/Wireframe/Properties/Prefab/Vertices + Snap (${registry.objectOps.join(',')})`
 	);
 	h.check(
 		registry.hubClose === 'close' && registry.hubObject === 'nav:object' && registry.hubBack === 'back',

@@ -28,6 +28,7 @@
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup } from '$lib/objectActions';
 	import { showLightHelpers } from '$lib/lightHelpers';
+	import { cameraNear, cameraFar, setCameraNear, setCameraFar } from '$lib/cameraClip';
 	import {
 		environment,
 		ENVIRONMENT_PRESETS,
@@ -538,6 +539,30 @@
 						$globalCamera.updateProjectionMatrix();
 					}}
 				/>
+				<!-- 123: local per-device clip planes; far pairs with orbit zoom -->
+				<SliderRow
+					label="Near clip"
+					min={0.01}
+					max={2}
+					step={0.01}
+					decimals={2}
+					value={$cameraNear}
+					onchange={(v) => setCameraNear(v)}
+				/>
+				<div class="ui-row">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Far clip</span>
+					<input
+						id="camera-far"
+						type="number"
+						min="10"
+						step="500"
+						class="ui-input w-24"
+						value={$cameraFar}
+						onchange={(e) => setCameraFar(parseFloat(e.currentTarget.value))}
+					/>
+					<span class="text-[10px] text-gray-500">grows to fit the scene</span>
+				</div>
+				<p class="text-[10px] italic text-gray-400">Clip planes are per-device (not shared).</p>
 			</Section>
 
 			<Section label="Background">

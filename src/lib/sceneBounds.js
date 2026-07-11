@@ -1,17 +1,13 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup, editorCam, playerCam } from '../stores/sceneStore';
+import { objectsGroup } from '../stores/sceneStore';
 
-// Large scenes used to clip: cameras default to far=2000 and environment fog
-// ends at a few hundred units. Watch the scene bounds (throttled) and grow the
-// camera far planes + fog reach to fit. Far only grows — never shrinks mid-
-// session (avoids pop while editing).
-
-const BASE_FAR = 5000;
-const FAR_CAP = 200000;
+// Large scenes used to clip: watch the scene bounds (throttled) and hand the
+// radius to cameraClip (123), which fits the far plane, pairs it with the
+// orbit maxDistance, and applies the user's near/far preference; fog reach
+// follows the same radius.
 
 let radius = 0;
-let lastCheck = 0;
 
 /** Current scene bounding-sphere radius (0 = empty) */
 export function sceneRadius() {
@@ -35,24 +31,15 @@ function measure() {
 	radius = sphere.center.length() + sphere.radius;
 }
 
-/** @param {any} camera */
-function applyFar(camera) {
-	if (!camera) return;
-	const needed = Math.min(Math.max(BASE_FAR, radius * 6), FAR_CAP);
-	if (camera.far < needed) {
-		camera.far = needed;
-		camera.updateProjectionMatrix();
-	}
-}
-
 let started = false;
 
-/** One sweep: measure + fit cameras (+ fog when the size changed) */
+/** One sweep: measure + fit cameras (near/far + orbit clamp) + fog */
 export function refreshSceneBounds() {
 	const before = radius;
 	measure();
-	applyFar(get(editorCam));
-	applyFar(get(playerCam));
+	// cameraClip owns near/far + the orbit maxDistance pairing (123); dynamic
+	// import keeps the module graph acyclic (cameraClip reads sceneRadius here)
+	import('./cameraClip').then((m) => m.applyCameraClip());
 	// fog reach follows the scene size (environment reads sceneRadius)
 	if (Math.abs(radius - before) > 1)
 		import('./environment').then((m) => m.applyEnvironment());
@@ -61,6 +48,7 @@ export function refreshSceneBounds() {
 export function startSceneBounds() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
+	refreshSceneBounds(); // apply the clip prefs once on boot
 	// plain interval: immune to event-ordering, cheap at this cadence
 	setInterval(refreshSceneBounds, 2500);
 }

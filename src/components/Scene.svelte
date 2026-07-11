@@ -19,7 +19,7 @@
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle } from '$lib/faceEdit';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, placePrefabGhost, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, placePrefabGhost, vrFaceTrigger, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -503,9 +503,11 @@
 			}
 			// an armed ghost places on trigger and stays armed (115)
 			if (placePrefabGhost()) return;
-			// in face edit mode a trigger commits the armed op on the highlighted face (118)
+			// face edit mode (122): a pending extrude/inset adjust commits on the
+			// next trigger; otherwise extrude/inset START a live adjust, move/delete
+			// commit immediately
 			if ($faceEditObject) {
-				commitArmedFaceOp();
+				vrFaceTrigger();
 				return;
 			}
 			// in vertex edit mode a trigger finishes editing (handles use grip, 113)

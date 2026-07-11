@@ -43,6 +43,8 @@ import {
 } from './meshEdit';
 import {
 	faceEditObject,
+	faceEditOp,
+	faceEditAmount,
 	enterFaceEdit,
 	exitFaceEdit,
 	vrFaceEditable,
@@ -50,7 +52,16 @@ import {
 	adjustFaceAmount,
 	commitArmedFaceOp,
 	highlightFaceByTriangle,
-	faceEditHighlight
+	faceEditHighlight,
+	faceIndexForTriangle,
+	beginFaceGrab,
+	applyFaceGrab,
+	commitFaceGrab,
+	beginFaceAdjust,
+	adjustFaceGesture,
+	commitFaceAdjust,
+	cancelFaceAdjust,
+	faceGesturePending
 } from './faceEdit';
 import { peers, showToast, messages } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
@@ -1058,6 +1069,23 @@ function finishWindowAdjust() {
 
 /** @type {any} active VR vertex-handle drag: {index, offset} */
 let vertexGrab = null;
+/** @type {any} active VR face grab (122): {index, pos0, quat0, push, scale} */
+let faceGrabHand = null;
+
+/**
+ * Face-mode trigger (122): a pending extrude/inset adjust commits; otherwise
+ * extrude/inset START a live adjust on the highlighted face, move/delete commit
+ * immediately. A grip grab in progress ignores the trigger.
+ */
+export function vrFaceTrigger() {
+	if (commitFaceAdjust()) return; // finalize a pending extrude/inset
+	if (faceGesturePending()) return; // a grip grab owns the gesture
+	const op = get(faceEditOp);
+	const fi = get(faceEditHighlight);
+	if (fi < 0) return;
+	if (op === 'extrude' || op === 'inset') beginFaceAdjust(fi, /** @type {any} */ (op), get(faceEditAmount));
+	else commitArmedFaceOp();
+}
 
 /** @param {number} index */
 function onSqueezeStart(index) {
@@ -1066,10 +1094,23 @@ function onSqueezeStart(index) {
 		cancelPrefabGhost();
 		return;
 	}
-	// face edit mode (118): grip exits back to the Edit ring
+	// face edit mode (122): grip the face under the ray to grab it (rigid
+	// move/rotate; stick reels along the normal + scales). Exits are hub/Back.
 	if (get(faceEditObject)) {
-		exitFaceEdit();
-		resetRings();
+		const edited = get(objectsGroup)?.getObjectByProperty('uuid', get(faceEditObject));
+		const hit = edited ? controllerRay(index).intersectObject(edited, false)[0] : null;
+		const fi = hit && hit.faceIndex != null ? faceIndexForTriangle(hit.faceIndex) : -1;
+		if (fi >= 0 && beginFaceGrab(fi)) {
+			const controller = renderer.xr.getController(index);
+			faceGrabHand = {
+				index,
+				pos0: controller.getWorldPosition(new THREE.Vector3()),
+				quat0: controller.getWorldQuaternion(new THREE.Quaternion()),
+				push: 0,
+				scale: 1
+			};
+			hapticPulse(0.3, 30);
+		}
 		return;
 	}
 	// vertex edit mode (113): grip a handle to drag its vertex
@@ -1161,6 +1202,13 @@ function onSqueezeStart(index) {
 
 /** @param {number} index */
 function onSqueezeEnd(index) {
+	// face grab (122): release commits the reshape as one meshgeo + undo entry
+	if (faceGrabHand?.index === index) {
+		faceGrabHand = null;
+		commitFaceGrab();
+		hapticPulse(0.2, 30);
+		return;
+	}
 	// vertex handle drag (113): release commits the pull + one undo entry
 	if (vertexGrab?.index === index) {
 		vrEndHandleDrag();
@@ -1364,6 +1412,11 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name === 'back') {
+		// a pending extrude/inset adjust reverts on Back before leaving (122)
+		if (faceGesturePending()) {
+			cancelFaceAdjust();
+			return;
+		}
 		// leaving the Faces ring exits face-edit mode (118)
 		if (get(activeRing) === 'faces') exitFaceEdit();
 		popRing();
@@ -1782,24 +1835,50 @@ export function updateVRControls() {
 		if (setHoveredHandle(hit) && hit >= 0) hapticPulse(0.1, 12);
 	}
 
-	// face edit (118): the pointer ray highlights the face under it; the
-	// grab-hand stick drives the live op amount
+	// face edit (118/122)
 	if (get(faceEditObject) && !get(vrMenuOpen)) {
-		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
-		if (pointerIndex >= 0) {
+		if (faceGrabHand) {
+			// rigid face grab (122): move/rotate 1:1 from the grip hand; that
+			// hand's stick reels along the normal (fwd/back) + scales (left/right)
+			const controller = renderer.xr.getController(faceGrabHand.index);
+			const pos1 = controller.getWorldPosition(new THREE.Vector3());
+			const quat1 = controller.getWorldQuaternion(new THREE.Quaternion());
 			const edited = get(objectsGroup)?.getObjectByProperty('uuid', get(faceEditObject));
-			if (edited) {
-				const hits = controllerRay(pointerIndex).intersectObject(edited, false);
-				// 121: highlight the hit face, or CLEAR when the ray leaves the mesh;
-				// haptic ticks only on an actual change (the fn reports it)
-				const tri = hits.length && hits[0].faceIndex != null ? hits[0].faceIndex : -1;
-				if (highlightFaceByTriangle(tri) && tri >= 0) hapticPulse(0.1, 12);
+			// world delta since grab-start, converted into the object's local frame
+			const objQuatInv = edited
+				? edited.getWorldQuaternion(new THREE.Quaternion()).invert()
+				: new THREE.Quaternion();
+			const dPosW = pos1.clone().sub(faceGrabHand.pos0);
+			const dPos = dPosW.applyQuaternion(objQuatInv);
+			const dQuat = objQuatInv
+				.clone()
+				.multiply(quat1.clone().multiply(faceGrabHand.quat0.clone().invert()))
+				.multiply(objQuatInv.clone().invert());
+			const axes = session.inputSources[faceGrabHand.index]?.gamepad?.axes ?? [];
+			const sy = Math.abs(axes[3] ?? 0) > 0.15 ? axes[3] : 0;
+			const sx = Math.abs(axes[2] ?? 0) > 0.15 ? axes[2] : 0;
+			faceGrabHand.push += -sy * 0.01;
+			faceGrabHand.scale = Math.min(Math.max(faceGrabHand.scale + sx * 0.01, 0.05), 5);
+			applyFaceGrab({ dPos, dQuat, push: faceGrabHand.push, scale: faceGrabHand.scale });
+		} else if (faceGesturePending()) {
+			// live extrude/inset adjust (122): stick fwd/back = depth, l/r = cap scale
+			const menuIndex = [...session.inputSources].findIndex((s) => s.handedness === get(vrMenuHand));
+			const axes = menuIndex >= 0 ? (session.inputSources[menuIndex]?.gamepad?.axes ?? []) : [];
+			const sy = Math.abs(axes[3] ?? 0) > 0.15 ? axes[3] : 0;
+			const sx = Math.abs(axes[2] ?? 0) > 0.15 ? axes[2] : 0;
+			if (sy || sx) adjustFaceGesture(-sy * 0.01, sx * 0.01);
+		} else {
+			// idle: the pointer ray highlights the face under it (121)
+			const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+			if (pointerIndex >= 0) {
+				const edited = get(objectsGroup)?.getObjectByProperty('uuid', get(faceEditObject));
+				if (edited) {
+					const hits = controllerRay(pointerIndex).intersectObject(edited, false);
+					const tri = hits.length && hits[0].faceIndex != null ? hits[0].faceIndex : -1;
+					if (highlightFaceByTriangle(tri) && tri >= 0) hapticPulse(0.1, 12);
+				}
 			}
 		}
-		// menu-hand stick fwd/back nudges the amount (~0.6/s, framerate-scaled)
-		const menuIndex = [...session.inputSources].findIndex((s) => s.handedness === get(vrMenuHand));
-		const axisY = menuIndex >= 0 ? (session.inputSources[menuIndex]?.gamepad?.axes?.[3] ?? 0) : 0;
-		if (Math.abs(axisY) > 0.15) adjustFaceAmount(-axisY * 0.01);
 	}
 
 	// both-grips world grab (71): scale/rotate/pan the rig around the hands

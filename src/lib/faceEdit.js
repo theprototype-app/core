@@ -249,7 +249,12 @@ export function applyMeshGeo(uuid, positions) {
 	object.geometry?.dispose?.();
 	object.geometry = geometry;
 	object.userData.faceEdited = true; // parametric Geometry rows disable (like vertexEdited)
-	if (faceEdited === object) refreshFaceOverlay();
+	// if we're editing this object, re-derive working tris + faces (a remote
+	// change or undo swapped the geometry out from under the session, 122)
+	if (faceEdited === object) {
+		rebuildFaces();
+		refreshFaceOverlay();
+	}
 	objectsGroup.update((v) => v);
 }
 
@@ -352,6 +357,11 @@ function onFaceKeydown(event) {
 
 export function exitFaceEdit() {
 	if (!faceEdited) return;
+	// revert an uncommitted gesture's live preview before tearing down (122)
+	const pendingBefore = faceGrab?.before ?? faceAdjust?.before ?? null;
+	faceGrab = null;
+	faceAdjust = null;
+	if (pendingBefore) applyGeometrySnapshot(pendingBefore);
 	if (typeof window !== 'undefined') window.removeEventListener('keydown', onFaceKeydown);
 	if (overlay) {
 		overlay.parent?.remove(overlay);
@@ -383,6 +393,11 @@ export function highlightFaceByTriangle(triangleIndex) {
 /** Clear the face highlight (ray left the mesh) — returns TRUE if it changed */
 export function clearFaceHighlight() {
 	return highlightFaceByTriangle(-1);
+}
+
+/** logical face index for a triangle index, or -1 (no highlight side-effect) @param {number} triangleIndex */
+export function faceIndexForTriangle(triangleIndex) {
+	return triangleIndex < 0 ? -1 : faces.findIndex((f) => f.triIndices.includes(triangleIndex));
 }
 
 /** the highlighted face's world-space centroid + normal (for ghost/preview) */
@@ -480,6 +495,174 @@ function broadcastMeshGeo(uuid, positions) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'meshgeo', uuid: uuid, positions: positions });
+}
+
+// ---- VR face grab + live extrude/inset (122): a pending edit applied live,
+// committed as ONE meshgeo on release/confirm ----
+
+let lastFaceBroadcast = 0;
+/** @type {any} rigid face-grab state */
+let faceGrab = null;
+/** @type {any} live extrude/inset adjust state */
+let faceAdjust = null;
+
+/** Live geometry swap from the CURRENT workingTris WITHOUT re-grouping faces
+ * (indices stay stable through a gesture); broadcasts a preview ~5/s. */
+function liveGeometryUpdate() {
+	const positions = trisToPositions(workingTris);
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+	geometry.computeVertexNormals();
+	geometry.computeBoundingSphere();
+	faceEdited.geometry?.dispose?.();
+	faceEdited.geometry = geometry;
+	faceEdited.userData.faceEdited = true;
+	refreshFaceOverlay();
+	objectsGroup.update((v) => v);
+	const now = Date.now();
+	if (now - lastFaceBroadcast > 200) {
+		lastFaceBroadcast = now;
+		broadcastMeshGeo(faceEdited.uuid, positions);
+	}
+}
+
+/** True while a face grab or extrude/inset adjust is in progress (122) */
+export function faceGesturePending() {
+	return !!faceGrab || !!faceAdjust;
+}
+
+/** Begin a rigid grab of a face (grip). Captures the pre-edit snapshot + the
+ * face's original local vertices. @param {number} index */
+export function beginFaceGrab(index) {
+	if (!faceEdited || index < 0 || !faces[index] || faceGesturePending()) return false;
+	const face = faces[index];
+	faceGrab = {
+		index,
+		before: trisToPositions(workingTris),
+		originals: face.triIndices.map((/** @type {number} */ ti) =>
+			workingTris[ti].map((/** @type {any} */ v) => v.clone())
+		),
+		centroid: face.centroid.clone(),
+		normal: face.normal.clone()
+	};
+	faceEditHighlight.set(index);
+	return true;
+}
+
+/**
+ * Apply a LOCAL-space rigid transform to the grabbed face around its centroid
+ * (rebuilt from the snapshot each call — no drift). Pure + testable.
+ * @param {{dPos?: any, dQuat?: any, push?: number, scale?: number}} t
+ */
+export function applyFaceGrab(t) {
+	if (!faceGrab || !faceEdited) return;
+	const face = faces[faceGrab.index];
+	const pivot = faceGrab.centroid;
+	const dPos = t.dPos || new THREE.Vector3();
+	const dQuat = t.dQuat || new THREE.Quaternion();
+	const scale = t.scale ?? 1;
+	const pushVec = faceGrab.normal.clone().multiplyScalar(t.push || 0);
+	face.triIndices.forEach((/** @type {number} */ ti, /** @type {number} */ k) => {
+		workingTris[ti] = faceGrab.originals[k].map((/** @type {any} */ v) => {
+			const rel = v.clone().sub(pivot).multiplyScalar(scale).applyQuaternion(dQuat);
+			return rel.add(pivot).add(dPos).add(pushVec);
+		});
+	});
+	liveGeometryUpdate();
+}
+
+/** Commit the grab: finalize geometry, replicate, one undo entry. */
+export function commitFaceGrab() {
+	if (!faceGrab || !faceEdited) return false;
+	const positions = trisToPositions(workingTris);
+	const before = faceGrab.before;
+	faceGrab = null;
+	applyGeometrySnapshot(positions);
+	broadcastMeshGeo(faceEdited.uuid, positions);
+	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: positions });
+	return true;
+}
+
+/** Drop a grab without committing — restore the pre-grab geometry. */
+export function cancelFaceGrab() {
+	if (!faceGrab || !faceEdited) return;
+	const before = faceGrab.before;
+	faceGrab = null;
+	applyGeometrySnapshot(before);
+}
+
+/**
+ * Begin a live extrude/inset adjust (trigger): applies the op at a default
+ * amount immediately (visible), then depth/scale sticks reshape it until a
+ * second trigger commits. @param {number} index @param {'extrude'|'inset'} op @param {number} defaultAmount
+ */
+export function beginFaceAdjust(index, op, defaultAmount) {
+	if (!faceEdited || index < 0 || !faces[index] || faceGesturePending()) return false;
+	const face = faces[index];
+	faceAdjust = {
+		op,
+		before: trisToPositions(workingTris),
+		originalTris: cloneTris(workingTris),
+		originalFace: {
+			triIndices: [...face.triIndices],
+			normal: face.normal.clone(),
+			centroid: face.centroid.clone()
+		},
+		amount: defaultAmount,
+		scale: 1
+	};
+	reapplyFaceAdjust();
+	return true;
+}
+
+function reapplyFaceAdjust() {
+	const a = faceAdjust;
+	let next =
+		a.op === 'inset'
+			? insetFace(a.originalTris, a.originalFace, a.amount)
+			: extrudeFace(a.originalTris, a.originalFace, a.amount);
+	// scale the cap (the original face tris, moved in place) around its centroid
+	if (a.scale !== 1) {
+		const capCentroid =
+			a.op === 'inset'
+				? a.originalFace.centroid.clone()
+				: a.originalFace.centroid.clone().add(a.originalFace.normal.clone().multiplyScalar(a.amount));
+		a.originalFace.triIndices.forEach((/** @type {number} */ ti) => {
+			next[ti] = next[ti].map((/** @type {any} */ v) =>
+				v.clone().sub(capCentroid).multiplyScalar(a.scale).add(capCentroid)
+			);
+		});
+	}
+	workingTris = next;
+	liveGeometryUpdate();
+}
+
+/** Stick reshapes the pending adjust @param {number} dAmount depth @param {number} dScale cap scale */
+export function adjustFaceGesture(dAmount, dScale) {
+	if (!faceAdjust) return;
+	if (dAmount) faceAdjust.amount = Math.min(Math.max(faceAdjust.amount + dAmount, -5), 5);
+	if (dScale) faceAdjust.scale = Math.min(Math.max(faceAdjust.scale + dScale, 0.05), 5);
+	reapplyFaceAdjust();
+}
+
+/** Second trigger: commit the pending extrude/inset — rebuild, replicate, undo. */
+export function commitFaceAdjust() {
+	if (!faceAdjust || !faceEdited) return false;
+	const positions = trisToPositions(workingTris);
+	const before = faceAdjust.before;
+	faceAdjust = null;
+	applyGeometrySnapshot(positions);
+	broadcastMeshGeo(faceEdited.uuid, positions);
+	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: positions });
+	return true;
+}
+
+/** Back/hub reverts a pending adjust to the pre-op geometry. */
+export function cancelFaceAdjust() {
+	if (!faceAdjust || !faceEdited) return;
+	const before = faceAdjust.before;
+	faceAdjust = null;
+	applyGeometrySnapshot(before);
 }
 
 // undo/redo replays meshgeo snapshots through the same apply + broadcast path

@@ -1,9 +1,11 @@
 <script lang="ts">
-	// Explorer (phase 95): dockable asset browser — folder tree on the left,
-	// thumbnail grid on the right, drag files in to import. Shares the bottom
-	// dock with the Flow editor as notebook tabs (bottomDock.js); undocks into
-	// a floating window exactly like Flow.svelte.
-	import { explorerClose, flowGraphClose } from '../../stores/appStore.js';
+	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
+	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
+	// cascade delete, resizable), thumbnail grid on the right (subfolder cards
+	// + items), drag files in to import. Shares the bottom dock with the Flow
+	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
+	import { explorerClose } from '../../stores/appStore.js';
+	import { showToast } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
 		explorerItems,
@@ -12,10 +14,13 @@
 		createFolder,
 		renameFolder,
 		deleteFolder,
+		folderCounts,
+		moveFolder,
 		moveItem,
 		importFiles,
 		deleteItem,
 		renameItem,
+		isValidName,
 		itemBlob
 	} from '$lib/explorer';
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
@@ -34,11 +39,13 @@
 	let docked = $state(true);
 	let winW = $state(720);
 	let winH = $state(440);
+	let treeWidth = $state(176);
 	if (typeof localStorage !== 'undefined') {
 		height = clampH(parseInt(localStorage.getItem('explorerHeight') ?? '300'));
 		docked = localStorage.getItem('explorerDocked') !== 'false';
 		winW = parseInt(localStorage.getItem('explorerWinW') ?? '720') || 720;
 		winH = parseInt(localStorage.getItem('explorerWinH') ?? '440') || 440;
+		treeWidth = parseInt(localStorage.getItem('explorerTreeW') ?? '176') || 176;
 	}
 	loadExplorer();
 	loadPrefabs();
@@ -95,10 +102,39 @@
 		localStorage.setItem('explorerWinH', String(winH));
 	}
 
+	// --- tree splitter (106.6) ---
+	let treeResizing = $state(false);
+	function doTreeResize(e: any) {
+		if (!treeResizing) return;
+		treeWidth = Math.min(Math.max(110, treeWidth + e.movementX), 420);
+	}
+	function endTreeResize(e: any) {
+		if (!treeResizing) return;
+		treeResizing = false;
+		e.currentTarget.releasePointerCapture?.(e.pointerId);
+		localStorage.setItem('explorerTreeW', String(treeWidth));
+	}
+
 	// --- content state ---
 	let search = $state('');
 	let dropActive = $state(false);
 	let menu: any = $state(null); // {x, y, items}
+	/** highlighted drop target while dragging: folder id | 'root' | null (106.4) */
+	let dropFolder: string | 'root' | null = $state(null);
+	/** inline editor (106.1/2): {mode:'create'|'rename', parentId, folderId?, value} */
+	let editing: any = $state(null);
+	let expanded = $state(new Set<string>());
+	if (typeof localStorage !== 'undefined') {
+		try {
+			expanded = new Set(JSON.parse(localStorage.getItem('explorerExpanded') ?? '[]'));
+		} catch {}
+	}
+	function toggleExpand(id: string) {
+		const next = new Set(expanded);
+		next.has(id) ? next.delete(id) : next.add(id);
+		expanded = next;
+		localStorage.setItem('explorerExpanded', JSON.stringify([...next]));
+	}
 
 	const KIND_ICONS: Record<string, string> = {
 		image: '🖼️',
@@ -108,17 +144,24 @@
 		prefab: '🧱'
 	};
 
-	// folders shown as a flat indented tree (parentId nesting, depth-first)
+	// folders as a flat indented tree, respecting expansion (106.6)
 	const folderTree = $derived.by(() => {
 		const list = $explorerFolders;
-		const out: { folder: any; depth: number }[] = [];
+		const out: { folder: any; depth: number; hasChildren: boolean }[] = [];
 		const walk = (parentId: string | null, depth: number) => {
-			for (const folder of list.filter((f) => (f.parentId ?? null) === parentId))
-				out.push({ folder, depth }), walk(folder.id, depth + 1);
+			for (const folder of list.filter((f) => (f.parentId ?? null) === parentId)) {
+				const hasChildren = list.some((f) => f.parentId === folder.id);
+				out.push({ folder, depth, hasChildren });
+				if (expanded.has(folder.id)) walk(folder.id, depth + 1);
+			}
 		};
 		walk(null, 0);
 		return out;
 	});
+
+	const childFolders = $derived(
+		$explorerFolders.filter((f) => (f.parentId ?? null) === ($activeFolder === 'prefabs' ? '__none__' : ($activeFolder ?? null)))
+	);
 
 	const gridItems = $derived.by(() => {
 		if ($activeFolder === 'prefabs')
@@ -135,12 +178,72 @@
 		return scoped;
 	});
 
-	function onDrop(e: DragEvent) {
+	// --- inline create/rename (106.1/2) ---
+	function startCreate(parentId: string | null) {
+		if (parentId) {
+			const next = new Set(expanded);
+			next.add(parentId);
+			expanded = next;
+		}
+		editing = { mode: 'create', parentId, value: 'New folder' };
+	}
+	function startRename(folder: any) {
+		editing = { mode: 'rename', folderId: folder.id, parentId: folder.parentId ?? null, value: folder.name };
+	}
+	function commitEdit() {
+		if (!editing || !isValidName(editing.value)) return;
+		if (editing.mode === 'create') createFolder(editing.value, editing.parentId);
+		else renameFolder(editing.folderId, editing.value);
+		editing = null;
+	}
+	function editKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') commitEdit();
+		else if (e.key === 'Escape') editing = null;
+		e.stopPropagation();
+	}
+	function focusSelect(node: HTMLInputElement) {
+		node.focus();
+		node.select();
+	}
+
+	function confirmDeleteFolder(folder: any) {
+		const counts = folderCounts(folder.id);
+		showToast(
+			`Delete "${folder.name}" (${counts.folders} folder${counts.folders === 1 ? '' : 's'}, ${counts.items} item${counts.items === 1 ? '' : 's'})?`,
+			[
+				{ label: 'Delete', action: () => deleteFolder(folder.id) },
+				{ label: 'Cancel', action: () => {} }
+			]
+		);
+	}
+
+	// --- drag & drop (106.4): items AND folders move into folders/root ---
+	function payloadOf(e: DragEvent) {
+		const rawItem = e.dataTransfer?.getData('application/x-explorer-item');
+		if (rawItem) return { type: 'item', ...JSON.parse(rawItem) };
+		const rawFolder = e.dataTransfer?.getData('application/x-explorer-folder');
+		if (rawFolder) return { type: 'folder', ...JSON.parse(rawFolder) };
+		return null;
+	}
+	function canAccept(e: DragEvent) {
+		const types = e.dataTransfer?.types ?? [];
+		return types.includes('application/x-explorer-item') || types.includes('application/x-explorer-folder');
+	}
+	function dropInto(e: DragEvent, target: string | null) {
+		const payload = payloadOf(e);
+		dropFolder = null;
+		if (!payload) return;
 		e.preventDefault();
-		dropActive = false;
-		// internal item move onto the panel root = no-op (tree rows handle moves)
-		if (e.dataTransfer?.files?.length)
-			importFiles(e.dataTransfer.files, $activeFolder === 'prefabs' ? null : $activeFolder);
+		e.stopPropagation();
+		if (payload.type === 'folder') {
+			if (!moveFolder(payload.id, target)) showToast("A folder can't move into its own subtree");
+		} else if (!payload.prefabId) moveItem(payload.id, target);
+	}
+	function dragOverInto(e: DragEvent, target: string | 'root' | null) {
+		if (!canAccept(e)) return;
+		e.preventDefault();
+		e.stopPropagation();
+		dropFolder = target;
 	}
 
 	function folderMenu(e: MouseEvent, folder: any) {
@@ -149,21 +252,16 @@
 			x: e.clientX,
 			y: e.clientY,
 			items: [
-				{ label: 'New subfolder', action: () => createFolder('New folder', folder.id) },
-				{
-					label: 'Rename',
-					action: () => {
-						const name = prompt('Folder name', folder.name);
-						if (name) renameFolder(folder.id, name);
-					}
-				},
-				{ label: 'Delete folder', danger: true, action: () => deleteFolder(folder.id) }
+				{ label: 'New subfolder', action: () => startCreate(folder.id) },
+				{ label: 'Rename', action: () => startRename(folder) },
+				{ label: 'Delete folder', danger: true, action: () => confirmDeleteFolder(folder) }
 			]
 		};
 	}
 
 	function itemMenu(e: MouseEvent, item: any) {
 		e.preventDefault();
+		e.stopPropagation();
 		if (item.kind === 'prefab') return; // prefab cards are managed in the Library
 		menu = {
 			x: e.clientX,
@@ -191,6 +289,27 @@
 				{ label: 'Delete', danger: true, action: () => deleteItem(item.id) }
 			]
 		};
+	}
+
+	// right-click on the grid background = new folder HERE (106.7)
+	function gridMenu(e: MouseEvent) {
+		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
+		if ($activeFolder === 'prefabs') return;
+		e.preventDefault();
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [{ label: 'New folder', action: () => startCreate($activeFolder ?? null) }]
+		};
+	}
+
+	function onDrop(e: DragEvent) {
+		dropActive = false;
+		// internal payloads are handled by the row/card targets
+		if (canAccept(e)) return;
+		e.preventDefault();
+		if (e.dataTransfer?.files?.length)
+			importFiles(e.dataTransfer.files, $activeFolder === 'prefabs' ? null : $activeFolder);
 	}
 
 	function onItemDragStart(e: DragEvent, item: any) {
@@ -221,57 +340,107 @@
 	{/if}
 {/snippet}
 
+{#snippet editRow(depth: number)}
+	<div class="flex flex-col gap-0.5" style="padding-left: {8 + depth * 14}px">
+		<input
+			class="ui-input w-40 py-0.5 {isValidName(editing.value) ? '' : 'border-red-500'}"
+			value={editing.value}
+			use:focusSelect
+			oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
+			onkeydown={editKeydown}
+			onblur={() => (editing = null)}
+		/>
+		{#if !isValidName(editing.value)}
+			<span class="text-[10px] text-red-400">names can't contain * \ /</span>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet content()}
 	<div class="flex h-full min-h-0">
-		<!-- folder tree -->
-		<div class="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-gray-700/60 pr-1 text-xs">
+		<!-- folder tree (resizable, no wrap, h-scroll — 106.6) -->
+		<div
+			id="explorer-tree"
+			class="flex shrink-0 flex-col gap-0.5 overflow-x-auto overflow-y-auto pr-1 text-xs"
+			style="width: {treeWidth}px"
+		>
 			<button
-				class="rounded px-2 py-1 text-left {$activeFolder === null && !search
+				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
 					? 'bg-primary-700 text-white'
-					: 'text-gray-300 hover:bg-gray-700'}"
+					: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline outline-2 outline-primary-500' : ''}"
+				ondragover={(e) => dragOverInto(e, 'root')}
+				ondragleave={() => (dropFolder = null)}
+				ondrop={(e) => dropInto(e, null)}
 				onclick={() => ((search = ''), activeFolder.set(null))}>🏠 Library</button
 			>
 			<button
 				id="prefabs-folder"
-				class="rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
+				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
 					? 'bg-primary-700 text-white'
 					: 'text-gray-300 hover:bg-gray-700'}"
 				onclick={() => ((search = ''), activeFolder.set('prefabs'))}>🧱 Prefabs</button
 			>
+			{#if editing?.mode === 'create' && editing.parentId === null}
+				{@render editRow(0)}
+			{/if}
 			{#each folderTree as row (row.folder.id)}
-				<button
-					class="rounded px-2 py-1 text-left {$activeFolder === row.folder.id
-						? 'bg-primary-700 text-white'
-						: 'text-gray-300 hover:bg-gray-700'}"
-					style="padding-left: {8 + row.depth * 14}px"
-					oncontextmenu={(e) => folderMenu(e, row.folder)}
-					ondragover={(e) => {
-						if (e.dataTransfer?.types.includes('application/x-explorer-item')) e.preventDefault();
-					}}
-					ondrop={(e) => {
-						const raw = e.dataTransfer?.getData('application/x-explorer-item');
-						if (!raw) return;
-						e.preventDefault();
-						const payload = JSON.parse(raw);
-						if (!payload.prefabId) moveItem(payload.id, row.folder.id);
-					}}
-					onclick={() => ((search = ''), activeFolder.set(row.folder.id))}
-				>
-					📁 {row.folder.name}
-				</button>
+				{#if editing?.mode === 'rename' && editing.folderId === row.folder.id}
+					{@render editRow(row.depth)}
+				{:else}
+					<div
+						class="flex items-center whitespace-nowrap {dropFolder === row.folder.id ? 'outline outline-2 outline-primary-500 rounded' : ''}"
+						style="padding-left: {2 + row.depth * 14}px"
+					>
+						<button
+							class="w-4 shrink-0 text-gray-500"
+							onclick={() => toggleExpand(row.folder.id)}
+							title={row.hasChildren ? (expanded.has(row.folder.id) ? 'Collapse' : 'Expand') : ''}
+						>
+							{row.hasChildren ? (expanded.has(row.folder.id) ? '▾' : '▸') : ''}
+						</button>
+						<button
+							class="flex-1 rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
+								? 'bg-primary-700 text-white'
+								: 'text-gray-300 hover:bg-gray-700'}"
+							draggable="true"
+							ondragstart={(e) =>
+								e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify({ id: row.folder.id }))}
+							oncontextmenu={(e) => folderMenu(e, row.folder)}
+							ondragover={(e) => dragOverInto(e, row.folder.id)}
+							ondragleave={() => (dropFolder = null)}
+							ondrop={(e) => dropInto(e, row.folder.id)}
+							onclick={() => ((search = ''), activeFolder.set(row.folder.id))}
+						>
+							📁 {row.folder.name}
+						</button>
+					</div>
+				{/if}
+				{#if editing?.mode === 'create' && editing.parentId === row.folder.id}
+					{@render editRow(row.depth + 1)}
+				{/if}
 			{/each}
 			<button
 				id="new-folder"
-				class="mt-1 rounded border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
-				onclick={() => {
-					const name = prompt('Folder name', 'New folder');
-					if (name) createFolder(name, $activeFolder === 'prefabs' ? null : $activeFolder);
-				}}>＋ New folder</button
+				class="mt-1 whitespace-nowrap rounded border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
+				onclick={() => startCreate($activeFolder === 'prefabs' ? null : $activeFolder)}>＋ New folder</button
 			>
 		</div>
-		<!-- item grid -->
-		<div class="relative min-w-0 flex-1 overflow-y-auto p-1">
-			{#if gridItems.length === 0}
+		<!-- tree splitter -->
+		<div
+			class="resize-cue w-1.5 shrink-0 cursor-ew-resize border-r border-gray-700/60"
+			style="touch-action: none"
+			title="Drag to resize"
+			onpointerdown={(e) => {
+				treeResizing = true;
+				(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+				e.preventDefault();
+			}}
+			onpointermove={doTreeResize}
+			onpointerup={endTreeResize}
+		></div>
+		<!-- item grid (+ subfolder cards, 106.7) -->
+		<div class="relative min-w-0 flex-1 overflow-y-auto p-1" oncontextmenu={gridMenu} role="region">
+			{#if childFolders.length === 0 && gridItems.length === 0}
 				<p class="p-4 text-center text-xs italic text-gray-500">
 					{$activeFolder === 'prefabs'
 						? 'No prefabs yet — right-click an object and Save as prefab.'
@@ -279,6 +448,31 @@
 				</p>
 			{:else}
 				<div class="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-1">
+					{#if !search && $activeFolder !== 'prefabs'}
+						{#each childFolders as folder (folder.id)}
+							<div
+								class="explorer-folder-card flex cursor-pointer flex-col items-center gap-1 rounded border p-1.5 {dropFolder === folder.id
+									? 'border-primary-500 bg-primary-500/10'
+									: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'}"
+								role="button"
+								tabindex="0"
+								draggable="true"
+								ondragstart={(e) =>
+									e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify({ id: folder.id }))}
+								ondragover={(e) => dragOverInto(e, folder.id)}
+								ondragleave={() => (dropFolder = null)}
+								ondrop={(e) => dropInto(e, folder.id)}
+								oncontextmenu={(e) => folderMenu(e, folder)}
+								onclick={() => activeFolder.set(folder.id)}
+								onkeydown={(e) => e.key === 'Enter' && activeFolder.set(folder.id)}
+							>
+								<span class="flex h-14 w-14 items-center justify-center text-4xl">📁</span>
+								<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
+									{folder.name}
+								</span>
+							</div>
+						{/each}
+					{/if}
 					{#each gridItems as item (item.id)}
 						<div
 							class="explorer-card group flex cursor-grab flex-col items-center gap-1 rounded border border-transparent p-1.5 hover:border-gray-600 hover:bg-gray-700/60"
@@ -317,6 +511,7 @@
 			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
 			style="z-index: var(--z-bottom); height: {height}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 			ondragover={(e) => {
+				if (canAccept(e)) return;
 				e.preventDefault();
 				dropActive = true;
 			}}
@@ -363,6 +558,7 @@
 			use:dockable={{ key: 'explorer' }}
 			style="z-index: var(--z-window); width: {winW}px; height: {winH}px"
 			ondragover={(e) => {
+				if (canAccept(e)) return;
 				e.preventDefault();
 				dropActive = true;
 			}}

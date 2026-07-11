@@ -66,9 +66,15 @@ async function persistIndex() {
 
 // ---- folders ----
 
+/** Folder names can't carry `* \ /` (106) @param {string} name */
+export function isValidName(name) {
+	return !!name?.trim() && !/[*\\/]/.test(name);
+}
+
 /** @param {string} name @param {string | null=} parentId */
 export function createFolder(name, parentId = null) {
-	const folder = { id: crypto.randomUUID(), name: name || 'New folder', parentId };
+	if (!isValidName(name)) return null;
+	const folder = { id: crypto.randomUUID(), name: name.trim(), parentId };
 	explorerFolders.update((list) => [...list, folder]);
 	persistIndex();
 	return folder;
@@ -76,21 +82,48 @@ export function createFolder(name, parentId = null) {
 
 /** @param {string} id @param {string} name */
 export function renameFolder(id, name) {
-	explorerFolders.update((list) => list.map((f) => (f.id === id ? { ...f, name } : f)));
+	if (!isValidName(name)) return false;
+	explorerFolders.update((list) => list.map((f) => (f.id === id ? { ...f, name: name.trim() } : f)));
 	persistIndex();
+	return true;
 }
 
-/** Delete a folder: children re-root to its parent @param {string} id */
-export function deleteFolder(id) {
-	const parent = get(explorerFolders).find((f) => f.id === id)?.parentId ?? null;
+/** Every folder id inside a subtree, root included @param {string} id */
+export function folderSubtree(id) {
+	const list = get(explorerFolders);
+	const out = [id];
+	for (let i = 0; i < out.length; i++)
+		for (const f of list) if (f.parentId === out[i]) out.push(f.id);
+	return out;
+}
+
+/** What a cascade delete would remove (for the confirm, 106) @param {string} id */
+export function folderCounts(id) {
+	const subtree = folderSubtree(id);
+	const items = get(explorerItems).filter((item) => subtree.includes(item.folderId ?? ''));
+	return { folders: subtree.length, items: items.length };
+}
+
+/** Cascade delete (106): the folder, its subfolders AND their items @param {string} id */
+export async function deleteFolder(id) {
+	const subtree = folderSubtree(id);
+	const doomed = get(explorerItems).filter((item) => subtree.includes(item.folderId ?? ''));
+	explorerFolders.update((list) => list.filter((f) => !subtree.includes(f.id)));
+	explorerItems.update((list) => list.filter((item) => !subtree.includes(item.folderId ?? '')));
+	activeFolder.update((current) => (current && subtree.includes(current) ? null : current));
+	for (const item of doomed) await idbDelete(BLOB_KEY + item.id);
+	await persistIndex();
+}
+
+/** Re-parent a folder by drag (106); refuses cycles @param {string} id @param {string | null} parentId */
+export function moveFolder(id, parentId) {
+	if (id === parentId) return false;
+	if (parentId && folderSubtree(id).includes(parentId)) return false; // no cycles
 	explorerFolders.update((list) =>
-		list.filter((f) => f.id !== id).map((f) => (f.parentId === id ? { ...f, parentId: parent } : f))
+		list.map((f) => (f.id === id ? { ...f, parentId } : f))
 	);
-	explorerItems.update((list) =>
-		list.map((item) => (item.folderId === id ? { ...item, folderId: parent } : item))
-	);
-	activeFolder.update((current) => (current === id ? parent : current));
 	persistIndex();
+	return true;
 }
 
 /** @param {string} itemId @param {string | null} folderId */

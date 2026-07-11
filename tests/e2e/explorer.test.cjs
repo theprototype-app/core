@@ -93,7 +93,122 @@ h.run(async () => {
 	}));
 	h.check(swapped.explorer && swapped.flow, 'Explorer tab takes the dock, Flow hides');
 
+	// --- 106: tree v2 ---
+	// inline create: the button spawns an input, Enter creates, Esc cancels
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.locator('#new-folder').click();
+	await A.page.waitForTimeout(200);
+	await A.page.keyboard.type('Sounds');
+	await A.page.keyboard.press('Enter');
+	await A.page.waitForTimeout(300);
+	let folders = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.explorer.explorerFolders.subscribe((f) =>
+					resolve(f.map((x) => ({ name: x.name, parent: x.parentId ?? null })))
+				)();
+			})
+	);
+	h.check(folders.some((f) => f.name === 'Sounds'), 'inline create makes the folder on Enter');
+	await A.page.locator('#new-folder').click();
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+	folders = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.explorer.explorerFolders.subscribe((f) => resolve(f.length))();
+			})
+	);
+	h.check(folders === 2, 'Esc cancels the inline create');
+
+	// validation: special characters refuse with a tip
+	await A.page.locator('#new-folder').click();
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('bad/name');
+	await A.page.waitForTimeout(200);
+	const tip = await A.page.getByText("names can't contain", { exact: false }).isVisible();
+	await A.page.keyboard.press('Enter'); // no-op while invalid
+	await A.page.waitForTimeout(200);
+	const stillEditing = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.explorer.explorerFolders.subscribe((f) =>
+					resolve(!f.some((x) => /bad/.test(x.name)))
+				)();
+			})
+	);
+	h.check(tip && stillEditing, 'special characters refuse with a tip (106.3)');
+	await A.page.keyboard.press('Escape');
+
+	// folder re-parent via the store API + cycle refusal (drag payloads are
+	// covered by the shared dropInto handler these calls route through)
+	const parenting = await A.page.evaluate(() => {
+		let list = [];
+		window.__stores.explorer.explorerFolders.subscribe((f) => (list = f))();
+		const textures = list.find((f) => f.name === 'Textures');
+		const sounds = list.find((f) => f.name === 'Sounds');
+		const ok = window.__stores.explorer.moveFolder(sounds.id, textures.id);
+		const cycle = window.__stores.explorer.moveFolder(textures.id, sounds.id);
+		let after = [];
+		window.__stores.explorer.explorerFolders.subscribe((f) => (after = f))();
+		return { ok, cycle, nested: after.find((f) => f.name === 'Sounds')?.parentId === textures.id };
+	});
+	h.check(parenting.ok && parenting.nested, 'folders re-parent into folders');
+	h.check(parenting.cycle === false, 'a folder refuses to move into its own subtree');
+
+	// cascade delete with the toast confirm
+	await A.page.evaluate(() => {
+		let list = [];
+		window.__stores.explorer.explorerFolders.subscribe((f) => (list = f))();
+		const textures = list.find((f) => f.name === 'Textures');
+		// put an item inside so the cascade has something to remove
+		let items = [];
+		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__stores.explorer.moveItem(items[0].id, textures.id);
+	});
+	await A.page.locator('#explorer-tree button', { hasText: 'Textures' }).click({ button: 'right' });
+	await A.page.waitForTimeout(200);
+	await A.page.getByText('Delete folder', { exact: true }).click();
+	await A.page.waitForTimeout(300);
+	h.check(
+		await A.page.getByText(/Delete "Textures" \(2 folders, 1 item\)/).isVisible(),
+		'cascade delete confirms with counts'
+	);
+	await A.page.getByRole('button', { name: 'Delete', exact: true }).click();
+	await A.page.waitForTimeout(400);
+	const afterDelete = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.explorer.explorerFolders.subscribe((f) => {
+					window.__stores.explorer.explorerItems.subscribe((items) =>
+						resolve({ folders: f.length, items: items.length })
+					)();
+				})();
+			})
+	);
+	h.check(
+		afterDelete.folders === 0 && afterDelete.items === 1,
+		`cascade removed subfolders + their items (${JSON.stringify(afterDelete)})`
+	);
+
+	// tree splitter persists
+	const tree = await A.page.locator('#explorer-tree').boundingBox();
+	await A.page.mouse.move(tree.x + tree.width + 3, tree.y + 60);
+	await A.page.mouse.down();
+	await A.page.mouse.move(tree.x + tree.width + 63, tree.y + 60, { steps: 6 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	const widened = await A.page.evaluate(() => ({
+		width: document.querySelector('#explorer-tree')?.getBoundingClientRect().width ?? 0,
+		saved: parseInt(localStorage.getItem('explorerTreeW') ?? '0')
+	}));
+	h.check(
+		Math.abs(widened.width - (tree.width + 60)) < 8 && Math.abs(widened.saved - widened.width) < 8,
+		`tree splitter resizes and persists (${Math.round(widened.width)})`
+	);
+
 	// persistence: items + folders survive a reload
+	await A.page.evaluate(() => window.__stores.explorer.createFolder('Keep', null));
 	await A.page.reload();
 	await A.page.waitForTimeout(2500);
 	const persisted = await A.page.evaluate(async () => {
@@ -107,7 +222,7 @@ h.run(async () => {
 		});
 	});
 	h.check(
-		persisted.items === 2 && persisted.folders.includes('Textures'),
+		persisted.items === 1 && persisted.folders.includes('Keep'),
 		`library persists across reload (${persisted.items} items, folders ${persisted.folders.join(',')})`
 	);
 

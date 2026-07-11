@@ -1,6 +1,10 @@
 <script lang="ts">
-	import { Modal, Select } from 'flowbite-svelte';
+	import { Modal, Select, Checkbox } from 'flowbite-svelte';
 	import { characterModalOpen, avatarConfig, userdata, peers } from '../../stores/appStore.js';
+	import { FACE_SHAPES, resolveAvatar } from '$lib/avatarModel';
+
+	// resolve so shape/showLabel have defaults even for older stored configs
+	$: cfg = resolveAvatar($avatarConfig);
 
 	// Edits the local player's avatar config; every change persists and
 	// replicates immediately through the existing userdata message.
@@ -54,14 +58,28 @@
 				on:change={(e) => update({ hat: e.srcElement.value })}
 			/>
 		</div>
+		<div class="flex px-6 pb-3">
+			<p class="{rowClass} rounded-s-lg">Head shape</p>
+			<Select
+				class="rounded-s-none"
+				items={FACE_SHAPES}
+				value={cfg.shape}
+				on:change={(e) => update({ shape: (e.target as HTMLSelectElement).value })}
+			/>
+		</div>
 		<div class="flex px-6 pb-1">
 			<p class="{rowClass} rounded-s-lg">Face</p>
 			<Select
 				class="rounded-s-none"
 				items={faces}
-				value={$avatarConfig.face}
+				value={cfg.face}
 				on:change={(e) => update({ face: e.srcElement.value })}
 			/>
+		</div>
+		<div class="flex items-center gap-2 px-6 pt-3">
+			<Checkbox checked={cfg.showLabel} on:change={(e) => update({ showLabel: (e.target as HTMLInputElement).checked })}
+				>Show name label</Checkbox
+			>
 		</div>
 		<p class="px-6 pt-2 text-xs text-gray-400">
 			The face photo uses your profile avatar image (Profile Settings). Changes apply for all

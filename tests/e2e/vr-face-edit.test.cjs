@@ -48,7 +48,8 @@ h.run(async () => {
 		`extrude + move push the +X cap to x=1 (${core.capMaxX.toFixed(2)}/${core.movedMaxX.toFixed(2)})`
 	);
 	h.check(core.deletedTris === 10, 'delete drops the face tris (12→10)');
-	h.check(core.movedTris === 12 && core.insetTris === 12, 'move + inset keep the triangle count');
+	// 121: inset now stitches a frame ring (+2 tris per boundary edge); move stays flat
+	h.check(core.movedTris === 12 && core.insetTris === 20, `move keeps 12, inset adds the ring (${core.insetTris})`);
 
 	// --- eligibility cap ---
 	const cap = await A.page.evaluate(() => {

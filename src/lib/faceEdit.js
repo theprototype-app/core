@@ -126,7 +126,31 @@ function boundaryEdges(tris, face) {
 	return dir.filter((d) => count.get(d.ek) === 1);
 }
 
-/** Extrude a face by dist along its normal, stitching side walls @param {any[]} tris @param {any} face @param {number} dist */
+/**
+ * Add a quad (a,b,c,d) as two triangles, winding it so its normal aligns with
+ * wantDir — otherwise the wall/ring backface-culls to invisible (121 fix).
+ * @param {any[]} out @param {any} a @param {any} b @param {any} c @param {any} d @param {any} wantDir
+ */
+function pushQuad(out, a, b, c, d, wantDir) {
+	let t1 = [a, b, c];
+	let t2 = [a, c, d];
+	if (triNormal(t1).dot(wantDir) < 0) {
+		t1 = [a, c, b];
+		t2 = [a, d, c];
+	}
+	out.push(t1, t2);
+}
+
+/** radial-outward direction at a wall midpoint (perpendicular to the face
+ * normal) — the visible side of an extrude wall @param {any} mid @param {any} face */
+function radialOut(mid, face) {
+	const r = mid.clone().sub(face.centroid);
+	r.addScaledVector(face.normal, -r.dot(face.normal)); // drop the normal component
+	if (r.lengthSq() < 1e-9) r.copy(face.normal);
+	return r.normalize();
+}
+
+/** Extrude a face by dist along its normal, stitching visible side walls @param {any[]} tris @param {any} face @param {number} dist */
 export function extrudeFace(tris, face, dist) {
 	const out = cloneTris(tris);
 	const offset = face.normal.clone().multiplyScalar(dist);
@@ -140,8 +164,8 @@ export function extrudeFace(tris, face, dist) {
 		const b = p1.clone();
 		const a2 = p0.clone().add(offset);
 		const b2 = p1.clone().add(offset);
-		out.push([a, b, b2]);
-		out.push([a, b2, a2]);
+		const mid = a.clone().add(b).add(b2).add(a2).multiplyScalar(0.25);
+		pushQuad(out, a, b, b2, a2, radialOut(mid, face));
 	});
 	return out;
 }
@@ -157,13 +181,24 @@ export function moveFaceAlongNormal(tris, face, dist) {
 	return out;
 }
 
-/** Inset: move a face's vertices toward its centroid (0..0.95) @param {any[]} tris @param {any} face @param {number} amount */
+/** Inset: shrink a face toward its centroid + stitch a visible frame ring so
+ * the gap doesn't read as a hole (121). @param {any[]} tris @param {any} face @param {number} amount */
 export function insetFace(tris, face, amount) {
 	const out = cloneTris(tris);
 	const faceSet = new Set(face.triIndices);
 	const t = Math.min(Math.max(amount, 0), 0.95);
+	const boundary = boundaryEdges(tris, face);
 	out.forEach((tri, ti) => {
 		if (faceSet.has(ti)) tri.forEach((v) => v.lerp(face.centroid, t));
+	});
+	// frame ring: original boundary edge → its inset counterpart, facing outward
+	// like the face did (normal ≈ the face normal)
+	boundary.forEach(({ p0, p1 }) => {
+		const a = p0.clone();
+		const b = p1.clone();
+		const b2 = p1.clone().lerp(face.centroid, t);
+		const a2 = p0.clone().lerp(face.centroid, t);
+		pushQuad(out, a, b, b2, a2, face.normal);
 	});
 	return out;
 }
@@ -326,13 +361,21 @@ export function exitFaceEdit() {
 
 /**
  * Map a raycast hit (three.js faceIndex = TRIANGLE index) to a logical face
- * index and highlight it. @param {number} triangleIndex
+ * index and highlight it. Returns TRUE only when the highlight changed, so the
+ * caller ticks a haptic once and the overlay rebuilds once (121). A negative
+ * triangleIndex clears the highlight. @param {number} triangleIndex
  */
 export function highlightFaceByTriangle(triangleIndex) {
-	const fi = faces.findIndex((f) => f.triIndices.includes(triangleIndex));
+	const fi = triangleIndex < 0 ? -1 : faces.findIndex((f) => f.triIndices.includes(triangleIndex));
+	if (fi === get(faceEditHighlight)) return false;
 	faceEditHighlight.set(fi);
 	refreshFaceOverlay();
-	return fi;
+	return true;
+}
+
+/** Clear the face highlight (ray left the mesh) — returns TRUE if it changed */
+export function clearFaceHighlight() {
+	return highlightFaceByTriangle(-1);
 }
 
 /** the highlighted face's world-space centroid + normal (for ghost/preview) */

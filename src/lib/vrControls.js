@@ -1790,10 +1790,10 @@ export function updateVRControls() {
 			const edited = get(objectsGroup)?.getObjectByProperty('uuid', get(faceEditObject));
 			if (edited) {
 				const hits = controllerRay(pointerIndex).intersectObject(edited, false);
-				if (hits.length && hits[0].faceIndex != null) {
-					if (highlightFaceByTriangle(hits[0].faceIndex) !== get(faceEditHighlight))
-						hapticPulse(0.1, 12);
-				}
+				// 121: highlight the hit face, or CLEAR when the ray leaves the mesh;
+				// haptic ticks only on an actual change (the fn reports it)
+				const tri = hits.length && hits[0].faceIndex != null ? hits[0].faceIndex : -1;
+				if (highlightFaceByTriangle(tri) && tri >= 0) hapticPulse(0.1, 12);
 			}
 		}
 		// menu-hand stick fwd/back nudges the amount (~0.6/s, framerate-scaled)

@@ -88,11 +88,11 @@ h.run(async () => {
 	h.check(registry.addCount === 6 && registry.sceneHasEnv, 'Add + Scene rings populated');
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
 	h.check(
-		registry.objectOps.slice(0, 5).join(',') ===
-			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe' &&
-			registry.objectOps.length === 6 &&
+		registry.objectOps.slice(0, 6).join(',') ===
+			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe,obj:props' &&
+			registry.objectOps.length === 7 &&
 			!registry.objectOps.some((id) => id.startsWith('color:')),
-		`Edit ring: ops + Color + Wireframe + Snap, swatches gone (${registry.objectOps.join(',')})`
+		`Edit ring: ops + Color + Wireframe + Properties + Snap, swatches gone (${registry.objectOps.join(',')})`
 	);
 	h.check(
 		registry.hubClose === 'close' && registry.hubObject === 'nav:object' && registry.hubBack === 'back',

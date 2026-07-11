@@ -72,6 +72,8 @@ export const vrObjectsPanelOpen = writable(false);
 export const vrChatPanelOpen = writable(false);
 // VR color palette (110), opened from Edit ▸ Color
 export const vrPaletteOpen = writable(false);
+// VR properties panel (112), opened from Edit ▸ Properties
+export const vrPropsPanelOpen = writable(false);
 // VR selection indicator style (110): wireframe (default) or the shell
 export const vrWireframeSelection = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('vrWireframe') !== 'false'

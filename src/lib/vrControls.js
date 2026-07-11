@@ -18,6 +18,7 @@ import {
 	vrObjectsPanelOpen,
 	vrChatPanelOpen,
 	vrPaletteOpen,
+	vrPropsPanelOpen,
 	vrWireframeSelection,
 	vrStatsOpen,
 	vrGrabStyle,
@@ -25,11 +26,17 @@ import {
 } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
-import { recordMaterialChange } from './materialsHandler';
+import { recordMaterialChange, setMaterialParam } from './materialsHandler';
 import { peers, showToast } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
-import { selectObject, topLevelObjectOf } from './objectActions';
+import {
+	selectObject,
+	topLevelObjectOf,
+	toggleObjectVisibility,
+	duplicateObject,
+	deleteSelection
+} from './objectActions';
 import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing } from './ping';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
@@ -468,6 +475,95 @@ export function raycastPalette(index) {
 }
 /** the live lightness (bar) value @type {import('svelte/store').Writable<number>} */
 export const vrPaletteLightness = writable(0.55);
+
+// ---- VR properties panel (112): core editable set for the selection ----
+/** the props panel THREE group @type {import('svelte/store').Writable<any>} */
+export const vrPropsGroup = writable(null);
+/** stick row cursor (objects-panel pattern): index into PROPS_ROWS */
+export const vrPropsCursor = writable(0);
+/** interactive rows top-to-bottom; axis rows nudge, the rest activate */
+export const PROPS_ROWS = [
+	'pos:x',
+	'pos:y',
+	'pos:z',
+	'rot:x',
+	'rot:y',
+	'rot:z',
+	'scale:x',
+	'scale:y',
+	'scale:z',
+	'opacity',
+	'color',
+	'visible',
+	'duplicate',
+	'delete'
+];
+
+/** Raycast the props panel controls @param {number} index @returns {string|null} props action */
+export function raycastProps(index) {
+	const panel = get(vrPropsGroup);
+	if (!panel || !get(vrPropsPanelOpen)) return null;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const control = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrprops-'));
+	return control ? 'props:' + control.object.name.slice('vrprops-'.length) : null;
+}
+
+/**
+ * Snap-aware nudge step per transform kind (112). Pure for tests.
+ * @param {string} kind pos|rot|scale @param {boolean} snapOn
+ * @param {{translate: number, rotateDeg: number, scale: number}} settings
+ */
+export function nudgeStep(kind, snapOn, settings) {
+	if (kind === 'pos') return snapOn ? settings.translate : 0.1;
+	if (kind === 'rot') return ((snapOn ? settings.rotateDeg : 5) * Math.PI) / 180;
+	return snapOn ? settings.scale : 0.1;
+}
+
+/** One nudge click/stick-tick: local apply + move replication + undo entry
+ * @param {any} object @param {string} kind @param {string} axis @param {number} sign */
+function nudgeTransform(object, kind, axis, sign) {
+	const before = transformStateOf(object);
+	const step = nudgeStep(kind, get(snapEnabled), get(snapSettings));
+	if (kind === 'pos') object.position[axis] += sign * step;
+	else if (kind === 'rot') object.rotation[axis] += sign * step;
+	else object.scale[axis] = Math.max(0.01, object.scale[axis] + sign * step);
+	recordTransform({ uuid: object.uuid, before, after: transformStateOf(object) });
+	broadcastMove(object, true);
+	objectsGroup.update((v) => v);
+}
+
+/** Props panel actions ('props:' prefix in executeVRMenuAction) @param {string} action */
+function handlePropsAction(action) {
+	if (action === 'close') {
+		vrPropsPanelOpen.set(false);
+		return;
+	}
+	const object = /** @type {any} */ (get(selectedObject));
+	if (!object?.uuid) return;
+	if (action === 'visible') toggleObjectVisibility(object.uuid);
+	else if (action === 'duplicate') duplicateObject(undefined);
+	else if (action === 'delete') {
+		deleteSelection();
+		vrPropsPanelOpen.set(false);
+	} else if (action === 'color') executeVRMenuAction('obj:color');
+	else if (action.startsWith('opacity:')) {
+		if (!object.material) return;
+		const sign = parseInt(action.slice('opacity:'.length)) || 0;
+		const next = Math.min(Math.max((object.material.opacity ?? 1) + sign * 0.1, 0.1), 1);
+		if (next < 1 && !object.material.transparent) setMaterialParam(object.uuid, 'transparent', true);
+		setMaterialParam(object.uuid, 'opacity', Math.round(next * 10) / 10);
+	} else if (action.startsWith('nudge:')) {
+		const [kind, axis, sign] = action.slice('nudge:'.length).split(':');
+		if (['x', 'y', 'z'].includes(axis)) nudgeTransform(object, kind, axis, parseInt(sign) || 1);
+	}
+}
+
+/** Stick press / cursored activation for a PROPS_ROWS row @param {string} row */
+export function propsRowAction(row) {
+	if (row === 'opacity') return 'props:opacity:1';
+	if (row.includes(':')) return 'props:nudge:' + row + ':1';
+	return 'props:' + row;
+}
 let paintGesture = /** @type {any} */ (null);
 let lastColorSent = 0;
 
@@ -678,15 +774,20 @@ let windowGrab = null;
 
 function windowGroupFor(/** @type {string} */ id) {
 	return get(
-		{ menu: vrMenuGroup, objects: vrPanelGroup, palette: vrPaletteGroup, stats: vrStatsGroup }[id] ??
-			vrMenuGroup
+		{
+			menu: vrMenuGroup,
+			objects: vrPanelGroup,
+			palette: vrPaletteGroup,
+			stats: vrStatsGroup,
+			props: vrPropsGroup
+		}[id] ?? vrMenuGroup
 	);
 }
 
 /** Which open window the controller ray lands on @param {number} index */
 function windowHitAt(index) {
 	let best = null;
-	for (const id of ['menu', 'objects', 'palette', 'stats']) {
+	for (const id of ['menu', 'objects', 'palette', 'stats', 'props']) {
 		const group = windowGroupFor(id);
 		if (!group) continue;
 		const hits = controllerRay(index).intersectObject(group, true);
@@ -1039,6 +1140,7 @@ export function executeVRMenuAction(name) {
 		vrChatPanelOpen.update((v) => !v);
 		vrObjectsPanelOpen.set(false);
 		vrPaletteOpen.set(false);
+		vrPropsPanelOpen.set(false);
 		vrMenuOpen.set(false);
 		return;
 	}
@@ -1047,7 +1149,21 @@ export function executeVRMenuAction(name) {
 		vrPaletteOpen.set(true);
 		vrObjectsPanelOpen.set(false);
 		vrChatPanelOpen.set(false);
+		vrPropsPanelOpen.set(false);
 		vrMenuOpen.set(false);
+		return;
+	}
+	if (name === 'obj:props') {
+		// the properties panel (112) replaces the ring on screen
+		vrPropsPanelOpen.set(true);
+		vrObjectsPanelOpen.set(false);
+		vrChatPanelOpen.set(false);
+		vrPaletteOpen.set(false);
+		vrMenuOpen.set(false);
+		return;
+	}
+	if (name.startsWith('props:')) {
+		handlePropsAction(name.slice('props:'.length));
 		return;
 	}
 	if (name === 'wireframe') {
@@ -1087,6 +1203,7 @@ export function executeVRMenuAction(name) {
 		// the native VR list panel (101) replaces the menu on screen
 		vrObjectsPanelOpen.update((v) => !v);
 		vrPaletteOpen.set(false);
+		vrPropsPanelOpen.set(false);
 		vrMenuOpen.set(false);
 	} else if (name === 'stats') {
 		vrStatsOpen.update((v) => {
@@ -1185,7 +1302,12 @@ export function updateVRControls() {
 	}
 	// open menu/panel are modal for the sticks: sector nav / scrolling own them;
 	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100)
-	if (!get(vrMenuOpen) && !get(vrObjectsPanelOpen) && get(vrGrabbedHand) !== 'right') {
+	if (
+		!get(vrMenuOpen) &&
+		!get(vrObjectsPanelOpen) &&
+		!get(vrPropsPanelOpen) &&
+		get(vrGrabbedHand) !== 'right'
+	) {
 		updateTeleport(session);
 		updateSnapTurn(session);
 	}
@@ -1203,6 +1325,7 @@ export function updateVRControls() {
 				if (menuPressed && !prev.menu) {
 					vrObjectsPanelOpen.set(false); // ring replaces the panel (101)
 					vrPaletteOpen.set(false);
+					vrPropsPanelOpen.set(false);
 					vrMenuOpen.set(true);
 				}
 				if (!menuPressed && prev.menu) {
@@ -1213,6 +1336,7 @@ export function updateVRControls() {
 			} else if (menuPressed && !prev.menu) {
 				vrObjectsPanelOpen.set(false);
 				vrPaletteOpen.set(false);
+				vrPropsPanelOpen.set(false);
 				vrMenuOpen.update((v) => !v);
 			}
 		}
@@ -1247,6 +1371,10 @@ export function updateVRControls() {
 			} else if (get(vrObjectsPanelOpen)) {
 				// ray hover wins; otherwise the row cursor's action (109.4)
 				const action = get(vrHovered) ?? get(vrPanelCursorAction);
+				if (action) executeVRMenuAction(action);
+			} else if (get(vrPropsPanelOpen)) {
+				// ray hover wins; otherwise activate the cursored row (112)
+				const action = get(vrHovered) ?? propsRowAction(PROPS_ROWS[get(vrPropsCursor)]);
 				if (action) executeVRMenuAction(action);
 			} else if (source.handedness === 'right') pingFromController(index);
 		}
@@ -1334,6 +1462,43 @@ export function updateVRControls() {
 			panelScrollAt = now;
 			hapticPulse(0.08, 10);
 			vrPanelCursor.update((v) => Math.max(0, v + (y > 0 ? 1 : -1)));
+		}
+	} else if (get(vrPropsPanelOpen)) {
+		// props panel (112): ray highlights controls; EITHER stick moves the row
+		// cursor, stick left/right nudges the cursored row, press activates it
+		const sources = [...session.inputSources];
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const menuIndex = sources.findIndex((s) => s.handedness === get(vrMenuHand));
+		const hovered = pointerIndex >= 0 ? raycastProps(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.12, 14);
+			vrHovered.set(hovered);
+		}
+		let x = 0;
+		let y = 0;
+		for (const index of [pointerIndex, menuIndex]) {
+			const axes = index >= 0 ? (sources[index]?.gamepad?.axes ?? []) : [];
+			if (Math.abs(axes[3] ?? 0) > Math.abs(y)) y = axes[3];
+			if (Math.abs(axes[2] ?? 0) > Math.abs(x)) x = axes[2];
+		}
+		const now = Date.now();
+		if (Math.abs(y) > 0.6 && Math.abs(y) >= Math.abs(x) && now - panelScrollAt > 220) {
+			panelScrollAt = now;
+			hapticPulse(0.08, 10);
+			vrPropsCursor.update((v) =>
+				Math.min(Math.max(0, v + (y > 0 ? 1 : -1)), PROPS_ROWS.length - 1)
+			);
+		} else if (Math.abs(x) > 0.6 && Math.abs(x) > Math.abs(y) && now - panelScrollAt > 220) {
+			// left/right adjusts the cursored row (axis nudges + opacity)
+			const row = PROPS_ROWS[get(vrPropsCursor)];
+			const sign = x > 0 ? 1 : -1;
+			if (row === 'opacity' || row.includes(':')) {
+				panelScrollAt = now;
+				hapticPulse(0.1, 12);
+				executeVRMenuAction(
+					row === 'opacity' ? 'props:opacity:' + sign : 'props:nudge:' + row + ':' + sign
+				);
+			}
 		}
 	} else if (get(vrHovered) !== null) {
 		vrHovered.set(null);

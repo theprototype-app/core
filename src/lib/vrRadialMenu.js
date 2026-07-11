@@ -298,6 +298,8 @@ function registerBuiltins() {
 		order: 4,
 		active: () => get(vrWireframeSelection)
 	});
+	// Properties opens the core-editable-set panel (112)
+	registerVRMenuEntry({ id: 'obj:props', group: 'object', label: 'Properties', order: 5 });
 }
 
 registerBuiltins();

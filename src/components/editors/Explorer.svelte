@@ -28,6 +28,9 @@
 	import { inspectorKind, inspectorClose } from '../../stores/appStore.js';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
+	import { sceneAssets } from '$lib/sceneAssets';
+	import { setNodeData } from '$lib/nodesHandler';
+	import { flowNodes } from '../../stores/flowStore';
 	import { bottomDockActive, dockShared, setDockOccupant } from '$lib/bottomDock';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
@@ -176,6 +179,13 @@
 				thumbnail: p.thumbnail,
 				prefabId: p.id
 			}));
+		// the Scene manifest (108): a derived, always-shared view — never editable
+		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')) {
+			const group = $activeFolder.split(':')[1] ?? null;
+			return $sceneAssets
+				.filter((entry) => !group || entry.group === group)
+				.map((entry) => ({ ...entry, sceneEntry: true, thumbnail: entry.dataUrl ?? null }));
+		}
 		const inFolder = $explorerItems.filter((item) => (item.folderId ?? null) === ($activeFolder ?? null));
 		const q = search.trim().toLowerCase();
 		const scoped = q ? $explorerItems.filter((item) => item.name.toLowerCase().includes(q)) : inFolder;
@@ -266,7 +276,7 @@
 	function itemMenu(e: MouseEvent, item: any) {
 		e.preventDefault();
 		e.stopPropagation();
-		if (item.kind === 'prefab') return; // prefab cards are managed in the Library
+		if (item.kind === 'prefab' || item.sceneEntry) return; // derived views have no CRUD
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -298,7 +308,7 @@
 	// right-click on the grid background = new folder HERE (106.7)
 	function gridMenu(e: MouseEvent) {
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
-		if ($activeFolder === 'prefabs') return;
+		if ($activeFolder === 'prefabs' || (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene'))) return;
 		e.preventDefault();
 		menu = {
 			x: e.clientX,
@@ -327,11 +337,37 @@
 	// click = properties in the Inspector; double-click = open/preview (107)
 	function inspectItem(item: any) {
 		if (item.kind === 'prefab') return;
+		if (item.sceneEntry) {
+			// hash-backed Scene entries inspect the real library item (108)
+			const backing = item.itemId ? $explorerItems.find((i) => i.id === item.itemId) : null;
+			if (backing) inspectItem(backing);
+			return;
+		}
 		inspectedFile.set(item.id);
 		inspectorKind.set('file');
 		inspectorClose.set(false);
 	}
 	async function openItem(item: any) {
+		if (item.sceneEntry) {
+			// derived Scene entries open live views (108): textures preview,
+			// scripts edit the NODE code (replicated via setNodeData)
+			if (item.kind === 'image' && item.dataUrl) openImagePreview({ title: item.name, url: item.dataUrl });
+			else if (item.kind === 'text' && item.nodeId) {
+				let nodes: any[] = [];
+				flowNodes.subscribe((v: any) => (nodes = v))();
+				const node = nodes.find((n) => n.id === item.nodeId);
+				if (node)
+					openTextEditor({
+						title: item.name + ' (live script)',
+						code: node.data?.code ?? '',
+						onSave: (code: string) => setNodeData(item.nodeId, { code })
+					});
+			} else if (item.kind === 'audio' && item.itemId) {
+				const backing = $explorerItems.find((i) => i.id === item.itemId);
+				if (backing) inspectItem(backing);
+			}
+			return;
+		}
 		if (item.kind === 'text') {
 			const blob = await itemBlob(item.id);
 			if (!blob) return;
@@ -406,6 +442,28 @@
 					: 'text-gray-300 hover:bg-gray-700'}"
 				onclick={() => ((search = ''), activeFolder.set('prefabs'))}>🧱 Prefabs</button
 			>
+			<!-- Scene manifest (108): derived, always shared, read-only structure -->
+			<button
+				id="scene-folder"
+				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene'
+					? 'bg-primary-700 text-white'
+					: 'text-gray-300 hover:bg-gray-700'}"
+				title="Assets the shared scene uses right now — identical on every peer"
+				onclick={() => ((search = ''), activeFolder.set('scene'))}>🌐 Scene</button
+			>
+			{#if typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')}
+				{#each ['audio', 'config', 'textures'] as sub}
+					<button
+						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
+							? 'bg-primary-700 text-white'
+							: 'text-gray-400 hover:bg-gray-700'}"
+						style="padding-left: 22px"
+						onclick={() => activeFolder.set('scene:' + sub)}
+					>
+						📁 {sub} ({$sceneAssets.filter((a) => a.group === sub).length})
+					</button>
+				{/each}
+			{/if}
 			{#if editing?.mode === 'create' && editing.parentId === null}
 				{@render editRow(0)}
 			{/if}

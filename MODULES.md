@@ -152,6 +152,8 @@ api.registerVRMenuEntry({                               // sector in the VR radi
 	id: 'spawn', group: 'root', label: 'Dungeon',         // group 'root' = base ring;
 	action: () => generate(), closes: true                // other names make a sub-ring
 });                                                     // (id gets prefixed moduleId:)
+api.sceneAssets();  // Promise<[{group, name, kind, hash}]> — what the shared
+                    // scene uses right now (audio/config/textures manifest)
 api.scene();        // THREE.Scene
 api.objectsGroup(); // the replicated objects root (add scene content here)
 api.peerId();       // our peer id (undefined before the mesh is up)

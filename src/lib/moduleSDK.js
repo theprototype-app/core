@@ -181,6 +181,11 @@ function makeApi(moduleId) {
 		},
 		scene: () => get(globalScene),
 		objectsGroup: () => get(objectsGroup),
+		/** The assets the shared scene uses right now — [{group, name, kind, hash}] (108) */
+		sceneAssets: () => {
+			// dynamic to stay outside the module graph cycle guard
+			return import('./sceneAssets').then((m) => m.sceneAssetList());
+		},
 		peerId: () => /** @type {any} */ (get(peers))?.peer?.id,
 		toast: showToast,
 		now: runtimeNow,

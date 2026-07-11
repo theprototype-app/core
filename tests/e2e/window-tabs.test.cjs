@@ -18,8 +18,17 @@ h.run(async () => {
 	await A.page.mouse.move(chat.x + 120, chat.y + 12);
 	await A.page.mouse.down();
 	await A.page.mouse.move(list.x + 120, list.y + 14, { steps: 10 });
+	// 104: the target header highlights BEFORE release
+	const highlighted = await A.page.evaluate(() =>
+		document.querySelector('#object-list')?.classList.contains('merge-target')
+	);
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(400);
+	h.check(highlighted === true, 'merge target highlights during the drag (104)');
+	const cleared = await A.page.evaluate(() =>
+		document.querySelector('#object-list')?.classList.contains('merge-target')
+	);
+	h.check(cleared === false, 'highlight clears on drop');
 
 	h.check(await A.page.locator('.tab-strip').isVisible(), 'tab strip appears');
 	h.check(

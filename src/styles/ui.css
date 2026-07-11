@@ -58,4 +58,23 @@
 	.palette-tab {
 		clip-path: polygon(0 0, 100% 14%, 100% 86%, 0 100%);
 	}
+	/* drag-merge feedback (104): the window you'd merge into lights up */
+	.merge-target {
+		outline: 2px solid rgb(249 115 22 / 0.9);
+		outline-offset: -1px;
+	}
+	.merge-target::before {
+		content: '⧉ Merge into tabs';
+		position: absolute;
+		top: -24px;
+		left: 8px;
+		z-index: 50;
+		padding: 2px 8px;
+		border-radius: 6px;
+		background: rgb(249 115 22);
+		color: white;
+		font-size: 11px;
+		font-weight: 600;
+		white-space: nowrap;
+	}
 }

@@ -380,6 +380,7 @@
 				<button id="explorer-dock" class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>
 					⇩ Dock
 				</button>
+				<button class="ui-button-quiet" title="Close" onclick={() => explorerClose.set(true)}>✕</button>
 			</div>
 			<div class="min-h-0 flex-1 p-1">
 				{@render content()}

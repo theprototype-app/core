@@ -494,27 +494,31 @@
 	use:dockable={{ key: 'objects' }}
 	style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
 	<!-- dropping a row on the header moves the object back to the scene root -->
+	<!-- header matches the Explorer chrome (104): title + inline search + close;
+	     still the move handle AND the drop-to-root target -->
 	<div
 		role="list"
+		class="ui-panel-header move-handle shrink-0 cursor-move select-none rounded-tl-lg rounded-tr-lg py-1.5"
 		on:dragover={(e) => { if (e.dataTransfer?.types.includes('application/x-object-uuid')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
 		on:drop={(e) => {
 			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
 			if (uuid) { e.preventDefault(); moveObjectToGroup(uuid, 'root'); }
 		}}
 	>
-	<Listgroup class="move-handle cursor-move -rounded rounded-tl-lg rounded-tr-lg border-b border-gray-300 p-1.5 text-center text-sm font-semibold uppercase tracking-wide text-gray-700 dark:border-gray-600 dark:text-gray-200">
-		☰&nbsp; Objects
-	</Listgroup>
-	</div>
-	<div class="flex flex-col gap-1 bg-gray-100 p-1 text-xs dark:bg-gray-700">
+		<span>☰ Objects</span>
 		<input
 			id="object-search"
-			class="rounded border border-gray-300 bg-white px-2 py-0.5 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+			class="ui-input w-36 py-0.5 font-normal normal-case tracking-normal"
 			placeholder="Search objects…"
 			value={searchTerm}
+			on:pointerdown={(e) => e.stopPropagation()}
 			on:input={(e) => (searchTerm = e.currentTarget.value)}
 			on:keydown={(e) => { if (e.key === 'Escape') { searchTerm = ''; e.currentTarget.blur(); } }}
 		/>
+		<span class="flex-1"></span>
+		<button class="ui-button-quiet" title="Close (O)" on:click={() => objectListClose.set(true)}>✕</button>
+	</div>
+	<div class="flex flex-col gap-1 bg-gray-100 p-1 text-xs dark:bg-gray-700">
 		<div class="relative flex items-center gap-1">
 			<!-- 80.2: one scrollable chip row that never overflows the window -->
 			<div id="filter-chips" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none]" use:chipScroll>

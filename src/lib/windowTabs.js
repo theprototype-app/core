@@ -196,14 +196,9 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 
 	// drag-merge: dropping this window's header onto another window's header
 	let draggingHeader = false;
-	const down = (/** @type {any} */ e) => {
-		if (!e.target.closest('.move-handle')) return;
-		if (groupOfKey(key)) return; // grouped windows drag via the strip
-		draggingHeader = true;
-	};
-	const up = (/** @type {any} */ e) => {
-		if (!draggingHeader) return;
-		draggingHeader = false;
+	/** @type {any} */ let mergeTarget = null;
+	/** the window whose HEADER is under (x, y) — the merge hit test */
+	const targetAt = (/** @type {number} */ x, /** @type {number} */ y) => {
 		for (const [otherKey, other] of registry) {
 			if (otherKey === key) continue;
 			if (other.node.dataset?.docked) continue; // docked windows don't tab (81L)
@@ -211,13 +206,35 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 			if (other.node.offsetParent === null && getComputedStyle(other.node).position !== 'fixed') continue;
 			const r = other.node.getBoundingClientRect();
 			if (r.width === 0) continue;
-			if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.top + 36) {
-				mergeWindows(otherKey, key);
-				return;
-			}
+			if (x >= r.left && x <= r.right && y >= r.top && y <= r.top + 36) return otherKey;
 		}
+		return null;
+	};
+	const setMergeTarget = (/** @type {string | null} */ otherKey) => {
+		const next = otherKey ? registry.get(otherKey)?.node : null;
+		if (next === mergeTarget) return;
+		mergeTarget?.classList.remove('merge-target');
+		mergeTarget = next ?? null;
+		mergeTarget?.classList.add('merge-target');
+	};
+	const down = (/** @type {any} */ e) => {
+		if (!e.target.closest('.move-handle')) return;
+		if (groupOfKey(key)) return; // grouped windows drag via the strip
+		draggingHeader = true;
+	};
+	const move = (/** @type {any} */ e) => {
+		// live feedback (104): the header you would merge into lights up
+		if (draggingHeader) setMergeTarget(targetAt(e.clientX, e.clientY));
+	};
+	const up = (/** @type {any} */ e) => {
+		if (!draggingHeader) return;
+		draggingHeader = false;
+		setMergeTarget(null);
+		const otherKey = targetAt(e.clientX, e.clientY);
+		if (otherKey) mergeWindows(otherKey, key);
 	};
 	node.addEventListener('pointerdown', down);
+	window.addEventListener('pointermove', move);
 	window.addEventListener('pointerup', up);
 
 	tryRestore();
@@ -225,7 +242,9 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 	return {
 		destroy() {
 			node.removeEventListener('pointerdown', down);
+			window.removeEventListener('pointermove', move);
 			window.removeEventListener('pointerup', up);
+			setMergeTarget(null);
 			unsub?.();
 			removeFromGroup(key, false);
 			registry.delete(key);

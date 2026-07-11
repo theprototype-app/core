@@ -142,6 +142,7 @@
 				<button id="flow-dock" class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>
 					⇩ Dock
 				</button>
+				<button class="ui-button-quiet" title="Close (N)" onclick={() => flowGraphClose.set(true)}>✕</button>
 			</div>
 			<div class="min-h-0 flex-1">
 				<SvelteFlowProvider>

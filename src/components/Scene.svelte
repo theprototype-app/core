@@ -17,7 +17,7 @@
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
-	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
+	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit } from '$lib/faceEdit';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, placePrefabGhost, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
@@ -146,6 +146,7 @@
 		updateVRControls(); // also manages ray/hover visibility outside sessions
 		updateSpatialAudio(camera.current, scene); // voices follow avatars (throttled)
 		tickAnimatedMixers(); // imported clips run on the synced clock
+		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		updateLightHelpers();
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);
 	});

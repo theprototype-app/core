@@ -3,6 +3,8 @@
 	import * as THREE from 'three'
 	import { T, useTask } from '@threlte/core'
 	import { selectedObject, isVRMode, objectsGroup, vrWireframeSelection } from '../../stores/sceneStore'
+	import { editingObject } from '$lib/meshEdit'
+	import { faceEditObject } from '$lib/faceEdit'
 
 	// VR selection indicator (101/110): the desktop outline is a postprocessing
 	// composer and does NOT render in WebXR. Default is a two-tone wireframe —
@@ -100,7 +102,11 @@
 	useTask(() => {
 		if (!group) return
 		const target: any = $selectedObject
-		const active = $isVRMode && !!target?.uuid && !!$objectsGroup?.getObjectByProperty('uuid', target.uuid)
+		// hidden while vertex/face editing (119): meshEdit's own overlay shows
+		// the live structure — a static indicator would just lag behind edits
+		const editing = !!$editingObject || !!$faceEditObject
+		const active =
+			$isVRMode && !editing && !!target?.uuid && !!$objectsGroup?.getObjectByProperty('uuid', target.uuid)
 		group.visible = active
 		if (!active) return
 		const style = $vrWireframeSelection ? 'wire' : 'shell'

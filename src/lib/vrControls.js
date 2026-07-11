@@ -38,7 +38,8 @@ import {
 	vrRaycastHandle,
 	vrBeginHandleDrag,
 	vrDragHandleTo,
-	vrEndHandleDrag
+	vrEndHandleDrag,
+	setHoveredHandle
 } from './meshEdit';
 import {
 	faceEditObject,
@@ -1723,6 +1724,11 @@ export function updateVRControls() {
 			.getWorldPosition(new THREE.Vector3());
 		const step = get(snapEnabled) ? get(snapSettings).translate : 0;
 		vrDragHandleTo(controllerPos.add(vertexGrab.offset), step);
+	} else if (get(editingObject)) {
+		// vertex hover (119): the pointer ray tints the handle under it
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const hit = pointerIndex >= 0 ? vrRaycastHandle(controllerRay(pointerIndex)) : -1;
+		if (setHoveredHandle(hit) && hit >= 0) hapticPulse(0.1, 12);
 	}
 
 	// face edit (118): the pointer ray highlights the face under it; the

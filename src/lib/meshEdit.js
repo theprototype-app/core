@@ -25,8 +25,13 @@ let lastSent = 0;
 
 const HANDLE_COLOR = 0x2f81f7;
 const HANDLE_SELECTED = 0xff4000;
+const HANDLE_HOVER = 0xffa000; // ray hover (119): selected still wins
 const tempMatrix = new THREE.Matrix4();
 const tempVector = new THREE.Vector3();
+/** ray-hovered handle index, or -1 (119) */
+let hoveredHandle = -1;
+/** last object world matrix we posed the handles against (119: follow moves) */
+const lastObjectMatrix = new THREE.Matrix4();
 
 /** Group position-attribute indices by (rounded) location @param {any} geometry */
 function buildHandles(geometry) {
@@ -56,9 +61,36 @@ function refreshHandleMatrix(index) {
 }
 
 function refreshHandleColors() {
-	for (let i = 0; i < handles.length; i++)
-		handleMesh.setColorAt(i, new THREE.Color(i === selectedHandle ? HANDLE_SELECTED : HANDLE_COLOR));
+	for (let i = 0; i < handles.length; i++) {
+		const color =
+			i === selectedHandle ? HANDLE_SELECTED : i === hoveredHandle ? HANDLE_HOVER : HANDLE_COLOR;
+		handleMesh.setColorAt(i, new THREE.Color(color));
+	}
 	if (handleMesh.instanceColor) handleMesh.instanceColor.needsUpdate = true;
+}
+
+/**
+ * Ray hover highlight (119): tint a handle under the pointer ray. Returns true
+ * when the hover changed (so the caller can pulse a haptic tick). @param {number} index
+ */
+export function setHoveredHandle(index) {
+	if (index === hoveredHandle) return false;
+	hoveredHandle = index;
+	if (handleMesh) refreshHandleColors();
+	return true;
+}
+
+/**
+ * Per-frame (119): if the edited object's world transform changed (peer move,
+ * world-rig grab, animation), re-pose every handle so the dots track it.
+ * Handles live at the scene root in WORLD space, so they don't follow for free.
+ */
+export function tickMeshEdit() {
+	if (!edited || !handleMesh) return;
+	edited.updateMatrixWorld();
+	if (lastObjectMatrix.equals(edited.matrixWorld)) return;
+	lastObjectMatrix.copy(edited.matrixWorld);
+	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
 }
 
 /** @param {string} uuid */
@@ -81,6 +113,9 @@ export function enterEditMode(uuid) {
 
 	edited = object;
 	handles = buildHandles(object.geometry);
+	hoveredHandle = -1;
+	object.updateMatrixWorld();
+	lastObjectMatrix.copy(object.matrixWorld);
 
 	// vertex handles as one instanced mesh (cheap for thousands of vertices)
 	const box = new THREE.Box3().setFromObject(object);
@@ -147,6 +182,7 @@ export function exitEditMode() {
 	overlay = null;
 	proxy = null;
 	selectedHandle = -1;
+	hoveredHandle = -1;
 	editingObject.set(null);
 }
 

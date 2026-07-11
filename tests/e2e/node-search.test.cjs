@@ -72,22 +72,22 @@ h.run(async () => {
 		`palette filter works (${paletteLabels.join(',')})`
 	);
 
-	// 91: a right-click near the bottom edge clamps the menu + gives it scroll
-	// (left of the hud pill, which floats over the drawer's center)
+	// 124: a right-click near the bottom edge FLIPS the menu up (no scrollbar) —
+	// context menus never scroll now (node search keeps its own results scroll)
 	await pane.click({ button: 'right', position: { x: 150, y: 285 } });
 	await A.page.waitForTimeout(300);
 	const menuBox = await A.page.evaluate(() => {
 		const el = document.querySelector('[role="menu"]');
 		const rect = el.getBoundingClientRect();
 		return {
-			overflow: getComputedStyle(el).overflowY,
+			overflowY: getComputedStyle(el).overflowY,
 			fits: rect.bottom <= window.innerHeight + 1,
-			capped: el.style.maxHeight !== ''
+			notCapped: el.style.maxHeight === ''
 		};
 	});
 	h.check(
-		menuBox.overflow === 'auto' && menuBox.fits && menuBox.capped,
-		`pane menu scrolls and stays on screen (${JSON.stringify(menuBox)})`
+		menuBox.overflowY === 'visible' && menuBox.fits && menuBox.notCapped,
+		`pane menu flips on screen without a scrollbar (${JSON.stringify(menuBox)})`
 	);
 	// ...and the search box opened from down there is clamped into view
 	await A.page.keyboard.type('s');
@@ -113,9 +113,9 @@ h.run(async () => {
 			(el) => getComputedStyle(el).position === 'fixed' && el.textContent?.includes('Bounce') && !el.getAttribute('role')
 		);
 		return {
-			// a horizontal scrollBAR can never render: overflow-x is hidden and
-			// submenus are fixed-positioned outside the scroll container
-			noHScroll: menu ? getComputedStyle(menu).overflowX === 'hidden' : false,
+			// 124: no scrollbar can render — the menu doesn't scroll at all
+			// (overflow visible), and submenus are fixed-positioned outside it
+			noHScroll: menu ? getComputedStyle(menu).overflowX === 'visible' : false,
 			subFixed: !!sub,
 			subOnScreen: sub
 				? sub.getBoundingClientRect().right <= window.innerWidth + 1 && sub.getBoundingClientRect().top >= 0

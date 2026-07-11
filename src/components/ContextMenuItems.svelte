@@ -11,11 +11,18 @@
 	export let flipY = false;
 
 	let openSub: string | null = null;
-	let subPos = { x: 0, y: 0 };
+	// submenu position as a left/right/top/bottom style string — NO transform
+	// (a transform makes this the containing block for the fixed submenu, which
+	// mis-placed deep menus and grew scrollbars, 124)
+	let subStyle = '';
 
 	function openSubmenu(e: MouseEvent, item: any) {
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		subPos = { x: flipX ? rect.left : rect.right, y: flipY ? rect.bottom : rect.top };
+		const vw = typeof window !== 'undefined' ? window.innerWidth : 0;
+		const vh = typeof window !== 'undefined' ? window.innerHeight : 0;
+		subStyle =
+			(flipX ? `right: ${vw - rect.left}px;` : `left: ${rect.right}px;`) +
+			(flipY ? `bottom: ${vh - rect.bottom}px;` : `top: ${rect.top}px;`);
 		openSub = item.label;
 	}
 
@@ -34,10 +41,8 @@
 			</span>
 			{#if openSub === item.label}
 				<div
-					class="fixed max-h-[60vh] min-w-36 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
-					style="left: {subPos.x}px; top: {subPos.y}px; transform: translate({flipX
-						? '-100%'
-						: '0'}, {flipY ? '-100%' : '0'}); z-index: 1001;"
+					class="fixed min-w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
+					style="{subStyle} z-index: 1001;"
 				>
 					<svelte:self items={item.children} {onrun} {flipX} {flipY} />
 				</div>

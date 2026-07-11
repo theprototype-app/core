@@ -63,36 +63,43 @@
 		},
 		{ label: 'Undo', disabled: !$canUndo, tooltip: 'Ctrl+Z', action: undo },
 		{ label: 'Redo', disabled: !$canRedo, tooltip: 'Ctrl+Y', action: redo },
-		{
-			label: 'Focus selected',
-			disabled: !$selectedObject?.uuid,
-			tooltip: 'F',
-			action: () => focusObject()
-		},
-		{
-			label: 'Duplicate selected',
-			disabled: !$selectedObject?.uuid,
-			tooltip: 'Ctrl+D',
-			action: () => duplicateObject()
-		},
-		{
-			label: 'Align to ground',
-			disabled: !$selectedObject?.uuid,
-			tooltip: 'Drop the selected object onto the surface below (undoable)',
-			action: () => alignToGround()
-		},
-		{
-			label: $editingObject ? 'Finish mesh edit' : 'Edit mesh',
-			disabled: !$editingObject && !$selectedObject?.geometry?.attributes?.position,
-			tooltip: $editingObject ? 'Esc' : 'Drag vertex handles of the selected mesh',
-			action: () => ($editingObject ? exitEditMode() : enterEditMode($selectedObject.uuid))
-		},
-		{
-			label: 'Add note',
-			disabled: !$selectedObject?.uuid,
-			tooltip: 'Pin a synced note to the selected object',
-			action: () => addAnnotation()
-		},
+		// 124: everything that acts on the CURRENT SELECTION lives in one
+		// submenu named after the object (only shown when something is selected
+		// or a mesh is being edited)
+		...($selectedObject?.uuid || $editingObject
+			? [
+					{
+						label: (($selectedObject?.name || $selectedObject?.type || 'Selected') + ' ▸'),
+						children: [
+							{ label: 'Focus', tooltip: 'F', action: () => focusObject() },
+							{
+								label: 'Duplicate',
+								disabled: !$selectedObject?.uuid,
+								tooltip: 'Ctrl+D',
+								action: () => duplicateObject()
+							},
+							{
+								label: 'Align to ground',
+								disabled: !$selectedObject?.uuid,
+								tooltip: 'Drop the selected object onto the surface below (undoable)',
+								action: () => alignToGround()
+							},
+							{
+								label: $editingObject ? 'Finish mesh edit' : 'Edit mesh',
+								disabled: !$editingObject && !$selectedObject?.geometry?.attributes?.position,
+								tooltip: $editingObject ? 'Esc' : 'Edit the vertices/faces of the selected mesh',
+								action: () => ($editingObject ? exitEditMode() : enterEditMode($selectedObject.uuid))
+							},
+							{
+								label: 'Add note',
+								disabled: !$selectedObject?.uuid,
+								tooltip: 'Pin a synced note to the selected object',
+								action: () => addAnnotation()
+							}
+						]
+					}
+				]
+			: []),
 		{
 			label: 'Tools',
 			children: [

@@ -30,7 +30,7 @@ import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popR
 import { paletteColorAt, barValueAt } from './vrPalette';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
 import { prefabs, instantiatePrefab } from './prefabs';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, messages } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
 import {
@@ -76,6 +76,20 @@ export const vrPanelCursorAction = writable(null);
 let panelScrollAt = 0;
 /** the stats card THREE group (111 grab target) @type {import('svelte/store').Writable<any>} */
 export const vrStatsGroup = writable(null);
+
+// VR chat unread badge (117): messages arriving while the VR chat panel is
+// closed accumulate; opening the panel clears the count
+/** @type {import('svelte/store').Writable<number>} */
+export const vrChatUnread = writable(0);
+let lastMessageCount = 0;
+messages.subscribe((list) => {
+	const count = Array.isArray(list) ? list.length : 0;
+	if (count > lastMessageCount && !get(vrChatPanelOpen)) vrChatUnread.update((n) => n + (count - lastMessageCount));
+	lastMessageCount = count;
+});
+vrChatPanelOpen.subscribe((open) => {
+	if (open) vrChatUnread.set(0);
+});
 
 /** @type {any} */ let renderer = null;
 /** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean}[]} */
@@ -583,6 +597,19 @@ let ghostObject = null;
 /** @type {any} */
 let ghostPrefab = null;
 
+// ---- VR chat panel (117) ----
+/** the chat panel THREE group @type {import('svelte/store').Writable<any>} */
+export const vrChatGroup = writable(null);
+
+/** Raycast the chat panel controls @param {number} index @returns {string|null} chat action */
+export function raycastChat(index) {
+	const panel = get(vrChatGroup);
+	if (!panel || !get(vrChatPanelOpen)) return null;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const control = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrchat-'));
+	return control ? 'chat:' + control.object.name.slice('vrchat-'.length) : null;
+}
+
 // ---- VR keyboard (116): raycast the key grid, route presses ----
 /** the keyboard THREE group @type {import('svelte/store').Writable<any>} */
 export const vrKeyboardGroup = writable(null);
@@ -899,7 +926,8 @@ function windowGroupFor(/** @type {string} */ id) {
 			stats: vrStatsGroup,
 			props: vrPropsGroup,
 			prefabs: vrPrefabsGroup,
-			keyboard: vrKeyboardGroup
+			keyboard: vrKeyboardGroup,
+			chat: vrChatGroup
 		}[id] ?? vrMenuGroup
 	);
 }
@@ -907,7 +935,7 @@ function windowGroupFor(/** @type {string} */ id) {
 /** Which open window the controller ray lands on @param {number} index */
 function windowHitAt(index) {
 	let best = null;
-	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard']) {
+	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard', 'chat']) {
 		const group = windowGroupFor(id);
 		if (!group) continue;
 		const hits = controllerRay(index).intersectObject(group, true);
@@ -1269,6 +1297,19 @@ export function executeVRMenuAction(name) {
 		vrMenuOpen.set(false);
 		return;
 	}
+	if (name.startsWith('chat:')) {
+		const action = name.slice('chat:'.length);
+		if (action === 'close') vrChatPanelOpen.set(false);
+		else if (action === 'input')
+			openVRKeyboard({
+				title: 'Chat message',
+				onCommit: (text) => {
+					const trimmed = text.trim();
+					if (trimmed) /** @type {any} */ (get(peers))?.sendMessage(trimmed);
+				}
+			});
+		return;
+	}
 	if (name === 'obj:color') {
 		// the continuous palette (110) replaces the ring on screen
 		vrPaletteOpen.set(true);
@@ -1477,6 +1518,7 @@ export function updateVRControls() {
 		!get(vrObjectsPanelOpen) &&
 		!get(vrPropsPanelOpen) &&
 		!get(vrPrefabsPanelOpen) &&
+		!get(vrChatPanelOpen) &&
 		!get(vrKeyboardTarget) &&
 		get(vrGrabbedHand) !== 'right'
 	) {
@@ -1557,6 +1599,10 @@ export function updateVRControls() {
 				const cell = get(prefabs)[get(vrPrefabsCursor)];
 				const action = get(vrHovered) ?? (cell ? 'prefabs:select:' + cell.id : null);
 				if (action) executeVRMenuAction(action);
+			} else if (get(vrChatPanelOpen)) {
+				// ray hover wins; otherwise the stick-press opens the input (117)
+				const action = get(vrHovered) ?? 'chat:input';
+				executeVRMenuAction(action);
 			} else if (source.handedness === 'right') pingFromController(index);
 		}
 		prev.stick = stickPressed;
@@ -1715,6 +1761,14 @@ export function updateVRControls() {
 			hapticPulse(0.08, 10);
 			const count = get(prefabs).length;
 			vrPrefabsCursor.update((v) => Math.min(Math.max(0, v + (y > 0 ? 1 : -1)), Math.max(0, count - 1)));
+		}
+	} else if (get(vrChatPanelOpen)) {
+		// chat panel (117): the pointer ray highlights close / input
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const hovered = pointerIndex >= 0 ? raycastChat(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.12, 14);
+			vrHovered.set(hovered);
 		}
 	} else if (get(vrHovered) !== null) {
 		vrHovered.set(null);

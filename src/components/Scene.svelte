@@ -7,7 +7,7 @@
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu } from '../stores/appStore';
 	import { get } from 'svelte/store';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
@@ -18,7 +18,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, raycastHandles, onProxyMoved, onProxyDragChanged } from '$lib/meshEdit';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, placePrefabGhost, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, placePrefabGhost, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -33,6 +33,7 @@
 	import VRPropertiesPanel from './play/VRPropertiesPanel.svelte';
 	import VRPrefabsPanel from './play/VRPrefabsPanel.svelte';
 	import VRKeyboard from './play/VRKeyboard.svelte';
+	import VRChatPanel from './play/VRChatPanel.svelte';
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
@@ -481,6 +482,14 @@
 					return;
 				}
 			}
+			if ($vrChatPanelOpen) {
+				// chat panel controls (117): close, input row → keyboard
+				const action = raycastChat(xrControllers.indexOf(controller));
+				if (action) {
+					executeVRMenuAction(action);
+					return;
+				}
+			}
 			// an armed ghost places on trigger and stays armed (115)
 			if (placePrefabGhost()) return;
 			if ($drawMode) return; // VR trigger feeds the stroke poll instead
@@ -620,6 +629,7 @@ position={[0, 2, 3]}
 <VRColorPalette />
 <VRPropertiesPanel />
 <VRPrefabsPanel />
+<VRChatPanel />
 <VRKeyboard />
 <VRSelectionShell />
 

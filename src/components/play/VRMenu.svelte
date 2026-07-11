@@ -8,7 +8,7 @@
 	import { drawMode } from '$lib/drawMode'
 	import { vrMicMode, micActive } from '$lib/voiceChat'
 	import { environment } from '$lib/environment'
-	import { vrHovered, vrMenuGroup } from '$lib/vrControls'
+	import { vrHovered, vrMenuGroup, vrChatUnread } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { activeRing, ringEntries, ringVersion, sectorLayout, hubEntry, menuPoseFromController, RING_INNER, RING_OUTER, HUB_RADIUS } from '$lib/vrRadialMenu'
 
@@ -112,6 +112,21 @@
 					anchorX="center"
 					anchorY="middle"
 					position={[s.labelX, s.labelY, 0.003]}
+				/>
+			{/if}
+			<!-- unread chat badge (117): a red dot + count on the Chat sector -->
+			{#if s.entry.id === 'chat' && $vrChatUnread > 0}
+				<T.Mesh name="vrmenu-chat-badge" position={[s.labelX + 0.014, s.labelY + 0.012, 0.004]}>
+					<T.CircleGeometry args={[0.008, 20]} />
+					<T.MeshBasicMaterial color="#e5484d" side={THREE.DoubleSide} />
+				</T.Mesh>
+				<Text
+					text={$vrChatUnread > 9 ? '9+' : String($vrChatUnread)}
+					color="#ffffff"
+					fontSize={0.008}
+					anchorX="center"
+					anchorY="middle"
+					position={[s.labelX + 0.014, s.labelY + 0.012, 0.005]}
 				/>
 			{/if}
 		{/each}

@@ -328,7 +328,7 @@
 	function inspectItem(item: any) {
 		if (item.kind === 'prefab') return;
 		inspectedFile.set(item.id);
-		inspectorKind.set('file' as any);
+		inspectorKind.set('file');
 		inspectorClose.set(false);
 	}
 	async function openItem(item: any) {

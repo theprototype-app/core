@@ -9,7 +9,7 @@ export const settingsSection = writable(null);
 // group) and the scene. `inspectorKind` picks the content, `inspectorClose`
 // the visibility — the legacy per-panel flags collapsed into this pair.
 export const inspectorClose = writable(true);
-/** @type {import('svelte/store').Writable<'selection'|'scene'>} */
+/** @type {import('svelte/store').Writable<'selection'|'scene'|'file'>} */
 export const inspectorKind = writable('selection');
 export const flowGraphClose = writable(true);
 // Explorer asset browser (95) — folder hud button toggles it

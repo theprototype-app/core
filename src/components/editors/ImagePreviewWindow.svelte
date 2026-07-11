@@ -8,7 +8,7 @@
 	let zoom = $state(1);
 	let panX = $state(0);
 	let panY = $state(0);
-	let panning = false;
+	let panning = $state(false);
 	let openedFor: any = null;
 
 	$effect(() => {

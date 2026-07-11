@@ -65,6 +65,7 @@ h.run(async () => {
 			sceneHasEnv: m.ringEntries('scene').some((e) => e.id === 'env:night'),
 			micModes: m.ringEntries('mic').map((e) => e.id),
 			objectOps: m.ringEntries('object').map((e) => e.id),
+			faces: m.ringEntries('faces').map((e) => e.id),
 			hubClose: m.hubEntry('root', false).id,
 			hubObject: m.hubEntry('root', true).id,
 			hubBack: m.hubEntry('add', true).id
@@ -88,11 +89,15 @@ h.run(async () => {
 	h.check(registry.addCount === 7 && registry.sceneHasEnv, 'Add ring: 6 primitives + Prefabs (115)');
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
 	h.check(
-		registry.objectOps.slice(0, 8).join(',') ===
-			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe,obj:props,obj:prefab,obj:vertices' &&
-			registry.objectOps.length === 9 &&
+		registry.objectOps.slice(0, 9).join(',') ===
+			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe,obj:props,obj:prefab,obj:vertices,nav:faces' &&
+			registry.objectOps.length === 10 &&
 			!registry.objectOps.some((id) => id.startsWith('color:')),
-		`Edit ring: ops + Color/Wireframe/Properties/Prefab/Vertices + Snap (${registry.objectOps.join(',')})`
+		`Edit ring: ops + Color/Wireframe/Properties/Prefab/Vertices/Faces + Snap (${registry.objectOps.join(',')})`
+	);
+	h.check(
+		registry.faces.join(',') === 'face:extrude,face:inset,face:move,face:delete',
+		`Faces sub-ring has the four blockout ops (${registry.faces.join(',')})`
 	);
 	h.check(
 		registry.hubClose === 'close' && registry.hubObject === 'nav:object' && registry.hubBack === 'back',

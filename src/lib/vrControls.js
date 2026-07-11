@@ -26,7 +26,7 @@ import {
 	vrGrabStyle,
 	vrGrabbedHand
 } from '../stores/sceneStore';
-import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, hubEntry } from './vrRadialMenu';
+import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
 import { prefabs, instantiatePrefab } from './prefabs';
@@ -40,6 +40,17 @@ import {
 	vrDragHandleTo,
 	vrEndHandleDrag
 } from './meshEdit';
+import {
+	faceEditObject,
+	enterFaceEdit,
+	exitFaceEdit,
+	vrFaceEditable,
+	setFaceOp,
+	adjustFaceAmount,
+	commitArmedFaceOp,
+	highlightFaceByTriangle,
+	faceEditHighlight
+} from './faceEdit';
 import { peers, showToast, messages } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings } from './snapping';
@@ -1024,6 +1035,12 @@ function onSqueezeStart(index) {
 		cancelPrefabGhost();
 		return;
 	}
+	// face edit mode (118): grip exits back to the Edit ring
+	if (get(faceEditObject)) {
+		exitFaceEdit();
+		resetRings();
+		return;
+	}
 	// vertex edit mode (113): grip a handle to drag its vertex
 	if (get(editingObject)) {
 		const handle = vrRaycastHandle(controllerRay(index));
@@ -1316,11 +1333,31 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name === 'back') {
+		// leaving the Faces ring exits face-edit mode (118)
+		if (get(activeRing) === 'faces') exitFaceEdit();
 		popRing();
+		return;
+	}
+	if (name === 'nav:faces') {
+		// enter face-edit mode + open the ops sub-ring (118)
+		const object = /** @type {any} */ (get(selectedObject));
+		if (!object?.uuid) return;
+		if (!vrFaceEditable(object)) {
+			showToast('Too dense for VR face editing (max 300 triangles)');
+			return;
+		}
+		enterFaceEdit(object.uuid);
+		if (get(faceEditObject)) pushRing('faces'); // only if entry succeeded (not locked)
 		return;
 	}
 	if (name.startsWith('nav:')) {
 		pushRing(name.slice(4));
+		return;
+	}
+	if (name.startsWith('face:')) {
+		// arm an op then close the ring so the pointer can pick + commit (118)
+		setFaceOp(/** @type {any} */ (name.slice('face:'.length)));
+		vrMenuOpen.set(false);
 		return;
 	}
 	if (name === 'chat') {
@@ -1686,6 +1723,26 @@ export function updateVRControls() {
 			.getWorldPosition(new THREE.Vector3());
 		const step = get(snapEnabled) ? get(snapSettings).translate : 0;
 		vrDragHandleTo(controllerPos.add(vertexGrab.offset), step);
+	}
+
+	// face edit (118): the pointer ray highlights the face under it; the
+	// grab-hand stick drives the live op amount
+	if (get(faceEditObject) && !get(vrMenuOpen)) {
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		if (pointerIndex >= 0) {
+			const edited = get(objectsGroup)?.getObjectByProperty('uuid', get(faceEditObject));
+			if (edited) {
+				const hits = controllerRay(pointerIndex).intersectObject(edited, false);
+				if (hits.length && hits[0].faceIndex != null) {
+					if (highlightFaceByTriangle(hits[0].faceIndex) !== get(faceEditHighlight))
+						hapticPulse(0.1, 12);
+				}
+			}
+		}
+		// menu-hand stick fwd/back nudges the amount (~0.6/s, framerate-scaled)
+		const menuIndex = [...session.inputSources].findIndex((s) => s.handedness === get(vrMenuHand));
+		const axisY = menuIndex >= 0 ? (session.inputSources[menuIndex]?.gamepad?.axes?.[3] ?? 0) : 0;
+		if (Math.abs(axisY) > 0.15) adjustFaceAmount(-axisY * 0.01);
 	}
 
 	// both-grips world grab (71): scale/rotate/pan the rig around the hands

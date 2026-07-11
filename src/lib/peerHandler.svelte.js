@@ -5,6 +5,7 @@ import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowN
 import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs } from '$lib/customNodes';
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
+import { applyMeshGeo } from '$lib/faceEdit';
 import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
@@ -278,6 +279,8 @@ export class PeerConnection {
 					sendAnnotations(data.sender);
 				} else if(data.type == 'verts') {
 					applyVerts(data.uuid, data.indices, data.position);
+				} else if(data.type == 'meshgeo') {
+					applyMeshGeo(data.uuid, data.positions);
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,

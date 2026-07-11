@@ -305,6 +305,14 @@ function registerBuiltins() {
 	registerVRMenuEntry({ id: 'obj:props', group: 'object', label: 'Properties', order: 5 });
 	// Vertices enters mesh edit mode for simple meshes (113)
 	registerVRMenuEntry({ id: 'obj:vertices', group: 'object', label: 'Vertices', order: 7 });
+	// Faces ▸ enters face-edit mode + opens the ops sub-ring (118)
+	registerVRMenuEntry({ id: 'nav:faces', group: 'object', label: 'Faces ▸', order: 8, ring: 'faces' });
+
+	// Faces sub-ring (118): the four ops that cover ~90% of blockout
+	registerVRMenuEntry({ id: 'face:extrude', group: 'faces', label: 'Extrude', order: 0 });
+	registerVRMenuEntry({ id: 'face:inset', group: 'faces', label: 'Inset', order: 1 });
+	registerVRMenuEntry({ id: 'face:move', group: 'faces', label: 'Move', order: 2 });
+	registerVRMenuEntry({ id: 'face:delete', group: 'faces', label: 'Delete', order: 3 });
 	// Save prefab (115): the selection joins the library, thumbnail included
 	registerVRMenuEntry({
 		id: 'obj:prefab',

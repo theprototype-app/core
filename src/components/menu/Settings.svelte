@@ -9,6 +9,7 @@
 	import { PING_SOUNDS, playPing } from '$lib/pingAudio';
 	import { THEMES, theme } from '$lib/themes';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
+	import { resetWindowPoses } from '$lib/vrWindowPoses';
 	import { shortcuts } from '$lib/shortcuts';
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
@@ -60,6 +61,103 @@
 	<div class="modal-content max-h-[90vh] overflow-y-auto p-4">
 		<Accordion>
 			<AccordionItem>
+				<svelte:fragment slot="header">VR</svelte:fragment>
+				<div class="flex">
+					<p class={topcoverName}>
+						<Checkbox
+							bind:checked={$vrOverride}
+							onclick={() => {
+								if (localStorage.getItem('vrOverride')) localStorage.removeItem('vrOverride');
+								else localStorage.setItem('vrOverride', 'true');
+							}}>&nbsp;VR override</Checkbox
+						>
+					</p>
+					<p class={topcoverDescription}>Forces normal play even if immersive-vr is enabled</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox
+							checked={$vrFlying}
+							on:change={(e) => {
+								$vrFlying = e.target.checked;
+								localStorage.setItem('vrFlying', String($vrFlying));
+							}}>&nbsp;VR flying</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Left-stick movement follows where the controller points (fly); off = stay level</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<!-- a red SWITCH (98): reads as an armed mode, not a plain option -->
+						<Toggle
+							id="passthrough-toggle"
+							color="red"
+							size="small"
+							checked={$vrPassthrough}
+							on:change={(e: any) => {
+								$vrPassthrough = e.target.checked;
+								localStorage.setItem('vrPassthrough', String($vrPassthrough));
+								showToast('Passthrough ' + ($vrPassthrough ? 'on' : 'off') + ' — takes effect on the next VR entry');
+							}}>Passthrough</Toggle>
+					</p>
+					<p class={middlecoverDescription}>Mixed reality: the next VR entry composites the scene over your room (immersive-ar){arSupport === false ? ' — not supported on this device' : ''}</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox
+							checked={$vrMenuHand === 'left'}
+							onclick={() => {
+								const next = $vrMenuHand === 'left' ? 'right' : 'left';
+								$vrMenuHand = next;
+								localStorage.setItem('vrMenuHand', next);
+							}}>&nbsp;VR menu on left</Checkbox
+						>
+					</p>
+					<p class={middlecoverDescription}>Which controller opens the VR quick-menu (the other hand points)</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox
+							id="vr-menu-hold"
+							checked={$vrMenuHold}
+							on:change={(e: any) => {
+								$vrMenuHold = e.target.checked;
+								localStorage.setItem('vrMenuHold', String($vrMenuHold));
+							}}>&nbsp;Hold-to-menu</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Hold B/Y to show the radial menu, release over a sector to pick it (off = press toggles)</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Select
+							class="border-0 bg-transparent p-0 text-sm dark:bg-transparent"
+							items={[
+								{ value: 15, name: 'Snap turn 15°' },
+								{ value: 30, name: 'Snap turn 30°' },
+								{ value: 45, name: 'Snap turn 45°' }
+							]}
+							value={$vrSnapAngle}
+							on:change={(e) => {
+								$vrSnapAngle = parseInt(e.srcElement.value);
+								localStorage.setItem('vrSnapAngle', String($vrSnapAngle));
+							}}
+						/>
+					</p>
+					<p class={middlecoverDescription}>VR thumbstick flick rotation angle</p>
+				</div>
+				<div class="flex">
+					<p class={bottomCoverName}>
+						<button
+							id="vr-reset-poses"
+							class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+							on:click={() => {
+								resetWindowPoses();
+								showToast('VR menu positions reset');
+							}}>Reset positions</button>
+					</p>
+					<p class={bottomCoverDescription}>Grabbed VR menus/panels snap back to their default spots on the controllers (111: hold the other grip on one to re-place it)</p>
+				</div>
+			</AccordionItem>
+			<AccordionItem>
 				<svelte:fragment slot="header">Scene</svelte:fragment>
 				<div class="flex">
 					<p class={topcoverName}>
@@ -71,18 +169,6 @@
 						/>
 					</p>
 					<p class={topcoverDescription}>UI theme for THIS device (the 3D viewport follows the environment, not the theme)</p>
-				</div>
-				<div class="flex">
-					<p class={middlecoverName}>
-						<Checkbox
-							bind:checked={$vrOverride}
-							onclick={() => {
-								if (localStorage.getItem('vrOverride')) localStorage.removeItem('vrOverride');
-								else localStorage.setItem('vrOverride', 'true');
-							}}>&nbsp;VR override</Checkbox
-						>
-					</p>
-					<p class={topcoverDescription}>Forces normal play even if immersive-vr is enabled</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>
@@ -160,80 +246,10 @@
 					<p class={middlecoverDescription}>Your ping color + sound — peers see and hear YOUR pings this way (color empty = your peer color)</p>
 				</div>
 				<div class="flex">
-					<p class={middlecoverName}>
-						<Checkbox
-							checked={$vrFlying}
-							on:change={(e) => {
-								$vrFlying = e.target.checked;
-								localStorage.setItem('vrFlying', String($vrFlying));
-							}}>&nbsp;VR flying</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Left-stick movement follows where the controller points (fly); off = stay level</p>
-				</div>
-				<div class="flex">
-					<p class={middlecoverName}>
-						<!-- a red SWITCH (98): reads as an armed mode, not a plain option -->
-						<Toggle
-							id="passthrough-toggle"
-							color="red"
-							size="small"
-							checked={$vrPassthrough}
-							on:change={(e: any) => {
-								$vrPassthrough = e.target.checked;
-								localStorage.setItem('vrPassthrough', String($vrPassthrough));
-								showToast('Passthrough ' + ($vrPassthrough ? 'on' : 'off') + ' — takes effect on the next VR entry');
-							}}>Passthrough</Toggle>
-					</p>
-					<p class={middlecoverDescription}>Mixed reality: the next VR entry composites the scene over your room (immersive-ar){arSupport === false ? ' — not supported on this device' : ''}</p>
-				</div>
-				<div class="flex">
-					<p class={middlecoverName}>
+					<p class={bottomCoverName}>
 						<Checkbox bind:checked={$autosaveEnabled}>&nbsp;Autosave</Checkbox>
 					</p>
-					<p class={middlecoverDescription}>Keep a local session snapshot (restore offered after a crash/reload)</p>
-				</div>
-				<div class="flex">
-					<p class={middlecoverName}>
-						<Checkbox
-							checked={$vrMenuHand === 'left'}
-							onclick={() => {
-								const next = $vrMenuHand === 'left' ? 'right' : 'left';
-								$vrMenuHand = next;
-								localStorage.setItem('vrMenuHand', next);
-							}}>&nbsp;VR menu on left</Checkbox
-						>
-					</p>
-					<p class={middlecoverDescription}>Which controller opens the VR quick-menu (the other hand points)</p>
-				</div>
-				<div class="flex">
-					<p class={middlecoverName}>
-						<Checkbox
-							id="vr-menu-hold"
-							checked={$vrMenuHold}
-							on:change={(e: any) => {
-								$vrMenuHold = e.target.checked;
-								localStorage.setItem('vrMenuHold', String($vrMenuHold));
-							}}>&nbsp;Hold-to-menu</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Hold B/Y to show the radial menu, release over a sector to pick it (off = press toggles)</p>
-				</div>
-				<div class="flex">
-					<p class={bottomCoverName}>
-						<Select
-							class="border-0 bg-transparent p-0 text-sm dark:bg-transparent"
-							items={[
-								{ value: 15, name: 'Snap turn 15°' },
-								{ value: 30, name: 'Snap turn 30°' },
-								{ value: 45, name: 'Snap turn 45°' }
-							]}
-							value={$vrSnapAngle}
-							on:change={(e) => {
-								$vrSnapAngle = parseInt(e.srcElement.value);
-								localStorage.setItem('vrSnapAngle', String($vrSnapAngle));
-							}}
-						/>
-					</p>
-					<p class={bottomCoverDescription}>VR thumbstick flick rotation angle</p>
+					<p class={bottomCoverDescription}>Keep a local session snapshot (restore offered after a crash/reload)</p>
 				</div>
 			</AccordionItem>
 			<AccordionItem bind:open={shortcutsExpanded}>

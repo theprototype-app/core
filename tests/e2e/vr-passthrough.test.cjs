@@ -63,7 +63,8 @@ h.run(async () => {
 	// 98: the Settings row is a RED switch and flipping it toasts the heads-up
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
-	await A.page.getByText('Scene', { exact: true }).first().click();
+	// 111: the passthrough switch lives in the VR section (first accordion) now
+	await A.page.getByText('VR', { exact: true }).first().click();
 	await A.page.waitForTimeout(400);
 	const toggle = A.page.locator('label', { has: A.page.locator('#passthrough-toggle') });
 	h.check((await A.page.locator('#passthrough-toggle').count()) === 1, 'passthrough renders as a Toggle switch');

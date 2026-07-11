@@ -6,6 +6,7 @@
 	import { Text } from '@threlte/extras'
 	import { vrPaletteOpen, vrMenuHand, selectedObject } from '../../stores/sceneStore'
 	import { vrPaletteGroup, vrPaletteLightness } from '$lib/vrControls'
+	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 	import { paletteTexture } from '$lib/vrPalette'
 
@@ -41,8 +42,9 @@
 		controller.getWorldPosition(controllerPosition)
 		controller.getWorldQuaternion(controllerQuaternion)
 		const pose = menuPoseFromController(THREE, controllerPosition, controllerQuaternion)
-		group.position.copy(pose.position).add(LIFT.clone().applyQuaternion(controllerQuaternion))
-		group.quaternion.copy(pose.quaternion)
+		// a user offset from a window grab (111) composes on top
+		pose.position.add(LIFT.clone().applyQuaternion(controllerQuaternion))
+		applyWindowPose(group, 'palette', pose)
 		const material: any = ($selectedObject as any)?.material
 		if (material?.color) liveHex = '#' + material.color.getHexString()
 	})

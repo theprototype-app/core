@@ -6,6 +6,7 @@
 	import { Text } from '@threlte/extras'
 	import { vrObjectsPanelOpen, vrMenuHand, objectsGroup, lockedObjects, selectedObject } from '../../stores/sceneStore'
 	import { vrHovered, vrPanelGroup, vrPanelCursor, vrPanelCursorAction } from '$lib/vrControls'
+	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 	import { peerColor } from '$lib/lockControl'
 
@@ -68,9 +69,10 @@
 		controller.getWorldPosition(controllerPosition)
 		controller.getWorldQuaternion(controllerQuaternion)
 		const pose = menuPoseFromController(THREE, controllerPosition, controllerQuaternion)
-		// the panel floats a hand-width above the ring anchor, same tilt
-		group.position.copy(pose.position).add(LIFT.clone().applyQuaternion(controllerQuaternion))
-		group.quaternion.copy(pose.quaternion)
+		// the panel floats a hand-width above the ring anchor, same tilt; a
+		// user offset from a window grab (111) composes on top
+		pose.position.add(LIFT.clone().applyQuaternion(controllerQuaternion))
+		applyWindowPose(group, 'objects', pose)
 	})
 </script>
 

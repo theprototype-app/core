@@ -7,6 +7,8 @@
 	import { vrStatsOpen, vrMenuHand, objectsGroup } from '../../stores/sceneStore'
 	import { userdata } from '../../stores/appStore'
 	import { statsHand } from '$lib/vrRadialMenu'
+	import { vrStatsGroup } from '$lib/vrControls'
+	import { applyWindowPose } from '$lib/vrWindowPoses'
 
 	// VR statistics card (102): FPS + frame ms + draw calls + triangles +
 	// object and peer counts on a small plate riding the POINTER controller
@@ -17,6 +19,11 @@
 
 	let group: any = $state(null)
 	let lines = $state('')
+
+	// register the plate as a grab target for the 111 window grab
+	$effect(() => {
+		vrStatsGroup.set($vrStatsOpen ? group : null)
+	})
 	let frames = 0
 	let last = typeof performance !== 'undefined' ? performance.now() : 0
 	let acc = 0
@@ -60,8 +67,11 @@
 		const controller = renderer.xr.getController(index)
 		controller.getWorldPosition(pos)
 		controller.getWorldQuaternion(quat)
-		group.position.copy(OFFSET.clone().applyQuaternion(quat).add(pos))
-		group.quaternion.copy(quat.clone().multiply(TILT))
+		// a user offset from a window grab (111) composes on top
+		applyWindowPose(group, 'stats', {
+			position: OFFSET.clone().applyQuaternion(quat).add(pos),
+			quaternion: quat.clone().multiply(TILT)
+		})
 	})
 </script>
 

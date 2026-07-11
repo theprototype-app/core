@@ -35,6 +35,13 @@ import { sendPing } from './ping';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
+import {
+	HOLD_MS,
+	vrWindowAdjust,
+	windowAnchor,
+	offsetFromWorld,
+	saveWindowPose
+} from './vrWindowPoses';
 
 // VR interactions (all gated on an active XR session):
 // - A/X button on the menu hand toggles the quick-menu
@@ -55,6 +62,8 @@ export const vrPanelCursor = writable(0);
 /** the cursored row's action id, published by VRObjectsPanel @type {import('svelte/store').Writable<string|null>} */
 export const vrPanelCursorAction = writable(null);
 let panelScrollAt = 0;
+/** the stats card THREE group (111 grab target) @type {import('svelte/store').Writable<any>} */
+export const vrStatsGroup = writable(null);
 
 /** @type {any} */ let renderer = null;
 /** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean}[]} */
@@ -661,8 +670,99 @@ export function containedTopLevel(point, group) {
 	return null;
 }
 
+// ---- VR window grab (111): grip-hold a follower window to re-place it ----
+/** @type {{id: string, index: number, startedAt: number}|null} */
+let windowGrabPending = null;
+/** @type {any} pending detach: relPos/relQuat like the 100 rigid object grab */
+let windowGrab = null;
+
+function windowGroupFor(/** @type {string} */ id) {
+	return get(
+		{ menu: vrMenuGroup, objects: vrPanelGroup, palette: vrPaletteGroup, stats: vrStatsGroup }[id] ??
+			vrMenuGroup
+	);
+}
+
+/** Which open window the controller ray lands on @param {number} index */
+function windowHitAt(index) {
+	let best = null;
+	for (const id of ['menu', 'objects', 'palette', 'stats']) {
+		const group = windowGroupFor(id);
+		if (!group) continue;
+		const hits = controllerRay(index).intersectObject(group, true);
+		if (hits.length && (!best || hits[0].distance < best.distance))
+			best = { id, distance: hits[0].distance };
+	}
+	return best && best.distance < 3 ? best.id : null;
+}
+
+function beginWindowAdjust() {
+	const { id, index } = /** @type {any} */ (windowGrabPending);
+	windowGrabPending = null;
+	const group = windowGroupFor(id);
+	if (!group) return;
+	const controller = renderer.xr.getController(index);
+	const cPos = controller.getWorldPosition(new THREE.Vector3());
+	const cQuat = controller.getWorldQuaternion(new THREE.Quaternion());
+	windowGrab = {
+		id,
+		index,
+		relPos: group.position.clone().sub(cPos).applyQuaternion(cQuat.clone().invert()),
+		relQuat: cQuat.clone().invert().multiply(group.quaternion),
+		scale: group.scale.x || 1
+	};
+	vrWindowAdjust.set({ id, index });
+	// gate that hand's stick (locomotion) — it scales the window now
+	const session = renderer?.xr.getSession();
+	vrGrabbedHand.set(session ? ([...session.inputSources][index]?.handedness ?? null) : null);
+	hapticPulse(0.5, 60);
+}
+
+function updateWindowAdjust() {
+	const group = windowGroupFor(windowGrab.id);
+	if (!group || !group.parent) {
+		// the window closed mid-adjust — drop the gesture
+		windowGrab = null;
+		vrWindowAdjust.set(null);
+		vrGrabbedHand.set(null);
+		return;
+	}
+	const controller = renderer.xr.getController(windowGrab.index);
+	const cPos = controller.getWorldPosition(new THREE.Vector3());
+	const cQuat = controller.getWorldQuaternion(new THREE.Quaternion());
+	const pose = rigidGrabPose(cPos, cQuat, windowGrab.relPos, windowGrab.relQuat);
+	group.position.copy(pose.position);
+	group.quaternion.copy(pose.quaternion);
+	// gripping hand's stick fwd/back resizes the window
+	const session = renderer?.xr.getSession();
+	const axes = session ? ([...session.inputSources][windowGrab.index]?.gamepad?.axes ?? []) : [];
+	const y = Math.abs(axes[3] ?? 0) > 0.15 ? (axes[3] ?? 0) : 0;
+	windowGrab.scale = Math.min(Math.max(windowGrab.scale * (1 - y * 0.02), 0.35), 3);
+	group.scale.setScalar(windowGrab.scale);
+}
+
+function finishWindowAdjust() {
+	const group = windowGroupFor(windowGrab.id);
+	const anchor = windowAnchor(windowGrab.id);
+	if (group && anchor)
+		saveWindowPose(
+			windowGrab.id,
+			offsetFromWorld(anchor, group.position, group.quaternion, group.scale.x || 1)
+		);
+	windowGrab = null;
+	vrWindowAdjust.set(null);
+	vrGrabbedHand.set(null);
+	hapticPulse(0.3, 40);
+}
+
 /** @param {number} index */
 function onSqueezeStart(index) {
+	// grip on a follower window (111): hold to detach it into adjust mode
+	const windowId = windowHitAt(index);
+	if (windowId) {
+		windowGrabPending = { id: windowId, index, startedAt: Date.now() };
+		return;
+	}
 	if (!get(objectsGroup)) return;
 	const controller = renderer.xr.getController(index);
 	const hits = controllerRay(index).intersectObjects(get(objectsGroup).children, true);
@@ -731,6 +831,15 @@ function onSqueezeStart(index) {
 
 /** @param {number} index */
 function onSqueezeEnd(index) {
+	// window grab (111): a short grip is a no-op, a held one re-anchors
+	if (windowGrabPending?.index === index) {
+		windowGrabPending = null;
+		return;
+	}
+	if (windowGrab?.index === index) {
+		finishWindowAdjust();
+		return;
+	}
 	emptyAirSqueeze[index] = false;
 	if (worldGrab) {
 		// releasing either grip ends the world gesture; a still-held RIGHT grip
@@ -1158,6 +1267,11 @@ export function updateVRControls() {
 
 	if (scaleGrab) updateScaleGrab();
 	else if (grab) updateGrab();
+
+	// window grab (111): the hold timer arms, then the grip drives the window
+	if (windowGrabPending && Date.now() - windowGrabPending.startedAt >= HOLD_MS)
+		beginWindowAdjust();
+	if (windowGrab) updateWindowAdjust();
 
 	// both-grips world grab (71): scale/rotate/pan the rig around the hands
 	if (worldGrab) updateWorldGrab();

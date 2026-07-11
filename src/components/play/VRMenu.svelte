@@ -9,6 +9,7 @@
 	import { vrMicMode, micActive } from '$lib/voiceChat'
 	import { environment } from '$lib/environment'
 	import { vrHovered, vrMenuGroup } from '$lib/vrControls'
+	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { activeRing, ringEntries, ringVersion, sectorLayout, hubEntry, menuPoseFromController, RING_INNER, RING_OUTER, HUB_RADIUS } from '$lib/vrRadialMenu'
 
 	// The in-world radial menu (74, anchored in 99): an 8-sector ring riding ON
@@ -73,15 +74,14 @@
 		const controller = renderer.xr.getController(index)
 		controller.getWorldPosition(controllerPosition)
 		controller.getWorldQuaternion(controllerQuaternion)
-		// rigid attach (99): center at the thumbstick, tilted to the button plane
+		// rigid attach (99): center at the thumbstick, tilted to the button plane;
+		// a user offset from a window grab (111) composes on top
 		const pose = menuPoseFromController(THREE, controllerPosition, controllerQuaternion)
-		group.position.copy(pose.position)
-		group.quaternion.copy(pose.quaternion)
 		// expand FROM the controller on open (~120ms ease-out)
 		if (!openedAt) openedAt = performance.now()
 		const t = Math.min(1, (performance.now() - openedAt) / 120)
 		const s = 0.05 + 0.95 * (1 - (1 - t) * (1 - t))
-		group.scale.set(s, s, s)
+		applyWindowPose(group, 'menu', pose, s)
 	})
 </script>
 

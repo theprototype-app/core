@@ -159,6 +159,14 @@ export function closeMember(key) {
 	registry.get(key)?.close?.();
 }
 
+/** Close EVERY member of the group the key belongs to (128: the tab ✕ closes
+ * the whole tab group, not just the active tab). @param {string} key */
+export function closeGroup(key) {
+	const group = groupOfKey(key);
+	const members = group ? [...group.members] : [key];
+	for (const member of members) registry.get(member)?.close?.();
+}
+
 function tryRestore() {
 	pendingRestore = pendingRestore.filter((saved) => {
 		const ready = saved.members.every((m) => registry.has(m));

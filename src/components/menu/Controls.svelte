@@ -489,7 +489,7 @@
 	{/if}
 </div>
 
-<div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col'} use:dragMe use:focusStack
+<div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack
 	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
 	use:dockable={{ key: 'objects' }}
 	style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">

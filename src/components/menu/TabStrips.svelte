@@ -3,7 +3,7 @@
 	// the active window's header area — notebook tabs (narrower on top, curvy),
 	// drag the strip background to move the whole group, drag a tab out to
 	// re-float it, ✕ closes the active member through its own path.
-	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeMember, nodeOf } from '$lib/windowTabs';
+	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeGroup, nodeOf } from '$lib/windowTabs';
 
 	/** @type {any} */
 	let stripDrag = null; // {groupId, x, y}
@@ -83,8 +83,8 @@
 		<span class="flex-1"></span>
 		<button
 			class="ui-button-quiet mb-1 shrink-0"
-			title="Close the active window"
-			onclick={() => closeMember(group.active)}
+			title="Close all tabs in this window"
+			onclick={() => closeGroup(group.active)}
 		>
 			✕
 		</button>

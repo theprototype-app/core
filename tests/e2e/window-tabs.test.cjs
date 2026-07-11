@@ -81,7 +81,8 @@ h.run(async () => {
 	]);
 	h.check(displays3[0] !== 'none' && displays3[1] !== 'none', 'both windows visible after tear-off');
 
-	// re-merge, then ✕ closes the active member via its own path (chat hides)
+	// 128: re-merge, then ✕ closes ALL tabs in the group (chat AND list) via
+	// each member's own store path
 	const chat2 = await A.page.locator('#chat-window').boundingBox();
 	const list2 = await A.page.locator('#object-list').boundingBox();
 	await A.page.mouse.move(chat2.x + 120, chat2.y + 12);
@@ -89,12 +90,18 @@ h.run(async () => {
 	await A.page.mouse.move(list2.x + 120, list2.y + 14, { steps: 10 });
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(300);
-	await A.page.locator('.tab-strip button[title="Close the active window"]').click();
+	await A.page.locator('.tab-strip button[title="Close all tabs in this window"]').click();
 	await A.page.waitForTimeout(300);
-	const chatHidden = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.chatHidden.subscribe((v) => r(v === 'hidden'))())
+	const bothClosed = await A.page.evaluate(
+		() =>
+			new Promise((r) => {
+				let chatV, listV;
+				window.__stores.chatHidden.subscribe((v) => (chatV = v))();
+				window.__stores.objectListClose.subscribe((v) => (listV = v))();
+				r(chatV === 'hidden' && listV === true);
+			})
 	);
-	h.check(chatHidden, 'strip ✕ closed chat through its own store');
+	h.check(bothClosed, 'strip ✕ closes every tab in the group (128)');
 	h.check(
 		!(await A.page.locator('.tab-strip').isVisible().catch(() => false)),
 		'group dissolved after the close'
@@ -104,6 +111,7 @@ h.run(async () => {
 	// through its shortcut store, reopen it — it must come back (the tab group
 	// used to leave display:none behind and the window vanished until reload)
 	await A.page.locator('#chat-button').click();
+	await A.page.evaluate(() => window.__stores.objectListClose.set(false)); // close-all shut it (128)
 	await A.page.waitForTimeout(300);
 	const chat3 = await A.page.locator('#chat-window').boundingBox();
 	const list3 = await A.page.locator('#object-list').boundingBox();

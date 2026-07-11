@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Select, Toggle } from 'flowbite-svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, showToast } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showToast } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
@@ -205,6 +205,12 @@
 						<Checkbox bind:checked={$showEnvInList}>&nbsp;Environment in list</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Show the environment group as an Environment filter in the object list</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox bind:checked={$objectSearchEnabled}>&nbsp;Object search in menu</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>

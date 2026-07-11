@@ -140,6 +140,17 @@ export const viewportMenu = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const addMenu = writable(null);
 
+// viewport object SEARCH popover (125): { x, y } | null — find + focus a scene
+// object. Opt-in via a setting; the viewport menu entry hides when off.
+/** @type {import('svelte/store').Writable<any>} */
+export const objectSearch = writable(null);
+export const objectSearchEnabled = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('objectSearchEnabled') === 'true'
+);
+objectSearchEnabled.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('objectSearchEnabled', String(on));
+});
+
 // advanced mode: reveals system objects (module content, environment rig)
 // in the object list behind a System filter chip
 export const advancedMode = writable(

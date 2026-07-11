@@ -12,7 +12,7 @@
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
 	import { addAnnotation } from '$lib/annotationsHandler';
 	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
-	import { viewportMenu, addMenu } from '../../stores/appStore';
+	import { viewportMenu, objectSearch, objectSearchEnabled } from '../../stores/appStore';
 	import { buildAddChildren } from '$lib/addObjects';
 
 	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
@@ -52,11 +52,16 @@
 	}
 
 	$: items = [
-		{
-			label: '🔍 Search objects…',
-			tooltip: 'Shift+A',
-			action: () => addMenu.set({ x: menu.x, y: menu.y, point: menu.point ?? null })
-		},
+		// 125: real scene-object search + focus — opt-in via settings, hidden otherwise
+		...($objectSearchEnabled
+			? [
+					{
+						label: '🔍 Search objects…',
+						tooltip: 'Find a scene object and fly to it',
+						action: () => objectSearch.set({ x: menu.x, y: menu.y })
+					}
+				]
+			: []),
 		{
 			label: 'Add',
 			children: buildAddChildren(() => menu?.point ?? null)

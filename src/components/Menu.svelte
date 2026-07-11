@@ -12,6 +12,7 @@
 	import MeshEditPopup from './menu/MeshEditPopup.svelte';
 	import MarqueeOverlay from './menu/MarqueeOverlay.svelte';
 	import AddMenu from './menu/AddMenu.svelte';
+	import ObjectSearch from './menu/ObjectSearch.svelte';
 	import TabStrips from './menu/TabStrips.svelte';
 	import VoiceChat from './menu/VoiceChat.svelte';
 	import AnnotationPopover from './menu/AnnotationPopover.svelte';
@@ -38,6 +39,7 @@
 <MeshEditPopup />
 <MarqueeOverlay />
 <AddMenu />
+<ObjectSearch />
 <TabStrips />
 <VoiceChat />
 <AnnotationPopover />

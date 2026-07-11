@@ -190,6 +190,13 @@
 		});
 	}
 
+	// 132: never show the transform gizmo without a real selection — a fresh
+	// reload used to leave it attached/visible at the origin with nothing to edit
+	$: if ($TControls && !$editingObject && !$faceEditObject && !$selectedObject?.uuid) {
+		$TControls.visible = false;
+		if ($TControls.object && !$TControls.object.userData?.isMultiPivot) $TControls.detach();
+	}
+
 	// --- viewport click selection (desktop) and controller ray selection (VR) ---
 	const selectionRaycaster = new THREE.Raycaster();
 

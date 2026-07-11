@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
-	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough } from '../../stores/sceneStore';
+	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
@@ -24,6 +24,12 @@
 
 	let allowPlay = true;
 	let resizing = $state(false);
+	// 132: toolbar icons tint when their panel is open / the transform mode is
+	// active. Move/Rotate/Scale only tint with a real selection.
+	let transformMode = $state('translate');
+	const hasSel = $derived(!!($selectedObject && $selectedObject.uuid));
+	const ICON_ON = 'text-primary-500';
+	const ICON_OFF = 'text-black dark:text-slate-200';
 
 	// --- object list search/filter: rows read the visible-uuid set via context ---
 	// 80: type chips MULTI-select (union); All clears and, clicked again,
@@ -411,15 +417,15 @@
 	classOuter="h-10 w-70 bg-white rounded-full dark:bg-gray-700 z-[45]"
 	classInner="grid-cols-7"
 >
-	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={(event) => $TControls.setMode('translate')}>
-		<i class="fas fa-arrows-alt text-black dark:text-slate-200"></i>
+	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={() => { $TControls.setMode('translate'); transformMode = 'translate'; }}>
+		<i class={'fas fa-arrows-alt ' + (hasSel && transformMode === 'translate' ? ICON_ON : ICON_OFF)}></i>
 	</p>
-	<p class={classActive} title="Rotate (2)" on:click={(event) => $TControls.setMode('rotate')}>
-		<i class="fas fa-rotate-left text-black dark:text-slate-200"></i>
+	<p class={classActive} title="Rotate (2)" on:click={() => { $TControls.setMode('rotate'); transformMode = 'rotate'; }}>
+		<i class={'fas fa-rotate-left ' + (hasSel && transformMode === 'rotate' ? ICON_ON : ICON_OFF)}></i>
 	</p>
 
-	<p class={classActive} title="Scale (3)" on:click={(event) => $TControls.setMode('scale')}>
-		<i class="fas fa-expand-arrows-alt text-black dark:text-slate-200"></i>
+	<p class={classActive} title="Scale (3)" on:click={() => { $TControls.setMode('scale'); transformMode = 'scale'; }}>
+		<i class={'fas fa-expand-arrows-alt ' + (hasSel && transformMode === 'scale' ? ICON_ON : ICON_OFF)}></i>
 	</p>
 	<div class="flex items-center justify-center">
 		<p
@@ -432,14 +438,14 @@
 		title="Object list (O)"
 		on:click={() => objectListClose.update((value) => !value)}
 	>
-		<i class="fas fa-list-ul text-black dark:text-slate-200"></i>
+		<i class={'fas fa-list-ul ' + (!$objectListClose ? ICON_ON : ICON_OFF)}></i>
 	</p>
 	<p
 		class={classActive}
 		title="Node editor (N)"
 		on:click={() => flowGraphClose.update((value) => !value)}
 	>
-		<i class="fas fa-circle-nodes text-black dark:text-slate-200"></i>
+		<i class={'fas fa-circle-nodes ' + (!$flowGraphClose ? ICON_ON : ICON_OFF)}></i>
 	</p>
 	<p
 		class={classActive + ' rounded-r-full'}
@@ -447,7 +453,7 @@
 		title="Explorer"
 		on:click={() => explorerClose.update((value) => !value)}
 	>
-		<i class="fas fa-folder-open text-black dark:text-slate-200"></i>
+		<i class={'fas fa-folder-open ' + (!$explorerClose ? ICON_ON : ICON_OFF)}></i>
 	</p>
 </BottomNav>
 

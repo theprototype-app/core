@@ -19,18 +19,28 @@ loadable play content. Everything a user does must be visible to connected peers
   (GLTF full sync; animated imports detour through `sendAnimatedImport` raw bytes).
 - Domain modules in `src/lib/`: `objectActions`, `geometries.svelte.js`,
   `materialsHandler`, `meshEdit`, `history` (kind registry: create/delete/group/material/
-  props/transformSet/verts/animimport; recording auto-muted while applying; 5 MB snapshot
-  cap), `snapping`, `shortcuts` (registry = bindings AND Settings list), `flowRuntime`
-  (per-frame tick, baseState rebase, suspend/resume for gizmo drags, module effects,
-  script nodes), `scriptRuntime` + `customNodes` (replicated user node defs),
-  `nodesHandler` + `nodeCatalog` (+nodesync drift heal), `moduleSDK` + `userModules`
-  (zip/URL installs), `physics` (rapier, initiator-authoritative), `environment`
-  (presets + scene-root rig, latest-wins sync), `animatedImports` (raw-bytes objectfile
-  sync, mixers on the synced clock), `prefabs` (local IndexedDB library), `lockControl`
-  (request-control flow, peerColor), `drawMode` (+live stroke streaming), `pathCapture`,
-  `ping`, `voiceChat` (+spatial PannerNodes, VR PTT), `vrControls` (locomotion math,
-  teleport arc, world pan, haptics), `autosave` + `idb`, `annotationsHandler`, `measure`,
-  `cameraBookmarks`, `editorNavigation`, `lightHelpers`.
+  props/transformSet/verts/animimport/geometry; recording auto-muted while applying; 5 MB
+  snapshot cap), `snapping`, `shortcuts` (registry = bindings AND Settings list),
+  `flowRuntime` (per-frame tick, baseState rebase, suspend/resume for gizmo drags,
+  `parkAnimatedAtBase` for serializers, module effects, script + sound nodes),
+  `soundRuntime` (sound-node panner chains, loop phase = synced clock), `scriptRuntime`
+  + `customNodes` (replicated user node defs), `nodesHandler` + `nodeCatalog` (+nodesync
+  drift heal), `moduleSDK` + `userModules` (zip/URL installs), `physics` (rapier,
+  initiator-authoritative), `environment` (presets + scene-root rig, latest-wins sync,
+  `passthroughActive` local sky lift), `animatedImports` (raw-bytes objectfile sync),
+  `prefabs` (local IndexedDB library), `explorer` (LOCAL asset library: IndexedDB index
+  + per-item blobs, content hashes, thumbnails) + `explorerDrop` (drag-out placement/
+  texturing) + `assetShare` (assetfile/getasset hash push+pull → 'Shared' folder),
+  `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
+  `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
+  (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
+  world pan, rigid grip grab, haptics, menu/panel raycasts) + `vrRadialMenu` (sector
+  math, entry registry, controller-anchored pose), `dungeonPlay` (raster collision/
+  spawns from the dungeon module's userData.play contract), `geometryEdit` +
+  `geometryParams`, `lightParams` (+local shadow-quality caps), `themes` (data-theme
+  token blocks, local-only), `windowTabs` + `windowFocus` + `docking` + `dragWindow` +
+  `searchMenuUx` (floating-window system), `autosave` + `idb`, `annotationsHandler`,
+  `sessions`, `measure`, `cameraBookmarks`, `editorNavigation`, `lightHelpers`.
 - `src/modules/` — core modules (hello, button, dungeon, piano, pong) + `index.js`
   `coreModules` list; manager enables/disables (live enable, reload to disable).
 - UI: `components/menu/*` (drawers/modals; visibility via stores + `hidePanels/
@@ -63,13 +73,29 @@ loadable play content. Everything a user does must be visible to connected peers
    symmetric pulls need a deterministic direction (nodesync: lower count pulls,
    peer-id tiebreak) or two drifted peers swap forever.
 8. Two sync models: **deterministic** (seed/params + synced clock — dungeon, effects,
-   scripts; determinism IS the netcode) vs **authoritative** (initiator simulates and
-   broadcasts — physics, pong ball). Pick one per feature; never mix per message.
+   scripts, sound loops; determinism IS the netcode) vs **authoritative** (initiator
+   simulates and broadcasts — physics, pong ball). Pick one per feature; never mix.
+9. Binary asset sharing = **content hash push+pull** (`assetfile`/`getasset`,
+   assetShare.js): push once on assign, any peer missing a hash pulls it — covers late
+   joiners/restores without handshake dumps. REPLY over your stable OUTGOING
+   `peer.connections[peerId]`, never the incoming conn (it can be a stale duplicate
+   from the connect dance). binarypack delivers Uint8Array **views** — slice
+   byteOffset..byteLength before hashing.
+10. Serializers (sendObjects, GLTF save, autosave, sessions) must
+   `parkAnimatedAtBase()` first or receivers bake mid-swing poses as animation base;
+   `restoreBase` calls `updateMatrix()` because toJSON/GLTFExporter read the matrix
+   the last RENDER composed.
 
 ## Hard-won gotchas (do not rediscover)
 
 - Svelte 5 forbids mixing `on:click` and `onclick` **per component** — match the file's
-  existing style. Runes-mode files can't use `$:` — use `$derived`/`$effect`.
+  existing style. Runes-mode files can't use `$:` — and adding ONE `$state` to a `$:`
+  file flips it to runes mode and breaks the build. Never introduce `$state` into
+  legacy-mode components.
+- `$effect` tracks EVERY store read synchronously inside it — side reads (userdata,
+  globalScene…) retrigger it and can hit `effect_update_depth_exceeded`, which
+  UNMOUNTS the app. Wrap one-shot side work in `untrack(() => …)` so the effect only
+  depends on its trigger.
 - No `bind:value` ping-pong with store round-trips — widgets render from data and write
   via handlers (`setNodeData`).
 - Media elements: `muted`/`volume` set as properties in an action, not attributes.
@@ -97,6 +123,19 @@ loadable play content. Everything a user does must be visible to connected peers
   one lock per peer (a new lock replaces the old one); `unlock` message exists.
 - vite re-optimizes new deps on first page load (one reload) — rerun once; lazy wasm
   (rapier) needs a throwaway prewarm page in tests.
+- Postprocessing composers (Outline) do NOT render in WebXR — VR indicators are
+  scene-root shell/wireframe meshes that copy the selection's world transform per
+  frame (never children of the object: they'd leak into GLTF sync).
+- Module cycles: a static import that closes a loop back into `history` (via
+  materialsHandler etc.) TDZ-crashes the SSR prerender — moduleSDK reaches optional
+  libs (vrRadialMenu) via dynamic `import()` instead.
+- `selectedObject` is `writable([])` and KEEPS the last object after deselect (the
+  desktop outline relies on it) — "has selection" checks need `?.uuid`, and the
+  init value is a truthy empty array.
+- The Bash tool's `cd` leaks into the shared shell cwd — `Set-Location` back to the
+  repo root before PowerShell git/npm calls.
+- The dungeon module publishes gameplay data on its group's `userData.play`
+  (grid/rooms/floorValue) — `dungeonPlay.js` consumes it; keep that contract stable.
 
 ## Verification (mandatory before commit)
 

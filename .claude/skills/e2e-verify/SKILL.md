@@ -32,7 +32,9 @@ The init script (helpers does it) sets `localStorage.debugStores='true'` +
 spread + modules: `meshEdit, vrControls, autosave, voiceChat, annotationsHandler,
 flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK,
 drawMode, pathCapture, lockControl, prefabs, physics, userModules, environment,
-animatedImports, fileHandler, ping, THREE, GLTFExporterModule`.
+animatedImports, fileHandler, sceneBounds, ping, sessions, geometryEdit, lightParams,
+themes, vrRadialMenu, explorer, bottomDock, explorerDrop, assetShare, soundRuntime,
+dungeonPlay, THREE, GLTFExporterModule`.
 
 **Never dynamic-import `/src/lib/x.js` from page code to reach a singleton** — once
 vite HMR-timestamps the app's copy you get a SECOND module instance (empty stores,
@@ -83,12 +85,24 @@ Late joiners: connect a third context AFTER mutations, assert handshake state ar
   Lazy wasm (rapier) needs a throwaway prewarm page first (see physics.test.cjs).
 - Phase-comparison asserts between two peers: two sequential evaluates skew ~150ms —
   tolerances ≥0.6 for fast oscillations, or compare Promise.all-sampled values.
-- Overlays intercept clicks (properties drawer covers right ~320px; modals block all).
-- `requestPointerLock` rejects in headless — code catches it; play mode still toggles.
+- Overlays intercept clicks (properties drawer covers right ~320px; modals block all;
+  the hud pill floats over the flow drawer's bottom-center; an open floating window
+  can cover another window's resize corner — close it first).
+- `requestPointerLock` rejects in headless — code catches it; play mode still toggles
+  (`isLocked.set(true)` drives play-mode logic incl. the dungeon spawn + minimap).
 - PowerShell mangles emoji AND em-dashes rewriting files; inline `node -e` quoting
-  breaks in PS — write scratch `.cjs` files and run them with node.
+  breaks in PS — write scratch `.cjs` files and run them with node. The Bash tool's
+  `cd` leaks into the SHARED shell cwd — `Set-Location` back to the repo root before
+  git/npm in PowerShell.
 - Suites assume a clean session per context (fresh IndexedDB/localStorage); reloading a
-  page keeps them — used deliberately for persistence tests (prefabs, user modules).
+  page keeps them — used deliberately for persistence tests (prefabs, user modules,
+  Explorer, themes).
+- Flowbite Toggle inputs are `sr-only` — click the wrapping `label`, not the input.
+- File drops: build a `DataTransfer` in `evaluate` and `dispatchEvent(new DragEvent('drop', …))`;
+  a known-good 1×1 PNG base64 is in explorer-drop.test.cjs (Image tolerates broken
+  PNGs but `createImageBitmap` does not).
+- Audio suites work headless (launch args allow autoplay); `soundEntries()` exposes the
+  live chains — `playing` is source-state, no audible check possible.
 
 ## Definition of done
 

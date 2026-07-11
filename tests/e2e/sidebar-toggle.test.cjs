@@ -59,13 +59,10 @@ h.run(async () => {
 	state = await inspector(A.page);
 	h.check(!state.open, 'second click closes it');
 
-	// Library: same toggle
-	await A.page.getByText('Library', { exact: true }).click();
-	await A.page.waitForTimeout(300);
-	h.check(await isOpen(A.page, 'libraryClose'), 'Library opens');
-	await A.page.getByText('● Library', { exact: true }).click();
-	await A.page.waitForTimeout(300);
-	h.check(!(await isOpen(A.page, 'libraryClose')), 'second click closes Library');
+	// 126: Library left the sidebar (its packs open from the Explorer now) — the
+	// sidebar no longer carries a Library item
+	const noLibrary = await A.page.getByText('Library', { exact: true }).count();
+	h.check(noLibrary === 0, 'the sidebar no longer has a Library item (126)');
 
 	// selection stays open-only: repeated showSidebar('properties') never closes
 	await A.page.evaluate(() => {

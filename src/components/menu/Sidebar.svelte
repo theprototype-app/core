@@ -7,7 +7,6 @@
 		inspectorClose,
 		inspectorKind,
 		closeSelectionInspector,
-		libraryClose,
 		showSidebar,
 		closeMenu
 	} from '../../stores/appStore.js';
@@ -82,26 +81,8 @@
 >
 <Sidebar>
 	<SidebarWrapper>
-		<SidebarGroup>
-			<!-- Create moved to the viewport right-click Add menu (phase 77) -->
-			<p class={sectionLabel}>Assets</p>
-			<SidebarItem
-				label={($libraryClose ? '' : '● ') + 'Library'}
-				on:click={() => {
-					showSidebar('library');
-				}}>
-				<svelte:fragment slot="icon">📚</svelte:fragment>
-			</SidebarItem>
-			<div id="open-modules-manager">
-				<SidebarItem
-					label="Modules"
-					on:click={() => {
-						modulesOpen.set(true);
-					}}>
-					<svelte:fragment slot="icon">🧩</svelte:fragment>
-				</SidebarItem>
-			</div>
-		</SidebarGroup>
+		<!-- 126: Library left the sidebar — its packs live in the Explorer now.
+		     Scene actions group in the agreed order below. -->
 		{#key rerenderInput}
 			<input type="file" id="import-file" style="display: none" on:input={e => { importFile(e.target.files[0])}} accept=".gltf, .glb, .obj, .stl, .fbx" />
 			<input type="file" id="load-file" style="display: none" on:input={e => load(e.target.files[0])} accept=".json, .gltf, .scene" />
@@ -150,6 +131,7 @@
 				</Dropdown>
 			</div>
 
+			<!-- 126: Configure Scene, Clear Scene, Modules, Sessions (in order) -->
 			<p class={sectionLabel}>Scene</p>
 			<SidebarItem
 				label={(!$inspectorClose && $inspectorKind === 'scene' ? '● ' : '') + 'Configure Scene'}
@@ -160,17 +142,6 @@
 			>
 				<svelte:fragment slot="icon">🎛️</svelte:fragment>
 			</SidebarItem>
-			<div id="open-sessions-manager">
-				<SidebarItem
-					label="Sessions"
-					{spanClass}
-					on:click={() => {
-						sessionsOpen.set(true);
-					}}
-				>
-					<svelte:fragment slot="icon">🗂️</svelte:fragment>
-				</SidebarItem>
-			</div>
 			<SidebarItem
 				label="Clear Scene"
 				{spanClass}
@@ -194,6 +165,27 @@
 			>
 				<svelte:fragment slot="icon">🗑️</svelte:fragment>
 			</SidebarItem>
+			<div id="open-modules-manager">
+				<SidebarItem
+					label="Modules"
+					{spanClass}
+					on:click={() => {
+						modulesOpen.set(true);
+					}}>
+					<svelte:fragment slot="icon">🧩</svelte:fragment>
+				</SidebarItem>
+			</div>
+			<div id="open-sessions-manager">
+				<SidebarItem
+					label="Sessions"
+					{spanClass}
+					on:click={() => {
+						sessionsOpen.set(true);
+					}}
+				>
+					<svelte:fragment slot="icon">🗂️</svelte:fragment>
+				</SidebarItem>
+			</div>
 
 			<p class={sectionLabel}>App</p>
 			<SidebarItem

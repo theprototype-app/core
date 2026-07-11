@@ -36,7 +36,8 @@
 		event.target.value = '';
 	}
 
-	let tab = $state('prefabs'); // 'prefabs' | 'packs'
+	// 126: prefabs live in the Explorer now — the Library opens on Packs
+	let tab = $state('packs'); // 'prefabs' | 'packs'
 	let query = $state('');
 	let attributionModal = $state(false);
 

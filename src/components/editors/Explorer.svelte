@@ -5,7 +5,7 @@
 	// + items), drag files in to import. Shares the bottom dock with the Flow
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { explorerClose } from '../../stores/appStore.js';
-	import { showToast } from '../../stores/appStore.js';
+	import { showToast, libraryClose } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
 		explorerItems,
@@ -441,6 +441,13 @@
 					? 'bg-primary-700 text-white'
 					: 'text-gray-300 hover:bg-gray-700'}"
 				onclick={() => ((search = ''), activeFolder.set('prefabs'))}>🧱 Prefabs</button
+			>
+			<!-- 126: built-in asset packs (moved off the sidebar) open their browser -->
+			<button
+				id="packs-folder"
+				class="whitespace-nowrap rounded px-2 py-1 text-left text-gray-300 hover:bg-gray-700"
+				title="Browse the built-in asset packs"
+				onclick={() => libraryClose.set(false)}>📦 Packs</button
 			>
 			<!-- Scene manifest (108): derived, always shared, read-only structure -->
 			<button

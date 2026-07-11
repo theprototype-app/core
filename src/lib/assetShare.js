@@ -12,7 +12,8 @@ export const MAX_SHARED_BYTES = 5 * 1024 * 1024;
 
 function sharedFolderId() {
 	const existing = get(explorerFolders).find((f) => f.name === 'Shared' && !f.parentId);
-	return existing ? existing.id : createFolder('Shared', null).id;
+	if (existing) return existing.id;
+	return createFolder('Shared', null)?.id ?? null;
 }
 
 /** Push an item's bytes to every peer @param {string} hash */

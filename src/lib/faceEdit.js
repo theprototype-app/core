@@ -342,10 +342,17 @@ export function enterFaceEdit(uuid) {
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 	faceEditObject.set(uuid);
 	showToast('Editing faces of ' + (object.name || 'mesh') + ' — point at a face, trigger to pick');
+	if (typeof window !== 'undefined') window.addEventListener('keydown', onFaceKeydown);
+}
+
+/** @param {KeyboardEvent} event */
+function onFaceKeydown(event) {
+	if (event.key === 'Escape') exitFaceEdit();
 }
 
 export function exitFaceEdit() {
 	if (!faceEdited) return;
+	if (typeof window !== 'undefined') window.removeEventListener('keydown', onFaceKeydown);
 	if (overlay) {
 		overlay.parent?.remove(overlay);
 		overlay.geometry?.dispose?.();

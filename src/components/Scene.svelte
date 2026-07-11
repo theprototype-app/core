@@ -18,7 +18,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, commitArmedFaceOp, exitFaceEdit } from '$lib/faceEdit';
+	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle } from '$lib/faceEdit';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, placePrefabGhost, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
@@ -270,7 +270,7 @@
 				return;
 			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
-			if (event.shiftKey && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject) {
+			if (event.shiftKey && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
 				marqueeStart = [event.clientX, event.clientY];
 				if ($orbitControls) $orbitControls.enabled = false;
 			}
@@ -373,6 +373,13 @@
 				raycastHandles(selectionRaycaster);
 				return;
 			}
+			// face edit mode (135 desktop): a click highlights the face under it
+			if ($faceEditObject) {
+				const edited = $objectsGroup?.getObjectByProperty('uuid', $faceEditObject);
+				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
+				highlightFaceByTriangle(hit && hit.faceIndex != null ? hit.faceIndex : -1);
+				return;
+			}
 			// light pick-proxies select their light (lights have no raycastable geometry)
 			if ($lightProxiesGroup) {
 				const proxyHits = selectionRaycaster.intersectObject($lightProxiesGroup, true);
@@ -410,7 +417,7 @@
 			const down = rightDown;
 			rightDown = null;
 			if (!down) return;
-			if ($isLocked || $isVRMode || $specatorMode || $drawMode || $editingObject || $measureMode) return;
+			if ($isLocked || $isVRMode || $specatorMode || $drawMode || $editingObject || $faceEditObject || $measureMode) return;
 			// only a short stationary tap opens menus — right-DRAG keeps panning
 			const moved = Math.hypot(event.clientX - down[0], event.clientY - down[1]);
 			if (moved > 5 || Date.now() - down[2] > 400) return;

@@ -9,6 +9,7 @@
 	import SessionsManager from './menu/SessionsManager.svelte';
 	import CharacterModal from './menu/CharacterModal.svelte';
 	import ViewportMenu from './menu/ViewportMenu.svelte';
+	import MeshEditPopup from './menu/MeshEditPopup.svelte';
 	import MarqueeOverlay from './menu/MarqueeOverlay.svelte';
 	import AddMenu from './menu/AddMenu.svelte';
 	import TabStrips from './menu/TabStrips.svelte';
@@ -34,6 +35,7 @@
 <SessionsManager />
 <CharacterModal />
 <ViewportMenu />
+<MeshEditPopup />
 <MarqueeOverlay />
 <AddMenu />
 <TabStrips />

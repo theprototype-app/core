@@ -5,6 +5,8 @@
   import Menu from './components/Menu.svelte'
   import Flow from './components/Flow.svelte'
   import Explorer from './components/editors/Explorer.svelte'
+  import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
+  import ImagePreviewWindow from './components/editors/ImagePreviewWindow.svelte'
   import DungeonMinimap from './components/play/DungeonMinimap.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
   import { isLocked } from './stores/sceneStore'
@@ -120,6 +122,8 @@
 {#if !$isLocked}
 <Flow />
 <Explorer />
+<TextEditorWindow />
+<ImagePreviewWindow />
 {/if}
 <Menu />
 <DrawToolbar />

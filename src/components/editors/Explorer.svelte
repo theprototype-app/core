@@ -21,8 +21,12 @@
 		deleteItem,
 		renameItem,
 		isValidName,
-		itemBlob
+		itemBlob,
+		inspectedFile,
+		updateItemBytes
 	} from '$lib/explorer';
+	import { inspectorKind, inspectorClose } from '../../stores/appStore.js';
+	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
 	import { bottomDockActive, dockShared, setDockOccupant } from '$lib/bottomDock';
 	import { dragWindow } from '$lib/dragWindow';
@@ -319,6 +323,28 @@
 			JSON.stringify({ id: item.id, kind: item.kind, name: item.name, prefabId: item.prefabId ?? null })
 		);
 	}
+
+	// click = properties in the Inspector; double-click = open/preview (107)
+	function inspectItem(item: any) {
+		if (item.kind === 'prefab') return;
+		inspectedFile.set(item.id);
+		inspectorKind.set('file' as any);
+		inspectorClose.set(false);
+	}
+	async function openItem(item: any) {
+		if (item.kind === 'text') {
+			const blob = await itemBlob(item.id);
+			if (!blob) return;
+			openTextEditor({
+				title: item.name,
+				code: await blob.text(),
+				onSave: (code: string) => updateItemBytes(item.id, code)
+			});
+		} else if (item.kind === 'image') {
+			const blob = await itemBlob(item.id);
+			if (blob) openImagePreview({ title: item.name, url: URL.createObjectURL(blob) });
+		}
+	}
 </script>
 
 {#snippet tabStrip()}
@@ -475,12 +501,16 @@
 					{/if}
 					{#each gridItems as item (item.id)}
 						<div
-							class="explorer-card group flex cursor-grab flex-col items-center gap-1 rounded border border-transparent p-1.5 hover:border-gray-600 hover:bg-gray-700/60"
+							class="explorer-card group flex cursor-grab flex-col items-center gap-1 rounded border p-1.5 {$inspectedFile === item.id
+								? 'border-primary-600 bg-primary-600/10'
+								: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'}"
 							draggable="true"
 							role="listitem"
 							title={item.name}
 							ondragstart={(e) => onItemDragStart(e, item)}
 							oncontextmenu={(e) => itemMenu(e, item)}
+							onclick={() => inspectItem(item)}
+							ondblclick={() => openItem(item)}
 						>
 							{#if item.thumbnail}
 								<img src={item.thumbnail} alt={item.name} class="h-14 w-14 rounded object-cover" />

@@ -299,6 +299,22 @@ export function renameItem(id, name) {
 	persistIndex();
 }
 
+/** the item whose properties show in the Inspector (107) */
+/** @type {import('svelte/store').Writable<string | null>} */
+export const inspectedFile = writable(null);
+
+/** Save edited text back into an item — hash + size recompute (107)
+ * @param {string} id @param {string} text */
+export async function updateItemBytes(id, text) {
+	const buffer = new TextEncoder().encode(text).buffer;
+	const hash = await sha256(buffer);
+	await idbPut(BLOB_KEY + id, new Blob([buffer], { type: 'text/plain' }));
+	explorerItems.update((list) =>
+		list.map((item) => (item.id === id ? { ...item, hash, size: buffer.byteLength } : item))
+	);
+	await persistIndex();
+}
+
 /** The stored file bytes @param {string} id @returns {Promise<Blob | null>} */
 export function itemBlob(id) {
 	return idbGet(BLOB_KEY + id).then((blob) => blob ?? null);

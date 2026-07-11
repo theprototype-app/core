@@ -27,10 +27,23 @@
 					lastEmitted = update.state.doc.toString();
 					onChange(lastEmitted);
 				}),
-				EditorView.theme({
-					'&': { fontSize: '12px', height: '100%' },
-					'.cm-scroller': { fontFamily: 'monospace' }
-				})
+				// dark professional theme from the ui tokens (107) — the stock
+				// white box looked pasted-in on every dark panel
+				EditorView.theme(
+					{
+						'&': { fontSize: '12px', height: '100%', backgroundColor: '#111827', color: '#e5e7eb' },
+						'.cm-scroller': { fontFamily: 'ui-monospace, Consolas, monospace' },
+						'.cm-gutters': { backgroundColor: '#1f2937', color: '#6b7280', border: 'none' },
+						'.cm-activeLine': { backgroundColor: 'rgba(59, 130, 246, 0.08)' },
+						'.cm-activeLineGutter': { backgroundColor: 'rgba(59, 130, 246, 0.12)' },
+						'.cm-content': { caretColor: '#f97316' },
+						'.cm-cursor': { borderLeftColor: '#f97316' },
+						'&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+							backgroundColor: 'rgba(59, 130, 246, 0.28) !important'
+						}
+					},
+					{ dark: true }
+				)
 			]
 		});
 	});
@@ -45,4 +58,4 @@
 	onDestroy(() => view?.destroy());
 </script>
 
-<div bind:this={host} class="h-full overflow-auto rounded border border-gray-600 bg-white text-left"></div>
+<div bind:this={host} class="h-full overflow-auto rounded border border-gray-600 bg-gray-900 text-left"></div>

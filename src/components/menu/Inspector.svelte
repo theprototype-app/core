@@ -12,6 +12,8 @@
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
 	import { sineIn } from 'svelte/easing';
 	import { applyExplorerImage } from '$lib/explorerDrop';
+	import { explorerItems, explorerFolders, inspectedFile, itemBlob, renameItem, deleteItem, updateItemBytes } from '$lib/explorer';
+	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
 	import {
 		setObjectTexture,
 		removeObjectTexture,
@@ -105,6 +107,54 @@
 
 	// Explorer image hovering the texture drop zone (96)
 	let textureDropActive = $state(false);
+
+	// Explorer file properties (107)
+	const inspectedItem = $derived(
+		$inspectorKind === 'file' ? $explorerItems.find((item) => item.id === $inspectedFile) ?? null : null
+	);
+	const fileFolderPath = $derived.by(() => {
+		if (!inspectedItem) return '';
+		const parts = [];
+		let parent = inspectedItem.folderId ?? null;
+		while (parent) {
+			const folder = $explorerFolders.find((f) => f.id === parent);
+			if (!folder) break;
+			parts.unshift(folder.name);
+			parent = folder.parentId ?? null;
+		}
+		return 'Library' + (parts.length ? ' / ' + parts.join(' / ') : '');
+	});
+	let fileDetails = $state('');
+	$effect(() => {
+		const item = inspectedItem;
+		fileDetails = '';
+		if (!item) return;
+		itemBlob(item.id).then(async (blob) => {
+			if (!blob || inspectedItem?.id !== item.id) return;
+			try {
+				if (item.kind === 'image') {
+					const bitmap = await createImageBitmap(blob);
+					fileDetails = bitmap.width + ' × ' + bitmap.height + ' px';
+				} else if (item.kind === 'text') {
+					fileDetails = (await blob.text()).split('\n').length + ' lines';
+				} else if (item.kind === 'audio') {
+					const ctx = new AudioContext();
+					const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+					fileDetails = decoded.duration.toFixed(2) + ' s · ' + decoded.numberOfChannels + ' ch';
+					ctx.close();
+				}
+			} catch {}
+		});
+	});
+	async function openInspectedItem() {
+		const item = inspectedItem;
+		if (!item) return;
+		const blob = await itemBlob(item.id);
+		if (!blob) return;
+		if (item.kind === 'text')
+			openTextEditor({ title: item.name, code: await blob.text(), onSave: (code) => updateItemBytes(item.id, code) });
+		else if (item.kind === 'image') openImagePreview({ title: item.name, url: URL.createObjectURL(blob) });
+	}
 
 	// color swatches mirror the target when the selection changes
 	/** @type {any} */
@@ -265,7 +315,67 @@
 	class="rounded-tl-lg"
 	id="inspector"
 >
-	{#if $inspectorKind === 'scene'}
+	{#if $inspectorKind === 'file'}
+		<!-- Explorer file properties (107) -->
+		<div id="drawer-label">
+			<PanelHeader title={inspectedItem?.name ?? 'File'} badge="File" onclose={() => inspectorClose.set(true)} />
+		</div>
+		{#if inspectedItem}
+			<div id="file-properties" class="flex flex-col gap-3">
+				<div class="flex justify-center">
+					{#if inspectedItem.thumbnail}
+						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded border border-gray-600 object-cover" />
+					{:else}
+						<span class="flex h-24 w-24 items-center justify-center rounded border border-gray-600 bg-gray-700 text-4xl">
+							{inspectedItem.kind === 'audio' ? '🎵' : inspectedItem.kind === 'text' ? '📄' : '📦'}
+						</span>
+					{/if}
+				</div>
+				<Section label="File">
+					<div class="ui-row">
+						<span class="w-16 text-gray-400">Name</span>
+						<input
+							id="file-name"
+							class="ui-input flex-1"
+							value={inspectedItem.name}
+							onchange={(e) => renameItem(inspectedItem.id, e.currentTarget.value)}
+						/>
+					</div>
+					<div class="ui-row"><span class="w-16 text-gray-400">Kind</span><span class="ui-badge-type">{inspectedItem.kind}</span></div>
+					<div class="ui-row"><span class="w-16 text-gray-400">Size</span><span>{(inspectedItem.size / 1024).toFixed(1)} KB</span></div>
+					<div class="ui-row"><span class="w-16 text-gray-400">Folder</span><span class="truncate">{fileFolderPath}</span></div>
+					<div class="ui-row"><span class="w-16 text-gray-400">Added</span><span>{new Date(inspectedItem.createdAt).toLocaleString()}</span></div>
+					<div class="ui-row">
+						<span class="w-16 text-gray-400">Hash</span>
+						<span class="truncate font-mono text-[10px]" title={inspectedItem.hash}>{inspectedItem.hash.slice(0, 16)}…</span>
+						<button class="ui-button-quiet" title="Copy the full hash" onclick={() => navigator.clipboard?.writeText(inspectedItem.hash)}>⧉</button>
+					</div>
+					{#if fileDetails}
+						<div class="ui-row"><span class="w-16 text-gray-400">Details</span><span>{fileDetails}</span></div>
+					{/if}
+				</Section>
+				<Section label="Actions">
+					<div class="flex flex-wrap gap-2">
+						{#if inspectedItem.kind === 'text' || inspectedItem.kind === 'image'}
+							<Button size="xs" color="alternative" onclick={() => openInspectedItem()}>
+								{inspectedItem.kind === 'text' ? '📝 Edit' : '🔍 Preview'}
+							</Button>
+						{/if}
+						<Button
+							size="xs"
+							color="alternative"
+							onclick={() => {
+								deleteItem(inspectedItem.id);
+								inspectorClose.set(true);
+							}}>🗑 Delete</Button
+						>
+					</div>
+				</Section>
+			</div>
+		{:else}
+			<p class="p-3 text-sm italic text-gray-400">The file was removed.</p>
+		{/if}
+	{:else if $inspectorKind === 'scene'}
 		<div id="drawer-label">
 			<PanelHeader title="Scene" badge="Scene" onclose={() => inspectorClose.set(true)} />
 		</div>

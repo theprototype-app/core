@@ -40,7 +40,8 @@
 	import OnClickNode from './nodes/OnClickNode.svelte';
 	import CounterNode from './nodes/CounterNode.svelte';
 	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen } from '../../stores/flowStore';
-	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges } from '$lib/nodesHandler';
+	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
+	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { isValidFlowConnection } from '$lib/flowSockets';
@@ -93,12 +94,33 @@
 		...moduleTypes
 	};
 
-	const snapGrid: [number, number] = [25, 25];
-	const { screenToFlowPosition } = useSvelteFlow();
+	const { screenToFlowPosition, fitView, setViewport } = useSvelteFlow();
 
 	// palette collapse + side (82), persisted
 	let paletteOpen = typeof localStorage === 'undefined' || localStorage.getItem('flowPaletteOpen') !== 'false';
 	let paletteSide = typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteSide') ?? 'left' : 'left';
+
+	// 166: flow PROPERTIES panel — curated graph prefs (LOCAL, persisted) + the
+	// selected node's props. Right-side, collapses like the palette.
+	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
+	let propsOpen = LS?.getItem('flowPropsOpen') === 'true';
+	let edgeStyle = LS?.getItem('flowEdgeStyle') ?? 'bezier';
+	let showMinimap = LS?.getItem('flowMinimap') !== 'false';
+	let bgPattern = LS?.getItem('flowBg') ?? 'dots';
+	let gridSnapOn = LS?.getItem('flowGridSnap') !== 'false';
+	let gridSize = +(LS?.getItem('flowGridSize') ?? '25');
+	const BG_LINES = BackgroundVariant.Lines;
+	const BG_DOTS = BackgroundVariant.Dots;
+	$: snapGrid = [gridSnapOn ? gridSize : 1, gridSnapOn ? gridSize : 1] as [number, number];
+	$: bgVariant = bgPattern === 'lines' ? BG_LINES : BG_DOTS;
+	$: selectedNode = ($nodes as any[]).find((n) => n.selected) ?? null;
+
+	function setEdgeStyle(style: string) {
+		edgeStyle = style;
+		LS?.setItem('flowEdgeStyle', style);
+		// restyle existing edges locally (cosmetic — not in the graph hash, 166)
+		edges.update((es: any[]) => es.map((e) => ({ ...e, type: style })));
+	}
 
 	// shared with <SvelteFlow> so peer cursors can be projected to screen space
 	const viewport = writable({ x: 0, y: 0, zoom: 1 });
@@ -194,8 +216,8 @@
 			sourceHandle: connection.sourceHandle,
 			targetHandle: connection.targetHandle,
 			// 69: readable edges — same shape on every peer via serializeEdge
-			// 150: curvy bezier connections
-			type: 'bezier',
+			// 150/166: edge style follows the flow properties panel (local pref)
+			type: edgeStyle,
 			markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 }
 		} satisfies Edge;
 		peer?.send({ type: 'edgecreate', edge: serializeEdge(edge) });
@@ -459,7 +481,7 @@
 			{onedgecreate}
 			{ondelete}
 			{isValidConnection}
-			defaultEdgeOptions={{ type: 'bezier', markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 } }}
+			defaultEdgeOptions={{ type: edgeStyle, markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 } }}
 			deleteKey={['Backspace', 'Delete']}
 			fitView
 			maxZoom={1}
@@ -472,19 +494,74 @@
 			on:edgecontextmenu={onEdgeContextMenu}
 			on:paneclick={() => (menu = null)}
 		>
-			<Background bgColor="transparent" variant={BackgroundVariant.Dots} />
+			{#if bgPattern !== 'none'}
+				<Background bgColor="transparent" variant={bgVariant} />
+			{/if}
 			<Controls showLock={false} />
-			<MiniMap
-				pannable
-				zoomable
-				width={140}
-				height={90}
-				nodeColor={() => '#475569'}
-				maskColor="rgb(17 24 39 / 0.65)"
-			/>
+			{#if showMinimap}
+				<MiniMap
+					pannable
+					zoomable
+					width={140}
+					height={90}
+					nodeColor={() => '#475569'}
+					maskColor="rgb(17 24 39 / 0.65)"
+				/>
+			{/if}
 		</SvelteFlow>
 		<PeerCursors {viewport} />
 	</div>
+	<!-- 166: flow PROPERTIES panel on the right (collapses like the palette) -->
+	<div class="relative z-10 w-0" style="order: 4">
+		<button
+			id="flow-props-toggle"
+			class="palette-tab palette-tab-mirrored absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-[10px] text-gray-200 hover:bg-gray-600"
+			style="right: -1px"
+			title={propsOpen ? 'Hide properties' : 'Show properties'}
+			on:click={() => { propsOpen = !propsOpen; LS?.setItem('flowPropsOpen', String(propsOpen)); }}
+		>
+			{propsOpen ? '▸' : '◂'}
+		</button>
+	</div>
+	{#if propsOpen}
+		<div id="flow-props" class="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-gray-800 p-2 text-xs text-gray-200" style="order: 5">
+			{#if selectedNode}
+				<p class="ui-section-label">Node</p>
+				<label class="flex flex-col gap-1">Name
+					<input id="flow-node-name" class="ui-input" value={selectedNode.data?.label ?? ''}
+						on:change={(e) => setNodeData(selectedNode.id, { label: e.currentTarget.value })} /></label>
+				<label class="flex flex-col gap-1">Note
+					<textarea class="ui-input" rows="2" value={selectedNode.data?.note ?? ''}
+						on:change={(e) => setNodeData(selectedNode.id, { note: e.currentTarget.value })}></textarea></label>
+			{:else}
+				<p class="ui-section-label">Graph</p>
+				<label class="flex flex-col gap-1">Edge style
+					<ThemedSelect
+						id="flow-edge-style"
+						items={[{ value: 'bezier', name: 'Bezier' }, { value: 'smoothstep', name: 'Step' }, { value: 'straight', name: 'Straight' }]}
+						value={edgeStyle}
+						onchange={(v) => setEdgeStyle(v)} /></label>
+				<label class="flex flex-col gap-1">Background
+					<ThemedSelect
+						items={[{ value: 'dots', name: 'Dots' }, { value: 'lines', name: 'Lines' }, { value: 'none', name: 'None' }]}
+						value={bgPattern}
+						onchange={(v) => { bgPattern = v; LS?.setItem('flowBg', v); }} /></label>
+				<label class="flex items-center gap-2">
+					<input id="flow-minimap-toggle" type="checkbox" checked={showMinimap}
+						on:change={(e) => { showMinimap = e.currentTarget.checked; LS?.setItem('flowMinimap', String(showMinimap)); }} /> Minimap</label>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" checked={gridSnapOn}
+						on:change={(e) => { gridSnapOn = e.currentTarget.checked; LS?.setItem('flowGridSnap', String(gridSnapOn)); }} /> Snap to grid</label>
+				<label class="flex items-center gap-2">Grid size
+					<input class="ui-input w-16" type="number" min="1" value={gridSize}
+						on:change={(e) => { gridSize = +e.currentTarget.value || 25; LS?.setItem('flowGridSize', String(gridSize)); }} /></label>
+				<div class="mt-1 flex gap-1">
+					<button id="flow-fit" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" on:click={() => fitView()}>Fit</button>
+					<button id="flow-reset-view" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" on:click={() => setViewport({ x: 0, y: 0, zoom: 1 })}>Reset view</button>
+				</div>
+			{/if}
+		</div>
+	{/if}
 </div>
 
 {#if menu}

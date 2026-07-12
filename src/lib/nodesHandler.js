@@ -100,7 +100,17 @@ export function applyNodesSnapshot(nodes, edges) {
 /** djb2 over the serialized graph, order-independent via sort */
 export function graphHash() {
 	const nodes = get(flowNodes).map(serializeNode).sort((a, b) => a.id.localeCompare(b.id));
-	const edges = get(flowEdges).map(serializeEdge).sort((a, b) => a.id.localeCompare(b.id));
+	// hash edges by STRUCTURE only — cosmetic type/marker are LOCAL editor prefs
+	// (166), so different per-peer edge styles must not trigger a resync
+	const edges = get(flowEdges)
+		.map((e) => ({
+			id: e.id,
+			source: e.source,
+			target: e.target,
+			sourceHandle: e.sourceHandle ?? null,
+			targetHandle: e.targetHandle ?? null
+		}))
+		.sort((a, b) => a.id.localeCompare(b.id));
 	const text = JSON.stringify([nodes, edges]);
 	let hash = 5381;
 	for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;

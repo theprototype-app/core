@@ -1,7 +1,8 @@
-// Phase 135: desktop mesh-edit popup — Vertices | Faces modes and the face op
-// buttons apply through the shared faceEdit core (meshgeo, undoable) without a
-// headset. Face PICKING via viewport raycast is manual; the ops are driven via
-// the highlight + op buttons here.
+// Phase 135 + 144: desktop mesh-edit toolbar — Vertices | Faces modes and the
+// face op buttons apply through the shared faceEdit core (meshgeo, undoable)
+// without a headset. 144 reworked the popup into a Draw-style pinned strip
+// (active mode state, a Done button, Esc to exit). Face PICKING via viewport
+// raycast is manual; the ops are driven via the highlight + op buttons here.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -24,13 +25,17 @@ h.run(async () => {
 		const el = document.querySelector('#mesh-edit-popup');
 		return {
 			present: !!el,
+			rounded: el ? getComputedStyle(el).borderTopLeftRadius : null,
 			hasVertices: !!document.querySelector('#mesh-mode-vertices'),
 			hasFaces: !!document.querySelector('#mesh-mode-faces'),
-			verticesActive: document.querySelector('#mesh-mode-vertices')?.className.includes('bg-primary')
+			hasDone: !!document.querySelector('#mesh-edit-done'),
+			verticesActive: document.querySelector('#mesh-mode-vertices')?.className.includes('bg-primary'),
+			facesActive: document.querySelector('#mesh-mode-faces')?.className.includes('bg-primary')
 		};
 	});
-	h.check(popup.present && popup.hasVertices && popup.hasFaces, 'popup shows on mesh edit with both modes');
-	h.check(popup.verticesActive, 'vertices mode is active first');
+	h.check(popup.present && popup.hasVertices && popup.hasFaces, 'toolbar shows on mesh edit with both modes');
+	h.check(popup.hasDone, '144: the Draw-style toolbar has a Done button');
+	h.check(popup.verticesActive && !popup.facesActive, 'vertices mode is the active toggle first');
 
 	// --- switching to Faces enters face-edit mode + shows op buttons ---
 	await A.page.evaluate(() => document.querySelector('#mesh-mode-faces').click());
@@ -72,14 +77,16 @@ h.run(async () => {
 	});
 	h.check(undone.before === 20 && undone.after === 12, 'the desktop face op is undoable');
 
-	// --- finish closes the popup and exits both modes ---
-	await A.page.evaluate(() => {
-		window.__stores.meshEdit.exitEditMode();
-		window.__stores.faceEdit.exitFaceEdit();
-	});
+	// --- 144: Esc exits (closes the toolbar + both modes) ---
+	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(300);
-	const gone = await A.page.evaluate(() => !document.querySelector('#mesh-edit-popup'));
-	h.check(gone, 'popup closes when editing ends');
+	const escaped = await A.page.evaluate(() => {
+		let fe, ve;
+		window.__stores.faceEdit.faceEditObject.subscribe((v) => (fe = v))();
+		window.__stores.meshEdit.editingObject.subscribe((v) => (ve = v))();
+		return { gone: !document.querySelector('#mesh-edit-popup'), fe, ve };
+	});
+	h.check(escaped.gone && escaped.fe === null && escaped.ve === null, 'Esc closes the toolbar and exits both modes');
 
 	await h.finish(browser);
 });

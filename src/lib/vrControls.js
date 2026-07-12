@@ -1185,8 +1185,12 @@ function onSqueezeStart(index) {
 				scale: 1
 			};
 			hapticPulse(0.3, 30);
+			return;
 		}
-		return;
+		// 158: aimed at the object but got no face -> swallow the grip; aimed
+		// ELSEWHERE (e.g. the Edit Mesh menu) -> fall through so the window grab
+		// below can detach + re-place the menu, like the radial ring.
+		if (hit) return;
 	}
 	// vertex edit mode (113): grip a handle to drag its vertex
 	if (get(editingObject)) {

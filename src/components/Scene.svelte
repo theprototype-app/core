@@ -39,7 +39,6 @@
 	import VREditMenu from './play/VREditMenu.svelte';
 	import VRSnapMenu from './play/VRSnapMenu.svelte';
 	import VRSettingsPanel from './play/VRSettingsPanel.svelte';
-	import VRDebugReadout from './play/VRDebugReadout.svelte';
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
@@ -750,7 +749,6 @@ position={[0, 2, 3]}
 <VREditMenu />
 <VRSnapMenu />
 <VRSettingsPanel />
-<VRDebugReadout />
 <VRKeyboard />
 <VRSelectionShell />
 

@@ -14,7 +14,6 @@ import {
 	vrTeleportEnabled,
 	vrVertexHold,
 	vrSettingsPanelOpen,
-	vrDebugOverlay,
 	selectedObject,
 	isVRMode,
 	worldRig,
@@ -591,33 +590,6 @@ function axesForSlot(slot) {
 	const hand = renderer?.xr.getController(slot)?.userData?.handedness;
 	const src = session && hand ? [...session.inputSources].find((s) => s.handedness === hand) : null;
 	return src?.gamepad?.axes ?? [];
-}
-
-/** 194-debug: live controller<->handedness mapping for the on-screen readout.
- * Surfaces per-slot inputSource.handedness vs the stamped userData.handedness, the
- * resolved menu/pointer indices, grip state, and the active grab's slot — so a
- * mismatch (grip on one hand driving the other's action) is visible in-headset. */
-export function vrDebugSnapshot() {
-	const session = renderer?.xr.getSession();
-	const src = session ? [...session.inputSources] : [];
-	const slot = (/** @type {number} */ i) => ({
-		input: src[i]?.handedness ?? '-',
-		stamp: renderer?.xr.getController(i)?.userData?.handedness ?? '-'
-	});
-	const menuHand = /** @type {any} */ (get(vrMenuHand));
-	const grabIdx = grab?.index ?? scaleGrab?.index ?? worldPan?.index ?? windowGrab?.index ?? -1;
-	return {
-		slot0: slot(0),
-		slot1: slot(1),
-		menuHand,
-		menuIdx: controllerIndexFor(menuHand),
-		pointerIdx: controllerIndexFor(menuHand === 'right' ? 'left' : 'right'),
-		leftIdx: controllerIndexFor('left'),
-		rightIdx: controllerIndexFor('right'),
-		grip0: !!gripHeld[0],
-		grip1: !!gripHeld[1],
-		grabIdx
-	};
 }
 
 /** 188: WebXR re-issues inputsourceschange on hands<->controllers and on a
@@ -1933,9 +1905,6 @@ export function executeVRMenuAction(name) {
 		} else if (key === 'resetpanels') {
 			resetWindowPoses();
 			showToast('VR panel positions reset');
-		} else if (key === 'debug') {
-			vrDebugOverlay.update((v) => !v);
-			try { localStorage.setItem('vrDebugOverlay', String(get(vrDebugOverlay))); } catch {}
 		}
 		return;
 	}

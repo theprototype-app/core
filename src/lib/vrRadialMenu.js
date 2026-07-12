@@ -247,7 +247,7 @@ function registerBuiltins() {
 	// Mic ▸ nests here — the nav stack makes its Back return to System)
 	registerVRMenuEntry({ id: 'grid', group: 'system', label: 'Grid', order: 0 });
 	registerVRMenuEntry({ id: 'world', group: 'system', label: 'World 1:1', order: 1 });
-	registerVRMenuEntry({ id: 'passthru', group: 'system', label: 'Passthru', order: 2 });
+	registerVRMenuEntry({ id: 'settings', group: 'system', label: 'Settings', order: 2 });
 	registerVRMenuEntry({
 		id: 'hand',
 		group: 'system',

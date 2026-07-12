@@ -99,6 +99,8 @@ export const vrStretchObject = writable(null);
 export const vrStretchAxis = writable(0);
 // VR Snap side-menu (156), opened from Edit ▸ Snap (toggle)
 export const vrSnapMenuOpen = writable(false);
+// VR Settings panel (187), opened from System ▸ Settings
+export const vrSettingsPanelOpen = writable(false);
 // VR snap MODE (156): 'off' | 'grid' | 'surface' | 'rotation'
 export const vrSnapMode = writable(
 	typeof localStorage !== 'undefined' ? localStorage.getItem('vrSnapMode') || 'off' : 'off'

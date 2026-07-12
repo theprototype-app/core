@@ -13,6 +13,7 @@ import {
 	vrMirrorSnapTurn,
 	vrTeleportEnabled,
 	vrVertexHold,
+	vrSettingsPanelOpen,
 	selectedObject,
 	isVRMode,
 	worldRig,
@@ -104,7 +105,8 @@ import {
 	vrWindowAdjust,
 	windowAnchor,
 	offsetFromWorld,
-	saveWindowPose
+	saveWindowPose,
+	resetWindowPoses
 } from './vrWindowPoses';
 
 // VR interactions (all gated on an active XR session):
@@ -664,6 +666,18 @@ export function raycastSnap(index) {
 	return control ? control.object.name.slice('vrsnap-'.length) : null;
 }
 
+/** the VR Settings panel group (187) @type {import('svelte/store').Writable<any>} */
+export const vrSettingsGroup = writable(null);
+/** Raycast the Settings panel (187) — control names carry the FULL action
+ * (settings:teleport / settings:close ...) @param {number} index */
+export function raycastSettings(index) {
+	const panel = get(vrSettingsGroup);
+	if (!panel || !get(vrSettingsPanelOpen)) return null;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const control = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrsettings-'));
+	return control ? control.object.name.slice('vrsettings-'.length) : null;
+}
+
 /**
  * Map a VR snap MODE onto the shared snapping stores (156). off = nothing;
  * grid/rotation = the gizmo/nudge grid+rotate snap (snapEnabled); surface =
@@ -1093,7 +1107,8 @@ function windowGroupFor(/** @type {string} */ id) {
 			keyboard: vrKeyboardGroup,
 			chat: vrChatGroup,
 			editmenu: vrEditGroup,
-			snapmenu: vrSnapGroup
+			snapmenu: vrSnapGroup,
+			settingspanel: vrSettingsGroup
 		}[id] ?? vrMenuGroup
 	);
 }
@@ -1767,6 +1782,37 @@ export function executeVRMenuAction(name) {
 		setFaceOp(/** @type {any} */ (name.slice('face:'.length)));
 		return;
 	}
+	if (name.startsWith('settings:')) {
+		// 187: VR Settings panel controls
+		const key = name.slice('settings:'.length);
+		if (key === 'close') vrSettingsPanelOpen.set(false);
+		else if (key === 'teleport') {
+			vrTeleportEnabled.update((v) => !v);
+			try { localStorage.setItem('vrTeleportEnabled', String(get(vrTeleportEnabled))); } catch {}
+		} else if (key === 'mirror') {
+			vrMirrorSnapTurn.update((v) => !v);
+			try { localStorage.setItem('vrMirrorSnapTurn', String(get(vrMirrorSnapTurn))); } catch {}
+		} else if (key === 'vertexhold') {
+			vrVertexHold.update((v) => !v);
+			try { localStorage.setItem('vrVertexHold', String(get(vrVertexHold))); } catch {}
+		} else if (key === 'angle') {
+			// cycle Off -> 15 -> 30 -> 45 -> Off
+			const steps = [0, 15, 30, 45];
+			const next = steps[(steps.indexOf(get(vrSnapAngle)) + 1) % steps.length];
+			vrSnapAngle.set(next);
+			try { localStorage.setItem('vrSnapAngle', String(next)); } catch {}
+		} else if (key === 'passthrough') {
+			// WebXR can't hot-swap session modes — applies on the next VR entry
+			const next = !get(vrPassthrough);
+			vrPassthrough.set(next);
+			try { localStorage.setItem('vrPassthrough', String(next)); } catch {}
+			showToast('Passthrough ' + (next ? 'on' : 'off') + ' — takes effect on the next VR entry');
+		} else if (key === 'resetpanels') {
+			resetWindowPoses();
+			showToast('VR panel positions reset');
+		}
+		return;
+	}
 	if (name === 'snap:close') {
 		vrSnapMenuOpen.set(false);
 		return;
@@ -2014,14 +2060,9 @@ export function executeVRMenuAction(name) {
 		cycleMicMode();
 	} else if (name === 'world') {
 		resetWorldRig(); // back to 1:1 mid-session
-	} else if (name === 'passthru') {
-		// WebXR can't hot-swap session modes — the preference applies next entry
-		const next = !get(vrPassthrough);
-		vrPassthrough.set(next);
-		try {
-			localStorage.setItem('vrPassthrough', String(next));
-		} catch {}
-		showToast('Passthrough ' + (next ? 'on' : 'off') + ' — takes effect on the next VR entry');
+	} else if (name === 'settings') {
+		// 187: System > Settings opens the VR settings panel (passthrough moved inside)
+		vrSettingsPanelOpen.set(true);
 	} else if (name === 'exitvr') {
 		vrMenuOpen.set(false);
 		isVRMode.set(false);
@@ -2414,6 +2455,14 @@ export function updateVRControls() {
 		// chat panel (117): the pointer ray highlights close / input
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 		const hovered = pointerIndex >= 0 ? raycastChat(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.12, 14);
+			vrHovered.set(hovered);
+		}
+	} else if (get(vrSettingsPanelOpen)) {
+		// VR Settings panel (187): the pointer ray highlights its rows
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const hovered = pointerIndex >= 0 ? raycastSettings(pointerIndex) : null;
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.12, 14);
 			vrHovered.set(hovered);

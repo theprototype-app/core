@@ -16,7 +16,7 @@ h.run(async () => {
 	h.check(label.includes('VR'), `hidden button requests immersive-vr by default (${label})`);
 
 	// the quick-menu tile flips the preference (real VR user path)
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('passthru'));
+	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('settings:passthrough')); // 187: moved into the VR settings panel
 	await A.page.waitForTimeout(400);
 	const toastShown = await A.page.getByText(/takes effect on the next VR entry/).first().isVisible().catch(() => false);
 	h.check(toastShown, 'tile toggle explains it applies next session');

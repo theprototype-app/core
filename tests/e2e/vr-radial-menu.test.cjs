@@ -77,7 +77,7 @@ h.run(async () => {
 	);
 	h.check(
 		registry.system.includes('nav:mic') &&
-			registry.system.includes('passthru') &&
+			registry.system.includes('settings') &&
 			registry.system.includes('exitvr') &&
 			registry.system.includes('stats') &&
 			registry.system.includes('grabmode') &&

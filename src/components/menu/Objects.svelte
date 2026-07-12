@@ -189,6 +189,12 @@
                 <i class="fa-solid fa-cube w-4 shrink-0 text-center text-gray-400" title="Object"></i>
             {/if}
 
+            <!-- 171: a persistent hidden marker so hidden rows read at a glance
+                 (the eye toggle only shows on hover) -->
+            {#if element.visible === false}
+                <i class="hidden-marker fa-regular fa-eye-slash w-3 shrink-0 text-center text-[10px] text-gray-500" title="Hidden"></i>
+            {/if}
+
             <!-- name / inline rename -->
             {#if $renamingObject === element.uuid}
                 <!-- svelte-ignore a11y_autofocus -->

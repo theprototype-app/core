@@ -170,14 +170,25 @@ export function extrudeFace(tris, face, dist) {
 	return out;
 }
 
-/** Push/pull a face's triangles along its normal (no walls) @param {any[]} tris @param {any} face @param {number} dist */
+/** position keys of a face's vertices (138: weld set for a move) @param {any[]} tris @param {any} face */
+function faceVertexKeys(tris, face) {
+	const keys = new Set();
+	face.triIndices.forEach((/** @type {number} */ ti) =>
+		tris[ti].forEach((/** @type {any} */ v) => keys.add(keyOf(v.x, v.y, v.z)))
+	);
+	return keys;
+}
+
+/**
+ * Push/pull a face along its normal, WELDED (138): every vertex sharing the
+ * face's corner positions moves too, so adjacent faces stretch with it instead
+ * of the face detaching and tearing a hole. @param {any[]} tris @param {any} face @param {number} dist
+ */
 export function moveFaceAlongNormal(tris, face, dist) {
 	const out = cloneTris(tris);
 	const offset = face.normal.clone().multiplyScalar(dist);
-	const faceSet = new Set(face.triIndices);
-	out.forEach((t, ti) => {
-		if (faceSet.has(ti)) t.forEach((v) => v.add(offset));
-	});
+	const keys = faceVertexKeys(tris, face);
+	out.forEach((t) => t.forEach((v) => { if (keys.has(keyOf(v.x, v.y, v.z))) v.add(offset); }));
 	return out;
 }
 
@@ -536,12 +547,25 @@ export function faceGesturePending() {
 export function beginFaceGrab(index) {
 	if (!faceEdited || index < 0 || !faces[index] || faceGesturePending()) return false;
 	const face = faces[index];
+	// weld-neighbour set (138): verts OUTSIDE the face sharing its corner
+	// positions — the TRANSLATION carries them so the mesh stretches, not tears
+	const faceSet = new Set(face.triIndices);
+	const keys = faceVertexKeys(workingTris, face);
+	/** @type {any[]} */
+	const neighbours = [];
+	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		if (faceSet.has(ti)) return;
+		t.forEach((/** @type {any} */ v, /** @type {number} */ k) => {
+			if (keys.has(keyOf(v.x, v.y, v.z))) neighbours.push({ ti, k, orig: v.clone() });
+		});
+	});
 	faceGrab = {
 		index,
 		before: trisToPositions(workingTris),
 		originals: face.triIndices.map((/** @type {number} */ ti) =>
 			workingTris[ti].map((/** @type {any} */ v) => v.clone())
 		),
+		neighbours,
 		centroid: face.centroid.clone(),
 		normal: face.normal.clone()
 	};
@@ -567,6 +591,12 @@ export function applyFaceGrab(t) {
 			const rel = v.clone().sub(pivot).multiplyScalar(scale).applyQuaternion(dQuat);
 			return rel.add(pivot).add(dPos).add(pushVec);
 		});
+	});
+	// welded neighbours follow the TRANSLATION only (not rotate/scale) so the
+	// object stretches with a moved face instead of tearing (138)
+	const shift = dPos.clone().add(pushVec);
+	faceGrab.neighbours.forEach((/** @type {any} */ n) => {
+		workingTris[n.ti][n.k] = n.orig.clone().add(shift);
 	});
 	liveGeometryUpdate();
 }

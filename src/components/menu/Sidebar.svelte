@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../../app.css';
 	import '../../styles/menu.css';
+	import { fade } from 'svelte/transition';
 	import { save, load, importFile } from '$lib/fileHandler.svelte';
 	import {
 		settingsOpen,
@@ -8,47 +9,44 @@
 		inspectorKind,
 		closeSelectionInspector,
 		showSidebar,
-		closeMenu
+		closeMenu,
+		modulesOpen,
+		sessionsOpen,
+		showToast
 	} from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
-	import { modulesOpen, sessionsOpen, showToast } from '../../stores/appStore.js';
-	import { sineIn } from 'svelte/easing';
 
-	import {
-		Sidebar,
-		SidebarGroup,
-		SidebarItem,
-		SidebarWrapper,
-		Radio,
-		Dropdown,
-		Drawer
-	} from 'flowbite-svelte';
+	// 203: redesigned as a compact floating panel — flat list (order preserved,
+	// no boxed group / section headers / vertical bar), a fast fade-in (was a
+	// slide from the left), narrower than the Properties sidebar so it needs no
+	// scrollbar, and floated ABOVE the bottom dock (z-hud) instead of covered.
+	// The Files format picker became a segmented control (the old dropdown was
+	// fiddly). Themed for light + dark.
 
-	let saveFormat = 'json';
-	let spanClass = 'flex-1 ms-3 whitespace-nowrap';
-	let sectionLabel = 'mb-1 mt-3 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400';
-	let fileButton =
-		'bg-white px-1 py-2 text-xs font-medium text-gray-900 hover:bg-gray-100 hover:text-blue-700\
-		dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 dark:hover:text-white';
-	let saveClass =
-		'px-4 py-2 text-sm font-medium text-gray-900 border-gray-200 hover:bg-gray-100\
-	hover:text-blue-700 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-800\
-	dark:text-gray-400 dark:border-gray-700 dark:text-white dark:hover:text-white dark:hover:bg-gray-700\
-	dark:focus:ring-blue-500 dark:focus:text-white bg-white';
-
-	// let  open  = $state(false);
+	let saveFormat = $state('json');
 	let rerenderInput = $state(false);
 
-	let transitionParamsRight = {
-		x: -320,
-		duration: 200,
-		easing: sineIn
-	};
+	function clearScene() {
+		const count = $objectsGroup?.children.length ?? 0;
+		if (count === 0) {
+			sceneCommand('/clear all'); // still clears module content
+			return;
+		}
+		showToast('Clear the scene for everyone? ' + count + ' object' + (count === 1 ? '' : 's') + ' will be removed.', [
+			{
+				label: 'Clear',
+				action: () => {
+					closeSelectionInspector();
+					sceneCommand('/clear all');
+				}
+			},
+			{ label: 'Cancel', action: () => {} }
+		]);
+	}
 </script>
 
-<!-- 94: the logo IS the menu button — the old squeeze hamburger overlapped it
-     (and showed an X while the sidebar was closed). Open state = accent ring. -->
+<!-- 94: the logo IS the menu button. Open state = accent ring. -->
 <button
 	id="logo-menu"
 	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur transition-transform hover:scale-105 {$closeMenu
@@ -56,171 +54,130 @@
 		: 'border-primary-500 ring-2 ring-primary-500/50'}"
 	style="height: 48px; width: 48px; top: 8px; left: 8px;"
 	title={$closeMenu ? 'Open menu' : 'Close menu'}
-	on:click={() => closeMenu.update((value) => !value)}
+	onclick={() => closeMenu.update((value) => !value)}
 >
 	<img src="logo.svg" alt="menu" class="h-9 w-9" />
 </button>
-{#if true}
 
-<div class="hamburger">
-<div>
-<Drawer
-	hidden={$closeMenu}
-	activateClickOutside={false}
-	backdrop={false}
-	placement="left"
-	position="fixed"
-	rightOffset="end-0 top-16"
-	leftOffset="start-0 top-16"
-	topOffset="top-16"
-	transitionType="fly"
-	transitionParams={transitionParamsRight}
-	class="rounded-tr-lg"
-	id="sidebar70"
-	style="bottom: var(--bottom-inset, 0px); height: auto; overflow-y: auto"
->
-<Sidebar>
-	<SidebarWrapper>
-		<!-- 126: Library left the sidebar — its packs live in the Explorer now.
-		     Scene actions group in the agreed order below. -->
+{#if !$closeMenu}
+	<nav
+		id="sidebar70"
+		transition:fade={{ duration: 130 }}
+		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
+	>
 		{#key rerenderInput}
-			<input type="file" id="import-file" style="display: none" on:input={e => { importFile(e.target.files[0])}} accept=".gltf, .glb, .obj, .stl, .fbx" />
-			<input type="file" id="load-file" style="display: none" on:input={e => load(e.target.files[0])} accept=".json, .gltf, .scene" />
+			<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
+			<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .gltf, .scene, .tpscene" />
 		{/key}
-		<SidebarGroup border>
 
-			<p class={sectionLabel}>Files</p>
-			<div
-				class="grid grid-cols-4 overflow-hidden rounded-lg border border-gray-200 shadow-sm dark:border-gray-700"
-				role="group"
-			>
-				<button type="button" class={fileButton}
-				on:click={() => {
-					document.getElementById('import-file').click()
-					// Toggle rerenderInput to refresh the input type file HTML elements
-					// and we want to load same object even if it is selected twice
-        			rerenderInput = rerenderInput ? false : true
-				}}>
-					📩<br />Import
-				</button>
-				<button type="button" class={fileButton + ' border-l border-gray-200 dark:border-gray-700'}
-				on:click={() => document.getElementById('load-file').click()}>
-					📁<br />Load
-				</button>
-				<button type="button" class={fileButton + ' border-l border-gray-200 dark:border-gray-700'}
-				on:click={() => save(saveFormat)}>
-					💾<br />Save
-				</button>
-				<button
-					type="button"
-					title="Save format"
-					class={fileButton + ' border-l border-gray-200 dark:border-gray-700'}
-				>
-					<span class="text-[9px] uppercase text-gray-400">{saveFormat}</span><br />▾
-				</button>
-				<Dropdown placement='bottom' class="w-44 p-3 space-y-3 text-sm">
-				  <li>
-					<Radio name="group1" bind:group={saveFormat} value={'scene'} disabled>Scene</Radio>
-				  </li>
-				  <li>
-					<Radio name="group1" bind:group={saveFormat} value={'json'}>JSON</Radio>
-				  </li>
-				  <li>
-					<Radio name="group1" bind:group={saveFormat} value={'gltf'}>GLTF</Radio>
-				  </li>
-				</Dropdown>
-			</div>
+		<!-- Files -->
+		<button
+			class="side-row"
+			onclick={() => {
+				document.getElementById('import-file')?.click();
+				rerenderInput = !rerenderInput; // allow re-picking the same file
+			}}
+		>
+			<span class="side-ico">📩</span><span class="flex-1 whitespace-nowrap">Import</span>
+		</button>
+		<button class="side-row" onclick={() => document.getElementById('load-file')?.click()}>
+			<span class="side-ico">📁</span><span class="flex-1 whitespace-nowrap">Load</span>
+		</button>
+		<button class="side-row" onclick={() => save(saveFormat)}>
+			<span class="side-ico">💾</span><span class="flex-1 whitespace-nowrap">Save</span>
+		</button>
+		<div class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
+			<button class="side-seg {saveFormat === 'json' ? 'on' : ''}" onclick={() => (saveFormat = 'json')}>JSON</button>
+			<button class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" onclick={() => (saveFormat = 'gltf')}>GLTF</button>
+		</div>
 
-			<!-- 126: Configure Scene, Clear Scene, Modules, Sessions (in order) -->
-			<p class={sectionLabel}>Scene</p>
-			<SidebarItem
-				label={(!$inspectorClose && $inspectorKind === 'scene' ? '● ' : '') + 'Configure Scene'}
-				{spanClass}
-				on:click={() => {
-					showSidebar('scene');
-				}}
-			>
-				<svelte:fragment slot="icon">🎛️</svelte:fragment>
-			</SidebarItem>
-			<SidebarItem
-				label="Clear Scene"
-				{spanClass}
-				on:click={() => {
-					const count = $objectsGroup?.children.length ?? 0;
-					if (count === 0) {
-						sceneCommand('/clear all'); // still clears module content
-						return;
-					}
-					showToast('Clear the scene for everyone? ' + count + ' object' + (count === 1 ? '' : 's') + ' will be removed.', [
-						{
-							label: 'Clear',
-							action: () => {
-								closeSelectionInspector();
-								sceneCommand('/clear all');
-							}
-						},
-						{ label: 'Cancel', action: () => {} }
-					]);
-				}}
-			>
-				<svelte:fragment slot="icon">🗑️</svelte:fragment>
-			</SidebarItem>
-			<div id="open-modules-manager">
-				<SidebarItem
-					label="Modules"
-					{spanClass}
-					on:click={() => {
-						modulesOpen.set(true);
-					}}>
-					<svelte:fragment slot="icon">🧩</svelte:fragment>
-				</SidebarItem>
-			</div>
-			<div id="open-sessions-manager">
-				<SidebarItem
-					label="Sessions"
-					{spanClass}
-					on:click={() => {
-						sessionsOpen.set(true);
-					}}
-				>
-					<svelte:fragment slot="icon">🗂️</svelte:fragment>
-				</SidebarItem>
-			</div>
+		<div class="side-div"></div>
 
-			<p class={sectionLabel}>App</p>
-			<SidebarItem
-				label="Settings"
-				{spanClass}
-				style="padding-right: 40px"
-				on:click={() => settingsOpen.set(!$settingsOpen)}
-			>
-				<svelte:fragment slot="icon">⚙️</svelte:fragment>
-			</SidebarItem>
+		<!-- Scene -->
+		<button class="side-row" onclick={() => showSidebar('scene')}>
+			<span class="side-ico">🎛️</span>
+			<span class="flex-1 whitespace-nowrap">{!$inspectorClose && $inspectorKind === 'scene' ? '● ' : ''}Configure Scene</span>
+		</button>
+		<button class="side-row" onclick={clearScene}>
+			<span class="side-ico">🗑️</span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
+		</button>
+		<button id="open-modules-manager" class="side-row" onclick={() => modulesOpen.set(true)}>
+			<span class="side-ico">🧩</span><span class="flex-1 whitespace-nowrap">Modules</span>
+		</button>
+		<button id="open-sessions-manager" class="side-row" onclick={() => sessionsOpen.set(true)}>
+			<span class="side-ico">🗂️</span><span class="flex-1 whitespace-nowrap">Sessions</span>
+		</button>
 
-			<SidebarItem
-				label="Docs"
-				{spanClass}
-				style="padding-right: 40px"
-				on:click={() => { window.open('https://github.com/AlexZ005/theprototype.app/wiki', '_blank') } }
-			>
-				<svelte:fragment slot="icon">📖</svelte:fragment>
-			</SidebarItem>
-		</SidebarGroup>
-	</SidebarWrapper>
-</Sidebar>
-</Drawer>
+		<div class="side-div"></div>
 
-
-</div>
-</div>
+		<!-- App -->
+		<button class="side-row" onclick={() => settingsOpen.set(!$settingsOpen)}>
+			<span class="side-ico">⚙️</span><span class="flex-1 whitespace-nowrap">Settings</span>
+		</button>
+		<button class="side-row" onclick={() => window.open('https://github.com/AlexZ005/theprototype.app/wiki', '_blank')}>
+			<span class="side-ico">📖</span><span class="flex-1 whitespace-nowrap">Docs</span>
+		</button>
+	</nav>
 {/if}
 
-
 <style>
-	:global(.switchMenu) {
-		display: flex;
-	}
 	.burger {
 		background-color: var(--color-form);
+	}
+	/* float above the bottom dock (z-bottom:35) instead of being covered */
+	.app-sidebar {
+		top: 64px;
+		left: 8px;
+		z-index: var(--z-hud);
+		/* size to the widest row so wider-font themes (e.g. 8-bit) never overflow
+		   the panel and overlap the scene; clamped so it stays compact */
+		width: max-content;
+		min-width: 12.5rem;
+		max-width: 17rem;
+	}
+	.side-row {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		gap: 0.5rem;
+		border-radius: 0.375rem;
+		padding: 0.4rem 0.5rem;
+		text-align: left;
+		font-size: 0.875rem;
+	}
+	.side-row:hover {
+		background-color: rgb(0 0 0 / 0.06);
+	}
+	:global(.dark) .side-row:hover {
+		background-color: rgb(255 255 255 / 0.08);
+	}
+	.side-ico {
+		width: 1.25rem;
+		flex-shrink: 0;
+		text-align: center;
+	}
+	.side-div {
+		margin: 0.35rem 0.25rem;
+		border-top: 1px solid rgb(0 0 0 / 0.1);
+	}
+	:global(.dark) .side-div {
+		border-top-color: rgb(255 255 255 / 0.1);
+	}
+	.side-seg {
+		flex: 1;
+		border-radius: 0.25rem;
+		padding: 0.1rem 0.4rem;
+		font-size: 0.625rem;
+		font-weight: 600;
+		background-color: rgb(0 0 0 / 0.06);
+		color: rgb(75 85 99);
+	}
+	:global(.dark) .side-seg {
+		background-color: rgb(255 255 255 / 0.08);
+		color: rgb(209 213 219);
+	}
+	.side-seg.on {
+		background-color: var(--color-primary-600, #2563eb);
+		color: #fff;
 	}
 </style>

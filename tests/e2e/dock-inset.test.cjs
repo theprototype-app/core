@@ -20,17 +20,21 @@ h.run(async () => {
 	const flowH = (await A.page.locator('#flow-list').boundingBox()).height;
 	h.check(Math.abs((await inset(A.page)) - flowH) < 2, `inset follows the dock height (${flowH})`);
 
+	// 203: the sidebar now FLOATS ON TOP of the dock (z-hud) instead of ending
+	// above it — it's a compact panel that is never covered by the dock
 	await A.page.locator('#logo-menu').click();
 	await A.page.waitForTimeout(600);
 	const layout = await A.page.evaluate(() => {
-		const sidebar = document.querySelector('#sidebar70')?.getBoundingClientRect();
-		const dock = document.querySelector('#flow-list')?.getBoundingClientRect();
-		return { sidebarBottom: sidebar?.bottom ?? 0, dockTop: dock?.top ?? 0 };
+		const sb = document.querySelector('#sidebar70');
+		const dock = document.querySelector('#flow-list');
+		return {
+			present: !!sb,
+			sbZ: sb ? parseInt(getComputedStyle(sb).zIndex || '0') : 0,
+			dockZ: dock ? parseInt(getComputedStyle(dock).zIndex || '0') : 0
+		};
 	});
-	h.check(
-		layout.sidebarBottom <= layout.dockTop + 2,
-		`sidebar ends above the dock (${Math.round(layout.sidebarBottom)} <= ${Math.round(layout.dockTop)})`
-	);
+	h.check(layout.present, 'the sidebar renders');
+	h.check(layout.sbZ >= 40 && layout.sbZ > layout.dockZ, `sidebar floats on top of the dock (z ${layout.sbZ} > ${layout.dockZ})`);
 
 	// resizing the dock updates the inset live
 	const hot = await A.page.locator('#flow-list .resize-cue').first().boundingBox();

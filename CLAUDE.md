@@ -18,9 +18,14 @@ loadable play content. Everything a user does must be visible to connected peers
 - `src/lib/commandsHandler.svelte.js` — receive-side scene appliers + `sendObjects`
   (GLTF full sync; animated imports detour through `sendAnimatedImport` raw bytes).
 - Domain modules in `src/lib/`: `objectActions`, `geometries.svelte.js`,
-  `materialsHandler`, `meshEdit`, `history` (kind registry: create/delete/group/material/
-  props/transformSet/verts/animimport/geometry; recording auto-muted while applying; 5 MB
-  snapshot cap), `snapping`, `shortcuts` (registry = bindings AND Settings list),
+  `materialsHandler`, `meshEdit` (+VR handle drag; `tickMeshEdit` re-poses the WORLD-space
+  handles when the object moves — scene-root handles don't follow for free), `faceEdit`
+  (topology core: coplanar+adjacent tris = logical faces; extrude/inset/move/delete with
+  OUTWARD-wound stitching; `meshgeo` full-geometry snapshots; VR rigid face-grab + live
+  extrude adjust; 300-tri VR cap; desktop UI = MeshEditPopup), `history` (kind registry:
+  create/delete/group/material/props/transformSet/verts/animimport/geometry/meshgeo;
+  recording auto-muted while applying; 5 MB snapshot cap), `snapping`, `shortcuts`
+  (registry = bindings AND Settings list),
   `flowRuntime` (per-frame tick, baseState rebase, suspend/resume for gizmo drags,
   `parkAnimatedAtBase` for serializers, module effects, script + sound nodes),
   `soundRuntime` (sound-node panner chains, loop phase = synced clock), `scriptRuntime`
@@ -34,19 +39,33 @@ loadable play content. Everything a user does must be visible to connected peers
   `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
   `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
   (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
-  world pan, rigid grip grab, haptics, menu/panel raycasts) + `vrRadialMenu` (sector
-  math, entry registry, controller-anchored pose), `dungeonPlay` (raster collision/
-  spawns from the dungeon module's userData.play contract), `geometryEdit` +
-  `geometryParams`, `lightParams` (+local shadow-quality caps), `themes` (data-theme
-  token blocks, local-only), `windowTabs` + `windowFocus` + `docking` + `dragWindow` +
-  `searchMenuUx` (floating-window system), `autosave` + `idb`, `annotationsHandler`,
-  `sessions`, `measure`, `cameraBookmarks`, `editorNavigation`, `lightHelpers`.
+  world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
+  dispatcher — namespaces panel:/props:/prefabs:/chat:/kbd:/face:) + `vrRadialMenu`
+  (sector math, entry registry, ring nav STACK, controller-anchored pose) +
+  `vrWindowPoses` (grip-hold window grab: anchor-relative persisted offsets; every VR
+  follower panel poses through `applyWindowPose(group, id, anchor)`) + `vrPalette`
+  (sRGB hue/sat disc math) + `vrKeyboard` (native key grid, one-shot shift buffer,
+  `openVRKeyboard({initial, onCommit})` targets — reused by rename + chat),
+  `dungeonPlay` (raster collision/spawns from the dungeon module's userData.play
+  contract), `geometryEdit` + `geometryParams`, `lightParams` (+local shadow-quality
+  caps), `cameraClip` (LOCAL near/far prefs; far pairs with orbit maxDistance so
+  zooming out can't pass the far plane) + `sceneBounds` (radius sweep feeding it),
+  `sceneAssets` (derived Scene manifest: audio/config/textures in use), `avatarModel`
+  (avatar defaults, photo-card rule, per-shape hat anchors), `themes` (data-theme
+  token blocks, local-only), `windowTabs` (+`closeGroup` = tab ✕ closes ALL members) +
+  `windowFocus` + `docking` + `dragWindow` + `searchMenuUx` (floating-window system),
+  `fileWindows` (floating text/image editor windows), `autosave` + `idb`,
+  `annotationsHandler`, `sessions` (+ .zip export/import bundling scene assets via
+  fflate), `measure`, `cameraBookmarks`, `editorNavigation`, `lightHelpers`.
 - `src/modules/` — core modules (hello, button, dungeon, piano, pong) + `index.js`
   `coreModules` list; manager enables/disables (live enable, reload to disable).
 - UI: `components/menu/*` (drawers/modals; visibility via stores + `hidePanels/
   restorePanels`), `components/editors/*` (flow editor + CodeMirror panels),
-  `components/play/*` (player, avatars, VR), scene-overlay components
-  (PingMarkers/PathWaypoints/LockHighlights), shared `ContextMenu.svelte`.
+  `components/play/*` (player, avatars — photo = billboard card; the VR follower
+  panels: Menu/ObjectsPanel/PropertiesPanel/ColorPalette/PrefabsPanel/Keyboard/
+  ChatPanel/Stats — named `vr<x>-*` control meshes, all grip-grabbable),
+  scene-overlay components (PingMarkers/PathWaypoints/LockHighlights), shared
+  `ContextMenu.svelte` (NEVER scrolls; flips via left/right/top/bottom — no transform).
 - `tests/e2e/` — committed Playwright suites (`npm run e2e`, subset by name);
   `.cjs` because the package is `"type": "module"`.
 - `docs/sdk/` — SDK docs (kept **uncommitted**, like docs/plan). `MODULES.md` committed.
@@ -68,7 +87,11 @@ loadable play content. Everything a user does must be visible to connected peers
    state instead. Scene-root groups need `registerInteractiveGroup` to be clickable.
 6. Content that can't round-trip (skinned rigs) replicates as its **original file
    bytes** (`objectfile`), not through the per-node exporter (GLTFExporter is lossy and
-   `sendObject` splits children, destroying rigs).
+   `sendObject` splits children, destroying rigs). Topology edits snapshot the FULL
+   geometry (`meshgeo` positions array, size-capped) — receivers swap it wholesale, and
+   the applier must REBUILD any live edit-session caches (applyMeshGeo re-derives face
+   groups; a stale cache after undo/remote swap bit us). Live gestures stream throttled
+   previews (~5/s) and commit ONE final snapshot + undo entry.
 7. Singleton shared state (environment) syncs latest-wins via a `changedAt` stamp;
    symmetric pulls need a deterministic direction (nodesync: lower count pulls,
    peer-id tiebreak) or two drifted peers swap forever.
@@ -116,7 +139,17 @@ loadable play content. Everything a user does must be visible to connected peers
 - `npm i` needs `--legacy-peer-deps` (three vs postprocessing peer conflict).
 - PowerShell mangles emoji AND em-dashes when rewriting files, and inline `node -e`
   quoting breaks — write a scratch `.cjs` and run it with node for any file rewrite
-  containing non-ASCII. Commit messages: no embedded double quotes in here-strings.
+  containing non-ASCII. Commit messages: **ASCII only** — a `▸`/em-dash inside a
+  here-string can split it into a bogus git pathspec; no embedded double quotes either.
+- CSS `transform` makes an element the containing block for `position: fixed`
+  descendants — flipping the context menu with a transform mis-placed its fixed
+  submenus and grew scrollbars. Menus/popovers that host fixed children flip with
+  left/right/top/bottom only; no context menu scrolls (node-search results is the one
+  sanctioned scroll box).
+- THREE color management: `setHSL()` works in the LINEAR working space — pass
+  `THREE.SRGBColorSpace` or lightness 0.5 hex-round-trips to `#bcbcbc`. Canvas
+  ImageData palettes: write bytes straight from the sRGB hex (round-tripping through
+  `Color` re-linearizes and darkens).
 - Reference-space convention in vrControls: `getOffsetReferenceSpace` offset =
   **-(viewer displacement)**; snap-turn/teleport/world-pan math builds on it.
 - Locks: `lockedObjects` holds REMOTE locks only — "we hold X" = X is our selection;
@@ -156,12 +189,15 @@ Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:51
 - Roadmap ritual: user drops notes → ask 3-4 targeted AskUserQuestion forks (offer a
   recommended option — they usually take it) → write plan files → present the batch
   table (sizes S/M/L/XL, riskiest last) → they pick what executes.
-- Design work: screenshot-driven; **keep the current designs of Users.svelte,
-  Toasts.svelte, Connect.svelte and Controls.svelte**.
+- Design work: screenshot-driven; **keep the current designs of Toasts.svelte,
+  Connect.svelte and Controls.svelte** (Users.svelte was redesigned into the peers
+  popover on explicit request, phase 130).
 - VR phases: verify math/state headlessly, state clearly that on-device feel is the
   user's manual check.
-- Batches 1-12 shipped (phases 1-54 minus skips); current roadmap = batches 13-18
-  (design overhaul, environment manager, restored 13/25/50/55/56/57/58, VR world grab).
+- Status: batches 1-40 + 58 shipped (2026-07-12). Only pending roadmap work =
+  **batch 41 flow nodes** (plans 133/134 in docs/plan/: typed input sockets across the
+  flow runtime + 17 deterministic node types — recon notes in 00-overview.md); older
+  skips live in docs/plan/pending/.
 
 ## Module SDK (implemented — extend, don't fork)
 

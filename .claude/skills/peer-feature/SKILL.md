@@ -61,6 +61,28 @@ Throttle continuous streams (~10–20/s) with a final unthrottled send on gestur
 (`move`, `verts`, `flowcursor`, `drawlive` are references); temp visuals for other
 peers get stale-expiry cleanup (`drawlive` 5s, ping 4s).
 
+**Geometry/topology changes** can't ride a per-vertex channel — snapshot the FULL
+geometry (`meshgeo`: uuid + positions array, size-capped ~45k floats, `faceEdit.js`).
+Receivers swap the geometry wholesale, the history kind replays the same snapshot, and
+the receive applier must REBUILD any live edit-session caches (applyMeshGeo re-derives
+its face groups — a stale cache after undo/remote swap corrupted gestures once). Live
+reshape gestures stream throttled previews (~5/s) and commit ONE snapshot + undo entry
+on release.
+
+## Adding a VR panel (the follower-window pattern)
+
+Copy VRPropertiesPanel/VRChatPanel: (a) a Svelte component with named control meshes
+`vr<x>-*` that publishes its THREE group to a `vr<X>Group` writable and poses through
+`applyWindowPose(group, '<id>', anchor)` (menuPoseFromController + optional LIFT) so
+the 111 grip-grab + persisted offsets apply; (b) a `raycast<X>(index)` in vrControls
+returning `'<x>:action'`; (c) a `'<x>:'` namespace branch in `executeVRMenuAction`;
+(d) mutual exclusion with the sibling menu-hand panels (each opener closes the others,
+the B/Y menu-open handler closes yours); (e) add `!get(vr<X>Open)` to the
+teleport/snap-turn modal gate + a hover/stick block; (f) register the window id in
+`windowGroupFor`/`windowHitAt`; (g) route the trigger in Scene.svelte's `onXRSelect`.
+Text input goes through `openVRKeyboard({title, initial, onCommit})` — the keyboard is
+modal on top of every panel.
+
 ## Modules (SDK is implemented — extend it, don't fork)
 
 `src/modules/<id>/module.js` default-exports `{id, name, version, description,

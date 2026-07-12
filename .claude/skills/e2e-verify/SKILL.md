@@ -11,7 +11,7 @@ description: Verify theprototype.app changes end-to-end with Playwright — the 
 Run with the dev server up (`npm run dev`, https on 5173):
 
 ```
-npm run e2e                      # all suites, sequential (~25 min)
+npm run e2e                      # all suites (~80), sequential, ~25-30 min
 npm run e2e -- ping drawing      # subset by name (normal during development)
 ```
 
@@ -32,9 +32,10 @@ The init script (helpers does it) sets `localStorage.debugStores='true'` +
 spread + modules: `meshEdit, vrControls, autosave, voiceChat, annotationsHandler,
 flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK,
 drawMode, pathCapture, lockControl, prefabs, physics, userModules, environment,
-animatedImports, fileHandler, sceneBounds, ping, sessions, geometryEdit, lightParams,
-themes, vrRadialMenu, explorer, bottomDock, explorerDrop, assetShare, soundRuntime,
-dungeonPlay, THREE, GLTFExporterModule`.
+animatedImports, fileHandler, sceneBounds, cameraClip, ping, sessions, geometryEdit,
+lightParams, themes, vrRadialMenu, vrPalette, vrWindowPoses, vrKeyboard, faceEdit,
+avatarModel, explorer, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay,
+sceneAssets, THREE, GLTFExporterModule`.
 
 **Never dynamic-import `/src/lib/x.js` from page code to reach a singleton** — once
 vite HMR-timestamps the app's copy you get a SECOND module instance (empty stores,
@@ -103,6 +104,25 @@ Late joiners: connect a third context AFTER mutations, assert handshake state ar
   PNGs but `createImageBitmap` does not).
 - Audio suites work headless (launch args allow autoplay); `soundEntries()` exposes the
   live chains — `playing` is source-state, no audible check possible.
+- After a reload, NEVER `waitForSelector('canvas')` — it matches the HIDDEN
+  `#dungeon-minimap` canvas and times out. Wait on the hook instead:
+  `waitForFunction(() => !!window.__stores?.<someLib>, { timeout: 20000 })`.
+- Custom-chrome buttons (mesh popup mode switch, peers trigger…) can fail Playwright's
+  actionability checks under overlapping fixed layers — click in page context:
+  `page.evaluate(() => document.querySelector('#x').click())`.
+- "Did it broadcast?" asserts don't need a second peer (the public cloud is the
+  slowest, flakiest layer): swap the peers store with a capture stub —
+  `peers.set({ ...original, send: (m) => captured.push(m) })` — and RESTORE the
+  original after. Never `peers.set(null)`: Player.svelte reads `$peers.peer` and
+  throws. Reserve real two-peer runs for receive-path/handshake coverage.
+- `objectActions.selectObject(uuid)` takes a **UUID** — passing the object no-ops
+  silently and the previous selection stays.
+- VR panel components early-return their pose task when `!renderer.xr.isPresenting`,
+  so panel groups sit at the origin headlessly — assert STRUCTURE (named `vr<x>-*`
+  meshes via a globalScene traverse) and drive actions through
+  `vrControls.executeVRMenuAction(...)`, not through controller rays.
+- svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
+  baseline 2026-07-12 = 526 errors / 84 warnings — new files must stay clean.
 
 ## Definition of done
 

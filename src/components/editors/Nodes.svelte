@@ -498,7 +498,12 @@
 			on:paneclick={() => (menu = null)}
 		>
 			{#if bgPattern !== 'none'}
-				<Background bgColor="transparent" variant={bgVariant} />
+				<!-- 180: {#key} forces a remount so a dots<->lines switch applies at
+				     once (xyflow ignores a live variant change); softer low-alpha
+				     colour so the grid stops reading like a high-contrast notebook -->
+				{#key bgPattern}
+					<Background bgColor="transparent" variant={bgVariant} lineWidth={0.6} patternColor="rgba(128,128,128,0.18)" />
+				{/key}
 			{/if}
 			<Controls showLock={false} />
 			{#if showMinimap}
@@ -546,6 +551,7 @@
 						onchange={(v) => setEdgeStyle(v)} /></label>
 				<label class="flex flex-col gap-1">Background
 					<ThemedSelect
+						id="flow-bg-pattern"
 						items={[{ value: 'dots', name: 'Dots' }, { value: 'lines', name: 'Lines' }, { value: 'none', name: 'None' }]}
 						value={bgPattern}
 						onchange={(v) => { bgPattern = v; LS?.setItem('flowBg', v); }} /></label>

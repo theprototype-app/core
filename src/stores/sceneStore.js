@@ -97,6 +97,9 @@ export const vrEditMenuOpen = writable(false);
 /** @type {import('svelte/store').Writable<any>} */
 export const vrStretchObject = writable(null);
 export const vrStretchAxis = writable(0);
+// 193: live [w,h,d] stretch factors, so the Edit>Stretch sliders show values
+/** @type {import('svelte/store').Writable<number[]>} */
+export const vrStretchFactors = writable([1, 1, 1]);
 // VR Snap side-menu (156), opened from Edit ▸ Snap (toggle)
 export const vrSnapMenuOpen = writable(false);
 // VR Settings panel (187), opened from System ▸ Settings

@@ -4,7 +4,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core'
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
-	import { vrEditMenuOpen, vrMenuHand, vrStretchObject, vrStretchAxis } from '../../stores/sceneStore'
+	import { vrEditMenuOpen, vrMenuHand, vrStretchObject, vrStretchFactors } from '../../stores/sceneStore'
 	import { vrHovered, vrEditGroup, vrFaceCreateMode } from '$lib/vrControls'
 	import { editingObject, vertexSelectionSize } from '$lib/meshEdit'
 	import { faceEditObject, faceEditOp } from '$lib/faceEdit'
@@ -51,10 +51,6 @@
 				{ action: 'face:move', label: 'Move', active: op === 'move' },
 				{ action: 'face:delete', label: 'Delete', active: op === 'delete', danger: true }
 			)
-		} else if (mode === 'stretch') {
-			;['Width', 'Height', 'Depth'].forEach((label, axis) =>
-				list.push({ action: `stretch:axis:${axis}`, label, active: $vrStretchAxis === axis })
-			)
 		} else if (mode === 'vertices') {
 			// 183: create a face from 3-4 trigger-tapped vertices
 			const n = $vertexSelectionSize
@@ -64,7 +60,10 @@
 		}
 		return list
 	})
-	let panelH = $derived(0.024 + TAB_H + 0.008 + toolRows.length * ROW_H + 0.02)
+	// stretch shows 3 sliders in place of tool rows (193)
+	let bodyRows = $derived(mode === 'stretch' ? 3 : toolRows.length)
+	let panelH = $derived(0.024 + TAB_H + 0.008 + bodyRows * ROW_H + 0.02)
+	const AXES = ['W', 'H', 'D']
 
 	const controllerPosition = new THREE.Vector3()
 	const controllerQuaternion = new THREE.Quaternion()
@@ -158,5 +157,28 @@
 				position={[0, toolY(i), 0.002]}
 			/>
 		{/each}
+
+		<!-- 193: stretch = three W/H/D infinite sliders (grab a handle + move the
+		     controller horizontally to scale that axis live) -->
+		{#if mode === 'stretch'}
+			{#each AXES as ax, i (ax)}
+				<T.Mesh position={[0.03, toolY(i), -0.001]}>
+					<T.PlaneGeometry args={[WIDTH - 0.06, 0.004]} />
+					<T.MeshBasicMaterial color="#2a2f38" side={THREE.DoubleSide} />
+				</T.Mesh>
+				<T.Mesh name={`vrstretch-${i}`} position={[0.03, toolY(i), 0]}>
+					<T.PlaneGeometry args={[0.05, ROW_H - 0.006]} />
+					<T.MeshBasicMaterial color="#2f81f7" transparent opacity={0.95} side={THREE.DoubleSide} />
+				</T.Mesh>
+				<Text
+					text={ax + ' ' + $vrStretchFactors[i].toFixed(2) + 'x'}
+					color="#e8ecf2"
+					fontSize={0.0075}
+					anchorX="left"
+					anchorY="middle"
+					position={[-WIDTH / 2, toolY(i), 0.002]}
+				/>
+			{/each}
+		{/if}
 	</T.Group>
 {/if}

@@ -20,7 +20,7 @@
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, executeVRMenuAction, resetWorldRig, onInputSourcesChange } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -579,8 +579,15 @@
 		};
 		// 182: hold-to-move a vertex — grab on trigger press, drop on release
 		// (the functions no-op unless in vertex mode with the hold setting on)
-		const onXRSelectStart = (event: any) => vrVertexGrabStart(xrControllers.indexOf(event.target));
-		const onXRSelectEnd = () => vrVertexGrabEnd();
+		const onXRSelectStart = (event: any) => {
+			const idx = xrControllers.indexOf(event.target);
+			vrVertexGrabStart(idx); // 182: hold to move a vertex (no-op unless vertex mode)
+			beginStretchSliderDrag(idx); // 193: grab a stretch slider (no-op unless stretch mode)
+		};
+		const onXRSelectEnd = () => {
+			vrVertexGrabEnd();
+			endStretchSliderDrag();
+		};
 		xrControllers.forEach((controller) => {
 			controller.addEventListener('select', onXRSelect);
 			controller.addEventListener('selectstart', onXRSelectStart);

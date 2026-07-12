@@ -28,6 +28,7 @@ import {
 	vrEditMenuOpen,
 	vrStretchObject,
 	vrStretchAxis,
+	vrStretchFactors,
 	vrSnapMenuOpen,
 	vrSnapMode,
 	vrWireframeSelection,
@@ -1333,6 +1334,7 @@ export function beginStretch(uuid) {
 	stretch = { uuid, base: trisToPositions(readTriangles(object.geometry)), factors: [1, 1, 1] };
 	vrStretchObject.set(uuid);
 	vrStretchAxis.set(0);
+	vrStretchFactors.set([1, 1, 1]);
 	return true;
 }
 
@@ -1341,6 +1343,7 @@ export function setStretch(axis, factor) {
 	if (!stretch) return;
 	stretch.factors[axis] = Math.min(Math.max(factor, 0.05), 20);
 	vrStretchAxis.set(axis);
+	vrStretchFactors.set([...stretch.factors]);
 	applyStretchPreview();
 }
 
@@ -1375,6 +1378,52 @@ export function cancelStretch() {
 /** Stretch session for tests (161) @returns {any} */
 export function stretchState() {
 	return stretch ? { uuid: stretch.uuid, factors: [...stretch.factors], axis: get(vrStretchAxis) } : null;
+}
+
+// ---- 193: per-axis infinite sliders in the Edit>Stretch menu ----
+/** @type {{axis:number, index:number, lastX:number}|null} */
+let stretchSliderDrag = null;
+
+/** current stretch factors [w,h,d] for the slider labels @returns {number[]} */
+export function stretchFactors() {
+	return stretch ? [...stretch.factors] : [1, 1, 1];
+}
+/** raycast the 3 W/H/D stretch slider handles in the edit menu -> axis 0/1/2 or -1
+ * @param {number} index */
+export function raycastStretchSlider(index) {
+	const panel = get(vrEditGroup);
+	if (!panel || !get(vrStretchObject)) return -1;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const control = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrstretch-'));
+	return control ? parseInt(control.object.name.slice('vrstretch-'.length)) : -1;
+}
+/** grab the hovered slider on trigger-down; true if a slider was grabbed @param {number} index */
+export function beginStretchSliderDrag(index) {
+	if (!stretch) return false;
+	const axis = raycastStretchSlider(index);
+	if (axis < 0) return false;
+	const x = renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()).x;
+	stretchSliderDrag = { axis, index, lastX: x };
+	hapticPulse(0.2, 20);
+	return true;
+}
+/** while held, horizontal controller motion scales the grabbed axis (infinite slider) */
+export function updateStretchSliderDrag() {
+	if (!stretchSliderDrag || !stretch) return;
+	const cx = renderer.xr.getController(stretchSliderDrag.index).getWorldPosition(new THREE.Vector3()).x;
+	const dx = cx - stretchSliderDrag.lastX;
+	if (Math.abs(dx) > 0.0004) {
+		const axis = stretchSliderDrag.axis;
+		setStretch(axis, stretch.factors[axis] * (1 + dx * 4));
+		stretchSliderDrag.lastX = cx;
+	}
+}
+export function endStretchSliderDrag() {
+	stretchSliderDrag = null;
+}
+/** the axis currently being slider-dragged, or -1 (193 test hook) */
+export function stretchSliderAxis() {
+	return stretchSliderDrag ? stretchSliderDrag.axis : -1;
 }
 
 /** @param {number} index */
@@ -2257,25 +2306,9 @@ export function updateVRControls() {
 	if (get(vrPrefabGhost))
 		updatePrefabGhost(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
 
-	// stretch mode — resize the active axis (161/186)
-	if (stretch && session) {
-		if (gripHeld[0] && gripHeld[1]) {
-			// 186: both grips + divergent thumbsticks (one up, one down) stretch the
-			// active axis; matching directions cancel (avoids the locomotion conflict)
-			const src = [...session.inputSources];
-			const li = src.findIndex((s) => s.handedness === 'left');
-			const ri = src.findIndex((s) => s.handedness === 'right');
-			const ly = li >= 0 ? src[li]?.gamepad?.axes?.[3] ?? 0 : 0;
-			const ry = ri >= 0 ? src[ri]?.gamepad?.axes?.[3] ?? 0 : 0;
-			const div = stretchDivergence(ly, ry);
-			if (Math.abs(div) > 0.2) nudgeStretch(div * 0.02);
-		} else {
-			// 161 fallback: the menu-hand stick resizes the active axis (up = grow)
-			const menuIdx = [...session.inputSources].findIndex((s) => s.handedness === get(vrMenuHand));
-			const y = menuIdx >= 0 ? [...session.inputSources][menuIdx]?.gamepad?.axes?.[3] ?? 0 : 0;
-			if (Math.abs(y) > 0.15) nudgeStretch(-y * 0.03);
-		}
-	}
+	// 193: stretch mode — drag a W/H/D slider handle (trigger held on the pointer),
+	// horizontal controller motion scales that axis live (an infinite slider)
+	if (stretch && session && stretchSliderDrag) updateStretchSliderDrag();
 
 	// a trigger drag left dangling by an exit (160) — drop it cleanly
 	if (vertexTriggerGrab && !get(editingObject)) vertexTriggerGrab = null;

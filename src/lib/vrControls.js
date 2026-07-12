@@ -1144,6 +1144,8 @@ function finishWindowAdjust() {
 
 /** @type {any} active VR vertex-handle drag: {index, offset} */
 let vertexGrab = null;
+/** @type {any} active TRIGGER vertex drag (160): click to grab, move, click to drop */
+let vertexTriggerGrab = null;
 /** @type {any} active VR face grab (122): {index, pos0, quat0, push, scale} */
 let faceGrabHand = null;
 
@@ -1169,9 +1171,28 @@ export function vrFaceTrigger() {
  * @param {number=} index
  */
 export function vrVertexTrigger(index) {
-	// intentionally a no-op for now: keep the vertex-edit session alive on any
-	// trigger; the grip still drags handles (113).
-	void index;
+	if (!get(editingObject)) return;
+	// second click drops the vertex being carried
+	if (vertexTriggerGrab) {
+		vrEndHandleDrag();
+		vertexTriggerGrab = null;
+		hapticPulse(0.3, 30);
+		return;
+	}
+	// first click: ray-pick a handle + start carrying it (rides the controller
+	// each frame until the next trigger). The grip drag (113) still works too.
+	const handle = vrRaycastHandle(controllerRay(index ?? 0));
+	if (handle < 0) return;
+	const handleWorld = vrBeginHandleDrag(handle);
+	if (!handleWorld) return;
+	const controllerPos = renderer.xr.getController(index ?? 0).getWorldPosition(new THREE.Vector3());
+	vertexTriggerGrab = { index: index ?? 0, offset: handleWorld.sub(controllerPos) };
+	hapticPulse(0.3, 30);
+}
+
+/** Is a trigger vertex-carry active? (160, for tests) */
+export function vertexTriggerActive() {
+	return !!vertexTriggerGrab;
 }
 
 /** @param {number} index */
@@ -1992,13 +2013,16 @@ export function updateVRControls() {
 	if (get(vrPrefabGhost))
 		updatePrefabGhost(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
 
-	// vertex handle drag (113): the gripped handle rides the controller
-	if (vertexGrab) {
+	// a trigger drag left dangling by an exit (160) — drop it cleanly
+	if (vertexTriggerGrab && !get(editingObject)) vertexTriggerGrab = null;
+	// vertex handle drag (113 grip / 160 trigger): the handle rides the controller
+	const vgrab = vertexGrab || vertexTriggerGrab;
+	if (vgrab) {
 		const controllerPos = renderer.xr
-			.getController(vertexGrab.index)
+			.getController(vgrab.index)
 			.getWorldPosition(new THREE.Vector3());
 		const step = get(snapEnabled) ? get(snapSettings).translate : 0;
-		vrDragHandleTo(controllerPos.add(vertexGrab.offset), step);
+		vrDragHandleTo(controllerPos.add(vgrab.offset), step);
 	} else if (get(editingObject)) {
 		// vertex hover (119): the pointer ray tints the handle under it
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');

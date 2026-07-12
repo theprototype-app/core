@@ -7,6 +7,7 @@ import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHa
 import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected } from '$lib/physics'
+import { dropPeerCursor } from '$lib/nodesHandler'
 import { environment } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
@@ -240,16 +241,25 @@ export function lockRestore(lockeditems) {
 
 export function handleDisconnected(peerId) {
     console.log(peerId + ' disconnected');
-    showToast(peerId + ' disconnected');
+    // Full per-peer teardown, idempotent so it's safe to run from both the
+    // conn-close path AND a relayed 'disconnected' message. Toast only while the
+    // peer is still known, so relayed duplicates don't stack toasts (172).
+    const known = users.some((/** @type {any} */ u) => u[0] === peerId);
+    if (known) showToast(peerId + ' disconnected');
     users = users.filter(u => u[0] !== peerId);
     userdata.set(users);
     userdata.update((value) => value);
+    // release every remote lock this peer held, keyed by peer id (the checkLocks
+    // uuid-based loop mis-handled this and could strand or wrongly drop locks)
+    locked = locked.filter((/** @type {any} */ l) => l[0] !== peerId);
+    lockedObjects.set(locked);
     // drop their VR hand markers
     peerHands.update((map) => {
         const next = { ...map };
         delete next[peerId];
         return next;
     });
+    dropPeerCursor(peerId);
     voicePeerDisconnected(peerId);
     physicsPeerDisconnected(peerId);
 }
@@ -284,7 +294,8 @@ export function checkLocks(data) {
 
         if(!peer.peer.connections[objectLock[0]]) {
             console.log('Connection ' + objectLock[0] + ' not found. Releasing...');
-            locked = locked.filter((lockedUuid) => lockedUuid[1] === objectLock[1]);
+            // release THIS gone peer's lock (was inverted: kept it, dropped others)
+            locked = locked.filter((lockedUuid) => lockedUuid[1] != objectLock[1]);
         } else if(peer.peer.connections[objectLock[0]].length <= 1) {
             console.log('Peer ' + objectLock[0] + ' is not connected anymore. Releasing...' + objectLock[1]);
             locked = locked.filter((lockedUuid) => lockedUuid[1] != objectLock[1]);

@@ -1,4 +1,5 @@
 import Peer from 'peerjs';
+import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
@@ -49,7 +50,12 @@ export class PeerConnection {
 	constructor(id, updateIdFn) {
 		this.updateIdFn = updateIdFn;
 
+		/** @type {Record<string, any>} outgoing DataConnections, keyed by peer id */
 		this.connections = {};
+		/** @type {Set<string>} peers whose conn actually opened — so a conn that
+		 * closes without ever opening (a failed connect) doesn't fire a spurious
+		 * 'disconnected' teardown; the error handler already messaged the user */
+		this.openedPeers = new Set();
 
 		const regex = /(\.io|\.app)$/i;
 		if (!regex.test(location.hostname)) {
@@ -65,6 +71,7 @@ export class PeerConnection {
 
 		this.peer.on('open', (id) => {
 			console.log(id);
+			this.reconnectAttempts = 0; // a fresh/re-established server link resets the backoff
 			if (this.updateIdFn) this.updateIdFn(id);
 			if (!window.location.hash.slice(1)) return;
 			let connect = window.location.hash.slice(1).toLocaleLowerCase()
@@ -85,18 +92,22 @@ export class PeerConnection {
 
 		this.peer.on('close', function() { console.log('server closed') });
 
-		// Surface signaling-server problems to the user
+		// Surface signaling-server problems to the user. Reconnect on a bounded
+		// exponential backoff instead of hammering reconnect() immediately (172).
 		this.reconnectAttempts = 0;
 		this.peer.on('disconnected', () => {
 			console.log('server disconnected');
 			if (this.peer.destroyed) return;
-			if (this.reconnectAttempts < 3) {
-				this.reconnectAttempts++;
-				showToast('Lost connection to the peer server, reconnecting... (' + this.reconnectAttempts + '/3)');
-				this.peer.reconnect();
-			} else {
+			this.reconnectAttempts++;
+			const delay = backoffDelay(this.reconnectAttempts, { base: 800, max: 5 });
+			if (delay === null) {
 				showToast('Could not reach the peer server. Please reload the page.');
+				return;
 			}
+			showToast('Lost connection to the peer server, reconnecting... (attempt ' + this.reconnectAttempts + ')');
+			setTimeout(() => {
+				if (!this.peer.destroyed && this.peer.disconnected) this.peer.reconnect();
+			}, delay);
 		});
 		this.peer.on('error', (err) => {
 			console.log('peer error: ' + err.type, err);
@@ -330,20 +341,11 @@ export class PeerConnection {
             const conn = this.peer.connect(peerId);
             this.connections[peerId] = conn;
 
-			conn.on('close', () => {
-				console.log("close");
-				// console.log(data);
-
-				checkLocks()
-			});
-			conn.on('disconnected', () => {
-				console.log("disconnected");
-				// console.log(data);
-				checkLocks()
-			});
+			conn.on('close', () => this.onConnClose(peerId, conn));
 
             conn.on('open', () => {
 				console.log('Connection to ' + peerId + ' established');
+				this.openedPeers.add(peerId);
 				//Trigger reactivity for UI list of objects
 				peers.update((value) => value);
 				this.sendHandshake(conn, peerId, getobjects, id);
@@ -355,8 +357,10 @@ export class PeerConnection {
 					console.log('Restoring connection: ' + peerId);
 					const conn = this.peer.connect(peerId);
            	 		this.connections[peerId] = conn;
+					conn.on('close', () => this.onConnClose(peerId, conn));
             		conn.on('open', () => {
 						console.log('Connection to ' + peerId + ' restored');
+						this.openedPeers.add(peerId);
 						peers.update((value) => value);
 						this.sendHandshake(conn, peerId, getobjects, id);
 					});
@@ -367,23 +371,63 @@ export class PeerConnection {
 		}
     }
 
+	// A peer's outgoing connection dropped. Self-heal locally: drop the dead conn
+	// and run the FULL per-peer teardown right here, instead of relying on a
+	// relayed 'disconnected' — that relay never reaches the last peer in a 2-peer
+	// session, so their voice nodes / VR hands / flow cursor / env presets used to
+	// leak. handleDisconnected is idempotent and prunes userdata before checkLocks'
+	// 500ms relay fires, so no duplicate toast/relay. checkLocks still releases the
+	// peer's object locks. (172)
+	/** @param {string} peerId @param {any} conn */
+	onConnClose(peerId, conn) {
+		// ignore a close from a stale conn we've already replaced or removed
+		if (this.connections[peerId] !== conn) return;
+		console.log('connection to ' + peerId + ' closed');
+		delete this.connections[peerId];
+		peers.update((value) => value);
+		// a conn that never opened was a failed connect, not a live peer dropping
+		// (peer.on('error') already told the user) — just re-check locks and bail
+		if (!this.openedPeers.has(peerId)) {
+			checkLocks();
+			return;
+		}
+		this.openedPeers.delete(peerId);
+		handleDisconnected(peerId);
+		dropPeerEnvPresets(peerId);
+		checkLocks();
+	}
+
+	// Broadcast to every OPEN outgoing connection. Guards conn.open (peerjs
+	// silently drops pre-open sends) and isolates each send so one dead/half-open
+	// conn can't throw mid-loop and starve the rest of the mesh (172).
+	/** @param {any} payload */
+	broadcast(payload) {
+		Object.keys(this.connections).forEach(peerId => {
+			const conn = this.connections[peerId];
+			if (!conn || !conn.open) return;
+			try {
+				conn.send(payload);
+			} catch (err) {
+				console.log('send to ' + peerId + ' failed', err);
+			}
+		});
+	}
+
+	/** @param {string} message @param {string} [type] */
 	sendMessage(message, type) {
 		if(message.startsWith('/')) {
 			sceneCommand(message);
 		} else {
 			if(type === undefined) type = 'sent';
 			addMessage({message: message, type: type, sender: this.peer.id});
-			Object.keys(this.connections).forEach(element => {
-				this.connections[element].send({message: message, type: type, sender: this.peer.id});
-			});
+			this.broadcast({message: message, type: type, sender: this.peer.id});
 		}
 	}
 
+	/** @param {any} data */
 	send(data) {
 		if(data.type == 'create')
 		this.sendMessage('created a ' + data.command.split(' ')[1], 'info');
-		Object.keys(this.connections).forEach(element => {
-			this.connections[element].send(data);
-		});
+		this.broadcast(data);
 	}
 }

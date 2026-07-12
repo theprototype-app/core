@@ -75,6 +75,19 @@ export function applyFlowCursor(data) {
 	});
 }
 
+// Drop a peer's flow cursor on disconnect. The TTL sweep in PeerCursors only
+// runs while the flow pane is mounted, so a dropped peer's cursor otherwise
+// leaks in the store; clear it as part of the disconnect teardown (172).
+/** @param {string} peerId */
+export function dropPeerCursor(peerId) {
+	flowCursors.update((map) => {
+		if (!(peerId in map)) return map;
+		const next = { ...map };
+		delete next[peerId];
+		return next;
+	});
+}
+
 // Merge a full snapshot received from a peer. Nodes we already have are
 // updated in place (position + data) so drift heals when a resync arrives.
 /** @param {any[]} nodes @param {any[]} edges */

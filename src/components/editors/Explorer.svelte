@@ -201,12 +201,19 @@
 		}
 		editing = { mode: 'create', parentId, value: 'New folder' };
 	}
-	function startRename(folder: any) {
-		editing = { mode: 'rename', folderId: folder.id, parentId: folder.parentId ?? null, value: folder.name };
+	// inGrid keeps the tree + thumbnail inputs from BOTH mounting for a root folder
+	// (it shows in both), whose duplicate focus/blur would tear the edit down instantly
+	function startRename(folder: any, inGrid = false) {
+		editing = { mode: 'rename', folderId: folder.id, parentId: folder.parentId ?? null, value: folder.name, inGrid };
+	}
+	// 170: inline item rename (replaces the browser prompt), works in either view
+	function startRenameItem(item: any) {
+		editing = { mode: 'rename-item', itemId: item.id, value: item.name };
 	}
 	function commitEdit() {
 		if (!editing || !isValidName(editing.value)) return;
 		if (editing.mode === 'create') createFolder(editing.value, editing.parentId);
+		else if (editing.mode === 'rename-item') renameItem(editing.itemId, editing.value);
 		else renameFolder(editing.folderId, editing.value);
 		editing = null;
 	}
@@ -260,14 +267,15 @@
 		dropFolder = target;
 	}
 
-	function folderMenu(e: MouseEvent, folder: any) {
+	function folderMenu(e: MouseEvent, folder: any, inTree = true) {
 		e.preventDefault();
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
 			items: [
-				{ label: 'New subfolder', action: () => startCreate(folder.id) },
-				{ label: 'Rename', action: () => startRename(folder) },
+				// 170: "New subfolder" only makes sense in the tree; the thumbnail grid drops it
+				...(inTree ? [{ label: 'New subfolder', action: () => startCreate(folder.id) }] : []),
+				{ label: 'Rename', action: () => startRename(folder, !inTree) },
 				{ label: 'Delete folder', danger: true, action: () => confirmDeleteFolder(folder) }
 			]
 		};
@@ -295,10 +303,7 @@
 					: []),
 				{
 					label: 'Rename',
-					action: () => {
-						const name = prompt('Item name', item.name);
-						if (name) renameItem(item.id, name);
-					}
+					action: () => startRenameItem(item)
 				},
 				{ label: 'Delete', danger: true, action: () => deleteItem(item.id) }
 			]
@@ -418,6 +423,19 @@
 	</div>
 {/snippet}
 
+<!-- 170: inline rename input sized for a thumbnail card (folders + items) -->
+{#snippet cardEdit()}
+	<input
+		class="ui-input w-full py-0 text-center text-[10px] {isValidName(editing.value) ? '' : 'border-red-500'}"
+		value={editing.value}
+		use:focusSelect
+		oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
+		onkeydown={editKeydown}
+		onclick={(e) => e.stopPropagation()}
+		onblur={() => (editing = null)}
+	/>
+{/snippet}
+
 {#snippet content()}
 	<div class="flex h-full min-h-0">
 		<!-- folder tree (resizable, no wrap, h-scroll — 106.6) -->
@@ -475,7 +493,7 @@
 				{@render editRow(0)}
 			{/if}
 			{#each folderTree as row (row.folder.id)}
-				{#if editing?.mode === 'rename' && editing.folderId === row.folder.id}
+				{#if editing?.mode === 'rename' && !editing.inGrid && editing.folderId === row.folder.id}
 					{@render editRow(row.depth)}
 				{:else}
 					<div
@@ -553,14 +571,18 @@
 								ondragover={(e) => dragOverInto(e, folder.id)}
 								ondragleave={() => (dropFolder = null)}
 								ondrop={(e) => dropInto(e, folder.id)}
-								oncontextmenu={(e) => folderMenu(e, folder)}
+								oncontextmenu={(e) => folderMenu(e, folder, false)}
 								onclick={() => activeFolder.set(folder.id)}
 								onkeydown={(e) => e.key === 'Enter' && activeFolder.set(folder.id)}
 							>
 								<span class="flex h-14 w-14 items-center justify-center text-4xl">📁</span>
-								<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
-									{folder.name}
-								</span>
+								{#if editing?.mode === 'rename' && editing.inGrid && editing.folderId === folder.id}
+									{@render cardEdit()}
+								{:else}
+									<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
+										{folder.name}
+									</span>
+								{/if}
 							</div>
 						{/each}
 					{/if}
@@ -584,9 +606,13 @@
 									{KIND_ICONS[item.kind] ?? '📦'}
 								</span>
 							{/if}
-							<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
-								{item.name}
-							</span>
+							{#if editing?.mode === 'rename-item' && editing.itemId === item.id}
+								{@render cardEdit()}
+							{:else}
+								<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
+									{item.name}
+								</span>
+							{/if}
 						</div>
 					{/each}
 				</div>

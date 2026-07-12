@@ -261,6 +261,21 @@
 		};
 	};
 
+	// 167: clone a node (fresh uuid, offset, same data) — edges are NOT copied
+	function duplicateNode(id: string) {
+		const src = get(nodes).find((n: any) => n.id === id);
+		if (!src) return;
+		const copy = {
+			id: crypto.randomUUID(),
+			type: src.type,
+			position: { x: src.position.x + 30, y: src.position.y + 30 },
+			data: { ...src.data },
+			...(src.class ? { class: src.class } : {})
+		} as any;
+		nodes.update((ns: any[]) => [...ns, copy]);
+		peer?.send({ type: 'nodecreate', node: serializeNode(copy) });
+	}
+
 	const onNodeContextMenu = (event: CustomEvent<{ event: MouseEvent; node: Node }>) => {
 		event.detail.event.preventDefault();
 		const id = event.detail.node.id;
@@ -268,6 +283,7 @@
 			x: event.detail.event.clientX,
 			y: event.detail.event.clientY,
 			items: [
+				{ label: 'Duplicate', action: () => duplicateNode(id) },
 				{ label: 'Disconnect all', action: () => disconnectNode(id) },
 				{ label: 'Delete node', danger: true, action: () => deleteNode(id) }
 			]

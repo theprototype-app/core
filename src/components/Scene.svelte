@@ -20,7 +20,7 @@
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, executeVRMenuAction, resetWorldRig, onInputSourcesChange } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -255,6 +255,14 @@
 			$peers?.send({ type: 'vrhands', peerId: $peers.peer.id, left: null, right: null, active: false });
 		};
 		renderer.xr.addEventListener('sessionend', onSessionEnd);
+
+		// 188: rebind on hands<->controllers / reconnect — the controller slot can
+		// flip handedness, so reset per-slot input state + drop in-progress grabs
+		const onSourcesChange = () => onInputSourcesChange();
+		const onSessionStart = () => {
+			renderer.xr.getSession()?.addEventListener('inputsourceschange', onSourcesChange);
+		};
+		renderer.xr.addEventListener('sessionstart', onSessionStart);
 
 		const element = renderer.domElement;
 		let downPosition = null;
@@ -589,6 +597,8 @@
 				controller.removeEventListener('selectend', onXRSelectEnd);
 			});
 			renderer.xr.removeEventListener('sessionend', onSessionEnd);
+			renderer.xr.removeEventListener('sessionstart', onSessionStart);
+			renderer.xr.getSession()?.removeEventListener('inputsourceschange', onSourcesChange);
 		};
 	});
 

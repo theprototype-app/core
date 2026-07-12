@@ -571,6 +571,33 @@ function controllerIndexFor(handedness) {
 	return [...session.inputSources].findIndex((source) => source.handedness === handedness);
 }
 
+/** 188: WebXR re-issues inputsourceschange on hands<->controllers and on a
+ * controller reconnect (e.g. headset off/on); the controller SLOT<->handedness
+ * mapping can flip. All per-slot button state + in-progress grabs are keyed by
+ * slot index, so a survivor would drive the WRONG controller's ray. Reset the
+ * cached per-slot state and DROP any transient grab/gesture (edit/stretch MODES
+ * stay); the next frame re-binds cleanly from the live input sources. */
+export function onInputSourcesChange() {
+	previousButtons[0] = {};
+	previousButtons[1] = {};
+	emptyAirSqueeze[0] = false;
+	emptyAirSqueeze[1] = false;
+	gripHeld[0] = false;
+	gripHeld[1] = false;
+	// drop slot-index-bound transient gestures (a mid-gesture source swap)
+	if (vertexTriggerGrab) {
+		vrEndHandleDrag();
+		vertexTriggerGrab = null;
+	}
+	grab = null;
+	scaleGrab = null;
+	worldGrab = null;
+	worldPan = null;
+	windowGrab = null;
+	windowGrabPending = null;
+	vrGrabbedHand.set(null);
+}
+
 /** @param {number} index */
 function controllerRay(index) {
 	const controller = renderer.xr.getController(index);

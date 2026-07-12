@@ -14,6 +14,7 @@ import {
 	vrTeleportEnabled,
 	vrVertexHold,
 	vrSettingsPanelOpen,
+	vrDebugOverlay,
 	selectedObject,
 	isVRMode,
 	worldRig,
@@ -565,7 +566,6 @@ export function hapticPulse(intensity = 0.5, durationMs = 50) {
 	});
 }
 
-/** @param {'left'|'right'} handedness @returns {number} controller index or -1 */
 /** 194: resolve a controller slot by HANDEDNESS. three's getController(i) is a
  * persistent object; Scene stamps controller.userData.handedness from each
  * 'connected' event, so this survives a hands<->controllers reorder (the raw
@@ -580,6 +580,33 @@ export function controllerIndexFor(handedness) {
 	const session = renderer?.xr.getSession();
 	if (!session) return -1;
 	return [...session.inputSources].findIndex((source) => source.handedness === handedness);
+}
+
+/** 194-debug: live controller<->handedness mapping for the on-screen readout.
+ * Surfaces per-slot inputSource.handedness vs the stamped userData.handedness, the
+ * resolved menu/pointer indices, grip state, and the active grab's slot — so a
+ * mismatch (grip on one hand driving the other's action) is visible in-headset. */
+export function vrDebugSnapshot() {
+	const session = renderer?.xr.getSession();
+	const src = session ? [...session.inputSources] : [];
+	const slot = (/** @type {number} */ i) => ({
+		input: src[i]?.handedness ?? '-',
+		stamp: renderer?.xr.getController(i)?.userData?.handedness ?? '-'
+	});
+	const menuHand = /** @type {any} */ (get(vrMenuHand));
+	const grabIdx = grab?.index ?? scaleGrab?.index ?? worldPan?.index ?? windowGrab?.index ?? -1;
+	return {
+		slot0: slot(0),
+		slot1: slot(1),
+		menuHand,
+		menuIdx: controllerIndexFor(menuHand),
+		pointerIdx: controllerIndexFor(menuHand === 'right' ? 'left' : 'right'),
+		leftIdx: controllerIndexFor('left'),
+		rightIdx: controllerIndexFor('right'),
+		grip0: !!gripHeld[0],
+		grip1: !!gripHeld[1],
+		grabIdx
+	};
 }
 
 /** 188: WebXR re-issues inputsourceschange on hands<->controllers and on a
@@ -1901,6 +1928,9 @@ export function executeVRMenuAction(name) {
 		} else if (key === 'resetpanels') {
 			resetWindowPoses();
 			showToast('VR panel positions reset');
+		} else if (key === 'debug') {
+			vrDebugOverlay.update((v) => !v);
+			try { localStorage.setItem('vrDebugOverlay', String(get(vrDebugOverlay))); } catch {}
 		}
 		return;
 	}

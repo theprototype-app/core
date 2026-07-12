@@ -104,6 +104,10 @@ export const vrStretchFactors = writable([1, 1, 1]);
 export const vrSnapMenuOpen = writable(false);
 // VR Settings panel (187), opened from System ▸ Settings
 export const vrSettingsPanelOpen = writable(false);
+// 194-debug: on-screen head-locked controller<->handedness readout (toggle in VR Settings)
+export const vrDebugOverlay = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('vrDebugOverlay') !== 'false'
+);
 // VR snap MODE (156): 'off' | 'grid' | 'surface' | 'rotation'
 export const vrSnapMode = writable(
 	typeof localStorage !== 'undefined' ? localStorage.getItem('vrSnapMode') || 'off' : 'off'

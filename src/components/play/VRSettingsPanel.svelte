@@ -11,7 +11,8 @@
 		vrMirrorSnapTurn,
 		vrSnapAngle,
 		vrVertexHold,
-		vrPassthrough
+		vrPassthrough,
+		vrDebugOverlay
 	} from '../../stores/sceneStore'
 	import { vrHovered, vrSettingsGroup, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
@@ -40,6 +41,7 @@
 		{ action: 'settings:angle', label: 'Snap turn: ' + ($vrSnapAngle ? $vrSnapAngle + ' deg' : 'Off') },
 		{ action: 'settings:vertexhold', label: 'Hold to move vertex', toggle: true, active: $vrVertexHold },
 		{ action: 'settings:passthrough', label: 'Passthrough', toggle: true, active: $vrPassthrough },
+		{ action: 'settings:debug', label: 'Debug overlay', toggle: true, active: $vrDebugOverlay },
 		{ action: 'settings:resetpanels', label: 'Reset panel positions' },
 		{ action: 'settings:close', label: 'Close', danger: true }
 	])

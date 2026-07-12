@@ -104,6 +104,9 @@
 	// selected node's props. Right-side, collapses like the palette.
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
 	let propsOpen = LS?.getItem('flowPropsOpen') === 'true';
+	// 179: the properties panel auto-reflows to the side OPPOSITE the palette so
+	// their divider tabs never overlap (the palette-side toggle used to hide it)
+	$: propsSide = paletteSide === 'right' ? 'left' : 'right';
 	let edgeStyle = LS?.getItem('flowEdgeStyle') ?? 'bezier';
 	let showMinimap = LS?.getItem('flowMinimap') !== 'false';
 	let bgPattern = LS?.getItem('flowBg') ?? 'dots';
@@ -511,20 +514,20 @@
 		</SvelteFlow>
 		<PeerCursors {viewport} />
 	</div>
-	<!-- 166: flow PROPERTIES panel on the right (collapses like the palette) -->
-	<div class="relative z-10 w-0" style="order: 4">
+	<!-- 166/179: flow PROPERTIES panel, auto-reflowed opposite the palette -->
+	<div class="relative z-10 w-0" style="order: {propsSide === 'left' ? 0 : 4}">
 		<button
 			id="flow-props-toggle"
-			class="palette-tab palette-tab-mirrored absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-[10px] text-gray-200 hover:bg-gray-600"
-			style="right: -1px"
+			class="palette-tab {propsSide === 'left' ? '' : 'palette-tab-mirrored'} absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-xs text-gray-200 hover:bg-gray-600"
+			style="{propsSide === 'left' ? 'left' : 'right'}: -1px"
 			title={propsOpen ? 'Hide properties' : 'Show properties'}
 			on:click={() => { propsOpen = !propsOpen; LS?.setItem('flowPropsOpen', String(propsOpen)); }}
 		>
-			{propsOpen ? '▸' : '◂'}
+			⚙
 		</button>
 	</div>
 	{#if propsOpen}
-		<div id="flow-props" class="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-gray-800 p-2 text-xs text-gray-200" style="order: 5">
+		<div id="flow-props" class="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-gray-800 p-2 text-xs text-gray-200" style="order: {propsSide === 'left' ? -1 : 5}">
 			{#if selectedNode}
 				<p class="ui-section-label">Node</p>
 				<label class="flex flex-col gap-1">Name

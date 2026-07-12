@@ -50,9 +50,13 @@ export const vrMenuHand = writable(
 	typeof localStorage !== 'undefined' ? localStorage.getItem('vrMenuHand') || 'right' : 'right'
 );
 export const vrMenuOpen = writable(false);
-// snap-turn angle in degrees (15 / 30 / 45)
+// snap-turn angle in degrees (15 / 30 / 45, or 0 = off — 155)
 export const vrSnapAngle = writable(
 	typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('vrSnapAngle') || '45') : 45
+);
+// mirror snap-turn direction (155): left flick turns right and vice-versa
+export const vrMirrorSnapTurn = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('vrMirrorSnapTurn') === 'true'
 );
 // VR flying: left-stick movement follows the controller aim (pitch included)
 export const vrFlying = writable(

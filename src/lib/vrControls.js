@@ -10,6 +10,7 @@ import {
 	vrMenuOpen,
 	vrTransformMode,
 	vrSnapAngle,
+	vrMirrorSnapTurn,
 	selectedObject,
 	isVRMode,
 	worldRig,
@@ -472,6 +473,17 @@ function updateBlink() {
 }
 
 /** Thumbstick flick on the RIGHT hand rotates the rig in snaps around the viewer */
+/**
+ * Snap-turn rotation for a stick flick, in radians (155). deg 0 = Off -> no
+ * turn; mirror flips left/right. Pure for tests.
+ * @param {number} deg @param {number} x stick x @param {boolean} mirror
+ */
+export function snapTurnRadians(deg, x, mirror) {
+	if (!deg) return 0; // Off
+	const dir = (x > 0 ? -1 : 1) * (mirror ? -1 : 1);
+	return THREE.MathUtils.degToRad(deg) * dir;
+}
+
 function updateSnapTurn(session) {
 	if (teleportEngaged) return; // the stick is busy aiming a teleport
 	const source = [...session.inputSources].find((s) => s.handedness === 'right');
@@ -483,12 +495,13 @@ function updateSnapTurn(session) {
 	if (!snapArmed || Math.abs(x) < 0.7) return;
 	snapArmed = false;
 
+	const angle = snapTurnRadians(get(vrSnapAngle), x, get(vrMirrorSnapTurn));
+	if (!angle) return; // snap-turn off
 	const frame = renderer.xr.getFrame?.();
 	const space = renderer.xr.getReferenceSpace();
 	const pose = frame?.getViewerPose?.(space);
 	if (!pose || !space) return;
 	const p = pose.transform.position;
-	const angle = THREE.MathUtils.degToRad(get(vrSnapAngle)) * (x > 0 ? -1 : 1);
 	const s = Math.sin(angle);
 	const c = Math.cos(angle);
 	// rotate the reference space about the viewer position (turn in place)

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
-	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
+	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showToast } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
@@ -149,6 +149,7 @@
 					<p class={middlecoverName}>
 						<ThemedSelect
 							items={[
+								{ value: 0, name: 'Snap turn off' },
 								{ value: 15, name: 'Snap turn 15°' },
 								{ value: 30, name: 'Snap turn 30°' },
 								{ value: 45, name: 'Snap turn 45°' }
@@ -160,7 +161,19 @@
 							}}
 						/>
 					</p>
-					<p class={middlecoverDescription}>VR thumbstick flick rotation angle</p>
+					<p class={middlecoverDescription}>VR thumbstick flick rotation angle (Off disables snap turn)</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox
+							id="vr-mirror-snap"
+							checked={$vrMirrorSnapTurn}
+							on:change={(e: any) => {
+								$vrMirrorSnapTurn = e.target.checked;
+								localStorage.setItem('vrMirrorSnapTurn', String($vrMirrorSnapTurn));
+							}}>&nbsp;Mirror snap turn</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Flip the flick direction — left turns right and vice-versa</p>
 				</div>
 				<div class="flex">
 					<p class={bottomCoverName}>

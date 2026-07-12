@@ -234,6 +234,13 @@
 		$peers.send({ type: 'name', name: $selectedObject.name, uuid: $selectedObject.uuid });
 	}
 
+	/** Object-level property (renderOrder/frustumCulled): local apply + replicate (147) @param {string} parameter @param {any} value */
+	function setObjectParam(parameter, value) {
+		$selectedObject[parameter] = value;
+		selectedObject.update((v) => v);
+		sendParam(parameter);
+	}
+
 	// ---- move to group (shared by mesh and light targets) -------------------
 	let groups = $state([{ value: 'none', name: 'None' }]);
 	let rerenderSelectGroup = $state(false);
@@ -769,6 +776,29 @@
 				<p class="text-[10px] text-gray-500">Drag to scrub — Shift fine, Ctrl snap, click to type.</p>
 			</Section>
 
+			{#if !isLight}
+				<Section label="Object">
+					<div class="ui-row items-center gap-2">
+						<span class="w-24 shrink-0 text-xs text-gray-400">Render order</span>
+						<input
+							id="inspector-render-order"
+							type="number"
+							step="1"
+							class="ui-input w-20 text-right"
+							value={$selectedObject.renderOrder}
+							onchange={(/** @type {any} */ e) => setObjectParam('renderOrder', +e.currentTarget.value || 0)}
+						/>
+					</div>
+					<Checkbox
+						checked={$selectedObject.frustumCulled}
+						onchange={(/** @type {any} */ e) => setObjectParam('frustumCulled', e.target.checked)}
+					>
+						Frustum culled
+					</Checkbox>
+					<p class="text-[10px] text-gray-500">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
+				</Section>
+			{/if}
+
 			{#if geoParams && geoSpec}
 				<Section label="Geometry">
 					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">{geoParams.gtype}</p>
@@ -1089,8 +1119,12 @@
 					{#if material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Clearcoat" min={0} max={1} step={0.05} value={material.clearcoat}
 							onchange={(v) => setMaterialParam($selectedObject.uuid, 'clearcoat', v)} />
+						<SliderRow label="Clearcoat rough" min={0} max={1} step={0.05} value={material.clearcoatRoughness}
+							onchange={(v) => setMaterialParam($selectedObject.uuid, 'clearcoatRoughness', v)} />
 						<SliderRow label="Transmission" min={0} max={1} step={0.05} value={material.transmission}
 							onchange={(v) => setMaterialParam($selectedObject.uuid, 'transmission', v)} />
+						<SliderRow label="IOR" min={1} max={2.333} step={0.01} decimals={2} value={material.ior}
+							onchange={(v) => setMaterialParam($selectedObject.uuid, 'ior', v)} />
 					{/if}
 					{#if material.type === 'MeshPhongMaterial'}
 						<SliderRow label="Shininess" min={0} max={100} step={1} decimals={0} value={material.shininess}
@@ -1116,6 +1150,44 @@
 						>
 							Wireframe
 						</Checkbox>
+					{/if}
+					{#if 'flatShading' in material}
+						<Checkbox
+							checked={material.flatShading}
+							onchange={(/** @type {any} */ e) =>
+								setMaterialParam($selectedObject.uuid, 'flatShading', e.target.checked)}
+						>
+							Flat shading
+						</Checkbox>
+					{/if}
+					{#if typeof material.side !== 'undefined'}
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Side</span>
+							<ThemedSelect
+								class="flex-1"
+								items={[
+									{ value: 0, name: 'Front' },
+									{ value: 1, name: 'Back' },
+									{ value: 2, name: 'Double' }
+								]}
+								value={material.side}
+								onchange={(/** @type {any} */ v) => setMaterialParam($selectedObject.uuid, 'side', +v)}
+							/>
+						</div>
+					{/if}
+					{#if material.emissive}
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Emissive</span>
+							<input
+								type="color"
+								class="h-6 w-8 cursor-pointer rounded border border-gray-500 bg-transparent"
+								value={'#' + material.emissive.getHexString()}
+								oninput={(/** @type {any} */ e) =>
+									setMaterialParam($selectedObject.uuid, 'emissive', e.currentTarget.value)}
+							/>
+						</div>
+						<SliderRow label="Emissive int." min={0} max={4} step={0.05} value={material.emissiveIntensity}
+							onchange={(v) => setMaterialParam($selectedObject.uuid, 'emissiveIntensity', v)} />
 					{/if}
 
 					<p class="ui-section-label">Shadow</p>

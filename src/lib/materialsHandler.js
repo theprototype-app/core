@@ -23,7 +23,17 @@ const MATERIAL_TYPES = [
 ];
 
 // numeric params carried across a type switch when BOTH sides have them
-const SHARED_MATERIAL_PARAMS = ['opacity', 'roughness', 'metalness', 'shininess', 'clearcoat', 'transmission'];
+const SHARED_MATERIAL_PARAMS = [
+	'opacity',
+	'roughness',
+	'metalness',
+	'shininess',
+	'clearcoat',
+	'clearcoatRoughness',
+	'transmission',
+	'ior',
+	'emissiveIntensity'
+];
 
 /** @param {string} uuid */
 function objectOf(uuid) {
@@ -190,8 +200,14 @@ export function setMaterialParam(uuid, key, value, replicate = true) {
 	const object = objectOf(uuid);
 	const material = object?.material;
 	if (!material || Array.isArray(material) || !(key in material)) return;
-	if (replicate) recordMaterialChange(uuid, 'materialParam', key, material[key], value);
-	material[key] = value;
+	// Color-typed params (emissive, ...) travel as a hex string and are applied
+	// through .set() on both sides, so they replicate + undo like any other.
+	const current = material[key];
+	const isColor = !!(current && current.isColor);
+	const before = isColor ? '#' + current.getHexString() : current;
+	if (replicate) recordMaterialChange(uuid, 'materialParam', key, before, value);
+	if (isColor) material[key].set(value);
+	else material[key] = value;
 	material.needsUpdate = true;
 	objectsGroup.update((v) => v);
 	if (replicate)

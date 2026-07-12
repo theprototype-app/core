@@ -339,6 +339,12 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'receiveShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.receiveShadow = data.receiveShadow;
+    } else if (data.parameter == 'renderOrder') {
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) mesh.renderOrder = data.renderOrder;
+    } else if (data.parameter == 'frustumCulled') {
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) mesh.frustumCulled = data.frustumCulled;
     }
 }
 

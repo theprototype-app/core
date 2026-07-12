@@ -11,6 +11,7 @@ import {
 	vrTransformMode,
 	vrSnapAngle,
 	vrMirrorSnapTurn,
+	vrTeleportEnabled,
 	selectedObject,
 	isVRMode,
 	worldRig,
@@ -407,16 +408,33 @@ function executeTeleport(target) {
 	hapticPulse(0.4, 60);
 }
 
+/** Does a right-stick position arm the teleport arc? (up + more up than sideways). Pure for tests. @param {number} x @param {number} y */
+export function teleportArms(x, y) {
+	return y < -0.7 && Math.abs(y) > Math.abs(x);
+}
+
+/** Teleport state for tests (157) @returns {{enabled: boolean, engaged: boolean}} */
+export function teleportState() {
+	return { enabled: get(vrTeleportEnabled), engaged: teleportEngaged };
+}
+
 /** @param {any} session */
-function updateTeleport(session) {
+export function updateTeleport(session) {
 	const sources = [...session.inputSources];
 	const source = sources.find((s) => s.handedness === 'right');
 	const x = source?.gamepad?.axes?.[2] ?? 0;
 	const y = source?.gamepad?.axes?.[3] ?? 0;
 
+	// 157: teleport can be disabled — reset any arm + hide the arc
+	if (!get(vrTeleportEnabled)) {
+		teleportEngaged = false;
+		hideArc();
+		return;
+	}
+
 	if (!teleportEngaged) {
 		// stick pushed clearly UP and more up than sideways -> arm
-		if (y < -0.7 && Math.abs(y) > Math.abs(x)) teleportEngaged = true;
+		if (teleportArms(x, y)) teleportEngaged = true;
 		else {
 			hideArc();
 			return;

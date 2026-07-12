@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
-	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
+	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showToast } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
@@ -174,6 +174,18 @@
 							}}>&nbsp;Mirror snap turn</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Flip the flick direction — left turns right and vice-versa</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox
+							id="vr-teleport"
+							checked={$vrTeleportEnabled}
+							on:change={(e: any) => {
+								$vrTeleportEnabled = e.target.checked;
+								localStorage.setItem('vrTeleportEnabled', String($vrTeleportEnabled));
+							}}>&nbsp;Teleport</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Right-stick-up teleport arc — off if you navigate only by stick/fly</p>
 				</div>
 				<div class="flex">
 					<p class={bottomCoverName}>

@@ -58,6 +58,10 @@ export const vrSnapAngle = writable(
 export const vrMirrorSnapTurn = writable(
 	typeof localStorage !== 'undefined' && localStorage.getItem('vrMirrorSnapTurn') === 'true'
 );
+// teleport locomotion (157): default ON; off disables the right-stick-up arc
+export const vrTeleportEnabled = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('vrTeleportEnabled') !== 'false'
+);
 // VR flying: left-stick movement follows the controller aim (pitch included)
 export const vrFlying = writable(
 	typeof localStorage !== 'undefined' && localStorage.getItem('vrFlying') === 'true'

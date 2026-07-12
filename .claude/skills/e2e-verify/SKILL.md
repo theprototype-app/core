@@ -117,12 +117,24 @@ Late joiners: connect a third context AFTER mutations, assert handshake state ar
   throws. Reserve real two-peer runs for receive-path/handshake coverage.
 - `objectActions.selectObject(uuid)` takes a **UUID** — passing the object no-ops
   silently and the previous selection stays.
-- VR panel components early-return their pose task when `!renderer.xr.isPresenting`,
-  so panel groups sit at the origin headlessly — assert STRUCTURE (named `vr<x>-*`
-  meshes via a globalScene traverse) and drive actions through
-  `vrControls.executeVRMenuAction(...)`, not through controller rays.
+- VR follower panels early-return their POSE task when `!renderer.xr.isPresenting` (so
+  they sit at the origin), but they still MOUNT: set the panel's open store, wait a
+  tick, and traverse its registered group (`__stores.vrControls.vrEditGroup` /
+  `vrSettingsGroup`, or a globalScene traverse) for the named `vr<x>-*` control meshes;
+  drive actions via `vrControls.executeVRMenuAction(...)`, not controller rays.
+  Controller-by-handedness resolves via `controller.userData.handedness` — a test fakes
+  a hands↔controllers reorder by setting `getController(0/1).userData.handedness` (reach
+  the renderer via the `globalRenderer` store) then asserting `controllerIndexFor`
+  follows the hand, not the slot.
+- Pure helpers (no DOM) unit-test headless WITHOUT a browser — a `.test.cjs` can
+  `await import(pathToFileURL('src/lib/x.js').href)` the ESM module directly and assert
+  (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
+  and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-07-12 = 526 errors / 84 warnings — new files must stay clean.
+  baseline 2026-07-12 = **502 errors / 77 warnings** (drifts down as flowbite/typed code
+  is removed — hold whatever it currently is; add no NEW). Runes-mode `.svelte` files
+  (any `$state`) must use `onclick`/`oninput` — the `on:` directive adds deprecation
+  WARNINGS that count against the baseline.
 
 ## Definition of done
 

@@ -71,10 +71,12 @@ on release.
 
 ## Adding a VR panel (the follower-window pattern)
 
-Copy VRPropertiesPanel/VRChatPanel: (a) a Svelte component with named control meshes
-`vr<x>-*` that publishes its THREE group to a `vr<X>Group` writable and poses through
-`applyWindowPose(group, '<id>', anchor)` (menuPoseFromController + optional LIFT) so
-the 111 grip-grab + persisted offsets apply; (b) a `raycast<X>(index)` in vrControls
+Copy VRSettingsPanel/VRPropertiesPanel/VRChatPanel: (a) a Svelte component with named
+control meshes `vr<x>-*` that publishes its THREE group to a `vr<X>Group` writable and
+poses through `applyWindowPose(group, '<id>', anchor)` (menuPoseFromController + optional
+LIFT) so the 111 grip-grab + persisted offsets apply — the pose task must resolve the
+menu-hand controller via `controllerIndexFor($vrMenuHand)`, never a raw `inputSources`
+index (194); (b) a `raycast<X>(index)` in vrControls
 returning `'<x>:action'`; (c) a `'<x>:'` namespace branch in `executeVRMenuAction`;
 (d) mutual exclusion with the sibling menu-hand panels (each opener closes the others,
 the B/Y menu-open handler closes yours); (e) add `!get(vr<X>Open)` to the

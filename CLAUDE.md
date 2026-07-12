@@ -112,8 +112,11 @@ loadable play content. Everything a user does must be visible to connected peers
 ## Hard-won gotchas (do not rediscover)
 
 - Svelte 5 forbids mixing `on:click` and `onclick` **per component** — match the file's
-  existing style. Runes-mode files can't use `$:` — and adding ONE `$state` to a `$:`
-  file flips it to runes mode and breaks the build. Never introduce `$state` into
+  existing style. In a RUNES-mode file (any `$state`/`$derived`/`$effect`) use the
+  attribute form `onclick`/`oninput`; the `on:` directive is deprecated there and each
+  use adds a svelte-check WARNING that counts against the baseline (bit the 203 sidebar
+  rewrite). Runes-mode files can't use `$:` — and adding ONE `$state` to a `$:` file
+  flips it to runes mode and breaks the build. Never introduce `$state` into
   legacy-mode components.
 - `$effect` tracks EVERY store read synchronously inside it — side reads (userdata,
   globalScene…) retrigger it and can hit `effect_update_depth_exceeded`, which
@@ -152,6 +155,20 @@ loadable play content. Everything a user does must be visible to connected peers
   `Color` re-linearizes and darkens).
 - Reference-space convention in vrControls: `getOffsetReferenceSpace` offset =
   **-(viewer displacement)**; snap-turn/teleport/world-pan math builds on it.
+- Resolve a VR controller BY HANDEDNESS via `controllerIndexFor` (reads
+  `controller.userData.handedness`, stamped from each `connected` event), NEVER the raw
+  `session.inputSources` index — the slot↔handedness mapping flips on hands↔controllers
+  and put the radial on the wrong hand (194). The trigger path is safe because it uses
+  the firing controller (`event.target`); the reorder also drops in-progress grabs
+  (`onInputSourcesChange`, 188). Two-grip **world-grab locomotion does NOT replicate**
+  yet (broadcast keys off `camera.current.position`, which the worldRig transform leaves
+  unchanged; peer avatars sit at scene-root outside worldRig) — see docs/plan #195.
+- VR live face-adjust amount clamps are PER-OP: inset `[0.02,0.9]` (a signed `[-5,5]`
+  let controller motion collapse it to ~0 and the confirm looked like a cancel, 192);
+  extrude/move keep the signed range. A VR-created face winds toward a `viewerPos`
+  (`createFaceFromVerts` — else it faces away and you see nothing, 191). VR Stretch =
+  per-axis infinite sliders in the Edit▸Stretch menu (grab a `vrstretch-<axis>` handle,
+  horizontal controller motion scales that axis), NOT a spatial gesture (193).
 - Locks: `lockedObjects` holds REMOTE locks only — "we hold X" = X is our selection;
   one lock per peer (a new lock replaces the old one); `unlock` message exists.
 - vite re-optimizes new deps on first page load (one reload) — rerun once; lazy wasm
@@ -194,10 +211,15 @@ Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:51
   popover on explicit request, phase 130).
 - VR phases: verify math/state headlessly, state clearly that on-device feel is the
   user's manual check.
-- Status: batches 1-40 + 58 shipped (2026-07-12). Only pending roadmap work =
-  **batch 41 flow nodes** (plans 133/134 in docs/plan/: typed input sockets across the
-  flow runtime + 17 deterministic node types — recon notes in 00-overview.md); older
-  skips live in docs/plan/pending/.
+- Status (2026-07-12): batches 1-61 SHIPPED (roadmaps #2/#3/#4 done) + roadmap #5 in
+  progress — batch 63 (191 create-face-facing, 192 inset-confirm, 193 stretch-sliders)
+  + 194 (controller handedness) + 203 (sidebar redesign) shipped. **Roadmap #5 remaining:
+  195 world-grab replication (DIAGNOSED, deferred — VR reference-space risk), 196 noVR
+  inset, 197/198 Explorer, 199-202/204-205 (Packs/flow revamp), 207-209 (.tpscene/
+  .tpmodule).** Batches skipped/deferred → docs/plan/pending/: physics (206), window-edge
+  resize (201, removed), module test-flight (189/190), Explorer tree v3 (140-142).
+  svelte-check baseline drifted 520→502 errors / 84→77 warnings (hold it). Roadmap #5
+  forks locked in quiz.md; per-phase plans in docs/plan/done/.
 
 ## Module SDK (implemented — extend, don't fork)
 

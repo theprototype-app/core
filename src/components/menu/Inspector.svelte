@@ -802,33 +802,36 @@
 			{#if geoParams && geoSpec}
 				<Section label="Geometry">
 					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">{geoParams.gtype}</p>
-					{#if $selectedObject.userData?.vertexEdited}
-						<p class="rounded bg-yellow-900/40 px-2 py-1 text-[10px] text-yellow-200">
-							Vertex edits present — changing a parameter rebuilds and discards them.
+					{#if $selectedObject.userData?.vertexEdited || $selectedObject.userData?.faceEdited}
+						<!-- 164: once the mesh is edited, the parametric controls are LOCKED
+						     (changing one rebuilds the primitive + discards the edits) -->
+						<p id="geometry-locked" class="rounded bg-yellow-900/40 px-2 py-1 text-[10px] text-yellow-200">
+							Mesh edited — geometry parameters are locked (changing them would rebuild the shape and discard your edits).
 						</p>
+					{:else}
+						<div id="inspector-geometry" class="flex flex-col gap-1">
+							{#each geoSpec.params as spec (spec.key)}
+								{#if spec.kind === 'bool'}
+									<Checkbox
+										checked={!!geoParams.params[spec.key]}
+										onchange={(/** @type {any} */ e) => editGeometry(spec.key, e.target.checked)}
+									>
+										{spec.label}
+									</Checkbox>
+								{:else}
+									<SliderRow
+										label={spec.label}
+										min={spec.min ?? 0}
+										max={spec.max ?? 10}
+										step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
+										decimals={spec.kind === 'int' ? 0 : 2}
+										value={Number(geoParams.params[spec.key] ?? spec.def)}
+										onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
+									/>
+								{/if}
+							{/each}
+						</div>
 					{/if}
-					<div id="inspector-geometry" class="flex flex-col gap-1">
-						{#each geoSpec.params as spec (spec.key)}
-							{#if spec.kind === 'bool'}
-								<Checkbox
-									checked={!!geoParams.params[spec.key]}
-									onchange={(/** @type {any} */ e) => editGeometry(spec.key, e.target.checked)}
-								>
-									{spec.label}
-								</Checkbox>
-							{:else}
-								<SliderRow
-									label={spec.label}
-									min={spec.min ?? 0}
-									max={spec.max ?? 10}
-									step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
-									decimals={spec.kind === 'int' ? 0 : 2}
-									value={Number(geoParams.params[spec.key] ?? spec.def)}
-									onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
-								/>
-							{/if}
-						{/each}
-					</div>
 				</Section>
 			{/if}
 

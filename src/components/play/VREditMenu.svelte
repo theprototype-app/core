@@ -5,7 +5,7 @@
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
 	import { vrEditMenuOpen, vrMenuHand, vrStretchObject, vrStretchFactors } from '../../stores/sceneStore'
-	import { vrHovered, vrEditGroup, vrFaceCreateMode } from '$lib/vrControls'
+	import { vrHovered, vrEditGroup, vrFaceCreateMode, controllerIndexFor } from '$lib/vrControls'
 	import { editingObject, vertexSelectionSize } from '$lib/meshEdit'
 	import { faceEditObject, faceEditOp } from '$lib/faceEdit'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
@@ -73,7 +73,7 @@
 		if (!group || !$vrEditMenuOpen || !renderer.xr.isPresenting) return
 		const session = renderer.xr.getSession()
 		if (!session) return
-		const index = [...session.inputSources].findIndex((s) => s.handedness === $vrMenuHand)
+		const index = controllerIndexFor($vrMenuHand) // 194: by handedness, reorder-safe
 		if (index < 0) return
 		const controller = renderer.xr.getController(index)
 		controller.getWorldPosition(controllerPosition)

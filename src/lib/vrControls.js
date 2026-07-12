@@ -566,7 +566,17 @@ export function hapticPulse(intensity = 0.5, durationMs = 50) {
 }
 
 /** @param {'left'|'right'} handedness @returns {number} controller index or -1 */
-function controllerIndexFor(handedness) {
+/** 194: resolve a controller slot by HANDEDNESS. three's getController(i) is a
+ * persistent object; Scene stamps controller.userData.handedness from each
+ * 'connected' event, so this survives a hands<->controllers reorder (the raw
+ * inputSources index does NOT — that put the radial on the wrong hand). Falls
+ * back to the inputSources order if userData isn't stamped yet. @param {string} handedness */
+export function controllerIndexFor(handedness) {
+	if (renderer) {
+		for (let i = 0; i < 2; i++) {
+			if (renderer.xr.getController(i)?.userData?.handedness === handedness) return i;
+		}
+	}
 	const session = renderer?.xr.getSession();
 	if (!session) return -1;
 	return [...session.inputSources].findIndex((source) => source.handedness === handedness);

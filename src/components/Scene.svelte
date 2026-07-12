@@ -588,10 +588,16 @@
 			vrVertexGrabEnd();
 			endStretchSliderDrag();
 		};
+		// 194: stamp handedness onto the persistent controller objects so anything
+		// resolving a controller by hand (radial, menus) survives a reorder
+		const onConn = (e: any) => { e.target.userData.handedness = e.data?.handedness ?? null; };
+		const onDisc = (e: any) => { e.target.userData.handedness = null; };
 		xrControllers.forEach((controller) => {
 			controller.addEventListener('select', onXRSelect);
 			controller.addEventListener('selectstart', onXRSelectStart);
 			controller.addEventListener('selectend', onXRSelectEnd);
+			controller.addEventListener('connected', onConn);
+			controller.addEventListener('disconnected', onDisc);
 		});
 
 		return () => {
@@ -602,6 +608,8 @@
 				controller.removeEventListener('select', onXRSelect);
 				controller.removeEventListener('selectstart', onXRSelectStart);
 				controller.removeEventListener('selectend', onXRSelectEnd);
+				controller.removeEventListener('connected', onConn);
+				controller.removeEventListener('disconnected', onDisc);
 			});
 			renderer.xr.removeEventListener('sessionend', onSessionEnd);
 			renderer.xr.removeEventListener('sessionstart', onSessionStart);

@@ -8,7 +8,7 @@
 	import { drawMode } from '$lib/drawMode'
 	import { vrMicMode, micActive } from '$lib/voiceChat'
 	import { environment } from '$lib/environment'
-	import { vrHovered, vrMenuGroup, vrChatUnread } from '$lib/vrControls'
+	import { vrHovered, vrMenuGroup, vrChatUnread, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { activeRing, ringEntries, ringVersion, sectorLayout, hubEntry, menuPoseFromController, RING_INNER, RING_OUTER, HUB_RADIUS } from '$lib/vrRadialMenu'
 
@@ -69,7 +69,7 @@
 		if (!group || !$vrMenuOpen || !renderer.xr.isPresenting) return
 		const session = renderer.xr.getSession()
 		if (!session) return
-		const index = [...session.inputSources].findIndex((s) => s.handedness === $vrMenuHand)
+		const index = controllerIndexFor($vrMenuHand) // 194: by handedness, reorder-safe
 		if (index < 0) return
 		const controller = renderer.xr.getController(index)
 		controller.getWorldPosition(controllerPosition)

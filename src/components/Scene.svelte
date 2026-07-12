@@ -20,7 +20,7 @@
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, placePrefabGhost, vrFaceTrigger, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -537,9 +537,11 @@
 				vrFaceTrigger();
 				return;
 			}
-			// in vertex edit mode a trigger finishes editing (handles use grip, 113)
+			// 159: in vertex edit mode a trigger no longer EXITS the session (a
+			// stray click off the object used to cancel it); exit is explicit
+			// (Edit ▸ Done / ring). 160 makes the trigger drag a vertex.
 			if ($editingObject) {
-				exitEditMode();
+				vrVertexTrigger(xrControllers.indexOf(controller));
 				return;
 			}
 			if ($drawMode) return; // VR trigger feeds the stroke poll instead

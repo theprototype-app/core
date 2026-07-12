@@ -1162,6 +1162,18 @@ export function vrFaceTrigger() {
 	else commitArmedFaceOp();
 }
 
+/**
+ * VR trigger while in VERTEX edit mode (159). It must NOT exit the session — a
+ * stray trigger off the object used to cancel the whole edit. Exit is explicit
+ * (Edit ▸ Done / the ring). 160 fills this with ray-pick + drag a vertex.
+ * @param {number=} index
+ */
+export function vrVertexTrigger(index) {
+	// intentionally a no-op for now: keep the vertex-edit session alive on any
+	// trigger; the grip still drags handles (113).
+	void index;
+}
+
 /** @param {number} index */
 function onSqueezeStart(index) {
 	// an armed prefab ghost cancels on grip (115) — nothing else grabs

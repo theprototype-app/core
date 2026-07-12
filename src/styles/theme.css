@@ -79,15 +79,20 @@
 	--accent-2: #eab308;
 }
 
-/* ---- themed dropdown tokens (146) — feed the ThemedSelect popup so it recolors
-        per theme instead of rendering the white/OS native <select>. Base = the
-        dark-authored look; each theme paints from its own semantic tokens. ---- */
+/* ---- themed dropdown + scrollbar tokens (146/148) — feed the ThemedSelect
+        popup + the global scrollbar style so both recolor per theme instead of
+        the white/OS native chrome. Base = the dark-authored look; each theme
+        paints from its own palette. ---- */
 :root {
 	--dropdown-bg: #1f2937; /* gray-800 */
 	--dropdown-text: #e5e7eb; /* gray-200 */
 	--dropdown-hover: #374151; /* gray-700 */
 	--dropdown-border: #4b5563; /* gray-600 */
 	--dropdown-accent: #1d4ed8; /* primary-700 */
+	/* scrollbars (148): dark defaults match the authored gray look */
+	--scrollbar-track: #1f2937; /* gray-800 */
+	--scrollbar-thumb: #4b5563; /* gray-600 */
+	--scrollbar-thumb-hover: #6b7280; /* gray-500 */
 }
 :root[data-theme='light'] {
 	--dropdown-bg: var(--surface);
@@ -95,6 +100,9 @@
 	--dropdown-hover: var(--hover);
 	--dropdown-border: var(--border);
 	--dropdown-accent: #2563eb;
+	--scrollbar-track: #e5e7eb;
+	--scrollbar-thumb: #b8bec6;
+	--scrollbar-thumb-hover: #98a1ac;
 }
 :root[data-theme='green'],
 :root[data-theme='bit8'],
@@ -104,6 +112,48 @@
 	--dropdown-hover: var(--hover);
 	--dropdown-border: var(--border);
 	--dropdown-accent: var(--accent);
+}
+:root[data-theme='green'] {
+	--scrollbar-track: #06220f;
+	--scrollbar-thumb: #14532d;
+	--scrollbar-thumb-hover: #16a34a;
+}
+:root[data-theme='bit8'] {
+	--scrollbar-track: #201a4e;
+	--scrollbar-thumb: #e11d74;
+	--scrollbar-thumb-hover: #be185f;
+}
+:root[data-theme='contrast'] {
+	--scrollbar-track: #000000;
+	--scrollbar-thumb: #ffffff;
+	--scrollbar-thumb-hover: #ffd400;
+}
+
+/* global scrollbar style reads the tokens so panels/menus/lists scroll in-theme
+   (148). Dark's tokens mirror the old gray, so the default look is unchanged. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+::-webkit-scrollbar-track {
+	background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+	background: var(--scrollbar-thumb);
+	border-radius: 6px;
+	border: 2px solid var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb:hover {
+	background: var(--scrollbar-thumb-hover);
+}
+/* 8-bit: blocky square thumb to match the pixel personality */
+:root[data-theme='bit8'] ::-webkit-scrollbar-thumb {
+	border-radius: 0;
+	border-width: 0;
 }
 
 /* ---- shared remap: unprefixed dark-authored utilities (all non-dark themes) ---- */

@@ -18,6 +18,7 @@
 	} from '$lib/themes';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
+	import { resetWindowLayout } from '$lib/dragWindow';
 	import { shortcuts } from '$lib/shortcuts';
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
@@ -335,6 +336,12 @@
 						<Checkbox bind:checked={$autosaveEnabled}>&nbsp;Autosave</Checkbox>
 					</p>
 					<p class={bottomCoverDescription}>Keep a local session snapshot (restore offered after a crash/reload)</p>
+				</div>
+				<div class="flex">
+					<p class={bottomCoverName}>
+						<button id="reset-windows" class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset window positions</button>
+					</p>
+					<p class={bottomCoverDescription}>Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI</p>
 				</div>
 			</AccordionItem>
 			<AccordionItem bind:open={shortcutsExpanded}>

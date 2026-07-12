@@ -7,6 +7,7 @@
 	import { flyTo } from '$lib/objectActions';
 	import { mutedFlowObjects } from '../../stores/flowStore';
 	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup, setTransformMode } from '$lib/objectActions';
+	import { registerWindowReset } from '$lib/dragWindow';
 	import { enterEditMode } from '$lib/meshEdit';
 	import { addAnnotation } from '$lib/annotationsHandler';
 	import { requestControl, nameOf } from '$lib/lockControl';
@@ -326,6 +327,14 @@
 			if (moving || resizing) persist();
 			moving = false;
 			resizing = false;
+		});
+
+		// 169: Settings "Reset window positions" recentres the object list too
+		registerWindowReset(() => {
+			left = 350;
+			top = 100;
+			node.style.left = `${left}px`;
+			node.style.top = `${top}px`;
 		});
 	}
 

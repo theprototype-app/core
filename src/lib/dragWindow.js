@@ -2,6 +2,34 @@
 // stay inside the viewport, persist the position per `key` in localStorage.
 // Windows sit on the --z-window tier; the caller sets size and z-index.
 
+// 169: live reset registry — every draggable window (this action + the object
+// list's own dragMe) registers a reset fn so Settings can rescue windows stuck
+// off-screen without a reload.
+/** @type {Set<() => void>} */
+const resetters = new Set();
+
+/** Register a live reset callback; returns an unregister fn. @param {() => void} fn */
+export function registerWindowReset(fn) {
+	resetters.add(fn);
+	return () => resetters.delete(fn);
+}
+
+/** Clear every persisted floating-window position + re-lay live windows (169). */
+export function resetWindowLayout() {
+	if (typeof localStorage !== 'undefined') {
+		for (const key of Object.keys(localStorage))
+			if (key.startsWith('win:')) localStorage.removeItem(key);
+		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW'].forEach((k) =>
+			localStorage.removeItem(k)
+		);
+	}
+	resetters.forEach((fn) => {
+		try {
+			fn();
+		} catch {}
+	});
+}
+
 /**
  * @param {any} node
  * @param {{key: string, defaultRect?: {left?: number, top?: number, right?: number, bottom?: number}}} options
@@ -60,6 +88,21 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 		apply();
 	}
 
+	// 169: reset this window to its default spot (Settings rescue)
+	function resetToDefault() {
+		try {
+			localStorage.removeItem('win:' + key);
+		} catch {}
+		rect = { ...defaultRect };
+		if (typeof rect.left === 'number' && typeof rect.top === 'number') {
+			clamp();
+			apply();
+		} else {
+			resolveDefaults();
+		}
+	}
+	const unregisterReset = registerWindowReset(resetToDefault);
+
 	let dragging = false;
 
 	/** @param {any} e */
@@ -94,6 +137,7 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 
 	return {
 		destroy() {
+			unregisterReset();
 			node.removeEventListener('pointerdown', down);
 			node.removeEventListener('pointermove', move);
 			node.removeEventListener('pointerup', up);

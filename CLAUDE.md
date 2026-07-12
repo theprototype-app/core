@@ -158,11 +158,19 @@ loadable play content. Everything a user does must be visible to connected peers
 - Resolve a VR controller BY HANDEDNESS via `controllerIndexFor` (reads
   `controller.userData.handedness`, stamped from each `connected` event), NEVER the raw
   `session.inputSources` index — the slot↔handedness mapping flips on hands↔controllers
-  and put the radial on the wrong hand (194). The trigger path is safe because it uses
-  the firing controller (`event.target`); the reorder also drops in-progress grabs
-  (`onInputSourcesChange`, 188). Two-grip **world-grab locomotion does NOT replicate**
-  yet (broadcast keys off `camera.current.position`, which the worldRig transform leaves
-  unchanged; peer avatars sit at scene-root outside worldRig) — see docs/plan #195.
+  and put the radial on the wrong hand (194). three's `getController(i)` slot order and
+  the `inputSources` order DIVERGE after a swap (in-headset: slot0 in:right stamp:left):
+  pose/ray/grabs resolve the slot by handedness, while buttons/axes read from the acting
+  inputSource (`axesForSlot`). The squeeze loop, ALL follower panels, fly-aim and the
+  peer-hand broadcast route through it (210). The trigger path is safe because it uses the
+  firing controller (`event.target`); the reorder also drops in-progress grabs
+  (`onInputSourcesChange`, 188).
+- VR presence broadcasts in the shared CONTENT frame (worldRig-local, `worldToContentPose`)
+  and peer avatars render back through the viewer's own rig (Player `peerFrame` mirrors
+  worldRig) — so two-grip world-grab (which bends worldRig, not the camera) repositions you
+  for peers (195). NO-OP when the rig is unbent, so desktop + normal-VR presence is
+  byte-unchanged; change-detection also runs in the content frame (a grab leaves
+  `camera.position` untouched). Reposition only — no scale on the wire.
 - VR live face-adjust amount clamps are PER-OP: inset `[0.02,0.9]` (a signed `[-5,5]`
   let controller motion collapse it to ~0 and the confirm looked like a cancel, 192);
   extrude/move keep the signed range. A VR-created face winds toward a `viewerPos`
@@ -213,9 +221,9 @@ Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:51
   user's manual check.
 - Status (2026-07-12): batches 1-61 SHIPPED (roadmaps #2/#3/#4 done) + roadmap #5 in
   progress — batch 63 (191 create-face-facing, 192 inset-confirm, 193 stretch-sliders)
-  + 194 (controller handedness) + 203 (sidebar redesign) shipped. **Roadmap #5 remaining:
-  195 world-grab replication (DIAGNOSED, deferred — VR reference-space risk), 196 noVR
-  inset, 197/198 Explorer, 199-202/204-205 (Packs/flow revamp), 207-209 (.tpscene/
+  + 194+210 (controller handedness: radial/grip/panels/peer-hands) + 195 (world-grab
+  presence in the content frame) + 203 (sidebar redesign) shipped. **Roadmap #5 remaining:
+  196 noVR inset, 197/198 Explorer, 199-202/204-205 (Packs/flow revamp), 207-209 (.tpscene/
   .tpmodule).** Batches skipped/deferred → docs/plan/pending/: physics (206), window-edge
   resize (201, removed), module test-flight (189/190), Explorer tree v3 (140-142).
   svelte-check baseline drifted 520→502 errors / 84→77 warnings (hold it). Roadmap #5

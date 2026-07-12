@@ -1758,8 +1758,13 @@ export function executeVRMenuAction(name) {
 			clearVertexSelection();
 		} else {
 			const n = get(vertexSelectionSize);
-			if (n >= 3 && n <= 4) createSelectedFace();
-			else clearVertexSelection();
+			if (n >= 3 && n <= 4) {
+				// 191: wind the new face to face the viewer's head, not the mesh centre
+				const viewer = renderer?.xr?.isPresenting
+					? renderer.xr.getCamera().getWorldPosition(new THREE.Vector3())
+					: null;
+				createSelectedFace(viewer);
+			} else clearVertexSelection();
 			vrFaceCreateMode.set(false);
 		}
 		return;

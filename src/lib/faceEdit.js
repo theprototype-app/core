@@ -585,8 +585,10 @@ function orderQuad(v) {
 /** 177/183: create a triangle (3) or quad (4) face from OBJECT-LOCAL vertex
  * positions and commit it as a meshgeo snapshot (replicated + undoable). Winds
  * the new face outward (normal away from the mesh centre). Shared by the desktop
- * vertices toolbar and VR. @param {string} uuid @param {{x:number,y:number,z:number}[]} verts */
-export function createFaceFromVerts(uuid, verts) {
+ * vertices toolbar and VR. @param {string} uuid @param {{x:number,y:number,z:number}[]} verts
+ * @param {any} [viewerPos] world-space viewer position; when given, the face is wound to FACE
+ * the viewer (191: in VR the face you look at must be the visible side) */
+export function createFaceFromVerts(uuid, verts, viewerPos = null) {
 	if (!verts || verts.length < 3 || verts.length > 4) return false;
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
@@ -606,7 +608,15 @@ export function createFaceFromVerts(uuid, verts) {
 	const normal = new THREE.Vector3()
 		.subVectors(poly[1], poly[0])
 		.cross(new THREE.Vector3().subVectors(poly[2], poly[0]));
-	const flip = normal.dot(new THREE.Vector3().subVectors(faceCenter, meshCenter)) < 0;
+	let flip;
+	if (viewerPos) {
+		// 191: wind so the normal points AT the viewer (the side they look from)
+		const localViewer = object.worldToLocal(viewerPos.clone());
+		flip = normal.dot(new THREE.Vector3().subVectors(localViewer, faceCenter)) < 0;
+	} else {
+		// outward winding: flip if the face normal points toward the mesh centre
+		flip = normal.dot(new THREE.Vector3().subVectors(faceCenter, meshCenter)) < 0;
+	}
 	// fan-triangulate the ordered polygon
 	const appended = [];
 	for (let i = 1; i < poly.length - 1; i++) {

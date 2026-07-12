@@ -260,12 +260,13 @@ export function clearVertexSelection() {
 	syncVertexSelection();
 }
 
-/** 177: build a face from the 3-4 multi-selected vertices (replicated + undoable) */
-export function createSelectedFace() {
+/** 177: build a face from the 3-4 multi-selected vertices (replicated + undoable).
+ * 191: viewerPos (world) winds the face to face the viewer in VR. @param {any} [viewerPos] */
+export function createSelectedFace(viewerPos = null) {
 	if (!edited || vertexSelection.size < 3 || vertexSelection.size > 4) return false;
 	const uuid = edited.uuid;
 	const verts = [...vertexSelection].map((i) => handles[i].position.clone());
-	const ok = createFaceFromVerts(uuid, verts);
+	const ok = createFaceFromVerts(uuid, verts, viewerPos);
 	if (ok) {
 		// geometry changed under us: rebuild the handle visuals from the new mesh
 		vertexSelection.clear();

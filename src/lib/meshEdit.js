@@ -19,6 +19,9 @@ export const editingObject = writable(null);
 /** @type {any} */ let overlay = null; // wireframe overlay child
 /** @type {any} */ let proxy = null; // gizmo target for the selected handle
 let selectedHandle = -1;
+/** 175: remember the last vertex selected per object, restored on re-entry
+ * @type {{uuid: string|null, handle: number}} */
+let stashedVert = { uuid: null, handle: -1 };
 /** @type {number[] | null} */
 let dragStartLocal = null;
 let lastSent = 0;
@@ -153,10 +156,21 @@ export function enterEditMode(uuid) {
 
 	editingObject.set(uuid);
 	window.addEventListener('keydown', onKeydown);
+
+	// 175: restore the vertex selected last time in this object (per-mode memory)
+	if (stashedVert.uuid === uuid && stashedVert.handle >= 0 && stashedVert.handle < handles.length) {
+		selectHandle(stashedVert.handle);
+	}
+}
+
+/** the selected vertex handle index, or -1 (175 test hook) */
+export function selectedVertexHandle() {
+	return selectedHandle;
 }
 
 export function exitEditMode() {
 	if (!edited) return;
+	if (selectedHandle >= 0) stashedVert = { uuid: edited.uuid, handle: selectedHandle };
 	const scene = get(globalScene);
 	/** @type {any} */
 	const controls = get(TControls);

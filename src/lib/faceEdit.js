@@ -327,6 +327,9 @@ export function commitArmedFaceOp() {
 }
 
 /** @type {any} */ let faceEdited = null;
+/** 175: remember the last face selected per object, restored on re-entry
+ * @type {{uuid: string|null, fi: number}} */
+let stashedFace = { uuid: null, fi: -1 };
 /** @type {any[]} */ let workingTris = [];
 /** @type {any[]} */ let faces = [];
 /** @type {any} */ let overlay = null; // highlighted-face tint at the scene root
@@ -374,6 +377,12 @@ export function enterFaceEdit(uuid) {
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 	faceEditObject.set(uuid);
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onFaceKeydown);
+	// 175: restore the face selected last time in this object (per-mode memory)
+	if (stashedFace.uuid === uuid && stashedFace.fi >= 0 && faces[stashedFace.fi]) {
+		faceEditHighlight.set(stashedFace.fi);
+		refreshFaceOverlay();
+		attachFaceGizmo();
+	}
 }
 
 /** @param {KeyboardEvent} event */
@@ -383,6 +392,7 @@ function onFaceKeydown(event) {
 
 export function exitFaceEdit() {
 	if (!faceEdited) return;
+	if (get(faceEditHighlight) >= 0) stashedFace = { uuid: faceEdited.uuid, fi: get(faceEditHighlight) };
 	detachFaceGizmo(); // 163: drop the desktop gizmo + its proxy
 	// revert an uncommitted gesture's live preview before tearing down (122)
 	const pendingBefore = faceGrab?.before ?? faceAdjust?.before ?? null;

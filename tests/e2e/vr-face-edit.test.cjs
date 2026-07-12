@@ -78,11 +78,10 @@ h.run(async () => {
 		const trisBefore = s.faceEdit.readTriangles(box.geometry).length;
 
 		s.vrMenuOpen.set(true);
-		s.vrControls.executeVRMenuAction('nav:faces'); // enters face mode + faces ring
+		s.vrControls.executeVRMenuAction('obj:editmesh'); // 137: enters mesh edit (faces default) + side-menu
 		const editing = read(s.faceEdit.faceEditObject) === box.uuid;
-		let ring;
-		s.vrRadialMenu.activeRing.subscribe((r) => (ring = r))();
-		s.vrControls.executeVRMenuAction('face:extrude'); // arm extrude, closes ring
+		const menuOpen = read(s.vrEditMenuOpen);
+		s.vrControls.executeVRMenuAction('face:extrude'); // arm extrude from the side-menu
 		const armed = read(s.faceEdit.faceEditOp);
 
 		// highlight a face (as the pointer ray would) and commit
@@ -91,9 +90,9 @@ h.run(async () => {
 		s.faceEdit.faceEditAmount.set(0.5);
 		const ok = s.faceEdit.commitArmedFaceOp();
 		const trisAfter = s.faceEdit.readTriangles(box.geometry).length;
-		return { editing, ring, armed, hi, ok, trisBefore, trisAfter };
+		return { editing, menuOpen, armed, hi, ok, trisBefore, trisAfter };
 	});
-	h.check(flow.editing && flow.ring === 'faces', 'Faces ▸ enters face-edit mode and opens the ops ring');
+	h.check(flow.editing && flow.menuOpen, 'Edit Mesh enters face-edit mode + opens the side-menu (137)');
 	h.check(flow.armed === 'extrude', 'selecting Extrude arms the op');
 	h.check(flow.hi >= 0, 'a face highlights');
 	h.check(
@@ -167,9 +166,10 @@ h.run(async () => {
 		};
 		s.objectActions.selectObject(window.__fbox.uuid);
 		s.lockedObjects.set([['peerX', window.__fbox.uuid]]);
-		s.vrControls.executeVRMenuAction('nav:faces');
+		s.vrControls.executeVRMenuAction('obj:editmesh');
 		const editing = read(s.faceEdit.faceEditObject);
 		s.lockedObjects.set([]);
+		s.vrEditMenuOpen.set(false);
 		return editing;
 	});
 	h.check(locked === null, 'a peer-locked object refuses face editing');

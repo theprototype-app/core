@@ -76,6 +76,14 @@ export const vrPaletteOpen = writable(false);
 export const vrPropsPanelOpen = writable(false);
 // VR prefabs window (115), opened from Add ▸ Prefabs
 export const vrPrefabsPanelOpen = writable(false);
+// VR Edit Mesh side-menu (137), opened from Edit ▸ Edit Mesh (toggle)
+export const vrEditMenuOpen = writable(false);
+// VR Snap side-menu (156), opened from Edit ▸ Snap (toggle)
+export const vrSnapMenuOpen = writable(false);
+// VR snap MODE (156): 'off' | 'grid' | 'surface' | 'rotation'
+export const vrSnapMode = writable(
+	typeof localStorage !== 'undefined' ? localStorage.getItem('vrSnapMode') || 'off' : 'off'
+);
 // 115: true = the prefabs window is world-fixed (📌), false = lazy-follows the view
 export const vrPrefabsPinned = writable(false);
 // VR selection indicator style (110): wireframe (default) or the shell

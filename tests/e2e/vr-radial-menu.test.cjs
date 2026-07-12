@@ -89,11 +89,12 @@ h.run(async () => {
 	h.check(registry.addCount === 7 && registry.sceneHasEnv, 'Add ring: 6 primitives + Prefabs (115)');
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
 	h.check(
-		registry.objectOps.slice(0, 9).join(',') ===
-			'obj:visible,obj:duplicate,obj:delete,obj:color,wireframe,obj:props,obj:prefab,obj:vertices,nav:faces' &&
-			registry.objectOps.length === 10 &&
-			!registry.objectOps.some((id) => id.startsWith('color:')),
-		`Edit ring: ops + Color/Wireframe/Properties/Prefab/Vertices/Faces + Snap (${registry.objectOps.join(',')})`
+		registry.objectOps.join(',') ===
+			'obj:duplicate,obj:delete,obj:color,wireframe,obj:props,obj:prefab,obj:editmesh,snap' &&
+			!registry.objectOps.includes('obj:visible') &&
+			!registry.objectOps.includes('obj:vertices') &&
+			!registry.objectOps.includes('nav:faces'),
+		`Edit ring 137: Show/Hide + Vertices + Faces▸ gone, Edit Mesh in (${registry.objectOps.join(',')})`
 	);
 	h.check(
 		registry.faces.join(',') === 'face:extrude,face:inset,face:move,face:delete',
@@ -207,18 +208,20 @@ h.run(async () => {
 		const paletteOpen = read(window.__stores.vrPaletteOpen);
 		const menuAfterColor = read(window.__stores.vrMenuOpen);
 		window.__stores.vrPaletteOpen.set(false);
+		// 137: Edit Mesh toggles mesh-edit mode + the side-menu
 		window.__stores.vrMenuOpen.set(true);
-		window.__stores.vrControls.executeVRMenuAction('obj:visible');
-		const hidden = window.__box.visible === false;
-		window.__stores.vrControls.executeVRMenuAction('obj:visible');
+		window.__stores.vrControls.executeVRMenuAction('obj:editmesh');
+		const editOpen = read(window.__stores.vrEditMenuOpen);
+		window.__stores.vrControls.executeVRMenuAction('obj:editmesh');
+		const editClosed = read(window.__stores.vrEditMenuOpen) === false;
 		window.__stores.vrMenuOpen.set(false);
-		return { paletteOpen, menuAfterColor, hidden };
+		return { paletteOpen, menuAfterColor, editOpen, editClosed };
 	});
 	h.check(
 		objectRing.paletteOpen === true && objectRing.menuAfterColor === false,
 		'Color opens the palette panel and closes the ring'
 	);
-	h.check(objectRing.hidden, 'Show/Hide toggles the selection');
+	h.check(objectRing.editOpen && objectRing.editClosed, 'Edit Mesh toggles the side-menu on/off (137)');
 
 	// --- environment sector replicates through the normal env path ---
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('env:night'));

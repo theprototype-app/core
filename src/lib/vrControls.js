@@ -21,6 +21,7 @@ import {
 	vrPropsPanelOpen,
 	vrPrefabsPanelOpen,
 	vrPrefabsPinned,
+	vrEditMenuOpen,
 	vrWireframeSelection,
 	vrStatsOpen,
 	vrGrabStyle,
@@ -590,6 +591,18 @@ export function raycastProps(index) {
 	return control ? 'props:' + control.object.name.slice('vrprops-'.length) : null;
 }
 
+/** the Edit Mesh side-menu group (137) @type {import('svelte/store').Writable<any>} */
+export const vrEditGroup = writable(null);
+/** Raycast the Edit Mesh side-menu (137) — control names carry the FULL action
+ * (edit:mode:faces / face:extrude / edit:close) @param {number} index */
+export function raycastEdit(index) {
+	const panel = get(vrEditGroup);
+	if (!panel || !get(vrEditMenuOpen)) return null;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const control = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vredit-'));
+	return control ? control.object.name.slice('vredit-'.length) : null;
+}
+
 /**
  * Snap-aware nudge step per transform kind (112). Pure for tests.
  * @param {string} kind pos|rot|scale @param {boolean} snapOn
@@ -990,7 +1003,8 @@ function windowGroupFor(/** @type {string} */ id) {
 			props: vrPropsGroup,
 			prefabs: vrPrefabsGroup,
 			keyboard: vrKeyboardGroup,
-			chat: vrChatGroup
+			chat: vrChatGroup,
+			editmenu: vrEditGroup
 		}[id] ?? vrMenuGroup
 	);
 }
@@ -998,7 +1012,7 @@ function windowGroupFor(/** @type {string} */ id) {
 /** Which open window the controller ray lands on @param {number} index */
 function windowHitAt(index) {
 	let best = null;
-	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard', 'chat']) {
+	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard', 'chat', 'editmenu']) {
 		const group = windowGroupFor(id);
 		if (!group) continue;
 		const hits = controllerRay(index).intersectObject(group, true);
@@ -1422,16 +1436,54 @@ export function executeVRMenuAction(name) {
 		popRing();
 		return;
 	}
-	if (name === 'nav:faces') {
-		// enter face-edit mode + open the ops sub-ring (118)
-		const object = /** @type {any} */ (get(selectedObject));
-		if (!object?.uuid) return;
-		if (!vrFaceEditable(object)) {
-			showToast('Too dense for VR face editing (max 300 triangles)');
+	if (name === 'obj:editmesh') {
+		// 137: TOGGLE mesh-edit mode + the controller side-menu (Vertices/Faces)
+		if (get(vrEditMenuOpen)) {
+			exitEditMode();
+			exitFaceEdit();
+			vrEditMenuOpen.set(false);
 			return;
 		}
-		enterFaceEdit(object.uuid);
-		if (get(faceEditObject)) pushRing('faces'); // only if entry succeeded (not locked)
+		const object = /** @type {any} */ (get(selectedObject));
+		if (!object?.uuid) return;
+		// default to Faces when the mesh qualifies, else Vertices, else refuse
+		if (vrFaceEditable(object)) enterFaceEdit(object.uuid);
+		else if (vrVertexEditable(object)) enterEditMode(object.uuid);
+		else {
+			showToast('This mesh is too dense to edit in VR');
+			return;
+		}
+		if (get(faceEditObject) || get(editingObject)) {
+			vrObjectsPanelOpen.set(false);
+			vrPaletteOpen.set(false);
+			vrPropsPanelOpen.set(false);
+			vrChatPanelOpen.set(false);
+			vrMenuOpen.set(false);
+			vrEditMenuOpen.set(true);
+		}
+		return;
+	}
+	if (name === 'edit:close') {
+		// side-menu close = exit mesh edit (137)
+		exitEditMode();
+		exitFaceEdit();
+		vrEditMenuOpen.set(false);
+		return;
+	}
+	if (name.startsWith('edit:mode:')) {
+		// switch Vertices <-> Faces from the side-menu (137)
+		const mode = name.slice('edit:mode:'.length);
+		const object = /** @type {any} */ (get(selectedObject));
+		if (!object?.uuid) return;
+		if (mode === 'vertices') {
+			exitFaceEdit();
+			if (vrVertexEditable(object)) enterEditMode(object.uuid);
+			else showToast('Too dense for vertex editing (max 500 verts)');
+		} else {
+			exitEditMode();
+			if (vrFaceEditable(object)) enterFaceEdit(object.uuid);
+			else showToast('Too dense for face editing (max 300 triangles)');
+		}
 		return;
 	}
 	if (name.startsWith('nav:')) {
@@ -1439,9 +1491,8 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name.startsWith('face:')) {
-		// arm an op then close the ring so the pointer can pick + commit (118)
+		// arm a face op (side-menu, 137); the pointer trigger picks + commits (118/122)
 		setFaceOp(/** @type {any} */ (name.slice('face:'.length)));
-		vrMenuOpen.set(false);
 		return;
 	}
 	if (name === 'chat') {
@@ -1481,18 +1532,6 @@ export function executeVRMenuAction(name) {
 		vrObjectsPanelOpen.set(false);
 		vrChatPanelOpen.set(false);
 		vrPaletteOpen.set(false);
-		vrMenuOpen.set(false);
-		return;
-	}
-	if (name === 'obj:vertices') {
-		// enter mesh edit mode (113): grip handles to pull vertices
-		const object = /** @type {any} */ (get(selectedObject));
-		if (!object?.uuid) return;
-		if (!vrVertexEditable(object)) {
-			showToast('Too dense for VR editing (max 500 vertices)');
-			return;
-		}
-		enterEditMode(object.uuid);
 		vrMenuOpen.set(false);
 		return;
 	}
@@ -2022,6 +2061,14 @@ export function updateVRControls() {
 		// chat panel (117): the pointer ray highlights close / input
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 		const hovered = pointerIndex >= 0 ? raycastChat(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.12, 14);
+			vrHovered.set(hovered);
+		}
+	} else if (get(vrEditMenuOpen)) {
+		// Edit Mesh side-menu (137): the pointer ray highlights its rows
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const hovered = pointerIndex >= 0 ? raycastEdit(pointerIndex) : null;
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.12, 14);
 			vrHovered.set(hovered);

@@ -4,11 +4,13 @@ import {
 	vrMenuHand,
 	vrSnapAngle,
 	selectedObject,
-	vrWireframeSelection
+	vrWireframeSelection,
+	vrEditMenuOpen,
+	vrSnapMenuOpen
 } from '../stores/sceneStore';
 import { environment, setEnvironment, ENVIRONMENT_PRESETS } from './environment';
 import { setMicMode, vrMicMode } from './voiceChat';
-import { toggleObjectVisibility, duplicateObject, deleteSelection } from './objectActions';
+import { duplicateObject, deleteSelection } from './objectActions';
 import { savePrefab } from './prefabs';
 
 // VR radial menu v2 (74): a flat 8-sector base ring with nested sub-rings.
@@ -264,17 +266,15 @@ function registerBuiltins() {
 	registerVRMenuEntry({ id: 'nav:mic', label: 'Mic ▸', group: 'system', order: 6, ring: 'mic' });
 	registerVRMenuEntry({ id: 'exitvr', group: 'system', label: 'Exit VR', order: 7 });
 
-	// Edit ▸ (hub when something is selected): ops + Snap (moved from System, 109)
-	registerVRMenuEntry({ id: 'snap', group: 'object', label: 'Snap', order: 12 });
+	// Edit ▸ (hub when something is selected): ops + Snap (moved from System, 109).
+	// 137: Show/Hide removed (the Objects list does it); Snap is a toggle that
+	// opens its side-menu (active dot), reworked in 156.
 	registerVRMenuEntry({
-		id: 'obj:visible',
+		id: 'snap',
 		group: 'object',
-		label: 'Show/Hide',
-		order: 0,
-		action: () => {
-			const uuid = get(selectedObject)?.uuid;
-			if (uuid) toggleObjectVisibility(uuid);
-		}
+		label: 'Snap',
+		order: 12,
+		active: () => get(vrSnapMenuOpen)
 	});
 	registerVRMenuEntry({
 		id: 'obj:duplicate',
@@ -303,12 +303,19 @@ function registerBuiltins() {
 	});
 	// Properties opens the core-editable-set panel (112)
 	registerVRMenuEntry({ id: 'obj:props', group: 'object', label: 'Properties', order: 5 });
-	// Vertices enters mesh edit mode for simple meshes (113)
-	registerVRMenuEntry({ id: 'obj:vertices', group: 'object', label: 'Vertices', order: 7 });
-	// Faces ▸ enters face-edit mode + opens the ops sub-ring (118)
-	registerVRMenuEntry({ id: 'nav:faces', group: 'object', label: 'Faces ▸', order: 8, ring: 'faces' });
+	// Edit Mesh (137): a TOGGLE (active dot) that enters mesh-edit mode + opens
+	// the controller side-menu with Vertices/Faces mode + tools (replaces the
+	// old Vertices entry + Faces ▸ sub-ring)
+	registerVRMenuEntry({
+		id: 'obj:editmesh',
+		group: 'object',
+		label: 'Edit Mesh',
+		order: 7,
+		active: () => get(vrEditMenuOpen)
+	});
 
-	// Faces sub-ring (118): the four ops that cover ~90% of blockout
+	// Face ops (118/137): still ids the side-menu arms via setFaceOp; the
+	// 'faces' group is kept registered so those ids resolve (no longer a ring)
 	registerVRMenuEntry({ id: 'face:extrude', group: 'faces', label: 'Extrude', order: 0 });
 	registerVRMenuEntry({ id: 'face:inset', group: 'faces', label: 'Inset', order: 1 });
 	registerVRMenuEntry({ id: 'face:move', group: 'faces', label: 'Move', order: 2 });

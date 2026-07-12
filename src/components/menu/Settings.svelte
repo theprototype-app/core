@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Accordion, AccordionItem, Modal, Button, Checkbox, Select, Toggle } from 'flowbite-svelte';
+	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
+	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showToast } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
@@ -129,16 +130,15 @@
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>
-						<Select
-							class="border-0 bg-transparent p-0 text-sm dark:bg-transparent"
+						<ThemedSelect
 							items={[
 								{ value: 15, name: 'Snap turn 15°' },
 								{ value: 30, name: 'Snap turn 30°' },
 								{ value: 45, name: 'Snap turn 45°' }
 							]}
 							value={$vrSnapAngle}
-							on:change={(e) => {
-								$vrSnapAngle = parseInt(e.srcElement.value);
+							onchange={(v) => {
+								$vrSnapAngle = parseInt(v);
 								localStorage.setItem('vrSnapAngle', String($vrSnapAngle));
 							}}
 						/>
@@ -162,9 +162,8 @@
 				<svelte:fragment slot="header">Scene</svelte:fragment>
 				<div class="flex">
 					<p class={topcoverName}>
-						<Select
+						<ThemedSelect
 							id="theme-select"
-							size="sm"
 							items={THEMES.map((t) => ({ value: t.id, name: 'Theme: ' + t.name }))}
 							bind:value={$theme}
 						/>
@@ -215,8 +214,7 @@
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>
-						<Select
-							size="sm"
+						<ThemedSelect
 							items={[
 								{ value: 'low', name: 'Shadows: low' },
 								{ value: 'medium', name: 'Shadows: medium' },
@@ -236,8 +234,8 @@
 							value={$pingColor || '#4f83cc'}
 							on:change={(e) => pingColor.set(e.currentTarget.value)}
 						/>
-						<Select
-							size="sm"
+						<ThemedSelect
+							class="min-w-28"
 							items={PING_SOUNDS.map((s) => ({ value: s.id, name: s.name }))}
 							bind:value={$pingSound}
 						/>

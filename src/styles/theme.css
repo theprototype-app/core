@@ -79,6 +79,33 @@
 	--accent-2: #eab308;
 }
 
+/* ---- themed dropdown tokens (146) — feed the ThemedSelect popup so it recolors
+        per theme instead of rendering the white/OS native <select>. Base = the
+        dark-authored look; each theme paints from its own semantic tokens. ---- */
+:root {
+	--dropdown-bg: #1f2937; /* gray-800 */
+	--dropdown-text: #e5e7eb; /* gray-200 */
+	--dropdown-hover: #374151; /* gray-700 */
+	--dropdown-border: #4b5563; /* gray-600 */
+	--dropdown-accent: #1d4ed8; /* primary-700 */
+}
+:root[data-theme='light'] {
+	--dropdown-bg: var(--surface);
+	--dropdown-text: var(--text);
+	--dropdown-hover: var(--hover);
+	--dropdown-border: var(--border);
+	--dropdown-accent: #2563eb;
+}
+:root[data-theme='green'],
+:root[data-theme='bit8'],
+:root[data-theme='contrast'] {
+	--dropdown-bg: var(--surface);
+	--dropdown-text: var(--text);
+	--dropdown-hover: var(--hover);
+	--dropdown-border: var(--border);
+	--dropdown-accent: var(--accent);
+}
+
 /* ---- shared remap: unprefixed dark-authored utilities (all non-dark themes) ---- */
 
 /* the rgb()/var forms keep tailwind's bg-opacity working (modal backdrops

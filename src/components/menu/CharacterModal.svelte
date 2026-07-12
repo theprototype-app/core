@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Modal, Select, Checkbox } from 'flowbite-svelte';
+	import { Modal, Checkbox } from 'flowbite-svelte';
+	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { characterModalOpen, avatarConfig, userdata, peers } from '../../stores/appStore.js';
 	import { FACE_SHAPES, resolveAvatar } from '$lib/avatarModel';
 
@@ -51,29 +52,29 @@
 		</div>
 		<div class="flex px-6 pb-3">
 			<p class="{rowClass} rounded-s-lg">Hat</p>
-			<Select
-				class="rounded-s-none"
+			<ThemedSelect
+				class="flex-1"
 				items={hats}
 				value={$avatarConfig.hat}
-				on:change={(e) => update({ hat: e.srcElement.value })}
+				onchange={(v) => update({ hat: v })}
 			/>
 		</div>
 		<div class="flex px-6 pb-3">
 			<p class="{rowClass} rounded-s-lg">Head shape</p>
-			<Select
-				class="rounded-s-none"
+			<ThemedSelect
+				class="flex-1"
 				items={FACE_SHAPES}
 				value={cfg.shape}
-				on:change={(e) => update({ shape: (e.target as HTMLSelectElement).value })}
+				onchange={(v) => update({ shape: v })}
 			/>
 		</div>
 		<div class="flex px-6 pb-1">
 			<p class="{rowClass} rounded-s-lg">Face</p>
-			<Select
-				class="rounded-s-none"
+			<ThemedSelect
+				class="flex-1"
 				items={faces}
 				value={cfg.face}
-				on:change={(e) => update({ face: e.srcElement.value })}
+				onchange={(v) => update({ face: v })}
 			/>
 		</div>
 		<div class="flex items-center gap-2 px-6 pt-3">

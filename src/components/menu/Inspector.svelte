@@ -3,7 +3,8 @@
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
 	import * as THREE from 'three';
-	import { Drawer, Select, Checkbox, Button, Tooltip } from 'flowbite-svelte';
+	import { Drawer, Checkbox, Button, Tooltip } from 'flowbite-svelte';
+	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import PanelHeader from '../ui/PanelHeader.svelte';
 	import Section from '../ui/Section.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
@@ -674,16 +675,15 @@
 				</p>
 				<div onclick={refreshGroups} role="presentation">
 					{#key rerenderSelectGroup}
-						<Select
+						<ThemedSelect
 							id="select-group"
-							underline
 							items={groups}
 							placeholder="Move to group"
-							on:change={(/** @type {any} */ event) => {
-								const selected = groups.find((item) => item.value === event.srcElement.value);
+							onchange={(/** @type {any} */ val) => {
+								const selected = groups.find((item) => item.value === val);
 								moveObjectToGroup(
 									$selectedObject.uuid,
-									selected?.name === 'Level Up' ? 'up' : event.srcElement.value
+									selected?.name === 'Level Up' ? 'up' : val
 								);
 								objectsGroup.update((v) => v);
 								rerenderSelectGroup = !rerenderSelectGroup;
@@ -697,13 +697,12 @@
 				{@const anim = $animatedObjects[$selectedObject.uuid]}
 				<Section label="Animation">
 					<div id="animation-controls">
-						<Select
-							underline
+						<ThemedSelect
 							class="mb-1"
 							value={anim.clip}
 							items={anim.clips.map((clip) => ({ value: clip, name: clip }))}
-							on:change={(/** @type {any} */ e) =>
-								setAnimationState($selectedObject.uuid, { clip: e.srcElement.value })}
+							onchange={(/** @type {any} */ val) =>
+								setAnimationState($selectedObject.uuid, { clip: val })}
 						/>
 						<div class="flex items-center gap-2">
 							<button
@@ -918,13 +917,12 @@
 						</Checkbox>
 						<div class="ui-row">
 							<span class="w-20 shrink-0 text-xs text-gray-400">Map size</span>
-							<Select
-								underline
+							<ThemedSelect
 								class="flex-1"
 								items={SHADOW_SIZES.map((size) => ({ value: size, name: size + ' px' }))}
 								value={$selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x}
-								on:change={(/** @type {any} */ e) => {
-									setShadowMapSize($selectedObject, +e.srcElement.value);
+								onchange={(/** @type {any} */ val) => {
+									setShadowMapSize($selectedObject, +val);
 									selectedObject.update((s) => s);
 									sendLightUpdate();
 								}}
@@ -962,14 +960,13 @@
 					<Checkbox bind:checked={$selectedObject.visible} onchange={() => sendParam('visible')}>
 						Visible
 					</Checkbox>
-					<Select
+					<ThemedSelect
 						id="select-material"
-						underline
 						items={materials}
 						value={material.type}
-						on:change={(/** @type {any} */ event) => {
+						onchange={(/** @type {any} */ val) => {
 							// switches type but keeps color/texture/opacity, locally and on peers
-							switchMaterialType($selectedObject.uuid, event.srcElement.value);
+							switchMaterialType($selectedObject.uuid, val);
 							selectedObject.update((s) => s);
 						}}
 					/>

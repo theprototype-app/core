@@ -11,15 +11,17 @@
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 
-	// VR Edit Mesh side-menu (137): a NON-radial list stuck to the menu hand —
-	// mode rows (Vertices/Faces, active lit) + the active mode's tools. Control
-	// meshes are named vredit-<full action> for the vrControls raycast; the
-	// 111 grab/persist applies (id editmenu).
+	// VR Edit Mesh side-menu (137, reworked into tabs in 181): a horizontal
+	// Vertices | Faces | Stretch TAB bar with the active tab lit, an ✕ close in
+	// the corner (replaced the "Done" row), and the active mode's tools below.
+	// Control meshes stay named vredit-<full action> for the vrControls raycast;
+	// the 111 grab/persist applies (id editmenu).
 
 	const { renderer } = useThrelte()
 
 	const WIDTH = 0.22
 	const ROW_H = 0.026
+	const TAB_H = 0.03
 
 	let group: any = $state(null)
 	$effect(() => {
@@ -31,14 +33,16 @@
 		$faceEditObject ? 'faces' : $editingObject ? 'vertices' : $vrStretchObject ? 'stretch' : 'none'
 	)
 
-	// rows: three mode toggles, then the active mode's tools + a close row
 	type Row = { action: string; label: string; active?: boolean; danger?: boolean }
-	let rows = $derived.by(() => {
-		const list: Row[] = [
-			{ action: 'edit:mode:vertices', label: 'Vertices', active: mode === 'vertices' },
-			{ action: 'edit:mode:faces', label: 'Faces', active: mode === 'faces' },
-			{ action: 'edit:mode:stretch', label: 'Stretch', active: mode === 'stretch' }
-		]
+	// the three mode TABS (horizontal bar)
+	let modeTabs = $derived<Row[]>([
+		{ action: 'edit:mode:vertices', label: 'Vertices', active: mode === 'vertices' },
+		{ action: 'edit:mode:faces', label: 'Faces', active: mode === 'faces' },
+		{ action: 'edit:mode:stretch', label: 'Stretch', active: mode === 'stretch' }
+	])
+	// the active tab's tools (vertical list below the tab bar)
+	let toolRows = $derived.by(() => {
+		const list: Row[] = []
 		if (mode === 'faces') {
 			const op = $faceEditOp
 			list.push(
@@ -48,15 +52,13 @@
 				{ action: 'face:delete', label: 'Delete', active: op === 'delete', danger: true }
 			)
 		} else if (mode === 'stretch') {
-			// pick the axis; the joystick then resizes that extent
 			;['Width', 'Height', 'Depth'].forEach((label, axis) =>
 				list.push({ action: `stretch:axis:${axis}`, label, active: $vrStretchAxis === axis })
 			)
 		}
-		list.push({ action: 'edit:close', label: '✕ Done', danger: true })
 		return list
 	})
-	let panelH = $derived(rows.length * ROW_H + 0.05)
+	let panelH = $derived(0.024 + TAB_H + 0.008 + toolRows.length * ROW_H + 0.02)
 
 	const controllerPosition = new THREE.Vector3()
 	const controllerQuaternion = new THREE.Quaternion()
@@ -82,8 +84,16 @@
 		if (row.danger) return '#5a2a2a'
 		return '#2a2f38'
 	}
-	function rowY(i: number) {
-		return panelH / 2 - ROW_H * 1.1 - i * ROW_H
+	// tab bar geometry (horizontal)
+	const TAB_GAP = 0.004
+	let tabW = $derived((WIDTH - TAB_GAP * 2) / 3)
+	function tabX(i: number) {
+		return (i - 1) * (tabW + TAB_GAP)
+	}
+	let titleY = $derived(panelH / 2 - 0.011)
+	let tabY = $derived(panelH / 2 - 0.026 - TAB_H / 2)
+	function toolY(i: number) {
+		return tabY - TAB_H / 2 - 0.008 - ROW_H / 2 - i * ROW_H
 	}
 </script>
 
@@ -93,16 +103,43 @@
 			<T.PlaneGeometry args={[WIDTH + 0.02, panelH + 0.02]} />
 			<T.MeshBasicMaterial color="#11151c" transparent opacity={0.9} side={THREE.DoubleSide} />
 		</T.Mesh>
+
+		<!-- title -->
 		<Text
-			text={'Edit Mesh · ' + (mode === 'none' ? '' : mode)}
+			text={'Edit Mesh'}
 			color="#e8ecf2"
 			fontSize={0.01}
-			anchorX="center"
+			anchorX="left"
 			anchorY="middle"
-			position={[0, panelH / 2 - ROW_H * 0.45, 0.002]}
+			position={[-WIDTH / 2, titleY, 0.002]}
 		/>
-		{#each rows as row (row.action)}
-			<T.Mesh name={`vredit-${row.action}`} position={[0, rowY(rows.indexOf(row)), 0]}>
+
+		<!-- ✕ close (was the "Done" row) -->
+		<T.Mesh name="vredit-edit:close" position={[WIDTH / 2 - 0.011, titleY, 0]}>
+			<T.PlaneGeometry args={[0.022, 0.022]} />
+			<T.MeshBasicMaterial color={rowColor({ action: 'edit:close', label: '', danger: true })} transparent opacity={0.95} side={THREE.DoubleSide} />
+		</T.Mesh>
+		<Text text="✕" color="#e8a0a0" fontSize={0.011} anchorX="center" anchorY="middle" position={[WIDTH / 2 - 0.011, titleY, 0.002]} />
+
+		<!-- mode TAB bar (horizontal) -->
+		{#each modeTabs as tab, i (tab.action)}
+			<T.Mesh name={`vredit-${tab.action}`} position={[tabX(i), tabY, 0]}>
+				<T.PlaneGeometry args={[tabW, TAB_H - 0.004]} />
+				<T.MeshBasicMaterial color={rowColor(tab)} transparent opacity={0.95} side={THREE.DoubleSide} />
+			</T.Mesh>
+			<Text
+				text={tab.label}
+				color="#e8ecf2"
+				fontSize={0.0085}
+				anchorX="center"
+				anchorY="middle"
+				position={[tabX(i), tabY, 0.002]}
+			/>
+		{/each}
+
+		<!-- active tab's tools (vertical) -->
+		{#each toolRows as row, i (row.action)}
+			<T.Mesh name={`vredit-${row.action}`} position={[0, toolY(i), 0]}>
 				<T.PlaneGeometry args={[WIDTH, ROW_H - 0.004]} />
 				<T.MeshBasicMaterial color={rowColor(row)} transparent opacity={0.95} side={THREE.DoubleSide} />
 			</T.Mesh>
@@ -112,7 +149,7 @@
 				fontSize={0.009}
 				anchorX="center"
 				anchorY="middle"
-				position={[0, rowY(rows.indexOf(row)), 0.002]}
+				position={[0, toolY(i), 0.002]}
 			/>
 		{/each}
 	</T.Group>

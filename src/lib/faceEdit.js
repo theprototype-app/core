@@ -619,17 +619,19 @@ export function applyFaceGrab(t) {
 	const dQuat = t.dQuat || new THREE.Quaternion();
 	const scale = t.scale ?? 1;
 	const pushVec = faceGrab.normal.clone().multiplyScalar(t.push || 0);
+	// the ONE rigid transform (about the face centroid) applied to a base vertex
+	const xf = (/** @type {any} */ v) =>
+		v.clone().sub(pivot).multiplyScalar(scale).applyQuaternion(dQuat).add(pivot).add(dPos).add(pushVec);
 	face.triIndices.forEach((/** @type {number} */ ti, /** @type {number} */ k) => {
-		workingTris[ti] = faceGrab.originals[k].map((/** @type {any} */ v) => {
-			const rel = v.clone().sub(pivot).multiplyScalar(scale).applyQuaternion(dQuat);
-			return rel.add(pivot).add(dPos).add(pushVec);
-		});
+		workingTris[ti] = faceGrab.originals[k].map(xf);
 	});
-	// welded neighbours follow the TRANSLATION only (not rotate/scale) so the
-	// object stretches with a moved face instead of tearing (138)
-	const shift = dPos.clone().add(pushVec);
+	// 162: the welded neighbours sit at the face's CORNER positions, so they get
+	// the SAME rigid transform — shared corners stay welded under rotate + scale
+	// too (138 moved them by translation only, which tore the edge when the
+	// controller rotated). Their far verts aren't in the set, so adjacent faces
+	// stretch instead of moving rigidly.
 	faceGrab.neighbours.forEach((/** @type {any} */ n) => {
-		workingTris[n.ti][n.k] = n.orig.clone().add(shift);
+		workingTris[n.ti][n.k] = xf(n.orig);
 	});
 	liveGeometryUpdate();
 }

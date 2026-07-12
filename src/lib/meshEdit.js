@@ -3,6 +3,7 @@ import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, TControls, lockedObjects } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
+import { createFaceFromVerts } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
 // regular gizmo. Handles that share a position (e.g. the 24 position entries
@@ -29,6 +30,17 @@ let lastSent = 0;
 const HANDLE_COLOR = 0x2f81f7;
 const HANDLE_SELECTED = 0xff4000;
 const HANDLE_HOVER = 0xffa000; // ray hover (119): selected still wins
+const HANDLE_MULTI = 0x22c55e; // 177: ctrl/shift multi-select for Create face
+
+/** 177: handle indices ctrl/shift-selected for Create face */
+let vertexSelection = new Set();
+/** reactive size of the multi-selection (drives the Create face button) */
+export const vertexSelectionSize = writable(0);
+function syncVertexSelection() {
+	vertexSelection = new Set([...vertexSelection].filter((i) => i < handles.length));
+	vertexSelectionSize.set(vertexSelection.size);
+	if (handleMesh) refreshHandleColors();
+}
 const tempMatrix = new THREE.Matrix4();
 const tempVector = new THREE.Vector3();
 /** ray-hovered handle index, or -1 (119) */
@@ -66,7 +78,13 @@ function refreshHandleMatrix(index) {
 function refreshHandleColors() {
 	for (let i = 0; i < handles.length; i++) {
 		const color =
-			i === selectedHandle ? HANDLE_SELECTED : i === hoveredHandle ? HANDLE_HOVER : HANDLE_COLOR;
+			i === selectedHandle
+				? HANDLE_SELECTED
+				: vertexSelection.has(i)
+					? HANDLE_MULTI
+					: i === hoveredHandle
+						? HANDLE_HOVER
+						: HANDLE_COLOR;
 		handleMesh.setColorAt(i, new THREE.Color(color));
 	}
 	if (handleMesh.instanceColor) handleMesh.instanceColor.needsUpdate = true;
@@ -196,6 +214,8 @@ export function exitEditMode() {
 	proxy = null;
 	selectedHandle = -1;
 	hoveredHandle = -1;
+	vertexSelection.clear();
+	vertexSelectionSize.set(0);
 	editingObject.set(null);
 }
 
@@ -208,12 +228,52 @@ function onKeydown(event) {
  * Raycast the vertex handles; select the hit one and attach the gizmo.
  * @param {THREE.Raycaster} raycaster @returns {boolean} whether a handle was hit
  */
-export function raycastHandles(raycaster) {
+/** @param {any} raycaster @param {boolean} [additive] ctrl/shift adds to the create-face multi-selection */
+export function raycastHandles(raycaster, additive = false) {
 	if (!handleMesh) return false;
 	const hits = raycaster.intersectObject(handleMesh);
 	if (hits.length === 0) return false;
-	selectHandle(/** @type {number} */ (hits[0].instanceId));
+	const idx = /** @type {number} */ (hits[0].instanceId);
+	if (additive) {
+		toggleVertexSelection(idx);
+		return true;
+	}
+	// a plain click starts a fresh single selection
+	vertexSelection.clear();
+	vertexSelectionSize.set(0);
+	selectHandle(idx);
 	return true;
+}
+
+/** 177/183: toggle a vertex handle in the Create-face multi-selection (ctrl-click
+ * on desktop, trigger-tap in VR). @param {number} index */
+export function toggleVertexSelection(index) {
+	if (index < 0 || index >= handles.length) return;
+	if (vertexSelection.has(index)) vertexSelection.delete(index);
+	else vertexSelection.add(index);
+	syncVertexSelection();
+}
+
+/** 177: clear the Create-face multi-selection (back to single-move) */
+export function clearVertexSelection() {
+	vertexSelection.clear();
+	syncVertexSelection();
+}
+
+/** 177: build a face from the 3-4 multi-selected vertices (replicated + undoable) */
+export function createSelectedFace() {
+	if (!edited || vertexSelection.size < 3 || vertexSelection.size > 4) return false;
+	const uuid = edited.uuid;
+	const verts = [...vertexSelection].map((i) => handles[i].position.clone());
+	const ok = createFaceFromVerts(uuid, verts);
+	if (ok) {
+		// geometry changed under us: rebuild the handle visuals from the new mesh
+		vertexSelection.clear();
+		selectedHandle = -1;
+		exitEditMode();
+		enterEditMode(uuid);
+	}
+	return ok;
 }
 
 /** @param {number} index */

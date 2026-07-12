@@ -6,7 +6,14 @@
 	// pick a face (Scene routes the click to highlightFaceByTriangle) then
 	// Extrude/Inset/Move/Delete through the SAME faceEdit core + meshgeo path VR
 	// uses (replicated, undoable). Esc or Done exits. Desktop-only.
-	import { editingObject, enterEditMode, exitEditMode } from '$lib/meshEdit';
+	import {
+		editingObject,
+		enterEditMode,
+		exitEditMode,
+		createSelectedFace,
+		clearVertexSelection,
+		vertexSelectionSize
+	} from '$lib/meshEdit';
 	import {
 		faceEditObject,
 		enterFaceEdit,
@@ -69,6 +76,11 @@
 		commitFaceOp($faceEditOp as any, $faceEditAmount);
 	}
 
+	// 177: build a face from the 3-4 ctrl/shift-selected vertices
+	function createFace() {
+		if (!createSelectedFace()) showToast('Ctrl+click 3 or 4 vertices to create a face');
+	}
+
 	function finish() {
 		exitEditMode();
 		exitFaceEdit();
@@ -120,7 +132,24 @@
 					{/each}
 				</div>
 			{:else}
-				<span class="text-[11px] text-gray-400">drag the vertex handles · Faces for extrude/inset</span>
+				<div class="flex items-center gap-1.5 text-xs">
+					<button
+						class="rounded-full px-2.5 py-1 {$vertexSelectionSize === 0
+							? 'bg-primary-600 text-white'
+							: 'bg-gray-700 hover:bg-gray-600'}"
+						title="Drag a vertex handle to move it"
+						on:click={() => clearVertexSelection()}>Move</button
+					>
+					<button
+						id="mesh-create-face"
+						class="rounded-full px-2.5 py-1 {$vertexSelectionSize >= 3 && $vertexSelectionSize <= 4
+							? 'bg-primary-600 text-white hover:bg-primary-500'
+							: 'bg-gray-700 opacity-50'}"
+						title="Ctrl+click 3-4 vertices, then Create face"
+						on:click={createFace}>Create face</button
+					>
+					<span class="text-[11px] text-gray-400">{$vertexSelectionSize} sel</span>
+				</div>
 			{/if}
 
 			<button

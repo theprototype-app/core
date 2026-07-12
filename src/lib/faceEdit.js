@@ -563,6 +563,62 @@ export function commitMeshGeoSnapshot(uuid, before, after) {
 	return true;
 }
 
+/** Order 4 coplanar-ish points into a convex ring around their centroid, so a
+ * fan triangulation is non-self-intersecting. @param {THREE.Vector3[]} v */
+function orderQuad(v) {
+	const c = new THREE.Vector3();
+	v.forEach((p) => c.add(p));
+	c.multiplyScalar(1 / v.length);
+	const n = new THREE.Vector3()
+		.subVectors(v[1], v[0])
+		.cross(new THREE.Vector3().subVectors(v[2], v[0]))
+		.normalize();
+	const u = new THREE.Vector3().subVectors(v[0], c).normalize();
+	const w = new THREE.Vector3().crossVectors(n, u).normalize();
+	const ang = (/** @type {THREE.Vector3} */ p) => {
+		const d = new THREE.Vector3().subVectors(p, c);
+		return Math.atan2(d.dot(w), d.dot(u));
+	};
+	return [...v].sort((a, b) => ang(a) - ang(b));
+}
+
+/** 177/183: create a triangle (3) or quad (4) face from OBJECT-LOCAL vertex
+ * positions and commit it as a meshgeo snapshot (replicated + undoable). Winds
+ * the new face outward (normal away from the mesh centre). Shared by the desktop
+ * vertices toolbar and VR. @param {string} uuid @param {{x:number,y:number,z:number}[]} verts */
+export function createFaceFromVerts(uuid, verts) {
+	if (!verts || verts.length < 3 || verts.length > 4) return false;
+	const group = get(objectsGroup);
+	const object = group?.getObjectByProperty('uuid', uuid);
+	if (!object || !object.geometry?.attributes?.position) return false;
+	let poly = verts.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+	// reject degenerate selections (duplicate/collinear points)
+	for (let i = 0; i < poly.length; i++)
+		for (let j = i + 1; j < poly.length; j++) if (poly[i].distanceTo(poly[j]) < 1e-6) return false;
+	if (poly.length === 4) poly = orderQuad(poly);
+	// outward winding: flip if the face normal points toward the mesh centre
+	const meshCenter = new THREE.Box3()
+		.setFromBufferAttribute(object.geometry.attributes.position)
+		.getCenter(new THREE.Vector3());
+	const faceCenter = new THREE.Vector3();
+	poly.forEach((p) => faceCenter.add(p));
+	faceCenter.multiplyScalar(1 / poly.length);
+	const normal = new THREE.Vector3()
+		.subVectors(poly[1], poly[0])
+		.cross(new THREE.Vector3().subVectors(poly[2], poly[0]));
+	const flip = normal.dot(new THREE.Vector3().subVectors(faceCenter, meshCenter)) < 0;
+	// fan-triangulate the ordered polygon
+	const appended = [];
+	for (let i = 1; i < poly.length - 1; i++) {
+		const tri = [poly[0], poly[i], poly[i + 1]];
+		const ordered = flip ? [tri[0], tri[2], tri[1]] : tri;
+		for (const p of ordered) appended.push(p.x, p.y, p.z);
+	}
+	const before = trisToPositions(readTriangles(object.geometry));
+	const after = before.concat(appended);
+	return commitMeshGeoSnapshot(uuid, before, after);
+}
+
 // ---- VR face grab + live extrude/inset (122): a pending edit applied live,
 // committed as ONE meshgeo on release/confirm ----
 

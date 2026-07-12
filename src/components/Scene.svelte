@@ -384,9 +384,10 @@
 				measureClick(selectionRaycaster, $objectsGroup);
 				return;
 			}
-			// while editing a mesh, clicks pick vertex handles instead of objects
+			// while editing a mesh, clicks pick vertex handles instead of objects;
+			// ctrl/shift-click adds to the Create-face multi-selection (177)
 			if ($editingObject) {
-				raycastHandles(selectionRaycaster);
+				raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey);
 				return;
 			}
 			// face edit mode (135 desktop): a click highlights the face under it,

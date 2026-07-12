@@ -33,6 +33,12 @@
 	import RandomNode from './nodes/RandomNode.svelte';
 	import TimeNode from './nodes/TimeNode.svelte';
 	import BinaryNode from './nodes/BinaryNode.svelte';
+	import LoopNode from './nodes/LoopNode.svelte';
+	import TimerNode from './nodes/TimerNode.svelte';
+	import ObjectPairNode from './nodes/ObjectPairNode.svelte';
+	import EffectNode from './nodes/EffectNode.svelte';
+	import OnClickNode from './nodes/OnClickNode.svelte';
+	import CounterNode from './nodes/CounterNode.svelte';
 	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen } from '../../stores/flowStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges } from '$lib/nodesHandler';
 	import { defDefaults } from '$lib/customNodes';
@@ -74,6 +80,15 @@
 		math: BinaryNode,
 		compare: BinaryNode,
 		gate: BinaryNode,
+		loop: LoopNode,
+		timer: TimerNode,
+		distance: ObjectPairNode,
+		proximity: ObjectPairNode,
+		lookat: EffectNode,
+		setcolor: EffectNode,
+		visibility: EffectNode,
+		onclick: OnClickNode,
+		counter: CounterNode,
 		...moduleTypes
 	};
 

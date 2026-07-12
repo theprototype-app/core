@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations, flowValues } from '../stores/flowStore';
+import { get } from 'svelte/store';
+import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
+import { peers } from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { runScript } from './scriptRuntime';
@@ -148,9 +150,12 @@ export function notifyExternalMove(uuid) {
 // --- Phase 133: value + logic nodes ------------------------------------------
 
 // node types that produce an OUTPUT value (not a scene effect)
-export const valueTypes = ['number', 'vector3', 'toggle', 'random', 'time', 'math', 'compare', 'gate'];
+export const valueTypes = [
+	'number', 'vector3', 'toggle', 'random', 'time', 'math', 'compare', 'gate',
+	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter' // 134
+];
 // existing input sources that also expose a value on their output handle
-const sourceValueTypes = ['slider', 'colorpicker'];
+const sourceValueTypes = ['slider', 'colorpicker', 'objectselector'];
 
 /** djb2 hash of a string -> uint32 (Random seed) @param {string} str */
 function hashString(str) {
@@ -182,10 +187,12 @@ function bool(v) {
  * Evaluate a node's OUTPUT value as a PURE function of the graph + synced time.
  * Deterministic across peers: Random is seeded by node id, Time reads the
  * shared clock. Cycle-guarded via `seen`.
- * @param {any} node @param {any[]} allNodes @param {any[]} allEdges @param {number} time @param {Set<string>} seen
+ * `ctx` (optional) gives scene-reading nodes (Distance/Proximity) + event nodes
+ * (OnClick/Counter) their world state: { pos(uuid), triggers }.
+ * @param {any} node @param {any[]} allNodes @param {any[]} allEdges @param {number} time @param {Set<string>} seen @param {any} ctx
  * @returns {number | boolean | number[] | string | undefined}
  */
-export function evalNode(node, allNodes, allEdges, time, seen = new Set()) {
+export function evalNode(node, allNodes, allEdges, time, seen = new Set(), ctx = null) {
 	if (!node || seen.has(node.id)) return undefined;
 	seen.add(node.id);
 	const d = node.data || {};
@@ -198,7 +205,8 @@ export function evalNode(node, allNodes, allEdges, time, seen = new Set()) {
 				allNodes,
 				allEdges,
 				time,
-				seen
+				seen,
+				ctx
 			);
 			if (value !== undefined) return value;
 		}
@@ -267,6 +275,61 @@ export function evalNode(node, allNodes, allEdges, time, seen = new Set()) {
 				default: return a && b;
 			}
 		}
+		// --- 134: object reference, loops, timers, events ---
+		case 'objectselector':
+			return d.selected && d.selected !== '-None-' ? d.selected : undefined;
+		case 'loop': {
+			const from = num(d.from ?? 0);
+			const to = num(d.to ?? 1);
+			const span = to - from;
+			const phase = time * num(d.rate ?? 1);
+			if (d.mode === 'pingpong') {
+				const p = ((phase % 2) + 2) % 2;
+				return from + (p > 1 ? 2 - p : p) * span;
+			}
+			if (d.mode === 'once') return from + Math.min(Math.max(phase, 0), 1) * span;
+			return from + (((phase % 1) + 1) % 1) * span; // wrap
+		}
+		case 'timer': {
+			// delay line: re-evaluate the wired input at a clock-shifted time
+			const delay = num(d.delay ?? 1);
+			const edge = allEdges.find((e) => e.target === node.id && e.targetHandle === 'a');
+			if (edge) {
+				const v = evalNode(
+					allNodes.find((n) => n.id === edge.source),
+					allNodes,
+					allEdges,
+					time - delay,
+					new Set([node.id]),
+					ctx
+				);
+				return v !== undefined ? v : num(d.a ?? 0);
+			}
+			return num(d.a ?? 0);
+		}
+		case 'distance': {
+			const ua = input('a', d.a);
+			const ub = input('b', d.b);
+			if (!ctx || typeof ua !== 'string' || typeof ub !== 'string') return 0;
+			const pa = ctx.pos(ua);
+			const pb = ctx.pos(ub);
+			return pa && pb ? pa.distanceTo(pb) : 0;
+		}
+		case 'proximity': {
+			const ua = input('a', d.a);
+			const ub = input('b', d.b);
+			if (!ctx || typeof ua !== 'string' || typeof ub !== 'string') return false;
+			const pa = ctx.pos(ua);
+			const pb = ctx.pos(ub);
+			return pa && pb ? pa.distanceTo(pb) <= num(d.radius ?? 3) : false;
+		}
+		case 'onclick': {
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
+		case 'counter':
+			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;
 		default:
 			return undefined;
 	}
@@ -276,24 +339,83 @@ export function evalNode(node, allNodes, allEdges, time, seen = new Set()) {
  * A consumer node's effective data: its own params, with any value/logic node
  * wired to a named INPUT handle overriding that key (133). Unconnected handles
  * keep the node's own param.
- * @param {any} node @param {any[]} allNodes @param {any[]} allEdges @param {number} time
+ * @param {any} node @param {any[]} allNodes @param {any[]} allEdges @param {number} time @param {any} ctx
  */
-export function resolveInputs(node, allNodes, allEdges, time) {
+export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 	const data = { ...(node.data || {}) };
 	allEdges.forEach((edge) => {
 		if (edge.target !== node.id || !edge.targetHandle) return;
 		const source = allNodes.find((n) => n.id === edge.source);
 		if (!source) return;
 		if (!valueTypes.includes(source.type) && !sourceValueTypes.includes(source.type)) return;
-		const value = evalNode(source, allNodes, allEdges, time, new Set());
+		const value = evalNode(source, allNodes, allEdges, time, new Set(), ctx);
 		if (value !== undefined) data[edge.targetHandle] = value;
 	});
 	return data;
 }
 
-/** @param {any} object @param {any} base @param {any} anim @param {number} time */
-function applyAnimation(object, base, anim, time) {
-	const data = resolveInputs(anim, nodes, edges, time);
+/** Scene/event context handed to evalNode each tick (134). @returns {any} */
+function runtimeCtx() {
+	return {
+		pos: (/** @type {string} */ uuid) => {
+			const object = sceneObjects?.getObjectByProperty('uuid', uuid);
+			return object ? object.getWorldPosition(new THREE.Vector3()) : null;
+		},
+		triggers: get(flowTriggers)
+	};
+}
+
+/** Synced seconds — same formula as the tick clock. */
+function syncedNow() {
+	return synced ? (Date.now() % 86400000) / 1000 : performance.now() / 1000;
+}
+
+/**
+ * Apply an event trigger (134): stamp the source node's pulse time and bump any
+ * Counter wired from it, all keyed by the SHARED synced time so peers agree.
+ * @param {string} nodeId @param {number} t @param {boolean} replicate
+ */
+export function applyNodeTrigger(nodeId, t, replicate = true) {
+	flowTriggers.update((map) => {
+		const next = { ...map };
+		next[nodeId] = { count: next[nodeId]?.count ?? 0, lastT: t };
+		edges.forEach((edge) => {
+			if (edge.source !== nodeId) return;
+			const counter = nodes.find((n) => n.id === edge.target && n.type === 'counter');
+			if (!counter) return;
+			const prev = next[counter.id]?.count ?? 0;
+			const step = counter.data?.step ?? 1;
+			const op = counter.data?.op ?? 'up';
+			next[counter.id] = {
+				count: op === 'reset' ? 0 : op === 'down' ? prev - step : prev + step,
+				lastT: t
+			};
+		});
+		return next;
+	});
+	if (replicate) {
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer) peer.send({ type: 'nodetrigger', id: nodeId, t });
+	}
+}
+
+/** A user clicked an object — pulse any OnClick node targeting it (134). @param {string} uuid */
+export function fireObjectClick(uuid) {
+	nodes.forEach((node) => {
+		if (node.type !== 'onclick') return;
+		const hit = edges.some((edge) => {
+			if (edge.source !== node.id) return false;
+			const target = nodes.find((n) => n.id === edge.target);
+			return target?.type === 'objectselector' && target.data?.selected === uuid;
+		});
+		if (hit) applyNodeTrigger(node.id, syncedNow(), true);
+	});
+}
+
+/** @param {any} object @param {any} base @param {any} anim @param {number} time @param {any} ctx */
+function applyAnimation(object, base, anim, time, ctx) {
+	const data = resolveInputs(anim, nodes, edges, time, ctx);
 	if (anim.type === 'script') {
 		runScript(anim.id, data.code ?? '', object, base, data, time);
 		return;
@@ -341,6 +463,20 @@ function applyAnimation(object, base, anim, time) {
 		object.visible = Math.sin(time * speed * Math.PI) > 0;
 	} else if (anim.type === 'pathpatrol') {
 		applyPathPatrol(object, data, time);
+	} else if (anim.type === 'lookat') {
+		// face a target object (uuid) or point ([x,y,z]) — 134
+		let target = null;
+		if (Array.isArray(data.target)) target = new THREE.Vector3(data.target[0], data.target[1], data.target[2]);
+		else if (typeof data.target === 'string') {
+			const other = sceneObjects?.getObjectByProperty('uuid', data.target);
+			if (other) target = other.getWorldPosition(new THREE.Vector3());
+		}
+		if (target) object.lookAt(target);
+	} else if (anim.type === 'setcolor') {
+		// drive the material color from a color input, LOCAL per peer (no spam) — 134
+		if (object.material?.color && typeof data.color === 'string') object.material.color.set(data.color);
+	} else if (anim.type === 'visibility') {
+		object.visible = !!data.on; // boolean input shows/hides, base-managed
 	}
 }
 
@@ -401,6 +537,7 @@ function applyPathPatrol(object, data, time) {
 function tick(now) {
 	// wall clock (wrapped daily to keep float noise low) -> same phase on every peer
 	const time = synced ? (Date.now() % 86400000) / 1000 : now / 1000;
+	const ctx = runtimeCtx(); // 134: scene + trigger state for the evaluators
 
 	// collect active animations per scene object
 	const active = new Map(); // uuid -> anim nodes
@@ -442,7 +579,7 @@ function tick(now) {
 		const base = baseState.get(uuid);
 		// reset to base, then let each animation add its offset
 		restoreBase(object, base);
-		anims.forEach((anim) => applyAnimation(object, base, anim, time));
+		anims.forEach((anim) => applyAnimation(object, base, anim, time, ctx));
 	});
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs
@@ -453,7 +590,7 @@ function tick(now) {
 		if (source?.type !== 'sound') return;
 		const uuid = targetUuidOf(edge);
 		// resolve input-driven volume/radius (133) without touching soundRuntime
-		if (uuid) soundPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time) }, uuid });
+		if (uuid) soundPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
 	});
 	updateSounds(soundPairs, sceneObjects, time);
 
@@ -463,7 +600,7 @@ function tick(now) {
 		/** @type {Record<string, any>} */
 		const values = {};
 		for (const node of nodes) {
-			if (valueTypes.includes(node.type)) values[node.id] = evalNode(node, nodes, edges, time, new Set());
+			if (valueTypes.includes(node.type)) values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}
 		flowValues.set(values);
 	}

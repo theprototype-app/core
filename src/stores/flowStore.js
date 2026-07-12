@@ -17,6 +17,12 @@ export const mutedFlowObjects = writable([]);
 /** @type {import('svelte/store').Writable<Record<string, any>>} */
 export const flowValues = writable({});
 
+// event-node state (134): OnClick/Counter ride replicated trigger messages, not
+// streamed state. nodeId -> { count, lastT } (lastT = shared synced time of the
+// last pulse). A trigger log, deterministic because the timestamp is shared.
+/** @type {import('svelte/store').Writable<Record<string, {count: number, lastT: number}>>} */
+export const flowTriggers = writable({});
+
 // live peer cursors in the flow editor: peerId -> { x, y, name, ts } (flow coordinates)
 /** @type {import('svelte/store').Writable<Record<string, any>>} */
 export const flowCursors = writable({});

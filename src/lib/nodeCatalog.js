@@ -48,7 +48,23 @@ export const nodeCatalog = [
 			// 133: pure logic on wired inputs (deterministic, no streaming)
 			{ type: 'math', label: 'Math', defaults: { op: 'add', a: 0, b: 0 } },
 			{ type: 'compare', label: 'Compare', defaults: { op: 'gt', a: 0, b: 0 } },
-			{ type: 'gate', label: 'Gate', defaults: { op: 'and', a: false, b: false } }
+			{ type: 'gate', label: 'Gate', defaults: { op: 'and', a: false, b: false } },
+			// 134: loops, timers, sensors + object actions (all deterministic)
+			{ type: 'loop', label: 'Loop', defaults: { from: 0, to: 1, rate: 1, mode: 'wrap' } },
+			{ type: 'timer', label: 'Timer', defaults: { delay: 1, a: 0 } },
+			{ type: 'distance', label: 'Distance', defaults: {} },
+			{ type: 'proximity', label: 'Proximity', defaults: { radius: 3 } },
+			{ type: 'lookat', label: 'Look At', defaults: {} },
+			{ type: 'setcolor', label: 'Set Color', defaults: { color: '#ff4000' } },
+			{ type: 'visibility', label: 'Visibility', defaults: { on: true } }
+		]
+	},
+	{
+		group: 'Triggers',
+		items: [
+			// 134: EVENT nodes — ride small replicated trigger messages, not state
+			{ type: 'onclick', label: 'On Click', defaults: { pulse: 0.3 } },
+			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } }
 		]
 	},
 	{
@@ -148,8 +164,12 @@ export const nodeCatalog = [
 	}
 ];
 
-// Node types the animation runtime evaluates every frame
-export const animationTypes = ['shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol'];
+// Node types the animation runtime evaluates every frame (134 adds the base-
+// managed object actions: LookAt orients, Set Color paints, Visibility toggles)
+export const animationTypes = [
+	'shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol',
+	'lookat', 'setcolor', 'visibility'
+];
 
 /**
  * Palette group a node type belongs to — drives the category accent color

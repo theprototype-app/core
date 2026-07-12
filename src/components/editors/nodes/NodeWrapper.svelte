@@ -12,7 +12,8 @@
 		Animation: '#fb923c', // orange
 		Effects: '#c084fc', // purple
 		Physics: '#f87171', // red
-		Logic: '#2dd4bf' // teal
+		Logic: '#2dd4bf', // teal
+		Triggers: '#facc15' // yellow
 	};
 	$: group = groupOf(type);
 	// module groups → gray, user-designed custom nodes → user accent

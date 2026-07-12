@@ -2,6 +2,7 @@ import Peer from 'peerjs';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
+import { applyNodeTrigger } from '$lib/flowRuntime';
 import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs } from '$lib/customNodes';
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
@@ -252,7 +253,9 @@ export class PeerConnection {
 					createFlowEdge(data.edge);
 				} else if(data.type == 'edgedelete') {
 					deleteFlowEdges(data.ids);
-				} else if(data.type == 'flowcursor') {
+				} else if(data.type == 'nodetrigger') {
+						applyNodeTrigger(data.id, data.t, false); // 134: shared-timestamp pulse
+					} else if(data.type == 'flowcursor') {
 					applyFlowCursor(data);
 				} else if(data.type == 'ping') {
 					applyPing(data);

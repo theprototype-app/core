@@ -876,9 +876,21 @@ function reapplyFaceAdjust() {
 /** Stick reshapes the pending adjust @param {number} dAmount depth @param {number} dScale cap scale */
 export function adjustFaceGesture(dAmount, dScale) {
 	if (!faceAdjust) return;
-	if (dAmount) faceAdjust.amount = Math.min(Math.max(faceAdjust.amount + dAmount, -5), 5);
+	if (dAmount) {
+		// 192: inset must stay in 0.02..0.9 — clamping to [-5,5] like extrude let
+		// controller motion drive the inset to ~0/negative, collapsing it (it
+		// looked like the second-trigger confirm had CANCELLED the operation)
+		const min = faceAdjust.op === 'inset' ? 0.02 : -5;
+		const max = faceAdjust.op === 'inset' ? 0.9 : 5;
+		faceAdjust.amount = Math.min(Math.max(faceAdjust.amount + dAmount, min), max);
+	}
 	if (dScale) faceAdjust.scale = Math.min(Math.max(faceAdjust.scale + dScale, 0.05), 5);
 	reapplyFaceAdjust();
+}
+
+/** the live extrude/inset adjust amount, or null (192 test hook) */
+export function faceAdjustAmount() {
+	return faceAdjust ? faceAdjust.amount : null;
 }
 
 /** Second trigger: commit the pending extrude/inset — rebuild, replicate, undo. */

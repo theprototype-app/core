@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
-	import { objectsGroup, TControls, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject } from '../../stores/sceneStore';
+	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
 	import { mutedFlowObjects } from '../../stores/flowStore';
-	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup } from '$lib/objectActions';
+	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup, setTransformMode } from '$lib/objectActions';
 	import { enterEditMode } from '$lib/meshEdit';
 	import { addAnnotation } from '$lib/annotationsHandler';
 	import { requestControl, nameOf } from '$lib/lockControl';
@@ -25,9 +25,11 @@
 	let allowPlay = true;
 	let resizing = $state(false);
 	// 132: toolbar icons tint when their panel is open / the transform mode is
-	// active. Move/Rotate/Scale only tint with a real selection.
-	let transformMode = $state('translate');
-	const hasSel = $derived(!!($selectedObject && $selectedObject.uuid));
+	// active. Move/Rotate/Scale only tint with a real selection. 151: the mode
+	// lives in the shared transformMode store so the 1/2/3 shortcuts tint too.
+	// 151: tint follows the ACTIVE selection set (cleared on deselect), not the
+	// sticky selectedObject (which keeps the last object for the inspector bind)
+	const hasSel = $derived($selectedObjects.length > 0);
 	const ICON_ON = 'text-primary-500';
 	const ICON_OFF = 'text-black dark:text-slate-200';
 
@@ -417,15 +419,15 @@
 	classOuter="h-10 w-70 bg-white rounded-full dark:bg-gray-700 z-[45]"
 	classInner="grid-cols-7"
 >
-	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={() => { $TControls.setMode('translate'); transformMode = 'translate'; }}>
-		<i class={'fas fa-arrows-alt ' + (hasSel && transformMode === 'translate' ? ICON_ON : ICON_OFF)}></i>
+	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={() => setTransformMode('translate')}>
+		<i class={'fas fa-arrows-alt ' + (hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF)}></i>
 	</p>
-	<p class={classActive} title="Rotate (2)" on:click={() => { $TControls.setMode('rotate'); transformMode = 'rotate'; }}>
-		<i class={'fas fa-rotate-left ' + (hasSel && transformMode === 'rotate' ? ICON_ON : ICON_OFF)}></i>
+	<p class={classActive} title="Rotate (2)" on:click={() => setTransformMode('rotate')}>
+		<i class={'fas fa-rotate-left ' + (hasSel && $transformMode === 'rotate' ? ICON_ON : ICON_OFF)}></i>
 	</p>
 
-	<p class={classActive} title="Scale (3)" on:click={() => { $TControls.setMode('scale'); transformMode = 'scale'; }}>
-		<i class={'fas fa-expand-arrows-alt ' + (hasSel && transformMode === 'scale' ? ICON_ON : ICON_OFF)}></i>
+	<p class={classActive} title="Scale (3)" on:click={() => setTransformMode('scale')}>
+		<i class={'fas fa-expand-arrows-alt ' + (hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF)}></i>
 	</p>
 	<div class="flex items-center justify-center">
 		<p

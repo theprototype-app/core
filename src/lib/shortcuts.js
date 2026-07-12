@@ -7,7 +7,7 @@ import {
 	settingsOpen,
 	settingsSection
 } from '../stores/appStore';
-import { focusObject, duplicateSelection, deleteSelection } from './objectActions';
+import { focusObject, duplicateSelection, deleteSelection, setTransformMode } from './objectActions';
 import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
 import { recallBookmark } from './cameraBookmarks';
@@ -26,19 +26,19 @@ export const shortcuts = [
 		keys: '1',
 		group: 'Transform',
 		label: 'Move (translate)',
-		action: () => get(TControls)?.setMode('translate')
+		action: () => setTransformMode('translate')
 	},
 	{
 		keys: '2',
 		group: 'Transform',
 		label: 'Rotate',
-		action: () => get(TControls)?.setMode('rotate')
+		action: () => setTransformMode('rotate')
 	},
 	{
 		keys: '3',
 		group: 'Transform',
 		label: 'Scale',
-		action: () => get(TControls)?.setMode('scale')
+		action: () => setTransformMode('scale')
 	},
 	{ keys: 'W A S D', group: 'Movement', label: 'Fly the camera (horizontal)' },
 	{ keys: 'Q / E', group: 'Movement', label: 'Fly down / up' },

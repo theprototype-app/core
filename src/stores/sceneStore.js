@@ -8,6 +8,8 @@ export const objectsGroup = writable(null);
 export const showGrid = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const TControls = writable(null);
+/** active gizmo transform mode (151): shared so the toolbar tint + 1/2/3 shortcuts agree */
+export const transformMode = writable('translate');
 /** @type {import('svelte/store').Writable<any[]>} */
 export const lockedObjects = writable([]);
 /** @type {import('svelte/store').Writable<any>} */

@@ -6,6 +6,7 @@ import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import {
 	objectsGroup,
 	TControls,
+	transformMode,
 	selectedObject,
 	selectedObjects,
 	lockedObjects,
@@ -151,6 +152,24 @@ export function deselectObject() {
 	// selectedObject keeps the last object on purpose — the open inspector binds
 	// to $selectedObject.position/material and would crash on an empty value
 	closeSelectionInspector();
+}
+
+/**
+ * Set the gizmo transform mode from the toolbar OR the 1/2/3 shortcuts through
+ * ONE path (151), so the toolbar tint (transformMode store) always matches.
+ * Pressing the ALREADY-active mode while a gizmo is attached = "done": deselect
+ * + detach (a repeat press exits rather than being a no-op).
+ * @param {'translate'|'rotate'|'scale'} mode
+ */
+export function setTransformMode(mode) {
+	/** @type {any} */
+	const controls = get(TControls);
+	if (get(transformMode) === mode && controls?.object && !get(isVRMode)) {
+		deselectObject();
+		return;
+	}
+	controls?.setMode(mode);
+	transformMode.set(mode);
 }
 
 /** Every selected uuid (the set, or the single selection) */

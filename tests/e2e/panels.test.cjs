@@ -5,10 +5,11 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// sidebar: sections + files row render (Create moved to the Add menu in 77)
+	// sidebar: sections + files row render (Create moved to the Add menu in 77;
+	// 126 moved Library/Assets off the sidebar to the Explorer)
 	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
 	await A.page.waitForTimeout(500);
-	for (const label of ['Assets', 'Files', 'Scene', 'App']) {
+	for (const label of ['Files', 'Scene', 'App']) {
 		h.check(
 			await A.page.getByText(label, { exact: true }).first().isVisible(),
 			`sidebar section "${label}" visible`

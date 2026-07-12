@@ -24,6 +24,9 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 
+	// 125 made the object-search entry opt-in; enable it so the menu shows it
+	await A.page.evaluate(() => window.__stores.objectSearchEnabled.set(true));
+
 	// right-click TAP on empty viewport opens the merged menu
 	await rightTap(A.page, 700, 400);
 	h.check(
@@ -69,11 +72,11 @@ h.run(async () => {
 		'same spot on both peers'
 	);
 
-	// search entry swaps to the search box; Enter adds the top match
-	// (upper-screen taps stay clear of spawned objects — camera not moved yet)
-	await rightTap(A.page, 300, 130);
-	await A.page.getByText('Search objects…', { exact: false }).click();
-	await A.page.waitForTimeout(200);
+	// the ADD search box (Shift+A) — Enter adds the top-matching primitive.
+	// (125 added a SEPARATE "Search objects" box for finding existing objects;
+	// this is the add-a-primitive search, #add-search-input.)
+	await A.page.keyboard.press('Shift+KeyA');
+	await A.page.waitForTimeout(300);
 	h.check(await A.page.locator('#add-search-input').isVisible(), 'search box opens');
 	await A.page.keyboard.type('ico');
 	await A.page.keyboard.press('Enter');

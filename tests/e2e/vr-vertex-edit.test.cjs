@@ -32,12 +32,15 @@ h.run(async () => {
 	h.check(eligible.boxOk === true, `a box is editable (${eligible.boxVerts} verts)`);
 	h.check(eligible.denseOk === false, `a dense sphere is refused (${eligible.denseVerts} verts)`);
 
-	// --- Edit ▸ Vertices enters edit mode; handles render at the scene root ---
+	// --- Edit Mesh ▸ Vertices enters edit mode; handles render at the scene root
+	// (137: obj:editmesh opens the side-menu defaulting to Faces, then
+	// edit:mode:vertices switches to vertex editing) ---
 	const entered = await A.page.evaluate(() => {
 		const s = window.__stores;
 		s.objectActions.selectObject(window.__box.uuid);
 		s.vrMenuOpen.set(true);
-		s.vrControls.executeVRMenuAction('obj:vertices');
+		s.vrControls.executeVRMenuAction('obj:editmesh');
+		s.vrControls.executeVRMenuAction('edit:mode:vertices');
 		let editing;
 		s.meshEdit.editingObject.subscribe((v) => (editing = v))();
 		let scene;
@@ -119,7 +122,8 @@ h.run(async () => {
 		const s = window.__stores;
 		s.objectActions.selectObject(window.__box.uuid);
 		s.lockedObjects.set([['peerX', window.__box.uuid]]);
-		s.vrControls.executeVRMenuAction('obj:vertices');
+		s.vrControls.executeVRMenuAction('obj:editmesh'); // 137: refuses a locked object
+		s.vrControls.executeVRMenuAction('edit:mode:vertices');
 		let editing;
 		s.meshEdit.editingObject.subscribe((v) => (editing = v))();
 		s.lockedObjects.set([]);

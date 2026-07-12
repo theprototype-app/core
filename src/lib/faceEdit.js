@@ -384,6 +384,7 @@ function onFaceKeydown(event) {
 
 export function exitFaceEdit() {
 	if (!faceEdited) return;
+	detachFaceGizmo(); // 163: drop the desktop gizmo + its proxy
 	// revert an uncommitted gesture's live preview before tearing down (122)
 	const pendingBefore = faceGrab?.before ?? faceAdjust?.before ?? null;
 	faceGrab = null;
@@ -654,6 +655,77 @@ export function cancelFaceGrab() {
 	const before = faceGrab.before;
 	faceGrab = null;
 	applyGeometrySnapshot(before);
+}
+
+// ---- 163: desktop face transform gizmo (a scene-root proxy driving the 162
+// rigid grab). The proxy lives at the SCENE ROOT (not under the object) so it
+// never leaks into GLTF sync / raycasts, like the vertex proxy. ----
+/** @type {any} */ let faceProxy = null;
+/** @type {any} */ let faceProxyStart = null;
+
+function ensureFaceProxy() {
+	if (faceProxy) return faceProxy;
+	const scene = get(globalScene);
+	if (!scene) return null;
+	faceProxy = new THREE.Object3D();
+	faceProxy.userData.isFaceProxy = true;
+	scene.add(faceProxy);
+	return faceProxy;
+}
+
+/** Attach the transform gizmo to the CURRENTLY highlighted face (desktop). */
+export function attachFaceGizmo() {
+	if (typeof window === 'undefined' || !faceEdited) return;
+	/** @type {any} */
+	const controls = get(TControls);
+	const fi = get(faceEditHighlight);
+	if (fi < 0 || !faces[fi] || !controls) {
+		detachFaceGizmo();
+		return;
+	}
+	const proxy = ensureFaceProxy();
+	if (!proxy) return;
+	faceEdited.updateMatrixWorld(true);
+	proxy.position.copy(faceEdited.localToWorld(faces[fi].centroid.clone()));
+	proxy.quaternion.copy(faceEdited.getWorldQuaternion(new THREE.Quaternion()));
+	proxy.scale.setScalar(1);
+	controls.setSpace?.('local');
+	controls.attach(proxy);
+}
+
+/** Detach + remove the face gizmo proxy. */
+export function detachFaceGizmo() {
+	/** @type {any} */
+	const controls = get(TControls);
+	if (faceProxy) {
+		if (controls && controls.object === faceProxy) controls.detach();
+		faceProxy.parent?.remove(faceProxy);
+		faceProxy = null;
+	}
+	faceProxyStart = null;
+}
+
+/** Gizmo dragging-changed for the face proxy (163). @param {boolean} dragging */
+export function onFaceGizmoDragChanged(dragging) {
+	if (!faceEdited || !faceProxy) return;
+	if (dragging) {
+		if (beginFaceGrab(get(faceEditHighlight)))
+			faceProxyStart = { pos: faceProxy.position.clone(), quat: faceProxy.quaternion.clone() };
+	} else if (faceProxyStart) {
+		faceProxyStart = null;
+		commitFaceGrab(); // ONE meshgeo + undo; rebuilds the face cache
+		attachFaceGizmo(); // re-seat on the rebuilt face
+	}
+}
+
+/** Gizmo onchange for the face proxy — apply the rigid transform (163/162). */
+export function onFaceGizmoMoved() {
+	if (!faceEdited || !faceProxy || !faceProxyStart) return;
+	const dPos = faceEdited
+		.worldToLocal(faceProxy.position.clone())
+		.sub(faceEdited.worldToLocal(faceProxyStart.pos.clone()));
+	const dQuat = faceProxyStart.quat.clone().invert().multiply(faceProxy.quaternion);
+	applyFaceGrab({ dPos, dQuat, scale: faceProxy.scale.x });
 }
 
 /**

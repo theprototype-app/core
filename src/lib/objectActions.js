@@ -164,7 +164,14 @@ export function deselectObject() {
 export function setTransformMode(mode) {
 	/** @type {any} */
 	const controls = get(TControls);
-	if (get(transformMode) === mode && controls?.object && !get(isVRMode)) {
+	const object = controls?.object;
+	// a face/vertex/multi gizmo proxy just switches mode (163) — no deselect
+	const isProxy = !!(
+		object?.userData?.isFaceProxy ||
+		object?.userData?.isVertexProxy ||
+		object?.userData?.isMultiPivot
+	);
+	if (!isProxy && get(transformMode) === mode && object && !get(isVRMode)) {
 		deselectObject();
 		return;
 	}

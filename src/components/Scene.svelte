@@ -18,7 +18,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle } from '$lib/faceEdit';
+	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
@@ -165,6 +165,11 @@
 			// vertex handles record their own history entries
 			if (object.userData?.isVertexProxy) {
 				onProxyDragChanged(event.value);
+				return;
+			}
+			// face gizmo (163): begin the rigid grab on drag, commit on release
+			if (object.userData?.isFaceProxy) {
+				onFaceGizmoDragChanged(event.value);
 				return;
 			}
 			// the multi-select pivot records per-member entries (multiTransform)
@@ -384,11 +389,13 @@
 				raycastHandles(selectionRaycaster);
 				return;
 			}
-			// face edit mode (135 desktop): a click highlights the face under it
+			// face edit mode (135 desktop): a click highlights the face under it,
+			// and 163 attaches the transform gizmo to it (drag = move/rotate/scale)
 			if ($faceEditObject) {
 				const edited = $objectsGroup?.getObjectByProperty('uuid', $faceEditObject);
 				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
 				highlightFaceByTriangle(hit && hit.faceIndex != null ? hit.faceIndex : -1);
+				attachFaceGizmo(); // 163: gizmo on the highlighted face (or detaches on a miss)
 				return;
 			}
 			// light pick-proxies select their light (lights have no raycastable geometry)
@@ -568,6 +575,12 @@
 		if ($TControls.object?.userData?.isVertexProxy) {
 			$TControls.visible = true;
 			onProxyMoved();
+			return;
+		}
+		// face gizmo proxy (163): apply the rigid face transform live
+		if ($TControls.object?.userData?.isFaceProxy) {
+			$TControls.visible = true;
+			onFaceGizmoMoved();
 			return;
 		}
 		// multi-select pivot: multiTransform drives + broadcasts the members,

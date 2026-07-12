@@ -6,7 +6,7 @@
 	import { simulating, remoteSimulating, toggleSimulation } from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
-	import { focusObject, duplicateObject, alignToGround } from '$lib/objectActions';
+	import { focusObject, duplicateObject, alignToGround, requestDeleteSelection } from '$lib/objectActions';
 	import { editingObject, enterEditMode, exitEditMode } from '$lib/meshEdit';
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
@@ -100,6 +100,13 @@
 								disabled: !$selectedObject?.uuid,
 								tooltip: 'Pin a synced note to the selected object',
 								action: () => addAnnotation()
+							},
+							{
+								label: 'Delete',
+								danger: true,
+								disabled: !$selectedObject?.uuid,
+								tooltip: 'Del — a group asks first',
+								action: () => requestDeleteSelection()
 							}
 						]
 					}

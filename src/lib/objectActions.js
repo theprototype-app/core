@@ -181,8 +181,8 @@ export function selectionUuids() {
 }
 
 /** Delete the whole selection (context menu / Delete key) */
-export function deleteSelection() {
-	const uuids = selectionUuids();
+/** Delete a specific set of objects by uuid (replicated + undoable). @param {string[]} uuids */
+export function deleteObjectsByUuid(uuids) {
 	if (!uuids.length) return 0;
 	deselectObject();
 	/** @type {any} */
@@ -197,6 +197,34 @@ export function deleteSelection() {
 	}
 	objectsGroup.update((value) => value);
 	return uuids.length;
+}
+
+export function deleteSelection() {
+	return deleteObjectsByUuid(selectionUuids());
+}
+
+/**
+ * Delete the current selection, but a single GROUP with children asks first via
+ * an action-toast (154). Single objects / multi-selects delete immediately.
+ * Used by the viewport menu Delete + the Delete/Backspace shortcut.
+ */
+export function requestDeleteSelection() {
+	const uuids = selectionUuids();
+	if (!uuids.length) return;
+	const group = get(objectsGroup);
+	if (uuids.length === 1) {
+		const object = group?.getObjectByProperty('uuid', uuids[0]);
+		if (object?.type === 'Group' && object.children.length > 0) {
+			const count = collectTree(object).length - 1;
+			const name = object.name || 'group';
+			showToast(`Delete "${name}" and its ${count} object${count === 1 ? '' : 's'}?`, [
+				{ label: 'Delete', action: () => deleteObjectsByUuid([object.uuid]) },
+				{ label: 'Cancel', action: () => {} }
+			]);
+			return;
+		}
+	}
+	deleteSelection();
 }
 
 /**

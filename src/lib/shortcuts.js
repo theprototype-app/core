@@ -5,11 +5,13 @@ import {
 	objectListClose,
 	chatHidden,
 	settingsOpen,
-	settingsSection
+	settingsSection,
+	specatorMode
 } from '../stores/appStore';
-import { focusObject, duplicateSelection, deleteSelection, setTransformMode } from './objectActions';
+import { focusObject, duplicateSelection, requestDeleteSelection, setTransformMode } from './objectActions';
 import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
+import { faceEditObject } from './faceEdit';
 import { recallBookmark } from './cameraBookmarks';
 import { selectedObject } from '../stores/sceneStore';
 
@@ -18,6 +20,17 @@ import { selectedObject } from '../stores/sceneStore';
 // registerShortcut() so their keys show up in the list automatically.
 
 /** @typedef {{ keys: string, group: string, label: string, action?: () => void }} Shortcut */
+
+/**
+ * Delete the viewport selection from the keyboard (154). The node editor owns
+ * Delete/Backspace while open; mesh edit + spectating keep the key too; text
+ * fields + locked views are already excluded by handleKeydown. Groups confirm.
+ */
+function deleteFromViewport() {
+	if (get(flowGraphClose) === false) return; // node editor owns the key while open
+	if (get(editingObject) || get(faceEditObject) || get(specatorMode)) return;
+	requestDeleteSelection();
+}
 
 /** @type {Shortcut[]} */
 export const shortcuts = [
@@ -58,12 +71,14 @@ export const shortcuts = [
 	{
 		keys: 'Delete',
 		group: 'Objects',
-		label: 'Delete selection',
-		action: () => {
-			// the node editor owns Delete while it is open (edge/node removal)
-			if (get(flowGraphClose) === false) return;
-			deleteSelection();
-		}
+		label: 'Delete selection (a group asks first)',
+		action: () => deleteFromViewport()
+	},
+	{
+		keys: 'Backspace',
+		group: 'Objects',
+		label: 'Delete selection (Backspace)',
+		action: () => deleteFromViewport()
 	},
 	{
 		keys: 'Tab',

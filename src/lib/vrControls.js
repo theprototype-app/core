@@ -22,6 +22,8 @@ import {
 	vrPrefabsPanelOpen,
 	vrPrefabsPinned,
 	vrEditMenuOpen,
+	vrSnapMenuOpen,
+	vrSnapMode,
 	vrWireframeSelection,
 	vrStatsOpen,
 	vrGrabStyle,
@@ -66,7 +68,7 @@ import {
 } from './faceEdit';
 import { peers, showToast, messages } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
-import { snapEnabled, snapSettings } from './snapping';
+import { snapEnabled, snapSettings, surfaceSnap, dropToSurface } from './snapping';
 import {
 	selectObject,
 	topLevelObjectOf,
@@ -603,6 +605,33 @@ export function raycastEdit(index) {
 	return control ? control.object.name.slice('vredit-'.length) : null;
 }
 
+/** the Snap side-menu group (156) @type {import('svelte/store').Writable<any>} */
+export const vrSnapGroup = writable(null);
+/** Raycast the Snap side-menu (156) — control names carry the FULL action
+ * (snap:mode:grid / snap:grid:0.5 / snap:rot:reset) @param {number} index */
+export function raycastSnap(index) {
+	const panel = get(vrSnapGroup);
+	if (!panel || !get(vrSnapMenuOpen)) return null;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const control = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrsnap-'));
+	return control ? control.object.name.slice('vrsnap-'.length) : null;
+}
+
+/**
+ * Map a VR snap MODE onto the shared snapping stores (156). off = nothing;
+ * grid/rotation = the gizmo/nudge grid+rotate snap (snapEnabled); surface =
+ * rest-on-surface (surfaceSnap, applied per-frame in the VR grab). Exported so
+ * headless tests can drive the mapping without a controller. @param {string} mode
+ */
+export function applySnapMode(mode) {
+	vrSnapMode.set(mode);
+	try {
+		localStorage.setItem('vrSnapMode', mode);
+	} catch {}
+	snapEnabled.set(mode === 'grid' || mode === 'rotation');
+	surfaceSnap.set(mode === 'surface');
+}
+
 /**
  * Snap-aware nudge step per transform kind (112). Pure for tests.
  * @param {string} kind pos|rot|scale @param {boolean} snapOn
@@ -1004,7 +1033,8 @@ function windowGroupFor(/** @type {string} */ id) {
 			prefabs: vrPrefabsGroup,
 			keyboard: vrKeyboardGroup,
 			chat: vrChatGroup,
-			editmenu: vrEditGroup
+			editmenu: vrEditGroup,
+			snapmenu: vrSnapGroup
 		}[id] ?? vrMenuGroup
 	);
 }
@@ -1012,7 +1042,7 @@ function windowGroupFor(/** @type {string} */ id) {
 /** Which open window the controller ray lands on @param {number} index */
 function windowHitAt(index) {
 	let best = null;
-	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard', 'chat', 'editmenu']) {
+	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard', 'chat', 'editmenu', 'snapmenu']) {
 		const group = windowGroupFor(id);
 		if (!group) continue;
 		const hits = controllerRay(index).intersectObject(group, true);
@@ -1337,7 +1367,9 @@ function updateGrab() {
 		const pose = rigidGrabPose(pPos, pQuat, grab.relPos, grab.relQuat);
 		object.position.copy(pose.position);
 		object.quaternion.copy(pose.quaternion);
-		if (get(snapEnabled)) {
+		if (get(vrSnapMode) === 'surface') {
+			dropToSurface(object, get(objectsGroup)); // 156: rest on the nearest surface under it
+		} else if (get(snapEnabled)) {
 			const step = get(snapSettings).translate;
 			object.position.x = Math.round(object.position.x / step) * step;
 			object.position.z = Math.round(object.position.z / step) * step;
@@ -1363,7 +1395,9 @@ function updateGrab() {
 		tempVector.copy(position).sub(grab.prevPos);
 		realDeltaToRigLocal(tempVector); // 1:1 when the world is unscaled
 		object.position.add(tempVector);
-		if (get(snapEnabled)) {
+		if (get(vrSnapMode) === 'surface') {
+			dropToSurface(object, get(objectsGroup)); // 156
+		} else if (get(snapEnabled)) {
 			const step = get(snapSettings).translate;
 			object.position.x = Math.round(object.position.x / step) * step;
 			object.position.z = Math.round(object.position.z / step) * step;
@@ -1493,6 +1527,45 @@ export function executeVRMenuAction(name) {
 	if (name.startsWith('face:')) {
 		// arm a face op (side-menu, 137); the pointer trigger picks + commits (118/122)
 		setFaceOp(/** @type {any} */ (name.slice('face:'.length)));
+		return;
+	}
+	if (name === 'snap:close') {
+		vrSnapMenuOpen.set(false);
+		return;
+	}
+	if (name.startsWith('snap:mode:')) {
+		// Off / Grid / Surface / Rotation — sets the snap mode + shared stores (156)
+		applySnapMode(name.slice('snap:mode:'.length));
+		return;
+	}
+	if (name.startsWith('snap:grid:')) {
+		// grid sub-value: pick the translate step + ensure grid mode (156)
+		const step = parseFloat(name.slice('snap:grid:'.length));
+		if (step > 0) snapSettings.update((s) => ({ ...s, translate: step }));
+		applySnapMode('grid');
+		return;
+	}
+	if (name === 'snap:rot:reset') {
+		// snap-to-identity: zero the selected object's rotation, replicated + undoable (156)
+		const object = /** @type {any} */ (get(selectedObject));
+		if (!object?.uuid) return;
+		if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) {
+			showToast('That object is locked by another peer');
+			return;
+		}
+		const before = transformStateOf(object);
+		object.rotation.set(0, 0, 0);
+		recordTransform({ uuid: object.uuid, before, after: transformStateOf(object) });
+		broadcastMove(object, true);
+		objectsGroup.update((v) => v);
+		hapticPulse(0.3, 40);
+		return;
+	}
+	if (name.startsWith('snap:rot:')) {
+		// rotation sub-value: pick the rotate-snap angle + ensure rotation mode (156)
+		const deg = parseInt(name.slice('snap:rot:'.length));
+		if (deg > 0) snapSettings.update((s) => ({ ...s, rotateDeg: deg }));
+		applySnapMode('rotation');
 		return;
 	}
 	if (name === 'chat') {
@@ -1665,8 +1738,20 @@ export function executeVRMenuAction(name) {
 				? 'Grab: rigid (controller is the handle — stick reels + scales)'
 				: 'Grab: legacy ' + next
 		);
-	} else if (name === 'snap') snapEnabled.update((v) => !v);
-	else if (name === 'grid') {
+	} else if (name === 'snap') {
+		// 156: toggle the controller Snap side-menu (Off/Grid/Surface/Rotation)
+		if (get(vrSnapMenuOpen)) {
+			vrSnapMenuOpen.set(false);
+		} else {
+			vrObjectsPanelOpen.set(false);
+			vrPaletteOpen.set(false);
+			vrPropsPanelOpen.set(false);
+			vrChatPanelOpen.set(false);
+			vrEditMenuOpen.set(false);
+			vrMenuOpen.set(false);
+			vrSnapMenuOpen.set(true);
+		}
+	} else if (name === 'grid') {
 		showGrid.update((v) => !v);
 		if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
 		else localStorage.setItem('showGrid', 'false');
@@ -2069,6 +2154,14 @@ export function updateVRControls() {
 		// Edit Mesh side-menu (137): the pointer ray highlights its rows
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 		const hovered = pointerIndex >= 0 ? raycastEdit(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.12, 14);
+			vrHovered.set(hovered);
+		}
+	} else if (get(vrSnapMenuOpen)) {
+		// Snap side-menu (156): the pointer ray highlights its rows
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const hovered = pointerIndex >= 0 ? raycastSnap(pointerIndex) : null;
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.12, 14);
 			vrHovered.set(hovered);

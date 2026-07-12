@@ -4,7 +4,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core'
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
-	import { vrEditMenuOpen, vrMenuHand } from '../../stores/sceneStore'
+	import { vrEditMenuOpen, vrMenuHand, vrStretchObject, vrStretchAxis } from '../../stores/sceneStore'
 	import { vrHovered, vrEditGroup } from '$lib/vrControls'
 	import { editingObject } from '$lib/meshEdit'
 	import { faceEditObject, faceEditOp } from '$lib/faceEdit'
@@ -27,14 +27,17 @@
 	})
 
 	// active mode from which edit session is live
-	let mode = $derived($faceEditObject ? 'faces' : $editingObject ? 'vertices' : 'none')
+	let mode = $derived(
+		$faceEditObject ? 'faces' : $editingObject ? 'vertices' : $vrStretchObject ? 'stretch' : 'none'
+	)
 
-	// rows: two mode toggles, then the active mode's tools + a close row
+	// rows: three mode toggles, then the active mode's tools + a close row
 	type Row = { action: string; label: string; active?: boolean; danger?: boolean }
 	let rows = $derived.by(() => {
 		const list: Row[] = [
 			{ action: 'edit:mode:vertices', label: 'Vertices', active: mode === 'vertices' },
-			{ action: 'edit:mode:faces', label: 'Faces', active: mode === 'faces' }
+			{ action: 'edit:mode:faces', label: 'Faces', active: mode === 'faces' },
+			{ action: 'edit:mode:stretch', label: 'Stretch', active: mode === 'stretch' }
 		]
 		if (mode === 'faces') {
 			const op = $faceEditOp
@@ -43,6 +46,11 @@
 				{ action: 'face:inset', label: 'Inset', active: op === 'inset' },
 				{ action: 'face:move', label: 'Move', active: op === 'move' },
 				{ action: 'face:delete', label: 'Delete', active: op === 'delete', danger: true }
+			)
+		} else if (mode === 'stretch') {
+			// pick the axis; the joystick then resizes that extent
+			;['Width', 'Height', 'Depth'].forEach((label, axis) =>
+				list.push({ action: `stretch:axis:${axis}`, label, active: $vrStretchAxis === axis })
 			)
 		}
 		list.push({ action: 'edit:close', label: '✕ Done', danger: true })

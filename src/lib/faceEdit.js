@@ -246,6 +246,22 @@ export function trisToPositions(tris) {
 }
 
 /**
+ * Scale one axis of a flat xyz positions array about its centroid on that axis
+ * (161 stretch). Pure. @param {number[]} positions @param {number} axis 0|1|2
+ * @param {number} factor @returns {number[]}
+ */
+export function stretchPositions(positions, axis, factor) {
+	const out = positions.slice();
+	const count = out.length / 3;
+	if (!count) return out;
+	let sum = 0;
+	for (let i = axis; i < out.length; i += 3) sum += out[i];
+	const center = sum / count;
+	for (let i = axis; i < out.length; i += 3) out[i] = center + (out[i] - center) * factor;
+	return out;
+}
+
+/**
  * Swap an object's geometry to a positions snapshot (remote msg / undo replay).
  * @param {string} uuid @param {number[]} positions
  */
@@ -506,6 +522,23 @@ function broadcastMeshGeo(uuid, positions) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'meshgeo', uuid: uuid, positions: positions });
+}
+
+/**
+ * Commit a full geometry snapshot for ANY object (161 stretch, 162/163 face
+ * transforms): swap locally, replicate, record ONE undoable meshgeo. Size-
+ * capped like the face ops. @param {string} uuid @param {number[]} before
+ * @param {number[]} after @returns {boolean}
+ */
+export function commitMeshGeoSnapshot(uuid, before, after) {
+	if (after.length > MAX_SNAPSHOT) {
+		showToast('That edit is too large to sync');
+		return false;
+	}
+	applyMeshGeo(uuid, after);
+	broadcastMeshGeo(uuid, after);
+	recordEntry({ kind: 'meshgeo', uuid, before, after });
+	return true;
 }
 
 // ---- VR face grab + live extrude/inset (122): a pending edit applied live,

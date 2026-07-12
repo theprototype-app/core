@@ -88,6 +88,10 @@ export const vrPropsPanelOpen = writable(false);
 export const vrPrefabsPanelOpen = writable(false);
 // VR Edit Mesh side-menu (137), opened from Edit ▸ Edit Mesh (toggle)
 export const vrEditMenuOpen = writable(false);
+// 161: VR stretch mode — uuid being stretched (null = off) + the active axis (0=W/1=H/2=D)
+/** @type {import('svelte/store').Writable<any>} */
+export const vrStretchObject = writable(null);
+export const vrStretchAxis = writable(0);
 // VR Snap side-menu (156), opened from Edit ▸ Snap (toggle)
 export const vrSnapMenuOpen = writable(false);
 // VR snap MODE (156): 'off' | 'grid' | 'surface' | 'rotation'

@@ -24,6 +24,8 @@ import {
 	vrPrefabsPanelOpen,
 	vrPrefabsPinned,
 	vrEditMenuOpen,
+	vrStretchObject,
+	vrStretchAxis,
 	vrSnapMenuOpen,
 	vrSnapMode,
 	vrWireframeSelection,
@@ -66,7 +68,12 @@ import {
 	adjustFaceGesture,
 	commitFaceAdjust,
 	cancelFaceAdjust,
-	faceGesturePending
+	faceGesturePending,
+	stretchPositions,
+	commitMeshGeoSnapshot,
+	readTriangles,
+	trisToPositions,
+	applyMeshGeo
 } from './faceEdit';
 import { peers, showToast, messages } from '../stores/appStore';
 import { undo, redo, recordTransform } from './history';
@@ -1195,6 +1202,75 @@ export function vertexTriggerActive() {
 	return !!vertexTriggerGrab;
 }
 
+// ---- 161: VR Stretch mode — non-uniform axis scale, baked as a meshgeo ----
+/** @type {any} { uuid, base: number[], factors: [x,y,z] } */
+let stretch = null;
+
+/** Positions with the current per-axis factors applied to the base. */
+function stretchedPositions() {
+	let p = stretch.base;
+	for (let a = 0; a < 3; a++) if (stretch.factors[a] !== 1) p = stretchPositions(p, a, stretch.factors[a]);
+	return p;
+}
+
+/** Live preview: swap the object's geometry to the stretched positions (local). */
+function applyStretchPreview() {
+	if (!stretch) return;
+	applyMeshGeo(stretch.uuid, stretchedPositions());
+}
+
+/** Enter stretch on an object (captures its base geometry, expanded/non-indexed). @param {string} uuid */
+export function beginStretch(uuid) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!object?.geometry) return false;
+	// expand through the index like the face ops so applyMeshGeo (non-indexed) matches
+	stretch = { uuid, base: trisToPositions(readTriangles(object.geometry)), factors: [1, 1, 1] };
+	vrStretchObject.set(uuid);
+	vrStretchAxis.set(0);
+	return true;
+}
+
+/** Set one axis' extent factor (absolute) + preview. @param {number} axis @param {number} factor */
+export function setStretch(axis, factor) {
+	if (!stretch) return;
+	stretch.factors[axis] = Math.min(Math.max(factor, 0.05), 20);
+	vrStretchAxis.set(axis);
+	applyStretchPreview();
+}
+
+/** Joystick tick: nudge the ACTIVE axis' factor by a fraction. @param {number} delta */
+export function nudgeStretch(delta) {
+	if (!stretch) return;
+	const axis = get(vrStretchAxis);
+	setStretch(axis, stretch.factors[axis] * (1 + delta));
+}
+
+/** Bake the stretch into ONE meshgeo (replicated + undoable). @returns {boolean} */
+export function commitStretch() {
+	if (!stretch) return false;
+	const { uuid, base, factors } = stretch;
+	const after = stretchedPositions();
+	const changed = factors.some((/** @type {number} */ f) => f !== 1);
+	stretch = null;
+	vrStretchObject.set(null);
+	if (changed) commitMeshGeoSnapshot(uuid, base, after);
+	return changed;
+}
+
+/** Abandon the stretch, restoring the base geometry. */
+export function cancelStretch() {
+	if (!stretch) return;
+	const { uuid, base } = stretch;
+	stretch = null;
+	vrStretchObject.set(null);
+	applyMeshGeo(uuid, base);
+}
+
+/** Stretch session for tests (161) @returns {any} */
+export function stretchState() {
+	return stretch ? { uuid: stretch.uuid, factors: [...stretch.factors], axis: get(vrStretchAxis) } : null;
+}
+
 /** @param {number} index */
 function onSqueezeStart(index) {
 	// an armed prefab ghost cancels on grip (115) — nothing else grabs
@@ -1541,6 +1617,7 @@ export function executeVRMenuAction(name) {
 	if (name === 'obj:editmesh') {
 		// 137: TOGGLE mesh-edit mode + the controller side-menu (Vertices/Faces)
 		if (get(vrEditMenuOpen)) {
+			commitStretch(); // 161: bake a pending stretch on close
 			exitEditMode();
 			exitFaceEdit();
 			vrEditMenuOpen.set(false);
@@ -1566,26 +1643,37 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name === 'edit:close') {
-		// side-menu close = exit mesh edit (137)
+		// side-menu close = exit mesh edit (137); bake a pending stretch (161)
+		commitStretch();
 		exitEditMode();
 		exitFaceEdit();
 		vrEditMenuOpen.set(false);
 		return;
 	}
 	if (name.startsWith('edit:mode:')) {
-		// switch Vertices <-> Faces from the side-menu (137)
+		// switch Vertices / Faces / Stretch from the side-menu (137/161)
 		const mode = name.slice('edit:mode:'.length);
 		const object = /** @type {any} */ (get(selectedObject));
 		if (!object?.uuid) return;
+		commitStretch(); // leaving stretch bakes it (no-op otherwise)
 		if (mode === 'vertices') {
 			exitFaceEdit();
 			if (vrVertexEditable(object)) enterEditMode(object.uuid);
 			else showToast('Too dense for vertex editing (max 500 verts)');
+		} else if (mode === 'stretch') {
+			exitEditMode();
+			exitFaceEdit();
+			beginStretch(object.uuid);
 		} else {
 			exitEditMode();
 			if (vrFaceEditable(object)) enterFaceEdit(object.uuid);
 			else showToast('Too dense for face editing (max 300 triangles)');
 		}
+		return;
+	}
+	if (name.startsWith('stretch:axis:')) {
+		// select which axis the joystick stretches (161)
+		vrStretchAxis.set(parseInt(name.slice('stretch:axis:'.length)) || 0);
 		return;
 	}
 	if (name.startsWith('nav:')) {
@@ -2012,6 +2100,13 @@ export function updateVRControls() {
 	// prefab placement ghost (115) rides the pointer-hand ray
 	if (get(vrPrefabGhost))
 		updatePrefabGhost(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
+
+	// 161: stretch mode — the menu-hand stick resizes the active axis (up = grow)
+	if (stretch && session) {
+		const menuIdx = [...session.inputSources].findIndex((s) => s.handedness === get(vrMenuHand));
+		const y = menuIdx >= 0 ? [...session.inputSources][menuIdx]?.gamepad?.axes?.[3] ?? 0 : 0;
+		if (Math.abs(y) > 0.15) nudgeStretch(-y * 0.03);
+	}
 
 	// a trigger drag left dangling by an exit (160) — drop it cleanly
 	if (vertexTriggerGrab && !get(editingObject)) vertexTriggerGrab = null;

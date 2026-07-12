@@ -74,6 +74,7 @@ import {
 	commitFaceAdjust,
 	cancelFaceAdjust,
 	faceGesturePending,
+	highlightedFaceInfo,
 	stretchPositions,
 	commitMeshGeoSnapshot,
 	readTriangles,
@@ -1169,14 +1170,28 @@ let faceGrabHand = null;
  * extrude/inset START a live adjust on the highlighted face, move/delete commit
  * immediately. A grip grab in progress ignores the trigger.
  */
+/** @type {any} 184/185: pointer-hand state while a live extrude/inset adjust runs */
+let faceAdjustHand = null;
+
 export function vrFaceTrigger() {
-	if (commitFaceAdjust()) return; // finalize a pending extrude/inset
+	if (commitFaceAdjust()) {
+		faceAdjustHand = null; // the second trigger CONFIRMS the extrude/inset
+		return;
+	}
 	if (faceGesturePending()) return; // a grip grab owns the gesture
 	const op = get(faceEditOp);
 	const fi = get(faceEditHighlight);
 	if (fi < 0) return;
-	if (op === 'extrude' || op === 'inset') beginFaceAdjust(fi, /** @type {any} */ (op), get(faceEditAmount));
-	else commitArmedFaceOp();
+	if (op === 'extrude' || op === 'inset') {
+		if (beginFaceAdjust(fi, /** @type {any} */ (op), get(faceEditAmount))) {
+			// 184/185: capture the pointer hand so controller motion along the face
+			// normal drives depth (extrude) / size (inset) until the next trigger
+			const info = highlightedFaceInfo();
+			const pIdx = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+			const pos = pIdx >= 0 ? renderer.xr.getController(pIdx).getWorldPosition(new THREE.Vector3()) : null;
+			faceAdjustHand = info && pos ? { index: pIdx, lastPos: pos, normal: info.normal.clone() } : null;
+		}
+	} else commitArmedFaceOp();
 }
 
 /**
@@ -2204,12 +2219,18 @@ export function updateVRControls() {
 			faceGrabHand.scale = Math.min(Math.max(faceGrabHand.scale + sx * 0.01, 0.05), 5);
 			applyFaceGrab({ dPos, dQuat, push: faceGrabHand.push, scale: faceGrabHand.scale });
 		} else if (faceGesturePending()) {
-			// live extrude/inset adjust (122): stick fwd/back = depth, l/r = cap scale
+			// 184/185: controller motion along the face normal drives depth (extrude)
+			// / size (inset); the stick still fine-tunes the cap scale (l/r)
 			const menuIndex = [...session.inputSources].findIndex((s) => s.handedness === get(vrMenuHand));
 			const axes = menuIndex >= 0 ? (session.inputSources[menuIndex]?.gamepad?.axes ?? []) : [];
-			const sy = Math.abs(axes[3] ?? 0) > 0.15 ? axes[3] : 0;
 			const sx = Math.abs(axes[2] ?? 0) > 0.15 ? axes[2] : 0;
-			if (sy || sx) adjustFaceGesture(-sy * 0.01, sx * 0.01);
+			let dAmount = 0;
+			if (faceAdjustHand && faceAdjustHand.index >= 0) {
+				const cur = renderer.xr.getController(faceAdjustHand.index).getWorldPosition(new THREE.Vector3());
+				dAmount = cur.clone().sub(faceAdjustHand.lastPos).dot(faceAdjustHand.normal);
+				faceAdjustHand.lastPos = cur;
+			}
+			if (dAmount || sx) adjustFaceGesture(dAmount, sx * 0.01);
 		} else {
 			// idle: the pointer ray highlights the face under it (121)
 			const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');

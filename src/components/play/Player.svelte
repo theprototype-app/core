@@ -1,16 +1,28 @@
 <script lang="ts">
-    import { T } from '@threlte/core'
+    import { T, useTask } from '@threlte/core'
     import { Vector3 } from 'three'
     import VRControls from './VRControls.svelte'
     import PointerLockControls from './PointerLockControls.svelte'
     import AvatarRig from './AvatarRig.svelte'
-    import { playerCam, peerHands } from '../../stores/sceneStore'
+    import { playerCam, peerHands, worldRig } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
     import { Text } from '@threlte/extras'
 
     export let position: [x: number, y: number, z: number] = [0, 0, 0]
 
     const handColors: Record<string, number> = { left: 0x4f83cc, right: 0xcc784f }
+
+    // 195: peer avatars live in the shared CONTENT frame. This group mirrors the
+    // local worldRig each frame so remote presence (broadcast in content-local
+    // coords) tracks the objects when THIS viewer two-grip world-grabs. The local
+    // camera rig above stays at scene-root, outside this group. Identity when unbent.
+    let peerFrame: any = null
+    useTask(() => {
+      if (!peerFrame || !$worldRig) return
+      peerFrame.position.copy($worldRig.position)
+      peerFrame.quaternion.copy($worldRig.quaternion)
+      peerFrame.scale.copy($worldRig.scale)
+    })
   </script>
     
   <VRControls />
@@ -30,6 +42,7 @@
     </T.PerspectiveCamera>
   </T.Group>
 
+  <T.Group bind:ref={peerFrame}>
   {#each $userdata as user, i}
     {#if user[0] != $peers.peer.id}
     <!-- {console.log(user)} -->
@@ -61,3 +74,4 @@
       </T.Group>
       {/if}
   {/each}
+  </T.Group>

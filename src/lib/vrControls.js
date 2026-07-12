@@ -592,6 +592,23 @@ function axesForSlot(slot) {
 	return src?.gamepad?.axes ?? [];
 }
 
+const _contentRigQuat = new THREE.Quaternion();
+/** 195: rewrite a WORLD pose into the shared CONTENT frame (worldRig-local), in
+ * place. VR presence (head + hands) is broadcast in this frame so a two-grip
+ * world-grab — which bends the rig instead of moving the camera — repositions you
+ * for peers. A no-op when rig is null/identity (desktop + normal VR), so the
+ * common presence path is byte-unchanged. Peers render avatars back through their
+ * OWN rig (Player's peerFrame), which recovers the world pose.
+ * @param {any} rig the worldRig group @param {any} pos THREE.Vector3 (mutated)
+ * @param {any} quat THREE.Quaternion (mutated) */
+export function worldToContentPose(rig, pos, quat) {
+	if (!rig) return;
+	rig.updateWorldMatrix(true, false);
+	rig.worldToLocal(pos);
+	rig.getWorldQuaternion(_contentRigQuat).invert();
+	quat.premultiply(_contentRigQuat);
+}
+
 /** 188: WebXR re-issues inputsourceschange on hands<->controllers and on a
  * controller reconnect (e.g. headset off/on); the controller SLOT<->handedness
  * mapping can flip. All per-slot button state + in-progress grabs are keyed by

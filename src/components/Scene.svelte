@@ -20,7 +20,7 @@
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -91,11 +91,18 @@
 	const handQuaternion = new THREE.Quaternion();
 	const handEuler = new THREE.Euler();
 	const lastHandPositions = [new THREE.Vector3(1e9, 0, 0), new THREE.Vector3(1e9, 0, 0)];
+	// 195: camera pose reused per-frame, expressed in the shared content frame
+	const camContentPos = new THREE.Vector3();
+	const camContentQuat = new THREE.Quaternion();
+	const camContentEuler = new THREE.Euler();
 
 	function readControllerPose(index) {
 		const controller = renderer.xr.getController(index);
 		controller.getWorldPosition(handPosition);
 		controller.getWorldQuaternion(handQuaternion);
+		// 195: express hands in the shared content frame (worldRig-local) so a VR
+		// world-grab moves them for peers; no-op when the rig is unbent
+		worldToContentPose($worldRig, handPosition, handQuaternion);
 		handEuler.setFromQuaternion(handQuaternion);
 		return { pos: handPosition.toArray(), rot: [handEuler.x, handEuler.y, handEuler.z] };
 	}
@@ -141,12 +148,19 @@
 		
 		if (!$specatorMode) {
 			$globalCamera = camera.current; // console.log($globalScene)
-			// console.log($specators)
-			if (camera.current.position.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
-				camera.current.quaternion.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) {
-				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camera.current.position.toArray(), rotation: camera.current.rotation.toArray() });
-				lastCameraPosition.copy(camera.current.position);
-				lastCameraQuaternion.copy(camera.current.quaternion);
+			// 195: broadcast in the shared content frame (worldRig-local) so a VR
+			// world-grab repositions you for peers; no-op when the rig is unbent, so
+			// desktop + normal VR stay unchanged. Detect movement in the SAME frame,
+			// else a grab (which leaves camera.position untouched) never sends.
+			camContentPos.copy(camera.current.position);
+			camContentQuat.copy(camera.current.quaternion);
+			worldToContentPose($worldRig, camContentPos, camContentQuat);
+			if (camContentPos.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
+				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) {
+				camContentEuler.setFromQuaternion(camContentQuat);
+				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z] });
+				lastCameraPosition.copy(camContentPos);
+				lastCameraQuaternion.copy(camContentQuat);
 			}
 		}
 		if (renderer.xr.isPresenting) broadcastVRHands();

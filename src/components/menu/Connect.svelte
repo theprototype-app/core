@@ -68,11 +68,15 @@ const connectToPeer = (peerIdToConnect) => {
 	};
 </script>
 
+<!-- 152: the p-8 padding is transparent but was capturing clicks/drags over
+	 neighbouring windows at z-index 300. pointer-events:none lets the padding
+	 pass events through; the Navbar re-enables them on its own (visible) area. -->
 <div
 	class="p-8"
-	style="position: absolute; top: 35px; left: 50%; transform: translate(-50%, -50%); z-index: 300;"
+	style="position: absolute; top: 35px; left: 50%; transform: translate(-50%, -50%); z-index: 300; pointer-events: none;"
 >
-	<Navbar rounded color="form">
+	<div style="pointer-events: auto; display: inline-block;">
+		<Navbar rounded color="form">
 		<div class="inline-flex rounded-md shadow-sm" role="group">
 			<Input
 				type="text"
@@ -95,4 +99,5 @@ const connectToPeer = (peerIdToConnect) => {
 		</div>
 
 	</Navbar>
+	</div>
 </div>

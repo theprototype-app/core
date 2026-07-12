@@ -294,7 +294,11 @@
 				startWidth = node.offsetWidth;
 				startHeight = node.offsetHeight;
 			}
-			if (e.target.classList.contains('move-handle')) {
+			// 153: start the drag when the click lands anywhere in the move-handle
+			// header (incl. the "☰ Objects" title text), but NOT on its interactive
+			// children (search input, close button) so those still focus/click
+			const t = /** @type {any} */ (e.target);
+			if (t?.closest?.('.move-handle') && !t.closest('input, button')) {
 				moving = true;
 			}
 		});

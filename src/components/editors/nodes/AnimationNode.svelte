@@ -15,6 +15,12 @@
 
 <NodeWrapper type={data.type} label={data.label}>
 	<Handle type="source" position={Position.Right} />
+	<!-- 133: a value input handle per numeric param (Number/Math/... drive it) -->
+	{#if spec?.params}
+		{#each spec.params.filter((pr: any) => pr.kind === 'range') as param, i}
+			<Handle type="target" position={Position.Left} id={param.key} style={`top: ${34 + i * 38}px`} />
+		{/each}
+	{/if}
 	<div class="flex w-full flex-col gap-1">
 		{#if spec?.params}
 			{#each spec.params as param}

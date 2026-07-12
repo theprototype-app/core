@@ -17,6 +17,8 @@
 
 <NodeWrapper type={data.type} label={data.label}>
 	<Handle type="source" position={Position.Right} />
+	<!-- 133: volume can be driven by a value node -->
+	<Handle type="target" position={Position.Left} id="volume" style="top: 74px" />
 	<div class="flex w-full flex-col gap-1">
 		<select
 			class="nodrag"

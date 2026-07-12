@@ -12,6 +12,11 @@ export const flowEdges = writable([]);
 /** @type {import('svelte/store').Writable<string[]>} */
 export const mutedFlowObjects = writable([]);
 
+// live output value of each value/logic node (133), for the on-card readouts —
+// the runtime writes it ~6/s; nodeId -> number | boolean | [x,y,z] | string
+/** @type {import('svelte/store').Writable<Record<string, any>>} */
+export const flowValues = writable({});
+
 // live peer cursors in the flow editor: peerId -> { x, y, name, ts } (flow coordinates)
 /** @type {import('svelte/store').Writable<Record<string, any>>} */
 export const flowCursors = writable({});

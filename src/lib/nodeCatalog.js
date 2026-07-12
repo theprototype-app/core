@@ -18,7 +18,13 @@ export const nodeCatalog = [
 		items: [
 			{ type: 'slider', label: 'Slider', defaults: { value: 20 } },
 			{ type: 'colorpicker', label: 'Color Picker', defaults: { color: '#ff4000' } },
-			{ type: 'switcher', label: 'Switcher', defaults: { shape: 'cube' } }
+			{ type: 'switcher', label: 'Switcher', defaults: { shape: 'cube' } },
+			// 133: value inputs — feed consumer node handles (deterministic)
+			{ type: 'number', label: 'Number', defaults: { value: 1, step: 1 } },
+			{ type: 'vector3', label: 'Vector3', defaults: { x: 0, y: 0, z: 0 } },
+			{ type: 'toggle', label: 'Toggle', defaults: { on: false } },
+			{ type: 'random', label: 'Random', defaults: { min: 0, max: 1, interval: 0 } },
+			{ type: 'time', label: 'Time', defaults: { mode: 'sin', rate: 1 } }
 		]
 	},
 	{
@@ -35,10 +41,14 @@ export const nodeCatalog = [
 					code:
 						'// runs every frame on every peer (keep it deterministic)\n' +
 						'// object: the connected THREE object; base: {pos, rot, scale, visible}\n' +
-						'// data: this node\'s data; time: synced seconds\n' +
+						'// data: this node\'s data (incl. wired a/b/c inputs); time: synced seconds\n' +
 						'object.position.y = base.pos[1] + Math.sin(time * 2) * 0.5;\n'
 				}
-			}
+			},
+			// 133: pure logic on wired inputs (deterministic, no streaming)
+			{ type: 'math', label: 'Math', defaults: { op: 'add', a: 0, b: 0 } },
+			{ type: 'compare', label: 'Compare', defaults: { op: 'gt', a: 0, b: 0 } },
+			{ type: 'gate', label: 'Gate', defaults: { op: 'and', a: false, b: false } }
 		]
 	},
 	{

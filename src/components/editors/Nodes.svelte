@@ -27,6 +27,12 @@
 	import CustomNode from './nodes/CustomNode.svelte';
 	import PathPatrolNode from './nodes/PathPatrolNode.svelte';
 	import SoundNode from './nodes/SoundNode.svelte';
+	import NumberNode from './nodes/NumberNode.svelte';
+	import Vector3Node from './nodes/Vector3Node.svelte';
+	import ToggleNode from './nodes/ToggleNode.svelte';
+	import RandomNode from './nodes/RandomNode.svelte';
+	import TimeNode from './nodes/TimeNode.svelte';
+	import BinaryNode from './nodes/BinaryNode.svelte';
 	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen } from '../../stores/flowStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges } from '$lib/nodesHandler';
 	import { defDefaults } from '$lib/customNodes';
@@ -60,6 +66,14 @@
 		mass: AnimationNode,
 		bounciness: AnimationNode,
 		friction: AnimationNode,
+		number: NumberNode,
+		vector3: Vector3Node,
+		toggle: ToggleNode,
+		random: RandomNode,
+		time: TimeNode,
+		math: BinaryNode,
+		compare: BinaryNode,
+		gate: BinaryNode,
 		...moduleTypes
 	};
 

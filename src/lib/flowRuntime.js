@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations } from '../stores/flowStore';
+import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations, flowValues } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { animationTypes } from './nodeCatalog';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
@@ -18,6 +18,7 @@ let started = false;
 /** @type {any} */ let sceneObjects = null;
 /** @type {string[]} */ let muted = [];
 let synced = true;
+let lastValuesAt = 0;
 
 // objectUuid -> captured base transform, restored when its animations are removed
 const baseState = new Map();
@@ -144,9 +145,155 @@ export function notifyExternalMove(uuid) {
 	if (object) baseState.set(uuid, captureBase(object));
 }
 
+// --- Phase 133: value + logic nodes ------------------------------------------
+
+// node types that produce an OUTPUT value (not a scene effect)
+export const valueTypes = ['number', 'vector3', 'toggle', 'random', 'time', 'math', 'compare', 'gate'];
+// existing input sources that also expose a value on their output handle
+const sourceValueTypes = ['slider', 'colorpicker'];
+
+/** djb2 hash of a string -> uint32 (Random seed) @param {string} str */
+function hashString(str) {
+	let hash = 5381;
+	for (let i = 0; i < str.length; i++) hash = ((hash * 33) ^ str.charCodeAt(i)) >>> 0;
+	return hash >>> 0;
+}
+/** seeded PRNG (mulberry32) -> [0,1) @param {number} seed */
+function mulberry32(seed) {
+	let t = (seed + 0x6d2b79f5) >>> 0;
+	t = Math.imul(t ^ (t >>> 15), t | 1);
+	t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+	return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+/** @param {any} v -> number */
+function num(v) {
+	if (Array.isArray(v)) return Number(v[0]) || 0;
+	if (typeof v === 'boolean') return v ? 1 : 0;
+	const n = Number(v);
+	return Number.isFinite(n) ? n : 0;
+}
+/** @param {any} v -> boolean */
+function bool(v) {
+	if (Array.isArray(v)) return v.length > 0;
+	return typeof v === 'number' ? v !== 0 : !!v;
+}
+
+/**
+ * Evaluate a node's OUTPUT value as a PURE function of the graph + synced time.
+ * Deterministic across peers: Random is seeded by node id, Time reads the
+ * shared clock. Cycle-guarded via `seen`.
+ * @param {any} node @param {any[]} allNodes @param {any[]} allEdges @param {number} time @param {Set<string>} seen
+ * @returns {number | boolean | number[] | string | undefined}
+ */
+export function evalNode(node, allNodes, allEdges, time, seen = new Set()) {
+	if (!node || seen.has(node.id)) return undefined;
+	seen.add(node.id);
+	const d = node.data || {};
+	/** a named input handle's value, falling back to a manual param @param {string} handle @param {any} fallback */
+	const input = (handle, fallback) => {
+		const edge = allEdges.find((e) => e.target === node.id && e.targetHandle === handle);
+		if (edge) {
+			const value = evalNode(
+				allNodes.find((n) => n.id === edge.source),
+				allNodes,
+				allEdges,
+				time,
+				seen
+			);
+			if (value !== undefined) return value;
+		}
+		return fallback;
+	};
+	switch (node.type) {
+		case 'number':
+			return num(d.value ?? 0);
+		case 'slider':
+			return num(d.value ?? 20);
+		case 'toggle':
+			return !!d.on;
+		case 'vector3':
+			return [num(d.x ?? 0), num(d.y ?? 0), num(d.z ?? 0)];
+		case 'colorpicker':
+			return d.color ?? '#ffffff';
+		case 'time': {
+			const t = time * num(d.rate ?? 1);
+			if (d.mode === 'sin') return Math.sin(t);
+			if (d.mode === 'saw') return ((t % 1) + 1) % 1;
+			if (d.mode === 'pingpong') {
+				const p = ((t % 2) + 2) % 2;
+				return p > 1 ? 2 - p : p;
+			}
+			return time;
+		}
+		case 'random': {
+			const lo = num(d.min ?? 0);
+			const hi = num(d.max ?? 1);
+			const interval = num(d.interval ?? 0);
+			const roll = interval > 0 ? Math.floor(time / interval) : 0;
+			return lo + mulberry32(hashString(node.id) + roll) * (hi - lo);
+		}
+		case 'math': {
+			const a = num(input('a', d.a ?? 0));
+			const b = num(input('b', d.b ?? 0));
+			switch (d.op ?? 'add') {
+				case 'sub': return a - b;
+				case 'mul': return a * b;
+				case 'div': return b !== 0 ? a / b : 0;
+				case 'min': return Math.min(a, b);
+				case 'max': return Math.max(a, b);
+				case 'mod': return b !== 0 ? ((a % b) + b) % b : 0;
+				default: return a + b;
+			}
+		}
+		case 'compare': {
+			const a = num(input('a', d.a ?? 0));
+			const b = num(input('b', d.b ?? 0));
+			switch (d.op ?? 'gt') {
+				case 'lt': return a < b;
+				case 'eq': return a === b;
+				case 'gte': return a >= b;
+				case 'lte': return a <= b;
+				case 'neq': return a !== b;
+				default: return a > b;
+			}
+		}
+		case 'gate': {
+			const a = bool(input('a', d.a ?? false));
+			const b = bool(input('b', d.b ?? false));
+			switch (d.op ?? 'and') {
+				case 'or': return a || b;
+				case 'not': return !a;
+				case 'xor': return a !== b;
+				default: return a && b;
+			}
+		}
+		default:
+			return undefined;
+	}
+}
+
+/**
+ * A consumer node's effective data: its own params, with any value/logic node
+ * wired to a named INPUT handle overriding that key (133). Unconnected handles
+ * keep the node's own param.
+ * @param {any} node @param {any[]} allNodes @param {any[]} allEdges @param {number} time
+ */
+export function resolveInputs(node, allNodes, allEdges, time) {
+	const data = { ...(node.data || {}) };
+	allEdges.forEach((edge) => {
+		if (edge.target !== node.id || !edge.targetHandle) return;
+		const source = allNodes.find((n) => n.id === edge.source);
+		if (!source) return;
+		if (!valueTypes.includes(source.type) && !sourceValueTypes.includes(source.type)) return;
+		const value = evalNode(source, allNodes, allEdges, time, new Set());
+		if (value !== undefined) data[edge.targetHandle] = value;
+	});
+	return data;
+}
+
 /** @param {any} object @param {any} base @param {any} anim @param {number} time */
 function applyAnimation(object, base, anim, time) {
-	const data = anim.data || {};
+	const data = resolveInputs(anim, nodes, edges, time);
 	if (anim.type === 'script') {
 		runScript(anim.id, data.code ?? '', object, base, data, time);
 		return;
@@ -305,9 +452,21 @@ function tick(now) {
 		const source = nodes.find((n) => n.id === edge.source);
 		if (source?.type !== 'sound') return;
 		const uuid = targetUuidOf(edge);
-		if (uuid) soundPairs.push({ node: source, uuid });
+		// resolve input-driven volume/radius (133) without touching soundRuntime
+		if (uuid) soundPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time) }, uuid });
 	});
 	updateSounds(soundPairs, sceneObjects, time);
+
+	// live value/logic readouts (133): recompute ~6/s and publish for the cards
+	if (now - lastValuesAt > 150) {
+		lastValuesAt = now;
+		/** @type {Record<string, any>} */
+		const values = {};
+		for (const node of nodes) {
+			if (valueTypes.includes(node.type)) values[node.id] = evalNode(node, nodes, edges, time, new Set());
+		}
+		flowValues.set(values);
+	}
 
 	moduleFrameTasks.forEach((task) => {
 		try {

@@ -12,10 +12,18 @@ import { recordEntry, registerHistoryKind } from '$lib/history';
 const MATERIAL_TYPES = [
 	'MeshBasicMaterial',
 	'MeshStandardMaterial',
+	'MeshPhysicalMaterial',
 	'MeshPhongMaterial',
+	'MeshLambertMaterial',
 	'MeshToonMaterial',
+	'MeshMatcapMaterial',
+	'MeshNormalMaterial',
+	'MeshDepthMaterial',
 	'ShadowMaterial'
 ];
+
+// numeric params carried across a type switch when BOTH sides have them
+const SHARED_MATERIAL_PARAMS = ['opacity', 'roughness', 'metalness', 'shininess', 'clearcoat', 'transmission'];
 
 /** @param {string} uuid */
 function objectOf(uuid) {
@@ -155,13 +163,17 @@ export function switchMaterialType(uuid, type, replicate = true) {
 	const fresh = new (/** @type {any} */ (THREE))[type]();
 	if (old && !Array.isArray(old)) {
 		if (old.color && fresh.color) fresh.color.copy(old.color);
+		if (old.emissive && fresh.emissive) fresh.emissive.copy(old.emissive);
 		if ('map' in fresh && old.map) {
 			fresh.map = old.map;
 			fresh.userData.mapDataUrl = old.userData?.mapDataUrl;
 		}
-		fresh.opacity = old.opacity;
 		fresh.transparent = old.transparent;
 		if ('wireframe' in fresh && old.wireframe !== undefined) fresh.wireframe = old.wireframe;
+		// carry shared numeric params only where the TARGET type has them
+		for (const key of SHARED_MATERIAL_PARAMS) {
+			if (key in fresh && key in old && typeof old[key] === 'number') fresh[key] = old[key];
+		}
 	}
 	object.material = fresh;
 	fresh.needsUpdate = true;

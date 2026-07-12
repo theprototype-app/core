@@ -102,8 +102,13 @@
 	let materials = [
 		{ value: 'MeshBasicMaterial', name: 'Basic' },
 		{ value: 'MeshStandardMaterial', name: 'Standard' },
+		{ value: 'MeshPhysicalMaterial', name: 'Physical' },
 		{ value: 'MeshPhongMaterial', name: 'Phong' },
+		{ value: 'MeshLambertMaterial', name: 'Lambert' },
 		{ value: 'MeshToonMaterial', name: 'Toon' },
+		{ value: 'MeshMatcapMaterial', name: 'Matcap' },
+		{ value: 'MeshNormalMaterial', name: 'Normal' },
+		{ value: 'MeshDepthMaterial', name: 'Depth' },
 		{ value: 'ShadowMaterial', name: 'Shadow' }
 	];
 
@@ -1075,15 +1080,26 @@
 						</div>
 					{/if}
 
-					{#if material.type === 'MeshStandardMaterial'}
+					{#if material.type === 'MeshStandardMaterial' || material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Roughness" min={0} max={1} step={0.05} value={material.roughness}
 							onchange={(v) => setMaterialParam($selectedObject.uuid, 'roughness', v)} />
 						<SliderRow label="Metalness" min={0} max={1} step={0.05} value={material.metalness}
 							onchange={(v) => setMaterialParam($selectedObject.uuid, 'metalness', v)} />
 					{/if}
+					{#if material.type === 'MeshPhysicalMaterial'}
+						<SliderRow label="Clearcoat" min={0} max={1} step={0.05} value={material.clearcoat}
+							onchange={(v) => setMaterialParam($selectedObject.uuid, 'clearcoat', v)} />
+						<SliderRow label="Transmission" min={0} max={1} step={0.05} value={material.transmission}
+							onchange={(v) => setMaterialParam($selectedObject.uuid, 'transmission', v)} />
+					{/if}
 					{#if material.type === 'MeshPhongMaterial'}
 						<SliderRow label="Shininess" min={0} max={100} step={1} decimals={0} value={material.shininess}
 							onchange={(v) => setMaterialParam($selectedObject.uuid, 'shininess', v)} />
+					{/if}
+					{#if material.type === 'MeshNormalMaterial' || material.type === 'MeshDepthMaterial'}
+						<p class="text-[11px] italic text-gray-400">
+							This material type derives its look from geometry — no color or surface parameters.
+						</p>
 					{/if}
 					{#if typeof material.opacity !== 'undefined' && material.type !== 'ShadowMaterial'}
 						<SliderRow label="Opacity" min={0} max={1} step={0.05} value={material.opacity}

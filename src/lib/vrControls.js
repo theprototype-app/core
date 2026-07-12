@@ -955,8 +955,20 @@ const WORLD_SCALE_MIN = 0.05;
 const WORLD_SCALE_MAX = 20;
 
 const emptyAirSqueeze = [false, false];
+/** 186: grip pressed per controller index — gates the two-grip stretch gesture */
+const gripHeld = [false, false];
 /** @type {{a0: any, b0: any, rig0: {pos: any, quat: any, scale: number}} | null} */
 let worldGrab = null;
+
+/** 186: two-grip stretch — opposite thumbstick Y directions DIVERGE (grow),
+ * matching directions cancel. @param {number} leftY @param {number} rightY */
+export function stretchDivergence(leftY, rightY) {
+	return rightY - leftY;
+}
+/** 186: is a two-grip stretch gesture active (both grips held in stretch mode)? */
+export function twoGripStretchActive() {
+	return !!stretch && gripHeld[0] && gripHeld[1];
+}
 
 /** current uniform world scale (1 outside a grab / on desktop) */
 export function worldScale() {
@@ -1384,6 +1396,8 @@ function onSqueezeStart(index) {
 	}
 	if (!object) {
 		emptyAirSqueeze[index] = true;
+		// 186: in stretch mode both grips drive the stretch, not a world grab
+		if (get(vrStretchObject)) return;
 		// both hands gripping air -> world grab (zoom/rotate/pan the world)
 		if (emptyAirSqueeze[0] && emptyAirSqueeze[1]) {
 			beginWorldGrab();
@@ -2101,6 +2115,7 @@ export function updateVRControls() {
 
 		// squeeze grabs
 		const squeezePressed = !!buttons[1]?.pressed;
+		gripHeld[index] = squeezePressed; // 186: track for the two-grip stretch
 		if (squeezePressed && !prev.squeeze) onSqueezeStart(index);
 		if (!squeezePressed && prev.squeeze) onSqueezeEnd(index);
 		prev.squeeze = squeezePressed;
@@ -2169,11 +2184,24 @@ export function updateVRControls() {
 	if (get(vrPrefabGhost))
 		updatePrefabGhost(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
 
-	// 161: stretch mode — the menu-hand stick resizes the active axis (up = grow)
+	// stretch mode — resize the active axis (161/186)
 	if (stretch && session) {
-		const menuIdx = [...session.inputSources].findIndex((s) => s.handedness === get(vrMenuHand));
-		const y = menuIdx >= 0 ? [...session.inputSources][menuIdx]?.gamepad?.axes?.[3] ?? 0 : 0;
-		if (Math.abs(y) > 0.15) nudgeStretch(-y * 0.03);
+		if (gripHeld[0] && gripHeld[1]) {
+			// 186: both grips + divergent thumbsticks (one up, one down) stretch the
+			// active axis; matching directions cancel (avoids the locomotion conflict)
+			const src = [...session.inputSources];
+			const li = src.findIndex((s) => s.handedness === 'left');
+			const ri = src.findIndex((s) => s.handedness === 'right');
+			const ly = li >= 0 ? src[li]?.gamepad?.axes?.[3] ?? 0 : 0;
+			const ry = ri >= 0 ? src[ri]?.gamepad?.axes?.[3] ?? 0 : 0;
+			const div = stretchDivergence(ly, ry);
+			if (Math.abs(div) > 0.2) nudgeStretch(div * 0.02);
+		} else {
+			// 161 fallback: the menu-hand stick resizes the active axis (up = grow)
+			const menuIdx = [...session.inputSources].findIndex((s) => s.handedness === get(vrMenuHand));
+			const y = menuIdx >= 0 ? [...session.inputSources][menuIdx]?.gamepad?.axes?.[3] ?? 0 : 0;
+			if (Math.abs(y) > 0.15) nudgeStretch(-y * 0.03);
+		}
 	}
 
 	// a trigger drag left dangling by an exit (160) — drop it cleanly

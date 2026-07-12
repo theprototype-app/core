@@ -6,7 +6,7 @@
 	import * as THREE from 'three';
 	import { useThrelte, useTask } from '@threlte/core';
 	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
-	import { computeMoveOffset, worldScale } from '$lib/vrControls';
+	import { computeMoveOffset, worldScale, twoGripStretchActive } from '$lib/vrControls';
 	import { dungeonData, slideMove } from '$lib/dungeonPlay';
 
 	const { renderer, camera, scene } = useThrelte();
@@ -35,6 +35,7 @@
 		if (!session) return;
 		if ($vrMenuOpen || $vrObjectsPanelOpen) return; // menu/panel own the sticks (74/101)
 		if ($vrGrabbedHand === 'left') return; // a left-hand grab owns its stick (100)
+		if (twoGripStretchActive()) return; // 186: both grips + sticks stretch, not move
 		const space = xr.getReferenceSpace();
 		if (!space) return;
 

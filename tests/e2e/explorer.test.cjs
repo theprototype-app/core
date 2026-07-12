@@ -166,7 +166,9 @@ h.run(async () => {
 		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
 		window.__stores.explorer.moveItem(items[0].id, textures.id);
 	});
-	await A.page.locator('#explorer-tree button', { hasText: 'Textures' }).click({ button: 'right' });
+	// exact name: the Scene manifest now shows a "textures" sub-entry (178), so a
+	// substring match would be ambiguous with the "Textures" library folder
+	await A.page.locator('#explorer-tree').getByRole('button', { name: '📁 Textures', exact: true }).click({ button: 'right' });
 	await A.page.waitForTimeout(200);
 	await A.page.getByText('Delete folder', { exact: true }).click();
 	await A.page.waitForTimeout(300);

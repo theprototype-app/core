@@ -143,6 +143,20 @@
 		localStorage.setItem('explorerExpanded', JSON.stringify([...next]));
 	}
 
+	// 178: collapse/expand the Library and Scene top-level sections (persisted)
+	const loadSection = (key: string) =>
+		typeof localStorage === 'undefined' ? true : localStorage.getItem(key) !== 'false';
+	let libraryExpanded = $state(loadSection('explorerLibraryExpanded'));
+	let sceneExpanded = $state(loadSection('explorerSceneExpanded'));
+	function toggleLibrary() {
+		libraryExpanded = !libraryExpanded;
+		localStorage.setItem('explorerLibraryExpanded', String(libraryExpanded));
+	}
+	function toggleScene() {
+		sceneExpanded = !sceneExpanded;
+		localStorage.setItem('explorerSceneExpanded', String(sceneExpanded));
+	}
+
 	const KIND_ICONS: Record<string, string> = {
 		image: '🖼️',
 		audio: '🎵',
@@ -444,15 +458,23 @@
 			class="flex shrink-0 flex-col gap-0.5 overflow-x-auto overflow-y-auto pr-1 text-xs"
 			style="width: {treeWidth}px"
 		>
-			<button
-				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
-					? 'bg-primary-700 text-white'
-					: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline outline-2 outline-primary-500' : ''}"
-				ondragover={(e) => dragOverInto(e, 'root')}
-				ondragleave={() => (dropFolder = null)}
-				ondrop={(e) => dropInto(e, null)}
-				onclick={() => ((search = ''), activeFolder.set(null))}>🏠 Library</button
-			>
+			<div class="flex items-center whitespace-nowrap">
+				<button
+					id="library-caret"
+					class="w-4 shrink-0 text-gray-500"
+					title={libraryExpanded ? 'Collapse' : 'Expand'}
+					onclick={toggleLibrary}>{libraryExpanded ? '▾' : '▸'}</button
+				>
+				<button
+					class="flex-1 rounded px-2 py-1 text-left {$activeFolder === null && !search
+						? 'bg-primary-700 text-white'
+						: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline outline-2 outline-primary-500' : ''}"
+					ondragover={(e) => dragOverInto(e, 'root')}
+					ondragleave={() => (dropFolder = null)}
+					ondrop={(e) => dropInto(e, null)}
+					onclick={() => ((search = ''), activeFolder.set(null))}>🏠 Library</button
+				>
+			</div>
 			<button
 				id="prefabs-folder"
 				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
@@ -468,15 +490,23 @@
 				onclick={() => libraryClose.set(false)}>📦 Packs</button
 			>
 			<!-- Scene manifest (108): derived, always shared, read-only structure -->
-			<button
-				id="scene-folder"
-				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene'
-					? 'bg-primary-700 text-white'
-					: 'text-gray-300 hover:bg-gray-700'}"
-				title="Assets the shared scene uses right now — identical on every peer"
-				onclick={() => ((search = ''), activeFolder.set('scene'))}>🌐 Scene</button
-			>
-			{#if typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')}
+			<div class="flex items-center whitespace-nowrap">
+				<button
+					id="scene-caret"
+					class="w-4 shrink-0 text-gray-500"
+					title={sceneExpanded ? 'Collapse' : 'Expand'}
+					onclick={toggleScene}>{sceneExpanded ? '▾' : '▸'}</button
+				>
+				<button
+					id="scene-folder"
+					class="flex-1 rounded px-2 py-1 text-left {$activeFolder === 'scene'
+						? 'bg-primary-700 text-white'
+						: 'text-gray-300 hover:bg-gray-700'}"
+					title="Assets the shared scene uses right now — identical on every peer"
+					onclick={() => ((search = ''), activeFolder.set('scene'))}>🌐 Scene</button
+				>
+			</div>
+			{#if sceneExpanded}
 				{#each ['audio', 'config', 'textures'] as sub}
 					<button
 						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
@@ -489,6 +519,7 @@
 					</button>
 				{/each}
 			{/if}
+			{#if libraryExpanded}
 			{#if editing?.mode === 'create' && editing.parentId === null}
 				{@render editRow(0)}
 			{/if}
@@ -528,6 +559,7 @@
 					{@render editRow(row.depth + 1)}
 				{/if}
 			{/each}
+			{/if}
 			<button
 				id="new-folder"
 				class="mt-1 whitespace-nowrap rounded border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"

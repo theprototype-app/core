@@ -47,7 +47,11 @@ import {
 	vrBeginHandleDrag,
 	vrDragHandleTo,
 	vrEndHandleDrag,
-	setHoveredHandle
+	setHoveredHandle,
+	toggleVertexSelection,
+	createSelectedFace,
+	clearVertexSelection,
+	vertexSelectionSize
 } from './meshEdit';
 import {
 	faceEditObject,
@@ -112,6 +116,9 @@ import {
 
 /** name of the hovered quick-menu tile (for highlight) @type {import('svelte/store').Writable<string|null>} */
 export const vrHovered = writable(null);
+/** 183: VR create-face select mode — a trigger-tap adds the picked vertex to the
+ * Create-face selection instead of grabbing it @type {import('svelte/store').Writable<boolean>} */
+export const vrFaceCreateMode = writable(false);
 /** the quick-menu THREE group, registered by VRMenu.svelte for raycasts @type {import('svelte/store').Writable<any>} */
 export const vrMenuGroup = writable(null);
 /** the objects panel THREE group (101) @type {import('svelte/store').Writable<any>} */
@@ -1202,7 +1209,15 @@ function endVertexCarry() {
 // grabs the picked vertex; the next click drops it.
 /** @param {number} index */
 export function vrVertexTrigger(index) {
-	if (!get(editingObject) || get(vrVertexHold)) return;
+	if (!get(editingObject)) return;
+	// 183: in create-face mode a trigger click toggles the picked vertex into the
+	// selection (once per click — the 'select' event) instead of grabbing it
+	if (get(vrFaceCreateMode)) {
+		const h = vrRaycastHandle(controllerRay(index ?? 0));
+		if (h >= 0) toggleVertexSelection(h);
+		return;
+	}
+	if (get(vrVertexHold)) return;
 	if (vertexTriggerGrab) return endVertexCarry();
 	beginVertexCarry(index);
 }
@@ -1211,7 +1226,8 @@ export function vrVertexTrigger(index) {
 // held, drop on release (selectend).
 /** @param {number} index */
 export function vrVertexGrabStart(index) {
-	if (!get(editingObject) || !get(vrVertexHold) || vertexTriggerGrab) return;
+	// create-face selection is driven by the 'select' click, not the press
+	if (!get(editingObject) || get(vrFaceCreateMode) || !get(vrVertexHold) || vertexTriggerGrab) return;
 	beginVertexCarry(index);
 }
 export function vrVertexGrabEnd() {
@@ -1663,9 +1679,24 @@ export function executeVRMenuAction(name) {
 		}
 		return;
 	}
+	if (name === 'edit:createface') {
+		// 183: toggle create-face select mode; a second tap with 3-4 verts builds
+		if (!get(editingObject)) return;
+		if (!get(vrFaceCreateMode)) {
+			vrFaceCreateMode.set(true);
+			clearVertexSelection();
+		} else {
+			const n = get(vertexSelectionSize);
+			if (n >= 3 && n <= 4) createSelectedFace();
+			else clearVertexSelection();
+			vrFaceCreateMode.set(false);
+		}
+		return;
+	}
 	if (name === 'edit:close') {
 		// side-menu close = exit mesh edit (137); bake a pending stretch (161)
 		commitStretch();
+		vrFaceCreateMode.set(false);
 		exitEditMode();
 		exitFaceEdit();
 		vrEditMenuOpen.set(false);
@@ -1676,6 +1707,7 @@ export function executeVRMenuAction(name) {
 		const mode = name.slice('edit:mode:'.length);
 		const object = /** @type {any} */ (get(selectedObject));
 		if (!object?.uuid) return;
+		vrFaceCreateMode.set(false); // leaving/re-entering a mode exits create-face
 		commitStretch(); // leaving stretch bakes it (no-op otherwise)
 		if (mode === 'vertices') {
 			exitFaceEdit();

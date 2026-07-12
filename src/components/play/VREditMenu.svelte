@@ -5,8 +5,8 @@
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
 	import { vrEditMenuOpen, vrMenuHand, vrStretchObject, vrStretchAxis } from '../../stores/sceneStore'
-	import { vrHovered, vrEditGroup } from '$lib/vrControls'
-	import { editingObject } from '$lib/meshEdit'
+	import { vrHovered, vrEditGroup, vrFaceCreateMode } from '$lib/vrControls'
+	import { editingObject, vertexSelectionSize } from '$lib/meshEdit'
 	import { faceEditObject, faceEditOp } from '$lib/faceEdit'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
@@ -55,6 +55,12 @@
 			;['Width', 'Height', 'Depth'].forEach((label, axis) =>
 				list.push({ action: `stretch:axis:${axis}`, label, active: $vrStretchAxis === axis })
 			)
+		} else if (mode === 'vertices') {
+			// 183: create a face from 3-4 trigger-tapped vertices
+			const n = $vertexSelectionSize
+			const creating = $vrFaceCreateMode
+			const label = creating ? (n >= 3 && n <= 4 ? `Build face (${n})` : `Select verts (${n})`) : 'Create face'
+			list.push({ action: 'edit:createface', label, active: creating })
 		}
 		return list
 	})

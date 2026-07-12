@@ -6,7 +6,7 @@
 	import { Text } from '@threlte/extras'
 	import { vrChatPanelOpen, vrMenuHand } from '../../stores/sceneStore'
 	import { peers, messages, username } from '../../stores/appStore'
-	import { vrHovered, vrChatGroup } from '$lib/vrControls'
+	import { vrHovered, vrChatGroup, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 	import { nameOf, peerColor } from '$lib/lockControl'
@@ -44,7 +44,7 @@
 		if (!group || !$vrChatPanelOpen || !renderer.xr.isPresenting) return
 		const session = renderer.xr.getSession()
 		if (!session) return
-		const index = [...session.inputSources].findIndex((s) => s.handedness === $vrMenuHand)
+		const index = controllerIndexFor($vrMenuHand) // 194/210: by handedness, reorder-safe
 		if (index < 0) return
 		const controller = renderer.xr.getController(index)
 		controller.getWorldPosition(controllerPosition)

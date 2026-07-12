@@ -114,11 +114,14 @@
 		lastHandPositions[0].fromArray(poses[0].pos);
 		lastHandPositions[1].fromArray(poses[1].pos);
 
+		// 194/210: label each pose by the controller SLOT's stamped handedness -
+		// poses is slot-indexed, and the inputSources order can differ from the slot
+		// order after a hands<->controllers swap (else peers see swapped hands)
 		const hands = { left: null, right: null };
-		[...session.inputSources].forEach((source, index) => {
-			if (index < 2 && (source.handedness === 'left' || source.handedness === 'right'))
-				hands[source.handedness] = poses[index];
-		});
+		for (let slot = 0; slot < 2; slot++) {
+			const hand = renderer.xr.getController(slot)?.userData?.handedness;
+			if (hand === 'left' || hand === 'right') hands[hand] = poses[slot];
+		}
 		$peers.send({ type: 'vrhands', peerId: $peers.peer.id, left: hands.left, right: hands.right, active: true });
 	}
 

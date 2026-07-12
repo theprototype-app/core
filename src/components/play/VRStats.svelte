@@ -7,7 +7,7 @@
 	import { vrStatsOpen, vrMenuHand, objectsGroup } from '../../stores/sceneStore'
 	import { userdata } from '../../stores/appStore'
 	import { statsHand } from '$lib/vrRadialMenu'
-	import { vrStatsGroup } from '$lib/vrControls'
+	import { vrStatsGroup, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 
 	// VR statistics card (102): FPS + frame ms + draw calls + triangles +
@@ -62,7 +62,7 @@
 		const session = renderer.xr.getSession()
 		group.visible = !!session
 		if (!session) return
-		const index = [...session.inputSources].findIndex((s) => s.handedness === statsHand($vrMenuHand))
+		const index = controllerIndexFor(statsHand($vrMenuHand)) // 194/210: by handedness, reorder-safe
 		if (index < 0) return
 		const controller = renderer.xr.getController(index)
 		controller.getWorldPosition(pos)

@@ -6,7 +6,7 @@
 	import * as THREE from 'three';
 	import { useThrelte, useTask } from '@threlte/core';
 	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
-	import { computeMoveOffset, worldScale, twoGripStretchActive } from '$lib/vrControls';
+	import { computeMoveOffset, worldScale, twoGripStretchActive, controllerIndexFor } from '$lib/vrControls';
 	import { dungeonData, slideMove } from '$lib/dungeonPlay';
 
 	const { renderer, camera, scene } = useThrelte();
@@ -41,14 +41,13 @@
 
 		xr.getCamera(camera.current).getWorldDirection(cameraDir);
 
-		let index = -1;
 		for (const source of session.inputSources) {
-			index++;
 			if (!source.gamepad || source.handedness !== 'left') continue;
 			const axes = source.gamepad.axes;
 			const grip = !!source.gamepad.buttons[1]?.pressed;
-			// aim of the left controller (pitch included) for flying
-			aimDir.set(0, 0, -1).applyQuaternion(xr.getController(index).getWorldQuaternion(new THREE.Quaternion()));
+			// aim of the left controller (pitch included) for flying — 194/210: the
+			// controller SLOT by handedness, not the inputSources order (they diverge)
+			aimDir.set(0, 0, -1).applyQuaternion(xr.getController(controllerIndexFor('left')).getWorldQuaternion(new THREE.Quaternion()));
 			const offset = computeMoveOffset({
 				x: axes[2] ?? 0,
 				y: axes[3] ?? 0,

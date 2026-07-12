@@ -12,6 +12,7 @@ import {
 	vrSnapAngle,
 	vrMirrorSnapTurn,
 	vrTeleportEnabled,
+	vrVertexHold,
 	selectedObject,
 	isVRMode,
 	worldRig,
@@ -1177,24 +1178,44 @@ export function vrFaceTrigger() {
  * (Edit ▸ Done / the ring). 160 fills this with ray-pick + drag a vertex.
  * @param {number=} index
  */
-export function vrVertexTrigger(index) {
-	if (!get(editingObject)) return;
-	// second click drops the vertex being carried
-	if (vertexTriggerGrab) {
-		vrEndHandleDrag();
-		vertexTriggerGrab = null;
-		hapticPulse(0.3, 30);
-		return;
-	}
-	// first click: ray-pick a handle + start carrying it (rides the controller
-	// each frame until the next trigger). The grip drag (113) still works too.
+// ray-pick a handle + start carrying it (rides the controller each frame). The
+// grip drag (113) still works too. Shared by the hold + toggle styles.
+/** @param {number} index */
+function beginVertexCarry(index) {
 	const handle = vrRaycastHandle(controllerRay(index ?? 0));
-	if (handle < 0) return;
+	if (handle < 0) return false;
 	const handleWorld = vrBeginHandleDrag(handle);
-	if (!handleWorld) return;
+	if (!handleWorld) return false;
 	const controllerPos = renderer.xr.getController(index ?? 0).getWorldPosition(new THREE.Vector3());
 	vertexTriggerGrab = { index: index ?? 0, offset: handleWorld.sub(controllerPos) };
 	hapticPulse(0.3, 30);
+	return true;
+}
+function endVertexCarry() {
+	if (!vertexTriggerGrab) return;
+	vrEndHandleDrag();
+	vertexTriggerGrab = null;
+	hapticPulse(0.3, 30);
+}
+
+// TOGGLE style (182: only when the hold setting is OFF) — a full trigger click
+// grabs the picked vertex; the next click drops it.
+/** @param {number} index */
+export function vrVertexTrigger(index) {
+	if (!get(editingObject) || get(vrVertexHold)) return;
+	if (vertexTriggerGrab) return endVertexCarry();
+	beginVertexCarry(index);
+}
+
+// HOLD style (182, default) — grab on trigger press (selectstart), carry while
+// held, drop on release (selectend).
+/** @param {number} index */
+export function vrVertexGrabStart(index) {
+	if (!get(editingObject) || !get(vrVertexHold) || vertexTriggerGrab) return;
+	beginVertexCarry(index);
+}
+export function vrVertexGrabEnd() {
+	if (get(vrVertexHold)) endVertexCarry();
 }
 
 /** Is a trigger vertex-carry active? (160, for tests) */

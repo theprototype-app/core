@@ -62,6 +62,11 @@ export const vrMirrorSnapTurn = writable(
 export const vrTeleportEnabled = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('vrTeleportEnabled') !== 'false'
 );
+// vertex grab style (182): default HOLD (trigger held = carry, release = drop);
+// OFF = the toggle style (press to grab, press again to drop)
+export const vrVertexHold = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('vrVertexHold') !== 'false'
+);
 // VR flying: left-stick movement follows the controller aim (pitch included)
 export const vrFlying = writable(
 	typeof localStorage !== 'undefined' && localStorage.getItem('vrFlying') === 'true'

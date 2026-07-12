@@ -20,7 +20,7 @@
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -560,13 +560,25 @@
 			selectionRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 			raycastSelect();
 		};
-		xrControllers.forEach((controller) => controller.addEventListener('select', onXRSelect));
+		// 182: hold-to-move a vertex — grab on trigger press, drop on release
+		// (the functions no-op unless in vertex mode with the hold setting on)
+		const onXRSelectStart = (event: any) => vrVertexGrabStart(xrControllers.indexOf(event.target));
+		const onXRSelectEnd = () => vrVertexGrabEnd();
+		xrControllers.forEach((controller) => {
+			controller.addEventListener('select', onXRSelect);
+			controller.addEventListener('selectstart', onXRSelectStart);
+			controller.addEventListener('selectend', onXRSelectEnd);
+		});
 
 		return () => {
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
 			window.removeEventListener('pointerup', onPointerUp);
-			xrControllers.forEach((controller) => controller.removeEventListener('select', onXRSelect));
+			xrControllers.forEach((controller) => {
+				controller.removeEventListener('select', onXRSelect);
+				controller.removeEventListener('selectstart', onXRSelectStart);
+				controller.removeEventListener('selectend', onXRSelectEnd);
+			});
 			renderer.xr.removeEventListener('sessionend', onSessionEnd);
 		};
 	});

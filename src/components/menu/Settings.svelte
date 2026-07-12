@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
-	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
+	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showToast } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
@@ -187,6 +187,18 @@
 							}}>&nbsp;Teleport</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Right-stick-up teleport arc — off if you navigate only by stick/fly</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Checkbox
+							id="vr-vertex-hold"
+							checked={$vrVertexHold}
+							on:change={(e: any) => {
+								$vrVertexHold = e.target.checked;
+								localStorage.setItem('vrVertexHold', String($vrVertexHold));
+							}}>&nbsp;Hold to move vertex</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Hold the trigger to carry a vertex (release drops it); off = press to grab, press again to drop</p>
 				</div>
 				<div class="flex">
 					<p class={bottomCoverName}>

@@ -39,6 +39,7 @@ h.run(async () => {
 		s.objectsGroup.update((v) => v);
 		s.objectActions.selectObject(box.uuid);
 		s.meshEdit.enterEditMode(box.uuid);
+		s.vrVertexHold.set(false); // 182: the click-toggle style is now opt-in
 		const before = s.vrControls.vertexTriggerActive();
 		s.vrControls.vrVertexTrigger(0); // click a handle -> carry it
 		const grabbed = s.vrControls.vertexTriggerActive();

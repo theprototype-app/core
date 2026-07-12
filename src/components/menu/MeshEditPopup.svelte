@@ -13,6 +13,8 @@
 		exitFaceEdit,
 		faceEditHighlight,
 		faceEditAmount,
+		faceEditOp,
+		setFaceOp,
 		commitFaceOp
 	} from '$lib/faceEdit';
 	import { isVRMode, selectedObject } from '../../stores/sceneStore';
@@ -42,11 +44,19 @@
 	] as const;
 
 	function runOp(op: string) {
-		if ($faceEditHighlight < 0) {
-			showToast('Click a face first');
+		// Delete is a one-shot (needs a picked face); it never becomes the active tool
+		if (op === 'delete') {
+			if ($faceEditHighlight < 0) {
+				showToast('Click a face first');
+				return;
+			}
+			commitFaceOp('delete' as any, $faceEditAmount);
 			return;
 		}
-		commitFaceOp(op as any, $faceEditAmount);
+		// Extrude/Inset/Move activate as the current tool (highlighted); if a face
+		// is already picked, apply right away (176 adds auto-apply-on-click + Apply)
+		setFaceOp(op as any);
+		if ($faceEditHighlight >= 0) commitFaceOp(op as any, $faceEditAmount);
 	}
 
 	function finish() {
@@ -89,7 +99,10 @@
 						id={`mesh-op-${o.op}`}
 						class="rounded-full px-2.5 py-1 {o.op === 'delete'
 							? 'bg-red-800/70 hover:bg-red-700'
-							: 'bg-gray-700 hover:bg-gray-600'}"
+							: o.op === $faceEditOp
+								? 'bg-primary-600 text-white'
+								: 'bg-gray-700 hover:bg-gray-600'}"
+						class:mesh-op-active={o.op !== 'delete' && o.op === $faceEditOp}
 						on:click={() => runOp(o.op)}>{o.label}</button
 					>
 				{/each}
@@ -104,9 +117,6 @@
 					bind:value={$faceEditAmount}
 				/>
 			</label>
-			<span class="text-[11px] text-gray-400">
-				{$faceEditHighlight >= 0 ? 'face selected — pick an op' : 'click a face'}
-			</span>
 		{:else}
 			<span class="text-[11px] text-gray-400">drag the vertex handles · Faces for extrude/inset</span>
 		{/if}

@@ -15,6 +15,7 @@
 		faceEditAmount,
 		faceEditOp,
 		setFaceOp,
+		faceAutoApply,
 		commitFaceOp
 	} from '$lib/faceEdit';
 	import { isVRMode, selectedObject } from '../../stores/sceneStore';
@@ -53,10 +54,19 @@
 			commitFaceOp('delete' as any, $faceEditAmount);
 			return;
 		}
-		// Extrude/Inset/Move activate as the current tool (highlighted); if a face
-		// is already picked, apply right away (176 adds auto-apply-on-click + Apply)
+		// Extrude/Inset/Move activate as the current tool (highlighted). Extrude/
+		// Inset reveal the params row; applying happens on a face click (auto-apply)
+		// or via the Apply button (176).
 		setFaceOp(op as any);
-		if ($faceEditHighlight >= 0) commitFaceOp(op as any, $faceEditAmount);
+	}
+
+	// 176: force-apply the active op on the currently highlighted face
+	function applyActive() {
+		if ($faceEditHighlight < 0) {
+			showToast('Click a face first');
+			return;
+		}
+		commitFaceOp($faceEditOp as any, $faceEditAmount);
 	}
 
 	function finish() {
@@ -74,58 +84,80 @@
 {#if active}
 	<div
 		id="mesh-edit-popup"
-		class="fixed left-1/2 top-20 z-[var(--z-window)] flex -translate-x-1/2 items-center gap-3 rounded-full bg-gray-800 px-4 py-2 text-sm text-white shadow-xl"
+		class="fixed left-1/2 top-20 z-[var(--z-window)] flex -translate-x-1/2 flex-col items-center gap-1.5"
 	>
-		<span class="font-semibold">🔷 Edit mesh</span>
+		<!-- row 1: mode + op selection (no amount; params live in the nested row) -->
+		<div class="flex items-center gap-3 rounded-full bg-gray-800 px-4 py-2 text-sm text-white shadow-xl">
+			<span class="font-semibold">🔷 Edit mesh</span>
 
-		<!-- mode toggles: clear active state -->
-		<div class="flex overflow-hidden rounded-full border border-gray-600">
+			<!-- mode toggles: clear active state -->
+			<div class="flex overflow-hidden rounded-full border border-gray-600">
+				<button
+					id="mesh-mode-vertices"
+					class="px-3 py-0.5 {mode === 'vertices' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					on:click={() => setMode('vertices')}>Vertices</button
+				>
+				<button
+					id="mesh-mode-faces"
+					class="px-3 py-0.5 {mode === 'faces' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					on:click={() => setMode('faces')}>Faces</button
+				>
+			</div>
+
+			{#if mode === 'faces'}
+				<div class="flex items-center gap-1">
+					{#each OPS as o}
+						<button
+							id={`mesh-op-${o.op}`}
+							class="rounded-full px-2.5 py-1 {o.op === 'delete'
+								? 'bg-red-800/70 hover:bg-red-700'
+								: o.op === $faceEditOp
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-700 hover:bg-gray-600'}"
+							class:mesh-op-active={o.op !== 'delete' && o.op === $faceEditOp}
+							on:click={() => runOp(o.op)}>{o.label}</button
+						>
+					{/each}
+				</div>
+			{:else}
+				<span class="text-[11px] text-gray-400">drag the vertex handles · Faces for extrude/inset</span>
+			{/if}
+
 			<button
-				id="mesh-mode-vertices"
-				class="px-3 py-0.5 {mode === 'vertices' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-				on:click={() => setMode('vertices')}>Vertices</button
-			>
-			<button
-				id="mesh-mode-faces"
-				class="px-3 py-0.5 {mode === 'faces' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-				on:click={() => setMode('faces')}>Faces</button
+				id="mesh-edit-done"
+				class="rounded-full bg-[#ff4000] px-3 py-0.5 text-white"
+				title="Finish (Esc)"
+				on:click={finish}>Done</button
 			>
 		</div>
 
-		{#if mode === 'faces'}
-			<div class="flex items-center gap-1">
-				{#each OPS as o}
-					<button
-						id={`mesh-op-${o.op}`}
-						class="rounded-full px-2.5 py-1 {o.op === 'delete'
-							? 'bg-red-800/70 hover:bg-red-700'
-							: o.op === $faceEditOp
-								? 'bg-primary-600 text-white'
-								: 'bg-gray-700 hover:bg-gray-600'}"
-						class:mesh-op-active={o.op !== 'delete' && o.op === $faceEditOp}
-						on:click={() => runOp(o.op)}>{o.label}</button
-					>
-				{/each}
+		<!-- 176: nested params row for Extrude/Inset (amount / auto-apply / Apply) -->
+		{#if mode === 'faces' && ($faceEditOp === 'extrude' || $faceEditOp === 'inset')}
+			<div
+				id="mesh-op-params"
+				class="flex items-center gap-3 rounded-full bg-gray-800 px-4 py-1.5 text-xs text-white shadow-xl"
+			>
+				<label class="flex items-center gap-1 text-gray-300">
+					amount
+					<input
+						id="mesh-op-amount"
+						type="number"
+						step="0.05"
+						class="w-14 rounded bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={$faceEditAmount}
+					/>
+				</label>
+				<label class="flex items-center gap-1 text-gray-300" title="Apply the op when you click a face">
+					<input id="mesh-op-autoapply" type="checkbox" bind:checked={$faceAutoApply} />
+					auto-apply
+				</label>
+				<button
+					id="mesh-op-apply"
+					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
+					title="Apply the active op to the selected face"
+					on:click={applyActive}>Apply</button
+				>
 			</div>
-			<label class="flex items-center gap-1 text-xs text-gray-300">
-				amount
-				<input
-					id="mesh-op-amount"
-					type="number"
-					step="0.05"
-					class="w-14 rounded bg-gray-900 px-1 py-0.5 text-right"
-					bind:value={$faceEditAmount}
-				/>
-			</label>
-		{:else}
-			<span class="text-[11px] text-gray-400">drag the vertex handles · Faces for extrude/inset</span>
 		{/if}
-
-		<button
-			id="mesh-edit-done"
-			class="rounded-full bg-[#ff4000] px-3 py-0.5 text-white"
-			title="Finish (Esc)"
-			on:click={finish}>Done</button
-		>
 	</div>
 {/if}

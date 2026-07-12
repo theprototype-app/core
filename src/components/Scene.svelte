@@ -18,7 +18,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged } from '$lib/faceEdit';
+	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, executeVRMenuAction, resetWorldRig } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
@@ -395,6 +395,7 @@
 				const edited = $objectsGroup?.getObjectByProperty('uuid', $faceEditObject);
 				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
 				highlightFaceByTriangle(hit && hit.faceIndex != null ? hit.faceIndex : -1);
+				if (hit && hit.faceIndex != null) autoApplyFaceOp(); // 176: click a face to apply the active extrude/inset
 				attachFaceGizmo(); // 163: gizmo on the highlighted face (or detaches on a miss)
 				return;
 			}

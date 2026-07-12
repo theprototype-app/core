@@ -303,6 +303,18 @@ export const faceEditHighlight = writable(-1);
 export const faceEditOp = writable('extrude');
 /** live op amount, stick-driven @type {import('svelte/store').Writable<number>} */
 export const faceEditAmount = writable(0.3);
+/** 176: desktop auto-apply the active extrude/inset op on face click */
+export const faceAutoApply = writable(true);
+
+/** 176: on a desktop face click, apply the active extrude/inset op if auto-apply
+ * is on and a face is highlighted. Returns TRUE if it committed. */
+export function autoApplyFaceOp() {
+	if (!get(faceAutoApply)) return false;
+	const op = get(faceEditOp);
+	if (op !== 'extrude' && op !== 'inset') return false;
+	if (get(faceEditHighlight) < 0) return false;
+	return commitFaceOp(op, get(faceEditAmount));
+}
 
 /** Arm an op (from the Faces sub-ring) @param {'extrude'|'inset'|'move'|'delete'} op */
 export function setFaceOp(op) {

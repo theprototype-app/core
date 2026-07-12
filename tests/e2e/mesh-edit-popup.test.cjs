@@ -53,20 +53,24 @@ h.run(async () => {
 	h.check(faces.faceEditing && faces.vertexExited, 'Faces mode enters face edit and leaves vertex mode');
 	h.check(faces.ops.every(Boolean), 'the four face op buttons render');
 
-	// --- pick a face (via the core) then Extrude through the button ---
+	// --- pick a face, activate Extrude (reveals the 176 params row), Apply ---
 	const extrude = await A.page.evaluate(async () => {
 		const fe = window.__stores.faceEdit;
 		fe.highlightFaceByTriangle(0); // stands in for the viewport click
 		const before = fe.readTriangles(window.__box.geometry).length;
+		document.querySelector('#mesh-op-extrude').click(); // activate the tool
+		await new Promise((r) => setTimeout(r, 50));
+		const paramsRow = !!document.querySelector('#mesh-op-params'); // 176: nested row appears
 		document.querySelector('#mesh-op-amount').value = '0.4';
 		document.querySelector('#mesh-op-amount').dispatchEvent(new Event('input', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 50));
-		document.querySelector('#mesh-op-extrude').click();
+		document.querySelector('#mesh-op-apply').click(); // 176: Apply commits on the selected face
 		await new Promise((r) => setTimeout(r, 50));
 		const after = fe.readTriangles(window.__box.geometry).length;
-		return { before, after };
+		return { before, after, paramsRow };
 	});
-	h.check(extrude.before === 12 && extrude.after === 20, `Extrude button rebuilds the geometry (${extrude.before}→${extrude.after})`);
+	h.check(extrude.paramsRow, '176: activating Extrude reveals the nested params row');
+	h.check(extrude.before === 12 && extrude.after === 20, `Apply rebuilds the geometry (${extrude.before}->${extrude.after})`);
 
 	// --- the edit is undoable through the shared meshgeo history ---
 	const undone = await A.page.evaluate(() => {

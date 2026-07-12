@@ -43,6 +43,7 @@
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges } from '$lib/nodesHandler';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
+	import { isValidFlowConnection } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
 	import { peers, username } from '../../stores/appStore';
@@ -179,6 +180,10 @@
 			peer?.send({ type: 'nodemove', id: node.id, position: { x: node.position.x, y: node.position.y } });
 		});
 	};
+
+	// 165: reject a drag between incompatible socket types (same type or a sane
+	// coercion). Saved edges are not re-validated — only live drags.
+	const isValidConnection = (connection: any) => isValidFlowConnection(connection, get(nodes));
 
 	// Give new edges a deterministic id and replicate them to all peers
 	const onedgecreate = (connection: Connection) => {
@@ -437,6 +442,7 @@
 			{viewport}
 			{onedgecreate}
 			{ondelete}
+			{isValidConnection}
 			defaultEdgeOptions={{ type: 'bezier', markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 } }}
 			deleteKey={['Backspace', 'Delete']}
 			fitView

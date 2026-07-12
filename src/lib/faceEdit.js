@@ -373,7 +373,6 @@ export function enterFaceEdit(uuid) {
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 	faceEditObject.set(uuid);
-	showToast('Editing faces of ' + (object.name || 'mesh') + ' — point at a face, trigger to pick');
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onFaceKeydown);
 }
 
@@ -671,6 +670,18 @@ function ensureFaceProxy() {
 	faceProxy.userData.isFaceProxy = true;
 	scene.add(faceProxy);
 	return faceProxy;
+}
+
+/** World-space focus target {center,radius} for the selected face, or null (173). */
+export function focusTargetFace() {
+	if (!faceEdited) return null;
+	const fi = get(faceEditHighlight);
+	if (fi < 0 || !faces[fi]) return null;
+	faceEdited.updateMatrixWorld(true);
+	const center = faceEdited.localToWorld(faces[fi].centroid.clone());
+	const box = new THREE.Box3().setFromObject(faceEdited);
+	const objR = box.getSize(new THREE.Vector3()).length() / 2;
+	return { center, radius: Math.max(objR * 0.3, 0.3) };
 }
 
 /** Attach the transform gizmo to the CURRENTLY highlighted face (desktop). */

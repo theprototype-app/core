@@ -152,7 +152,6 @@ export function enterEditMode(uuid) {
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 
 	editingObject.set(uuid);
-	showToast('Editing ' + (object.name || 'mesh') + ' — drag the vertex handles, Esc to finish');
 	window.addEventListener('keydown', onKeydown);
 }
 
@@ -213,6 +212,15 @@ export function selectHandle(index) {
 	const controls = get(TControls);
 	controls.setMode('translate');
 	controls.attach(proxy);
+}
+
+/** World-space focus target {center,radius} for the selected vertex, or null (173). */
+export function focusTargetVertex() {
+	if (!edited || selectedHandle < 0 || !handles[selectedHandle]) return null;
+	const center = handleWorldPosition(selectedHandle, new THREE.Vector3()).clone();
+	const box = new THREE.Box3().setFromObject(edited);
+	const objR = box.getSize(new THREE.Vector3()).length() / 2;
+	return { center, radius: Math.max(objR * 0.2, 0.25) };
 }
 
 // dedicated vector for the write path: refreshHandleMatrix reuses tempVector,

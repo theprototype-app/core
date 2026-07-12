@@ -15,6 +15,8 @@ import {
 	isVRMode
 } from '../stores/sceneStore';
 import { attachMultiPivot, releaseMultiPivot } from './multiTransform';
+import { focusTargetFace } from './faceEdit';
+import { focusTargetVertex } from './meshEdit';
 import {
 	peers,
 	showSidebar,
@@ -527,6 +529,22 @@ export function flyTo(position, target, duration = 400) {
  */
 export function focusObject(uuid) {
 	if (get(specatorMode) || get(isVRMode)) return;
+	// 173: in mesh-edit, F frames the selected face/vertex; fall back to the object
+	if (!uuid) {
+		const editFocus = focusTargetFace() || focusTargetVertex();
+		if (editFocus) {
+			/** @type {any} */
+			const camera = get(globalCamera);
+			/** @type {any} */
+			const controls = get(orbitControls);
+			if (!camera || !controls) return;
+			const fov = THREE.MathUtils.degToRad(camera.fov);
+			const distance = THREE.MathUtils.clamp((editFocus.radius / Math.tan(fov / 2)) * 1.2, 0.5, 200);
+			const direction = camera.position.clone().sub(controls.target).normalize();
+			flyTo(editFocus.center.clone().add(direction.multiplyScalar(distance)), editFocus.center.clone());
+			return;
+		}
+	}
 	const group = get(objectsGroup);
 	// a multi-selection frames the union of every member's bounds
 	const targets = uuid ? [uuid] : selectionUuids();

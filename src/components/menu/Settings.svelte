@@ -150,10 +150,10 @@
 					<p class={middlecoverName}>
 						<ThemedSelect
 							items={[
-								{ value: 0, name: 'Snap turn off' },
-								{ value: 15, name: 'Snap turn 15°' },
-								{ value: 30, name: 'Snap turn 30°' },
-								{ value: 45, name: 'Snap turn 45°' }
+								{ value: 0, name: 'Off' },
+								{ value: 15, name: '15°' },
+								{ value: 30, name: '30°' },
+								{ value: 45, name: '45°' }
 							]}
 							value={$vrSnapAngle}
 							onchange={(v) => {
@@ -162,7 +162,7 @@
 							}}
 						/>
 					</p>
-					<p class={middlecoverDescription}>VR thumbstick flick rotation angle (Off disables snap turn)</p>
+					<p class={middlecoverDescription}><span class="font-semibold">Snap turn</span> — VR thumbstick flick rotation angle (Off disables it)</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>
@@ -207,11 +207,11 @@
 					<p class={topcoverName}>
 						<ThemedSelect
 							id="theme-select"
-							items={[...THEMES, ...$customThemes].map((t) => ({ value: t.id, name: 'Theme: ' + t.name }))}
+							items={[...THEMES, ...$customThemes].map((t) => ({ value: t.id, name: t.name }))}
 							bind:value={$theme}
 						/>
 					</p>
-					<p class={topcoverDescription}>UI theme for THIS device (the 3D viewport follows the environment, not the theme)</p>
+					<p class={topcoverDescription}><span class="font-semibold">Theme</span> — UI theme for THIS device (the 3D viewport follows the environment, not the theme)</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName + ' gap-2'}>
@@ -296,15 +296,16 @@
 				<div class="flex">
 					<p class={middlecoverName}>
 						<ThemedSelect
+							id="shadow-quality"
 							items={[
-								{ value: 'low', name: 'Shadows: low' },
-								{ value: 'medium', name: 'Shadows: medium' },
-								{ value: 'high', name: 'Shadows: high' }
+								{ value: 'low', name: 'Low' },
+								{ value: 'medium', name: 'Medium' },
+								{ value: 'high', name: 'High' }
 							]}
 							bind:value={$shadowQuality}
 						/>
 					</p>
-					<p class={middlecoverDescription}>Caps every light's shadow map size on THIS machine (per-light sizes still replicate)</p>
+					<p class={middlecoverDescription}><span class="font-semibold">Shadow quality</span> — caps every light's shadow map size on THIS machine (per-light sizes still replicate)</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName + ' gap-1'}>

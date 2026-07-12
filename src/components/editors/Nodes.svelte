@@ -189,7 +189,8 @@
 			sourceHandle: connection.sourceHandle,
 			targetHandle: connection.targetHandle,
 			// 69: readable edges — same shape on every peer via serializeEdge
-			type: 'smoothstep',
+			// 150: curvy bezier connections
+			type: 'bezier',
 			markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 }
 		} satisfies Edge;
 		peer?.send({ type: 'edgecreate', edge: serializeEdge(edge) });
@@ -436,6 +437,7 @@
 			{viewport}
 			{onedgecreate}
 			{ondelete}
+			defaultEdgeOptions={{ type: 'bezier', markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 } }}
 			deleteKey={['Backspace', 'Delete']}
 			fitView
 			maxZoom={1}

@@ -8,13 +8,30 @@
 	import { shadowQuality } from '$lib/lightParams';
 	import { pingColor, pingSound } from '$lib/ping';
 	import { PING_SOUNDS, playPing } from '$lib/pingAudio';
-	import { THEMES, theme } from '$lib/themes';
+	import {
+		THEMES,
+		theme,
+		customThemes,
+		exportActiveTheme,
+		importThemeFile,
+		removeCustomTheme
+	} from '$lib/themes';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
 	import { shortcuts } from '$lib/shortcuts';
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
+
+	// custom theme import (149): a hidden file input + a validating handler
+	let themeFileInput: any;
+	async function onThemeFile(e: any) {
+		const file = e.currentTarget.files?.[0];
+		e.currentTarget.value = '';
+		if (!file) return;
+		const id = await importThemeFile(file);
+		showToast(id ? 'Theme imported' : 'Not a valid .theme.json file');
+	}
 
 	// passthrough capability probe (90): the setting stays visible with a hint
 	let arSupport: boolean | null = null;
@@ -164,11 +181,49 @@
 					<p class={topcoverName}>
 						<ThemedSelect
 							id="theme-select"
-							items={THEMES.map((t) => ({ value: t.id, name: 'Theme: ' + t.name }))}
+							items={[...THEMES, ...$customThemes].map((t) => ({ value: t.id, name: 'Theme: ' + t.name }))}
 							bind:value={$theme}
 						/>
 					</p>
 					<p class={topcoverDescription}>UI theme for THIS device (the 3D viewport follows the environment, not the theme)</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName + ' gap-2'}>
+						<button
+							id="theme-export"
+							class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+							on:click={() => exportActiveTheme()}>Export template</button
+						>
+						<button
+							id="theme-browse"
+							class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+							on:click={() => themeFileInput?.click()}>Browse…</button
+						>
+						<input
+							type="file"
+							accept=".json,application/json"
+							bind:this={themeFileInput}
+							style="display: none"
+							on:change={onThemeFile}
+						/>
+					</p>
+					<p class={middlecoverDescription}>
+						Export the active theme as an editable .theme.json, tweak the colors, then Browse to load it back
+						{#if $customThemes.length}
+							<span class="mt-1 flex flex-wrap gap-1">
+								{#each $customThemes as ct (ct.id)}
+									<span class="inline-flex items-center gap-1 rounded bg-gray-800 px-1.5 py-0.5 text-[11px]">
+										{ct.name}
+										<button
+											class="text-gray-400 hover:text-red-400"
+											title="Remove theme"
+											on:click={() => removeCustomTheme(ct.id)}>✕</button
+										>
+									</span>
+								{/each}
+							</span>
+						{/if}
+					</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName}>

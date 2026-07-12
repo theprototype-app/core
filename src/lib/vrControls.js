@@ -582,6 +582,17 @@ export function controllerIndexFor(handedness) {
 	return [...session.inputSources].findIndex((source) => source.handedness === handedness);
 }
 
+/** 210: gamepad axes for the physical hand at three.js controller SLOT `slot`.
+ * The gamepad lives on the inputSource, whose ORDER can differ from the controller
+ * slot order after a hands<->controllers swap (194), so match by the slot's stamped
+ * handedness rather than indexing inputSources by the slot. @param {number} slot */
+function axesForSlot(slot) {
+	const session = renderer?.xr.getSession();
+	const hand = renderer?.xr.getController(slot)?.userData?.handedness;
+	const src = session && hand ? [...session.inputSources].find((s) => s.handedness === hand) : null;
+	return src?.gamepad?.axes ?? [];
+}
+
 /** 194-debug: live controller<->handedness mapping for the on-screen readout.
  * Surfaces per-slot inputSource.handedness vs the stamped userData.handedness, the
  * resolved menu/pointer indices, grip state, and the active grab's slot — so a
@@ -1208,8 +1219,7 @@ function beginWindowAdjust() {
 	};
 	vrWindowAdjust.set({ id, index });
 	// gate that hand's stick (locomotion) — it scales the window now
-	const session = renderer?.xr.getSession();
-	vrGrabbedHand.set(session ? ([...session.inputSources][index]?.handedness ?? null) : null);
+	vrGrabbedHand.set(renderer.xr.getController(index)?.userData?.handedness ?? null);
 	hapticPulse(0.5, 60);
 }
 
@@ -1229,8 +1239,7 @@ function updateWindowAdjust() {
 	group.position.copy(pose.position);
 	group.quaternion.copy(pose.quaternion);
 	// gripping hand's stick fwd/back resizes the window
-	const session = renderer?.xr.getSession();
-	const axes = session ? ([...session.inputSources][windowGrab.index]?.gamepad?.axes ?? []) : [];
+	const axes = axesForSlot(windowGrab.index);
 	const y = Math.abs(axes[3] ?? 0) > 0.15 ? (axes[3] ?? 0) : 0;
 	windowGrab.scale = Math.min(Math.max(windowGrab.scale * (1 - y * 0.02), 0.35), 3);
 	group.scale.setScalar(windowGrab.scale);
@@ -1532,8 +1541,7 @@ function onSqueezeStart(index) {
 			return;
 		}
 		// gripping air with the RIGHT hand pans the world with the controller
-		const session = renderer?.xr.getSession();
-		const handedness = session ? [...session.inputSources][index]?.handedness : null;
+		const handedness = renderer.xr.getController(index)?.userData?.handedness ?? null;
 		if (handedness === 'right')
 			worldPan = { index, prev: renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()) };
 		return;
@@ -1576,8 +1584,7 @@ function onSqueezeStart(index) {
 		prevQuat: cQuat,
 		before: transformStateOf(object)
 	};
-	const session = renderer?.xr.getSession();
-	vrGrabbedHand.set(session ? ([...session.inputSources][index]?.handedness ?? null) : null);
+	vrGrabbedHand.set(renderer.xr.getController(index)?.userData?.handedness ?? null);
 	hapticPulse(0.25, 30);
 	selectObject(object.uuid); // locks it for peers, updates selection state
 }
@@ -1614,8 +1621,7 @@ function onSqueezeEnd(index) {
 		worldGrab = null;
 		const other = index === 0 ? 1 : 0;
 		if (emptyAirSqueeze[other]) {
-			const session = renderer?.xr.getSession();
-			const handedness = session ? [...session.inputSources][other]?.handedness : null;
+			const handedness = renderer.xr.getController(other)?.userData?.handedness ?? null;
 			if (handedness === 'right')
 				worldPan = { index: other, prev: renderer.xr.getController(other).getWorldPosition(new THREE.Vector3()) };
 		}
@@ -1688,8 +1694,7 @@ function updateGrab() {
 		const pPos = position.clone().applyMatrix4(parentInv);
 		const pQuat = parentQuat.clone().invert().multiply(quaternion);
 
-		const session = renderer?.xr.getSession();
-		const axes = session ? ([...session.inputSources][grab.index]?.gamepad?.axes ?? []) : [];
+		const axes = axesForSlot(grab.index);
 		const adjusted = grabStickAdjust({
 			length: Math.max(grab.relPos.length(), 0.05),
 			scale: grab.scaleFactor,
@@ -2239,9 +2244,17 @@ export function updateVRControls() {
 		updateSnapTurn(session);
 	}
 
-	[...session.inputSources].forEach((source, index) => {
-		if (index > 1 || !source.gamepad) return;
+	[...session.inputSources].forEach((source, srcIndex) => {
+		if (srcIndex > 1 || !source.gamepad) return;
 		const buttons = source.gamepad.buttons;
+		// 210: everything downstream (pose, ray, grabs, per-slot state) keys by the
+		// three.js controller SLOT resolved from handedness, NOT the inputSources
+		// order - the two DIVERGE after a hands<->controllers swap (seen in-headset:
+		// slot0 in:right stamp:left), which drove grips onto the wrong controller.
+		// Buttons/axes still read from `source` (the acting hand); fall back to the
+		// raw order only if the slot isn't stamped yet.
+		let index = controllerIndexFor(source.handedness);
+		if (index < 0) index = srcIndex;
 		const prev = previousButtons[index];
 
 		// B/Y on the menu hand: toggle the radial menu, or (hold mode, 74) hold
@@ -2386,7 +2399,7 @@ export function updateVRControls() {
 				.clone()
 				.multiply(quat1.clone().multiply(faceGrabHand.quat0.clone().invert()))
 				.multiply(objQuatInv.clone().invert());
-			const axes = session.inputSources[faceGrabHand.index]?.gamepad?.axes ?? [];
+			const axes = axesForSlot(faceGrabHand.index);
 			const sy = Math.abs(axes[3] ?? 0) > 0.15 ? axes[3] : 0;
 			const sx = Math.abs(axes[2] ?? 0) > 0.15 ? axes[2] : 0;
 			faceGrabHand.push += -sy * 0.01;

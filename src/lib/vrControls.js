@@ -34,7 +34,8 @@ import {
 	vrWireframeSelection,
 	vrStatsOpen,
 	vrGrabStyle,
-	vrGrabbedHand
+	vrGrabbedHand,
+	vrApprovePanelOpen
 } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
@@ -83,7 +84,8 @@ import {
 	trisToPositions,
 	applyMeshGeo
 } from './faceEdit';
-import { peers, showToast, messages } from '../stores/appStore';
+import { peers, showToast, messages, pendingApprovals } from '../stores/appStore';
+import { approvePeer, denyPeer } from './peerApproval';
 import { undo, redo, recordTransform } from './history';
 import { snapEnabled, snapSettings, surfaceSnap, dropToSurface } from './snapping';
 import {
@@ -842,6 +844,19 @@ export function raycastChat(index) {
 	return control ? 'chat:' + control.object.name.slice('vrchat-'.length) : null;
 }
 
+// ---- VR peer-approval panel (211) ----
+/** the approval panel THREE group @type {import('svelte/store').Writable<any>} */
+export const vrApproveGroup = writable(null);
+
+/** Raycast the approval panel controls @param {number} index @returns {string|null} approve action */
+export function raycastApprove(index) {
+	const panel = get(vrApproveGroup);
+	if (!panel || !get(vrApprovePanelOpen)) return null;
+	const hits = controllerRay(index).intersectObject(panel, true);
+	const control = hits.find((/** @type {any} */ h) => h.object.name?.startsWith('vrapprove-'));
+	return control ? 'approve:' + control.object.name.slice('vrapprove-'.length) : null;
+}
+
 // ---- VR keyboard (116): raycast the key grid, route presses ----
 /** the keyboard THREE group @type {import('svelte/store').Writable<any>} */
 export const vrKeyboardGroup = writable(null);
@@ -1174,7 +1189,8 @@ function windowGroupFor(/** @type {string} */ id) {
 			chat: vrChatGroup,
 			editmenu: vrEditGroup,
 			snapmenu: vrSnapGroup,
-			settingspanel: vrSettingsGroup
+			settingspanel: vrSettingsGroup,
+			approve: vrApproveGroup
 		}[id] ?? vrMenuGroup
 	);
 }
@@ -1182,7 +1198,7 @@ function windowGroupFor(/** @type {string} */ id) {
 /** Which open window the controller ray lands on @param {number} index */
 function windowHitAt(index) {
 	let best = null;
-	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard', 'chat', 'editmenu', 'snapmenu']) {
+	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard', 'chat', 'editmenu', 'snapmenu', 'approve']) {
 		const group = windowGroupFor(id);
 		if (!group) continue;
 		const hits = controllerRay(index).intersectObject(group, true);
@@ -1980,6 +1996,17 @@ export function executeVRMenuAction(name) {
 		vrMenuOpen.set(false);
 		return;
 	}
+	if (name.startsWith('approve:')) {
+		// 211: Approve / Deny the FIRST pending request (the one the panel shows).
+		// Routes through the same accept/reject path the desktop Toasts card uses.
+		const action = name.slice('approve:'.length);
+		const first = /** @type {any} */ (get(pendingApprovals))[0];
+		if (first) {
+			if (action === 'yes') approvePeer(first.peerId);
+			else if (action === 'no') denyPeer(first.peerId);
+		}
+		return;
+	}
 	if (name.startsWith('chat:')) {
 		const action = name.slice('chat:'.length);
 		if (action === 'close') vrChatPanelOpen.set(false);
@@ -2574,6 +2601,14 @@ export function updateVRControls() {
 		// VR Settings panel (187): the pointer ray highlights its rows
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 		const hovered = pointerIndex >= 0 ? raycastSettings(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.12, 14);
+			vrHovered.set(hovered);
+		}
+	} else if (get(vrApprovePanelOpen)) {
+		// VR peer-approval panel (211): the pointer ray highlights Approve / Deny
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const hovered = pointerIndex >= 0 ? raycastApprove(pointerIndex) : null;
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.12, 14);
 			vrHovered.set(hovered);

@@ -104,6 +104,9 @@ export const vrStretchFactors = writable([1, 1, 1]);
 export const vrSnapMenuOpen = writable(false);
 // VR Settings panel (187), opened from System ▸ Settings
 export const vrSettingsPanelOpen = writable(false);
+// VR peer-approval follower panel (211): auto-opens while presenting when a
+// connection request is pending (desktop shows the Toasts approval card instead)
+export const vrApprovePanelOpen = writable(false);
 // VR snap MODE (156): 'off' | 'grid' | 'surface' | 'rotation'
 export const vrSnapMode = writable(
 	typeof localStorage !== 'undefined' ? localStorage.getItem('vrSnapMode') || 'off' : 'off'

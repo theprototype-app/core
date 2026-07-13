@@ -451,6 +451,22 @@ export function moveObjectToGroup(uuid, target) {
 }
 
 /**
+ * Ungroup (216): move every child up to the group's parent (world transform kept
+ * via moveObjectToGroup 'up', which replicates + records undo per child), then
+ * delete the now-empty group. Peers apply the child moves BEFORE the delete, so
+ * children survive. @param {string} groupUuid @returns {boolean}
+ */
+export function ungroupObject(groupUuid) {
+	const root = get(objectsGroup);
+	const grp = root?.getObjectByProperty('uuid', groupUuid);
+	if (!grp || grp.type !== 'Group') return false;
+	const children = [...grp.children]; // snapshot: attach() mutates .children
+	for (const child of children) moveObjectToGroup(child.uuid, 'up');
+	deleteObjectsByUuid([groupUuid]); // now empty -> removes just the group
+	return true;
+}
+
+/**
  * One-shot "Align to ground": drop the selected object onto the surface below,
  * replicate and record an undoable history entry.
  * @param {string=} uuid - defaults to the selected object

@@ -77,7 +77,7 @@ const registry = new Map();
  * Register (or replace, by id) a radial menu entry.
  * @param {{id: string, group?: string, label: string, order?: number,
  *   ring?: string, action?: () => void, active?: () => boolean,
- *   color?: string, closes?: boolean}} entry
+ *   color?: string, closes?: boolean, visible?: () => boolean}} entry
  * `ring` makes it a navigation sector into that sub-ring; `color` renders the
  * sector as a swatch; `closes` closes the menu after the action runs.
  */
@@ -94,9 +94,14 @@ export function registerVRMenuEntry(entry) {
 	ringVersion.update((v) => v + 1);
 }
 
-/** Entries of a ring, in registration/order order @param {string} group */
+/**
+ * Entries of a ring, in order, minus any whose `visible()` predicate is false.
+ * @param {string} group
+ */
 export function ringEntries(group) {
-	return [...(registry.get(group) ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+	return [...(registry.get(group) ?? [])]
+		.filter((e) => (e.visible ? e.visible() : true))
+		.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
 /** Find an entry by id across all rings @param {string} id */
@@ -311,7 +316,19 @@ function registerBuiltins() {
 		group: 'object',
 		label: 'Edit Mesh',
 		order: 7,
-		active: () => get(vrEditMenuOpen)
+		active: () => get(vrEditMenuOpen),
+		// 216: a GROUP selection can't be mesh-edited; it shows Ungroup instead
+		visible: () => /** @type {any} */ (get(selectedObject))?.type !== 'Group'
+	});
+	// 216: Ungroup (dissolve the group, move children up) — replaces Edit Mesh
+	// when the selection is a Group
+	registerVRMenuEntry({
+		id: 'obj:ungroup',
+		group: 'object',
+		label: 'Ungroup',
+		order: 7,
+		closes: true,
+		visible: () => /** @type {any} */ (get(selectedObject))?.type === 'Group'
 	});
 
 	// Face ops (118/137): still ids the side-menu arms via setFaceOp; the

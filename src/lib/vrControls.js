@@ -93,7 +93,8 @@ import {
 	duplicateObject,
 	deleteSelection,
 	renameObject,
-	focusObject
+	focusObject,
+	ungroupObject
 } from './objectActions';
 import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
@@ -1800,6 +1801,12 @@ export function executeVRMenuAction(name) {
 		// leaving the Faces ring exits face-edit mode (118)
 		if (get(activeRing) === 'faces') exitFaceEdit();
 		popRing();
+		return;
+	}
+	if (name === 'obj:ungroup') {
+		// 216: dissolve the selected group (children move up, group deleted)
+		const grp = /** @type {any} */ (get(selectedObject));
+		if (grp?.uuid && grp.type === 'Group') ungroupObject(grp.uuid);
 		return;
 	}
 	if (name === 'obj:editmesh') {

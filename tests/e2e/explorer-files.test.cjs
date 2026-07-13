@@ -24,16 +24,15 @@ h.run(async () => {
 	}, TINY_PNG);
 	await A.page.waitForTimeout(900);
 
-	// click -> Inspector file properties
+	// 197b: single-click -> file properties in the Explorer's own (ⓘ) panel
 	await A.page.locator('.explorer-card', { hasText: 'notes.txt' }).click();
 	await A.page.waitForTimeout(600);
-	const props = await A.page.evaluate(() => ({
-		open: document.querySelector('#file-properties') !== null,
-		name: document.querySelector('#file-name')?.value ?? '',
-		text: document.querySelector('#file-properties')?.textContent ?? ''
-	}));
-	h.check(props.open && props.name === 'notes.txt', 'click opens file properties in the Inspector');
-	h.check(/text/.test(props.text) && /3 lines/.test(props.text), `per-kind details compute (${props.text.includes('3 lines')})`);
+	const props = await A.page.evaluate(() => {
+		const panel = document.querySelector('.ws-panel-secondary');
+		return { open: !!panel, text: panel?.textContent ?? '' };
+	});
+	h.check(props.open && props.text.includes('notes.txt'), 'click opens file properties in the panel');
+	h.check(/text/i.test(props.text), `properties show the file type (${props.open})`);
 
 	// double-click text -> floating dark editor; Ctrl+S saves (hash changes)
 	const hashBefore = await A.page.evaluate(

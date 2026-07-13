@@ -2,22 +2,21 @@
 	import type { Snippet } from 'svelte'
 
 	// 197: reusable window CHROME. A MAIN area flanked by a collapsible PRIMARY
-	// sidebar and a SECONDARY (settings/inspector) sidebar that auto-reflows to the
-	// side OPPOSITE the primary. Chrome-ONLY: it owns collapse / side / persistence
-	// + the toggle tabs and knows NOTHING about its contents (folders, nodes, ...) —
-	// consumers fill the `topbar` / `primary` / `main` / `secondary` snippet slots
-	// and decide what `secondary` renders (settings vs. selected-item props).
-	// Modeled on Flow's palette/props panels (Nodes.svelte). Prefs are LOCAL,
-	// persisted per-window under `key`; nothing here is replicated.
+	// sidebar and a SECONDARY panel that can show one of several MODES (e.g.
+	// Properties / Settings), each with its own vertical tab. The secondary auto-
+	// reflows to the side OPPOSITE the primary. Chrome-ONLY: it owns collapse /
+	// side / resize / persistence + the tabs and knows NOTHING about its contents
+	// (folders, nodes, ...). Consumers fill topbar/primary/main/secondary snippet
+	// slots; `secondary` receives the active mode key. Prefs are LOCAL, persisted
+	// per-window under `key`; nothing here is replicated.
+	type Mode = { key: string; icon: string; label: string }
 	let {
 		key,
-		primaryLabel = 'Sidebar',
-		secondaryLabel = 'Settings',
+		primaryLabel = 'sidebar',
 		primaryDefaultOpen = true,
-		secondaryDefaultOpen = false,
 		primaryDefaultWidth = 176,
-		primaryIcon = '☰',
-		secondaryIcon = '⚙',
+		secondaryModes = [{ key: 'settings', icon: '⚙', label: 'Settings' }] as Mode[],
+		secondaryDefaultOpen = false,
 		topbar,
 		primary,
 		main,
@@ -25,16 +24,14 @@
 	}: {
 		key: string
 		primaryLabel?: string
-		secondaryLabel?: string
 		primaryDefaultOpen?: boolean
-		secondaryDefaultOpen?: boolean
 		primaryDefaultWidth?: number
-		primaryIcon?: string
-		secondaryIcon?: string
+		secondaryModes?: Mode[]
+		secondaryDefaultOpen?: boolean
 		topbar?: Snippet
 		primary?: Snippet
 		main?: Snippet
-		secondary?: Snippet
+		secondary?: Snippet<[string]>
 	} = $props()
 
 	const LS = typeof localStorage === 'undefined' ? null : localStorage
@@ -45,13 +42,49 @@
 
 	let primaryOpen = $state(readBool(`ws:${key}:primaryOpen`, primaryDefaultOpen))
 	let secondaryOpen = $state(readBool(`ws:${key}:secondaryOpen`, secondaryDefaultOpen))
+	let secondaryMode = $state(LS?.getItem(`ws:${key}:secondaryMode`) ?? secondaryModes[0]?.key ?? 'settings')
 	let side = $state<'left' | 'right'>(LS?.getItem(`ws:${key}:side`) === 'right' ? 'right' : 'left')
 	let primaryWidth = $state(Number(LS?.getItem(`ws:${key}:primaryWidth`)) || primaryDefaultWidth)
 
 	// the secondary always sits on the opposite edge from the primary (179)
 	let secondarySide = $derived<'left' | 'right'>(side === 'left' ? 'right' : 'left')
 
-	// primary-sidebar resize (chrome): drag the splitter; width persists per-window
+	function togglePrimary() {
+		primaryOpen = !primaryOpen
+		LS?.setItem(`ws:${key}:primaryOpen`, String(primaryOpen))
+	}
+	function switchSide() {
+		side = side === 'left' ? 'right' : 'left'
+		LS?.setItem(`ws:${key}:side`, side)
+	}
+	function persistSecondary() {
+		LS?.setItem(`ws:${key}:secondaryOpen`, String(secondaryOpen))
+		LS?.setItem(`ws:${key}:secondaryMode`, secondaryMode)
+	}
+	// a tab click: open in that mode, or close if it's already the shown mode
+	function clickMode(m: string) {
+		if (secondaryOpen && secondaryMode === m) secondaryOpen = false
+		else {
+			secondaryMode = m
+			secondaryOpen = true
+		}
+		persistSecondary()
+	}
+	// imperative API for consumers (e.g. open the inspector when an item is picked)
+	export function showSecondary(m: string) {
+		secondaryMode = m
+		secondaryOpen = true
+		persistSecondary()
+	}
+	export function hideSecondary() {
+		secondaryOpen = false
+		persistSecondary()
+	}
+	export function secondaryStatus() {
+		return { open: secondaryOpen, mode: secondaryMode }
+	}
+
+	// primary-sidebar resize (chrome): drag the handle; width persists per-window
 	let resizing = $state(false)
 	function startResize(e: PointerEvent) {
 		resizing = true
@@ -60,7 +93,6 @@
 	}
 	function doResize(e: PointerEvent) {
 		if (!resizing) return
-		// dragging toward `main` grows the panel; direction flips when on the right
 		const dx = side === 'left' ? e.movementX : -e.movementX
 		primaryWidth = Math.min(Math.max(110, primaryWidth + dx), 460)
 	}
@@ -71,36 +103,36 @@
 		LS?.setItem(`ws:${key}:primaryWidth`, String(primaryWidth))
 	}
 
-	function togglePrimary() {
-		primaryOpen = !primaryOpen
-		LS?.setItem(`ws:${key}:primaryOpen`, String(primaryOpen))
-	}
-	function toggleSecondary() {
-		secondaryOpen = !secondaryOpen
-		LS?.setItem(`ws:${key}:secondaryOpen`, String(secondaryOpen))
-	}
-	function switchSide() {
-		side = side === 'left' ? 'right' : 'left'
-		LS?.setItem(`ws:${key}:side`, side)
-	}
-
-	// flex order: primary hugs `side`, secondary the opposite; main in the middle.
-	// tab sits between main and its panel (panel is further out), like Flow.
-	let primaryTabOrder = $derived(side === 'left' ? 1 : 5)
+	// flex order: primary hugs `side`; edges are constant so they hug the window
+	// border once their panel is gone; main in the middle.
 	let primaryPanelOrder = $derived(side === 'left' ? 0 : 6)
-	let secondaryTabOrder = $derived(secondarySide === 'left' ? 1 : 5)
+	let primaryEdgeOrder = $derived(side === 'left' ? 2 : 4)
+	let secondaryTabsOrder = $derived(secondarySide === 'left' ? 2 : 4)
 	let secondaryPanelOrder = $derived(secondarySide === 'left' ? 0 : 6)
+
+	let activeMode = $derived(secondaryModes.find((m) => m.key === secondaryMode) ?? secondaryModes[0])
+	// arrow points the way the panel would move: ‹ collapses a left tree / expands
+	// a right one, and vice-versa. Same button reused open OR closed.
+	let chevron = $derived((side === 'left') === primaryOpen ? '‹' : '›')
 </script>
 
 <div class="ws-root flex h-full w-full overflow-hidden">
-	<!-- PRIMARY panel + inner edge: collapse chevron on top, resize handle below
-	     (kept separate so the drag-to-resize zone never eats the collapse click) -->
+	<!-- PRIMARY panel -->
 	{#if primaryOpen}
 		<div class="ws-panel flex h-full shrink-0 flex-col overflow-y-auto" style="order: {primaryPanelOrder}; width: {primaryWidth}px">
 			{@render primary?.()}
 		</div>
-		<div class="ws-edge shrink-0" style="order: {side === 'left' ? 2 : 4}">
-			<button class="ws-edge-btn" onclick={togglePrimary} data-ws-primary-toggle title={`Collapse ${primaryLabel}`}>{side === 'left' ? '‹' : '›'}</button>
+	{/if}
+	<!-- PRIMARY edge: the SAME collapse bar whether open or closed (arrow flips);
+	     the resize handle only exists while there's a panel to resize -->
+	<div class="ws-edge shrink-0" style="order: {primaryEdgeOrder}">
+		<button
+			class="ws-edge-btn"
+			onclick={togglePrimary}
+			data-ws-primary-toggle
+			title={primaryOpen ? `Hide ${primaryLabel}` : `Show ${primaryLabel}`}
+		>{chevron}</button>
+		{#if primaryOpen}
 			<div
 				class="ws-resize"
 				style="touch-action: none"
@@ -109,46 +141,37 @@
 				onpointermove={doResize}
 				onpointerup={endResize}
 			></div>
-		</div>
-	{:else}
-		<div class="relative w-0 shrink-0" style="order: {primaryTabOrder}">
-			<button
-				class="ws-tab {side === 'right' ? 'ws-tab-mirror' : ''}"
-				style="{side === 'left' ? 'left' : 'right'}: -1px"
-				title={`Show ${primaryLabel}`}
-				onclick={togglePrimary}
-				data-ws-primary-toggle
-			>{primaryIcon}</button>
-		</div>
-	{/if}
+		{/if}
+	</div>
 
 	<!-- MAIN (+ optional topbar) -->
 	<div class="ws-main flex min-w-0 flex-1 flex-col" style="order: 3">
 		{#if topbar}
-			<div class="ws-topbar shrink-0">{@render topbar()}</div>
+			<div class="shrink-0">{@render topbar()}</div>
 		{/if}
 		<div class="min-h-0 flex-1 overflow-hidden">{@render main?.()}</div>
 	</div>
 
-	<!-- SECONDARY toggle tab (always visible) -->
-	<div class="relative w-0" style="order: {secondaryTabOrder}">
-		<button
-			class="ws-tab {secondarySide === 'right' ? 'ws-tab-mirror' : ''}"
-			style="{secondarySide === 'left' ? 'left' : 'right'}: -1px; top: 2.75rem"
-			title={secondaryOpen ? `Hide ${secondaryLabel}` : `Show ${secondaryLabel}`}
-			onclick={toggleSecondary}
-			data-ws-secondary-toggle
-		>{secondaryIcon}</button>
+	<!-- SECONDARY mode tabs (stacked): they hug the border when the panel is closed -->
+	<div class="ws-tabs shrink-0" style="order: {secondaryTabsOrder}">
+		{#each secondaryModes as m (m.key)}
+			<button
+				class="ws-tab-btn {secondaryOpen && secondaryMode === m.key ? 'ws-tab-active' : ''}"
+				title={m.label}
+				data-ws-mode={m.key}
+				onclick={() => clickMode(m.key)}
+			>{m.icon}</button>
+		{/each}
 	</div>
 	<!-- SECONDARY panel -->
 	{#if secondaryOpen}
 		<div class="ws-panel ws-panel-secondary flex h-full shrink-0 flex-col overflow-y-auto" style="order: {secondaryPanelOrder}">
 			<div class="ws-panel-head flex shrink-0 items-center gap-1 px-2 py-1">
-				<span class="flex-1 truncate text-xs font-semibold opacity-80">{secondaryLabel}</span>
+				<span class="flex-1 truncate text-xs font-semibold opacity-80">{activeMode?.label}</span>
 				<button class="ws-mini" title="Switch sidebar side" onclick={switchSide} data-ws-switch-side>⇄</button>
-				<button class="ws-mini" title="Hide {secondaryLabel}" onclick={toggleSecondary}>✕</button>
+				<button class="ws-mini" title="Close" onclick={hideSecondary}>✕</button>
 			</div>
-			<div class="min-h-0 flex-1 overflow-y-auto">{@render secondary?.()}</div>
+			<div class="min-h-0 flex-1 overflow-y-auto">{@render secondary?.(secondaryMode)}</div>
 		</div>
 	{/if}
 </div>
@@ -160,27 +183,6 @@
 		color: var(--ws-panel-fg, rgb(229 231 235));
 		border-inline: 1px solid rgb(255 255 255 / 0.06);
 	}
-	.ws-tab {
-		position: absolute;
-		top: 2rem;
-		display: flex;
-		height: 3.5rem;
-		width: 1rem;
-		align-items: center;
-		justify-content: center;
-		font-size: 0.75rem;
-		color: rgb(226 232 240);
-		background: rgb(55 65 81);
-		border-radius: 0 0.25rem 0.25rem 0;
-		cursor: pointer;
-		z-index: 10;
-	}
-	.ws-tab:hover {
-		background: rgb(75 85 99);
-	}
-	.ws-tab-mirror {
-		border-radius: 0.25rem 0 0 0.25rem;
-	}
 	.ws-edge {
 		position: relative;
 		display: flex;
@@ -189,10 +191,10 @@
 	}
 	.ws-edge-btn {
 		display: flex;
-		height: 1.5rem;
+		height: 1.75rem;
 		align-items: center;
 		justify-content: center;
-		font-size: 0.7rem;
+		font-size: 0.75rem;
 		color: rgb(226 232 240);
 		background: rgb(55 65 81);
 		cursor: pointer;
@@ -208,6 +210,34 @@
 	}
 	.ws-resize:hover {
 		background: rgb(255 255 255 / 0.08);
+	}
+	.ws-tabs {
+		display: flex;
+		width: 1rem;
+		flex-direction: column;
+		gap: 1px;
+		padding-top: 2rem;
+	}
+	.ws-tab-btn {
+		display: flex;
+		height: 3.25rem;
+		width: 100%;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.8rem;
+		color: rgb(203 213 225);
+		background: rgb(55 65 81);
+		cursor: pointer;
+	}
+	.ws-tab-btn:first-child {
+		border-radius: 0.25rem 0 0 0;
+	}
+	.ws-tab-btn:hover {
+		background: rgb(75 85 99);
+	}
+	.ws-tab-active {
+		background: rgb(37 99 235);
+		color: white;
 	}
 	.ws-mini {
 		display: inline-flex;

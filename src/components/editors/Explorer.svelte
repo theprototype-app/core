@@ -25,7 +25,6 @@
 		inspectedFile,
 		updateItemBytes
 	} from '$lib/explorer';
-	import { inspectorKind, inspectorClose } from '../../stores/appStore.js';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
 	import { sceneAssets } from '$lib/sceneAssets';
@@ -51,6 +50,10 @@
 	// live in WindowShell (keyed 'explorer'); these are Explorer-specific toggles.
 	let singleClickOpen = $state(false);
 	let showBreadcrumb = $state(true);
+	// 197b: the WindowShell instance (imperative showSecondary) + what's selected
+	// for the Properties (ⓘ) inspector: { kind:'item'|'folder', ... } | null
+	let shell = $state<any>(null);
+	let selected = $state<any>(null);
 	if (typeof localStorage !== 'undefined') {
 		height = clampH(parseInt(localStorage.getItem('explorerHeight') ?? '300'));
 		docked = localStorage.getItem('explorerDocked') !== 'false';
@@ -279,6 +282,7 @@
 			x: e.clientX,
 			y: e.clientY,
 			items: [
+				{ label: 'Properties', action: () => selectFolder(folder) },
 				// 170: "New subfolder" only makes sense in the tree; the thumbnail grid drops it
 				...(inTree ? [{ label: 'New subfolder', action: () => startCreate(folder.id) }] : []),
 				{ label: 'Rename', action: () => startRename(folder, !inTree) },
@@ -307,6 +311,7 @@
 							}
 						]
 					: []),
+				{ label: 'Properties', action: () => inspectItem(item) },
 				{
 					label: 'Rename',
 					action: () => startRenameItem(item)
@@ -345,7 +350,8 @@
 		);
 	}
 
-	// click = properties in the Inspector; double-click = open/preview (107)
+	// 197b: single-click = select + show properties in the ⓘ panel; double-click
+	// opens/previews (openItem). Right-click Properties routes here too.
 	function inspectItem(item: any) {
 		if (item.kind === 'prefab') return;
 		if (item.sceneEntry) {
@@ -355,8 +361,26 @@
 			return;
 		}
 		inspectedFile.set(item.id);
-		inspectorKind.set('file');
-		inspectorClose.set(false);
+		selected = { kind: 'item', item };
+		shell?.showSecondary('props');
+	}
+	function selectFolder(folder: any) {
+		selected = { kind: 'folder', folder };
+		shell?.showSecondary('props');
+	}
+	function openFolder(id: string | null) {
+		search = '';
+		activeFolder.set(id);
+	}
+	// 197b: single-click empty grid space clears the selection + closes the ⓘ panel
+	function deselect() {
+		selected = null;
+		inspectedFile.set(null);
+		if (shell?.secondaryStatus?.().mode === 'props') shell.hideSecondary();
+	}
+	function gridBackgroundClick(e: MouseEvent) {
+		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
+		deselect();
 	}
 	async function openItem(item: any) {
 		if (item.sceneEntry) {
@@ -443,7 +467,15 @@
 {/snippet}
 
 {#snippet content()}
-	<WindowShell key="explorer" primaryLabel="Folders" secondaryLabel="Explorer settings">
+	<WindowShell
+		key="explorer"
+		bind:this={shell}
+		primaryLabel="folder tree"
+		secondaryModes={[
+			{ key: 'props', icon: 'ⓘ', label: 'Properties' },
+			{ key: 'settings', icon: '⚙', label: 'Settings' }
+		]}
+	>
 		{#snippet primary()}
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
 		<div
@@ -560,8 +592,9 @@
 		</div>
 		{/snippet}
 		{#snippet main()}
-		<!-- item grid (+ subfolder cards, 106.7) -->
-		<div class="relative h-full min-w-0 overflow-y-auto p-1" oncontextmenu={gridMenu} role="region">
+		<!-- item grid (+ subfolder cards, 106.7); click empty space to deselect (197b) -->
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+		<div class="relative h-full min-w-0 overflow-y-auto p-1" oncontextmenu={gridMenu} onclick={gridBackgroundClick} role="region">
 			{#if childFolders.length === 0 && gridItems.length === 0}
 				<p class="p-4 text-center text-xs italic text-gray-500">
 					{$activeFolder === 'prefabs'
@@ -585,8 +618,9 @@
 								ondragleave={() => (dropFolder = null)}
 								ondrop={(e) => dropInto(e, folder.id)}
 								oncontextmenu={(e) => folderMenu(e, folder, false)}
-								onclick={() => activeFolder.set(folder.id)}
-								onkeydown={(e) => e.key === 'Enter' && activeFolder.set(folder.id)}
+								onclick={() => (singleClickOpen ? openFolder(folder.id) : selectFolder(folder))}
+								ondblclick={() => openFolder(folder.id)}
+								onkeydown={(e) => e.key === 'Enter' && openFolder(folder.id)}
 							>
 								<span class="flex h-14 w-14 items-center justify-center text-4xl">📁</span>
 								{#if editing?.mode === 'rename' && editing.inGrid && editing.folderId === folder.id}
@@ -635,34 +669,72 @@
 			{/if}
 		</div>
 		{/snippet}
-		{#snippet secondary()}
-		<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
-			<label class="flex items-center gap-2">
-				<input
-					type="checkbox"
-					checked={singleClickOpen}
-					onchange={(e) => {
-						singleClickOpen = e.currentTarget.checked;
-						localStorage.setItem('explorerSingleClickOpen', String(singleClickOpen));
-					}}
-				/>
-				Single-click opens folders
-			</label>
-			<label class="flex items-center gap-2">
-				<input
-					type="checkbox"
-					checked={showBreadcrumb}
-					onchange={(e) => {
-						showBreadcrumb = e.currentTarget.checked;
-						localStorage.setItem('explorerBreadcrumb', String(showBreadcrumb));
-					}}
-				/>
-				Show path bar
-			</label>
-			<p class="mt-2 text-[10px] leading-relaxed text-gray-400">
-				Click a folder or file to see its details here (coming next).
-			</p>
-		</div>
+		{#snippet secondary(mode)}
+		{#if mode === 'props'}
+			<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
+				{#if selected?.kind === 'item'}
+					<div class="flex items-center gap-2">
+						{#if selected.item.thumbnail}
+							<img src={selected.item.thumbnail} alt="" class="h-12 w-12 rounded object-cover" />
+						{:else}
+							<span class="flex h-12 w-12 items-center justify-center rounded bg-gray-700 text-2xl"
+								>{KIND_ICONS[selected.item.kind] ?? '📦'}</span
+							>
+						{/if}
+						<span class="min-w-0 flex-1 break-words font-semibold">{selected.item.name}</span>
+					</div>
+					<p class="text-gray-400">Type: {selected.item.kind}</p>
+					<div class="mt-1 flex gap-2">
+						<button class="ui-button-quiet" onclick={() => startRenameItem(selected.item)}>Rename</button>
+						<button class="ui-button-quiet" onclick={() => openItem(selected.item)}>Open</button>
+					</div>
+				{:else if selected?.kind === 'folder'}
+					{@const counts = folderCounts(selected.folder.id)}
+					<div class="flex items-center gap-2">
+						<span class="text-2xl">📁</span>
+						<span class="min-w-0 flex-1 break-words font-semibold">{selected.folder.name}</span>
+					</div>
+					<p class="text-gray-400">
+						{counts.folders} folder{counts.folders === 1 ? '' : 's'}, {counts.items} item{counts.items === 1
+							? ''
+							: 's'}
+					</p>
+					<div class="mt-1 flex gap-2">
+						<button class="ui-button-quiet" onclick={() => openFolder(selected.folder.id)}>Open</button>
+						<button class="ui-button-quiet" onclick={() => startRename(selected.folder, false)}>Rename</button>
+					</div>
+				{:else}
+					<p class="leading-relaxed text-gray-400">
+						Select a folder or file (or right-click ▸ Properties) to see its details here.
+					</p>
+				{/if}
+			</div>
+		{:else}
+			<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
+				<label class="flex items-center gap-2">
+					<input
+						type="checkbox"
+						checked={singleClickOpen}
+						onchange={(e) => {
+							singleClickOpen = e.currentTarget.checked;
+							localStorage.setItem('explorerSingleClickOpen', String(singleClickOpen));
+						}}
+					/>
+					Single-click opens folders
+				</label>
+				<label class="flex items-center gap-2">
+					<input
+						type="checkbox"
+						checked={showBreadcrumb}
+						onchange={(e) => {
+							showBreadcrumb = e.currentTarget.checked;
+							localStorage.setItem('explorerBreadcrumb', String(showBreadcrumb));
+						}}
+					/>
+					Show path bar
+				</label>
+			</div>
+		{/if}
 		{/snippet}
 	</WindowShell>
 {/snippet}

@@ -138,8 +138,15 @@
 		localStorage.setItem('explorerExpanded', JSON.stringify([...next]));
 	}
 
-	// 197: Library is always open (no caret); Scene's sub-groups always show,
-	// pinned to the bottom of the tree. (was 178 collapse/expand sections)
+	// 197: Library is always open (no caret). Scene is pinned at the bottom and
+	// collapsed by default; double-click it to reveal audio/config/textures.
+	let sceneExpanded = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem('explorerSceneExpanded') === 'true'
+	);
+	function toggleScene() {
+		sceneExpanded = !sceneExpanded;
+		localStorage.setItem('explorerSceneExpanded', String(sceneExpanded));
+	}
 
 	const KIND_ICONS: Record<string, string> = {
 		image: '🖼️',
@@ -255,6 +262,55 @@
 		if (bytes < 1024) return bytes + ' B';
 		if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
 		return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+	}
+
+	// 197: keyboard navigation in the grid (focused region) — arrows move the
+	// selection, Enter opens, Backspace goes up a level, Esc closes the window.
+	let gridEl: any = $state(null);
+	const gridEntries = $derived([
+		...(!search &&
+		$activeFolder !== 'prefabs' &&
+		!(typeof $activeFolder === 'string' && $activeFolder.startsWith('scene'))
+			? childFolders.map((f: any) => ({ kind: 'folder', folder: f }))
+			: []),
+		...gridItems.map((it: any) => ({ kind: 'item', item: it }))
+	]);
+	function gridIndex() {
+		if (!selected) return -1;
+		return gridEntries.findIndex((e: any) =>
+			e.kind !== selected.kind
+				? false
+				: e.kind === 'folder'
+					? e.folder.id === selected.folder?.id
+					: e.item.id === selected.item?.id
+		);
+	}
+	function moveSel(delta: number) {
+		if (!gridEntries.length) return;
+		let i = gridIndex();
+		i = i < 0 ? (delta > 0 ? 0 : gridEntries.length - 1) : Math.min(Math.max(i + delta, 0), gridEntries.length - 1);
+		const e: any = gridEntries[i];
+		if (e.kind === 'folder') selectFolder(e.folder);
+		else inspectItem(e.item);
+	}
+	function goUp() {
+		const a = $activeFolder;
+		if (a == null) return;
+		if (a === 'prefabs' || (typeof a === 'string' && a.startsWith('scene'))) return openFolder(null);
+		const f = $explorerFolders.find((x: any) => x.id === a);
+		openFolder(f?.parentId ?? null);
+	}
+	function gridKeydown(e: KeyboardEvent) {
+		const tag = (e.target as HTMLElement)?.tagName;
+		if (tag === 'INPUT' || tag === 'TEXTAREA') return; // don't hijack typing
+		if (e.key === 'ArrowRight' || e.key === 'ArrowDown') (e.preventDefault(), moveSel(1));
+		else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') (e.preventDefault(), moveSel(-1));
+		else if (e.key === 'Enter') {
+			e.preventDefault();
+			if (selected?.kind === 'item') openItem(selected.item);
+			else if (selected?.kind === 'folder') openFolder(selected.folder.id);
+		} else if (e.key === 'Backspace') (e.preventDefault(), goUp());
+		else if (e.key === 'Escape') (e.preventDefault(), explorerClose.set(true));
 	}
 
 	// --- inline create/rename (106.1/2) ---
@@ -444,6 +500,7 @@
 		if (st?.open && st.mode === 'props' && !st.pinned) shell.hideSecondary();
 	}
 	function gridBackgroundClick(e: MouseEvent) {
+		gridEl?.focus(); // focus the region so keyboard nav works after any grid click
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
 		deselect();
 	}
@@ -579,6 +636,12 @@
 					<div
 						class="flex items-center whitespace-nowrap {dropFolder === row.folder.id ? 'outline outline-2 outline-primary-500 rounded' : ''}"
 						style="padding-left: {2 + row.depth * 14}px"
+						role="treeitem"
+						aria-selected={$activeFolder === row.folder.id}
+						tabindex="-1"
+						ondragover={(e) => dragOverInto(e, row.folder.id)}
+						ondragleave={() => (dropFolder = null)}
+						ondrop={(e) => dropInto(e, row.folder.id)}
 					>
 						<button
 							class="w-4 shrink-0 text-gray-500"
@@ -595,10 +658,8 @@
 							ondragstart={(e) =>
 								e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify({ id: row.folder.id }))}
 							oncontextmenu={(e) => folderMenu(e, row.folder)}
-							ondragover={(e) => dragOverInto(e, row.folder.id)}
-							ondragleave={() => (dropFolder = null)}
-							ondrop={(e) => dropInto(e, row.folder.id)}
 							onclick={() => openFolder(row.folder.id)}
+							ondblclick={() => toggleExpand(row.folder.id)}
 						>
 							📁 {row.folder.name}
 						</button>
@@ -635,8 +696,9 @@
 						? 'bg-primary-700 text-white'
 						: 'text-gray-300 hover:bg-gray-700'}"
 					title="Assets the shared scene uses right now — identical on every peer"
-					onclick={() => openFolder('scene')}>🌐 Scene</button
+					onclick={() => openFolder('scene')} ondblclick={toggleScene}>🌐 Scene {sceneExpanded ? '▾' : '▸'}</button
 				>
+				{#if sceneExpanded}
 				{#each ['audio', 'config', 'textures'] as sub}
 					<button
 						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
@@ -648,13 +710,23 @@
 						📁 {sub} ({$sceneAssets.filter((a) => a.group === sub).length})
 					</button>
 				{/each}
+				{/if}
 			</div>
 		</div>
 		{/snippet}
 		{#snippet main()}
 		<!-- item grid (+ subfolder cards, 106.7); click empty space to deselect (197b) -->
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-		<div class="relative h-full min-w-0 overflow-y-auto p-1" oncontextmenu={gridMenu} onclick={gridBackgroundClick} role="region">
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex a11y_no_static_element_interactions -->
+		<div
+			bind:this={gridEl}
+			class="relative h-full min-w-0 overflow-y-auto p-1 outline-none"
+			style="scrollbar-gutter: stable"
+			tabindex="-1"
+			oncontextmenu={gridMenu}
+			onclick={gridBackgroundClick}
+			onkeydown={gridKeydown}
+			role="region"
+		>
 			{#if childFolders.length === 0 && gridItems.length === 0}
 				<p class="p-4 text-center text-xs italic text-gray-500">
 					{$activeFolder === 'prefabs'
@@ -668,7 +740,9 @@
 							<div
 								class="explorer-folder-card flex cursor-pointer flex-col items-center gap-1 rounded border p-1.5 {dropFolder === folder.id
 									? 'border-primary-500 bg-primary-500/10'
-									: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'}"
+									: selected?.kind === 'folder' && selected.folder?.id === folder.id
+										? 'border-primary-600 bg-primary-600/10'
+										: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'}"
 								role="button"
 								tabindex="0"
 								draggable="true"

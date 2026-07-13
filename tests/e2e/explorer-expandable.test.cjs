@@ -20,7 +20,11 @@ h.run(async () => {
 	h.check((await A.page.locator('#library-caret').count()) === 0, 'Library has no section caret (always open)');
 	h.check((await A.page.locator('#scene-caret').count()) === 0, 'Scene has no section caret');
 	h.check(await folderRow().isVisible(), 'a Library folder always shows');
-	h.check(await sceneSub().isVisible(), 'Scene sub-entries always show');
+	// Scene is collapsed by default; double-clicking it reveals the sub-groups
+	h.check(!(await sceneSub().isVisible()), 'Scene sub-groups hidden by default');
+	await A.page.locator('#scene-folder').dblclick();
+	await A.page.waitForTimeout(200);
+	h.check(await sceneSub().isVisible(), 'double-click Scene reveals its sub-groups');
 
 	// Prefabs/Packs/Scene are pinned BELOW the New folder button (DOM order)
 	const order = await A.page.evaluate(() => {

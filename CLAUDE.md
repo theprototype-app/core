@@ -203,7 +203,11 @@ loadable play content. Everything a user does must be visible to connected peers
   frame (never children of the object: they'd leak into GLTF sync).
 - Module cycles: a static import that closes a loop back into `history` (via
   materialsHandler etc.) TDZ-crashes the SSR prerender — moduleSDK reaches optional
-  libs (vrRadialMenu) via dynamic `import()` instead.
+  libs (vrRadialMenu) via dynamic `import()` instead. `npm run build` (Rollup) can
+  TOLERATE a cycle that `vite dev` (lazy ESM) TDZ-crashes — a green build ≠ a booting
+  dev server; the dev 500 shows as the DOCUMENT returning 500 (stack only in the dev
+  terminal). vrControls must NOT statically import peerHandler — put shared peer logic
+  in a store-only module (peerApproval.js imports appStore only), 211.
 - `selectedObject` is `writable([])` and KEEPS the last object after deselect (the
   desktop outline relies on it) — "has selection" checks need `?.uuid`, and the
   init value is a truthy empty array.
@@ -236,17 +240,20 @@ Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:51
   popover on explicit request, phase 130).
 - VR phases: verify math/state headlessly, state clearly that on-device feel is the
   user's manual check.
-- Status (2026-07-13): batches 1-61 SHIPPED (roadmaps #2/#3/#4 done) + roadmap #5 in
-  progress — batch 63 (191/192/193) + 194+210 (controller handedness: radial/grip/panels/
-  peer-hands) + 195 (world-grab presence in the content frame) + 196 (noVR inset verified)
-  + 203 (sidebar redesign) + **197/198 Explorer window v-next SHIPPED** (WindowShell chrome:
-  tree sidebar + Properties/Settings tabs + inspector + breadcrumb + tree reorg + keyboard
-  nav + folder-select highlight; Flow parity dropped). **Roadmap #5 remaining: 199 Packs +
-  207-209 (.tpscene/.tpmodule); flow revamp (199-202/204-205) DEFERRED → docs/plan/pending/.**
-  Batches skipped/deferred → docs/plan/pending/: flow revamp (199-202/204-205), physics
-  (206), window-edge resize (201, removed), module test-flight (189/190), Explorer tree v3
-  (140-142). svelte-check baseline drifted 520→502 errors / 84→77 warnings (hold it).
-  Roadmap #5 forks locked in quiz.md; per-phase plans in docs/plan/done/.
+- Status (2026-07-13): batches 1-61 SHIPPED (roadmaps #2/#3/#4 done); roadmap #5 —
+  batch 63 (191/192/193) + 194+210 (controller handedness) + 195 (world-grab presence) +
+  196 (noVR inset) + 203 (sidebar) + 197/198 (Explorer window v-next: WindowShell chrome).
+  **Roadmap #6 (211-220) ALL SHIPPED**: 211 VR peer approve/deny (VRPeerApprove follower +
+  peerApproval.js store-only to dodge a peerHandler import cycle), 212 face polygon-select +
+  multiselect (faceEdit granularity/multi + opTargetFace synth; VR menu + desktop popup),
+  213 VR mesh-edit undo (audit-only + regression test — already correct), 214 VR Tools radial
+  submenu (Select/BoxSelect/Draw) + 3D box-select marquee (vrToolMode + selectObjectsInBox +
+  scene-root visual), 215 VR objects-panel expandable groups (flattenPanelRows), 216 VR group
+  Ungroup in Edit radial, 217-220 Explorer/editor polish. **Remaining: 199 Packs + 207-209
+  (.tpscene/.tpmodule) POSTPONED (docs/plan/pending/).** Deferred → docs/plan/pending/: flow
+  revamp (199-202/204-205), physics (206), module test-flight (189/190), Explorer tree v3
+  (140-142). svelte-check baseline 502 errors / 77 warnings (hold it). Forks in quiz.md;
+  per-phase plans in docs/plan/done/.
 
 ## Module SDK (implemented — extend, don't fork)
 

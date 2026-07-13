@@ -1,5 +1,7 @@
-// Phase 178: the Explorer tree's Library and Scene sections have expand/collapse
-// carets; collapsing hides their children; the state persists to localStorage.
+// Phase 197: Explorer tree reorg. Library is always open (no caret) with its
+// folders + New folder scrolling at the top; Prefabs/Packs/Scene are pinned
+// BELOW the New folder button, and Scene's sub-groups always show (no caret).
+// (Replaces the phase-178 Library/Scene collapse carets, which were removed.)
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -14,34 +16,25 @@ h.run(async () => {
 	const folderRow = () => A.page.locator('#explorer-tree button', { hasText: 'MyFolder' });
 	const sceneSub = () => A.page.locator('#explorer-tree button', { hasText: 'audio' });
 
-	// both sections expanded by default
-	h.check(await A.page.locator('#library-caret').isVisible(), 'Library has an expand caret');
-	h.check(await A.page.locator('#scene-caret').isVisible(), 'Scene has an expand caret');
-	h.check(await folderRow().isVisible(), 'a Library folder shows while expanded');
-	h.check(await sceneSub().isVisible(), 'Scene sub-entries show while expanded');
+	// Library/Scene no longer have section carets; their contents always show
+	h.check((await A.page.locator('#library-caret').count()) === 0, 'Library has no section caret (always open)');
+	h.check((await A.page.locator('#scene-caret').count()) === 0, 'Scene has no section caret');
+	h.check(await folderRow().isVisible(), 'a Library folder always shows');
+	h.check(await sceneSub().isVisible(), 'Scene sub-entries always show');
 
-	// collapse Library -> its folders hide
-	await A.page.locator('#library-caret').click();
-	await A.page.waitForTimeout(200);
-	h.check(!(await folderRow().isVisible()), 'collapsing Library hides its folders');
-	h.check(await sceneSub().isVisible(), 'collapsing Library leaves Scene alone');
-
-	// collapse Scene -> its sub-entries hide
-	await A.page.locator('#scene-caret').click();
-	await A.page.waitForTimeout(200);
-	h.check(!(await sceneSub().isVisible()), 'collapsing Scene hides its sub-entries');
-
-	// persisted
-	const persisted = await A.page.evaluate(() => ({
-		lib: localStorage.getItem('explorerLibraryExpanded'),
-		scene: localStorage.getItem('explorerSceneExpanded')
-	}));
-	h.check(persisted.lib === 'false' && persisted.scene === 'false', 'collapsed state persists to localStorage');
-
-	// re-expand Library restores the folder
-	await A.page.locator('#library-caret').click();
-	await A.page.waitForTimeout(200);
-	h.check(await folderRow().isVisible(), 're-expanding Library restores its folders');
+	// Prefabs/Packs/Scene are pinned BELOW the New folder button (DOM order)
+	const order = await A.page.evaluate(() => {
+		const html = document.querySelector('#explorer-tree').innerHTML;
+		return {
+			newFolder: html.indexOf('New folder'),
+			prefabs: html.indexOf('prefabs-folder'),
+			scene: html.indexOf('scene-folder')
+		};
+	});
+	h.check(
+		order.newFolder >= 0 && order.prefabs > order.newFolder && order.scene > order.newFolder,
+		'Prefabs + Scene sit below the New folder button'
+	);
 
 	await h.finish(browser);
 });

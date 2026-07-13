@@ -43,6 +43,9 @@
 	let primaryOpen = $state(readBool(`ws:${key}:primaryOpen`, primaryDefaultOpen))
 	let secondaryOpen = $state(readBool(`ws:${key}:secondaryOpen`, secondaryDefaultOpen))
 	let secondaryMode = $state(LS?.getItem(`ws:${key}:secondaryMode`) ?? secondaryModes[0]?.key ?? 'settings')
+	// PINNED = the user opened this panel via its tab (stays put); an auto-open via
+	// showSecondary() is transient and the consumer may close it (e.g. on deselect)
+	let secondaryPinned = $state(LS?.getItem(`ws:${key}:secondaryPinned`) === 'true')
 	let side = $state<'left' | 'right'>(LS?.getItem(`ws:${key}:side`) === 'right' ? 'right' : 'left')
 	let primaryWidth = $state(Number(LS?.getItem(`ws:${key}:primaryWidth`)) || primaryDefaultWidth)
 
@@ -60,18 +63,23 @@
 	function persistSecondary() {
 		LS?.setItem(`ws:${key}:secondaryOpen`, String(secondaryOpen))
 		LS?.setItem(`ws:${key}:secondaryMode`, secondaryMode)
+		LS?.setItem(`ws:${key}:secondaryPinned`, String(secondaryPinned))
 	}
-	// a tab click: open in that mode, or close if it's already the shown mode
+	// a tab click PINS the panel (user chose to open it)
 	function clickMode(m: string) {
 		if (secondaryOpen && secondaryMode === m) secondaryOpen = false
 		else {
 			secondaryMode = m
 			secondaryOpen = true
+			secondaryPinned = true
 		}
 		persistSecondary()
 	}
-	// imperative API for consumers (e.g. open the inspector when an item is picked)
+	// imperative API for consumers (e.g. open the inspector when an item is picked).
+	// Opening a CLOSED panel this way is transient (unpinned); if it's already open
+	// (pinned by the user) we keep the pin.
 	export function showSecondary(m: string) {
+		if (!secondaryOpen) secondaryPinned = false
 		secondaryMode = m
 		secondaryOpen = true
 		persistSecondary()
@@ -81,7 +89,7 @@
 		persistSecondary()
 	}
 	export function secondaryStatus() {
-		return { open: secondaryOpen, mode: secondaryMode }
+		return { open: secondaryOpen, mode: secondaryMode, pinned: secondaryPinned }
 	}
 
 	// primary-sidebar resize (chrome): drag the handle; width persists per-window

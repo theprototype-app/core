@@ -138,19 +138,8 @@
 		localStorage.setItem('explorerExpanded', JSON.stringify([...next]));
 	}
 
-	// 178: collapse/expand the Library and Scene top-level sections (persisted)
-	const loadSection = (key: string) =>
-		typeof localStorage === 'undefined' ? true : localStorage.getItem(key) !== 'false';
-	let libraryExpanded = $state(loadSection('explorerLibraryExpanded'));
-	let sceneExpanded = $state(loadSection('explorerSceneExpanded'));
-	function toggleLibrary() {
-		libraryExpanded = !libraryExpanded;
-		localStorage.setItem('explorerLibraryExpanded', String(libraryExpanded));
-	}
-	function toggleScene() {
-		sceneExpanded = !sceneExpanded;
-		localStorage.setItem('explorerSceneExpanded', String(sceneExpanded));
-	}
+	// 197: Library is always open (no caret); Scene's sub-groups always show,
+	// pinned to the bottom of the tree. (was 178 collapse/expand sections)
 
 	const KIND_ICONS: Record<string, string> = {
 		image: '🖼️',
@@ -199,6 +188,29 @@
 		const q = search.trim().toLowerCase();
 		const scoped = q ? $explorerItems.filter((item) => item.name.toLowerCase().includes(q)) : inFolder;
 		return scoped;
+	});
+
+	// 197d: breadcrumb trail for the current location (click a crumb to navigate)
+	const crumbs = $derived.by(() => {
+		const a = $activeFolder;
+		if (a === 'prefabs') return [{ label: '🧱 Prefabs', id: 'prefabs' as string | null }];
+		if (typeof a === 'string' && a.startsWith('scene')) {
+			const sub = a.split(':')[1];
+			const out = [{ label: '🌐 Scene', id: 'scene' as string | null }];
+			if (sub) out.push({ label: sub, id: a });
+			return out;
+		}
+		const out = [{ label: '🏠 Library', id: null as string | null }];
+		if (typeof a === 'string') {
+			const chain: any[] = [];
+			let cur: any = $explorerFolders.find((f: any) => f.id === a);
+			while (cur) {
+				chain.unshift(cur);
+				cur = cur.parentId ? $explorerFolders.find((f: any) => f.id === cur.parentId) : undefined;
+			}
+			for (const f of chain) out.push({ label: f.name, id: f.id });
+		}
+		return out;
 	});
 
 	// --- inline create/rename (106.1/2) ---
@@ -376,7 +388,10 @@
 	function deselect() {
 		selected = null;
 		inspectedFile.set(null);
-		if (shell?.secondaryStatus?.().mode === 'props') shell.hideSecondary();
+		// keep the panel if the user pinned it (opened via the ⓘ tab) — just clear
+		// the selection; close it only if it auto-opened from a pick (197 note)
+		const st = shell?.secondaryStatus?.();
+		if (st?.open && st.mode === 'props' && !st.pinned) shell.hideSecondary();
 	}
 	function gridBackgroundClick(e: MouseEvent) {
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
@@ -476,74 +491,34 @@
 			{ key: 'settings', icon: '⚙', label: 'Settings' }
 		]}
 	>
+		{#snippet topbar()}
+			{#if showBreadcrumb}
+				<div class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-300">
+					{#each crumbs as c, i (c.id ?? 'root')}
+						{#if i > 0}<span class="px-0.5 text-gray-600">/</span>{/if}
+						<button
+							class="rounded px-1 py-0.5 hover:bg-gray-700 {i === crumbs.length - 1 ? 'text-white' : ''}"
+							onclick={() => openFolder(c.id)}>{c.label}</button
+						>
+					{/each}
+				</div>
+			{/if}
+		{/snippet}
 		{#snippet primary()}
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
 		<div
 			id="explorer-tree"
 			class="flex h-full flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1 text-xs"
 		>
-			<div class="flex items-center whitespace-nowrap">
-				<button
-					id="library-caret"
-					class="w-4 shrink-0 text-gray-500"
-					title={libraryExpanded ? 'Collapse' : 'Expand'}
-					onclick={toggleLibrary}>{libraryExpanded ? '▾' : '▸'}</button
-				>
-				<button
-					class="flex-1 rounded px-2 py-1 text-left {$activeFolder === null && !search
-						? 'bg-primary-700 text-white'
-						: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline outline-2 outline-primary-500' : ''}"
-					ondragover={(e) => dragOverInto(e, 'root')}
-					ondragleave={() => (dropFolder = null)}
-					ondrop={(e) => dropInto(e, null)}
-					onclick={() => ((search = ''), activeFolder.set(null))}>🏠 Library</button
-				>
-			</div>
 			<button
-				id="prefabs-folder"
-				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
+				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
 					? 'bg-primary-700 text-white'
-					: 'text-gray-300 hover:bg-gray-700'}"
-				onclick={() => ((search = ''), activeFolder.set('prefabs'))}>🧱 Prefabs</button
+					: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline outline-2 outline-primary-500' : ''}"
+				ondragover={(e) => dragOverInto(e, 'root')}
+				ondragleave={() => (dropFolder = null)}
+				ondrop={(e) => dropInto(e, null)}
+				onclick={() => openFolder(null)}>🏠 Library</button
 			>
-			<!-- 126: built-in asset packs (moved off the sidebar) open their browser -->
-			<button
-				id="packs-folder"
-				class="whitespace-nowrap rounded px-2 py-1 text-left text-gray-300 hover:bg-gray-700"
-				title="Browse the built-in asset packs"
-				onclick={() => libraryClose.set(false)}>📦 Packs</button
-			>
-			<!-- Scene manifest (108): derived, always shared, read-only structure -->
-			<div class="flex items-center whitespace-nowrap">
-				<button
-					id="scene-caret"
-					class="w-4 shrink-0 text-gray-500"
-					title={sceneExpanded ? 'Collapse' : 'Expand'}
-					onclick={toggleScene}>{sceneExpanded ? '▾' : '▸'}</button
-				>
-				<button
-					id="scene-folder"
-					class="flex-1 rounded px-2 py-1 text-left {$activeFolder === 'scene'
-						? 'bg-primary-700 text-white'
-						: 'text-gray-300 hover:bg-gray-700'}"
-					title="Assets the shared scene uses right now — identical on every peer"
-					onclick={() => ((search = ''), activeFolder.set('scene'))}>🌐 Scene</button
-				>
-			</div>
-			{#if sceneExpanded}
-				{#each ['audio', 'config', 'textures'] as sub}
-					<button
-						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
-							? 'bg-primary-700 text-white'
-							: 'text-gray-400 hover:bg-gray-700'}"
-						style="padding-left: 22px"
-						onclick={() => activeFolder.set('scene:' + sub)}
-					>
-						📁 {sub} ({$sceneAssets.filter((a) => a.group === sub).length})
-					</button>
-				{/each}
-			{/if}
-			{#if libraryExpanded}
 			{#if editing?.mode === 'create' && editing.parentId === null}
 				{@render editRow(0)}
 			{/if}
@@ -573,7 +548,7 @@
 							ondragover={(e) => dragOverInto(e, row.folder.id)}
 							ondragleave={() => (dropFolder = null)}
 							ondrop={(e) => dropInto(e, row.folder.id)}
-							onclick={() => ((search = ''), activeFolder.set(row.folder.id))}
+							onclick={() => openFolder(row.folder.id)}
 						>
 							📁 {row.folder.name}
 						</button>
@@ -583,12 +558,52 @@
 					{@render editRow(row.depth + 1)}
 				{/if}
 			{/each}
-			{/if}
 			<button
 				id="new-folder"
 				class="mt-1 whitespace-nowrap rounded border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
-				onclick={() => startCreate($activeFolder === 'prefabs' ? null : $activeFolder)}>＋ New folder</button
+				onclick={() =>
+					startCreate(
+						typeof $activeFolder === 'string' &&
+							($activeFolder === 'prefabs' || $activeFolder.startsWith('scene'))
+							? null
+							: $activeFolder
+					)}>＋ New folder</button
 			>
+			<!-- pinned below +New folder: Prefabs / Packs / Scene (108 read-only) -->
+			<div class="mt-auto flex flex-col gap-0.5 border-t border-gray-700/60 pt-1">
+				<button
+					id="prefabs-folder"
+					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
+						? 'bg-primary-700 text-white'
+						: 'text-gray-300 hover:bg-gray-700'}"
+					onclick={() => openFolder('prefabs')}>🧱 Prefabs</button
+				>
+				<button
+					id="packs-folder"
+					class="whitespace-nowrap rounded px-2 py-1 text-left text-gray-300 hover:bg-gray-700"
+					title="Browse the built-in asset packs"
+					onclick={() => libraryClose.set(false)}>📦 Packs</button
+				>
+				<button
+					id="scene-folder"
+					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene'
+						? 'bg-primary-700 text-white'
+						: 'text-gray-300 hover:bg-gray-700'}"
+					title="Assets the shared scene uses right now — identical on every peer"
+					onclick={() => openFolder('scene')}>🌐 Scene</button
+				>
+				{#each ['audio', 'config', 'textures'] as sub}
+					<button
+						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
+							? 'bg-primary-700 text-white'
+							: 'text-gray-400 hover:bg-gray-700'}"
+						style="padding-left: 22px"
+						onclick={() => openFolder('scene:' + sub)}
+					>
+						📁 {sub} ({$sceneAssets.filter((a) => a.group === sub).length})
+					</button>
+				{/each}
+			</div>
 		</div>
 		{/snippet}
 		{#snippet main()}
@@ -599,7 +614,7 @@
 				<p class="p-4 text-center text-xs italic text-gray-500">
 					{$activeFolder === 'prefabs'
 						? 'No prefabs yet — right-click an object and Save as prefab.'
-						: 'Drop images, audio, text or 3D files here to import them.'}
+						: typeof $activeFolder === 'string' && $activeFolder.startsWith('scene') ? 'No shared assets in this scene group yet.' : 'Drop images, audio, text or 3D files here to import them.'}
 				</p>
 			{:else}
 				<div class="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-1">

@@ -38,8 +38,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(150);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(250);
-	const promptText = await A.page.evaluate(() => document.body.textContent || '');
-	h.check((await txtOpen(A)) && /Save changes before closing/.test(promptText), 'dirty editor Esc keeps it open + prompts to save');
+	const promptText = await A.page.evaluate(() => document.querySelector('#text-editor-window')?.textContent || '');
+	h.check((await txtOpen(A)) && /Save changes to/.test(promptText), 'dirty editor Esc keeps it open + shows the in-window save dialog');
+	// the dialog lives inside the editor window (not a toast)
+	h.check(await A.page.locator('#text-editor-window #text-editor-savenclose').count() === 1, 'save dialog is in-window with Save/Discard/Cancel');
 
 	await h.finish(browser);
 });

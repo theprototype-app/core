@@ -35,6 +35,7 @@
 		zoom = clamp(zoom * (e.deltaY > 0 ? 0.9 : 1.1));
 	}
 	function close() {
+		$imagePreviewTarget?.onClose?.(); // 218: let the opener (Explorer) refocus
 		if ($imagePreviewTarget?.url.startsWith('blob:')) URL.revokeObjectURL($imagePreviewTarget.url);
 		imagePreviewTarget.set(null);
 		openedFor = null;

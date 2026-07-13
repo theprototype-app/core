@@ -507,7 +507,7 @@
 		if (item.sceneEntry) {
 			// derived Scene entries open live views (108): textures preview,
 			// scripts edit the NODE code (replicated via setNodeData)
-			if (item.kind === 'image' && item.dataUrl) openImagePreview({ title: item.name, url: item.dataUrl });
+			if (item.kind === 'image' && item.dataUrl) openImagePreview({ title: item.name, url: item.dataUrl, onClose: () => gridEl?.focus() });
 			else if (item.kind === 'text' && item.nodeId) {
 				let nodes: any[] = [];
 				flowNodes.subscribe((v: any) => (nodes = v))();
@@ -516,7 +516,8 @@
 					openTextEditor({
 						title: item.name + ' (live script)',
 						code: node.data?.code ?? '',
-						onSave: (code: string) => setNodeData(item.nodeId, { code })
+						onSave: (code: string) => setNodeData(item.nodeId, { code }),
+						onClose: () => gridEl?.focus()
 					});
 			} else if (item.kind === 'audio' && item.itemId) {
 				const backing = $explorerItems.find((i) => i.id === item.itemId);
@@ -530,11 +531,12 @@
 			openTextEditor({
 				title: item.name,
 				code: await blob.text(),
-				onSave: (code: string) => updateItemBytes(item.id, code)
+				onSave: (code: string) => updateItemBytes(item.id, code),
+				onClose: () => gridEl?.focus()
 			});
 		} else if (item.kind === 'image') {
 			const blob = await itemBlob(item.id);
-			if (blob) openImagePreview({ title: item.name, url: URL.createObjectURL(blob) });
+			if (blob) openImagePreview({ title: item.name, url: URL.createObjectURL(blob), onClose: () => gridEl?.focus() });
 		}
 	}
 </script>
@@ -632,7 +634,7 @@
 					{@render editRow(row.depth)}
 				{:else}
 					<div
-						class="flex items-center whitespace-nowrap {dropFolder === row.folder.id ? 'outline outline-2 outline-primary-500 rounded' : ''}"
+						class="flex items-center whitespace-nowrap"
 						style="padding-left: {2 + row.depth * 14}px"
 						role="treeitem"
 						aria-selected={$activeFolder === row.folder.id}
@@ -651,7 +653,7 @@
 						<button
 							class="flex-1 rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
 								? 'bg-primary-700 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
+								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id ? 'outline outline-2 outline-primary-500' : ''}"
 							draggable="true"
 							ondragstart={(e) =>
 								e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify({ id: row.folder.id }))}

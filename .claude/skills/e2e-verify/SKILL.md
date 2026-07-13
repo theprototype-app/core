@@ -131,10 +131,17 @@ Late joiners: connect a third context AFTER mutations, assert handshake state ar
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-07-12 = **502 errors / 77 warnings** (drifts down as flowbite/typed code
+  baseline 2026-07-13 = **502 errors / 77 warnings** (drifts down as flowbite/typed code
   is removed — hold whatever it currently is; add no NEW). Runes-mode `.svelte` files
   (any `$state`) must use `onclick`/`oninput` — the `on:` directive adds deprecation
-  WARNINGS that count against the baseline.
+  WARNINGS that count against the baseline. a11y warnings count too: focusable divs use
+  `tabindex="-1"` + `.focus()`; click/drag containers take a targeted `svelte-ignore`.
+- Screenshot-driven design checks reuse the harness: a throwaway `_shot.test.cjs` does
+  `setupPage`, seeds state via `window.__stores` (e.g. `explorer.createFolder`,
+  `explorer.importFiles([new File([...],'a.txt')])`), opens the panel, then
+  `page.locator('#explorer-list').screenshot({ path: <scratchpad>/x.png })`. Read the PNG
+  to eyeball it, then DELETE the throwaway (never commit a machine-specific scratchpad
+  path). The runner only matches `*.test.cjs`.
 
 ## Definition of done
 

@@ -65,7 +65,12 @@ loadable play content. Everything a user does must be visible to connected peers
   panels: Menu/ObjectsPanel/PropertiesPanel/ColorPalette/PrefabsPanel/Keyboard/
   ChatPanel/Stats — named `vr<x>-*` control meshes, all grip-grabbable),
   scene-overlay components (PingMarkers/PathWaypoints/LockHighlights), shared
-  `ContextMenu.svelte` (NEVER scrolls; flips via left/right/top/bottom — no transform).
+  `ContextMenu.svelte` (NEVER scrolls; flips via left/right/top/bottom — no transform),
+  `components/shared/WindowShell.svelte` (197: reusable window CHROME — collapsible/
+  resizable/side-switchable primary sidebar + a multi-mode secondary panel that
+  reflows opposite it; snippet slots topbar/primary/main/secondary; chrome-only,
+  LOCAL prefs keyed `ws:<key>:*`; the Explorer is built on it, Flow is NOT — parity
+  deferred).
 - `tests/e2e/` — committed Playwright suites (`npm run e2e`, subset by name);
   `.cjs` because the package is `"type": "module"`.
 - `docs/sdk/` — SDK docs (kept **uncommitted**, like docs/plan). `MODULES.md` committed.
@@ -118,6 +123,18 @@ loadable play content. Everything a user does must be visible to connected peers
   rewrite). Runes-mode files can't use `$:` — and adding ONE `$state` to a `$:` file
   flips it to runes mode and breaks the build. Never introduce `$state` into
   legacy-mode components.
+- a11y warnings count against the baseline too. A `<div>` you make keyboard-focusable
+  should use `tabindex="-1"` + programmatic `.focus()` (the `a11y_no_noninteractive_tabindex`
+  rule only fires for tabindex `>= 0`; `.focus()` still works at -1). A container that
+  needs click/drag listeners (grid background, tree drop-row) takes a targeted
+  `<!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_static_element_interactions -->`
+  (add `a11y_click_events_have_key_events` if it has `onclick` and no key handler).
+  Adding `role="treeitem"`/`role="button"` etc. to dodge one warning can ADD others
+  (treeitem then demands `aria-selected` + a tabindex) — prefer the ignore.
+- Editing svelte files by exact-match is whitespace-sensitive; the files use TABS.
+  When an Edit "String not found" repeats, `sed -n 'A,Bp' file | cat -A` shows tabs as
+  `^I` — copy the exact indentation. Bare single-line substrings (no leading tab) are
+  the safest anchor.
 - `$effect` tracks EVERY store read synchronously inside it — side reads (userdata,
   globalScene…) retrigger it and can hit `effect_update_depth_exceeded`, which
   UNMOUNTS the app. Wrap one-shot side work in `untrack(() => …)` so the effect only
@@ -219,15 +236,17 @@ Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:51
   popover on explicit request, phase 130).
 - VR phases: verify math/state headlessly, state clearly that on-device feel is the
   user's manual check.
-- Status (2026-07-12): batches 1-61 SHIPPED (roadmaps #2/#3/#4 done) + roadmap #5 in
-  progress — batch 63 (191 create-face-facing, 192 inset-confirm, 193 stretch-sliders)
-  + 194+210 (controller handedness: radial/grip/panels/peer-hands) + 195 (world-grab
-  presence in the content frame) + 203 (sidebar redesign) shipped. **Roadmap #5 remaining:
-  196 noVR inset, 197/198 Explorer, 199-202/204-205 (Packs/flow revamp), 207-209 (.tpscene/
-  .tpmodule).** Batches skipped/deferred → docs/plan/pending/: physics (206), window-edge
-  resize (201, removed), module test-flight (189/190), Explorer tree v3 (140-142).
-  svelte-check baseline drifted 520→502 errors / 84→77 warnings (hold it). Roadmap #5
-  forks locked in quiz.md; per-phase plans in docs/plan/done/.
+- Status (2026-07-13): batches 1-61 SHIPPED (roadmaps #2/#3/#4 done) + roadmap #5 in
+  progress — batch 63 (191/192/193) + 194+210 (controller handedness: radial/grip/panels/
+  peer-hands) + 195 (world-grab presence in the content frame) + 196 (noVR inset verified)
+  + 203 (sidebar redesign) + **197/198 Explorer window v-next SHIPPED** (WindowShell chrome:
+  tree sidebar + Properties/Settings tabs + inspector + breadcrumb + tree reorg + keyboard
+  nav + folder-select highlight; Flow parity dropped). **Roadmap #5 remaining: 199 Packs +
+  207-209 (.tpscene/.tpmodule); flow revamp (199-202/204-205) DEFERRED → docs/plan/pending/.**
+  Batches skipped/deferred → docs/plan/pending/: flow revamp (199-202/204-205), physics
+  (206), window-edge resize (201, removed), module test-flight (189/190), Explorer tree v3
+  (140-142). svelte-check baseline drifted 520→502 errors / 84→77 warnings (hold it).
+  Roadmap #5 forks locked in quiz.md; per-phase plans in docs/plan/done/.
 
 ## Module SDK (implemented — extend, don't fork)
 

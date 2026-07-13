@@ -132,8 +132,33 @@ export const vrMenuGroup = writable(null);
 export const vrPanelGroup = writable(null);
 /** objects panel row CURSOR (109.4) — the stick moves it, press selects it */
 export const vrPanelCursor = writable(0);
+/** 215: set of expanded group uuids in the VR objects panel @type {import('svelte/store').Writable<Set<string>>} */
+export const vrPanelExpanded = writable(new Set());
 /** last panel row-select {uuid, at} for double-click focus detection (120) */
 let lastPanelSelect = { uuid: '', at: 0 };
+
+/**
+ * 215: flatten the objects tree into the panel's visible rows — top-level
+ * children, with an EXPANDED group's descendants inlined and indented by depth.
+ * Pure so VRObjectsPanel (reactive) and the stick-scroll loop (get-based) render
+ * and navigate the exact same ordering.
+ * @param {any[]} nodes top-level children @param {Set<string>} expanded group uuids
+ * @returns {{uuid: string, object: any, depth: number, isGroup: boolean}[]}
+ */
+export function flattenPanelRows(nodes, expanded) {
+	/** @type {{uuid: string, object: any, depth: number, isGroup: boolean}[]} */
+	const out = [];
+	/** @param {any[]} list @param {number} depth */
+	const walk = (list, depth) => {
+		for (const obj of list) {
+			const isGroup = obj.type === 'Group';
+			out.push({ uuid: obj.uuid, object: obj, depth, isGroup });
+			if (isGroup && expanded.has(obj.uuid) && obj.children?.length) walk(obj.children, depth + 1);
+		}
+	};
+	walk(nodes ?? [], 0);
+	return out;
+}
 
 /**
  * VR focus (120): teleport the rig so the viewer frames an object — the
@@ -2088,7 +2113,17 @@ export function executeVRMenuAction(name) {
 	if (name.startsWith('panel:')) {
 		// objects panel actions (101) + row actions v2 (116/120)
 		if (name === 'panel:close') vrObjectsPanelOpen.set(false);
-		else if (name.startsWith('panel:select:')) {
+		else if (name.startsWith('panel:expand:')) {
+			// 215: toggle a group row open/closed (children inline + indent)
+			const uuid = name.slice('panel:expand:'.length);
+			vrPanelExpanded.update((set) => {
+				const next = new Set(set);
+				if (next.has(uuid)) next.delete(uuid);
+				else next.add(uuid);
+				return next;
+			});
+			hapticPulse(0.15, 18);
+		} else if (name.startsWith('panel:select:')) {
 			// 120: selecting no longer closes the panel; a second select on the
 			// SAME row within the double-click window focuses it instead
 			const uuid = name.slice('panel:select:'.length);
@@ -2523,10 +2558,11 @@ export function updateVRControls() {
 			hapticPulse(0.08, 10);
 			vrPanelCursor.update((v) => Math.max(0, v + (y > 0 ? 1 : -1)));
 			// 120: selection FOLLOWS the cursor (lock-respecting) so navigating
-			// the list selects live — no separate press needed
-			const children = get(objectsGroup)?.children ?? [];
-			const idx = Math.min(Math.max(0, get(vrPanelCursor)), Math.max(0, children.length - 1));
-			const target = children[idx];
+			// the list selects live — no separate press needed. 215: over the
+			// FLATTENED rows (expanded groups' children inline).
+			const rows = flattenPanelRows(get(objectsGroup)?.children ?? [], get(vrPanelExpanded));
+			const idx = Math.min(Math.max(0, get(vrPanelCursor)), Math.max(0, rows.length - 1));
+			const target = rows[idx]?.object;
 			if (target && !get(lockedObjects).find((lock) => lock[1] === target.uuid))
 				selectObject(target.uuid);
 		}

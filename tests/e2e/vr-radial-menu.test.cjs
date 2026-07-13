@@ -62,6 +62,7 @@ h.run(async () => {
 			root: m.ringEntries('root').map((e) => e.id),
 			system: m.ringEntries('system').map((e) => e.id),
 			addCount: m.ringEntries('add').length,
+			tools: m.ringEntries('tools').map((e) => e.id),
 			sceneHasEnv: m.ringEntries('scene').some((e) => e.id === 'env:night'),
 			micModes: m.ringEntries('mic').map((e) => e.id),
 			objectOps: m.ringEntries('object').map((e) => e.id),
@@ -72,8 +73,12 @@ h.run(async () => {
 		};
 	});
 	h.check(
-		registry.root.join(',') === 'objects,nav:add,nav:scene,draw,redo,undo,chat,nav:system',
-		`base ring is the 109 remap: redo/undo swapped, Chat in (${registry.root.join(',')})`
+		registry.root.join(',') === 'objects,nav:add,nav:scene,nav:tools,redo,undo,chat,nav:system',
+		`base ring is the 109 remap + 214 Tools submenu (${registry.root.join(',')})`
+	);
+	h.check(
+		registry.tools.join(',') === 'tool:select,tool:box,tool:draw',
+		`Tools submenu lists Select / Box Select / Draw (${registry.tools.join(',')})`
 	);
 	h.check(
 		registry.system.includes('nav:mic') &&

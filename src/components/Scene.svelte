@@ -7,7 +7,7 @@
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu } from '../stores/appStore';
 	import { get } from 'svelte/store';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
@@ -20,7 +20,7 @@
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -603,6 +603,9 @@
 				return;
 			}
 			if ($drawMode) return; // VR trigger feeds the stroke poll instead
+			// 214: in Box Select mode the marquee (selectstart/selectend) owns the
+			// trigger — the click never falls through to a single ray pick
+			if ($vrToolMode === 'box' || boxSelectActive()) return;
 			if (!$objectsGroup) return;
 			tempMatrix.identity().extractRotation(controller.matrixWorld);
 			selectionRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
@@ -615,10 +618,12 @@
 			const idx = xrControllers.indexOf(event.target);
 			vrVertexGrabStart(idx); // 182: hold to move a vertex (no-op unless vertex mode)
 			beginStretchSliderDrag(idx); // 193: grab a stretch slider (no-op unless stretch mode)
+			boxSelectStart(idx); // 214: start a box-select marquee (no-op unless tool = box)
 		};
 		const onXRSelectEnd = () => {
 			vrVertexGrabEnd();
 			endStretchSliderDrag();
+			boxSelectEnd(); // 214: finalize a box-select marquee (no-op unless active)
 		};
 		// 194: stamp handedness onto the persistent controller objects so anything
 		// resolving a controller by hand (radial, menus) survives a reorder

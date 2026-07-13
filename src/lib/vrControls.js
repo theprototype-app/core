@@ -35,7 +35,8 @@ import {
 	vrStatsOpen,
 	vrGrabStyle,
 	vrGrabbedHand,
-	vrApprovePanelOpen
+	vrApprovePanelOpen,
+	vrToolMode
 } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
@@ -104,7 +105,8 @@ import {
 	deleteSelection,
 	renameObject,
 	focusObject,
-	ungroupObject
+	ungroupObject,
+	applySelectionSet
 } from './objectActions';
 import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
@@ -1075,6 +1077,119 @@ function endGrab(object, before) {
 /** @type {{index: number, prev: any} | null} right-grip drag-the-world pan */
 let worldPan = null;
 
+// ---- 214: Box Select — a 3D drag-box marquee. Trigger-press anchors a corner,
+// the controller drags the opposite corner, release selects every top-level
+// object whose world origin falls inside. The visual is a scene-root mesh
+// (translucent blue faces + dashed edges) that NEVER parents into objectsGroup
+// (it would leak into GLTF sync, like the selection shell). ----
+/** @type {{index: number, anchor: any} | null} */
+let boxSelect = null;
+/** @type {any} scene-root visual group */
+let boxSelectVisual = null;
+
+/** @param {number} index */
+function controllerWorldPos(index) {
+	return renderer.xr.getController(index).getWorldPosition(new THREE.Vector3());
+}
+
+function ensureBoxVisual() {
+	if (boxSelectVisual) return boxSelectVisual;
+	const scene = get(globalScene);
+	if (!scene) return null;
+	const grp = new THREE.Group();
+	grp.name = 'vr-box-select';
+	const faces = new THREE.Mesh(
+		new THREE.BoxGeometry(1, 1, 1),
+		new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.14, depthTest: false, side: THREE.DoubleSide })
+	);
+	faces.name = 'vr-box-select-faces';
+	faces.renderOrder = 998;
+	const edges = new THREE.LineSegments(
+		new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+		new THREE.LineDashedMaterial({ color: 0x8ec5ff, dashSize: 0.03, gapSize: 0.02, depthTest: false })
+	);
+	edges.name = 'vr-box-select-edges';
+	edges.computeLineDistances();
+	edges.renderOrder = 999;
+	grp.add(faces, edges);
+	scene.add(grp);
+	boxSelectVisual = grp;
+	return grp;
+}
+
+/** Position/scale the visual to span anchor..current (min size so it stays visible).
+ * @param {any} anchor @param {any} current */
+function updateBoxVisual(anchor, current) {
+	const grp = ensureBoxVisual();
+	if (!grp) return;
+	grp.position.copy(anchor.clone().add(current).multiplyScalar(0.5));
+	grp.scale.set(
+		Math.max(Math.abs(current.x - anchor.x), 1e-3),
+		Math.max(Math.abs(current.y - anchor.y), 1e-3),
+		Math.max(Math.abs(current.z - anchor.z), 1e-3)
+	);
+}
+
+/** Trigger press starts the marquee (no-op unless tool = 'box'). @param {number} index */
+export function boxSelectStart(index) {
+	if (get(vrToolMode) !== 'box' || !renderer?.xr?.isPresenting) return false;
+	boxSelect = { index, anchor: controllerWorldPos(index) };
+	updateBoxVisual(boxSelect.anchor, boxSelect.anchor);
+	hapticPulse(0.3, 30);
+	return true;
+}
+
+/** Per-frame: grow the box to the controller. */
+function updateBoxSelect() {
+	if (!boxSelect) return;
+	updateBoxVisual(boxSelect.anchor, controllerWorldPos(boxSelect.index));
+}
+
+/** Select every top-level object whose world origin is inside the AABB. Testable:
+ * pass two world corners, applies the replicated multi-selection.
+ * @param {number[]} a @param {number[]} b @returns {string[]} selected uuids */
+export function selectObjectsInBox(a, b) {
+	const min = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.min(a[2], b[2])];
+	const max = [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[2], b[2])];
+	const root = get(objectsGroup);
+	if (!root) return [];
+	const p = new THREE.Vector3();
+	/** @type {string[]} */
+	const hits = [];
+	root.children.forEach((/** @type {any} */ child) => {
+		child.getWorldPosition(p);
+		if (p.x >= min[0] && p.x <= max[0] && p.y >= min[1] && p.y <= max[1] && p.z >= min[2] && p.z <= max[2])
+			hits.push(child.uuid);
+	});
+	if (hits.length) applySelectionSet(hits);
+	return hits;
+}
+
+/** Trigger release finalizes (or cancels) the marquee. @param {boolean=} cancel @returns {string[]|null} */
+export function boxSelectEnd(cancel = false) {
+	if (!boxSelect) return null;
+	const anchor = boxSelect.anchor;
+	const current = controllerWorldPos(boxSelect.index);
+	boxSelect = null;
+	if (boxSelectVisual) {
+		boxSelectVisual.parent?.remove(boxSelectVisual);
+		boxSelectVisual.traverse((/** @type {any} */ o) => {
+			o.geometry?.dispose?.();
+			o.material?.dispose?.();
+		});
+		boxSelectVisual = null;
+	}
+	if (cancel) return null;
+	const uuids = selectObjectsInBox(anchor.toArray(), current.toArray());
+	hapticPulse(0.4, 40);
+	return uuids;
+}
+
+/** True while a box-select drag is active (Scene guards the click-select). */
+export function boxSelectActive() {
+	return !!boxSelect;
+}
+
 // ---- world grab (71): BOTH grips in empty air scale/rotate/pan the world ---
 // The gesture transforms the world-grab-rig LOCALLY (peers see nothing —
 // broadcasts stay in objectsGroup-local coords, which never change here).
@@ -1952,6 +2067,15 @@ export function executeVRMenuAction(name) {
 		pushRing(name.slice(4));
 		return;
 	}
+	if (name.startsWith('tool:')) {
+		// 214: pick the trigger tool from the Tools submenu, then close the ring
+		const tool = name.slice('tool:'.length); // select | box | draw
+		vrToolMode.set(tool);
+		if ((tool === 'draw') !== get(drawMode)) toggleDrawMode();
+		if (tool !== 'box') boxSelectEnd(true); // drop any in-progress marquee
+		vrMenuOpen.set(false);
+		return;
+	}
 	if (name === 'edit:granularity') {
 		toggleFaceGranularity(); // 212: FACE <-> POLYGON
 		return;
@@ -2260,9 +2384,6 @@ export function executeVRMenuAction(name) {
 			localStorage.setItem('vrMenuHand', next);
 			return next;
 		});
-	} else if (name === 'draw') {
-		toggleDrawMode();
-		vrMenuOpen.set(false);
 	} else if (name === 'mic') {
 		cycleMicMode();
 	} else if (name === 'world') {
@@ -2435,6 +2556,9 @@ export function updateVRControls() {
 	if (windowGrabPending && Date.now() - windowGrabPending.startedAt >= HOLD_MS)
 		beginWindowAdjust();
 	if (windowGrab) updateWindowAdjust();
+
+	// 214: box-select marquee grows to the controller while the trigger is held
+	if (boxSelect) updateBoxSelect();
 
 	// prefab placement ghost (115) rides the pointer-hand ray
 	if (get(vrPrefabGhost))

@@ -107,6 +107,9 @@ export const vrSettingsPanelOpen = writable(false);
 // VR peer-approval follower panel (211): auto-opens while presenting when a
 // connection request is pending (desktop shows the Toasts approval card instead)
 export const vrApprovePanelOpen = writable(false);
+// 214: VR trigger tool mode from the radial Tools submenu — 'select' (single
+// pick), 'box' (3D drag-box marquee) or 'draw' (freehand stroke)
+export const vrToolMode = writable('select');
 // VR snap MODE (156): 'off' | 'grid' | 'surface' | 'rotation'
 export const vrSnapMode = writable(
 	typeof localStorage !== 'undefined' ? localStorage.getItem('vrSnapMode') || 'off' : 'off'

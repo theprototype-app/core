@@ -6,7 +6,8 @@ import {
 	selectedObject,
 	vrWireframeSelection,
 	vrEditMenuOpen,
-	vrSnapMenuOpen
+	vrSnapMenuOpen,
+	vrToolMode
 } from '../stores/sceneStore';
 import { environment, setEnvironment, ENVIRONMENT_PRESETS } from './environment';
 import { setMicMode, vrMicMode } from './voiceChat';
@@ -187,11 +188,16 @@ function registerBuiltins() {
 	registerVRMenuEntry({ id: 'objects', label: 'Objects', order: 0 });
 	registerVRMenuEntry({ id: 'nav:add', label: 'Add ▸', order: 1, ring: 'add' });
 	registerVRMenuEntry({ id: 'nav:scene', label: 'Scene ▸', order: 2, ring: 'scene' });
-	registerVRMenuEntry({ id: 'draw', label: 'Draw', order: 3 });
+	registerVRMenuEntry({ id: 'nav:tools', label: 'Tools ▸', order: 3, ring: 'tools' });
 	registerVRMenuEntry({ id: 'redo', label: 'Redo', order: 4 });
 	registerVRMenuEntry({ id: 'undo', label: 'Undo', order: 5 });
 	registerVRMenuEntry({ id: 'chat', label: 'Chat', order: 6 });
 	registerVRMenuEntry({ id: 'nav:system', label: 'System ▸', order: 7, ring: 'system' });
+
+	// Tools ▸ (214) — the trigger tool mode: single Select, Box Select marquee, Draw
+	registerVRMenuEntry({ id: 'tool:select', group: 'tools', label: 'Select', order: 0, active: () => get(vrToolMode) === 'select' });
+	registerVRMenuEntry({ id: 'tool:box', group: 'tools', label: 'Box Select', order: 1, active: () => get(vrToolMode) === 'box' });
+	registerVRMenuEntry({ id: 'tool:draw', group: 'tools', label: 'Draw', order: 2, active: () => get(vrToolMode) === 'draw' });
 
 	// Add ▸ — ids resolve in executeVRMenuAction's switch, which spawns the
 	// primitive 2m ahead of the camera (spawnPrimitive)

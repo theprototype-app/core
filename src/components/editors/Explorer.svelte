@@ -37,6 +37,7 @@
 	import { tabbable } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
 	import ContextMenu from '../ContextMenu.svelte';
+	import WindowShell from '../shared/WindowShell.svelte';
 	import { fly } from 'svelte/transition';
 
 	const clampH = (h: number) =>
@@ -46,13 +47,17 @@
 	let docked = $state(true);
 	let winW = $state(720);
 	let winH = $state(440);
-	let treeWidth = $state(176);
+	// 197: LOCAL explorer prefs (persisted). Folder-tree width/collapse/side now
+	// live in WindowShell (keyed 'explorer'); these are Explorer-specific toggles.
+	let singleClickOpen = $state(false);
+	let showBreadcrumb = $state(true);
 	if (typeof localStorage !== 'undefined') {
 		height = clampH(parseInt(localStorage.getItem('explorerHeight') ?? '300'));
 		docked = localStorage.getItem('explorerDocked') !== 'false';
 		winW = parseInt(localStorage.getItem('explorerWinW') ?? '720') || 720;
 		winH = parseInt(localStorage.getItem('explorerWinH') ?? '440') || 440;
-		treeWidth = parseInt(localStorage.getItem('explorerTreeW') ?? '176') || 176;
+		singleClickOpen = localStorage.getItem('explorerSingleClickOpen') === 'true';
+		showBreadcrumb = localStorage.getItem('explorerBreadcrumb') !== 'false';
 	}
 	loadExplorer();
 	loadPrefabs();
@@ -107,19 +112,6 @@
 		e.currentTarget.releaseCapture?.(e.pointerId);
 		localStorage.setItem('explorerWinW', String(winW));
 		localStorage.setItem('explorerWinH', String(winH));
-	}
-
-	// --- tree splitter (106.6) ---
-	let treeResizing = $state(false);
-	function doTreeResize(e: any) {
-		if (!treeResizing) return;
-		treeWidth = Math.min(Math.max(110, treeWidth + e.movementX), 420);
-	}
-	function endTreeResize(e: any) {
-		if (!treeResizing) return;
-		treeResizing = false;
-		e.currentTarget.releasePointerCapture?.(e.pointerId);
-		localStorage.setItem('explorerTreeW', String(treeWidth));
 	}
 
 	// --- content state ---
@@ -451,12 +443,12 @@
 {/snippet}
 
 {#snippet content()}
-	<div class="flex h-full min-h-0">
-		<!-- folder tree (resizable, no wrap, h-scroll — 106.6) -->
+	<WindowShell key="explorer" primaryLabel="Folders" secondaryLabel="Explorer settings">
+		{#snippet primary()}
+		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
 		<div
 			id="explorer-tree"
-			class="flex shrink-0 flex-col gap-0.5 overflow-x-auto overflow-y-auto pr-1 text-xs"
-			style="width: {treeWidth}px"
+			class="flex h-full flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1 text-xs"
 		>
 			<div class="flex items-center whitespace-nowrap">
 				<button
@@ -566,21 +558,10 @@
 				onclick={() => startCreate($activeFolder === 'prefabs' ? null : $activeFolder)}>＋ New folder</button
 			>
 		</div>
-		<!-- tree splitter -->
-		<div
-			class="resize-cue w-1.5 shrink-0 cursor-ew-resize border-r border-gray-700/60"
-			style="touch-action: none"
-			title="Drag to resize"
-			onpointerdown={(e) => {
-				treeResizing = true;
-				(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-				e.preventDefault();
-			}}
-			onpointermove={doTreeResize}
-			onpointerup={endTreeResize}
-		></div>
+		{/snippet}
+		{#snippet main()}
 		<!-- item grid (+ subfolder cards, 106.7) -->
-		<div class="relative min-w-0 flex-1 overflow-y-auto p-1" oncontextmenu={gridMenu} role="region">
+		<div class="relative h-full min-w-0 overflow-y-auto p-1" oncontextmenu={gridMenu} role="region">
 			{#if childFolders.length === 0 && gridItems.length === 0}
 				<p class="p-4 text-center text-xs italic text-gray-500">
 					{$activeFolder === 'prefabs'
@@ -653,7 +634,37 @@
 				<div class="pointer-events-none absolute inset-1 rounded-lg border-2 border-dashed border-primary-500 bg-primary-500/10"></div>
 			{/if}
 		</div>
-	</div>
+		{/snippet}
+		{#snippet secondary()}
+		<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
+			<label class="flex items-center gap-2">
+				<input
+					type="checkbox"
+					checked={singleClickOpen}
+					onchange={(e) => {
+						singleClickOpen = e.currentTarget.checked;
+						localStorage.setItem('explorerSingleClickOpen', String(singleClickOpen));
+					}}
+				/>
+				Single-click opens folders
+			</label>
+			<label class="flex items-center gap-2">
+				<input
+					type="checkbox"
+					checked={showBreadcrumb}
+					onchange={(e) => {
+						showBreadcrumb = e.currentTarget.checked;
+						localStorage.setItem('explorerBreadcrumb', String(showBreadcrumb));
+					}}
+				/>
+				Show path bar
+			</label>
+			<p class="mt-2 text-[10px] leading-relaxed text-gray-400">
+				Click a folder or file to see its details here (coming next).
+			</p>
+		</div>
+		{/snippet}
+	</WindowShell>
 {/snippet}
 
 {#if !$explorerClose}

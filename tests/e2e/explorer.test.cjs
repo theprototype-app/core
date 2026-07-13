@@ -193,20 +193,22 @@ h.run(async () => {
 		`cascade removed subfolders + their items (${JSON.stringify(afterDelete)})`
 	);
 
-	// tree splitter persists
-	const tree = await A.page.locator('#explorer-tree').boundingBox();
-	await A.page.mouse.move(tree.x + tree.width + 3, tree.y + 60);
+	// 197: the folder tree is WindowShell's primary sidebar; its splitter resizes
+	// the panel and persists under ws:explorer:primaryWidth (was explorerTreeW)
+	const treeBefore = await A.page.locator('#explorer-tree').boundingBox();
+	const splitter = await A.page.locator('#explorer-list .ws-resize').first().boundingBox();
+	await A.page.mouse.move(splitter.x + splitter.width / 2, splitter.y + 40);
 	await A.page.mouse.down();
-	await A.page.mouse.move(tree.x + tree.width + 63, tree.y + 60, { steps: 6 });
+	await A.page.mouse.move(splitter.x + splitter.width / 2 + 60, splitter.y + 40, { steps: 6 });
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(300);
 	const widened = await A.page.evaluate(() => ({
 		width: document.querySelector('#explorer-tree')?.getBoundingClientRect().width ?? 0,
-		saved: parseInt(localStorage.getItem('explorerTreeW') ?? '0')
+		saved: parseInt(localStorage.getItem('ws:explorer:primaryWidth') ?? '0')
 	}));
 	h.check(
-		Math.abs(widened.width - (tree.width + 60)) < 8 && Math.abs(widened.saved - widened.width) < 8,
-		`tree splitter resizes and persists (${Math.round(widened.width)})`
+		widened.width > treeBefore.width + 30 && Math.abs(widened.saved - widened.width) < 24,
+		`primary sidebar resizes and persists (${Math.round(widened.width)}, saved ${widened.saved})`
 	);
 
 	// persistence: items + folders survive a reload

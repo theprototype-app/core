@@ -338,6 +338,97 @@ export function commitArmedFaceOp() {
 	return commitFaceOp(op, get(faceEditAmount));
 }
 
+// ---- 212: polygon-select + multiselect ------------------------------------
+/** face-select granularity: 'face' = coplanar group (default), 'polygon' = the
+ * single tri under the ray (so an inset cap, coplanar with its frame, isolates)
+ * @type {import('svelte/store').Writable<'face'|'polygon'>} */
+export const faceEditGranularity = writable('face');
+/** Multi mode: triggers ACCUMULATE picks; ops apply to the whole set */
+export const faceEditMulti = writable(false);
+/** accumulated selected tri indices (into workingTris) in Multi mode @type {import('svelte/store').Writable<number[]>} */
+export const faceEditSelectedTris = writable(/** @type {number[]} */ ([]));
+/** the raw triangle under the ray/cursor (for polygon picking), or -1 */
+export const faceEditHoverTri = writable(-1);
+
+/** The tri indices a single pick selects, per granularity. @param {number} tri */
+function pickFaceUnitTris(tri) {
+	if (tri < 0 || !workingTris[tri]) return [];
+	if (get(faceEditGranularity) === 'polygon') return [tri];
+	const fi = faceIndexForTriangle(tri);
+	return fi >= 0 ? [...faces[fi].triIndices] : [];
+}
+
+/** Multi mode: toggle the picked unit into the accumulated selection. @param {number} tri */
+export function toggleFaceSelection(tri) {
+	const unit = pickFaceUnitTris(tri);
+	if (!unit.length) return false;
+	faceEditSelectedTris.update((sel) => {
+		const set = new Set(sel);
+		const allIn = unit.every((t) => set.has(t));
+		unit.forEach((t) => (allIn ? set.delete(t) : set.add(t)));
+		return [...set];
+	});
+	refreshFaceOverlay();
+	return true;
+}
+
+/** Clear the accumulated multi-selection */
+export function clearFaceSelection() {
+	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
+	refreshFaceOverlay();
+}
+
+/** Toggle FACE <-> POLYGON granularity (units differ, so drop the selection) */
+export function toggleFaceGranularity() {
+	faceEditGranularity.update((g) => (g === 'face' ? 'polygon' : 'face'));
+	clearFaceSelection();
+}
+
+/** Toggle Multi mode on/off (drop the accumulated selection either way) */
+export function toggleFaceMulti() {
+	faceEditMulti.update((v) => !v);
+	clearFaceSelection();
+}
+
+/** The tri indices the next op targets: the multi selection, else the hovered
+ * unit (polygon = the tri; face = the coplanar group under the ray/highlight).
+ * @returns {number[]} */
+function opTargetTris() {
+	if (get(faceEditMulti) && get(faceEditSelectedTris).length)
+		return get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
+	if (get(faceEditGranularity) === 'polygon') {
+		const t = get(faceEditHoverTri);
+		return t >= 0 && workingTris[t] ? [t] : [];
+	}
+	const fi = get(faceEditHighlight);
+	return fi >= 0 && faces[fi] ? faces[fi].triIndices.filter((/** @type {number} */ ti) => workingTris[ti]) : [];
+}
+
+/** Synthesize a face {triIndices, normal, centroid} from the op target tris (212).
+ * For a single coplanar group this equals the groupFaces() face, so the default
+ * FACE path is unchanged. */
+function opTargetFace() {
+	const tris = opTargetTris();
+	if (!tris.length) return null;
+	const normal = new THREE.Vector3();
+	const centroid = new THREE.Vector3();
+	let cnt = 0;
+	tris.forEach((/** @type {number} */ ti) => {
+		normal.add(triNormal(workingTris[ti]));
+		workingTris[ti].forEach((/** @type {any} */ v) => (centroid.add(v), cnt++));
+	});
+	if (normal.lengthSq() < 1e-9) normal.copy(triNormal(workingTris[tris[0]]));
+	return { triIndices: tris, normal: normal.normalize(), centroid: centroid.divideScalar(cnt || 1) };
+}
+
+/** Tris to tint in the overlay: the multi selection plus the hovered unit (212) */
+function overlayTris() {
+	const set = new Set();
+	if (get(faceEditMulti)) get(faceEditSelectedTris).forEach((t) => set.add(t));
+	pickFaceUnitTris(get(faceEditHoverTri)).forEach((t) => set.add(t));
+	return [...set].filter((ti) => workingTris[ti]);
+}
+
 /** @type {any} */ let faceEdited = null;
 /** 175: remember the last face selected per object, restored on re-entry
  * @type {{uuid: string|null, fi: number}} */
@@ -381,6 +472,8 @@ export function enterFaceEdit(uuid) {
 	faceEdited = object;
 	rebuildFaces();
 	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
+	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212
 	/** @type {any} */
 	const controls = get(TControls);
 	controls?.detach?.();
@@ -422,6 +515,8 @@ export function exitFaceEdit() {
 	workingTris = [];
 	faces = [];
 	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
+	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212
 	faceEditObject.set(null);
 }
 
@@ -432,11 +527,15 @@ export function exitFaceEdit() {
  * triangleIndex clears the highlight. @param {number} triangleIndex
  */
 export function highlightFaceByTriangle(triangleIndex) {
+	// 212: track the raw tri (polygon picking) + refresh per-tri in polygon mode
+	const prevTri = get(faceEditHoverTri);
+	faceEditHoverTri.set(triangleIndex);
 	const fi = triangleIndex < 0 ? -1 : faces.findIndex((f) => f.triIndices.includes(triangleIndex));
-	if (fi === get(faceEditHighlight)) return false;
+	const prevFi = get(faceEditHighlight);
 	faceEditHighlight.set(fi);
-	refreshFaceOverlay();
-	return true;
+	const changed = get(faceEditGranularity) === 'polygon' ? triangleIndex !== prevTri : fi !== prevFi;
+	if (changed) refreshFaceOverlay();
+	return changed;
 }
 
 /** Clear the face highlight (ray left the mesh) — returns TRUE if it changed */
@@ -449,32 +548,33 @@ export function faceIndexForTriangle(triangleIndex) {
 	return triangleIndex < 0 ? -1 : faces.findIndex((f) => f.triIndices.includes(triangleIndex));
 }
 
-/** the highlighted face's world-space centroid + normal (for ghost/preview) */
+/** the op target's world-space centroid + normal (for ghost/preview) — the
+ * multi selection or hovered unit (212), falling back to the highlighted face */
 export function highlightedFaceInfo() {
-	const fi = get(faceEditHighlight);
-	if (fi < 0 || !faces[fi] || !faceEdited) return null;
+	const face = opTargetFace();
+	if (!face || !faceEdited) return null;
 	faceEdited.updateMatrixWorld(true);
 	return {
-		index: fi,
-		centroid: faceEdited.localToWorld(faces[fi].centroid.clone()),
-		normal: faces[fi].normal.clone().transformDirection(faceEdited.matrixWorld).normalize()
+		index: get(faceEditHighlight),
+		centroid: faceEdited.localToWorld(face.centroid.clone()),
+		normal: face.normal.clone().transformDirection(faceEdited.matrixWorld).normalize()
 	};
 }
 
-/** tint the highlighted face with a scene-root overlay triangle set */
+/** tint the op target with a scene-root overlay triangle set (212: selection + hover) */
 function refreshFaceOverlay() {
 	const scene = get(globalScene);
 	if (!scene || !faceEdited) return;
-	const fi = get(faceEditHighlight);
 	if (overlay) {
 		overlay.parent?.remove(overlay);
 		overlay.geometry?.dispose?.();
 		overlay = null;
 	}
-	if (fi < 0 || !faces[fi]) return;
+	const tris = overlayTris();
+	if (!tris.length) return;
 	/** @type {number[]} */
 	const positions = [];
-	faces[fi].triIndices.forEach((/** @type {number} */ ti) =>
+	tris.forEach((ti) =>
 		workingTris[ti].forEach((/** @type {any} */ v) => positions.push(v.x, v.y, v.z))
 	);
 	const geometry = new THREE.BufferGeometry();
@@ -502,10 +602,10 @@ function refreshFaceOverlay() {
  * @param {number} amount
  */
 export function commitFaceOp(op, amount) {
-	const fi = get(faceEditHighlight);
-	if (!faceEdited || fi < 0 || !faces[fi]) return false;
+	// 212: target the multi selection / hovered polygon / highlighted face group
+	const face = opTargetFace();
+	if (!faceEdited || !face) return false;
 	const before = trisToPositions(workingTris);
-	const face = faces[fi];
 	let next;
 	if (op === 'extrude') next = extrudeFace(workingTris, face, amount);
 	else if (op === 'inset') next = insetFace(workingTris, face, amount);
@@ -520,6 +620,8 @@ export function commitFaceOp(op, amount) {
 	applyGeometrySnapshot(positions);
 	broadcastMeshGeo(faceEdited.uuid, positions);
 	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: positions });
+	// the geometry changed: any accumulated tri indices are now stale (212)
+	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
 	// delete drops the face; keep the highlight only if it still exists
 	if (op === 'delete') faceEditHighlight.set(-1);
 	return true;
@@ -827,14 +929,21 @@ export function onFaceGizmoMoved() {
 	applyFaceGrab({ dPos, dQuat, scale: faceProxy.scale.x });
 }
 
+/** The op target as a synthesized face (multi selection / hovered polygon /
+ * highlighted group) — for the VR live-adjust + ghost to aim at (212). */
+export function currentTargetFace() {
+	return opTargetFace();
+}
+
 /**
  * Begin a live extrude/inset adjust (trigger): applies the op at a default
  * amount immediately (visible), then depth/scale sticks reshape it until a
- * second trigger commits. @param {number} index @param {'extrude'|'inset'} op @param {number} defaultAmount
+ * second trigger commits. 212: accepts the synthesized op target OR a face-group
+ * index (number, back-compat). @param {any} faceOrIndex @param {'extrude'|'inset'} op @param {number} defaultAmount
  */
-export function beginFaceAdjust(index, op, defaultAmount) {
-	if (!faceEdited || index < 0 || !faces[index] || faceGesturePending()) return false;
-	const face = faces[index];
+export function beginFaceAdjust(faceOrIndex, op, defaultAmount) {
+	const face = typeof faceOrIndex === 'number' ? faces[faceOrIndex] : faceOrIndex;
+	if (!faceEdited || !face || !face.triIndices?.length || faceGesturePending()) return false;
 	faceAdjust = {
 		op,
 		before: trisToPositions(workingTris),
@@ -902,6 +1011,7 @@ export function commitFaceAdjust() {
 	applyGeometrySnapshot(positions);
 	broadcastMeshGeo(faceEdited.uuid, positions);
 	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: positions });
+	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212: stale after reshape
 	return true;
 }
 

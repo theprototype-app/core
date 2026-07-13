@@ -18,7 +18,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp } from '$lib/faceEdit';
+	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
@@ -422,8 +422,14 @@
 			if ($faceEditObject) {
 				const edited = $objectsGroup?.getObjectByProperty('uuid', $faceEditObject);
 				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
-				highlightFaceByTriangle(hit && hit.faceIndex != null ? hit.faceIndex : -1);
-				if (hit && hit.faceIndex != null) autoApplyFaceOp(); // 176: click a face to apply the active extrude/inset
+				const tri = hit && hit.faceIndex != null ? hit.faceIndex : -1;
+				highlightFaceByTriangle(tri);
+				// 212: Multi mode accumulates picks (the op button applies to the set);
+				// otherwise 176 auto-applies the active extrude/inset on the click
+				if (tri >= 0) {
+					if ($faceEditMulti) toggleFaceSelection(tri);
+					else autoApplyFaceOp();
+				}
 				attachFaceGizmo(); // 163: gizmo on the highlighted face (or detaches on a miss)
 				return;
 			}

@@ -66,6 +66,7 @@ import {
 	setFaceOp,
 	adjustFaceAmount,
 	commitArmedFaceOp,
+	commitFaceOp,
 	highlightFaceByTriangle,
 	faceEditHighlight,
 	faceIndexForTriangle,
@@ -78,6 +79,13 @@ import {
 	cancelFaceAdjust,
 	faceGesturePending,
 	highlightedFaceInfo,
+	faceEditMulti,
+	faceEditSelectedTris,
+	faceEditHoverTri,
+	toggleFaceSelection,
+	toggleFaceGranularity,
+	toggleFaceMulti,
+	currentTargetFace,
 	stretchPositions,
 	commitMeshGeoSnapshot,
 	readTriangles,
@@ -1306,16 +1314,23 @@ let faceGrabHand = null;
 let faceAdjustHand = null;
 
 export function vrFaceTrigger() {
+	// 212: Multi mode — the trigger ACCUMULATES the pointed unit; the op button
+	// applies to the whole set (no live adjust while multi-selecting)
+	if (get(faceEditMulti)) {
+		toggleFaceSelection(get(faceEditHoverTri));
+		hapticPulse(0.2, 25);
+		return;
+	}
 	if (commitFaceAdjust()) {
 		faceAdjustHand = null; // the second trigger CONFIRMS the extrude/inset
 		return;
 	}
 	if (faceGesturePending()) return; // a grip grab owns the gesture
 	const op = get(faceEditOp);
-	const fi = get(faceEditHighlight);
-	if (fi < 0) return;
+	const target = currentTargetFace(); // 212: hovered polygon / face group
+	if (!target) return;
 	if (op === 'extrude' || op === 'inset') {
-		if (beginFaceAdjust(fi, /** @type {any} */ (op), get(faceEditAmount))) {
+		if (beginFaceAdjust(target, /** @type {any} */ (op), get(faceEditAmount))) {
 			// 184/185: capture the pointer hand so controller motion along the face
 			// normal drives depth (extrude) / size (inset) until the next trigger
 			const info = highlightedFaceInfo();
@@ -1937,9 +1952,20 @@ export function executeVRMenuAction(name) {
 		pushRing(name.slice(4));
 		return;
 	}
+	if (name === 'edit:granularity') {
+		toggleFaceGranularity(); // 212: FACE <-> POLYGON
+		return;
+	}
+	if (name === 'edit:multi') {
+		toggleFaceMulti(); // 212: accumulate picks on/off
+		return;
+	}
 	if (name.startsWith('face:')) {
 		// arm a face op (side-menu, 137); the pointer trigger picks + commits (118/122)
-		setFaceOp(/** @type {any} */ (name.slice('face:'.length)));
+		const op = /** @type {any} */ (name.slice('face:'.length));
+		setFaceOp(op);
+		// 212: in Multi mode the button APPLIES the op to the accumulated selection
+		if (get(faceEditMulti) && get(faceEditSelectedTris).length) commitFaceOp(op, get(faceEditAmount));
 		return;
 	}
 	if (name.startsWith('settings:')) {

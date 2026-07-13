@@ -7,7 +7,7 @@
 	import { vrEditMenuOpen, vrMenuHand, vrStretchObject, vrStretchFactors } from '../../stores/sceneStore'
 	import { vrHovered, vrEditGroup, vrFaceCreateMode, controllerIndexFor } from '$lib/vrControls'
 	import { editingObject, vertexSelectionSize } from '$lib/meshEdit'
-	import { faceEditObject, faceEditOp } from '$lib/faceEdit'
+	import { faceEditObject, faceEditOp, faceEditGranularity, faceEditMulti, faceEditSelectedTris } from '$lib/faceEdit'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 
@@ -45,7 +45,11 @@
 		const list: Row[] = []
 		if (mode === 'faces') {
 			const op = $faceEditOp
+			// 212: granularity + multi toggles above the ops
+			const nSel = $faceEditSelectedTris.length
 			list.push(
+				{ action: 'edit:granularity', label: `Select: ${$faceEditGranularity === 'polygon' ? 'Polygon' : 'Face'}`, active: $faceEditGranularity === 'polygon' },
+				{ action: 'edit:multi', label: `Multi: ${$faceEditMulti ? 'On' : 'Off'}${$faceEditMulti && nSel ? ` (${nSel})` : ''}`, active: $faceEditMulti },
 				{ action: 'face:extrude', label: 'Extrude', active: op === 'extrude' },
 				{ action: 'face:inset', label: 'Inset', active: op === 'inset' },
 				{ action: 'face:move', label: 'Move', active: op === 'move' },

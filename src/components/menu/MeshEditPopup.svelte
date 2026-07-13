@@ -23,7 +23,12 @@
 		faceEditOp,
 		setFaceOp,
 		faceAutoApply,
-		commitFaceOp
+		commitFaceOp,
+		faceEditGranularity,
+		faceEditMulti,
+		faceEditSelectedTris,
+		toggleFaceGranularity,
+		toggleFaceMulti
 	} from '$lib/faceEdit';
 	import { isVRMode, selectedObject } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
@@ -52,6 +57,12 @@
 	] as const;
 
 	function runOp(op: string) {
+		// 212: Multi mode — the op button applies to the whole accumulated selection
+		if ($faceEditMulti && $faceEditSelectedTris.length) {
+			setFaceOp(op as any);
+			commitFaceOp(op as any, $faceEditAmount);
+			return;
+		}
 		// Delete is a one-shot (needs a picked face); it never becomes the active tool
 		if (op === 'delete') {
 			if ($faceEditHighlight < 0) {
@@ -117,6 +128,27 @@
 			</div>
 
 			{#if mode === 'faces'}
+				<!-- 212: granularity (Face vs single Polygon) + Multi accumulate -->
+				<div class="flex overflow-hidden rounded-full border border-gray-600 text-xs">
+					<button
+						id="mesh-gran-face"
+						class="px-2 py-0.5 {$faceEditGranularity === 'face' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						title="Select the whole coplanar face"
+						on:click={() => { if ($faceEditGranularity !== 'face') toggleFaceGranularity(); }}>Face</button
+					>
+					<button
+						id="mesh-gran-polygon"
+						class="px-2 py-0.5 {$faceEditGranularity === 'polygon' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						title="Select the single polygon under the cursor (isolates inset caps)"
+						on:click={() => { if ($faceEditGranularity !== 'polygon') toggleFaceGranularity(); }}>Polygon</button
+					>
+				</div>
+				<button
+					id="mesh-multi"
+					class="rounded-full px-2.5 py-1 text-xs {$faceEditMulti ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					title="Accumulate several faces/polygons, then apply an op to all"
+					on:click={() => toggleFaceMulti()}>Multi{$faceEditMulti && $faceEditSelectedTris.length ? ` (${$faceEditSelectedTris.length})` : ''}</button
+				>
 				<div class="flex items-center gap-1">
 					{#each OPS as o}
 						<button

@@ -310,7 +310,6 @@
 			if (selected?.kind === 'item') openItem(selected.item);
 			else if (selected?.kind === 'folder') openFolder(selected.folder.id);
 		} else if (e.key === 'Backspace') (e.preventDefault(), goUp());
-		else if (e.key === 'Escape') (e.preventDefault(), explorerClose.set(true));
 	}
 
 	// --- inline create/rename (106.1/2) ---
@@ -613,10 +612,9 @@
 		{/snippet}
 		{#snippet primary()}
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
-		<div
-			id="explorer-tree"
-			class="flex h-full flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1 text-xs"
-		>
+		<div id="explorer-tree" class="flex h-full flex-col text-xs">
+			<!-- scrollable folder list; the roots below stay pinned to the bottom -->
+			<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1">
 			<button
 				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
 					? 'bg-primary-700 text-white'
@@ -670,7 +668,8 @@
 				{/if}
 			{/each}
 			<!-- New folder + the read-only roots are pinned to the bottom together -->
-			<div class="mt-auto flex flex-col gap-0.5 border-t border-gray-700/60 pt-1">
+			</div>
+			<div class="flex shrink-0 flex-col gap-0.5 border-t border-gray-700/60 p-1">
 				<button
 					id="new-folder"
 					class="whitespace-nowrap rounded border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
@@ -734,7 +733,9 @@
 						: typeof $activeFolder === 'string' && $activeFolder.startsWith('scene') ? 'No shared assets in this scene group yet.' : 'Drop images, audio, text or 3D files here to import them.'}
 				</p>
 			{:else}
-				<div class="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-1">
+				<!-- fixed-width columns (not 1fr) so cards don't resize/jiggle when the
+				     Properties sidebar toggles main's width -->
+				<div class="grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-1">
 					{#if !search && $activeFolder !== 'prefabs'}
 						{#each childFolders as folder (folder.id)}
 							<div

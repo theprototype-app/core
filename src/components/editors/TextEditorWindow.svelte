@@ -3,6 +3,7 @@
 	// custom-node definition editor share this window. Ctrl+S saves; the title
 	// carries a dirty dot.
 	import { textEditorTarget } from '$lib/fileWindows';
+	import { showToast } from '../../stores/appStore.js';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import CodeEditor from './CodeEditor.svelte';
@@ -32,6 +33,19 @@
 		if ((e.ctrlKey || e.metaKey) && e.key === 's') {
 			e.preventDefault();
 			save();
+		} else if (e.key === 'Escape') {
+			// Esc closes the editor; if there are unsaved edits, ask first (107)
+			e.preventDefault();
+			e.stopPropagation();
+			if (dirty) {
+				showToast('Save changes before closing?', [
+					{ label: 'Save', action: () => (save(), close()) },
+					{ label: "Don't save", action: () => close() },
+					{ label: 'Cancel', action: () => {} }
+				]);
+			} else {
+				close();
+			}
 		}
 	}
 </script>

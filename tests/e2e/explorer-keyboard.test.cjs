@@ -47,11 +47,5 @@ h.run(async () => {
 	const up = await activeFolder(A);
 	h.check(up === null, `Backspace goes up to the Library root (activeFolder=${up})`);
 
-	// Esc closes the Explorer window
-	await A.page.keyboard.press('Escape');
-	await A.page.waitForTimeout(300);
-	const closed = await A.page.evaluate(() => { let v; window.__stores.explorerClose.subscribe((x) => (v = x))(); return v; });
-	h.check(closed === true, 'Esc closes the Explorer');
-
 	await h.finish(browser);
 });

@@ -213,6 +213,50 @@
 		return out;
 	});
 
+	// 197: rich Properties for the selected item (Kind/Size/Folder/Added/Hash +
+	// per-kind Details) — ported from the old file inspector.
+	const selItem = $derived(selected?.kind === 'item' ? selected.item : null);
+	const itemFolderPath = $derived.by(() => {
+		if (!selItem) return '';
+		const parts: string[] = [];
+		let parent: any = selItem.folderId ?? null;
+		while (parent) {
+			const f = $explorerFolders.find((x: any) => x.id === parent);
+			if (!f) break;
+			parts.unshift(f.name);
+			parent = f.parentId ?? null;
+		}
+		return 'Library' + (parts.length ? ' / ' + parts.join(' / ') : '');
+	});
+	let itemDetails = $state('');
+	$effect(() => {
+		const item = selItem;
+		itemDetails = '';
+		if (!item) return;
+		itemBlob(item.id).then(async (blob: any) => {
+			if (!blob || selItem?.id !== item.id) return;
+			try {
+				if (item.kind === 'image') {
+					const bitmap = await createImageBitmap(blob);
+					itemDetails = bitmap.width + ' × ' + bitmap.height + ' px';
+				} else if (item.kind === 'text') {
+					itemDetails = (await blob.text()).split('\n').length + ' lines';
+				} else if (item.kind === 'audio') {
+					const ctx = new AudioContext();
+					const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+					itemDetails = decoded.duration.toFixed(2) + ' s · ' + decoded.numberOfChannels + ' ch';
+					ctx.close();
+				}
+			} catch {}
+		});
+	});
+	function fmtSize(bytes: number) {
+		if (bytes == null || isNaN(bytes)) return '—';
+		if (bytes < 1024) return bytes + ' B';
+		if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+		return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+	}
+
 	// --- inline create/rename (106.1/2) ---
 	function startCreate(parentId: string | null) {
 		if (parentId) {
@@ -294,7 +338,7 @@
 			x: e.clientX,
 			y: e.clientY,
 			items: [
-				{ label: 'Properties', action: () => selectFolder(folder) },
+				{ label: 'Properties', action: () => showProperties({ kind: 'folder', folder }) },
 				// 170: "New subfolder" only makes sense in the tree; the thumbnail grid drops it
 				...(inTree ? [{ label: 'New subfolder', action: () => startCreate(folder.id) }] : []),
 				{ label: 'Rename', action: () => startRename(folder, !inTree) },
@@ -323,7 +367,7 @@
 							}
 						]
 					: []),
-				{ label: 'Properties', action: () => inspectItem(item) },
+				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
 				{
 					label: 'Rename',
 					action: () => startRenameItem(item)
@@ -374,10 +418,16 @@
 		}
 		inspectedFile.set(item.id);
 		selected = { kind: 'item', item };
-		shell?.showSecondary('props');
 	}
 	function selectFolder(folder: any) {
+		inspectedFile.set(null);
 		selected = { kind: 'folder', folder };
+	}
+	// right-click Properties: select AND open the panel. A plain single-click only
+	// selects — it never forces the (closed) Properties panel open (197 note).
+	function showProperties(t: any) {
+		if (t.kind === 'item') inspectItem(t.item);
+		else selectFolder(t.folder);
 		shell?.showSecondary('props');
 	}
 	function openFolder(id: string | null) {
@@ -558,19 +608,14 @@
 					{@render editRow(row.depth + 1)}
 				{/if}
 			{/each}
-			<button
-				id="new-folder"
-				class="mt-1 whitespace-nowrap rounded border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
-				onclick={() =>
-					startCreate(
-						typeof $activeFolder === 'string' &&
-							($activeFolder === 'prefabs' || $activeFolder.startsWith('scene'))
-							? null
-							: $activeFolder
-					)}>＋ New folder</button
-			>
-			<!-- pinned below +New folder: Prefabs / Packs / Scene (108 read-only) -->
+			<!-- New folder + the read-only roots are pinned to the bottom together -->
 			<div class="mt-auto flex flex-col gap-0.5 border-t border-gray-700/60 pt-1">
+				<button
+					id="new-folder"
+					class="whitespace-nowrap rounded border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
+					onclick={() => startCreate(typeof $activeFolder === 'string' && ($activeFolder === 'prefabs' || $activeFolder.startsWith('scene')) ? null : $activeFolder)}>＋ New folder</button
+				>
+				<div class="my-0.5 border-t border-gray-700/40"></div>
 				<button
 					id="prefabs-folder"
 					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
@@ -687,21 +732,46 @@
 		{#snippet secondary(mode)}
 		{#if mode === 'props'}
 			<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
-				{#if selected?.kind === 'item'}
+				{#if selItem}
 					<div class="flex items-center gap-2">
-						{#if selected.item.thumbnail}
-							<img src={selected.item.thumbnail} alt="" class="h-12 w-12 rounded object-cover" />
+						{#if selItem.thumbnail}
+							<img src={selItem.thumbnail} alt="" class="h-12 w-12 rounded object-cover" />
 						{:else}
 							<span class="flex h-12 w-12 items-center justify-center rounded bg-gray-700 text-2xl"
-								>{KIND_ICONS[selected.item.kind] ?? '📦'}</span
+								>{KIND_ICONS[selItem.kind] ?? '📦'}</span
 							>
 						{/if}
-						<span class="min-w-0 flex-1 break-words font-semibold">{selected.item.name}</span>
+						<span class="min-w-0 flex-1 break-words font-semibold">{selItem.name}</span>
 					</div>
-					<p class="text-gray-400">Type: {selected.item.kind}</p>
+					<div class="flex flex-col gap-1">
+						<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Kind</span><span>{selItem.kind}</span></div>
+						<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Size</span><span>{fmtSize(selItem.size)}</span></div>
+						<div class="flex gap-2">
+							<span class="w-14 shrink-0 text-gray-500">Folder</span>
+							<span class="min-w-0 truncate" title={itemFolderPath}>{itemFolderPath}</span>
+						</div>
+						{#if selItem.createdAt}
+							<div class="flex gap-2">
+								<span class="w-14 shrink-0 text-gray-500">Added</span>
+								<span>{new Date(selItem.createdAt).toLocaleString()}</span>
+							</div>
+						{/if}
+						{#if selItem.hash}
+							<div class="flex items-center gap-2">
+								<span class="w-14 shrink-0 text-gray-500">Hash</span>
+								<span class="min-w-0 flex-1 truncate font-mono text-[10px]" title={selItem.hash}>{selItem.hash.slice(0, 16)}…</span>
+								<button class="ui-button-quiet shrink-0" title="Copy full hash" onclick={() => navigator.clipboard?.writeText(selItem.hash)}>⧉</button>
+							</div>
+						{/if}
+						{#if itemDetails}
+							<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Details</span><span>{itemDetails}</span></div>
+						{/if}
+					</div>
 					<div class="mt-1 flex gap-2">
-						<button class="ui-button-quiet" onclick={() => startRenameItem(selected.item)}>Rename</button>
-						<button class="ui-button-quiet" onclick={() => openItem(selected.item)}>Open</button>
+						<button class="ui-button-quiet" onclick={() => startRenameItem(selItem)}>Rename</button>
+						{#if selItem.kind === 'text' || selItem.kind === 'image'}
+							<button class="ui-button-quiet" onclick={() => openItem(selItem)}>{selItem.kind === 'text' ? 'Edit' : 'Preview'}</button>
+						{/if}
 					</div>
 				{:else if selected?.kind === 'folder'}
 					{@const counts = folderCounts(selected.folder.id)}

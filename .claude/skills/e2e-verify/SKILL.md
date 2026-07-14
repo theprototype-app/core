@@ -35,7 +35,7 @@ drawMode, pathCapture, lockControl, prefabs, physics, userModules, environment,
 animatedImports, fileHandler, sceneBounds, cameraClip, ping, sessions, geometryEdit,
 lightParams, themes, vrRadialMenu, vrPalette, vrWindowPoses, vrKeyboard, faceEdit,
 avatarModel, explorer, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay,
-sceneAssets, THREE, GLTFExporterModule`.
+sceneAssets, THREE, GLTFExporterModule, snapping, flowSockets, networkQuality, packs`.
 
 **Never dynamic-import `/src/lib/x.js` from page code to reach a singleton** — once
 vite HMR-timestamps the app's copy you get a SECOND module instance (empty stores,
@@ -126,13 +126,26 @@ Late joiners: connect a third context AFTER mutations, assert handshake state ar
   a hands↔controllers reorder by setting `getController(0/1).userData.handedness` (reach
   the renderer via the `globalRenderer` store) then asserting `controllerIndexFor`
   follows the hand, not the slot.
+- A **bare module specifier** (`await import('fflate')`) does NOT resolve inside
+  `page.evaluate` — the page has no vite resolver there. Build such artifacts in the
+  Node side of the `.cjs` test (it can `require('fflate')`) and pass bytes in via an
+  `evaluate` arg (e.g. generate a glb in the page → return `Array.from(bytes)` → zip in
+  Node → pass the zip array back → reconstruct a `File`). See packs.test.cjs.
+- WebXR hand JOINTS are not on `renderer.xr.getHand(slot).joints` by app slot reliably —
+  read via threlte `useHand('left'/'right').current?.hand.joints` (keyed by handedness).
+  Cross-peer hand presence: send a real `{type:'vrhands', left:{pos,rot,joints:[75]}}`
+  from A over the mesh and assert B renders A's `<peerId>-hand-<side>` group (25 joint
+  spheres) — a manual send bypasses the on-device capture CI can't do (vr-peer-hands-net).
 - Pure helpers (no DOM) unit-test headless WITHOUT a browser — a `.test.cjs` can
   `await import(pathToFileURL('src/lib/x.js').href)` the ESM module directly and assert
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-07-13 = **502 errors / 77 warnings** (drifts down as flowbite/typed code
-  is removed — hold whatever it currently is; add no NEW). Runes-mode `.svelte` files
+  baseline 2026-07-15 ≈ **501-502 errors / 77 warnings** (drifts down as flowbite/typed
+  code is removed — hold whatever it currently is; add no NEW). Note: in the big
+  JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —
+  give the param a default (`slot = 0`) to force the type, and prefer explicit locals
+  over dynamic string-indexing of a typed object (both tripped the baseline in N5). Runes-mode `.svelte` files
   (any `$state`) must use `onclick`/`oninput` — the `on:` directive adds deprecation
   WARNINGS that count against the baseline. a11y warnings count too: focusable divs use
   `tabindex="-1"` + `.focus()`; click/drag containers take a targeted `svelte-ignore`.

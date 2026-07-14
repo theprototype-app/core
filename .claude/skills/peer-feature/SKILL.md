@@ -21,6 +21,18 @@ in the codebase — copy the referenced implementation.
   busy-guard message), pong (spawner owns the ball at ~12 Hz). Use when simulation
   can't be deterministic; guard against two authorities.
 
+## Not everything replicates — some state is deliberately LOCAL
+
+Resist the "every mutation broadcasts" instinct for state that is DERIVED or per-viewer:
+do NOT add a message type or `$peers.send`, just a local writable + local updater, and
+prune it in `handleDisconnected` (or derive the UI from live peers so stale entries
+can't render). References: `networkQuality.js` (per-peer RTT/relay from `getStats()`,
+polled locally), the Explorer **pack library** (imported packs stay local until an
+explicit future "Share"; only a *placed* object replicates through the normal import
+path), and the LOCAL-prefs modules (themes, cameraClip, WindowShell `ws:*`). Rule of
+thumb: if two peers would independently compute the same value, or it's a personal
+setting, keep it off the wire.
+
 ## Checklist for a new replicated feature
 
 1. **State** in a store (`src/stores/*`) or module-level writable; uuid/id-keyed,

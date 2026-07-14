@@ -35,8 +35,13 @@ loadable play content. Everything a user does must be visible to connected peers
   `passthroughActive` local sky lift), `animatedImports` (raw-bytes objectfile sync),
   `prefabs` (local IndexedDB library), `explorer` (LOCAL asset library: IndexedDB index
   + per-item blobs, content hashes, thumbnails) + `explorerDrop` (drag-out placement/
-  texturing) + `assetShare` (assetfile/getasset hash push+pull → 'Shared' folder),
+  texturing) + `assetShare` (assetfile/getasset hash push+pull → 'Shared' folder) +
+  `packs` (N6: Explorer Packs — libraryList defaults + manifest.json .zip imports,
+  normalized; LOCAL library, only PLACED objects replicate; PACKS_BASE off-bundle CDN
+  const; PACKS.md committed format) + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
+  three.js preview canvas + popup, `enable3dPreview`),
   `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
+  `networkQuality` (N6/D3: LOCAL per-peer getStats RTT + relay dot, median, NOT replicated),
   `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
   (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
   world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
@@ -144,6 +149,16 @@ loadable play content. Everything a user does must be visible to connected peers
 - Media elements: `muted`/`volume` set as properties in an action, not attributes.
 - The Threlte Canvas wrapper swallows **pointerup AND pointermove** mid-gesture —
   put both on `window`; only `pointerdown` belongs on the canvas.
+- Threlte `<T>` `oncreate` passes the ref **DIRECTLY** (`CreateEvent<T> = (ref) => void`),
+  NOT wrapped: `oncreate={(ref) => …}`, never `oncreate={({ref}) => …}` (the destructure
+  silently captures `undefined` — this stranded every annotation pin at the origin +
+  killed PingMarkers' animations, N1/roadmap-7).
+- WebXR hand joints: read them from threlte's `useHand('left'/'right')` store
+  (`.current?.hand.joints[name]` — the SAME XRHand space it renders), keyed by
+  HANDEDNESS. Raw `renderer.xr.getHand(SLOT).joints` by app slot index is unreliable (the
+  tracked hand isn't necessarily at that slot). VR presence broadcasts joints wrist-local
+  (rig-independent) + the wrist in the content frame; peers branch on `joints.length`
+  (spheres vs the controller box).
 - Shared THREE temp vectors corrupt values across helper calls — clone before reuse.
 - Never write a store from inside its own subscriber (infinite flush loop) — read refs
   first, then mutate (also applies inside test `evaluate`).
@@ -240,7 +255,19 @@ Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:51
   popover on explicit request, phase 130).
 - VR phases: verify math/state headlessly, state clearly that on-device feel is the
   user's manual check.
-- Status (2026-07-13): batches 1-61 SHIPPED (roadmaps #2/#3/#4 done); roadmap #5 —
+- Status (2026-07-15): **Roadmap #7 SHIPPED** (order N1→N3→N4→N6→N5): N1 notes-anchor
+  fix (Threlte `oncreate` passes the ref DIRECTLY — `({ref})` captured undefined so NO
+  annotation pin was ever positioned; fixed capture + owner-from-both-stores; same bug
+  in PingMarkers), N3 per-peer network-quality dot (networkQuality.js, LOCAL getStats
+  RTT+relay, median; Users popover + VR stats), N4 Explorer 3D model preview
+  (enable3dPreview toggle; ModelPreview canvas inline + ModelPreviewWindow popup w/
+  tris/verts), N6 packs off-bundle + Explorer UI (packs.js normalizes libraryList
+  defaults + manifest.json .zip imports; LOCAL library; PACKS.md format; PACKS_BASE
+  awaits real GitHub URLs), N5 articulated peer hands (read joints from threlte
+  `useHand` spaces by handedness, broadcast wrist-local; box fallback — on-device hand
+  capture still flaky, user debugging). N2 node-palette DROPPED. svelte-check ~501/77.
+  Plan: docs/plan/roadmap-7-vr-explorer-net.md. --- Earlier: batches 1-61 SHIPPED
+  (roadmaps #2/#3/#4 done); roadmap #5 —
   batch 63 (191/192/193) + 194+210 (controller handedness) + 195 (world-grab presence) +
   196 (noVR inset) + 203 (sidebar) + 197/198 (Explorer window v-next: WindowShell chrome).
   **Roadmap #6 (211-220) ALL SHIPPED**: 211 VR peer approve/deny (VRPeerApprove follower +

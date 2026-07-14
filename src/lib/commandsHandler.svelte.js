@@ -8,6 +8,7 @@ import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected } from '$lib/physics'
 import { dropPeerCursor } from '$lib/nodesHandler'
+import { dropPeerQuality } from '$lib/networkQuality'
 import { environment } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
@@ -260,6 +261,7 @@ export function handleDisconnected(peerId) {
         return next;
     });
     dropPeerCursor(peerId);
+    dropPeerQuality(peerId); // N3: drop the peer's network-quality telemetry
     voicePeerDisconnected(peerId);
     physicsPeerDisconnected(peerId);
 }

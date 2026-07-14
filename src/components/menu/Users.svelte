@@ -20,7 +20,12 @@
 	} from '../../stores/appStore.js';
 	import { globalScene, globalCamera, camSave, peerHands } from '../../stores/sceneStore.js';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
+	import { peerQuality } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
+
+	// N3: latency-band dot color for a peer's network-quality indicator
+	const qColor = (level: string) =>
+		level === 'good' ? '#4ade80' : level === 'ok' ? '#fbbf24' : level === 'bad' ? '#f87171' : '#9ca3af';
 
     let openDropdown = $state(false);
   	let profileSettingsModal = $state(false);
@@ -152,6 +157,14 @@
 								{#if $mutedPeers.includes(user[0])}<span title="Muted">🔇</span>{/if}
 								{#if $peerHands[user[0]]?.active}<span title="In VR">🥽</span>{/if}
 								{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
+								{#if i > 0 && $peerQuality[user[0]]}
+									{@const q = $peerQuality[user[0]]}
+									<span
+										title={q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…'}
+										style="color: {qColor(q.level)}">●{q.rtt != null ? ` ${Math.round(q.rtt)}ms` : ''}</span
+									>
+									{#if q.relayed}<span class="text-orange-300" title="Relayed through a TURN server">relayed</span>{/if}
+								{/if}
 							</div>
 						</div>
 						{#if i > 0}

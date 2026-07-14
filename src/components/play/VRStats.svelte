@@ -6,6 +6,8 @@
 	import { Text } from '@threlte/extras'
 	import { vrStatsOpen, vrMenuHand, objectsGroup } from '../../stores/sceneStore'
 	import { userdata } from '../../stores/appStore'
+	import { peerQuality } from '$lib/networkQuality'
+	import { nameOf } from '$lib/lockControl'
 	import { statsHand } from '$lib/vrRadialMenu'
 	import { vrStatsGroup, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
@@ -19,6 +21,8 @@
 
 	let group: any = $state(null)
 	let lines = $state('')
+	// plate grows with the line count (base 4 lines ≈ 0.06; ~0.013/line + padding)
+	let plateH = $derived(Math.max(0.06, lines.split('\n').length * 0.0125 + 0.012))
 
 	// register the plate as a grab target for the 111 window grab
 	$effect(() => {
@@ -49,12 +53,21 @@
 			$objectsGroup?.traverse((o: any) => {
 				if (o.isMesh) meshes++
 			})
+			// N3: per-peer latency + relayed flag (● glyph colored per band isn't
+			// possible in one Text, so use a compact "name ms [R]" line each)
+			const peerRows = ($userdata ?? []).slice(1).map((u: any) => {
+				const q = $peerQuality[u[0]]
+				const nm = String(u[1] || nameOf(u[0]) || 'peer').slice(0, 10)
+				if (!q || q.rtt == null) return `  ${nm} …`
+				return `  ${nm} ${Math.round(q.rtt)}ms${q.relayed ? ' ⇄' : ''}`
+			})
 			lines =
 				`FPS ${fps} · ${ms} ms\n` +
 				`draw ${info.calls} · tris ${info.triangles}\n` +
 				`objects ${objects} (${meshes} meshes)\n` +
 				// userdata includes ourselves — show CONNECTED peers
-				`peers ${Math.max(0, ($userdata?.length ?? 1) - 1)}`
+				`peers ${Math.max(0, ($userdata?.length ?? 1) - 1)}` +
+				(peerRows.length ? '\n' + peerRows.join('\n') : '')
 			frames = 0
 			acc = 0
 		}
@@ -78,7 +91,7 @@
 {#if $vrStatsOpen}
 	<T.Group bind:ref={group} name="vr-stats-card">
 		<T.Mesh>
-			<T.PlaneGeometry args={[0.115, 0.06]} />
+			<T.PlaneGeometry args={[0.115, plateH]} />
 			<T.MeshBasicMaterial color="#11151c" transparent opacity={0.88} side={THREE.DoubleSide} />
 		</T.Mesh>
 		<Text

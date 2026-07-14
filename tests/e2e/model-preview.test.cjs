@@ -47,5 +47,16 @@ h.run(async () => {
 	const persisted = await A.page.evaluate(() => localStorage.getItem('enable3dPreview'));
 	h.check(persisted === 'true', 'the 3D-preview toggle persists (localStorage)');
 
+	// P1: with the toggle OFF, double-clicking an object item STILL opens the popup
+	await A.page.evaluate(() => window.__stores.enable3dPreview.set(false));
+	await A.page.locator('#explorer-slot').click();
+	await A.page.waitForTimeout(500);
+	await A.page.locator('#explorer-list .explorer-card', { hasText: 'testbox' }).first().dblclick();
+	await A.page.waitForTimeout(900);
+	h.check(
+		(await A.page.locator('#model-preview-window').count()) === 1,
+		'double-click opens the popup even with the toggle off (P1)'
+	);
+
 	await h.finish(browser);
 });

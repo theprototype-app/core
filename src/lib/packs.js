@@ -42,6 +42,44 @@ function setInstalled(list) {
 	} catch {}
 }
 
+// P2: remember which thumbnail URL actually loaded per pack item, so switching
+// packs shows them instantly (no re-probing webp->png->screenshot, no 404 flashes).
+// Persisted; dropped when a pack is removed. (The browser HTTP-caches the bytes; this
+// caches the RESOLUTION.)
+const THUMB_KEY = 'packThumbCache';
+/** @returns {Record<string, string>} */
+function getThumbCache() {
+	try {
+		return JSON.parse(localStorage.getItem(THUMB_KEY) || '{}');
+	} catch {
+		return {};
+	}
+}
+/** @param {string} packName @param {string} itemName */
+export function cachedThumb(packName, itemName) {
+	return getThumbCache()[`${packName}/${itemName}`] || null;
+}
+/** @param {string} packName @param {string} itemName @param {string} url */
+export function rememberThumb(packName, itemName, url) {
+	const c = getThumbCache();
+	if (c[`${packName}/${itemName}`] === url) return;
+	c[`${packName}/${itemName}`] = url;
+	try {
+		localStorage.setItem(THUMB_KEY, JSON.stringify(c));
+	} catch {}
+}
+/** @param {string} packName */
+function dropPackThumbs(packName) {
+	const c = getThumbCache();
+	const prefix = `${packName}/`;
+	let changed = false;
+	for (const k of Object.keys(c)) if (k.startsWith(prefix)) (delete c[k], (changed = true));
+	if (changed)
+		try {
+			localStorage.setItem(THUMB_KEY, JSON.stringify(c));
+		} catch {}
+}
+
 /** @param {any} entry a libraryList.json row */
 function normalizeDefault(entry) {
 	return {
@@ -111,6 +149,7 @@ export async function loadPackItems(pack) {
 				kind: 'object',
 				glbUrl: `${pack.base}/${o.name}/glTF-Binary/${o.variants['glTF-Binary']}`,
 				thumbs: thumbCandidates(pack, o),
+				resolvedThumb: cachedThumb(pack.name, o.name), // P2: skip re-probing if known
 				packName: pack.name
 			}));
 	}
@@ -131,9 +170,22 @@ export function packByName(name) {
  */
 export async function importPackZip(file) {
 	const { unzipSync, strFromU8 } = await import('fflate');
-	const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+	let entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+	// P3: GitHub "Download ZIP" (and many bundlers) wrap everything in ONE top-level
+	// folder, so manifest.json isn't at the root — descend into it. (assets/ + metadata/
+	// live inside that wrapper.)
+	if (!entries['manifest.json']) {
+		const tops = new Set(Object.keys(entries).map((/** @type {string} */ k) => k.split('/')[0]));
+		if (tops.size === 1) {
+			const prefix = [...tops][0] + '/';
+			/** @type {Record<string, any>} */
+			const stripped = {};
+			for (const [k, v] of Object.entries(entries)) if (k.startsWith(prefix)) stripped[k.slice(prefix.length)] = v;
+			entries = stripped;
+		}
+	}
 	const manifestRaw = entries['manifest.json'];
-	if (!manifestRaw) throw new Error('pack .zip has no manifest.json at its root');
+	if (!manifestRaw) throw new Error('pack .zip has no manifest.json (at the root or in one wrapper folder)');
 	const manifest = JSON.parse(strFromU8(manifestRaw));
 	const id = manifest.id || file.name.replace(/\.zip$/i, '');
 	/** @type {any[]} */
@@ -198,6 +250,7 @@ function attributionHtmlFrom(manifest) {
 export function removeImportedPack(name) {
 	setInstalled(getInstalled().filter((/** @type {any} */ p) => p.name !== name));
 	delete itemCache[name];
+	dropPackThumbs(name); // P2: forget cached thumbnails so a re-import re-resolves
 	packs.update((list) => list.filter((/** @type {any} */ p) => p.name !== name));
 }
 

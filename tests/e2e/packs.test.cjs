@@ -77,13 +77,41 @@ h.run(async () => {
 	);
 	h.check(imported.itemLicense === 'MIT', 'per-item license override is kept');
 
+	// P2: thumbnail cache round-trips + is dropped on remove
+	const thumb = await A.page.evaluate(() => {
+		const p = window.__stores.packs;
+		p.rememberThumb('testpack', 'box', 'https://x/thumb.png');
+		const before = p.cachedThumb('testpack', 'box');
+		p.removeImportedPack('testpack');
+		return { before, after: p.cachedThumb('testpack', 'box') };
+	});
+	h.check(thumb.before === 'https://x/thumb.png', 'rememberThumb/cachedThumb round-trip');
+	h.check(thumb.after === null, 'removeImportedPack drops the pack thumbnail cache (P2)');
+
 	const afterRemove = await A.page.evaluate(() => {
-		window.__stores.packs.removeImportedPack('testpack');
 		let list;
 		window.__stores.packs.packs.subscribe((x) => (list = x))();
 		return list.some((x) => x.name === 'testpack');
 	});
 	h.check(!afterRemove, 'removeImportedPack drops it from the list');
+
+	// P3: a .zip wrapped in ONE top-level folder (GitHub "Download ZIP" shape) still imports
+	const wrapZip = zipSync(
+		{
+			'mypack-main/manifest.json': strToU8(JSON.stringify({ id: 'wrapped', name: 'Wrapped', items: [{ id: 'b', name: 'B', file: 'assets/b/model.glb' }] })),
+			'mypack-main/assets/b/model.glb': new Uint8Array(glbArr)
+		},
+		{ level: 6 }
+	);
+	const wrapped = await A.page.evaluate(async (zipArr) => {
+		const pack = await window.__stores.packs.importPackZip(new File([new Uint8Array(zipArr)], 'mypack-main.zip'));
+		const items = await window.__stores.packs.loadPackItems(pack);
+		return { name: pack.name, title: pack.title, itemCount: items.length };
+	}, Array.from(wrapZip));
+	h.check(
+		wrapped.name === 'wrapped' && wrapped.itemCount === 1,
+		`a single-wrapper-folder .zip descends into it (${wrapped.name}, ${wrapped.itemCount} item)`
+	);
 
 	await h.finish(browser);
 });

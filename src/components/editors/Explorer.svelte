@@ -36,7 +36,8 @@
 		packByName,
 		importPackZip,
 		removeImportedPack,
-		licenseLabel
+		licenseLabel,
+		rememberThumb
 	} from '$lib/packs';
 	import { importFile } from '$lib/fileHandler.svelte';
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
@@ -177,7 +178,32 @@
 	let hideBuiltinPacks = $state(
 		typeof localStorage !== 'undefined' && localStorage.getItem('explorerHideBuiltinPacks') === 'true'
 	);
-	let shownPacks = $derived($packs.filter((p: any) => !hideBuiltinPacks || p.source !== 'default'));
+	// P5: per-pack hide (built-ins can't be truly deleted — they're bundled/CDN — so
+	// hiding is the reversible alternative; imported packs delete outright)
+	let hiddenPacks = $state(new Set<string>(loadHiddenPacks()));
+	function loadHiddenPacks(): string[] {
+		try {
+			return JSON.parse(localStorage.getItem('explorerHiddenPacks') || '[]');
+		} catch {
+			return [];
+		}
+	}
+	function hidePack(name: string) {
+		const s = new Set(hiddenPacks);
+		s.add(name);
+		hiddenPacks = s;
+		localStorage.setItem('explorerHiddenPacks', JSON.stringify([...s]));
+		if ($activeFolder === 'pack:' + name) openFolder('packs');
+	}
+	function showAllHiddenPacks() {
+		hiddenPacks = new Set();
+		localStorage.setItem('explorerHiddenPacks', '[]');
+	}
+	let shownPacks = $derived(
+		$packs.filter(
+			(p: any) => !(hideBuiltinPacks && p.source === 'default') && !hiddenPacks.has(p.name)
+		)
+	);
 	loadPacks();
 	async function onImportPackZip(e: Event) {
 		const file = (e.target as HTMLInputElement).files?.[0];
@@ -221,13 +247,16 @@
 		const items: any[] = [{ label: 'ⓘ Attribution / license', action: () => showPackAttribution(pack) }];
 		if (pack.source === 'imported')
 			items.push({
-				label: '🗑 Remove pack',
+				label: '🗑 Delete pack',
 				danger: true,
 				action: () => {
 					removeImportedPack(pack.name);
-					if ($activeFolder === 'pack:' + pack.name) openFolder(null);
+					if ($activeFolder === 'pack:' + pack.name) openFolder('packs');
 				}
 			});
+		else
+			// P5: built-in packs are bundled/CDN — can't delete, so HIDE (reversible)
+			items.push({ label: '🙈 Hide pack', action: () => hidePack(pack.name) });
 		menu = { x: e.clientX, y: e.clientY, items };
 	}
 	// fetch a pack's items when it's opened
@@ -241,12 +270,20 @@
 	// pack-item thumbnail: imported items carry a dataURL; default items resolve
 	// webp -> png -> screenshot via the <img> onerror cursor, else a placeholder icon
 	function packThumb(item: any): string | null {
+		if (item.resolvedThumb) return item.resolvedThumb; // P2: cached resolution
 		if (item.thumbnail) return item.thumbnail;
 		const cands = item.thumbs || [];
 		return cands[thumbIdx[item.name] ?? 0] ?? null;
 	}
 	function packThumbError(item: any) {
 		thumbIdx = { ...thumbIdx, [item.name]: (thumbIdx[item.name] ?? 0) + 1 };
+	}
+	// P2: the URL that actually loaded — remember it so switching packs doesn't re-probe
+	function packThumbOk(item: any, src: string) {
+		if (item.packName && !item.resolvedThumb && !item.thumbnail) {
+			item.resolvedThumb = src;
+			rememberThumb(item.packName, item.name, src);
+		}
 	}
 
 	const KIND_ICONS: Record<string, string> = {
@@ -285,6 +322,15 @@
 				thumbnail: p.thumbnail,
 				prefabId: p.id
 			}));
+		// P4: the Packs root — one card per pack (single-click a pack card opens it)
+		if ($activeFolder === 'packs') {
+			return shownPacks.map((p: any) => ({
+				id: 'packfolder:' + p.name,
+				name: p.title,
+				kind: 'pack-folder',
+				packName: p.name
+			}));
+		}
 		// N6: a pack's items (default packs from libraryList, imported from a manifest).
 		// Give each a stable unique id — default items have none, and the keyed {#each}
 		// needs one (duplicate undefined keys crash the block).
@@ -308,10 +354,11 @@
 	const crumbs = $derived.by(() => {
 		const a = $activeFolder;
 		if (a === 'prefabs') return [{ label: '🧱 Prefabs', id: 'prefabs' as string | null }];
+		if (a === 'packs') return [{ label: '📦 Packs', id: 'packs' as string | null }];
 		if (typeof a === 'string' && a.startsWith('pack:')) {
 			const p = packByName(a.slice(5));
 			return [
-				{ label: '📦 Packs', id: null as string | null },
+				{ label: '📦 Packs', id: 'packs' as string | null },
 				{ label: p?.title || a.slice(5), id: a as string | null }
 			];
 		}
@@ -410,7 +457,9 @@
 	function goUp() {
 		const a = $activeFolder;
 		if (a == null) return;
-		if (a === 'prefabs' || (typeof a === 'string' && a.startsWith('scene'))) return openFolder(null);
+		if (typeof a === 'string' && a.startsWith('pack:')) return openFolder('packs'); // P4
+		if (a === 'prefabs' || a === 'packs' || (typeof a === 'string' && a.startsWith('scene')))
+			return openFolder(null);
 		const f = $explorerFolders.find((x: any) => x.id === a);
 		openFolder(f?.parentId ?? null);
 	}
@@ -549,13 +598,42 @@
 	// right-click on the grid background = new folder HERE (106.7)
 	function gridMenu(e: MouseEvent) {
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
-		if ($activeFolder === 'prefabs' || (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene'))) return;
+		const inPacks =
+			$activeFolder === 'packs' || (typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:'));
+		if (!inPacks && ($activeFolder === 'prefabs' || (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')))) return;
 		e.preventDefault();
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
-			items: [{ label: 'New folder', action: () => startCreate($activeFolder ?? null) }]
+			// P6: the Packs view adds pack-import affordances instead of New folder
+			items: inPacks
+				? [
+						{ label: '＋ Import pack (.zip)', action: () => packZipInput?.click() },
+						{ label: '🔗 Load pack from URL', action: loadPackFromUrl }
+					]
+				: [{ label: 'New folder', action: () => startCreate($activeFolder ?? null) }]
 		};
+	}
+	// P6: load a pack from a .zip URL (or a GitHub repo link -> codeload .zip). Remote
+	// manifest.json / jsDelivr repos are the PACKS_BASE path (later). CORS-gated.
+	async function loadPackFromUrl() {
+		const url = prompt('Pack URL — a .zip, or a GitHub repo link:');
+		if (!url) return;
+		let fetchUrl = url.trim();
+		const gh = fetchUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/?#]+)\/?$/);
+		if (gh) fetchUrl = `https://codeload.github.com/${gh[1]}/${gh[2].replace(/\.git$/, '')}/zip/refs/heads/main`;
+		try {
+			const res = await fetch(fetchUrl);
+			if (!res.ok) return showToast(`Could not fetch that URL (HTTP ${res.status})`);
+			const isZip = /\.zip($|\?)/i.test(fetchUrl) || !!gh || (res.headers.get('content-type') || '').includes('zip');
+			if (!isZip) return showToast('Only .zip / GitHub-repo pack URLs are supported for now');
+			const pack = await importPackZip(new File([await res.blob()], (fetchUrl.split('/').pop() || 'pack') + '.zip'));
+			packsExpanded = true;
+			openFolder('pack:' + pack.name);
+			showToast(`Loaded pack "${pack.title}"`);
+		} catch {
+			showToast('Could not load the pack (network / CORS — try a direct .zip URL)');
+		}
 	}
 
 	function onDrop(e: DragEvent) {
@@ -598,6 +676,10 @@
 	// opens/previews (openItem). Right-click Properties routes here too.
 	function inspectItem(item: any) {
 		if (item.kind === 'prefab') return;
+		if (item.kind === 'pack-folder') {
+			openFolder('pack:' + item.packName); // P4: single-click a pack card opens it
+			return;
+		}
 		if (item.packEntry) {
 			// pack items aren't library items (no inspectedFile highlight); just select
 			// for the Properties panel
@@ -643,6 +725,10 @@
 		deselect();
 	}
 	async function openItem(item: any) {
+		if (item.kind === 'pack-folder') {
+			openFolder('pack:' + item.packName);
+			return;
+		}
 		if (item.packEntry && item.glbUrl) {
 			// default-pack item: place it into the scene (double-click)
 			placePackItem(item);
@@ -681,8 +767,9 @@
 		} else if (item.kind === 'image') {
 			const blob = await itemBlob(item.id);
 			if (blob) openImagePreview({ title: item.name, url: URL.createObjectURL(blob), onClose: () => gridEl?.focus() });
-		} else if (item.kind === 'object' && get(enable3dPreview)) {
-			// N4: open the rotatable 3D preview popup (only when the global toggle is on)
+		} else if (item.kind === 'object' && !item.packEntry) {
+			// P1: double-click an object item ALWAYS opens the preview popup (the
+			// enable3dPreview toggle only gates the inline Properties preview)
 			openModelPreview({ title: item.name, itemId: item.id, name: item.name, onClose: () => gridEl?.focus() });
 		}
 	}
@@ -834,9 +921,11 @@
 				>
 				<button
 					id="packs-folder"
-					class="whitespace-nowrap rounded px-2 py-1 text-left text-gray-300 hover:bg-gray-700"
-					title="Asset packs — click to expand, then a pack to browse its items"
-					onclick={togglePacks} ondblclick={togglePacks}>📦 Packs {packsExpanded ? '▾' : '▸'}</button
+					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'packs'
+						? 'bg-primary-700 text-white'
+						: 'text-gray-300 hover:bg-gray-700'}"
+					title="Asset packs — click to list them, double-click to expand the tree"
+					onclick={() => openFolder('packs')} ondblclick={togglePacks}>📦 Packs {packsExpanded ? '▾' : '▸'}</button
 				>
 				{#if packsExpanded}
 					{#each shownPacks as pack (pack.name)}
@@ -898,6 +987,8 @@
 				<p class="p-4 text-center text-xs italic text-gray-500">
 					{$activeFolder === 'prefabs'
 						? 'No prefabs yet — right-click an object and Save as prefab.'
+						: $activeFolder === 'packs' ? 'No packs. Right-click here to import a pack (.zip) or load one from a URL.'
+						: typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:') ? 'This pack has no items.'
 						: typeof $activeFolder === 'string' && $activeFolder.startsWith('scene') ? 'No shared assets in this scene group yet.' : 'Drop images, audio, text or 3D files here to import them.'}
 				</p>
 			{:else}
@@ -951,8 +1042,14 @@
 						>
 							{#if item.packEntry}
 								{#if packThumb(item)}
-									<!-- N6: lazily resolve webp -> png -> screenshot via onerror -->
-									<img src={packThumb(item)} alt={item.name} onerror={() => packThumbError(item)} class="h-14 w-14 rounded object-cover" />
+									<!-- N6: lazily resolve webp -> png -> screenshot via onerror; P2: cache the winner -->
+									<img
+										src={packThumb(item)}
+										alt={item.name}
+										onerror={() => packThumbError(item)}
+										onload={(e) => packThumbOk(item, (e.currentTarget as HTMLImageElement).src)}
+										class="h-14 w-14 rounded object-cover"
+									/>
 								{:else}
 									<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-2xl">{KIND_ICONS[item.kind] ?? '📦'}</span>
 								{/if}
@@ -1122,6 +1219,11 @@
 					/>
 					Hide built-in packs
 				</label>
+				{#if hiddenPacks.size > 0}
+					<button class="ui-button-quiet self-start text-[11px]" onclick={showAllHiddenPacks}
+						>Show {hiddenPacks.size} hidden pack{hiddenPacks.size === 1 ? '' : 's'}</button
+					>
+				{/if}
 				<div class="mt-1 border-t border-gray-700/40 pt-2">
 					<button class="ui-button-quiet w-full" onclick={() => packZipInput?.click()}>＋ Import pack (.zip)</button>
 					<input bind:this={packZipInput} type="file" accept=".zip" class="hidden" onchange={onImportPackZip} />

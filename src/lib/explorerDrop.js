@@ -72,7 +72,7 @@ export async function applyExplorerImage(uuid, payload) {
 
 /**
  * Handle a viewport drop of an Explorer card.
- * @param {{id?: string, kind: string, name: string, prefabId?: string | null}} payload
+ * @param {{id?: string, kind: string, name: string, prefabId?: string | null, url?: string | null}} payload
  * @param {number} clientX @param {number} clientY
  */
 export async function dropExplorerItem(payload, clientX, clientY) {
@@ -82,6 +82,19 @@ export async function dropExplorerItem(payload, clientX, clientY) {
 		if (!prefab) return;
 		const object = instantiatePrefab(prefab);
 		if (object && target.point) placeAt(object, target.point);
+		return;
+	}
+	// N6: a default-pack item carries a `url` (not a stored library item) — fetch
+	// its glb and place it at the drop point. The placed object replicates normally.
+	if (payload.url) {
+		try {
+			const res = await fetch(payload.url);
+			if (!res.ok) return showToast('Could not fetch the pack item');
+			const name = String(payload.name || 'model').replace(/\.\w+$/, '');
+			importFile(new File([await res.blob()], name + '.glb'), name, undefined, target.point ?? undefined);
+		} catch {
+			showToast('Could not load the pack item (network / CORS)');
+		}
 		return;
 	}
 	const item = get(explorerItems).find((entry) => entry.id === payload.id);

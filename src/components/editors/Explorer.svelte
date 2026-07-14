@@ -6,7 +6,7 @@
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { explorerClose } from '../../stores/appStore.js';
-	import { showToast, libraryClose, enable3dPreview } from '../../stores/appStore.js';
+	import { showToast, enable3dPreview } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
 		explorerItems,
@@ -28,6 +28,17 @@
 	} from '$lib/explorer';
 	import { openTextEditor, openImagePreview, openModelPreview } from '$lib/fileWindows';
 	import ModelPreview from './ModelPreview.svelte';
+	import {
+		packs,
+		openPackItems,
+		loadPacks,
+		loadPackItems,
+		packByName,
+		importPackZip,
+		removeImportedPack,
+		licenseLabel
+	} from '$lib/packs';
+	import { importFile } from '$lib/fileHandler.svelte';
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
@@ -151,6 +162,93 @@
 		localStorage.setItem('explorerSceneExpanded', String(sceneExpanded));
 	}
 
+	// N6: Packs section (mirror Scene) — expandable, lists packs; opening a pack
+	// shows its items with lazily-resolved thumbnails.
+	let packsExpanded = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem('explorerPacksExpanded') === 'true'
+	);
+	function togglePacks() {
+		packsExpanded = !packsExpanded;
+		localStorage.setItem('explorerPacksExpanded', String(packsExpanded));
+		if (packsExpanded && $packs.length === 0) loadPacks();
+	}
+	let thumbIdx: Record<string, number> = $state({}); // per pack-item webp->png->screenshot cursor
+	let packZipInput: HTMLInputElement | undefined = $state();
+	let hideBuiltinPacks = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem('explorerHideBuiltinPacks') === 'true'
+	);
+	let shownPacks = $derived($packs.filter((p: any) => !hideBuiltinPacks || p.source !== 'default'));
+	loadPacks();
+	async function onImportPackZip(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		(e.target as HTMLInputElement).value = '';
+		if (!file) return;
+		try {
+			const pack = await importPackZip(file);
+			packsExpanded = true;
+			openFolder('pack:' + pack.name);
+			showToast(`Imported pack "${pack.title}"`);
+		} catch (err: any) {
+			showToast('Pack import failed: ' + (err?.message ?? 'bad .zip'));
+		}
+	}
+	// pack currently open (for the Properties attribution panel)
+	let openPack = $derived(
+		typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:')
+			? packByName($activeFolder.slice(5))
+			: null
+	);
+	let packAttribModal = $state(false);
+	let packAttribHtml = $state('');
+	async function showPackAttribution(pack: any) {
+		let html = pack.attributionHtml || '';
+		if (!html && pack.attributionUrl) {
+			try {
+				const res = await fetch(pack.attributionUrl);
+				if (res.ok) html = await res.text();
+			} catch {}
+		}
+		if (!html)
+			html =
+				`<h3>${pack.title}</h3>` +
+				(pack.copyright ? `<p>${pack.copyright}</p>` : '') +
+				(pack.license ? `<p>License: ${licenseLabel(pack.license)}</p>` : '');
+		packAttribHtml = html;
+		packAttribModal = true;
+	}
+	function packRowMenu(e: MouseEvent, pack: any) {
+		e.preventDefault();
+		const items: any[] = [{ label: 'ⓘ Attribution / license', action: () => showPackAttribution(pack) }];
+		if (pack.source === 'imported')
+			items.push({
+				label: '🗑 Remove pack',
+				danger: true,
+				action: () => {
+					removeImportedPack(pack.name);
+					if ($activeFolder === 'pack:' + pack.name) openFolder(null);
+				}
+			});
+		menu = { x: e.clientX, y: e.clientY, items };
+	}
+	// fetch a pack's items when it's opened
+	$effect(() => {
+		const a = $activeFolder;
+		if (typeof a === 'string' && a.startsWith('pack:')) {
+			thumbIdx = {};
+			loadPackItems(packByName(a.slice(5)));
+		}
+	});
+	// pack-item thumbnail: imported items carry a dataURL; default items resolve
+	// webp -> png -> screenshot via the <img> onerror cursor, else a placeholder icon
+	function packThumb(item: any): string | null {
+		if (item.thumbnail) return item.thumbnail;
+		const cands = item.thumbs || [];
+		return cands[thumbIdx[item.name] ?? 0] ?? null;
+	}
+	function packThumbError(item: any) {
+		thumbIdx = { ...thumbIdx, [item.name]: (thumbIdx[item.name] ?? 0) + 1 };
+	}
+
 	const KIND_ICONS: Record<string, string> = {
 		image: '🖼️',
 		audio: '🎵',
@@ -187,6 +285,12 @@
 				thumbnail: p.thumbnail,
 				prefabId: p.id
 			}));
+		// N6: a pack's items (default packs from libraryList, imported from a manifest).
+		// Give each a stable unique id — default items have none, and the keyed {#each}
+		// needs one (duplicate undefined keys crash the block).
+		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:')) {
+			return $openPackItems.map((it) => ({ ...it, packEntry: true, id: it.id ?? `pack:${it.packName}:${it.name}` }));
+		}
 		// the Scene manifest (108): a derived, always-shared view — never editable
 		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')) {
 			const group = $activeFolder.split(':')[1] ?? null;
@@ -204,6 +308,13 @@
 	const crumbs = $derived.by(() => {
 		const a = $activeFolder;
 		if (a === 'prefabs') return [{ label: '🧱 Prefabs', id: 'prefabs' as string | null }];
+		if (typeof a === 'string' && a.startsWith('pack:')) {
+			const p = packByName(a.slice(5));
+			return [
+				{ label: '📦 Packs', id: null as string | null },
+				{ label: p?.title || a.slice(5), id: a as string | null }
+			];
+		}
 		if (typeof a === 'string' && a.startsWith('scene')) {
 			const sub = a.split(':')[1];
 			const out = [{ label: '🌐 Scene', id: 'scene' as string | null }];
@@ -457,17 +568,42 @@
 	}
 
 	function onItemDragStart(e: DragEvent, item: any) {
-		// 96 consumes these payloads (viewport placement / texture drop)
+		// 96 consumes these payloads (viewport placement / texture drop). N6: a
+		// default-pack item carries a `url` so the drop can fetch+place it without
+		// first storing it in the Explorer library.
 		e.dataTransfer?.setData(
 			'application/x-explorer-item',
-			JSON.stringify({ id: item.id, kind: item.kind, name: item.name, prefabId: item.prefabId ?? null })
+			JSON.stringify({
+				id: item.id ?? null,
+				kind: item.kind,
+				name: item.name,
+				prefabId: item.prefabId ?? null,
+				url: item.glbUrl ?? null
+			})
 		);
+	}
+
+	// N6: place a default-pack item into the scene (double-click / Enter) at origin
+	async function placePackItem(item: any) {
+		try {
+			const res = await fetch(item.glbUrl);
+			if (!res.ok) return showToast('Could not fetch the pack item');
+			await importFile(new File([await res.blob()], item.name + '.glb'), item.name, 'glb');
+		} catch {
+			showToast('Could not load the pack item (check the network / CORS)');
+		}
 	}
 
 	// 197b: single-click = select + show properties in the ⓘ panel; double-click
 	// opens/previews (openItem). Right-click Properties routes here too.
 	function inspectItem(item: any) {
 		if (item.kind === 'prefab') return;
+		if (item.packEntry) {
+			// pack items aren't library items (no inspectedFile highlight); just select
+			// for the Properties panel
+			selected = { kind: 'item', item };
+			return;
+		}
 		if (item.sceneEntry) {
 			// hash-backed Scene entries inspect the real library item (108)
 			const backing = item.itemId ? $explorerItems.find((i) => i.id === item.itemId) : null;
@@ -507,6 +643,11 @@
 		deselect();
 	}
 	async function openItem(item: any) {
+		if (item.packEntry && item.glbUrl) {
+			// default-pack item: place it into the scene (double-click)
+			placePackItem(item);
+			return;
+		}
 		if (item.sceneEntry) {
 			// derived Scene entries open live views (108): textures preview,
 			// scripts edit the NODE code (replicated via setNodeData)
@@ -694,9 +835,28 @@
 				<button
 					id="packs-folder"
 					class="whitespace-nowrap rounded px-2 py-1 text-left text-gray-300 hover:bg-gray-700"
-					title="Browse the built-in asset packs"
-					onclick={() => libraryClose.set(false)}>📦 Packs</button
+					title="Asset packs — click to expand, then a pack to browse its items"
+					onclick={togglePacks} ondblclick={togglePacks}>📦 Packs {packsExpanded ? '▾' : '▸'}</button
 				>
+				{#if packsExpanded}
+					{#each shownPacks as pack (pack.name)}
+						<button
+							data-pack={pack.name}
+							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'pack:' + pack.name
+								? 'bg-primary-700 text-white'
+								: 'text-gray-400 hover:bg-gray-700'}"
+							style="padding-left: 22px"
+							title={pack.license ? pack.title + ' · ' + pack.license : pack.title}
+							oncontextmenu={(e) => packRowMenu(e, pack)}
+							onclick={() => openFolder('pack:' + pack.name)}
+						>
+							📦 {pack.title}
+						</button>
+					{/each}
+					{#if shownPacks.length === 0}
+						<span class="px-2 py-1 text-[10px] italic text-gray-500" style="padding-left: 22px">No packs</span>
+					{/if}
+				{/if}
 				<button
 					id="scene-folder"
 					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene'
@@ -789,7 +949,14 @@
 							onclick={() => inspectItem(item)}
 							ondblclick={() => openItem(item)}
 						>
-							{#if item.thumbnail}
+							{#if item.packEntry}
+								{#if packThumb(item)}
+									<!-- N6: lazily resolve webp -> png -> screenshot via onerror -->
+									<img src={packThumb(item)} alt={item.name} onerror={() => packThumbError(item)} class="h-14 w-14 rounded object-cover" />
+								{:else}
+									<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-2xl">{KIND_ICONS[item.kind] ?? '📦'}</span>
+								{/if}
+							{:else if item.thumbnail}
 								<img src={item.thumbnail} alt={item.name} class="h-14 w-14 rounded object-cover" />
 							{:else}
 								<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-2xl">
@@ -815,6 +982,18 @@
 		{#snippet secondary(mode)}
 		{#if mode === 'props'}
 			<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
+				{#if openPack}
+					<!-- N6: pack-level properties + attribution -->
+					<div class="flex flex-col gap-1 border-b border-gray-700/40 pb-2">
+						<div class="flex items-center gap-2">
+							<span class="text-xl">📦</span>
+							<span class="min-w-0 flex-1 break-words font-semibold">{openPack.title}</span>
+						</div>
+						{#if openPack.license}<div class="text-[11px] text-gray-400">License: {licenseLabel(openPack.license)}</div>{/if}
+						{#if openPack.copyright}<div class="text-[11px] text-gray-400">{openPack.copyright}</div>{/if}
+						<button id="pack-attribution" class="ui-button-quiet mt-1 self-start" onclick={() => showPackAttribution(openPack)}>ⓘ Attribution / license</button>
+					</div>
+				{/if}
 				{#if selItem}
 					<div class="flex items-center gap-2">
 						{#if selItem.thumbnail}
@@ -851,7 +1030,7 @@
 						{/if}
 					</div>
 					<!-- N4: rotatable inline 3D preview + poly stats (behind the global toggle) -->
-					{#if selItem.kind === 'object' && $enable3dPreview}
+					{#if selItem.kind === 'object' && $enable3dPreview && !selItem.packEntry}
 						<div class="mt-1 overflow-hidden rounded bg-[#0d1117]" style="height: 150px">
 							{#key selItem.id}
 								<ModelPreview itemId={selItem.id} name={selItem.name} onStats={(s) => (inlineStats = s)} />
@@ -868,11 +1047,15 @@
 						{/if}
 					{/if}
 					<div class="mt-1 flex gap-2">
-						<button class="ui-button-quiet" onclick={() => startRenameItem(selItem)}>Rename</button>
-						{#if selItem.kind === 'text' || selItem.kind === 'image'}
-							<button class="ui-button-quiet" onclick={() => openItem(selItem)}>{selItem.kind === 'text' ? 'Edit' : 'Preview'}</button>
-						{:else if selItem.kind === 'object' && $enable3dPreview}
-							<button class="ui-button-quiet" onclick={() => openItem(selItem)}>3D preview</button>
+						{#if selItem.packEntry}
+							<button class="ui-button-quiet" onclick={() => openItem(selItem)}>Place in scene</button>
+						{:else}
+							<button class="ui-button-quiet" onclick={() => startRenameItem(selItem)}>Rename</button>
+							{#if selItem.kind === 'text' || selItem.kind === 'image'}
+								<button class="ui-button-quiet" onclick={() => openItem(selItem)}>{selItem.kind === 'text' ? 'Edit' : 'Preview'}</button>
+							{:else if selItem.kind === 'object' && $enable3dPreview}
+								<button class="ui-button-quiet" onclick={() => openItem(selItem)}>3D preview</button>
+							{/if}
 						{/if}
 					</div>
 				{:else if selected?.kind === 'folder'}
@@ -928,6 +1111,21 @@
 					/>
 					3D model preview
 				</label>
+				<label class="flex items-center gap-2" title="Hide the bundled packs, showing only your imported ones">
+					<input
+						type="checkbox"
+						checked={hideBuiltinPacks}
+						onchange={(e) => {
+							hideBuiltinPacks = e.currentTarget.checked;
+							localStorage.setItem('explorerHideBuiltinPacks', String(hideBuiltinPacks));
+						}}
+					/>
+					Hide built-in packs
+				</label>
+				<div class="mt-1 border-t border-gray-700/40 pt-2">
+					<button class="ui-button-quiet w-full" onclick={() => packZipInput?.click()}>＋ Import pack (.zip)</button>
+					<input bind:this={packZipInput} type="file" accept=".zip" class="hidden" onchange={onImportPackZip} />
+				</div>
 			</div>
 		{/if}
 		{/snippet}
@@ -1027,4 +1225,24 @@
 
 {#if menu}
 	<ContextMenu x={menu.x} y={menu.y} items={menu.items} on:close={() => (menu = null)} />
+{/if}
+
+<!-- N6: pack attribution / license (raw HTML fragment, like the Library popup).
+     Backdrop is a <button> so no div needs a click handler (a11y-clean). -->
+{#if packAttribModal}
+	<button
+		class="fixed inset-0 z-[var(--z-window)] cursor-default bg-black/50"
+		aria-label="Close attribution"
+		onclick={() => (packAttribModal = false)}
+	></button>
+	<div
+		id="pack-attrib-modal"
+		class="ui-panel fixed left-1/2 top-1/2 z-[var(--z-window)] max-h-[70vh] w-96 -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-4 text-sm"
+		style="z-index: calc(var(--z-window) + 1)"
+	>
+		<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>
+		<div class="mt-3 flex justify-end">
+			<button class="ui-button-quiet" onclick={() => (packAttribModal = false)}>Close</button>
+		</div>
+	</div>
 {/if}

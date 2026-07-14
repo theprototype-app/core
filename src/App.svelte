@@ -7,6 +7,7 @@
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
   import ImagePreviewWindow from './components/editors/ImagePreviewWindow.svelte'
+  import ModelPreviewWindow from './components/editors/ModelPreviewWindow.svelte'
   import DungeonMinimap from './components/play/DungeonMinimap.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
   import { isLocked } from './stores/sceneStore'
@@ -139,6 +140,7 @@
 <Explorer />
 <TextEditorWindow />
 <ImagePreviewWindow />
+<ModelPreviewWindow />
 {/if}
 <Menu />
 <DrawToolbar />

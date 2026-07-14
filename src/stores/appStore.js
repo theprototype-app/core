@@ -168,6 +168,15 @@ showEnvInList.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('showEnvInList', String(on));
 });
 
+// N4: Explorer 3D model preview — a rotatable inline preview in Properties + a
+// popup on open. Global (all of Explorer), persisted; off by default.
+export const enable3dPreview = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('enable3dPreview') === 'true'
+);
+enable3dPreview.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('enable3dPreview', String(on));
+});
+
 /**
  * Plain string = 3s info toast. Pass `actions` ([{label, action}]) for a
  * sticky decision toast (15s) with buttons.

@@ -4,8 +4,9 @@
 	// cascade delete, resizable), thumbnail grid on the right (subfolder cards
 	// + items), drag files in to import. Shares the bottom dock with the Flow
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
+	import { get } from 'svelte/store';
 	import { explorerClose } from '../../stores/appStore.js';
-	import { showToast, libraryClose } from '../../stores/appStore.js';
+	import { showToast, libraryClose, enable3dPreview } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
 		explorerItems,
@@ -25,7 +26,8 @@
 		inspectedFile,
 		updateItemBytes
 	} from '$lib/explorer';
-	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
+	import { openTextEditor, openImagePreview, openModelPreview } from '$lib/fileWindows';
+	import ModelPreview from './ModelPreview.svelte';
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
@@ -43,6 +45,7 @@
 		Math.min(Math.max(h || 300, 200), Math.round(window.innerHeight * 0.8));
 
 	let height = $state(300);
+	let inlineStats: any = $state(null); // N4: poly stats for the Properties inline preview
 	let docked = $state(true);
 	let winW = $state(720);
 	let winH = $state(440);
@@ -537,6 +540,9 @@
 		} else if (item.kind === 'image') {
 			const blob = await itemBlob(item.id);
 			if (blob) openImagePreview({ title: item.name, url: URL.createObjectURL(blob), onClose: () => gridEl?.focus() });
+		} else if (item.kind === 'object' && get(enable3dPreview)) {
+			// N4: open the rotatable 3D preview popup (only when the global toggle is on)
+			openModelPreview({ title: item.name, itemId: item.id, name: item.name, onClose: () => gridEl?.focus() });
 		}
 	}
 </script>
@@ -844,10 +850,29 @@
 							<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Details</span><span>{itemDetails}</span></div>
 						{/if}
 					</div>
+					<!-- N4: rotatable inline 3D preview + poly stats (behind the global toggle) -->
+					{#if selItem.kind === 'object' && $enable3dPreview}
+						<div class="mt-1 overflow-hidden rounded bg-[#0d1117]" style="height: 150px">
+							{#key selItem.id}
+								<ModelPreview itemId={selItem.id} name={selItem.name} onStats={(s) => (inlineStats = s)} />
+							{/key}
+						</div>
+						{#if inlineStats}
+							<div class="flex gap-2 text-[11px]">
+								<span class="w-14 shrink-0 text-gray-500">Mesh</span>
+								<span class="text-gray-300"
+									>{inlineStats.tris.toLocaleString()} tris · {inlineStats.verts.toLocaleString()} verts · {inlineStats.meshes}
+									mesh{inlineStats.meshes === 1 ? '' : 'es'}</span
+								>
+							</div>
+						{/if}
+					{/if}
 					<div class="mt-1 flex gap-2">
 						<button class="ui-button-quiet" onclick={() => startRenameItem(selItem)}>Rename</button>
 						{#if selItem.kind === 'text' || selItem.kind === 'image'}
 							<button class="ui-button-quiet" onclick={() => openItem(selItem)}>{selItem.kind === 'text' ? 'Edit' : 'Preview'}</button>
+						{:else if selItem.kind === 'object' && $enable3dPreview}
+							<button class="ui-button-quiet" onclick={() => openItem(selItem)}>3D preview</button>
 						{/if}
 					</div>
 				{:else if selected?.kind === 'folder'}
@@ -894,6 +919,14 @@
 						}}
 					/>
 					Show path bar
+				</label>
+				<label class="flex items-center gap-2" title="Show a rotatable 3D preview for model items in Properties + on open">
+					<input
+						type="checkbox"
+						checked={$enable3dPreview}
+						onchange={(e) => enable3dPreview.set(e.currentTarget.checked)}
+					/>
+					3D model preview
 				</label>
 			</div>
 		{/if}

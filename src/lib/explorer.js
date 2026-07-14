@@ -190,8 +190,8 @@ function imageThumbnail(blob) {
 	});
 }
 
-/** Parse a 3D file into a THREE object for its thumbnail @param {ArrayBuffer} buffer @param {string} ext */
-async function parseObjectFile(buffer, ext) {
+/** Parse a 3D file into a THREE object (thumbnail + N4 preview) @param {ArrayBuffer} buffer @param {string} ext */
+export async function parseObjectFile(buffer, ext) {
 	if (ext === 'obj') return new OBJLoader().parse(new TextDecoder().decode(buffer));
 	if (ext === 'stl') {
 		const geometry = new STLLoader().parse(buffer);

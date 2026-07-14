@@ -19,3 +19,12 @@ export const imagePreviewTarget = writable(null);
 export function openImagePreview(target) {
 	imagePreviewTarget.set(target);
 }
+
+// N4: 3D model preview window (rotatable canvas + poly stats)
+/** @type {import('svelte/store').Writable<{title: string, itemId: string, name?: string, onClose?: () => void} | null>} */
+export const modelPreviewTarget = writable(null);
+
+/** @param {{title: string, itemId: string, name?: string, onClose?: () => void}} target */
+export function openModelPreview(target) {
+	modelPreviewTarget.set(target);
+}

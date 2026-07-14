@@ -14,7 +14,10 @@
 	const colorOf = (ping: any) => ping.color ?? peerColor(ping.peerId)
 
 	const parts: Record<string, any> = {}
-	const track = (id: string, key: string) => ({ ref }: any) => {
+	// Threlte oncreate passes the ref DIRECTLY (CreateEvent<T> = (ref) => void), not
+	// wrapped in { ref } — the old destructure captured undefined, so these animations
+	// never ran (same class of bug as the annotation pins, N1).
+	const track = (id: string, key: string) => (ref: any) => {
 		;(parts[id] ??= {})[key] = ref
 	}
 

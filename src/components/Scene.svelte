@@ -123,10 +123,22 @@
 	];
 	const jointPos = new THREE.Vector3();
 
-	function isHandTracking(slot = 0) {
+	// The live inputSource for a controller slot: prefer the stamped handedness
+	// (194/210), fall back to the positional index. In hand-tracking the 'connected'
+	// stamp can be missing, so this fallback is what keeps hands from broadcasting
+	// unlabeled (null) — which made desktop peers see no VR hands at all.
+	function inputSourceForSlot(slot = 0) {
 		const session = renderer.xr.getSession();
-		const handedness = renderer.xr.getController(slot)?.userData?.handedness;
-		return !!(session && handedness && [...session.inputSources].some((/** @type {any} */ s) => s.handedness === handedness && s.hand));
+		if (!session) return null;
+		const sources = [...session.inputSources];
+		const stamped = renderer.xr.getController(slot)?.userData?.handedness;
+		return (stamped && sources.find((/** @type {any} */ s) => s.handedness === stamped)) || sources[slot] || null;
+	}
+	function slotHandedness(slot = 0) {
+		return renderer.xr.getController(slot)?.userData?.handedness || inputSourceForSlot(slot)?.handedness || null;
+	}
+	function isHandTracking(slot = 0) {
+		return !!inputSourceForSlot(slot)?.hand;
 	}
 
 	function readHandPose(slot = 0) {
@@ -175,12 +187,14 @@
 		lastHandPositions[0].fromArray(poses[0].pos);
 		lastHandPositions[1].fromArray(poses[1].pos);
 
-		// 194/210: label each pose by the controller SLOT's stamped handedness -
-		// poses is slot-indexed, and the inputSources order can differ from the slot
-		// order after a hands<->controllers swap (else peers see swapped hands)
+		// 194/210: label each pose by the SLOT's handedness (stamped, else the live
+		// inputSource) — poses is slot-indexed, and the inputSources order can differ
+		// from the slot order after a hands<->controllers swap (else peers see swapped
+		// hands). N5 fix: without the inputSource fallback, hand-tracking sessions where
+		// the stamp is missing broadcast null hands and peers saw nothing.
 		const hands = { left: null, right: null };
 		for (let slot = 0; slot < 2; slot++) {
-			const hand = renderer.xr.getController(slot)?.userData?.handedness;
+			const hand = slotHandedness(slot);
 			if (hand === 'left' || hand === 'right') hands[hand] = poses[slot];
 		}
 		$peers.send({ type: 'vrhands', peerId: $peers.peer.id, left: hands.left, right: hands.right, active: true });

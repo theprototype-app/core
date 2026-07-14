@@ -66,7 +66,7 @@
                 position={$peerHands[user[0]][side].pos}
                 rotation={$peerHands[user[0]][side].rot}
               >
-                {#if $peerHands[user[0]][side].joints}
+                {#if $peerHands[user[0]][side].joints?.length}
                   <!-- N5: hand-tracked peer — a sphere per WebXR joint (wrist-local) -->
                   {#each jointTriples($peerHands[user[0]][side].joints) as p}
                     <T.Mesh position={p}>

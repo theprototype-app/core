@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { T, useTask, useThrelte } from '@threlte/core';
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
-	import { XR, Controller, Hand } from '@threlte/xr'
+	import { XR, Controller, Hand, useHand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu } from '../stores/appStore';
 	import { get } from 'svelte/store';
@@ -106,7 +106,8 @@
 		// world-grab moves them for peers; no-op when the rig is unbent
 		worldToContentPose($worldRig, handPosition, handQuaternion);
 		handEuler.setFromQuaternion(handQuaternion);
-		return { pos: handPosition.toArray(), rot: [handEuler.x, handEuler.y, handEuler.z], joints: /** @type {number[]|null} */ (null) };
+		// joints: [] (a controller has none) — peers branch on joints.length
+		return { pos: handPosition.toArray(), rot: [handEuler.x, handEuler.y, handEuler.z], joints: /** @type {number[]} */ ([]) };
 	}
 
 	// N5: articulated hand presence. When a slot is HAND-TRACKED (not a controller),
@@ -137,15 +138,18 @@
 	function slotHandedness(slot = 0) {
 		return renderer.xr.getController(slot)?.userData?.handedness || inputSourceForSlot(slot)?.handedness || null;
 	}
-	function isHandTracking(slot = 0) {
-		return !!inputSourceForSlot(slot)?.hand;
-	}
+	// threlte's tracked hand spaces, keyed by handedness — the SAME XRHand spaces it
+	// renders locally, so their joints are always populated when hands are visible.
+	// (Reading renderer.xr.getHand(slot) by slot index was unreliable — the tracked
+	// hand isn't necessarily at that slot, so it read empty joints and fell back to
+	// the controller box.)
+	const leftHandStore = useHand('left');
+	const rightHandStore = useHand('right');
 
-	function readHandPose(slot = 0) {
-		if (!isHandTracking(slot)) return null;
-		const hand = renderer.xr.getHand(slot);
-		const wrist = hand?.joints?.['wrist'];
-		if (!wrist) return null;
+	function readHandJoints(handedness = 'left') {
+		const handSpace = /** @type {any} */ ((handedness === 'left' ? leftHandStore : rightHandStore).current)?.hand;
+		const wrist = handSpace?.joints?.['wrist'];
+		if (!wrist || !wrist.visible) return null; // not actively tracked
 		// wrist pose -> content frame (same as a controller)
 		wrist.getWorldPosition(handPosition);
 		wrist.getWorldQuaternion(handQuaternion);
@@ -154,7 +158,7 @@
 		// every joint expressed in the wrist's LOCAL frame (rig-independent)
 		const joints = /** @type {number[]} */ ([]);
 		for (const name of HAND_JOINTS) {
-			const j = hand.joints[name];
+			const j = handSpace.joints[name];
 			if (!j) {
 				joints.push(0, 0, 0);
 				continue;
@@ -169,35 +173,35 @@
 	function broadcastVRHands() {
 		const session = renderer.xr.getSession();
 		if (!session) return;
-		let moved = false;
-		// N5: a hand-tracked slot broadcasts articulated joints; a controller slot the
-		// wrist/ray pose as before
-		const poses = [readHandPose(0) ?? readControllerPose(0), readHandPose(1) ?? readControllerPose(1)];
-		const hasJoints = !!(poses[0].joints || poses[1].joints);
-		// the joints payload is heavier — throttle it to ~30/s (controllers stay per-frame)
+		// N5: fill each hand by HANDEDNESS — an actively-tracked hand contributes its
+		// articulated joints; otherwise the controller slot for that handedness gives
+		// the wrist/ray pose (box). Keying by handedness (not slot) is why a tracked
+		// hand at either slot now reaches peers.
+		let left = readHandJoints('left');
+		let right = readHandJoints('right');
+		for (let slot = 0; slot < 2; slot++) {
+			const hd = slotHandedness(slot);
+			if (hd === 'left' && !left) left = readControllerPose(slot);
+			else if (hd === 'right' && !right) right = readControllerPose(slot);
+		}
+		const poses = [left, right];
+		const hasJoints = !!(left?.joints?.length || right?.joints?.length);
+		// the joints payload is heavier — throttle it to ~30/s (controllers per-frame)
 		const now = Date.now();
 		if (hasJoints && now - lastHandsSendAt < 33) return;
+		let moved = false;
 		for (let i = 0; i < 2; i++) {
-			const position = new THREE.Vector3().fromArray(poses[i].pos);
-			if (position.distanceTo(lastHandPositions[i]) > 0.005) moved = true;
+			const pose = poses[i];
+			if (pose && new THREE.Vector3().fromArray(pose.pos).distanceTo(lastHandPositions[i]) > 0.005) moved = true;
 		}
 		// finger motion barely moves the wrist — always resend while hand-tracking
 		if (!moved && !hasJoints) return;
 		lastHandsSendAt = now;
-		lastHandPositions[0].fromArray(poses[0].pos);
-		lastHandPositions[1].fromArray(poses[1].pos);
-
-		// 194/210: label each pose by the SLOT's handedness (stamped, else the live
-		// inputSource) — poses is slot-indexed, and the inputSources order can differ
-		// from the slot order after a hands<->controllers swap (else peers see swapped
-		// hands). N5 fix: without the inputSource fallback, hand-tracking sessions where
-		// the stamp is missing broadcast null hands and peers saw nothing.
-		const hands = { left: null, right: null };
-		for (let slot = 0; slot < 2; slot++) {
-			const hand = slotHandedness(slot);
-			if (hand === 'left' || hand === 'right') hands[hand] = poses[slot];
+		for (let i = 0; i < 2; i++) {
+			const pose = poses[i];
+			if (pose) lastHandPositions[i].fromArray(pose.pos);
 		}
-		$peers.send({ type: 'vrhands', peerId: $peers.peer.id, left: hands.left, right: hands.right, active: true });
+		$peers.send({ type: 'vrhands', peerId: $peers.peer.id, left, right, active: true });
 	}
 
 	useTask((delta) => {

@@ -12,6 +12,14 @@
 
     const handColors: Record<string, number> = { left: 0x4f83cc, right: 0xcc784f }
 
+    // N5: split a flat wrist-local joint array [x,y,z,…] into [x,y,z] triples for
+    // rendering finger-joint spheres on a hand-tracked peer
+    const jointTriples = (flat: number[]): [number, number, number][] => {
+      const out: [number, number, number][] = []
+      for (let i = 0; i + 2 < flat.length; i += 3) out.push([flat[i], flat[i + 1], flat[i + 2]])
+      return out
+    }
+
     // 195: peer avatars live in the shared CONTENT frame. This group mirrors the
     // local worldRig each frame so remote presence (broadcast in content-local
     // coords) tracks the objects when THIS viewer two-grip world-grabs. The local
@@ -58,15 +66,25 @@
                 position={$peerHands[user[0]][side].pos}
                 rotation={$peerHands[user[0]][side].rot}
               >
-                <T.Mesh>
-                  <T.BoxGeometry args={[0.06, 0.06, 0.14]} />
-                  <T.MeshStandardMaterial color={handColors[side]} />
-                </T.Mesh>
-                <!-- short pointer so the aiming direction is readable -->
-                <T.Mesh position={[0, 0, -0.12]} rotation={[Math.PI / 2, 0, 0]}>
-                  <T.CylinderGeometry args={[0.006, 0.006, 0.1]} />
-                  <T.MeshStandardMaterial color={0xffffff} />
-                </T.Mesh>
+                {#if $peerHands[user[0]][side].joints}
+                  <!-- N5: hand-tracked peer — a sphere per WebXR joint (wrist-local) -->
+                  {#each jointTriples($peerHands[user[0]][side].joints) as p}
+                    <T.Mesh position={p}>
+                      <T.SphereGeometry args={[0.008, 8, 8]} />
+                      <T.MeshStandardMaterial color={handColors[side]} />
+                    </T.Mesh>
+                  {/each}
+                {:else}
+                  <T.Mesh>
+                    <T.BoxGeometry args={[0.06, 0.06, 0.14]} />
+                    <T.MeshStandardMaterial color={handColors[side]} />
+                  </T.Mesh>
+                  <!-- short pointer so the aiming direction is readable -->
+                  <T.Mesh position={[0, 0, -0.12]} rotation={[Math.PI / 2, 0, 0]}>
+                    <T.CylinderGeometry args={[0.006, 0.006, 0.1]} />
+                    <T.MeshStandardMaterial color={0xffffff} />
+                  </T.Mesh>
+                {/if}
               </T.Group>
             {/if}
           {/each}

@@ -92,6 +92,7 @@
 	const handQuaternion = new THREE.Quaternion();
 	const handEuler = new THREE.Euler();
 	const lastHandPositions = [new THREE.Vector3(1e9, 0, 0), new THREE.Vector3(1e9, 0, 0)];
+	let lastHandsSendAt = 0; // N5: throttle the heavier articulated-hand payload
 	// 195: camera pose reused per-frame, expressed in the shared content frame
 	const camContentPos = new THREE.Vector3();
 	const camContentQuat = new THREE.Quaternion();
@@ -105,19 +106,72 @@
 		// world-grab moves them for peers; no-op when the rig is unbent
 		worldToContentPose($worldRig, handPosition, handQuaternion);
 		handEuler.setFromQuaternion(handQuaternion);
-		return { pos: handPosition.toArray(), rot: [handEuler.x, handEuler.y, handEuler.z] };
+		return { pos: handPosition.toArray(), rot: [handEuler.x, handEuler.y, handEuler.z], joints: /** @type {number[]|null} */ (null) };
+	}
+
+	// N5: articulated hand presence. When a slot is HAND-TRACKED (not a controller),
+	// broadcast the 25 WebXR joints so peers see moving fingers. The wrist rides the
+	// content frame (like a controller); the joints are sent WRIST-LOCAL, so they're
+	// rig-independent and peers reconstruct them under the wrist group.
+	const HAND_JOINTS = [
+		'wrist',
+		'thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip',
+		'index-finger-metacarpal', 'index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate', 'index-finger-phalanx-distal', 'index-finger-tip',
+		'middle-finger-metacarpal', 'middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal', 'middle-finger-tip',
+		'ring-finger-metacarpal', 'ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal', 'ring-finger-tip',
+		'pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal', 'pinky-finger-tip'
+	];
+	const jointPos = new THREE.Vector3();
+
+	function isHandTracking(slot = 0) {
+		const session = renderer.xr.getSession();
+		const handedness = renderer.xr.getController(slot)?.userData?.handedness;
+		return !!(session && handedness && [...session.inputSources].some((/** @type {any} */ s) => s.handedness === handedness && s.hand));
+	}
+
+	function readHandPose(slot = 0) {
+		if (!isHandTracking(slot)) return null;
+		const hand = renderer.xr.getHand(slot);
+		const wrist = hand?.joints?.['wrist'];
+		if (!wrist) return null;
+		// wrist pose -> content frame (same as a controller)
+		wrist.getWorldPosition(handPosition);
+		wrist.getWorldQuaternion(handQuaternion);
+		worldToContentPose($worldRig, handPosition, handQuaternion);
+		handEuler.setFromQuaternion(handQuaternion);
+		// every joint expressed in the wrist's LOCAL frame (rig-independent)
+		const joints = /** @type {number[]} */ ([]);
+		for (const name of HAND_JOINTS) {
+			const j = hand.joints[name];
+			if (!j) {
+				joints.push(0, 0, 0);
+				continue;
+			}
+			j.getWorldPosition(jointPos);
+			wrist.worldToLocal(jointPos);
+			joints.push(jointPos.x, jointPos.y, jointPos.z);
+		}
+		return { pos: handPosition.toArray(), rot: [handEuler.x, handEuler.y, handEuler.z], joints };
 	}
 
 	function broadcastVRHands() {
 		const session = renderer.xr.getSession();
 		if (!session) return;
 		let moved = false;
-		const poses = [readControllerPose(0), readControllerPose(1)];
+		// N5: a hand-tracked slot broadcasts articulated joints; a controller slot the
+		// wrist/ray pose as before
+		const poses = [readHandPose(0) ?? readControllerPose(0), readHandPose(1) ?? readControllerPose(1)];
+		const hasJoints = !!(poses[0].joints || poses[1].joints);
+		// the joints payload is heavier — throttle it to ~30/s (controllers stay per-frame)
+		const now = Date.now();
+		if (hasJoints && now - lastHandsSendAt < 33) return;
 		for (let i = 0; i < 2; i++) {
 			const position = new THREE.Vector3().fromArray(poses[i].pos);
 			if (position.distanceTo(lastHandPositions[i]) > 0.005) moved = true;
 		}
-		if (!moved) return;
+		// finger motion barely moves the wrist — always resend while hand-tracking
+		if (!moved && !hasJoints) return;
+		lastHandsSendAt = now;
 		lastHandPositions[0].fromArray(poses[0].pos);
 		lastHandPositions[1].fromArray(poses[1].pos);
 

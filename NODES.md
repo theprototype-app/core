@@ -17,7 +17,7 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | random | Input | number | — | OK (min/max/interval on card; deterministic per interval) |
 | time | Input | number | — | OK (sin/cos/linear × rate) |
 | objectselector | Scene | — (sink) | effect | OK — THE effect sink; anything not ending here is silently inert (DOC). |
-| script | Logic | number | a b c | OK (side panel editor; deterministic pure fn) |
+| script | Logic | effect (drives a Selector; value readable) | a b c | OK (side panel editor; deterministic pure fn) |
 | math | Logic | number | a b | OK (BinaryNode) |
 | compare | Logic | boolean | a b | OK |
 | gate | Logic | boolean | a b | DOC: op NOT ignores `b` (vestigial handle; harmless). |
@@ -28,14 +28,14 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | lookat | Logic | effect | target | OK (already accepted uuid OR vector3) |
 | setcolor | Logic | effect | color | OK |
 | visibility | Logic | effect | on | OK |
-| onclick | Triggers | event | — | OK (pulse window) |
+| onclick | Triggers | event | — | FIX: event→effect is now a legal drag (the typed sockets rejected wiring On Click into the Object Selector its own feature requires). Pulse window OK. |
 | counter | Triggers | number | pulse | OK |
 | shake/spin/bounce/orbit | Animation | effect | per-param | OK (generic AnimationNode; params get ⓘ editors where sensible) |
 | pathpatrol | Animation | effect | — | OK (points captured by scene clicks) |
 | mass/bounciness/friction | Physics | effect | value | DOC: consumed by physics.js collectParams when the sim starts — NOT flowRuntime. Working, different runtime; invisible to per-frame eval. |
 | pulse/blink | Effects | effect | per-param | OK |
 | sound | Effects | effect | volume | OK (`playing` IS read by soundRuntime — earlier suspicion disproven). |
-| customnode | (meta) | number | per-def param | FIX (4.5): def params get INPUT sockets (they were unwirable — the runtime already resolved them); def edits prune dangling edges deterministically. |
+| customnode | (meta) | effect (drives a Selector) | per-def param | FIX (4.5): def params get INPUT sockets (they were unwirable — the runtime already resolved them); def edits prune dangling edges deterministically. |
 | maprange | Logic | number | a | NEW (4.6): remap [inMin..inMax] → [outMin..outMax], optional clamp — the glue between free-range sources and bounded params. |
 | select | Logic | number | index a b | NEW (4.6): outputs a when index < 0.5 else b — pairs with switcher-as-number / compare. |
 

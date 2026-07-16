@@ -63,6 +63,10 @@ export function inputType(nodeType, handleId) {
 /** May an output of `from` connect to an input of `to`? @param {string} from @param {string} to */
 export function canConnect(from, to) {
 	if (from === to) return true;
+	// 4.6 audit fix: EVENT sources (On Click) must reach the Object Selector's
+	// effect input — that's the only way fireObjectClick can act on the scene.
+	// The blanket effect-only rule rejected it, so the trigger was un-authorable.
+	if (from === 'event' && to === 'effect') return true;
 	if (from === 'effect' || to === 'effect') return false; // effect only to effect
 	return (COERCE[from] || []).includes(to);
 }

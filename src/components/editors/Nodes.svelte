@@ -44,7 +44,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
-	import { isValidFlowConnection } from '$lib/flowSockets';
+	import { isValidFlowConnection, typeColor } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
 	import { peers, username } from '../../stores/appStore';
@@ -570,6 +570,15 @@
 				<div class="mt-1 flex gap-1">
 					<button id="flow-fit" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" on:click={() => fitView()}>Fit</button>
 					<button id="flow-reset-view" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" on:click={() => setViewport({ x: 0, y: 0, zoom: 1 })}>Reset view</button>
+				</div>
+				<!-- B4.2: socket type -> color legend (sockets are painted by TYPE now) -->
+				<p class="ui-section-label mt-1">Socket types</p>
+				<div id="socket-legend" class="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-gray-300">
+					{#each ['number', 'vector3', 'boolean', 'color', 'object', 'event', 'effect'] as t}
+						<span class="flex items-center gap-1">
+							<span class="inline-block h-2 w-2 rounded-full" style="background: {typeColor(t)}"></span>{t}
+						</span>
+					{/each}
 				</div>
 			{/if}
 		</div>

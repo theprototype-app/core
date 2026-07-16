@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { objectsGroup } from '../../../stores/sceneStore';
 	import { setNodeData } from '$lib/nodesHandler';
@@ -31,5 +32,5 @@
 			{/each}
 		</select>
 	</div>
-	<Handle type="target" position={Position.Left} />
+	<Socket kind="target" nodeType={data.type} position={Position.Left} />
 </NodeWrapper>

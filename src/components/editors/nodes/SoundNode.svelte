@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { explorerItems } from '$lib/explorer';
@@ -16,9 +17,9 @@
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
-	<Handle type="source" position={Position.Right} />
+	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<!-- 133: volume can be driven by a value node -->
-	<Handle type="target" position={Position.Left} id="volume" style="top: 74px" />
+	<Socket kind="target" nodeType={data.type} position={Position.Left} id="volume" style="top: 74px" />
 	<div class="flex w-full flex-col gap-1">
 		<select
 			class="nodrag"

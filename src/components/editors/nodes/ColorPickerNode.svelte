@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 
@@ -19,5 +20,5 @@
 		/>
 		<p>{data.color ?? '#ff4000'}</p>
 	</div>
-	<Handle type="source" position={Position.Right} />
+	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 </NodeWrapper>

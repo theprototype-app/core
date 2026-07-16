@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { flowValues } from '../../../stores/flowStore';
@@ -13,8 +14,8 @@
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
-	<Handle type="target" position={Position.Left} id="a" style="top: 30px" />
-	<Handle type="source" position={Position.Right} />
+	<Socket kind="target" nodeType={data.type} position={Position.Left} id="a" style="top: 30px" />
+	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<div class="flex w-full flex-col gap-1">
 		<div class="flex justify-between">
 			<span>delayed</span><span class="font-mono">{typeof live === 'number' ? live.toFixed(2) : '—'}</span>

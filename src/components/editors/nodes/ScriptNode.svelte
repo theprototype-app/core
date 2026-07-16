@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { scriptEditorOpen, scriptErrors } from '../../../stores/flowStore';
 
@@ -12,11 +13,11 @@
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
-	<Handle type="source" position={Position.Right} />
+	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<!-- 133: wire value nodes into data.a / data.b / data.c for the code to read -->
-	<Handle type="target" position={Position.Left} id="a" style="top: 30px" />
-	<Handle type="target" position={Position.Left} id="b" style="top: 52px" />
-	<Handle type="target" position={Position.Left} id="c" style="top: 74px" />
+	<Socket kind="target" nodeType={data.type} position={Position.Left} id="a" style="top: 30px" />
+	<Socket kind="target" nodeType={data.type} position={Position.Left} id="b" style="top: 52px" />
+	<Socket kind="target" nodeType={data.type} position={Position.Left} id="c" style="top: 74px" />
 	<div class="flex w-full flex-col gap-1">
 		{#if data.name}
 			<span class="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-200" title={data.name}>{data.name}</span>

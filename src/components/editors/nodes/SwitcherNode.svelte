@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 
@@ -12,7 +13,7 @@
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
-	<Handle type="source" position={Position.Right} />
+	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<div class="nodrag flex flex-col">
 		{#each options as option}
 			<label class="flex">

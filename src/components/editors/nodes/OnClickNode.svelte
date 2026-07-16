@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { flowValues } from '../../../stores/flowStore';
 
@@ -14,7 +15,7 @@
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
-	<Handle type="source" position={Position.Right} />
+	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<div class="flex w-full flex-col gap-1">
 		<div class="flex items-center gap-2">
 			<span class="h-2.5 w-2.5 rounded-full" style="background: {pulsing ? '#22c55e' : '#374151'}"></span>

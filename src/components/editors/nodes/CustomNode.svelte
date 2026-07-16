@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { customNodeDefs, scriptErrors, nodeDesignerOpen } from '../../../stores/flowStore';
@@ -15,7 +16,7 @@
 </script>
 
 <NodeWrapper type={def?.name ?? 'custom'}>
-	<Handle type="source" position={Position.Right} />
+	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<div class="flex w-full flex-col gap-1">
 		{#if !def}
 			<span class="text-[10px] text-red-500">definition missing</span>

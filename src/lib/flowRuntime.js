@@ -182,6 +182,13 @@ function bool(v) {
 	if (Array.isArray(v)) return v.length > 0;
 	return typeof v === 'number' ? v !== 0 : !!v;
 }
+/** 4.1: a wired "point" — an object uuid (looked up) OR a vector3 literal array.
+ * @param {any} v @param {any} ctx @returns {any} THREE.Vector3 | null */
+function pointOf(v, ctx) {
+	if (Array.isArray(v) && v.length >= 3) return new THREE.Vector3(num(v[0]), num(v[1]), num(v[2]));
+	if (ctx && typeof v === 'string') return ctx.pos(v);
+	return null;
+}
 
 /**
  * Evaluate a node's OUTPUT value as a PURE function of the graph + synced time.
@@ -193,8 +200,19 @@ function bool(v) {
  * @returns {number | boolean | number[] | string | undefined}
  */
 export function evalNode(node, allNodes, allEdges, time, seen = new Set(), ctx = null) {
+	// 4.1: PATH-based cycle guard. The old global `seen` meant a source feeding
+	// TWO inputs of one node evaluated once — the second input read undefined and
+	// fell back (math a+b wired from one number returned a + fallback). Deleting
+	// on exit lets siblings re-evaluate; true cycles are still cut on the path.
 	if (!node || seen.has(node.id)) return undefined;
 	seen.add(node.id);
+	const value = evalNodeBody(node, allNodes, allEdges, time, seen, ctx);
+	seen.delete(node.id);
+	return value;
+}
+
+/** @param {any} node @param {any[]} allNodes @param {any[]} allEdges @param {number} time @param {Set<any>} seen @param {any} ctx */
+function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 	const d = node.data || {};
 	/** a named input handle's value, falling back to a manual param @param {string} handle @param {any} fallback */
 	const input = (handle, fallback) => {
@@ -308,19 +326,15 @@ export function evalNode(node, allNodes, allEdges, time, seen = new Set(), ctx =
 			return num(d.a ?? 0);
 		}
 		case 'distance': {
-			const ua = input('a', d.a);
-			const ub = input('b', d.b);
-			if (!ctx || typeof ua !== 'string' || typeof ub !== 'string') return 0;
-			const pa = ctx.pos(ua);
-			const pb = ctx.pos(ub);
+			// 4.1: also accept a wired Vector3 LITERAL as a world point (the coercion
+			// matrix allows vector3->object and lookat already honors it)
+			const pa = pointOf(input('a', d.a), ctx);
+			const pb = pointOf(input('b', d.b), ctx);
 			return pa && pb ? pa.distanceTo(pb) : 0;
 		}
 		case 'proximity': {
-			const ua = input('a', d.a);
-			const ub = input('b', d.b);
-			if (!ctx || typeof ua !== 'string' || typeof ub !== 'string') return false;
-			const pa = ctx.pos(ua);
-			const pb = ctx.pos(ub);
+			const pa = pointOf(input('a', d.a), ctx);
+			const pb = pointOf(input('b', d.b), ctx);
 			return pa && pb ? pa.distanceTo(pb) <= num(d.radius ?? 3) : false;
 		}
 		case 'onclick': {

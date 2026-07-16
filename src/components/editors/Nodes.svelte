@@ -210,10 +210,13 @@
 	// coercion). Saved edges are not re-validated — only live drags.
 	const isValidConnection = (connection: any) => isValidFlowConnection(connection, get(nodes));
 
-	// Give new edges a deterministic id and replicate them to all peers
+	// Give new edges a deterministic id and replicate them to all peers.
+	// 4.1: the id MUST include the handles — without them, wiring one source into
+	// BOTH a and b of a node collided ids, the peer-side dedupe dropped edge #2
+	// and the graphs diverged permanently (nodesync could never converge).
 	const onedgecreate = (connection: Connection) => {
 		const edge = {
-			id: `e-${connection.source}-${connection.target}`,
+			id: `e-${connection.source}${connection.sourceHandle ? '.' + connection.sourceHandle : ''}-${connection.target}${connection.targetHandle ? '.' + connection.targetHandle : ''}`,
 			source: connection.source,
 			target: connection.target,
 			sourceHandle: connection.sourceHandle,

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
-	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold } from '../../stores/sceneStore.js';
+	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
+	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showToast } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
@@ -199,6 +200,38 @@
 							}}>&nbsp;Hold to move vertex</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Hold the trigger to carry a vertex (release drops it); off = press to grab, press again to drop</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<select
+							id="peer-hand-style"
+							class="rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+							value={$peerHandStyle}
+							on:change={(e: any) => peerHandStyle.set(e.target.value)}
+						>
+							<option value="hands">Hands</option>
+							<option value="spheres">Spheres</option>
+						</select>&nbsp;Peer hand style
+					</p>
+					<p class={middlecoverDescription}>How hand-tracked peers render for you — cuboid-bone hands or joint spheres (local preference)</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>
+						<select
+							id="vr-target-hz"
+							class="rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+							value={$vrTargetHz}
+							on:change={(e: any) => {
+								vrTargetHz.set(e.target.value);
+								applyVRFrameRate();
+							}}
+						>
+							<option value="auto">Max</option>
+							<option value="90">90</option>
+							<option value="120">120</option>
+						</select>&nbsp;VR refresh rate
+					</p>
+					<p class={middlecoverDescription}>Target headset Hz — Max picks the highest the device supports (120 needs the Quest 120Hz system setting); applies on VR entry</p>
 				</div>
 				<div class="flex">
 					<p class={bottomCoverName}>

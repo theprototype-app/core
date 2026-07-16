@@ -4,8 +4,9 @@
     import VRControls from './VRControls.svelte'
     import PointerLockControls from './PointerLockControls.svelte'
     import AvatarRig from './AvatarRig.svelte'
-    import { playerCam, peerHands, worldRig } from '../../stores/sceneStore'
+    import { playerCam, peerHands, worldRig, peerHandStyle } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
+    import { handBoneSegments } from '$lib/vrControls'
     import { Text } from '@threlte/extras'
 
     export let position: [x: number, y: number, z: number] = [0, 0, 0]
@@ -67,13 +68,23 @@
                 rotation={$peerHands[user[0]][side].rot}
               >
                 {#if $peerHands[user[0]][side].joints?.length}
-                  <!-- N5: hand-tracked peer — a sphere per WebXR joint (wrist-local) -->
-                  {#each jointTriples($peerHands[user[0]][side].joints) as p}
-                    <T.Mesh position={p}>
-                      <T.SphereGeometry args={[0.008, 8, 8]} />
-                      <T.MeshStandardMaterial color={handColors[side]} />
-                    </T.Mesh>
-                  {/each}
+                  {#if $peerHandStyle === 'hands'}
+                    <!-- B2.3: cuboid-bone hand — ~24 box segments between the joints -->
+                    {#each handBoneSegments($peerHands[user[0]][side].joints) as b}
+                      <T.Mesh position={b.pos} rotation={b.rot}>
+                        <T.BoxGeometry args={[0.009, b.len, 0.009]} />
+                        <T.MeshStandardMaterial color={handColors[side]} />
+                      </T.Mesh>
+                    {/each}
+                  {:else}
+                    <!-- N5: sphere-per-joint style (setting: peerHandStyle) -->
+                    {#each jointTriples($peerHands[user[0]][side].joints) as p}
+                      <T.Mesh position={p}>
+                        <T.SphereGeometry args={[0.008, 8, 8]} />
+                        <T.MeshStandardMaterial color={handColors[side]} />
+                      </T.Mesh>
+                    {/each}
+                  {/if}
                 {:else}
                   <T.Mesh>
                     <T.BoxGeometry args={[0.06, 0.06, 0.14]} />

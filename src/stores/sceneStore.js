@@ -110,6 +110,21 @@ export const vrApprovePanelOpen = writable(false);
 // 214: VR trigger tool mode from the radial Tools submenu — 'select' (single
 // pick), 'box' (3D drag-box marquee) or 'draw' (freehand stroke)
 export const vrToolMode = writable('select');
+// B2.1 (roadmap 9): target VR refresh rate — 'auto' picks the highest supported
+export const vrTargetHz = writable(
+	typeof localStorage !== 'undefined' ? localStorage.getItem('vrTargetHz') || 'auto' : 'auto'
+);
+vrTargetHz.subscribe((v) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('vrTargetHz', String(v));
+});
+// B2.3: how everyone's hand-tracked peers render LOCALLY — 'hands' (cuboid bones)
+// or 'spheres' (joint dots). A per-viewer preference, never replicated.
+export const peerHandStyle = writable(
+	typeof localStorage !== 'undefined' ? localStorage.getItem('peerHandStyle') || 'hands' : 'hands'
+);
+peerHandStyle.subscribe((v) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('peerHandStyle', String(v));
+});
 // VR snap MODE (156): 'off' | 'grid' | 'surface' | 'rotation'
 export const vrSnapMode = writable(
 	typeof localStorage !== 'undefined' ? localStorage.getItem('vrSnapMode') || 'off' : 'off'

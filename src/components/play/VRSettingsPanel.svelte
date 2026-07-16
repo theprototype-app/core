@@ -11,7 +11,9 @@
 		vrMirrorSnapTurn,
 		vrSnapAngle,
 		vrVertexHold,
-		vrPassthrough
+		vrPassthrough,
+		vrTargetHz,
+		peerHandStyle
 	} from '../../stores/sceneStore'
 	import { vrHovered, vrSettingsGroup, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
@@ -39,6 +41,8 @@
 		{ action: 'settings:mirror', label: 'Mirror snap turn', toggle: true, active: $vrMirrorSnapTurn },
 		{ action: 'settings:angle', label: 'Snap turn: ' + ($vrSnapAngle ? $vrSnapAngle + ' deg' : 'Off') },
 		{ action: 'settings:vertexhold', label: 'Hold to move vertex', toggle: true, active: $vrVertexHold },
+		{ action: 'settings:hz', label: 'Refresh: ' + ($vrTargetHz === 'auto' ? 'Max' : $vrTargetHz + ' Hz') },
+		{ action: 'settings:handstyle', label: 'Peer hands: ' + ($peerHandStyle === 'hands' ? 'Hands' : 'Spheres') },
 		{ action: 'settings:passthrough', label: 'Passthrough', toggle: true, active: $vrPassthrough },
 		{ action: 'settings:resetpanels', label: 'Reset panel positions' },
 		{ action: 'settings:close', label: 'Close', danger: true }

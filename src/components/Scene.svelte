@@ -20,7 +20,7 @@
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -93,6 +93,7 @@
 	const handEuler = new THREE.Euler();
 	const lastHandPositions = [new THREE.Vector3(1e9, 0, 0), new THREE.Vector3(1e9, 0, 0)];
 	let lastHandsSendAt = 0; // N5: throttle the heavier articulated-hand payload
+	let lastSentJointLens = [-1, -1]; // B2.2: last-SENT representation per hand (rep-flip detector)
 	// 195: camera pose reused per-frame, expressed in the shared content frame
 	const camContentPos = new THREE.Vector3();
 	const camContentQuat = new THREE.Quaternion();
@@ -194,8 +195,12 @@
 			const pose = poses[i];
 			if (pose && new THREE.Vector3().fromArray(pose.pos).distanceTo(lastHandPositions[i]) > 0.005) moved = true;
 		}
-		// finger motion barely moves the wrist — always resend while hand-tracking
-		if (!moved && !hasJoints) return;
+		// B2.2: a hands<->controllers switch must ALWAYS send (the old
+		// `!moved && !hasJoints` gate ate the hands->controllers message, so peers
+		// kept rendering finger spheres). shouldSendHands forces it on a rep flip.
+		const lens = [left?.joints?.length ?? 0, right?.joints?.length ?? 0];
+		if (!shouldSendHands({ moved, hasJoints, prevLens: lastSentJointLens, lens })) return;
+		lastSentJointLens = lens;
 		lastHandsSendAt = now;
 		for (let i = 0; i < 2; i++) {
 			const pose = poses[i];
@@ -579,6 +584,9 @@
 		const xrControllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
 		const onXRSelect = (event) => {
 			const controller = event.target;
+			// B2.4: a pinch-HOLD that just toggled the radial also fires 'select' on
+			// release — swallow that click so it doesn't immediately pick a sector
+			if (Date.now() - pinchMenuToggledAt < 250) return;
 			// the keyboard is modal on top of any panel (116)
 			if ($vrKeyboardTarget) {
 				const key = raycastKeyboard(xrControllers.indexOf(controller));
@@ -864,11 +872,15 @@ position={[0, 2, 3]}
 		// passthrough (90): AR sessions blend with the room — drop the local sky
 		const session = renderer.xr.getSession();
 		passthroughActive.set(!!session && session.environmentBlendMode !== 'opaque');
+		// B2.1: request the preferred refresh rate (auto = highest supported) —
+		// without this the Quest stays at its 90Hz default
+		applyVRFrameRate();
 	}}
 	onsessionend={() => passthroughActive.set(false)}
 >
 	<Controller left />
 	<Controller right />
-	<Hand left />
-	<Hand right />
+	<!-- B2.4: pinch-HOLD on the menu hand toggles the radial (hands have no B/Y) -->
+	<Hand left onpinchstart={() => onHandPinchStart('left')} onpinchend={() => onHandPinchEnd('left')} />
+	<Hand right onpinchstart={() => onHandPinchStart('right')} onpinchend={() => onHandPinchEnd('right')} />
 </XR>

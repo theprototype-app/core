@@ -13,6 +13,7 @@ h.run(async () => {
 		() =>
 			new Promise((resolve) => {
 				const s = window.__stores;
+				s.peerHandStyle.set('spheres'); // B2.3: default is 'hands' (cuboid bones) now
 				const joints = [];
 				for (let i = 0; i < 25; i++) joints.push(i * 0.001, i * 0.002, i * 0.003); // 25 * 3
 				let ud;
@@ -43,6 +44,25 @@ h.run(async () => {
 	);
 	h.check(r.left.has && r.left.meshes === 25, `hand-tracked peer renders 25 finger-joint spheres (${r.left.meshes})`);
 	h.check(r.right.has && r.right.meshes === 2, `controller peer hand stays a box + pointer (${r.right.meshes})`);
+
+	// B2.3: the default 'hands' style renders ~24 cuboid bone segments instead
+	const bones = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.peerHandStyle.set('hands');
+				setTimeout(() => {
+					window.__stores.globalScene.subscribe((scene) => {
+						const g = scene.getObjectByName('fakepeer-hand-left');
+						let n = 0;
+						g?.traverse((o) => {
+							if (o.isMesh) n++;
+						});
+						resolve(n);
+					})();
+				}, 500);
+			})
+	);
+	h.check(bones === 24, `'hands' style renders 24 cuboid bones (${bones})`);
 
 	await h.finish(browser);
 });

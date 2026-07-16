@@ -36,7 +36,9 @@ import {
 	vrGrabStyle,
 	vrGrabbedHand,
 	vrApprovePanelOpen,
-	vrToolMode
+	vrToolMode,
+	vrTargetHz,
+	peerHandStyle
 } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
@@ -645,6 +647,85 @@ export function worldToContentPose(rig, pos, quat) {
 	rig.worldToLocal(pos);
 	rig.getWorldQuaternion(_contentRigQuat).invert();
 	quat.premultiply(_contentRigQuat);
+}
+
+// ---- B2.1 (roadmap 9): target VR refresh rate ----
+/** Apply the vrTargetHz preference to the live session. Gated on
+ * supportedFrameRates — an out-of-range value REJECTS a promise threlte's sync
+ * try/catch would miss, so we only ever request a supported rate. */
+export function applyVRFrameRate() {
+	const session = renderer?.xr?.getSession?.();
+	const rates = session?.supportedFrameRates;
+	if (!session || !rates || !rates.length || !session.updateTargetFrameRate) return null;
+	const pref = get(vrTargetHz);
+	const max = Math.max(...rates);
+	const wanted = pref === 'auto' ? max : Number(pref);
+	const target = rates.includes ? (rates.includes(wanted) ? wanted : max) : max;
+	try {
+		const p = session.updateTargetFrameRate(target);
+		p?.catch?.(() => {});
+	} catch {}
+	return target;
+}
+
+/** B2.2: should this frame's vrhands broadcast go out? Pure — the switch-back
+ * (hands→controllers) bug was the `!moved && !hasJoints` gate eating the ONE
+ * message that tells peers the representation flipped. repChanged forces it.
+ * @param {{moved: boolean, hasJoints: boolean, prevLens: number[], lens: number[]}} s */
+export function shouldSendHands(s) {
+	const repChanged = s.lens[0] !== s.prevLens[0] || s.lens[1] !== s.prevLens[1];
+	return s.moved || s.hasJoints || repChanged;
+}
+
+// B2.3: cuboid-bone hand — segment pairs over the 25-joint WebXR order
+// (0 wrist; 1-4 thumb; 5-9 index; 10-14 middle; 15-19 ring; 20-24 pinky)
+const HAND_BONES = [
+	[0, 1], [1, 2], [2, 3], [3, 4],
+	[0, 5], [5, 6], [6, 7], [7, 8], [8, 9],
+	[0, 10], [10, 11], [11, 12], [12, 13], [13, 14],
+	[0, 15], [15, 16], [16, 17], [17, 18], [18, 19],
+	[0, 20], [20, 21], [21, 22], [22, 23], [23, 24]
+];
+const _boneUp = new THREE.Vector3(0, 1, 0);
+/** Wrist-local joint positions (flat 75 floats) → ~24 cuboid bone segments
+ * {pos:[3], rot:[3], len}. Pure; Player renders these. @param {number[]} flat */
+export function handBoneSegments(flat) {
+	/** @type {{pos: number[], rot: number[], len: number}[]} */
+	const out = [];
+	if (!flat || flat.length < 75) return out;
+	const v = (/** @type {number} */ i) => new THREE.Vector3(flat[i * 3], flat[i * 3 + 1], flat[i * 3 + 2]);
+	for (const [a, b] of HAND_BONES) {
+		const va = v(a);
+		const vb = v(b);
+		const dir = vb.clone().sub(va);
+		const len = Math.max(dir.length(), 0.001);
+		const mid = va.add(vb).multiplyScalar(0.5);
+		const quat = new THREE.Quaternion().setFromUnitVectors(_boneUp, dir.normalize());
+		const e = new THREE.Euler().setFromQuaternion(quat);
+		out.push({ pos: [mid.x, mid.y, mid.z], rot: [e.x, e.y, e.z], len });
+	}
+	return out;
+}
+
+// ---- B2.4: pinch-HOLD on the menu hand toggles the radial (hands have no B/Y) ----
+const pinchStartAt = { left: 0, right: 0 };
+/** ms the pinch must be held to toggle the menu (a quick pinch = native select) */
+export const PINCH_HOLD_MS = 500;
+/** set when the hold fires, so Scene's onXRSelect can swallow the release-click */
+export let pinchMenuToggledAt = 0;
+/** @param {string} handedness */
+export function onHandPinchStart(handedness) {
+	pinchStartAt[handedness === 'left' ? 'left' : 'right'] = Date.now();
+}
+/** @param {string} handedness @returns {boolean} true if the menu toggled */
+export function onHandPinchEnd(handedness) {
+	const side = handedness === 'left' ? 'left' : 'right';
+	const held = Date.now() - (pinchStartAt[side] || 0);
+	pinchStartAt[side] = 0;
+	if (handedness !== get(vrMenuHand) || held < PINCH_HOLD_MS) return false;
+	vrMenuOpen.update((v) => !v);
+	pinchMenuToggledAt = Date.now();
+	return true;
 }
 
 /** 188: WebXR re-issues inputsourceschange on hands<->controllers and on a
@@ -2111,6 +2192,15 @@ export function executeVRMenuAction(name) {
 			const next = steps[(steps.indexOf(get(vrSnapAngle)) + 1) % steps.length];
 			vrSnapAngle.set(next);
 			try { localStorage.setItem('vrSnapAngle', String(next)); } catch {}
+		} else if (key === 'hz') {
+			// B2.1: cycle Auto(max) -> 90 -> 120 and apply live if presenting
+			const steps = ['auto', '90', '120'];
+			const next = steps[(steps.indexOf(get(vrTargetHz)) + 1) % steps.length];
+			vrTargetHz.set(next);
+			applyVRFrameRate();
+		} else if (key === 'handstyle') {
+			// B2.3: how hand-tracked peers render locally
+			peerHandStyle.set(get(peerHandStyle) === 'hands' ? 'spheres' : 'hands');
 		} else if (key === 'passthrough') {
 			// WebXR can't hot-swap session modes — applies on the next VR entry
 			const next = !get(vrPassthrough);

@@ -80,7 +80,7 @@ export async function loadSessions() {
 }
 
 /** Build a session payload from the current scene @param {string} name */
-function buildSessionPayload(name) {
+export function buildSessionPayload(name) {
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const camera = get(globalCamera);
@@ -173,28 +173,50 @@ export async function importSession(json) {
  * Portable — re-importing on a fresh machine restores the assets too.
  * @param {any} payload
  */
-export async function exportSessionZip(payload) {
+export async function exportSessionZip(payload, opts = { assets: true, packs: false, flow: true }) {
 	const { zipSync, strToU8 } = await import('fflate');
 	const { sceneAssetList } = await import('./sceneAssets');
 	const { itemByHash, itemBlob } = await import('./explorer');
+	// B3 (.tpscene): the include-checkboxes — flow strips nodes/edges, assets
+	// toggles the hash bundle, packs adds the imported-pack section below
+	if (opts.flow === false) payload = { ...payload, nodes: [], edges: [] };
 	/** @type {Record<string, any>} */
 	const files = { 'session.json': strToU8(JSON.stringify(payload)) };
 	/** @type {Array<{hash: string, name: string, kind: string, file: string}>} */
 	const index = [];
 	const seen = new Set();
-	for (const asset of sceneAssetList()) {
-		if (!asset.hash || seen.has(asset.hash)) continue;
-		const item = /** @type {any} */ (itemByHash(asset.hash));
-		if (!item) continue;
-		const blob = await itemBlob(item.id);
-		if (!blob) continue;
-		seen.add(asset.hash);
-		const ext = (item.name?.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase();
-		const file = 'assets/' + asset.hash + ext;
-		files[file] = new Uint8Array(await blob.arrayBuffer());
-		index.push({ hash: asset.hash, name: item.name, kind: asset.kind, file });
-	}
+	if (opts.assets !== false)
+		for (const asset of sceneAssetList()) {
+			if (!asset.hash || seen.has(asset.hash)) continue;
+			const item = /** @type {any} */ (itemByHash(asset.hash));
+			if (!item) continue;
+			const blob = await itemBlob(item.id);
+			if (!blob) continue;
+			seen.add(asset.hash);
+			const ext = (item.name?.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase();
+			const file = 'assets/' + asset.hash + ext;
+			files[file] = new Uint8Array(await blob.arrayBuffer());
+			index.push({ hash: asset.hash, name: item.name, kind: asset.kind, file });
+		}
 	files['assets/index.json'] = strToU8(JSON.stringify(index));
+	if (opts.packs) {
+		// bundle the IMPORTED packs (built-ins are bundled/CDN — nothing to carry):
+		// pack metadata + each item's Explorer blob, re-registered on import
+		const { installedPacksSnapshot } = await import('./packs');
+		const packs = installedPacksSnapshot();
+		/** @type {any[]} */
+		const packIndex = [];
+		for (const pack of packs) {
+			for (const it of pack.items ?? []) {
+				const blob = it.id ? await itemBlob(it.id) : null;
+				if (!blob) continue;
+				const file = `packs/${pack.name}/${it.id}`;
+				files[file] = new Uint8Array(await blob.arrayBuffer());
+				packIndex.push({ pack: pack.name, itemId: it.id, name: it.name, file });
+			}
+		}
+		files['packs/index.json'] = strToU8(JSON.stringify({ packs, items: packIndex }));
+	}
 	return zipSync(files, { level: 6 });
 }
 
@@ -222,6 +244,32 @@ export async function importSessionZip(buffer) {
 			// pass the Uint8Array VIEW — applyAssetFile slices byteOffset..length
 			// so fflate's shared buffers don't corrupt the content hash
 			await applyAssetFile({ hash: entry.hash, name: entry.name, buffer: bytes });
+		}
+	}
+	// B3: restore bundled packs — re-store each item blob (content-hash deduped;
+	// ids can CHANGE, so remap the pack's item ids), then re-register the pack
+	if (entries['packs/index.json']) {
+		try {
+			const packData = JSON.parse(strFromU8(entries['packs/index.json']));
+			const { addItemFromBytes } = await import('./explorer');
+			const { registerImportedPack } = await import('./packs');
+			/** @type {Record<string, string>} old itemId -> restored id */
+			const remap = {};
+			for (const entry of packData.items ?? []) {
+				const bytes = entries[entry.file];
+				if (!bytes) continue;
+				const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+				const stored = await addItemFromBytes(buf, entry.name || 'item', null);
+				remap[entry.itemId] = stored.id;
+			}
+			for (const pack of packData.packs ?? []) {
+				registerImportedPack({
+					...pack,
+					items: (pack.items ?? []).map((/** @type {any} */ it) => ({ ...it, id: remap[it.id] ?? it.id }))
+				});
+			}
+		} catch (error) {
+			console.log('pack restore failed', error);
 		}
 	}
 	return importSession(strFromU8(sessionBytes));

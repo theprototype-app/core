@@ -27,8 +27,39 @@ peers.subscribe(value => { peer = value });
 let loadingNames = $state();
 loadingFile.subscribe(value => { loadingNames = value });
 
+// B3: .tpscene export prefs (set from the Sidebar export-settings cog)
+export function tpsceneOptions() {
+	const read = (/** @type {string} */ k, /** @type {boolean} */ dflt) => {
+		const v = typeof localStorage !== 'undefined' ? localStorage.getItem(k) : null;
+		return v === null ? dflt : v === 'true';
+	};
+	return {
+		assets: read('tpsceneAssets', true),
+		packs: read('tpscenePacks', false),
+		flow: read('tpsceneFlow', true)
+	};
+}
+
+/** B3: save the scene as a .tpscene bundle (session.json + assets/ + packs/) */
+async function saveTpScene() {
+	const { buildSessionPayload, exportSessionZip } = await import('./sessions');
+	const payload = buildSessionPayload('Scene export');
+	const zip = await exportSessionZip(payload, tpsceneOptions());
+	const blob = new Blob([zip], { type: 'application/zip' });
+	const a = document.createElement('a');
+	document.body.appendChild(a);
+	a.style.display = 'none';
+	const url = window.URL.createObjectURL(blob);
+	a.href = url;
+	const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
+	a.download = `ThePrototype-${date}UTC.tpscene`;
+	a.click();
+	window.URL.revokeObjectURL(url);
+}
+
 export function save(format) {
 	console.log('Saving...');
+	if (format === 'tpscene') return void saveTpScene(); // B3: Scene bundle path
 	//This exports entire scene with all objects
 	// saves store animation BASE poses, not the current swing (88)
 	const restore = parkAnimatedAtBase();
@@ -181,6 +212,14 @@ export async function importFile(file, name, ext, position) {
 
 export async function load(file) {
 try {
+	// B3: .tpscene bundles restore assets + packs, then apply the session (the
+	// request path confirms/proposes like the Sessions manager Load)
+	if (file.name?.toLowerCase().endsWith('.tpscene')) {
+		const { importSessionZip, requestLoadSession } = await import('./sessions');
+		const payload = await importSessionZip(await file.arrayBuffer());
+		await requestLoadSession(payload.id);
+		return;
+	}
 	const reader = new FileReader();
 	reader.readAsText(file);
 	await new Promise((resolve, reject) => {

@@ -246,6 +246,20 @@ function attributionHtmlFrom(manifest) {
 	);
 }
 
+/** B3 (.tpscene): the imported packs, for bundling into a scene export. */
+export function installedPacksSnapshot() {
+	return getInstalled();
+}
+
+/** B3: (re)register an imported pack (e.g. restored from a .tpscene) locally. @param {any} pack */
+export function registerImportedPack(pack) {
+	const installed = getInstalled().filter((/** @type {any} */ p) => p.name !== pack.name);
+	installed.push({ ...pack, source: 'imported' });
+	setInstalled(installed);
+	delete itemCache[pack.name];
+	packs.update((list) => [...list.filter((/** @type {any} */ p) => p.name !== pack.name), { ...pack, source: 'imported' }]);
+}
+
 /** Remove an imported pack (its item blobs stay in the Explorer library). @param {string} name */
 export function removeImportedPack(name) {
 	setInstalled(getInstalled().filter((/** @type {any} */ p) => p.name !== name));

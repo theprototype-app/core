@@ -24,7 +24,20 @@
 	// The Files format picker became a segmented control (the old dropdown was
 	// fiddly). Themed for light + dark.
 
-	let saveFormat = $state('json');
+	// B3: Scene (.tpscene) is the primary format; JSON is demoted behind the
+	// export-settings cog ("Show JSON") since it's rarely used
+	const initShowJson = typeof localStorage !== 'undefined' && localStorage.getItem('showJsonFormat') === 'true';
+	const initFormat = typeof localStorage !== 'undefined' ? localStorage.getItem('saveFormat') || 'tpscene' : 'tpscene';
+	let saveFormat = $state(initFormat === 'json' && !initShowJson ? 'tpscene' : initFormat);
+	let showJson = $state(initShowJson);
+	let exportSettingsOpen = $state(false);
+	let tpAssets = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneAssets') !== 'false');
+	let tpPacks = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpscenePacks') === 'true');
+	let tpFlow = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneFlow') !== 'false');
+	function pickFormat(f: string) {
+		saveFormat = f;
+		localStorage.setItem('saveFormat', f);
+	}
 	let rerenderInput = $state(false);
 
 	function clearScene() {
@@ -87,9 +100,45 @@
 			<span class="side-ico">💾</span><span class="flex-1 whitespace-nowrap">Save</span>
 		</button>
 		<div class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
-			<button class="side-seg {saveFormat === 'json' ? 'on' : ''}" onclick={() => (saveFormat = 'json')}>JSON</button>
-			<button class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" onclick={() => (saveFormat = 'gltf')}>GLTF</button>
+			<button class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" onclick={() => pickFormat('gltf')}>GLTF</button>
+			<button id="format-tpscene" class="side-seg {saveFormat === 'tpscene' ? 'on' : ''}" onclick={() => pickFormat('tpscene')}>Scene</button>
+			{#if showJson}
+				<button class="side-seg {saveFormat === 'json' ? 'on' : ''}" onclick={() => pickFormat('json')}>JSON</button>
+			{/if}
+			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={() => (exportSettingsOpen = true)}>⚙</button>
 		</div>
+		{#if exportSettingsOpen}
+			<!-- B3: export settings — what a .tpscene bundle includes + the JSON toggle -->
+			<button
+				class="fixed inset-0 z-[60] cursor-default bg-black/40"
+				aria-label="Close export settings"
+				onclick={() => (exportSettingsOpen = false)}
+			></button>
+			<div id="export-settings-modal" class="fixed left-1/2 top-1/2 z-[61] w-64 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-gray-700 bg-gray-800 p-4 text-sm text-gray-100 shadow-2xl">
+				<p class="mb-2 font-semibold">Export settings</p>
+				<p class="mb-1 text-[11px] text-gray-400">Scene (.tpscene) includes:</p>
+				<label class="flex items-center gap-2 py-0.5">
+					<input type="checkbox" checked={tpAssets} onchange={(e: any) => { tpAssets = e.target.checked; localStorage.setItem('tpsceneAssets', String(tpAssets)); }} />
+					Assets (audio, textures, configs)
+				</label>
+				<label class="flex items-center gap-2 py-0.5">
+					<input id="tpscene-packs" type="checkbox" checked={tpPacks} onchange={(e: any) => { tpPacks = e.target.checked; localStorage.setItem('tpscenePacks', String(tpPacks)); }} />
+					Imported packs
+				</label>
+				<label class="flex items-center gap-2 py-0.5">
+					<input id="tpscene-flow" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; localStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
+					Flow graph (nodes + edges)
+				</label>
+				<div class="my-2 border-t border-gray-700"></div>
+				<label class="flex items-center gap-2 py-0.5">
+					<input type="checkbox" checked={showJson} onchange={(e: any) => { showJson = e.target.checked; localStorage.setItem('showJsonFormat', String(showJson)); if (!showJson && saveFormat === 'json') pickFormat('tpscene'); }} />
+					Show JSON format
+				</label>
+				<div class="mt-3 flex justify-end">
+					<button class="rounded bg-gray-600 px-2 py-1 text-xs hover:bg-gray-500" onclick={() => (exportSettingsOpen = false)}>Close</button>
+				</div>
+			</div>
+		{/if}
 
 		<div class="side-div"></div>
 

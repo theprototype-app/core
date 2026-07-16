@@ -47,20 +47,20 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.sessionsOpen.set(false));
 	await A.page.waitForTimeout(200);
 
-	// --- Explorer gains a Packs entry that opens the pack browser ---
+	// --- Explorer gains a Packs entry; single-click opens the packs GRID view
+	// (roadmap-8 P4 replaced the old 126 library-drawer stopgap) ---
 	await A.page.evaluate(() => window.__stores.explorerClose?.set(false));
 	await A.page.waitForTimeout(400);
 	const packs = await A.page.evaluate(() => {
 		const btn = document.querySelector('#packs-folder');
 		if (!btn) return { present: false };
 		btn.click();
-		let libClosed;
-		window.__stores.libraryClose.subscribe((v) => (libClosed = v))();
-		window.__stores.libraryClose.set(true);
-		return { present: true, opened: libClosed === false };
+		let folder;
+		window.__stores.explorer.activeFolder.subscribe((v) => (folder = v))();
+		return { present: true, opened: folder === 'packs' };
 	});
 	h.check(packs.present, 'the Explorer has a Packs entry');
-	h.check(packs.opened, 'the Packs entry opens the pack browser');
+	h.check(packs.opened, 'the Packs entry opens the packs grid view');
 
 	await h.finish(browser);
 });

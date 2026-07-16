@@ -24,6 +24,8 @@
 	import ObjectSelectorNode from './nodes/ObjectSelectorNode.svelte';
 	import AnimationNode from './nodes/AnimationNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
+	import MapRangeNode from './nodes/MapRangeNode.svelte';
+	import SelectNode from './nodes/SelectNode.svelte';
 	import CustomNode from './nodes/CustomNode.svelte';
 	import PathPatrolNode from './nodes/PathPatrolNode.svelte';
 	import SoundNode from './nodes/SoundNode.svelte';
@@ -68,6 +70,8 @@
 		pulse: AnimationNode,
 		blink: AnimationNode,
 		script: ScriptNode,
+		maprange: MapRangeNode,
+		select: SelectNode,
 		customnode: CustomNode,
 		pathpatrol: PathPatrolNode,
 		sound: SoundNode,

@@ -155,7 +155,8 @@ export function notifyExternalMove(uuid) {
 // node types that produce an OUTPUT value (not a scene effect)
 export const valueTypes = [
 	'number', 'vector3', 'toggle', 'random', 'time', 'math', 'compare', 'gate',
-	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter' // 134
+	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter', // 134
+	'maprange', 'select' // 4.6
 ];
 // existing input sources that also expose a value on their output handle
 // (4.4: switcher outputs its selected index)
@@ -246,6 +247,21 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		case 'switcher':
 			// 4.4: a real value source — the selected item INDEX (pairs with select/compare)
 			return num(d.index ?? Math.max((Array.isArray(d.items) ? d.items : ['cube', 'pyramid']).indexOf(d.shape ?? 'cube'), 0));
+		case 'maprange': {
+			// 4.6: remap a from [inMin..inMax] to [outMin..outMax] (optional clamp)
+			const a = num(input('a', d.a ?? 0));
+			const inMin = num(d.inMin ?? 0);
+			const inMax = num(d.inMax ?? 1);
+			const outMin = num(d.outMin ?? 0);
+			const outMax = num(d.outMax ?? 1);
+			const span = inMax - inMin;
+			let t = span === 0 ? 0 : (a - inMin) / span;
+			if (d.clamp ?? true) t = Math.min(Math.max(t, 0), 1);
+			return outMin + t * (outMax - outMin);
+		}
+		case 'select':
+			// 4.6: pick a or b by a wired index/boolean (switcher/compare pair-up)
+			return num(input('index', d.index ?? 0)) < 0.5 ? input('a', d.a ?? 0) : input('b', d.b ?? 0);
 		case 'toggle':
 			return !!d.on;
 		case 'vector3':

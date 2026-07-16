@@ -9,6 +9,7 @@ const OUTPUT = {
 	number: 'number', slider: 'number', time: 'number', loop: 'number', timer: 'number',
 	random: 'number', math: 'number', distance: 'number', counter: 'number',
 	switcher: 'number', // 4.4: a real value source (the selected index)
+	maprange: 'number', select: 'number', // 4.6: loop-closers
 	vector3: 'vector3',
 	toggle: 'boolean', compare: 'boolean', gate: 'boolean', proximity: 'boolean',
 	colorpicker: 'color',
@@ -24,6 +25,8 @@ const INPUT = {
 	gate: { a: 'boolean', b: 'boolean' },
 	sound: { volume: 'number' },
 	timer: { a: 'number' },
+	maprange: { a: 'number' },
+	select: { index: 'number', a: 'number', b: 'number' },
 	script: { a: 'number', b: 'number', c: 'number' },
 	distance: { a: 'object', b: 'object' },
 	proximity: { a: 'object', b: 'object' },

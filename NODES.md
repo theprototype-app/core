@@ -36,6 +36,8 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | pulse/blink | Effects | effect | per-param | OK |
 | sound | Effects | effect | volume | OK (`playing` IS read by soundRuntime — earlier suspicion disproven). |
 | customnode | (meta) | number | per-def param | FIX (4.5): def params get INPUT sockets (they were unwirable — the runtime already resolved them); def edits prune dangling edges deterministically. |
+| maprange | Logic | number | a | NEW (4.6): remap [inMin..inMax] → [outMin..outMax], optional clamp — the glue between free-range sources and bounded params. |
+| select | Logic | number | index a b | NEW (4.6): outputs a when index < 0.5 else b — pairs with switcher-as-number / compare. |
 
 ## Correctness fixes shipped in 4.1
 - **Edge-id collision (divergence bug)**: ids were `e-<src>-<tgt>` WITHOUT handles, so

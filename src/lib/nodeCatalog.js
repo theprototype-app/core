@@ -49,6 +49,9 @@ export const nodeCatalog = [
 			{ type: 'math', label: 'Math', defaults: { op: 'add', a: 0, b: 0 } },
 			{ type: 'compare', label: 'Compare', defaults: { op: 'gt', a: 0, b: 0 } },
 			{ type: 'gate', label: 'Gate', defaults: { op: 'and', a: false, b: false } },
+			// 4.6: loop-closers from the NODES.md audit
+			{ type: 'maprange', label: 'Map Range', defaults: { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: true, a: 0 } },
+			{ type: 'select', label: 'Select', defaults: { index: 0, a: 0, b: 0 } },
 			// 134: loops, timers, sensors + object actions (all deterministic)
 			{ type: 'loop', label: 'Loop', defaults: { from: 0, to: 1, rate: 1, mode: 'wrap' } },
 			{ type: 'timer', label: 'Timer', defaults: { delay: 1, a: 0 } },

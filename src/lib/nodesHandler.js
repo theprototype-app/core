@@ -105,6 +105,9 @@ export function applyNodesSnapshot(nodes, edges) {
 		});
 	}
 	if (Array.isArray(edges)) edges.forEach(createFlowEdge);
+	// B4.5: a stale snapshot must not resurrect edges into removed custom-node
+	// params — prune deterministically after every snapshot apply
+	import('./customNodes').then((m) => m.pruneAllCustomNodeEdges());
 }
 
 // --- Drift detection: peers periodically exchange a graph hash and pull a

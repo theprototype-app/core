@@ -17,6 +17,11 @@
 
 <NodeWrapper type={def?.name ?? 'custom'}>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
+	<!-- B4.5: one input socket per RANGE param (the runtime already resolves
+	     wired inputs via resolveInputs — only the sockets were missing) -->
+	{#each (def?.params ?? []).filter((p: any) => p.kind === 'range') as param, i (param.key)}
+		<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style={`top: ${34 + i * 38}px`} />
+	{/each}
 	<div class="flex w-full flex-col gap-1">
 		{#if !def}
 			<span class="text-[10px] text-red-500">definition missing</span>

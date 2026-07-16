@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { customNodeDefs } from '../stores/flowStore';
+import { customNodeDefs, flowNodes, flowEdges } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
 
 // User-designed node definitions ({id, name, params[], code}) — replicated
@@ -29,6 +29,32 @@ export function applyNodeDef(def) {
 		if (existing >= 0) return defs.map((d, i) => (i === existing ? def : d));
 		return [...defs, def];
 	});
+	// B4.5: a def edit can REMOVE params — prune edges into now-gone input
+	// sockets. Runs in the applier so every peer prunes identically (a
+	// deterministic invariant, never a broadcast).
+	pruneCustomNodeEdges(def.id);
+}
+
+/** B4.5: drop edges targeting a custom-node input whose def param no longer
+ * exists (deleted-handle edges would dangle + diverge). @param {string} defId */
+export function pruneCustomNodeEdges(defId) {
+	const def = get(customNodeDefs).find((d) => d.id === defId);
+	const valid = new Set((def?.params ?? []).filter((/** @type {any} */ p) => p.kind === 'range').map((/** @type {any} */ p) => p.key));
+	const instances = new Set(
+		get(flowNodes)
+			.filter((n) => n.data?.defId === defId)
+			.map((n) => n.id)
+	);
+	if (!instances.size) return;
+	flowEdges.update((edges) =>
+		edges.filter((e) => !(instances.has(e.target) && e.targetHandle && !valid.has(e.targetHandle)))
+	);
+}
+
+/** B4.5: snapshot post-pass — a stale peer's snapshot must not resurrect
+ * dangling custom-node edges (drift-heal safe). */
+export function pruneAllCustomNodeEdges() {
+	get(customNodeDefs).forEach((def) => pruneCustomNodeEdges(def.id));
 }
 
 /** @param {string} id */

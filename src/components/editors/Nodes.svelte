@@ -104,6 +104,8 @@
 	// selected node's props. Right-side, collapses like the palette.
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
 	let propsOpen = LS?.getItem('flowPropsOpen') === 'true';
+	// 4.3: right-panel tab — 'info' (selected node's params) | 'settings' (graph + name/note)
+	let propsTab = LS?.getItem('flowPropsTab') || 'settings';
 	// 179: the properties panel auto-reflows to the side OPPOSITE the palette so
 	// their divider tabs never overlap (the palette-side toggle used to hide it)
 	$: propsSide = paletteSide === 'right' ? 'left' : 'right';
@@ -536,6 +538,56 @@
 	</div>
 	{#if propsOpen}
 		<div id="flow-props" class="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-gray-800 p-2 text-xs text-gray-200" style="order: {propsSide === 'left' ? -1 : 5}">
+			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
+			     ⚙ = graph settings + node name/note (as before) -->
+			<div class="flex gap-1">
+				<button id="flow-tab-info" class="flex-1 rounded px-2 py-1 {propsTab === 'info' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					on:click={() => { propsTab = 'info'; LS?.setItem('flowPropsTab', 'info'); }}>ⓘ Params</button>
+				<button id="flow-tab-settings" class="flex-1 rounded px-2 py-1 {propsTab === 'settings' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					on:click={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}>⚙ Settings</button>
+			</div>
+			{#if propsTab === 'info'}
+				{#if selectedNode}
+					<p class="ui-section-label">{selectedNode.data?.label ?? selectedNode.type}</p>
+					{#if selectedNode.type === 'slider'}
+						<label class="flex items-center justify-between gap-2">Min
+							<input id="param-slider-min" class="ui-input w-16" type="number" value={selectedNode.data?.min ?? 0}
+								on:change={(e) => setNodeData(selectedNode.id, { min: +e.currentTarget.value || 0 })} /></label>
+						<label class="flex items-center justify-between gap-2">Max
+							<input id="param-slider-max" class="ui-input w-16" type="number" value={selectedNode.data?.max ?? 40}
+								on:change={(e) => setNodeData(selectedNode.id, { max: +e.currentTarget.value || 0 })} /></label>
+					{:else if selectedNode.type === 'switcher'}
+						{#each selectedNode.data?.items ?? ['cube', 'pyramid'] as item, i}
+							<div class="flex items-center gap-1">
+								<input class="ui-input flex-1" value={item}
+									on:change={(e) => {
+										const items = [...(selectedNode.data?.items ?? ['cube', 'pyramid'])];
+										items[i] = e.currentTarget.value;
+										setNodeData(selectedNode.id, { items });
+									}} />
+								<button class="rounded bg-gray-600 px-1.5 hover:bg-red-700" title="Remove item"
+									on:click={() => {
+										const items = (selectedNode.data?.items ?? ['cube', 'pyramid']).filter((_: any, x: number) => x !== i);
+										if (items.length) setNodeData(selectedNode.id, { items, index: 0, shape: items[0] });
+									}}>✕</button>
+							</div>
+						{/each}
+						<button id="param-switcher-add" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500"
+							on:click={() => {
+								const items = [...(selectedNode.data?.items ?? ['cube', 'pyramid']), 'item ' + ((selectedNode.data?.items?.length ?? 2) + 1)];
+								setNodeData(selectedNode.id, { items });
+							}}>＋ Add item</button>
+					{:else if selectedNode.type === 'number'}
+						<label class="flex items-center justify-between gap-2">Step
+							<input id="param-number-step" class="ui-input w-16" type="number" min="0" value={selectedNode.data?.step ?? 1}
+								on:change={(e) => setNodeData(selectedNode.id, { step: +e.currentTarget.value || 1 })} /></label>
+					{:else}
+						<p class="text-gray-400">This node's parameters live on its card.</p>
+					{/if}
+				{:else}
+					<p class="text-gray-400">Select a node to edit its parameters.</p>
+				{/if}
+			{:else}
 			{#if selectedNode}
 				<p class="ui-section-label">Node</p>
 				<label class="flex flex-col gap-1">Name
@@ -580,6 +632,7 @@
 						</span>
 					{/each}
 				</div>
+			{/if}
 			{/if}
 		</div>
 	{/if}

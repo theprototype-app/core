@@ -80,7 +80,10 @@ function applyColors() {
 			if (base) base.scale = [factor, factor, factor];
 			else object.scale.set(factor, factor, factor);
 		} else if (source.type === 'switcher' && object.geometry) {
-			const shape = source.data?.shape ?? 'cube';
+			// 4.4: items[index] drives the swap; legacy saved graphs fall back to shape
+			const items = Array.isArray(source.data?.items) && source.data.items.length ? source.data.items : ['cube', 'pyramid'];
+			const rawIdx = source.data?.index ?? Math.max(items.indexOf(source.data?.shape ?? 'cube'), 0);
+			const shape = items[Math.min(Math.max(num(rawIdx), 0), items.length - 1)] ?? 'cube';
 			if (object.userData.switcherShape !== shape) {
 				object.userData.switcherShape = shape;
 				object.geometry.dispose();
@@ -155,7 +158,8 @@ export const valueTypes = [
 	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter' // 134
 ];
 // existing input sources that also expose a value on their output handle
-const sourceValueTypes = ['slider', 'colorpicker', 'objectselector'];
+// (4.4: switcher outputs its selected index)
+const sourceValueTypes = ['slider', 'colorpicker', 'objectselector', 'switcher'];
 
 /** djb2 hash of a string -> uint32 (Random seed) @param {string} str */
 function hashString(str) {
@@ -233,8 +237,15 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 	switch (node.type) {
 		case 'number':
 			return num(d.value ?? 0);
-		case 'slider':
-			return num(d.value ?? 20);
+		case 'slider': {
+			// 4.4: adjustable min/max (data-seeded) — clamp so stale values can't escape
+			const lo = num(d.min ?? 0);
+			const hi = num(d.max ?? 40);
+			return Math.min(Math.max(num(d.value ?? 20), Math.min(lo, hi)), Math.max(lo, hi));
+		}
+		case 'switcher':
+			// 4.4: a real value source — the selected item INDEX (pairs with select/compare)
+			return num(d.index ?? Math.max((Array.isArray(d.items) ? d.items : ['cube', 'pyramid']).indexOf(d.shape ?? 'cube'), 0));
 		case 'toggle':
 			return !!d.on;
 		case 'vector3':

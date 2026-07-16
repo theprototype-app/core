@@ -8,8 +8,9 @@
 	export let id: string;
 	export let data;
 
-	const min = 0;
-	const max = 40;
+	// 4.4: min/max are adjustable node data (edited in the Flow ⓘ tab)
+	$: min = data.min ?? 0;
+	$: max = data.max ?? 40;
 	// One-way flow: render from data, write through setNodeData (replicates to peers).
 	// A local bind:value would get clobbered by the store round-trip.
 </script>
@@ -18,8 +19,8 @@
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<label class="flex w-full flex-col">
 		<span class="flex justify-between">
-			<span>scale</span>
-			<span>{((data.value ?? 20) / 20).toFixed(2)}×</span>
+			<span>value</span>
+			<span>{data.value ?? 20}</span>
 		</span>
 		<input
 			class="nodrag accent-[#ff4000]"

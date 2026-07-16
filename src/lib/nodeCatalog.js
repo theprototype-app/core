@@ -16,9 +16,9 @@ export const nodeCatalog = [
 	{
 		group: 'Input',
 		items: [
-			{ type: 'slider', label: 'Slider', defaults: { value: 20 } },
+			{ type: 'slider', label: 'Slider', defaults: { value: 20, min: 0, max: 40 } },
 			{ type: 'colorpicker', label: 'Color Picker', defaults: { color: '#ff4000' } },
-			{ type: 'switcher', label: 'Switcher', defaults: { shape: 'cube' } },
+			{ type: 'switcher', label: 'Switcher', defaults: { items: ['cube', 'pyramid'], index: 0, shape: 'cube' } },
 			// 133: value inputs — feed consumer node handles (deterministic)
 			{ type: 'number', label: 'Number', defaults: { value: 1, step: 1 } },
 			{ type: 'vector3', label: 'Vector3', defaults: { x: 0, y: 0, z: 0 } },

@@ -8,6 +8,7 @@
 const OUTPUT = {
 	number: 'number', slider: 'number', time: 'number', loop: 'number', timer: 'number',
 	random: 'number', math: 'number', distance: 'number', counter: 'number',
+	switcher: 'number', // 4.4: a real value source (the selected index)
 	vector3: 'vector3',
 	toggle: 'boolean', compare: 'boolean', gate: 'boolean', proximity: 'boolean',
 	colorpicker: 'color',

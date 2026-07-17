@@ -181,6 +181,22 @@
 		peer?.send({ type: 'nodecreate', node: serializeNode(newNode) });
 	}
 
+	// Touch has no HTML5 drag-and-drop, so a palette TAP adds the node at the flow
+	// pane's centre (the node can then be dragged on the canvas, which touch supports).
+	function addNodeAtCenter(type: string) {
+		const pane = document.querySelector('.svelte-flow');
+		const r = pane?.getBoundingClientRect();
+		const cx = r ? r.left + r.width / 2 : window.innerWidth / 2;
+		const cy = r ? r.top + r.height / 2 : window.innerHeight / 2;
+		const position = screenToFlowPosition({ x: cx, y: cy });
+		if (type.startsWith('customnode:')) {
+			const def = $customNodeDefs.find((d) => d.id === type.slice('customnode:'.length));
+			if (def) addNode('customnode', def.name, position, defDefaults(def));
+			return;
+		}
+		addNode(type, findNodeSpec(type)?.label ?? `${type} node`, position);
+	}
+
 	const onDragOver = (event: DragEvent) => {
 		event.preventDefault();
 		if (event.dataTransfer) {
@@ -447,7 +463,7 @@
 <div class="flex h-full w-full">
 	{#if paletteOpen}
 		<div class="h-full w-40 shrink-0 overflow-y-auto" style="order: {paletteSide === 'right' ? 3 : 1}">
-			<Sidebar />
+			<Sidebar onPick={addNodeAtCenter} />
 		</div>
 	{/if}
 	<!-- palette collapse/side controls: notebook-tab buttons on the divider (82) -->

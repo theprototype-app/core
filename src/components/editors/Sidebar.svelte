@@ -3,6 +3,10 @@
 	import { moduleNodeGroups } from '$lib/moduleSDK';
 	import { customNodeDefs } from '../../stores/flowStore';
 
+	// tap/click adds the node (touch has no HTML5 drag); Nodes.svelte places it at
+	// the pane centre. A real drag fires no click, so desktop drag is unaffected.
+	export let onPick: (type: string) => void = () => {};
+
 	const onDragStart = (event: DragEvent, nodeType: string) => {
 		if (!event.dataTransfer) {
 			return null;
@@ -45,14 +49,16 @@
 		placeholder="Filter nodes…"
 		bind:value={filter}
 	/>
-	<p class="text-center text-xs italic text-gray-400">Drag a node to the canvas</p>
+	<p class="text-center text-xs italic text-gray-400">Drag a node to the canvas, or tap to add it</p>
 	{#each catalog as group}
 		<p class="mt-1 text-xs font-semibold uppercase text-gray-400">{group.group}</p>
 		{#each group.items as node}
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
 			<div
 				class="cursor-grab rounded-2xl border border-solid border-gray-200 bg-white/70 shadow-[0_7px_9px_0_rgba(0,0,0,0.02)]"
 				role="listitem"
 				on:dragstart={(event) => onDragStart(event, node.type)}
+				on:click={() => onPick(node.type)}
 				draggable={true}
 			>
 				<div

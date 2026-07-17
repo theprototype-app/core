@@ -140,6 +140,12 @@ export const viewportMenu = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const addMenu = writable(null);
 
+// Scene registers its context-menu opener here so touch/HUD (the mobile "+"
+// button, a canvas long-press) can open the same viewport/object menu without a
+// right-click. Signature: (clientX, clientY, forceEmpty?) => void.
+/** @type {import('svelte/store').Writable<((x: number, y: number, forceEmpty?: boolean) => void) | null>} */
+export const viewportMenuOpener = writable(null);
+
 // viewport object SEARCH popover (125): { x, y } | null — find + focus a scene
 // object. Opt-in via a setting; the viewport menu entry hides when off.
 /** @type {import('svelte/store').Writable<any>} */

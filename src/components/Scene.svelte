@@ -5,7 +5,7 @@
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand, useHand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
-	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu } from '../stores/appStore';
+	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
@@ -542,24 +542,20 @@
 		// right-click TAP opens the Add/object menu (77). Opening happens on the
 		// contextmenu event (which trails pointerup) — opening on pointerup lets
 		// that trailing event hit the fresh menu backdrop and close it instantly.
-		const onContextMenu = (event) => {
-			event.preventDefault(); // the browser menu never belongs on the canvas
-			const down = rightDown;
-			rightDown = null;
-			if (!down) return;
+		// Shared opener for the viewport/object context menu — reused by right-click,
+		// a touch long-press, and the mobile "+" HUD button (via viewportMenuOpener).
+		// forceEmpty skips the object hit so "+" always opens the create menu.
+		const openViewportMenuAt = (clientX = 0, clientY = 0, forceEmpty = false) => {
 			if ($isLocked || $isVRMode || $specatorMode || $drawMode || $editingObject || $faceEditObject || $measureMode) return;
-			// only a short stationary tap opens menus — right-DRAG keeps panning
-			const moved = Math.hypot(event.clientX - down[0], event.clientY - down[1]);
-			if (moved > 5 || Date.now() - down[2] > 400) return;
-			setRayFromEvent(event);
+			setRayFromEvent({ clientX, clientY });
 			const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
-			const top = hits.length ? topLevelObjectOf(hits[0].object) : null;
+			const top = !forceEmpty && hits.length ? topLevelObjectOf(hits[0].object) : null;
 			if (top) {
 				// an object under the cursor gets its regular context menu; the
 				// hit point rides along so Add note pins exactly there (87)
 				$objectContextMenu = {
-					x: event.clientX,
-					y: event.clientY,
+					x: clientX,
+					y: clientY,
 					uuid: top.uuid,
 					point: hits[0].point.toArray(),
 					locked: !!$lockedObjects.find((lock) => lock[1] === top.uuid)
@@ -572,9 +568,58 @@
 				(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
 					? planePoint
 					: new THREE.Vector3());
-			viewportMenu.set({ x: event.clientX, y: event.clientY, point: point.toArray() });
+			viewportMenu.set({ x: clientX, y: clientY, point: point.toArray() });
+		};
+		// HUD/touch entry point (mobile "+" button, no right-click available)
+		viewportMenuOpener.set(openViewportMenuAt);
+
+		const onContextMenu = (event) => {
+			event.preventDefault(); // the browser menu never belongs on the canvas
+			const down = rightDown;
+			rightDown = null;
+			if (!down) return;
+			// only a short stationary tap opens menus — right-DRAG keeps panning
+			const moved = Math.hypot(event.clientX - down[0], event.clientY - down[1]);
+			if (moved > 5 || Date.now() - down[2] > 400) return;
+			openViewportMenuAt(event.clientX, event.clientY);
 		};
 		element.addEventListener('contextmenu', onContextMenu);
+
+		// touch long-press = right-click (touch has no contextmenu). A stationary
+		// ~500ms hold opens the same menu at the touch point.
+		let holdTimer = 0; // 0 = no pending long-press (setTimeout returns a number)
+		let holdX = 0;
+		let holdY = 0;
+		const clearTouchHold = () => {
+			if (holdTimer) clearTimeout(holdTimer);
+			holdTimer = 0;
+		};
+		// inline handlers so `e` is contextually typed (TouchEvent) off element's
+		// HTMLCanvasElement.addEventListener overload — a named const wouldn't be
+		element.addEventListener(
+			'touchstart',
+			(e) => {
+				if (e.touches.length !== 1) return clearTouchHold();
+				holdX = e.touches[0].clientX;
+				holdY = e.touches[0].clientY;
+				holdTimer = setTimeout(() => {
+					openViewportMenuAt(holdX, holdY);
+					holdTimer = 0;
+				}, 500);
+			},
+			{ passive: true }
+		);
+		element.addEventListener(
+			'touchmove',
+			(e) => {
+				if (!holdTimer) return;
+				const t = e.touches[0];
+				if (Math.hypot(t.clientX - holdX, t.clientY - holdY) > 10) clearTouchHold();
+			},
+			{ passive: true }
+		);
+		element.addEventListener('touchend', clearTouchHold);
+		element.addEventListener('touchcancel', clearTouchHold);
 		setDrawScene(scene);
 
 		// VR: trigger press activates a quick-menu tile, otherwise selects

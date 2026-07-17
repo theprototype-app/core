@@ -6,14 +6,12 @@
 	import { simulating, remoteSimulating, toggleSimulation } from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
-	import { focusObject, duplicateObject, alignToGround, requestDeleteSelection } from '$lib/objectActions';
-	import { editingObject, enterEditMode, exitEditMode } from '$lib/meshEdit';
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
-	import { addAnnotation } from '$lib/annotationsHandler';
 	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
 	import { viewportMenu, objectSearch, objectSearchEnabled } from '../../stores/appStore';
 	import { buildAddChildren } from '$lib/addObjects';
+	import { buildObjectMenuItems } from '$lib/objectMenu';
 
 	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
 	// the clicked ground point; an object under the cursor → its own context
@@ -68,47 +66,14 @@
 		},
 		{ label: 'Undo', disabled: !$canUndo, tooltip: 'Ctrl+Z', action: undo },
 		{ label: 'Redo', disabled: !$canRedo, tooltip: 'Ctrl+Y', action: redo },
-		// 124: everything that acts on the CURRENT SELECTION lives in one
-		// submenu named after the object (only shown when something is selected
-		// or a mesh is being edited)
-		...($selectedObject?.uuid || $editingObject
+		// 124: everything that acts on the CURRENT SELECTION lives in one submenu.
+		// Fixed "Selected" label (object names get very long) + the SAME items as the
+		// direct object right-click menu (buildObjectMenuItems), so the two are in parity.
+		...($selectedObject?.uuid
 			? [
 					{
-						label: (($selectedObject?.name || $selectedObject?.type || 'Selected') + ' ▸'),
-						children: [
-							{ label: 'Focus', tooltip: 'F', action: () => focusObject() },
-							{
-								label: 'Duplicate',
-								disabled: !$selectedObject?.uuid,
-								tooltip: 'Ctrl+D',
-								action: () => duplicateObject()
-							},
-							{
-								label: 'Align to ground',
-								disabled: !$selectedObject?.uuid,
-								tooltip: 'Drop the selected object onto the surface below (undoable)',
-								action: () => alignToGround()
-							},
-							{
-								label: $editingObject ? 'Finish mesh edit' : 'Edit mesh',
-								disabled: !$editingObject && !$selectedObject?.geometry?.attributes?.position,
-								tooltip: $editingObject ? 'Esc' : 'Edit the vertices/faces of the selected mesh',
-								action: () => ($editingObject ? exitEditMode() : enterEditMode($selectedObject.uuid))
-							},
-							{
-								label: 'Add note',
-								disabled: !$selectedObject?.uuid,
-								tooltip: 'Pin a synced note to the selected object',
-								action: () => addAnnotation()
-							},
-							{
-								label: 'Delete',
-								danger: true,
-								disabled: !$selectedObject?.uuid,
-								tooltip: 'Del — a group asks first',
-								action: () => requestDeleteSelection()
-							}
-						]
+						label: 'Selected ▸',
+						children: buildObjectMenuItems($selectedObject.uuid)
 					}
 				]
 			: []),

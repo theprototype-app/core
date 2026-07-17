@@ -13,11 +13,13 @@
 	import { requestControl, nameOf } from '$lib/lockControl';
 	import { savePrefab } from '$lib/prefabs';
 	import { sendPing } from '$lib/ping';
+	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import * as THREE from 'three';
 	import { setContext } from 'svelte';
 	import { writable } from 'svelte/store';
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
+	import MobileAddButton from './MobileAddButton.svelte';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
@@ -287,7 +289,8 @@
 				JSON.stringify({ left, top, width: node.offsetWidth, height: node.offsetHeight })
 			);
 
-		node.addEventListener('mousedown', (e) => {
+		// pointer (not mouse) events so touch can move/resize the window on mobile
+		node.addEventListener('pointerdown', (e) => {
 			if (e.target.classList.contains('resize-handle')) {
 				resizing = true;
 				startX = e.clientX;
@@ -304,7 +307,7 @@
 			}
 		});
 
-		window.addEventListener('mousemove', (e) => {
+		window.addEventListener('pointermove', (e) => {
 			if (moving) {
 				left += e.movementX;
 				top += e.movementY;
@@ -323,7 +326,7 @@
 			}
 		});
 
-		window.addEventListener('mouseup', () => {
+		window.addEventListener('pointerup', () => {
 			if (moving || resizing) persist();
 			moving = false;
 			resizing = false;
@@ -338,67 +341,10 @@
 		});
 	}
 
-	// Right-click menu for object list rows (Objects.svelte sets $objectContextMenu)
+	// Right-click menu for objects (Objects.svelte rows + the viewport) — the item
+	// set is shared with ViewportMenu's "Selected" submenu so both stay in parity.
 	function objectMenuItems(menu) {
-		const object = $objectsGroup?.getObjectByProperty('uuid', menu.uuid);
-		const muted = $mutedFlowObjects.includes(menu.uuid);
-		const lockHolder = $lockedObjects.find((lock) => lock[1] === menu.uuid)?.[0];
-		const lockedTooltip = menu.locked ? 'Locked by ' + nameOf(lockHolder) : '';
-		return [
-			...(menu.locked
-				? [
-						{
-							label: 'Request control',
-							tooltip: 'Ask ' + nameOf(lockHolder) + ' to hand the object over',
-							action: () => requestControl(menu.uuid)
-						}
-					]
-				: []),
-			{ label: 'Focus camera', action: () => focusObject(menu.uuid) },
-			{ label: 'Duplicate', action: () => duplicateObject(menu.uuid) },
-			{
-				label: 'Save as prefab',
-				tooltip: 'Reusable copy in your Library (local, instances replicate)',
-				action: () => savePrefab(menu.uuid)
-			},
-			{
-				label: 'Edit mesh',
-				disabled: menu.locked || !object?.geometry?.attributes?.position,
-				tooltip: menu.locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
-				action: () => enterEditMode(menu.uuid)
-			},
-			{ label: 'Add note', tooltip: 'Pin a synced note exactly where you pointed', action: () => addAnnotation(menu.uuid, menu.point ?? null) },
-			{
-				label: 'Ping this object',
-				tooltip: 'Everyone sees a pulse here (Alt+click pings anywhere)',
-				action: () => {
-					if (!object) return;
-					const box = new THREE.Box3().setFromObject(object);
-					const top = box.getCenter(new THREE.Vector3());
-					top.y = box.max.y;
-					sendPing(top);
-				}
-			},
-			{
-				label: 'Rename',
-				disabled: menu.locked,
-				tooltip: lockedTooltip,
-				action: () => renamingObject.set(menu.uuid)
-			},
-			{
-				label: object?.visible === false ? 'Show' : 'Hide',
-				disabled: menu.locked,
-				tooltip: lockedTooltip,
-				action: () => toggleObjectVisibility(menu.uuid)
-			},
-			{
-				label: muted ? 'Enable flow effects' : 'Disable flow effects',
-				action: () =>
-					mutedFlowObjects.update((list) =>
-						muted ? list.filter((uuid) => uuid !== menu.uuid) : [...list, menu.uuid]
-					)
-			}
-		];
+		return buildObjectMenuItems(menu.uuid, { point: menu.point ?? null, locked: menu.locked });
 	}
 
 	function checkPlay() {
@@ -482,6 +428,10 @@
 >
 	<i class="fas fa-message text-white"></i>
 </button>
+
+<!-- mobile "+" (bottom-left): opens the same create/context menu as a right-click
+     (own component so it can use onclick without mixing with this file's on:) -->
+<MobileAddButton />
 
 <p
 	class={classActive + ' rounded-full bg-primary-600 font-medium dark:focus:ring-primary-800'}

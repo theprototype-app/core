@@ -40,14 +40,14 @@ h.run(async () => {
 	await openViewportMenu();
 	await A.page.waitForTimeout(300);
 	const subgroupPresent = await A.page.evaluate(() =>
-		[...document.querySelectorAll('[role="menuitem"]')].some((e) => e.textContent.trim().startsWith('Crate'))
+		[...document.querySelectorAll('[role="menuitem"]')].some((e) => e.textContent.trim().startsWith('Selected'))
 	);
-	h.check(subgroupPresent, 'selection ops group under a "Crate ▸" submenu');
+	h.check(subgroupPresent, 'selection ops group under a "Selected ▸" submenu (124: fixed label)');
 
-	// hover the Crate subgroup → its children are the selection ops, on screen
+	// hover the Selected subgroup → its children are the selection ops, on screen
 	const subChildren = await A.page.evaluate(async () => {
 		const row = [...document.querySelectorAll('[role="menuitem"]')].find((e) =>
-			e.textContent.trim().startsWith('Crate')
+			e.textContent.trim().startsWith('Selected')
 		);
 		row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 200));

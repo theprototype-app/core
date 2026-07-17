@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { peers, username } from '../stores/appStore';
+import { objectsGroup } from '../stores/sceneStore';
 import { peerColor } from './lockControl';
 import { playPing } from './pingAudio';
 
@@ -54,6 +55,18 @@ export function sendPing(position) {
 	};
 	addPing(ping);
 	if (peer) peer.send({ type: 'ping', id: ping.id, peerId: ping.peerId, name, pos, color, sound });
+}
+
+/** Ping the top-center of an object by uuid (used by the object context menu).
+ * Lives here so the shared object-menu builder needs no THREE import. @param {string} uuid */
+export function pingObject(uuid) {
+	const group = /** @type {any} */ (get(objectsGroup));
+	const object = group?.getObjectByProperty('uuid', uuid);
+	if (!object) return;
+	const box = new THREE.Box3().setFromObject(object);
+	const top = box.getCenter(new THREE.Vector3());
+	top.y = box.max.y;
+	sendPing(top);
 }
 
 /** Remote ping @param {any} data */

@@ -70,7 +70,8 @@ loadable play content. Everything a user does must be visible to connected peers
   panels: Menu/ObjectsPanel/PropertiesPanel/ColorPalette/PrefabsPanel/Keyboard/
   ChatPanel/Stats — named `vr<x>-*` control meshes, all grip-grabbable),
   scene-overlay components (PingMarkers/PathWaypoints/LockHighlights), shared
-  `ContextMenu.svelte` (NEVER scrolls; flips via left/right/top/bottom — no transform),
+  `ContextMenu.svelte` (caps to viewport + scrolls vertically when tall, never
+  horizontally; per-submenu flip via left/right/top/bottom — no transform),
   `components/shared/WindowShell.svelte` (197: reusable window CHROME — collapsible/
   resizable/side-switchable primary sidebar + a multi-mode secondary panel that
   reflows opposite it; snippet slots topbar/primary/main/secondary; chrome-only,
@@ -178,9 +179,12 @@ loadable play content. Everything a user does must be visible to connected peers
   here-string can split it into a bogus git pathspec; no embedded double quotes either.
 - CSS `transform` makes an element the containing block for `position: fixed`
   descendants — flipping the context menu with a transform mis-placed its fixed
-  submenus and grew scrollbars. Menus/popovers that host fixed children flip with
-  left/right/top/bottom only; no context menu scrolls (node-search results is the one
-  sanctioned scroll box).
+  submenus. Menus/popovers that host fixed children flip with left/right/top/bottom
+  only, never a transform. Context menus DO now cap to the viewport + scroll
+  VERTICALLY (visible slim bar, `.ctx-scroll`) when too tall, but never horizontally
+  (`overflow-x: hidden`); each submenu re-decides its flip locally in `openSubmenu`
+  (not inherited from the root click) so deep chains stay on-screen. The fixed
+  submenus escape the root's scroll box, so a scrolling root never grows an x-bar.
 - THREE color management: `setHSL()` works in the LINEAR working space — pass
   `THREE.SRGBColorSpace` or lightness 0.5 hex-round-trips to `#bcbcbc`. Canvas
   ImageData palettes: write bytes straight from the sRGB hex (round-tripping through

@@ -18,11 +18,18 @@
 
 	function openSubmenu(e: MouseEvent, item: any) {
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		const vw = typeof window !== 'undefined' ? window.innerWidth : 0;
-		const vh = typeof window !== 'undefined' ? window.innerHeight : 0;
+		const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+		const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+		// decide the flip PER submenu (not inherited from the root click) so deep
+		// chains re-flip instead of marching off the edge; cap height + scroll when tall
+		const EST_W = 240; // submenu width estimate (min-w-36 + longer labels)
+		const openLeft = rect.right + EST_W > vw;
+		const openUp = rect.top > vh - rect.top; // more room above than below
 		subStyle =
-			(flipX ? `right: ${vw - rect.left}px;` : `left: ${rect.right}px;`) +
-			(flipY ? `bottom: ${vh - rect.bottom}px;` : `top: ${rect.top}px;`);
+			(openLeft ? `right: ${vw - rect.left}px;` : `left: ${rect.right}px;`) +
+			(openUp
+				? `bottom: ${vh - rect.bottom}px; max-height: ${rect.bottom - 8}px;`
+				: `top: ${rect.top}px; max-height: ${vh - rect.top - 8}px;`);
 		openSub = item.label;
 	}
 
@@ -41,7 +48,7 @@
 			</span>
 			{#if openSub === item.label}
 				<div
-					class="fixed min-w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
+					class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
 					style="{subStyle} z-index: 1001;"
 				>
 					<svelte:self items={item.children} {onrun} {flipX} {flipY} />

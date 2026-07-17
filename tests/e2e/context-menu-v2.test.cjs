@@ -66,24 +66,23 @@ h.run(async () => {
 	);
 	h.check(subChildren.onScreen, 'the submenu stays on screen');
 
-	// --- no scrollbars anywhere on the context menu ---
+	// --- roadmap #9: a too-tall menu MAY now scroll vertically (capped to the
+	// viewport), but NEVER horizontally, and never via a transform ---
 	const scroll = await A.page.evaluate(() => {
 		const root = document.querySelector('[role="menu"]');
 		const rs = getComputedStyle(root);
-		// find an open submenu (Crate's, still hovered)
 		const sub = [...document.querySelectorAll('div')].find(
 			(el) => getComputedStyle(el).position === 'fixed' && el.textContent?.includes('Focus') && !el.getAttribute('role')
 		);
 		const ss = sub ? getComputedStyle(sub) : null;
 		return {
-			rootNoScroll: rs.overflowX === 'visible' && rs.overflowY === 'visible',
-			rootNoBar: root.scrollHeight <= root.clientHeight + 1,
-			subNoScroll: ss ? ss.overflowY === 'visible' : false,
+			rootNoXScroll: rs.overflowX === 'hidden',
+			subNoXScroll: ss ? ss.overflowX === 'hidden' : true,
 			rootHasTransform: rs.transform !== 'none'
 		};
 	});
-	h.check(scroll.rootNoScroll && scroll.rootNoBar, 'the root menu never scrolls');
-	h.check(scroll.subNoScroll, 'submenus never scroll');
+	h.check(scroll.rootNoXScroll, 'the menu never scrolls horizontally');
+	h.check(scroll.subNoXScroll, 'submenus never scroll horizontally');
 	h.check(!scroll.rootHasTransform, 'the root uses no transform (fixed submenus stay viewport-anchored)');
 
 	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));

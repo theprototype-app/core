@@ -3,6 +3,7 @@
 	// an undocked floating window (same-context portal — stores, peers and VR
 	// keep working because nothing leaves the page). Both states persist.
 	import { flowGraphClose } from '../stores/appStore.js';
+	import { onMount } from 'svelte';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import Nodes from './editors/Nodes.svelte';
 	import ScriptPanel from './editors/ScriptPanel.svelte';
@@ -21,12 +22,27 @@
 	let docked = $state(true);
 	let winW = $state(760);
 	let winH = $state(480);
+	// keep the floating window within the viewport — a persisted 760px width used to
+	// push the header's Dock/X buttons off-screen on a narrow (mobile) viewport, and
+	// there was no re-clamp on load or window resize
+	function clampWin() {
+		if (typeof window === 'undefined') return;
+		winW = Math.min(winW, window.innerWidth - 8);
+		winH = Math.min(winH, Math.round(window.innerHeight * 0.9));
+	}
 	if (typeof localStorage !== 'undefined') {
 		height = clampH(parseInt(localStorage.getItem('flowHeight') ?? '320'));
 		docked = localStorage.getItem('flowDocked') !== 'false';
 		winW = parseInt(localStorage.getItem('flowWinW') ?? '760') || 760;
 		winH = parseInt(localStorage.getItem('flowWinH') ?? '480') || 480;
+		clampWin();
 	}
+	onMount(() => {
+		clampWin();
+		const onResize = () => clampWin();
+		window.addEventListener('resize', onResize);
+		return () => window.removeEventListener('resize', onResize);
+	});
 
 	function setDocked(v: boolean) {
 		docked = v;
@@ -69,8 +85,8 @@
 	}
 	function doWinResize(e: any) {
 		if (!winResizing) return;
-		winW = Math.min(Math.max(420, winW + e.movementX), window.innerWidth);
-		winH = Math.min(Math.max(300, winH + e.movementY), window.innerHeight);
+		winW = Math.min(Math.max(280, winW + e.movementX), window.innerWidth - 8);
+		winH = Math.min(Math.max(240, winH + e.movementY), window.innerHeight);
 	}
 	function endWinResize(e: any) {
 		if (!winResizing) return;

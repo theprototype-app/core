@@ -4,7 +4,8 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
-import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore.js';
+import { get } from 'svelte/store';
+import { objectsGroup, TControls, selectedObject, selectedObjects } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
 import { recordObjectPresence } from '$lib/history';
 import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
@@ -57,25 +58,38 @@ async function saveTpScene() {
 	window.URL.revokeObjectURL(url);
 }
 
-export function save(format) {
-	console.log('Saving...');
-	if (format === 'tpscene') return void saveTpScene(); // B3: Scene bundle path
-	//This exports entire scene with all objects
+/** The selected objects (union of the primary selection + the multi-select set),
+ * resolved to live Object3D roots for export. @returns {any[]} */
+function selectedRoots() {
+	const uuids = new Set(get(selectedObjects) || []);
+	const primary = get(selectedObject);
+	if (primary && primary.uuid) uuids.add(primary.uuid);
+	const roots = [];
+	for (const uuid of uuids) {
+		const obj = sceneObjects?.getObjectByProperty('uuid', uuid);
+		if (obj) roots.push(obj);
+	}
+	return roots;
+}
+
+/** Run the GLTFExporter over a root (or array of roots) and download it.
+ * @param {string} format @param {any} input */
+function exportGltf(format, input) {
 	// saves store animation BASE poses, not the current swing (88)
 	const restore = parkAnimatedAtBase();
-	const exporter = new GLTFExporter({outputEncoding: format});
+	const exporter = new GLTFExporter();
 	exporter.parse(
-		sceneObjects,
+		input,
 		function (result) {
 			restore();
-			var blob = new Blob([JSON.stringify(result)], { type: 'application/json' });
-			let a = document.createElement('a');
+			const blob = new Blob([JSON.stringify(result)], { type: 'application/json' });
+			const a = document.createElement('a');
 			document.body.appendChild(a);
-			a.style = 'display: none';
-			let url = window.URL.createObjectURL(blob);
+			a.style.display = 'none';
+			const url = window.URL.createObjectURL(blob);
 			a.href = url;
-			let date = new Date().toISOString().replace(/[T:.Z]/g, '-');
-			a.download = `ThePrototype-${date}UTC.${format.toLocaleLowerCase()}`;
+			const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
+			a.download = `ThePrototype-${date}UTC.${String(format).toLowerCase()}`;
 			a.click();
 			window.URL.revokeObjectURL(url);
 		},
@@ -84,6 +98,27 @@ export function save(format) {
 			console.log(error);
 		}
 	);
+}
+
+export function save(format) {
+	console.log('Saving...');
+	if (format === 'tpscene') return void saveTpScene(); // B3: Scene bundle path
+	// B1.2: GLTF exports the SELECTION (it used to export the whole scene). No
+	// selection -> warn + offer the whole scene. JSON keeps its whole-scene behavior.
+	if (String(format).toLowerCase() === 'gltf') {
+		const roots = selectedRoots();
+		if (roots.length) {
+			exportGltf(format, roots);
+			showToast(roots.length === 1 ? 'Exported 1 selected object (GLTF)' : `Exported ${roots.length} selected objects (GLTF)`);
+		} else {
+			showToast('Nothing selected — export the entire scene?', [
+				{ label: 'Export all', action: () => exportGltf(format, sceneObjects) }
+			]);
+		}
+		return;
+	}
+	// JSON (legacy, whole scene)
+	exportGltf(format, sceneObjects);
 }
 
 export async function loadFile(url, name) {

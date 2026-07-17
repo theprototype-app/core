@@ -205,10 +205,7 @@
 		)
 	);
 	loadPacks();
-	async function onImportPackZip(e: Event) {
-		const file = (e.target as HTMLInputElement).files?.[0];
-		(e.target as HTMLInputElement).value = '';
-		if (!file) return;
+	async function importPackZipFile(file: File) {
 		try {
 			const pack = await importPackZip(file);
 			packsExpanded = true;
@@ -217,6 +214,11 @@
 		} catch (err: any) {
 			showToast('Pack import failed: ' + (err?.message ?? 'bad .zip'));
 		}
+	}
+	async function onImportPackZip(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		(e.target as HTMLInputElement).value = '';
+		if (file) importPackZipFile(file);
 	}
 	// pack currently open (for the Properties attribution panel)
 	let openPack = $derived(
@@ -641,8 +643,23 @@
 		// internal payloads are handled by the row/card targets
 		if (canAccept(e)) return;
 		e.preventDefault();
-		if (e.dataTransfer?.files?.length)
-			importFiles(e.dataTransfer.files, $activeFolder === 'prefabs' ? null : $activeFolder);
+		const files = e.dataTransfer?.files;
+		if (!files?.length) return;
+		const folder = $activeFolder;
+		// B1.1: the Packs view accepts ONLY pack .zip files — anything else would
+		// import with a bogus folderId and orphan (invisible). Mirror the Import path.
+		if (folder === 'packs' || (typeof folder === 'string' && folder.startsWith('pack:'))) {
+			const zip = Array.from(files).find((f) => f.name.toLowerCase().endsWith('.zip'));
+			if (zip) importPackZipFile(zip);
+			else showToast('Only pack .zip files can be dropped into Packs');
+			return;
+		}
+		// the derived Scene view is read-only — don't orphan a drop here
+		if (typeof folder === 'string' && folder.startsWith('scene')) {
+			showToast('This view is read-only — drop files into a Library folder');
+			return;
+		}
+		importFiles(files, folder === 'prefabs' ? null : folder);
 	}
 
 	function onItemDragStart(e: DragEvent, item: any) {

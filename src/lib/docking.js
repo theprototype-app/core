@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { inspectorClose, libraryClose } from '../stores/appStore';
+import { inspectorClose, libraryClose, closeMenu } from '../stores/appStore';
 
 // Docking lite (phase 81L). Drag a window near the left/right screen edge to
 // dock it as a full-height panel (--z-drawer tier); drag its header away to
@@ -33,6 +33,18 @@ function widthOf(key) {
 
 function drawerOpen() {
 	return get(inspectorClose) === false || get(libraryClose) === false;
+}
+
+// A LEFT-docked panel starts at x:0, but the app-sidebar floats above it (z-hud >
+// z-drawer), covering the panel's topbar (dock/close) — worst on narrow screens
+// where the panel is thin. When the menu is open, inset the panel past the sidebar
+// so its buttons stay reachable (mirrors the right-side drawer offset).
+function leftInset() {
+	if (get(closeMenu) !== false) return 0; // menu closed = no sidebar
+	const el = typeof document !== 'undefined' ? document.querySelector('.app-sidebar') : null;
+	// fallback while the sidebar hasn't rendered yet (store fires before the DOM
+	// updates); the deferred re-apply below refines it to the exact width
+	return el ? Math.round(el.getBoundingClientRect().right) + 8 : 228;
 }
 
 /** @param {string} key */
@@ -70,7 +82,7 @@ function apply(key) {
 	node.style.maxHeight = 'none';
 	node.style.zIndex = '30'; // --z-drawer tier
 	const offset = side === 'right' && drawerOpen() ? DRAWER_WIDTH : 0;
-	node.style.left = side === 'left' ? '0px' : window.innerWidth - width - offset + 'px';
+	node.style.left = side === 'left' ? leftInset() + 'px' : window.innerWidth - width - offset + 'px';
 	node.style.right = 'auto';
 	// inner-edge resize handle
 	if (!entry.handle) {
@@ -185,6 +197,12 @@ export function dockable(node, { key }) {
 		// right-docked panels give way to the Inspector/Library drawer
 		inspectorClose.subscribe(() => applyAll());
 		libraryClose.subscribe(() => applyAll());
+		// left dock insets past the sidebar — re-apply next frame too, since the
+		// sidebar mounts AFTER the store fires (so it can be measured)
+		closeMenu.subscribe(() => {
+			applyAll();
+			requestAnimationFrame(applyAll);
+		});
 		window.addEventListener('resize', applyAll);
 	}
 	if (sideOf(key)) apply(key); // restore a persisted dock

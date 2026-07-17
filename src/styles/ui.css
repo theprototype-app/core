@@ -21,6 +21,10 @@
 	   still open over the modal. */
 	--z-modal: 1100;
 	--z-toast: 1200;
+	/* the logo/burger menu is the TOP-most persistent chrome — above Connect (300)
+	   and toasts (1200) so it is never opened "behind" them. Modals launched from it
+	   close the menu, so they don't need to out-rank it. */
+	--z-menu: 1300;
 }
 
 /* Flowbite hardcodes the modal dialog at z-50 and its backdrop at z-40 — both

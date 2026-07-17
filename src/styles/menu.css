@@ -2,7 +2,7 @@
 
 .burger {
 	position: absolute;
-	z-index: var(--z-hud);
+	z-index: var(--z-menu); /* the logo menu opens above Connect + toasts */
 }
 
 /* hamburger menu — positioning only: typography belongs to the drawer

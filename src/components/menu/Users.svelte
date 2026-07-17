@@ -117,7 +117,7 @@
 	 }
 </script>
 
-<div style="position: fixed; right: 0px; z-index: 997;">
+<div class="top-right-chrome" style="position: fixed; right: 0px; z-index: 997;">
 	<div class="flex" style=" position: absolute; top: 15px; right: 100px; z-index: 997;">
 {#if $userdata && $userdata.length > 1}
 	<div class="relative">
@@ -329,3 +329,22 @@
 	</div>
 	<br />
 </Modal>
+
+<style>
+	/* narrow: the connect bar owns the top row, so the peers/profile chrome drops
+	   to a second row below it (shifting the fixed wrapper moves its children) */
+	@media (max-width: 640px) {
+		.top-right-chrome {
+			top: 58px;
+		}
+		/* pin the peers list to the viewport so it can't spill off the left edge
+		   when the trigger sits near a narrow screen's right edge */
+		#peers-popover {
+			position: fixed;
+			top: 122px;
+			right: 8px;
+			left: auto;
+			max-width: calc(100vw - 16px);
+		}
+	}
+</style>

@@ -45,7 +45,7 @@ toastStatus = false;
 <!-- pointer-events: none lets clicks pass through the (invisible) container area;
      each toast re-enables them for itself -->
 <div class="my-4 toasts-container"
-style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
+style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
 >
 {#if showToast}
 {#if $loadingcount > 0}
@@ -317,5 +317,16 @@ style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: tr
     /* toasts stay clickable while the empty container area passes clicks through */
     :global(.toasts-container > div) {
         pointer-events: auto;
+    }
+    .toasts-container {
+        position: absolute;
+        top: 65px;
+    }
+    /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
+       toasts below both */
+    @media (max-width: 640px) {
+        .toasts-container {
+            top: 124px;
+        }
     }
 </style>

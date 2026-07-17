@@ -375,7 +375,7 @@
 <BottomNav
 	position="absolute"
 	navType="application"
-	classOuter="h-10 w-70 bg-white rounded-full dark:bg-gray-700 z-[45]"
+	classOuter="h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 z-[45]"
 	classInner="grid-cols-7"
 >
 	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={() => setTransformMode('translate')}>

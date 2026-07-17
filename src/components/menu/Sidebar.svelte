@@ -31,6 +31,20 @@
 	let saveFormat = $state(initFormat === 'json' && !initShowJson ? 'tpscene' : initFormat);
 	let showJson = $state(initShowJson);
 	let exportSettingsOpen = $state(false);
+	// export-settings popup is anchored BELOW-RIGHT of the cog (so its relation is
+	// clear), clamped to the viewport when there isn't room
+	let exportPos = $state({ top: 0, left: 0 });
+	function openExportSettings(e: MouseEvent) {
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const w = 256;
+		const h = 240;
+		let left = r.left; // top-left of the popup aligns under the cog, extending right
+		let top = r.bottom + 6;
+		left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+		top = Math.max(8, Math.min(top, window.innerHeight - h - 8));
+		exportPos = { top, left };
+		exportSettingsOpen = true;
+	}
 	let tpAssets = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneAssets') !== 'false');
 	let tpPacks = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpscenePacks') === 'true');
 	let tpFlow = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneFlow') !== 'false');
@@ -65,7 +79,7 @@
 	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur transition-transform hover:scale-105 {$closeMenu
 		? 'border-gray-700/60'
 		: 'border-primary-500 ring-2 ring-primary-500/50'}"
-	style="height: 48px; width: 48px; top: 8px; left: 8px;"
+	style="height: 48px; width: 48px;"
 	title={$closeMenu ? 'Open menu' : 'Close menu'}
 	onclick={() => closeMenu.update((value) => !value)}
 >
@@ -105,7 +119,7 @@
 			{#if showJson}
 				<button class="side-seg {saveFormat === 'json' ? 'on' : ''}" onclick={() => pickFormat('json')}>JSON</button>
 			{/if}
-			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={() => (exportSettingsOpen = true)}>⚙</button>
+			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}>⚙</button>
 		</div>
 
 		<div class="side-div"></div>
@@ -118,17 +132,17 @@
 		<button class="side-row" onclick={clearScene}>
 			<span class="side-ico">🗑️</span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
 		</button>
-		<button id="open-modules-manager" class="side-row" onclick={() => modulesOpen.set(true)}>
+		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico">🧩</span><span class="flex-1 whitespace-nowrap">Modules</span>
 		</button>
-		<button id="open-sessions-manager" class="side-row" onclick={() => sessionsOpen.set(true)}>
+		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico">🗂️</span><span class="flex-1 whitespace-nowrap">Sessions</span>
 		</button>
 
 		<div class="side-div"></div>
 
 		<!-- App -->
-		<button class="side-row" onclick={() => settingsOpen.set(!$settingsOpen)}>
+		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
 			<span class="side-ico">⚙️</span><span class="flex-1 whitespace-nowrap">Settings</span>
 		</button>
 		<button class="side-row" onclick={() => window.open('https://github.com/AlexZ005/theprototype.app/wiki', '_blank')}>
@@ -143,14 +157,14 @@
 	     spill off the left edge). Modal tier so it clears the avatar/Connect chrome. -->
 	<button
 		class="fixed inset-0 cursor-default bg-black/40"
-		style="z-index: calc(var(--z-modal) - 1)"
+		style="z-index: calc(var(--z-menu) + 1)"
 		aria-label="Close export settings"
 		onclick={() => (exportSettingsOpen = false)}
 	></button>
 	<div
 		id="export-settings-modal"
-		class="fixed left-1/2 top-1/2 w-64 max-w-[92vw] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-gray-700 bg-gray-800 p-4 text-sm text-gray-100 shadow-2xl"
-		style="z-index: var(--z-modal)"
+		class="fixed w-64 max-w-[92vw] rounded-lg border border-gray-700 bg-gray-800 p-4 text-sm text-gray-100 shadow-2xl"
+		style="z-index: calc(var(--z-menu) + 2); top: {exportPos.top}px; left: {exportPos.left}px;"
 	>
 		<p class="mb-2 font-semibold">Export settings</p>
 		<p class="mb-1 text-[11px] text-gray-400">Scene (.tpscene) includes:</p>
@@ -180,17 +194,28 @@
 <style>
 	.burger {
 		background-color: var(--color-form);
+		top: 8px;
+		left: 8px;
 	}
-	/* float above the bottom dock (z-bottom:35) instead of being covered */
+	/* the logo menu opens above everything (Connect, toasts) */
 	.app-sidebar {
 		top: 64px;
 		left: 8px;
-		z-index: var(--z-hud);
+		z-index: var(--z-menu);
 		/* size to the widest row so wider-font themes (e.g. 8-bit) never overflow
 		   the panel and overlap the scene; clamped so it stays compact */
 		width: max-content;
 		min-width: 12.5rem;
 		max-width: 17rem;
+		/* short viewports: touch-scroll the menu, but with no visible scrollbar */
+		max-height: calc(100vh - 72px);
+		overflow-y: auto;
+		overflow-x: hidden;
+		scrollbar-width: none; /* Firefox */
+		-webkit-overflow-scrolling: touch;
+	}
+	.app-sidebar::-webkit-scrollbar {
+		display: none; /* Chrome/Safari — scroll, no bar */
 	}
 	.side-row {
 		display: flex;
@@ -236,5 +261,16 @@
 	.side-seg.on {
 		background-color: var(--color-primary-600, #2563eb);
 		color: #fff;
+	}
+	/* narrow: the full-width connect bar owns the top row, so the logo + its menu
+	   drop to a second row below it */
+	@media (max-width: 640px) {
+		.burger {
+			top: 66px;
+		}
+		.app-sidebar {
+			top: 120px;
+			max-height: calc(100vh - 128px);
+		}
 	}
 </style>

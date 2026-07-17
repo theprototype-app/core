@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { peers, userdata, waitingForApproval, pendingApprovals } from '../../stores/appStore'
-	import { Navbar, NavHamburger, Input, Button } from 'flowbite-svelte';
+	import { Input, Button } from 'flowbite-svelte';
 	import { onMount } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 
@@ -68,20 +68,26 @@ const connectToPeer = (peerIdToConnect) => {
 	};
 </script>
 
-<!-- 152: the p-8 padding is transparent but was capturing clicks/drags over
-	 neighbouring windows at z-index 300. pointer-events:none lets the padding
-	 pass events through; the Navbar re-enables them on its own (visible) area. -->
-<div
-	class="p-8"
-	style="position: absolute; top: 35px; left: 50%; transform: translate(-50%, -50%); z-index: 300; pointer-events: none;"
->
-	<div style="pointer-events: auto; display: inline-block;">
-		<Navbar rounded color="form">
-		<div class="inline-flex rounded-md shadow-sm" role="group">
+<!-- Top-centre connect bar. pointer-events:none on the wrapper lets its
+	 transparent margin pass clicks to windows underneath (z-index 300); the pill
+	 re-enables them. Narrow screens drop the bar to its own row BELOW the logo
+	 (left) and the peers/profile chrome (right) instead of squeezing between them. -->
+<div class="connect-wrap">
+	<div class="connect-pill" role="group">
+		<!-- your invite id (click to copy the share link) -->
+		<Button
+			color="primary"
+			class="nob shrink-0 rounded-lg bg-gray-400 text-white ring-0 dark:bg-gray-600 dark:text-gray-200"
+			on:click={copy}
+			title="Copy your invite link"><span style="white-space: nowrap;">&#x1f4cb; {myidcap}</span></Button
+		>
+		<span class="connect-divider"></span>
+		<!-- connect to a peer -->
+		<div class="cx-connect inline-flex shrink-0 rounded-md shadow-sm">
 			<Input
 				type="text"
 				placeholder="Enter peer ID to connect"
-				class="nob rounded-r-none border-0 "
+				class="nob cx-input w-48 shrink-0 rounded-r-none border-0"
 				bind:value="{peerIdToConnect}"
 			/>
 			<Button
@@ -90,14 +96,68 @@ const connectToPeer = (peerIdToConnect) => {
 				on:click="{() => {connectToPeer(peerIdToConnect)}}"
 				>Connect</Button
 			>
-			<Button
-				color="primary"
-				class="nob white bg-gray-400	text-white dark:bg-gray-600 dark:text-gray-200 ring-0"
-				on:click={copy}
-				style="margin-left: 15px;"><p style="white-space: nowrap;">&#x1f4cb; {myidcap}</p></Button
-			>
 		</div>
-
-	</Navbar>
 	</div>
 </div>
+
+<style>
+	.connect-wrap {
+		position: fixed;
+		top: 8px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 300;
+		pointer-events: none;
+		max-width: 100vw;
+	}
+	.cx-connect {
+		min-width: 0;
+	}
+	.connect-pill {
+		pointer-events: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+		/* moderate rounding (matches the buttons inside) — not a full pill */
+		border-radius: 14px;
+		border: 1px solid rgb(55 65 81 / 0.6);
+		background: var(--color-form, rgb(31 41 55 / 0.9));
+		padding: 6px 8px;
+		box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+		backdrop-filter: blur(6px);
+		white-space: nowrap; /* never shrink/wrap the bar as the window narrows */
+	}
+	.connect-divider {
+		width: 1px;
+		align-self: stretch;
+		margin: 2px 0;
+		background: rgb(255 255 255 / 0.12);
+	}
+	/* Connect stays on the top row; the logo + peers/profile chrome drops to a second
+	   row on narrow screens (Sidebar/Users media queries). When space is too tight for
+	   the fixed pill (its button would run off-screen), Connect becomes a full-width
+	   bar stuck to the top edge — the input flexes to fill, the buttons stay visible. */
+	@media (max-width: 640px) {
+		.connect-wrap {
+			top: 0;
+			left: 0;
+			right: 0;
+			transform: none;
+			max-width: none;
+		}
+		.connect-pill {
+			width: 100%;
+			border-radius: 0 0 14px 14px;
+			white-space: normal;
+		}
+		.cx-connect {
+			flex: 1 1 auto;
+		}
+		/* :global — the class lands on the flowbite Input's inner <input> */
+		:global(.cx-input) {
+			width: auto;
+			flex: 1 1 auto;
+			min-width: 0;
+		}
+	}
+</style>

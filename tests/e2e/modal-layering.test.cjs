@@ -25,12 +25,13 @@ h.run(async () => {
 	await A.page.locator('#export-settings-cog').click();
 	await A.page.waitForTimeout(300);
 	const rect = await A.page.evaluate(() => {
-		const el = document.querySelector('#export-settings-modal');
-		const r = el.getBoundingClientRect();
-		return { left: r.left, right: r.right, vw: window.innerWidth, cx: (r.left + r.right) / 2 };
+		const cog = document.querySelector('#export-settings-cog').getBoundingClientRect();
+		const m = document.querySelector('#export-settings-modal').getBoundingClientRect();
+		return { cogBottom: cog.bottom, cogLeft: cog.left, top: m.top, left: m.left, right: m.right, bottom: m.bottom, vw: window.innerWidth, vh: window.innerHeight };
 	});
-	h.check(rect.left >= 0 && rect.right <= rect.vw, `export settings fully on-screen (left=${Math.round(rect.left)}, right=${Math.round(rect.right)}, vw=${rect.vw})`);
-	h.check(Math.abs(rect.cx - rect.vw / 2) < 6, `export settings centered on the viewport (cx=${Math.round(rect.cx)}, half=${rect.vw / 2})`);
+	h.check(rect.left >= 0 && rect.right <= rect.vw && rect.bottom <= rect.vh, `export settings fully on-screen (left=${Math.round(rect.left)}, right=${Math.round(rect.right)}, bottom=${Math.round(rect.bottom)})`);
+	h.check(rect.top >= rect.cogBottom - 1, `export settings opens below the cog (top=${Math.round(rect.top)} >= cogBottom=${Math.round(rect.cogBottom)})`);
+	h.check(Math.abs(rect.left - rect.cogLeft) < 24, `export settings anchors to the cog, not centered (mLeft=${Math.round(rect.left)}, cogLeft=${Math.round(rect.cogLeft)})`);
 
 	await h.finish(browser);
 });

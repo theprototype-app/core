@@ -40,11 +40,20 @@ h.run(async () => {
 	await A.page.locator('#open-modules-manager').click();
 	await A.page.waitForTimeout(300);
 	h.check((await read('modulesOpen')) === true, 'Modules opens the manager');
+	// opening a modal from the menu closes the menu (the menu is the top-most layer,
+	// so it must not cover the modal)
+	h.check((await read('closeMenu')) === true, 'opening a modal from the menu closes the menu');
+	// reset fully (close the modal + its backdrop) before the next menu interaction
 	await A.page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await A.page.waitForTimeout(400);
+	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.waitForTimeout(300);
 	await A.page.locator('#open-sessions-manager').click();
 	await A.page.waitForTimeout(300);
 	h.check((await read('sessionsOpen')) === true, 'Sessions opens the manager');
 	await A.page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await A.page.waitForTimeout(300);
+	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
 	await A.page.waitForTimeout(200);
 
 	// --- Explorer gains a Packs entry; single-click opens the packs GRID view

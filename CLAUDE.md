@@ -29,8 +29,13 @@ loadable play content. Everything a user does must be visible to connected peers
   `flowRuntime` (per-frame tick, baseState rebase, suspend/resume for gizmo drags,
   `parkAnimatedAtBase` for serializers, module effects, script + sound nodes),
   `soundRuntime` (sound-node panner chains, loop phase = synced clock), `scriptRuntime`
-  + `customNodes` (replicated user node defs), `nodesHandler` + `nodeCatalog` (+nodesync
-  drift heal), `moduleSDK` + `userModules` (zip/URL installs), `physics` (rapier,
+  + `customNodes` (replicated user node defs; #9: def range-params get input sockets,
+  `pruneCustomNodeEdges` drops edges to removed params deterministically), `nodesHandler`
+  + `nodeCatalog` (+nodesync drift heal), `flowSockets` (typed socket coercion + colors;
+  #9 `Socket.svelte` wraps the xyflow Handle and paints `typeColor` by socket type;
+  audit + verdicts in committed `NODES.md`), `objectMenu` (#9: `buildObjectMenuItems` —
+  ONE object context menu shared by Controls' direct menu + ViewportMenu's "Selected"
+  submenu), `moduleSDK` + `userModules` (zip/URL installs), `physics` (rapier,
   initiator-authoritative), `environment` (presets + scene-root rig, latest-wins sync,
   `passthroughActive` local sky lift), `animatedImports` (raw-bytes objectfile sync),
   `prefabs` (local IndexedDB library), `explorer` (LOCAL asset library: IndexedDB index
@@ -61,7 +66,10 @@ loadable play content. Everything a user does must be visible to connected peers
   `windowFocus` + `docking` + `dragWindow` + `searchMenuUx` (floating-window system),
   `fileWindows` (floating text/image editor windows), `autosave` + `idb`,
   `annotationsHandler`, `sessions` (+ .zip export/import bundling scene assets via
-  fflate), `measure`, `cameraBookmarks`, `editorNavigation`, `lightHelpers`.
+  fflate; #9: the SAME bundle is the first-class **.tpscene** format — `exportSessionZip`
+  takes `{assets,packs,flow}` include-opts, adds a `packs/` section; `fileHandler` saves/
+  loads it, Sidebar Files = [GLTF | Scene | ⚙cog]), `measure`, `cameraBookmarks`,
+  `editorNavigation`, `lightHelpers`.
 - `src/modules/` — core modules (hello, button, dungeon, piano, pong) + `index.js`
   `coreModules` list; manager enables/disables (live enable, reload to disable).
 - UI: `components/menu/*` (drawers/modals; visibility via stores + `hidePanels/
@@ -185,6 +193,28 @@ loadable play content. Everything a user does must be visible to connected peers
   (`overflow-x: hidden`); each submenu re-decides its flip locally in `openSubmenu`
   (not inherited from the root click) so deep chains stay on-screen. The fixed
   submenus escape the root's scroll box, so a scrolling root never grows an x-bar.
+- `backdrop-filter`/`filter` ALSO make an element the containing block for
+  `position: fixed` descendants (same trap as transform). A `fixed` popup rendered
+  inside `.app-sidebar` (which has `backdrop-blur`) centered on the SIDEBAR and spilled
+  off-screen — render such popups at the component ROOT, not inside a blurred/filtered
+  ancestor (roadmap 9 export-settings bug).
+- **z-index tiers** (`ui.css` `:root`): viewport 0 · drawer 30 · bottom 35 · window 40 ·
+  hud 45 · **modal 1100 · toast 1200 · menu 1300**. The high modal/toast/menu values
+  clear the ad-hoc persistent chrome that lives OUTSIDE the scale — Users (avatar/peers)
+  ~996-998, Connect 300, ContextMenu 999-1001, ThemedSelect 9999. flowbite Modal
+  hardcodes its dialog z-50 + backdrop z-40, remapped onto `--z-modal` by an UNLAYERED
+  `[role='dialog'][aria-modal='true']` rule (unlayered beats Tailwind's layered utility
+  without !important). The logo/burger menu sits at `--z-menu` (top-most); opening a
+  modal from it calls `closeMenu.set(true)` so the menu can't cover the modal.
+- **Mobile/touch** (roadmap 9): there is no `isMobile` store — gate with CSS
+  `@media (pointer: coarse), (max-width: …)`. Touch has NO right-click and NO HTML5
+  drag-and-drop: the canvas long-press opens the viewport menu (Scene) and a `+` HUD
+  button (`MobileAddButton`, via the `viewportMenuOpener` store) does the same; the node
+  palette adds on TAP (a real drag fires no click, so desktop drag is unaffected). Window
+  drag/resize must use POINTER events, not mouse (object-list `dragMe` was the last mouse
+  holdout). Floating windows clamp width/height to the viewport on load + on `resize`
+  (Flow window) or their header buttons land off a narrow screen. Drag/resize handles
+  need `touch-action: none`.
 - THREE color management: `setHSL()` works in the LINEAR working space — pass
   `THREE.SRGBColorSpace` or lightness 0.5 hex-round-trips to `#bcbcbc`. Canvas
   ImageData palettes: write bytes straight from the sRGB hex (round-tripping through
@@ -254,12 +284,35 @@ Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:51
 - Roadmap ritual: user drops notes → ask 3-4 targeted AskUserQuestion forks (offer a
   recommended option — they usually take it) → write plan files → present the batch
   table (sizes S/M/L/XL, riskiest last) → they pick what executes.
-- Design work: screenshot-driven; **keep the current designs of Toasts.svelte,
-  Connect.svelte and Controls.svelte** (Users.svelte was redesigned into the peers
-  popover on explicit request, phase 130).
+- Design work: screenshot-driven. (Toasts/Connect/Controls were long "keep as-is" but
+  roadmap #9 responsive/mobile work intentionally revised them — Connect is a
+  pill on wide / full-width top bar on narrow, Controls corner buttons reflow, Toasts
+  reposition on narrow; don't blanket-revert them anymore.)
 - VR phases: verify math/state headlessly, state clearly that on-device feel is the
   user's manual check.
-- Status (2026-07-15): **Roadmap #7 SHIPPED** (order N1→N3→N4→N6→N5): N1 notes-anchor
+- Status (2026-07-18): **Roadmap #9 SHIPPED** (release runway). B2 VR: 120Hz
+  (session.updateTargetFrameRate off supportedFrameRates on session start; vrTargetHz
+  setting) + hands↔controllers switch fix (shouldSendHands forces a send on rep-flip —
+  the `!moved && !hasJoints` gate ate the switch-back) + cuboid peer hands
+  (handBoneSegments; peerHandStyle LOCAL pref) + pinch-hold radial opener. B3 **.tpscene**
+  = the session .zip promoted to a first-class Scene format (exportSessionZip gains
+  {assets,packs,flow}; Sidebar Files = [GLTF | Scene | ⚙cog], JSON demoted behind the
+  cog; fileHandler load/save). B4 **flow stage 1**: NODES.md audit (fixed edge-id
+  divergence — ids now include handles; PATH-based cycle guard; event→effect drag;
+  distance/proximity accept vector3 literals) + typed socket COLORS (Socket.svelte wraps
+  Handle, paints flowSockets.typeColor) + ⓘ/⚙ panel tabs (ⓘ = selected node params, ⚙ =
+  graph + node name/NOTE) + adjustable params (slider min/max, switcher items list +
+  index output, number step) + custom-node input sockets w/ deterministic
+  pruneCustomNodeEdges + new nodes maprange/select. B6 docs → theprototype-docs (MkDocs,
+  local). **B1 (Opus)**: packs-view .zip drop (non-zip rejected), GLTF export
+  selection-only + warning. **UI/mobile (Opus)**: z-tiers reworked (see gotcha), mobile
+  "+" HUD + canvas long-press open the viewport menu (viewportMenuOpener), shared object
+  menu (objectMenu.js buildObjectMenuItems used by Controls + ViewportMenu "Selected"
+  submenu), Controls reflow, left-dock insets past the sidebar, top-bar responsive,
+  context menus now cap+scroll vertically w/ per-submenu flip, Flow window clamps to
+  viewport, node palette add-on-tap. **B5 network stress SKIPPED** (pending/). svelte-check
+  502/77. Plans: docs/plan/roadmap-9-release-runway.md (+ pending/opus-b1, pending/b5).
+  --- Earlier — Status (2026-07-15): **Roadmap #7 SHIPPED** (order N1→N3→N4→N6→N5): N1 notes-anchor
   fix (Threlte `oncreate` passes the ref DIRECTLY — `({ref})` captured undefined so NO
   annotation pin was ever positioned; fixed capture + owner-from-both-stores; same bug
   in PingMarkers), N3 per-peer network-quality dot (networkQuality.js, LOCAL getStats

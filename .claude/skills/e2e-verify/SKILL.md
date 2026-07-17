@@ -35,7 +35,10 @@ drawMode, pathCapture, lockControl, prefabs, physics, userModules, environment,
 animatedImports, fileHandler, sceneBounds, cameraClip, ping, sessions, geometryEdit,
 lightParams, themes, vrRadialMenu, vrPalette, vrWindowPoses, vrKeyboard, faceEdit,
 avatarModel, explorer, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay,
-sceneAssets, THREE, GLTFExporterModule, snapping, flowSockets, networkQuality, packs`.
+sceneAssets, THREE, GLTFExporterModule, snapping, flowSockets, networkQuality, packs,
+customNodes, nodesHandler, objectMenu`. Also on the stores spread: `viewportMenuOpener`
+(Scene registers its context-menu opener here — call `$viewportMenuOpener(x,y,forceEmpty)`
+to open the viewport/create menu without a right-click).
 
 **Never dynamic-import `/src/lib/x.js` from page code to reach a singleton** — once
 vite HMR-timestamps the app's copy you get a SECOND module instance (empty stores,
@@ -101,7 +104,22 @@ Late joiners: connect a third context AFTER mutations, assert handshake state ar
 - Flowbite Toggle inputs are `sr-only` — click the wrapping `label`, not the input.
 - File drops: build a `DataTransfer` in `evaluate` and `dispatchEvent(new DragEvent('drop', …))`;
   a known-good 1×1 PNG base64 is in explorer-drop.test.cjs (Image tolerates broken
-  PNGs but `createImageBitmap` does not).
+  PNGs but `createImageBitmap` does not). For an OS FILE drop (not an internal payload),
+  `dt.items.add(new File([bytes], name, {type}))` populates `dt.files` (packs-drop.test).
+- **Downloads**: capture an `a.click()`/blob download with
+  `const [dl] = await Promise.all([page.waitForEvent('download'), <trigger>]); const p =
+  await dl.path();` then read/parse `p` (gltf-export-selection, modules-manager). Works
+  headless; `dl.suggestedFilename()` gives the extension.
+- **Responsive / mobile**: `page.setViewportSize({width,height})` per test (or a
+  `browser.newContext({viewport, hasTouch:true, isMobile:true})` for a throwaway
+  screenshot). Layout gated by `@media (pointer:coarse),(max-width:…)` won't show on the
+  default 1280 desktop context — resize first. Custom-chrome context menus can't be
+  right-clicked via Playwright actionability — dispatch it in page context:
+  `el.dispatchEvent(new MouseEvent('contextmenu',{clientX,clientY,bubbles:true}))`
+  (packs-explorer); a menu opened this way replaces any prior one.
+- **Exact svelte-check delta**: `git stash push -u` (includes new files), run
+  `npx svelte-check` for the true HEAD baseline, `git stash pop` — the machine output
+  DOUBLE-escapes path separators (`src\\lib\\…`), so filter with `\\\\` in the regex.
 - Audio suites work headless (launch args allow autoplay); `soundEntries()` exposes the
   live chains — `playing` is source-state, no audible check possible.
 - After a reload, NEVER `waitForSelector('canvas')` — it matches the HIDDEN
@@ -141,7 +159,7 @@ Late joiners: connect a third context AFTER mutations, assert handshake state ar
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-07-15 ≈ **501-502 errors / 77 warnings** (drifts down as flowbite/typed
+  baseline 2026-07-18 = **502 errors / 77 warnings** (drifts down as flowbite/typed
   code is removed — hold whatever it currently is; add no NEW). Note: in the big
   JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —
   give the param a default (`slot = 0`) to force the type, and prefer explicit locals

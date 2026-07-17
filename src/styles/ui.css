@@ -15,8 +15,22 @@
 	--z-bottom: 35;
 	--z-window: 40;
 	--z-hud: 45;
-	--z-modal: 50;
-	--z-toast: 60;
+	/* modal/toast sit ABOVE the persistent top chrome — the avatar/peers popover
+	   (~996-998) and Connect (300) — which live outside this scale, so a modal and
+	   its X are never covered. Kept below ThemedSelect (9999) so in-modal dropdowns
+	   still open over the modal. */
+	--z-modal: 1100;
+	--z-toast: 1200;
+}
+
+/* Flowbite hardcodes the modal dialog at z-50 and its backdrop at z-40 — both
+   under the avatar/Connect chrome. Map them onto the modal tier (unlayered, so it
+   beats Tailwind's layered z-40/z-50 utilities without !important). */
+[role='dialog'][aria-modal='true'] {
+	z-index: var(--z-modal);
+}
+*:has(+ [role='dialog'][aria-modal='true']) {
+	z-index: calc(var(--z-modal) - 1);
 }
 
 @layer components {

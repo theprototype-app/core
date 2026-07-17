@@ -107,38 +107,6 @@
 			{/if}
 			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={() => (exportSettingsOpen = true)}>⚙</button>
 		</div>
-		{#if exportSettingsOpen}
-			<!-- B3: export settings — what a .tpscene bundle includes + the JSON toggle -->
-			<button
-				class="fixed inset-0 z-[60] cursor-default bg-black/40"
-				aria-label="Close export settings"
-				onclick={() => (exportSettingsOpen = false)}
-			></button>
-			<div id="export-settings-modal" class="fixed left-1/2 top-1/2 z-[61] w-64 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-gray-700 bg-gray-800 p-4 text-sm text-gray-100 shadow-2xl">
-				<p class="mb-2 font-semibold">Export settings</p>
-				<p class="mb-1 text-[11px] text-gray-400">Scene (.tpscene) includes:</p>
-				<label class="flex items-center gap-2 py-0.5">
-					<input type="checkbox" checked={tpAssets} onchange={(e: any) => { tpAssets = e.target.checked; localStorage.setItem('tpsceneAssets', String(tpAssets)); }} />
-					Assets (audio, textures, configs)
-				</label>
-				<label class="flex items-center gap-2 py-0.5">
-					<input id="tpscene-packs" type="checkbox" checked={tpPacks} onchange={(e: any) => { tpPacks = e.target.checked; localStorage.setItem('tpscenePacks', String(tpPacks)); }} />
-					Imported packs
-				</label>
-				<label class="flex items-center gap-2 py-0.5">
-					<input id="tpscene-flow" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; localStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
-					Flow graph (nodes + edges)
-				</label>
-				<div class="my-2 border-t border-gray-700"></div>
-				<label class="flex items-center gap-2 py-0.5">
-					<input type="checkbox" checked={showJson} onchange={(e: any) => { showJson = e.target.checked; localStorage.setItem('showJsonFormat', String(showJson)); if (!showJson && saveFormat === 'json') pickFormat('tpscene'); }} />
-					Show JSON format
-				</label>
-				<div class="mt-3 flex justify-end">
-					<button class="rounded bg-gray-600 px-2 py-1 text-xs hover:bg-gray-500" onclick={() => (exportSettingsOpen = false)}>Close</button>
-				</div>
-			</div>
-		{/if}
 
 		<div class="side-div"></div>
 
@@ -167,6 +135,46 @@
 			<span class="side-ico">📖</span><span class="flex-1 whitespace-nowrap">Docs</span>
 		</button>
 	</nav>
+{/if}
+
+{#if exportSettingsOpen}
+	<!-- B3 export settings. Rendered at the component ROOT (not inside .app-sidebar,
+	     whose backdrop-blur would make this fixed panel center on the sidebar and
+	     spill off the left edge). Modal tier so it clears the avatar/Connect chrome. -->
+	<button
+		class="fixed inset-0 cursor-default bg-black/40"
+		style="z-index: calc(var(--z-modal) - 1)"
+		aria-label="Close export settings"
+		onclick={() => (exportSettingsOpen = false)}
+	></button>
+	<div
+		id="export-settings-modal"
+		class="fixed left-1/2 top-1/2 w-64 max-w-[92vw] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-gray-700 bg-gray-800 p-4 text-sm text-gray-100 shadow-2xl"
+		style="z-index: var(--z-modal)"
+	>
+		<p class="mb-2 font-semibold">Export settings</p>
+		<p class="mb-1 text-[11px] text-gray-400">Scene (.tpscene) includes:</p>
+		<label class="flex items-center gap-2 py-0.5">
+			<input type="checkbox" checked={tpAssets} onchange={(e: any) => { tpAssets = e.target.checked; localStorage.setItem('tpsceneAssets', String(tpAssets)); }} />
+			Assets (audio, textures, configs)
+		</label>
+		<label class="flex items-center gap-2 py-0.5">
+			<input id="tpscene-packs" type="checkbox" checked={tpPacks} onchange={(e: any) => { tpPacks = e.target.checked; localStorage.setItem('tpscenePacks', String(tpPacks)); }} />
+			Imported packs
+		</label>
+		<label class="flex items-center gap-2 py-0.5">
+			<input id="tpscene-flow" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; localStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
+			Flow graph (nodes + edges)
+		</label>
+		<div class="my-2 border-t border-gray-700"></div>
+		<label class="flex items-center gap-2 py-0.5">
+			<input type="checkbox" checked={showJson} onchange={(e: any) => { showJson = e.target.checked; localStorage.setItem('showJsonFormat', String(showJson)); if (!showJson && saveFormat === 'json') pickFormat('tpscene'); }} />
+			Show JSON format
+		</label>
+		<div class="mt-3 flex justify-end">
+			<button class="rounded bg-gray-600 px-2 py-1 text-xs hover:bg-gray-500" onclick={() => (exportSettingsOpen = false)}>Close</button>
+		</div>
+	</div>
 {/if}
 
 <style>

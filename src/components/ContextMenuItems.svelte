@@ -7,8 +7,6 @@
 	// can overflow-y without ever growing a horizontal scrollbar.
 	export let items: any[] = [];
 	export let onrun: (item: any) => void;
-	export let flipX = false;
-	export let flipY = false;
 
 	let openSub: string | null = null;
 	// the hovered row's rect — the submenu positions itself against it, then clamps
@@ -68,7 +66,7 @@
 					class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
 					style="z-index: 1001;"
 				>
-					<svelte:self items={item.children} {onrun} {flipX} {flipY} />
+					<svelte:self items={item.children} {onrun} />
 				</div>
 			{/if}
 		</div>

@@ -10,20 +10,10 @@
 
 	const dispatch = createEventDispatcher();
 
-	// flip near the edges so the menu stays on screen. 124: position via
-	// left/right/top/bottom — NO transform. A transformed ancestor becomes the
-	// containing block for its position:fixed submenus, which mis-placed them.
-	// A too-tall menu is capped to the viewport and scrolls (visible bar) — the
-	// fixed submenus escape this scroll box, so they never grow a horizontal bar.
-	$: vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-	$: vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
-	$: flipY = y > vh - 240;
-	$: flipX = x > vw - 320;
-	$: availH = flipY ? y - 8 : vh - y - 8;
-	$: rootStyle =
-		(flipX ? `right: ${vw - x}px;` : `left: ${x}px;`) +
-		(flipY ? `bottom: ${vh - y}px;` : `top: ${y}px;`) +
-		` max-height: ${availH}px;`;
+	// The menu positions via left/top only — NO transform (a transform makes it the
+	// containing block for its position:fixed submenus, which mis-placed them, 124).
+	// It's portaled to <body>, measured + clamped into the viewport by `place`, and
+	// caps + scrolls vertically when too tall; submenus place themselves.
 
 	function run(item: any) {
 		if (item.disabled || item.children) return;
@@ -37,6 +27,31 @@
 	function portal(node: HTMLElement) {
 		document.body.appendChild(node);
 		return { destroy: () => node.remove() };
+	}
+
+	// Position by MEASURING the menu (no width/height guess): open from the click,
+	// but clamp fully into the viewport so it never runs off any edge on a narrow
+	// screen; too-tall menus cap + scroll (.ctx-scroll). Submenus place themselves.
+	function place(node: HTMLElement) {
+		const reposition = () => {
+			const vw = window.innerWidth;
+			const vh = window.innerHeight;
+			node.style.maxHeight = vh - 8 + 'px';
+			const w = node.offsetWidth;
+			const h = node.offsetHeight;
+			let left = x > vw - w - 4 ? x - w : x; // near the right edge -> open leftward
+			left = Math.max(4, Math.min(left, vw - w - 4));
+			let top = y > vh - h - 4 ? y - h : y;
+			top = Math.max(4, Math.min(top, vh - h - 4));
+			node.style.left = left + 'px';
+			node.style.top = top + 'px';
+			node.style.right = 'auto';
+			node.style.bottom = 'auto';
+		};
+		reposition();
+		requestAnimationFrame(reposition);
+		window.addEventListener('resize', reposition);
+		return { destroy: () => window.removeEventListener('resize', reposition) };
 	}
 </script>
 
@@ -52,11 +67,12 @@
 
 <div
 	use:portal
+	use:place
 	class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-	style="{rootStyle} z-index: 1000;"
+	style="left: 0; top: 0; z-index: 1000;"
 	role="menu"
 >
-	<ContextMenuItems {items} onrun={run} {flipX} {flipY} />
+	<ContextMenuItems {items} onrun={run} />
 </div>
 
 <style>

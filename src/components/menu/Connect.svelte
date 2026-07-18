@@ -157,6 +157,7 @@ const connectToPeer = (peerIdToConnect) => {
 		}
 		.connect-pill {
 			width: 100%;
+			max-width: none; /* the reserve-room cap is for the wide pill, not the full bar */
 			border-radius: 0 0 14px 14px;
 			white-space: normal;
 		}

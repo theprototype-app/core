@@ -47,11 +47,17 @@ h.run(async () => {
 	h.check(sub.left >= -1 && sub.right <= sub.vw + 1, `submenu flipped to stay on-screen (left=${Math.round(sub.left)}, right=${Math.round(sub.right)}, vw=${sub.vw})`);
 	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
 
-	// --- on a very narrow screen the submenu can't fit either side, so it clamps
-	// fully into the viewport (covering the parent is fine, better than off-screen) ---
+	// --- on a very narrow screen: the ROOT menu opened near the right edge clamps
+	// on-screen, and its submenu (can't fit either side) clamps too (covering the
+	// parent is fine, better than off-screen) ---
 	await A.page.setViewportSize({ width: 360, height: 700 });
-	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 160, y: 80, point: [0, 0, 0] }));
+	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 340, y: 80, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(200);
+	const root2 = await A.page.evaluate(() => {
+		const r = document.querySelector('[role="menu"]').getBoundingClientRect();
+		return { left: r.left, right: r.right, vw: window.innerWidth };
+	});
+	h.check(root2.left >= -1 && root2.right <= root2.vw + 1, `root menu opened near the right edge clamps on-screen (left=${Math.round(root2.left)}, right=${Math.round(root2.right)}, vw=${root2.vw})`);
 	const clamp = await A.page.evaluate(async () => {
 		const row = [...document.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent.trim().startsWith('Snapping'));
 		if (!row) return { found: false };

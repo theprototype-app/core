@@ -545,7 +545,10 @@
 		// Shared opener for the viewport/object context menu — reused by right-click,
 		// a touch long-press, and the mobile "+" HUD button (via viewportMenuOpener).
 		// forceEmpty skips the object hit so "+" always opens the create menu.
-		const openViewportMenuAt = (clientX = 0, clientY = 0, forceEmpty = false) => {
+		// menuX/menuY position the MENU (default to the ray coords); a HUD button
+		// with no pointer location rays from screen-centre but anchors the menu to
+		// itself by passing its own rect.
+		const openViewportMenuAt = (clientX = 0, clientY = 0, forceEmpty = false, menuX = clientX, menuY = clientY) => {
 			if ($isLocked || $isVRMode || $specatorMode || $drawMode || $editingObject || $faceEditObject || $measureMode) return;
 			setRayFromEvent({ clientX, clientY });
 			const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
@@ -554,8 +557,8 @@
 				// an object under the cursor gets its regular context menu; the
 				// hit point rides along so Add note pins exactly there (87)
 				$objectContextMenu = {
-					x: clientX,
-					y: clientY,
+					x: menuX,
+					y: menuY,
 					uuid: top.uuid,
 					point: hits[0].point.toArray(),
 					locked: !!$lockedObjects.find((lock) => lock[1] === top.uuid)
@@ -568,7 +571,7 @@
 				(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
 					? planePoint
 					: new THREE.Vector3());
-			viewportMenu.set({ x: clientX, y: clientY, point: point.toArray() });
+			viewportMenu.set({ x: menuX, y: menuY, point: point.toArray() });
 		};
 		// HUD/touch entry point (mobile "+" button, no right-click available)
 		viewportMenuOpener.set(openViewportMenuAt);

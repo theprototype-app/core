@@ -37,15 +37,11 @@
 	z-index: calc(var(--z-modal) - 1);
 }
 
-/* The mobile "+" HUD button (Controls) is for touch/narrow only — hidden on a
-   normal fine-pointer desktop where right-click already opens the menu. */
+/* The "+" HUD button (MobileAddButton) opens the create/context menu without a
+   right-click. Shown on ALL widths (user request): on touch it's the only way in,
+   on a fine-pointer desktop it's a convenience alongside right-click. */
 .mobile-hud-btn {
-	display: none;
-}
-@media (pointer: coarse), (max-width: 820px) {
-	.mobile-hud-btn {
-		display: flex;
-	}
+	display: flex;
 }
 /* drag/resize handles must claim the touch gesture (else the browser scrolls) */
 .move-handle,

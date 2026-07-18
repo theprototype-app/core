@@ -145,8 +145,10 @@ export const addMenu = writable(null);
 
 // Scene registers its context-menu opener here so touch/HUD (the mobile "+"
 // button, a canvas long-press) can open the same viewport/object menu without a
-// right-click. Signature: (clientX, clientY, forceEmpty?) => void.
-/** @type {import('svelte/store').Writable<((x: number, y: number, forceEmpty?: boolean) => void) | null>} */
+// right-click. Signature: (clientX, clientY, forceEmpty?, menuX?, menuY?) => void
+// — the ray casts from clientX/Y; menuX/Y (default to clientX/Y) position the menu
+// so a HUD button can anchor the menu to itself while raying from screen-centre.
+/** @type {import('svelte/store').Writable<((x: number, y: number, forceEmpty?: boolean, menuX?: number, menuY?: number) => void) | null>} */
 export const viewportMenuOpener = writable(null);
 
 // viewport object SEARCH popover (125): { x, y } | null — find + focus a scene

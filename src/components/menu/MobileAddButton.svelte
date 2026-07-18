@@ -6,7 +6,17 @@
 	// the chat/mic stack above the centred Controls pill.
 	import { viewportMenuOpener } from '../../stores/appStore.js';
 	function add() {
-		$viewportMenuOpener?.(window.innerWidth / 2, window.innerHeight / 2, true);
+		// Raycast a new object into the MIDDLE of the view (the button carries no
+		// pointer location), but open the menu anchored to the button itself so it
+		// appears right next to it (place() flips it up off the bottom edge).
+		const r = document.getElementById('mobile-add-button')?.getBoundingClientRect();
+		$viewportMenuOpener?.(
+			window.innerWidth / 2,
+			window.innerHeight / 2,
+			true,
+			r?.left ?? 16,
+			r?.top ?? window.innerHeight - 60
+		);
 	}
 </script>
 

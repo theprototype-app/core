@@ -8,8 +8,10 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// the "+" button exists (hidden by CSS on fine-pointer desktops, present in DOM)
+	// the "+" button is visible on ALL widths now — including a wide desktop viewport
+	await A.page.setViewportSize({ width: 1200, height: 800 });
 	h.check((await A.page.locator('#mobile-add-button').count()) === 1, 'the mobile + button is in the DOM');
+	h.check(await A.page.locator('#mobile-add-button').isVisible(), 'the + button is visible on a wide desktop (not gated to <=820px)');
 
 	// viewportMenuOpener opens the create menu (forceEmpty) even over an object
 	const opened = await A.page.evaluate(() => {
@@ -25,6 +27,21 @@ h.run(async () => {
 	});
 	h.check(opened.ran, 'Scene registered viewportMenuOpener');
 	h.check(opened.hasMenu && opened.point, 'the opener opens the viewport create menu with a ground point');
+	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+
+	// the menu position can be DECOUPLED from the ray: the "+" button rays from
+	// screen-centre but anchors the menu to its own rect (menuX/menuY args)
+	const anchored = await A.page.evaluate(() => {
+		const s = window.__stores;
+		let opener;
+		s.viewportMenuOpener.subscribe((v) => (opener = v))();
+		opener(600, 400, true, 16, 720); // ray centre-ish, menu bottom-left (button)
+		let vm;
+		s.viewportMenu.subscribe((v) => (vm = v))();
+		return { x: vm?.x, y: vm?.y, hasPoint: vm?.point?.length === 3 };
+	});
+	h.check(anchored.x === 16 && anchored.y === 720, `menu opens at the button anchor, not the ray point (x=${anchored.x}, y=${anchored.y})`);
+	h.check(anchored.hasPoint, 'the ground point is still computed from the ray coords');
 	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
 
 	// object-menu parity: the shared builder has the full set (the indirect

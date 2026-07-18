@@ -45,6 +45,24 @@ h.run(async () => {
 	});
 	h.check(sub.found, 'the Snapping submenu opened');
 	h.check(sub.left >= -1 && sub.right <= sub.vw + 1, `submenu flipped to stay on-screen (left=${Math.round(sub.left)}, right=${Math.round(sub.right)}, vw=${sub.vw})`);
+	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+
+	// --- on a very narrow screen the submenu can't fit either side, so it clamps
+	// fully into the viewport (covering the parent is fine, better than off-screen) ---
+	await A.page.setViewportSize({ width: 360, height: 700 });
+	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 160, y: 80, point: [0, 0, 0] }));
+	await A.page.waitForTimeout(200);
+	const clamp = await A.page.evaluate(async () => {
+		const row = [...document.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent.trim().startsWith('Snapping'));
+		if (!row) return { found: false };
+		row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+		await new Promise((r) => setTimeout(r, 200));
+		const boxes = [...document.querySelectorAll('div')].filter((el) => getComputedStyle(el).position === 'fixed' && el.textContent?.includes('Snap to surface') && !el.getAttribute('role'));
+		const r = boxes[boxes.length - 1].getBoundingClientRect();
+		return { found: true, left: r.left, right: r.right, vw: window.innerWidth };
+	});
+	h.check(clamp.found, 'the submenu opened on the narrow screen');
+	h.check(clamp.left >= -1 && clamp.right <= clamp.vw + 1, `submenu clamps fully on-screen when neither side fits (left=${Math.round(clamp.left)}, right=${Math.round(clamp.right)}, vw=${clamp.vw})`);
 
 	await h.finish(browser);
 });

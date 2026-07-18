@@ -14,8 +14,9 @@
     "mcp": "node src/cli.js --mcp"
   },
   "dependencies": {
-    "peerjs": "^1.5.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@roamhq/wrtc": "^0.8.0",
+    "peerjs": "^1.5.4",
     "ws": "^8.18.0"
   }
 }

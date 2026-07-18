@@ -4,6 +4,7 @@
   import Scene from './components/Scene.svelte'
   import Menu from './components/Menu.svelte'
   import Flow from './components/Flow.svelte'
+  import FlowCode from './components/editors/FlowCode.svelte'
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
   import ImagePreviewWindow from './components/editors/ImagePreviewWindow.svelte'
@@ -141,6 +142,7 @@
 
 {#if !$isLocked}
 <Flow />
+<FlowCode />
 <Explorer />
 <TextEditorWindow />
 <ImagePreviewWindow />

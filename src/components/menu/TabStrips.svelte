@@ -3,8 +3,11 @@
 	// the active window's header area — notebook tabs (narrower on top, curvy),
 	// drag the strip background to move the whole group, drag a tab out to
 	// re-float it, ✕ closes the active member through its own path.
-	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeGroup, nodeOf } from '$lib/windowTabs';
+	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeGroup, closeMember, nodeOf } from '$lib/windowTabs';
+	import ContextMenu from '../ContextMenu.svelte';
 
+	/** @type {any} */
+	let tabMenu = null; // {x, y, key} — right-click a tab -> "Hide tab"
 	/** @type {any} */
 	let stripDrag = null; // {groupId, x, y}
 	/** @type {any} */
@@ -71,10 +74,15 @@
 						: 'bg-gray-700/70 text-gray-400 hover:text-gray-200')}
 				role="tab"
 				aria-selected={key === group.active}
-				title="Click to switch — drag out to detach"
+				title="Click to switch — drag out to detach — right-click to hide"
 				onpointerdown={(e) => {
 					e.stopPropagation();
 					onTabDown(e, group.id, key);
+				}}
+				oncontextmenu={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					tabMenu = { x: e.clientX, y: e.clientY, key };
 				}}
 			>
 				{titleOf(key)}
@@ -90,6 +98,15 @@
 		</button>
 	</div>
 {/each}
+
+{#if tabMenu}
+	<ContextMenu
+		x={tabMenu.x}
+		y={tabMenu.y}
+		items={[{ label: '🙈 Hide tab', action: () => closeMember(tabMenu.key) }]}
+		on:close={() => (tabMenu = null)}
+	/>
+{/if}
 
 <style>
 	/* notebook look: slightly narrower at the top, curvy shoulders */

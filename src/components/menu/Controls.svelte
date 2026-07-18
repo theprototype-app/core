@@ -23,7 +23,28 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
+	import { dockShared, bottomDockActive } from '$lib/bottomDock';
 	import { VRButton, XRButton } from '@threlte/xr'
+
+	// Flow + Explorer SHARE the bottom dock when both are docked (only the active one
+	// shows). A toolbar icon highlights only when its panel is actually VISIBLE, and
+	// clicking makes that panel the active dock occupant (or closes it if already shown).
+	const flowVisible = $derived(!$flowGraphClose && (!$dockShared || $bottomDockActive === 'flow'));
+	const explorerVisible = $derived(!$explorerClose && (!$dockShared || $bottomDockActive === 'explorer'));
+	function toggleFlow() {
+		if (flowVisible) flowGraphClose.set(true);
+		else {
+			flowGraphClose.set(false);
+			bottomDockActive.set('flow'); // if docked, become the shown one (no-op if windowed)
+		}
+	}
+	function toggleExplorer() {
+		if (explorerVisible) explorerClose.set(true);
+		else {
+			explorerClose.set(false);
+			bottomDockActive.set('explorer');
+		}
+	}
 
 	let allowPlay = true;
 	let resizing = $state(false);
@@ -418,17 +439,17 @@
 	<p
 		class={classActive}
 		title="Node editor (N)"
-		on:click={() => flowGraphClose.update((value) => !value)}
+		on:click={toggleFlow}
 	>
-		<i class={'fas fa-circle-nodes ' + (!$flowGraphClose ? ICON_ON : ICON_OFF)}></i>
+		<i class={'fas fa-circle-nodes ' + (flowVisible ? ICON_ON : ICON_OFF)}></i>
 	</p>
 	<p
 		class={classActive + ' rounded-r-full'}
 		id="explorer-slot"
 		title="Explorer"
-		on:click={() => explorerClose.update((value) => !value)}
+		on:click={toggleExplorer}
 	>
-		<i class={'fas fa-folder-open ' + (!$explorerClose ? ICON_ON : ICON_OFF)}></i>
+		<i class={'fas fa-folder-open ' + (explorerVisible ? ICON_ON : ICON_OFF)}></i>
 	</p>
 </BottomNav>
 

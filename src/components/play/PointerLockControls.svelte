@@ -1,8 +1,10 @@
 <script lang="ts">
-    import { onDestroy } from 'svelte'
+    import { onDestroy, untrack } from 'svelte'
     import { Euler, Camera } from 'three'
     import { useThrelte, useParent, useTask } from '@threlte/core'
-    import { isLocked, playerCam, editorCam } from '../../stores/sceneStore'
+    import { isLocked, playerCam, editorCam, globalScene } from '../../stores/sceneStore'
+    import { userdata, peers } from '../../stores/appStore'
+    import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
 
     const { renderer, camera, invalidate } = useThrelte()
   
@@ -38,14 +40,35 @@
   
         $effect(() => {
       if ($isLocked) {
-        domElement.requestPointerLock({
+        // returns a promise in newer Chrome; rejection (headless, unsupported
+        // unadjustedMovement) already surfaces via the pointerlockerror event
+        const request: any = domElement.requestPointerLock({
           unadjustedMovement: true
+        })
+        request?.catch?.(() => {})
+        // dungeon spawn (58.2): entering play with a dungeon present drops you
+        // in your seed-deterministic room (peers take consecutive rooms).
+        // untracked: the effect must only depend on $isLocked.
+        untrack(() => {
+          const data = dungeonData($globalScene)
+          if (data && $cameraParent) {
+            const my = ($peers as any)?.peer?.id ?? 'me'
+            const spawn = spawnPointFor(data, ($userdata ?? []).map((u: any) => u[0]), my)
+            if (spawn) {
+              $cameraParent.position.x = spawn.x
+              $cameraParent.position.y = 0.8
+              $cameraParent.position.z = spawn.z
+            }
+          }
         })
       }
     })
 
     useTask(
     (delta) => {
+
+      const beforeX = $cameraParent?.position.x ?? 0
+      const beforeZ = $cameraParent?.position.z ?? 0
 
       if (moveState.forward === 1) {
         $cameraParent.translateZ(-moveSpeed);
@@ -69,6 +92,16 @@
 
       if (moveState.down === 1) {
         $cameraParent.translateY(moveSpeed);
+      }
+
+      // dungeon collision (58.1): slide the XZ step along the raster walls
+      if ($isLocked && $cameraParent) {
+        const data = dungeonData($globalScene)
+        if (data) {
+          const c = slideMove(data, beforeX, beforeZ, $cameraParent.position.x - beforeX, $cameraParent.position.z - beforeZ, 0.3)
+          $cameraParent.position.x = c.x
+          $cameraParent.position.z = c.z
+        }
       }
 
     },
@@ -109,6 +142,14 @@
         case 'KeyD': moveState.right = 1; break;
         case 'KeyQ': moveState.up = 1; break;
         case 'KeyE': moveState.down = 1; break;
+        case 'Escape':
+          // native pointer-lock Esc handles the normal case; this also rescues
+          // the stuck state where play mode engaged but the lock never did
+          if ($isLocked) {
+            if (document.pointerLockElement) document.exitPointerLock()
+            else $isLocked = false
+          }
+          break;
       }
     }
 

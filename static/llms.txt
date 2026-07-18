@@ -1,0 +1,38 @@
+# theprototype.app
+
+> Collaborative peer-to-peer 3D prototyping in the browser. No accounts and no
+> server beyond PeerJS signaling — a session is a direct WebRTC peer mesh, so
+> everything one person does is visible to everyone connected. Desktop and VR
+> (WebXR), a node/flow editor that drives scene behavior, and a module SDK for
+> loadable, self-contained play content. Built with SvelteKit (static adapter),
+> Svelte 5, Threlte and three.js.
+
+## Modules (write your own)
+
+- [Module SDK guide, inlined](/llms-full.txt): the full guide — the api surface,
+  the one rule that matters (a module runs on every peer), layout/registration,
+  and worked examples. Fetch this to write a correct module without guessing the
+  API.
+
+## Key concepts
+
+- Everything replicates over the peer mesh: apply the change locally, then
+  broadcast it; a receiver applies it WITHOUT re-broadcasting.
+- Two sync models — deterministic (a pure function of a seed/params plus a
+  shared synced clock) vs authoritative (one initiator simulates and
+  broadcasts). Pick one per feature; never mix them.
+- A module is a self-contained default export
+  `{ id, name, version, description, register(api) }` in
+  `src/modules/<id>/module.js`; user modules (zip/URL) must have no imports.
+- Script and flow nodes are pure functions of `(object, base, data, time)`
+  evaluated identically on every peer — never stream their outputs.
+- Randomness must be seeded: send the seed, not the result, or peers desync.
+
+## Docs
+
+- [llms-full.txt](/llms-full.txt): this map plus the entire module SDK guide
+  inline (works offline / without repo access).
+
+<!-- At public launch, add repo-backed links here: GitHub wiki, README, and the
+     raw MODULES.md URL. They 404 while the repo is private — the inlined
+     /llms-full.txt above carries the same SDK content regardless. -->

@@ -1,5 +1,18 @@
 import * as THREE from 'three';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { toggleExpand, fixLight } from '../stores/appStore.js';
+import { customGeometryBuilders } from '$lib/customGeometries';
+import { stampGeometryParams } from '$lib/geometryEdit';
+
+// RectAreaLight renders black on Standard/Physical materials until the
+// uniforms lib initializes — once per session is enough (79)
+let rectAreaReady = false;
+function initRectAreaUniforms() {
+    if (rectAreaReady) return;
+    rectAreaReady = true;
+    RectAreaLightUniformsLib.init();
+}
+import { notifyExternalMove } from '$lib/flowRuntime';
 import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject } from '../stores/sceneStore.js';
 
 //Access scene Store
@@ -31,14 +44,23 @@ lockedObjects.subscribe(value => { locked = value });
 export function createGeometry(command, uuid) {
     let geometry = command.split(' ')[1]
     geometry = geometry.charAt(0).toUpperCase() + geometry.slice(1)
-    let options = [command.split(' ')[2],command.split(' ')[3],command.split(' ')[4],command.split(' ')[5]]
+    // numbers, not strings: geometry constructors that ADD parameters
+    // (Torus: radius + tube*cos) would string-concatenate otherwise and
+    // produce exploded meshes; missing args stay undefined for defaults
+    let options = [2, 3, 4, 5].map((index) => {
+        const value = parseFloat(command.split(' ')[index]);
+        return Number.isNaN(value) ? undefined : value;
+    });
     let geometryList = ["Box","Capsule","Circle","Cone","Cylinder","Dodecahedron","Edges","Extrude","Icosahedron","Lathe","Octahedron","Plane","Polyhedron","Ring","Shape","Sphere","Tetrahedron","Torus","TorusKnot","Tube","Wireframe"]
-    if (geometryList.includes(geometry)) {
-        let mesh = new THREE[geometry+'Geometry'](options[0],options[1],options[2],options[3]);
+    if (customGeometryBuilders[geometry] || geometryList.includes(geometry)) {
+        let mesh = customGeometryBuilders[geometry]
+            ? customGeometryBuilders[geometry](options[0],options[1],options[2],options[3])
+            : new (/** @type {any} */ (THREE))[geometry+'Geometry'](options[0],options[1],options[2],options[3]);
         let material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
         let object = new THREE.Mesh(mesh, material);
         if (uuid) object.uuid = uuid
         object.name = geometry;
+        stampGeometryParams(object); // editable params survive sync (78)
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects
         objectsGroup.update((value) => value);
@@ -71,8 +93,10 @@ export function createLight(command, uuid) {
         light = new THREE.HemisphereLight(0xffffff, 0xffffff, 1);
         light.name = 'Hemisphere';
         if (uuid) light.uuid = uuid
-    } else if ( lightType == 'rectArea') {
-        light = new THREE.RectAreaLight(0xffffff, 1, 10, 10);
+    } else if (lightType == 'rectarea') {
+        // needs the uniforms lib once, or Standard/Physical materials render black
+        initRectAreaUniforms();
+        light = new THREE.RectAreaLight(0xffffff, 2, 4, 4);
         light.name = 'RectArea';
     } else {
         console.log('Invalid light: ' + light);
@@ -154,6 +178,8 @@ export function moveGeometry(uuid, pos, rot, scale) {
         sceneObjects.getObjectByProperty('uuid', uuid).position.set(pos[0], pos[1], pos[2]);
         sceneObjects.getObjectByProperty('uuid', uuid).rotation.set(rot[0], rot[1], rot[2]);
         sceneObjects.getObjectByProperty('uuid', uuid).scale.set(scale[0], scale[1], scale[2]);
+        // a peer moved it: if it is animated here, this transform is the new base
+        notifyExternalMove(uuid);
     }
 }
 
@@ -166,31 +192,20 @@ export function moveCamera(data) {
 }
 
 /**
- * Locks an object by changing its material color and updating the locked list.
- * 
- * @param {string} uuid - The unique identifier of the geometry object to lock.
- * @param {string} peerId - The unique identifier of the peer requesting the lock.
+ * Locks objects for a peer, replacing that peer's previous lock set.
+ * Multi-select (13) sends `uuids`; single locks keep the legacy `uuid` field.
+ *
+ * @param {string} uuid - primary locked object (legacy field, always present).
+ * @param {string} peerId - the peer holding the lock.
+ * @param {string[]=} uuids - full selection set when the peer multi-selects.
  */
-export function lockGeometry(uuid, peerId) {
-    // Check if the object with the given UUID exists
-    if (sceneObjects.getObjectByProperty('uuid', uuid)) {
-        // Check if there are any currently locked objects
-        if (locked.length != 0) {
-            // Check if the peer has already locked an object
-            let existingLock = locked.find((lockedUuid) => lockedUuid[0] === peerId);
-            if (existingLock) {
-                // Update the locked array by removing the old lock and adding the new one
-                locked = locked.filter((lockedUuid) => lockedUuid[0] != peerId);
-                locked.push([peerId, uuid]);
-            } else {
-                // If the peer hasn't locked an object, lock the new one
-                locked.push([peerId, uuid]);
-            }
-        } else {
-            // If there are no locked objects, simply lock the new one
-            locked.push([peerId, uuid]);
-        }
-        // Update the locked objects store
-        lockedObjects.set(locked);
-    }
+export function lockGeometry(uuid, peerId, uuids) {
+    const wanted = (uuids && uuids.length ? uuids : [uuid]).filter((/** @type {any} */ entry) =>
+        sceneObjects.getObjectByProperty('uuid', entry)
+    );
+    if (!wanted.length) return;
+    // one lock SET per peer: drop the peer's previous locks, add the new ones
+    locked = locked.filter((/** @type {any} */ lockedUuid) => lockedUuid[0] != peerId);
+    wanted.forEach((/** @type {any} */ entry) => locked.push([peerId, entry]));
+    lockedObjects.set(locked);
 }

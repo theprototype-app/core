@@ -1,8 +1,20 @@
 import * as THREE from 'three';
-import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera } from '../stores/sceneStore.js';
+import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands } from '../stores/sceneStore.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
+import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
+import { recordObjectPresence } from '$lib/history'
+import { voicePeerDisconnected } from '$lib/voiceChat'
+import { physicsPeerDisconnected } from '$lib/physics'
+import { dropPeerCursor } from '$lib/nodesHandler'
+import { dropPeerQuality } from '$lib/networkQuality'
+import { environment } from '$lib/environment'
+import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { parkAnimatedAtBase } from '$lib/flowRuntime'
+import { runSceneClearHandlers } from '$lib/moduleSDK'
+import { annotations } from '$lib/annotationsHandler'
+import { get } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
 
@@ -56,6 +68,8 @@ export function userData(data) {
             let index = users.findIndex(u => u[0] === element[0]);
             if (element[1] != '') users[index][1] = element[1];
             if (element[2] != '') users[index][2] = element[2];
+            // avatar config (slot 5) from newer clients
+            if (element[5]) users[index][5] = element[5];
         }
 
     })
@@ -97,11 +111,15 @@ export function sceneCommand(command) {
         if (command.startsWith('/clear')) {
             if (command.split(' ')[1] == 'all')
             {
-                controls.detach();
-                sceneObjects.clear();
+                clearSceneLocal();
+                peer.send({type: 'clearscene', peerId: peer.peer.id});
             } else {
                 let object = sceneObjects.getObjectByProperty('uuid', command.split(' ')[1])
-                if (object != null) sceneObjects.remove(object);
+                if (object != null) {
+                    recordObjectPresence('delete', object);
+                    // parent-aware so nested objects are removed too
+                    (object.parent ?? sceneObjects).remove(object);
+                }
                 peer.send({type: 'delete', uuid: command.split(' ')[1], peerId: peer.peer.id});
             }
         }
@@ -120,30 +138,39 @@ export function sceneCommand(command) {
         else if (command.startsWith('/create')) {
                 let uuid = createGeometry(command);
                 console.log(uuid + ' created');
-                if(uuid != null)
+                if(uuid != null) {
                 peer.send({type: 'create', command: command, uuid: uuid});
+                recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
+                }
                 peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
 
-                fixLight.set(true);
-                sceneObjects.traverse((object) => {
-                    if (object.isLight) {
-                        fixLight.set(false);
-                    }
-                    });
-    
+                // the environment rig lights every preset except Classic —
+                // only nag about missing lights in Classic
+                if (get(environment).preset === 'classic') {
+                    fixLight.set(true);
+                    sceneObjects.traverse((object) => {
+                        if (object.isLight) {
+                            fixLight.set(false);
+                        }
+                        });
+                }
         }
         else if (command.startsWith('/light')) {
                 let uuid = createLight(command);
                 console.log(uuid + ' created');
-                if(uuid != null)
+                if(uuid != null) {
                 peer.send({type: 'light', command: command, uuid: uuid});
+                recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
+                }
                 peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
         }
         else if (command.startsWith('/group')) {
                 let uuid = createGroup(command);
                 console.log(uuid + ' created');
-                if(uuid != null)
+                if(uuid != null) {
                 peer.send({type: 'group', command: command, uuid: uuid});
+                recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
+                }
                 peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
         }
         else if (command.startsWith('/transform')) {
@@ -185,6 +212,27 @@ export function sceneCommand(command) {
     objectsGroup.update((value) => value);
 }
 
+/**
+ * Full local scene wipe (both the local /clear all and the clearscene message):
+ * objects, module viewport content, annotations, locks and byte registries.
+ */
+export function clearSceneLocal() {
+    controls?.detach();
+    sceneObjects?.clear();
+    runSceneClearHandlers(); // modules remove their scene-root content
+    annotations.set([]);
+    lockedObjects.set([]);
+    // animated-import bytes/mixers are per-object — all gone now
+    dropAllAnimatedImports();
+    objectsGroup.update((value) => value);
+}
+
+/** A peer wiped the shared scene @param {string} peerId */
+export function applyClearScene(peerId) {
+    clearSceneLocal();
+    showToast(peerId + ' cleared the scene');
+}
+
 export function lockRestore(lockeditems) {
     // Filter out the current peer id locks
     locked = locked.concat(lockeditems.filter((lock) => lock[0] != peer.peer.id));
@@ -194,11 +242,28 @@ export function lockRestore(lockeditems) {
 
 export function handleDisconnected(peerId) {
     console.log(peerId + ' disconnected');
-    showToast(peerId + ' disconnected');
+    // Full per-peer teardown, idempotent so it's safe to run from both the
+    // conn-close path AND a relayed 'disconnected' message. Toast only while the
+    // peer is still known, so relayed duplicates don't stack toasts (172).
+    const known = users.some((/** @type {any} */ u) => u[0] === peerId);
+    if (known) showToast(peerId + ' disconnected');
     users = users.filter(u => u[0] !== peerId);
     userdata.set(users);
     userdata.update((value) => value);
-
+    // release every remote lock this peer held, keyed by peer id (the checkLocks
+    // uuid-based loop mis-handled this and could strand or wrongly drop locks)
+    locked = locked.filter((/** @type {any} */ l) => l[0] !== peerId);
+    lockedObjects.set(locked);
+    // drop their VR hand markers
+    peerHands.update((map) => {
+        const next = { ...map };
+        delete next[peerId];
+        return next;
+    });
+    dropPeerCursor(peerId);
+    dropPeerQuality(peerId); // N3: drop the peer's network-quality telemetry
+    voicePeerDisconnected(peerId);
+    physicsPeerDisconnected(peerId);
 }
 
 export function checkLocks(data) {
@@ -231,7 +296,8 @@ export function checkLocks(data) {
 
         if(!peer.peer.connections[objectLock[0]]) {
             console.log('Connection ' + objectLock[0] + ' not found. Releasing...');
-            locked = locked.filter((lockedUuid) => lockedUuid[1] === objectLock[1]);
+            // release THIS gone peer's lock (was inverted: kept it, dropped others)
+            locked = locked.filter((lockedUuid) => lockedUuid[1] != objectLock[1]);
         } else if(peer.peer.connections[objectLock[0]].length <= 1) {
             console.log('Peer ' + objectLock[0] + ' is not connected anymore. Releasing...' + objectLock[1]);
             locked = locked.filter((lockedUuid) => lockedUuid[1] != objectLock[1]);
@@ -271,28 +337,35 @@ export async function objectParameters(data) {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.visible = data.visible;
     } else if (data.parameter == 'material') {
+        // carries over color/map/opacity from the previous material
+        switchMaterialType(data.uuid, data.material, false);
+    } else if (data.parameter == 'map') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
-        if (mesh) {
-            if (data.material == 'MeshBasicMaterial') mesh.material = new THREE.MeshBasicMaterial();
-            if (data.material == 'MeshStandardMaterial') mesh.material = new THREE.MeshStandardMaterial();
-            if (data.material == 'MeshPhongMaterial') mesh.material = new THREE.MeshPhongMaterial();
-            if (data.material == 'MeshToonMaterial') mesh.material = new THREE.MeshToonMaterial();
-            if (data.material == 'ShadowMaterial') mesh.material = new THREE.ShadowMaterial();
-        }
-            
+        if (mesh) applyMap(mesh, data.map);
+    } else if (data.parameter == 'materialParam') {
+        setMaterialParam(data.uuid, data.key, data.value, false);
+    } else if (data.parameter == 'animation') {
+        setAnimationState(data.uuid, { clip: data.clip, playing: data.playing, speed: data.speed }, false);
     } else if (data.parameter == 'castShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.castShadow = data.castShadow;
     } else if (data.parameter == 'receiveShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.receiveShadow = data.receiveShadow;
+    } else if (data.parameter == 'renderOrder') {
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) mesh.renderOrder = data.renderOrder;
+    } else if (data.parameter == 'frustumCulled') {
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) mesh.frustumCulled = data.frustumCulled;
     }
 }
 
 export async function deleteObject(uuid) {
     let object = sceneObjects.getObjectByProperty('uuid', uuid)
+    if (!object) return;
     object.parent?.remove(object);
-    if(selected.uuid == uuid) controls.detach();
+    if(selected?.uuid == uuid) controls.detach();
     sceneObjects.remove(sceneObjects.getObjectByProperty('uuid', uuid));
     //Trigger reactivity for UI list of objects on remote
     objectsGroup.update((value) => value);
@@ -374,7 +447,15 @@ export function sendObjects(peerId, element) {
     setTimeout(() => {
         // Send amount of objects to be sent and their uuids
         conn.send({type: 'loading', count: count, uuids: uuids});
-        sendObject(conn, element, groupid);
+        // park animated objects at their base pose so the receiver captures the
+        // TRUE animation base, not a mid-swing pose (88). The walk below reads
+        // every transform synchronously, so restore right after.
+        const restore = parkAnimatedAtBase();
+        try {
+            sendObject(conn, element, groupid);
+        } finally {
+            restore();
+        }
         uuids = [];
     }, 500);
 
@@ -390,7 +471,10 @@ export function sendObject(conn, element, groupuuid) {
     }
     // Iterate over all objects in the scene
     objects.forEach(element => {
-        if (element.type == "Group") {
+        if (hasAnimatedImport(element.uuid)) {
+            // rigs travel as their original file bytes, one message
+            sendAnimatedImport(conn, element);
+        } else if (element.type == "Group") {
             if (element.parent.parent.parent !== null) {
                 groupuuid = element.parent.uuid
                 // console.log("group uuid: " + groupuuid);
@@ -437,29 +521,29 @@ export function sendObject(conn, element, groupuuid) {
             });
             sendObject(conn, element, element.uuid);
         } else {
+            // capture the transform NOW (synchronously, while animated objects
+            // are parked at their base) — the exporter callback fires later (88)
+            const pos = element.position.toArray();
+            const rot = element.rotation.toArray();
+            const scale = element.scale.toArray();
             const exporter = new GLTFExporter({outputEncoding: 'json'});
             exporter.parse(
                 element,
                 function (result) {
-                    // console.log('packing gltf');
-                    element.getWorldPosition(test);
-                    // if (element.name === "Rug001")
-                        // console.log("Rug001 pos: " + element.position.x + " " + element.position.y + " " + element.position.z)
-                    // if (groupuuid) console.log("group uuid " + groupuuid + ' ' + ' ' + element.name);
                     conn.send({
                         type: 'object',
                         element: result,
                         uuids: [element.uuid],
                         groupuuid: groupuuid,
-                        pos: element.position.toArray(),
-                        rot: element.rotation.toArray(),
-                        scale: element.scale.toArray()
+                        pos: pos,
+                        rot: rot,
+                        scale: scale
                     });
                 },
                 function (error) {
                     console.log(error);
                 }
-            );                
+            );
         }
     })
 
@@ -473,7 +557,7 @@ function countObjects(element) {
         objects = sceneObjects.children;
     }
     objects.forEach(element => {
-        if (element.type == "Group") {
+        if (element.type == "Group" && !hasAnimatedImport(element.uuid)) {
             countObjects(element);
         }
         uuids.push(element.uuid)

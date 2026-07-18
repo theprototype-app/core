@@ -2,9 +2,6 @@
 	import * as THREE from 'three';
 	import {
 		Avatar,
-		Tooltip,
-		Popover,
-		Button,
 		Modal,
 		Input,
 		Dropdown,
@@ -14,18 +11,37 @@
 	} from 'flowbite-svelte';
 	import {
 		chatHidden,
-		propertiesClose,
-		lightPropertiesClose,
-		scenePropertiesClose,
 		specatorMode,
 		username,
 		userdata,
-		peers
+		peers,
+		hidePanels,
+		characterModalOpen
 	} from '../../stores/appStore.js';
-	import { globalScene, globalCamera, camSave } from '../../stores/sceneStore.js';
+	import { globalScene, globalCamera, camSave, peerHands } from '../../stores/sceneStore.js';
+	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
+	import { peerQuality } from '$lib/networkQuality';
+	import ContextMenu from '../ContextMenu.svelte';
+
+	// N3: latency-band dot color for a peer's network-quality indicator
+	const qColor = (level: string) =>
+		level === 'good' ? '#4ade80' : level === 'ok' ? '#fbbf24' : level === 'bad' ? '#f87171' : '#9ca3af';
 
     let openDropdown = $state(false);
   	let profileSettingsModal = $state(false);
+	let muteMenu = $state(null);
+	// 130: the peers overflow is a proper popover listing EVERY peer (none
+	// hidden by stacking) with a labeled Watch affordance
+	let peersOpen = $state(false);
+	/** @param {string} id */
+	function shortId(id) {
+		return String(id ?? '').slice(0, 6);
+	}
+
+	function openMuteMenu(event, peerId) {
+		event.preventDefault();
+		muteMenu = { x: event.clientX, y: event.clientY, peerId };
+	}
 
 	// $effect(() => {
 	// 	Object.keys($peers.connections).forEach((element) => {
@@ -71,6 +87,8 @@
 		if($specatorMode)
 			return;
 		$specatorMode = user;
+		// hide the editing panels while spectating, chat and flow stay available
+		hidePanels(['chat', 'flow']);
 		$camSave = new THREE.PerspectiveCamera();
 		$camSave.position.copy($globalCamera.position)
 		$camSave.rotation.copy($globalCamera.rotation)
@@ -99,127 +117,73 @@
 	 }
 </script>
 
-<div style="position: fixed; right: 0px; z-index: 997;">
+<div class="top-right-chrome" style="position: fixed; right: 0px; z-index: 997;">
 	<div class="flex" style=" position: absolute; top: 15px; right: 100px; z-index: 997;">
-{#if $userdata}
-<!-- {console.log($userdata)} -->
-{#if $userdata.length < 4}
-<div style=" position: absolute; right: 0px;">
-	<div class="flex items-center space-x-3">
-{#each $userdata as user, i}
-{#if i > 0}
-		<Avatar href="/" stacked src={user[2]}
-			onclick={() => { if (!user[3]) specate(user[0]); } }
-		/>
-		<Tooltip placement="top" arrow={false}>
-			<div style="display: flex; align-items: center;">
-			Peer: {user[0]}
-			</div>
-			<div style="display: flex; overflow: hidden;">
-				<p style="">User:&nbsp;</p>
-				<p style="">{user[1]}</p>
-			</div>
-			{#if (user[3])}
-			<div style="display: flex; overflow: hidden;">
-				<p style="">Watching:&nbsp;</p>
-				<p style="">{user[3]}</p>
-			</div>
-			{/if}
-		</Tooltip>
-
-		{/if}
-		{/each}
-	</div>
-</div>
-{:else}
-
-		<Avatar href="/" stacked src={$userdata[1][2]}
-			onclick={() => { if (!$userdata[1][3]) specate($userdata[1][0]); } }
-		/>
-		<Tooltip placement="top" arrow={false}>
-			<div style="display: flex; align-items: center;">
-			Peer: {$userdata[1][0]}
-			</div>
-			<div style="display: flex; overflow: hidden;">
-				<p style="">User:&nbsp;</p>
-				<p style="">{$userdata[1][1]}</p>
-			</div>
-			{#if ($userdata[1][3])}
-			<div style="display: flex; overflow: hidden;">
-				<p style="">Watching:&nbsp;</p>
-				<p style="">{$userdata[1][3]}</p>
-			</div>
-			{/if}
-		</Tooltip>
-
-		<Avatar href="/" stacked src={$userdata[2][2]}
-			onclick={() => { if (!$userdata[2][3]) specate($userdata[2][0]); } }
-		/>
-		<Tooltip placement="top" arrow={false}>
-			<div style="display: flex; align-items: center;">
-			Peer: {$userdata[2][0]}
-			</div>
-			<div style="display: flex; overflow: hidden;">
-				<p style="">User:&nbsp;</p>
-				<p style="">{$userdata[2][1]}</p>
-			</div>
-			{#if ($userdata[2][3])}
-			<div style="display: flex; overflow: hidden;">
-				<p style="">Watching:&nbsp;</p>
-				<p style="">{$userdata[2][3]}</p>
-			</div>
-			{/if}
-		</Tooltip>
-
-
-		<Avatar
-			id="b2"
-			stacked
-			class="bg-gray-700 text-sm text-white hover:bg-gray-600"
-			onclick={() => console.log($peers.connections)}
-			><button>+{$userdata.length - 3}</button></Avatar
+{#if $userdata && $userdata.length > 1}
+	<div class="relative">
+		<!-- compact trigger: a few stacked avatars + the peer count -->
+		<button
+			id="peers-trigger"
+			class="flex items-center gap-2 rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-1 backdrop-blur hover:bg-gray-700/85"
+			title="Connected peers"
+			onclick={() => (peersOpen = !peersOpen)}
 		>
+			<div class="flex -space-x-2">
+				{#each $userdata.slice(1, 4) as user (user[0])}
+					<Avatar stacked src={user[2]} class="h-7 w-7 border-2 border-gray-800" />
+				{/each}
+			</div>
+			<span class="pr-1 text-xs font-semibold text-gray-200">{$userdata.length - 1}</span>
+		</button>
 
-				<Popover
-					triggeredBy="#b2"
-					class="w-64 bg-white text-sm font-light text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400"
-				>
-					<div class="p-3">
-						{#each $userdata as user, i}
-							{#if i > 2}
-
-
-							<ul class="w-full items-center divide-gray-200 text-sm font-medium dark:divide-gray-600 dark:border-gray-600 dark:bg-gray-800 sm:flex">
-								<li class="w-1/3 p-4">
-									<Avatar href="/" stacked src={user[2]}
-										onclick={() => { if (!user[3]) specate(user[0]); } }
-									/>
-								</li>
-								<li class="w-2/3">
-									
-									<span class="flex">Peer: {user[0]}
-									</span>
-									
-									<div style="display: flex; overflow: hidden;">
-									<p style="">User:&nbsp;</p>
-									<p style="">{user[1]}</p>
-									</div>
-									{#if (user[3])}
-									<div style="display: flex; overflow: hidden;">
-										<p style="">Watching:&nbsp;</p>
-										<p style="">{user[3]}</p>
-									</div>
-									{/if}
-								</li>
-							</ul>
-
-
-							{/if}
-						{/each}
+		{#if peersOpen}
+			<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => (peersOpen = false)}></div>
+			<div id="peers-popover" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 998;">
+				<p class="ui-section-label">Connected ({$userdata.length - 1})</p>
+				{#each $userdata as user, i (user[0])}
+					<div
+						class="peers-row flex items-center gap-2 rounded px-1.5 py-1 {$specatorMode === user[0]
+							? 'bg-primary-800/60'
+							: 'hover:bg-gray-700/60'}"
+					>
+						<Avatar src={user[2]} class="h-8 w-8 shrink-0" />
+						<div class="min-w-0 flex-1">
+							<div class="flex items-center gap-1 truncate text-sm text-gray-100">
+								<span class="truncate">{user[1] || 'Peer'}</span>
+								{#if i === 0}<span class="text-[10px] text-primary-300">(you)</span>{/if}
+							</div>
+							<div class="flex items-center gap-1.5 text-[10px] text-gray-400">
+								<span class="truncate">{shortId(user[0])}</span>
+								{#if $mutedPeers.includes(user[0])}<span title="Muted">🔇</span>{/if}
+								{#if $peerHands[user[0]]?.active}<span title="In VR">🥽</span>{/if}
+								{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
+								{#if i > 0 && $peerQuality[user[0]]}
+									{@const q = $peerQuality[user[0]]}
+									<span
+										title={q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…'}
+										style="color: {qColor(q.level)}">●{q.rtt != null ? ` ${Math.round(q.rtt)}ms` : ''}</span
+									>
+									{#if q.relayed}<span class="text-orange-300" title="Relayed through a TURN server">relayed</span>{/if}
+								{/if}
+							</div>
+						</div>
+						{#if i > 0}
+							<button
+								class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {$specatorMode === user[0]
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
+								title={$specatorMode === user[0] ? 'Watching (exit from the banner)' : 'Watch this peer'}
+								onclick={() => { specate(user[0]); peersOpen = false; }}
+								oncontextmenu={(e) => openMuteMenu(e, user[0])}
+							>
+								{$specatorMode === user[0] ? '👁 Watching' : '👁 Watch'}
+							</button>
+						{/if}
 					</div>
-				</Popover>
-				{/if}
-
+				{/each}
+			</div>
+		{/if}
+	</div>
 {/if}
 	</div>
 	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2; z-index: 999;">
@@ -259,9 +223,12 @@
 		<span class="block text-lg">{localStorage.getItem('username') ? localStorage.getItem('username') : 'Anonymous'}</span>
 		<DropdownDivider />
 	</DropdownHeader>
-	<DropdownItem>
-		<p class="text-gray-500 dark:text-gray-400">Customize Character</p>
-	</DropdownItem>
+	<DropdownItem
+		onclick={() => {
+			characterModalOpen.set(true);
+			openDropdown = false;
+		}}>Customize Character</DropdownItem
+	>
 	<DropdownItem
 		onclick={() => {
 			profileSettingsModal = true;
@@ -271,6 +238,20 @@
 </div>
 
 
+
+{#if muteMenu}
+	<ContextMenu
+		x={muteMenu.x}
+		y={muteMenu.y}
+		items={[
+			{
+				label: $mutedPeers.includes(muteMenu.peerId) ? 'Unmute voice' : 'Mute voice',
+				action: () => toggleMutePeer(muteMenu.peerId)
+			}
+		]}
+		on:close={() => (muteMenu = null)}
+	/>
+{/if}
 
 <Modal title="" bind:open={profileSettingsModal} outsideclose>
 
@@ -283,17 +264,17 @@
 			>
 				Avatar
 			</p>
-			<input type="file" id="avatar-file" style="display: none" on:change={e => avatar_load(e)}/>
+			<input type="file" id="avatar-file" style="display: none" onchange={e => avatar_load(e)}/>
 			{#if avatarImage != ''}
-			<img id="avatar-preview" src={avatarImage} class="h-14 w-14 dark:border-gray-800" 
-			on:click={() => document.getElementById('avatar-file').click()}
+			<img id="avatar-preview" src={avatarImage} class="h-14 w-14 dark:border-gray-800"
+			onclick={() => document.getElementById('avatar-file').click()}
 			/>
 			{:else if localStorage.getItem('avatar') != null}
-			<img id="avatar-preview" src={localStorage.getItem('avatar')} class="h-14 w-14 dark:border-gray-800" 
-			on:click={() => document.getElementById('avatar-file').click()}
+			<img id="avatar-preview" src={localStorage.getItem('avatar')} class="h-14 w-14 dark:border-gray-800"
+			onclick={() => document.getElementById('avatar-file').click()}
 			/>
 			{:else}
-			<svg on:click={() => document.getElementById('avatar-file').click()}
+			<svg onclick={() => document.getElementById('avatar-file').click()}
 			fill="currentColor"
 			viewBox="0 0 16 16"
 			xmlns="http://www.w3.org/2000/svg"
@@ -348,3 +329,22 @@
 	</div>
 	<br />
 </Modal>
+
+<style>
+	/* narrow: the connect bar owns the top row, so the peers/profile chrome drops
+	   to a second row below it (shifting the fixed wrapper moves its children) */
+	@media (max-width: 640px) {
+		.top-right-chrome {
+			top: 58px;
+		}
+		/* pin the peers list to the viewport so it can't spill off the left edge
+		   when the trigger sits near a narrow screen's right edge */
+		#peers-popover {
+			position: fixed;
+			top: 122px;
+			right: 8px;
+			left: auto;
+			max-width: calc(100vw - 16px);
+		}
+	}
+</style>

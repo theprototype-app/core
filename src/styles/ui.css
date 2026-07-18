@@ -1,0 +1,126 @@
+/* Design tokens + shared utility classes (phase 63). Components compose these
+   instead of re-inventing panel chrome. The app is dark-first (html.dark). */
+
+:root {
+	/* z-tiers — every layered component maps to ONE of these (phase 68).
+	   viewport: three.js canvas
+	   drawer: side drawers (inspector, library, sidebar menu)
+	   bottom: the docked flow editor
+	   window: floating windows (chat, object list, undocked flow, script panel)
+	   hud: toolbar pills, play button, burger — the dock, always clickable
+	   modal: flowbite modals (settings, modules, attribution)
+	   toast: notifications — above everything */
+	--z-viewport: 0;
+	--z-drawer: 30;
+	--z-bottom: 35;
+	--z-window: 40;
+	--z-hud: 45;
+	/* modal/toast sit ABOVE the persistent top chrome — the avatar/peers popover
+	   (~996-998) and Connect (300) — which live outside this scale, so a modal and
+	   its X are never covered. Kept below ThemedSelect (9999) so in-modal dropdowns
+	   still open over the modal. */
+	--z-modal: 1100;
+	--z-toast: 1200;
+	/* the logo/burger menu is the TOP-most persistent chrome — above Connect (300)
+	   and toasts (1200) so it is never opened "behind" them. Modals launched from it
+	   close the menu, so they don't need to out-rank it. */
+	--z-menu: 1300;
+}
+
+/* Flowbite hardcodes the modal dialog at z-50 and its backdrop at z-40 — both
+   under the avatar/Connect chrome. Map them onto the modal tier (unlayered, so it
+   beats Tailwind's layered z-40/z-50 utilities without !important). */
+[role='dialog'][aria-modal='true'] {
+	z-index: var(--z-modal);
+}
+*:has(+ [role='dialog'][aria-modal='true']) {
+	z-index: calc(var(--z-modal) - 1);
+}
+
+/* The "+" HUD button (MobileAddButton) opens the create/context menu without a
+   right-click. Shown on ALL widths (user request): on touch it's the only way in,
+   on a fine-pointer desktop it's a convenience alongside right-click. */
+.mobile-hud-btn {
+	display: flex;
+}
+/* drag/resize handles must claim the touch gesture (else the browser scrolls) */
+.move-handle,
+.resize-handle {
+	touch-action: none;
+}
+/* Narrow screens: lift the corner HUD buttons ABOVE the centred Controls pill so
+   they don't overlap/crowd it (the pill stays one line). +/chat on one row, mic
+   above chat. */
+@media (max-width: 600px) {
+	#chat-button,
+	#mobile-add-button {
+		bottom: 74px;
+	}
+	#mic-button {
+		bottom: 122px;
+	}
+}
+
+@layer components {
+	/* panel chrome */
+	.ui-panel {
+		@apply rounded-lg border border-gray-700/60 bg-gray-800 text-gray-200 shadow-xl;
+	}
+	.ui-panel-header {
+		@apply flex items-center gap-2 border-b border-gray-700/60 px-3 py-2 text-sm font-semibold text-gray-100;
+	}
+	.ui-section-label {
+		@apply mb-1 mt-3 px-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400;
+	}
+	.ui-row {
+		@apply flex items-center gap-2 px-1 py-1 text-sm text-gray-200;
+	}
+	.ui-input {
+		@apply rounded border border-gray-600 bg-gray-900/60 px-2 py-1 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500;
+	}
+	.ui-chip {
+		@apply rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider;
+	}
+	.ui-badge-type {
+		@apply ui-chip bg-primary-700 text-white;
+	}
+	.ui-button-quiet {
+		@apply rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-600;
+	}
+	/* resize hot zones (82.4): the highlight shows only after ~600ms of hover,
+	   so casually crossing a panel edge never flashes it; cursor stays instant */
+	.resize-cue {
+		background-color: transparent;
+		transition: background-color 0.15s ease 0.6s;
+	}
+	.resize-cue:hover {
+		background-color: rgb(249 115 22 / 0.5);
+	}
+	/* notebook-tab side buttons (82): trapezoid, narrower at the outer edge;
+	   the shape mirrors when the palette sits on the RIGHT (105) — glyphs stay */
+	.palette-tab {
+		clip-path: polygon(0 0, 100% 14%, 100% 86%, 0 100%);
+	}
+	.palette-tab-mirrored {
+		clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%);
+	}
+	/* drag-merge feedback (104): the window you'd merge into lights up */
+	.merge-target {
+		outline: 2px solid rgb(249 115 22 / 0.9);
+		outline-offset: -1px;
+	}
+	.merge-target::before {
+		content: '⧉ Merge into tabs';
+		position: absolute;
+		top: -24px;
+		left: 8px;
+		z-index: 50;
+		padding: 2px 8px;
+		border-radius: 6px;
+		background: rgb(249 115 22);
+		color: white;
+		font-size: 11px;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+}

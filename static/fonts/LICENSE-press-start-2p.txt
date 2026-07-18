@@ -1,0 +1,7 @@
+Press Start 2P (press-start-2p-latin.woff2)
+Copyright 2012 The Press Start 2P Project Authors (codeman38@zone38.net),
+with Reserved Font Name "Press Start 2P".
+
+Licensed under the SIL Open Font License, Version 1.1.
+https://openfontlicense.org
+Full text: https://github.com/google/fonts/blob/main/ofl/pressstart2p/OFL.txt

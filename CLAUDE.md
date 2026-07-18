@@ -1,0 +1,352 @@
+# CLAUDE.md — theprototype.app
+
+Collaborative peer-to-peer 3D prototyping app: SvelteKit (static adapter) + Svelte 5 +
+Threlte 8 + three.js, peerjs mesh networking (no server beyond PeerJS signaling), a
+node/flow editor (@xyflow/svelte 0.1.x) driving scene behavior, and a module SDK for
+loadable play content. Everything a user does must be visible to connected peers.
+
+## Architecture map
+
+- `src/stores/` — `appStore` (UI panels, userdata, peers instance, toasts+action-toasts,
+  modulesOpen), `sceneStore` (three refs: objectsGroup/TControls/camera/renderer,
+  selection, locks, VR incl. vrFlying/vrSnapAngle), `flowStore` (nodes/edges/cursors/
+  customNodeDefs/scriptErrors/sync flags).
+- `src/lib/peerHandler.svelte.js` — PeerConnection class; **all incoming messages**
+  dispatch in `conn.on('data')`; `sendHandshake` fires **on connection open** and pushes
+  locked/hosts/userdata/module versions/environment + requests full-state syncs
+  (`getobjects/getnodes/getannotations/getmodulestate/getnodedefs`).
+- `src/lib/commandsHandler.svelte.js` — receive-side scene appliers + `sendObjects`
+  (GLTF full sync; animated imports detour through `sendAnimatedImport` raw bytes).
+- Domain modules in `src/lib/`: `objectActions`, `geometries.svelte.js`,
+  `materialsHandler`, `meshEdit` (+VR handle drag; `tickMeshEdit` re-poses the WORLD-space
+  handles when the object moves — scene-root handles don't follow for free), `faceEdit`
+  (topology core: coplanar+adjacent tris = logical faces; extrude/inset/move/delete with
+  OUTWARD-wound stitching; `meshgeo` full-geometry snapshots; VR rigid face-grab + live
+  extrude adjust; 300-tri VR cap; desktop UI = MeshEditPopup), `history` (kind registry:
+  create/delete/group/material/props/transformSet/verts/animimport/geometry/meshgeo;
+  recording auto-muted while applying; 5 MB snapshot cap), `snapping`, `shortcuts`
+  (registry = bindings AND Settings list),
+  `flowRuntime` (per-frame tick, baseState rebase, suspend/resume for gizmo drags,
+  `parkAnimatedAtBase` for serializers, module effects, script + sound nodes),
+  `soundRuntime` (sound-node panner chains, loop phase = synced clock), `scriptRuntime`
+  + `customNodes` (replicated user node defs; #9: def range-params get input sockets,
+  `pruneCustomNodeEdges` drops edges to removed params deterministically), `nodesHandler`
+  + `nodeCatalog` (+nodesync drift heal), `flowSockets` (typed socket coercion + colors;
+  #9 `Socket.svelte` wraps the xyflow Handle and paints `typeColor` by socket type;
+  audit + verdicts in committed `NODES.md`), `objectMenu` (#9: `buildObjectMenuItems` —
+  ONE object context menu shared by Controls' direct menu + ViewportMenu's "Selected"
+  submenu), `moduleSDK` + `userModules` (zip/URL installs), `physics` (rapier,
+  initiator-authoritative), `environment` (presets + scene-root rig, latest-wins sync,
+  `passthroughActive` local sky lift), `animatedImports` (raw-bytes objectfile sync),
+  `prefabs` (local IndexedDB library), `explorer` (LOCAL asset library: IndexedDB index
+  + per-item blobs, content hashes, thumbnails) + `explorerDrop` (drag-out placement/
+  texturing) + `assetShare` (assetfile/getasset hash push+pull → 'Shared' folder) +
+  `packs` (N6: Explorer Packs — libraryList defaults + manifest.json .zip imports,
+  normalized; LOCAL library, only PLACED objects replicate; PACKS_BASE off-bundle CDN
+  const; PACKS.md committed format) + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
+  three.js preview canvas + popup, `enable3dPreview`),
+  `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
+  `networkQuality` (N6/D3: LOCAL per-peer getStats RTT + relay dot, median, NOT replicated),
+  `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
+  (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
+  world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
+  dispatcher — namespaces panel:/props:/prefabs:/chat:/kbd:/face:) + `vrRadialMenu`
+  (sector math, entry registry, ring nav STACK, controller-anchored pose) +
+  `vrWindowPoses` (grip-hold window grab: anchor-relative persisted offsets; every VR
+  follower panel poses through `applyWindowPose(group, id, anchor)`) + `vrPalette`
+  (sRGB hue/sat disc math) + `vrKeyboard` (native key grid, one-shot shift buffer,
+  `openVRKeyboard({initial, onCommit})` targets — reused by rename + chat),
+  `dungeonPlay` (raster collision/spawns from the dungeon module's userData.play
+  contract), `geometryEdit` + `geometryParams`, `lightParams` (+local shadow-quality
+  caps), `cameraClip` (LOCAL near/far prefs; far pairs with orbit maxDistance so
+  zooming out can't pass the far plane) + `sceneBounds` (radius sweep feeding it),
+  `sceneAssets` (derived Scene manifest: audio/config/textures in use), `avatarModel`
+  (avatar defaults, photo-card rule, per-shape hat anchors), `themes` (data-theme
+  token blocks, local-only), `windowTabs` (+`closeGroup` = tab ✕ closes ALL members) +
+  `windowFocus` + `docking` + `dragWindow` + `searchMenuUx` (floating-window system),
+  `fileWindows` (floating text/image editor windows), `autosave` + `idb`,
+  `annotationsHandler`, `sessions` (+ .zip export/import bundling scene assets via
+  fflate; #9: the SAME bundle is the first-class **.tpscene** format — `exportSessionZip`
+  takes `{assets,packs,flow}` include-opts, adds a `packs/` section; `fileHandler` saves/
+  loads it, Sidebar Files = [GLTF | Scene | ⚙cog]), `measure`, `cameraBookmarks`,
+  `editorNavigation`, `lightHelpers`.
+- `src/modules/` — core modules (hello, button, dungeon, piano, pong) + `index.js`
+  `coreModules` list; manager enables/disables (live enable, reload to disable).
+- UI: `components/menu/*` (drawers/modals; visibility via stores + `hidePanels/
+  restorePanels`), `components/editors/*` (flow editor + CodeMirror panels),
+  `components/play/*` (player, avatars — photo = billboard card; the VR follower
+  panels: Menu/ObjectsPanel/PropertiesPanel/ColorPalette/PrefabsPanel/Keyboard/
+  ChatPanel/Stats — named `vr<x>-*` control meshes, all grip-grabbable),
+  scene-overlay components (PingMarkers/PathWaypoints/LockHighlights), shared
+  `ContextMenu.svelte` (caps to viewport + scrolls vertically when tall, never
+  horizontally; per-submenu flip via left/right/top/bottom — no transform),
+  `components/shared/WindowShell.svelte` (197: reusable window CHROME — collapsible/
+  resizable/side-switchable primary sidebar + a multi-mode secondary panel that
+  reflows opposite it; snippet slots topbar/primary/main/secondary; chrome-only,
+  LOCAL prefs keyed `ws:<key>:*`; the Explorer is built on it, Flow is NOT — parity
+  deferred).
+- `tests/e2e/` — committed Playwright suites (`npm run e2e`, subset by name);
+  `.cjs` because the package is `"type": "module"`.
+- `docs/sdk/` — SDK docs (kept **uncommitted**, like docs/plan). `MODULES.md` committed.
+
+## Replication golden rules
+
+1. Every mutation = apply locally + `$peers.send({type, ...})`; receivers apply WITHOUT
+   re-broadcasting. Add the `type` case to `conn.on('data')`.
+2. Never send on a timer after connecting — peerjs silently drops pre-open messages.
+   Send in the connection `open` callback (`sendHandshake`) or retry-until-`conn.open`
+   (`sendNodes`/`sendAnnotations`/`sendModuleStates` pattern).
+3. Each domain needs a full-state reply for late joiners (`get<domain>` in
+   `sendHandshake`) and cleanup in `handleDisconnected`.
+4. Key everything by uuid; peers assume the **same app version** (catalogs/builders/
+   modules execute identically — versions handshake toasts on mismatch).
+5. **objectsGroup = replicated, scene root = local.** Helpers, the environment rig and
+   module viewport content live at the scene root (fixed names), so they never enter
+   GLTF sync or duplicate on connect; regenerating content rebuilds from module/env
+   state instead. Scene-root groups need `registerInteractiveGroup` to be clickable.
+6. Content that can't round-trip (skinned rigs) replicates as its **original file
+   bytes** (`objectfile`), not through the per-node exporter (GLTFExporter is lossy and
+   `sendObject` splits children, destroying rigs). Topology edits snapshot the FULL
+   geometry (`meshgeo` positions array, size-capped) — receivers swap it wholesale, and
+   the applier must REBUILD any live edit-session caches (applyMeshGeo re-derives face
+   groups; a stale cache after undo/remote swap bit us). Live gestures stream throttled
+   previews (~5/s) and commit ONE final snapshot + undo entry.
+7. Singleton shared state (environment) syncs latest-wins via a `changedAt` stamp;
+   symmetric pulls need a deterministic direction (nodesync: lower count pulls,
+   peer-id tiebreak) or two drifted peers swap forever.
+8. Two sync models: **deterministic** (seed/params + synced clock — dungeon, effects,
+   scripts, sound loops; determinism IS the netcode) vs **authoritative** (initiator
+   simulates and broadcasts — physics, pong ball). Pick one per feature; never mix.
+9. Binary asset sharing = **content hash push+pull** (`assetfile`/`getasset`,
+   assetShare.js): push once on assign, any peer missing a hash pulls it — covers late
+   joiners/restores without handshake dumps. REPLY over your stable OUTGOING
+   `peer.connections[peerId]`, never the incoming conn (it can be a stale duplicate
+   from the connect dance). binarypack delivers Uint8Array **views** — slice
+   byteOffset..byteLength before hashing.
+10. Serializers (sendObjects, GLTF save, autosave, sessions) must
+   `parkAnimatedAtBase()` first or receivers bake mid-swing poses as animation base;
+   `restoreBase` calls `updateMatrix()` because toJSON/GLTFExporter read the matrix
+   the last RENDER composed.
+
+## Hard-won gotchas (do not rediscover)
+
+- Svelte 5 forbids mixing `on:click` and `onclick` **per component** — match the file's
+  existing style. In a RUNES-mode file (any `$state`/`$derived`/`$effect`) use the
+  attribute form `onclick`/`oninput`; the `on:` directive is deprecated there and each
+  use adds a svelte-check WARNING that counts against the baseline (bit the 203 sidebar
+  rewrite). Runes-mode files can't use `$:` — and adding ONE `$state` to a `$:` file
+  flips it to runes mode and breaks the build. Never introduce `$state` into
+  legacy-mode components.
+- a11y warnings count against the baseline too. A `<div>` you make keyboard-focusable
+  should use `tabindex="-1"` + programmatic `.focus()` (the `a11y_no_noninteractive_tabindex`
+  rule only fires for tabindex `>= 0`; `.focus()` still works at -1). A container that
+  needs click/drag listeners (grid background, tree drop-row) takes a targeted
+  `<!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_static_element_interactions -->`
+  (add `a11y_click_events_have_key_events` if it has `onclick` and no key handler).
+  Adding `role="treeitem"`/`role="button"` etc. to dodge one warning can ADD others
+  (treeitem then demands `aria-selected` + a tabindex) — prefer the ignore.
+- Editing svelte files by exact-match is whitespace-sensitive; the files use TABS.
+  When an Edit "String not found" repeats, `sed -n 'A,Bp' file | cat -A` shows tabs as
+  `^I` — copy the exact indentation. Bare single-line substrings (no leading tab) are
+  the safest anchor.
+- `$effect` tracks EVERY store read synchronously inside it — side reads (userdata,
+  globalScene…) retrigger it and can hit `effect_update_depth_exceeded`, which
+  UNMOUNTS the app. Wrap one-shot side work in `untrack(() => …)` so the effect only
+  depends on its trigger.
+- No `bind:value` ping-pong with store round-trips — widgets render from data and write
+  via handlers (`setNodeData`).
+- Media elements: `muted`/`volume` set as properties in an action, not attributes.
+- The Threlte Canvas wrapper swallows **pointerup AND pointermove** mid-gesture —
+  put both on `window`; only `pointerdown` belongs on the canvas.
+- Threlte `<T>` `oncreate` passes the ref **DIRECTLY** (`CreateEvent<T> = (ref) => void`),
+  NOT wrapped: `oncreate={(ref) => …}`, never `oncreate={({ref}) => …}` (the destructure
+  silently captures `undefined` — this stranded every annotation pin at the origin +
+  killed PingMarkers' animations, N1/roadmap-7).
+- WebXR hand joints: read them from threlte's `useHand('left'/'right')` store
+  (`.current?.hand.joints[name]` — the SAME XRHand space it renders), keyed by
+  HANDEDNESS. Raw `renderer.xr.getHand(SLOT).joints` by app slot index is unreliable (the
+  tracked hand isn't necessarily at that slot). VR presence broadcasts joints wrist-local
+  (rig-independent) + the wrist in the content frame; peers branch on `joints.length`
+  (spheres vs the controller box).
+- Shared THREE temp vectors corrupt values across helper calls — clone before reuse.
+- Never write a store from inside its own subscriber (infinite flush loop) — read refs
+  first, then mutate (also applies inside test `evaluate`).
+- **Vite HMR module identity**: a page-side dynamic `import('/src/lib/x.js')` can bind a
+  SECOND module instance once vite timestamps the app's copy (empty stores, false
+  fails). Singletons are only reachable via the `window.__stores` debug hook — extend
+  the hook in App.svelte when a test needs a new module.
+- flowbite: Modal has no `onopen` (react to the bound store); Dropdown anchors to its
+  previous sibling; toasts container keeps `pointer-events: none` (children re-enable).
+- `event.code` (`Digit1`) for digit shortcuts — `event.key` breaks with Shift.
+- Stores initialized `writable(null)`/`writable([])` infer `never` — annotate with
+  JSDoc `Writable<any>`; keep NEW files clean (legacy implicit-any baseline stays).
+- `npm i` needs `--legacy-peer-deps` (three vs postprocessing peer conflict).
+- PowerShell mangles emoji AND em-dashes when rewriting files, and inline `node -e`
+  quoting breaks — write a scratch `.cjs` and run it with node for any file rewrite
+  containing non-ASCII. Commit messages: **ASCII only** — a `▸`/em-dash inside a
+  here-string can split it into a bogus git pathspec; no embedded double quotes either.
+- CSS `transform` makes an element the containing block for `position: fixed`
+  descendants — flipping the context menu with a transform mis-placed its fixed
+  submenus. Menus/popovers that host fixed children flip with left/right/top/bottom
+  only, never a transform. Context menus DO now cap to the viewport + scroll
+  VERTICALLY (visible slim bar, `.ctx-scroll`) when too tall, but never horizontally
+  (`overflow-x: hidden`); each submenu re-decides its flip locally in `openSubmenu`
+  (not inherited from the root click) so deep chains stay on-screen. The fixed
+  submenus escape the root's scroll box, so a scrolling root never grows an x-bar.
+- `backdrop-filter`/`filter` ALSO make an element the containing block for
+  `position: fixed` descendants (same trap as transform). A `fixed` popup rendered
+  inside `.app-sidebar` (which has `backdrop-blur`) centered on the SIDEBAR and spilled
+  off-screen — render such popups at the component ROOT, not inside a blurred/filtered
+  ancestor (roadmap 9 export-settings bug).
+- **z-index tiers** (`ui.css` `:root`): viewport 0 · drawer 30 · bottom 35 · window 40 ·
+  hud 45 · **modal 1100 · toast 1200 · menu 1300**. The high modal/toast/menu values
+  clear the ad-hoc persistent chrome that lives OUTSIDE the scale — Users (avatar/peers)
+  ~996-998, Connect 300, ContextMenu 999-1001, ThemedSelect 9999. flowbite Modal
+  hardcodes its dialog z-50 + backdrop z-40, remapped onto `--z-modal` by an UNLAYERED
+  `[role='dialog'][aria-modal='true']` rule (unlayered beats Tailwind's layered utility
+  without !important). The logo/burger menu sits at `--z-menu` (top-most); opening a
+  modal from it calls `closeMenu.set(true)` so the menu can't cover the modal.
+- **Mobile/touch** (roadmap 9): there is no `isMobile` store — gate with CSS
+  `@media (pointer: coarse), (max-width: …)`. Touch has NO right-click and NO HTML5
+  drag-and-drop: the canvas long-press opens the viewport menu (Scene) and a `+` HUD
+  button (`MobileAddButton`, via the `viewportMenuOpener` store) does the same; the node
+  palette adds on TAP (a real drag fires no click, so desktop drag is unaffected). Window
+  drag/resize must use POINTER events, not mouse (object-list `dragMe` was the last mouse
+  holdout). Floating windows clamp width/height to the viewport on load + on `resize`
+  (Flow window) or their header buttons land off a narrow screen. Drag/resize handles
+  need `touch-action: none`.
+- THREE color management: `setHSL()` works in the LINEAR working space — pass
+  `THREE.SRGBColorSpace` or lightness 0.5 hex-round-trips to `#bcbcbc`. Canvas
+  ImageData palettes: write bytes straight from the sRGB hex (round-tripping through
+  `Color` re-linearizes and darkens).
+- Reference-space convention in vrControls: `getOffsetReferenceSpace` offset =
+  **-(viewer displacement)**; snap-turn/teleport/world-pan math builds on it.
+- Resolve a VR controller BY HANDEDNESS via `controllerIndexFor` (reads
+  `controller.userData.handedness`, stamped from each `connected` event), NEVER the raw
+  `session.inputSources` index — the slot↔handedness mapping flips on hands↔controllers
+  and put the radial on the wrong hand (194). three's `getController(i)` slot order and
+  the `inputSources` order DIVERGE after a swap (in-headset: slot0 in:right stamp:left):
+  pose/ray/grabs resolve the slot by handedness, while buttons/axes read from the acting
+  inputSource (`axesForSlot`). The squeeze loop, ALL follower panels, fly-aim and the
+  peer-hand broadcast route through it (210). The trigger path is safe because it uses the
+  firing controller (`event.target`); the reorder also drops in-progress grabs
+  (`onInputSourcesChange`, 188).
+- VR presence broadcasts in the shared CONTENT frame (worldRig-local, `worldToContentPose`)
+  and peer avatars render back through the viewer's own rig (Player `peerFrame` mirrors
+  worldRig) — so two-grip world-grab (which bends worldRig, not the camera) repositions you
+  for peers (195). NO-OP when the rig is unbent, so desktop + normal-VR presence is
+  byte-unchanged; change-detection also runs in the content frame (a grab leaves
+  `camera.position` untouched). Reposition only — no scale on the wire.
+- VR live face-adjust amount clamps are PER-OP: inset `[0.02,0.9]` (a signed `[-5,5]`
+  let controller motion collapse it to ~0 and the confirm looked like a cancel, 192);
+  extrude/move keep the signed range. A VR-created face winds toward a `viewerPos`
+  (`createFaceFromVerts` — else it faces away and you see nothing, 191). VR Stretch =
+  per-axis infinite sliders in the Edit▸Stretch menu (grab a `vrstretch-<axis>` handle,
+  horizontal controller motion scales that axis), NOT a spatial gesture (193).
+- Locks: `lockedObjects` holds REMOTE locks only — "we hold X" = X is our selection;
+  one lock per peer (a new lock replaces the old one); `unlock` message exists.
+- vite re-optimizes new deps on first page load (one reload) — rerun once; lazy wasm
+  (rapier) needs a throwaway prewarm page in tests.
+- Postprocessing composers (Outline) do NOT render in WebXR — VR indicators are
+  scene-root shell/wireframe meshes that copy the selection's world transform per
+  frame (never children of the object: they'd leak into GLTF sync).
+- Module cycles: a static import that closes a loop back into `history` (via
+  materialsHandler etc.) TDZ-crashes the SSR prerender — moduleSDK reaches optional
+  libs (vrRadialMenu) via dynamic `import()` instead. `npm run build` (Rollup) can
+  TOLERATE a cycle that `vite dev` (lazy ESM) TDZ-crashes — a green build ≠ a booting
+  dev server; the dev 500 shows as the DOCUMENT returning 500 (stack only in the dev
+  terminal). vrControls must NOT statically import peerHandler — put shared peer logic
+  in a store-only module (peerApproval.js imports appStore only), 211.
+- `selectedObject` is `writable([])` and KEEPS the last object after deselect (the
+  desktop outline relies on it) — "has selection" checks need `?.uuid`, and the
+  init value is a truthy empty array.
+- The Bash tool's `cd` leaks into the shared shell cwd — `Set-Location` back to the
+  repo root before PowerShell git/npm calls.
+- The dungeon module publishes gameplay data on its group's `userData.play`
+  (grid/rooms/floorValue) — `dungeonPlay.js` consumes it; keep that contract stable.
+
+## Verification (mandatory before commit)
+
+Follow `.claude/skills/e2e-verify/SKILL.md`. Short version: the suite lives in
+`tests/e2e/` — `npm run e2e -- <name>` for the feature suite you add/update (every
+feature phase ships one; update suites broken by UI changes in the same commit).
+Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:5173`
+(hosts-mapped). `npm run build` must pass; `npx svelte-check` must add no NEW errors.
+
+## Workflow preferences (user)
+
+- One commit per phase/feature; message style: `[feat]/[fix] lowercase summary` + body
+  bullets + `Co-Authored-By: Claude ... <noreply@anthropic.com>`.
+- Plan documents live in `docs/plan/` (**never commit them**; `docs/sdk/` is also
+  uncommitted for now — the user moves them). Postponed phases → `docs/plan/pending/`;
+  future ideas → `docs/plan/backlog.md`; open design questions → `docs/plan/quiz.md`.
+  Keep `00-overview.md` tables in sync with every scope change.
+- Roadmap ritual: user drops notes → ask 3-4 targeted AskUserQuestion forks (offer a
+  recommended option — they usually take it) → write plan files → present the batch
+  table (sizes S/M/L/XL, riskiest last) → they pick what executes.
+- Design work: screenshot-driven. (Toasts/Connect/Controls were long "keep as-is" but
+  roadmap #9 responsive/mobile work intentionally revised them — Connect is a
+  pill on wide / full-width top bar on narrow, Controls corner buttons reflow, Toasts
+  reposition on narrow; don't blanket-revert them anymore.)
+- VR phases: verify math/state headlessly, state clearly that on-device feel is the
+  user's manual check.
+- Status (2026-07-18): **Roadmap #9 SHIPPED** (release runway). B2 VR: 120Hz
+  (session.updateTargetFrameRate off supportedFrameRates on session start; vrTargetHz
+  setting) + hands↔controllers switch fix (shouldSendHands forces a send on rep-flip —
+  the `!moved && !hasJoints` gate ate the switch-back) + cuboid peer hands
+  (handBoneSegments; peerHandStyle LOCAL pref) + pinch-hold radial opener. B3 **.tpscene**
+  = the session .zip promoted to a first-class Scene format (exportSessionZip gains
+  {assets,packs,flow}; Sidebar Files = [GLTF | Scene | ⚙cog], JSON demoted behind the
+  cog; fileHandler load/save). B4 **flow stage 1**: NODES.md audit (fixed edge-id
+  divergence — ids now include handles; PATH-based cycle guard; event→effect drag;
+  distance/proximity accept vector3 literals) + typed socket COLORS (Socket.svelte wraps
+  Handle, paints flowSockets.typeColor) + ⓘ/⚙ panel tabs (ⓘ = selected node params, ⚙ =
+  graph + node name/NOTE) + adjustable params (slider min/max, switcher items list +
+  index output, number step) + custom-node input sockets w/ deterministic
+  pruneCustomNodeEdges + new nodes maprange/select. B6 docs → theprototype-docs (MkDocs,
+  local). **B1 (Opus)**: packs-view .zip drop (non-zip rejected), GLTF export
+  selection-only + warning. **UI/mobile (Opus)**: z-tiers reworked (see gotcha), mobile
+  "+" HUD + canvas long-press open the viewport menu (viewportMenuOpener), shared object
+  menu (objectMenu.js buildObjectMenuItems used by Controls + ViewportMenu "Selected"
+  submenu), Controls reflow, left-dock insets past the sidebar, top-bar responsive,
+  context menus now cap+scroll vertically w/ per-submenu flip, Flow window clamps to
+  viewport, node palette add-on-tap. **B5 network stress SKIPPED** (pending/). svelte-check
+  502/77. Plans: docs/plan/roadmap-9-release-runway.md (+ pending/opus-b1, pending/b5).
+  --- Earlier — Status (2026-07-15): **Roadmap #7 SHIPPED** (order N1→N3→N4→N6→N5): N1 notes-anchor
+  fix (Threlte `oncreate` passes the ref DIRECTLY — `({ref})` captured undefined so NO
+  annotation pin was ever positioned; fixed capture + owner-from-both-stores; same bug
+  in PingMarkers), N3 per-peer network-quality dot (networkQuality.js, LOCAL getStats
+  RTT+relay, median; Users popover + VR stats), N4 Explorer 3D model preview
+  (enable3dPreview toggle; ModelPreview canvas inline + ModelPreviewWindow popup w/
+  tris/verts), N6 packs off-bundle + Explorer UI (packs.js normalizes libraryList
+  defaults + manifest.json .zip imports; LOCAL library; PACKS.md format; PACKS_BASE
+  awaits real GitHub URLs), N5 articulated peer hands (read joints from threlte
+  `useHand` spaces by handedness, broadcast wrist-local; box fallback — on-device hand
+  capture still flaky, user debugging). N2 node-palette DROPPED. svelte-check ~501/77.
+  Plan: docs/plan/roadmap-7-vr-explorer-net.md. --- Earlier: batches 1-61 SHIPPED
+  (roadmaps #2/#3/#4 done); roadmap #5 —
+  batch 63 (191/192/193) + 194+210 (controller handedness) + 195 (world-grab presence) +
+  196 (noVR inset) + 203 (sidebar) + 197/198 (Explorer window v-next: WindowShell chrome).
+  **Roadmap #6 (211-220) ALL SHIPPED**: 211 VR peer approve/deny (VRPeerApprove follower +
+  peerApproval.js store-only to dodge a peerHandler import cycle), 212 face polygon-select +
+  multiselect (faceEdit granularity/multi + opTargetFace synth; VR menu + desktop popup),
+  213 VR mesh-edit undo (audit-only + regression test — already correct), 214 VR Tools radial
+  submenu (Select/BoxSelect/Draw) + 3D box-select marquee (vrToolMode + selectObjectsInBox +
+  scene-root visual), 215 VR objects-panel expandable groups (flattenPanelRows), 216 VR group
+  Ungroup in Edit radial, 217-220 Explorer/editor polish. **Remaining: 199 Packs + 207-209
+  (.tpscene/.tpmodule) POSTPONED (docs/plan/pending/).** Deferred → docs/plan/pending/: flow
+  revamp (199-202/204-205), physics (206), module test-flight (189/190), Explorer tree v3
+  (140-142). svelte-check baseline 502 errors / 77 warnings (hold it). Forks in quiz.md;
+  per-phase plans in docs/plan/done/.
+
+## Module SDK (implemented — extend, don't fork)
+
+`src/modules/<id>/module.js` default-exports `{id, name, version, description,
+register(api)}`. api surface: registerNodeGroup (+custom components), registerEffect
+(base-managed per-frame), registerPrimitive (replicated `/create`), registerClickHandler
+(desktop+VR), registerInteractiveGroup (scene-root click targets), registerFrameTask,
+send/onMessage (namespaced `{type:'module', moduleId}`), registerStateSync (late-joiner
+handshake), registerMenu (manager card buttons), scene/objectsGroup/peerId/toast/now/
+THREE/assetUrl. User modules (zip/URL via the manager) must be self-contained — no
+imports; guide in `MODULES.md` + `docs/sdk/`. Script nodes run arbitrary replicated
+code deterministically (pure function of object/base/data/time) — never stream outputs.

@@ -2,18 +2,16 @@
 
 .burger {
 	position: absolute;
-	z-index: 3;
+	z-index: var(--z-menu); /* the logo menu opens above Connect + toasts */
 }
 
-/* hamburger menu */
+/* hamburger menu — positioning only: typography belongs to the drawer
+   contents (the old 1.5em + letter-spacing leaked into every sidebar row) */
 
 .hamburger {
 	position: absolute;
 	cursor: pointer;
-	z-index: 2;
-	border-radius: 20px; /* Rounded corners */
+	z-index: var(--z-drawer);
+	border-radius: 20px;
 	padding-top: 30px;
-	text-align: center;
-	font-size: 1.5em;
-	letter-spacing: 0.15em;
 }

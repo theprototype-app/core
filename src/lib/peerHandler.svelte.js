@@ -1,7 +1,27 @@
 import Peer from 'peerjs';
-import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters } from './commandsHandler.svelte';
+import { backoffDelay } from '$lib/netBackoff';
+import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
-import { lockedObjects, selectedObject } from '../stores/sceneStore';
+import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
+import { applyNodeTrigger } from '$lib/flowRuntime';
+import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs } from '$lib/customNodes';
+import { applyRemoteDuplicate } from '$lib/objectActions';
+import { applyVerts } from '$lib/meshEdit';
+import { applyMeshGeo } from '$lib/faceEdit';
+import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
+import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
+import { applyPing } from '$lib/ping';
+import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
+import { applyModuleMessage, moduleVersions, checkModuleVersions, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
+import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
+import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
+import { applySimulate } from '$lib/physics';
+import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
+import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
+import { applyRemoteGeometry } from '$lib/geometryEdit';
+import { applyLightTarget } from '$lib/lightParams';
+import { applyObjectFile } from '$lib/animatedImports';
+import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
 
@@ -30,7 +50,12 @@ export class PeerConnection {
 	constructor(id, updateIdFn) {
 		this.updateIdFn = updateIdFn;
 
+		/** @type {Record<string, any>} outgoing DataConnections, keyed by peer id */
 		this.connections = {};
+		/** @type {Set<string>} peers whose conn actually opened — so a conn that
+		 * closes without ever opening (a failed connect) doesn't fire a spurious
+		 * 'disconnected' teardown; the error handler already messaged the user */
+		this.openedPeers = new Set();
 
 		const regex = /(\.io|\.app)$/i;
 		if (!regex.test(location.hostname)) {
@@ -42,8 +67,11 @@ export class PeerConnection {
 			this.peer = new Peer(id)
 		}
 
+		initVoiceChat(this);
+
 		this.peer.on('open', (id) => {
 			console.log(id);
+			this.reconnectAttempts = 0; // a fresh/re-established server link resets the backoff
 			if (this.updateIdFn) this.updateIdFn(id);
 			if (!window.location.hash.slice(1)) return;
 			let connect = window.location.hash.slice(1).toLocaleLowerCase()
@@ -63,7 +91,36 @@ export class PeerConnection {
 		});
 
 		this.peer.on('close', function() { console.log('server closed') });
-		this.peer.on('disconnected', function() { console.log('server disconnected') });
+
+		// Surface signaling-server problems to the user. Reconnect on a bounded
+		// exponential backoff instead of hammering reconnect() immediately (172).
+		this.reconnectAttempts = 0;
+		this.peer.on('disconnected', () => {
+			console.log('server disconnected');
+			if (this.peer.destroyed) return;
+			this.reconnectAttempts++;
+			const delay = backoffDelay(this.reconnectAttempts, { base: 800, max: 5 });
+			if (delay === null) {
+				showToast('Could not reach the peer server. Please reload the page.');
+				return;
+			}
+			showToast('Lost connection to the peer server, reconnecting... (attempt ' + this.reconnectAttempts + ')');
+			setTimeout(() => {
+				if (!this.peer.destroyed && this.peer.disconnected) this.peer.reconnect();
+			}, delay);
+		});
+		this.peer.on('error', (err) => {
+			console.log('peer error: ' + err.type, err);
+			if (err.type === 'peer-unavailable') {
+				showToast('Peer is unreachable. Check the ID and ask them to stay online.');
+			} else if (err.type === 'unavailable-id') {
+				showToast('Your session ID is already in use. Please reload the page.');
+			} else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
+				showToast('Cannot reach the peer server. Retrying...');
+			} else {
+				showToast('Connection error: ' + err.type);
+			}
+		});
 
 		this.peer.on('connection', handleConnection.bind(this));
 
@@ -123,8 +180,32 @@ export class PeerConnection {
 					changeName(data.uuid, data.name);
 				} else if(data.type == 'move') {
 					moveGeometry(data.uuid, data.pos, data.rot, data.scale);
+				} else if(data.type == 'simulate') {
+					applySimulate(data);
+				} else if(data.type == 'environment') {
+					applyRemoteEnvironment(data);
+				} else if(data.type == 'envpresets') {
+					applyRemoteEnvPresets(data);
+				} else if(data.type == 'geometry') {
+					applyRemoteGeometry(data);
+				} else if(data.type == 'lighttarget') {
+					applyLightTarget(data);
+				} else if(data.type == 'sessionproposal') {
+					applySessionProposal(data);
+				} else if(data.type == 'sessionanswer') {
+					applySessionAnswer(data);
+				} else if(data.type == 'drawlive') {
+					applyDrawLive(data);
+				} else if(data.type == 'drawend') {
+					applyDrawEnd(data);
+				} else if(data.type == 'lockrequest') {
+					applyLockRequest(data);
+				} else if(data.type == 'unlock') {
+					applyUnlock(data);
+				} else if(data.type == 'lockdenied') {
+					applyLockDenied(data);
 				} else if(data.type == 'lock') {
-					lockGeometry(data.uuid, data.peerId);
+					lockGeometry(data.uuid, data.peerId, data.uuids);
 				} else if(data.type == 'locked') {
 					lockRestore(data.lockeditems);
 				} else if(data.type == 'userdata') {
@@ -136,11 +217,18 @@ export class PeerConnection {
 				} else if(data.type == 'camera') {
 					moveCamera(data);
 				} else if(data.type == 'getobjects') {
-					sendObjects(data.sender)
+					// share-or-stash (50): the reply may wait for the user's choice
+					deferUntilShareChoice('objects', data.sender, data.count ?? 0);
+				} else if(data.type == 'objectfile') {
+					applyObjectFile(data);
 				} else if(data.type == 'object') {
 					createObject(data, data.uuids, data.override, data.groupuuid, data.pos, data.rot, data.scale);
 				} else if(data.type == 'objectParameters') {
 					objectParameters(data);
+				} else if(data.type == 'duplicate') {
+					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos);
+				} else if(data.type == 'clearscene') {
+					applyClearScene(data.peerId);
 				} else if(data.type == 'delete') {
 					deleteObject(data.uuid);
 				} else if(data.type == 'color') {
@@ -149,6 +237,69 @@ export class PeerConnection {
 					createLoader(data.count, data.uuids);
 				} else if(data.type == 'disconnected') {
 					handleDisconnected(data.peerId);
+					dropPeerEnvPresets(data.peerId);
+				} else if(data.type == 'getnodes') {
+					deferUntilShareChoice('nodes', data.sender);
+				} else if(data.type == 'nodes') {
+					applyNodesSnapshot(data.nodes, data.edges);
+				} else if(data.type == 'nodesync') {
+					applyNodeSync(data);
+				} else if(data.type == 'nodedef') {
+					applyNodeDef(data.def);
+				} else if(data.type == 'nodedefdelete') {
+					applyNodeDefDelete(data.id);
+				} else if(data.type == 'nodedefs') {
+					applyNodeDefsSnapshot(data.defs);
+				} else if(data.type == 'getnodedefs') {
+					sendNodeDefs(data.sender);
+				} else if(data.type == 'nodecreate') {
+					createFlowNode(data.node);
+				} else if(data.type == 'nodemove') {
+					moveFlowNode(data.id, data.position);
+				} else if(data.type == 'nodedata') {
+					updateFlowNodeData(data.id, data.data);
+				} else if(data.type == 'nodedelete') {
+					deleteFlowNodes(data.ids);
+				} else if(data.type == 'edgecreate') {
+					createFlowEdge(data.edge);
+				} else if(data.type == 'edgedelete') {
+					deleteFlowEdges(data.ids);
+				} else if(data.type == 'nodetrigger') {
+						applyNodeTrigger(data.id, data.t, false); // 134: shared-timestamp pulse
+					} else if(data.type == 'flowcursor') {
+					applyFlowCursor(data);
+				} else if(data.type == 'ping') {
+					applyPing(data);
+				} else if(data.type == 'assetfile') {
+					// shared Explorer bytes (97) — dedup by content hash
+					applyAssetFile(data);
+				} else if(data.type == 'getasset') {
+					// a peer is missing a hash we may hold — answer over our
+					// stable outgoing connection to them
+					answerAssetRequest(conn.peer, data);
+				} else if(data.type == 'module') {
+					applyModuleMessage(data);
+				} else if(data.type == 'modules') {
+					checkModuleVersions(data.versions);
+				} else if(data.type == 'getmodulestate') {
+					sendModuleStates(data.sender);
+				} else if(data.type == 'modulestate') {
+					applyModuleStates(data.states);
+				} else if(data.type == 'annotation') {
+					applyAnnotation(data);
+				} else if(data.type == 'annotations') {
+					applyAnnotationsSnapshot(data.annotations);
+				} else if(data.type == 'getannotations') {
+					sendAnnotations(data.sender);
+				} else if(data.type == 'verts') {
+					applyVerts(data.uuid, data.indices, data.position);
+				} else if(data.type == 'meshgeo') {
+					applyMeshGeo(data.uuid, data.positions);
+				} else if(data.type == 'vrhands') {
+					peerHands.update((map) => ({
+						...map,
+						[data.peerId]: { left: data.left, right: data.right, active: data.active !== false, ts: Date.now() }
+					}));
 				} else if(data.startsWith('/')) {
 					sceneCommand(data);
 				}
@@ -157,42 +308,48 @@ export class PeerConnection {
 		}
 	}
 
+	// Send the initial handshake (locks, known hosts, whitelist, object/node sync requests).
+	// Must only be called once the connection is open — messages sent earlier are dropped by peerjs.
+	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id */
+	sendHandshake(conn, peerId, getobjects, id) {
+		let hosts = [id];
+		Object.keys(this.connections).forEach(element => {
+			if(element != peerId)
+			hosts.push(element)
+		});
+		console.log("sending to " + peerId + "  remote " + hosts)
+		let locks = [...locked];
+		if(typeof selected.uuid != 'undefined' && selected.uuid) locks.push([id, selected.uuid]);
+		conn.send({type: 'locked', lockeditems: locks})
+		conn.send({type: 'hosts', hosts: hosts})
+		conn.send({type: 'userdata', userdata: users})
+		conn.send({type: 'modules', versions: moduleVersions()})
+		conn.send(environmentState())
+		conn.send(envPresetsState())
+		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
+		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getmodulestate', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
+		// join them into the voice mesh if our mic is live
+		voicePeerConnected(peerId);
+	}
+
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {
 		if (!this.connections[peerId]) {
 			console.log("Connecting to " + peerId);
             const conn = this.peer.connect(peerId);
             this.connections[peerId] = conn;
 
-			conn.on('close', () => { 
-				console.log("close");	
-				// console.log(data);	
+			conn.on('close', () => this.onConnClose(peerId, conn));
 
-				checkLocks()
-			});
-			conn.on('disconnected', () => { 
-				console.log("disconnected");
-				// console.log(data);
-				checkLocks()
-			});
-	
             conn.on('open', () => {
-				 console.log('Connection to ' + peerId + ' established')});
+				console.log('Connection to ' + peerId + ' established');
+				this.openedPeers.add(peerId);
 				//Trigger reactivity for UI list of objects
 				peers.update((value) => value);
-				 let hosts = [id];
-				 Object.keys(this.connections).forEach(element => {
-					if(element != peerId)
-					hosts.push(element)
-				});
-				console.log("sending to " + peerId + "  remote " + hosts)
-				setTimeout(() => {
-				let locks = [...locked];
-				if(typeof selected.uuid != 'undefined' && selected.uuid) locks.push([id, selected.uuid]);
-				this.connections[peerId].send({type: 'locked', lockeditems: locks})
-				this.connections[peerId].send({type: 'hosts', hosts: hosts})
-				this.connections[peerId].send({type: 'userdata', userdata: users})
-				if (getobjects) this.connections[peerId].send({type: 'getobjects', sender: this.peer.id})
-				}, 500);
+				this.sendHandshake(conn, peerId, getobjects, id);
+			});
         } else {
 			if (this.connections[peerId].peer == peerId) {
 				console.log(`Peer ${peerId} is already connected or has a pending request. Connection status: ${this.connections[peerId].open}`)
@@ -200,46 +357,77 @@ export class PeerConnection {
 					console.log('Restoring connection: ' + peerId);
 					const conn = this.peer.connect(peerId);
            	 		this.connections[peerId] = conn;
+					conn.on('close', () => this.onConnClose(peerId, conn));
             		conn.on('open', () => {
-					 console.log('Connection to ' + peerId + ' restored')});
-					let hosts = [id];
-				 	Object.keys(this.connections).forEach(element => {
-						if(element != peerId)
-						hosts.push(element)
+						console.log('Connection to ' + peerId + ' restored');
+						this.openedPeers.add(peerId);
+						peers.update((value) => value);
+						this.sendHandshake(conn, peerId, getobjects, id);
 					});
-				 	console.log("sending to " + peerId + "  remote " + hosts)
-				 	setTimeout(() => {
-						let locks = [...locked];
-						if(selected.uuid) locks.push([id, selected.uuid]);
-						this.connections[peerId].send({type: 'locked', lockeditems: locks})
-				 		this.connections[peerId].send({type: 'hosts', hosts: hosts})
-						 this.connections[peerId].send({type: 'userdata', userdata: users})
-						if (getobjects) this.connections[peerId].send({type: 'getobjects', sender: this.peer.id})
-				 	}, 500);
 				}
 
 			}
-			
+
 		}
     }
 
+	// A peer's outgoing connection dropped. Self-heal locally: drop the dead conn
+	// and run the FULL per-peer teardown right here, instead of relying on a
+	// relayed 'disconnected' — that relay never reaches the last peer in a 2-peer
+	// session, so their voice nodes / VR hands / flow cursor / env presets used to
+	// leak. handleDisconnected is idempotent and prunes userdata before checkLocks'
+	// 500ms relay fires, so no duplicate toast/relay. checkLocks still releases the
+	// peer's object locks. (172)
+	/** @param {string} peerId @param {any} conn */
+	onConnClose(peerId, conn) {
+		// ignore a close from a stale conn we've already replaced or removed
+		if (this.connections[peerId] !== conn) return;
+		console.log('connection to ' + peerId + ' closed');
+		delete this.connections[peerId];
+		peers.update((value) => value);
+		// a conn that never opened was a failed connect, not a live peer dropping
+		// (peer.on('error') already told the user) — just re-check locks and bail
+		if (!this.openedPeers.has(peerId)) {
+			checkLocks();
+			return;
+		}
+		this.openedPeers.delete(peerId);
+		handleDisconnected(peerId);
+		dropPeerEnvPresets(peerId);
+		checkLocks();
+	}
+
+	// Broadcast to every OPEN outgoing connection. Guards conn.open (peerjs
+	// silently drops pre-open sends) and isolates each send so one dead/half-open
+	// conn can't throw mid-loop and starve the rest of the mesh (172).
+	/** @param {any} payload */
+	broadcast(payload) {
+		Object.keys(this.connections).forEach(peerId => {
+			const conn = this.connections[peerId];
+			if (!conn || !conn.open) return;
+			try {
+				conn.send(payload);
+			} catch (err) {
+				console.log('send to ' + peerId + ' failed', err);
+			}
+		});
+	}
+
+	/** @param {string} message @param {string} [type] */
 	sendMessage(message, type) {
 		if(message.startsWith('/')) {
 			sceneCommand(message);
 		} else {
 			if(type === undefined) type = 'sent';
 			addMessage({message: message, type: type, sender: this.peer.id});
-			Object.keys(this.connections).forEach(element => {
-				this.connections[element].send({message: message, type: type, sender: this.peer.id});
-			});
+			this.broadcast({message: message, type: type, sender: this.peer.id});
 		}
 	}
 
+	/** @param {any} data */
 	send(data) {
 		if(data.type == 'create')
 		this.sendMessage('created a ' + data.command.split(' ')[1], 'info');
-		Object.keys(this.connections).forEach(element => {
-			this.connections[element].send(data);
-		});
+		this.broadcast(data);
 	}
 }

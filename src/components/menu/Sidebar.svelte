@@ -1,334 +1,276 @@
 <script lang="ts">
 	import '../../app.css';
 	import '../../styles/menu.css';
+	import { fade } from 'svelte/transition';
 	import { save, load, importFile } from '$lib/fileHandler.svelte';
 	import {
 		settingsOpen,
-		propertiesClose,
-		lightPropertiesClose,
+		inspectorClose,
+		inspectorKind,
+		closeSelectionInspector,
 		showSidebar,
-		closeMenu
+		closeMenu,
+		modulesOpen,
+		sessionsOpen,
+		showToast
 	} from '../../stores/appStore.js';
-	import { backgroundColor } from '../../stores/sceneStore';
+	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
-	import { sineIn } from 'svelte/easing';
 
-	import {
-		Sidebar,
-		SidebarGroup,
-		SidebarItem,
-		SidebarWrapper,
-		SidebarDropdownWrapper,
-		SidebarDropdownItem,
-		Radio,
-		Dropdown,
-		Drawer,
-		Navbar,
-		Card
-	} from 'flowbite-svelte';
-	import { Hamburger } from 'svelte-hamburgers';
-	import invert from 'invert-color';
+	// 203: redesigned as a compact floating panel — flat list (order preserved,
+	// no boxed group / section headers / vertical bar), a fast fade-in (was a
+	// slide from the left), narrower than the Properties sidebar so it needs no
+	// scrollbar, and floated ABOVE the bottom dock (z-hud) instead of covered.
+	// The Files format picker became a segmented control (the old dropdown was
+	// fiddly). Themed for light + dark.
 
-	let saveFormat = 'json';
-	let spanClass = 'flex-1 ms-3 whitespace-nowrap';
-	let saveClass =
-		'px-4 py-2 text-sm font-medium text-gray-900 border-gray-200 hover:bg-gray-100\
-	hover:text-blue-700 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-800\
-	dark:text-gray-400 dark:border-gray-700 dark:text-white dark:hover:text-white dark:hover:bg-gray-700\
-	dark:focus:ring-blue-500 dark:focus:text-white bg-white';
-
-	// let  open  = $state(false);
+	// B3: Scene (.tpscene) is the primary format; JSON is demoted behind the
+	// export-settings cog ("Show JSON") since it's rarely used
+	const initShowJson = typeof localStorage !== 'undefined' && localStorage.getItem('showJsonFormat') === 'true';
+	const initFormat = typeof localStorage !== 'undefined' ? localStorage.getItem('saveFormat') || 'tpscene' : 'tpscene';
+	let saveFormat = $state(initFormat === 'json' && !initShowJson ? 'tpscene' : initFormat);
+	let showJson = $state(initShowJson);
+	let exportSettingsOpen = $state(false);
+	// export-settings popup is anchored BELOW-RIGHT of the cog (so its relation is
+	// clear), clamped to the viewport when there isn't room
+	let exportPos = $state({ top: 0, left: 0 });
+	function openExportSettings(e: MouseEvent) {
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const w = 256;
+		const h = 240;
+		let left = r.left; // top-left of the popup aligns under the cog, extending right
+		let top = r.bottom + 6;
+		left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+		top = Math.max(8, Math.min(top, window.innerHeight - h - 8));
+		exportPos = { top, left };
+		exportSettingsOpen = true;
+	}
+	let tpAssets = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneAssets') !== 'false');
+	let tpPacks = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpscenePacks') === 'true');
+	let tpFlow = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneFlow') !== 'false');
+	function pickFormat(f: string) {
+		saveFormat = f;
+		localStorage.setItem('saveFormat', f);
+	}
 	let rerenderInput = $state(false);
 
-	let transitionParamsRight = {
-		x: -320,
-		duration: 200,
-		easing: sineIn
-	};
+	function clearScene() {
+		const count = $objectsGroup?.children.length ?? 0;
+		if (count === 0) {
+			sceneCommand('/clear all'); // still clears module content
+			return;
+		}
+		showToast('Clear the scene for everyone? ' + count + ' object' + (count === 1 ? '' : 's') + ' will be removed.', [
+			{
+				label: 'Clear',
+				action: () => {
+					closeSelectionInspector();
+					sceneCommand('/clear all');
+				}
+			},
+			{ label: 'Cancel', action: () => {} }
+		]);
+	}
 </script>
 
-<div
-class="burger inline-flex rounded-md bg-primary-700 shadow-sm"
-style="width: 120px; height: 55px; background-color: rgba(100, 123, 155, 1); top: 5px; left: 5px;"
+<!-- 94: the logo IS the menu button. Open state = accent ring. -->
+<button
+	id="logo-menu"
+	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur transition-transform hover:scale-105 {$closeMenu
+		? 'border-gray-700/60'
+		: 'border-primary-500 ring-2 ring-primary-500/50'}"
+	style="height: 48px; width: 48px;"
+	title={$closeMenu ? 'Open menu' : 'Close menu'}
+	onclick={() => closeMenu.update((value) => !value)}
 >
-<Navbar rounded color="form">
+	<img src="logo.svg" alt="menu" class="h-9 w-9" />
+</button>
 
-	<img src="logo.svg" alt="logo" class="h-10 w-10" />
-		<div class="" style="position: absolute; top: 0; left: 50px;">
-	<Hamburger
-		bind:open={$closeMenu}
-		--color={invert($backgroundColor)}
-		
-		type="none"
-	/>
-</div>
-
-</Navbar>
-</div>
-{#if true}
-
-<div class="hamburger" style="z-index: 49;">
-<div>
-<Drawer
-	hidden={$closeMenu}
-	activateClickOutside={false}
-	backdrop={false}
-	placement="left"
-	position="fixed"
-	rightOffset="end-0 top-16"
-	leftOffset="start-0 top-16 h-full"
-	topOffset="top-16"
-	transitionType="fly"
-	transitionParams={transitionParamsRight}
-	class="rounded-tr-lg"
-	id="sidebar70"
->
-<Sidebar>
-	<SidebarWrapper>
-		<SidebarGroup>
-			<SidebarDropdownWrapper label="Primitives">
-				<svelte:fragment slot="arrowup">
-					<svg
-						style="transform: rotate(180deg);"
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<polyline points="18 9 12 15 6 9"></polyline>
-					</svg>
-				</svelte:fragment>
-				<svelte:fragment slot="arrowdown">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<polyline points="18 9 12 15 6 9"></polyline>
-					</svg>
-				</svelte:fragment>
-				<SidebarDropdownItem
-				label="Cube"
-				on:click={() => {
-					showSidebar('properties');
-					sceneCommand('/create Box 2 2 2');
-				}}
-			>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-				<SidebarDropdownItem
-					label="Cone"
-					on:click={() => {
-						showSidebar('properties');
-						sceneCommand('/create Cone 1');
-					}}
-				>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-				<SidebarDropdownItem
-					label="Sphere"
-					on:click={() => {
-						showSidebar('properties');
-						sceneCommand('/create Sphere 1');
-					}}
-				>
-				<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-			</SidebarDropdownWrapper>
-
-			<SidebarDropdownWrapper label="Lights">
-				<svelte:fragment slot="arrowup">
-					<svg
-						style="transform: rotate(180deg);"
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<polyline points="18 9 12 15 6 9"></polyline>
-					</svg>
-				</svelte:fragment>
-				<svelte:fragment slot="arrowdown">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<polyline points="18 9 12 15 6 9"></polyline>
-					</svg>
-				</svelte:fragment>
-				
-					<SidebarDropdownItem
-					label="Ambient"
-					on:click={() => {
-						showSidebar('lightProperties');
-						sceneCommand('/light ambient');
-					}}
-				>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-				<SidebarDropdownItem
-					label="Directional"
-					on:click={() => {
-						showSidebar('lightProperties');
-						sceneCommand('/light directional');
-					}}
-				>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-				<SidebarDropdownItem
-					label="Hemisphere"
-					on:click={() => {
-						showSidebar('lightProperties');
-						sceneCommand('/light hemisphere');
-					}}
-				>
-					<svelte:fragment slot="icon"></svelte:fragment>
-				</SidebarDropdownItem>
-			</SidebarDropdownWrapper>
-		
-			<SidebarItem
-				label="Create Group"
-				
-				on:click={() => {
-					showSidebar('properties');
-					sceneCommand('/group New');
-				}}>
-				
-			</SidebarItem>
-			<SidebarItem
-				label="Library"
-				
-				on:click={() => {
-					showSidebar('library');
-				}}>
-				
-				</SidebarItem>
-		</SidebarGroup>
+{#if !$closeMenu}
+	<nav
+		id="sidebar70"
+		transition:fade={{ duration: 130 }}
+		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
+	>
 		{#key rerenderInput}
-			<input type="file" id="import-file" style="display: none" on:input={e => { console.log('test') ; importFile(e.target.files[0])}} accept=".gltf, .glb" />
-			<input type="file" id="load-file" style="display: none" on:input={e => load(e.target.files[0])} accept=".json, .gltf, .scene" />
+			<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
+			<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .gltf, .scene, .tpscene" />
 		{/key}
-		<SidebarGroup border>
 
-			<div class="" role="group">
-				<div class="inline-flex shadow-sm " role="group">
-				<button type="button" class={saveClass + " border rounded-tr-lg rounded-tl-lg"}
-				on:click={() => { 
-					document.getElementById('import-file').click()
-					// Toggle rerenderInput to refresh the input type file HTML elements
-					// and we want to load same object even if it is selected twice
-        			rerenderInput = rerenderInput ? false : true
-				}
-			}>
-				  📩 Import&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-				</button>
-				</div>
-			<div class="inline-flex rounded-md shadow-sm">
-        <div class="inline-flex rounded-md shadow-sm" role="group">
-			<button type="button" class={saveClass + " border "}
-			on:click={() => document.getElementById('load-file').click()}>
-			  📁<br />Load
-			</button>
-			<button type="button" class={saveClass + " border-t border-b border-r"}
-			on:click={() => save(saveFormat)}>
-			  💾<br />Save
-			</button>
-			<button type="button" class="px-1 py-2 text-sm font-medium text-gray-900 bg-white border-t border-b border-r border-gray-200 hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:hover:text-white dark:hover:bg-gray-700 dark:focus:ring-blue-500 dark:focus:text-white"
-			>
-		   
-			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<polyline points="18 9 12 15 6 9"></polyline>
-			</svg>    
-			
-			</button>
-			<Dropdown placement='bottom' class="w-44 p-3 space-y-3 text-sm">
-			  <li>
-				<Radio name="group1" bind:group={saveFormat} value={'scene'} disabled>Scene</Radio>
-			  </li>
-			  <li>
-				<Radio name="group1" bind:group={saveFormat} value={'json'}>JSON</Radio>
-			  </li>
-			  <li>
-				<Radio name="group1" bind:group={saveFormat} value={'gltf'}>GLTF</Radio>
-			  </li>
-			</Dropdown>
+		<!-- Files -->
+		<button
+			class="side-row"
+			onclick={() => {
+				document.getElementById('import-file')?.click();
+				rerenderInput = !rerenderInput; // allow re-picking the same file
+			}}
+		>
+			<span class="side-ico">📩</span><span class="flex-1 whitespace-nowrap">Import</span>
+		</button>
+		<button class="side-row" onclick={() => document.getElementById('load-file')?.click()}>
+			<span class="side-ico">📁</span><span class="flex-1 whitespace-nowrap">Load</span>
+		</button>
+		<button class="side-row" onclick={() => save(saveFormat)}>
+			<span class="side-ico">💾</span><span class="flex-1 whitespace-nowrap">Save</span>
+		</button>
+		<div class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
+			<button class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" onclick={() => pickFormat('gltf')}>GLTF</button>
+			<button id="format-tpscene" class="side-seg {saveFormat === 'tpscene' ? 'on' : ''}" onclick={() => pickFormat('tpscene')}>Scene</button>
+			{#if showJson}
+				<button class="side-seg {saveFormat === 'json' ? 'on' : ''}" onclick={() => pickFormat('json')}>JSON</button>
+			{/if}
+			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}>⚙</button>
 		</div>
-	</div>
-	</div>
-			<SidebarItem
-				label="Configure Scene"
-				{spanClass}
-				on:click={() => {
-					showSidebar('scene');
-				}}
-			></SidebarItem>
-			<SidebarItem
-				label="Clear Scene"
-				{spanClass}
-				on:click={() => {
-					lightPropertiesClose.set(true);
-					propertiesClose.set(true);
-					sceneCommand('/clear all');
-				}}
-			></SidebarItem>
 
-			<SidebarItem
-				label="Settings"
-				{spanClass}
-				style="padding-right: 40px"
-				on:click={() => settingsOpen.set(!$settingsOpen)}
-			>
-				<svelte:fragment slot="icon">⚙️</svelte:fragment>
-			</SidebarItem>
+		<div class="side-div"></div>
 
-			<SidebarItem
-				label="Docs"
-				{spanClass}
-				style="padding-right: 40px"
-				on:click={() => { window.open('https://github.com/AlexZ005/theprototype.app/wiki', '_blank') } }
-			>
-				<svelte:fragment slot="icon">📖</svelte:fragment>
-			</SidebarItem>
-		</SidebarGroup>
-	<Card class="border-0"/>
-	</SidebarWrapper>
-</Sidebar>
-</Drawer>
+		<!-- Scene -->
+		<button class="side-row" onclick={() => showSidebar('scene')}>
+			<span class="side-ico">🎛️</span>
+			<span class="flex-1 whitespace-nowrap">{!$inspectorClose && $inspectorKind === 'scene' ? '● ' : ''}Configure Scene</span>
+		</button>
+		<button class="side-row" onclick={clearScene}>
+			<span class="side-ico">🗑️</span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
+		</button>
+		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico">🧩</span><span class="flex-1 whitespace-nowrap">Modules</span>
+		</button>
+		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico">🗂️</span><span class="flex-1 whitespace-nowrap">Sessions</span>
+		</button>
 
+		<div class="side-div"></div>
 
-</div>
-</div>
+		<!-- App -->
+		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
+			<span class="side-ico">⚙️</span><span class="flex-1 whitespace-nowrap">Settings</span>
+		</button>
+		<button class="side-row" onclick={() => window.open('https://github.com/AlexZ005/theprototype.app/wiki', '_blank')}>
+			<span class="side-ico">📖</span><span class="flex-1 whitespace-nowrap">Docs</span>
+		</button>
+	</nav>
 {/if}
 
+{#if exportSettingsOpen}
+	<!-- B3 export settings. Rendered at the component ROOT (not inside .app-sidebar,
+	     whose backdrop-blur would make this fixed panel center on the sidebar and
+	     spill off the left edge). Modal tier so it clears the avatar/Connect chrome. -->
+	<button
+		class="fixed inset-0 cursor-default bg-black/40"
+		style="z-index: calc(var(--z-menu) + 1)"
+		aria-label="Close export settings"
+		onclick={() => (exportSettingsOpen = false)}
+	></button>
+	<div
+		id="export-settings-modal"
+		class="fixed w-64 max-w-[92vw] rounded-lg border border-gray-700 bg-gray-800 p-4 text-sm text-gray-100 shadow-2xl"
+		style="z-index: calc(var(--z-menu) + 2); top: {exportPos.top}px; left: {exportPos.left}px;"
+	>
+		<p class="mb-2 font-semibold">Export settings</p>
+		<p class="mb-1 text-[11px] text-gray-400">Scene (.tpscene) includes:</p>
+		<label class="flex items-center gap-2 py-0.5">
+			<input type="checkbox" checked={tpAssets} onchange={(e: any) => { tpAssets = e.target.checked; localStorage.setItem('tpsceneAssets', String(tpAssets)); }} />
+			Assets (audio, textures, configs)
+		</label>
+		<label class="flex items-center gap-2 py-0.5">
+			<input id="tpscene-packs" type="checkbox" checked={tpPacks} onchange={(e: any) => { tpPacks = e.target.checked; localStorage.setItem('tpscenePacks', String(tpPacks)); }} />
+			Imported packs
+		</label>
+		<label class="flex items-center gap-2 py-0.5">
+			<input id="tpscene-flow" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; localStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
+			Flow graph (nodes + edges)
+		</label>
+		<div class="my-2 border-t border-gray-700"></div>
+		<label class="flex items-center gap-2 py-0.5">
+			<input type="checkbox" checked={showJson} onchange={(e: any) => { showJson = e.target.checked; localStorage.setItem('showJsonFormat', String(showJson)); if (!showJson && saveFormat === 'json') pickFormat('tpscene'); }} />
+			Show JSON format
+		</label>
+		<div class="mt-3 flex justify-end">
+			<button class="rounded bg-gray-600 px-2 py-1 text-xs hover:bg-gray-500" onclick={() => (exportSettingsOpen = false)}>Close</button>
+		</div>
+	</div>
+{/if}
 
 <style>
-	:global(.switchMenu) {
-		display: flex;
-	}
 	.burger {
 		background-color: var(--color-form);
+		top: 8px;
+		left: 8px;
+	}
+	/* the logo menu opens above everything (Connect, toasts) */
+	.app-sidebar {
+		top: 64px;
+		left: 8px;
+		z-index: var(--z-menu);
+		/* size to the widest row so wider-font themes (e.g. 8-bit) never overflow
+		   the panel and overlap the scene; clamped so it stays compact */
+		width: max-content;
+		min-width: 12.5rem;
+		max-width: 17rem;
+		/* short viewports: touch-scroll the menu, but with no visible scrollbar */
+		max-height: calc(100vh - 72px);
+		overflow-y: auto;
+		overflow-x: hidden;
+		scrollbar-width: none; /* Firefox */
+		-webkit-overflow-scrolling: touch;
+	}
+	.app-sidebar::-webkit-scrollbar {
+		display: none; /* Chrome/Safari — scroll, no bar */
+	}
+	.side-row {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		gap: 0.5rem;
+		border-radius: 0.375rem;
+		padding: 0.4rem 0.5rem;
+		text-align: left;
+		font-size: 0.875rem;
+	}
+	.side-row:hover {
+		background-color: rgb(0 0 0 / 0.06);
+	}
+	:global(.dark) .side-row:hover {
+		background-color: rgb(255 255 255 / 0.08);
+	}
+	.side-ico {
+		width: 1.25rem;
+		flex-shrink: 0;
+		text-align: center;
+	}
+	.side-div {
+		margin: 0.35rem 0.25rem;
+		border-top: 1px solid rgb(0 0 0 / 0.1);
+	}
+	:global(.dark) .side-div {
+		border-top-color: rgb(255 255 255 / 0.1);
+	}
+	.side-seg {
+		flex: 1;
+		border-radius: 0.25rem;
+		padding: 0.1rem 0.4rem;
+		font-size: 0.625rem;
+		font-weight: 600;
+		background-color: rgb(0 0 0 / 0.06);
+		color: rgb(75 85 99);
+	}
+	:global(.dark) .side-seg {
+		background-color: rgb(255 255 255 / 0.08);
+		color: rgb(209 213 219);
+	}
+	.side-seg.on {
+		background-color: var(--color-primary-600, #2563eb);
+		color: #fff;
+	}
+	/* narrow: the full-width connect bar owns the top row, so the logo + its menu
+	   drop to a second row below it */
+	@media (max-width: 640px) {
+		.burger {
+			top: 66px;
+		}
+		.app-sidebar {
+			top: 120px;
+			max-height: calc(100vh - 128px);
+		}
 	}
 </style>

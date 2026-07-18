@@ -1,8 +1,16 @@
+import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
-import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { get } from 'svelte/store';
+import { objectsGroup, TControls, selectedObject, selectedObjects } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
-import { peers, fixLight, loadingFile } from '../stores/appStore';
+import { recordObjectPresence } from '$lib/history';
+import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
+import { parkAnimatedAtBase } from '$lib/flowRuntime';
+import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 
 //Access objects Store
 let sceneObjects = $state();
@@ -20,28 +28,97 @@ peers.subscribe(value => { peer = value });
 let loadingNames = $state();
 loadingFile.subscribe(value => { loadingNames = value });
 
-export function save(format) {
-	console.log('Saving...');        
-	//This exports entire scene with all objects
-	const exporter = new GLTFExporter({outputEncoding: format});
+// B3: .tpscene export prefs (set from the Sidebar export-settings cog)
+export function tpsceneOptions() {
+	const read = (/** @type {string} */ k, /** @type {boolean} */ dflt) => {
+		const v = typeof localStorage !== 'undefined' ? localStorage.getItem(k) : null;
+		return v === null ? dflt : v === 'true';
+	};
+	return {
+		assets: read('tpsceneAssets', true),
+		packs: read('tpscenePacks', false),
+		flow: read('tpsceneFlow', true)
+	};
+}
+
+/** B3: save the scene as a .tpscene bundle (session.json + assets/ + packs/) */
+async function saveTpScene() {
+	const { buildSessionPayload, exportSessionZip } = await import('./sessions');
+	const payload = buildSessionPayload('Scene export');
+	const zip = await exportSessionZip(payload, tpsceneOptions());
+	const blob = new Blob([zip], { type: 'application/zip' });
+	const a = document.createElement('a');
+	document.body.appendChild(a);
+	a.style.display = 'none';
+	const url = window.URL.createObjectURL(blob);
+	a.href = url;
+	const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
+	a.download = `ThePrototype-${date}UTC.tpscene`;
+	a.click();
+	window.URL.revokeObjectURL(url);
+}
+
+/** The selected objects (union of the primary selection + the multi-select set),
+ * resolved to live Object3D roots for export. @returns {any[]} */
+function selectedRoots() {
+	const uuids = new Set(get(selectedObjects) || []);
+	const primary = get(selectedObject);
+	if (primary && primary.uuid) uuids.add(primary.uuid);
+	const roots = [];
+	for (const uuid of uuids) {
+		const obj = sceneObjects?.getObjectByProperty('uuid', uuid);
+		if (obj) roots.push(obj);
+	}
+	return roots;
+}
+
+/** Run the GLTFExporter over a root (or array of roots) and download it.
+ * @param {string} format @param {any} input */
+function exportGltf(format, input) {
+	// saves store animation BASE poses, not the current swing (88)
+	const restore = parkAnimatedAtBase();
+	const exporter = new GLTFExporter();
 	exporter.parse(
-		sceneObjects,
+		input,
 		function (result) {
-			var blob = new Blob([JSON.stringify(result)], { type: 'application/json' });
-			let a = document.createElement('a');
+			restore();
+			const blob = new Blob([JSON.stringify(result)], { type: 'application/json' });
+			const a = document.createElement('a');
 			document.body.appendChild(a);
-			a.style = 'display: none';
-			let url = window.URL.createObjectURL(blob);
+			a.style.display = 'none';
+			const url = window.URL.createObjectURL(blob);
 			a.href = url;
-			let date = new Date().toISOString().replace(/[T:.Z]/g, '-');
-			a.download = `ThePrototype-${date}UTC.${format.toLocaleLowerCase()}`;
+			const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
+			a.download = `ThePrototype-${date}UTC.${String(format).toLowerCase()}`;
 			a.click();
 			window.URL.revokeObjectURL(url);
 		},
 		function (error) {
+			restore();
 			console.log(error);
 		}
 	);
+}
+
+export function save(format) {
+	console.log('Saving...');
+	if (format === 'tpscene') return void saveTpScene(); // B3: Scene bundle path
+	// B1.2: GLTF exports the SELECTION (it used to export the whole scene). No
+	// selection -> warn + offer the whole scene. JSON keeps its whole-scene behavior.
+	if (String(format).toLowerCase() === 'gltf') {
+		const roots = selectedRoots();
+		if (roots.length) {
+			exportGltf(format, roots);
+			showToast(roots.length === 1 ? 'Exported 1 selected object (GLTF)' : `Exported ${roots.length} selected objects (GLTF)`);
+		} else {
+			showToast('Nothing selected — export the entire scene?', [
+				{ label: 'Export all', action: () => exportGltf(format, sceneObjects) }
+			]);
+		}
+		return;
+	}
+	// JSON (legacy, whole scene)
+	exportGltf(format, sceneObjects);
 }
 
 export async function loadFile(url, name) {
@@ -57,7 +134,7 @@ export async function loadFile(url, name) {
 			} else if (url.endsWith('.html')) {
 				resolve(event.target.result);
 			} else if (url.endsWith('.glb')) {
-				importFile(blob, name);
+				importFile(blob, name, 'glb');
 			} else {
 				console.error(`Unsupported file type: ${url}`);
 				reject(new Error(`Unsupported file type: ${url}`));
@@ -72,46 +149,112 @@ export async function loadFile(url, name) {
 		
 }
 
-export async function importFile(file, name) {
-	try {
+/**
+ * Animated imports keep their file bytes and replicate as ONE objectfile
+ * message (rigs cannot survive the per-node pipeline).
+ * @param {any} result @param {ArrayBuffer} buffer @param {string=} name
+ */
+function addAnimatedImport(result, buffer, name) {
+	const root = result.scene;
+	root.name = name ?? 'Animated import';
+	sceneObjects.add(root);
+	objectsGroup.update((value) => value);
+	controls.attach(root);
+	registerAnimatedImport(root, result.animations, buffer);
+	recordAnimatedImport(root);
+	sendAnimatedImport(peer, root);
+	selectedObject.set(root);
+	peer.send({ type: 'lock', uuid: root.uuid, peerId: peer.peer.id });
+	showToast('Animated model: ' + result.animations.length + ' clip(s), playing the first');
+}
+
+/** Shared tail for every import format: add to the scene, select, replicate.
+ * @param {any} imported @param {string=} name @param {number[]=} position drop point (96) */
+function addImported(imported, name, position) {
+	if (name) imported.name = name;
+	// position BEFORE the sync so peers receive the placed transform (96)
+	if (position) imported.position.fromArray(position);
+	sceneObjects.add(imported);
+	//Trigger reactivity for UI list of objects
+	objectsGroup.update((value) => value);
+	controls.attach(imported);
+	recordObjectPresence('create', imported);
+	sendObjects(/** @type {any} */ (null), imported);
+
+	selectedObject.set(sceneObjects.getObjectByProperty('uuid', imported.uuid));
+	peer.send({ type: 'lock', uuid: imported.uuid, peerId: peer.peer.id });
+
+	fixLight.set(true);
+	sceneObjects.traverse((/** @type {any} */ object) => {
+		if (object.isLight) {
+			fixLight.set(false);
+		}
+	});
+}
+
+/** @param {any} file @param {'text' | 'buffer'} mode */
+function readAs(file, mode) {
+	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
-		reader.readAsArrayBuffer(file);
-		await new Promise((resolve, reject) => {
-			reader.onload = () => resolve(reader.result);
-			reader.onerror = () => reject(reader.error);
-		});
+		reader.onload = () => resolve(reader.result);
+		reader.onerror = () => reject(reader.error);
+		if (mode === 'text') reader.readAsText(file);
+		else reader.readAsArrayBuffer(file);
+	});
+}
 
-		// const json = JSON.parse(reader.result);
-		const loader = new GLTFLoader();
-
-		loader.parse(reader.result, '', function (result) {
-			const scene = result.scene;
-			if (name) scene.name = name;
-			sceneObjects.add(scene);
-			// scene.position.set(1, 1, 1);
-			//Trigger reactivity for UI list of objects
-			objectsGroup.update((value) => value);
-			controls.attach(scene);
-			sendObjects(null, scene);
-			
-			selectedObject.set(sceneObjects.getObjectByProperty('uuid', scene.uuid));
-            peer.send({ type: 'lock', uuid: scene.uuid, peerId: peer.peer.id });
-
-			fixLight.set(true);
-			sceneObjects.traverse((object) => {
-				if (object.isLight) {
-				  fixLight.set(false);
+/**
+ * Import a 3d file into the scene. GLB/GLTF, OBJ (no .mtl), STL and FBX (static meshes).
+ * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
+ * @param {number[]=} position - world drop point (Explorer drag-out, 96)
+ */
+export async function importFile(file, name, ext, position) {
+	const extension = String(ext ?? file.name ?? '').toLowerCase().split('.').pop();
+	try {
+		if (extension === 'obj') {
+			const object = new OBJLoader().parse(await readAs(file, 'text'));
+			addImported(object, name ?? 'OBJ', position);
+		} else if (extension === 'stl') {
+			const geometry = new STLLoader().parse(await readAs(file, 'buffer'));
+			geometry.computeVertexNormals();
+			const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+			addImported(mesh, name ?? 'STL', position);
+		} else if (extension === 'fbx') {
+			const object = new FBXLoader().parse(await readAs(file, 'buffer'), '');
+			addImported(object, name ?? 'FBX', position);
+		} else {
+			// glb/gltf (default) — draco/meshopt capable
+			const buffer = await readAs(file, 'buffer');
+			createGltfLoader().parse(
+				buffer,
+				'',
+				(result) => {
+					// animated rigs keep their own pipeline (raw-bytes sync) — unplaced
+					if (result.animations?.length > 0) addAnimatedImport(result, buffer, name);
+					else addImported(result.scene, name, position);
+				},
+				(error) => {
+					console.error('Error importing file:', error);
+					showToast('Could not import ' + (name ?? file.name ?? 'file'));
 				}
-			  });
-			
-		});
+			);
+		}
 	} catch (error) {
 		console.error('Error importing file:', error);
+		showToast('Could not import ' + (name ?? file.name ?? 'file') + ' — the file may be corrupt or an unsupported version');
 	}
 }
 
 export async function load(file) {
 try {
+	// B3: .tpscene bundles restore assets + packs, then apply the session (the
+	// request path confirms/proposes like the Sessions manager Load)
+	if (file.name?.toLowerCase().endsWith('.tpscene')) {
+		const { importSessionZip, requestLoadSession } = await import('./sessions');
+		const payload = await importSessionZip(await file.arrayBuffer());
+		await requestLoadSession(payload.id);
+		return;
+	}
 	const reader = new FileReader();
 	reader.readAsText(file);
 	await new Promise((resolve, reject) => {

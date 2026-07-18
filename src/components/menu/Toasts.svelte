@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode } from '../../stores/appStore'
+    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels } from '../../stores/appStore'
+    import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
 	import { Progressbar, Toast, Button } from 'flowbite-svelte';
@@ -41,8 +42,10 @@ if (--counter > 0) return setTimeout(timeout, 4000);
 toastStatus = false;
 }
 </script>
-<div class="my-4"
-style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: 40;"
+<!-- pointer-events: none lets clicks pass through the (invisible) container area;
+     each toast re-enables them for itself -->
+<div class="my-4 toasts-container"
+style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
 >
 {#if showToast}
 {#if $loadingcount > 0}
@@ -131,6 +134,30 @@ style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: tr
 </div>
 {/each}
 
+{#if $restoreAvailable}
+<div class="my-1">
+    <Toast dismissable={false} transition={fly} class="p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-blue-500" divClass="flex items-center gap-3">
+        <div style="position: relative; left: 50%; transform: translate(-25%, -50%);"></div>
+        <div class="mb-1 inline-flex items-center text-base font-medium">
+            <p class="max-w-80 overflow-hidden pr-4 text-sm font-medium text-gray-500 dark:text-gray-200">
+                Restore previous session?<br />
+                {$restoreAvailable.objects} objects, saved {new Date($restoreAvailable.ts).toLocaleTimeString()}
+            </p>
+            <Button
+                color="primary"
+                class="nob rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
+                onclick={() => restoreSnapshot()}>Restore</Button
+            >
+            <Button
+                color="alternative"
+                class="nob ml-2 rounded"
+                onclick={() => dismissRestore()}>Dismiss</Button
+            >
+        </div>
+    </Toast>
+</div>
+{/if}
+
 {#if (typeof localStorage !== 'undefined' && !localStorage.getItem('hasSeenDisclaimer'))}
 <div class="my-1">
     <Toast  transition={fly} class="p-2 rounded-lg dark:bg-red-300 dark:border-dark-700 border-2 border-red-500" divClass="flex items-center gap-3" on:close={() => 
@@ -191,6 +218,8 @@ style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: tr
                 $peers.send({ type: 'camera', peerId: $peers.peer.id, position: $globalCamera.position.toArray(), rotation: $globalCamera.rotation.toArray() });
                 $peers.send({ type: 'specator', peerId: $peers.peer.id, watching: 'false' });
                 // $globalCamera.zoom = $camSave.zoom
+                // bring back the panels hidden when spectating started
+                restorePanels();
             }}
             >Exit</Button
         >
@@ -256,18 +285,48 @@ style="position: absolute; top: 65px; left: 50%; max-width: 500px; transform: tr
         dismissable={false}
         oncreate={setTimeout(() => {
             $toastStore = $toastStore.filter((t) => t !== toast);
-        }, 3000)}
+        }, typeof toast === 'string' ? 3000 : 15000)}
         transition={fly}
         class="dark:border-dark-700 rounded-lg border-2 border-green-500 p-2 dark:bg-green-800"
         divClass="flex items-center gap-3">
         <div style="position: relative; left: 50%; transform: translate(-25%, -50%);"></div>
         <div class="mb-1 inline-flex items-center text-base font-medium text-green-700 dark:text-green-500">
             <p class="max-w-80 overflow-hidden pr-4 text-sm font-medium text-gray-500 dark:text-gray-400">
-                {toast}
+                {typeof toast === 'string' ? toast : toast.text}
             </p>
+            {#if typeof toast !== 'string'}
+                {#each toast.actions as entry}
+                    <Button
+                        color="primary"
+                        class="nob ml-1 rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
+                        onclick={() => {
+                            entry.action();
+                            $toastStore = $toastStore.filter((t) => t !== toast);
+                        }}>{entry.label}</Button
+                    >
+                {/each}
+            {/if}
         </div>
     </Toast>
 </div>
 {/each}
 
 </div>
+
+<style>
+    /* toasts stay clickable while the empty container area passes clicks through */
+    :global(.toasts-container > div) {
+        pointer-events: auto;
+    }
+    .toasts-container {
+        position: absolute;
+        top: 65px;
+    }
+    /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
+       toasts below both */
+    @media (max-width: 640px) {
+        .toasts-container {
+            top: 124px;
+        }
+    }
+</style>

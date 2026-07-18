@@ -1,12 +1,24 @@
 <!doctype html>
-<html lang="en">
+<!-- class="dark": the app is a dark-theme tool (tailwind darkMode:'class');
+     every component's dark: styles were authored for this -->
+<html lang="en" class="dark">
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/logo.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<script>
+			// apply the saved theme before first paint (themes.js takes over after)
+			try {
+				var savedTheme = localStorage.getItem('theme');
+				if (savedTheme) {
+					document.documentElement.dataset.theme = savedTheme;
+					if (savedTheme === 'light') document.documentElement.classList.remove('dark');
+				}
+			} catch (e) {}
+		</script>
 		%sveltekit.head%
 	</head>
-	<body class="overflow-x-hidden overflow-y-hidden" data-sveltekit-preload-data="hover">
+	<body class="overflow-x-hidden overflow-y-hidden bg-gray-900" data-sveltekit-preload-data="hover">
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

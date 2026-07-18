@@ -19,6 +19,10 @@ export const flowCodeClose = writable(true);
 export const explorerClose = writable(true);
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
+// AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).
+export const aiAssistantHidden = writable('hidden');
+// Quick prompt pill — toggled by the backquote shortcut; session-only (not persisted).
+export const aiPromptBarOpen = writable(false);
 export const libraryClose = writable(true);
 export const userdata = writable([]);
 export const username = writable(null);

@@ -36,9 +36,36 @@ export const canRedo = derived(redoStack, (stack) => stack.length > 0);
 // normal actions) — recordEntry ignores them so replays don't pollute history.
 let applying = false;
 
+// Batching (roadmap #10): while a batch is open, individual entries collect into
+// it instead of the undo stack — one AI prompt commits as ONE undoable step. The
+// batch branch returns BEFORE redoStack is cleared; redo is only cleared when the
+// composite 'aibatch' entry is finally recorded (via recordEntry with batch=null).
+/** @type {any[]|null} */
+let batch = null;
+
+/** Open a history batch. Any leftover batch is flushed first (defensive). */
+export function beginHistoryBatch() {
+	if (batch && batch.length) endHistoryBatch('Batch');
+	batch = [];
+}
+
+/** Commit the open batch as one 'aibatch' entry (no-op if empty).
+ * @param {string} [label] */
+export function endHistoryBatch(label = 'AI edit') {
+	const entries = batch;
+	batch = null;
+	if (entries && entries.length) {
+		recordEntry({ kind: 'aibatch', label, entries, before: 'before', after: 'after' });
+	}
+}
+
 /** @param {any} entry */
 export function recordEntry(entry) {
 	if (applying) return;
+	if (batch) {
+		batch.push(entry);
+		return; // deferred — redoStack stays until the batch commits
+	}
 	undoStack.update((stack) => {
 		const next = [...stack, entry];
 		if (next.length > LIMIT) next.shift();
@@ -194,6 +221,25 @@ function applyState(entry, state) {
 	if (peer) peer.send({ type: 'move', uuid: entry.uuid, pos: state.pos, rot: state.rot, scale: state.scale });
 	return true;
 }
+
+// --- aibatch: a composite of sub-entries replayed through applyState, so an AI
+// prompt (or any grouped edit) is ONE undo step. Reverse order on undo so ops
+// that depend on earlier ones (e.g. color-after-create) unwind correctly.
+registerHistoryKind('aibatch', (entry, state) => {
+	const undoing = state === 'before';
+	const list = undoing ? [...entry.entries].reverse() : entry.entries;
+	let any = false;
+	for (const sub of list) {
+		const target = undoing ? sub.before : sub.after;
+		try {
+			if (applyState(sub, target)) any = true;
+		} catch (error) {
+			console.log('aibatch sub-entry failed', error);
+		}
+	}
+	if (!any) showToast('Cannot undo/redo: those objects no longer exist');
+	return any;
+});
 
 export function undo() {
 	const stack = get(undoStack);

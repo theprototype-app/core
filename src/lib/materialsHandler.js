@@ -193,6 +193,26 @@ export function switchMaterialType(uuid, type, replicate = true) {
 }
 
 /**
+ * Set an object's base material color and replicate + record (the missing
+ * counterpart to setMaterialParam — color previously lived inline in the
+ * Properties picker and vrControls; both can call this now).
+ * @param {string} uuid @param {string} hex @param {boolean} replicate
+ */
+export function setObjectColor(uuid, hex, replicate = true) {
+	const object = objectOf(uuid);
+	const material = object?.material;
+	if (!material || Array.isArray(material) || !material.color) return;
+	const before = '#' + material.color.getHexString();
+	material.color.set(hex);
+	material.needsUpdate = true;
+	objectsGroup.update((v) => v);
+	if (replicate) {
+		recordMaterialChange(uuid, 'color', null, before, hex);
+		broadcast({ type: 'color', uuid: uuid, color: hex });
+	}
+}
+
+/**
  * Set a single material parameter (roughness, metalness, shininess, wireframe, ...)
  * @param {string} uuid @param {string} key @param {any} value @param {boolean} replicate
  */

@@ -30,10 +30,19 @@
 		item.action?.();
 		dispatch('close');
 	}
+
+	// Portal to <body> so the menu escapes any z-indexed/stacking-context ancestor
+	// (e.g. the Flow editor's docked/floating window) and its z-index:1000 ranks
+	// above other windows instead of being trapped at the host window's z-tier.
+	function portal(node: HTMLElement) {
+		document.body.appendChild(node);
+		return { destroy: () => node.remove() };
+	}
 </script>
 
 <!-- backdrop to catch outside clicks -->
 <div
+	use:portal
 	class="fixed inset-0"
 	style="z-index: 999;"
 	role="presentation"
@@ -42,6 +51,7 @@
 ></div>
 
 <div
+	use:portal
 	class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
 	style="{rootStyle} z-index: 1000;"
 	role="menu"

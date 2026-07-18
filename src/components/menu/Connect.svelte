@@ -82,17 +82,18 @@ const connectToPeer = (peerIdToConnect) => {
 			title="Copy your invite link"><span style="white-space: nowrap;">&#x1f4cb; {myidcap}</span></Button
 		>
 		<span class="connect-divider"></span>
-		<!-- connect to a peer -->
-		<div class="cx-connect inline-flex shrink-0 rounded-md shadow-sm">
+		<!-- connect to a peer — the input shrinks (down to cx-input min-width) so the
+			 Connect button stays visible when the row is tight; the button never shrinks -->
+		<div class="cx-connect inline-flex rounded-md shadow-sm">
 			<Input
 				type="text"
 				placeholder="Enter peer ID to connect"
-				class="nob cx-input w-48 shrink-0 rounded-r-none border-0"
+				class="nob cx-input rounded-r-none border-0"
 				bind:value="{peerIdToConnect}"
 			/>
 			<Button
 				color="primary"
-				class="nob rounded-l-none rounded-r-lg bg-blue-500 text-white dark:bg-blue-700 dark:text-gray-200"
+				class="nob shrink-0 rounded-l-none rounded-r-lg bg-blue-500 text-white dark:bg-blue-700 dark:text-gray-200"
 				on:click="{() => {connectToPeer(peerIdToConnect)}}"
 				>Connect</Button
 			>
@@ -111,7 +112,13 @@ const connectToPeer = (peerIdToConnect) => {
 		max-width: 100vw;
 	}
 	.cx-connect {
-		min-width: 0;
+		min-width: 0; /* allow the group to shrink so its input can shrink */
+	}
+	/* the input is comfortable by default but shrinks when the row is tight (so the
+	   Connect button is never pushed off-screen); the button itself keeps its size */
+	:global(.cx-input) {
+		width: 12rem;
+		min-width: 2.5rem;
 	}
 	.connect-pill {
 		pointer-events: auto;
@@ -125,7 +132,10 @@ const connectToPeer = (peerIdToConnect) => {
 		padding: 6px 8px;
 		box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
 		backdrop-filter: blur(6px);
-		white-space: nowrap; /* never shrink/wrap the bar as the window narrows */
+		white-space: nowrap;
+		/* reserve room for the logo (left) + peers/profile (right) so the centred pill
+		   shrinks its input instead of sliding under that chrome */
+		max-width: calc(100vw - 280px);
 	}
 	.connect-divider {
 		width: 1px;

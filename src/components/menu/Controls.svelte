@@ -270,18 +270,32 @@
 		let moving = false;
 		let left = saved?.left ?? 350;
 		let top = saved?.top ?? 100;
+		let width = saved?.width ?? 300;
+		let height = saved?.height ?? 250;
 
 		let startX = 0;
 		let startY = 0;
 		let startWidth = 0;
 		let startHeight = 0;
 
+		// keep the window (and its subgroups) within the viewport — a rect persisted on
+		// a wide screen used to reopen partly off a narrow screen with no way to scroll to
+		// the clipped tree rows (same bug the Flow window had)
+		const clampRect = () => {
+			width = Math.min(width, Math.round(window.innerWidth * 0.9));
+			height = Math.min(height, Math.round(window.innerHeight * 0.85));
+			left = Math.max(0, Math.min(left, window.innerWidth - width));
+			top = Math.max(0, Math.min(top, window.innerHeight - height));
+			node.style.width = `${width}px`;
+			node.style.height = `${height}px`;
+			node.style.left = `${left}px`;
+			node.style.top = `${top}px`;
+		};
+
 		node.style.position = 'absolute';
-		node.style.top = `${top}px`;
-		node.style.left = `${left}px`;
 		node.style.userSelect = 'none';
-		node.style.width = `${saved?.width ?? 300}px`;
-		node.style.height = `${saved?.height ?? 250}px`;
+		clampRect();
+		window.addEventListener('resize', clampRect);
 
 		const persist = () =>
 			localStorage.setItem(
@@ -319,8 +333,8 @@
 				node.style.left = `${left}px`;
 			}
 			if (resizing) {
-				const width = Math.min(Math.max(250, startWidth + (e.clientX - startX)), window.innerWidth * 0.9);
-				const height = Math.min(Math.max(200, startHeight + (e.clientY - startY)), window.innerHeight * 0.85);
+				width = Math.min(Math.max(250, startWidth + (e.clientX - startX)), window.innerWidth * 0.9);
+				height = Math.min(Math.max(200, startHeight + (e.clientY - startY)), window.innerHeight * 0.85);
 				node.style.width = `${width}px`;
 				node.style.height = `${height}px`;
 			}

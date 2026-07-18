@@ -8,6 +8,7 @@
     "theprototype-agent": "src/cli.js"
   },
   "scripts": {
+    "test": "node test/messages.test.mjs && node test/bridge.test.mjs",
     "spike": "node src/spike.js",
     "smoke": "node src/cli.js --smoke",
     "repl": "node src/cli.js --repl",

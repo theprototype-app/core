@@ -1,0 +1,21 @@
+{
+  "name": "theprototype-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless console agent that joins a theprototype.app session as a peer and builds/edits the scene (REPL + MCP modes).",
+  "bin": {
+    "theprototype-agent": "src/cli.js"
+  },
+  "scripts": {
+    "spike": "node src/spike.js",
+    "smoke": "node src/cli.js --smoke",
+    "repl": "node src/cli.js --repl",
+    "mcp": "node src/cli.js --mcp"
+  },
+  "dependencies": {
+    "peerjs": "^1.5.4",
+    "@roamhq/wrtc": "^0.8.0",
+    "ws": "^8.18.0"
+  }
+}

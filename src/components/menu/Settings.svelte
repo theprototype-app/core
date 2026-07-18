@@ -21,9 +21,90 @@
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { shortcuts } from '$lib/shortcuts';
+	import {
+		aiEnabled,
+		setAiEnabled,
+		aiProviders,
+		aiActiveProvider,
+		setAiActiveProvider,
+		addAiProvider,
+		updateAiProvider,
+		removeAiProvider,
+		PROVIDER_PRESETS,
+		presetFor
+	} from '$lib/ai/providers';
+	import { testConnection } from '$lib/ai/client';
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
+	let aiExpanded = false;
+
+	// AI provider add/edit form state (roadmap #10). Legacy-mode file — plain lets.
+	let aiFormOpen = false;
+	let aiEditId: string | null = null;
+	let aiFormPreset = 'grok';
+	let aiFormLabel = '';
+	let aiFormBaseUrl = '';
+	let aiFormKey = '';
+	let aiFormModel = '';
+	let aiTesting = false;
+
+	function aiApplyPreset() {
+		const preset = presetFor(aiFormPreset);
+		aiFormLabel = preset.label;
+		aiFormBaseUrl = preset.baseUrl;
+		aiFormModel = preset.defaultModel;
+	}
+	function aiStartAdd() {
+		aiEditId = null;
+		aiFormPreset = 'grok';
+		aiApplyPreset();
+		aiFormKey = '';
+		aiFormOpen = true;
+	}
+	function aiStartEdit(p: any) {
+		aiEditId = p.id;
+		aiFormPreset = p.preset;
+		aiFormLabel = p.label;
+		aiFormBaseUrl = p.baseUrl;
+		aiFormKey = p.apiKey;
+		aiFormModel = p.model;
+		aiFormOpen = true;
+	}
+	function aiSaveProvider() {
+		if (!aiFormBaseUrl.trim() || !aiFormModel.trim()) {
+			showToast('Base URL and model are required');
+			return;
+		}
+		const config = {
+			preset: aiFormPreset,
+			label: aiFormLabel,
+			baseUrl: aiFormBaseUrl,
+			apiKey: aiFormKey,
+			model: aiFormModel
+		};
+		if (aiEditId) updateAiProvider(aiEditId, config);
+		else addAiProvider(config);
+		aiFormOpen = false;
+		aiEditId = null;
+	}
+	async function aiTest() {
+		if (!aiFormBaseUrl.trim() || !aiFormModel.trim()) {
+			showToast('Enter a base URL and model first');
+			return;
+		}
+		aiTesting = true;
+		const result = await testConnection({
+			id: 'test',
+			preset: aiFormPreset,
+			label: aiFormLabel,
+			baseUrl: aiFormBaseUrl.trim().replace(/\/+$/, ''),
+			apiKey: aiFormKey.trim(),
+			model: aiFormModel.trim()
+		});
+		aiTesting = false;
+		showToast(result.ok ? '✓ ' + result.detail : '✗ ' + result.detail);
+	}
 
 	// custom theme import (149): a hidden file input + a validating handler
 	let themeFileInput: any;
@@ -67,6 +148,7 @@
 		// refresh the group list — later phases register more shortcuts at runtime
 		shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 		shortcutsExpanded = $settingsSection === 'shortcuts';
+		aiExpanded = $settingsSection === 'ai';
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
@@ -388,6 +470,78 @@
 						<button id="reset-windows" class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset window positions</button>
 					</p>
 					<p class={bottomCoverDescription}>Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI</p>
+				</div>
+			</AccordionItem>
+			<AccordionItem bind:open={aiExpanded}>
+				<svelte:fragment slot="header">AI</svelte:fragment>
+				<div class="flex">
+					<p class={topcoverName}>
+						<Toggle bind:checked={$aiEnabled} on:change={() => setAiEnabled($aiEnabled)}>&nbsp;Enable assistant</Toggle>
+					</p>
+					<p class={topcoverDescription}>
+						<span class="font-semibold">AI scene assistant</span> — build and edit the scene with prompts. Press
+						<kbd class="rounded border border-gray-500 px-1 text-[11px]">`</kbd> for the quick prompt bar, or open the AI Assistant window. Edits replicate to peers and undo as one step.
+					</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>Providers</p>
+					<p class={middlecoverDescription}>
+						{#if $aiProviders.length}
+							<span class="flex flex-col gap-1">
+								{#each $aiProviders as p (p.id)}
+									<span class="inline-flex items-center gap-2 rounded bg-gray-800 px-2 py-1 text-[13px]">
+										<input
+											type="radio"
+											name="ai-active"
+											checked={$aiActiveProvider === p.id}
+											on:change={() => setAiActiveProvider(p.id)}
+											title="Use this provider"
+										/>
+										<span class="font-semibold">{p.label}</span>
+										<span class="text-gray-400">{p.model}</span>
+										<span class="flex-1"></span>
+										<button class="text-gray-300 hover:text-white" on:click={() => aiStartEdit(p)}>Edit</button>
+										<button class="text-gray-400 hover:text-red-400" title="Remove" on:click={() => removeAiProvider(p.id)}>✕</button>
+									</span>
+								{/each}
+							</span>
+						{:else}
+							<span class="text-gray-400">No providers yet.</span>
+						{/if}
+						<button
+							class="mt-1.5 rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+							on:click={aiStartAdd}>+ Add provider</button
+						>
+					</p>
+				</div>
+				{#if aiFormOpen}
+					<div class="flex">
+						<p class={middlecoverName}>{aiEditId ? 'Edit' : 'New'} provider</p>
+						<p class={middlecoverDescription}>
+							<span class="flex flex-col gap-1.5">
+								<select class="ui-input" bind:value={aiFormPreset} on:change={aiApplyPreset}>
+									{#each PROVIDER_PRESETS as preset}
+										<option value={preset.preset}>{preset.label}</option>
+									{/each}
+								</select>
+								<input class="ui-input" placeholder="Label" bind:value={aiFormLabel} />
+								<input class="ui-input" placeholder="Base URL (…/v1)" bind:value={aiFormBaseUrl} />
+								<input class="ui-input" type="password" placeholder="API key / bearer token" bind:value={aiFormKey} />
+								<input class="ui-input" placeholder="Model id" bind:value={aiFormModel} />
+								<span class="flex gap-1.5">
+									<button class="rounded bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-600" on:click={aiSaveProvider}>Save</button>
+									<button class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50" disabled={aiTesting} on:click={aiTest}>{aiTesting ? 'Testing…' : 'Test connection'}</button>
+									<button class="rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { aiFormOpen = false; aiEditId = null; }}>Cancel</button>
+								</span>
+							</span>
+						</p>
+					</div>
+				{/if}
+				<div class="flex">
+					<p class={bottomCoverName}>Storage</p>
+					<p class={bottomCoverDescription}>
+						API keys are stored <span class="font-semibold">unencrypted</span> in this browser's local storage (like all settings) and never leave your device except in requests to the provider you configure. "Reset settings" clears them.
+					</p>
 				</div>
 			</AccordionItem>
 			<AccordionItem bind:open={shortcutsExpanded}>

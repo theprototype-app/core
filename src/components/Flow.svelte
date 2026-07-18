@@ -2,7 +2,7 @@
 	// Flow host (phase 68): a bottom-docked panel with top-edge drag-resize, or
 	// an undocked floating window (same-context portal — stores, peers and VR
 	// keep working because nothing leaves the page). Both states persist.
-	import { flowGraphClose, flowCodeClose } from '../stores/appStore.js';
+	import { flowGraphClose, flowCodeClose, animationClose } from '../stores/appStore.js';
 	import { onMount } from 'svelte';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import ContextMenu from './ContextMenu.svelte';
@@ -56,7 +56,7 @@
 	let addMenu: { x: number; y: number } | null = $state(null);
 	const addItems = [
 		{ label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => flowCodeClose.set(false) },
-		{ label: 'Animation (soon)', disabled: true }
+		{ label: '＋ Animation', tooltip: 'Animate the selected object', action: () => animationClose.set(false) }
 	];
 	function openAddMenu(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();

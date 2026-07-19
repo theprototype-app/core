@@ -141,6 +141,17 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			tooltip: locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
 			action: () => enterEditMode(uuid)
 		},
+		// T-2: brush sculpting, Terrain objects only
+		...(object?.userData?.terrain
+			? [
+					{
+						label: 'Sculpt terrain',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Brush raise/lower/smooth/flatten — drag on the terrain',
+						action: () => import('./terrainSculpt').then((m) => m.enterSculpt(uuid))
+					}
+				]
+			: []),
 		{ label: 'Add note', tooltip: 'Pin a synced note exactly where you pointed', action: () => addAnnotation(uuid, point) },
 		{
 			label: multi ? 'Ping selection' + suffix : 'Ping this object',

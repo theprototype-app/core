@@ -15,13 +15,13 @@
 	import { sendPing } from '$lib/ping';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import * as THREE from 'three';
-	import { setContext } from 'svelte';
+	import { setContext, tick } from 'svelte';
 	import { writable } from 'svelte/store';
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import MobileAddButton from './MobileAddButton.svelte';
-	import { focusStack } from '$lib/windowFocus';
-	import { tabbable } from '$lib/windowTabs';
+	import { focusStack, raiseWindow, isTopWindow } from '$lib/windowFocus';
+	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
 	import { visibleDockKey, bottomDockActive, activateDock, dockOccupants } from '$lib/bottomDock';
 	import { VRButton, XRButton } from '@threlte/xr'
@@ -46,6 +46,19 @@
 		else {
 			explorerClose.set(false); // hidden -> show it in its last mode
 			bottomDockActive.set('explorer'); // if docked, make it the visible panel
+		}
+	}
+	// Object List is a pure floating window. Clicking its button RAISES it to the front
+	// (bring-to-front, as the user "called" it); clicking again while it is already at
+	// the front closes it. Opening a closed one raises it too.
+	function toggleObjectList() {
+		if ($objectListClose) {
+			objectListClose.set(false);
+			tick().then(() => raiseWindow('objects'));
+		} else if (isTopWindow('objects')) {
+			objectListClose.set(true);
+		} else {
+			raiseWindow('objects');
 		}
 	}
 
@@ -302,10 +315,15 @@
 		let startWidth = 0;
 		let startHeight = 0;
 
+		// when tab-grouped, windowTabs owns the geometry (all members share one rect) —
+		// dragMe must NOT set its own size/pos or it desyncs from the strip
+		const grouped = () => !!groupRectOf('objects');
+
 		// keep the window (and its subgroups) within the viewport — a rect persisted on
 		// a wide screen used to reopen partly off a narrow screen with no way to scroll to
 		// the clipped tree rows (same bug the Flow window had)
 		const clampRect = () => {
+			if (grouped()) return; // the group rect drives size/pos while grouped
 			width = Math.min(width, Math.round(window.innerWidth * 0.9));
 			height = Math.min(height, Math.round(window.innerHeight * 0.85));
 			left = Math.max(0, Math.min(left, window.innerWidth - width));
@@ -347,25 +365,34 @@
 
 		window.addEventListener('pointermove', (e) => {
 			if (moving) {
-				left += e.movementX;
-				top += e.movementY;
-				if (left < 0) left = 0;
-				if (top < 0) top = 0;
-				if (left > window.innerWidth - node.offsetWidth) left = window.innerWidth - node.offsetWidth;
-				if (top > window.innerHeight - node.offsetHeight) top = window.innerHeight - node.offsetHeight;
-				node.style.top = `${top}px`;
-				node.style.left = `${left}px`;
+				if (grouped()) {
+					// move the whole tab group so its strip follows (not just this window)
+					moveGroupOf('objects', e.movementX, e.movementY);
+				} else {
+					left += e.movementX;
+					top += e.movementY;
+					if (left < 0) left = 0;
+					if (top < 0) top = 0;
+					if (left > window.innerWidth - node.offsetWidth) left = window.innerWidth - node.offsetWidth;
+					if (top > window.innerHeight - node.offsetHeight) top = window.innerHeight - node.offsetHeight;
+					node.style.top = `${top}px`;
+					node.style.left = `${left}px`;
+				}
 			}
 			if (resizing) {
 				width = Math.min(Math.max(250, startWidth + (e.clientX - startX)), window.innerWidth * 0.9);
 				height = Math.min(Math.max(200, startHeight + (e.clientY - startY)), window.innerHeight * 0.85);
-				node.style.width = `${width}px`;
-				node.style.height = `${height}px`;
+				if (grouped()) {
+					resizeGroup('objects', width, height); // resize the whole group (all tabs)
+				} else {
+					node.style.width = `${width}px`;
+					node.style.height = `${height}px`;
+				}
 			}
 		});
 
 		window.addEventListener('pointerup', () => {
-			if (moving || resizing) persist();
+			if ((moving || resizing) && !grouped()) persist();
 			moving = false;
 			resizing = false;
 		});
@@ -435,7 +462,7 @@
 	<p
 		class={classActive}
 		title="Object list (O)"
-		on:click={() => objectListClose.update((value) => !value)}
+		on:click={toggleObjectList}
 	>
 		<i class={'fas fa-list-ul ' + (!$objectListClose ? ICON_ON : ICON_OFF)}></i>
 	</p>
@@ -498,7 +525,7 @@
 	{/if}
 </div>
 
-<div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack
+<div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
 	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
 	use:dockable={{ key: 'objects' }}
 	style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">

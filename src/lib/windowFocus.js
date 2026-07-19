@@ -4,6 +4,8 @@
 
 /** @type {any[]} */
 const order = [];
+/** @type {Map<string, any>} key -> node, for programmatic raise (e.g. a toolbar button) */
+const byKey = new Map();
 
 function apply() {
 	order.forEach((node, index) => {
@@ -11,18 +13,26 @@ function apply() {
 	});
 }
 
-/** svelte action: use:focusStack on a floating window's root @param {any} node */
-export function focusStack(node) {
+/** @param {any} node */
+function raiseNode(node) {
+	const index = order.indexOf(node);
+	if (index >= 0 && index < order.length - 1) {
+		order.splice(index, 1);
+		order.push(node);
+		apply();
+	}
+}
+
+/**
+ * svelte action: use:focusStack on a floating window's root. Pass an optional key
+ * (use:focusStack={'objects'}) to allow raising it programmatically by key.
+ * @param {any} node @param {string=} key
+ */
+export function focusStack(node, key) {
 	order.push(node);
+	if (key) byKey.set(key, node);
 	apply();
-	const raise = () => {
-		const index = order.indexOf(node);
-		if (index >= 0 && index < order.length - 1) {
-			order.splice(index, 1);
-			order.push(node);
-			apply();
-		}
-	};
+	const raise = () => raiseNode(node);
 	// capture phase: runs before inner handlers, dragging included
 	node.addEventListener('pointerdown', raise, true);
 	return {
@@ -30,7 +40,21 @@ export function focusStack(node) {
 			node.removeEventListener('pointerdown', raise, true);
 			const index = order.indexOf(node);
 			if (index >= 0) order.splice(index, 1);
+			if (key) byKey.delete(key);
 			apply();
 		}
 	};
+}
+
+/** Raise a keyed window to the front (e.g. when its toolbar button is clicked). @param {string} key */
+export function raiseWindow(key) {
+	const node = byKey.get(key);
+	if (node) raiseNode(node);
+	return !!node;
+}
+
+/** Is the keyed window already at the front of the stack? @param {string} key */
+export function isTopWindow(key) {
+	const node = byKey.get(key);
+	return !!node && order.length > 0 && order[order.length - 1] === node;
 }

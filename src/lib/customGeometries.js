@@ -85,10 +85,24 @@ function corner(a, b, c) {
 	return geometry;
 }
 
+/** Flat sculptable ground: size (metres) x segments per side. Segments are
+ * clamped to 48 so a sculpted terrain's non-indexed snapshot (18*seg^2 floats =
+ * 41,472 at 48) stays under the meshgeo cap (45,000) — see terrainSculpt / T-2.
+ * A PlaneGeometry in XY rotated flat so up is +Y, resting at y=0.
+ * @param {any=} a @param {any=} b */
+function terrain(a, b) {
+	const size = num(a, 24);
+	const segments = Math.min(Math.max(Math.round(num(b, 48)), 2), 48);
+	const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+	geometry.rotateX(-Math.PI / 2);
+	return geometry;
+}
+
 /** @type {Record<string, (a?: any, b?: any, c?: any, d?: any) => THREE.BufferGeometry>} */
 export const customGeometryBuilders = {
 	Wedge: wedge,
 	Stairs: stairs,
 	Arch: arch,
-	Corner: corner
+	Corner: corner,
+	Terrain: terrain
 };

@@ -63,6 +63,13 @@ export function createGeometry(command, uuid) {
         // same color from the create message's uuid) — V-3, replaces 0x00ff00
         object.material.color.set(paletteColorFor(object.uuid));
         object.name = geometry;
+        if (geometry === 'Terrain') {
+            // terrain gets a distinct sage look + a flag the Sculpt menu keys off
+            // (deterministic on both peers; survives toJSON + GLTF extras) — T-1
+            object.material.color.set('#81b29a');
+            object.material.roughness = 0.95;
+            object.userData.terrain = true;
+        }
         stampGeometryParams(object); // editable params survive sync (78)
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects

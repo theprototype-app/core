@@ -47,7 +47,7 @@
 	import { bottomDockActive, visibleDockKey, setDockOccupant } from '$lib/bottomDock';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
-	import { tabbable } from '$lib/windowTabs';
+	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
 	import ContextMenu from '../ContextMenu.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
@@ -96,6 +96,12 @@
 	});
 	const dockVisible = $derived($visibleDockKey === 'explorer');
 
+	// tab-grouped windows share one size: show the group's rect so a resize on any
+	// member updates every tab, not just the active one.
+	const myGroup = $derived($tabGroups.find((g: any) => g.members.includes('explorer')) ?? null);
+	const effW = $derived(myGroup ? myGroup.rect.width : winW);
+	const effH = $derived(myGroup ? myGroup.rect.height : winH);
+
 	// --- docked: top-edge resize (Flow pattern) ---
 	let resizing = $state(false);
 	function startResize(e: any) {
@@ -124,8 +130,11 @@
 	}
 	function doWinResize(e: any) {
 		if (!winResizing) return;
-		winW = Math.min(Math.max(420, winW + e.movementX), window.innerWidth);
-		winH = Math.min(Math.max(280, winH + e.movementY), window.innerHeight);
+		const baseW = myGroup ? myGroup.rect.width : winW;
+		const baseH = myGroup ? myGroup.rect.height : winH;
+		winW = Math.min(Math.max(420, baseW + e.movementX), window.innerWidth);
+		winH = Math.min(Math.max(280, baseH + e.movementY), window.innerHeight);
+		resizeGroup('explorer', winW, winH); // if grouped, resize the whole group
 	}
 	function endWinResize(e: any) {
 		if (!winResizing) return;
@@ -1289,8 +1298,8 @@
 			use:tabbable={{ key: 'explorer', title: '🗂️ Explorer', openStore: explorerClose, isOpen: (v) => !v, close: () => explorerClose.set(true) }}
 			use:dockable={{ key: 'explorer' }}
 			style="z-index: var(--z-window)"
-			style:width="{winW}px"
-			style:height="{winH}px"
+			style:width="{effW}px"
+			style:height="{effH}px"
 			ondragover={(e) => {
 				if (canAccept(e)) return;
 				e.preventDefault();

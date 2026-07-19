@@ -11,7 +11,7 @@
 	import DockTabs from '../DockTabs.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
-	import { tabbable } from '$lib/windowTabs';
+	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
 
 	let text = $state('');
@@ -29,6 +29,12 @@
 		localStorage.setItem('flowCodeDocked', String(v));
 		if (v) activateDock('flowcode');
 	}
+
+	// when tab-grouped, ALL members share one size — display the group's rect so a
+	// resize on any member shows on every tab (not just the active one).
+	const myGroup = $derived($tabGroups.find((g) => g.members.includes('flowCode')) ?? null);
+	const effW = $derived(myGroup ? myGroup.rect.width : winW);
+	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 
 	function snapshot() {
 		return JSON.stringify(
@@ -94,8 +100,11 @@
 	function startWinResize(/** @type {any} */ e) { winResizing = true; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); }
 	function doWinResize(/** @type {any} */ e) {
 		if (!winResizing) return;
-		winW = Math.min(Math.max(320, winW + e.movementX), window.innerWidth - 8);
-		winH = Math.min(Math.max(240, winH + e.movementY), window.innerHeight);
+		const baseW = myGroup ? myGroup.rect.width : winW;
+		const baseH = myGroup ? myGroup.rect.height : winH;
+		winW = Math.min(Math.max(320, baseW + e.movementX), window.innerWidth - 8);
+		winH = Math.min(Math.max(240, baseH + e.movementY), window.innerHeight);
+		resizeGroup('flowCode', winW, winH); // if grouped, resize the whole group (no-op otherwise)
 	}
 	function endWinResize(/** @type {any} */ e) {
 		if (!winResizing) return;
@@ -155,8 +164,8 @@
 			use:focusStack
 			use:tabbable={{ key: 'flowCode', title: 'Flow Code', openStore: flowCodeClose, isOpen: (v) => !v, close: () => flowCodeClose.set(true) }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 85vh"
-			style:width="{winW}px"
-			style:height="{winH}px"
+			style:width="{effW}px"
+			style:height="{effH}px"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span>Flow Code</span>

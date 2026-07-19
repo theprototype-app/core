@@ -15,7 +15,7 @@
 	import DockTabs from '../DockTabs.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
-	import { tabbable } from '$lib/windowTabs';
+	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
@@ -44,6 +44,12 @@
 		localStorage.setItem('animationDocked', String(v));
 		if (v) activateDock('animation');
 	}
+
+	// tab-grouped windows share one size: show the group's rect so a resize on any
+	// member updates every tab, not just the active one.
+	const myGroup = $derived($tabGroups.find((g) => g.members.includes('animation')) ?? null);
+	const effW = $derived(myGroup ? myGroup.rect.width : winW);
+	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 	$effect(() => {
 		setDockOccupant('animation', !$animationClose && docked, $dockHeight);
 		return () => setDockOccupant('animation', false);
@@ -129,8 +135,11 @@
 	function startWinResize(/** @type {any} */ e) { winResizing = true; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); }
 	function doWinResize(/** @type {any} */ e) {
 		if (!winResizing) return;
-		winW = Math.min(Math.max(360, winW + e.movementX), window.innerWidth - 8);
-		winH = Math.min(Math.max(260, winH + e.movementY), window.innerHeight);
+		const baseW = myGroup ? myGroup.rect.width : winW;
+		const baseH = myGroup ? myGroup.rect.height : winH;
+		winW = Math.min(Math.max(360, baseW + e.movementX), window.innerWidth - 8);
+		winH = Math.min(Math.max(260, baseH + e.movementY), window.innerHeight);
+		resizeGroup('animation', winW, winH); // if grouped, resize the whole group
 	}
 	function endWinResize(/** @type {any} */ e) {
 		if (!winResizing) return;
@@ -303,8 +312,8 @@
 			use:focusStack
 			use:tabbable={{ key: 'animation', title: 'Animation', openStore: animationClose, isOpen: (v) => !v, close: () => animationClose.set(true) }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"
-			style:width="{winW}px"
-			style:height="{winH}px"
+			style:width="{effW}px"
+			style:height="{effH}px"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span>Animation</span>

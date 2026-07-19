@@ -12,7 +12,7 @@
 	import DockTabs from './DockTabs.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
-	import { tabbable } from '$lib/windowTabs';
+	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
 	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
 	import { fly } from 'svelte/transition';
@@ -46,6 +46,12 @@
 		localStorage.setItem('flowDocked', String(v));
 		if (v) activateDock('flow'); // re-docking makes it the visible tab
 	}
+
+	// tab-grouped windows share one size: show the group's rect so a resize on any
+	// member updates every tab, not just the active one.
+	const myGroup = $derived($tabGroups.find((g: any) => g.members.includes('flow')) ?? null);
+	const effW = $derived(myGroup ? myGroup.rect.width : winW);
+	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 
 	// Flow "+" (floating window only — docked mode uses the DockTabs strip): open
 	// another Flow-family view. They start docked, so they appear as dock tabs.
@@ -94,8 +100,11 @@
 	}
 	function doWinResize(e: any) {
 		if (!winResizing) return;
-		winW = Math.min(Math.max(280, winW + e.movementX), window.innerWidth - 8);
-		winH = Math.min(Math.max(240, winH + e.movementY), window.innerHeight);
+		const baseW = myGroup ? myGroup.rect.width : winW;
+		const baseH = myGroup ? myGroup.rect.height : winH;
+		winW = Math.min(Math.max(280, baseW + e.movementX), window.innerWidth - 8);
+		winH = Math.min(Math.max(240, baseH + e.movementY), window.innerHeight);
+		resizeGroup('flow', winW, winH); // if grouped, resize the whole group
 	}
 	function endWinResize(e: any) {
 		if (!winResizing) return;
@@ -145,8 +154,8 @@
 			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true) }}
 			use:dockable={{ key: 'flow' }}
 			style="z-index: var(--z-window)"
-			style:width="{winW}px"
-			style:height="{winH}px"
+			style:width="{effW}px"
+			style:height="{effH}px"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span>Node editor</span>

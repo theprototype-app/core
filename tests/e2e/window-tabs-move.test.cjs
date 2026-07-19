@@ -63,5 +63,25 @@ h.run(async () => {
 		`the window stays aligned under its tab strip after moving (strip ${moved.stripLeft},${moved.stripTop} vs window ${moved.winLeft},${moved.winTop})`
 	);
 
+	// resizing a grouped window resizes the WHOLE group (all tabs share one size),
+	// not just the active tab — the other member's node picks up the new width too
+	const grpResize = await A.page.evaluate(async () => {
+		const active = ['#object-list', '#flow-code-window'].map((s) => document.querySelector(s)).find((n) => n && getComputedStyle(n).display !== 'none');
+		const other = ['#object-list', '#flow-code-window'].map((s) => document.querySelector(s)).find((n) => n && getComputedStyle(n).display === 'none');
+		const grip = active.querySelector('.resize-cue, .resize-handle');
+		const r = grip.getBoundingClientRect();
+		const beforeOther = parseInt(other.style.width);
+		const ev = (t, x, y, extra) => grip.dispatchEvent(new PointerEvent(t, { bubbles: true, clientX: x, clientY: y, pointerId: 8, pointerType: 'mouse', ...(extra || {}) }));
+		ev('pointerdown', r.left + 2, r.top + 2);
+		ev('pointermove', r.left + 122, r.top + 82, { movementX: 120, movementY: 80 });
+		ev('pointerup', r.left + 122, r.top + 82);
+		await new Promise((res) => setTimeout(res, 150));
+		return { activeW: parseInt(active.style.width), otherW: parseInt(other.style.width), beforeOther };
+	});
+	h.check(
+		Math.abs(grpResize.activeW - grpResize.otherW) < 3 && grpResize.otherW > grpResize.beforeOther + 20,
+		`resizing a grouped window resizes every tab (active=${grpResize.activeW}, other=${grpResize.beforeOther}->${grpResize.otherW})`
+	);
+
 	await h.finish(browser);
 });

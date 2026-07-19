@@ -34,6 +34,7 @@
 		presetFor
 	} from '$lib/ai/providers';
 	import { testConnection } from '$lib/ai/client';
+	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST } from '$lib/peerServer';
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
@@ -104,6 +105,14 @@
 		});
 		aiTesting = false;
 		showToast(result.ok ? '✓ ' + result.detail : '✗ ' + result.detail);
+	}
+
+	// Peer signaling-server selection (default self-hosted+fallback / public / custom)
+	function setPeerMode(v: any) {
+		peerServerConfig.update((c) => ({ ...c, mode: v }));
+	}
+	function setPeerCustom(k: string, v: any) {
+		peerServerConfig.update((c) => ({ ...c, custom: { ...c.custom, [k]: v } }));
 	}
 
 	// custom theme import (149): a hidden file input + a validating handler
@@ -542,6 +551,114 @@
 					<p class={bottomCoverDescription}>
 						API keys are stored <span class="font-semibold">unencrypted</span> in this browser's local storage (like all settings) and never leave your device except in requests to the provider you configure. "Reset settings" clears them.
 					</p>
+				</div>
+			</AccordionItem>
+			<AccordionItem>
+				<svelte:fragment slot="header">Connection</svelte:fragment>
+				<div class="flex">
+					<p class={topcoverName}>
+						<ThemedSelect
+							id="peer-server-mode"
+							items={[
+								{ value: 'default', name: HAS_SELF_HOSTED ? 'Default (self-hosted + fallback)' : 'Default (public cloud)' },
+								{ value: 'public', name: 'Public PeerJS cloud' },
+								{ value: 'custom', name: 'Custom server' }
+							]}
+							value={$peerServerConfig.mode}
+							onchange={(v) => setPeerMode(v)}
+						/>
+					</p>
+					<p class={topcoverDescription}>
+						<span class="font-semibold">Signaling server</span> — where peers discover each other.
+						{#if HAS_SELF_HOSTED}Default uses <span class="font-mono">{SELF_HOSTED_HOST}</span> and falls back to the public PeerJS cloud if it's unreachable.{:else}Default is the public PeerJS cloud.{/if}
+						Custom pins your own server (no fallback). Takes effect on reload.
+					</p>
+				</div>
+				{#if $peerServerConfig.mode === 'custom'}
+					<div class="flex">
+						<p class={middlecoverName}>
+							<input
+								class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								placeholder="peer.example.com"
+								value={$peerServerConfig.custom.host}
+								on:change={(e: any) => setPeerCustom('host', e.target.value)}
+							/>
+						</p>
+						<p class={middlecoverDescription}>Your PeerJS server host (no https://, no path)</p>
+					</div>
+					<div class="flex">
+						<p class={middlecoverName + ' gap-1'}>
+							<input
+								class="w-16 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								placeholder="443"
+								value={$peerServerConfig.custom.port}
+								on:change={(e: any) => setPeerCustom('port', e.target.value)}
+							/>
+							<input
+								class="min-w-0 flex-1 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								placeholder="/peerjs"
+								value={$peerServerConfig.custom.path}
+								on:change={(e: any) => setPeerCustom('path', e.target.value)}
+							/>
+						</p>
+						<p class={middlecoverDescription}>Port + path (Caddy/TLS defaults: 443 and /peerjs)</p>
+					</div>
+					<div class="flex">
+						<p class={middlecoverName}>
+							<Checkbox
+								checked={$peerServerConfig.custom.secure}
+								on:change={(e: any) => setPeerCustom('secure', e.target.checked)}>&nbsp;Secure (wss)</Checkbox>
+						</p>
+						<p class={middlecoverDescription}>Use TLS — leave on unless testing a plain-ws server</p>
+					</div>
+					<div class="flex">
+						<p class={middlecoverName}>
+							<input
+								class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								placeholder="turn:host:3478?transport=udp,turn:host:3478?transport=tcp"
+								value={$peerServerConfig.custom.turnUrls}
+								on:change={(e: any) => setPeerCustom('turnUrls', e.target.value)}
+							/>
+						</p>
+						<p class={middlecoverDescription}>TURN URLs (comma-separated) — the NAT relay; blank = STUN-only, direct connections only</p>
+					</div>
+					<div class="flex">
+						<p class={middlecoverName + ' gap-1'}>
+							<input
+								class="min-w-0 flex-1 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								placeholder="turn user"
+								value={$peerServerConfig.custom.turnUsername}
+								on:change={(e: any) => setPeerCustom('turnUsername', e.target.value)}
+							/>
+							<input
+								class="min-w-0 flex-1 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								placeholder="turn credential"
+								value={$peerServerConfig.custom.turnCredential}
+								on:change={(e: any) => setPeerCustom('turnCredential', e.target.value)}
+							/>
+						</p>
+						<p class={middlecoverDescription}>TURN username + credential</p>
+					</div>
+					<div class="flex">
+						<p class={middlecoverName}>
+							<input
+								class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								placeholder="stun:host:3478"
+								value={$peerServerConfig.custom.stunUrls}
+								on:change={(e: any) => setPeerCustom('stunUrls', e.target.value)}
+							/>
+						</p>
+						<p class={middlecoverDescription}>STUN URLs (comma-separated) — optional</p>
+					</div>
+				{/if}
+				<div class="flex">
+					<p class={bottomCoverName}>
+						<button
+							id="peer-server-reload"
+							class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+							on:click={() => location.reload()}>Apply &amp; reload</button>
+					</p>
+					<p class={bottomCoverDescription}>The peer connection is created at startup — reload to switch servers</p>
 				</div>
 			</AccordionItem>
 			<AccordionItem bind:open={shortcutsExpanded}>

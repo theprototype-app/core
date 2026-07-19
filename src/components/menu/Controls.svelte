@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -15,34 +15,91 @@
 	import { sendPing } from '$lib/ping';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import * as THREE from 'three';
-	import { setContext } from 'svelte';
+	import { setContext, tick } from 'svelte';
 	import { writable } from 'svelte/store';
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import MobileAddButton from './MobileAddButton.svelte';
-	import { focusStack } from '$lib/windowFocus';
-	import { tabbable } from '$lib/windowTabs';
+	import { focusStack, raiseWindow, isTopWindow } from '$lib/windowFocus';
+	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
-	import { dockShared, bottomDockActive } from '$lib/bottomDock';
+	import { visibleDockKey, bottomDockActive, activateDock, dockOccupants, FLOW_FAMILY } from '$lib/bottomDock';
 	import { VRButton, XRButton } from '@threlte/xr'
 
-	// Flow + Explorer SHARE the bottom dock when both are docked (only the active one
-	// shows). A toolbar icon highlights only when its panel is actually VISIBLE, and
-	// clicking makes that panel the active dock occupant (or closes it if already shown).
-	const flowVisible = $derived(!$flowGraphClose && (!$dockShared || $bottomDockActive === 'flow'));
-	const explorerVisible = $derived(!$explorerClose && (!$dockShared || $bottomDockActive === 'explorer'));
+	// A panel is "shown" when it is open AND either the visible dock tab OR floating
+	// (floating = open but not the docked occupant). The toolbar icon tints whenever its
+	// panel is shown — docked OR as a floating window (this fixes the icon going dark
+	// while a floating panel is clearly on screen). Clicking shows the panel in its
+	// current mode (docked tab or floating window) or hides it; docking/undocking is on
+	// each panel's own header buttons.
+	// The Node editor button's behaviour follows the NODE EDITOR's own mode:
+	//  - Node editor DOCKED   -> the button toggles the docked flow group (its docked tabs).
+	//  - Node editor FLOATING -> the button only shows/hides that floating window and never
+	//    touches the docked Flow Code / Animation group.
+	// The icon is lit when a docked flow tab is the visible dock panel OR the Node editor
+	// floating window is shown.
+	const flowDockVisible = $derived(FLOW_FAMILY.includes($visibleDockKey ?? ''));
+	const flowFloatingShown = $derived(!$flowGraphClose && !$dockOccupants.flow?.present);
+	const flowShown = $derived(flowDockVisible || flowFloatingShown);
+	const explorerShown = $derived(!$explorerClose && ($visibleDockKey === 'explorer' || !$dockOccupants.explorer?.present));
+	// remembers which flow-family views were open when the docked group was hidden
+	let flowDockSnapshot: any = null;
 	function toggleFlow() {
-		if (flowVisible) flowGraphClose.set(true);
-		else {
+		const open = !$flowGraphClose;
+		const docked = !!$dockOccupants.flow?.present; // Node editor docked AND open
+		if (open && !docked) {
+			flowGraphClose.set(true); // FLOATING Node editor is shown -> hide only its window
+			return;
+		}
+		if (docked) {
+			if (flowDockVisible) {
+				// docked group is on screen -> hide only the tabs that are actually DOCKED
+				// (leave undocked/floating Flow Code / Animation windows open)
+				flowDockSnapshot = {
+					flow: true,
+					flowcode: !!$dockOccupants.flowcode?.present,
+					animation: !!$dockOccupants.animation?.present
+				};
+				flowGraphClose.set(true);
+				if (flowDockSnapshot.flowcode) flowCodeClose.set(true);
+				if (flowDockSnapshot.animation) animationClose.set(true);
+			} else {
+				activateDock('flow'); // docked but hidden (Explorer covering) -> bring the dock back
+			}
+			return;
+		}
+		// Node editor is CLOSED -> show it in its last mode
+		const wasDocked = typeof localStorage === 'undefined' || localStorage.getItem('flowDocked') !== 'false';
+		const snap = flowDockSnapshot;
+		if (snap && (snap.flow || snap.flowcode || snap.animation)) {
+			if (snap.flow) flowGraphClose.set(false);
+			if (snap.flowcode) flowCodeClose.set(false);
+			if (snap.animation) animationClose.set(false);
+			flowDockSnapshot = null;
+			activateDock('flow');
+		} else {
 			flowGraphClose.set(false);
-			bottomDockActive.set('flow'); // if docked, become the shown one (no-op if windowed)
+			if (wasDocked) activateDock('flow'); // docked -> show as the dock tab; floating -> leave the dock alone
 		}
 	}
 	function toggleExplorer() {
-		if (explorerVisible) explorerClose.set(true);
+		if (explorerShown) explorerClose.set(true); // shown (docked or floating) -> hide
 		else {
-			explorerClose.set(false);
-			bottomDockActive.set('explorer');
+			explorerClose.set(false); // hidden -> show it in its last mode
+			bottomDockActive.set('explorer'); // if docked, make it the visible panel
+		}
+	}
+	// Object List is a pure floating window. Clicking its button RAISES it to the front
+	// (bring-to-front, as the user "called" it); clicking again while it is already at
+	// the front closes it. Opening a closed one raises it too.
+	function toggleObjectList() {
+		if ($objectListClose) {
+			objectListClose.set(false);
+			tick().then(() => raiseWindow('objects'));
+		} else if (isTopWindow('objects')) {
+			objectListClose.set(true);
+		} else {
+			raiseWindow('objects');
 		}
 	}
 
@@ -299,12 +356,17 @@
 		let startWidth = 0;
 		let startHeight = 0;
 
+		// when tab-grouped, windowTabs owns the geometry (all members share one rect) —
+		// dragMe must NOT set its own size/pos or it desyncs from the strip
+		const grouped = () => !!groupRectOf('objects');
+
 		// keep the window (and its subgroups) within the viewport — a rect persisted on
 		// a wide screen used to reopen partly off a narrow screen with no way to scroll to
 		// the clipped tree rows (same bug the Flow window had)
 		const clampRect = () => {
-			width = Math.min(width, Math.round(window.innerWidth * 0.9));
-			height = Math.min(height, Math.round(window.innerHeight * 0.85));
+			if (grouped()) return; // the group rect drives size/pos while grouped
+			width = Math.min(width, window.innerWidth - 8);
+			height = Math.min(height, window.innerHeight);
 			left = Math.max(0, Math.min(left, window.innerWidth - width));
 			top = Math.max(0, Math.min(top, window.innerHeight - height));
 			node.style.width = `${width}px`;
@@ -344,25 +406,34 @@
 
 		window.addEventListener('pointermove', (e) => {
 			if (moving) {
-				left += e.movementX;
-				top += e.movementY;
-				if (left < 0) left = 0;
-				if (top < 0) top = 0;
-				if (left > window.innerWidth - node.offsetWidth) left = window.innerWidth - node.offsetWidth;
-				if (top > window.innerHeight - node.offsetHeight) top = window.innerHeight - node.offsetHeight;
-				node.style.top = `${top}px`;
-				node.style.left = `${left}px`;
+				if (grouped()) {
+					// move the whole tab group so its strip follows (not just this window)
+					moveGroupOf('objects', e.movementX, e.movementY);
+				} else {
+					left += e.movementX;
+					top += e.movementY;
+					if (left < 0) left = 0;
+					if (top < 0) top = 0;
+					if (left > window.innerWidth - node.offsetWidth) left = window.innerWidth - node.offsetWidth;
+					if (top > window.innerHeight - node.offsetHeight) top = window.innerHeight - node.offsetHeight;
+					node.style.top = `${top}px`;
+					node.style.left = `${left}px`;
+				}
 			}
 			if (resizing) {
-				width = Math.min(Math.max(250, startWidth + (e.clientX - startX)), window.innerWidth * 0.9);
-				height = Math.min(Math.max(200, startHeight + (e.clientY - startY)), window.innerHeight * 0.85);
-				node.style.width = `${width}px`;
-				node.style.height = `${height}px`;
+				width = Math.min(Math.max(250, startWidth + (e.clientX - startX)), window.innerWidth - 8);
+				height = Math.min(Math.max(200, startHeight + (e.clientY - startY)), window.innerHeight);
+				if (grouped()) {
+					resizeGroup('objects', width, height); // resize the whole group (all tabs)
+				} else {
+					node.style.width = `${width}px`;
+					node.style.height = `${height}px`;
+				}
 			}
 		});
 
 		window.addEventListener('pointerup', () => {
-			if (moving || resizing) persist();
+			if ((moving || resizing) && !grouped()) persist();
 			moving = false;
 			resizing = false;
 		});
@@ -432,7 +503,7 @@
 	<p
 		class={classActive}
 		title="Object list (O)"
-		on:click={() => objectListClose.update((value) => !value)}
+		on:click={toggleObjectList}
 	>
 		<i class={'fas fa-list-ul ' + (!$objectListClose ? ICON_ON : ICON_OFF)}></i>
 	</p>
@@ -441,7 +512,7 @@
 		title="Node editor (N)"
 		on:click={toggleFlow}
 	>
-		<i class={'fas fa-circle-nodes ' + (flowVisible ? ICON_ON : ICON_OFF)}></i>
+		<i class={'fas fa-circle-nodes ' + (flowShown ? ICON_ON : ICON_OFF)}></i>
 	</p>
 	<p
 		class={classActive + ' rounded-r-full'}
@@ -449,7 +520,7 @@
 		title="Explorer"
 		on:click={toggleExplorer}
 	>
-		<i class={'fas fa-folder-open ' + (explorerVisible ? ICON_ON : ICON_OFF)}></i>
+		<i class={'fas fa-folder-open ' + (explorerShown ? ICON_ON : ICON_OFF)}></i>
 	</p>
 </BottomNav>
 
@@ -495,10 +566,10 @@
 	{/if}
 </div>
 
-<div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack
+<div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
 	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
 	use:dockable={{ key: 'objects' }}
-	style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
+	style="z-index: var(--z-window)">
 	<!-- dropping a row on the header moves the object back to the scene root -->
 	<!-- header matches the Explorer chrome (104): title + inline search + close;
 	     still the move handle AND the drop-to-root target -->

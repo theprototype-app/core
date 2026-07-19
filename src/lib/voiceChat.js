@@ -318,7 +318,10 @@ spatialVoice.subscribe((on) => {
 
 // --- lifecycle hooks called from the peer layer ---
 /** @param {any} pc - the PeerConnection instance */
-export function initVoiceChat(pc) {
+/** Bind the incoming-call handler to pc.peer. Split out of initVoiceChat so the
+ * peer layer can re-bind it after recreating the Peer (public-server fallback)
+ * without re-adding the one-time window listeners / interval below. */
+export function attachVoiceToPeer(/** @type {any} */ pc) {
 	peerConnection = pc;
 	pc.peer.on('call', (/** @type {any} */ call) => {
 		const whitelisted = get(userdata).some((user) => user[0] === call.peer);
@@ -329,6 +332,10 @@ export function initVoiceChat(pc) {
 		call.answer(localStream ?? undefined);
 		trackCall(call, 'in');
 	});
+}
+
+export function initVoiceChat(/** @type {any} */ pc) {
+	attachVoiceToPeer(pc);
 	window.addEventListener('keydown', onKeydown);
 	window.addEventListener('keyup', onKeyup);
 	// AudioContext starts suspended until a user gesture

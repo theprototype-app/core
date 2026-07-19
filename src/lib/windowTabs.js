@@ -121,6 +121,32 @@ export function activateTab(groupId, key) {
 	applyGroups();
 }
 
+/** Resize the whole group a window belongs to — every member shares ONE size, so
+ * dragging any member's grip resizes them all (not just the active tab). Returns
+ * false when the window isn't grouped, so the caller keeps its own local resize.
+ * @param {string} key @param {number} width @param {number} height */
+export function resizeGroup(key, width, height) {
+	const group = groupOfKey(key);
+	if (!group) return false;
+	tabGroups.update((groups) =>
+		groups.map((g) => (g.id === group.id ? { ...g, rect: { ...g.rect, width, height } } : g))
+	);
+	applyGroups();
+	return true;
+}
+
+/** The group rect a window belongs to, or null if it isn't grouped. @param {string} key */
+export function groupRectOf(key) {
+	return groupOfKey(key)?.rect ?? null;
+}
+
+/** Move the whole group a window belongs to by (dx,dy). @param {string} key @param {number} dx @param {number} dy */
+export function moveGroupOf(key, dx, dy) {
+	const group = groupOfKey(key);
+	if (group) moveGroup(group.id, dx, dy);
+	return !!group;
+}
+
 /** @param {string} groupId @param {number} dx @param {number} dy */
 export function moveGroup(groupId, dx, dy) {
 	tabGroups.update((groups) =>

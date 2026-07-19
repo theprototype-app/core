@@ -15,6 +15,8 @@ export const flowGraphClose = writable(true);
 // Flow Code: an editable JSON view of the flow graph (roadmap 9). Added via the
 // Flow tab "+"; a standalone floating window that can tab-group with Flow.
 export const flowCodeClose = writable(true);
+// Animation window (author + preview LOCAL transform movements) — Flow "+" menu.
+export const animationClose = writable(true);
 // Explorer asset browser (95) — folder hud button toggles it
 export const explorerClose = writable(true);
 export const objectListClose = writable(true);

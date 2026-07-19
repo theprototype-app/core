@@ -1,6 +1,7 @@
-// Roadmap #9: Flow + Explorer share the bottom dock when both docked. The Controls
-// icons highlight only the VISIBLE panel; clicking Explorer makes it the shown dock
-// occupant (Flow un-highlights); clicking a shown panel again closes it.
+// Docking rework: the bottom dock shows ONE panel. The Node editor (Flow-family) and
+// the Explorer are MUTUALLY EXCLUSIVE — clicking Explorer shows it (Flow un-highlights,
+// stays open+hidden); clicking the Node editor shows the Flow dock AND closes the
+// Explorer (single docked panel). Clicking a shown panel again closes it.
 const h = require('./helpers.cjs');
 
 const state = (page) =>
@@ -47,11 +48,11 @@ h.run(async () => {
 	s = await state(A.page);
 	h.check(s.active === 'explorer' && s.explOn && !s.flowOn, `click Explorer: Explorer shown+highlighted, Flow un-highlighted`);
 
-	// click Node editor -> Flow shown again, Explorer un-highlighted (still open, hidden)
+	// click Node editor -> Flow shown again AND the Explorer is CLOSED (single docked panel)
 	await A.page.evaluate(() => document.querySelector('p[title="Node editor (N)"]').click());
 	await A.page.waitForTimeout(300);
 	s = await state(A.page);
-	h.check(s.active === 'flow' && s.flowOn && !s.explOn && !s.explClosed, `click Node editor: Flow shown, Explorer hidden but still open`);
+	h.check(s.active === 'flow' && s.flowOn && !s.explOn && s.explClosed, `click Node editor: Flow shown, Explorer closed (exclusive)`);
 
 	// click Explorer twice: show it, then close it (highlight removed)
 	await A.page.evaluate(() => document.querySelector('#explorer-slot').click());

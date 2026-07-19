@@ -4,7 +4,17 @@
 	// drag the strip background to move the whole group, drag a tab out to
 	// re-float it, ✕ closes the active member through its own path.
 	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeGroup, closeMember, nodeOf } from '$lib/windowTabs';
+	import { focusTick, raiseWindowNode } from '$lib/windowFocus';
 	import ContextMenu from '../ContextMenu.svelte';
+
+	// The strip must sit at its group's z-order, not a fixed top value, so another
+	// floating window dragged in front of the group also covers the group's strip.
+	// $focusTick makes this re-read the active member's z when the z-order changes.
+	function stripZ(/** @type {any} */ group) {
+		const node = nodeOf(group.active);
+		const z = node ? parseInt(node.style.zIndex) : NaN;
+		return Number.isFinite(z) ? z : 44;
+	}
 
 	/** @type {any} */
 	let tabMenu = null; // {x, y, key} — right-click a tab -> "Hide tab"
@@ -13,14 +23,16 @@
 	/** @type {any} */
 	let tabDrag = null; // {groupId, key, x, y, torn}
 
-	/** @param {any} e @param {string} groupId */
-	function onStripDown(e, groupId) {
+	/** @param {any} e @param {any} group */
+	function onStripDown(e, group) {
 		if (e.target.closest('.tab-note, button')) return;
-		stripDrag = { groupId, x: e.clientX, y: e.clientY };
+		raiseWindowNode(nodeOf(group.active)); // grabbing the strip brings the group forward
+		stripDrag = { groupId: group.id, x: e.clientX, y: e.clientY };
 		e.preventDefault();
 	}
 	/** @param {any} e @param {string} groupId @param {string} key */
 	function onTabDown(e, groupId, key) {
+		raiseWindowNode(nodeOf(key)); // clicking a tab brings the group forward
 		tabDrag = { groupId, key, x: e.clientX, y: e.clientY, torn: false };
 	}
 	/** @param {any} e */
@@ -61,10 +73,10 @@
 {#each $tabGroups as group (group.id)}
 	<div
 		class="tab-strip fixed flex items-end gap-0.5 overflow-hidden rounded-t-lg border-b border-gray-700/60 bg-gray-900 px-1.5 pt-1"
-		style="left: {group.rect.left}px; top: {group.rect.top}px; width: {group.rect.width}px; height: 34px; z-index: 44; cursor: move"
+		style="left: {group.rect.left}px; top: {group.rect.top}px; width: {group.rect.width}px; height: 34px; z-index: {[$focusTick, stripZ(group)][1]}; cursor: move"
 		role="tablist"
 		tabindex="-1"
-		onpointerdown={(e) => onStripDown(e, group.id)}
+		onpointerdown={(e) => onStripDown(e, group)}
 	>
 		{#each group.members as key (key)}
 			<button

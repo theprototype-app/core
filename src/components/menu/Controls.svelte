@@ -365,8 +365,8 @@
 		// the clipped tree rows (same bug the Flow window had)
 		const clampRect = () => {
 			if (grouped()) return; // the group rect drives size/pos while grouped
-			width = Math.min(width, Math.round(window.innerWidth * 0.9));
-			height = Math.min(height, Math.round(window.innerHeight * 0.85));
+			width = Math.min(width, window.innerWidth - 8);
+			height = Math.min(height, window.innerHeight);
 			left = Math.max(0, Math.min(left, window.innerWidth - width));
 			top = Math.max(0, Math.min(top, window.innerHeight - height));
 			node.style.width = `${width}px`;
@@ -421,8 +421,8 @@
 				}
 			}
 			if (resizing) {
-				width = Math.min(Math.max(250, startWidth + (e.clientX - startX)), window.innerWidth * 0.9);
-				height = Math.min(Math.max(200, startHeight + (e.clientY - startY)), window.innerHeight * 0.85);
+				width = Math.min(Math.max(250, startWidth + (e.clientX - startX)), window.innerWidth - 8);
+				height = Math.min(Math.max(200, startHeight + (e.clientY - startY)), window.innerHeight);
 				if (grouped()) {
 					resizeGroup('objects', width, height); // resize the whole group (all tabs)
 				} else {
@@ -569,7 +569,7 @@
 <div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
 	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
 	use:dockable={{ key: 'objects' }}
-	style="z-index: var(--z-window); max-height: 70%; max-width: 50%; min-width: 250px;">
+	style="z-index: var(--z-window)">
 	<!-- dropping a row on the header moves the object back to the scene root -->
 	<!-- header matches the Explorer chrome (104): title + inline search + close;
 	     still the move handle AND the drop-to-root target -->

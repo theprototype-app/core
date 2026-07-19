@@ -31,6 +31,15 @@
 	import { showLightHelpers } from '$lib/lightHelpers';
 	import { cameraNear, cameraFar, setCameraNear, setCameraFar } from '$lib/cameraClip';
 	import {
+		music,
+		musicLocalVolume,
+		musicMuted,
+		musicBlocked,
+		setMusicTrack,
+		setMusicPlaying,
+		setMusicVolume
+	} from '$lib/sceneMusic';
+	import {
 		environment,
 		ENVIRONMENT_PRESETS,
 		setEnvironment,
@@ -547,6 +556,46 @@
 
 				<p class="text-[10px] italic text-gray-400">
 					Everything here replicates to peers; your own lights automatically dim the default rig.
+				</p>
+			</Section>
+
+			<Section label="Music">
+				<p class="ui-section-label">Scene track (shared)</p>
+				<select
+					class="ui-input w-full"
+					value={$music.hash ?? ''}
+					onchange={(e) => {
+						const hash = e.currentTarget.value || null;
+						const item = $explorerItems.find((entry) => entry.hash === hash);
+						setMusicTrack(hash, item?.name ?? '');
+					}}
+				>
+					<option value="">— no music —</option>
+					{#each $explorerItems.filter((item) => item.kind === 'audio') as item (item.id)}
+						<option value={item.hash}>{item.name}</option>
+					{/each}
+					{#if $music.hash && !$explorerItems.some((item) => item.hash === $music.hash)}
+						<option value={$music.hash}>{$music.name || 'shared track'} (fetching…)</option>
+					{/if}
+				</select>
+				<div class="mt-1 flex items-center gap-2">
+					<button
+						class="ui-chip {$music.playing ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500'}"
+						disabled={!$music.hash}
+						onclick={() => setMusicPlaying(!$music.playing)}
+					>
+						{$music.playing ? '■ Stop' : '▶ Play'}
+					</button>
+					{#if $musicBlocked && $music.playing}
+						<span class="text-xs text-amber-400">click anywhere to enable audio</span>
+					{/if}
+				</div>
+				<SliderRow label="Shared volume" min={0} max={1} step={0.05} value={$music.volume} onchange={(v) => setMusicVolume(v)} />
+				<p class="ui-section-label">This device</p>
+				<SliderRow label="Local volume" min={0} max={1} step={0.05} value={$musicLocalVolume} onchange={(v) => musicLocalVolume.set(v)} />
+				<Checkbox bind:checked={$musicMuted}>Mute music on this device</Checkbox>
+				<p class="mt-1 text-xs text-gray-400">
+					One background track for everyone, synced to the same moment. Volume is shared; the local trim + mute affect only you.
 				</p>
 			</Section>
 

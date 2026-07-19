@@ -18,6 +18,7 @@ import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate } from '$lib/physics';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
+import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
@@ -214,6 +215,8 @@ export class PeerConnection {
 					applySimulate(data);
 				} else if(data.type == 'environment') {
 					applyRemoteEnvironment(data);
+				} else if(data.type == 'music') {
+					applyRemoteMusic(data);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
@@ -355,6 +358,7 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users})
 		conn.send({type: 'modules', versions: moduleVersions()})
 		conn.send(environmentState())
+		conn.send(musicState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})

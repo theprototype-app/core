@@ -65,8 +65,10 @@
 	let transitionParamsRight = { x: 320, duration: 200, easing: sineIn };
 
 	// side drawers live on the --z-drawer tier (68); chat floats on its own now.
-	// bottom follows the docked Flow/Explorer height so nothing covers it (105)
-	const drawerStyle = 'bottom: var(--bottom-inset, 0px); z-index: var(--z-drawer); height: auto';
+	// bottom rises above the docked Flow/Explorer height (105) AND the Controls pill/
+	// HUD footprint on narrow screens (--controls-inset) so neither covers the drawer.
+	const drawerStyle =
+		'bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); z-index: var(--z-drawer); height: auto';
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	const isGroup = $derived($selectedObject?.type === 'Group');
@@ -326,12 +328,12 @@
 	transitionType="fly"
 	transitionParams={transitionParamsRight}
 	bind:hidden={$inspectorClose}
-	class="rounded-tl-lg"
+	class="rounded-tl-lg pt-0"
 	id="inspector"
 >
 	{#if $inspectorKind === 'file'}
 		<!-- Explorer file properties (107) -->
-		<div id="drawer-label">
+		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
 			<PanelHeader title={inspectedItem?.name ?? 'File'} badge="File" onclose={() => inspectorClose.set(true)} />
 		</div>
 		{#if inspectedItem}
@@ -390,7 +392,7 @@
 			<p class="p-3 text-sm italic text-gray-400">The file was removed.</p>
 		{/if}
 	{:else if $inspectorKind === 'scene'}
-		<div id="drawer-label">
+		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
 			<PanelHeader title="Scene" badge="Scene" onclose={() => inspectorClose.set(true)} />
 		</div>
 
@@ -661,7 +663,7 @@
 			</Section>
 		</div>
 	{:else if $selectedObject?.name !== undefined}
-		<div id="drawer-label">
+		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
 			<PanelHeader
 				title="Properties"
 				badge={$selectedObject.type}

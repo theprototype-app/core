@@ -18,9 +18,9 @@ import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 export const ENVIRONMENT_PRESETS = {
 	studio: {
 		label: 'Studio',
-		background: '#3b4048',
+		background: '#363b43',
 		fog: null,
-		hemi: { sky: '#ffffff', ground: '#565d68', intensity: 1.1 },
+		hemi: { sky: '#ffffff', ground: '#4c525c', intensity: 1.1 },
 		sun: { color: '#ffffff', intensity: 1.8, position: [6, 10, 4] },
 		exposure: 1
 	},

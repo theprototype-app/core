@@ -3,6 +3,7 @@ import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLigh
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
+import { paletteColorFor } from '$lib/palette';
 
 // RectAreaLight renders black on Standard/Physical materials until the
 // uniforms lib initializes — once per session is enough (79)
@@ -56,9 +57,11 @@ export function createGeometry(command, uuid) {
         let mesh = customGeometryBuilders[geometry]
             ? customGeometryBuilders[geometry](options[0],options[1],options[2],options[3])
             : new (/** @type {any} */ (THREE))[geometry+'Geometry'](options[0],options[1],options[2],options[3]);
-        let material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-        let object = new THREE.Mesh(mesh, material);
+        let object = new THREE.Mesh(mesh, new THREE.MeshStandardMaterial({ roughness: 0.85 }));
         if (uuid) object.uuid = uuid
+        // deterministic palette color keyed by the FINAL uuid (peers compute the
+        // same color from the create message's uuid) — V-3, replaces 0x00ff00
+        object.material.color.set(paletteColorFor(object.uuid));
         object.name = geometry;
         stampGeometryParams(object); // editable params survive sync (78)
         sceneObjects.add(object);

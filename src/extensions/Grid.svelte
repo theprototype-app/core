@@ -5,14 +5,13 @@
   
    {#if showGrid}
     <Grid
-      userData={{ ignoreOverrideMaterial: true }}
       infiniteGrid
       renderOrder={9999}
       position={[0,0,0.03]}
       cellColor={0x484d55}
-      sectionColor={0x6b7280}
+      sectionColor={0x77808d}
       sectionThickness={1.2}
-      fadeDistance={80}
+      fadeDistance={100}
       fadeStrength={1.5}
       />
   {/if}

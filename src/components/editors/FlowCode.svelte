@@ -1,19 +1,34 @@
 <script>
-	// Flow Code (roadmap 9, ex-backlog): an editable JSON view of the flow graph.
-	// Serialize -> text is complete; Apply parses the text and REPLACES the graph
-	// (add/update + delete removed) locally + broadcasts so peers converge. A
-	// floating window that can tab-group with Flow (tabbable) + tear off (detach).
+	// Flow Code: an editable JSON view of the flow graph. DOCKED mode is a Flow-family
+	// tab in the bottom dock (Apply + Reload buttons in its toolbar); UNDOCKED mode is a
+	// floating, resizable window. Apply parses the text and REPLACES the graph locally +
+	// broadcasts so peers converge.
 	import { get } from 'svelte/store';
 	import CodeEditor from './CodeEditor.svelte';
 	import { flowNodes, flowEdges } from '../../stores/flowStore';
 	import { flowCodeClose, peers } from '../../stores/appStore.js';
 	import { serializeNode, serializeEdge } from '$lib/nodesHandler';
+	import DockTabs from '../DockTabs.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
+	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
 
 	let text = $state('');
 	let error = $state('');
+	let docked = $state(true);
+	let winW = $state(460);
+	let winH = $state(440);
+	if (typeof localStorage !== 'undefined') {
+		docked = localStorage.getItem('flowCodeDocked') !== 'false'; // start docked
+		winW = parseInt(localStorage.getItem('flowCodeWinW') ?? '460') || 460;
+		winH = parseInt(localStorage.getItem('flowCodeWinH') ?? '440') || 440;
+	}
+	function setDocked(/** @type {boolean} */ v) {
+		docked = v;
+		localStorage.setItem('flowCodeDocked', String(v));
+		if (v) activateDock('flowcode');
+	}
 
 	function snapshot() {
 		return JSON.stringify(
@@ -22,13 +37,19 @@
 			2
 		);
 	}
-	// (re)seed the text from the live graph whenever the window opens
+	// (re)seed the text from the live graph whenever the view opens
 	$effect(() => {
 		if (!$flowCodeClose) {
 			text = snapshot();
 			error = '';
 		}
 	});
+	// report docked+open (+ shared dock height); visible only as the active dock tab
+	$effect(() => {
+		setDockOccupant('flowcode', !$flowCodeClose && docked, $dockHeight);
+		return () => setDockOccupant('flowcode', false);
+	});
+	const dockVisible = $derived($visibleDockKey === 'flowcode');
 
 	function apply() {
 		let parsed;
@@ -52,10 +73,8 @@
 		const newEdgeIds = new Set(newEdges.map((/** @type {any} */ e) => e.id));
 		const removedNodes = get(flowNodes).map((n) => n.id).filter((id) => !newNodeIds.has(id));
 		const removedEdges = get(flowEdges).map((e) => e.id).filter((id) => !newEdgeIds.has(id));
-		// local: faithful full replace (the text is the source of truth)
 		flowNodes.set(newNodes);
 		flowEdges.set(newEdges);
-		// replicate: delete what's gone, snapshot the rest (peers merge add/update)
 		const peer = /** @type {any} */ (get(peers));
 		if (peer) {
 			if (removedNodes.length) peer.send({ type: 'nodedelete', ids: removedNodes });
@@ -64,29 +83,95 @@
 		}
 		error = '';
 	}
+
+	// resize: docked = shared top-edge dock height; floating = corner grip
+	const clampH = (/** @type {number} */ h) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
+	let resizing = $state(false);
+	let winResizing = $state(false);
+	function startResize(/** @type {any} */ e) { resizing = true; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); }
+	function doResize(/** @type {any} */ e) { if (resizing) dockHeight.update((h) => clampH(h - e.movementY)); }
+	function endResize(/** @type {any} */ e) { if (resizing) { resizing = false; e.currentTarget.releasePointerCapture?.(e.pointerId); } }
+	function startWinResize(/** @type {any} */ e) { winResizing = true; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); }
+	function doWinResize(/** @type {any} */ e) {
+		if (!winResizing) return;
+		winW = Math.min(Math.max(320, winW + e.movementX), window.innerWidth - 8);
+		winH = Math.min(Math.max(240, winH + e.movementY), window.innerHeight);
+	}
+	function endWinResize(/** @type {any} */ e) {
+		if (!winResizing) return;
+		winResizing = false;
+		e.currentTarget.releasePointerCapture?.(e.pointerId);
+		localStorage.setItem('flowCodeWinW', String(winW));
+		localStorage.setItem('flowCodeWinH', String(winH));
+	}
 </script>
 
-{#if !$flowCodeClose}
-	<div
-		id="flow-code-window"
-		class="ui-panel fixed flex flex-col overflow-hidden"
-		use:dragWindow={{ key: 'flowCode', defaultRect: { left: 160, top: 120 } }}
-		use:focusStack
-		use:tabbable={{ key: 'flowCode', title: 'Flow Code', openStore: flowCodeClose, isOpen: (v) => !v, close: () => flowCodeClose.set(true) }}
-		style="z-index: var(--z-window); width: 460px; height: 440px; max-width: 96vw; max-height: 85vh"
-	>
-		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>Flow Code</span>
-			<span class="flex-1"></span>
-			<button class="ui-button-quiet" title="Reload the text from the graph" onclick={() => (text = snapshot())}>↻</button>
-			<button class="ui-button-quiet text-primary-400" title="Apply the text to the graph (replaces it)" onclick={apply}>Apply</button>
-			<button class="ui-button-quiet" title="Close" onclick={() => flowCodeClose.set(true)}>✕</button>
-		</div>
-		{#if error}
-			<div class="shrink-0 bg-red-900/40 px-2 py-1 text-[11px] text-red-300">{error}</div>
-		{/if}
-		<div class="min-h-0 flex-1 p-1">
-			<CodeEditor value={text} onChange={(v) => (text = v)} />
-		</div>
+{#snippet actions()}
+	<button class="ui-button-quiet" title="Reload the text from the graph" onclick={() => (text = snapshot())}>↻</button>
+	<button class="ui-button-quiet text-primary-400" title="Apply the text to the graph (replaces it)" onclick={apply}>Apply</button>
+{/snippet}
+
+{#snippet body()}
+	{#if error}
+		<div class="shrink-0 bg-red-900/40 px-2 py-1 text-[11px] text-red-300">{error}</div>
+	{/if}
+	<div class="min-h-0 flex-1 p-1">
+		<CodeEditor value={text} onChange={(v) => (text = v)} />
 	</div>
+{/snippet}
+
+{#if !$flowCodeClose}
+	{#if docked}
+		<div
+			id="flow-code-dock"
+			class="fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+		>
+			<div
+				class="resize-cue absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize"
+				style="touch-action: none"
+				title="Drag to resize"
+				onpointerdown={startResize}
+				onpointermove={doResize}
+				onpointerup={endResize}
+			></div>
+			<DockTabs />
+			<div class="flex shrink-0 items-center gap-1 pb-1">
+				<span class="text-xs font-semibold text-gray-200">Flow Code</span>
+				<span class="flex-1"></span>
+				{@render actions()}
+				<button class="ui-button-quiet" title="Undock into a floating window" onclick={() => setDocked(false)}>⧉</button>
+				<button class="ui-button-quiet" title="Close" onclick={() => flowCodeClose.set(true)}>✕</button>
+			</div>
+			<div class="flex min-h-0 flex-1 flex-col">
+				{@render body()}
+			</div>
+		</div>
+	{:else}
+		<div
+			id="flow-code-window"
+			class="ui-panel fixed flex flex-col overflow-hidden"
+			use:dragWindow={{ key: 'flowCode', defaultRect: { left: 160, top: 120 } }}
+			use:focusStack
+			use:tabbable={{ key: 'flowCode', title: 'Flow Code', openStore: flowCodeClose, isOpen: (v) => !v, close: () => flowCodeClose.set(true) }}
+			style="z-index: var(--z-window); width: {winW}px; height: {winH}px; max-width: 96vw; max-height: 85vh"
+		>
+			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
+				<span>Flow Code</span>
+				<span class="flex-1"></span>
+				{@render actions()}
+				<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
+				<button class="ui-button-quiet" title="Close" onclick={() => flowCodeClose.set(true)}>✕</button>
+			</div>
+			{@render body()}
+			<div
+				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+				style="touch-action: none"
+				title="Drag to resize"
+				onpointerdown={startWinResize}
+				onpointermove={doWinResize}
+				onpointerup={endWinResize}
+			></div>
+		</div>
+	{/if}
 {/if}

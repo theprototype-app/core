@@ -1,7 +1,7 @@
 <script lang="ts">
-	// Flow host (phase 68): a bottom-docked panel with top-edge drag-resize, or
-	// an undocked floating window (same-context portal — stores, peers and VR
-	// keep working because nothing leaves the page). Both states persist.
+	// Flow host: the Node editor. DOCKED mode is a Flow-family TAB in the shared bottom
+	// dock (DockTabs strip; shares dockHeight with Flow Code + Animation; only the
+	// visible tab renders). UNDOCKED mode is a floating, resizable window. Both persist.
 	import { flowGraphClose, flowCodeClose, animationClose } from '../stores/appStore.js';
 	import { onMount } from 'svelte';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
@@ -9,30 +9,26 @@
 	import Nodes from './editors/Nodes.svelte';
 	import ScriptPanel from './editors/ScriptPanel.svelte';
 	import NodeDesigner from './editors/NodeDesigner.svelte';
+	import DockTabs from './DockTabs.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
-	import { bottomDockActive, dockShared, setDockOccupant } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
 	import { fly } from 'svelte/transition';
 
-	const clampH = (h: number) =>
-		Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
-
-	let height = $state(320);
+	const clampH = (h: number) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
 	let docked = $state(true);
 	let winW = $state(760);
 	let winH = $state(480);
-	// keep the floating window within the viewport — a persisted 760px width used to
-	// push the header's Dock/X buttons off-screen on a narrow (mobile) viewport, and
-	// there was no re-clamp on load or window resize
+	// keep the floating window within the viewport (a persisted wide rect used to push
+	// the header buttons off a narrow screen)
 	function clampWin() {
 		if (typeof window === 'undefined') return;
 		winW = Math.min(winW, window.innerWidth - 8);
 		winH = Math.min(winH, Math.round(window.innerHeight * 0.9));
 	}
 	if (typeof localStorage !== 'undefined') {
-		height = clampH(parseInt(localStorage.getItem('flowHeight') ?? '320'));
 		docked = localStorage.getItem('flowDocked') !== 'false';
 		winW = parseInt(localStorage.getItem('flowWinW') ?? '760') || 760;
 		winH = parseInt(localStorage.getItem('flowWinH') ?? '480') || 480;
@@ -48,30 +44,30 @@
 	function setDocked(v: boolean) {
 		docked = v;
 		localStorage.setItem('flowDocked', String(v));
+		if (v) activateDock('flow'); // re-docking makes it the visible tab
 	}
 
-	// Flow tab "+": add another view. Flow Code opens now; Animation lands next batch.
-	// Added views open as their own floating windows (tabbable — drag to group with
-	// Flow, tear a tab off to detach again).
+	// Flow "+" (floating window only — docked mode uses the DockTabs strip): open
+	// another Flow-family view. They start docked, so they appear as dock tabs.
 	let addMenu: { x: number; y: number } | null = $state(null);
 	const addItems = [
-		{ label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => flowCodeClose.set(false) },
-		{ label: '＋ Animation', tooltip: 'Animate the selected object', action: () => animationClose.set(false) }
+		{ label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => { flowCodeClose.set(false); activateDock('flowcode'); } },
+		{ label: '＋ Animation', tooltip: 'Animate the selected object', action: () => { animationClose.set(false); activateDock('animation'); } }
 	];
 	function openAddMenu(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		addMenu = { x: r.left, y: r.bottom + 4 };
 	}
 
-	// tabbed dock coexistence with the Explorer (95); height feeds the
-	// --bottom-inset so side UI ends above the dock (105)
+	// report docked+open (+ the shared dock height) so the dock knows this tab exists;
+	// only the visible Flow-family tab actually renders
 	$effect(() => {
-		setDockOccupant('flow', !$flowGraphClose && docked, height);
+		setDockOccupant('flow', !$flowGraphClose && docked, $dockHeight);
 		return () => setDockOccupant('flow', false);
 	});
-	const dockVisible = $derived(!$dockShared || $bottomDockActive === 'flow');
+	const dockVisible = $derived($visibleDockKey === 'flow');
 
-	// --- docked: top-edge resize (min 200px, max 80vh, persisted) ---
+	// --- docked: top-edge resize (shared dock height, persisted by the store) ---
 	let resizing = $state(false);
 	function startResize(e: any) {
 		resizing = true;
@@ -80,13 +76,12 @@
 	}
 	function doResize(e: any) {
 		if (!resizing) return;
-		height = clampH(height - e.movementY);
+		dockHeight.update((h) => clampH(h - e.movementY));
 	}
 	function endResize(e: any) {
 		if (!resizing) return;
 		resizing = false;
 		e.currentTarget.releasePointerCapture?.(e.pointerId);
-		localStorage.setItem('flowHeight', String(height));
 	}
 
 	// --- undocked: corner resize ---
@@ -117,9 +112,9 @@
 			id="flow-list"
 			transition:fly={{ y: 320, duration: 200 }}
 			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {height}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 		>
-			<!-- top-edge resize hot zone: cursor instant, cue after a hover delay (82) -->
+			<!-- top-edge resize hot zone -->
 			<div
 				class="resize-cue absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize"
 				style="touch-action: none"
@@ -128,23 +123,14 @@
 				onpointermove={doResize}
 				onpointerup={endResize}
 			></div>
-			<!-- Flow notebook tab + "add view" (Explorer is toolbar-controlled now, not
-			     a tab here); the tabs sit ON the dock's top edge -->
-			<div class="absolute -top-6 left-3 z-20 flex gap-0.5">
-				<span class="tab-note bg-gray-700 px-4 pb-0.5 pt-1 text-xs font-semibold text-white">Node editor</span>
-				<button
-					class="tab-note bg-gray-900/70 px-3 pb-0.5 pt-1 text-xs font-semibold text-gray-300 hover:text-white"
-					title="Add a view (Flow Code, …)"
-					onclick={openAddMenu}>＋</button
-				>
-			</div>
+			<DockTabs />
 			<button
 				id="flow-undock"
 				class="ui-button-quiet absolute right-2 top-2 z-10"
 				title="Undock into a floating window"
 				onclick={() => setDocked(false)}>⧉</button
 			>
-			<div style="height: {height - 16}px">
+			<div style="height: {$dockHeight - 16}px">
 				<SvelteFlowProvider>
 					<Nodes />
 				</SvelteFlowProvider>
@@ -163,10 +149,8 @@
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span>Node editor</span>
 				<span class="flex-1"></span>
-				<button id="flow-add-view" class="ui-button-quiet" title="Add a view (Flow Code, …)" onclick={openAddMenu}>＋</button>
-				<button id="flow-dock" class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>
-					⇩ Dock
-				</button>
+				<button id="flow-add-view" class="ui-button-quiet" title="Add a view (Flow Code, Animation)" onclick={openAddMenu}>＋</button>
+				<button id="flow-dock" class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
 				<button class="ui-button-quiet" title="Close (N)" onclick={() => flowGraphClose.set(true)}>✕</button>
 			</div>
 			<div class="min-h-0 flex-1">

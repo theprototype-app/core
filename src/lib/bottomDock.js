@@ -1,54 +1,84 @@
 import { writable, derived } from 'svelte/store';
+import { explorerClose } from '../stores/appStore';
 
-// Bottom dock coexistence (95, quiz: tabbed): when BOTH the Flow editor and
-// the Explorer are open AND docked, they share the bottom dock as notebook
-// tabs — the active one renders, the other stays mounted but hidden. Each
-// panel reports its docked+open state (and height) here; the tab strip
-// renders inside whichever panel is visible.
-// 105: the visible dock height publishes as the CSS var --bottom-inset so
-// drawers and edge-docked windows always end ABOVE the dock.
+// Bottom dock (roadmap #9 tail rework): the dock shows exactly ONE panel at a time.
+// The Flow-family — Node editor (flow) / Flow Code (flowcode) / Animation (animation)
+// — are notebook TABS in the dock (DockTabs.svelte); the Explorer is a SEPARATE panel
+// that is MUTUALLY EXCLUSIVE with them: activating any Flow tab closes the Explorer,
+// and the Explorer itself shows no tabs. Each panel reports present(docked+open)+height
+// via setDockOccupant; only the visible one renders (the rest hide). The visible
+// panel's height publishes as --bottom-inset so drawers/edge-docked windows sit above it.
 
-/** which tab owns the shared dock */
-export const bottomDockActive = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('bottomDockActive') ?? 'flow' : 'flow'
-);
+export const FLOW_FAMILY = ['flow', 'flowcode', 'animation'];
+/** @type {Record<string, string>} */
+export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', explorer: 'Explorer' };
+
+const ls = typeof localStorage !== 'undefined' ? localStorage : null;
+
+/** which panel owns the dock right now */
+export const bottomDockActive = writable(ls?.getItem('bottomDockActive') ?? 'flow');
 bottomDockActive.subscribe((value) => {
 	try {
-		localStorage.setItem('bottomDockActive', value);
+		ls?.setItem('bottomDockActive', value);
 	} catch {}
 });
 
-/** {flow: {present, height}, explorer: {present, height}} — docked AND open */
-export const dockOccupants = writable({
-	flow: { present: false, height: 0 },
-	explorer: { present: false, height: 0 }
+/** @param {number} h */
+function clampH(h) {
+	const max = typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.8) : 800;
+	return Math.min(Math.max(h || 320, 160), max);
+}
+/** shared height of the Flow-family dock (the Explorer keeps its own height) */
+export const dockHeight = writable(clampH(parseInt(ls?.getItem('flowDockHeight') ?? '320')));
+dockHeight.subscribe((value) => {
+	try {
+		ls?.setItem('flowDockHeight', String(value));
+	} catch {}
 });
 
-/** @param {'flow' | 'explorer'} key @param {boolean} present @param {number=} height */
+/** {key: {present, height}} — docked AND open */
+export const dockOccupants = writable(
+	/** @type {Record<string, {present: boolean, height: number}>} */ ({})
+);
+
+/** @param {string} key @param {boolean} present @param {number=} height */
 export function setDockOccupant(key, present, height = 0) {
 	dockOccupants.update((state) => {
 		const entry = state[key];
-		if (entry.present === present && entry.height === height) return state;
+		if (entry && entry.present === present && entry.height === height) return state;
 		return { ...state, [key]: { present, height } };
 	});
 }
 
-/** true while both panels want the dock — the tab strip shows */
-export const dockShared = derived(
-	dockOccupants,
-	($o) => $o.flow.present && $o.explorer.present
+/** the Flow-family panels currently open+docked, as tabs (Node editor first) */
+export const flowTabs = derived(dockOccupants, ($o) =>
+	FLOW_FAMILY.filter((k) => $o[k]?.present).map((k) => ({ key: k, title: DOCK_TITLES[k] }))
 );
 
-/** height of the VISIBLE docked panel (0 when the dock is empty) */
-export const bottomInset = derived([dockOccupants, bottomDockActive], ([$o, $active]) => {
-	const shared = $o.flow.present && $o.explorer.present;
-	if (shared) return $o[$active === 'explorer' ? 'explorer' : 'flow'].height;
-	if ($o.flow.present) return $o.flow.height;
-	if ($o.explorer.present) return $o.explorer.height;
-	return 0;
+/** the single panel that is actually VISIBLE in the dock (null if the dock is empty) */
+export const visibleDockKey = derived([dockOccupants, bottomDockActive], ([$o, $a]) => {
+	if ($o[$a]?.present) return $a;
+	// active isn't docked (undocked/closed) — fall back to any present panel so the
+	// dock never goes blank while a tab is still open
+	return Object.keys($o).find((k) => $o[k]?.present) ?? null;
 });
 
-// publish as a CSS var so drawers/docked windows adjust in pure CSS (105)
+/** height of the visible docked panel (0 when nothing is docked) */
+export const bottomInset = derived([dockOccupants, visibleDockKey], ([$o, $key]) =>
+	$key && $o[$key]?.present ? $o[$key].height : 0
+);
+
+/**
+ * Make `key` the visible dock panel. A Flow-family activation closes the Explorer
+ * (they are mutually exclusive — only one docked panel is ever visible).
+ * @param {string} key
+ */
+export function activateDock(key) {
+	bottomDockActive.set(key);
+	if (FLOW_FAMILY.includes(key)) explorerClose.set(true);
+}
+
+// publish the visible dock height as a CSS var so drawers/docked windows adjust (105)
 if (typeof document !== 'undefined') {
 	bottomInset.subscribe((inset) => {
 		document.documentElement.style.setProperty('--bottom-inset', inset + 'px');

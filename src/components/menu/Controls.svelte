@@ -23,26 +23,29 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
-	import { dockShared, bottomDockActive } from '$lib/bottomDock';
+	import { visibleDockKey, bottomDockActive, activateDock } from '$lib/bottomDock';
 	import { VRButton, XRButton } from '@threlte/xr'
 
-	// Flow + Explorer SHARE the bottom dock when both are docked (only the active one
-	// shows). A toolbar icon highlights only when its panel is actually VISIBLE, and
-	// clicking makes that panel the active dock occupant (or closes it if already shown).
-	const flowVisible = $derived(!$flowGraphClose && (!$dockShared || $bottomDockActive === 'flow'));
-	const explorerVisible = $derived(!$explorerClose && (!$dockShared || $bottomDockActive === 'explorer'));
+	// The bottom dock shows ONE panel. The Node editor (with Flow Code / Animation) is a
+	// Flow-family tab group; the Explorer is the separate, exclusive panel. A toolbar
+	// icon tints when its panel is the visible one. Clicking the Node editor button
+	// opens/shows it (activateDock closes the exclusive Explorer); clicking Explorer
+	// shows it (hiding the Flow tabs). Clicking a panel that is already showing closes it.
+	const flowVisible = $derived(!$flowGraphClose && $visibleDockKey !== 'explorer');
+	const explorerVisible = $derived(!$explorerClose && $visibleDockKey === 'explorer');
 	function toggleFlow() {
-		if (flowVisible) flowGraphClose.set(true);
+		if ($visibleDockKey === 'flow') flowGraphClose.set(true); // showing Node editor -> close
+		else if (!$flowGraphClose) activateDock('flow'); // open but hidden -> switch to it
 		else {
-			flowGraphClose.set(false);
-			bottomDockActive.set('flow'); // if docked, become the shown one (no-op if windowed)
+			flowGraphClose.set(false); // closed -> open + show (closes the Explorer)
+			activateDock('flow');
 		}
 	}
 	function toggleExplorer() {
 		if (explorerVisible) explorerClose.set(true);
 		else {
 			explorerClose.set(false);
-			bottomDockActive.set('explorer');
+			bottomDockActive.set('explorer'); // show the Explorer (hides the Flow tabs)
 		}
 	}
 

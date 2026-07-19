@@ -30,10 +30,11 @@ h.run(async () => {
 		const obj = g.children[g.children.length - 1];
 		s.objectActions.selectObject(obj.uuid);
 		s.animationClose.set(false);
+		s.bottomDock.activateDock('animation'); // starts docked -> make it the visible tab
 		return obj.uuid;
 	});
 	await A.page.waitForTimeout(200);
-	h.check(await A.page.locator('#animation-window').isVisible(), 'the Animation window opens for the selection');
+	h.check(await A.page.locator('#animation-dock').isVisible(), 'the Animation view opens (docked) for the selection');
 
 	// --- add a movement track: it shows on the left ---
 	await A.page.evaluate((id) => {
@@ -48,7 +49,7 @@ h.run(async () => {
 		s.animationPreview.updateAnim(id, { duration: 1, loop: 'loop' });
 	}, uuid);
 	await A.page.waitForTimeout(150);
-	h.check(await A.page.locator('#animation-window button:has-text("Position Y")').first().isVisible(), 'the movement track renders in the layer list');
+	h.check(await A.page.locator('#animation-dock button:has-text("Position Y")').first().isVisible(), 'the movement track renders in the layer list');
 
 	// --- Play drives the object per frame ---
 	await A.page.evaluate((id) => window.__stores.animationPreview.play(id), uuid);

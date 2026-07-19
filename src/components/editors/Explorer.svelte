@@ -44,7 +44,7 @@
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { flowNodes } from '../../stores/flowStore';
-	import { bottomDockActive, dockShared, setDockOccupant } from '$lib/bottomDock';
+	import { bottomDockActive, visibleDockKey, setDockOccupant } from '$lib/bottomDock';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
@@ -83,15 +83,18 @@
 	function setDocked(v: boolean) {
 		docked = v;
 		localStorage.setItem('explorerDocked', String(v));
+		if (v) bottomDockActive.set('explorer'); // re-docking makes it the visible panel
 	}
 
-	// tabbed dock coexistence: report "docked + open" (+height for the 105
-	// --bottom-inset), hide when Flow owns it
+	// The Explorer is the dock's separate (exclusive) panel — it reports docked+open
+	// (+height for the --bottom-inset) and is visible only when it owns the dock. It is
+	// mutually exclusive with the Flow-family tabs (activating a Flow tab closes it), so
+	// it shows NO tab strip of its own.
 	$effect(() => {
 		setDockOccupant('explorer', !$explorerClose && docked, height);
 		return () => setDockOccupant('explorer', false);
 	});
-	const dockVisible = $derived(!$dockShared || $bottomDockActive === 'explorer');
+	const dockVisible = $derived($visibleDockKey === 'explorer');
 
 	// --- docked: top-edge resize (Flow pattern) ---
 	let resizing = $state(false);
@@ -792,24 +795,6 @@
 	}
 </script>
 
-{#snippet tabStrip()}
-	{#if $dockShared}
-		<div class="absolute -top-6 left-3 z-20 flex gap-0.5">
-			<button
-				class="tab-note px-4 pb-0.5 pt-1 text-xs font-semibold {$bottomDockActive === 'flow'
-					? 'bg-gray-700 text-white'
-					: 'bg-gray-900/70 text-gray-400 hover:text-gray-200'}"
-				onclick={() => bottomDockActive.set('flow')}>Flow</button
-			>
-			<button
-				class="tab-note px-4 pb-0.5 pt-1 text-xs font-semibold {$bottomDockActive === 'explorer'
-					? 'bg-gray-700 text-white'
-					: 'bg-gray-900/70 text-gray-400 hover:text-gray-200'}"
-				onclick={() => bottomDockActive.set('explorer')}>Explorer</button
-			>
-		</div>
-	{/if}
-{/snippet}
 
 {#snippet editRow(depth: number)}
 	<div class="flex flex-col gap-0.5" style="padding-left: {8 + depth * 14}px">
@@ -1275,7 +1260,6 @@
 				onpointermove={doResize}
 				onpointerup={endResize}
 			></div>
-			{@render tabStrip()}
 			<div class="mb-1 flex items-center gap-2">
 				<span class="text-xs font-semibold text-gray-200">🗂️ Explorer</span>
 				<input

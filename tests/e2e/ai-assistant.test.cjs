@@ -69,13 +69,11 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await A.page.waitForTimeout(200);
 	// The pill is rendered by AiAssistant.svelte from its OWN static import of the
-	// providers/appStore modules. On a dev server churned by HMR, a dynamic import
-	// (the __stores hook) can bind a SECOND module instance, so setting aiEnabled /
-	// aiPromptBarOpen via the hook wouldn't reach the component (CLAUDE.md gotcha).
-	// aiProviders + aiEnabled persist to localStorage, so a fresh reload gives the
-	// component a single, correctly-seeded instance; then toggle the pill.
-	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	// providers/appStore modules; on an HMR-churned dev server the __stores hook can
+	// be a second module instance, so seed persisted state then reload to one
+	// instance (see helpers.freshReload). aiProviders + aiEnabled persist; the pill
+	// toggle is session-only so it's set AFTER the reload.
+	await h.freshReload(A);
 	await A.page.evaluate(() => window.__stores.aiPromptBarOpen.set(true));
 	await A.page.waitForTimeout(300);
 	h.check(await A.page.locator('.ai-pill').first().isVisible(), 'backquote prompt pill shows');

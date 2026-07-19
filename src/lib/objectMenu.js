@@ -15,6 +15,7 @@ import {
 	selectionUuids
 } from './objectActions';
 import { requestControl, nameOf } from './lockControl';
+import { createJoint, detachJoints, jointsFor } from './joints';
 import { savePrefab, savePrefabSelection } from './prefabs';
 import { enterEditMode } from './meshEdit';
 import { addAnnotation } from './annotationsHandler';
@@ -75,6 +76,41 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						label: 'Group selection' + suffix,
 						tooltip: 'Move the selected objects into one new group',
 						action: () => groupSelection()
+					}
+				]
+			: []),
+		// P-B: joints — attach exactly TWO objects (weld holds the pose, a hinge
+		// spins about the FIRST-clicked object's chosen local axis, anchored at
+		// the second object's origin); Detach appears when any joint touches this
+		...(targets.length === 2 || jointsFor(targets).length
+			? [
+					{
+						label: 'Physics',
+						children: [
+							...(targets.length === 2
+								? [
+										{
+											label: 'Weld together',
+											tooltip: 'Fixed joint — they move as one during simulations',
+											action: () => createJoint('fixed', targets[0], targets[1])
+										},
+										...['x', 'y', 'z'].map((axis) => ({
+											label: `Hinge (${axis.toUpperCase()} axis)`,
+											tooltip: 'Revolute joint about the first object’s local ' + axis.toUpperCase() + ' axis, anchored at the second object',
+											action: () => createJoint('revolute', targets[0], targets[1], /** @type {'x'|'y'|'z'} */ (axis))
+										}))
+									]
+								: []),
+							...(jointsFor(targets).length
+								? [
+										{
+											label: `Detach joints (${jointsFor(targets).length})`,
+											danger: true,
+											action: () => detachJoints(targets)
+										}
+									]
+								: [])
+						]
 					}
 				]
 			: []),

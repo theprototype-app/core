@@ -12,6 +12,7 @@ import {
 	resumeAnimation
 } from './flowRuntime';
 import { nameOf } from './lockControl';
+import { sceneJoints } from './joints';
 
 // Physics preview (P-A rework): the INITIATOR runs rapier and broadcasts plain
 // `move` messages (~10/s per awake body) — peers just watch standard moves.
@@ -49,6 +50,10 @@ export const remoteSimulating = writable(null);
 /** @type {BodyEntry[]} */
 let bodies = [];
 /** @type {{uuid: string, before: any}[]} */ let beforeStates = [];
+/** @type {Map<string, any>} joint def id -> live rapier impulse joint (P-B) */
+let liveJoints = new Map();
+/** @type {Map<string, any>} uuid -> FIXED body (scenery a joint may pin to) */
+let fixedBodies = new Map();
 /** @type {string[]} dynamic+animated uuids whose effects we suspended for the run */
 let suspendedForRun = [];
 let lastStep = 0;
@@ -182,11 +187,12 @@ async function startSimulation() {
 	bodies = [];
 	beforeStates = [];
 	suspendedForRun = [];
+	fixedBodies = new Map();
 	const box = new THREE.Box3();
 	const size = new THREE.Vector3();
 	const center = new THREE.Vector3();
 
-	group.children.forEach((object) => {
+	group.children.forEach((/** @type {any} */ object) => {
 		box.setFromObject(object);
 		if (!isFinite(box.min.x)) return; // lights/empties
 		box.getSize(size).multiplyScalar(0.5);
@@ -250,7 +256,67 @@ async function startSimulation() {
 			bodies.push(entry);
 		} else if (kinematic) {
 			bodies.push(entry);
+		} else {
+			fixedBodies.set(object.uuid, body); // a joint may pin something to it (P-B)
 		}
+	});
+
+	// P-B: build rapier impulse joints from the replicated defs. Anchors are
+	// OBJECT-local at attach time -> world -> BODY-local. Box bodies start with
+	// IDENTITY rotation (initialQuat compensates), so body-local = world - center
+	// and a world axis is valid in both bodies' frames; hull bodies carry the
+	// object rotation, so their body frame IS the object frame (scale baked).
+	liveJoints = new Map();
+	const anchorWorld = new THREE.Vector3();
+	const axisWorld = new THREE.Vector3();
+	get(sceneJoints).forEach((def) => {
+		const entryA = bodies.find((e) => e.object.uuid === def.a);
+		const entryB = bodies.find((e) => e.object.uuid === def.b);
+		// jointed scenery is possible: fall back to any body we created — bodies[]
+		// only holds dynamic+kinematic, so look the object up for a fixed body too
+		const bodyA = entryA?.body ?? fixedBodies.get(def.a);
+		const bodyB = entryB?.body ?? fixedBodies.get(def.b);
+		if (!bodyA || !bodyB) return;
+		const objA = get(objectsGroup)?.getObjectByProperty('uuid', def.a);
+		const objB = get(objectsGroup)?.getObjectByProperty('uuid', def.b);
+		if (!objA || !objB) return;
+		/** body-local point for one side @param {any} obj @param {any} entry @param {number[]} anchorLocal @param {any} body */
+		const bodyLocal = (obj, entry, anchorLocal, body) => {
+			obj.updateWorldMatrix(true, false);
+			obj.localToWorld(anchorWorld.fromArray(anchorLocal));
+			if (entry?.hull) {
+				// hull body frame = object frame: rotate the world offset back
+				const t = body.translation();
+				return anchorWorld
+					.sub(new THREE.Vector3(t.x, t.y, t.z))
+					.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion()).invert())
+					.toArray();
+			}
+			const t = body.translation();
+			return [anchorWorld.x - t.x, anchorWorld.y - t.y, anchorWorld.z - t.z];
+		};
+		const a1 = bodyLocal(objA, entryA, def.anchorA, bodyA);
+		const a2 = bodyLocal(objB, entryB, def.anchorB, bodyB);
+		let data;
+		if (def.kind === 'revolute') {
+			axisWorld.fromArray(def.axisA ?? [0, 1, 0]).applyQuaternion(objA.quaternion).normalize();
+			data = RAPIER.JointData.revolute(
+				{ x: a1[0], y: a1[1], z: a1[2] },
+				{ x: a2[0], y: a2[1], z: a2[2] },
+				{ x: axisWorld.x, y: axisWorld.y, z: axisWorld.z }
+			);
+		} else {
+			data = RAPIER.JointData.fixed(
+				{ x: a1[0], y: a1[1], z: a1[2] },
+				{ w: 1, x: 0, y: 0, z: 0 },
+				{ x: a2[0], y: a2[1], z: a2[2] },
+				{ w: 1, x: 0, y: 0, z: 0 }
+			);
+		}
+		const joint = world.createImpulseJoint(data, bodyA, bodyB, true);
+		if (def.kind === 'revolute' && def.motor)
+			joint.configureMotorVelocity(def.motor.vel ?? 0, def.motor.maxForce ?? 100);
+		liveJoints.set(def.id, joint);
 	});
 
 	simulating.set(true);
@@ -540,6 +606,8 @@ export function stopSimulation(opts = {}) {
 	world = null;
 	bodies = [];
 	beforeStates = [];
+	liveJoints = new Map();
+	fixedBodies = new Map();
 	simulating.set(false);
 	simPaused.set(false);
 	if (peer) peer.send({ type: 'simulate', running: false, peerId: peer.peer.id });
@@ -555,6 +623,17 @@ export function resetSimulation() {
 /** Whether THIS peer is the one stepping the world (initiator-authority). */
 export function isInitiator() {
 	return get(simulating);
+}
+
+/** Drive a revolute joint's motor mid-sim (P-B) — initiator-only (only the
+ * stepping peer holds live joints; forward inputs to it, pong-paddle pattern).
+ * @param {string} jointId @param {number} vel rad/s @param {number=} maxForce */
+export function setJointMotor(jointId, vel, maxForce = 100) {
+	if (!world || !get(simulating)) return false;
+	const joint = liveJoints.get(jointId);
+	if (!joint?.configureMotorVelocity) return false;
+	joint.configureMotorVelocity(vel, maxForce);
+	return true;
 }
 
 /** Push a dynamic body (module SDK) — initiator-only, mid-sim.

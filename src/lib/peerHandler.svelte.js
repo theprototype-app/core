@@ -17,6 +17,7 @@ import { applyModuleMessage, moduleVersions, checkModuleVersions, sendModuleStat
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate, physicsExternalMove } from '$lib/physics';
+import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
@@ -243,6 +244,14 @@ export class PeerConnection {
 					physicsExternalMove(data.uuid);
 				} else if(data.type == 'simulate') {
 					applySimulate(data);
+				} else if(data.type == 'jointcreate') {
+					applyJointCreate(data);
+				} else if(data.type == 'jointdelete') {
+					applyJointDelete(data);
+				} else if(data.type == 'joints') {
+					applyJointsSnapshot(data.joints);
+				} else if(data.type == 'getjoints') {
+					sendJoints(data.sender);
 				} else if(data.type == 'environment') {
 					applyRemoteEnvironment(data);
 				} else if(data.type == 'music') {
@@ -393,6 +402,7 @@ export class PeerConnection {
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getmodulestate', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live

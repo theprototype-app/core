@@ -7,6 +7,7 @@ import { parkAnimatedAtBase } from './flowRuntime';
 import { peers, showToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
+import { jointsSnapshot, jointsRestore } from './joints';
 import { sceneCommand, sendObjects } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
@@ -100,6 +101,7 @@ export function buildSessionPayload(name) {
 			nodes: get(flowNodes).map(serializeNode),
 			edges: get(flowEdges).map(serializeEdge),
 			annotations: annotationsSnapshot(),
+			joints: jointsSnapshot(),
 			camera: camera
 				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 				: null
@@ -340,6 +342,9 @@ export async function applySession(payload) {
 		}
 	}
 	annotationsRestore(payload.annotations ?? []);
+	// P-B: joints restore locally + replicate each def (receivers only apply)
+	jointsRestore(payload.joints ?? []);
+	if (peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
 	/** @type {any} */
 	const camera = get(globalCamera);
 	/** @type {any} */

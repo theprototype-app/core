@@ -239,7 +239,12 @@ function makeApi(moduleId) {
 			simulating: () => physicsApi()?.isInitiator() ?? false,
 			isInitiator: () => physicsApi()?.isInitiator() ?? false,
 			/** push a dynamic body @param {string} uuid @param {number[]} impulse */
-			applyImpulse: (uuid, impulse) => physicsApi()?.applyImpulse(uuid, impulse) ?? false
+			applyImpulse: (uuid, impulse) => physicsApi()?.applyImpulse(uuid, impulse) ?? false,
+			/** drive a revolute joint's motor (P-B) @param {string} jointId @param {number} vel @param {number=} maxForce */
+			setJointMotor: (jointId, vel, maxForce) =>
+				physicsApi()?.setJointMotor(jointId, vel, maxForce) ?? false,
+			/** the replicated joint defs @returns {Promise<any[]>} */
+			joints: () => import('./joints').then((m) => m.jointsSnapshot())
 		},
 		scene: () => get(globalScene),
 		objectsGroup: () => get(objectsGroup),

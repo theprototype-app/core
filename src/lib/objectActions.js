@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { dropToSurface } from './snapping';
 import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch } from './history';
+import { cascadeJointDeletes } from './joints';
 import { createGroup } from './geometries.svelte';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import {
@@ -195,6 +196,9 @@ export function selectionUuids() {
 export function deleteObjectsByUuid(uuids) {
 	if (!uuids.length) return 0;
 	deselectObject();
+	// P-B: cascade joint deletes at the SENDER (each jointdelete replicates;
+	// receivers only apply)
+	cascadeJointDeletes(uuids);
 	/** @type {any} */
 	const peer = get(peers);
 	const group = get(objectsGroup);

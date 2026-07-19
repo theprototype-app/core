@@ -77,8 +77,8 @@ h.run(async () => {
 		`base ring is the 109 remap + 214 Tools submenu (${registry.root.join(',')})`
 	);
 	h.check(
-		registry.tools.join(',') === 'tool:select,tool:box,tool:draw',
-		`Tools submenu lists Select / Box Select / Draw (${registry.tools.join(',')})`
+		registry.tools.join(',') === 'tool:select,tool:box,tool:draw,ping',
+		`Tools submenu lists Select / Box Select / Draw / Ping (${registry.tools.join(',')})`
 	);
 	h.check(
 		registry.system.includes('nav:mic') &&

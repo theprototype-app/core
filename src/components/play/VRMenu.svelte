@@ -104,7 +104,7 @@
 			</T.Mesh>
 			{#if s.entry.label}
 				<Text
-					text={s.entry.label}
+					text={typeof s.entry.label === 'function' ? s.entry.label() : s.entry.label}
 					color={$vrHovered === s.entry.id ? '#ffffff' : '#e8ecf2'}
 					outlineColor="#000000"
 					outlineWidth={0.0012}

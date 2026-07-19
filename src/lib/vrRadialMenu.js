@@ -76,7 +76,7 @@ const registry = new Map();
 
 /**
  * Register (or replace, by id) a radial menu entry.
- * @param {{id: string, group?: string, label: string, order?: number,
+ * @param {{id: string, group?: string, label: string | (() => string), order?: number,
  *   ring?: string, action?: () => void, active?: () => boolean,
  *   color?: string, closes?: boolean, visible?: () => boolean}} entry
  * `ring` makes it a navigation sector into that sub-ring; `color` renders the
@@ -180,7 +180,9 @@ export function sectorLayout(i, count) {
 
 // ---- built-in rings ----
 
-const SNAP_ANGLES = [15, 30, 45];
+// unified with the VR settings panel + desktop Settings (R-2): 0 = Off, so the
+// radial can also turn snap-turn off and cycling is consistent across all three
+const SNAP_ANGLES = [0, 15, 30, 45];
 
 function registerBuiltins() {
 	// base ring (8 sectors; 109 remap): Redo/Undo swapped per user muscle
@@ -229,7 +231,9 @@ function registerBuiltins() {
 	registerVRMenuEntry({
 		id: 'snapangle',
 		group: 'scene',
-		label: 'Turn °',
+		// live label so the change is visible immediately in the radial (R-2);
+		// the sector re-derives on $vrSnapAngle in VRMenu
+		label: () => 'Turn: ' + (get(vrSnapAngle) ? get(vrSnapAngle) + '°' : 'Off'),
 		order: 9,
 		action: () => {
 			const next =

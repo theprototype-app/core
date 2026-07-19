@@ -242,6 +242,24 @@
 		restorePanels();
 		$settingsSection = null;
 	}
+
+	// U-3: filter the (numerous) settings rows by a search query. A `use:` action
+	// keeps it legacy-mode safe — it toggles each row's display without touching
+	// the heterogeneous markup. Rows carry the `.setting-row` class; inner controls
+	// live in <p>, so hiding a row never hides a control inside a shown row.
+	let settingsQuery = '';
+	/** @param {HTMLElement} node @param {string} query */
+	function filterSettings(node: HTMLElement, query: string) {
+		const apply = (q: string) => {
+			const needle = (q || '').trim().toLowerCase();
+			node.querySelectorAll('.setting-row').forEach((row) => {
+				const text = (row.textContent || '').toLowerCase();
+				(row as HTMLElement).style.display = !needle || text.includes(needle) ? '' : 'none';
+			});
+		};
+		apply(query);
+		return { update: apply };
+	}
 </script>
 
 <Modal
@@ -251,10 +269,18 @@
 	size="xl"
 >
 	<div class="modal-content max-h-[90vh] overflow-y-auto p-4">
+		<input
+			id="settings-search"
+			type="text"
+			class="ui-input mb-3 w-full"
+			placeholder="Search settings…"
+			bind:value={settingsQuery}
+		/>
+		<div use:filterSettings={settingsQuery}>
 		<Accordion>
 			<AccordionItem>
 				<svelte:fragment slot="header">VR</svelte:fragment>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={topcoverName}>
 						<Checkbox
 							bind:checked={$vrOverride}
@@ -266,7 +292,7 @@
 					</p>
 					<p class={topcoverDescription}>Forces normal play even if immersive-vr is enabled</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox
 							checked={$vrFlying}
@@ -277,7 +303,7 @@
 					</p>
 					<p class={middlecoverDescription}>Left-stick movement follows where the controller points (fly); off = stay level</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<!-- a red SWITCH (98): reads as an armed mode, not a plain option -->
 						<Toggle
@@ -293,7 +319,7 @@
 					</p>
 					<p class={middlecoverDescription}>Mixed reality: the next VR entry composites the scene over your room (immersive-ar){arSupport === false ? ' — not supported on this device' : ''}</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox
 							checked={$vrMenuHand === 'left'}
@@ -306,7 +332,7 @@
 					</p>
 					<p class={middlecoverDescription}>Which controller opens the VR quick-menu (the other hand points)</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox
 							id="vr-menu-hold"
@@ -318,7 +344,7 @@
 					</p>
 					<p class={middlecoverDescription}>Hold B/Y to show the radial menu, release over a sector to pick it (off = press toggles)</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<ThemedSelect
 							items={[
@@ -336,7 +362,7 @@
 					</p>
 					<p class={middlecoverDescription}><span class="font-semibold">Snap turn</span> — VR thumbstick flick rotation angle (Off disables it)</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox
 							id="vr-mirror-snap"
@@ -348,7 +374,7 @@
 					</p>
 					<p class={middlecoverDescription}>Flip the flick direction — left turns right and vice-versa</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox
 							id="vr-teleport"
@@ -360,7 +386,7 @@
 					</p>
 					<p class={middlecoverDescription}>Right-stick-up teleport arc — off if you navigate only by stick/fly</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox
 							id="vr-vertex-hold"
@@ -372,7 +398,7 @@
 					</p>
 					<p class={middlecoverDescription}>Hold the trigger to carry a vertex (release drops it); off = press to grab, press again to drop</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<select
 							id="peer-hand-style"
@@ -386,7 +412,7 @@
 					</p>
 					<p class={middlecoverDescription}>How hand-tracked peers render for you — cuboid-bone hands or joint spheres (local preference)</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<select
 							id="vr-target-hz"
@@ -404,7 +430,7 @@
 					</p>
 					<p class={middlecoverDescription}>Target headset Hz — Max picks the highest the device supports (120 needs the Quest 120Hz system setting); applies on VR entry</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={bottomCoverName}>
 						<button
 							id="vr-reset-poses"
@@ -419,7 +445,7 @@
 			</AccordionItem>
 			<AccordionItem>
 				<svelte:fragment slot="header">Scene</svelte:fragment>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={topcoverName}>
 						<ThemedSelect
 							id="theme-select"
@@ -429,7 +455,7 @@
 					</p>
 					<p class={topcoverDescription}><span class="font-semibold">Theme</span> — UI theme for THIS device (the 3D viewport follows the environment, not the theme)</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName + ' gap-2'}>
 						<button
 							id="theme-export"
@@ -467,7 +493,7 @@
 						{/if}
 					</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox
 							bind:checked={$showGrid}
@@ -479,37 +505,37 @@
 					</p>
 					<p class={middlecoverDescription}>Display grid on floor</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox bind:checked={$syncedAnimations}>&nbsp;Sync animations</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Node animations use wall-clock time so all peers see the same phase</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox bind:checked={$spatialVoice}>&nbsp;Spatial voice</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Voices come from where each peer is (pan + distance falloff)</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox bind:checked={$advancedMode}>&nbsp;Advanced mode</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Show system objects (module content, environment rig) as a System filter in the object list</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox bind:checked={$showEnvInList}>&nbsp;Environment in list</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Show the environment group as an Environment filter in the object list</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Checkbox bind:checked={$objectSearchEnabled}>&nbsp;Object search in menu</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<ThemedSelect
 							id="shadow-quality"
@@ -524,7 +550,7 @@
 					</p>
 					<p class={middlecoverDescription}><span class="font-semibold">Shadow quality</span> — caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName + ' gap-1'}>
 						<input
 							type="color"
@@ -549,13 +575,13 @@
 					</p>
 					<p class={middlecoverDescription}>Your ping color + sound — peers see and hear YOUR pings this way (color empty = your peer color)</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={bottomCoverName}>
 						<Checkbox bind:checked={$autosaveEnabled}>&nbsp;Autosave</Checkbox>
 					</p>
 					<p class={bottomCoverDescription}>Keep a local session snapshot (restore offered after a crash/reload)</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={bottomCoverName}>
 						<button id="reset-windows" class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset window positions</button>
 					</p>
@@ -564,7 +590,7 @@
 			</AccordionItem>
 			<AccordionItem bind:open={aiExpanded}>
 				<svelte:fragment slot="header">AI</svelte:fragment>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={topcoverName}>
 						<Toggle bind:checked={$aiEnabled} on:change={() => setAiEnabled($aiEnabled)}>&nbsp;Enable assistant</Toggle>
 					</p>
@@ -573,7 +599,7 @@
 						<kbd class="rounded border border-gray-500 px-1 text-[11px]">`</kbd> for the quick prompt bar, or open the AI Assistant window. Edits replicate to peers and undo as one step.
 					</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>Providers</p>
 					<p class={middlecoverDescription}>
 						{#if $aiProviders.length}
@@ -605,7 +631,7 @@
 					</p>
 				</div>
 				{#if aiFormOpen}
-					<div class="flex">
+					<div class="flex setting-row">
 						<p class={middlecoverName}>{aiEditId ? 'Edit' : 'New'} provider</p>
 						<p class={middlecoverDescription}>
 							<span class="flex flex-col gap-1.5">
@@ -627,7 +653,7 @@
 						</p>
 					</div>
 				{/if}
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<Toggle bind:checked={$meshGenEnabled} on:change={() => setMeshGenEnabled($meshGenEnabled)}>&nbsp;Mesh generation</Toggle>
 					</p>
@@ -635,7 +661,7 @@
 						<span class="font-semibold">Text → 3D mesh</span> — generate custom models from prompts (Add menu → “✨ Generate 3D model”, or the assistant). Backends: a self-hosted <span class="font-mono">ComfyUI</span> running TRELLIS, or a hosted API (Meshy). See the Console/AI docs for setup.
 					</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>Mesh providers</p>
 					<p class={middlecoverDescription}>
 						{#if $meshProviders.length}
@@ -658,7 +684,7 @@
 					</p>
 				</div>
 				{#if meshFormOpen}
-					<div class="flex">
+					<div class="flex setting-row">
 						<p class={middlecoverName}>{meshEditId ? 'Edit' : 'New'} mesh provider</p>
 						<p class={middlecoverDescription}>
 							<span class="flex flex-col gap-1.5">
@@ -687,7 +713,7 @@
 						</p>
 					</div>
 				{/if}
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={bottomCoverName}>Storage</p>
 					<p class={bottomCoverDescription}>
 						API keys are stored <span class="font-semibold">unencrypted</span> in this browser's local storage (like all settings) and never leave your device except in requests to the provider you configure. "Reset settings" clears them.
@@ -696,7 +722,7 @@
 			</AccordionItem>
 			<AccordionItem>
 				<svelte:fragment slot="header">Connection</svelte:fragment>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={topcoverName}>
 						<ThemedSelect
 							id="peer-server-mode"
@@ -716,7 +742,7 @@
 					</p>
 				</div>
 				{#if $peerServerConfig.mode === 'custom'}
-					<div class="flex">
+					<div class="flex setting-row">
 						<p class={middlecoverName}>
 							<input
 								class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
@@ -727,7 +753,7 @@
 						</p>
 						<p class={middlecoverDescription}>Your PeerJS server host (no https://, no path)</p>
 					</div>
-					<div class="flex">
+					<div class="flex setting-row">
 						<p class={middlecoverName + ' gap-1'}>
 							<input
 								class="w-16 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
@@ -744,7 +770,7 @@
 						</p>
 						<p class={middlecoverDescription}>Port + path (Caddy/TLS defaults: 443 and /peerjs)</p>
 					</div>
-					<div class="flex">
+					<div class="flex setting-row">
 						<p class={middlecoverName}>
 							<Checkbox
 								checked={$peerServerConfig.custom.secure}
@@ -752,7 +778,7 @@
 						</p>
 						<p class={middlecoverDescription}>Use TLS — leave on unless testing a plain-ws server</p>
 					</div>
-					<div class="flex">
+					<div class="flex setting-row">
 						<p class={middlecoverName}>
 							<input
 								class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
@@ -763,7 +789,7 @@
 						</p>
 						<p class={middlecoverDescription}>TURN URLs (comma-separated) — the NAT relay; blank = STUN-only, direct connections only</p>
 					</div>
-					<div class="flex">
+					<div class="flex setting-row">
 						<p class={middlecoverName + ' gap-1'}>
 							<input
 								class="min-w-0 flex-1 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
@@ -780,7 +806,7 @@
 						</p>
 						<p class={middlecoverDescription}>TURN username + credential</p>
 					</div>
-					<div class="flex">
+					<div class="flex setting-row">
 						<p class={middlecoverName}>
 							<input
 								class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
@@ -792,7 +818,7 @@
 						<p class={middlecoverDescription}>STUN URLs (comma-separated) — optional</p>
 					</div>
 				{/if}
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={bottomCoverName}>
 						<button
 							id="peer-server-reload"
@@ -822,19 +848,19 @@
 			</AccordionItem>
 			<AccordionItem>
 				<svelte:fragment slot="header">About</svelte:fragment>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={topcoverName}>
 						Version
 					</p>
 					<p class={topcoverDescription}>alpha</p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						Dev Builds
 					</p>
 					<p class={middlecoverDescription}><a href="https://alexz005.github.io/theprototype">https://alexz005.github.io/theprototype</a></p>
 				</div>
-				<div class="flex">
+				<div class="flex setting-row">
 					<p class={bottomCoverName}>
 						Source Code
 					</p>
@@ -843,6 +869,7 @@
 
 			</AccordionItem>
 		</Accordion>
+		</div>
 	</div>
 	<svelte:fragment slot="footer">
 		<Button onclick={() => localStorage.clear()}>Reset settings</Button>

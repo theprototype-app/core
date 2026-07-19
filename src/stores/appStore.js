@@ -203,7 +203,12 @@ enable3dPreview.subscribe((on) => {
  * @param {string} message @param {{label: string, action: () => void}[]=} actions
  */
 export function showToast(message, actions) {
-  toastStore.update((toast) => [...toast, actions ? { text: message, actions } : message]);
+  toastStore.update((toast) => {
+    // U-3: collapse duplicate plain-string toasts so a repeated message can't
+    // spam the stack (action toasts are always distinct, never deduped)
+    if (!actions && toast.some((entry) => entry === message)) return toast;
+    return [...toast, actions ? { text: message, actions } : message];
+  });
 }
 
 export function clearToast(toast) {

@@ -43,11 +43,17 @@
 	let flowDockSnapshot: any = null;
 	function toggleFlow() {
 		if (flowDockVisible) {
-			// the docked flow group is on screen -> hide ALL its tabs (remember them)
-			flowDockSnapshot = { flow: !$flowGraphClose, flowcode: !$flowCodeClose, animation: !$animationClose };
-			flowGraphClose.set(true);
-			flowCodeClose.set(true);
-			animationClose.set(true);
+			// hide the docked flow group -> close only the tabs that are actually DOCKED;
+			// leave undocked (floating) Flow Code / Animation windows open (the Node editor
+			// button controls the dock, not those separate floating windows)
+			flowDockSnapshot = {
+				flow: !!$dockOccupants.flow?.present,
+				flowcode: !!$dockOccupants.flowcode?.present,
+				animation: !!$dockOccupants.animation?.present
+			};
+			if (flowDockSnapshot.flow) flowGraphClose.set(true);
+			if (flowDockSnapshot.flowcode) flowCodeClose.set(true);
+			if (flowDockSnapshot.animation) animationClose.set(true);
 		} else if (flowFloatingShown) {
 			flowGraphClose.set(true); // a floating Node editor is shown -> hide it (Explorer untouched)
 		} else {

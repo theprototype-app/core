@@ -88,10 +88,24 @@ function normalizeDefault(entry) {
 		source: 'default',
 		base: `${PACKS_BASE}/library/${entry.name}`,
 		listUrl: entry.value,
+		// M-2: a `zip` entry is a self-describing .zip pack (manifest.json + assets/)
+		// rather than the model-list format — installed via importPackZip on demand,
+		// so it can carry audio/texture/text items, not just glTF models
+		zip: entry.zip ? `${PACKS_BASE}${entry.zip}` : '',
 		attributionUrl: entry.attribution || '',
 		copyright: entry.copyright || '',
 		license: entry.license || ''
 	};
+}
+
+/** Install a default-list `zip` pack: fetch the .zip and run it through the
+ * normal import path (kind-agnostic, so audio/SFX packs work). @param {any} pack */
+export async function installDefaultPackZip(pack) {
+	if (!pack?.zip) throw new Error('this pack has no .zip to install');
+	const res = await fetch(pack.zip);
+	if (!res.ok) throw new Error('could not fetch the pack (' + res.status + ')');
+	const file = new File([await res.blob()], (pack.zip.split('/').pop() || pack.name) + '.zip');
+	return importPackZip(file);
 }
 
 /** Load the pack list: libraryList.json defaults + locally imported packs. */

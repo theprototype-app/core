@@ -35,6 +35,7 @@
 		loadPackItems,
 		packByName,
 		importPackZip,
+		installDefaultPackZip,
 		removeImportedPack,
 		licenseLabel,
 		rememberThumb
@@ -259,6 +260,21 @@
 	function packRowMenu(e: MouseEvent, pack: any) {
 		e.preventDefault();
 		const items: any[] = [{ label: 'ⓘ Attribution / license', action: () => showPackAttribution(pack) }];
+		// M-2: a default-list .zip pack (e.g. audio/SFX) installs on demand
+		if (pack.source === 'default' && pack.zip)
+			items.push({
+				label: '⬇ Install pack',
+				action: async () => {
+					try {
+						const imported = await installDefaultPackZip(pack);
+						packsExpanded = true;
+						openFolder('pack:' + imported.name);
+						showToast(`Installed "${imported.title}"`);
+					} catch (err: any) {
+						showToast('Install failed: ' + (err?.message ?? 'bad .zip'));
+					}
+				}
+			});
 		if (pack.source === 'imported')
 			items.push({
 				label: '🗑 Delete pack',

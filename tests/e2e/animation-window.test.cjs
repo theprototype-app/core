@@ -51,6 +51,16 @@ h.run(async () => {
 	await A.page.waitForTimeout(150);
 	h.check(await A.page.locator('#animation-dock button:has-text("Position Y")').first().isVisible(), 'the movement track renders in the layer list');
 
+	// docked dropdowns must use the panel's light text color (they inherit it from the
+	// dock container) so the <option> items are readable, matching the floating window
+	const dropColor = await A.page.evaluate(() => {
+		const sel = document.querySelector('#animation-dock select');
+		const c = sel ? getComputedStyle(sel).color : '';
+		const m = c.match(/\d+/g);
+		return m ? { r: +m[0], g: +m[1], b: +m[2] } : null;
+	});
+	h.check(!!dropColor && (dropColor.r + dropColor.g + dropColor.b) / 3 > 140, `docked dropdowns use a light text color (${JSON.stringify(dropColor)})`);
+
 	// --- Play drives the object per frame ---
 	await A.page.evaluate((id) => window.__stores.animationPreview.play(id), uuid);
 	await A.page.waitForTimeout(280);

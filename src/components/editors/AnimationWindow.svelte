@@ -302,7 +302,9 @@
 			use:dragWindow={{ key: 'animation', defaultRect: { left: 200, top: 120 } }}
 			use:focusStack
 			use:tabbable={{ key: 'animation', title: 'Animation', openStore: animationClose, isOpen: (v) => !v, close: () => animationClose.set(true) }}
-			style="z-index: var(--z-window); width: {winW}px; height: {winH}px; max-width: 96vw; max-height: 88vh"
+			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"
+			style:width="{winW}px"
+			style:height="{winH}px"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span>Animation</span>

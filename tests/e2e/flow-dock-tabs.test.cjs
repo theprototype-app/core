@@ -53,17 +53,24 @@ h.run(async () => {
 		const win = document.getElementById('flow-code-window');
 		if (!win) return { win: false };
 		const grip = win.querySelector('.resize-cue');
-		const before = win.getBoundingClientRect().width;
+		const b = win.getBoundingClientRect();
 		const r = grip.getBoundingClientRect();
 		const opt = (x, y) => ({ clientX: x, clientY: y, bubbles: true, pointerId: 3, pointerType: 'mouse' });
 		grip.dispatchEvent(new PointerEvent('pointerdown', opt(r.left + 2, r.top + 2)));
 		grip.dispatchEvent(new PointerEvent('pointermove', { ...opt(r.left + 92, r.top + 72), movementX: 90, movementY: 70 }));
 		grip.dispatchEvent(new PointerEvent('pointerup', opt(r.left + 92, r.top + 72)));
 		await new Promise((res) => setTimeout(res, 120));
-		return { win: true, before, after: win.getBoundingClientRect().width };
+		const a = win.getBoundingClientRect();
+		return { win: true, beforeW: b.width, afterW: a.width, beforeLeft: b.left, afterLeft: a.left, beforeTop: b.top, afterTop: a.top };
 	});
 	h.check(resized.win, 'undocking Flow Code produces a floating window');
-	h.check(resized.after > resized.before + 20, `the undocked Flow Code window resizes via its corner grip (${Math.round(resized.before)}->${Math.round(resized.after)})`);
+	h.check(resized.afterW > resized.beforeW + 20, `the undocked Flow Code window resizes via its corner grip (${Math.round(resized.beforeW)}->${Math.round(resized.afterW)})`);
+	// bug fix: resizing must NOT move the window (the reactive style attr used to wipe
+	// dragWindow's inline left/top, snapping the window to the top-left corner)
+	h.check(
+		Math.abs(resized.afterLeft - resized.beforeLeft) < 2 && Math.abs(resized.afterTop - resized.beforeTop) < 2,
+		`resizing keeps the window in place, no jump to top-left (left ${Math.round(resized.beforeLeft)}->${Math.round(resized.afterLeft)}, top ${Math.round(resized.beforeTop)}->${Math.round(resized.afterTop)})`
+	);
 
 	await h.finish(browser);
 });

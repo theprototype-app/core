@@ -1288,7 +1288,9 @@
 			use:focusStack
 			use:tabbable={{ key: 'explorer', title: '🗂️ Explorer', openStore: explorerClose, isOpen: (v) => !v, close: () => explorerClose.set(true) }}
 			use:dockable={{ key: 'explorer' }}
-			style="z-index: var(--z-window); width: {winW}px; height: {winH}px"
+			style="z-index: var(--z-window)"
+			style:width="{winW}px"
+			style:height="{winH}px"
 			ondragover={(e) => {
 				if (canAccept(e)) return;
 				e.preventDefault();

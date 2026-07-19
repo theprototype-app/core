@@ -144,7 +144,9 @@
 			use:focusStack
 			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true) }}
 			use:dockable={{ key: 'flow' }}
-			style="z-index: var(--z-window); width: {winW}px; height: {winH}px"
+			style="z-index: var(--z-window)"
+			style:width="{winW}px"
+			style:height="{winH}px"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span>Node editor</span>

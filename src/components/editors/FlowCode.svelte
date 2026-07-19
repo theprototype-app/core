@@ -154,7 +154,9 @@
 			use:dragWindow={{ key: 'flowCode', defaultRect: { left: 160, top: 120 } }}
 			use:focusStack
 			use:tabbable={{ key: 'flowCode', title: 'Flow Code', openStore: flowCodeClose, isOpen: (v) => !v, close: () => flowCodeClose.set(true) }}
-			style="z-index: var(--z-window); width: {winW}px; height: {winH}px; max-width: 96vw; max-height: 85vh"
+			style="z-index: var(--z-window); max-width: 96vw; max-height: 85vh"
+			style:width="{winW}px"
+			style:height="{winH}px"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span>Flow Code</span>

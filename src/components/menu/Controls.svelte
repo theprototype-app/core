@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -23,7 +23,7 @@
 	import { focusStack, raiseWindow, isTopWindow } from '$lib/windowFocus';
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
-	import { visibleDockKey, bottomDockActive, activateDock, dockOccupants } from '$lib/bottomDock';
+	import { visibleDockKey, bottomDockActive, activateDock, dockOccupants, FLOW_FAMILY } from '$lib/bottomDock';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -32,13 +32,36 @@
 	// while a floating panel is clearly on screen). Clicking shows the panel in its
 	// current mode (docked tab or floating window) or hides it; docking/undocking is on
 	// each panel's own header buttons.
-	const flowShown = $derived(!$flowGraphClose && ($visibleDockKey === 'flow' || !$dockOccupants.flow?.present));
+	// The Node editor button represents the whole Flow-family (Node editor + its Flow
+	// Code / Animation tabs). It is "shown" when a docked flow tab is the visible dock
+	// panel, OR when the Node editor is a shown floating window.
+	const flowDockVisible = $derived(FLOW_FAMILY.includes($visibleDockKey ?? ''));
+	const flowFloatingShown = $derived(!$flowGraphClose && !$dockOccupants.flow?.present);
+	const flowShown = $derived(flowDockVisible || flowFloatingShown);
 	const explorerShown = $derived(!$explorerClose && ($visibleDockKey === 'explorer' || !$dockOccupants.explorer?.present));
+	// remembers which flow-family views were open when the docked group was hidden
+	let flowDockSnapshot: any = null;
 	function toggleFlow() {
-		if (flowShown) flowGraphClose.set(true); // shown (docked or floating) -> hide
-		else {
-			flowGraphClose.set(false); // hidden -> show it in its last mode
-			activateDock('flow'); // if docked, make it the visible tab (no-op if floating)
+		if (flowDockVisible) {
+			// the docked flow group is on screen -> hide ALL its tabs (remember them)
+			flowDockSnapshot = { flow: !$flowGraphClose, flowcode: !$flowCodeClose, animation: !$animationClose };
+			flowGraphClose.set(true);
+			flowCodeClose.set(true);
+			animationClose.set(true);
+		} else if (flowFloatingShown) {
+			flowGraphClose.set(true); // a floating Node editor is shown -> hide it (Explorer untouched)
+		} else {
+			// hidden -> show: restore the hidden docked group if any, else open the Node editor
+			const snap = flowDockSnapshot;
+			if (snap && (snap.flow || snap.flowcode || snap.animation)) {
+				if (snap.flow) flowGraphClose.set(false);
+				if (snap.flowcode) flowCodeClose.set(false);
+				if (snap.animation) animationClose.set(false);
+			} else {
+				flowGraphClose.set(false);
+			}
+			flowDockSnapshot = null;
+			activateDock('flow'); // show the flow dock (closes a DOCKED Explorer, per the dock rule)
 		}
 	}
 	function toggleExplorer() {

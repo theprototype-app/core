@@ -9,5 +9,6 @@ import piano from './piano/module.js';
 import pong from './pong/module.js';
 import avatar from './avatar/module.js';
 import essentials from './essentials/module.js';
+import car from './car/module.js';
 
-export const coreModules = [hello, button, dungeon, piano, pong, avatar, essentials];
+export const coreModules = [hello, button, dungeon, piano, pong, avatar, essentials, car];

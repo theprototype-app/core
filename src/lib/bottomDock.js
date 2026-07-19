@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { explorerClose } from '../stores/appStore';
 
 // Bottom dock (roadmap #9 tail rework): the dock shows exactly ONE panel at a time.
@@ -69,14 +69,23 @@ export const bottomInset = derived([dockOccupants, visibleDockKey], ([$o, $key])
 );
 
 /**
- * Make `key` the visible dock panel. A Flow-family activation closes the Explorer
- * (they are mutually exclusive — only one docked panel is ever visible).
+ * Make `key` the visible dock panel. The Flow-family and the Explorer are mutually
+ * exclusive ONLY in the dock — the actual closing of the Explorer happens reactively
+ * (see below) when a Flow-family panel becomes the VISIBLE dock panel, so a FLOATING
+ * Node editor / Flow Code never closes a docked Explorer.
  * @param {string} key
  */
 export function activateDock(key) {
 	bottomDockActive.set(key);
-	if (FLOW_FAMILY.includes(key)) explorerClose.set(true);
 }
+
+// Exclusivity: the dock has ONE slot. Close the Explorer only when a DOCKED Flow-family
+// panel actually becomes the visible dock panel — a floating Node editor never makes a
+// Flow-family key the visible key, so a docked Explorer is left alone (they collide only
+// when BOTH are docked).
+visibleDockKey.subscribe((key) => {
+	if (key && FLOW_FAMILY.includes(key) && get(dockOccupants).explorer?.present) explorerClose.set(true);
+});
 
 // publish the visible dock height as a CSS var so drawers/docked windows adjust (105)
 if (typeof document !== 'undefined') {

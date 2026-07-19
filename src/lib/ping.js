@@ -11,7 +11,7 @@ import { playPing } from './pingAudio';
 
 export const PING_TTL = 4000;
 
-/** @type {import('svelte/store').Writable<{id: string, peerId: string, name: string, pos: number[], ts: number, color?: string, sound?: string}[]>} */
+/** @type {import('svelte/store').Writable<{id: string, peerId: string, name: string, pos: number[], ts: number, color?: string, sound?: string, uuid?: string}[]>} */
 export const pings = writable([]);
 
 // per-user ping preferences (Settings; '' color = automatic peer color)
@@ -36,8 +36,10 @@ function addPing(ping) {
 	}, PING_TTL + 100);
 }
 
-/** Ping a world position, locally and for all peers @param {THREE.Vector3 | number[]} position */
-export function sendPing(position) {
+/** Ping a world position, locally and for all peers. An optional `uuid` marks
+ * the ping as an OBJECT ping: receivers also flash a highlight around that
+ * object for PING_TTL (PingHighlights). @param {THREE.Vector3 | number[]} position @param {string=} uuid */
+export function sendPing(position, uuid) {
 	const pos = Array.isArray(position) ? position : position.toArray();
 	/** @type {any} */
 	const peer = get(peers);
@@ -51,10 +53,11 @@ export function sendPing(position) {
 		pos,
 		ts: Date.now(),
 		color,
-		sound
+		sound,
+		uuid: uuid ?? undefined
 	};
 	addPing(ping);
-	if (peer) peer.send({ type: 'ping', id: ping.id, peerId: ping.peerId, name, pos, color, sound });
+	if (peer) peer.send({ type: 'ping', id: ping.id, peerId: ping.peerId, name, pos, color, sound, uuid: uuid ?? undefined });
 }
 
 /** Ping the top-center of an object by uuid (used by the object context menu).
@@ -66,7 +69,7 @@ export function pingObject(uuid) {
 	const box = new THREE.Box3().setFromObject(object);
 	const top = box.getCenter(new THREE.Vector3());
 	top.y = box.max.y;
-	sendPing(top);
+	sendPing(top, uuid); // carry the uuid so peers highlight the object too
 }
 
 /** Ping the top-center of a SET's union bounds (multi-select menu). @param {string[]} uuids */
@@ -97,6 +100,7 @@ export function applyPing(data) {
 		pos: data.pos,
 		ts: Date.now(),
 		color: data.color,
-		sound: data.sound
+		sound: data.sound,
+		uuid: data.uuid
 	});
 }

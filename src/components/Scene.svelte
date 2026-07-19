@@ -45,6 +45,7 @@
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
+	import PingHighlights from './PingHighlights.svelte';
 	import PathWaypoints from './PathWaypoints.svelte';
 	import LockHighlights from './LockHighlights.svelte';
 	import Grid from '../extensions/Grid.svelte';
@@ -888,6 +889,7 @@
 	<AnnotationPins />
 
 	<PingMarkers />
+	<PingHighlights />
 	<PathWaypoints />
 	<LockHighlights />
 </T.Group>

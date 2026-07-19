@@ -2157,6 +2157,13 @@ export function executeVRMenuAction(name) {
 		vrMenuOpen.set(false);
 		return;
 	}
+	if (name === 'ping') {
+		// U-1: ping immediately from the POINTER hand (the menu is on the other
+		// hand), then close the ring; highlights the object if the ray hits one
+		pingFromController(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
+		vrMenuOpen.set(false);
+		return;
+	}
 	if (name === 'edit:granularity') {
 		toggleFaceGranularity(); // 212: FACE <-> POLYGON
 		return;
@@ -2488,9 +2495,20 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'close') vrMenuOpen.set(false);
 }
 
-/** Right-stick click: ping where the controller ray lands (87.6) @param {number} index */
+/** Right-stick click / radial Ping: ping where the controller ray lands. When
+ * it lands ON an object, carry that object's uuid so peers highlight it too
+ * (U-1). (87.6) @param {number} index */
 function pingFromController(index) {
-	const point = pingPointFromRay(controllerRay(index), get(objectsGroup));
+	const ray = controllerRay(index);
+	const group = get(objectsGroup);
+	const hits = group ? ray.intersectObjects(group.children, true) : [];
+	if (hits[0]) {
+		const top = topLevelObjectOf(hits[0].object);
+		sendPing(hits[0].point, top?.uuid);
+		hapticPulse(0.4, 60);
+		return;
+	}
+	const point = pingPointFromRay(ray, group);
 	if (!point) return;
 	sendPing(point);
 	hapticPulse(0.4, 60);

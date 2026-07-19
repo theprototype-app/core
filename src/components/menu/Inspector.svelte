@@ -67,8 +67,11 @@
 	// side drawers live on the --z-drawer tier (68); chat floats on its own now.
 	// bottom rises above the docked Flow/Explorer height (105) AND the Controls pill/
 	// HUD footprint on narrow screens (--controls-inset) so neither covers the drawer.
+	// z sits just above the bottom HUD buttons (mic/chat/+ are at --z-drawer=30) so the
+	// settings drawer is never covered by the mic on the bottom-right, but stays BELOW
+	// the dock (--z-bottom=35) and floating windows.
 	const drawerStyle =
-		'bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); z-index: var(--z-drawer); height: auto';
+		'bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); z-index: calc(var(--z-bottom) - 1); height: auto';
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	const isGroup = $derived($selectedObject?.type === 'Group');

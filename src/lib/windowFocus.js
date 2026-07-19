@@ -1,16 +1,20 @@
 // Click-to-front for floating windows (phase 82). Every registered window
 // gets a z-index inside the --z-window band (40..44, still under the hud at
 // 45); pointerdown moves it to the top of the stack.
+import { writable } from 'svelte/store';
 
 /** @type {any[]} */
 const order = [];
 /** @type {Map<string, any>} key -> node, for programmatic raise (e.g. a toolbar button) */
 const byKey = new Map();
+/** bumps whenever the z-order changes, so followers (tab strips) can re-read z */
+export const focusTick = writable(0);
 
 function apply() {
 	order.forEach((node, index) => {
 		node.style.zIndex = String(40 + Math.min(index, 4));
 	});
+	focusTick.update((n) => n + 1);
 }
 
 /** @param {any} node */
@@ -51,6 +55,11 @@ export function raiseWindow(key) {
 	const node = byKey.get(key);
 	if (node) raiseNode(node);
 	return !!node;
+}
+
+/** Raise a window to the front by its node (e.g. a tab group's active member). @param {any} node */
+export function raiseWindowNode(node) {
+	if (node) raiseNode(node);
 }
 
 /** Is the keyed window already at the front of the stack? @param {string} key */

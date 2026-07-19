@@ -138,6 +138,21 @@ export function nameMsg(id, name) {
 export function deleteMsg(id, peerId) {
 	return { type: 'delete', uuid: id, peerId };
 }
+/** A generated/imported GLB pushed as raw bytes (the objectfile path — receivers
+ * parse it with GLTFLoader, so it round-trips where the per-node exporter can't).
+ * @param {string} id @param {string} name @param {Uint8Array} bytes @param {number[]} [pos] */
+export function objectFileMsg(id, name, bytes, pos) {
+	return {
+		type: 'objectfile',
+		uuid: id,
+		name: name || 'Generated',
+		buffer: bytes,
+		pos: num3(pos, [0, 0, 0]),
+		rot: [0, 0, 0],
+		scale: [1, 1, 1],
+		anim: null
+	};
+}
 /** @param {string} id @param {string} key @param {any} value */
 export function materialParamMsg(id, key, value) {
 	return { type: 'objectParameters', parameter: 'materialParam', uuid: id, key, value };

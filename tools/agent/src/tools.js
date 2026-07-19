@@ -14,10 +14,12 @@ import {
 	materialTypeMsg,
 	materialParamMsg,
 	visibleMsg,
+	objectFileMsg,
 	PRIMITIVES,
 	LIGHTS,
 	MATERIALS
 } from './messages.js';
+import { generateMesh } from './meshGen.js';
 
 /** OpenAI-format tool schemas (also used to build the MCP tool list). */
 export const TOOL_SCHEMAS = [
@@ -102,6 +104,19 @@ export const TOOL_SCHEMAS = [
 		name: 'get_status',
 		description: 'Report the connection state, session peers and how many objects the agent is tracking.',
 		parameters: { type: 'object', properties: {} }
+	},
+	{
+		name: 'generate_mesh',
+		description: 'Generate a NEW custom 3D mesh from a text description (when no primitive fits). SLOW + async: returns immediately and the mesh appears in the scene when ready. Requires a mesh backend (--mesh-url).',
+		parameters: {
+			type: 'object',
+			properties: {
+				prompt: { type: 'string' },
+				name: { type: 'string' },
+				position: { type: 'array', items: { type: 'number' } }
+			},
+			required: ['prompt']
+		}
 	}
 ];
 
@@ -184,6 +199,21 @@ export function executeTool(bridge, name, args) {
 				bridge.broadcast(groupCreateMsg(id, args?.name || 'Group'));
 				for (const m of members) bridge.broadcast(groupReparentMsg(m, id));
 				return { groupUuid: id, members };
+			}
+			case 'generate_mesh': {
+				const prompt = String(args?.prompt || '').trim();
+				if (!prompt) return { error: 'prompt required' };
+				if (!bridge.meshConfig) return { error: 'no mesh backend configured (pass --mesh-url / --mesh-kind, or AGENT_MESH_*)' };
+				const id = uuid();
+				const position = Array.isArray(args?.position) ? args.position : [0, 0, 0];
+				// LONG + async: generate in the background, push the GLB bytes when ready
+				generateMesh(bridge.meshConfig, prompt, (m) => bridge.log && bridge.log('mesh: ' + m))
+					.then(({ bytes }) => {
+						bridge.broadcast(objectFileMsg(id, args?.name || prompt.slice(0, 40), bytes, position));
+						bridge.registry.upsert(id, { kind: 'generated', name: args?.name || prompt.slice(0, 40), by: 'self' }, 'full');
+					})
+					.catch((e) => bridge.log && bridge.log('mesh generation failed: ' + e.message));
+				return { started: true, uuid: id, note: 'Generating a mesh from "' + prompt.slice(0, 60) + '"; it will appear in ~1-3 min.' };
 			}
 			default:
 				return { error: 'unknown tool: ' + name };

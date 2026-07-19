@@ -2,6 +2,7 @@
 // theprototype-agent CLI (roadmap #10). Joins a session as a peer and builds/edits
 // the scene. Modes: --repl (own LLM loop), --mcp (stdio MCP server), --smoke
 // (scripted create/move/color/delete for testing).
+import { readFileSync } from 'node:fs';
 import { PeerBridge } from './peerBridge.js';
 import { uuid, createMsg, moveMsg, colorMsg, deleteMsg } from './messages.js';
 
@@ -42,8 +43,32 @@ function parseServer(args) {
 	};
 }
 
+/** Optional mesh-generation backend config from flags/env (roadmap #11 G8). */
+function parseMeshConfig(args) {
+	const kind = args['mesh-kind'] || process.env.AGENT_MESH_KIND;
+	const url = args['mesh-url'] || process.env.AGENT_MESH_URL;
+	if (!kind || !url) return null;
+	/** @type {any} */
+	const cfg = {
+		kind,
+		baseUrl: url,
+		apiKey: args['mesh-key'] || process.env.AGENT_MESH_KEY || '',
+		mode: args['mesh-mode'] || process.env.AGENT_MESH_MODE || 'preview',
+		outputNodeId: args['mesh-output-node'] || process.env.AGENT_MESH_OUTPUT_NODE || ''
+	};
+	const wfPath = args['mesh-workflow'] || process.env.AGENT_MESH_WORKFLOW;
+	if (kind === 'comfyui' && wfPath) {
+		try {
+			cfg.workflowJson = readFileSync(wfPath, 'utf8');
+		} catch (e) {
+			console.error('[agent] could not read --mesh-workflow ' + wfPath + ': ' + e.message);
+		}
+	}
+	return cfg;
+}
+
 function makeBridge(args) {
-	return new PeerBridge({
+	const bridge = new PeerBridge({
 		agentId: args.id || 'agt' + Math.floor(Math.random() * 90000 + 10000).toString(36),
 		name: args.name || 'agent',
 		hostId: args.peer || null,
@@ -51,6 +76,8 @@ function makeBridge(args) {
 		approvalTimeout: args['approval-timeout'] ? Number(args['approval-timeout']) * 1000 : 120000,
 		verbose: !!args.verbose
 	});
+	bridge.meshConfig = parseMeshConfig(args);
+	return bridge;
 }
 
 // (peerBridge installs a process-wide guard that swallows transient signaling

@@ -34,6 +34,18 @@
 		presetFor
 	} from '$lib/ai/providers';
 	import { testConnection } from '$lib/ai/client';
+	import {
+		meshGenEnabled,
+		setMeshGenEnabled,
+		meshProviders,
+		meshActiveProvider,
+		setMeshActiveProvider,
+		addMeshProvider,
+		updateMeshProvider,
+		removeMeshProvider,
+		MESH_PRESETS,
+		meshPresetFor
+	} from '$lib/ai/meshProviders';
 	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST } from '$lib/peerServer';
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
@@ -105,6 +117,74 @@
 		});
 		aiTesting = false;
 		showToast(result.ok ? '✓ ' + result.detail : '✗ ' + result.detail);
+	}
+
+	// Mesh-generation provider add/edit form (roadmap #11)
+	let meshFormOpen = false;
+	let meshEditId: string | null = null;
+	let meshFormKind = 'comfyui';
+	let meshFormLabel = '';
+	let meshFormBaseUrl = '';
+	let meshFormKey = '';
+	let meshFormWorkflow = '';
+	let meshFormOutputNode = '';
+	let meshFormMode = 'preview';
+
+	function meshApplyPreset() {
+		const preset = meshPresetFor(meshFormKind);
+		meshFormLabel = preset.label;
+		meshFormBaseUrl = preset.baseUrl;
+	}
+	function meshStartAdd() {
+		meshEditId = null;
+		meshFormKind = 'comfyui';
+		meshApplyPreset();
+		meshFormKey = '';
+		meshFormWorkflow = '';
+		meshFormOutputNode = '';
+		meshFormMode = 'preview';
+		meshFormOpen = true;
+	}
+	function meshStartEdit(p: any) {
+		meshEditId = p.id;
+		meshFormKind = p.kind;
+		meshFormLabel = p.label;
+		meshFormBaseUrl = p.baseUrl;
+		meshFormKey = p.apiKey ?? '';
+		meshFormWorkflow = p.workflowJson ?? '';
+		meshFormOutputNode = p.outputNodeId ?? '';
+		meshFormMode = p.mode ?? 'preview';
+		meshFormOpen = true;
+	}
+	function meshSaveProvider() {
+		if (!meshFormBaseUrl.trim()) {
+			showToast('A base URL is required');
+			return;
+		}
+		if (meshFormKind === 'comfyui' && meshFormWorkflow.trim()) {
+			try {
+				JSON.parse(meshFormWorkflow);
+			} catch {
+				showToast('The ComfyUI workflow is not valid JSON — re-export it in API format');
+				return;
+			}
+		}
+		const config: any = {
+			kind: meshFormKind,
+			label: meshFormLabel,
+			baseUrl: meshFormBaseUrl,
+			apiKey: meshFormKey
+		};
+		if (meshFormKind === 'comfyui') {
+			config.workflowJson = meshFormWorkflow;
+			config.outputNodeId = meshFormOutputNode;
+		} else {
+			config.mode = meshFormMode;
+		}
+		if (meshEditId) updateMeshProvider(meshEditId, config);
+		else addMeshProvider(config);
+		meshFormOpen = false;
+		meshEditId = null;
 	}
 
 	// Peer signaling-server selection (default self-hosted+fallback / public / custom)
@@ -541,6 +621,66 @@
 									<button class="rounded bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-600" on:click={aiSaveProvider}>Save</button>
 									<button class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50" disabled={aiTesting} on:click={aiTest}>{aiTesting ? 'Testing…' : 'Test connection'}</button>
 									<button class="rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { aiFormOpen = false; aiEditId = null; }}>Cancel</button>
+								</span>
+							</span>
+						</p>
+					</div>
+				{/if}
+				<div class="flex">
+					<p class={middlecoverName}>
+						<Toggle bind:checked={$meshGenEnabled} on:change={() => setMeshGenEnabled($meshGenEnabled)}>&nbsp;Mesh generation</Toggle>
+					</p>
+					<p class={middlecoverDescription}>
+						<span class="font-semibold">Text → 3D mesh</span> — generate custom models from prompts (Add menu → “✨ Generate 3D model”, or the assistant). Backends: a self-hosted <span class="font-mono">ComfyUI</span> running TRELLIS, or a hosted API (Meshy). See the Console/AI docs for setup.
+					</p>
+				</div>
+				<div class="flex">
+					<p class={middlecoverName}>Mesh providers</p>
+					<p class={middlecoverDescription}>
+						{#if $meshProviders.length}
+							<span class="flex flex-col gap-1">
+								{#each $meshProviders as p (p.id)}
+									<span class="inline-flex items-center gap-2 rounded bg-gray-800 px-2 py-1 text-[13px]">
+										<input type="radio" name="mesh-active" checked={$meshActiveProvider === p.id} on:change={() => setMeshActiveProvider(p.id)} title="Use this provider" />
+										<span class="font-semibold">{p.label}</span>
+										<span class="text-gray-400">{p.kind}</span>
+										<span class="flex-1"></span>
+										<button class="text-gray-300 hover:text-white" on:click={() => meshStartEdit(p)}>Edit</button>
+										<button class="text-gray-400 hover:text-red-400" title="Remove" on:click={() => removeMeshProvider(p.id)}>✕</button>
+									</span>
+								{/each}
+							</span>
+						{:else}
+							<span class="text-gray-400">No mesh providers yet.</span>
+						{/if}
+						<button class="mt-1.5 rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={meshStartAdd}>+ Add mesh provider</button>
+					</p>
+				</div>
+				{#if meshFormOpen}
+					<div class="flex">
+						<p class={middlecoverName}>{meshEditId ? 'Edit' : 'New'} mesh provider</p>
+						<p class={middlecoverDescription}>
+							<span class="flex flex-col gap-1.5">
+								<select class="ui-input" bind:value={meshFormKind} on:change={meshApplyPreset}>
+									{#each MESH_PRESETS as preset}
+										<option value={preset.kind}>{preset.label}</option>
+									{/each}
+								</select>
+								<input class="ui-input" placeholder="Label" bind:value={meshFormLabel} />
+								<input class="ui-input" placeholder={meshFormKind === 'comfyui' ? 'ComfyUI URL (http://host:8188)' : 'API base (https://api.meshy.ai)'} bind:value={meshFormBaseUrl} />
+								<input class="ui-input" type="password" placeholder={meshFormKind === 'comfyui' ? 'Bearer token (only if proxied; blank for LAN)' : 'API key'} bind:value={meshFormKey} />
+								{#if meshFormKind === 'comfyui'}
+									<textarea class="ui-input min-h-[80px] resize-y font-mono text-[11px]" placeholder={'Workflow JSON (API format). Put {{PROMPT}} in the text node and {{SEED}} in the sampler seed.'} bind:value={meshFormWorkflow}></textarea>
+									<input class="ui-input" placeholder="Output node id (optional — auto-detects the SaveGLB node)" bind:value={meshFormOutputNode} />
+								{:else}
+									<select class="ui-input" bind:value={meshFormMode}>
+										<option value="preview">preview (geometry only — faster, cheaper)</option>
+										<option value="refine">refine (adds textures — more credits)</option>
+									</select>
+								{/if}
+								<span class="flex gap-1.5">
+									<button class="rounded bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-600" on:click={meshSaveProvider}>Save</button>
+									<button class="rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { meshFormOpen = false; meshEditId = null; }}>Cancel</button>
 								</span>
 							</span>
 						</p>

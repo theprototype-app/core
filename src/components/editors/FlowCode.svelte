@@ -115,14 +115,20 @@
 	}
 </script>
 
+{#snippet actions()}
+	<button class="ui-button-quiet" title="Reload the text from the graph" onclick={() => (text = snapshot())}>↻ Reload</button>
+	<button class="ui-button-quiet text-primary-400" title="Apply the text to the graph (replaces it)" onclick={apply}>Apply</button>
+{/snippet}
+
 {#snippet body()}
-	<!-- Apply/Reload live in the CONTENT (not the drag header) so they stay visible
-	     when this window is tab-grouped and the tab strip covers the header. -->
-	<div class="flex shrink-0 items-center gap-1 border-b border-gray-700/60 px-2 py-1">
-		<span class="flex-1"></span>
-		<button class="ui-button-quiet" title="Reload the text from the graph" onclick={() => (text = snapshot())}>↻ Reload</button>
-		<button class="ui-button-quiet text-primary-400" title="Apply the text to the graph (replaces it)" onclick={apply}>Apply</button>
-	</div>
+	<!-- when tab-grouped the strip covers the header, so Apply/Reload move into a
+	     content row; docked/floating keep them in the header instead (below) -->
+	{#if myGroup}
+		<div class="flex shrink-0 items-center gap-1 border-b border-gray-700/60 px-2 py-1">
+			<span class="flex-1"></span>
+			{@render actions()}
+		</div>
+	{/if}
 	{#if error}
 		<div class="shrink-0 bg-red-900/40 px-2 py-1 text-[11px] text-red-300">{error}</div>
 	{/if}
@@ -150,6 +156,7 @@
 			<div class="flex shrink-0 items-center gap-1 pb-1">
 				<span class="text-xs font-semibold text-gray-200">Flow Code</span>
 				<span class="flex-1"></span>
+				{@render actions()}
 				<button class="ui-button-quiet" title="Undock into a floating window" onclick={() => setDocked(false)}>⧉</button>
 				<button class="ui-button-quiet" title="Close" onclick={() => flowCodeClose.set(true)}>✕</button>
 			</div>
@@ -171,6 +178,7 @@
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span>Flow Code</span>
 				<span class="flex-1"></span>
+				{#if !myGroup}{@render actions()}{/if}
 				<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
 				<button class="ui-button-quiet" title="Close" onclick={() => flowCodeClose.set(true)}>✕</button>
 			</div>

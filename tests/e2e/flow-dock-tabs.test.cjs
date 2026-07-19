@@ -49,6 +49,12 @@ h.run(async () => {
 		[...dock.querySelectorAll('button')].find((b) => b.title && b.title.includes('Undock'))?.click();
 	});
 	await A.page.waitForTimeout(400);
+	// ungrouped floating Flow Code keeps Apply/Reload in its HEADER (not a content row)
+	const hdrApply = await A.page.evaluate(() => {
+		const hdr = document.querySelector('#flow-code-window .ui-panel-header');
+		return hdr ? [...hdr.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Apply') : false;
+	});
+	h.check(hdrApply, 'ungrouped floating Flow Code shows Apply in its header (not a content row)');
 	const resized = await A.page.evaluate(async () => {
 		const win = document.getElementById('flow-code-window');
 		if (!win) return { win: false };

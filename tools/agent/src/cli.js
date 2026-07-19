@@ -29,10 +29,17 @@ function parseArgs(argv) {
 }
 
 function parseServer(args) {
-	// --peer-server host:port[:insecure]  (default: public cloud)
+	// --peer-server host:port[:insecure]  (default: public cloud). Path defaults to
+	// /peerjs — the app's self-hosted convention (Settings: Caddy/TLS, 443, /peerjs).
 	if (!args['peer-server']) return null;
 	const [host, port, insecure] = String(args['peer-server']).split(':');
-	return { host, port: Number(port) || 9000, secure: insecure !== 'insecure', path: args['peer-path'] || '/' };
+	return {
+		host,
+		port: Number(port) || 443,
+		secure: insecure !== 'insecure',
+		path: args['peer-path'] || '/peerjs',
+		key: args['peer-key'] || ''
+	};
 }
 
 function makeBridge(args) {

@@ -42,7 +42,7 @@ export class PeerBridge extends EventEmitter {
 	 * @param {string} opts.agentId
 	 * @param {string} [opts.name]
 	 * @param {string} [opts.hostId]
-	 * @param {{host:string,port:number,secure?:boolean,path?:string}|null} [opts.server] null = public cloud
+	 * @param {{host:string,port:number,secure?:boolean,path?:string,key?:string}|null} [opts.server] null = public cloud
 	 * @param {number} [opts.approvalTimeout] ms (default 120000)
 	 * @param {boolean} [opts.verbose]
 	 */
@@ -111,14 +111,20 @@ export class PeerBridge extends EventEmitter {
 	/** One signaling attempt: create the Peer and wait for 'open'. @returns {Promise<string>} */
 	_openPeer() {
 		this._setState('signaling');
-		const peer = this.server
-			? new this._Peer(this.agentId, {
-					host: this.server.host,
-					port: this.server.port,
-					secure: this.server.secure !== false,
-					path: this.server.path || '/'
-			  })
-			: new this._Peer(this.agentId);
+		let peer;
+		if (this.server) {
+			/** @type {Record<string, any>} */
+			const opts = {
+				host: this.server.host,
+				port: Number(this.server.port) || 443,
+				secure: this.server.secure !== false,
+				path: this.server.path || '/peerjs'
+			};
+			if (this.server.key) opts.key = this.server.key;
+			peer = new this._Peer(this.agentId, opts);
+		} else {
+			peer = new this._Peer(this.agentId);
+		}
 		this.peer = peer;
 
 		return new Promise((resolve, reject) => {
@@ -199,7 +205,22 @@ export class PeerBridge extends EventEmitter {
 	/** @param {string} peerId */
 	_openOutgoing(peerId) {
 		if (!peerId || peerId === this.agentId) return;
-		if (this.out.has(peerId)) return;
+		const existing = this.out.get(peerId);
+		if (existing) {
+			if (existing.open) return;
+			// A conn can be legitimately mid-connect — only treat it as stale after a
+			// grace period. Stale = the host closed it pre-approval, but with real
+			// WebRTC that close is often NOT signaled to us; replace it (mirrors
+			// peerHandler's "Restoring connection" branch), or the post-approval
+			// reopen is blocked forever.
+			const age = Date.now() - (existing.__openedAt || 0);
+			if (age < 8000) return;
+			this.log('replacing stale non-open conn to ' + peerId);
+			try {
+				existing.close();
+			} catch {}
+			this.out.delete(peerId);
+		}
 		this.log('opening outgoing conn to ' + peerId);
 		let conn;
 		try {
@@ -208,6 +229,7 @@ export class PeerBridge extends EventEmitter {
 			this.log('connect threw: ' + e.message);
 			return;
 		}
+		conn.__openedAt = Date.now(); // stale-detection grace anchor
 		this.out.set(peerId, conn);
 		conn.on('open', () => this._onOutOpen(peerId, conn));
 		conn.on('close', () => this._onOutClose(peerId, conn));
@@ -250,9 +272,23 @@ export class PeerBridge extends EventEmitter {
 	_onInbound(conn) {
 		this.log('inbound conn from ' + conn.peer);
 		this.inbound.add(conn);
+		this.whitelist.add(conn.peer);
 		conn.on('data', (d) => this._onData(conn.peer, d));
 		conn.on('close', () => this.inbound.delete(conn));
 		conn.on('error', () => {});
+		// An inbound conn from the host is the approval signal (approvePeer connects
+		// back). Reopen our outgoing conn once it opens — belt-and-braces alongside
+		// the {type:'hosts'} gossip, and required when the pre-approval close of our
+		// first conn was never signaled (real-WebRTC behavior). The stale-conn grace
+		// in _openOutgoing can defer the first attempts, so RETRY until one opens.
+		let tries = 0;
+		const reopen = () => {
+			if (this.state === 'closed' || this.out.get(conn.peer)?.open) return;
+			this._openOutgoing(conn.peer);
+			if (++tries < 15 && !this.out.get(conn.peer)?.open) setTimeout(reopen, 3000);
+		};
+		if (conn.open) setTimeout(reopen, 50);
+		else conn.on('open', () => setTimeout(reopen, 50));
 	}
 
 	/** @param {string} from @param {any} msg */

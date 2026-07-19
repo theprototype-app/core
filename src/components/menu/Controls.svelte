@@ -32,9 +32,12 @@
 	// while a floating panel is clearly on screen). Clicking shows the panel in its
 	// current mode (docked tab or floating window) or hides it; docking/undocking is on
 	// each panel's own header buttons.
-	// The Node editor button represents the whole Flow-family (Node editor + its Flow
-	// Code / Animation tabs). It is "shown" when a docked flow tab is the visible dock
-	// panel, OR when the Node editor is a shown floating window.
+	// The Node editor button's behaviour follows the NODE EDITOR's own mode:
+	//  - Node editor DOCKED   -> the button toggles the docked flow group (its docked tabs).
+	//  - Node editor FLOATING -> the button only shows/hides that floating window and never
+	//    touches the docked Flow Code / Animation group.
+	// The icon is lit when a docked flow tab is the visible dock panel OR the Node editor
+	// floating window is shown.
 	const flowDockVisible = $derived(FLOW_FAMILY.includes($visibleDockKey ?? ''));
 	const flowFloatingShown = $derived(!$flowGraphClose && !$dockOccupants.flow?.present);
 	const flowShown = $derived(flowDockVisible || flowFloatingShown);
@@ -42,32 +45,41 @@
 	// remembers which flow-family views were open when the docked group was hidden
 	let flowDockSnapshot: any = null;
 	function toggleFlow() {
-		if (flowDockVisible) {
-			// hide the docked flow group -> close only the tabs that are actually DOCKED;
-			// leave undocked (floating) Flow Code / Animation windows open (the Node editor
-			// button controls the dock, not those separate floating windows)
-			flowDockSnapshot = {
-				flow: !!$dockOccupants.flow?.present,
-				flowcode: !!$dockOccupants.flowcode?.present,
-				animation: !!$dockOccupants.animation?.present
-			};
-			if (flowDockSnapshot.flow) flowGraphClose.set(true);
-			if (flowDockSnapshot.flowcode) flowCodeClose.set(true);
-			if (flowDockSnapshot.animation) animationClose.set(true);
-		} else if (flowFloatingShown) {
-			flowGraphClose.set(true); // a floating Node editor is shown -> hide it (Explorer untouched)
-		} else {
-			// hidden -> show: restore the hidden docked group if any, else open the Node editor
-			const snap = flowDockSnapshot;
-			if (snap && (snap.flow || snap.flowcode || snap.animation)) {
-				if (snap.flow) flowGraphClose.set(false);
-				if (snap.flowcode) flowCodeClose.set(false);
-				if (snap.animation) animationClose.set(false);
+		const open = !$flowGraphClose;
+		const docked = !!$dockOccupants.flow?.present; // Node editor docked AND open
+		if (open && !docked) {
+			flowGraphClose.set(true); // FLOATING Node editor is shown -> hide only its window
+			return;
+		}
+		if (docked) {
+			if (flowDockVisible) {
+				// docked group is on screen -> hide only the tabs that are actually DOCKED
+				// (leave undocked/floating Flow Code / Animation windows open)
+				flowDockSnapshot = {
+					flow: true,
+					flowcode: !!$dockOccupants.flowcode?.present,
+					animation: !!$dockOccupants.animation?.present
+				};
+				flowGraphClose.set(true);
+				if (flowDockSnapshot.flowcode) flowCodeClose.set(true);
+				if (flowDockSnapshot.animation) animationClose.set(true);
 			} else {
-				flowGraphClose.set(false);
+				activateDock('flow'); // docked but hidden (Explorer covering) -> bring the dock back
 			}
+			return;
+		}
+		// Node editor is CLOSED -> show it in its last mode
+		const wasDocked = typeof localStorage === 'undefined' || localStorage.getItem('flowDocked') !== 'false';
+		const snap = flowDockSnapshot;
+		if (snap && (snap.flow || snap.flowcode || snap.animation)) {
+			if (snap.flow) flowGraphClose.set(false);
+			if (snap.flowcode) flowCodeClose.set(false);
+			if (snap.animation) animationClose.set(false);
 			flowDockSnapshot = null;
-			activateDock('flow'); // show the flow dock (closes a DOCKED Explorer, per the dock rule)
+			activateDock('flow');
+		} else {
+			flowGraphClose.set(false);
+			if (wasDocked) activateDock('flow'); // docked -> show as the dock tab; floating -> leave the dock alone
 		}
 	}
 	function toggleExplorer() {

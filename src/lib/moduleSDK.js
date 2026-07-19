@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObject } from '../stores/sceneStore';
 import { peers, showToast, modulesOpen } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
@@ -68,9 +68,11 @@ const stateSyncs = {};
 // frame task polls them; the fallbacks cover the first few frames.
 /** @type {any} */ let inputRuntimeRef = null;
 /** @type {any} */ let physicsRef = null;
+/** @type {any} */ let possessRef = null;
 if (typeof window !== 'undefined') {
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
 	import('./physics').then((m) => (physicsRef = m));
+	import('./possess').then((m) => (possessRef = m));
 }
 function inputApi() {
 	return (
@@ -245,6 +247,23 @@ function makeApi(moduleId) {
 				physicsApi()?.setJointMotor(jointId, vel, maxForce) ?? false,
 			/** the replicated joint defs @returns {Promise<any[]>} */
 			joints: () => import('./joints').then((m) => m.jointsSnapshot())
+		},
+		/**
+		 * Possess an object: WASD/arrows or the VR left stick drive it (tank
+		 * controls) with a follow camera; Esc releases. Possessing selects it
+		 * (selection = lock), suspends its flow effects and records ONE undo
+		 * entry on release. @param {string} uuid
+		 * @param {{camera?: 'chase'|'orbit'|'none', speed?: number, turnSpeed?: number}=} opts
+		 */
+		possess(uuid, opts) {
+			return possessRef?.possess(uuid, opts) ?? false;
+		},
+		releasePossess() {
+			possessRef?.release();
+		},
+		/** the currently selected object's uuid (undefined when none) */
+		selectedUuid() {
+			return /** @type {any} */ (get(selectedObject))?.uuid;
 		},
 		scene: () => get(globalScene),
 		objectsGroup: () => get(objectsGroup),

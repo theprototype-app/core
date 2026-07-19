@@ -7,5 +7,6 @@ import button from './button/module.js';
 import dungeon from './dungeon/module.js';
 import piano from './piano/module.js';
 import pong from './pong/module.js';
+import avatar from './avatar/module.js';
 
-export const coreModules = [hello, button, dungeon, piano, pong];
+export const coreModules = [hello, button, dungeon, piano, pong, avatar];

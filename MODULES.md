@@ -180,6 +180,17 @@ api.physics.isInitiator();              // true while THIS peer runs the sim
 api.physics.applyImpulse(uuid, [0, 5, 0]); // push a dynamic body (initiator-only)
 ```
 
+### Possess (K-D)
+
+```js
+// drive any object with WASD/arrows or the VR left stick (tank controls),
+// chase camera by default; Esc releases. Possessing SELECTS the object
+// (selection = lock), suspends its flow effects, and records ONE undo entry
+// on release. Movement replicates as plain throttled moves.
+api.possess(api.selectedUuid(), { camera: 'chase' }); // 'chase'|'orbit'|'none'
+api.releasePossess();
+```
+
 ### Misc
 
 ```js

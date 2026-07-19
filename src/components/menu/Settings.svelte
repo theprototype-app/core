@@ -514,6 +514,7 @@
 						<ThemedSelect
 							id="shadow-quality"
 							items={[
+								{ value: 'off', name: 'Off' },
 								{ value: 'low', name: 'Low' },
 								{ value: 'medium', name: 'Medium' },
 								{ value: 'high', name: 'High' }
@@ -521,7 +522,7 @@
 							bind:value={$shadowQuality}
 						/>
 					</p>
-					<p class={middlecoverDescription}><span class="font-semibold">Shadow quality</span> — caps every light's shadow map size on THIS machine (per-light sizes still replicate)</p>
+					<p class={middlecoverDescription}><span class="font-semibold">Shadow quality</span> — caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)</p>
 				</div>
 				<div class="flex">
 					<p class={middlecoverName + ' gap-1'}>

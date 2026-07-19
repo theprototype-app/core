@@ -104,6 +104,24 @@ export function createLight(command, uuid) {
     }       
     if (light){
         fixLight.set(false);
+        // Directional/Spot cast shadows by default (V-1); Point stays opt-in
+        // (6-face cube-map cost). Deterministic: the same /light command runs
+        // on every peer, so shadow flags match without extra sync.
+        if (light.isDirectionalLight || light.isSpotLight) {
+            light.castShadow = true;
+            if (light.isDirectionalLight && light.shadow) {
+                light.shadow.camera.left = -15;
+                light.shadow.camera.right = 15;
+                light.shadow.camera.top = 15;
+                light.shadow.camera.bottom = -15;
+                light.shadow.camera.far = 80;
+                light.shadow.camera.updateProjectionMatrix();
+            }
+            if (light.shadow) {
+                light.shadow.bias = -0.0002;
+                light.shadow.normalBias = 0.02;
+            }
+        }
         if (uuid) light.uuid = uuid
         sceneObjects.add(light);
         //Trigger reactivity for UI list of objects

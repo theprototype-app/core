@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, globalScene, globalRenderer } from '../stores/sceneStore';
 
 // Light parameter registry (phase 79): type-specific settings the Inspector
 // renders (color/intensity/visible are common rows it already has). Values
@@ -30,8 +30,9 @@ export const LIGHT_PARAMS = {
 export const SHADOW_TYPES = ['DirectionalLight', 'SpotLight', 'PointLight'];
 export const SHADOW_SIZES = [512, 1024, 2048];
 
-// global shadow quality (quiz: low/med/high cap) — a LOCAL render preference
-const QUALITY_CAPS = { low: 512, medium: 1024, high: 2048 };
+// global shadow quality (quiz: off/low/med/high cap) — a LOCAL render preference.
+// 'off' disables the renderer shadow map entirely (V-1 perf escape hatch).
+const QUALITY_CAPS = { off: 512, low: 512, medium: 1024, high: 2048 };
 export const shadowQuality = writable(
 	typeof localStorage !== 'undefined'
 		? localStorage.getItem('shadowQuality') ?? 'high'
@@ -41,14 +42,24 @@ export const shadowQuality = writable(
 /** the size a light's shadow map actually uses under the global cap
  * @param {number} wanted */
 export function cappedShadowSize(wanted) {
-	const cap = QUALITY_CAPS[/** @type {'low'|'medium'|'high'} */ (get(shadowQuality))] ?? 2048;
+	const cap = QUALITY_CAPS[/** @type {'off'|'low'|'medium'|'high'} */ (get(shadowQuality))] ?? 2048;
 	return Math.min(wanted || 1024, cap);
 }
 
-/** re-apply the cap to every shadow-casting light (on quality change) */
+/** re-apply the cap to every shadow-casting light (on quality change) —
+ * walks both objectsGroup and the scene-root environment rig, and toggles the
+ * renderer's shadow map on the 'off' setting */
 export function applyShadowQualityCap() {
-	const group = get(objectsGroup);
-	group?.traverse((/** @type {any} */ node) => {
+	const off = get(shadowQuality) === 'off';
+	/** @type {any} */
+	const renderer = get(globalRenderer);
+	if (renderer?.shadowMap) {
+		if (renderer.shadowMap.enabled === off) {
+			renderer.shadowMap.enabled = !off;
+			renderer.shadowMap.needsUpdate = true;
+		}
+	}
+	const apply = (/** @type {any} */ node) => {
 		if (!node.isLight || !node.shadow) return;
 		const wanted = node.userData.shadowMapSize ?? node.shadow.mapSize.x;
 		const size = cappedShadowSize(wanted);
@@ -57,7 +68,12 @@ export function applyShadowQualityCap() {
 			node.shadow.map?.dispose();
 			node.shadow.map = null;
 		}
-	});
+	};
+	get(objectsGroup)?.traverse(apply);
+	get(globalScene)?.getObjectByName('environment-root')?.traverse(apply);
+	// the shadow catcher's visibility depends on this pref — dynamic import
+	// keeps the module graph acyclic (environment imports lightParams)
+	import('./environment').then((m) => m.applyEnvironment());
 }
 
 /** set a light's WANTED shadow map size (the cap may reduce it locally)

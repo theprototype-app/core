@@ -234,6 +234,13 @@
 		});
 	}
 
+	// Cast toggle also stamps userData.shadow so the opt-out survives GLTF sync
+	// (the bare castShadow flag does not round-trip through GLTFExporter) — V-1
+	function setCastShadow() {
+		$selectedObject.userData.shadow = $selectedObject.castShadow ? undefined : false;
+		sendParam('castShadow');
+	}
+
 	function sendName() {
 		objectsGroup.update((value) => value); // refresh the object list
 		$peers.send({ type: 'name', name: $selectedObject.name, uuid: $selectedObject.uuid });
@@ -1200,7 +1207,7 @@
 
 					<p class="ui-section-label">Shadow</p>
 					<div class="flex gap-4 px-1">
-						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => sendParam('castShadow')}>
+						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => setCastShadow()}>
 							Cast
 						</Checkbox>
 						<Checkbox

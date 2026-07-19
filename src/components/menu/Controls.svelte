@@ -23,29 +23,29 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
-	import { visibleDockKey, bottomDockActive, activateDock } from '$lib/bottomDock';
+	import { visibleDockKey, bottomDockActive, activateDock, dockOccupants } from '$lib/bottomDock';
 	import { VRButton, XRButton } from '@threlte/xr'
 
-	// The bottom dock shows ONE panel. The Node editor (with Flow Code / Animation) is a
-	// Flow-family tab group; the Explorer is the separate, exclusive panel. A toolbar
-	// icon tints when its panel is the visible one. Clicking the Node editor button
-	// opens/shows it (activateDock closes the exclusive Explorer); clicking Explorer
-	// shows it (hiding the Flow tabs). Clicking a panel that is already showing closes it.
-	const flowVisible = $derived(!$flowGraphClose && $visibleDockKey !== 'explorer');
-	const explorerVisible = $derived(!$explorerClose && $visibleDockKey === 'explorer');
+	// A panel is "shown" when it is open AND either the visible dock tab OR floating
+	// (floating = open but not the docked occupant). The toolbar icon tints whenever its
+	// panel is shown — docked OR as a floating window (this fixes the icon going dark
+	// while a floating panel is clearly on screen). Clicking shows the panel in its
+	// current mode (docked tab or floating window) or hides it; docking/undocking is on
+	// each panel's own header buttons.
+	const flowShown = $derived(!$flowGraphClose && ($visibleDockKey === 'flow' || !$dockOccupants.flow?.present));
+	const explorerShown = $derived(!$explorerClose && ($visibleDockKey === 'explorer' || !$dockOccupants.explorer?.present));
 	function toggleFlow() {
-		if ($visibleDockKey === 'flow') flowGraphClose.set(true); // showing Node editor -> close
-		else if (!$flowGraphClose) activateDock('flow'); // open but hidden -> switch to it
+		if (flowShown) flowGraphClose.set(true); // shown (docked or floating) -> hide
 		else {
-			flowGraphClose.set(false); // closed -> open + show (closes the Explorer)
-			activateDock('flow');
+			flowGraphClose.set(false); // hidden -> show it in its last mode
+			activateDock('flow'); // if docked, make it the visible tab (no-op if floating)
 		}
 	}
 	function toggleExplorer() {
-		if (explorerVisible) explorerClose.set(true);
+		if (explorerShown) explorerClose.set(true); // shown (docked or floating) -> hide
 		else {
-			explorerClose.set(false);
-			bottomDockActive.set('explorer'); // show the Explorer (hides the Flow tabs)
+			explorerClose.set(false); // hidden -> show it in its last mode
+			bottomDockActive.set('explorer'); // if docked, make it the visible panel
 		}
 	}
 
@@ -444,7 +444,7 @@
 		title="Node editor (N)"
 		on:click={toggleFlow}
 	>
-		<i class={'fas fa-circle-nodes ' + (flowVisible ? ICON_ON : ICON_OFF)}></i>
+		<i class={'fas fa-circle-nodes ' + (flowShown ? ICON_ON : ICON_OFF)}></i>
 	</p>
 	<p
 		class={classActive + ' rounded-r-full'}
@@ -452,7 +452,7 @@
 		title="Explorer"
 		on:click={toggleExplorer}
 	>
-		<i class={'fas fa-folder-open ' + (explorerVisible ? ICON_ON : ICON_OFF)}></i>
+		<i class={'fas fa-folder-open ' + (explorerShown ? ICON_ON : ICON_OFF)}></i>
 	</p>
 </BottomNav>
 

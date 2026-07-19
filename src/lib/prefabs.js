@@ -85,6 +85,42 @@ export async function savePrefab(uuid, name) {
 	return entry;
 }
 
+/** Save a MULTI-selection as ONE prefab: clone every member (baking world
+ * transform so layout is preserved) into a temp group, snapshot that (U-2).
+ * @param {string[]} uuids @param {string=} name */
+export async function savePrefabSelection(uuids, name) {
+	if (!uuids || uuids.length <= 1) return savePrefab(uuids?.[0], name);
+	const group = get(objectsGroup);
+	const holder = new THREE.Group();
+	holder.name = name || 'Group';
+	for (const uuid of uuids) {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		if (!object) continue;
+		const clone = object.clone(true);
+		object.updateWorldMatrix(true, false);
+		clone.matrix.copy(object.matrixWorld);
+		clone.matrix.decompose(clone.position, clone.quaternion, clone.scale);
+		holder.add(clone);
+	}
+	if (!holder.children.length) return null;
+	const element = holder.toJSON();
+	if (JSON.stringify(element).length > 5_000_000) {
+		showToast('Selection is too large for a prefab (>5 MB)');
+		return null;
+	}
+	const entry = {
+		id: crypto.randomUUID(),
+		name: holder.name,
+		createdAt: Date.now(),
+		thumbnail: renderThumbnail(element),
+		element
+	};
+	prefabs.update((list) => [...list, entry]);
+	await persist();
+	showToast('Prefab saved to your library');
+	return entry;
+}
+
 /** Add a prefab instance to the scene (fresh uuids), replicated + undoable.
  * @param {any} prefab @param {any=} position optional spawn point (group-local) */
 export function instantiatePrefab(prefab, position) {

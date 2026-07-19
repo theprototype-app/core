@@ -69,6 +69,25 @@ export function pingObject(uuid) {
 	sendPing(top);
 }
 
+/** Ping the top-center of a SET's union bounds (multi-select menu). @param {string[]} uuids */
+export function pingObjects(uuids) {
+	if (!uuids || uuids.length <= 1) return pingObject(uuids?.[0]);
+	const group = /** @type {any} */ (get(objectsGroup));
+	const box = new THREE.Box3();
+	let any = false;
+	for (const uuid of uuids) {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		if (object) {
+			box.expandByObject(object);
+			any = true;
+		}
+	}
+	if (!any) return;
+	const top = box.getCenter(new THREE.Vector3());
+	top.y = box.max.y;
+	sendPing(top);
+}
+
 /** Remote ping @param {any} data */
 export function applyPing(data) {
 	addPing({

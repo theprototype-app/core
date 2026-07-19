@@ -7,6 +7,8 @@
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
+	import { myHandModel, setMyHandModel } from '$lib/handModels';
+	import { explorerItems } from '$lib/explorer';
 	import { pingColor, pingSound } from '$lib/ping';
 	import { PING_SOUNDS, playPing } from '$lib/pingAudio';
 	import {
@@ -406,11 +408,28 @@
 							value={$peerHandStyle}
 							on:change={(e: any) => peerHandStyle.set(e.target.value)}
 						>
+							<option value="model">Model</option>
 							<option value="hands">Hands</option>
 							<option value="spheres">Spheres</option>
 						</select>&nbsp;Peer hand style
 					</p>
-					<p class={middlecoverDescription}>How hand-tracked peers render for you — cuboid-bone hands or joint spheres (local preference)</p>
+					<p class={middlecoverDescription}>How hand-tracked peers render for you — rounded capsule hands, cuboid bones or joint spheres (local preference)</p>
+				</div>
+				<div class="flex setting-row">
+					<p class={middlecoverName}>
+						<select
+							id="my-hand-model"
+							class="rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+							value={$myHandModel}
+							on:change={(e: any) => setMyHandModel(e.target.value)}
+						>
+							<option value="">Default</option>
+							{#each $explorerItems.filter((i: any) => i.kind === 'object') as item (item.id)}
+								<option value={item.hash}>{item.name}</option>
+							{/each}
+						</select>&nbsp;My hand model
+					</p>
+					<p class={middlecoverDescription}><span class="font-semibold">Custom hands (identity)</span> — a GLB from your Explorer library that OTHER peers see as your hands in VR (bytes push automatically; renders rigid at the wrist)</p>
 				</div>
 				<div class="flex setting-row">
 					<p class={middlecoverName}>

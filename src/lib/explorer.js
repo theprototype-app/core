@@ -270,6 +270,13 @@ export async function addItemFromBytes(buffer, name, folderId = null) {
 	if (existing) return existing;
 	const kind = kindOf(name) ?? 'text';
 	const blob = new Blob([buffer]);
+	// the thumbnail is DECORATIVE — never let a wedged loader/renderer block
+	// storing the bytes (a hung GLB parse used to silently swallow shared
+	// assets on the receiving peer, R-3); the card falls back to an icon
+	const thumbnail = await Promise.race([
+		thumbnailFor(blob, name, kind),
+		new Promise((resolve) => setTimeout(() => resolve(null), 4000))
+	]);
 	const item = {
 		id: crypto.randomUUID(),
 		name,
@@ -277,7 +284,7 @@ export async function addItemFromBytes(buffer, name, folderId = null) {
 		folderId,
 		size: buffer.byteLength,
 		hash,
-		thumbnail: await thumbnailFor(blob, name, kind),
+		thumbnail,
 		createdAt: Date.now()
 	};
 	await idbPut(BLOB_KEY + item.id, blob);

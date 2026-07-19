@@ -771,6 +771,19 @@ export function handBoneSegments(flat) {
 	return out;
 }
 
+/** R-3 'model' hand style: the same bones as handBoneSegments but with
+ * per-bone RADII (palm metacarpals thick, fingertips thin) for rounded capsule
+ * rendering — reads as a hand rather than a wireframe. Pure. @param {number[]} flat */
+export function handModelSegments(flat) {
+	const segments = handBoneSegments(flat);
+	return segments.map((segment, index) => {
+		const [a, b] = HAND_BONES[index];
+		const fromWrist = a === 0; // metacarpal
+		const isTip = [4, 9, 14, 19, 24].includes(b);
+		return { ...segment, r: fromWrist ? 0.011 : isTip ? 0.006 : 0.008 };
+	});
+}
+
 // ---- B2.4: pinch-HOLD on the menu hand toggles the radial (hands have no B/Y) ----
 const pinchStartAt = { left: 0, right: 0 };
 /** ms the pinch must be held to toggle the menu (a quick pinch = native select) */
@@ -2270,8 +2283,9 @@ export function executeVRMenuAction(name) {
 			vrTargetHz.set(next);
 			applyVRFrameRate();
 		} else if (key === 'handstyle') {
-			// B2.3: how hand-tracked peers render locally
-			peerHandStyle.set(get(peerHandStyle) === 'hands' ? 'spheres' : 'hands');
+			// B2.3/R-3: how hand-tracked peers render locally (3-way cycle)
+			const styles = ['model', 'hands', 'spheres'];
+			peerHandStyle.set(styles[(styles.indexOf(get(peerHandStyle)) + 1) % styles.length]);
 		} else if (key === 'passthrough') {
 			// WebXR can't hot-swap session modes — applies on the next VR entry
 			const next = !get(vrPassthrough);

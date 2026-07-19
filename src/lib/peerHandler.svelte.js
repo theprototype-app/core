@@ -18,6 +18,7 @@ import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate, physicsExternalMove } from '$lib/physics';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
+import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
@@ -252,6 +253,8 @@ export class PeerConnection {
 					applyJointsSnapshot(data.joints);
 				} else if(data.type == 'getjoints') {
 					sendJoints(data.sender);
+				} else if(data.type == 'handmodel') {
+					applyHandModel(data);
 				} else if(data.type == 'environment') {
 					applyRemoteEnvironment(data);
 				} else if(data.type == 'music') {
@@ -310,6 +313,7 @@ export class PeerConnection {
 				} else if(data.type == 'disconnected') {
 					handleDisconnected(data.peerId);
 					dropPeerEnvPresets(data.peerId);
+					dropPeerHandModel(data.peerId);
 				} else if(data.type == 'getnodes') {
 					deferUntilShareChoice('nodes', data.sender);
 				} else if(data.type == 'nodes') {
@@ -398,6 +402,7 @@ export class PeerConnection {
 		conn.send({type: 'modules', versions: moduleVersions()})
 		conn.send(environmentState())
 		conn.send(musicState())
+		conn.send(handModelState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
@@ -501,6 +506,7 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
 		dropPeerEnvPresets(peerId);
+		dropPeerHandModel(peerId);
 		checkLocks();
 	}
 

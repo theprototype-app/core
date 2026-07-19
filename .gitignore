@@ -26,3 +26,6 @@ certs/localhost.key
 
 # Libraries
 static/library
+
+# Maintainer planning area (never published; public docs live in theprototype-docs)
+/docs/

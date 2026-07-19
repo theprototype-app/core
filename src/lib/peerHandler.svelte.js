@@ -8,7 +8,8 @@ import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs }
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
 import { applyMeshGeo } from '$lib/faceEdit';
-import { initVoiceChat, voicePeerConnected } from '$lib/voiceChat';
+import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
+import { resolvePeerOptions } from '$lib/peerServer';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
@@ -49,6 +50,10 @@ userdata.subscribe(value => { users = value });
 export class PeerConnection {
 	constructor(id, updateIdFn) {
 		this.updateIdFn = updateIdFn;
+		this.myId = id;
+		this.reconnectAttempts = 0;
+		this.hasOpened = false;   // the signaling link has opened at least once
+		this.didFallback = false; // we've already switched to the public cloud
 
 		/** @type {Record<string, any>} outgoing DataConnections, keyed by peer id */
 		this.connections = {};
@@ -57,20 +62,33 @@ export class PeerConnection {
 		 * 'disconnected' teardown; the error handler already messaged the user */
 		this.openedPeers = new Set();
 
-		const regex = /(\.io|\.app)$/i;
-		if (!regex.test(location.hostname)) {
-		this.peer = new Peer(id, {
-			secure: true,
-			host: 'localhost',
-			port: 9001
-		});} else {
-			this.peer = new Peer(id)
-		}
+		// A non-production hostname (localhost etc.) means the local dev signaling
+		// server; production consults the peer-server Settings (default self-hosted
+		// with public fallback / user's custom server / public cloud).
+		const isLocalDev = !/(\.io|\.app)$/i.test(location.hostname);
 
-		initVoiceChat(this);
+		const createPeerForMode = (/** @type {boolean} */ forcePublic) => {
+			const { options, canFallback } = resolvePeerOptions({ isLocalDev, forcePublic });
+			this.canFallback = canFallback;
+			this.peer = new Peer(this.myId, options);
+		};
 
+		// The pinned self-hosted server never opened -> rebuild against the public
+		// PeerJS cloud and re-wire. Default mode only; custom/public never fall back.
+		const fallbackToPublic = () => {
+			this.didFallback = true;
+			this.canFallback = false;
+			showToast('Your peer server is unreachable - switching to the public PeerJS server.');
+			try { this.peer.destroy(); } catch (e) { /* already gone */ }
+			createPeerForMode(true);
+			attachVoiceToPeer(this); // rebind the incoming-call handler to the new peer
+			wire();
+		};
+
+		const wire = () => {
 		this.peer.on('open', (id) => {
 			console.log(id);
+			this.hasOpened = true;
 			this.reconnectAttempts = 0; // a fresh/re-established server link resets the backoff
 			if (this.updateIdFn) this.updateIdFn(id);
 			if (!window.location.hash.slice(1)) return;
@@ -111,6 +129,13 @@ export class PeerConnection {
 		});
 		this.peer.on('error', (err) => {
 			console.log('peer error: ' + err.type, err);
+			// Pinned self-hosted server never opened -> retry on the public cloud
+			// (default mode only; custom/public keep canFallback false).
+			if (!this.hasOpened && this.canFallback && !this.didFallback &&
+				['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
+				fallbackToPublic();
+				return;
+			}
 			if (err.type === 'peer-unavailable') {
 				showToast('Peer is unreachable. Check the ID and ask them to stay online.');
 			} else if (err.type === 'unavailable-id') {
@@ -123,6 +148,11 @@ export class PeerConnection {
 		});
 
 		this.peer.on('connection', handleConnection.bind(this));
+		};
+
+		createPeerForMode(false);
+		initVoiceChat(this);
+		wire();
 
 		function handleConnection(conn) {
 

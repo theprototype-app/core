@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Chat from './menu/Chat.svelte';
 	import AiAssistant from './menu/AiAssistant.svelte';
+	import MeshGenModal from './menu/MeshGenModal.svelte';
+	import MeshJobsCard from './menu/MeshJobsCard.svelte';
 	import Toasts from './menu/Toasts.svelte';
 	import Connect from './menu/Connect.svelte';
 	import Controls from './menu/Controls.svelte';
@@ -27,6 +29,8 @@
 
 <Chat />
 <AiAssistant />
+<MeshGenModal />
+<MeshJobsCard />
 
 <div class={$isLocked ? 'hidden' : ''}>
 <News />

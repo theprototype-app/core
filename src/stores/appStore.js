@@ -25,6 +25,9 @@ export const chatHidden = writable('hidden');
 export const aiAssistantHidden = writable('hidden');
 // Quick prompt pill — toggled by the backquote shortcut; session-only (not persisted).
 export const aiPromptBarOpen = writable(false);
+// Mesh-generation modal (roadmap #11): { position: number[]|null } when open, else null.
+/** @type {import('svelte/store').Writable<any>} */
+export const meshGenModalOpen = writable(null);
 export const libraryClose = writable(true);
 export const userdata = writable([]);
 export const username = writable(null);

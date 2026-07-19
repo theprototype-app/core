@@ -11,6 +11,7 @@ import {
 } from '$lib/objectActions';
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
 import { notifyExternalMove } from '$lib/flowRuntime';
+import { meshGenReady } from './meshProviders.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -326,6 +327,22 @@ export async function executeAiTool(name, args) {
 				return { cleared: count };
 			}
 
+			case 'generate_mesh': {
+				// LONG tool: generation takes minutes, so we DON'T block the chat loop.
+				// Kick off the job and return immediately; the job runner places +
+				// replicates the mesh when it lands (a progress card shows status).
+				const prompt = String(args?.prompt || '').trim();
+				if (!prompt) return { error: 'prompt required' };
+				if (!meshGenReady()) return { error: 'no mesh-generation provider is configured (Settings -> AI -> Mesh generation)' };
+				import('$lib/ai/meshJobs')
+					.then((m) => m.generateMesh({ prompt, name: args?.name, position: args?.position }))
+					.catch(() => {});
+				return {
+					started: true,
+					note: 'Generating a 3D mesh from "' + prompt.slice(0, 60) + '". It will appear in the scene in ~1-3 minutes; a progress card shows status. Do not call generate_mesh again for the same request.'
+				};
+			}
+
 			default:
 				return { error: 'unknown tool: ' + name };
 		}
@@ -479,8 +496,37 @@ export const AI_TOOLS = [
 	}
 ];
 
+/** The generate_mesh tool — only offered when a mesh provider is configured (it is
+ * slow + costs credits, so we don't tempt the model with it otherwise). */
+export const MESH_TOOL = {
+	type: 'function',
+	function: {
+		name: 'generate_mesh',
+		description:
+			'Generate a NEW custom 3D mesh from a text description when no primitive fits (an organic prop, a detailed object, a character). SLOW (~1-3 min) and async — it returns immediately and the mesh appears in the scene when ready. Use sparingly; prefer primitives for simple/blocky shapes.',
+		parameters: {
+			type: 'object',
+			properties: {
+				prompt: { type: 'string', description: 'what to generate, e.g. "a weathered wooden treasure chest"' },
+				name: { type: 'string' },
+				position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' }
+			},
+			required: ['prompt']
+		}
+	}
+};
+
+/** Toolset for the assistant — includes generate_mesh only when a mesh provider is
+ * ready. Call this per turn (readiness can change). @returns {any[]} */
+export function getAiTools() {
+	return meshGenReady() ? [...AI_TOOLS, MESH_TOOL] : AI_TOOLS;
+}
+
 /** Build the system prompt with scene-building guidance. @returns {string} */
 export function buildSystemPrompt() {
+	const meshLine = meshGenReady()
+		? '\nCustom meshes: for objects no primitive can approximate, call generate_mesh with a text\ndescription (slow, async — it appears shortly). Prefer primitives for simple shapes.'
+		: '';
 	return [
 		'You are a 3D scene-building assistant embedded in a collaborative prototyping app.',
 		'You build scenes by calling tools that create and arrange objects. Everything you do is',
@@ -497,6 +543,6 @@ export function buildSystemPrompt() {
 		'Workflow: call list_scene first when modifying or referring to existing objects, and always',
 		'use the real uuids it returns. Prefer batching many objects into ONE create_objects call',
 		'(e.g. a grid of boxes) instead of many calls. Give objects clear names. When done, reply',
-		'with a short plain-text summary of what you built — do not describe tool calls.'
+		'with a short plain-text summary of what you built — do not describe tool calls.' + meshLine
 	].join('\n');
 }

@@ -2,7 +2,7 @@ import { writable, get } from 'svelte/store';
 import { showToast, settingsOpen, settingsSection } from '../../stores/appStore.js';
 import { activeAiConfig, aiReady } from './providers.js';
 import { runChat, describeAiError } from './client.js';
-import { AI_TOOLS, executeAiTool, buildSystemPrompt, summarizeScene } from './tools.js';
+import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene } from './tools.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 
 // Conversation orchestrator (roadmap #10, A5). Module-level state so the chat
@@ -115,7 +115,7 @@ export async function runPrompt(text) {
 		const result = await runChat({
 			config,
 			messages: apiHistory,
-			tools: AI_TOOLS,
+			tools: getAiTools(),
 			executeTool: executeAiTool,
 			onDelta: (t) => streamInto(t),
 			onToolStart: (name, args) => push({ role: 'tool-status', content: toolStatusLabel(name, args) }),

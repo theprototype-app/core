@@ -20,6 +20,7 @@
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import MobileAddButton from './MobileAddButton.svelte';
+	import SimControls from './SimControls.svelte';
 	import { focusStack, raiseWindow, isTopWindow } from '$lib/windowFocus';
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
@@ -538,6 +539,9 @@
 <!-- mobile "+" (bottom-left): opens the same create/context menu as a right-click
      (own component so it can use onclick without mixing with this file's on:) -->
 <MobileAddButton />
+
+<!-- physics transport (P-A): play / pause / stop / reset, above the chat toggle -->
+<SimControls />
 
 <p
 	class={classActive + ' rounded-full bg-primary-600 font-medium dark:focus:ring-primary-800'}

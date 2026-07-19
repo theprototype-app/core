@@ -11,6 +11,7 @@
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
+	import { holdBody, releaseBody } from '$lib/physics';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
@@ -276,6 +277,8 @@
 			if (event.value) {
 				// animated objects: park at their base so the gizmo edits the base transform
 				suspendAnimation(object.uuid);
+				// P-A: mid-sim, a grabbed dynamic body follows the gizmo kinematically
+				holdBody(object.uuid);
 				dragStartState = {
 					uuid: object.uuid,
 					pos: object.position.toArray(),
@@ -284,6 +287,7 @@
 				};
 			} else if (dragStartState && dragStartState.uuid === object.uuid) {
 				resumeAnimation(object.uuid);
+				releaseBody(object.uuid); // back to dynamic + throw velocity
 				const after = {
 					pos: object.position.toArray(),
 					rot: object.rotation.toArray(),

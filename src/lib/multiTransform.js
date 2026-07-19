@@ -4,6 +4,9 @@ import { globalScene, objectsGroup, TControls, selectedObjects } from '../stores
 import { peers } from '../stores/appStore';
 import { recordTransformSet } from './history';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
+// physics is reached DYNAMICALLY: a static import would close the cycle
+// multiTransform -> physics -> lockControl -> objectActions -> multiTransform
+// (the vite-dev TDZ trap; Rollup tolerates it, the dev server 500s)
 
 // Multi-select transforms (phase 13). TransformControls drives ONE object, so
 // a hidden pivot Group sits at the selection centroid and the gizmo attaches
@@ -76,6 +79,8 @@ function onDraggingChanged(/** @type {any} */ event) {
 			.filter(Boolean)
 			.map((member) => {
 				suspendAnimation(member.uuid);
+				// P-A: mid-sim, grabbed dynamic bodies follow the pivot kinematically
+				import('./physics').then((m) => m.holdBody(member.uuid));
 				member.updateMatrixWorld(true);
 				return {
 					object: member,
@@ -93,6 +98,7 @@ function onDraggingChanged(/** @type {any} */ event) {
 		const set = [];
 		for (const entry of dragMembers) {
 			resumeAnimation(entry.object.uuid);
+			import('./physics').then((m) => m.releaseBody(entry.object.uuid));
 			const after = {
 				pos: entry.object.position.toArray(),
 				rot: entry.object.rotation.toArray(),

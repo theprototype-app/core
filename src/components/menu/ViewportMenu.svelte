@@ -3,7 +3,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { drawMode, toggleDrawMode } from '$lib/drawMode';
-	import { simulating, remoteSimulating, toggleSimulation } from '$lib/physics';
+	import { simulating, simPaused, remoteSimulating, toggleSimulation, pauseSimulation, resetSimulation } from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { measureMode, toggleMeasure } from '$lib/measure';
@@ -101,9 +101,22 @@
 					disabled: !!$remoteSimulating,
 					tooltip: $remoteSimulating
 						? nameOf($remoteSimulating) + ' is simulating'
-						: 'Objects wired to a Mass node fall and collide; stop leaves one undo step',
+						: 'Dynamic objects fall and collide; stop leaves one undo step (P)',
 					action: toggleSimulation
-				}
+				},
+				...($simulating
+					? [
+							{
+								label: $simPaused ? '▶ Resume simulation' : '⏸ Pause simulation',
+								action: () => pauseSimulation()
+							},
+							{
+								label: '↺ Reset simulation',
+								tooltip: 'Restore the initial layout (no undo entry)',
+								action: () => resetSimulation()
+							}
+						]
+					: [])
 			]
 		},
 		{

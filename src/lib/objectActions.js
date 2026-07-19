@@ -357,6 +357,13 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'visible', uuid: entry.uuid, visible: state.visible });
 	}
+	if ('physics' in state) {
+		// P-A: Inspector physics edits are undoable through the same kind
+		if (state.physics) object.userData.physics = state.physics;
+		else delete object.userData.physics;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'physics', uuid: entry.uuid, physics: state.physics });
+	}
 	objectsGroup.update((value) => value);
 	return true;
 });

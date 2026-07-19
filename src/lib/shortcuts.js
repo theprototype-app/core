@@ -181,6 +181,15 @@ export const shortcuts = [
 		action: () => recallBookmark(slot - 1)
 	})),
 	{
+		keys: 'P',
+		group: 'Scene',
+		label: 'Simulate physics (toggle)',
+		action: () => {
+			if (get(editingObject) || get(faceEditObject) || get(specatorMode)) return;
+			import('./physics').then((m) => m.toggleSimulation());
+		}
+	},
+	{
 		keys: 'V (hold)',
 		group: 'Voice',
 		label: 'Push to talk while the mic toggle is off'

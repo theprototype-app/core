@@ -352,6 +352,14 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'receiveShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.receiveShadow = data.receiveShadow;
+    } else if (data.parameter == 'physics') {
+        // P-A: userData.physics is the source of truth for the Inspector-set
+        // body params (mode/mass/restitution/friction/collider); null = cleared
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.physics) mesh.userData.physics = data.physics;
+            else delete mesh.userData.physics;
+        }
     } else if (data.parameter == 'renderOrder') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.renderOrder = data.renderOrder;

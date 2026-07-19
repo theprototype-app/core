@@ -22,6 +22,7 @@
 		switchMaterialType,
 		recordMaterialChange
 	} from '$lib/materialsHandler';
+	import { recordEntry } from '$lib/history';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
@@ -249,6 +250,19 @@
 	function setCastShadow() {
 		$selectedObject.userData.shadow = $selectedObject.castShadow ? undefined : false;
 		sendParam('castShadow');
+	}
+
+	// P-A: physics body params live on userData.physics (replicates free via
+	// object sync / GLTF extras / sessions); flow nodes override at sim start.
+	// Each edit replicates via objectParameters and records a props undo entry.
+	/** @param {any} patch */
+	function setPhysics(patch) {
+		const before = $selectedObject.userData.physics ? { ...$selectedObject.userData.physics } : null;
+		const next = { mode: 'auto', ...($selectedObject.userData.physics ?? {}), ...patch };
+		$selectedObject.userData.physics = next;
+		recordEntry({ kind: 'props', uuid: $selectedObject.uuid, before: { physics: before }, after: { physics: next } });
+		$peers.send({ type: 'objectParameters', parameter: 'physics', uuid: $selectedObject.uuid, physics: next });
+		selectedObject.update((v) => v);
 	}
 
 	function sendName() {
@@ -1282,6 +1296,47 @@
 							Receive
 						</Checkbox>
 					</div>
+				</Section>
+			{/if}
+
+			{#if !$selectedObject.isLight}
+				<Section label="Physics">
+					<div class="ui-row items-center gap-2">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Body</span>
+						<ThemedSelect
+							id="physics-mode"
+							items={[
+								{ value: 'auto', name: 'Auto (scenery)' },
+								{ value: 'static', name: 'Static' },
+								{ value: 'dynamic', name: 'Dynamic' }
+							]}
+							value={$selectedObject.userData.physics?.mode ?? 'auto'}
+							onchange={(/** @type {any} */ v) => setPhysics({ mode: v })}
+						/>
+					</div>
+					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
+						<SliderRow label="Mass" min={0.1} max={100} step={0.1} value={$selectedObject.userData.physics?.mass ?? 1}
+							onchange={(v) => setPhysics({ mass: v })} />
+					{/if}
+					<SliderRow label="Bounciness" min={0} max={1} step={0.05} value={$selectedObject.userData.physics?.restitution ?? 0.3}
+						onchange={(v) => setPhysics({ restitution: v })} />
+					<SliderRow label="Friction" min={0} max={2} step={0.05} value={$selectedObject.userData.physics?.friction ?? 0.5}
+						onchange={(v) => setPhysics({ friction: v })} />
+					<div class="ui-row items-center gap-2">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Collider</span>
+						<ThemedSelect
+							id="physics-collider"
+							items={[
+								{ value: 'box', name: 'Box' },
+								{ value: 'hull', name: 'Convex hull' }
+							]}
+							value={$selectedObject.userData.physics?.collider ?? 'box'}
+							onchange={(/** @type {any} */ v) => setPhysics({ collider: v })}
+						/>
+					</div>
+					<p class="mt-1 text-xs text-gray-400">
+						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
+					</p>
 				</Section>
 			{/if}
 		</div>

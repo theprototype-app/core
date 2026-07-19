@@ -654,7 +654,28 @@ function tick(now) {
 		}
 	});
 
+	// P-A: physics steps AFTER the animation pass in the SAME frame, so the
+	// order is deterministic: flow poses objects -> physics reads kinematic
+	// targets -> world.step() -> physics writes dynamic results. One slot (a
+	// dedicated hook, not a moduleFrameTask: those have no removal or ordering
+	// guarantee); physics sets it on sim start and clears it on stop.
+	if (postTick) {
+		try {
+			postTick(now);
+		} catch (error) {
+			console.log('post-tick hook failed', error);
+		}
+	}
+
 	requestAnimationFrame(tick);
+}
+
+/** @type {((now: number) => void) | null} */
+let postTick = null;
+
+/** Install/clear the single post-tick hook (physics). @param {((now: number) => void) | null} fn */
+export function setPostTick(fn) {
+	postTick = fn;
 }
 
 export function startFlowRuntime() {

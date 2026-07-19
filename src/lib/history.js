@@ -24,8 +24,8 @@ export function registerHistoryKind(kind, apply) {
 	kindHandlers[kind] = apply;
 }
 
-/** @type {import('svelte/store').Writable<any[]>} */
-const undoStack = writable([]);
+/** @type {import('svelte/store').Writable<any[]>} exported READ-ONLY (tests/debug) */
+export const undoStack = writable([]);
 /** @type {import('svelte/store').Writable<any[]>} */
 const redoStack = writable([]);
 

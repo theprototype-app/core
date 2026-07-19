@@ -147,6 +147,39 @@ api.registerStateSync({
 });
 ```
 
+### Input (K-C)
+
+```js
+// declare bindings so they LIST in Settings ▸ Shortcuts (display-only —
+// you read the keys yourself via input()/onInput)
+api.registerBindings([{ label: 'Drive forward', keys: 'W' }]);
+
+api.registerFrameTask(() => {
+	const { codes, axes } = api.input();  // codes: Set<'KeyW'...> (event.code),
+	if (codes.has('KeyW')) drive(1);      // axes: {lx,ly,rx,ry} = VR stick axes
+});
+api.onInput((kind, code) => {});        // 'down'/'up' events; returns unsubscribe
+
+// pause the HOST's use of an input scope while your module drives:
+//   'keys'       — WASD camera fly + play-mode movement
+//   'locomotion' — VR left-stick locomotion
+api.claimInput('keys');                 // ALWAYS release when your mode ends
+api.releaseInput('keys');
+```
+
+### Physics (P-A)
+
+All mutations are INITIATOR-ONLY — the peer that started the simulation steps
+the world (golden rule: authoritative, never mixed with deterministic). The
+blessed recipe for driven physics (pong's paddle pattern): every peer forwards
+its INPUT via `api.send({op:'drive', ...})` at ~20Hz, and only the peer where
+`api.physics.isInitiator()` is true applies it.
+
+```js
+api.physics.isInitiator();              // true while THIS peer runs the sim
+api.physics.applyImpulse(uuid, [0, 5, 0]); // push a dynamic body (initiator-only)
+```
+
 ### Misc
 
 ```js

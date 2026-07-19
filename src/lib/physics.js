@@ -552,6 +552,21 @@ export function resetSimulation() {
 	stopSimulation({ reset: true });
 }
 
+/** Whether THIS peer is the one stepping the world (initiator-authority). */
+export function isInitiator() {
+	return get(simulating);
+}
+
+/** Push a dynamic body (module SDK) — initiator-only, mid-sim.
+ * @param {string} uuid @param {number[]} impulse [x,y,z] */
+export function applyImpulse(uuid, impulse) {
+	if (!world || !get(simulating)) return false;
+	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic' && !e.hold);
+	if (!entry) return false;
+	entry.body.applyImpulse({ x: impulse[0] ?? 0, y: impulse[1] ?? 0, z: impulse[2] ?? 0 }, true);
+	return true;
+}
+
 /** @param {any} data */
 export function applySimulate(data) {
 	remoteSimulating.set(data.running ? data.peerId : null);

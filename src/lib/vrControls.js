@@ -113,6 +113,7 @@ import {
 import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing } from './ping';
+import { setVRAxes, setVRButtons } from './inputRuntime';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
@@ -2660,6 +2661,13 @@ export function updateVRControls() {
 		const aPressed = !!buttons[4]?.pressed;
 		if (source.handedness === 'right' && aPressed !== !!prev.a) setPttHeld(aPressed);
 		prev.a = aPressed;
+
+		// K-C: publish this hand's stick + trigger/squeeze into the SDK input
+		// layer (inputRuntime is store-only; this is the safe import direction)
+		if (source.handedness === 'left' || source.handedness === 'right') {
+			setVRAxes(source.handedness, source.gamepad.axes?.[2] ?? 0, source.gamepad.axes?.[3] ?? 0);
+			setVRButtons(source.handedness, !!buttons[0]?.pressed, !!buttons[1]?.pressed);
+		}
 
 		// squeeze grabs
 		const squeezePressed = !!buttons[1]?.pressed;

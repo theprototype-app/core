@@ -39,6 +39,20 @@ h.run(async () => {
 	h.check(merged.ok, 'both windows are present to merge');
 	h.check(merged.strip, 'dragging one window onto another forms a tab group with a tab strip');
 
+	// grouped Flow Code must still show its Apply/Reload buttons — they live in the
+	// content, below the strip, so the tab strip doesn't cover them
+	const fcButtons = await A.page.evaluate(() => {
+		const win = document.getElementById('flow-code-window');
+		const strip = document.querySelector('.tab-strip');
+		if (!win || !strip) return { ok: false };
+		const apply = [...win.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Apply');
+		if (!apply) return { ok: true, hasApply: false };
+		const ar = apply.getBoundingClientRect();
+		const sr = strip.getBoundingClientRect();
+		return { ok: true, hasApply: true, visible: ar.width > 0 && ar.height > 0, belowStrip: ar.top >= sr.bottom - 2 };
+	});
+	h.check(fcButtons.hasApply && fcButtons.visible && fcButtons.belowStrip, 'grouped Flow Code shows its Apply button in the content, below the tab strip (not hidden behind it)');
+
 	// move the group by dragging the strip background; the visible member must follow
 	const moved = await A.page.evaluate(async () => {
 		const strip = document.querySelector('.tab-strip');

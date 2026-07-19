@@ -14,6 +14,7 @@
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
+	import { tickAnimationPreview } from '$lib/animationPreview';
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
@@ -245,6 +246,7 @@
 		updateVRControls(); // also manages ray/hover visibility outside sessions
 		updateSpatialAudio(camera.current, scene); // voices follow avatars (throttled)
 		tickAnimatedMixers(); // imported clips run on the synced clock
+		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		updateLightHelpers();
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);

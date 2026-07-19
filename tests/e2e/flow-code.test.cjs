@@ -1,7 +1,7 @@
-// Roadmap #9: the Flow tab "+" adds views; "Flow Code" opens an editable JSON view
-// of the graph (ex-backlog). Verifies the "+" menu, the window opening, and that it
-// seeds from the live graph. (Apply round-trip is exercised manually — CodeMirror
-// auto-close makes raw-JSON typing unreliable in a headless test.)
+// Roadmap #9 + dock rework: the Flow tab "+" adds views; "Flow Code" opens an editable
+// JSON view of the graph as a DOCKED tab (starts docked). Verifies the "+" menu, the
+// docked view opening, and that it seeds from the live graph. (Apply round-trip is
+// exercised manually — CodeMirror auto-close makes raw-JSON typing unreliable headless.)
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -30,10 +30,13 @@ h.run(async () => {
 		i?.click();
 	});
 	await A.page.waitForTimeout(600);
-	const win = await A.page.evaluate(() => !!document.querySelector('#flow-code-window'));
-	h.check(win, 'clicking Flow Code opens the Flow Code window');
+	const win = await A.page.evaluate(() => {
+		const d = document.querySelector('#flow-code-dock');
+		return !!d && !d.classList.contains('hidden');
+	});
+	h.check(win, 'clicking Flow Code opens the Flow Code docked tab');
 
-	const seeded = await A.page.evaluate(() => (document.querySelector('#flow-code-window .cm-content')?.textContent || ''));
+	const seeded = await A.page.evaluate(() => (document.querySelector('#flow-code-dock .cm-content')?.textContent || ''));
 	h.check(seeded.includes('seedNode'), 'Flow Code seeds the current graph as JSON');
 	h.check(seeded.includes('"nodes"') && seeded.includes('"edges"'), 'the JSON has nodes + edges keys');
 

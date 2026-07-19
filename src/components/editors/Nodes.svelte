@@ -197,6 +197,18 @@
 		addNode(type, findNodeSpec(type)?.label ?? `${type} node`, position);
 	}
 
+	// Touch drag-to-place: the palette (Sidebar) drags a ghost and drops it here at a
+	// screen point; place the node there (mirrors onDrop, which touch can't trigger).
+	function addNodeAtScreen(type: string, clientX: number, clientY: number) {
+		const position = screenToFlowPosition({ x: clientX, y: clientY });
+		if (type.startsWith('customnode:')) {
+			const def = $customNodeDefs.find((d) => d.id === type.slice('customnode:'.length));
+			if (def) addNode('customnode', def.name, position, defDefaults(def));
+			return;
+		}
+		addNode(type, findNodeSpec(type)?.label ?? `${type} node`, position);
+	}
+
 	const onDragOver = (event: DragEvent) => {
 		event.preventDefault();
 		if (event.dataTransfer) {
@@ -463,7 +475,7 @@
 <div class="flex h-full w-full">
 	{#if paletteOpen}
 		<div class="h-full w-40 shrink-0 overflow-y-auto" style="order: {paletteSide === 'right' ? 3 : 1}">
-			<Sidebar onPick={addNodeAtCenter} />
+			<Sidebar onPick={addNodeAtCenter} onPlaceAt={addNodeAtScreen} />
 		</div>
 	{/if}
 	<!-- palette collapse/side controls: notebook-tab buttons on the divider (82) -->

@@ -25,6 +25,9 @@
 	   and toasts (1200) so it is never opened "behind" them. Modals launched from it
 	   close the menu, so they don't need to out-rank it. */
 	--z-menu: 1300;
+	/* how much of the bottom the Controls pill + HUD buttons occupy; side drawers
+	   inset ABOVE it on narrow screens (same idea as --bottom-inset for the dock). */
+	--controls-inset: 0px;
 }
 
 /* Flowbite hardcodes the modal dialog at z-50 and its backdrop at z-40 — both
@@ -58,6 +61,19 @@
 	}
 	#mic-button {
 		bottom: 122px;
+	}
+}
+/* side drawers (Scene/Object settings) inset above the Controls footprint on narrow
+   screens so the pill/HUD buttons never cover them — the ≤600 reflow above stacks
+   the buttons taller, so its inset is larger. (≤600 comes after ≤820 so it wins.) */
+@media (pointer: coarse), (max-width: 820px) {
+	:root {
+		--controls-inset: 76px;
+	}
+}
+@media (max-width: 600px) {
+	:root {
+		--controls-inset: 176px;
 	}
 }
 

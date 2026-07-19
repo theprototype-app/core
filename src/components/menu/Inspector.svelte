@@ -64,7 +64,8 @@
 		objectsGroup,
 		selectedObject,
 		backgroundColor,
-		globalCamera
+		globalCamera,
+		viewMode
 	} from '../../stores/sceneStore';
 	import { peers, inspectorClose, inspectorKind, showToast } from '../../stores/appStore.js';
 
@@ -600,6 +601,21 @@
 			</Section>
 
 			<Section label="View">
+				<p class="ui-section-label">Viewport — this device</p>
+				<div id="view-mode-switch" class="flex flex-wrap gap-1">
+					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
+						<button
+							class={'ui-chip ' +
+								($viewMode === mode ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => viewMode.set(mode)}
+						>
+							{label}
+						</button>
+					{/each}
+				</div>
+				<p class="mb-1 text-xs text-gray-400">
+					Local render mode (ambient occlusion + wireframe are desktop-only; not shown to peers).
+				</p>
 				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
 				<SliderRow
 					label="Camera FOV"

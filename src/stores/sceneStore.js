@@ -125,6 +125,14 @@ export const peerHandStyle = writable(
 peerHandStyle.subscribe((v) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('peerHandStyle', String(v));
 });
+// Viewport render mode (V-2): LOCAL per-viewer, never replicated —
+// 'shaded' | 'shaded-ao' (default) | 'wireframe'
+export const viewMode = writable(
+	typeof localStorage !== 'undefined' ? localStorage.getItem('viewMode') || 'shaded-ao' : 'shaded-ao'
+);
+viewMode.subscribe((v) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('viewMode', String(v));
+});
 // VR snap MODE (156): 'off' | 'grid' | 'surface' | 'rotation'
 export const vrSnapMode = writable(
 	typeof localStorage !== 'undefined' ? localStorage.getItem('vrSnapMode') || 'off' : 'off'

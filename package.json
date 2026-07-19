@@ -45,6 +45,7 @@
 		"codemirror": "^6.0.2",
 		"fflate": "^0.8.3",
 		"invert-color": "^2.0.0",
+		"n8ao": "^2.0.0",
 		"peerjs": "^1.5.4",
 		"postprocessing": "^6.36.4",
 		"svelte-hamburgers": "^5.0.0",

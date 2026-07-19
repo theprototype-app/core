@@ -6,6 +6,7 @@ import { sceneRadius } from './sceneBounds';
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
 import { cappedShadowSize, shadowQuality } from './lightParams';
+import { wireframeActive } from './viewMode';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 
 // Environment v2 (phase 70). Everything environmental lives under ONE group at
@@ -246,7 +247,7 @@ export function applyEnvironment() {
 	const shadowsOff = get(shadowQuality) === 'off';
 	const catcher = shadowCatcher(scene, !!(preset.sun && !shadowsOff));
 	if (catcher) {
-		catcher.visible = !!(preset.sun && !shadowsOff) && !get(passthroughActive);
+		catcher.visible = !!(preset.sun && !shadowsOff) && !get(passthroughActive) && !wireframeActive();
 		const span = Math.max(60, sceneRadius() * 2);
 		catcher.scale.set(span, span, span);
 	}

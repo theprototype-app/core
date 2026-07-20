@@ -3,7 +3,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showToast } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast } from '../../stores/appStore.js';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
@@ -53,6 +53,8 @@
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
 	let aiExpanded = false;
+	let sceneExpanded = false;
+	let connectionExpanded = false;
 
 	// AI provider add/edit form state (roadmap #10). Legacy-mode file — plain lets.
 	let aiFormOpen = false;
@@ -240,6 +242,8 @@
 		shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 		shortcutsExpanded = $settingsSection === 'shortcuts';
 		aiExpanded = $settingsSection === 'ai';
+		sceneExpanded = $settingsSection === 'scene';
+		connectionExpanded = $settingsSection === 'connection';
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
@@ -462,7 +466,7 @@
 					<p class={bottomCoverDescription}>Grabbed VR menus/panels snap back to their default spots on the controllers (111: hold the other grip on one to re-place it)</p>
 				</div>
 			</AccordionItem>
-			<AccordionItem>
+			<AccordionItem bind:open={sceneExpanded}>
 				<svelte:fragment slot="header">Scene</svelte:fragment>
 				<div class="flex setting-row">
 					<p class={topcoverName}>
@@ -523,6 +527,12 @@
 						>
 					</p>
 					<p class={middlecoverDescription}>Display grid on floor</p>
+				</div>
+				<div class="flex setting-row">
+					<p class={middlecoverName}>
+						<Checkbox bind:checked={$showSimControls}>&nbsp;Show simulation controls</Checkbox>
+					</p>
+					<p class={middlecoverDescription}>Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation</p>
 				</div>
 				<div class="flex setting-row">
 					<p class={middlecoverName}>
@@ -739,7 +749,7 @@
 					</p>
 				</div>
 			</AccordionItem>
-			<AccordionItem>
+			<AccordionItem bind:open={connectionExpanded}>
 				<svelte:fragment slot="header">Connection</svelte:fragment>
 				<div class="flex setting-row">
 					<p class={topcoverName}>

@@ -20,6 +20,7 @@
 	import Objects from './Objects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import MobileAddButton from './MobileAddButton.svelte';
+	import AiHudButton from './AiHudButton.svelte';
 	import SimControls from './SimControls.svelte';
 	import { focusStack, raiseWindow, isTopWindow } from '$lib/windowFocus';
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
@@ -539,6 +540,9 @@
 <!-- mobile "+" (bottom-left): opens the same create/context menu as a right-click
      (own component so it can use onclick without mixing with this file's on:) -->
 <MobileAddButton />
+
+<!-- A2: AI assistant button, bottom-left below the "+" (own component, onclick) -->
+<AiHudButton />
 
 <!-- physics transport (P-A): play / pause / stop / reset, above the chat toggle -->
 <SimControls />

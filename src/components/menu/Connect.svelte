@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { peers, userdata, waitingForApproval, pendingApprovals } from '../../stores/appStore'
+	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection } from '../../stores/appStore'
 	import { Input, Button } from 'flowbite-svelte';
 	import { onMount } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
@@ -20,6 +20,32 @@
 		const id = createPeer();
 
 		$peers = new PeerConnection(id, updateDisplayId);
+
+		// A7: nudge users running a local/self-hosted build (not on the official
+		// domain) to configure a peer server on first run — the public PeerJS cloud
+		// is fine for a quick try but not recommended for real use. Shown once.
+		try {
+			const isLocalVersion = !/(\.io|\.app)$/i.test(location.hostname);
+			const firstRun = !localStorage.getItem('peerServerConfig');
+			const seen = localStorage.getItem('localPeerNoticeSeen');
+			if (isLocalVersion && firstRun && !seen) {
+				localStorage.setItem('localPeerNoticeSeen', '1');
+				showToast(
+					'It looks like you are running a local build of theprototype. Configure a peer signaling server in Settings for reliable connections — the public PeerJS cloud is not recommended for real use.',
+					[
+						{
+							label: 'Open Settings',
+							action: () => {
+								settingsSection.set('connection');
+								settingsOpen.set(true);
+							}
+						}
+					]
+				);
+			}
+		} catch {
+			/* localStorage unavailable — skip the notice */
+		}
 	});
 
 	// Use the instance method to connect

@@ -11,12 +11,14 @@
 		resetSimulation
 	} from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
+	import { showSimControls } from '../../stores/appStore.js';
 
 	const btn =
 		'flex h-9 w-9 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg transition-colors hover:bg-gray-600';
 </script>
 
-<div id="sim-controls" class="fixed bottom-[70px] right-4 z-[30] flex flex-col gap-1.5">
+{#if $showSimControls}
+<div id="sim-controls" class="fixed bottom-[112px] right-4 z-[30] flex flex-col gap-1.5">
 	{#if $simulating}
 		<button id="sim-reset" class={btn} aria-label="Reset simulation" title="Reset — restore the initial layout" onclick={() => resetSimulation()}>
 			<i class="fas fa-rotate-left text-xs"></i>
@@ -42,3 +44,4 @@
 		</button>
 	{/if}
 </div>
+{/if}

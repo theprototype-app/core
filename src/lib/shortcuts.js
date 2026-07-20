@@ -8,7 +8,8 @@ import {
 	settingsSection,
 	specatorMode,
 	aiPromptBarOpen,
-	showToast
+	showToast,
+	showSimControls
 } from '../stores/appStore';
 import { aiReady } from './ai/providers';
 import { focusObject, duplicateSelection, requestDeleteSelection, setTransformMode } from './objectActions';
@@ -186,6 +187,21 @@ export const shortcuts = [
 		label: 'Simulate physics (toggle)',
 		action: () => {
 			if (get(editingObject) || get(faceEditObject) || get(specatorMode)) return;
+			// A3: the SimControls HUD is off by default; P still works, but the first
+			// time it's used while the HUD is hidden, point users at the setting so the
+			// transport (pause/stop/reset) is discoverable.
+			if (!get(showSimControls) && typeof localStorage !== 'undefined' && !localStorage.getItem('simHudHintSeen')) {
+				localStorage.setItem('simHudHintSeen', '1');
+				showToast('Simulation controls are hidden — enable them in Settings → Scene to show the pause/stop/reset buttons.', [
+					{
+						label: 'Open Settings',
+						action: () => {
+							settingsSection.set('scene');
+							settingsOpen.set(true);
+						}
+					}
+				]);
+			}
 			import('./physics').then((m) => m.toggleSimulation());
 		}
 	},

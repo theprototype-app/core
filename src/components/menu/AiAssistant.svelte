@@ -67,7 +67,7 @@
 {#if pillVisible}
 	<div
 		class="ai-pill ui-panel flex items-center gap-1.5 bg-gray-900/90 px-2 py-1.5 backdrop-blur"
-		style="position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bottom-inset, 0px) + 12px); z-index: var(--z-hud); width: min(560px, 92vw);"
+		style="position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bottom-inset, 0px) + 72px); z-index: var(--z-hud); width: min(560px, 92vw);"
 	>
 		<span class="pl-1 text-sm">✨</span>
 		<input
@@ -87,7 +87,6 @@
 		>
 			Send
 		</button>
-		<button class="ui-button-quiet shrink-0" title="Close (`)" onclick={() => aiPromptBarOpen.set(false)}>✕</button>
 	</div>
 {/if}
 

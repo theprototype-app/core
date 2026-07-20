@@ -22,7 +22,7 @@
 
 <button
 	id="mobile-add-button"
-	class="mobile-hud-btn fixed bottom-4 left-4 z-[30] flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg transition-colors hover:bg-gray-600"
+	class="mobile-hud-btn fixed bottom-[70px] left-4 z-[30] flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg transition-colors hover:bg-gray-600"
 	title="Add / context menu"
 	aria-label="Add object or open the context menu"
 	onclick={add}

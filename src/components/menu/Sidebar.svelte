@@ -54,6 +54,18 @@
 	}
 	let rerenderInput = $state(false);
 
+	// A6: opening the menu dismisses any open modal (Settings/Modules/Sessions) so
+	// the menu (top-most z-tier) is never stacked over — and blocking — a modal. The
+	// reverse (opening a modal from a menu row) already closes the menu.
+	function toggleMenu() {
+		if ($closeMenu) {
+			settingsOpen.set(false);
+			modulesOpen.set(false);
+			sessionsOpen.set(false);
+		}
+		closeMenu.update((value) => !value);
+	}
+
 	function clearScene() {
 		const count = $objectsGroup?.children.length ?? 0;
 		if (count === 0) {
@@ -81,7 +93,7 @@
 		: 'border-primary-500 ring-2 ring-primary-500/50'}"
 	style="height: 48px; width: 48px;"
 	title={$closeMenu ? 'Open menu' : 'Close menu'}
-	onclick={() => closeMenu.update((value) => !value)}
+	onclick={toggleMenu}
 >
 	<img src="logo.svg" alt="menu" class="h-9 w-9" />
 </button>

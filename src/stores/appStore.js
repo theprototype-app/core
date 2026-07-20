@@ -188,6 +188,16 @@ showEnvInList.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('showEnvInList', String(on));
 });
 
+// A3 (roadmap #13): show the physics simulation transport (SimControls HUD).
+// Default OFF — the standalone ▶/⏸/⏹ HUD confuses with the main play button in
+// Controls; the P shortcut still starts/stops the sim when this is hidden.
+export const showSimControls = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('showSimControls') === 'true'
+);
+showSimControls.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('showSimControls', String(on));
+});
+
 // N4: Explorer 3D model preview — a rotatable inline preview in Properties + a
 // popup on open. Global (all of Explorer), persisted; off by default.
 export const enable3dPreview = writable(

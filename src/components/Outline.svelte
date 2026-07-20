@@ -50,8 +50,14 @@
 	composer.addPass(new EffectPass(camera.current, outlineEffectLocked));
 	composer.addPass(new EffectPass(camera.current, outlineEffectSelected));
 	$effect(() => {
+		// B2: size the AO pass to the PHYSICAL drawing buffer. postprocessing's
+		// composer.setSize sizes each pass to width*devicePixelRatio; passing the
+		// LOGICAL CSS size here (the old code) under-sized the N8AO buffer on HiDPI
+		// displays, so its output was upsampled and read as a shifted "ghost" of the
+		// shading offset from the objects. Match the composer's physical resolution.
+		const dpr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
 		composer.setSize($size.width, $size.height);
-		aoPass.setSize($size.width, $size.height);
+		aoPass.setSize(Math.round($size.width * dpr), Math.round($size.height * dpr));
 	});
 	// AO on/off + quality follow the local prefs (one perf knob = shadowQuality)
 	$effect(() => {

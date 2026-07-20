@@ -73,6 +73,17 @@
 	const hexColor = /^#[0-9A-F]{6}$/i;
 	const RAD_SNAP = Math.PI / 12; // Ctrl-snap rotations to 15°
 
+	// B3 (roadmap #13): camera lens presets. Labels use the familiar full-frame
+	// focal-length vocabulary; the value set is three's VERTICAL fov in degrees
+	// (vfov = 2·atan(12mm / focal)). Default camera fov is 40° (~33mm) — a natural,
+	// low-distortion product-viz look, just wider than a classic 35mm.
+	const LENS_PRESETS = [
+		{ label: 'Wide', mm: 24, fov: 53 },
+		{ label: 'Classic', mm: 35, fov: 38 },
+		{ label: 'Natural', mm: 50, fov: 27 },
+		{ label: 'Portrait', mm: 85, fov: 16 }
+	];
+
 	let transitionParamsRight = { x: 320, duration: 200, easing: sineIn };
 
 	// side drawers live on the --z-drawer tier (68); chat floats on its own now.
@@ -631,6 +642,26 @@
 					Local render mode (ambient occlusion + wireframe are desktop-only; not shown to peers).
 				</p>
 				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
+				<p class="ui-section-label">Camera lens</p>
+				<div id="lens-presets" class="flex flex-wrap gap-1">
+					{#each LENS_PRESETS as p (p.label)}
+						<button
+							class={'ui-chip ' +
+								(Math.round($globalCamera?.fov ?? 0) === p.fov
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							title={p.mm + 'mm equivalent · ' + p.fov + '° vertical FOV'}
+							onclick={() => {
+								if ($globalCamera) {
+									$globalCamera.fov = p.fov;
+									$globalCamera.updateProjectionMatrix();
+								}
+							}}
+						>
+							{p.label}
+						</button>
+					{/each}
+				</div>
 				<SliderRow
 					label="Camera FOV"
 					min={15}

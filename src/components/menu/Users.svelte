@@ -16,12 +16,14 @@
 		userdata,
 		peers,
 		hidePanels,
-		characterModalOpen
+		characterModalOpen,
+		notesDrawerOpen
 	} from '../../stores/appStore.js';
 	import { globalScene, globalCamera, camSave, peerHands } from '../../stores/sceneStore.js';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
 	import { peerQuality } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
+	import NotificationCenter from './NotificationCenter.svelte';
 
 	// N3: latency-band dot color for a peer's network-quality indicator
 	const qColor = (level: string) =>
@@ -118,7 +120,19 @@
 </script>
 
 <div class="top-right-chrome" style="position: fixed; right: 0px; z-index: 997;">
-	<div class="flex" style=" position: absolute; top: 15px; right: 100px; z-index: 997;">
+	<div class="flex items-center gap-2" style=" position: absolute; top: 15px; right: 100px; z-index: 997;">
+	<!-- E2: scene-notes drawer toggle -->
+	<button
+		id="notes-toggle"
+		class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur hover:bg-gray-700/85 {$notesDrawerOpen ? 'ring-2 ring-primary-500/60' : ''}"
+		title="Scene notes"
+		aria-label="Scene notes"
+		onclick={() => notesDrawerOpen.update((v) => !v)}
+	>
+		<i class="fas fa-note-sticky text-xs"></i>
+	</button>
+	<!-- E1: notifications bell + history panel -->
+	<NotificationCenter />
 {#if $userdata && $userdata.length > 1}
 	<div class="relative">
 		<!-- compact trigger: a few stacked avatars + the peer count -->

@@ -57,10 +57,22 @@
 				class="nodrag accent-[#ff4000]"
 				type="range"
 				min="1"
-				max="30"
+				max="60"
 				step="1"
 				value={data.radius ?? 5}
 				on:input={(e) => setNodeData(id, { radius: +e.currentTarget.value })}
+			/>
+		</label>
+		<label class="flex flex-col">
+			<span class="flex justify-between"><span>rolloff</span><span>{(data.rolloff ?? 1).toFixed(1)}</span></span>
+			<input
+				class="nodrag accent-[#ff4000]"
+				type="range"
+				min="0.5"
+				max="4"
+				step="0.1"
+				value={data.rolloff ?? 1}
+				on:input={(e) => setNodeData(id, { rolloff: +e.currentTarget.value })}
 			/>
 		</label>
 		<div class="flex items-center gap-2">

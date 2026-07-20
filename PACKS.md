@@ -13,6 +13,27 @@ There are two kinds of pack:
   `PACKS_BASE` constant in `src/lib/packs.js` (e.g. a jsDelivr CDN URL over a
   GitHub repo), or drag a `.zip` in with **＋ Import pack**.
 
+### Default-list `.zip` packs (audio / SFX / mixed) — M-2
+
+The default model packs use the model-list format (one item folder per glTF).
+A default-list entry can instead point at a self-describing **`.zip`** with a
+`zip` field — used for **audio / SFX packs** (or any mixed-kind pack), because the
+`.zip` import path is kind-agnostic (`kindOf` stores audio as `audio`, textures as
+`texture`, …). Such an entry shows an **⬇ Install pack** action in the Explorer
+Packs list (right-click the pack) that fetches the `.zip` and imports it locally:
+
+```jsonc
+// static/library/libraryList.json
+{ "name": "starter-audio", "title": "Starter Music & SFX", "zip": "/library/starter-audio/pack.zip",
+  "license": "CC0-1.0" }
+```
+
+Drop the `.zip` at `static/library/starter-audio/pack.zip` (a normal pack `.zip`:
+`manifest.json` + `assets/…mp3|ogg|wav`). Prefer **CC0** loops/one-shots (freesound
+CC0, OpenGameArt CC0). Keep each file under the 5 MB share cap so it round-trips to
+peers. Installed audio items appear in the Explorer library and can be assigned to
+a **Sound** node (spatial) or the **Scene music** channel (global).
+
 ## Repo / .zip structure
 
 ```

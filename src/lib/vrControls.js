@@ -113,6 +113,7 @@ import {
 import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing } from './ping';
+import { setVRAxes, setVRButtons } from './inputRuntime';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
@@ -234,37 +235,89 @@ let scaleGrab = null;
 let lastMoveSent = 0;
 
 // --- clarity pack: controller rays, hover highlight, snap turn ---
-/** @type {any[]} */ let rayLines = [];
+/** @type {any[]} */ let rayLines = []; // fat beam meshes, one per controller
+/** @type {any[]} */ let rayReticles = []; // hit-point disc at each beam's tip
 /** @type {any} */ let hoveredObject = null;
 let hoveredEmissive = 0;
+/** @type {any} */ let hoverBox = null; // scene-root shell around the hovered object
+
+const RAY_IDLE = 0x8ab4ff;
+const RAY_HOVER = 0x5fd0ff;
 let snapArmed = true;
 
 function ensureRayLines() {
 	if (rayLines.length > 0 || !renderer) return;
+	// a tapered cylinder along -Z (spans 0..-1) reads as a visible beam on-device
+	// where a 1px THREE.Line vanishes; additive blending gives it a soft glow
+	const beamGeo = new THREE.CylinderGeometry(0.0012, 0.0035, 1, 8, 1, true);
+	beamGeo.rotateX(-Math.PI / 2); // axis +Y -> -Z (narrow top ends toward the tip)
+	beamGeo.translate(0, 0, -0.5); // span 0 (controller) .. -1 (tip)
 	for (let i = 0; i < 2; i++) {
-		const geometry = new THREE.BufferGeometry().setFromPoints([
-			new THREE.Vector3(0, 0, 0),
-			new THREE.Vector3(0, 0, -1)
-		]);
-		const line = new THREE.Line(
-			geometry,
-			new THREE.LineBasicMaterial({ color: 0x8ab4ff, transparent: true, opacity: 0.7 })
+		const beam = new THREE.Mesh(
+			beamGeo,
+			new THREE.MeshBasicMaterial({
+				color: RAY_IDLE,
+				transparent: true,
+				opacity: 0.6,
+				blending: THREE.AdditiveBlending,
+				depthWrite: false
+			})
 		);
-		line.name = 'vr-ray';
-		line.scale.z = 5;
-		renderer.xr.getController(i).add(line);
-		rayLines.push(line);
+		beam.name = 'vr-ray';
+		beam.scale.z = 5;
+		renderer.xr.getController(i).add(beam);
+		rayLines.push(beam);
+
+		// hit reticle: a small ring at the beam tip, scaled with distance so it
+		// keeps a constant angular size; shown only when the ray hits something
+		const reticle = new THREE.Mesh(
+			new THREE.RingGeometry(0.02, 0.03, 20),
+			new THREE.MeshBasicMaterial({
+				color: RAY_HOVER,
+				transparent: true,
+				opacity: 0.9,
+				depthWrite: false,
+				side: THREE.DoubleSide
+			})
+		);
+		reticle.name = 'vr-ray-reticle';
+		reticle.visible = false;
+		renderer.xr.getController(i).add(reticle);
+		rayReticles.push(reticle);
 	}
 }
 
+/** Scene-root shell around the hovered object — emissive-INDEPENDENT (a
+ * MeshBasicMaterial object shows no emissive tint), copies world bounds per
+ * frame, never parented into objectsGroup (would leak into GLTF sync).
+ * Exported for headless tests. @param {any} object */
+export function updateHoverBox(object) {
+	const scene = get(globalScene);
+	if (!scene) return;
+	if (!hoverBox) {
+		hoverBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(RAY_HOVER));
+		hoverBox.name = 'vr-hover-box';
+		hoverBox.material.transparent = true;
+		hoverBox.material.opacity = 0.7;
+		hoverBox.material.depthTest = false;
+		hoverBox.renderOrder = 997;
+		scene.add(hoverBox);
+	}
+	if (object) {
+		hoverBox.visible = true;
+		hoverBox.box.setFromObject(object);
+	} else hoverBox.visible = false;
+}
+
 function setHovered(object) {
+	// the shell is the primary, emissive-independent cue; the emissive tint is a
+	// secondary touch for materials that support it
+	updateHoverBox(object);
 	if (hoveredObject === object) return;
-	// restore the previous highlight
 	if (hoveredObject?.material?.emissive) hoveredObject.material.emissive.setHex(hoveredEmissive);
 	hoveredObject = null;
 	if (object) {
-		// tint the first emissive-capable mesh in the subtree
-		let target = null;
+		/** @type {any} */ let target = null;
 		object.traverse((/** @type {any} */ node) => {
 			if (!target && node.material?.emissive) target = node;
 		});
@@ -281,6 +334,7 @@ function updateRaysAndHover(presenting) {
 	ensureRayLines();
 	rayLines.forEach((line) => (line.visible = presenting));
 	if (!presenting) {
+		rayReticles.forEach((r) => (r.visible = false));
 		setHovered(null);
 		return;
 	}
@@ -288,15 +342,25 @@ function updateRaysAndHover(presenting) {
 	const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 	for (let i = 0; i < 2; i++) {
 		let distance = 5;
+		let hit = false;
 		let hitObject = null;
 		if (group) {
 			const hits = controllerRay(i).intersectObjects(group.children, true);
 			if (hits.length > 0) {
 				distance = hits[0].distance;
+				hit = true;
 				hitObject = topLevelObjectOf(hits[0].object);
 			}
 		}
-		if (rayLines[i]) rayLines[i].scale.z = distance;
+		if (rayLines[i]) {
+			rayLines[i].scale.z = distance;
+			rayLines[i].material.color.setHex(hit ? RAY_HOVER : RAY_IDLE);
+		}
+		if (rayReticles[i]) {
+			rayReticles[i].visible = hit;
+			rayReticles[i].position.z = -distance;
+			rayReticles[i].scale.setScalar(Math.max(distance, 0.2)); // constant angular size
+		}
 		if (i === pointerIndex) setHovered(get(vrMenuOpen) ? null : hitObject);
 	}
 }
@@ -705,6 +769,19 @@ export function handBoneSegments(flat) {
 		out.push({ pos: [mid.x, mid.y, mid.z], rot: [e.x, e.y, e.z], len });
 	}
 	return out;
+}
+
+/** R-3 'model' hand style: the same bones as handBoneSegments but with
+ * per-bone RADII (palm metacarpals thick, fingertips thin) for rounded capsule
+ * rendering — reads as a hand rather than a wireframe. Pure. @param {number[]} flat */
+export function handModelSegments(flat) {
+	const segments = handBoneSegments(flat);
+	return segments.map((segment, index) => {
+		const [a, b] = HAND_BONES[index];
+		const fromWrist = a === 0; // metacarpal
+		const isTip = [4, 9, 14, 19, 24].includes(b);
+		return { ...segment, r: fromWrist ? 0.011 : isTip ? 0.006 : 0.008 };
+	});
 }
 
 // ---- B2.4: pinch-HOLD on the menu hand toggles the radial (hands have no B/Y) ----
@@ -2157,6 +2234,13 @@ export function executeVRMenuAction(name) {
 		vrMenuOpen.set(false);
 		return;
 	}
+	if (name === 'ping') {
+		// U-1: ping immediately from the POINTER hand (the menu is on the other
+		// hand), then close the ring; highlights the object if the ray hits one
+		pingFromController(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
+		vrMenuOpen.set(false);
+		return;
+	}
 	if (name === 'edit:granularity') {
 		toggleFaceGranularity(); // 212: FACE <-> POLYGON
 		return;
@@ -2199,8 +2283,9 @@ export function executeVRMenuAction(name) {
 			vrTargetHz.set(next);
 			applyVRFrameRate();
 		} else if (key === 'handstyle') {
-			// B2.3: how hand-tracked peers render locally
-			peerHandStyle.set(get(peerHandStyle) === 'hands' ? 'spheres' : 'hands');
+			// B2.3/R-3: how hand-tracked peers render locally (3-way cycle)
+			const styles = ['model', 'hands', 'spheres'];
+			peerHandStyle.set(styles[(styles.indexOf(get(peerHandStyle)) + 1) % styles.length]);
 		} else if (key === 'passthrough') {
 			// WebXR can't hot-swap session modes — applies on the next VR entry
 			const next = !get(vrPassthrough);
@@ -2488,9 +2573,20 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'close') vrMenuOpen.set(false);
 }
 
-/** Right-stick click: ping where the controller ray lands (87.6) @param {number} index */
+/** Right-stick click / radial Ping: ping where the controller ray lands. When
+ * it lands ON an object, carry that object's uuid so peers highlight it too
+ * (U-1). (87.6) @param {number} index */
 function pingFromController(index) {
-	const point = pingPointFromRay(controllerRay(index), get(objectsGroup));
+	const ray = controllerRay(index);
+	const group = get(objectsGroup);
+	const hits = group ? ray.intersectObjects(group.children, true) : [];
+	if (hits[0]) {
+		const top = topLevelObjectOf(hits[0].object);
+		sendPing(hits[0].point, top?.uuid);
+		hapticPulse(0.4, 60);
+		return;
+	}
+	const point = pingPointFromRay(ray, group);
 	if (!point) return;
 	sendPing(point);
 	hapticPulse(0.4, 60);
@@ -2579,6 +2675,13 @@ export function updateVRControls() {
 		const aPressed = !!buttons[4]?.pressed;
 		if (source.handedness === 'right' && aPressed !== !!prev.a) setPttHeld(aPressed);
 		prev.a = aPressed;
+
+		// K-C: publish this hand's stick + trigger/squeeze into the SDK input
+		// layer (inputRuntime is store-only; this is the safe import direction)
+		if (source.handedness === 'left' || source.handedness === 'right') {
+			setVRAxes(source.handedness, source.gamepad.axes?.[2] ?? 0, source.gamepad.axes?.[3] ?? 0);
+			setVRButtons(source.handedness, !!buttons[0]?.pressed, !!buttons[1]?.pressed);
+		}
 
 		// squeeze grabs
 		const squeezePressed = !!buttons[1]?.pressed;

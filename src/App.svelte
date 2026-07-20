@@ -12,17 +12,24 @@
   import ModelPreviewWindow from './components/editors/ModelPreviewWindow.svelte'
   import DungeonMinimap from './components/play/DungeonMinimap.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
+  import SculptToolbar from './components/menu/SculptToolbar.svelte'
   import { isLocked } from './stores/sceneStore'
   import { startFlowRuntime } from '$lib/flowRuntime'
   import { startNodeSync } from '$lib/nodesHandler'
   import { startLockSweep } from '$lib/lockControl'
   import { loadUserModules } from '$lib/userModules'
   import { startEnvironment } from '$lib/environment'
+  import { startSceneMusic } from '$lib/sceneMusic'
   import { startSceneBounds } from '$lib/sceneBounds'
   import { startShortcuts } from '$lib/shortcuts'
   import { startSnapping } from '$lib/snapping'
   import { startMultiTransform } from '$lib/multiTransform'
   import { startLightParams } from '$lib/lightParams'
+  import { startShadowDefaults } from '$lib/shadowDefaults'
+  import { startViewMode } from '$lib/viewMode'
+  import { startInputRuntime } from '$lib/inputRuntime'
+  import { startPossess } from '$lib/possess'
+  import { startHandModels } from '$lib/handModels'
   import { startAutosave } from '$lib/autosave'
   import { startSceneAssets } from '$lib/sceneAssets'
   import { startNetworkQuality } from '$lib/networkQuality'
@@ -44,8 +51,14 @@
     startLockSweep()
     startMultiTransform()
     startLightParams()
+    startShadowDefaults()
+    startViewMode()
+    startInputRuntime()
+    startPossess()
+    startHandModels()
     loadUserModules()
     startEnvironment()
+    startSceneMusic()
     startSceneBounds()
     startShortcuts()
     startSnapping()
@@ -74,8 +87,13 @@
         import('./lib/lockControl'),
         import('./lib/prefabs'),
         import('./lib/physics'),
+        import('./lib/joints'),
+        import('./lib/possess'),
+        import('./lib/handModels'),
+        import('./lib/terrainSculpt'),
         import('./lib/userModules'),
         import('./lib/environment'),
+        import('./lib/sceneMusic'),
         import('./lib/animatedImports'),
         import('./lib/fileHandler.svelte'),
         import('./lib/fileWindows'),
@@ -85,6 +103,11 @@
         import('./lib/sessions'),
         import('./lib/geometryEdit'),
         import('./lib/lightParams'),
+        import('./lib/shadowDefaults'),
+        import('./lib/palette'),
+        import('./lib/viewMode'),
+        import('./lib/inputRuntime'),
+        import('./lib/shortcuts'),
         import('./lib/themes'),
         import('./lib/vrRadialMenu'),
         import('./lib/vrPalette'),
@@ -107,6 +130,7 @@
         import('./lib/packs'),
         import('./lib/customNodes'),
         import('./lib/nodesHandler'),
+        import('./lib/nodeCatalog'),
         import('./lib/objectMenu'),
         import('./lib/animationPreview'),
         import('./lib/ai/providers'),
@@ -114,8 +138,8 @@
         import('./lib/ai/assistant'),
         import('./lib/ai/meshProviders'),
         import('./lib/ai/meshJobs')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, userModulesLib, environmentLib, animatedImports, fileHandler, fileWindowsLib, sceneBounds, cameraClip, ping, sessionsLib, geometryEdit, lightParams, themesLib, vrRadialMenu, vrPaletteLib, vrWindowPosesLib, vrKeyboardLib, faceEditLib, avatarModelLib, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssetsLib, THREE, GLTFExporterModule, snappingLib, flowSocketsLib, networkQualityLib, packsLib, customNodesLib, nodesHandlerLib, objectMenuLib, animationPreviewLib, aiProvidersLib, aiToolsLib, aiAssistantLib, meshProvidersLib, meshJobsLib]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, userModules: userModulesLib, environment: environmentLib, animatedImports, fileHandler, fileWindows: fileWindowsLib, sceneBounds, cameraClip, ping, sessions: sessionsLib, geometryEdit, lightParams, themes: themesLib, vrRadialMenu, vrPalette: vrPaletteLib, vrWindowPoses: vrWindowPosesLib, vrKeyboard: vrKeyboardLib, faceEdit: faceEditLib, avatarModel: avatarModelLib, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets: sceneAssetsLib, THREE, GLTFExporterModule, snapping: snappingLib, flowSockets: flowSocketsLib, networkQuality: networkQualityLib, packs: packsLib, customNodes: customNodesLib, nodesHandler: nodesHandlerLib, objectMenu: objectMenuLib, animationPreview: animationPreviewLib, aiProviders: aiProvidersLib, aiTools: aiToolsLib, aiAssistant: aiAssistantLib, meshProviders: meshProvidersLib, meshJobs: meshJobsLib }
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, jointsLib, possessLib, handModelsLib, terrainSculptLib, userModulesLib, environmentLib, sceneMusicLib, animatedImports, fileHandler, fileWindowsLib, sceneBounds, cameraClip, ping, sessionsLib, geometryEdit, lightParams, shadowDefaultsLib, paletteLib, viewModeLib, inputRuntimeLib, shortcutsLib, themesLib, vrRadialMenu, vrPaletteLib, vrWindowPosesLib, vrKeyboardLib, faceEditLib, avatarModelLib, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssetsLib, THREE, GLTFExporterModule, snappingLib, flowSocketsLib, networkQualityLib, packsLib, customNodesLib, nodesHandlerLib, nodeCatalogLib, objectMenuLib, animationPreviewLib, aiProvidersLib, aiToolsLib, aiAssistantLib, meshProvidersLib, meshJobsLib]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, joints: jointsLib, possess: possessLib, handModels: handModelsLib, terrainSculpt: terrainSculptLib, userModules: userModulesLib, environment: environmentLib, sceneMusic: sceneMusicLib, animatedImports, fileHandler, fileWindows: fileWindowsLib, sceneBounds, cameraClip, ping, sessions: sessionsLib, geometryEdit, lightParams, shadowDefaults: shadowDefaultsLib, palette: paletteLib, viewModeCtl: viewModeLib, inputRuntime: inputRuntimeLib, shortcutsRegistry: shortcutsLib, themes: themesLib, vrRadialMenu, vrPalette: vrPaletteLib, vrWindowPoses: vrWindowPosesLib, vrKeyboard: vrKeyboardLib, faceEdit: faceEditLib, avatarModel: avatarModelLib, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets: sceneAssetsLib, THREE, GLTFExporterModule, snapping: snappingLib, flowSockets: flowSocketsLib, networkQuality: networkQualityLib, packs: packsLib, customNodes: customNodesLib, nodesHandler: nodesHandlerLib, nodeCatalog: nodeCatalogLib, objectMenu: objectMenuLib, animationPreview: animationPreviewLib, aiProviders: aiProvidersLib, aiTools: aiToolsLib, aiAssistant: aiAssistantLib, meshProviders: meshProvidersLib, meshJobs: meshJobsLib }
       })
     }
   })
@@ -158,6 +182,7 @@
 {/if}
 <Menu />
 <DrawToolbar />
+<SculptToolbar />
 <ModulesManager />
 <DungeonMinimap />
 

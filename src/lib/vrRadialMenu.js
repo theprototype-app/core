@@ -76,7 +76,7 @@ const registry = new Map();
 
 /**
  * Register (or replace, by id) a radial menu entry.
- * @param {{id: string, group?: string, label: string, order?: number,
+ * @param {{id: string, group?: string, label: string | (() => string), order?: number,
  *   ring?: string, action?: () => void, active?: () => boolean,
  *   color?: string, closes?: boolean, visible?: () => boolean}} entry
  * `ring` makes it a navigation sector into that sub-ring; `color` renders the
@@ -180,7 +180,9 @@ export function sectorLayout(i, count) {
 
 // ---- built-in rings ----
 
-const SNAP_ANGLES = [15, 30, 45];
+// unified with the VR settings panel + desktop Settings (R-2): 0 = Off, so the
+// radial can also turn snap-turn off and cycling is consistent across all three
+const SNAP_ANGLES = [0, 15, 30, 45];
 
 function registerBuiltins() {
 	// base ring (8 sectors; 109 remap): Redo/Undo swapped per user muscle
@@ -198,6 +200,9 @@ function registerBuiltins() {
 	registerVRMenuEntry({ id: 'tool:select', group: 'tools', label: 'Select', order: 0, active: () => get(vrToolMode) === 'select' });
 	registerVRMenuEntry({ id: 'tool:box', group: 'tools', label: 'Box Select', order: 1, active: () => get(vrToolMode) === 'box' });
 	registerVRMenuEntry({ id: 'tool:draw', group: 'tools', label: 'Draw', order: 2, active: () => get(vrToolMode) === 'draw' });
+	// Ping (U-1): immediate ping from the pointer hand — a discoverable partner
+	// to the right-stick-click ping; highlights the object if the ray hits one
+	registerVRMenuEntry({ id: 'ping', group: 'tools', label: 'Ping', order: 3 });
 
 	// Add ▸ — ids resolve in executeVRMenuAction's switch, which spawns the
 	// primitive 2m ahead of the camera (spawnPrimitive)
@@ -226,7 +231,9 @@ function registerBuiltins() {
 	registerVRMenuEntry({
 		id: 'snapangle',
 		group: 'scene',
-		label: 'Turn °',
+		// live label so the change is visible immediately in the radial (R-2);
+		// the sector re-derives on $vrSnapAngle in VRMenu
+		label: () => 'Turn: ' + (get(vrSnapAngle) ? get(vrSnapAngle) + '°' : 'Off'),
 		order: 9,
 		action: () => {
 			const next =

@@ -17,9 +17,12 @@ in the codebase — copy the referenced implementation.
   animated-import mixers. Seeded randomness only (`mulberry32`); no accumulation in
   effects (compute from `base` + `time`); no `Math.random()` in anything replicated.
 - **Authoritative** — one peer simulates and broadcasts results as plain messages;
-  others just apply. References: physics (initiator → `move` at ~10 Hz per awake body,
-  busy-guard message), pong (spawner owns the ball at ~12 Hz). Use when simulation
-  can't be deterministic; guard against two authorities.
+  others just apply. References: physics (initiator steps the world, movement-gated
+  `move` broadcasts, busy-guard message), pong (spawner owns the ball at ~12 Hz), the
+  car module (the blessed INPUT-FORWARDING recipe: every peer sends its inputs
+  `{op:'drive', throttle, steer}` at ~20 Hz, only the `api.physics.isInitiator()`
+  peer applies motors — result replicates as plain moves). Use when simulation can't
+  be deterministic; guard against two authorities.
 
 ## Not everything replicates — some state is deliberately LOCAL
 
@@ -29,25 +32,38 @@ prune it in `handleDisconnected` (or derive the UI from live peers so stale entr
 can't render). References: `networkQuality.js` (per-peer RTT/relay from `getStats()`,
 polled locally), the Explorer **pack library** (imported packs stay local until an
 explicit future "Share"; only a *placed* object replicates through the normal import
-path), and the LOCAL-prefs modules (themes, cameraClip, WindowShell `ws:*`). Rule of
-thumb: if two peers would independently compute the same value, or it's a personal
-setting, keep it off the wire.
+path), input claims (`inputRuntime.claimInput` — a claim only pauses THIS peer's own
+input consumers, nothing on the wire), view mode/shadow quality/sculpt brush prefs,
+and the LOCAL-prefs modules (themes, cameraClip, WindowShell `ws:*`). Rule of thumb:
+if two peers would independently compute the same value, or it's a personal setting,
+keep it off the wire.
 
 ## Checklist for a new replicated feature
 
 1. **State** in a store (`src/stores/*`) or module-level writable; uuid/id-keyed,
    plain-serializable (peerjs binarypack: ArrayBuffers OK — raw-bytes syncs like
-   `objectfile` ride on this; no class instances/functions).
+   `objectfile` ride on this; no class instances/functions). **Large numeric payloads
+   MUST go as raw bytes**: a plain array of ~40k numbers makes binarypack recurse to
+   "Maximum call stack size exceeded" — and `broadcast()`'s try/catch swallows it, so
+   the send silently vanishes. Send `new Float32Array(arr).buffer` and normalize
+   array/ArrayBuffer/typed-view on receive (meshgeo is the reference).
 2. **Local mutation function** applies + broadcasts:
    `get(peers)?.send({ type: 'mything', ... })` (pattern: `annotationsHandler`).
 3. **Receive case** in `peerHandler.svelte.js` `conn.on('data')` — applier does NOT
    re-broadcast.
 4. **Late joiners**: `getmything` request in `sendHandshake()` + a full-state reply
-   that retries until `conn.open` (`sendNodes`/`sendNodeDefs`/`sendModuleStates` —
+   that retries until `conn.open` (`sendNodes`/`sendJoints`/`sendModuleStates` —
    never bare `setTimeout` sends: peerjs silently drops pre-open messages). Singleton
-   state (environment) instead pushes with a `changedAt` stamp, latest-wins — and any
-   symmetric pull needs a deterministic direction (nodesync: lower count pulls,
-   peer-id tiebreak) or drifted peers swap forever.
+   state (environment, sceneMusic) instead pushes with a `changedAt` stamp,
+   latest-wins — each singleton gets its OWN message type (music deliberately does
+   NOT piggyback on `environment` because env state round-trips through preset
+   export/import and would leak the track into presets) — and any symmetric pull
+   needs a deterministic direction (nodesync: lower count pulls, peer-id tiebreak)
+   or drifted peers swap forever. A replicated LIST of small defs (joints) copies
+   the annotations pattern: create/delete messages + full-list handshake reply +
+   sender-side delete-cascade + a presence-style history kind. Per-peer IDENTITY
+   choices (avatar photo, hand model) broadcast a content HASH with presence/
+   userdata and receivers pull the bytes via assetShare (`handModels.js`).
 5. **Where does it live in the scene?** `objectsGroup` children = replicated, listed,
    GLTF-synced, anyone edits. Scene-root groups (fixed `name`) = local/derived —
    helpers, env rig, module content; rebuild them from state; they need
@@ -74,12 +90,13 @@ Throttle continuous streams (~10–20/s) with a final unthrottled send on gestur
 peers get stale-expiry cleanup (`drawlive` 5s, ping 4s).
 
 **Geometry/topology changes** can't ride a per-vertex channel — snapshot the FULL
-geometry (`meshgeo`: uuid + positions array, size-capped ~45k floats, `faceEdit.js`).
+geometry (`meshgeo`: uuid + positions, size-capped ~45k floats, `faceEdit.js`; the
+WIRE format is raw `Float32Array.buffer` bytes per the binarypack rule above).
 Receivers swap the geometry wholesale, the history kind replays the same snapshot, and
 the receive applier must REBUILD any live edit-session caches (applyMeshGeo re-derives
-its face groups — a stale cache after undo/remote swap corrupted gestures once). Live
-reshape gestures stream throttled previews (~5/s) and commit ONE snapshot + undo entry
-on release.
+its face groups AND the terrain sculpt weld map — a stale cache after undo/remote swap
+corrupted gestures once). Live reshape gestures stream throttled previews (~5/s) and
+commit ONE snapshot + undo entry on release.
 
 ## Adding a VR panel (the follower-window pattern)
 
@@ -113,8 +130,20 @@ entry)` (replicated `/create <Name>`), `registerClickHandler(fn(hitObject) => bo
 (desktop + VR trigger), `registerInteractiveGroup(name)`, `registerFrameTask(fn(time))`,
 `send(payload)`/`onMessage(fn)` (namespaced `{type:'module', moduleId}`),
 `registerStateSync({getState, applyState})` (late joiners), `registerMenu(label, fn)`
-(renders on the module's manager card), accessors `scene() objectsGroup() peerId()
-toast() now() THREE assetUrl(path)`.
+(renders on the module's manager card), `registerVRMenuEntry({id, group, label,
+action, closes})` (VR radial sector), accessors `scene() objectsGroup() peerId()
+toast() now() THREE assetUrl(path) selectedUuid()`. #12 additions (reached via PRIMED
+dynamic imports in moduleSDK — static edges close TDZ cycles): **input** —
+`registerBindings` (Settings ▸ Shortcuts listing), `input()` snapshot
+`{codes:Set, axes, vrButtons}`, `onInput(fn)`, `claimInput/releaseInput('keys'|
+'locomotion')` (pauses the host's OWN consumers, LOCAL, always release); **physics**
+— `api.physics.{isInitiator, applyImpulse, setJointMotor, joints()}` (mutations
+initiator-only — forward inputs, see the authoritative car recipe above);
+**possess** — `possess(uuid, {camera:'chase'|'orbit'|'none'})`/`releasePossess()`
+(possessing = selecting = the lock; ONE undo per ride). A module KIND peers must
+agree on derives from the replicated object NAME (car's 'Carbody'), never
+locally-set userData. Worked examples: `src/modules/essentials/` (interactables) +
+`src/modules/car/` (physics + input + claims).
 
 Version trust: peers exchange `[{id, version}]` on connect and toast on mismatch
 (advisory). Module viewport content = scene-root group rebuilt from state (see rule 5);

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { dropToSurface } from './snapping';
-import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind } from './history';
+import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch } from './history';
+import { cascadeJointDeletes } from './joints';
+import { createGroup } from './geometries.svelte';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import {
 	objectsGroup,
@@ -194,6 +196,9 @@ export function selectionUuids() {
 export function deleteObjectsByUuid(uuids) {
 	if (!uuids.length) return 0;
 	deselectObject();
+	// P-B: cascade joint deletes at the SENDER (each jointdelete replicates;
+	// receivers only apply)
+	cascadeJointDeletes(uuids);
 	/** @type {any} */
 	const peer = get(peers);
 	const group = get(objectsGroup);
@@ -356,6 +361,13 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'visible', uuid: entry.uuid, visible: state.visible });
 	}
+	if ('physics' in state) {
+		// P-A: Inspector physics edits are undoable through the same kind
+		if (state.physics) object.userData.physics = state.physics;
+		else delete object.userData.physics;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'physics', uuid: entry.uuid, physics: state.physics });
+	}
 	objectsGroup.update((value) => value);
 	return true;
 });
@@ -464,6 +476,59 @@ export function ungroupObject(groupUuid) {
 	for (const child of children) moveObjectToGroup(child.uuid, 'up');
 	deleteObjectsByUuid([groupUuid]); // now empty -> removes just the group
 	return true;
+}
+
+/**
+ * Group the current multi-selection into a NEW empty group placed at the
+ * selection centroid, then move every member into it (U-2). All pieces are
+ * already replicated primitives — createGroup + the group message + a move for
+ * the centroid — wrapped in ONE history batch so undo restores the flat layout
+ * in a single step. Returns the new group's uuid (or null if <2 selected).
+ */
+export function groupSelection() {
+	const uuids = selectionUuids();
+	if (uuids.length < 2) return null;
+	const group = get(objectsGroup);
+	const members = uuids
+		.map((uuid) => group?.getObjectByProperty('uuid', uuid))
+		.filter(Boolean);
+	if (members.length < 2) return null;
+
+	// centroid of members in world space → the group's pivot
+	const centroid = new THREE.Vector3();
+	const world = new THREE.Vector3();
+	for (const member of members) {
+		member.getWorldPosition(world);
+		centroid.add(world);
+	}
+	centroid.divideScalar(members.length);
+
+	/** @type {any} */
+	const peer = get(peers);
+	beginHistoryBatch();
+	// empty group (replicated via the same message the /group command uses)
+	const groupUuid = createGroup('/group Selection');
+	const newGroup = group?.getObjectByProperty('uuid', groupUuid);
+	if (peer) peer.send({ type: 'group', command: '/group Selection', uuid: groupUuid });
+	recordObjectPresence('create', newGroup);
+	// move the empty group to the centroid BEFORE attaching (both peers attach
+	// with the group already at the pivot, so member local coords match)
+	if (newGroup) {
+		newGroup.position.copy(centroid);
+		if (peer)
+			peer.send({
+				type: 'move',
+				uuid: groupUuid,
+				pos: newGroup.position.toArray(),
+				rot: newGroup.rotation.toArray(),
+				scale: newGroup.scale.toArray()
+			});
+	}
+	for (const uuid of uuids) moveObjectToGroup(uuid, groupUuid);
+	endHistoryBatch('Group objects');
+	objectsGroup.update((value) => value);
+	applySelectionSet([groupUuid]);
+	return groupUuid;
 }
 
 /**

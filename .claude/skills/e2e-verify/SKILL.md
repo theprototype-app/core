@@ -31,14 +31,19 @@ The init script (helpers does it) sets `localStorage.debugStores='true'` +
 `hasSeenDisclaimer='true'`. App.svelte then publishes `window.__stores` = all stores
 spread + modules: `meshEdit, vrControls, autosave, voiceChat, annotationsHandler,
 flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK,
-drawMode, pathCapture, lockControl, prefabs, physics, userModules, environment,
-animatedImports, fileHandler, sceneBounds, cameraClip, ping, sessions, geometryEdit,
-lightParams, themes, vrRadialMenu, vrPalette, vrWindowPoses, vrKeyboard, faceEdit,
-avatarModel, explorer, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay,
-sceneAssets, THREE, GLTFExporterModule, snapping, flowSockets, networkQuality, packs,
-customNodes, nodesHandler, objectMenu`. Also on the stores spread: `viewportMenuOpener`
-(Scene registers its context-menu opener here — call `$viewportMenuOpener(x,y,forceEmpty)`
-to open the viewport/create menu without a right-click).
+drawMode, pathCapture, lockControl, prefabs, physics, joints, possess, handModels,
+terrainSculpt, userModules, environment, sceneMusic, animatedImports, fileHandler,
+sceneBounds, cameraClip, ping, sessions, geometryEdit, lightParams, shadowDefaults,
+palette, viewModeCtl, inputRuntime, shortcutsRegistry, themes, vrRadialMenu,
+vrPalette, vrWindowPoses, vrKeyboard, faceEdit, avatarModel, explorer, bottomDock,
+explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets, THREE,
+GLTFExporterModule, snapping, flowSockets, networkQuality, packs, customNodes,
+nodesHandler, nodeCatalog, objectMenu`. Naming trap: `__stores.viewMode` is the
+STORE (from the sceneStore spread); the viewMode MODULE is `viewModeCtl` — a module
+key that shadows a same-named store silently breaks tests (#12 lesson). Also on the
+stores spread: `viewportMenuOpener` (Scene registers its context-menu opener here —
+call `$viewportMenuOpener(x,y,forceEmpty)` to open the viewport/create menu without
+a right-click).
 
 **Never dynamic-import `/src/lib/x.js` from page code to reach a singleton** — once
 vite HMR-timestamps the app's copy you get a SECOND module instance (empty stores,
@@ -80,13 +85,35 @@ Use `https://theprototype.app:5173/` — hosts-mapped to 127.0.0.1; the `.app` h
 makes peerjs use the **public cloud** (localhost tries ws://localhost:9001 and fails).
 `helpers.connect(B, A)` does: fill peer id → Connect → Approve on A → ~9s settle.
 Late joiners: connect a third context AFTER mutations, assert handshake state arrived
-(objects/nodes/annotations/module state/env/custom defs). Voice: launch with
-`--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`.
+(objects/nodes/annotations/joints/module state/env/music/handmodel/custom defs).
+Voice: launch with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`.
+**B→A messaging works** since #12 (the adopted-inbound-conn fix) — tests may drive
+mutations FROM the joiner (peer move streams, claims). When a suite needs the
+dual-module-instance split collapsed, `freshReload(peer)` BEFORE `connect` and
+re-read the id (`peer.id = await …peers.subscribe…peer.id`) — a reload mid-mesh
+drops the P2P session.
 
 ## Known flakes / traps
 
 - First run after adding a dependency: vite re-optimizes and reloads mid-test — rerun.
   Lazy wasm (rapier) needs a throwaway prewarm page first (see physics.test.cjs).
+  Physics sims run REAL-time since #12 (fixed-timestep accumulator) — falls/settles
+  take wall-clock seconds even under a throttled rAF; don't compensate with huge waits.
+- **Machine saturation**: headless pages can run at ~4fps with timers ~1.8x slow when
+  the host is loaded (dozens of user Chrome processes — do NOT kill them). Symptoms:
+  timeouts on waits that "always worked", missed one-shot flag reads. Cures: generous
+  `eventually` windows, BEHAVIORAL asserts (did the box move) over one-shot state
+  reads, and for flags that flicker (hold/claim booleans) an IN-PAGE sampling loop
+  (`setInterval` 50ms inside one `evaluate`) instead of round-trip polling.
+- **Large plain-number arrays blow binarypack**: `conn.send` with a ~40k-element plain
+  array throws "Maximum call stack size exceeded" — and `broadcast()`'s try/catch
+  SWALLOWS it, so the message silently never leaves. Send raw bytes instead
+  (`new Float32Array(arr).buffer`) and normalize on receive (meshgeo/terrain do this).
+  If a big payload "never arrives" in a test, suspect this before the network.
+- Pre-existing flakes (reproduce on a clean base — don't chase them into your diff):
+  add-menu search-Enter, sound-node Play overlap, connect-overlay querySelector,
+  scene-music byte-push timing. To PROVE a failure is pre-existing:
+  `git stash push -u`, run the suite on HEAD, `git stash pop`.
 - Phase-comparison asserts between two peers: two sequential evaluates skew ~150ms —
   tolerances ≥0.6 for fast oscillations, or compare Promise.all-sampled values.
 - Overlays intercept clicks (properties drawer covers right ~320px; modals block all;
@@ -159,7 +186,7 @@ Late joiners: connect a third context AFTER mutations, assert handshake state ar
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-07-18 = **502 errors / 77 warnings** (drifts down as flowbite/typed
+  baseline 2026-07-19 = **501 errors / 77 warnings** (drifts down as flowbite/typed
   code is removed — hold whatever it currently is; add no NEW). Note: in the big
   JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —
   give the param a default (`slot = 0`) to force the type, and prefer explicit locals

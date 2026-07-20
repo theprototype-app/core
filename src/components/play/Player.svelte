@@ -6,8 +6,20 @@
     import AvatarRig from './AvatarRig.svelte'
     import { playerCam, peerHands, worldRig, peerHandStyle } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
-    import { handBoneSegments } from '$lib/vrControls'
+    import { handBoneSegments, handModelSegments } from '$lib/vrControls'
+    import { peerHandModels, handModelCache } from '$lib/handModels'
     import { Text } from '@threlte/extras'
+
+    // R-3: a peer's CUSTOM hand GLB renders rigidly at their broadcast wrist
+    // pose (the hand group's pos/rot IS the wrist). Clone per side; mirror left.
+    const customHand = (peerId: string, side: string) => {
+      const hash = $peerHandModels[peerId]
+      const scene = hash ? $handModelCache[hash] : null
+      if (!scene) return null
+      const clone = scene.clone(true)
+      if (side === 'left') clone.scale.x *= -1
+      return clone
+    }
 
     export let position: [x: number, y: number, z: number] = [0, 0, 0]
 
@@ -67,8 +79,19 @@
                 position={$peerHands[user[0]][side].pos}
                 rotation={$peerHands[user[0]][side].rot}
               >
-                {#if $peerHands[user[0]][side].joints?.length}
-                  {#if $peerHandStyle === 'hands'}
+                {#if customHand(user[0], side)}
+                  <!-- R-3: the peer's chosen hand GLB, rigid at the wrist -->
+                  <T is={customHand(user[0], side)} />
+                {:else if $peerHands[user[0]][side].joints?.length}
+                  {#if $peerHandStyle === 'model'}
+                    <!-- R-3: rounded capsule hand — same bones, per-bone radii -->
+                    {#each handModelSegments($peerHands[user[0]][side].joints) as b}
+                      <T.Mesh position={b.pos} rotation={b.rot}>
+                        <T.CapsuleGeometry args={[b.r, Math.max(b.len - b.r, 0.004), 3, 8]} />
+                        <T.MeshStandardMaterial color={handColors[side]} roughness={0.7} />
+                      </T.Mesh>
+                    {/each}
+                  {:else if $peerHandStyle === 'hands'}
                     <!-- B2.3: cuboid-bone hand — ~24 box segments between the joints -->
                     {#each handBoneSegments($peerHands[user[0]][side].joints) as b}
                       <T.Mesh position={b.pos} rotation={b.rot}>

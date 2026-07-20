@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObject } from '../stores/sceneStore';
 import { peers, showToast, modulesOpen } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
@@ -61,6 +61,29 @@ export const loadedModules = [];
 const messageHandlers = {};
 /** @type {Record<string, {getState: () => any, applyState: (state: any) => void}>} */
 const stateSyncs = {};
+
+// input/physics are reached via primed DYNAMIC imports: static edges would close
+// cycles back into this module (flowRuntime -> moduleSDK; physics -> flowRuntime)
+// — the vite-dev TDZ trap. The refs resolve at boot, long before any module
+// frame task polls them; the fallbacks cover the first few frames.
+/** @type {any} */ let inputRuntimeRef = null;
+/** @type {any} */ let physicsRef = null;
+/** @type {any} */ let possessRef = null;
+if (typeof window !== 'undefined') {
+	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
+	import('./physics').then((m) => (physicsRef = m));
+	import('./possess').then((m) => (possessRef = m));
+}
+function inputApi() {
+	return (
+		inputRuntimeRef ?? {
+			getInput: () => ({ codes: new Set(), axes: { lx: 0, ly: 0, rx: 0, ry: 0 }, vrButtons: {} })
+		}
+	);
+}
+function physicsApi() {
+	return physicsRef;
+}
 
 /** @param {string} moduleId */
 function makeApi(moduleId) {
@@ -178,6 +201,69 @@ function makeApi(moduleId) {
 			import('./vrRadialMenu').then((menu) =>
 				menu.registerVRMenuEntry({ ...entry, id: moduleId + ':' + entry.id })
 			);
+		},
+		/**
+		 * Declare key bindings so they list in Settings ▸ Shortcuts under this
+		 * module (display-only — poll api.input() / subscribe api.onInput).
+		 * @param {{label: string, keys: string}[]} bindings
+		 */
+		registerBindings(bindings) {
+			import('./inputRuntime').then((m) => m.registerBindings(moduleId, bindings));
+		},
+		/** Per-frame input snapshot: {codes: Set<'KeyW'...>, axes: {lx,ly,rx,ry}, vrButtons} */
+		input() {
+			return inputApi().getInput();
+		},
+		/** Key down/up events; returns an unsubscribe. @param {(kind: 'down'|'up', code: string) => void} fn */
+		onInput(fn) {
+			let unsub = () => {};
+			import('./inputRuntime').then((m) => (unsub = m.onInput(fn)));
+			return () => unsub();
+		},
+		/** Pause the host's own use of an input scope while your module drives:
+		 * 'keys' (WASD camera fly / play movement) or 'locomotion' (VR left stick).
+		 * ALWAYS release (module disable/error releases everything).
+		 * @param {'keys'|'locomotion'} scope */
+		claimInput(scope) {
+			import('./inputRuntime').then((m) => m.claimInput(scope));
+		},
+		/** @param {'keys'|'locomotion'} scope */
+		releaseInput(scope) {
+			import('./inputRuntime').then((m) => m.releaseInput(scope));
+		},
+		/**
+		 * Physics access (P-A/P-B). All mutations are INITIATOR-ONLY (the peer
+		 * that started the simulation steps the world — golden rule 8): forward
+		 * inputs to the initiator via api.send and let IT call these.
+		 */
+		physics: {
+			/** true while THIS peer runs the simulation */
+			simulating: () => physicsApi()?.isInitiator() ?? false,
+			isInitiator: () => physicsApi()?.isInitiator() ?? false,
+			/** push a dynamic body @param {string} uuid @param {number[]} impulse */
+			applyImpulse: (uuid, impulse) => physicsApi()?.applyImpulse(uuid, impulse) ?? false,
+			/** drive a revolute joint's motor (P-B) @param {string} jointId @param {number} vel @param {number=} maxForce */
+			setJointMotor: (jointId, vel, maxForce) =>
+				physicsApi()?.setJointMotor(jointId, vel, maxForce) ?? false,
+			/** the replicated joint defs @returns {Promise<any[]>} */
+			joints: () => import('./joints').then((m) => m.jointsSnapshot())
+		},
+		/**
+		 * Possess an object: WASD/arrows or the VR left stick drive it (tank
+		 * controls) with a follow camera; Esc releases. Possessing selects it
+		 * (selection = lock), suspends its flow effects and records ONE undo
+		 * entry on release. @param {string} uuid
+		 * @param {{camera?: 'chase'|'orbit'|'none', speed?: number, turnSpeed?: number}=} opts
+		 */
+		possess(uuid, opts) {
+			return possessRef?.possess(uuid, opts) ?? false;
+		},
+		releasePossess() {
+			possessRef?.release();
+		},
+		/** the currently selected object's uuid (undefined when none) */
+		selectedUuid() {
+			return /** @type {any} */ (get(selectedObject))?.uuid;
 		},
 		scene: () => get(globalScene),
 		objectsGroup: () => get(objectsGroup),

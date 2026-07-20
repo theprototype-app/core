@@ -8,6 +8,10 @@
 
 let showToast = $state(false);
 
+// U-3: cap how many generic toasts stack at once (older ones collapse into a
+// "+N more" line) so bursts can't fill the screen
+const MAX_TOASTS = 4;
+
 $effect(() => {
     if($loading.length > 0) showToast = true;
     if($loading.length > 0)
@@ -279,7 +283,10 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 {/if}
 {/each}
 
-{#each $toastStore as toast}
+{#if $toastStore.length > MAX_TOASTS}
+<div class="my-1 text-center text-xs text-gray-400">+{$toastStore.length - MAX_TOASTS} more…</div>
+{/if}
+{#each $toastStore.slice(-MAX_TOASTS) as toast}
 <div class="my-1">
     <Toast
         dismissable={false}

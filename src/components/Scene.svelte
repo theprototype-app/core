@@ -7,10 +7,12 @@
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener } from '../stores/appStore';
 	import { get } from 'svelte/store';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
+	import { holdBody, releaseBody } from '$lib/physics';
+	import { sculptObject, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
@@ -45,6 +47,7 @@
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
+	import PingHighlights from './PingHighlights.svelte';
 	import PathWaypoints from './PathWaypoints.svelte';
 	import LockHighlights from './LockHighlights.svelte';
 	import Grid from '../extensions/Grid.svelte';
@@ -275,6 +278,8 @@
 			if (event.value) {
 				// animated objects: park at their base so the gizmo edits the base transform
 				suspendAnimation(object.uuid);
+				// P-A: mid-sim, a grabbed dynamic body follows the gizmo kinematically
+				holdBody(object.uuid);
 				dragStartState = {
 					uuid: object.uuid,
 					pos: object.position.toArray(),
@@ -283,6 +288,7 @@
 				};
 			} else if (dragStartState && dragStartState.uuid === object.uuid) {
 				resumeAnimation(object.uuid);
+				releaseBody(object.uuid); // back to dynamic + throw velocity
 				const after = {
 					pos: object.position.toArray(),
 					rot: object.rotation.toArray(),
@@ -365,6 +371,8 @@
 		let downPosition = null;
 		let downTime = 0;
 		let strokeActive = false;
+		let sculptActive = false; // T-2 brush drag in progress
+		let lastSculptAt = 0;
 		let marqueeStart = null; // shift-drag box select (13)
 		let rightDown = null; // right-click TAP opens the Add/object menu (77)
 
@@ -391,6 +399,21 @@
 				strokePointFromRay(selectionRaycaster);
 				return;
 			}
+			// T-2: sculpt mode — dragging brushes the terrain instead of orbiting
+			if ($sculptObject && !$isLocked && !$isVRMode) {
+				const terrain = $objectsGroup?.getObjectByProperty('uuid', $sculptObject);
+				setRayFromEvent(event);
+				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
+				if (hit) {
+					sculptActive = true;
+					lastSculptAt = performance.now();
+					if ($orbitControls) $orbitControls.enabled = false;
+					beginStroke($sculptObject);
+					const local = terrain.worldToLocal(hit.point.clone());
+					strokeMove($sculptObject, local.x, local.z);
+				}
+				return;
+			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
 			if (event.shiftKey && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
 				marqueeStart = [event.clientX, event.clientY];
@@ -408,6 +431,23 @@
 					x1: Math.max(marqueeStart[0], event.clientX),
 					y1: Math.max(marqueeStart[1], event.clientY)
 				};
+			}
+			// T-2: the brush cursor tracks the terrain; a held button keeps sculpting
+			if ($sculptObject) {
+				const terrain = $objectsGroup?.getObjectByProperty('uuid', $sculptObject);
+				setRayFromEvent(event);
+				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
+				if (hit) {
+					showCursorAt(hit.point);
+					if (sculptActive) {
+						const now = performance.now();
+						const dt = Math.min((now - lastSculptAt) / 1000, 0.1);
+						lastSculptAt = now;
+						const local = terrain.worldToLocal(hit.point.clone());
+						strokeMove($sculptObject, local.x, local.z, dt);
+					}
+				} else hideCursor();
+				if (sculptActive) return;
 			}
 			if (!strokeActive) return;
 			setRayFromEvent(event);
@@ -450,6 +490,12 @@
 				}
 				$marqueeRect = null;
 				// fall through: a stationary shift-click toggles the hit object
+			}
+			if (sculptActive && event.button === 0) {
+				sculptActive = false;
+				if ($orbitControls) $orbitControls.enabled = true;
+				sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
+				return;
 			}
 			if (strokeActive && event.button === 0) {
 				strokeActive = false;
@@ -881,13 +927,14 @@
 <T.Group bind:ref={$worldRig} name="world-grab-rig">
 	<T.Group bind:ref={$objectsGroup} name="sceneObjects" />
 
-	<Grid showGrid={$showGrid} />
+	<Grid showGrid={$showGrid && $viewMode !== 'wireframe'} />
 
 	<MeasureOverlay />
 
 	<AnnotationPins />
 
 	<PingMarkers />
+	<PingHighlights />
 	<PathWaypoints />
 	<LockHighlights />
 </T.Group>

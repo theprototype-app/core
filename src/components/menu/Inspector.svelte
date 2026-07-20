@@ -22,6 +22,7 @@
 		switchMaterialType,
 		recordMaterialChange
 	} from '$lib/materialsHandler';
+	import { recordEntry } from '$lib/history';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
@@ -30,6 +31,15 @@
 	import { moveObjectToGroup } from '$lib/objectActions';
 	import { showLightHelpers } from '$lib/lightHelpers';
 	import { cameraNear, cameraFar, setCameraNear, setCameraFar } from '$lib/cameraClip';
+	import {
+		music,
+		musicLocalVolume,
+		musicMuted,
+		musicBlocked,
+		setMusicTrack,
+		setMusicPlaying,
+		setMusicVolume
+	} from '$lib/sceneMusic';
 	import {
 		environment,
 		ENVIRONMENT_PRESETS,
@@ -55,7 +65,8 @@
 		objectsGroup,
 		selectedObject,
 		backgroundColor,
-		globalCamera
+		globalCamera,
+		viewMode
 	} from '../../stores/sceneStore';
 	import { peers, inspectorClose, inspectorKind, showToast } from '../../stores/appStore.js';
 
@@ -232,6 +243,26 @@
 			uuid: $selectedObject.uuid,
 			[parameter]: $selectedObject[parameter]
 		});
+	}
+
+	// Cast toggle also stamps userData.shadow so the opt-out survives GLTF sync
+	// (the bare castShadow flag does not round-trip through GLTFExporter) — V-1
+	function setCastShadow() {
+		$selectedObject.userData.shadow = $selectedObject.castShadow ? undefined : false;
+		sendParam('castShadow');
+	}
+
+	// P-A: physics body params live on userData.physics (replicates free via
+	// object sync / GLTF extras / sessions); flow nodes override at sim start.
+	// Each edit replicates via objectParameters and records a props undo entry.
+	/** @param {any} patch */
+	function setPhysics(patch) {
+		const before = $selectedObject.userData.physics ? { ...$selectedObject.userData.physics } : null;
+		const next = { mode: 'auto', ...($selectedObject.userData.physics ?? {}), ...patch };
+		$selectedObject.userData.physics = next;
+		recordEntry({ kind: 'props', uuid: $selectedObject.uuid, before: { physics: before }, after: { physics: next } });
+		$peers.send({ type: 'objectParameters', parameter: 'physics', uuid: $selectedObject.uuid, physics: next });
+		selectedObject.update((v) => v);
 	}
 
 	function sendName() {
@@ -543,7 +574,62 @@
 				</p>
 			</Section>
 
+			<Section label="Music">
+				<p class="ui-section-label">Scene track (shared)</p>
+				<select
+					class="ui-input w-full"
+					value={$music.hash ?? ''}
+					onchange={(e) => {
+						const hash = e.currentTarget.value || null;
+						const item = $explorerItems.find((entry) => entry.hash === hash);
+						setMusicTrack(hash, item?.name ?? '');
+					}}
+				>
+					<option value="">— no music —</option>
+					{#each $explorerItems.filter((item) => item.kind === 'audio') as item (item.id)}
+						<option value={item.hash}>{item.name}</option>
+					{/each}
+					{#if $music.hash && !$explorerItems.some((item) => item.hash === $music.hash)}
+						<option value={$music.hash}>{$music.name || 'shared track'} (fetching…)</option>
+					{/if}
+				</select>
+				<div class="mt-1 flex items-center gap-2">
+					<button
+						class="ui-chip {$music.playing ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500'}"
+						disabled={!$music.hash}
+						onclick={() => setMusicPlaying(!$music.playing)}
+					>
+						{$music.playing ? '■ Stop' : '▶ Play'}
+					</button>
+					{#if $musicBlocked && $music.playing}
+						<span class="text-xs text-amber-400">click anywhere to enable audio</span>
+					{/if}
+				</div>
+				<SliderRow label="Shared volume" min={0} max={1} step={0.05} value={$music.volume} onchange={(v) => setMusicVolume(v)} />
+				<p class="ui-section-label">This device</p>
+				<SliderRow label="Local volume" min={0} max={1} step={0.05} value={$musicLocalVolume} onchange={(v) => musicLocalVolume.set(v)} />
+				<Checkbox bind:checked={$musicMuted}>Mute music on this device</Checkbox>
+				<p class="mt-1 text-xs text-gray-400">
+					One background track for everyone, synced to the same moment. Volume is shared; the local trim + mute affect only you.
+				</p>
+			</Section>
+
 			<Section label="View">
+				<p class="ui-section-label">Viewport — this device</p>
+				<div id="view-mode-switch" class="flex flex-wrap gap-1">
+					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
+						<button
+							class={'ui-chip ' +
+								($viewMode === mode ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => viewMode.set(mode)}
+						>
+							{label}
+						</button>
+					{/each}
+				</div>
+				<p class="mb-1 text-xs text-gray-400">
+					Local render mode (ambient occlusion + wireframe are desktop-only; not shown to peers).
+				</p>
 				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
 				<SliderRow
 					label="Camera FOV"
@@ -1200,7 +1286,7 @@
 
 					<p class="ui-section-label">Shadow</p>
 					<div class="flex gap-4 px-1">
-						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => sendParam('castShadow')}>
+						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => setCastShadow()}>
 							Cast
 						</Checkbox>
 						<Checkbox
@@ -1210,6 +1296,47 @@
 							Receive
 						</Checkbox>
 					</div>
+				</Section>
+			{/if}
+
+			{#if !$selectedObject.isLight}
+				<Section label="Physics">
+					<div class="ui-row items-center gap-2">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Body</span>
+						<ThemedSelect
+							id="physics-mode"
+							items={[
+								{ value: 'auto', name: 'Auto (scenery)' },
+								{ value: 'static', name: 'Static' },
+								{ value: 'dynamic', name: 'Dynamic' }
+							]}
+							value={$selectedObject.userData.physics?.mode ?? 'auto'}
+							onchange={(/** @type {any} */ v) => setPhysics({ mode: v })}
+						/>
+					</div>
+					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
+						<SliderRow label="Mass" min={0.1} max={100} step={0.1} value={$selectedObject.userData.physics?.mass ?? 1}
+							onchange={(v) => setPhysics({ mass: v })} />
+					{/if}
+					<SliderRow label="Bounciness" min={0} max={1} step={0.05} value={$selectedObject.userData.physics?.restitution ?? 0.3}
+						onchange={(v) => setPhysics({ restitution: v })} />
+					<SliderRow label="Friction" min={0} max={2} step={0.05} value={$selectedObject.userData.physics?.friction ?? 0.5}
+						onchange={(v) => setPhysics({ friction: v })} />
+					<div class="ui-row items-center gap-2">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Collider</span>
+						<ThemedSelect
+							id="physics-collider"
+							items={[
+								{ value: 'box', name: 'Box' },
+								{ value: 'hull', name: 'Convex hull' }
+							]}
+							value={$selectedObject.userData.physics?.collider ?? 'box'}
+							onchange={(/** @type {any} */ v) => setPhysics({ collider: v })}
+						/>
+					</div>
+					<p class="mt-1 text-xs text-gray-400">
+						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
+					</p>
 				</Section>
 			{/if}
 		</div>

@@ -5,6 +5,7 @@
     import { isLocked, playerCam, editorCam, globalScene } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
+    import { inputClaims } from '$lib/inputRuntime'
 
     const { renderer, camera, invalidate } = useThrelte()
   
@@ -66,6 +67,9 @@
 
     useTask(
     (delta) => {
+
+      // K-C: a module claimed the keys (possession) — WASD drives IT, not the camera
+      if ($inputClaims.includes('keys')) return
 
       const beforeX = $cameraParent?.position.x ?? 0
       const beforeZ = $cameraParent?.position.z ?? 0

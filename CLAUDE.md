@@ -35,9 +35,35 @@ loadable play content. Everything a user does must be visible to connected peers
   #9 `Socket.svelte` wraps the xyflow Handle and paints `typeColor` by socket type;
   audit + verdicts in committed `NODES.md`), `objectMenu` (#9: `buildObjectMenuItems` —
   ONE object context menu shared by Controls' direct menu + ViewportMenu's "Selected"
-  submenu), `moduleSDK` + `userModules` (zip/URL installs), `physics` (rapier,
-  initiator-authoritative), `environment` (presets + scene-root rig, latest-wins sync,
-  `passthroughActive` local sky lift), `animatedImports` (raw-bytes objectfile sync),
+  submenu; #12: selection-aware — counted labels act on the SET, Group selection,
+  Physics ▸ Weld/Hinge, Sculpt terrain), `moduleSDK` + `userModules` (zip/URL installs),
+  `physics` (#12 rework: rapier steps as a flowRuntime **post-tick hook** —
+  flow poses → kinematic targets → step → write-back; fixed-timestep accumulator
+  (1/60, ≤8 substeps) so sim time tracks REAL time under throttled rAF; flow-animated
+  objects = KINEMATIC bodies w/ slerp-interpolated substep targets; dynamics have
+  sleep OFF + movement-gated broadcasts; drag/throw via holdBody/releaseBody; external
+  writes detected by write-back DEVIATION → 250ms kinematic hold; hull colliders
+  opt-in via userData.physics; Inspector Physics section; SimControls HUD + `P`) +
+  `joints` (#12: replicated sceneJoints defs — weld/revolute+motor, OBJECT-local
+  anchors → body-local at sim start, jointcreate/delete + getjoints handshake,
+  'joint' history kind, sender-side delete cascade, sessions persist),
+  `inputRuntime` (#12: store-only SDK input — key codes + VR axes published by
+  vrControls, claims 'keys'/'locomotion' gate PointerLockControls/editorNavigation/
+  VR stick; module bindings list in Settings), `possess` (#12: tank-controls drive of
+  any object + chase/orbit camera; possessing = selecting; ONE undo per ride),
+  `handModels` (#12: custom hand GLB = IDENTITY — hash on `handmodel` msg + handshake,
+  assetShare pull, rigid-at-wrist render), `terrainSculpt` (#12: brush raise/lower/
+  smooth/flatten over the meshgeo channel; weld by quantized (x,z) COLUMNS, rebuilt in
+  the applyMeshGeo hook; one snapshot+undo per stroke; SculptToolbar pill),
+  `sceneMusic` (#12: ONE shared background track, latest-wins `music` singleton —
+  NOT piggybacked on environment; synced-clock loop offset; LOCAL volume/mute overlay),
+  `shadowDefaults` (#12: objectsGroup-sweep sets cast/receiveShadow on every mesh;
+  opt-out = userData.shadow=false) + `palette` (#12: paletteColorFor(uuid) deterministic
+  default colors) + `viewMode` (#12: LOCAL Shaded/Shaded+AO/Wireframe;
+  wireframe = scene.overrideMaterial, never per-material),
+  `environment` (presets + scene-root rig, latest-wins sync,
+  `passthroughActive` local sky lift; #12: sun casts w/ scene-fit frustum +
+  env-shadow-catcher ShadowMaterial disc), `animatedImports` (raw-bytes objectfile sync),
   `prefabs` (local IndexedDB library), `explorer` (LOCAL asset library: IndexedDB index
   + per-item blobs, content hashes, thumbnails) + `explorerDrop` (drag-out placement/
   texturing) + `assetShare` (assetfile/getasset hash push+pull → 'Shared' folder) +
@@ -70,14 +96,20 @@ loadable play content. Everything a user does must be visible to connected peers
   takes `{assets,packs,flow}` include-opts, adds a `packs/` section; `fileHandler` saves/
   loads it, Sidebar Files = [GLTF | Scene | ⚙cog]), `measure`, `cameraBookmarks`,
   `editorNavigation`, `lightHelpers`.
-- `src/modules/` — core modules (hello, button, dungeon, piano, pong) + `index.js`
-  `coreModules` list; manager enables/disables (live enable, reload to disable).
+- `src/modules/` — core modules (hello, button, dungeon, piano, pong; #12: avatar =
+  possess-selected, essentials = 6 clickable interactables whose KIND derives from the
+  replicated object NAME, car = jointed drivable demo w/ click-claim + drive-op
+  forwarding) + `index.js` `coreModules` list; manager enables/disables (live enable,
+  reload to disable).
 - UI: `components/menu/*` (drawers/modals; visibility via stores + `hidePanels/
   restorePanels`), `components/editors/*` (flow editor + CodeMirror panels),
   `components/play/*` (player, avatars — photo = billboard card; the VR follower
   panels: Menu/ObjectsPanel/PropertiesPanel/ColorPalette/PrefabsPanel/Keyboard/
   ChatPanel/Stats — named `vr<x>-*` control meshes, all grip-grabbable),
-  scene-overlay components (PingMarkers/PathWaypoints/LockHighlights), shared
+  scene-overlay components (PingMarkers/PingHighlights (#12: uuid-carrying pings flash
+  an object box)/PathWaypoints/LockHighlights), `SimControls`/`SculptToolbar` (#12:
+  runes-mode HUD pills — the MobileAddButton "own file so onclick doesn't mix with
+  on:" precedent), shared
   `ContextMenu.svelte` (caps to viewport + scrolls vertically when tall, never
   horizontally; per-submenu flip via left/right/top/bottom — no transform),
   `components/shared/WindowShell.svelte` (197: reusable window CHROME — collapsible/
@@ -107,10 +139,15 @@ loadable play content. Everything a user does must be visible to connected peers
 6. Content that can't round-trip (skinned rigs) replicates as its **original file
    bytes** (`objectfile`), not through the per-node exporter (GLTFExporter is lossy and
    `sendObject` splits children, destroying rigs). Topology edits snapshot the FULL
-   geometry (`meshgeo` positions array, size-capped) — receivers swap it wholesale, and
+   geometry (`meshgeo`, size-capped 45k floats) — receivers swap it wholesale, and
    the applier must REBUILD any live edit-session caches (applyMeshGeo re-derives face
-   groups; a stale cache after undo/remote swap bit us). Live gestures stream throttled
-   previews (~5/s) and commit ONE final snapshot + undo entry.
+   groups + the sculpt weld map; a stale cache after undo/remote swap bit us). Live
+   gestures stream throttled previews (~5/s) and commit ONE final snapshot + undo entry.
+   **Big numeric payloads travel as RAW BYTES** (`new Float32Array(arr).buffer`), never
+   plain number arrays: binarypack recurses per element and a ~40k-number array throws
+   "Maximum call stack size exceeded" — which `broadcast()`'s catch SWALLOWS, so the
+   message silently never leaves (#12; large face-edits never replicated). applyMeshGeo
+   normalizes plain array / ArrayBuffer / typed-array view.
 7. Singleton shared state (environment) syncs latest-wins via a `changedAt` stamp;
    symmetric pulls need a deterministic direction (nodesync: lower count pulls,
    peer-id tiebreak) or two drifted peers swap forever.
@@ -122,7 +159,9 @@ loadable play content. Everything a user does must be visible to connected peers
    joiners/restores without handshake dumps. REPLY over your stable OUTGOING
    `peer.connections[peerId]`, never the incoming conn (it can be a stale duplicate
    from the connect dance). binarypack delivers Uint8Array **views** — slice
-   byteOffset..byteLength before hashing.
+   byteOffset..byteLength before hashing. #12: `connections[peerId]` may legitimately
+   BE an adopted inbound conn (see the connect-dance gotcha) — it's still the stable
+   channel; DataConnections are bidirectional and OUTGOING conns are wireData'd too.
 10. Serializers (sendObjects, GLTF save, autosave, sessions) must
    `parkAnimatedAtBase()` first or receivers bake mid-swing poses as animation base;
    `restoreBase` calls `updateMatrix()` because toJSON/GLTFExporter read the matrix
@@ -262,6 +301,28 @@ loadable play content. Everything a user does must be visible to connected peers
   init value is a truthy empty array.
 - The Bash tool's `cd` leaks into the shared shell cwd — `Set-Location` back to the
   repo root before PowerShell git/npm calls.
+- **Connect dance (#12 fix)**: the host CLOSES the joiner's original conn pre-approval;
+  real WebRTC often never signals that close, and a fresh reopen can wedge mid-ICE —
+  the JOINER could never send anything to the host. peerHandler now ADOPTS an open
+  inbound conn as the send channel when the outgoing one is dead, wires the data
+  dispatcher (`wireData`) on OUTGOING conns too (the remote may talk back over them),
+  and `restoreConnection` retries with backoff after closing the stale conn first.
+- **Physics ↔ rapier traps (#12)**: comparing quaternions with `dot()` reads |q|² —
+  rapier's f32 components leave the norm ~1e-9 off unit, so "unchanged" looks like a
+  deviation (compare COMPONENT-WISE). A kinematic platform moving UNDER a sleeping
+  dynamic body never wakes it — dynamics run `setCanSleep(false)` + movement-gated
+  broadcasts instead of `isSleeping()` gating. Kinematic substep targets must be
+  SLERP-INTERPOLATED per substep: feeding only the end pose gives full velocity on
+  substep 1 and zero after, so friction alternately drags and brakes (no net fling).
+  Sim speed must come from a fixed-timestep ACCUMULATOR — a per-frame dt clamp runs
+  slow-motion whenever rAF is throttled (background/headless tabs).
+- Explorer `addItemFromBytes` TIME-BOXES its decorative thumbnail (Promise.race 4s) —
+  a wedged/slow GLB parse on the receiver used to silently block storing SHARED bytes.
+- Static-import cycle map grew in #12: objectActions now imports geometries
+  (createGroup) and joints; multiTransform/objectMenu reach physics/terrainSculpt
+  DYNAMICALLY; moduleSDK reaches inputRuntime/physics/possess via PRIMED dynamic
+  imports (module-level refs resolved at boot). When adding an SDK capability, assume
+  a static edge into moduleSDK's consumers closes a cycle (flowRuntime → moduleSDK).
 - The dungeon module publishes gameplay data on its group's `userData.play`
   (grid/rooms/floorValue) — `dungeonPlay.js` consumes it; keep that contract stable.
 
@@ -290,7 +351,26 @@ Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:51
   reposition on narrow; don't blanket-revert them anymore.)
 - VR phases: verify math/state headlessly, state clearly that on-device feel is the
   user's manual check.
-- Status (2026-07-18): **Roadmap #9 SHIPPED** (release runway). B2 VR: 120Hz
+- Status (2026-07-20): **Roadmap #12 "playground & polish" SHIPPED — ALL 19 phases**
+  on `feature/playground-polish` (off ai-scene-assistant; NOT merged). Opus set (11):
+  V-1 shadows-by-default + catcher, V-3 palette (kills 0x00ff00) + look tune, T-1
+  Add▸Terrain, U-2 multi-select menu (groupSelection one-undo, multi prefab/delete,
+  desktop Ungroup), U-1 ping v2 (uuid object-highlight + radial Ping), R-2 VR
+  snap-angle unify + live labels, R-1 VR beam+reticle+hover shell, M-2 audio-pack
+  install + sound rolloff, M-1 sceneMusic singleton, V-2 N8AO + viewModes, U-3 toast
+  dedupe/cap + settings search. Fable set (8): P-A physics rework (post-tick hook,
+  kinematic flow bodies, accumulator, deviation holds, hulls, Inspector Physics,
+  SimControls), K-C SDK inputRuntime + claims + api.physics, P-B joints
+  (weld/hinge/motors + menu + sessions), K-D possess + avatar module, K-E essentials
+  (6 interactables), R-3 hand models (capsule style + GLB identity), T-2 terrain
+  sculpt (weld columns + smooth normals + SculptToolbar), K-F drivable car
+  (click-claim + drive-op forwarding; ~14m in e2e). THREE deep pre-existing bugs
+  fixed: joiner-cannot-send-to-host (adopted inbound conn), meshgeo big-array
+  binarypack stack overflow (raw-bytes wire format), Explorer thumbnail hang blocking
+  shared bytes. svelte-check ended **501/77** (new baseline — hold it). Plan:
+  docs/plan/roadmap-12-playground-polish.md (per-phase hashes). Backlog'd: articulated
+  hand retargeting, steered knuckles, VR sculpt, joint-clone-on-duplicate.
+  --- Earlier — Status (2026-07-18): **Roadmap #9 SHIPPED** (release runway). B2 VR: 120Hz
   (session.updateTargetFrameRate off supportedFrameRates on session start; vrTargetHz
   setting) + hands↔controllers switch fix (shouldSendHands forces a send on rep-flip —
   the `!moved && !hasJoints` gate ate the switch-back) + cuboid peer hands
@@ -346,7 +426,17 @@ register(api)}`. api surface: registerNodeGroup (+custom components), registerEf
 (base-managed per-frame), registerPrimitive (replicated `/create`), registerClickHandler
 (desktop+VR), registerInteractiveGroup (scene-root click targets), registerFrameTask,
 send/onMessage (namespaced `{type:'module', moduleId}`), registerStateSync (late-joiner
-handshake), registerMenu (manager card buttons), scene/objectsGroup/peerId/toast/now/
-THREE/assetUrl. User modules (zip/URL via the manager) must be self-contained — no
-imports; guide in `MODULES.md` + `docs/sdk/`. Script nodes run arbitrary replicated
-code deterministically (pure function of object/base/data/time) — never stream outputs.
+handshake), registerMenu (manager card buttons), registerVRMenuEntry,
+scene/objectsGroup/peerId/toast/now/THREE/assetUrl/selectedUuid. #12 additions:
+**input** — registerBindings (lists in Settings ▸ Shortcuts), input() per-frame
+snapshot {codes, axes, vrButtons}, onInput down/up events, claimInput/releaseInput
+('keys'|'locomotion' pause the host's own consumers); **physics** —
+api.physics.{isInitiator, applyImpulse, setJointMotor, joints()} (mutations are
+INITIATOR-ONLY: forward inputs via api.send and let the stepping peer apply — the car
+module is the worked recipe, pong's paddle pattern); **possess/releasePossess**
+(tank-controls drive + follow camera; possessing = selecting). A module KIND that
+must agree across peers derives from the replicated object NAME, never locally-set
+userData (essentials + car). User modules (zip/URL via the manager) must be
+self-contained — no imports; guide in `MODULES.md` + `docs/sdk/`. Script nodes run
+arbitrary replicated code deterministically (pure function of object/base/data/time)
+— never stream outputs.

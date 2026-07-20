@@ -189,6 +189,7 @@ export function endStroke() {
 		new THREE.MeshBasicMaterial({ color: get(drawColor) })
 	);
 	mesh.name = 'Stroke';
+	mesh.userData.shadow = false; // draw strokes don't cast (basic-material lines)
 
 	group.add(mesh);
 	objectsGroup.update((value) => value);

@@ -75,6 +75,7 @@ function startSource(entry, data, time) {
 	}
 	entry.gain.gain.value = data.volume ?? 0.8;
 	entry.panner.refDistance = data.radius ?? 5;
+	entry.panner.rolloffFactor = data.rolloff ?? 1; // how fast it fades with distance
 	const src = ctx.createBufferSource();
 	src.buffer = entry.buffer;
 	src.loop = data.loop !== false;
@@ -108,7 +109,7 @@ export function updateSounds(pairs, sceneObjects, time) {
 			if (!entry.failed) loadBuffer(entry, data.hash);
 			continue;
 		}
-		const key = [!!data.playing, data.loop !== false, data.volume ?? 0.8, data.radius ?? 5].join('|');
+		const key = [!!data.playing, data.loop !== false, data.volume ?? 0.8, data.radius ?? 5, data.rolloff ?? 1].join('|');
 		if (data.playing && (!entry.src || entry.key !== key)) startSource(entry, data, time);
 		else if (!data.playing && entry.src) stopSource(entry);
 		entry.key = key;

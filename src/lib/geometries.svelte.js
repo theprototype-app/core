@@ -3,6 +3,7 @@ import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLigh
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
+import { paletteColorFor } from '$lib/palette';
 
 // RectAreaLight renders black on Standard/Physical materials until the
 // uniforms lib initializes — once per session is enough (79)
@@ -56,10 +57,19 @@ export function createGeometry(command, uuid) {
         let mesh = customGeometryBuilders[geometry]
             ? customGeometryBuilders[geometry](options[0],options[1],options[2],options[3])
             : new (/** @type {any} */ (THREE))[geometry+'Geometry'](options[0],options[1],options[2],options[3]);
-        let material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-        let object = new THREE.Mesh(mesh, material);
+        let object = new THREE.Mesh(mesh, new THREE.MeshStandardMaterial({ roughness: 0.85 }));
         if (uuid) object.uuid = uuid
+        // deterministic palette color keyed by the FINAL uuid (peers compute the
+        // same color from the create message's uuid) — V-3, replaces 0x00ff00
+        object.material.color.set(paletteColorFor(object.uuid));
         object.name = geometry;
+        if (geometry === 'Terrain') {
+            // terrain gets a distinct sage look + a flag the Sculpt menu keys off
+            // (deterministic on both peers; survives toJSON + GLTF extras) — T-1
+            object.material.color.set('#81b29a');
+            object.material.roughness = 0.95;
+            object.userData.terrain = true;
+        }
         stampGeometryParams(object); // editable params survive sync (78)
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects
@@ -104,6 +114,24 @@ export function createLight(command, uuid) {
     }       
     if (light){
         fixLight.set(false);
+        // Directional/Spot cast shadows by default (V-1); Point stays opt-in
+        // (6-face cube-map cost). Deterministic: the same /light command runs
+        // on every peer, so shadow flags match without extra sync.
+        if (light.isDirectionalLight || light.isSpotLight) {
+            light.castShadow = true;
+            if (light.isDirectionalLight && light.shadow) {
+                light.shadow.camera.left = -15;
+                light.shadow.camera.right = 15;
+                light.shadow.camera.top = 15;
+                light.shadow.camera.bottom = -15;
+                light.shadow.camera.far = 80;
+                light.shadow.camera.updateProjectionMatrix();
+            }
+            if (light.shadow) {
+                light.shadow.bias = -0.0002;
+                light.shadow.normalBias = 0.02;
+            }
+        }
         if (uuid) light.uuid = uuid
         sceneObjects.add(light);
         //Trigger reactivity for UI list of objects

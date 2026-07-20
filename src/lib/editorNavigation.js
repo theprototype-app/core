@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { isLocked, isVRMode } from '../stores/sceneStore';
 import { specatorMode } from '../stores/appStore';
+import { isClaimed } from './inputRuntime';
 
 // WASD fly-panning for the desktop editor, Q down / E up, Shift = 3x.
 // Camera position and orbit target move together. Inert while typing, in
@@ -55,6 +56,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 export function updateEditorNavigation(delta, camera, controls) {
 	if (pressed.size === 0 || !camera || !controls) return;
 	if (get(isLocked) || get(isVRMode) || get(specatorMode)) return;
+	if (isClaimed('keys')) return; // K-C: a module owns WASD (possession)
 
 	movement.set(0, 0, 0);
 	camera.getWorldDirection(forward);

@@ -269,10 +269,28 @@ export function applyMeshGeo(uuid, positions) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
 	if (!object) return;
+	// positions arrive as a plain array (history replays), an ArrayBuffer (the
+	// wire format) or a typed-array VIEW (binarypack may deliver a view into a
+	// larger buffer — slice the exact bytes, the assetShare gotcha)
+	const floats =
+		positions instanceof ArrayBuffer
+			? new Float32Array(positions)
+			: ArrayBuffer.isView(positions)
+				? new Float32Array(
+						/** @type {any} */ (positions).buffer.slice(
+							/** @type {any} */ (positions).byteOffset,
+							/** @type {any} */ (positions).byteOffset + /** @type {any} */ (positions).byteLength
+						)
+					)
+				: new Float32Array(positions);
 	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+	geometry.setAttribute('position', new THREE.BufferAttribute(floats, 3));
 	geometry.computeVertexNormals();
 	geometry.computeBoundingSphere();
+	// T-2: terrain reads smooth, not faceted — average normals across
+	// position-welded vertices (deterministic: every peer derives the same
+	// shading from the same positions; nothing extra on the wire)
+	if (object.userData.terrain) smoothWeldedNormals(geometry);
 	object.geometry?.dispose?.();
 	object.geometry = geometry;
 	object.userData.faceEdited = true; // parametric Geometry rows disable (like vertexEdited)
@@ -282,7 +300,42 @@ export function applyMeshGeo(uuid, positions) {
 		rebuildFaces();
 		refreshFaceOverlay();
 	}
+	// a live sculpt session's weld map is a cache over THIS geometry — rebuild
+	// it after a remote stroke / undo swap (dynamic: terrainSculpt imports us)
+	import('./terrainSculpt').then((m) => {
+		if (get(m.sculptObject) === uuid) m.rebuildWeldMap(object);
+	});
 	objectsGroup.update((v) => v);
+}
+
+/** Average normals across position-welded vertices of a NON-INDEXED geometry
+ * (computeVertexNormals on split tris gives flat shading). @param {any} geometry */
+function smoothWeldedNormals(geometry) {
+	const position = geometry.attributes.position;
+	const normal = geometry.attributes.normal;
+	if (!position || !normal) return;
+	/** @type {Map<string, number[]>} */
+	const groups = new Map();
+	for (let i = 0; i < position.count; i++) {
+		const key =
+			Math.round(position.getX(i) * 1e4) +
+			'|' +
+			Math.round(position.getY(i) * 1e4) +
+			'|' +
+			Math.round(position.getZ(i) * 1e4);
+		let list = groups.get(key);
+		if (!list) groups.set(key, (list = []));
+		list.push(i);
+	}
+	const sum = new THREE.Vector3();
+	for (const indices of groups.values()) {
+		if (indices.length < 2) continue;
+		sum.set(0, 0, 0);
+		for (const i of indices) sum.add(new THREE.Vector3(normal.getX(i), normal.getY(i), normal.getZ(i)));
+		sum.normalize();
+		for (const i of indices) normal.setXYZ(i, sum.x, sum.y, sum.z);
+	}
+	normal.needsUpdate = true;
 }
 
 /** Is this object simple enough to face-edit in VR? @param {any} object */
@@ -645,7 +698,11 @@ function applyGeometrySnapshot(positions) {
 function broadcastMeshGeo(uuid, positions) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'meshgeo', uuid: uuid, positions: positions });
+	// raw Float32 BYTES, not a plain number array: binarypack recurses per
+	// element and blows the call stack on big arrays (a 48-seg terrain snapshot
+	// = 41k numbers silently vanished — broadcast() catches the throw), and
+	// bytes are ~half the wire size anyway. applyMeshGeo accepts either shape.
+	if (peer) peer.send({ type: 'meshgeo', uuid: uuid, positions: new Float32Array(positions).buffer });
 }
 
 /**
@@ -1026,8 +1083,10 @@ export function cancelFaceAdjust() {
 // undo/redo replays meshgeo snapshots through the same apply + broadcast path
 registerHistoryKind('meshgeo', (entry, state) => {
 	applyMeshGeo(entry.uuid, state);
+	// same raw-bytes wire format as broadcastMeshGeo (big plain arrays blow
+	// binarypack's recursion and the replay would silently not replicate)
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'meshgeo', uuid: entry.uuid, positions: state });
+	if (peer) peer.send({ type: 'meshgeo', uuid: entry.uuid, positions: new Float32Array(state).buffer });
 	return true;
 });

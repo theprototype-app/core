@@ -35,6 +35,10 @@ export const primitivesCatalog = [
 		]
 	},
 	{
+		group: 'Ground',
+		items: [{ label: 'Terrain', command: '/create Terrain 24 48' }]
+	},
+	{
 		group: 'Light',
 		items: [
 			{ label: 'Ambient', command: '/light ambient' },

@@ -161,7 +161,7 @@ export const nodeCatalog = [
 				// spatial audio on the connected object; file from the Explorer (97)
 				type: 'sound',
 				label: 'Sound',
-				defaults: { hash: null, file: '', volume: 0.8, radius: 5, loop: true, playing: false }
+				defaults: { hash: null, file: '', volume: 0.8, radius: 5, rolloff: 1, loop: true, playing: false }
 			}
 		]
 	}

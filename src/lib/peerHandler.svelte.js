@@ -16,8 +16,11 @@ import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate } from '$lib/physics';
+import { applySimulate, physicsExternalMove } from '$lib/physics';
+import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
+import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
+import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
@@ -154,6 +157,11 @@ export class PeerConnection {
 		initVoiceChat(this);
 		wire();
 
+		// Wire the message dispatcher onto a connection. Historically only INBOUND
+		// conns listened for data; with the adopted-inbound channel (see below) a
+		// peer may send back over OUR outgoing conn, so those wire it too (P-A).
+		this.wireData = handleData.bind(this);
+
 		function handleConnection(conn) {
 
 			// Update approval status on expected connections
@@ -187,6 +195,28 @@ export class PeerConnection {
 				conn.close();
 			}
 
+			// ADOPT an open inbound conn as our send channel when our outgoing one
+			// is dead (P-A find): the host closes the joiner's original conn before
+			// approving, the close is often never signaled, and the fresh reopen can
+			// wedge mid-ICE — leaving the JOINER unable to send ANYTHING to the host.
+			// DataConnections are bidirectional, and this one is provably alive.
+			conn.on('open', () => {
+				const existing = this.connections[conn.peer];
+				if (existing?.open) return; // stable outgoing conn stays preferred
+				console.log('adopting inbound connection from ' + conn.peer + ' as the send channel');
+				if (existing) { try { existing.close(); } catch {} }
+				this.connections[conn.peer] = conn;
+				conn.on('close', () => this.onConnClose(conn.peer, conn));
+				this.openedPeers.add(conn.peer);
+				peers.update((value) => value);
+				this.sendHandshake(conn, conn.peer, true, this.peer.id);
+			});
+
+			this.wireData(conn);
+		}
+
+		/** @this {any} @param {any} conn */
+		function handleData(conn) {
 			conn.on('data', (data) => {
 				// console.log(data);
 				if(data.type == 'hosts') {
@@ -210,10 +240,25 @@ export class PeerConnection {
 					changeName(data.uuid, data.name);
 				} else if(data.type == 'move') {
 					moveGeometry(data.uuid, data.pos, data.rot, data.scale);
+					// P-A: mid-sim, a peer's move stream on a dynamic body becomes a
+					// kinematic hold (drops back to dynamic after 250ms of silence)
+					physicsExternalMove(data.uuid);
 				} else if(data.type == 'simulate') {
 					applySimulate(data);
+				} else if(data.type == 'jointcreate') {
+					applyJointCreate(data);
+				} else if(data.type == 'jointdelete') {
+					applyJointDelete(data);
+				} else if(data.type == 'joints') {
+					applyJointsSnapshot(data.joints);
+				} else if(data.type == 'getjoints') {
+					sendJoints(data.sender);
+				} else if(data.type == 'handmodel') {
+					applyHandModel(data);
 				} else if(data.type == 'environment') {
 					applyRemoteEnvironment(data);
+				} else if(data.type == 'music') {
+					applyRemoteMusic(data);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
@@ -268,6 +313,7 @@ export class PeerConnection {
 				} else if(data.type == 'disconnected') {
 					handleDisconnected(data.peerId);
 					dropPeerEnvPresets(data.peerId);
+					dropPeerHandModel(data.peerId);
 				} else if(data.type == 'getnodes') {
 					deferUntilShareChoice('nodes', data.sender);
 				} else if(data.type == 'nodes') {
@@ -355,10 +401,13 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users})
 		conn.send({type: 'modules', versions: moduleVersions()})
 		conn.send(environmentState())
+		conn.send(musicState())
+		conn.send(handModelState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getmodulestate', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
@@ -380,26 +429,59 @@ export class PeerConnection {
 				peers.update((value) => value);
 				this.sendHandshake(conn, peerId, getobjects, id);
 			});
+			// the remote may adopt THIS conn as their send channel (bidirectional)
+			this.wireData(conn);
         } else {
 			if (this.connections[peerId].peer == peerId) {
 				console.log(`Peer ${peerId} is already connected or has a pending request. Connection status: ${this.connections[peerId].open}`)
 				if(!this.connections[peerId].open) {
-					console.log('Restoring connection: ' + peerId);
-					const conn = this.peer.connect(peerId);
-           	 		this.connections[peerId] = conn;
-					conn.on('close', () => this.onConnClose(peerId, conn));
-            		conn.on('open', () => {
-						console.log('Connection to ' + peerId + ' restored');
-						this.openedPeers.add(peerId);
-						peers.update((value) => value);
-						this.sendHandshake(conn, peerId, getobjects, id);
-					});
+					this.restoreConnection(peerId, getobjects, id, 0);
 				}
 
 			}
 
 		}
     }
+
+	// Post-approval reopen of OUR outgoing conn to a host. The host closed our
+	// original conn before approving, and real WebRTC often never signals that
+	// close — the first fresh connect can wedge on the stale negotiation state
+	// and silently never open. RETRY with a bounded backoff until one opens
+	// (same fix the headless agent's peerBridge needed, roadmap #10) — without
+	// this the JOINING peer can never send anything to the host.
+	/** @param {string} peerId @param {boolean} getobjects @param {string} id @param {number} attempt */
+	restoreConnection(peerId, getobjects, id, attempt) {
+		if (this.connections[peerId]?.open) return; // an adopted inbound conn already covers this peer
+		console.log('Restoring connection: ' + peerId + (attempt ? ' (attempt ' + (attempt + 1) + ')' : ''));
+		// drop the stale never-opened conn FIRST — left in peerjs's per-peer
+		// bookkeeping it can wedge the fresh negotiation (offer never starts)
+		const stale = this.connections[peerId];
+		if (stale && !stale.open) {
+			try { stale.close(); } catch {}
+			delete this.connections[peerId];
+		}
+		const conn = this.peer.connect(peerId);
+		this.connections[peerId] = conn;
+		conn.on('close', () => this.onConnClose(peerId, conn));
+		conn.on('open', () => {
+			console.log('Connection to ' + peerId + ' restored');
+			this.openedPeers.add(peerId);
+			peers.update((value) => value);
+			this.sendHandshake(conn, peerId, getobjects, id);
+		});
+		this.wireData(conn);
+		setTimeout(() => {
+			// still ours, still never opened -> replace the stale conn and retry
+			if (this.connections[peerId] !== conn || conn.open) return;
+			if (attempt >= 4) {
+				console.log('restore to ' + peerId + ' gave up after ' + (attempt + 1) + ' attempts');
+				return;
+			}
+			try { conn.close(); } catch {}
+			delete this.connections[peerId];
+			this.restoreConnection(peerId, getobjects, id, attempt + 1);
+		}, 4000);
+	}
 
 	// A peer's outgoing connection dropped. Self-heal locally: drop the dead conn
 	// and run the FULL per-peer teardown right here, instead of relying on a
@@ -424,6 +506,7 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
 		dropPeerEnvPresets(peerId);
+		dropPeerHandModel(peerId);
 		checkLocks();
 	}
 

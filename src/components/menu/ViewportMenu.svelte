@@ -3,7 +3,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { drawMode, toggleDrawMode } from '$lib/drawMode';
-	import { simulating, remoteSimulating, toggleSimulation } from '$lib/physics';
+	import { simulating, simPaused, remoteSimulating, toggleSimulation, pauseSimulation, resetSimulation } from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { measureMode, toggleMeasure } from '$lib/measure';
@@ -12,6 +12,7 @@
 	import { viewportMenu, objectSearch, objectSearchEnabled } from '../../stores/appStore';
 	import { buildAddChildren } from '$lib/addObjects';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
+	import { sendPing } from '$lib/ping';
 
 	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
 	// the clicked ground point; an object under the cursor → its own context
@@ -66,6 +67,11 @@
 		},
 		{ label: 'Undo', disabled: !$canUndo, tooltip: 'Ctrl+Z', action: undo },
 		{ label: 'Redo', disabled: !$canRedo, tooltip: 'Ctrl+Y', action: redo },
+		{
+			label: 'Ping here',
+			tooltip: 'Everyone sees a pulse at this spot (or Alt+click anywhere)',
+			action: () => sendPing(menu?.point ?? [0, 0, 0])
+		},
 		// 124: everything that acts on the CURRENT SELECTION lives in one submenu.
 		// Fixed "Selected" label (object names get very long) + the SAME items as the
 		// direct object right-click menu (buildObjectMenuItems), so the two are in parity.
@@ -95,9 +101,22 @@
 					disabled: !!$remoteSimulating,
 					tooltip: $remoteSimulating
 						? nameOf($remoteSimulating) + ' is simulating'
-						: 'Objects wired to a Mass node fall and collide; stop leaves one undo step',
+						: 'Dynamic objects fall and collide; stop leaves one undo step (P)',
 					action: toggleSimulation
-				}
+				},
+				...($simulating
+					? [
+							{
+								label: $simPaused ? '▶ Resume simulation' : '⏸ Pause simulation',
+								action: () => pauseSimulation()
+							},
+							{
+								label: '↺ Reset simulation',
+								tooltip: 'Restore the initial layout (no undo entry)',
+								action: () => resetSimulation()
+							}
+						]
+					: [])
 			]
 		},
 		{

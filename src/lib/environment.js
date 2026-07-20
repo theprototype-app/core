@@ -5,6 +5,8 @@ import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
+import { cappedShadowSize, shadowQuality } from './lightParams';
+import { wireframeActive } from './viewMode';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 
 // Environment v2 (phase 70). Everything environmental lives under ONE group at
@@ -17,9 +19,9 @@ import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 export const ENVIRONMENT_PRESETS = {
 	studio: {
 		label: 'Studio',
-		background: '#3b4048',
+		background: '#363b43',
 		fog: null,
-		hemi: { sky: '#ffffff', ground: '#565d68', intensity: 1.1 },
+		hemi: { sky: '#ffffff', ground: '#4c525c', intensity: 1.1 },
 		sun: { color: '#ffffff', intensity: 1.8, position: [6, 10, 4] },
 		exposure: 1
 	},
@@ -83,6 +85,7 @@ export const peerEnvPresets = writable(/** @type {Record<string, any[]>} */ ({})
 export const ENV_ROOT = 'environment-root';
 const RIG_HEMI = 'env-rig-hemi';
 const RIG_SUN = 'env-rig-sun';
+const CATCHER = 'env-shadow-catcher';
 const EXTRA_PREFIX = 'env-extra-';
 let userLightFactor = 1;
 
@@ -117,9 +120,36 @@ function rigLights(scene, create) {
 	if (!sun && create) {
 		sun = new THREE.DirectionalLight(0xffffff, 1);
 		sun.name = RIG_SUN;
+		// the rig sun is the default shadow caster (V-1); bias values tuned to
+		// avoid acne/peter-panning across the presets, map size under the cap
+		sun.castShadow = true;
+		sun.shadow.bias = -0.0002;
+		sun.shadow.normalBias = 0.02;
+		const size = cappedShadowSize(2048);
+		sun.shadow.mapSize.set(size, size);
 		root.add(sun);
 	}
 	return { hemi, sun };
+}
+
+/** The flat ShadowMaterial disc that catches the rig sun's shadows — the
+ * infinite Grid is a shader and can't receive shadows. Lives in ENV_ROOT
+ * (scene root) so it never enters GLTF sync. @param {any} scene @param {boolean} create */
+function shadowCatcher(scene, create) {
+	const root = envRoot(scene);
+	let disc = scene.getObjectByName(CATCHER);
+	if (!disc && create) {
+		disc = new THREE.Mesh(
+			new THREE.CircleGeometry(1, 48),
+			new THREE.ShadowMaterial({ opacity: 0.32, transparent: true })
+		);
+		disc.name = CATCHER;
+		disc.rotation.x = -Math.PI / 2;
+		disc.position.y = -0.001;
+		disc.receiveShadow = true;
+		root.add(disc);
+	}
+	return disc;
 }
 
 /** Create/update/remove `env-extra-*` lights to mirror state.lights @param {any} scene @param {any[]} defs */
@@ -175,6 +205,10 @@ export function applyEnvironment() {
 	if (renderer) {
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
 		renderer.toneMappingExposure = (preset.exposure ?? 1) * (state.exposure ?? 1);
+		// honor a persisted 'off' shadow pref here too: the renderer arrives
+		// after lightParams' first subscribe fires (which would no-op on a null
+		// renderer), so re-assert it on every apply
+		if (renderer.shadowMap) renderer.shadowMap.enabled = get(shadowQuality) !== 'off';
 	}
 
 	const { hemi, sun } = rigLights(scene, !!preset.hemi);
@@ -192,7 +226,30 @@ export function applyEnvironment() {
 			sun.color.set(preset.sun.color);
 			sun.intensity = preset.sun.intensity * userLightFactor;
 			sun.position.fromArray(preset.sun.position);
+			// fit the ortho shadow frustum to the scene: sceneBounds re-calls
+			// applyEnvironment when the radius changes by >1, so the frustum
+			// tracks scene growth for free
+			if (sun.castShadow && sun.shadow) {
+				const r = Math.min(Math.max(sceneRadius() * 1.2, 15), 120);
+				const cam = sun.shadow.camera;
+				cam.left = -r;
+				cam.right = r;
+				cam.top = r;
+				cam.bottom = -r;
+				cam.near = 0.5;
+				cam.far = r * 4;
+				cam.updateProjectionMatrix();
+			}
 		} else sun.visible = false;
+	}
+
+	// shadow catcher: visible only when the sun casts and shadows aren't off
+	const shadowsOff = get(shadowQuality) === 'off';
+	const catcher = shadowCatcher(scene, !!(preset.sun && !shadowsOff));
+	if (catcher) {
+		catcher.visible = !!(preset.sun && !shadowsOff) && !get(passthroughActive) && !wireframeActive();
+		const span = Math.max(60, sceneRadius() * 2);
+		catcher.scale.set(span, span, span);
 	}
 
 	reconcileExtraLights(scene, state.lights ?? []);

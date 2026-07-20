@@ -6,8 +6,11 @@ import {
 	chatHidden,
 	settingsOpen,
 	settingsSection,
-	specatorMode
+	specatorMode,
+	aiPromptBarOpen,
+	showToast
 } from '../stores/appStore';
+import { aiReady } from './ai/providers';
 import { focusObject, duplicateSelection, requestDeleteSelection, setTransformMode } from './objectActions';
 import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
@@ -30,6 +33,24 @@ function deleteFromViewport() {
 	if (get(flowGraphClose) === false) return; // node editor owns the key while open
 	if (get(editingObject) || get(faceEditObject) || get(specatorMode)) return;
 	requestDeleteSelection();
+}
+
+/**
+ * Toggle the quick AI prompt pill (roadmap #10). Opens only when a provider is
+ * configured; otherwise points the user at Settings -> AI.
+ */
+function toggleAiPrompt() {
+	if (get(aiPromptBarOpen)) {
+		aiPromptBarOpen.set(false);
+		return;
+	}
+	if (!aiReady()) {
+		showToast('Enable an AI provider in Settings to use the assistant');
+		settingsSection.set('ai');
+		settingsOpen.set(true);
+		return;
+	}
+	aiPromptBarOpen.set(true);
 }
 
 /** @type {Shortcut[]} */
@@ -106,6 +127,12 @@ export const shortcuts = [
 		group: 'Panels',
 		label: 'Toggle chat',
 		action: () => chatHidden.update((value) => (value === 'hidden' ? '' : 'hidden'))
+	},
+	{
+		keys: '`',
+		group: 'Panels',
+		label: 'Toggle AI prompt bar',
+		action: () => toggleAiPrompt()
 	},
 	{
 		keys: 'Shift+A',

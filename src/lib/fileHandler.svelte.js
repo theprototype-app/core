@@ -192,6 +192,43 @@ function addImported(imported, name, position) {
 	});
 }
 
+/**
+ * Import a GENERATED GLB (roadmap #11): parse the bytes, stamp AI provenance on the
+ * root (survives GLTF sync + .tpscene), then place + replicate + record undo via the
+ * SAME addImported path a dropped .glb uses. Returns the placed object's uuid.
+ * @param {ArrayBuffer} buffer
+ * @param {{name?: string, position?: number[], provenance?: any}} [opts]
+ * @returns {Promise<string>}
+ */
+export function importGeneratedGlb(buffer, opts = {}) {
+	return new Promise((resolve, reject) => {
+		try {
+			createGltfLoader().parse(
+				buffer,
+				'',
+				(/** @type {any} */ result) => {
+					try {
+						const root = result.scene;
+						if (opts.provenance) root.userData = { ...(root.userData || {}), aiGen: opts.provenance };
+						if (result.animations?.length > 0) {
+							// rare for generated meshes; animated rigs keep the raw-bytes path (unplaced)
+							addAnimatedImport(result, buffer, opts.name ?? 'Generated');
+						} else {
+							addImported(root, opts.name ?? 'Generated', opts.position);
+						}
+						resolve(root.uuid);
+					} catch (e) {
+						reject(e instanceof Error ? e : new Error(String(e)));
+					}
+				},
+				(/** @type {any} */ error) => reject(error instanceof Error ? error : new Error('GLB parse failed'))
+			);
+		} catch (e) {
+			reject(e instanceof Error ? e : new Error(String(e)));
+		}
+	});
+}
+
 /** @param {any} file @param {'text' | 'buffer'} mode */
 function readAs(file, mode) {
 	return new Promise((resolve, reject) => {

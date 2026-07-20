@@ -89,6 +89,23 @@ function projectPoint(page, world) {
 	);
 }
 
+/**
+ * Reload a page and wait for the debug hook to republish.
+ *
+ * WHY: the `debugStores` hook reaches singletons via dynamic `import()`. On a dev
+ * server churned by HMR, that can bind a SECOND module instance, so a value set
+ * through `window.__stores.<mod>` may NOT be the same store a component reads via
+ * its static import — the component renders stale (this bit the AI prompt-pill
+ * check). A fresh navigation rebuilds one consistent module graph. Store state that
+ * persists to localStorage (provider configs, toggles) survives the reload, so seed
+ * it first, then `freshReload`, then assert component-rendered UI. Session-only
+ * stores must be set AFTER the reload.
+ */
+async function freshReload(peer) {
+	await peer.page.reload({ waitUntil: 'domcontentloaded' });
+	await peer.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+}
+
 /** Close up and exit with the right code. */
 async function finish(browser) {
 	await browser.close();
@@ -104,4 +121,4 @@ function run(body) {
 	});
 }
 
-module.exports = { URL, check, launch, setupPage, connect, eventually, projectPoint, finish, run };
+module.exports = { URL, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run };

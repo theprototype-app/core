@@ -1,8 +1,9 @@
 import { get } from 'svelte/store';
 import { selectedObject } from '../stores/sceneStore';
-import { peers } from '../stores/appStore';
+import { peers, meshGenModalOpen } from '../stores/appStore';
 import { sceneCommand } from './commandsHandler.svelte';
 import { primitivesCatalog } from './primitivesCatalog';
+import { meshGenReady } from './ai/meshProviders';
 
 // Spawning for the viewport Add menu (77): run the replicated create command,
 // then land the new object at the clicked ground point (groups keep their
@@ -38,6 +39,16 @@ export function buildAddChildren(pointOf) {
 				action: () => spawnAtPoint(item.command, pointOf())
 			}))
 		})),
-		{ label: 'Group', tooltip: 'Create an empty group', action: () => spawnAtPoint('/group New', null) }
+		{ label: 'Group', tooltip: 'Create an empty group', action: () => spawnAtPoint('/group New', null) },
+		// Generate a custom mesh from a prompt (roadmap #11) — only when configured
+		...(meshGenReady()
+			? [
+					{
+						label: '✨ Generate 3D model…',
+						tooltip: 'Create a custom mesh from a text prompt',
+						action: () => meshGenModalOpen.set({ position: pointOf() })
+					}
+			  ]
+			: [])
 	];
 }

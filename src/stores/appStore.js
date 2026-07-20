@@ -207,6 +207,46 @@ enable3dPreview.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('enable3dPreview', String(on));
 });
 
+// E1 (roadmap #13): notification center — a persisted history of everything that
+// flashed as a toast, so a message missed (or dismissed while a modal was open) is
+// still recoverable. The bell + panel live in NotificationCenter.svelte.
+/** @type {import('svelte/store').Writable<any[]>} */
+export const notifications = writable(
+  (() => {
+    if (typeof localStorage === 'undefined') return [];
+    try {
+      return JSON.parse(localStorage.getItem('notifications') || '[]');
+    } catch {
+      return [];
+    }
+  })()
+);
+notifications.subscribe((list) => {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem('notifications', JSON.stringify(list.slice(-50)));
+  } catch {
+    /* storage full / disabled */
+  }
+});
+/** count of notifications arrived since the center was last opened */
+export const notificationsUnread = writable(0);
+/** the notification center panel open state */
+export const notificationCenterOpen = writable(false);
+/** E2: the scene-notes drawer (lists every annotation) open state */
+export const notesDrawerOpen = writable(false);
+let _notifId = 0;
+/**
+ * Append a notification to the history + bump the unread badge.
+ * @param {string} text @param {string} [kind]
+ */
+export function pushNotification(text, kind = 'info') {
+  if (!text) return;
+  const entry = { id: `n${Date.now()}_${++_notifId}`, text, ts: Date.now(), kind };
+  notifications.update((list) => [...list, entry].slice(-50));
+  notificationsUnread.update((c) => c + 1);
+}
+
 /**
  * Plain string = 3s info toast. Pass `actions` ([{label, action}]) for a
  * sticky decision toast (15s) with buttons.
@@ -219,6 +259,8 @@ export function showToast(message, actions) {
     if (!actions && toast.some((entry) => entry === message)) return toast;
     return [...toast, actions ? { text: message, actions } : message];
   });
+  // E1: every toast also lands in the notification history
+  pushNotification(message, actions ? 'action' : 'info');
 }
 
 export function clearToast(toast) {

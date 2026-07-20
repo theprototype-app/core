@@ -19,6 +19,10 @@
 	   (~996-998) and Connect (300) — which live outside this scale, so a modal and
 	   its X are never covered. Kept below ThemedSelect (9999) so in-modal dropdowns
 	   still open over the modal. */
+	/* E1: regular/info toasts drop BELOW modals so Settings/Modules/Sessions cover
+	   them; connection-request (action) toasts keep the high --z-toast tier so an
+	   approval is never missed while a modal is open. */
+	--z-toast-low: 1050;
 	--z-modal: 1100;
 	--z-toast: 1200;
 	/* the logo/burger menu is the TOP-most persistent chrome — above Connect (300)

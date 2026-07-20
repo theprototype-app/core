@@ -46,21 +46,11 @@ if (--counter > 0) return setTimeout(timeout, 4000);
 toastStatus = false;
 }
 </script>
-<!-- pointer-events: none lets clicks pass through the (invisible) container area;
-     each toast re-enables them for itself -->
-<div class="my-4 toasts-container"
+<!-- E1: CRITICAL container — connection requests + pending outbound requests stay
+     ABOVE modals (--z-toast) so an approval is never missed while a modal is open. -->
+<div class="my-4 toasts-container toasts-critical"
 style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
 >
-{#if showToast}
-{#if $loadingcount > 0}
-<Toast  dismissable={false} transition={fly} bind:toastStatus>
-	<div class="mb-1 text-base font-medium text-green-700 dark:text-green-500">Receiving objects: {($loadingcount-$loading.length)}/{$loadingcount}</div>
-	<Progressbar progress="{100 * (($loadingcount-$loading.length) - 0) / ($loadingcount - 0)}" color="green" />
-</Toast>
-{/if}
-{/if}
-
-
 {#each $pendingApprovals as approval}
 <div class="my-1">
 {#if approval.status != 'retry'}
@@ -69,7 +59,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 
     </div>
     <div class="mb-1 text-base font-medium text-green-700 dark:text-green-500 inline-flex items-center">
-        
+
         <p class="text-sm font-medium text-gray-500 dark:text-gray-200 pr-4 overflow-hidden max-w-80">
             Connection request from peer:&nbsp;{approval.peerId}
         </p>
@@ -103,7 +93,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 
     </div>
     <div class="mb-1 text-base font-medium text-green-700 dark:text-green-500 inline-flex items-center">
-        
+
         <p class="text-sm font-medium text-gray-500 dark:text-gray-200 pr-4 overflow-hidden max-w-80">
             Connection &nbsp;{approval.peerId} already exists
         </p>
@@ -115,13 +105,8 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
             onclick={() => {
                 console.log($peers.connections[approval.peerId])
                 $peers.connections[approval.peerId].close();
-                // $peers.peers[approval.peerId].close()
                 // Remove approved peer from pending approvals
                 $pendingApprovals = $pendingApprovals.filter(peer => peer.peerId !== approval.peerId);
-
-                // Add peer to user data (whitelist)
-                // let data = [approval.peerId, '', '']
-                // $userdata.push(data);
 
                 // Broadcast updated whitelist to all connected peers
                 $peers.send({type: 'userdata', userdata: $userdata})
@@ -137,6 +122,43 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 {/if}
 </div>
 {/each}
+
+{#each $waitingForApproval as status}
+{#if status[1] === 'pending'}
+<div class="my-1">
+<Toast  transition={fly} class="p-2 rounded-lg dark:bg-green-800 dark:border-dark-700 border-2 border-green-500" divClass="flex items-center gap-3">
+    <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
+
+    </div>
+    <div class="mb-1 text-base font-medium text-green-700 dark:text-green-500 inline-flex items-center">
+
+        <p class="text-sm font-medium text-gray-500 dark:text-gray-400 pr-4 overflow-hidden max-w-80">
+            Connection request to peer:&nbsp;{status[0]} <br />
+            Status: {status[1]}
+        </p>
+    </div>
+
+</Toast>
+</div>
+{/if}
+{/each}
+</div>
+
+<!-- pointer-events: none lets clicks pass through the (invisible) container area;
+     each toast re-enables them for itself. REGULAR container: info/decision toasts
+     sit BELOW modals (--z-toast-low) so Settings/Modules/Sessions cover them. -->
+<div class="my-4 toasts-container toasts-regular"
+style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast-low); pointer-events: none;"
+>
+{#if showToast}
+{#if $loadingcount > 0}
+<Toast  dismissable={false} transition={fly} bind:toastStatus>
+	<div class="mb-1 text-base font-medium text-green-700 dark:text-green-500">Receiving objects: {($loadingcount-$loading.length)}/{$loadingcount}</div>
+	<Progressbar progress="{100 * (($loadingcount-$loading.length) - 0) / ($loadingcount - 0)}" color="green" />
+</Toast>
+{/if}
+{/if}
+
 
 {#if $restoreAvailable}
 <div class="my-1">
@@ -262,26 +284,6 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
     </Toast>
     </div>
 {/if}
-
-{#each $waitingForApproval as status}
-{#if status[1] === 'pending'}
-<div class="my-1">
-<Toast  transition={fly} class="p-2 rounded-lg dark:bg-green-800 dark:border-dark-700 border-2 border-green-500" divClass="flex items-center gap-3">
-    <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
-
-    </div>
-    <div class="mb-1 text-base font-medium text-green-700 dark:text-green-500 inline-flex items-center">
-        
-        <p class="text-sm font-medium text-gray-500 dark:text-gray-400 pr-4 overflow-hidden max-w-80">
-            Connection request to peer:&nbsp;{status[0]} <br />
-            Status: {status[1]}
-        </p>
-    </div>
-
-</Toast>
-</div>
-{/if}
-{/each}
 
 {#if $toastStore.length > MAX_TOASTS}
 <div class="my-1 text-center text-xs text-gray-400">+{$toastStore.length - MAX_TOASTS} more…</div>

@@ -19,6 +19,7 @@
 	import TabStrips from './menu/TabStrips.svelte';
 	import VoiceChat from './menu/VoiceChat.svelte';
 	import AnnotationPopover from './menu/AnnotationPopover.svelte';
+	import NotesDrawer from './menu/NotesDrawer.svelte';
 	import Library from './menu/Library.svelte';
 	import { DarkMode } from 'flowbite-svelte';
 	import Users from './menu/Users.svelte';
@@ -49,6 +50,7 @@
 <TabStrips />
 <VoiceChat />
 <AnnotationPopover />
+<NotesDrawer />
 <Library />
 <Toasts />
 <Users />

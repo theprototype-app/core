@@ -2,7 +2,8 @@ import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { objectsGroup, globalCamera, orbitControls } from '../stores/sceneStore';
-import { flowNodes, flowEdges } from '../stores/flowStore';
+import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
+import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { peers, showToast } from '../stores/appStore';
@@ -50,11 +51,18 @@ function exportScene() {
 
 async function saveSnapshot() {
 	if (!get(autosaveEnabled)) return;
-	const nodes = get(flowNodes).map(serializeNode);
-	const edges = get(flowEdges).map(serializeEdge);
+	// H1: persist EVERY graph document; orphan object graphs (owner object gone)
+	// are pruned from the OUTPUT only. Legacy nodes/edges fields keep carrying the
+	// scene graph so an old build can still restore this snapshot.
+	const group = get(objectsGroup);
+	const graphs = serializeGraphs(serializeNode, serializeEdge, {
+		pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+	});
+	const nodes = graphs[SCENE_GRAPH]?.nodes ?? [];
+	const edges = graphs[SCENE_GRAPH]?.edges ?? [];
 	const scene = await exportScene();
 	// never overwrite a good snapshot with emptiness
-	if (!scene && nodes.length === 0) return;
+	if (!scene && nodes.length === 0 && Object.keys(graphs).length <= 1) return;
 	/** @type {any} */
 	const camera = get(globalCamera);
 	/** @type {any} */
@@ -65,6 +73,7 @@ async function saveSnapshot() {
 		scene,
 		nodes,
 		edges,
+		graphs,
 		annotations: annotationsProvider ? annotationsProvider() : [],
 		camera: camera
 			? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
@@ -149,9 +158,10 @@ export async function restoreSnapshot() {
 			});
 			objectsGroup.update((value) => value);
 		}
-		if (snapshot.nodes?.length || snapshot.edges?.length) {
-			flowNodes.set(snapshot.nodes ?? []);
-			flowEdges.set(snapshot.edges ?? []);
+		if (snapshot.graphs && typeof snapshot.graphs === 'object') {
+			restoreGraphs(snapshot.graphs); // H1 format: every graph document
+		} else if (snapshot.nodes?.length || snapshot.edges?.length) {
+			restoreGraphs({ [SCENE_GRAPH]: { nodes: snapshot.nodes ?? [], edges: snapshot.edges ?? [] } });
 		}
 		if (snapshot.annotations?.length && annotationsRestorer) annotationsRestorer(snapshot.annotations);
 		/** @type {any} */
@@ -191,8 +201,7 @@ export function startAutosave() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
 	objectsGroup.subscribe(() => markDirty());
-	flowNodes.subscribe(() => markDirty());
-	flowEdges.subscribe(() => markDirty());
+	flowGraphs.subscribe(() => markDirty()); // H1: any graph document change
 	setInterval(() => {
 		if (dirty) saveSnapshot();
 	}, INTERVAL_MS);

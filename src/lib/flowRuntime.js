@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers } from '../stores/flowStore';
+import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
@@ -59,6 +59,20 @@ function targetUuidOf(edge) {
 	// per-object mute from the object list context menu
 	if (muted.includes(selected)) return null;
 	return selected;
+}
+
+// H1: inside an OBJECT graph, an effect/source node that is NOT wired into any
+// objectselector implicitly targets the graph's owner object. Explicit selector
+// wiring always wins (lets an object graph drive other objects too).
+/** @param {any} node @returns {string | null} the owner uuid or null */
+function implicitOwnerOf(node) {
+	const graph = node.__graph;
+	if (!graph || graph === SCENE_GRAPH) return null;
+	if (muted.includes(graph)) return null;
+	const wired = edges.some(
+		(e) => e.source === node.id && nodes.find((n) => n.id === e.target)?.type === 'objectselector'
+	);
+	return wired ? null : graph;
 }
 
 function applyColors() {
@@ -450,7 +464,8 @@ export function fireObjectClick(uuid) {
 			const target = nodes.find((n) => n.id === edge.target);
 			return target?.type === 'objectselector' && target.data?.selected === uuid;
 		});
-		if (hit) applyNodeTrigger(node.id, syncedNow(), true);
+		// H1: an unwired OnClick inside the clicked object's own graph also fires
+		if (hit || implicitOwnerOf(node) === uuid) applyNodeTrigger(node.id, syncedNow(), true);
 	});
 }
 
@@ -582,21 +597,28 @@ function tick(now) {
 
 	// collect active animations per scene object
 	const active = new Map(); // uuid -> anim nodes
+	/** @param {any} node */
+	const isEffectNode = (node) =>
+		animationTypes.includes(node.type) ||
+		!!moduleEffects[node.type] ||
+		node.type === 'script' ||
+		node.type === 'customnode';
 	if (sceneObjects) {
 		edges.forEach((edge) => {
 			const source = nodes.find((n) => n.id === edge.source);
-			if (
-				!source ||
-				(!animationTypes.includes(source.type) &&
-					!moduleEffects[source.type] &&
-					source.type !== 'script' &&
-					source.type !== 'customnode')
-			)
-				return;
+			if (!source || !isEffectNode(source)) return;
 			const uuid = targetUuidOf(edge);
 			if (!uuid) return;
 			if (!active.has(uuid)) active.set(uuid, []);
 			active.get(uuid).push(source);
+		});
+		// H1: object-graph effects with no explicit selector target their owner
+		nodes.forEach((node) => {
+			if (!isEffectNode(node)) return;
+			const uuid = implicitOwnerOf(node);
+			if (!uuid) return;
+			if (!active.has(uuid)) active.set(uuid, []);
+			if (!active.get(uuid).includes(node)) active.get(uuid).push(node);
 		});
 	}
 
@@ -632,6 +654,12 @@ function tick(now) {
 		const uuid = targetUuidOf(edge);
 		// resolve input-driven volume/radius (133) without touching soundRuntime
 		if (uuid) soundPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+	});
+	// H1: sound nodes in object graphs attach to their owner when unwired
+	nodes.forEach((node) => {
+		if (node.type !== 'sound') return;
+		const uuid = implicitOwnerOf(node);
+		if (uuid) soundPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
 	});
 	updateSounds(soundPairs, sceneObjects, time);
 
@@ -682,12 +710,13 @@ export function startFlowRuntime() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
 
-	flowNodes.subscribe((value) => {
-		nodes = value;
-		applyColors();
-	});
-	flowEdges.subscribe((value) => {
-		edges = value;
+	// H1: the runtime sees EVERY graph (scene + per-object documents) as one
+	// combined node/edge set; nodes carry a runtime-only __graph tag used for
+	// implicit-owner targeting. The mirror keeps the editor view in sync.
+	startGraphMirror();
+	flowGraphs.subscribe(() => {
+		nodes = allNodes();
+		edges = allEdges();
 		applyColors();
 	});
 	objectsGroup.subscribe((value) => {

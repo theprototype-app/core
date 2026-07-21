@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { get } from 'svelte/store';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { flowNodes } from '../../stores/flowStore';
+import { allNodes } from '../../stores/flowStore';
 import { setNodeData } from '$lib/nodesHandler';
 import { runtimeNow } from '$lib/moduleSDK';
 import ButtonTriggerNode from './ButtonTriggerNode.svelte';
@@ -15,7 +14,8 @@ import ButtonTriggerNode from './ButtonTriggerNode.svelte';
 /** Press a trigger node like a viewport click would @param {any} node */
 export function pressTriggerNode(node) {
 	const pressed = node.data?.mode === 'push' ? true : !node.data?.pressed;
-	setNodeData(node.id, { pressed: pressed, at: runtimeNow() });
+	// H1: route the data write to the node's own graph (allNodes tags __graph)
+	setNodeData(node.id, { pressed: pressed, at: runtimeNow() }, node.__graph);
 }
 
 export default {
@@ -57,7 +57,8 @@ export default {
 			if (!group) return false;
 			let top = object;
 			while (top.parent && top.parent !== group) top = top.parent;
-			const node = get(flowNodes).find(
+			// H1: the trigger node can live in any graph document
+			const node = allNodes().find(
 				(n) => n.type === 'buttontrigger' && n.data?.button === top.uuid
 			);
 			if (!node) return false;

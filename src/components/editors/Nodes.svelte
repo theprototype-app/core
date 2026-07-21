@@ -41,7 +41,9 @@
 	import EffectNode from './nodes/EffectNode.svelte';
 	import OnClickNode from './nodes/OnClickNode.svelte';
 	import CounterNode from './nodes/CounterNode.svelte';
-	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen } from '../../stores/flowStore';
+	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
+	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
+	import { objectsGroup, selectedObject } from '../../stores/sceneStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
@@ -126,6 +128,22 @@
 	$: bgVariant = bgPattern === 'lines' ? BG_LINES : BG_DOTS;
 	$: selectedNode = ($nodes as any[]).find((n) => n.selected) ?? null;
 
+	// H1 (flow v2): the editor scope follows the viewport selection — a selected
+	// object shows ITS graph (or the create-flow empty state), deselecting returns
+	// to the scene graph. setActiveGraph no-ops on repeats.
+	$: {
+		const uuid = ($selectedObject as any)?.uuid;
+		setActiveGraph(uuid ?? SCENE_GRAPH);
+	}
+	$: activeId = $activeGraphId;
+	$: hasActiveGraph = activeId === SCENE_GRAPH || !!$flowGraphs[activeId];
+	$: activeOwnerName =
+		activeId === SCENE_GRAPH
+			? 'Scene'
+			: ($objectsGroup as any)?.getObjectByProperty?.('uuid', activeId)?.name ||
+				($objectsGroup as any)?.getObjectByProperty?.('uuid', activeId)?.type ||
+				activeId.slice(0, 8);
+
 	function setEdgeStyle(style: string) {
 		edgeStyle = style;
 		LS?.setItem('flowEdgeStyle', style);
@@ -153,7 +171,8 @@
 			id: peer.peer.id,
 			name: $username || peer.peer.id,
 			x: position.x,
-			y: position.y
+			y: position.y,
+			graphId: activeId
 		});
 	};
 	const onPointerLeaveCursor = () => {
@@ -164,6 +183,10 @@
 	let menu: any = null;
 
 	function addNode(type: string, label: string, position: { x: number; y: number }, extraDefaults: any = null) {
+		// H1: adding a node to a selected object that has no flow yet CREATES the
+		// flow implicitly (replicated + undoable) — the palette stays usable from
+		// the empty state.
+		if (activeId !== SCENE_GRAPH && !hasActiveGraph) createObjectGraph(activeId);
 		const spec = findNodeSpec(type);
 		const newNode = {
 			id: crypto.randomUUID(),
@@ -180,7 +203,7 @@
 
 		nodes.update((nodes) => [...nodes, newNode]);
 		// Replicate the new node to all peers
-		peer?.send({ type: 'nodecreate', node: serializeNode(newNode) });
+		peer?.send({ type: 'nodecreate', node: serializeNode(newNode), graphId: activeId });
 	}
 
 	// Touch has no HTML5 drag-and-drop, so a palette TAP adds the node at the flow
@@ -238,7 +261,7 @@
 	// Replicate node positions when a drag ends
 	const onNodeDragStop = (event: CustomEvent<{ nodes: Node[] }>) => {
 		event.detail.nodes.forEach((node) => {
-			peer?.send({ type: 'nodemove', id: node.id, position: { x: node.position.x, y: node.position.y } });
+			peer?.send({ type: 'nodemove', id: node.id, position: { x: node.position.x, y: node.position.y }, graphId: activeId });
 		});
 	};
 
@@ -262,36 +285,36 @@
 			type: edgeStyle,
 			markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 }
 		} satisfies Edge;
-		peer?.send({ type: 'edgecreate', edge: serializeEdge(edge) });
+		peer?.send({ type: 'edgecreate', edge: serializeEdge(edge), graphId: activeId });
 		return edge;
 	};
 
 	// Replicate deletions (Backspace / Delete key)
 	const ondelete = ({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node[]; edges: Edge[] }) => {
 		if (deletedNodes.length)
-			peer?.send({ type: 'nodedelete', ids: deletedNodes.map((n) => n.id) });
+			peer?.send({ type: 'nodedelete', ids: deletedNodes.map((n) => n.id), graphId: activeId });
 		if (deletedEdges.length)
-			peer?.send({ type: 'edgedelete', ids: deletedEdges.map((e) => e.id) });
+			peer?.send({ type: 'edgedelete', ids: deletedEdges.map((e) => e.id), graphId: activeId });
 	};
 
 	// --- context menus ---
 
 	function deleteNode(id: string) {
-		deleteFlowNodes([id]);
-		peer?.send({ type: 'nodedelete', ids: [id] });
+		deleteFlowNodes([id], activeId);
+		peer?.send({ type: 'nodedelete', ids: [id], graphId: activeId });
 	}
 
 	function disconnectNode(id: string) {
 		const ids = $edges.filter((e) => e.source === id || e.target === id).map((e) => e.id);
 		if (ids.length) {
-			deleteFlowEdges(ids);
-			peer?.send({ type: 'edgedelete', ids: ids });
+			deleteFlowEdges(ids, activeId);
+			peer?.send({ type: 'edgedelete', ids: ids, graphId: activeId });
 		}
 	}
 
 	function deleteEdge(id: string) {
-		deleteFlowEdges([id]);
-		peer?.send({ type: 'edgedelete', ids: [id] });
+		deleteFlowEdges([id], activeId);
+		peer?.send({ type: 'edgedelete', ids: [id], graphId: activeId });
 	}
 
 	const onPaneContextMenu = (event: CustomEvent<{ event: MouseEvent }>) => {
@@ -337,7 +360,7 @@
 			...(src.class ? { class: src.class } : {})
 		} as any;
 		nodes.update((ns: any[]) => [...ns, copy]);
-		peer?.send({ type: 'nodecreate', node: serializeNode(copy) });
+		peer?.send({ type: 'nodecreate', node: serializeNode(copy), graphId: activeId });
 	}
 
 	const onNodeContextMenu = (event: CustomEvent<{ event: MouseEvent; node: Node }>) => {
@@ -514,6 +537,48 @@
 		on:pointermove={onPointerMoveCursor}
 		on:pointerleave={onPointerLeaveCursor}
 	>
+		<!-- H1: graph-scope chip — which flow the editor shows (follows the viewport
+		     selection). Object flows get a delete action (confirmation toast). -->
+		<div
+			id="flow-scope-chip"
+			class="pointer-events-none absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-1.5"
+		>
+			<span
+				class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2.5 py-0.5 text-xs text-gray-200 backdrop-blur"
+			>
+				{activeId === SCENE_GRAPH ? 'Scene flow' : activeOwnerName + ' — object flow'}
+			</span>
+			{#if activeId !== SCENE_GRAPH && hasActiveGraph}
+				<button
+					id="flow-scope-delete"
+					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur hover:text-red-400"
+					title="Delete this object's flow"
+					on:click={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
+				>
+					🗑
+				</button>
+			{/if}
+		</div>
+
+		<!-- H1: empty state — the selected object has no flow document yet -->
+		{#if activeId !== SCENE_GRAPH && !hasActiveGraph}
+			<div
+				id="flow-empty-state"
+				class="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-gray-900/60 backdrop-blur-[2px]"
+			>
+				<p class="text-sm text-gray-300">
+					<span class="font-semibold text-gray-100">{activeOwnerName}</span> has no flow yet
+				</p>
+				<button
+					id="flow-create-btn"
+					class="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
+					on:click={() => createObjectGraph(activeId)}
+				>
+					Create flow
+				</button>
+				<p class="text-[11px] text-gray-500">Nodes here will drive this object (no Object Selector needed)</p>
+			</div>
+		{/if}
 		<SvelteFlow
 			{nodes}
 			{nodeTypes}

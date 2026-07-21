@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { flowNodes, flowEdges } from '../stores/flowStore';
+import { flowGraphs, allNodes, allEdges, SCENE_GRAPH } from '../stores/flowStore';
 import { objectsGroup, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordTransformSet, recordEntry } from './history';
@@ -106,15 +106,11 @@ function collectParams(group) {
 		if (p.friction != null) map[object.uuid].friction = p.friction;
 		if (p.collider) map[object.uuid].collider = p.collider;
 	});
-	const nodes = get(flowNodes);
-	const edges = get(flowEdges);
-	edges.forEach((edge) => {
-		const source = nodes.find((n) => n.id === edge.source);
-		if (!source || !PHYSICS_TYPES.includes(source.type)) return;
-		const target = nodes.find((n) => n.id === edge.target);
-		if (target?.type !== 'objectselector') return;
-		const uuid = target.data?.selected;
-		if (!uuid || uuid === '-None-') return;
+	// H1: physics nodes live in ANY graph (scene or per-object documents)
+	const nodes = allNodes();
+	const edges = allEdges();
+	/** apply one physics node's params onto an object's entry @param {any} source @param {string} uuid */
+	const applyPhysicsNode = (source, uuid) => {
 		map[uuid] ??= {};
 		map[uuid].flow = true; // provenance for the Inspector physics list (C1)
 		// flow wiring wins over userData (incl. re-dynamicizing a 'static' object)
@@ -134,6 +130,26 @@ function collectParams(group) {
 		// recipe: select the body -> all wheel motors). Joints stay def-owned.
 		if (source.type === 'motor')
 			map[uuid].motor = { vel: source.data?.vel ?? 3, maxForce: source.data?.maxForce ?? 100 };
+	};
+	edges.forEach((edge) => {
+		const source = nodes.find((n) => n.id === edge.source);
+		if (!source || !PHYSICS_TYPES.includes(source.type)) return;
+		const target = nodes.find((n) => n.id === edge.target);
+		if (target?.type !== 'objectselector') return;
+		const uuid = target.data?.selected;
+		if (!uuid || uuid === '-None-') return;
+		applyPhysicsNode(source, uuid);
+	});
+	// H1: a physics node inside an OBJECT graph with no explicit selector wiring
+	// applies to the graph's owner object (matches the runtime's implicit rule)
+	nodes.forEach((source) => {
+		if (!PHYSICS_TYPES.includes(source.type)) return;
+		const graph = source.__graph;
+		if (!graph || graph === SCENE_GRAPH) return;
+		const wired = edges.some(
+			(e) => e.source === source.id && nodes.find((n) => n.id === e.target)?.type === 'objectselector'
+		);
+		if (!wired) applyPhysicsNode(source, graph);
 	});
 	return map;
 }
@@ -463,7 +479,7 @@ async function startSimulation() {
 		liveSnapshot = snap;
 		applyLiveParams();
 	};
-	liveUnsubs = [flowNodes.subscribe(onGraphChange), flowEdges.subscribe(onGraphChange)];
+	liveUnsubs = [flowGraphs.subscribe(onGraphChange)]; // H1: sees every graph
 
 	simulating.set(true);
 	simPaused.set(false);

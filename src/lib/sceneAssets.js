@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { flowNodes } from '../stores/flowStore';
+import { flowGraphs, allNodes } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { itemByHash } from './explorer';
 
@@ -19,7 +19,7 @@ function compute() {
 	/** @type {any[]} */
 	const out = [];
 	const seenAudio = new Set();
-	for (const node of get(flowNodes) ?? []) {
+	for (const node of allNodes()) { // H1: sound/script nodes live in any graph
 		if (node.type === 'sound' && node.data?.hash && !seenAudio.has(node.data.hash)) {
 			seenAudio.add(node.data.hash);
 			out.push({
@@ -69,7 +69,7 @@ function schedule() {
 export function startSceneAssets() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
-	flowNodes.subscribe(schedule);
+	flowGraphs.subscribe(schedule); // H1: any graph document change
 	objectsGroup.subscribe(schedule);
 	// texture changes mutate materials without an objectsGroup identity change
 	// in some paths — a slow safety tick keeps the view honest

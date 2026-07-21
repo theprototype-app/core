@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, orbitControls, TControls } from '../stores/sceneStore';
-import { flowNodes, flowEdges } from '../stores/flowStore';
+import { restoreGraphs, clearGraphs, SCENE_GRAPH } from '../stores/flowStore';
+import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { peers, showToast } from '../stores/appStore';
@@ -90,6 +91,8 @@ export function buildSessionPayload(name) {
 	// sessions store animation BASE poses, not the current swing (88);
 	// toJSON + thumbnail read the graph synchronously
 	const restore = parkAnimatedAtBase();
+	/** @type {any} */
+	let graphs;
 	try {
 		return {
 			id: crypto.randomUUID(),
@@ -98,8 +101,12 @@ export function buildSessionPayload(name) {
 			count: group?.children.length ?? 0,
 			thumbnail: renderSceneThumbnail(group),
 			objects: (group?.children ?? []).map((/** @type {any} */ child) => child.toJSON()),
-			nodes: get(flowNodes).map(serializeNode),
-			edges: get(flowEdges).map(serializeEdge),
+			// H1: full graph map (+ legacy SCENE fields so old builds can load it)
+			graphs: (graphs = serializeGraphs(serializeNode, serializeEdge, {
+				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+			})),
+			nodes: graphs[SCENE_GRAPH]?.nodes ?? [],
+			edges: graphs[SCENE_GRAPH]?.edges ?? [],
 			annotations: annotationsSnapshot(),
 			joints: jointsSnapshot(),
 			camera: camera
@@ -333,13 +340,23 @@ export async function applySession(payload) {
 		if (peer) peer.send({ type: 'object', element });
 	}
 	objectsGroup.update((value) => value);
-	if (payload.nodes?.length || payload.edges?.length) {
-		flowNodes.set(payload.nodes ?? []);
-		flowEdges.set(payload.edges ?? []);
-		if (peer) {
-			for (const node of payload.nodes ?? []) peer.send({ type: 'nodecreate', node });
-			for (const edge of payload.edges ?? []) peer.send({ type: 'edgecreate', edge });
-		}
+	// H1: new format restores EVERY graph document; legacy payloads carry the
+	// scene graph only. One 'nodes' snapshot replicates the whole map.
+	const graphsPayload =
+		payload.graphs && typeof payload.graphs === 'object'
+			? payload.graphs
+			: payload.nodes?.length || payload.edges?.length
+				? { [SCENE_GRAPH]: { nodes: payload.nodes ?? [], edges: payload.edges ?? [] } }
+				: null;
+	if (graphsPayload) {
+		restoreGraphs(graphsPayload);
+		if (peer)
+			peer.send({
+				type: 'nodes',
+				graphs: graphsPayload,
+				nodes: graphsPayload[SCENE_GRAPH]?.nodes ?? [],
+				edges: graphsPayload[SCENE_GRAPH]?.edges ?? []
+			});
 	}
 	annotationsRestore(payload.annotations ?? []);
 	// P-B: joints restore locally + replicate each def (receivers only apply)
@@ -453,8 +470,7 @@ async function stashAndJoin() {
 		object.parent?.remove(object);
 	}
 	objectsGroup.update((value) => value);
-	flowNodes.set([]);
-	flowEdges.set([]);
+	clearGraphs(); // H1: stash empties every graph document
 	showToast('Stashed to Sessions: ' + payload.name);
 	resolveGate();
 }

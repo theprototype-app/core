@@ -3,6 +3,7 @@ import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
+import { applyGraphCreate, applyGraphDelete } from '$lib/flowGraphs';
 import { applyNodeTrigger } from '$lib/flowRuntime';
 import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs } from '$lib/customNodes';
 import { applyRemoteDuplicate } from '$lib/objectActions';
@@ -317,9 +318,13 @@ export class PeerConnection {
 				} else if(data.type == 'getnodes') {
 					deferUntilShareChoice('nodes', data.sender);
 				} else if(data.type == 'nodes') {
-					applyNodesSnapshot(data.nodes, data.edges);
+					applyNodesSnapshot(data.nodes, data.edges, data.graphs);
 				} else if(data.type == 'nodesync') {
 					applyNodeSync(data);
+				} else if(data.type == 'graphcreate') {
+					applyGraphCreate(data.uuid);
+				} else if(data.type == 'graphdelete') {
+					applyGraphDelete(data.uuid);
 				} else if(data.type == 'nodedef') {
 					applyNodeDef(data.def);
 				} else if(data.type == 'nodedefdelete') {
@@ -329,17 +334,17 @@ export class PeerConnection {
 				} else if(data.type == 'getnodedefs') {
 					sendNodeDefs(data.sender);
 				} else if(data.type == 'nodecreate') {
-					createFlowNode(data.node);
+					createFlowNode(data.node, data.graphId);
 				} else if(data.type == 'nodemove') {
-					moveFlowNode(data.id, data.position);
+					moveFlowNode(data.id, data.position, data.graphId);
 				} else if(data.type == 'nodedata') {
-					updateFlowNodeData(data.id, data.data);
+					updateFlowNodeData(data.id, data.data, data.graphId);
 				} else if(data.type == 'nodedelete') {
-					deleteFlowNodes(data.ids);
+					deleteFlowNodes(data.ids, data.graphId);
 				} else if(data.type == 'edgecreate') {
-					createFlowEdge(data.edge);
+					createFlowEdge(data.edge, data.graphId);
 				} else if(data.type == 'edgedelete') {
-					deleteFlowEdges(data.ids);
+					deleteFlowEdges(data.ids, data.graphId);
 				} else if(data.type == 'nodetrigger') {
 						applyNodeTrigger(data.id, data.t, false); // 134: shared-timestamp pulse
 					} else if(data.type == 'flowcursor') {

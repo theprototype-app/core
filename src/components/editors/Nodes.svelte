@@ -46,7 +46,8 @@
 	import KeyPressNode from './nodes/KeyPressNode.svelte';
 	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
-	import { objectsGroup, selectedObject } from '../../stores/sceneStore';
+	import { deselectObject } from '$lib/objectActions';
+	import { objectsGroup, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
@@ -137,10 +138,14 @@
 
 	// H1 (flow v2): the editor scope follows the viewport selection — a selected
 	// object shows ITS graph (or the create-flow empty state), deselecting returns
-	// to the scene graph. setActiveGraph no-ops on repeats.
+	// to the scene graph. "Has a selection" MUST be read from the selectedObjects
+	// SET: selectedObject keeps the last object after a deselect on purpose (the
+	// inspector/outline bind to it), so an empty-space click clears only the set.
 	$: {
-		const uuid = ($selectedObject as any)?.uuid;
-		setActiveGraph(uuid ?? SCENE_GRAPH);
+		const set = $selectedObjects as string[];
+		const primary = ($selectedObject as any)?.uuid;
+		const scopeUuid = set.length ? (primary && set.includes(primary) ? primary : set[set.length - 1]) : null;
+		setActiveGraph(scopeUuid ?? SCENE_GRAPH);
 	}
 	$: activeId = $activeGraphId;
 	$: hasActiveGraph = activeId === SCENE_GRAPH || !!$flowGraphs[activeId];
@@ -550,6 +555,17 @@
 			id="flow-scope-chip"
 			class="pointer-events-none absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-1.5"
 		>
+			{#if activeId !== SCENE_GRAPH}
+				<!-- explicit way back: show the Scene flow AND deselect the object -->
+				<button
+					id="flow-scope-scene"
+					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur hover:text-gray-100"
+					title="Back to the Scene flow (deselects the object)"
+					on:click={() => deselectObject()}
+				>
+					⌂ Scene
+				</button>
+			{/if}
 			<span
 				class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2.5 py-0.5 text-xs text-gray-200 backdrop-blur"
 			>

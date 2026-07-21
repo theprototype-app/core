@@ -64,9 +64,23 @@ h.run(async () => {
 	);
 
 	// --- deselect returns to the scene graph ----------------------------------
-	await A.page.evaluate(() => window.__stores.selectedObject.set([]));
+	// the REAL empty-click path: deselectObject clears the selectedObjects SET but
+	// keeps selectedObject (inspector/outline gotcha) — scope must still return
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
 	await A.page.waitForTimeout(400);
-	h.check((await activeOf(A)) === 'scene', 'deselecting returns the editor to the scene graph');
+	h.check((await activeOf(A)) === 'scene', 'empty-click deselect returns the editor to the scene graph');
+
+	// --- explicit "Scene" chip button switches scope AND deselects -------------
+	await A.page.evaluate((id) => window.__stores.objectActions.selectObject(id), uuid);
+	await A.page.waitForTimeout(400);
+	h.check((await activeOf(A)) === uuid, 'reselecting scopes back to the object');
+	await A.page.locator('#flow-scope-scene').click();
+	await A.page.waitForTimeout(400);
+	h.check((await activeOf(A)) === 'scene', 'the Scene chip button returns to the scene flow');
+	const setAfter = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.selectedObjects.subscribe((s) => r(s.length))())
+	);
+	h.check(setAfter === 0, 'the Scene chip button also deselects the object');
 
 	// --- two-peer: the object graph replicates --------------------------------
 	const B = await h.setupPage(browser, 'B');

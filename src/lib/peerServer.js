@@ -121,6 +121,80 @@ peerServerConfig.subscribe((v) => {
 });
 
 /**
+ * Human-readable description of the RESOLVED signaling server, for the Connect
+ * indicator (I5). Mirrors resolvePeerOptions' branch logic so the label always
+ * matches the server actually used. `didFallback` is layered on by peerHandler once
+ * a self-hosted server proves unreachable.
+ * @typedef {'self-hosted'|'public'|'custom'|'local'} PeerServerKind
+ * @typedef {{ kind: PeerServerKind, label: string, host: string, port: number, path: string, didFallback: boolean }} PeerServerStatus
+ */
+
+/**
+ * @param {{ isLocalDev?: boolean, forcePublic?: boolean }} [ctx]
+ * @returns {PeerServerStatus}
+ */
+export function describePeerServer(ctx = {}) {
+	const { isLocalDev = false, forcePublic = false } = ctx;
+	const publicCloud = () => ({
+		kind: /** @type {PeerServerKind} */ ('public'),
+		label: 'public cloud',
+		host: 'PeerJS public cloud',
+		port: 443,
+		path: '/',
+		didFallback: false
+	});
+
+	if (forcePublic) return publicCloud();
+
+	const cfg = get(peerServerConfig);
+	if (cfg.mode === 'public') return publicCloud();
+
+	if (cfg.mode === 'custom') {
+		const c = cfg.custom || {};
+		if (!c.host) return publicCloud(); // misconfigured -> public
+		return {
+			kind: 'custom',
+			label: 'custom',
+			host: c.host,
+			port: Number(c.port) || 443,
+			path: c.path || '/peerjs',
+			didFallback: false
+		};
+	}
+
+	// default mode
+	if (isLocalDev) {
+		return {
+			kind: 'local',
+			label: 'local dev',
+			host: LOCAL_DEV_OPTIONS.host,
+			port: LOCAL_DEV_OPTIONS.port,
+			path: '/peerjs',
+			didFallback: false
+		};
+	}
+	if (HAS_SELF_HOSTED) {
+		return {
+			kind: 'self-hosted',
+			label: 'self-hosted',
+			host: ENV.host,
+			port: Number(ENV.port) || 443,
+			path: ENV.path || '/peerjs',
+			didFallback: false
+		};
+	}
+	return publicCloud();
+}
+
+/**
+ * The signaling server currently in use, for the Connect indicator. peerHandler
+ * updates this on peer creation and again if the self-hosted server falls back to
+ * the public cloud. Starts null (unknown) until the first PeerConnection is built.
+ * @type {import('svelte/store').Writable<PeerServerStatus|null>}
+ */
+export const peerServerStatus = writable(null);
+
+/**
  * Resolve the `new Peer(id, options)` options for the current settings.
  * @param {{ isLocalDev?: boolean, forcePublic?: boolean }} [ctx]
  * @returns {{ options: any, canFallback: boolean }}

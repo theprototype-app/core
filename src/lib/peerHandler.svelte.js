@@ -10,7 +10,7 @@ import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
 import { applyMeshGeo } from '$lib/faceEdit';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
-import { resolvePeerOptions } from '$lib/peerServer';
+import { resolvePeerOptions, describePeerServer, peerServerStatus } from '$lib/peerServer';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
@@ -74,6 +74,9 @@ export class PeerConnection {
 		const createPeerForMode = (/** @type {boolean} */ forcePublic) => {
 			const { options, canFallback } = resolvePeerOptions({ isLocalDev, forcePublic });
 			this.canFallback = canFallback;
+			// Publish the resolved server for the Connect indicator (I5); carry the
+			// fallback flag once we've switched to the public cloud.
+			peerServerStatus.set({ ...describePeerServer({ isLocalDev, forcePublic }), didFallback: this.didFallback });
 			this.peer = new Peer(this.myId, options);
 		};
 

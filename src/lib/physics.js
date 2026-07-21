@@ -263,19 +263,28 @@ export async function toggleSimulation() {
 	await startSimulation();
 }
 
-/** Convex-hull collider desc for a single-Mesh object (scale BAKED into the
- * vertices — rapier colliders don't scale). Returns null when ineligible
- * (Groups, huge meshes) so the caller falls back to the box. @param {any} object */
+/** Convex-hull collider desc for a single-Mesh object (scale AND rotation
+ * BAKED into the vertices — rapier colliders don't scale, and baking the
+ * rotation lets hull bodies start from an IDENTITY rotation like the box
+ * bodies do, so one world-space joint axis is valid in every body's local
+ * frame. C3 root-cause: hull bodies used to CARRY the object rotation, which
+ * gave the car's z-rotated wheel hulls a 90-degree-wrong hinge axis — the
+ * solver fought itself and launched the assembly). Returns null when
+ * ineligible (Groups, huge meshes) so the caller falls back to the box.
+ * @param {any} object */
 function hullDesc(object) {
 	if (!object.isMesh || !object.geometry?.attributes?.position) return null;
 	const position = object.geometry.attributes.position;
 	if (position.count > HULL_MAX_VERTS) return null;
 	const scaled = new Float32Array(position.count * 3);
 	const s = object.scale;
+	const v = new THREE.Vector3();
 	for (let i = 0; i < position.count; i++) {
-		scaled[i * 3] = position.getX(i) * s.x;
-		scaled[i * 3 + 1] = position.getY(i) * s.y;
-		scaled[i * 3 + 2] = position.getZ(i) * s.z;
+		v.set(position.getX(i) * s.x, position.getY(i) * s.y, position.getZ(i) * s.z);
+		v.applyQuaternion(object.quaternion);
+		scaled[i * 3] = v.x;
+		scaled[i * 3 + 1] = v.y;
+		scaled[i * 3 + 2] = v.z;
 	}
 	return RAPIER.ColliderDesc.convexHull(scaled);
 }
@@ -352,14 +361,15 @@ async function startSimulation() {
 		if (p?.friction != null) colliderDesc.setFriction(p.friction);
 		if (dynamic) colliderDesc.setMass(p.mass);
 		world.createCollider(colliderDesc, body);
-		// hull vertices are in the object's LOCAL frame -> the body carries the
-		// object's own transform (offset zero); the AABB box path keeps the
-		// classic center-offset bookkeeping
+		// hull vertices are baked in the object's WORLD orientation around its
+		// origin -> the body carries only the translation and starts at IDENTITY
+		// rotation (like the box path, initialQuat compensates); the AABB box
+		// path keeps the classic center-offset bookkeeping
 		const entry = {
 			object,
 			body,
 			offset: usedHull ? new THREE.Vector3() : object.position.clone().sub(center),
-			initialQuat: usedHull ? new THREE.Quaternion() : object.quaternion.clone(),
+			initialQuat: object.quaternion.clone(),
 			mode: /** @type {'dynamic'|'kinematic'} */ (dynamic ? 'dynamic' : 'kinematic'),
 			hull: usedHull,
 			hold: /** @type {'user'|'external'|null} */ (null),
@@ -369,13 +379,8 @@ async function startSimulation() {
 			// move applier, undo, an AI edit) wrote the object mid-sim
 			lastWritten: { pos: object.position.clone(), quat: object.quaternion.clone() }
 		};
-		if (usedHull) {
+		if (usedHull)
 			body.setTranslation({ x: object.position.x, y: object.position.y, z: object.position.z }, true);
-			body.setRotation(
-				{ x: object.quaternion.x, y: object.quaternion.y, z: object.quaternion.z, w: object.quaternion.w },
-				true
-			);
-		}
 		if (dynamic) {
 			beforeStates.push({ uuid: object.uuid, before: transformOf(object) });
 			// dynamic wins over an animation: suspend the effect for the run
@@ -392,10 +397,10 @@ async function startSimulation() {
 	});
 
 	// P-B: build rapier impulse joints from the replicated defs. Anchors are
-	// OBJECT-local at attach time -> world -> BODY-local. Box bodies start with
-	// IDENTITY rotation (initialQuat compensates), so body-local = world - center
-	// and a world axis is valid in both bodies' frames; hull bodies carry the
-	// object rotation, so their body frame IS the object frame (scale baked).
+	// OBJECT-local at attach time -> world -> BODY-local. EVERY body (box and
+	// hull alike, C3) starts with IDENTITY rotation (initialQuat compensates),
+	// so body-local = world - translation and ONE world-space axis is valid in
+	// both bodies' local frames — which rapier's revolute() requires.
 	liveJoints = new Map();
 	const anchorWorld = new THREE.Vector3();
 	const axisWorld = new THREE.Vector3();
@@ -410,23 +415,16 @@ async function startSimulation() {
 		const objA = get(objectsGroup)?.getObjectByProperty('uuid', def.a);
 		const objB = get(objectsGroup)?.getObjectByProperty('uuid', def.b);
 		if (!objA || !objB) return;
-		/** body-local point for one side @param {any} obj @param {any} entry @param {number[]} anchorLocal @param {any} body */
-		const bodyLocal = (obj, entry, anchorLocal, body) => {
+		/** body-local point for one side (all bodies start world-aligned, C3)
+		 * @param {any} obj @param {number[]} anchorLocal @param {any} body */
+		const bodyLocal = (obj, anchorLocal, body) => {
 			obj.updateWorldMatrix(true, false);
 			obj.localToWorld(anchorWorld.fromArray(anchorLocal));
-			if (entry?.hull) {
-				// hull body frame = object frame: rotate the world offset back
-				const t = body.translation();
-				return anchorWorld
-					.sub(new THREE.Vector3(t.x, t.y, t.z))
-					.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion()).invert())
-					.toArray();
-			}
 			const t = body.translation();
 			return [anchorWorld.x - t.x, anchorWorld.y - t.y, anchorWorld.z - t.z];
 		};
-		const a1 = bodyLocal(objA, entryA, def.anchorA, bodyA);
-		const a2 = bodyLocal(objB, entryB, def.anchorB, bodyB);
+		const a1 = bodyLocal(objA, def.anchorA, bodyA);
+		const a2 = bodyLocal(objB, def.anchorB, bodyB);
 		let data;
 		if (def.kind === 'revolute') {
 			axisWorld.fromArray(def.axisA ?? [0, 1, 0]).applyQuaternion(objA.quaternion).normalize();

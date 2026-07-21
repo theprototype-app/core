@@ -8,26 +8,83 @@
 // joiners adopt them) and free when the claimant disconnects (pong's paddle
 // pattern). Driver != initiator adds ~150-250ms input latency — acceptable
 // for a prototype toy, by design.
+// C3 (roadmap #13): claims are allowed anytime, but DRIVING + the chase camera
+// engage only while Play mode is active AND a simulation runs — engagement
+// claims 'keys' (pausing play-mode walking) and reuses the possess follow cam
+// (possess.startFollowCam), both released when play mode/sim/claim ends.
 
 export default {
 	id: 'car',
 	name: 'Drivable Car',
-	version: '1.0.0',
-	description: 'Spawn a jointed demo car; click its body to claim it, WASD drives (needs a running simulation).',
+	version: '1.1.0',
+	description: 'Spawn a jointed demo car; click its body to claim it, then drive with WASD in Play mode while a simulation runs.',
 	/** @param {any} api */
 	register(api) {
 		const THREE = api.THREE;
 		/** @type {Record<string, string>} car body uuid -> driver peerId */
 		const claims = {};
-		const MAX_VEL = 14; // rad/s wheel speed at full throttle
-		const STEER_VEL = 8;
-		const FORCE = 300;
+		// C3 tuning: stable & grippy — lower top speed/force + softer wheel grip
+		// than the 1.0 params (300/14/1.4 could flip the car at full throttle)
+		const MAX_VEL = 10; // rad/s wheel speed at full throttle
+		const STEER_VEL = 6;
+		const FORCE = 120;
 		let lastDrive = 0;
 
 		api.registerBindings([
-			{ label: 'Drive claimed car (needs a running sim)', keys: 'W / S' },
+			{ label: 'Drive claimed car (Play mode + running sim)', keys: 'W / S' },
 			{ label: 'Steer claimed car', keys: 'A / D' }
 		]);
+
+		// C3 play-gate: driving + the chase camera engage only while the main
+		// play button is active AND a simulation is running; the claim itself is
+		// allowed anytime (pre-claim while editing). Engagement claims 'keys'
+		// (pausing play-mode walking, K-C) and follows via the possess chase cam.
+		let playMode = false;
+		let simOn = false;
+		let engaged = false;
+		/** @type {any} */ let possessLib = null;
+		const myCarId = () => {
+			const me = api.peerId() ?? 'me';
+			const mine = Object.entries(claims).find(([, peerId]) => peerId === me);
+			return mine ? mine[0] : null;
+		};
+		const syncEngagement = () => {
+			const car = myCarId();
+			const want = !!car && playMode && simOn;
+			if (want && !engaged) {
+				engaged = true;
+				api.claimInput('keys');
+				possessLib?.startFollowCam(car);
+			} else if (!want && engaged) {
+				engaged = false;
+				api.releaseInput('keys');
+				possessLib?.stopFollowCam();
+			}
+		};
+		if (typeof window !== 'undefined') {
+			Promise.all([
+				import('../../lib/possess'),
+				import('../../lib/physics'),
+				import('../../stores/sceneStore'),
+				import('svelte/store')
+			]).then(([possess, physics, sceneStore, svelteStore]) => {
+				possessLib = possess;
+				sceneStore.isLocked.subscribe((/** @type {any} */ locked) => {
+					playMode = locked === true;
+					syncEngagement();
+				});
+				const readSim = () =>
+					svelteStore.get(physics.simulating) || !!svelteStore.get(physics.remoteSimulating);
+				physics.simulating.subscribe(() => {
+					simOn = readSim();
+					syncEngagement();
+				});
+				physics.remoteSimulating.subscribe(() => {
+					simOn = readSim();
+					syncEngagement();
+				});
+			});
+		}
 
 		// body geometry so '/create Carbody' replicates like any primitive
 		api.registerPrimitive('Carbody', () => {
@@ -56,19 +113,21 @@ export default {
 				}
 				const peer = svelteStore.get(appStore.peers);
 				body.position.set(0, 0.55, 0);
-				body.userData.physics = { mode: 'dynamic', mass: 20, friction: 0.3 };
+				// C3 tuning: heavier body (lower effective CG under load) + wider
+				// stance keep the assembly planted through full-throttle turns
+				body.userData.physics = { mode: 'dynamic', mass: 30, friction: 0.3 };
 				body.userData.car = true;
 				const corners = [
-					[1.15, -1.0],
-					[-1.15, -1.0],
-					[1.15, 1.0],
-					[-1.15, 1.0]
+					[1.3, -1.0],
+					[-1.3, -1.0],
+					[1.3, 1.0],
+					[-1.3, 1.0]
 				];
 				wheels.forEach((/** @type {any} */ wheel, /** @type {number} */ index) => {
 					wheel.position.set(corners[index][0], 0.4, corners[index][1]);
 					wheel.rotation.z = Math.PI / 2; // cylinder axis Y -> X (the axle)
 					wheel.updateMatrix();
-					wheel.userData.physics = { mode: 'dynamic', mass: 2, collider: 'hull', friction: 1.4 };
+					wheel.userData.physics = { mode: 'dynamic', mass: 2, collider: 'hull', friction: 1.1 };
 				});
 				// replicate the placements + physics params
 				[body, ...wheels].forEach((/** @type {any} */ object) => {
@@ -83,7 +142,7 @@ export default {
 				});
 				// axle hinges: revolute about the BODY's local X, anchored at each wheel
 				wheels.forEach((/** @type {any} */ wheel) => joints.createJoint('revolute', body.uuid, wheel.uuid, 'x', { vel: 0, maxForce: FORCE }));
-				api.toast('Car spawned — ▶ start a simulation, click the body to claim, WASD drives');
+				api.toast('Car spawned — click the body to claim it, then Play + a running simulation to drive');
 			});
 		};
 
@@ -106,13 +165,14 @@ export default {
 			const next = holder === me ? '' : me; // toggle
 			applyClaim(current.uuid, next);
 			api.send({ op: 'claim', carId: current.uuid, peerId: next });
-			api.toast(next ? 'Car claimed — WASD drives (sim must be running)' : 'Car released');
+			api.toast(next ? 'Car claimed — press ▶ Play with a running simulation, WASD drives' : 'Car released');
 			return true;
 		});
 
 		const applyClaim = (/** @type {string} */ carId, /** @type {string} */ peerId) => {
 			if (peerId) claims[carId] = peerId;
 			else delete claims[carId];
+			syncEngagement(); // C3: my claim appearing/vanishing (incl. remote release)
 		};
 
 		/** the initiator turns a drive op into wheel motor velocities */
@@ -130,8 +190,10 @@ export default {
 		};
 
 		// the driver forwards INPUT at ~20Hz; every peer sees the op, only the
-		// initiator applies motors (driver == initiator short-circuits the same path)
+		// initiator applies motors (driver == initiator short-circuits the same path).
+		// C3: gated on Play mode — outside it WASD stays with the editor/camera.
 		api.registerFrameTask(() => {
+			if (!playMode) return;
 			const me = api.peerId() ?? 'me';
 			const mine = Object.entries(claims).find(([, peerId]) => peerId === me);
 			if (!mine) return;

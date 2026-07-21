@@ -186,7 +186,9 @@ api.physics.joints();                   // Promise<the replicated joint defs>
 The **car module** (`src/modules/car/`) is the worked example: replicated
 primitives + motorized revolute joints, click-to-claim (pong's paddle
 pattern), driver forwards `{op:'drive', throttle, steer}` at ~20Hz and only
-the initiator applies wheel motors.
+the initiator applies wheel motors. Driving + the chase camera engage only
+in Play mode with a running simulation (the module claims `'keys'` and uses
+possess's `startFollowCam` while engaged; the claim itself works anytime).
 
 ### Possess (K-D)
 

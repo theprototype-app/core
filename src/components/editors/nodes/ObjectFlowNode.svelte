@@ -15,7 +15,7 @@
 	// listed in the picker.
 	type $$Props = NodeProps;
 	export let id: string;
-	export let data;
+	export let data: any;
 
 	$: candidates = Object.keys($flowGraphs)
 		.filter((g) => g !== SCENE_GRAPH)

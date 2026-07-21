@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { flowNodes, flowEdges } from '../stores/flowStore';
-import { objectsGroup, lockedObjects, selectedObject } from '../stores/sceneStore';
+import { objectsGroup, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
-import { recordTransformSet } from './history';
+import { recordTransformSet, recordEntry } from './history';
 import {
 	notifyExternalMove,
 	setPostTick,
@@ -113,6 +113,7 @@ function collectParams(group) {
 		const uuid = target.data?.selected;
 		if (!uuid || uuid === '-None-') return;
 		map[uuid] ??= {};
+		map[uuid].flow = true; // provenance for the Inspector physics list (C1)
 		// flow wiring wins over userData (incl. re-dynamicizing a 'static' object)
 		if (source.type === 'mass') {
 			map[uuid].mass = source.data?.kg ?? 1;
@@ -122,6 +123,66 @@ function collectParams(group) {
 		if (source.type === 'friction') map[uuid].friction = source.data?.value ?? 0.5;
 	});
 	return map;
+}
+
+/**
+ * C1 discoverability: every object that would get physics params at sim start,
+ * as display rows for the Inspector scene-mode "Physics" section. Pure read —
+ * recomputed by the UI from objectsGroup/flowNodes/flowEdges changes.
+ * @returns {{uuid: string, name: string, mode: 'dynamic'|'static'|'props', mass: number|null, flow: boolean}[]}
+ */
+export function listPhysicsObjects() {
+	const group = get(objectsGroup);
+	if (!group) return [];
+	const params = collectParams(group);
+	return group.children
+		.filter((/** @type {any} */ o) => params[o.uuid])
+		.map((/** @type {any} */ o) => {
+			const p = params[o.uuid];
+			return {
+				uuid: o.uuid,
+				name: o.name || o.type,
+				mode: /** @type {'dynamic'|'static'|'props'} */ (
+					p.forceStatic ? 'static' : p.mass != null ? 'dynamic' : 'props'
+				),
+				mass: p.mass ?? null,
+				flow: !!p.flow
+			};
+		});
+}
+
+/**
+ * C1 quick action: make the current selection dynamic (userData.physics mode
+ * 'dynamic', mass 1 unless already set) — replicates via the existing
+ * objectParameters message and records a props undo entry per object.
+ * @returns {number} objects updated
+ */
+export function enablePhysicsOnSelection() {
+	const group = get(objectsGroup);
+	/** @type {any} */
+	const peer = get(peers);
+	const multi = get(selectedObjects);
+	const primary = /** @type {any} */ (get(selectedObject));
+	const uuids = multi?.length ? multi : primary?.uuid ? [primary.uuid] : [];
+	let count = 0;
+	uuids.forEach((/** @type {string} */ uuid) => {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		if (!object) return;
+		const before = object.userData.physics ? { ...object.userData.physics } : null;
+		const next = { ...(object.userData.physics ?? {}), mode: 'dynamic', mass: object.userData.physics?.mass ?? 1 };
+		object.userData.physics = next;
+		recordEntry({ kind: 'props', uuid, before: { physics: before }, after: { physics: next } });
+		peer?.send({ type: 'objectParameters', parameter: 'physics', uuid, physics: next });
+		count++;
+	});
+	if (count === 0) {
+		showToast('Select an object first — then Enable physics makes it fall and collide');
+		return 0;
+	}
+	objectsGroup.update((v) => v);
+	selectedObject.update((v) => v);
+	showToast(count === 1 ? 'Physics enabled — dynamic, mass 1' : 'Physics enabled on ' + count + ' objects — dynamic, mass 1');
+	return count;
 }
 
 export async function toggleSimulation() {
@@ -172,9 +233,13 @@ async function startSimulation() {
 			params[selected.uuid] = { ...(params[selected.uuid] ?? {}), mass: 1 };
 			delete params[selected.uuid].forceStatic;
 			dynamicUuids = [selected.uuid];
-			showToast('No Mass nodes wired — simulating the selected object with mass 1');
+			showToast(
+				'No objects have physics yet — simulating the selected object with mass 1. Make it permanent in Inspector ▸ Physics.'
+			);
 		} else {
-			showToast('Wire a Mass node to an Object Selector (or select an object) to make something fall');
+			showToast(
+				'Nothing to simulate — enable physics on an object first (select it → Inspector ▸ Physics, or wire a Mass node)'
+			);
 			return;
 		}
 	}

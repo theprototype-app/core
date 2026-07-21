@@ -28,7 +28,9 @@
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
-	import { moveObjectToGroup } from '$lib/objectActions';
+	import { moveObjectToGroup, selectObject } from '$lib/objectActions';
+	import { listPhysicsObjects, enablePhysicsOnSelection } from '$lib/physics';
+	import { flowNodes, flowEdges } from '../../stores/flowStore';
 	import { showLightHelpers } from '$lib/lightHelpers';
 	import { cameraNear, cameraFar, setCameraNear, setCameraFar } from '$lib/cameraClip';
 	import {
@@ -94,6 +96,16 @@
 	// the dock (--z-bottom=35) and floating windows.
 	const drawerStyle =
 		'bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); z-index: calc(var(--z-bottom) - 1); height: auto';
+
+	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
+	// changes AND selection updates (setPhysics only pokes selectedObject).
+	const physicsRows = $derived.by(() => {
+		$objectsGroup;
+		$flowNodes;
+		$flowEdges;
+		$selectedObject;
+		return listPhysicsObjects();
+	});
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	const isGroup = $derived($selectedObject?.type === 'Group');
@@ -698,6 +710,49 @@
 					<span class="text-[10px] text-gray-500">grows to fit the scene</span>
 				</div>
 				<p class="text-[10px] italic text-gray-400">Clip planes are per-device (not shared).</p>
+			</Section>
+
+			<Section label="Physics">
+				<!-- C1: every object that gets a body at sim start; click = select -->
+				{#if physicsRows.length === 0}
+					<p class="text-xs text-gray-400">
+						No objects have physics yet. Select an object and set its Physics mode to
+						Dynamic (or wire a Mass node to an Object Selector in the node editor),
+						then press ▶ / P to simulate.
+					</p>
+				{:else}
+					<div id="physics-objects" class="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+						{#each physicsRows as row (row.uuid)}
+							<button
+								class={'flex items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs transition-colors ' +
+									($selectedObject?.uuid === row.uuid
+										? 'bg-primary-600 text-white'
+										: 'bg-gray-700 text-gray-200 hover:bg-gray-600')}
+								title="Click to select"
+								onclick={() => selectObject(row.uuid)}
+							>
+								<span class="truncate">{row.name}</span>
+								<span class="shrink-0 text-[10px] opacity-75">
+									{row.mode === 'dynamic'
+										? 'dynamic · ' + row.mass + ' kg'
+										: row.mode === 'static'
+											? 'static'
+											: 'collider only'}{row.flow ? ' · flow' : ''}
+								</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+				<button
+					id="physics-enable-selection"
+					class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+					onclick={() => enablePhysicsOnSelection()}
+				>
+					Enable physics on selection
+				</button>
+				<p class="text-[10px] italic text-gray-400">
+					Dynamic objects fall and collide while a simulation runs (▶ or P).
+				</p>
 			</Section>
 
 			<Section label="Background">

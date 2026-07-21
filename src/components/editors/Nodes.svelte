@@ -52,7 +52,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
-	import { isValidFlowConnection, typeColor } from '$lib/flowSockets';
+	import { isValidFlowConnection, typeColor, replaceableInputEdges } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
 	import { peers, username } from '../../stores/appStore';
@@ -286,6 +286,14 @@
 	// BOTH a and b of a node collided ids, the peer-side dedupe dropped edge #2
 	// and the graphs diverged permanently (nodesync could never converge).
 	const onedgecreate = (connection: Connection) => {
+		// single-connection inputs: a new wire into an occupied VALUE input
+		// replaces the old one (effect/event inputs keep multi fan-in; fan-out
+		// from an output is always unlimited)
+		const stale = replaceableInputEdges(connection, get(nodes), get(edges));
+		if (stale.length) {
+			deleteFlowEdges(stale, activeId);
+			peer?.send({ type: 'edgedelete', ids: stale, graphId: activeId });
+		}
 		const edge = {
 			id: `e-${connection.source}${connection.sourceHandle ? '.' + connection.sourceHandle : ''}-${connection.target}${connection.targetHandle ? '.' + connection.targetHandle : ''}`,
 			source: connection.source,

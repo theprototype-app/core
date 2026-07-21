@@ -107,6 +107,35 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
 	await A.page.waitForTimeout(400);
 
+	// --- single-connection inputs: a new wire replaces the old -----------------
+	const singleRules = await A.page.evaluate(() => {
+		const fs = window.__stores.flowSockets;
+		const nodes = [
+			{ id: 'n1', type: 'number', data: {} },
+			{ id: 'n2', type: 'number', data: {} },
+			{ id: 'sp', type: 'spin', data: {} },
+			{ id: 'sel', type: 'objectselector', data: {} },
+			{ id: 'cnt', type: 'counter', data: {} },
+			{ id: 'oc1', type: 'onclick', data: {} }
+		];
+		const edges = [
+			{ id: 'e-old', source: 'n1', target: 'sp', targetHandle: 'speed' },
+			{ id: 'e-fx', source: 'sp', target: 'sel' },
+			{ id: 'e-ev', source: 'oc1', target: 'cnt', targetHandle: 'pulse' }
+		];
+		return {
+			valueReplaces: fs.replaceableInputEdges({ source: 'n2', target: 'sp', targetHandle: 'speed' }, nodes, edges),
+			effectKeepsMulti: fs.replaceableInputEdges({ source: 'sp', target: 'sel', targetHandle: null }, nodes, edges),
+			eventKeepsMulti: fs.replaceableInputEdges({ source: 'oc1', target: 'cnt', targetHandle: 'pulse' }, nodes, edges)
+		};
+	});
+	h.check(
+		singleRules.valueReplaces.length === 1 && singleRules.valueReplaces[0] === 'e-old',
+		'a value input is single-connection: the new wire replaces the old edge'
+	);
+	h.check(singleRules.effectKeepsMulti.length === 0, 'the effect channel keeps multi fan-in');
+	h.check(singleRules.eventKeepsMulti.length === 0, 'event inputs keep multi fan-in');
+
 	// --- interface change prunes stale embed edges ----------------------------
 	await A.page.evaluate((id) => {
 		window.__stores.nodesHandler.updateFlowNodeData('fi-speed', { name: 'velocity' }, id);
@@ -117,6 +146,25 @@ h.run(async () => {
 		!afterRename.edges.some((e) => e.id === 'e-num-embed'),
 		'renaming the Flow Input prunes the scene edge into the old socket'
 	);
+
+	// --- self-embed is blocked in the picker -----------------------------------
+	await A.page.evaluate(async (id) => {
+		window.__stores.nodesHandler.createFlowNode(
+			{ id: 'self-embed-probe', type: 'objectflow', position: { x: 500, y: 100 }, data: { type: 'objectflow', label: 'Object Flow', flowUuid: '' } },
+			id
+		);
+		window.__stores.objectActions.selectObject(id); // view the object's own flow
+	}, uuid);
+	await A.page.waitForTimeout(600);
+	const pickerValues = await A.page.evaluate(() =>
+		[...document.querySelectorAll('[data-id="self-embed-probe"] select option')].map((o) => o.value)
+	);
+	h.check(!pickerValues.includes(uuid), 'the picker never offers the flow it lives in (no self-embed)');
+	await A.page.evaluate((id) => {
+		window.__stores.nodesHandler.deleteFlowNodes(['self-embed-probe'], id);
+		window.__stores.objectActions.deselectObject();
+	}, uuid);
+	await A.page.waitForTimeout(400);
 
 	// --- deleting the flow removes the embedded node ---------------------------
 	await A.page.evaluate((id) => window.__stores.flowGraphsCtl.deleteObjectGraph(id), uuid);

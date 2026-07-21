@@ -3,7 +3,7 @@
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
-	import { flowGraphs, SCENE_GRAPH } from '../../../stores/flowStore';
+	import { flowGraphs, activeGraphId, SCENE_GRAPH } from '../../../stores/flowStore';
 	import { objectsGroup } from '../../../stores/sceneStore';
 	import { selectObject } from '$lib/objectActions';
 
@@ -17,8 +17,11 @@
 	export let id: string;
 	export let data: any;
 
+	// a flow can't embed ITSELF (the runtime would survive it — 1-frame latency +
+	// per-tick cycle guards bound everything — but a self-feedback card is pure
+	// confusion); embedding OTHER flows inside an object flow stays allowed
 	$: candidates = Object.keys($flowGraphs)
-		.filter((g) => g !== SCENE_GRAPH)
+		.filter((g) => g !== SCENE_GRAPH && g !== $activeGraphId)
 		.map((uuid) => {
 			const object = ($objectsGroup as any)?.getObjectByProperty?.('uuid', uuid);
 			return { uuid, name: object?.name || object?.type || uuid.slice(0, 8) };

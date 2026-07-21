@@ -3,7 +3,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core'
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
-	import { vrMenuOpen, vrMenuHand, vrTransformMode, showGrid, vrPassthrough, vrSnapAngle, selectedObject } from '../../stores/sceneStore'
+	import { vrMenuOpen, vrMenuHand, vrTransformMode, showGrid, vrPassthrough, vrSnapAngle, selectedObject, selectedObjects } from '../../stores/sceneStore'
 	import { snapEnabled } from '$lib/snapping'
 	import { drawMode } from '$lib/drawMode'
 	import { vrMicMode, micActive } from '$lib/voiceChat'
@@ -40,7 +40,8 @@
 		$vrPassthrough,
 		$vrSnapAngle,
 		$environment,
-		$selectedObject
+		$selectedObject,
+		$selectedObjects // D4: counted labels + Make Group re-derive on the SET
 	)
 	function deriveSectors(ring: string, ..._deps: any[]) {
 		const entries = ringEntries(ring)
@@ -54,9 +55,14 @@
 	$: hub = hubEntry($activeRing, !!$selectedObject?.uuid)
 
 	function sectorColor(entry: any) {
+		if (entry.disabled?.()) return '#1b1f26' // D4: greyed out, hover never lights it
 		if ($vrHovered === entry.id) return '#ff4000'
 		if (entry.color) return entry.color
 		return entry.active?.() ? '#2f81f7' : '#2a2f38'
+	}
+	function labelColor(entry: any) {
+		if (entry.disabled?.()) return '#6b7280'
+		return $vrHovered === entry.id ? '#ffffff' : '#e8ecf2'
 	}
 
 	const controllerPosition = new THREE.Vector3()
@@ -105,7 +111,7 @@
 			{#if s.entry.label}
 				<Text
 					text={typeof s.entry.label === 'function' ? s.entry.label() : s.entry.label}
-					color={$vrHovered === s.entry.id ? '#ffffff' : '#e8ecf2'}
+					color={labelColor(s.entry)}
 					outlineColor="#000000"
 					outlineWidth={0.0012}
 					fontSize={sectors.length > 8 ? 0.0095 : 0.0115}

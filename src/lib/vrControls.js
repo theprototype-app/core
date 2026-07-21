@@ -97,7 +97,7 @@ import {
 } from './faceEdit';
 import { peers, showToast, messages, pendingApprovals } from '../stores/appStore';
 import { approvePeer, denyPeer } from './peerApproval';
-import { undo, redo, recordTransform } from './history';
+import { undo, redo, recordTransform, beginHistoryBatch, endHistoryBatch } from './history';
 import { snapEnabled, snapSettings, surfaceSnap, dropToSurface } from './snapping';
 import {
 	selectObject,
@@ -108,7 +108,8 @@ import {
 	renameObject,
 	focusObject,
 	ungroupObject,
-	applySelectionSet
+	applySelectionSet,
+	selectionUuids
 } from './objectActions';
 import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
@@ -1171,21 +1172,40 @@ export function placePrefabGhost() {
 let paintGesture = /** @type {any} */ (null);
 let lastColorSent = 0;
 
+/** D4: the palette paints the whole SELECTION SET (parity with the desktop
+ * menu's counted set ops); a lone selection keeps the single-object behavior.
+ * @returns {any[]} selected objects with a paintable material color */
+function paintTargets() {
+	const group = get(objectsGroup);
+	return selectionUuids()
+		.map((uuid) => group?.getObjectByProperty('uuid', uuid))
+		.filter((object) => object?.material?.color);
+}
+
 /** Continuous palette painting while the trigger is held (110)
  * @param {number} index @param {boolean} triggerHeld */
 function updatePalettePaint(index, triggerHeld) {
 	const paletteGroup = get(vrPaletteGroup);
-	const object = /** @type {any} */ (get(selectedObject));
-	if (!paletteGroup || !object?.uuid || !object?.material?.color) {
+	const targets = paintTargets();
+	if (!paletteGroup || !targets.length) {
 		paintGesture = null;
 		return;
 	}
 	if (!triggerHeld) {
 		if (paintGesture) {
-			// one undo entry + one final replicated color per pick gesture
-			const after = '#' + object.material.color.getHexString();
-			recordMaterialChange(object.uuid, 'color', null, paintGesture.before, after);
-			/** @type {any} */ (get(peers))?.send({ type: 'color', uuid: object.uuid, color: after });
+			// one undo entry + one final replicated color per pick gesture; a
+			// multi-selection collapses into ONE composite history entry (D4)
+			/** @type {any} */ const peer = get(peers);
+			const multi = paintGesture.before.size > 1;
+			if (multi) beginHistoryBatch();
+			for (const object of targets) {
+				const before = paintGesture.before.get(object.uuid);
+				if (!before) continue;
+				const after = '#' + object.material.color.getHexString();
+				recordMaterialChange(object.uuid, 'color', null, before, after);
+				peer?.send({ type: 'color', uuid: object.uuid, color: after });
+			}
+			if (multi) endHistoryBatch('Color (' + paintGesture.before.size + ')');
 			paintGesture = null;
 		}
 		return;
@@ -1206,12 +1226,18 @@ function updatePalettePaint(index, triggerHeld) {
 		const picked = paletteColorAt(hit.uv?.x ?? 0.5, hit.uv?.y ?? 0.5, get(vrPaletteLightness));
 		if (!picked) return;
 		if (!paintGesture)
-			paintGesture = { before: '#' + object.material.color.getHexString() };
-		object.material.color.set(picked.hex);
+			paintGesture = {
+				before: new Map(
+					targets.map((object) => [object.uuid, '#' + object.material.color.getHexString()])
+				)
+			};
 		const now = Date.now();
-		if (now - lastColorSent > 120) {
-			lastColorSent = now;
-			/** @type {any} */ (get(peers))?.send({ type: 'color', uuid: object.uuid, color: picked.hex });
+		const sendNow = now - lastColorSent > 120;
+		if (sendNow) lastColorSent = now;
+		for (const object of targets) {
+			object.material.color.set(picked.hex);
+			if (sendNow)
+				/** @type {any} */ (get(peers))?.send({ type: 'color', uuid: object.uuid, color: picked.hex });
 		}
 	}
 }
@@ -2135,6 +2161,9 @@ function spawnPrimitive(command) {
 /** Radial-menu sector actions (74): navigation + registry first, then the
  * built-in switch @param {string} name */
 export function executeVRMenuAction(name) {
+	// D4: a disabled registry entry (greyed sector) never activates, whether
+	// its behavior lives in a registry action or the built-in switch below
+	if (findMenuEntry(name)?.disabled?.()) return;
 	// ring navigation + close (109: a STACK — Back pops one level)
 	if (name === 'close') {
 		vrMenuOpen.set(false);

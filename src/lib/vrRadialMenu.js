@@ -11,8 +11,18 @@ import {
 } from '../stores/sceneStore';
 import { environment, setEnvironment, ENVIRONMENT_PRESETS } from './environment';
 import { setMicMode, vrMicMode } from './voiceChat';
-import { duplicateObject, deleteSelection, selectionUuids } from './objectActions';
+import { duplicateSelection, deleteSelection, groupSelection, selectionUuids } from './objectActions';
 import { savePrefab, savePrefabSelection } from './prefabs';
+
+// D4 (roadmap 13): selection-set helpers for the Edit ring — counted labels
+// act on the whole SET (parity with the desktop object menu, U-2)
+function selCount() {
+	return selectionUuids().length;
+}
+function countSuffix() {
+	const n = selCount();
+	return n > 1 ? ` (${n})` : '';
+}
 
 // VR radial menu v2 (74): a flat 8-sector base ring with nested sub-rings.
 // Entries live in a registry so modules and later phases can add their own
@@ -78,9 +88,11 @@ const registry = new Map();
  * Register (or replace, by id) a radial menu entry.
  * @param {{id: string, group?: string, label: string | (() => string), order?: number,
  *   ring?: string, action?: () => void, active?: () => boolean,
- *   color?: string, closes?: boolean, visible?: () => boolean}} entry
+ *   color?: string, closes?: boolean, visible?: () => boolean,
+ *   disabled?: () => boolean}} entry
  * `ring` makes it a navigation sector into that sub-ring; `color` renders the
- * sector as a swatch; `closes` closes the menu after the action runs.
+ * sector as a swatch; `closes` closes the menu after the action runs;
+ * `disabled` greys the sector out and blocks activation (D4).
  */
 export function registerVRMenuEntry(entry) {
 	const group = entry.group ?? 'root';
@@ -294,18 +306,20 @@ function registerBuiltins() {
 		order: 12,
 		active: () => get(vrSnapMenuOpen)
 	});
+	// D4: counted labels act on the SET (duplicateSelection falls back to the
+	// single path for a lone selection; deleteSelection was already set-wide)
 	registerVRMenuEntry({
 		id: 'obj:duplicate',
 		group: 'object',
-		label: 'Duplicate',
+		label: () => 'Duplicate' + countSuffix(),
 		order: 1,
 		closes: true,
-		action: () => duplicateObject(undefined)
+		action: () => duplicateSelection()
 	});
 	registerVRMenuEntry({
 		id: 'obj:delete',
 		group: 'object',
-		label: 'Delete',
+		label: () => 'Delete' + countSuffix(),
 		order: 2,
 		closes: true,
 		action: () => deleteSelection()
@@ -319,8 +333,15 @@ function registerBuiltins() {
 		order: 4,
 		active: () => get(vrWireframeSelection)
 	});
-	// Properties opens the core-editable-set panel (112)
-	registerVRMenuEntry({ id: 'obj:props', group: 'object', label: 'Properties', order: 5 });
+	// Properties opens the core-editable-set panel (112) — D4: primary-only,
+	// greyed out for a multi-selection instead of silently editing one member
+	registerVRMenuEntry({
+		id: 'obj:props',
+		group: 'object',
+		label: 'Properties',
+		order: 5,
+		disabled: () => selCount() > 1
+	});
 	// Edit Mesh (137): a TOGGLE (active dot) that enters mesh-edit mode + opens
 	// the controller side-menu with Vertices/Faces mode + tools (replaces the
 	// old Vertices entry + Faces ▸ sub-ring)
@@ -330,8 +351,10 @@ function registerBuiltins() {
 		label: 'Edit Mesh',
 		order: 7,
 		active: () => get(vrEditMenuOpen),
-		// 216: a GROUP selection can't be mesh-edited; it shows Ungroup instead
-		visible: () => /** @type {any} */ (get(selectedObject))?.type !== 'Group'
+		// 216: a GROUP selection can't be mesh-edited; it shows Ungroup instead.
+		// D4: a MULTI-selection shows Make Group instead
+		visible: () =>
+			selCount() <= 1 && /** @type {any} */ (get(selectedObject))?.type !== 'Group'
 	});
 	// 216: Ungroup (dissolve the group, move children up) — replaces Edit Mesh
 	// when the selection is a Group
@@ -341,7 +364,19 @@ function registerBuiltins() {
 		label: 'Ungroup',
 		order: 7,
 		closes: true,
-		visible: () => /** @type {any} */ (get(selectedObject))?.type === 'Group'
+		visible: () =>
+			selCount() <= 1 && /** @type {any} */ (get(selectedObject))?.type === 'Group'
+	});
+	// D4: Make Group takes the Edit Mesh slot when 2+ objects are selected —
+	// groupSelection is the one-undo U-2 op (replicated create + reparent)
+	registerVRMenuEntry({
+		id: 'obj:group',
+		group: 'object',
+		label: () => 'Make Group' + countSuffix(),
+		order: 7,
+		closes: true,
+		visible: () => selCount() > 1,
+		action: () => groupSelection()
 	});
 
 	// Face ops (118/137): still ids the side-menu arms via setFaceOp; the
@@ -356,7 +391,7 @@ function registerBuiltins() {
 	registerVRMenuEntry({
 		id: 'obj:prefab',
 		group: 'object',
-		label: 'Save prefab',
+		label: () => 'Save prefab' + countSuffix(),
 		order: 6,
 		closes: true,
 		action: () => {

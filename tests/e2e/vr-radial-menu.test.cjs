@@ -93,8 +93,10 @@ h.run(async () => {
 	h.check(registry.objectOps.includes('snap'), 'Edit ring gained Snap');
 	h.check(registry.addCount === 7 && registry.sceneHasEnv, 'Add ring: 6 primitives + Prefabs (115)');
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
+	// D4: modules may append entries (avatar:possess from the default-on avatar
+	// module) — assert the built-in prefix, not an exact list
 	h.check(
-		registry.objectOps.join(',') ===
+		registry.objectOps.slice(0, 8).join(',') ===
 			'obj:duplicate,obj:delete,obj:color,wireframe,obj:props,obj:prefab,obj:editmesh,snap' &&
 			!registry.objectOps.includes('obj:visible') &&
 			!registry.objectOps.includes('obj:vertices') &&

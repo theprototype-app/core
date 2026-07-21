@@ -330,14 +330,22 @@ loadable play content. Everything a user does must be visible to connected peers
   a static edge into moduleSDK's consumers closes a cycle (flowRuntime → moduleSDK).
 - The dungeon module publishes gameplay data on its group's `userData.play`
   (grid/rooms/floorValue) — `dungeonPlay.js` consumes it; keep that contract stable.
+- **Inspector.svelte is a plain `<script>` (NOT lang="ts")** — one TypeScript type
+  annotation in it hard-breaks `npm run build` with a useless
+  `error during build: undefined` (svelte-check never runs; vite dev 500s too).
+  Same trap in any non-TS component: JSDoc for types, never TS syntax (#13-B3).
 
 ## Verification (mandatory before commit)
 
 Follow `.claude/skills/e2e-verify/SKILL.md`. Short version: the suite lives in
 `tests/e2e/` — `npm run e2e -- <name>` for the feature suite you add/update (every
 feature phase ships one; update suites broken by UI changes in the same commit).
-Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:5173`
+Two-peer tests meet on the SELF-HOSTED signaling box (peerjs.theprototype.app, the
+docs/tf EC2 w/ discovery + /stats since #13-J) via `https://theprototype.app:5173`
 (hosts-mapped). `npm run build` must pass; `npx svelte-check` must add no NEW errors.
+**Parallel lanes**: concurrent sessions each use their own `git worktree`
+(`../theprototype-lane-*`) + own dev server port (5174-5177) + `$env:APP_URL`
+override for e2e — never share 5173 (the user's main-checkout server).
 
 ## Workflow preferences (user)
 
@@ -356,7 +364,33 @@ Two-peer tests run over the public PeerJS cloud via `https://theprototype.app:51
   reposition on narrow; don't blanket-revert them anymore.)
 - VR phases: verify math/state headlessly, state clearly that on-device feel is the
   user's manual check.
-- Status (2026-07-20): **Roadmap #12 "playground & polish" SHIPPED — ALL 19 phases**
+- Shipping flow (since 2026-07-20): branch-per-batch off `main` → one commit per
+  phase → PR to main → MERGE-COMMIT merge (preserve phase history). Parallel batches
+  run in git WORKTREES (`../theprototype-lane-*`, own dev-server port + APP_URL e2e).
+- **Repos (org move 2026-07-21, github.com/theprototype-app)**: this repo =
+  `theprototype-app/core` (origin updated); infra (the peerjs/TURN Terraform, was
+  docs/tf) = `theprototype-app/infra` (own git repo, tfstate/tfvars/.env NEVER
+  committed — state holds the TURN password); user docs = the theprototype-docs
+  checkout; PRIVATE cloud tier = `C:\Users\white\.code\AlexZ005\theprototype.app-cloud`
+  (open-core: OSS ships only inert hooks — capability gate / auth hook /
+  VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
+  MAINTAINING.md).
+- Status (2026-07-21): **Roadmap #13 IN FLIGHT** — plan docs/plan/
+  roadmap-13-rooms-graphs-polish.md. MERGED to main: #28 (roadmaps 10+11 AI),
+  #29 (roadmap 12), #30 A UI-chrome, #31 B viewport/camera (default FOV 40, N8AO
+  HiDPI ghost fix, grid fade scales), #32 E notification center (notifications/
+  notificationsUnread/notificationCenterOpen stores + NotificationCenter.svelte,
+  toast z-split: approvals ABOVE modals in .toasts-critical, info below at
+  --z-toast-low) + notes drawer (notesDrawerOpen + NotesDrawer.svelte), #35 C
+  physics/car (C1 listPhysicsObjects Inspector list, C2 angularvelocity/motor nodes
+  + applyTorqueImpulse + LIVE mid-sim re-apply, C3 car play-gate + chase cam via
+  possess startFollowCam + world-aligned-hull joint fix). PRs OPEN (user checking):
+  #33 I UI-fixes, #34 D VR-fix-pack. J SHIPPED (self-hosted peerjs box: discovery +
+  SQLite /stats). L done (docs repo). NEXT: batch H (flow v2 TRUE per-object graphs
+  + H5 object-flows-as-scene-nodes, pending/flow-v2-object-graphs.md) in
+  ../theprototype-lane-flow @5177; VR lane continues F (AI cockpit) → K (sleeve);
+  M (open-core hooks) AFTER H (both touch the peerHandler dispatch).
+  --- Earlier — Status (2026-07-20): **Roadmap #12 "playground & polish" SHIPPED — ALL 19 phases**
   on `feature/playground-polish` (off ai-scene-assistant; NOT merged). Opus set (11):
   V-1 shadows-by-default + catcher, V-3 palette (kills 0x00ff00) + look tune, T-1
   Add▸Terrain, U-2 multi-select menu (groupSelection one-undo, multi prefab/delete,

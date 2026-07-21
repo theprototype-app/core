@@ -22,8 +22,22 @@ peer id), `connect(from, to, settleMs=9000)`, `check(ok, label)`,
 `eventually(fn, predicate, label, timeout)`, `projectPoint(page, [x,y,z])` (world →
 screen pixel for real clicks), `finish(browser)` (exit code), `run(body)`.
 
-Rules: never run suites in parallel (shared dev server), never edit sources while one
-runs (HMR reloads the pages mid-test).
+Rules: never run suites in parallel AGAINST THE SAME dev server, never edit sources
+while one runs (HMR reloads the pages mid-test).
+
+**Parallel lanes (multi-session work, 2026-07-21):** each session works in its own
+`git worktree` (e.g. `../theprototype-lane-flow`) with its OWN dev server on its own
+port, and points the suite at it via the `APP_URL` env override (helpers.cjs reads it):
+
+```powershell
+npm run dev -- --port 5177 --host      # from the worktree, background
+$env:APP_URL='https://theprototype.app:5177/'; npm run e2e -- <name>
+```
+
+Assigned ports: main checkout 5173 (the user's), lane-c 5174, lane-vr 5175,
+lane-ui 5176, lane-flow 5177. Two-peer suites still meet on the signaling server
+(now the self-hosted peerjs.theprototype.app box), so concurrent lanes' test peers
+never collide (random ids).
 
 ## The debugStores hook — the ONLY sanctioned test API
 

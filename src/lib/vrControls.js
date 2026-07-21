@@ -113,7 +113,8 @@ import {
 } from './objectActions';
 import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
-import { sendPing } from './ping';
+import { sendPing, pingColor } from './ping';
+import { peerColor } from './lockControl';
 import { setVRAxes, setVRButtons } from './inputRuntime';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
@@ -431,14 +432,22 @@ function updateRaysAndHover(presenting) {
 		return;
 	}
 	const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+	// D6: an armed one-shot ping tints the beam + reticle with YOUR ping color
+	// so the arm state is visible in-headset
+	const pingTint = get(vrPingArmed)
+		? get(pingColor) || peerColor(/** @type {any} */ (get(peers))?.peer?.id ?? 'me')
+		: null;
 	for (let i = 0; i < 2; i++) {
 		const target = beamTarget(controllerRay(i));
 		if (rayLines[i]) {
 			rayLines[i].scale.z = target.distance;
-			rayLines[i].material.color.setHex(target.hit ? RAY_HOVER : RAY_IDLE);
+			if (pingTint) rayLines[i].material.color.set(pingTint);
+			else rayLines[i].material.color.setHex(target.hit ? RAY_HOVER : RAY_IDLE);
 		}
 		if (rayReticles[i]) {
 			rayReticles[i].visible = target.hit;
+			if (pingTint) rayReticles[i].material.color.set(pingTint);
+			else rayReticles[i].material.color.setHex(RAY_HOVER);
 			if (target.hit) {
 				const controller = renderer.xr.getController(i);
 				controller.getWorldQuaternion(_reticleCtrlQuat);
@@ -2374,9 +2383,13 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name === 'ping') {
-		// U-1: ping immediately from the POINTER hand (the menu is on the other
-		// hand), then close the ring; highlights the object if the ray hits one
-		pingFromController(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
+		// U-1 ping, reworked in D6: activating the sector used to ping
+		// IMMEDIATELY from the pointer hand — but on a trigger activation that
+		// ray is parked on the radial itself, so the ping landed wherever the
+		// menu floated. Now the sector ARMS a one-shot: the ring closes, the
+		// beam/reticle tint to your ping color, and the next trigger pings the
+		// exact pointed x,y,z (firePingIfArmed).
+		vrPingArmed.set(true);
 		vrMenuOpen.set(false);
 		return;
 	}
@@ -2712,10 +2725,37 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'close') vrMenuOpen.set(false);
 }
 
+/** D6: armed one-shot ping (radial Ping). True while the next trigger press
+ * should ping instead of select. @type {import('svelte/store').Writable<boolean>} */
+export const vrPingArmed = writable(false);
+// re-opening the radial cancels a pending ping (the tinted reticle reads as
+// armed; opening the menu is the natural back-out)
+vrMenuOpen.subscribe((open) => {
+	if (open) vrPingArmed.set(false);
+});
+
+/** D6: fire the armed ping from the FIRING controller's ray — the exact
+ * pointed spot. Returns true when it consumed the trigger; a sky-miss keeps
+ * the arm (the tint shows it is still live). Exported for Scene's trigger
+ * path + headless tests. @param {number} index */
+export function firePingIfArmed(index) {
+	if (!get(vrPingArmed)) return false;
+	if (!pingFromController(index)) return true; // consumed, still armed (sky)
+	vrPingArmed.set(false);
+	return true;
+}
+
+/** D6: the pointer hand's controller slot (the hand OPPOSITE the menu hand —
+ * its beam/reticle is the targeting cue). Exported for tests. */
+export function pointerHandIndex() {
+	return controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+}
+
 /** Right-stick click / radial Ping: ping where the controller ray lands. When
  * it lands ON an object, carry that object's uuid so peers highlight it too
- * (U-1). (87.6) @param {number} index */
+ * (U-1). (87.6) Returns whether a ping landed. @param {number} index */
 function pingFromController(index) {
+	if (index < 0) return false;
 	const ray = controllerRay(index);
 	const group = get(objectsGroup);
 	const hits = group ? ray.intersectObjects(group.children, true) : [];
@@ -2723,12 +2763,13 @@ function pingFromController(index) {
 		const top = topLevelObjectOf(hits[0].object);
 		sendPing(hits[0].point, top?.uuid);
 		hapticPulse(0.4, 60);
-		return;
+		return true;
 	}
 	const point = pingPointFromRay(ray, group);
-	if (!point) return;
+	if (!point) return false;
 	sendPing(point);
 	hapticPulse(0.4, 60);
+	return true;
 }
 
 /**
@@ -2864,7 +2905,12 @@ export function updateVRControls() {
 				// ray hover wins; otherwise the stick-press opens the input (117)
 				const action = get(vrHovered) ?? 'chat:input';
 				executeVRMenuAction(action);
-			} else if (source.handedness === 'right') pingFromController(index);
+			} else if (source.handedness === 'right') {
+				// D6: ping from the POINTER hand (its beam/reticle is the targeting
+				// cue) — with the menu on the right, the right stick used to ping
+				// where the MENU hand pointed
+				pingFromController(pointerHandIndex());
+			}
 		}
 		prev.stick = stickPressed;
 

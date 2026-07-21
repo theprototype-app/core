@@ -71,6 +71,25 @@ h.run(async () => {
 		'the flow’s spin animates the owner with the injected speed'
 	);
 
+	// --- double-clicking the embed node opens the object's flow ----------------
+	await A.page.evaluate(async (id) => {
+		window.__stores.flowGraphClose.set(false);
+		// park the embed node in an unobstructed spot for the real dblclick
+		let graphs; window.__stores.flowGraphs.subscribe((g) => (graphs = g))();
+		const embed = graphs.scene.nodes.find((n) => n.type === 'objectflow' && n.data.flowUuid === id);
+		window.__stores.nodesHandler.moveFlowNode(embed.id, { x: 620, y: 260 }, 'scene');
+	}, uuid);
+	await A.page.waitForTimeout(600);
+	await A.page.locator('.svelte-flow__node').filter({ hasText: 'double-click to open' }).first().dblclick();
+	await A.page.waitForTimeout(500);
+	const scopeAfterDbl = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.activeGraphId.subscribe((v) => r(v))())
+	);
+	h.check(scopeAfterDbl === uuid, 'double-clicking the embed node opens the object flow');
+	// back to the scene graph for the remaining checks
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.waitForTimeout(400);
+
 	// --- interface change prunes stale embed edges ----------------------------
 	await A.page.evaluate((id) => {
 		window.__stores.nodesHandler.updateFlowNodeData('fi-speed', { name: 'velocity' }, id);

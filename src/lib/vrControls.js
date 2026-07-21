@@ -841,6 +841,26 @@ function controllerRay(index) {
 	return raycaster;
 }
 
+/**
+ * SDK (api.pointerRay): the POINTER hand's world ray for modules. Returns a
+ * FRESH Raycaster — the shared module-level one above is reused per frame and
+ * handing it out would corrupt in-flight raycasts (the temp-vector gotcha).
+ * Resolves the hand by handedness (never raw slots). Null outside VR.
+ * @returns {any | null}
+ */
+export function pointerHandRay() {
+	if (!get(isVRMode) || !renderer?.xr) return null;
+	const index = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+	if (index < 0) return null;
+	const controller = renderer.xr.getController(index);
+	if (!controller) return null;
+	const fresh = new THREE.Raycaster();
+	const m = new THREE.Matrix4().identity().extractRotation(controller.matrixWorld);
+	fresh.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+	fresh.ray.direction.set(0, 0, -1).applyMatrix4(m);
+	return fresh;
+}
+
 /** Raycast the quick-menu tiles @param {number} index @returns {string|null} tile action name */
 export function raycastMenu(index) {
 	const menu = get(vrMenuGroup);

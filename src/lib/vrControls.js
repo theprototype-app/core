@@ -330,6 +330,97 @@ function setHovered(object) {
 	}
 }
 
+/** D5: the floating panel groups a beam may terminate on — only the OPEN
+ * ones (same gating as their raycast* pickers) */
+function openPanelGroups() {
+	/** @type {any[]} */ const list = [];
+	const add = (/** @type {boolean} */ open, /** @type {any} */ store) => {
+		const panel = open ? get(store) : null;
+		if (panel) list.push(panel);
+	};
+	add(get(vrMenuOpen), vrMenuGroup);
+	add(get(vrObjectsPanelOpen), vrPanelGroup);
+	add(get(vrPropsPanelOpen), vrPropsGroup);
+	add(get(vrPrefabsPanelOpen), vrPrefabsGroup);
+	add(get(vrChatPanelOpen), vrChatGroup);
+	add(get(vrSettingsPanelOpen), vrSettingsGroup);
+	add(get(vrApprovePanelOpen), vrApproveGroup);
+	add(get(vrEditMenuOpen), vrEditGroup);
+	add(get(vrSnapMenuOpen), vrSnapGroup);
+	add(!!get(vrKeyboardTarget), vrKeyboardGroup);
+	add(get(vrPaletteOpen), vrPaletteGroup);
+	return list;
+}
+
+/** D5: where a beam terminates — the NEAREST hit among scene objects and any
+ * open floating panel, so navigating menus shows the beam ending in a circle
+ * on the hovered control (parity with object selection). Exported for
+ * headless tests. @param {any} ray a THREE.Raycaster
+ * @returns {{distance: number, hit: boolean, object: any, info: any}} */
+export function beamTarget(ray) {
+	const group = get(objectsGroup);
+	let distance = 5;
+	let hit = false;
+	let object = null;
+	let info = null;
+	if (group) {
+		const hits = ray.intersectObjects(group.children, true);
+		if (hits.length > 0) {
+			distance = hits[0].distance;
+			hit = true;
+			object = topLevelObjectOf(hits[0].object);
+			info = hits[0];
+		}
+	}
+	for (const panel of openPanelGroups()) {
+		const hits = ray.intersectObject(panel, true);
+		if (hits.length > 0 && hits[0].distance < distance) {
+			distance = hits[0].distance;
+			hit = true;
+			object = null; // a panel in front never highlights the object behind it
+			info = hits[0];
+		}
+	}
+	return { distance, hit, object, info };
+}
+
+/** D5: controller-local reticle pose — the ring sits at the beam tip, laid
+ * ONTO the hit surface when a world normal is known (flipped toward the
+ * viewer, nudged a hair off the surface so it never z-fights), beam-aligned
+ * otherwise. Pure for headless tests.
+ * @param {any} THREE_NS @param {any} controllerQuat world quaternion
+ * @param {number} distance @param {any=} worldNormal */
+export function reticlePose(THREE_NS, controllerQuat, distance, worldNormal) {
+	const scale = Math.max(distance, 0.2);
+	const position = new THREE_NS.Vector3(0, 0, -distance);
+	const quaternion = new THREE_NS.Quaternion();
+	if (!worldNormal) return { position, quaternion, scale };
+	const normal = worldNormal.clone().normalize();
+	const beamDir = new THREE_NS.Vector3(0, 0, -1).applyQuaternion(controllerQuat);
+	if (normal.dot(beamDir) > 0) normal.negate(); // face the viewer side
+	const align = new THREE_NS.Quaternion().setFromUnitVectors(
+		new THREE_NS.Vector3(0, 0, 1),
+		normal
+	);
+	quaternion.copy(controllerQuat).invert().multiply(align);
+	const localNormal = normal.clone().applyQuaternion(controllerQuat.clone().invert());
+	position.add(localNormal.multiplyScalar(0.004 * scale));
+	return { position, quaternion, scale };
+}
+
+const _hitNormalMatrix = new THREE.Matrix3();
+const _hitWorldNormal = new THREE.Vector3();
+const _reticleCtrlQuat = new THREE.Quaternion();
+
+/** World-space normal of a raycast hit, or null @param {any} info */
+function hitWorldNormal(info) {
+	if (!info?.face?.normal || !info.object) return null;
+	return _hitWorldNormal
+		.copy(info.face.normal)
+		.applyNormalMatrix(_hitNormalMatrix.getNormalMatrix(info.object.matrixWorld))
+		.normalize();
+}
+
 /** Rays follow hits, pointed object glows @param {boolean} presenting */
 function updateRaysAndHover(presenting) {
 	ensureRayLines();
@@ -339,30 +430,30 @@ function updateRaysAndHover(presenting) {
 		setHovered(null);
 		return;
 	}
-	const group = get(objectsGroup);
 	const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 	for (let i = 0; i < 2; i++) {
-		let distance = 5;
-		let hit = false;
-		let hitObject = null;
-		if (group) {
-			const hits = controllerRay(i).intersectObjects(group.children, true);
-			if (hits.length > 0) {
-				distance = hits[0].distance;
-				hit = true;
-				hitObject = topLevelObjectOf(hits[0].object);
-			}
-		}
+		const target = beamTarget(controllerRay(i));
 		if (rayLines[i]) {
-			rayLines[i].scale.z = distance;
-			rayLines[i].material.color.setHex(hit ? RAY_HOVER : RAY_IDLE);
+			rayLines[i].scale.z = target.distance;
+			rayLines[i].material.color.setHex(target.hit ? RAY_HOVER : RAY_IDLE);
 		}
 		if (rayReticles[i]) {
-			rayReticles[i].visible = hit;
-			rayReticles[i].position.z = -distance;
-			rayReticles[i].scale.setScalar(Math.max(distance, 0.2)); // constant angular size
+			rayReticles[i].visible = target.hit;
+			if (target.hit) {
+				const controller = renderer.xr.getController(i);
+				controller.getWorldQuaternion(_reticleCtrlQuat);
+				const pose = reticlePose(
+					THREE,
+					_reticleCtrlQuat,
+					target.distance,
+					hitWorldNormal(target.info)
+				);
+				rayReticles[i].position.copy(pose.position);
+				rayReticles[i].quaternion.copy(pose.quaternion);
+				rayReticles[i].scale.setScalar(pose.scale);
+			}
 		}
-		if (i === pointerIndex) setHovered(get(vrMenuOpen) ? null : hitObject);
+		if (i === pointerIndex) setHovered(get(vrMenuOpen) ? null : target.object);
 	}
 }
 

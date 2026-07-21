@@ -73,6 +73,12 @@ function refreshHandleMatrix(index) {
 	tempMatrix.makeTranslation(tempVector.x, tempVector.y, tempVector.z);
 	handleMesh.setMatrixAt(index, tempMatrix);
 	handleMesh.instanceMatrix.needsUpdate = true;
+	// D2 (roadmap 13): three caches an InstancedMesh boundingSphere for its
+	// raycast pre-check — never invalidated by setMatrixAt, so handles moved
+	// outside the initial bounds (object moved / vertex dragged far) became
+	// unpickable. Null it so the next raycast lazily recomputes.
+	handleMesh.boundingSphere = null;
+	handleMesh.boundingBox = null;
 }
 
 function refreshHandleColors() {

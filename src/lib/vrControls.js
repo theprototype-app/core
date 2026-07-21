@@ -571,14 +571,33 @@ export function updateTeleport(session) {
 		return;
 	}
 
-	const index = sources.indexOf(source);
+	const pose = teleportArcPose(session);
+	if (!pose) {
+		hideArc();
+		return;
+	}
+	lastArc = computeTeleportArc(pose.origin, pose.direction, get(objectsGroup));
+	showArc(lastArc.points, !!lastArc.target, lastArc.target);
+}
+
+/** D1 (roadmap 13): the teleport arc anchors to the RIGHT hand's controller
+ * slot resolved by HANDEDNESS — this was the last raw `inputSources.indexOf`
+ * holdout (194/210 class: the slot order and the inputSources order DIVERGE
+ * after a hands<->controllers swap, so the arc came off the wrong controller).
+ * Exported for headless tests. When the slots aren't stamped yet, falls back
+ * to the CALLER's session inputSources order (also keeps fake-session tests
+ * working). @param {any=} session @returns {{index: number, origin: any, direction: any} | null} */
+export function teleportArcPose(session) {
+	let index = controllerIndexFor('right');
+	if (index < 0 && session)
+		index = [...session.inputSources].findIndex((s) => s.handedness === 'right');
+	if (index < 0) return null;
 	const controller = renderer.xr.getController(index);
 	const origin = controller.getWorldPosition(new THREE.Vector3());
 	const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(
 		controller.getWorldQuaternion(new THREE.Quaternion())
 	);
-	lastArc = computeTeleportArc(origin, direction, get(objectsGroup));
-	showArc(lastArc.points, !!lastArc.target, lastArc.target);
+	return { index, origin, direction };
 }
 
 /** @type {any} */ let micHud = null;

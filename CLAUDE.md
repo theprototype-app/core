@@ -316,6 +316,11 @@ loadable play content. Everything a user does must be visible to connected peers
   substep 1 and zero after, so friction alternately drags and brakes (no net fling).
   Sim speed must come from a fixed-timestep ACCUMULATOR — a per-frame dt clamp runs
   slow-motion whenever rAF is throttled (background/headless tabs).
+  #13-C3: rapier `JointData.revolute(a1, a2, axis)` takes ONE axis interpreted in
+  BOTH bodies' LOCAL frames — every body must start WORLD-ALIGNED (identity rotation,
+  initialQuat compensates) or a jointed rotated body hinges about the wrong axis and
+  the solver LAUNCHES the assembly (the car's z-rotated wheel hulls, "car blows up").
+  Hull colliders bake rotation into their vertices exactly like scale.
 - Explorer `addItemFromBytes` TIME-BOXES its decorative thumbnail (Promise.race 4s) —
   a wedged/slow GLB parse on the receiver used to silently block storing SHARED bytes.
 - Static-import cycle map grew in #12: objectActions now imports geometries

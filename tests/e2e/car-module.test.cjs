@@ -90,7 +90,14 @@ h.run(async () => {
 	}, body.uuid);
 	h.check(bClaim === 'consumed', "B's claim attempt is consumed (refusal toast, no takeover)");
 
-	// drive: sim on A (initiator == driver), hold W — the car displaces
+	// drive: sim on A (initiator == driver), hold W — the car displaces.
+	// C3: driving is gated on Play mode; the claim alone must not steal keys.
+	const claimsOf = (page) =>
+		page.evaluate(() => new Promise((r) => window.__stores.inputRuntime.inputClaims.subscribe(r)()));
+	const followOf = (page) =>
+		page.evaluate(() => new Promise((r) => window.__stores.possess.followingCam.subscribe(r)()));
+	h.check(!(await claimsOf(A.page)).includes('keys'), 'claim alone does not claim keys (editor keeps WASD)');
+
 	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
 	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
 	await h.eventually(
@@ -99,6 +106,21 @@ h.run(async () => {
 		'simulation running'
 	);
 	await A.page.waitForTimeout(1000); // wheels settle onto the ground
+
+	// NOT in play mode: holding W must not drive the car
+	const preGate = await bodyOf(A.page);
+	await A.page.keyboard.down('W');
+	await A.page.waitForTimeout(1500);
+	await A.page.keyboard.up('W');
+	const postGate = await bodyOf(A.page);
+	const gateDist = Math.hypot(postGate.x - preGate.x, postGate.z - preGate.z);
+	h.check(gateDist < 0.3, `outside Play mode W does not drive (moved ${gateDist.toFixed(2)}m)`);
+
+	// enter Play mode -> engagement: keys claimed + chase cam follows the body
+	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await h.eventually(() => claimsOf(A.page), (c) => c.includes('keys'), 'Play mode + sim + claim -> keys claimed');
+	await h.eventually(() => followOf(A.page), (v) => v === body.uuid, 'chase cam follows the car body');
+
 	const start = await bodyOf(A.page);
 	await A.page.keyboard.down('W');
 	await A.page.waitForTimeout(4000);
@@ -107,6 +129,25 @@ h.run(async () => {
 	const dist = Math.hypot(end.x - start.x, end.z - start.z);
 	h.check(dist > 0.8, `holding W drives the car (moved ${dist.toFixed(2)}m)`);
 
+	// the car stayed upright through the drive (C3 stability tuning)
+	const upright = await A.page.evaluate((uuid) => {
+		let target = null;
+		window.__stores.objectsGroup.subscribe((g) => (target = g?.getObjectByProperty('uuid', uuid)))();
+		const up = new window.__stores.THREE.Vector3(0, 1, 0).applyQuaternion(target.quaternion);
+		return up.y;
+	}, body.uuid);
+	h.check(upright > 0.8, `car stayed upright (up.y = ${upright.toFixed(2)})`);
+
+	// chase cam sits near behind the body while engaged
+	const camDist = await A.page.evaluate((uuid) => {
+		let target = null;
+		window.__stores.objectsGroup.subscribe((g) => (target = g?.getObjectByProperty('uuid', uuid)))();
+		let cam = null;
+		window.__stores.globalCamera.subscribe((c) => (cam = c))();
+		return cam.position.distanceTo(target.position);
+	}, body.uuid);
+	h.check(camDist < 10, `camera chases the car (${camDist.toFixed(1)}m away)`);
+
 	// motion replicated to B
 	await h.eventually(
 		() => bodyOf(B.page),
@@ -114,6 +155,12 @@ h.run(async () => {
 		'the drive replicated to B',
 		10000
 	);
+
+	// leaving Play mode disengages (claim itself is kept)
+	await A.page.evaluate(() => window.__stores.isLocked.set(null));
+	await h.eventually(() => claimsOf(A.page), (c) => !c.includes('keys'), 'exiting Play releases the keys claim');
+	await h.eventually(() => followOf(A.page), (v) => v === null, 'exiting Play restores the camera');
+
 	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
 
 	await h.finish(browser);

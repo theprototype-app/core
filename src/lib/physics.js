@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { flowNodes, flowEdges } from '../stores/flowStore';
-import { objectsGroup, lockedObjects, selectedObject } from '../stores/sceneStore';
+import { objectsGroup, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
-import { recordTransformSet } from './history';
+import { recordTransformSet, recordEntry } from './history';
 import {
 	notifyExternalMove,
 	setPostTick,
@@ -59,8 +59,11 @@ let suspendedForRun = [];
 let lastStep = 0;
 let lastBroadcast = 0;
 let accumulator = 0; // fixed-timestep leftover (see step)
+/** @type {(() => void)[]} C2: live node-param subscriptions active during a sim */
+let liveUnsubs = [];
+let liveSnapshot = '';
 
-const PHYSICS_TYPES = ['mass', 'bounciness', 'friction'];
+const PHYSICS_TYPES = ['mass', 'bounciness', 'friction', 'angularvelocity', 'motor'];
 const HULL_MAX_VERTS = 5000;
 const MAX_LINVEL = 20; // m/s clamp on release-velocity estimates
 const MAX_ANGVEL = 20; // rad/s
@@ -113,6 +116,7 @@ function collectParams(group) {
 		const uuid = target.data?.selected;
 		if (!uuid || uuid === '-None-') return;
 		map[uuid] ??= {};
+		map[uuid].flow = true; // provenance for the Inspector physics list (C1)
 		// flow wiring wins over userData (incl. re-dynamicizing a 'static' object)
 		if (source.type === 'mass') {
 			map[uuid].mass = source.data?.kg ?? 1;
@@ -120,8 +124,130 @@ function collectParams(group) {
 		}
 		if (source.type === 'bounciness') map[uuid].restitution = source.data?.value ?? 0.3;
 		if (source.type === 'friction') map[uuid].friction = source.data?.value ?? 0.5;
+		// C2: constant spin — implies dynamic (mass 1) so wiring it ALONE works;
+		// an explicit Mass node still wins (processed independently, ??=)
+		if (source.type === 'angularvelocity') {
+			map[uuid].angvel = { axis: source.data?.axis ?? 'y', speed: source.data?.speed ?? 2 };
+			if (!map[uuid].forceStatic) map[uuid].mass ??= 1;
+		}
+		// C2: drives every revolute joint touching the selected object (the car
+		// recipe: select the body -> all wheel motors). Joints stay def-owned.
+		if (source.type === 'motor')
+			map[uuid].motor = { vel: source.data?.vel ?? 3, maxForce: source.data?.maxForce ?? 100 };
 	});
 	return map;
+}
+
+/** LOCAL axis letter -> WORLD angvel vector for setAngvel (bodies report/step in
+ * world space; box bodies start with identity rotation, so the object's world
+ * quaternion is the right frame either way). @param {any} object @param {{axis: string, speed: number}} angvel */
+function angvelWorld(object, angvel) {
+	const v = new THREE.Vector3(
+		angvel.axis === 'x' ? 1 : 0,
+		angvel.axis === 'y' ? 1 : 0,
+		angvel.axis === 'z' ? 1 : 0
+	);
+	v.applyQuaternion(object.quaternion).multiplyScalar(angvel.speed ?? 0);
+	return { x: v.x, y: v.y, z: v.z };
+}
+
+/** Apply a motor param to every live revolute joint touching the object (C2).
+ * @param {string} uuid @param {{vel: number, maxForce: number}} motor */
+function applyMotorParam(uuid, motor) {
+	get(sceneJoints).forEach((def) => {
+		if (def.kind !== 'revolute' || (def.a !== uuid && def.b !== uuid)) return;
+		const joint = liveJoints.get(def.id);
+		joint?.configureMotorVelocity?.(motor.vel ?? 0, motor.maxForce ?? 100);
+	});
+}
+
+/** The graph's angvel/motor params only, as a change-detection key (C2). */
+function liveParamsJson() {
+	const group = get(objectsGroup);
+	if (!group) return '';
+	const params = collectParams(group);
+	/** @type {Record<string, any>} */
+	const out = {};
+	Object.keys(params).forEach((uuid) => {
+		if (params[uuid].angvel || params[uuid].motor)
+			out[uuid] = { angvel: params[uuid].angvel, motor: params[uuid].motor };
+	});
+	return JSON.stringify(out);
+}
+
+/** Re-apply angvel/motor from the current graph to the live world (C2). */
+function applyLiveParams() {
+	const group = get(objectsGroup);
+	if (!world || !group) return;
+	const live = collectParams(group);
+	bodies.forEach((entry) => {
+		const p = live[entry.object.uuid];
+		if (entry.mode === 'dynamic' && !entry.hold && p?.angvel)
+			entry.body.setAngvel(angvelWorld(entry.object, p.angvel), true);
+	});
+	Object.keys(live).forEach((uuid) => {
+		if (live[uuid].motor) applyMotorParam(uuid, live[uuid].motor);
+	});
+}
+
+/**
+ * C1 discoverability: every object that would get physics params at sim start,
+ * as display rows for the Inspector scene-mode "Physics" section. Pure read —
+ * recomputed by the UI from objectsGroup/flowNodes/flowEdges changes.
+ * @returns {{uuid: string, name: string, mode: 'dynamic'|'static'|'props', mass: number|null, flow: boolean}[]}
+ */
+export function listPhysicsObjects() {
+	const group = get(objectsGroup);
+	if (!group) return [];
+	const params = collectParams(group);
+	return group.children
+		.filter((/** @type {any} */ o) => params[o.uuid])
+		.map((/** @type {any} */ o) => {
+			const p = params[o.uuid];
+			return {
+				uuid: o.uuid,
+				name: o.name || o.type,
+				mode: /** @type {'dynamic'|'static'|'props'} */ (
+					p.forceStatic ? 'static' : p.mass != null ? 'dynamic' : 'props'
+				),
+				mass: p.mass ?? null,
+				flow: !!p.flow
+			};
+		});
+}
+
+/**
+ * C1 quick action: make the current selection dynamic (userData.physics mode
+ * 'dynamic', mass 1 unless already set) — replicates via the existing
+ * objectParameters message and records a props undo entry per object.
+ * @returns {number} objects updated
+ */
+export function enablePhysicsOnSelection() {
+	const group = get(objectsGroup);
+	/** @type {any} */
+	const peer = get(peers);
+	const multi = get(selectedObjects);
+	const primary = /** @type {any} */ (get(selectedObject));
+	const uuids = multi?.length ? multi : primary?.uuid ? [primary.uuid] : [];
+	let count = 0;
+	uuids.forEach((/** @type {string} */ uuid) => {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		if (!object) return;
+		const before = object.userData.physics ? { ...object.userData.physics } : null;
+		const next = { ...(object.userData.physics ?? {}), mode: 'dynamic', mass: object.userData.physics?.mass ?? 1 };
+		object.userData.physics = next;
+		recordEntry({ kind: 'props', uuid, before: { physics: before }, after: { physics: next } });
+		peer?.send({ type: 'objectParameters', parameter: 'physics', uuid, physics: next });
+		count++;
+	});
+	if (count === 0) {
+		showToast('Select an object first — then Enable physics makes it fall and collide');
+		return 0;
+	}
+	objectsGroup.update((v) => v);
+	selectedObject.update((v) => v);
+	showToast(count === 1 ? 'Physics enabled — dynamic, mass 1' : 'Physics enabled on ' + count + ' objects — dynamic, mass 1');
+	return count;
 }
 
 export async function toggleSimulation() {
@@ -137,19 +263,28 @@ export async function toggleSimulation() {
 	await startSimulation();
 }
 
-/** Convex-hull collider desc for a single-Mesh object (scale BAKED into the
- * vertices — rapier colliders don't scale). Returns null when ineligible
- * (Groups, huge meshes) so the caller falls back to the box. @param {any} object */
+/** Convex-hull collider desc for a single-Mesh object (scale AND rotation
+ * BAKED into the vertices — rapier colliders don't scale, and baking the
+ * rotation lets hull bodies start from an IDENTITY rotation like the box
+ * bodies do, so one world-space joint axis is valid in every body's local
+ * frame. C3 root-cause: hull bodies used to CARRY the object rotation, which
+ * gave the car's z-rotated wheel hulls a 90-degree-wrong hinge axis — the
+ * solver fought itself and launched the assembly). Returns null when
+ * ineligible (Groups, huge meshes) so the caller falls back to the box.
+ * @param {any} object */
 function hullDesc(object) {
 	if (!object.isMesh || !object.geometry?.attributes?.position) return null;
 	const position = object.geometry.attributes.position;
 	if (position.count > HULL_MAX_VERTS) return null;
 	const scaled = new Float32Array(position.count * 3);
 	const s = object.scale;
+	const v = new THREE.Vector3();
 	for (let i = 0; i < position.count; i++) {
-		scaled[i * 3] = position.getX(i) * s.x;
-		scaled[i * 3 + 1] = position.getY(i) * s.y;
-		scaled[i * 3 + 2] = position.getZ(i) * s.z;
+		v.set(position.getX(i) * s.x, position.getY(i) * s.y, position.getZ(i) * s.z);
+		v.applyQuaternion(object.quaternion);
+		scaled[i * 3] = v.x;
+		scaled[i * 3 + 1] = v.y;
+		scaled[i * 3 + 2] = v.z;
 	}
 	return RAPIER.ColliderDesc.convexHull(scaled);
 }
@@ -172,9 +307,13 @@ async function startSimulation() {
 			params[selected.uuid] = { ...(params[selected.uuid] ?? {}), mass: 1 };
 			delete params[selected.uuid].forceStatic;
 			dynamicUuids = [selected.uuid];
-			showToast('No Mass nodes wired — simulating the selected object with mass 1');
+			showToast(
+				'No objects have physics yet — simulating the selected object with mass 1. Make it permanent in Inspector ▸ Physics.'
+			);
 		} else {
-			showToast('Wire a Mass node to an Object Selector (or select an object) to make something fall');
+			showToast(
+				'Nothing to simulate — enable physics on an object first (select it → Inspector ▸ Physics, or wire a Mass node)'
+			);
 			return;
 		}
 	}
@@ -222,14 +361,15 @@ async function startSimulation() {
 		if (p?.friction != null) colliderDesc.setFriction(p.friction);
 		if (dynamic) colliderDesc.setMass(p.mass);
 		world.createCollider(colliderDesc, body);
-		// hull vertices are in the object's LOCAL frame -> the body carries the
-		// object's own transform (offset zero); the AABB box path keeps the
-		// classic center-offset bookkeeping
+		// hull vertices are baked in the object's WORLD orientation around its
+		// origin -> the body carries only the translation and starts at IDENTITY
+		// rotation (like the box path, initialQuat compensates); the AABB box
+		// path keeps the classic center-offset bookkeeping
 		const entry = {
 			object,
 			body,
 			offset: usedHull ? new THREE.Vector3() : object.position.clone().sub(center),
-			initialQuat: usedHull ? new THREE.Quaternion() : object.quaternion.clone(),
+			initialQuat: object.quaternion.clone(),
 			mode: /** @type {'dynamic'|'kinematic'} */ (dynamic ? 'dynamic' : 'kinematic'),
 			hull: usedHull,
 			hold: /** @type {'user'|'external'|null} */ (null),
@@ -239,13 +379,8 @@ async function startSimulation() {
 			// move applier, undo, an AI edit) wrote the object mid-sim
 			lastWritten: { pos: object.position.clone(), quat: object.quaternion.clone() }
 		};
-		if (usedHull) {
+		if (usedHull)
 			body.setTranslation({ x: object.position.x, y: object.position.y, z: object.position.z }, true);
-			body.setRotation(
-				{ x: object.quaternion.x, y: object.quaternion.y, z: object.quaternion.z, w: object.quaternion.w },
-				true
-			);
-		}
 		if (dynamic) {
 			beforeStates.push({ uuid: object.uuid, before: transformOf(object) });
 			// dynamic wins over an animation: suspend the effect for the run
@@ -262,10 +397,10 @@ async function startSimulation() {
 	});
 
 	// P-B: build rapier impulse joints from the replicated defs. Anchors are
-	// OBJECT-local at attach time -> world -> BODY-local. Box bodies start with
-	// IDENTITY rotation (initialQuat compensates), so body-local = world - center
-	// and a world axis is valid in both bodies' frames; hull bodies carry the
-	// object rotation, so their body frame IS the object frame (scale baked).
+	// OBJECT-local at attach time -> world -> BODY-local. EVERY body (box and
+	// hull alike, C3) starts with IDENTITY rotation (initialQuat compensates),
+	// so body-local = world - translation and ONE world-space axis is valid in
+	// both bodies' local frames — which rapier's revolute() requires.
 	liveJoints = new Map();
 	const anchorWorld = new THREE.Vector3();
 	const axisWorld = new THREE.Vector3();
@@ -280,23 +415,16 @@ async function startSimulation() {
 		const objA = get(objectsGroup)?.getObjectByProperty('uuid', def.a);
 		const objB = get(objectsGroup)?.getObjectByProperty('uuid', def.b);
 		if (!objA || !objB) return;
-		/** body-local point for one side @param {any} obj @param {any} entry @param {number[]} anchorLocal @param {any} body */
-		const bodyLocal = (obj, entry, anchorLocal, body) => {
+		/** body-local point for one side (all bodies start world-aligned, C3)
+		 * @param {any} obj @param {number[]} anchorLocal @param {any} body */
+		const bodyLocal = (obj, anchorLocal, body) => {
 			obj.updateWorldMatrix(true, false);
 			obj.localToWorld(anchorWorld.fromArray(anchorLocal));
-			if (entry?.hull) {
-				// hull body frame = object frame: rotate the world offset back
-				const t = body.translation();
-				return anchorWorld
-					.sub(new THREE.Vector3(t.x, t.y, t.z))
-					.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion()).invert())
-					.toArray();
-			}
 			const t = body.translation();
 			return [anchorWorld.x - t.x, anchorWorld.y - t.y, anchorWorld.z - t.z];
 		};
-		const a1 = bodyLocal(objA, entryA, def.anchorA, bodyA);
-		const a2 = bodyLocal(objB, entryB, def.anchorB, bodyB);
+		const a1 = bodyLocal(objA, def.anchorA, bodyA);
+		const a2 = bodyLocal(objB, def.anchorB, bodyB);
 		let data;
 		if (def.kind === 'revolute') {
 			axisWorld.fromArray(def.axisA ?? [0, 1, 0]).applyQuaternion(objA.quaternion).normalize();
@@ -318,6 +446,24 @@ async function startSimulation() {
 			joint.configureMotorVelocity(def.motor.vel ?? 0, def.motor.maxForce ?? 100);
 		liveJoints.set(def.id, joint);
 	});
+
+	// C2: initial angular velocities + graph-driven motors (needs liveJoints).
+	// Node params win over a joint def's own motor — applied last.
+	applyLiveParams();
+
+	// C2: LIVE re-apply — editing an Angular Velocity / Motor node mid-sim
+	// (local slider drag or a peer's replicated nodechange) re-applies on the
+	// stepping peer. Change-detected on the physics params only, so node drags
+	// (position updates also fire flowNodes) never touch the world.
+	liveSnapshot = liveParamsJson();
+	const onGraphChange = () => {
+		if (!world) return;
+		const snap = liveParamsJson();
+		if (snap === liveSnapshot) return;
+		liveSnapshot = snap;
+		applyLiveParams();
+	};
+	liveUnsubs = [flowNodes.subscribe(onGraphChange), flowEdges.subscribe(onGraphChange)];
 
 	simulating.set(true);
 	simPaused.set(false);
@@ -573,6 +719,8 @@ export function pauseSimulation(paused) {
 export function stopSimulation(opts = {}) {
 	if (!get(simulating)) return;
 	setPostTick(null); // clear the hook BEFORE freeing the world
+	liveUnsubs.forEach((unsub) => unsub());
+	liveUnsubs = [];
 	/** @type {any} */
 	const peer = get(peers);
 	const group = get(objectsGroup);
@@ -643,6 +791,16 @@ export function applyImpulse(uuid, impulse) {
 	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic' && !e.hold);
 	if (!entry) return false;
 	entry.body.applyImpulse({ x: impulse[0] ?? 0, y: impulse[1] ?? 0, z: impulse[2] ?? 0 }, true);
+	return true;
+}
+
+/** Spin a dynamic body (module SDK, C2) — initiator-only, mid-sim.
+ * @param {string} uuid @param {number[]} torque world-space [x,y,z] */
+export function applyTorqueImpulse(uuid, torque) {
+	if (!world || !get(simulating)) return false;
+	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic' && !e.hold);
+	if (!entry) return false;
+	entry.body.applyTorqueImpulse({ x: torque[0] ?? 0, y: torque[1] ?? 0, z: torque[2] ?? 0 }, true);
 	return true;
 }
 

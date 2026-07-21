@@ -178,6 +178,7 @@ its INPUT via `api.send({op:'drive', ...})` at ~20Hz, and only the peer where
 ```js
 api.physics.isInitiator();              // true while THIS peer runs the sim
 api.physics.applyImpulse(uuid, [0, 5, 0]); // push a dynamic body (initiator-only)
+api.physics.applyTorqueImpulse(uuid, [0, 2, 0]); // spin a dynamic body (world axes)
 api.physics.setJointMotor(jointId, vel, maxForce); // drive a revolute joint
 api.physics.joints();                   // Promise<the replicated joint defs>
 ```
@@ -185,7 +186,9 @@ api.physics.joints();                   // Promise<the replicated joint defs>
 The **car module** (`src/modules/car/`) is the worked example: replicated
 primitives + motorized revolute joints, click-to-claim (pong's paddle
 pattern), driver forwards `{op:'drive', throttle, steer}` at ~20Hz and only
-the initiator applies wheel motors.
+the initiator applies wheel motors. Driving + the chase camera engage only
+in Play mode with a running simulation (the module claims `'keys'` and uses
+possess's `startFollowCam` while engaged; the claim itself works anytime).
 
 ### Possess (K-D)
 

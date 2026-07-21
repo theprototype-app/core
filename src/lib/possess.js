@@ -28,6 +28,16 @@ const forward = new THREE.Vector3();
 const camTarget = new THREE.Vector3();
 const camOffset = new THREE.Vector3();
 
+/** Third-person chase framing shared by possess and the follow cam (C3):
+ * sit behind + above the facing, ease in, look at the object.
+ * @param {any} cam @param {any} object @param {number} dt */
+function chaseCamera(cam, object, dt) {
+	camOffset.set(0, 2.2, 4.5).applyQuaternion(object.quaternion);
+	camTarget.copy(object.position).add(camOffset);
+	cam.position.lerp(camTarget, 1 - Math.pow(0.001, dt));
+	cam.lookAt(object.position);
+}
+
 /**
  * Take control of an object. @param {string} uuid
  * @param {{camera?: 'chase'|'orbit'|'none', speed?: number, turnSpeed?: number}=} opts
@@ -162,16 +172,73 @@ function tick(now) {
 	/** @type {any} */
 	const cam = get(globalCamera);
 	if (camera === 'chase' && cam) {
-		// third-person: sit behind + above the facing, ease in, look at the object
-		camOffset.set(0, 2.2, 4.5).applyQuaternion(object.quaternion);
-		camTarget.copy(object.position).add(camOffset);
-		cam.position.lerp(camTarget, 1 - Math.pow(0.001, dt));
-		cam.lookAt(object.position);
+		chaseCamera(cam, object, dt);
 	} else if (camera === 'orbit' && controls) {
 		controls.target.copy(object.position); // free orbit/zoom around the ride
 	}
 
 	state.raf = requestAnimationFrame(tick);
+}
+
+// ---- camera-only chase follow (C3) ------------------------------------------
+// The car module reuses the possess chase framing WITHOUT the movement half:
+// something else (the physics sim) owns the object's transform, we only fly the
+// editor camera behind it. No input claim, no selection, no history.
+
+/** @type {import('svelte/store').Writable<string | null>} followed uuid (tests/UI) */
+export const followingCam = writable(null);
+
+/** @type {any} */ let follow = null; // {uuid, raf, lastTime, camSave}
+
+/** @param {string} uuid @returns {boolean} */
+export function startFollowCam(uuid) {
+	if (follow?.uuid === uuid) return true;
+	stopFollowCam();
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!object) return false;
+	/** @type {any} */
+	const controls = get(orbitControls);
+	follow = {
+		uuid,
+		camSave: controls ? { enabled: controls.enabled, target: controls.target.clone() } : null,
+		lastTime: performance.now(),
+		raf: 0
+	};
+	if (controls) controls.enabled = false;
+	followingCam.set(uuid);
+	follow.raf = requestAnimationFrame(followTick);
+	return true;
+}
+
+export function stopFollowCam() {
+	if (!follow) return;
+	cancelAnimationFrame(follow.raf);
+	/** @type {any} */
+	const controls = get(orbitControls);
+	if (controls && follow.camSave) {
+		controls.enabled = follow.camSave.enabled;
+		// keep looking where the ride ended rather than snapping back
+		const object = get(objectsGroup)?.getObjectByProperty('uuid', follow.uuid);
+		if (object) controls.target.copy(object.position);
+	}
+	follow = null;
+	followingCam.set(null);
+}
+
+/** @param {number} now */
+function followTick(now) {
+	if (!follow) return;
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', follow.uuid);
+	if (!object) {
+		stopFollowCam(); // deleted out from under us
+		return;
+	}
+	const dt = Math.min((now - follow.lastTime) / 1000, 0.1);
+	follow.lastTime = now;
+	/** @type {any} */
+	const cam = get(globalCamera);
+	if (cam) chaseCamera(cam, object, dt);
+	follow.raf = requestAnimationFrame(followTick);
 }
 
 let started = false;
@@ -181,5 +248,6 @@ export function startPossess() {
 	// entering VR mid-possession: the editor camera modes make no sense there
 	isVRMode.subscribe((vr) => {
 		if (vr) release();
+		if (vr) stopFollowCam();
 	});
 }

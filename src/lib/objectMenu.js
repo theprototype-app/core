@@ -174,6 +174,22 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			)
 		},
 		{
+			// H5: embed this object's flow into the SCENE graph as an Object Flow node
+			label: 'Add flow to Scene graph',
+			tooltip: 'Embed this object’s flow as a node with its declared inputs/outputs',
+			action: () =>
+				Promise.all([import('./objectFlow'), import('../stores/flowStore'), import('../stores/appStore')]).then(
+					([objectFlow, flowStore, appStore]) => {
+						if (!flowStore.graphExists(uuid)) {
+							appStore.showToast('This object has no flow yet — select it in the Flow editor and click Create flow.');
+							return;
+						}
+						const added = objectFlow.addObjectFlowToScene(uuid, object?.name || object?.type);
+						appStore.showToast(added ? 'Object Flow node added to the Scene graph' : 'This flow is already embedded in the Scene graph');
+					}
+				)
+		},
+		{
 			label: 'Delete' + suffix,
 			danger: true,
 			disabled: locked,

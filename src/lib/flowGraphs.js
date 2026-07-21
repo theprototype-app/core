@@ -9,6 +9,7 @@ import {
 } from '../stores/flowStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
+import { removeEmbedsOf } from './objectFlow';
 
 // H1 (flow v2): object-flow lifecycle -- create/delete graph documents,
 // replicated (graphcreate/graphdelete) and undoable (the 'flowgraph' history
@@ -55,6 +56,7 @@ export function deleteObjectGraph(uuid, opts = {}) {
 			after: 'after'
 		});
 	removeGraphDocument(uuid);
+	removeEmbedsOf(uuid); // H5: embedded Object Flow nodes die with their flow
 	/** @type {any} */
 	const peer = get(peers);
 	if (replicate && peer) peer.send({ type: 'graphdelete', uuid });
@@ -69,6 +71,7 @@ export function applyGraphCreate(uuid) {
 /** @param {string} uuid */
 export function applyGraphDelete(uuid) {
 	removeGraphDocument(uuid);
+	removeEmbedsOf(uuid); // deterministic on the applier side too
 }
 
 // 'flowgraph' history kind: undo of create removes the graph; undo of delete

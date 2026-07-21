@@ -41,6 +41,8 @@
 	import EffectNode from './nodes/EffectNode.svelte';
 	import OnClickNode from './nodes/OnClickNode.svelte';
 	import CounterNode from './nodes/CounterNode.svelte';
+	import FlowIONode from './nodes/FlowIONode.svelte';
+	import ObjectFlowNode from './nodes/ObjectFlowNode.svelte';
 	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
 	import { objectsGroup, selectedObject } from '../../stores/sceneStore';
@@ -99,6 +101,9 @@
 		visibility: EffectNode,
 		onclick: OnClickNode,
 		counter: CounterNode,
+		flowinput: FlowIONode,
+		flowoutput: FlowIONode,
+		objectflow: ObjectFlowNode,
 		...moduleTypes
 	};
 

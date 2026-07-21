@@ -4,6 +4,8 @@
 // effect/anim/action nodes carry the special 'effect' type into an Object
 // Selector. Existing saved edges are NOT re-validated — only new drags.
 
+import { graphOf } from '../stores/flowStore';
+
 /** output type of a node's source handle @type {Record<string,string>} */
 const OUTPUT = {
 	number: 'number', slider: 'number', time: 'number', loop: 'number', timer: 'number',
@@ -97,5 +99,22 @@ export function isValidFlowConnection(connection, nodes) {
 	const source = nodes.find((n) => n.id === connection.source);
 	const target = nodes.find((n) => n.id === connection.target);
 	if (!source || !target) return false;
-	return canConnect(outputType(source.type), inputType(target.type, connection.targetHandle));
+	// H5: the object-flow interface types come from node DATA / the referenced
+	// graph's declarations, not the static type table
+	const from = source.type === 'flowinput' ? source.data?.vtype ?? 'number' : outputType(source.type);
+	if (source.type === 'objectflow') {
+		// embedded outputs carry whatever the flow's outputs compute — untyped v1,
+		// anything except the effect channel may consume them
+		return inputType(target.type, connection.targetHandle) !== 'effect';
+	}
+	if (target.type === 'flowoutput') return from !== 'effect'; // outputs accept any value
+	if (target.type === 'objectflow') {
+		const graph = graphOf(target.data?.flowUuid ?? '');
+		const decl = graph?.nodes.find(
+			(/** @type {any} */ n) =>
+				n.type === 'flowinput' && (n.data?.name ?? 'value') === connection.targetHandle
+		);
+		return canConnect(from, decl?.data?.vtype ?? 'number');
+	}
+	return canConnect(from, inputType(target.type, connection.targetHandle));
 }

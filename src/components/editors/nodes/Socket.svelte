@@ -12,10 +12,13 @@
 	export let position: any = undefined; // defaults by kind
 	export let top: number | undefined = undefined; // px offset for stacked targets
 	export let style: string = '';
+	// H5: interface sockets carry a DATA-declared type (flowinput.vtype), not a
+	// table lookup — an explicit type wins when provided
+	export let forceType: string | undefined = undefined;
 
 	const RIGHT = Position.Right;
 	const LEFT = Position.Left;
-	$: socketType = kind === 'source' ? outputType(nodeType) : inputType(nodeType, id ?? 'a');
+	$: socketType = forceType ?? (kind === 'source' ? outputType(nodeType) : inputType(nodeType, id ?? 'a'));
 	$: pos = position ?? (kind === 'source' ? RIGHT : LEFT);
 	$: css = `--socket-color: ${typeColor(socketType)};${top !== undefined ? ` top: ${top}px;` : ''}${style}`;
 </script>

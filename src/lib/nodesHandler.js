@@ -161,6 +161,8 @@ export function applyNodesSnapshot(nodes, edges, graphs) {
 	// B4.5: a stale snapshot must not resurrect edges into removed custom-node
 	// params -- prune deterministically after every snapshot apply
 	import('./customNodes').then((m) => m.pruneAllCustomNodeEdges());
+	// H5: same invariant for embedded Object Flow sockets
+	import('./objectFlow').then((m) => m.pruneObjectFlowEdges());
 }
 
 // --- Drift detection: peers periodically exchange a graph hash and pull a

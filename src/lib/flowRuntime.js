@@ -8,6 +8,7 @@ import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { runScript } from './scriptRuntime';
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
+import { startObjectFlowWatcher } from './objectFlow';
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
@@ -170,8 +171,35 @@ export function notifyExternalMove(uuid) {
 export const valueTypes = [
 	'number', 'vector3', 'toggle', 'random', 'time', 'math', 'compare', 'gate',
 	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter', // 134
-	'maprange', 'select' // 4.6
+	'maprange', 'select', // 4.6
+	'flowinput', 'flowoutput', 'objectflow' // H5: object-flow composition
 ];
+
+// --- H5: object flows embedded in the scene graph -----------------------------
+// The SCENE graph feeds values INTO an object flow through its declared Flow
+// Input nodes (per-tick injection, same tick) and reads its Flow Output values
+// back (computed at the END of a tick, consumed by the scene on the NEXT tick —
+// one frame of latency, documented in the plan).
+/** @type {Record<string, Record<string, any>>} graphId -> {inputName: value} */
+let graphInputs = {};
+/** @type {Record<string, Record<string, any>>} graphId -> {outputName: value} */
+let graphOutputs = {};
+
+/** Unwrap a multi-output node's handle map by the edge's sourceHandle.
+ * @param {any} value @param {any} edge */
+function unwrapHandle(value, edge) {
+	if (value && typeof value === 'object' && value.__handles)
+		return edge?.sourceHandle ? value.__handles[edge.sourceHandle] : undefined;
+	return value;
+}
+
+/** Typed zero for a Flow Input with nothing injected. @param {string} vtype */
+function typedFallback(vtype) {
+	if (vtype === 'boolean') return false;
+	if (vtype === 'vector3') return [0, 0, 0];
+	if (vtype === 'color') return '#ffffff';
+	return 0;
+}
 // existing input sources that also expose a value on their output handle
 // (4.4: switcher outputs its selected index)
 const sourceValueTypes = ['slider', 'colorpicker', 'objectselector', 'switcher'];
@@ -237,13 +265,9 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 	const input = (handle, fallback) => {
 		const edge = allEdges.find((e) => e.target === node.id && e.targetHandle === handle);
 		if (edge) {
-			const value = evalNode(
-				allNodes.find((n) => n.id === edge.source),
-				allNodes,
-				allEdges,
-				time,
-				seen,
-				ctx
+			const value = unwrapHandle(
+				evalNode(allNodes.find((n) => n.id === edge.source), allNodes, allEdges, time, seen, ctx),
+				edge
 			);
 			if (value !== undefined) return value;
 		}
@@ -385,6 +409,20 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		}
 		case 'counter':
 			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;
+		// --- H5: object-flow composition ---
+		case 'flowinput': {
+			// value injected by the scene graph's embedded Object Flow node this
+			// tick; falls back to the node's own default param
+			const injected = graphInputs[node.__graph]?.[d.name ?? 'value'];
+			return injected !== undefined ? injected : d.fallback ?? typedFallback(d.vtype);
+		}
+		case 'flowoutput':
+			// a Flow Output IS its wired input (lets the tick + readouts reuse eval)
+			return input('value', d.fallback ?? 0);
+		case 'objectflow':
+			// the embedded node exposes the target flow's outputs as named handles,
+			// computed at the END of the previous tick (one-frame latency)
+			return { __handles: graphOutputs[d.flowUuid] ?? {} };
 		default:
 			return undefined;
 	}
@@ -403,7 +441,7 @@ export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 		const source = allNodes.find((n) => n.id === edge.source);
 		if (!source) return;
 		if (!valueTypes.includes(source.type) && !sourceValueTypes.includes(source.type)) return;
-		const value = evalNode(source, allNodes, allEdges, time, new Set(), ctx);
+		const value = unwrapHandle(evalNode(source, allNodes, allEdges, time, new Set(), ctx), edge);
 		if (value !== undefined) data[edge.targetHandle] = value;
 	});
 	return data;
@@ -596,6 +634,25 @@ function tick(now) {
 	const ctx = runtimeCtx(); // 134: scene + trigger state for the evaluators
 
 	// collect active animations per scene object
+	// H5: inject the scene graph's wired values into each embedded object flow
+	// BEFORE effects run, so Flow Inputs read this tick's scene values
+	/** @type {Record<string, Record<string, any>>} */
+	const nextInputs = {};
+	nodes.forEach((embed) => {
+		if (embed.type !== 'objectflow') return;
+		const target = embed.data?.flowUuid;
+		if (!target) return;
+		const bucket = nextInputs[target] ?? (nextInputs[target] = {});
+		edges.forEach((e) => {
+			if (e.target !== embed.id || !e.targetHandle) return;
+			const src = nodes.find((n) => n.id === e.source);
+			if (!src) return;
+			const v = unwrapHandle(evalNode(src, nodes, edges, time, new Set(), ctx), e);
+			if (v !== undefined) bucket[e.targetHandle] = v;
+		});
+	});
+	graphInputs = nextInputs;
+
 	const active = new Map(); // uuid -> anim nodes
 	/** @param {any} node */
 	const isEffectNode = (node) =>
@@ -669,10 +726,23 @@ function tick(now) {
 		/** @type {Record<string, any>} */
 		const values = {};
 		for (const node of nodes) {
-			if (valueTypes.includes(node.type)) values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
+			// H5: objectflow returns a handle MAP, not a scalar — no card readout
+			if (valueTypes.includes(node.type) && node.type !== 'objectflow')
+				values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}
 		flowValues.set(values);
 	}
+
+	// H5: harvest every object flow's declared outputs for the NEXT tick's
+	// embedded Object Flow reads (one-frame latency by design)
+	/** @type {Record<string, Record<string, any>>} */
+	const nextOutputs = {};
+	nodes.forEach((node) => {
+		if (node.type !== 'flowoutput' || !node.__graph || node.__graph === SCENE_GRAPH) return;
+		const name = node.data?.name ?? 'out';
+		(nextOutputs[node.__graph] ??= {})[name] = evalNode(node, nodes, edges, time, new Set(), ctx);
+	});
+	graphOutputs = nextOutputs;
 
 	moduleFrameTasks.forEach((task) => {
 		try {
@@ -714,6 +784,7 @@ export function startFlowRuntime() {
 	// combined node/edge set; nodes carry a runtime-only __graph tag used for
 	// implicit-owner targeting. The mirror keeps the editor view in sync.
 	startGraphMirror();
+	startObjectFlowWatcher(); // H5: embed-socket pruning on interface changes
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

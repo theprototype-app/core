@@ -32,6 +32,17 @@ export const nodeCatalog = [
 		items: [{ type: 'objectselector', label: 'Object Selector', defaults: { selected: '-None-' } }]
 	},
 	{
+		// H5: object-flow composition — Flow Input/Output DECLARE an object flow's
+		// public sockets; Object Flow embeds a flow into the scene graph with those
+		// sockets. Interface nodes only mean something inside an object flow.
+		group: 'Object Flow',
+		items: [
+			{ type: 'flowinput', label: 'Flow Input', defaults: { name: 'value', vtype: 'number', fallback: 0 } },
+			{ type: 'flowoutput', label: 'Flow Output', defaults: { name: 'out', fallback: 0 } },
+			{ type: 'objectflow', label: 'Object Flow', defaults: { flowUuid: '' } }
+		]
+	},
+	{
 		group: 'Logic',
 		items: [
 			{

@@ -78,6 +78,8 @@
 		mass: AnimationNode,
 		bounciness: AnimationNode,
 		friction: AnimationNode,
+		angularvelocity: AnimationNode,
+		motor: AnimationNode,
 		number: NumberNode,
 		vector3: Vector3Node,
 		toggle: ToggleNode,

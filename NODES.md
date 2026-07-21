@@ -1,6 +1,6 @@
 # Flow nodes — audit (roadmap #9, stage 1)
 
-All 33 built-in node types + the `customnode` meta-type. Types/coercions:
+All 35 built-in node types + the `customnode` meta-type. Types/coercions:
 `src/lib/flowSockets.js` (number, vector3, boolean, color, object, event, effect);
 runtime: `src/lib/flowRuntime.js` (evalNode + baseState rebase; effects apply only
 through an Object Selector sink). Widgets write via `setNodeData` (replicated).
@@ -33,6 +33,8 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | shake/spin/bounce/orbit | Animation | effect | per-param | OK (generic AnimationNode; params get ⓘ editors where sensible) |
 | pathpatrol | Animation | effect | — | OK (points captured by scene clicks) |
 | mass/bounciness/friction | Physics | effect | value | DOC: consumed by physics.js collectParams when the sim starts — NOT flowRuntime. Working, different runtime; invisible to per-frame eval. |
+| angularvelocity | Physics | effect | per-param | NEW (13-C2): constant spin under physics — setAngvel on the dynamic body at sim start; wiring it alone implies dynamic mass 1 (an explicit Mass node wins). Param edits re-apply LIVE mid-sim on the stepping peer. Authoritative sync (motion rides the move broadcasts). |
+| motor | Physics | effect | per-param | NEW (13-C2): drives EVERY revolute joint touching the selected object (select a car body → all wheel motors) via configureMotorVelocity; wins over a joint def's own motor. Param edits re-apply LIVE mid-sim. Authoritative sync. |
 | pulse/blink | Effects | effect | per-param | OK |
 | sound | Effects | effect | volume | OK (`playing` IS read by soundRuntime — earlier suspicion disproven). |
 | customnode | (meta) | effect (drives a Selector) | per-def param | FIX (4.5): def params get INPUT sockets (they were unwirable — the runtime already resolved them); def edits prune dangling edges deterministically. |

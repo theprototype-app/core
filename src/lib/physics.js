@@ -59,8 +59,11 @@ let suspendedForRun = [];
 let lastStep = 0;
 let lastBroadcast = 0;
 let accumulator = 0; // fixed-timestep leftover (see step)
+/** @type {(() => void)[]} C2: live node-param subscriptions active during a sim */
+let liveUnsubs = [];
+let liveSnapshot = '';
 
-const PHYSICS_TYPES = ['mass', 'bounciness', 'friction'];
+const PHYSICS_TYPES = ['mass', 'bounciness', 'friction', 'angularvelocity', 'motor'];
 const HULL_MAX_VERTS = 5000;
 const MAX_LINVEL = 20; // m/s clamp on release-velocity estimates
 const MAX_ANGVEL = 20; // rad/s
@@ -121,8 +124,70 @@ function collectParams(group) {
 		}
 		if (source.type === 'bounciness') map[uuid].restitution = source.data?.value ?? 0.3;
 		if (source.type === 'friction') map[uuid].friction = source.data?.value ?? 0.5;
+		// C2: constant spin — implies dynamic (mass 1) so wiring it ALONE works;
+		// an explicit Mass node still wins (processed independently, ??=)
+		if (source.type === 'angularvelocity') {
+			map[uuid].angvel = { axis: source.data?.axis ?? 'y', speed: source.data?.speed ?? 2 };
+			if (!map[uuid].forceStatic) map[uuid].mass ??= 1;
+		}
+		// C2: drives every revolute joint touching the selected object (the car
+		// recipe: select the body -> all wheel motors). Joints stay def-owned.
+		if (source.type === 'motor')
+			map[uuid].motor = { vel: source.data?.vel ?? 3, maxForce: source.data?.maxForce ?? 100 };
 	});
 	return map;
+}
+
+/** LOCAL axis letter -> WORLD angvel vector for setAngvel (bodies report/step in
+ * world space; box bodies start with identity rotation, so the object's world
+ * quaternion is the right frame either way). @param {any} object @param {{axis: string, speed: number}} angvel */
+function angvelWorld(object, angvel) {
+	const v = new THREE.Vector3(
+		angvel.axis === 'x' ? 1 : 0,
+		angvel.axis === 'y' ? 1 : 0,
+		angvel.axis === 'z' ? 1 : 0
+	);
+	v.applyQuaternion(object.quaternion).multiplyScalar(angvel.speed ?? 0);
+	return { x: v.x, y: v.y, z: v.z };
+}
+
+/** Apply a motor param to every live revolute joint touching the object (C2).
+ * @param {string} uuid @param {{vel: number, maxForce: number}} motor */
+function applyMotorParam(uuid, motor) {
+	get(sceneJoints).forEach((def) => {
+		if (def.kind !== 'revolute' || (def.a !== uuid && def.b !== uuid)) return;
+		const joint = liveJoints.get(def.id);
+		joint?.configureMotorVelocity?.(motor.vel ?? 0, motor.maxForce ?? 100);
+	});
+}
+
+/** The graph's angvel/motor params only, as a change-detection key (C2). */
+function liveParamsJson() {
+	const group = get(objectsGroup);
+	if (!group) return '';
+	const params = collectParams(group);
+	/** @type {Record<string, any>} */
+	const out = {};
+	Object.keys(params).forEach((uuid) => {
+		if (params[uuid].angvel || params[uuid].motor)
+			out[uuid] = { angvel: params[uuid].angvel, motor: params[uuid].motor };
+	});
+	return JSON.stringify(out);
+}
+
+/** Re-apply angvel/motor from the current graph to the live world (C2). */
+function applyLiveParams() {
+	const group = get(objectsGroup);
+	if (!world || !group) return;
+	const live = collectParams(group);
+	bodies.forEach((entry) => {
+		const p = live[entry.object.uuid];
+		if (entry.mode === 'dynamic' && !entry.hold && p?.angvel)
+			entry.body.setAngvel(angvelWorld(entry.object, p.angvel), true);
+	});
+	Object.keys(live).forEach((uuid) => {
+		if (live[uuid].motor) applyMotorParam(uuid, live[uuid].motor);
+	});
 }
 
 /**
@@ -384,6 +449,24 @@ async function startSimulation() {
 		liveJoints.set(def.id, joint);
 	});
 
+	// C2: initial angular velocities + graph-driven motors (needs liveJoints).
+	// Node params win over a joint def's own motor — applied last.
+	applyLiveParams();
+
+	// C2: LIVE re-apply — editing an Angular Velocity / Motor node mid-sim
+	// (local slider drag or a peer's replicated nodechange) re-applies on the
+	// stepping peer. Change-detected on the physics params only, so node drags
+	// (position updates also fire flowNodes) never touch the world.
+	liveSnapshot = liveParamsJson();
+	const onGraphChange = () => {
+		if (!world) return;
+		const snap = liveParamsJson();
+		if (snap === liveSnapshot) return;
+		liveSnapshot = snap;
+		applyLiveParams();
+	};
+	liveUnsubs = [flowNodes.subscribe(onGraphChange), flowEdges.subscribe(onGraphChange)];
+
 	simulating.set(true);
 	simPaused.set(false);
 	if (peer) peer.send({ type: 'simulate', running: true, peerId: peer.peer.id });
@@ -638,6 +721,8 @@ export function pauseSimulation(paused) {
 export function stopSimulation(opts = {}) {
 	if (!get(simulating)) return;
 	setPostTick(null); // clear the hook BEFORE freeing the world
+	liveUnsubs.forEach((unsub) => unsub());
+	liveUnsubs = [];
 	/** @type {any} */
 	const peer = get(peers);
 	const group = get(objectsGroup);
@@ -708,6 +793,16 @@ export function applyImpulse(uuid, impulse) {
 	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic' && !e.hold);
 	if (!entry) return false;
 	entry.body.applyImpulse({ x: impulse[0] ?? 0, y: impulse[1] ?? 0, z: impulse[2] ?? 0 }, true);
+	return true;
+}
+
+/** Spin a dynamic body (module SDK, C2) — initiator-only, mid-sim.
+ * @param {string} uuid @param {number[]} torque world-space [x,y,z] */
+export function applyTorqueImpulse(uuid, torque) {
+	if (!world || !get(simulating)) return false;
+	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic' && !e.hold);
+	if (!entry) return false;
+	entry.body.applyTorqueImpulse({ x: torque[0] ?? 0, y: torque[1] ?? 0, z: torque[2] ?? 0 }, true);
 	return true;
 }
 

@@ -178,6 +178,7 @@ its INPUT via `api.send({op:'drive', ...})` at ~20Hz, and only the peer where
 ```js
 api.physics.isInitiator();              // true while THIS peer runs the sim
 api.physics.applyImpulse(uuid, [0, 5, 0]); // push a dynamic body (initiator-only)
+api.physics.applyTorqueImpulse(uuid, [0, 2, 0]); // spin a dynamic body (world axes)
 api.physics.setJointMotor(jointId, vel, maxForce); // drive a revolute joint
 api.physics.joints();                   // Promise<the replicated joint defs>
 ```

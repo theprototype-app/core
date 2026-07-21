@@ -136,6 +136,26 @@ export const nodeCatalog = [
 				label: 'Friction',
 				defaults: { value: 0.5 },
 				params: [{ key: 'value', kind: 'range', min: 0, max: 1, step: 0.05 }]
+			},
+			// C2 (roadmap #13): constant rotation under physics. Both are consumed
+			// by physics.js (sim start + live re-apply on node edits), like mass.
+			{
+				type: 'angularvelocity',
+				label: 'Angular Velocity',
+				defaults: { axis: 'y', speed: 2 },
+				params: [
+					{ key: 'axis', kind: 'select', options: ['x', 'y', 'z'] },
+					{ key: 'speed', kind: 'range', min: -10, max: 10, step: 0.1 }
+				]
+			},
+			{
+				type: 'motor',
+				label: 'Motor',
+				defaults: { vel: 3, maxForce: 100 },
+				params: [
+					{ key: 'vel', kind: 'range', min: -20, max: 20, step: 0.1 },
+					{ key: 'maxForce', kind: 'range', min: 0, max: 500, step: 5 }
+				]
 			}
 		]
 	},

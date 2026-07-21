@@ -92,14 +92,16 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
 
 	// --- motorized hinge spins its wheel ---------------------------------------
+	// the wheel hangs IN THE AIR from the hinge (the old on-the-ground layout
+	// could contact-lock anchor/wheel/ground and stall the motor — flaky read)
 	const wheel = await A.page.evaluate(async () => {
 		const cmd = window.__stores.commandsHandler.sceneCommand;
 		cmd('/create Box 0.6 0.6 0.6'); // anchor block
 		cmd('/create Cylinder 0.5 0.5 0.3'); // wheel
 		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
 		const [anchor, wheel] = group.children.slice(-2);
-		anchor.position.set(-4, 2, 0);
-		wheel.position.set(-4, 1, 0);
+		anchor.position.set(-4, 0.3, 0);
+		wheel.position.set(-4, 1.8, 0);
 		anchor.userData.physics = { mode: 'dynamic', mass: 5 };
 		wheel.userData.physics = { mode: 'dynamic', mass: 1 };
 		const joint = window.__stores.joints.createJoint('revolute', anchor.uuid, wheel.uuid, 'y');
@@ -109,12 +111,17 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	const motorOk = await A.page.evaluate((id) => window.__stores.physics.setJointMotor(id, 6, 200), wheel.jointId);
 	h.check(motorOk === true, 'setJointMotor accepts the live joint');
-	await A.page.waitForTimeout(1200);
-	const spin = await A.page.evaluate((uuid) => {
-		const d = window.__stores.physics.physicsDebug().find((e) => e.uuid === uuid);
-		return d?.angvel ? Math.hypot(d.angvel.x, d.angvel.y, d.angvel.z) : 0;
-	}, wheel.wheelUuid);
-	h.check(spin > 1, `motor spins the hinged wheel (|angvel| = ${spin.toFixed(2)})`);
+	// poll (machine-load safe) instead of a one-shot read
+	await h.eventually(
+		() =>
+			A.page.evaluate((uuid) => {
+				const d = window.__stores.physics.physicsDebug().find((e) => e.uuid === uuid);
+				return d?.angvel ? Math.hypot(d.angvel.x, d.angvel.y, d.angvel.z) : 0;
+			}, wheel.wheelUuid),
+		(spin) => spin > 1,
+		'motor spins the hinged wheel',
+		15000
+	);
 	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
 
 	// --- detach deletes the defs (replicated) ----------------------------------

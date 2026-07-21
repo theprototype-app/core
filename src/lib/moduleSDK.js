@@ -242,6 +242,9 @@ function makeApi(moduleId) {
 			isInitiator: () => physicsApi()?.isInitiator() ?? false,
 			/** push a dynamic body @param {string} uuid @param {number[]} impulse */
 			applyImpulse: (uuid, impulse) => physicsApi()?.applyImpulse(uuid, impulse) ?? false,
+			/** spin a dynamic body (C2) @param {string} uuid @param {number[]} torque world-space */
+			applyTorqueImpulse: (uuid, torque) =>
+				physicsApi()?.applyTorqueImpulse(uuid, torque) ?? false,
 			/** drive a revolute joint's motor (P-B) @param {string} jointId @param {number} vel @param {number=} maxForce */
 			setJointMotor: (jointId, vel, maxForce) =>
 				physicsApi()?.setJointMotor(jointId, vel, maxForce) ?? false,

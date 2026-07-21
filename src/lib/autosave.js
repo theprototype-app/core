@@ -34,13 +34,26 @@ function exportScene() {
 		if (!group || group.children.length === 0) return resolve(null);
 		// snapshots must store animation BASE poses, not the current swing (88)
 		const restore = parkAnimatedAtBase();
+		// H1 fix: GLTFLoader assigns NEW uuids on parse, which orphans everything
+		// keyed by object uuid (object flows, annotations). Stamp each object's
+		// uuid into userData (GLTF extras round-trips it) so restoreSnapshot can
+		// re-assign the ORIGINAL uuids; markers are stripped again after export.
+		group.traverse((/** @type {any} */ child) => {
+			if (child !== group) child.userData.__uuid = child.uuid;
+		});
+		const unstamp = () =>
+			group.traverse((/** @type {any} */ child) => {
+				if (child.userData && '__uuid' in child.userData) delete child.userData.__uuid;
+			});
 		new GLTFExporter().parse(
 			group,
 			(result) => {
+				unstamp();
 				restore();
 				resolve(result);
 			},
 			(error) => {
+				unstamp();
 				restore();
 				console.log('autosave export failed', error);
 				resolve(null);
@@ -150,6 +163,16 @@ export async function restoreSnapshot() {
 				result.scene.getObjectByName('AuxScene')?.children?.[0] ??
 				result.scene.children[0] ??
 				result.scene;
+			// H1 fix: restore the ORIGINAL uuids stamped at export time — object
+			// flows/annotations are keyed by them, and the re-broadcast below then
+			// carries the same uuids to peers
+			container.traverse((/** @type {any} */ child) => {
+				const saved = child.userData?.__uuid;
+				if (saved) {
+					child.uuid = saved;
+					delete child.userData.__uuid;
+				}
+			});
 			/** @type {any} */
 			const peer = get(peers);
 			[...container.children].forEach((child) => {

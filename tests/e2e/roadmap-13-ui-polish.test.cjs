@@ -95,6 +95,45 @@ h.run(async () => {
 	await A.page.waitForTimeout(250);
 	h.check(await A.page.locator('#ai-assistant-window').first().isVisible(), 'I3: configured click opens the AI window');
 
+	// --- I4: far-zoom grid fade SNAPS (no multi-frame lerp ramp) --------------
+	// dolly the camera far out, then sample the grid fadeDistance uniform: the old
+	// 0.2/frame lerp ramped over ~35 frames (the sweeping ring); the fix reaches the
+	// target within a frame and holds it.
+	const readFade = () =>
+		A.page.evaluate(
+			() =>
+				new Promise((resolve) => {
+					window.__stores.globalScene.subscribe((sc) => {
+						let fade = null;
+						sc?.traverse((o) => {
+							const m = o.material;
+							if (m && m.uniforms && 'fadeDistance' in m.uniforms) fade = m.uniforms.fadeDistance.value;
+						});
+						resolve(fade);
+					})();
+				})
+		);
+	await A.page.evaluate(() => {
+		return new Promise((resolve) => {
+			window.__stores.orbitControls.subscribe((oc) => {
+				window.__stores.globalCamera.subscribe((cam) => {
+					if (cam && oc) {
+						oc.target.set(0, 1.5, 0);
+						cam.position.set(1200, 900, 1200);
+						oc.update();
+					}
+					resolve(true);
+				})();
+			})();
+		});
+	});
+	await A.page.waitForTimeout(60); // two frames
+	const f1 = await readFade();
+	await A.page.waitForTimeout(400); // many more frames
+	const f2 = await readFade();
+	h.check(f1 != null && f1 > 500, 'I4: grid fade tracks far zoom (' + Math.round(f1) + ')');
+	h.check(f1 != null && f2 != null && Math.abs(f2 - f1) < f1 * 0.05, 'I4: grid fade snaps — no multi-frame ramp (Δ ' + Math.round(Math.abs(f2 - f1)) + ')');
+
 	// --- A1: the pill has no ✕ close button ----------------------------------
 	// the pill only shows while the full window is hidden — close it first
 	await A.page.evaluate(() => window.__stores.aiAssistantHidden.set('hidden'));

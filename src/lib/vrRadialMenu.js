@@ -11,8 +11,8 @@ import {
 } from '../stores/sceneStore';
 import { environment, setEnvironment, ENVIRONMENT_PRESETS } from './environment';
 import { setMicMode, vrMicMode } from './voiceChat';
-import { duplicateObject, deleteSelection } from './objectActions';
-import { savePrefab } from './prefabs';
+import { duplicateObject, deleteSelection, selectionUuids } from './objectActions';
+import { savePrefab, savePrefabSelection } from './prefabs';
 
 // VR radial menu v2 (74): a flat 8-sector base ring with nested sub-rings.
 // Entries live in a registry so modules and later phases can add their own
@@ -350,7 +350,9 @@ function registerBuiltins() {
 	registerVRMenuEntry({ id: 'face:inset', group: 'faces', label: 'Inset', order: 1 });
 	registerVRMenuEntry({ id: 'face:move', group: 'faces', label: 'Move', order: 2 });
 	registerVRMenuEntry({ id: 'face:delete', group: 'faces', label: 'Delete', order: 3 });
-	// Save prefab (115): the selection joins the library, thumbnail included
+	// Save prefab (115): the selection joins the library, thumbnail included.
+	// D3 (roadmap 13): a MULTI-selection saves as ONE layout-preserving prefab
+	// (savePrefabSelection, the U-2 op desktop already uses)
 	registerVRMenuEntry({
 		id: 'obj:prefab',
 		group: 'object',
@@ -358,8 +360,9 @@ function registerBuiltins() {
 		order: 6,
 		closes: true,
 		action: () => {
-			const uuid = /** @type {any} */ (get(selectedObject))?.uuid;
-			if (uuid) savePrefab(uuid);
+			const uuids = selectionUuids();
+			if (uuids.length > 1) savePrefabSelection(uuids);
+			else if (uuids[0]) savePrefab(uuids[0]);
 		}
 	});
 }

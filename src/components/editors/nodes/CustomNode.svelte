@@ -3,16 +3,27 @@
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
-	import { customNodeDefs, scriptErrors, nodeDesignerOpen } from '../../../stores/flowStore';
+	import { customNodeDefs, scriptErrors, nodeDesignerOpen, flowEdges, flowValues } from '../../../stores/flowStore';
 
 	type $$Props = NodeProps;
 	export let id: string;
-	export let data;
+	export let data: any;
 
 	// instance of a user-designed definition: controls come from the def
 	$: def = $customNodeDefs.find((d) => d.id === data.defId) ?? null;
 	$: error = $scriptErrors[id];
 	// One-way flow: render from data, write through setNodeData (replicates to peers)
+
+	// wired params show the incoming live value instead of the slider (the manual
+	// value is overridden anyway); a flowValues lookup — no new evaluation
+	$: wiredSource = (key: string) =>
+		($flowEdges as any[]).find((e) => e.target === id && e.targetHandle === key)?.source ?? null;
+	function fmt(v: any) {
+		if (v === undefined || v === null) return '…';
+		if (typeof v === 'number') return (+v).toFixed(2);
+		if (Array.isArray(v)) return v.map((n) => (+n).toFixed(1)).join(', ');
+		return String(v);
+	}
 </script>
 
 <NodeWrapper type={def?.name ?? 'custom'}>
@@ -30,11 +41,15 @@
 				<label class="flex flex-col">
 					<span class="flex justify-between">
 						<span>{param.key}</span>
-						{#if param.kind === 'range'}
+						{#if param.kind === 'range' && !wiredSource(param.key)}
 							<span>{data[param.key] ?? param.min ?? 0}</span>
 						{/if}
 					</span>
-					{#if param.kind === 'range'}
+					{#if param.kind === 'range' && wiredSource(param.key)}
+						<span class="wired-value rounded bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300" title="Driven by the wired input">
+							◈ {fmt($flowValues[wiredSource(param.key)])}
+						</span>
+					{:else if param.kind === 'range'}
 						<input
 							class="nodrag accent-[#ff4000]"
 							type="range"

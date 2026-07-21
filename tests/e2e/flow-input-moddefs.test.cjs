@@ -80,5 +80,32 @@ h.run(async () => {
 		'H3: releasing the key drops the output after the pulse expires'
 	);
 
+	// --- Flow Input: changing the type resets the fallback to a typed default --
+	await A.page.evaluate(async () => {
+		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const box = g.children[g.children.length - 1];
+		window.__stores.nodesHandler.createFlowNode(
+			{ id: 'fi-typed', type: 'flowinput', position: { x: 300, y: 200 }, data: { type: 'flowinput', label: 'Flow Input', name: 'val', vtype: 'number', fallback: 7 } },
+			box.uuid
+		);
+		window.__stores.flowGraphClose.set(false);
+		window.__stores.objectActions.selectObject(box.uuid);
+	});
+	await A.page.waitForTimeout(600);
+	await A.page.locator('[data-id="fi-typed"] select').selectOption('color');
+	await A.page.waitForTimeout(300);
+	const typed = await A.page.evaluate(
+		() => new Promise((r) =>
+			window.__stores.flowGraphs.subscribe((g) => {
+				for (const graph of Object.values(g)) {
+					const n = graph.nodes.find((x) => x.id === 'fi-typed');
+					if (n) return r({ vtype: n.data.vtype, fallback: n.data.fallback });
+				}
+				r(null);
+			})()
+		)
+	);
+	h.check(typed?.vtype === 'color' && typed?.fallback === '#ffffff', 'Flow Input type change resets the fallback to a typed default');
+
 	await h.finish(browser);
 });

@@ -71,6 +71,23 @@ h.run(async () => {
 		'the flow’s spin animates the owner with the injected speed'
 	);
 
+	// --- a WIRED param renders the live incoming value, not its slider ---------
+	await A.page.evaluate((id) => {
+		window.__stores.flowGraphClose.set(false);
+		window.__stores.objectActions.selectObject(id); // editor shows the object flow
+	}, uuid);
+	await A.page.waitForTimeout(700);
+	h.check(
+		(await A.page.locator('[data-id="spin-emb"] .wired-value').count()) === 1,
+		'a wired param shows the live value readout'
+	);
+	h.check(
+		(await A.page.locator('[data-id="spin-emb"] input[type="range"]').count()) === 0,
+		'the wired param slider is replaced'
+	);
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.waitForTimeout(400);
+
 	// --- double-clicking the embed node opens the object's flow ----------------
 	await A.page.evaluate(async (id) => {
 		window.__stores.flowGraphClose.set(false);

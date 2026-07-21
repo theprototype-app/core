@@ -81,7 +81,8 @@
 			{#each iface.outputs as socket (socket.name)}
 				<div class="relative -mx-3 flex h-5 items-center justify-end px-3">
 					<span class="max-w-full truncate text-[10px] text-gray-300">{socket.name}</span>
-					<Socket kind="source" nodeType="objectflow" id={socket.name} position={Position.Right} forceType="number" style="top: 50%;" />
+					<!-- outputs carry whatever the flow computes — the neutral 'any' socket -->
+					<Socket kind="source" nodeType="objectflow" id={socket.name} position={Position.Right} forceType="any" style="top: 50%;" />
 				</div>
 			{/each}
 			{#if data.flowUuid && !iface.inputs.length && !iface.outputs.length}

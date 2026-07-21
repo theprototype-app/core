@@ -22,23 +22,26 @@
 
 <NodeWrapper type={data.type} label={data.label}>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
-	<button
-		class="nodrag w-full rounded border border-gray-600 px-1 py-0.5 text-xs {capturing ? 'bg-primary-700 text-white' : ''}"
-		on:click={() => (capturing = true)}
-		on:keydown={capturing ? onCaptureKey : undefined}
-		on:blur={() => (capturing = false)}
-	>
-		{capturing ? 'press a key…' : data.code ?? 'KeyR'}
-	</button>
-	<label class="flex w-full flex-col">
-		<span>pulse (s)</span>
-		<input
-			class="nodrag"
-			type="number"
-			min="0.1"
-			step="0.1"
-			value={data.pulse ?? 0.3}
-			on:change={(e) => setNodeData(id, { pulse: +e.currentTarget.value })}
-		/>
-	</label>
+	<!-- one column (the wrapper slot is a flex ROW) -->
+	<div class="flex w-full flex-col gap-1">
+		<button
+			class="nodrag w-full rounded border border-gray-600 px-1 py-0.5 text-xs {capturing ? 'bg-primary-700 text-white' : ''}"
+			on:click={() => (capturing = true)}
+			on:keydown={capturing ? onCaptureKey : undefined}
+			on:blur={() => (capturing = false)}
+		>
+			{capturing ? 'press a key…' : data.code ?? 'KeyR'}
+		</button>
+		<label class="flex w-full flex-col">
+			<span class="text-gray-400">pulse (s)</span>
+			<input
+				class="nodrag w-full"
+				type="number"
+				min="0.1"
+				step="0.1"
+				value={data.pulse ?? 0.3}
+				on:change={(e) => setNodeData(id, { pulse: +e.currentTarget.value })}
+			/>
+		</label>
+	</div>
 </NodeWrapper>

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObject, globalCamera, isVRMode } from '../stores/sceneStore';
 import { peers, showToast, modulesOpen } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
@@ -69,11 +69,37 @@ const stateSyncs = {};
 /** @type {any} */ let inputRuntimeRef = null;
 /** @type {any} */ let physicsRef = null;
 /** @type {any} */ let possessRef = null;
+/** @type {any} */ let vrControlsRef = null;
 if (typeof window !== 'undefined') {
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
 	import('./physics').then((m) => (physicsRef = m));
 	import('./possess').then((m) => (possessRef = m));
+	import('./vrControls').then((m) => (vrControlsRef = m));
 }
+
+// --- api.pointerRay (190): where the user is POINTING, as a world ray --------
+// Desktop: the mouse over the viewport (tracked window-wide in NDC, same math
+// as Scene.svelte's selection raycast). VR: the pointer hand's controller ray
+// (vrControls, resolved by handedness). A FRESH Raycaster every call.
+const pointerNdc = { x: 0, y: 0, seen: false };
+if (typeof window !== 'undefined') {
+	window.addEventListener('pointermove', (event) => {
+		pointerNdc.x = (event.clientX / window.innerWidth) * 2 - 1;
+		pointerNdc.y = -(event.clientY / window.innerHeight) * 2 + 1;
+		pointerNdc.seen = true;
+	});
+}
+function pointerRayNow() {
+	if (get(isVRMode)) return vrControlsRef?.pointerHandRay?.() ?? null;
+	/** @type {any} */
+	const camera = get(globalCamera);
+	if (!camera || !pointerNdc.seen) return null;
+	const fresh = new THREE.Raycaster();
+	fresh.setFromCamera(new THREE.Vector2(pointerNdc.x, pointerNdc.y), camera);
+	return fresh;
+}
+/** exported for tests (__stores.moduleSDK.pointerRayNow) */
+export { pointerRayNow };
 function inputApi() {
 	return (
 		inputRuntimeRef ?? {
@@ -185,6 +211,16 @@ function makeApi(moduleId) {
 		 */
 		onSceneClear(fn) {
 			sceneClearHandlers.push(fn);
+		},
+		/**
+		 * Where the user is POINTING, as a THREE.Raycaster in world space —
+		 * desktop mouse over the viewport, or the VR pointer hand's ray. A fresh
+		 * instance per call (safe to keep). Null before the first pointer event.
+		 * The drag recipe (190/untangle): click to pick, follow pointerRay() in a
+		 * frame task, click to drop. (190)
+		 */
+		pointerRay() {
+			return pointerRayNow();
 		},
 		/** Handle messages other peers sent with api.send() @param {(data: any) => void} fn */
 		onMessage(fn) {

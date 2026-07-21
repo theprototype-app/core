@@ -167,6 +167,21 @@ api.claimInput('keys');                 // ALWAYS release when your mode ends
 api.releaseInput('keys');
 ```
 
+### Pointer ray (190)
+
+```js
+// where the user is POINTING, as a THREE.Raycaster in WORLD space: the desktop
+// mouse over the viewport, or the VR pointer hand's ray. Fresh instance per
+// call; null before the first pointer event. The drag recipe: click to pick,
+// follow pointerRay() in a frame task, click to drop (works desktop + VR).
+api.registerFrameTask(() => {
+	const ray = api.pointerRay();
+	if (!ray || !carried) return;
+	const hit = ray.ray.intersectPlane(dragPlane, tempVec);
+	if (hit) carried.position.copy(hit);
+});
+```
+
 ### Physics (P-A)
 
 All mutations are INITIATOR-ONLY — the peer that started the simulation steps

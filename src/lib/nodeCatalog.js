@@ -78,6 +78,10 @@ export const nodeCatalog = [
 		items: [
 			// 134: EVENT nodes — ride small replicated trigger messages, not state
 			{ type: 'onclick', label: 'On Click', defaults: { pulse: 0.3 } },
+			// H3: keyboard trigger — LOCAL key presses replicate as trigger pulses
+			// (golden rule: never stream local state); held keys re-pulse so the
+			// output stays high while held
+			{ type: 'keypress', label: 'Key Press', defaults: { code: 'KeyR', pulse: 0.3 } },
 			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } }
 		]
 	},

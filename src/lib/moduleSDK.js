@@ -114,6 +114,27 @@ function makeApi(moduleId) {
 			moduleEffects[type] = fn;
 		},
 		/**
+		 * H2 (flow v2): ship CODE-EDITABLE node definitions with the module. Each
+		 * def becomes a regular custom node (NodeDesigner-editable, listed in the
+		 * palette's Custom section, replicated like user defs) with the id
+		 * `mod-<moduleId>-<key>`. Seeding is ABSENT-ONLY: a def the user edited
+		 * (same id already in the store) is never clobbered on module reload.
+		 * Def shape mirrors the NodeDesigner: {key, name, params: [{key,
+		 * kind:'range'|'select', min?, max?, step?, options?}], code} — the code
+		 * runs like a Script node (pure function of object/base/data/time; keep
+		 * it deterministic, golden rule).
+		 * @param {{key: string, name: string, params?: any[], code: string}[]} defs
+		 */
+		registerNodeDefs(defs) {
+			import('./customNodes').then((m) => {
+				for (const def of defs ?? []) {
+					const id = 'mod-' + moduleId + '-' + def.key;
+					if (m.findNodeDef(id)) continue; // user edits win over reseeds
+					m.applyNodeDef({ id, name: def.name ?? def.key, params: def.params ?? [], code: def.code ?? '' });
+				}
+			});
+		},
+		/**
 		 * Creatable geometry: `/create <Name> ...args` works locally and on
 		 * peers. `entry` ({label, command, group?}) lists it in the sidebar.
 		 * @param {string} name @param {(...args: any[]) => any} builder @param {{label: string, command: string, group?: string}=} entry

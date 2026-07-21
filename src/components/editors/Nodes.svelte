@@ -43,6 +43,7 @@
 	import CounterNode from './nodes/CounterNode.svelte';
 	import FlowIONode from './nodes/FlowIONode.svelte';
 	import ObjectFlowNode from './nodes/ObjectFlowNode.svelte';
+	import KeyPressNode from './nodes/KeyPressNode.svelte';
 	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
 	import { objectsGroup, selectedObject } from '../../stores/sceneStore';
@@ -104,6 +105,7 @@
 		flowinput: FlowIONode,
 		flowoutput: FlowIONode,
 		objectflow: ObjectFlowNode,
+		keypress: KeyPressNode,
 		...moduleTypes
 	};
 

@@ -220,6 +220,7 @@ export function applyNodeSync(data) {
 	conn.send({ type: 'getnodes', sender: peer.peer.id });
 }
 
+/** @type {any} */
 let syncTimer = null;
 
 /** Broadcast our graph hash every 10s so peers can detect drift */

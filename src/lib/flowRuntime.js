@@ -10,6 +10,13 @@ import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { startObjectFlowWatcher } from './objectFlow';
 
+// H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
+// pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
+// inputRuntime -> shortcuts -> history (inputRuntime pulls shortcuts for
+// registerShortcut, and shortcuts' subtree reaches peerHandler -> flowGraphs,
+// whose module body registers a history kind while history is mid-init).
+/** @type {any} */ let inputRuntimeRef = null;
+
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
 // Lives outside the Flow drawer so animations keep running when it is closed.
@@ -172,7 +179,8 @@ export const valueTypes = [
 	'number', 'vector3', 'toggle', 'random', 'time', 'math', 'compare', 'gate',
 	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter', // 134
 	'maprange', 'select', // 4.6
-	'flowinput', 'flowoutput', 'objectflow' // H5: object-flow composition
+	'flowinput', 'flowoutput', 'objectflow', // H5: object-flow composition
+	'keypress' // H3: keyboard trigger
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -403,6 +411,13 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			return pa && pb ? pa.distanceTo(pb) <= num(d.radius ?? 3) : false;
 		}
 		case 'onclick': {
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
+		case 'keypress': {
+			// H3: same pulse semantics as onclick — LOCAL keys arrive as replicated
+			// trigger stamps (held keys re-pulse, so this stays 1 while held)
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
@@ -733,6 +748,22 @@ function tick(now) {
 		flowValues.set(values);
 	}
 
+	// H3: while a Key Press node's key is HELD locally, re-stamp its trigger
+	// before the pulse expires so the output stays 1 (bounded re-broadcast,
+	// ~3/s per held node)
+	{
+		const held = inputRuntimeRef ? inputRuntimeRef.getInput().codes : new Set();
+		if (held.size) {
+			const trigs = get(flowTriggers);
+			nodes.forEach((node) => {
+				if (node.type !== 'keypress' || !held.has(node.data?.code)) return;
+				const pulse = node.data?.pulse ?? 0.3;
+				const last = trigs[node.id]?.lastT ?? -Infinity;
+				if (time - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), true);
+			});
+		}
+	}
+
 	// H5: harvest every object flow's declared outputs for the NEXT tick's
 	// embedded Object Flow reads (one-frame latency by design)
 	/** @type {Record<string, Record<string, any>>} */
@@ -785,6 +816,20 @@ export function startFlowRuntime() {
 	// implicit-owner targeting. The mirror keeps the editor view in sync.
 	startGraphMirror();
 	startObjectFlowWatcher(); // H5: embed-socket pruning on interface changes
+	// H3: LOCAL key presses pulse matching Key Press nodes — applyNodeTrigger
+	// REPLICATES the stamp (button-module pattern), so every peer computes the
+	// same pulse from the shared timestamp. Text fields are already filtered by
+	// inputRuntime; held keys re-pulse from the tick below.
+	import('./inputRuntime').then((m) => {
+		inputRuntimeRef = m;
+		m.onInput((/** @type {any} */ event) => {
+			if (event.type !== 'down') return;
+			nodes.forEach((node) => {
+				if (node.type === 'keypress' && node.data?.code === event.code)
+					applyNodeTrigger(node.id, syncedNow(), true);
+			});
+		});
+	});
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

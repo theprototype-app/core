@@ -16,7 +16,9 @@ const OUTPUT = {
 	toggle: 'boolean', compare: 'boolean', gate: 'boolean', proximity: 'boolean',
 	colorpicker: 'color',
 	objectselector: 'object',
-	onclick: 'event'
+	onclick: 'event',
+	keypress: 'event', // H3
+	flowinput: 'number' // H5 fallback; the live check reads data.vtype
 };
 
 /** typed named inputs; `_default` covers an unnamed target handle @type {Record<string,Record<string,string>>} */

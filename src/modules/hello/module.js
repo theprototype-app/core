@@ -29,5 +29,24 @@ export default {
 			const speed = data.speed ?? 2;
 			object.rotation.z = base.rot[2] + Math.sin(time * speed) * amplitude;
 		});
+
+		// H2 (flow v2): the worked example for registerNodeDefs — a CODE-EDITABLE
+		// node (open it in the Node Designer to tweak the formula). Ships as a
+		// regular custom node with the id mod-hello-bobble; user edits persist.
+		api.registerNodeDefs([
+			{
+				key: 'bobble',
+				name: 'Bobble (hello)',
+				params: [
+					{ key: 'height', kind: 'range', min: 0, max: 2, step: 0.05 },
+					{ key: 'speed', kind: 'range', min: 0.2, max: 10, step: 0.1 }
+				],
+				code:
+					'// editable module node (H2): bobs the object up and down\n' +
+					'const height = data.height ?? 0.5;\n' +
+					'const speed = data.speed ?? 3;\n' +
+					'object.position.y = base.pos[1] + Math.abs(Math.sin(time * speed)) * height;\n'
+			}
+		]);
 	}
 };

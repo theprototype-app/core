@@ -17,20 +17,29 @@ h.run(async () => {
 		const box = group.children[group.children.length - 1];
 		window.__box = box;
 		s.objectActions.selectObject(box.uuid);
-		// a dense sphere is over the 500-vertex cap
+		// D7: the default cap is 800 (a user-editable setting) — the DEFAULT
+		// sphere (561 verts) now edits out of the box; a denser one refuses
+		const THREE = s.THREE;
 		s.commandsHandler.sceneCommand('/create Sphere 1');
-		const dense = group.children[group.children.length - 1];
+		const defaultSphere = group.children[group.children.length - 1];
+		const dense = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32));
 		return {
 			cap: s.meshEdit.VR_VERTEX_CAP,
 			boxOk: s.meshEdit.vrVertexEditable(box),
 			boxVerts: box.geometry.attributes.position.count,
+			sphereOk: s.meshEdit.vrVertexEditable(defaultSphere),
+			sphereVerts: defaultSphere.geometry.attributes.position.count,
 			denseOk: s.meshEdit.vrVertexEditable(dense),
 			denseVerts: dense.geometry.attributes.position.count
 		};
 	});
-	h.check(eligible.cap === 500, 'VR vertex cap is 500');
+	h.check(eligible.cap === 800, 'default VR vertex cap is 800 (D7, user-editable)');
 	h.check(eligible.boxOk === true, `a box is editable (${eligible.boxVerts} verts)`);
-	h.check(eligible.denseOk === false, `a dense sphere is refused (${eligible.denseVerts} verts)`);
+	h.check(
+		eligible.sphereOk === true,
+		`the default sphere edits out of the box (${eligible.sphereVerts} verts)`
+	);
+	h.check(eligible.denseOk === false, `a denser sphere is refused (${eligible.denseVerts} verts)`);
 
 	// --- Edit Mesh ▸ Vertices enters edit mode; handles render at the scene root
 	// (137: obj:editmesh opens the side-menu defaulting to Faces, then

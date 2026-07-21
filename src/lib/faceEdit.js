@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, TControls, lockedObjects } from '../stores/sceneStore';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, settingsOpen, settingsSection } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 
 // Face editing core (118, pulled forward from pending/25 and scoped to VR
@@ -14,8 +14,34 @@ import { registerHistoryKind, recordEntry } from './history';
 // commit ships a full `meshgeo` snapshot (positions array + uuid, size-capped);
 // receivers swap the geometry wholesale. History kind 'meshgeo' is undoable.
 
-/** VR face cap — denser meshes are unwieldy to blockout with controllers */
-export const VR_FACE_CAP = 300;
+/** Default VR face cap — D7 (roadmap 13): raised from 300 so the default
+ * sphere (960 tris) edits out of the box; the LIVE limit is the user-editable
+ * `vrFaceCap` setting below */
+export const VR_FACE_CAP = 1000;
+/** D7: user-editable face-edit triangle limit (Settings ▸ VR, local pref)
+ * @type {import('svelte/store').Writable<number>} */
+export const vrFaceCap = writable(
+	typeof localStorage !== 'undefined'
+		? parseInt(localStorage.getItem('vrFaceCap') ?? '') || VR_FACE_CAP
+		: VR_FACE_CAP
+);
+if (typeof localStorage !== 'undefined')
+	vrFaceCap.subscribe((value) => localStorage.setItem('vrFaceCap', String(value)));
+
+/** D7: over-limit / blocked-edit warning with a deep link into the Settings
+ * VR section (works in noVR immediately; VR users see it on exit — on-device
+ * surfacing stays a manual check). @param {string} message */
+export function editCapToast(message) {
+	showToast(message, [
+		{
+			label: 'Open Settings',
+			action: () => {
+				settingsSection.set('vr');
+				settingsOpen.set(true);
+			}
+		}
+	]);
+}
 /** hard ceiling on a snapshot message (floats) — ~5k tris */
 const MAX_SNAPSHOT = 45000;
 
@@ -338,12 +364,18 @@ function smoothWeldedNormals(geometry) {
 	normal.needsUpdate = true;
 }
 
-/** Is this object simple enough to face-edit in VR? @param {any} object */
-export function vrFaceEditable(object) {
+/** Triangle count of an object's geometry (0 when not a mesh) @param {any} object */
+export function triangleCount(object) {
 	const pos = object?.geometry?.attributes?.position;
-	if (!pos) return false;
-	const tris = (object.geometry.index ? object.geometry.index.count : pos.count) / 3;
-	return tris > 0 && tris <= VR_FACE_CAP;
+	if (!pos) return 0;
+	return (object.geometry.index ? object.geometry.index.count : pos.count) / 3;
+}
+
+/** Is this object simple enough to face-edit in VR? D7: capped by the
+ * user-editable vrFaceCap setting. @param {any} object */
+export function vrFaceEditable(object) {
+	const tris = triangleCount(object);
+	return tris > 0 && tris <= get(vrFaceCap);
 }
 
 // ---- face edit MODE (VR + desktop-parity hook) ----
@@ -511,11 +543,20 @@ export function enterFaceEdit(uuid) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
 	if (!object || !object.geometry?.attributes?.position) {
-		showToast('Only meshes can be face-edited');
+		// D7: a multi-mesh GROUP blocks face editing — say how to unblock it
+		if (object?.type === 'Group')
+			showToast('A group can’t be mesh-edited — Ungroup it first, then edit each mesh');
+		else showToast('Only meshes can be face-edited');
 		return;
 	}
 	if (!vrFaceEditable(object)) {
-		showToast('Too dense for VR face editing (max ' + VR_FACE_CAP + ' triangles)');
+		editCapToast(
+			'Mesh exceeds the face edit limit (' +
+				Math.round(triangleCount(object)) +
+				' of ' +
+				get(vrFaceCap) +
+				' triangles) — raise it in Settings ▸ VR'
+		);
 		return;
 	}
 	if (get(lockedObjects).find((lock) => lock[1] === uuid)) {

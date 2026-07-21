@@ -49,6 +49,8 @@ import {
 	enterEditMode,
 	exitEditMode,
 	vrVertexEditable,
+	vrVertexCap,
+	vertexCount,
 	vrRaycastHandle,
 	vrBeginHandleDrag,
 	vrDragHandleTo,
@@ -66,6 +68,9 @@ import {
 	enterFaceEdit,
 	exitFaceEdit,
 	vrFaceEditable,
+	vrFaceCap,
+	triangleCount,
+	editCapToast,
 	setFaceOp,
 	adjustFaceAmount,
 	commitArmedFaceOp,
@@ -2301,7 +2306,18 @@ export function executeVRMenuAction(name) {
 		if (vrFaceEditable(object)) enterFaceEdit(object.uuid);
 		else if (vrVertexEditable(object)) enterEditMode(object.uuid);
 		else {
-			showToast('This mesh is too dense to edit in VR');
+			// D7: say WHICH limit blocks + deep-link the setting
+			editCapToast(
+				'Mesh exceeds the edit limits (' +
+					Math.round(triangleCount(object)) +
+					' tris of ' +
+					get(vrFaceCap) +
+					', ' +
+					vertexCount(object) +
+					' verts of ' +
+					get(vrVertexCap) +
+					') — raise them in Settings ▸ VR'
+			);
 			return;
 		}
 		if (get(faceEditObject) || get(editingObject)) {
@@ -2352,15 +2368,22 @@ export function executeVRMenuAction(name) {
 		if (mode === 'vertices') {
 			exitFaceEdit();
 			if (vrVertexEditable(object)) enterEditMode(object.uuid);
-			else showToast('Too dense for vertex editing (max 500 verts)');
+			else
+				editCapToast(
+					'Mesh exceeds the vertex edit limit (' +
+						vertexCount(object) +
+						' of ' +
+						get(vrVertexCap) +
+						' verts) — raise it in Settings ▸ VR'
+				);
 		} else if (mode === 'stretch') {
 			exitEditMode();
 			exitFaceEdit();
 			beginStretch(object.uuid);
 		} else {
 			exitEditMode();
-			if (vrFaceEditable(object)) enterFaceEdit(object.uuid);
-			else showToast('Too dense for face editing (max 300 triangles)');
+			// enterFaceEdit guards the cap itself and shows the D7 toast
+			enterFaceEdit(object.uuid);
 		}
 		return;
 	}

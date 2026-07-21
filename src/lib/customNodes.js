@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { customNodeDefs, flowNodes, flowEdges } from '../stores/flowStore';
+import { customNodeDefs, flowGraphs, updateGraph } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
 
 // User-designed node definitions ({id, name, params[], code}) — replicated
@@ -36,19 +36,27 @@ export function applyNodeDef(def) {
 }
 
 /** B4.5: drop edges targeting a custom-node input whose def param no longer
- * exists (deleted-handle edges would dangle + diverge). @param {string} defId */
+ * exists (deleted-handle edges would dangle + diverge). H1: instances can live
+ * in ANY graph document — prune each graph. @param {string} defId */
 export function pruneCustomNodeEdges(defId) {
 	const def = get(customNodeDefs).find((d) => d.id === defId);
 	const valid = new Set((def?.params ?? []).filter((/** @type {any} */ p) => p.kind === 'range').map((/** @type {any} */ p) => p.key));
-	const instances = new Set(
-		get(flowNodes)
-			.filter((n) => n.data?.defId === defId)
-			.map((n) => n.id)
-	);
-	if (!instances.size) return;
-	flowEdges.update((edges) =>
-		edges.filter((e) => !(instances.has(e.target) && e.targetHandle && !valid.has(e.targetHandle)))
-	);
+	for (const [graphId, graph] of Object.entries(get(flowGraphs))) {
+		const instances = new Set(
+			graph.nodes.filter((/** @type {any} */ n) => n.data?.defId === defId).map((/** @type {any} */ n) => n.id)
+		);
+		if (!instances.size) continue;
+		const dangling = graph.edges.some(
+			(/** @type {any} */ e) => instances.has(e.target) && e.targetHandle && !valid.has(e.targetHandle)
+		);
+		if (dangling)
+			updateGraph(graphId, (g) => ({
+				nodes: g.nodes,
+				edges: g.edges.filter(
+					(/** @type {any} */ e) => !(instances.has(e.target) && e.targetHandle && !valid.has(e.targetHandle))
+				)
+			}));
+	}
 }
 
 /** B4.5: snapshot post-pass — a stale peer's snapshot must not resurrect

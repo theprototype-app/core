@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { flowCursors } from '../../stores/flowStore';
+	import { flowCursors, activeGraphId, SCENE_GRAPH } from '../../stores/flowStore';
 
 	// Renders connected peers' cursors inside the flow editor. Coordinates arrive
 	// in flow space; the current viewport (pan/zoom) converts them to screen space.
@@ -31,7 +31,8 @@
 </script>
 
 <div class="pointer-events-none absolute inset-0 overflow-hidden" style="z-index: 10;">
-	{#each Object.entries($flowCursors) as [id, cursor] (id)}
+	<!-- H1: only cursors on the SAME graph as this editor (missing graphId = scene) -->
+	{#each Object.entries($flowCursors).filter(([, c]) => ((c as any).graphId ?? SCENE_GRAPH) === $activeGraphId) as [id, cursor] (id)}
 		<div
 			class="absolute flex items-start"
 			style="left: {cursor.x * $viewport.zoom + $viewport.x}px; top: {cursor.y * $viewport.zoom + $viewport.y}px;"

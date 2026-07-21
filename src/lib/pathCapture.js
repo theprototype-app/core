@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
-import { flowNodes } from '../stores/flowStore';
+import { findNodeAnyGraph } from '../stores/flowStore';
 import { setNodeData } from './nodesHandler';
 import { showToast } from '../stores/appStore';
 
@@ -31,11 +31,13 @@ export function togglePathCapture(nodeId) {
 export function capturePathClick(raycaster) {
 	const nodeId = get(pathCaptureNode);
 	if (!nodeId) return false;
-	const node = get(flowNodes).find((n) => n.id === nodeId);
-	if (!node) {
+	// H1: the capturing path node can live in any graph document
+	const found = findNodeAnyGraph((n) => n.id === nodeId);
+	if (!found) {
 		pathCaptureNode.set(null);
 		return false;
 	}
+	const { node, graphId } = found;
 	const group = get(objectsGroup);
 	// clicks on existing waypoint markers are drags/removals, not new points
 	const markers = group?.parent?.getObjectByName('path-waypoints');
@@ -49,8 +51,10 @@ export function capturePathClick(raycaster) {
 		hits[0]?.point ??
 		(raycaster.ray.intersectPlane(groundPlane, planeHit) ? planeHit : null);
 	if (point)
-		setNodeData(nodeId, {
-			points: [...(node.data.points ?? []), [point.x, point.y, point.z]]
-		});
+		setNodeData(
+			nodeId,
+			{ points: [...(node.data.points ?? []), [point.x, point.y, point.z]] },
+			graphId
+		);
 	return true;
 }

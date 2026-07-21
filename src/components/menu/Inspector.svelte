@@ -30,7 +30,7 @@
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup, selectObject } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection } from '$lib/physics';
-	import { flowNodes, flowEdges } from '../../stores/flowStore';
+	import { flowGraphs } from '../../stores/flowStore';
 	import { showLightHelpers } from '$lib/lightHelpers';
 	import { cameraNear, cameraFar, setCameraNear, setCameraFar } from '$lib/cameraClip';
 	import {
@@ -99,10 +99,10 @@
 
 	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
 	// changes AND selection updates (setPhysics only pokes selectedObject).
+	// H1: depends on flowGraphs so physics nodes in ANY graph document retrigger it.
 	const physicsRows = $derived.by(() => {
 		$objectsGroup;
-		$flowNodes;
-		$flowEdges;
+		$flowGraphs;
 		$selectedObject;
 		return listPhysicsObjects();
 	});

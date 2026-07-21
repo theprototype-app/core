@@ -32,6 +32,17 @@ export const nodeCatalog = [
 		items: [{ type: 'objectselector', label: 'Object Selector', defaults: { selected: '-None-' } }]
 	},
 	{
+		// H5: object-flow composition — Flow Input/Output DECLARE an object flow's
+		// public sockets; Object Flow embeds a flow into the scene graph with those
+		// sockets. Interface nodes only mean something inside an object flow.
+		group: 'Object Flow',
+		items: [
+			{ type: 'flowinput', label: 'Flow Input', defaults: { name: 'value', vtype: 'number', fallback: 0 } },
+			{ type: 'flowoutput', label: 'Flow Output', defaults: { name: 'out', fallback: 0 } },
+			{ type: 'objectflow', label: 'Object Flow', defaults: { flowUuid: '' } }
+		]
+	},
+	{
 		group: 'Logic',
 		items: [
 			{
@@ -67,6 +78,10 @@ export const nodeCatalog = [
 		items: [
 			// 134: EVENT nodes — ride small replicated trigger messages, not state
 			{ type: 'onclick', label: 'On Click', defaults: { pulse: 0.3 } },
+			// H3: keyboard trigger — LOCAL key presses replicate as trigger pulses
+			// (golden rule: never stream local state); held keys re-pulse so the
+			// output stays high while held
+			{ type: 'keypress', label: 'Key Press', defaults: { code: 'KeyR', pulse: 0.3 } },
 			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } }
 		]
 	},

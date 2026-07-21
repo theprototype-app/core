@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { flowNodes, flowEdges, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers } from '../stores/flowStore';
+import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
@@ -8,6 +8,14 @@ import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { runScript } from './scriptRuntime';
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
+import { startObjectFlowWatcher } from './objectFlow';
+
+// H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
+// pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
+// inputRuntime -> shortcuts -> history (inputRuntime pulls shortcuts for
+// registerShortcut, and shortcuts' subtree reaches peerHandler -> flowGraphs,
+// whose module body registers a history kind while history is mid-init).
+/** @type {any} */ let inputRuntimeRef = null;
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
@@ -59,6 +67,20 @@ function targetUuidOf(edge) {
 	// per-object mute from the object list context menu
 	if (muted.includes(selected)) return null;
 	return selected;
+}
+
+// H1: inside an OBJECT graph, an effect/source node that is NOT wired into any
+// objectselector implicitly targets the graph's owner object. Explicit selector
+// wiring always wins (lets an object graph drive other objects too).
+/** @param {any} node @returns {string | null} the owner uuid or null */
+function implicitOwnerOf(node) {
+	const graph = node.__graph;
+	if (!graph || graph === SCENE_GRAPH) return null;
+	if (muted.includes(graph)) return null;
+	const wired = edges.some(
+		(e) => e.source === node.id && nodes.find((n) => n.id === e.target)?.type === 'objectselector'
+	);
+	return wired ? null : graph;
 }
 
 function applyColors() {
@@ -156,8 +178,36 @@ export function notifyExternalMove(uuid) {
 export const valueTypes = [
 	'number', 'vector3', 'toggle', 'random', 'time', 'math', 'compare', 'gate',
 	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter', // 134
-	'maprange', 'select' // 4.6
+	'maprange', 'select', // 4.6
+	'flowinput', 'flowoutput', 'objectflow', // H5: object-flow composition
+	'keypress' // H3: keyboard trigger
 ];
+
+// --- H5: object flows embedded in the scene graph -----------------------------
+// The SCENE graph feeds values INTO an object flow through its declared Flow
+// Input nodes (per-tick injection, same tick) and reads its Flow Output values
+// back (computed at the END of a tick, consumed by the scene on the NEXT tick —
+// one frame of latency, documented in the plan).
+/** @type {Record<string, Record<string, any>>} graphId -> {inputName: value} */
+let graphInputs = {};
+/** @type {Record<string, Record<string, any>>} graphId -> {outputName: value} */
+let graphOutputs = {};
+
+/** Unwrap a multi-output node's handle map by the edge's sourceHandle.
+ * @param {any} value @param {any} edge */
+function unwrapHandle(value, edge) {
+	if (value && typeof value === 'object' && value.__handles)
+		return edge?.sourceHandle ? value.__handles[edge.sourceHandle] : undefined;
+	return value;
+}
+
+/** Typed zero for a Flow Input with nothing injected. @param {string} vtype */
+function typedFallback(vtype) {
+	if (vtype === 'boolean') return false;
+	if (vtype === 'vector3') return [0, 0, 0];
+	if (vtype === 'color') return '#ffffff';
+	return 0;
+}
 // existing input sources that also expose a value on their output handle
 // (4.4: switcher outputs its selected index)
 const sourceValueTypes = ['slider', 'colorpicker', 'objectselector', 'switcher'];
@@ -223,13 +273,9 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 	const input = (handle, fallback) => {
 		const edge = allEdges.find((e) => e.target === node.id && e.targetHandle === handle);
 		if (edge) {
-			const value = evalNode(
-				allNodes.find((n) => n.id === edge.source),
-				allNodes,
-				allEdges,
-				time,
-				seen,
-				ctx
+			const value = unwrapHandle(
+				evalNode(allNodes.find((n) => n.id === edge.source), allNodes, allEdges, time, seen, ctx),
+				edge
 			);
 			if (value !== undefined) return value;
 		}
@@ -369,8 +415,29 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
 		}
+		case 'keypress': {
+			// H3: same pulse semantics as onclick — LOCAL keys arrive as replicated
+			// trigger stamps (held keys re-pulse, so this stays 1 while held)
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
 		case 'counter':
 			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;
+		// --- H5: object-flow composition ---
+		case 'flowinput': {
+			// value injected by the scene graph's embedded Object Flow node this
+			// tick; falls back to the node's own default param
+			const injected = graphInputs[node.__graph]?.[d.name ?? 'value'];
+			return injected !== undefined ? injected : d.fallback ?? typedFallback(d.vtype);
+		}
+		case 'flowoutput':
+			// a Flow Output IS its wired input (lets the tick + readouts reuse eval)
+			return input('value', d.fallback ?? 0);
+		case 'objectflow':
+			// the embedded node exposes the target flow's outputs as named handles,
+			// computed at the END of the previous tick (one-frame latency)
+			return { __handles: graphOutputs[d.flowUuid] ?? {} };
 		default:
 			return undefined;
 	}
@@ -389,7 +456,7 @@ export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 		const source = allNodes.find((n) => n.id === edge.source);
 		if (!source) return;
 		if (!valueTypes.includes(source.type) && !sourceValueTypes.includes(source.type)) return;
-		const value = evalNode(source, allNodes, allEdges, time, new Set(), ctx);
+		const value = unwrapHandle(evalNode(source, allNodes, allEdges, time, new Set(), ctx), edge);
 		if (value !== undefined) data[edge.targetHandle] = value;
 	});
 	return data;
@@ -450,7 +517,8 @@ export function fireObjectClick(uuid) {
 			const target = nodes.find((n) => n.id === edge.target);
 			return target?.type === 'objectselector' && target.data?.selected === uuid;
 		});
-		if (hit) applyNodeTrigger(node.id, syncedNow(), true);
+		// H1: an unwired OnClick inside the clicked object's own graph also fires
+		if (hit || implicitOwnerOf(node) === uuid) applyNodeTrigger(node.id, syncedNow(), true);
 	});
 }
 
@@ -581,22 +649,48 @@ function tick(now) {
 	const ctx = runtimeCtx(); // 134: scene + trigger state for the evaluators
 
 	// collect active animations per scene object
+	// H5: inject the scene graph's wired values into each embedded object flow
+	// BEFORE effects run, so Flow Inputs read this tick's scene values
+	/** @type {Record<string, Record<string, any>>} */
+	const nextInputs = {};
+	nodes.forEach((embed) => {
+		if (embed.type !== 'objectflow') return;
+		const target = embed.data?.flowUuid;
+		if (!target) return;
+		const bucket = nextInputs[target] ?? (nextInputs[target] = {});
+		edges.forEach((e) => {
+			if (e.target !== embed.id || !e.targetHandle) return;
+			const src = nodes.find((n) => n.id === e.source);
+			if (!src) return;
+			const v = unwrapHandle(evalNode(src, nodes, edges, time, new Set(), ctx), e);
+			if (v !== undefined) bucket[e.targetHandle] = v;
+		});
+	});
+	graphInputs = nextInputs;
+
 	const active = new Map(); // uuid -> anim nodes
+	/** @param {any} node */
+	const isEffectNode = (node) =>
+		animationTypes.includes(node.type) ||
+		!!moduleEffects[node.type] ||
+		node.type === 'script' ||
+		node.type === 'customnode';
 	if (sceneObjects) {
 		edges.forEach((edge) => {
 			const source = nodes.find((n) => n.id === edge.source);
-			if (
-				!source ||
-				(!animationTypes.includes(source.type) &&
-					!moduleEffects[source.type] &&
-					source.type !== 'script' &&
-					source.type !== 'customnode')
-			)
-				return;
+			if (!source || !isEffectNode(source)) return;
 			const uuid = targetUuidOf(edge);
 			if (!uuid) return;
 			if (!active.has(uuid)) active.set(uuid, []);
 			active.get(uuid).push(source);
+		});
+		// H1: object-graph effects with no explicit selector target their owner
+		nodes.forEach((node) => {
+			if (!isEffectNode(node)) return;
+			const uuid = implicitOwnerOf(node);
+			if (!uuid) return;
+			if (!active.has(uuid)) active.set(uuid, []);
+			if (!active.get(uuid).includes(node)) active.get(uuid).push(node);
 		});
 	}
 
@@ -633,6 +727,12 @@ function tick(now) {
 		// resolve input-driven volume/radius (133) without touching soundRuntime
 		if (uuid) soundPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
 	});
+	// H1: sound nodes in object graphs attach to their owner when unwired
+	nodes.forEach((node) => {
+		if (node.type !== 'sound') return;
+		const uuid = implicitOwnerOf(node);
+		if (uuid) soundPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
+	});
 	updateSounds(soundPairs, sceneObjects, time);
 
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
@@ -641,10 +741,39 @@ function tick(now) {
 		/** @type {Record<string, any>} */
 		const values = {};
 		for (const node of nodes) {
-			if (valueTypes.includes(node.type)) values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
+			// H5: objectflow returns a handle MAP, not a scalar — no card readout
+			if (valueTypes.includes(node.type) && node.type !== 'objectflow')
+				values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}
 		flowValues.set(values);
 	}
+
+	// H3: while a Key Press node's key is HELD locally, re-stamp its trigger
+	// before the pulse expires so the output stays 1 (bounded re-broadcast,
+	// ~3/s per held node)
+	{
+		const held = inputRuntimeRef ? inputRuntimeRef.getInput().codes : new Set();
+		if (held.size) {
+			const trigs = get(flowTriggers);
+			nodes.forEach((node) => {
+				if (node.type !== 'keypress' || !held.has(node.data?.code)) return;
+				const pulse = node.data?.pulse ?? 0.3;
+				const last = trigs[node.id]?.lastT ?? -Infinity;
+				if (time - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), true);
+			});
+		}
+	}
+
+	// H5: harvest every object flow's declared outputs for the NEXT tick's
+	// embedded Object Flow reads (one-frame latency by design)
+	/** @type {Record<string, Record<string, any>>} */
+	const nextOutputs = {};
+	nodes.forEach((node) => {
+		if (node.type !== 'flowoutput' || !node.__graph || node.__graph === SCENE_GRAPH) return;
+		const name = node.data?.name ?? 'out';
+		(nextOutputs[node.__graph] ??= {})[name] = evalNode(node, nodes, edges, time, new Set(), ctx);
+	});
+	graphOutputs = nextOutputs;
 
 	moduleFrameTasks.forEach((task) => {
 		try {
@@ -682,12 +811,28 @@ export function startFlowRuntime() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
 
-	flowNodes.subscribe((value) => {
-		nodes = value;
-		applyColors();
+	// H1: the runtime sees EVERY graph (scene + per-object documents) as one
+	// combined node/edge set; nodes carry a runtime-only __graph tag used for
+	// implicit-owner targeting. The mirror keeps the editor view in sync.
+	startGraphMirror();
+	startObjectFlowWatcher(); // H5: embed-socket pruning on interface changes
+	// H3: LOCAL key presses pulse matching Key Press nodes — applyNodeTrigger
+	// REPLICATES the stamp (button-module pattern), so every peer computes the
+	// same pulse from the shared timestamp. Text fields are already filtered by
+	// inputRuntime; held keys re-pulse from the tick below.
+	import('./inputRuntime').then((m) => {
+		inputRuntimeRef = m;
+		m.onInput((/** @type {any} */ event) => {
+			if (event.type !== 'down') return;
+			nodes.forEach((node) => {
+				if (node.type === 'keypress' && node.data?.code === event.code)
+					applyNodeTrigger(node.id, syncedNow(), true);
+			});
+		});
 	});
-	flowEdges.subscribe((value) => {
-		edges = value;
+	flowGraphs.subscribe(() => {
+		nodes = allNodes();
+		edges = allEdges();
 		applyColors();
 	});
 	objectsGroup.subscribe((value) => {

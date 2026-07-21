@@ -44,7 +44,7 @@
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
-	import { flowNodes } from '../../stores/flowStore';
+	import { findNodeAnyGraph } from '../../stores/flowStore';
 	import { bottomDockActive, visibleDockKey, setDockOccupant } from '$lib/bottomDock';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
@@ -784,14 +784,13 @@
 			// scripts edit the NODE code (replicated via setNodeData)
 			if (item.kind === 'image' && item.dataUrl) openImagePreview({ title: item.name, url: item.dataUrl, onClose: () => gridEl?.focus() });
 			else if (item.kind === 'text' && item.nodeId) {
-				let nodes: any[] = [];
-				flowNodes.subscribe((v: any) => (nodes = v))();
-				const node = nodes.find((n) => n.id === item.nodeId);
-				if (node)
+				// H1: the script node can live in any graph document
+				const found = findNodeAnyGraph((n: any) => n.id === item.nodeId);
+				if (found)
 					openTextEditor({
 						title: item.name + ' (live script)',
-						code: node.data?.code ?? '',
-						onSave: (code: string) => setNodeData(item.nodeId, { code }),
+						code: found.node.data?.code ?? '',
+						onSave: (code: string) => setNodeData(item.nodeId, { code }, found.graphId),
 						onClose: () => gridEl?.focus()
 					});
 			} else if (item.kind === 'audio' && item.itemId) {

@@ -4,6 +4,8 @@
 // effect/anim/action nodes carry the special 'effect' type into an Object
 // Selector. Existing saved edges are NOT re-validated — only new drags.
 
+import { graphOf } from '../stores/flowStore';
+
 /** output type of a node's source handle @type {Record<string,string>} */
 const OUTPUT = {
 	number: 'number', slider: 'number', time: 'number', loop: 'number', timer: 'number',
@@ -14,7 +16,9 @@ const OUTPUT = {
 	toggle: 'boolean', compare: 'boolean', gate: 'boolean', proximity: 'boolean',
 	colorpicker: 'color',
 	objectselector: 'object',
-	onclick: 'event'
+	onclick: 'event',
+	keypress: 'event', // H3
+	flowinput: 'number' // H5 fallback; the live check reads data.vtype
 };
 
 /** typed named inputs; `_default` covers an unnamed target handle @type {Record<string,Record<string,string>>} */
@@ -97,5 +101,54 @@ export function isValidFlowConnection(connection, nodes) {
 	const source = nodes.find((n) => n.id === connection.source);
 	const target = nodes.find((n) => n.id === connection.target);
 	if (!source || !target) return false;
-	return canConnect(outputType(source.type), inputType(target.type, connection.targetHandle));
+	// H5: the object-flow interface types come from node DATA / the referenced
+	// graph's declarations, not the static type table
+	const from = source.type === 'flowinput' ? source.data?.vtype ?? 'number' : outputType(source.type);
+	if (source.type === 'objectflow') {
+		// embedded outputs carry whatever the flow's outputs compute — untyped v1,
+		// anything except the effect channel may consume them
+		return resolvedInputType(target, connection.targetHandle) !== 'effect';
+	}
+	const to = resolvedInputType(target, connection.targetHandle);
+	if (to === 'any') return from !== 'effect'; // flow outputs accept any value
+	return canConnect(from, to);
+}
+
+/**
+ * A target node's ACTUAL input type for a handle — the static table plus the
+ * H5 data-declared cases (flowoutput accepts any value; objectflow inputs take
+ * the referenced flow's declared vtype).
+ * @param {any} targetNode @param {string|null|undefined} handleId
+ */
+export function resolvedInputType(targetNode, handleId) {
+	if (!targetNode) return 'number';
+	if (targetNode.type === 'flowoutput') return 'any';
+	if (targetNode.type === 'objectflow') {
+		const graph = graphOf(targetNode.data?.flowUuid ?? '');
+		const decl = graph?.nodes.find(
+			(/** @type {any} */ n) => n.type === 'flowinput' && (n.data?.name ?? 'value') === handleId
+		);
+		return decl?.data?.vtype ?? 'number';
+	}
+	return inputType(targetNode.type, handleId);
+}
+
+/**
+ * Single-connection inputs (Blender/UE semantics): a NAMED value input holds at
+ * most one wire — connecting a new one REPLACES the old (the runtime only reads
+ * the first edge anyway). Multi-fan-IN stays for the effect channel (many
+ * animations into one Object Selector) and event inputs (many triggers into one
+ * Counter); fan-OUT from one output to many inputs is always unlimited.
+ * @param {any} connection the NEW connection being made
+ * @param {any[]} nodes @param {any[]} edges
+ * @returns {string[]} ids of existing edges the new wire replaces
+ */
+export function replaceableInputEdges(connection, nodes, edges) {
+	if (!connection?.targetHandle) return []; // unnamed handles = the effect channel
+	const target = nodes.find((n) => n.id === connection.target);
+	const type = resolvedInputType(target, connection.targetHandle);
+	if (type === 'effect' || type === 'event') return [];
+	return edges
+		.filter((e) => e.target === connection.target && e.targetHandle === connection.targetHandle)
+		.map((e) => e.id);
 }

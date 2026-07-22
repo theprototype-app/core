@@ -30,9 +30,13 @@ while one runs (HMR reloads the pages mid-test).
 port, and points the suite at it via the `APP_URL` env override (helpers.cjs reads it):
 
 ```powershell
-npm run dev -- --port 5177 --host      # from the worktree, background
+npx vite dev --port 5177 --strictPort --host   # from the worktree, background
 $env:APP_URL='https://theprototype.app:5177/'; npm run e2e -- <name>
 ```
+
+(`npx vite dev` directly — `npm run dev -- --port N` does NOT pass the flags
+through on this npm version: it parses them as npm config, vite gets `dev 5177`
+as a positional and binds a random free port over plain http.)
 
 Assigned ports: main checkout 5173 (the user's), lane-c 5174, lane-vr 5175,
 lane-ui 5176, lane-flow 5177. Two-peer suites still meet on the signaling server
@@ -52,7 +56,11 @@ palette, viewModeCtl, inputRuntime, shortcutsRegistry, themes, vrRadialMenu,
 vrPalette, vrWindowPoses, vrKeyboard, faceEdit, avatarModel, explorer, bottomDock,
 explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets, THREE,
 GLTFExporterModule, snapping, flowSockets, networkQuality, packs, customNodes,
-nodesHandler, nodeCatalog, objectMenu`. Naming trap: `__stores.viewMode` is the
+nodesHandler, nodeCatalog, objectMenu, flowGraphsCtl, objectFlow` (+ from the
+flowStore spread: `flowGraphs, activeGraphId, setActiveGraph, allNodes, allEdges,
+findNodeAnyGraph, SCENE_GRAPH`; `moduleSDK.pointerRayNow()` = the api.pointerRay
+internals, `moduleSDK.applyModuleMessage(msg)` = simulate a PEER's module message
+through the real applier path). Naming trap: `__stores.viewMode` is the
 STORE (from the sceneStore spread); the viewMode MODULE is `viewModeCtl` — a module
 key that shadows a same-named store silently breaks tests (#12 lesson). Also on the
 stores spread: `viewportMenuOpener` (Scene registers its context-menu opener here —
@@ -92,6 +100,23 @@ const value = await page.evaluate(() =>
 - Context menus render `role="menuitem"`; group items CONTAIN submenu text — anchored
   regex `/^Exact label$/` + `.last()` if needed.
 - Action toasts have buttons now — `getByRole('button', { name: 'Approve' })` etc.
+
+## Repo-external modules (theprototype-app/modules)
+
+Modules in the SEPARATE modules repo have no committed suite here (the suite must
+not depend on a sibling checkout) — verify them with a SCRATCH playwright script
+through the REAL install path (the untangle test-flight is the reference):
+
+```js
+await page.evaluate(() => window.__stores.modulesOpen.set(true));
+await page.getByRole('button', { name: 'User', exact: true }).click(); // the User tab
+await page.locator('#install-module-zip').setInputFiles(ZIP_PATH);     // hidden input — fine
+```
+
+Then assert the module's scene-root group / behavior, and simulate a PEER's ops via
+`__stores.moduleSDK.applyModuleMessage({type:'module', moduleId, ...})` (the real
+applier path, no cloud dependency). Fresh browser CONTEXT per run — installed user
+modules persist in storage.
 
 ## Two-peer flow (real replication)
 

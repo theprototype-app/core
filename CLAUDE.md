@@ -7,10 +7,16 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Architecture map
 
-- `src/stores/` — `appStore` (UI panels, userdata, peers instance, toasts+action-toasts,
-  modulesOpen), `sceneStore` (three refs: objectsGroup/TControls/camera/renderer,
-  selection, locks, VR incl. vrFlying/vrSnapAngle), `flowStore` (nodes/edges/cursors/
-  customNodeDefs/scriptErrors/sync flags).
+- `src/stores/` — `appStore` (UI panels, userdata, peers instance, toasts+action-toasts
+  + notification center stores, modulesOpen), `sceneStore` (three refs: objectsGroup/
+  TControls/camera/renderer, selection, locks, VR incl. vrFlying/vrSnapAngle),
+  `flowStore` (#13-H flow v2: **`flowGraphs` keyed `'scene'|objectUuid` is the source
+  of truth**; the legacy `flowNodes`/`flowEdges` are the ACTIVE graph's editor VIEW,
+  kept in sync by the mirror that lives HERE in the leaf store — `history.js` imports
+  `flowRuntime`, so the mirror can't sit behind a history-importing module; also
+  `activeGraphId`, whole-world reads `allNodes()`/`allEdges()` (nodes get a
+  runtime-only `__graph` tag), `findNodeAnyGraph`, `updateGraph`, restore/clear;
+  plus cursors/customNodeDefs/scriptErrors/sync flags).
 - `src/lib/peerHandler.svelte.js` — PeerConnection class; **all incoming messages**
   dispatch in `conn.on('data')`; `sendHandshake` fires **on connection open** and pushes
   locked/hosts/userdata/module versions/environment + requests full-state syncs
@@ -26,13 +32,32 @@ loadable play content. Everything a user does must be visible to connected peers
   create/delete/group/material/props/transformSet/verts/animimport/geometry/meshgeo;
   recording auto-muted while applying; 5 MB snapshot cap), `snapping`, `shortcuts`
   (registry = bindings AND Settings list),
-  `flowRuntime` (per-frame tick, baseState rebase, suspend/resume for gizmo drags,
-  `parkAnimatedAtBase` for serializers, module effects, script + sound nodes),
+  `flowRuntime` (per-frame tick over ALL graph documents; #13-H: an effect/physics/
+  sound/onclick node inside an OBJECT graph with no Object Selector implicitly targets
+  the graph's OWNER (explicit wiring wins); `graphInputs`/`graphOutputs` plumb embedded
+  Object Flow nodes — scene values inject same-tick, outputs harvest at tick end for
+  the NEXT tick (1-frame latency by design); multi-output values travel as a
+  `__handles` map unwrapped by `sourceHandle`; `keypress` nodes pulse via replicated
+  triggers (held keys re-stamp ~3/s); baseState rebase, suspend/resume for gizmo
+  drags, `parkAnimatedAtBase` for serializers, module effects, script + sound nodes),
+  `flowGraphs.js` (#13-H: object-flow LIFECYCLE — create/delete replicated as
+  `graphcreate`/`graphdelete`, the `'flowgraph'` history kind restores a deleted
+  document wholesale, `serializeGraphs` prunes orphans at SERIALIZATION ONLY so
+  undoing an object delete finds its flow intact) + `objectFlow.js` (#13-H5:
+  `interfaceOf` derives an embed's sockets from its Flow Input/Output nodes,
+  `pruneObjectFlowEdges` = the applier-side invariant on interface changes,
+  `removeEmbedsOf` on flow deletion, `addObjectFlowToScene` for the context menu),
   `soundRuntime` (sound-node panner chains, loop phase = synced clock), `scriptRuntime`
   + `customNodes` (replicated user node defs; #9: def range-params get input sockets,
-  `pruneCustomNodeEdges` drops edges to removed params deterministically), `nodesHandler`
-  + `nodeCatalog` (+nodesync drift heal), `flowSockets` (typed socket coercion + colors;
-  #9 `Socket.svelte` wraps the xyflow Handle and paints `typeColor` by socket type;
+  `pruneCustomNodeEdges` prunes across EVERY graph deterministically), `nodesHandler`
+  + `nodeCatalog` (#13-H: every applier/sender takes the target `graphId` — absent =
+  scene, legacy compat; the full-state `nodes` message carries a `graphs` map;
+  hash/nodesync cover all graphs), `flowSockets` (typed socket coercion + colors;
+  #9 `Socket.svelte` wraps the xyflow Handle and paints `typeColor` by socket type,
+  `forceType` for data-declared types; #13-H: `resolvedInputType` folds in the H5
+  cases — flow outputs are gray 'any', embed inputs take the referenced flow's
+  declared vtype; `replaceableInputEdges` = single-connection VALUE inputs, a new
+  wire replaces the old; effect/event inputs keep multi fan-in;
   audit + verdicts in committed `NODES.md`), `objectMenu` (#9: `buildObjectMenuItems` —
   ONE object context menu shared by Controls' direct menu + ViewportMenu's "Selected"
   submenu; #12: selection-aware — counted labels act on the SET, Group selection,
@@ -296,9 +321,32 @@ loadable play content. Everything a user does must be visible to connected peers
   dev server; the dev 500 shows as the DOCUMENT returning 500 (stack only in the dev
   terminal). vrControls must NOT statically import peerHandler — put shared peer logic
   in a store-only module (peerApproval.js imports appStore only), 211.
+- **The TDZ-cycle family around history.js**: `history.js` statically imports
+  `flowRuntime`, so anything flowRuntime imports must not reach history/shortcuts
+  statically — a flowRuntime → inputRuntime edge closed
+  history→flowRuntime→inputRuntime→shortcuts→history and broke the SSR prerender
+  with `Cannot access 'kindHandlers' before initialization` (#13-H3). Same cure as
+  moduleSDK: PRIMED dynamic imports. Any module whose BODY calls
+  `registerHistoryKind` (flowGraphs.js, joints.js) must never be reachable from
+  history's own import subtree.
+- **Node cards (flow editor)**: NodeWrapper's slot is a flex ROW — multiple sibling
+  fields squeeze side-by-side into the ~150px card (three-letter inputs); wrap card
+  content in ONE `flex w-full flex-col`. Its content div is also `relative p-3`, so
+  absolutely-positioned Handles inside the slot anchor to the PADDED box, not the
+  card edge — dynamic per-socket handles use per-ROW relative wrappers with `-mx-3
+  px-3` (cancels the padding) + `style="top:50%"` so handles sit ON the card edge,
+  centered on their label (ObjectFlowNode is the reference).
+- **Autosave restore re-uuid'd every object** (GLTFLoader assigns new uuids on
+  parse) — anything uuid-keyed silently orphaned (object flows, annotations).
+  autosave now stamps `userData.__uuid` at export (GLTF extras round-trip it) and
+  re-assigns originals in restoreSnapshot BEFORE adding/re-broadcasting. sessions.js
+  never had this (toJSON/ObjectLoader keeps uuids). Any new GLTF round-trip needs
+  the same stamp.
 - `selectedObject` is `writable([])` and KEEPS the last object after deselect (the
   desktop outline relies on it) — "has selection" checks need `?.uuid`, and the
-  init value is a truthy empty array.
+  init value is a truthy empty array. `deselectObject()` clears ONLY the
+  `selectedObjects` SET — anything that must react to deselection (the flow editor's
+  scope-follows-selection) watches the SET, never `selectedObject` (#13-H bit this).
 - The Bash tool's `cd` leaks into the shared shell cwd — `Set-Location` back to the
   repo root before PowerShell git/npm calls.
 - **Connect dance (#12 fix)**: the host CLOSES the joiner's original conn pre-approval;
@@ -371,11 +419,37 @@ override for e2e — never share 5173 (the user's main-checkout server).
   `theprototype-app/core` (origin updated); infra (the peerjs/TURN Terraform, was
   docs/tf) = `theprototype-app/infra` (own git repo, tfstate/tfvars/.env NEVER
   committed — state holds the TURN password); user docs = the theprototype-docs
-  checkout; PRIVATE cloud tier = `C:\Users\white\.code\AlexZ005\theprototype.app-cloud`
+  checkout; optional/community modules = `theprototype-app/modules` (local:
+  `C:\Users\white\.code\AlexZ005\theprototype.app-modules` — one folder per module,
+  zip-installable, flow-toolkit + untangle); PRIVATE cloud tier =
+  `C:\Users\white\.code\AlexZ005\theprototype.app-cloud`
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
-- Status (2026-07-21): **Roadmap #13 IN FLIGHT** — plan docs/plan/
+- Status (2026-07-22): **Batch H (flow v2) MERGED to main = PR #36** — TRUE
+  per-object graph documents (H1), object-flows-as-scene-nodes w/ Flow Input/Output
+  declared sockets (H5), api.registerNodeDefs (H2), Key Press trigger node (H3), plus
+  user-driven follow-ups: scope-follows-the-selectedObjects-SET deselect fix, the
+  autosave uuid-preservation fix (pre-existing: GLTF restore re-uuid'd objects and
+  orphaned annotations too), Object Flow card labeled stretching sockets +
+  dblclick-opens-flow, FlowIONode column layout + type-aware fallbacks (type change
+  resets fallback), gray any-type flow-output sockets, wired params render the LIVE
+  incoming value instead of their slider (flowValues lookup — free), single-connection
+  value inputs w/ replace-on-connect (effect/event inputs keep multi fan-in), and
+  self-embed blocked in the Object Flow picker (cycles can't hang — 1-frame latency +
+  path guards — but a self-feedback card is confusing). **PR #37 MERGED**:
+  api.pointerRay. **190 untangle SHIPPED as-built** in theprototype-app/modules
+  (plan → done/190, deps rewritten: no synth API needed — modules use WebAudio
+  directly; the grab hook became pointerRay); verified via a scratch playwright
+  test-flight ALL 8 PASS incl. REAL manager zip install (Modules ▸ User tab ▸
+  `#install-module-zip` + setInputFiles) and real mouse pick/carry/drop. Suites:
+  flow-object-graphs(20)/flow-object-embed(14)/flow-input-moddefs(7)/
+  autosave-object-flows(6)/sdk-pointer-ray(4). svelte-check now **499/77** (new
+  baseline — hold it). PRs OPEN (user checking): #33 I UI-fixes, #34 D VR-fix-pack.
+  REMAINING in this lane: H4 car-as-nodes (after #33/#34 land, VR lane continues
+  F → K). path-node's patrol-drift e2e failure is a PRE-EXISTING machine-saturation
+  flake (reproduces on main).
+  --- Earlier — Status (2026-07-21): **Roadmap #13 IN FLIGHT** — plan docs/plan/
   roadmap-13-rooms-graphs-polish.md. MERGED to main: #28 (roadmaps 10+11 AI),
   #29 (roadmap 12), #30 A UI-chrome, #31 B viewport/camera (default FOV 40, N8AO
   HiDPI ghost fix, grid fade scales), #32 E notification center (notifications/
@@ -473,9 +547,22 @@ snapshot {codes, axes, vrButtons}, onInput down/up events, claimInput/releaseInp
 api.physics.{isInitiator, applyImpulse, setJointMotor, joints()} (mutations are
 INITIATOR-ONLY: forward inputs via api.send and let the stepping peer apply — the car
 module is the worked recipe, pong's paddle pattern); **possess/releasePossess**
-(tank-controls drive + follow camera; possessing = selecting). A module KIND that
-must agree across peers derives from the replicated object NAME, never locally-set
-userData (essentials + car). User modules (zip/URL via the manager) must be
-self-contained — no imports; guide in `MODULES.md` + `docs/sdk/`. Script nodes run
-arbitrary replicated code deterministically (pure function of object/base/data/time)
-— never stream outputs.
+(tank-controls drive + follow camera; possessing = selecting). #13 additions:
+**registerNodeDefs(defs)** (H2) — ship CODE-EDITABLE nodes: each {key, name, params,
+code} lands in the replicated customNodeDefs store as `mod-<moduleId>-<key>`
+(NodeDesigner-editable; seeding is ABSENT-ONLY so user edits survive reloads);
+**pointerRay()** (190/PR#37) — a world-space THREE.Raycaster for wherever the user
+points (desktop mouse NDC / VR pointer hand via vrControls.pointerHandRay,
+handedness-resolved; FRESH instance per call; null before the first pointer event);
+the drag recipe = click to pick → follow pointerRay() in a frame task → click to
+drop. A module KIND that must agree across peers derives from the replicated object
+NAME, never locally-set userData (essentials + car). User modules (zip/URL via the
+manager) must be self-contained — no imports; guide in `MODULES.md` + `docs/sdk/`.
+OPTIONAL/community modules live in the separate `theprototype-app/modules` monorepo
+(local: `C:\Users\white\.code\AlexZ005\theprototype.app-modules`; one folder per
+module + zip recipe; `flow-toolkit` = registerNodeDefs reference, `untangle` = the
+190 game test-flight: seed-deterministic solvable puzzles, pointerRay drag, throttled
+drag previews + authoritative move, LOCKSTEP win/level advance with NO win message —
+same positions → same result on every peer). Script nodes run arbitrary replicated
+code deterministically (pure function of object/base/data/time) — never stream
+outputs.

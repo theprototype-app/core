@@ -98,6 +98,23 @@ its face groups AND the terrain sculpt weld map — a stale cache after undo/rem
 corrupted gestures once). Live reshape gestures stream throttled previews (~5/s) and
 commit ONE snapshot + undo entry on release.
 
+**Flow graphs are PER-OBJECT documents** (#13-H): `flowGraphs` keyed
+`'scene' | objectUuid` is the source of truth; `flowNodes/flowEdges` are only the
+ACTIVE graph's editor view. Anything touching nodes must (a) tag its messages with
+`graphId` (absent = scene, legacy compat) and route appliers through
+`updateGraph(graphId, fn)`, (b) READ the whole world via `allNodes()`/`allEdges()`
+(nodes carry a runtime-only `__graph` tag) or `findNodeAnyGraph`, never
+`get(flowNodes)`, and (c) keep the applier-side PRUNE INVARIANTS deterministic —
+`pruneCustomNodeEdges` (def param removed) and `pruneObjectFlowEdges` (Flow
+Input/Output renamed/deleted) run identically on every peer from converged state,
+never broadcast. Graph lifecycle replicates as `graphcreate`/`graphdelete` +
+the `'flowgraph'` history kind (undo of delete restores the whole document);
+inside an object graph, effect/physics/sound/onclick nodes with no Object Selector
+implicitly target the OWNER. Named VALUE inputs are single-connection (a new wire
+replaces the old via `replaceableInputEdges`); effect/event inputs keep multi
+fan-in; local input (keyboard) enters the graph ONLY as replicated trigger stamps
+(`keypress` node = the button-module pattern, held keys re-stamp).
+
 ## Adding a VR panel (the follower-window pattern)
 
 Copy VRSettingsPanel/VRPropertiesPanel/VRChatPanel: (a) a Svelte component with named
@@ -140,10 +157,20 @@ dynamic imports in moduleSDK — static edges close TDZ cycles): **input** —
 — `api.physics.{isInitiator, applyImpulse, setJointMotor, joints()}` (mutations
 initiator-only — forward inputs, see the authoritative car recipe above);
 **possess** — `possess(uuid, {camera:'chase'|'orbit'|'none'})`/`releasePossess()`
-(possessing = selecting = the lock; ONE undo per ride). A module KIND peers must
-agree on derives from the replicated object NAME (car's 'Carbody'), never
-locally-set userData. Worked examples: `src/modules/essentials/` (interactables) +
-`src/modules/car/` (physics + input + claims).
+(possessing = selecting = the lock; ONE undo per ride). #13 additions:
+**registerNodeDefs(defs)** — code-editable nodes shipped with the module (land in
+the replicated customNodeDefs as `mod-<moduleId>-<key>`, NodeDesigner-editable,
+ABSENT-ONLY seeding so user edits survive reloads); **pointerRay()** — a FRESH
+world-space Raycaster for wherever the user points (desktop mouse / VR pointer
+hand); drag recipe: click to pick → follow pointerRay() in a frame task → click to
+drop. A module KIND peers must agree on derives from the replicated object NAME
+(car's 'Carbody'), never locally-set userData. Worked examples:
+`src/modules/essentials/` (interactables), `src/modules/car/` (physics + input +
+claims), and in the SEPARATE `theprototype-app/modules` repo: `flow-toolkit`
+(registerNodeDefs) + **`untangle`** (a full GAME: seed-deterministic solvable
+puzzles — determinism IS the netcode, pointerRay drag with throttled `drag`
+previews + one authoritative `move`, LOCKSTEP win/level advance with NO win message
+because every peer computes the same result, self-synthesized WebAudio).
 
 Version trust: peers exchange `[{id, version}]` on connect and toast on mismatch
 (advisory). Module viewport content = scene-root group rebuilt from state (see rule 5);

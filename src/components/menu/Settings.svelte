@@ -890,10 +890,22 @@
 					<p class={middlecoverDescription}><a href="https://alexz005.github.io/theprototype">https://alexz005.github.io/theprototype</a></p>
 				</div>
 				<div class="flex setting-row">
-					<p class={bottomCoverName}>
+					<p class={middlecoverName}>
 						Source Code
 					</p>
-					<p class={bottomCoverDescription}><a href="https://github.com/AlexZ005/theprototype.app" target="_blank">https://github.com/AlexZ005/theprototype.app</a></p>
+					<p class={middlecoverDescription}><a href="https://github.com/theprototype-app/core" target="_blank">github.com/theprototype-app/core</a></p>
+				</div>
+				<div class="flex setting-row">
+					<p class={middlecoverName}>
+						Modules
+					</p>
+					<p class={middlecoverDescription}><a href="https://github.com/theprototype-app/modules" target="_blank">github.com/theprototype-app/modules</a></p>
+				</div>
+				<div class="flex setting-row">
+					<p class={bottomCoverName}>
+						Docs
+					</p>
+					<p class={bottomCoverDescription}><a href="https://github.com/theprototype-app/docs" target="_blank">github.com/theprototype-app/docs</a></p>
 				</div>
 
 			</AccordionItem>

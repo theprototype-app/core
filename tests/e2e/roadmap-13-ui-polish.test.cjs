@@ -16,6 +16,7 @@
 //   I5  the Connect pill shows the resolved signaling server (dot + label), and the
 //       label flips to "public (fallback)" when the self-hosted server is unreachable
 //   +   the logo-menu Docs link opens docs.theprototype.app
+//   +   Settings ▸ About links point at the theprototype-app org (core/modules/docs)
 // A2 folded into I1/I3. A4/A5 (narrow-width drawer + settings row stacking) and A7
 // (local first-run warning, hostname+localStorage gated — off on the .app domain) are
 // CSS/heuristic and verified manually / by build; not asserted here.
@@ -184,6 +185,25 @@ h.run(async () => {
 	const docUrl = await A.page.evaluate(() => window.__lastOpen);
 	h.check(docUrl === 'https://docs.theprototype.app', 'Docs menu link -> docs.theprototype.app (' + docUrl + ')');
 	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
+
+	// --- Settings ▸ About links point at the theprototype-app org ------------
+	await A.page.evaluate(() => {
+		window.__stores.settingsSection.set('about');
+		window.__stores.settingsOpen.set(true);
+	});
+	await A.page.waitForTimeout(300);
+	await A.page
+		.getByRole('button', { name: 'About', exact: true })
+		.click()
+		.catch(() => {});
+	await A.page.waitForTimeout(200);
+	const aboutLinks = await A.page.evaluate(() =>
+		Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
+	);
+	h.check(aboutLinks.includes('https://github.com/theprototype-app/core'), 'About: Source Code -> core repo');
+	h.check(aboutLinks.includes('https://github.com/theprototype-app/modules'), 'About: Modules -> modules repo');
+	h.check(aboutLinks.includes('https://github.com/theprototype-app/docs'), 'About: Docs -> docs repo');
+	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 
 	// --- A1: the pill has no ✕ close button ----------------------------------
 	// the pill only shows while the full window is hidden — close it first

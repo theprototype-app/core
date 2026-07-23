@@ -4,6 +4,8 @@
 	import { onMount } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus } from '$lib/peerServer';
+	import { connectSlot } from '$lib/cloudHooks';
+	import CloudSlot from '../CloudSlot.svelte';
 
 	let peerIdToConnect;
 	let displayid = $state('Generating...');
@@ -162,6 +164,12 @@ const connectToPeer = (peerIdToConnect) => {
 				>Connect</Button
 			>
 		</div>
+		<!-- open-core (M1d): cloud plugin mount point (login / Browse Rooms). Empty in
+			 the OSS build; the cloud plugin fills it via cloudApi.mountConnect(). -->
+		{#if $connectSlot}
+			<span class="connect-divider"></span>
+			<CloudSlot mount={$connectSlot} />
+		{/if}
 	</div>
 </div>
 

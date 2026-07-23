@@ -24,6 +24,8 @@
 	import { peerQuality } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
 	import NotificationCenter from './NotificationCenter.svelte';
+	import CloudSlot from '../CloudSlot.svelte';
+	import { usersSlot } from '$lib/cloudHooks';
 
 	// N3: latency-band dot color for a peer's network-quality indicator
 	const qColor = (level: string) =>
@@ -195,6 +197,13 @@
 						{/if}
 					</div>
 				{/each}
+				<!-- open-core (M1d): cloud plugin roles section. Empty in the OSS
+					 build; the cloud plugin fills it via cloudApi.mountUsersSection(). -->
+				{#if $usersSlot}
+					<div class="mt-1 border-t border-gray-700/60 pt-1">
+						<CloudSlot mount={$usersSlot} />
+					</div>
+				{/if}
 			</div>
 		{/if}
 	</div>

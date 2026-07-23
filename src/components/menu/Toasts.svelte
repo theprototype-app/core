@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels } from '../../stores/appStore'
+    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
@@ -184,29 +184,34 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 </div>
 {/if}
 
-{#if (typeof localStorage !== 'undefined' && !localStorage.getItem('hasSeenDisclaimer'))}
+<!-- First-run info banner. Content comes from the `appNotice` store: the OSS build
+     shows a "local version" notice; the cloud plugin (VITE_CLOUD_PLUGIN) can clear
+     it (appNotice.set(null)) or rebrand it. Dismissed once via hasSeenDisclaimer. -->
+{#if $appNotice && typeof localStorage !== 'undefined' && !localStorage.getItem('hasSeenDisclaimer')}
 <div class="my-1">
-    <Toast  transition={fly} class="p-2 rounded-lg dark:bg-red-300 dark:border-dark-700 border-2 border-red-500" divClass="flex items-center gap-3" on:close={() => 
+    <Toast  transition={fly} class="p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-blue-500" divClass="flex items-center gap-3" on:close={() =>
         { localStorage.setItem('hasSeenDisclaimer', 'true'); }
         }>
         <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
-    
+
         </div>
         <div class="mb-1 text-base font-medium text-black-700 dark:text-brack-500 inline-flex items-center">
-            
-            <p class="text-sm font-medium text-gray-500 dark:text-gray-800 pr-4 overflow-hidden max-w-80">
-                This is an alpha release.<br />
+
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-200 pr-4 overflow-hidden max-w-80">
+                {$appNotice.text}<br />
             </p>
+            {#if $appNotice.ctaUrl}
             <Button
             color="primary"
             class="nob rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
             onclick={() => {
-                window.open('https://github.com/users/AlexZ005/projects/2', '_blank');
+                window.open($appNotice.ctaUrl, '_blank');
             }}
-            >Roadmap</Button
+            >{$appNotice.ctaLabel || 'Learn more'}</Button
         >
+            {/if}
         </div>
-    
+
     </Toast>
     </div>
 {/if}

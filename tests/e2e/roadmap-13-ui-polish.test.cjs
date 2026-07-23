@@ -17,6 +17,8 @@
 //       label flips to "public (fallback)" when the self-hosted server is unreachable
 //   +   the logo-menu Docs link opens docs.theprototype.app
 //   +   Settings ▸ About links point at the theprototype-app org (core/modules/docs)
+//   +   the first-run banner is driven by the `appNotice` store (OSS "local version"
+//       notice; the cloud plugin can rebrand or remove it via appNotice.set(null))
 // A2 folded into I1/I3. A4/A5 (narrow-width drawer + settings row stacking) and A7
 // (local first-run warning, hostname+localStorage gated — off on the .app domain) are
 // CSS/heuristic and verified manually / by build; not asserted here.
@@ -204,6 +206,37 @@ h.run(async () => {
 	h.check(aboutLinks.includes('https://github.com/theprototype-app/modules'), 'About: Modules -> modules repo');
 	h.check(aboutLinks.includes('https://github.com/theprototype-app/docs'), 'About: Docs -> docs repo');
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+
+	// --- first-run notice is driven by appNotice (cloud plugin can override) --
+	// OSS default is a "local version" notice; the cloud plugin can rebrand it or
+	// remove it entirely via appNotice.set(null).
+	await A.page.evaluate(() => {
+		localStorage.removeItem('hasSeenDisclaimer'); // let the first-run banner show
+		window.__stores.appNotice.set({
+			text: 'You are running the local, open-source version of theprototype.',
+			ctaLabel: 'Source',
+			ctaUrl: 'https://github.com/theprototype-app/core'
+		});
+	});
+	await A.page.waitForTimeout(250);
+	const noticeVisible = await A.page
+		.getByText('local, open-source version', { exact: false })
+		.first()
+		.isVisible()
+		.catch(() => false);
+	h.check(noticeVisible, 'first-run notice shows the appNotice text (local version)');
+	h.check(
+		(await A.page.getByText('This is an alpha release', { exact: false }).count()) === 0,
+		'the old "alpha release" toast is gone'
+	);
+	// cloud plugin removes the banner
+	await A.page.evaluate(() => window.__stores.appNotice.set(null));
+	await A.page.waitForTimeout(200);
+	h.check(
+		(await A.page.getByText('local, open-source version', { exact: false }).count()) === 0,
+		'appNotice.set(null) removes the banner (cloud override seam)'
+	);
+	await A.page.evaluate(() => localStorage.setItem('hasSeenDisclaimer', 'true'));
 
 	// --- A1: the pill has no ✕ close button ----------------------------------
 	// the pill only shows while the full window is hidden — close it first

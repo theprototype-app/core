@@ -141,7 +141,12 @@ function shadowCatcher(scene, create) {
 	if (!disc && create) {
 		disc = new THREE.Mesh(
 			new THREE.CircleGeometry(1, 48),
-			new THREE.ShadowMaterial({ opacity: 0.32, transparent: true })
+			// depthWrite:false keeps the flat disc OUT of the depth buffer that the
+			// N8AO post-pass samples. Otherwise AO treats the scene-span disc (just
+			// under the grid) as a solid occluding surface and paints it as a dark
+			// circle at the scene centre on far dolly-out (the "far-zoom circle").
+			// ShadowMaterial still receives + blends the sun's shadow without it.
+			new THREE.ShadowMaterial({ opacity: 0.32, transparent: true, depthWrite: false })
 		);
 		disc.name = CATCHER;
 		disc.rotation.x = -Math.PI / 2;

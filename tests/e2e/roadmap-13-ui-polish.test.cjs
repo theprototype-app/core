@@ -10,8 +10,9 @@
 //       AI at bottom-4 (chat parity)
 //   I3  the AI HUD button ALWAYS renders; unconfigured, clicking opens Settings ▸ AI;
 //       configured, it opens the chat window
-//   I4  the far-zoom grid fade SNAPS to its target (no multi-frame lerp ramp that
-//       swept a flashing fade ring during camera movement)
+//   I4  the far-zoom "circle": (a) the grid fade SNAPS to its target (no multi-frame
+//       lerp ramp), and (b) the shadow-catcher disc has depthWrite:false so N8AO no
+//       longer paints it as a dark disc at the scene centre on far dolly-out
 //   I5  the Connect pill shows the resolved signaling server (dot + label), and the
 //       label flips to "public (fallback)" when the self-hosted server is unreachable
 // A2 folded into I1/I3. A4/A5 (narrow-width drawer + settings row stacking) and A7
@@ -150,6 +151,23 @@ h.run(async () => {
 	const f2 = await readFade();
 	h.check(f1 != null && f1 > 500, 'I4: grid fade tracks far zoom (' + Math.round(f1) + ')');
 	h.check(f1 != null && f2 != null && Math.abs(f2 - f1) < f1 * 0.05, 'I4: grid fade snaps — no multi-frame ramp (Δ ' + Math.round(Math.abs(f2 - f1)) + ')');
+
+	// --- I4 (disc): the shadow catcher is kept OUT of the N8AO depth buffer ---
+	// so AO can't paint the scene-span disc as a dark "far-zoom circle". The disc
+	// still receives shadows (depthWrite only affects the depth buffer AO samples).
+	const catcherDepthWrite = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.__stores.globalScene.subscribe((sc) => {
+					let dw = 'missing';
+					sc?.traverse((o) => {
+						if (o.name === 'env-shadow-catcher') dw = o.material && o.material.depthWrite;
+					});
+					resolve(dw);
+				})();
+			})
+	);
+	h.check(catcherDepthWrite === false, 'I4: shadow catcher has depthWrite:false (no AO far-zoom disc)');
 
 	// --- A1: the pill has no ✕ close button ----------------------------------
 	// the pill only shows while the full window is hidden — close it first

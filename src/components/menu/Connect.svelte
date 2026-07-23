@@ -3,6 +3,7 @@
 	import { Input, Button } from 'flowbite-svelte';
 	import { onMount } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
+	import { peerServerStatus } from '$lib/peerServer';
 
 	let peerIdToConnect;
 	let displayid = $state('Generating...');
@@ -10,6 +11,35 @@
 
 	$effect(() => {
 		myidcap = displayid === 'Generating...' ? displayid : displayid.toUpperCase();
+	});
+
+	// I5: compact indicator of the RESOLVED signaling server, so users can tell which
+	// world they're in (a wrong server = share links that never connect). Reads the
+	// store peerHandler updates on peer creation + on fallback to the public cloud.
+	const srv = $derived($peerServerStatus);
+	const srvLabel = $derived(srv ? (srv.didFallback ? 'public (fallback)' : srv.label) : '');
+	const srvTitle = $derived(
+		!srv
+			? ''
+			: srv.didFallback
+				? 'Self-hosted peer server unreachable — connected via the public PeerJS cloud'
+				: `Signaling server: ${srv.host}${srv.port && srv.port !== 443 ? ':' + srv.port : ''}${srv.path && srv.path !== '/' ? srv.path : ''}`
+	);
+	const srvDot = $derived.by(() => {
+		if (!srv) return '#6b7280';
+		if (srv.didFallback) return '#f59e0b'; // amber — degraded/fallback
+		switch (srv.kind) {
+			case 'self-hosted':
+				return '#22c55e'; // green
+			case 'custom':
+				return '#8b5cf6'; // violet
+			case 'public':
+				return '#3b82f6'; // blue
+			case 'local':
+				return '#9ca3af'; // gray
+			default:
+				return '#6b7280';
+		}
 	});
 
 	function updateDisplayId(id) {
@@ -107,6 +137,14 @@ const connectToPeer = (peerIdToConnect) => {
 			on:click={copy}
 			title="Copy your invite link"><span style="white-space: nowrap;">&#x1f4cb; {myidcap}</span></Button
 		>
+		<!-- I5: resolved signaling-server indicator (dot + short label, full host in
+			 the tooltip). Non-interactive; stays one line + truncates on the narrow bar. -->
+		{#if srv}
+			<span class="srv-indicator" title={srvTitle} data-testid="peer-server-indicator" data-kind={srv.didFallback ? 'fallback' : srv.kind}>
+				<span class="srv-dot" style="background:{srvDot}"></span>
+				<span class="srv-label">{srvLabel}</span>
+			</span>
+		{/if}
 		<span class="connect-divider"></span>
 		<!-- connect to a peer — the input shrinks (down to cx-input min-width) so the
 			 Connect button stays visible when the row is tight; the button never shrinks -->
@@ -168,6 +206,31 @@ const connectToPeer = (peerIdToConnect) => {
 		align-self: stretch;
 		margin: 2px 0;
 		background: rgb(255 255 255 / 0.12);
+	}
+	/* resolved signaling-server indicator: dot + short label. Shrinks (truncates the
+	   label) before the connect input so the pill/bar stays one line. */
+	.srv-indicator {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		min-width: 0;
+		flex: 0 1 auto;
+		font-size: 11px;
+		line-height: 1;
+		color: var(--color-text-muted, rgb(209 213 219 / 0.9));
+		cursor: default;
+	}
+	.srv-dot {
+		width: 8px;
+		height: 8px;
+		flex: 0 0 auto;
+		border-radius: 9999px;
+		box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25);
+	}
+	.srv-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	/* Connect stays on the top row; the logo + peers/profile chrome drops to a second
 	   row on narrow screens (Sidebar/Users media queries). When space is too tight for

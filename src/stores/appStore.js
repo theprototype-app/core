@@ -138,6 +138,22 @@ export const waitingForApproval = writable([]);
 /** @type {import('svelte/store').Writable<any[]>} strings or {text, actions} */
 export const toastStore = writable([]);
 
+/**
+ * First-run info banner (Toasts.svelte), dismissed once via the `hasSeenDisclaimer`
+ * flag. The OSS default tells users they're on the free, self-hosted/local build.
+ *
+ * This is the open-core seam (roadmap #13 batch M): the cloud plugin loaded via
+ * `VITE_CLOUD_PLUGIN` can `appNotice.set(null)` to remove the banner, or set its own
+ * `{ text, ctaLabel?, ctaUrl? }` to rebrand it — the OSS build never has to know
+ * about the cloud. `null` => no banner.
+ * @type {import('svelte/store').Writable<{ text: string, ctaLabel?: string, ctaUrl?: string } | null>}
+ */
+export const appNotice = writable({
+	text: 'You are running the local, open-source version of theprototype.',
+	ctaLabel: 'Source',
+	ctaUrl: 'https://github.com/theprototype-app/core'
+});
+
 // modules manager modal
 export const modulesOpen = writable(false);
 

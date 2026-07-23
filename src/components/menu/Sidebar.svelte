@@ -157,7 +157,7 @@
 		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
 			<span class="side-ico">⚙️</span><span class="flex-1 whitespace-nowrap">Settings</span>
 		</button>
-		<button class="side-row" onclick={() => window.open('https://github.com/AlexZ005/theprototype.app/wiki', '_blank')}>
+		<button class="side-row" onclick={() => window.open('https://docs.theprototype.app', '_blank')}>
 			<span class="side-ico">📖</span><span class="flex-1 whitespace-nowrap">Docs</span>
 		</button>
 	</nav>

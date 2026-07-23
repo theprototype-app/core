@@ -15,6 +15,7 @@
 //       longer paints it as a dark disc at the scene centre on far dolly-out
 //   I5  the Connect pill shows the resolved signaling server (dot + label), and the
 //       label flips to "public (fallback)" when the self-hosted server is unreachable
+//   +   the logo-menu Docs link opens docs.theprototype.app
 // A2 folded into I1/I3. A4/A5 (narrow-width drawer + settings row stacking) and A7
 // (local first-run warning, hostname+localStorage gated — off on the .app domain) are
 // CSS/heuristic and verified manually / by build; not asserted here.
@@ -168,6 +169,21 @@ h.run(async () => {
 			})
 	);
 	h.check(catcherDepthWrite === false, 'I4: shadow catcher has depthWrite:false (no AO far-zoom disc)');
+
+	// --- Docs menu link points at docs.theprototype.app ----------------------
+	await A.page.evaluate(() => {
+		window.__lastOpen = null;
+		window.open = (u) => {
+			window.__lastOpen = u;
+			return null;
+		};
+		window.__stores.closeMenu.set(false); // open the logo/burger menu
+	});
+	await A.page.waitForTimeout(200);
+	await A.page.getByRole('button', { name: 'Docs' }).click();
+	const docUrl = await A.page.evaluate(() => window.__lastOpen);
+	h.check(docUrl === 'https://docs.theprototype.app', 'Docs menu link -> docs.theprototype.app (' + docUrl + ')');
+	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
 
 	// --- A1: the pill has no ✕ close button ----------------------------------
 	// the pill only shows while the full window is hidden — close it first

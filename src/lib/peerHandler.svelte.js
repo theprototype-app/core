@@ -11,6 +11,7 @@ import { applyVerts } from '$lib/meshEdit';
 import { applyMeshGeo } from '$lib/faceEdit';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus } from '$lib/peerServer';
+import { canApply, getAuthProvider, dispatchCloudMessage } from '$lib/cloudHooks';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
@@ -189,6 +190,18 @@ export class PeerConnection {
 			const users = get(userdata);
 			let found = users.some(element => element[0] === conn.peer);
 
+			// M1b (open-core): a cloud auth provider may pre-approve a known /
+			// authenticated peer, skipping the manual Approve. Default — no provider
+			// — keeps the whitelist + approval flow byte-identical.
+			if (!found) {
+				const auth = getAuthProvider();
+				try {
+					if (auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer)) found = true;
+				} catch (e) {
+					console.error('cloud auth provider threw:', e);
+				}
+			}
+
 			if (!found) {
 				// If peer is not found, add it to the pending approvals
 				var approvals = get(pendingApprovals);
@@ -222,8 +235,15 @@ export class PeerConnection {
 		/** @this {any} @param {any} conn */
 		function handleData(conn) {
 			conn.on('data', (data) => {
+				// M1a (open-core): the ONE receive-side capability gate. Default allows
+				// everything (byte-identical OSS behavior); a cloud plugin's provider
+				// drops disallowed message types from a peer (e.g. a viewer's mutations).
+				if (data && !canApply(conn.peer, data.type)) return;
 				// console.log(data);
-				if(data.type == 'hosts') {
+				if(data.type == 'cloud') {
+					// open-core (M1): the cloud plugin's own replicated channel
+					dispatchCloudMessage(conn.peer, data.payload);
+				} else if(data.type == 'hosts') {
 					console.log('Connecting to received hosts');
 					data.hosts.forEach( id =>
 					{

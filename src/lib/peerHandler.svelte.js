@@ -11,7 +11,7 @@ import { applyVerts } from '$lib/meshEdit';
 import { applyMeshGeo } from '$lib/faceEdit';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus } from '$lib/peerServer';
-import { canApply, getAuthProvider } from '$lib/cloudHooks';
+import { canApply, getAuthProvider, dispatchCloudMessage } from '$lib/cloudHooks';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
@@ -240,7 +240,10 @@ export class PeerConnection {
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
 				if (data && !canApply(conn.peer, data.type)) return;
 				// console.log(data);
-				if(data.type == 'hosts') {
+				if(data.type == 'cloud') {
+					// open-core (M1): the cloud plugin's own replicated channel
+					dispatchCloudMessage(conn.peer, data.payload);
+				} else if(data.type == 'hosts') {
 					console.log('Connecting to received hosts');
 					data.hosts.forEach( id =>
 					{

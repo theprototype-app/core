@@ -45,6 +45,10 @@ export function register(api) {
   // Context
   api.getPeers()                   // the live PeerConnection (or null pre-connect)
 
+  // Plugin message channel (replicate the plugin's OWN state across the mesh)
+  api.sendCloud(payload)           // broadcast { type:'cloud', payload } to peers
+  api.onCloudMessage((peerId, payload) => …)  // receive them
+
   // UI mount points — mount fn: (el) => cleanup
   api.mountConnect(fn)             // into the Connect pill (login / Browse Rooms)
   api.mountUsersSection(fn)        // into the Users popover (roles)
@@ -81,6 +85,11 @@ Default (no provider) keeps the whitelist + approval flow byte-identical. `autho
 is a synchronous lookup against state the plugin maintains from its own async login.
 
 ### 3. UI mount points
+
+Roles replicate over the **plugin message channel**: an admin broadcasts the roles
+map with `sendCloud(payload)`; every peer's plugin applies it via `onCloudMessage`
+and updates its capability provider. Core routes `{ type:'cloud', payload }` and
+never gates it (it's in the always-allowed floor), so role updates always arrive.
 
 `mountConnect` / `mountUsersSection` hand the plugin a DOM node (via
 [CloudSlot.svelte](src/components/CloudSlot.svelte)) and an optional cleanup fn, so a

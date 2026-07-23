@@ -50,6 +50,16 @@ h.run(async () => {
 	// M1c/M1d: the plugin mounted a login button into the Connect slot
 	h.check(await A.page.locator('#cloud-login-btn').first().isVisible(), 'M1c/M1d: plugin UI mounts in the Connect slot');
 
+	// M1: plugin message channel — core routes an inbound {type:'cloud'} to the
+	// plugin's onCloudMessage handler (roles/room replication rides this).
+	const gotMsg = await A.page.evaluate(() => {
+		window.__cloudLastMessage = null;
+		window.__stores.cloudHooks.dispatchCloudMessage('peerZ', { role: 'viewer', n: 7 });
+		const m = window.__cloudLastMessage;
+		return m && m.peerId === 'peerZ' && m.payload && m.payload.n === 7;
+	});
+	h.check(gotMsg === true, 'M1: plugin receives cloud messages via onCloudMessage');
+
 	// the plugin rebranded the first-run notice
 	const notice = await A.page.evaluate(
 		() => new Promise((r) => window.__stores.appNotice.subscribe((v) => r(v))())

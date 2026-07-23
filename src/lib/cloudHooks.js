@@ -21,6 +21,7 @@ import { writable } from 'svelte/store';
 const ALWAYS_ALLOWED = new Set([
 	'hosts', // mesh peer discovery
 	'userdata', // whitelist sync
+	'cloud', // the plugin's OWN control channel (roles, room announces) — never gate it
 	'locked', // lock-state restore on handshake
 	// late-joiner full-state REQUESTS (answering them is how a peer ever syncs)
 	'getobjects',
@@ -86,6 +87,32 @@ export function setAuthProvider(provider) {
 /** @returns {any} the installed auth provider, or null */
 export function getAuthProvider() {
 	return authProvider;
+}
+
+// --- Plugin message channel --------------------------------------------------
+//
+// The plugin is a separate build with no access to the engine's stores, so this is
+// its ONLY way to replicate its own state across the mesh (roles, room announces).
+// Core routes inbound `{ type: 'cloud', payload }` messages to the handler; the
+// plugin broadcasts with cloudApi.sendCloud(payload). 'cloud' is in ALWAYS_ALLOWED
+// so a plugin's own capability gate can never drop its control channel.
+
+/** @type {((peerId: string, payload: any) => void) | null} */
+let messageHandler = null;
+
+/** @param {((peerId: string, payload: any) => void) | null} fn */
+export function setMessageHandler(fn) {
+	messageHandler = typeof fn === 'function' ? fn : null;
+}
+
+/** Core → plugin: deliver an inbound cloud message. @param {string} peerId @param {any} payload */
+export function dispatchCloudMessage(peerId, payload) {
+	if (!messageHandler) return;
+	try {
+		messageHandler(peerId, payload);
+	} catch (e) {
+		console.error('cloud message handler threw:', e);
+	}
 }
 
 // --- UI mount points ---------------------------------------------------------

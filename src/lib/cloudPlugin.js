@@ -4,6 +4,7 @@ import {
 	setCapabilityProvider,
 	setAuthProvider,
 	getAuthProvider,
+	setMessageHandler,
 	connectSlot,
 	usersSlot
 } from './cloudHooks';
@@ -72,6 +73,15 @@ function makeCloudApi() {
 		// --- context accessors ---
 		/** the live PeerConnection (id, connections, send…), or null before connect */
 		getPeers: () => get(peers),
+
+		// --- plugin message channel (replicate the plugin's own state) ---
+		/** broadcast a cloud message to all peers (roles, room announces) */
+		sendCloud: (/** @type {any} */ payload) => {
+			const p = get(peers);
+			if (p && typeof p.send === 'function') p.send({ type: 'cloud', payload });
+		},
+		/** receive inbound cloud messages: handler(peerId, payload) */
+		onCloudMessage: (/** @type {any} */ fn) => setMessageHandler(fn),
 
 		// --- UI mount points (mount fn: (el) => cleanup) ---
 		/** render into the Connect pill (login / Browse Rooms) */

@@ -49,4 +49,17 @@ export function register(cloudApi) {
 		ctaLabel: 'Account',
 		ctaUrl: 'https://example.com/account'
 	});
+
+	// 5) Plugin message channel — the only way a (separately-built) plugin
+	//    replicates its OWN state across the mesh (e.g. an admin broadcasting the
+	//    roles map). Send with sendCloud(payload); receive with onCloudMessage.
+	cloudApi.onCloudMessage((peerId, payload) => {
+		console.log('[cloud-plugin-example] cloud message from', peerId, payload);
+		// (demo hook for the e2e — the real plugin would apply a roles update here)
+		try {
+			window.__cloudLastMessage = { peerId, payload };
+		} catch {
+			/* ignore */
+		}
+	});
 }

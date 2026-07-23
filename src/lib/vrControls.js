@@ -49,6 +49,9 @@ import {
 	enterEditMode,
 	exitEditMode,
 	vrVertexEditable,
+	vrVertexCap,
+	vertexCount,
+	vertexHandleMesh,
 	vrRaycastHandle,
 	vrBeginHandleDrag,
 	vrDragHandleTo,
@@ -66,6 +69,9 @@ import {
 	enterFaceEdit,
 	exitFaceEdit,
 	vrFaceEditable,
+	vrFaceCap,
+	triangleCount,
+	editCapToast,
 	setFaceOp,
 	adjustFaceAmount,
 	commitArmedFaceOp,
@@ -97,7 +103,7 @@ import {
 } from './faceEdit';
 import { peers, showToast, messages, pendingApprovals } from '../stores/appStore';
 import { approvePeer, denyPeer } from './peerApproval';
-import { undo, redo, recordTransform } from './history';
+import { undo, redo, recordTransform, beginHistoryBatch, endHistoryBatch } from './history';
 import { snapEnabled, snapSettings, surfaceSnap, dropToSurface } from './snapping';
 import {
 	selectObject,
@@ -108,11 +114,13 @@ import {
 	renameObject,
 	focusObject,
 	ungroupObject,
-	applySelectionSet
+	applySelectionSet,
+	selectionUuids
 } from './objectActions';
 import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
-import { sendPing } from './ping';
+import { sendPing, pingColor } from './ping';
+import { peerColor } from './lockControl';
 import { setVRAxes, setVRButtons } from './inputRuntime';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
@@ -329,6 +337,109 @@ function setHovered(object) {
 	}
 }
 
+/** D5: the floating panel groups a beam may terminate on — only the OPEN
+ * ones (same gating as their raycast* pickers) */
+function openPanelGroups() {
+	/** @type {any[]} */ const list = [];
+	const add = (/** @type {boolean} */ open, /** @type {any} */ store) => {
+		const panel = open ? get(store) : null;
+		if (panel) list.push(panel);
+	};
+	add(get(vrMenuOpen), vrMenuGroup);
+	add(get(vrObjectsPanelOpen), vrPanelGroup);
+	add(get(vrPropsPanelOpen), vrPropsGroup);
+	add(get(vrPrefabsPanelOpen), vrPrefabsGroup);
+	add(get(vrChatPanelOpen), vrChatGroup);
+	add(get(vrSettingsPanelOpen), vrSettingsGroup);
+	add(get(vrApprovePanelOpen), vrApproveGroup);
+	add(get(vrEditMenuOpen), vrEditGroup);
+	add(get(vrSnapMenuOpen), vrSnapGroup);
+	add(!!get(vrKeyboardTarget), vrKeyboardGroup);
+	add(get(vrPaletteOpen), vrPaletteGroup);
+	return list;
+}
+
+/** D5: where a beam terminates — the NEAREST hit among scene objects and any
+ * open floating panel, so navigating menus shows the beam ending in a circle
+ * on the hovered control (parity with object selection). Exported for
+ * headless tests. @param {any} ray a THREE.Raycaster
+ * @returns {{distance: number, hit: boolean, object: any, info: any}} */
+export function beamTarget(ray) {
+	const group = get(objectsGroup);
+	let distance = 5;
+	let hit = false;
+	let object = null;
+	let info = null;
+	if (group) {
+		const hits = ray.intersectObjects(group.children, true);
+		if (hits.length > 0) {
+			distance = hits[0].distance;
+			hit = true;
+			object = topLevelObjectOf(hits[0].object);
+			info = hits[0];
+		}
+	}
+	for (const panel of openPanelGroups()) {
+		const hits = ray.intersectObject(panel, true);
+		if (hits.length > 0 && hits[0].distance < distance) {
+			distance = hits[0].distance;
+			hit = true;
+			object = null; // a panel in front never highlights the object behind it
+			info = hits[0];
+		}
+	}
+	// D8: while vertex-editing, the scene-root handle dots are beam targets too
+	// (they live OUTSIDE objectsGroup); a handle hit never highlights an object
+	const handles = get(editingObject) ? vertexHandleMesh() : null;
+	if (handles) {
+		const hits = ray.intersectObject(handles);
+		if (hits.length > 0 && hits[0].distance < distance) {
+			distance = hits[0].distance;
+			hit = true;
+			object = null;
+			info = hits[0];
+		}
+	}
+	return { distance, hit, object, info };
+}
+
+/** D5: controller-local reticle pose — the ring sits at the beam tip, laid
+ * ONTO the hit surface when a world normal is known (flipped toward the
+ * viewer, nudged a hair off the surface so it never z-fights), beam-aligned
+ * otherwise. Pure for headless tests.
+ * @param {any} THREE_NS @param {any} controllerQuat world quaternion
+ * @param {number} distance @param {any=} worldNormal */
+export function reticlePose(THREE_NS, controllerQuat, distance, worldNormal) {
+	const scale = Math.max(distance, 0.2);
+	const position = new THREE_NS.Vector3(0, 0, -distance);
+	const quaternion = new THREE_NS.Quaternion();
+	if (!worldNormal) return { position, quaternion, scale };
+	const normal = worldNormal.clone().normalize();
+	const beamDir = new THREE_NS.Vector3(0, 0, -1).applyQuaternion(controllerQuat);
+	if (normal.dot(beamDir) > 0) normal.negate(); // face the viewer side
+	const align = new THREE_NS.Quaternion().setFromUnitVectors(
+		new THREE_NS.Vector3(0, 0, 1),
+		normal
+	);
+	quaternion.copy(controllerQuat).invert().multiply(align);
+	const localNormal = normal.clone().applyQuaternion(controllerQuat.clone().invert());
+	position.add(localNormal.multiplyScalar(0.004 * scale));
+	return { position, quaternion, scale };
+}
+
+const _hitNormalMatrix = new THREE.Matrix3();
+const _hitWorldNormal = new THREE.Vector3();
+const _reticleCtrlQuat = new THREE.Quaternion();
+
+/** World-space normal of a raycast hit, or null @param {any} info */
+function hitWorldNormal(info) {
+	if (!info?.face?.normal || !info.object) return null;
+	return _hitWorldNormal
+		.copy(info.face.normal)
+		.applyNormalMatrix(_hitNormalMatrix.getNormalMatrix(info.object.matrixWorld))
+		.normalize();
+}
+
 /** Rays follow hits, pointed object glows @param {boolean} presenting */
 function updateRaysAndHover(presenting) {
 	ensureRayLines();
@@ -338,30 +449,38 @@ function updateRaysAndHover(presenting) {
 		setHovered(null);
 		return;
 	}
-	const group = get(objectsGroup);
 	const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+	// D6: an armed one-shot ping tints the beam + reticle with YOUR ping color
+	// so the arm state is visible in-headset
+	const pingTint = get(vrPingArmed)
+		? get(pingColor) || peerColor(/** @type {any} */ (get(peers))?.peer?.id ?? 'me')
+		: null;
 	for (let i = 0; i < 2; i++) {
-		let distance = 5;
-		let hit = false;
-		let hitObject = null;
-		if (group) {
-			const hits = controllerRay(i).intersectObjects(group.children, true);
-			if (hits.length > 0) {
-				distance = hits[0].distance;
-				hit = true;
-				hitObject = topLevelObjectOf(hits[0].object);
-			}
-		}
+		const target = beamTarget(controllerRay(i));
 		if (rayLines[i]) {
-			rayLines[i].scale.z = distance;
-			rayLines[i].material.color.setHex(hit ? RAY_HOVER : RAY_IDLE);
+			rayLines[i].scale.z = target.distance;
+			if (pingTint) rayLines[i].material.color.set(pingTint);
+			else rayLines[i].material.color.setHex(target.hit ? RAY_HOVER : RAY_IDLE);
 		}
 		if (rayReticles[i]) {
-			rayReticles[i].visible = hit;
-			rayReticles[i].position.z = -distance;
-			rayReticles[i].scale.setScalar(Math.max(distance, 0.2)); // constant angular size
+			rayReticles[i].visible = target.hit;
+			if (pingTint) rayReticles[i].material.color.set(pingTint);
+			else rayReticles[i].material.color.setHex(RAY_HOVER);
+			if (target.hit) {
+				const controller = renderer.xr.getController(i);
+				controller.getWorldQuaternion(_reticleCtrlQuat);
+				const pose = reticlePose(
+					THREE,
+					_reticleCtrlQuat,
+					target.distance,
+					hitWorldNormal(target.info)
+				);
+				rayReticles[i].position.copy(pose.position);
+				rayReticles[i].quaternion.copy(pose.quaternion);
+				rayReticles[i].scale.setScalar(pose.scale);
+			}
 		}
-		if (i === pointerIndex) setHovered(get(vrMenuOpen) ? null : hitObject);
+		if (i === pointerIndex) setHovered(get(vrMenuOpen) ? null : target.object);
 	}
 }
 
@@ -571,14 +690,33 @@ export function updateTeleport(session) {
 		return;
 	}
 
-	const index = sources.indexOf(source);
+	const pose = teleportArcPose(session);
+	if (!pose) {
+		hideArc();
+		return;
+	}
+	lastArc = computeTeleportArc(pose.origin, pose.direction, get(objectsGroup));
+	showArc(lastArc.points, !!lastArc.target, lastArc.target);
+}
+
+/** D1 (roadmap 13): the teleport arc anchors to the RIGHT hand's controller
+ * slot resolved by HANDEDNESS — this was the last raw `inputSources.indexOf`
+ * holdout (194/210 class: the slot order and the inputSources order DIVERGE
+ * after a hands<->controllers swap, so the arc came off the wrong controller).
+ * Exported for headless tests. When the slots aren't stamped yet, falls back
+ * to the CALLER's session inputSources order (also keeps fake-session tests
+ * working). @param {any=} session @returns {{index: number, origin: any, direction: any} | null} */
+export function teleportArcPose(session) {
+	let index = controllerIndexFor('right');
+	if (index < 0 && session)
+		index = [...session.inputSources].findIndex((s) => s.handedness === 'right');
+	if (index < 0) return null;
 	const controller = renderer.xr.getController(index);
 	const origin = controller.getWorldPosition(new THREE.Vector3());
 	const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(
 		controller.getWorldQuaternion(new THREE.Quaternion())
 	);
-	lastArc = computeTeleportArc(origin, direction, get(objectsGroup));
-	showArc(lastArc.points, !!lastArc.target, lastArc.target);
+	return { index, origin, direction };
 }
 
 /** @type {any} */ let micHud = null;
@@ -1172,21 +1310,40 @@ export function placePrefabGhost() {
 let paintGesture = /** @type {any} */ (null);
 let lastColorSent = 0;
 
+/** D4: the palette paints the whole SELECTION SET (parity with the desktop
+ * menu's counted set ops); a lone selection keeps the single-object behavior.
+ * @returns {any[]} selected objects with a paintable material color */
+function paintTargets() {
+	const group = get(objectsGroup);
+	return selectionUuids()
+		.map((uuid) => group?.getObjectByProperty('uuid', uuid))
+		.filter((object) => object?.material?.color);
+}
+
 /** Continuous palette painting while the trigger is held (110)
  * @param {number} index @param {boolean} triggerHeld */
 function updatePalettePaint(index, triggerHeld) {
 	const paletteGroup = get(vrPaletteGroup);
-	const object = /** @type {any} */ (get(selectedObject));
-	if (!paletteGroup || !object?.uuid || !object?.material?.color) {
+	const targets = paintTargets();
+	if (!paletteGroup || !targets.length) {
 		paintGesture = null;
 		return;
 	}
 	if (!triggerHeld) {
 		if (paintGesture) {
-			// one undo entry + one final replicated color per pick gesture
-			const after = '#' + object.material.color.getHexString();
-			recordMaterialChange(object.uuid, 'color', null, paintGesture.before, after);
-			/** @type {any} */ (get(peers))?.send({ type: 'color', uuid: object.uuid, color: after });
+			// one undo entry + one final replicated color per pick gesture; a
+			// multi-selection collapses into ONE composite history entry (D4)
+			/** @type {any} */ const peer = get(peers);
+			const multi = paintGesture.before.size > 1;
+			if (multi) beginHistoryBatch();
+			for (const object of targets) {
+				const before = paintGesture.before.get(object.uuid);
+				if (!before) continue;
+				const after = '#' + object.material.color.getHexString();
+				recordMaterialChange(object.uuid, 'color', null, before, after);
+				peer?.send({ type: 'color', uuid: object.uuid, color: after });
+			}
+			if (multi) endHistoryBatch('Color (' + paintGesture.before.size + ')');
 			paintGesture = null;
 		}
 		return;
@@ -1207,12 +1364,18 @@ function updatePalettePaint(index, triggerHeld) {
 		const picked = paletteColorAt(hit.uv?.x ?? 0.5, hit.uv?.y ?? 0.5, get(vrPaletteLightness));
 		if (!picked) return;
 		if (!paintGesture)
-			paintGesture = { before: '#' + object.material.color.getHexString() };
-		object.material.color.set(picked.hex);
+			paintGesture = {
+				before: new Map(
+					targets.map((object) => [object.uuid, '#' + object.material.color.getHexString()])
+				)
+			};
 		const now = Date.now();
-		if (now - lastColorSent > 120) {
-			lastColorSent = now;
-			/** @type {any} */ (get(peers))?.send({ type: 'color', uuid: object.uuid, color: picked.hex });
+		const sendNow = now - lastColorSent > 120;
+		if (sendNow) lastColorSent = now;
+		for (const object of targets) {
+			object.material.color.set(picked.hex);
+			if (sendNow)
+				/** @type {any} */ (get(peers))?.send({ type: 'color', uuid: object.uuid, color: picked.hex });
 		}
 	}
 }
@@ -2136,6 +2299,9 @@ function spawnPrimitive(command) {
 /** Radial-menu sector actions (74): navigation + registry first, then the
  * built-in switch @param {string} name */
 export function executeVRMenuAction(name) {
+	// D4: a disabled registry entry (greyed sector) never activates, whether
+	// its behavior lives in a registry action or the built-in switch below
+	if (findMenuEntry(name)?.disabled?.()) return;
 	// ring navigation + close (109: a STACK — Back pops one level)
 	if (name === 'close') {
 		vrMenuOpen.set(false);
@@ -2173,7 +2339,18 @@ export function executeVRMenuAction(name) {
 		if (vrFaceEditable(object)) enterFaceEdit(object.uuid);
 		else if (vrVertexEditable(object)) enterEditMode(object.uuid);
 		else {
-			showToast('This mesh is too dense to edit in VR');
+			// D7: say WHICH limit blocks + deep-link the setting
+			editCapToast(
+				'Mesh exceeds the edit limits (' +
+					Math.round(triangleCount(object)) +
+					' tris of ' +
+					get(vrFaceCap) +
+					', ' +
+					vertexCount(object) +
+					' verts of ' +
+					get(vrVertexCap) +
+					') — raise them in Settings ▸ VR'
+			);
 			return;
 		}
 		if (get(faceEditObject) || get(editingObject)) {
@@ -2224,15 +2401,22 @@ export function executeVRMenuAction(name) {
 		if (mode === 'vertices') {
 			exitFaceEdit();
 			if (vrVertexEditable(object)) enterEditMode(object.uuid);
-			else showToast('Too dense for vertex editing (max 500 verts)');
+			else
+				editCapToast(
+					'Mesh exceeds the vertex edit limit (' +
+						vertexCount(object) +
+						' of ' +
+						get(vrVertexCap) +
+						' verts) — raise it in Settings ▸ VR'
+				);
 		} else if (mode === 'stretch') {
 			exitEditMode();
 			exitFaceEdit();
 			beginStretch(object.uuid);
 		} else {
 			exitEditMode();
-			if (vrFaceEditable(object)) enterFaceEdit(object.uuid);
-			else showToast('Too dense for face editing (max 300 triangles)');
+			// enterFaceEdit guards the cap itself and shows the D7 toast
+			enterFaceEdit(object.uuid);
 		}
 		return;
 	}
@@ -2255,9 +2439,13 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name === 'ping') {
-		// U-1: ping immediately from the POINTER hand (the menu is on the other
-		// hand), then close the ring; highlights the object if the ray hits one
-		pingFromController(controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right'));
+		// U-1 ping, reworked in D6: activating the sector used to ping
+		// IMMEDIATELY from the pointer hand — but on a trigger activation that
+		// ray is parked on the radial itself, so the ping landed wherever the
+		// menu floated. Now the sector ARMS a one-shot: the ring closes, the
+		// beam/reticle tint to your ping color, and the next trigger pings the
+		// exact pointed x,y,z (firePingIfArmed).
+		vrPingArmed.set(true);
 		vrMenuOpen.set(false);
 		return;
 	}
@@ -2593,10 +2781,39 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'close') vrMenuOpen.set(false);
 }
 
+/** D6: armed one-shot ping (radial Ping). True while the next trigger press
+ * should ping instead of select. @type {import('svelte/store').Writable<boolean>} */
+export const vrPingArmed = writable(false);
+// re-opening the radial cancels a pending ping (the tinted reticle reads as
+// armed; opening the menu is the natural back-out)
+vrMenuOpen.subscribe((open) => {
+	if (open) vrPingArmed.set(false);
+});
+
+/** D6: fire the armed ping from the FIRING controller's ray — the exact
+ * pointed spot. Returns true when it consumed the trigger; a sky-miss keeps
+ * the arm (the tint shows it is still live). Exported for Scene's trigger
+ * path + headless tests. @param {number} index */
+export function firePingIfArmed(index) {
+	if (!get(vrPingArmed)) return false;
+	if (!pingFromController(index)) return true; // consumed, still armed (sky)
+	vrPingArmed.set(false);
+	return true;
+}
+
+/** D6: the pointer hand's controller slot (the hand OPPOSITE the menu hand —
+ * its beam/reticle drives hover highlights). NOT used for pings anymore:
+ * pings fire from the hand that ACTED (stick click / armed trigger), D10.
+ * Exported for tests + panel work. */
+export function pointerHandIndex() {
+	return controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+}
+
 /** Right-stick click / radial Ping: ping where the controller ray lands. When
  * it lands ON an object, carry that object's uuid so peers highlight it too
- * (U-1). (87.6) @param {number} index */
+ * (U-1). (87.6) Returns whether a ping landed. @param {number} index */
 function pingFromController(index) {
+	if (index < 0) return false;
 	const ray = controllerRay(index);
 	const group = get(objectsGroup);
 	const hits = group ? ray.intersectObjects(group.children, true) : [];
@@ -2604,12 +2821,13 @@ function pingFromController(index) {
 		const top = topLevelObjectOf(hits[0].object);
 		sendPing(hits[0].point, top?.uuid);
 		hapticPulse(0.4, 60);
-		return;
+		return true;
 	}
 	const point = pingPointFromRay(ray, group);
-	if (!point) return;
+	if (!point) return false;
 	sendPing(point);
 	hapticPulse(0.4, 60);
+	return true;
 }
 
 /**
@@ -2626,6 +2844,26 @@ export function pingPointFromRay(ray, group) {
 		: null;
 }
 
+/** D9 (roadmap 13): true while a manipulation gesture owns the sticks or the
+ * reference space — world pan/grab write reference-space offsets themselves,
+ * two-hand object scale uses both hands, and the mesh-edit gestures read the
+ * sticks for reel/scale — so stick NAVIGATION (left-stick move, right-stick
+ * teleport/snap-turn) must stand down or it double-drives the rig.
+ * `grips: true` additionally suppresses while EITHER grip is held (the
+ * teleport/snap gate — a held grip always means manipulation). The plain call
+ * (no opts) gates left-stick locomotion in VRControls.svelte and deliberately
+ * does NOT include bare grips: left-grip + left-stick pan/elevate is itself a
+ * locomotion mode. Exported for VRControls.svelte + headless tests.
+ * @param {{grips?: boolean}=} opts */
+export function vrNavigationSuppressed(opts = {}) {
+	if (worldPan || worldGrab || scaleGrab) return true;
+	if (vertexGrab || vertexTriggerGrab) return true;
+	if (faceGrabHand || faceGesturePending()) return true;
+	if (stretchSliderDrag || boxSelect) return true;
+	if (opts.grips && (gripHeld[0] || gripHeld[1])) return true;
+	return false;
+}
+
 /** Per-frame update while presenting (called from Scene's useTask) */
 export function updateVRControls() {
 	const session = renderer?.xr.getSession();
@@ -2638,7 +2876,8 @@ export function updateVRControls() {
 		return;
 	}
 	// open menu/panel are modal for the sticks: sector nav / scrolling own them;
-	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100)
+	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100);
+	// D9: manipulation gestures + ANY held grip stand navigation down entirely
 	if (
 		!get(vrMenuOpen) &&
 		!get(vrObjectsPanelOpen) &&
@@ -2646,10 +2885,18 @@ export function updateVRControls() {
 		!get(vrPrefabsPanelOpen) &&
 		!get(vrChatPanelOpen) &&
 		!get(vrKeyboardTarget) &&
-		get(vrGrabbedHand) !== 'right'
+		get(vrGrabbedHand) !== 'right' &&
+		!vrNavigationSuppressed({ grips: true })
 	) {
 		updateTeleport(session);
 		updateSnapTurn(session);
+	} else {
+		// D9: a gesture/grip released mid-stick-deflection must not fire a
+		// queued teleport or an instant snap — disarm while suppressed; the
+		// stick has to return to center before navigating again
+		teleportEngaged = false;
+		snapArmed = false;
+		hideArc();
 	}
 
 	[...session.inputSources].forEach((source, srcIndex) => {
@@ -2745,7 +2992,13 @@ export function updateVRControls() {
 				// ray hover wins; otherwise the stick-press opens the input (117)
 				const action = get(vrHovered) ?? 'chat:input';
 				executeVRMenuAction(action);
-			} else if (source.handedness === 'right') pingFromController(index);
+			} else if (source.handedness === 'right') {
+				// D10: ping from the hand that CLICKED the stick — its ray is what
+				// you aimed. (D6 briefly routed this through the "pointer hand",
+				// which sent the ping down the LEFT ray whenever the menu sat on
+				// the right hand — the on-device report.)
+				pingFromController(index);
+			}
 		}
 		prev.stick = stickPressed;
 

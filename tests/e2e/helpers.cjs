@@ -6,6 +6,14 @@ const { chromium } = require('playwright');
 
 const URL = process.env.APP_URL || 'https://theprototype.app:5173/';
 
+// Optional: seed the peer-server Settings for every test context. Needed when
+// the app is served from a hostname the peerHandler treats as LOCAL DEV
+// (anything not ending .io/.app — e.g. https://localhost:5175 in a worktree
+// lane): default mode then targets a local :9001 signaling server that
+// usually isn't running. Example:
+//   PEER_CONFIG={"mode":"custom","custom":{"host":"peerjs.theprototype.app","port":443,"path":"/peerjs","secure":true}}
+const PEER_CONFIG = process.env.PEER_CONFIG || '';
+
 let failures = 0;
 
 /** @param {boolean} ok @param {string} label */
@@ -33,10 +41,11 @@ function launch(options = {}) {
  */
 async function setupPage(browser, name, options = {}) {
 	const ctx = await browser.newContext({ ignoreHTTPSErrors: true, ...(options.context ?? {}) });
-	await ctx.addInitScript(() => {
+	await ctx.addInitScript((peerConfig) => {
 		localStorage.setItem('debugStores', 'true');
 		localStorage.setItem('hasSeenDisclaimer', 'true');
-	});
+		if (peerConfig) localStorage.setItem('peerServerConfig', peerConfig);
+	}, PEER_CONFIG);
 	const page = await ctx.newPage();
 	page.on('pageerror', (err) => console.log(`[${name} pageerror] ` + err.stack));
 	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });

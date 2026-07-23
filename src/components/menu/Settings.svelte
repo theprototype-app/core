@@ -4,6 +4,8 @@
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast } from '../../stores/appStore.js';
+	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
+	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
@@ -55,6 +57,13 @@
 	let aiExpanded = false;
 	let sceneExpanded = false;
 	let connectionExpanded = false;
+	let vrExpanded = false; // D7: edit-cap toasts deep-link here ('vr')
+
+	// D7: sanitize a cap edit — an empty/garbage field falls back to the default
+	function setCap(store: any, raw: string, fallback: number) {
+		const value = parseInt(raw);
+		store.set(Number.isFinite(value) && value >= 10 ? value : fallback);
+	}
 
 	// AI provider add/edit form state (roadmap #10). Legacy-mode file — plain lets.
 	let aiFormOpen = false;
@@ -244,6 +253,7 @@
 		aiExpanded = $settingsSection === 'ai';
 		sceneExpanded = $settingsSection === 'scene';
 		connectionExpanded = $settingsSection === 'connection';
+		vrExpanded = $settingsSection === 'vr';
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
@@ -284,7 +294,7 @@
 		/>
 		<div use:filterSettings={settingsQuery}>
 		<Accordion>
-			<AccordionItem>
+			<AccordionItem bind:open={vrExpanded}>
 				<svelte:fragment slot="header">VR</svelte:fragment>
 				<div class="flex setting-row">
 					<p class={topcoverName}>
@@ -403,6 +413,34 @@
 							}}>&nbsp;Hold to move vertex</Checkbox>
 					</p>
 					<p class={middlecoverDescription}>Hold the trigger to carry a vertex (release drops it); off = press to grab, press again to drop</p>
+				</div>
+				<div class="flex setting-row">
+					<p class={middlecoverName}>
+						<input
+							id="vr-face-cap"
+							type="number"
+							min="10"
+							step="50"
+							class="w-20 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+							value={$vrFaceCap}
+							on:change={(e: any) => setCap(vrFaceCap, e.target.value, VR_FACE_CAP)}
+						/>&nbsp;Face edit limit
+					</p>
+					<p class={middlecoverDescription}><span class="font-semibold">Mesh edit caps (D7)</span> — max triangles for VR face editing (default {VR_FACE_CAP}; denser meshes get a warning). Imported single meshes under the caps edit fine; Ungroup multi-mesh imports first</p>
+				</div>
+				<div class="flex setting-row">
+					<p class={middlecoverName}>
+						<input
+							id="vr-vertex-cap"
+							type="number"
+							min="10"
+							step="50"
+							class="w-20 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+							value={$vrVertexCap}
+							on:change={(e: any) => setCap(vrVertexCap, e.target.value, VR_VERTEX_CAP)}
+						/>&nbsp;Vertex edit limit
+					</p>
+					<p class={middlecoverDescription}>Max vertices for VR vertex editing (default {VR_VERTEX_CAP}) — very dense handle clouds get unwieldy with controllers</p>
 				</div>
 				<div class="flex setting-row">
 					<p class={middlecoverName}>

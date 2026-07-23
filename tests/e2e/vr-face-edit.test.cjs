@@ -59,7 +59,9 @@ h.run(async () => {
 		const dense = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32));
 		return { cap: f.VR_FACE_CAP, boxOk: f.vrFaceEditable(box), denseOk: f.vrFaceEditable(dense) };
 	});
-	h.check(cap.cap === 300, 'VR face cap is 300 triangles');
+	// D7: raised default (user-editable setting); a 32x32 sphere (1984 tris)
+	// still refuses
+	h.check(cap.cap === 1000, 'default VR face cap is 1000 triangles (D7, user-editable)');
 	h.check(cap.boxOk === true && cap.denseOk === false, 'a box is editable, a dense sphere is refused');
 
 	// --- VR flow: enter mode, arm op, highlight, commit an extrude ---
@@ -123,7 +125,13 @@ h.run(async () => {
 		s.faceEdit.commitArmedFaceOp();
 		s.peers.set(original);
 		const msg = captured.find((m) => m.type === 'meshgeo');
-		return { hasMsg: !!msg, uuid: msg?.uuid === window.__fbox.uuid, len: msg?.positions?.length };
+		// #12: positions travel as RAW Float32 BYTES (ArrayBuffer), not a plain
+		// number array (binarypack blows the stack on big arrays)
+		const len =
+			msg?.positions instanceof ArrayBuffer
+				? msg.positions.byteLength / 4
+				: msg?.positions?.length;
+		return { hasMsg: !!msg, uuid: msg?.uuid === window.__fbox.uuid, len };
 	});
 	h.check(sent.hasMsg && sent.uuid && sent.len > 0, `commit broadcasts a meshgeo snapshot (${sent.len} floats)`);
 

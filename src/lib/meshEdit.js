@@ -73,6 +73,12 @@ function refreshHandleMatrix(index) {
 	tempMatrix.makeTranslation(tempVector.x, tempVector.y, tempVector.z);
 	handleMesh.setMatrixAt(index, tempMatrix);
 	handleMesh.instanceMatrix.needsUpdate = true;
+	// D2 (roadmap 13): three caches an InstancedMesh boundingSphere for its
+	// raycast pre-check — never invalidated by setMatrixAt, so handles moved
+	// outside the initial bounds (object moved / vertex dragged far) became
+	// unpickable. Null it so the next raycast lazily recomputes.
+	handleMesh.boundingSphere = null;
+	handleMesh.boundingBox = null;
 }
 
 function refreshHandleColors() {
@@ -120,7 +126,10 @@ export function enterEditMode(uuid) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
 	if (!object || !object.geometry?.attributes?.position) {
-		showToast('Only meshes can be edited');
+		// D7: a multi-mesh GROUP is the common blocker for imports — say so
+		if (object?.type === 'Group')
+			showToast('A group can’t be mesh-edited — Ungroup it first, then edit each mesh');
+		else showToast('Only meshes can be edited');
 		return;
 	}
 	if (get(lockedObjects).find((lock) => lock[1] === uuid)) {
@@ -158,6 +167,12 @@ export function enterEditMode(uuid) {
 		new THREE.LineBasicMaterial({ color: 0x2f81f7, transparent: true, opacity: 0.5 })
 	);
 	overlay.name = 'edit-overlay';
+	// D8 (roadmap 13): the overlay is DECORATIVE. As a child of the edited
+	// object it rides inside every objectsGroup raycast, and three raycasts
+	// lines with a 1-WORLD-UNIT threshold (raycaster.params.Line) — so beams,
+	// selection and pings "hit" invisible fat lines up to a metre off the
+	// surface while vertex-editing. Never a pick target.
+	overlay.raycast = () => {};
 	object.add(overlay);
 
 	proxy = new THREE.Object3D();
@@ -412,18 +427,42 @@ export function applyVerts(uuid, indices, positionArray) {
 
 // ---- VR vertex editing (113): drive a handle from a controller, no gizmo ----
 
-/** VR vertex-count cap — denser meshes are unwieldy with controllers */
-export const VR_VERTEX_CAP = 500;
+/** Default VR vertex cap — D7 (roadmap 13): raised from 500 so the default
+ * sphere (561 position entries) edits out of the box; the LIVE limit is the
+ * user-editable `vrVertexCap` setting below */
+export const VR_VERTEX_CAP = 800;
+/** D7: user-editable vertex-edit limit (Settings ▸ VR, local pref)
+ * @type {import('svelte/store').Writable<number>} */
+export const vrVertexCap = writable(
+	typeof localStorage !== 'undefined'
+		? parseInt(localStorage.getItem('vrVertexCap') ?? '') || VR_VERTEX_CAP
+		: VR_VERTEX_CAP
+);
+if (typeof localStorage !== 'undefined')
+	vrVertexCap.subscribe((value) => localStorage.setItem('vrVertexCap', String(value)));
 
-/** Is this object simple enough to vertex-edit in VR? @param {any} object */
+/** Vertex (position entry) count of an object's geometry @param {any} object */
+export function vertexCount(object) {
+	return object?.geometry?.attributes?.position?.count ?? 0;
+}
+
+/** Is this object simple enough to vertex-edit in VR? D7: capped by the
+ * user-editable vrVertexCap setting. @param {any} object */
 export function vrVertexEditable(object) {
-	const count = object?.geometry?.attributes?.position?.count;
-	return !!count && count <= VR_VERTEX_CAP;
+	const count = vertexCount(object);
+	return count > 0 && count <= get(vrVertexCap);
 }
 
 /** vertices of the mesh currently in edit mode (0 if none) */
 export function editedVertexCount() {
 	return edited?.geometry?.attributes?.position?.count ?? 0;
+}
+
+/** D8: the live vertex-handle InstancedMesh (scene root), or null — the VR
+ * beam terminates on handles while vertex-editing (they are NOT in
+ * objectsGroup, so beamTarget must ask for them explicitly) */
+export function vertexHandleMesh() {
+	return handleMesh;
 }
 
 /** Raycast the handles from a controller ray @param {THREE.Raycaster} raycaster @returns {number} handle index or -1 */

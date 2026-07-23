@@ -22,7 +22,8 @@ h.run(async () => {
 		return { root: m.ringEntries('root').map((e) => e.id), tools: m.ringEntries('tools').map((e) => e.id) };
 	});
 	h.check(ring.root.includes('nav:tools') && !ring.root.includes('draw'), 'the Draw sector became a Tools submenu');
-	h.check(ring.tools.join(',') === 'tool:select,tool:box,tool:draw', `Tools lists Select / Box Select / Draw (${ring.tools.join(',')})`);
+	// U-1 later appended Ping to this ring — assert the tool prefix, not an exact list
+	h.check(ring.tools.slice(0, 3).join(',') === 'tool:select,tool:box,tool:draw', `Tools lists Select / Box Select / Draw (${ring.tools.join(',')})`);
 
 	// picking a tool sets the mode, closes the ring, and Draw drives draw mode
 	const modes = await A.page.evaluate(() => {

@@ -78,7 +78,27 @@ h.run(async () => {
 		s.vrMenuOpen.set(false);
 		const idle = s.vrControls.firePingIfArmed(1);
 
+		// D10: pings fire from the ACTING hand — even when it is NOT the
+		// pointer hand (menu on left -> pointer is slot 1; we fire slot 0,
+		// aimed at a different spot, and the ping must follow SLOT 0's ray).
+		// The right-stick path routes the clicked hand's slot the same way.
+		s.vrControls.vrPingArmed.set(true);
+		const leftAim = new THREE.Matrix4().compose(
+			new THREE.Vector3(2, 1.6, 0),
+			new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 4),
+			new THREE.Vector3(1, 1, 1)
+		);
+		c0.matrix.copy(leftAim);
+		c0.updateMatrixWorld(true);
+		const actingConsumed = s.vrControls.firePingIfArmed(0);
+		const actingPings = read(s.ping.pings);
+		const actingLast = actingPings[actingPings.length - 1];
+
 		return {
+			acting: {
+				consumed: actingConsumed,
+				pos: actingLast && actingLast.pos.map((v) => Math.round(v * 100) / 100)
+			},
 			pointerWithLeftMenu,
 			pointerWithRightMenu,
 			armed,
@@ -115,6 +135,13 @@ h.run(async () => {
 	);
 	h.check(res.cancelled, 'reopening the radial cancels a pending ping');
 	h.check(res.idle === false, 'an unarmed trigger is never consumed');
+	h.check(
+		res.acting.consumed &&
+			res.acting.pos &&
+			Math.abs(res.acting.pos[0] - 2) < 0.01 &&
+			Math.abs(res.acting.pos[2] + 1.6) < 0.01,
+		`the ping follows the ACTING hand's ray, not the pointer hand (${JSON.stringify(res.acting.pos)})`
+	);
 
 	await h.finish(browser);
 });

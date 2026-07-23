@@ -2782,7 +2782,9 @@ export function firePingIfArmed(index) {
 }
 
 /** D6: the pointer hand's controller slot (the hand OPPOSITE the menu hand —
- * its beam/reticle is the targeting cue). Exported for tests. */
+ * its beam/reticle drives hover highlights). NOT used for pings anymore:
+ * pings fire from the hand that ACTED (stick click / armed trigger), D10.
+ * Exported for tests + panel work. */
 export function pointerHandIndex() {
 	return controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 }
@@ -2971,10 +2973,11 @@ export function updateVRControls() {
 				const action = get(vrHovered) ?? 'chat:input';
 				executeVRMenuAction(action);
 			} else if (source.handedness === 'right') {
-				// D6: ping from the POINTER hand (its beam/reticle is the targeting
-				// cue) — with the menu on the right, the right stick used to ping
-				// where the MENU hand pointed
-				pingFromController(pointerHandIndex());
+				// D10: ping from the hand that CLICKED the stick — its ray is what
+				// you aimed. (D6 briefly routed this through the "pointer hand",
+				// which sent the ping down the LEFT ray whenever the menu sat on
+				// the right hand — the on-device report.)
+				pingFromController(index);
 			}
 		}
 		prev.stick = stickPressed;

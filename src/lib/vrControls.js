@@ -51,6 +51,7 @@ import {
 	vrVertexEditable,
 	vrVertexCap,
 	vertexCount,
+	vertexHandleMesh,
 	vrRaycastHandle,
 	vrBeginHandleDrag,
 	vrDragHandleTo,
@@ -384,6 +385,18 @@ export function beamTarget(ray) {
 			distance = hits[0].distance;
 			hit = true;
 			object = null; // a panel in front never highlights the object behind it
+			info = hits[0];
+		}
+	}
+	// D8: while vertex-editing, the scene-root handle dots are beam targets too
+	// (they live OUTSIDE objectsGroup); a handle hit never highlights an object
+	const handles = get(editingObject) ? vertexHandleMesh() : null;
+	if (handles) {
+		const hits = ray.intersectObject(handles);
+		if (hits.length > 0 && hits[0].distance < distance) {
+			distance = hits[0].distance;
+			hit = true;
+			object = null;
 			info = hits[0];
 		}
 	}

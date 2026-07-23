@@ -167,6 +167,12 @@ export function enterEditMode(uuid) {
 		new THREE.LineBasicMaterial({ color: 0x2f81f7, transparent: true, opacity: 0.5 })
 	);
 	overlay.name = 'edit-overlay';
+	// D8 (roadmap 13): the overlay is DECORATIVE. As a child of the edited
+	// object it rides inside every objectsGroup raycast, and three raycasts
+	// lines with a 1-WORLD-UNIT threshold (raycaster.params.Line) — so beams,
+	// selection and pings "hit" invisible fat lines up to a metre off the
+	// surface while vertex-editing. Never a pick target.
+	overlay.raycast = () => {};
 	object.add(overlay);
 
 	proxy = new THREE.Object3D();
@@ -450,6 +456,13 @@ export function vrVertexEditable(object) {
 /** vertices of the mesh currently in edit mode (0 if none) */
 export function editedVertexCount() {
 	return edited?.geometry?.attributes?.position?.count ?? 0;
+}
+
+/** D8: the live vertex-handle InstancedMesh (scene root), or null — the VR
+ * beam terminates on handles while vertex-editing (they are NOT in
+ * objectsGroup, so beamTarget must ask for them explicitly) */
+export function vertexHandleMesh() {
+	return handleMesh;
 }
 
 /** Raycast the handles from a controller ray @param {THREE.Raycaster} raycaster @returns {number} handle index or -1 */

@@ -2822,6 +2822,26 @@ export function pingPointFromRay(ray, group) {
 		: null;
 }
 
+/** D9 (roadmap 13): true while a manipulation gesture owns the sticks or the
+ * reference space — world pan/grab write reference-space offsets themselves,
+ * two-hand object scale uses both hands, and the mesh-edit gestures read the
+ * sticks for reel/scale — so stick NAVIGATION (left-stick move, right-stick
+ * teleport/snap-turn) must stand down or it double-drives the rig.
+ * `grips: true` additionally suppresses while EITHER grip is held (the
+ * teleport/snap gate — a held grip always means manipulation). The plain call
+ * (no opts) gates left-stick locomotion in VRControls.svelte and deliberately
+ * does NOT include bare grips: left-grip + left-stick pan/elevate is itself a
+ * locomotion mode. Exported for VRControls.svelte + headless tests.
+ * @param {{grips?: boolean}=} opts */
+export function vrNavigationSuppressed(opts = {}) {
+	if (worldPan || worldGrab || scaleGrab) return true;
+	if (vertexGrab || vertexTriggerGrab) return true;
+	if (faceGrabHand || faceGesturePending()) return true;
+	if (stretchSliderDrag || boxSelect) return true;
+	if (opts.grips && (gripHeld[0] || gripHeld[1])) return true;
+	return false;
+}
+
 /** Per-frame update while presenting (called from Scene's useTask) */
 export function updateVRControls() {
 	const session = renderer?.xr.getSession();
@@ -2834,7 +2854,8 @@ export function updateVRControls() {
 		return;
 	}
 	// open menu/panel are modal for the sticks: sector nav / scrolling own them;
-	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100)
+	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100);
+	// D9: manipulation gestures + ANY held grip stand navigation down entirely
 	if (
 		!get(vrMenuOpen) &&
 		!get(vrObjectsPanelOpen) &&
@@ -2842,10 +2863,18 @@ export function updateVRControls() {
 		!get(vrPrefabsPanelOpen) &&
 		!get(vrChatPanelOpen) &&
 		!get(vrKeyboardTarget) &&
-		get(vrGrabbedHand) !== 'right'
+		get(vrGrabbedHand) !== 'right' &&
+		!vrNavigationSuppressed({ grips: true })
 	) {
 		updateTeleport(session);
 		updateSnapTurn(session);
+	} else {
+		// D9: a gesture/grip released mid-stick-deflection must not fire a
+		// queued teleport or an instant snap — disarm while suppressed; the
+		// stick has to return to center before navigating again
+		teleportEngaged = false;
+		snapArmed = false;
+		hideArc();
 	}
 
 	[...session.inputSources].forEach((source, srcIndex) => {

@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { showToast, appNotice, peers } from '../stores/appStore';
+import { showToast, appNotice, peers, cloudIdentity } from '../stores/appStore';
 import { requestConnect } from './peerApproval';
 import {
 	setCapabilityProvider,
@@ -73,6 +73,9 @@ function makeCloudApi() {
 		// --- shared state ---
 		/** the first-run notice banner store — rebrand or clear (set null) it */
 		appNotice,
+		/** push the signed-in account's {username, avatar, email} (or null on sign-out)
+		 *  — core uses it as the default collaborative identity + menu display (v2) */
+		setAccountIdentity: (/** @type {any} */ id) => cloudIdentity.set(id || null),
 
 		// --- context accessors ---
 		/** the live PeerConnection (id, connections, send…), or null before connect */

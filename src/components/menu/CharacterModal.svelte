@@ -45,7 +45,7 @@
 			<p class="{rowClass} rounded-s-lg">Body color</p>
 			<input
 				type="color"
-				class="h-11 w-full cursor-pointer rounded-e-lg border border-gray-300 bg-white p-1 dark:border-gray-600 dark:bg-gray-700"
+				class="h-11 min-w-0 flex-1 cursor-pointer rounded-e-lg border border-gray-300 bg-white p-1 dark:border-gray-600 dark:bg-gray-700"
 				value={$avatarConfig.body}
 				on:input={(e) => update({ body: e.currentTarget.value })}
 			/>
@@ -53,7 +53,7 @@
 		<div class="flex px-6 pb-3">
 			<p class="{rowClass} rounded-s-lg">Hat</p>
 			<ThemedSelect
-				class="flex-1"
+				class="min-w-0 flex-1"
 				items={hats}
 				value={$avatarConfig.hat}
 				onchange={(v) => update({ hat: v })}
@@ -62,7 +62,7 @@
 		<div class="flex px-6 pb-3">
 			<p class="{rowClass} rounded-s-lg">Head shape</p>
 			<ThemedSelect
-				class="flex-1"
+				class="min-w-0 flex-1"
 				items={FACE_SHAPES}
 				value={cfg.shape}
 				onchange={(v) => update({ shape: v })}
@@ -71,7 +71,7 @@
 		<div class="flex px-6 pb-1">
 			<p class="{rowClass} rounded-s-lg">Face</p>
 			<ThemedSelect
-				class="flex-1"
+				class="min-w-0 flex-1"
 				items={faces}
 				value={cfg.face}
 				onchange={(v) => update({ face: v })}

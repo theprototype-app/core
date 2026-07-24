@@ -135,7 +135,10 @@
 	</button>
 	<!-- E1: notifications bell + history panel -->
 	<NotificationCenter />
-{#if $userdata && $userdata.length > 1}
+<!-- CN: gate on LIVE connections (openedPeers), not the roster — userdata is
+	 populated optimistically at dial time, which showed a phantom peer while an
+	 outbound request was still pending. -->
+{#if $userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0}
 	<div class="relative">
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button

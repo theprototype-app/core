@@ -13,7 +13,8 @@
 //   I4  the far-zoom "circle": (a) the grid fade SNAPS to its target (no multi-frame
 //       lerp ramp), and (b) the shadow-catcher disc has depthWrite:false so N8AO no
 //       longer paints it as a dark disc at the scene centre on far dolly-out
-//   I5  the Connect pill shows the resolved signaling server (dot + label), and the
+//   I5  (roadmap-14 CN migration) server info moved behind the (i) button's info
+//       drawer — asserts the drawer server label, fallback flip + (i) badge; the
 //       label flips to "public (fallback)" when the self-hosted server is unreachable
 //   +   the logo-menu Docs link opens docs.theprototype.app
 //   +   Settings ▸ About links point at the theprototype-app org (core/modules/docs)
@@ -100,22 +101,34 @@ h.run(async () => {
 	await A.page.waitForTimeout(250);
 	h.check(await A.page.locator('#ai-assistant-window').first().isVisible(), 'I3: configured click opens the AI window');
 
-	// --- I5: Connect shows the resolved signaling server ---------------------
-	const srvVisible = await A.page.locator('[data-testid="peer-server-indicator"]').first().isVisible();
-	h.check(srvVisible, 'I5: peer-server indicator renders in the Connect pill');
-	const srvLabel = (await A.page.locator('[data-testid="peer-server-indicator"] .srv-label').first().innerText()).trim();
-	h.check(srvLabel.length > 0, 'I5: indicator shows a non-empty server label (' + srvLabel + ')');
-	// drive the fallback state and confirm the label + kind flip
+	// --- I5 (migrated to the CN drawer): server info lives behind the (i) button --
+	h.check(await A.page.locator('[data-testid="connect-info-button"]').first().isVisible(), 'I5/CN: (i) info button renders in the Connect pill');
+	await A.page.locator('[data-testid="connect-info-button"]').click();
+	await A.page.waitForTimeout(250);
+	h.check(await A.page.locator('[data-testid="connect-info-drawer"]').first().isVisible(), 'I5/CN: the info drawer opens');
+	const srvLabel = (await A.page.locator('[data-testid="drawer-server-label"]').first().innerText()).trim();
+	h.check(srvLabel.length > 0, 'I5/CN: drawer shows a non-empty server label (' + srvLabel + ')');
+	// drive the fallback state and confirm the label + kind flip + the (i) badge
 	await A.page.evaluate(() => {
 		window.__stores.peerServer.peerServerStatus.set({
 			kind: 'public', label: 'public cloud', host: 'PeerJS public cloud', port: 443, path: '/', didFallback: true
 		});
 	});
 	await A.page.waitForTimeout(150);
-	const fbLabel = (await A.page.locator('[data-testid="peer-server-indicator"] .srv-label').first().innerText()).trim();
-	const fbKind = await A.page.locator('[data-testid="peer-server-indicator"]').first().getAttribute('data-kind');
-	h.check(fbLabel === 'public (fallback)', 'I5: fallback flips the label to "public (fallback)"');
-	h.check(fbKind === 'fallback', 'I5: fallback sets data-kind="fallback"');
+	const fbLabel = (await A.page.locator('[data-testid="drawer-server-label"]').first().innerText()).trim();
+	const fbKind = await A.page.locator('[data-testid="drawer-server-row"]').first().getAttribute('data-kind');
+	h.check(fbLabel === 'public (fallback)', 'I5/CN: fallback flips the drawer label to "public (fallback)"');
+	h.check(fbKind === 'fallback', 'I5/CN: fallback sets data-kind="fallback"');
+	h.check(await A.page.locator('[data-testid="drawer-fallback-warn"]').first().isVisible(), 'I5/CN: fallback warning row shows');
+	h.check(await A.page.locator('[data-testid="connect-info-warn"]').first().isVisible(), 'I5/CN: the (i) button gains the amber fallback badge');
+	// close the drawer (outside pointerdown). Poll past the slide-out transition
+	// before asserting it's gone from the DOM.
+	await A.page.mouse.click(10, 400);
+	await h.eventually(
+		() => A.page.locator('[data-testid="connect-info-drawer"]').count(),
+		(n) => n === 0,
+		'I5/CN: clicking outside closes the drawer'
+	);
 
 	// --- I4: far-zoom grid fade SNAPS (no multi-frame lerp ramp) --------------
 	// dolly the camera far out, then sample the grid fadeDistance uniform: the old

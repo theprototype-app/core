@@ -10,7 +10,8 @@ import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
 import { applyMeshGeo } from '$lib/faceEdit';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
-import { resolvePeerOptions, describePeerServer, peerServerStatus } from '$lib/peerServer';
+import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride } from '$lib/peerServer';
+import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage } from '$lib/cloudHooks';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
@@ -66,6 +67,22 @@ export class PeerConnection {
 		 * closes without ever opening (a failed connect) doesn't fire a spurious
 		 * 'disconnected' teardown; the error handler already messaged the user */
 		this.openedPeers = new Set();
+
+		// CN-3: an invite link can pin the signaling world (#A1B2C~srv=…). Parse it
+		// HERE, before resolvePeerOptions runs — the peer.on('open') hash flow below
+		// fires too late for server selection. Strip only the ~srv tail so the
+		// auto-connect flow keeps working on the bare id.
+		if (typeof location !== 'undefined' && location.hash.includes('~')) {
+			const { peerId: hashPeer, srv } = parseInviteHash(location.hash);
+			if (srv) {
+				const ov = decodeInviteServer(srv);
+				if (ov) {
+					applyInviteServerOverride(ov);
+					console.log('invite link pinned the signaling server:', srv);
+				}
+			}
+			location.hash = hashPeer ? '#' + hashPeer : '';
+		}
 
 		// A non-production hostname (localhost etc.) means the local dev signaling
 		// server; production consults the peer-server Settings (default self-hosted
@@ -177,6 +194,10 @@ export class PeerConnection {
 					waiting = waiting.filter(e => e[1] !== 'approved');
 					element[1] = 'approved';
 
+					// CN: OUR outbound request was approved — that peer is the session
+					// host (first approval wins; null while hosting ourselves).
+					if (!get(sessionHost)) sessionHost.set(conn.peer);
+
 					// Show approved toast message
 					showToast(element[0] + ' has approved your connection request.');
 					// waitingForApproval.set(waiting);
@@ -225,6 +246,7 @@ export class PeerConnection {
 				this.connections[conn.peer] = conn;
 				conn.on('close', () => this.onConnClose(conn.peer, conn));
 				this.openedPeers.add(conn.peer);
+				markPeerJoined(conn.peer);
 				peers.update((value) => value);
 				this.sendHandshake(conn, conn.peer, true, this.peer.id);
 			});
@@ -446,6 +468,13 @@ export class PeerConnection {
 		if (!this.connections[peerId]) {
 			console.log("Connecting to " + peerId);
             const conn = this.peer.connect(peerId);
+            // peer.connect returns undefined when the signaling link is down
+            // (disconnected peer) — bail instead of throwing on conn.on below (CN)
+            if (!conn) {
+                console.log('connect to ' + peerId + ' failed: signaling link is down');
+                showToast('Cannot reach the signaling server - the connection request was not sent.');
+                return;
+            }
             this.connections[peerId] = conn;
 
 			conn.on('close', () => this.onConnClose(peerId, conn));
@@ -453,6 +482,7 @@ export class PeerConnection {
             conn.on('open', () => {
 				console.log('Connection to ' + peerId + ' established');
 				this.openedPeers.add(peerId);
+				markPeerJoined(peerId);
 				//Trigger reactivity for UI list of objects
 				peers.update((value) => value);
 				this.sendHandshake(conn, peerId, getobjects, id);
@@ -489,11 +519,16 @@ export class PeerConnection {
 			delete this.connections[peerId];
 		}
 		const conn = this.peer.connect(peerId);
+		if (!conn) {
+			console.log('restore to ' + peerId + ' failed: signaling link is down');
+			return;
+		}
 		this.connections[peerId] = conn;
 		conn.on('close', () => this.onConnClose(peerId, conn));
 		conn.on('open', () => {
 			console.log('Connection to ' + peerId + ' restored');
 			this.openedPeers.add(peerId);
+			markPeerJoined(peerId);
 			peers.update((value) => value);
 			this.sendHandshake(conn, peerId, getobjects, id);
 		});
@@ -536,6 +571,34 @@ export class PeerConnection {
 		dropPeerEnvPresets(peerId);
 		dropPeerHandModel(peerId);
 		checkLocks();
+	}
+
+	// CN (roadmap #14): leave the WHOLE session — close every peer connection and
+	// run the full per-peer teardown, keep the local scene. Teardown is EXPLICIT
+	// (not via close events): real WebRTC closes are often never signaled (the P-A
+	// finding), and each conn is deleted from `connections` BEFORE close() so the
+	// onConnClose stale-guard no-ops any late events. The signaling registration is
+	// KEPT (no peer.destroy()) so our invite id stays valid; remote peers self-heal
+	// via their own onConnClose + checkLocks sweep.
+	leaveSession() {
+		for (const peerId of Object.keys(this.connections)) {
+			const conn = this.connections[peerId];
+			delete this.connections[peerId];
+			try { conn.close(); } catch {}
+			if (this.openedPeers.has(peerId)) {
+				this.openedPeers.delete(peerId);
+				handleDisconnected(peerId);
+				dropPeerEnvPresets(peerId);
+				dropPeerHandModel(peerId);
+			}
+		}
+		// roster -> self only (entry [0] is SELF); both approval queues cleared
+		userdata.set(get(userdata).filter(u => u[0] === this.peer.id));
+		waitingForApproval.set([]);
+		pendingApprovals.set([]);
+		resetSession();
+		checkLocks();
+		peers.update((value) => value);
 	}
 
 	// Broadcast to every OPEN outgoing connection. Guards conn.open (peerjs

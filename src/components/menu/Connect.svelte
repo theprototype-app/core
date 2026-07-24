@@ -3,46 +3,41 @@
 	import { Input, Button } from 'flowbite-svelte';
 	import { onMount } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
-	import { peerServerStatus } from '$lib/peerServer';
+	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
+	import { sessionHost } from '$lib/connectionState';
+	import { cancelOutboundRequest } from '$lib/peerApproval';
 	import { connectSlot } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
+	import ConnectInfoDrawer from './ConnectInfoDrawer.svelte';
 
-	let peerIdToConnect;
+	let peerIdToConnect = $state('');
 	let displayid = $state('Generating...');
 	let myidcap = $state();
+	let infoOpen = $state(false);
 
 	$effect(() => {
 		myidcap = displayid === 'Generating...' ? displayid : displayid.toUpperCase();
 	});
 
-	// I5: compact indicator of the RESOLVED signaling server, so users can tell which
-	// world they're in (a wrong server = share links that never connect). Reads the
-	// store peerHandler updates on peer creation + on fallback to the public cloud.
 	const srv = $derived($peerServerStatus);
-	const srvLabel = $derived(srv ? (srv.didFallback ? 'public (fallback)' : srv.label) : '');
-	const srvTitle = $derived(
-		!srv
-			? ''
-			: srv.didFallback
-				? 'Self-hosted peer server unreachable — connected via the public PeerJS cloud'
-				: `Signaling server: ${srv.host}${srv.port && srv.port !== 443 ? ':' + srv.port : ''}${srv.path && srv.path !== '/' ? srv.path : ''}`
+
+	// CN (roadmap #14): the pill is a small state machine. "Connected" derives from
+	// the transport truth (openedPeers — $peers ticks on every open/close), NEVER
+	// from $userdata.length: the roster is populated optimistically at DIAL time.
+	const remoteOpen = $derived($peers ? [...$peers.openedPeers] : []);
+	const pendingOut = $derived($waitingForApproval.filter((w) => w[1] === 'pending'));
+	const connState = $derived(
+		remoteOpen.length > 0 ? 'connected' : pendingOut.length > 0 ? 'pending' : 'idle'
 	);
-	const srvDot = $derived.by(() => {
-		if (!srv) return '#6b7280';
-		if (srv.didFallback) return '#f59e0b'; // amber — degraded/fallback
-		switch (srv.kind) {
-			case 'self-hosted':
-				return '#22c55e'; // green
-			case 'custom':
-				return '#8b5cf6'; // violet
-			case 'public':
-				return '#3b82f6'; // blue
-			case 'local':
-				return '#9ca3af'; // gray
-			default:
-				return '#6b7280';
-		}
-	});
+	// the peer whose session we joined (approved our request), else the first live peer
+	const hostId = $derived($sessionHost ?? remoteOpen[0] ?? null);
+	const hostName = $derived($userdata.find((u) => u[0] === hostId)?.[1] || null);
+	const hostLabel = $derived(hostName || (hostId ? String(hostId).toUpperCase() : ''));
+	const connectedTitle = $derived(
+		$sessionHost
+			? 'Connected to ' + hostLabel + "'s session (" + remoteOpen.length + ' peer' + (remoteOpen.length > 1 ? 's' : '') + ')'
+			: 'You are hosting · ' + remoteOpen.length + ' peer' + (remoteOpen.length > 1 ? 's' : '') + ' connected'
+	);
 
 	function updateDisplayId(id) {
 		displayid = id;
@@ -82,6 +77,12 @@
 
 	// Use the instance method to connect
 const connectToPeer = (peerIdToConnect) => {
+	// CN: dialing with the signaling link down used to throw inside peer.connect()
+	// (undefined conn) and silently strand the request — surface it instead.
+	if ($peers && peerIdToConnect && !$peers.peer?.open) {
+		showToast('Not connected to a signaling server yet — check the (i) panel next to Connect.');
+		return;
+	}
     if ($peers && peerIdToConnect) {
 
 	// Check if peer is already present in whitelist
@@ -100,7 +101,7 @@ const connectToPeer = (peerIdToConnect) => {
 		$waitingForApproval.push([peerIdToConnect.toLowerCase(), 'pending']);
 		$waitingForApproval = $waitingForApproval
 	}
-	else 
+	else
 	{
 		// already connected
 		$pendingApprovals.push({peerId: peerIdToConnect.toLowerCase(), status: 'retry'});
@@ -110,12 +111,31 @@ const connectToPeer = (peerIdToConnect) => {
     }
 };
 
+	// cancel OUR pending outbound request (the pill covers the single-dial case;
+	// extra simultaneous dials get inline cancels in the info drawer)
+	function cancelPending() {
+		const target = pendingOut[0]?.[0];
+		if (target) cancelOutboundRequest(target);
+	}
+
+	function disconnect() {
+		$peers?.leaveSession?.();
+		showToast('Left the session — your local scene is kept.');
+	}
+
 	const copy = () => {
+		if (displayid === 'Generating...') {
+			showToast('Still connecting to the signaling server — try again in a moment.');
+			return;
+		}
 		if (!navigator.clipboard) {
 			// use old commandExec() way
 		} else {
+			// CN-3: pin the signaling world into the link when it differs from the
+			// build default (fallback / explicit public / custom) so the joiner lands
+			// on the SAME server.
 			navigator.clipboard
-				.writeText(window.location.origin+'#'+myidcap)
+				.writeText(window.location.origin + '#' + myidcap + inviteServerParam(srv))
 				.then(function () {
 					// alert("yeah!"); // success
 				})
@@ -131,7 +151,7 @@ const connectToPeer = (peerIdToConnect) => {
 	 re-enables them. Narrow screens drop the bar to its own row BELOW the logo
 	 (left) and the peers/profile chrome (right) instead of squeezing between them. -->
 <div class="connect-wrap">
-	<div class="connect-pill" role="group">
+	<div class="connect-pill" role="group" data-state={connState}>
 		<!-- your invite id (click to copy the share link) -->
 		<Button
 			color="primary"
@@ -139,31 +159,87 @@ const connectToPeer = (peerIdToConnect) => {
 			on:click={copy}
 			title="Copy your invite link"><span style="white-space: nowrap;">&#x1f4cb; {myidcap}</span></Button
 		>
-		<!-- I5: resolved signaling-server indicator (dot + short label, full host in
-			 the tooltip). Non-interactive; stays one line + truncates on the narrow bar. -->
-		{#if srv}
-			<span class="srv-indicator" title={srvTitle} data-testid="peer-server-indicator" data-kind={srv.didFallback ? 'fallback' : srv.kind}>
-				<span class="srv-dot" style="background:{srvDot}"></span>
-				<span class="srv-label">{srvLabel}</span>
-			</span>
-		{/if}
 		<span class="connect-divider"></span>
-		<!-- connect to a peer — the input shrinks (down to cx-input min-width) so the
-			 Connect button stays visible when the row is tight; the button never shrinks -->
-		<div class="cx-connect inline-flex rounded-md shadow-sm">
-			<Input
-				type="text"
-				placeholder="Enter peer ID to connect"
-				class="nob cx-input rounded-r-none border-0"
-				bind:value="{peerIdToConnect}"
-			/>
+
+		{#if connState === 'connected'}
+			<!-- connected: who + how many, red Disconnect. No dial input. -->
+			<span class="cx-status" title={connectedTitle} data-testid="connect-status">
+				<span class="cx-dot cx-dot-live"></span>
+				<span class="cx-status-label"
+					>Connected · {$sessionHost ? hostLabel : 'hosting'}{remoteOpen.length > 1
+						? ' +' + (remoteOpen.length - 1)
+						: $sessionHost
+							? ''
+							: ' · ' + remoteOpen.length + ' peer' + (remoteOpen.length > 1 ? 's' : '')}</span
+				>
+			</span>
 			<Button
-				color="primary"
-				class="nob shrink-0 rounded-l-none rounded-r-lg bg-blue-500 text-white dark:bg-blue-700 dark:text-gray-200"
-				on:click="{() => {connectToPeer(peerIdToConnect)}}"
-				>Connect</Button
+				color="red"
+				id="disconnect-button"
+				class="nob shrink-0 rounded-lg bg-red-600 text-white hover:bg-red-700 dark:bg-red-700 dark:text-gray-100 dark:hover:bg-red-800"
+				on:click={disconnect}
+				title="Leave the session (your local scene is kept)">Disconnect</Button
 			>
-		</div>
+		{:else if connState === 'pending'}
+			<!-- pending: request out, waiting for their approval. Amber = reversible
+				 abort (red stays reserved for Disconnect). -->
+			<div class="cx-connect inline-flex rounded-md shadow-sm">
+				<Input
+					type="text"
+					disabled
+					class="nob cx-input rounded-r-none border-0 opacity-70"
+					value={pendingOut[0]?.[0] ?? peerIdToConnect}
+				/>
+				<Button
+					color="yellow"
+					id="cancel-request-button"
+					class="nob shrink-0 rounded-l-none rounded-r-lg bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
+					on:click={cancelPending}
+					title="Cancel the connection request">Cancel</Button
+				>
+			</div>
+			<span class="cx-status" aria-live="polite" data-testid="connect-pending">
+				<span class="cx-dot cx-dot-wait"></span>
+				<span class="cx-status-label cx-muted">Waiting for approval…</span>
+			</span>
+		{:else}
+			<!-- idle: dial a peer — the input shrinks (down to cx-input min-width) so
+				 the Connect button stays visible when the row is tight -->
+			<div class="cx-connect inline-flex rounded-md shadow-sm">
+				<Input
+					type="text"
+					placeholder="Enter peer ID to connect"
+					class="nob cx-input rounded-r-none border-0"
+					bind:value="{peerIdToConnect}"
+				/>
+				<Button
+					color="primary"
+					class="nob shrink-0 rounded-l-none rounded-r-lg bg-blue-500 text-white dark:bg-blue-700 dark:text-gray-200"
+					on:click="{() => {connectToPeer(peerIdToConnect)}}"
+					>Connect</Button
+				>
+			</div>
+		{/if}
+
+		<!-- connection/server info disclosure — a chevron that rotates 180° on open;
+			 the panel slides down from under the pill. Present in every state; the
+			 amber badge surfaces a signaling fallback without a permanent label. -->
+		<button
+			id="connect-info-button"
+			class="cx-toggle"
+			class:open={infoOpen}
+			data-testid="connect-info-button"
+			title="Connection &amp; server info"
+			aria-label="Show connection and server info"
+			aria-expanded={infoOpen}
+			onclick={() => (infoOpen = !infoOpen)}
+		>
+			<i class="fas fa-chevron-down cx-chevron"></i>
+			{#if srv?.didFallback}
+				<span class="cx-info-warn" data-testid="connect-info-warn" title="Self-hosted server unreachable — on the public cloud"></span>
+			{/if}
+		</button>
+
 		<!-- open-core (M1d): cloud plugin mount point (login / Browse Rooms). Empty in
 			 the OSS build; the cloud plugin fills it via cloudApi.mountConnect(). -->
 		{#if $connectSlot}
@@ -171,6 +247,10 @@ const connectToPeer = (peerIdToConnect) => {
 			<CloudSlot mount={$connectSlot} />
 		{/if}
 	</div>
+
+	{#if infoOpen}
+		<ConnectInfoDrawer onClose={() => (infoOpen = false)} />
+	{/if}
 </div>
 
 <style>
@@ -215,30 +295,83 @@ const connectToPeer = (peerIdToConnect) => {
 		margin: 2px 0;
 		background: rgb(255 255 255 / 0.12);
 	}
-	/* resolved signaling-server indicator: dot + short label. Shrinks (truncates the
-	   label) before the connect input so the pill/bar stays one line. */
-	.srv-indicator {
+	/* connection status cluster (pending/connected) */
+	.cx-status {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
+		gap: 6px;
 		min-width: 0;
-		flex: 0 1 auto;
-		font-size: 11px;
-		line-height: 1;
-		color: var(--color-text-muted, rgb(209 213 219 / 0.9));
-		cursor: default;
+		font-size: 12px;
+		color: var(--color-text, rgb(229 231 235));
 	}
-	.srv-dot {
+	.cx-status-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 220px;
+	}
+	.cx-muted {
+		color: rgb(209 213 219 / 0.75);
+	}
+	.cx-dot {
 		width: 8px;
 		height: 8px;
 		flex: 0 0 auto;
 		border-radius: 9999px;
-		box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25);
 	}
-	.srv-label {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	.cx-dot-live {
+		background: #22c55e;
+		box-shadow: 0 0 6px rgb(34 197 94 / 0.7);
+	}
+	.cx-dot-wait {
+		background: #f59e0b;
+		animation: cx-pulse 1.2s ease-in-out infinite;
+	}
+	@keyframes cx-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
+	}
+	/* chevron disclosure — rotates 180° on open; drives the slide-down info panel */
+	.cx-toggle {
+		position: relative;
+		flex: 0 0 auto;
+		width: 26px;
+		height: 26px;
+		border-radius: 9999px;
+		border: 1px solid rgb(255 255 255 / 0.15);
+		background: rgb(255 255 255 / 0.06);
+		color: rgb(209 213 219 / 0.9);
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.cx-toggle:hover {
+		background: rgb(255 255 255 / 0.14);
+		color: #fff;
+	}
+	.cx-chevron {
+		font-size: 11px;
+		line-height: 1;
+		transition: transform 0.2s ease;
+	}
+	.cx-toggle.open .cx-chevron {
+		transform: rotate(180deg);
+	}
+	.cx-info-warn {
+		position: absolute;
+		top: -2px;
+		right: -2px;
+		width: 9px;
+		height: 9px;
+		border-radius: 9999px;
+		background: #f59e0b;
+		border: 1.5px solid rgb(31 41 55);
 	}
 	/* Connect stays on the top row; the logo + peers/profile chrome drops to a second
 	   row on narrow screens (Sidebar/Users media queries). When space is too tight for

@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { showToast, appNotice, peers } from '../stores/appStore';
+import { requestConnect } from './peerApproval';
 import {
 	setCapabilityProvider,
 	setAuthProvider,
@@ -76,6 +77,8 @@ function makeCloudApi() {
 		// --- context accessors ---
 		/** the live PeerConnection (id, connections, send…), or null before connect */
 		getPeers: () => get(peers),
+		/** dial a peer through the normal request flow (join a room) — v2 */
+		connectToPeer: (/** @type {string} */ peerId) => requestConnect(peerId),
 
 		// --- plugin message channel (replicate the plugin's own state) ---
 		/** broadcast a cloud message to all peers (roles, room announces) */

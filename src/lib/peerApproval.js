@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { peers, userdata, pendingApprovals, waitingForApproval } from '../stores/appStore';
+import { peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { sessionHost } from './connectionState';
 
 // Pending-connection approval (211). Kept in its own store-only module so VR
@@ -33,6 +33,37 @@ export function denyPeer(peerId) {
 	/** @type {any} */
 	const peer = get(peers);
 	peer?.connections?.[peerId]?.close?.();
+}
+
+/**
+ * Dial a peer: the outbound connection request (whitelist + broadcast the roster +
+ * open the DataConnection + queue the pending entry). Shared by the Connect pill and
+ * the cloud plugin's "join room" (cloudApi.connectToPeer) so both take the exact
+ * same path. No-op without a live signaling link. @param {string} rawId
+ */
+export function requestConnect(rawId) {
+	const peerId = String(rawId || '').toLowerCase();
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer || !peerId) return;
+	if (!peer.peer?.open) {
+		showToast('Not connected to a signaling server yet — try again in a moment.');
+		return;
+	}
+	const users = /** @type {any[]} */ (get(userdata));
+	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) {
+		users.push([peerId, '', '']);
+		userdata.set(/** @type {any} */ (users));
+		peer.send({ type: 'userdata', userdata: get(userdata) });
+		peer.connectToPeer(peerId, true);
+		const waiting = /** @type {any[]} */ (get(waitingForApproval));
+		if (!waiting.some((/** @type {any} */ w) => w[0] === peerId)) waiting.push([peerId, 'pending']);
+		waitingForApproval.set(/** @type {any} */ (waiting));
+	} else {
+		const pend = /** @type {any[]} */ (get(pendingApprovals));
+		pend.push({ peerId, status: 'retry' });
+		pendingApprovals.set(/** @type {any} */ (pend));
+	}
 }
 
 /**

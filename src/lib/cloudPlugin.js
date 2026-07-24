@@ -6,7 +6,9 @@ import {
 	getAuthProvider,
 	setMessageHandler,
 	connectSlot,
-	usersSlot
+	usersSlot,
+	profileSlot,
+	drawerSlot
 } from './cloudHooks';
 
 /**
@@ -56,8 +58,9 @@ export async function startCloudPlugin() {
  */
 function makeCloudApi() {
 	return {
-		/** contract version — bump when the surface changes incompatibly */
-		version: 1,
+		/** contract version — bump when the surface changes incompatibly.
+		 *  v2 (roadmap #14 PM): + mountProfile, mountConnectDrawer. */
+		version: 2,
 
 		// --- peer hooks ---
 		/** install the receive-side capability gate (roles enforcement) */
@@ -90,6 +93,12 @@ function makeCloudApi() {
 		/** render into the Users popover (roles section) */
 		mountUsersSection: (/** @type {any} */ mountFn) =>
 			usersSlot.set(typeof mountFn === 'function' ? mountFn : null),
+		/** render into the profile dropdown (login / account / preferences) — v2 */
+		mountProfile: (/** @type {any} */ mountFn) =>
+			profileSlot.set(typeof mountFn === 'function' ? mountFn : null),
+		/** render into the Connect info drawer (room / host settings) — v2 */
+		mountConnectDrawer: (/** @type {any} */ mountFn) =>
+			drawerSlot.set(typeof mountFn === 'function' ? mountFn : null),
 
 		// --- utilities ---
 		toast: showToast

@@ -50,6 +50,25 @@ h.run(async () => {
 	// M1c/M1d: the plugin mounted a login button into the Connect slot
 	h.check(await A.page.locator('#cloud-login-btn').first().isVisible(), 'M1c/M1d: plugin UI mounts in the Connect slot');
 
+	// PM (roadmap #14): cloudApi v2 mount points. profileSlot renders only when the
+	// avatar dropdown is open (flowbite trigger is flaky headless) — assert the seam
+	// is installed at the store level; the drawer mount is exercised via the DOM.
+	const v2 = await A.page.evaluate(() => {
+		const read = (s) => { let v; s.subscribe((x) => (v = x))(); return v; };
+		return {
+			profile: typeof read(window.__stores.cloudHooks.profileSlot) === 'function',
+			drawer: typeof read(window.__stores.cloudHooks.drawerSlot) === 'function'
+		};
+	});
+	h.check(v2.profile, 'PM: plugin installs a profile mount (mountProfile / profileSlot)');
+	h.check(v2.drawer, 'PM: plugin installs a Connect-drawer mount (mountConnectDrawer / drawerSlot)');
+	// drawer mount renders in the DOM when the (i) drawer opens
+	await A.page.locator('[data-testid="connect-info-button"]').click();
+	await A.page.waitForTimeout(350);
+	h.check(await A.page.locator('#cloud-drawer-section').first().isVisible(), 'PM: drawer section renders in the open info drawer');
+	await A.page.mouse.click(10, 500); // close the drawer
+	await A.page.waitForTimeout(350);
+
 	// M1: plugin message channel — core routes an inbound {type:'cloud'} to the
 	// plugin's onCloudMessage handler (roles/room replication rides this).
 	const gotMsg = await A.page.evaluate(() => {

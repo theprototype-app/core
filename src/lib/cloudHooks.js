@@ -131,3 +131,8 @@ export const usersSlot = writable(null);
 /** Connect info-drawer section (CN, roadmap #14) — room/host settings render here.
  * @type {import('svelte/store').Writable<((el: HTMLElement) => (() => void) | void) | null>} */
 export const drawerSlot = writable(null);
+
+/** Profile dropdown section (PM, roadmap #14) — the cloud login / account UI renders
+ * here (moved out of the Connect pill).
+ * @type {import('svelte/store').Writable<((el: HTMLElement) => (() => void) | void) | null>} */
+export const profileSlot = writable(null);

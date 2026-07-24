@@ -122,6 +122,10 @@ modules persist in storage.
 
 Use `https://theprototype.app:5173/` — hosts-mapped to 127.0.0.1; the `.app` hostname
 makes peerjs use the **public cloud** (localhost tries ws://localhost:9001 and fails).
+**NOTE (2026-07-24)**: the `theprototype.app` hosts mapping is currently COMMENTED
+OUT in `etc/hosts`, so two-peer suites are env-gated locally — re-enable the mapping
+(or gate the block behind an env flag, as `connect-states.test.cjs` does with
+`TWO_PEER=1`) to run them.
 `helpers.connect(B, A)` does: fill peer id → Connect → Approve on A → ~9s settle.
 Late joiners: connect a third context AFTER mutations, assert handshake state arrived
 (objects/nodes/annotations/joints/module state/env/music/handmodel/custom defs).
@@ -134,6 +138,16 @@ drops the P2P session.
 
 ## Known flakes / traps
 
+- **Connect / open-core (#14)**: `connect-states.test.cjs` drives the pill state
+  machine single-page by STUBBING the dead-signaling peer (`peer.open=true` +
+  `peer.connect=(id)=>({peer:id,open:false,on(){},close(){},send(){}})`) so a dial
+  flows without a server. `open-core-m1.test.cjs` loads the reference plugin
+  (`static/cloud-plugin-example.js`) via `localStorage.cloudPluginUrl='/cloud-plugin.js'`
+  + `freshReload`, then asserts the seams (`window.__stores.cloudHooks.canApply`,
+  `profileSlot`/`drawerSlot` are functions, mounted DOM). The flowbite avatar Dropdown
+  is flaky to open headlessly — assert profile mounts at the STORE level, not by
+  clicking `#avatar-menu`. A `transition:slide` element stays in the DOM through the
+  ~200ms out-transition — poll with `eventually`, don't assert `count===0` immediately.
 - First run after adding a dependency: vite re-optimizes and reloads mid-test — rerun.
   Lazy wasm (rapier) needs a throwaway prewarm page first (see physics.test.cjs).
   Physics sims run REAL-time since #12 (fixed-timestep accumulator) — falls/settles

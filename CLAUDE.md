@@ -20,7 +20,36 @@ loadable play content. Everything a user does must be visible to connected peers
 - `src/lib/peerHandler.svelte.js` — PeerConnection class; **all incoming messages**
   dispatch in `conn.on('data')`; `sendHandshake` fires **on connection open** and pushes
   locked/hosts/userdata/module versions/environment + requests full-state syncs
-  (`getobjects/getnodes/getannotations/getmodulestate/getnodedefs`).
+  (`getobjects/getnodes/getannotations/getmodulestate/getnodedefs`). #14 CN: the
+  FIRST dispatch line is the open-core capability gate (`if (!canApply(...)) return`);
+  `leaveSession()` closes every conn with explicit teardown (no `peer.destroy()` — the
+  invite id stays valid); the constructor parses an invite `~srv` tail BEFORE creating
+  the Peer (`applyInviteServerOverride`); `markPeerJoined`/`sessionHost` set on
+  approval. `peer.connect()` returns undefined when the signaling link is down — all
+  call sites guard it (dialing used to throw + strand the request).
+- Open-core seams (#13 M1 + #14 PM, contract in committed `OPEN-CORE.md`): a closed
+  cloud plugin loads via `VITE_CLOUD_PLUGIN`/`localStorage.cloudPluginUrl`
+  (`cloudPlugin.js` → `register(cloudApi)`). `cloudHooks.js` (store-only, no cycles) =
+  the seams: `canApply` capability gate (default allow; `ALWAYS_ALLOWED` protocol
+  floor incl. `cloud`), `authProvider`, `sendCloud`/`onCloudMessage` (`{type:'cloud'}`
+  channel), and mount stores `connectSlot`/`usersSlot`/`profileSlot`/`drawerSlot`
+  rendered via `CloudSlot.svelte` (a `(el)=>cleanup` mount fn). cloudApi **v2**:
+  +`mountProfile`/`mountConnectDrawer`/`connectToPeer`. Everything is INERT with no
+  plugin — OSS behaves byte-identical.
+- `src/lib/connectionState.js` (store-only) — `sessionHost` (peer that approved OUR
+  outbound request; null = we host), `peerJoinedAt`, `resetSession`. Connect state
+  derives from `$peers.openedPeers`, **NEVER `userdata.length`** (the roster is
+  populated at DIAL time — trap). `peerApproval.js` = `requestConnect` (shared dial),
+  `cancelOutboundRequest`, `approvePeer`/`denyPeer` (store-only so VR + cloudApi reach
+  them without a peerHandler cycle).
+- `src/components/menu/Connect.svelte` — a 3-state pill (`data-state`
+  idle/pending/connected): idle dial + blue Connect; pending amber Cancel; connected
+  green `Connected · <host>` + red Disconnect. A chevron toggles `ConnectInfoDrawer`
+  (slide-down: Session/Server-with-ping+discovery/`drawerSlot` cloud mount). The
+  always-on server indicator was removed (moved into the drawer; amber dot on the
+  chevron when `peerServerStatus.didFallback`). `peerServer.js` also carries the
+  invite `~srv` param helpers (`inviteServerParam`/`parseInviteHash`/
+  `applyInviteServerOverride`, session-only, never falls back).
 - `src/lib/commandsHandler.svelte.js` — receive-side scene appliers + `sendObjects`
   (GLTF full sync; animated imports detour through `sendAnimatedImport` raw bytes).
 - Domain modules in `src/lib/`: `objectActions`, `geometries.svelte.js`,
@@ -198,6 +227,20 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **Connection "connected" state = `$peers.openedPeers`, NOT `userdata.length`**:
+  dialing whitelists the target in `userdata` at DIAL time (before approval), so a
+  roster-length check shows a phantom peer while pending. `$peers` ticks
+  (`peers.update`) on every open/close, so derive from `openedPeers` (#14 CN; the
+  Users peers-trigger had this bug too).
+- A fixed overlay anchored under the Connect pill can't use a `position:fixed`
+  click-catcher sized to the viewport — `.connect-wrap`'s `translateX(-50%)` makes it
+  the containing block for fixed descendants (the transform gotcha). Close the
+  ConnectInfoDrawer on an outside click via a `<svelte:window onpointerdown>` listener
+  instead (excluding the toggle). Svelte's `slide` transition animates height, not
+  transform, so the pill's centering survives the slide.
+- Headless e2e can't reach a signaling server (peer.open stays false, `peer.connect`
+  returns undefined). To drive the dial state machine, stub it:
+  `Object.defineProperty(p.peer,'open',{value:true}); p.peer.connect = (id)=>({peer:id,open:false,on(){},close(){},send(){}})`.
 - Svelte 5 forbids mixing `on:click` and `onclick` **per component** — match the file's
   existing style. In a RUNES-mode file (any `$state`/`$derived`/`$effect`) use the
   attribute form `onclick`/`oninput`; the `on:` directive is deprecated there and each
@@ -432,7 +475,22 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
-- Status (2026-07-22): **Batch H (flow v2) MERGED to main = PR #36** — TRUE
+- Status (2026-07-24): **Roadmap #14 (Connect UX + open-core cloud) IN FLIGHT.**
+  MERGED to core main: #38 M1 open-core seams, #39 docs-migration pointers (plans →
+  private cloud repo, SDK docs → public site), #40 **CN** (Connect 3-state pill +
+  ConnectInfoDrawer chevron/slide + `sessionHost`/`leaveSession`/cancel + invite
+  `~srv`). OPEN: core **PR #41 PM** (cloudApi v2 mountProfile/mountConnectDrawer/
+  connectToPeer + `requestConnect` + Users dropdown restructure keeping the 1.5rem
+  corner). Cloud repo (`theprototype-app/cloud`): #1-#4 merged (login/roles/deploy/
+  docs), **PR #5 = PM-cloud + SUB + RM** (login → profile dropdown; feature-updates
+  opt-in + `/privacy`; **rooms** — PocketBase `rooms`, opt-in listing, Browse +
+  host-settings drawer, auto-accept-viewers). PocketBase = orange-room.pockethost.io
+  (GitHub+Google OAuth confirmed working). PROD at **theprototype.pages.dev** (Cloudflare
+  Pages; `npm run deploy` in the cloud repo, guide in its README). USER must add in PB
+  admin: `rooms` collection + `users.featureUpdates`/`featureUpdatesConsentAt`.
+  svelte-check core 495/76. NEXT: RM-2 room thumbnails; rooms-access-control
+  (password/knock, plan written).
+  --- Earlier — Status (2026-07-22): **Batch H (flow v2) MERGED to main = PR #36** — TRUE
   per-object graph documents (H1), object-flows-as-scene-nodes w/ Flow Input/Output
   declared sockets (H5), api.registerNodeDefs (H2), Key Press trigger node (H3), plus
   user-driven follow-ups: scope-follows-the-selectedObjects-SET deselect fix, the

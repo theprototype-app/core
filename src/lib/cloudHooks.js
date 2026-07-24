@@ -127,3 +127,7 @@ export const connectSlot = writable(null);
 
 /** @type {import('svelte/store').Writable<((el: HTMLElement) => (() => void) | void) | null>} */
 export const usersSlot = writable(null);
+
+/** Connect info-drawer section (CN, roadmap #14) — room/host settings render here.
+ * @type {import('svelte/store').Writable<((el: HTMLElement) => (() => void) | void) | null>} */
+export const drawerSlot = writable(null);

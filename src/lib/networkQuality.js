@@ -23,6 +23,12 @@ export function classifyRtt(ms) {
 	return 'bad';
 }
 
+/** Band -> dot color (shared by Users popover + the Connect info drawer).
+ * @param {string} level */
+export function qColor(level) {
+	return level === 'good' ? '#4ade80' : level === 'ok' ? '#fbbf24' : level === 'bad' ? '#f87171' : '#9ca3af';
+}
+
 /** @param {number[]} arr */
 function median(arr) {
 	if (!arr.length) return null;

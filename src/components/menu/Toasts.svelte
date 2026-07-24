@@ -1,6 +1,7 @@
 <script lang="ts">
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
+    import { cancelOutboundRequest } from '$lib/peerApproval'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
 	import { Progressbar, Toast, Button } from 'flowbite-svelte';
@@ -136,6 +137,14 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
             Connection request to peer:&nbsp;{status[0]} <br />
             Status: {status[1]}
         </p>
+
+        <!-- CN: cancel the outbound request (same path as the pill's Cancel) -->
+        <Button
+            color="yellow"
+            class="nob rounded bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
+            onclick={() => cancelOutboundRequest(status[0])}
+            >Cancel</Button
+        >
     </div>
 
 </Toast>

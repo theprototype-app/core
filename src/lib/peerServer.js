@@ -129,6 +129,97 @@ peerServerConfig.subscribe((v) => {
  * @typedef {{ kind: PeerServerKind, label: string, host: string, port: number, path: string, didFallback: boolean }} PeerServerStatus
  */
 
+// --- invite-link server override (CN-3, roadmap #14) -------------------------
+//
+// A share link can pin the signaling world it was minted in: `#A1B2C~srv=public`
+// or `#A1B2C~srv=<encoded host[:port][path]>`. The joiner applies the override
+// BEFORE creating its Peer (peerHandler parses the hash at constructor-top — the
+// peer.on('open') hash flow runs too late for server selection). Session-only,
+// never persisted, and it never falls back: a pinned invite server must not
+// silently land the joiner in a different world.
+
+/** @type {{ forcePublic?: boolean, custom?: any } | null} */
+let inviteOverride = null;
+
+/** Install (or clear with null) the session-only invite server override. @param {any} ov */
+export function applyInviteServerOverride(ov) {
+	inviteOverride = ov || null;
+}
+
+/** Split a location.hash into peer id + optional invite server tail.
+ * @param {string} rawHash @returns {{ peerId: string, srv: string | null }} */
+export function parseInviteHash(rawHash) {
+	const h = (rawHash || '').replace(/^#/, '');
+	const i = h.indexOf('~');
+	if (i < 0) return { peerId: h, srv: null };
+	const peerId = h.slice(0, i);
+	const m = /(?:^|~)srv=([^~]*)/.exec(h.slice(i));
+	return { peerId, srv: m ? m[1] : null };
+}
+
+/** Decode a `~srv=` value into an override shape. @param {string} srv */
+export function decodeInviteServer(srv) {
+	if (!srv) return null;
+	if (srv === 'public') return { forcePublic: true };
+	const raw = decodeURIComponent(srv);
+	// host[:port][/path]
+	const m = /^([^:/]+)(?::(\d+))?(\/.*)?$/.exec(raw);
+	if (!m) return null;
+	return {
+		custom: {
+			host: m[1],
+			port: Number(m[2]) || 443,
+			path: m[3] || '/peerjs',
+			secure: true
+		}
+	};
+}
+
+/**
+ * The `~srv=` tail for a copied invite link — EMPTY when the resolved server is
+ * what a fresh default build would resolve anyway (self-hosted default, plain
+ * public with nothing configured, local dev). Only fallback / explicit-public /
+ * custom servers get encoded.
+ * @param {PeerServerStatus | null} status @returns {string}
+ */
+export function inviteServerParam(status) {
+	if (!status) return '';
+	if (status.kind === 'self-hosted' || status.kind === 'local') return '';
+	if (status.kind === 'public') {
+		// only meaningful when the default build would NOT have picked public
+		return status.didFallback || HAS_SELF_HOSTED ? '~srv=public' : '';
+	}
+	// custom
+	const port = status.port && status.port !== 443 ? ':' + status.port : '';
+	const path = status.path && status.path !== '/peerjs' && status.path !== '/' ? status.path : '';
+	return '~srv=' + encodeURIComponent(status.host + port + path);
+}
+
+/**
+ * The REST endpoint used to measure signaling-server reachability/ping — the
+ * peerjs INFO route (`GET <path>` returns server JSON, e.g.
+ * https://peerjs.theprototype.app/peerjs). Public cloud maps to its real API host.
+ * @param {PeerServerStatus | null} status @returns {string | null}
+ */
+export function peerServerPingUrl(status) {
+	if (!status) return null;
+	if (status.kind === 'public') return 'https://0.peerjs.com/';
+	const port = status.port && status.port !== 443 ? ':' + status.port : '';
+	const path = status.path && status.path !== '/' ? status.path : '';
+	return `https://${status.host}${port}${path}`;
+}
+
+/**
+ * The peerjs DISCOVERY endpoint (`GET <path>/<key>/peers`) — 200 = discovery on,
+ * 401 = off. Best-effort probe target for the info drawer.
+ * @param {PeerServerStatus | null} status @param {string=} key @returns {string | null}
+ */
+export function peerServerPeersUrl(status, key = 'peerjs') {
+	const base = peerServerPingUrl(status);
+	if (!base) return null;
+	return base.replace(/\/$/, '') + '/' + key + '/peers';
+}
+
 /**
  * @param {{ isLocalDev?: boolean, forcePublic?: boolean }} [ctx]
  * @returns {PeerServerStatus}
@@ -145,6 +236,22 @@ export function describePeerServer(ctx = {}) {
 	});
 
 	if (forcePublic) return publicCloud();
+
+	// invite override wins for the session (CN-3)
+	if (inviteOverride) {
+		if (inviteOverride.forcePublic) return publicCloud();
+		const c = inviteOverride.custom || {};
+		if (c.host) {
+			return {
+				kind: 'custom',
+				label: 'invite server',
+				host: c.host,
+				port: Number(c.port) || 443,
+				path: c.path || '/peerjs',
+				didFallback: false
+			};
+		}
+	}
 
 	const cfg = get(peerServerConfig);
 	if (cfg.mode === 'public') return publicCloud();
@@ -204,6 +311,14 @@ export const peerServerStatus = writable(null);
 export function resolvePeerOptions(ctx = {}) {
 	const { isLocalDev = false, forcePublic = false } = ctx;
 	if (forcePublic) return { options: undefined, canFallback: false };
+
+	// invite override wins for the session (CN-3) — and never falls back: a pinned
+	// invite server must not silently land the joiner in a different world.
+	if (inviteOverride) {
+		if (inviteOverride.forcePublic) return { options: undefined, canFallback: false };
+		const c = inviteOverride.custom || {};
+		if (c.host) return { options: serverOptions(c), canFallback: false };
+	}
 
 	const cfg = get(peerServerConfig);
 

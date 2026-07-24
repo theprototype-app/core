@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
-import { peers, userdata, pendingApprovals } from '../stores/appStore';
+import { peers, userdata, pendingApprovals, waitingForApproval } from '../stores/appStore';
+import { sessionHost } from './connectionState';
 
 // Pending-connection approval (211). Kept in its own store-only module so VR
 // (vrControls -> executeVRMenuAction) can call it WITHOUT statically importing
@@ -32,4 +33,25 @@ export function denyPeer(peerId) {
 	/** @type {any} */
 	const peer = get(peers);
 	peer?.connections?.[peerId]?.close?.();
+}
+
+/**
+ * Cancel OUR pending outbound request (CN, roadmap #14): drop the
+ * waitingForApproval entry, close + forget the never-opened conn (onConnClose sees
+ * !openedPeers.has -> just re-checks locks), and un-whitelist the peer we
+ * optimistically added at dial time. Deleting from `connections` stops the
+ * restoreConnection retry loop too (its stale-conn guard). @param {string} peerId
+ */
+export function cancelOutboundRequest(peerId) {
+	waitingForApproval.set(
+		get(waitingForApproval).filter((/** @type {any} */ w) => w[0] !== peerId)
+	);
+	/** @type {any} */
+	const peer = get(peers);
+	const conn = peer?.connections?.[peerId];
+	if (peer && conn) delete peer.connections[peerId]; // BEFORE close: stale-guard no-ops the event
+	try { conn?.close?.(); } catch { /* already gone */ }
+	userdata.set(get(userdata).filter((/** @type {any} */ u) => u[0] !== peerId));
+	if (get(sessionHost) === peerId) sessionHost.set(null);
+	if (peer) peers.update((v) => v);
 }

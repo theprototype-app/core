@@ -9,6 +9,7 @@ import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected } from '$lib/physics'
 import { dropPeerCursor } from '$lib/nodesHandler'
 import { dropPeerQuality } from '$lib/networkQuality'
+import { sessionHost, dropPeerJoined } from '$lib/connectionState'
 import { environment } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
@@ -262,6 +263,9 @@ export function handleDisconnected(peerId) {
     });
     dropPeerCursor(peerId);
     dropPeerQuality(peerId); // N3: drop the peer's network-quality telemetry
+    // CN: host bookkeeping — the host leaving means we're no longer "joined"
+    if (get(sessionHost) === peerId) sessionHost.set(null);
+    dropPeerJoined(peerId);
     voicePeerDisconnected(peerId);
     physicsPeerDisconnected(peerId);
 }

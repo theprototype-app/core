@@ -144,7 +144,11 @@ loadable play content. Everything a user does must be visible to connected peers
   deferred).
 - `tests/e2e/` — committed Playwright suites (`npm run e2e`, subset by name);
   `.cjs` because the package is `"type": "module"`.
-- `docs/sdk/` — SDK docs (kept **uncommitted**, like docs/plan). `MODULES.md` committed.
+- Docs (2026-07-24 split): SDK authoring docs live on the PUBLIC docs site
+  (theprototype-docs: module-sdk.md + module-package.md); `MODULES.md` committed here.
+  ALL planning docs live in the PRIVATE cloud repo (`theprototype-app/cloud` →
+  `docs/plans-core/`, local `../theprototype.app-cloud`). This repo's `/docs` is
+  gitignored scratch space (pointer READMEs inside).
 
 ## Replication golden rules
 
@@ -399,10 +403,12 @@ override for e2e — never share 5173 (the user's main-checkout server).
 
 - One commit per phase/feature; message style: `[feat]/[fix] lowercase summary` + body
   bullets + `Co-Authored-By: Claude ... <noreply@anthropic.com>`.
-- Plan documents live in `docs/plan/` (**never commit them**; `docs/sdk/` is also
-  uncommitted for now — the user moves them). Postponed phases → `docs/plan/pending/`;
-  future ideas → `docs/plan/backlog.md`; open design questions → `docs/plan/quiz.md`.
-  Keep `00-overview.md` tables in sync with every scope change.
+- Plan documents live in the PRIVATE cloud repo: `../theprototype.app-cloud/docs/plans-core/`
+  (versioned there — moved 2026-07-24; **never commit plans into THIS repo**).
+  Postponed phases → `plans-core/pending/`; future ideas → `plans-core/backlog.md`;
+  open design questions → `plans-core/quiz.md`. Keep `00-overview.md` tables in sync
+  with every scope change. Historical `docs/plan/...` references below = the old
+  in-repo path; those files are now under `plans-core/`.
 - Roadmap ritual: user drops notes → ask 3-4 targeted AskUserQuestion forks (offer a
   recommended option — they usually take it) → write plan files → present the batch
   table (sizes S/M/L/XL, riskiest last) → they pick what executes.
@@ -557,7 +563,8 @@ handedness-resolved; FRESH instance per call; null before the first pointer even
 the drag recipe = click to pick → follow pointerRay() in a frame task → click to
 drop. A module KIND that must agree across peers derives from the replicated object
 NAME, never locally-set userData (essentials + car). User modules (zip/URL via the
-manager) must be self-contained — no imports; guide in `MODULES.md` + `docs/sdk/`.
+manager) must be self-contained — no imports; guide in `MODULES.md` + the public
+docs site (module-sdk.md / module-package.md).
 OPTIONAL/community modules live in the separate `theprototype-app/modules` monorepo
 (local: `C:\Users\white\.code\AlexZ005\theprototype.app-modules`; one folder per
 module + zip recipe; `flow-toolkit` = registerNodeDefs reference, `untangle` = the

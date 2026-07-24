@@ -85,6 +85,16 @@ keep it off the wire.
    `tests/e2e/`; expose new singletons via the App.svelte `__stores` hook; one
    `[feat] ...` commit.
 
+**Open-core dispatch gate (#13 M1 / #14)**: the FIRST line of `conn.on('data')` is
+`if (data && !canApply(conn.peer, data.type)) return;` (`cloudHooks.canApply`, default
+allow). A NEW mutating message type is gate-able for free; if it is
+connection/handshake-critical it MUST be added to `ALWAYS_ALLOWED` in `cloudHooks.js`
+(alongside `hosts`/`userdata`/`cloud`/`get*`) so a cloud plugin's role gate can't drop
+it and break the mesh. Cloud-plugin state (roles, rooms) replicates over the
+`{type:'cloud', payload}` channel (`sendCloud`/`onCloudMessage`), NOT a new core type —
+core only carries the seam. Never build cloud/roles features into core; they live in
+the private `theprototype-app/cloud` plugin (see its `CLAUDE.md`).
+
 Throttle continuous streams (~10–20/s) with a final unthrottled send on gesture end
 (`move`, `verts`, `flowcursor`, `drawlive` are references); temp visuals for other
 peers get stale-expiry cleanup (`drawlive` 5s, ping 4s).

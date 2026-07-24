@@ -25,7 +25,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import NotificationCenter from './NotificationCenter.svelte';
 	import CloudSlot from '../CloudSlot.svelte';
-	import { usersSlot } from '$lib/cloudHooks';
+	import { usersSlot, profileSlot } from '$lib/cloudHooks';
 
 	// N3: latency-band dot color for a peer's network-quality indicator
 	const qColor = (level: string) =>
@@ -242,12 +242,22 @@
     placement="bottom"
     bind:open={openDropdown}
     triggeredBy="#avatar-menu"
-    class="w-52"
+    class="w-56"
     style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 998;"
 	>
+	<!-- PM (roadmap #14): identity header (avatar + name). The rounded top-right
+		 corner is KEPT — it echoes the profile circle. -->
 	<DropdownHeader>
-		<span class="block text-lg">{localStorage.getItem('username') ? localStorage.getItem('username') : 'Anonymous'}</span>
-		<DropdownDivider />
+		<div class="flex items-center gap-2">
+			<Avatar
+				src={avatarImage || (typeof localStorage !== 'undefined' ? localStorage.getItem('avatar') : '') || undefined}
+				class="h-9 w-9 shrink-0"
+			/>
+			<div class="min-w-0">
+				<span class="block truncate text-base font-semibold">{localStorage.getItem('username') ? localStorage.getItem('username') : 'Anonymous'}</span>
+				<span class="block truncate text-xs text-gray-400">Local profile</span>
+			</div>
+		</div>
 	</DropdownHeader>
 	<DropdownItem
 		onclick={() => {
@@ -260,6 +270,15 @@
 			profileSettingsModal = true;
 			openDropdown = false;
 		}}>Profile Settings</DropdownItem>
+	<!-- open-core (PM): cloud account section — the plugin mounts Sign in/out +
+		 preferences here (moved out of the Connect pill). Plain block: the plugin
+		 owns its own clicks, so it is NOT a DropdownItem. -->
+	{#if $profileSlot}
+		<DropdownDivider />
+		<div class="cloud-profile px-3 py-2">
+			<CloudSlot mount={$profileSlot} />
+		</div>
+	{/if}
 	</Dropdown>
 </div>
 

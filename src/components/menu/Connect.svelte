@@ -5,7 +5,7 @@
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
 	import { sessionHost } from '$lib/connectionState';
-	import { cancelOutboundRequest } from '$lib/peerApproval';
+	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
 	import { connectSlot } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 	import ConnectInfoDrawer from './ConnectInfoDrawer.svelte';
@@ -75,41 +75,11 @@
 		}
 	});
 
-	// Use the instance method to connect
-const connectToPeer = (peerIdToConnect) => {
-	// CN: dialing with the signaling link down used to throw inside peer.connect()
-	// (undefined conn) and silently strand the request — surface it instead.
-	if ($peers && peerIdToConnect && !$peers.peer?.open) {
-		showToast('Not connected to a signaling server yet — check the (i) panel next to Connect.');
-		return;
-	}
-    if ($peers && peerIdToConnect) {
-
-	// Check if peer is already present in whitelist
-	if(!$userdata.some((peer) => peer[0] === peerIdToConnect.toLowerCase()))
-	{
-		// Whitelist connection by adding to userdata
-		let data = [peerIdToConnect.toLowerCase(), '', '']
-		$userdata.push(data);
-		// Notify existing peers of updated whitelist
-		$peers.send({type: 'userdata', userdata: $userdata})
-		// Initiate connection request to peer and await approval
-        $peers.connectToPeer(peerIdToConnect.toLowerCase(), true);
-
-		// Add peer to pending approvals
-		if(!$waitingForApproval.some((peer) => peer[0] === peerIdToConnect.toLowerCase()))
-		$waitingForApproval.push([peerIdToConnect.toLowerCase(), 'pending']);
-		$waitingForApproval = $waitingForApproval
-	}
-	else
-	{
-		// already connected
-		$pendingApprovals.push({peerId: peerIdToConnect.toLowerCase(), status: 'retry'});
-		$pendingApprovals = $pendingApprovals;
-	}
-
-    }
-};
+	// dial a peer — delegates to the shared requestConnect (same path the cloud
+	// plugin's "join room" uses via cloudApi.connectToPeer).
+	const connectToPeer = (peerIdToConnect) => {
+		if (peerIdToConnect) requestConnect(peerIdToConnect);
+	};
 
 	// cancel OUR pending outbound request (the pill covers the single-dial case;
 	// extra simultaneous dials get inline cancels in the info drawer)

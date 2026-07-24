@@ -43,6 +43,30 @@ export function register(cloudApi) {
 		return () => btn.remove();
 	});
 
+	// 3b) cloudApi v2 mount points (roadmap #14): the profile dropdown (account /
+	//     preferences) and the Connect info-drawer (room / host settings). Guarded so
+	//     the example still works against a v1 host.
+	if (typeof cloudApi.mountProfile === 'function') {
+		cloudApi.mountProfile((el) => {
+			const b = document.createElement('button');
+			b.id = 'cloud-profile-signin';
+			b.textContent = 'Sign in to cloud';
+			b.style.cssText = 'font-size:12px;padding:4px 8px;border-radius:8px;background:#7c3aed;color:#fff;width:100%';
+			el.appendChild(b);
+			return () => b.remove();
+		});
+	}
+	if (typeof cloudApi.mountConnectDrawer === 'function') {
+		cloudApi.mountConnectDrawer((el) => {
+			const d = document.createElement('div');
+			d.id = 'cloud-drawer-section';
+			d.style.cssText = 'font-size:11px;color:#9ca3af';
+			d.textContent = 'Room settings would appear here.';
+			el.appendChild(d);
+			return () => d.remove();
+		});
+	}
+
 	// 4) Rebrand the first-run banner (or clear it with appNotice.set(null)).
 	cloudApi.appNotice.set({
 		text: 'Connected to theprototype cloud (example plugin).',

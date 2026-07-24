@@ -221,17 +221,20 @@ const connectToPeer = (peerIdToConnect) => {
 			</div>
 		{/if}
 
-		<!-- (i) connection/server info drawer toggle — present in every state. The
+		<!-- connection/server info disclosure — a chevron that rotates 180° on open;
+			 the panel slides down from under the pill. Present in every state; the
 			 amber badge surfaces a signaling fallback without a permanent label. -->
 		<button
 			id="connect-info-button"
-			class="cx-info"
+			class="cx-toggle"
+			class:open={infoOpen}
 			data-testid="connect-info-button"
 			title="Connection &amp; server info"
 			aria-label="Show connection and server info"
+			aria-expanded={infoOpen}
 			onclick={() => (infoOpen = !infoOpen)}
 		>
-			<span class="cx-info-glyph">i</span>
+			<i class="fas fa-chevron-down cx-chevron"></i>
 			{#if srv?.didFallback}
 				<span class="cx-info-warn" data-testid="connect-info-warn" title="Self-hosted server unreachable — on the public cloud"></span>
 			{/if}
@@ -333,8 +336,8 @@ const connectToPeer = (peerIdToConnect) => {
 			opacity: 0.35;
 		}
 	}
-	/* (i) info button — round, subtle, with an amber fallback badge */
-	.cx-info {
+	/* chevron disclosure — rotates 180° on open; drives the slide-down info panel */
+	.cx-toggle {
 		position: relative;
 		flex: 0 0 auto;
 		width: 26px;
@@ -348,15 +351,17 @@ const connectToPeer = (peerIdToConnect) => {
 		align-items: center;
 		justify-content: center;
 	}
-	.cx-info:hover {
+	.cx-toggle:hover {
 		background: rgb(255 255 255 / 0.14);
 		color: #fff;
 	}
-	.cx-info-glyph {
-		font-size: 12px;
-		font-style: italic;
-		font-family: Georgia, 'Times New Roman', serif;
+	.cx-chevron {
+		font-size: 11px;
 		line-height: 1;
+		transition: transform 0.2s ease;
+	}
+	.cx-toggle.open .cx-chevron {
+		transform: rotate(180deg);
 	}
 	.cx-info-warn {
 		position: absolute;

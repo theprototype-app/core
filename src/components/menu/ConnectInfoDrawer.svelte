@@ -5,6 +5,8 @@
 	// Server (resolved signaling server + measured ping + discovery probe), and a
 	// cloud-plugin mount (drawerSlot — room/host settings render here, batch RM).
 	import { onMount } from 'svelte';
+	import { slide } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import { peers, userdata, waitingForApproval } from '../../stores/appStore.js';
 	import { sessionHost, peerJoinedAt } from '$lib/connectionState';
 	import { peerQuality, qColor } from '$lib/networkQuality';
@@ -93,7 +95,12 @@
 
 <svelte:window onpointerdown={onWindowDown} />
 
-<div class="ui-panel cxd-panel" data-testid="connect-info-drawer" bind:this={panelEl}>
+<div
+	class="ui-panel cxd-panel"
+	data-testid="connect-info-drawer"
+	bind:this={panelEl}
+	transition:slide={{ duration: 200, easing: cubicOut }}
+>
 	<div class="ui-panel-header">
 		<span class="flex-1">Connection info</span>
 		<button class="cxd-x" title="Close" aria-label="Close" onclick={onClose}>✕</button>

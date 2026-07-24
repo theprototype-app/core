@@ -121,10 +121,14 @@ h.run(async () => {
 	h.check(fbKind === 'fallback', 'I5/CN: fallback sets data-kind="fallback"');
 	h.check(await A.page.locator('[data-testid="drawer-fallback-warn"]').first().isVisible(), 'I5/CN: fallback warning row shows');
 	h.check(await A.page.locator('[data-testid="connect-info-warn"]').first().isVisible(), 'I5/CN: the (i) button gains the amber fallback badge');
-	// close the drawer (click-catcher) and restore the real status
+	// close the drawer (outside pointerdown). Poll past the slide-out transition
+	// before asserting it's gone from the DOM.
 	await A.page.mouse.click(10, 400);
-	await A.page.waitForTimeout(150);
-	h.check((await A.page.locator('[data-testid="connect-info-drawer"]').count()) === 0, 'I5/CN: clicking outside closes the drawer');
+	await h.eventually(
+		() => A.page.locator('[data-testid="connect-info-drawer"]').count(),
+		(n) => n === 0,
+		'I5/CN: clicking outside closes the drawer'
+	);
 
 	// --- I4: far-zoom grid fade SNAPS (no multi-frame lerp ramp) --------------
 	// dolly the camera far out, then sample the grid fadeDistance uniform: the old

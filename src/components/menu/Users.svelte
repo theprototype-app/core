@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as THREE from 'three';
+	import { onMount, untrack } from 'svelte';
 	import {
 		Avatar,
 		Modal,
@@ -17,7 +18,8 @@
 		peers,
 		hidePanels,
 		characterModalOpen,
-		notesDrawerOpen
+		notesDrawerOpen,
+		cloudIdentity
 	} from '../../stores/appStore.js';
 	import { globalScene, globalCamera, camSave, peerHands } from '../../stores/sceneStore.js';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
@@ -79,8 +81,68 @@
 			
 			};
 			reader.readAsDataURL(avatarFile);
+			// an uploaded image is a CUSTOM avatar
+			try { localStorage.removeItem('avatarReset'); } catch {}
 		}
 	 }
+
+	// --- identity (roadmap #14 profile-fixes) ---------------------------------
+	// The collaborative username/avatar default to the signed-in cloud account
+	// (pushed by the plugin via cloudApi.setAccountIdentity -> $cloudIdentity) UNLESS
+	// the user set a custom one. "Custom username" = the usernameCustom flag; "custom
+	// avatar" = an uploaded image in localStorage.avatar.
+	const ls = (k: string) => (typeof localStorage !== 'undefined' ? localStorage.getItem(k) : null);
+	const usernameIsCustom = () => ls('usernameCustom') === '1';
+	const cid = $derived($cloudIdentity);
+	/** what the header/button/peers show */
+	const effName = $derived($username || cid?.username || 'Anonymous');
+	/** avatar src: session upload > stored custom > cloud account > default */
+	const effAvatar = $derived(avatarImage || ls('avatar') || cid?.avatar || '');
+
+	function broadcastUserdata() {
+		if (!$peers?.peer) return;
+		($userdata as any[]).forEach((el: any) => {
+			if (el[0] === $peers.peer.id) { el[1] = $username || ''; el[2] = ls('avatar') || avatarImage || cid?.avatar || ''; }
+		});
+		$peers.send({ type: 'userdata', userdata: $userdata });
+	}
+
+	onMount(() => {
+		// seed the live username from a previously-set custom value
+		if (usernameIsCustom() && ls('username')) untrack(() => username.set((ls('username') || '') as any));
+	});
+
+	// adopt the cloud identity as the default when nothing custom is set
+	$effect(() => {
+		const id = $cloudIdentity; // track
+		untrack(() => {
+			let changed = false;
+			if (!usernameIsCustom() && id?.username && $username !== id.username) {
+				username.set(id.username as any);
+				changed = true;
+			}
+			// avatar: only adopt when there's no custom upload stored
+			if (!ls('avatar') && id?.avatar && avatarImage !== id.avatar) {
+				// keep avatarImage empty (custom marker); effAvatar falls back to cloud
+				changed = true;
+			}
+			if (changed) broadcastUserdata();
+		});
+	});
+
+	function onUsernameEdited() {
+		try {
+			localStorage.setItem('username', $username || '');
+			localStorage.setItem('usernameCustom', ($username || '').trim() ? '1' : '0');
+		} catch {}
+		broadcastUserdata();
+	}
+
+	function resetAvatarToDefault() {
+		avatarImage = '';
+		try { localStorage.removeItem('avatar'); } catch {}
+		broadcastUserdata(); // falls back to the cloud-account avatar (or default)
+	}
 
 	 function specate(user) {
 		// $peers.send({ type: 'specator', peerId: $peers.peer.id });
@@ -212,51 +274,34 @@
 	</div>
 {/if}
 	</div>
+	<!-- main profile button: a single clean Avatar (no href -> no navigation bug; no
+		 3-branch) that picks the effective avatar (custom upload > stored > cloud
+		 account > default). This is the dropdown trigger. -->
 	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2; z-index: 999;">
 		<div class="flex items-center space-x-3" style="z-index: 999;">
-			{#if avatarImage != ''}
 			<Avatar
-				href="/"
-				src={avatarImage}
-				style="position: absolute; top: 8px; right: 20px;"
-				class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600;"
+				src={effAvatar || undefined}
+				style="position: absolute; top: 8px; right: 20px; cursor: pointer;"
+				class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
 			/>
-			{:else if typeof localStorage !== 'undefined' && localStorage.getItem('avatar')}
-			<Avatar
-				href="/"
-				src={localStorage.getItem('avatar')}
-				style="position: absolute; top: 8px; right: 20px;"
-				class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600;"
-			/>
-			{:else}
-			<Avatar
-				href="/"
-				style="position: absolute; top: 8px; right: 20px;"
-				class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600;"
-			/>
-			{/if}
-			
 		</div>
 	</div>
 	<Dropdown
-    placement="bottom"
+    placement="bottom-end"
     bind:open={openDropdown}
     triggeredBy="#avatar-menu"
     class="w-56"
     style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 998;"
 	>
-	<!-- PM (roadmap #14): identity header (avatar + name). The rounded top-right
-		 corner is KEPT — it echoes the profile circle. -->
+	<!-- PM (roadmap #14): identity header — name, then the cloud email on a new line
+		 when signed in. No avatar here (it's already the profile button). The rounded
+		 top-right corner is KEPT — it echoes the profile circle. -->
 	<DropdownHeader>
-		<div class="flex items-center gap-2">
-			<Avatar
-				src={avatarImage || (typeof localStorage !== 'undefined' ? localStorage.getItem('avatar') : '') || undefined}
-				class="h-9 w-9 shrink-0"
-			/>
-			<div class="min-w-0">
-				<span class="block truncate text-base font-semibold">{localStorage.getItem('username') ? localStorage.getItem('username') : 'Anonymous'}</span>
-				<span class="block truncate text-xs text-gray-400">Local profile</span>
-			</div>
+		<div class="min-w-0">
+			<span class="block truncate text-base font-semibold">{effName}</span>
+			{#if cid?.email}
+				<span class="block truncate text-xs text-gray-400">{cid.email}</span>
+			{/if}
 		</div>
 	</DropdownHeader>
 	<DropdownItem
@@ -310,26 +355,29 @@
 				Avatar
 			</p>
 			<input type="file" id="avatar-file" style="display: none" onchange={e => avatar_load(e)}/>
-			{#if avatarImage != ''}
-			<img id="avatar-preview" src={avatarImage} class="h-14 w-14 dark:border-gray-800"
-			onclick={() => document.getElementById('avatar-file').click()}
-			/>
-			{:else if localStorage.getItem('avatar') != null}
-			<img id="avatar-preview" src={localStorage.getItem('avatar')} class="h-14 w-14 dark:border-gray-800"
-			onclick={() => document.getElementById('avatar-file').click()}
-			/>
-			{:else}
-			<svg onclick={() => document.getElementById('avatar-file').click()}
-			fill="currentColor"
-			viewBox="0 0 16 16"
-			xmlns="http://www.w3.org/2000/svg"
-			class="h-14 w-14 border-2 dark:border-gray-400"
-			><path
-				fill-rule="evenodd"
-				d="M8 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
-				clip-rule="evenodd"
-			></path></svg>
-			{/if}
+			<div class="flex items-center gap-3">
+				{#if effAvatar}
+				<img id="avatar-preview" src={effAvatar} alt="avatar" class="h-14 w-14 rounded-full border-2 dark:border-gray-800 cursor-pointer object-cover"
+				onclick={() => document.getElementById('avatar-file').click()}
+				/>
+				{:else}
+				<svg onclick={() => document.getElementById('avatar-file').click()}
+				fill="currentColor"
+				viewBox="0 0 16 16"
+				xmlns="http://www.w3.org/2000/svg"
+				class="h-14 w-14 rounded-full border-2 dark:border-gray-400 cursor-pointer"
+				><path
+					fill-rule="evenodd"
+					d="M8 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+					clip-rule="evenodd"
+				></path></svg>
+				{/if}
+				<!-- reset to the signed-in account's picture (or the default) -->
+				{#if avatarImage || (typeof localStorage !== 'undefined' && localStorage.getItem('avatar'))}
+				<button id="avatar-reset" class="rounded border border-gray-500 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+					onclick={resetAvatarToDefault}>Reset to {cid?.avatar ? 'account picture' : 'default'}</button>
+				{/if}
+			</div>
 		</div>
 		<br />
 		<div class="flex px-10">
@@ -356,19 +404,10 @@
 			<Input
 				id="update-username"
 				class="!rounded-s-none rounded-tr-none"
-				placeholder="&#xf007; Username"
+				placeholder={cid?.username ? ' ' + cid.username : ' Username'}
 				style="font-family:Arial, FontAwesome"
 				bind:value={$username}
-				onchange={() => { localStorage.setItem('username', $username);
-
-					//find and update, same for image
-					$userdata.forEach(element => {
-						// console.log("for "  + element[0])
-						if (element[0] === $peers.peer.id)
-							element[1] = $username
-					})
-					$peers.send({type: 'userdata', userdata: $userdata})
-				 }}
+				onchange={onUsernameEdited}
 			/>
 		</div>
 	</div>

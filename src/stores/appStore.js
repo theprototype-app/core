@@ -138,21 +138,35 @@ export const waitingForApproval = writable([]);
 /** @type {import('svelte/store').Writable<any[]>} strings or {text, actions} */
 export const toastStore = writable([]);
 
+// On an official/hosted domain (theprototype.app/.io, *.pages.dev) the "local
+// version" banner text is wrong, so it defaults to null there (the cloud plugin can
+// still set its own). Elsewhere (localhost/self-host) it shows the local notice.
+const isHostedDomain =
+	typeof location !== 'undefined' && /(theprototype\.(app|io)|\.pages\.dev)$/i.test(location.hostname);
 /**
  * First-run info banner (Toasts.svelte), dismissed once via the `hasSeenDisclaimer`
- * flag. The OSS default tells users they're on the free, self-hosted/local build.
- *
- * This is the open-core seam (roadmap #13 batch M): the cloud plugin loaded via
+ * flag. Open-core seam (roadmap #13 batch M): the cloud plugin loaded via
  * `VITE_CLOUD_PLUGIN` can `appNotice.set(null)` to remove the banner, or set its own
- * `{ text, ctaLabel?, ctaUrl? }` to rebrand it — the OSS build never has to know
- * about the cloud. `null` => no banner.
+ * `{ text, ctaLabel?, ctaUrl? }` to rebrand it. `null` => no banner.
  * @type {import('svelte/store').Writable<{ text: string, ctaLabel?: string, ctaUrl?: string } | null>}
  */
-export const appNotice = writable({
-	text: 'You are running the local, open-source version of theprototype.',
-	ctaLabel: 'Source',
-	ctaUrl: 'https://github.com/theprototype-app/core'
-});
+export const appNotice = writable(
+	isHostedDomain
+		? null
+		: {
+				text: 'You are running the local, open-source version of theprototype.',
+				ctaLabel: 'Source',
+				ctaUrl: 'https://github.com/theprototype-app/core'
+			}
+);
+
+/**
+ * Cloud account identity pushed by the plugin (cloudApi.setAccountIdentity) — used as
+ * the DEFAULT collaborative username/avatar (and shown in the profile menu) when the
+ * user hasn't set a custom one. null = signed out. (roadmap #14 profile-fixes)
+ * @type {import('svelte/store').Writable<{ username?: string, avatar?: string, email?: string } | null>}
+ */
+export const cloudIdentity = writable(null);
 
 // modules manager modal
 export const modulesOpen = writable(false);

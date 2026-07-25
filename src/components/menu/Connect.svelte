@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, showRoomsButton } from '../../stores/appStore'
+	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton } from '../../stores/appStore'
 	import { Input, Button } from 'flowbite-svelte';
 	import { onMount } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
-	import { sessionHost } from '$lib/connectionState';
 	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
 	import { connectSlot, drawerSlot } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
@@ -40,15 +39,8 @@
 	const connState = $derived(
 		remoteOpen.length > 0 ? 'connected' : pendingOut.length > 0 ? 'pending' : 'idle'
 	);
-	// the peer whose session we joined (approved our request), else the first live peer
-	const hostId = $derived($sessionHost ?? remoteOpen[0] ?? null);
-	const hostName = $derived($userdata.find((u) => u[0] === hostId)?.[1] || null);
-	const hostLabel = $derived(hostName || (hostId ? String(hostId).toUpperCase() : ''));
-	const connectedTitle = $derived(
-		$sessionHost
-			? 'Connected to ' + hostLabel + "'s session (" + remoteOpen.length + ' peer' + (remoteOpen.length > 1 ? 's' : '') + ')'
-			: 'You are hosting · ' + remoteOpen.length + ' peer' + (remoteOpen.length > 1 ? 's' : '') + ' connected'
-	);
+	// the drawer is visible when open OR pinned (pinned keeps the tab bar under the pill)
+	const drawerVisible = $derived($connectDrawerOpen || $connectDrawerPinned);
 
 	function updateDisplayId(id) {
 		displayid = id;
@@ -132,7 +124,7 @@
 	 re-enables them. Narrow screens drop the bar to its own row BELOW the logo
 	 (left) and the peers/profile chrome (right) instead of squeezing between them. -->
 <div class="connect-wrap">
-	<div class="connect-pill" class:drawer-open={$connectDrawerOpen} role="group" data-state={connState}>
+	<div class="connect-pill" class:drawer-open={drawerVisible} role="group" data-state={connState}>
 		<!-- your invite id (click to copy the share link) -->
 		<Button
 			color="primary"
@@ -143,17 +135,7 @@
 		<span class="connect-divider"></span>
 
 		{#if connState === 'connected'}
-			<!-- connected: who + how many, red Disconnect. No dial input. -->
-			<span class="cx-status" title={connectedTitle} data-testid="connect-status">
-				<span class="cx-dot cx-dot-live"></span>
-				<span class="cx-status-label"
-					>Connected · {$sessionHost ? hostLabel : 'hosting'}{remoteOpen.length > 1
-						? ' +' + (remoteOpen.length - 1)
-						: $sessionHost
-							? ''
-							: ' · ' + remoteOpen.length + ' peer' + (remoteOpen.length > 1 ? 's' : '')}</span
-				>
-			</span>
+			<!-- connected: red Disconnect (connection status now lives in the drawer header) -->
 			<Button
 				color="red"
 				id="disconnect-button"
@@ -164,10 +146,6 @@
 		{:else if connState === 'pending'}
 			<!-- pending: request out, waiting for their approval. Amber = reversible
 				 abort (red stays reserved for Disconnect). -->
-			<span class="cx-status" aria-live="polite" data-testid="connect-pending" title={'Waiting for ' + (pendingOut[0]?.[0] ?? peerIdToConnect) + ' to accept'}>
-				<span class="cx-dot cx-dot-wait"></span>
-				<span class="cx-status-label cx-muted">Waiting for approval…</span>
-			</span>
 			<Button
 				color="yellow"
 				id="cancel-request-button"
@@ -236,7 +214,7 @@
 		{/if}
 	</div>
 
-	{#if $connectDrawerOpen}
+	{#if drawerVisible}
 		<ConnectInfoDrawer onClose={() => connectDrawerOpen.set(false)} />
 	{/if}
 </div>
@@ -311,47 +289,6 @@
 		align-self: stretch;
 		margin: 2px 0;
 		background: rgb(255 255 255 / 0.12);
-	}
-	/* connection status cluster (pending/connected) */
-	.cx-status {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		min-width: 0;
-		font-size: 12px;
-		color: var(--color-text, rgb(229 231 235));
-	}
-	.cx-status-label {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		max-width: 220px;
-	}
-	.cx-muted {
-		color: rgb(209 213 219 / 0.75);
-	}
-	.cx-dot {
-		width: 8px;
-		height: 8px;
-		flex: 0 0 auto;
-		border-radius: 9999px;
-	}
-	.cx-dot-live {
-		background: #22c55e;
-		box-shadow: 0 0 6px rgb(34 197 94 / 0.7);
-	}
-	.cx-dot-wait {
-		background: #f59e0b;
-		animation: cx-pulse 1.2s ease-in-out infinite;
-	}
-	@keyframes cx-pulse {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.35;
-		}
 	}
 	/* chevron disclosure — rotates 180° on open; drives the slide-down info panel */
 	.cx-toggle {

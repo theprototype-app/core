@@ -273,6 +273,25 @@ export const notesDrawerOpen = writable(false);
 export const connectDrawerOpen = writable(false);
 /** @type {import('svelte/store').Writable<'info'|'rooms'|'toasts'>} */
 export const connectDrawerTab = writable('info');
+/** PINNED: keep the drawer's tab bar (+ status) visible even when the body is
+ * collapsed, so it acts as a persistent mini-bar under the pill. Persisted. */
+export const connectDrawerPinned = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('connectDrawerPinned') === 'true' : false
+);
+/** Route toasts into the drawer's Toasts tab only — hide the viewport pop-ups even
+ * when the drawer is closed (they still live in the Toasts tab + notification bell).
+ * Persisted. */
+export const toastsInDrawerOnly = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('toastsInDrawerOnly') === 'true' : false
+);
+if (typeof localStorage !== 'undefined') {
+  connectDrawerPinned.subscribe((v) => {
+    try { localStorage.setItem('connectDrawerPinned', v ? 'true' : 'false'); } catch { /* */ }
+  });
+  toastsInDrawerOnly.subscribe((v) => {
+    try { localStorage.setItem('toastsInDrawerOnly', v ? 'true' : 'false'); } catch { /* */ }
+  });
+}
 /** Show the "Rooms" shortcut button in the Connect pill (only meaningful when the
  * cloud plugin is present). Default ON for discoverability; users can hide it and
  * still reach rooms via the chevron drawer's Rooms tab. Persisted. */

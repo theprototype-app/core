@@ -27,6 +27,7 @@
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
+	import { setParticleRoot } from '$lib/particleRuntime';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
@@ -940,6 +941,11 @@
 	<PingHighlights />
 	<PathWaypoints />
 	<LockHighlights />
+
+	<!-- PFX-A: particle Points live here at the scene root (never inside
+	     sceneObjects — they'd leak into GLTF sync). oncreate passes the ref
+	     DIRECTLY (the { ref } destructure trap, N1). -->
+	<T.Group name="particle-root" oncreate={(ref: any) => setParticleRoot(ref)} />
 </T.Group>
 
 {#if !$isLocked && !$isVRMode}

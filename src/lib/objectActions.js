@@ -377,6 +377,13 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'physics', uuid: entry.uuid, physics: state.physics });
 	}
+	if ('particles' in state) {
+		// PFX-A: particle emitter add/remove/edits replay the same way
+		if (state.particles) object.userData.particles = state.particles;
+		else delete object.userData.particles;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'particles', uuid: entry.uuid, particles: state.particles });
+	}
 	objectsGroup.update((value) => value);
 	return true;
 });

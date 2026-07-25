@@ -8,6 +8,7 @@ import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { runScript } from './scriptRuntime';
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
+import { updateParticles } from './particleRuntime';
 import { startObjectFlowWatcher } from './objectFlow';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
@@ -734,6 +735,24 @@ function tick(now) {
 		if (uuid) soundPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
 	});
 	updateSounds(soundPairs, sceneObjects, time);
+
+	// PFX-A: particle emitters — same keyed-runtime lifecycle as sound. Node
+	// pairs (the `particle` node ships in PFX-B) plus the runtime's own sweep
+	// of userData.particles emitters happen in updateParticles.
+	/** @type {{node: any, uuid: string}[]} */
+	const particlePairs = [];
+	edges.forEach((edge) => {
+		const source = nodes.find((n) => n.id === edge.source);
+		if (source?.type !== 'particle') return;
+		const uuid = targetUuidOf(edge);
+		if (uuid) particlePairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+	});
+	nodes.forEach((node) => {
+		if (node.type !== 'particle') return;
+		const uuid = implicitOwnerOf(node);
+		if (uuid) particlePairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
+	});
+	updateParticles(particlePairs, sceneObjects, time);
 
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
 	if (now - lastValuesAt > 150) {

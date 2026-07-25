@@ -16,6 +16,8 @@ import {
 } from './objectActions';
 import { requestControl, nameOf } from './lockControl';
 import { createJoint, detachJoints, jointsFor } from './joints';
+import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from './particleActions';
+import { PARTICLE_PRESETS } from './particlePresets';
 import { savePrefab, savePrefabSelection } from './prefabs';
 import { enterEditMode } from './meshEdit';
 import { addAnnotation } from './annotationsHandler';
@@ -114,6 +116,35 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				]
 			: []),
+		// PFX-A: particle emitters — add a preset / burst / remove, set-aware
+		{
+			label: 'Effects',
+			children: [
+				...PARTICLE_PRESETS.map((preset) => ({
+					label: preset.name + suffix,
+					tooltip: 'Attach a ' + preset.name + ' particle emitter (tweak it in Properties)',
+					action: forEach((u) => addParticlesPreset(u, preset.key))
+				})),
+				...(targets.some((u) => group?.getObjectByProperty('uuid', u)?.userData?.particles?.mode === 'burst')
+					? [
+							{
+								label: 'Burst now' + suffix,
+								tooltip: 'Fire the burst emitters — every peer sees it',
+								action: forEach((u) => burstObjectParticles(u))
+							}
+						]
+					: []),
+				...(targets.some((u) => group?.getObjectByProperty('uuid', u)?.userData?.particles)
+					? [
+							{
+								label: 'Remove particles' + suffix,
+								danger: true,
+								action: forEach((u) => removeObjectParticles(u))
+							}
+						]
+					: [])
+			]
+		},
 		...(isGroup
 			? [
 					{

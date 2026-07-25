@@ -72,7 +72,7 @@
 		globalCamera,
 		viewMode
 	} from '../../stores/sceneStore';
-	import { peers, inspectorClose, inspectorKind, showToast } from '../../stores/appStore.js';
+	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter } from '../../stores/appStore.js';
 
 	const hexColor = /^#[0-9A-F]{6}$/i;
 	const RAD_SNAP = Math.PI / 12; // Ctrl-snap rotations to 15°
@@ -461,6 +461,16 @@
 	{:else if $inspectorKind === 'scene'}
 		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
 			<PanelHeader title="Scene" badge="Scene" onclose={() => inspectorClose.set(true)} />
+			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
+			<input
+				id="inspector-search"
+				type="search"
+				class="ui-input mb-2 w-full"
+				placeholder="Filter properties…"
+				value={$inspectorFilter}
+				oninput={(/** @type {any} */ e) => inspectorFilter.set(e.currentTarget.value)}
+				onkeydown={(/** @type {any} */ e) => e.key === 'Escape' && inspectorFilter.set('')}
+			/>
 		</div>
 
 		<div class="flex flex-col gap-3">
@@ -853,6 +863,16 @@
 				title="Properties"
 				badge={$selectedObject.type}
 				onclose={() => inspectorClose.set(true)}
+			/>
+			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
+			<input
+				id="inspector-search"
+				type="search"
+				class="ui-input mb-2 w-full"
+				placeholder="Filter properties…"
+				value={$inspectorFilter}
+				oninput={(/** @type {any} */ e) => inspectorFilter.set(e.currentTarget.value)}
+				onkeydown={(/** @type {any} */ e) => e.key === 'Escape' && inspectorFilter.set('')}
 			/>
 		</div>
 
@@ -1424,6 +1444,9 @@
 							id="physics-collider"
 							items={[
 								{ value: 'box', name: 'Box' },
+								{ value: 'sphere', name: 'Sphere' },
+								{ value: 'capsule', name: 'Capsule' },
+								{ value: 'cylinder', name: 'Cylinder' },
 								{ value: 'hull', name: 'Convex hull' }
 							]}
 							value={$selectedObject.userData.physics?.collider ?? 'box'}

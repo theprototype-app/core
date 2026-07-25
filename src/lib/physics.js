@@ -173,6 +173,23 @@ function collectParams(group) {
 	return map;
 }
 
+/**
+ * Collider shape from the Inspector's collider pick + the object's LOCAL half
+ * extents (PFX-C follow-up: sphere/capsule/cylinder join box + hull). Capsule
+ * and cylinder stand along the object's local Y; sphere takes the largest
+ * extent so nothing pokes through.
+ * @param {string|undefined} kind @param {THREE.Vector3} he half extents
+ */
+function shapeDesc(kind, he) {
+	if (kind === 'sphere') return RAPIER.ColliderDesc.ball(Math.max(he.x, he.y, he.z));
+	if (kind === 'capsule') {
+		const radius = Math.max(he.x, he.z, 0.02);
+		return RAPIER.ColliderDesc.capsule(Math.max(he.y - radius, 0.01), radius);
+	}
+	if (kind === 'cylinder') return RAPIER.ColliderDesc.cylinder(he.y, Math.max(he.x, he.z, 0.02));
+	return RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z);
+}
+
 /** LOCAL axis letter -> WORLD angvel vector for setAngvel (bodies report/step in
  * world space; box bodies start with identity rotation, so the object's world
  * quaternion is the right frame either way). @param {any} object @param {{axis: string, speed: number}} angvel */
@@ -373,11 +390,23 @@ async function startSimulation() {
 	const center = new THREE.Vector3();
 
 	group.children.forEach((/** @type {any} */ object) => {
+		// PFX-C follow-up: colliders are ORIENTED. The size comes from the
+		// object's LOCAL AABB (rotation stripped for the measure, restored
+		// after) and the collider carries the object's rotation RELATIVE to the
+		// identity-start body (joints require identity bodies, C3). A rotated
+		// wall/ramp/box now collides as itself — the old world-AABB capture
+		// inflated any rotated object into a fat axis-aligned block.
+		const savedQuat = object.quaternion.clone();
+		object.quaternion.set(0, 0, 0, 1);
+		object.updateMatrixWorld(true);
 		box.setFromObject(object);
+		object.quaternion.copy(savedQuat);
+		object.updateMatrixWorld(true);
 		if (!isFinite(box.min.x)) return; // lights/empties
 		box.getSize(size).multiplyScalar(0.5);
 		size.set(Math.max(size.x, 0.02), Math.max(size.y, 0.02), Math.max(size.z, 0.02));
-		box.getCenter(center);
+		// the unrotated-frame box center, swung back into the real orientation
+		box.getCenter(center).sub(object.position).applyQuaternion(savedQuat).add(object.position);
 		const p = params[object.uuid];
 		const dynamic = !!p && p.mass != null && dynamicUuids.includes(object.uuid);
 		// flow-animated objects (not dynamic) become KINEMATIC platforms: the
@@ -397,7 +426,14 @@ async function startSimulation() {
 		if (p?.collider === 'hull' && !colliderDesc)
 			showToast('Convex hull unavailable for "' + (object.name || object.type) + '" — using a box');
 		let usedHull = !!colliderDesc;
-		colliderDesc ??= RAPIER.ColliderDesc.cuboid(size.x, size.y, size.z);
+		// primitive shapes (box/sphere/capsule/cylinder) fit the LOCAL extents and
+		// carry the object's rotation on the collider (hulls bake it into verts)
+		colliderDesc ??= shapeDesc(p?.collider, size).setRotation({
+			x: savedQuat.x,
+			y: savedQuat.y,
+			z: savedQuat.z,
+			w: savedQuat.w
+		});
 		if (p?.restitution != null) colliderDesc.setRestitution(p.restitution);
 		if (p?.friction != null) colliderDesc.setFriction(p.friction);
 		if (dynamic) colliderDesc.setMass(p.mass);

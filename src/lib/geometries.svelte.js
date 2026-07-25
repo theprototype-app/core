@@ -32,6 +32,15 @@ TControls.subscribe(value => { controls = value });
 let locked = $state();
 lockedObjects.subscribe(value => { locked = value });
 
+// PFX-C follow-up: the primitives that spawn DYNAMIC by default (mass 1) so
+// they fall/collide/throw the moment a sim runs. Terrain and module-registered
+// kinds are intentionally absent (they stay scenery).
+const FUN_PRIMITIVES = [
+    'Box', 'Sphere', 'Cylinder', 'Cone', 'Capsule', 'Torus', 'TorusKnot', 'Ring',
+    'Circle', 'Plane', 'Dodecahedron', 'Icosahedron', 'Octahedron', 'Tetrahedron',
+    'Lathe', 'Tube', 'Wedge', 'Stairs', 'Arch', 'Corner'
+];
+
 /**
  * Creates a THREE.js geometry object based on the given command string.
  * The geometry name is extracted from the command string, and the options
@@ -83,6 +92,13 @@ export function createGeometry(command, uuid) {
             object.material.roughness = 0.95;
             object.userData.terrain = true;
         }
+        // PFX-C follow-up: standard primitives are DYNAMIC by default (mass 1) so
+        // a fresh cube falls, collides and THROWS the moment a sim runs — fun by
+        // default. Explicit allow-list: Terrain + module-registered primitives
+        // (buttons, playables) stay scenery. Deterministic — receivers run this
+        // same builder from the replicated /create, and the stamp rides
+        // userData.physics like an Inspector edit (Body: Auto reverts it).
+        if (FUN_PRIMITIVES.includes(geometry)) object.userData.physics = { mode: 'dynamic', mass: 1 };
         stampGeometryParams(object); // editable params survive sync (78)
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects

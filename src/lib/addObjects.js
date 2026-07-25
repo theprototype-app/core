@@ -62,6 +62,10 @@ export function buildAddChildren(pointOf) {
 					object.castShadow = false;
 					object.userData.shadow = false;
 					if (peer) peer.send({ type: 'objectParameters', parameter: 'castShadow', uuid: object.uuid, castShadow: false });
+					// nor join simulations (primitives spawn dynamic by default now —
+					// an emitter marker must stay scenery, not tumble away)
+					delete object.userData.physics;
+					if (peer) peer.send({ type: 'objectParameters', parameter: 'physics', uuid: object.uuid, physics: null });
 					addParticlesPreset(object.uuid, preset.key);
 				}
 			}))

@@ -59,26 +59,58 @@ h.run(async () => {
 		'wired count input rebuilds the emitter to 200 particles'
 	);
 
-	// burst-mode + a wired event: the trigger fires a burst on its rising edge
+	// a wired Vector3 sets the emission offset (where in the object particles spawn)
+	await A.page.evaluate(() => {
+		window.__stores.flowNodes.update((ns) => [
+			...ns,
+			{ id: 'vec1', type: 'vector3', position: { x: 20, y: 500 }, data: { type: 'vector3', label: 'Vector3', x: 0, y: 1.5, z: 0 }, class: 'w-[150px]' }
+		]);
+		window.__stores.flowEdges.update((es) => [...es, { id: 'e4', source: 'vec1', target: 'pfx1', targetHandle: 'offset' }]);
+	});
+	await h.eventually(
+		() => entriesOn(A.page),
+		(e) => {
+			const o = e.find((x) => x.key === 'pfx1')?.offset;
+			return !!o && Math.abs(o[1] - 1.5) < 0.001;
+		},
+		'wired Vector3 sets the emission offset uniform (y=1.5)'
+	);
+
+	// burst-mode + On Click wired THROUGH the node: clicking the target OBJECT
+	// fires the burst (fireObjectClick reaches the selector via the particle node)
 	await A.page.evaluate(() => {
 		window.__stores.flowNodes.update((ns) =>
 			ns
 				.map((n) => (n.id === 'pfx1' ? { ...n, data: { ...n.data, mode: 'burst' } } : n))
-				.concat([{ id: 'clk1', type: 'onclick', position: { x: 20, y: 420 }, data: { type: 'onclick', label: 'On Click', pulse: 0.5 } }])
+				.concat([{ id: 'clk1', type: 'onclick', position: { x: 20, y: 640 }, data: { type: 'onclick', label: 'On Click', pulse: 0.5 } }])
 		);
 		window.__stores.flowEdges.update((es) => [...es, { id: 'e3', source: 'clk1', target: 'pfx1', targetHandle: 'trigger' }]);
 	});
 	await A.page.waitForTimeout(300);
-	const beforeBurst = (await entriesOn(A.page)).find((x) => x.key === 'pfx1')?.burstT;
-	// fire the wired event (replicated pulse; here local is enough)
-	await A.page.evaluate(() => {
-		const t = (Date.now() % 86400000) / 1000;
-		window.__stores.flowRuntime.applyNodeTrigger('clk1', t, false);
-	});
+	// simulate clicking the box in the viewport (NOT wiring OnClick to a selector
+	// directly — the whole point of the BFS fix)
+	await A.page.evaluate((u) => window.__stores.flowRuntime.fireObjectClick(u), uuid);
 	await h.eventually(
 		() => entriesOn(A.page),
 		(e) => (e.find((x) => x.key === 'pfx1')?.burstT ?? -1) >= 0,
-		`a wired event triggers a burst (was ${beforeBurst})`
+		'clicking the target object fires the burst through the node (fireObjectClick BFS)'
+	);
+
+	// additive (glow) presets render through the mesh they emit from inside of —
+	// depthTest OFF (sparkles is additive); switching to a normal-blend preset
+	// restores depth-testing
+	await h.eventually(
+		() => entriesOn(A.page),
+		(e) => e.find((x) => x.key === 'pfx1')?.depthTest === false,
+		'additive-blend emitter disables depth test (glows through the object)'
+	);
+	await A.page.evaluate(() =>
+		window.__stores.flowNodes.update((ns) => ns.map((n) => (n.id === 'pfx1' ? { ...n, data: { ...n.data, blending: 'normal' } } : n)))
+	);
+	await h.eventually(
+		() => entriesOn(A.page),
+		(e) => e.find((x) => x.key === 'pfx1')?.depthTest === true,
+		'normal-blend emitter keeps depth test'
 	);
 
 	// implicit owner: a particle node in an OBJECT graph with no selector targets

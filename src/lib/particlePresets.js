@@ -31,6 +31,7 @@ export const PARTICLE_DEFAULTS = {
 	shape: 'cone',
 	angle: 25,
 	radius: 0.15,
+	offset: [0, 0, 0],
 	speed: 1,
 	speedJitter: 0.4,
 	gravity: 0,

@@ -1501,6 +1501,23 @@
 						<SliderRow label="Opacity" min={0} max={1} step={0.05} value={p.opacity ?? 0.9}
 							onchange={(v) => setParticles({ opacity: v })} />
 						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400" title="Where particles spawn, relative to the object center (local axes)">Emit from</span>
+							{#each ['x', 'y', 'z'] as axis, i}
+								<input
+									type="number"
+									step="0.1"
+									aria-label={'Emit offset ' + axis}
+									class="w-14 rounded border border-gray-500 bg-transparent px-1 py-0.5 text-xs"
+									value={(p.offset ?? [0, 0, 0])[i] ?? 0}
+									oninput={(/** @type {any} */ e) => {
+										const off = [...(p.offset ?? [0, 0, 0])];
+										off[i] = +e.currentTarget.value;
+										setParticles({ offset: off });
+									}}
+								/>
+							{/each}
+						</div>
+						<div class="ui-row items-center gap-2">
 							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
 							<input
 								type="color"

@@ -509,17 +509,37 @@ export function applyNodeTrigger(nodeId, t, replicate = true) {
 	}
 }
 
+/** Does a downstream Object Selector targeting `uuid` sit anywhere past `startId`?
+ * Follows outgoing edges through intermediate nodes (e.g. On Click -> Particles ->
+ * Object Selector), so a trigger wired THROUGH an effect node still fires on the
+ * click of the object that effect targets. @param {string} startId @param {string} uuid */
+function reachesObjectSelector(startId, uuid) {
+	const seen = new Set([startId]);
+	const stack = [startId];
+	while (stack.length) {
+		const cur = stack.pop();
+		for (const edge of edges) {
+			if (edge.source !== cur || seen.has(edge.target)) continue;
+			const target = nodes.find((n) => n.id === edge.target);
+			// an Object Selector is a sink — check its target, don't traverse past it
+			if (target?.type === 'objectselector') {
+				if (target.data?.selected === uuid) return true;
+				continue;
+			}
+			seen.add(edge.target);
+			stack.push(edge.target);
+		}
+	}
+	return false;
+}
+
 /** A user clicked an object — pulse any OnClick node targeting it (134). @param {string} uuid */
 export function fireObjectClick(uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
-		const hit = edges.some((edge) => {
-			if (edge.source !== node.id) return false;
-			const target = nodes.find((n) => n.id === edge.target);
-			return target?.type === 'objectselector' && target.data?.selected === uuid;
-		});
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
-		if (hit || implicitOwnerOf(node) === uuid) applyNodeTrigger(node.id, syncedNow(), true);
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+			applyNodeTrigger(node.id, syncedNow(), true);
 	});
 }
 

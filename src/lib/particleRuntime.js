@@ -112,6 +112,7 @@ function buildEntry(key, count) {
 			uSizeEnd: { value: 0.03 },
 			uSpin: { value: 0 },
 			uSizeScale: { value: 600 },
+			uOffset: { value: new THREE.Vector3() },
 			uQuat: { value: new THREE.Vector4(0, 0, 0, 1) },
 			uWorldSpace: { value: 0 },
 			uMap: { value: spriteTexture('dot') },
@@ -189,8 +190,12 @@ function applyUniforms(entry, cfg) {
 	u.uGravity.value = cfg.gravity;
 	u.uDrag.value = cfg.drag;
 	u.uTurbulence.value = cfg.turbulence;
-	u.uSizeStart.value = cfg.sizeStart;
+	// PFX-B fix: `size` is an alias for the start size (the wired input handle)
+	u.uSizeStart.value = cfg.size ?? cfg.sizeStart;
 	u.uSizeEnd.value = cfg.sizeEnd;
+	// emission point offset in the object's local frame (vector3 input / Inspector)
+	const off = Array.isArray(cfg.offset) ? cfg.offset : [0, 0, 0];
+	u.uOffset.value.set(off[0] ?? 0, off[1] ?? 0, off[2] ?? 0);
 	u.uSpin.value = cfg.spin;
 	u.uColorMode.value = cfg.colorMode === 'particle' ? 1 : 0;
 	u.uOpacity.value = cfg.opacity;
@@ -212,7 +217,13 @@ function applyUniforms(entry, cfg) {
 		entry.colorEnd = cEnd;
 		u.uColorEnd.value.set(cEnd);
 	}
-	entry.material.blending = cfg.blending === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
+	// Additive (glow) presets — fire, sparkles, sparks — emit from inside the
+	// object; depth-testing would hide them behind the mesh, so let them glow
+	// through (the standard VFX trick). Normal-blend presets (smoke, confetti,
+	// dust) keep depth-testing for correct occlusion.
+	const additive = cfg.blending !== 'normal';
+	entry.material.blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
+	entry.material.depthTest = !additive;
 }
 
 /**
@@ -364,6 +375,8 @@ export function particleEntries() {
 		sprite: entry.sprite,
 		burstT: entry.burstT,
 		uTime: entry.material.uniforms.uTime.value,
+		offset: entry.material.uniforms.uOffset.value.toArray(),
+		depthTest: entry.material.depthTest,
 		visible: entry.points.visible,
 		inRoot: entry.points.parent === root
 	}));

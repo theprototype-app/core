@@ -41,6 +41,7 @@ export const particleVertexShader = /* glsl */ `
 	uniform float uSizeEnd;
 	uniform float uSpin;
 	uniform float uSizeScale; // px = size * uSizeScale / depth
+	uniform vec3 uOffset;     // emission point offset in the object's local frame
 	uniform vec4 uQuat;       // emitter world quaternion (world mode)
 	uniform float uWorldSpace;
 
@@ -91,6 +92,9 @@ export const particleVertexShader = /* glsl */ `
 			dir = vec3(sa * cos(ph), ca, sa * sin(ph));
 			posBase = vec3(cos(ph), 0.0, sin(ph)) * uRadius * aRand.z;
 		}
+
+		// emit from an offset point inside the object (default center)
+		posBase += uOffset;
 
 		// analytic motion: exponential drag + ballistic gravity + hash wobble
 		float sp = uSpeed * (1.0 + uSpeedJitter * (aRand.z - 0.5));

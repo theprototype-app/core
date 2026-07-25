@@ -37,7 +37,10 @@ const INPUT = {
 	lookat: { target: 'object' },
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
-	counter: { pulse: 'event' }
+	counter: { pulse: 'event' },
+	// PFX-B: drive emission density / tint from flow, and fire a burst-mode
+	// emitter from any event (On Click / Key Press / On Impact)
+	particle: { count: 'number', color: 'color', trigger: 'event' }
 };
 
 // what an OUTPUT type may feed into a differently-typed INPUT

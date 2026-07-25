@@ -37,6 +37,7 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | motor | Physics | effect | per-param | NEW (13-C2): drives EVERY revolute joint touching the selected object (select a car body → all wheel motors) via configureMotorVelocity; wins over a joint def's own motor. Param edits re-apply LIVE mid-sim. Authoritative sync. |
 | pulse/blink | Effects | effect | per-param | OK |
 | sound | Effects | effect | volume | OK (`playing` IS read by soundRuntime — earlier suspicion disproven). |
+| particle | Effects | effect | count color trigger | NEW (PFX-B): flow-driven particle emitter — targets the connected object (or the graph owner, H1 implicit rule) and renders through `particleRuntime` (deterministic analytic sim, keyed by node id). `count`/`color` are wired overrides; `trigger` fires a burst-mode emitter on its rising edge. Config seeded from a preset on the card. Not in `animationTypes` — a keyed runtime subsystem like `sound`. |
 | customnode | (meta) | effect (drives a Selector) | per-def param | FIX (4.5): def params get INPUT sockets (they were unwirable — the runtime already resolved them); def edits prune dangling edges deterministically. |
 | maprange | Logic | number | a | NEW (4.6): remap [inMin..inMax] → [outMin..outMax], optional clamp — the glue between free-range sources and bounded params. |
 | select | Logic | number | index a b | NEW (4.6): outputs a when index < 0.5 else b — pairs with switcher-as-number / compare. |

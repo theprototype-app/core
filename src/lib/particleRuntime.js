@@ -136,6 +136,7 @@ function buildEntry(key, count) {
 		material,
 		space: 'local',
 		burstT: -1,
+		lastTrigger: false,
 		// CPU mirror of each slot's phase/lifetime (world-space rebirth stamping)
 		lifeKey: '',
 		phases: new Float32Array(count),
@@ -199,13 +200,17 @@ function applyUniforms(entry, cfg) {
 		entry.sprite = cfg.sprite;
 		u.uMap.value = spriteTexture(cfg.sprite);
 	}
-	if (entry.colorStart !== cfg.colorStart) {
-		entry.colorStart = cfg.colorStart;
-		u.uColorStart.value.set(cfg.colorStart);
+	// PFX-B: a wired `color` input (single value) tints the whole system —
+	// it overrides both gradient stops when present
+	const cStart = cfg.color ?? cfg.colorStart;
+	const cEnd = cfg.color ?? cfg.colorEnd;
+	if (entry.colorStart !== cStart) {
+		entry.colorStart = cStart;
+		u.uColorStart.value.set(cStart);
 	}
-	if (entry.colorEnd !== cfg.colorEnd) {
-		entry.colorEnd = cfg.colorEnd;
-		u.uColorEnd.value.set(cfg.colorEnd);
+	if (entry.colorEnd !== cEnd) {
+		entry.colorEnd = cEnd;
+		u.uColorEnd.value.set(cEnd);
 	}
 	entry.material.blending = cfg.blending === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
 }
@@ -271,6 +276,18 @@ export function updateParticles(pairs, sceneObjects, time) {
 		const u = entry.material.uniforms;
 		u.uTime.value = tw;
 		u.uSizeScale.value = sizeScale;
+		// PFX-B: a wired event input fires a burst on its RISING edge (the pulse
+		// is high ~0.3s; fire once, not every frame). Each peer sees the pulse
+		// via the replicated nodetrigger stamp, so bursts stay ~in sync.
+		if (cfg.mode === 'burst' && cfg.trigger) {
+			if (!entry.lastTrigger) {
+				entry.burstT = tw;
+				if (cfg.space === 'world') stampAllOrigins(entry, object);
+			}
+			entry.lastTrigger = true;
+		} else {
+			entry.lastTrigger = false;
+		}
 		u.uBurstT.value = entry.burstT;
 		entry.geometry.setDrawRange(0, vr ? Math.min(cfg.count, VR_MAX_COUNT) : cfg.count);
 		entry.points.visible = object.visible !== false;

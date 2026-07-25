@@ -29,6 +29,7 @@
 	import CustomNode from './nodes/CustomNode.svelte';
 	import PathPatrolNode from './nodes/PathPatrolNode.svelte';
 	import SoundNode from './nodes/SoundNode.svelte';
+	import ParticleNode from './nodes/ParticleNode.svelte';
 	import NumberNode from './nodes/NumberNode.svelte';
 	import Vector3Node from './nodes/Vector3Node.svelte';
 	import ToggleNode from './nodes/ToggleNode.svelte';
@@ -81,6 +82,7 @@
 		customnode: CustomNode,
 		pathpatrol: PathPatrolNode,
 		sound: SoundNode,
+		particle: ParticleNode,
 		mass: AnimationNode,
 		bounciness: AnimationNode,
 		friction: AnimationNode,

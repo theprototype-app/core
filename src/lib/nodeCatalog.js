@@ -5,6 +5,7 @@
 
 import { get } from 'svelte/store';
 import { moduleNodeGroups } from './moduleSDK';
+import { particlePreset } from './particlePresets';
 
 /**
  * @typedef {{ key: string, kind: 'range' | 'select', min?: number, max?: number, step?: number, options?: string[] }} NodeParam
@@ -197,6 +198,28 @@ export const nodeCatalog = [
 				type: 'sound',
 				label: 'Sound',
 				defaults: { hash: null, file: '', volume: 0.8, radius: 5, rolloff: 1, loop: true, playing: false }
+			},
+			{
+				// PFX-B: particle emitter driven by flow — targets the connected object
+				// (or the graph owner). Wired inputs: count (number), color (color),
+				// trigger (event, fires a burst-mode emitter). Config = node.data,
+				// seeded from a preset; the particle RUNTIME renders it (particleRuntime).
+				type: 'particle',
+				label: 'Particles',
+				defaults: particlePreset('sparkles'),
+				params: [
+					{ key: 'mode', kind: 'select', options: ['continuous', 'burst'] },
+					{ key: 'count', kind: 'range', min: 1, max: 500, step: 1 },
+					{ key: 'lifetime', kind: 'range', min: 0.1, max: 6, step: 0.1 },
+					{ key: 'speed', kind: 'range', min: 0, max: 8, step: 0.1 },
+					{ key: 'gravity', kind: 'range', min: -10, max: 10, step: 0.1 },
+					{ key: 'turbulence', kind: 'range', min: 0, max: 1, step: 0.05 },
+					{ key: 'sizeStart', kind: 'range', min: 0.01, max: 1, step: 0.01 },
+					{ key: 'opacity', kind: 'range', min: 0, max: 1, step: 0.05 },
+					{ key: 'sprite', kind: 'select', options: ['dot', 'streak', 'puff', 'star', 'square'] },
+					{ key: 'blending', kind: 'select', options: ['additive', 'normal'] },
+					{ key: 'space', kind: 'select', options: ['local', 'world'] }
+				]
 			}
 		]
 	}

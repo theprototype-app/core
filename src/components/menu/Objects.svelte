@@ -22,8 +22,17 @@
     import {
         showSidebar,
 		closeSelectionInspector,
-		peers
+		peers,
+		showToast
 	} from '../../stores/appStore.js';
+	import { get } from 'svelte/store';
+	import { clearLocalOnly, isViewer } from '$lib/objectPermissions';
+	function shareLocal(/** @type {any} */ obj) {
+		if (isViewer()) { showToast('You need edit access to share — ask an admin.'); return; }
+		clearLocalOnly(obj);
+		try { get(peers)?.send({ type: 'object', element: obj.toJSON(), uuids: [obj.uuid] }); showToast('Shared "' + (obj.name || 'object') + '".'); } catch (e) { console.warn(e); }
+		const g = get(objectsGroup); if (g) objectsGroup.set(g);
+	}
 
     /**
      * When a move-to-group targets this row's object, expand it so the moved
@@ -189,6 +198,10 @@
                 <i class="fa-solid fa-cube w-4 shrink-0 text-center text-gray-400" title="Object"></i>
             {/if}
 
+            {#if element.userData?.__localOnly}
+                <i class="fa-solid fa-user-lock w-3 shrink-0 text-center text-[10px] text-amber-400" title="Local only (not shared with peers)"></i>
+            {/if}
+
             <!-- 171: a persistent hidden marker so hidden rows read at a glance
                  (the eye toggle only shows on hover) -->
             {#if element.visible === false}
@@ -234,6 +247,9 @@
                         <i class={element.visible === false ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}></i>
                     </button>
                     <button class="configure hover:brightness-200" title="Properties" onclick={(e) => { e.stopPropagation(); configure(element); }}>⚙️</button>
+                    {#if element.userData?.__localOnly && !isViewer()}
+                        <button class="share-local hover:brightness-200" title="Share with peers" aria-label="Share with peers" onclick={(e) => { e.stopPropagation(); shareLocal(element); }}><i class="fa-solid fa-share-nodes text-primary-300"></i></button>
+                    {/if}
                     <button class="delete hover:brightness-200" title="Delete" onclick={(e) => { e.stopPropagation(); deleteItem(element); }}>✖️</button>
                 </span>
             {/if}

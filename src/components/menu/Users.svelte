@@ -100,11 +100,8 @@
 	const effAvatar = $derived(avatarImage || ls('avatar') || cid?.avatar || '');
 	/** cloud roles bridge (null without the cloud plugin) */
 	const ri = $derived($rolesInfo);
-	function cycleRole(id: string) {
-		const order = ri?.order || ['viewer', 'editor', 'admin'];
-		const next = order[(order.indexOf(ri?.roleOf?.(id)) + 1) % order.length];
-		ri?.setRole?.(id, next);
-	}
+	/** peerId whose role dropdown is open (null = none) */
+	let roleMenuFor: string | null = $state(null);
 
 	function broadcastUserdata() {
 		if (!$peers?.peer) return;
@@ -225,7 +222,7 @@
 		</button>
 
 		{#if peersOpen}
-			<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => (peersOpen = false)}></div>
+			<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => { peersOpen = false; roleMenuFor = null; }}></div>
 			<div id="peers-popover" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 998;">
 				<p class="ui-section-label">Connected ({$userdata.length - 1})</p>
 				<div class="peers-scroll">
@@ -260,7 +257,16 @@
 							{#if i === 0}
 								<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
 							{:else if ri.amAdmin}
-								<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} title={'Role: ' + ri.roleOf(user[0]) + ' (click to change)'} onclick={() => cycleRole(user[0])}>{ri.roleOf(user[0])}</button>
+								<div class="role-ctl">
+									<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => { e.stopPropagation(); roleMenuFor = roleMenuFor === user[0] ? null : user[0]; }}>{ri.roleOf(user[0])}<i class="fa-solid fa-chevron-down role-caret"></i></button>
+									{#if roleMenuFor === user[0]}
+										<div class="role-menu" role="listbox">
+											{#each ri.order as r}
+												<button type="button" class="role-menu-item" class:sel={ri.roleOf(user[0]) === r} role="option" aria-selected={ri.roleOf(user[0]) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(user[0], r); roleMenuFor = null; }}><span class="role-dot" data-role={r}></span><span class="role-menu-label">{r}</span>{#if ri.roleOf(user[0]) === r}<i class="fa-solid fa-check role-check"></i>{/if}</button>
+											{/each}
+										</div>
+									{/if}
+								</div>
 							{:else}
 								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 							{/if}
@@ -445,6 +451,18 @@
 	.role-badge { flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 8px; color: #fff; background: rgb(107 114 128); text-transform: capitalize; }
 	.role-btn { border: 0; cursor: pointer; }
 	.role-btn:hover { filter: brightness(1.15); }
+	.role-btn { display: inline-flex; align-items: center; gap: 4px; }
+	.role-caret { font-size: 7px; opacity: 0.75; }
+	.role-ctl { position: relative; flex: 0 0 auto; }
+	.role-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 1000; min-width: 116px; padding: 4px; border-radius: 10px; background: #1f2937; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 12px 28px rgb(0 0 0 / 0.5); display: flex; flex-direction: column; gap: 2px; }
+	.role-menu-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: #e5e7eb; font-size: 11px; cursor: pointer; text-transform: capitalize; text-align: left; }
+	.role-menu-item:hover { background: rgb(255 255 255 / 0.09); }
+	.role-menu-item.sel { background: rgb(255 255 255 / 0.05); }
+	.role-dot { width: 9px; height: 9px; border-radius: 9999px; flex: 0 0 auto; background: #6b7280; }
+	.role-dot[data-role='editor'] { background: #2563eb; }
+	.role-dot[data-role='admin'] { background: #7c3aed; }
+	.role-menu-label { flex: 1; min-width: 0; }
+	.role-check { font-size: 9px; color: #86efac; }
 	.role-badge[data-role='editor'] { background: #2563eb; }
 	.role-badge[data-role='admin'] { background: #7c3aed; }
 	#peers-popover {

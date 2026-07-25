@@ -77,6 +77,15 @@ function rejectPeer(approval) {
     $pendingApprovals = $pendingApprovals.filter((p) => p.peerId !== approval.peerId);
     try { $peers.connections[approval.peerId]?.close?.(); } catch {}
 }
+
+// professional toast card: manual close (✕) + auto-dismiss timer (kept from before)
+function dismiss(toast: any) {
+    $toastStore = $toastStore.filter((t) => t !== toast);
+}
+function autoDismiss(node: any, toast: any) {
+    const id = setTimeout(() => dismiss(toast), typeof toast === 'string' ? 5000 : 15000);
+    return { destroy() { clearTimeout(id); } };
+}
 </script>
 <!-- E1: CRITICAL container — connection requests + pending outbound requests stay
      ABOVE modals (--z-toast) so an approval is never missed while a modal is open. -->
@@ -262,34 +271,21 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 <div class="my-1 text-center text-xs text-gray-400">+{$toastStore.length - MAX_TOASTS} more…</div>
 {/if}
 {#each $toastStore.slice(-MAX_TOASTS) as toast}
-<div class="my-1">
-    <Toast
-        dismissable={false}
-        oncreate={setTimeout(() => {
-            $toastStore = $toastStore.filter((t) => t !== toast);
-        }, typeof toast === 'string' ? 3000 : 15000)}
-        transition={fly}
-        class="dark:border-dark-700 rounded-lg border-2 border-green-500 p-2 dark:bg-green-800"
-        divClass="flex items-center gap-3">
-        <div style="position: relative; left: 50%; transform: translate(-25%, -50%);"></div>
-        <div class="mb-1 inline-flex items-center text-base font-medium text-green-700 dark:text-green-500">
-            <p class="max-w-80 overflow-hidden pr-4 text-sm font-medium text-gray-500 dark:text-gray-400">
-                {typeof toast === 'string' ? toast : toast.text}
-            </p>
-            {#if typeof toast !== 'string'}
-                {#each toast.actions as entry}
-                    <Button
-                        color="primary"
-                        class="nob ml-1 rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
-                        onclick={() => {
-                            entry.action();
-                            $toastStore = $toastStore.filter((t) => t !== toast);
-                        }}>{entry.label}</Button
-                    >
-                {/each}
+<div class="my-1 tp-toast" transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
+    <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => dismiss(toast)}>✕</button>
+    <div class="tp-toast-body">
+        <i class="fa-solid fa-circle-info tp-toast-icon"></i>
+        <div class="tp-toast-main">
+            <div class="tp-toast-text">{typeof toast === 'string' ? toast : toast.text}</div>
+            {#if typeof toast !== 'string' && toast.actions?.length}
+                <div class="tp-toast-actions">
+                    {#each toast.actions as entry}
+                        <button class="tp-toast-action" onclick={() => { entry.action(); dismiss(toast); }}>{entry.label}</button>
+                    {/each}
+                </div>
             {/if}
         </div>
-    </Toast>
+    </div>
 </div>
 {/each}
 
@@ -332,6 +328,33 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
     .cxreq-editor:hover { background: #1d4ed8; }
     .cxreq-reject { background: transparent; border: 1px solid rgb(248 113 113 / 0.4); color: #f87171; }
     .cxreq-reject:hover { background: rgb(220 38 38 / 0.15); }
+    /* professional notification toast (replaces the flowbite green toast) */
+    .tp-toast {
+        pointer-events: auto;
+        position: relative;
+        width: min(420px, 94vw);
+        margin: 0 auto;
+        background: var(--color-form, rgb(31 41 55 / 0.98));
+        border: 1px solid rgb(255 255 255 / 0.1);
+        border-left: 3px solid #60a5fa;
+        border-radius: 12px;
+        padding: 10px 32px 10px 12px;
+        box-shadow: 0 12px 30px rgb(0 0 0 / 0.4);
+        backdrop-filter: blur(6px);
+    }
+    .tp-toast-body { display: flex; align-items: flex-start; gap: 9px; }
+    .tp-toast-icon { color: #60a5fa; font-size: 14px; margin-top: 1px; flex: 0 0 auto; }
+    .tp-toast-main { min-width: 0; flex: 1 1 auto; }
+    .tp-toast-text { font-size: 12.5px; color: #e5e7eb; line-height: 1.4; }
+    .tp-toast-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; }
+    .tp-toast-action { font-size: 11px; color: #93c5fd; background: transparent; border: 0; cursor: pointer; padding: 0; text-decoration: underline; }
+    .tp-toast-action:hover { color: #bfdbfe; }
+    .tp-toast-x {
+        position: absolute; top: 7px; right: 7px; width: 20px; height: 20px;
+        border: 0; background: transparent; color: rgb(156 163 175); cursor: pointer;
+        font-size: 11px; line-height: 1; border-radius: 6px;
+    }
+    .tp-toast-x:hover { color: #fff; background: rgb(255 255 255 / 0.08); }
     /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
        toasts below both */
     @media (max-width: 640px) {

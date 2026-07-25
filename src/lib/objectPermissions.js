@@ -8,7 +8,7 @@
 //    never broadcast). Everything shared by other peers is read-only for them.
 import { get } from 'svelte/store';
 import { rolesInfo } from './cloudHooks';
-import { showToast } from '../stores/appStore';
+import { showToast, showLocalObjects } from '../stores/appStore';
 import { objectsGroup } from '../stores/sceneStore';
 
 /** broadcast message `type`s that CREATE a scene object (peerHandler send-gate) */
@@ -27,10 +27,14 @@ export function isViewer() {
 export function isLocalOnly(object) {
 	return !!object?.userData?.__localOnly;
 }
-/** mark an object as local-only (viewer WIP that never reaches peers)
+/** mark an object as local-only (viewer WIP that never reaches peers) — also reveals
+ * the "Local objects" section (auto-enable on the first one)
  * @param {any} object */
 export function markLocalOnly(object) {
-	if (object && object.userData) object.userData.__localOnly = true;
+	if (object && object.userData) {
+		object.userData.__localOnly = true;
+		showLocalObjects.set(true);
+	}
 }
 /** clear the flag when the object is shared (promoted user hits Share)
  * @param {any} object */
@@ -82,6 +86,7 @@ export function gateCreationBroadcast(/** @type {any} */ data) {
 		const o = group?.getObjectByProperty('uuid', id);
 		if (o) markLocalOnly(o);
 	}
-	warnViewerLocalCreate();
+	// no per-creation toast — the "Local objects" section (auto-shown on the first one)
+	// is the indicator.
 	return true;
 }

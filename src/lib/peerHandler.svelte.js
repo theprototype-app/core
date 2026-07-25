@@ -13,7 +13,7 @@ import { applyMeshGeo } from '$lib/faceEdit';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride } from '$lib/peerServer';
 import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState';
-import { canApply, getAuthProvider, dispatchCloudMessage } from '$lib/cloudHooks';
+import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
@@ -200,7 +200,12 @@ export class PeerConnection {
 					if (!get(sessionHost)) sessionHost.set(conn.peer);
 
 					// Show approved toast message
-					showToast(element[0] + ' has approved your connection request.');
+					// with roles active (cloud), joiners default to view-only — say so + link docs
+					if (get(rolesInfo)) {
+						showToast(String(element[0]).slice(0, 6).toUpperCase() + ' approved your request. You joined with view-only access — an admin can grant edit access.', [{ label: 'Read more', action: () => { try { window.open('https://docs.theprototype.app', '_blank'); } catch {} } }]);
+					} else {
+						showToast(String(element[0]).slice(0, 6).toUpperCase() + ' has approved your connection request.');
+					}
 					// waitingForApproval.set(waiting);
 					// waitingForApproval.update((value) => value);
 				}
@@ -218,7 +223,20 @@ export class PeerConnection {
 			if (!found) {
 				const auth = getAuthProvider();
 				try {
-					if (auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer)) found = true;
+					if (auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer)) {
+						found = true;
+						// AUTO-APPROVE == the manual Approve: whitelist the peer, broadcast the
+						// roster, and DIAL BACK. The joiner only leaves its "waiting for
+						// approval" state on an INCOMING connection from us, so without the
+						// dial-back it waits forever (the autoaccept join bug).
+						const roster = /** @type {any[]} */ (get(userdata));
+						if (!roster.some((/** @type {any} */ e) => e[0] === conn.peer)) {
+							roster.push([conn.peer, '', '']);
+							userdata.set(roster);
+						}
+						get(peers).send({ type: 'userdata', userdata: get(userdata) });
+						get(peers).connectToPeer(conn.peer, true);
+					}
 				} catch (e) {
 					console.error('cloud auth provider threw:', e);
 				}

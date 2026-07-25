@@ -100,7 +100,6 @@
 	const effAvatar = $derived(avatarImage || ls('avatar') || cid?.avatar || '');
 	/** cloud roles bridge (null without the cloud plugin) */
 	const ri = $derived($rolesInfo);
-	function setPeerRole(id: string, e: any) { $rolesInfo?.setRole?.(id, e.target.value); }
 
 	function broadcastUserdata() {
 		if (!$peers?.peer) return;
@@ -256,9 +255,9 @@
 							{#if i === 0}
 								<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
 							{:else if ri.amAdmin}
-								<select class="role-sel" title="Set role" onchange={(e) => setPeerRole(user[0], e)}>
-									{#each ri.order as r}<option value={r} selected={ri.roleOf(user[0]) === r}>{r}</option>{/each}
-								</select>
+								<div class="role-seg" role="group" aria-label="Set role">
+									{#each ri.order as r}<button type="button" class="role-opt" class:on={ri.roleOf(user[0]) === r} data-role={r} title={r} aria-label={'Set ' + r} onclick={() => ri.setRole(user[0], r)}>{r[0].toUpperCase()}</button>{/each}
+								</div>
 							{:else}
 								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 							{/if}
@@ -443,7 +442,13 @@
 	.role-badge { flex: 0 0 auto; font-size: 10px; padding: 1px 7px; border-radius: 9999px; color: #fff; background: rgb(107 114 128); text-transform: capitalize; }
 	.role-badge[data-role='editor'] { background: #2563eb; }
 	.role-badge[data-role='admin'] { background: #7c3aed; }
-	.role-sel { flex: 0 0 auto; font-size: 10px; padding: 2px 4px; border-radius: 6px; border: 0; background: #374151; color: #fff; text-transform: capitalize; }
+	.role-seg { flex: 0 0 auto; display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: rgb(0 0 0 / 0.28); }
+	.role-opt { width: 20px; height: 18px; border: 0; border-radius: 6px; background: transparent; color: #9ca3af; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
+	.role-opt:hover { color: #fff; background: rgb(255 255 255 / 0.08); }
+	.role-opt.on { color: #fff; }
+	.role-opt.on[data-role='viewer'] { background: #6b7280; }
+	.role-opt.on[data-role='editor'] { background: #2563eb; }
+	.role-opt.on[data-role='admin'] { background: #7c3aed; }
 	#peers-popover {
 			position: fixed;
 			top: 122px;

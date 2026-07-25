@@ -5,6 +5,7 @@
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
 	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
+	import { sessionHost } from '$lib/connectionState';
 	import { connectSlot, drawerSlot } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 	import ConnectInfoDrawer from './ConnectInfoDrawer.svelte';
@@ -42,6 +43,14 @@
 	);
 	// the drawer is visible when open OR pinned (pinned keeps the tab bar under the pill)
 	const drawerVisible = $derived($connectDrawerOpen || $connectDrawerPinned);
+	// who we're connected to (for the read-only pill textbox): the host we joined, else
+	// "Hosting" when we're the host. pending = the peer we're dialing.
+	const hostId = $derived($sessionHost ?? remoteOpen[0] ?? null);
+	const hostName = $derived($userdata.find((u) => u[0] === hostId)?.[1] || '');
+	const hostLabel = $derived(hostName || (hostId ? String(hostId).toUpperCase() : ''));
+	const connectedText = $derived(
+		$sessionHost ? 'Connected to ' + hostLabel : 'Hosting · ' + remoteOpen.length + ' peer' + (remoteOpen.length === 1 ? '' : 's')
+	);
 
 	function updateDisplayId(id) {
 		displayid = id;
@@ -140,7 +149,7 @@
 				 the drawer, which matches the pill width, never reflows), + red Disconnect.
 				 Connection status lives in the drawer header. -->
 			<div class="cx-connect inline-flex rounded-md shadow-sm">
-				<Input type="text" disabled placeholder="" class="nob cx-input rounded-r-none border-0 opacity-60" value="" />
+				<Input type="text" disabled title={connectedText} class="nob cx-input rounded-r-none border-0 opacity-70" value={connectedText} />
 				<Button
 					color="red"
 					id="disconnect-button"
@@ -152,7 +161,7 @@
 		{:else if connState === 'pending'}
 			<!-- pending: same gray disabled input for a stable width + amber Cancel -->
 			<div class="cx-connect inline-flex rounded-md shadow-sm">
-				<Input type="text" disabled placeholder="" class="nob cx-input rounded-r-none border-0 opacity-60" value="" />
+				<Input type="text" disabled title="Waiting for approval" class="nob cx-input rounded-r-none border-0 opacity-70" value={'Requesting ' + String(pendingOut[0]?.[0] ?? peerIdToConnect ?? '').toUpperCase()} />
 				<Button
 					color="yellow"
 					id="cancel-request-button"

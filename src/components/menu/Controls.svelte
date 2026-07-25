@@ -17,6 +17,7 @@
 	import * as THREE from 'three';
 	import { setContext, tick } from 'svelte';
 	import { writable } from 'svelte/store';
+	import { shareObject } from '$lib/objectPermissions';
 	import Objects from './Objects.svelte';
 	import LocalObjects from './LocalObjects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -249,6 +250,44 @@
 				node.removeEventListener('pointerdown', down);
 				window.removeEventListener('pointermove', move);
 				window.removeEventListener('pointerup', up);
+			}
+		};
+	}
+
+	// Drop-to-share: dragging a LOCAL object anywhere over the shared object-list body
+	// shares it to the scene root (a shared object just moves to root). Uses an action
+	// so it adds no on:-directive/a11y warnings in this on:-style component.
+	function shareDropZone(node: HTMLElement) {
+		const setActive = (on: boolean) => {
+			node.style.boxShadow = on ? 'inset 0 0 0 2px rgb(59 130 246 / 0.7)' : '';
+			node.style.background = on ? 'rgb(59 130 246 / 0.08)' : '';
+		};
+		const over = (e: DragEvent) => {
+			if (e.dataTransfer?.types.includes('application/x-object-uuid')) {
+				e.preventDefault();
+				e.dataTransfer.dropEffect = 'move';
+				setActive(true);
+			}
+		};
+		const leave = () => setActive(false);
+		const drop = (e: DragEvent) => {
+			setActive(false);
+			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
+			if (!uuid) return;
+			e.preventDefault();
+			e.stopPropagation();
+			const obj: any = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
+			if (obj?.userData?.__localOnly) shareObject(obj);
+			else moveObjectToGroup(uuid, 'root');
+		};
+		node.addEventListener('dragover', over);
+		node.addEventListener('dragleave', leave);
+		node.addEventListener('drop', drop);
+		return {
+			destroy() {
+				node.removeEventListener('dragover', over);
+				node.removeEventListener('dragleave', leave);
+				node.removeEventListener('drop', drop);
 			}
 		};
 	}
@@ -588,7 +627,11 @@
 		on:dragover={(e) => { if (e.dataTransfer?.types.includes('application/x-object-uuid')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
 		on:drop={(e) => {
 			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
-			if (uuid) { e.preventDefault(); moveObjectToGroup(uuid, 'root'); }
+			if (!uuid) return;
+			e.preventDefault();
+			const obj = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
+			if (obj?.userData?.__localOnly) shareObject(obj);
+			else moveObjectToGroup(uuid, 'root');
 		}}
 	>
 		<span>☰ Objects</span>
@@ -782,11 +825,14 @@
 			{:else}
 			  {#if $objectsGroup}
 				<LocalObjects />
-				{#if $objectsGroup.children.length > 0}
-					{#each $objectsGroup.children.filter((/** @type {any} */ c) => !c.userData?.__localOnly) as element}
-					<Objects {element} />
-					{/each}
-				{/if}
+				<!-- drop a local object anywhere here to SHARE it to the scene root -->
+				<div class="min-h-8 rounded transition-colors" use:shareDropZone>
+					{#if $objectsGroup.children.length > 0}
+						{#each $objectsGroup.children.filter((/** @type {any} */ c) => !c.userData?.__localOnly) as element}
+						<Objects {element} />
+						{/each}
+					{/if}
+				</div>
 			  {/if}
 			{/if}
 		</div>

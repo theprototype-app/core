@@ -262,7 +262,7 @@
 									{#if roleMenuFor === user[0]}
 										<div class="role-menu" role="listbox">
 											{#each ri.order as r}
-												<button type="button" class="role-menu-item" class:sel={ri.roleOf(user[0]) === r} role="option" aria-selected={ri.roleOf(user[0]) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(user[0], r); roleMenuFor = null; }}><span class="role-dot" data-role={r}></span><span class="role-menu-label">{r}</span>{#if ri.roleOf(user[0]) === r}<i class="fa-solid fa-check role-check"></i>{/if}</button>
+												<button type="button" class="role-menu-item" class:sel={ri.roleOf(user[0]) === r} role="option" aria-selected={ri.roleOf(user[0]) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(user[0], r); roleMenuFor = null; }}><span class="role-badge" data-role={r} style="pointer-events:none">{r}</span>{#if ri.roleOf(user[0]) === r}<i class="fa-solid fa-check role-check"></i>{/if}</button>
 											{/each}
 										</div>
 									{/if}
@@ -448,20 +448,16 @@
 		/* pin the peers list to the viewport so it can't spill off the left edge
 		   when the trigger sits near a narrow screen's right edge */
 		.peers-scroll { max-height: 264px; overflow-y: auto; }
-	.role-badge { flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 8px; color: #fff; background: rgb(107 114 128); text-transform: capitalize; }
-	.role-btn { border: 0; cursor: pointer; }
-	.role-btn:hover { filter: brightness(1.15); }
-	.role-btn { display: inline-flex; align-items: center; gap: 4px; }
-	.role-caret { font-size: 7px; opacity: 0.75; }
+	.role-badge { flex: 0 0 auto; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 9px; border-radius: 9999px; color: #fff; background: #64748b; text-transform: capitalize; line-height: 1.4; }
+	.role-btn { border: 0; cursor: pointer; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
+	.role-btn:hover { filter: brightness(1.12); }
+	.role-btn { display: inline-flex; align-items: center; gap: 5px; }
+	.role-caret { font-size: 8px; opacity: 0.85; }
 	.role-ctl { position: relative; flex: 0 0 auto; }
 	.role-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 1000; min-width: 116px; padding: 4px; border-radius: 10px; background: #1f2937; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 12px 28px rgb(0 0 0 / 0.5); display: flex; flex-direction: column; gap: 2px; }
 	.role-menu-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: #e5e7eb; font-size: 11px; cursor: pointer; text-transform: capitalize; text-align: left; }
 	.role-menu-item:hover { background: rgb(255 255 255 / 0.09); }
 	.role-menu-item.sel { background: rgb(255 255 255 / 0.05); }
-	.role-dot { width: 9px; height: 9px; border-radius: 9999px; flex: 0 0 auto; background: #6b7280; }
-	.role-dot[data-role='editor'] { background: #2563eb; }
-	.role-dot[data-role='admin'] { background: #7c3aed; }
-	.role-menu-label { flex: 1; min-width: 0; }
 	.role-check { font-size: 9px; color: #86efac; }
 	.role-badge[data-role='editor'] { background: #2563eb; }
 	.role-badge[data-role='admin'] { background: #7c3aed; }

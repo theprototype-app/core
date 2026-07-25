@@ -8,7 +8,7 @@
 //    never broadcast). Everything shared by other peers is read-only for them.
 import { get } from 'svelte/store';
 import { rolesInfo } from './cloudHooks';
-import { showToast, showLocalObjects } from '../stores/appStore';
+import { showToast, showLocalObjects, peers } from '../stores/appStore';
 import { objectsGroup } from '../stores/sceneStore';
 
 /** broadcast message `type`s that CREATE a scene object (peerHandler send-gate) */
@@ -40,6 +40,36 @@ export function markLocalOnly(object) {
  * @param {any} object */
 export function clearLocalOnly(object) {
 	if (object?.userData) delete object.userData.__localOnly;
+}
+
+/** Promote a local-only object to a SHARED one: re-parent into `groupUuid` when given
+ * (so its toJSON carries the group-local transform), clear the `__localOnly` flag,
+ * broadcast it to peers, and poke the object list. No-op for viewers. This is the ONE
+ * path that actually replicates a local object — a bare `group` reparent references a
+ * uuid peers never received, so it silently does nothing on their side.
+ * @param {any} object
+ * @param {string|null} [groupUuid]
+ * @returns {boolean} true when the object was shared */
+export function shareObject(object, groupUuid = null) {
+	if (!object || isViewer()) return false;
+	const group = get(objectsGroup);
+	if (groupUuid) {
+		const dest = group?.getObjectByProperty('uuid', groupUuid);
+		if (dest && dest.type === 'Group' && object.parent !== dest) dest.attach(object);
+	}
+	clearLocalOnly(object);
+	/** @type {any} */
+	const peer = get(peers);
+	try {
+		/** @type {any} */
+		const msg = { type: 'object', element: object.toJSON() };
+		if (groupUuid) msg.groupuuid = groupUuid;
+		peer?.send(msg);
+	} catch (e) {
+		console.warn('share failed', e);
+	}
+	objectsGroup.update((v) => v);
+	return true;
 }
 
 /** Can the LOCAL user move/edit this object?

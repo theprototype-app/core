@@ -18,6 +18,7 @@
 	import { setContext, tick } from 'svelte';
 	import { writable } from 'svelte/store';
 	import Objects from './Objects.svelte';
+	import LocalObjects from './LocalObjects.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import MobileAddButton from './MobileAddButton.svelte';
 	import AiHudButton from './AiHudButton.svelte';
@@ -776,8 +777,9 @@
 				{/if}
 			{:else}
 			  {#if $objectsGroup}
+				<LocalObjects />
 				{#if $objectsGroup.children.length > 0}
-					{#each $objectsGroup.children as element}
+					{#each $objectsGroup.children.filter((/** @type {any} */ c) => !c.userData?.__localOnly) as element}
 					<Objects {element} />
 					{/each}
 				{/if}

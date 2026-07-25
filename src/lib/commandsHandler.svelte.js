@@ -483,6 +483,8 @@ export function sendObject(conn, element, groupuuid) {
     }
     // Iterate over all objects in the scene
     objects.forEach(element => {
+        // viewer perms: never sync a viewer's local-only objects to a peer
+        if (element.userData && element.userData.__localOnly) return;
         if (hasAnimatedImport(element.uuid)) {
             // rigs travel as their original file bytes, one message
             sendAnimatedImport(conn, element);

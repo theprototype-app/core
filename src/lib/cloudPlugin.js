@@ -10,7 +10,8 @@ import {
 	connectSlot,
 	usersSlot,
 	profileSlot,
-	drawerSlot
+	drawerSlot,
+	rolesInfo
 } from './cloudHooks';
 
 /**
@@ -109,6 +110,9 @@ function makeCloudApi() {
 		/** render into the Connect info drawer (room / host settings) — v2 */
 		mountConnectDrawer: (/** @type {any} */ mountFn) =>
 			drawerSlot.set(typeof mountFn === 'function' ? mountFn : null),
+		/** publish the live roles so core can render per-peer role controls + gate
+		 *  viewer actions (2026-07-25). Pass null to clear. */
+		setRolesInfo: (/** @type {any} */ info) => rolesInfo.set(info || null),
 
 		// --- utilities ---
 		toast: showToast

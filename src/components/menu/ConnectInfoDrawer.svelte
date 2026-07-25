@@ -21,7 +21,7 @@
 	import { peerQuality, qColor } from '$lib/networkQuality';
 	import { peerServerStatus, peerServerPingUrl, peerServerPeersUrl } from '$lib/peerServer';
 	import { cancelOutboundRequest } from '$lib/peerApproval';
-	import { drawerSlot } from '$lib/cloudHooks';
+	import { drawerSlot, rolesInfo } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 
 	/** @type {{ onClose?: () => void }} */
@@ -33,11 +33,12 @@
 	// --- Toasts tab = LIVE toasts (approvals + transient messages). The viewport copy
 	// (Toasts.svelte, hidden while the drawer is open) owns each toast's expiry timer,
 	// so here we just render the shared stores; actions mutate the same stores. ---
-	function approveRequest(/** @type {any} */ approval) {
+	function approveRequest(/** @type {any} */ approval, /** @type {string|null} */ role) {
 		pendingApprovals.set(/** @type {any} */ ($pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== approval.peerId));
 		$userdata.push([approval.peerId, '', '']);
 		$peers?.send?.({ type: 'userdata', userdata: $userdata });
 		$peers?.connectToPeer?.(approval.peerId, true);
+		if (role && $rolesInfo?.setRole) $rolesInfo.setRole(approval.peerId, role);
 	}
 	function rejectRequest(/** @type {any} */ approval) {
 		pendingApprovals.set(/** @type {any} */ ($pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== approval.peerId));
@@ -54,8 +55,17 @@
 		if ($connectDrawerTab === 'rooms' && !hasRooms) connectDrawerTab.set('info');
 	});
 
-	/** @param {'info'|'rooms'|'toasts'} t */
-	const setTab = (t) => connectDrawerTab.set(t);
+	/** Click a tab: open the body to it. Click the ACTIVE tab (while open) collapses
+	 * the body — so a pinned drawer's tab bar stays but nothing is highlighted, and
+	 * clicking away (outside-close) likewise clears the highlight.
+	 * @param {'info'|'rooms'|'toasts'} t */
+	function setTab(t) {
+		if ($connectDrawerOpen && $connectDrawerTab === t) connectDrawerOpen.set(false);
+		else {
+			connectDrawerTab.set(t);
+			connectDrawerOpen.set(true);
+		}
+	}
 
 	// Close on outside pointerdown via a WINDOW listener — a fixed click-catcher
 	// would be sized to the pill, not the viewport: .connect-wrap's translateX makes
@@ -161,11 +171,11 @@
 	transition:slide={{ duration: 200, easing: cubicOut }}
 >
 	<div class="cxd-tabs" role="tablist">
-		<button class="cxd-tab" class:active={$connectDrawerTab === 'info'} role="tab" aria-selected={$connectDrawerTab === 'info'} onclick={() => setTab('info')}>Info</button>
+		<button class="cxd-tab" class:active={$connectDrawerOpen && $connectDrawerTab === 'info'} role="tab" aria-selected={$connectDrawerOpen && $connectDrawerTab === 'info'} onclick={() => setTab('info')}>Info</button>
 		{#if hasRooms}
-			<button class="cxd-tab" class:active={$connectDrawerTab === 'rooms'} role="tab" aria-selected={$connectDrawerTab === 'rooms'} onclick={() => setTab('rooms')}>Rooms</button>
+			<button class="cxd-tab" class:active={$connectDrawerOpen && $connectDrawerTab === 'rooms'} role="tab" aria-selected={$connectDrawerOpen && $connectDrawerTab === 'rooms'} onclick={() => setTab('rooms')}>Rooms</button>
 		{/if}
-		<button class="cxd-tab" class:active={$connectDrawerTab === 'toasts'} role="tab" aria-selected={$connectDrawerTab === 'toasts'} onclick={() => setTab('toasts')}>
+		<button class="cxd-tab" class:active={$connectDrawerOpen && $connectDrawerTab === 'toasts'} role="tab" aria-selected={$connectDrawerOpen && $connectDrawerTab === 'toasts'} onclick={() => setTab('toasts')}>
 			Toasts{#if $pendingApprovals.length + $toastStore.length > 0}<span class="cxd-tab-badge" class:req={$pendingApprovals.length > 0}>{Math.min($pendingApprovals.length + $toastStore.length, 9)}{$pendingApprovals.length + $toastStore.length > 9 ? '+' : ''}</span>{/if}
 		</button>
 		<span class="flex-1"></span>
@@ -200,7 +210,8 @@
 						<li class="cxd-toast cxd-live" data-kind="request">
 							<div class="cxd-toast-text">Connection request from <span class="cxd-mono">{String(a.peerId).toUpperCase()}</span></div>
 							<div class="cxd-live-actions">
-								<button class="cxd-approve" onclick={() => approveRequest(a)}>Approve</button>
+								<button class="cxd-approve" onclick={() => approveRequest(a, null)}>Approve</button>
+								{#if $rolesInfo}<button class="cxd-approve cxd-approve-edit" onclick={() => approveRequest(a, 'editor')}>+ edit</button>{/if}
 								<button class="cxd-reject" onclick={() => rejectRequest(a)}>Reject</button>
 							</div>
 						</li>
@@ -422,6 +433,12 @@
 	}
 	.cxd-approve:hover {
 		background: #1d4ed8;
+	}
+	.cxd-approve-edit {
+		background: #7c3aed;
+	}
+	.cxd-approve-edit:hover {
+		background: #6d28d9;
 	}
 	.cxd-reject {
 		background: rgb(75 85 99 / 0.8);

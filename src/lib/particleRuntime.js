@@ -258,6 +258,12 @@ export function updateParticles(pairs, sceneObjects, time) {
 			entry = buildEntry(key, cfg.count);
 			entries.set(key, entry);
 			entry.space = ''; // force the space init below
+			// burst emitters idle until triggered, so attaching one would look
+			// dead — auto-fire ONCE on (re)build for immediate LOCAL feedback
+			// (each peer fires when it builds its own entry; tightly-synced
+			// bursts still ride the replicated particleburst timestamp). World
+			// origins get stamped in the space-init block below this tick.
+			if (cfg.mode === 'burst') entry.burstT = tw;
 		}
 		entry.uuid = uuid;
 		refreshLifeCache(entry, cfg);

@@ -146,6 +146,25 @@ h.run(async () => {
 		`object menu Effects submenu (${menu.children.length} items)`
 	);
 
+	// 8b) a burst preset auto-fires on attach (immediate local feedback — burst
+	// emitters would otherwise sit invisible until an explicit trigger). Runs
+	// before the cap test so its entry isn't culled by the emitter cap.
+	const burstUuid = await A.page.evaluate(() => {
+		window.__stores.commandsHandler.sceneCommand('/create box');
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		return g.children[g.children.length - 1].uuid;
+	});
+	await A.page.evaluate((u) => window.__stores.particleActions.addParticlesPreset(u, 'confetti'), burstUuid);
+	await h.eventually(
+		() => entriesOn(A.page),
+		(e) => {
+			const c = e.find((x) => x.key === 'ud:' + burstUuid);
+			return !!c && c.sprite === 'square' && c.burstT >= 0;
+		},
+		'burst preset auto-fires on attach (no explicit trigger)'
+	);
+
 	// 9) emitter cap: 10 emitters -> at most MAX_EMITTERS render
 	await A.page.evaluate(() => {
 		for (let i = 0; i < 9; i++) {

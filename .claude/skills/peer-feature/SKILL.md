@@ -93,7 +93,11 @@ connection/handshake-critical it MUST be added to `ALWAYS_ALLOWED` in `cloudHook
 it and break the mesh. Cloud-plugin state (roles, rooms) replicates over the
 `{type:'cloud', payload}` channel (`sendCloud`/`onCloudMessage`), NOT a new core type —
 core only carries the seam. Never build cloud/roles features into core; they live in
-the private `theprototype-app/cloud` plugin (see its `CLAUDE.md`).
+the private `theprototype-app/cloud` plugin (see its `CLAUDE.md`). #14: roles, rooms,
+and room thumbnails are ALL cloud-plugin concerns — the plugin gates via `canApply`,
+publishes `rolesInfo` to core (per-peer role UI + viewer object gates in
+`objectPermissions.js`), authorizes/dials back joiners via `authProvider`, and pulls a
+`captureThumbnail(maxW)` JPEG. Core just exposes the seams; it ships no role/room type.
 
 Throttle continuous streams (~10–20/s) with a final unthrottled send on gesture end
 (`move`, `verts`, `flowcursor`, `drawlive` are references); temp visuals for other

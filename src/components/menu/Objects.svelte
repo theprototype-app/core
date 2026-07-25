@@ -9,6 +9,9 @@
     // search/filter from Controls: a store holding the visible-uuid set (null = all)
     const objectFilter = getContext('objectFilter');
     const rowVisible = $derived(!objectFilter || !$objectFilter || $objectFilter.has(element.uuid));
+    // THREE children/userData aren't reactive — re-derive on each objectsGroup poke
+    const kids = $derived.by(() => { void $objectsGroup; return [...(element?.children ?? [])]; });
+    const isLocal = $derived.by(() => { void $objectsGroup; return !!element?.userData?.__localOnly; });
     // groups on the path to a match auto-expand while filtering
     $effect(() => {
         if ($objectFilter && element.children.length > 0 && $objectFilter.has(element.uuid))
@@ -30,7 +33,7 @@
 	function shareLocal(/** @type {any} */ obj) {
 		if (isViewer()) { showToast('You need edit access to share — ask an admin.'); return; }
 		clearLocalOnly(obj);
-		try { get(peers)?.send({ type: 'object', element: obj.toJSON(), uuids: [obj.uuid] }); showToast('Shared "' + (obj.name || 'object') + '".'); } catch (e) { console.warn(e); }
+		try { get(peers)?.send({ type: 'object', element: obj.toJSON() }); showToast('Shared "' + (obj.name || 'object') + '".'); } catch (e) { console.warn(e); }
 		const g = get(objectsGroup); if (g) objectsGroup.set(g);
 	}
 
@@ -198,7 +201,7 @@
                 <i class="fa-solid fa-cube w-4 shrink-0 text-center text-gray-400" title="Object"></i>
             {/if}
 
-            {#if element.userData?.__localOnly}
+            {#if isLocal}
                 <i class="fa-solid fa-user-lock w-3 shrink-0 text-center text-[10px] text-amber-400" title="Local only (not shared with peers)"></i>
             {/if}
 
@@ -247,7 +250,7 @@
                         <i class={element.visible === false ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}></i>
                     </button>
                     <button class="configure hover:brightness-200" title="Properties" onclick={(e) => { e.stopPropagation(); configure(element); }}>⚙️</button>
-                    {#if element.userData?.__localOnly && !isViewer()}
+                    {#if isLocal && !isViewer()}
                         <button class="share-local hover:brightness-200" title="Share with peers" aria-label="Share with peers" onclick={(e) => { e.stopPropagation(); shareLocal(element); }}><i class="fa-solid fa-share-nodes text-primary-300"></i></button>
                     {/if}
                     <button class="delete hover:brightness-200" title="Delete" onclick={(e) => { e.stopPropagation(); deleteItem(element); }}>✖️</button>
@@ -258,7 +261,7 @@
 
     {#if isExpanded}
     <div class="ml-3 border-l border-gray-600/40 pl-1">
-        {#each element.children as item (item.uuid)}
+        {#each kids as item (item.uuid)}
             <svelte:self element={item} />
         {/each}
     </div>

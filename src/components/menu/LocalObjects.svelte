@@ -10,6 +10,7 @@
 	import { peers, showToast, showLocalObjects } from '../../stores/appStore';
 	import { rolesInfo } from '$lib/cloudHooks';
 	import { markLocalOnly, clearLocalOnly } from '$lib/objectPermissions';
+	import { moveObjectToGroup } from '$lib/objectActions';
 	import Objects from './Objects.svelte';
 
 	let dropHover = $state(false);
@@ -33,7 +34,7 @@
 		for (const o of [...local]) {
 			clearLocalOnly(o);
 			try {
-				get(peers)?.send({ type: 'object', element: o.toJSON(), uuids: [o.uuid] });
+				get(peers)?.send({ type: 'object', element: o.toJSON() });
 			} catch (e) {
 				console.warn('share failed', e);
 			}
@@ -55,10 +56,20 @@
 
 	function onDrop(/** @type {DragEvent} */ e) {
 		e.preventDefault();
+		e.stopPropagation();
 		dropHover = false;
 		const uuid = e.dataTransfer?.getData('application/x-object-uuid');
 		const obj = uuid && get(objectsGroup)?.getObjectByProperty('uuid', uuid);
-		if (!obj || obj.userData?.__localOnly) return; // dropping a local object here is a no-op
+		if (!obj) return;
+		if (obj.userData?.__localOnly) {
+			// a LOCAL object dropped on the section background moves to the TOP LEVEL of
+			// Local objects (drag it OUT of a group)
+			if (obj.parent && obj.parent !== get(objectsGroup)) {
+				moveObjectToGroup(uuid, 'root');
+				poke();
+			}
+			return;
+		}
 		if (isViewerNow) {
 			showToast('Create a local copy of "' + (obj.name || 'object') + '"? The original stays shared.', [
 				{ label: 'Create copy', action: () => makeLocalCopy(obj) }
@@ -78,6 +89,7 @@
 	function onDragOver(/** @type {DragEvent} */ e) {
 		if (e.dataTransfer?.types?.includes('application/x-object-uuid')) {
 			e.preventDefault();
+			e.stopPropagation();
 			e.dataTransfer.dropEffect = 'move';
 			dropHover = true;
 		}

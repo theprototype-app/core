@@ -35,7 +35,30 @@ loadable play content. Everything a user does must be visible to connected peers
   channel), and mount stores `connectSlot`/`usersSlot`/`profileSlot`/`drawerSlot`
   rendered via `CloudSlot.svelte` (a `(el)=>cleanup` mount fn). cloudApi **v2**:
   +`mountProfile`/`mountConnectDrawer`/`connectToPeer`. Everything is INERT with no
-  plugin — OSS behaves byte-identical.
+  plugin — OSS behaves byte-identical. #14 cloudApi **v2.2** additions: `canApply`
+  keeps an `ALWAYS_ALLOWED` FLOOR (hosts/userdata/cloud/locked/get*); `authProvider`
+  autoaccept path now WHITELISTS + broadcasts the roster + DIALS BACK the joiner via
+  `get(peers).connectToPeer` (a joiner only leaves "waiting for approval" on an
+  INCOMING conn from the host — manual approve already dialed back, autoaccept did not
+  → the join-stuck bug); `rolesInfo` store BRIDGE (the plugin publishes
+  `{myId,myRole,amAdmin,order,roleOf(id),setRole(id,role)}` so CORE renders per-peer
+  role controls + gates viewer actions) + `setRolesInfo`; `sessionHost()` accessor;
+  `captureThumbnail(maxW)` (renders a fresh frame + reads the canvas synchronously →
+  downscaled JPEG blob, null in VR — for cloud room thumbnails).
+- `src/lib/objectPermissions.js` (#14, store-only) — viewer object permissions, ONLY
+  active when a roles plugin publishes `rolesInfo` (OSS byte-unchanged): `canEditObject`
+  (a viewer edits ONLY their own `__localOnly` objects), `markLocalOnly`/`clearLocalOnly`,
+  `gateCreationBroadcast`, `isViewer`. GIZMO gate in `objectActions.applySelectionSet`
+  (a viewer can select/inspect but not attach the transform gizmo to SHARED objects).
+  `PeerConnection.send` runs `gateCreationBroadcast` — a viewer's object-CREATION
+  broadcasts (create/light/group/object/objectfile/duplicate) mark the object
+  `__localOnly` + skip the send (peers drop them anyway); `sendObject` handshake filters
+  `__localOnly`. The `__localOnly` marker rides toJSON/GLTF extras like the existing
+  `__uuid` marker. `LocalObjects.svelte` = a "Local objects" list section rendering local
+  objects through the SAME recursive `Objects.svelte` tree (groups + drag); `showLocalObjects`
+  store OFF by default + toggle under the object-list filter cog + auto-on via
+  `markLocalOnly`; Share/Share-all broadcast toJSON + clear the flag; drop-to-local =
+  viewer local COPY / editor delete-for-peers. `Objects.svelte` gained a local badge + Share.
 - `src/lib/connectionState.js` (store-only) — `sessionHost` (peer that approved OUR
   outbound request; null = we host), `peerJoinedAt`, `resetSession`. Connect state
   derives from `$peers.openedPeers`, **NEVER `userdata.length`** (the roster is
@@ -49,7 +72,20 @@ loadable play content. Everything a user does must be visible to connected peers
   always-on server indicator was removed (moved into the drawer; amber dot on the
   chevron when `peerServerStatus.didFallback`). `peerServer.js` also carries the
   invite `~srv` param helpers (`inviteServerParam`/`parseInviteHash`/
-  `applyInviteServerOverride`, session-only, never falls back).
+  `applyInviteServerOverride`, session-only, never falls back). #14 Connect UX
+  redesign (`Connect.svelte`/`ConnectInfoDrawer.svelte`/`Toasts.svelte`): the chevron
+  opens ONE tabbed drawer (Info/Rooms/Toasts) flush under the pill (pill squares its
+  bottom corners when open), PINNABLE (`connectDrawerPinned` — tab bar stays when the
+  body is collapsed); connection STATUS lives in the drawer tab-header, not the pill;
+  the pill keeps a stable width via a gray disabled input showing the host
+  ("Connected to <host>"/"Hosting"). Stores: `connectDrawerOpen`/`connectDrawerTab`/
+  `connectDrawerPinned`/`toastsInDrawerOnly`/`showRoomsButton`/`showLocalObjects`.
+  Toast ROUTING: viewport toasts hidden via CSS (timers keep running) when the drawer
+  is open or `toastsInDrawerOnly`; the Toasts tab shows LIVE toasts; the bell keeps
+  history. Toasts redesigned to `.tp-toast` professional cards (dark, close ✕,
+  underline link actions, `autoDismiss` action). Roles UI: a per-peer role DROPDOWN in
+  the Users popover next to Watch (via `rolesInfo`) + name tooltip + scrollable list;
+  the connection-request toast is an on-scheme card (View only / Editor access / Reject).
 - `src/lib/commandsHandler.svelte.js` — receive-side scene appliers + `sendObjects`
   (GLTF full sync; animated imports detour through `sendAnimatedImport` raw bytes).
 - Domain modules in `src/lib/`: `objectActions`, `geometries.svelte.js`,
@@ -222,11 +258,27 @@ loadable play content. Everything a user does must be visible to connected peers
    channel; DataConnections are bidirectional and OUTGOING conns are wireData'd too.
 10. Serializers (sendObjects, GLTF save, autosave, sessions) must
    `parkAnimatedAtBase()` first or receivers bake mid-swing poses as animation base;
-   `restoreBase` calls `updateMatrix()` because toJSON/GLTFExporter read the matrix
+   `restoreBase` calls `updateMatrix()` because toJSON/GLTF read the matrix
    the last RENDER composed.
+11. **Viewer object permissions** (#14, cloud-roles only) go through
+   `objectPermissions.js` — INERT unless a plugin publishes `rolesInfo`. A viewer's
+   object-creation is not sent; the object is marked `__localOnly` (rides toJSON/GLTF
+   extras like `__uuid`) and stays local until Share broadcasts its toJSON + clears the
+   flag. Enforcement is send-side (`gateCreationBroadcast` in `PeerConnection.send` +
+   `sendObject` handshake filter) AND a gizmo gate in `applySelectionSet` — never trust
+   a viewer's bytes; peers also drop gated types via `canApply`.
 
 ## Hard-won gotchas (do not rediscover)
 
+- **#14 file-shape traps**: many core files are **CRLF + tabs** — a node-script rewrite
+  must DETECT the newline and match the exact tab depth (a wrong-depth "match" silently
+  MISSES). Some components are `lang="ts"` (use TS param types), others are plain
+  `<script>` (JSDoc `@param` — never TS syntax); any NEW .js/.ts must be clean
+  (noImplicitAny). Icon-only buttons need `aria-label` (an a11y warning counts against
+  the baseline). THREE object trees are **NOT reactive**: mutating `.children`/`.userData`
+  needs `objectsGroup.update(v=>v)` to poke, AND rendered components must derive from
+  `$objectsGroup` (or a keyed-each on the same ref won't re-render). svelte-check
+  baseline is **485 errors / 72 warnings** — hold it.
 - **Connection "connected" state = `$peers.openedPeers`, NOT `userdata.length`**:
   dialing whitelists the target in `userdata` at DIAL time (before approval), so a
   roster-length check shows a phantom peer while pending. `$peers` ticks
@@ -475,6 +527,16 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-07-25): **Roadmap #14 continuing — open-core cloud MATURED.** cloudApi
+  now **v2.2**: capability gate w/ `ALWAYS_ALLOWED` floor, autoaccept dial-back +
+  roster broadcast (fixes join-stuck), `rolesInfo` bridge + `setRolesInfo`,
+  `sessionHost()`, `captureThumbnail(maxW)`. NEW `objectPermissions.js` (viewer
+  __localOnly objects, gizmo/creation gates, LocalObjects.svelte list) — INERT without
+  a roles plugin. Connect UX redesign: one PINNABLE tabbed drawer (Info/Rooms/Toasts)
+  flush under a stable-width pill; `.tp-toast` cards; per-peer role dropdown in Users.
+  Cloud plugin (`theprototype-app/cloud`): PocketBase self-hosted at
+  `pb.theprototype.app`, roles.js/rooms.js/account.js. svelte-check core **485/72**
+  (new baseline — hold it).
 - Status (2026-07-24): **Roadmap #14 (Connect UX + open-core cloud) IN FLIGHT.**
   MERGED to core main: #38 M1 open-core seams, #39 docs-migration pointers (plans →
   private cloud repo, SDK docs → public site), #40 **CN** (Connect 3-state pill +

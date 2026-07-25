@@ -2,6 +2,7 @@
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, toastsInDrawerOnly } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
+    import { rolesInfo } from '$lib/cloudHooks'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
 	import { Progressbar, Toast, Button } from 'flowbite-svelte';
@@ -57,6 +58,25 @@ function timeout() {
 if (--counter > 0) return setTimeout(timeout, 4000);
 toastStatus = false;
 }
+
+// Approve an incoming connection request. `role` (cloud roles) optionally grants the
+// joiner a role right away — "Approve + edit" makes them an editor instead of the
+// default viewer. A 'retry' request just re-establishes an existing whitelisted conn.
+function approvePeer(approval, role) {
+    $pendingApprovals = $pendingApprovals.filter((p) => p.peerId !== approval.peerId);
+    if (approval.status === 'retry') {
+        try { $peers.connections[approval.peerId]?.close(); } catch {}
+    } else {
+        $userdata.push([approval.peerId, '', '']);
+    }
+    $peers.send({ type: 'userdata', userdata: $userdata });
+    $peers.connectToPeer(approval.peerId, true);
+    if (role && $rolesInfo?.setRole) $rolesInfo.setRole(approval.peerId, role);
+}
+function rejectPeer(approval) {
+    $pendingApprovals = $pendingApprovals.filter((p) => p.peerId !== approval.peerId);
+    try { $peers.connections[approval.peerId]?.close?.(); } catch {}
+}
 </script>
 <!-- E1: CRITICAL container — connection requests + pending outbound requests stay
      ABOVE modals (--z-toast) so an approval is never missed while a modal is open. -->
@@ -65,74 +85,22 @@ class:cxd-hidden={hideCritical}
 style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
 >
 {#each $pendingApprovals as approval}
-<div class="my-1">
-{#if approval.status != 'retry'}
-<Toast  transition={fly} class="p-2 rounded-lg dark:bg-green-800 dark:border-dark-700 border-2 border-green-500" divClass="flex items-center gap-3">
-    <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
-
+<div class="my-1 cxreq" transition:fly={{ y: -8, duration: 180 }}>
+    <div class="cxreq-top">
+        <span class="cxreq-icon">🔗</span>
+        <div class="cxreq-text">
+            <div class="cxreq-title">{approval.status === 'retry' ? 'Reconnect request' : 'Connection request'}</div>
+            <div class="cxreq-id">{String(approval.peerId).toUpperCase()}</div>
+        </div>
     </div>
-    <div class="mb-1 text-base font-medium text-green-700 dark:text-green-500 inline-flex items-center">
-
-        <p class="text-sm font-medium text-gray-500 dark:text-gray-200 pr-4 overflow-hidden max-w-80">
-            Connection request from peer:&nbsp;{approval.peerId}
-        </p>
-
-
-        <Button
-            color="primary"
-            class="nob rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
-            onclick={() => {
-                // Remove approved peer from pending approvals
-                $pendingApprovals = $pendingApprovals.filter(peer => peer.peerId !== approval.peerId);
-
-                // Add peer to user data (whitelist)
-                let data = [approval.peerId, '', '']
-                $userdata.push(data);
-
-                // Broadcast updated whitelist to all connected peers
-                $peers.send({type: 'userdata', userdata: $userdata})
-
-                // Simply connect as requester whitelisted us
-                $peers.connectToPeer(approval.peerId, true);
-            }}
-            >Approve</Button
-        >
-
+    <div class="cxreq-actions">
+        <button class="cxreq-btn cxreq-approve" onclick={() => approvePeer(approval, null)}
+            title={$rolesInfo ? 'Approve as a view-only viewer' : 'Approve the connection'}>Approve</button>
+        {#if $rolesInfo && approval.status !== 'retry'}
+            <button class="cxreq-btn cxreq-edit" onclick={() => approvePeer(approval, 'editor')} title="Approve and grant edit access">Approve + edit</button>
+        {/if}
+        <button class="cxreq-btn cxreq-reject" onclick={() => rejectPeer(approval)} title="Decline">Reject</button>
     </div>
-</Toast>
-{:else}
-<Toast  transition={fly} class="p-2 rounded-lg dark:bg-green-800 dark:border-dark-700 border-2 border-green-500" divClass="flex items-center gap-3">
-    <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
-
-    </div>
-    <div class="mb-1 text-base font-medium text-green-700 dark:text-green-500 inline-flex items-center">
-
-        <p class="text-sm font-medium text-gray-500 dark:text-gray-200 pr-4 overflow-hidden max-w-80">
-            Connection &nbsp;{approval.peerId} already exists
-        </p>
-
-
-        <Button
-            color="primary"
-            class="nob rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
-            onclick={() => {
-                console.log($peers.connections[approval.peerId])
-                $peers.connections[approval.peerId].close();
-                // Remove approved peer from pending approvals
-                $pendingApprovals = $pendingApprovals.filter(peer => peer.peerId !== approval.peerId);
-
-                // Broadcast updated whitelist to all connected peers
-                $peers.send({type: 'userdata', userdata: $userdata})
-
-                // Simply connect as requester whitelisted us
-                $peers.connectToPeer(approval.peerId, true);
-            }}
-            >Retry</Button
-        >
-
-    </div>
-</Toast>
-{/if}
 </div>
 {/each}
 
@@ -337,6 +305,32 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
     .cxd-hidden {
         display: none !important;
     }
+    /* redesigned connection-request card (replaces the off-pattern green toast) */
+    .cxreq {
+        pointer-events: auto;
+        width: min(340px, 92vw);
+        margin: 4px auto 0;
+        background: rgb(17 24 39 / 0.98);
+        border: 1px solid rgb(255 255 255 / 0.12);
+        border-left: 3px solid #f59e0b;
+        border-radius: 12px;
+        padding: 10px 12px;
+        box-shadow: 0 12px 30px rgb(0 0 0 / 0.45);
+        backdrop-filter: blur(6px);
+    }
+    .cxreq-top { display: flex; align-items: center; gap: 10px; }
+    .cxreq-icon { font-size: 18px; flex: 0 0 auto; }
+    .cxreq-text { min-width: 0; }
+    .cxreq-title { font-size: 13px; font-weight: 600; color: #f3f4f6; }
+    .cxreq-id { font-size: 11px; color: #9ca3af; font-family: ui-monospace, monospace; }
+    .cxreq-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .cxreq-btn { font-size: 12px; padding: 5px 8px; border-radius: 7px; border: 0; cursor: pointer; color: #fff; }
+    .cxreq-approve { flex: 1 1 auto; background: #2563eb; }
+    .cxreq-approve:hover { background: #1d4ed8; }
+    .cxreq-edit { flex: 1 1 auto; background: #7c3aed; }
+    .cxreq-edit:hover { background: #6d28d9; }
+    .cxreq-reject { flex: 0 0 auto; background: rgb(75 85 99 / 0.8); }
+    .cxreq-reject:hover { background: rgb(107 114 128 / 0.9); }
     /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
        toasts below both */
     @media (max-width: 640px) {

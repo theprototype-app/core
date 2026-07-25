@@ -27,7 +27,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import NotificationCenter from './NotificationCenter.svelte';
 	import CloudSlot from '../CloudSlot.svelte';
-	import { usersSlot, profileSlot } from '$lib/cloudHooks';
+	import { usersSlot, profileSlot, rolesInfo } from '$lib/cloudHooks';
 
 	// N3: latency-band dot color for a peer's network-quality indicator
 	const qColor = (level: string) =>
@@ -98,6 +98,9 @@
 	const effName = $derived($username || cid?.username || 'Anonymous');
 	/** avatar src: session upload > stored custom > cloud account > default */
 	const effAvatar = $derived(avatarImage || ls('avatar') || cid?.avatar || '');
+	/** cloud roles bridge (null without the cloud plugin) */
+	const ri = $derived($rolesInfo);
+	function setPeerRole(id: string, e: any) { $rolesInfo?.setRole?.(id, e.target.value); }
 
 	function broadcastUserdata() {
 		if (!$peers?.peer) return;
@@ -211,7 +214,7 @@
 		>
 			<div class="flex -space-x-2">
 				{#each $userdata.slice(1, 4) as user (user[0])}
-					<Avatar stacked src={user[2]} class="h-7 w-7 border-2 border-gray-800" />
+					<Avatar stacked src={user[2]} class="h-7 w-7 rounded-full border-2 border-gray-800" />
 				{/each}
 			</div>
 			<span class="pr-1 text-xs font-semibold text-gray-200">{$userdata.length - 1}</span>
@@ -221,16 +224,17 @@
 			<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => (peersOpen = false)}></div>
 			<div id="peers-popover" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 998;">
 				<p class="ui-section-label">Connected ({$userdata.length - 1})</p>
+				<div class="peers-scroll">
 				{#each $userdata as user, i (user[0])}
 					<div
 						class="peers-row flex items-center gap-2 rounded px-1.5 py-1 {$specatorMode === user[0]
 							? 'bg-primary-800/60'
 							: 'hover:bg-gray-700/60'}"
 					>
-						<Avatar src={user[2]} class="h-8 w-8 shrink-0" />
+						<Avatar src={user[2]} class="h-8 w-8 shrink-0 rounded-full" />
 						<div class="min-w-0 flex-1">
 							<div class="flex items-center gap-1 truncate text-sm text-gray-100">
-								<span class="truncate">{user[1] || 'Peer'}</span>
+								<span class="truncate" title={user[1] || 'Peer'}>{user[1] || 'Peer'}</span>
 								{#if i === 0}<span class="text-[10px] text-primary-300">(you)</span>{/if}
 							</div>
 							<div class="flex items-center gap-1.5 text-[10px] text-gray-400">
@@ -248,6 +252,17 @@
 								{/if}
 							</div>
 						</div>
+						{#if ri}
+							{#if i === 0}
+								<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
+							{:else if ri.amAdmin}
+								<select class="role-sel" title="Set role" onchange={(e) => setPeerRole(user[0], e)}>
+									{#each ri.order as r}<option value={r} selected={ri.roleOf(user[0]) === r}>{r}</option>{/each}
+								</select>
+							{:else}
+								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
+							{/if}
+						{/if}
 						{#if i > 0}
 							<button
 								class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {$specatorMode === user[0]
@@ -262,6 +277,7 @@
 						{/if}
 					</div>
 				{/each}
+				</div>
 				<!-- open-core (M1d): cloud plugin roles section. Empty in the OSS
 					 build; the cloud plugin fills it via cloudApi.mountUsersSection(). -->
 				{#if $usersSlot}
@@ -423,7 +439,12 @@
 		}
 		/* pin the peers list to the viewport so it can't spill off the left edge
 		   when the trigger sits near a narrow screen's right edge */
-		#peers-popover {
+		.peers-scroll { max-height: 264px; overflow-y: auto; }
+	.role-badge { flex: 0 0 auto; font-size: 10px; padding: 1px 7px; border-radius: 9999px; color: #fff; background: rgb(107 114 128); text-transform: capitalize; }
+	.role-badge[data-role='editor'] { background: #2563eb; }
+	.role-badge[data-role='admin'] { background: #7c3aed; }
+	.role-sel { flex: 0 0 auto; font-size: 10px; padding: 2px 4px; border-radius: 6px; border: 0; background: #374151; color: #fff; text-transform: capitalize; }
+	#peers-popover {
 			position: fixed;
 			top: 122px;
 			right: 8px;

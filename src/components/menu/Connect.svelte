@@ -17,8 +17,9 @@
 	// stores. The chevron defaults to Info; the Rooms shortcut button opens it on the
 	// Rooms tab. Clicking the chevron again closes it.
 	function toggleInfo() {
-		if ($connectDrawerOpen) connectDrawerOpen.set(false);
-		else { connectDrawerTab.set('info'); connectDrawerOpen.set(true); }
+		// the chevron toggles the body and REOPENS the last-viewed tab (connectDrawerTab
+		// is retained) rather than resetting to Info.
+		connectDrawerOpen.update((v) => !v);
 	}
 	function openRooms() {
 		connectDrawerTab.set('rooms');
@@ -135,24 +136,31 @@
 		<span class="connect-divider"></span>
 
 		{#if connState === 'connected'}
-			<!-- connected: red Disconnect (connection status now lives in the drawer header) -->
-			<Button
-				color="red"
-				id="disconnect-button"
-				class="nob shrink-0 rounded-lg bg-red-600 text-white hover:bg-red-700 dark:bg-red-700 dark:text-gray-100 dark:hover:bg-red-800"
-				on:click={disconnect}
-				title="Leave the session (your local scene is kept)">Disconnect</Button
-			>
+			<!-- connected: a GRAY disabled input keeps the row the SAME width as idle (so
+				 the drawer, which matches the pill width, never reflows), + red Disconnect.
+				 Connection status lives in the drawer header. -->
+			<div class="cx-connect inline-flex rounded-md shadow-sm">
+				<Input type="text" disabled placeholder="" class="nob cx-input rounded-r-none border-0 opacity-60" value="" />
+				<Button
+					color="red"
+					id="disconnect-button"
+					class="nob shrink-0 rounded-l-none rounded-r-lg bg-red-600 text-white hover:bg-red-700 dark:bg-red-700 dark:text-gray-100 dark:hover:bg-red-800"
+					on:click={disconnect}
+					title="Leave the session (your local scene is kept)">Disconnect</Button
+				>
+			</div>
 		{:else if connState === 'pending'}
-			<!-- pending: request out, waiting for their approval. Amber = reversible
-				 abort (red stays reserved for Disconnect). -->
-			<Button
-				color="yellow"
-				id="cancel-request-button"
-				class="nob shrink-0 rounded-lg bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
-				on:click={cancelPending}
-				title="Cancel the connection request">Cancel</Button
-			>
+			<!-- pending: same gray disabled input for a stable width + amber Cancel -->
+			<div class="cx-connect inline-flex rounded-md shadow-sm">
+				<Input type="text" disabled placeholder="" class="nob cx-input rounded-r-none border-0 opacity-60" value="" />
+				<Button
+					color="yellow"
+					id="cancel-request-button"
+					class="nob shrink-0 rounded-l-none rounded-r-lg bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
+					on:click={cancelPending}
+					title="Cancel the connection request">Cancel</Button
+				>
+			</div>
 		{:else}
 			<!-- idle: dial a peer — the input shrinks (down to cx-input min-width) so
 				 the Connect button stays visible when the row is tight -->

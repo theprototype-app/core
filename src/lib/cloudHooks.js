@@ -136,3 +136,10 @@ export const drawerSlot = writable(null);
  * here (moved out of the Connect pill).
  * @type {import('svelte/store').Writable<((el: HTMLElement) => (() => void) | void) | null>} */
 export const profileSlot = writable(null);
+
+/** Roles bridge (2026-07-25): the cloud plugin publishes the live roles so CORE can
+ * render a per-peer role control next to Watch, gate viewer actions, etc. Shape:
+ * `{ myId, myRole, amAdmin, order:[…], roleOf(id), setRole(id,role) }` or null (no
+ * plugin). Kept a plain object so a separately-built plugin owns the logic.
+ * @type {import('svelte/store').Writable<any>} */
+export const rolesInfo = writable(null);

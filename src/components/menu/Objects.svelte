@@ -25,16 +25,12 @@
     import {
         showSidebar,
 		closeSelectionInspector,
-		peers,
 		showToast
 	} from '../../stores/appStore.js';
-	import { get } from 'svelte/store';
-	import { clearLocalOnly, isViewer } from '$lib/objectPermissions';
+	import { isViewer, shareObject } from '$lib/objectPermissions';
 	function shareLocal(/** @type {any} */ obj) {
 		if (isViewer()) { showToast('You need edit access to share — ask an admin.'); return; }
-		clearLocalOnly(obj);
-		try { get(peers)?.send({ type: 'object', element: obj.toJSON() }); showToast('Shared "' + (obj.name || 'object') + '".'); } catch (e) { console.warn(e); }
-		const g = get(objectsGroup); if (g) objectsGroup.set(g);
+		if (shareObject(obj)) showToast('Shared "' + (obj.name || 'object') + '".');
 	}
 
     /**
@@ -121,7 +117,13 @@
         if (!uuid || uuid === element.uuid) return;
         event.preventDefault();
         event.stopPropagation();
-        moveObjectToGroup(uuid, element.uuid);
+        const dragged = $objectsGroup.getObjectByProperty('uuid', uuid);
+        // a LOCAL object dropped into a SHARED group is SHARED into that group (a bare
+        // reparent would never reach peers); local->local group stays local
+        if (dragged?.userData?.__localOnly && !element.userData?.__localOnly)
+            shareObject(dragged, element.uuid);
+        else
+            moveObjectToGroup(uuid, element.uuid);
         isExpanded = true;
     }
 

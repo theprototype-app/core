@@ -448,11 +448,11 @@
 		/* pin the peers list to the viewport so it can't spill off the left edge
 		   when the trigger sits near a narrow screen's right edge */
 		.peers-scroll { max-height: 264px; overflow-y: auto; }
-	.role-badge { flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 8px; color: #fff; background: rgb(107 114 128); text-transform: capitalize; }
-	.role-btn { border: 0; cursor: pointer; }
-	.role-btn:hover { filter: brightness(1.15); }
-	.role-btn { display: inline-flex; align-items: center; gap: 4px; }
-	.role-caret { font-size: 7px; opacity: 0.75; }
+	.role-badge { flex: 0 0 auto; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 9px; border-radius: 9999px; color: #fff; background: #64748b; text-transform: capitalize; line-height: 1.4; }
+	.role-btn { border: 0; cursor: pointer; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
+	.role-btn:hover { filter: brightness(1.12); }
+	.role-btn { display: inline-flex; align-items: center; gap: 5px; }
+	.role-caret { font-size: 8px; opacity: 0.85; }
 	.role-ctl { position: relative; flex: 0 0 auto; }
 	.role-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 1000; min-width: 116px; padding: 4px; border-radius: 10px; background: #1f2937; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 12px 28px rgb(0 0 0 / 0.5); display: flex; flex-direction: column; gap: 2px; }
 	.role-menu-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: #e5e7eb; font-size: 11px; cursor: pointer; text-transform: capitalize; text-align: left; }

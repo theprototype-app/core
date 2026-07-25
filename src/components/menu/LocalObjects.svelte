@@ -9,7 +9,7 @@
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { peers, showToast, showLocalObjects } from '../../stores/appStore';
 	import { rolesInfo } from '$lib/cloudHooks';
-	import { markLocalOnly, clearLocalOnly } from '$lib/objectPermissions';
+	import { markLocalOnly, shareObject } from '$lib/objectPermissions';
 	import { moveObjectToGroup } from '$lib/objectActions';
 	import Objects from './Objects.svelte';
 
@@ -31,14 +31,7 @@
 
 	function shareAll() {
 		if (isViewerNow) return showToast('You need edit access to share — ask an admin.');
-		for (const o of [...local]) {
-			clearLocalOnly(o);
-			try {
-				get(peers)?.send({ type: 'object', element: o.toJSON() });
-			} catch (e) {
-				console.warn('share failed', e);
-			}
-		}
+		for (const o of [...local]) shareObject(o);
 		showToast('Shared all local objects with peers.');
 		poke();
 	}

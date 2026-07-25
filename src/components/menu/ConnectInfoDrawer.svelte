@@ -7,7 +7,14 @@
 	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { peers, userdata, waitingForApproval } from '../../stores/appStore.js';
+	import {
+		peers,
+		userdata,
+		waitingForApproval,
+		connectDrawerTab,
+		notifications,
+		notificationsUnread
+	} from '../../stores/appStore.js';
 	import { sessionHost, peerJoinedAt } from '$lib/connectionState';
 	import { peerQuality, qColor } from '$lib/networkQuality';
 	import { peerServerStatus, peerServerPingUrl, peerServerPeersUrl } from '$lib/peerServer';
@@ -19,14 +26,44 @@
 
 	/** @type {HTMLElement|null} */
 	let panelEl = $state(null);
+	// the Rooms tab exists only when the cloud plugin mounts room content
+	const hasRooms = $derived($drawerSlot != null);
+	// if we're parked on a tab that isn't available, fall back to Info
+	$effect(() => {
+		if ($connectDrawerTab === 'rooms' && !hasRooms) connectDrawerTab.set('info');
+	});
+	// opening the Toasts tab clears the unread badge (it IS the notification feed)
+	$effect(() => {
+		if ($connectDrawerTab === 'toasts') notificationsUnread.set(0);
+	});
+
+	/** @param {'info'|'rooms'|'toasts'} t */
+	const setTab = (t) => connectDrawerTab.set(t);
+
 	// Close on outside pointerdown via a WINDOW listener — a fixed click-catcher
 	// would be sized to the pill, not the viewport: .connect-wrap's translateX makes
 	// it the containing block for fixed descendants (the CLAUDE.md transform gotcha).
-	// The (i) toggle is excluded or its pointerdown-close + click-toggle would
-	// immediately reopen.
+	// The chevron + the Rooms shortcut button are excluded or their pointerdown-close
+	// + click-toggle would immediately reopen.
 	function onWindowDown(/** @type {PointerEvent} */ e) {
 		const t = /** @type {HTMLElement} */ (e.target);
-		if (panelEl && !panelEl.contains(t) && !t.closest?.('#connect-info-button')) onClose();
+		if (
+			panelEl &&
+			!panelEl.contains(t) &&
+			!t.closest?.('#connect-info-button') &&
+			!t.closest?.('#connect-rooms-button')
+		)
+			onClose();
+	}
+	/** @param {number} ts */
+	function tago(ts) {
+		const s = Math.floor((Date.now() - ts) / 1000);
+		if (s < 60) return 'just now';
+		const m = Math.floor(s / 60);
+		if (m < 60) return m + 'm ago';
+		const h = Math.floor(m / 60);
+		if (h < 24) return h + 'h ago';
+		return Math.floor(h / 24) + 'd ago';
 	}
 
 	const srv = $derived($peerServerStatus);
@@ -101,11 +138,48 @@
 	bind:this={panelEl}
 	transition:slide={{ duration: 200, easing: cubicOut }}
 >
-	<div class="ui-panel-header">
-		<span class="flex-1">Connection info</span>
+	<div class="cxd-tabs" role="tablist">
+		<button class="cxd-tab" class:active={$connectDrawerTab === 'info'} role="tab" aria-selected={$connectDrawerTab === 'info'} onclick={() => setTab('info')}>Info</button>
+		{#if hasRooms}
+			<button class="cxd-tab" class:active={$connectDrawerTab === 'rooms'} role="tab" aria-selected={$connectDrawerTab === 'rooms'} onclick={() => setTab('rooms')}>Rooms</button>
+		{/if}
+		<button class="cxd-tab" class:active={$connectDrawerTab === 'toasts'} role="tab" aria-selected={$connectDrawerTab === 'toasts'} onclick={() => setTab('toasts')}>
+			Toasts{#if $notificationsUnread > 0}<span class="cxd-tab-badge">{$notificationsUnread > 9 ? '9+' : $notificationsUnread}</span>{/if}
+		</button>
+		<span class="flex-1"></span>
 		<button class="cxd-x" title="Close" aria-label="Close" onclick={onClose}>✕</button>
 	</div>
 
+	<!-- ROOMS tab: the cloud plugin renders Browse + host settings here -->
+	{#if $connectDrawerTab === 'rooms' && hasRooms}
+		<div class="cxd-body cxd-rooms">
+			<CloudSlot mount={$drawerSlot} />
+		</div>
+	{:else if $connectDrawerTab === 'toasts'}
+		<!-- TOASTS tab: a scrollable view of the SAME notification feed the top-right
+		     bell shows (single source of truth). Live pop-ups are suppressed while
+		     this tab is open (Toasts.svelte) so they never cover the list. -->
+		<div class="cxd-body">
+			<div class="cxd-toasts-head">
+				<p class="ui-section-label">Recent activity</p>
+				{#if $notifications.length}
+					<button class="cxd-clear" onclick={() => notifications.set([])}>Clear all</button>
+				{/if}
+			</div>
+			{#if !$notifications.length}
+				<p class="cxd-empty">Nothing yet — approvals, joins and messages show up here.</p>
+			{:else}
+				<ul class="cxd-toast-list">
+					{#each [...$notifications].reverse() as n (n.id)}
+						<li class="cxd-toast" data-kind={n.kind}>
+							<div class="cxd-toast-text">{n.text}</div>
+							<div class="cxd-toast-ago">{tago(n.ts)}</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{:else}
 	<div class="cxd-body">
 		<!-- Session -->
 		<p class="ui-section-label">Session</p>
@@ -183,26 +257,113 @@
 		{:else}
 			<div class="cxd-row"><span class="cxd-val cxd-muted">Not connected to a signaling server yet.</span></div>
 		{/if}
-
-		<!-- open-core: cloud plugin section (room/host settings — batch RM) -->
-		{#if $drawerSlot}
-			<div class="cxd-plugin">
-				<CloudSlot mount={$drawerSlot} />
-			</div>
-		{/if}
 	</div>
+	{/if}
 </div>
 
 <style>
+	/* the drawer hangs FLUSH off the pill's bottom edge and spans the pill's full
+	   width; the pill squares its bottom corners while open (Connect.svelte) so the
+	   two read as one connected surface — no rounded-corner notches. */
 	.cxd-panel {
 		position: absolute;
-		top: calc(100% + 6px);
-		left: 50%;
-		transform: translateX(-50%);
-		width: 340px;
-		max-width: calc(100vw - 16px);
+		top: 100%;
+		left: 0;
+		right: 0;
+		width: auto;
+		border-top: 0;
+		border-top-left-radius: 0;
+		border-top-right-radius: 0;
 		pointer-events: auto;
 		z-index: 2;
+	}
+	.cxd-tabs {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		padding: 4px 6px 0;
+	}
+	.cxd-tab {
+		border: 0;
+		background: transparent;
+		color: rgb(156 163 175);
+		font-size: 12px;
+		padding: 5px 10px;
+		border-radius: 8px 8px 0 0;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+	.cxd-tab:hover {
+		color: #e5e7eb;
+		background: rgb(255 255 255 / 0.05);
+	}
+	.cxd-tab.active {
+		color: #fff;
+		background: rgb(255 255 255 / 0.09);
+	}
+	.cxd-tab-badge {
+		font-size: 9px;
+		min-width: 15px;
+		height: 15px;
+		padding: 0 4px;
+		border-radius: 9999px;
+		background: #ef4444;
+		color: #fff;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.cxd-rooms {
+		padding: 4px 8px 8px;
+	}
+	.cxd-toasts-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.cxd-clear {
+		border: 0;
+		background: transparent;
+		color: rgb(156 163 175);
+		font-size: 11px;
+		cursor: pointer;
+	}
+	.cxd-clear:hover {
+		color: #e5e7eb;
+	}
+	.cxd-empty {
+		padding: 16px 6px;
+		text-align: center;
+		font-size: 12px;
+		color: rgb(156 163 175);
+	}
+	.cxd-toast-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.cxd-toast {
+		border-radius: 8px;
+		background: rgb(31 41 55 / 0.6);
+		padding: 6px 8px;
+		border-left: 3px solid rgb(75 85 99 / 0.7);
+	}
+	.cxd-toast[data-kind='action'] {
+		border-left-color: #f59e0b;
+	}
+	.cxd-toast-text {
+		font-size: 12px;
+		color: #e5e7eb;
+	}
+	.cxd-toast-ago {
+		margin-top: 2px;
+		font-size: 10px;
+		color: rgb(107 114 128);
 	}
 	.cxd-body {
 		padding: 4px 10px 10px;
@@ -324,21 +485,6 @@
 	.cxd-x:hover {
 		color: #fff;
 	}
-	.cxd-plugin {
-		margin-top: 6px;
-		border-top: 1px solid rgb(55 65 81 / 0.6);
-		padding-top: 6px;
-	}
-	/* narrow: the pill is a full-width top bar — pin the drawer to the viewport so
-	   it can't clip inside the transformed/fixed wrapper (peers-popover precedent) */
-	@media (max-width: 640px) {
-		.cxd-panel {
-			position: fixed;
-			top: 92px;
-			left: 8px;
-			right: 8px;
-			transform: none;
-			width: auto;
-		}
-	}
+	/* narrow: the pill is already a full-width top bar, so the absolute panel
+	   (left:0/right:0/top:100%) spans it flush — no viewport-pin override needed. */
 </style>

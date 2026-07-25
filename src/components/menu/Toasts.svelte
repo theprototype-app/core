@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice } from '../../stores/appStore'
+    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
@@ -8,6 +8,11 @@
     import { fly } from 'svelte/transition';
 
 let showToast = $state(false);
+
+// CN redesign: while the connect drawer's Toasts tab is open, hide the live toast
+// pop-ups (they'd cover the drawer). They still land in the notification history the
+// tab shows, so nothing is lost. Critical connection-request toasts are NOT hidden.
+const suppressLiveToasts = $derived($connectDrawerOpen && $connectDrawerTab === 'toasts');
 
 // U-3: cap how many generic toasts stack at once (older ones collapse into a
 // "+N more" line) so bursts can't fill the screen
@@ -157,6 +162,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
      each toast re-enables them for itself. REGULAR container: info/decision toasts
      sit BELOW modals (--z-toast-low) so Settings/Modules/Sessions cover them. -->
 <div class="my-4 toasts-container toasts-regular"
+class:cxd-hidden={suppressLiveToasts}
 style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast-low); pointer-events: none;"
 >
 {#if showToast}
@@ -344,6 +350,9 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
     .toasts-container {
         position: absolute;
         top: 65px;
+    }
+    .cxd-hidden {
+        display: none !important;
     }
     /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
        toasts below both */

@@ -3,7 +3,8 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton } from '../../stores/appStore.js';
+	import { drawerSlot } from '$lib/cloudHooks';
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
@@ -602,6 +603,14 @@
 					</p>
 					<p class={middlecoverDescription}>Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it</p>
 				</div>
+				{#if $drawerSlot}
+					<div class="flex setting-row">
+						<p class={middlecoverName}>
+							<Checkbox bind:checked={$showRoomsButton}>&nbsp;Show Rooms button</Checkbox>
+						</p>
+						<p class={middlecoverDescription}>Show the "🌐 Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab</p>
+					</div>
+				{/if}
 				<div class="flex setting-row">
 					<p class={middlecoverName}>
 						<ThemedSelect

@@ -265,6 +265,29 @@ export const notificationsUnread = writable(0);
 export const notificationCenterOpen = writable(false);
 /** E2: the scene-notes drawer (lists every annotation) open state */
 export const notesDrawerOpen = writable(false);
+
+// CN drawer redesign (2026-07-25): the chevron under the Connect pill opens ONE
+// tabbed drawer — Info (connection/server), Rooms (cloud plugin), Toasts (a view of
+// the notifications feed). Shared so Toasts.svelte can suppress live pop-ups while
+// the Toasts tab is open, and so a Rooms shortcut button can open it on that tab.
+export const connectDrawerOpen = writable(false);
+/** @type {import('svelte/store').Writable<'info'|'rooms'|'toasts'>} */
+export const connectDrawerTab = writable('info');
+/** Show the "Rooms" shortcut button in the Connect pill (only meaningful when the
+ * cloud plugin is present). Default ON for discoverability; users can hide it and
+ * still reach rooms via the chevron drawer's Rooms tab. Persisted. */
+export const showRoomsButton = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('showRoomsButton') !== 'false' : true
+);
+if (typeof localStorage !== 'undefined') {
+  showRoomsButton.subscribe((v) => {
+    try {
+      localStorage.setItem('showRoomsButton', v ? 'true' : 'false');
+    } catch {
+      /* storage disabled */
+    }
+  });
+}
 let _notifId = 0;
 /**
  * Append a notification to the history + bump the unread badge.

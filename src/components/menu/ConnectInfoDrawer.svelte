@@ -11,9 +11,11 @@
 		peers,
 		userdata,
 		waitingForApproval,
+		pendingApprovals,
+		toastStore,
 		connectDrawerTab,
-		notifications,
-		notificationsUnread
+		connectDrawerOpen,
+		connectDrawerPinned
 	} from '../../stores/appStore.js';
 	import { sessionHost, peerJoinedAt } from '$lib/connectionState';
 	import { peerQuality, qColor } from '$lib/networkQuality';
@@ -22,7 +24,26 @@
 	import { drawerSlot } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 
-	let { onClose = () => {} } = $props();
+	/** @type {{ onClose?: () => void }} */
+	const { onClose = () => {} } = $props();
+
+	// pin: keep the tab bar (+ status) visible when the body is collapsed
+	const togglePin = () => connectDrawerPinned.update((v) => !v);
+
+	// --- Toasts tab = LIVE toasts (approvals + transient messages). The viewport copy
+	// (Toasts.svelte, hidden while the drawer is open) owns each toast's expiry timer,
+	// so here we just render the shared stores; actions mutate the same stores. ---
+	function approveRequest(/** @type {any} */ approval) {
+		pendingApprovals.set(/** @type {any} */ ($pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== approval.peerId));
+		$userdata.push([approval.peerId, '', '']);
+		$peers?.send?.({ type: 'userdata', userdata: $userdata });
+		$peers?.connectToPeer?.(approval.peerId, true);
+	}
+	function rejectRequest(/** @type {any} */ approval) {
+		pendingApprovals.set(/** @type {any} */ ($pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== approval.peerId));
+		try { $peers?.connections?.[approval.peerId]?.close?.(); } catch { /* already gone */ }
+	}
+	const dismissToast = (/** @type {any} */ t) => toastStore.set(/** @type {any} */ ($toastStore).filter((/** @type {any} */ x) => x !== t));
 
 	/** @type {HTMLElement|null} */
 	let panelEl = $state(null);
@@ -31,10 +52,6 @@
 	// if we're parked on a tab that isn't available, fall back to Info
 	$effect(() => {
 		if ($connectDrawerTab === 'rooms' && !hasRooms) connectDrawerTab.set('info');
-	});
-	// opening the Toasts tab clears the unread badge (it IS the notification feed)
-	$effect(() => {
-		if ($connectDrawerTab === 'toasts') notificationsUnread.set(0);
 	});
 
 	/** @param {'info'|'rooms'|'toasts'} t */
@@ -55,22 +72,27 @@
 		)
 			onClose();
 	}
-	/** @param {number} ts */
-	function tago(ts) {
-		const s = Math.floor((Date.now() - ts) / 1000);
-		if (s < 60) return 'just now';
-		const m = Math.floor(s / 60);
-		if (m < 60) return m + 'm ago';
-		const h = Math.floor(m / 60);
-		if (h < 24) return h + 'h ago';
-		return Math.floor(h / 24) + 'd ago';
-	}
-
 	const srv = $derived($peerServerStatus);
 	const remoteOpen = $derived($peers ? [...$peers.openedPeers] : []);
 	const pendingOut = $derived($waitingForApproval.filter((w) => w[1] === 'pending'));
 	const connState = $derived(
 		remoteOpen.length > 0 ? 'connected' : pendingOut.length > 0 ? 'pending' : 'idle'
+	);
+	// header status (moved out of the Connect pill, per the redesign)
+	const statusLabel = $derived(
+		connState === 'connected'
+			? 'Connected' + (remoteOpen.length > 1 ? ' +' + (remoteOpen.length - 1) : '')
+			: connState === 'pending'
+				? 'Waiting…'
+				: 'Offline'
+	);
+	const statusTitle = $derived(
+		connState === 'connected'
+			? ($sessionHost ? "In " + String($sessionHost).toUpperCase() + "'s session" : 'You are hosting') +
+				' · ' + remoteOpen.length + ' peer' + (remoteOpen.length > 1 ? 's' : '')
+			: connState === 'pending'
+				? 'Waiting for a peer to accept your request'
+				: 'Not connected'
 	);
 	const myId = $derived($peers?.peer?.id ? String($peers.peer.id).toUpperCase() : '…');
 
@@ -144,36 +166,64 @@
 			<button class="cxd-tab" class:active={$connectDrawerTab === 'rooms'} role="tab" aria-selected={$connectDrawerTab === 'rooms'} onclick={() => setTab('rooms')}>Rooms</button>
 		{/if}
 		<button class="cxd-tab" class:active={$connectDrawerTab === 'toasts'} role="tab" aria-selected={$connectDrawerTab === 'toasts'} onclick={() => setTab('toasts')}>
-			Toasts{#if $notificationsUnread > 0}<span class="cxd-tab-badge">{$notificationsUnread > 9 ? '9+' : $notificationsUnread}</span>{/if}
+			Toasts{#if $pendingApprovals.length + $toastStore.length > 0}<span class="cxd-tab-badge" class:req={$pendingApprovals.length > 0}>{Math.min($pendingApprovals.length + $toastStore.length, 9)}{$pendingApprovals.length + $toastStore.length > 9 ? '+' : ''}</span>{/if}
 		</button>
 		<span class="flex-1"></span>
-		<button class="cxd-x" title="Close" aria-label="Close" onclick={onClose}>✕</button>
+		<!-- connection status lives HERE now (moved out of the Connect pill) -->
+		<span class="cxd-status" data-state={connState} title={statusTitle}>
+			<span class="cxd-sdot"></span>
+			<span class="cxd-slabel">{statusLabel}</span>
+			{#if $pendingApprovals.length}<span class="cxd-req-badge" title="Pending connection request(s)">{$pendingApprovals.length} new request{$pendingApprovals.length > 1 ? 's' : ''}</span>{/if}
+		</span>
+		<button class="cxd-pin" class:pinned={$connectDrawerPinned} title={$connectDrawerPinned ? 'Unpin (hide tabs when closed)' : 'Pin — keep the tabs visible when closed'} aria-label="Pin drawer" aria-pressed={$connectDrawerPinned} onclick={togglePin}>
+			<i class="fas fa-thumbtack"></i>
+		</button>
 	</div>
 
+	<!-- body only when OPEN; pinned-but-collapsed shows just the tab bar above -->
+	{#if $connectDrawerOpen}
 	<!-- ROOMS tab: the cloud plugin renders Browse + host settings here -->
 	{#if $connectDrawerTab === 'rooms' && hasRooms}
 		<div class="cxd-body cxd-rooms">
 			<CloudSlot mount={$drawerSlot} />
 		</div>
 	{:else if $connectDrawerTab === 'toasts'}
-		<!-- TOASTS tab: a scrollable view of the SAME notification feed the top-right
-		     bell shows (single source of truth). Live pop-ups are suppressed while
-		     this tab is open (Toasts.svelte) so they never cover the list. -->
+		<!-- TOASTS tab: the LIVE toasts (routed here while the drawer is open) — pending
+		     connection requests you can act on, plus current messages. The full HISTORY
+		     lives in the top-right notification bell. -->
 		<div class="cxd-body">
-			<div class="cxd-toasts-head">
-				<p class="ui-section-label">Recent activity</p>
-				{#if $notifications.length}
-					<button class="cxd-clear" onclick={() => notifications.set([])}>Clear all</button>
-				{/if}
-			</div>
-			{#if !$notifications.length}
-				<p class="cxd-empty">Nothing yet — approvals, joins and messages show up here.</p>
+			{#if !$pendingApprovals.length && !$toastStore.length && !pendingOut.length}
+				<p class="cxd-empty">No active toasts. New requests and messages appear here while the drawer is open.</p>
 			{:else}
 				<ul class="cxd-toast-list">
-					{#each [...$notifications].reverse() as n (n.id)}
-						<li class="cxd-toast" data-kind={n.kind}>
-							<div class="cxd-toast-text">{n.text}</div>
-							<div class="cxd-toast-ago">{tago(n.ts)}</div>
+					{#each $pendingApprovals as a (a.peerId)}
+						<li class="cxd-toast cxd-live" data-kind="request">
+							<div class="cxd-toast-text">Connection request from <span class="cxd-mono">{String(a.peerId).toUpperCase()}</span></div>
+							<div class="cxd-live-actions">
+								<button class="cxd-approve" onclick={() => approveRequest(a)}>Approve</button>
+								<button class="cxd-reject" onclick={() => rejectRequest(a)}>Reject</button>
+							</div>
+						</li>
+					{/each}
+					{#each pendingOut as w (w[0])}
+						<li class="cxd-toast cxd-live" data-kind="waiting">
+							<div class="cxd-toast-text">Waiting for <span class="cxd-mono">{String(w[0]).toUpperCase()}</span> to accept…</div>
+							<div class="cxd-live-actions">
+								<button class="cxd-reject" onclick={() => cancelOutboundRequest(w[0])}>Cancel</button>
+							</div>
+						</li>
+					{/each}
+					{#each $toastStore as t (t)}
+						<li class="cxd-toast cxd-live" data-kind="msg">
+							<div class="cxd-toast-text">{typeof t === 'string' ? t : t.text}</div>
+							<div class="cxd-live-actions">
+								{#if typeof t !== 'string'}
+									{#each t.actions as entry}
+										<button class="cxd-approve" onclick={() => { entry.action(); dismissToast(t); }}>{entry.label}</button>
+									{/each}
+								{/if}
+								<button class="cxd-reject" onclick={() => dismissToast(t)}>Dismiss</button>
+							</div>
 						</li>
 					{/each}
 				</ul>
@@ -259,6 +309,7 @@
 		{/if}
 	</div>
 	{/if}
+	{/if}
 </div>
 
 <style>
@@ -309,29 +360,18 @@
 		height: 15px;
 		padding: 0 4px;
 		border-radius: 9999px;
-		background: #ef4444;
+		background: rgb(75 85 99 / 0.8);
 		color: #fff;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 	}
+	.cxd-tab-badge.req {
+		background: #f59e0b;
+		color: #1f2937;
+	}
 	.cxd-rooms {
 		padding: 4px 8px 8px;
-	}
-	.cxd-toasts-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-	.cxd-clear {
-		border: 0;
-		background: transparent;
-		color: rgb(156 163 175);
-		font-size: 11px;
-		cursor: pointer;
-	}
-	.cxd-clear:hover {
-		color: #e5e7eb;
 	}
 	.cxd-empty {
 		padding: 16px 6px;
@@ -353,17 +393,103 @@
 		padding: 6px 8px;
 		border-left: 3px solid rgb(75 85 99 / 0.7);
 	}
-	.cxd-toast[data-kind='action'] {
+	.cxd-toast[data-kind='request'] {
 		border-left-color: #f59e0b;
+	}
+	.cxd-toast[data-kind='msg'] {
+		border-left-color: #22c55e;
 	}
 	.cxd-toast-text {
 		font-size: 12px;
 		color: #e5e7eb;
 	}
-	.cxd-toast-ago {
-		margin-top: 2px;
+	.cxd-live-actions {
+		display: flex;
+		gap: 6px;
+		margin-top: 5px;
+	}
+	.cxd-approve,
+	.cxd-reject {
+		font-size: 11px;
+		padding: 3px 10px;
+		border-radius: 6px;
+		border: 0;
+		cursor: pointer;
+		color: #fff;
+	}
+	.cxd-approve {
+		background: #2563eb;
+	}
+	.cxd-approve:hover {
+		background: #1d4ed8;
+	}
+	.cxd-reject {
+		background: rgb(75 85 99 / 0.8);
+	}
+	.cxd-reject:hover {
+		background: rgb(107 114 128 / 0.9);
+	}
+	.cxd-status {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 11px;
+		color: rgb(209 213 219);
+		padding: 0 4px;
+		min-width: 0;
+	}
+	.cxd-sdot {
+		width: 7px;
+		height: 7px;
+		border-radius: 9999px;
+		flex: 0 0 auto;
+		background: rgb(107 114 128);
+	}
+	.cxd-status[data-state='connected'] .cxd-sdot {
+		background: #22c55e;
+		box-shadow: 0 0 6px rgb(34 197 94 / 0.7);
+	}
+	.cxd-status[data-state='pending'] .cxd-sdot {
+		background: #f59e0b;
+		animation: cxd-pulse 1.2s ease-in-out infinite;
+	}
+	@keyframes cxd-pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.35; }
+	}
+	.cxd-slabel {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 120px;
+	}
+	.cxd-req-badge {
 		font-size: 10px;
-		color: rgb(107 114 128);
+		padding: 1px 7px;
+		border-radius: 9999px;
+		background: #f59e0b;
+		color: #1f2937;
+		white-space: nowrap;
+	}
+	.cxd-pin {
+		flex: 0 0 auto;
+		width: 24px;
+		height: 24px;
+		border-radius: 7px;
+		border: 0;
+		background: transparent;
+		color: rgb(156 163 175);
+		cursor: pointer;
+		font-size: 11px;
+		transform: rotate(30deg);
+	}
+	.cxd-pin:hover {
+		color: #e5e7eb;
+		background: rgb(255 255 255 / 0.06);
+	}
+	.cxd-pin.pinned {
+		color: #60a5fa;
+		transform: rotate(0deg);
 	}
 	.cxd-body {
 		padding: 4px 10px 10px;
@@ -473,16 +599,6 @@
 		padding: 0 4px;
 	}
 	.cxd-refresh:hover {
-		color: #fff;
-	}
-	.cxd-x {
-		border: 0;
-		background: transparent;
-		color: rgb(156 163 175);
-		cursor: pointer;
-		font-size: 12px;
-	}
-	.cxd-x:hover {
 		color: #fff;
 	}
 	/* narrow: the pill is already a full-width top bar, so the absolute panel

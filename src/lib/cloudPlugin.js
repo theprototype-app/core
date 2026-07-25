@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import { showToast, appNotice, peers, cloudIdentity } from '../stores/appStore';
 import { requestConnect } from './peerApproval';
+import { sessionHost } from './connectionState';
 import {
 	setCapabilityProvider,
 	setAuthProvider,
@@ -80,6 +81,9 @@ function makeCloudApi() {
 		// --- context accessors ---
 		/** the live PeerConnection (id, connections, send…), or null before connect */
 		getPeers: () => get(peers),
+		/** the id of the peer whose session we joined, or null when WE are the host —
+		 *  lets the plugin make the session host the roles authority (admin) — v2.1 */
+		sessionHost: () => get(sessionHost),
 		/** dial a peer through the normal request flow (join a room) — v2 */
 		connectToPeer: (/** @type {string} */ peerId) => requestConnect(peerId),
 

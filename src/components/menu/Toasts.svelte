@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab } from '../../stores/appStore'
+    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, toastsInDrawerOnly } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
@@ -9,10 +9,16 @@
 
 let showToast = $state(false);
 
-// CN redesign: while the connect drawer's Toasts tab is open, hide the live toast
-// pop-ups (they'd cover the drawer). They still land in the notification history the
-// tab shows, so nothing is lost. Critical connection-request toasts are NOT hidden.
-const suppressLiveToasts = $derived($connectDrawerOpen && $connectDrawerTab === 'toasts');
+// CN toast routing. The viewport containers are HIDDEN (display:none, not removed —
+// so each toast's expiry timer keeps running) and the live toasts instead render in
+// the drawer's Toasts tab:
+//  - approval requests hide from the viewport when the drawer body is OPEN (they show
+//    in the Toasts tab; a "new request" cue appears in the drawer header). When the
+//    drawer is closed they always pop in the viewport so they're never missed.
+//  - informational toasts hide when the drawer is open OR when the user opted into
+//    "toasts in the drawer only".
+const hideCritical = $derived($connectDrawerOpen);
+const hideRegular = $derived($connectDrawerOpen || $toastsInDrawerOnly);
 
 // U-3: cap how many generic toasts stack at once (older ones collapse into a
 // "+N more" line) so bursts can't fill the screen
@@ -55,6 +61,7 @@ toastStatus = false;
 <!-- E1: CRITICAL container — connection requests + pending outbound requests stay
      ABOVE modals (--z-toast) so an approval is never missed while a modal is open. -->
 <div class="my-4 toasts-container toasts-critical"
+class:cxd-hidden={hideCritical}
 style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
 >
 {#each $pendingApprovals as approval}
@@ -138,7 +145,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
      each toast re-enables them for itself. REGULAR container: info/decision toasts
      sit BELOW modals (--z-toast-low) so Settings/Modules/Sessions cover them. -->
 <div class="my-4 toasts-container toasts-regular"
-class:cxd-hidden={suppressLiveToasts}
+class:cxd-hidden={hideRegular}
 style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast-low); pointer-events: none;"
 >
 {#if showToast}

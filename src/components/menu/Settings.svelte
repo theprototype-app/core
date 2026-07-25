@@ -3,7 +3,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly } from '../../stores/appStore.js';
 	import { drawerSlot } from '$lib/cloudHooks';
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
@@ -603,10 +603,16 @@
 					</p>
 					<p class={middlecoverDescription}>Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it</p>
 				</div>
+				<div class="flex setting-row">
+					<p class={middlecoverName}>
+						<Toggle bind:checked={$toastsInDrawerOnly}>&nbsp;Toasts in drawer only</Toggle>
+					</p>
+					<p class={middlecoverDescription}>Hide the pop-up toasts in the viewport — they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy</p>
+				</div>
 				{#if $drawerSlot}
 					<div class="flex setting-row">
 						<p class={middlecoverName}>
-							<Checkbox bind:checked={$showRoomsButton}>&nbsp;Show Rooms button</Checkbox>
+							<Toggle bind:checked={$showRoomsButton}>&nbsp;Show Rooms button</Toggle>
 						</p>
 						<p class={middlecoverDescription}>Show the "🌐 Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab</p>
 					</div>

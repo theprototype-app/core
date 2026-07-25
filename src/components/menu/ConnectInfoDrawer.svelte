@@ -210,8 +210,12 @@
 						<li class="cxd-toast cxd-live" data-kind="request">
 							<div class="cxd-toast-text">Connection request from <span class="cxd-mono">{String(a.peerId).toUpperCase()}</span></div>
 							<div class="cxd-live-actions">
-								<button class="cxd-approve" onclick={() => approveRequest(a, null)}>Approve</button>
-								{#if $rolesInfo}<button class="cxd-approve cxd-approve-edit" onclick={() => approveRequest(a, 'editor')}>+ edit</button>{/if}
+								{#if $rolesInfo}
+									<button class="cxd-approve" onclick={() => approveRequest(a, null)} title="Approve as viewer">View only</button>
+									<button class="cxd-approve cxd-approve-edit" onclick={() => approveRequest(a, 'editor')} title="Approve with edit access">Editor access</button>
+								{:else}
+									<button class="cxd-approve" onclick={() => approveRequest(a, null)}>Approve</button>
+								{/if}
 								<button class="cxd-reject" onclick={() => rejectRequest(a)}>Reject</button>
 							</div>
 						</li>

@@ -607,7 +607,7 @@
 					<p class={middlecoverName}>
 						<Toggle bind:checked={$toastsInDrawerOnly}>&nbsp;Toasts in drawer only</Toggle>
 					</p>
-					<p class={middlecoverDescription}>Hide the pop-up toasts in the viewport — they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy</p>
+					<p class={middlecoverDescription}>Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy</p>
 				</div>
 				{#if $drawerSlot}
 					<div class="flex setting-row">

@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { showToast, appNotice, peers, cloudIdentity } from '../stores/appStore';
+import { globalScene, globalCamera, globalRenderer } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
 import { sessionHost } from './connectionState';
 import {
@@ -113,6 +114,33 @@ function makeCloudApi() {
 		/** publish the live roles so core can render per-peer role controls + gate
 		 *  viewer actions (2026-07-25). Pass null to clear. */
 		setRolesInfo: (/** @type {any} */ info) => rolesInfo.set(info || null),
+		/** capture a downscaled JPEG Blob of the current viewport (room thumbnails) —
+		 *  renders a fresh frame then reads the canvas synchronously so it works without
+		 *  preserveDrawingBuffer. Returns null in VR / before the renderer exists. v2.2 */
+		captureThumbnail: async (/** @type {number} */ maxW = 480) => {
+			const r = /** @type {any} */ (get(globalRenderer));
+			const scene = get(globalScene);
+			const cam = get(globalCamera);
+			if (!r || !scene || !cam || r.xr?.isPresenting) return null;
+			try {
+				r.render(scene, cam);
+				const src = r.domElement;
+				const sw = src.width || maxW;
+				const scale = Math.min(1, maxW / sw);
+				const w = Math.max(1, Math.round(sw * scale));
+				const h = Math.max(1, Math.round((src.height || maxW) * scale));
+				const c = document.createElement('canvas');
+				c.width = w;
+				c.height = h;
+				const ctx = c.getContext('2d');
+				if (!ctx) return null;
+				ctx.drawImage(src, 0, 0, w, h);
+				return await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.6));
+			} catch (e) {
+				console.warn('thumbnail capture failed', e);
+				return null;
+			}
+		},
 
 		// --- utilities ---
 		toast: showToast

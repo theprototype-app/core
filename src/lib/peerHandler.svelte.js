@@ -1,6 +1,7 @@
 import Peer from 'peerjs';
 import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
+import { gateCreationBroadcast } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { applyGraphCreate, applyGraphDelete } from '$lib/flowGraphs';
@@ -630,6 +631,9 @@ export class PeerConnection {
 
 	/** @param {any} data */
 	send(data) {
+		// viewer perms: a viewer's object CREATIONS never leave this machine — mark
+		// them local-only + warn, and skip the broadcast (peers drop them anyway).
+		if (gateCreationBroadcast(data)) return;
 		if(data.type == 'create')
 		this.sendMessage('created a ' + data.command.split(' ')[1], 'info');
 		this.broadcast(data);

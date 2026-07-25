@@ -18,7 +18,7 @@ let showToast = $state(false);
 //    drawer is closed they always pop in the viewport so they're never missed.
 //  - informational toasts hide when the drawer is open OR when the user opted into
 //    "toasts in the drawer only".
-const hideCritical = $derived($connectDrawerOpen);
+const hideCritical = $derived($connectDrawerOpen || $toastsInDrawerOnly);
 const hideRegular = $derived($connectDrawerOpen || $toastsInDrawerOnly);
 
 // U-3: cap how many generic toasts stack at once (older ones collapse into a
@@ -86,20 +86,22 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 >
 {#each $pendingApprovals as approval}
 <div class="my-1 cxreq" transition:fly={{ y: -8, duration: 180 }}>
-    <div class="cxreq-top">
-        <span class="cxreq-icon">🔗</span>
+    <div class="cxreq-row">
         <div class="cxreq-text">
-            <div class="cxreq-title">{approval.status === 'retry' ? 'Reconnect request' : 'Connection request'}</div>
-            <div class="cxreq-id">{String(approval.peerId).toUpperCase()}</div>
+            <span class="cxreq-title">Connection request, approve?</span>
+            <span class="cxreq-id">{String(approval.peerId).slice(0, 6).toUpperCase()}</span>
         </div>
-    </div>
-    <div class="cxreq-actions">
-        <button class="cxreq-btn cxreq-approve" onclick={() => approvePeer(approval, null)}
-            title={$rolesInfo ? 'Approve as a view-only viewer' : 'Approve the connection'}>Approve</button>
-        {#if $rolesInfo && approval.status !== 'retry'}
-            <button class="cxreq-btn cxreq-edit" onclick={() => approvePeer(approval, 'editor')} title="Approve and grant edit access">Approve + edit</button>
-        {/if}
-        <button class="cxreq-btn cxreq-reject" onclick={() => rejectPeer(approval)} title="Decline">Reject</button>
+        <div class="cxreq-actions">
+            {#if $rolesInfo}
+                <button class="cxreq-btn cxreq-view" onclick={() => approvePeer(approval, null)} title="Approve as a view-only viewer">View only</button>
+                {#if approval.status !== 'retry'}
+                    <button class="cxreq-btn cxreq-editor" onclick={() => approvePeer(approval, 'editor')} title="Approve and grant edit access">Editor access</button>
+                {/if}
+            {:else}
+                <button class="cxreq-btn cxreq-editor" onclick={() => approvePeer(approval, null)}>Approve</button>
+            {/if}
+            <button class="cxreq-btn cxreq-reject" onclick={() => rejectPeer(approval)} title="Decline">Reject</button>
+        </div>
     </div>
 </div>
 {/each}
@@ -305,32 +307,31 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
     .cxd-hidden {
         display: none !important;
     }
-    /* redesigned connection-request card (replaces the off-pattern green toast) */
+    /* connection-request card — on-scheme (dark surface; buttons match role colours:
+       viewer=gray, editor=blue) with the text + actions on ONE row. */
     .cxreq {
         pointer-events: auto;
-        width: min(340px, 92vw);
+        width: min(420px, 94vw);
         margin: 4px auto 0;
-        background: rgb(17 24 39 / 0.98);
-        border: 1px solid rgb(255 255 255 / 0.12);
-        border-left: 3px solid #f59e0b;
+        background: var(--color-form, rgb(31 41 55 / 0.98));
+        border: 1px solid rgb(255 255 255 / 0.1);
         border-radius: 12px;
-        padding: 10px 12px;
-        box-shadow: 0 12px 30px rgb(0 0 0 / 0.45);
+        padding: 8px 10px;
+        box-shadow: 0 12px 30px rgb(0 0 0 / 0.4);
         backdrop-filter: blur(6px);
     }
-    .cxreq-top { display: flex; align-items: center; gap: 10px; }
-    .cxreq-icon { font-size: 18px; flex: 0 0 auto; }
-    .cxreq-text { min-width: 0; }
-    .cxreq-title { font-size: 13px; font-weight: 600; color: #f3f4f6; }
+    .cxreq-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .cxreq-text { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1 1 auto; }
+    .cxreq-title { font-size: 12px; color: #e5e7eb; }
     .cxreq-id { font-size: 11px; color: #9ca3af; font-family: ui-monospace, monospace; }
-    .cxreq-actions { display: flex; gap: 6px; margin-top: 8px; }
-    .cxreq-btn { font-size: 12px; padding: 5px 8px; border-radius: 7px; border: 0; cursor: pointer; color: #fff; }
-    .cxreq-approve { flex: 1 1 auto; background: #2563eb; }
-    .cxreq-approve:hover { background: #1d4ed8; }
-    .cxreq-edit { flex: 1 1 auto; background: #7c3aed; }
-    .cxreq-edit:hover { background: #6d28d9; }
-    .cxreq-reject { flex: 0 0 auto; background: rgb(75 85 99 / 0.8); }
-    .cxreq-reject:hover { background: rgb(107 114 128 / 0.9); }
+    .cxreq-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+    .cxreq-btn { font-size: 11px; padding: 4px 10px; border-radius: 7px; border: 0; cursor: pointer; color: #fff; white-space: nowrap; }
+    .cxreq-view { background: #6b7280; }
+    .cxreq-view:hover { background: #7b8494; }
+    .cxreq-editor { background: #2563eb; }
+    .cxreq-editor:hover { background: #1d4ed8; }
+    .cxreq-reject { background: transparent; border: 1px solid rgb(248 113 113 / 0.4); color: #f87171; }
+    .cxreq-reject:hover { background: rgb(220 38 38 / 0.15); }
     /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
        toasts below both */
     @media (max-width: 640px) {

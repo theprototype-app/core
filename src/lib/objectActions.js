@@ -29,6 +29,7 @@ import {
 	showToast,
 	toggleExpand
 } from '../stores/appStore';
+import { canEditObject, warnViewerReadOnly } from './objectPermissions';
 
 // Shared object selection used by the object list, viewport clicks and VR rays.
 // Mirrors the original Objects.svelte behavior: selecting an unlocked object
@@ -96,7 +97,15 @@ export function applySelectionSet(uuids, openProperties = false) {
 	const primary = group.getObjectByProperty('uuid', clean[clean.length - 1]);
 	selectedObject.set(primary);
 	if (controls && !get(isVRMode)) {
-		if (clean.length === 1) {
+		// viewer perms: selecting/inspecting a shared object is fine, but deny the
+		// move gizmo unless every object in the set is editable by the local user
+		// (their own local-only objects, or anything for editors/admins).
+		const editable = clean.every((/** @type {any} */ uuid) => canEditObject(group.getObjectByProperty('uuid', uuid)));
+		if (!editable) {
+			releaseMultiPivot();
+			controls.detach();
+			warnViewerReadOnly();
+		} else if (clean.length === 1) {
 			releaseMultiPivot();
 			controls.attach(primary);
 		} else {

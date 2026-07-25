@@ -54,9 +54,22 @@ export function createGeometry(command, uuid) {
     });
     let geometryList = ["Box","Capsule","Circle","Cone","Cylinder","Dodecahedron","Edges","Extrude","Icosahedron","Lathe","Octahedron","Plane","Polyhedron","Ring","Shape","Sphere","Tetrahedron","Torus","TorusKnot","Tube","Wireframe"]
     if (customGeometryBuilders[geometry] || geometryList.includes(geometry)) {
-        let mesh = customGeometryBuilders[geometry]
-            ? customGeometryBuilders[geometry](options[0],options[1],options[2],options[3])
-            : new (/** @type {any} */ (THREE))[geometry+'Geometry'](options[0],options[1],options[2],options[3]);
+        /** @type {any} */
+        let mesh;
+        if (customGeometryBuilders[geometry]) {
+            // Custom builders (Stairs/Wedge/Arch/Corner/Terrain, + SDK ones) bake
+            // post-construction rotateY/rotateX/translate into a PARAMETRIC geometry
+            // (ExtrudeGeometry/PlaneGeometry). Their toJSON serializes only the shape +
+            // options, so a SHARED (toJSON) copy rebuilds WITHOUT those transforms and
+            // lands rotated/offset on peers (stairs looked rotated 90 deg). Bake into a
+            // plain BufferGeometry whose toJSON carries the real vertices. The /create
+            // path is deterministic regardless — this only matters for toJSON sharing.
+            const built = customGeometryBuilders[geometry](options[0],options[1],options[2],options[3]);
+            mesh = built?.type === 'BufferGeometry' ? built : new THREE.BufferGeometry().copy(built);
+            if (built && built !== mesh) built.dispose?.();
+        } else {
+            mesh = new (/** @type {any} */ (THREE))[geometry+'Geometry'](options[0],options[1],options[2],options[3]);
+        }
         let object = new THREE.Mesh(mesh, new THREE.MeshStandardMaterial({ roughness: 0.85 }));
         if (uuid) object.uuid = uuid
         // deterministic palette color keyed by the FINAL uuid (peers compute the

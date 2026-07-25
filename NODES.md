@@ -30,6 +30,7 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | visibility | Logic | effect | on | OK |
 | onclick | Triggers | event | — | FIX: event→effect is now a legal drag (the typed sockets rejected wiring On Click into the Object Selector its own feature requires). Pulse window OK. |
 | counter | Triggers | number | pulse | OK |
+| onimpact | Triggers | event | minStrength | NEW (PFX-C): pulses when the physics INITIATOR lands the object on the ground/another object (rapier contact-start + pre-step downward velocity ≥ 1.2 m/s + 300ms per-body cooldown). Targeting walks THROUGH intermediate nodes to the Object Selector (the fireObjectClick BFS) and honors the implicit-owner rule. Replicated via nodetrigger stamps; `minStrength` gates on impact speed (wirable). |
 | shake/spin/bounce/orbit | Animation | effect | per-param | OK (generic AnimationNode; params get ⓘ editors where sensible) |
 | pathpatrol | Animation | effect | — | OK (points captured by scene clicks) |
 | mass/bounciness/friction | Physics | effect | value | DOC: consumed by physics.js collectParams when the sim starts — NOT flowRuntime. Working, different runtime; invisible to per-frame eval. |

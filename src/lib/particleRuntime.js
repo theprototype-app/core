@@ -179,7 +179,10 @@ function stampAllOrigins(entry, object) {
 /** Push the emitter config into the shader uniforms. @param {any} entry @param {any} cfg */
 function applyUniforms(entry, cfg) {
 	const u = entry.material.uniforms;
-	u.uMode.value = cfg.mode === 'burst' ? 1 : 0;
+	// 'burst' AND 'impact' (PFX-C: fires when physics lands the object) are
+	// both one-shot triggered modes in the shader
+	u.uMode.value = cfg.mode !== 'continuous' ? 1 : 0;
+	entry.mode = cfg.mode; // physics asks hasImpactEmitter() by this
 	u.uLifetime.value = cfg.lifetime;
 	u.uLifeJitter.value = cfg.lifeJitter;
 	u.uShape.value = SHAPE_INDEX[/** @type {'cone'} */ (cfg.shape)] ?? 0;
@@ -274,12 +277,12 @@ export function updateParticles(pairs, sceneObjects, time) {
 			entry = buildEntry(key, cfg.count);
 			entries.set(key, entry);
 			entry.space = ''; // force the space init below
-			// burst emitters idle until triggered, so attaching one would look
-			// dead — auto-fire ONCE on (re)build for immediate LOCAL feedback
+			// burst/impact emitters idle until triggered, so attaching one would
+			// look dead — auto-fire ONCE on (re)build for immediate LOCAL feedback
 			// (each peer fires when it builds its own entry; tightly-synced
 			// bursts still ride the replicated particleburst timestamp). World
 			// origins get stamped in the space-init block below this tick.
-			if (cfg.mode === 'burst') entry.burstT = tw;
+			if (cfg.mode !== 'continuous') entry.burstT = tw;
 		}
 		entry.uuid = uuid;
 		refreshLifeCache(entry, cfg);
@@ -290,7 +293,7 @@ export function updateParticles(pairs, sceneObjects, time) {
 		// PFX-B: a wired event input fires a burst on its RISING edge (the pulse
 		// is high ~0.3s; fire once, not every frame). Each peer sees the pulse
 		// via the replicated nodetrigger stamp, so bursts stay ~in sync.
-		if (cfg.mode === 'burst' && cfg.trigger) {
+		if (cfg.mode !== 'continuous' && cfg.trigger) {
 			if (!entry.lastTrigger) {
 				entry.burstT = tw;
 				if (cfg.space === 'world') stampAllOrigins(entry, object);
@@ -303,7 +306,7 @@ export function updateParticles(pairs, sceneObjects, time) {
 		// sprite…) so editing — moving the emission origin especially — is visible
 		// immediately without a manual trigger. Count changes rebuild the entry
 		// (which auto-fires), so they're excluded here.
-		if (cfg.mode === 'burst') {
+		if (cfg.mode !== 'continuous') {
 			const sig = JSON.stringify([
 				cfg.offset, cfg.speed, cfg.gravity, cfg.sizeStart, cfg.size, cfg.lifetime,
 				cfg.turbulence, cfg.angle, cfg.radius, cfg.shape, cfg.sprite, cfg.colorStart, cfg.colorEnd
@@ -378,6 +381,15 @@ export function applyBurst(uuid, t) {
 			if (object) stampAllOrigins(entry, object);
 		}
 	}
+}
+
+/** PFX-C: does any live emitter on this object fire on physics impact?
+ * (covers NODE-based emitters — userData ones are checked directly on the
+ * object by physics). @param {string} uuid */
+export function hasImpactEmitter(uuid) {
+	for (const entry of entries.values())
+		if (entry.uuid === uuid && entry.mode === 'impact') return true;
+	return false;
 }
 
 /** test/debug view of the live emitters */

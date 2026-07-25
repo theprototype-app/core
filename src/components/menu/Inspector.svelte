@@ -1470,13 +1470,19 @@
 								id="particles-mode"
 								items={[
 									{ value: 'continuous', name: 'Continuous' },
-									{ value: 'burst', name: 'Burst (triggered)' }
+									{ value: 'burst', name: 'Burst (triggered)' },
+									{ value: 'impact', name: 'On impact (physics)' }
 								]}
 								value={p.mode ?? 'continuous'}
 								onchange={(/** @type {any} */ v) => setParticles({ mode: v })}
 							/>
 						</div>
-						{#if (p.mode ?? 'continuous') === 'burst'}
+						{#if (p.mode ?? 'continuous') === 'impact'}
+							<p class="text-xs text-gray-400">
+								Fires when a physics simulation lands this object on the ground or another object (needs a Dynamic body + a running sim).
+							</p>
+						{/if}
+						{#if (p.mode ?? 'continuous') !== 'continuous'}
 							<div class="ui-row items-center gap-2">
 								<Button size="xs" color="alternative" onclick={() => burstObjectParticles($selectedObject.uuid)}>
 									💥 Burst now

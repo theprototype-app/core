@@ -181,7 +181,8 @@ export const valueTypes = [
 	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter', // 134
 	'maprange', 'select', // 4.6
 	'flowinput', 'flowoutput', 'objectflow', // H5: object-flow composition
-	'keypress' // H3: keyboard trigger
+	'keypress', // H3: keyboard trigger
+	'onimpact' // PFX-C: physics impact trigger
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -423,6 +424,12 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
 		}
+		case 'onimpact': {
+			// PFX-C: physics impacts arrive as replicated trigger stamps too
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
 		case 'counter':
 			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;
 		// --- H5: object-flow composition ---
@@ -538,6 +545,23 @@ export function fireObjectClick(uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+			applyNodeTrigger(node.id, syncedNow(), true);
+	});
+}
+
+/**
+ * PFX-C: the physics INITIATOR detected a ground/object impact — pulse any On
+ * Impact node targeting the object whose min-strength gate passes. The trigger
+ * stamp replicates (nodetrigger), so every peer computes the identical pulse.
+ * @param {string} uuid @param {number} strength downward speed at contact (m/s)
+ */
+export function fireObjectImpact(uuid, strength) {
+	const ctx = runtimeCtx();
+	nodes.forEach((node) => {
+		if (node.type !== 'onimpact') return;
+		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
+		if (strength < num(data.minStrength ?? 0)) return;
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
 			applyNodeTrigger(node.id, syncedNow(), true);
 	});

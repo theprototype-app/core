@@ -39,6 +39,7 @@
 				on:change={(e) => set({ mode: e.currentTarget.value })}>
 				<option value="continuous">continuous</option>
 				<option value="burst">burst (triggered)</option>
+				<option value="impact">on impact (physics)</option>
 			</select>
 		</label>
 

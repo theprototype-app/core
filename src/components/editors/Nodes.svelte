@@ -104,6 +104,7 @@
 		setcolor: EffectNode,
 		visibility: EffectNode,
 		onclick: OnClickNode,
+		onimpact: AnimationNode,
 		counter: CounterNode,
 		flowinput: FlowIONode,
 		flowoutput: FlowIONode,

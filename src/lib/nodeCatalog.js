@@ -83,6 +83,14 @@ export const nodeCatalog = [
 			// (golden rule: never stream local state); held keys re-pulse so the
 			// output stays high while held
 			{ type: 'keypress', label: 'Key Press', defaults: { code: 'KeyR', pulse: 0.3 } },
+			// PFX-C: fires when the physics sim lands this object on the ground /
+			// another object (initiator-detected, replicated trigger stamp)
+			{
+				type: 'onimpact',
+				label: 'On Impact',
+				defaults: { pulse: 0.3, minStrength: 1 },
+				params: [{ key: 'minStrength', kind: 'range', min: 0, max: 10, step: 0.1 }]
+			},
 			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } }
 		]
 	},

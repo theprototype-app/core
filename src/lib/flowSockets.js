@@ -18,6 +18,7 @@ const OUTPUT = {
 	objectselector: 'object',
 	onclick: 'event',
 	keypress: 'event', // H3
+	onimpact: 'event', // PFX-C
 	flowinput: 'number' // H5 fallback; the live check reads data.vtype
 };
 

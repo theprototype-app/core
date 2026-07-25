@@ -1,48 +1,55 @@
 <script>
-	// Viewer object-permissions: the "Local objects" section of the object list. Lists
-	// objects marked `__localOnly` (a viewer's creations that never reached peers), lets
-	// you REMOVE them, DRAG objects in (mark local-only), and — once you have edit
-	// access — SHARE them to peers (single or all). Shown only when the roles plugin is
-	// present (or there are local objects), so the OSS build is unchanged.
+	// The "Local objects" section of the object list. Renders local-only objects with
+	// the SAME tree component as the shared list (Objects.svelte) — so groups expand/
+	// collapse and objects drag in/out of groups for free. A drop target moves a shared
+	// object into local objects: a VIEWER is offered a local COPY (original stays
+	// shared); an EDITOR removes it for peers and keeps it locally. Shown only when
+	// `showLocalObjects` is on (off by default, auto-enabled on the first local object).
 	import { get } from 'svelte/store';
 	import { objectsGroup } from '../../stores/sceneStore';
-	import { peers, showToast } from '../../stores/appStore';
+	import { peers, showToast, showLocalObjects } from '../../stores/appStore';
 	import { rolesInfo } from '$lib/cloudHooks';
-	import { clearLocalOnly, markLocalOnly } from '$lib/objectPermissions';
-	import { selectObject, deleteObjectsByUuid } from '$lib/objectActions';
+	import { markLocalOnly, clearLocalOnly } from '$lib/objectPermissions';
+	import Objects from './Objects.svelte';
 
-	let expanded = $state(true);
 	let dropHover = $state(false);
-
 	const local = $derived(($objectsGroup?.children || []).filter((/** @type {any} */ c) => c?.userData?.__localOnly));
 	const isViewerNow = $derived($rolesInfo?.myRole === 'viewer');
-	const show = $derived(!!$rolesInfo || local.length > 0);
 
-	/** poke the objectsGroup store so both lists re-render after a mark/share/remove */
 	function poke() {
 		const g = get(objectsGroup);
 		if (g) objectsGroup.set(g);
 	}
-
-	function share(/** @type {any} */ obj) {
-		if (isViewerNow) {
-			showToast('You need edit access to share — ask an admin to make you an editor.');
-			return;
-		}
-		clearLocalOnly(obj);
+	const newUuid = () => {
 		try {
-			get(peers)?.send({ type: 'object', element: obj.toJSON(), uuids: [obj.uuid] });
-			showToast('Shared "' + (obj.name || 'object') + '" with peers.');
-		} catch (e) {
-			console.warn('share failed', e);
+			return crypto.randomUUID();
+		} catch {
+			return Date.now() + '-' + Math.random().toString(16).slice(2);
 		}
+	};
+
+	function shareAll() {
+		if (isViewerNow) return showToast('You need edit access to share — ask an admin.');
+		for (const o of [...local]) {
+			clearLocalOnly(o);
+			try {
+				get(peers)?.send({ type: 'object', element: o.toJSON(), uuids: [o.uuid] });
+			} catch (e) {
+				console.warn('share failed', e);
+			}
+		}
+		showToast('Shared all local objects with peers.');
 		poke();
 	}
-	function shareAll() {
-		for (const o of [...local]) share(o);
-	}
-	function remove(/** @type {any} */ obj) {
-		deleteObjectsByUuid([obj.uuid]);
+
+	function makeLocalCopy(/** @type {any} */ obj) {
+		const clone = obj.clone();
+		clone.traverse?.((/** @type {any} */ n) => (n.uuid = newUuid()));
+		clone.uuid = newUuid();
+		clone.name = (obj.name || 'Object') + ' (local)';
+		markLocalOnly(clone);
+		get(objectsGroup)?.add(clone);
+		showToast('Local copy created.');
 		poke();
 	}
 
@@ -51,9 +58,20 @@
 		dropHover = false;
 		const uuid = e.dataTransfer?.getData('application/x-object-uuid');
 		const obj = uuid && get(objectsGroup)?.getObjectByProperty('uuid', uuid);
-		if (obj) {
+		if (!obj || obj.userData?.__localOnly) return; // dropping a local object here is a no-op
+		if (isViewerNow) {
+			showToast('Create a local copy of "' + (obj.name || 'object') + '"? The original stays shared.', [
+				{ label: 'Create copy', action: () => makeLocalCopy(obj) }
+			]);
+		} else {
+			// editor: remove it for peers, keep it locally as a local object
+			try {
+				get(peers)?.send({ type: 'delete', uuid: obj.uuid, peerId: get(peers)?.peer?.id });
+			} catch (e) {
+				console.warn(e);
+			}
 			markLocalOnly(obj);
-			showToast('"' + (obj.name || 'object') + '" is now local-only.');
+			showToast('"' + (obj.name || 'object') + '" moved to local objects (removed for peers).');
 			poke();
 		}
 	}
@@ -66,7 +84,7 @@
 	}
 </script>
 
-{#if show}
+{#if $showLocalObjects}
 	<div
 		class={'local-objs mb-1 rounded border ' +
 			(dropHover ? 'border-primary-400 bg-primary-900/20' : 'border-amber-500/30 bg-amber-500/5')}
@@ -75,50 +93,29 @@
 		ondragleave={() => (dropHover = false)}
 		ondrop={onDrop}
 	>
-		<div class="flex items-center gap-1 px-1.5 py-1">
-			<button
-				class="flex min-w-0 flex-1 items-center gap-1.5 text-left text-xs font-medium text-amber-200"
-				title={expanded ? 'Collapse' : 'Expand'}
-				onclick={() => (expanded = !expanded)}
-			>
-				<i class={expanded ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'} style="font-size:9px"></i>
-				<i class="fa-solid fa-user-lock" style="font-size:10px"></i>
-				<span>Local objects</span>
+		<div class="flex items-center gap-1.5 px-1.5 py-1">
+			<i class="fa-solid fa-user-lock text-amber-300" style="font-size:10px"></i>
+			<span class="min-w-0 flex-1 text-xs font-medium text-amber-200">
+				Local objects
 				<span class="rounded-full bg-amber-500/30 px-1.5 text-[10px]">{local.length}</span>
-			</button>
+			</span>
 			{#if local.length > 0 && !isViewerNow}
 				<button class="rounded bg-primary-700 px-1.5 py-0.5 text-[10px] text-white hover:bg-primary-600" title="Share all with peers" onclick={shareAll}>Share all</button>
 			{/if}
 		</div>
 
-		{#if expanded}
-			{#if local.length === 0}
-				<p class="px-2 pb-1.5 text-[10px] italic text-gray-400">
-					{isViewerNow
-						? 'Objects you create are kept here (view-only — peers can’t see them).'
-						: 'Drag an object here to keep it on your machine only.'}
-				</p>
-			{:else}
+		{#if local.length === 0}
+			<p class="px-2 pb-1.5 text-[10px] italic text-gray-400">
+				{isViewerNow
+					? 'Objects you create stay here (view-only). Drag a shared object here to make a local copy.'
+					: 'Drag an object here to keep it on your machine only (removes it for peers).'}
+			</p>
+		{:else}
+			<div class="pb-1">
 				{#each local as obj (obj.uuid)}
-					<div class="group/lo flex items-center gap-1 px-1.5 py-0.5 text-xs hover:bg-gray-600/30">
-						<i class="fa-solid fa-cube w-3 shrink-0 text-center text-[10px] text-gray-400"></i>
-						<button
-							class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left text-gray-200"
-							onclick={() => selectObject(obj.uuid, false)}
-							title="Select">{obj.name || 'Object'}</button
-						>
-						<span class="hidden shrink-0 items-center gap-1 group-hover/lo:flex">
-							<button
-								class="rounded bg-primary-700 px-1.5 py-0.5 text-[10px] text-white hover:bg-primary-600 disabled:opacity-40"
-								disabled={isViewerNow}
-								title={isViewerNow ? 'Ask an admin for edit access to share' : 'Share with peers'}
-								onclick={() => share(obj)}>Share</button
-							>
-							<button class="text-gray-400 hover:text-red-400" title="Remove (delete)" onclick={() => remove(obj)}>✖</button>
-						</span>
-					</div>
+					<Objects element={obj} />
 				{/each}
-			{/if}
+			</div>
 		{/if}
 	</div>
 {/if}

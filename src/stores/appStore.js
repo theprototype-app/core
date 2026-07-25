@@ -292,6 +292,22 @@ if (typeof localStorage !== 'undefined') {
     try { localStorage.setItem('toastsInDrawerOnly', v ? 'true' : 'false'); } catch { /* */ }
   });
 }
+/** Show the "Local objects" section in the object list (viewer WIP / editor-shareable
+ * objects). OFF by default — auto-enabled when the first local object is made; also
+ * togglable under the object-list filter cog. Persisted. */
+export const showLocalObjects = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('showLocalObjects') === 'true' : false
+);
+if (typeof localStorage !== 'undefined') {
+  showLocalObjects.subscribe((v) => {
+    try {
+      localStorage.setItem('showLocalObjects', v ? 'true' : 'false');
+    } catch {
+      /* storage disabled */
+    }
+  });
+}
+
 /** Show the "Rooms" shortcut button in the Connect pill (only meaningful when the
  * cloud plugin is present). Default ON for discoverability; users can hide it and
  * still reach rooms via the chevron drawer's Rooms tab. Persisted. */

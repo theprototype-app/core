@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -679,6 +679,10 @@
 					>
 						Reset all filters
 					</button>
+					<label class="mt-1 flex cursor-pointer items-center gap-2 border-t border-gray-300 pt-1.5 text-gray-700 dark:border-gray-600 dark:text-gray-200">
+						<input type="checkbox" bind:checked={$showLocalObjects} />
+						Show local objects
+					</label>
 				</div>
 			{/if}
 		</div>

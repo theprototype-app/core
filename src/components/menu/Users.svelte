@@ -100,6 +100,11 @@
 	const effAvatar = $derived(avatarImage || ls('avatar') || cid?.avatar || '');
 	/** cloud roles bridge (null without the cloud plugin) */
 	const ri = $derived($rolesInfo);
+	function cycleRole(id: string) {
+		const order = ri?.order || ['viewer', 'editor', 'admin'];
+		const next = order[(order.indexOf(ri?.roleOf?.(id)) + 1) % order.length];
+		ri?.setRole?.(id, next);
+	}
 
 	function broadcastUserdata() {
 		if (!$peers?.peer) return;
@@ -255,9 +260,7 @@
 							{#if i === 0}
 								<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
 							{:else if ri.amAdmin}
-								<div class="role-seg" role="group" aria-label="Set role">
-									{#each ri.order as r}<button type="button" class="role-opt" class:on={ri.roleOf(user[0]) === r} data-role={r} title={r} aria-label={'Set ' + r} onclick={() => ri.setRole(user[0], r)}>{r[0].toUpperCase()}</button>{/each}
-								</div>
+								<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} title={'Role: ' + ri.roleOf(user[0]) + ' (click to change)'} onclick={() => cycleRole(user[0])}>{ri.roleOf(user[0])}</button>
 							{:else}
 								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 							{/if}
@@ -439,16 +442,11 @@
 		/* pin the peers list to the viewport so it can't spill off the left edge
 		   when the trigger sits near a narrow screen's right edge */
 		.peers-scroll { max-height: 264px; overflow-y: auto; }
-	.role-badge { flex: 0 0 auto; font-size: 10px; padding: 1px 7px; border-radius: 9999px; color: #fff; background: rgb(107 114 128); text-transform: capitalize; }
+	.role-badge { flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 8px; color: #fff; background: rgb(107 114 128); text-transform: capitalize; }
+	.role-btn { border: 0; cursor: pointer; }
+	.role-btn:hover { filter: brightness(1.15); }
 	.role-badge[data-role='editor'] { background: #2563eb; }
 	.role-badge[data-role='admin'] { background: #7c3aed; }
-	.role-seg { flex: 0 0 auto; display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: rgb(0 0 0 / 0.28); }
-	.role-opt { width: 20px; height: 18px; border: 0; border-radius: 6px; background: transparent; color: #9ca3af; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
-	.role-opt:hover { color: #fff; background: rgb(255 255 255 / 0.08); }
-	.role-opt.on { color: #fff; }
-	.role-opt.on[data-role='viewer'] { background: #6b7280; }
-	.role-opt.on[data-role='editor'] { background: #2563eb; }
-	.role-opt.on[data-role='admin'] { background: #7c3aed; }
 	#peers-popover {
 			position: fixed;
 			top: 122px;

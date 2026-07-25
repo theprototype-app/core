@@ -165,6 +165,20 @@ h.run(async () => {
 		'burst preset auto-fires on attach (no explicit trigger)'
 	);
 
+	// 8c) editing a burst emitter's OFFSET re-fires it, so the moved emission
+	// origin is visible immediately (and the offset uniform tracks it)
+	const beforeOff = (await entriesOn(A.page)).find((x) => x.key === 'ud:' + burstUuid)?.burstT;
+	await A.page.waitForTimeout(50);
+	await A.page.evaluate((u) => window.__stores.particleActions.updateObjectParticles(u, { offset: [0, 1.5, 0] }), burstUuid);
+	await h.eventually(
+		() => entriesOn(A.page),
+		(e) => {
+			const c = e.find((x) => x.key === 'ud:' + burstUuid);
+			return !!c && Math.abs(c.offset[1] - 1.5) < 0.001 && c.burstT > beforeOff;
+		},
+		`changing a burst emitter's offset re-fires it (was burstT ${beforeOff})`
+	);
+
 	// 9) emitter cap: 10 emitters -> at most MAX_EMITTERS render
 	await A.page.evaluate(() => {
 		for (let i = 0; i < 9; i++) {

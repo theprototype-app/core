@@ -299,6 +299,21 @@ export function updateParticles(pairs, sceneObjects, time) {
 		} else {
 			entry.lastTrigger = false;
 		}
+		// Re-fire a burst emitter whenever its LOOK changes (offset, motion,
+		// sprite…) so editing — moving the emission origin especially — is visible
+		// immediately without a manual trigger. Count changes rebuild the entry
+		// (which auto-fires), so they're excluded here.
+		if (cfg.mode === 'burst') {
+			const sig = JSON.stringify([
+				cfg.offset, cfg.speed, cfg.gravity, cfg.sizeStart, cfg.size, cfg.lifetime,
+				cfg.turbulence, cfg.angle, cfg.radius, cfg.shape, cfg.sprite, cfg.colorStart, cfg.colorEnd
+			]);
+			if (entry.cfgSig !== undefined && entry.cfgSig !== sig) {
+				entry.burstT = tw;
+				if (cfg.space === 'world') stampAllOrigins(entry, object);
+			}
+			entry.cfgSig = sig;
+		}
 		u.uBurstT.value = entry.burstT;
 		entry.geometry.setDrawRange(0, vr ? Math.min(cfg.count, VR_MAX_COUNT) : cfg.count);
 		entry.points.visible = object.visible !== false;

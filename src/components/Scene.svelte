@@ -10,7 +10,7 @@
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
 	import { recordTransform } from '$lib/history';
-	import { suspendAnimation, resumeAnimation } from '$lib/flowRuntime';
+	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
@@ -216,6 +216,10 @@
 
 	useTask((delta) => {
 		rotation += 0.25 * delta;
+		// PFX-C follow-up: while presenting, window.rAF is suspended — pump the
+		// flow tick (animations + particle sweep + the physics postTick) from
+		// threlte's XR-aware loop or everything freezes the moment VR starts
+		if (renderer?.xr?.isPresenting) pumpFlowTick(performance.now());
 		// console.log(camera.current.lookAt.)
 		if (camera.current.fov !== fov) {
 			// console.log('fov changed')

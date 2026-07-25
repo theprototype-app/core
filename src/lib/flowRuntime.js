@@ -687,8 +687,17 @@ function applyPathPatrol(object, data, time) {
 	}
 }
 
+// PFX-C follow-up: the loop body, split from its scheduler. window.rAF is
+// SUSPENDED during an immersive WebXR session (the browser only services
+// session.requestAnimationFrame), which froze every flow animation AND physics
+// (the postTick) the moment a headset went on. Scene.svelte pumps this from
+// threlte's task loop (setAnimationLoop — XR-aware) while presenting; the
+// timestamp guard makes a double delivery (both loops in one frame) a no-op.
+let lastRunAt = -1000;
 /** @param {number} now */
-function tick(now) {
+function runTick(now) {
+	if (now - lastRunAt < 3) return;
+	lastRunAt = now;
 	// wall clock (wrapped daily to keep float noise low) -> same phase on every peer
 	const time = synced ? (Date.now() % 86400000) / 1000 : now / 1000;
 	const ctx = runtimeCtx(); // 134: scene + trigger state for the evaluators
@@ -858,8 +867,19 @@ function tick(now) {
 			console.log('post-tick hook failed', error);
 		}
 	}
+}
 
+/** the desktop scheduler (suspended by the browser while in immersive XR) */
+/** @param {number} now */
+function tick(now) {
+	runTick(now);
 	requestAnimationFrame(tick);
+}
+
+/** XR-side pump: Scene.svelte calls this from threlte's task loop while
+ * presenting, so flow + physics keep running in the headset. @param {number} now */
+export function pumpFlowTick(now) {
+	runTick(now);
 }
 
 /** @type {((now: number) => void) | null} */

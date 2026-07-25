@@ -63,7 +63,10 @@ h.run(async () => {
 			system: m.ringEntries('system').map((e) => e.id),
 			addCount: m.ringEntries('add').length,
 			tools: m.ringEntries('tools').map((e) => e.id),
-			sceneHasEnv: m.ringEntries('scene').some((e) => e.id === 'env:night'),
+			// PFX-C follow-up: presets moved into the nested Environment ▸ ring;
+			// the Scene ring gained the nav entry + the Physics sim toggle
+			sceneHasEnv: m.ringEntries('environment').some((e) => e.id === 'env:night'),
+			sceneRing: m.ringEntries('scene').map((e) => e.id),
 			micModes: m.ringEntries('mic').map((e) => e.id),
 			objectOps: m.ringEntries('object').map((e) => e.id),
 			faces: m.ringEntries('faces').map((e) => e.id),
@@ -92,6 +95,13 @@ h.run(async () => {
 	);
 	h.check(registry.objectOps.includes('snap'), 'Edit ring gained Snap');
 	h.check(registry.addCount === 7 && registry.sceneHasEnv, 'Add ring: 6 primitives + Prefabs (115)');
+	h.check(
+		registry.sceneRing.includes('nav:environment') &&
+			registry.sceneRing.includes('physics') &&
+			registry.sceneRing.includes('snapangle') &&
+			!registry.sceneRing.some((id) => id.startsWith('env:')),
+		`Scene ring: Environment ▸ nests the presets + Physics toggle (${registry.sceneRing.join(',')})`
+	);
 	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
 	// D4: modules may append entries (avatar:possess from the default-on avatar
 	// module) — assert the built-in prefix, not an exact list

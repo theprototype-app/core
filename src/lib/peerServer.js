@@ -215,6 +215,9 @@ export function peerServerPingUrl(status) {
  * @param {PeerServerStatus | null} status @param {string=} key @returns {string | null}
  */
 export function peerServerPeersUrl(status, key = 'peerjs') {
+	// the PUBLIC PeerJS cloud has no discovery endpoint — probing it just logs a
+	// noisy 404, so skip it (discovery shows as "—").
+	if (!status || status.kind === 'public') return null;
 	const base = peerServerPingUrl(status);
 	if (!base) return null;
 	return base.replace(/\/$/, '') + '/' + key + '/peers';

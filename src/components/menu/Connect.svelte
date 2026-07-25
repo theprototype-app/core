@@ -164,25 +164,17 @@
 		{:else if connState === 'pending'}
 			<!-- pending: request out, waiting for their approval. Amber = reversible
 				 abort (red stays reserved for Disconnect). -->
-			<div class="cx-connect inline-flex rounded-md shadow-sm">
-				<Input
-					type="text"
-					disabled
-					class="nob cx-input rounded-r-none border-0 opacity-70"
-					value={pendingOut[0]?.[0] ?? peerIdToConnect}
-				/>
-				<Button
-					color="yellow"
-					id="cancel-request-button"
-					class="nob shrink-0 rounded-l-none rounded-r-lg bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
-					on:click={cancelPending}
-					title="Cancel the connection request">Cancel</Button
-				>
-			</div>
-			<span class="cx-status" aria-live="polite" data-testid="connect-pending">
+			<span class="cx-status" aria-live="polite" data-testid="connect-pending" title={'Waiting for ' + (pendingOut[0]?.[0] ?? peerIdToConnect) + ' to accept'}>
 				<span class="cx-dot cx-dot-wait"></span>
 				<span class="cx-status-label cx-muted">Waiting for approval…</span>
 			</span>
+			<Button
+				color="yellow"
+				id="cancel-request-button"
+				class="nob shrink-0 rounded-lg bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
+				on:click={cancelPending}
+				title="Cancel the connection request">Cancel</Button
+			>
 		{:else}
 			<!-- idle: dial a peer — the input shrinks (down to cx-input min-width) so
 				 the Connect button stays visible when the row is tight -->

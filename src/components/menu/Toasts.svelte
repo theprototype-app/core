@@ -129,33 +129,9 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 </div>
 {/each}
 
-{#each $waitingForApproval as status}
-{#if status[1] === 'pending'}
-<div class="my-1">
-<Toast  transition={fly} class="p-2 rounded-lg dark:bg-green-800 dark:border-dark-700 border-2 border-green-500" divClass="flex items-center gap-3">
-    <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
-
-    </div>
-    <div class="mb-1 text-base font-medium text-green-700 dark:text-green-500 inline-flex items-center">
-
-        <p class="text-sm font-medium text-gray-500 dark:text-gray-400 pr-4 overflow-hidden max-w-80">
-            Connection request to peer:&nbsp;{status[0]} <br />
-            Status: {status[1]}
-        </p>
-
-        <!-- CN: cancel the outbound request (same path as the pill's Cancel) -->
-        <Button
-            color="yellow"
-            class="nob rounded bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
-            onclick={() => cancelOutboundRequest(status[0])}
-            >Cancel</Button
-        >
-    </div>
-
-</Toast>
-</div>
-{/if}
-{/each}
+<!-- CN: the OUTBOUND "Connection request to peer / pending" toast was removed — the
+     Connect pill already shows the "Waiting for approval…" state + a Cancel button, so
+     the toast was redundant chrome. Incoming approval requests (above) still toast. -->
 </div>
 
 <!-- pointer-events: none lets clicks pass through the (invisible) container area;

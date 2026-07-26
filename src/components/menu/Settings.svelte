@@ -884,7 +884,7 @@
 				</AccordionItem>
 				<AccordionItem>
 					<svelte:fragment slot="header">About</svelte:fragment>
-					<SettingRow name="Version" noControl>alpha</SettingRow>
+					<SettingRow name="Version" noControl>beta</SettingRow>
 					<SettingRow name="Dev Builds" noControl>
 						<a href="https://alexz005.github.io/theprototype">https://alexz005.github.io/theprototype</a>
 					</SettingRow>

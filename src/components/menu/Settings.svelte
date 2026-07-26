@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
+	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly } from '../../stores/appStore.js';
@@ -228,21 +229,6 @@
 			.catch(() => (arSupport = false));
 	}
 
-	//Rounded corners for options
-	let coverClass =
-		'z-10 inline-flex items-center py-2.5 text-sm font-medium text-center text-gray-500 bg-gray-100 border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600';
-	let topcoverName =
-		'w-40 flex-shrink-0 px-4 rounded-tl-lg hover:bg-gray-200 focus:ring-4 focus:outline-none focus:ring-gray-100 dark:hover:bg-gray-600 dark:focus:ring-gray-700 ' +
-		coverClass;
-	let middlecoverName =
-		'w-40 flex-shrink-0 px-4 hover:bg-gray-200 focus:ring-4 focus:outline-none focus:ring-gray-100 dark:hover:bg-gray-600 dark:focus:ring-gray-700 ' +
-		coverClass;
-	let topcoverDescription = 'w-full px-5 rounded-tr-lg ' + coverClass;
-	let middlecoverDescription = 'w-full px-5 ' + coverClass;
-	let bottomCoverName =
-		'w-40 flex-shrink-0 px-4 rounded-bl-lg hover:bg-gray-200 focus:ring-4 focus:outline-none focus:ring-gray-100 dark:hover:bg-gray-600 dark:focus:ring-gray-700 ' +
-		coverClass;
-	let bottomCoverDescription = 'w-full px-5 rounded-br-lg ' + coverClass;
 
 	// Hide open panels while settings is shown, restore them after (initial value is null,
 	// so nothing happens until the modal is opened the first time)
@@ -295,249 +281,248 @@
 		/>
 		<div use:filterSettings={settingsQuery}>
 		<Accordion>
-			<AccordionItem bind:open={vrExpanded}>
-				<svelte:fragment slot="header">VR</svelte:fragment>
-				<div class="flex setting-row">
-					<p class={topcoverName}>
-						<Checkbox
-							bind:checked={$vrOverride}
-							onclick={() => {
-								if (localStorage.getItem('vrOverride')) localStorage.removeItem('vrOverride');
-								else localStorage.setItem('vrOverride', 'true');
-							}}>&nbsp;VR override</Checkbox
-						>
-					</p>
-					<p class={topcoverDescription}>Forces normal play even if immersive-vr is enabled</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox
-							checked={$vrFlying}
-							on:change={(e) => {
-								$vrFlying = e.target.checked;
-								localStorage.setItem('vrFlying', String($vrFlying));
-							}}>&nbsp;VR flying</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Left-stick movement follows where the controller points (fly); off = stay level</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<!-- a red SWITCH (98): reads as an armed mode, not a plain option -->
-						<Toggle
-							id="passthrough-toggle"
-							color="red"
-							size="small"
-							checked={$vrPassthrough}
-							on:change={(e: any) => {
-								$vrPassthrough = e.target.checked;
-								localStorage.setItem('vrPassthrough', String($vrPassthrough));
-								showToast('Passthrough ' + ($vrPassthrough ? 'on' : 'off') + ' — takes effect on the next VR entry');
-							}}>Passthrough</Toggle>
-					</p>
-					<p class={middlecoverDescription}>Mixed reality: the next VR entry composites the scene over your room (immersive-ar){arSupport === false ? ' — not supported on this device' : ''}</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox
-							checked={$vrMenuHand === 'left'}
-							onclick={() => {
-								const next = $vrMenuHand === 'left' ? 'right' : 'left';
-								$vrMenuHand = next;
-								localStorage.setItem('vrMenuHand', next);
-							}}>&nbsp;VR menu on left</Checkbox
-						>
-					</p>
-					<p class={middlecoverDescription}>Which controller opens the VR quick-menu (the other hand points)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox
-							id="vr-menu-hold"
-							checked={$vrMenuHold}
-							on:change={(e: any) => {
-								$vrMenuHold = e.target.checked;
-								localStorage.setItem('vrMenuHold', String($vrMenuHold));
-							}}>&nbsp;Hold-to-menu</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Hold B/Y to show the radial menu, release over a sector to pick it (off = press toggles)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<ThemedSelect
-							items={[
-								{ value: 0, name: 'Off' },
-								{ value: 15, name: '15°' },
-								{ value: 30, name: '30°' },
-								{ value: 45, name: '45°' }
-							]}
-							value={$vrSnapAngle}
-							onchange={(v) => {
-								$vrSnapAngle = parseInt(v);
-								localStorage.setItem('vrSnapAngle', String($vrSnapAngle));
-							}}
-						/>
-					</p>
-					<p class={middlecoverDescription}><span class="font-semibold">Snap turn</span> — VR thumbstick flick rotation angle (Off disables it)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox
-							id="vr-mirror-snap"
-							checked={$vrMirrorSnapTurn}
-							on:change={(e: any) => {
-								$vrMirrorSnapTurn = e.target.checked;
-								localStorage.setItem('vrMirrorSnapTurn', String($vrMirrorSnapTurn));
-							}}>&nbsp;Mirror snap turn</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Flip the flick direction — left turns right and vice-versa</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox
-							id="vr-teleport"
-							checked={$vrTeleportEnabled}
-							on:change={(e: any) => {
-								$vrTeleportEnabled = e.target.checked;
-								localStorage.setItem('vrTeleportEnabled', String($vrTeleportEnabled));
-							}}>&nbsp;Teleport</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Right-stick-up teleport arc — off if you navigate only by stick/fly</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox
-							id="vr-vertex-hold"
-							checked={$vrVertexHold}
-							on:change={(e: any) => {
-								$vrVertexHold = e.target.checked;
-								localStorage.setItem('vrVertexHold', String($vrVertexHold));
-							}}>&nbsp;Hold to move vertex</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Hold the trigger to carry a vertex (release drops it); off = press to grab, press again to drop</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<input
-							id="vr-face-cap"
-							type="number"
-							min="10"
-							step="50"
-							class="w-20 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-							value={$vrFaceCap}
-							on:change={(e: any) => setCap(vrFaceCap, e.target.value, VR_FACE_CAP)}
-						/>&nbsp;Face edit limit
-					</p>
-					<p class={middlecoverDescription}><span class="font-semibold">Mesh edit caps (D7)</span> — max triangles for VR face editing (default {VR_FACE_CAP}; denser meshes get a warning). Imported single meshes under the caps edit fine; Ungroup multi-mesh imports first</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<input
-							id="vr-vertex-cap"
-							type="number"
-							min="10"
-							step="50"
-							class="w-20 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-							value={$vrVertexCap}
-							on:change={(e: any) => setCap(vrVertexCap, e.target.value, VR_VERTEX_CAP)}
-						/>&nbsp;Vertex edit limit
-					</p>
-					<p class={middlecoverDescription}>Max vertices for VR vertex editing (default {VR_VERTEX_CAP}) — very dense handle clouds get unwieldy with controllers</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<select
-							id="peer-hand-style"
-							class="rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-							value={$peerHandStyle}
-							on:change={(e: any) => peerHandStyle.set(e.target.value)}
-						>
-							<option value="model">Model</option>
-							<option value="hands">Hands</option>
-							<option value="spheres">Spheres</option>
-						</select>&nbsp;Peer hand style
-					</p>
-					<p class={middlecoverDescription}>How hand-tracked peers render for you — rounded capsule hands, cuboid bones or joint spheres (local preference)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<select
-							id="my-hand-model"
-							class="rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-							value={$myHandModel}
-							on:change={(e: any) => setMyHandModel(e.target.value)}
-						>
-							<option value="">Default</option>
-							{#each $explorerItems.filter((i: any) => i.kind === 'object') as item (item.id)}
-								<option value={item.hash}>{item.name}</option>
-							{/each}
-						</select>&nbsp;My hand model
-					</p>
-					<p class={middlecoverDescription}><span class="font-semibold">Custom hands (identity)</span> — a GLB from your Explorer library that OTHER peers see as your hands in VR (bytes push automatically; renders rigid at the wrist)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<select
-							id="vr-target-hz"
-							class="rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-							value={$vrTargetHz}
-							on:change={(e: any) => {
-								vrTargetHz.set(e.target.value);
-								applyVRFrameRate();
-							}}
-						>
-							<option value="auto">Max</option>
-							<option value="90">90</option>
-							<option value="120">120</option>
-						</select>&nbsp;VR refresh rate
-					</p>
-					<p class={middlecoverDescription}>Target headset Hz — Max picks the highest the device supports (120 needs the Quest 120Hz system setting); applies on VR entry</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={bottomCoverName}>
-						<button
-							id="vr-reset-poses"
-							class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-							on:click={() => {
-								resetWindowPoses();
-								showToast('VR menu positions reset');
-							}}>Reset positions</button>
-					</p>
-					<p class={bottomCoverDescription}>Grabbed VR menus/panels snap back to their default spots on the controllers (111: hold the other grip on one to re-place it)</p>
-				</div>
-			</AccordionItem>
-			<AccordionItem bind:open={sceneExpanded}>
-				<svelte:fragment slot="header">Scene</svelte:fragment>
-				<div class="flex setting-row">
-					<p class={topcoverName}>
-						<ThemedSelect
-							id="theme-select"
-							items={[...THEMES, ...$customThemes].map((t) => ({ value: t.id, name: t.name }))}
-							bind:value={$theme}
-						/>
-					</p>
-					<p class={topcoverDescription}><span class="font-semibold">Theme</span> — UI theme for THIS device (the 3D viewport follows the environment, not the theme)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName + ' gap-2'}>
-						<button
-							id="theme-export"
-							class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-							on:click={() => exportActiveTheme()}>Export template</button
-						>
-						<button
-							id="theme-browse"
-							class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-							on:click={() => themeFileInput?.click()}>Browse…</button
-						>
-						<input
-							type="file"
-							accept=".json,application/json"
-							bind:this={themeFileInput}
-							style="display: none"
-							on:change={onThemeFile}
-						/>
-					</p>
-					<p class={middlecoverDescription}>
+				<AccordionItem bind:open={vrExpanded}>
+					<svelte:fragment slot="header">VR</svelte:fragment>
+					<SettingRow name="VR override">
+						<svelte:fragment slot="control">
+							<Checkbox
+								bind:checked={$vrOverride}
+								onclick={() => {
+									if (localStorage.getItem('vrOverride')) localStorage.removeItem('vrOverride');
+									else localStorage.setItem('vrOverride', 'true');
+								}} />
+						</svelte:fragment>
+						Forces normal play even if immersive-vr is enabled
+					</SettingRow>
+					<SettingRow name="VR flying">
+						<svelte:fragment slot="control">
+							<Checkbox
+								checked={$vrFlying}
+								on:change={(e) => {
+									$vrFlying = e.target.checked;
+									localStorage.setItem('vrFlying', String($vrFlying));
+								}} />
+						</svelte:fragment>
+						Left-stick movement follows where the controller points (fly); off = stay level
+					</SettingRow>
+					<SettingRow name="Passthrough">
+						<svelte:fragment slot="control">
+							<!-- a red SWITCH (98): reads as an armed mode, not a plain option -->
+							<Toggle
+								id="passthrough-toggle"
+								color="red"
+								size="small"
+								checked={$vrPassthrough}
+								on:change={(e: any) => {
+									$vrPassthrough = e.target.checked;
+									localStorage.setItem('vrPassthrough', String($vrPassthrough));
+									showToast('Passthrough ' + ($vrPassthrough ? 'on' : 'off') + ' — takes effect on the next VR entry');
+								}} />
+						</svelte:fragment>
+						Mixed reality: the next VR entry composites the scene over your room (immersive-ar){arSupport === false ? ' — not supported on this device' : ''}
+					</SettingRow>
+					<SettingRow name="VR menu on left">
+						<svelte:fragment slot="control">
+							<Checkbox
+								checked={$vrMenuHand === 'left'}
+								onclick={() => {
+									const next = $vrMenuHand === 'left' ? 'right' : 'left';
+									$vrMenuHand = next;
+									localStorage.setItem('vrMenuHand', next);
+								}} />
+						</svelte:fragment>
+						Which controller opens the VR quick-menu (the other hand points)
+					</SettingRow>
+					<SettingRow name="Hold-to-menu">
+						<svelte:fragment slot="control">
+							<Checkbox
+								id="vr-menu-hold"
+								checked={$vrMenuHold}
+								on:change={(e: any) => {
+									$vrMenuHold = e.target.checked;
+									localStorage.setItem('vrMenuHold', String($vrMenuHold));
+								}} />
+						</svelte:fragment>
+						Hold B/Y to show the radial menu, release over a sector to pick it (off = press toggles)
+					</SettingRow>
+					<SettingRow name="Snap turn">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								items={[
+									{ value: 0, name: 'Off' },
+									{ value: 15, name: '15°' },
+									{ value: 30, name: '30°' },
+									{ value: 45, name: '45°' }
+								]}
+								value={$vrSnapAngle}
+								onchange={(v) => {
+									$vrSnapAngle = parseInt(v);
+									localStorage.setItem('vrSnapAngle', String($vrSnapAngle));
+								}}
+							/>
+						</svelte:fragment>
+						VR thumbstick flick rotation angle (Off disables it)
+					</SettingRow>
+					<SettingRow name="Mirror snap turn">
+						<svelte:fragment slot="control">
+							<Checkbox
+								id="vr-mirror-snap"
+								checked={$vrMirrorSnapTurn}
+								on:change={(e: any) => {
+									$vrMirrorSnapTurn = e.target.checked;
+									localStorage.setItem('vrMirrorSnapTurn', String($vrMirrorSnapTurn));
+								}} />
+						</svelte:fragment>
+						Flip the flick direction — left turns right and vice-versa
+					</SettingRow>
+					<SettingRow name="Teleport">
+						<svelte:fragment slot="control">
+							<Checkbox
+								id="vr-teleport"
+								checked={$vrTeleportEnabled}
+								on:change={(e: any) => {
+									$vrTeleportEnabled = e.target.checked;
+									localStorage.setItem('vrTeleportEnabled', String($vrTeleportEnabled));
+								}} />
+						</svelte:fragment>
+						Right-stick-up teleport arc — off if you navigate only by stick/fly
+					</SettingRow>
+					<SettingRow name="Hold to move vertex">
+						<svelte:fragment slot="control">
+							<Checkbox
+								id="vr-vertex-hold"
+								checked={$vrVertexHold}
+								on:change={(e: any) => {
+									$vrVertexHold = e.target.checked;
+									localStorage.setItem('vrVertexHold', String($vrVertexHold));
+								}} />
+						</svelte:fragment>
+						Hold the trigger to carry a vertex (release drops it); off = press to grab, press again to drop
+					</SettingRow>
+					<SettingRow name="Face edit limit">
+						<svelte:fragment slot="control">
+							<input
+								id="vr-face-cap"
+								type="number"
+								min="10"
+								step="50"
+								class="w-20 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$vrFaceCap}
+								on:change={(e: any) => setCap(vrFaceCap, e.target.value, VR_FACE_CAP)}
+							/>
+						</svelte:fragment>
+						<span class="font-semibold">Mesh edit caps (D7)</span> — max triangles for VR face editing (default {VR_FACE_CAP}; denser meshes get a warning). Imported single meshes under the caps edit fine; Ungroup multi-mesh imports first
+					</SettingRow>
+					<SettingRow name="Vertex edit limit">
+						<svelte:fragment slot="control">
+							<input
+								id="vr-vertex-cap"
+								type="number"
+								min="10"
+								step="50"
+								class="w-20 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$vrVertexCap}
+								on:change={(e: any) => setCap(vrVertexCap, e.target.value, VR_VERTEX_CAP)}
+							/>
+						</svelte:fragment>
+						Max vertices for VR vertex editing (default {VR_VERTEX_CAP}) — very dense handle clouds get unwieldy with controllers
+					</SettingRow>
+					<SettingRow name="Peer hand style">
+						<svelte:fragment slot="control">
+							<select
+								id="peer-hand-style"
+								class="rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$peerHandStyle}
+								on:change={(e: any) => peerHandStyle.set(e.target.value)}
+							>
+								<option value="model">Model</option>
+								<option value="hands">Hands</option>
+								<option value="spheres">Spheres</option>
+							</select>
+						</svelte:fragment>
+						How hand-tracked peers render for you — rounded capsule hands, cuboid bones or joint spheres (local preference)
+					</SettingRow>
+					<SettingRow name="My hand model">
+						<svelte:fragment slot="control">
+							<select
+								id="my-hand-model"
+								class="rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$myHandModel}
+								on:change={(e: any) => setMyHandModel(e.target.value)}
+							>
+								<option value="">Default</option>
+								{#each $explorerItems.filter((i: any) => i.kind === 'object') as item (item.id)}
+									<option value={item.hash}>{item.name}</option>
+								{/each}
+							</select>
+						</svelte:fragment>
+						<span class="font-semibold">Custom hands (identity)</span> — a GLB from your Explorer library that OTHER peers see as your hands in VR (bytes push automatically; renders rigid at the wrist)
+					</SettingRow>
+					<SettingRow name="VR refresh rate">
+						<svelte:fragment slot="control">
+							<select
+								id="vr-target-hz"
+								class="rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$vrTargetHz}
+								on:change={(e: any) => {
+									vrTargetHz.set(e.target.value);
+									applyVRFrameRate();
+								}}
+							>
+								<option value="auto">Max</option>
+								<option value="90">90</option>
+								<option value="120">120</option>
+							</select>
+						</svelte:fragment>
+						Target headset Hz — Max picks the highest the device supports (120 needs the Quest 120Hz system setting); applies on VR entry
+					</SettingRow>
+					<SettingRow name="VR menu positions">
+						<svelte:fragment slot="control">
+							<button
+								id="vr-reset-poses"
+								class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+								on:click={() => {
+									resetWindowPoses();
+									showToast('VR menu positions reset');
+								}}>Reset positions</button>
+						</svelte:fragment>
+						Grabbed VR menus/panels snap back to their default spots on the controllers (111: hold the other grip on one to re-place it)
+					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={sceneExpanded}>
+					<svelte:fragment slot="header">Scene</svelte:fragment>
+					<SettingRow name="Theme">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="theme-select"
+								items={[...THEMES, ...$customThemes].map((t) => ({ value: t.id, name: t.name }))}
+								bind:value={$theme}
+							/>
+						</svelte:fragment>
+						UI theme for THIS device (the 3D viewport follows the environment, not the theme)
+					</SettingRow>
+					<SettingRow name="Custom theme">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<button
+									id="theme-export"
+									class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+									on:click={() => exportActiveTheme()}>Export template</button
+								>
+								<button
+									id="theme-browse"
+									class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+									on:click={() => themeFileInput?.click()}>Browse…</button
+								>
+								<input
+									type="file"
+									accept=".json,application/json"
+									bind:this={themeFileInput}
+									style="display: none"
+									on:change={onThemeFile}
+								/>
+							</span>
+						</svelte:fragment>
 						Export the active theme as an editable .theme.json, tweak the colors, then Browse to load it back
 						{#if $customThemes.length}
 							<span class="mt-1 flex flex-wrap gap-1">
@@ -553,137 +538,112 @@
 								{/each}
 							</span>
 						{/if}
-					</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox
-							bind:checked={$showGrid}
-							onclick={() => {
-								if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
-								else localStorage.setItem('showGrid', 'false');
-							}}>&nbsp;Show grid</Checkbox
-						>
-					</p>
-					<p class={middlecoverDescription}>Display grid on floor</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox bind:checked={$showSimControls}>&nbsp;Show simulation controls</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox bind:checked={$syncedAnimations}>&nbsp;Sync animations</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Node animations use wall-clock time so all peers see the same phase</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox bind:checked={$spatialVoice}>&nbsp;Spatial voice</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Voices come from where each peer is (pan + distance falloff)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox bind:checked={$advancedMode}>&nbsp;Advanced mode</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Show system objects (module content, environment rig) as a System filter in the object list</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox bind:checked={$showEnvInList}>&nbsp;Environment in list</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Show the environment group as an Environment filter in the object list</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Checkbox bind:checked={$objectSearchEnabled}>&nbsp;Object search in menu</Checkbox>
-					</p>
-					<p class={middlecoverDescription}>Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Toggle bind:checked={$toastsInDrawerOnly}>&nbsp;Toasts in drawer only</Toggle>
-					</p>
-					<p class={middlecoverDescription}>Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy</p>
-				</div>
-				{#if $drawerSlot}
-					<div class="flex setting-row">
-						<p class={middlecoverName}>
-							<Toggle bind:checked={$showRoomsButton}>&nbsp;Show Rooms button</Toggle>
-						</p>
-						<p class={middlecoverDescription}>Show the "🌐 Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab</p>
-					</div>
-				{/if}
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<ThemedSelect
-							id="shadow-quality"
-							items={[
-								{ value: 'off', name: 'Off' },
-								{ value: 'low', name: 'Low' },
-								{ value: 'medium', name: 'Medium' },
-								{ value: 'high', name: 'High' }
-							]}
-							bind:value={$shadowQuality}
-						/>
-					</p>
-					<p class={middlecoverDescription}><span class="font-semibold">Shadow quality</span> — caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName + ' gap-1'}>
-						<input
-							type="color"
-							id="ping-color"
-							class="h-6 w-8 cursor-pointer rounded border border-gray-500 bg-transparent"
-							value={$pingColor || '#4f83cc'}
-							on:change={(e) => pingColor.set(e.currentTarget.value)}
-						/>
-						<ThemedSelect
-							class="min-w-28"
-							items={PING_SOUNDS.map((s) => ({ value: s.id, name: s.name }))}
-							bind:value={$pingSound}
-						/>
-						<button
-							id="ping-preview"
-							class="rounded bg-gray-600 px-1.5 text-white"
-							title="Preview the ping chime"
-							on:click={() => playPing($pingSound)}
-						>
-							▶
-						</button>
-					</p>
-					<p class={middlecoverDescription}>Your ping color + sound — peers see and hear YOUR pings this way (color empty = your peer color)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={bottomCoverName}>
-						<Checkbox bind:checked={$autosaveEnabled}>&nbsp;Autosave</Checkbox>
-					</p>
-					<p class={bottomCoverDescription}>Keep a local session snapshot (restore offered after a crash/reload)</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={bottomCoverName}>
-						<button id="reset-windows" class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset window positions</button>
-					</p>
-					<p class={bottomCoverDescription}>Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI</p>
-				</div>
-			</AccordionItem>
-			<AccordionItem bind:open={aiExpanded}>
-				<svelte:fragment slot="header">AI</svelte:fragment>
-				<div class="flex setting-row">
-					<p class={topcoverName}>
-						<Toggle bind:checked={$aiEnabled} on:change={() => setAiEnabled($aiEnabled)}>&nbsp;Enable assistant</Toggle>
-					</p>
-					<p class={topcoverDescription}>
+					</SettingRow>
+					<SettingRow name="Show grid">
+						<svelte:fragment slot="control">
+							<Checkbox
+								bind:checked={$showGrid}
+								onclick={() => {
+									if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
+									else localStorage.setItem('showGrid', 'false');
+								}} />
+						</svelte:fragment>
+						Display grid on floor
+					</SettingRow>
+					<SettingRow name="Simulation controls">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>
+						Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation
+					</SettingRow>
+					<SettingRow name="Sync animations">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$syncedAnimations} /></svelte:fragment>
+						Node animations use wall-clock time so all peers see the same phase
+					</SettingRow>
+					<SettingRow name="Spatial voice">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$spatialVoice} /></svelte:fragment>
+						Voices come from where each peer is (pan + distance falloff)
+					</SettingRow>
+					<SettingRow name="Advanced mode">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$advancedMode} /></svelte:fragment>
+						Show system objects (module content, environment rig) as a System filter in the object list
+					</SettingRow>
+					<SettingRow name="Environment in list">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$showEnvInList} /></svelte:fragment>
+						Show the environment group as an Environment filter in the object list
+					</SettingRow>
+					<SettingRow name="Object search in menu">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$objectSearchEnabled} /></svelte:fragment>
+						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
+					</SettingRow>
+					<SettingRow name="Toasts in drawer only">
+						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>
+						Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy
+					</SettingRow>
+					{#if $drawerSlot}
+						<SettingRow name="Show Rooms button">
+							<svelte:fragment slot="control"><Toggle bind:checked={$showRoomsButton} /></svelte:fragment>
+							Show the "🌐 Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab
+						</SettingRow>
+					{/if}
+					<SettingRow name="Shadow quality">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="shadow-quality"
+								items={[
+									{ value: 'off', name: 'Off' },
+									{ value: 'low', name: 'Low' },
+									{ value: 'medium', name: 'Medium' },
+									{ value: 'high', name: 'High' }
+								]}
+								bind:value={$shadowQuality}
+							/>
+						</svelte:fragment>
+						Caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)
+					</SettingRow>
+					<SettingRow name="Ping color + sound">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<input
+									type="color"
+									id="ping-color"
+									class="h-7 w-full cursor-pointer rounded border border-gray-500 bg-transparent"
+									value={$pingColor || '#4f83cc'}
+									on:change={(e) => pingColor.set(e.currentTarget.value)}
+								/>
+								<ThemedSelect
+									items={PING_SOUNDS.map((s) => ({ value: s.id, name: s.name }))}
+									bind:value={$pingSound}
+								/>
+								<button
+									id="ping-preview"
+									class="rounded bg-gray-600 px-1.5 py-1 text-white"
+									title="Preview the ping chime"
+									on:click={() => playPing($pingSound)}
+								>
+									▶ Preview
+								</button>
+							</span>
+						</svelte:fragment>
+						Your ping color + sound — peers see and hear YOUR pings this way (color empty = your peer color)
+					</SettingRow>
+					<SettingRow name="Autosave">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$autosaveEnabled} /></svelte:fragment>
+						Keep a local session snapshot (restore offered after a crash/reload)
+					</SettingRow>
+					<SettingRow name="Window positions">
+						<svelte:fragment slot="control">
+							<button id="reset-windows" class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset</button>
+						</svelte:fragment>
+						Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI
+					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={aiExpanded}>
+					<svelte:fragment slot="header">AI</svelte:fragment>
+					<SettingRow name="Enable assistant">
+						<svelte:fragment slot="control"><Toggle bind:checked={$aiEnabled} on:change={() => setAiEnabled($aiEnabled)} /></svelte:fragment>
 						<span class="font-semibold">AI scene assistant</span> — build and edit the scene with prompts. Press
 						<kbd class="rounded border border-gray-500 px-1 text-[11px]">`</kbd> for the quick prompt bar, or open the AI Assistant window. Edits replicate to peers and undo as one step.
-					</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>Providers</p>
-					<p class={middlecoverDescription}>
+					</SettingRow>
+					<SettingRow name="Providers" noControl>
 						{#if $aiProviders.length}
 							<span class="flex flex-col gap-1">
 								{#each $aiProviders as p (p.id)}
@@ -707,15 +667,12 @@
 							<span class="text-gray-400">No providers yet.</span>
 						{/if}
 						<button
-							class="mt-1.5 rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+							class="mt-1.5 self-start rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
 							on:click={aiStartAdd}>+ Add provider</button
 						>
-					</p>
-				</div>
-				{#if aiFormOpen}
-					<div class="flex setting-row">
-						<p class={middlecoverName}>{aiEditId ? 'Edit' : 'New'} provider</p>
-						<p class={middlecoverDescription}>
+					</SettingRow>
+					{#if aiFormOpen}
+						<SettingRow name={aiEditId ? 'Edit provider' : 'New provider'} noControl>
 							<span class="flex flex-col gap-1.5">
 								<select class="ui-input" bind:value={aiFormPreset} on:change={aiApplyPreset}>
 									{#each PROVIDER_PRESETS as preset}
@@ -732,20 +689,13 @@
 									<button class="rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { aiFormOpen = false; aiEditId = null; }}>Cancel</button>
 								</span>
 							</span>
-						</p>
-					</div>
-				{/if}
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						<Toggle bind:checked={$meshGenEnabled} on:change={() => setMeshGenEnabled($meshGenEnabled)}>&nbsp;Mesh generation</Toggle>
-					</p>
-					<p class={middlecoverDescription}>
+						</SettingRow>
+					{/if}
+					<SettingRow name="Mesh generation">
+						<svelte:fragment slot="control"><Toggle bind:checked={$meshGenEnabled} on:change={() => setMeshGenEnabled($meshGenEnabled)} /></svelte:fragment>
 						<span class="font-semibold">Text → 3D mesh</span> — generate custom models from prompts (Add menu → “✨ Generate 3D model”, or the assistant). Backends: a self-hosted <span class="font-mono">ComfyUI</span> running TRELLIS, or a hosted API (Meshy). See the Console/AI docs for setup.
-					</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>Mesh providers</p>
-					<p class={middlecoverDescription}>
+					</SettingRow>
+					<SettingRow name="Mesh providers" noControl>
 						{#if $meshProviders.length}
 							<span class="flex flex-col gap-1">
 								{#each $meshProviders as p (p.id)}
@@ -762,13 +712,10 @@
 						{:else}
 							<span class="text-gray-400">No mesh providers yet.</span>
 						{/if}
-						<button class="mt-1.5 rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={meshStartAdd}>+ Add mesh provider</button>
-					</p>
-				</div>
-				{#if meshFormOpen}
-					<div class="flex setting-row">
-						<p class={middlecoverName}>{meshEditId ? 'Edit' : 'New'} mesh provider</p>
-						<p class={middlecoverDescription}>
+						<button class="mt-1.5 self-start rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={meshStartAdd}>+ Add mesh provider</button>
+					</SettingRow>
+					{#if meshFormOpen}
+						<SettingRow name={meshEditId ? 'Edit mesh provider' : 'New mesh provider'} noControl>
 							<span class="flex flex-col gap-1.5">
 								<select class="ui-input" bind:value={meshFormKind} on:change={meshApplyPreset}>
 									{#each MESH_PRESETS as preset}
@@ -792,177 +739,157 @@
 									<button class="rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { meshFormOpen = false; meshEditId = null; }}>Cancel</button>
 								</span>
 							</span>
-						</p>
-					</div>
-				{/if}
-				<div class="flex setting-row">
-					<p class={bottomCoverName}>Storage</p>
-					<p class={bottomCoverDescription}>
+						</SettingRow>
+					{/if}
+					<SettingRow name="Storage" noControl>
 						API keys are stored <span class="font-semibold">unencrypted</span> in this browser's local storage (like all settings) and never leave your device except in requests to the provider you configure. "Reset settings" clears them.
-					</p>
-				</div>
-			</AccordionItem>
-			<AccordionItem bind:open={connectionExpanded}>
-				<svelte:fragment slot="header">Connection</svelte:fragment>
-				<div class="flex setting-row">
-					<p class={topcoverName}>
-						<ThemedSelect
-							id="peer-server-mode"
-							items={[
-								{ value: 'default', name: HAS_SELF_HOSTED ? 'Default (self-hosted + fallback)' : 'Default (public cloud)' },
-								{ value: 'public', name: 'Public PeerJS cloud' },
-								{ value: 'custom', name: 'Custom server' }
-							]}
-							value={$peerServerConfig.mode}
-							onchange={(v) => setPeerMode(v)}
-						/>
-					</p>
-					<p class={topcoverDescription}>
-						<span class="font-semibold">Signaling server</span> — where peers discover each other.
+					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={connectionExpanded}>
+					<svelte:fragment slot="header">Connection</svelte:fragment>
+					<SettingRow name="Signaling server">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="peer-server-mode"
+								items={[
+									{ value: 'default', name: HAS_SELF_HOSTED ? 'Default (self-hosted + fallback)' : 'Default (public cloud)' },
+									{ value: 'public', name: 'Public PeerJS cloud' },
+									{ value: 'custom', name: 'Custom server' }
+								]}
+								value={$peerServerConfig.mode}
+								onchange={(v) => setPeerMode(v)}
+							/>
+						</svelte:fragment>
+						Where peers discover each other.
 						{#if HAS_SELF_HOSTED}Default uses <span class="font-mono">{SELF_HOSTED_HOST}</span> and falls back to the public PeerJS cloud if it's unreachable.{:else}Default is the public PeerJS cloud.{/if}
 						Custom pins your own server (no fallback). Takes effect on reload.
-					</p>
-				</div>
-				{#if $peerServerConfig.mode === 'custom'}
-					<div class="flex setting-row">
-						<p class={middlecoverName}>
-							<input
-								class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-								placeholder="peer.example.com"
-								value={$peerServerConfig.custom.host}
-								on:change={(e: any) => setPeerCustom('host', e.target.value)}
-							/>
-						</p>
-						<p class={middlecoverDescription}>Your PeerJS server host (no https://, no path)</p>
-					</div>
-					<div class="flex setting-row">
-						<p class={middlecoverName + ' gap-1'}>
-							<input
-								class="w-16 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-								placeholder="443"
-								value={$peerServerConfig.custom.port}
-								on:change={(e: any) => setPeerCustom('port', e.target.value)}
-							/>
-							<input
-								class="min-w-0 flex-1 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-								placeholder="/peerjs"
-								value={$peerServerConfig.custom.path}
-								on:change={(e: any) => setPeerCustom('path', e.target.value)}
-							/>
-						</p>
-						<p class={middlecoverDescription}>Port + path (Caddy/TLS defaults: 443 and /peerjs)</p>
-					</div>
-					<div class="flex setting-row">
-						<p class={middlecoverName}>
-							<Checkbox
-								checked={$peerServerConfig.custom.secure}
-								on:change={(e: any) => setPeerCustom('secure', e.target.checked)}>&nbsp;Secure (wss)</Checkbox>
-						</p>
-						<p class={middlecoverDescription}>Use TLS — leave on unless testing a plain-ws server</p>
-					</div>
-					<div class="flex setting-row">
-						<p class={middlecoverName}>
-							<input
-								class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-								placeholder="turn:host:3478?transport=udp,turn:host:3478?transport=tcp"
-								value={$peerServerConfig.custom.turnUrls}
-								on:change={(e: any) => setPeerCustom('turnUrls', e.target.value)}
-							/>
-						</p>
-						<p class={middlecoverDescription}>TURN URLs (comma-separated) — the NAT relay; blank = STUN-only, direct connections only</p>
-					</div>
-					<div class="flex setting-row">
-						<p class={middlecoverName + ' gap-1'}>
-							<input
-								class="min-w-0 flex-1 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-								placeholder="turn user"
-								value={$peerServerConfig.custom.turnUsername}
-								on:change={(e: any) => setPeerCustom('turnUsername', e.target.value)}
-							/>
-							<input
-								class="min-w-0 flex-1 rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-								placeholder="turn credential"
-								value={$peerServerConfig.custom.turnCredential}
-								on:change={(e: any) => setPeerCustom('turnCredential', e.target.value)}
-							/>
-						</p>
-						<p class={middlecoverDescription}>TURN username + credential</p>
-					</div>
-					<div class="flex setting-row">
-						<p class={middlecoverName}>
-							<input
-								class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
-								placeholder="stun:host:3478"
-								value={$peerServerConfig.custom.stunUrls}
-								on:change={(e: any) => setPeerCustom('stunUrls', e.target.value)}
-							/>
-						</p>
-						<p class={middlecoverDescription}>STUN URLs (comma-separated) — optional</p>
-					</div>
-				{/if}
-				<div class="flex setting-row">
-					<p class={bottomCoverName}>
-						<button
-							id="peer-server-reload"
-							class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-							on:click={() => location.reload()}>Apply &amp; reload</button>
-					</p>
-					<p class={bottomCoverDescription}>The peer connection is created at startup — reload to switch servers</p>
-				</div>
-			</AccordionItem>
-			<AccordionItem bind:open={shortcutsExpanded}>
-				<svelte:fragment slot="header">Shortcuts</svelte:fragment>
-				<!-- 131: borderless multi-column grid; group headers span all columns -->
-				<div id="shortcut-grid" class="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
-					{#each shortcutGroups as group}
-						<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
-						{#each shortcuts.filter((s) => s.group === group) as shortcut}
-							<div class="flex items-center gap-3 py-1">
-								<kbd
-									class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100"
-									>{shortcut.keys}</kbd
-								>
-								<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
-							</div>
+					</SettingRow>
+					{#if $peerServerConfig.mode === 'custom'}
+						<SettingRow name="Server host">
+							<svelte:fragment slot="control">
+								<input
+									class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+									placeholder="peer.example.com"
+									value={$peerServerConfig.custom.host}
+									on:change={(e: any) => setPeerCustom('host', e.target.value)}
+								/>
+							</svelte:fragment>
+							Your PeerJS server host (no https://, no path)
+						</SettingRow>
+						<SettingRow name="Port + path">
+							<svelte:fragment slot="control">
+								<span class="sr-stack">
+									<input
+										class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+										placeholder="443"
+										value={$peerServerConfig.custom.port}
+										on:change={(e: any) => setPeerCustom('port', e.target.value)}
+									/>
+									<input
+										class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+										placeholder="/peerjs"
+										value={$peerServerConfig.custom.path}
+										on:change={(e: any) => setPeerCustom('path', e.target.value)}
+									/>
+								</span>
+							</svelte:fragment>
+							Port + path (Caddy/TLS defaults: 443 and /peerjs) — each on its own line
+						</SettingRow>
+						<SettingRow name="Secure (wss)">
+							<svelte:fragment slot="control">
+								<Checkbox
+									checked={$peerServerConfig.custom.secure}
+									on:change={(e: any) => setPeerCustom('secure', e.target.checked)} />
+							</svelte:fragment>
+							Use TLS — leave on unless testing a plain-ws server
+						</SettingRow>
+						<SettingRow name="TURN URLs">
+							<svelte:fragment slot="control">
+								<input
+									class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+									placeholder="turn:host:3478?transport=udp,…"
+									value={$peerServerConfig.custom.turnUrls}
+									on:change={(e: any) => setPeerCustom('turnUrls', e.target.value)}
+								/>
+							</svelte:fragment>
+							TURN URLs (comma-separated) — the NAT relay; blank = STUN-only, direct connections only
+						</SettingRow>
+						<SettingRow name="TURN credentials">
+							<svelte:fragment slot="control">
+								<span class="sr-stack">
+									<input
+										class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+										placeholder="turn user"
+										value={$peerServerConfig.custom.turnUsername}
+										on:change={(e: any) => setPeerCustom('turnUsername', e.target.value)}
+									/>
+									<input
+										class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+										placeholder="turn credential"
+										value={$peerServerConfig.custom.turnCredential}
+										on:change={(e: any) => setPeerCustom('turnCredential', e.target.value)}
+									/>
+								</span>
+							</svelte:fragment>
+							TURN username + credential — each on its own line
+						</SettingRow>
+						<SettingRow name="STUN URLs">
+							<svelte:fragment slot="control">
+								<input
+									class="w-full rounded bg-gray-700 px-1 py-0.5 text-xs text-white"
+									placeholder="stun:host:3478"
+									value={$peerServerConfig.custom.stunUrls}
+									on:change={(e: any) => setPeerCustom('stunUrls', e.target.value)}
+								/>
+							</svelte:fragment>
+							STUN URLs (comma-separated) — optional
+						</SettingRow>
+					{/if}
+					<SettingRow name="Apply changes">
+						<svelte:fragment slot="control">
+							<button
+								id="peer-server-reload"
+								class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+								on:click={() => location.reload()}>Apply &amp; reload</button>
+						</svelte:fragment>
+						The peer connection is created at startup — reload to switch servers
+					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={shortcutsExpanded}>
+					<svelte:fragment slot="header">Shortcuts</svelte:fragment>
+					<!-- 131: borderless multi-column grid; group headers span all columns -->
+					<div id="shortcut-grid" class="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+						{#each shortcutGroups as group}
+							<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
+							{#each shortcuts.filter((s) => s.group === group) as shortcut}
+								<div class="flex items-center gap-3 py-1">
+									<kbd
+										class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100"
+										>{shortcut.keys}</kbd
+									>
+									<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
+								</div>
+							{/each}
 						{/each}
-					{/each}
-				</div>
-			</AccordionItem>
-			<AccordionItem>
-				<svelte:fragment slot="header">About</svelte:fragment>
-				<div class="flex setting-row">
-					<p class={topcoverName}>
-						Version
-					</p>
-					<p class={topcoverDescription}>alpha</p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						Dev Builds
-					</p>
-					<p class={middlecoverDescription}><a href="https://alexz005.github.io/theprototype">https://alexz005.github.io/theprototype</a></p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						Source Code
-					</p>
-					<p class={middlecoverDescription}><a href="https://github.com/theprototype-app/core" target="_blank">github.com/theprototype-app/core</a></p>
-				</div>
-				<div class="flex setting-row">
-					<p class={middlecoverName}>
-						Modules
-					</p>
-					<p class={middlecoverDescription}><a href="https://github.com/theprototype-app/modules" target="_blank">github.com/theprototype-app/modules</a></p>
-				</div>
-				<div class="flex setting-row">
-					<p class={bottomCoverName}>
-						Docs
-					</p>
-					<p class={bottomCoverDescription}><a href="https://github.com/theprototype-app/docs" target="_blank">github.com/theprototype-app/docs</a></p>
-				</div>
-
-			</AccordionItem>
-		</Accordion>
+					</div>
+				</AccordionItem>
+				<AccordionItem>
+					<svelte:fragment slot="header">About</svelte:fragment>
+					<SettingRow name="Version" noControl>alpha</SettingRow>
+					<SettingRow name="Dev Builds" noControl>
+						<a href="https://alexz005.github.io/theprototype">https://alexz005.github.io/theprototype</a>
+					</SettingRow>
+					<SettingRow name="Source Code" noControl>
+						<a href="https://github.com/theprototype-app/core" target="_blank">github.com/theprototype-app/core</a>
+					</SettingRow>
+					<SettingRow name="Modules" noControl>
+						<a href="https://github.com/theprototype-app/modules" target="_blank">github.com/theprototype-app/modules</a>
+					</SettingRow>
+					<SettingRow name="Docs" noControl>
+						<a href="https://github.com/theprototype-app/docs" target="_blank">github.com/theprototype-app/docs</a>
+					</SettingRow>
+				</AccordionItem>
+			</Accordion>
 		</div>
 	</div>
 	<svelte:fragment slot="footer">
@@ -970,3 +897,4 @@
 		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
 	</svelte:fragment>
 </Modal>
+

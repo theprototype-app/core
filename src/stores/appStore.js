@@ -276,6 +276,16 @@ export const notesDrawerOpen = writable(false);
 export const connectDrawerOpen = writable(false);
 /** @type {import('svelte/store').Writable<'info'|'rooms'|'toasts'>} */
 export const connectDrawerTab = writable('info');
+/** DOCKED: Connect.svelte measures whether the centred pill would overlap the corner
+ * chrome (logo left, peers/profile right). When it would, the pill snaps to a
+ * full-width top bar ("docked") — the Rooms shortcut hides, and the logo/profile
+ * chrome shifts DOWN by `connectBarHeight` so it clears the bar (and its tab strip
+ * when pinned). Runtime-only (no persistence). */
+export const connectDocked = writable(false);
+/** Height (px) the docked Connect bar occupies at the top — pill height plus its tab
+ * strip when the drawer is pinned/open. Chrome offsets its top by this so nothing
+ * overlaps. 0 when not docked. */
+export const connectBarHeight = writable(0);
 /** PINNED: keep the drawer's tab bar (+ status) visible even when the body is
  * collapsed, so it acts as a persistent mini-bar under the pill. Persisted. */
 export const connectDrawerPinned = writable(

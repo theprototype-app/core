@@ -59,7 +59,7 @@
 <div
 	use:portal
 	class="fixed inset-0"
-	style="z-index: 999;"
+	style="z-index: var(--z-menu);"
 	role="presentation"
 	on:click={() => dispatch('close')}
 	on:contextmenu|preventDefault={() => dispatch('close')}
@@ -69,7 +69,7 @@
 	use:portal
 	use:place
 	class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-	style="left: 0; top: 0; z-index: 1000;"
+	style="left: 0; top: 0; z-index: calc(var(--z-menu) + 1);"
 	role="menu"
 >
 	<ContextMenuItems {items} onrun={run} />

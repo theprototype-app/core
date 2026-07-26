@@ -19,7 +19,9 @@
 		hidePanels,
 		characterModalOpen,
 		notesDrawerOpen,
-		cloudIdentity
+		cloudIdentity,
+		connectDocked,
+		connectBarHeight
 	} from '../../stores/appStore.js';
 	import { globalScene, globalCamera, camSave, peerHands } from '../../stores/sceneStore.js';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
@@ -102,6 +104,26 @@
 	const ri = $derived($rolesInfo);
 	/** peerId whose role dropdown is open (null = none) */
 	let roleMenuFor: string | null = $state(null);
+	/** fixed-position anchor for the (portaled) role dropdown */
+	let roleMenuPos: { top: number; right: number } = $state({ top: 0, right: 0 });
+	/** open/toggle the role dropdown for a peer, anchored under its pill button. The
+	 * menu is PORTALED to <body> so it escapes the peers-list overflow clip (an
+	 * absolute child of an overflow:auto ancestor is clipped — it rendered invisibly). */
+	function toggleRoleMenu(e: MouseEvent, peerId: string) {
+		e.stopPropagation();
+		if (roleMenuFor === peerId) {
+			roleMenuFor = null;
+			return;
+		}
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		roleMenuPos = { top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) };
+		roleMenuFor = peerId;
+	}
+	/** portal a node to <body> so no overflow/stacking ancestor can clip it */
+	function portal(node: HTMLElement) {
+		document.body.appendChild(node);
+		return { destroy() { node.remove(); } };
+	}
 
 	function broadcastUserdata() {
 		if (!$peers?.peer) return;
@@ -187,7 +209,9 @@
 	 }
 </script>
 
-<div class="top-right-chrome" style="position: fixed; right: 0px; z-index: 997;">
+<!-- when Connect docks to a full-width top bar, drop this corner chrome below it (plus
+	 its tab strip when pinned) so nothing overlaps — connectBarHeight is the bar's height -->
+<div class="top-right-chrome" style="position: fixed; right: 0px; z-index: 997; top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
 	<div class="flex items-center gap-2" style=" position: absolute; top: 15px; right: 100px; z-index: 997;">
 	<!-- E2: scene-notes drawer toggle -->
 	<button
@@ -223,7 +247,7 @@
 
 		{#if peersOpen}
 			<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => { peersOpen = false; roleMenuFor = null; }}></div>
-			<div id="peers-popover" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 998;">
+			<div id="peers-popover" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 998; {$connectDocked ? `position: fixed; top: ${$connectBarHeight + 44}px; right: 8px; left: auto; max-width: calc(100vw - 16px);` : ''}">
 				<p class="ui-section-label">Connected ({$userdata.length - 1})</p>
 				<div class="peers-scroll">
 				{#each $userdata as user, i (user[0])}
@@ -257,16 +281,7 @@
 							{#if i === 0}
 								<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
 							{:else if ri.amAdmin}
-								<div class="role-ctl">
-									<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => { e.stopPropagation(); roleMenuFor = roleMenuFor === user[0] ? null : user[0]; }}>{ri.roleOf(user[0])}<i class="fa-solid fa-chevron-down role-caret"></i></button>
-									{#if roleMenuFor === user[0]}
-										<div class="role-menu" role="listbox">
-											{#each ri.order as r}
-												<button type="button" class="role-menu-item" class:sel={ri.roleOf(user[0]) === r} role="option" aria-selected={ri.roleOf(user[0]) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(user[0], r); roleMenuFor = null; }}><span class="role-badge" data-role={r} style="pointer-events:none">{r}</span>{#if ri.roleOf(user[0]) === r}<i class="fa-solid fa-check role-check"></i>{/if}</button>
-											{/each}
-										</div>
-									{/if}
-								</div>
+								<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => toggleRoleMenu(e, user[0])}>{ri.roleOf(user[0])}<i class="fa-solid fa-chevron-down role-caret"></i></button>
 							{:else}
 								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 							{/if}
@@ -294,6 +309,16 @@
 					</div>
 				{/if}
 			</div>
+			<!-- role dropdown — PORTALED to <body> (fixed position) so it isn't clipped by
+				 the peers list's overflow container -->
+			{#if roleMenuFor && ri && ri.amAdmin}
+				{@const pid = roleMenuFor}
+				<div use:portal class="role-menu role-menu-portal" role="listbox" style="top:{roleMenuPos.top}px; right:{roleMenuPos.right}px;">
+					{#each ri.order as r}
+						<button type="button" class="role-menu-item" class:sel={ri.roleOf(pid) === r} role="option" aria-selected={ri.roleOf(pid) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(pid, r); roleMenuFor = null; }}><span class="role-badge" data-role={r} style="pointer-events:none">{r}</span>{#if ri.roleOf(pid) === r}<i class="fa-solid fa-check role-check"></i>{/if}</button>
+					{/each}
+				</div>
+			{/if}
 		{/if}
 	</div>
 {/if}
@@ -439,34 +464,22 @@
 </Modal>
 
 <style>
-	/* narrow: the connect bar owns the top row, so the peers/profile chrome drops
-	   to a second row below it (shifting the fixed wrapper moves its children) */
-	@media (max-width: 640px) {
-		.top-right-chrome {
-			top: 58px;
-		}
-		/* pin the peers list to the viewport so it can't spill off the left edge
-		   when the trigger sits near a narrow screen's right edge */
-		.peers-scroll { max-height: 264px; overflow-y: auto; }
+	/* Role pill + change-role dropdown (cloud-roles bridge). These MUST live outside
+	   any media query — they previously sat inside @media(max-width:640px) so on a
+	   normal-width screen the "change role" control rendered as an unstyled native
+	   button/list (the bug in the screenshot). */
 	.role-badge { flex: 0 0 auto; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 9px; border-radius: 9999px; color: #fff; background: #64748b; text-transform: capitalize; line-height: 1.4; }
-	.role-btn { border: 0; cursor: pointer; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
+	.role-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; cursor: pointer; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
 	.role-btn:hover { filter: brightness(1.12); }
-	.role-btn { display: inline-flex; align-items: center; gap: 5px; }
 	.role-caret { font-size: 8px; opacity: 0.85; }
-	.role-ctl { position: relative; flex: 0 0 auto; }
-	.role-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 1000; min-width: 116px; padding: 4px; border-radius: 10px; background: #1f2937; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 12px 28px rgb(0 0 0 / 0.5); display: flex; flex-direction: column; gap: 2px; }
+	/* portaled to <body> — fixed position, anchored via inline top/right */
+	.role-menu { position: fixed; z-index: 1000; min-width: 116px; padding: 4px; border-radius: 10px; background: #1f2937; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 12px 28px rgb(0 0 0 / 0.5); display: flex; flex-direction: column; gap: 2px; }
 	.role-menu-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: #e5e7eb; font-size: 11px; cursor: pointer; text-transform: capitalize; text-align: left; }
 	.role-menu-item:hover { background: rgb(255 255 255 / 0.09); }
 	.role-menu-item.sel { background: rgb(255 255 255 / 0.05); }
 	.role-check { font-size: 9px; color: #86efac; }
 	.role-badge[data-role='editor'] { background: #2563eb; }
 	.role-badge[data-role='admin'] { background: #7c3aed; }
-	#peers-popover {
-			position: fixed;
-			top: 122px;
-			right: 8px;
-			left: auto;
-			max-width: calc(100vw - 16px);
-		}
-	}
+	/* keep the peers list scrollable so it never spills off a short/narrow screen */
+	.peers-scroll { max-height: 264px; overflow-y: auto; }
 </style>

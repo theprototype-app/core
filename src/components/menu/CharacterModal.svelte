@@ -21,8 +21,10 @@
 		{ value: 'image', name: 'My avatar photo' }
 	];
 
+	// w-32 on tight/folded screens so the dropdown value isn't squeezed to one letter,
+	// widening to w-40 once there's room
 	let rowClass =
-		'z-10 inline-flex w-40 flex-shrink-0 items-center border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white';
+		'z-10 inline-flex w-32 sm:w-40 flex-shrink-0 items-center border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white';
 
 	function update(partial: any) {
 		const next = { ...$avatarConfig, ...partial };
@@ -53,7 +55,7 @@
 		<div class="flex px-6 pb-3">
 			<p class="{rowClass} rounded-s-lg">Hat</p>
 			<ThemedSelect
-				class="min-w-0 flex-1"
+				class="char-select min-w-0 flex-1"
 				items={hats}
 				value={$avatarConfig.hat}
 				onchange={(v) => update({ hat: v })}
@@ -62,7 +64,7 @@
 		<div class="flex px-6 pb-3">
 			<p class="{rowClass} rounded-s-lg">Head shape</p>
 			<ThemedSelect
-				class="min-w-0 flex-1"
+				class="char-select min-w-0 flex-1"
 				items={FACE_SHAPES}
 				value={cfg.shape}
 				onchange={(v) => update({ shape: v })}
@@ -71,7 +73,7 @@
 		<div class="flex px-6 pb-1">
 			<p class="{rowClass} rounded-s-lg">Face</p>
 			<ThemedSelect
-				class="min-w-0 flex-1"
+				class="char-select min-w-0 flex-1"
 				items={faces}
 				value={cfg.face}
 				onchange={(v) => update({ face: v })}
@@ -88,3 +90,14 @@
 		</p>
 	</div>
 </Modal>
+
+<style>
+	/* The dropdowns sit beside a fixed-height label box (rounded-s-lg). Square the
+	   control's left corners and let it fill the row height so it seams with the label
+	   exactly like the Body color input — no short, top-floating select. */
+	:global(.char-select .ts-btn) {
+		border-top-left-radius: 0;
+		border-bottom-left-radius: 0;
+		height: 100%;
+	}
+</style>

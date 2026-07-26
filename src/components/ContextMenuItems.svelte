@@ -64,7 +64,7 @@
 				<div
 					use:placeSubmenu
 					class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
-					style="z-index: 1001;"
+					style="z-index: calc(var(--z-menu) + 2);"
 				>
 					<svelte:self items={item.children} {onrun} />
 				</div>

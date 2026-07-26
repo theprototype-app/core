@@ -12,7 +12,9 @@
 		closeMenu,
 		modulesOpen,
 		sessionsOpen,
-		showToast
+		showToast,
+		connectDocked,
+		connectBarHeight
 	} from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
@@ -91,7 +93,7 @@
 	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur transition-transform hover:scale-105 {$closeMenu
 		? 'border-gray-700/60'
 		: 'border-primary-500 ring-2 ring-primary-500/50'}"
-	style="height: 48px; width: 48px;"
+	style="height: 48px; width: 48px; {$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}"
 	title={$closeMenu ? 'Open menu' : 'Close menu'}
 	onclick={toggleMenu}
 >
@@ -103,6 +105,7 @@
 		id="sidebar70"
 		transition:fade={{ duration: 130 }}
 		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
+		style={$connectDocked ? `top: ${$connectBarHeight + 64}px` : ''}
 	>
 		{#key rerenderInput}
 			<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
@@ -274,15 +277,7 @@
 		background-color: var(--color-primary-600, #2563eb);
 		color: #fff;
 	}
-	/* narrow: the full-width connect bar owns the top row, so the logo + its menu
-	   drop to a second row below it */
-	@media (max-width: 640px) {
-		.burger {
-			top: 66px;
-		}
-		.app-sidebar {
-			top: 120px;
-			max-height: calc(100vh - 128px);
-		}
-	}
+	/* When the Connect bar docks to a full-width top strip, the logo + its menu drop
+	   below it — driven dynamically by connectDocked/connectBarHeight (inline `top`),
+	   which adapts to the bar's height (incl. its pinned tab strip) at any width. */
 </style>

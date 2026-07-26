@@ -148,7 +148,7 @@
 				title="Undock into a floating window"
 				onclick={() => setDocked(false)}>⧉</button
 			>
-			<div style="height: calc({$dockHeight - 16}px - var(--controls-inset, 0px))">
+			<div style="height: {$dockHeight - 16}px">
 				<SvelteFlowProvider>
 					<Nodes />
 				</SvelteFlowProvider>

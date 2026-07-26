@@ -522,7 +522,7 @@
 
 <div class="flex h-full w-full">
 	{#if paletteOpen}
-		<div class="h-full w-40 shrink-0 overflow-y-auto" style="order: {paletteSide === 'right' ? 3 : 1}">
+		<div class="h-full w-40 shrink-0 overflow-y-auto" style="order: {paletteSide === 'right' ? 3 : 1}; padding-bottom: var(--controls-inset, 0px)">
 			<Sidebar onPick={addNodeAtCenter} onPlaceAt={addNodeAtScreen} />
 		</div>
 	{/if}
@@ -670,7 +670,7 @@
 		</button>
 	</div>
 	{#if propsOpen}
-		<div id="flow-props" class="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-gray-800 p-2 text-xs text-gray-200" style="order: {propsSide === 'left' ? -1 : 5}">
+		<div id="flow-props" class="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-gray-800 p-2 text-xs text-gray-200" style="order: {propsSide === 'left' ? -1 : 5}; padding-bottom: var(--controls-inset, 0px)">
 			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
 			     ⚙ = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">

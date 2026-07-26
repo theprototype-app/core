@@ -77,6 +77,15 @@
    cover the right Inspector drawer, which otherwise starts at top-16 (64px). Push the
    drawer below that chrome so the profile button never overlaps its header, and cap
    its width to the viewport. Id + !important beats flowbite's top-16 utility class. */
+/* Wide (side-drawer) mesh/object/scene properties: sit just BELOW the Connect bar and
+   ABOVE the top-right chrome (profile/peers/bell/notes) — so it covers those buttons
+   when a docked Connect has dropped them underneath it. (Narrow = bottom sheet below.) */
+@media (min-width: 641px) {
+	#inspector {
+		top: calc(var(--connect-bottom, 0px) + 4px) !important;
+		z-index: 1000 !important;
+	}
+}
 /* inspector bottom-sheet drag handle — hidden in the wide side-drawer layout */
 .ins-resize {
 	display: none;

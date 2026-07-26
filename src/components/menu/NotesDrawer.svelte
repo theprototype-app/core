@@ -124,7 +124,9 @@
 	#notes-drawer {
 		position: fixed;
 		right: 0;
-		top: 8px;
+		/* just below the Connect bar; above the top-right chrome (z:1000) so it covers
+		   those buttons when a docked Connect has dropped them underneath */
+		top: calc(var(--connect-bottom, 0px) + 4px);
 		bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px));
 		width: min(320px, 92vw);
 		z-index: 1000;

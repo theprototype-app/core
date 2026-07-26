@@ -2,7 +2,8 @@
 	// Flow host: the Node editor. DOCKED mode is a Flow-family TAB in the shared bottom
 	// dock (DockTabs strip; shares dockHeight with Flow Code + Animation; only the
 	// visible tab renders). UNDOCKED mode is a floating, resizable window. Both persist.
-	import { flowGraphClose, flowCodeClose, animationClose } from '../stores/appStore.js';
+	import { flowGraphClose, flowCodeClose, animationClose, mobileUndockAllowed } from '../stores/appStore.js';
+	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import ContextMenu from './ContextMenu.svelte';
@@ -34,8 +35,14 @@
 		winH = parseInt(localStorage.getItem('flowWinH') ?? '480') || 480;
 		clampWin();
 	}
-	// touch / limited-width: keep the editor docked (no room to float; undock hidden)
-	if (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches) docked = true;
+	// touch / limited-width: keep the editor docked (no room to float; undock hidden),
+	// unless the user opted into undocking on touch (Settings > Allow undocking)
+	if (
+		typeof window !== 'undefined' &&
+		window.matchMedia?.('(pointer: coarse)').matches &&
+		!get(mobileUndockAllowed)
+	)
+		docked = true;
 	onMount(() => {
 		clampWin();
 		const onResize = () => clampWin();

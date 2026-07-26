@@ -99,6 +99,15 @@
 	const drawerStyle =
 		'bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); z-index: calc(var(--z-bottom) - 1); height: auto';
 
+	// Narrow screens: while this settings drawer is open, drop a `.side-drawer-open`
+	// root class so the top-right chrome (profile/peers/bell/notes — which dropped under
+	// Connect) hides, letting the taller drawer own that space (user request). Reversible.
+	$effect(() => {
+		if (typeof document === 'undefined') return;
+		document.documentElement.classList.toggle('side-drawer-open', $inspectorClose === false);
+		return () => document.documentElement.classList.remove('side-drawer-open');
+	});
+
 	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
 	// changes AND selection updates (setPhysics only pokes selectedObject).
 	// H1: depends on flowGraphs so physics nodes in ANY graph document retrigger it.

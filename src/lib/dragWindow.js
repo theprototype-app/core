@@ -50,7 +50,16 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 		const w = node.offsetWidth || 0;
 		const h = node.offsetHeight || 0;
 		rect.left = Math.min(Math.max(0, rect.left), Math.max(0, window.innerWidth - w));
-		rect.top = Math.min(Math.max(0, rect.top), Math.max(0, window.innerHeight - h));
+		// keep the window from sliding BEHIND the Connect bar/pill (which sits above the
+		// window tier) — only when they actually overlap horizontally (the centred pill on
+		// a wide screen; the full-width bar on a narrow one)
+		let minTop = 0;
+		const cp = typeof document !== 'undefined' ? document.querySelector('.connect-pill') : null;
+		if (cp) {
+			const r = cp.getBoundingClientRect();
+			if (rect.left < r.right && rect.left + w > r.left) minTop = Math.max(minTop, Math.round(r.bottom) + 4);
+		}
+		rect.top = Math.min(Math.max(minTop, rect.top), Math.max(minTop, window.innerHeight - h));
 	}
 
 	function apply() {

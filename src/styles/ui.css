@@ -78,9 +78,17 @@
    drawer below that chrome so the profile button never overlaps its header, and cap
    its width to the viewport. Id + !important beats flowbite's top-16 utility class. */
 @media (max-width: 640px) {
+	/* Object/mesh/scene settings drawer: tuck right under the Connect bar (covering the
+	   top-left/profile chrome that dropped below it) so the drawer is as tall as possible.
+	   --connect-bottom is published by Connect.svelte (docked bar height). */
 	#inspector {
-		top: 120px !important;
+		top: calc(var(--connect-bottom, 56px) + 6px) !important;
 		max-width: 100vw;
+	}
+	/* while a settings drawer is open on a narrow screen, hide the top-right chrome
+	   (profile/peers/bell/notes) so the taller drawer covers that area cleanly */
+	:root.side-drawer-open .top-right-chrome {
+		display: none;
 	}
 	/* A5: Settings rows are a fixed w-40 label beside a description — too cramped on
 	   narrow screens. Stack the label full-width above its description. Unlayered, so
@@ -104,15 +112,18 @@
 	}
 }
 @media (max-width: 600px) {
+	/* clear only the centred Controls pill / play button (bottom HUD) — the settings
+	   drawer now extends DOWN over the chat + mic buttons (which sit above this inset),
+	   covering them, while Controls stays uncovered (it is z-hud, above the drawer). */
 	:root {
-		--controls-inset: 176px;
+		--controls-inset: 68px;
 	}
 }
 /* Touch / limited-width: hide the "undock into a floating window" buttons (Flow,
-   Explorer, Flow Code, Animation). Floating windows have no room to work on a phone,
-   so those panels stay docked. Targeted by the shared title so all four are covered. */
+   Explorer, Flow Code, Animation) UNLESS the user opted in (Settings > Allow undocking,
+   which adds the .allow-undock root class). Floating windows have no room on a phone. */
 @media (pointer: coarse) {
-	[title="Undock into a floating window"] {
+	:root:not(.allow-undock) [title="Undock into a floating window"] {
 		display: none !important;
 	}
 }

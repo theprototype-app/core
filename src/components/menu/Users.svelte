@@ -397,7 +397,7 @@
 	<center><b>Profile Settings</b></center>
 
 	<div class="modal-content max-h-[90vh] overflow-y-auto p-4">
-		<div class="flex px-10">
+		<div class="flex px-10 pf-row">
 			<p
 				class={classProfileSettings}
 			>
@@ -429,7 +429,7 @@
 			</div>
 		</div>
 		<br />
-		<div class="flex px-10">
+		<div class="flex px-10 pf-row">
 			<p
 				class={classProfileSettings + " rounded-bl-none"}
 			>
@@ -444,7 +444,7 @@
 			/>
 		</div>
 
-		<div class="flex px-10">
+		<div class="flex px-10 pf-row">
 			<p
 				class={classProfileSettings + " rounded-tl-none"}
 			>
@@ -482,4 +482,19 @@
 	.role-badge[data-role='admin'] { background: #7c3aed; }
 	/* keep the peers list scrollable so it never spills off a short/narrow screen */
 	.peers-scroll { max-height: 264px; overflow-y: auto; }
+	/* Profile Settings modal: on a narrow screen stack each label above its control
+	   (the fixed w-40 label beside the input is too cramped) — matches app Settings. */
+	@media (max-width: 640px) {
+		.pf-row {
+			flex-direction: column;
+			align-items: stretch;
+			gap: 4px;
+			padding-left: 1rem;
+			padding-right: 1rem;
+		}
+		.pf-row > :global(p) {
+			width: 100%;
+			border-radius: 8px 8px 0 0 !important;
+		}
+	}
 </style>

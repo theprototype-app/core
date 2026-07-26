@@ -4,7 +4,7 @@
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed } from '../../stores/appStore.js';
 	import { drawerSlot } from '$lib/cloudHooks';
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
@@ -637,6 +637,10 @@
 							<button id="reset-windows" class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset</button>
 						</svelte:fragment>
 						Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI
+					</SettingRow>
+					<SettingRow name="Allow undocking (touch)">
+						<svelte:fragment slot="control"><Toggle bind:checked={$mobileUndockAllowed} /></svelte:fragment>
+						On touch / small screens the Flow and Explorer panels stay docked and their "undock" buttons are hidden (floating windows are cramped on a phone). Turn this on to allow undocking them into floating windows anyway
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>

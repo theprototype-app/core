@@ -84,12 +84,15 @@
 	});
 	$effect(() => {
 		const barVisible = drawerVisible; // track
-		if (!docked) {
-			connectBarHeight.set(0);
-			return;
+		let bh = 0;
+		if (docked) {
+			const pillH = pillEl?.offsetHeight || 46;
+			bh = pillH + (barVisible ? TAB_STRIP_H : 0);
 		}
-		const pillH = pillEl?.offsetHeight || 46;
-		connectBarHeight.set(pillH + (barVisible ? TAB_STRIP_H : 0));
+		connectBarHeight.set(bh);
+		// publish as a CSS var so side drawers (Inspector) can tuck right under the bar
+		if (typeof document !== 'undefined')
+			document.documentElement.style.setProperty('--connect-bottom', bh + 'px');
 	});
 
 	// re-measure after any layout-affecting change (state, drawer, viewport)

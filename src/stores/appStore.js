@@ -286,6 +286,20 @@ export const connectDocked = writable(false);
  * strip when the drawer is pinned/open. Chrome offsets its top by this so nothing
  * overlaps. 0 when not docked. */
 export const connectBarHeight = writable(0);
+
+/** Allow undocking Flow/Explorer on touch/limited-width devices. Default OFF — floating
+ * windows have no room on a phone, so those panels stay docked and the undock button is
+ * hidden. Toggle in Settings; a `.allow-undock` root class drives the CSS, and the
+ * panels read this to decide whether to force-dock on load. Persisted. */
+export const mobileUndockAllowed = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('mobileUndockAllowed') === 'true' : false
+);
+if (typeof localStorage !== 'undefined') {
+  mobileUndockAllowed.subscribe((v) => {
+    try { localStorage.setItem('mobileUndockAllowed', v ? 'true' : 'false'); } catch { /* */ }
+    if (typeof document !== 'undefined') document.documentElement.classList.toggle('allow-undock', !!v);
+  });
+}
 /** PINNED: keep the drawer's tab bar (+ status) visible even when the body is
  * collapsed, so it acts as a persistent mini-bar under the pill. Persisted. */
 export const connectDrawerPinned = writable(

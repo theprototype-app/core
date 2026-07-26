@@ -455,8 +455,16 @@
 					left += e.movementX;
 					top += e.movementY;
 					if (left < 0) left = 0;
-					if (top < 0) top = 0;
 					if (left > window.innerWidth - node.offsetWidth) left = window.innerWidth - node.offsetWidth;
+					// keep the window from sliding BEHIND the Connect bar/pill (only when
+					// they actually overlap horizontally)
+					let minTop = 0;
+					const cp = document.querySelector('.connect-pill');
+					if (cp) {
+						const r = cp.getBoundingClientRect();
+						if (left < r.right && left + node.offsetWidth > r.left) minTop = Math.round(r.bottom) + 4;
+					}
+					if (top < minTop) top = minTop;
 					if (top > window.innerHeight - node.offsetHeight) top = window.innerHeight - node.offsetHeight;
 					node.style.top = `${top}px`;
 					node.style.left = `${left}px`;

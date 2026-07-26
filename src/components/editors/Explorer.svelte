@@ -5,7 +5,7 @@
 	// + items), drag files in to import. Shares the bottom dock with the Flow
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
-	import { explorerClose } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
@@ -78,8 +78,14 @@
 		singleClickOpen = localStorage.getItem('explorerSingleClickOpen') === 'true';
 		showBreadcrumb = localStorage.getItem('explorerBreadcrumb') !== 'false';
 	}
-	// touch / limited-width: keep the Explorer docked (no room to float; undock hidden)
-	if (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches) docked = true;
+	// touch / limited-width: keep the Explorer docked (no room to float; undock hidden),
+	// unless the user opted into undocking on touch (Settings > Allow undocking)
+	if (
+		typeof window !== 'undefined' &&
+		window.matchMedia?.('(pointer: coarse)').matches &&
+		!get(mobileUndockAllowed)
+	)
+		docked = true;
 	loadExplorer();
 	loadPrefabs();
 

@@ -270,8 +270,11 @@
 	bind:open={$settingsOpen}
 	outsideclose
 	size="xl"
+	class="settings-modal-frame"
+	dialogClass="settings-modal-dialog fixed top-0 start-0 end-0 h-modal md:inset-0 md:h-full z-50 w-full p-4 flex"
+	bodyClass="settings-modal-body flex-1 overflow-y-auto overscroll-contain"
 >
-	<div class="modal-content max-h-[90vh] overflow-y-auto p-4">
+	<div class="modal-content p-4">
 		<input
 			id="settings-search"
 			type="text"
@@ -897,4 +900,39 @@
 		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
 	</svelte:fragment>
 </Modal>
+
+<style>
+	/* Strip the padding flowbite's modal body (the role="document" div) adds on top of
+	   our own content padding — it was wasting space at the top of the panel. */
+	:global(.settings-modal-body) {
+		padding: 0 !important;
+	}
+	/* Wider modal on desktop — closer to full width. */
+	:global(.settings-modal-dialog > div) {
+		max-width: min(1200px, 94vw) !important;
+	}
+	/* Cap the desktop height so the modal isn't edge-to-edge; the flowbite body is the
+	   SINGLE scroll container (the inner content no longer scrolls — that was the double
+	   scrollbar). */
+	:global(.settings-modal-frame) {
+		max-height: 88vh;
+	}
+	/* Full-screen Settings on a limited-width screen: edge to edge, full height. */
+	@media (max-width: 640px) {
+		:global(.settings-modal-dialog) {
+			padding: 0 !important;
+			height: 100% !important;
+		}
+		:global(.settings-modal-dialog > div) {
+			max-width: 100% !important;
+			max-height: 100% !important;
+			height: 100% !important;
+		}
+		:global(.settings-modal-frame) {
+			border-radius: 0 !important;
+			height: 100% !important;
+			max-height: 100% !important;
+		}
+	}
+</style>
 

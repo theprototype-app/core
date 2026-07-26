@@ -27,18 +27,40 @@
 <style>
 	.setting-row {
 		display: grid;
-		grid-template-columns: minmax(130px, 190px) minmax(120px, 180px) minmax(0, 1fr);
+		/* column order (wide): NAME | CONTROL | DESCRIPTION — the control column is kept
+		   compact so dropdowns/selects don't stretch out unreasonably long */
+		grid-template-columns: minmax(120px, 180px) minmax(96px, 150px) minmax(0, 1fr);
 		margin-bottom: 6px;
 		border: 1px solid rgb(209 213 219);
 		border-radius: 8px;
 		overflow: hidden; /* clean rounded corners — dropdown popups portal to <body>, so
 		                     they are NOT clipped by this */
 	}
-	/* list/form rows keep the SAME three tracks so their content still lines up with
-	   the description column of control rows; the name spans the (empty) control +
-	   name tracks */
+	/* place each cell explicitly so the visual order is name, control, description even
+	   though the DOM order stays control-first (that DOM order is what the narrow stack
+	   uses, keeping the mobile layout unchanged) */
+	/* explicit row too: the DOM order is control-first, so without a fixed row the
+	   sparse auto-placement drops the (column-1) name onto a second row */
+	.sr-name {
+		grid-column: 1;
+		grid-row: 1;
+	}
+	.sr-control {
+		grid-column: 2;
+		grid-row: 1;
+	}
+	.sr-desc {
+		grid-column: 3;
+		grid-row: 1;
+	}
+	/* list/form rows: name in column 1, content spans the control + description tracks */
 	.setting-row.no-control .sr-name {
-		grid-column: 1 / 3;
+		grid-column: 1;
+		grid-row: 1;
+	}
+	.setting-row.no-control .sr-desc {
+		grid-column: 2 / 4;
+		grid-row: 1;
 	}
 	:global(.dark) .setting-row {
 		border-color: rgb(75 85 99);
@@ -103,8 +125,15 @@
 		.setting-row.no-control {
 			grid-template-columns: 1fr;
 		}
-		.setting-row.no-control .sr-name {
+		/* reset the wide column placement so the single-column grid stacks in DOM
+		   order (control, name, description) — the unchanged mobile layout */
+		.sr-name,
+		.sr-control,
+		.sr-desc,
+		.setting-row.no-control .sr-name,
+		.setting-row.no-control .sr-desc {
 			grid-column: auto;
+			grid-row: auto;
 		}
 		.sr-control,
 		.sr-name {

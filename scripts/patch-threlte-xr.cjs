@@ -21,8 +21,13 @@ const files = ['setupControllers.js', 'setupHands.js'];
 // both the disconnected AND connected handlers index `stores[...]` unguarded — for
 // Cardboard/gaze input the key is missing, so `.set` throws. Guard every variant.
 const REPLACEMENTS = [
+	// stores[...] .set on connect/disconnect
 	['stores[event.data.handedness].set', 'stores[event.data?.handedness]?.set'],
-	['stores[handedness].set', 'stores[handedness]?.set']
+	['stores[handedness].set', 'stores[handedness]?.set'],
+	// the `dispatch` helper reads handedness off event.data, which is undefined on the
+	// disconnect fired at session end — guard those reads too (this is what still crashed)
+	['controllerEvents[data.handedness]', 'controllerEvents[data?.handedness]'],
+	['handEvent.data.handedness', 'handEvent.data?.handedness']
 ];
 
 let changed = 0;

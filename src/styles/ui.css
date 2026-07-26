@@ -90,6 +90,15 @@
 	:root.side-drawer-open .top-right-chrome {
 		display: none;
 	}
+	/* the notifications panel is anchored to the bell (top-right); on a narrow screen
+	   pin it to the viewport so its 20rem width can't spill off the left/top edge */
+	#notif-panel {
+		position: fixed;
+		top: calc(var(--connect-bottom, 0px) + 48px);
+		right: 8px;
+		left: auto;
+		max-width: calc(100vw - 16px);
+	}
 	/* A5: Settings rows are a fixed w-40 label beside a description — too cramped on
 	   narrow screens. Stack the label full-width above its description. Unlayered, so
 	   it beats Tailwind's layered w-40/flex utilities without !important. */

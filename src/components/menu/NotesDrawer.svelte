@@ -7,6 +7,35 @@
 	import { annotations, openAnnotation, deleteAnnotation } from '$lib/annotationsHandler';
 	import { objectsGroup } from '../../stores/sceneStore.js';
 
+	// On a narrow/folded screen the notes drawer is a bottom SHEET (like the Flow/Explorer
+	// bottom dock) with a drag handle to adjust its height — the right-side drawer was
+	// covered by the profile chrome there. On wide screens it stays the right drawer.
+	let sheetH =
+		typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('notesSheetH') || '') : NaN;
+	if (!sheetH || Number.isNaN(sheetH))
+		sheetH = Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.45);
+	let resizing = false;
+	/** @param {PointerEvent} e */
+	function startResize(e) {
+		resizing = true;
+		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture?.(e.pointerId);
+		e.preventDefault();
+	}
+	/** @param {PointerEvent} e */
+	function doResize(e) {
+		if (!resizing) return;
+		sheetH = Math.min(Math.max(160, window.innerHeight - e.clientY), Math.round(window.innerHeight * 0.85));
+	}
+	/** @param {PointerEvent} e */
+	function endResize(e) {
+		if (!resizing) return;
+		resizing = false;
+		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
+		try {
+			localStorage.setItem('notesSheetH', String(sheetH));
+		} catch {}
+	}
+
 	/** @param {string} uuid */
 	function labelFor(uuid) {
 		const g = $objectsGroup;
@@ -25,7 +54,17 @@
 </script>
 
 {#if $notesDrawerOpen}
-	<aside id="notes-drawer" class="ui-panel flex flex-col" style="position: fixed; right: 0; top: 64px; bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); width: min(320px, 92vw); z-index: calc(var(--z-bottom) - 1); border-radius: 0.5rem 0 0 0.5rem;">
+	<aside id="notes-drawer" class="ui-panel flex flex-col" style="--notes-h: {sheetH}px;">
+		<!-- top drag handle: adjusts the sheet height (bottom-sheet mode on narrow only) -->
+		<div
+			class="notes-resize"
+			title="Drag to resize"
+			onpointerdown={startResize}
+			onpointermove={doResize}
+			onpointerup={endResize}
+		>
+			<span class="notes-grabber"></span>
+		</div>
 		<div class="ui-panel-header shrink-0 justify-between">
 			<span>Scene notes {#if $annotations.length}<span class="text-xs text-gray-400">({$annotations.length})</span>{/if}</span>
 			<button class="ui-button-quiet" title="Close" aria-label="Close notes" onclick={() => notesDrawerOpen.set(false)}>✕</button>
@@ -65,3 +104,47 @@
 		</div>
 	</aside>
 {/if}
+
+<style>
+	/* Wide: right-side drawer (unchanged). */
+	#notes-drawer {
+		position: fixed;
+		right: 0;
+		top: 64px;
+		bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px));
+		width: min(320px, 92vw);
+		z-index: calc(var(--z-bottom) - 1);
+		border-radius: 0.5rem 0 0 0.5rem;
+	}
+	/* the resize grabber only shows in bottom-sheet mode */
+	.notes-resize {
+		display: none;
+		flex: 0 0 auto;
+		height: 16px;
+		cursor: ns-resize;
+		touch-action: none;
+		align-items: center;
+		justify-content: center;
+	}
+	.notes-grabber {
+		width: 40px;
+		height: 4px;
+		border-radius: 9999px;
+		background: rgb(148 163 184 / 0.7);
+	}
+	/* Narrow / folded: a bottom sheet (like the Flow/Explorer dock) with a drag handle. */
+	@media (max-width: 640px) {
+		#notes-drawer {
+			left: 0;
+			right: 0;
+			top: auto;
+			bottom: var(--controls-inset, 0px);
+			width: 100%;
+			height: var(--notes-h, 45vh);
+			border-radius: 0.75rem 0.75rem 0 0;
+		}
+		.notes-resize {
+			display: flex;
+		}
+	}
+</style>

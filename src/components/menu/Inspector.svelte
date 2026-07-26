@@ -113,13 +113,25 @@
 		return () => mq.removeEventListener('change', on);
 	});
 	const bottomRounded = $derived($bottomInset > 0 || narrowDrawer);
-	// One bottom sheet at a time on narrow: opening the settings sheet closes scene notes.
+	// SHEET mode = the actual bottom-sheet layout (max-width:640, matching the CSS). This
+	// is separate from narrowDrawer (<=820) so the 641-820 side-drawer still slides in
+	// horizontally, not up.
+	let sheetMode = $state(false);
 	$effect(() => {
-		if (!$inspectorClose && narrowDrawer) notesDrawerOpen.set(false);
+		if (typeof window === 'undefined') return;
+		const mq = window.matchMedia('(max-width: 640px)');
+		sheetMode = mq.matches;
+		const on = () => (sheetMode = mq.matches);
+		mq.addEventListener('change', on);
+		return () => mq.removeEventListener('change', on);
 	});
-	// narrow = bottom SHEET: slide up from below instead of flying in from the right
+	// One bottom sheet at a time: opening the settings sheet closes scene notes.
+	$effect(() => {
+		if (!$inspectorClose && sheetMode) notesDrawerOpen.set(false);
+	});
+	// SHEET = slide UP from below; side drawer = fly in from the right (horizontal).
 	const insTransition = $derived(
-		narrowDrawer ? { y: 500, duration: 240, easing: sineIn } : transitionParamsRight
+		sheetMode ? { y: 500, duration: 240, easing: sineIn } : transitionParamsRight
 	);
 
 	// On a narrow/folded screen this drawer is a bottom SHEET (see #inspector in ui.css)

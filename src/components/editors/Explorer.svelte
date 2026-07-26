@@ -5,7 +5,7 @@
 	// + items), drag files in to import. Shares the bottom dock with the Flow
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
-	import { explorerClose } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
@@ -78,6 +78,14 @@
 		singleClickOpen = localStorage.getItem('explorerSingleClickOpen') === 'true';
 		showBreadcrumb = localStorage.getItem('explorerBreadcrumb') !== 'false';
 	}
+	// touch / limited-width: keep the Explorer docked (no room to float; undock hidden),
+	// unless the user opted into undocking on touch (Settings > Allow undocking)
+	if (
+		typeof window !== 'undefined' &&
+		window.matchMedia?.('(pointer: coarse)').matches &&
+		!get(mobileUndockAllowed)
+	)
+		docked = true;
 	loadExplorer();
 	loadPrefabs();
 
@@ -690,20 +698,91 @@
 		importFiles(files, folder === 'prefabs' ? null : folder);
 	}
 
+	function itemDragPayload(item: any) {
+		return {
+			id: item.id ?? null,
+			kind: item.kind,
+			name: item.name,
+			prefabId: item.prefabId ?? null,
+			url: item.glbUrl ?? null
+		};
+	}
 	function onItemDragStart(e: DragEvent, item: any) {
 		// 96 consumes these payloads (viewport placement / texture drop). N6: a
 		// default-pack item carries a `url` so the drop can fetch+place it without
 		// first storing it in the Explorer library.
-		e.dataTransfer?.setData(
-			'application/x-explorer-item',
-			JSON.stringify({
-				id: item.id ?? null,
-				kind: item.kind,
-				name: item.name,
-				prefabId: item.prefabId ?? null,
-				url: item.glbUrl ?? null
-			})
-		);
+		e.dataTransfer?.setData('application/x-explorer-item', JSON.stringify(itemDragPayload(item)));
+	}
+
+	// --- MOBILE drag-to-place (HTML5 DnD is desktop-only). On touch a LONG-PRESS on a
+	// card picks the item up; dragging a ghost onto the viewport and releasing there
+	// places it at that spot (dropExplorerItem raycasts the screen coords — same path
+	// the desktop drop uses). A quick tap still selects; a swipe still scrolls the grid. ---
+	let tDrag = $state<{ payload: any; label: string } | null>(null);
+	let tDragging = $state(false);
+	let tGhostX = $state(0);
+	let tGhostY = $state(0);
+	let tPressTimer = 0;
+	let tStartX = 0;
+	let tStartY = 0;
+	let tSuppressClick = false;
+
+	function onCardPointerDown(e: PointerEvent, item: any) {
+		if (e.pointerType === 'mouse') return; // desktop uses native HTML5 drag
+		tStartX = e.clientX;
+		tStartY = e.clientY;
+		const target = e.currentTarget as HTMLElement;
+		const pid = e.pointerId;
+		const payload = itemDragPayload(item);
+		const label = item.name;
+		clearTimeout(tPressTimer);
+		tPressTimer = window.setTimeout(() => {
+			tDrag = { payload, label };
+			tDragging = true;
+			tGhostX = tStartX;
+			tGhostY = tStartY;
+			try {
+				target.setPointerCapture?.(pid);
+			} catch {}
+			try {
+				navigator.vibrate?.(15);
+			} catch {}
+		}, 300);
+	}
+	function onCardPointerMove(e: PointerEvent) {
+		if (e.pointerType === 'mouse') return;
+		if (!tDragging) {
+			// moved before the long-press fired -> it's a scroll, not a pick-up
+			if (Math.abs(e.clientX - tStartX) > 10 || Math.abs(e.clientY - tStartY) > 10)
+				clearTimeout(tPressTimer);
+			return;
+		}
+		e.preventDefault();
+		tGhostX = e.clientX;
+		tGhostY = e.clientY;
+	}
+	function onCardPointerUp(e: PointerEvent) {
+		clearTimeout(tPressTimer);
+		if (tDragging && tDrag) {
+			const el = document.elementFromPoint(e.clientX, e.clientY);
+			// drop only when released over the viewport, not back onto the Explorer
+			if (!el?.closest?.('#explorer-list') && !el?.closest?.('#explorer-window')) {
+				const payload = tDrag.payload;
+				const x = e.clientX;
+				const y = e.clientY;
+				import('$lib/explorerDrop').then((m) => m.dropExplorerItem(payload, x, y));
+			}
+			tSuppressClick = true; // the drag must not also fire the tap-select
+		}
+		tDragging = false;
+		tDrag = null;
+	}
+	function onCardClick(item: any) {
+		if (tSuppressClick) {
+			tSuppressClick = false;
+			return;
+		}
+		inspectItem(item);
 	}
 
 	// N6: place a default-pack item into the scene (double-click / Enter) at origin
@@ -1061,9 +1140,13 @@
 							draggable="true"
 							role="listitem"
 							title={item.name}
+							style:touch-action={tDragging ? 'none' : 'pan-y'}
 							ondragstart={(e) => onItemDragStart(e, item)}
+							onpointerdown={(e) => onCardPointerDown(e, item)}
+							onpointermove={onCardPointerMove}
+							onpointerup={onCardPointerUp}
 							oncontextmenu={(e) => itemMenu(e, item)}
-							onclick={() => inspectItem(item)}
+							onclick={() => onCardClick(item)}
 							ondblclick={() => openItem(item)}
 						>
 							{#if item.packEntry}
@@ -1300,7 +1383,7 @@
 					onclick={() => setDocked(false)}>⧉</button
 				>
 			</div>
-			<div style="height: {height - 44}px">
+			<div style="height: calc({height - 44}px - var(--dock-inset, 0px))">
 				{@render content()}
 			</div>
 		</div>
@@ -1354,6 +1437,16 @@
 
 {#if menu}
 	<ContextMenu x={menu.x} y={menu.y} items={menu.items} on:close={() => (menu = null)} />
+{/if}
+
+<!-- mobile touch-drag ghost that follows the finger onto the viewport -->
+{#if tDragging && tDrag}
+	<div
+		class="pointer-events-none fixed z-[1400] max-w-[160px] -translate-x-1/2 -translate-y-1/2 truncate rounded border border-primary-400 bg-gray-800 px-2 py-1 text-center text-xs font-semibold text-gray-100 shadow-lg"
+		style="left: {tGhostX}px; top: {tGhostY}px;"
+	>
+		{tDrag.label}
+	</div>
 {/if}
 
 <!-- N6: pack attribution / license (raw HTML fragment, like the Library popup).

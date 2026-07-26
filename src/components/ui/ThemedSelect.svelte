@@ -169,7 +169,12 @@
 <style>
 	.ts-wrap {
 		position: relative;
-		display: block;
+		/* a flex column so the button can stretch to the wrap's height when the wrap
+		   is itself stretched by a flex row (e.g. beside a taller label box) — keeps
+		   the control vertically aligned with its setting label instead of sitting
+		   short at the top. Collapses to content height when the wrap isn't stretched. */
+		display: flex;
+		flex-direction: column;
 	}
 	.ts-btn {
 		display: flex;
@@ -177,6 +182,8 @@
 		justify-content: space-between;
 		gap: 0.5rem;
 		width: 100%;
+		flex: 1 1 auto;
+		min-height: 2.25rem;
 		padding: 0.3rem 0.55rem;
 		font-size: 0.8rem;
 		line-height: 1.2;

@@ -115,8 +115,9 @@
 
 	const { screenToFlowPosition, fitView, setViewport } = useSvelteFlow();
 
-	// palette collapse + side (82), persisted
-	let paletteOpen = typeof localStorage === 'undefined' || localStorage.getItem('flowPaletteOpen') !== 'false';
+	// palette collapse + side (82), persisted. Exported so the docked host (Flow) can
+	// inset its content above the Controls HUD only when the palette is actually shown.
+	export let paletteOpen = typeof localStorage === 'undefined' || localStorage.getItem('flowPaletteOpen') !== 'false';
 	let paletteSide = typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteSide') ?? 'left' : 'left';
 
 	// 166: flow PROPERTIES panel — curated graph prefs (LOCAL, persisted) + the

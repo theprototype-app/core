@@ -76,7 +76,13 @@
 	});
 	useTask(
 		(delta) => {
-			composer.render(delta);
+			// In WebXR the EffectComposer can't be used: its passes render to canvas-sized
+			// targets, not the XR framebuffer, so blitting them mismatches sizes
+			// (GL_INVALID_FRAMEBUFFER_OPERATION) and nothing reaches the headset (dark
+			// viewport). Render the scene DIRECTLY through the XR cameras while presenting;
+			// the composer (AO/outline) takes over again on the desktop.
+			if (renderer.xr.isPresenting) renderer.render(scene, camera.current);
+			else composer.render(delta);
 		},
 		{ stage: renderStage, autoInvalidate: false }
 	);

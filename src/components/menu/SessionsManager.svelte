@@ -109,8 +109,18 @@
 	}
 </script>
 
-<Modal title="Sessions" bind:open={$sessionsOpen} outsideclose size="lg">
-	<div class="modal-content max-h-[80vh] overflow-y-auto p-1">
+<Modal
+	title="Sessions"
+	bind:open={$sessionsOpen}
+	outsideclose
+	size="lg"
+	class="tp-modal-frame"
+	dialogClass="tp-modal-dialog fixed top-0 start-0 end-0 h-modal md:inset-0 md:h-full z-50 w-full p-4 flex"
+	bodyClass="tp-modal-body flex-1 overflow-y-auto overscroll-contain"
+	backdropClass="tp-modal-backdrop fixed inset-0 z-40 bg-gray-900 bg-opacity-50 dark:bg-opacity-80"
+	headerClass="tp-modal-header flex justify-between items-center p-4 md:p-5 rounded-t-lg"
+>
+	<div class="modal-content p-1">
 		<div class="mb-3 flex flex-wrap items-center gap-2">
 			<Button
 				id="session-save"

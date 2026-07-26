@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton } from '../../stores/appStore'
+	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight } from '../../stores/appStore'
 	import { Input, Button } from 'flowbite-svelte';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
 	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
@@ -43,6 +43,79 @@
 	);
 	// the drawer is visible when open OR pinned (pinned keeps the tab bar under the pill)
 	const drawerVisible = $derived($connectDrawerOpen || $connectDrawerPinned);
+
+	// --- Responsive DOCKING (roadmap follow-up) --------------------------------
+	// The pill is centred at the top. On a wide screen there's room for it between
+	// the logo (left) and the peers/profile chrome (right). As the viewport narrows
+	// (or the pill grows — e.g. the Disconnect state), it eventually can't fit
+	// without covering that chrome. We MEASURE the free centre span and, the moment
+	// the pill would overlap, snap it to a full-width top bar ("docked"): the Rooms
+	// shortcut hides and the corner chrome drops below the bar (via connectDocked/
+	// connectBarHeight). Measuring the fixed corner anchors (whose HORIZONTAL edges
+	// never move with docking) keeps the decision deterministic — no oscillation.
+	let pillEl = $state<HTMLElement | null>(null);
+	let docked = $state(false);
+	// last natural (undocked) width of the pill content — frozen while docked so the
+	// undock threshold uses a stable value even though the bar is now full-width
+	let naturalWidth = 0;
+
+	function measureDock() {
+		if (typeof window === 'undefined' || !pillEl) return;
+		const vw = window.innerWidth;
+		const logo = document.getElementById('logo-menu');
+		// leftmost element of the right-hand chrome (notes button) — falls back to the
+		// avatar, then a sane estimate. Horizontal position is dock-independent.
+		const rightAnchor = document.getElementById('notes-toggle') || document.getElementById('avatar-menu');
+		const leftRight = logo ? logo.getBoundingClientRect().right : 56;
+		const rightLeft = rightAnchor ? rightAnchor.getBoundingClientRect().left : vw - 240;
+		const gap = 12;
+		// only trust a fresh content-width reading while the pill is its natural size
+		if (!docked) naturalWidth = Math.max(pillEl.scrollWidth, pillEl.offsetWidth);
+		const centerX = vw / 2;
+		// a centred element fits iff its width <= twice the SMALLER side gap
+		const available = 2 * Math.min(centerX - (leftRight + gap), (rightLeft - gap) - centerX);
+		docked = vw <= 640 || naturalWidth > available;
+	}
+
+	// publish docked + the bar height so the logo/profile chrome can clear it
+	const TAB_STRIP_H = 32; // approx height of the drawer's tab bar
+	$effect(() => {
+		connectDocked.set(docked);
+	});
+	$effect(() => {
+		const barVisible = drawerVisible; // track
+		let bh = 0;
+		if (docked) {
+			const pillH = pillEl?.offsetHeight || 46;
+			bh = pillH + (barVisible ? TAB_STRIP_H : 0);
+		}
+		connectBarHeight.set(bh);
+		// publish as a CSS var so side drawers (Inspector) can tuck right under the bar,
+		// and a root class so side drawers only COVER the top-right chrome when Connect is
+		// docked (chrome dropped under it) — otherwise they stay below the profile.
+		if (typeof document !== 'undefined') {
+			document.documentElement.style.setProperty('--connect-bottom', bh + 'px');
+			document.documentElement.classList.toggle('connect-docked', docked);
+		}
+	});
+
+	// re-measure after any layout-affecting change (state, drawer, viewport)
+	$effect(() => {
+		connState; // track content-width changes
+		drawerVisible; // track
+		$showRoomsButton; // rooms button presence changes the natural width
+		tick().then(measureDock);
+	});
+	onMount(() => {
+		measureDock();
+		const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => measureDock()) : null;
+		ro?.observe(document.body);
+		window.addEventListener('resize', measureDock);
+		return () => {
+			ro?.disconnect();
+			window.removeEventListener('resize', measureDock);
+		};
+	});
 	// who we're connected to (for the read-only pill textbox): the host we joined, else
 	// "Hosting" when we're the host. pending = the peer we're dialing.
 	const hostId = $derived($sessionHost ?? remoteOpen[0] ?? null);
@@ -133,8 +206,8 @@
 	 transparent margin pass clicks to windows underneath (z-index 300); the pill
 	 re-enables them. Narrow screens drop the bar to its own row BELOW the logo
 	 (left) and the peers/profile chrome (right) instead of squeezing between them. -->
-<div class="connect-wrap">
-	<div class="connect-pill" class:drawer-open={drawerVisible} role="group" data-state={connState}>
+<div class="connect-wrap" class:docked class:body-open={$connectDrawerOpen}>
+	<div class="connect-pill" class:drawer-open={drawerVisible} class:docked bind:this={pillEl} role="group" data-state={connState}>
 		<!-- your invite id (click to copy the share link) -->
 		<Button
 			color="primary"
@@ -197,8 +270,8 @@
 			class="cx-toggle"
 			class:open={$connectDrawerOpen}
 			data-testid="connect-info-button"
-			title="Connection &amp; server info"
-			aria-label="Show connection and server info"
+			title={$connectDrawerOpen ? 'Close drawer' : 'Open drawer'}
+			aria-label={$connectDrawerOpen ? 'Close connection drawer' : 'Open connection drawer'}
 			aria-expanded={$connectDrawerOpen}
 			onclick={toggleInfo}
 		>
@@ -245,6 +318,12 @@
 		z-index: 300;
 		pointer-events: none;
 		max-width: 100vw;
+	}
+	/* when the drawer BODY is open, lift the whole pill+drawer above the corner chrome
+	   (logo/profile/notifications/notes all sit at or below --z-menu) so the open
+	   drawer reads on top of them instead of being covered. */
+	.connect-wrap.body-open {
+		z-index: calc(var(--z-menu) + 5);
 	}
 	.cx-connect {
 		min-width: 0; /* allow the group to shrink so its input can shrink */
@@ -344,32 +423,43 @@
 		background: #f59e0b;
 		border: 1.5px solid rgb(31 41 55);
 	}
-	/* Connect stays on the top row; the logo + peers/profile chrome drops to a second
-	   row on narrow screens (Sidebar/Users media queries). When space is too tight for
-	   the fixed pill (its button would run off-screen), Connect becomes a full-width
-	   bar stuck to the top edge — the input flexes to fill, the buttons stay visible. */
-	@media (max-width: 640px) {
-		.connect-wrap {
-			top: 0;
-			left: 0;
-			right: 0;
-			transform: none;
-			max-width: none;
-		}
-		.connect-pill {
-			width: 100%;
-			max-width: none; /* the reserve-room cap is for the wide pill, not the full bar */
-			border-radius: 0 0 14px 14px;
-			white-space: normal;
-		}
-		.cx-connect {
-			flex: 1 1 auto;
-		}
-		/* :global — the class lands on the flowbite Input's inner <input> */
-		:global(.cx-input) {
-			width: auto;
-			flex: 1 1 auto;
-			min-width: 0;
-		}
+	/* Connect stays centred while it fits between the logo (left) and the peers/profile
+	   chrome (right). The moment the centred pill would COVER that chrome, Connect.svelte
+	   flips to DOCKED (measured in script): a full-width bar stuck to the top edge — the
+	   input flexes to fill, the buttons stay visible, the Rooms shortcut hides, and the
+	   corner chrome drops below the bar (Sidebar/Users read connectDocked/BarHeight). */
+	.connect-wrap.docked {
+		top: 0;
+		left: 0;
+		right: 0;
+		transform: none;
+		max-width: none;
+	}
+	.connect-pill.docked {
+		width: 100%;
+		max-width: none; /* the reserve-room cap is for the centred pill, not the full bar */
+		border-radius: 0 0 14px 14px;
+		white-space: normal;
+	}
+	/* docked bar WITH the drawer expanded below it: square the bottom corners so the
+	   drawer reads flush (the .docked rule above would otherwise re-round them, beating
+	   the .drawer-open rule on source order) */
+	.connect-pill.docked.drawer-open {
+		border-bottom-left-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+	.connect-pill.docked .cx-connect {
+		flex: 1 1 auto;
+	}
+	/* hide the Rooms shortcut in the tight docked bar (still reachable via the chevron
+	   drawer's Rooms tab) */
+	.connect-pill.docked .cx-rooms {
+		display: none;
+	}
+	/* :global — the class lands on the flowbite Input's inner <input> */
+	.connect-pill.docked :global(.cx-input) {
+		width: auto;
+		flex: 1 1 auto;
+		min-width: 0;
 	}
 </style>

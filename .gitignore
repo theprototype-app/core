@@ -27,5 +27,9 @@ certs/localhost.key
 # Libraries
 static/library
 
+# Cloud plugin dev artifact — copied in by the cloud repo's link-to-app vstask; the OSS
+# app is inert without it, so it must never be committed here.
+static/cloud-plugin.js
+
 # Maintainer planning area (never published; public docs live in theprototype-docs)
 /docs/

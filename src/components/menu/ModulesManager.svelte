@@ -66,14 +66,24 @@
 	}
 </script>
 
-<Modal title="Modules" bind:open={$modulesOpen} size="lg" outsideclose>
-	<div class="mb-3 flex gap-2">
-		<Button size="xs" color={tab === 'core' ? 'primary' : 'alternative'} on:click={() => (tab = 'core')}>
+<Modal
+	title="Modules"
+	bind:open={$modulesOpen}
+	size="lg"
+	outsideclose
+	class="tp-modal-frame"
+	dialogClass="tp-modal-dialog fixed top-0 start-0 end-0 h-modal md:inset-0 md:h-full z-50 w-full p-4 flex"
+	bodyClass="tp-modal-body flex-1 overflow-y-auto overscroll-contain"
+	backdropClass="tp-modal-backdrop fixed inset-0 z-40 bg-gray-900 bg-opacity-50 dark:bg-opacity-80"
+	headerClass="tp-modal-header flex justify-between items-center p-4 md:p-5 rounded-t-lg"
+>
+	<div class="mod-tabs" role="tablist">
+		<button class="mod-tab" class:active={tab === 'core'} role="tab" aria-selected={tab === 'core'} on:click={() => (tab = 'core')}>
 			Core
-		</Button>
-		<Button size="xs" color={tab === 'user' ? 'primary' : 'alternative'} on:click={() => (tab = 'user')}>
+		</button>
+		<button class="mod-tab" class:active={tab === 'user'} role="tab" aria-selected={tab === 'user'} on:click={() => (tab = 'user')}>
 			User
-		</Button>
+		</button>
 	</div>
 
 	{#if tab === 'core'}
@@ -211,3 +221,31 @@
 		</div>
 	{/if}
 </Modal>
+
+<style>
+	/* Core / User read as real tabs (underline the active one) instead of two buttons. */
+	.mod-tabs {
+		display: flex;
+		gap: 0.25rem;
+		margin-bottom: 0.85rem;
+		border-bottom: 1px solid rgb(75 85 99 / 0.6);
+	}
+	.mod-tab {
+		padding: 0.4rem 1.1rem;
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: rgb(156 163 175);
+		background: none;
+		border: 0;
+		border-bottom: 2px solid transparent;
+		margin-bottom: -1px;
+		cursor: pointer;
+	}
+	.mod-tab:hover {
+		color: rgb(229 231 235);
+	}
+	.mod-tab.active {
+		color: #fff;
+		border-bottom-color: var(--color-primary-600, #2563eb);
+	}
+</style>

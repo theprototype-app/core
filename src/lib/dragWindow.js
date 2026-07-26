@@ -46,11 +46,30 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 
 	node.style.position = 'fixed';
 
-	function clamp() {
+	// min px of the window kept on-screen while DRAGGING — you can shove a window mostly
+	// off the left/right/bottom (to get it out of the way) but a grabbable strip always
+	// stays, and its top (the drag header) never goes above the top edge, so it's never
+	// lost. `reveal`/init clamp it FULLY back on-screen.
+	const KEEP = 52;
+
+	/** @param {boolean} full  true = keep the whole window on-screen; false = allow partial off */
+	function clamp(full) {
 		const w = node.offsetWidth || 0;
 		const h = node.offsetHeight || 0;
-		rect.left = Math.min(Math.max(0, rect.left), Math.max(0, window.innerWidth - w));
-		rect.top = Math.min(Math.max(0, rect.top), Math.max(0, window.innerHeight - h));
+		const keepX = full ? w : Math.min(KEEP, w);
+		const keepY = full ? h : Math.min(KEEP, h);
+		rect.left = Math.min(Math.max(keepX - w, rect.left), Math.max(keepX - w, window.innerWidth - keepX));
+		// keep the window from sliding BEHIND the Connect bar/pill (which sits above the
+		// window tier) — only when they actually overlap horizontally (the centred pill on
+		// a wide screen; the full-width bar on a narrow one)
+		let minTop = 0;
+		const cp = typeof document !== 'undefined' ? document.querySelector('.connect-pill') : null;
+		if (cp) {
+			const r = cp.getBoundingClientRect();
+			if (rect.left < r.right && rect.left + w > r.left) minTop = Math.max(minTop, Math.round(r.bottom) + 4);
+		}
+		// top never above minTop (the drag header stays reachable); may slide off the bottom
+		rect.top = Math.min(Math.max(minTop, rect.top), Math.max(minTop, window.innerHeight - keepY));
 	}
 
 	function apply() {
@@ -74,7 +93,7 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 			typeof rect.bottom === 'number' ? window.innerHeight - node.offsetHeight - rect.bottom : rect.top ?? 60;
 		delete rect.right;
 		delete rect.bottom;
-		clamp();
+		clamp(true);
 		apply();
 		return true;
 	}
@@ -84,9 +103,26 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 		});
 		observer.observe(node);
 	} else {
-		clamp();
+		clamp(true);
 		apply();
 	}
+
+	// Reveal: when the window goes from hidden back to visible ("called again"), snap it
+	// FULLY on-screen so a window that was shoved partly off doesn't reappear off-screen.
+	let wasVisible = false;
+	const io =
+		typeof IntersectionObserver !== 'undefined'
+			? new IntersectionObserver((entries) => {
+					const vis = entries.some((e) => e.isIntersecting);
+					if (vis && !wasVisible && typeof rect.left === 'number') {
+						clamp(true);
+						apply();
+						save();
+					}
+					wasVisible = vis;
+				})
+			: null;
+	io?.observe(node);
 
 	// 169: reset this window to its default spot (Settings rescue)
 	function resetToDefault() {
@@ -95,7 +131,7 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 		} catch {}
 		rect = { ...defaultRect };
 		if (typeof rect.left === 'number' && typeof rect.top === 'number') {
-			clamp();
+			clamp(true);
 			apply();
 		} else {
 			resolveDefaults();
@@ -119,7 +155,7 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 		if (!dragging) return;
 		rect.left = (typeof rect.left === 'number' ? rect.left : node.offsetLeft) + e.movementX;
 		rect.top = (typeof rect.top === 'number' ? rect.top : node.offsetTop) + e.movementY;
-		clamp();
+		clamp(false); // allow partial off-screen while dragging
 		apply();
 	}
 
@@ -138,6 +174,7 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 	return {
 		destroy() {
 			unregisterReset();
+			io?.disconnect();
 			node.removeEventListener('pointerdown', down);
 			node.removeEventListener('pointermove', move);
 			node.removeEventListener('pointerup', up);

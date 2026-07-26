@@ -23,6 +23,7 @@
 		recordMaterialChange
 	} from '$lib/materialsHandler';
 	import { recordEntry } from '$lib/history';
+	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
@@ -72,7 +73,7 @@
 		globalCamera,
 		viewMode
 	} from '../../stores/sceneStore';
-	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter } from '../../stores/appStore.js';
+	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
 
 	const hexColor = /^#[0-9A-F]{6}$/i;
 	const RAD_SNAP = Math.PI / 12; // Ctrl-snap rotations to 15°
@@ -98,6 +99,74 @@
 	// the dock (--z-bottom=35) and floating windows.
 	const drawerStyle =
 		'bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); z-index: calc(var(--z-bottom) - 1); height: auto';
+
+	// Round the drawer's bottom-LEFT corner when it floats ABOVE the bottom (a docked
+	// Flow/Explorer, or the narrow Controls inset, leave a gap below it). When it sits
+	// flush on the viewport bottom it stays square there.
+	let narrowDrawer = $state(false);
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const mq = window.matchMedia('(pointer: coarse), (max-width: 820px)');
+		narrowDrawer = mq.matches;
+		const on = () => (narrowDrawer = mq.matches);
+		mq.addEventListener('change', on);
+		return () => mq.removeEventListener('change', on);
+	});
+	const bottomRounded = $derived($bottomInset > 0 || narrowDrawer);
+	// SHEET mode = the actual bottom-sheet layout (max-width:640, matching the CSS). This
+	// is separate from narrowDrawer (<=820) so the 641-820 side-drawer still slides in
+	// horizontally, not up.
+	let sheetMode = $state(false);
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const mq = window.matchMedia('(max-width: 640px)');
+		sheetMode = mq.matches;
+		const on = () => (sheetMode = mq.matches);
+		mq.addEventListener('change', on);
+		return () => mq.removeEventListener('change', on);
+	});
+	// One bottom sheet at a time: opening the settings sheet closes scene notes.
+	$effect(() => {
+		if (!$inspectorClose && sheetMode) notesDrawerOpen.set(false);
+	});
+	// SHEET = slide UP from below; side drawer = fly in from the right (horizontal).
+	const insTransition = $derived(
+		sheetMode ? { y: 500, duration: 240, easing: sineIn } : transitionParamsRight
+	);
+
+	// On a narrow/folded screen this drawer is a bottom SHEET (see #inspector in ui.css)
+	// with a top drag handle to adjust height — mirrors the scene-notes sheet. Persisted.
+	let inspectorH = $state(0);
+	$effect(() => {
+		if (inspectorH || typeof window === 'undefined') return;
+		const saved = parseInt(localStorage.getItem('inspectorSheetH') || '');
+		inspectorH = !saved || Number.isNaN(saved) ? Math.round(window.innerHeight * 0.45) : saved;
+	});
+	let insResizing = $state(false);
+	/** @param {PointerEvent} e */
+	function insStartResize(e) {
+		insResizing = true;
+		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture?.(e.pointerId);
+		e.preventDefault();
+	}
+	/** @param {PointerEvent} e */
+	function insDoResize(e) {
+		if (!insResizing) return;
+		// sheet is bottom:0, so height = viewport height - finger y; cap the top below
+		// the Connect bar + top-right chrome (same limit as the Flow/Explorer dock)
+		const cb = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--connect-bottom')) || 54;
+		const maxH = Math.max(200, window.innerHeight - cb - 56);
+		inspectorH = Math.min(Math.max(160, window.innerHeight - e.clientY), maxH);
+	}
+	/** @param {PointerEvent} e */
+	function insEndResize(e) {
+		if (!insResizing) return;
+		insResizing = false;
+		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
+		try {
+			localStorage.setItem('inspectorSheetH', String(inspectorH));
+		} catch {}
+	}
 
 	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
 	// changes AND selection updates (setPhysics only pokes selectedObject).
@@ -384,7 +453,7 @@
 </script>
 
 <Drawer
-	style={drawerStyle}
+	style={drawerStyle + '; --inspector-h: ' + inspectorH + 'px'}
 	activateClickOutside={false}
 	backdrop={false}
 	placement="right"
@@ -393,11 +462,21 @@
 	leftOffset="start-0 "
 	topOffset="top-16"
 	transitionType="fly"
-	transitionParams={transitionParamsRight}
+	transitionParams={insTransition}
 	bind:hidden={$inspectorClose}
-	class="rounded-tl-lg pt-0"
+	class={'rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
 	id="inspector"
 >
+	<!-- bottom-sheet drag handle (shown only in the narrow bottom-sheet layout) -->
+	<div
+		class="ins-resize"
+		title="Drag to resize"
+		onpointerdown={insStartResize}
+		onpointermove={insDoResize}
+		onpointerup={insEndResize}
+	>
+		<span class="ins-grabber"></span>
+	</div>
 	{#if $inspectorKind === 'file'}
 		<!-- Explorer file properties (107) -->
 		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">

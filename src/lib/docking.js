@@ -186,12 +186,27 @@ function showZone(side) {
 
 let subscribed = false;
 
+// touch / limited-width devices: edge side-docking is disabled — there isn't the
+// horizontal room for a full-height side panel, and it fights touch scrolling.
+const isCoarse = () =>
+	typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
 /**
  * svelte action: makes a floating window dockable to the screen edges.
  * @param {any} node @param {{key: string}} options
  */
 export function dockable(node, { key }) {
 	registry.set(key, { node, prevRect: null, handle: null });
+	// On mobile, register only (so destroy() still cleans up) but wire NO edge-drag
+	// handlers and restore NO persisted side-dock — the window stays a normal floating
+	// window. The persisted desktop preference is left untouched.
+	if (isCoarse()) {
+		return {
+			destroy() {
+				registry.delete(key);
+			}
+		};
+	}
 	if (!subscribed) {
 		subscribed = true;
 		// right-docked panels give way to the Inspector/Library drawer

@@ -3,9 +3,51 @@
 	// Right-docked list of all annotations; a row flies the camera to the pin and
 	// opens its note (openAnnotation), and can be deleted inline. Toggled from the
 	// notes button in the top-right chrome (Users.svelte).
-	import { notesDrawerOpen } from '../../stores/appStore.js';
+	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore.js';
 	import { annotations, openAnnotation, deleteAnnotation } from '$lib/annotationsHandler';
 	import { objectsGroup } from '../../stores/sceneStore.js';
+
+	// One bottom sheet at a time on narrow: opening scene notes closes the object/scene
+	// settings sheet (they'd otherwise stack at the bottom).
+	$: if (
+		$notesDrawerOpen &&
+		typeof window !== 'undefined' &&
+		window.matchMedia('(max-width: 640px)').matches
+	)
+		inspectorClose.set(true);
+
+	// On a narrow/folded screen the notes drawer is a bottom SHEET (like the Flow/Explorer
+	// bottom dock) with a drag handle to adjust its height — the right-side drawer was
+	// covered by the profile chrome there. On wide screens it stays the right drawer.
+	let sheetH =
+		typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('notesSheetH') || '') : NaN;
+	if (!sheetH || Number.isNaN(sheetH))
+		sheetH = Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.45);
+	let resizing = false;
+	/** @param {PointerEvent} e */
+	function startResize(e) {
+		resizing = true;
+		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture?.(e.pointerId);
+		e.preventDefault();
+	}
+	/** @param {PointerEvent} e */
+	function doResize(e) {
+		if (!resizing) return;
+		// sheet is bottom:0, so height = viewport height - finger y; cap the top below
+		// the Connect bar + top-right chrome (same limit as the Flow/Explorer dock)
+		const cb = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--connect-bottom')) || 54;
+		const maxH = Math.max(200, window.innerHeight - cb - 56);
+		sheetH = Math.min(Math.max(160, window.innerHeight - e.clientY), maxH);
+	}
+	/** @param {PointerEvent} e */
+	function endResize(e) {
+		if (!resizing) return;
+		resizing = false;
+		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
+		try {
+			localStorage.setItem('notesSheetH', String(sheetH));
+		} catch {}
+	}
 
 	/** @param {string} uuid */
 	function labelFor(uuid) {
@@ -25,12 +67,22 @@
 </script>
 
 {#if $notesDrawerOpen}
-	<aside id="notes-drawer" class="ui-panel flex flex-col" style="position: fixed; right: 0; top: 64px; bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); width: min(320px, 92vw); z-index: calc(var(--z-bottom) - 1); border-radius: 0.5rem 0 0 0.5rem;">
+	<aside id="notes-drawer" class="ui-panel flex flex-col" style="--notes-h: {sheetH}px;">
+		<!-- top drag handle: adjusts the sheet height (bottom-sheet mode on narrow only) -->
+		<div
+			class="notes-resize"
+			title="Drag to resize"
+			onpointerdown={startResize}
+			onpointermove={doResize}
+			onpointerup={endResize}
+		>
+			<span class="notes-grabber"></span>
+		</div>
 		<div class="ui-panel-header shrink-0 justify-between">
 			<span>Scene notes {#if $annotations.length}<span class="text-xs text-gray-400">({$annotations.length})</span>{/if}</span>
 			<button class="ui-button-quiet" title="Close" aria-label="Close notes" onclick={() => notesDrawerOpen.set(false)}>✕</button>
 		</div>
-		<div class="min-h-0 flex-1 overflow-y-auto p-2">
+		<div class="notes-body min-h-0 flex-1 overflow-y-auto p-2">
 			{#if !$annotations.length}
 				<p class="px-1 py-6 text-center text-sm text-gray-400">
 					No notes yet. Select an object and add a note from its context menu or the object list.
@@ -65,3 +117,66 @@
 		</div>
 	</aside>
 {/if}
+
+<style>
+	/* Wide (unfolded): right-side drawer that sits ABOVE the top-right chrome (profile/
+	   peers/bell/notes) — top:8 + a z above ~999 so it covers those buttons while open. */
+	#notes-drawer {
+		position: fixed;
+		right: 0;
+		/* default (Connect centred / not docked): below the profile icon, under the chrome */
+		top: 64px;
+		bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px));
+		width: min(320px, 92vw);
+		z-index: calc(var(--z-bottom) - 1);
+		border-radius: 0.5rem 0 0 0.5rem;
+	}
+	/* only when Connect is docked (chrome dropped under it), and only in side-drawer mode
+	   (wide) — tuck below the bar and cover the chrome buttons; narrow stays a bottom sheet */
+	@media (min-width: 641px) {
+		:global(:root.connect-docked) #notes-drawer {
+			top: calc(var(--connect-bottom, 0px) + 4px);
+			z-index: 1000;
+		}
+	}
+	/* the resize grabber only shows in bottom-sheet mode */
+	.notes-resize {
+		display: none;
+		flex: 0 0 auto;
+		height: 16px;
+		cursor: ns-resize;
+		touch-action: none;
+		align-items: center;
+		justify-content: center;
+	}
+	.notes-grabber {
+		width: 40px;
+		height: 4px;
+		border-radius: 9999px;
+		background: rgb(148 163 184 / 0.7);
+	}
+	/* Narrow / folded: a bottom sheet (like the Flow/Explorer dock) with a drag handle. */
+	@media (max-width: 640px) {
+		#notes-drawer {
+			left: 0;
+			right: 0;
+			top: auto;
+			/* background extends behind the Controls HUD; content padded up (see .notes-body) */
+			bottom: 0;
+			width: 100%;
+			height: var(--notes-h, 45vh);
+			/* never rise above the Connect bar + top-right chrome (like the Flow/Explorer dock) */
+			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px);
+			border-radius: 0.75rem 0.75rem 0 0;
+			/* below the Controls HUD in the bottom-sheet layout (not the wide cover-z) */
+			z-index: calc(var(--z-bottom) - 1);
+		}
+		.notes-resize {
+			display: flex;
+		}
+		/* keep the list above the Controls HUD while the sheet bg extends behind it */
+		.notes-body {
+			padding-bottom: var(--controls-inset, 0px);
+		}
+	}
+</style>

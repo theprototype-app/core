@@ -378,6 +378,42 @@ loadable play content. Everything a user does must be visible to connected peers
   holdout). Floating windows clamp width/height to the viewport on load + on `resize`
   (Flow window) or their header buttons land off a narrow screen. Drag/resize handles
   need `touch-action: none`.
+- **Responsive layout CSS-var bus (`fix/ui-polish-connect-settings`)** — chrome/drawers
+  coordinate through custom props on `:root`, NOT hard-coded offsets: `--connect-bottom`
+  (docked Connect bar height, published by Connect.svelte; side drawers tuck under it),
+  `--controls-inset` (bottom Controls-HUD footprint on narrow; settings sheets bottom-clear
+  it), `--dock-inset` (= `--controls-inset` only `≤500px`, else 0; docked Flow/Explorer
+  content shrinks by it so its bg fills BEHIND the Controls while items stay above),
+  `--bottom-inset` (docked Flow/Explorer height, for edge-docked windows). Plus a
+  `.connect-docked` root CLASS (Connect toggles it) — side drawers cover the top-right
+  chrome ONLY when set, else sit below the profile. Connect "docked" is JS-MEASURED (does
+  the centred pill overlap the corner chrome?), not a fixed breakpoint — see
+  `measureDock()`. Bottom-sheet mode (Inspector/NotesDrawer) is `≤640px` and its slide-UP
+  transition must gate on that EXACT breakpoint, NOT the `≤820` `narrowDrawer` used for the
+  floating-corner rounding, or the 641–820 side drawer wrongly slides up.
+- **A floating/absolute element off the RIGHT or BOTTOM edge grows the document (scrollbars
+  + shifts the centred Connect pill); off the LEFT/TOP does not** — hence `body,html {
+  overflow:hidden }` in `routes/+page.svelte` (full-viewport app; panels/modals scroll
+  internally). Do NOT also clip the canvas-wrapper `div` — it risked the WebXR canvas.
+  dragWindow lets a window go partly off (keeps a ~52px grabbable strip, top never above
+  its header) and re-clamps FULLY on-screen via an IntersectionObserver "reveal" when it's
+  shown again (the object-list's own `dragMe` mirrors this).
+- **`@threlte/xr` 1.0.0-next.15 crashes on XR session end/inputsourceschange** —
+  `setup{Controllers,Hands}.js` read `data.handedness` / index `stores[handedness]`
+  unguarded in BOTH the `dispatch` helper AND the connect/disconnect store writes (four
+  sites). A Cardboard/gaze input's handedness isn't in `{left,right,none}` and the
+  session-end disconnect has `event.data === undefined` → `Cannot read properties of
+  undefined` aborts the WebXR teardown (dark-blue viewport, re-entry locked). Fix = the
+  **`guardThrelteXr` Vite transform plugin in vite.config.ts** (guards all four accesses
+  with `?.` at load time, dev + build). Do NOT patch node_modules for this: Vite caches
+  the transformed module and a node_modules edit alone keeps serving the stale crashing
+  copy (only a vite.config change forces the dev restart). The plugin also needs
+  `optimizeDeps.exclude:['@threlte/xr']` so the dep is served as SOURCE (not esbuild
+  pre-bundled, which the Rollup-style transform hook wouldn't touch). SEPARATELY, the
+  dark viewport itself is Outline.svelte driving ALL rendering through the EffectComposer
+  (autoRender off) — its passes target canvas-sized buffers, not the XR framebuffer, so
+  in WebXR it must `renderer.render(scene, camera.current)` directly (composer resumes on
+  desktop).
 - THREE color management: `setHSL()` works in the LINEAR working space — pass
   `THREE.SRGBColorSpace` or lightness 0.5 hex-round-trips to `#bcbcbc`. Canvas
   ImageData palettes: write bytes straight from the sRGB hex (round-tripping through
@@ -527,6 +563,46 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-07-26): **Mobile/responsive UI polish — branch
+  `fix/ui-polish-connect-settings` (off main, NOT PR'd yet).** A large ad-hoc pass, not a
+  numbered roadmap batch. Landmarks: **Connect docking** — the centred pill MEASURES
+  whether it would overlap the corner chrome (logo left / peers+profile right) and, when
+  it would, snaps to a full-width top bar ("docked"); publishes `--connect-bottom` (bar
+  height) + a `.connect-docked` root class + `connectDocked`/`connectBarHeight` stores;
+  Rooms button hides when docked; the open drawer lifts above the chrome; the logo +
+  top-right chrome drop below the docked bar. **Role pill** CSS was trapped inside a
+  `@media(max-width:640)` block (unstyled at normal widths — the screenshot bug); moved
+  out + the role menu is PORTALED to `<body>` (peers-list overflow clipped it).
+  **Settings** = a `SettingRow` component: aligned 3-column grid **name | control |
+  description** on wide (grid `order`/explicit column so the DOM order stays control-first
+  for the mobile stack), centred stack on narrow, multi-input rows split per line. A
+  SHARED `.tp-modal-*` treatment (ui.css) gives Settings/Sessions/Modules full-screen on
+  narrow (fill BELOW Connect via `--connect-bottom`, header title padded 62px to clear the
+  logo, SINGLE flowbite-body scroller — the old inner `modal-content` overflow was the
+  double-scrollbar). **Bottom sheets**: scene notes (`NotesDrawer`) + object/mesh/scene
+  properties (`Inspector`) become bottom sheets on `≤640` (slide UP, top drag-handle to
+  resize, `max-height` keeps the top below Connect+chrome, bg extends behind the Controls
+  HUD with content padded above it); ONE sheet open at a time (mutual close); as SIDE
+  drawers they cover the top-right chrome ONLY when `.connect-docked` (else stay below the
+  profile). **Floating windows** may be shoved partly off-screen (a grabbable strip stays)
+  and snap fully on when reopened (dragWindow IntersectionObserver reveal + object-list
+  dragMe); clamp below the Connect pill; `body,html { overflow:hidden }` stops an
+  off-the-RIGHT window growing the document (left never did). **Docked Flow/Explorer**
+  content insets above the Controls only on FOLDED screens (`--dock-inset` = full
+  `--controls-inset` at `≤500`, else 0; Flow gated on `paletteOpen` via a bound prop).
+  **Logo click** now closes any open modal AND opens the menu in one step (deferred past
+  the modal's `restorePanels` with `tick()` so the menu no longer flickers). **Cardboard
+  crash** — `@threlte/xr`'s controller/hand disconnect+connect handlers do
+  `stores[handedness].set(...)` unguarded; a gaze/Cardboard handedness misses the
+  {left,right,none} keys → `Cannot read properties of undefined (reading 'set')` aborts
+  the XR teardown (dark-blue viewport, re-entry locked). Fixed by the `guardThrelteXr`
+  Vite transform plugin (vite.config.ts) guarding all four `handedness` sites at load
+  time + `optimizeDeps.exclude:['@threlte/xr']` (serve as source) + Outline.svelte
+  rendering directly through the XR cameras (the composer can't target the XR
+  framebuffer → `glBlitFramebuffer` / dark viewport). Also: Modules Core/User = real tabs,
+  notifications panel pinned on narrow, CharacterModal/ThemedSelect dropdown alignment,
+  ContextMenu raised above the toast tier, `mobileUndockAllowed` setting. svelte-check
+  held **485/72** throughout.
 - Status (2026-07-25): **Roadmap #14 continuing — open-core cloud MATURED.** cloudApi
   now **v2.2**: capability gate w/ `ALWAYS_ALLOWED` floor, autoaccept dial-back +
   roster broadcast (fixes join-stuck), `rolesInfo` bridge + `setRolesInfo`,

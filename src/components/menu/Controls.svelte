@@ -421,6 +421,16 @@
 		node.style.userSelect = 'none';
 		clampRect();
 		window.addEventListener('resize', clampRect);
+		// reveal: when the window is shown again after being shoved partly off-screen,
+		// snap it fully back on so it's never lost
+		let objWasVis = false;
+		if (typeof IntersectionObserver !== 'undefined') {
+			new IntersectionObserver((entries) => {
+				const vis = entries.some((e) => e.isIntersecting);
+				if (vis && !objWasVis) clampRect();
+				objWasVis = vis;
+			}).observe(node);
+		}
 
 		const persist = () =>
 			localStorage.setItem(
@@ -454,10 +464,23 @@
 				} else {
 					left += e.movementX;
 					top += e.movementY;
-					if (left < 0) left = 0;
-					if (top < 0) top = 0;
-					if (left > window.innerWidth - node.offsetWidth) left = window.innerWidth - node.offsetWidth;
-					if (top > window.innerHeight - node.offsetHeight) top = window.innerHeight - node.offsetHeight;
+					// allow the window to be shoved PARTLY off-screen (a grabbable strip
+					// always stays; the header row stays at/below the top so it's never
+					// lost — reopening snaps it fully back on, see the reveal observer)
+					const KEEP = 52;
+					const w = node.offsetWidth;
+					if (left < KEEP - w) left = KEEP - w;
+					if (left > window.innerWidth - KEEP) left = window.innerWidth - KEEP;
+					// keep the window from sliding BEHIND the Connect bar/pill (only when
+					// they actually overlap horizontally)
+					let minTop = 0;
+					const cp = document.querySelector('.connect-pill');
+					if (cp) {
+						const r = cp.getBoundingClientRect();
+						if (left < r.right && left + w > r.left) minTop = Math.round(r.bottom) + 4;
+					}
+					if (top < minTop) top = minTop;
+					if (top > window.innerHeight - KEEP) top = window.innerHeight - KEEP;
 					node.style.top = `${top}px`;
 					node.style.left = `${left}px`;
 				}

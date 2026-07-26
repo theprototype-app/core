@@ -3,9 +3,18 @@
 	// Right-docked list of all annotations; a row flies the camera to the pin and
 	// opens its note (openAnnotation), and can be deleted inline. Toggled from the
 	// notes button in the top-right chrome (Users.svelte).
-	import { notesDrawerOpen } from '../../stores/appStore.js';
+	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore.js';
 	import { annotations, openAnnotation, deleteAnnotation } from '$lib/annotationsHandler';
 	import { objectsGroup } from '../../stores/sceneStore.js';
+
+	// One bottom sheet at a time on narrow: opening scene notes closes the object/scene
+	// settings sheet (they'd otherwise stack at the bottom).
+	$: if (
+		$notesDrawerOpen &&
+		typeof window !== 'undefined' &&
+		window.matchMedia('(max-width: 640px)').matches
+	)
+		inspectorClose.set(true);
 
 	// On a narrow/folded screen the notes drawer is a bottom SHEET (like the Flow/Explorer
 	// bottom dock) with a drag handle to adjust its height — the right-side drawer was

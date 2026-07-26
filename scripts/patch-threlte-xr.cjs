@@ -18,17 +18,29 @@ const path = require('path');
 
 const base = path.join(__dirname, '..', 'node_modules', '@threlte', 'xr', 'dist', 'internal');
 const files = ['setupControllers.js', 'setupHands.js'];
-const NEEDLE = 'stores[event.data.handedness].set';
-const GUARDED = 'stores[event.data?.handedness]?.set';
+// both the disconnected AND connected handlers index `stores[...]` unguarded — for
+// Cardboard/gaze input the key is missing, so `.set` throws. Guard every variant.
+const REPLACEMENTS = [
+	['stores[event.data.handedness].set', 'stores[event.data?.handedness]?.set'],
+	['stores[handedness].set', 'stores[handedness]?.set']
+];
 
 let changed = 0;
 for (const file of files) {
 	const fp = path.join(base, file);
 	if (!fs.existsSync(fp)) continue;
-	const src = fs.readFileSync(fp, 'utf8');
-	if (!src.includes(NEEDLE)) continue;
-	fs.writeFileSync(fp, src.split(NEEDLE).join(GUARDED));
-	changed++;
-	console.log('[patch-threlte-xr] guarded store access in', file);
+	let src = fs.readFileSync(fp, 'utf8');
+	let touched = false;
+	for (const [needle, guarded] of REPLACEMENTS) {
+		if (src.includes(needle)) {
+			src = src.split(needle).join(guarded);
+			touched = true;
+		}
+	}
+	if (touched) {
+		fs.writeFileSync(fp, src);
+		changed++;
+		console.log('[patch-threlte-xr] guarded store access in', file);
+	}
 }
 if (!changed) console.log('[patch-threlte-xr] nothing to patch (already guarded or package absent)');

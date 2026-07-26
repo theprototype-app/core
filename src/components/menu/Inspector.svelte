@@ -73,7 +73,7 @@
 		globalCamera,
 		viewMode
 	} from '../../stores/sceneStore';
-	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter } from '../../stores/appStore.js';
+	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
 
 	const hexColor = /^#[0-9A-F]{6}$/i;
 	const RAD_SNAP = Math.PI / 12; // Ctrl-snap rotations to 15°
@@ -113,6 +113,10 @@
 		return () => mq.removeEventListener('change', on);
 	});
 	const bottomRounded = $derived($bottomInset > 0 || narrowDrawer);
+	// One bottom sheet at a time on narrow: opening the settings sheet closes scene notes.
+	$effect(() => {
+		if (!$inspectorClose && narrowDrawer) notesDrawerOpen.set(false);
+	});
 	// narrow = bottom SHEET: slide up from below instead of flying in from the right
 	const insTransition = $derived(
 		narrowDrawer ? { y: 500, duration: 240, easing: sineIn } : transitionParamsRight

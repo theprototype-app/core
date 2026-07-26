@@ -102,10 +102,15 @@
 		left: 0 !important;
 		right: 0 !important;
 		top: auto !important;
-		bottom: var(--controls-inset, 0px) !important;
+		/* background extends to the very bottom BEHIND the Controls HUD; the content is
+		   padded up so items stop above it (Controls is z-hud, on top of the sheet bg) */
+		bottom: 0 !important;
+		padding-bottom: var(--controls-inset, 0px) !important;
 		width: 100% !important;
 		max-width: 100vw !important;
 		height: var(--inspector-h, 45vh) !important;
+		/* never rise above the Connect bar + top-right chrome (like the Flow/Explorer dock) */
+		max-height: calc(100vh - var(--connect-bottom, 54px) - 56px) !important;
 		border-radius: 0.75rem 0.75rem 0 0 !important;
 	}
 	.ins-resize {

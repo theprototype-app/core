@@ -11,7 +11,8 @@
 		"format": "prettier --write .",
 		"lint": "prettier --check .",
 		"e2e": "node tests/e2e/run.cjs",
-		"sync-llms": "node scripts/sync-llms.cjs"
+		"sync-llms": "node scripts/sync-llms.cjs",
+		"postinstall": "node scripts/patch-threlte-xr.cjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^3.0.0",

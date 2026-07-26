@@ -113,6 +113,10 @@
 		return () => mq.removeEventListener('change', on);
 	});
 	const bottomRounded = $derived($bottomInset > 0 || narrowDrawer);
+	// narrow = bottom SHEET: slide up from below instead of flying in from the right
+	const insTransition = $derived(
+		narrowDrawer ? { y: 500, duration: 240, easing: sineIn } : transitionParamsRight
+	);
 
 	// On a narrow/folded screen this drawer is a bottom SHEET (see #inspector in ui.css)
 	// with a top drag handle to adjust height — mirrors the scene-notes sheet. Persisted.
@@ -132,7 +136,11 @@
 	/** @param {PointerEvent} e */
 	function insDoResize(e) {
 		if (!insResizing) return;
-		inspectorH = Math.min(Math.max(160, window.innerHeight - e.clientY), Math.round(window.innerHeight * 0.85));
+		// sheet is bottom:0, so height = viewport height - finger y; cap the top below
+		// the Connect bar + top-right chrome (same limit as the Flow/Explorer dock)
+		const cb = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--connect-bottom')) || 54;
+		const maxH = Math.max(200, window.innerHeight - cb - 56);
+		inspectorH = Math.min(Math.max(160, window.innerHeight - e.clientY), maxH);
 	}
 	/** @param {PointerEvent} e */
 	function insEndResize(e) {
@@ -438,7 +446,7 @@
 	leftOffset="start-0 "
 	topOffset="top-16"
 	transitionType="fly"
-	transitionParams={transitionParamsRight}
+	transitionParams={insTransition}
 	bind:hidden={$inspectorClose}
 	class={'rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
 	id="inspector"

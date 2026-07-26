@@ -100,15 +100,6 @@
 	const drawerStyle =
 		'bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); z-index: calc(var(--z-bottom) - 1); height: auto';
 
-	// Narrow screens: while this settings drawer is open, drop a `.side-drawer-open`
-	// root class so the top-right chrome (profile/peers/bell/notes — which dropped under
-	// Connect) hides, letting the taller drawer own that space (user request). Reversible.
-	$effect(() => {
-		if (typeof document === 'undefined') return;
-		document.documentElement.classList.toggle('side-drawer-open', $inspectorClose === false);
-		return () => document.documentElement.classList.remove('side-drawer-open');
-	});
-
 	// Round the drawer's bottom-LEFT corner when it floats ABOVE the bottom (a docked
 	// Flow/Explorer, or the narrow Controls inset, leave a gap below it). When it sits
 	// flush on the viewport bottom it stays square there.
@@ -122,6 +113,36 @@
 		return () => mq.removeEventListener('change', on);
 	});
 	const bottomRounded = $derived($bottomInset > 0 || narrowDrawer);
+
+	// On a narrow/folded screen this drawer is a bottom SHEET (see #inspector in ui.css)
+	// with a top drag handle to adjust height — mirrors the scene-notes sheet. Persisted.
+	let inspectorH = $state(0);
+	$effect(() => {
+		if (inspectorH || typeof window === 'undefined') return;
+		const saved = parseInt(localStorage.getItem('inspectorSheetH') || '');
+		inspectorH = !saved || Number.isNaN(saved) ? Math.round(window.innerHeight * 0.45) : saved;
+	});
+	let insResizing = $state(false);
+	/** @param {PointerEvent} e */
+	function insStartResize(e) {
+		insResizing = true;
+		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture?.(e.pointerId);
+		e.preventDefault();
+	}
+	/** @param {PointerEvent} e */
+	function insDoResize(e) {
+		if (!insResizing) return;
+		inspectorH = Math.min(Math.max(160, window.innerHeight - e.clientY), Math.round(window.innerHeight * 0.85));
+	}
+	/** @param {PointerEvent} e */
+	function insEndResize(e) {
+		if (!insResizing) return;
+		insResizing = false;
+		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
+		try {
+			localStorage.setItem('inspectorSheetH', String(inspectorH));
+		} catch {}
+	}
 
 	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
 	// changes AND selection updates (setPhysics only pokes selectedObject).
@@ -408,7 +429,7 @@
 </script>
 
 <Drawer
-	style={drawerStyle}
+	style={drawerStyle + '; --inspector-h: ' + inspectorH + 'px'}
 	activateClickOutside={false}
 	backdrop={false}
 	placement="right"
@@ -422,6 +443,16 @@
 	class={'rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
 	id="inspector"
 >
+	<!-- bottom-sheet drag handle (shown only in the narrow bottom-sheet layout) -->
+	<div
+		class="ins-resize"
+		title="Drag to resize"
+		onpointerdown={insStartResize}
+		onpointermove={insDoResize}
+		onpointerup={insEndResize}
+	>
+		<span class="ins-grabber"></span>
+	</div>
 	{#if $inspectorKind === 'file'}
 		<!-- Explorer file properties (107) -->
 		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">

@@ -106,14 +106,15 @@
 {/if}
 
 <style>
-	/* Wide: right-side drawer (unchanged). */
+	/* Wide (unfolded): right-side drawer that sits ABOVE the top-right chrome (profile/
+	   peers/bell/notes) — top:8 + a z above ~999 so it covers those buttons while open. */
 	#notes-drawer {
 		position: fixed;
 		right: 0;
-		top: 64px;
+		top: 8px;
 		bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px));
 		width: min(320px, 92vw);
-		z-index: calc(var(--z-bottom) - 1);
+		z-index: 1000;
 		border-radius: 0.5rem 0 0 0.5rem;
 	}
 	/* the resize grabber only shows in bottom-sheet mode */
@@ -142,6 +143,8 @@
 			width: 100%;
 			height: var(--notes-h, 45vh);
 			border-radius: 0.75rem 0.75rem 0 0;
+			/* below the Controls HUD in the bottom-sheet layout (not the wide cover-z) */
+			z-index: calc(var(--z-bottom) - 1);
 		}
 		.notes-resize {
 			display: flex;

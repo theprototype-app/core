@@ -18,6 +18,7 @@
 		peers,
 		hidePanels,
 		characterModalOpen,
+		profileSettingsOpen,
 		notesDrawerOpen,
 		cloudIdentity,
 		connectDocked,
@@ -36,7 +37,6 @@
 		level === 'good' ? '#4ade80' : level === 'ok' ? '#fbbf24' : level === 'bad' ? '#f87171' : '#9ca3af';
 
     let openDropdown = $state(false);
-  	let profileSettingsModal = $state(false);
 	let muteMenu = $state(null);
 	// 130: the peers overflow is a proper popover listing EVERY peer (none
 	// hidden by stacking) with a labeled Watch affordance
@@ -361,7 +361,7 @@
 	>
 	<DropdownItem
 		onclick={() => {
-			profileSettingsModal = true;
+			profileSettingsOpen.set(true);
 			openDropdown = false;
 		}}>Profile Settings</DropdownItem>
 	<!-- open-core (PM): cloud account section — the plugin mounts Sign in/out +
@@ -392,7 +392,7 @@
 	/>
 {/if}
 
-<Modal title="" bind:open={profileSettingsModal} outsideclose>
+<Modal title="" bind:open={$profileSettingsOpen} outsideclose>
 
 	<center><b>Profile Settings</b></center>
 
@@ -488,13 +488,18 @@
 		.pf-row {
 			flex-direction: column;
 			align-items: stretch;
-			gap: 4px;
+			gap: 6px;
+			margin-bottom: 6px;
 			padding-left: 1rem;
 			padding-right: 1rem;
 		}
-		.pf-row > :global(p) {
+		/* each label + its control becomes its own cleanly-rounded box — the desktop
+		   layout's half-rounded seams (rounded-s-none / rounded-*-none) look broken when
+		   stacked, so force full rounding on both */
+		.pf-row > :global(p),
+		.pf-row :global(input) {
 			width: 100%;
-			border-radius: 8px 8px 0 0 !important;
+			border-radius: 8px !important;
 		}
 	}
 </style>

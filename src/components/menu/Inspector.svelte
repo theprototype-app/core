@@ -23,6 +23,7 @@
 		recordMaterialChange
 	} from '$lib/materialsHandler';
 	import { recordEntry } from '$lib/history';
+	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
@@ -107,6 +108,20 @@
 		document.documentElement.classList.toggle('side-drawer-open', $inspectorClose === false);
 		return () => document.documentElement.classList.remove('side-drawer-open');
 	});
+
+	// Round the drawer's bottom-LEFT corner when it floats ABOVE the bottom (a docked
+	// Flow/Explorer, or the narrow Controls inset, leave a gap below it). When it sits
+	// flush on the viewport bottom it stays square there.
+	let narrowDrawer = $state(false);
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const mq = window.matchMedia('(pointer: coarse), (max-width: 820px)');
+		narrowDrawer = mq.matches;
+		const on = () => (narrowDrawer = mq.matches);
+		mq.addEventListener('change', on);
+		return () => mq.removeEventListener('change', on);
+	});
+	const bottomRounded = $derived($bottomInset > 0 || narrowDrawer);
 
 	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
 	// changes AND selection updates (setPhysics only pokes selectedObject).
@@ -404,7 +419,7 @@
 	transitionType="fly"
 	transitionParams={transitionParamsRight}
 	bind:hidden={$inspectorClose}
-	class="rounded-tl-lg pt-0"
+	class={'rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
 	id="inspector"
 >
 	{#if $inspectorKind === 'file'}

@@ -40,6 +40,8 @@ export const avatarConfig = writable(
 	storedAvatarConfig ? JSON.parse(storedAvatarConfig) : { body: '#4f83cc', hat: 'none', face: 'label' }
 );
 export const characterModalOpen = writable(false);
+/** Profile Settings modal open state (shared so the logo/menu can close it). */
+export const profileSettingsOpen = writable(false);
 /** @type {import('svelte/store').Writable<any>} */
 export const peers = writable(null);
 export const toggleExpand = writable(null);

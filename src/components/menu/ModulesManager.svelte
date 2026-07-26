@@ -66,7 +66,17 @@
 	}
 </script>
 
-<Modal title="Modules" bind:open={$modulesOpen} size="lg" outsideclose>
+<Modal
+	title="Modules"
+	bind:open={$modulesOpen}
+	size="lg"
+	outsideclose
+	class="tp-modal-frame"
+	dialogClass="tp-modal-dialog fixed top-0 start-0 end-0 h-modal md:inset-0 md:h-full z-50 w-full p-4 flex"
+	bodyClass="tp-modal-body flex-1 overflow-y-auto overscroll-contain"
+	backdropClass="tp-modal-backdrop fixed inset-0 z-40 bg-gray-900 bg-opacity-50 dark:bg-opacity-80"
+	headerClass="tp-modal-header flex justify-between items-center p-4 md:p-5 rounded-t-lg"
+>
 	<div class="mb-3 flex gap-2">
 		<Button size="xs" color={tab === 'core' ? 'primary' : 'alternative'} on:click={() => (tab = 'core')}>
 			Core

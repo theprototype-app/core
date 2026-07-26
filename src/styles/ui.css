@@ -127,6 +127,45 @@
 		display: none !important;
 	}
 }
+/* Shared full-screen-on-narrow modal treatment (Settings, Sessions, Modules). The
+   flowbite modal body is the SINGLE scroll container (no extra inner padding, so no
+   double scrollbar). Desktop: capped at 88vh + widened. Narrow: fills the viewport
+   BELOW the Connect bar (which stays visible/undimmed on top), no radius, and the header
+   title is padded left so it clears the top-left logo. */
+.tp-modal-body {
+	padding: 0 !important;
+}
+.tp-modal-dialog > div {
+	max-width: min(1200px, 94vw) !important;
+}
+.tp-modal-frame {
+	max-height: 88vh;
+}
+@media (max-width: 640px) {
+	.tp-modal-dialog,
+	.tp-modal-backdrop {
+		top: var(--connect-bottom, 0px) !important;
+	}
+	.tp-modal-dialog {
+		padding: 0 !important;
+		height: auto !important;
+		bottom: 0 !important;
+	}
+	.tp-modal-dialog > div {
+		max-width: 100% !important;
+		max-height: 100% !important;
+		height: 100% !important;
+	}
+	.tp-modal-frame {
+		border-radius: 0 !important;
+		height: 100% !important;
+		max-height: 100% !important;
+	}
+	/* leave room for the logo (top-left) so the modal title never sits under it */
+	.tp-modal-header {
+		padding-left: 62px !important;
+	}
+}
 
 @layer components {
 	/* panel chrome */

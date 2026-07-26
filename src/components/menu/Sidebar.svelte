@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../../app.css';
 	import '../../styles/menu.css';
+	import { tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { save, load, importFile } from '$lib/fileHandler.svelte';
 	import {
@@ -12,6 +13,8 @@
 		closeMenu,
 		modulesOpen,
 		sessionsOpen,
+		characterModalOpen,
+		profileSettingsOpen,
 		showToast,
 		connectDocked,
 		connectBarHeight
@@ -56,14 +59,23 @@
 	}
 	let rerenderInput = $state(false);
 
-	// A6: opening the menu dismisses any open modal (Settings/Modules/Sessions) so
-	// the menu (top-most z-tier) is never stacked over — and blocking — a modal. The
-	// reverse (opening a modal from a menu row) already closes the menu.
-	function toggleMenu() {
-		if ($closeMenu) {
+	// A6: clicking the logo while ANY modal is open closes every modal and OPENS the
+	// menu in ONE step. (Previously it toggled the menu regardless of state, so a modal
+	// opened from the avatar — where the menu was already "open" — flipped the menu shut
+	// and only the modal's own outside-click closed it, causing a flicker.)
+	async function toggleMenu() {
+		if ($settingsOpen || $modulesOpen || $sessionsOpen || $characterModalOpen || $profileSettingsOpen) {
 			settingsOpen.set(false);
 			modulesOpen.set(false);
 			sessionsOpen.set(false);
+			characterModalOpen.set(false);
+			profileSettingsOpen.set(false);
+			// closing a modal fires its restorePanels(), which resets closeMenu to the
+			// pre-modal value — open the menu AFTER that flush so it wins (previously the
+			// menu flickered open then shut).
+			await tick();
+			closeMenu.set(false);
+			return;
 		}
 		closeMenu.update((value) => !value);
 	}

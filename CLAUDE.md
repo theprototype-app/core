@@ -399,14 +399,21 @@ loadable play content. Everything a user does must be visible to connected peers
   its header) and re-clamps FULLY on-screen via an IntersectionObserver "reveal" when it's
   shown again (the object-list's own `dragMe` mirrors this).
 - **`@threlte/xr` 1.0.0-next.15 crashes on XR session end/inputsourceschange** —
-  `setup{Controllers,Hands}.js` call `stores[handedness].set(...)` unguarded; a
-  Cardboard/gaze input's handedness isn't in `{left,right,none}` → `undefined.set` throws,
-  aborting teardown (dark-blue viewport, re-entry locked). Fix = `scripts/patch-threlte-xr.cjs`
-  run from `postinstall` (guards all four `.set` with `?.`), idempotent, survives
-  `npm install` in dev + the cloud deploy; the prod build reads the patched source. Vite
-  PRE-BUNDLES the dep and caches it, so a node_modules edit alone keeps serving the stale
-  crashing copy — `optimizeDeps.exclude:['@threlte/xr']` (vite.config) makes dev serve the
-  patched source; a running dev server needs a full restart (cleared `.vite`) to pick it up.
+  `setup{Controllers,Hands}.js` read `data.handedness` / index `stores[handedness]`
+  unguarded in BOTH the `dispatch` helper AND the connect/disconnect store writes (four
+  sites). A Cardboard/gaze input's handedness isn't in `{left,right,none}` and the
+  session-end disconnect has `event.data === undefined` → `Cannot read properties of
+  undefined` aborts the WebXR teardown (dark-blue viewport, re-entry locked). Fix = the
+  **`guardThrelteXr` Vite transform plugin in vite.config.ts** (guards all four accesses
+  with `?.` at load time, dev + build). Do NOT patch node_modules for this: Vite caches
+  the transformed module and a node_modules edit alone keeps serving the stale crashing
+  copy (only a vite.config change forces the dev restart). The plugin also needs
+  `optimizeDeps.exclude:['@threlte/xr']` so the dep is served as SOURCE (not esbuild
+  pre-bundled, which the Rollup-style transform hook wouldn't touch). SEPARATELY, the
+  dark viewport itself is Outline.svelte driving ALL rendering through the EffectComposer
+  (autoRender off) — its passes target canvas-sized buffers, not the XR framebuffer, so
+  in WebXR it must `renderer.render(scene, camera.current)` directly (composer resumes on
+  desktop).
 - THREE color management: `setHSL()` works in the LINEAR working space — pass
   `THREE.SRGBColorSpace` or lightness 0.5 hex-round-trips to `#bcbcbc`. Canvas
   ImageData palettes: write bytes straight from the sRGB hex (round-tripping through
@@ -588,9 +595,11 @@ override for e2e — never share 5173 (the user's main-checkout server).
   crash** — `@threlte/xr`'s controller/hand disconnect+connect handlers do
   `stores[handedness].set(...)` unguarded; a gaze/Cardboard handedness misses the
   {left,right,none} keys → `Cannot read properties of undefined (reading 'set')` aborts
-  the XR teardown (dark-blue viewport, re-entry locked). Fixed by `scripts/patch-threlte-xr.cjs`
-  (postinstall, guards all four `.set` sites) + `optimizeDeps.exclude:['@threlte/xr']`
-  (Vite kept serving the stale pre-bundled copy). Also: Modules Core/User = real tabs,
+  the XR teardown (dark-blue viewport, re-entry locked). Fixed by the `guardThrelteXr`
+  Vite transform plugin (vite.config.ts) guarding all four `handedness` sites at load
+  time + `optimizeDeps.exclude:['@threlte/xr']` (serve as source) + Outline.svelte
+  rendering directly through the XR cameras (the composer can't target the XR
+  framebuffer → `glBlitFramebuffer` / dark viewport). Also: Modules Core/User = real tabs,
   notifications panel pinned on narrow, CharacterModal/ThemedSelect dropdown alignment,
   ContextMenu raised above the toast tier, `mobileUndockAllowed` setting. svelte-check
   held **485/72** throughout.

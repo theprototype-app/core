@@ -108,6 +108,14 @@
 		--controls-inset: 176px;
 	}
 }
+/* Touch / limited-width: hide the "undock into a floating window" buttons (Flow,
+   Explorer, Flow Code, Animation). Floating windows have no room to work on a phone,
+   so those panels stay docked. Targeted by the shared title so all four are covered. */
+@media (pointer: coarse) {
+	[title="Undock into a floating window"] {
+		display: none !important;
+	}
+}
 
 @layer components {
 	/* panel chrome */

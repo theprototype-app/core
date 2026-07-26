@@ -34,6 +34,8 @@
 		winH = parseInt(localStorage.getItem('flowWinH') ?? '480') || 480;
 		clampWin();
 	}
+	// touch / limited-width: keep the editor docked (no room to float; undock hidden)
+	if (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches) docked = true;
 	onMount(() => {
 		clampWin();
 		const onResize = () => clampWin();

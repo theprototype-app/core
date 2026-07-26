@@ -6,6 +6,7 @@ import { createGeometry, createLight, createGroup, changeName, moveGeometry, loc
 import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { applyGraphCreate, applyGraphDelete } from '$lib/flowGraphs';
 import { applyNodeTrigger } from '$lib/flowRuntime';
+import { applyBurst } from '$lib/particleRuntime';
 import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs } from '$lib/customNodes';
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
@@ -411,6 +412,10 @@ export class PeerConnection {
 					deleteFlowEdges(data.ids, data.graphId);
 				} else if(data.type == 'nodetrigger') {
 						applyNodeTrigger(data.id, data.t, false); // 134: shared-timestamp pulse
+					} else if(data.type == 'particleburst') {
+						// PFX-A: shared-timestamp burst — every peer seeds the identical
+						// particle burst from t (no re-broadcast)
+						applyBurst(data.uuid, data.t);
 					} else if(data.type == 'flowcursor') {
 					applyFlowCursor(data);
 				} else if(data.type == 'ping') {

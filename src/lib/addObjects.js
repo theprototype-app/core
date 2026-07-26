@@ -4,6 +4,8 @@ import { peers, meshGenModalOpen } from '../stores/appStore';
 import { sceneCommand } from './commandsHandler.svelte';
 import { primitivesCatalog } from './primitivesCatalog';
 import { meshGenReady } from './ai/meshProviders';
+import { addParticlesPreset } from './particleActions';
+import { PARTICLE_PRESETS } from './particlePresets';
 
 // Spawning for the viewport Add menu (77): run the replicated create command,
 // then land the new object at the clicked ground point (groups keep their
@@ -40,6 +42,34 @@ export function buildAddChildren(pointOf) {
 			}))
 		})),
 		{ label: 'Group', tooltip: 'Create an empty group', action: () => spawnAtPoint('/group New', null) },
+		// PFX-A: standalone emitters — a small marker sphere carries the config
+		// (userData.particles rides object sync / GLTF extras, so it replicates
+		// and saves like any object)
+		{
+			label: 'Effects',
+			children: PARTICLE_PRESETS.map((preset) => ({
+				label: preset.name,
+				tooltip: 'Place a ' + preset.name + ' particle emitter',
+				action: () => {
+					const object = spawnAtPoint('/create Sphere 0.15', pointOf());
+					if (!object?.uuid) return;
+					/** @type {any} */
+					const peer = get(peers);
+					object.name = preset.name + ' emitter';
+					if (peer) peer.send({ type: 'name', uuid: object.uuid, name: object.name });
+					// the marker itself should not cast a shadow (userData.shadow
+					// keeps the opt-out through GLTF sync, V-1)
+					object.castShadow = false;
+					object.userData.shadow = false;
+					if (peer) peer.send({ type: 'objectParameters', parameter: 'castShadow', uuid: object.uuid, castShadow: false });
+					// nor join simulations (primitives spawn dynamic by default now —
+					// an emitter marker must stay scenery, not tumble away)
+					delete object.userData.physics;
+					if (peer) peer.send({ type: 'objectParameters', parameter: 'physics', uuid: object.uuid, physics: null });
+					addParticlesPreset(object.uuid, preset.key);
+				}
+			}))
+		},
 		// Generate a custom mesh from a prompt (roadmap #11) — only when configured
 		...(meshGenReady()
 			? [

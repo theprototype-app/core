@@ -9,8 +9,11 @@ import {
 	setPostTick,
 	isAnimatedTarget,
 	suspendAnimation,
-	resumeAnimation
+	resumeAnimation,
+	fireObjectImpact
 } from './flowRuntime';
+import { burstObjectParticles } from './particleActions';
+import { hasImpactEmitter } from './particleRuntime';
 import { nameOf } from './lockControl';
 import { sceneJoints } from './joints';
 
@@ -46,7 +49,8 @@ export const remoteSimulating = writable(null);
  *   mode: 'dynamic'|'kinematic', hull: boolean, hold: 'user'|'external'|null, holdUntil: number,
  *   samples: {t: number, pos: THREE.Vector3, rot: THREE.Euler}[],
  *   lastWritten: {pos: THREE.Vector3, quat: THREE.Quaternion},
- *   lastSent?: {pos: THREE.Vector3, quat: THREE.Quaternion}}} BodyEntry */
+ *   lastSent?: {pos: THREE.Vector3, quat: THREE.Quaternion},
+ *   preVy?: number}} BodyEntry */
 /** @type {BodyEntry[]} */
 let bodies = [];
 /** @type {{uuid: string, before: any}[]} */ let beforeStates = [];
@@ -59,6 +63,19 @@ let suspendedForRun = [];
 let lastStep = 0;
 let lastBroadcast = 0;
 let accumulator = 0; // fixed-timestep leftover (see step)
+// PFX-C: collision events. Rapier only reports contacts when an EventQueue is
+// passed to world.step AND a collider in the pair carries ActiveEvents flags —
+// neither existed before this phase. Impacts are INITIATOR-detected (only the
+// stepping peer has a world) and replicate through the existing shared-stamp
+// paths: applyNodeTrigger for On Impact nodes, particleburst for emitters.
+/** @type {any} */ let eventQueue = null;
+/** @type {Map<number, {uuid: string, entry: BodyEntry | null}>} collider handle -> owner */
+let colliderOwner = new Map();
+let groundHandle = -1;
+/** @type {Map<string, number>} uuid -> last impact stamp (step-now ms) */
+let lastImpactAt = new Map();
+/** @type {{uuid: string, strength: number}[]} contacts collected inside the substep loop */
+let pendingImpacts = [];
 /** @type {(() => void)[]} C2: live node-param subscriptions active during a sim */
 let liveUnsubs = [];
 let liveSnapshot = '';
@@ -68,6 +85,8 @@ const HULL_MAX_VERTS = 5000;
 const MAX_LINVEL = 20; // m/s clamp on release-velocity estimates
 const MAX_ANGVEL = 20; // rad/s
 const EXTERNAL_HOLD_MS = 250; // peer-move silence before a held body drops
+const IMPACT_COOLDOWN_MS = 300; // per-body: a roll/settle can't machine-gun impacts
+const IMPACT_MIN_DOWN_VY = 1.2; // m/s downward (pre-step) for a contact to count
 
 /** Pre-load the wasm module (also lets tests warm the vite dep cache) */
 export async function warmup() {
@@ -152,6 +171,23 @@ function collectParams(group) {
 		if (!wired) applyPhysicsNode(source, graph);
 	});
 	return map;
+}
+
+/**
+ * Collider shape from the Inspector's collider pick + the object's LOCAL half
+ * extents (PFX-C follow-up: sphere/capsule/cylinder join box + hull). Capsule
+ * and cylinder stand along the object's local Y; sphere takes the largest
+ * extent so nothing pokes through.
+ * @param {string|undefined} kind @param {THREE.Vector3} he half extents
+ */
+function shapeDesc(kind, he) {
+	if (kind === 'sphere') return RAPIER.ColliderDesc.ball(Math.max(he.x, he.y, he.z));
+	if (kind === 'capsule') {
+		const radius = Math.max(he.x, he.z, 0.02);
+		return RAPIER.ColliderDesc.capsule(Math.max(he.y - radius, 0.01), radius);
+	}
+	if (kind === 'cylinder') return RAPIER.ColliderDesc.cylinder(he.y, Math.max(he.x, he.z, 0.02));
+	return RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z);
 }
 
 /** LOCAL axis letter -> WORLD angvel vector for setAngvel (bodies report/step in
@@ -335,7 +371,13 @@ async function startSimulation() {
 	}
 
 	world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-	world.createCollider(RAPIER.ColliderDesc.cuboid(500, 0.1, 500).setTranslation(0, -0.1, 0));
+	groundHandle = world.createCollider(
+		RAPIER.ColliderDesc.cuboid(500, 0.1, 500).setTranslation(0, -0.1, 0)
+	).handle;
+	eventQueue = new RAPIER.EventQueue(true);
+	colliderOwner = new Map();
+	lastImpactAt = new Map();
+	pendingImpacts = [];
 	// NOTE for later phases: static scenery would benefit from
 	// ColliderDesc.trimesh (fixed bodies only) and terrain from a heightfield —
 	// both deferred; every collider today is a cuboid AABB or an opt-in hull.
@@ -348,11 +390,23 @@ async function startSimulation() {
 	const center = new THREE.Vector3();
 
 	group.children.forEach((/** @type {any} */ object) => {
+		// PFX-C follow-up: colliders are ORIENTED. The size comes from the
+		// object's LOCAL AABB (rotation stripped for the measure, restored
+		// after) and the collider carries the object's rotation RELATIVE to the
+		// identity-start body (joints require identity bodies, C3). A rotated
+		// wall/ramp/box now collides as itself — the old world-AABB capture
+		// inflated any rotated object into a fat axis-aligned block.
+		const savedQuat = object.quaternion.clone();
+		object.quaternion.set(0, 0, 0, 1);
+		object.updateMatrixWorld(true);
 		box.setFromObject(object);
+		object.quaternion.copy(savedQuat);
+		object.updateMatrixWorld(true);
 		if (!isFinite(box.min.x)) return; // lights/empties
 		box.getSize(size).multiplyScalar(0.5);
 		size.set(Math.max(size.x, 0.02), Math.max(size.y, 0.02), Math.max(size.z, 0.02));
-		box.getCenter(center);
+		// the unrotated-frame box center, swung back into the real orientation
+		box.getCenter(center).sub(object.position).applyQuaternion(savedQuat).add(object.position);
 		const p = params[object.uuid];
 		const dynamic = !!p && p.mass != null && dynamicUuids.includes(object.uuid);
 		// flow-animated objects (not dynamic) become KINEMATIC platforms: the
@@ -372,11 +426,21 @@ async function startSimulation() {
 		if (p?.collider === 'hull' && !colliderDesc)
 			showToast('Convex hull unavailable for "' + (object.name || object.type) + '" — using a box');
 		let usedHull = !!colliderDesc;
-		colliderDesc ??= RAPIER.ColliderDesc.cuboid(size.x, size.y, size.z);
+		// primitive shapes (box/sphere/capsule/cylinder) fit the LOCAL extents and
+		// carry the object's rotation on the collider (hulls bake it into verts)
+		colliderDesc ??= shapeDesc(p?.collider, size).setRotation({
+			x: savedQuat.x,
+			y: savedQuat.y,
+			z: savedQuat.z,
+			w: savedQuat.w
+		});
 		if (p?.restitution != null) colliderDesc.setRestitution(p.restitution);
 		if (p?.friction != null) colliderDesc.setFriction(p.friction);
 		if (dynamic) colliderDesc.setMass(p.mass);
-		world.createCollider(colliderDesc, body);
+		// PFX-C: dynamics report contact starts (one flagged collider per pair
+		// is enough — dynamic-vs-scenery and dynamic-vs-dynamic both fire)
+		if (dynamic) colliderDesc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+		const collider = world.createCollider(colliderDesc, body);
 		// hull vertices are baked in the object's WORLD orientation around its
 		// origin -> the body carries only the translation and starts at IDENTITY
 		// rotation (like the box path, initialQuat compensates); the AABB box
@@ -410,6 +474,7 @@ async function startSimulation() {
 		} else {
 			fixedBodies.set(object.uuid, body); // a joint may pin something to it (P-B)
 		}
+		colliderOwner.set(collider.handle, { uuid: object.uuid, entry: dynamic || kinematic ? entry : null });
 	});
 
 	// P-B: build rapier impulse joints from the replicated defs. Anchors are
@@ -676,8 +741,18 @@ function step(now) {
 			feed.entry.body.setNextKinematicTranslation({ x: stepPos.x, y: stepPos.y, z: stepPos.z });
 			feed.entry.body.setNextKinematicRotation({ x: stepQuat.x, y: stepQuat.y, z: stepQuat.z, w: stepQuat.w });
 		}
-		world.step();
+		// PFX-C: impact strength must be sampled BEFORE the step — contact
+		// resolution rewrites linvel during it (a bounce reads as upward after)
+		bodies.forEach((entry) => {
+			if (entry.mode === 'dynamic' && !entry.hold) entry.preVy = entry.body.linvel().y;
+		});
+		world.step(eventQueue);
+		// drain per SUBSTEP or events from early substeps get merged/lost
+		eventQueue.drainCollisionEvents((/** @type {number} */ h1, /** @type {number} */ h2, /** @type {boolean} */ started) => {
+			if (started) queueContact(h1, h2, now);
+		});
 	}
+	dispatchImpacts();
 
 	/** @type {any} */
 	const peer = get(peers);
@@ -718,6 +793,47 @@ function step(now) {
 		}
 	});
 	objectsGroup.update((value) => value);
+}
+
+/**
+ * A contact-start seen inside the substep loop. Either side that is a falling
+ * DYNAMIC body (pre-step downward velocity above the threshold, not held, off
+ * cooldown) registers an impact — dynamic-vs-ground, dynamic-vs-scenery and
+ * dynamic-vs-dynamic all count.
+ * @param {number} h1 @param {number} h2 @param {number} now step clock (ms)
+ */
+function queueContact(h1, h2, now) {
+	for (const handle of [h1, h2]) {
+		if (handle === groundHandle) continue;
+		const entry = colliderOwner.get(handle)?.entry;
+		if (!entry || entry.mode !== 'dynamic' || entry.hold) continue;
+		const down = -(entry.preVy ?? 0);
+		if (down < IMPACT_MIN_DOWN_VY) continue;
+		const uuid = entry.object.uuid;
+		if (now - (lastImpactAt.get(uuid) ?? -Infinity) < IMPACT_COOLDOWN_MS) continue;
+		lastImpactAt.set(uuid, now);
+		pendingImpacts.push({ uuid, strength: down });
+	}
+}
+
+/** Fire the collected impacts AFTER the substep loop (keeps the stepping tight
+ * and the peer sends out of the drain callback). Initiator-only by construction. */
+function dispatchImpacts() {
+	if (!pendingImpacts.length) return;
+	const impacts = pendingImpacts;
+	pendingImpacts = [];
+	const group = get(objectsGroup);
+	impacts.forEach(({ uuid, strength }) => {
+		// flow path: pulse On Impact nodes targeting this object — the trigger
+		// stamp replicates (nodetrigger), so every peer computes the same pulse
+		fireObjectImpact(uuid, strength);
+		// zero-flow path: an emitter set to "On impact" bursts for everyone
+		// (replicated particleburst timestamp) — userData emitters checked on
+		// the object, NODE emitters through the runtime
+		const object = group?.getObjectByProperty('uuid', uuid);
+		if (object?.userData?.particles?.mode === 'impact' || hasImpactEmitter(uuid))
+			burstObjectParticles(uuid);
+	});
 }
 
 /** Pause/resume the stepping (world + suspensions stay alive). Peers simply see
@@ -768,6 +884,10 @@ export function stopSimulation(opts = {}) {
 
 	world?.free?.();
 	world = null;
+	eventQueue?.free?.();
+	eventQueue = null;
+	colliderOwner = new Map();
+	pendingImpacts = [];
 	bodies = [];
 	beforeStates = [];
 	liveJoints = new Map();

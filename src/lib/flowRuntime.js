@@ -8,6 +8,7 @@ import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { runScript } from './scriptRuntime';
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
+import { updateParticles } from './particleRuntime';
 import { startObjectFlowWatcher } from './objectFlow';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
@@ -180,7 +181,8 @@ export const valueTypes = [
 	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter', // 134
 	'maprange', 'select', // 4.6
 	'flowinput', 'flowoutput', 'objectflow', // H5: object-flow composition
-	'keypress' // H3: keyboard trigger
+	'keypress', // H3: keyboard trigger
+	'onimpact' // PFX-C: physics impact trigger
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -422,6 +424,12 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
 		}
+		case 'onimpact': {
+			// PFX-C: physics impacts arrive as replicated trigger stamps too
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
 		case 'counter':
 			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;
 		// --- H5: object-flow composition ---
@@ -508,17 +516,54 @@ export function applyNodeTrigger(nodeId, t, replicate = true) {
 	}
 }
 
+/** Does a downstream Object Selector targeting `uuid` sit anywhere past `startId`?
+ * Follows outgoing edges through intermediate nodes (e.g. On Click -> Particles ->
+ * Object Selector), so a trigger wired THROUGH an effect node still fires on the
+ * click of the object that effect targets. @param {string} startId @param {string} uuid */
+function reachesObjectSelector(startId, uuid) {
+	const seen = new Set([startId]);
+	const stack = [startId];
+	while (stack.length) {
+		const cur = stack.pop();
+		for (const edge of edges) {
+			if (edge.source !== cur || seen.has(edge.target)) continue;
+			const target = nodes.find((n) => n.id === edge.target);
+			// an Object Selector is a sink — check its target, don't traverse past it
+			if (target?.type === 'objectselector') {
+				if (target.data?.selected === uuid) return true;
+				continue;
+			}
+			seen.add(edge.target);
+			stack.push(edge.target);
+		}
+	}
+	return false;
+}
+
 /** A user clicked an object — pulse any OnClick node targeting it (134). @param {string} uuid */
 export function fireObjectClick(uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
-		const hit = edges.some((edge) => {
-			if (edge.source !== node.id) return false;
-			const target = nodes.find((n) => n.id === edge.target);
-			return target?.type === 'objectselector' && target.data?.selected === uuid;
-		});
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
-		if (hit || implicitOwnerOf(node) === uuid) applyNodeTrigger(node.id, syncedNow(), true);
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+			applyNodeTrigger(node.id, syncedNow(), true);
+	});
+}
+
+/**
+ * PFX-C: the physics INITIATOR detected a ground/object impact — pulse any On
+ * Impact node targeting the object whose min-strength gate passes. The trigger
+ * stamp replicates (nodetrigger), so every peer computes the identical pulse.
+ * @param {string} uuid @param {number} strength downward speed at contact (m/s)
+ */
+export function fireObjectImpact(uuid, strength) {
+	const ctx = runtimeCtx();
+	nodes.forEach((node) => {
+		if (node.type !== 'onimpact') return;
+		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
+		if (strength < num(data.minStrength ?? 0)) return;
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+			applyNodeTrigger(node.id, syncedNow(), true);
 	});
 }
 
@@ -642,8 +687,17 @@ function applyPathPatrol(object, data, time) {
 	}
 }
 
+// PFX-C follow-up: the loop body, split from its scheduler. window.rAF is
+// SUSPENDED during an immersive WebXR session (the browser only services
+// session.requestAnimationFrame), which froze every flow animation AND physics
+// (the postTick) the moment a headset went on. Scene.svelte pumps this from
+// threlte's task loop (setAnimationLoop — XR-aware) while presenting; the
+// timestamp guard makes a double delivery (both loops in one frame) a no-op.
+let lastRunAt = -1000;
 /** @param {number} now */
-function tick(now) {
+function runTick(now) {
+	if (now - lastRunAt < 3) return;
+	lastRunAt = now;
 	// wall clock (wrapped daily to keep float noise low) -> same phase on every peer
 	const time = synced ? (Date.now() % 86400000) / 1000 : now / 1000;
 	const ctx = runtimeCtx(); // 134: scene + trigger state for the evaluators
@@ -735,6 +789,24 @@ function tick(now) {
 	});
 	updateSounds(soundPairs, sceneObjects, time);
 
+	// PFX-A: particle emitters — same keyed-runtime lifecycle as sound. Node
+	// pairs (the `particle` node ships in PFX-B) plus the runtime's own sweep
+	// of userData.particles emitters happen in updateParticles.
+	/** @type {{node: any, uuid: string}[]} */
+	const particlePairs = [];
+	edges.forEach((edge) => {
+		const source = nodes.find((n) => n.id === edge.source);
+		if (source?.type !== 'particle') return;
+		const uuid = targetUuidOf(edge);
+		if (uuid) particlePairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+	});
+	nodes.forEach((node) => {
+		if (node.type !== 'particle') return;
+		const uuid = implicitOwnerOf(node);
+		if (uuid) particlePairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
+	});
+	updateParticles(particlePairs, sceneObjects, time);
+
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
 	if (now - lastValuesAt > 150) {
 		lastValuesAt = now;
@@ -795,8 +867,19 @@ function tick(now) {
 			console.log('post-tick hook failed', error);
 		}
 	}
+}
 
+/** the desktop scheduler (suspended by the browser while in immersive XR) */
+/** @param {number} now */
+function tick(now) {
+	runTick(now);
 	requestAnimationFrame(tick);
+}
+
+/** XR-side pump: Scene.svelte calls this from threlte's task loop while
+ * presenting, so flow + physics keep running in the headset. @param {number} now */
+export function pumpFlowTick(now) {
+	runTick(now);
 }
 
 /** @type {((now: number) => void) | null} */

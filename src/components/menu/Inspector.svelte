@@ -30,6 +30,8 @@
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup, selectObject } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection } from '$lib/physics';
+	import { addParticlesPreset, updateObjectParticles, removeObjectParticles, burstObjectParticles } from '$lib/particleActions';
+	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
 	import { showLightHelpers } from '$lib/lightHelpers';
 	import { cameraNear, cameraFar, setCameraNear, setCameraFar } from '$lib/cameraClip';
@@ -70,7 +72,7 @@
 		globalCamera,
 		viewMode
 	} from '../../stores/sceneStore';
-	import { peers, inspectorClose, inspectorKind, showToast } from '../../stores/appStore.js';
+	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter } from '../../stores/appStore.js';
 
 	const hexColor = /^#[0-9A-F]{6}$/i;
 	const RAD_SNAP = Math.PI / 12; // Ctrl-snap rotations to 15°
@@ -278,6 +280,14 @@
 	// P-A: physics body params live on userData.physics (replicates free via
 	// object sync / GLTF extras / sessions); flow nodes override at sim start.
 	// Each edit replicates via objectParameters and records a props undo entry.
+	// PFX-A: particle emitter config lives on userData.particles (replicates
+	// free via object sync / GLTF extras / sessions); particleActions records
+	// the props undo entry and replicates each edit via objectParameters.
+	/** @param {any} patch */
+	function setParticles(patch) {
+		updateObjectParticles($selectedObject.uuid, patch);
+	}
+
 	/** @param {any} patch */
 	function setPhysics(patch) {
 		const before = $selectedObject.userData.physics ? { ...$selectedObject.userData.physics } : null;
@@ -451,6 +461,16 @@
 	{:else if $inspectorKind === 'scene'}
 		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
 			<PanelHeader title="Scene" badge="Scene" onclose={() => inspectorClose.set(true)} />
+			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
+			<input
+				id="inspector-search"
+				type="search"
+				class="ui-input mb-2 w-full"
+				placeholder="Filter properties…"
+				value={$inspectorFilter}
+				oninput={(/** @type {any} */ e) => inspectorFilter.set(e.currentTarget.value)}
+				onkeydown={(/** @type {any} */ e) => e.key === 'Escape' && inspectorFilter.set('')}
+			/>
 		</div>
 
 		<div class="flex flex-col gap-3">
@@ -843,6 +863,16 @@
 				title="Properties"
 				badge={$selectedObject.type}
 				onclose={() => inspectorClose.set(true)}
+			/>
+			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
+			<input
+				id="inspector-search"
+				type="search"
+				class="ui-input mb-2 w-full"
+				placeholder="Filter properties…"
+				value={$inspectorFilter}
+				oninput={(/** @type {any} */ e) => inspectorFilter.set(e.currentTarget.value)}
+				onkeydown={(/** @type {any} */ e) => e.key === 'Escape' && inspectorFilter.set('')}
 			/>
 		</div>
 
@@ -1414,6 +1444,9 @@
 							id="physics-collider"
 							items={[
 								{ value: 'box', name: 'Box' },
+								{ value: 'sphere', name: 'Sphere' },
+								{ value: 'capsule', name: 'Capsule' },
+								{ value: 'cylinder', name: 'Cylinder' },
 								{ value: 'hull', name: 'Convex hull' }
 							]}
 							value={$selectedObject.userData.physics?.collider ?? 'box'}
@@ -1423,6 +1456,159 @@
 					<p class="mt-1 text-xs text-gray-400">
 						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
 					</p>
+				</Section>
+
+				<!-- PFX-A: particle emitter — config on userData.particles, every edit
+				     replicates + records a props undo entry (setParticles) -->
+				<Section label="Particles">
+					{#if !$selectedObject.userData.particles}
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Emitter</span>
+							<ThemedSelect
+								id="particles-add"
+								items={[
+									{ value: 'none', name: 'Add emitter…' },
+									...PARTICLE_PRESETS.map((p) => ({ value: p.key, name: p.name }))
+								]}
+								value={'none'}
+								onchange={(/** @type {any} */ v) => {
+									if (v !== 'none') addParticlesPreset($selectedObject.uuid, v);
+								}}
+							/>
+						</div>
+					{:else}
+						{@const p = $selectedObject.userData.particles}
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Preset</span>
+							<ThemedSelect
+								id="particles-preset"
+								items={PARTICLE_PRESETS.map((item) => ({ value: item.key, name: item.name }))}
+								value={p.preset ?? 'sparkles'}
+								onchange={(/** @type {any} */ v) => addParticlesPreset($selectedObject.uuid, v)}
+							/>
+						</div>
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Emission</span>
+							<ThemedSelect
+								id="particles-mode"
+								items={[
+									{ value: 'continuous', name: 'Continuous' },
+									{ value: 'burst', name: 'Burst (triggered)' },
+									{ value: 'impact', name: 'On impact (physics)' }
+								]}
+								value={p.mode ?? 'continuous'}
+								onchange={(/** @type {any} */ v) => setParticles({ mode: v })}
+							/>
+						</div>
+						{#if (p.mode ?? 'continuous') === 'impact'}
+							<p class="text-xs text-gray-400">
+								Fires when a physics simulation lands this object on the ground or another object (needs a Dynamic body + a running sim).
+							</p>
+						{/if}
+						{#if (p.mode ?? 'continuous') !== 'continuous'}
+							<div class="ui-row items-center gap-2">
+								<Button size="xs" color="alternative" onclick={() => burstObjectParticles($selectedObject.uuid)}>
+									💥 Burst now
+								</Button>
+								<span class="text-xs text-gray-400">fires for every peer</span>
+							</div>
+						{/if}
+						<SliderRow label="Count" min={1} max={500} step={1} value={p.count ?? 80}
+							onchange={(v) => setParticles({ count: v })} />
+						<SliderRow label="Lifetime" min={0.1} max={6} step={0.1} value={p.lifetime ?? 1.5}
+							onchange={(v) => setParticles({ lifetime: v })} />
+						<SliderRow label="Speed" min={0} max={8} step={0.1} value={p.speed ?? 1}
+							onchange={(v) => setParticles({ speed: v })} />
+						<SliderRow label="Gravity" min={-10} max={10} step={0.1} value={p.gravity ?? 0}
+							onchange={(v) => setParticles({ gravity: v })} />
+						<SliderRow label="Turbulence" min={0} max={1} step={0.05} value={p.turbulence ?? 0.2}
+							onchange={(v) => setParticles({ turbulence: v })} />
+						<SliderRow label="Size start" min={0.01} max={1} step={0.01} value={p.sizeStart ?? 0.1}
+							onchange={(v) => setParticles({ sizeStart: v })} />
+						<SliderRow label="Size end" min={0} max={1} step={0.01} value={p.sizeEnd ?? 0.03}
+							onchange={(v) => setParticles({ sizeEnd: v })} />
+						<SliderRow label="Opacity" min={0} max={1} step={0.05} value={p.opacity ?? 0.9}
+							onchange={(v) => setParticles({ opacity: v })} />
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400" title="Where particles spawn, relative to the object center (local axes)">Emit from</span>
+							{#each ['x', 'y', 'z'] as axis, i}
+								<input
+									type="number"
+									step="0.1"
+									aria-label={'Emit offset ' + axis}
+									class="w-14 rounded border border-gray-500 bg-transparent px-1 py-0.5 text-xs"
+									value={(p.offset ?? [0, 0, 0])[i] ?? 0}
+									oninput={(/** @type {any} */ e) => {
+										const off = [...(p.offset ?? [0, 0, 0])];
+										off[i] = +e.currentTarget.value;
+										setParticles({ offset: off });
+									}}
+								/>
+							{/each}
+						</div>
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
+							<input
+								type="color"
+								aria-label="Particle start color"
+								class="h-6 w-8 cursor-pointer rounded border border-gray-500 bg-transparent"
+								value={p.colorStart ?? '#ffffff'}
+								oninput={(/** @type {any} */ e) => setParticles({ colorStart: e.currentTarget.value })}
+							/>
+							<span class="text-xs text-gray-400">→</span>
+							<input
+								type="color"
+								aria-label="Particle end color"
+								class="h-6 w-8 cursor-pointer rounded border border-gray-500 bg-transparent"
+								value={p.colorEnd ?? '#8899aa'}
+								oninput={(/** @type {any} */ e) => setParticles({ colorEnd: e.currentTarget.value })}
+							/>
+						</div>
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Sprite</span>
+							<ThemedSelect
+								id="particles-sprite"
+								items={[
+									{ value: 'dot', name: 'Soft dot' },
+									{ value: 'streak', name: 'Spark streak' },
+									{ value: 'puff', name: 'Smoke puff' },
+									{ value: 'star', name: 'Star' },
+									{ value: 'square', name: 'Confetti' }
+								]}
+								value={p.sprite ?? 'dot'}
+								onchange={(/** @type {any} */ v) => setParticles({ sprite: v })}
+							/>
+						</div>
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Blending</span>
+							<ThemedSelect
+								id="particles-blending"
+								items={[
+									{ value: 'additive', name: 'Additive (glow)' },
+									{ value: 'normal', name: 'Normal' }
+								]}
+								value={p.blending ?? 'additive'}
+								onchange={(/** @type {any} */ v) => setParticles({ blending: v })}
+							/>
+						</div>
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Space</span>
+							<ThemedSelect
+								id="particles-space"
+								items={[
+									{ value: 'local', name: 'Local (rides object)' },
+									{ value: 'world', name: 'World (trails behind)' }
+								]}
+								value={p.space ?? 'local'}
+								onchange={(/** @type {any} */ v) => setParticles({ space: v })}
+							/>
+						</div>
+						<div class="ui-row items-center gap-2">
+							<Button size="xs" color="red" onclick={() => removeObjectParticles($selectedObject.uuid)}>
+								Remove emitter
+							</Button>
+						</div>
+					{/if}
 				</Section>
 			{/if}
 		</div>

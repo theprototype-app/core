@@ -1412,6 +1412,8 @@ function endGrab(object, before) {
 	const after = transformStateOf(object);
 	if (JSON.stringify(before) !== JSON.stringify(after))
 		recordTransform({ uuid: object.uuid, before: before, after: after });
+	// PFX-C: mid-sim release = throw (velocity estimate from the hold samples)
+	import('./physics').then((m) => m.releaseBody(object.uuid));
 	resumeAnimation(object.uuid); // release spot becomes the new animation base
 }
 
@@ -2065,6 +2067,11 @@ function onSqueezeStart(index) {
 	}
 
 	suspendAnimation(object.uuid); // animated objects park at their base while held
+	// PFX-C: mid-sim, a VR-grabbed dynamic body follows the hand kinematically
+	// and RELEASE throws it with the estimated hand velocity — the exact desktop
+	// gizmo contract (holdBody/releaseBody). Dynamic import keeps the vrControls
+	// import graph physics-free (the multiTransform pattern); no-op outside a sim.
+	import('./physics').then((m) => m.holdBody(object.uuid));
 	const cPos = controller.getWorldPosition(new THREE.Vector3());
 	const cQuat = controller.getWorldQuaternion(new THREE.Quaternion());
 	// rigid attach (100): the object's pose RELATIVE to the controller, in the

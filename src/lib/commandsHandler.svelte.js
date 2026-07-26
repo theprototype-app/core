@@ -364,6 +364,15 @@ export async function objectParameters(data) {
             if (data.physics) mesh.userData.physics = data.physics;
             else delete mesh.userData.physics;
         }
+    } else if (data.parameter == 'particles') {
+        // PFX-A: userData.particles is the emitter config (Inspector/menus set
+        // it); the particle runtime sweeps it per tick. null = removed
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.particles) mesh.userData.particles = data.particles;
+            else delete mesh.userData.particles;
+            objectsGroup.update((value) => value);
+        }
     } else if (data.parameter == 'renderOrder') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.renderOrder = data.renderOrder;

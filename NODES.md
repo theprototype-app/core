@@ -30,6 +30,7 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | visibility | Logic | effect | on | OK |
 | onclick | Triggers | event | — | FIX: event→effect is now a legal drag (the typed sockets rejected wiring On Click into the Object Selector its own feature requires). Pulse window OK. |
 | counter | Triggers | number | pulse | OK |
+| onimpact | Triggers | event | minStrength | NEW (PFX-C): pulses when the physics INITIATOR lands the object on the ground/another object (rapier contact-start + pre-step downward velocity ≥ 1.2 m/s + 300ms per-body cooldown). Targeting walks THROUGH intermediate nodes to the Object Selector (the fireObjectClick BFS) and honors the implicit-owner rule. Replicated via nodetrigger stamps; `minStrength` gates on impact speed (wirable). |
 | shake/spin/bounce/orbit | Animation | effect | per-param | OK (generic AnimationNode; params get ⓘ editors where sensible) |
 | pathpatrol | Animation | effect | — | OK (points captured by scene clicks) |
 | mass/bounciness/friction | Physics | effect | value | DOC: consumed by physics.js collectParams when the sim starts — NOT flowRuntime. Working, different runtime; invisible to per-frame eval. |
@@ -37,6 +38,7 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | motor | Physics | effect | per-param | NEW (13-C2): drives EVERY revolute joint touching the selected object (select a car body → all wheel motors) via configureMotorVelocity; wins over a joint def's own motor. Param edits re-apply LIVE mid-sim. Authoritative sync. |
 | pulse/blink | Effects | effect | per-param | OK |
 | sound | Effects | effect | volume | OK (`playing` IS read by soundRuntime — earlier suspicion disproven). |
+| particle | Effects | effect | count color trigger | NEW (PFX-B): flow-driven particle emitter — targets the connected object (or the graph owner, H1 implicit rule) and renders through `particleRuntime` (deterministic analytic sim, keyed by node id). `count`/`color` are wired overrides; `trigger` fires a burst-mode emitter on its rising edge. Config seeded from a preset on the card. Not in `animationTypes` — a keyed runtime subsystem like `sound`. |
 | customnode | (meta) | effect (drives a Selector) | per-def param | FIX (4.5): def params get INPUT sockets (they were unwirable — the runtime already resolved them); def edits prune dangling edges deterministically. |
 | maprange | Logic | number | a | NEW (4.6): remap [inMin..inMax] → [outMin..outMax], optional clamp — the glue between free-range sources and bounded params. |
 | select | Logic | number | index a b | NEW (4.6): outputs a when index < 0.5 else b — pairs with switcher-as-number / compare. |

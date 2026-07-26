@@ -18,6 +18,7 @@ const OUTPUT = {
 	objectselector: 'object',
 	onclick: 'event',
 	keypress: 'event', // H3
+	onimpact: 'event', // PFX-C
 	flowinput: 'number' // H5 fallback; the live check reads data.vtype
 };
 
@@ -37,7 +38,10 @@ const INPUT = {
 	lookat: { target: 'object' },
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
-	counter: { pulse: 'event' }
+	counter: { pulse: 'event' },
+	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
+	// a burst fired from any event (On Click / Key Press / On Impact)
+	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' }
 };
 
 // what an OUTPUT type may feed into a differently-typed INPUT

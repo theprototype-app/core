@@ -10,6 +10,7 @@ import {
 	vrToolMode
 } from '../stores/sceneStore';
 import { environment, setEnvironment, ENVIRONMENT_PRESETS } from './environment';
+import { simulating, remoteSimulating, toggleSimulation } from './physics';
 import { setMicMode, vrMicMode } from './voiceChat';
 import { duplicateSelection, deleteSelection, groupSelection, selectionUuids } from './objectActions';
 import { savePrefab, savePrefabSelection } from './prefabs';
@@ -229,17 +230,31 @@ function registerBuiltins() {
 	// Prefabs opens the thumbnail window (115)
 	registerVRMenuEntry({ id: 'prefabs', group: 'add', label: 'Prefabs', order: 6 });
 
-	// Scene ▸ — environment presets + snap-turn angle
+	// Scene ▸ — Environment ▸ (the presets, nested — they crowded the ring),
+	// Physics toggle + snap-turn angle
+	registerVRMenuEntry({ id: 'nav:environment', group: 'scene', label: 'Environment ▸', order: 0, ring: 'environment' });
 	Object.entries(ENVIRONMENT_PRESETS).forEach(([key, preset], order) =>
 		registerVRMenuEntry({
 			id: 'env:' + key,
-			group: 'scene',
+			group: 'environment',
 			label: preset.label,
 			order,
 			active: () => get(environment)?.preset === key,
 			action: () => setEnvironment(key)
 		})
 	);
+	// PFX-C follow-up: start/stop the scene physics simulation from VR (the P
+	// key is desktop-only). Greyed out while a REMOTE peer runs the sim (the
+	// same busy-guard toggleSimulation enforces).
+	registerVRMenuEntry({
+		id: 'physics',
+		group: 'scene',
+		label: () => 'Physics: ' + (get(simulating) || get(remoteSimulating) ? 'On' : 'Off'),
+		order: 1,
+		active: () => get(simulating),
+		disabled: () => !!get(remoteSimulating),
+		action: () => toggleSimulation()
+	});
 	registerVRMenuEntry({
 		id: 'snapangle',
 		group: 'scene',

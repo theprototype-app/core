@@ -8,6 +8,7 @@
 	import { drawMode } from '$lib/drawMode'
 	import { vrMicMode, micActive } from '$lib/voiceChat'
 	import { environment } from '$lib/environment'
+	import { simulating, remoteSimulating } from '$lib/physics'
 	import { vrHovered, vrMenuGroup, vrChatUnread, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { activeRing, ringEntries, ringVersion, sectorLayout, hubEntry, menuPoseFromController, RING_INNER, RING_OUTER, HUB_RADIUS } from '$lib/vrRadialMenu'
@@ -40,6 +41,8 @@
 		$vrPassthrough,
 		$vrSnapAngle,
 		$environment,
+		$simulating,
+		$remoteSimulating, // PFX-C: the Physics sector label/dot tracks the sim
 		$selectedObject,
 		$selectedObjects // D4: counted labels + Make Group re-derive on the SET
 	)

@@ -261,6 +261,9 @@ notifications.subscribe((list) => {
 });
 /** count of notifications arrived since the center was last opened */
 export const notificationsUnread = writable(0);
+/** Inspector property search (PFX-C follow-up): non-empty = Sections filter
+ * themselves by their rendered text (Section.svelte reads this). LOCAL. */
+export const inspectorFilter = writable('');
 /** the notification center panel open state */
 export const notificationCenterOpen = writable(false);
 /** E2: the scene-notes drawer (lists every annotation) open state */

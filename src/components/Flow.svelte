@@ -153,7 +153,7 @@
 				title="Undock into a floating window"
 				onclick={() => setDocked(false)}>⧉</button
 			>
-			<div style="height: calc({$dockHeight - 16}px - {paletteOpen ? 'var(--controls-inset, 0px) * 0.5' : '0px'})">
+			<div style="height: calc({$dockHeight - 16}px - {paletteOpen ? 'var(--dock-inset, 0px)' : '0px'})">
 				<SvelteFlowProvider>
 					<Nodes bind:paletteOpen />
 				</SvelteFlowProvider>

@@ -955,7 +955,7 @@
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
 		<div id="explorer-tree" class="flex h-full flex-col text-xs">
 			<!-- scrollable folder list; the roots below stay pinned to the bottom -->
-			<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1" style="padding-bottom: var(--controls-inset, 0px)">
+			<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1">
 			<button
 				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
 					? 'bg-primary-700 text-white'
@@ -1081,7 +1081,7 @@
 		<div
 			bind:this={gridEl}
 			class="relative h-full min-w-0 overflow-y-auto p-1 outline-none"
-			style="scrollbar-gutter: stable; padding-bottom: var(--controls-inset, 0px)"
+			style="scrollbar-gutter: stable"
 			tabindex="-1"
 			oncontextmenu={gridMenu}
 			onclick={gridBackgroundClick}
@@ -1383,7 +1383,7 @@
 					onclick={() => setDocked(false)}>⧉</button
 				>
 			</div>
-			<div style="height: {height - 44}px">
+			<div style="height: calc({height - 44}px - var(--controls-inset, 0px))">
 				{@render content()}
 			</div>
 		</div>

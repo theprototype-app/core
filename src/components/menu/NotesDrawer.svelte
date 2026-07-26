@@ -124,13 +124,20 @@
 	#notes-drawer {
 		position: fixed;
 		right: 0;
-		/* just below the Connect bar; above the top-right chrome (z:1000) so it covers
-		   those buttons when a docked Connect has dropped them underneath */
-		top: calc(var(--connect-bottom, 0px) + 4px);
+		/* default (Connect centred / not docked): below the profile icon, under the chrome */
+		top: 64px;
 		bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px));
 		width: min(320px, 92vw);
-		z-index: 1000;
+		z-index: calc(var(--z-bottom) - 1);
 		border-radius: 0.5rem 0 0 0.5rem;
+	}
+	/* only when Connect is docked (chrome dropped under it), and only in side-drawer mode
+	   (wide) — tuck below the bar and cover the chrome buttons; narrow stays a bottom sheet */
+	@media (min-width: 641px) {
+		:global(:root.connect-docked) #notes-drawer {
+			top: calc(var(--connect-bottom, 0px) + 4px);
+			z-index: 1000;
+		}
 	}
 	/* the resize grabber only shows in bottom-sheet mode */
 	.notes-resize {

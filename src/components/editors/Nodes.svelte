@@ -115,8 +115,9 @@
 
 	const { screenToFlowPosition, fitView, setViewport } = useSvelteFlow();
 
-	// palette collapse + side (82), persisted
-	let paletteOpen = typeof localStorage === 'undefined' || localStorage.getItem('flowPaletteOpen') !== 'false';
+	// palette collapse + side (82), persisted. Exported so the docked host (Flow) can
+	// inset its content above the Controls HUD only when the palette is actually shown.
+	export let paletteOpen = typeof localStorage === 'undefined' || localStorage.getItem('flowPaletteOpen') !== 'false';
 	let paletteSide = typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteSide') ?? 'left' : 'left';
 
 	// 166: flow PROPERTIES panel — curated graph prefs (LOCAL, persisted) + the
@@ -522,7 +523,7 @@
 
 <div class="flex h-full w-full">
 	{#if paletteOpen}
-		<div class="h-full w-40 shrink-0 overflow-y-auto" style="order: {paletteSide === 'right' ? 3 : 1}; padding-bottom: var(--controls-inset, 0px)">
+		<div class="h-full w-40 shrink-0 overflow-y-auto" style="order: {paletteSide === 'right' ? 3 : 1}">
 			<Sidebar onPick={addNodeAtCenter} onPlaceAt={addNodeAtScreen} />
 		</div>
 	{/if}
@@ -670,7 +671,7 @@
 		</button>
 	</div>
 	{#if propsOpen}
-		<div id="flow-props" class="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-gray-800 p-2 text-xs text-gray-200" style="order: {propsSide === 'left' ? -1 : 5}; padding-bottom: var(--controls-inset, 0px)">
+		<div id="flow-props" class="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-gray-800 p-2 text-xs text-gray-200" style="order: {propsSide === 'left' ? -1 : 5}">
 			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
 			     ⚙ = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">

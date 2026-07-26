@@ -20,6 +20,11 @@
 
 	const clampH = (h: number) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
 	let docked = $state(true);
+	// mirrors Nodes' palette-open (bound below) so the docked content only insets above
+	// the Controls HUD when the node palette is actually shown (overlapping the HUD)
+	let paletteOpen = $state(
+		typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteOpen') !== 'false' : true
+	);
 	let winW = $state(760);
 	let winH = $state(480);
 	// keep the floating window within the viewport (a persisted wide rect used to push
@@ -148,9 +153,9 @@
 				title="Undock into a floating window"
 				onclick={() => setDocked(false)}>⧉</button
 			>
-			<div style="height: {$dockHeight - 16}px">
+			<div style="height: calc({$dockHeight - 16}px - {paletteOpen ? 'var(--controls-inset, 0px)' : '0px'})">
 				<SvelteFlowProvider>
-					<Nodes />
+					<Nodes bind:paletteOpen />
 				</SvelteFlowProvider>
 			</div>
 		</div>
@@ -175,7 +180,7 @@
 			</div>
 			<div class="min-h-0 flex-1">
 				<SvelteFlowProvider>
-					<Nodes />
+					<Nodes bind:paletteOpen />
 				</SvelteFlowProvider>
 			</div>
 			<div

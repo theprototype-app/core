@@ -90,9 +90,13 @@
 			bh = pillH + (barVisible ? TAB_STRIP_H : 0);
 		}
 		connectBarHeight.set(bh);
-		// publish as a CSS var so side drawers (Inspector) can tuck right under the bar
-		if (typeof document !== 'undefined')
+		// publish as a CSS var so side drawers (Inspector) can tuck right under the bar,
+		// and a root class so side drawers only COVER the top-right chrome when Connect is
+		// docked (chrome dropped under it) — otherwise they stay below the profile.
+		if (typeof document !== 'undefined') {
 			document.documentElement.style.setProperty('--connect-bottom', bh + 'px');
+			document.documentElement.classList.toggle('connect-docked', docked);
+		}
 	});
 
 	// re-measure after any layout-affecting change (state, drawer, viewport)

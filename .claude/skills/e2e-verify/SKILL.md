@@ -192,10 +192,17 @@ drops the P2P session.
   headless; `dl.suggestedFilename()` gives the extension.
 - **Responsive / mobile**: `page.setViewportSize({width,height})` per test (or a
   `browser.newContext({viewport, hasTouch:true, isMobile:true})` for a throwaway
-  screenshot). Layout gated by `@media (pointer:coarse),(max-width:…)` won't show on the
-  default 1280 desktop context — resize first. Custom-chrome context menus can't be
-  right-clicked via Playwright actionability — dispatch it in page context:
-  `el.dispatchEvent(new MouseEvent('contextmenu',{clientX,clientY,bubbles:true}))`
+  screenshot). Layout gated by `@media (max-width:…)` shows once you resize — but
+  `@media (pointer: coarse)` and any JS `window.matchMedia('(pointer: coarse)')` gate
+  (force-dock, undock-hide, side-dock disable, the mobile drag-to-place path) **cannot be
+  emulated** on a desktop headless browser (`hasTouch` sets `maxTouchPoints`, not the
+  primary-pointer media). So width-based responsive CSS is testable; coarse-pointer /
+  touch-gesture behavior is an **on-device manual check** (state it clearly, like VR).
+  You CAN still measure width-gated CSS vars (`getComputedStyle(document.documentElement)
+  .getPropertyValue('--connect-bottom'|'--controls-inset'|'--dock-inset')`) and element
+  geometry (`getBoundingClientRect`) to verify docking/sheet math at a given width. Custom-
+  chrome context menus can't be right-clicked via Playwright actionability — dispatch it in
+  page context: `el.dispatchEvent(new MouseEvent('contextmenu',{clientX,clientY,bubbles:true}))`
   (packs-explorer); a menu opened this way replaces any prior one.
 - **Exact svelte-check delta**: `git stash push -u` (includes new files), run
   `npx svelte-check` for the true HEAD baseline, `git stash pop` — the machine output

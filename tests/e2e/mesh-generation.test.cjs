@@ -64,6 +64,7 @@ h.run(async () => {
 
 	// --- mock Meshy (preview -> succeeded -> model_urls.glb) ---
 	let meshyPolls = 0;
+	let meshyGlbUrl = MESHY + '/download.glb'; // switched to the blocked url later
 	await A.page.route('**/mock-meshy/openapi/v2/text-to-3d', (route) =>
 		route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: 'task-1' }) })
 	);
@@ -72,12 +73,22 @@ h.run(async () => {
 		route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ status: 'SUCCEEDED', progress: 100, model_urls: { glb: MESHY + '/download.glb' } })
+			body: JSON.stringify({ status: 'SUCCEEDED', progress: 100, model_urls: { glb: meshyGlbUrl } })
 		});
 	});
 	await A.page.route('**/mock-meshy/download.glb', (route) =>
 		route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glbBuf })
 	);
+	// CORS-blocked CDN + asset proxy (assets.meshy.ai sends no ACAO — the adapter must
+	// fall back to `<assetProxy>?url=<encoded>`; see meshy.js fetchResult)
+	let proxied = 0;
+	await A.page.route('**/mock-meshy/blocked.glb', (route) => route.abort('failed'));
+	await A.page.route('**/mock-proxy**', (route) => {
+		const q = new URL(route.request().url()).searchParams.get('url') || '';
+		proxied++;
+		if (!q.includes('blocked.glb')) return route.fulfill({ status: 400, body: 'wrong url param' });
+		route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glbBuf });
+	});
 
 	const base = await objCount(A);
 
@@ -116,9 +127,22 @@ h.run(async () => {
 	await h.eventually(() => objCount(A), (n) => n === base + 2, 'Meshy mesh imported into the scene', 20000);
 	h.check(meshyPolls > 0, 'Meshy task was polled');
 
+	// Meshy with a CORS-blocked CDN url -> the adapter retries through the asset proxy
+	meshyGlbUrl = MESHY + '/blocked.glb';
+	await A.page.evaluate(() => {
+		const list = window.__stores.meshProviders;
+		let providers;
+		list.meshProviders.subscribe((v) => (providers = v))();
+		const meshy = providers.find((p) => p.kind === 'meshy');
+		list.updateMeshProvider(meshy.id, { assetProxy: 'https://theprototype.app:5173/mock-proxy' });
+		return window.__stores.meshJobs.generateMesh({ prompt: 'a stone well' });
+	});
+	await h.eventually(() => objCount(A), (n) => n === base + 3, 'CORS-blocked GLB imported via the asset proxy', 20000);
+	h.check(proxied > 0, 'download went through the proxy (' + proxied + ' request(s))');
+
 	// undo removes the last generated mesh (standard history)
 	await A.page.evaluate(() => window.__stores.history.undo());
-	await h.eventually(() => objCount(A), (n) => n === base + 1, 'undo removed the last generated mesh', 8000);
+	await h.eventually(() => objCount(A), (n) => n === base + 2, 'undo removed the last generated mesh', 8000);
 
 	await h.finish(browser);
 });

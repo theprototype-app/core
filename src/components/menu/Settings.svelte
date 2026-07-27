@@ -153,6 +153,7 @@
 	let meshFormWorkflow = '';
 	let meshFormOutputNode = '';
 	let meshFormMode = 'preview';
+	let meshFormAssetProxy = '';
 
 	function meshApplyPreset() {
 		const preset = meshPresetFor(meshFormKind);
@@ -167,6 +168,7 @@
 		meshFormWorkflow = '';
 		meshFormOutputNode = '';
 		meshFormMode = 'preview';
+		meshFormAssetProxy = '';
 		meshFormOpen = true;
 	}
 	function meshStartEdit(p: any) {
@@ -178,6 +180,7 @@
 		meshFormWorkflow = p.workflowJson ?? '';
 		meshFormOutputNode = p.outputNodeId ?? '';
 		meshFormMode = p.mode ?? 'preview';
+		meshFormAssetProxy = p.assetProxy ?? '';
 		meshFormOpen = true;
 	}
 	function meshSaveProvider() {
@@ -204,6 +207,7 @@
 			config.outputNodeId = meshFormOutputNode;
 		} else {
 			config.mode = meshFormMode;
+			config.assetProxy = meshFormAssetProxy;
 		}
 		if (meshEditId) updateMeshProvider(meshEditId, config);
 		else addMeshProvider(config);
@@ -762,6 +766,12 @@
 										<option value="preview">preview (geometry only — faster, cheaper)</option>
 										<option value="refine">refine (adds textures — more credits)</option>
 									</select>
+									<input class="ui-input" placeholder="Asset proxy URL (optional — blank uses the built-in default)" bind:value={meshFormAssetProxy} />
+									<span class="text-[11px] leading-snug text-gray-400">
+										Meshy's assets CDN sends no CORS headers, so the finished model can't be
+										downloaded by the browser directly — downloads go through this proxy
+										(e.g. <span class="font-mono">https://peerjs.theprototype.app/proxy</span>).
+									</span>
 								{/if}
 								<span class="flex gap-1.5">
 									<button class="rounded bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-600" on:click={meshSaveProvider}>Save</button>

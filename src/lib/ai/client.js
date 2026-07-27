@@ -12,8 +12,12 @@ import { parseTextToolCalls, visiblePrefixLength } from './toolCallText.js';
 /**
  * @typedef {import('./providers.js').AiProviderConfig} AiProviderConfig
  * @typedef {{role: string, content?: string|null, tool_calls?: any[], tool_call_id?: string, name?: string}} ChatMessage
- * @typedef {{id: string, name: string, arguments: string}} ToolCall
+ * @typedef {{id: string, name: string, arguments: string, extra?: any}} ToolCall
  */
+// ToolCall.extra = provider extras that MUST be echoed back when the assistant turn is
+// replayed. Gemini's OpenAI-compat layer attaches `extra_content.google.thought_signature`
+// to each tool call and 400s ("missing thought_signature" / "function_response.name")
+// if the replayed tool_calls drop it.
 
 /** Raised when the API responds non-OK; carries status for describeAiError. */
 export class AiHttpError extends Error {
@@ -106,7 +110,8 @@ export async function chatOnce({ config, messages, tools, onDelta, onReasoning, 
 			? message.tool_calls.map((/** @type {any} */ c) => ({
 					id: c.id || '',
 					name: (c.function && c.function.name) || '',
-					arguments: (c.function && c.function.arguments) || ''
+					arguments: (c.function && c.function.arguments) || '',
+					extra: c.extra_content
 				}))
 			: [];
 		const settled = finalizeTurn(String(message.content || ''), rawCalls, tools);
@@ -163,6 +168,7 @@ export async function chatOnce({ config, messages, tools, onDelta, onReasoning, 
 				const idx = typeof tc.index === 'number' ? tc.index : toolCalls.size;
 				const existing = toolCalls.get(idx) || { id: '', name: '', arguments: '' };
 				if (tc.id) existing.id = tc.id;
+				if (tc.extra_content) existing.extra = tc.extra_content;
 				if (tc.function) {
 					if (tc.function.name) existing.name = tc.function.name;
 					if (typeof tc.function.arguments === 'string') existing.arguments += tc.function.arguments;
@@ -302,7 +308,9 @@ export async function runChat({
 			tool_calls: toolCalls.map((c) => ({
 				id: c.id || 'call_' + i + '_' + c.name,
 				type: 'function',
-				function: { name: c.name, arguments: c.arguments || '{}' }
+				function: { name: c.name, arguments: c.arguments || '{}' },
+				// echo provider extras verbatim (Gemini thought_signature — see ToolCall.extra)
+				...(c.extra ? { extra_content: c.extra } : {})
 			}))
 		});
 
@@ -316,6 +324,7 @@ export async function runChat({
 				messages.push({
 					role: 'tool',
 					tool_call_id: call.id || 'call_' + i + '_' + call.name,
+					name: call.name,
 					content: JSON.stringify(errResult)
 				});
 				if (onToolResult) onToolResult(call.name, errResult);
@@ -332,6 +341,7 @@ export async function runChat({
 			messages.push({
 				role: 'tool',
 				tool_call_id: call.id || 'call_' + i + '_' + call.name,
+				name: call.name,
 				content: JSON.stringify(result ?? { ok: true })
 			});
 			if (onToolResult) onToolResult(call.name, result);

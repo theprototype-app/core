@@ -16,6 +16,9 @@ import { writable, get } from 'svelte/store';
  * @property {string} [workflowJson]  comfyui: API-format graph w/ {{PROMPT}}/{{SEED}} placeholders
  * @property {string} [outputNodeId]  comfyui: node id whose file output is the GLB (blank = auto-detect)
  * @property {string} [mode]          meshy: 'preview' | 'refine'
+ * @property {string} [assetProxy]    meshy: CORS proxy for the GLB download — Meshy's
+ *   assets CDN sends no Access-Control-Allow-Origin, so browsers can't fetch the
+ *   result directly. Blank = the build-time VITE_ASSET_PROXY default (meshy.js).
  */
 
 /**
@@ -116,7 +119,8 @@ export function addMeshProvider(config) {
 		...preset.defaults,
 		...(config.workflowJson !== undefined ? { workflowJson: config.workflowJson } : {}),
 		...(config.outputNodeId !== undefined ? { outputNodeId: String(config.outputNodeId).trim() } : {}),
-		...(config.mode !== undefined ? { mode: config.mode } : {})
+		...(config.mode !== undefined ? { mode: config.mode } : {}),
+		...(config.assetProxy !== undefined ? { assetProxy: String(config.assetProxy).trim() } : {})
 	};
 	const list = [...get(meshProviders), entry];
 	meshProviders.set(list);
@@ -137,6 +141,7 @@ export function updateMeshProvider(id, patch) {
 		if (typeof next.label === 'string') next.label = next.label.trim();
 		if (typeof next.apiKey === 'string') next.apiKey = next.apiKey.trim();
 		if (typeof next.outputNodeId === 'string') next.outputNodeId = next.outputNodeId.trim();
+		if (typeof next.assetProxy === 'string') next.assetProxy = next.assetProxy.trim();
 		return next;
 	});
 	meshProviders.set(list);

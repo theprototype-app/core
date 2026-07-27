@@ -37,9 +37,10 @@
 		updateAiProvider,
 		removeAiProvider,
 		PROVIDER_PRESETS,
-		presetFor
+		presetFor,
+		normalizeBaseUrl
 	} from '$lib/ai/providers';
-	import { testConnection } from '$lib/ai/client';
+	import { testConnection, listModels } from '$lib/ai/client';
 	import {
 		meshGenEnabled,
 		setMeshGenEnabled,
@@ -75,7 +76,54 @@
 	let aiFormBaseUrl = '';
 	let aiFormKey = '';
 	let aiFormModel = '';
+	let aiFormStream = true;
+	let aiFormTemp = '';
 	let aiTesting = false;
+	let aiTestResult: { ok: boolean; detail: string; modelOk?: boolean | null; model?: string } | null = null;
+	// model picker: suggestions from the endpoint's GET /models (persisted on the
+	// provider so Edit works after a reload); free text stays allowed — aliases and
+	// unlisted/custom ids are legitimate
+	let aiFormModels: string[] = [];
+	let aiModelListOpen = false;
+	let aiModelsFetching = false;
+	// per-preset API-key entries while the form is OPEN (switching Grok→Gemini must
+	// not carry the Grok key into the Gemini box); scoped to the form session — only
+	// Save persists a key
+	let aiFormKeys: Record<string, string> = {};
+	let aiFormPresetPrev = 'grok';
+	$: aiModelFiltered = (() => {
+		const q = (aiFormModel || '').trim().toLowerCase();
+		return q ? aiFormModels.filter((m) => m.toLowerCase().includes(q)) : aiFormModels;
+	})();
+
+	/** Silent best-effort refresh of the model suggestions. Fires on Edit open, on
+	 * leaving the key/base-url fields, and on preset switch — so the picker fills
+	 * without needing a Test connection click. Sequence guard: a slow response for
+	 * a PREVIOUS endpoint must not populate the current one. */
+	let aiFetchSeq = 0;
+	async function aiRefreshModels() {
+		const baseUrl = normalizeBaseUrl(aiFormBaseUrl);
+		if (!baseUrl) return;
+		const seq = ++aiFetchSeq;
+		aiModelsFetching = true;
+		const list = await listModels({ id: 'probe', preset: aiFormPreset, label: '', baseUrl, apiKey: aiFormKey.trim(), model: '' });
+		if (seq !== aiFetchSeq) return;
+		aiModelsFetching = false;
+		if (list && list.length) aiFormModels = list;
+	}
+
+	/** Preset switch: stash the old preset's key, restore the new one's, reset
+	 * endpoint-specific state, and refetch suggestions if a key is already there. */
+	function aiPresetChanged() {
+		aiFormKeys[aiFormPresetPrev] = aiFormKey;
+		aiApplyPreset();
+		aiFormKey = aiFormKeys[aiFormPreset] ?? '';
+		aiFormModels = [];
+		aiModelListOpen = false;
+		aiTestResult = null;
+		aiFormPresetPrev = aiFormPreset;
+		if (aiFormKey.trim() || aiFormPreset === 'custom') aiRefreshModels();
+	}
 
 	function aiApplyPreset() {
 		const preset = presetFor(aiFormPreset);
@@ -88,6 +136,13 @@
 		aiFormPreset = 'grok';
 		aiApplyPreset();
 		aiFormKey = '';
+		aiFormStream = true;
+		aiFormTemp = '';
+		aiTestResult = null;
+		aiFormModels = [];
+		aiModelListOpen = false;
+		aiFormKeys = {};
+		aiFormPresetPrev = aiFormPreset;
 		aiFormOpen = true;
 	}
 	function aiStartEdit(p: any) {
@@ -97,19 +152,31 @@
 		aiFormBaseUrl = p.baseUrl;
 		aiFormKey = p.apiKey;
 		aiFormModel = p.model;
+		aiFormStream = p.stream !== false;
+		aiFormTemp = typeof p.temperature === 'number' ? String(p.temperature) : '';
+		aiTestResult = null;
+		aiFormModels = Array.isArray(p.models) ? p.models : [];
+		aiModelListOpen = false;
+		aiFormKeys = { [p.preset]: p.apiKey };
+		aiFormPresetPrev = p.preset;
 		aiFormOpen = true;
+		aiRefreshModels(); // silent; keeps the picker current without a Test click
 	}
 	function aiSaveProvider() {
 		if (!aiFormBaseUrl.trim() || !aiFormModel.trim()) {
 			showToast('Base URL and model are required');
 			return;
 		}
+		const temp = parseFloat(aiFormTemp);
 		const config = {
 			preset: aiFormPreset,
 			label: aiFormLabel,
 			baseUrl: aiFormBaseUrl,
 			apiKey: aiFormKey,
-			model: aiFormModel
+			model: aiFormModel,
+			stream: aiFormStream,
+			temperature: Number.isFinite(temp) ? temp : undefined,
+			models: aiFormModels
 		};
 		if (aiEditId) updateAiProvider(aiEditId, config);
 		else addAiProvider(config);
@@ -117,21 +184,24 @@
 		aiEditId = null;
 	}
 	async function aiTest() {
-		if (!aiFormBaseUrl.trim() || !aiFormModel.trim()) {
-			showToast('Enter a base URL and model first');
+		if (!aiFormBaseUrl.trim()) {
+			aiTestResult = { ok: false, detail: 'Enter a base URL first' };
 			return;
 		}
 		aiTesting = true;
+		aiTestResult = null;
 		const result = await testConnection({
 			id: 'test',
 			preset: aiFormPreset,
 			label: aiFormLabel,
-			baseUrl: aiFormBaseUrl.trim().replace(/\/+$/, ''),
+			baseUrl: normalizeBaseUrl(aiFormBaseUrl),
 			apiKey: aiFormKey.trim(),
 			model: aiFormModel.trim()
 		});
+		if (result.models && result.models.length) aiFormModels = result.models;
+		// pin the tested model into the result so later typing can't mislabel it
+		aiTestResult = { ok: result.ok, detail: result.detail, modelOk: result.modelOk, model: aiFormModel.trim() };
 		aiTesting = false;
-		showToast(result.ok ? '✓ ' + result.detail : '✗ ' + result.detail);
 	}
 
 	// Mesh-generation provider add/edit form (roadmap #11)
@@ -144,6 +214,7 @@
 	let meshFormWorkflow = '';
 	let meshFormOutputNode = '';
 	let meshFormMode = 'preview';
+	let meshFormAssetProxy = '';
 
 	function meshApplyPreset() {
 		const preset = meshPresetFor(meshFormKind);
@@ -158,6 +229,7 @@
 		meshFormWorkflow = '';
 		meshFormOutputNode = '';
 		meshFormMode = 'preview';
+		meshFormAssetProxy = '';
 		meshFormOpen = true;
 	}
 	function meshStartEdit(p: any) {
@@ -169,6 +241,7 @@
 		meshFormWorkflow = p.workflowJson ?? '';
 		meshFormOutputNode = p.outputNodeId ?? '';
 		meshFormMode = p.mode ?? 'preview';
+		meshFormAssetProxy = p.assetProxy ?? '';
 		meshFormOpen = true;
 	}
 	function meshSaveProvider() {
@@ -195,6 +268,7 @@
 			config.outputNodeId = meshFormOutputNode;
 		} else {
 			config.mode = meshFormMode;
+			config.assetProxy = meshFormAssetProxy;
 		}
 		if (meshEditId) updateMeshProvider(meshEditId, config);
 		else addMeshProvider(config);
@@ -683,20 +757,77 @@
 					{#if aiFormOpen}
 						<SettingRow name={aiEditId ? 'Edit provider' : 'New provider'} noControl>
 							<span class="flex flex-col gap-1.5">
-								<select class="ui-input" bind:value={aiFormPreset} on:change={aiApplyPreset}>
+								<select class="ui-input" bind:value={aiFormPreset} on:change={aiPresetChanged}>
 									{#each PROVIDER_PRESETS as preset}
 										<option value={preset.preset}>{preset.label}</option>
 									{/each}
 								</select>
-								<input class="ui-input" placeholder="Label" bind:value={aiFormLabel} />
-								<input class="ui-input" placeholder="Base URL (…/v1)" bind:value={aiFormBaseUrl} />
-								<input class="ui-input" type="password" placeholder="API key / bearer token" bind:value={aiFormKey} />
-								<input class="ui-input" placeholder="Model id" bind:value={aiFormModel} />
+								<input class="ui-input" placeholder="Label" autocomplete="off" bind:value={aiFormLabel} />
+								<!-- on:change (fires when leaving an edited field) auto-fetches the model list
+								     so the picker fills without a Test connection click -->
+								<input class="ui-input" placeholder="Base URL (…/v1)" autocomplete="off" bind:value={aiFormBaseUrl} on:change={aiRefreshModels} />
+								<!-- new-password: keeps Chrome's password manager from saving base-url + key as a
+								     login pair and autofilling them into unrelated text inputs (Connect peer id) -->
+								<input class="ui-input" type="password" placeholder="API key / bearer token" autocomplete="new-password" bind:value={aiFormKey} on:change={aiRefreshModels} />
+								<!-- model combobox: free text + suggestions from the endpoint's /models
+								     (fetched on Test connection / Edit open, persisted on the provider).
+								     Selection uses mousedown so it lands before the input's blur. -->
+								<input
+									id="ai-model-input"
+									class="ui-input"
+									placeholder={aiModelsFetching ? 'Model id — fetching list…' : aiFormModels.length ? 'Model id — ' + aiFormModels.length + ' available' : 'Model id'}
+									autocomplete="off"
+									bind:value={aiFormModel}
+									on:focus={() => (aiModelListOpen = true)}
+									on:input={() => (aiModelListOpen = true)}
+									on:keydown={(e: any) => { if (e.key === 'Escape' || e.key === 'Enter') aiModelListOpen = false; }}
+									on:blur={() => setTimeout(() => (aiModelListOpen = false), 150)}
+								/>
+								{#if aiModelListOpen && aiFormModels.length}
+									<div id="ai-model-list" class="max-h-40 overflow-y-auto rounded border border-gray-600 bg-gray-800">
+										{#each aiModelFiltered as m (m)}
+											<button
+												class="block w-full px-2 py-1 text-left font-mono text-[12px] {m === aiFormModel.trim() ? 'bg-primary-700 text-white' : 'text-gray-200 hover:bg-gray-700'}"
+												on:mousedown|preventDefault={() => { aiFormModel = m; aiModelListOpen = false; }}
+											>{m}</button>
+										{/each}
+										{#if !aiModelFiltered.length}
+											<div class="px-2 py-1 text-[12px] text-gray-400">no match — free text works too (aliases / custom ids)</div>
+										{/if}
+									</div>
+								{/if}
+								<label class="flex items-center gap-2 text-[13px] text-gray-300">
+									<input type="checkbox" bind:checked={aiFormStream} />
+									Stream responses
+								</label>
+								<input class="ui-input" placeholder="Temperature (blank = server default)" bind:value={aiFormTemp} />
+								<span class="text-[11px] leading-snug text-gray-400">
+									Turn streaming OFF for a self-hosted server whose tool calls only work unstreamed —
+									vLLM with a mismatched <span class="font-mono">--tool-call-parser</span> (e.g. hermes
+									for a Qwen3.5 model, which needs qwen3_xml) mangles streamed tool calls. The
+									assistant also detects that at runtime and falls back on its own.
+								</span>
 								<span class="flex gap-1.5">
 									<button class="rounded bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-600" on:click={aiSaveProvider}>Save</button>
 									<button class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50" disabled={aiTesting} on:click={aiTest}>{aiTesting ? 'Testing…' : 'Test connection'}</button>
 									<button class="rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { aiFormOpen = false; aiEditId = null; }}>Cancel</button>
 								</span>
+								{#if aiTestResult}
+									<span id="ai-test-result" class="text-[12px] leading-snug">
+										{#if aiTestResult.ok}
+											<span class="text-emerald-400">✓ {aiTestResult.detail}</span>
+											{#if !aiTestResult.model}
+												<span class="text-red-400"> · no model selected</span>
+											{:else if aiTestResult.modelOk}
+												<span class="text-emerald-400"> · model <span class="font-mono">{aiTestResult.model}</span> — Configuration OK</span>
+											{:else if aiTestResult.modelOk === false}
+												<span class="text-red-400"> · model "{aiTestResult.model}" did not respond — pick one from the list</span>
+											{/if}
+										{:else}
+											<span class="text-red-400">✗ {aiTestResult.detail}</span>
+										{/if}
+									</span>
+								{/if}
 							</span>
 						</SettingRow>
 					{/if}
@@ -731,9 +862,11 @@
 										<option value={preset.kind}>{preset.label}</option>
 									{/each}
 								</select>
-								<input class="ui-input" placeholder="Label" bind:value={meshFormLabel} />
-								<input class="ui-input" placeholder={meshFormKind === 'comfyui' ? 'ComfyUI URL (http://host:8188)' : 'API base (https://api.meshy.ai)'} bind:value={meshFormBaseUrl} />
-								<input class="ui-input" type="password" placeholder={meshFormKind === 'comfyui' ? 'Bearer token (only if proxied; blank for LAN)' : 'API key'} bind:value={meshFormKey} />
+								<input class="ui-input" placeholder="Label" autocomplete="off" bind:value={meshFormLabel} />
+								<input class="ui-input" placeholder={meshFormKind === 'comfyui' ? 'ComfyUI URL (http://host:8188)' : 'API base (https://api.meshy.ai)'} autocomplete="off" bind:value={meshFormBaseUrl} />
+								<!-- new-password: don't let Chrome save base-url + key as a login pair (it then
+								     autofills them into unrelated text inputs like the Connect peer id) -->
+								<input class="ui-input" type="password" placeholder={meshFormKind === 'comfyui' ? 'Bearer token (only if proxied; blank for LAN)' : 'API key'} autocomplete="new-password" bind:value={meshFormKey} />
 								{#if meshFormKind === 'comfyui'}
 									<textarea class="ui-input min-h-[80px] resize-y font-mono text-[11px]" placeholder={'Workflow JSON (API format). Put {{PROMPT}} in the text node and {{SEED}} in the sampler seed.'} bind:value={meshFormWorkflow}></textarea>
 									<input class="ui-input" placeholder="Output node id (optional — auto-detects the SaveGLB node)" bind:value={meshFormOutputNode} />
@@ -742,6 +875,13 @@
 										<option value="preview">preview (geometry only — faster, cheaper)</option>
 										<option value="refine">refine (adds textures — more credits)</option>
 									</select>
+									<input class="ui-input" placeholder="Asset proxy URL (optional — blank uses the built-in default)" bind:value={meshFormAssetProxy} />
+									<span class="text-[11px] leading-snug text-gray-400">
+										Meshy's assets CDN sends no CORS headers, so the finished model can't be
+										downloaded by the browser directly — downloads go through a proxy
+										(e.g. <span class="font-mono">https://proxy.theprototype.app</span>; blank
+										tries the built-in defaults, falling back automatically).
+									</span>
 								{/if}
 								<span class="flex gap-1.5">
 									<button class="rounded bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-600" on:click={meshSaveProvider}>Save</button>
@@ -884,7 +1024,7 @@
 				</AccordionItem>
 				<AccordionItem>
 					<svelte:fragment slot="header">About</svelte:fragment>
-					<SettingRow name="Version" noControl>alpha</SettingRow>
+					<SettingRow name="Version" noControl>beta</SettingRow>
 					<SettingRow name="Dev Builds" noControl>
 						<a href="https://alexz005.github.io/theprototype">https://alexz005.github.io/theprototype</a>
 					</SettingRow>

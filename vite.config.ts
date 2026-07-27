@@ -28,9 +28,54 @@ function guardThrelteXr(): Plugin {
 	};
 }
 
+// Dev-only CORS relay for generated-asset CDNs (mirror of the peerjs box's /proxy
+// route — infra repo server.js): Meshy's assets.meshy.ai serves finished GLBs with
+// no Access-Control-Allow-Origin, so the browser can't fetch them directly. In dev
+// the meshy adapter prefers this same-origin /proxy (meshy.js assetProxyFor), which
+// keeps local development working with NO deployed proxy / EC2 dependency. Same
+// hardening: https-only, host allowlist, redirects refused, size cap.
+function devAssetProxy(): Plugin {
+	const HOSTS = ['assets.meshy.ai'];
+	const MAX_BYTES = 256 * 1048576;
+	return {
+		name: 'dev-asset-proxy',
+		configureServer(server) {
+			// req/res as any: the svelte-check project has no node types for the config
+			server.middlewares.use('/proxy', async (req: any, res: any) => {
+				const fail = (status: number, msg: string) => {
+					res.statusCode = status;
+					res.end(msg);
+				};
+				let target: URL;
+				try {
+					target = new URL(new URL(req.url || '', 'http://x').searchParams.get('url') || '');
+				} catch {
+					return fail(400, 'bad url');
+				}
+				if (target.protocol !== 'https:' || !HOSTS.includes(target.hostname)) {
+					return fail(403, 'host not allowed');
+				}
+				try {
+					const upstream = await fetch(target, { redirect: 'error' });
+					if (!upstream.ok) return fail(502, 'upstream ' + upstream.status);
+					const bytes = new Uint8Array(await upstream.arrayBuffer());
+					if (bytes.byteLength > MAX_BYTES) return fail(413, 'too large');
+					res.statusCode = 200;
+					res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
+					res.setHeader('Content-Length', String(bytes.byteLength));
+					res.setHeader('Cache-Control', 'no-store');
+					res.end(bytes);
+				} catch {
+					fail(502, 'proxy fetch failed');
+				}
+			});
+		}
+	};
+}
+
 export default defineConfig({
 	// guardThrelteXr must run before sveltekit/optimize so it patches the served source
-	plugins: [guardThrelteXr(), mkcert(), sveltekit()],
+	plugins: [guardThrelteXr(), devAssetProxy(), mkcert(), sveltekit()],
 	ssr: {
 		noExternal: ['three']
 	},

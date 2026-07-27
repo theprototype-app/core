@@ -513,6 +513,20 @@ loadable play content. Everything a user does must be visible to connected peers
   a static edge into moduleSDK's consumers closes a cycle (flowRuntime → moduleSDK).
 - The dungeon module publishes gameplay data on its group's `userData.play`
   (grid/rooms/floorValue) — `dungeonPlay.js` consumes it; keep that contract stable.
+- **Local-model tool calls (AI assistant)**: a self-hosted OpenAI-compatible server
+  often serves a tool-capable model with a MISMATCHED tool-call parser. vLLM 0.26 +
+  Qwen3.5 with `--tool-call-parser hermes` is the worked case (Qwen3.5 emits
+  `<function=X><parameter=k>` XML; hermes expects JSON — the fix is `qwen3_xml`): **unstreamed** it returns
+  the call as plain CONTENT in Qwen XML (`<tool_call><function=NAME><parameter=K>…`) with
+  `tool_calls` absent; **streamed** it swallows the call and emits ONE `tool_calls` delta
+  whose name is an INVENTED string (the object's own name — "Cube", "campfire_flame")
+  with EMPTY arguments, or nothing at all. Symptom: "Applied N action(s)" with an empty
+  viewport. Hence `ai/toolCallText.js` (recover calls from text + hold streamed markup
+  back from the transcript), `turnUnusable`→retry-unstreamed + a session `brokenStreaming`
+  flag + a per-provider `stream`/`temperature` setting, and `repairToolCall` in tools.js
+  (alias/case fixes, and an invented name with object-spec args becomes create_objects).
+  Reasoning models also stream `delta.reasoning`/`reasoning_content` — never chat content,
+  never in the transcript; it only feeds the `aiStatus` "Thinking…" line.
 - **Inspector.svelte is a plain `<script>` (NOT lang="ts")** — one TypeScript type
   annotation in it hard-breaks `npm run build` with a useless
   `error during build: undefined` (svelte-check never runs; vite dev 500s too).

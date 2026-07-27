@@ -265,13 +265,101 @@ function updateOne(spec) {
 	return { uuid, ok: true };
 }
 
+const TOOL_NAMES = [
+	'list_scene',
+	'create_objects',
+	'update_objects',
+	'delete_objects',
+	'group_objects',
+	'clear_scene',
+	'generate_mesh'
+];
+
+/** Common near-misses. Small local models invent singular/verb variants. */
+const NAME_ALIASES = /** @type {Record<string,string>} */ ({
+	create_object: 'create_objects',
+	add_object: 'create_objects',
+	add_objects: 'create_objects',
+	create_primitive: 'create_objects',
+	create_primitives: 'create_objects',
+	spawn_object: 'create_objects',
+	create: 'create_objects',
+	add: 'create_objects',
+	update_object: 'update_objects',
+	modify_object: 'update_objects',
+	modify_objects: 'update_objects',
+	move_object: 'update_objects',
+	move_objects: 'update_objects',
+	set_color: 'update_objects',
+	update: 'update_objects',
+	delete_object: 'delete_objects',
+	remove_object: 'delete_objects',
+	remove_objects: 'delete_objects',
+	delete: 'delete_objects',
+	group_object: 'group_objects',
+	group: 'group_objects',
+	get_scene: 'list_scene',
+	scene: 'list_scene',
+	list_objects: 'list_scene',
+	list: 'list_scene',
+	clear: 'clear_scene',
+	generate_model: 'generate_mesh',
+	create_mesh: 'generate_mesh'
+});
+
+/**
+ * Best-effort repair of a tool call from a weaker model: fix the NAME (case, aliases,
+ * `functions.` prefixes) and, when the name is pure invention, infer the tool from the
+ * ARGUMENT shape — a call like `Cube({kind:'primitive', primitive:'Box'})` is plainly a
+ * one-object create_objects. Conservative: anything unrecognizable is returned as-is so
+ * executeAiTool reports a proper error the model can correct.
+ * @param {string} rawName
+ * @param {any} rawArgs
+ * @returns {{name: string, args: any, repaired: boolean}}
+ */
+export function repairToolCall(rawName, rawArgs) {
+	const args = rawArgs && typeof rawArgs === 'object' ? rawArgs : {};
+	const original = String(rawName || '');
+	if (TOOL_NAMES.includes(original)) return { name: original, args, repaired: false };
+
+	// `functions.create_objects`, `tool:create_objects`, "Create Objects", camelCase…
+	const bare = original.split(/[.:]/).pop() || original;
+	const key = bare.trim().toLowerCase().replace(/[\s-]+/g, '_');
+	const snake = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+	for (const candidate of [key, snake]) {
+		if (TOOL_NAMES.includes(candidate)) return { name: candidate, args, repaired: true };
+		if (NAME_ALIASES[candidate]) return { name: NAME_ALIASES[candidate], args, repaired: true };
+	}
+
+	// name is invention — infer from the argument shape
+	if (Array.isArray(args.objects)) return { name: 'create_objects', args, repaired: true };
+	if (Array.isArray(args.updates)) return { name: 'update_objects', args, repaired: true };
+	if (Array.isArray(args.uuids)) return { name: 'delete_objects', args, repaired: true };
+	if (Array.isArray(args.memberUuids)) return { name: 'group_objects', args, repaired: true };
+	// a single object spec passed directly (kind/primitive/light present)
+	if (args.kind || args.primitive || args.light) {
+		return { name: 'create_objects', args: { objects: [args] }, repaired: true };
+	}
+	// the invented name IS a primitive ("Cube", "sphere") with loose args
+	const asPrimitive = normalizePrimitive(bare) || (/^cubes?$/i.test(bare) ? 'Box' : null);
+	if (asPrimitive && (args.position || args.color || args.params || args.scale || args.name)) {
+		return {
+			name: 'create_objects',
+			args: { objects: [{ ...args, kind: 'primitive', primitive: asPrimitive }] },
+			repaired: true
+		};
+	}
+	return { name: original, args, repaired: false };
+}
+
 /**
  * Execute one tool call. Never throws — returns a JSON-serializable result.
- * @param {string} name
- * @param {any} args
+ * @param {string} rawName
+ * @param {any} rawArgs
  * @returns {Promise<any>}
  */
-export async function executeAiTool(name, args) {
+export async function executeAiTool(rawName, rawArgs) {
+	const { name, args } = repairToolCall(rawName, rawArgs);
 	try {
 		switch (name) {
 			case 'list_scene':
@@ -279,8 +367,13 @@ export async function executeAiTool(name, args) {
 
 			case 'create_objects': {
 				const specs = Array.isArray(args?.objects) ? args.objects : [];
-				if (!specs.length) return { error: 'no objects provided' };
+				if (!specs.length)
+					return { error: 'no objects provided — pass objects: [{ kind: "primitive", primitive: "Box", ... }]' };
 				const results = specs.map((/** @type {any} */ s) => createOne(s));
+				// surface a total failure at the TOP level so the caller (and the undo
+				// summary) doesn't count a no-op as an applied action
+				if (results.every((/** @type {any} */ r) => r.error))
+					return { error: 'nothing was created: ' + results[0].error, created: results };
 				return { created: results };
 			}
 
@@ -344,7 +437,14 @@ export async function executeAiTool(name, args) {
 			}
 
 			default:
-				return { error: 'unknown tool: ' + name };
+				return {
+					error:
+						'unknown tool "' +
+						rawName +
+						'". Call one of: ' +
+						TOOL_NAMES.join(', ') +
+						'. To add objects use create_objects with { objects: [{ kind, primitive, position, color, name }] }.'
+				};
 		}
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : String(error) };
@@ -540,9 +640,17 @@ export function buildSystemPrompt() {
 		'Primitives: ' + PRIMITIVE_TYPES.join(', ') + '.',
 		'Lights: ' + LIGHT_TYPES.join(', ') + '.',
 		'',
-		'Workflow: call list_scene first when modifying or referring to existing objects, and always',
-		'use the real uuids it returns. Prefer batching many objects into ONE create_objects call',
-		'(e.g. a grid of boxes) instead of many calls. Give objects clear names. When done, reply',
-		'with a short plain-text summary of what you built — do not describe tool calls.' + meshLine
+		'Workflow: the "Current scene" block in the user message already lists every object with',
+		'its uuid — use those uuids directly and only call list_scene when you need to re-read the',
+		'scene after your own edits. Build with as FEW calls as possible: put every object of a',
+		'request into ONE create_objects call (a ring of 6 rocks and a flame = one call, 7 objects).',
+		'When done, reply with a short plain-text summary of what you built — do not describe tool',
+		'calls.',
+		'',
+		'Tool discipline: only ever call a tool from the provided list, by its exact name. Never use',
+		"an object's name as the tool name — the name of a thing you create belongs in that object's",
+		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
+		'call that already came back without an error — once the scene matches the request, stop',
+		'calling tools and write the summary.' + meshLine
 	].join('\n');
 }

@@ -15,6 +15,14 @@ import { writable, get } from 'svelte/store';
  * @property {string} baseUrl  OpenAI-compatible base (no trailing /chat/completions)
  * @property {string} apiKey   bearer token (plaintext)
  * @property {string} model    model id sent as `model`
+ * @property {boolean} [stream] false = never use SSE streaming for this provider.
+ *   Some self-hosted servers only parse tool calls correctly when NOT streaming
+ *   (vLLM 0.26 + Qwen3.5 swallows the call and streams an invented tool name);
+ *   ai/client.js also detects that at runtime and falls back for the session.
+ * @property {number} [temperature] sampling temperature; omitted = server default
+ * @property {string[]} [models]   model ids the endpoint reported on the last
+ *   successful Test connection (GET /models) — Settings' model-picker suggestions.
+ *   Persisted so the picker still works after a reload without re-fetching.
  */
 
 /**
@@ -33,7 +41,7 @@ export const PROVIDER_PRESETS = [
 		preset: 'gemini',
 		label: 'Gemini (Google)',
 		baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-		defaultModel: 'gemini-2.5-flash'
+		defaultModel: 'gemini-flash-latest'
 	},
 	{
 		preset: 'custom',
@@ -46,6 +54,29 @@ export const PROVIDER_PRESETS = [
 /** @param {string} preset */
 export function presetFor(preset) {
 	return PROVIDER_PRESETS.find((p) => p.preset === preset) ?? PROVIDER_PRESETS[2];
+}
+
+/**
+ * Fix common paste mistakes. Gemini users paste the NATIVE REST shapes from Google's
+ * docs — base `.../v1beta` or `.../v1beta/models` (only `/v1beta/openai` speaks the
+ * OpenAI dialect) and model `models/x` or `x:generateContent` — all of which 400/fail
+ * in confusing ways. Normalize instead of erroring.
+ * @param {string} baseUrl @returns {string}
+ */
+export function normalizeBaseUrl(baseUrl) {
+	const url = (baseUrl || '').trim().replace(/\/+$/, '');
+	if (/^https:\/\/generativelanguage\.googleapis\.com(\/|$)/.test(url) && !/\/openai$/.test(url)) {
+		return 'https://generativelanguage.googleapis.com/v1beta/openai';
+	}
+	return url;
+}
+
+/** @param {string} model @returns {string} */
+export function normalizeModel(model) {
+	return (model || '')
+		.trim()
+		.replace(/^models\//, '')
+		.replace(/:(generateContent|streamGenerateContent)$/, '');
 }
 
 const PROVIDERS_KEY = 'aiProviders';
@@ -119,10 +150,15 @@ export function addAiProvider(config) {
 		id: newId(),
 		preset: preset.preset,
 		label: (config.label || preset.label).trim(),
-		baseUrl: (config.baseUrl ?? preset.baseUrl).trim().replace(/\/+$/, ''),
+		baseUrl: normalizeBaseUrl(config.baseUrl ?? preset.baseUrl),
 		apiKey: (config.apiKey ?? '').trim(),
-		model: (config.model || preset.defaultModel).trim()
+		model: normalizeModel(config.model || preset.defaultModel)
 	};
+	if (config.stream === false) entry.stream = false;
+	if (typeof config.temperature === 'number') entry.temperature = config.temperature;
+	if (Array.isArray(config.models) && config.models.length) {
+		entry.models = config.models.map(String).slice(0, 500);
+	}
 	const list = [...get(aiProviders), entry];
 	aiProviders.set(list);
 	persistProviders(list);
@@ -139,10 +175,10 @@ export function updateAiProvider(id, patch) {
 	const list = get(aiProviders).map((p) => {
 		if (p.id !== id) return p;
 		const next = { ...p, ...patch };
-		if (typeof next.baseUrl === 'string') next.baseUrl = next.baseUrl.trim().replace(/\/+$/, '');
+		if (typeof next.baseUrl === 'string') next.baseUrl = normalizeBaseUrl(next.baseUrl);
 		if (typeof next.label === 'string') next.label = next.label.trim();
 		if (typeof next.apiKey === 'string') next.apiKey = next.apiKey.trim();
-		if (typeof next.model === 'string') next.model = next.model.trim();
+		if (typeof next.model === 'string') next.model = normalizeModel(next.model);
 		return next;
 	});
 	aiProviders.set(list);

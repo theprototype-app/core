@@ -97,10 +97,111 @@ export async function poll(config, ref) {
  * @returns {Promise<ArrayBuffer>}
  */
 export async function fetchResult(config, resultRef) {
-	// signed CDN url — no auth header; may be CORS-restricted (see module header)
-	const res = await fetch(resultRef.url);
-	if (!res.ok) throw new Error('Downloading the Meshy GLB failed (' + res.status + ')');
-	return await res.arrayBuffer();
+	// Signed CDN url, no auth header. assets.meshy.ai sends NO CORS headers (confirmed
+	// against their CDN + docs 2026-07-27), so a direct browser fetch always fails —
+	// and even a CAUGHT CORS failure paints a red error in the devtools console. For
+	// known no-CORS hosts we therefore go straight through the asset-proxy CHAIN
+	// (provider field → dev /proxy → the Cloudflare Worker → the peerjs box; see
+	// assetProxyCandidates) and only fall back to a direct attempt if every proxy
+	// fails. Unknown hosts still try direct first.
+	const candidates = assetProxyCandidates(config);
+	const viaProxies = async () => {
+		/** @type {any} */
+		let lastError = null;
+		for (const proxy of candidates) {
+			try {
+				const res = await fetch(proxy + '?url=' + encodeURIComponent(resultRef.url));
+				// a static host's SPA fallback answers unknown paths with 200 text/html —
+				// that's "no proxy on this origin", not a model
+				const type = res.headers.get('content-type') || '';
+				if (res.ok && !type.includes('text/html')) return await res.arrayBuffer();
+				lastError = new AssetHttpError(res.status, true);
+			} catch (err) {
+				lastError = err;
+			}
+		}
+		throw lastError ?? new Error('no asset proxy configured');
+	};
+	let host = '';
+	try {
+		host = new URL(resultRef.url).hostname;
+	} catch {}
+	const corsBlocked = NO_CORS_HOSTS.includes(host);
+
+	if (candidates.length && corsBlocked) {
+		try {
+			return await viaProxies();
+		} catch {
+			// every proxy down/misconfigured — the direct attempt below is a last
+			// resort (it will log a CORS error, but we're on the error path already)
+		}
+	}
+	try {
+		const res = await fetch(resultRef.url);
+		if (!res.ok) throw new AssetHttpError(res.status, false);
+		return await res.arrayBuffer();
+	} catch (err) {
+		if (err instanceof AssetHttpError) {
+			throw new Error('Downloading the Meshy GLB failed (' + err.status + ')');
+		}
+		// direct fetch died on CORS (TypeError)
+		if (!candidates.length) {
+			throw new Error(
+				"Meshy's CDN blocks browser downloads (no CORS headers). Set an asset proxy on the Meshy provider (Settings → AI → Mesh providers)."
+			);
+		}
+		if (corsBlocked) {
+			// the proxy chain already failed above — don't loop back into it
+			throw new Error('All asset proxies failed and the CDN blocks direct downloads — is the proxy up?');
+		}
+		try {
+			return await viaProxies();
+		} catch (proxyErr) {
+			const status = proxyErr instanceof AssetHttpError ? ' (' + proxyErr.status + ')' : '';
+			throw new Error('Asset-proxy download failed' + status);
+		}
+	}
+}
+
+/** CDNs that are KNOWN to never send Access-Control-Allow-Origin — skip the doomed
+ * direct fetch for these (it would be caught, but each attempt logs a red CORS error
+ * in the browser console). */
+const NO_CORS_HOSTS = ['assets.meshy.ai'];
+
+/**
+ * Ordered asset-proxy candidates, tried until one succeeds (all serve the same
+ * `?url=<encoded>` contract). Empty entries drop out (`||`-style — the Settings
+ * form saves a blank field as '' and that must fall through):
+ *   1. the provider's own assetProxy field
+ *   2. the SAME-ORIGIN /proxy — in dev the vite middleware (vite.config.ts
+ *      devAssetProxy), in prod a Worker route on the app's own hostname
+ *      (theprototype.app/proxy* → the asset-proxy Worker). Zero config, no CORS;
+ *      origins without such a route fail fast (viaProxies rejects the SPA-fallback
+ *      HTML a static host may return for unknown paths)
+ *   3. VITE_ASSET_PROXY (the Cloudflare Worker, proxy.theprototype.app)
+ *   4. derived https://<VITE_PEER_HOST>/proxy (the peerjs box route, opt-in there)
+ * @param {any} config @returns {string[]}
+ */
+function assetProxyCandidates(config) {
+	const env = /** @type {any} */ (import.meta.env);
+	const peerHost = String(env.VITE_PEER_HOST || '').trim();
+	const raw = [
+		String(config.assetProxy || '').trim(),
+		'/proxy',
+		String(env.VITE_ASSET_PROXY || '').trim(),
+		peerHost ? 'https://' + peerHost + '/proxy' : ''
+	];
+	return [...new Set(raw.filter(Boolean).map((p) => p.replace(/\/+$/, '')))];
+}
+
+/** Distinguishes an HTTP failure from the CORS TypeError inside fetchResult. */
+class AssetHttpError extends Error {
+	/** @param {number} status @param {boolean} [viaProxy] */
+	constructor(status, viaProxy = false) {
+		super('asset http ' + status);
+		this.status = status;
+		this.viaProxy = viaProxy;
+	}
 }
 
 /** @param {number} status @param {string} detail */

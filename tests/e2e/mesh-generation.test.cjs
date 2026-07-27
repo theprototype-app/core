@@ -64,6 +64,7 @@ h.run(async () => {
 
 	// --- mock Meshy (preview -> succeeded -> model_urls.glb) ---
 	let meshyPolls = 0;
+	let meshyGlbUrl = MESHY + '/download.glb'; // switched to the blocked url later
 	await A.page.route('**/mock-meshy/openapi/v2/text-to-3d', (route) =>
 		route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: 'task-1' }) })
 	);
@@ -72,12 +73,23 @@ h.run(async () => {
 		route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ status: 'SUCCEEDED', progress: 100, model_urls: { glb: MESHY + '/download.glb' } })
+			body: JSON.stringify({ status: 'SUCCEEDED', progress: 100, model_urls: { glb: meshyGlbUrl } })
 		});
 	});
 	await A.page.route('**/mock-meshy/download.glb', (route) =>
 		route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glbBuf })
 	);
+	// CORS-blocked CDN + asset proxy (assets.meshy.ai sends no ACAO — the adapter must
+	// fall back to `<assetProxy>?url=<encoded>`; see meshy.js fetchResult)
+	let proxied = 0;
+	await A.page.route('**/mock-meshy/blocked.glb', (route) => route.abort('failed'));
+	await A.page.route('**/mock-proxy**', (route) => {
+		const q = new URL(route.request().url()).searchParams.get('url') || '';
+		proxied++;
+		if (!q.includes('blocked.glb') && !q.includes('assets.meshy.ai'))
+			return route.fulfill({ status: 400, body: 'wrong url param' });
+		route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glbBuf });
+	});
 
 	const base = await objCount(A);
 
@@ -116,9 +128,85 @@ h.run(async () => {
 	await h.eventually(() => objCount(A), (n) => n === base + 2, 'Meshy mesh imported into the scene', 20000);
 	h.check(meshyPolls > 0, 'Meshy task was polled');
 
+	// Meshy with a CORS-blocked CDN url -> the adapter retries through the asset proxy
+	meshyGlbUrl = MESHY + '/blocked.glb';
+	await A.page.evaluate(() => {
+		const list = window.__stores.meshProviders;
+		let providers;
+		list.meshProviders.subscribe((v) => (providers = v))();
+		const meshy = providers.find((p) => p.kind === 'meshy');
+		list.updateMeshProvider(meshy.id, { assetProxy: 'https://theprototype.app:5173/mock-proxy' });
+		return window.__stores.meshJobs.generateMesh({ prompt: 'a stone well' });
+	});
+	await h.eventually(() => objCount(A), (n) => n === base + 3, 'CORS-blocked GLB imported via the asset proxy', 20000);
+	h.check(proxied > 0, 'download went through the proxy (' + proxied + ' request(s))');
+
+	// EMPTY assetProxy field (the Settings form saves '' — the user-hit bug: '' must
+	// fall through to the built-in default, `||` not `??`). Under the dev server the
+	// default is the SAME-ORIGIN /proxy (vite devAssetProxy); intercept the deployed
+	// defaults too so the check survives an env change.
+	let defaultProxied = 0;
+	const serveDefault = (route) => {
+		const q = new URL(route.request().url()).searchParams.get('url') || '';
+		if (!q.includes('blocked.glb')) return route.fulfill({ status: 400, body: 'wrong url param' });
+		defaultProxied++;
+		route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glbBuf });
+	};
+	await A.page.route('**/peerjs.theprototype.app/proxy**', serveDefault);
+	await A.page.route('**/proxy?url=*', serveDefault); // same-origin dev default ('/mock-proxy' has no '/proxy' segment)
+	await A.page.evaluate(() => {
+		const list = window.__stores.meshProviders;
+		let providers;
+		list.meshProviders.subscribe((v) => (providers = v))();
+		const meshy = providers.find((p) => p.kind === 'meshy');
+		list.updateMeshProvider(meshy.id, { assetProxy: '' });
+		return window.__stores.meshJobs.generateMesh({ prompt: 'a rope bridge' });
+	});
+	await h.eventually(() => objCount(A), (n) => n === base + 4, 'empty provider field falls back to the default proxy', 20000);
+	h.check(defaultProxied > 0, 'default proxy served the download (' + defaultProxied + ' request(s))');
+
+	// assets.meshy.ai is a KNOWN no-CORS host — the adapter must go proxy-FIRST and
+	// never attempt the direct fetch (a caught CORS failure still paints a red error
+	// in the user's console; the user-reported noise).
+	let directAttempts = 0;
+	await A.page.route('**/assets.meshy.ai/**', (route) => {
+		directAttempts++;
+		route.abort('failed');
+	});
+	meshyGlbUrl = 'https://assets.meshy.ai/mock/tasks/t1/output/model.glb?sig=x';
+	await A.page.evaluate(() => {
+		const list = window.__stores.meshProviders;
+		let providers;
+		list.meshProviders.subscribe((v) => (providers = v))();
+		const meshy = providers.find((p) => p.kind === 'meshy');
+		list.updateMeshProvider(meshy.id, { assetProxy: 'https://theprototype.app:5173/mock-proxy' });
+		return window.__stores.meshJobs.generateMesh({ prompt: 'a clay oven' });
+	});
+	await h.eventually(() => objCount(A), (n) => n === base + 5, 'known no-CORS host imported proxy-first', 20000);
+	h.check(directAttempts === 0, 'no direct fetch attempted for assets.meshy.ai (no console CORS noise)');
+
+	// proxy CHAIN: a dead provider-configured proxy falls back to the next candidate
+	// (dev /proxy here; in prod the Worker -> peerjs-box order works the same way)
+	let deadTried = 0;
+	await A.page.route('**/dead-proxy**', (route) => {
+		deadTried++;
+		route.abort('failed');
+	});
+	meshyGlbUrl = MESHY + '/blocked.glb';
+	await A.page.evaluate(() => {
+		const list = window.__stores.meshProviders;
+		let providers;
+		list.meshProviders.subscribe((v) => (providers = v))();
+		const meshy = providers.find((p) => p.kind === 'meshy');
+		list.updateMeshProvider(meshy.id, { assetProxy: 'https://theprototype.app:5173/dead-proxy' });
+		return window.__stores.meshJobs.generateMesh({ prompt: 'a watch tower' });
+	});
+	await h.eventually(() => objCount(A), (n) => n === base + 6, 'dead primary proxy fell back to the next candidate', 20000);
+	h.check(deadTried > 0, 'the dead proxy was tried first (' + deadTried + ' attempt(s))');
+
 	// undo removes the last generated mesh (standard history)
 	await A.page.evaluate(() => window.__stores.history.undo());
-	await h.eventually(() => objCount(A), (n) => n === base + 1, 'undo removed the last generated mesh', 8000);
+	await h.eventually(() => objCount(A), (n) => n === base + 5, 'undo removed the last generated mesh', 8000);
 
 	await h.finish(browser);
 });

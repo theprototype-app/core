@@ -253,7 +253,8 @@ function keyGuard(event) {
 
 /** @param {KeyboardEvent} event */
 async function onKeydown(event) {
-	if (event.key.toLowerCase() !== 'v' || event.repeat || keyGuard(event)) return;
+	// key can be undefined on synthetic events (Chrome password-manager autofill)
+	if (String(event.key || '').toLowerCase() !== 'v' || event.repeat || keyGuard(event)) return;
 	if (get(micActive) || get(vrMicMode) === 'off') return;
 	pttHeld = true;
 	if (await ensureStream()) applyTrackState();
@@ -262,7 +263,7 @@ async function onKeydown(event) {
 
 /** @param {KeyboardEvent} event */
 function onKeyup(event) {
-	if (event.key.toLowerCase() !== 'v') return;
+	if (String(event.key || '').toLowerCase() !== 'v') return;
 	pttHeld = false;
 	applyTrackState();
 }

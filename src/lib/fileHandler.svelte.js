@@ -9,6 +9,7 @@ import { objectsGroup, TControls, selectedObject, selectedObjects } from '../sto
 import { sendObjects } from './commandsHandler.svelte';
 import { recordObjectPresence } from '$lib/history';
 import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
+import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 
@@ -184,12 +185,17 @@ function addImported(imported, name, position) {
 	selectedObject.set(sceneObjects.getObjectByProperty('uuid', imported.uuid));
 	peer.send({ type: 'lock', uuid: imported.uuid, peerId: peer.peer.id });
 
-	fixLight.set(true);
-	sceneObjects.traverse((/** @type {any} */ object) => {
-		if (object.isLight) {
-			fixLight.set(false);
-		}
-	});
+	// the environment rig lights every preset except Classic — only nag about
+	// missing lights there (same guard as /create in commandsHandler; imports
+	// used to nag under ANY preset even though the scene was clearly lit)
+	if (get(environment).preset === 'classic') {
+		fixLight.set(true);
+		sceneObjects.traverse((/** @type {any} */ object) => {
+			if (object.isLight) {
+				fixLight.set(false);
+			}
+		});
+	}
 }
 
 /**

@@ -8,7 +8,7 @@
 		aiPromptBarOpen
 	} from '../../stores/appStore';
 	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
-	import { aiMessages, aiBusy, runPrompt, stopAi } from '$lib/ai/assistant';
+	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
@@ -133,6 +133,9 @@
 						</li>
 					{/if}
 				{/each}
+				{#if $aiBusy && $aiStatus}
+					<li class="self-center text-center text-[11px] italic text-gray-400">💭 {$aiStatus}</li>
+				{/if}
 			</ul>
 		</div>
 

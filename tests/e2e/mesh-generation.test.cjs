@@ -142,8 +142,9 @@ h.run(async () => {
 	h.check(proxied > 0, 'download went through the proxy (' + proxied + ' request(s))');
 
 	// EMPTY assetProxy field (the Settings form saves '' — the user-hit bug: '' must
-	// fall through to the built-in default, `||` not `??`). The default resolves to
-	// VITE_ASSET_PROXY or https://<VITE_PEER_HOST>/proxy — intercept both.
+	// fall through to the built-in default, `||` not `??`). Under the dev server the
+	// default is the SAME-ORIGIN /proxy (vite devAssetProxy); intercept the deployed
+	// defaults too so the check survives an env change.
 	let defaultProxied = 0;
 	const serveDefault = (route) => {
 		const q = new URL(route.request().url()).searchParams.get('url') || '';
@@ -152,6 +153,7 @@ h.run(async () => {
 		route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glbBuf });
 	};
 	await A.page.route('**/peerjs.theprototype.app/proxy**', serveDefault);
+	await A.page.route('**/proxy?url=*', serveDefault); // same-origin dev default ('/mock-proxy' has no '/proxy' segment)
 	await A.page.evaluate(() => {
 		const list = window.__stores.meshProviders;
 		let providers;

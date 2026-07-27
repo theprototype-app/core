@@ -157,10 +157,11 @@ const NO_CORS_HOSTS = ['assets.meshy.ai'];
 
 /**
  * The asset proxy to use, first non-EMPTY wins (`||`, not `??` — the Settings form
- * saves a blank field as '' and that must fall through): provider field ->
- * VITE_ASSET_PROXY -> derived from VITE_PEER_HOST. The derivation covers CI/Pages
- * builds that bake the peer host but were never given the (gitignored-.env) proxy
- * var — the proxy ships on the self-hosted peer server box by design.
+ * saves a blank field as '' and that must fall through): provider field -> the dev
+ * server's own same-origin /proxy (vite.config.ts devAssetProxy — local dev works
+ * with no deployed proxy) -> VITE_ASSET_PROXY -> derived from VITE_PEER_HOST. The
+ * derivation covers CI/Pages builds that bake the peer host but were never given
+ * the (gitignored-.env) proxy var — the proxy ships on the peer server box by design.
  * @param {any} config @returns {string}
  */
 function assetProxyFor(config) {
@@ -168,7 +169,8 @@ function assetProxyFor(config) {
 	const own = String(config.assetProxy || '').trim();
 	const configured = String(env.VITE_ASSET_PROXY || '').trim();
 	const peerHost = String(env.VITE_PEER_HOST || '').trim();
-	const proxy = own || configured || (peerHost ? 'https://' + peerHost + '/proxy' : '');
+	const proxy =
+		own || (env.DEV ? '/proxy' : '') || configured || (peerHost ? 'https://' + peerHost + '/proxy' : '');
 	return proxy.replace(/\/+$/, '');
 }
 

@@ -75,9 +75,13 @@ h.run(async () => {
 	// the ADD search box (Shift+A) — Enter adds the top-matching primitive.
 	// (125 added a SEPARATE "Search objects" box for finding existing objects;
 	// this is the add-a-primitive search, #add-search-input.)
+	// WAIT for the box rather than sleeping 300ms: the shortcut's action dynamically
+	// imports appStore, and with two peers rendering at full rAF that resolved after
+	// the old fixed wait — the check failed while the feature worked.
 	await A.page.keyboard.press('Shift+KeyA');
-	await A.page.waitForTimeout(300);
-	h.check(await A.page.locator('#add-search-input').isVisible(), 'search box opens');
+	const addBox = A.page.locator('#add-search-input');
+	await addBox.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+	h.check(await addBox.isVisible(), 'search box opens');
 	await A.page.keyboard.type('ico');
 	await A.page.keyboard.press('Enter');
 	await h.eventually(
@@ -99,8 +103,8 @@ h.run(async () => {
 
 	// Shift+A opens the search box directly
 	await A.page.keyboard.press('Shift+KeyA');
-	await A.page.waitForTimeout(300);
-	h.check(await A.page.locator('#add-search-input').isVisible(), 'Shift+A opens the search');
+	await addBox.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+	h.check(await addBox.isVisible(), 'Shift+A opens the search');
 	await A.page.keyboard.press('Escape');
 
 	// right-tap ON an object opens the object context menu (not the Add menu) —

@@ -3,6 +3,9 @@ import { get } from 'svelte/store';
 import { isLocked, isVRMode } from '../stores/sceneStore';
 import { specatorMode } from '../stores/appStore';
 import { isClaimed } from './inputRuntime';
+// No new dependency: inputRuntime already imports shortcuts, and nothing in lib/
+// imports editorNavigation, so this closes no cycle.
+import { shortcuts } from './shortcuts';
 
 // WASD fly-panning for the desktop editor, Q down / E up, Shift = 3x.
 // Camera position and orbit target move together. Inert while typing, in
@@ -14,6 +17,21 @@ const KEYS = ['w', 'a', 's', 'd', 'q', 'e'];
 /** @type {Set<string>} */
 const pressed = new Set();
 let started = false;
+
+/**
+ * Is `Shift+<key>` a registered COMMAND rather than fast flying?
+ *
+ * Shift on its own is the 3x fly modifier, so Shift+W/S/D/Q/E must keep moving —
+ * but Shift+A opens the Add menu, and running that command used to ALSO strafe the
+ * camera left (at 3x, because Shift was held), so the viewport lurched before the
+ * menu appeared. Reading the registry keeps this correct for any Shift+<key>
+ * shortcut added later. Checked live: registerShortcut mutates the same array.
+ * @param {string} key lowercased single key
+ */
+function isShiftCommand(key) {
+	const combo = 'shift+' + key;
+	return shortcuts.some((s) => s.action && String(s.keys).toLowerCase() === combo);
+}
 
 /** @param {KeyboardEvent} event */
 function guarded(event) {
@@ -37,6 +55,7 @@ export function startEditorNavigation() {
 		if (event.key === 'Shift') return pressed.add('shift');
 		if (guarded(event) || event.ctrlKey || event.metaKey) return;
 		const key = String(event.key || '').toLowerCase();
+		if (event.shiftKey && isShiftCommand(key)) return; // a command, not movement
 		if (KEYS.includes(key)) pressed.add(key);
 	});
 	window.addEventListener('keyup', (event) => {

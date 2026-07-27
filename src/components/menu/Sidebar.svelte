@@ -58,7 +58,15 @@
 		saveFormat = f;
 		localStorage.setItem('saveFormat', f);
 	}
-	let rerenderInput = $state(false);
+	// Clearing value (instead of the old {#key} recreate) lets the same file be
+	// re-picked without detaching the input mid-dialog — a detached input's event
+	// never reaches Svelte 5's delegated oninput, so the pick was silently dropped.
+	function pickFile(id: string) {
+		const input = document.getElementById(id) as HTMLInputElement | null;
+		if (!input) return;
+		input.value = '';
+		input.click();
+	}
 
 	// A6: clicking the logo while ANY modal is open closes every modal and OPENS the
 	// menu in ONE step. (Previously it toggled the menu regardless of state, so a modal
@@ -124,22 +132,14 @@
 		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
 		style={$connectDocked ? `top: ${$connectBarHeight + 64}px` : ''}
 	>
-		{#key rerenderInput}
-			<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
-			<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .gltf, .scene, .tpscene" />
-		{/key}
+		<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
+		<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .tpscene" />
 
 		<!-- Files -->
-		<button
-			class="side-row"
-			onclick={() => {
-				document.getElementById('import-file')?.click();
-				rerenderInput = !rerenderInput; // allow re-picking the same file
-			}}
-		>
+		<button class="side-row" onclick={() => pickFile('import-file')}>
 			<span class="side-ico">📩</span><span class="flex-1 whitespace-nowrap">Import</span>
 		</button>
-		<button class="side-row" onclick={() => document.getElementById('load-file')?.click()}>
+		<button class="side-row" onclick={() => pickFile('load-file')}>
 			<span class="side-ico">📁</span><span class="flex-1 whitespace-nowrap">Load</span>
 		</button>
 		<button class="side-row" onclick={() => save(saveFormat)}>

@@ -37,7 +37,8 @@
 		updateAiProvider,
 		removeAiProvider,
 		PROVIDER_PRESETS,
-		presetFor
+		presetFor,
+		normalizeBaseUrl
 	} from '$lib/ai/providers';
 	import { testConnection, listModels } from '$lib/ai/client';
 	import {
@@ -84,17 +85,44 @@
 	// unlisted/custom ids are legitimate
 	let aiFormModels: string[] = [];
 	let aiModelListOpen = false;
+	let aiModelsFetching = false;
+	// per-preset API-key entries while the form is OPEN (switching Grok→Gemini must
+	// not carry the Grok key into the Gemini box); scoped to the form session — only
+	// Save persists a key
+	let aiFormKeys: Record<string, string> = {};
+	let aiFormPresetPrev = 'grok';
 	$: aiModelFiltered = (() => {
 		const q = (aiFormModel || '').trim().toLowerCase();
 		return q ? aiFormModels.filter((m) => m.toLowerCase().includes(q)) : aiFormModels;
 	})();
 
-	/** Silent best-effort refresh of the suggestions (on Edit open). */
+	/** Silent best-effort refresh of the model suggestions. Fires on Edit open, on
+	 * leaving the key/base-url fields, and on preset switch — so the picker fills
+	 * without needing a Test connection click. Sequence guard: a slow response for
+	 * a PREVIOUS endpoint must not populate the current one. */
+	let aiFetchSeq = 0;
 	async function aiRefreshModels() {
-		const baseUrl = aiFormBaseUrl.trim().replace(/\/+$/, '');
+		const baseUrl = normalizeBaseUrl(aiFormBaseUrl);
 		if (!baseUrl) return;
+		const seq = ++aiFetchSeq;
+		aiModelsFetching = true;
 		const list = await listModels({ id: 'probe', preset: aiFormPreset, label: '', baseUrl, apiKey: aiFormKey.trim(), model: '' });
+		if (seq !== aiFetchSeq) return;
+		aiModelsFetching = false;
 		if (list && list.length) aiFormModels = list;
+	}
+
+	/** Preset switch: stash the old preset's key, restore the new one's, reset
+	 * endpoint-specific state, and refetch suggestions if a key is already there. */
+	function aiPresetChanged() {
+		aiFormKeys[aiFormPresetPrev] = aiFormKey;
+		aiApplyPreset();
+		aiFormKey = aiFormKeys[aiFormPreset] ?? '';
+		aiFormModels = [];
+		aiModelListOpen = false;
+		aiTestResult = null;
+		aiFormPresetPrev = aiFormPreset;
+		if (aiFormKey.trim() || aiFormPreset === 'custom') aiRefreshModels();
 	}
 
 	function aiApplyPreset() {
@@ -113,6 +141,8 @@
 		aiTestResult = null;
 		aiFormModels = [];
 		aiModelListOpen = false;
+		aiFormKeys = {};
+		aiFormPresetPrev = aiFormPreset;
 		aiFormOpen = true;
 	}
 	function aiStartEdit(p: any) {
@@ -127,6 +157,8 @@
 		aiTestResult = null;
 		aiFormModels = Array.isArray(p.models) ? p.models : [];
 		aiModelListOpen = false;
+		aiFormKeys = { [p.preset]: p.apiKey };
+		aiFormPresetPrev = p.preset;
 		aiFormOpen = true;
 		aiRefreshModels(); // silent; keeps the picker current without a Test click
 	}
@@ -162,7 +194,7 @@
 			id: 'test',
 			preset: aiFormPreset,
 			label: aiFormLabel,
-			baseUrl: aiFormBaseUrl.trim().replace(/\/+$/, ''),
+			baseUrl: normalizeBaseUrl(aiFormBaseUrl),
 			apiKey: aiFormKey.trim(),
 			model: aiFormModel.trim()
 		});
@@ -725,23 +757,25 @@
 					{#if aiFormOpen}
 						<SettingRow name={aiEditId ? 'Edit provider' : 'New provider'} noControl>
 							<span class="flex flex-col gap-1.5">
-								<select class="ui-input" bind:value={aiFormPreset} on:change={aiApplyPreset}>
+								<select class="ui-input" bind:value={aiFormPreset} on:change={aiPresetChanged}>
 									{#each PROVIDER_PRESETS as preset}
 										<option value={preset.preset}>{preset.label}</option>
 									{/each}
 								</select>
 								<input class="ui-input" placeholder="Label" autocomplete="off" bind:value={aiFormLabel} />
-								<input class="ui-input" placeholder="Base URL (…/v1)" autocomplete="off" bind:value={aiFormBaseUrl} />
+								<!-- on:change (fires when leaving an edited field) auto-fetches the model list
+								     so the picker fills without a Test connection click -->
+								<input class="ui-input" placeholder="Base URL (…/v1)" autocomplete="off" bind:value={aiFormBaseUrl} on:change={aiRefreshModels} />
 								<!-- new-password: keeps Chrome's password manager from saving base-url + key as a
 								     login pair and autofilling them into unrelated text inputs (Connect peer id) -->
-								<input class="ui-input" type="password" placeholder="API key / bearer token" autocomplete="new-password" bind:value={aiFormKey} />
+								<input class="ui-input" type="password" placeholder="API key / bearer token" autocomplete="new-password" bind:value={aiFormKey} on:change={aiRefreshModels} />
 								<!-- model combobox: free text + suggestions from the endpoint's /models
 								     (fetched on Test connection / Edit open, persisted on the provider).
 								     Selection uses mousedown so it lands before the input's blur. -->
 								<input
 									id="ai-model-input"
 									class="ui-input"
-									placeholder={aiFormModels.length ? 'Model id — ' + aiFormModels.length + ' available' : 'Model id'}
+									placeholder={aiModelsFetching ? 'Model id — fetching list…' : aiFormModels.length ? 'Model id — ' + aiFormModels.length + ' available' : 'Model id'}
 									autocomplete="off"
 									bind:value={aiFormModel}
 									on:focus={() => (aiModelListOpen = true)}

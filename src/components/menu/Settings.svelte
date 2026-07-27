@@ -24,6 +24,7 @@
 		removeCustomTheme
 	} from '$lib/themes';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
+	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { shortcuts } from '$lib/shortcuts';
@@ -657,6 +658,17 @@
 						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>
 						Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy
 					</SettingRow>
+					<SettingRow name="Welcome on start">
+						<svelte:fragment slot="control"><Toggle bind:checked={$showWelcomeOnStart} /></svelte:fragment>
+						Show the welcome card every time the app opens. It normally appears only on your first
+						visit — turn this on to keep its quick links handy, or
+						<button class="underline" on:click={() => { settingsOpen.set(false); openWelcome(); }}>open it now</button>
+					</SettingRow>
+					<SettingRow name="Announce new versions">
+						<svelte:fragment slot="control"><Toggle bind:checked={$showWhatsNewNotice} /></svelte:fragment>
+						After an update, mark the logo menu with a dot and show one toast linking to the
+						changelog. Off means updates arrive silently — What's new stays in the logo menu
+					</SettingRow>
 					{#if $drawerSlot}
 						<SettingRow name="Show Rooms button">
 							<svelte:fragment slot="control"><Toggle bind:checked={$showRoomsButton} /></svelte:fragment>
@@ -1036,6 +1048,12 @@
 					</SettingRow>
 					<SettingRow name="Docs" noControl>
 						<a href="https://github.com/theprototype-app/docs" target="_blank">github.com/theprototype-app/docs</a>
+					</SettingRow>
+					<SettingRow name="What's new">
+						<svelte:fragment slot="control">
+							<button id="about-whats-new" class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { settingsOpen.set(false); openWhatsNew(); }}>Open</button>
+						</svelte:fragment>
+						The changelog for this version
 					</SettingRow>
 				</AccordionItem>
 			</Accordion>

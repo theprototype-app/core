@@ -21,6 +21,7 @@
 	} from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
+	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
 	// no boxed group / section headers / vertical bar), a fast fade-in (was a
@@ -110,6 +111,10 @@
 	onclick={toggleMenu}
 >
 	<img src="logo.svg" alt="menu" class="h-9 w-9" />
+	<!-- RW/B4: unseen-update cue. A dot, never a boot dialog — the menu's "What's new"
+	     row (and the one update toast) lead to the changelog. Class toggle, not an
+	     {#if}, so nothing is destroyed mid-flush when the cue clears (see the row). -->
+	<span class="update-dot" class:update-dot-on={$whatsNewUnseen} title="Updated — see what's new"></span>
 </button>
 
 {#if !$closeMenu}
@@ -175,6 +180,14 @@
 		<button class="side-row" onclick={() => window.open('https://docs.theprototype.app', '_blank')}>
 			<span class="side-ico">📖</span><span class="flex-1 whitespace-nowrap">Docs</span>
 		</button>
+		<!-- the unseen cue is a CLASS toggle, not an {#if}: clicking this row closes the
+		     menu, and destroying a nested branch inside the subtree being destroyed in
+		     the same flush crashes Svelte's sibling walk (destroy_effect). -->
+		<button id="open-whats-new" class="side-row" onclick={() => { openWhatsNew(); closeMenu.set(true); }}>
+			<span class="side-ico">✨</span>
+			<span class="flex-1 whitespace-nowrap">What's new</span>
+			<span class="row-dot" class:row-dot-on={$whatsNewUnseen}></span>
+		</button>
 	</nav>
 {/if}
 
@@ -223,6 +236,33 @@
 		background-color: var(--color-form);
 		top: 8px;
 		left: 8px;
+		/* .burger is position:absolute in menu.css — that already anchors .update-dot */
+	}
+	/* unseen-update cue: a small accent dot on the logo corner + on the menu row */
+	.update-dot {
+		position: absolute;
+		top: 5px;
+		right: 5px;
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: #60a5fa;
+		box-shadow: 0 0 0 2px var(--color-form, #1f2937);
+		visibility: hidden;
+	}
+	.update-dot-on {
+		visibility: visible;
+	}
+	.row-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: #60a5fa;
+		flex: 0 0 auto;
+		visibility: hidden;
+	}
+	.row-dot-on {
+		visibility: visible;
 	}
 	/* the logo menu opens above everything (Connect, toasts) */
 	.app-sidebar {

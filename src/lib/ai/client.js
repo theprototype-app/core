@@ -351,34 +351,35 @@ export async function runChat({
 }
 
 /**
- * Probe a provider config. Tries GET /models, falls back to a 1-token completion.
+ * List the endpoint's models (GET /models — served by vLLM, Gemini's OpenAI-compat
+ * layer, Grok, OpenAI alike). Returns null when the endpoint doesn't support it.
  * @param {AiProviderConfig} config
  * @param {AbortSignal} [signal]
- * @returns {Promise<{ok: boolean, detail: string}>}
+ * @returns {Promise<string[]|null>}
  */
-export async function testConnection(config, signal) {
-	if (!config.baseUrl) return { ok: false, detail: 'No base URL set' };
+export async function listModels(config, signal) {
 	try {
-		const res = await fetch(endpoint(config, '/models'), {
-			headers: authHeaders(config),
-			signal
-		});
-		if (res.ok) {
-			/** @type {any} */
-			const json = await res.json().catch(() => ({}));
-			const n = Array.isArray(json.data) ? json.data.length : 0;
-			return { ok: true, detail: n ? 'Connected — ' + n + ' models' : 'Connected' };
-		}
-		// some endpoints 404 /models — fall through to a tiny completion probe
-		if (res.status !== 404) {
-			return { ok: false, detail: describeAiError(new AiHttpError(res.status, '')) };
-		}
-	} catch (err) {
-		// network/CORS — but /models may just be unsupported; try a completion
-		if (!(err instanceof Error) || err.name === 'AbortError') {
-			return { ok: false, detail: 'Cancelled' };
-		}
+		const res = await fetch(endpoint(config, '/models'), { headers: authHeaders(config), signal });
+		if (!res.ok) return null;
+		/** @type {any} */
+		const json = await res.json().catch(() => ({}));
+		if (!Array.isArray(json.data)) return null;
+		return json.data
+			.map((/** @type {any} */ m) => String(m.id || ''))
+			// Gemini's compat layer prefixes ids with "models/" — normalize to what
+			// the chat endpoint expects (matches providers.normalizeModel)
+			.map((/** @type {string} */ id) => id.replace(/^models\//, ''))
+			.filter(Boolean)
+			.slice(0, 500);
+	} catch {
+		return null;
 	}
+}
+
+/** A 1-token completion against the configured model — the definitive "does this
+ * model answer" check. @param {AiProviderConfig} config @param {AbortSignal} [signal]
+ * @returns {Promise<{ok: boolean, detail: string}>} */
+async function probeCompletion(config, signal) {
 	try {
 		const res = await fetch(endpoint(config, '/chat/completions'), {
 			method: 'POST',
@@ -394,8 +395,53 @@ export async function testConnection(config, signal) {
 		if (res.ok) return { ok: true, detail: 'Connected' };
 		return { ok: false, detail: describeAiError(new AiHttpError(res.status, await res.text().catch(() => ''))) };
 	} catch (err) {
+		if (err instanceof Error && err.name === 'AbortError') return { ok: false, detail: 'Cancelled' };
 		return { ok: false, detail: describeAiError(err) };
 	}
+}
+
+/**
+ * Probe a provider config. Tries GET /models (also feeding the Settings model
+ * suggestions), then validates the CONFIGURED model: listed -> good; not listed or
+ * no list -> a 1-token completion decides (aliases like gemini-flash-latest may
+ * answer without being listed).
+ * @param {AiProviderConfig} config
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{ok: boolean, detail: string, models: string[]|null, modelOk: boolean|null}>}
+ *   modelOk: true = the configured model is confirmed (listed or answered),
+ *   false = it failed the probe, null = no model configured / nothing verifiable
+ */
+export async function testConnection(config, signal) {
+	if (!config.baseUrl) return { ok: false, detail: 'No base URL set', models: null, modelOk: null };
+	const models = await listModels(config, signal);
+	const model = (config.model || '').trim();
+
+	if (models) {
+		if (!model) return { ok: true, detail: 'Connected — ' + models.length + ' models', models, modelOk: null };
+		if (models.includes(model)) {
+			return { ok: true, detail: 'Connected — ' + models.length + ' models', models, modelOk: true };
+		}
+		// not listed — an alias may still answer; let the completion decide
+		const probe = await probeCompletion(config, signal);
+		return {
+			ok: true,
+			detail: 'Connected — ' + models.length + ' models',
+			models,
+			modelOk: probe.ok
+		};
+	}
+
+	// endpoint without /models (or blocked) — the completion probe is the whole test
+	if (!model) {
+		return {
+			ok: false,
+			detail: 'This endpoint lists no models — enter a model id, then test again',
+			models: null,
+			modelOk: null
+		};
+	}
+	const probe = await probeCompletion(config, signal);
+	return { ...probe, models: null, modelOk: probe.ok };
 }
 
 /**

@@ -20,6 +20,9 @@ import { writable, get } from 'svelte/store';
  *   (vLLM 0.26 + Qwen3.5 swallows the call and streams an invented tool name);
  *   ai/client.js also detects that at runtime and falls back for the session.
  * @property {number} [temperature] sampling temperature; omitted = server default
+ * @property {string[]} [models]   model ids the endpoint reported on the last
+ *   successful Test connection (GET /models) — Settings' model-picker suggestions.
+ *   Persisted so the picker still works after a reload without re-fetching.
  */
 
 /**
@@ -153,6 +156,9 @@ export function addAiProvider(config) {
 	};
 	if (config.stream === false) entry.stream = false;
 	if (typeof config.temperature === 'number') entry.temperature = config.temperature;
+	if (Array.isArray(config.models) && config.models.length) {
+		entry.models = config.models.map(String).slice(0, 500);
+	}
 	const list = [...get(aiProviders), entry];
 	aiProviders.set(list);
 	persistProviders(list);

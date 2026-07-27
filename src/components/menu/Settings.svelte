@@ -39,7 +39,7 @@
 		PROVIDER_PRESETS,
 		presetFor
 	} from '$lib/ai/providers';
-	import { testConnection } from '$lib/ai/client';
+	import { testConnection, listModels } from '$lib/ai/client';
 	import {
 		meshGenEnabled,
 		setMeshGenEnabled,
@@ -78,7 +78,24 @@
 	let aiFormStream = true;
 	let aiFormTemp = '';
 	let aiTesting = false;
-	let aiTestResult: { ok: boolean; detail: string } | null = null;
+	let aiTestResult: { ok: boolean; detail: string; modelOk?: boolean | null; model?: string } | null = null;
+	// model picker: suggestions from the endpoint's GET /models (persisted on the
+	// provider so Edit works after a reload); free text stays allowed — aliases and
+	// unlisted/custom ids are legitimate
+	let aiFormModels: string[] = [];
+	let aiModelListOpen = false;
+	$: aiModelFiltered = (() => {
+		const q = (aiFormModel || '').trim().toLowerCase();
+		return q ? aiFormModels.filter((m) => m.toLowerCase().includes(q)) : aiFormModels;
+	})();
+
+	/** Silent best-effort refresh of the suggestions (on Edit open). */
+	async function aiRefreshModels() {
+		const baseUrl = aiFormBaseUrl.trim().replace(/\/+$/, '');
+		if (!baseUrl) return;
+		const list = await listModels({ id: 'probe', preset: aiFormPreset, label: '', baseUrl, apiKey: aiFormKey.trim(), model: '' });
+		if (list && list.length) aiFormModels = list;
+	}
 
 	function aiApplyPreset() {
 		const preset = presetFor(aiFormPreset);
@@ -94,6 +111,8 @@
 		aiFormStream = true;
 		aiFormTemp = '';
 		aiTestResult = null;
+		aiFormModels = [];
+		aiModelListOpen = false;
 		aiFormOpen = true;
 	}
 	function aiStartEdit(p: any) {
@@ -106,7 +125,10 @@
 		aiFormStream = p.stream !== false;
 		aiFormTemp = typeof p.temperature === 'number' ? String(p.temperature) : '';
 		aiTestResult = null;
+		aiFormModels = Array.isArray(p.models) ? p.models : [];
+		aiModelListOpen = false;
 		aiFormOpen = true;
+		aiRefreshModels(); // silent; keeps the picker current without a Test click
 	}
 	function aiSaveProvider() {
 		if (!aiFormBaseUrl.trim() || !aiFormModel.trim()) {
@@ -121,7 +143,8 @@
 			apiKey: aiFormKey,
 			model: aiFormModel,
 			stream: aiFormStream,
-			temperature: Number.isFinite(temp) ? temp : undefined
+			temperature: Number.isFinite(temp) ? temp : undefined,
+			models: aiFormModels
 		};
 		if (aiEditId) updateAiProvider(aiEditId, config);
 		else addAiProvider(config);
@@ -129,13 +152,13 @@
 		aiEditId = null;
 	}
 	async function aiTest() {
-		if (!aiFormBaseUrl.trim() || !aiFormModel.trim()) {
-			aiTestResult = { ok: false, detail: 'Enter a base URL and model first' };
+		if (!aiFormBaseUrl.trim()) {
+			aiTestResult = { ok: false, detail: 'Enter a base URL first' };
 			return;
 		}
 		aiTesting = true;
 		aiTestResult = null;
-		aiTestResult = await testConnection({
+		const result = await testConnection({
 			id: 'test',
 			preset: aiFormPreset,
 			label: aiFormLabel,
@@ -143,6 +166,9 @@
 			apiKey: aiFormKey.trim(),
 			model: aiFormModel.trim()
 		});
+		if (result.models && result.models.length) aiFormModels = result.models;
+		// pin the tested model into the result so later typing can't mislabel it
+		aiTestResult = { ok: result.ok, detail: result.detail, modelOk: result.modelOk, model: aiFormModel.trim() };
 		aiTesting = false;
 	}
 
@@ -709,7 +735,33 @@
 								<!-- new-password: keeps Chrome's password manager from saving base-url + key as a
 								     login pair and autofilling them into unrelated text inputs (Connect peer id) -->
 								<input class="ui-input" type="password" placeholder="API key / bearer token" autocomplete="new-password" bind:value={aiFormKey} />
-								<input class="ui-input" placeholder="Model id" autocomplete="off" bind:value={aiFormModel} />
+								<!-- model combobox: free text + suggestions from the endpoint's /models
+								     (fetched on Test connection / Edit open, persisted on the provider).
+								     Selection uses mousedown so it lands before the input's blur. -->
+								<input
+									id="ai-model-input"
+									class="ui-input"
+									placeholder={aiFormModels.length ? 'Model id — ' + aiFormModels.length + ' available' : 'Model id'}
+									autocomplete="off"
+									bind:value={aiFormModel}
+									on:focus={() => (aiModelListOpen = true)}
+									on:input={() => (aiModelListOpen = true)}
+									on:keydown={(e: any) => { if (e.key === 'Escape' || e.key === 'Enter') aiModelListOpen = false; }}
+									on:blur={() => setTimeout(() => (aiModelListOpen = false), 150)}
+								/>
+								{#if aiModelListOpen && aiFormModels.length}
+									<div id="ai-model-list" class="max-h-40 overflow-y-auto rounded border border-gray-600 bg-gray-800">
+										{#each aiModelFiltered as m (m)}
+											<button
+												class="block w-full px-2 py-1 text-left font-mono text-[12px] {m === aiFormModel.trim() ? 'bg-primary-700 text-white' : 'text-gray-200 hover:bg-gray-700'}"
+												on:mousedown|preventDefault={() => { aiFormModel = m; aiModelListOpen = false; }}
+											>{m}</button>
+										{/each}
+										{#if !aiModelFiltered.length}
+											<div class="px-2 py-1 text-[12px] text-gray-400">no match — free text works too (aliases / custom ids)</div>
+										{/if}
+									</div>
+								{/if}
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
 									<input type="checkbox" bind:checked={aiFormStream} />
 									Stream responses
@@ -727,8 +779,19 @@
 									<button class="rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { aiFormOpen = false; aiEditId = null; }}>Cancel</button>
 								</span>
 								{#if aiTestResult}
-									<span id="ai-test-result" class="text-[12px] leading-snug {aiTestResult.ok ? 'text-emerald-400' : 'text-red-400'}">
-										{aiTestResult.ok ? '✓' : '✗'} {aiTestResult.detail}
+									<span id="ai-test-result" class="text-[12px] leading-snug">
+										{#if aiTestResult.ok}
+											<span class="text-emerald-400">✓ {aiTestResult.detail}</span>
+											{#if !aiTestResult.model}
+												<span class="text-red-400"> · no model selected</span>
+											{:else if aiTestResult.modelOk}
+												<span class="text-emerald-400"> · model <span class="font-mono">{aiTestResult.model}</span> — Configuration OK</span>
+											{:else if aiTestResult.modelOk === false}
+												<span class="text-red-400"> · model "{aiTestResult.model}" did not respond — pick one from the list</span>
+											{/if}
+										{:else}
+											<span class="text-red-400">✗ {aiTestResult.detail}</span>
+										{/if}
 									</span>
 								{/if}
 							</span>

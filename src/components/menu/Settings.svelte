@@ -1049,12 +1049,6 @@
 					<SettingRow name="Docs" noControl>
 						<a href="https://github.com/theprototype-app/docs" target="_blank">github.com/theprototype-app/docs</a>
 					</SettingRow>
-					<SettingRow name="What's new">
-						<svelte:fragment slot="control">
-							<button id="about-whats-new" class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { settingsOpen.set(false); openWhatsNew(); }}>Open</button>
-						</svelte:fragment>
-						The changelog for this version
-					</SettingRow>
 				</AccordionItem>
 			</Accordion>
 		</div>
@@ -1062,6 +1056,7 @@
 	<svelte:fragment slot="footer">
 		<Button onclick={() => localStorage.clear()}>Reset settings</Button>
 		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
+		<Button id="about-whats-new" color="alternative" onclick={() => { settingsOpen.set(false); openWhatsNew(); }}>What's new</Button>
 	</svelte:fragment>
 </Modal>
 

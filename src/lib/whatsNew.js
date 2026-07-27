@@ -95,9 +95,12 @@ export function closeWelcome() {
 export function startWhatsNew() {
 	if (typeof localStorage === 'undefined') return;
 	const firstVisit = !localStorage.getItem(SEEN_WELCOME);
-	if (firstVisit || get(showWelcomeOnStart)) {
-		welcomeOpen.set(true);
-		if (firstVisit) markSeen();
+	const welcomeThisBoot = firstVisit || get(showWelcomeOnStart);
+	if (welcomeThisBoot) welcomeOpen.set(true);
+	if (firstVisit) {
+		// The welcome overlay IS the announcement — the current version counts as
+		// seen so the update badge can't fire on top of it.
+		markSeen();
 		return;
 	}
 	if (!get(showWhatsNewNotice)) return;
@@ -110,6 +113,9 @@ export function startWhatsNew() {
 	}
 	if (lastSeen === APP_VERSION) return;
 	whatsNewUnseen.set(true);
+	// Welcome-on-start opt-ins still get the dot, but a toast on top of the overlay
+	// they asked for is noise — the badge alone carries the news that boot.
+	if (welcomeThisBoot) return;
 	showToast('Updated to ' + APP_VERSION + (IS_DEV ? '-dev' : '') + ' — see what changed.', [
 		{ label: "What's new", action: openWhatsNew }
 	]);

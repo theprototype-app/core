@@ -1,6 +1,21 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, type Plugin } from 'vite';
 import mkcert from 'vite-plugin-mkcert';
+import pkg from './package.json';
+// @ts-ignore -- no @types/node in this project (adding them shifts the svelte-check baseline)
+import { execSync } from 'node:child_process';
+
+// Version identity is baked at build time (V1): `npm version` in package.json is the
+// single source of truth, the sha comes from the checkout. vite `define` reaches dev,
+// build AND the static prerender, so there is no second code path to keep in sync.
+// Read them through src/lib/version.js, never the globals directly.
+function commitSha(): string {
+	try {
+		return String(execSync('git rev-parse --short HEAD')).trim() || 'unknown';
+	} catch {
+		return 'unknown';
+	}
+}
 
 // @threlte/xr 1.0.0-next.15 crashes on XR session end / inputsourceschange: its
 // controller/hand handlers index `stores[handedness]` and read `data.handedness`
@@ -74,6 +89,10 @@ function devAssetProxy(): Plugin {
 }
 
 export default defineConfig({
+	define: {
+		__APP_VERSION__: JSON.stringify(pkg.version),
+		__COMMIT_SHA__: JSON.stringify(commitSha())
+	},
 	// guardThrelteXr must run before sveltekit/optimize so it patches the served source
 	plugins: [guardThrelteXr(), devAssetProxy(), mkcert(), sveltekit()],
 	ssr: {

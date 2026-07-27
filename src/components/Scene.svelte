@@ -5,7 +5,7 @@
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand, useHand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
-	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener } from '../stores/appStore';
+	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
@@ -380,6 +380,7 @@
 		let lastSculptAt = 0;
 		let marqueeStart = null; // shift-drag box select (13)
 		let rightDown = null; // right-click TAP opens the Add/object menu (77)
+		let lastPointerXY: number[] | null = null; // last cursor position, for keyboard-opened menus
 
 		const setRayFromEvent = (event) => {
 			const rect = element.getBoundingClientRect();
@@ -429,6 +430,9 @@
 		};
 
 		const onPointerMove = (event) => {
+			// remember where the cursor is so keyboard commands (Shift+A) can anchor to
+			// it and spawn under it — null until the pointer has moved at least once
+			lastPointerXY = [event.clientX, event.clientY];
 			if (marqueeStart) {
 				$marqueeRect = {
 					x0: Math.min(marqueeStart[0], event.clientX),
@@ -628,6 +632,28 @@
 		};
 		// HUD/touch entry point (mobile "+" button, no right-click available)
 		viewportMenuOpener.set(openViewportMenuAt);
+
+		// The world point under a screen position: an object hit, else the ground
+		// plane, else the origin. Same resolution the right-click Add menu uses.
+		const scenePointAt = (clientX: number, clientY: number) => {
+			setRayFromEvent({ clientX, clientY });
+			const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
+			if (hits[0]?.point) return hits[0].point.toArray();
+			const planePoint = new THREE.Vector3();
+			return selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
+				? planePoint.toArray()
+				: [0, 0, 0];
+		};
+
+		// Shift+A entry point: anchor the Add-search popover to the cursor and spawn
+		// what you pick right there. Returns false when the pointer has never moved
+		// (fresh load / keyboard-only) so the caller can fall back to a centred box.
+		addMenuOpener.set(() => {
+			if ($isLocked || $isVRMode || $specatorMode || !lastPointerXY) return false;
+			const [x, y] = lastPointerXY;
+			addMenu.set({ x, y, point: scenePointAt(x, y) });
+			return true;
+		});
 
 		const onContextMenu = (event) => {
 			event.preventDefault(); // the browser menu never belongs on the canvas

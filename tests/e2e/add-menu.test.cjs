@@ -11,11 +11,21 @@ const names = (page) =>
 				window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()
 			)
 	);
-const rightTap = async (page, x, y) => {
-	await page.mouse.move(x, y);
-	await page.mouse.down({ button: 'right' });
-	await page.mouse.up({ button: 'right' });
-	await page.waitForTimeout(300);
+// A right TAP only opens the menu when it is short and stationary — Scene ignores a
+// press longer than 400ms (that is a right-DRAG, which pans the camera). Playwright
+// dispatches down and up as separate CDP round-trips, and with two peers rendering at
+// full rAF those measured 360-410ms here: right on the threshold, so the menu opened
+// only about half the time. Retry until it appears instead of trusting one tap.
+// Retrying is safe because a tap that failed to register changed nothing; never
+// press Escape between attempts — that would dismiss a menu that DID open.
+const rightTap = async (page, x, y, retries = 6) => {
+	for (let attempt = 0; attempt < retries; attempt++) {
+		await page.mouse.move(x, y);
+		await page.mouse.down({ button: 'right' });
+		await page.mouse.up({ button: 'right' });
+		await page.waitForTimeout(300);
+		if ((await page.locator('[role="menuitem"]').count()) > 0) return;
+	}
 };
 
 h.run(async () => {
@@ -90,6 +100,11 @@ h.run(async () => {
 		'search Enter added the top match'
 	);
 
+	// KNOWN FLAKE (pre-existing, reproduces on this suite without any of the Shift+A
+	// changes): this right-tap often fails to open the viewport menu, so the hover
+	// below times out. The tap timing above is one cause; ruled out so far = an object
+	// under the point (parking every object away does not help) and a stale add-search
+	// box (its store is null by here). Needs its own investigation.
 	// Add ▸ Group creates an empty group
 	await rightTap(A.page, 950, 140);
 	await A.page.locator('[role="menuitem"]').filter({ hasText: 'Add' }).first().hover();

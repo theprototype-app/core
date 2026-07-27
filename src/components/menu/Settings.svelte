@@ -75,6 +75,8 @@
 	let aiFormBaseUrl = '';
 	let aiFormKey = '';
 	let aiFormModel = '';
+	let aiFormStream = true;
+	let aiFormTemp = '';
 	let aiTesting = false;
 
 	function aiApplyPreset() {
@@ -88,6 +90,8 @@
 		aiFormPreset = 'grok';
 		aiApplyPreset();
 		aiFormKey = '';
+		aiFormStream = true;
+		aiFormTemp = '';
 		aiFormOpen = true;
 	}
 	function aiStartEdit(p: any) {
@@ -97,6 +101,8 @@
 		aiFormBaseUrl = p.baseUrl;
 		aiFormKey = p.apiKey;
 		aiFormModel = p.model;
+		aiFormStream = p.stream !== false;
+		aiFormTemp = typeof p.temperature === 'number' ? String(p.temperature) : '';
 		aiFormOpen = true;
 	}
 	function aiSaveProvider() {
@@ -104,12 +110,15 @@
 			showToast('Base URL and model are required');
 			return;
 		}
+		const temp = parseFloat(aiFormTemp);
 		const config = {
 			preset: aiFormPreset,
 			label: aiFormLabel,
 			baseUrl: aiFormBaseUrl,
 			apiKey: aiFormKey,
-			model: aiFormModel
+			model: aiFormModel,
+			stream: aiFormStream,
+			temperature: Number.isFinite(temp) ? temp : undefined
 		};
 		if (aiEditId) updateAiProvider(aiEditId, config);
 		else addAiProvider(config);
@@ -692,6 +701,17 @@
 								<input class="ui-input" placeholder="Base URL (…/v1)" bind:value={aiFormBaseUrl} />
 								<input class="ui-input" type="password" placeholder="API key / bearer token" bind:value={aiFormKey} />
 								<input class="ui-input" placeholder="Model id" bind:value={aiFormModel} />
+								<label class="flex items-center gap-2 text-[13px] text-gray-300">
+									<input type="checkbox" bind:checked={aiFormStream} />
+									Stream responses
+								</label>
+								<input class="ui-input" placeholder="Temperature (blank = server default)" bind:value={aiFormTemp} />
+								<span class="text-[11px] leading-snug text-gray-400">
+									Turn streaming OFF for a self-hosted server whose tool calls only work unstreamed —
+									vLLM with a mismatched <span class="font-mono">--tool-call-parser</span> (e.g. hermes
+									for a Qwen3.5 model, which needs qwen3_xml) mangles streamed tool calls. The
+									assistant also detects that at runtime and falls back on its own.
+								</span>
 								<span class="flex gap-1.5">
 									<button class="rounded bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-600" on:click={aiSaveProvider}>Save</button>
 									<button class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50" disabled={aiTesting} on:click={aiTest}>{aiTesting ? 'Testing…' : 'Test connection'}</button>

@@ -2,7 +2,7 @@ import { writable, get } from 'svelte/store';
 import { showToast, settingsOpen, settingsSection } from '../../stores/appStore.js';
 import { activeAiConfig, aiReady } from './providers.js';
 import { runChat, describeAiError } from './client.js';
-import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene } from './tools.js';
+import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall } from './tools.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 
 // Conversation orchestrator (roadmap #10, A5). Module-level state so the chat
@@ -16,6 +16,9 @@ import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 /** @type {import('svelte/store').Writable<UiMessage[]>} */
 export const aiMessages = writable([]);
 export const aiBusy = writable(false);
+/** Transient status while a run is in flight (reasoning models emit thinking tokens
+ * for a long time before any content — without this the window looks frozen). */
+export const aiStatus = writable('');
 
 /** @type {AbortController|null} */
 let controller = null;
@@ -49,7 +52,10 @@ function streamInto(text) {
 		if (last && last.role === 'assistant' && last.streaming) {
 			return [...list.slice(0, -1), { ...last, content: last.content + text }];
 		}
-		return [...list, { role: 'assistant', content: text, streaming: true }];
+		// reasoning models open their answer with blank lines — don't start a bubble on those
+		const opening = text.replace(/^\s+/, '');
+		if (!opening) return list;
+		return [...list, { role: 'assistant', content: opening, streaming: true }];
 	});
 }
 
@@ -63,6 +69,21 @@ function endStreaming() {
 	});
 }
 
+/**
+ * Replace the streaming bubble with the settled text for that turn (tool-call markup
+ * recovered from TEXT is stripped after the fact — drop the bubble if only markup came).
+ * @param {string} text
+ */
+function replaceStreaming(text) {
+	const clean = (text || '').trim();
+	aiMessages.update((list) => {
+		const last = list[list.length - 1];
+		if (!last || last.role !== 'assistant' || !last.streaming) return list;
+		if (!clean) return list.slice(0, -1);
+		return [...list.slice(0, -1), { ...last, content: clean }];
+	});
+}
+
 /** @param {string} name @param {any} args */
 function toolStatusLabel(name, args) {
 	if (name === 'create_objects') return 'Creating ' + (args?.objects?.length ?? 0) + ' object(s)';
@@ -72,6 +93,37 @@ function toolStatusLabel(name, args) {
 	if (name === 'clear_scene') return 'Clearing the scene';
 	if (name === 'list_scene') return 'Reading the scene';
 	return name;
+}
+
+/**
+ * Tally what a tool result actually changed. The undo summary should count OBJECTS,
+ * not tool calls: one create_objects can build a whole campfire, and a weaker model
+ * often re-sends an update it already made — so objects are counted by UUID and only
+ * once. Reads (list_scene) and per-item failures count for nothing.
+ * @param {string} name @param {any} result
+ * @param {{uuids: Set<string>, other: number}} tally
+ */
+function tallyChanges(name, result, tally) {
+	if (name === 'list_scene' || !result || typeof result !== 'object') return;
+	/** @param {any[]} list */
+	const addAll = (list) => {
+		for (const entry of list) {
+			if (!entry || entry.error) continue;
+			if (typeof entry.uuid === 'string') tally.uuids.add(entry.uuid);
+			else tally.other += 1;
+		}
+	};
+	if (Array.isArray(result.created)) return addAll(result.created);
+	if (Array.isArray(result.updated)) return addAll(result.updated);
+	if (typeof result.deleted === 'number') {
+		tally.other += result.deleted;
+		return;
+	}
+	if (typeof result.cleared === 'number') {
+		tally.other += result.cleared;
+		return;
+	}
+	tally.other += 1; // group_objects / generate_mesh / anything else
 }
 
 /**
@@ -109,27 +161,51 @@ export async function runPrompt(text) {
 
 	controller = new AbortController();
 	aiBusy.set(true);
+	aiStatus.set('');
 	beginHistoryBatch();
-	let toolRuns = 0;
+	/** distinct objects touched + non-object changes (see tallyChanges) */
+	const tally = { uuids: new Set(), other: 0 };
+	const appliedCount = () => tally.uuids.size + tally.other;
+	let failed = 0;
 	try {
 		const result = await runChat({
 			config,
 			messages: apiHistory,
 			tools: getAiTools(),
 			executeTool: executeAiTool,
-			onDelta: (t) => streamInto(t),
-			onToolStart: (name, args) => push({ role: 'tool-status', content: toolStatusLabel(name, args) }),
+			onDelta: (t) => {
+				aiStatus.set('');
+				streamInto(t);
+			},
+			onReasoning: () => aiStatus.set('Thinking…'),
+			onNotice: (text) => push({ role: 'tool-status', content: text }),
+			onTurnText: (text) => replaceStreaming(text),
+			onToolStart: (name, args) => {
+				aiStatus.set('');
+				const call = repairToolCall(name, args);
+				push({ role: 'tool-status', content: toolStatusLabel(call.name, call.args) });
+			},
+			onToolResult: (name, res) => {
+				const error = res && typeof res === 'object' ? res.error : null;
+				if (error) {
+					failed++;
+					push({ role: 'error', content: String(error).slice(0, 300) });
+				} else {
+					tallyChanges(repairToolCall(name, {}).name, res, tally);
+				}
+			},
 			signal: controller.signal
 		});
-		toolRuns = result.toolRuns;
 		endStreaming();
-		if (!result.content && !toolRuns) push({ role: 'assistant', content: '(no response)' });
+		if (!result.content && !appliedCount() && !failed) push({ role: 'assistant', content: '(no response)' });
 	} catch (error) {
 		endStreaming();
 		push({ role: 'error', content: describeAiError(error) });
 	} finally {
 		endHistoryBatch('AI: ' + trimmed.slice(0, 40));
-		if (toolRuns) push({ role: 'summary', content: 'Applied ' + toolRuns + ' action(s) — undo (Ctrl+Z) reverts them together' });
+		const applied = appliedCount();
+		if (applied) push({ role: 'summary', content: 'Applied ' + applied + ' action(s) — undo (Ctrl+Z) reverts them together' });
+		aiStatus.set('');
 		aiBusy.set(false);
 		controller = null;
 	}

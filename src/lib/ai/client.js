@@ -7,6 +7,8 @@
 // server that does NOT set CORS headers will fail with a network/TypeError. There is
 // no proxy fallback (static app) — describeAiError() surfaces this clearly.
 
+import { parseTextToolCalls, visiblePrefixLength } from './toolCallText.js';
+
 /**
  * @typedef {import('./providers.js').AiProviderConfig} AiProviderConfig
  * @typedef {{role: string, content?: string|null, tool_calls?: any[], tool_call_id?: string, name?: string}} ChatMessage
@@ -29,6 +31,21 @@ function endpoint(config, path) {
 	return config.baseUrl.replace(/\/+$/, '') + path;
 }
 
+/** Providers whose STREAMING tool calls proved unusable this session (see
+ * runChat) — keyed by id so the next prompt skips straight to non-streaming.
+ * @type {Set<string>} */
+const brokenStreaming = new Set();
+
+/** @param {AiProviderConfig} config */
+function providerKey(config) {
+	return config.id || config.baseUrl + '|' + config.model;
+}
+
+/** @param {AiProviderConfig} config @returns {boolean} */
+export function streamingDisabled(config) {
+	return config.stream === false || brokenStreaming.has(providerKey(config));
+}
+
 /** @param {AiProviderConfig} config */
 function authHeaders(config) {
 	/** @type {Record<string,string>} */
@@ -40,17 +57,28 @@ function authHeaders(config) {
 /**
  * One streamed chat-completions call. Accumulates assistant text (via onDelta) and
  * tool_calls (index-keyed — providers stream `function.arguments` in fragments).
+ * Also accumulates `reasoning`/`reasoning_content` deltas (thinking models served by
+ * vLLM/Ollama with a reasoning parser) — those are NOT chat content and never go back
+ * into the transcript; they only drive a "thinking" indicator via onReasoning.
+ *
+ * When the server returns no tool_calls but the text CONTAINS a tool call (a
+ * self-hosted endpoint without `--tool-call-parser`), the call is recovered from the
+ * text and `fromText` is set — see toolCallText.js.
  * @param {Object} opts
  * @param {AiProviderConfig} opts.config
  * @param {ChatMessage[]} opts.messages
  * @param {any[]} [opts.tools]
  * @param {(text: string) => void} [opts.onDelta]
+ * @param {(text: string) => void} [opts.onReasoning]
  * @param {AbortSignal} [opts.signal]
- * @returns {Promise<{content: string, toolCalls: ToolCall[], finishReason: string|null}>}
+ * @param {boolean} [opts.stream] set false to use a plain (non-SSE) completion — some
+ *   self-hosted servers only parse tool calls correctly when NOT streaming
+ * @returns {Promise<{content: string, toolCalls: ToolCall[], finishReason: string|null, fromText: boolean}>}
  */
-export async function chatOnce({ config, messages, tools, onDelta, signal }) {
+export async function chatOnce({ config, messages, tools, onDelta, onReasoning, signal, stream = true }) {
 	/** @type {any} */
-	const body = { model: config.model, messages, stream: true };
+	const body = { model: config.model, messages, stream };
+	if (typeof config.temperature === 'number') body.temperature = config.temperature;
 	if (tools && tools.length) {
 		body.tools = tools;
 		body.tool_choice = 'auto';
@@ -63,18 +91,53 @@ export async function chatOnce({ config, messages, tools, onDelta, signal }) {
 		signal
 	});
 
-	if (!res.ok || !res.body) {
+	if (!res.ok) {
 		const text = await res.text().catch(() => '');
 		throw new AiHttpError(res.status, text);
 	}
 
-	const reader = res.body.getReader();
+	if (!stream) {
+		/** @type {any} */
+		const json = await res.json();
+		const message = (json.choices && json.choices[0] && json.choices[0].message) || {};
+		const reasoning = message.reasoning_content ?? message.reasoning;
+		if (typeof reasoning === 'string' && reasoning && onReasoning) onReasoning(reasoning);
+		const rawCalls = Array.isArray(message.tool_calls)
+			? message.tool_calls.map((/** @type {any} */ c) => ({
+					id: c.id || '',
+					name: (c.function && c.function.name) || '',
+					arguments: (c.function && c.function.arguments) || ''
+				}))
+			: [];
+		const settled = finalizeTurn(String(message.content || ''), rawCalls, tools);
+		// no SSE, so feed the whole visible answer at once
+		if (onDelta && settled.content) onDelta(settled.content);
+		const finish = (json.choices && json.choices[0] && json.choices[0].finish_reason) || null;
+		return { ...settled, finishReason: finish };
+	}
+
+	const body_ = res.body;
+	if (!body_) throw new AiHttpError(res.status, 'empty response body');
+	const reader = body_.getReader();
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let content = '';
 	let finishReason = /** @type {string|null} */ (null);
 	/** @type {Map<number, ToolCall>} */
 	const toolCalls = new Map();
+
+	// Stream text out only up to the first tool-call marker (and hold back a possible
+	// partial marker), so raw `<tool_call>` markup never flashes in the transcript.
+	let emitted = 0;
+	/** @param {boolean} final */
+	const flushVisible = (final) => {
+		if (!onDelta) return;
+		const upto = visiblePrefixLength(content, final);
+		if (upto > emitted) {
+			onDelta(content.slice(emitted, upto));
+			emitted = upto;
+		}
+	};
 
 	/** @param {string} payload */
 	const handlePayload = (payload) => {
@@ -89,9 +152,11 @@ export async function chatOnce({ config, messages, tools, onDelta, signal }) {
 		const choice = json.choices && json.choices[0];
 		if (!choice) return;
 		const delta = choice.delta || {};
+		const reasoning = delta.reasoning_content ?? delta.reasoning;
+		if (typeof reasoning === 'string' && reasoning && onReasoning) onReasoning(reasoning);
 		if (typeof delta.content === 'string' && delta.content) {
 			content += delta.content;
-			if (onDelta) onDelta(delta.content);
+			flushVisible(false);
 		}
 		if (Array.isArray(delta.tool_calls)) {
 			for (const tc of delta.tool_calls) {
@@ -123,6 +188,7 @@ export async function chatOnce({ config, messages, tools, onDelta, signal }) {
 		// flush any trailing buffered line
 		const tail = buffer.trim();
 		if (tail.startsWith('data:')) handlePayload(tail.slice(5).trim());
+		flushVisible(true);
 	} finally {
 		try {
 			reader.cancel();
@@ -130,7 +196,45 @@ export async function chatOnce({ config, messages, tools, onDelta, signal }) {
 	}
 
 	const calls = [...toolCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
-	return { content, toolCalls: calls, finishReason };
+	return { ...finalizeTurn(content, calls, tools), finishReason };
+}
+
+/** @param {any[]} [tools] @returns {string[]} */
+function toolNames(tools) {
+	return (tools || []).map((/** @type {any} */ t) => t?.function?.name).filter(Boolean);
+}
+
+/**
+ * Settle one turn: when the server produced no tool_calls but the TEXT carries one
+ * (endpoint without a tool-call parser), recover it and strip the markup.
+ * @param {string} content @param {ToolCall[]} calls @param {any[]} [tools]
+ * @returns {{content: string, toolCalls: ToolCall[], fromText: boolean}}
+ */
+function finalizeTurn(content, calls, tools) {
+	if (!calls.length && content) {
+		const recovered = parseTextToolCalls(content, toolNames(tools));
+		if (recovered.calls.length) {
+			return { content: recovered.text, toolCalls: recovered.calls, fromText: true };
+		}
+	}
+	return { content, toolCalls: calls, fromText: false };
+}
+
+/**
+ * Did this turn come back useless? Two shapes seen from self-hosted servers whose
+ * STREAMING tool-call parser doesn't match the model's format (vLLM 0.26 + Qwen3.5):
+ * the whole turn arrives empty, or a tool call arrives with an invented name and NO
+ * arguments (the parser swallowed the real call). Non-streaming is unaffected, so the
+ * turn is worth one retry. An unknown name WITH arguments is repairable — not this.
+ * @param {string} content @param {ToolCall[]} calls @param {any[]} [tools]
+ */
+function turnUnusable(content, calls, tools) {
+	if (!content.trim() && !calls.length) return true;
+	const known = toolNames(tools);
+	return calls.some((c) => {
+		const args = (c.arguments || '').trim();
+		return !known.includes(c.name) && (!args || args === '{}');
+	});
 }
 
 /**
@@ -142,8 +246,12 @@ export async function chatOnce({ config, messages, tools, onDelta, signal }) {
  * @param {any[]} opts.tools
  * @param {(name: string, args: any) => Promise<any>} opts.executeTool
  * @param {(text: string) => void} [opts.onDelta]
+ * @param {(text: string) => void} [opts.onReasoning]
+ * @param {(text: string) => void} [opts.onTurnText] settled text for this turn, with any
+ *   text-mode tool-call markup stripped — lets the UI correct what onDelta streamed
  * @param {(name: string, args: any) => void} [opts.onToolStart]
  * @param {(name: string, result: any) => void} [opts.onToolResult]
+ * @param {(text: string) => void} [opts.onNotice] non-fatal diagnostics for the UI
  * @param {AbortSignal} [opts.signal]
  * @param {number} [opts.maxIterations]
  * @returns {Promise<{content: string, iterations: number, toolRuns: number}>}
@@ -154,17 +262,35 @@ export async function runChat({
 	tools,
 	executeTool,
 	onDelta,
+	onReasoning,
+	onTurnText,
 	onToolStart,
 	onToolResult,
+	onNotice,
 	signal,
 	maxIterations = 12
 }) {
 	let toolRuns = 0;
 	let finalContent = '';
+	let stream = !streamingDisabled(config);
 	let i = 0;
 	for (; i < maxIterations; i++) {
-		const { content, toolCalls } = await chatOnce({ config, messages, tools, onDelta, signal });
+		let turn = await chatOnce({ config, messages, tools, onDelta, onReasoning, signal, stream });
+		// Streamed turn came back unusable? The endpoint's streaming tool-call parser
+		// is mismatched — redo this turn unstreamed and stay unstreamed from here.
+		if (stream && turnUnusable(turn.content, turn.toolCalls, tools)) {
+			stream = false;
+			brokenStreaming.add(providerKey(config));
+			// drop the dead turn's bubble FIRST — onTurnText only rewrites the LAST
+			// message, and a notice pushed ahead of it would shadow the bubble
+			if (onTurnText) onTurnText('');
+			if (onNotice) onNotice('Streamed tool calls came back empty — retrying without streaming');
+			turn = await chatOnce({ config, messages, tools, onDelta, onReasoning, signal, stream });
+		}
+		const { content, toolCalls, fromText } = turn;
 		finalContent = content;
+		// a text-mode call means onDelta may have streamed markup we've now stripped
+		if (fromText && onTurnText) onTurnText(content);
 
 		// Treat ANY accumulated tool calls as a tool turn even if finish_reason
 		// isn't exactly 'tool_calls' (Gemini-compat is inconsistent here).

@@ -15,6 +15,11 @@ import { writable, get } from 'svelte/store';
  * @property {string} baseUrl  OpenAI-compatible base (no trailing /chat/completions)
  * @property {string} apiKey   bearer token (plaintext)
  * @property {string} model    model id sent as `model`
+ * @property {boolean} [stream] false = never use SSE streaming for this provider.
+ *   Some self-hosted servers only parse tool calls correctly when NOT streaming
+ *   (vLLM 0.26 + Qwen3.5 swallows the call and streams an invented tool name);
+ *   ai/client.js also detects that at runtime and falls back for the session.
+ * @property {number} [temperature] sampling temperature; omitted = server default
  */
 
 /**
@@ -123,6 +128,8 @@ export function addAiProvider(config) {
 		apiKey: (config.apiKey ?? '').trim(),
 		model: (config.model || preset.defaultModel).trim()
 	};
+	if (config.stream === false) entry.stream = false;
+	if (typeof config.temperature === 'number') entry.temperature = config.temperature;
 	const list = [...get(aiProviders), entry];
 	aiProviders.set(list);
 	persistProviders(list);

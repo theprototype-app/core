@@ -86,7 +86,8 @@ h.run(async () => {
 	await A.page.route('**/mock-proxy**', (route) => {
 		const q = new URL(route.request().url()).searchParams.get('url') || '';
 		proxied++;
-		if (!q.includes('blocked.glb')) return route.fulfill({ status: 400, body: 'wrong url param' });
+		if (!q.includes('blocked.glb') && !q.includes('assets.meshy.ai'))
+			return route.fulfill({ status: 400, body: 'wrong url param' });
 		route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glbBuf });
 	});
 
@@ -162,9 +163,29 @@ h.run(async () => {
 	await h.eventually(() => objCount(A), (n) => n === base + 4, 'empty provider field falls back to the default proxy', 20000);
 	h.check(defaultProxied > 0, 'default proxy served the download (' + defaultProxied + ' request(s))');
 
+	// assets.meshy.ai is a KNOWN no-CORS host — the adapter must go proxy-FIRST and
+	// never attempt the direct fetch (a caught CORS failure still paints a red error
+	// in the user's console; the user-reported noise).
+	let directAttempts = 0;
+	await A.page.route('**/assets.meshy.ai/**', (route) => {
+		directAttempts++;
+		route.abort('failed');
+	});
+	meshyGlbUrl = 'https://assets.meshy.ai/mock/tasks/t1/output/model.glb?sig=x';
+	await A.page.evaluate(() => {
+		const list = window.__stores.meshProviders;
+		let providers;
+		list.meshProviders.subscribe((v) => (providers = v))();
+		const meshy = providers.find((p) => p.kind === 'meshy');
+		list.updateMeshProvider(meshy.id, { assetProxy: 'https://theprototype.app:5173/mock-proxy' });
+		return window.__stores.meshJobs.generateMesh({ prompt: 'a clay oven' });
+	});
+	await h.eventually(() => objCount(A), (n) => n === base + 5, 'known no-CORS host imported proxy-first', 20000);
+	h.check(directAttempts === 0, 'no direct fetch attempted for assets.meshy.ai (no console CORS noise)');
+
 	// undo removes the last generated mesh (standard history)
 	await A.page.evaluate(() => window.__stores.history.undo());
-	await h.eventually(() => objCount(A), (n) => n === base + 3, 'undo removed the last generated mesh', 8000);
+	await h.eventually(() => objCount(A), (n) => n === base + 4, 'undo removed the last generated mesh', 8000);
 
 	await h.finish(browser);
 });

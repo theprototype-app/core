@@ -98,29 +98,62 @@ export async function poll(config, ref) {
  */
 export async function fetchResult(config, resultRef) {
 	// Signed CDN url, no auth header. assets.meshy.ai sends NO CORS headers (confirmed
-	// against their CDN + docs 2026-07-27), so the direct fetch throws a TypeError in
-	// every browser — fall back to the configured asset proxy (provider field, else the
-	// build-time VITE_ASSET_PROXY default). A real HTTP error (expired signature etc.)
-	// is NOT retried through the proxy — the status is accurate as-is.
+	// against their CDN + docs 2026-07-27), so a direct browser fetch always fails —
+	// and even a CAUGHT CORS failure paints a red error in the devtools console. For
+	// known no-CORS hosts we therefore go straight through the asset proxy (provider
+	// field / VITE_ASSET_PROXY / derived from VITE_PEER_HOST) and only fall back to a
+	// direct attempt if the proxy itself fails. Unknown hosts still try direct first.
+	const proxy = assetProxyFor(config);
+	const viaProxy = async () => {
+		const res = await fetch(proxy + '?url=' + encodeURIComponent(resultRef.url));
+		if (!res.ok) throw new AssetHttpError(res.status, true);
+		return await res.arrayBuffer();
+	};
+	let host = '';
+	try {
+		host = new URL(resultRef.url).hostname;
+	} catch {}
+	const corsBlocked = NO_CORS_HOSTS.includes(host);
+
+	if (proxy && corsBlocked) {
+		try {
+			return await viaProxy();
+		} catch {
+			// proxy down/misconfigured — the direct attempt below is a last resort
+			// (it will log a CORS error, but we're on the error path already)
+		}
+	}
 	try {
 		const res = await fetch(resultRef.url);
-		if (!res.ok) throw new AssetHttpError(res.status);
+		if (!res.ok) throw new AssetHttpError(res.status, false);
 		return await res.arrayBuffer();
 	} catch (err) {
 		if (err instanceof AssetHttpError) {
 			throw new Error('Downloading the Meshy GLB failed (' + err.status + ')');
 		}
-		const proxy = assetProxyFor(config);
+		// direct fetch died on CORS (TypeError)
 		if (!proxy) {
 			throw new Error(
 				"Meshy's CDN blocks browser downloads (no CORS headers). Set an asset proxy on the Meshy provider (Settings → AI → Mesh providers)."
 			);
 		}
-		const res = await fetch(proxy + '?url=' + encodeURIComponent(resultRef.url));
-		if (!res.ok) throw new Error('Asset-proxy download failed (' + res.status + ')');
-		return await res.arrayBuffer();
+		if (corsBlocked) {
+			// proxy-first already failed above — don't loop back into it
+			throw new Error('Asset-proxy download failed and the CDN blocks direct downloads — is the proxy up?');
+		}
+		try {
+			return await viaProxy();
+		} catch (proxyErr) {
+			const status = proxyErr instanceof AssetHttpError ? ' (' + proxyErr.status + ')' : '';
+			throw new Error('Asset-proxy download failed' + status);
+		}
 	}
 }
+
+/** CDNs that are KNOWN to never send Access-Control-Allow-Origin — skip the doomed
+ * direct fetch for these (it would be caught, but each attempt logs a red CORS error
+ * in the browser console). */
+const NO_CORS_HOSTS = ['assets.meshy.ai'];
 
 /**
  * The asset proxy to use, first non-EMPTY wins (`||`, not `??` — the Settings form
@@ -141,10 +174,11 @@ function assetProxyFor(config) {
 
 /** Distinguishes an HTTP failure from the CORS TypeError inside fetchResult. */
 class AssetHttpError extends Error {
-	/** @param {number} status */
-	constructor(status) {
+	/** @param {number} status @param {boolean} [viaProxy] */
+	constructor(status, viaProxy = false) {
 		super('asset http ' + status);
 		this.status = status;
+		this.viaProxy = viaProxy;
 	}
 }
 

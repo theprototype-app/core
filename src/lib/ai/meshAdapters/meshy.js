@@ -111,7 +111,10 @@ export async function fetchResult(config, resultRef) {
 		for (const proxy of candidates) {
 			try {
 				const res = await fetch(proxy + '?url=' + encodeURIComponent(resultRef.url));
-				if (res.ok) return await res.arrayBuffer();
+				// a static host's SPA fallback answers unknown paths with 200 text/html —
+				// that's "no proxy on this origin", not a model
+				const type = res.headers.get('content-type') || '';
+				if (res.ok && !type.includes('text/html')) return await res.arrayBuffer();
 				lastError = new AssetHttpError(res.status, true);
 			} catch (err) {
 				lastError = err;
@@ -170,12 +173,13 @@ const NO_CORS_HOSTS = ['assets.meshy.ai'];
  * `?url=<encoded>` contract). Empty entries drop out (`||`-style — the Settings
  * form saves a blank field as '' and that must fall through):
  *   1. the provider's own assetProxy field
- *   2. dev only: the dev server's same-origin /proxy (vite.config.ts devAssetProxy —
- *      local dev works with NO deployed proxy at all)
+ *   2. the SAME-ORIGIN /proxy — in dev the vite middleware (vite.config.ts
+ *      devAssetProxy), in prod a Worker route on the app's own hostname
+ *      (theprototype.app/proxy* → the asset-proxy Worker). Zero config, no CORS;
+ *      origins without such a route fail fast (viaProxies rejects the SPA-fallback
+ *      HTML a static host may return for unknown paths)
  *   3. VITE_ASSET_PROXY (the Cloudflare Worker, proxy.theprototype.app)
- *   4. derived https://<VITE_PEER_HOST>/proxy (the peerjs box) — both the fallback
- *      when the Worker is removed/over-quota AND the default for CI/Pages builds
- *      that bake the peer host but never saw the gitignored-.env proxy var
+ *   4. derived https://<VITE_PEER_HOST>/proxy (the peerjs box route, opt-in there)
  * @param {any} config @returns {string[]}
  */
 function assetProxyCandidates(config) {
@@ -183,7 +187,7 @@ function assetProxyCandidates(config) {
 	const peerHost = String(env.VITE_PEER_HOST || '').trim();
 	const raw = [
 		String(config.assetProxy || '').trim(),
-		env.DEV ? '/proxy' : '',
+		'/proxy',
 		String(env.VITE_ASSET_PROXY || '').trim(),
 		peerHost ? 'https://' + peerHost + '/proxy' : ''
 	];

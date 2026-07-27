@@ -110,9 +110,7 @@ export async function fetchResult(config, resultRef) {
 		if (err instanceof AssetHttpError) {
 			throw new Error('Downloading the Meshy GLB failed (' + err.status + ')');
 		}
-		const proxy = String(config.assetProxy ?? import.meta.env.VITE_ASSET_PROXY ?? '')
-			.trim()
-			.replace(/\/+$/, '');
+		const proxy = assetProxyFor(config);
 		if (!proxy) {
 			throw new Error(
 				"Meshy's CDN blocks browser downloads (no CORS headers). Set an asset proxy on the Meshy provider (Settings → AI → Mesh providers)."
@@ -122,6 +120,23 @@ export async function fetchResult(config, resultRef) {
 		if (!res.ok) throw new Error('Asset-proxy download failed (' + res.status + ')');
 		return await res.arrayBuffer();
 	}
+}
+
+/**
+ * The asset proxy to use, first non-EMPTY wins (`||`, not `??` — the Settings form
+ * saves a blank field as '' and that must fall through): provider field ->
+ * VITE_ASSET_PROXY -> derived from VITE_PEER_HOST. The derivation covers CI/Pages
+ * builds that bake the peer host but were never given the (gitignored-.env) proxy
+ * var — the proxy ships on the self-hosted peer server box by design.
+ * @param {any} config @returns {string}
+ */
+function assetProxyFor(config) {
+	const env = /** @type {any} */ (import.meta.env);
+	const own = String(config.assetProxy || '').trim();
+	const configured = String(env.VITE_ASSET_PROXY || '').trim();
+	const peerHost = String(env.VITE_PEER_HOST || '').trim();
+	const proxy = own || configured || (peerHost ? 'https://' + peerHost + '/proxy' : '');
+	return proxy.replace(/\/+$/, '');
 }
 
 /** Distinguishes an HTTP failure from the CORS TypeError inside fetchResult. */

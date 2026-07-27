@@ -140,9 +140,31 @@ h.run(async () => {
 	await h.eventually(() => objCount(A), (n) => n === base + 3, 'CORS-blocked GLB imported via the asset proxy', 20000);
 	h.check(proxied > 0, 'download went through the proxy (' + proxied + ' request(s))');
 
+	// EMPTY assetProxy field (the Settings form saves '' — the user-hit bug: '' must
+	// fall through to the built-in default, `||` not `??`). The default resolves to
+	// VITE_ASSET_PROXY or https://<VITE_PEER_HOST>/proxy — intercept both.
+	let defaultProxied = 0;
+	const serveDefault = (route) => {
+		const q = new URL(route.request().url()).searchParams.get('url') || '';
+		if (!q.includes('blocked.glb')) return route.fulfill({ status: 400, body: 'wrong url param' });
+		defaultProxied++;
+		route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glbBuf });
+	};
+	await A.page.route('**/peerjs.theprototype.app/proxy**', serveDefault);
+	await A.page.evaluate(() => {
+		const list = window.__stores.meshProviders;
+		let providers;
+		list.meshProviders.subscribe((v) => (providers = v))();
+		const meshy = providers.find((p) => p.kind === 'meshy');
+		list.updateMeshProvider(meshy.id, { assetProxy: '' });
+		return window.__stores.meshJobs.generateMesh({ prompt: 'a rope bridge' });
+	});
+	await h.eventually(() => objCount(A), (n) => n === base + 4, 'empty provider field falls back to the default proxy', 20000);
+	h.check(defaultProxied > 0, 'default proxy served the download (' + defaultProxied + ' request(s))');
+
 	// undo removes the last generated mesh (standard history)
 	await A.page.evaluate(() => window.__stores.history.undo());
-	await h.eventually(() => objCount(A), (n) => n === base + 2, 'undo removed the last generated mesh', 8000);
+	await h.eventually(() => objCount(A), (n) => n === base + 3, 'undo removed the last generated mesh', 8000);
 
 	await h.finish(browser);
 });

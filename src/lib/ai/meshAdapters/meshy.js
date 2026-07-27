@@ -100,14 +100,24 @@ export async function fetchResult(config, resultRef) {
 	// Signed CDN url, no auth header. assets.meshy.ai sends NO CORS headers (confirmed
 	// against their CDN + docs 2026-07-27), so a direct browser fetch always fails —
 	// and even a CAUGHT CORS failure paints a red error in the devtools console. For
-	// known no-CORS hosts we therefore go straight through the asset proxy (provider
-	// field / VITE_ASSET_PROXY / derived from VITE_PEER_HOST) and only fall back to a
-	// direct attempt if the proxy itself fails. Unknown hosts still try direct first.
-	const proxy = assetProxyFor(config);
-	const viaProxy = async () => {
-		const res = await fetch(proxy + '?url=' + encodeURIComponent(resultRef.url));
-		if (!res.ok) throw new AssetHttpError(res.status, true);
-		return await res.arrayBuffer();
+	// known no-CORS hosts we therefore go straight through the asset-proxy CHAIN
+	// (provider field → dev /proxy → the Cloudflare Worker → the peerjs box; see
+	// assetProxyCandidates) and only fall back to a direct attempt if every proxy
+	// fails. Unknown hosts still try direct first.
+	const candidates = assetProxyCandidates(config);
+	const viaProxies = async () => {
+		/** @type {any} */
+		let lastError = null;
+		for (const proxy of candidates) {
+			try {
+				const res = await fetch(proxy + '?url=' + encodeURIComponent(resultRef.url));
+				if (res.ok) return await res.arrayBuffer();
+				lastError = new AssetHttpError(res.status, true);
+			} catch (err) {
+				lastError = err;
+			}
+		}
+		throw lastError ?? new Error('no asset proxy configured');
 	};
 	let host = '';
 	try {
@@ -115,12 +125,12 @@ export async function fetchResult(config, resultRef) {
 	} catch {}
 	const corsBlocked = NO_CORS_HOSTS.includes(host);
 
-	if (proxy && corsBlocked) {
+	if (candidates.length && corsBlocked) {
 		try {
-			return await viaProxy();
+			return await viaProxies();
 		} catch {
-			// proxy down/misconfigured — the direct attempt below is a last resort
-			// (it will log a CORS error, but we're on the error path already)
+			// every proxy down/misconfigured — the direct attempt below is a last
+			// resort (it will log a CORS error, but we're on the error path already)
 		}
 	}
 	try {
@@ -132,17 +142,17 @@ export async function fetchResult(config, resultRef) {
 			throw new Error('Downloading the Meshy GLB failed (' + err.status + ')');
 		}
 		// direct fetch died on CORS (TypeError)
-		if (!proxy) {
+		if (!candidates.length) {
 			throw new Error(
 				"Meshy's CDN blocks browser downloads (no CORS headers). Set an asset proxy on the Meshy provider (Settings → AI → Mesh providers)."
 			);
 		}
 		if (corsBlocked) {
-			// proxy-first already failed above — don't loop back into it
-			throw new Error('Asset-proxy download failed and the CDN blocks direct downloads — is the proxy up?');
+			// the proxy chain already failed above — don't loop back into it
+			throw new Error('All asset proxies failed and the CDN blocks direct downloads — is the proxy up?');
 		}
 		try {
-			return await viaProxy();
+			return await viaProxies();
 		} catch (proxyErr) {
 			const status = proxyErr instanceof AssetHttpError ? ' (' + proxyErr.status + ')' : '';
 			throw new Error('Asset-proxy download failed' + status);
@@ -156,22 +166,28 @@ export async function fetchResult(config, resultRef) {
 const NO_CORS_HOSTS = ['assets.meshy.ai'];
 
 /**
- * The asset proxy to use, first non-EMPTY wins (`||`, not `??` — the Settings form
- * saves a blank field as '' and that must fall through): provider field -> the dev
- * server's own same-origin /proxy (vite.config.ts devAssetProxy — local dev works
- * with no deployed proxy) -> VITE_ASSET_PROXY -> derived from VITE_PEER_HOST. The
- * derivation covers CI/Pages builds that bake the peer host but were never given
- * the (gitignored-.env) proxy var — the proxy ships on the peer server box by design.
- * @param {any} config @returns {string}
+ * Ordered asset-proxy candidates, tried until one succeeds (all serve the same
+ * `?url=<encoded>` contract). Empty entries drop out (`||`-style — the Settings
+ * form saves a blank field as '' and that must fall through):
+ *   1. the provider's own assetProxy field
+ *   2. dev only: the dev server's same-origin /proxy (vite.config.ts devAssetProxy —
+ *      local dev works with NO deployed proxy at all)
+ *   3. VITE_ASSET_PROXY (the Cloudflare Worker, proxy.theprototype.app)
+ *   4. derived https://<VITE_PEER_HOST>/proxy (the peerjs box) — both the fallback
+ *      when the Worker is removed/over-quota AND the default for CI/Pages builds
+ *      that bake the peer host but never saw the gitignored-.env proxy var
+ * @param {any} config @returns {string[]}
  */
-function assetProxyFor(config) {
+function assetProxyCandidates(config) {
 	const env = /** @type {any} */ (import.meta.env);
-	const own = String(config.assetProxy || '').trim();
-	const configured = String(env.VITE_ASSET_PROXY || '').trim();
 	const peerHost = String(env.VITE_PEER_HOST || '').trim();
-	const proxy =
-		own || (env.DEV ? '/proxy' : '') || configured || (peerHost ? 'https://' + peerHost + '/proxy' : '');
-	return proxy.replace(/\/+$/, '');
+	const raw = [
+		String(config.assetProxy || '').trim(),
+		env.DEV ? '/proxy' : '',
+		String(env.VITE_ASSET_PROXY || '').trim(),
+		peerHost ? 'https://' + peerHost + '/proxy' : ''
+	];
+	return [...new Set(raw.filter(Boolean).map((p) => p.replace(/\/+$/, '')))];
 }
 
 /** Distinguishes an HTTP failure from the CORS TypeError inside fetchResult. */

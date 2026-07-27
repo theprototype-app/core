@@ -769,8 +769,9 @@
 									<input class="ui-input" placeholder="Asset proxy URL (optional — blank uses the built-in default)" bind:value={meshFormAssetProxy} />
 									<span class="text-[11px] leading-snug text-gray-400">
 										Meshy's assets CDN sends no CORS headers, so the finished model can't be
-										downloaded by the browser directly — downloads go through this proxy
-										(e.g. <span class="font-mono">https://peerjs.theprototype.app/proxy</span>).
+										downloaded by the browser directly — downloads go through a proxy
+										(e.g. <span class="font-mono">https://proxy.theprototype.app</span>; blank
+										tries the built-in defaults, falling back automatically).
 									</span>
 								{/if}
 								<span class="flex gap-1.5">

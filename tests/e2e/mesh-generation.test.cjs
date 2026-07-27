@@ -185,9 +185,28 @@ h.run(async () => {
 	await h.eventually(() => objCount(A), (n) => n === base + 5, 'known no-CORS host imported proxy-first', 20000);
 	h.check(directAttempts === 0, 'no direct fetch attempted for assets.meshy.ai (no console CORS noise)');
 
+	// proxy CHAIN: a dead provider-configured proxy falls back to the next candidate
+	// (dev /proxy here; in prod the Worker -> peerjs-box order works the same way)
+	let deadTried = 0;
+	await A.page.route('**/dead-proxy**', (route) => {
+		deadTried++;
+		route.abort('failed');
+	});
+	meshyGlbUrl = MESHY + '/blocked.glb';
+	await A.page.evaluate(() => {
+		const list = window.__stores.meshProviders;
+		let providers;
+		list.meshProviders.subscribe((v) => (providers = v))();
+		const meshy = providers.find((p) => p.kind === 'meshy');
+		list.updateMeshProvider(meshy.id, { assetProxy: 'https://theprototype.app:5173/dead-proxy' });
+		return window.__stores.meshJobs.generateMesh({ prompt: 'a watch tower' });
+	});
+	await h.eventually(() => objCount(A), (n) => n === base + 6, 'dead primary proxy fell back to the next candidate', 20000);
+	h.check(deadTried > 0, 'the dead proxy was tried first (' + deadTried + ' attempt(s))');
+
 	// undo removes the last generated mesh (standard history)
 	await A.page.evaluate(() => window.__stores.history.undo());
-	await h.eventually(() => objCount(A), (n) => n === base + 4, 'undo removed the last generated mesh', 8000);
+	await h.eventually(() => objCount(A), (n) => n === base + 5, 'undo removed the last generated mesh', 8000);
 
 	await h.finish(browser);
 });

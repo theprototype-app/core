@@ -247,8 +247,12 @@
 			<!-- idle: dial a peer — the input shrinks (down to cx-input min-width) so
 				 the Connect button stays visible when the row is tight -->
 			<div class="cx-connect inline-flex rounded-md shadow-sm">
+				<!-- autocomplete off + a non-loginish name: Chrome's password manager was
+					 autofilling a saved Settings api-base/key pair into this box -->
 				<Input
 					type="text"
+					name="peer-id"
+					autocomplete="off"
 					placeholder="Enter peer ID to connect"
 					class="nob cx-input rounded-r-none border-0"
 					bind:value="{peerIdToConnect}"

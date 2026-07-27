@@ -78,6 +78,7 @@
 	let aiFormStream = true;
 	let aiFormTemp = '';
 	let aiTesting = false;
+	let aiTestResult: { ok: boolean; detail: string } | null = null;
 
 	function aiApplyPreset() {
 		const preset = presetFor(aiFormPreset);
@@ -92,6 +93,7 @@
 		aiFormKey = '';
 		aiFormStream = true;
 		aiFormTemp = '';
+		aiTestResult = null;
 		aiFormOpen = true;
 	}
 	function aiStartEdit(p: any) {
@@ -103,6 +105,7 @@
 		aiFormModel = p.model;
 		aiFormStream = p.stream !== false;
 		aiFormTemp = typeof p.temperature === 'number' ? String(p.temperature) : '';
+		aiTestResult = null;
 		aiFormOpen = true;
 	}
 	function aiSaveProvider() {
@@ -127,11 +130,12 @@
 	}
 	async function aiTest() {
 		if (!aiFormBaseUrl.trim() || !aiFormModel.trim()) {
-			showToast('Enter a base URL and model first');
+			aiTestResult = { ok: false, detail: 'Enter a base URL and model first' };
 			return;
 		}
 		aiTesting = true;
-		const result = await testConnection({
+		aiTestResult = null;
+		aiTestResult = await testConnection({
 			id: 'test',
 			preset: aiFormPreset,
 			label: aiFormLabel,
@@ -140,7 +144,6 @@
 			model: aiFormModel.trim()
 		});
 		aiTesting = false;
-		showToast(result.ok ? '✓ ' + result.detail : '✗ ' + result.detail);
 	}
 
 	// Mesh-generation provider add/edit form (roadmap #11)
@@ -701,10 +704,12 @@
 										<option value={preset.preset}>{preset.label}</option>
 									{/each}
 								</select>
-								<input class="ui-input" placeholder="Label" bind:value={aiFormLabel} />
-								<input class="ui-input" placeholder="Base URL (…/v1)" bind:value={aiFormBaseUrl} />
-								<input class="ui-input" type="password" placeholder="API key / bearer token" bind:value={aiFormKey} />
-								<input class="ui-input" placeholder="Model id" bind:value={aiFormModel} />
+								<input class="ui-input" placeholder="Label" autocomplete="off" bind:value={aiFormLabel} />
+								<input class="ui-input" placeholder="Base URL (…/v1)" autocomplete="off" bind:value={aiFormBaseUrl} />
+								<!-- new-password: keeps Chrome's password manager from saving base-url + key as a
+								     login pair and autofilling them into unrelated text inputs (Connect peer id) -->
+								<input class="ui-input" type="password" placeholder="API key / bearer token" autocomplete="new-password" bind:value={aiFormKey} />
+								<input class="ui-input" placeholder="Model id" autocomplete="off" bind:value={aiFormModel} />
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
 									<input type="checkbox" bind:checked={aiFormStream} />
 									Stream responses
@@ -721,6 +726,11 @@
 									<button class="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50" disabled={aiTesting} on:click={aiTest}>{aiTesting ? 'Testing…' : 'Test connection'}</button>
 									<button class="rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { aiFormOpen = false; aiEditId = null; }}>Cancel</button>
 								</span>
+								{#if aiTestResult}
+									<span id="ai-test-result" class="text-[12px] leading-snug {aiTestResult.ok ? 'text-emerald-400' : 'text-red-400'}">
+										{aiTestResult.ok ? '✓' : '✗'} {aiTestResult.detail}
+									</span>
+								{/if}
 							</span>
 						</SettingRow>
 					{/if}
@@ -755,9 +765,11 @@
 										<option value={preset.kind}>{preset.label}</option>
 									{/each}
 								</select>
-								<input class="ui-input" placeholder="Label" bind:value={meshFormLabel} />
-								<input class="ui-input" placeholder={meshFormKind === 'comfyui' ? 'ComfyUI URL (http://host:8188)' : 'API base (https://api.meshy.ai)'} bind:value={meshFormBaseUrl} />
-								<input class="ui-input" type="password" placeholder={meshFormKind === 'comfyui' ? 'Bearer token (only if proxied; blank for LAN)' : 'API key'} bind:value={meshFormKey} />
+								<input class="ui-input" placeholder="Label" autocomplete="off" bind:value={meshFormLabel} />
+								<input class="ui-input" placeholder={meshFormKind === 'comfyui' ? 'ComfyUI URL (http://host:8188)' : 'API base (https://api.meshy.ai)'} autocomplete="off" bind:value={meshFormBaseUrl} />
+								<!-- new-password: don't let Chrome save base-url + key as a login pair (it then
+								     autofills them into unrelated text inputs like the Connect peer id) -->
+								<input class="ui-input" type="password" placeholder={meshFormKind === 'comfyui' ? 'Bearer token (only if proxied; blank for LAN)' : 'API key'} autocomplete="new-password" bind:value={meshFormKey} />
 								{#if meshFormKind === 'comfyui'}
 									<textarea class="ui-input min-h-[80px] resize-y font-mono text-[11px]" placeholder={'Workflow JSON (API format). Put {{PROMPT}} in the text node and {{SEED}} in the sampler seed.'} bind:value={meshFormWorkflow}></textarea>
 									<input class="ui-input" placeholder="Output node id (optional — auto-detects the SaveGLB node)" bind:value={meshFormOutputNode} />

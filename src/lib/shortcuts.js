@@ -229,12 +229,14 @@ export function registerShortcut(shortcut) {
 
 /** @param {KeyboardEvent} event */
 function comboOf(event) {
+	// raw || '': synthetic events (Chrome password-manager autofill) have key undefined
+	const raw = event.key || '';
 	// digits by code so Shift+1 stays "Shift+1" instead of layout characters like "!"
 	const key = event.code?.startsWith('Digit')
 		? event.code.slice(5)
-		: event.key.length === 1
-			? event.key.toUpperCase()
-			: event.key;
+		: raw.length === 1
+			? raw.toUpperCase()
+			: raw;
 	return (event.ctrlKey || event.metaKey ? 'Ctrl+' : '') + (event.shiftKey ? 'Shift+' : '') + key;
 }
 

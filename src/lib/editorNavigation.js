@@ -31,15 +31,17 @@ function guarded(event) {
 export function startEditorNavigation() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
+	// String(event.key || ''): Chrome's password manager fires synthetic key events
+	// with key === undefined (e.g. saving an API key in Settings) — never dereference
 	window.addEventListener('keydown', (event) => {
 		if (event.key === 'Shift') return pressed.add('shift');
 		if (guarded(event) || event.ctrlKey || event.metaKey) return;
-		const key = event.key.toLowerCase();
+		const key = String(event.key || '').toLowerCase();
 		if (KEYS.includes(key)) pressed.add(key);
 	});
 	window.addEventListener('keyup', (event) => {
 		if (event.key === 'Shift') return pressed.delete('shift');
-		pressed.delete(event.key.toLowerCase());
+		pressed.delete(String(event.key || '').toLowerCase());
 	});
 	window.addEventListener('blur', () => pressed.clear());
 }

@@ -39,9 +39,9 @@
 		"@codemirror/lang-javascript": "^6.2.5",
 		"@dimforge/rapier3d-compat": "^0.19.3",
 		"@fortawesome/fontawesome-free": "^6.7.2",
-		"@threlte/core": "^8.0.0-next.38",
-		"@threlte/extras": "^9.0.0-next.51",
-		"@threlte/xr": "^1.0.0-next.15",
+		"@threlte/core": "^8.5.16",
+		"@threlte/extras": "^9.21.0",
+		"@threlte/xr": "^1.6.1",
 		"@xyflow/svelte": "^0.1.23",
 		"codemirror": "^6.0.2",
 		"fflate": "^0.8.3",
@@ -50,6 +50,9 @@
 		"peerjs": "^1.5.5",
 		"postprocessing": "^6.39.3",
 		"svelte-hamburgers": "^5.0.0",
-		"three": "^0.171.0"
+		"three": "^0.185.0"
+	},
+	"overrides": {
+		"camera-controls": "3.1.0"
 	}
 }

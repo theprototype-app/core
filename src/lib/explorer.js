@@ -2,13 +2,13 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 // @ts-ignore - see above
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 // @ts-ignore - see above
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 // @ts-ignore - see above
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 // @ts-ignore - see above
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { idbGet, idbPut, idbDelete } from './idb';
 import { showToast } from '../stores/appStore';
 

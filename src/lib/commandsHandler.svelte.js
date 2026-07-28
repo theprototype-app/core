@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands } from '../stores/sceneStore.js';
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
 import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
 import { recordObjectPresence } from '$lib/history'

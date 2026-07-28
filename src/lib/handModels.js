@@ -1,5 +1,5 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { writable, get } from 'svelte/store';
 import { peers } from '../stores/appStore';
 import { itemByHash, itemBlob } from './explorer';

@@ -147,16 +147,29 @@ h.run(async () => {
 		s.packs.packs.subscribe((x) => (list = x))();
 		const items = await s.packs.loadPackItems(pack);
 		const blob = await s.explorer.itemBlob(items[0].id);
+		// RP: pack items land in their own library folder named after the pack
+		let folders;
+		s.explorer.explorerFolders.subscribe((x) => (folders = x))();
+		const packFolder = folders.find((f) => f.name === 'Test Pack' && !f.parentId);
+		let allItems;
+		s.explorer.explorerItems.subscribe((x) => (allItems = x))();
+		const storedItem = allItems.find((it) => it.id === items[0].id);
 		return {
 			registered: list.some((x) => x.name === 'testpack'),
 			source: pack.source,
 			itemCount: items.length,
 			kind: items[0]?.kind,
 			hasBlob: !!blob,
-			itemLicense: items[0]?.license
+			itemLicense: items[0]?.license,
+			folderId: packFolder?.id ?? null,
+			itemFolderId: storedItem?.folderId ?? null
 		};
 	}, Array.from(zipBytes));
 	h.check(imported.registered && imported.source === 'imported', 'zip import registers a local pack');
+	h.check(
+		!!imported.folderId && imported.itemFolderId === imported.folderId,
+		'pack items land in a library folder named after the pack'
+	);
 	h.check(
 		imported.itemCount === 1 && imported.kind === 'object' && imported.hasBlob,
 		'the pack item is stored as a real Explorer object item'

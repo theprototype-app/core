@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { addItemFromBytes } from './explorer';
+import { addItemFromBytes, createFolder, explorerFolders } from './explorer';
 
 // N6 (roadmap 7 / ship-qa D1): object packs. Two sources, one normalized model:
 //  - DEFAULT packs from static/libraryList.json (bundled today; the model bytes
@@ -248,6 +248,12 @@ export async function importPackZip(file) {
 	if (!manifestRaw) throw new Error('pack .zip has no manifest.json (at the root or in one wrapper folder)');
 	const manifest = JSON.parse(strFromU8(manifestRaw));
 	const id = manifest.id || file.name.replace(/\.zip$/i, '');
+	// RP: pack items land in their OWN library folder (23 sounds dumped into the
+	// root made a mess) — reuse a same-named root folder on re-install
+	const folderName = String(manifest.name || id).replace(/[*\\/]/g, ' ').trim();
+	const folder =
+		get(explorerFolders).find((/** @type {any} */ f) => f.name === folderName && !f.parentId) ??
+		createFolder(folderName);
 	/** @type {any[]} */
 	const items = [];
 	for (const decl of manifest.items || []) {
@@ -257,7 +263,7 @@ export async function importPackZip(file) {
 		// the content hash (sessions.js gotcha)
 		const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 		const name = decl.file.split('/').pop() || decl.name || 'item';
-		const stored = await addItemFromBytes(buf, name, null);
+		const stored = await addItemFromBytes(buf, name, folder?.id ?? null);
 		items.push({
 			id: stored.id,
 			name: decl.name || stored.name,

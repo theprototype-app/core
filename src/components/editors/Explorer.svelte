@@ -265,9 +265,26 @@
 		packAttribHtml = html;
 		packAttribModal = true;
 	}
+	// RP: where a pack's content comes from (index `source` field; imported packs
+	// reuse their manifest homepage). Labelled with the repo slug for GitHub URLs,
+	// the bare hostname otherwise.
+	function packSourceUrl(pack: any): string {
+		return pack?.sourceUrl || pack?.homepage || '';
+	}
+	function packSourceLabel(url: string): string {
+		const gh = /github\.com\/([^/]+\/[^/#?]+)/.exec(url);
+		if (gh) return gh[1].replace(/\.git$/, '');
+		try {
+			return new URL(url).hostname;
+		} catch {
+			return url;
+		}
+	}
 	function packRowMenu(e: MouseEvent, pack: any) {
 		e.preventDefault();
 		const items: any[] = [{ label: 'ⓘ Attribution / license', action: () => showPackAttribution(pack) }];
+		if (packSourceUrl(pack))
+			items.push({ label: '↗ Open source', action: () => window.open(packSourceUrl(pack), '_blank', 'noopener') });
 		// M-2: a default-list .zip pack (e.g. audio/SFX) installs on demand
 		if (pack.source === 'default' && pack.zip)
 			items.push({
@@ -1198,6 +1215,16 @@
 						{#if openPack.license}<div class="text-[11px] text-gray-400">License: {licenseLabel(openPack.license)}</div>{/if}
 						{#if openPack.copyright}<div class="text-[11px] text-gray-400">{openPack.copyright}</div>{/if}
 						<button id="pack-attribution" class="ui-button-quiet mt-1 self-start" onclick={() => showPackAttribution(openPack)}>ⓘ Attribution / license</button>
+						{#if packSourceUrl(openPack)}
+							<a
+								id="pack-source"
+								class="ui-button-quiet mt-1 inline-flex items-center gap-1.5 self-start"
+								href={packSourceUrl(openPack)}
+								target="_blank"
+								rel="noopener"
+								title="Open the content source"
+							><i class={/github\.com/.test(packSourceUrl(openPack)) ? 'fa-brands fa-github' : 'fa-solid fa-arrow-up-right-from-square'}></i> {packSourceLabel(packSourceUrl(openPack))}</a>
+						{/if}
 					</div>
 				{/if}
 				{#if selItem}

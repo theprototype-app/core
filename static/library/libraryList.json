@@ -1,0 +1,11 @@
+[
+  {
+    "name": "default",
+    "title": "The Prototype (starter)",
+    "value": "/library/default/default.json",
+    "attribution": "/library/default/attribution.html",
+    "copyright": "(c) The Prototype",
+    "license": "",
+    "source": "https://github.com/theprototype-app/packs"
+  }
+]

@@ -13,9 +13,10 @@ import { addItemFromBytes } from './explorer';
 //
 // The pack repo/manifest structure is documented in PACKS.md.
 
-/** Off-bundle base for remote packs. '' keeps default packs on the bundled
- * /library path; set to e.g. 'https://cdn.jsdelivr.net/gh/<org>/<repo>@<tag>'. */
-export const PACKS_BASE = '';
+/** Off-bundle base for remote packs (RP): the tagged jsDelivr mirror of
+ * github.com/theprototype-app/packs. Bump the tag when pack content changes —
+ * jsDelivr caches tags aggressively, so released builds stay stable. */
+export const PACKS_BASE = 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@v1';
 
 const INSTALLED_KEY = 'installedPacks';
 
@@ -80,19 +81,37 @@ function dropPackThumbs(packName) {
 		} catch {}
 }
 
-/** @param {any} entry a libraryList.json row */
-function normalizeDefault(entry) {
+/**
+ * Normalize a pack-index row. Two shapes feed this (RP):
+ *  - the REMOTE `${PACKS_BASE}/index.json` — value/attribution/zip are repo-relative
+ *    paths that must be prefixed with PACKS_BASE (the old code never prefixed
+ *    listUrl/attributionUrl — the latent bug this fixes);
+ *  - the BUNDLED /library/libraryList.json fallback — app-origin '/library/...'
+ *    paths that pass through untouched (offline / fresh clones).
+ * Absolute http(s) URLs always pass through.
+ * @param {any} entry @param {boolean} remote
+ */
+function normalizeDefault(entry, remote) {
+	/** @param {string} value */
+	const resolve = (value) => {
+		if (!value) return '';
+		if (/^https?:\/\//.test(value)) return value;
+		return remote ? `${PACKS_BASE}/${value.replace(/^\//, '')}` : value;
+	};
 	return {
 		name: entry.name,
 		title: entry.title || entry.name,
 		source: 'default',
-		base: `${PACKS_BASE}/library/${entry.name}`,
-		listUrl: entry.value,
+		base: remote ? `${PACKS_BASE}/${entry.name}` : `/library/${entry.name}`,
+		listUrl: resolve(entry.value),
 		// M-2: a `zip` entry is a self-describing .zip pack (manifest.json + assets/)
 		// rather than the model-list format — installed via importPackZip on demand,
 		// so it can carry audio/texture/text items, not just glTF models
-		zip: entry.zip ? `${PACKS_BASE}${entry.zip}` : '',
-		attributionUrl: entry.attribution || '',
+		zip: resolve(entry.zip),
+		attributionUrl: resolve(entry.attribution),
+		// RP: where the content comes from (Source button); named sourceUrl because
+		// `source` is already the default/imported discriminator
+		sourceUrl: entry.source || '',
 		copyright: entry.copyright || '',
 		license: entry.license || ''
 	};
@@ -108,24 +127,38 @@ export async function installDefaultPackZip(pack) {
 	return importPackZip(file);
 }
 
-/** Load the pack list: libraryList.json defaults + locally imported packs. */
+/** Load the pack list: the remote CDN index first, the bundled libraryList.json
+ * starter as the offline fallback, plus locally imported packs. */
 export async function loadPacks() {
 	let defaults = [];
 	try {
-		const res = await fetch(`${PACKS_BASE}/library/libraryList.json`);
-		if (res.ok) defaults = (await res.json()).map(normalizeDefault);
+		const res = await fetch(`${PACKS_BASE}/index.json`);
+		if (res.ok) defaults = (await res.json()).map((/** @type {any} */ e) => normalizeDefault(e, true));
 	} catch {
-		/* offline / no packs bundled — imported packs still work */
+		/* CDN unreachable — fall back to the bundled starter below */
+	}
+	if (!defaults.length) {
+		try {
+			const res = await fetch('/library/libraryList.json');
+			if (res.ok) defaults = (await res.json()).map((/** @type {any} */ e) => normalizeDefault(e, false));
+		} catch {
+			/* offline / no packs bundled — imported packs still work */
+		}
 	}
 	packs.set([...defaults, ...getInstalled()]);
 }
 
-/** Ordered thumbnail URL candidates for a default-pack item (webp -> png ->
- * committed screenshot). @param {any} pack @param {any} item */
+/** Ordered thumbnail URL candidates for a default-pack item. An ABSOLUTE
+ * screenshot URL (khronos upstream) is the only candidate; otherwise the
+ * committed screenshot leads (it always exists in our packs — probing
+ * thumb.webp first spammed 404s on the CDN) with webp/png as extras.
+ * @param {any} pack @param {any} item */
 export function thumbCandidates(pack, item) {
+	if (/^https?:\/\//.test(item.screenshot || '')) return [item.screenshot];
 	const dir = `${pack.base}/${item.name}`;
-	const list = [`${dir}/thumb.webp`, `${dir}/thumb.png`];
+	const list = [];
 	if (item.screenshot) list.push(`${dir}/${item.screenshot}`);
+	list.push(`${dir}/thumb.webp`, `${dir}/thumb.png`);
 	return list;
 }
 
@@ -157,15 +190,20 @@ export async function loadPackItems(pack) {
 		}
 		items = (Array.isArray(raw) ? raw : [])
 			.filter((o) => o?.variants?.['glTF-Binary'])
-			.map((o) => ({
-				name: o.name,
-				label: o.label || o.name,
-				kind: 'object',
-				glbUrl: `${pack.base}/${o.name}/glTF-Binary/${o.variants['glTF-Binary']}`,
-				thumbs: thumbCandidates(pack, o),
-				resolvedThumb: cachedThumb(pack.name, o.name), // P2: skip re-probing if known
-				packName: pack.name
-			}));
+			.map((o) => {
+				// RP: item lists may carry ABSOLUTE glb URLs (khronos entries resolve to
+				// the upstream KhronosGroup repo); relative ones resolve against the pack
+				const glb = o.variants['glTF-Binary'];
+				return {
+					name: o.name,
+					label: o.label || o.name,
+					kind: 'object',
+					glbUrl: /^https?:\/\//.test(glb) ? glb : `${pack.base}/${o.name}/glTF-Binary/${glb}`,
+					thumbs: thumbCandidates(pack, o),
+					resolvedThumb: cachedThumb(pack.name, o.name), // P2: skip re-probing if known
+					packName: pack.name
+				};
+			});
 	}
 	itemCache[pack.name] = items;
 	openPackItems.set(items);

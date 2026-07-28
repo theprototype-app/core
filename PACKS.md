@@ -7,11 +7,28 @@ audio / materials) that shows up in the Explorer's **Packs** section. Packs are
 
 There are two kinds of pack:
 
-- **Default packs** ship with the app, listed in `static/library/libraryList.json`.
+- **Default packs** come from the pack repo's `index.json`, fetched from
+  `PACKS_BASE` (`src/lib/packs.js`) — the jsDelivr CDN over
+  [theprototype-app/packs](https://github.com/theprototype-app/packs), pinned to a
+  tag (`@v1`). If the CDN is unreachable, the app falls back to the MINIMAL starter
+  bundled at `static/library/libraryList.json` (offline / fresh clones are never
+  empty).
 - **Remote / imported packs** are self-describing repos or `.zip` files using the
-  `manifest.json` format below. Point the app at a remote pack repo via the
-  `PACKS_BASE` constant in `src/lib/packs.js` (e.g. a jsDelivr CDN URL over a
-  GitHub repo), or drag a `.zip` in with **＋ Import pack**.
+  `manifest.json` format below — drag a `.zip` in with **＋ Import pack**.
+
+### The pack-repo `index.json` (RP)
+
+Each row: `{name, title, value | zip, attribution, copyright, license, source}`.
+`value` / `attribution` / `zip` may be repo-relative (resolved against
+`PACKS_BASE`), app-origin (`/library/...`, bundled fallback) or absolute URLs.
+`source` renders as a **Source** button in the pack Properties panel and an
+"↗ Open source" row action (imported packs reuse `manifest.homepage`).
+
+**Upstream-fetch pattern**: an item list may carry ABSOLUTE `glTF-Binary` /
+`screenshot` URLs — the khronos pack ships only an index whose entries resolve to
+`raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets`, so the model bytes
+never live in our repo. Relative variants resolve against
+`<base>/<item>/glTF-Binary/<file>` as before.
 
 ### Default-list `.zip` packs (audio / SFX / mixed) — M-2
 

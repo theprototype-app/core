@@ -24,9 +24,16 @@ jobs:
       - name: svelte-check baseline gate
         run: |
           npm run check 2>&1 | tee check.log || true
+          # svelte-check prints "N ERRORS N WARNINGS" (machine) or
+          # "found N errors and N warnings" (human) depending on the TTY — parse both
           LINE=$(grep -Eo '[0-9]+ ERRORS [0-9]+ WARNINGS' check.log | tail -1)
           ERRORS=$(echo "$LINE" | awk '{print $1}')
           WARNINGS=$(echo "$LINE" | awk '{print $3}')
+          if [ -z "$ERRORS" ]; then
+            LINE=$(grep -Eo 'found [0-9]+ errors and [0-9]+ warnings' check.log | tail -1)
+            ERRORS=$(echo "$LINE" | awk '{print $2}')
+            WARNINGS=$(echo "$LINE" | awk '{print $5}')
+          fi
           echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 476/62)"
           if [ -z "$ERRORS" ]; then echo "could not parse svelte-check output"; exit 1; fi
           if [ "$ERRORS" -gt 476 ] || [ "$WARNINGS" -gt 62 ]; then

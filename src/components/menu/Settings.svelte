@@ -5,7 +5,9 @@
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd } from '../../stores/appStore.js';
-	import { drawerSlot } from '$lib/cloudHooks';
+	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
+	import { versionString } from '$lib/version.js';
+	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
@@ -1041,7 +1043,10 @@
 				</AccordionItem>
 				<AccordionItem>
 					<svelte:fragment slot="header">About</svelte:fragment>
-					<SettingRow name="Version" noControl>beta</SettingRow>
+					<SettingRow name="Version" noControl>{appVersionString}</SettingRow>
+					{#if $cloudPluginInfo}
+						<SettingRow name="Cloud plugin" noControl>{$cloudPluginInfo.name} {$cloudPluginInfo.version}</SettingRow>
+					{/if}
 					<SettingRow name="Dev Builds" noControl>
 						<a href="https://alexz005.github.io/theprototype">https://alexz005.github.io/theprototype</a>
 					</SettingRow>

@@ -143,3 +143,14 @@ export const profileSlot = writable(null);
  * plugin). Kept a plain object so a separately-built plugin owns the logic.
  * @type {import('svelte/store').Writable<any>} */
 export const rolesInfo = writable(null);
+
+/** V2 (versioning): the hooks-contract version a plugin can require via its
+ * `compatibleHooks` export — a plugin needing a NEWER contract fails closed
+ * (cloudPlugin.startCloudPlugin). Additive members keep using plugin-side typeof
+ * probes; bump only on incompatible surface changes. */
+export const CLOUD_HOOKS_VERSION = 2;
+
+/** V2: `{name, version}` published by the loaded plugin via api.setPluginInfo —
+ * Settings ▸ About renders it as a "Cloud plugin x.y.z" row. Null without a plugin.
+ * @type {import('svelte/store').Writable<{name: string, version: string} | null>} */
+export const cloudPluginInfo = writable(null);

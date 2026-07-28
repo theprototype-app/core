@@ -347,6 +347,11 @@ loadable play content. Everything a user does must be visible to connected peers
 - Stores initialized `writable(null)`/`writable([])` infer `never` — annotate with
   JSDoc `Writable<any>`; keep NEW files clean (legacy implicit-any baseline stays).
 - `npm i` needs `--legacy-peer-deps` (three vs postprocessing peer conflict).
+- **Release ritual (V6)**: `npm version minor|patch` + `git push origin main
+  --follow-tags` — the v* tag triggers `.github/workflows/release.yml` (build +
+  svelte-check baseline gate + GitHub Release). Full doc: committed `RELEASING.md`.
+  The version bump is the SINGLE source of truth (About / peer handshake /
+  .tpscene+.tpmodule provenance / static/version.json all derive from it).
 - **Deps policy (2026-07-28)**: three/@threlte/*/@xyflow/flowbite*/tailwind/vite/TS are
   DELIBERATELY frozen — each has a planned migration in the cloud repo
   `plans-core/pending/deps-migrations-post-1.0.md`; Dependabot (grouped monthly,

@@ -27,6 +27,9 @@ certs/localhost.key
 # Libraries — the MINIMAL starter pack is committed (RP: offline/fresh clones are
 # never empty; the full pack library lives in theprototype-app/packs via jsDelivr)
 
+# V8: build artifact emitted by the emitVersionJson vite plugin
+static/version.json
+
 # Cloud plugin dev artifact — copied in by the cloud repo's link-to-app vstask; the OSS
 # app is inert without it, so it must never be committed here.
 static/cloud-plugin.js

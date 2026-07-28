@@ -295,6 +295,7 @@ try {
 	if (file.name?.toLowerCase().endsWith('.tpscene')) {
 		const { importSessionZip, requestLoadSession } = await import('./sessions');
 		const payload = await importSessionZip(await file.arrayBuffer());
+		if (!payload) return; // V4: user declined a newer-format confirm — silent
 		await requestLoadSession(payload.id);
 		return;
 	}

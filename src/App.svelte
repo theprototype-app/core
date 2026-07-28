@@ -3,6 +3,7 @@
   import { Canvas } from '@threlte/core'
   import Scene from './components/Scene.svelte'
   import Menu from './components/Menu.svelte'
+  import ConfirmModal from './components/menu/ConfirmModal.svelte'
   import Flow from './components/Flow.svelte'
   import FlowCode from './components/editors/FlowCode.svelte'
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
@@ -34,6 +35,7 @@
   import { startSceneAssets } from '$lib/sceneAssets'
   import { startNetworkQuality } from '$lib/networkQuality'
   import { startWhatsNew } from '$lib/whatsNew'
+  import { startUpdateCheck } from '$lib/updateCheck'
   import { startCloudPlugin } from '$lib/cloudPlugin'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast } from './stores/appStore'
@@ -69,6 +71,8 @@
     startNetworkQuality()
     // RW: first visit -> welcome overlay; a new version -> logo dot + one toast
     startWhatsNew()
+    // V8: poll the deployed version.json — one reload toast per session (prod only)
+    startUpdateCheck()
     // open-core (M1): load a configured cloud plugin (no-op in the OSS build)
     startCloudPlugin()
     // store access for automated tests, opt-in via localStorage
@@ -155,9 +159,10 @@
         import('./lib/particleActions'),
         import('./lib/particlePresets'),
         import('./lib/version'),
-        import('./lib/whatsNew')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, jointsLib, possessLib, handModelsLib, terrainSculptLib, userModulesLib, environmentLib, sceneMusicLib, animatedImports, fileHandler, fileWindowsLib, sceneBounds, cameraClip, ping, sessionsLib, geometryEdit, lightParams, shadowDefaultsLib, paletteLib, viewModeLib, inputRuntimeLib, shortcutsLib, themesLib, vrRadialMenu, vrPaletteLib, vrWindowPosesLib, vrKeyboardLib, faceEditLib, avatarModelLib, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssetsLib, THREE, GLTFExporterModule, snappingLib, flowSocketsLib, networkQualityLib, packsLib, customNodesLib, nodesHandlerLib, nodeCatalogLib, objectMenuLib, animationPreviewLib, aiProvidersLib, aiToolsLib, aiAssistantLib, meshProvidersLib, meshJobsLib, flowGraphsLib, objectFlowLib, peerServerLib, cloudHooksLib, cloudPluginLib, connectionStateLib, peerApprovalLib, particleRuntimeLib, particleActionsLib, particlePresetsLib, versionLib, whatsNewLib]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, joints: jointsLib, possess: possessLib, handModels: handModelsLib, terrainSculpt: terrainSculptLib, userModules: userModulesLib, environment: environmentLib, sceneMusic: sceneMusicLib, animatedImports, fileHandler, fileWindows: fileWindowsLib, sceneBounds, cameraClip, ping, sessions: sessionsLib, geometryEdit, lightParams, shadowDefaults: shadowDefaultsLib, palette: paletteLib, viewModeCtl: viewModeLib, inputRuntime: inputRuntimeLib, shortcutsRegistry: shortcutsLib, themes: themesLib, vrRadialMenu, vrPalette: vrPaletteLib, vrWindowPoses: vrWindowPosesLib, vrKeyboard: vrKeyboardLib, faceEdit: faceEditLib, avatarModel: avatarModelLib, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets: sceneAssetsLib, THREE, GLTFExporterModule, snapping: snappingLib, flowSockets: flowSocketsLib, networkQuality: networkQualityLib, packs: packsLib, customNodes: customNodesLib, nodesHandler: nodesHandlerLib, nodeCatalog: nodeCatalogLib, objectMenu: objectMenuLib, animationPreview: animationPreviewLib, aiProviders: aiProvidersLib, aiTools: aiToolsLib, aiAssistant: aiAssistantLib, meshProviders: meshProvidersLib, meshJobs: meshJobsLib, flowGraphsCtl: flowGraphsLib, objectFlow: objectFlowLib, peerServer: peerServerLib, cloudHooks: cloudHooksLib, cloudPlugin: cloudPluginLib, connectionState: connectionStateLib, peerApproval: peerApprovalLib, particleRuntime: particleRuntimeLib, particleActions: particleActionsLib, particlePresets: particlePresetsLib, version: versionLib, whatsNew: whatsNewLib }
+        import('./lib/whatsNew'),
+        import('./lib/confirmDialog')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, jointsLib, possessLib, handModelsLib, terrainSculptLib, userModulesLib, environmentLib, sceneMusicLib, animatedImports, fileHandler, fileWindowsLib, sceneBounds, cameraClip, ping, sessionsLib, geometryEdit, lightParams, shadowDefaultsLib, paletteLib, viewModeLib, inputRuntimeLib, shortcutsLib, themesLib, vrRadialMenu, vrPaletteLib, vrWindowPosesLib, vrKeyboardLib, faceEditLib, avatarModelLib, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssetsLib, THREE, GLTFExporterModule, snappingLib, flowSocketsLib, networkQualityLib, packsLib, customNodesLib, nodesHandlerLib, nodeCatalogLib, objectMenuLib, animationPreviewLib, aiProvidersLib, aiToolsLib, aiAssistantLib, meshProvidersLib, meshJobsLib, flowGraphsLib, objectFlowLib, peerServerLib, cloudHooksLib, cloudPluginLib, connectionStateLib, peerApprovalLib, particleRuntimeLib, particleActionsLib, particlePresetsLib, versionLib, whatsNewLib, confirmDialogLib]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, joints: jointsLib, possess: possessLib, handModels: handModelsLib, terrainSculpt: terrainSculptLib, userModules: userModulesLib, environment: environmentLib, sceneMusic: sceneMusicLib, animatedImports, fileHandler, fileWindows: fileWindowsLib, sceneBounds, cameraClip, ping, sessions: sessionsLib, geometryEdit, lightParams, shadowDefaults: shadowDefaultsLib, palette: paletteLib, viewModeCtl: viewModeLib, inputRuntime: inputRuntimeLib, shortcutsRegistry: shortcutsLib, themes: themesLib, vrRadialMenu, vrPalette: vrPaletteLib, vrWindowPoses: vrWindowPosesLib, vrKeyboard: vrKeyboardLib, faceEdit: faceEditLib, avatarModel: avatarModelLib, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets: sceneAssetsLib, THREE, GLTFExporterModule, snapping: snappingLib, flowSockets: flowSocketsLib, networkQuality: networkQualityLib, packs: packsLib, customNodes: customNodesLib, nodesHandler: nodesHandlerLib, nodeCatalog: nodeCatalogLib, objectMenu: objectMenuLib, animationPreview: animationPreviewLib, aiProviders: aiProvidersLib, aiTools: aiToolsLib, aiAssistant: aiAssistantLib, meshProviders: meshProvidersLib, meshJobs: meshJobsLib, flowGraphsCtl: flowGraphsLib, objectFlow: objectFlowLib, peerServer: peerServerLib, cloudHooks: cloudHooksLib, cloudPlugin: cloudPluginLib, connectionState: connectionStateLib, peerApproval: peerApprovalLib, particleRuntime: particleRuntimeLib, particleActions: particleActionsLib, particlePresets: particlePresetsLib, version: versionLib, whatsNew: whatsNewLib, confirmDialog: confirmDialogLib }
       })
     }
   })
@@ -199,6 +204,7 @@
 <ModelPreviewWindow />
 {/if}
 <Menu />
+<ConfirmModal />
 <DrawToolbar />
 <SculptToolbar />
 <ModulesManager />

@@ -30,7 +30,7 @@
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup, selectObject } from '$lib/objectActions';
-	import { listPhysicsObjects, enablePhysicsOnSelection } from '$lib/physics';
+	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor } from '$lib/physics';
 	import { addParticlesPreset, updateObjectParticles, removeObjectParticles, burstObjectParticles } from '$lib/particleActions';
 	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
@@ -359,11 +359,7 @@
 
 	/** @param {any} patch */
 	function setPhysics(patch) {
-		const before = $selectedObject.userData.physics ? { ...$selectedObject.userData.physics } : null;
-		const next = { mode: 'auto', ...($selectedObject.userData.physics ?? {}), ...patch };
-		$selectedObject.userData.physics = next;
-		recordEntry({ kind: 'props', uuid: $selectedObject.uuid, before: { physics: before }, after: { physics: next } });
-		$peers.send({ type: 'objectParameters', parameter: 'physics', uuid: $selectedObject.uuid, physics: next });
+		setPhysicsFor($selectedObject.uuid, patch);
 		selectedObject.update((v) => v);
 	}
 

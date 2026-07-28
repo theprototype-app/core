@@ -151,6 +151,11 @@ export const vrStatsOpen = writable(
 // scene background/fog go transparent so the room shows through; the
 // replicated environment state is untouched
 export const passthroughActive = writable(false);
+// selection keeps working but the transform gizmo must NOT attach (sculpt mode:
+// a visible gizmo invites accidental terrain moves mid-stroke). Lives in this
+// leaf store so objectActions can gate on it without importing terrainSculpt
+// (that static edge would close an import cycle).
+export const gizmoSuppressed = writable(false);
 /** @type {import('svelte/store').Writable<'move' | 'rotate'>} grab behavior; scale is always two-handed */
 export const vrTransformMode = writable('move');
 /** grab style (100): 'rigid' = controller-as-handle (default); 'move'/'rotate' = legacy gizmo grabs */

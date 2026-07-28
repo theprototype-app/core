@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, lockedObjects, globalScene } from '../stores/sceneStore';
+import { objectsGroup, lockedObjects, globalScene, TControls, gizmoSuppressed } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { commitMeshGeoSnapshot } from './faceEdit';
 import { selectObject, deselectObject } from './objectActions';
@@ -103,6 +103,10 @@ export function enterSculpt(uuid) {
 		showToast('Locked by ' + nameOf(lock[0]));
 		return false;
 	}
+	// no gizmo while sculpting (accidental terrain moves) — set BEFORE the select
+	// so applySelectionSet never attaches; resets to OFF on every sculpt entry,
+	// the toolbar toggle opts back in per session
+	gizmoSuppressed.set(true);
 	selectObject(uuid);
 	// first sculpt on a fresh terrain: go non-indexed LOCALLY + sync the
 	// representation so peers' snapshots line up (no history entry — visually
@@ -133,7 +137,20 @@ export function exitSculpt() {
 	sculptObject.set(null);
 	weld = null;
 	hideCursor();
+	gizmoSuppressed.set(false);
 	deselectObject();
+}
+
+/** SculptToolbar gizmo toggle: opt back into the transform gizmo mid-sculpt. @param {boolean} enabled */
+export function setSculptGizmo(enabled) {
+	gizmoSuppressed.set(!enabled);
+	const uuid = get(sculptObject);
+	const object = uuid ? objectOf(uuid) : null;
+	/** @type {any} */
+	const controls = get(TControls);
+	if (!object || !controls) return;
+	if (enabled) controls.attach(object);
+	else controls.detach();
 }
 
 /**

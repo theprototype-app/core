@@ -14,7 +14,8 @@ import {
 	lockedObjects,
 	globalCamera,
 	orbitControls,
-	isVRMode
+	isVRMode,
+	gizmoSuppressed
 } from '../stores/sceneStore';
 import { attachMultiPivot, releaseMultiPivot } from './multiTransform';
 import { focusTargetFace } from './faceEdit';
@@ -101,7 +102,12 @@ export function applySelectionSet(uuids, openProperties = false) {
 		// move gizmo unless every object in the set is editable by the local user
 		// (their own local-only objects, or anything for editors/admins).
 		const editable = clean.every((/** @type {any} */ uuid) => canEditObject(group.getObjectByProperty('uuid', uuid)));
-		if (!editable) {
+		if (get(gizmoSuppressed)) {
+			// sculpt mode: selection (and its lock) stand, but no gizmo — the
+			// SculptToolbar toggle re-attaches explicitly when the user opts in
+			releaseMultiPivot();
+			controls.detach();
+		} else if (!editable) {
 			releaseMultiPivot();
 			controls.detach();
 			warnViewerReadOnly();

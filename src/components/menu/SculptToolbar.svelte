@@ -6,8 +6,10 @@
 		sculptOp,
 		sculptRadius,
 		sculptStrength,
-		exitSculpt
+		exitSculpt,
+		setSculptGizmo
 	} from '$lib/terrainSculpt';
+	import { gizmoSuppressed } from '../../stores/sceneStore';
 
 	const OPS = [
 		{ op: 'raise', label: '⛰ Raise' },
@@ -67,6 +69,14 @@
 			/>
 			<span class="w-7">{$sculptStrength.toFixed(2)}</span>
 		</label>
+		<!-- gizmo opt-in: sculpt entry always suppresses the transform gizmo so a
+		     stray drag can't move the terrain; this re-enables it deliberately -->
+		<button
+			id="sculpt-gizmo"
+			class="rounded-full px-2.5 py-1 {$gizmoSuppressed ? 'bg-gray-700 hover:bg-gray-600' : 'bg-primary-600 text-white'}"
+			title={$gizmoSuppressed ? 'Show the move gizmo (off to avoid accidental terrain moves)' : 'Hide the move gizmo'}
+			onclick={() => setSculptGizmo($gizmoSuppressed)}>✥ Gizmo</button
+		>
 		<button
 			id="sculpt-done"
 			class="rounded-full bg-gray-700 px-3 py-1 hover:bg-gray-600"

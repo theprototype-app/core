@@ -25,9 +25,15 @@ export function rightDragMove(node, options = {}) {
 			onMove(e.movementX, e.movementY);
 			return;
 		}
+		// Keep the box FULLY on-screen: clamping only the left/top edges let a drag
+		// push it off the right/bottom (which also grows the document — see the
+		// off-the-right-edge gotcha in CLAUDE.md).
 		const rect = node.getBoundingClientRect();
-		node.style.left = Math.max(0, rect.left + e.movementX) + 'px';
-		node.style.top = Math.max(0, rect.top + e.movementY) + 'px';
+		const margin = 8;
+		const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+		const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
+		node.style.left = Math.max(margin, Math.min(rect.left + e.movementX, maxLeft)) + 'px';
+		node.style.top = Math.max(margin, Math.min(rect.top + e.movementY, maxTop)) + 'px';
 	};
 	/** @param {any} e */
 	const up = (e) => {

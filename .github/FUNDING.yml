@@ -1,0 +1,6 @@
+# Enables the "Sponsor" button on the repo. Fill in the accounts you actually have
+# and delete the rest — GitHub hides entries that are blank, but a WRONG handle
+# renders a broken link, so leave a line commented until the account exists.
+github: [theprototype-app]
+# ko_fi:
+# custom: ["https://theprototype.app"]

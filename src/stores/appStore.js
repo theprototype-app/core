@@ -183,6 +183,13 @@ export const viewportMenu = writable(null);
 // Add-object SEARCH popover (77): { x, y, point: [x,y,z] | null } | null
 /** @type {import('svelte/store').Writable<any>} */
 export const addMenu = writable(null);
+// Scene publishes an opener that anchors the Add-search popover to the CURRENT
+// pointer and resolves the world point under it (object hit, else the ground
+// plane) — so Shift+A spawns where you are looking, exactly like the right-click
+// Add menu does. Scene owns the raycaster, so the ray logic stays there.
+// Signature: () => boolean (false = no pointer seen yet, caller should fall back)
+/** @type {import('svelte/store').Writable<null | (() => boolean)>} */
+export const addMenuOpener = writable(null);
 
 // Scene registers its context-menu opener here so touch/HUD (the mobile "+"
 // button, a canvas long-press) can open the same viewport/object menu without a
@@ -237,6 +244,16 @@ export const enable3dPreview = writable(
 );
 enable3dPreview.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('enable3dPreview', String(on));
+});
+
+// Shift+A quick-add (the cursor-anchored Add popover). Opt-in, persisted; OFF by
+// default — Shift is a camera-strafe modifier in fly mode, so the shortcut only
+// exists for users who ask for it in Settings.
+export const enableShiftAdd = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('enableShiftAdd') === 'true'
+);
+enableShiftAdd.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('enableShiftAdd', String(on));
 });
 
 // E1 (roadmap #13): notification center — a persisted history of everything that

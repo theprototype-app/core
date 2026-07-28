@@ -12,7 +12,9 @@ import {
 	usersSlot,
 	profileSlot,
 	drawerSlot,
-	rolesInfo
+	rolesInfo,
+	CLOUD_HOOKS_VERSION,
+	cloudPluginInfo
 } from './cloudHooks';
 
 /**
@@ -42,6 +44,14 @@ export async function startCloudPlugin() {
 
 	try {
 		const mod = await import(/* @vite-ignore */ url);
+		// V2 fail-closed gate: a plugin may declare the hooks contract it NEEDS.
+		// Strictly `>`, never `!==` — new-app + old-plugin is blessed (hooks stay
+		// inert); only old-app + new-plugin refuses to register.
+		const needs = Number(mod.compatibleHooks ?? (mod.default && mod.default.compatibleHooks));
+		if (Number.isFinite(needs) && needs > CLOUD_HOOKS_VERSION) {
+			showToast('Cloud plugin requires a newer app version — running in local mode.');
+			return;
+		}
 		const register = mod.register || (mod.default && (mod.default.register || mod.default));
 		if (typeof register !== 'function') {
 			showToast('Cloud plugin loaded but exports no register() — ignoring.');
@@ -63,8 +73,16 @@ export async function startCloudPlugin() {
 function makeCloudApi() {
 	return {
 		/** contract version — bump when the surface changes incompatibly.
-		 *  v2 (roadmap #14 PM): + mountProfile, mountConnectDrawer. */
-		version: 2,
+		 *  v2 (roadmap #14 PM): + mountProfile, mountConnectDrawer.
+		 *  v2.3 (versioning): + setPluginInfo (plugin-side typeof probe). */
+		version: CLOUD_HOOKS_VERSION,
+
+		/** V2: publish the loaded plugin's identity for Settings ▸ About.
+		 *  @param {any} info `{name, version}` (null clears) */
+		setPluginInfo: (info) =>
+			cloudPluginInfo.set(
+				info ? { name: String(info.name || 'cloud'), version: String(info.version || '') } : null
+			),
 
 		// --- peer hooks ---
 		/** install the receive-side capability gate (roles enforcement) */

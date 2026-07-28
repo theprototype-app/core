@@ -1,0 +1,57 @@
+name: 🐛 Bug report
+description: Something behaves wrong, crashes, or does not replicate to peers
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. If it involves two peers, please say
+        what each of them saw — most replication bugs only make sense from both sides.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a box
+        2. Open the node editor and …
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Settings ▸ About ▸ Version (e.g. `1.0.0 (abc1234)`)"
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it happen?
+      multiple: true
+      options:
+        - Desktop browser
+        - VR headset (WebXR)
+        - Touch / mobile
+        - Alone in a session
+        - With connected peers
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Browser / OS / headset
+      placeholder: Chrome 131 on Windows 11, Quest 3
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: Anything red in the browser devtools console.
+      render: text

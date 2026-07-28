@@ -21,6 +21,7 @@
 	} from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
+	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
 	// no boxed group / section headers / vertical bar), a fast fade-in (was a
@@ -57,7 +58,15 @@
 		saveFormat = f;
 		localStorage.setItem('saveFormat', f);
 	}
-	let rerenderInput = $state(false);
+	// Clearing value (instead of the old {#key} recreate) lets the same file be
+	// re-picked without detaching the input mid-dialog — a detached input's event
+	// never reaches Svelte 5's delegated oninput, so the pick was silently dropped.
+	function pickFile(id: string) {
+		const input = document.getElementById(id) as HTMLInputElement | null;
+		if (!input) return;
+		input.value = '';
+		input.click();
+	}
 
 	// A6: clicking the logo while ANY modal is open closes every modal and OPENS the
 	// menu in ONE step. (Previously it toggled the menu regardless of state, so a modal
@@ -110,6 +119,10 @@
 	onclick={toggleMenu}
 >
 	<img src="logo.svg" alt="menu" class="h-9 w-9" />
+	<!-- RW/B4: unseen-update cue. A dot, never a boot dialog — the menu's "What's new"
+	     row (and the one update toast) lead to the changelog. Class toggle, not an
+	     {#if}, so nothing is destroyed mid-flush when the cue clears (see the row). -->
+	<span class="update-dot" class:update-dot-on={$whatsNewUnseen} title="Updated — see what's new"></span>
 </button>
 
 {#if !$closeMenu}
@@ -119,22 +132,14 @@
 		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
 		style={$connectDocked ? `top: ${$connectBarHeight + 64}px` : ''}
 	>
-		{#key rerenderInput}
-			<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
-			<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .gltf, .scene, .tpscene" />
-		{/key}
+		<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
+		<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .tpscene" />
 
 		<!-- Files -->
-		<button
-			class="side-row"
-			onclick={() => {
-				document.getElementById('import-file')?.click();
-				rerenderInput = !rerenderInput; // allow re-picking the same file
-			}}
-		>
+		<button class="side-row" onclick={() => pickFile('import-file')}>
 			<span class="side-ico">📩</span><span class="flex-1 whitespace-nowrap">Import</span>
 		</button>
-		<button class="side-row" onclick={() => document.getElementById('load-file')?.click()}>
+		<button class="side-row" onclick={() => pickFile('load-file')}>
 			<span class="side-ico">📁</span><span class="flex-1 whitespace-nowrap">Load</span>
 		</button>
 		<button class="side-row" onclick={() => save(saveFormat)}>
@@ -174,6 +179,14 @@
 		</button>
 		<button class="side-row" onclick={() => window.open('https://docs.theprototype.app', '_blank')}>
 			<span class="side-ico">📖</span><span class="flex-1 whitespace-nowrap">Docs</span>
+		</button>
+		<!-- the unseen cue is a CLASS toggle, not an {#if}: clicking this row closes the
+		     menu, and destroying a nested branch inside the subtree being destroyed in
+		     the same flush crashes Svelte's sibling walk (destroy_effect). -->
+		<button id="open-whats-new" class="side-row" onclick={() => { openWhatsNew(); closeMenu.set(true); }}>
+			<span class="side-ico">✨</span>
+			<span class="flex-1 whitespace-nowrap">What's new</span>
+			<span class="row-dot" class:row-dot-on={$whatsNewUnseen}></span>
 		</button>
 	</nav>
 {/if}
@@ -223,6 +236,33 @@
 		background-color: var(--color-form);
 		top: 8px;
 		left: 8px;
+		/* .burger is position:absolute in menu.css — that already anchors .update-dot */
+	}
+	/* unseen-update cue: a small accent dot on the logo corner + on the menu row */
+	.update-dot {
+		position: absolute;
+		top: 5px;
+		right: 5px;
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: #60a5fa;
+		box-shadow: 0 0 0 2px var(--color-form, #1f2937);
+		visibility: hidden;
+	}
+	.update-dot-on {
+		visibility: visible;
+	}
+	.row-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: #60a5fa;
+		flex: 0 0 auto;
+		visibility: hidden;
+	}
+	.row-dot-on {
+		visibility: visible;
 	}
 	/* the logo menu opens above everything (Connect, toasts) */
 	.app-sidebar {

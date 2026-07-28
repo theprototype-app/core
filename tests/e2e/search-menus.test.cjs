@@ -9,7 +9,14 @@ h.run(async () => {
 		permissions: ['clipboard-read', 'clipboard-write']
 	});
 	const page = await ctx.newPage();
-	await page.addInitScript(() => localStorage.setItem('debugStores', 'true'));
+	// this suite builds its own context (clipboard permissions), so it needs the
+	// first-run guards h.setupPage normally applies — a virgin profile opens the
+	// welcome overlay, whose backdrop would swallow the menu interactions below
+	await page.addInitScript(() => {
+		localStorage.setItem('debugStores', 'true');
+		localStorage.setItem('hasSeenDisclaimer', 'true');
+		localStorage.setItem('hasSeenWelcome', 'true');
+	});
 	await page.goto(h.URL, { waitUntil: 'load' });
 	await page.waitForFunction(() => window.__stores && window.__stores.peers, { timeout: 30000 });
 	await page.waitForTimeout(1500);

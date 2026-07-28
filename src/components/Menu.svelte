@@ -23,7 +23,9 @@
 	import Library from './menu/Library.svelte';
 	import { DarkMode } from 'flowbite-svelte';
 	import Users from './menu/Users.svelte';
-	import News from './menu/News.svelte';
+	// RW: replaced the gutted News.svelte stub (empty body, inverted hasSeenModal flag)
+	import Welcome from './menu/Welcome.svelte';
+	import WhatsNew from './menu/WhatsNew.svelte';
 
 	import { isLocked } from '../stores/sceneStore'
 </script>
@@ -34,7 +36,8 @@
 <MeshJobsCard />
 
 <div class={$isLocked ? 'hidden' : ''}>
-<News />
+<Welcome />
+<WhatsNew />
 <Connect />
 <Controls />
 <Inspector />

@@ -44,6 +44,11 @@ async function setupPage(browser, name, options = {}) {
 	await ctx.addInitScript((peerConfig) => {
 		localStorage.setItem('debugStores', 'true');
 		localStorage.setItem('hasSeenDisclaimer', 'true');
+		// RW: a fresh profile is a "first visit", which opens the welcome overlay over
+		// the whole UI. The whats-new suite clears this flag to test that path.
+		// (With it set and no lastSeenVersion, startWhatsNew marks the version seen
+		// silently — so no update badge/toast appears either.)
+		localStorage.setItem('hasSeenWelcome', 'true');
 		if (peerConfig) localStorage.setItem('peerServerConfig', peerConfig);
 	}, PEER_CONFIG);
 	const page = await ctx.newPage();

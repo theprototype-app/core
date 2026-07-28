@@ -18,7 +18,8 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
-import { applyModuleMessage, moduleVersions, checkModuleVersions, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
+import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVersion, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
+import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate, physicsExternalMove } from '$lib/physics';
@@ -431,6 +432,7 @@ export class PeerConnection {
 					applyModuleMessage(data);
 				} else if(data.type == 'modules') {
 					checkModuleVersions(data.versions);
+					checkPeerAppVersion(data.appVersion);
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);
 				} else if(data.type == 'modulestate') {
@@ -473,7 +475,9 @@ export class PeerConnection {
 		conn.send({type: 'locked', lockeditems: locks})
 		conn.send({type: 'hosts', hosts: hosts})
 		conn.send({type: 'userdata', userdata: users})
-		conn.send({type: 'modules', versions: moduleVersions()})
+		// V3: app version rides the modules handshake — old peers ignore the extras,
+		// old senders omit them (checkPeerAppVersion is silent on absence)
+		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA})
 		conn.send(environmentState())
 		conn.send(musicState())
 		conn.send(handModelState())

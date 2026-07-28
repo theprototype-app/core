@@ -40,9 +40,15 @@ h.run(async () => {
 		await A.page.locator('#cancel-request-button').first().isVisible(),
 		'CN: pending shows the amber Cancel button'
 	);
+	// The pending STATUS is the gray disabled input that keeps the pill a stable
+	// width ("Requesting <ID>", title "Waiting for approval"). This used to look for
+	// a `data-testid="connect-pending"` that the CN drawer redesign never carried
+	// over — the element never existed in src, so the check could only ever fail.
+	const pendingInput = A.page.locator('.cx-connect input[disabled]').first();
+	const pendingValue = await pendingInput.inputValue();
 	h.check(
-		await A.page.locator('[data-testid="connect-pending"]').first().isVisible(),
-		'CN: pending shows the waiting-for-approval status'
+		(await pendingInput.isVisible()) && /^Requesting FFFF1$/i.test(pendingValue),
+		`CN: pending shows the waiting-for-approval status ("${pendingValue}")`
 	);
 
 	// --- Cancel -> back to idle, stores fully unwound ----------------------------

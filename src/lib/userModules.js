@@ -2,6 +2,8 @@ import { writable, get } from 'svelte/store';
 import { unzipSync, strFromU8 } from 'fflate';
 import { idbGet, idbPut } from './idb';
 import { showToast } from '../stores/appStore';
+import { showConfirm } from './confirmDialog';
+import { APP_VERSION } from './version.js';
 import {
 	initModules,
 	isModuleLoaded,
@@ -38,6 +40,9 @@ export function normalizeRepoUrl(url) {
 	return trimmed;
 }
 
+/** V5: the .tpmodule manifest format this build understands (absent = 0). */
+export const MODULE_FORMAT = 1;
+
 /** @param {any} manifest */
 function validateManifest(manifest) {
 	if (!manifest?.id || !manifest?.name || !manifest?.version)
@@ -46,9 +51,23 @@ function validateManifest(manifest) {
 		id: String(manifest.id),
 		name: String(manifest.name),
 		version: String(manifest.version),
+		format: Number(manifest.format) || 0,
 		description: manifest.description ? String(manifest.description) : '',
 		entry: manifest.entry ? String(manifest.entry) : 'module.js'
 	};
+}
+
+/** V5: install-time gate — a NEWER manifest format asks before installing;
+ * older/absent installs silently. @param {any} manifest */
+async function confirmModuleFormat(manifest) {
+	if (!(manifest.format > MODULE_FORMAT)) return true;
+	return showConfirm({
+		title: 'Newer module format',
+		message:
+			'"' + manifest.name + '" uses module format ' + manifest.format + '; this app supports format ' +
+			MODULE_FORMAT + '. It may not work correctly.',
+		confirmLabel: 'Install anyway'
+	});
 }
 
 /** Register one stored record with the SDK @param {any} record */
@@ -104,12 +123,13 @@ export async function installZip(file) {
 		const manifestBytes = entries['manifest.json'];
 		if (!manifestBytes) throw new Error('zip has no manifest.json at its root');
 		const manifest = validateManifest(JSON.parse(strFromU8(manifestBytes)));
+		if (!(await confirmModuleFormat(manifest))) return false;
 		/** @type {Record<string, Uint8Array>} */
 		const files = {};
 		Object.entries(entries).forEach(([path, bytes]) => {
 			if (!path.endsWith('/')) files[path] = bytes;
 		});
-		const record = { ...manifest, files, source: 'zip', installedAt: Date.now() };
+		const record = { ...manifest, files, source: 'zip', installedAt: Date.now(), appVersion: APP_VERSION };
 		const ok = await storeAndActivate(record);
 		if (ok) showToast('Module "' + manifest.name + '" installed');
 		return ok;
@@ -128,6 +148,7 @@ export async function installUrl(url) {
 		if (!manifestResponse.ok) throw new Error('manifest.json not reachable (' + manifestResponse.status + ')');
 		const rawManifest = await manifestResponse.json();
 		const manifest = validateManifest(rawManifest);
+		if (!(await confirmModuleFormat(manifest))) return false;
 		const list = Array.isArray(rawManifest.files) && rawManifest.files.length > 0
 			? [...new Set([manifest.entry, ...rawManifest.files])]
 			: [manifest.entry];
@@ -138,7 +159,7 @@ export async function installUrl(url) {
 			if (!response.ok) throw new Error(path + ' not reachable');
 			files[path] = new Uint8Array(await response.arrayBuffer());
 		}
-		const record = { ...manifest, files, source: base, installedAt: Date.now() };
+		const record = { ...manifest, files, source: base, installedAt: Date.now(), appVersion: APP_VERSION };
 		const ok = await storeAndActivate(record);
 		if (ok) showToast('Module "' + manifest.name + '" installed from URL');
 		return ok;

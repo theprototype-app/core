@@ -12,6 +12,8 @@ import { jointsSnapshot, jointsRestore } from './joints';
 import { sceneCommand, sendObjects } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
+import { showConfirm } from './confirmDialog';
+import { APP_VERSION } from './version.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
 // stores its top-level objects as individual ObjectLoader jsons — that makes
@@ -98,6 +100,10 @@ export function buildSessionPayload(name) {
 			id: crypto.randomUUID(),
 			name: name || 'Session ' + new Date().toLocaleString(),
 			createdAt: Date.now(),
+			// V4: format gates loading (a NEWER int asks before importing);
+			// appVersion is display-only provenance
+			format: SESSION_FORMAT,
+			appVersion: APP_VERSION,
 			count: group?.children.length ?? 0,
 			thumbnail: renderSceneThumbnail(group),
 			objects: (group?.children ?? []).map((/** @type {any} */ child) => child.toJSON()),
@@ -162,16 +168,48 @@ export function exportSession(payload) {
 	return JSON.stringify(payload);
 }
 
-/** Import a previously exported session file @param {string} json */
-export async function importSession(json) {
+/** V4: the .tpscene/.session format this build writes and knows how to read. */
+export const SESSION_FORMAT = 1;
+
+/** Parse + shape-validate a session JSON string. @param {string} json */
+function parseSessionJson(json) {
 	const payload = JSON.parse(json);
 	if (!payload || !Array.isArray(payload.objects)) throw new Error('not a session file');
+	return payload;
+}
+
+/** V4: true when the payload's format is loadable; a NEWER format asks first.
+ * Older/absent formats (0) load silently — no noise after routine upgrades.
+ * @param {any} payload */
+async function confirmSessionFormat(payload) {
+	const format = Number(payload?.format) || 0;
+	if (format <= SESSION_FORMAT) return true;
+	return showConfirm({
+		title: 'Newer scene format',
+		message:
+			'This scene was saved by app ' + (payload?.appVersion || 'unknown') + ' (format ' + format +
+			'); this app supports format ' + SESSION_FORMAT + '. Some content may not load correctly.',
+		confirmLabel: 'Load anyway'
+	});
+}
+
+/** Store an imported payload as a fresh slot. @param {any} payload */
+async function finishImport(payload) {
 	payload.id = crypto.randomUUID(); // never collide with an existing slot
 	payload.name = payload.name || 'Imported session';
 	payload.createdAt = Date.now();
 	await idbPut(KEY + payload.id, payload);
 	await loadSessions();
 	return payload;
+}
+
+/** Import a previously exported session file. Resolves NULL when the user cancels
+ * a newer-format confirm (callers treat null as a silent no-op, not an error).
+ * @param {string} json */
+export async function importSession(json) {
+	const payload = parseSessionJson(json);
+	if (!(await confirmSessionFormat(payload))) return null;
+	return finishImport(payload);
 }
 
 // ---- session ZIP: session.json + the scene's binary assets (127) ----
@@ -239,6 +277,10 @@ export async function importSessionZip(buffer) {
 	const entries = unzipSync(new Uint8Array(buffer));
 	const sessionBytes = entries['session.json'];
 	if (!sessionBytes) throw new Error('zip has no session.json');
+	// V4: parse + confirm the format BEFORE the asset/pack restore loops — a
+	// cancelled import must not mutate the Explorer library
+	const payload = parseSessionJson(strFromU8(sessionBytes));
+	if (!(await confirmSessionFormat(payload))) return null;
 	let index = [];
 	try {
 		if (entries['assets/index.json']) index = JSON.parse(strFromU8(entries['assets/index.json']));
@@ -281,7 +323,9 @@ export async function importSessionZip(buffer) {
 			console.log('pack restore failed', error);
 		}
 	}
-	return importSession(strFromU8(sessionBytes));
+	// finishImport, NOT importSession — the format was already confirmed above
+	// (importSession would double-confirm)
+	return finishImport(payload);
 }
 
 /** Top-level entries for the selective-import checklist @param {any} payload */

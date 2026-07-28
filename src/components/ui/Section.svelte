@@ -10,7 +10,9 @@
 	let { label = '', collapsible = true, open = $bindable(true), children = null } = $props();
 
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
-	// persisted collapse, keyed by the section label
+	// persisted collapse, keyed by the section label (static per instance — a
+	// deliberate one-time read)
+	// svelte-ignore state_referenced_locally
 	let collapsed = $state(LS?.getItem('inspector:sec:' + label) === 'closed');
 	function toggle() {
 		collapsed = !collapsed;

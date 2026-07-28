@@ -11,11 +11,21 @@ const names = (page) =>
 				window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()
 			)
 	);
-const rightTap = async (page, x, y) => {
-	await page.mouse.move(x, y);
-	await page.mouse.down({ button: 'right' });
-	await page.mouse.up({ button: 'right' });
-	await page.waitForTimeout(300);
+// A right TAP only opens the menu when it is short and stationary — Scene ignores a
+// press longer than 400ms (that is a right-DRAG, which pans the camera). Playwright
+// dispatches down and up as separate CDP round-trips, and with two peers rendering at
+// full rAF those measured 360-410ms here: right on the threshold, so the menu opened
+// only about half the time. Retry until it appears instead of trusting one tap.
+// Retrying is safe because a tap that failed to register changed nothing; never
+// press Escape between attempts — that would dismiss a menu that DID open.
+const rightTap = async (page, x, y, retries = 6) => {
+	for (let attempt = 0; attempt < retries; attempt++) {
+		await page.mouse.move(x, y);
+		await page.mouse.down({ button: 'right' });
+		await page.mouse.up({ button: 'right' });
+		await page.waitForTimeout(300);
+		if ((await page.locator('[role="menuitem"]').count()) > 0) return;
+	}
 };
 
 h.run(async () => {
@@ -26,6 +36,8 @@ h.run(async () => {
 
 	// 125 made the object-search entry opt-in; enable it so the menu shows it
 	await A.page.evaluate(() => window.__stores.objectSearchEnabled.set(true));
+	// Shift+A quick add is opt-in too (Settings, default off)
+	await A.page.evaluate(() => window.__stores.enableShiftAdd.set(true));
 
 	// right-click TAP on empty viewport opens the merged menu
 	await rightTap(A.page, 700, 400);
@@ -75,9 +87,13 @@ h.run(async () => {
 	// the ADD search box (Shift+A) — Enter adds the top-matching primitive.
 	// (125 added a SEPARATE "Search objects" box for finding existing objects;
 	// this is the add-a-primitive search, #add-search-input.)
+	// WAIT for the box rather than sleeping 300ms: the shortcut's action dynamically
+	// imports appStore, and with two peers rendering at full rAF that resolved after
+	// the old fixed wait — the check failed while the feature worked.
 	await A.page.keyboard.press('Shift+KeyA');
-	await A.page.waitForTimeout(300);
-	h.check(await A.page.locator('#add-search-input').isVisible(), 'search box opens');
+	const addBox = A.page.locator('#add-search-input');
+	await addBox.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+	h.check(await addBox.isVisible(), 'search box opens');
 	await A.page.keyboard.type('ico');
 	await A.page.keyboard.press('Enter');
 	await h.eventually(
@@ -86,6 +102,11 @@ h.run(async () => {
 		'search Enter added the top match'
 	);
 
+	// KNOWN FLAKE (pre-existing, reproduces on this suite without any of the Shift+A
+	// changes): this right-tap often fails to open the viewport menu, so the hover
+	// below times out. The tap timing above is one cause; ruled out so far = an object
+	// under the point (parking every object away does not help) and a stale add-search
+	// box (its store is null by here). Needs its own investigation.
 	// Add ▸ Group creates an empty group
 	await rightTap(A.page, 950, 140);
 	await A.page.locator('[role="menuitem"]').filter({ hasText: 'Add' }).first().hover();
@@ -99,8 +120,8 @@ h.run(async () => {
 
 	// Shift+A opens the search box directly
 	await A.page.keyboard.press('Shift+KeyA');
-	await A.page.waitForTimeout(300);
-	h.check(await A.page.locator('#add-search-input').isVisible(), 'Shift+A opens the search');
+	await addBox.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+	h.check(await addBox.isVisible(), 'Shift+A opens the search');
 	await A.page.keyboard.press('Escape');
 
 	// right-tap ON an object opens the object context menu (not the Add menu) —

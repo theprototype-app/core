@@ -4,6 +4,7 @@ import { globalScene, objectsGroup, selectedObject, globalCamera, isVRMode } fro
 import { peers, showToast, modulesOpen } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
+import { APP_VERSION } from './version.js';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
 // the api object passed to their register(api). See MODULES.md for the guide.
@@ -457,6 +458,18 @@ export function checkModuleVersions(remote) {
 		if (!remote.find((r) => r.id === m.id))
 			showToast('Peer does not have module "' + m.id + '" — things may look different', openManager);
 	});
+}
+
+/** V3: app versions already warned about this session — showToast's U-3 dedupe only
+ * collapses while the previous toast is visible, so reconnects would re-spam. */
+const warnedAppVersions = new Set();
+
+/** V3: toast ONCE per differing peer app version per session. @param {any} remote */
+export function checkPeerAppVersion(remote) {
+	if (!remote || typeof remote !== 'string') return; // pre-1.0 peers omit the field
+	if (remote === APP_VERSION || warnedAppVersions.has(remote)) return;
+	warnedAppVersions.add(remote);
+	showToast('Peer runs app ' + remote + ' (you have ' + APP_VERSION + ') — features may behave differently.');
 }
 
 /** Send all module states to a peer (handshake reply) @param {string} peerId */

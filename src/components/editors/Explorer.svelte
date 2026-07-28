@@ -265,24 +265,50 @@
 		packAttribHtml = html;
 		packAttribModal = true;
 	}
+	// RP: where a pack's content comes from (index `source` field; imported packs
+	// reuse their manifest homepage). Labelled with the repo slug for GitHub URLs,
+	// the bare hostname otherwise.
+	function packSourceUrl(pack: any): string {
+		return pack?.sourceUrl || pack?.homepage || '';
+	}
+	function packSourceLabel(url: string): string {
+		const gh = /github\.com\/([^/]+\/[^/#?]+)/.exec(url);
+		if (gh) return gh[1].replace(/\.git$/, '');
+		try {
+			return new URL(url).hostname;
+		} catch {
+			return url;
+		}
+	}
+	// M-2/RP: install a default-list .zip pack (audio/SFX). Shared by the row menu
+	// AND the in-grid install card — a zip-only pack has no item list, so its open
+	// view must offer the install itself (right-click-only was undiscoverable).
+	let installingPack = $state(false);
+	async function installZipPack(pack: any) {
+		if (installingPack) return;
+		installingPack = true;
+		try {
+			const imported = await installDefaultPackZip(pack);
+			packsExpanded = true;
+			openFolder('pack:' + imported.name);
+			// the $activeFolder effect won't re-fire when we were ALREADY viewing this
+			// pack (same value -> no rerun in svelte 5) — load the items explicitly
+			loadPackItems(imported);
+			showToast(`Installed "${imported.title}"`);
+		} catch (err: any) {
+			showToast('Install failed: ' + (err?.message ?? 'bad .zip'));
+		} finally {
+			installingPack = false;
+		}
+	}
 	function packRowMenu(e: MouseEvent, pack: any) {
 		e.preventDefault();
 		const items: any[] = [{ label: 'ⓘ Attribution / license', action: () => showPackAttribution(pack) }];
+		if (packSourceUrl(pack))
+			items.push({ label: '↗ Open source', action: () => window.open(packSourceUrl(pack), '_blank', 'noopener') });
 		// M-2: a default-list .zip pack (e.g. audio/SFX) installs on demand
 		if (pack.source === 'default' && pack.zip)
-			items.push({
-				label: '⬇ Install pack',
-				action: async () => {
-					try {
-						const imported = await installDefaultPackZip(pack);
-						packsExpanded = true;
-						openFolder('pack:' + imported.name);
-						showToast(`Installed "${imported.title}"`);
-					} catch (err: any) {
-						showToast('Install failed: ' + (err?.message ?? 'bad .zip'));
-					}
-				}
-			});
+			items.push({ label: '⬇ Install pack', action: () => installZipPack(pack) });
 		if (pack.source === 'imported')
 			items.push({
 				label: '🗑 Delete pack',
@@ -1089,6 +1115,20 @@
 			role="region"
 		>
 			{#if childFolders.length === 0 && gridItems.length === 0}
+				{#if openPack && openPack.source === 'default' && openPack.zip}
+					<!-- RP: a zip-only pack (audio-essentials) has no browsable item list —
+					     its open view IS the install prompt (right-click-only was undiscoverable) -->
+					<div class="flex flex-col items-center gap-2 p-6 text-center">
+						<span class="text-4xl">🎁</span>
+						<span class="text-sm text-gray-300">"{openPack.title}" installs into your local library.</span>
+						<button
+							id="pack-install"
+							class="rounded bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-500 disabled:opacity-50"
+							disabled={installingPack}
+							onclick={() => installZipPack(openPack)}
+						>{installingPack ? 'Installing…' : `⬇ Install ${openPack.title}`}</button>
+					</div>
+				{:else}
 				<p class="p-4 text-center text-xs italic text-gray-500">
 					{$activeFolder === 'prefabs'
 						? 'No prefabs yet — right-click an object and Save as prefab.'
@@ -1096,6 +1136,7 @@
 						: typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:') ? 'This pack has no items.'
 						: typeof $activeFolder === 'string' && $activeFolder.startsWith('scene') ? 'No shared assets in this scene group yet.' : 'Drop images, audio, text or 3D files here to import them.'}
 				</p>
+				{/if}
 			{:else}
 				<!-- fixed-width columns (not 1fr) so cards don't resize/jiggle when the
 				     Properties sidebar toggles main's width -->
@@ -1198,6 +1239,16 @@
 						{#if openPack.license}<div class="text-[11px] text-gray-400">License: {licenseLabel(openPack.license)}</div>{/if}
 						{#if openPack.copyright}<div class="text-[11px] text-gray-400">{openPack.copyright}</div>{/if}
 						<button id="pack-attribution" class="ui-button-quiet mt-1 self-start" onclick={() => showPackAttribution(openPack)}>ⓘ Attribution / license</button>
+						{#if packSourceUrl(openPack)}
+							<a
+								id="pack-source"
+								class="ui-button-quiet mt-1 inline-flex items-center gap-1.5 self-start"
+								href={packSourceUrl(openPack)}
+								target="_blank"
+								rel="noopener"
+								title="Open the content source"
+							><i class={/github\.com/.test(packSourceUrl(openPack)) ? 'fa-brands fa-github' : 'fa-solid fa-arrow-up-right-from-square'}></i> {packSourceLabel(packSourceUrl(openPack))}</a>
+						{/if}
 					</div>
 				{/if}
 				{#if selItem}

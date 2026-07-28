@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 Documentation
+    url: https://docs.theprototype.app
+    about: Guides for the editor, the module SDK and the node catalogue.
+  - name: 🧩 Community modules
+    url: https://github.com/theprototype-app/modules
+    about: Optional modules — and where to propose a new one.

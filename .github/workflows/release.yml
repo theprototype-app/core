@@ -1,0 +1,40 @@
+# V6 (versioning): tag-triggered release — push a v* tag (via `npm version` +
+# `git push --follow-tags`, see RELEASING.md) and this builds the static app,
+# gates on the svelte-check baseline, and publishes a GitHub Release with the
+# build zip + generated notes.
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      # svelte-check exits non-zero at the legacy baseline; fail ONLY when the
+      # counts grow past it (baseline 476 errors / 62 warnings, 2026-07-28)
+      - name: svelte-check baseline gate
+        run: |
+          npm run check 2>&1 | tee check.log || true
+          LINE=$(grep -Eo '[0-9]+ ERRORS [0-9]+ WARNINGS' check.log | tail -1)
+          ERRORS=$(echo "$LINE" | awk '{print $1}')
+          WARNINGS=$(echo "$LINE" | awk '{print $3}')
+          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 476/62)"
+          if [ -z "$ERRORS" ]; then echo "could not parse svelte-check output"; exit 1; fi
+          if [ "$ERRORS" -gt 476 ] || [ "$WARNINGS" -gt 62 ]; then
+            echo "baseline exceeded"; exit 1
+          fi
+      - name: zip the build
+        run: cd build && zip -r "../theprototype-${GITHUB_REF_NAME}.zip" .
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: theprototype-*.zip

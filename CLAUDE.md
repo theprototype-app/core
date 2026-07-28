@@ -278,7 +278,10 @@ loadable play content. Everything a user does must be visible to connected peers
   the baseline). THREE object trees are **NOT reactive**: mutating `.children`/`.userData`
   needs `objectsGroup.update(v=>v)` to poke, AND rendered components must derive from
   `$objectsGroup` (or a keyed-each on the same ref won't re-render). svelte-check
-  baseline is **485 errors / 72 warnings** — hold it.
+  baseline is **476 errors / 62 warnings** (2026-07-28, after the svelte 5.56 safe-bump
+  pass) — hold it. Svelte 5.5x added `state_referenced_locally` (intentional one-time
+  prop reads take a `// svelte-ignore state_referenced_locally` line — WindowShell is
+  the reference) and deprecated `<svelte:self>` (use a self-import).
 - **Connection "connected" state = `$peers.openedPeers`, NOT `userdata.length`**:
   dialing whitelists the target in `userdata` at DIAL time (before approval), so a
   roster-length check shows a phantom peer while pending. `$peers` ticks
@@ -344,6 +347,17 @@ loadable play content. Everything a user does must be visible to connected peers
 - Stores initialized `writable(null)`/`writable([])` infer `never` — annotate with
   JSDoc `Writable<any>`; keep NEW files clean (legacy implicit-any baseline stays).
 - `npm i` needs `--legacy-peer-deps` (three vs postprocessing peer conflict).
+- **Release ritual (V6)**: `npm version minor|patch` + `git push origin main
+  --follow-tags` — the v* tag triggers `.github/workflows/release.yml` (build +
+  svelte-check baseline gate + GitHub Release). Full doc: committed `RELEASING.md`.
+  The version bump is the SINGLE source of truth (About / peer handshake /
+  .tpscene+.tpmodule provenance / static/version.json all derive from it).
+- **Deps policy (2026-07-28)**: three/@threlte/*/@xyflow/flowbite*/tailwind/vite/TS are
+  DELIBERATELY frozen — each has a planned migration in the cloud repo
+  `plans-core/pending/deps-migrations-post-1.0.md`; Dependabot (grouped monthly,
+  `.github/dependabot.yml`) ignores them and `npm run deps:check` reports drift
+  (non-blocking; also runs in the cloud deploy). Don't bump them ad hoc. A playwright
+  bump needs `npx playwright install chromium` or every suite fails at launch.
 - PowerShell mangles emoji AND em-dashes when rewriting files, and inline `node -e`
   quoting breaks — write a scratch `.cjs` and run it with node for any file rewrite
   containing non-ASCII. Commit messages: **ASCII only** — a `▸`/em-dash inside a

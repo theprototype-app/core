@@ -1,0 +1,44 @@
+# Dependency update policy (release 1.0):
+# - one grouped PR per month for all minor/patch bumps (low-risk, reviewed together)
+# - majors arrive as separate PRs, EXCEPT the known frozen migration deps below —
+#   each of those needs its own planned migration (see plans-core/pending/ in the
+#   private cloud repo) and a Dependabot PR would just red-x until then.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # three moves in lockstep with threlte + postprocessing/n8ao (planned migration)
+      - dependency-name: three
+        update-types: [version-update:semver-minor, version-update:semver-major]
+      # pinned on prereleases; stable bump is part of the three lockstep migration
+      - dependency-name: '@threlte/*'
+      # 0.1.x -> 1.x is a Svelte 5 rewrite of the whole flow editor (planned migration)
+      - dependency-name: '@xyflow/svelte'
+        update-types: [version-update:semver-major]
+      # flowbite-svelte 1.x requires tailwind 4 — coupled migration
+      - dependency-name: flowbite-svelte
+        update-types: [version-update:semver-major]
+      - dependency-name: flowbite
+        update-types: [version-update:semver-major]
+      - dependency-name: tailwindcss
+        update-types: [version-update:semver-major]
+      # vite majors move with @sveltejs/vite-plugin-svelte majors — coupled migration
+      - dependency-name: vite
+        update-types: [version-update:semver-major]
+      - dependency-name: '@sveltejs/vite-plugin-svelte'
+        update-types: [version-update:semver-major]
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # icon class names change across majors; bump deliberately
+      - dependency-name: '@fortawesome/fontawesome-free'
+        update-types: [version-update:semver-major]
+      # physics solver behavior can shift on 0.x bumps (rapier revolute-axis gotcha)
+      - dependency-name: '@dimforge/rapier3d-compat'

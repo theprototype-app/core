@@ -4,8 +4,10 @@
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed } from '../../stores/appStore.js';
-	import { drawerSlot } from '$lib/cloudHooks';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd } from '../../stores/appStore.js';
+	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
+	import { versionString } from '$lib/version.js';
+	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
@@ -24,6 +26,7 @@
 		removeCustomTheme
 	} from '$lib/themes';
 	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
+	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { shortcuts } from '$lib/shortcuts';
@@ -653,9 +656,25 @@
 						<svelte:fragment slot="control"><Checkbox bind:checked={$objectSearchEnabled} /></svelte:fragment>
 						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
 					</SettingRow>
+					<SettingRow name="Shift+A quick add">
+						<svelte:fragment slot="control"><Toggle bind:checked={$enableShiftAdd} /></svelte:fragment>
+						Pressing Shift+A opens the Add menu at the cursor and spawns the picked object
+						under it. Off by default — Shift also strafes the camera in fly mode
+					</SettingRow>
 					<SettingRow name="Toasts in drawer only">
 						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>
 						Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy
+					</SettingRow>
+					<SettingRow name="Welcome on start">
+						<svelte:fragment slot="control"><Toggle bind:checked={$showWelcomeOnStart} /></svelte:fragment>
+						Show the welcome card every time the app opens. It normally appears only on your first
+						visit — turn this on to keep its quick links handy, or
+						<button class="underline" on:click={() => { settingsOpen.set(false); openWelcome(); }}>open it now</button>
+					</SettingRow>
+					<SettingRow name="Announce new versions">
+						<svelte:fragment slot="control"><Toggle bind:checked={$showWhatsNewNotice} /></svelte:fragment>
+						After an update, mark the logo menu with a dot and show one toast linking to the
+						changelog. Off means updates arrive silently — What's new stays in the logo menu
 					</SettingRow>
 					{#if $drawerSlot}
 						<SettingRow name="Show Rooms button">
@@ -1024,7 +1043,10 @@
 				</AccordionItem>
 				<AccordionItem>
 					<svelte:fragment slot="header">About</svelte:fragment>
-					<SettingRow name="Version" noControl>beta</SettingRow>
+					<SettingRow name="Version" noControl>{appVersionString}</SettingRow>
+					{#if $cloudPluginInfo}
+						<SettingRow name="Cloud plugin" noControl>{$cloudPluginInfo.name} {$cloudPluginInfo.version}</SettingRow>
+					{/if}
 					<SettingRow name="Dev Builds" noControl>
 						<a href="https://alexz005.github.io/theprototype">https://alexz005.github.io/theprototype</a>
 					</SettingRow>
@@ -1044,6 +1066,7 @@
 	<svelte:fragment slot="footer">
 		<Button onclick={() => localStorage.clear()}>Reset settings</Button>
 		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
+		<Button id="about-whats-new" color="alternative" onclick={() => { settingsOpen.set(false); openWhatsNew(); }}>What's new</Button>
 	</svelte:fragment>
 </Modal>
 

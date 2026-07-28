@@ -3,7 +3,7 @@ import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, TControls, lockedObjects } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
-import { createFaceFromVerts } from './faceEdit';
+import { createFaceFromVerts, lookupEditable } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
 // regular gizmo. Handles that share a position (e.g. the 24 position entries
@@ -123,8 +123,7 @@ export function tickMeshEdit() {
 /** @param {string} uuid */
 export function enterEditMode(uuid) {
 	if (get(editingObject)) exitEditMode();
-	const group = get(objectsGroup);
-	const object = group?.getObjectByProperty('uuid', uuid);
+	const object = lookupEditable(uuid); // A8: also accepts the collider proxy
 	if (!object || !object.geometry?.attributes?.position) {
 		// D7: a multi-mesh GROUP is the common blocker for imports — say so
 		if (object?.type === 'Group')
@@ -401,8 +400,7 @@ export function onProxyDragChanged(dragging) {
  * @param {string} uuid @param {number[]} indices @param {number[]} positionArray
  */
 export function applyVerts(uuid, indices, positionArray) {
-	const group = get(objectsGroup);
-	const object = group?.getObjectByProperty('uuid', uuid);
+	const object = lookupEditable(uuid); // A8: also finds the collider-edit proxy
 	const position = object?.geometry?.attributes?.position;
 	if (!position) return;
 	indices.forEach((i) => position.setXYZ(i, positionArray[0], positionArray[1], positionArray[2]));

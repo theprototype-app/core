@@ -30,6 +30,12 @@
 		toggleFaceGranularity,
 		toggleFaceMulti
 	} from '$lib/faceEdit';
+	import {
+		colliderEditObject,
+		addColliderPiece,
+		commitColliderEdit,
+		exitColliderEdit
+	} from '$lib/colliderEdit';
 	import { isVRMode, selectedObject } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
 
@@ -111,7 +117,7 @@
 	>
 		<!-- row 1: mode + op selection (no amount; params live in the nested row) -->
 		<div class="flex items-center gap-3 rounded-full bg-gray-800 px-4 py-2 text-sm text-white shadow-xl">
-			<span class="font-semibold">🔷 Edit mesh</span>
+			<span class="font-semibold">{$colliderEditObject ? '🟩 Edit collider' : '🔷 Edit mesh'}</span>
 
 			<!-- mode toggles: clear active state -->
 			<div class="flex overflow-hidden rounded-full border border-gray-600">
@@ -184,12 +190,40 @@
 				</div>
 			{/if}
 
-			<button
-				id="mesh-edit-done"
-				class="rounded-full bg-[#ff4000] px-3 py-0.5 text-white"
-				title="Finish (Esc)"
-				on:click={finish}>Done</button
-			>
+			{#if $colliderEditObject}
+				<!-- CL-A A8: collider session — add compound pieces, commit or drop -->
+				<button
+					id="collider-add-box"
+					class="rounded-full bg-gray-700 px-2.5 py-1 text-xs hover:bg-gray-600"
+					title="Merge a box into the collider as a new convex piece"
+					on:click={() => addColliderPiece('box')}>+ Box piece</button
+				>
+				<button
+					id="collider-add-sphere"
+					class="rounded-full bg-gray-700 px-2.5 py-1 text-xs hover:bg-gray-600"
+					title="Merge a sphere into the collider as a new convex piece"
+					on:click={() => addColliderPiece('sphere')}>+ Sphere piece</button
+				>
+				<button
+					id="collider-edit-done"
+					class="rounded-full bg-[#22c55e] px-3 py-0.5 text-white"
+					title="Save the custom collider (each shell = one convex piece)"
+					on:click={() => commitColliderEdit()}>Done</button
+				>
+				<button
+					id="collider-edit-cancel"
+					class="rounded-full bg-gray-700 px-3 py-0.5"
+					title="Drop the collider edit (Esc)"
+					on:click={() => exitColliderEdit()}>Cancel</button
+				>
+			{:else}
+				<button
+					id="mesh-edit-done"
+					class="rounded-full bg-[#ff4000] px-3 py-0.5 text-white"
+					title="Finish (Esc)"
+					on:click={finish}>Done</button
+				>
+			{/if}
 		</div>
 
 		<!-- 176: nested params row for Extrude/Inset (amount / auto-apply / Apply) -->

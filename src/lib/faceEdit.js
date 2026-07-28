@@ -51,6 +51,63 @@ function keyOf(x, y, z) {
 }
 
 /**
+ * Union-find over welded vertex keys: the connected components ("shells") of
+ * a triangle soup — a merged-in primitive is one shell, a plane floating off
+ * a box is another. Shared by Shell granularity (CL-B) and custom-collider
+ * piece splitting (CL-A A8). @param {any[]} tris @returns {number[][]} tri-index groups
+ */
+export function shellsOfTris(tris) {
+	const n = tris.length;
+	const parent = [...Array(n).keys()];
+	const find = (/** @type {number} */ a) => {
+		while (parent[a] !== a) {
+			parent[a] = parent[parent[a]];
+			a = parent[a];
+		}
+		return a;
+	};
+	const union = (/** @type {number} */ a, /** @type {number} */ b) => {
+		parent[find(a)] = find(b);
+	};
+	/** @type {Map<string, number>} first tri seen per welded vertex key */
+	const byKey = new Map();
+	tris.forEach((t, ti) => {
+		for (const v of t) {
+			const k = keyOf(v.x, v.y, v.z);
+			const first = byKey.get(k);
+			if (first === undefined) byKey.set(k, ti);
+			else union(first, ti);
+		}
+	});
+	/** @type {Map<number, number[]>} */
+	const groups = new Map();
+	for (let ti = 0; ti < n; ti++) {
+		const root = find(ti);
+		let list = groups.get(root);
+		if (!list) groups.set(root, (list = []));
+		list.push(ti);
+	}
+	return [...groups.values()];
+}
+
+// ---- CL-A A8: scene-root edit proxy ----------------------------------------
+// The custom-collider session edits a PROXY mesh at the scene root (never in
+// objectsGroup, so it can't leak into GLTF sync). objectsGroup lookups in the
+// edit tools fall back to it; peers never learn its uuid, so replicated edit
+// messages (verts/meshgeo/lock) NO-OP on their side.
+/** @type {any} */ let editProxy = null;
+/** @param {any} object the live proxy mesh, or null to clear */
+export function registerEditProxy(object) {
+	editProxy = object;
+}
+/** objectsGroup lookup that also finds the registered edit proxy @param {string} uuid */
+export function lookupEditable(uuid) {
+	const found = get(objectsGroup)?.getObjectByProperty('uuid', uuid) ?? null;
+	if (found) return found;
+	return editProxy && editProxy.uuid === uuid ? editProxy : null;
+}
+
+/**
  * Read a geometry into triangles [[Vector3,Vector3,Vector3], ...] (index
  * expanded). @param {any} geometry
  */
@@ -292,8 +349,7 @@ export function stretchPositions(positions, axis, factor) {
  * @param {string} uuid @param {number[]} positions
  */
 export function applyMeshGeo(uuid, positions) {
-	const group = get(objectsGroup);
-	const object = group?.getObjectByProperty('uuid', uuid);
+	const object = lookupEditable(uuid); // A8: also finds the collider-edit proxy
 	if (!object) return;
 	// positions arrive as a plain array (history replays), an ArrayBuffer (the
 	// wire format) or a typed-array VIEW (binarypack may deliver a view into a
@@ -540,8 +596,7 @@ export function currentFaces() {
 /** @param {string} uuid */
 export function enterFaceEdit(uuid) {
 	if (get(faceEditObject)) exitFaceEdit();
-	const group = get(objectsGroup);
-	const object = group?.getObjectByProperty('uuid', uuid);
+	const object = lookupEditable(uuid); // A8: also accepts the collider proxy
 	if (!object || !object.geometry?.attributes?.position) {
 		// D7: a multi-mesh GROUP blocks face editing — say how to unblock it
 		if (object?.type === 'Group')

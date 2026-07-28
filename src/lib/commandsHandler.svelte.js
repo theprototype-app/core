@@ -6,7 +6,7 @@ import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte
 import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
 import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
-import { physicsPeerDisconnected } from '$lib/physics'
+import { physicsPeerDisconnected, physicsShapeChanged } from '$lib/physics'
 import { dropPeerCursor } from '$lib/nodesHandler'
 import { dropPeerQuality } from '$lib/networkQuality'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
@@ -363,6 +363,8 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.physics) mesh.userData.physics = data.physics;
             else delete mesh.userData.physics;
+            objectsGroup.update((value) => value); // collider viz re-syncs
+            physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
         }
     } else if (data.parameter == 'particles') {
         // PFX-A: userData.particles is the emitter config (Inspector/menus set

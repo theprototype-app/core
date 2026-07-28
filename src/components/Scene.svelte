@@ -30,6 +30,7 @@
 	import { setParticleRoot } from '$lib/particleRuntime';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
+	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
@@ -257,6 +258,7 @@
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		updateLightHelpers();
+		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);
 	});
 
@@ -353,6 +355,7 @@
 
 	onMount(() => {
 		startLightHelpers();
+		startColliderHelpers();
 		startEditorNavigation();
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {

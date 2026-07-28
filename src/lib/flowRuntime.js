@@ -567,6 +567,32 @@ export function fireObjectImpact(uuid, strength) {
 	});
 }
 
+/**
+ * CL-A A3: the physics INITIATOR saw a sensor pair start/stop intersecting —
+ * pulse the matching On Enter / On Exit nodes targeting `uuid`. Physics fires
+ * this once per DIRECTION of the pair (uuid/otherUuid swapped), so matching
+ * only on `uuid` covers both sides without double-pulsing. Same replicated-
+ * stamp semantics as onimpact; no-op while no such nodes exist (CL-C adds
+ * the node types). @param {string} type @param {string} uuid @param {string} otherUuid
+ */
+function fireSensorEdge(type, uuid, otherUuid) {
+	nodes.forEach((node) => {
+		if (node.type !== type) return;
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+			applyNodeTrigger(node.id, syncedNow(), true);
+	});
+}
+
+/** Something entered a sensor (or a sensor entered something). @param {string} uuid @param {string} otherUuid */
+export function fireObjectEnter(uuid, otherUuid) {
+	fireSensorEdge('onenter', uuid, otherUuid);
+}
+
+/** A sensor overlap ended. @param {string} uuid @param {string} otherUuid */
+export function fireObjectExit(uuid, otherUuid) {
+	fireSensorEdge('onexit', uuid, otherUuid);
+}
+
 /** @param {any} object @param {any} base @param {any} anim @param {number} time @param {any} ctx */
 function applyAnimation(object, base, anim, time, ctx) {
 	const data = resolveInputs(anim, nodes, edges, time, ctx);

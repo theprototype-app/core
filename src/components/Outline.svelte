@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { objectsGroup, selectedObject, lockedObjects, viewMode } from '../stores/sceneStore.js';
+	import { showToast } from '../stores/appStore.js';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
 	import {
@@ -59,9 +60,27 @@
 		composer.setSize($size.width, $size.height);
 		aoPass.setSize(Math.round($size.width * dpr), Math.round($size.height * dpr));
 	});
+	// three r185 + Chromium <=150 (ANGLE D3D11): any shader program FIRST COMPILED
+	// while the N8AO pass is enabled links broken — meshes created after boot render
+	// invisible (outline only), and with AO on from boot the whole scene is black.
+	// Chromium 151+ fixed it. AO is therefore gated OFF on affected engines (lights/
+	// shadows/outlines all keep working); it comes back with a browser update.
+	const chromiumMajor = Number(
+		(typeof navigator !== 'undefined' && navigator.userAgent.match(/Chrom(?:e|ium)\/(\d+)/)?.[1]) ?? 0
+	);
+	const aoSupported = chromiumMajor === 0 || chromiumMajor >= 151;
+	// belt-and-braces for unknown engines: AO also skips the first composer frames
+	// (the boot-compile window is where the breakage bites hardest)
+	let aoWarm = $state(false);
+	let warmupFrames = 0;
+	let aoGateToasted = false;
 	// AO on/off + quality follow the local prefs (one perf knob = shadowQuality)
 	$effect(() => {
-		aoPass.enabled = $viewMode === 'shaded-ao';
+		aoPass.enabled = aoSupported && aoWarm && $viewMode === 'shaded-ao';
+		if (!aoSupported && $viewMode === 'shaded-ao' && !aoGateToasted) {
+			aoGateToasted = true;
+			showToast('Ambient occlusion is off — this browser version (Chromium ' + chromiumMajor + ') has a rendering bug with it. It returns after a browser update.');
+		}
 		const q = $shadowQuality;
 		aoPass.configuration.halfRes = q === 'low' || q === 'medium' || q === 'off';
 		if (aoPass.setQualityMode)
@@ -82,7 +101,10 @@
 			// viewport). Render the scene DIRECTLY through the XR cameras while presenting;
 			// the composer (AO/outline) takes over again on the desktop.
 			if (renderer.xr.isPresenting) renderer.render(scene, camera.current);
-			else composer.render(delta);
+			else {
+				composer.render(delta);
+				if (!aoWarm && ++warmupFrames > 10) aoWarm = true;
+			}
 		},
 		{ stage: renderStage, autoInvalidate: false }
 	);

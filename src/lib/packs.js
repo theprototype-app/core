@@ -145,7 +145,11 @@ export async function loadPacks() {
 			/* offline / no packs bundled — imported packs still work */
 		}
 	}
-	packs.set([...defaults, ...getInstalled()]);
+	// RP: an INSTALLED zip pack shadows its default-list row (same name) — without
+	// this, installing audio-essentials listed the pack twice after a reload
+	const installed = getInstalled();
+	const installedNames = new Set(installed.map((/** @type {any} */ p) => p.name));
+	packs.set([...defaults.filter((/** @type {any} */ d) => !installedNames.has(d.name)), ...installed]);
 }
 
 /** Ordered thumbnail URL candidates for a default-pack item. An ABSOLUTE
@@ -180,6 +184,10 @@ export async function loadPackItems(pack) {
 	if (pack.source === 'imported') {
 		// imported packs already hold real Explorer item ids
 		items = (pack.items || []).map((/** @type {any} */ it) => ({ ...it, packName: pack.name, imported: true }));
+	} else if (!pack.listUrl) {
+		// RP: a zip-only default pack has no browsable list — the Explorer's open
+		// view offers the install instead (don't fetch(''), which grabs the page)
+		items = [];
 	} else {
 		let raw = [];
 		try {

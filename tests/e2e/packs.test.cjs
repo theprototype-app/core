@@ -16,7 +16,8 @@ h.run(async () => {
 			return route.fulfill({
 				json: [
 					{ name: 'mockpack', title: 'Mock Pack', value: 'mockpack/default.json', attribution: 'mockpack/attribution.html', license: 'CC0-1.0', source: 'https://github.com/theprototype-app/packs' },
-					{ name: 'mock-remote', title: 'Mock Remote', value: 'mock-remote/index.json', license: 'CC-BY-4.0', source: 'https://github.com/KhronosGroup/glTF-Sample-Assets' }
+					{ name: 'mock-remote', title: 'Mock Remote', value: 'mock-remote/index.json', license: 'CC-BY-4.0', source: 'https://github.com/KhronosGroup/glTF-Sample-Assets' },
+					{ name: 'mock-audio', title: 'Mock Audio', zip: '/mock-audio/pack.zip', license: 'CC0-1.0' }
 				]
 			});
 		if (url.includes('mock-remote/index.json'))
@@ -90,6 +91,13 @@ h.run(async () => {
 		'pack Properties shows the Source button with the repo link'
 	);
 	h.check((await srcBtn.innerText()).includes('theprototype-app/packs'), 'Source button is labelled with the repo slug');
+
+	// RP: a zip-only pack (audio-essentials shape) is LISTED and its open view is
+	// an install prompt, not an empty grid
+	h.check((await A.page.locator('#explorer-list [data-pack="mock-audio"]').count()) === 1, 'zip-only pack is listed in the tree');
+	await A.page.locator('#explorer-list [data-pack="mock-audio"]').click();
+	await A.page.waitForTimeout(500);
+	h.check(await A.page.locator('#pack-install').isVisible(), 'opening a zip-only pack shows the Install card');
 
 	// offline fallback: CDN unreachable -> the bundled starter list loads
 	await A.page.unroute('**/cdn.jsdelivr.net/**');

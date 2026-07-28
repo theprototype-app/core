@@ -36,6 +36,8 @@ h.run(async () => {
 
 	// 125 made the object-search entry opt-in; enable it so the menu shows it
 	await A.page.evaluate(() => window.__stores.objectSearchEnabled.set(true));
+	// Shift+A quick add is opt-in too (Settings, default off)
+	await A.page.evaluate(() => window.__stores.enableShiftAdd.set(true));
 
 	// right-click TAP on empty viewport opens the merged menu
 	await rightTap(A.page, 700, 400);

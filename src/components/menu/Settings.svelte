@@ -4,7 +4,7 @@
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd } from '../../stores/appStore.js';
 	import { drawerSlot } from '$lib/cloudHooks';
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
@@ -653,6 +653,11 @@
 					<SettingRow name="Object search in menu">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$objectSearchEnabled} /></svelte:fragment>
 						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
+					</SettingRow>
+					<SettingRow name="Shift+A quick add">
+						<svelte:fragment slot="control"><Toggle bind:checked={$enableShiftAdd} /></svelte:fragment>
+						Pressing Shift+A opens the Add menu at the cursor and spawns the picked object
+						under it. Off by default — Shift also strafes the camera in fly mode
 					</SettingRow>
 					<SettingRow name="Toasts in drawer only">
 						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>

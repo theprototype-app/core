@@ -138,9 +138,11 @@ export const shortcuts = [
 	{
 		keys: 'Shift+A',
 		group: 'Objects',
-		label: 'Add object at the cursor',
+		label: 'Add object at the cursor (enable in Settings)',
 		action: () =>
-			import('../stores/appStore').then(({ addMenu, addMenuOpener }) => {
+			import('../stores/appStore').then(({ addMenu, addMenuOpener, enableShiftAdd }) => {
+				// opt-in (Settings ▸ "Shift+A quick add", default off)
+				if (!get(enableShiftAdd)) return;
 				// Scene anchors the popover to the cursor and spawns under it (same
 				// point resolution as the right-click Add menu). It declines when the
 				// pointer has never moved, or in VR / play / spectator mode — then fall

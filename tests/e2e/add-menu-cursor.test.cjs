@@ -43,6 +43,15 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const vp = A.page.viewportSize();
 
+	// Shift+A is OPT-IN (Settings "Shift+A quick add", default off): first prove
+	// the default is inert, then enable it for the rest of the suite
+	await A.page.mouse.move(400, 300);
+	await A.page.waitForTimeout(120);
+	await A.page.keyboard.press('Shift+KeyA');
+	await A.page.waitForTimeout(400);
+	h.check((await A.page.locator('#add-search-box').count()) === 0, 'Shift+A is inert by default');
+	await A.page.evaluate(() => window.__stores.enableShiftAdd.set(true));
+
 	// --- opens at the cursor ---------------------------------------------------
 	await openAt(A.page, 500, 300);
 	let r = await boxRect(A.page);

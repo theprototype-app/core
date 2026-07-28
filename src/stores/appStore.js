@@ -246,6 +246,16 @@ enable3dPreview.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('enable3dPreview', String(on));
 });
 
+// Shift+A quick-add (the cursor-anchored Add popover). Opt-in, persisted; OFF by
+// default — Shift is a camera-strafe modifier in fly mode, so the shortcut only
+// exists for users who ask for it in Settings.
+export const enableShiftAdd = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('enableShiftAdd') === 'true'
+);
+enableShiftAdd.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('enableShiftAdd', String(on));
+});
+
 // E1 (roadmap #13): notification center — a persisted history of everything that
 // flashed as a toast, so a message missed (or dismissed while a modal was open) is
 // still recoverable. The bell + panel live in NotificationCenter.svelte.

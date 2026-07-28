@@ -591,6 +591,25 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-07-28): **v1.0.0 RELEASED** (PR #56 merge-commit → `npm version 1.0.0`
+  → tag-triggered release.yml → github.com/theprototype-app/core/releases/tag/v1.0.0;
+  cloud deployed w/ `CORE_REF=v1.0.0`). The release batch shipped: **RP** packs
+  off-bundle (github.com/theprototype-app/packs @v1 via jsDelivr — default/
+  cube_diorama/khronos-upstream-index/audio-essentials 23 CC0 sounds; bundled
+  starter in static/library; zip packs get an in-view Install card + their own
+  library folder; installed shadows default row) · **RV V2-V8** (About version +
+  setPluginInfo/compatibleHooks fail-closed gate, peer app-version warn once/session,
+  SESSION_FORMAT/MODULE_FORMAT confirm gates + ConfirmModal, release.yml +
+  RELEASING.md, V8 static/version.json poll → one reload toast/session) · deps
+  safe-bump (svelte 5.56.8/kit 2.70/vite 5.4.21/playwright 1.62 — frozen majors
+  have planned migrations, see Deps policy) · fixes (Import button, whats-new
+  footer + welcome-on-start badge, sculpt-gizmo suppression + toolbar toggle,
+  Shift+A opt-in default OFF, keyed toast each). svelte-check baseline **476/62**.
+  KNOWN pre-existing e2e failures in the localhost env (identical pre/post deps
+  bump): drag-drop-simulation cluster (explorer-drop/explorer/packs-drop) +
+  user-modules, open-core-m1 (1 check), dock-sidebar-inset, layout, node-search,
+  panels, script-nodes + a few two-peer timing suites. NEXT: deps migrations
+  post-1.0 (cloud plans-core/pending/deps-migrations-post-1.0.md, Part A first).
 - Status (2026-07-26): **Mobile/responsive UI polish — branch
   `fix/ui-polish-connect-settings` (off main, NOT PR'd yet).** A large ad-hoc pass, not a
   numbered roadmap batch. Landmarks: **Connect docking** — the centred pill MEASURES

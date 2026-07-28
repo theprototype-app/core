@@ -164,9 +164,21 @@ drops the P2P session.
   (`new Float32Array(arr).buffer`) and normalize on receive (meshgeo/terrain do this).
   If a big payload "never arrives" in a test, suspect this before the network.
 - Pre-existing flakes (reproduce on a clean base — don't chase them into your diff):
-  add-menu search-Enter, sound-node Play overlap, connect-overlay querySelector,
-  scene-music byte-push timing. To PROVE a failure is pre-existing:
+  add-menu search-Enter + right-tap, sound-node Play overlap, connect-overlay
+  querySelector, scene-music byte-push timing. To PROVE a failure is pre-existing:
   `git stash push -u`, run the suite on HEAD, `git stash pop`.
+- KNOWN failing suites in the localhost env (2026-07-28, proven identical across a
+  full old-deps/new-deps baseline comparison — treat as the dirty baseline, not
+  regressions): the drag-drop-SIMULATION cluster (explorer-drop, explorer,
+  packs-drop) + user-modules (setup crash), open-core-m1 (1 drawer check),
+  dock-sidebar-inset, layout, node-search, panels, script-nodes, and a few
+  two-peer timing suites (module-sdk, scene-music, physics-kinematic,
+  physics-discoverability, roadmap-13-notifications-notes, scene-assets,
+  view-mode, vr-passthrough).
+- Long full-suite runs: the Bash tool caps at 10 min — launch the runner DETACHED
+  (PowerShell `Start-Process node -ArgumentList 'tests\e2e\run.cjs ...'` with
+  output redirects) and poll/Monitor the log. A dev server started via the Bash
+  tool DIES with the session — start it detached the same way.
 - Phase-comparison asserts between two peers: two sequential evaluates skew ~150ms —
   tolerances ≥0.6 for fast oscillations, or compare Promise.all-sampled values.
 - Overlays intercept clicks (properties drawer covers right ~320px; modals block all;
@@ -246,8 +258,9 @@ drops the P2P session.
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-07-19 = **501 errors / 77 warnings** (drifts down as flowbite/typed
-  code is removed — hold whatever it currently is; add no NEW). Note: in the big
+  baseline 2026-07-28 = **476 errors / 62 warnings** (drifts down as flowbite/typed
+  code is removed — hold whatever it currently is; add no NEW; the release.yml gate
+  hardcodes the numbers — update it when the baseline moves). Note: in the big
   JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —
   give the param a default (`slot = 0`) to force the type, and prefer explicit locals
   over dynamic string-indexing of a typed object (both tripped the baseline in N5). Runes-mode `.svelte` files

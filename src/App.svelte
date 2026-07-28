@@ -133,7 +133,7 @@
         import('./lib/dungeonPlay'),
         import('./lib/sceneAssets'),
         import('three'),
-        import('three/examples/jsm/exporters/GLTFExporter.js'),
+        import('three/addons/exporters/GLTFExporter.js'),
         import('./lib/snapping'),
         import('./lib/flowSockets'),
         import('./lib/networkQuality'),

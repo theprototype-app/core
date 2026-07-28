@@ -40,13 +40,21 @@
 		return v == null ? d : v !== 'false'
 	}
 
+	// deliberate one-time prop reads: `key` is static per window and the Default*
+	// props only seed first-run state (persisted to localStorage afterwards)
+	// svelte-ignore state_referenced_locally
 	let primaryOpen = $state(readBool(`ws:${key}:primaryOpen`, primaryDefaultOpen))
+	// svelte-ignore state_referenced_locally
 	let secondaryOpen = $state(readBool(`ws:${key}:secondaryOpen`, secondaryDefaultOpen))
+	// svelte-ignore state_referenced_locally
 	let secondaryMode = $state(LS?.getItem(`ws:${key}:secondaryMode`) ?? secondaryModes[0]?.key ?? 'settings')
 	// PINNED = the user opened this panel via its tab (stays put); an auto-open via
 	// showSecondary() is transient and the consumer may close it (e.g. on deselect)
+	// svelte-ignore state_referenced_locally
 	let secondaryPinned = $state(LS?.getItem(`ws:${key}:secondaryPinned`) === 'true')
+	// svelte-ignore state_referenced_locally
 	let side = $state<'left' | 'right'>(LS?.getItem(`ws:${key}:side`) === 'right' ? 'right' : 'left')
+	// svelte-ignore state_referenced_locally
 	let primaryWidth = $state(Number(LS?.getItem(`ws:${key}:primaryWidth`)) || primaryDefaultWidth)
 
 	// the secondary always sits on the opposite edge from the primary (179)

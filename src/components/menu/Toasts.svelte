@@ -131,7 +131,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 {#if $loadingcount > 0}
 <Toast  dismissable={false} transition={fly} bind:toastStatus>
 	<div class="mb-1 text-base font-medium text-green-700 dark:text-green-500">Receiving objects: {($loadingcount-$loading.length)}/{$loadingcount}</div>
-	<Progressbar progress="{100 * (($loadingcount-$loading.length) - 0) / ($loadingcount - 0)}" color="green" />
+	<Progressbar progress={100 * (($loadingcount-$loading.length) - 0) / ($loadingcount - 0)} color="green" />
 </Toast>
 {/if}
 {/if}
@@ -270,7 +270,10 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 {#if $toastStore.length > MAX_TOASTS}
 <div class="my-1 text-center text-xs text-gray-400">+{$toastStore.length - MAX_TOASTS} more…</div>
 {/if}
-{#each $toastStore.slice(-MAX_TOASTS) as toast}
+<!-- keyed by the entry (dedupe keeps plain strings unique; action toasts are
+     distinct objects): an UNKEYED each reuses rows here, so a neighbour's expiry
+     migrated text across nodes and svelte 5.5x left a stuck duplicate behind -->
+{#each $toastStore.slice(-MAX_TOASTS) as toast (toast)}
 <div class="my-1 tp-toast" transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
     <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => dismiss(toast)}>✕</button>
     <div class="tp-toast-body">

@@ -5,6 +5,8 @@
     let previouslySelectedObject;
     import { getContext } from 'svelte';
     import { Tooltip } from 'flowbite-svelte';
+    // recursive tree — svelte 5 self-import replaces the deprecated <svelte:self>
+    import Objects from './Objects.svelte';
 
     // search/filter from Controls: a store holding the visible-uuid set (null = all)
     const objectFilter = getContext('objectFilter');
@@ -264,7 +266,7 @@
     {#if isExpanded}
     <div class="ml-3 border-l border-gray-600/40 pl-1">
         {#each kids as item (item.uuid)}
-            <svelte:self element={item} />
+            <Objects element={item} />
         {/each}
     </div>
     {/if}

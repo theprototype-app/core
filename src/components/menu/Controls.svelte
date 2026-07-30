@@ -559,10 +559,10 @@
 	<p class={classActive} title="Scale (3)" on:click={() => setTransformMode('scale')}>
 		<i class={'fas fa-expand-arrows-alt ' + (hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF)}></i>
 	</p>
+	<!-- QW (Controls Option A): transparent SPACER reserving the grid cell under the
+	     floating play button — the old filled square peeked out around the circle -->
 	<div class="flex items-center justify-center">
-		<p
-			class={classActive + ' h-10 w-10  bg-primary-600 font-medium dark:focus:ring-primary-800'}
-		></p>
+		<div class="h-10 w-10"></div>
 	</div>
 
 	<p
@@ -610,15 +610,18 @@
 <!-- physics transport (P-A): play / pause / stop / reset, above the chat toggle -->
 <SimControls />
 
+<!-- QW (Controls Option A): white glyph + optical centering (fa-play is left-heavy,
+     nudge right) + a ring in the pill's background color so the FAB punches through
+     the bar cleanly instead of exposing the old square placeholder -->
 <p
-	class={classActive + ' rounded-full bg-primary-600 font-medium dark:focus:ring-primary-800'}
+	class={classActive + ' rounded-full bg-primary-600 font-medium shadow-lg ring-4 ring-white dark:ring-gray-700 dark:focus:ring-primary-800'}
 	style="position: absolute; height: 50px; width: 50px; bottom: 10px; z-index: var(--z-hud);
         display: flex; left: 50%; transform: translate(-50%,0)"
 	on:click={() => {
 		checkPlay();
 	}}
 >
-	<i class="fas fa-play text-black hover:scale-110 dark:text-slate-200" style="font-size: 25px;"
+	<i class="fas fa-play text-white hover:scale-110" style="font-size: 25px; margin-left: 3px;"
 	></i>
 </p>
 

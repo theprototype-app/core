@@ -5,6 +5,17 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.0.1 — Going public 🌍
+
+The engine is now open source (MIT): [github.com/theprototype-app/core](https://github.com/theprototype-app/core).
+Star it, fork it, break it — bug reports and modules welcome.
+
+- 📜 **Community files** — a contributing guide, code of conduct and security
+  policy now ship with the repo.
+- 🤖 **Agent-ready docs** — llms.txt links the public repository, README and
+  module guide, so your coding agent can find its way around.
+- 🏷️ Package metadata cleanup (name, license, repository).
+
 ## 1.0.0 — First release 🎉
 
 The first tagged release. Everything below is in the box.

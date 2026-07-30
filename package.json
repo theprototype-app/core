@@ -1,6 +1,11 @@
 {
-	"name": "theprototype.io",
-	"version": "1.0.0",
+	"name": "theprototype.app",
+	"version": "1.0.1",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/theprototype-app/core.git"
+	},
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",

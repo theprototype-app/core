@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Archive, BookOpen, FileInput, FolderOpen, Puzzle, Save, Settings, SlidersHorizontal, Trash2 } from '@lucide/svelte';
 	import '../../app.css';
 	import '../../styles/menu.css';
 	import { tick } from 'svelte';
@@ -137,13 +138,13 @@
 
 		<!-- Files -->
 		<button class="side-row" onclick={() => pickFile('import-file')}>
-			<span class="side-ico">📩</span><span class="flex-1 whitespace-nowrap">Import</span>
+			<span class="side-ico"><FileInput size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Import</span>
 		</button>
 		<button class="side-row" onclick={() => pickFile('load-file')}>
-			<span class="side-ico">📁</span><span class="flex-1 whitespace-nowrap">Load</span>
+			<span class="side-ico"><FolderOpen size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Load</span>
 		</button>
 		<button class="side-row" onclick={() => save(saveFormat)}>
-			<span class="side-ico">💾</span><span class="flex-1 whitespace-nowrap">Save</span>
+			<span class="side-ico"><Save size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save</span>
 		</button>
 		<div class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
 			<button class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" onclick={() => pickFormat('gltf')}>GLTF</button>
@@ -151,34 +152,34 @@
 			{#if showJson}
 				<button class="side-seg {saveFormat === 'json' ? 'on' : ''}" onclick={() => pickFormat('json')}>JSON</button>
 			{/if}
-			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}>⚙</button>
+			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}><Settings size={16} aria-hidden="true" /></button>
 		</div>
 
 		<div class="side-div"></div>
 
 		<!-- Scene -->
 		<button class="side-row" onclick={() => showSidebar('scene')}>
-			<span class="side-ico">🎛️</span>
+			<span class="side-ico"><SlidersHorizontal size={16} aria-hidden="true" /></span>
 			<span class="flex-1 whitespace-nowrap">{!$inspectorClose && $inspectorKind === 'scene' ? '● ' : ''}Configure Scene</span>
 		</button>
 		<button class="side-row" onclick={clearScene}>
-			<span class="side-ico">🗑️</span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
+			<span class="side-ico"><Trash2 size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
 		</button>
 		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico">🧩</span><span class="flex-1 whitespace-nowrap">Modules</span>
+			<span class="side-ico"><Puzzle size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Modules</span>
 		</button>
 		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico">🗂️</span><span class="flex-1 whitespace-nowrap">Sessions</span>
+			<span class="side-ico"><Archive size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
 		</button>
 
 		<div class="side-div"></div>
 
 		<!-- App -->
 		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
-			<span class="side-ico">⚙️</span><span class="flex-1 whitespace-nowrap">Settings</span>
+			<span class="side-ico"><Settings size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>
 		</button>
 		<button class="side-row" onclick={() => window.open('https://docs.theprototype.app', '_blank')}>
-			<span class="side-ico">📖</span><span class="flex-1 whitespace-nowrap">Docs</span>
+			<span class="side-ico"><BookOpen size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Docs</span>
 		</button>
 		<!-- the unseen cue is a CLASS toggle, not an {#if}: clicking this row closes the
 		     menu, and destroying a nested branch inside the subtree being destroyed in

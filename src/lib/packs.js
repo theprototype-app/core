@@ -24,9 +24,16 @@ const INSTALLED_KEY = 'installedPacks';
 export const packs = writable([]);
 /** items of the currently open pack @type {import('svelte/store').Writable<any[]>} */
 export const openPackItems = writable([]);
+/** true while an UNCACHED pack's item list is fetching — the Explorer grid shows a
+ *  loading state instead of the previous pack's items (first-open stale flash)
+ *  @type {import('svelte/store').Writable<boolean>} */
+export const openPackLoading = writable(false);
 
 /** @type {Record<string, any[]>} per-pack item cache (fetched once on open) */
 const itemCache = {};
+/** stale-response guard: only the LATEST loadPackItems call may publish results
+ *  (switching packs quickly used to let a slow first fetch clobber the new pack) */
+let loadSeq = 0;
 
 /** @returns {any[]} imported packs persisted locally */
 function getInstalled() {
@@ -172,14 +179,21 @@ export function thumbCandidates(pack, item) {
  * Explorer items. @param {any} pack @returns {Promise<any[]>}
  */
 export async function loadPackItems(pack) {
+	const seq = ++loadSeq;
 	if (!pack) {
 		openPackItems.set([]);
+		openPackLoading.set(false);
 		return [];
 	}
 	if (itemCache[pack.name]) {
 		openPackItems.set(itemCache[pack.name]);
+		openPackLoading.set(false);
 		return itemCache[pack.name];
 	}
+	// first open of this pack: clear the PREVIOUS pack's items right away and flag
+	// loading — leaving the old list up during the fetch was the stale-flash bug
+	openPackItems.set([]);
+	openPackLoading.set(true);
 	let items = [];
 	if (pack.source === 'imported') {
 		// imported packs already hold real Explorer item ids
@@ -214,7 +228,11 @@ export async function loadPackItems(pack) {
 			});
 	}
 	itemCache[pack.name] = items;
-	openPackItems.set(items);
+	if (seq === loadSeq) {
+		// still the pack the user is looking at — a newer open supersedes this one
+		openPackItems.set(items);
+		openPackLoading.set(false);
+	}
 	return items;
 }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects } from '../../stores/appStore.js';
@@ -550,14 +551,14 @@
 	classInner="grid-cols-7"
 >
 	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={() => setTransformMode('translate')}>
-		<i class={'fas fa-arrows-alt ' + (hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF)}></i>
+		<Move size={18} class={hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF} aria-hidden="true" />
 	</p>
 	<p class={classActive} title="Rotate (2)" on:click={() => setTransformMode('rotate')}>
-		<i class={'fas fa-rotate-left ' + (hasSel && $transformMode === 'rotate' ? ICON_ON : ICON_OFF)}></i>
+		<RotateCcw size={18} class={hasSel && $transformMode === 'rotate' ? ICON_ON : ICON_OFF} aria-hidden="true" />
 	</p>
 
 	<p class={classActive} title="Scale (3)" on:click={() => setTransformMode('scale')}>
-		<i class={'fas fa-expand-arrows-alt ' + (hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF)}></i>
+		<Maximize2 size={18} class={hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF} aria-hidden="true" />
 	</p>
 	<!-- QW (Controls Option A): transparent SPACER reserving the grid cell under the
 	     floating play button — the old filled square peeked out around the circle.
@@ -578,14 +579,14 @@
 		title="Object list (O)"
 		on:click={toggleObjectList}
 	>
-		<i class={'fas fa-list-ul ' + (!$objectListClose ? ICON_ON : ICON_OFF)}></i>
+		<List size={18} class={!$objectListClose ? ICON_ON : ICON_OFF} aria-hidden="true" />
 	</p>
 	<p
 		class={classActive}
 		title="Node editor (N)"
 		on:click={toggleFlow}
 	>
-		<i class={'fas fa-circle-nodes ' + (flowShown ? ICON_ON : ICON_OFF)}></i>
+		<Workflow size={18} class={flowShown ? ICON_ON : ICON_OFF} aria-hidden="true" />
 	</p>
 	<p
 		class={classActive + ' rounded-r-full'}
@@ -593,7 +594,7 @@
 		title="Explorer"
 		on:click={toggleExplorer}
 	>
-		<i class={'fas fa-folder-open ' + (explorerShown ? ICON_ON : ICON_OFF)}></i>
+		<FolderOpen size={18} class={explorerShown ? ICON_ON : ICON_OFF} aria-hidden="true" />
 	</p>
 </BottomNav>
 
@@ -605,7 +606,7 @@
 	title="Chat (C)"
 	on:click={() => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')}
 >
-	<i class="fas fa-message text-white"></i>
+	<MessageSquare size={16} class="text-white" aria-hidden="true" />
 </button>
 
 <!-- mobile "+" (bottom-left): opens the same create/context menu as a right-click
@@ -618,13 +619,14 @@
 <!-- physics transport (P-A): play / pause / stop / reset, above the chat toggle -->
 <SimControls />
 
-<!-- QW (Controls Option A): white glyph + optical centering (fa-play is left-heavy,
-     nudge right); the WHOLE button scales on hover anywhere on it (the centering
-     translate moved from inline style to a tailwind class so the two transforms
-     compose instead of fighting). clip-path circles the HIT AREA too: the 50px
-     square box used to intercept clicks/hovers meant for the Scale / Object-list
-     cells it overlaps. -->
+<!-- QW (Controls Option A): the WHOLE button scales on hover anywhere on it (the
+     centering translate lives in a tailwind class so the two transforms compose
+     instead of fighting). clip-path circles the HIT AREA too: the 50px square box
+     used to intercept clicks/hovers meant for the Scale / Object-list cells it
+     overlaps. fill=currentColor keeps the play triangle SOLID (lucide is
+     stroke-only by default); the 2px nudge is the classic optical centering. -->
 <p
+	id="play-button"
 	class={classActive + ' -translate-x-1/2 rounded-full bg-primary-600 font-medium transition-transform duration-100 hover:scale-110 dark:focus:ring-primary-800'}
 	style="position: absolute; height: 50px; width: 50px; bottom: 10px; z-index: var(--z-hud);
         display: flex; left: 50%; clip-path: circle(50%)"
@@ -632,7 +634,7 @@
 		checkPlay();
 	}}
 >
-	<i class="fas fa-play text-white" style="font-size: 25px; margin-left: 3px;"></i>
+	<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
 </p>
 
 <div class="hidden" id="vrButton">
@@ -793,7 +795,7 @@
 							>
 								{expandedSystem[row.name] ? '−' : '+'}
 							</button>
-							<i class="fa-solid fa-gears text-gray-400" title="System object"></i>
+							<Cog size={16} class="text-gray-400" aria-hidden="true" title="System object" />
 							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed by a module / the environment">
 								{row.name}
 							</span>
@@ -801,15 +803,15 @@
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Ping it for everyone"
-								on:click={() => pingObject(row.object)}><i class="fa-solid fa-thumbtack"></i></button>
+								on:click={() => pingObject(row.object)}><Pin size={16} aria-hidden="true" /></button>
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Pin a synced note to it"
-								on:click={() => addAnnotation(row.object.uuid)}><i class="fa-solid fa-pen-to-square"></i></button>
+								on:click={() => addAnnotation(row.object.uuid)}><SquarePen size={16} aria-hidden="true" /></button>
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"
-								on:click={() => focusSystemObject(row.object)}><i class="fa-solid fa-eye"></i></button>
+								on:click={() => focusSystemObject(row.object)}><Eye size={16} aria-hidden="true" /></button>
 						</div>
 						{#if expandedSystem[row.name]}
 							{#each row.children as childName}
@@ -839,7 +841,7 @@
 				{#each envRows as row (row.name)}
 					<div class="border-b border-gray-600/40 px-2 py-1 text-sm text-gray-800 dark:text-gray-200">
 						<div class="flex items-center gap-2">
-							<i class="fa-regular fa-sun w-4 text-center text-yellow-300/80" title="Environment light"></i>
+							<Sun size={16} class="w-4 text-center text-yellow-300/80" aria-hidden="true" title="Environment light" />
 							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed from Scene settings">
 								{row.name}
 							</span>
@@ -847,11 +849,11 @@
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Ping it for everyone"
-								on:click={() => pingObject(row.object)}><i class="fa-solid fa-thumbtack"></i></button>
+								on:click={() => pingObject(row.object)}><Pin size={16} aria-hidden="true" /></button>
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"
-								on:click={() => focusSystemObject(row.object)}><i class="fa-solid fa-eye"></i></button>
+								on:click={() => focusSystemObject(row.object)}><Eye size={16} aria-hidden="true" /></button>
 						</div>
 					</div>
 				{/each}

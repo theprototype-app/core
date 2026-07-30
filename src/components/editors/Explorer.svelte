@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, House, LoaderCircle, PackageOpen } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
 	// cascade delete, resizable), thumbnail grid on the right (subfolder cards
@@ -359,13 +361,13 @@
 		}
 	}
 
-	// B-sweep: Font Awesome classes (the app's icon language) instead of color emoji
+	// icon-system: lucide kebab names, rendered through ui/Icon.svelte (data-driven)
 	const KIND_ICONS: Record<string, string> = {
-		image: 'fa-image',
-		audio: 'fa-music',
-		text: 'fa-file-lines',
-		object: 'fa-cube',
-		prefab: 'fa-cubes'
+		image: 'image',
+		audio: 'music',
+		text: 'file-text',
+		object: 'box',
+		prefab: 'boxes'
 	};
 
 	// folders as a flat indented tree, respecting expansion (106.6)
@@ -999,7 +1001,7 @@
 				ondragover={(e) => dragOverInto(e, 'root')}
 				ondragleave={() => (dropFolder = null)}
 				ondrop={(e) => dropInto(e, null)}
-				onclick={() => openFolder(null)}><i class="fa-solid fa-house mr-1.5 w-4 text-center text-gray-400"></i>Library</button
+				onclick={() => openFolder(null)}><House size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Library</button
 			>
 			{#if editing?.mode === 'create' && editing.parentId === null}
 				{@render editRow(0)}
@@ -1036,7 +1038,7 @@
 							onclick={() => openFolder(row.folder.id)}
 							ondblclick={() => toggleExpand(row.folder.id)}
 						>
-							<i class="fa-solid fa-folder mr-1.5 w-4 text-center text-gray-400"></i>{row.folder.name}
+							<Folder size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />{row.folder.name}
 						</button>
 					</div>
 				{/if}
@@ -1058,7 +1060,7 @@
 					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
 						? 'bg-primary-700 text-white'
 						: 'text-gray-300 hover:bg-gray-700'}"
-					onclick={() => openFolder('prefabs')}><i class="fa-solid fa-cubes mr-1.5 w-4 text-center text-gray-400"></i>Prefabs</button
+					onclick={() => openFolder('prefabs')}><Boxes size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Prefabs</button
 				>
 				<button
 					id="packs-folder"
@@ -1066,7 +1068,7 @@
 						? 'bg-primary-700 text-white'
 						: 'text-gray-300 hover:bg-gray-700'}"
 					title="Asset packs — click to list them, double-click to expand the tree"
-					onclick={() => openFolder('packs')} ondblclick={togglePacks}><i class="fa-solid fa-box-open mr-1.5 w-4 text-center text-gray-400"></i>Packs {packsExpanded ? '▾' : '▸'}</button
+					onclick={() => openFolder('packs')} ondblclick={togglePacks}><PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Packs {packsExpanded ? '▾' : '▸'}</button
 				>
 				{#if packsExpanded}
 					{#each shownPacks as pack (pack.name)}
@@ -1080,7 +1082,7 @@
 							oncontextmenu={(e) => packRowMenu(e, pack)}
 							onclick={() => openFolder('pack:' + pack.name)}
 						>
-							<i class="fa-solid fa-box-open mr-1.5 w-4 text-center text-gray-500"></i>{pack.title}
+							<PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{pack.title}
 						</button>
 					{/each}
 					{#if shownPacks.length === 0}
@@ -1093,7 +1095,7 @@
 						? 'bg-primary-700 text-white'
 						: 'text-gray-300 hover:bg-gray-700'}"
 					title="Assets the shared scene uses right now — identical on every peer"
-					onclick={() => openFolder('scene')} ondblclick={toggleScene}><i class="fa-solid fa-globe mr-1.5 w-4 text-center text-gray-400"></i>Scene {sceneExpanded ? '▾' : '▸'}</button
+					onclick={() => openFolder('scene')} ondblclick={toggleScene}><Globe size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
 				>
 				{#if sceneExpanded}
 				{#each ['audio', 'config', 'textures'] as sub}
@@ -1104,7 +1106,7 @@
 						style="padding-left: 22px"
 						onclick={() => openFolder('scene:' + sub)}
 					>
-						<i class="fa-solid fa-folder mr-1.5 w-4 text-center text-gray-500"></i>{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
+						<Folder size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
 					</button>
 				{/each}
 				{/if}
@@ -1129,20 +1131,20 @@
 					<!-- QW: first open of a pack fetches its item list from the CDN — show a
 					     real loading state instead of "no items" (or the stale previous list) -->
 					<div id="pack-loading" class="flex items-center justify-center gap-2 p-6 text-xs text-gray-400">
-						<i class="fas fa-spinner fa-spin"></i> Loading pack contents…
+						<LoaderCircle size={16} class="animate-spin" aria-hidden="true" /> Loading pack contents…
 					</div>
 				{:else if openPack && openPack.source === 'default' && openPack.zip}
 					<!-- RP: a zip-only pack (audio-essentials) has no browsable item list —
 					     its open view IS the install prompt (right-click-only was undiscoverable) -->
 					<div class="flex flex-col items-center gap-2 p-6 text-center">
-						<span class="text-4xl text-gray-300"><i class="fa-solid fa-gift"></i></span>
+						<span class="text-4xl text-gray-300"><Gift size={16} aria-hidden="true" /></span>
 						<span class="text-sm text-gray-300">"{openPack.title}" installs into your local library.</span>
 						<button
 							id="pack-install"
 							class="rounded bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-500 disabled:opacity-50"
 							disabled={installingPack}
 							onclick={() => installZipPack(openPack)}
-						><i class="fa-solid fa-download mr-1"></i>{installingPack ? 'Installing…' : `Install ${openPack.title}`}</button>
+						><Download size={16} class="mr-1" aria-hidden="true" />{installingPack ? 'Installing…' : `Install ${openPack.title}`}</button>
 					</div>
 				{:else}
 				<p class="p-4 text-center text-xs italic text-gray-500">
@@ -1178,7 +1180,7 @@
 								ondblclick={() => openFolder(folder.id)}
 								onkeydown={(e) => e.key === 'Enter' && openFolder(folder.id)}
 							>
-								<span class="flex h-14 w-14 items-center justify-center text-3xl text-gray-400"><i class="fa-solid fa-folder"></i></span>
+								<span class="flex h-14 w-14 items-center justify-center text-3xl text-gray-400"><Folder size={16} aria-hidden="true" /></span>
 								{#if editing?.mode === 'rename' && editing.inGrid && editing.folderId === folder.id}
 									{@render cardEdit()}
 								{:else}
@@ -1217,13 +1219,13 @@
 										class="h-14 w-14 rounded object-cover"
 									/>
 								{:else}
-									<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-2xl text-gray-400"><i class={'fa-solid ' + (KIND_ICONS[item.kind] ?? 'fa-box')}></i></span>
+									<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-gray-400"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} /></span>
 								{/if}
 							{:else if item.thumbnail}
 								<img src={item.thumbnail} alt={item.name} class="h-14 w-14 rounded object-cover" />
 							{:else}
-								<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-2xl">
-									<i class={'fa-solid ' + (KIND_ICONS[item.kind] ?? 'fa-box') + ' text-gray-400'}></i>
+								<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-gray-400">
+									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
 								</span>
 							{/if}
 							{#if editing?.mode === 'rename-item' && editing.itemId === item.id}
@@ -1249,7 +1251,7 @@
 					<!-- N6: pack-level properties + attribution -->
 					<div class="flex flex-col gap-1 border-b border-gray-700/40 pb-2">
 						<div class="flex items-center gap-2">
-							<span class="text-xl text-gray-400"><i class="fa-solid fa-box-open"></i></span>
+							<span class="text-xl text-gray-400"><PackageOpen size={16} aria-hidden="true" /></span>
 							<span class="min-w-0 flex-1 break-words font-semibold">{openPack.title}</span>
 						</div>
 						{#if openPack.license}<div class="text-[11px] text-gray-400">License: {licenseLabel(openPack.license)}</div>{/if}
@@ -1263,7 +1265,7 @@
 								target="_blank"
 								rel="noopener"
 								title="Open the content source"
-							><i class={/github\.com/.test(packSourceUrl(openPack)) ? 'fa-brands fa-github' : 'fa-solid fa-arrow-up-right-from-square'}></i> {packSourceLabel(packSourceUrl(openPack))}</a>
+							><ExternalLink size={14} aria-hidden="true" /> {packSourceLabel(packSourceUrl(openPack))}</a>
 						{/if}
 					</div>
 				{/if}
@@ -1272,8 +1274,8 @@
 						{#if selItem.thumbnail}
 							<img src={selItem.thumbnail} alt="" class="h-12 w-12 rounded object-cover" />
 						{:else}
-							<span class="flex h-12 w-12 items-center justify-center rounded bg-gray-700 text-2xl text-gray-400"
-								><i class={'fa-solid ' + (KIND_ICONS[selItem.kind] ?? 'fa-box')}></i></span
+							<span class="flex h-12 w-12 items-center justify-center rounded bg-gray-700 text-gray-400"
+								><Icon name={KIND_ICONS[selItem.kind] ?? 'package'} size={24} /></span
 							>
 						{/if}
 						<span class="min-w-0 flex-1 break-words font-semibold">{selItem.name}</span>
@@ -1334,7 +1336,7 @@
 				{:else if selected?.kind === 'folder'}
 					{@const counts = folderCounts(selected.folder.id)}
 					<div class="flex items-center gap-2">
-						<span class="text-2xl text-gray-400"><i class="fa-solid fa-folder"></i></span>
+						<span class="text-2xl text-gray-400"><Folder size={16} aria-hidden="true" /></span>
 						<span class="min-w-0 flex-1 break-words font-semibold">{selected.folder.name}</span>
 					</div>
 					<p class="text-gray-400">
@@ -1435,7 +1437,7 @@
 				onpointerup={endResize}
 			></div>
 			<div class="mb-1 flex items-center gap-2">
-				<span class="text-xs font-semibold text-gray-200"><i class="fa-solid fa-folder-tree mr-1"></i>Explorer</span>
+				<span class="text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
 				<input
 					id="explorer-search"
 					class="ui-input w-48 py-0.5"
@@ -1475,7 +1477,7 @@
 			role="region"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-				<span><i class="fa-solid fa-folder-tree mr-1"></i>Explorer</span>
+				<span><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
 				<input
 					class="ui-input w-44 py-0.5 font-normal"
 					placeholder="Search assets…"
@@ -1531,7 +1533,7 @@
 	>
 		{#if packAttribLoading}
 			<div class="flex items-center gap-2 p-4 text-sm text-gray-400">
-				<i class="fas fa-spinner fa-spin"></i> Loading attribution…
+				<LoaderCircle size={16} class="animate-spin" aria-hidden="true" /> Loading attribution…
 			</div>
 		{:else}
 			<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>

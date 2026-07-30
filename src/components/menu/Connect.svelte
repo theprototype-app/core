@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ChevronDown, Globe } from '@lucide/svelte';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight } from '../../stores/appStore'
 	import { Input, Button } from 'flowbite-svelte';
 	import { onMount, tick } from 'svelte';
@@ -279,7 +280,7 @@
 			aria-expanded={$connectDrawerOpen}
 			onclick={toggleInfo}
 		>
-			<i class="fas fa-chevron-down cx-chevron"></i>
+			<ChevronDown size={16} class="cx-chevron" aria-hidden="true" />
 			{#if srv?.didFallback}
 				<span class="cx-info-warn" data-testid="connect-info-warn" title="Self-hosted server unreachable — on the public cloud"></span>
 			{/if}
@@ -297,7 +298,7 @@
 				title="Browse public rooms"
 				aria-label="Browse public rooms"
 				onclick={openRooms}
-			><i class="fa-solid fa-globe mr-1"></i>Rooms</button>
+			><Globe size={16} class="mr-1" aria-hidden="true" />Rooms</button>
 		{/if}
 
 		<!-- open-core (M1d): cloud plugin mount point. Empty in the OSS build; the
@@ -409,12 +410,12 @@
 		background: rgb(255 255 255 / 0.14);
 		color: #fff;
 	}
-	.cx-chevron {
-		font-size: 11px;
-		line-height: 1;
+	/* the chevron is a lucide component's svg — the class lands OUTSIDE this
+	   component's scope hash, so these selectors must be :global to reach it */
+	.cx-toggle :global(.cx-chevron) {
 		transition: transform 0.2s ease;
 	}
-	.cx-toggle.open .cx-chevron {
+	.cx-toggle.open :global(.cx-chevron) {
 		transform: rotate(180deg);
 	}
 	.cx-info-warn {

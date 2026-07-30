@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Trash2 } from '@lucide/svelte';
 	import {
 		SvelteFlow,
 		Background,
@@ -590,7 +591,7 @@
 					title="Delete this object's flow"
 					on:click={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 				>
-					<i class="fa-solid fa-trash-can"></i>
+					<Trash2 size={16} aria-hidden="true" />
 				</button>
 			{/if}
 		</div>

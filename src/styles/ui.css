@@ -1,6 +1,14 @@
 /* Design tokens + shared utility classes (phase 63). Components compose these
    instead of re-inventing panel chrome. The app is dark-first (html.dark). */
 
+/* icon system (@lucide/svelte): svg icons flow inline with text in buttons and
+   labels — align them to the text baseline and never let flex rows squash them */
+svg.lucide {
+	display: inline-block;
+	vertical-align: -0.155em;
+	flex-shrink: 0;
+}
+
 :root {
 	/* z-tiers — every layered component maps to ONE of these (phase 68).
 	   viewport: three.js canvas

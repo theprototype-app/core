@@ -1,4 +1,5 @@
 <script>
+	import { UserLock } from '@lucide/svelte';
 	// The "Local objects" section of the object list. Renders local-only objects with
 	// the SAME tree component as the shared list (Objects.svelte) — so groups expand/
 	// collapse and objects drag in/out of groups for free. A drop target moves a shared
@@ -99,7 +100,7 @@
 		ondrop={onDrop}
 	>
 		<div class="flex items-center gap-1.5 px-1.5 py-1">
-			<i class="fa-solid fa-user-lock text-amber-300" style="font-size:10px"></i>
+			<UserLock size={16} class="text-amber-300" aria-hidden="true" style="font-size:10px" />
 			<span class="min-w-0 flex-1 text-xs font-medium text-amber-200">
 				Local objects
 				<span class="rounded-full bg-amber-500/30 px-1.5 text-[10px]">{local.length}</span>

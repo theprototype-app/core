@@ -1,4 +1,5 @@
 <script>
+	import { Boxes, Download, Upload } from '@lucide/svelte';
 	// Library (phase 65): tabs for user prefabs and built-in packs, one uniform
 	// card grid, search, skeleton loading states. All prefab/pack flows are the
 	// same functions as before — this is chrome only.
@@ -140,7 +141,7 @@
 					title="Import a .prefab.json file"
 					onclick={() => document.getElementById('import-prefab')?.click()}
 				>
-					<i class="fa-solid fa-upload mr-1"></i>Import
+					<Upload size={16} class="mr-1" aria-hidden="true" />Import
 				</button>
 				<input
 					type="file"
@@ -165,7 +166,7 @@
 								{#if prefab.thumbnail}
 									<img src={prefab.thumbnail} alt={prefab.name} class="aspect-square w-full rounded object-cover" />
 								{:else}
-									<div class="flex aspect-square w-full items-center justify-center rounded bg-gray-700 text-xl text-gray-400"><i class="fa-solid fa-cubes"></i></div>
+									<div class="flex aspect-square w-full items-center justify-center rounded bg-gray-700 text-xl text-gray-400"><Boxes size={16} aria-hidden="true" /></div>
 								{/if}
 							</button>
 							<p
@@ -179,7 +180,7 @@
 								{prefab.name}
 							</p>
 							<div class="absolute -right-1 -top-1 hidden gap-0.5 group-hover:flex">
-								<button class="rounded bg-gray-700 px-1 text-[10px] hover:bg-gray-600" title="Export" onclick={() => downloadPrefab(prefab)}><i class="fa-solid fa-download"></i></button>
+								<button class="rounded bg-gray-700 px-1 text-[10px] hover:bg-gray-600" title="Export" onclick={() => downloadPrefab(prefab)}><Download size={16} aria-hidden="true" /></button>
 								<button class="rounded bg-gray-700 px-1 text-[10px] hover:bg-red-700" title="Delete" onclick={() => removePrefab(prefab.id)}>✕</button>
 							</div>
 						</div>

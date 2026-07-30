@@ -1,4 +1,5 @@
 <script>
+	import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Layers, Lock, PersonStanding, Settings, Share2, Sun, UserLock } from '@lucide/svelte';
     /** @type {{ element: any }} */
     let { element } = $props();
     let isExpanded = $state(false);
@@ -188,7 +189,7 @@
                     title={isExpanded ? 'Collapse group' : 'Expand group'}
                     onclick={(e) => { e.stopPropagation(); isExpanded = !isExpanded; }}
                 >
-                    <i class={isExpanded ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'}></i>
+                    {#if isExpanded}<ChevronDown size={14} aria-hidden="true" />{:else}<ChevronRight size={14} aria-hidden="true" />{/if}
                 </button>
             {:else}
                 <span class="w-4 shrink-0"></span>
@@ -196,23 +197,23 @@
 
             <!-- type icon column -->
             {#if element.userData?.animatedClips}
-                <i class="fa-solid fa-person-running w-4 shrink-0 text-center text-purple-300" title="Animated model"></i>
+                <PersonStanding size={16} class="w-4 shrink-0 text-center text-purple-300" aria-hidden="true" title="Animated model" />
             {:else if element.type.endsWith('Group')}
-                <i class="fa-solid fa-layer-group w-4 shrink-0 text-center text-sky-300" title="Group"></i>
+                <Layers size={16} class="w-4 shrink-0 text-center text-sky-300" aria-hidden="true" title="Group" />
             {:else if element.type.endsWith('Light')}
-                <i class="fa-regular fa-sun w-4 shrink-0 text-center text-yellow-300" title="Light"></i>
+                <Sun size={16} class="w-4 shrink-0 text-center text-yellow-300" aria-hidden="true" title="Light" />
             {:else}
-                <i class="fa-solid fa-cube w-4 shrink-0 text-center text-gray-400" title="Object"></i>
+                <Box size={16} class="w-4 shrink-0 text-center text-gray-400" aria-hidden="true" title="Object" />
             {/if}
 
             {#if isLocal}
-                <i class="fa-solid fa-user-lock w-3 shrink-0 text-center text-[10px] text-amber-400" title="Local only (not shared with peers)"></i>
+                <UserLock size={16} class="w-3 shrink-0 text-center text-[10px] text-amber-400" aria-hidden="true" title="Local only (not shared with peers)" />
             {/if}
 
             <!-- 171: a persistent hidden marker so hidden rows read at a glance
                  (the eye toggle only shows on hover) -->
             {#if element.visible === false}
-                <i class="hidden-marker fa-regular fa-eye-slash w-3 shrink-0 text-center text-[10px] text-gray-500" title="Hidden"></i>
+                <EyeOff size={16} class="hidden-marker w-3 shrink-0 text-center text-[10px] text-gray-500" aria-hidden="true" title="Hidden" />
             {/if}
 
             <!-- name / inline rename -->
@@ -241,7 +242,7 @@
             {#if lockEntry}
                 <span class="flex shrink-0 items-center gap-1 pr-1">
                     <span class="h-2 w-2 rounded-full" style={'background:' + peerColor(lockEntry[0])}></span>
-                    <i class="fa-solid fa-lock text-gray-400"></i>
+                    <Lock size={16} class="text-gray-400" aria-hidden="true" />
                 </span>
                 <Tooltip placement='left' arrow={false}>Locked by {nameOf(lockEntry[0])} — right-click to request control</Tooltip>
             {:else}
@@ -251,11 +252,11 @@
                         title={element.visible === false ? 'Show' : 'Hide'}
                         onclick={(e) => { e.stopPropagation(); toggleObjectVisibility(element.uuid); }}
                     >
-                        <i class={element.visible === false ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}></i>
+                        {#if element.visible === false}<EyeOff size={14} aria-hidden="true" />{:else}<Eye size={14} aria-hidden="true" />{/if}
                     </button>
-                    <button class="configure hover:brightness-200" title="Properties" onclick={(e) => { e.stopPropagation(); configure(element); }}>⚙️</button>
+                    <button class="configure hover:brightness-200" title="Properties" onclick={(e) => { e.stopPropagation(); configure(element); }}><Settings size={14} aria-hidden="true" /></button>
                     {#if isLocal && !isViewer()}
-                        <button class="share-local hover:brightness-200" title="Share with peers" aria-label="Share with peers" onclick={(e) => { e.stopPropagation(); shareLocal(element); }}><i class="fa-solid fa-share-nodes text-primary-300"></i></button>
+                        <button class="share-local hover:brightness-200" title="Share with peers" aria-label="Share with peers" onclick={(e) => { e.stopPropagation(); shareLocal(element); }}><Share2 size={16} class="text-primary-300" aria-hidden="true" /></button>
                     {/if}
                     <button class="delete hover:brightness-200" title="Delete" onclick={(e) => { e.stopPropagation(); deleteItem(element); }}>✖️</button>
                 </span>

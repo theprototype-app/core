@@ -5,6 +5,7 @@
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd } from '../../stores/appStore.js';
+	import { trackpadMode, allowBrowserZoom } from '$lib/trackpadNav';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
 	const appVersionString = versionString();
@@ -736,6 +737,24 @@
 					<SettingRow name="Allow undocking (touch)">
 						<svelte:fragment slot="control"><Toggle bind:checked={$mobileUndockAllowed} /></svelte:fragment>
 						On touch / small screens the Flow and Explorer panels stay docked and their "undock" buttons are hidden (floating windows are cramped on a phone). Turn this on to allow undocking them into floating windows anyway
+					</SettingRow>
+					<SettingRow name="Trackpad gestures">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="trackpad-mode"
+								items={[
+									{ value: 'auto', name: 'Auto' },
+									{ value: 'on', name: 'On' },
+									{ value: 'off', name: 'Off' }
+								]}
+								bind:value={$trackpadMode}
+							/>
+						</svelte:fragment>
+						Two-finger swipes on a laptop trackpad pan the camera; pinch zooms. Auto detects trackpads and leaves mouse wheels zooming as usual — pick On/Off if the detection guesses wrong on your hardware
+					</SettingRow>
+					<SettingRow name="Allow browser pinch zoom">
+						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>
+						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>

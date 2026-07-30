@@ -32,10 +32,16 @@
 
 - [llms-full.txt](/llms-full.txt): this map plus the entire module SDK guide
   inline (works offline / without repo access).
-
-<!-- At public launch, add repo-backed links here: GitHub wiki, README, and the
-     raw MODULES.md URL. They 404 while the repo is private — the inlined
-     /llms-full.txt above carries the same SDK content regardless. -->
+- [Source repository](https://github.com/theprototype-app/core): MIT-licensed
+  code; CLAUDE.md in the repo root documents the architecture, replication
+  rules and conventions agents should follow when contributing.
+- [README](https://github.com/theprototype-app/core#readme): feature overview,
+  quick start, self-hosting notes.
+- [Module SDK guide, raw](https://raw.githubusercontent.com/theprototype-app/core/main/MODULES.md):
+  the same guide as llms-full.txt, straight from the repo.
+- [Releases](https://github.com/theprototype-app/core/releases): changelog per
+  version.
+- [User docs](https://docs.theprototype.app): guides for people (not agents).
 
 ---
 
@@ -188,6 +194,75 @@ api.registerStateSync({
 	getState: () => ({ pressed: [...pressedUuids] }),   // sent to late joiners
 	applyState: (state) => state.pressed.forEach(markPressed)
 });
+```
+
+### Input (K-C)
+
+```js
+// declare bindings so they LIST in Settings ▸ Shortcuts (display-only —
+// you read the keys yourself via input()/onInput)
+api.registerBindings([{ label: 'Drive forward', keys: 'W' }]);
+
+api.registerFrameTask(() => {
+	const { codes, axes } = api.input();  // codes: Set<'KeyW'...> (event.code),
+	if (codes.has('KeyW')) drive(1);      // axes: {lx,ly,rx,ry} = VR stick axes
+});
+api.onInput((kind, code) => {});        // 'down'/'up' events; returns unsubscribe
+
+// pause the HOST's use of an input scope while your module drives:
+//   'keys'       — WASD camera fly + play-mode movement
+//   'locomotion' — VR left-stick locomotion
+api.claimInput('keys');                 // ALWAYS release when your mode ends
+api.releaseInput('keys');
+```
+
+### Pointer ray (190)
+
+```js
+// where the user is POINTING, as a THREE.Raycaster in WORLD space: the desktop
+// mouse over the viewport, or the VR pointer hand's ray. Fresh instance per
+// call; null before the first pointer event. The drag recipe: click to pick,
+// follow pointerRay() in a frame task, click to drop (works desktop + VR).
+api.registerFrameTask(() => {
+	const ray = api.pointerRay();
+	if (!ray || !carried) return;
+	const hit = ray.ray.intersectPlane(dragPlane, tempVec);
+	if (hit) carried.position.copy(hit);
+});
+```
+
+### Physics (P-A)
+
+All mutations are INITIATOR-ONLY — the peer that started the simulation steps
+the world (golden rule: authoritative, never mixed with deterministic). The
+blessed recipe for driven physics (pong's paddle pattern): every peer forwards
+its INPUT via `api.send({op:'drive', ...})` at ~20Hz, and only the peer where
+`api.physics.isInitiator()` is true applies it.
+
+```js
+api.physics.isInitiator();              // true while THIS peer runs the sim
+api.physics.applyImpulse(uuid, [0, 5, 0]); // push a dynamic body (initiator-only)
+api.physics.applyTorqueImpulse(uuid, [0, 2, 0]); // spin a dynamic body (world axes)
+api.physics.setJointMotor(jointId, vel, maxForce); // drive a revolute joint
+api.physics.joints();                   // Promise<the replicated joint defs>
+```
+
+The **car module** (`src/modules/car/`) is the worked example: replicated
+primitives + motorized revolute joints, click-to-claim (pong's paddle
+pattern), driver forwards `{op:'drive', throttle, steer}` at ~20Hz and only
+the initiator applies wheel motors. Driving + the chase camera engage only
+in Play mode with a running simulation (the module claims `'keys'` and uses
+possess's `startFollowCam` while engaged; the claim itself works anytime).
+
+### Possess (K-D)
+
+```js
+// drive any object with WASD/arrows or the VR left stick (tank controls),
+// chase camera by default; Esc releases. Possessing SELECTS the object
+// (selection = lock), suspends its flow effects, and records ONE undo entry
+// on release. Movement replicates as plain throttled moves.
+api.possess(api.selectedUuid(), { camera: 'chase' }); // 'chase'|'orbit'|'none'
+api.releasePossess();
 ```
 
 ### Misc

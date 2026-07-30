@@ -560,9 +560,17 @@
 		<i class={'fas fa-expand-arrows-alt ' + (hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF)}></i>
 	</p>
 	<!-- QW (Controls Option A): transparent SPACER reserving the grid cell under the
-	     floating play button — the old filled square peeked out around the circle -->
+	     floating play button — the old filled square peeked out around the circle.
+	     Hovering either NEIGHBOR paints the spacer too (arbitrary variants below), so
+	     the hover red runs continuously up to the round button instead of leaving
+	     pill-colored notches above/below the circle. -->
+	<!-- the w-10 is LOAD-BEARING: the grid's fr columns are content-sized, so this
+	     spacer's 40px width is what gives every cell its width (18px icons alone
+	     collapse the whole bar) — do not change it to w-full -->
 	<div class="flex items-center justify-center">
-		<div class="h-10 w-10"></div>
+		<div
+			class="h-full w-10 transition-colors [div:has(+p:hover)>&]:bg-primary-700 [p:hover+div>&]:bg-primary-700"
+		></div>
 	</div>
 
 	<p
@@ -611,18 +619,20 @@
 <SimControls />
 
 <!-- QW (Controls Option A): white glyph + optical centering (fa-play is left-heavy,
-     nudge right) + a ring in the pill's background color so the FAB punches through
-     the bar cleanly instead of exposing the old square placeholder -->
+     nudge right); the WHOLE button scales on hover anywhere on it (the centering
+     translate moved from inline style to a tailwind class so the two transforms
+     compose instead of fighting). clip-path circles the HIT AREA too: the 50px
+     square box used to intercept clicks/hovers meant for the Scale / Object-list
+     cells it overlaps. -->
 <p
-	class={classActive + ' rounded-full bg-primary-600 font-medium shadow-lg ring-4 ring-white dark:ring-gray-700 dark:focus:ring-primary-800'}
+	class={classActive + ' -translate-x-1/2 rounded-full bg-primary-600 font-medium transition-transform duration-100 hover:scale-110 dark:focus:ring-primary-800'}
 	style="position: absolute; height: 50px; width: 50px; bottom: 10px; z-index: var(--z-hud);
-        display: flex; left: 50%; transform: translate(-50%,0)"
+        display: flex; left: 50%; clip-path: circle(50%)"
 	on:click={() => {
 		checkPlay();
 	}}
 >
-	<i class="fas fa-play text-white hover:scale-110" style="font-size: 25px; margin-left: 3px;"
-	></i>
+	<i class="fas fa-play text-white" style="font-size: 25px; margin-left: 3px;"></i>
 </p>
 
 <div class="hidden" id="vrButton">

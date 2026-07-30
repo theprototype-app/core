@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, globalCamera, selectedObject } from '../stores/sceneStore';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, toastStore } from '../stores/appStore';
 import { explorerItems, itemBlob } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
 import { importFile } from './fileHandler.svelte';
@@ -87,12 +87,23 @@ export async function dropExplorerItem(payload, clientX, clientY) {
 	// N6: a default-pack item carries a `url` (not a stored library item) — fetch
 	// its glb and place it at the drop point. The placed object replicates normally.
 	if (payload.url) {
+		// the CDN fetch takes seconds on a first load with NOTHING on screen — hold a
+		// loading toast, removed the moment the import starts (or on failure); the
+		// object-toast 15s timeout in Toasts.svelte is the failsafe if we never return
+		const name = String(payload.name || 'model').replace(/\.\w+$/, '');
+		const loadingToast = { text: `Loading "${name}"…`, actions: [] };
+		toastStore.update((list) => [...list, loadingToast]);
+		const dismiss = () => toastStore.update((list) => list.filter((t) => t !== loadingToast));
 		try {
 			const res = await fetch(payload.url);
-			if (!res.ok) return showToast('Could not fetch the pack item');
-			const name = String(payload.name || 'model').replace(/\.\w+$/, '');
+			if (!res.ok) {
+				dismiss();
+				return showToast('Could not fetch the pack item');
+			}
 			importFile(new File([await res.blob()], name + '.glb'), name, undefined, target.point ?? undefined);
+			dismiss();
 		} catch {
+			dismiss();
 			showToast('Could not load the pack item (network / CORS)');
 		}
 		return;

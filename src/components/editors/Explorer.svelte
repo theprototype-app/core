@@ -38,7 +38,8 @@
 		installDefaultPackZip,
 		removeImportedPack,
 		licenseLabel,
-		rememberThumb
+		rememberThumb,
+		openPackLoading
 	} from '$lib/packs';
 	import { importFile } from '$lib/fileHandler.svelte';
 	import { prefabs, loadPrefabs } from '$lib/prefabs';
@@ -249,13 +250,21 @@
 	);
 	let packAttribModal = $state(false);
 	let packAttribHtml = $state('');
+	let packAttribLoading = $state(false);
 	async function showPackAttribution(pack: any) {
 		let html = pack.attributionHtml || '';
 		if (!html && pack.attributionUrl) {
+			// QW: the first fetch has a visible delay — open the modal immediately in a
+			// loading state instead of leaving the click apparently ignored
+			packAttribHtml = '';
+			packAttribLoading = true;
+			packAttribModal = true;
 			try {
 				const res = await fetch(pack.attributionUrl);
 				if (res.ok) html = await res.text();
 			} catch {}
+			packAttribLoading = false;
+			if (html) pack.attributionHtml = html; // second open is instant
 		}
 		if (!html)
 			html =
@@ -1115,7 +1124,13 @@
 			role="region"
 		>
 			{#if childFolders.length === 0 && gridItems.length === 0}
-				{#if openPack && openPack.source === 'default' && openPack.zip}
+				{#if openPack && $openPackLoading}
+					<!-- QW: first open of a pack fetches its item list from the CDN — show a
+					     real loading state instead of "no items" (or the stale previous list) -->
+					<div id="pack-loading" class="flex items-center justify-center gap-2 p-6 text-xs text-gray-400">
+						<i class="fas fa-spinner fa-spin"></i> Loading pack contents…
+					</div>
+				{:else if openPack && openPack.source === 'default' && openPack.zip}
 					<!-- RP: a zip-only pack (audio-essentials) has no browsable item list —
 					     its open view IS the install prompt (right-click-only was undiscoverable) -->
 					<div class="flex flex-col items-center gap-2 p-6 text-center">
@@ -1513,7 +1528,13 @@
 		class="ui-panel fixed left-1/2 top-1/2 z-[var(--z-window)] max-h-[70vh] w-96 -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-4 text-sm"
 		style="z-index: calc(var(--z-window) + 1)"
 	>
-		<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>
+		{#if packAttribLoading}
+			<div class="flex items-center gap-2 p-4 text-sm text-gray-400">
+				<i class="fas fa-spinner fa-spin"></i> Loading attribution…
+			</div>
+		{:else}
+			<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>
+		{/if}
 		<div class="mt-3 flex justify-end">
 			<button class="ui-button-quiet" onclick={() => (packAttribModal = false)}>Close</button>
 		</div>

@@ -9,6 +9,13 @@ svg.lucide {
 	flex-shrink: 0;
 }
 
+/* the play FAB's HIT AREA matches its round shape (the 50px box used to steal
+   clicks from the neighbor toolbar cells). In a CSS rule (not inline) so the
+   8-bit theme can square it back — see the bit8 override in theme.css */
+#play-button {
+	clip-path: circle(50%);
+}
+
 /* semantic icon colors — theme tokens (theme.css); icons inherit via currentColor,
    so these work on the icon itself OR a wrapping span */
 .ico-folder { color: var(--icon-folder); }

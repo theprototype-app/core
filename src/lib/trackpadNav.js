@@ -41,14 +41,43 @@ reversePan.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('trackpadReversePan', String(value));
 });
 
+/** Two-finger pan on/off (default ON). Off = trackpad swipes fall through to the
+ *  wheel zoom and panning stays available via right-click drag (OrbitControls).
+ *  @type {import('svelte/store').Writable<boolean>} */
+export const panEnabled = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('trackpadPanEnabled') !== 'false'
+);
+panEnabled.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('trackpadPanEnabled', String(value));
+});
+
+/** Pinch-to-zoom on/off (default ON). Off = pinch does nothing to the camera
+ *  (the page-zoom guard still applies); zoom stays on the mouse wheel.
+ *  @type {import('svelte/store').Writable<boolean>} */
+export const pinchZoomEnabled = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('trackpadPinchZoom') !== 'false'
+);
+pinchZoomEnabled.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('trackpadPinchZoom', String(value));
+});
+
+/** end timestamp of the current trackpad-swipe gesture (see isTrackpadSwipe) */
+let lastSwipeTs = 0;
+
 /** Trackpad-swipe detector. Classic wheels tick in coarse (>=40px or line-mode)
  *  vertical jumps; trackpads emit fine pixel deltas, usually with a horizontal
- *  component. @param {WheelEvent} e */
+ *  component. STATEFUL: once a swipe is recognized, events arriving within the
+ *  gesture window stay a PAN even when a fast flick produces big deltas — the
+ *  per-event heuristic alone let mid-pan flicks fall through to zoom.
+ *  @param {WheelEvent} e */
 function isTrackpadSwipe(e) {
 	const mode = get(trackpadMode);
 	if (mode === 'off') return false;
 	if (mode === 'on') return true;
-	return e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 40);
+	if (e.deltaMode !== 0) return false;
+	const now = performance.now();
+	if (now - lastSwipeTs < 250) return true; // continuation of the active gesture
+	return e.deltaX !== 0 || Math.abs(e.deltaY) < 40;
 }
 
 /** Screen-space pan of the orbit camera + target (the same math OrbitControls
@@ -75,16 +104,25 @@ function panCamera(dx, dy) {
 
 /** @param {WheelEvent} e */
 function onWheel(e) {
+	const canvas = get(globalRenderer)?.domElement;
+	const overCanvas = !!canvas && e.target === canvas;
+	// the canvas must sit OUTSIDE the body's pan-x/pan-y guard: Chromium
+	// axis-latches scroll gestures over pan-x/pan-y regions (two-finger pans
+	// lock to one axis unless started diagonally). Idempotent, set lazily
+	// because the renderer doesn't exist at install time.
+	if (canvas && canvas.style.touchAction !== 'none') canvas.style.touchAction = 'none';
 	if (e.ctrlKey) {
 		// pinch / ctrl+wheel: the PAGE must never zoom. Over the canvas the event
-		// still reaches OrbitControls (no stopPropagation), which dollies as before.
+		// reaches OrbitControls (which dollies) UNLESS pinch zoom is disabled.
 		if (!get(allowBrowserZoom)) e.preventDefault();
+		if (overCanvas && !get(pinchZoomEnabled)) e.stopPropagation();
 		return;
 	}
-	const canvas = get(globalRenderer)?.domElement;
-	if (!canvas || e.target !== canvas) return; // UI panels keep native scrolling
+	if (!overCanvas) return; // UI panels keep native scrolling
 	if (document.pointerLockElement) return; // play mode owns the pointer
+	if (!get(panEnabled)) return; // pan off -> wheel zoom; right-drag still pans
 	if (!isTrackpadSwipe(e)) return; // classic wheel -> OrbitControls dolly
+	lastSwipeTs = performance.now(); // extend the gesture window
 	e.preventDefault();
 	e.stopPropagation(); // capture phase: OrbitControls never sees the pan swipe
 	const dir = get(reversePan) ? 1 : -1; // default = content-follows-fingers

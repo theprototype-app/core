@@ -631,7 +631,7 @@
 	id="play-button"
 	class={classActive + ' -translate-x-1/2 rounded-full bg-primary-600 font-medium transition-transform duration-100 hover:scale-110 dark:focus:ring-primary-800'}
 	style="position: absolute; height: 50px; width: 50px; bottom: 10px; z-index: var(--z-hud);
-        display: flex; left: 50%; clip-path: circle(50%)"
+        display: flex; left: 50%"
 	on:click={() => {
 		checkPlay();
 	}}

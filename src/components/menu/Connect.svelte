@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronDown, Globe } from '@lucide/svelte';
+	import { ChevronDown, Copy, Globe } from '@lucide/svelte';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight } from '../../stores/appStore'
 	import { Input, Button } from 'flowbite-svelte';
 	import { onMount, tick } from 'svelte';
@@ -214,7 +214,7 @@
 			color="primary"
 			class="nob shrink-0 rounded-lg bg-gray-400 text-white ring-0 dark:bg-gray-600 dark:text-gray-200"
 			on:click={copy}
-			title="Copy your invite link"><span style="white-space: nowrap;">&#x1f4cb; {myidcap}</span></Button
+			title="Copy your invite link"><span class="inline-flex items-center gap-1.5" style="white-space: nowrap;"><Copy size={14} aria-hidden="true" />{myidcap}</span></Button
 		>
 		<span class="connect-divider"></span>
 

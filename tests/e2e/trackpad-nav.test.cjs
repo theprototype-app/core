@@ -69,6 +69,36 @@ h.run(async () => {
 	);
 	await A.page.evaluate(() => window.__stores.trackpadNav.reversePan.set(false));
 
+	// --- gesture window: a fast FLICK (big deltaY) right after fine deltas stays a PAN
+	const preFlick = await read();
+	await wheelCanvas({ deltaX: 6, deltaY: 5.5 }); // opens the gesture window
+	await wheelCanvas({ deltaX: 0, deltaY: 90 }); // mid-gesture flick (used to zoom)
+	await A.page.waitForTimeout(200);
+	s = await read();
+	h.check(Math.abs(s.distance - preFlick.distance) < 0.05, 'fast mid-gesture flick pans instead of zooming (gesture window)');
+	await A.page.waitForTimeout(400); // let the gesture window expire
+
+	// --- pan toggle off: swipes fall through (no pan)
+	await A.page.evaluate(() => window.__stores.trackpadNav.panEnabled.set(false));
+	const prePanOff = await read();
+	await wheelCanvas({ deltaX: 12, deltaY: 8.5 });
+	await A.page.waitForTimeout(150);
+	s = await read();
+	const panOffMoved = Math.hypot(
+		s.target[0] - prePanOff.target[0], s.target[1] - prePanOff.target[1], s.target[2] - prePanOff.target[2]);
+	h.check(panOffMoved < 0.001, 'Two-finger pan OFF: swipes no longer pan');
+	await A.page.evaluate(() => window.__stores.trackpadNav.panEnabled.set(true));
+
+	// --- pinch-zoom toggle off: ctrl+wheel over canvas changes nothing (page still guarded)
+	await A.page.evaluate(() => window.__stores.trackpadNav.pinchZoomEnabled.set(false));
+	const prePinchOff = await read();
+	const prevented = await wheelCanvas({ deltaY: -120, ctrlKey: true });
+	await A.page.waitForTimeout(250);
+	s = await read();
+	h.check(prevented, 'Pinch zoom OFF: page zoom still guarded');
+	h.check(Math.abs(s.distance - prePinchOff.distance) < 0.01, 'Pinch zoom OFF: camera does not dolly');
+	await A.page.evaluate(() => window.__stores.trackpadNav.pinchZoomEnabled.set(true));
+
 	// --- classic mouse wheel still ZOOMS (distance changes, target holds)
 	const preZoom = await read();
 	for (let i = 0; i < 3; i++) await wheelCanvas({ deltaY: 120 });

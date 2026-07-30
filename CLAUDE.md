@@ -139,7 +139,13 @@ loadable play content. Everything a user does must be visible to connected peers
   'joint' history kind, sender-side delete cascade, sessions persist),
   `inputRuntime` (#12: store-only SDK input — key codes + VR axes published by
   vrControls, claims 'keys'/'locomotion' gate PointerLockControls/editorNavigation/
-  VR stick; module bindings list in Settings), `possess` (#12: tank-controls drive of
+  VR stick; module bindings list in Settings), `trackpadNav` (QW launch polish:
+  window-capture wheel — two-finger trackpad swipes PAN via cloned-vector
+  OrbitControls math with a STATEFUL 250ms gesture window (fast flicks stay pans);
+  pinch/ctrl-wheel page-zoom guards (iOS gesturestart + body touch-action
+  pan-x pan-y — the CANVAS gets touch-action:none or Chromium axis-latches pans);
+  Settings: mode auto/on/off, reverse pan, pan + pinch-zoom enable toggles —
+  all LOCAL prefs), `possess` (#12: tank-controls drive of
   any object + chase/orbit camera; possessing = selecting; ONE undo per ride),
   `handModels` (#12: custom hand GLB = IDENTITY — hash on `handmodel` msg + handshake,
   assetShare pull, rigid-at-wrist render), `terrainSculpt` (#12: brush raise/lower/

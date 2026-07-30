@@ -354,6 +354,11 @@
 :root[data-theme='bit8'] body *::after {
 	border-radius: 0 !important;
 }
+/* the play FAB stays SQUARE in 8-bit (the border-radius kill above squares its
+   look; without this the ui.css circular hit-area clip re-rounds it) */
+:root[data-theme='bit8'] #play-button {
+	clip-path: none;
+}
 :root[data-theme='bit8'] .ui-panel,
 :root[data-theme='bit8'] .ui-input {
 	border-width: 2px;

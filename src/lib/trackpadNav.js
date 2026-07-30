@@ -31,6 +31,16 @@ allowBrowserZoom.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('allowBrowserZoom', String(value));
 });
 
+/** Flip the two-finger pan direction. The DEFAULT (off) is content-follows-
+ *  fingers, the user-picked direction; on = the opposite convention.
+ *  @type {import('svelte/store').Writable<boolean>} */
+export const reversePan = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('trackpadReversePan') === 'true'
+);
+reversePan.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('trackpadReversePan', String(value));
+});
+
 /** Trackpad-swipe detector. Classic wheels tick in coarse (>=40px or line-mode)
  *  vertical jumps; trackpads emit fine pixel deltas, usually with a horizontal
  *  component. @param {WheelEvent} e */
@@ -77,7 +87,8 @@ function onWheel(e) {
 	if (!isTrackpadSwipe(e)) return; // classic wheel -> OrbitControls dolly
 	e.preventDefault();
 	e.stopPropagation(); // capture phase: OrbitControls never sees the pan swipe
-	panCamera(e.deltaX, e.deltaY);
+	const dir = get(reversePan) ? 1 : -1; // default = content-follows-fingers
+	panCamera(dir * e.deltaX, dir * e.deltaY);
 }
 
 /** iOS Safari fires proprietary gesture events for pinch — the only reliable

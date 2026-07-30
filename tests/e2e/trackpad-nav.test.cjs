@@ -52,6 +52,23 @@ h.run(async () => {
 	h.check(targetMoved > 0.01, `trackpad swipe pans the camera (target moved ${targetMoved.toFixed(3)})`);
 	h.check(Math.abs(s.distance - before.distance) < 0.05, 'panning keeps the orbit distance (no zoom)');
 
+	// --- reverse toggle flips the pan direction (compare x-delta signs)
+	const beforeDir = await read();
+	await wheelCanvas({ deltaX: 40, deltaY: 0 });
+	await A.page.waitForTimeout(150);
+	const afterDefault = await read();
+	const dxDefault = afterDefault.target[0] - beforeDir.target[0];
+	await A.page.evaluate(() => window.__stores.trackpadNav.reversePan.set(true));
+	await wheelCanvas({ deltaX: 40, deltaY: 0 });
+	await A.page.waitForTimeout(150);
+	const afterReversed = await read();
+	const dxReversed = afterReversed.target[0] - afterDefault.target[0];
+	h.check(
+		dxDefault !== 0 && dxReversed !== 0 && Math.sign(dxDefault) !== Math.sign(dxReversed),
+		`reverse toggle flips pan direction (${dxDefault.toFixed(3)} vs ${dxReversed.toFixed(3)})`
+	);
+	await A.page.evaluate(() => window.__stores.trackpadNav.reversePan.set(false));
+
 	// --- classic mouse wheel still ZOOMS (distance changes, target holds)
 	const preZoom = await read();
 	for (let i = 0; i < 3; i++) await wheelCanvas({ deltaY: 120 });

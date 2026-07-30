@@ -5,7 +5,7 @@
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd } from '../../stores/appStore.js';
-	import { trackpadMode, allowBrowserZoom } from '$lib/trackpadNav';
+	import { trackpadMode, allowBrowserZoom, reversePan } from '$lib/trackpadNav';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
 	const appVersionString = versionString();
@@ -751,6 +751,10 @@
 							/>
 						</svelte:fragment>
 						Two-finger swipes on a laptop trackpad pan the camera; pinch zooms. Auto detects trackpads and leaves mouse wheels zooming as usual — pick On/Off if the detection guesses wrong on your hardware
+					</SettingRow>
+					<SettingRow name="Reverse trackpad pan">
+						<svelte:fragment slot="control"><Toggle bind:checked={$reversePan} /></svelte:fragment>
+						Flip the two-finger pan direction (default: the scene follows your fingers, like touch scrolling)
 					</SettingRow>
 					<SettingRow name="Allow browser pinch zoom">
 						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>

@@ -565,13 +565,15 @@
 	     Hovering either NEIGHBOR paints the spacer too (arbitrary variants below), so
 	     the hover red runs continuously up to the round button instead of leaving
 	     pill-colored notches above/below the circle. -->
-	<!-- the w-10 is LOAD-BEARING: the grid's fr columns are content-sized, so this
-	     spacer's 40px width is what gives every cell its width (18px icons alone
-	     collapse the whole bar) — do not change it to w-full -->
-	<div class="flex items-center justify-center">
-		<div
-			class="h-full w-10 transition-colors [div:has(+p:hover)>&]:bg-primary-700 [p:hover+div>&]:bg-primary-700"
-		></div>
+	<!-- the 40px total width is LOAD-BEARING: the grid's fr columns are content-
+	     sized, so this spacer's width is what gives every cell its width (18px
+	     icons alone collapse the whole bar). TWO HALVES so each neighbor's hover
+	     paints only ITS side up to the circle (a full-width paint peeked out red
+	     on the opposite side of the FAB). No transition — the neighbors' own
+	     hover backgrounds are instant, a fade here lagged visibly. -->
+	<div class="flex h-full items-stretch justify-center">
+		<div class="h-full w-5 [p:hover+div>&:first-child]:bg-primary-700"></div>
+		<div class="h-full w-5 [div:has(+p:hover)>&:last-child]:bg-primary-700"></div>
 	</div>
 
 	<p

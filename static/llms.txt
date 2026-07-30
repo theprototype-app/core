@@ -32,7 +32,13 @@
 
 - [llms-full.txt](/llms-full.txt): this map plus the entire module SDK guide
   inline (works offline / without repo access).
-
-<!-- At public launch, add repo-backed links here: GitHub wiki, README, and the
-     raw MODULES.md URL. They 404 while the repo is private — the inlined
-     /llms-full.txt above carries the same SDK content regardless. -->
+- [Source repository](https://github.com/theprototype-app/core): MIT-licensed
+  code; CLAUDE.md in the repo root documents the architecture, replication
+  rules and conventions agents should follow when contributing.
+- [README](https://github.com/theprototype-app/core#readme): feature overview,
+  quick start, self-hosting notes.
+- [Module SDK guide, raw](https://raw.githubusercontent.com/theprototype-app/core/main/MODULES.md):
+  the same guide as llms-full.txt, straight from the repo.
+- [Releases](https://github.com/theprototype-app/core/releases): changelog per
+  version.
+- [User docs](https://docs.theprototype.app): guides for people (not agents).

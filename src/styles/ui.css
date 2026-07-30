@@ -9,6 +9,16 @@ svg.lucide {
 	flex-shrink: 0;
 }
 
+/* semantic icon colors — theme tokens (theme.css); icons inherit via currentColor,
+   so these work on the icon itself OR a wrapping span */
+.ico-folder { color: var(--icon-folder); }
+.ico-image { color: var(--icon-image); }
+.ico-audio { color: var(--icon-audio); }
+.ico-doc { color: var(--icon-doc); }
+.ico-object { color: var(--icon-object); }
+.ico-prefab { color: var(--icon-prefab); }
+.ico-danger { color: var(--icon-danger); }
+
 :root {
 	/* z-tiers — every layered component maps to ONE of these (phase 68).
 	   viewport: three.js canvas

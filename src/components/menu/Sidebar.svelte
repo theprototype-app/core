@@ -163,7 +163,7 @@
 			<span class="flex-1 whitespace-nowrap">{!$inspectorClose && $inspectorKind === 'scene' ? '● ' : ''}Configure Scene</span>
 		</button>
 		<button class="side-row" onclick={clearScene}>
-			<span class="side-ico"><Trash2 size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
+			<span class="side-ico"><Trash2 size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
 		</button>
 		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Puzzle size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Modules</span>

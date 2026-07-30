@@ -43,7 +43,16 @@ export const THEME_TOKENS = [
 	'--dropdown-accent',
 	'--scrollbar-track',
 	'--scrollbar-thumb',
-	'--scrollbar-thumb-hover'
+	'--scrollbar-thumb-hover',
+	// icon-system L4: semantic icon colors (older .theme.json files may omit
+	// these — usages fall back to the :root defaults in theme.css)
+	'--icon-folder',
+	'--icon-image',
+	'--icon-audio',
+	'--icon-doc',
+	'--icon-object',
+	'--icon-prefab',
+	'--icon-danger'
 ];
 
 function loadCustomThemes() {

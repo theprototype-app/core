@@ -491,7 +491,7 @@
 						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded border border-gray-600 object-cover" />
 					{:else}
 						<span class="flex h-24 w-24 items-center justify-center rounded border border-gray-600 bg-gray-700 text-4xl text-gray-400">
-							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={36} />
+							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={36} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
 						</span>
 					{/if}
 				</div>
@@ -531,7 +531,7 @@
 							onclick={() => {
 								deleteItem(inspectedItem.id);
 								inspectorClose.set(true);
-							}}><Trash2 size={16} class="mr-1" aria-hidden="true" />Delete</Button
+							}}><Trash2 size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</Button
 						>
 					</div>
 				</Section>

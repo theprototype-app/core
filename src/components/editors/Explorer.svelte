@@ -369,6 +369,14 @@
 		object: 'box',
 		prefab: 'boxes'
 	};
+	// semantic icon colors (ui.css classes over the --icon-* theme tokens)
+	const KIND_COLORS: Record<string, string> = {
+		image: 'ico-image',
+		audio: 'ico-audio',
+		text: 'ico-doc',
+		object: 'ico-object',
+		prefab: 'ico-prefab'
+	};
 
 	// folders as a flat indented tree, respecting expansion (106.6)
 	const folderTree = $derived.by(() => {
@@ -1038,7 +1046,7 @@
 							onclick={() => openFolder(row.folder.id)}
 							ondblclick={() => toggleExpand(row.folder.id)}
 						>
-							<Folder size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />{row.folder.name}
+							<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{row.folder.name}
 						</button>
 					</div>
 				{/if}
@@ -1060,7 +1068,7 @@
 					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
 						? 'bg-primary-700 text-white'
 						: 'text-gray-300 hover:bg-gray-700'}"
-					onclick={() => openFolder('prefabs')}><Boxes size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Prefabs</button
+					onclick={() => openFolder('prefabs')}><Boxes size={16} class="ico-prefab mr-1.5 w-4 text-center" aria-hidden="true" />Prefabs</button
 				>
 				<button
 					id="packs-folder"
@@ -1106,7 +1114,7 @@
 						style="padding-left: 22px"
 						onclick={() => openFolder('scene:' + sub)}
 					>
-						<Folder size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
+						<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
 					</button>
 				{/each}
 				{/if}
@@ -1180,7 +1188,7 @@
 								ondblclick={() => openFolder(folder.id)}
 								onkeydown={(e) => e.key === 'Enter' && openFolder(folder.id)}
 							>
-								<span class="flex h-14 w-14 items-center justify-center text-3xl text-gray-400"><Folder size={16} aria-hidden="true" /></span>
+								<span class="ico-folder flex h-14 w-14 items-center justify-center"><Folder size={32} aria-hidden="true" /></span>
 								{#if editing?.mode === 'rename' && editing.inGrid && editing.folderId === folder.id}
 									{@render cardEdit()}
 								{:else}
@@ -1219,12 +1227,12 @@
 										class="h-14 w-14 rounded object-cover"
 									/>
 								{:else}
-									<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-gray-400"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} /></span>
+									<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} /></span>
 								{/if}
 							{:else if item.thumbnail}
 								<img src={item.thumbnail} alt={item.name} class="h-14 w-14 rounded object-cover" />
 							{:else}
-								<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-gray-400">
+								<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}">
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
 								</span>
 							{/if}
@@ -1251,7 +1259,7 @@
 					<!-- N6: pack-level properties + attribution -->
 					<div class="flex flex-col gap-1 border-b border-gray-700/40 pb-2">
 						<div class="flex items-center gap-2">
-							<span class="text-xl text-gray-400"><PackageOpen size={16} aria-hidden="true" /></span>
+							<span class="text-gray-400"><PackageOpen size={18} aria-hidden="true" /></span>
 							<span class="min-w-0 flex-1 break-words font-semibold">{openPack.title}</span>
 						</div>
 						{#if openPack.license}<div class="text-[11px] text-gray-400">License: {licenseLabel(openPack.license)}</div>{/if}
@@ -1274,7 +1282,7 @@
 						{#if selItem.thumbnail}
 							<img src={selItem.thumbnail} alt="" class="h-12 w-12 rounded object-cover" />
 						{:else}
-							<span class="flex h-12 w-12 items-center justify-center rounded bg-gray-700 text-gray-400"
+							<span class="flex h-12 w-12 items-center justify-center rounded bg-gray-700 {KIND_COLORS[selItem.kind] ?? 'text-gray-400'}"
 								><Icon name={KIND_ICONS[selItem.kind] ?? 'package'} size={24} /></span
 							>
 						{/if}
@@ -1336,7 +1344,7 @@
 				{:else if selected?.kind === 'folder'}
 					{@const counts = folderCounts(selected.folder.id)}
 					<div class="flex items-center gap-2">
-						<span class="text-2xl text-gray-400"><Folder size={16} aria-hidden="true" /></span>
+						<span class="ico-folder"><Folder size={22} aria-hidden="true" /></span>
 						<span class="min-w-0 flex-1 break-words font-semibold">{selected.folder.name}</span>
 					</div>
 					<p class="text-gray-400">

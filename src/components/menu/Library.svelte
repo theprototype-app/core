@@ -166,7 +166,7 @@
 								{#if prefab.thumbnail}
 									<img src={prefab.thumbnail} alt={prefab.name} class="aspect-square w-full rounded object-cover" />
 								{:else}
-									<div class="flex aspect-square w-full items-center justify-center rounded bg-gray-700 text-xl text-gray-400"><Boxes size={16} aria-hidden="true" /></div>
+									<div class="ico-prefab flex aspect-square w-full items-center justify-center rounded bg-gray-700"><Boxes size={24} aria-hidden="true" /></div>
 								{/if}
 							</button>
 							<p

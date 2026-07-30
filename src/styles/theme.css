@@ -13,7 +13,28 @@
    - green / bit8 / contrast: keep .dark as base and remap both the
             unprefixed utilities and the dark: variants. */
 
+/* semantic ICON colors (icon-system L4): file-manager-style at-a-glance hues —
+   folders amber, file kinds each a hue, destructive red. Defaults here are the
+   dark-theme values (dark has no token block); every theme block below overrides.
+   Custom .theme.json files may omit these — they fall back to :root. */
+:root {
+	--icon-folder: #d4a95c;
+	--icon-image: #a78bfa;
+	--icon-audio: #2dd4bf;
+	--icon-doc: #94a8c4;
+	--icon-object: #6ee7a0;
+	--icon-prefab: #f0a35e;
+	--icon-danger: #f87171;
+}
+
 :root[data-theme='light'] {
+	--icon-folder: #b07d2a;
+	--icon-image: #7c3aed;
+	--icon-audio: #0d9488;
+	--icon-doc: #64748b;
+	--icon-object: #16a34a;
+	--icon-prefab: #ea580c;
+	--icon-danger: #dc2626;
 	--surface-deep: #eef0f3;
 	--surface-deep-rgb: 238 240 243;
 	--surface: #ffffff;
@@ -29,6 +50,14 @@
 }
 
 :root[data-theme='green'] {
+	/* console flavor: green-tinted kinds, danger stays red for semantics */
+	--icon-folder: #86efac;
+	--icon-image: #34d399;
+	--icon-audio: #6ee7b7;
+	--icon-doc: #3d9e58;
+	--icon-object: #4ade80;
+	--icon-prefab: #a7f3d0;
+	--icon-danger: #f87171;
 	--surface-deep: #020f06;
 	--surface-deep-rgb: 2 15 6;
 	--surface: #04170a;
@@ -46,6 +75,14 @@
 }
 
 :root[data-theme='bit8'] {
+	/* saturated arcade palette */
+	--icon-folder: #fbbf24;
+	--icon-image: #f472b6;
+	--icon-audio: #22d3ee;
+	--icon-doc: #a5b4fc;
+	--icon-object: #4ade80;
+	--icon-prefab: #fb923c;
+	--icon-danger: #f43f5e;
 	--surface-deep: #16123a;
 	--surface-deep-rgb: 22 18 58;
 	--surface: #201a4e;
@@ -63,6 +100,14 @@
 }
 
 :root[data-theme='contrast'] {
+	/* maximum-separation hues on black */
+	--icon-folder: #ffcc00;
+	--icon-image: #ff66ff;
+	--icon-audio: #00e5ff;
+	--icon-doc: #d4d4d4;
+	--icon-object: #00ff88;
+	--icon-prefab: #ff9933;
+	--icon-danger: #ff5555;
 	--surface-deep: #000000;
 	--surface-deep-rgb: 0 0 0;
 	--surface: #000000;

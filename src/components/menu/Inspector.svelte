@@ -1,4 +1,6 @@
 <script>
+	import { Download, Save, Search, Sparkles, SquarePen, Trash2, Upload } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	// Unified inspector (phase 64): one drawer serves every target — mesh, group,
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
@@ -488,8 +490,8 @@
 					{#if inspectedItem.thumbnail}
 						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded border border-gray-600 object-cover" />
 					{:else}
-						<span class="flex h-24 w-24 items-center justify-center rounded border border-gray-600 bg-gray-700 text-4xl">
-							{inspectedItem.kind === 'audio' ? '🎵' : inspectedItem.kind === 'text' ? '📄' : '📦'}
+						<span class="flex h-24 w-24 items-center justify-center rounded border border-gray-600 bg-gray-700 text-4xl text-gray-400">
+							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={36} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
 						</span>
 					{/if}
 				</div>
@@ -520,7 +522,7 @@
 					<div class="flex flex-wrap gap-2">
 						{#if inspectedItem.kind === 'text' || inspectedItem.kind === 'image'}
 							<Button size="xs" color="alternative" onclick={() => openInspectedItem()}>
-								{inspectedItem.kind === 'text' ? '📝 Edit' : '🔍 Preview'}
+								{#if inspectedItem.kind === 'text'}<SquarePen size={14} class="mr-1" aria-hidden="true" />{:else}<Search size={14} class="mr-1" aria-hidden="true" />{/if}{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
 							</Button>
 						{/if}
 						<Button
@@ -529,7 +531,7 @@
 							onclick={() => {
 								deleteItem(inspectedItem.id);
 								inspectorClose.set(true);
-							}}>🗑 Delete</Button
+							}}><Trash2 size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</Button
 						>
 					</div>
 				</Section>
@@ -623,11 +625,11 @@
 				{/each}
 				<div class="flex flex-wrap gap-1">
 					<button id="env-save-preset" class="ui-button-quiet" title="Save the current environment as a named preset" onclick={savePresetPrompt}>
-						💾 Save preset
+						<Save size={16} class="mr-1" aria-hidden="true" />Save preset
 					</button>
-					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}>⬇ Export</button>
+					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}><Download size={16} class="mr-1" aria-hidden="true" />Export</button>
 					<button class="ui-button-quiet" title="Import a .envpreset.json file" onclick={() => document.getElementById('env-import-file')?.click()}>
-						⬆ Import
+						<Upload size={16} class="mr-1" aria-hidden="true" />Import
 					</button>
 					<input type="file" id="env-import-file" style="display: none" accept=".json" onchange={onImportPreset} />
 				</div>
@@ -1587,7 +1589,7 @@
 						{#if (p.mode ?? 'continuous') !== 'continuous'}
 							<div class="ui-row items-center gap-2">
 								<Button size="xs" color="alternative" onclick={() => burstObjectParticles($selectedObject.uuid)}>
-									💥 Burst now
+									<Sparkles size={16} class="mr-1" aria-hidden="true" />Burst now
 								</Button>
 								<span class="text-xs text-gray-400">fires for every peer</span>
 							</div>

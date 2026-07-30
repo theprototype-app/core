@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Check, ChevronDown, Eye, Glasses, StickyNote, VolumeX } from '@lucide/svelte';
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
 	import {
@@ -221,7 +222,7 @@
 		aria-label="Scene notes"
 		onclick={() => notesDrawerOpen.update((v) => !v)}
 	>
-		<i class="fas fa-note-sticky text-xs"></i>
+		<StickyNote size={16} class="text-xs" aria-hidden="true" />
 	</button>
 	<!-- E1: notifications bell + history panel -->
 	<NotificationCenter />
@@ -264,8 +265,8 @@
 							</div>
 							<div class="flex items-center gap-1.5 text-[10px] text-gray-400">
 								<span class="truncate">{shortId(user[0])}</span>
-								{#if $mutedPeers.includes(user[0])}<span title="Muted">🔇</span>{/if}
-								{#if $peerHands[user[0]]?.active}<span title="In VR">🥽</span>{/if}
+								{#if $mutedPeers.includes(user[0])}<span title="Muted"><VolumeX size={16} aria-hidden="true" /></span>{/if}
+								{#if $peerHands[user[0]]?.active}<span title="In VR"><Glasses size={16} aria-hidden="true" /></span>{/if}
 								{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
 								{#if i > 0 && $peerQuality[user[0]]}
 									{@const q = $peerQuality[user[0]]}
@@ -281,7 +282,7 @@
 							{#if i === 0}
 								<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
 							{:else if ri.amAdmin}
-								<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => toggleRoleMenu(e, user[0])}>{ri.roleOf(user[0])}<i class="fa-solid fa-chevron-down role-caret"></i></button>
+								<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => toggleRoleMenu(e, user[0])}>{ri.roleOf(user[0])}<ChevronDown size={10} class="role-caret" aria-hidden="true" /></button>
 							{:else}
 								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 							{/if}
@@ -295,7 +296,7 @@
 								onclick={() => { specate(user[0]); peersOpen = false; }}
 								oncontextmenu={(e) => openMuteMenu(e, user[0])}
 							>
-								{$specatorMode === user[0] ? '👁 Watching' : '👁 Watch'}
+								<Eye size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
 							</button>
 						{/if}
 					</div>
@@ -315,7 +316,7 @@
 				{@const pid = roleMenuFor}
 				<div use:portal class="role-menu role-menu-portal" role="listbox" style="top:{roleMenuPos.top}px; right:{roleMenuPos.right}px;">
 					{#each ri.order as r}
-						<button type="button" class="role-menu-item" class:sel={ri.roleOf(pid) === r} role="option" aria-selected={ri.roleOf(pid) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(pid, r); roleMenuFor = null; }}><span class="role-badge" data-role={r} style="pointer-events:none">{r}</span>{#if ri.roleOf(pid) === r}<i class="fa-solid fa-check role-check"></i>{/if}</button>
+						<button type="button" class="role-menu-item" class:sel={ri.roleOf(pid) === r} role="option" aria-selected={ri.roleOf(pid) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(pid, r); roleMenuFor = null; }}><span class="role-badge" data-role={r} style="pointer-events:none">{r}</span>{#if ri.roleOf(pid) === r}<Check size={16} class="role-check" aria-hidden="true" />{/if}</button>
 					{/each}
 				</div>
 			{/if}
@@ -438,8 +439,7 @@
 			<Input
 				id="peer-id"
 				class="!rounded-s-none rounded-br-none"
-				placeholder="&#xf2c3; {$peers.peer.id}"
-				style="font-family:Arial, FontAwesome"
+				placeholder={$peers.peer.id}
 				disabled
 			/>
 		</div>
@@ -453,8 +453,7 @@
 			<Input
 				id="update-username"
 				class="!rounded-s-none rounded-tr-none"
-				placeholder={cid?.username ? ' ' + cid.username : ' Username'}
-				style="font-family:Arial, FontAwesome"
+				placeholder={cid?.username ? '' + cid.username : 'Username'}
 				bind:value={$username}
 				onchange={onUsernameEdited}
 			/>
@@ -471,7 +470,8 @@
 	.role-badge { flex: 0 0 auto; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 9px; border-radius: 9999px; color: #fff; background: #64748b; text-transform: capitalize; line-height: 1.4; }
 	.role-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; cursor: pointer; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
 	.role-btn:hover { filter: brightness(1.12); }
-	.role-caret { font-size: 8px; opacity: 0.85; }
+	/* the caret is a lucide svg from a child component — needs :global to match */
+	.role-btn :global(.role-caret) { opacity: 0.85; }
 	/* portaled to <body> — fixed position, anchored via inline top/right */
 	.role-menu { position: fixed; z-index: 1000; min-width: 116px; padding: 4px; border-radius: 10px; background: #1f2937; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 12px 28px rgb(0 0 0 / 0.5); display: flex; flex-direction: column; gap: 2px; }
 	.role-menu-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: #e5e7eb; font-size: 11px; cursor: pointer; text-transform: capitalize; text-align: left; }

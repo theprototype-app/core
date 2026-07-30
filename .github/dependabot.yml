@@ -37,8 +37,5 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: typescript
         update-types: [version-update:semver-major]
-      # icon class names change across majors; bump deliberately
-      - dependency-name: '@fortawesome/fontawesome-free'
-        update-types: [version-update:semver-major]
       # physics solver behavior can shift on 0.x bumps (rapier revolute-axis gotcha)
       - dependency-name: '@dimforge/rapier3d-compat'

@@ -21,8 +21,9 @@ h.run(async () => {
 			let tm; window.__stores.transformMode.subscribe((v) => (tm = v))();
 			let tc; window.__stores.TControls.subscribe((v) => (tc = v))();
 			const cls = (t) => {
-				const el = document.querySelector(`p[title="${t}"] i`);
-				return el ? el.className : '';
+				// lucide <svg> icons: className is an SVGAnimatedString — read the attribute
+				const el = document.querySelector(`p[title="${t}"] svg`);
+				return el ? el.getAttribute('class') ?? '' : '';
 			};
 			return {
 				mode: tm,

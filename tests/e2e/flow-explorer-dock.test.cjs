@@ -6,8 +6,8 @@ const h = require('./helpers.cjs');
 
 const state = (page) =>
 	page.evaluate(() => {
-		const flowI = document.querySelector('p[title="Node editor (N)"] i');
-		const explI = document.querySelector('#explorer-slot i');
+		const flowI = document.querySelector('p[title="Node editor (N)"] svg');
+		const explI = document.querySelector('#explorer-slot svg');
 		const ON = 'text-primary-500';
 		let active, flowClosed, explClosed;
 		window.__stores.bottomDock.bottomDockActive.subscribe((v) => (active = v))();
@@ -17,8 +17,8 @@ const state = (page) =>
 			active,
 			flowClosed,
 			explClosed,
-			flowOn: flowI.className.includes(ON),
-			explOn: explI.className.includes(ON)
+			flowOn: (flowI.getAttribute('class') ?? '').includes(ON),
+			explOn: (explI.getAttribute('class') ?? '').includes(ON)
 		};
 	});
 

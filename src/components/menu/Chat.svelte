@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { MessageSquare } from '@lucide/svelte';
 	// Chat (phases 67+68): floating draggable window on the --z-window tier —
 	// never underneath the flow drawer. Bubbles with author color chips and
 	// timestamps, Enter to send, autoscroll with a new-messages pill, /hints.
@@ -78,12 +79,12 @@
 		id="chat-window"
 		use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 } }}
 		use:focusStack
-		use:tabbable={{ key: 'chat', title: '💬 Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}
+		use:tabbable={{ key: 'chat', title: 'Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}
 		class="ui-panel flex h-[420px] w-[min(500px,90vw)] flex-col overflow-hidden bg-gray-900/85 backdrop-blur"
 		style="z-index: var(--z-window)"
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>💬 Chat</span>
+			<span><MessageSquare size={16} class="mr-1" aria-hidden="true" />Chat</span>
 			<span class="flex-1"></span>
 			<button class="ui-button-quiet" title="Close (C)" onclick={() => chatHidden.set('hidden')}>✕</button>
 		</div>

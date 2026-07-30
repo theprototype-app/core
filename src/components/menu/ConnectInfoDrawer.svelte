@@ -1,4 +1,5 @@
 <script>
+	import { Pin } from '@lucide/svelte';
 	// CN-2 (roadmap #14): the connection & server info drawer, anchored under the
 	// Connect pill ((i) button). NotificationCenter pattern: a fixed click-catcher
 	// + a ui-panel. Three sections: Session (state/host/peers w/ live quality),
@@ -186,7 +187,7 @@
 			{#if $pendingApprovals.length}<span class="cxd-req-badge" title="Pending connection request(s)">{$pendingApprovals.length} new request{$pendingApprovals.length > 1 ? 's' : ''}</span>{/if}
 		</span>
 		<button class="cxd-pin" class:pinned={$connectDrawerPinned} title={$connectDrawerPinned ? 'Unpin (hide tabs when closed)' : 'Pin — keep the tabs visible when closed'} aria-label="Pin drawer" aria-pressed={$connectDrawerPinned} onclick={togglePin}>
-			<i class="fas fa-thumbtack"></i>
+			<Pin size={16} aria-hidden="true" />
 		</button>
 	</div>
 

@@ -350,7 +350,7 @@
 			y: e.clientY,
 			flowPos,
 			items: [
-				{ label: '🔍 Search nodes…', action: () => openSearch('') },
+				{ label: 'Search nodes…', action: () => openSearch('') },
 				...[...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
 					label: group.group,
 					children: group.items.map((item) => ({
@@ -590,7 +590,7 @@
 					title="Delete this object's flow"
 					on:click={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 				>
-					🗑
+					<i class="fa-solid fa-trash-can"></i>
 				</button>
 			{/if}
 		</div>

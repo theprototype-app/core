@@ -297,7 +297,7 @@
 				title="Browse public rooms"
 				aria-label="Browse public rooms"
 				onclick={openRooms}
-			>🌐 Rooms</button>
+			><i class="fa-solid fa-globe mr-1"></i>Rooms</button>
 		{/if}
 
 		<!-- open-core (M1d): cloud plugin mount point. Empty in the OSS build; the

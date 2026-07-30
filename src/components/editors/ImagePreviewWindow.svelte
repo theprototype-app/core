@@ -55,7 +55,7 @@
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>🖼️ {$imagePreviewTarget.title}</span>
+			<span><i class="fa-solid fa-image mr-1"></i>{$imagePreviewTarget.title}</span>
 			<span id="image-zoom" class="text-xs text-gray-400">{Math.round(zoom * 100)}%</span>
 			<span class="flex-1"></span>
 			<button class="ui-button-quiet" title="Zoom out" onclick={() => (zoom = clamp(zoom * 0.8))}>−</button>

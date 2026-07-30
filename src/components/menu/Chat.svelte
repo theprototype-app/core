@@ -78,12 +78,12 @@
 		id="chat-window"
 		use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 } }}
 		use:focusStack
-		use:tabbable={{ key: 'chat', title: '💬 Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}
+		use:tabbable={{ key: 'chat', title: 'Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}
 		class="ui-panel flex h-[420px] w-[min(500px,90vw)] flex-col overflow-hidden bg-gray-900/85 backdrop-blur"
 		style="z-index: var(--z-window)"
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>💬 Chat</span>
+			<span><i class="fa-solid fa-message mr-1"></i>Chat</span>
 			<span class="flex-1"></span>
 			<button class="ui-button-quiet" title="Close (C)" onclick={() => chatHidden.set('hidden')}>✕</button>
 		</div>

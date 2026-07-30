@@ -241,7 +241,7 @@
             {#if lockEntry}
                 <span class="flex shrink-0 items-center gap-1 pr-1">
                     <span class="h-2 w-2 rounded-full" style={'background:' + peerColor(lockEntry[0])}></span>
-                    🔒
+                    <i class="fa-solid fa-lock text-gray-400"></i>
                 </span>
                 <Tooltip placement='left' arrow={false}>Locked by {nameOf(lockEntry[0])} — right-click to request control</Tooltip>
             {:else}

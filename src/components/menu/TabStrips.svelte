@@ -115,7 +115,7 @@
 	<ContextMenu
 		x={tabMenu.x}
 		y={tabMenu.y}
-		items={[{ label: '🙈 Hide tab', action: () => closeMember(tabMenu.key) }]}
+		items={[{ label: 'Hide tab', action: () => closeMember(tabMenu.key) }]}
 		on:close={() => (tabMenu = null)}
 	/>
 {/if}

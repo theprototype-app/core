@@ -46,7 +46,7 @@
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>🧊 {$modelPreviewTarget.title}</span>
+			<span><i class="fa-solid fa-cube mr-1"></i>{$modelPreviewTarget.title}</span>
 			<span class="flex-1"></span>
 			<button class="ui-button-quiet" title="Close" onclick={close}>✕</button>
 		</div>

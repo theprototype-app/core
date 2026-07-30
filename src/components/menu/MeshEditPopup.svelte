@@ -111,7 +111,7 @@
 	>
 		<!-- row 1: mode + op selection (no amount; params live in the nested row) -->
 		<div class="flex items-center gap-3 rounded-full bg-gray-800 px-4 py-2 text-sm text-white shadow-xl">
-			<span class="font-semibold">🔷 Edit mesh</span>
+			<span class="font-semibold"><i class="fa-solid fa-draw-polygon mr-1"></i>Edit mesh</span>
 
 			<!-- mode toggles: clear active state -->
 			<div class="flex overflow-hidden rounded-full border border-gray-600">

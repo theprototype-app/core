@@ -488,8 +488,8 @@
 					{#if inspectedItem.thumbnail}
 						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded border border-gray-600 object-cover" />
 					{:else}
-						<span class="flex h-24 w-24 items-center justify-center rounded border border-gray-600 bg-gray-700 text-4xl">
-							{inspectedItem.kind === 'audio' ? '🎵' : inspectedItem.kind === 'text' ? '📄' : '📦'}
+						<span class="flex h-24 w-24 items-center justify-center rounded border border-gray-600 bg-gray-700 text-4xl text-gray-400">
+							<i class={'fa-solid ' + (inspectedItem.kind === 'audio' ? 'fa-music' : inspectedItem.kind === 'text' ? 'fa-file-lines' : 'fa-box')}></i>
 						</span>
 					{/if}
 				</div>
@@ -520,7 +520,7 @@
 					<div class="flex flex-wrap gap-2">
 						{#if inspectedItem.kind === 'text' || inspectedItem.kind === 'image'}
 							<Button size="xs" color="alternative" onclick={() => openInspectedItem()}>
-								{inspectedItem.kind === 'text' ? '📝 Edit' : '🔍 Preview'}
+								<i class={'fa-solid mr-1 ' + (inspectedItem.kind === 'text' ? 'fa-pen-to-square' : 'fa-magnifying-glass')}></i>{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
 							</Button>
 						{/if}
 						<Button
@@ -529,7 +529,7 @@
 							onclick={() => {
 								deleteItem(inspectedItem.id);
 								inspectorClose.set(true);
-							}}>🗑 Delete</Button
+							}}><i class="fa-solid fa-trash-can mr-1"></i>Delete</Button
 						>
 					</div>
 				</Section>
@@ -623,11 +623,11 @@
 				{/each}
 				<div class="flex flex-wrap gap-1">
 					<button id="env-save-preset" class="ui-button-quiet" title="Save the current environment as a named preset" onclick={savePresetPrompt}>
-						💾 Save preset
+						<i class="fa-solid fa-floppy-disk mr-1"></i>Save preset
 					</button>
-					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}>⬇ Export</button>
+					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}><i class="fa-solid fa-download mr-1"></i>Export</button>
 					<button class="ui-button-quiet" title="Import a .envpreset.json file" onclick={() => document.getElementById('env-import-file')?.click()}>
-						⬆ Import
+						<i class="fa-solid fa-upload mr-1"></i>Import
 					</button>
 					<input type="file" id="env-import-file" style="display: none" accept=".json" onchange={onImportPreset} />
 				</div>
@@ -1587,7 +1587,7 @@
 						{#if (p.mode ?? 'continuous') !== 'continuous'}
 							<div class="ui-row items-center gap-2">
 								<Button size="xs" color="alternative" onclick={() => burstObjectParticles($selectedObject.uuid)}>
-									💥 Burst now
+									<i class="fa-solid fa-burst mr-1"></i>Burst now
 								</Button>
 								<span class="text-xs text-gray-400">fires for every peer</span>
 							</div>

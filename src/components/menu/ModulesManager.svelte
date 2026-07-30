@@ -123,7 +123,7 @@
 								{/each}
 							{/if}
 							<Button size="xs" color="alternative" on:click={() => downloadModule(mod)}>
-								⬇ Download as example
+								<i class="fa-solid fa-download mr-1"></i>Download as example
 							</Button>
 						</div>
 					</div>

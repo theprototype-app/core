@@ -27,7 +27,7 @@
 		<label class="flex items-center gap-2">
 			Seed
 			<input id="dungeon-seed" class="w-28 rounded bg-gray-700 px-2 py-0.5" type="number" bind:value={seed} />
-			<button class="rounded bg-gray-600 px-2" title="Random seed" on:click={dice}>🎲</button>
+			<button class="rounded bg-gray-600 px-2" title="Random seed" on:click={dice}><i class="fa-solid fa-dice"></i></button>
 		</label>
 
 		<label class="flex flex-col">

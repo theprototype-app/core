@@ -679,7 +679,7 @@
 					{#if $drawerSlot}
 						<SettingRow name="Show Rooms button">
 							<svelte:fragment slot="control"><Toggle bind:checked={$showRoomsButton} /></svelte:fragment>
-							Show the "🌐 Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab
+							Show the "Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab
 						</SettingRow>
 					{/if}
 					<SettingRow name="Shadow quality">

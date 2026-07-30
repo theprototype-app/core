@@ -20,7 +20,7 @@ h.run(async () => {
 	await pane.click({ button: 'right', position: { x: 400, y: 120 } });
 	await A.page.waitForTimeout(300);
 	h.check(
-		await A.page.getByText('🔍 Search nodes…').isVisible(),
+		await A.page.getByText('Search nodes…').isVisible(),
 		'menu shows the search entry first'
 	);
 
@@ -49,7 +49,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
-	h.check(await A.page.getByText('🔍 Search nodes…').isVisible(), 'Esc restores the grouped menu');
+	h.check(await A.page.getByText('Search nodes…').isVisible(), 'Esc restores the grouped menu');
 	await A.page.mouse.click(900, 400); // backdrop click closes the restored menu
 	await A.page.waitForTimeout(200);
 
@@ -132,7 +132,7 @@ h.run(async () => {
 	// 103: empty flow search browses ALL entries (scrollable, Add-search parity)
 	await pane.click({ button: 'right', position: { x: 300, y: 100 } });
 	await A.page.waitForTimeout(200);
-	await A.page.getByText('🔍 Search nodes…').click();
+	await A.page.getByText('Search nodes…').click();
 	await A.page.waitForTimeout(300);
 	const browseAll = await A.page.evaluate(() => {
 		const list = document.querySelector('#node-search-box .max-h-64');

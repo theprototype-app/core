@@ -140,7 +140,7 @@
 					title="Import a .prefab.json file"
 					onclick={() => document.getElementById('import-prefab')?.click()}
 				>
-					⬆ Import
+					<i class="fa-solid fa-upload mr-1"></i>Import
 				</button>
 				<input
 					type="file"
@@ -165,7 +165,7 @@
 								{#if prefab.thumbnail}
 									<img src={prefab.thumbnail} alt={prefab.name} class="aspect-square w-full rounded object-cover" />
 								{:else}
-									<div class="flex aspect-square w-full items-center justify-center rounded bg-gray-700 text-xl">📦</div>
+									<div class="flex aspect-square w-full items-center justify-center rounded bg-gray-700 text-xl text-gray-400"><i class="fa-solid fa-cubes"></i></div>
 								{/if}
 							</button>
 							<p
@@ -179,7 +179,7 @@
 								{prefab.name}
 							</p>
 							<div class="absolute -right-1 -top-1 hidden gap-0.5 group-hover:flex">
-								<button class="rounded bg-gray-700 px-1 text-[10px] hover:bg-gray-600" title="Export" onclick={() => downloadPrefab(prefab)}>⬇</button>
+								<button class="rounded bg-gray-700 px-1 text-[10px] hover:bg-gray-600" title="Export" onclick={() => downloadPrefab(prefab)}><i class="fa-solid fa-download"></i></button>
 								<button class="rounded bg-gray-700 px-1 text-[10px] hover:bg-red-700" title="Delete" onclick={() => removePrefab(prefab.id)}>✕</button>
 							</div>
 						</div>

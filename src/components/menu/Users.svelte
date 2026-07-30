@@ -264,8 +264,8 @@
 							</div>
 							<div class="flex items-center gap-1.5 text-[10px] text-gray-400">
 								<span class="truncate">{shortId(user[0])}</span>
-								{#if $mutedPeers.includes(user[0])}<span title="Muted">🔇</span>{/if}
-								{#if $peerHands[user[0]]?.active}<span title="In VR">🥽</span>{/if}
+								{#if $mutedPeers.includes(user[0])}<span title="Muted"><i class="fa-solid fa-volume-xmark"></i></span>{/if}
+								{#if $peerHands[user[0]]?.active}<span title="In VR"><i class="fa-solid fa-vr-cardboard"></i></span>{/if}
 								{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
 								{#if i > 0 && $peerQuality[user[0]]}
 									{@const q = $peerQuality[user[0]]}
@@ -295,7 +295,7 @@
 								onclick={() => { specate(user[0]); peersOpen = false; }}
 								oncontextmenu={(e) => openMuteMenu(e, user[0])}
 							>
-								{$specatorMode === user[0] ? '👁 Watching' : '👁 Watch'}
+								<i class="fa-solid fa-eye mr-1"></i>{$specatorMode === user[0] ? 'Watching' : 'Watch'}
 							</button>
 						{/if}
 					</div>

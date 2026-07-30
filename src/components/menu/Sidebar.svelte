@@ -137,13 +137,13 @@
 
 		<!-- Files -->
 		<button class="side-row" onclick={() => pickFile('import-file')}>
-			<span class="side-ico">📩</span><span class="flex-1 whitespace-nowrap">Import</span>
+			<span class="side-ico"><i class="fa-solid fa-file-import"></i></span><span class="flex-1 whitespace-nowrap">Import</span>
 		</button>
 		<button class="side-row" onclick={() => pickFile('load-file')}>
-			<span class="side-ico">📁</span><span class="flex-1 whitespace-nowrap">Load</span>
+			<span class="side-ico"><i class="fa-solid fa-folder-open"></i></span><span class="flex-1 whitespace-nowrap">Load</span>
 		</button>
 		<button class="side-row" onclick={() => save(saveFormat)}>
-			<span class="side-ico">💾</span><span class="flex-1 whitespace-nowrap">Save</span>
+			<span class="side-ico"><i class="fa-solid fa-floppy-disk"></i></span><span class="flex-1 whitespace-nowrap">Save</span>
 		</button>
 		<div class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
 			<button class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" onclick={() => pickFormat('gltf')}>GLTF</button>
@@ -151,34 +151,34 @@
 			{#if showJson}
 				<button class="side-seg {saveFormat === 'json' ? 'on' : ''}" onclick={() => pickFormat('json')}>JSON</button>
 			{/if}
-			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}>⚙</button>
+			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}><i class="fa-solid fa-gear"></i></button>
 		</div>
 
 		<div class="side-div"></div>
 
 		<!-- Scene -->
 		<button class="side-row" onclick={() => showSidebar('scene')}>
-			<span class="side-ico">🎛️</span>
+			<span class="side-ico"><i class="fa-solid fa-sliders"></i></span>
 			<span class="flex-1 whitespace-nowrap">{!$inspectorClose && $inspectorKind === 'scene' ? '● ' : ''}Configure Scene</span>
 		</button>
 		<button class="side-row" onclick={clearScene}>
-			<span class="side-ico">🗑️</span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
+			<span class="side-ico"><i class="fa-solid fa-trash-can"></i></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
 		</button>
 		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico">🧩</span><span class="flex-1 whitespace-nowrap">Modules</span>
+			<span class="side-ico"><i class="fa-solid fa-puzzle-piece"></i></span><span class="flex-1 whitespace-nowrap">Modules</span>
 		</button>
 		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico">🗂️</span><span class="flex-1 whitespace-nowrap">Sessions</span>
+			<span class="side-ico"><i class="fa-solid fa-box-archive"></i></span><span class="flex-1 whitespace-nowrap">Sessions</span>
 		</button>
 
 		<div class="side-div"></div>
 
 		<!-- App -->
 		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
-			<span class="side-ico">⚙️</span><span class="flex-1 whitespace-nowrap">Settings</span>
+			<span class="side-ico"><i class="fa-solid fa-gear"></i></span><span class="flex-1 whitespace-nowrap">Settings</span>
 		</button>
 		<button class="side-row" onclick={() => window.open('https://docs.theprototype.app', '_blank')}>
-			<span class="side-ico">📖</span><span class="flex-1 whitespace-nowrap">Docs</span>
+			<span class="side-ico"><i class="fa-solid fa-book"></i></span><span class="flex-1 whitespace-nowrap">Docs</span>
 		</button>
 		<!-- the unseen cue is a CLASS toggle, not an {#if}: clicking this row closes the
 		     menu, and destroying a nested branch inside the subtree being destroyed in

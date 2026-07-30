@@ -312,15 +312,15 @@
 	}
 	function packRowMenu(e: MouseEvent, pack: any) {
 		e.preventDefault();
-		const items: any[] = [{ label: 'ⓘ Attribution / license', action: () => showPackAttribution(pack) }];
+		const items: any[] = [{ label: 'Attribution / license', action: () => showPackAttribution(pack) }];
 		if (packSourceUrl(pack))
-			items.push({ label: '↗ Open source', action: () => window.open(packSourceUrl(pack), '_blank', 'noopener') });
+			items.push({ label: 'Open source', action: () => window.open(packSourceUrl(pack), '_blank', 'noopener') });
 		// M-2: a default-list .zip pack (e.g. audio/SFX) installs on demand
 		if (pack.source === 'default' && pack.zip)
-			items.push({ label: '⬇ Install pack', action: () => installZipPack(pack) });
+			items.push({ label: 'Install pack', action: () => installZipPack(pack) });
 		if (pack.source === 'imported')
 			items.push({
-				label: '🗑 Delete pack',
+				label: 'Delete pack',
 				danger: true,
 				action: () => {
 					removeImportedPack(pack.name);
@@ -329,7 +329,7 @@
 			});
 		else
 			// P5: built-in packs are bundled/CDN — can't delete, so HIDE (reversible)
-			items.push({ label: '🙈 Hide pack', action: () => hidePack(pack.name) });
+			items.push({ label: 'Hide pack', action: () => hidePack(pack.name) });
 		menu = { x: e.clientX, y: e.clientY, items };
 	}
 	// fetch a pack's items when it's opened
@@ -359,12 +359,13 @@
 		}
 	}
 
+	// B-sweep: Font Awesome classes (the app's icon language) instead of color emoji
 	const KIND_ICONS: Record<string, string> = {
-		image: '🖼️',
-		audio: '🎵',
-		text: '📄',
-		object: '🧊',
-		prefab: '🧱'
+		image: 'fa-image',
+		audio: 'fa-music',
+		text: 'fa-file-lines',
+		object: 'fa-cube',
+		prefab: 'fa-cubes'
 	};
 
 	// folders as a flat indented tree, respecting expansion (106.6)
@@ -426,22 +427,22 @@
 	// 197d: breadcrumb trail for the current location (click a crumb to navigate)
 	const crumbs = $derived.by(() => {
 		const a = $activeFolder;
-		if (a === 'prefabs') return [{ label: '🧱 Prefabs', id: 'prefabs' as string | null }];
-		if (a === 'packs') return [{ label: '📦 Packs', id: 'packs' as string | null }];
+		if (a === 'prefabs') return [{ label: 'Prefabs', id: 'prefabs' as string | null }];
+		if (a === 'packs') return [{ label: 'Packs', id: 'packs' as string | null }];
 		if (typeof a === 'string' && a.startsWith('pack:')) {
 			const p = packByName(a.slice(5));
 			return [
-				{ label: '📦 Packs', id: 'packs' as string | null },
+				{ label: 'Packs', id: 'packs' as string | null },
 				{ label: p?.title || a.slice(5), id: a as string | null }
 			];
 		}
 		if (typeof a === 'string' && a.startsWith('scene')) {
 			const sub = a.split(':')[1];
-			const out = [{ label: '🌐 Scene', id: 'scene' as string | null }];
+			const out = [{ label: 'Scene', id: 'scene' as string | null }];
 			if (sub) out.push({ label: sub, id: a });
 			return out;
 		}
-		const out = [{ label: '🏠 Library', id: null as string | null }];
+		const out = [{ label: 'Library', id: null as string | null }];
 		if (typeof a === 'string') {
 			const chain: any[] = [];
 			let cur: any = $explorerFolders.find((f: any) => f.id === a);
@@ -682,7 +683,7 @@
 			items: inPacks
 				? [
 						{ label: '＋ Import pack (.zip)', action: () => packZipInput?.click() },
-						{ label: '🔗 Load pack from URL', action: loadPackFromUrl }
+						{ label: 'Load pack from URL', action: loadPackFromUrl }
 					]
 				: [{ label: 'New folder', action: () => startCreate($activeFolder ?? null) }]
 		};
@@ -998,7 +999,7 @@
 				ondragover={(e) => dragOverInto(e, 'root')}
 				ondragleave={() => (dropFolder = null)}
 				ondrop={(e) => dropInto(e, null)}
-				onclick={() => openFolder(null)}>🏠 Library</button
+				onclick={() => openFolder(null)}><i class="fa-solid fa-house mr-1.5 w-4 text-center text-gray-400"></i>Library</button
 			>
 			{#if editing?.mode === 'create' && editing.parentId === null}
 				{@render editRow(0)}
@@ -1035,7 +1036,7 @@
 							onclick={() => openFolder(row.folder.id)}
 							ondblclick={() => toggleExpand(row.folder.id)}
 						>
-							📁 {row.folder.name}
+							<i class="fa-solid fa-folder mr-1.5 w-4 text-center text-gray-400"></i>{row.folder.name}
 						</button>
 					</div>
 				{/if}
@@ -1057,7 +1058,7 @@
 					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
 						? 'bg-primary-700 text-white'
 						: 'text-gray-300 hover:bg-gray-700'}"
-					onclick={() => openFolder('prefabs')}>🧱 Prefabs</button
+					onclick={() => openFolder('prefabs')}><i class="fa-solid fa-cubes mr-1.5 w-4 text-center text-gray-400"></i>Prefabs</button
 				>
 				<button
 					id="packs-folder"
@@ -1065,7 +1066,7 @@
 						? 'bg-primary-700 text-white'
 						: 'text-gray-300 hover:bg-gray-700'}"
 					title="Asset packs — click to list them, double-click to expand the tree"
-					onclick={() => openFolder('packs')} ondblclick={togglePacks}>📦 Packs {packsExpanded ? '▾' : '▸'}</button
+					onclick={() => openFolder('packs')} ondblclick={togglePacks}><i class="fa-solid fa-box-open mr-1.5 w-4 text-center text-gray-400"></i>Packs {packsExpanded ? '▾' : '▸'}</button
 				>
 				{#if packsExpanded}
 					{#each shownPacks as pack (pack.name)}
@@ -1079,7 +1080,7 @@
 							oncontextmenu={(e) => packRowMenu(e, pack)}
 							onclick={() => openFolder('pack:' + pack.name)}
 						>
-							📦 {pack.title}
+							<i class="fa-solid fa-box-open mr-1.5 w-4 text-center text-gray-500"></i>{pack.title}
 						</button>
 					{/each}
 					{#if shownPacks.length === 0}
@@ -1092,7 +1093,7 @@
 						? 'bg-primary-700 text-white'
 						: 'text-gray-300 hover:bg-gray-700'}"
 					title="Assets the shared scene uses right now — identical on every peer"
-					onclick={() => openFolder('scene')} ondblclick={toggleScene}>🌐 Scene {sceneExpanded ? '▾' : '▸'}</button
+					onclick={() => openFolder('scene')} ondblclick={toggleScene}><i class="fa-solid fa-globe mr-1.5 w-4 text-center text-gray-400"></i>Scene {sceneExpanded ? '▾' : '▸'}</button
 				>
 				{#if sceneExpanded}
 				{#each ['audio', 'config', 'textures'] as sub}
@@ -1103,7 +1104,7 @@
 						style="padding-left: 22px"
 						onclick={() => openFolder('scene:' + sub)}
 					>
-						📁 {sub} ({$sceneAssets.filter((a) => a.group === sub).length})
+						<i class="fa-solid fa-folder mr-1.5 w-4 text-center text-gray-500"></i>{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
 					</button>
 				{/each}
 				{/if}
@@ -1134,14 +1135,14 @@
 					<!-- RP: a zip-only pack (audio-essentials) has no browsable item list —
 					     its open view IS the install prompt (right-click-only was undiscoverable) -->
 					<div class="flex flex-col items-center gap-2 p-6 text-center">
-						<span class="text-4xl">🎁</span>
+						<span class="text-4xl text-gray-300"><i class="fa-solid fa-gift"></i></span>
 						<span class="text-sm text-gray-300">"{openPack.title}" installs into your local library.</span>
 						<button
 							id="pack-install"
 							class="rounded bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-500 disabled:opacity-50"
 							disabled={installingPack}
 							onclick={() => installZipPack(openPack)}
-						>{installingPack ? 'Installing…' : `⬇ Install ${openPack.title}`}</button>
+						><i class="fa-solid fa-download mr-1"></i>{installingPack ? 'Installing…' : `Install ${openPack.title}`}</button>
 					</div>
 				{:else}
 				<p class="p-4 text-center text-xs italic text-gray-500">
@@ -1177,7 +1178,7 @@
 								ondblclick={() => openFolder(folder.id)}
 								onkeydown={(e) => e.key === 'Enter' && openFolder(folder.id)}
 							>
-								<span class="flex h-14 w-14 items-center justify-center text-4xl">📁</span>
+								<span class="flex h-14 w-14 items-center justify-center text-3xl text-gray-400"><i class="fa-solid fa-folder"></i></span>
 								{#if editing?.mode === 'rename' && editing.inGrid && editing.folderId === folder.id}
 									{@render cardEdit()}
 								{:else}
@@ -1216,13 +1217,13 @@
 										class="h-14 w-14 rounded object-cover"
 									/>
 								{:else}
-									<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-2xl">{KIND_ICONS[item.kind] ?? '📦'}</span>
+									<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-2xl text-gray-400"><i class={'fa-solid ' + (KIND_ICONS[item.kind] ?? 'fa-box')}></i></span>
 								{/if}
 							{:else if item.thumbnail}
 								<img src={item.thumbnail} alt={item.name} class="h-14 w-14 rounded object-cover" />
 							{:else}
 								<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 text-2xl">
-									{KIND_ICONS[item.kind] ?? '📦'}
+									<i class={'fa-solid ' + (KIND_ICONS[item.kind] ?? 'fa-box') + ' text-gray-400'}></i>
 								</span>
 							{/if}
 							{#if editing?.mode === 'rename-item' && editing.itemId === item.id}
@@ -1248,7 +1249,7 @@
 					<!-- N6: pack-level properties + attribution -->
 					<div class="flex flex-col gap-1 border-b border-gray-700/40 pb-2">
 						<div class="flex items-center gap-2">
-							<span class="text-xl">📦</span>
+							<span class="text-xl text-gray-400"><i class="fa-solid fa-box-open"></i></span>
 							<span class="min-w-0 flex-1 break-words font-semibold">{openPack.title}</span>
 						</div>
 						{#if openPack.license}<div class="text-[11px] text-gray-400">License: {licenseLabel(openPack.license)}</div>{/if}
@@ -1271,8 +1272,8 @@
 						{#if selItem.thumbnail}
 							<img src={selItem.thumbnail} alt="" class="h-12 w-12 rounded object-cover" />
 						{:else}
-							<span class="flex h-12 w-12 items-center justify-center rounded bg-gray-700 text-2xl"
-								>{KIND_ICONS[selItem.kind] ?? '📦'}</span
+							<span class="flex h-12 w-12 items-center justify-center rounded bg-gray-700 text-2xl text-gray-400"
+								><i class={'fa-solid ' + (KIND_ICONS[selItem.kind] ?? 'fa-box')}></i></span
 							>
 						{/if}
 						<span class="min-w-0 flex-1 break-words font-semibold">{selItem.name}</span>
@@ -1333,7 +1334,7 @@
 				{:else if selected?.kind === 'folder'}
 					{@const counts = folderCounts(selected.folder.id)}
 					<div class="flex items-center gap-2">
-						<span class="text-2xl">📁</span>
+						<span class="text-2xl text-gray-400"><i class="fa-solid fa-folder"></i></span>
 						<span class="min-w-0 flex-1 break-words font-semibold">{selected.folder.name}</span>
 					</div>
 					<p class="text-gray-400">
@@ -1434,7 +1435,7 @@
 				onpointerup={endResize}
 			></div>
 			<div class="mb-1 flex items-center gap-2">
-				<span class="text-xs font-semibold text-gray-200">🗂️ Explorer</span>
+				<span class="text-xs font-semibold text-gray-200"><i class="fa-solid fa-folder-tree mr-1"></i>Explorer</span>
 				<input
 					id="explorer-search"
 					class="ui-input w-48 py-0.5"
@@ -1459,7 +1460,7 @@
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'explorerWin', defaultRect: { left: 160, top: 120 } }}
 			use:focusStack
-			use:tabbable={{ key: 'explorer', title: '🗂️ Explorer', openStore: explorerClose, isOpen: (v) => !v, close: () => explorerClose.set(true) }}
+			use:tabbable={{ key: 'explorer', title: 'Explorer', openStore: explorerClose, isOpen: (v) => !v, close: () => explorerClose.set(true) }}
 			use:dockable={{ key: 'explorer' }}
 			style="z-index: var(--z-window)"
 			style:width="{effW}px"
@@ -1474,7 +1475,7 @@
 			role="region"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-				<span>🗂️ Explorer</span>
+				<span><i class="fa-solid fa-folder-tree mr-1"></i>Explorer</span>
 				<input
 					class="ui-input w-44 py-0.5 font-normal"
 					placeholder="Search assets…"

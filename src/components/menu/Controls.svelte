@@ -801,15 +801,15 @@
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Ping it for everyone"
-								on:click={() => pingObject(row.object)}>📌</button>
+								on:click={() => pingObject(row.object)}><i class="fa-solid fa-thumbtack"></i></button>
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Pin a synced note to it"
-								on:click={() => addAnnotation(row.object.uuid)}>📝</button>
+								on:click={() => addAnnotation(row.object.uuid)}><i class="fa-solid fa-pen-to-square"></i></button>
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"
-								on:click={() => focusSystemObject(row.object)}>👁</button>
+								on:click={() => focusSystemObject(row.object)}><i class="fa-solid fa-eye"></i></button>
 						</div>
 						{#if expandedSystem[row.name]}
 							{#each row.children as childName}
@@ -847,11 +847,11 @@
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Ping it for everyone"
-								on:click={() => pingObject(row.object)}>📌</button>
+								on:click={() => pingObject(row.object)}><i class="fa-solid fa-thumbtack"></i></button>
 							<button
 								class="rounded bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"
-								on:click={() => focusSystemObject(row.object)}>👁</button>
+								on:click={() => focusSystemObject(row.object)}><i class="fa-solid fa-eye"></i></button>
 						</div>
 					</div>
 				{/each}

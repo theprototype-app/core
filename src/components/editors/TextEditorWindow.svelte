@@ -62,13 +62,13 @@
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>📝 {$textEditorTarget.title}{dirty ? ' ●' : ''}</span>
+			<span><i class="fa-solid fa-pen-to-square mr-1"></i>{$textEditorTarget.title}{dirty ? ' ●' : ''}</span>
 			<span class="flex-1"></span>
 			<button
 				id="text-editor-save"
 				class="ui-button-quiet {dirty ? 'bg-primary-700 text-white' : ''}"
 				title="Save (Ctrl+S)"
-				onclick={save}>💾 Save</button
+				onclick={save}><i class="fa-solid fa-floppy-disk mr-1"></i>Save</button
 			>
 			<button class="ui-button-quiet" title="Close" onclick={requestClose}>✕</button>
 		</div>

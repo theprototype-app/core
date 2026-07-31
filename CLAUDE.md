@@ -139,7 +139,13 @@ loadable play content. Everything a user does must be visible to connected peers
   'joint' history kind, sender-side delete cascade, sessions persist),
   `inputRuntime` (#12: store-only SDK input — key codes + VR axes published by
   vrControls, claims 'keys'/'locomotion' gate PointerLockControls/editorNavigation/
-  VR stick; module bindings list in Settings), `possess` (#12: tank-controls drive of
+  VR stick; module bindings list in Settings), `trackpadNav` (QW launch polish:
+  window-capture wheel — two-finger trackpad swipes PAN via cloned-vector
+  OrbitControls math with a STATEFUL 250ms gesture window (fast flicks stay pans);
+  pinch/ctrl-wheel page-zoom guards (iOS gesturestart + body touch-action
+  pan-x pan-y — the CANVAS gets touch-action:none or Chromium axis-latches pans);
+  Settings: mode auto/on/off, reverse pan, pan + pinch-zoom enable toggles —
+  all LOCAL prefs), `possess` (#12: tank-controls drive of
   any object + chase/orbit camera; possessing = selecting; ONE undo per ride),
   `handModels` (#12: custom hand GLB = IDENTITY — hash on `handmodel` msg + handshake,
   assetShare pull, rigid-at-wrist render), `terrainSculpt` (#12: brush raise/lower/
@@ -545,6 +551,17 @@ loadable play content. Everything a user does must be visible to connected peers
   annotation in it hard-breaks `npm run build` with a useless
   `error during build: undefined` (svelte-check never runs; vite dev 500s too).
   Same trap in any non-TS component: JSDoc for types, never TS syntax (#13-B3).
+- **Icons = `@lucide/svelte` SVG components** (Font Awesome fully REMOVED post-1.0.1
+  — never add `fa-` classes). Static markup imports named components
+  (`import { Play } from '@lucide/svelte'`; sizes 16 inline/menu, 18-20 toolbar/
+  header, 24 the play FAB; `aria-hidden="true"` when decorative); DATA-DRIVEN icon
+  names (Explorer KIND_ICONS, menu-item defs) render via `components/ui/Icon.svelte`
+  (kebab lucide names). Icons inherit `currentColor` — never hardcode grays;
+  semantic colors come from the `--icon-*` theme tokens. TWO TRAPS: a `class` passed
+  to a lucide component lands on the CHILD-scope `<svg>`, so scoped CSS targeting it
+  needs `:global(...)` (bit cx-chevron/tp-toast-icon/role-caret — silent style loss,
+  sometimes without even an unused-selector warning); svg `className` is an
+  SVGAnimatedString — e2e reads `getAttribute('class')` and selects `svg`, not `i`.
 
 ## Verification (mandatory before commit)
 

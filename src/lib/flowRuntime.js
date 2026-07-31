@@ -182,7 +182,9 @@ export const valueTypes = [
 	'maprange', 'select', // 4.6
 	'flowinput', 'flowoutput', 'objectflow', // H5: object-flow composition
 	'keypress', // H3: keyboard trigger
-	'onimpact' // PFX-C: physics impact trigger
+	'onimpact', // PFX-C: physics impact trigger
+	'onenter', 'onexit', // CL-C: sensor overlap triggers
+	'velocity' // CL-C: live speed readout (m/s)
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -430,6 +432,21 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
 		}
+		case 'onenter':
+		case 'onexit': {
+			// CL-C: sensor overlap edges arrive as replicated trigger stamps
+			// (initiator-detected in physics, same as onimpact)
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
+		case 'velocity': {
+			// CL-C: live speed (m/s) of the wired object (or the graph owner).
+			// APPROXIMATE on non-initiators: fed by ~10Hz move-message deltas,
+			// exact-ish on the stepping peer (per-step write-back deltas).
+			const target = input('target', null) || implicitOwnerOf(node);
+			return typeof target === 'string' && ctx && ctx.speed ? ctx.speed(target) : 0;
+		}
 		case 'counter':
 			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;
 		// --- H5: object-flow composition ---
@@ -477,8 +494,42 @@ function runtimeCtx() {
 			const object = sceneObjects?.getObjectByProperty('uuid', uuid);
 			return object ? object.getWorldPosition(new THREE.Vector3()) : null;
 		},
-		triggers: get(flowTriggers)
+		triggers: get(flowTriggers),
+		speed: (/** @type {string} */ uuid) => speedOf(uuid)
 	};
+}
+
+// --- CL-C C3: LOCAL per-object speed feed (velocity node) --------------------
+// NOT replicated: the initiator feeds exact per-step write-back poses, peers
+// feed the ~10Hz incoming move stream — so the value is approximate off the
+// stepping peer (documented on the node card). Stale entries read as 0.
+/** @type {Map<string, {x: number, y: number, z: number, t: number, speed: number}>} */
+const objectSpeeds = new Map();
+
+/** Feed one observed pose (physics write-back / incoming move applier).
+ * @param {string} uuid @param {number} x @param {number} y @param {number} z */
+export function noteObjectPose(uuid, x, y, z) {
+	const now = performance.now();
+	const prev = objectSpeeds.get(uuid);
+	if (!prev) {
+		objectSpeeds.set(uuid, { x, y, z, t: now, speed: 0 });
+		return;
+	}
+	const dt = (now - prev.t) / 1000;
+	if (dt < 0.005) return; // sub-step duplicate
+	prev.speed = Math.hypot(x - prev.x, y - prev.y, z - prev.z) / dt;
+	prev.x = x;
+	prev.y = y;
+	prev.z = z;
+	prev.t = now;
+}
+
+/** Current speed estimate (m/s), 0 when nothing moves / no feed. @param {string} uuid */
+export function speedOf(uuid) {
+	const entry = objectSpeeds.get(uuid);
+	if (!entry) return 0;
+	if (performance.now() - entry.t > 400) return 0; // feed went quiet = at rest
+	return entry.speed;
 }
 
 /** Synced seconds — same formula as the tick clock. */
@@ -565,6 +616,32 @@ export function fireObjectImpact(uuid, strength) {
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
 			applyNodeTrigger(node.id, syncedNow(), true);
 	});
+}
+
+/**
+ * CL-A A3: the physics INITIATOR saw a sensor pair start/stop intersecting —
+ * pulse the matching On Enter / On Exit nodes targeting `uuid`. Physics fires
+ * this once per DIRECTION of the pair (uuid/otherUuid swapped), so matching
+ * only on `uuid` covers both sides without double-pulsing. Same replicated-
+ * stamp semantics as onimpact; no-op while no such nodes exist (CL-C adds
+ * the node types). @param {string} type @param {string} uuid @param {string} otherUuid
+ */
+function fireSensorEdge(type, uuid, otherUuid) {
+	nodes.forEach((node) => {
+		if (node.type !== type) return;
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+			applyNodeTrigger(node.id, syncedNow(), true);
+	});
+}
+
+/** Something entered a sensor (or a sensor entered something). @param {string} uuid @param {string} otherUuid */
+export function fireObjectEnter(uuid, otherUuid) {
+	fireSensorEdge('onenter', uuid, otherUuid);
+}
+
+/** A sensor overlap ended. @param {string} uuid @param {string} otherUuid */
+export function fireObjectExit(uuid, otherUuid) {
+	fireSensorEdge('onexit', uuid, otherUuid);
 }
 
 /** @param {any} object @param {any} base @param {any} anim @param {number} time @param {any} ctx */

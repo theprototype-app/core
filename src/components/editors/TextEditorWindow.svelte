@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Save, SquarePen } from '@lucide/svelte';
 	// Floating professional code editor (107): Explorer text files and the
 	// custom-node definition editor share this window. Ctrl+S saves; the title
 	// carries a dirty dot. Esc / ✕ close, prompting to save unsaved edits via an
@@ -62,13 +63,13 @@
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>📝 {$textEditorTarget.title}{dirty ? ' ●' : ''}</span>
+			<span><SquarePen size={16} class="mr-1" aria-hidden="true" />{$textEditorTarget.title}{dirty ? ' ●' : ''}</span>
 			<span class="flex-1"></span>
 			<button
 				id="text-editor-save"
 				class="ui-button-quiet {dirty ? 'bg-primary-700 text-white' : ''}"
 				title="Save (Ctrl+S)"
-				onclick={save}>💾 Save</button
+				onclick={save}><Save size={16} class="mr-1" aria-hidden="true" />Save</button
 			>
 			<button class="ui-button-quiet" title="Close" onclick={requestClose}>✕</button>
 		</div>

@@ -19,12 +19,18 @@ const OUTPUT = {
 	onclick: 'event',
 	keypress: 'event', // H3
 	onimpact: 'event', // PFX-C
+	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
+	velocity: 'number', // CL-C: live speed readout
 	flowinput: 'number' // H5 fallback; the live check reads data.vtype
 };
 
 /** typed named inputs; `_default` covers an unnamed target handle @type {Record<string,Record<string,string>>} */
 const INPUT = {
 	objectselector: { _default: 'effect' },
+	// CL-C: collider takes an object source (shape 'object') + a scale number;
+	// velocity reads the wired object's live speed
+	collider: { source: 'object', scale: 'number' },
+	velocity: { target: 'object' },
 	math: { a: 'number', b: 'number' },
 	compare: { a: 'number', b: 'number' },
 	gate: { a: 'boolean', b: 'boolean' },

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Trash2 } from '@lucide/svelte';
 	import {
 		SvelteFlow,
 		Background,
@@ -41,6 +42,8 @@
 	import ObjectPairNode from './nodes/ObjectPairNode.svelte';
 	import EffectNode from './nodes/EffectNode.svelte';
 	import OnClickNode from './nodes/OnClickNode.svelte';
+	import ColliderNode from './nodes/ColliderNode.svelte';
+	import VelocityNode from './nodes/VelocityNode.svelte';
 	import CounterNode from './nodes/CounterNode.svelte';
 	import FlowIONode from './nodes/FlowIONode.svelte';
 	import ObjectFlowNode from './nodes/ObjectFlowNode.svelte';
@@ -105,6 +108,10 @@
 		visibility: EffectNode,
 		onclick: OnClickNode,
 		onimpact: AnimationNode,
+		onenter: OnClickNode, // CL-C: same pulse card, sensor copy
+		onexit: OnClickNode,
+		collider: ColliderNode, // CL-C
+		velocity: VelocityNode, // CL-C
 		counter: CounterNode,
 		flowinput: FlowIONode,
 		flowoutput: FlowIONode,
@@ -350,7 +357,7 @@
 			y: e.clientY,
 			flowPos,
 			items: [
-				{ label: '🔍 Search nodes…', action: () => openSearch('') },
+				{ label: 'Search nodes…', action: () => openSearch('') },
 				...[...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
 					label: group.group,
 					children: group.items.map((item) => ({
@@ -590,7 +597,7 @@
 					title="Delete this object's flow"
 					on:click={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 				>
-					🗑
+					<Trash2 size={16} aria-hidden="true" />
 				</button>
 			{/if}
 		</div>

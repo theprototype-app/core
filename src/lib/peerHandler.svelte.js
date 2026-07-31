@@ -27,6 +27,7 @@ import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } f
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
+import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
@@ -326,6 +327,8 @@ export class PeerConnection {
 					applyRemoteEnvironment(data);
 				} else if(data.type == 'music') {
 					applyRemoteMusic(data);
+				} else if(data.type == 'scenephysics') {
+					applyRemoteScenePhysics(data);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
@@ -480,6 +483,7 @@ export class PeerConnection {
 		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA})
 		conn.send(environmentState())
 		conn.send(musicState())
+		conn.send(scenePhysicsState())
 		conn.send(handModelState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})

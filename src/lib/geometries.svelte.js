@@ -13,7 +13,7 @@ function initRectAreaUniforms() {
     rectAreaReady = true;
     RectAreaLightUniformsLib.init();
 }
-import { notifyExternalMove } from '$lib/flowRuntime';
+import { notifyExternalMove, noteObjectPose } from '$lib/flowRuntime';
 import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject } from '../stores/sceneStore.js';
 
 //Access scene Store
@@ -237,6 +237,8 @@ export function moveGeometry(uuid, pos, rot, scale) {
         sceneObjects.getObjectByProperty('uuid', uuid).scale.set(scale[0], scale[1], scale[2]);
         // a peer moved it: if it is animated here, this transform is the new base
         notifyExternalMove(uuid);
+        // CL-C C3: ~10Hz speed approximation feed on peers (velocity node)
+        noteObjectPose(uuid, pos[0], pos[1], pos[2]);
     }
 }
 

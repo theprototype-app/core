@@ -5,6 +5,31 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.1.0 — A sharper coat of paint 🎨
+
+- ✒️ **New icon system** — crisp SVG icons (Lucide) everywhere, with meaningful
+  colors: amber folders, tinted file types, red for anything destructive. Every
+  theme (including 8-bit and your custom ones) controls the palette.
+- 🖐️ **Trackpad navigation** — two-finger swipes pan the camera, pinch zooms,
+  and the page itself never zooms by accident. Direction, pan and pinch are all
+  configurable in Settings.
+- ⏳ **Loading feedback** — dropping a pack model shows a loading toast, pack
+  lists show a spinner on first open (no more stale flashes), and attribution
+  opens instantly.
+- ▶️ **Play button polish** — cleaner look, whole-button hover, and its
+  neighbors no longer lose clicks to it.
+
+## 1.0.1 — Going public 🌍
+
+The engine is now open source (MIT): [github.com/theprototype-app/core](https://github.com/theprototype-app/core).
+Star it, fork it, break it — bug reports and modules welcome.
+
+- 📜 **Community files** — a contributing guide, code of conduct and security
+  policy now ship with the repo.
+- 🤖 **Agent-ready docs** — llms.txt links the public repository, README and
+  module guide, so your coding agent can find its way around.
+- 🏷️ Package metadata cleanup (name, license, repository).
+
 ## 1.0.0 — First release 🎉
 
 The first tagged release. Everything below is in the box.

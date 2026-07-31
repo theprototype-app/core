@@ -1,4 +1,5 @@
 <script>
+	import { Archive, Download, Save, Upload } from '@lucide/svelte';
 	// Sessions manager (phase 50): thumbnail grid of saved sessions with
 	// load (proposal when peers are connected), selective object import,
 	// rename, export/import and delete.
@@ -128,10 +129,10 @@
 				onclick={() => {
 					const name = prompt('Session name', 'Session ' + new Date().toLocaleDateString());
 					if (name) saveSession(name);
-				}}>💾 Save current scene</Button
+				}}><Save size={16} class="mr-1" aria-hidden="true" />Save current scene</Button
 			>
 			<Button size="xs" color="alternative" onclick={() => document.getElementById('session-import-file')?.click()}>
-				⬆ Import session file
+				<Upload size={16} class="mr-1" aria-hidden="true" />Import session file
 			</Button>
 			<input type="file" id="session-import-file" style="display: none" accept=".json,.zip" onchange={importSessionFile} />
 			<span class="text-xs text-gray-400">
@@ -181,7 +182,7 @@
 						{#if meta.thumbnail}
 							<img src={meta.thumbnail} alt={meta.name} class="h-24 w-full object-cover" />
 						{:else}
-							<div class="flex h-24 w-full items-center justify-center bg-gray-700 text-2xl">🗂</div>
+							<div class="flex h-24 w-full items-center justify-center bg-gray-700 text-2xl text-gray-400"><Archive size={16} aria-hidden="true" /></div>
 						{/if}
 						<div class="flex flex-col gap-1 p-2">
 							<p
@@ -202,8 +203,8 @@
 									onclick={() => { requestLoadSession(meta.id); sessionsOpen.set(false); }}>▶ Load</button>
 								<button class="ui-button-quiet" title="Pick objects to add to the current scene"
 									onclick={() => openPicker(meta)}>⤵ Import objects…</button>
-								<button class="ui-button-quiet session-download-json" title="Download as JSON" onclick={() => downloadSession(meta)}>⬇ .json</button>
-								<button class="ui-button-quiet session-download-zip" title="Download as a .zip with the scene's assets" onclick={() => downloadSession(meta, true)}>⬇ .zip</button>
+								<button class="ui-button-quiet session-download-json" title="Download as JSON" onclick={() => downloadSession(meta)}><Download size={16} class="mr-1" aria-hidden="true" />.json</button>
+								<button class="ui-button-quiet session-download-zip" title="Download as a .zip with the scene's assets" onclick={() => downloadSession(meta, true)}><Download size={16} class="mr-1" aria-hidden="true" />.zip</button>
 								<button class="ui-button-quiet hover:bg-red-700" title="Delete"
 									onclick={() => deleteSession(meta.id)}>✕</button>
 							</div>

@@ -18,7 +18,6 @@ const FROZEN = [
 	'vite',
 	'@sveltejs/vite-plugin-svelte',
 	'typescript',
-	'@fortawesome/fontawesome-free',
 	'@dimforge/rapier3d-compat'
 ];
 

@@ -21,7 +21,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection } from '$lib/faceEdit';
+	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, lookupEditable } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
@@ -30,6 +30,7 @@
 	import { setParticleRoot } from '$lib/particleRuntime';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
+	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
@@ -257,6 +258,7 @@
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		updateLightHelpers();
+		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);
 	});
 
@@ -353,6 +355,7 @@
 
 	onMount(() => {
 		startLightHelpers();
+		startColliderHelpers();
 		startEditorNavigation();
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
@@ -416,7 +419,7 @@
 					if ($orbitControls) $orbitControls.enabled = false;
 					beginStroke($sculptObject);
 					const local = terrain.worldToLocal(hit.point.clone());
-					strokeMove($sculptObject, local.x, local.z);
+					strokeMove($sculptObject, local.x, local.z, 0.016, local.y); // y feeds the mesh brush
 				}
 				return;
 			}
@@ -447,13 +450,15 @@
 				setRayFromEvent(event);
 				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
 				if (hit) {
-					showCursorAt(hit.point);
+					// mesh sculpt: orient the brush ring to the surface
+					const worldNormal = hit.face ? hit.face.normal.clone().transformDirection(terrain.matrixWorld) : null;
+					showCursorAt(hit.point, worldNormal);
 					if (sculptActive) {
 						const now = performance.now();
 						const dt = Math.min((now - lastSculptAt) / 1000, 0.1);
 						lastSculptAt = now;
 						const local = terrain.worldToLocal(hit.point.clone());
-						strokeMove($sculptObject, local.x, local.z, dt);
+						strokeMove($sculptObject, local.x, local.z, dt, local.y);
 					}
 				} else hideCursor();
 				if (sculptActive) return;
@@ -554,7 +559,8 @@
 			// face edit mode (135 desktop): a click highlights the face under it,
 			// and 163 attaches the transform gizmo to it (drag = move/rotate/scale)
 			if ($faceEditObject) {
-				const edited = $objectsGroup?.getObjectByProperty('uuid', $faceEditObject);
+				// A8: lookupEditable also finds the scene-root collider-edit proxy
+				const edited = lookupEditable($faceEditObject);
 				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
 				const tri = hit && hit.faceIndex != null ? hit.faceIndex : -1;
 				highlightFaceByTriangle(tri);
@@ -564,7 +570,12 @@
 					if ($faceEditMulti) toggleFaceSelection(tri);
 					else autoApplyFaceOp();
 				}
-				attachFaceGizmo(); // 163: gizmo on the highlighted face (or detaches on a miss)
+				// B1 (inset fix): a seated MOVE gizmo intercepts the NEXT click (the
+				// dragging||axis guard above skips face dispatch), so click 2 of an
+				// armed inset/extrude DRAGGED the face instead. Only the Move op
+				// seats the gizmo; a miss still detaches it.
+				if ($faceEditOp === 'move' || tri < 0) attachFaceGizmo();
+				else detachFaceGizmo();
 				return;
 			}
 			// light pick-proxies select their light (lights have no raycastable geometry)

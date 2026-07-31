@@ -55,7 +55,7 @@
 		...($objectSearchEnabled
 			? [
 					{
-						label: '🔍 Search objects…',
+						label: 'Search objects…',
 						tooltip: 'Find a scene object and fly to it',
 						action: () => objectSearch.set({ x: menu.x, y: menu.y })
 					}

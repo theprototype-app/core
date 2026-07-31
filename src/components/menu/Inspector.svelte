@@ -1,4 +1,6 @@
 <script>
+	import { Download, Save, Search, Sparkles, SquarePen, Trash2, Upload } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	// Unified inspector (phase 64): one drawer serves every target — mesh, group,
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
@@ -30,7 +32,10 @@
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup, selectObject } from '$lib/objectActions';
-	import { listPhysicsObjects, enablePhysicsOnSelection } from '$lib/physics';
+	import { listPhysicsObjects, enablePhysicsOnSelection, PHYSICS_MATERIALS, physicsShapeChanged } from '$lib/physics';
+	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
+	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
+	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { addParticlesPreset, updateObjectParticles, removeObjectParticles, burstObjectParticles } from '$lib/particleActions';
 	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
@@ -364,7 +369,27 @@
 		$selectedObject.userData.physics = next;
 		recordEntry({ kind: 'props', uuid: $selectedObject.uuid, before: { physics: before }, after: { physics: next } });
 		$peers.send({ type: 'objectParameters', parameter: 'physics', uuid: $selectedObject.uuid, physics: next });
+		objectsGroup.update((v) => v); // collider viz re-syncs from the poke
+		physicsShapeChanged($selectedObject.uuid); // CL-A A2: live mid-sim rebuild
 		selectedObject.update((v) => v);
+	}
+
+	/** CL-A A4: which material preset matches the current values (else 'custom') @param {any} p */
+	function physicsMaterialOf(p) {
+		const r = p?.restitution ?? 0.3;
+		const f = p?.friction ?? 0.5;
+		const hit = Object.entries(PHYSICS_MATERIALS).find(
+			([, m]) => Math.abs(m.restitution - r) < 0.001 && Math.abs(m.friction - f) < 0.001
+		);
+		return hit ? hit[0] : 'custom';
+	}
+
+	/** CL-A A5: toggle one freeze-axis flag @param {string} key @param {boolean} on */
+	function setFreeze(key, on) {
+		const freeze = { ...($selectedObject.userData.physics?.freeze ?? {}) };
+		if (on) freeze[key] = true;
+		else delete freeze[key];
+		setPhysics({ freeze: Object.keys(freeze).length ? freeze : null });
 	}
 
 	function sendName() {
@@ -402,8 +427,11 @@
 	}
 
 	// ---- scene target (fog state is local, like the old scene panel) --------
+	// fogColor is INITIALIZED: svelte 5.56 hard-errors on `bind:hex={undefined}`
+	// when the prop has a fallback (props_invalid_value) — undefined here
+	// CRASHED the whole scene drawer (pre-existing on release/1.1, deps bump)
 	/** @type {any} */
-	let fogColor = $state();
+	let fogColor = $state('#ffffff');
 	/** @type {any} */
 	let fogNear = $state(0);
 	/** @type {any} */
@@ -488,8 +516,8 @@
 					{#if inspectedItem.thumbnail}
 						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded border border-gray-600 object-cover" />
 					{:else}
-						<span class="flex h-24 w-24 items-center justify-center rounded border border-gray-600 bg-gray-700 text-4xl">
-							{inspectedItem.kind === 'audio' ? '🎵' : inspectedItem.kind === 'text' ? '📄' : '📦'}
+						<span class="flex h-24 w-24 items-center justify-center rounded border border-gray-600 bg-gray-700 text-4xl text-gray-400">
+							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={36} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
 						</span>
 					{/if}
 				</div>
@@ -520,7 +548,7 @@
 					<div class="flex flex-wrap gap-2">
 						{#if inspectedItem.kind === 'text' || inspectedItem.kind === 'image'}
 							<Button size="xs" color="alternative" onclick={() => openInspectedItem()}>
-								{inspectedItem.kind === 'text' ? '📝 Edit' : '🔍 Preview'}
+								{#if inspectedItem.kind === 'text'}<SquarePen size={14} class="mr-1" aria-hidden="true" />{:else}<Search size={14} class="mr-1" aria-hidden="true" />{/if}{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
 							</Button>
 						{/if}
 						<Button
@@ -529,7 +557,7 @@
 							onclick={() => {
 								deleteItem(inspectedItem.id);
 								inspectorClose.set(true);
-							}}>🗑 Delete</Button
+							}}><Trash2 size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</Button
 						>
 					</div>
 				</Section>
@@ -623,11 +651,11 @@
 				{/each}
 				<div class="flex flex-wrap gap-1">
 					<button id="env-save-preset" class="ui-button-quiet" title="Save the current environment as a named preset" onclick={savePresetPrompt}>
-						💾 Save preset
+						<Save size={16} class="mr-1" aria-hidden="true" />Save preset
 					</button>
-					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}>⬇ Export</button>
+					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}><Download size={16} class="mr-1" aria-hidden="true" />Export</button>
 					<button class="ui-button-quiet" title="Import a .envpreset.json file" onclick={() => document.getElementById('env-import-file')?.click()}>
-						⬆ Import
+						<Upload size={16} class="mr-1" aria-hidden="true" />Import
 					</button>
 					<input type="file" id="env-import-file" style="display: none" accept=".json" onchange={onImportPreset} />
 				</div>
@@ -753,6 +781,7 @@
 					Local render mode (ambient occlusion + wireframe are desktop-only; not shown to peers).
 				</p>
 				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
+				<Checkbox bind:checked={$showColliders}>Show colliders — this device</Checkbox>
 				<p class="ui-section-label">Camera lens</p>
 				<div id="lens-presets" class="flex flex-wrap gap-1">
 					{#each LENS_PRESETS as p (p.label)}
@@ -812,6 +841,20 @@
 			</Section>
 
 			<Section label="Physics">
+				<!-- CL-A A6: shared scene gravity (replicated singleton, applies live) -->
+				<SliderRow label="Gravity" min={-20} max={5} step={0.1} value={$sceneGravity} onchange={(v) => setSceneGravity(v)} />
+				<div class="ui-row items-center gap-2">
+					<button
+						id="physics-gravity-reset"
+						class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+						onclick={() => resetSceneGravity()}
+					>
+						Reset gravity ({DEFAULT_GRAVITY})
+					</button>
+				</div>
+				<p class="text-[10px] italic text-gray-400">
+					Shared with everyone and applies to running simulations live.
+				</p>
 				<!-- C1: every object that gets a body at sim start; click = select -->
 				{#if physicsRows.length === 0}
 					<p class="text-xs text-gray-400">
@@ -1513,6 +1556,24 @@
 						<SliderRow label="Mass" min={0.1} max={100} step={0.1} value={$selectedObject.userData.physics?.mass ?? 1}
 							onchange={(v) => setPhysics({ mass: v })} />
 					{/if}
+					<div class="ui-row items-center gap-2">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Material</span>
+						<ThemedSelect
+							id="physics-material"
+							items={[
+								{ value: 'custom', name: 'Custom' },
+								{ value: 'ice', name: 'Ice' },
+								{ value: 'rubber', name: 'Rubber' },
+								{ value: 'wood', name: 'Wood' },
+								{ value: 'metal', name: 'Metal' }
+							]}
+							value={physicsMaterialOf($selectedObject.userData.physics)}
+							onchange={(/** @type {any} */ v) => {
+								const m = PHYSICS_MATERIALS[v];
+								if (m) setPhysics({ restitution: m.restitution, friction: m.friction });
+							}}
+						/>
+					</div>
 					<SliderRow label="Bounciness" min={0} max={1} step={0.05} value={$selectedObject.userData.physics?.restitution ?? 0.3}
 						onchange={(v) => setPhysics({ restitution: v })} />
 					<SliderRow label="Friction" min={0} max={2} step={0.05} value={$selectedObject.userData.physics?.friction ?? 0.5}
@@ -1526,12 +1587,67 @@
 								{ value: 'sphere', name: 'Sphere' },
 								{ value: 'capsule', name: 'Capsule' },
 								{ value: 'cylinder', name: 'Cylinder' },
-								{ value: 'hull', name: 'Convex hull' }
+								{ value: 'hull', name: 'Convex hull' },
+							{ value: 'custom', name: 'Custom (edit…)' }
 							]}
 							value={$selectedObject.userData.physics?.collider ?? 'box'}
-							onchange={(/** @type {any} */ v) => setPhysics({ collider: v })}
+							onchange={(/** @type {any} */ v) => {
+							// A8: picking Custom opens the edit session; Done writes the verts
+							if (v === 'custom') enterColliderEdit($selectedObject.uuid);
+							else setPhysics({ collider: v });
+						}}
 						/>
 					</div>
+					{#if ($selectedObject.userData.physics?.collider ?? 'box') === 'custom'}
+						<button
+							id="physics-edit-collider"
+							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							onclick={() => enterColliderEdit($selectedObject.uuid)}
+						>
+							Edit collider…
+						</button>
+					{/if}
+					<!-- CL-A A3: sensor = trigger volume; overlaps fire On Enter / On Exit -->
+					<label class="flex items-center gap-1.5 text-xs text-gray-300">
+						<input
+							id="physics-sensor"
+							type="checkbox"
+							checked={!!$selectedObject.userData.physics?.sensor}
+							onchange={(e) => setPhysics({ sensor: e.currentTarget.checked || null })}
+						/>
+						Sensor — no collision, fires On Enter / On Exit
+					</label>
+					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
+						<!-- CL-A A5: freeze axes (dynamic bodies only) -->
+						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-gray-300">
+							<span class="w-20 shrink-0 text-gray-400">Lock rotation</span>
+							{#each [['rx', 'X'], ['ry', 'Y'], ['rz', 'Z']] as [key, label] (key)}
+								<label class="flex items-center gap-1">
+									<input type="checkbox" checked={!!$selectedObject.userData.physics?.freeze?.[key]} onchange={(e) => setFreeze(key, e.currentTarget.checked)} />
+									{label}
+								</label>
+							{/each}
+						</div>
+						<div id="physics-freeze-pos" class="ui-row items-center gap-2 text-xs text-gray-300">
+							<span class="w-20 shrink-0 text-gray-400">Lock position</span>
+							{#each [['px', 'X'], ['py', 'Y'], ['pz', 'Z']] as [key, label] (key)}
+								<label class="flex items-center gap-1">
+									<input type="checkbox" checked={!!$selectedObject.userData.physics?.freeze?.[key]} onchange={(e) => setFreeze(key, e.currentTarget.checked)} />
+									{label}
+								</label>
+							{/each}
+						</div>
+					{/if}
+					<!-- CL-A A7: per-object collider preview (local, this device) -->
+					<label class="flex items-center gap-1.5 text-xs text-gray-300">
+						<input
+							id="physics-show-collider"
+							type="checkbox"
+							checked={$colliderVizObjects.has($selectedObject.uuid)}
+							onchange={(e) => setColliderViz($selectedObject.uuid, e.currentTarget.checked)}
+						/>
+						Show collider — this device
+					</label>
 					<p class="mt-1 text-xs text-gray-400">
 						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
 					</p>
@@ -1587,7 +1703,7 @@
 						{#if (p.mode ?? 'continuous') !== 'continuous'}
 							<div class="ui-row items-center gap-2">
 								<Button size="xs" color="alternative" onclick={() => burstObjectParticles($selectedObject.uuid)}>
-									💥 Burst now
+									<Sparkles size={16} class="mr-1" aria-hidden="true" />Burst now
 								</Button>
 								<span class="text-xs text-gray-400">fires for every peer</span>
 							</div>

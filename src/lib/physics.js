@@ -503,6 +503,7 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 				.setRotation({ x: relQuat.x, y: relQuat.y, z: relQuat.z, w: relQuat.w })
 		);
 	}
+	/** @type {any[]} */
 	const colliders = [];
 	descs.forEach((desc) => {
 		if (p?.restitution != null) desc.setRestitution(p.restitution);

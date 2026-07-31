@@ -1,17 +1,18 @@
-<script lang="ts">
-	// Desktop mesh-edit toolbar (135, reworked into a Draw-style pinned strip in
-	// 144): while editing a mesh a pill toolbar (same visual language as
-	// #draw-toolbar) offers Vertices | Faces mode toggles with a clear active
-	// state, plus the active mode's ops. Vertices = the handle drag (16); Faces =
-	// pick a face (Scene routes the click to highlightFaceByTriangle) then
-	// Extrude/Inset/Move/Delete through the SAME faceEdit core + meshgeo path VR
-	// uses (replicated, undoable). Esc or Done exits. Desktop-only.
+<script>
+	// Desktop mesh-edit toolbar (135 -> 144 pinned strip -> CL-B B5 redesign):
+	// a FLOATING, draggable segmented toolbar (dragWindow, key meshEditToolbar)
+	// with divider-separated segments — [Mode] [Select granularity + Multi]
+	// [Ops with shortcut hints] [Display] [Done] — plus a contextual amount
+	// row for extrude/inset and the CL-A collider-session banner state.
+	// Keyboard shortcuts are active only while the toolbar is mounted (the
+	// global registry mutes itself during mesh edit); typing in inputs skips.
 	import {
 		editingObject,
 		enterEditMode,
 		exitEditMode,
 		createSelectedFace,
 		clearVertexSelection,
+		weldSelectedVerts,
 		vertexSelectionSize
 	} from '$lib/meshEdit';
 	import {
@@ -19,16 +20,18 @@
 		enterFaceEdit,
 		exitFaceEdit,
 		faceEditHighlight,
+		faceEditHoverTri,
 		faceEditAmount,
 		faceEditOp,
 		setFaceOp,
 		faceAutoApply,
 		commitFaceOp,
 		faceEditGranularity,
+		setFaceGranularity,
 		faceEditMulti,
 		faceEditSelectedTris,
-		toggleFaceGranularity,
-		toggleFaceMulti
+		toggleFaceMulti,
+		meshEditWireframe
 	} from '$lib/faceEdit';
 	import {
 		colliderEditObject,
@@ -36,14 +39,16 @@
 		commitColliderEdit,
 		exitColliderEdit
 	} from '$lib/colliderEdit';
+	import { dragWindow } from '$lib/dragWindow';
 	import { isVRMode, selectedObject } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
 
-	$: active = !$isVRMode && (!!$editingObject || !!$faceEditObject);
-	$: mode = $faceEditObject ? 'faces' : 'vertices';
+	const active = $derived(!$isVRMode && (!!$editingObject || !!$faceEditObject));
+	const mode = $derived($faceEditObject ? 'faces' : 'vertices');
 
-	function setMode(next: 'vertices' | 'faces') {
-		const uuid = ($editingObject || $faceEditObject || $selectedObject?.uuid) as string;
+	/** @param {'vertices' | 'faces'} next */
+	function setMode(next) {
+		const uuid = /** @type {string} */ ($editingObject || $faceEditObject || $selectedObject?.uuid);
 		if (!uuid) return;
 		if (next === mode) return;
 		if (next === 'vertices') {
@@ -55,42 +60,63 @@
 		}
 	}
 
+	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);
+	// one-shots commit immediately on the current target
 	const OPS = [
-		{ op: 'extrude', label: 'Extrude' },
-		{ op: 'inset', label: 'Inset' },
-		{ op: 'move', label: 'Move' },
-		{ op: 'delete', label: 'Delete' }
-	] as const;
+		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false },
+		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false },
+		{ op: 'move', label: 'Move', hint: 'G', oneShot: false },
+		{ op: 'subdivide', label: 'Subdiv', hint: 'S', oneShot: true },
+		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true },
+		{ op: 'flip', label: 'Flip', hint: 'F', oneShot: true },
+		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true }
+	];
 
-	function runOp(op: string) {
+	const GRANULARITIES = [
+		{ value: 'face', label: 'Face', title: 'Pick the whole coplanar face' },
+		{ value: 'triangle', label: 'Tri', title: 'Pick the single triangle under the cursor' },
+		{ value: 'shell', label: 'Shell', title: 'Pick the whole connected island' }
+	];
+
+	/** a target exists for a one-shot op (multi selection or a picked unit) */
+	function hasTarget() {
+		if ($faceEditMulti && $faceEditSelectedTris.length) return true;
+		if (($faceEditGranularity === 'face' ? $faceEditHighlight : $faceEditHoverTri) >= 0) return true;
+		return false;
+	}
+
+	/** @param {string} op */
+	function runOp(op) {
+		const spec = OPS.find((o) => o.op === op);
 		// 212: Multi mode — the op button applies to the whole accumulated selection
 		if ($faceEditMulti && $faceEditSelectedTris.length) {
-			setFaceOp(op as any);
-			commitFaceOp(op as any, $faceEditAmount);
+			commitFaceOp(/** @type {any} */ (op), $faceEditAmount);
 			return;
 		}
-		// Delete is a one-shot (needs a picked face); it never becomes the active tool
-		if (op === 'delete') {
-			if ($faceEditHighlight < 0) {
+		if (op === 'bridge') {
+			commitFaceOp('bridge', 0); // validates the two-face selection + toasts
+			return;
+		}
+		if (spec?.oneShot) {
+			if (!hasTarget()) {
 				showToast('Click a face first');
 				return;
 			}
-			commitFaceOp('delete' as any, $faceEditAmount);
+			commitFaceOp(/** @type {any} */ (op), $faceEditAmount);
 			return;
 		}
-		// Extrude/Inset/Move activate as the current tool (highlighted). Extrude/
-		// Inset reveal the params row; applying happens on a face click (auto-apply)
-		// or via the Apply button (176).
-		setFaceOp(op as any);
+		// Extrude/Inset/Move arm as the current tool; extrude/inset apply on a
+		// face click (auto-apply) or via Apply; Move seats the gizmo (B1)
+		setFaceOp(/** @type {any} */ (op));
 	}
 
 	// 176: force-apply the active op on the currently highlighted face
 	function applyActive() {
-		if ($faceEditHighlight < 0) {
+		if (!hasTarget()) {
 			showToast('Click a face first');
 			return;
 		}
-		commitFaceOp($faceEditOp as any, $faceEditAmount);
+		commitFaceOp(/** @type {any} */ ($faceEditOp), $faceEditAmount);
 	}
 
 	// 177: build a face from the 3-4 ctrl/shift-selected vertices
@@ -98,85 +124,130 @@
 		if (!createSelectedFace()) showToast('Ctrl+click 3 or 4 vertices to create a face');
 	}
 
+	// B4: weld the vertex multi-selection to its centroid
+	function weld() {
+		if (!weldSelectedVerts()) showToast('Ctrl+click 2+ vertices to weld them');
+	}
+
 	function finish() {
 		exitEditMode();
 		exitFaceEdit();
 	}
 
-	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape' && active) finish();
+	/** @param {KeyboardEvent} event */
+	function onKeydown(event) {
+		if (!active) return;
+		if (event.key === 'Escape') {
+			if (!$colliderEditObject) finish(); // a collider session tears down via its watcher
+			return;
+		}
+		const target = /** @type {any} */ (event.target);
+		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+		if (event.ctrlKey || event.metaKey || event.altKey) return;
+		const key = event.key.toLowerCase();
+		if (mode === 'faces') {
+			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete' };
+			const op = key === 'delete' ? 'delete' : /** @type {any} */ (byKey)[key];
+			if (!op) return;
+			runOp(op);
+			event.preventDefault();
+		} else if (key === 'w') {
+			weld();
+			event.preventDefault();
+		}
 	}
+
+	// floating default: near the top center (dragWindow persists win:meshEditToolbar)
+	const defaultRect = {
+		left: typeof window !== 'undefined' ? Math.max(12, Math.round(window.innerWidth / 2 - 360)) : 120,
+		top: 76
+	};
 </script>
 
-<svelte:window on:keydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} />
 
 {#if active}
 	<div
 		id="mesh-edit-popup"
-		class="fixed left-1/2 top-20 z-[var(--z-window)] flex -translate-x-1/2 flex-col items-center gap-1.5"
+		use:dragWindow={{ key: 'meshEditToolbar', defaultRect }}
+		class="move-handle z-[var(--z-window)] flex max-w-[min(96vw,780px)] cursor-move select-none flex-col gap-1.5 rounded-xl border border-gray-700/60 bg-gray-800/95 px-3 py-2 text-sm text-white shadow-xl backdrop-blur"
 	>
-		<!-- row 1: mode + op selection (no amount; params live in the nested row) -->
-		<div class="flex items-center gap-3 rounded-full bg-gray-800 px-4 py-2 text-sm text-white shadow-xl">
-			<span class="font-semibold">{$colliderEditObject ? '🟩 Edit collider' : '🔷 Edit mesh'}</span>
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+			<span class="font-semibold" title="Drag to move this toolbar"
+				>⠿ {$colliderEditObject ? '🟩 Collider' : '🔷 Mesh'}</span
+			>
 
-			<!-- mode toggles: clear active state -->
+			<!-- segment: mode -->
 			<div class="flex overflow-hidden rounded-full border border-gray-600">
 				<button
 					id="mesh-mode-vertices"
 					class="px-3 py-0.5 {mode === 'vertices' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					on:click={() => setMode('vertices')}>Vertices</button
+					onclick={() => setMode('vertices')}>Vertices</button
 				>
 				<button
 					id="mesh-mode-faces"
 					class="px-3 py-0.5 {mode === 'faces' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					on:click={() => setMode('faces')}>Faces</button
+					onclick={() => setMode('faces')}>Faces</button
 				>
 			</div>
 
+			<span class="h-5 w-px shrink-0 bg-gray-600/70"></span>
+
 			{#if mode === 'faces'}
-				<!-- 212: granularity (Face vs single Polygon) + Multi accumulate -->
+				<!-- segment: pick granularity (B3 Face/Tri/Shell) + Multi -->
 				<div class="flex overflow-hidden rounded-full border border-gray-600 text-xs">
-					<button
-						id="mesh-gran-face"
-						class="px-2 py-0.5 {$faceEditGranularity === 'face' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-						title="Select the whole coplanar face"
-						on:click={() => { if ($faceEditGranularity !== 'face') toggleFaceGranularity(); }}>Face</button
-					>
-					<button
-						id="mesh-gran-polygon"
-						class="px-2 py-0.5 {$faceEditGranularity === 'polygon' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-						title="Select the single polygon under the cursor (isolates inset caps)"
-						on:click={() => { if ($faceEditGranularity !== 'polygon') toggleFaceGranularity(); }}>Polygon</button
-					>
+					{#each GRANULARITIES as g (g.value)}
+						<button
+							id={`mesh-gran-${g.value}`}
+							class="px-2 py-0.5 {$faceEditGranularity === g.value ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+							title={g.title}
+							onclick={() => setFaceGranularity(/** @type {any} */ (g.value))}>{g.label}</button
+						>
+					{/each}
 				</div>
 				<button
 					id="mesh-multi"
 					class="rounded-full px-2.5 py-1 text-xs {$faceEditMulti ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					title="Accumulate several faces/polygons, then apply an op to all"
-					on:click={() => toggleFaceMulti()}>Multi{$faceEditMulti && $faceEditSelectedTris.length ? ` (${$faceEditSelectedTris.length})` : ''}</button
+					title="Accumulate several picks, then apply an op to all"
+					onclick={() => toggleFaceMulti()}
+					>Multi{$faceEditMulti && $faceEditSelectedTris.length ? ` (${$faceEditSelectedTris.length})` : ''}</button
 				>
-				<div class="flex items-center gap-1">
-					{#each OPS as o}
+
+				<span class="h-5 w-px shrink-0 bg-gray-600/70"></span>
+
+				<!-- segment: ops (armed tools highlight; one-shots act now) -->
+				<div class="flex items-center gap-1 text-xs">
+					{#each OPS as o (o.op)}
 						<button
 							id={`mesh-op-${o.op}`}
 							class="rounded-full px-2.5 py-1 {o.op === 'delete'
 								? 'bg-red-800/70 hover:bg-red-700'
-								: o.op === $faceEditOp
+								: !o.oneShot && o.op === $faceEditOp
 									? 'bg-primary-600 text-white'
 									: 'bg-gray-700 hover:bg-gray-600'}"
-							class:mesh-op-active={o.op !== 'delete' && o.op === $faceEditOp}
-							on:click={() => runOp(o.op)}>{o.label}</button
+							class:mesh-op-active={!o.oneShot && o.op === $faceEditOp}
+							title={`${o.label} (${o.hint})`}
+							onclick={() => runOp(o.op)}>{o.label}</button
 						>
 					{/each}
 				</div>
 			{:else}
+				<!-- segment: vertex tools -->
 				<div class="flex items-center gap-1.5 text-xs">
 					<button
 						class="rounded-full px-2.5 py-1 {$vertexSelectionSize === 0
 							? 'bg-primary-600 text-white'
 							: 'bg-gray-700 hover:bg-gray-600'}"
 						title="Drag a vertex handle to move it"
-						on:click={() => clearVertexSelection()}>Move</button
+						onclick={() => clearVertexSelection()}>Move</button
+					>
+					<button
+						id="mesh-weld"
+						class="rounded-full px-2.5 py-1 {$vertexSelectionSize >= 2
+							? 'bg-primary-600 text-white hover:bg-primary-500'
+							: 'bg-gray-700 opacity-50'}"
+						title="Merge the selected vertices into one (W)"
+						onclick={weld}>Weld</button
 					>
 					<button
 						id="mesh-create-face"
@@ -184,11 +255,21 @@
 							? 'bg-primary-600 text-white hover:bg-primary-500'
 							: 'bg-gray-700 opacity-50'}"
 						title="Ctrl+click 3-4 vertices, then Create face"
-						on:click={createFace}>Create face</button
+						onclick={createFace}>Create face</button
 					>
 					<span class="text-[11px] text-gray-400">{$vertexSelectionSize} sel</span>
 				</div>
 			{/if}
+
+			<span class="h-5 w-px shrink-0 bg-gray-600/70"></span>
+
+			<!-- segment: display -->
+			<button
+				id="mesh-wireframe-toggle"
+				class="rounded-full px-2.5 py-1 text-xs {$meshEditWireframe ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				title="Show the edit wireframe overlay"
+				onclick={() => meshEditWireframe.update((v) => !v)}>Wire</button
+			>
 
 			{#if $colliderEditObject}
 				<!-- CL-A A8: collider session — add compound pieces, commit or drop -->
@@ -196,43 +277,40 @@
 					id="collider-add-box"
 					class="rounded-full bg-gray-700 px-2.5 py-1 text-xs hover:bg-gray-600"
 					title="Merge a box into the collider as a new convex piece"
-					on:click={() => addColliderPiece('box')}>+ Box piece</button
+					onclick={() => addColliderPiece('box')}>+ Box piece</button
 				>
 				<button
 					id="collider-add-sphere"
 					class="rounded-full bg-gray-700 px-2.5 py-1 text-xs hover:bg-gray-600"
 					title="Merge a sphere into the collider as a new convex piece"
-					on:click={() => addColliderPiece('sphere')}>+ Sphere piece</button
+					onclick={() => addColliderPiece('sphere')}>+ Sphere piece</button
 				>
 				<button
 					id="collider-edit-done"
 					class="rounded-full bg-[#22c55e] px-3 py-0.5 text-white"
 					title="Save the custom collider (each shell = one convex piece)"
-					on:click={() => commitColliderEdit()}>Done</button
+					onclick={() => commitColliderEdit()}>Done</button
 				>
 				<button
 					id="collider-edit-cancel"
 					class="rounded-full bg-gray-700 px-3 py-0.5"
 					title="Drop the collider edit (Esc)"
-					on:click={() => exitColliderEdit()}>Cancel</button
+					onclick={() => exitColliderEdit()}>Cancel</button
 				>
 			{:else}
 				<button
 					id="mesh-edit-done"
 					class="rounded-full bg-[#ff4000] px-3 py-0.5 text-white"
 					title="Finish (Esc)"
-					on:click={finish}>Done</button
+					onclick={finish}>Done</button
 				>
 			{/if}
 		</div>
 
-		<!-- 176: nested params row for Extrude/Inset (amount / auto-apply / Apply) -->
+		<!-- 176: contextual amount row for Extrude/Inset -->
 		{#if mode === 'faces' && ($faceEditOp === 'extrude' || $faceEditOp === 'inset')}
-			<div
-				id="mesh-op-params"
-				class="flex items-center gap-3 rounded-full bg-gray-800 px-4 py-1.5 text-xs text-white shadow-xl"
-			>
-				<label class="flex items-center gap-1 text-gray-300">
+			<div id="mesh-op-params" class="flex flex-wrap items-center gap-3 text-xs text-gray-300">
+				<label class="flex items-center gap-1">
 					amount
 					<input
 						id="mesh-op-amount"
@@ -242,7 +320,7 @@
 						bind:value={$faceEditAmount}
 					/>
 				</label>
-				<label class="flex items-center gap-1 text-gray-300" title="Apply the op when you click a face">
+				<label class="flex items-center gap-1" title="Apply the op when you click a face">
 					<input id="mesh-op-autoapply" type="checkbox" bind:checked={$faceAutoApply} />
 					auto-apply
 				</label>
@@ -250,7 +328,7 @@
 					id="mesh-op-apply"
 					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
 					title="Apply the active op to the selected face"
-					on:click={applyActive}>Apply</button
+					onclick={applyActive}>Apply</button
 				>
 			</div>
 		{/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Trash2 } from '@lucide/svelte';
 	import {
 		SvelteFlow,
 		Background,
@@ -356,7 +357,7 @@
 			y: e.clientY,
 			flowPos,
 			items: [
-				{ label: '🔍 Search nodes…', action: () => openSearch('') },
+				{ label: 'Search nodes…', action: () => openSearch('') },
 				...[...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
 					label: group.group,
 					children: group.items.map((item) => ({
@@ -596,7 +597,7 @@
 					title="Delete this object's flow"
 					on:click={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 				>
-					🗑
+					<Trash2 size={16} aria-hidden="true" />
 				</button>
 			{/if}
 		</div>

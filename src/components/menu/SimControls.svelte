@@ -1,4 +1,5 @@
 <script>
+	import { Pause, Play, RotateCcw, Square } from '@lucide/svelte';
 	// P-A: compact physics transport (own component so it can use onclick without
 	// mixing with Controls.svelte's on: style — MobileAddButton precedent).
 	// ▶ always; ⏸/⏹/↺ appear while simulating. Sits above the chat toggle.
@@ -21,13 +22,13 @@
 <div id="sim-controls" class="fixed bottom-[112px] right-4 z-[30] flex flex-col gap-1.5">
 	{#if $simulating}
 		<button id="sim-reset" class={btn} aria-label="Reset simulation" title="Reset — restore the initial layout" onclick={() => resetSimulation()}>
-			<i class="fas fa-rotate-left text-xs"></i>
+			<RotateCcw size={16} class="text-xs" aria-hidden="true" />
 		</button>
 		<button id="sim-pause" class={btn} aria-label={$simPaused ? 'Resume simulation' : 'Pause simulation'} title={$simPaused ? 'Resume' : 'Pause'} onclick={() => pauseSimulation()}>
-			<i class={'fas text-xs ' + ($simPaused ? 'fa-play' : 'fa-pause')}></i>
+			{#if $simPaused}<Play size={16} aria-hidden="true" />{:else}<Pause size={16} aria-hidden="true" />{/if}
 		</button>
 		<button id="sim-stop" class={btn + ' bg-red-700 hover:bg-red-600'} aria-label="Stop simulation" title="Stop — Ctrl+Z restores the layout" onclick={() => toggleSimulation()}>
-			<i class="fas fa-stop text-xs"></i>
+			<Square size={16} class="text-xs" aria-hidden="true" />
 		</button>
 	{:else}
 		<button
@@ -40,7 +41,7 @@
 				: 'Simulate physics (P) — dynamic objects fall and collide'}
 			onclick={() => toggleSimulation()}
 		>
-			<i class="fas fa-play text-xs"></i>
+			<Play size={16} class="text-xs" aria-hidden="true" />
 		</button>
 	{/if}
 </div>

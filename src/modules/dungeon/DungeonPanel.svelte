@@ -1,4 +1,5 @@
 <script>
+	import { Dices } from '@lucide/svelte';
 	import { panelOpen, panelStats, generateAndBroadcast, clearAndBroadcast } from './module.js';
 
 	let seed = 1337;
@@ -27,7 +28,7 @@
 		<label class="flex items-center gap-2">
 			Seed
 			<input id="dungeon-seed" class="w-28 rounded bg-gray-700 px-2 py-0.5" type="number" bind:value={seed} />
-			<button class="rounded bg-gray-600 px-2" title="Random seed" on:click={dice}>🎲</button>
+			<button class="rounded bg-gray-600 px-2" title="Random seed" on:click={dice}><Dices size={16} aria-hidden="true" /></button>
 		</label>
 
 		<label class="flex flex-col">

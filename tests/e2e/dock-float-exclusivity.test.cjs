@@ -29,14 +29,14 @@ h.run(async () => {
 		s.explorerClose.subscribe((v) => (ec = v))();
 		s.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
 		const ON = 'text-primary-500';
-		const flowI = document.querySelector('p[title="Node editor (N)"] i');
-		const explI = document.querySelector('#explorer-slot i');
+		const flowI = document.querySelector('p[title="Node editor (N)"] svg');
+		const explI = document.querySelector('#explorer-slot svg');
 		return {
 			explorerClosed: ec,
 			visible: k,
 			floatWin: !!document.getElementById('flow-window'),
-			flowOn: flowI.className.includes(ON),
-			explOn: explI.className.includes(ON)
+			flowOn: (flowI.getAttribute('class') ?? '').includes(ON),
+			explOn: (explI.getAttribute('class') ?? '').includes(ON)
 		};
 	});
 	h.check(before.explorerClosed === false && before.visible === 'explorer' && before.floatWin, `setup: Explorer docked+visible, Node editor floating (visible=${before.visible})`);

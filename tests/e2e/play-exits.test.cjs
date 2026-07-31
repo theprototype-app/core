@@ -9,7 +9,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	// enter play mode via the play button
-	await A.page.locator('i.fa-play').click();
+	await A.page.locator('#play-button').click();
 	await h.eventually(() => lockedState(A.page), (v) => v === true, 'play mode engaged');
 
 	// menu hides in play mode
@@ -31,7 +31,7 @@ h.run(async () => {
 
 	// round-trip again after the 2s re-entry guard
 	await A.page.waitForTimeout(2200);
-	await A.page.locator('i.fa-play').click();
+	await A.page.locator('#play-button').click();
 	await h.eventually(() => lockedState(A.page), (v) => v === true, 'play re-enters after the guard');
 	await A.page.keyboard.press('Escape');
 	await h.eventually(() => lockedState(A.page), (v) => v !== true, 'second Escape works too');

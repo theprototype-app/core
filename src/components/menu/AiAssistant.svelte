@@ -134,7 +134,7 @@
 					{/if}
 				{/each}
 				{#if $aiBusy && $aiStatus}
-					<li class="self-center text-center text-[11px] italic text-gray-400">💭 {$aiStatus}</li>
+					<li class="self-center text-center text-[11px] italic text-gray-400">{$aiStatus}</li>
 				{/if}
 			</ul>
 		</div>

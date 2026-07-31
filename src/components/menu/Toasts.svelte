@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Info } from '@lucide/svelte';
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, toastsInDrawerOnly } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
@@ -277,7 +278,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 <div class="my-1 tp-toast" transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
     <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => dismiss(toast)}>✕</button>
     <div class="tp-toast-body">
-        <i class="fa-solid fa-circle-info tp-toast-icon"></i>
+        <Info size={16} class="tp-toast-icon" aria-hidden="true" />
         <div class="tp-toast-main">
             <div class="tp-toast-text">{typeof toast === 'string' ? toast : toast.text}</div>
             {#if typeof toast !== 'string' && toast.actions?.length}
@@ -346,7 +347,8 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
         backdrop-filter: blur(6px);
     }
     .tp-toast-body { display: flex; align-items: flex-start; gap: 9px; }
-    .tp-toast-icon { color: #60a5fa; font-size: 14px; margin-top: 1px; flex: 0 0 auto; }
+    /* the icon is a lucide component's svg (outside this component's scope hash) */
+    .tp-toast-body :global(.tp-toast-icon) { color: #60a5fa; margin-top: 1px; flex: 0 0 auto; }
     .tp-toast-main { min-width: 0; flex: 1 1 auto; }
     .tp-toast-text { font-size: 12.5px; color: #e5e7eb; line-height: 1.4; }
     .tp-toast-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; }

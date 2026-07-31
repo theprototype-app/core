@@ -2457,7 +2457,7 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name === 'edit:granularity') {
-		toggleFaceGranularity(); // 212: FACE <-> POLYGON
+		toggleFaceGranularity(); // B3: cycles FACE -> TRIANGLE -> SHELL
 		return;
 	}
 	if (name === 'edit:multi') {

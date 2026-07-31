@@ -3,7 +3,13 @@ import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, TControls, lockedObjects } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
-import { createFaceFromVerts } from './faceEdit';
+import {
+	createFaceFromVerts,
+	lookupEditable,
+	commitMeshGeoSnapshot,
+	meshEditWireframe,
+	buildEditWireframe
+} from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
 // regular gizmo. Handles that share a position (e.g. the 24 position entries
@@ -26,6 +32,14 @@ let stashedVert = { uuid: null, handle: -1 };
 /** @type {number[] | null} */
 let dragStartLocal = null;
 let lastSent = 0;
+
+// B2: the wireframe display toggle + shared overlay builder live in faceEdit
+// (this module imports faceEdit; the reverse edge would close a TDZ cycle).
+// Subscribed AFTER the `let overlay` declaration — the callback runs at
+// module eval (the classic store-subscriber TDZ).
+meshEditWireframe.subscribe((value) => {
+	if (overlay) overlay.visible = value; // live toggle mid-session (vertex mode)
+});
 
 const HANDLE_COLOR = 0x2f81f7;
 const HANDLE_SELECTED = 0xff4000;
@@ -123,8 +137,7 @@ export function tickMeshEdit() {
 /** @param {string} uuid */
 export function enterEditMode(uuid) {
 	if (get(editingObject)) exitEditMode();
-	const group = get(objectsGroup);
-	const object = group?.getObjectByProperty('uuid', uuid);
+	const object = lookupEditable(uuid); // A8: also accepts the collider proxy
 	if (!object || !object.geometry?.attributes?.position) {
 		// D7: a multi-mesh GROUP is the common blocker for imports — say so
 		if (object?.type === 'Group')
@@ -161,18 +174,9 @@ export function enterEditMode(uuid) {
 	refreshHandleColors();
 	scene.add(handleMesh);
 
-	// wireframe overlay as a child so it follows the object's transform
-	overlay = new THREE.LineSegments(
-		new THREE.WireframeGeometry(object.geometry),
-		new THREE.LineBasicMaterial({ color: 0x2f81f7, transparent: true, opacity: 0.5 })
-	);
-	overlay.name = 'edit-overlay';
-	// D8 (roadmap 13): the overlay is DECORATIVE. As a child of the edited
-	// object it rides inside every objectsGroup raycast, and three raycasts
-	// lines with a 1-WORLD-UNIT threshold (raycaster.params.Line) — so beams,
-	// selection and pings "hit" invisible fat lines up to a metre off the
-	// surface while vertex-editing. Never a pick target.
-	overlay.raycast = () => {};
+	// wireframe overlay as a child so it follows the object's transform (B2:
+	// shared builder, raycast stubbed per D8, honors the display toggle)
+	overlay = buildEditWireframe(object);
 	object.add(overlay);
 
 	proxy = new THREE.Object3D();
@@ -273,6 +277,35 @@ export function toggleVertexSelection(index) {
 export function clearVertexSelection() {
 	vertexSelection.clear();
 	syncVertexSelection();
+}
+
+/**
+ * B4: WELD the ctrl-multi-selected vertices (>=2 handles) to their shared
+ * centroid — replicated + ONE undo entry. Committed as a meshgeo snapshot
+ * (a 'verts' entry holds one position for all indices, so it cannot undo
+ * per-handle befores). Re-enters edit mode so the merged handles regroup.
+ * @returns {boolean}
+ */
+export function weldSelectedVerts() {
+	if (!edited || vertexSelection.size < 2) return false;
+	const uuid = edited.uuid;
+	const position = edited.geometry.attributes.position;
+	const before = Array.from(position.array);
+	const centroid = new THREE.Vector3();
+	const picked = [...vertexSelection];
+	picked.forEach((i) => centroid.add(handles[i].position));
+	centroid.multiplyScalar(1 / picked.length);
+	picked.forEach((i) =>
+		handles[i].indices.forEach((/** @type {number} */ idx) =>
+			position.setXYZ(idx, centroid.x, centroid.y, centroid.z)
+		)
+	);
+	const after = Array.from(position.array);
+	if (JSON.stringify(before) === JSON.stringify(after)) return false; // already coincident
+	exitEditMode(); // handles regroup on re-entry (merged verts share a key now)
+	const ok = commitMeshGeoSnapshot(uuid, before, after);
+	enterEditMode(uuid);
+	return ok;
 }
 
 /** 177: build a face from the 3-4 multi-selected vertices (replicated + undoable).
@@ -401,8 +434,7 @@ export function onProxyDragChanged(dragging) {
  * @param {string} uuid @param {number[]} indices @param {number[]} positionArray
  */
 export function applyVerts(uuid, indices, positionArray) {
-	const group = get(objectsGroup);
-	const object = group?.getObjectByProperty('uuid', uuid);
+	const object = lookupEditable(uuid); // A8: also finds the collider-edit proxy
 	const position = object?.geometry?.attributes?.position;
 	if (!position) return;
 	indices.forEach((i) => position.setXYZ(i, positionArray[0], positionArray[1], positionArray[2]));

@@ -425,8 +425,11 @@
 	}
 
 	// ---- scene target (fog state is local, like the old scene panel) --------
+	// fogColor is INITIALIZED: svelte 5.56 hard-errors on `bind:hex={undefined}`
+	// when the prop has a fallback (props_invalid_value) — undefined here
+	// CRASHED the whole scene drawer (pre-existing on release/1.1, deps bump)
 	/** @type {any} */
-	let fogColor = $state();
+	let fogColor = $state('#ffffff');
 	/** @type {any} */
 	let fogNear = $state(0);
 	/** @type {any} */

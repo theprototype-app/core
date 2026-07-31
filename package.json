@@ -21,11 +21,11 @@
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",
-		"@sveltejs/kit": "^2.70.1",
+		"@sveltejs/kit": "^2.70.2",
 		"@sveltejs/vite-plugin-svelte": "^4.0.4",
 		"autoprefixer": "^10.5.4",
 		"flowbite": "^2.5.2",
-		"flowbite-svelte": "^0.47.4",
+		"flowbite-svelte": "^0.48.6",
 		"gh-pages": "^6.3.0",
 		"playwright": "^1.62.0",
 		"prettier": "^3.9.6",
@@ -42,7 +42,7 @@
 	"dependencies": {
 		"@codemirror/lang-javascript": "^6.2.5",
 		"@dimforge/rapier3d-compat": "^0.19.3",
-		"@lucide/svelte": "^1.27.0",
+		"@lucide/svelte": "^1.28.0",
 		"@threlte/core": "^8.5.16",
 		"@threlte/extras": "^9.21.0",
 		"@threlte/xr": "^1.6.1",

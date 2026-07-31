@@ -23,7 +23,7 @@
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
@@ -714,6 +714,9 @@
 			// B2.4: a pinch-HOLD that just toggled the radial also fires 'select' on
 			// release — swallow that click so it doesn't immediately pick a sector
 			if (Date.now() - pinchMenuToggledAt < 250) return;
+			// K1: a sleeve ghost pick/place just handled this trigger — the release
+			// must not fall through to raycastSelect
+			if (vrModuleSelectSwallowed()) return;
 			// the keyboard is modal on top of any panel (116)
 			if ($vrKeyboardTarget) {
 				const key = raycastKeyboard(xrControllers.indexOf(controller));
@@ -826,11 +829,15 @@
 		// (the functions no-op unless in vertex mode with the hold setting on)
 		const onXRSelectStart = (event: any) => {
 			const idx = xrControllers.indexOf(event.target);
+			// K1: a module hook (sleeve ghost pick) may consume the press
+			if (vrModuleTriggerStart(idx)) return;
 			vrVertexGrabStart(idx); // 182: hold to move a vertex (no-op unless vertex mode)
 			beginStretchSliderDrag(idx); // 193: grab a stretch slider (no-op unless stretch mode)
 			boxSelectStart(idx); // 214: start a box-select marquee (no-op unless tool = box)
 		};
-		const onXRSelectEnd = () => {
+		const onXRSelectEnd = (event: any) => {
+			// K1: a held sleeve preview places on release
+			if (vrModuleTriggerEnd(xrControllers.indexOf(event?.target))) return;
 			vrVertexGrabEnd();
 			endStretchSliderDrag();
 			boxSelectEnd(); // 214: finalize a box-select marquee (no-op unless active)

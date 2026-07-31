@@ -2,7 +2,7 @@
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
-	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
+	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd } from '../../stores/appStore.js';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
@@ -468,6 +468,18 @@
 								}} />
 						</svelte:fragment>
 						Right-stick-up teleport arc — off if you navigate only by stick/fly
+					</SettingRow>
+					<SettingRow name="VR sleeve palette">
+						<svelte:fragment slot="control">
+							<Checkbox
+								id="vr-sleeve"
+								checked={$vrSleeveEnabled}
+								on:change={(e: any) => {
+									$vrSleeveEnabled = e.target.checked;
+									localStorage.setItem('vrSleeveEnabled', String($vrSleeveEnabled));
+								}} />
+						</svelte:fragment>
+						Experimental — a strip of ghost primitives on your forearm: trigger-drag one out to place it (stick scales, wrist rotates). Grip-drop an object onto the strip to keep it as a personal slot
 					</SettingRow>
 					<SettingRow name="Hold to move vertex">
 						<svelte:fragment slot="control">

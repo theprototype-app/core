@@ -109,9 +109,12 @@ function customPieces(object) {
  * `kindOverride` (the collectParams pick — node wins over userData) falls back
  * to userData.physics.collider, then 'box'. Hull/custom degrade to 'box' with
  * `fallback: true` when ineligible. Returns null for unmeasurable objects.
- * @param {any} object @param {string=} kindOverride @returns {ColliderSpec | null}
+ * CL-C options: `sourceObject` backs kind 'object' (hull ANOTHER object's
+ * geometry onto this body); `scale` multiplies the final shape.
+ * @param {any} object @param {string=} kindOverride
+ * @param {{sourceObject?: any, scale?: number}=} opts @returns {ColliderSpec | null}
  */
-export function colliderSpecOf(object, kindOverride) {
+export function colliderSpecOf(object, kindOverride, opts = {}) {
 	if (!object) return null;
 	const measured = measureLocalAABB(object);
 	if (!measured) return null;
@@ -131,8 +134,27 @@ export function colliderSpecOf(object, kindOverride) {
 			kind = 'box';
 			fallback = true;
 		}
+	} else if (kind === 'object') {
+		// CL-C: the collider node's wired source — hull its geometry (its own
+		// scale baked, hull convention); the shape rides THIS object's pose
+		const verts = opts.sourceObject ? hullVerts(opts.sourceObject) : null;
+		if (verts) {
+			pieces = [{ verts }];
+			kind = 'hull';
+		} else {
+			kind = 'box';
+			fallback = true;
+		}
 	} else if (!['box', 'sphere', 'capsule', 'cylinder'].includes(kind)) {
 		kind = 'box';
+	}
+	// CL-C: uniform shape scale (node param) — primitives scale their extents,
+	// piece verts scale about the object origin
+	const s = opts.scale;
+	if (typeof s === 'number' && s > 0 && s !== 1) {
+		measured.halfExtents.multiplyScalar(s);
+		if (pieces)
+			for (const piece of pieces) for (let i = 0; i < piece.verts.length; i++) piece.verts[i] *= s;
 	}
 	return { kind, ...measured, pieces, fallback };
 }

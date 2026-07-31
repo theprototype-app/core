@@ -12,7 +12,8 @@ import {
 	resumeAnimation,
 	fireObjectImpact,
 	fireObjectEnter,
-	fireObjectExit
+	fireObjectExit,
+	noteObjectPose
 } from './flowRuntime';
 import { colliderSpecOf } from './colliderSpec';
 import { sceneGravity } from './scenePhysics';
@@ -95,7 +96,7 @@ let sensorEventSeen = new Set();
 let liveUnsubs = [];
 let liveSnapshot = '';
 
-const PHYSICS_TYPES = ['mass', 'bounciness', 'friction', 'angularvelocity', 'motor'];
+const PHYSICS_TYPES = ['mass', 'bounciness', 'friction', 'angularvelocity', 'motor', 'collider'];
 
 // CL-A A4: physics material presets — picking one in the Inspector writes BOTH
 // friction and restitution via setPhysics (sliders stay editable; the select
@@ -175,6 +176,18 @@ function collectParams(group) {
 		// recipe: select the body -> all wheel motors). Joints stay def-owned.
 		if (source.type === 'motor')
 			map[uuid].motor = { vel: source.data?.vel ?? 3, maxForce: source.data?.maxForce ?? 100 };
+		// CL-C C1: collider node — shape/sensor/scale WIN over the Inspector
+		// pick (flow-overrides-Inspector, the mass precedent); shape 'object'
+		// hulls the object wired into the node's `source` handle
+		if (source.type === 'collider') {
+			map[uuid].collider = source.data?.shape ?? 'box';
+			if (source.data?.scale != null) map[uuid].colliderScale = source.data.scale;
+			if (source.data?.sensor) map[uuid].sensor = true;
+			const sourceEdge = edges.find((e) => e.target === source.id && e.targetHandle === 'source');
+			const sourceNode = sourceEdge ? nodes.find((n) => n.id === sourceEdge.source) : null;
+			const sourceUuid = sourceNode?.type === 'objectselector' ? sourceNode.data?.selected : null;
+			if (sourceUuid && sourceUuid !== '-None-') map[uuid].colliderSource = sourceUuid;
+		}
 	};
 	edges.forEach((edge) => {
 		const source = nodes.find((n) => n.id === edge.source);
@@ -441,8 +454,19 @@ function shapeKeyOf(p, object) {
 		f: p?.freeze ?? null,
 		r: p?.restitution ?? null,
 		fr: p?.friction ?? null,
-		m: p?.mass ?? null
+		m: p?.mass ?? null,
+		cs: p?.colliderScale ?? null, // CL-C: node shape scale
+		src: p?.colliderSource ?? null // CL-C: 'object' shape source uuid
 	});
+}
+
+/** CL-C: node params may hull ANOTHER object ('object' source) and scale the
+ * shape — resolve those extras into the shared spec. @param {any} object @param {any} p */
+function specOf(object, p) {
+	const sourceObject = p?.colliderSource
+		? get(objectsGroup)?.getObjectByProperty('uuid', p.colliderSource)
+		: null;
+	return colliderSpecOf(object, p?.collider, { sourceObject, scale: p?.colliderScale });
 }
 
 /**
@@ -459,7 +483,7 @@ function shapeKeyOf(p, object) {
  * @returns {{colliders: any[], spec: any} | null}
  */
 function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
-	const spec = knownSpec ?? colliderSpecOf(object, p?.collider);
+	const spec = knownSpec ?? specOf(object, p);
 	if (!spec) return null;
 	if (spec.fallback)
 		showToast(
@@ -587,7 +611,7 @@ async function startSimulation() {
 		// hull/custom pieces bake it into the verts — so every body starts
 		// WORLD-ALIGNED (identity rotation; joints require it, C3).
 		const p = params[object.uuid];
-		const spec = colliderSpecOf(object, p?.collider);
+		const spec = specOf(object, p);
 		if (!spec) return; // lights/empties
 		const dynamic = !!p && p.mass != null && dynamicUuids.includes(object.uuid);
 		// flow-animated objects (not dynamic) become KINEMATIC platforms: the
@@ -947,6 +971,8 @@ function step(now) {
 		object.quaternion.copy(bodyQuat).multiply(initialQuat);
 		entry.lastWritten.pos.copy(object.position);
 		entry.lastWritten.quat.copy(object.quaternion);
+		// CL-C C3: exact-ish speed feed on the initiator (velocity node)
+		noteObjectPose(object.uuid, object.position.x, object.position.y, object.position.z);
 		if (broadcast && peer) {
 			// sleep is disabled (kinematic-wake), so gate broadcasts on MOVEMENT:
 			// settled bodies stop producing traffic

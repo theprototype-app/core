@@ -41,6 +41,8 @@
 	import ObjectPairNode from './nodes/ObjectPairNode.svelte';
 	import EffectNode from './nodes/EffectNode.svelte';
 	import OnClickNode from './nodes/OnClickNode.svelte';
+	import ColliderNode from './nodes/ColliderNode.svelte';
+	import VelocityNode from './nodes/VelocityNode.svelte';
 	import CounterNode from './nodes/CounterNode.svelte';
 	import FlowIONode from './nodes/FlowIONode.svelte';
 	import ObjectFlowNode from './nodes/ObjectFlowNode.svelte';
@@ -105,6 +107,10 @@
 		visibility: EffectNode,
 		onclick: OnClickNode,
 		onimpact: AnimationNode,
+		onenter: OnClickNode, // CL-C: same pulse card, sensor copy
+		onexit: OnClickNode,
+		collider: ColliderNode, // CL-C
+		velocity: VelocityNode, // CL-C
 		counter: CounterNode,
 		flowinput: FlowIONode,
 		flowoutput: FlowIONode,

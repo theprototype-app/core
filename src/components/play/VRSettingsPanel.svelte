@@ -8,6 +8,7 @@
 		vrSettingsPanelOpen,
 		vrMenuHand,
 		vrTeleportEnabled,
+		vrSleeveEnabled,
 		vrMirrorSnapTurn,
 		vrSnapAngle,
 		vrVertexHold,
@@ -38,6 +39,7 @@
 	type Row = { action: string; label: string; active?: boolean; toggle?: boolean; danger?: boolean }
 	let rows = $derived<Row[]>([
 		{ action: 'settings:teleport', label: 'Teleport', toggle: true, active: $vrTeleportEnabled },
+		{ action: 'settings:sleeve', label: 'VR sleeve palette', toggle: true, active: $vrSleeveEnabled },
 		{ action: 'settings:mirror', label: 'Mirror snap turn', toggle: true, active: $vrMirrorSnapTurn },
 		{ action: 'settings:angle', label: 'Snap turn: ' + ($vrSnapAngle ? $vrSnapAngle + ' deg' : 'Off') },
 		{ action: 'settings:vertexhold', label: 'Hold to move vertex', toggle: true, active: $vrVertexHold },

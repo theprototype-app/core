@@ -396,7 +396,7 @@
 	/>
 {/if}
 
-<Modal title="" bind:open={$profileSettingsOpen} outsideclose>
+<Modal title="" bind:open={$profileSettingsOpen} outsideclose modal={false} onkeydown={(e) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }} class="tp-modal-frame">
 
 	<center><b>Profile Settings</b></center>
 

@@ -39,7 +39,7 @@
 	}
 </script>
 
-<Modal title="" bind:open={$characterModalOpen} outsideclose size="sm">
+<Modal title="" bind:open={$characterModalOpen} outsideclose modal={false} onkeydown={(e) => { if (e.key === 'Escape') characterModalOpen.set(false); }} class="tp-modal-frame" size="sm">
 	<center><b>Customize Character</b></center>
 
 	<div class="modal-content p-4">

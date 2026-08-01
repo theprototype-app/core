@@ -88,30 +88,13 @@ function autoDismiss(node: any, toast: any) {
     return { destroy() { clearTimeout(id); } };
 }
 
-// flowbite 1.x modals are native <dialog> TOP-LAYER — no z-index can beat them.
-// The critical container is therefore a MANUAL POPOVER: shown while approvals are
-// pending, it enters the top layer AFTER any open dialog and stacks above it, so
-// a connection request is still never missed behind a modal (the E1 guarantee).
-let criticalEl = $state<any>(null);
-$effect(() => {
-	const wanted = $pendingApprovals.length > 0 && !hideCritical;
-	const el = criticalEl;
-	if (!el || typeof el.showPopover !== 'function') return;
-	try {
-		if (wanted && !el.matches(':popover-open')) el.showPopover();
-		else if (!wanted && el.matches(':popover-open')) el.hidePopover();
-	} catch {
-		/* popover quirks (detached el) — the container still renders in-page */
-	}
-});
 </script>
 <!-- E1: CRITICAL container — connection requests + pending outbound requests stay
-     ABOVE modals (top-layer popover, see above) so an approval is never missed. -->
+     ABOVE modals (--z-toast beats the NON-MODAL dialogs at --z-modal) so an
+     approval is never missed while a modal is open. -->
 <div class="my-4 toasts-container toasts-critical"
-popover="manual"
-bind:this={criticalEl}
 class:cxd-hidden={hideCritical}
-style="max-width: 500px; pointer-events: none;"
+style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
 >
 {#each $pendingApprovals as approval}
 <div class="my-1 cxreq" transition:fly={{ y: -8, duration: 180 }}>
@@ -322,20 +305,6 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
     .toasts-container {
         position: absolute;
         top: 65px;
-    }
-    /* the critical container is a manual POPOVER (top layer, above native dialogs);
-       reset the UA popover styles and keep the old centered-under-the-bar placement */
-    .toasts-critical[popover] {
-        position: fixed;
-        inset: auto;
-        top: 65px;
-        left: 50%;
-        transform: translate(-50%, 0);
-        margin: 0;
-        border: 0;
-        padding: 0;
-        background: transparent;
-        overflow: visible;
     }
     .cxd-hidden {
         display: none !important;

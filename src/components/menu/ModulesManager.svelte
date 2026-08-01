@@ -70,6 +70,7 @@
 <Modal
 	title="Modules"
 	bind:open={$modulesOpen}
+	modal={false} onkeydown={(e) => { if (e.key === 'Escape') modulesOpen.set(false); }}
 	size="lg"
 	outsideclose
 	class="tp-modal-frame"

@@ -203,23 +203,37 @@ svg.lucide {
 		display: none !important;
 	}
 }
-/* Shared full-screen-on-narrow modal treatment (Settings, Sessions, Modules).
-   flowbite-svelte 1.x: the native <dialog> element itself carries .tp-modal-frame
-   (there is no wrapper .tp-modal-dialog / sibling .tp-modal-backdrop anymore — the
-   dim layer is the dialog's ::backdrop). The modal body stays the SINGLE scroll
-   container. Desktop: capped at 88vh + widened. Narrow: fills the viewport BELOW
-   the Connect bar, no radius, and the header title is padded left so it clears the
-   top-left logo. */
+/* Shared full-screen-on-narrow modal treatment (Settings, Sessions, Modules,
+   Character/profile). flowbite-svelte 1.x renders a native <dialog> carrying
+   .tp-modal-frame — but these app modals run NON-MODAL (`modal={false}` →
+   dialog.show(), NO top layer): the app's chrome deliberately stays ALIVE above
+   them (logo at --z-menu closes-modal-and-opens-menu in one click, the Connect
+   bar + its drawer keep working, approval toasts at --z-toast, ThemedSelect
+   portals at 9999). A modal showModal() dialog would make ALL of that inert —
+   only ConfirmModal keeps true modality on purpose. The dim layer is a ::before
+   pseudo (non-modal dialogs have no ::backdrop); clicks on it target the dialog
+   element itself, which flowbite's outsideclose bounding-box check treats as
+   outside → closes. The modal body stays the SINGLE scroll container. */
 .tp-modal-body {
 	padding: 0 !important;
 }
-.tp-modal-frame {
+dialog.tp-modal-frame {
+	position: fixed !important;
+	inset: 0;
+	margin: auto;
+	z-index: var(--z-modal);
 	max-width: min(1200px, 94vw) !important;
 	max-height: 88vh;
 }
+dialog.tp-modal-frame::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	background: rgb(17 24 39 / 0.5);
+	z-index: -1;
+}
 @media (max-width: 640px) {
 	dialog.tp-modal-frame {
-		position: fixed !important;
 		top: var(--connect-bottom, 0px) !important;
 		bottom: 0 !important;
 		margin: 0 !important;
@@ -229,7 +243,7 @@ svg.lucide {
 		max-height: none !important;
 		border-radius: 0 !important;
 	}
-	dialog.tp-modal-frame::backdrop {
+	dialog.tp-modal-frame::before {
 		top: var(--connect-bottom, 0px);
 	}
 	/* leave room for the logo (top-left) so the modal title never sits under it */

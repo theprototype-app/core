@@ -15,12 +15,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
-      - run: npm ci --legacy-peer-deps
+      - run: npm ci
       - run: npm run build
       # svelte-check exits non-zero at the legacy baseline; fail ONLY when the
-      # counts grow past it (baseline 438 errors / 62 warnings, 2026-08-01)
+      # counts grow past it (baseline 435 errors / 62 warnings, 2026-08-01, node 24)
       - name: svelte-check baseline gate
         run: |
           npm run check 2>&1 | tee check.log || true
@@ -34,9 +34,9 @@ jobs:
             ERRORS=$(echo "$LINE" | awk '{print $2}')
             WARNINGS=$(echo "$LINE" | awk '{print $5}')
           fi
-          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 438/62)"
+          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 435/62)"
           if [ -z "$ERRORS" ]; then echo "could not parse svelte-check output"; exit 1; fi
-          if [ "$ERRORS" -gt 438 ] || [ "$WARNINGS" -gt 62 ]; then
+          if [ "$ERRORS" -gt 435 ] || [ "$WARNINGS" -gt 62 ]; then
             echo "baseline exceeded"; exit 1
           fi
       - name: zip the build

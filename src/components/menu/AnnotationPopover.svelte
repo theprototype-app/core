@@ -46,7 +46,7 @@
 		</p>
 		<!-- svelte-ignore a11y_autofocus -->
 		<textarea
-			class="h-24 w-full resize-none rounded border border-gray-300 bg-transparent p-2 text-sm text-gray-800 dark:border-gray-600 dark:text-gray-100"
+			class="h-24 w-full resize-none rounded-sm border border-gray-300 bg-transparent p-2 text-sm text-gray-800 dark:border-gray-600 dark:text-gray-100"
 			placeholder="Write a note…"
 			autofocus
 			bind:value={text}

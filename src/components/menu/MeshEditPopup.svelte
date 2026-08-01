@@ -170,7 +170,7 @@
 	<div
 		id="mesh-edit-popup"
 		use:dragWindow={{ key: 'meshEditToolbar', defaultRect }}
-		class="move-handle z-[var(--z-window)] flex max-w-[min(96vw,780px)] cursor-move select-none flex-col gap-1.5 rounded-xl border border-gray-700/60 bg-gray-800/95 px-3 py-2 text-sm text-white shadow-xl backdrop-blur"
+		class="move-handle z-(--z-window) flex max-w-[min(96vw,780px)] cursor-move select-none flex-col gap-1.5 rounded-xl border border-gray-700/60 bg-gray-800/95 px-3 py-2 text-sm text-white shadow-xl backdrop-blur-sm"
 	>
 		<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
 			<span class="font-semibold" title="Drag to move this toolbar"
@@ -316,7 +316,7 @@
 						id="mesh-op-amount"
 						type="number"
 						step="0.05"
-						class="w-14 rounded bg-gray-900 px-1 py-0.5 text-right"
+						class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
 						bind:value={$faceEditAmount}
 					/>
 				</label>

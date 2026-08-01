@@ -105,7 +105,7 @@
 <aside class="flex flex-col gap-2 p-2">
 	<input
 		id="palette-filter"
-		class="rounded border border-gray-300 bg-transparent px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:text-gray-200"
+		class="rounded-sm border border-gray-300 bg-transparent px-2 py-1 text-xs focus:outline-hidden focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:text-gray-200"
 		placeholder="Filter nodes…"
 		bind:value={filter}
 	/>
@@ -137,7 +137,7 @@
 <!-- drag ghost that follows the finger while touch-dragging a node onto the canvas -->
 {#if dragging}
 	<div
-		class="pointer-events-none fixed z-[1400] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-primary-400 bg-gray-800 px-3 py-2 text-center font-mono text-xs font-semibold text-gray-100 shadow-lg"
+		class="pointer-events-none fixed z-1400 -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-primary-400 bg-gray-800 px-3 py-2 text-center font-mono text-xs font-semibold text-gray-100 shadow-lg"
 		style="left: {ghostX}px; top: {ghostY}px;"
 	>
 		{ghostLabel}

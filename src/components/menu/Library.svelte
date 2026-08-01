@@ -3,7 +3,8 @@
 	// Library (phase 65): tabs for user prefabs and built-in packs, one uniform
 	// card grid, search, skeleton loading states. All prefab/pack flows are the
 	// same functions as before — this is chrome only.
-	import { Drawer, Modal } from 'flowbite-svelte';
+	import { Modal } from 'flowbite-svelte';
+	import { fly } from 'svelte/transition';
 	import { libraryClose, loadingFile } from '../../stores/appStore.js';
 	import { sineIn } from 'svelte/easing';
 	import { loadFile } from '$lib/fileHandler.svelte';
@@ -99,19 +100,13 @@
 		(active ? 'bg-primary-700 text-white' : 'bg-gray-700/60 text-gray-300 hover:bg-gray-600');
 </script>
 
-<Drawer
+<!-- flowbite-svelte 1.x turned Drawer into a native <dialog> — this persistent side
+     panel is a plain div reproducing the v0 drawer chrome exactly. -->
+{#if !$libraryClose}
+<div
 	style={drawerStyle}
-	activateClickOutside={false}
-	backdrop={false}
-	placement="right"
-	position="fixed"
-	rightOffset="end-0 top-16"
-	leftOffset="start-0 "
-	topOffset="top-16"
-	transitionType="fly"
-	transitionParams={transitionParamsRight}
-	bind:hidden={$libraryClose}
-	class="rounded-tl-lg"
+	transition:fly={transitionParamsRight}
+	class="fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto rounded-tl-lg bg-white p-4 dark:bg-gray-800"
 	id="library-drawer"
 >
 	<PanelHeader title="Library" badge="Assets" onclose={() => libraryClose.set(true)} />
@@ -164,9 +159,9 @@
 						<div class="asset-card group relative flex flex-col items-center rounded-lg border border-gray-700/60 bg-gray-800/70 p-1.5 hover:border-gray-500">
 							<button class="w-full" title="Add to scene" onclick={() => instantiatePrefab(prefab)}>
 								{#if prefab.thumbnail}
-									<img src={prefab.thumbnail} alt={prefab.name} class="aspect-square w-full rounded object-cover" />
+									<img src={prefab.thumbnail} alt={prefab.name} class="aspect-square w-full rounded-sm object-cover" />
 								{:else}
-									<div class="ico-prefab flex aspect-square w-full items-center justify-center rounded bg-gray-700"><Boxes size={24} aria-hidden="true" /></div>
+									<div class="ico-prefab flex aspect-square w-full items-center justify-center rounded-sm bg-gray-700"><Boxes size={24} aria-hidden="true" /></div>
 								{/if}
 							</button>
 							<p
@@ -180,8 +175,8 @@
 								{prefab.name}
 							</p>
 							<div class="absolute -right-1 -top-1 hidden gap-0.5 group-hover:flex">
-								<button class="rounded bg-gray-700 px-1 text-[10px] hover:bg-gray-600" title="Export" onclick={() => downloadPrefab(prefab)}><Download size={16} aria-hidden="true" /></button>
-								<button class="rounded bg-gray-700 px-1 text-[10px] hover:bg-red-700" title="Delete" onclick={() => removePrefab(prefab.id)}>✕</button>
+								<button class="rounded-sm bg-gray-700 px-1 text-[10px] hover:bg-gray-600" title="Export" onclick={() => downloadPrefab(prefab)}><Download size={16} aria-hidden="true" /></button>
+								<button class="rounded-sm bg-gray-700 px-1 text-[10px] hover:bg-red-700" title="Delete" onclick={() => removePrefab(prefab.id)}>✕</button>
 							</div>
 						</div>
 					{/each}
@@ -227,8 +222,8 @@
 				<div class="grid grid-cols-3 gap-2">
 					{#each Array(6) as _}
 						<div class="animate-pulse rounded-lg border border-gray-700/60 bg-gray-800/70 p-1.5">
-							<div class="aspect-square w-full rounded bg-gray-700"></div>
-							<div class="mx-auto mt-1.5 h-2 w-2/3 rounded bg-gray-700"></div>
+							<div class="aspect-square w-full rounded-sm bg-gray-700"></div>
+							<div class="mx-auto mt-1.5 h-2 w-2/3 rounded-sm bg-gray-700"></div>
 						</div>
 					{/each}
 				</div>
@@ -241,7 +236,7 @@
 					{#each packItems as object (object.name)}
 						{#if $loadingFile.includes(object.name)}
 							<div class="animate-pulse rounded-lg border border-gray-700/60 bg-gray-800/70 p-1.5">
-								<div class="aspect-square w-full rounded bg-gray-700"></div>
+								<div class="aspect-square w-full rounded-sm bg-gray-700"></div>
 								<p class="overflow-hidden text-ellipsis whitespace-nowrap pt-1 text-center text-[11px] text-gray-400">
 									{object.name}
 								</p>
@@ -261,7 +256,7 @@
 									src={`/library/${selected.name}/${object.name}/${object.screenshot}`}
 									alt={object.name}
 									loading="lazy"
-									class="aspect-square w-full rounded object-cover"
+									class="aspect-square w-full rounded-sm object-cover"
 								/>
 								<p class="w-full overflow-hidden text-ellipsis whitespace-nowrap pt-1 text-center text-[11px] text-gray-200">
 									{object.name}
@@ -273,7 +268,8 @@
 			{/if}
 		{/if}
 	</div>
-</Drawer>
+</div>
+{/if}
 
 <Modal title={selected?.name} bind:open={attributionModal} autoclose>
 	<div class="modal-content max-h-[90vh] overflow-y-auto p-4">

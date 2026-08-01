@@ -25,7 +25,7 @@
 	<!-- one column (the wrapper slot is a flex ROW) -->
 	<div class="flex w-full flex-col gap-1">
 		<button
-			class="nodrag w-full rounded border border-gray-600 px-1 py-0.5 text-xs {capturing ? 'bg-primary-700 text-white' : ''}"
+			class="nodrag w-full rounded-sm border border-gray-600 px-1 py-0.5 text-xs {capturing ? 'bg-primary-700 text-white' : ''}"
 			on:click={() => (capturing = true)}
 			on:keydown={capturing ? onCaptureKey : undefined}
 			on:blur={() => (capturing = false)}

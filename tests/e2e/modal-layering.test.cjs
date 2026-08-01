@@ -8,14 +8,29 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// Settings modal is on the modal tier (>= 1100, above the ~998 avatar chrome)
+	// Settings modal renders in the browser TOP LAYER (flowbite 1.x = native <dialog>
+	// + showModal) - above ALL page chrome by definition; z-index tiers no longer apply
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
-	const z = await A.page.evaluate(() => {
-		const d = document.querySelector('[role="dialog"][aria-modal="true"]');
-		return d ? parseInt(getComputedStyle(d).zIndex) : null;
+	const modal = await A.page.evaluate(() => {
+		const d = document.querySelector('dialog.tp-modal-frame');
+		return { exists: !!d, topLayer: !!d && d.matches(':modal') };
 	});
-	h.check(z !== null && z >= 1100, `settings modal is on the modal tier, above the avatar (z=${z})`);
+	h.check(modal.exists && modal.topLayer, 'settings modal is a native top-layer dialog (above all chrome)');
+	// E1 guarantee survives top layer: a pending approval's container is a MANUAL
+	// POPOVER shown after the dialog, so it stacks above the modal
+	const approvalAbove = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		let before;
+		s.pendingApprovals.subscribe((v) => (before = v))();
+		s.pendingApprovals.set([{ peerId: 'e2etest', status: 'new' }]);
+		await new Promise((r) => setTimeout(r, 300));
+		const el = document.querySelector('.toasts-critical');
+		const open = !!el && el.matches(':popover-open');
+		s.pendingApprovals.set(before ?? []);
+		return open;
+	});
+	h.check(approvalAbove, 'pending approval popover enters the top layer above the open modal');
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await A.page.waitForTimeout(200);
 

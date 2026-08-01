@@ -28,7 +28,7 @@
 	>
 		<div class="move-handle flex items-center justify-between">
 			<span class="font-semibold">Script — runs on every peer</span>
-			<button id="script-panel-close" class="rounded bg-gray-600 px-2" on:click={() => scriptEditorOpen.set(null)}>✕</button>
+			<button id="script-panel-close" class="rounded-sm bg-gray-600 px-2" on:click={() => scriptEditorOpen.set(null)}>✕</button>
 		</div>
 		<div class="min-h-0 flex-1">
 			<CodeEditor value={node.data.code ?? ''} {onChange} />

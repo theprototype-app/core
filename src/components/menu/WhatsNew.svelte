@@ -88,7 +88,7 @@
 		id="whats-new-window"
 		bind:this={winEl}
 		tabindex="-1"
-		class="ui-panel fixed flex flex-col overflow-hidden outline-none"
+		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
 		use:dragWindow={{ key: 'whatsNewWin', defaultRect: { left: 220, top: 90 } }}
 		use:focusStack
 		style="z-index: var(--z-window); width: min(620px, 94vw); height: min(620px, 80vh)"

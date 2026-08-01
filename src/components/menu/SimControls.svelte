@@ -19,7 +19,7 @@
 </script>
 
 {#if $showSimControls}
-<div id="sim-controls" class="fixed bottom-[112px] right-4 z-[30] flex flex-col gap-1.5">
+<div id="sim-controls" class="fixed bottom-[112px] right-4 z-30 flex flex-col gap-1.5">
 	{#if $simulating}
 		<button id="sim-reset" class={btn} aria-label="Reset simulation" title="Reset — restore the initial layout" onclick={() => resetSimulation()}>
 			<RotateCcw size={16} class="text-xs" aria-hidden="true" />

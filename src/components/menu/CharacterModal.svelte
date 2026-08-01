@@ -24,7 +24,7 @@
 	// w-32 on tight/folded screens so the dropdown value isn't squeezed to one letter,
 	// widening to w-40 once there's room
 	let rowClass =
-		'z-10 inline-flex w-32 sm:w-40 flex-shrink-0 items-center border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white';
+		'z-10 inline-flex w-32 sm:w-40 shrink-0 items-center border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white';
 
 	function update(partial: any) {
 		const next = { ...$avatarConfig, ...partial };
@@ -80,7 +80,7 @@
 			/>
 		</div>
 		<div class="flex items-center gap-2 px-6 pt-3">
-			<Checkbox checked={cfg.showLabel} on:change={(e) => update({ showLabel: (e.target as HTMLInputElement).checked })}
+			<Checkbox checked={cfg.showLabel} onchange={(e) => update({ showLabel: (e.target as HTMLInputElement).checked })}
 				>Show name label</Checkbox
 			>
 		</div>

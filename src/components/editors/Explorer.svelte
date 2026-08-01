@@ -990,7 +990,7 @@
 					{#each crumbs as c, i (c.id ?? 'root')}
 						{#if i > 0}<span class="px-0.5 text-gray-600">/</span>{/if}
 						<button
-							class="rounded px-1 py-0.5 hover:bg-gray-700 {i === crumbs.length - 1 ? 'text-white' : ''}"
+							class="rounded-sm px-1 py-0.5 hover:bg-gray-700 {i === crumbs.length - 1 ? 'text-white' : ''}"
 							onclick={() => openFolder(c.id)}>{c.label}</button
 						>
 					{/each}
@@ -1005,7 +1005,7 @@
 			<button
 				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
 					? 'bg-primary-700 text-white'
-					: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline outline-2 outline-primary-500' : ''}"
+					: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline-solid outline-2 outline-primary-500' : ''}"
 				ondragover={(e) => dragOverInto(e, 'root')}
 				ondragleave={() => (dropFolder = null)}
 				ondrop={(e) => dropInto(e, null)}
@@ -1038,7 +1038,7 @@
 						<button
 							class="flex-1 rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
 								? 'bg-primary-700 text-white'
-								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id ? 'outline outline-2 outline-primary-500' : ''}"
+								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id ? 'outline-solid outline-2 outline-primary-500' : ''}"
 							draggable="true"
 							ondragstart={(e) =>
 								e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify({ id: row.folder.id }))}
@@ -1059,7 +1059,7 @@
 			<div class="flex shrink-0 flex-col gap-0.5 border-t border-gray-700/60 p-1">
 				<button
 					id="new-folder"
-					class="whitespace-nowrap rounded border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
+					class="whitespace-nowrap rounded-sm border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
 					onclick={() => startCreate(typeof $activeFolder === 'string' && ($activeFolder === 'prefabs' || $activeFolder.startsWith('scene')) ? null : $activeFolder)}>＋ New folder</button
 				>
 				<div class="my-0.5 border-t border-gray-700/40"></div>
@@ -1126,7 +1126,7 @@
 		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex a11y_no_static_element_interactions -->
 		<div
 			bind:this={gridEl}
-			class="relative h-full min-w-0 overflow-y-auto p-1 outline-none"
+			class="relative h-full min-w-0 overflow-y-auto p-1 outline-hidden"
 			style="scrollbar-gutter: stable"
 			tabindex="-1"
 			oncontextmenu={gridMenu}
@@ -1149,7 +1149,7 @@
 						<span class="text-sm text-gray-300">"{openPack.title}" installs into your local library.</span>
 						<button
 							id="pack-install"
-							class="rounded bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-500 disabled:opacity-50"
+							class="rounded-sm bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-500 disabled:opacity-50"
 							disabled={installingPack}
 							onclick={() => installZipPack(openPack)}
 						><Download size={16} class="mr-1" aria-hidden="true" />{installingPack ? 'Installing…' : `Install ${openPack.title}`}</button>
@@ -1224,15 +1224,15 @@
 										alt={item.name}
 										onerror={() => packThumbError(item)}
 										onload={(e) => packThumbOk(item, (e.currentTarget as HTMLImageElement).src)}
-										class="h-14 w-14 rounded object-cover"
+										class="h-14 w-14 rounded-sm object-cover"
 									/>
 								{:else}
-									<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} /></span>
+									<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} /></span>
 								{/if}
 							{:else if item.thumbnail}
-								<img src={item.thumbnail} alt={item.name} class="h-14 w-14 rounded object-cover" />
+								<img src={item.thumbnail} alt={item.name} class="h-14 w-14 rounded-sm object-cover" />
 							{:else}
-								<span class="flex h-14 w-14 items-center justify-center rounded bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}">
+								<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}">
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
 								</span>
 							{/if}
@@ -1260,7 +1260,7 @@
 					<div class="flex flex-col gap-1 border-b border-gray-700/40 pb-2">
 						<div class="flex items-center gap-2">
 							<span class="text-gray-400"><PackageOpen size={18} aria-hidden="true" /></span>
-							<span class="min-w-0 flex-1 break-words font-semibold">{openPack.title}</span>
+							<span class="min-w-0 flex-1 wrap-break-word font-semibold">{openPack.title}</span>
 						</div>
 						{#if openPack.license}<div class="text-[11px] text-gray-400">License: {licenseLabel(openPack.license)}</div>{/if}
 						{#if openPack.copyright}<div class="text-[11px] text-gray-400">{openPack.copyright}</div>{/if}
@@ -1280,13 +1280,13 @@
 				{#if selItem}
 					<div class="flex items-center gap-2">
 						{#if selItem.thumbnail}
-							<img src={selItem.thumbnail} alt="" class="h-12 w-12 rounded object-cover" />
+							<img src={selItem.thumbnail} alt="" class="h-12 w-12 rounded-sm object-cover" />
 						{:else}
-							<span class="flex h-12 w-12 items-center justify-center rounded bg-gray-700 {KIND_COLORS[selItem.kind] ?? 'text-gray-400'}"
+							<span class="flex h-12 w-12 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[selItem.kind] ?? 'text-gray-400'}"
 								><Icon name={KIND_ICONS[selItem.kind] ?? 'package'} size={24} /></span
 							>
 						{/if}
-						<span class="min-w-0 flex-1 break-words font-semibold">{selItem.name}</span>
+						<span class="min-w-0 flex-1 wrap-break-word font-semibold">{selItem.name}</span>
 					</div>
 					<div class="flex flex-col gap-1">
 						<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Kind</span><span>{selItem.kind}</span></div>
@@ -1314,7 +1314,7 @@
 					</div>
 					<!-- N4: rotatable inline 3D preview + poly stats (behind the global toggle) -->
 					{#if selItem.kind === 'object' && $enable3dPreview && !selItem.packEntry}
-						<div class="mt-1 overflow-hidden rounded bg-[#0d1117]" style="height: 150px">
+						<div class="mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
 							{#key selItem.id}
 								<ModelPreview itemId={selItem.id} name={selItem.name} onStats={(s) => (inlineStats = s)} />
 							{/key}
@@ -1345,7 +1345,7 @@
 					{@const counts = folderCounts(selected.folder.id)}
 					<div class="flex items-center gap-2">
 						<span class="ico-folder"><Folder size={22} aria-hidden="true" /></span>
-						<span class="min-w-0 flex-1 break-words font-semibold">{selected.folder.name}</span>
+						<span class="min-w-0 flex-1 wrap-break-word font-semibold">{selected.folder.name}</span>
 					</div>
 					<p class="text-gray-400">
 						{counts.folders} folder{counts.folders === 1 ? '' : 's'}, {counts.items} item{counts.items === 1
@@ -1519,7 +1519,7 @@
 <!-- mobile touch-drag ghost that follows the finger onto the viewport -->
 {#if tDragging && tDrag}
 	<div
-		class="pointer-events-none fixed z-[1400] max-w-[160px] -translate-x-1/2 -translate-y-1/2 truncate rounded border border-primary-400 bg-gray-800 px-2 py-1 text-center text-xs font-semibold text-gray-100 shadow-lg"
+		class="pointer-events-none fixed z-1400 max-w-[160px] -translate-x-1/2 -translate-y-1/2 truncate rounded-sm border border-primary-400 bg-gray-800 px-2 py-1 text-center text-xs font-semibold text-gray-100 shadow-lg"
 		style="left: {tGhostX}px; top: {tGhostY}px;"
 	>
 		{tDrag.label}
@@ -1530,13 +1530,13 @@
      Backdrop is a <button> so no div needs a click handler (a11y-clean). -->
 {#if packAttribModal}
 	<button
-		class="fixed inset-0 z-[var(--z-window)] cursor-default bg-black/50"
+		class="fixed inset-0 z-(--z-window) cursor-default bg-black/50"
 		aria-label="Close attribution"
 		onclick={() => (packAttribModal = false)}
 	></button>
 	<div
 		id="pack-attrib-modal"
-		class="ui-panel fixed left-1/2 top-1/2 z-[var(--z-window)] max-h-[70vh] w-96 -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-4 text-sm"
+		class="ui-panel fixed left-1/2 top-1/2 z-(--z-window) max-h-[70vh] w-96 -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-4 text-sm"
 		style="z-index: calc(var(--z-window) + 1)"
 	>
 		{#if packAttribLoading}

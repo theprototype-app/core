@@ -40,7 +40,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
 	<div class="mesh-gen-backdrop" role="presentation" onclick={onBackdrop}>
 		<div
-			class="ui-panel mesh-gen-modal flex w-[min(460px,92vw)] flex-col gap-3 bg-gray-900/95 p-4 backdrop-blur"
+			class="ui-panel mesh-gen-modal flex w-[min(460px,92vw)] flex-col gap-3 bg-gray-900/95 p-4 backdrop-blur-sm"
 			role="dialog"
 			aria-modal="true"
 			aria-label="Generate 3D model"

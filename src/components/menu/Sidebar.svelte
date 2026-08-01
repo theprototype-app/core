@@ -112,7 +112,7 @@
 <!-- 94: the logo IS the menu button. Open state = accent ring. -->
 <button
 	id="logo-menu"
-	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur transition-transform hover:scale-105 {$closeMenu
+	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur-sm transition-transform hover:scale-105 {$closeMenu
 		? 'border-gray-700/60'
 		: 'border-primary-500 ring-2 ring-primary-500/50'}"
 	style="height: 48px; width: 48px; {$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}"
@@ -130,7 +130,7 @@
 	<nav
 		id="sidebar70"
 		transition:fade={{ duration: 130 }}
-		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
+		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
 		style={$connectDocked ? `top: ${$connectBarHeight + 64}px` : ''}
 	>
 		<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
@@ -194,7 +194,7 @@
 
 {#if exportSettingsOpen}
 	<!-- B3 export settings. Rendered at the component ROOT (not inside .app-sidebar,
-	     whose backdrop-blur would make this fixed panel center on the sidebar and
+	     whose backdrop-blur-sm would make this fixed panel center on the sidebar and
 	     spill off the left edge). Modal tier so it clears the avatar/Connect chrome. -->
 	<button
 		class="fixed inset-0 cursor-default bg-black/40"
@@ -227,7 +227,7 @@
 			Show JSON format
 		</label>
 		<div class="mt-3 flex justify-end">
-			<button class="rounded bg-gray-600 px-2 py-1 text-xs hover:bg-gray-500" onclick={() => (exportSettingsOpen = false)}>Close</button>
+			<button class="rounded-sm bg-gray-600 px-2 py-1 text-xs hover:bg-gray-500" onclick={() => (exportSettingsOpen = false)}>Close</button>
 		</div>
 	</div>
 {/if}

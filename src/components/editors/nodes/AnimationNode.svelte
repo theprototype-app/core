@@ -48,7 +48,7 @@
 					</span>
 					{#if param.kind === 'range' && wiredSource(param.key)}
 						<!-- wired: the incoming value drives this param — show it live -->
-						<span class="wired-value rounded bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300" title="Driven by the wired input">
+						<span class="wired-value rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300" title="Driven by the wired input">
 							◈ {fmt($flowValues[wiredSource(param.key)])}
 						</span>
 					{:else if param.kind === 'range'}

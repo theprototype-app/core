@@ -77,7 +77,7 @@
 		</label>
 		<div class="flex items-center gap-2">
 			<button
-				class="nodrag flex-1 rounded px-1 py-0.5 text-white {data.playing ? 'bg-green-600' : 'bg-[#ff4000]'}"
+				class="nodrag flex-1 rounded-sm px-1 py-0.5 text-white {data.playing ? 'bg-green-600' : 'bg-[#ff4000]'}"
 				on:click={() => setNodeData(id, { playing: !data.playing })}
 			>
 				{data.playing ? '■ Stop' : '▶ Play'}

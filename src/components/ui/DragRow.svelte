@@ -83,7 +83,7 @@
 {:else}
 	<button
 		type="button"
-		class="drag-number flex w-full cursor-ew-resize select-none items-center justify-between gap-1 rounded border border-gray-600/60 bg-gray-700/60 px-1.5 py-0.5 text-xs text-gray-100 hover:border-gray-400"
+		class="drag-number flex w-full cursor-ew-resize select-none items-center justify-between gap-1 rounded-sm border border-gray-600/60 bg-gray-700/60 px-1.5 py-0.5 text-xs text-gray-100 hover:border-gray-400"
 		style="touch-action: none"
 		title="Drag to change — Shift fine, Ctrl snap, click to type"
 		onpointerdown={down}

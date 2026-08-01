@@ -89,7 +89,7 @@
 		<div class="mt-1 max-h-64 overflow-y-auto">
 			{#each results as entry, index (entry.child.uuid)}
 				<button
-					class={'flex w-full items-baseline gap-2 rounded px-2 py-1 text-left ' +
+					class={'flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left ' +
 						(index === selectedIndex ? 'bg-primary-700 text-white' : 'hover:bg-gray-700')}
 					data-selected={index === selectedIndex}
 					onmouseenter={() => (selectedIndex = index)}

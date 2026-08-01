@@ -12,6 +12,17 @@ import {
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { meshGenReady } from './meshProviders.js';
+import { graphOf, SCENE_GRAPH } from '../../stores/flowStore';
+import { sceneJoints } from '$lib/joints';
+import {
+	physicsToolsEnabled,
+	aiNodeTypes,
+	createFlowNodesTool,
+	updateFlowNodesTool,
+	setPhysicsTool,
+	createJointsTool,
+	controlSimulationTool
+} from './flowTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -110,6 +121,56 @@ function describeObject(object) {
 		out.materialType = material.type;
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
+	if (object.userData?.physics) out.physics = { ...object.userData.physics };
+	const flow = summarizeGraph(object.uuid);
+	if (flow) out.flow = flow;
+	return out;
+}
+
+/** Node data compacted for the model: label/type dupes stripped, big point
+ * lists reduced to a count, long strings clipped. @param {any} node */
+function compactNodeData(node) {
+	/** @type {any} */
+	const out = {};
+	for (const [key, value] of Object.entries(node.data ?? {})) {
+		if (key === 'label' || key === 'type') continue;
+		if (key === 'points' && Array.isArray(value) && value.length > 6) {
+			out.points = value.length + ' points';
+			continue;
+		}
+		if (typeof value === 'string' && value.length > 80) {
+			out[key] = value.slice(0, 77) + '…';
+			continue;
+		}
+		out[key] = value;
+	}
+	return out;
+}
+
+/**
+ * Compact one graph document for the scene summary ("make the spider faster"
+ * needs the node ids + data). Capped per graph so a node-heavy scene can't
+ * blow the context.
+ * @param {string} graphId @param {number} [cap]
+ * @returns {{nodes: any[], edges?: any[], truncatedNodes?: number}|null}
+ */
+function summarizeGraph(graphId, cap = 12) {
+	const graph = graphOf(graphId);
+	if (!graph || (!graph.nodes.length && !graph.edges.length)) return null;
+	/** @type {any} */
+	const out = {
+		nodes: graph.nodes
+			.slice(0, cap)
+			.map((/** @type {any} */ n) => ({ id: n.id, type: n.type, ...compactNodeData(n) }))
+	};
+	if (graph.nodes.length > cap) out.truncatedNodes = graph.nodes.length - cap;
+	if (graph.edges.length)
+		out.edges = graph.edges.map((/** @type {any} */ e) => ({
+			from: e.source,
+			to: e.target,
+			...(e.sourceHandle ? { fromHandle: e.sourceHandle } : {}),
+			...(e.targetHandle ? { toHandle: e.targetHandle } : {})
+		}));
 	return out;
 }
 
@@ -135,7 +196,14 @@ export function summarizeScene(cap = 200) {
 			objects.push(describeObject(object));
 		});
 	}
-	return truncated ? { objects, truncated } : { objects };
+	/** @type {any} */
+	const out = truncated ? { objects, truncated } : { objects };
+	const sceneFlow = summarizeGraph(SCENE_GRAPH);
+	if (sceneFlow) out.sceneFlow = sceneFlow;
+	const joints = get(sceneJoints);
+	if (joints.length)
+		out.joints = joints.map((/** @type {any} */ j) => ({ id: j.id, kind: j.kind, a: j.a, b: j.b }));
+	return out;
 }
 
 /** @param {string} uuid */
@@ -272,8 +340,15 @@ const TOOL_NAMES = [
 	'delete_objects',
 	'group_objects',
 	'clear_scene',
-	'generate_mesh'
+	'generate_mesh',
+	'create_flow_nodes',
+	'update_flow_nodes',
+	'set_physics',
+	'create_joints',
+	'control_simulation'
 ];
+
+const SIM_ACTIONS = ['start', 'stop', 'pause', 'resume', 'reset'];
 
 /** Common near-misses. Small local models invent singular/verb variants. */
 const NAME_ALIASES = /** @type {Record<string,string>} */ ({
@@ -304,8 +379,64 @@ const NAME_ALIASES = /** @type {Record<string,string>} */ ({
 	list: 'list_scene',
 	clear: 'clear_scene',
 	generate_model: 'generate_mesh',
-	create_mesh: 'generate_mesh'
+	create_mesh: 'generate_mesh',
+	// flow / behavior invention family
+	add_behavior: 'create_flow_nodes',
+	add_behaviour: 'create_flow_nodes',
+	create_behavior: 'create_flow_nodes',
+	animate: 'create_flow_nodes',
+	animate_object: 'create_flow_nodes',
+	add_animation: 'create_flow_nodes',
+	add_node: 'create_flow_nodes',
+	add_nodes: 'create_flow_nodes',
+	add_flow_node: 'create_flow_nodes',
+	add_flow_nodes: 'create_flow_nodes',
+	create_flow_node: 'create_flow_nodes',
+	create_nodes: 'create_flow_nodes',
+	update_flow_node: 'update_flow_nodes',
+	update_node: 'update_flow_nodes',
+	update_nodes: 'update_flow_nodes',
+	edit_node: 'update_flow_nodes',
+	set_node_data: 'update_flow_nodes',
+	remove_node: 'update_flow_nodes',
+	remove_nodes: 'update_flow_nodes',
+	delete_node: 'update_flow_nodes',
+	delete_nodes: 'update_flow_nodes',
+	// physics family
+	enable_physics: 'set_physics',
+	set_physic: 'set_physics',
+	update_physics: 'set_physics',
+	physics: 'set_physics',
+	make_static: 'set_physics',
+	make_dynamic: 'set_physics',
+	set_mass: 'set_physics',
+	create_joint: 'create_joints',
+	add_joint: 'create_joints',
+	add_joints: 'create_joints',
+	hinge: 'create_joints',
+	weld: 'create_joints',
+	attach: 'create_joints',
+	attach_objects: 'create_joints',
+	connect_objects: 'create_joints',
+	start_simulation: 'control_simulation',
+	stop_simulation: 'control_simulation',
+	pause_simulation: 'control_simulation',
+	reset_simulation: 'control_simulation',
+	run_simulation: 'control_simulation',
+	simulate: 'control_simulation',
+	simulation: 'control_simulation'
 });
+
+/** Alias hits landing on control_simulation carry the action IN THE NAME
+ * ("start_simulation") more often than in args — fill it in.
+ * @param {string} name @param {string} sourceKey @param {any} args */
+function withActionFill(name, sourceKey, args) {
+	if (name === 'control_simulation' && !args.action) {
+		const action = SIM_ACTIONS.find((a) => sourceKey.includes(a)) ?? 'start';
+		return { name, args: { ...args, action }, repaired: true };
+	}
+	return { name, args, repaired: true };
+}
 
 /**
  * Best-effort repair of a tool call from a weaker model: fix the NAME (case, aliases,
@@ -328,12 +459,27 @@ export function repairToolCall(rawName, rawArgs) {
 	const snake = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 	for (const candidate of [key, snake]) {
 		if (TOOL_NAMES.includes(candidate)) return { name: candidate, args, repaired: true };
-		if (NAME_ALIASES[candidate]) return { name: NAME_ALIASES[candidate], args, repaired: true };
+		if (NAME_ALIASES[candidate]) return withActionFill(NAME_ALIASES[candidate], candidate, args);
 	}
 
 	// name is invention — infer from the argument shape
 	if (Array.isArray(args.objects)) return { name: 'create_objects', args, repaired: true };
-	if (Array.isArray(args.updates)) return { name: 'update_objects', args, repaired: true };
+	if (Array.isArray(args.nodes)) return { name: 'create_flow_nodes', args, repaired: true };
+	if (Array.isArray(args.joints)) return { name: 'create_joints', args, repaired: true };
+	if (typeof args.action === 'string' && SIM_ACTIONS.includes(args.action.toLowerCase()))
+		return { name: 'control_simulation', args, repaired: true };
+	if (Array.isArray(args.updates)) {
+		// updates whose items carry ONLY physics keys route to set_physics
+		const PHYS_KEYS = ['mass', 'restitution', 'bounciness', 'friction', 'mode', 'collider'];
+		const OBJ_KEYS = ['position', 'rotation', 'scale', 'color', 'name', 'visible', 'materialType', 'materialParams', 'parentUuid'];
+		const items = args.updates.filter((/** @type {any} */ u) => u && typeof u === 'object');
+		const physicsOnly =
+			items.length > 0 &&
+			items.every(
+				(/** @type {any} */ u) => PHYS_KEYS.some((k) => k in u) && !OBJ_KEYS.some((k) => k in u)
+			);
+		return { name: physicsOnly ? 'set_physics' : 'update_objects', args, repaired: true };
+	}
 	if (Array.isArray(args.uuids)) return { name: 'delete_objects', args, repaired: true };
 	if (Array.isArray(args.memberUuids)) return { name: 'group_objects', args, repaired: true };
 	// a single object spec passed directly (kind/primitive/light present)
@@ -351,6 +497,11 @@ export function repairToolCall(rawName, rawArgs) {
 	}
 	return { name: original, args, repaired: false };
 }
+
+/** Names stay in TOOL_NAMES even while gated OFF so repair still normalizes
+ * them — the executor answers with this instead. */
+const PHYSICS_DISABLED =
+	'physics tools are disabled — enable "Physics tools" for this provider in Settings → AI';
 
 /**
  * Execute one tool call. Never throws — returns a JSON-serializable result.
@@ -418,6 +569,27 @@ export async function executeAiTool(rawName, rawArgs) {
 				const top = group ? group.children.map((/** @type {any} */ c) => c.uuid) : [];
 				const count = deleteObjectsByUuid(top);
 				return { cleared: count };
+			}
+
+			case 'create_flow_nodes':
+				return createFlowNodesTool(args);
+
+			case 'update_flow_nodes':
+				return updateFlowNodesTool(args);
+
+			case 'set_physics': {
+				if (!physicsToolsEnabled()) return { error: PHYSICS_DISABLED };
+				return setPhysicsTool(args);
+			}
+
+			case 'create_joints': {
+				if (!physicsToolsEnabled()) return { error: PHYSICS_DISABLED };
+				return createJointsTool(args);
+			}
+
+			case 'control_simulation': {
+				if (!physicsToolsEnabled()) return { error: PHYSICS_DISABLED };
+				return await controlSimulationTool(args);
 			}
 
 			case 'generate_mesh': {
@@ -616,16 +788,217 @@ export const MESH_TOOL = {
 	}
 };
 
-/** Toolset for the assistant — includes generate_mesh only when a mesh provider is
- * ready. Call this per turn (readiness can change). @returns {any[]} */
+/** Flow-node tool schemas. Built per call — the node-type enum tracks the
+ * physics gate (physics node types absent when gated off).
+ * @param {boolean} physics @returns {any[]} */
+function flowToolSchemas(physics) {
+	const types = aiNodeTypes(physics);
+	return [
+		{
+			type: 'function',
+			function: {
+				name: 'create_flow_nodes',
+				description:
+					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges.',
+				parameters: {
+					type: 'object',
+					properties: {
+						graph: {
+							type: 'string',
+							description: '"scene" or an existing object uuid (nodes in an object\'s graph drive that object)'
+						},
+						nodes: {
+							type: 'array',
+							items: {
+								type: 'object',
+								properties: {
+									ref: {
+										type: 'string',
+										description: 'local key so edges in THIS call can reference the new node'
+									},
+									type: { type: 'string', enum: types },
+									data: {
+										type: 'object',
+										description:
+											'node params, e.g. spin {axis:"y",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {points:[[x,y,z],…] (>=2 world waypoints), speed:1, mode:"loop"|"pingpong"}; setcolor {color:"#ff0000"}. Omit for defaults.'
+									}
+								},
+								required: ['type']
+							}
+						},
+						edges: {
+							type: 'array',
+							description:
+								'optional wires between nodes (by ref or existing node id). Usually OMIT — unwired behavior nodes already drive their graph\'s object.',
+							items: {
+								type: 'object',
+								properties: {
+									from: { type: 'string' },
+									to: { type: 'string' },
+									fromHandle: { type: 'string' },
+									toHandle: { type: 'string' }
+								},
+								required: ['from', 'to']
+							}
+						}
+					},
+					required: ['graph', 'nodes']
+				}
+			}
+		},
+		{
+			type: 'function',
+			function: {
+				name: 'update_flow_nodes',
+				description:
+					'Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object\'s "flow" (and "sceneFlow").',
+				parameters: {
+					type: 'object',
+					properties: {
+						graph: { type: 'string', description: '"scene" or an object uuid' },
+						updates: {
+							type: 'array',
+							items: {
+								type: 'object',
+								properties: {
+									id: { type: 'string' },
+									data: { type: 'object', description: 'data keys to change, e.g. {speed: 3}' }
+								},
+								required: ['id', 'data']
+							}
+						},
+						remove: { type: 'array', items: { type: 'string' }, description: 'node ids to delete' }
+					},
+					required: ['graph']
+				}
+			}
+		}
+	];
+}
+
+/** Physics tool schemas — only offered when the provider's "Physics tools"
+ * checkbox is on (hard for small local models). */
+const PHYSICS_AI_TOOLS = [
+	{
+		type: 'function',
+		function: {
+			name: 'set_physics',
+			description:
+				'Set physics body params on objects (batch). NOTE: new primitives already spawn dynamic with mass 1 — use this mostly to TUNE bodies or make scenery immovable (mode "static" for ground/walls). mode "auto" reverts to scenery defaults.',
+			parameters: {
+				type: 'object',
+				properties: {
+					updates: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								uuid: { type: 'string' },
+								mode: { type: 'string', enum: ['auto', 'static', 'dynamic'] },
+								mass: { type: 'number', description: 'kg; implies mode dynamic' },
+								restitution: { type: 'number', description: 'bounciness 0..1' },
+								friction: { type: 'number', description: '0..2' },
+								collider: { type: 'string', enum: ['box', 'sphere', 'capsule', 'cylinder', 'hull'] },
+								sensor: {
+									type: 'boolean',
+									description: 'true = a trigger volume: no collision response, fires On Enter/On Exit nodes'
+								}
+							},
+							required: ['uuid']
+						}
+					}
+				},
+				required: ['updates']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'create_joints',
+			description:
+				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing.',
+			parameters: {
+				type: 'object',
+				properties: {
+					joints: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								kind: { type: 'string', enum: ['fixed', 'revolute'] },
+								a: { type: 'string', description: 'uuid of the base object' },
+								b: { type: 'string', description: 'uuid of the attached object (hinge anchors at its origin)' },
+								axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'hinge axis (revolute only, default y)' },
+								motor: {
+									type: 'object',
+									description: 'revolute only: {vel: rad/s, maxForce}',
+									properties: { vel: { type: 'number' }, maxForce: { type: 'number' } }
+								}
+							},
+							required: ['kind', 'a', 'b']
+						}
+					}
+				},
+				required: ['joints']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'control_simulation',
+			description:
+				'Start, stop, pause, resume or reset the physics simulation. After building a physics assembly, start the simulation so the user sees it move.',
+			parameters: {
+				type: 'object',
+				properties: { action: { type: 'string', enum: ['start', 'stop', 'pause', 'resume', 'reset'] } },
+				required: ['action']
+			}
+		}
+	}
+];
+
+/** Toolset for the assistant — flow tools always; physics tools when the
+ * provider checkbox is on; generate_mesh only when a mesh provider is ready.
+ * Call this per turn (readiness can change). @returns {any[]} */
 export function getAiTools() {
-	return meshGenReady() ? [...AI_TOOLS, MESH_TOOL] : AI_TOOLS;
+	const physics = physicsToolsEnabled();
+	const tools = [...AI_TOOLS, ...flowToolSchemas(physics)];
+	if (physics) tools.push(...PHYSICS_AI_TOOLS);
+	if (meshGenReady()) tools.push(MESH_TOOL);
+	return tools;
 }
 
 /** Build the system prompt with scene-building guidance. @returns {string} */
 export function buildSystemPrompt() {
 	const meshLine = meshGenReady()
 		? '\nCustom meshes: for objects no primitive can approximate, call generate_mesh with a text\ndescription (slow, async — it appears shortly). Prefer primitives for simple shapes.'
+		: '';
+	const physics = physicsToolsEnabled();
+	const flowBlock = [
+		'',
+		'Behaviors (flow nodes): objects MOVE via behavior nodes. create_flow_nodes adds them;',
+		"the graph argument picks whose: \"scene\" or an object's uuid. KEY RULE: a behavior node",
+		"in an OBJECT's graph with no edges drives that object — one node, zero edges is the",
+		'normal case, so usually OMIT edges. Node types: ' + aiNodeTypes(physics).join(', ') + '.',
+		'pathpatrol walks world waypoints: data.points = [[x,y,z],…] (at least 2).',
+		'Moving-creature recipe (e.g. "a moving spider"): create the body parts, group them, put',
+		"ONE pathpatrol node on the GROUP's graph, and a bounce node on each leg's graph.",
+		'Existing node ids/data appear in the scene summary ("flow"/"sceneFlow") — tune or remove',
+		'them with update_flow_nodes.'
+	].join('\n');
+	const physicsBlock = physics
+		? [
+				'',
+				'Physics: new primitives already spawn DYNAMIC (mass 1) — they fall and collide once a',
+				'simulation runs. Use set_physics to tune bodies or pin scenery (mode "static" for',
+				'ground/walls). create_joints welds (fixed) or hinges (revolute, optional motor) pairs:',
+				'assemble parts at their final pose WORLD-ALIGNED (no rotation) BEFORE jointing, or the',
+				'hinge axis is wrong and the solver launches the assembly. A door = static frame +',
+				'revolute joint; a wheel = revolute + motor. When a physics build is done, call',
+				'control_simulation action "start" so it comes alive (undo will not stop a running sim).'
+			].join('\n')
 		: '';
 	return [
 		'You are a 3D scene-building assistant embedded in a collaborative prototyping app.',
@@ -651,6 +1024,6 @@ export function buildSystemPrompt() {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine
+		'calling tools and write the summary.' + meshLine + flowBlock + physicsBlock
 	].join('\n');
 }

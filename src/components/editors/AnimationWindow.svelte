@@ -172,13 +172,13 @@
 			<label class="flex items-center gap-1 text-[11px] text-gray-400">
 				dur
 				<input
-					type="number" min="0.1" step="0.1" class="w-14 rounded border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs"
+					type="number" min="0.1" step="0.1" class="w-14 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs"
 					value={anim?.duration ?? 2}
 					oninput={(e) => target && updateAnim(target.uuid, { duration: Math.max(0.1, parseFloat(e.currentTarget.value) || 0.1) })}
 				/>
 			</label>
 			<select
-				class="rounded border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs"
+				class="rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs"
 				value={anim?.loop ?? 'loop'}
 				onchange={(e) => target && updateAnim(target.uuid, { loop: /** @type {any} */ (e.currentTarget.value) })}
 			>
@@ -192,7 +192,7 @@
 			<!-- LEFT: movement tracks (layers) -->
 			<div class="flex w-44 shrink-0 flex-col border-r border-gray-700/60">
 				<div class="flex items-center gap-1 border-b border-gray-700/60 p-1.5">
-					<select class="min-w-0 flex-1 rounded border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs" value={newChannel} onchange={(e) => (newChannel = e.currentTarget.value)}>
+					<select class="min-w-0 flex-1 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs" value={newChannel} onchange={(e) => (newChannel = e.currentTarget.value)}>
 						{#each CHANNELS as c}<option value={c}>{channelLabel(c)}</option>{/each}
 					</select>
 					<button class="ui-button-quiet shrink-0" title="Add movement" onclick={add}>＋</button>
@@ -218,7 +218,7 @@
 				{#if selTrack}
 					<div class="text-[11px] text-gray-400">Speed curve for <span class="text-gray-200">{channelLabel(selTrack.channel)}</span></div>
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<svg bind:this={svgEl} width={SIZE} height={SIZE} viewBox="0 0 {SIZE} {SIZE}" class="touch-none rounded bg-gray-900/60">
+					<svg bind:this={svgEl} width={SIZE} height={SIZE} viewBox="0 0 {SIZE} {SIZE}" class="touch-none rounded-sm bg-gray-900/60">
 						<rect x={PAD} y={PAD} width={INNER} height={INNER} fill="none" stroke="rgb(75 85 99 / 0.6)" />
 						<line x1={sx(0)} y1={sy(0)} x2={sx(1)} y2={sy(1)} stroke="rgb(75 85 99 / 0.35)" stroke-dasharray="3 3" />
 						<line x1={sx(0)} y1={sy(0)} x2={sx(selTrack.bezier[0])} y2={sy(selTrack.bezier[1])} stroke="rgb(129 140 248 / 0.5)" />
@@ -234,7 +234,7 @@
 					</svg>
 					<div class="flex flex-wrap justify-center gap-1">
 						{#each Object.keys(EASINGS) as name}
-							<button class="rounded border border-gray-600 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-gray-700" onclick={() => applyEasing(name)}>{name}</button>
+							<button class="rounded-sm border border-gray-600 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-gray-700" onclick={() => applyEasing(name)}>{name}</button>
 						{/each}
 					</div>
 				{:else}
@@ -249,7 +249,7 @@
 					<label class="mb-2 block text-[11px] text-gray-400">
 						Channel
 						<select
-							class="mt-0.5 w-full rounded border border-gray-600 bg-gray-900 px-1 py-1 text-xs text-gray-200"
+							class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs text-gray-200"
 							value={selTrack.channel}
 							onchange={(e) => target && updateTrack(target.uuid, selTrack.id, { channel: e.currentTarget.value })}
 						>
@@ -259,11 +259,11 @@
 					<div class="mb-2 grid grid-cols-2 gap-2">
 						<label class="text-[11px] text-gray-400">
 							From{isRot(selTrack.channel) ? ' (deg)' : ''}
-							<input type="number" step="0.1" class="mt-0.5 w-full rounded border border-gray-600 bg-gray-900 px-1 py-1 text-xs" value={dispVal(selTrack, 'from')} oninput={(e) => setVal(selTrack, 'from', e.currentTarget.value)} />
+							<input type="number" step="0.1" class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs" value={dispVal(selTrack, 'from')} oninput={(e) => setVal(selTrack, 'from', e.currentTarget.value)} />
 						</label>
 						<label class="text-[11px] text-gray-400">
 							To{isRot(selTrack.channel) ? ' (deg)' : ''}
-							<input type="number" step="0.1" class="mt-0.5 w-full rounded border border-gray-600 bg-gray-900 px-1 py-1 text-xs" value={dispVal(selTrack, 'to')} oninput={(e) => setVal(selTrack, 'to', e.currentTarget.value)} />
+							<input type="number" step="0.1" class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs" value={dispVal(selTrack, 'to')} oninput={(e) => setVal(selTrack, 'to', e.currentTarget.value)} />
 						</label>
 					</div>
 					<div class="text-[10px] leading-relaxed text-gray-500">

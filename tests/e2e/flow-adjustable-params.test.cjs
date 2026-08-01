@@ -54,7 +54,7 @@ h.run(async () => {
 		s.peers.set({ ...(original ?? {}), peer: original?.peer ?? { id: 'me' }, send: (m) => captured.push(m) });
 		const el = document.querySelector('#param-slider-max');
 		el.value = '10';
-		el.dispatchEvent(new Event('change'));
+		el.dispatchEvent(new Event('change', { bubbles: true })); // svelte 5 delegated onchange needs the bubble (real change events always bubble)
 		await new Promise((r) => setTimeout(r, 200));
 		s.peers.set(original);
 		let nodes;

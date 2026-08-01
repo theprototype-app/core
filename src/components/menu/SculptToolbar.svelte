@@ -40,7 +40,7 @@
 	<div
 		id="sculpt-toolbar"
 		use:dragWindow={{ key: 'sculptToolbar', defaultRect }}
-		class="move-handle z-[var(--z-window)] flex max-w-[min(96vw,680px)] cursor-move select-none flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-gray-700/60 bg-gray-800/95 px-3 py-2 text-sm text-white shadow-xl backdrop-blur"
+		class="move-handle z-(--z-window) flex max-w-[min(96vw,680px)] cursor-move select-none flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-gray-700/60 bg-gray-800/95 px-3 py-2 text-sm text-white shadow-xl backdrop-blur-sm"
 	>
 		<span class="font-semibold" title="Drag to move this toolbar"
 			>⠿ {$sculptMode === 'mesh' ? '🗿 Sculpt mesh' : '⛰ Sculpt'}</span

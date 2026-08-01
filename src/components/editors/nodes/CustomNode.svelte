@@ -46,7 +46,7 @@
 						{/if}
 					</span>
 					{#if param.kind === 'range' && wiredSource(param.key)}
-						<span class="wired-value rounded bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300" title="Driven by the wired input">
+						<span class="wired-value rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300" title="Driven by the wired input">
 							◈ {fmt($flowValues[wiredSource(param.key)])}
 						</span>
 					{:else if param.kind === 'range'}
@@ -73,14 +73,14 @@
 				</label>
 			{/each}
 			<button
-				class="nodrag rounded bg-gray-600 px-2 py-0.5 text-[10px] text-white"
+				class="nodrag rounded-sm bg-gray-600 px-2 py-0.5 text-[10px] text-white"
 				on:click={() => nodeDesignerOpen.set(def)}
 			>
 				Edit definition
 			</button>
 		{/if}
 		{#if error}
-			<span class="max-w-[180px] break-words text-[10px] text-red-500" title={error}>⚠ {error}</span>
+			<span class="max-w-[180px] wrap-break-word text-[10px] text-red-500" title={error}>⚠ {error}</span>
 		{/if}
 	</div>
 </NodeWrapper>

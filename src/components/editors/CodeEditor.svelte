@@ -58,4 +58,4 @@
 	onDestroy(() => view?.destroy());
 </script>
 
-<div bind:this={host} class="h-full overflow-auto rounded border border-gray-600 bg-gray-900 text-left"></div>
+<div bind:this={host} class="h-full overflow-auto rounded-sm border border-gray-600 bg-gray-900 text-left"></div>

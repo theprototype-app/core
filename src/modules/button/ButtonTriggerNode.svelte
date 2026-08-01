@@ -65,7 +65,7 @@
 				{data.pressed ? 'pressed' : 'released'}
 			</span>
 			<button
-				class="nodrag rounded bg-[#ff4000] px-2 text-white"
+				class="nodrag rounded-sm bg-[#ff4000] px-2 text-white"
 				on:click={() => pressTriggerNode({ id, data })}
 			>
 				Press

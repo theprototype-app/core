@@ -358,6 +358,12 @@ loadable play content. Everything a user does must be visible to connected peers
 - Headless e2e can't reach a signaling server (peer.open stays false, `peer.connect`
   returns undefined). To drive the dial state machine, stub it:
   `Object.defineProperty(p.peer,'open',{value:true}); p.peer.connect = (id)=>({peer:id,open:false,on(){},close(){},send(){}})`.
+- Svelte 5.5x runes-mode: a MULTI-CODE `svelte-ignore` comment only honors the FIRST
+  code when space-separated — use COMMAS (`<!-- svelte-ignore a, b -->`), which works
+  in both modes. And synthetic DOM events aimed at delegated attribute-form handlers
+  (`onchange`, `onclick`…) MUST be dispatched with `{ bubbles: true }` — a
+  non-bubbling `new Event(...)` never reaches the delegation root (bit the
+  adjustable-params e2e after the xyflow v1 runes flip; real user events bubble).
 - Svelte 5 forbids mixing `on:click` and `onclick` **per component** — match the file's
   existing style. In a RUNES-mode file (any `$state`/`$derived`/`$effect`) use the
   attribute form `onclick`/`oninput`; the `on:` directive is deprecated there and each

@@ -5,7 +5,8 @@
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
 	import * as THREE from 'three';
-	import { Drawer, Checkbox, Button, Tooltip } from 'flowbite-svelte';
+	import { Checkbox, Button, Tooltip } from 'flowbite-svelte';
+	import { fly } from 'svelte/transition';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import PanelHeader from '../ui/PanelHeader.svelte';
 	import Section from '../ui/Section.svelte';
@@ -32,7 +33,7 @@
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup, selectObject } from '$lib/objectActions';
-	import { listPhysicsObjects, enablePhysicsOnSelection, PHYSICS_MATERIALS, physicsShapeChanged } from '$lib/physics';
+	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
@@ -364,13 +365,9 @@
 
 	/** @param {any} patch */
 	function setPhysics(patch) {
-		const before = $selectedObject.userData.physics ? { ...$selectedObject.userData.physics } : null;
-		const next = { mode: 'auto', ...($selectedObject.userData.physics ?? {}), ...patch };
-		$selectedObject.userData.physics = next;
-		recordEntry({ kind: 'props', uuid: $selectedObject.uuid, before: { physics: before }, after: { physics: next } });
-		$peers.send({ type: 'objectParameters', parameter: 'physics', uuid: $selectedObject.uuid, physics: next });
-		objectsGroup.update((v) => v); // collider viz re-syncs from the poke
-		physicsShapeChanged($selectedObject.uuid); // CL-A A2: live mid-sim rebuild
+		// shared write path — replicates, records props undo, pokes the collider
+		// viz and live-rebuilds mid-sim colliders (CL-A A2) for EVERY caller
+		setPhysicsFor($selectedObject.uuid, patch);
 		selectedObject.update((v) => v);
 	}
 
@@ -480,19 +477,14 @@
 	}
 </script>
 
-<Drawer
+<!-- flowbite-svelte 1.x turned Drawer into a native <dialog> (focus-stealing, modal
+     semantics) — this persistent tool panel is a plain div reproducing the v0 drawer
+     chrome (fixed inset-e-0 top-16 w-80 + fly) exactly. -->
+{#if !$inspectorClose}
+<div
 	style={drawerStyle + '; --inspector-h: ' + inspectorH + 'px'}
-	activateClickOutside={false}
-	backdrop={false}
-	placement="right"
-	position="fixed"
-	rightOffset="end-0 top-16"
-	leftOffset="start-0 "
-	topOffset="top-16"
-	transitionType="fly"
-	transitionParams={insTransition}
-	bind:hidden={$inspectorClose}
-	class={'rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
+	transition:fly={insTransition}
+	class={'fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto bg-white p-4 dark:bg-gray-800 rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
 	id="inspector"
 >
 	<!-- bottom-sheet drag handle (shown only in the narrow bottom-sheet layout) -->
@@ -514,9 +506,9 @@
 			<div id="file-properties" class="flex flex-col gap-3">
 				<div class="flex justify-center">
 					{#if inspectedItem.thumbnail}
-						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded border border-gray-600 object-cover" />
+						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded-sm border border-gray-600 object-cover" />
 					{:else}
-						<span class="flex h-24 w-24 items-center justify-center rounded border border-gray-600 bg-gray-700 text-4xl text-gray-400">
+						<span class="flex h-24 w-24 items-center justify-center rounded-sm border border-gray-600 bg-gray-700 text-4xl text-gray-400">
 							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={36} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
 						</span>
 					{/if}
@@ -666,9 +658,9 @@
 						onchange={(v) => editRigComponent('hemi', { intensity: v })} />
 					<div class="ui-row">
 						<span class="w-20 shrink-0 text-xs text-gray-400">Sky / ground</span>
-						<input type="color" class="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent" value={envPayload.hemi.sky}
+						<input type="color" class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={envPayload.hemi.sky}
 							onchange={(e) => editRigComponent('hemi', { sky: e.currentTarget.value })} />
-						<input type="color" class="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent" value={envPayload.hemi.ground}
+						<input type="color" class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={envPayload.hemi.ground}
 							onchange={(e) => editRigComponent('hemi', { ground: e.currentTarget.value })} />
 					</div>
 				{/if}
@@ -677,7 +669,7 @@
 						onchange={(v) => editRigComponent('sun', { intensity: v })} />
 					<div class="ui-row">
 						<span class="w-20 shrink-0 text-xs text-gray-400">Sun color</span>
-						<input type="color" class="h-6 w-8 cursor-pointer rounded border border-gray-600 bg-transparent" value={envPayload.sun.color}
+						<input type="color" class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={envPayload.sun.color}
 							onchange={(e) => editRigComponent('sun', { color: e.currentTarget.value })} />
 					</div>
 				{/if}
@@ -686,10 +678,10 @@
 					<div class="env-light rounded-lg border border-gray-700/60 p-1.5">
 						<div class="flex items-center gap-1.5">
 							<span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{def.kind}</span>
-							<input type="color" class="h-5 w-7 cursor-pointer rounded border border-gray-600 bg-transparent" value={def.color}
+							<input type="color" class="h-5 w-7 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={def.color}
 								onchange={(e) => updateEnvLight(def.id, { color: e.currentTarget.value })} />
 							{#if def.kind === 'hemisphere'}
-								<input type="color" class="h-5 w-7 cursor-pointer rounded border border-gray-600 bg-transparent" value={def.groundColor}
+								<input type="color" class="h-5 w-7 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={def.groundColor}
 									onchange={(e) => updateEnvLight(def.id, { groundColor: e.currentTarget.value })} />
 							{/if}
 							<span class="flex-1"></span>
@@ -866,7 +858,7 @@
 					<div id="physics-objects" class="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
 						{#each physicsRows as row (row.uuid)}
 							<button
-								class={'flex items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs transition-colors ' +
+								class={'flex items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs transition-colors ' +
 									($selectedObject?.uuid === row.uuid
 										? 'bg-primary-600 text-white'
 										: 'bg-gray-700 text-gray-200 hover:bg-gray-600')}
@@ -970,7 +962,7 @@
 				<Button
 					size="xs"
 					color="alternative"
-					on:click={() => {
+					onclick={() => {
 						$globalScene.fog = null;
 						fogNear = null;
 						fogFar = null;
@@ -1047,7 +1039,7 @@
 						/>
 						<div class="flex items-center gap-2">
 							<button
-								class="rounded bg-primary-700 px-2 py-0.5 text-sm text-white"
+								class="rounded-sm bg-primary-700 px-2 py-0.5 text-sm text-white"
 								onclick={() => setAnimationState($selectedObject.uuid, { playing: !anim.playing })}
 							>
 								{anim.playing ? '⏸ Pause' : '▶ Play'}
@@ -1134,7 +1126,7 @@
 					{#if $selectedObject.userData?.vertexEdited || $selectedObject.userData?.faceEdited}
 						<!-- 164: once the mesh is edited, the parametric controls are LOCKED
 						     (changing one rebuilds the primitive + discards the edits) -->
-						<p id="geometry-locked" class="rounded bg-yellow-900/40 px-2 py-1 text-[10px] text-yellow-200">
+						<p id="geometry-locked" class="rounded-sm bg-yellow-900/40 px-2 py-1 text-[10px] text-yellow-200">
 							Mesh edited — geometry parameters are locked (changing them would rebuild the shape and discard your edits).
 						</p>
 					{:else}
@@ -1379,7 +1371,7 @@
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							id="texture-drop"
-							class="rounded border border-dashed {textureDropActive ? 'border-primary-500 bg-primary-500/10' : 'border-transparent'}"
+							class="rounded-sm border border-dashed {textureDropActive ? 'border-primary-500 bg-primary-500/10' : 'border-transparent'}"
 							ondragover={(e) => {
 								if (e.dataTransfer?.types.includes('application/x-explorer-item')) {
 									e.preventDefault();
@@ -1416,7 +1408,7 @@
 								<img
 									src={material.userData.mapDataUrl}
 									alt="texture"
-									class="h-10 w-10 cursor-pointer rounded border border-gray-500 object-cover"
+									class="h-10 w-10 cursor-pointer rounded-sm border border-gray-500 object-cover"
 									role="presentation"
 									onclick={() => document.getElementById('texture-file')?.click()}
 								/>
@@ -1512,7 +1504,7 @@
 							<span class="w-20 shrink-0 text-xs text-gray-400">Emissive</span>
 							<input
 								type="color"
-								class="h-6 w-8 cursor-pointer rounded border border-gray-500 bg-transparent"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
 								value={'#' + material.emissive.getHexString()}
 								oninput={(/** @type {any} */ e) =>
 									setMaterialParam($selectedObject.uuid, 'emissive', e.currentTarget.value)}
@@ -1731,7 +1723,7 @@
 									type="number"
 									step="0.1"
 									aria-label={'Emit offset ' + axis}
-									class="w-14 rounded border border-gray-500 bg-transparent px-1 py-0.5 text-xs"
+									class="w-14 rounded-sm border border-gray-500 bg-transparent px-1 py-0.5 text-xs"
 									value={(p.offset ?? [0, 0, 0])[i] ?? 0}
 									oninput={(/** @type {any} */ e) => {
 										const off = [...(p.offset ?? [0, 0, 0])];
@@ -1746,7 +1738,7 @@
 							<input
 								type="color"
 								aria-label="Particle start color"
-								class="h-6 w-8 cursor-pointer rounded border border-gray-500 bg-transparent"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
 								value={p.colorStart ?? '#ffffff'}
 								oninput={(/** @type {any} */ e) => setParticles({ colorStart: e.currentTarget.value })}
 							/>
@@ -1754,7 +1746,7 @@
 							<input
 								type="color"
 								aria-label="Particle end color"
-								class="h-6 w-8 cursor-pointer rounded border border-gray-500 bg-transparent"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
 								value={p.colorEnd ?? '#8899aa'}
 								oninput={(/** @type {any} */ e) => setParticles({ colorEnd: e.currentTarget.value })}
 							/>
@@ -1808,4 +1800,5 @@
 			{/if}
 		</div>
 	{/if}
-</Drawer>
+</div>
+{/if}

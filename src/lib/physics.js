@@ -386,6 +386,33 @@ export function listPhysicsObjects() {
 }
 
 /**
+ * Set/merge physics body params on ONE object's userData.physics — the shared
+ * write path for the Inspector, quick actions and the AI set_physics tool.
+ * Rides the existing 'props' history kind (undo/redo replays + re-broadcasts
+ * free) and replicates via objectParameters. Returns the new params, or null
+ * when the object doesn't exist.
+ * @param {string} uuid
+ * @param {{mode?: 'auto'|'static'|'dynamic', mass?: number, restitution?: number,
+ *   friction?: number, collider?: string}} patch
+ * @returns {any|null}
+ */
+export function setPhysicsFor(uuid, patch) {
+	const group = get(objectsGroup);
+	const object = group?.getObjectByProperty('uuid', uuid);
+	if (!object) return null;
+	const before = object.userData.physics ? { ...object.userData.physics } : null;
+	const next = { mode: 'auto', ...(object.userData.physics ?? {}), ...patch };
+	object.userData.physics = next;
+	recordEntry({ kind: 'props', uuid, before: { physics: before }, after: { physics: next } });
+	/** @type {any} */
+	const peer = get(peers);
+	peer?.send({ type: 'objectParameters', parameter: 'physics', uuid, physics: next });
+	objectsGroup.update((v) => v); // collider viz re-syncs from the poke
+	physicsShapeChanged(uuid); // CL-A A2: live mid-sim collider rebuild
+	return next;
+}
+
+/**
  * C1 quick action: make the current selection dynamic (userData.physics mode
  * 'dynamic', mass 1 unless already set) — replicates via the existing
  * objectParameters message and records a props undo entry per object.
@@ -393,8 +420,6 @@ export function listPhysicsObjects() {
  */
 export function enablePhysicsOnSelection() {
 	const group = get(objectsGroup);
-	/** @type {any} */
-	const peer = get(peers);
 	const multi = get(selectedObjects);
 	const primary = /** @type {any} */ (get(selectedObject));
 	const uuids = multi?.length ? multi : primary?.uuid ? [primary.uuid] : [];
@@ -402,12 +427,11 @@ export function enablePhysicsOnSelection() {
 	uuids.forEach((/** @type {string} */ uuid) => {
 		const object = group?.getObjectByProperty('uuid', uuid);
 		if (!object) return;
-		const before = object.userData.physics ? { ...object.userData.physics } : null;
-		const next = { ...(object.userData.physics ?? {}), mode: 'dynamic', mass: object.userData.physics?.mass ?? 1 };
-		object.userData.physics = next;
-		recordEntry({ kind: 'props', uuid, before: { physics: before }, after: { physics: next } });
-		peer?.send({ type: 'objectParameters', parameter: 'physics', uuid, physics: next });
-		count++;
+		const next = setPhysicsFor(uuid, {
+			mode: 'dynamic',
+			mass: object.userData.physics?.mass ?? 1
+		});
+		if (next) count++;
 	});
 	if (count === 0) {
 		showToast('Select an object first — then Enable physics makes it fall and collide');

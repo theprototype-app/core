@@ -90,7 +90,7 @@
 			{:else}
 				<ul class="flex flex-col gap-1.5">
 					{#each $annotations as a (a.id)}
-						<li class="group rounded bg-gray-800/60 hover:bg-gray-700/60">
+						<li class="group rounded-sm bg-gray-800/60 hover:bg-gray-700/60">
 							<div class="flex items-start gap-2 p-2">
 								<button
 									class="min-w-0 flex-1 text-left"
@@ -99,7 +99,7 @@
 								>
 									<div class="truncate text-sm text-gray-100">{a.text || '(empty note)'}</div>
 									<div class="mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-gray-500">
-										<span class="rounded bg-gray-700/70 px-1 text-gray-300">{labelFor(a.objectUuid)}</span>
+										<span class="rounded-sm bg-gray-700/70 px-1 text-gray-300">{labelFor(a.objectUuid)}</span>
 										<span class="truncate">{a.author || 'peer'} · {when(a.ts)}</span>
 									</div>
 								</button>

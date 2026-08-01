@@ -33,7 +33,7 @@
 <div class="relative">
 	<button
 		id="notif-bell"
-		class="relative flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur hover:bg-gray-700/85"
+		class="relative flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur-sm hover:bg-gray-700/85"
 		title="Notifications"
 		aria-label="Notifications"
 		onclick={toggle}
@@ -63,7 +63,7 @@
 				{:else}
 					<ul class="flex flex-col gap-1">
 						{#each [...$notifications].reverse() as n (n.id)}
-							<li class="rounded bg-gray-800/60 px-2 py-1.5">
+							<li class="rounded-sm bg-gray-800/60 px-2 py-1.5">
 								<div class="text-xs text-gray-100">{n.text}</div>
 								<div class="mt-0.5 text-[10px] text-gray-500">{ago(n.ts)}</div>
 							</li>

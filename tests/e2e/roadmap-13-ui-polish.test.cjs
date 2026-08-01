@@ -42,18 +42,32 @@ h.run(async () => {
 	await A.page.waitForTimeout(150);
 	h.check((await A.page.locator('#sim-play').count()) === 0, 'A3: disabling the setting hides it again');
 
-	// --- A6: opening the logo menu closes an open modal ----------------------
+	// --- A6 (adapted for flowbite 1.x native dialogs): a modal can never stack over
+	// the menu — the page is INERT behind the top-layer dialog, and a click AT the
+	// logo lands on the dialog's outside-close (closing the modal); the next click
+	// opens the menu normally. One click became two, the never-stacked guarantee
+	// is now platform-enforced.
 	await A.page.evaluate(() => {
 		window.__stores.closeMenu.set(true); // menu closed
 		window.__stores.settingsOpen.set(true); // a modal is open
 	});
-	await A.page.waitForTimeout(200);
-	await A.page.locator('#logo-menu').click();
-	await A.page.waitForTimeout(250);
+	await A.page.waitForTimeout(300);
+	const logoBox = await A.page.evaluate(() => {
+		const r = document.querySelector('#logo-menu')?.getBoundingClientRect();
+		return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+	});
+	await A.page.mouse.click(logoBox.x, logoBox.y); // hits the dialog -> outside-close
+	await A.page.waitForTimeout(300);
 	const settingsClosed = await A.page.evaluate(
 		() => new Promise((r) => window.__stores.settingsOpen.subscribe((v) => r(v))())
 	);
-	h.check(settingsClosed === false, 'A6: opening the menu closed the open Settings modal');
+	h.check(settingsClosed === false, 'A6: clicking at the logo closes the open Settings modal (outside-close)');
+	await A.page.locator('#logo-menu').click();
+	await A.page.waitForTimeout(250);
+	const menuOpen = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.closeMenu.subscribe((v) => r(v))())
+	);
+	h.check(menuOpen === false, 'A6: the follow-up click opens the menu');
 	// tidy up: close the menu again
 	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
 

@@ -1,0 +1,72 @@
+@utility ui-panel {
+  /* panel chrome */
+  @apply rounded-lg border border-gray-700/60 bg-gray-800 text-gray-200 shadow-xl;
+}
+
+@utility ui-panel-header {
+  @apply flex items-center gap-2 border-b border-gray-700/60 px-3 py-2 text-sm font-semibold text-gray-100;
+}
+
+@utility ui-section-label {
+  @apply mb-1 mt-3 px-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400;
+}
+
+@utility ui-row {
+  @apply flex items-center gap-2 px-1 py-1 text-sm text-gray-200;
+}
+
+@utility ui-input {
+  @apply rounded-sm border border-gray-600 bg-gray-900/60 px-2 py-1 text-sm text-gray-100 placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-500;
+}
+
+@utility ui-chip {
+  @apply rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider;
+}
+
+@utility ui-badge-type {
+  @apply ui-chip bg-primary-700 text-white;
+}
+
+@utility ui-button-quiet {
+  @apply rounded-sm bg-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-600;
+}
+
+@utility resize-cue {
+  /* resize hot zones (82.4): the highlight shows only after ~600ms of hover,
+	   so casually crossing a panel edge never flashes it; cursor stays instant */
+  background-color: transparent;
+  transition: background-color 0.15s ease 0.6s;
+  &:hover {
+    background-color: rgb(249 115 22 / 0.5);
+  }
+}
+
+@utility palette-tab {
+  /* notebook-tab side buttons (82): trapezoid, narrower at the outer edge;
+	   the shape mirrors when the palette sits on the RIGHT (105) — glyphs stay */
+  clip-path: polygon(0 0, 100% 14%, 100% 86%, 0 100%);
+}
+
+@utility palette-tab-mirrored {
+  clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%);
+}
+
+@utility merge-target {
+  /* drag-merge feedback (104): the window you'd merge into lights up */
+  outline: 2px solid rgb(249 115 22 / 0.9);
+  outline-offset: -1px;
+  &::before {
+    content: '⧉ Merge into tabs';
+    position: absolute;
+    top: -24px;
+    left: 8px;
+    z-index: 50;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgb(249 115 22);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+}

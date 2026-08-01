@@ -37,14 +37,18 @@
 		colliderEditObject,
 		addColliderPiece,
 		commitColliderEdit,
-		exitColliderEdit
+		exitColliderEdit,
+		colliderShellCount
 	} from '$lib/colliderEdit';
 	import { dragWindow } from '$lib/dragWindow';
-	import { isVRMode, selectedObject } from '../../stores/sceneStore';
+	import { isVRMode, selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
 
 	const active = $derived(!$isVRMode && (!!$editingObject || !!$faceEditObject));
 	const mode = $derived($faceEditObject ? 'faces' : 'vertices');
+	// 15-A2: live shell count for the collider banner — applyMeshGeo pokes
+	// objectsGroup on every proxy geometry swap, so this tracks adds/deletes/welds
+	const shellCount = $derived($colliderEditObject && $objectsGroup ? colliderShellCount() : 0);
 
 	/** @param {'vertices' | 'faces'} next */
 	function setMode(next) {
@@ -273,6 +277,12 @@
 
 			{#if $colliderEditObject}
 				<!-- CL-A A8: collider session — add compound pieces, commit or drop -->
+				<span
+					id="collider-shell-count"
+					class="rounded-full bg-gray-800/80 px-2 py-0.5 text-xs text-emerald-300"
+					title="Disconnected shells — each becomes one convex piece"
+					>{shellCount} shell{shellCount === 1 ? '' : 's'}</span
+				>
 				<button
 					id="collider-add-box"
 					class="rounded-full bg-gray-700 px-2.5 py-1 text-xs hover:bg-gray-600"

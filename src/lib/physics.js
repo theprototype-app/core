@@ -214,9 +214,9 @@ function collectParams(group) {
 
 /**
  * Collider shape from the Inspector's collider pick + the object's LOCAL half
- * extents (PFX-C follow-up: sphere/capsule/cylinder join box + hull). Capsule
- * and cylinder stand along the object's local Y; sphere takes the largest
- * extent so nothing pokes through.
+ * extents (PFX-C follow-up: sphere/capsule/cylinder join box + hull; 15-A3
+ * adds cone). Capsule, cylinder and cone stand along the object's local Y;
+ * sphere takes the largest extent so nothing pokes through.
  * @param {string|undefined} kind @param {THREE.Vector3} he half extents
  */
 function shapeDesc(kind, he) {
@@ -226,6 +226,7 @@ function shapeDesc(kind, he) {
 		return RAPIER.ColliderDesc.capsule(Math.max(he.y - radius, 0.01), radius);
 	}
 	if (kind === 'cylinder') return RAPIER.ColliderDesc.cylinder(he.y, Math.max(he.x, he.z, 0.02));
+	if (kind === 'cone') return RAPIER.ColliderDesc.cone(he.y, Math.max(he.x, he.z, 0.02));
 	return RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z);
 }
 

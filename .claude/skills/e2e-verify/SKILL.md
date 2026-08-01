@@ -39,9 +39,13 @@ through on this npm version: it parses them as npm config, vite gets `dev 5177`
 as a positional and binds a random free port over plain http.)
 
 Assigned ports: main checkout 5173 (the user's), lane-c 5174, lane-vr 5175,
-lane-ui 5176, lane-flow 5177. Two-peer suites still meet on the signaling server
+lane-ui 5176, lane-flow 5177, lane-editmesh 5183. Two-peer suites still meet on the signaling server
 (now the self-hosted peerjs.theprototype.app box), so concurrent lanes' test peers
-never collide (random ids).
+never collide (random ids). PORT-SHADOW TRAP: another process holding only
+`[::1]:PORT` does NOT trip `--strictPort` (vite binds 0.0.0.0) — but
+curl/playwright resolve localhost to ::1 and hit the STALE server (symptom: new
+modules 404 to index.html, `__stores` missing new keys). `netstat -ano` and
+check BOTH stacks before blaming your build.
 
 ## The debugStores hook — the ONLY sanctioned test API
 
@@ -261,7 +265,7 @@ drops the P2P session.
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-07-28 = **476 errors / 62 warnings** (drifts down as flowbite/typed
+  baseline 2026-08-01 = **438 errors / 62 warnings** (drifts down as flowbite/typed
   code is removed — hold whatever it currently is; add no NEW; the release.yml gate
   hardcodes the numbers — update it when the baseline moves). Note: in the big
   JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —

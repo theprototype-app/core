@@ -213,7 +213,21 @@ loadable play content. Everything a user does must be visible to connected peers
   `vrWindowPoses` (grip-hold window grab: anchor-relative persisted offsets; every VR
   follower panel poses through `applyWindowPose(group, id, anchor)`) + `vrPalette`
   (sRGB hue/sat disc math) + `vrKeyboard` (native key grid, one-shot shift buffer,
-  `openVRKeyboard({initial, onCommit})` targets — reused by rename + chat),
+  `openVRKeyboard({initial, onCommit})` targets — reused by rename + chat) +
+  `vrSleeve` (K, PR #75: forearm strip of ghost mini-primitives on the sleeve hand —
+  left, mirrors right when `vrMenuHand==='left'`; trigger-drag a ghost into a held
+  preview (rigid-follow, stick-Y scales 0.2–5), release creates at the preview pose
+  with the grip-drop snap rules as ONE `aibatch` undo; K2 custom slots = grip-drop an
+  object ONTO the strip → prefab snapshot in idb `vrsleeve-slots-v1` (LOCAL, cap 8,
+  ✕ chips, spawn = replicated `instantiatePrefab`); gate = `vrSleeveEnabled`
+  (Settings ▸ VR + `settings:sleeve` panel row, DEFAULT OFF); packaged as the
+  `vrsleeve` core module — vrControls only carries GENERIC module-VR hook registries:
+  `registerNavSuppressor` / `registerPanelGroupProvider` (beam/reticle family) /
+  `registerVRTriggerHooks` (start/end/swallow, dispatched from Scene's
+  select/selectstart/selectend) / `registerGripDropHook` (may consume a grab release;
+  hook restores the pose, vrControls still releases the physics hold) /
+  `registerVRFrameHook` — reuse these for future VR feature modules instead of
+  hardwiring vrControls),
   `dungeonPlay` (raster collision/spawns from the dungeon module's userData.play
   contract), `geometryEdit` + `geometryParams`, `lightParams` (+local shadow-quality
   caps), `cameraClip` (LOCAL near/far prefs; far pairs with orbit maxDistance so
@@ -231,8 +245,10 @@ loadable play content. Everything a user does must be visible to connected peers
 - `src/modules/` — core modules (hello, button, dungeon, piano, pong; #12: avatar =
   possess-selected, essentials = 6 clickable interactables whose KIND derives from the
   replicated object NAME, car = jointed drivable demo w/ click-claim + drive-op
-  forwarding) + `index.js` `coreModules` list; manager enables/disables (live enable,
-  reload to disable).
+  forwarding; K: vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only feature,
+  register() just wires the vrControls hook registries, so disabling the module
+  removes the sleeve entirely) + `index.js` `coreModules` list; manager
+  enables/disables (live enable, reload to disable).
 - UI: `components/menu/*` (drawers/modals; visibility via stores + `hidePanels/
   restorePanels`), `components/editors/*` (flow editor + CodeMirror panels),
   `components/play/*` (player, avatars — photo = billboard card; the VR follower
@@ -652,6 +668,24 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-01): **VR sleeve palette (K1+K2) MERGED to release/next (PR #75)**
+  — plan: cloud repo plans-core/done/k-vr-sleeve-palette.md (as-built notes there).
+  One commit: `$lib/vrSleeve.js` + the `vrsleeve` core-module shell + the generic
+  module-VR hook registries in vrControls (nav suppressor / panel-group provider /
+  trigger start-end-swallow / grip-drop interceptor / frame hook — Scene.svelte
+  dispatches select events through them) + `vrSleeveEnabled` gate (Settings ▸ VR +
+  `settings:sleeve` VR panel row, default OFF). Suite: vr-sleeve (29 headless checks
+  w/ synthetic controller poses — structure, gating, ghost→create one-undo round trip
+  w/ grid/surface snap, suppression/swallow predicates, K2 capture/persist/spawn/
+  clear/cap). Lane: ../theprototype-lane-aiphys @5178. REMAINING: on-device feel
+  (strip offsets on the forearm — constants at the top of vrSleeve.js) = user check.
+  **NOT YET MERGED (same lane): AI assistant v3 flow+physics tools** — local commit
+  ae53c7b on `feature/ai-flow-physics-tools` (branched off pre-rename release/1.1,
+  never pushed; plan: plans-core/done/ai-flow-physics-tools.md): create/update_flow_nodes
+  + gated set_physics/create_joints/control_simulation, 'flownodes' history kind,
+  setPhysicsFor, physicsTools provider checkbox, ai-flow-physics suite (38 checks);
+  the theprototype-docs page (ai/local-models.md, qwen3_xml guidance) is ALREADY
+  committed on the docs repo — push/PR of the core branch awaits the user.
 - Status (2026-08-01): **Colliders v2 + Edit Mesh Pro MERGED to release/next (PR
   #74)** — plan: cloud repo plans-core/pending/colliders-v2-editmesh-pro.md (marked
   EXECUTED). Five commits: **CL-A** colliders core (colliderSpec.js one source of

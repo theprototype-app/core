@@ -39,7 +39,7 @@ through on this npm version: it parses them as npm config, vite gets `dev 5177`
 as a positional and binds a random free port over plain http.)
 
 Assigned ports: main checkout 5173 (the user's), lane-c 5174, lane-vr 5175,
-lane-ui 5176, lane-flow 5177, lane-editmesh 5183. Two-peer suites still meet on the signaling server
+lane-ui 5176, lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. Two-peer suites still meet on the signaling server
 (now the self-hosted peerjs.theprototype.app box), so concurrent lanes' test peers
 never collide (random ids). PORT-SHADOW TRAP: another process holding only
 `[::1]:PORT` does NOT trip `--strictPort` (vite binds 0.0.0.0) — but
@@ -60,7 +60,7 @@ palette, viewModeCtl, inputRuntime, shortcutsRegistry, themes, vrRadialMenu,
 vrPalette, vrWindowPoses, vrKeyboard, faceEdit, avatarModel, explorer, bottomDock,
 explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets, THREE,
 GLTFExporterModule, snapping, flowSockets, networkQuality, packs, customNodes,
-nodesHandler, nodeCatalog, objectMenu, flowGraphsCtl, objectFlow` (+ from the
+nodesHandler, nodeCatalog, objectMenu, flowGraphsCtl, objectFlow, vrSleeve` (+ from the
 flowStore spread: `flowGraphs, activeGraphId, setActiveGraph, allNodes, allEdges,
 findNodeAnyGraph, SCENE_GRAPH`; `moduleSDK.pointerRayNow()` = the api.pointerRay
 internals, `moduleSDK.applyModuleMessage(msg)` = simulate a PEER's module message
@@ -199,7 +199,11 @@ drops the P2P session.
   git/npm in PowerShell.
 - Suites assume a clean session per context (fresh IndexedDB/localStorage); reloading a
   page keeps them — used deliberately for persistence tests (prefabs, user modules,
-  Explorer, themes).
+  Explorer, themes). Two idb traps in persistence tests: fire-and-forget idb writes
+  (sleeve slot capture) are ABORTED by an immediate reload — settle ~800ms before
+  `freshReload`; and a store gated behind a "loaded once" flag never fills on the
+  debug-hook's SECOND module instance — call its loader explicitly after the reload
+  (idempotent on the single-instance path; vr-sleeve.test does both).
 - Flowbite Toggle inputs are `sr-only` — click the wrapping `label`, not the input.
 - File drops: build a `DataTransfer` in `evaluate` and `dispatchEvent(new DragEvent('drop', …))`;
   a known-good 1×1 PNG base64 is in explorer-drop.test.cjs (Image tolerates broken

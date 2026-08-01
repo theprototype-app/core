@@ -10,5 +10,6 @@ import pong from './pong/module.js';
 import avatar from './avatar/module.js';
 import essentials from './essentials/module.js';
 import car from './car/module.js';
+import vrsleeve from './vrsleeve/module.js';
 
-export const coreModules = [hello, button, dungeon, piano, pong, avatar, essentials, car];
+export const coreModules = [hello, button, dungeon, piano, pong, avatar, essentials, car, vrsleeve];

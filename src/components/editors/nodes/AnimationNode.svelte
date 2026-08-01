@@ -61,6 +61,15 @@
 							value={data[param.key] ?? spec.defaults[param.key]}
 							on:input={(e) => setNodeData(id, { [param.key]: +e.currentTarget.value })}
 						/>
+					{:else if param.kind === 'toggle'}
+						<!-- CL-C: boolean param (checkbox) -->
+						<span class="nodrag flex items-center gap-1.5">
+							<input
+								type="checkbox"
+								checked={!!(data[param.key] ?? spec.defaults[param.key])}
+								on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.checked })}
+							/>
+						</span>
 					{:else if param.kind === 'select'}
 						<select
 							class="nodrag"

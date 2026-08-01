@@ -7,8 +7,9 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
+	// icons are lucide <svg>s now; svg.className is an SVGAnimatedString — read the attribute
 	const iconClass = (title) =>
-		A.page.evaluate((t) => document.querySelector(`p[title="${t}"] i`)?.className ?? '', title);
+		A.page.evaluate((t) => document.querySelector(`p[title="${t}"] svg`)?.getAttribute('class') ?? '', title);
 
 	// --- O/N/Explorer tint when their panel opens ---
 	await A.page.evaluate(() => {

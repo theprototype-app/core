@@ -12,6 +12,13 @@
 	export let id: string;
 	export let data;
 	$: pulsing = $flowValues[id] === 1;
+	// CL-C: the same pulse card serves the sensor overlap triggers
+	const COPY: Record<string, [string, string]> = {
+		onclick: ['clicked!', 'connect to the object; pulses on click'],
+		onenter: ['entered!', 'pulses when something enters the sensor object'],
+		onexit: ['exited!', 'pulses when a sensor overlap ends']
+	};
+	$: copy = COPY[data.type] ?? COPY.onclick;
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
@@ -19,8 +26,8 @@
 	<div class="flex w-full flex-col gap-1">
 		<div class="flex items-center gap-2">
 			<span class="h-2.5 w-2.5 rounded-full" style="background: {pulsing ? '#22c55e' : '#374151'}"></span>
-			<span>{pulsing ? 'clicked!' : 'idle'}</span>
+			<span>{pulsing ? copy[0] : 'idle'}</span>
 		</div>
-		<p class="text-[10px] text-gray-400">connect to the object; pulses on click</p>
+		<p class="text-[10px] text-gray-400">{copy[1]}</p>
 	</div>
 </NodeWrapper>

@@ -1,4 +1,5 @@
 <script>
+	import { Bell } from '@lucide/svelte';
 	// E1 (roadmap #13): notification center. A bell with an unread badge; the panel
 	// is the SCROLLABLE history of everything that flashed as a toast, so a message
 	// missed (or dismissed while a modal was open) is still recoverable. Placed in the
@@ -37,7 +38,7 @@
 		aria-label="Notifications"
 		onclick={toggle}
 	>
-		<i class="fas fa-bell text-xs"></i>
+		<Bell size={16} class="text-xs" aria-hidden="true" />
 		{#if $notificationsUnread > 0}
 			<span
 				class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"

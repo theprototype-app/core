@@ -8,7 +8,7 @@ import { moduleNodeGroups } from './moduleSDK';
 import { particlePreset } from './particlePresets';
 
 /**
- * @typedef {{ key: string, kind: 'range' | 'select', min?: number, max?: number, step?: number, options?: string[] }} NodeParam
+ * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle', min?: number, max?: number, step?: number, options?: string[] }} NodeParam
  * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[] }} NodeSpec
  */
 
@@ -30,7 +30,12 @@ export const nodeCatalog = [
 	},
 	{
 		group: 'Scene',
-		items: [{ type: 'objectselector', label: 'Object Selector', defaults: { selected: '-None-' } }]
+		items: [
+			{ type: 'objectselector', label: 'Object Selector', defaults: { selected: '-None-' } },
+			// CL-C C3: live speed (m/s) of the wired object — LOCAL feed, exact on
+			// the sim initiator, ~10Hz move-delta approximation on other peers
+			{ type: 'velocity', label: 'Velocity', defaults: {} }
+		]
 	},
 	{
 		// H5: object-flow composition — Flow Input/Output DECLARE an object flow's
@@ -91,6 +96,9 @@ export const nodeCatalog = [
 				defaults: { pulse: 0.3, minStrength: 1 },
 				params: [{ key: 'minStrength', kind: 'range', min: 0, max: 10, step: 0.1 }]
 			},
+			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
+			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
+			{ type: 'onexit', label: 'On Exit', defaults: { pulse: 0.3 } },
 			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } }
 		]
 	},
@@ -170,6 +178,18 @@ export const nodeCatalog = [
 				params: [
 					{ key: 'axis', kind: 'select', options: ['x', 'y', 'z'] },
 					{ key: 'speed', kind: 'range', min: -10, max: 10, step: 0.1 }
+				]
+			},
+			// CL-C C1: collider shape override (wins over the Inspector pick, the
+			// mass precedent); shape 'object' hulls the wired source object
+			{
+				type: 'collider',
+				label: 'Collider',
+				defaults: { shape: 'box', sensor: false, scale: 1 },
+				params: [
+					{ key: 'shape', kind: 'select', options: ['box', 'sphere', 'capsule', 'cylinder', 'hull', 'custom', 'object'] },
+					{ key: 'scale', kind: 'range', min: 0.25, max: 4, step: 0.05 },
+					{ key: 'sensor', kind: 'toggle' }
 				]
 			},
 			{

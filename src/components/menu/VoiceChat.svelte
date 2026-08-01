@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Mic, MicOff } from '@lucide/svelte';
 	import { remoteStreams, mutedPeers, micActive, pttActive, toggleMic, spatialVoice } from '$lib/voiceChat';
 
 	// hidden audio sinks for remote voices + the mic toggle button.
@@ -30,5 +31,5 @@
 	title={$micActive ? 'Microphone on — click to mute' : 'Microphone off — click to talk, or hold V for push-to-talk'}
 	on:click={toggleMic}
 >
-	<i class="fas {$micActive || $pttActive ? 'fa-microphone' : 'fa-microphone-slash'} text-white"></i>
+	{#if $micActive || $pttActive}<Mic size={18} class="text-white" aria-hidden="true" />{:else}<MicOff size={18} class="text-white" aria-hidden="true" />{/if}
 </button>

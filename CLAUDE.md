@@ -90,10 +90,23 @@ loadable play content. Everything a user does must be visible to connected peers
   (GLTF full sync; animated imports detour through `sendAnimatedImport` raw bytes).
 - Domain modules in `src/lib/`: `objectActions`, `geometries.svelte.js`,
   `materialsHandler`, `meshEdit` (+VR handle drag; `tickMeshEdit` re-poses the WORLD-space
-  handles when the object moves — scene-root handles don't follow for free), `faceEdit`
+  handles when the object moves — scene-root handles don't follow for free; CL-B Weld
+  merges the ctrl-multi-selection to its centroid as ONE meshgeo undo entry — a 'verts'
+  entry can't hold per-handle befores), `faceEdit`
   (topology core: coplanar+adjacent tris = logical faces; extrude/inset/move/delete with
-  OUTWARD-wound stitching; `meshgeo` full-geometry snapshots; VR rigid face-grab + live
-  extrude adjust; 300-tri VR cap; desktop UI = MeshEditPopup), `history` (kind registry:
+  OUTWARD-wound stitching + CL-B subdivide/flip/BRIDGE (two multi-selected faces:
+  ordered boundary loops, equal-count gate, closest-pair anchor + untwist direction
+  pick, outward-wound walls); pick granularity Face/Triangle/Shell (`shellsOfTris`
+  union-find over welded keys; legacy 'polygon' migrates at read time); the MOVE gizmo
+  seats ONLY while Move is the armed op — a seated gizmo intercepted the next click
+  and rigid-moved the face instead of applying the armed inset (the CL-B inset fix);
+  shared edit WIREFRAME overlay (`buildEditWireframe` + `meshEditWireframe` local
+  pref, honored by BOTH modes, rebuilt on every geometry swap);
+  `registerEditProxy`/`lookupEditable` let the edit tools run on a SCENE-ROOT proxy
+  (collider editing — replicated edit messages no-op on peers); `meshgeo`
+  full-geometry snapshots; VR rigid face-grab + live extrude adjust; user-editable VR
+  caps; desktop UI = MeshEditPopup, a FLOATING draggable dragWindow toolbar
+  (key `meshEditToolbar`) with shortcuts E/I/G/S/B/F/X + W), `history` (kind registry:
   create/delete/group/material/props/transformSet/verts/animimport/geometry/meshgeo;
   recording auto-muted while applying; 5 MB snapshot cap), `snapping`, `shortcuts`
   (registry = bindings AND Settings list),
@@ -133,18 +146,47 @@ loadable play content. Everything a user does must be visible to connected peers
   objects = KINEMATIC bodies w/ slerp-interpolated substep targets; dynamics have
   sleep OFF + movement-gated broadcasts; drag/throw via holdBody/releaseBody; external
   writes detected by write-back DEVIATION → 250ms kinematic hold; hull colliders
-  opt-in via userData.physics; Inspector Physics section; SimControls HUD + `P`) +
+  opt-in via userData.physics; Inspector Physics section; SimControls HUD + `P`;
+  **CL-A colliders v2**: every shape is built from `colliderSpec.js` — ONE source of
+  truth shared with the viz — RELATIVE to the CURRENT body pose, so
+  `rebuildColliders`/`physicsShapeChanged` swap shapes MID-SIM (no restart;
+  joints/velocity survive; `liveParamsJson` widened to collider/sensor/freeze/
+  material/mass; Inspector setPhysics AND the remote objectParameters applier poke
+  it); SENSORS = trigger volumes (pass-through; pairs collected BOTH directions,
+  per-frame dedupe → `fireObjectEnter/Exit` replicated stamps); `PHYSICS_MATERIALS`
+  presets (ice/rubber/wood/metal); freeze axes via setEnabledRotations/Translations;
+  scene GRAVITY from `scenePhysics.js` (a sceneMusic-style latest-wins
+  `scenephysics` singleton, applied at world create AND live); CUSTOM colliders are
+  COMPOUND — one convexHull per SHELL, verts+pieces stored on userData.physics
+  (1200-float cap), authored by `colliderEdit.js` (runs the REAL Edit Mesh tool on a
+  scene-root proxy); **CL-C** collider node overrides the Inspector pick (shape
+  'object' hulls the wired source object; sensor + scale) and the velocity node reads
+  the LOCAL `objectSpeeds` feed — exact-ish on the initiator per-step, ~10Hz move
+  deltas on peers) + `colliderHelpers` (CL-A viz: scene-root wireframe proxies from
+  the SAME spec — green, amber sensors; `showColliders` local pref + per-object
+  union; per-frame follow from Scene's useTask; hidden in wireframe view mode) +
   `joints` (#12: replicated sceneJoints defs — weld/revolute+motor, OBJECT-local
   anchors → body-local at sim start, jointcreate/delete + getjoints handshake,
   'joint' history kind, sender-side delete cascade, sessions persist),
   `inputRuntime` (#12: store-only SDK input — key codes + VR axes published by
   vrControls, claims 'keys'/'locomotion' gate PointerLockControls/editorNavigation/
-  VR stick; module bindings list in Settings), `possess` (#12: tank-controls drive of
+  VR stick; module bindings list in Settings), `trackpadNav` (QW launch polish:
+  window-capture wheel — two-finger trackpad swipes PAN via cloned-vector
+  OrbitControls math with a STATEFUL 250ms gesture window (fast flicks stay pans);
+  pinch/ctrl-wheel page-zoom guards (iOS gesturestart + body touch-action
+  pan-x pan-y — the CANVAS gets touch-action:none or Chromium axis-latches pans);
+  Settings: mode auto/on/off, reverse pan, pan + pinch-zoom enable toggles —
+  all LOCAL prefs), `possess` (#12: tank-controls drive of
   any object + chase/orbit camera; possessing = selecting; ONE undo per ride),
   `handModels` (#12: custom hand GLB = IDENTITY — hash on `handmodel` msg + handshake,
   assetShare pull, rigid-at-wrist render), `terrainSculpt` (#12: brush raise/lower/
   smooth/flatten over the meshgeo channel; weld by quantized (x,z) COLUMNS, rebuilt in
-  the applyMeshGeo hook; one snapshot+undo per stroke; SculptToolbar pill),
+  the applyMeshGeo hook (`rebuildSculptCaches`) AND guarded by position-ATTRIBUTE
+  identity so a same-tick brush after a remote/undo swap never hits a stale cache;
+  one snapshot+undo per stroke; CL-B follow-up MESH mode (`sculptMode`): the same
+  brush on ANY mesh — weld by full xyz, displacement along averaged NORMALS, flatten
+  = hit tangent plane, smooth = Laplacian relax, 45k-float entry cap, cursor ring
+  hugs the surface; SculptToolbar is a FLOATING dragWindow toolbar now),
   `sceneMusic` (#12: ONE shared background track, latest-wins `music` singleton —
   NOT piggybacked on environment; synced-clock loop offset; LOCAL volume/mute overlay),
   `shadowDefaults` (#12: objectsGroup-sweep sets cast/receiveShadow on every mesh;
@@ -197,9 +239,10 @@ loadable play content. Everything a user does must be visible to connected peers
   panels: Menu/ObjectsPanel/PropertiesPanel/ColorPalette/PrefabsPanel/Keyboard/
   ChatPanel/Stats — named `vr<x>-*` control meshes, all grip-grabbable),
   scene-overlay components (PingMarkers/PingHighlights (#12: uuid-carrying pings flash
-  an object box)/PathWaypoints/LockHighlights), `SimControls`/`SculptToolbar` (#12:
+  an object box)/PathWaypoints/LockHighlights), `SimControls`/`SculptToolbar`/`MeshEditPopup` (#12
   runes-mode HUD pills — the MobileAddButton "own file so onclick doesn't mix with
-  on:" precedent), shared
+  on:" precedent; CL-B: the sculpt + mesh-edit toolbars are FLOATING dragWindow
+  panels, keys `sculptToolbar`/`meshEditToolbar`), shared
   `ContextMenu.svelte` (caps to viewport + scrolls vertically when tall, never
   horizontally; per-submenu flip via left/right/top/bottom — no transform),
   `components/shared/WindowShell.svelte` (197: reusable window CHROME — collapsible/
@@ -278,8 +321,8 @@ loadable play content. Everything a user does must be visible to connected peers
   the baseline). THREE object trees are **NOT reactive**: mutating `.children`/`.userData`
   needs `objectsGroup.update(v=>v)` to poke, AND rendered components must derive from
   `$objectsGroup` (or a keyed-each on the same ref won't re-render). svelte-check
-  baseline is **476 errors / 62 warnings** (2026-07-28, after the svelte 5.56 safe-bump
-  pass) — hold it. Svelte 5.5x added `state_referenced_locally` (intentional one-time
+  baseline is **438 errors / 62 warnings** (2026-08-01, release/next after colliders
+  v2 + the icon system) — hold it; the release.yml gate matches. Svelte 5.5x added `state_referenced_locally` (intentional one-time
   prop reads take a `// svelte-ignore state_referenced_locally` line — WindowShell is
   the reference) and deprecated `<svelte:self>` (use a self-import).
 - **Connection "connected" state = `$peers.openedPeers`, NOT `userdata.length`**:
@@ -315,6 +358,13 @@ loadable play content. Everything a user does must be visible to connected peers
   When an Edit "String not found" repeats, `sed -n 'A,Bp' file | cat -A` shows tabs as
   `^I` — copy the exact indentation. Bare single-line substrings (no leading tab) are
   the safest anchor.
+- Module-level `store.subscribe(cb)` runs cb SYNCHRONOUSLY at module eval — any
+  `let` the callback reads must be DECLARED ABOVE the subscribe or the module
+  TDZ-crashes the SSR eval ("Cannot access 'x' before initialization"; bit
+  meshEdit/faceEdit twice in CL-B). Related svelte 5.56 strictness:
+  `bind:X={undefined}` on a prop WITH a fallback hard-errors
+  (props_invalid_value) — an uninitialized `let fogColor = $state()` bound via
+  bind:hex CRASHED the whole scene inspector drawer; always initialize bound $state.
 - `$effect` tracks EVERY store read synchronously inside it — side reads (userdata,
   globalScene…) retrigger it and can hit `effect_update_depth_exceeded`, which
   UNMOUNTS the app. Wrap one-shot side work in `untrack(() => …)` so the effect only
@@ -545,6 +595,17 @@ loadable play content. Everything a user does must be visible to connected peers
   annotation in it hard-breaks `npm run build` with a useless
   `error during build: undefined` (svelte-check never runs; vite dev 500s too).
   Same trap in any non-TS component: JSDoc for types, never TS syntax (#13-B3).
+- **Icons = `@lucide/svelte` SVG components** (Font Awesome fully REMOVED post-1.0.1
+  — never add `fa-` classes). Static markup imports named components
+  (`import { Play } from '@lucide/svelte'`; sizes 16 inline/menu, 18-20 toolbar/
+  header, 24 the play FAB; `aria-hidden="true"` when decorative); DATA-DRIVEN icon
+  names (Explorer KIND_ICONS, menu-item defs) render via `components/ui/Icon.svelte`
+  (kebab lucide names). Icons inherit `currentColor` — never hardcode grays;
+  semantic colors come from the `--icon-*` theme tokens. TWO TRAPS: a `class` passed
+  to a lucide component lands on the CHILD-scope `<svg>`, so scoped CSS targeting it
+  needs `:global(...)` (bit cx-chevron/tp-toast-icon/role-caret — silent style loss,
+  sometimes without even an unused-selector warning); svg `className` is an
+  SVGAnimatedString — e2e reads `getAttribute('class')` and selects `svg`, not `i`.
 
 ## Verification (mandatory before commit)
 
@@ -591,6 +652,24 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-01): **Colliders v2 + Edit Mesh Pro MERGED to release/next (PR
+  #74)** — plan: cloud repo plans-core/pending/colliders-v2-editmesh-pro.md (marked
+  EXECUTED). Five commits: **CL-A** colliders core (colliderSpec.js one source of
+  truth, LIVE mid-sim collider rebuild, sensors + enter/exit dispatch, material
+  presets, freeze axes, scene-gravity `scenephysics` singleton, collider viz,
+  compound custom collider edit session on a scene-root proxy) - **CL-B** edit mesh
+  pro (inset gizmo-gating fix, face-mode wireframe + Wire toggle, Face/Triangle/Shell
+  granularity, subdivide/flip/weld/bridge ops, MeshEditPopup rebuilt as a FLOATING
+  dragWindow toolbar with shortcuts) - **mesh sculpt** (the terrain brush generalized
+  to ANY mesh: normal-direction displacement, xyz weld, floating SculptToolbar) -
+  **CL-C** physics nodes (collider override incl. object-source hull + live rebuild,
+  onenter/onexit, velocity with a LOCAL speed feed) - a [fix] for the PRE-EXISTING
+  scene-inspector crash (fogColor bind:hex undefined under svelte 5.56). New suites:
+  collider-viz/collider-live/collider-custom/mesh-ops/mesh-sculpt/
+  flow-physics-collider. svelte-check baseline DROPPED to **438/62** (release.yml
+  gate updated to match). Lane: ../theprototype-lane-editmesh @5183. REMAINING:
+  theprototype-docs site pages (physics.md sensors/materials/freeze/gravity/viz +
+  colliders.md + node pages), VR on-device feel check (user).
 - Status (2026-07-28): **v1.0.0 RELEASED** (PR #56 merge-commit → `npm version 1.0.0`
   → tag-triggered release.yml → github.com/theprototype-app/core/releases/tag/v1.0.0;
   cloud deployed w/ `CORE_REF=v1.0.0`). The release batch shipped: **RP** packs

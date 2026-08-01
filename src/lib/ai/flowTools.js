@@ -37,8 +37,22 @@ export function physicsToolsEnabled() {
 	return !!activeAiConfig()?.physicsTools;
 }
 
-/** Node types only usable when physics tools are on (they drive the rapier sim). */
-export const PHYSICS_NODE_TYPES = ['mass', 'bounciness', 'friction', 'angularvelocity', 'motor'];
+/** Node types only usable when physics tools are on — the sim-driving set
+ * (mirrors physics.js PHYSICS_TYPES incl. the CL-C collider override) plus the
+ * physics-DEPENDENT trigger/readout nodes (inert without a running sim, so
+ * offering them while the sim tools are gated off would only mislead). */
+export const PHYSICS_NODE_TYPES = [
+	'mass',
+	'bounciness',
+	'friction',
+	'angularvelocity',
+	'motor',
+	'collider',
+	'onimpact',
+	'onenter',
+	'onexit',
+	'velocity'
+];
 
 // Editor-only node types the AI must not create: Object Flow composition needs
 // declared sockets picked in the editor, sound needs an Explorer asset hash.
@@ -390,6 +404,7 @@ export function setPhysicsTool(args) {
 		if (Number.isFinite(u.friction)) patch.friction = Math.min(Math.max(u.friction, 0), 2);
 		if (typeof u.collider === 'string' && COLLIDER_KINDS.includes(u.collider))
 			patch.collider = u.collider;
+		if (typeof u.sensor === 'boolean') patch.sensor = u.sensor; // CL-A A3 trigger volume
 		if (!Object.keys(patch).length)
 			return { uuid, error: 'no physics keys — pass mode/mass/restitution/friction/collider' };
 		setPhysicsFor(uuid, patch);

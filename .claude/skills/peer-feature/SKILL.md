@@ -54,7 +54,7 @@ keep it off the wire.
 4. **Late joiners**: `getmything` request in `sendHandshake()` + a full-state reply
    that retries until `conn.open` (`sendNodes`/`sendJoints`/`sendModuleStates` —
    never bare `setTimeout` sends: peerjs silently drops pre-open messages). Singleton
-   state (environment, sceneMusic) instead pushes with a `changedAt` stamp,
+   state (environment, sceneMusic, scenePhysics/gravity) instead pushes with a `changedAt` stamp,
    latest-wins — each singleton gets its OWN message type (music deliberately does
    NOT piggyback on `environment` because env state round-trips through preset
    export/import and would leak the track into presets) — and any symmetric pull

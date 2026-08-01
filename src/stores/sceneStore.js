@@ -62,6 +62,12 @@ export const vrMirrorSnapTurn = writable(
 export const vrTeleportEnabled = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('vrTeleportEnabled') !== 'false'
 );
+// VR sleeve palette (K1, experimental): a forearm strip of ghost primitives on
+// the LEFT controller (mirrors right when the menu owns the left hand) —
+// trigger-drag a ghost out to place it. DEFAULT OFF.
+export const vrSleeveEnabled = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('vrSleeveEnabled') === 'true'
+);
 // vertex grab style (182): default HOLD (trigger held = carry, release = drop);
 // OFF = the toggle style (press to grab, press again to drop)
 export const vrVertexHold = writable(

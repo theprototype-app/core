@@ -10,8 +10,13 @@ import {
 	isAnimatedTarget,
 	suspendAnimation,
 	resumeAnimation,
-	fireObjectImpact
+	fireObjectImpact,
+	fireObjectEnter,
+	fireObjectExit,
+	noteObjectPose
 } from './flowRuntime';
+import { colliderSpecOf } from './colliderSpec';
+import { sceneGravity } from './scenePhysics';
 import { burstObjectParticles } from './particleActions';
 import { hasImpactEmitter } from './particleRuntime';
 import { nameOf } from './lockControl';
@@ -50,6 +55,7 @@ export const remoteSimulating = writable(null);
  *   samples: {t: number, pos: THREE.Vector3, rot: THREE.Euler}[],
  *   lastWritten: {pos: THREE.Vector3, quat: THREE.Quaternion},
  *   lastSent?: {pos: THREE.Vector3, quat: THREE.Quaternion},
+ *   colliders: any[], shapeKey: string,
  *   preVy?: number}} BodyEntry */
 /** @type {BodyEntry[]} */
 let bodies = [];
@@ -69,19 +75,38 @@ let accumulator = 0; // fixed-timestep leftover (see step)
 // stepping peer has a world) and replicate through the existing shared-stamp
 // paths: applyNodeTrigger for On Impact nodes, particleburst for emitters.
 /** @type {any} */ let eventQueue = null;
-/** @type {Map<number, {uuid: string, entry: BodyEntry | null}>} collider handle -> owner */
+/** @type {Map<number, {uuid: string, entry: BodyEntry | null, sensor: boolean}>} collider handle -> owner */
 let colliderOwner = new Map();
 let groundHandle = -1;
 /** @type {Map<string, number>} uuid -> last impact stamp (step-now ms) */
 let lastImpactAt = new Map();
 /** @type {{uuid: string, strength: number}[]} contacts collected inside the substep loop */
 let pendingImpacts = [];
+/** CL-A: colliders attached to FIXED scenery bodies (rebuild bookkeeping —
+ * BodyEntry only exists for dynamic/kinematic). @type {Map<string, any[]>} */
+let fixedColliders = new Map();
+/** @type {Map<string, string>} uuid -> shapeKey for fixed bodies (live rebuild) */
+let fixedShapeKeys = new Map();
+/** CL-A A3: sensor enter/exit edges collected inside the substep loop
+ * @type {{uuid: string, otherUuid: string, entered: boolean}[]} */
+let pendingEnterExit = [];
+/** per-frame dedupe of repeated sensor events @type {Set<string>} */
+let sensorEventSeen = new Set();
 /** @type {(() => void)[]} C2: live node-param subscriptions active during a sim */
 let liveUnsubs = [];
 let liveSnapshot = '';
 
-const PHYSICS_TYPES = ['mass', 'bounciness', 'friction', 'angularvelocity', 'motor'];
-const HULL_MAX_VERTS = 5000;
+const PHYSICS_TYPES = ['mass', 'bounciness', 'friction', 'angularvelocity', 'motor', 'collider'];
+
+// CL-A A4: physics material presets — picking one in the Inspector writes BOTH
+// friction and restitution via setPhysics (sliders stay editable; the select
+// shows Custom when the values match no preset).
+export const PHYSICS_MATERIALS = {
+	ice: { friction: 0.02, restitution: 0.05 },
+	rubber: { friction: 0.9, restitution: 0.85 },
+	wood: { friction: 0.55, restitution: 0.25 },
+	metal: { friction: 0.3, restitution: 0.1 }
+};
 const MAX_LINVEL = 20; // m/s clamp on release-velocity estimates
 const MAX_ANGVEL = 20; // rad/s
 const EXTERNAL_HOLD_MS = 250; // peer-move silence before a held body drops
@@ -124,6 +149,8 @@ function collectParams(group) {
 		if (p.restitution != null) map[object.uuid].restitution = p.restitution;
 		if (p.friction != null) map[object.uuid].friction = p.friction;
 		if (p.collider) map[object.uuid].collider = p.collider;
+		if (p.sensor) map[object.uuid].sensor = true; // CL-A A3: trigger volume
+		if (p.freeze) map[object.uuid].freeze = p.freeze; // CL-A A5: axis locks
 	});
 	// H1: physics nodes live in ANY graph (scene or per-object documents)
 	const nodes = allNodes();
@@ -149,6 +176,18 @@ function collectParams(group) {
 		// recipe: select the body -> all wheel motors). Joints stay def-owned.
 		if (source.type === 'motor')
 			map[uuid].motor = { vel: source.data?.vel ?? 3, maxForce: source.data?.maxForce ?? 100 };
+		// CL-C C1: collider node — shape/sensor/scale WIN over the Inspector
+		// pick (flow-overrides-Inspector, the mass precedent); shape 'object'
+		// hulls the object wired into the node's `source` handle
+		if (source.type === 'collider') {
+			map[uuid].collider = source.data?.shape ?? 'box';
+			if (source.data?.scale != null) map[uuid].colliderScale = source.data.scale;
+			if (source.data?.sensor) map[uuid].sensor = true;
+			const sourceEdge = edges.find((e) => e.target === source.id && e.targetHandle === 'source');
+			const sourceNode = sourceEdge ? nodes.find((n) => n.id === sourceEdge.source) : null;
+			const sourceUuid = sourceNode?.type === 'objectselector' ? sourceNode.data?.selected : null;
+			if (sourceUuid && sourceUuid !== '-None-') map[uuid].colliderSource = sourceUuid;
+		}
 	};
 	edges.forEach((edge) => {
 		const source = nodes.find((n) => n.id === edge.source);
@@ -213,7 +252,8 @@ function applyMotorParam(uuid, motor) {
 	});
 }
 
-/** The graph's angvel/motor params only, as a change-detection key (C2). */
+/** The graph's LIVE-appliable params (angvel/motor + everything that forces a
+ * collider rebuild — CL-A A2 widened this beyond angvel/motor). */
 function liveParamsJson() {
 	const group = get(objectsGroup);
 	if (!group) return '';
@@ -221,13 +261,20 @@ function liveParamsJson() {
 	/** @type {Record<string, any>} */
 	const out = {};
 	Object.keys(params).forEach((uuid) => {
-		if (params[uuid].angvel || params[uuid].motor)
-			out[uuid] = { angvel: params[uuid].angvel, motor: params[uuid].motor };
+		const p = params[uuid];
+		if (p.angvel || p.motor || p.collider || p.sensor || p.freeze || p.restitution != null || p.friction != null || p.mass != null)
+			out[uuid] = {
+				angvel: p.angvel,
+				motor: p.motor,
+				shape: shapeKeyOf(p, group.getObjectByProperty('uuid', uuid))
+			};
 	});
 	return JSON.stringify(out);
 }
 
-/** Re-apply angvel/motor from the current graph to the live world (C2). */
+/** Re-apply live params to the running world (C2 angvel/motor; CL-A A2:
+ * collider/sensor/freeze/material changes REBUILD the affected colliders
+ * in place — no sim restart). */
 function applyLiveParams() {
 	const group = get(objectsGroup);
 	if (!world || !group) return;
@@ -236,10 +283,80 @@ function applyLiveParams() {
 		const p = live[entry.object.uuid];
 		if (entry.mode === 'dynamic' && !entry.hold && p?.angvel)
 			entry.body.setAngvel(angvelWorld(entry.object, p.angvel), true);
+		// shape/material/sensor/freeze drift vs what the colliders were built
+		// with -> rebuild this body's collider set live
+		if (entry.shapeKey && entry.shapeKey !== shapeKeyOf(p ?? {}, entry.object))
+			rebuildColliders(entry, p ?? {});
+	});
+	fixedShapeKeys.forEach((key, uuid) => {
+		const next = shapeKeyOf(live[uuid] ?? {}, group.getObjectByProperty('uuid', uuid));
+		if (key !== next) rebuildFixedColliders(uuid, live[uuid] ?? {});
 	});
 	Object.keys(live).forEach((uuid) => {
 		if (live[uuid].motor) applyMotorParam(uuid, live[uuid].motor);
 	});
+}
+
+/**
+ * CL-A A2: live collider rebuild for a tracked (dynamic/kinematic) body —
+ * removes the old collider set and rebuilds from the CURRENT object state,
+ * keeping the body pose/velocity (and any joints) untouched.
+ * @param {BodyEntry} entry @param {any} p collectParams entry
+ */
+function rebuildColliders(entry, p) {
+	if (!world) return;
+	entry.colliders.forEach((c) => {
+		colliderOwner.delete(c.handle);
+		world.removeCollider(c, true);
+	});
+	entry.colliders = [];
+	createCollidersFor(entry.object, entry.body, p ?? {}, entry.mode === 'dynamic', entry);
+	if (entry.mode === 'dynamic') applyFreeze(entry.body, p?.freeze); // set OR clear
+	// the write-back bookkeeping changed shape: refresh the deviation baseline
+	entry.lastWritten.pos.copy(entry.object.position);
+	entry.lastWritten.quat.copy(entry.object.quaternion);
+}
+
+/** CL-A A2: live collider rebuild for FIXED scenery (sensor toggles on a
+ * static trigger volume are the common case). @param {string} uuid @param {any} p */
+function rebuildFixedColliders(uuid, p) {
+	if (!world) return;
+	const body = fixedBodies.get(uuid);
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!body || !object) return;
+	(fixedColliders.get(uuid) ?? []).forEach((c) => {
+		colliderOwner.delete(c.handle);
+		world.removeCollider(c, true);
+	});
+	const built = createCollidersFor(object, body, p ?? {}, false, null);
+	fixedColliders.set(uuid, built?.colliders ?? []);
+	fixedShapeKeys.set(uuid, shapeKeyOf(p, object));
+}
+
+/**
+ * CL-A A2: an Inspector setPhysics / remote objectParameters 'physics' write
+ * changed an object's collider-relevant params — rebuild live if a sim runs.
+ * (userData.physics has no flowGraphs subscription, so callers poke this
+ * directly; no-op unless simulating with a live body.) @param {string} uuid
+ */
+export function physicsShapeChanged(uuid) {
+	if (!world || !get(simulating)) return false;
+	const group = get(objectsGroup);
+	if (!group) return false;
+	const p = collectParams(group)[uuid] ?? {};
+	const entry = bodies.find((e) => e.object.uuid === uuid);
+	if (entry) {
+		if (entry.shapeKey === shapeKeyOf(p, entry.object)) return false;
+		rebuildColliders(entry, p);
+		return true;
+	}
+	if (fixedBodies.has(uuid)) {
+		const object = group.getObjectByProperty('uuid', uuid);
+		if (fixedShapeKeys.get(uuid) === shapeKeyOf(p, object)) return false;
+		rebuildFixedColliders(uuid, p);
+		return true;
+	}
+	return false;
 }
 
 /**
@@ -290,7 +407,8 @@ export function setPhysicsFor(uuid, patch) {
 	/** @type {any} */
 	const peer = get(peers);
 	peer?.send({ type: 'objectParameters', parameter: 'physics', uuid, physics: next });
-	objectsGroup.update((v) => v);
+	objectsGroup.update((v) => v); // collider viz re-syncs from the poke
+	physicsShapeChanged(uuid); // CL-A A2: live mid-sim collider rebuild
 	return next;
 }
 
@@ -338,30 +456,126 @@ export async function toggleSimulation() {
 	await startSimulation();
 }
 
-/** Convex-hull collider desc for a single-Mesh object (scale AND rotation
- * BAKED into the vertices — rapier colliders don't scale, and baking the
- * rotation lets hull bodies start from an IDENTITY rotation like the box
- * bodies do, so one world-space joint axis is valid in every body's local
- * frame. C3 root-cause: hull bodies used to CARRY the object rotation, which
- * gave the car's z-rotated wheel hulls a 90-degree-wrong hinge axis — the
- * solver fought itself and launched the assembly). Returns null when
- * ineligible (Groups, huge meshes) so the caller falls back to the box.
- * @param {any} object */
-function hullDesc(object) {
-	if (!object.isMesh || !object.geometry?.attributes?.position) return null;
-	const position = object.geometry.attributes.position;
-	if (position.count > HULL_MAX_VERTS) return null;
-	const scaled = new Float32Array(position.count * 3);
-	const s = object.scale;
-	const v = new THREE.Vector3();
-	for (let i = 0; i < position.count; i++) {
-		v.set(position.getX(i) * s.x, position.getY(i) * s.y, position.getZ(i) * s.z);
-		v.applyQuaternion(object.quaternion);
-		scaled[i * 3] = v.x;
-		scaled[i * 3 + 1] = v.y;
-		scaled[i * 3 + 2] = v.z;
+/** CL-A A5: apply (or clear) per-axis locks on a dynamic body.
+ * @param {any} body @param {{rx?:boolean,ry?:boolean,rz?:boolean,px?:boolean,py?:boolean,pz?:boolean}|undefined} f */
+function applyFreeze(body, f) {
+	body.setEnabledRotations(!f?.rx, !f?.ry, !f?.rz, true);
+	body.setEnabledTranslations(!f?.px, !f?.py, !f?.pz, true);
+}
+
+/** CL-A A2: change-detection key over everything that forces a collider
+ * rebuild (shape kind, custom verts, sensor, freeze, materials, mass).
+ * @param {any} p collectParams entry @param {any} object */
+function shapeKeyOf(p, object) {
+	const verts = object?.userData?.physics?.colliderVerts;
+	const vertsKey = Array.isArray(verts)
+		? verts.length + ':' + verts.reduce((/** @type {number} */ a, /** @type {number} */ b) => a + b, 0).toFixed(2)
+		: null;
+	return JSON.stringify({
+		c: p?.collider ?? null,
+		v: vertsKey,
+		s: !!p?.sensor,
+		f: p?.freeze ?? null,
+		r: p?.restitution ?? null,
+		fr: p?.friction ?? null,
+		m: p?.mass ?? null,
+		cs: p?.colliderScale ?? null, // CL-C: node shape scale
+		src: p?.colliderSource ?? null // CL-C: 'object' shape source uuid
+	});
+}
+
+/** CL-C: node params may hull ANOTHER object ('object' source) and scale the
+ * shape — resolve those extras into the shared spec. @param {any} object @param {any} p */
+function specOf(object, p) {
+	const sourceObject = p?.colliderSource
+		? get(objectsGroup)?.getObjectByProperty('uuid', p.colliderSource)
+		: null;
+	return colliderSpecOf(object, p?.collider, { sourceObject, scale: p?.colliderScale });
+}
+
+/**
+ * CL-A A1/A2: build + attach the collider set for one body from the shared
+ * colliderSpec, placed RELATIVE to the body's CURRENT pose — identity at sim
+ * start (byte-identical to the old inline construction), and on a live
+ * mid-sim rebuild the body pose is untouched so joints and velocities
+ * survive. Hull/custom pieces get the object rotation baked into the verts
+ * (identity-start convention, C3); primitives carry it on the desc.
+ * Updates entry offset/initialQuat bookkeeping + colliderOwner.
+ * @param {any} object @param {any} body @param {any} p params entry
+ * @param {boolean} dynamic @param {BodyEntry | null} entry
+ * @param {any=} knownSpec spec already computed by the caller
+ * @returns {{colliders: any[], spec: any} | null}
+ */
+function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
+	const spec = knownSpec ?? specOf(object, p);
+	if (!spec) return null;
+	if (spec.fallback)
+		showToast(
+			(p?.collider === 'custom' ? 'Custom collider' : 'Convex hull') +
+				' unavailable for "' +
+				(object.name || object.type) +
+				'" — using a box'
+		);
+	const t = body.translation();
+	const r = body.rotation();
+	const bodyQuat = new THREE.Quaternion(r.x, r.y, r.z, r.w);
+	const invBody = bodyQuat.clone().invert();
+	const bodyPos = new THREE.Vector3(t.x, t.y, t.z);
+	/** world point -> body-local @param {any} world */
+	const localOf = (world) => world.clone().sub(bodyPos).applyQuaternion(invBody);
+	const relQuat = invBody.clone().multiply(spec.quat); // object rotation in the body frame
+	/** @type {any[]} */
+	const descs = [];
+	if (spec.pieces) {
+		// hull/custom: verts are scale-baked around the OBJECT ORIGIN — bake the
+		// relative rotation per-vert, carry the origin offset on the desc
+		const origin = localOf(object.position);
+		const v = new THREE.Vector3();
+		for (const piece of spec.pieces) {
+			const baked = new Float32Array(piece.verts.length);
+			for (let i = 0; i < piece.verts.length; i += 3) {
+				v.set(piece.verts[i], piece.verts[i + 1], piece.verts[i + 2]).applyQuaternion(relQuat);
+				baked[i] = v.x;
+				baked[i + 1] = v.y;
+				baked[i + 2] = v.z;
+			}
+			const desc = RAPIER.ColliderDesc.convexHull(baked);
+			if (desc) descs.push(desc.setTranslation(origin.x, origin.y, origin.z));
+		}
 	}
-	return RAPIER.ColliderDesc.convexHull(scaled);
+	if (!descs.length) {
+		const local = localOf(spec.center);
+		descs.push(
+			shapeDesc(spec.pieces ? 'box' : spec.kind, spec.halfExtents)
+				.setTranslation(local.x, local.y, local.z)
+				.setRotation({ x: relQuat.x, y: relQuat.y, z: relQuat.z, w: relQuat.w })
+		);
+	}
+	/** @type {any[]} */
+	const colliders = [];
+	descs.forEach((desc) => {
+		if (p?.restitution != null) desc.setRestitution(p.restitution);
+		if (p?.friction != null) desc.setFriction(p.friction);
+		if (dynamic) desc.setMass((p.mass ?? 1) / descs.length);
+		// PFX-C: dynamics report contact starts; CL-A: sensors need events too
+		if (dynamic || p?.sensor) desc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+		if (p?.sensor) desc.setSensor(true);
+		const collider = world.createCollider(desc, body);
+		colliders.push(collider);
+		colliderOwner.set(collider.handle, { uuid: object.uuid, entry, sensor: !!p?.sensor });
+	});
+	// write-back bookkeeping, generalized to any body pose: at sim start (body
+	// world-aligned) these equal the classic values (objPos-center / objQuat)
+	if (entry) {
+		// primitives at start: objPos - center; hulls at start: 0 (body sits at
+		// the object origin); mid-sim rebuilds: whatever keeps the pose fixed
+		entry.offset = localOf(object.position);
+		entry.initialQuat = invBody.clone().multiply(object.quaternion);
+		entry.colliders = colliders;
+		entry.hull = !!spec.pieces;
+		entry.shapeKey = shapeKeyOf(p, object);
+	}
+	return { colliders, spec };
 }
 
 async function startSimulation() {
@@ -393,7 +607,9 @@ async function startSimulation() {
 		}
 	}
 
-	world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+	// CL-A A6: scene gravity is a replicated singleton (scenePhysics.js); the
+	// live subscription below applies mid-sim changes on the stepping peer
+	world = new RAPIER.World({ x: 0, y: get(sceneGravity), z: 0 });
 	groundHandle = world.createCollider(
 		RAPIER.ColliderDesc.cuboid(500, 0.1, 500).setTranslation(0, -0.1, 0)
 	).handle;
@@ -408,33 +624,26 @@ async function startSimulation() {
 	beforeStates = [];
 	suspendedForRun = [];
 	fixedBodies = new Map();
-	const box = new THREE.Box3();
-	const size = new THREE.Vector3();
-	const center = new THREE.Vector3();
+	fixedColliders = new Map();
+	fixedShapeKeys = new Map();
 
 	group.children.forEach((/** @type {any} */ object) => {
-		// PFX-C follow-up: colliders are ORIENTED. The size comes from the
-		// object's LOCAL AABB (rotation stripped for the measure, restored
-		// after) and the collider carries the object's rotation RELATIVE to the
-		// identity-start body (joints require identity bodies, C3). A rotated
-		// wall/ramp/box now collides as itself — the old world-AABB capture
-		// inflated any rotated object into a fat axis-aligned block.
-		const savedQuat = object.quaternion.clone();
-		object.quaternion.set(0, 0, 0, 1);
-		object.updateMatrixWorld(true);
-		box.setFromObject(object);
-		object.quaternion.copy(savedQuat);
-		object.updateMatrixWorld(true);
-		if (!isFinite(box.min.x)) return; // lights/empties
-		box.getSize(size).multiplyScalar(0.5);
-		size.set(Math.max(size.x, 0.02), Math.max(size.y, 0.02), Math.max(size.z, 0.02));
-		// the unrotated-frame box center, swung back into the real orientation
-		box.getCenter(center).sub(object.position).applyQuaternion(savedQuat).add(object.position);
+		// CL-A A1: the shape measurement + hull/custom vert extraction moved to
+		// colliderSpec.js (ONE source of truth, shared with the collider viz).
+		// Colliders stay ORIENTED: primitives fit the LOCAL AABB (rotation
+		// stripped for the measure) and carry the rotation on the desc;
+		// hull/custom pieces bake it into the verts — so every body starts
+		// WORLD-ALIGNED (identity rotation; joints require it, C3).
 		const p = params[object.uuid];
+		const spec = specOf(object, p);
+		if (!spec) return; // lights/empties
 		const dynamic = !!p && p.mass != null && dynamicUuids.includes(object.uuid);
 		// flow-animated objects (not dynamic) become KINEMATIC platforms: the
 		// flow pose feeds the body each step so rapier derives their velocity
 		const kinematic = !dynamic && isAnimatedTarget(object.uuid);
+		// hull/custom bodies sit at the OBJECT ORIGIN (verts are origin-
+		// relative); primitives at the AABB center (center-offset bookkeeping)
+		const at = spec.pieces ? object.position : spec.center;
 		// sleep OFF for dynamics: a kinematic platform moving UNDER a sleeping
 		// body never wakes it (existing contact, unchanged normal) — the resting
 		// box would ignore the spinning slab; broadcasts gate on movement instead
@@ -443,47 +652,28 @@ async function startSimulation() {
 			: kinematic
 				? RAPIER.RigidBodyDesc.kinematicPositionBased()
 				: RAPIER.RigidBodyDesc.fixed()
-		).setTranslation(center.x, center.y, center.z);
+		).setTranslation(at.x, at.y, at.z);
 		const body = world.createRigidBody(bodyDesc);
-		let colliderDesc = p?.collider === 'hull' ? hullDesc(object) : null;
-		if (p?.collider === 'hull' && !colliderDesc)
-			showToast('Convex hull unavailable for "' + (object.name || object.type) + '" — using a box');
-		let usedHull = !!colliderDesc;
-		// primitive shapes (box/sphere/capsule/cylinder) fit the LOCAL extents and
-		// carry the object's rotation on the collider (hulls bake it into verts)
-		colliderDesc ??= shapeDesc(p?.collider, size).setRotation({
-			x: savedQuat.x,
-			y: savedQuat.y,
-			z: savedQuat.z,
-			w: savedQuat.w
-		});
-		if (p?.restitution != null) colliderDesc.setRestitution(p.restitution);
-		if (p?.friction != null) colliderDesc.setFriction(p.friction);
-		if (dynamic) colliderDesc.setMass(p.mass);
-		// PFX-C: dynamics report contact starts (one flagged collider per pair
-		// is enough — dynamic-vs-scenery and dynamic-vs-dynamic both fire)
-		if (dynamic) colliderDesc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-		const collider = world.createCollider(colliderDesc, body);
-		// hull vertices are baked in the object's WORLD orientation around its
-		// origin -> the body carries only the translation and starts at IDENTITY
-		// rotation (like the box path, initialQuat compensates); the AABB box
-		// path keeps the classic center-offset bookkeeping
+		/** @type {BodyEntry} */
 		const entry = {
 			object,
 			body,
-			offset: usedHull ? new THREE.Vector3() : object.position.clone().sub(center),
+			offset: new THREE.Vector3(),
 			initialQuat: object.quaternion.clone(),
 			mode: /** @type {'dynamic'|'kinematic'} */ (dynamic ? 'dynamic' : 'kinematic'),
-			hull: usedHull,
+			hull: false,
 			hold: /** @type {'user'|'external'|null} */ (null),
 			holdUntil: 0,
 			samples: /** @type {any[]} */ ([]),
+			colliders: /** @type {any[]} */ ([]),
+			shapeKey: '',
 			// the pose WE last wrote — a deviation means someone else (a peer's
 			// move applier, undo, an AI edit) wrote the object mid-sim
 			lastWritten: { pos: object.position.clone(), quat: object.quaternion.clone() }
 		};
-		if (usedHull)
-			body.setTranslation({ x: object.position.x, y: object.position.y, z: object.position.z }, true);
+		const tracked = dynamic || kinematic;
+		const built = createCollidersFor(object, body, p ?? {}, dynamic, tracked ? entry : null, spec);
+		if (dynamic && p?.freeze) applyFreeze(body, p.freeze); // CL-A A5
 		if (dynamic) {
 			beforeStates.push({ uuid: object.uuid, before: transformOf(object) });
 			// dynamic wins over an animation: suspend the effect for the run
@@ -496,8 +686,9 @@ async function startSimulation() {
 			bodies.push(entry);
 		} else {
 			fixedBodies.set(object.uuid, body); // a joint may pin something to it (P-B)
+			fixedColliders.set(object.uuid, built?.colliders ?? []);
+			fixedShapeKeys.set(object.uuid, shapeKeyOf(p, object));
 		}
-		colliderOwner.set(collider.handle, { uuid: object.uuid, entry: dynamic || kinematic ? entry : null });
 	});
 
 	// P-B: build rapier impulse joints from the replicated defs. Anchors are
@@ -567,7 +758,14 @@ async function startSimulation() {
 		liveSnapshot = snap;
 		applyLiveParams();
 	};
-	liveUnsubs = [flowGraphs.subscribe(onGraphChange)]; // H1: sees every graph
+	liveUnsubs = [
+		flowGraphs.subscribe(onGraphChange), // H1: sees every graph
+		// A6: gravity applies live (world.gravity is a plain setter; dynamics
+		// never sleep, so they notice immediately)
+		sceneGravity.subscribe((g) => {
+			if (world) world.gravity = { x: 0, y: g, z: 0 };
+		})
+	];
 
 	simulating.set(true);
 	simPaused.set(false);
@@ -753,6 +951,7 @@ function step(now) {
 	});
 
 	world.timestep = FIXED_DT;
+	sensorEventSeen.clear(); // A3: per-frame dedupe window
 	const stepPos = new THREE.Vector3();
 	const stepQuat = new THREE.Quaternion();
 	for (let k = 1; k <= substeps; k++) {
@@ -773,9 +972,11 @@ function step(now) {
 		// drain per SUBSTEP or events from early substeps get merged/lost
 		eventQueue.drainCollisionEvents((/** @type {number} */ h1, /** @type {number} */ h2, /** @type {boolean} */ started) => {
 			if (started) queueContact(h1, h2, now);
+			queueSensorEvent(h1, h2, started); // A3: enter/exit edges
 		});
 	}
 	dispatchImpacts();
+	dispatchEnterExit();
 
 	/** @type {any} */
 	const peer = get(peers);
@@ -794,6 +995,8 @@ function step(now) {
 		object.quaternion.copy(bodyQuat).multiply(initialQuat);
 		entry.lastWritten.pos.copy(object.position);
 		entry.lastWritten.quat.copy(object.quaternion);
+		// CL-C C3: exact-ish speed feed on the initiator (velocity node)
+		noteObjectPose(object.uuid, object.position.x, object.position.y, object.position.z);
 		if (broadcast && peer) {
 			// sleep is disabled (kinematic-wake), so gate broadcasts on MOVEMENT:
 			// settled bodies stop producing traffic
@@ -837,6 +1040,38 @@ function queueContact(h1, h2, now) {
 		lastImpactAt.set(uuid, now);
 		pendingImpacts.push({ uuid, strength: down });
 	}
+}
+
+/**
+ * CL-A A3: a sensor pair crossed (started) or separated (stopped) — collect
+ * the edge for BOTH tracked sides. Sensors bypass the downward-velocity
+ * impact filter entirely (enter/exit are edges, not impulses); repeated
+ * events for the same pair within a frame dedupe.
+ * @param {number} h1 @param {number} h2 @param {boolean} entered
+ */
+function queueSensorEvent(h1, h2, entered) {
+	const o1 = colliderOwner.get(h1);
+	const o2 = colliderOwner.get(h2);
+	if (!o1 || !o2) return; // ground / unknown
+	if (!o1.sensor && !o2.sensor) return;
+	const key = o1.uuid + '|' + o2.uuid + '|' + entered;
+	if (sensorEventSeen.has(key)) return;
+	sensorEventSeen.add(key);
+	pendingEnterExit.push({ uuid: o1.uuid, otherUuid: o2.uuid, entered });
+	pendingEnterExit.push({ uuid: o2.uuid, otherUuid: o1.uuid, entered });
+}
+
+/** CL-A A3: fire collected enter/exit edges AFTER the substep loop. The
+ * dispatch fns live in flowRuntime (replicated trigger stamps); with no
+ * onenter/onexit nodes in any graph they no-op — CL-C adds the nodes. */
+function dispatchEnterExit() {
+	if (!pendingEnterExit.length) return;
+	const events = pendingEnterExit;
+	pendingEnterExit = [];
+	events.forEach(({ uuid, otherUuid, entered }) => {
+		if (entered) fireObjectEnter(uuid, otherUuid);
+		else fireObjectExit(uuid, otherUuid);
+	});
 }
 
 /** Fire the collected impacts AFTER the substep loop (keeps the stepping tight
@@ -911,10 +1146,14 @@ export function stopSimulation(opts = {}) {
 	eventQueue = null;
 	colliderOwner = new Map();
 	pendingImpacts = [];
+	pendingEnterExit = [];
+	sensorEventSeen = new Set();
 	bodies = [];
 	beforeStates = [];
 	liveJoints = new Map();
 	fixedBodies = new Map();
+	fixedColliders = new Map();
+	fixedShapeKeys = new Map();
 	simulating.set(false);
 	simPaused.set(false);
 	if (peer) peer.send({ type: 'simulate', running: false, peerId: peer.peer.id });

@@ -121,7 +121,10 @@ loadable play content. Everything a user does must be visible to connected peers
   `flowGraphs.js` (#13-H: object-flow LIFECYCLE — create/delete replicated as
   `graphcreate`/`graphdelete`, the `'flowgraph'` history kind restores a deleted
   document wholesale, `serializeGraphs` prunes orphans at SERIALIZATION ONLY so
-  undoing an object delete finds its flow intact) + `objectFlow.js` (#13-H5:
+  undoing an object delete finds its flow intact; PR #76 adds the `'flownodes'`
+  kind — node/edge create/data/delete inside one graph as ONE undo entry, storing
+  SERIALIZED copies so replayed re-broadcasts hash identically for nodesync) +
+  `objectFlow.js` (#13-H5:
   `interfaceOf` derives an embed's sockets from its Flow Input/Output nodes,
   `pruneObjectFlowEdges` = the applier-side invariant on interface changes,
   `removeEmbedsOf` on flow deletion, `addObjectFlowToScene` for the context menu),
@@ -679,13 +682,27 @@ override for e2e — never share 5173 (the user's main-checkout server).
   w/ grid/surface snap, suppression/swallow predicates, K2 capture/persist/spawn/
   clear/cap). Lane: ../theprototype-lane-aiphys @5178. REMAINING: on-device feel
   (strip offsets on the forearm — constants at the top of vrSleeve.js) = user check.
-  **NOT YET MERGED (same lane): AI assistant v3 flow+physics tools** — local commit
-  ae53c7b on `feature/ai-flow-physics-tools` (branched off pre-rename release/1.1,
-  never pushed; plan: plans-core/done/ai-flow-physics-tools.md): create/update_flow_nodes
-  + gated set_physics/create_joints/control_simulation, 'flownodes' history kind,
-  setPhysicsFor, physicsTools provider checkbox, ai-flow-physics suite (38 checks);
-  the theprototype-docs page (ai/local-models.md, qwen3_xml guidance) is ALREADY
-  committed on the docs repo — push/PR of the core branch awaits the user.
+  **AI assistant v3 flow+physics tools: PR #76 OPEN against release/next** (same
+  lane; plan: plans-core/done/ai-flow-physics-tools.md). The assistant creates
+  BEHAVIOR now: `create_flow_nodes`/`update_flow_nodes` always available (curated
+  node-type enum + alias map, editor-identical node/edge construction incl. the
+  handle-qualified edge-id format, ONE 'flownodes' history entry per call; the
+  implicit-owner rule makes one-node-zero-edges the normal case), and
+  `set_physics`/`create_joints`/`control_simulation` + the physics node FAMILY
+  (mass/bounciness/friction/angularvelocity/motor/collider/onimpact/onenter/onexit/
+  velocity) gated by a per-provider **physicsTools checkbox** (Settings ▸ AI, docs
+  link). `setPhysicsFor(uuid, patch)` in physics.js = the shared physics write path
+  (props history + objectParameters + collider-viz poke + CL-A A2 live mid-sim
+  rebuild) used by Inspector/quick-action/AI alike. summarizeScene carries per-object
+  `physics` + compact `flow` (12-node cap) + top-level `sceneFlow`/`joints`;
+  repairToolCall gained the 5 names + invention aliases (add_behavior,
+  start_simulation w/ action fill-in) + physics-only-updates → set_physics inference.
+  Sim start/stop deliberately records NO history — undoing an AI batch never stops a
+  running sim. Suite: ai-flow-physics (38 checks, scripted moving-spider scenario).
+  Docs-repo page ai/local-models.md (qwen3_xml-not-hermes vLLM guidance) already on
+  the docs branch. release/next merged INTO the branch (Inspector setPhysics conflict
+  resolved by absorbing physicsShapeChanged into setPhysicsFor); post-merge 438/62
+  held + ai/collider/joints suites green. REMAINING: live vLLM smoke = user check.
 - Status (2026-08-01): **Colliders v2 + Edit Mesh Pro MERGED to release/next (PR
   #74)** — plan: cloud repo plans-core/pending/colliders-v2-editmesh-pro.md (marked
   EXECUTED). Five commits: **CL-A** colliders core (colliderSpec.js one source of

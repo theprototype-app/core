@@ -75,7 +75,11 @@ keep it off the wire.
    history applies, so replays can't re-record. Object presence uses
    `recordObjectPresence('create'|'delete', object)` (ObjectLoader snapshot, 5 MB cap);
    batches use `recordTransformSet(items)`; bytes-backed content has its own kind
-   (`animimport`).
+   (`animimport`). An entry whose replay RE-BROADCASTS content that peers hash for
+   drift detection (flow nodes/edges → nodesync) must store SERIALIZED copies
+   (`serializeNode`/`serializeEdge` shapes), never live editor objects — runtime-only
+   fields would make the replayed broadcast hash differently (`'flownodes'` kind,
+   PR #76, is the reference).
 8. **UI entry points**: viewport menu (`ViewportMenu.svelte` items), object context
    menu (`Controls.svelte objectMenuItems`), shortcuts registry (`shortcuts.js` — one
    registry drives bindings AND the Settings list), VR quick-menu

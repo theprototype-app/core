@@ -4,7 +4,7 @@
 
 	// Renders connected peers' cursors inside the flow editor. Coordinates arrive
 	// in flow space; the current viewport (pan/zoom) converts them to screen space.
-	export let viewport: any; // writable<{x, y, zoom}> shared with <SvelteFlow>
+	export let viewport: any; // plain {x, y, zoom} object bound to <SvelteFlow> (xyflow v1)
 
 	let sweep: any;
 	onMount(() => {
@@ -35,7 +35,7 @@
 	{#each Object.entries($flowCursors).filter(([, c]) => ((c as any).graphId ?? SCENE_GRAPH) === $activeGraphId) as [id, cursor] (id)}
 		<div
 			class="absolute flex items-start"
-			style="left: {cursor.x * $viewport.zoom + $viewport.x}px; top: {cursor.y * $viewport.zoom + $viewport.y}px;"
+			style="left: {cursor.x * viewport.zoom + viewport.x}px; top: {cursor.y * viewport.zoom + viewport.y}px;"
 		>
 			<svg width="18" height="18" viewBox="0 0 24 24" style="color: {colorOf(id)}">
 				<path fill="currentColor" stroke="white" stroke-width="1.5" d="M4 2 L20 12 L12 13.5 L8.5 21 Z" />

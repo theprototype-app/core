@@ -166,15 +166,24 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			tooltip: locked ? lockedTooltip : 'Drop onto the surface below (undoable)',
 			action: forEach((u) => alignToGround(u))
 		},
-		{
-			label: 'Edit mesh',
-			disabled: locked || !object?.geometry?.attributes?.position,
-			tooltip: locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
-			action: () => enterEditMode(uuid)
-		},
+		// 15-B8: Edit mesh / Sculpt are SINGLE-object modes — with a set selected
+		// they'd silently act on the last-picked object only (the ViewportMenu path
+		// passes the sticky primary), so hide them rather than mislead.
+		...(multi
+			? []
+			: [
+					{
+						label: 'Edit mesh',
+						disabled: locked || !object?.geometry?.attributes?.position,
+						tooltip: locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
+						action: () => enterEditMode(uuid)
+					}
+				]),
 		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh
 		// gets the normal-brush MESH sculpt (same toolbar + replication)
-		...(object?.userData?.terrain
+		...(multi
+			? []
+			: object?.userData?.terrain
 			? [
 					{
 						label: 'Sculpt terrain',

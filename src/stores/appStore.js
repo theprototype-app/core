@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 
 /** @type {import('svelte/store').Writable<any>} */
 export const settingsOpen = writable(null);
@@ -176,6 +176,21 @@ export const modulesOpen = writable(false);
 
 // sessions manager modal (50)
 export const sessionsOpen = writable(false);
+
+/**
+ * 15-B6: is ANY app modal open? App modals are non-modal native `<dialog>`s
+ * (they must stay non-modal so body-portalled dropdowns/toasts keep working),
+ * which means the page behind them is NOT inert and window key handlers still
+ * fire — WASD flew the camera while Settings was open. One derived signal, so
+ * shortcuts.js / editorNavigation.js / inputRuntime.js all gate the same way.
+ * Drawers, floating windows and menus are deliberately NOT included (they're
+ * meant to coexist with viewport work).
+ */
+export const anyModalOpen = derived(
+	[settingsOpen, sessionsOpen, modulesOpen, characterModalOpen, profileSettingsOpen, meshGenModalOpen],
+	([$settings, $sessions, $modules, $character, $profile, $meshGen]) =>
+		!!$settings || !!$sessions || !!$modules || !!$character || !!$profile || !!$meshGen
+);
 
 // viewport right-click menu (77): { x, y, point: [x,y,z] } | null — rendered
 // by ViewportMenu; Scene routes right-taps here (or to objectContextMenu)

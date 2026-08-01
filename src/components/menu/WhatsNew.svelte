@@ -89,7 +89,7 @@
 		bind:this={winEl}
 		tabindex="-1"
 		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
-		use:dragWindow={{ key: 'whatsNewWin', defaultRect: { left: 220, top: 90 } }}
+		use:dragWindow={{ key: 'whatsNewWin', defaultRect: { left: 220, top: 90 }, resizable: true, minW: 320, minH: 240 }}
 		use:focusStack
 		style="z-index: var(--z-window); width: min(620px, 94vw); height: min(620px, 80vh)"
 		onkeydown={onKeydown}
@@ -122,6 +122,22 @@
 {/if}
 
 <style>
+	/* 15-B7: on a narrow screen the changelog reads as a FULL-SCREEN sheet (the
+	   .tp-modal-frame treatment Settings/Sessions get), filling below the Connect
+	   bar. !important beats the inline left/top/width/height dragWindow writes;
+	   the resize grabber is pointless at this size, so it hides. */
+	@media (max-width: 640px) {
+		#whats-new-window {
+			left: 0 !important;
+			top: var(--connect-bottom, 0px) !important;
+			width: 100vw !important;
+			height: calc(100dvh - var(--connect-bottom, 0px)) !important;
+			border-radius: 0;
+		}
+		#whats-new-window :global(.dw-resize) {
+			display: none;
+		}
+	}
 	.wn-body {
 		font-size: 13px;
 		line-height: 1.6;

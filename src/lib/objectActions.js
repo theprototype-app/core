@@ -287,11 +287,30 @@ function detachMaterials(clone) {
 }
 
 /**
+ * A multi-select member wears an emissive HIGHLIGHT (applyMemberTints), and
+ * `detachMaterials` clones the material with that tint baked in — the copy then
+ * kept the selection blue forever. Restore each cloned node's recorded original
+ * emissive (source and clone share collectTree's depth-first order). 15-B2.
+ * @param {any} source @param {any} clone
+ */
+function stripSelectionTint(source, clone) {
+	const original = memberTints.get(source.uuid);
+	if (!original) return;
+	const sourceNodes = collectTree(source);
+	collectTree(clone).forEach((node, index) => {
+		const hex = original[sourceNodes[index]?.uuid];
+		if (hex !== undefined && node.material?.emissive) node.material.emissive.setHex(hex);
+	});
+}
+
+/**
  * Duplicate an object (Ctrl+D / context menu) and replicate the copy to peers.
  * Peers clone their own instance of the source, so no geometry re-export is needed.
  * @param {string=} uuid - defaults to the selected object
+ * @param {{select?: boolean}=} options - select:false leaves the selection alone
+ *   (duplicateSelection selects the whole clone SET once, at the end)
  */
-export function duplicateObject(uuid) {
+export function duplicateObject(uuid, options = {}) {
 	const group = get(objectsGroup);
 	const targetUuid = uuid ?? get(selectedObject)?.uuid;
 	const source = targetUuid ? group?.getObjectByProperty('uuid', targetUuid) : null;
@@ -301,6 +320,7 @@ export function duplicateObject(uuid) {
 	}
 	const clone = source.clone(true);
 	detachMaterials(clone);
+	stripSelectionTint(source, clone);
 	const cloneNodes = collectTree(clone);
 	cloneNodes.forEach((node) => (node.uuid = crypto.randomUUID()));
 	clone.name = (source.name || source.type) + ' copy';
@@ -320,7 +340,7 @@ export function duplicateObject(uuid) {
 			pos: clone.position.toArray()
 		});
 
-	selectObject(clone.uuid);
+	if (options.select !== false) selectObject(clone.uuid);
 	recordObjectPresence('create', clone);
 	return clone;
 }
@@ -329,11 +349,15 @@ export function duplicateObject(uuid) {
 export function duplicateSelection() {
 	const uuids = selectionUuids();
 	if (uuids.length <= 1) return duplicateObject(uuids[0]);
+	// 15-B2: selecting each clone mid-loop collapsed the set and restored the
+	// sources' tints one by one — the FIRST clone was made from a still-tinted
+	// source and then had that tint recorded as its "original". Clone the whole
+	// set first (each copy un-tinted by stripSelectionTint), select once after.
 	const clones = uuids
-		.map((uuid) => duplicateObject(uuid))
+		.map((uuid) => duplicateObject(uuid, { select: false }))
 		.filter(Boolean)
 		.map((clone) => clone.uuid);
-	if (clones.length > 1) applySelectionSet(clones);
+	if (clones.length) applySelectionSet(clones);
 	return clones;
 }
 

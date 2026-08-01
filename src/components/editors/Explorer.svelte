@@ -832,12 +832,21 @@
 	}
 
 	// N6: place a default-pack item into the scene (double-click / Enter) at origin
+	// 15-B3: the CDN fetch takes seconds — hold the SAME loading toast the drop
+	// path shows (it used to look like nothing happened until the model popped in)
 	async function placePackItem(item: any) {
+		const { holdLoadingToast } = await import('$lib/explorerDrop');
+		const dismiss = holdLoadingToast(String(item.name || 'model'));
 		try {
 			const res = await fetch(item.glbUrl);
-			if (!res.ok) return showToast('Could not fetch the pack item');
+			if (!res.ok) {
+				dismiss();
+				return showToast('Could not fetch the pack item');
+			}
 			await importFile(new File([await res.blob()], item.name + '.glb'), item.name, 'glb');
+			dismiss();
 		} catch {
+			dismiss();
 			showToast('Could not load the pack item (check the network / CORS)');
 		}
 	}

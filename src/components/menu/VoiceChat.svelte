@@ -26,7 +26,7 @@
      so an open flow editor / Explorer covers them -->
 <button
 	id="mic-button"
-	class="fixed bottom-16 right-4 z-[30] flex h-11 w-11 items-center justify-center rounded-full shadow-lg transition-colors
+	class="fixed bottom-16 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full shadow-lg transition-colors
 		{$micActive || $pttActive ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-700 hover:bg-gray-600'}"
 	title={$micActive ? 'Microphone on — click to mute' : 'Microphone off — click to talk, or hold V for push-to-talk'}
 	on:click={toggleMic}

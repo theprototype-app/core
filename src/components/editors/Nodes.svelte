@@ -633,7 +633,7 @@
 				<!-- explicit way back: show the Scene flow AND deselect the object -->
 				<button
 					id="flow-scope-scene"
-					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur hover:text-gray-100"
+					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur-sm hover:text-gray-100"
 					title="Back to the Scene flow (deselects the object)"
 					onclick={() => deselectObject()}
 				>
@@ -641,14 +641,14 @@
 				</button>
 			{/if}
 			<span
-				class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2.5 py-0.5 text-xs text-gray-200 backdrop-blur"
+				class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2.5 py-0.5 text-xs text-gray-200 backdrop-blur-sm"
 			>
 				{activeId === SCENE_GRAPH ? 'Scene flow' : activeOwnerName + ' — object flow'}
 			</span>
 			{#if activeId !== SCENE_GRAPH && hasActiveGraph}
 				<button
 					id="flow-scope-delete"
-					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur hover:text-red-400"
+					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur-sm hover:text-red-400"
 					title="Delete this object's flow"
 					onclick={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 				>
@@ -661,7 +661,7 @@
 		{#if activeId !== SCENE_GRAPH && !hasActiveGraph}
 			<div
 				id="flow-empty-state"
-				class="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-gray-900/60 backdrop-blur-[2px]"
+				class="absolute inset-0 z-5 flex flex-col items-center justify-center gap-3 bg-gray-900/60 backdrop-blur-[2px]"
 			>
 				<p class="text-sm text-gray-300">
 					<span class="font-semibold text-gray-100">{activeOwnerName}</span> has no flow yet
@@ -737,9 +737,9 @@
 			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
 			     ⚙ = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">
-				<button id="flow-tab-info" class="flex-1 rounded px-2 py-1 {propsTab === 'info' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'info' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
 					onclick={() => { propsTab = 'info'; LS?.setItem('flowPropsTab', 'info'); }}>ⓘ Params</button>
-				<button id="flow-tab-settings" class="flex-1 rounded px-2 py-1 {propsTab === 'settings' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'settings' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
 					onclick={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}>⚙ Settings</button>
 			</div>
 			{#if propsTab === 'info'}
@@ -761,14 +761,14 @@
 										items[i] = e.currentTarget.value;
 										setNodeData(selectedNode.id, { items });
 									}} />
-								<button class="rounded bg-gray-600 px-1.5 hover:bg-red-700" title="Remove item"
+								<button class="rounded-sm bg-gray-600 px-1.5 hover:bg-red-700" title="Remove item"
 									onclick={() => {
 										const items = (selectedNode.data?.items ?? ['cube', 'pyramid']).filter((_: any, x: number) => x !== i);
 										if (items.length) setNodeData(selectedNode.id, { items, index: 0, shape: items[0] });
 									}}>✕</button>
 							</div>
 						{/each}
-						<button id="param-switcher-add" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500"
+						<button id="param-switcher-add" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500"
 							onclick={() => {
 								const items = [...(selectedNode.data?.items ?? ['cube', 'pyramid']), 'item ' + ((selectedNode.data?.items?.length ?? 2) + 1)];
 								setNodeData(selectedNode.id, { items });
@@ -816,8 +816,8 @@
 					<input class="ui-input w-16" type="number" min="1" value={gridSize}
 						onchange={(e) => { gridSize = +e.currentTarget.value || 25; LS?.setItem('flowGridSize', String(gridSize)); }} /></label>
 				<div class="mt-1 flex gap-1">
-					<button id="flow-fit" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => fitView()}>Fit</button>
-					<button id="flow-reset-view" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => setViewport({ x: 0, y: 0, zoom: 1 })}>Reset view</button>
+					<button id="flow-fit" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => fitView()}>Fit</button>
+					<button id="flow-reset-view" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => setViewport({ x: 0, y: 0, zoom: 1 })}>Reset view</button>
 				</div>
 				<!-- B4.2: socket type -> color legend (sockets are painted by TYPE now) -->
 				<p class="ui-section-label mt-1">Socket types</p>
@@ -860,7 +860,7 @@
 			id="node-search-input"
 			use:focusInput
 			use:inputContextMenu
-			class="mx-2 mb-1 w-[calc(100%-16px)] rounded border border-gray-300 bg-transparent px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-500"
+			class="mx-2 mb-1 w-[calc(100%-16px)] rounded-sm border border-gray-300 bg-transparent px-2 py-1 focus:outline-hidden focus:ring-1 focus:ring-primary-500 dark:border-gray-500"
 			placeholder="Search nodes… (Esc = menu)"
 			value={search.query}
 			oninput={(e) => (search = { ...search, query: e.currentTarget.value, highlight: 0 })}

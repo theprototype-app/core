@@ -30,6 +30,7 @@ export const aiPromptBarOpen = writable(false);
 export const meshGenModalOpen = writable(null);
 export const libraryClose = writable(true);
 export const userdata = writable([]);
+/** @type {import('svelte/store').Writable<any>} */
 export const username = writable(null);
 
 // local player's avatar configuration (userdata slot 5, replicated to peers)

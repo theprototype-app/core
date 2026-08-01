@@ -213,7 +213,7 @@
 		<Button
 			color="primary"
 			class="nob shrink-0 rounded-lg bg-gray-400 text-white ring-0 dark:bg-gray-600 dark:text-gray-200"
-			on:click={copy}
+			onclick={copy}
 			title="Copy your invite link"><span class="inline-flex items-center gap-1.5" style="white-space: nowrap;"><Copy size={14} aria-hidden="true" />{myidcap}</span></Button
 		>
 		<span class="connect-divider"></span>
@@ -222,32 +222,32 @@
 			<!-- connected: a GRAY disabled input keeps the row the SAME width as idle (so
 				 the drawer, which matches the pill width, never reflows), + red Disconnect.
 				 Connection status lives in the drawer header. -->
-			<div class="cx-connect inline-flex rounded-md shadow-sm">
+			<div class="cx-connect inline-flex rounded-md shadow-xs">
 				<Input type="text" disabled title={connectedText} class="nob cx-input rounded-r-none border-0 opacity-70" value={connectedText} />
 				<Button
 					color="red"
 					id="disconnect-button"
 					class="nob shrink-0 rounded-l-none rounded-r-lg bg-red-600 text-white hover:bg-red-700 dark:bg-red-700 dark:text-gray-100 dark:hover:bg-red-800"
-					on:click={disconnect}
+					onclick={disconnect}
 					title="Leave the session (your local scene is kept)">Disconnect</Button
 				>
 			</div>
 		{:else if connState === 'pending'}
 			<!-- pending: same gray disabled input for a stable width + amber Cancel -->
-			<div class="cx-connect inline-flex rounded-md shadow-sm">
+			<div class="cx-connect inline-flex rounded-md shadow-xs">
 				<Input type="text" disabled title="Waiting for approval" class="nob cx-input rounded-r-none border-0 opacity-70" value={'Requesting ' + String(pendingOut[0]?.[0] ?? peerIdToConnect ?? '').toUpperCase()} />
 				<Button
 					color="yellow"
 					id="cancel-request-button"
 					class="nob shrink-0 rounded-l-none rounded-r-lg bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
-					on:click={cancelPending}
+					onclick={cancelPending}
 					title="Cancel the connection request">Cancel</Button
 				>
 			</div>
 		{:else}
 			<!-- idle: dial a peer — the input shrinks (down to cx-input min-width) so
 				 the Connect button stays visible when the row is tight -->
-			<div class="cx-connect inline-flex rounded-md shadow-sm">
+			<div class="cx-connect inline-flex rounded-md shadow-xs">
 				<!-- autocomplete off + a non-loginish name: Chrome's password manager was
 					 autofilling a saved Settings api-base/key pair into this box -->
 				<Input
@@ -261,7 +261,7 @@
 				<Button
 					color="primary"
 					class="nob shrink-0 rounded-l-none rounded-r-lg bg-blue-500 text-white dark:bg-blue-700 dark:text-gray-200"
-					on:click="{() => {connectToPeer(peerIdToConnect)}}"
+					onclick={() => {connectToPeer(peerIdToConnect)}}
 					>Connect</Button
 				>
 			</div>

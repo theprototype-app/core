@@ -49,7 +49,7 @@
 		id="image-preview-window"
 		bind:this={winEl}
 		tabindex="-1"
-		class="ui-panel fixed flex flex-col overflow-hidden outline-none"
+		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
 		use:dragWindow={{ key: 'imagePreviewWin', defaultRect: { left: 300, top: 130 } }}
 		use:focusStack
 		style="z-index: var(--z-window); width: 520px; height: 420px"

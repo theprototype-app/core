@@ -7,6 +7,7 @@
 		Modal,
 		Input,
 		Dropdown,
+		DropdownGroup,
 		DropdownHeader,
 		DropdownItem,
 		DropdownDivider
@@ -59,8 +60,8 @@
 	// 	});
 	// });
 
-	let classProfileSettings = 'z-10 z-10 inline-flex w-40 flex-shrink-0 flex-shrink-0 items-center rounded-s-lg border\
-	 border-gray-300 bg-gray-100 px-4 py-2.5 text-center text-sm font-medium text-gray-500 hover:bg-gray-200 focus:outline-none\
+	let classProfileSettings = 'z-10 z-10 inline-flex w-40 shrink-0 shrink-0 items-center rounded-s-lg border\
+	 border-gray-300 bg-gray-100 px-4 py-2.5 text-center text-sm font-medium text-gray-500 hover:bg-gray-200 focus:outline-hidden\
 	 focus:ring-4 focus:ring-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600\
 	 dark:focus:ring-gray-700';
 
@@ -217,7 +218,7 @@
 	<!-- E2: scene-notes drawer toggle -->
 	<button
 		id="notes-toggle"
-		class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur hover:bg-gray-700/85 {$notesDrawerOpen ? 'ring-2 ring-primary-500/60' : ''}"
+		class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur-sm hover:bg-gray-700/85 {$notesDrawerOpen ? 'ring-2 ring-primary-500/60' : ''}"
 		title="Scene notes"
 		aria-label="Scene notes"
 		onclick={() => notesDrawerOpen.update((v) => !v)}
@@ -234,7 +235,7 @@
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
 			id="peers-trigger"
-			class="flex items-center gap-2 rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-1 backdrop-blur hover:bg-gray-700/85"
+			class="flex items-center gap-2 rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-1 backdrop-blur-sm hover:bg-gray-700/85"
 			title="Connected peers"
 			onclick={() => (peersOpen = !peersOpen)}
 		>
@@ -338,7 +339,7 @@
 	</div>
 	<Dropdown
     placement="bottom-end"
-    bind:open={openDropdown}
+    bind:isOpen={openDropdown}
     triggeredBy="#avatar-menu"
     class="w-56"
     style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 998;"
@@ -354,6 +355,7 @@
 			{/if}
 		</div>
 	</DropdownHeader>
+	<DropdownGroup>
 	<DropdownItem
 		onclick={() => {
 			characterModalOpen.set(true);
@@ -365,6 +367,7 @@
 			profileSettingsOpen.set(true);
 			openDropdown = false;
 		}}>Profile Settings</DropdownItem>
+	</DropdownGroup>
 	<!-- open-core (PM): cloud account section — the plugin mounts Sign in/out +
 		 preferences here (moved out of the Connect pill). Plain block: the plugin
 		 owns its own clicks, so it is NOT a DropdownItem. -->
@@ -424,7 +427,7 @@
 				{/if}
 				<!-- reset to the signed-in account's picture (or the default) -->
 				{#if avatarImage || (typeof localStorage !== 'undefined' && localStorage.getItem('avatar'))}
-				<button id="avatar-reset" class="rounded border border-gray-500 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+				<button id="avatar-reset" class="rounded-sm border border-gray-500 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
 					onclick={resetAvatarToDefault}>Reset to {cid?.avatar ? 'account picture' : 'default'}</button>
 				{/if}
 			</div>
@@ -438,7 +441,7 @@
 			</p>
 			<Input
 				id="peer-id"
-				class="!rounded-s-none rounded-br-none"
+				class="rounded-s-none! rounded-br-none"
 				placeholder={$peers.peer.id}
 				disabled
 			/>
@@ -452,7 +455,7 @@
 			</p>
 			<Input
 				id="update-username"
-				class="!rounded-s-none rounded-tr-none"
+				class="rounded-s-none! rounded-tr-none"
 				placeholder={cid?.username ? '' + cid.username : 'Username'}
 				bind:value={$username}
 				onchange={onUsernameEdited}

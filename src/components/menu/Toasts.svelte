@@ -87,12 +87,31 @@ function autoDismiss(node: any, toast: any) {
     const id = setTimeout(() => dismiss(toast), typeof toast === 'string' ? 5000 : 15000);
     return { destroy() { clearTimeout(id); } };
 }
+
+// flowbite 1.x modals are native <dialog> TOP-LAYER — no z-index can beat them.
+// The critical container is therefore a MANUAL POPOVER: shown while approvals are
+// pending, it enters the top layer AFTER any open dialog and stacks above it, so
+// a connection request is still never missed behind a modal (the E1 guarantee).
+let criticalEl = $state<any>(null);
+$effect(() => {
+	const wanted = $pendingApprovals.length > 0 && !hideCritical;
+	const el = criticalEl;
+	if (!el || typeof el.showPopover !== 'function') return;
+	try {
+		if (wanted && !el.matches(':popover-open')) el.showPopover();
+		else if (!wanted && el.matches(':popover-open')) el.hidePopover();
+	} catch {
+		/* popover quirks (detached el) — the container still renders in-page */
+	}
+});
 </script>
 <!-- E1: CRITICAL container — connection requests + pending outbound requests stay
-     ABOVE modals (--z-toast) so an approval is never missed while a modal is open. -->
+     ABOVE modals (top-layer popover, see above) so an approval is never missed. -->
 <div class="my-4 toasts-container toasts-critical"
+popover="manual"
+bind:this={criticalEl}
 class:cxd-hidden={hideCritical}
-style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
+style="max-width: 500px; pointer-events: none;"
 >
 {#each $pendingApprovals as approval}
 <div class="my-1 cxreq" transition:fly={{ y: -8, duration: 180 }}>
@@ -140,7 +159,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 
 {#if $restoreAvailable}
 <div class="my-1">
-    <Toast dismissable={false} transition={fly} class="p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-blue-500" divClass="flex items-center gap-3">
+    <Toast dismissable={false} transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-blue-500">
         <div style="position: relative; left: 50%; transform: translate(-25%, -50%);"></div>
         <div class="mb-1 inline-flex items-center text-base font-medium">
             <p class="max-w-80 overflow-hidden pr-4 text-sm font-medium text-gray-500 dark:text-gray-200">
@@ -149,12 +168,12 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
             </p>
             <Button
                 color="primary"
-                class="nob rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
+                class="nob rounded-sm bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
                 onclick={() => restoreSnapshot()}>Restore</Button
             >
             <Button
                 color="alternative"
-                class="nob ml-2 rounded"
+                class="nob ml-2 rounded-sm"
                 onclick={() => dismissRestore()}>Dismiss</Button
             >
         </div>
@@ -167,7 +186,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
      it (appNotice.set(null)) or rebrand it. Dismissed once via hasSeenDisclaimer. -->
 {#if $appNotice && typeof localStorage !== 'undefined' && !localStorage.getItem('hasSeenDisclaimer')}
 <div class="my-1">
-    <Toast  transition={fly} class="p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-blue-500" divClass="flex items-center gap-3" on:close={() =>
+    <Toast  transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-blue-500" onclose={() =>
         { localStorage.setItem('hasSeenDisclaimer', 'true'); }
         }>
         <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
@@ -181,7 +200,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
             {#if $appNotice.ctaUrl}
             <Button
             color="primary"
-            class="nob rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
+            class="nob rounded-sm bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
             onclick={() => {
                 window.open($appNotice.ctaUrl, '_blank');
             }}
@@ -196,7 +215,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 
 {#if $specatorMode}
 <div class="my-1">
-    <Toast dismissable={false} transition={fly} class="p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700  border-2 border-red-500" divClass="flex items-center gap-3" on:close={() => 
+    <Toast dismissable={false} transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-red-500" onclose={() => 
         { localStorage.setItem('hasSeenDisclaimer', 'true'); }
         }>
         <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
@@ -211,7 +230,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
             </p>
             <Button
             color="primary"
-            class="nob rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
+            class="nob rounded-sm bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
             onclick={() => {
                 let dolly = $globalScene.getObjectByName('dolly')
                 dolly.attach($globalCamera)
@@ -240,7 +259,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 
 {#if $fixLight}
 <div class="my-1">
-    <Toast  transition={fly} class="p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-red-500" divClass="flex items-center gap-3" on:close={() => 
+    <Toast  transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-red-500" onclose={() => 
         { localStorage.setItem('hasSeenDisclaimer', 'true'); }
         }>
         <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
@@ -254,7 +273,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
             </p>
             <Button
             color="primary"
-            class="nob rounded bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
+            class="nob rounded-sm bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
             onclick={() => {
                 showSidebar('lightProperties');
                 sceneCommand('/light hemisphere');
@@ -303,6 +322,20 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
     .toasts-container {
         position: absolute;
         top: 65px;
+    }
+    /* the critical container is a manual POPOVER (top layer, above native dialogs);
+       reset the UA popover styles and keep the old centered-under-the-bar placement */
+    .toasts-critical[popover] {
+        position: fixed;
+        inset: auto;
+        top: 65px;
+        left: 50%;
+        transform: translate(-50%, 0);
+        margin: 0;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        overflow: visible;
     }
     .cxd-hidden {
         display: none !important;

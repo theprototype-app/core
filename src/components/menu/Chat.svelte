@@ -80,7 +80,7 @@
 		use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 } }}
 		use:focusStack
 		use:tabbable={{ key: 'chat', title: 'Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}
-		class="ui-panel flex h-[420px] w-[min(500px,90vw)] flex-col overflow-hidden bg-gray-900/85 backdrop-blur"
+		class="ui-panel flex h-[420px] w-[min(500px,90vw)] flex-col overflow-hidden bg-gray-900/85 backdrop-blur-sm"
 		style="z-index: var(--z-window)"
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
@@ -107,7 +107,7 @@
 									<span class="text-[11px] font-semibold opacity-90">{authorName(m)}</span>
 									<span class="text-[9px] text-gray-400">{stamp(m)}</span>
 								</span>
-								<span class="break-words">{m.text}</span>
+								<span class="wrap-break-word">{m.text}</span>
 							</li>
 						{/if}
 					{/each}
@@ -130,7 +130,7 @@
 					<div class="mb-1 flex flex-col gap-0.5 rounded-md border border-gray-700/60 bg-gray-800/95 p-1 text-xs">
 						{#each hints as hint}
 							<button
-								class="flex items-baseline gap-2 rounded px-1.5 py-0.5 text-left hover:bg-gray-700"
+								class="flex items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left hover:bg-gray-700"
 								onclick={() => {
 									message = hint.cmd + ' ';
 									document.getElementById('message')?.focus();

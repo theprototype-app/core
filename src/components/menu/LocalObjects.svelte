@@ -92,7 +92,7 @@
 
 {#if $showLocalObjects}
 	<div
-		class={'local-objs mb-1 rounded border ' +
+		class={'local-objs mb-1 rounded-sm border ' +
 			(dropHover ? 'border-primary-400 bg-primary-900/20' : 'border-amber-500/30 bg-amber-500/5')}
 		role="group"
 		ondragover={onDragOver}
@@ -106,7 +106,7 @@
 				<span class="rounded-full bg-amber-500/30 px-1.5 text-[10px]">{local.length}</span>
 			</span>
 			{#if local.length > 0 && !isViewerNow}
-				<button class="rounded bg-primary-700 px-1.5 py-0.5 text-[10px] text-white hover:bg-primary-600" title="Share all with peers" onclick={shareAll}>Share all</button>
+				<button class="rounded-sm bg-primary-700 px-1.5 py-0.5 text-[10px] text-white hover:bg-primary-600" title="Share all with peers" onclick={shareAll}>Share all</button>
 			{/if}
 		</div>
 

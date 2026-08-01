@@ -93,6 +93,10 @@ export default defineConfig({
 	},
 	plugins: [devAssetProxy(), emitVersionJson(), mkcert(), sveltekit()],
 	ssr: {
-		noExternal: ['three']
+		noExternal: ['three'],
+		// flowbite-svelte 1.x has an internal circular import vite 5's ssrImport
+		// can't order (500 at dev boot: 'not yet fully initialized due to circular
+		// dependency'); esbuild pre-bundling for SSR resolves the cycle
+		optimizeDeps: { include: ['flowbite-svelte'] }
 	}
 });

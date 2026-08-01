@@ -19,7 +19,7 @@
 {#if $meshJobs.length}
 	<div class="mesh-jobs">
 		{#each $meshJobs as job (job.id)}
-			<div class="ui-panel mesh-job bg-gray-900/90 backdrop-blur">
+			<div class="ui-panel mesh-job bg-gray-900/90 backdrop-blur-sm">
 				<div class="flex items-center gap-2">
 					<span class="text-sm">✨</span>
 					<span class="min-w-0 flex-1 truncate text-xs text-gray-200" title={job.prompt}>{job.prompt}</span>
@@ -39,7 +39,7 @@
 					{/if}
 				</div>
 				{#if RUNNING.has(job.status)}
-					<div class="mt-1 h-1 w-full overflow-hidden rounded bg-gray-700">
+					<div class="mt-1 h-1 w-full overflow-hidden rounded-sm bg-gray-700">
 						{#if job.progress != null}
 							<div class="h-full bg-primary-500" style={`width:${Math.round(job.progress * 100)}%`}></div>
 						{:else}

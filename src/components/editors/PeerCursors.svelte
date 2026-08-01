@@ -41,7 +41,7 @@
 				<path fill="currentColor" stroke="white" stroke-width="1.5" d="M4 2 L20 12 L12 13.5 L8.5 21 Z" />
 			</svg>
 			<span
-				class="ml-1 mt-3 whitespace-nowrap rounded px-1.5 py-0.5 text-xs text-white"
+				class="ml-1 mt-3 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-xs text-white"
 				style="background: {colorOf(id)}">{cursor.name}</span
 			>
 		</div>

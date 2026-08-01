@@ -40,7 +40,7 @@
 		id="model-preview-window"
 		bind:this={winEl}
 		tabindex="-1"
-		class="ui-panel fixed flex flex-col overflow-hidden outline-none"
+		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
 		use:dragWindow={{ key: 'modelPreviewWin', defaultRect: { left: 280, top: 120 } }}
 		use:focusStack
 		style="z-index: var(--z-window); width: 560px; height: 460px"
@@ -62,7 +62,7 @@
 			{#if stats}
 				<div
 					id="model-preview-stats"
-					class="pointer-events-none absolute right-2 top-2 rounded bg-black/60 px-2 py-1 text-right text-[11px] leading-tight text-gray-200"
+					class="pointer-events-none absolute right-2 top-2 rounded-sm bg-black/60 px-2 py-1 text-right text-[11px] leading-tight text-gray-200"
 				>
 					<div>{stats.tris.toLocaleString()} tris</div>
 					<div>{stats.verts.toLocaleString()} verts</div>

@@ -18,7 +18,7 @@
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<Socket kind="target" nodeType={data.type} position={Position.Left} id="target" style="top: 34px" />
 	<div class="flex w-full flex-col gap-1">
-		<span class="rounded bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300"
+		<span class="rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300"
 			>{speed.toFixed(2)} m/s</span
 		>
 		<p class="text-[10px] text-gray-400">object speed; approximate on non-sim peers</p>

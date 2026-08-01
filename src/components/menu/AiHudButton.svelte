@@ -26,7 +26,7 @@
 
 <button
 	id="ai-hud-button"
-	class="mobile-hud-btn fixed bottom-4 left-4 z-[30] flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg transition-colors hover:bg-gray-600"
+	class="mobile-hud-btn fixed bottom-4 left-4 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg transition-colors hover:bg-gray-600"
 	title="AI assistant"
 	aria-label="Open the AI assistant chat"
 	onclick={toggle}

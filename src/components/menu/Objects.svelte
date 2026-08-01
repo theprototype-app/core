@@ -166,7 +166,7 @@
     {#if rowVisible}
     <div id={element.uuid} oncontextmenu={openContextMenu}
         class={'group/row select-none ' +
-            (dropHover ? 'rounded outline outline-2 outline-primary-400 bg-primary-900/20 ' : '') +
+            (dropHover ? 'rounded-sm outline-solid outline-2 outline-primary-400 bg-primary-900/20 ' : '') +
             (lockEntry ? '' : 'cursor-grab active:cursor-grabbing')}
         role="listitem"
         draggable={!lockEntry}
@@ -175,7 +175,7 @@
         ondragleave={clearHoverExpand}
         ondrop={onRowDrop}>
         <div
-            class={'flex w-full items-center gap-1 rounded px-1 py-0.5 text-sm ' +
+            class={'flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-sm ' +
                 (isSelected
                     ? 'bg-primary-900/50 text-primary-100'
                     : 'text-gray-800 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600/50')}

@@ -23,7 +23,8 @@
 		removeObjectTexture,
 		setMaterialParam,
 		switchMaterialType,
-		recordMaterialChange
+		recordMaterialChange,
+		setObjectColor
 	} from '$lib/materialsHandler';
 	import { recordEntry } from '$lib/history';
 	import { bottomInset } from '$lib/bottomDock';
@@ -69,7 +70,8 @@
 		deleteEnvPreset,
 		exportEnvPreset,
 		importEnvPreset,
-		applyCustomPreset
+		applyCustomPreset,
+		editEnvSky
 	} from '$lib/environment';
 	import {
 		globalScene,
@@ -426,7 +428,10 @@
 	// ---- scene target (fog state is local, like the old scene panel) --------
 	// fogColor is INITIALIZED: svelte 5.56 hard-errors on `bind:hex={undefined}`
 	// when the prop has a fallback (props_invalid_value) — undefined here
-	// CRASHED the whole scene drawer (pre-existing on release/1.1, deps bump)
+	// CRASHED the whole scene drawer (pre-existing on release/1.1, deps bump).
+	// 15-C: the pickers pass `hex` ONE-WAY now (color-picker v4 writes its own
+	// snapshot back through a binding and clobbers external writes — an env
+	// preset or a selection change); `onInput` is the input channel.
 	/** @type {any} */
 	let fogColor = $state('#ffffff');
 	/** @type {any} */
@@ -465,15 +470,23 @@
 		}
 		event.target.value = '';
 	}
-	function sendBackgroundColor() {
-		$peers.send({ type: 'color', uuid: 'background', color: $backgroundColor });
-	}
-	function sendFogColor() {
-		$peers.send({ type: 'color', uuid: 'fog', color: fogColor, near: fogNear, far: fogFar });
+	// 15-C: sky edits go through the ENVIRONMENT (editEnvSky detaches a live
+	// custom preset). Writing scene.background / scene.fog directly was undone
+	// by the next applyEnvironment() — the reason "changing the background did
+	// nothing" survived even after the picker's dead handler was fixed. The env
+	// commit also persists + replicates ({type:'environment'}), so peers and a
+	// reload keep the color.
+	/** @param {string} hex */
+	function setBackground(hex) {
+		backgroundColor.set(hex);
+		editEnvSky({ background: hex });
 	}
 	function applyFog() {
-		$globalScene.fog = new THREE.Fog(fogColor ?? '#ffffff', fogNear, fogFar);
-		sendFogColor();
+		editEnvSky(
+			fogNear === null || fogFar === null
+				? { fog: null }
+				: { fog: { color: fogColor ?? '#ffffff', near: fogNear, far: fogFar } }
+		);
 	}
 </script>
 
@@ -892,7 +905,8 @@
 			<Section label="Background">
 				<ColorPicker
 					isAlpha={false}
-					isTextInput={false}
+					isTextInput={true}
+					textInputModes={['hex', 'rgb', 'hsv']}
 					isDialog={false}
 					components={{ ...ChromeVariant, wrapper: CustomWrapper }}
 					isOpen={true}
@@ -903,23 +917,15 @@
 					--picker-height="70px"
 					--picker-width="50px"
 					--slider-width="10px"
-					bind:hex={$backgroundColor}
-					on:input={(event) => {
-						$backgroundColor = event.detail.hex;
-						$globalScene.background = new THREE.Color($backgroundColor);
-						sendBackgroundColor();
-					}}
+					hex={$backgroundColor}
+					onInput={(/** @type {any} */ c) => setBackground(c.hex)}
 				/>
 				<input
 					type="text"
 					class="ui-input w-full"
 					value={$backgroundColor}
 					onchange={(e) => {
-						if (hexColor.test(e.currentTarget.value)) {
-							$backgroundColor = e.currentTarget.value;
-							$globalScene.background = new THREE.Color($backgroundColor);
-							sendBackgroundColor();
-						}
+						if (hexColor.test(e.currentTarget.value)) setBackground(e.currentTarget.value);
 					}}
 				/>
 			</Section>
@@ -927,7 +933,8 @@
 			<Section label="Fog">
 				<ColorPicker
 					isAlpha={false}
-					isTextInput={false}
+					isTextInput={true}
+					textInputModes={['hex', 'rgb', 'hsv']}
 					isDialog={false}
 					components={{ ...ChromeVariant, wrapper: CustomWrapper }}
 					isOpen={true}
@@ -938,9 +945,9 @@
 					--picker-height="70px"
 					--picker-width="50px"
 					--slider-width="10px"
-					bind:hex={fogColor}
-					on:input={(event) => {
-						fogColor = event.detail.hex;
+					hex={fogColor}
+					onInput={(/** @type {any} */ c) => {
+						fogColor = c.hex;
 						applyFog();
 					}}
 				/>
@@ -963,10 +970,9 @@
 					size="xs"
 					color="alternative"
 					onclick={() => {
-						$globalScene.fog = null;
 						fogNear = null;
 						fogFar = null;
-						sendFogColor();
+						editEnvSky({ fog: null });
 					}}>Remove Fog</Button
 				>
 			</Section>
@@ -1169,7 +1175,8 @@
 				<Section label="Light">
 					<ColorPicker
 						isAlpha={false}
-						isTextInput={false}
+						isTextInput={true}
+						textInputModes={['hex', 'rgb', 'hsv']}
 						isDialog={false}
 						components={{ ...ChromeVariant, wrapper: CustomWrapper }}
 						isOpen={true}
@@ -1180,10 +1187,10 @@
 						--picker-height="70px"
 						--picker-width="50px"
 						--slider-width="10px"
-						bind:hex={color}
-						on:input={(event) => {
-							$selectedObject.color.set(event.detail.hex);
-							color = event.detail.hex;
+						hex={color}
+						onInput={(/** @type {any} */ c) => {
+							$selectedObject.color.set(c.hex);
+							color = c.hex;
 							sendLightUpdate();
 						}}
 					/>
@@ -1203,7 +1210,8 @@
 						<p class="ui-section-label">Ground color</p>
 						<ColorPicker
 							isAlpha={false}
-							isTextInput={false}
+							isTextInput={true}
+							textInputModes={['hex', 'rgb', 'hsv']}
 							isDialog={false}
 							components={{ ...ChromeVariant, wrapper: CustomWrapper }}
 							isOpen={true}
@@ -1214,10 +1222,10 @@
 							--picker-height="70px"
 							--picker-width="50px"
 							--slider-width="10px"
-							bind:hex={groundColor}
-							on:input={(event) => {
-								$selectedObject.groundColor.set(event.detail.hex);
-								groundColor = event.detail.hex;
+							hex={groundColor}
+							onInput={(/** @type {any} */ c) => {
+								$selectedObject.groundColor.set(c.hex);
+								groundColor = c.hex;
 								sendLightUpdate();
 							}}
 						/>
@@ -1333,7 +1341,8 @@
 					{#if material.color && material.type !== 'MeshNormalMaterial'}
 						<ColorPicker
 							isAlpha={false}
-							isTextInput={false}
+							isTextInput={true}
+							textInputModes={['hex', 'rgb', 'hsv']}
 							isDialog={false}
 							components={{ ...ChromeVariant, wrapper: CustomWrapper }}
 							isOpen={true}
@@ -1344,11 +1353,15 @@
 							--picker-height="70px"
 							--picker-width="50px"
 							--slider-width="10px"
-							bind:hex={color}
-							on:input={(event) => {
-								trackColorGesture($selectedObject.uuid, event.detail.hex);
-								$selectedObject.material.color.set(event.detail.hex);
-								$peers.send({ type: 'color', uuid: $selectedObject.uuid, color: event.detail.hex });
+							hex={color}
+							onInput={(/** @type {any} */ c) => {
+								// live drag: ONE debounced undo entry per gesture (setObjectColor
+								// would record on every frame), then apply + replicate
+								trackColorGesture($selectedObject.uuid, c.hex);
+								$selectedObject.material.color.set(c.hex);
+								$selectedObject.material.needsUpdate = true;
+								objectsGroup.update((v) => v);
+								$peers.send({ type: 'color', uuid: $selectedObject.uuid, color: c.hex });
 							}}
 						/>
 						<input
@@ -1358,8 +1371,9 @@
 							onchange={(e) => {
 								if (hexColor.test(e.currentTarget.value)) {
 									color = e.currentTarget.value;
-									$selectedObject.material.color.set(color);
-									$peers.send({ type: 'color', uuid: $selectedObject.uuid, color });
+									// a typed value is ONE discrete change — the shared write path
+									// applies, replicates and records a single undo entry
+									setObjectColor($selectedObject.uuid, color);
 								}
 							}}
 						/>

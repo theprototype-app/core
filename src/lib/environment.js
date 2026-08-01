@@ -289,6 +289,24 @@ export function applyCustomPreset(payload) {
 	});
 }
 
+/**
+ * 15-C: the scene inspector's Background / Fog controls wrote the scene (and
+ * the backgroundColor store) DIRECTLY, and the next applyEnvironment() restored
+ * the preset's values — so the edit looked like it did nothing. (Invisible
+ * until the color picker's dead `on:input` was fixed, since the handler never
+ * ran at all.) Editing the sky now detaches into a live custom payload, exactly
+ * like editRigComponent: it sticks, persists and replicates.
+ * @param {{background?: string, fog?: {color?: string, near?: number, far?: number} | null}} patch
+ */
+export function editEnvSky(patch) {
+	const payload = JSON.parse(JSON.stringify(presetPayload()));
+	payload.label = 'Custom';
+	if (patch.background !== undefined) payload.background = patch.background;
+	if (patch.fog !== undefined)
+		payload.fog = patch.fog === null ? null : { ...(payload.fog ?? {}), ...patch.fog };
+	commit({ preset: 'custom', customPreset: payload });
+}
+
 /** Editing a rig component detaches into a live custom payload
  * @param {'hemi'|'sun'} part @param {any} patch */
 export function editRigComponent(part, patch) {

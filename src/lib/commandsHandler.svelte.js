@@ -15,6 +15,7 @@ import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimat
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
+import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
 import { get } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
@@ -112,6 +113,9 @@ export function sceneCommand(command) {
         if (command.startsWith('/clear')) {
             if (command.split(' ')[1] == 'all')
             {
+                // 15-J: viewer send-gate — peers drop a viewer's clearscene (cloud
+                // capability gate), so clearing locally would only desync this client.
+                if (isViewer()) { warnViewerReadOnly('View-only — ask an editor to clear the scene.'); return; }
                 clearSceneLocal();
                 peer.send({type: 'clearscene', peerId: peer.peer.id});
             } else {

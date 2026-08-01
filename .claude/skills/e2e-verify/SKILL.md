@@ -8,7 +8,8 @@ description: Verify theprototype.app changes end-to-end with Playwright — the 
 ## The committed suite (start here)
 
 `tests/e2e/*.test.cjs` + `helpers.cjs` (`.cjs` — the package is `"type": "module"`).
-Run with the dev server up (`npm run dev`, https on 5173):
+Run with the dev server up (`npm run dev`, https on 5173 via the repo certs/ —
+vite-plugin-mkcert is gone; node >= 24 required, engines-gated):
 
 ```
 npm run e2e                      # all suites (~80), sequential, ~25-30 min
@@ -269,7 +270,7 @@ drops the P2P session.
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-08-01 = **438 errors / 62 warnings** (drifts down as flowbite/typed
+  baseline 2026-08-01 = **435 errors / 62 warnings** (node 24, all A-D migrations in) (drifts down as flowbite/typed
   code is removed — hold whatever it currently is; add no NEW; the release.yml gate
   hardcodes the numbers — update it when the baseline moves). Note: in the big
   JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —

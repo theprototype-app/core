@@ -421,18 +421,36 @@ loadable play content. Everything a user does must be visible to connected peers
 - `event.code` (`Digit1`) for digit shortcuts — `event.key` breaks with Shift.
 - Stores initialized `writable(null)`/`writable([])` infer `never` — annotate with
   JSDoc `Writable<any>`; keep NEW files clean (legacy implicit-any baseline stays).
-- `npm i` needs `--legacy-peer-deps` (three vs postprocessing peer conflict).
+- **Runtime = node >= 24** (engines-gated, engine-strict .npmrc; 2026-08-01). Plain
+  `npm install` works — the old `--legacy-peer-deps` requirement died with three 0.185
+  (postprocessing widened its peer range). Dev https uses the repo's own `certs/`
+  files via `server.https` in vite.config (vite-plugin-mkcert was dropped). npm 11
+  gates postinstall scripts (`allow-scripts` warning) — if a native dep misbehaves
+  after install, check `npm approve-scripts`.
 - **Release ritual (V6)**: `npm version minor|patch` + `git push origin main
   --follow-tags` — the v* tag triggers `.github/workflows/release.yml` (build +
-  svelte-check baseline gate + GitHub Release). Full doc: committed `RELEASING.md`.
-  The version bump is the SINGLE source of truth (About / peer handshake /
-  .tpscene+.tpmodule provenance / static/version.json all derive from it).
-- **Deps policy (2026-07-28)**: three/@threlte/*/@xyflow/flowbite*/tailwind/vite/TS are
-  DELIBERATELY frozen — each has a planned migration in the cloud repo
-  `plans-core/pending/deps-migrations-post-1.0.md`; Dependabot (grouped monthly,
-  `.github/dependabot.yml`) ignores them and `npm run deps:check` reports drift
-  (non-blocking; also runs in the cloud deploy). Don't bump them ad hoc. A playwright
-  bump needs `npx playwright install chromium` or every suite fails at launch.
+  svelte-check baseline gate + GitHub Release; UPDATE the gate's hardcoded numbers
+  when the baseline moves). Full doc: committed `RELEASING.md`. The version bump is
+  the SINGLE source of truth (About / peer handshake / .tpscene+.tpmodule
+  provenance / static/version.json all derive from it).
+- **Deps policy (2026-08-01, post-migrations)**: the A-D migrations SHIPPED — three
+  0.185 + threlte stable, @xyflow/svelte 1.6 (flow editor on runes), tailwind 4 +
+  flowbite-svelte 1.x (NON-modal native dialogs — see the modal gotcha), vite 7 +
+  node 24. Still frozen (dependabot ignores + `npm run deps:check` FROZEN list):
+  TypeScript 7 (until svelte-check peers ^7) and rapier (solver behavior). Everything
+  else takes normal grouped-monthly Dependabot PRs. A playwright bump needs
+  `npx playwright install chromium` or every suite fails at launch. svelte-check
+  baselines DRIFT with dep bumps — re-measure on a pristine worktree before gating.
+- **Modal gotcha (flowbite 1.x)**: app modals (Settings/Modules/Sessions/Character/
+  profile/Library) are NON-MODAL native dialogs (`modal={false}` → dialog.show()) so
+  the z-tier chrome above --z-modal stays CLICKABLE (logo one-click close+menu,
+  Connect bar, approval toasts, ThemedSelect body-portals). Never switch them to
+  showModal(): the top layer makes everything else INERT — body-portaled menus and
+  toasts go visible-but-dead, and top-layer popovers do NOT escape inertness. The
+  ::before pseudo is the backdrop (non-modal dialogs have no ::backdrop); flowbite's
+  outsideclose bbox math treats clicks on it as outside. ConfirmModal alone stays
+  truly modal (blocking confirm). ESC = per-dialog onkeydown (no cancel event
+  non-modal).
 - PowerShell mangles emoji AND em-dashes when rewriting files, and inline `node -e`
   quoting breaks — write a scratch `.cjs` and run it with node for any file rewrite
   containing non-ASCII. Commit messages: **ASCII only** — a `▸`/em-dash inside a

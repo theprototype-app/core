@@ -350,6 +350,7 @@
 <Modal
 	title="Settings"
 	bind:open={$settingsOpen}
+	modal={false} onkeydown={(e) => { if (e.key === 'Escape') settingsOpen.set(false); }}
 	outsideclose
 	size="xl"
 	class="tp-modal-frame"

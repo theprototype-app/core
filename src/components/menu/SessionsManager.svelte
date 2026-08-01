@@ -113,6 +113,7 @@
 <Modal
 	title="Sessions"
 	bind:open={$sessionsOpen}
+	modal={false} onkeydown={(e) => { if (e.key === 'Escape') sessionsOpen.set(false); }}
 	outsideclose
 	size="lg"
 	class="tp-modal-frame"

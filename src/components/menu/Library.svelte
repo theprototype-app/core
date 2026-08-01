@@ -271,7 +271,7 @@
 </div>
 {/if}
 
-<Modal title={selected?.name} bind:open={attributionModal} autoclose>
+<Modal title={selected?.name} bind:open={attributionModal} autoclose modal={false} onkeydown={(e) => { if (e.key === 'Escape') attributionModal = false; }} class="tp-modal-frame">
 	<div class="modal-content max-h-[90vh] overflow-y-auto p-4">
 		<p class="pb-4 text-white dark:text-slate-200">{@html attribution}</p>
 	</div>

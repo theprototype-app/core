@@ -8,29 +8,38 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// Settings modal renders in the browser TOP LAYER (flowbite 1.x = native <dialog>
-	// + showModal) - above ALL page chrome by definition; z-index tiers no longer apply
+	// App modals are NON-MODAL native dialogs (modal={false} -> dialog.show()):
+	// no top layer, no inertness — they sit on the --z-modal tier (1100) so the
+	// chrome ABOVE that tier (approval toasts 1200, logo menu 1300, ThemedSelect
+	// portals 9999) stays visible AND clickable while a modal is open.
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	const modal = await A.page.evaluate(() => {
 		const d = document.querySelector('dialog.tp-modal-frame');
-		return { exists: !!d, topLayer: !!d && d.matches(':modal') };
+		return {
+			exists: !!d,
+			nonModal: !!d && !d.matches(':modal'),
+			z: d ? parseInt(getComputedStyle(d).zIndex) : null
+		};
 	});
-	h.check(modal.exists && modal.topLayer, 'settings modal is a native top-layer dialog (above all chrome)');
-	// E1 guarantee survives top layer: a pending approval's container is a MANUAL
-	// POPOVER shown after the dialog, so it stacks above the modal
-	const approvalAbove = await A.page.evaluate(async () => {
+	h.check(modal.exists && modal.nonModal && modal.z >= 1100, `settings modal is a NON-modal dialog on the modal tier (z=${modal.z})`);
+	// the E1 guarantee, now with CLICKABILITY: an approval toast renders above the
+	// open modal and its Approve button takes a REAL mouse click
+	const approvalClickable = await A.page.evaluate(async () => {
 		const s = window.__stores;
 		let before;
 		s.pendingApprovals.subscribe((v) => (before = v))();
 		s.pendingApprovals.set([{ peerId: 'e2etest', status: 'new' }]);
 		await new Promise((r) => setTimeout(r, 300));
-		const el = document.querySelector('.toasts-critical');
-		const open = !!el && el.matches(':popover-open');
+		const btn = [...document.querySelectorAll('.toasts-critical button')].find((b) => /approve/i.test(b.textContent));
+		if (!btn) { s.pendingApprovals.set(before ?? []); return { found: false }; }
+		const r = btn.getBoundingClientRect();
+		const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+		const clickable = !!hit && (hit === btn || btn.contains(hit));
 		s.pendingApprovals.set(before ?? []);
-		return open;
+		return { found: true, clickable };
 	});
-	h.check(approvalAbove, 'pending approval popover enters the top layer above the open modal');
+	h.check(approvalClickable.found && approvalClickable.clickable, 'approval toast is hit-testable ABOVE the open modal');
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await A.page.waitForTimeout(200);
 

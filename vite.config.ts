@@ -1,11 +1,10 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, type Plugin } from 'vite';
-import mkcert from 'vite-plugin-mkcert';
 import pkg from './package.json';
 // @ts-ignore -- no @types/node in this project (adding them shifts the svelte-check baseline)
 import { execSync } from 'node:child_process';
 // @ts-ignore -- same node-types caveat
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 
 // Version identity is baked at build time (V1): `npm version` in package.json is the
 // single source of truth, the sha comes from the checkout. vite `define` reaches dev,
@@ -91,12 +90,19 @@ export default defineConfig({
 		__APP_VERSION__: JSON.stringify(pkg.version),
 		__COMMIT_SHA__: JSON.stringify(commitSha())
 	},
-	plugins: [devAssetProxy(), emitVersionJson(), mkcert(), sveltekit()],
+	plugins: [devAssetProxy(), emitVersionJson(), sveltekit()],
+	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
+	// certs/ was already how CI-less https worked before mkcert)
+	server: {
+		https: (() => {
+			try {
+				return { cert: readFileSync('certs/localhost.crt'), key: readFileSync('certs/localhost.key') };
+			} catch {
+				return undefined;
+			}
+		})()
+	},
 	ssr: {
-		noExternal: ['three'],
-		// flowbite-svelte 1.x has an internal circular import vite 5's ssrImport
-		// can't order (500 at dev boot: 'not yet fully initialized due to circular
-		// dependency'); esbuild pre-bundling for SSR resolves the cycle
-		optimizeDeps: { include: ['flowbite-svelte'] }
+		noExternal: ['three']
 	}
 });

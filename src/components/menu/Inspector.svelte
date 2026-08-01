@@ -32,7 +32,7 @@
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { moveObjectToGroup, selectObject } from '$lib/objectActions';
-	import { listPhysicsObjects, enablePhysicsOnSelection, PHYSICS_MATERIALS, physicsShapeChanged } from '$lib/physics';
+	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
@@ -364,13 +364,9 @@
 
 	/** @param {any} patch */
 	function setPhysics(patch) {
-		const before = $selectedObject.userData.physics ? { ...$selectedObject.userData.physics } : null;
-		const next = { mode: 'auto', ...($selectedObject.userData.physics ?? {}), ...patch };
-		$selectedObject.userData.physics = next;
-		recordEntry({ kind: 'props', uuid: $selectedObject.uuid, before: { physics: before }, after: { physics: next } });
-		$peers.send({ type: 'objectParameters', parameter: 'physics', uuid: $selectedObject.uuid, physics: next });
-		objectsGroup.update((v) => v); // collider viz re-syncs from the poke
-		physicsShapeChanged($selectedObject.uuid); // CL-A A2: live mid-sim rebuild
+		// shared write path — replicates, records props undo, pokes the collider
+		// viz and live-rebuilds mid-sim colliders (CL-A A2) for EVERY caller
+		setPhysicsFor($selectedObject.uuid, patch);
 		selectedObject.update((v) => v);
 	}
 

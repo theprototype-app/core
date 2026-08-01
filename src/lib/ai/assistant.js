@@ -92,6 +92,16 @@ function toolStatusLabel(name, args) {
 	if (name === 'group_objects') return 'Grouping objects';
 	if (name === 'clear_scene') return 'Clearing the scene';
 	if (name === 'list_scene') return 'Reading the scene';
+	if (name === 'create_flow_nodes') return 'Adding ' + (args?.nodes?.length ?? 0) + ' behavior node(s)';
+	if (name === 'update_flow_nodes') {
+		const removing = args?.remove?.length ?? 0;
+		const updating = args?.updates?.length ?? 0;
+		if (removing && !updating) return 'Removing ' + removing + ' behavior node(s)';
+		return 'Updating ' + updating + ' behavior node(s)';
+	}
+	if (name === 'set_physics') return 'Setting physics on ' + (args?.updates?.length ?? 0) + ' object(s)';
+	if (name === 'create_joints') return 'Attaching ' + (args?.joints?.length ?? 0) + ' joint(s)';
+	if (name === 'control_simulation') return 'Simulation: ' + (args?.action ?? '…');
 	return name;
 }
 
@@ -105,16 +115,23 @@ function toolStatusLabel(name, args) {
  */
 function tallyChanges(name, result, tally) {
 	if (name === 'list_scene' || !result || typeof result !== 'object') return;
+	// read-only-style: starting/stopping the sim changes no scene content
+	if (name === 'control_simulation') return;
 	/** @param {any[]} list */
 	const addAll = (list) => {
 		for (const entry of list) {
 			if (!entry || entry.error) continue;
 			if (typeof entry.uuid === 'string') tally.uuids.add(entry.uuid);
-			else tally.other += 1;
+			else tally.other += 1; // flow nodes / joints have no object uuid
 		}
 	};
 	if (Array.isArray(result.created)) return addAll(result.created);
-	if (Array.isArray(result.updated)) return addAll(result.updated);
+	if (Array.isArray(result.updated)) {
+		addAll(result.updated);
+		if (typeof result.removed === 'number') tally.other += result.removed;
+		return;
+	}
+	if (Array.isArray(result.joints)) return addAll(result.joints);
 	if (typeof result.deleted === 'number') {
 		tally.other += result.deleted;
 		return;

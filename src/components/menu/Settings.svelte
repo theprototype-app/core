@@ -81,6 +81,7 @@
 	let aiFormKey = '';
 	let aiFormModel = '';
 	let aiFormStream = true;
+	let aiFormPhysics = false;
 	let aiFormTemp = '';
 	let aiTesting = false;
 	let aiTestResult: { ok: boolean; detail: string; modelOk?: boolean | null; model?: string } | null = null;
@@ -141,6 +142,7 @@
 		aiApplyPreset();
 		aiFormKey = '';
 		aiFormStream = true;
+		aiFormPhysics = false;
 		aiFormTemp = '';
 		aiTestResult = null;
 		aiFormModels = [];
@@ -157,6 +159,7 @@
 		aiFormKey = p.apiKey;
 		aiFormModel = p.model;
 		aiFormStream = p.stream !== false;
+		aiFormPhysics = p.physicsTools === true;
 		aiFormTemp = typeof p.temperature === 'number' ? String(p.temperature) : '';
 		aiTestResult = null;
 		aiFormModels = Array.isArray(p.models) ? p.models : [];
@@ -179,6 +182,7 @@
 			apiKey: aiFormKey,
 			model: aiFormModel,
 			stream: aiFormStream,
+			physicsTools: aiFormPhysics,
 			temperature: Number.isFinite(temp) ? temp : undefined,
 			models: aiFormModels
 		};
@@ -862,6 +866,19 @@
 									<input type="checkbox" bind:checked={aiFormStream} />
 									Stream responses
 								</label>
+								<label class="flex items-center gap-2 text-[13px] text-gray-300">
+									<input id="ai-physics-tools" type="checkbox" bind:checked={aiFormPhysics} />
+									Physics tools (advanced)
+								</label>
+								<span class="text-[11px] leading-snug text-gray-400">
+									Lets the assistant set physics bodies, attach joints and start the simulation.
+									Multi-step physics is hard for small local models (4B) — recommended for 14B+
+									or hosted models.
+									<button
+										class="underline hover:text-gray-200"
+										on:click={() => window.open('https://docs.theprototype.app/ai/local-models/', '_blank')}
+									>Local &amp; small models guide</button>
+								</span>
 								<input class="ui-input" placeholder="Temperature (blank = server default)" bind:value={aiFormTemp} />
 								<span class="text-[11px] leading-snug text-gray-400">
 									Turn streaming OFF for a self-hosted server whose tool calls only work unstreamed —

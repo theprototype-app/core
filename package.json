@@ -46,7 +46,7 @@
 		"@threlte/core": "^8.5.16",
 		"@threlte/extras": "^9.21.0",
 		"@threlte/xr": "^1.6.1",
-		"@xyflow/svelte": "^0.1.39",
+		"@xyflow/svelte": "^1.6.2",
 		"codemirror": "^6.0.2",
 		"fflate": "^0.8.3",
 		"invert-color": "^2.0.0",

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Trash2 } from '@lucide/svelte';
 	import {
 		SvelteFlow,
@@ -15,7 +16,7 @@
 	// 👇 this is important! You need to import the styles for Svelte Flow to work
 	import '@xyflow/svelte/dist/style.css';
 	import '../../styles/flow.css';
-	import { writable, get } from 'svelte/store';
+	import { get } from 'svelte/store';
 	import Sidebar from './Sidebar.svelte';
 	import PeerCursors from './PeerCursors.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -48,7 +49,7 @@
 	import FlowIONode from './nodes/FlowIONode.svelte';
 	import ObjectFlowNode from './nodes/ObjectFlowNode.svelte';
 	import KeyPressNode from './nodes/KeyPressNode.svelte';
-	import { flowNodes as nodes, flowEdges as edges, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
+	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
 	import { deselectObject } from '$lib/objectActions';
 	import { objectsGroup, selectedObject, selectedObjects } from '../../stores/sceneStore';
@@ -68,7 +69,7 @@
 			.flatMap((group) => group.items)
 			.map((item) => [item.type, moduleNodeComponents[item.type] ?? AnimationNode])
 	);
-	const nodeTypes = {
+	const nodeTypes: any = {
 		colorpicker: ColorPickerNode,
 		slider: SliderNode,
 		switcher: SwitcherNode,
@@ -124,62 +125,116 @@
 
 	// palette collapse + side (82), persisted. Exported so the docked host (Flow) can
 	// inset its content above the Controls HUD only when the palette is actually shown.
-	export let paletteOpen = typeof localStorage === 'undefined' || localStorage.getItem('flowPaletteOpen') !== 'false';
-	let paletteSide = typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteSide') ?? 'left' : 'left';
+	let {
+		paletteOpen = $bindable(
+			typeof localStorage === 'undefined' || localStorage.getItem('flowPaletteOpen') !== 'false'
+		)
+	}: { paletteOpen?: boolean } = $props();
+	let paletteSide = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteSide') ?? 'left' : 'left');
+
+	// --- xyflow v1 bridge -------------------------------------------------------
+	// SvelteFlow 1.x binds PLAIN $state.raw arrays (immutable-style updates), not
+	// writable stores. The flowNodes/flowEdges stores REMAIN the contract for all
+	// lib code (nodesHandler appliers, history, flowRuntime, FlowCode...); these
+	// locals mirror the ACTIVE graph's view store both ways.
+	let nodes = $state.raw<Node[]>([]);
+	let edges = $state.raw<Edge[]>([]);
+	let pushingToStore = false;
+	// store -> local (remote edits, undo, graph switches). The subscribe callback
+	// fires synchronously and reads `nodes`/`edges`, so it runs inside untrack()
+	// or the effect would re-run (and resubscribe) on every local change.
+	$effect(() =>
+		untrack(() =>
+			flowNodesStore.subscribe((v: any[]) => {
+				if (pushingToStore) return;
+				if (v !== nodes) nodes = v as Node[];
+			})
+		)
+	);
+	$effect(() =>
+		untrack(() =>
+			flowEdgesStore.subscribe((v: any[]) => {
+				if (pushingToStore) return;
+				if (v !== edges) edges = v as Edge[];
+			})
+		)
+	);
+	// local -> store (drag positions, selection, connects made by SvelteFlow)
+	$effect(() => {
+		const local = nodes; // track
+		untrack(() => {
+			if (local !== get(flowNodesStore)) {
+				pushingToStore = true;
+				flowNodesStore.set(local);
+				pushingToStore = false;
+			}
+		});
+	});
+	$effect(() => {
+		const local = edges; // track
+		untrack(() => {
+			if (local !== get(flowEdgesStore)) {
+				pushingToStore = true;
+				flowEdgesStore.set(local);
+				pushingToStore = false;
+			}
+		});
+	});
 
 	// 166: flow PROPERTIES panel — curated graph prefs (LOCAL, persisted) + the
 	// selected node's props. Right-side, collapses like the palette.
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
-	let propsOpen = LS?.getItem('flowPropsOpen') === 'true';
+	let propsOpen = $state(LS?.getItem('flowPropsOpen') === 'true');
 	// 4.3: right-panel tab — 'info' (selected node's params) | 'settings' (graph + name/note)
-	let propsTab = LS?.getItem('flowPropsTab') || 'settings';
+	let propsTab = $state(LS?.getItem('flowPropsTab') || 'settings');
 	// 179: the properties panel auto-reflows to the side OPPOSITE the palette so
 	// their divider tabs never overlap (the palette-side toggle used to hide it)
-	$: propsSide = paletteSide === 'right' ? 'left' : 'right';
-	let edgeStyle = LS?.getItem('flowEdgeStyle') ?? 'bezier';
-	let showMinimap = LS?.getItem('flowMinimap') !== 'false';
-	let bgPattern = LS?.getItem('flowBg') ?? 'dots';
-	let gridSnapOn = LS?.getItem('flowGridSnap') !== 'false';
-	let gridSize = +(LS?.getItem('flowGridSize') ?? '25');
+	const propsSide = $derived(paletteSide === 'right' ? 'left' : 'right');
+	let edgeStyle = $state(LS?.getItem('flowEdgeStyle') ?? 'bezier');
+	let showMinimap = $state(LS?.getItem('flowMinimap') !== 'false');
+	let bgPattern = $state(LS?.getItem('flowBg') ?? 'dots');
+	let gridSnapOn = $state(LS?.getItem('flowGridSnap') !== 'false');
+	let gridSize = $state(+(LS?.getItem('flowGridSize') ?? '25'));
 	const BG_LINES = BackgroundVariant.Lines;
 	const BG_DOTS = BackgroundVariant.Dots;
-	$: snapGrid = [gridSnapOn ? gridSize : 1, gridSnapOn ? gridSize : 1] as [number, number];
-	$: bgVariant = bgPattern === 'lines' ? BG_LINES : BG_DOTS;
-	$: selectedNode = ($nodes as any[]).find((n) => n.selected) ?? null;
+	const snapGrid = $derived([gridSnapOn ? gridSize : 1, gridSnapOn ? gridSize : 1] as [number, number]);
+	const bgVariant = $derived(bgPattern === 'lines' ? BG_LINES : BG_DOTS);
+	const selectedNode = $derived((nodes as any[]).find((n) => n.selected) ?? null);
 
 	// H1 (flow v2): the editor scope follows the viewport selection — a selected
 	// object shows ITS graph (or the create-flow empty state), deselecting returns
 	// to the scene graph. "Has a selection" MUST be read from the selectedObjects
 	// SET: selectedObject keeps the last object after a deselect on purpose (the
 	// inspector/outline bind to it), so an empty-space click clears only the set.
-	$: {
+	$effect(() => {
 		const set = $selectedObjects as string[];
 		const primary = ($selectedObject as any)?.uuid;
 		const scopeUuid = set.length ? (primary && set.includes(primary) ? primary : set[set.length - 1]) : null;
-		setActiveGraph(scopeUuid ?? SCENE_GRAPH);
-	}
-	$: activeId = $activeGraphId;
-	$: hasActiveGraph = activeId === SCENE_GRAPH || !!$flowGraphs[activeId];
-	$: activeOwnerName =
+		untrack(() => setActiveGraph(scopeUuid ?? SCENE_GRAPH));
+	});
+	const activeId = $derived($activeGraphId);
+	const hasActiveGraph = $derived(activeId === SCENE_GRAPH || !!$flowGraphs[activeId]);
+	const activeOwnerName = $derived(
 		activeId === SCENE_GRAPH
 			? 'Scene'
 			: ($objectsGroup as any)?.getObjectByProperty?.('uuid', activeId)?.name ||
 				($objectsGroup as any)?.getObjectByProperty?.('uuid', activeId)?.type ||
-				activeId.slice(0, 8);
+				activeId.slice(0, 8)
+	);
 
 	function setEdgeStyle(style: string) {
 		edgeStyle = style;
 		LS?.setItem('flowEdgeStyle', style);
 		// restyle existing edges locally (cosmetic — not in the graph hash, 166)
-		edges.update((es: any[]) => es.map((e) => ({ ...e, type: style })));
+		edges = (edges as any[]).map((e) => ({ ...e, type: style })) as Edge[];
 	}
 
-	// shared with <SvelteFlow> so peer cursors can be projected to screen space
-	const viewport = writable({ x: 0, y: 0, zoom: 1 });
+	// shared with <SvelteFlow> (bind:viewport) so peer cursors can be projected
+	// to screen space — v1 binds a plain object, not a store
+	let viewport = $state.raw({ x: 0, y: 0, zoom: 1 });
 
 	// Stores are initialized with null, so their inferred type is unusable here
-	let peer: any;
-	$: peer = $peers;
+	const peer: any = $derived($peers);
 
 	// broadcast the local cursor position in flow coordinates (throttled)
 	let lastCursorSent = 0;
@@ -203,7 +258,7 @@
 	};
 
 	// active context menu: { x, y, items }
-	let menu: any = null;
+	let menu: any = $state(null);
 
 	function addNode(type: string, label: string, position: { x: number; y: number }, extraDefaults: any = null) {
 		// H1: adding a node to a selected object that has no flow yet CREATES the
@@ -224,7 +279,7 @@
 			class: 'w-[150px]'
 		} satisfies Node;
 
-		nodes.update((nodes) => [...nodes, newNode]);
+		nodes = [...nodes, newNode];
 		// Replicate the new node to all peers
 		peer?.send({ type: 'nodecreate', node: serializeNode(newNode), graphId: activeId });
 	}
@@ -281,26 +336,27 @@
 		addNode(type, findNodeSpec(type)?.label ?? `${type} node`, position);
 	};
 
-	// Replicate node positions when a drag ends
-	const onNodeDragStop = (event: CustomEvent<{ nodes: Node[] }>) => {
-		event.detail.nodes.forEach((node) => {
+	// Replicate node positions when a drag ends (v1 payload: plain object)
+	const onNodeDragStop = ({ nodes: dragged }: { targetNode: Node | null; nodes: Node[]; event: MouseEvent | TouchEvent }) => {
+		dragged.forEach((node) => {
 			peer?.send({ type: 'nodemove', id: node.id, position: { x: node.position.x, y: node.position.y }, graphId: activeId });
 		});
 	};
 
 	// 165: reject a drag between incompatible socket types (same type or a sane
 	// coercion). Saved edges are not re-validated — only live drags.
-	const isValidConnection = (connection: any) => isValidFlowConnection(connection, get(nodes));
+	const isValidConnection = (connection: any) => isValidFlowConnection(connection, nodes);
 
 	// Give new edges a deterministic id and replicate them to all peers.
 	// 4.1: the id MUST include the handles — without them, wiring one source into
 	// BOTH a and b of a node collided ids, the peer-side dedupe dropped edge #2
 	// and the graphs diverged permanently (nodesync could never converge).
-	const onedgecreate = (connection: Connection) => {
+	// v1: onbeforeconnect replaces v0's onedgecreate (same return-the-edge contract).
+	const onbeforeconnect = (connection: Connection) => {
 		// single-connection inputs: a new wire into an occupied VALUE input
 		// replaces the old one (effect/event inputs keep multi fan-in; fan-out
 		// from an output is always unlimited)
-		const stale = replaceableInputEdges(connection, get(nodes), get(edges));
+		const stale = replaceableInputEdges(connection, nodes, edges);
 		if (stale.length) {
 			deleteFlowEdges(stale, activeId);
 			peer?.send({ type: 'edgedelete', ids: stale, graphId: activeId });
@@ -336,7 +392,7 @@
 	}
 
 	function disconnectNode(id: string) {
-		const ids = $edges.filter((e) => e.source === id || e.target === id).map((e) => e.id);
+		const ids = (edges as any[]).filter((e) => e.source === id || e.target === id).map((e) => e.id);
 		if (ids.length) {
 			deleteFlowEdges(ids, activeId);
 			peer?.send({ type: 'edgedelete', ids: ids, graphId: activeId });
@@ -348,13 +404,12 @@
 		peer?.send({ type: 'edgedelete', ids: [id], graphId: activeId });
 	}
 
-	const onPaneContextMenu = (event: CustomEvent<{ event: MouseEvent }>) => {
-		const e = event.detail.event;
-		e.preventDefault();
-		const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+	const onPaneContextMenu = ({ event }: { event: MouseEvent }) => {
+		event.preventDefault();
+		const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 		menu = {
-			x: e.clientX,
-			y: e.clientY,
+			x: event.clientX,
+			y: event.clientY,
 			flowPos,
 			items: [
 				{ label: 'Search nodes…', action: () => openSearch('') },
@@ -381,7 +436,7 @@
 
 	// 167: clone a node (fresh uuid, offset, same data) — edges are NOT copied
 	function duplicateNode(id: string) {
-		const src = get(nodes).find((n: any) => n.id === id);
+		const src = (nodes as any[]).find((n) => n.id === id);
 		if (!src) return;
 		const copy = {
 			id: crypto.randomUUID(),
@@ -390,16 +445,16 @@
 			data: { ...src.data },
 			...(src.class ? { class: src.class } : {})
 		} as any;
-		nodes.update((ns: any[]) => [...ns, copy]);
+		nodes = [...nodes, copy];
 		peer?.send({ type: 'nodecreate', node: serializeNode(copy), graphId: activeId });
 	}
 
-	const onNodeContextMenu = (event: CustomEvent<{ event: MouseEvent; node: Node }>) => {
-		event.detail.event.preventDefault();
-		const id = event.detail.node.id;
+	const onNodeContextMenu = ({ node, event }: { node: Node; event: MouseEvent }) => {
+		event.preventDefault();
+		const id = node.id;
 		menu = {
-			x: event.detail.event.clientX,
-			y: event.detail.event.clientY,
+			x: event.clientX,
+			y: event.clientY,
 			items: [
 				{ label: 'Duplicate', action: () => duplicateNode(id) },
 				{ label: 'Disconnect all', action: () => disconnectNode(id) },
@@ -408,18 +463,18 @@
 		};
 	};
 
-	const onEdgeContextMenu = (event: CustomEvent<{ event: MouseEvent; edge: Edge }>) => {
-		event.detail.event.preventDefault();
-		const id = event.detail.edge.id;
+	const onEdgeContextMenu = ({ edge, event }: { edge: Edge; event: MouseEvent }) => {
+		event.preventDefault();
+		const id = edge.id;
 		menu = {
-			x: event.detail.event.clientX,
-			y: event.detail.event.clientY,
+			x: event.clientX,
+			y: event.clientY,
 			items: [{ label: 'Disconnect', action: () => deleteEdge(id) }]
 		};
 	};
 
 	// --- node search: a box that REPLACES the pane menu at the same spot/size ---
-	let search: any = null; // {x, y, width, flowPos, query, highlight}
+	let search: any = $state(null); // {x, y, width, flowPos, query, highlight}
 	let savedMenu: any = null;
 
 	function openSearch(initial: string) {
@@ -475,7 +530,7 @@
 			.slice(0, 30); // the list scrolls now (84)
 	}
 
-	$: results = search ? searchResults(search.query) : [];
+	const results = $derived(search ? searchResults(search.query) : []);
 
 	function pickResult(entry: any) {
 		entry.add(search.flowPos);
@@ -526,7 +581,7 @@
 	}
 </script>
 
-<svelte:window on:keydown={onWindowKeydown} />
+<svelte:window onkeydown={onWindowKeydown} />
 
 <div class="flex h-full w-full">
 	{#if paletteOpen}
@@ -541,7 +596,7 @@
 			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-[10px] text-gray-200 hover:bg-gray-600"
 			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
 			title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
-			on:click={() => {
+			onclick={() => {
 				paletteOpen = !paletteOpen;
 				localStorage.setItem('flowPaletteOpen', String(paletteOpen));
 			}}
@@ -553,7 +608,7 @@
 			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-24 flex h-9 w-4 items-center justify-center bg-gray-700 text-[9px] text-gray-300 hover:bg-gray-600"
 			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
 			title="Move the palette to the other side"
-			on:click={() => {
+			onclick={() => {
 				paletteSide = paletteSide === 'right' ? 'left' : 'right';
 				localStorage.setItem('flowPaletteSide', paletteSide);
 			}}
@@ -565,8 +620,8 @@
 	<div
 		class="svelteFlow relative h-full grow"
 		style="order: {paletteSide === 'right' ? 1 : 3}"
-		on:pointermove={onPointerMoveCursor}
-		on:pointerleave={onPointerLeaveCursor}
+		onpointermove={onPointerMoveCursor}
+		onpointerleave={onPointerLeaveCursor}
 	>
 		<!-- H1: graph-scope chip — which flow the editor shows (follows the viewport
 		     selection). Object flows get a delete action (confirmation toast). -->
@@ -580,7 +635,7 @@
 					id="flow-scope-scene"
 					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur hover:text-gray-100"
 					title="Back to the Scene flow (deselects the object)"
-					on:click={() => deselectObject()}
+					onclick={() => deselectObject()}
 				>
 					⌂ Scene
 				</button>
@@ -595,7 +650,7 @@
 					id="flow-scope-delete"
 					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur hover:text-red-400"
 					title="Delete this object's flow"
-					on:click={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
+					onclick={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 				>
 					<Trash2 size={16} aria-hidden="true" />
 				</button>
@@ -614,7 +669,7 @@
 				<button
 					id="flow-create-btn"
 					class="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
-					on:click={() => createObjectGraph(activeId)}
+					onclick={() => createObjectGraph(activeId)}
 				>
 					Create flow
 				</button>
@@ -622,12 +677,12 @@
 			</div>
 		{/if}
 		<SvelteFlow
-			{nodes}
+			bind:nodes
 			{nodeTypes}
-			{edges}
+			bind:edges
 			{snapGrid}
-			{viewport}
-			{onedgecreate}
+			bind:viewport
+			{onbeforeconnect}
 			{ondelete}
 			{isValidConnection}
 			defaultEdgeOptions={{ type: edgeStyle, markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 } }}
@@ -635,13 +690,13 @@
 			fitView
 			maxZoom={1}
 			minZoom={0.5}
-			on:dragover={onDragOver}
-			on:drop={onDrop}
-			on:nodedragstop={onNodeDragStop}
-			on:panecontextmenu={onPaneContextMenu}
-			on:nodecontextmenu={onNodeContextMenu}
-			on:edgecontextmenu={onEdgeContextMenu}
-			on:paneclick={() => (menu = null)}
+			ondragover={onDragOver}
+			ondrop={onDrop}
+			onnodedragstop={onNodeDragStop}
+			onpanecontextmenu={onPaneContextMenu}
+			onnodecontextmenu={onNodeContextMenu}
+			onedgecontextmenu={onEdgeContextMenu}
+			onpaneclick={() => (menu = null)}
 		>
 			{#if bgPattern !== 'none'}
 				<!-- 180: {#key} forces a remount so a dots<->lines switch applies at
@@ -672,7 +727,7 @@
 			class="palette-tab {propsSide === 'left' ? '' : 'palette-tab-mirrored'} absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-xs text-gray-200 hover:bg-gray-600"
 			style="{propsSide === 'left' ? 'left' : 'right'}: -1px"
 			title={propsOpen ? 'Hide properties' : 'Show properties'}
-			on:click={() => { propsOpen = !propsOpen; LS?.setItem('flowPropsOpen', String(propsOpen)); }}
+			onclick={() => { propsOpen = !propsOpen; LS?.setItem('flowPropsOpen', String(propsOpen)); }}
 		>
 			⚙
 		</button>
@@ -683,9 +738,9 @@
 			     ⚙ = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">
 				<button id="flow-tab-info" class="flex-1 rounded px-2 py-1 {propsTab === 'info' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					on:click={() => { propsTab = 'info'; LS?.setItem('flowPropsTab', 'info'); }}>ⓘ Params</button>
+					onclick={() => { propsTab = 'info'; LS?.setItem('flowPropsTab', 'info'); }}>ⓘ Params</button>
 				<button id="flow-tab-settings" class="flex-1 rounded px-2 py-1 {propsTab === 'settings' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					on:click={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}>⚙ Settings</button>
+					onclick={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}>⚙ Settings</button>
 			</div>
 			{#if propsTab === 'info'}
 				{#if selectedNode}
@@ -693,35 +748,35 @@
 					{#if selectedNode.type === 'slider'}
 						<label class="flex items-center justify-between gap-2">Min
 							<input id="param-slider-min" class="ui-input w-16" type="number" value={selectedNode.data?.min ?? 0}
-								on:change={(e) => setNodeData(selectedNode.id, { min: +e.currentTarget.value || 0 })} /></label>
+								onchange={(e) => setNodeData(selectedNode.id, { min: +e.currentTarget.value || 0 })} /></label>
 						<label class="flex items-center justify-between gap-2">Max
 							<input id="param-slider-max" class="ui-input w-16" type="number" value={selectedNode.data?.max ?? 40}
-								on:change={(e) => setNodeData(selectedNode.id, { max: +e.currentTarget.value || 0 })} /></label>
+								onchange={(e) => setNodeData(selectedNode.id, { max: +e.currentTarget.value || 0 })} /></label>
 					{:else if selectedNode.type === 'switcher'}
 						{#each selectedNode.data?.items ?? ['cube', 'pyramid'] as item, i}
 							<div class="flex items-center gap-1">
 								<input class="ui-input flex-1" value={item}
-									on:change={(e) => {
+									onchange={(e) => {
 										const items = [...(selectedNode.data?.items ?? ['cube', 'pyramid'])];
 										items[i] = e.currentTarget.value;
 										setNodeData(selectedNode.id, { items });
 									}} />
 								<button class="rounded bg-gray-600 px-1.5 hover:bg-red-700" title="Remove item"
-									on:click={() => {
+									onclick={() => {
 										const items = (selectedNode.data?.items ?? ['cube', 'pyramid']).filter((_: any, x: number) => x !== i);
 										if (items.length) setNodeData(selectedNode.id, { items, index: 0, shape: items[0] });
 									}}>✕</button>
 							</div>
 						{/each}
 						<button id="param-switcher-add" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500"
-							on:click={() => {
+							onclick={() => {
 								const items = [...(selectedNode.data?.items ?? ['cube', 'pyramid']), 'item ' + ((selectedNode.data?.items?.length ?? 2) + 1)];
 								setNodeData(selectedNode.id, { items });
 							}}>＋ Add item</button>
 					{:else if selectedNode.type === 'number'}
 						<label class="flex items-center justify-between gap-2">Step
 							<input id="param-number-step" class="ui-input w-16" type="number" min="0" value={selectedNode.data?.step ?? 1}
-								on:change={(e) => setNodeData(selectedNode.id, { step: +e.currentTarget.value || 1 })} /></label>
+								onchange={(e) => setNodeData(selectedNode.id, { step: +e.currentTarget.value || 1 })} /></label>
 					{:else}
 						<p class="text-gray-400">This node's parameters live on its card.</p>
 					{/if}
@@ -733,10 +788,10 @@
 				<p class="ui-section-label">Node</p>
 				<label class="flex flex-col gap-1">Name
 					<input id="flow-node-name" class="ui-input" value={selectedNode.data?.label ?? ''}
-						on:change={(e) => setNodeData(selectedNode.id, { label: e.currentTarget.value })} /></label>
+						onchange={(e) => setNodeData(selectedNode.id, { label: e.currentTarget.value })} /></label>
 				<label class="flex flex-col gap-1">Note
 					<textarea class="ui-input" rows="2" value={selectedNode.data?.note ?? ''}
-						on:change={(e) => setNodeData(selectedNode.id, { note: e.currentTarget.value })}></textarea></label>
+						onchange={(e) => setNodeData(selectedNode.id, { note: e.currentTarget.value })}></textarea></label>
 			{:else}
 				<p class="ui-section-label">Graph</p>
 				<label class="flex flex-col gap-1">Edge style
@@ -753,16 +808,16 @@
 						onchange={(v) => { bgPattern = v; LS?.setItem('flowBg', v); }} /></label>
 				<label class="flex items-center gap-2">
 					<input id="flow-minimap-toggle" type="checkbox" checked={showMinimap}
-						on:change={(e) => { showMinimap = e.currentTarget.checked; LS?.setItem('flowMinimap', String(showMinimap)); }} /> Minimap</label>
+						onchange={(e) => { showMinimap = e.currentTarget.checked; LS?.setItem('flowMinimap', String(showMinimap)); }} /> Minimap</label>
 				<label class="flex items-center gap-2">
 					<input type="checkbox" checked={gridSnapOn}
-						on:change={(e) => { gridSnapOn = e.currentTarget.checked; LS?.setItem('flowGridSnap', String(gridSnapOn)); }} /> Snap to grid</label>
+						onchange={(e) => { gridSnapOn = e.currentTarget.checked; LS?.setItem('flowGridSnap', String(gridSnapOn)); }} /> Snap to grid</label>
 				<label class="flex items-center gap-2">Grid size
 					<input class="ui-input w-16" type="number" min="1" value={gridSize}
-						on:change={(e) => { gridSize = +e.currentTarget.value || 25; LS?.setItem('flowGridSize', String(gridSize)); }} /></label>
+						onchange={(e) => { gridSize = +e.currentTarget.value || 25; LS?.setItem('flowGridSize', String(gridSize)); }} /></label>
 				<div class="mt-1 flex gap-1">
-					<button id="flow-fit" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" on:click={() => fitView()}>Fit</button>
-					<button id="flow-reset-view" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" on:click={() => setViewport({ x: 0, y: 0, zoom: 1 })}>Reset view</button>
+					<button id="flow-fit" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => fitView()}>Fit</button>
+					<button id="flow-reset-view" class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => setViewport({ x: 0, y: 0, zoom: 1 })}>Reset view</button>
 				</div>
 				<!-- B4.2: socket type -> color legend (sockets are painted by TYPE now) -->
 				<p class="ui-section-label mt-1">Socket types</p>
@@ -784,12 +839,12 @@
 {/if}
 
 {#if search}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0"
 		style="z-index: 999;"
 		role="presentation"
-		on:click={() => {
+		onclick={() => {
 			search = null;
 			savedMenu = null;
 		}}
@@ -808,19 +863,20 @@
 			class="mx-2 mb-1 w-[calc(100%-16px)] rounded border border-gray-300 bg-transparent px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-500"
 			placeholder="Search nodes… (Esc = menu)"
 			value={search.query}
-			on:input={(e) => (search = { ...search, query: e.currentTarget.value, highlight: 0 })}
-			on:keydown={onSearchKeydown}
+			oninput={(e) => (search = { ...search, query: e.currentTarget.value, highlight: 0 })}
+			onkeydown={onSearchKeydown}
 		/>
 		<div class="max-h-64 overflow-y-auto">
 			{#each results as entry, index}
-				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+				<!-- runes mode on svelte 5.56 honors only the FIRST code of a space-separated ignore list — keep the comma -->
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div
 					class="cursor-pointer px-3 py-1.5 {index === search.highlight
 						? 'bg-primary-600 text-white'
 						: 'hover:bg-gray-100 dark:hover:bg-gray-600'}"
 					data-selected={index === search.highlight}
-					on:mouseenter={() => (search = { ...search, highlight: index })}
-					on:click={() => pickResult(entry)}
+					onmouseenter={() => (search = { ...search, highlight: index })}
+					onclick={() => pickResult(entry)}
 				>
 					<span class={index === search.highlight ? 'text-white/70' : 'text-gray-400'}>{entry.group} · </span>{entry.label}
 				</div>

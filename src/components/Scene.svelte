@@ -330,6 +330,11 @@
 		return false;
 	}
 
+	// 15-O: double-click detection for "open the properties panel" — reuses the
+	// existing click path instead of a separate dblclick listener. Declared at
+	// COMPONENT scope: raycastSelect lives here, not in the pointer-handler block.
+	let lastPick: { uuid: string | null; t: number } = { uuid: null, t: 0 };
+
 	function raycastSelect(additive = false) {
 		// module-owned interactive groups live at the scene root (piano, pong, ...)
 		for (const name of moduleInteractiveGroups) {
@@ -344,8 +349,15 @@
 			if (runModuleClickHandlers(hits[0].object)) return true;
 			const target = topLevelObjectOf(hits[0].object);
 			if (target) {
+				// 15-O: a plain click SELECTS; the properties panel opens on a
+				// DOUBLE-click (or via the context menu / object list / a pinned
+				// panel). It used to open on EVERY single click — that is exactly
+				// what the pin now controls deliberately.
+				const now = Date.now();
+				const isDouble = !additive && lastPick.uuid === target.uuid && now - lastPick.t < 400;
+				lastPick = { uuid: target.uuid, t: now };
 				// shift-click toggles set membership (13)
-				selectObject(target.uuid, !additive, additive);
+				selectObject(target.uuid, isDouble, additive);
 				fireObjectClick(target.uuid); // 134: pulse any OnClick node targeting it
 				return true;
 			}

@@ -67,6 +67,13 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 				]
 			: []),
 		{ label: 'Focus camera' + suffix, tooltip: 'F', action: () => focusObject(multi ? undefined : uuid) },
+		// 15-O: an explicit way in — a plain click only selects now, so this and a
+		// double-click are how the panel opens when it is not pinned
+		{
+			label: 'Properties',
+			tooltip: 'Open the properties panel (double-click does this too)',
+			action: () => selectObject(uuid, true)
+		},
 		{
 			label: 'Duplicate' + suffix,
 			tooltip: 'Ctrl+D',

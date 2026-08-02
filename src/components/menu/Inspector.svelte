@@ -81,9 +81,11 @@
 		globalCamera,
 		viewMode
 	} from '../../stores/sceneStore';
-	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
+	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
 
-	const hexColor = /^#[0-9A-F]{6}$/i;
+	// (15-L3 dropped the standalone hex textboxes under each colour picker — the
+	// picker's own hex/rgb/hsv field from 15-C2 replaced them, so the validating
+	// regex they needed is gone too)
 	const RAD_SNAP = Math.PI / 12; // Ctrl-snap rotations to 15°
 
 	// B3 (roadmap #13): camera lens presets. Labels use the familiar full-frame
@@ -211,11 +213,45 @@
 		}
 		run();
 	}
-	const material = $derived(
-		!isLight && !isGroup && $selectedObject?.material && !Array.isArray($selectedObject.material)
-			? $selectedObject.material
-			: null
-	);
+	/**
+	 * 15-O1: a SNAPSHOT of the selected material, not the material itself.
+	 * `setMaterialParam` mutates the material IN PLACE and pokes `objectsGroup`
+	 * (never `selectedObject`), and `$derived` compares with `===` — so a derived
+	 * returning the same THREE material never propagated and the
+	 * Roughness/Metalness/Opacity readouts kept showing the pre-drag value (the
+	 * material itself did change; only the UI lagged). A fresh object per poke
+	 * fixes every row at once. Object-valued fields keep their live refs, so
+	 * `material.color.getHexString()` etc. still work.
+	 * NOTE: a new material property rendered below must be added here too.
+	 */
+	const material = $derived.by(() => {
+		$objectsGroup; // in-place material edits poke this store
+		const m =
+			!isLight && !isGroup && $selectedObject?.material && !Array.isArray($selectedObject.material)
+				? $selectedObject.material
+				: null;
+		if (!m) return null;
+		return {
+			ref: m,
+			type: m.type,
+			color: m.color,
+			map: m.map,
+			userData: m.userData,
+			roughness: m.roughness,
+			metalness: m.metalness,
+			clearcoat: m.clearcoat,
+			clearcoatRoughness: m.clearcoatRoughness,
+			transmission: m.transmission,
+			ior: m.ior,
+			shininess: m.shininess,
+			opacity: m.opacity,
+			wireframe: m.wireframe,
+			flatShading: m.flatShading,
+			side: m.side,
+			emissive: m.emissive,
+			emissiveIntensity: m.emissiveIntensity
+		};
+	});
 
 	let materials = [
 		{ value: 'MeshBasicMaterial', name: 'Basic' },
@@ -572,7 +608,13 @@
 		{/if}
 	{:else if $inspectorKind === 'scene'}
 		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
-			<PanelHeader title="Scene" badge="Scene" onclose={() => inspectorClose.set(true)} />
+			<PanelHeader
+				title="Scene"
+				badge="Scene"
+				pinned={$inspectorPinned}
+				onpin={() => inspectorPinned.update((v) => !v)}
+				onclose={() => inspectorClose.set(true)}
+			/>
 			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
 			<input
 				id="inspector-search"
@@ -920,14 +962,6 @@
 					hex={$backgroundColor}
 					onInput={(/** @type {any} */ c) => setBackground(c.hex)}
 				/>
-				<input
-					type="text"
-					class="ui-input w-full"
-					value={$backgroundColor}
-					onchange={(e) => {
-						if (hexColor.test(e.currentTarget.value)) setBackground(e.currentTarget.value);
-					}}
-				/>
 			</Section>
 
 			<Section label="Fog">
@@ -951,17 +985,6 @@
 						applyFog();
 					}}
 				/>
-				<input
-					type="text"
-					class="ui-input w-full"
-					value={fogColor ?? ''}
-					onchange={(e) => {
-						if (hexColor.test(e.currentTarget.value)) {
-							fogColor = e.currentTarget.value;
-							applyFog();
-						}
-					}}
-				/>
 				<SliderRow label="Near" min={0} max={10} step={0.1} decimals={1} value={fogNear ?? 0}
 					onchange={(v) => { fogNear = v; applyFog(); }} />
 				<SliderRow label="Far" min={0} max={100} step={0.1} decimals={1} value={fogFar ?? 0}
@@ -982,6 +1005,8 @@
 			<PanelHeader
 				title="Properties"
 				badge={$selectedObject.type}
+				pinned={$inspectorPinned}
+				onpin={() => inspectorPinned.update((v) => !v)}
 				onclose={() => inspectorClose.set(true)}
 			/>
 			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
@@ -1194,18 +1219,6 @@
 							sendLightUpdate();
 						}}
 					/>
-					<input
-						type="text"
-						class="ui-input w-full"
-						value={color}
-						oninput={(e) => {
-							if (hexColor.test(e.currentTarget.value)) {
-								color = e.currentTarget.value;
-								$selectedObject.color.set(color);
-								sendLightUpdate();
-							}
-						}}
-					/>
 					{#if $selectedObject.type === 'HemisphereLight'}
 						<p class="ui-section-label">Ground color</p>
 						<ColorPicker
@@ -1362,19 +1375,6 @@
 								$selectedObject.material.needsUpdate = true;
 								objectsGroup.update((v) => v);
 								$peers.send({ type: 'color', uuid: $selectedObject.uuid, color: c.hex });
-							}}
-						/>
-						<input
-							type="text"
-							class="ui-input w-full"
-							value={color}
-							onchange={(e) => {
-								if (hexColor.test(e.currentTarget.value)) {
-									color = e.currentTarget.value;
-									// a typed value is ONE discrete change — the shared write path
-									// applies, replicates and records a single undo entry
-									setObjectColor($selectedObject.uuid, color);
-								}
 							}}
 						/>
 					{/if}

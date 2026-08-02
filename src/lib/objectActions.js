@@ -25,6 +25,7 @@ import {
 	showSidebar,
 	inspectorClose,
 	inspectorKind,
+	inspectorPinned,
 	closeSelectionInspector,
 	specatorMode,
 	showToast,
@@ -120,7 +121,10 @@ export function applySelectionSet(uuids, openProperties = false) {
 	}
 	// one lock message covers the whole set (receivers replace this peer's set)
 	if (peer) peer.send({ type: 'lock', uuid: clean[clean.length - 1], uuids: clean, peerId: peer.peer.id });
-	if (openProperties || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
+	// 15-O: explicit request (double-click / context menu / object list), a
+	// PINNED panel (follows every selection), or a panel already showing the
+	// selection. A plain viewport click alone no longer forces it open.
+	if (openProperties || get(inspectorPinned) || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
 		showSidebar('properties');
 	}
 }
@@ -153,7 +157,7 @@ export function selectObject(uuid, openProperties = false, additive = false) {
 		selectedObjects.set([]);
 		if (controls && !get(isVRMode)) controls.detach();
 		selectedObject.set(object);
-		if (openProperties || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
+		if (openProperties || get(inspectorPinned) || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
 			showSidebar('properties');
 		}
 		return;

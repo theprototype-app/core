@@ -51,6 +51,11 @@
 
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
+    // 15-N: register the PWA service worker (a no-cache passthrough — see
+    // static/sw.js) so mobile browsers offer "Install app". Dev is skipped: a
+    // SW in front of vite's HMR only causes confusion.
+    if ('serviceWorker' in navigator && import.meta.env.PROD)
+      navigator.serviceWorker.register('/sw.js').catch(() => {})
     startFlowRuntime()
     startNodeSync()
     startLockSweep()

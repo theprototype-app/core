@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Info } from '@lucide/svelte';
-    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, toastsInDrawerOnly } from '../../stores/appStore'
+    import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
     import { rolesInfo } from '$lib/cloudHooks'
@@ -81,12 +81,52 @@ function rejectPeer(approval) {
 
 // professional toast card: manual close (✕) + auto-dismiss timer (kept from before)
 function dismiss(toast: any) {
+    // 15-L: sticky info toasts carry the side effect their old bespoke close
+    // button had (persist "seen", drop the restore snapshot)
+    try { toast?.onDismiss?.(); } catch {}
     $toastStore = $toastStore.filter((t) => t !== toast);
 }
 function autoDismiss(node: any, toast: any) {
+    if (toast?.sticky) return {}; // 15-L: info prompts wait for the user
     const id = setTimeout(() => dismiss(toast), typeof toast === 'string' ? 5000 : 15000);
     return { destroy() { clearTimeout(id); } };
 }
+
+// 15-L: the restore prompt and the first-run notice used to be hand-rolled
+// <Toast> blocks — which is why they looked nothing like the other cards and
+// never appeared in the drawer's Toasts tab. They are STATE-DRIVEN, so mirror
+// each source store into a sticky INFO entry and pull it when the source clears.
+$effect(() => {
+    const snap = $restoreAvailable;
+    if (snap)
+        showInfoToast(
+            'restore-session',
+            `Restore previous session? ${snap.objects} objects, saved ${new Date(snap.ts).toLocaleTimeString()}`,
+            [
+                { label: 'Restore', action: () => restoreSnapshot() },
+                { label: 'Dismiss', action: () => dismissRestore() }
+            ],
+            () => dismissRestore()
+        );
+    else dismissToastById('restore-session');
+});
+$effect(() => {
+    const notice = $appNotice;
+    const seen = typeof localStorage !== 'undefined' && !!localStorage.getItem('hasSeenDisclaimer');
+    const markSeen = () => {
+        try { localStorage.setItem('hasSeenDisclaimer', 'true'); } catch {}
+    };
+    if (notice && !seen)
+        showInfoToast(
+            'app-notice',
+            notice.text,
+            notice.ctaUrl
+                ? [{ label: notice.ctaLabel || 'Learn more', action: () => { markSeen(); window.open(notice.ctaUrl, '_blank'); } }]
+                : [],
+            markSeen
+        );
+    else dismissToastById('app-notice');
+});
 
 </script>
 <!-- E1: CRITICAL container — connection requests + pending outbound requests stay
@@ -140,61 +180,9 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 {/if}
 
 
-{#if $restoreAvailable}
-<div class="my-1">
-    <Toast dismissable={false} transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-blue-500">
-        <div style="position: relative; left: 50%; transform: translate(-25%, -50%);"></div>
-        <div class="mb-1 inline-flex items-center text-base font-medium">
-            <p class="max-w-80 overflow-hidden pr-4 text-sm font-medium text-gray-500 dark:text-gray-200">
-                Restore previous session?<br />
-                {$restoreAvailable.objects} objects, saved {new Date($restoreAvailable.ts).toLocaleTimeString()}
-            </p>
-            <Button
-                color="primary"
-                class="nob rounded-sm bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
-                onclick={() => restoreSnapshot()}>Restore</Button
-            >
-            <Button
-                color="alternative"
-                class="nob ml-2 rounded-sm"
-                onclick={() => dismissRestore()}>Dismiss</Button
-            >
-        </div>
-    </Toast>
-</div>
-{/if}
-
-<!-- First-run info banner. Content comes from the `appNotice` store: the OSS build
-     shows a "local version" notice; the cloud plugin (VITE_CLOUD_PLUGIN) can clear
-     it (appNotice.set(null)) or rebrand it. Dismissed once via hasSeenDisclaimer. -->
-{#if $appNotice && typeof localStorage !== 'undefined' && !localStorage.getItem('hasSeenDisclaimer')}
-<div class="my-1">
-    <Toast  transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-blue-500" onclose={() =>
-        { localStorage.setItem('hasSeenDisclaimer', 'true'); }
-        }>
-        <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
-
-        </div>
-        <div class="mb-1 text-base font-medium text-black-700 dark:text-brack-500 inline-flex items-center">
-
-            <p class="text-sm font-medium text-gray-500 dark:text-gray-200 pr-4 overflow-hidden max-w-80">
-                {$appNotice.text}<br />
-            </p>
-            {#if $appNotice.ctaUrl}
-            <Button
-            color="primary"
-            class="nob rounded-sm bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
-            onclick={() => {
-                window.open($appNotice.ctaUrl, '_blank');
-            }}
-            >{$appNotice.ctaLabel || 'Learn more'}</Button
-        >
-            {/if}
-        </div>
-
-    </Toast>
-    </div>
-{/if}
+<!-- 15-L: the restore prompt + the first-run notice now ride the normal toast
+     pipeline as STICKY INFO cards (mirrored into toastStore by the $effects above),
+     so they share the card chrome and appear in the Connect drawer Toasts tab. -->
 
 {#if $specatorMode}
 <div class="my-1">
@@ -271,13 +259,23 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 {/if}
 
 {#if $toastStore.length > MAX_TOASTS}
-<div class="my-1 text-center text-xs text-gray-400">+{$toastStore.length - MAX_TOASTS} more…</div>
+<!-- 15-L: the overflow line is a BUTTON — the hidden toasts all live in the
+     drawer's Toasts tab, so send the user straight there -->
+<div class="my-1 text-center">
+    <button
+        id="toast-overflow-more"
+        class="tp-toast-more"
+        title="Show all toasts in the Connect drawer"
+        onclick={() => { connectDrawerTab.set('toasts'); connectDrawerOpen.set(true); }}
+        >+{$toastStore.length - MAX_TOASTS} more…</button
+    >
+</div>
 {/if}
 <!-- keyed by the entry (dedupe keeps plain strings unique; action toasts are
      distinct objects): an UNKEYED each reuses rows here, so a neighbour's expiry
      migrated text across nodes and svelte 5.5x left a stuck duplicate behind -->
 {#each $toastStore.slice(-MAX_TOASTS) as toast (toast)}
-<div class="my-1 tp-toast" transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
+<div class="my-1 tp-toast" class:tp-toast--info={toast?.kind === 'info'} transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
     <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => dismiss(toast)}>✕</button>
     <div class="tp-toast-body">
         <Info size={16} class="tp-toast-icon" aria-hidden="true" />
@@ -362,6 +360,21 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
         font-size: 11px; line-height: 1; border-radius: 6px;
     }
     .tp-toast-x:hover { color: #fff; background: rgb(255 255 255 / 0.08); }
+    /* 15-L: INFO variant — the standing, informational prompts (restore a
+       session, the first-run notice). Teal reads as "system info" against the
+       blue default notification and the amber approval card; the icon needs
+       :global because it is a lucide component's own svg. */
+    .tp-toast--info { border-left-color: #2dd4bf; background: var(--color-form, rgb(31 41 55 / 0.98)); }
+    .tp-toast--info :global(.tp-toast-icon) { color: #2dd4bf; }
+    .tp-toast--info .tp-toast-action { color: #5eead4; }
+    .tp-toast--info .tp-toast-action:hover { color: #99f6e4; }
+    /* the "+N more" overflow line is a button into the drawer's Toasts tab */
+    .tp-toast-more {
+        pointer-events: auto;
+        border: 0; background: transparent; cursor: pointer;
+        font-size: 11px; color: rgb(156 163 175); padding: 2px 8px; border-radius: 6px;
+    }
+    .tp-toast-more:hover { color: #e5e7eb; background: rgb(255 255 255 / 0.08); text-decoration: underline; }
     /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
        toasts below both */
     @media (max-width: 640px) {

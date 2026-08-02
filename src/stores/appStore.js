@@ -11,6 +11,22 @@ export const settingsSection = writable(null);
 export const inspectorClose = writable(true);
 /** @type {import('svelte/store').Writable<'selection'|'scene'|'file'>} */
 export const inspectorKind = writable('selection');
+/**
+ * 15-O: PIN the properties sidebar. Unpinned (default) a click just SELECTS —
+ * properties open on double-click, the context-menu "Properties" entry or the
+ * object-list ⓘ. Pinned, the panel stays up and follows you: object selected →
+ * its properties, nothing selected → the scene's (deselecting no longer closes
+ * it). LOCAL preference.
+ */
+export const inspectorPinned = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('inspectorPinned') === 'true'
+);
+if (typeof localStorage !== 'undefined')
+	inspectorPinned.subscribe((v) => {
+		try {
+			localStorage.setItem('inspectorPinned', String(v));
+		} catch {}
+	});
 export const flowGraphClose = writable(true);
 // Flow Code: an editable JSON view of the flow graph (roadmap 9). Added via the
 // Flow tab "+"; a standalone floating window that can tab-group with Flow.
@@ -87,7 +103,14 @@ export function showSidebar(store) {
  * delete paths must not close an open scene view.
  */
 export function closeSelectionInspector() {
-	if (get(inspectorKind) === 'selection') inspectorClose.set(true);
+	if (get(inspectorKind) !== 'selection') return;
+	// 15-O: a PINNED panel never closes itself — with nothing selected there is
+	// still something to show, so it falls back to the scene's settings.
+	if (get(inspectorPinned) && !get(inspectorClose)) {
+		inspectorKind.set('scene');
+		return;
+	}
+	inspectorClose.set(true);
 }
 
 // Snapshot/restore of panel visibility, used when opening Settings or entering
@@ -415,6 +438,30 @@ export function showToast(message, actions) {
 
 export function clearToast(toast) {
   toastStore.update((toast) => []);
+}
+
+/**
+ * 15-L: a STICKY INFO toast — informational, visually distinct (blue accent),
+ * never auto-dismissed, and identified by `id` so a state-driven source can
+ * add/remove exactly its own entry. This is how the restore-session prompt and
+ * the first-run notice ride the normal toast pipeline: they get the shared card
+ * chrome AND show up in the Connect drawer's Toasts tab, which hand-rolled
+ * blocks never did.
+ * @param {string} id stable key (also dedupes re-adds)
+ * @param {string} text
+ * @param {{label: string, action: () => void}[]=} actions
+ * @param {(() => void)=} onDismiss side effect for the ✕ (e.g. persist "seen")
+ */
+export function showInfoToast(id, text, actions, onDismiss) {
+  toastStore.update((list) => {
+    if (list.some((entry) => entry && entry.id === id)) return list; // already up
+    return [...list, { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss }];
+  });
+}
+
+/** Remove a toast by its `id` (no-op when absent). @param {string} id */
+export function dismissToastById(id) {
+  toastStore.update((list) => list.filter((entry) => !(entry && entry.id === id)));
 }
 
 export const loading = writable([]);

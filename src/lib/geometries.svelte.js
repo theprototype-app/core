@@ -14,7 +14,7 @@ function initRectAreaUniforms() {
     RectAreaLightUniformsLib.init();
 }
 import { notifyExternalMove, noteObjectPose } from '$lib/flowRuntime';
-import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject } from '../stores/sceneStore.js';
+import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore.js';
 
 //Access scene Store
 let scene = $state();
@@ -106,6 +106,9 @@ export function createGeometry(command, uuid) {
         // console.log('createGeometry: ' + geometry);
         if (!uuid) controls.attach(object);
         if (!uuid) selectedObject.set(object);
+        // 15-K3: the selection SET is the source of truth for the outline +
+        // Ctrl+D — a fresh creation is selected, so the set must say so too
+        if (!uuid) selectedObjects.set([object.uuid]);
         return object.uuid
     } else {
         console.log('Invalid geometry: ' + geometry);
@@ -168,6 +171,9 @@ export function createLight(command, uuid) {
         // console.log('createLight: ' + light);
         if (!uuid) controls.attach(light);
         if (!uuid) selectedObject.set(light);
+        // 15-K3: the selection SET is the source of truth for the outline +
+        // Ctrl+D — a fresh creation is selected, so the set must say so too
+        if (!uuid) selectedObjects.set([light.uuid]);
         return light.uuid
     }
 }
@@ -206,6 +212,9 @@ export function createGroup(command, uuid, groupuuid, name, groupparent, pos, ro
         // console.log('createGroup: ' + group);
         if (!uuid) controls.attach(group);
         if (!uuid) selectedObject.set(group);
+        // 15-K3: the selection SET is the source of truth for the outline +
+        // Ctrl+D — a fresh creation is selected, so the set must say so too
+        if (!uuid) selectedObjects.set([group.uuid]);
         // Attach the group to its parent, if specified
         if (groupparent) {
             let groupParent = sceneObjects.getObjectByProperty('uuid', groupparent)

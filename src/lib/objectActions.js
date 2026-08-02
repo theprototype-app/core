@@ -352,6 +352,20 @@ export function duplicateObject(uuid, options = {}) {
 /** Ctrl+D on a set: clone every member, the clones become the new selection */
 export function duplicateSelection() {
 	const uuids = selectionUuids();
+	// 15-K4: an empty selection SET means nothing is selected — creation now
+	// populates the set (K3), so the old fallback (duplicate `selectedObject`'s
+	// deliberately-sticky LAST object) only ever resurrected stale state. The
+	// one legitimate empty-set-with-a-primary state is VIEWING a peer-locked
+	// object (selectObject keeps the set empty there) — that may still fall
+	// through to selectionUuids' primary and duplicate an editable copy.
+	if (!get(selectedObjects).length) {
+		const primary = get(selectedObject)?.uuid;
+		const lockedView = primary && get(lockedObjects).some((lock) => lock[1] === primary);
+		if (!lockedView) {
+			showToast('Nothing selected to duplicate');
+			return [];
+		}
+	}
 	if (uuids.length <= 1) return duplicateObject(uuids[0]);
 	// 15-B2: selecting each clone mid-loop collapsed the set and restored the
 	// sources' tints one by one — the FIRST clone was made from a still-tinted

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { objectsGroup, selectedObject, lockedObjects, viewMode } from '../stores/sceneStore.js';
+	import { objectsGroup, selectedObjects, lockedObjects, viewMode } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
@@ -108,18 +108,37 @@
 		},
 		{ stage: renderStage, autoInvalidate: false }
 	);
+	// 15-K: collect every mesh under a uuid — OutlineEffect only renders MESHES
+	// in its selection, so adding a Group outlined nothing useful, and adding a
+	// parent mesh skipped its children (imported models). Traversal makes the
+	// outline show exactly what the gizmo will move.
+	function addMeshes(selection: any, uuid: string) {
+		const object = $objectsGroup?.getObjectByProperty('uuid', uuid);
+		object?.traverse((node: any) => {
+			if (node.isMesh) selection.add(node);
+		});
+	}
 	$effect(() => {
-		if (typeof $selectedObject !== 'undefined')
-		if ($selectedObject.type) {
-			outlineEffectSelected.selection.clear();
-			outlineEffectSelected.selection.add($selectedObject);
-		}
-		if ($lockedObjects) {
+		// 15-K1: the outline follows the selection SET, never `selectedObject` —
+		// that store deliberately KEEPS the last object after a deselect (the open
+		// inspector binds to it), so it can never signal "no outline". Empty set =
+		// cleared outline; a multi-selection outlines every member. $objectsGroup
+		// is a live dependency, so late-arriving children re-outline on the poke.
+		outlineEffectSelected.selection.clear();
+		if ($objectsGroup)
+			for (const uuid of $selectedObjects) addMeshes(outlineEffectSelected.selection, uuid);
+		if ($lockedObjects && $objectsGroup) {
 			outlineEffectLocked.selection.clear();
-			for (let i = 0; i < $lockedObjects.length; i++) {
-				let mesh = $objectsGroup.getObjectByProperty('uuid', $lockedObjects[i][1]);
-				if (mesh) outlineEffectLocked.selection.add(mesh);
-			}
+			for (let i = 0; i < $lockedObjects.length; i++)
+				addMeshes(outlineEffectLocked.selection, $lockedObjects[i][1]);
 		}
+	});
+	// e2e hook (debugStores opt-in): the effects live in this component only
+	onMount(() => {
+		if (typeof localStorage !== 'undefined' && localStorage.getItem('debugStores'))
+			(window as any).__outlineDebug = () => ({
+				selected: outlineEffectSelected?.selection.size ?? -1,
+				locked: outlineEffectLocked?.selection.size ?? -1
+			});
 	});
 </script>

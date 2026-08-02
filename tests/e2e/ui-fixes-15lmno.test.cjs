@@ -194,6 +194,102 @@ h.run(async () => {
 	h.check(overflow.present, `the overflow line renders (${overflow.label})`);
 	h.check(overflow.open && overflow.tab === 'toasts', 'clicking it opens the drawer on Toasts');
 
+	// a burst of ordinary toasts must never evict a STICKY prompt
+	const stickySurvives = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.toastStore.set([]);
+		w.appNotice.set({ text: 'You are running the local, open-source version.' });
+		await new Promise((r) => setTimeout(r, 250));
+		w.toastStore.update((l) => [...l, 'a', 'b', 'c', 'd', 'e', 'f']);
+		await new Promise((r) => setTimeout(r, 350));
+		const shown = [...document.querySelectorAll('.tp-toast')].some((c) =>
+			c.textContent?.includes('open-source version')
+		);
+		const label = document.querySelector('#toast-overflow-more')?.textContent?.trim() ?? '';
+		// derive the expectation from the live store: other steps may have left
+		// transient toasts behind, and the point is that STICKY ones aren't counted
+		const all = await new Promise((r) => w.toastStore.subscribe((v) => r(v))());
+		const transient = all.filter((t) => !t?.sticky).length;
+		const sticky = all.filter((t) => t?.sticky).length;
+		w.appNotice.set(null);
+		w.toastStore.set([]);
+		return { shown, label, expected: Math.max(0, transient - 4), sticky };
+	});
+	h.check(stickySurvives.shown, 'a sticky prompt is never folded away by a burst');
+	h.check(
+		stickySurvives.sticky > 0 && stickySurvives.label === `+${stickySurvives.expected} more…`,
+		`the fold counts only transient toasts ("${stickySurvives.label}", ${stickySurvives.sticky} sticky excluded)`
+	);
+
+	// ---------- P: the toast tiers STACK instead of overlapping ----------
+	const stacked = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.toastStore.set(['an informational toast']);
+		w.pendingApprovals.set([{ peerId: 'peer-aaa', status: 'new' }]);
+		await new Promise((r) => setTimeout(r, 350));
+		const crit = document.querySelector('.toasts-critical')?.getBoundingClientRect();
+		const reg = document.querySelector('.toasts-regular')?.getBoundingClientRect();
+		return {
+			reqIsCard: !!document.querySelector('.tp-toast--req'),
+			overlap: crit && reg ? crit.bottom > reg.top + 1 : null,
+			centred: crit && reg ? Math.abs((crit.left + crit.right) / 2 - (reg.left + reg.right) / 2) < 2 : null
+		};
+	});
+	h.check(stacked.reqIsCard, 'connection requests use the shared toast card');
+	h.check(stacked.overlap === false, 'the critical tier no longer covers the regular one');
+	h.check(stacked.centred, 'both tiers stay centred on the same axis');
+
+	// a rush of joiners folds like any other burst
+	const folded = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.pendingApprovals.set(['a', 'b', 'c', 'd', 'e'].map((id) => ({ peerId: 'peer-' + id, status: 'new' })));
+		await new Promise((r) => setTimeout(r, 350));
+		const cards = document.querySelectorAll('.tp-toast--req').length;
+		const more = document.querySelector('#request-overflow-more');
+		const label = more?.textContent?.trim() ?? '';
+		more?.click();
+		await new Promise((r) => setTimeout(r, 250));
+		const tab = await new Promise((r) => w.connectDrawerTab.subscribe((v) => r(v))());
+		w.connectDrawerOpen.set(false);
+		w.pendingApprovals.set([]);
+		w.toastStore.set([]);
+		return { cards, label, tab };
+	});
+	h.check(folded.cards === 3, `a rush of requests caps at 3 cards (${folded.cards})`);
+	h.check(/\+2 more requests/.test(folded.label), `the rest fold into a line ("${folded.label}")`);
+	h.check(folded.tab === 'toasts', 'the fold line opens the drawer on Toasts');
+
+	// ---------- P: spectating is a MODE BANNER, not a toast ----------
+	const spectator = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.specatorMode.set('peer-watch');
+		await new Promise((r) => setTimeout(r, 300));
+		const banner = document.querySelector('.spectator-banner');
+		if (!banner) return { present: false };
+		// it is the stack's FIRST child, so toasts flow below it and can never
+		// displace it (top-centre belongs to the Connect pill, hence not `fixed`)
+		const isFirst = banner.parentElement?.firstElementChild === banner;
+		const before = banner.getBoundingClientRect();
+		// a burst of toasts must NOT move it (as a toast, it used to shift)
+		w.toastStore.set(['one', 'two', 'three']);
+		await new Promise((r) => setTimeout(r, 350));
+		const after = banner.getBoundingClientRect();
+		const centred = Math.abs((after.left + after.right) / 2 - window.innerWidth / 2) < 2;
+		w.toastStore.set([]);
+		w.specatorMode.set(false);
+		return {
+			present: true,
+			isFirst,
+			moved: Math.abs(after.top - before.top),
+			centred,
+			exit: !!banner.querySelector('.spectator-exit')
+		};
+	});
+	h.check(spectator.present && spectator.isFirst, 'the spectator banner pins to the top of the stack');
+	h.check(spectator.moved < 1, `incoming toasts never shift it (${spectator.moved.toFixed(2)}px)`);
+	h.check(spectator.centred, 'it stays centred');
+	h.check(spectator.exit, 'it keeps a prominent Exit button');
+
 	// ---------- M: the Welcome GitHub button shows a star count ----------
 	// The fetch fires at component init, so mocking mid-session is too late —
 	// drive the two deterministic paths through the CACHE instead (which is also

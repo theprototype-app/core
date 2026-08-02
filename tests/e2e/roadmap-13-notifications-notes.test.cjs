@@ -58,7 +58,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const approvalInCritical = await A.page.evaluate(() => {
 		const c = document.querySelector('.toasts-critical');
-		return !!c && /Connection request from peer/.test(c.textContent || '');
+		// 15-P: the card reads "Connection request <PEERID>" — it never said
+		// "from peer", so this assertion was stale and failing before the rework
+		return !!c && /Connection request/.test(c.textContent || '');
 	});
 	h.check(approvalInCritical, 'E1: connection-request toast renders in the critical (above-modals) container');
 	await A.page.evaluate(() => window.__stores.pendingApprovals.set([]));

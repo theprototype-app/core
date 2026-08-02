@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Info } from '@lucide/svelte';
+	import { Info, UserPlus, Download } from '@lucide/svelte';
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
@@ -25,6 +25,18 @@ const hideRegular = $derived($connectDrawerOpen || $toastsInDrawerOnly);
 // U-3: cap how many generic toasts stack at once (older ones collapse into a
 // "+N more" line) so bursts can't fill the screen
 const MAX_TOASTS = 4;
+// 15-P: a rush of joiners folds the same way — the drawer's Toasts tab lists
+// every pending request, so the viewport never fills with approval cards
+const MAX_REQUESTS = 3;
+
+// 15-P: STICKY prompts (restore a session, the first-run notice) must never be
+// evicted by a burst of ordinary toasts — only the transient ones are capped,
+// and the "+N more" count reflects just those. Sticky cards render LAST so they
+// hold a stable spot while transients come and go above them.
+const stickyToasts = $derived($toastStore.filter((t: any) => t?.sticky));
+const transientToasts = $derived($toastStore.filter((t: any) => !t?.sticky));
+const hiddenCount = $derived(Math.max(0, transientToasts.length - MAX_TOASTS));
+const visibleToasts = $derived([...transientToasts.slice(-MAX_TOASTS), ...stickyToasts]);
 
 $effect(() => {
     if($loading.length > 0) showToast = true;
@@ -129,79 +141,29 @@ $effect(() => {
 });
 
 </script>
-<!-- E1: CRITICAL container — connection requests + pending outbound requests stay
-     ABOVE modals (--z-toast beats the NON-MODAL dialogs at --z-modal) so an
-     approval is never missed while a modal is open. -->
-<div class="my-4 toasts-container toasts-critical"
-class:cxd-hidden={hideCritical}
-style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast); pointer-events: none;"
->
-{#each $pendingApprovals as approval}
-<div class="my-1 cxreq" transition:fly={{ y: -8, duration: 180 }}>
-    <div class="cxreq-row">
-        <div class="cxreq-text">
-            <span class="cxreq-title">Connection request, approve?</span>
-            <span class="cxreq-id">{String(approval.peerId).slice(0, 6).toUpperCase()}</span>
-        </div>
-        <div class="cxreq-actions">
-            {#if $rolesInfo}
-                <button class="cxreq-btn cxreq-view" onclick={() => approvePeer(approval, null)} title="Approve as a view-only viewer">View only</button>
-                {#if approval.status !== 'retry'}
-                    <button class="cxreq-btn cxreq-editor" onclick={() => approvePeer(approval, 'editor')} title="Approve and grant edit access">Editor access</button>
-                {/if}
-            {:else}
-                <button class="cxreq-btn cxreq-editor" onclick={() => approvePeer(approval, null)}>Approve</button>
-            {/if}
-            <button class="cxreq-btn cxreq-reject" onclick={() => rejectPeer(approval)} title="Decline">Reject</button>
-        </div>
-    </div>
-</div>
-{/each}
+<!-- 15-P: ONE positioning wrapper so the two z-tiers STACK instead of overlapping.
+     Both containers used to be `absolute; top:65px; left:50%`, i.e. pinned to the
+     same spot — approval cards physically covered the info toasts. The wrapper
+     must NOT use transform (that would create a stacking context and trap the
+     children's z-index, breaking "approvals above modals"), so it centres with
+     auto margins. -->
+<div class="toasts-stack">
 
-<!-- CN: the OUTBOUND "Connection request to peer / pending" toast was removed — the
-     Connect pill already shows the "Waiting for approval…" state + a Cancel button, so
-     the toast was redundant chrome. Incoming approval requests (above) still toast. -->
-</div>
-
-<!-- pointer-events: none lets clicks pass through the (invisible) container area;
-     each toast re-enables them for itself. REGULAR container: info/decision toasts
-     sit BELOW modals (--z-toast-low) so Settings/Modules/Sessions cover them. -->
-<div class="my-4 toasts-container toasts-regular"
-class:cxd-hidden={hideRegular}
-style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var(--z-toast-low); pointer-events: none;"
->
-{#if showToast}
-{#if $loadingcount > 0}
-<Toast  dismissable={false} transition={fly} bind:toastStatus>
-	<div class="mb-1 text-base font-medium text-green-700 dark:text-green-500">Receiving objects: {($loadingcount-$loading.length)}/{$loadingcount}</div>
-	<Progressbar progress={100 * (($loadingcount-$loading.length) - 0) / ($loadingcount - 0)} color="green" />
-</Toast>
-{/if}
-{/if}
-
-
-<!-- 15-L: the restore prompt + the first-run notice now ride the normal toast
-     pipeline as STICKY INFO cards (mirrored into toastStore by the $effects above),
-     so they share the card chrome and appear in the Connect drawer Toasts tab. -->
-
+<!-- 15-P: SPECTATOR banner — a MODE indicator, not a toast. Modes belong in a
+     stable, always-visible strip (the recording/impersonation-banner pattern):
+     it never queues behind toasts, never shifts when one arrives, and never
+     auto-expires. Keeps its red framing + prominent Exit. -->
 {#if $specatorMode}
-<div class="my-1">
-    <Toast dismissable={false} transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-red-500" onclose={() => 
-        { localStorage.setItem('hasSeenDisclaimer', 'true'); }
-        }>
-        <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
-    
-        </div>
-        <div class="mb-1 text-base font-medium text-black-700 dark:text-brack-500 inline-flex items-center">
-            
-            <p class="text-sm font-medium text-gray-500 dark:text-gray-200 pr-4 overflow-hidden max-w-80">
-                
-                Watching: {$specatorMode}<br />
-                
+<div class="spectator-banner" transition:fly={{ y: -8, duration: 180 }}>
+    <div class="spectator-inner">
+        <span class="spectator-dot" aria-hidden="true"></span>
+        <div class="inline-flex items-center">
+            <p class="spectator-text">
+                Watching <strong>{$specatorMode}</strong>
             </p>
-            <Button
-            color="primary"
-            class="nob rounded-sm bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
+            <button
+            class="spectator-exit"
+            title="Stop watching and return to your own camera"
             onclick={() => {
                 let dolly = $globalScene.getObjectByName('dolly')
                 dolly.attach($globalCamera)
@@ -220,13 +182,88 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
                 // bring back the panels hidden when spectating started
                 restorePanels();
             }}
-            >Exit</Button
+            >Exit</button
         >
         </div>
-    
-    </Toast>
     </div>
+</div>
 {/if}
+<!-- E1: CRITICAL container — connection requests + pending outbound requests stay
+     ABOVE modals (--z-toast beats the NON-MODAL dialogs at --z-modal) so an
+     approval is never missed while a modal is open. -->
+<div class="my-4 toasts-container toasts-critical"
+class:cxd-hidden={hideCritical}
+style="z-index: var(--z-toast); pointer-events: none;"
+>
+{#each $pendingApprovals.slice(0, MAX_REQUESTS) as approval}
+<div class="my-1 tp-toast tp-toast--req" transition:fly={{ y: -8, duration: 180 }}>
+    <div class="tp-toast-body">
+        <UserPlus size={16} class="tp-toast-icon" aria-hidden="true" />
+        <div class="tp-toast-main">
+            <div class="tp-toast-text">
+                Connection request <span class="cxreq-id">{String(approval.peerId).slice(0, 6).toUpperCase()}</span>
+            </div>
+            <div class="tp-toast-actions">
+                {#if $rolesInfo}
+                    <button class="cxreq-btn cxreq-view" onclick={() => approvePeer(approval, null)} title="Approve as a view-only viewer">View only</button>
+                    {#if approval.status !== 'retry'}
+                        <button class="cxreq-btn cxreq-editor" onclick={() => approvePeer(approval, 'editor')} title="Approve and grant edit access">Editor access</button>
+                    {/if}
+                {:else}
+                    <button class="cxreq-btn cxreq-editor" onclick={() => approvePeer(approval, null)}>Approve</button>
+                {/if}
+                <button class="cxreq-btn cxreq-reject" onclick={() => rejectPeer(approval)} title="Decline">Reject</button>
+            </div>
+        </div>
+    </div>
+</div>
+{/each}
+<!-- 15-P: a rush of joiners folds like any other burst — the drawer lists them all -->
+{#if $pendingApprovals.length > MAX_REQUESTS}
+<div class="my-1 text-center">
+    <button
+        id="request-overflow-more"
+        class="tp-toast-more"
+        title="Show all connection requests in the Connect drawer"
+        onclick={() => { connectDrawerTab.set('toasts'); connectDrawerOpen.set(true); }}
+        >+{$pendingApprovals.length - MAX_REQUESTS} more request{$pendingApprovals.length - MAX_REQUESTS === 1 ? '' : 's'}…</button
+    >
+</div>
+{/if}
+
+<!-- CN: the OUTBOUND "Connection request to peer / pending" toast was removed — the
+     Connect pill already shows the "Waiting for approval…" state + a Cancel button, so
+     the toast was redundant chrome. Incoming approval requests (above) still toast. -->
+</div>
+
+<!-- pointer-events: none lets clicks pass through the (invisible) container area;
+     each toast re-enables them for itself. REGULAR container: info/decision toasts
+     sit BELOW modals (--z-toast-low) so Settings/Modules/Sessions cover them. -->
+<div class="my-4 toasts-container toasts-regular"
+class:cxd-hidden={hideRegular}
+style="z-index: var(--z-toast-low); pointer-events: none;"
+>
+{#if showToast}
+{#if $loadingcount > 0}
+<!-- 15-P: transfer progress wears the shared card too (it is a notification) —
+     it used to be a raw flowbite Toast with green body text -->
+<div class="my-1 tp-toast tp-toast--progress" transition:fly={{ y: -8, duration: 180 }}>
+	<div class="tp-toast-body">
+		<Download size={16} class="tp-toast-icon" aria-hidden="true" />
+		<div class="tp-toast-main">
+			<div class="tp-toast-text">Receiving objects: {($loadingcount-$loading.length)}/{$loadingcount}</div>
+			<Progressbar progress={100 * (($loadingcount-$loading.length) - 0) / ($loadingcount - 0)} color="green" size="h-1.5" class="mt-1.5" />
+		</div>
+	</div>
+</div>
+{/if}
+{/if}
+
+
+<!-- 15-L: the restore prompt + the first-run notice now ride the normal toast
+     pipeline as STICKY INFO cards (mirrored into toastStore by the $effects above),
+     so they share the card chrome and appear in the Connect drawer Toasts tab. -->
+
 
 {#if $fixLight}
 <div class="my-1">
@@ -258,7 +295,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
     </div>
 {/if}
 
-{#if $toastStore.length > MAX_TOASTS}
+{#if hiddenCount > 0}
 <!-- 15-L: the overflow line is a BUTTON — the hidden toasts all live in the
      drawer's Toasts tab, so send the user straight there -->
 <div class="my-1 text-center">
@@ -267,14 +304,14 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
         class="tp-toast-more"
         title="Show all toasts in the Connect drawer"
         onclick={() => { connectDrawerTab.set('toasts'); connectDrawerOpen.set(true); }}
-        >+{$toastStore.length - MAX_TOASTS} more…</button
+        >+{hiddenCount} more…</button
     >
 </div>
 {/if}
 <!-- keyed by the entry (dedupe keeps plain strings unique; action toasts are
      distinct objects): an UNKEYED each reuses rows here, so a neighbour's expiry
      migrated text across nodes and svelte 5.5x left a stuck duplicate behind -->
-{#each $toastStore.slice(-MAX_TOASTS) as toast (toast)}
+{#each visibleToasts as toast (toast)}
 <div class="my-1 tp-toast" class:tp-toast--info={toast?.kind === 'info'} transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
     <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => dismiss(toast)}>✕</button>
     <div class="tp-toast-body">
@@ -294,37 +331,43 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
 {/each}
 
 </div>
+</div><!-- /toasts-stack -->
 
 <style>
     /* toasts stay clickable while the empty container area passes clicks through */
     :global(.toasts-container > div) {
         pointer-events: auto;
     }
-    .toasts-container {
+    /* 15-P: the two z-tiers live in ONE wrapper so they STACK (critical first,
+       then regular) instead of being pinned to the same coordinates and
+       overlapping. Centred with auto margins — a transform here would create a
+       stacking context and trap the children's z-index, which is what keeps
+       approvals above modals and regular toasts below them. */
+    .toasts-stack {
         position: absolute;
         top: 65px;
+        left: 0;
+        right: 0;
+        margin-inline: auto;
+        width: min(500px, 94vw);
+        pointer-events: none;
+    }
+    .toasts-container {
+        position: relative;
+        width: 100%;
+    }
+    /* the stack owns the top offset now; the containers just flow inside it */
+    .toasts-critical:empty,
+    .toasts-regular:empty {
+        display: none;
     }
     .cxd-hidden {
         display: none !important;
     }
-    /* connection-request card — on-scheme (dark surface; buttons match role colours:
-       viewer=gray, editor=blue) with the text + actions on ONE row. */
-    .cxreq {
-        pointer-events: auto;
-        width: min(420px, 94vw);
-        margin: 4px auto 0;
-        background: var(--color-form, rgb(31 41 55 / 0.98));
-        border: 1px solid rgb(255 255 255 / 0.1);
-        border-radius: 12px;
-        padding: 8px 10px;
-        box-shadow: 0 12px 30px rgb(0 0 0 / 0.4);
-        backdrop-filter: blur(6px);
-    }
-    .cxreq-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .cxreq-text { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1 1 auto; }
-    .cxreq-title { font-size: 12px; color: #e5e7eb; }
+    /* connection-request card — 15-P: the card CHROME is now .tp-toast--req (shared
+       with every other toast); only the role-coloured buttons + the peer-id chip
+       remain bespoke (viewer=gray, editor=blue, reject=outlined red). */
     .cxreq-id { font-size: 11px; color: #9ca3af; font-family: ui-monospace, monospace; }
-    .cxreq-actions { display: flex; gap: 6px; flex: 0 0 auto; }
     .cxreq-btn { font-size: 11px; padding: 4px 10px; border-radius: 7px; border: 0; cursor: pointer; color: #fff; white-space: nowrap; }
     .cxreq-view { background: #6b7280; }
     .cxreq-view:hover { background: #7b8494; }
@@ -364,10 +407,79 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
        session, the first-run notice). Teal reads as "system info" against the
        blue default notification and the amber approval card; the icon needs
        :global because it is a lucide component's own svg. */
+    /* 15-P: connection requests + transfer progress wear the same card, so the
+       whole stack reads as one system. Amber = needs a decision; the progress
+       card keeps the neutral blue of an ordinary notification. */
+    .tp-toast--req { border-left-color: #f59e0b; }
+    .tp-toast--req :global(.tp-toast-icon) { color: #f59e0b; }
+    .tp-toast--req .tp-toast-actions { gap: 8px; margin-top: 8px; }
+    .tp-toast--progress { border-left-color: #22c55e; }
+    .tp-toast--progress :global(.tp-toast-icon) { color: #22c55e; }
     .tp-toast--info { border-left-color: #2dd4bf; background: var(--color-form, rgb(31 41 55 / 0.98)); }
     .tp-toast--info :global(.tp-toast-icon) { color: #2dd4bf; }
     .tp-toast--info .tp-toast-action { color: #5eead4; }
     .tp-toast--info .tp-toast-action:hover { color: #99f6e4; }
+    /* 15-P: SPECTATOR mode banner. A mode is not a notification: it gets its own
+       fixed strip so it can never be queued behind toasts or shifted when one
+       arrives (the user's complaint), never expires, and stays exactly centred.
+       Red framing + a live dot + a prominent Exit, the recording-banner pattern. */
+    .spectator-banner {
+        /* FIRST child of the stack, so it owns a fixed spot: toasts flow BELOW
+           it and can never displace it (the old version was a toast in the
+           queue, so every new toast shoved it). Not `fixed` — top-centre is the
+           Connect pill's, and the banner would collide with it. */
+        position: relative;
+        z-index: var(--z-toast);
+        display: flex;
+        justify-content: center;
+        margin-bottom: 6px;
+        pointer-events: none;
+    }
+    .spectator-inner {
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 8px 6px 12px;
+        border-radius: 999px;
+        background: rgb(31 41 55 / 0.97);
+        border: 1px solid rgb(239 68 68 / 0.55);
+        box-shadow: 0 10px 26px rgb(0 0 0 / 0.4);
+        backdrop-filter: blur(6px);
+    }
+    .spectator-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #ef4444;
+        box-shadow: 0 0 0 3px rgb(239 68 68 / 0.2);
+        animation: spectator-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes spectator-pulse {
+        50% { opacity: 0.35; }
+    }
+    .spectator-text {
+        font-size: 12.5px;
+        color: #e5e7eb;
+        margin: 0;
+        white-space: nowrap;
+    }
+    .spectator-text strong { color: #fff; font-weight: 650; }
+    .spectator-exit {
+        margin-left: 10px;
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 5px 14px;
+        border-radius: 999px;
+        border: 0;
+        cursor: pointer;
+        background: #ef4444;
+        color: #fff;
+    }
+    .spectator-exit:hover { background: #dc2626; }
+    @media (prefers-reduced-motion: reduce) {
+        .spectator-dot { animation: none; }
+    }
     /* the "+N more" overflow line is a button into the drawer's Toasts tab */
     .tp-toast-more {
         pointer-events: auto;
@@ -378,7 +490,7 @@ style="left: 50%; max-width: 500px; transform: translate(-50%, 0%); z-index: var
     /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
        toasts below both */
     @media (max-width: 640px) {
-        .toasts-container {
+        .toasts-stack {
             top: 124px;
         }
     }

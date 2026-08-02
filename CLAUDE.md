@@ -339,9 +339,13 @@ loadable play content. Everything a user does must be visible to connected peers
   (noImplicitAny). Icon-only buttons need `aria-label` (an a11y warning counts against
   the baseline). THREE object trees are **NOT reactive**: mutating `.children`/`.userData`
   needs `objectsGroup.update(v=>v)` to poke, AND rendered components must derive from
-  `$objectsGroup` (or a keyed-each on the same ref won't re-render). svelte-check
-  baseline is **438 errors / 62 warnings** (2026-08-01, release/next after colliders
-  v2 + the icon system) — hold it; the release.yml gate matches. Svelte 5.5x added `state_referenced_locally` (intentional one-time
+  `$objectsGroup` (or a keyed-each on the same ref won't re-render). Related #15-O1
+  trap: **`$derived` compares with `===`**, so a derived returning the SAME
+  (in-place-mutated) THREE object never propagates — return a fresh SNAPSHOT object
+  per poke (the Inspector `material` derived is the reference; adding the store as a
+  dependency alone does NOT fix it). svelte-check
+  baseline is **419 errors / 62 warnings** (2026-08-02, after #15 C's one-way
+  pickers −14 and K's outline rework −2) — hold it; the release.yml gate matches. Svelte 5.5x added `state_referenced_locally` (intentional one-time
   prop reads take a `// svelte-ignore state_referenced_locally` line — WindowShell is
   the reference) and deprecated `<svelte:self>` (use a self-import).
 - **Connection "connected" state = `$peers.openedPeers`, NOT `userdata.length`**:
@@ -390,6 +394,29 @@ loadable play content. Everything a user does must be visible to connected peers
   `bind:X={undefined}` on a prop WITH a fallback hard-errors
   (props_invalid_value) — an uninitialized `let fogColor = $state()` bound via
   bind:hex CRASHED the whole scene inspector drawer; always initialize bound $state.
+- **svelte-awesome-color-picker 4.x (runes rewrite, #15-C)**: it emits NO component
+  events — `on:input` silently never fires; use the **`onInput` PROP** (payload is
+  `{hsv,rgb,hex,color}` directly, not `event.detail`). And it writes its own snapshot
+  back through `bind:hex`, CLOBBERING external writes (an env preset / selection
+  change reverted while the picker was mounted) — all pickers pass `hex` ONE-WAY.
+  Sky (background/fog) edits must go through `editEnvSky()` in environment.js:
+  writing `scene.background`/`scene.fog` directly is reverted by the next
+  `applyEnvironment()` (it re-applies the preset).
+- **Toasts (#15-L/P)**: ONE system — `showToast(msg, actions?)` transient (5s/15s),
+  `showInfoToast(id, text, actions?, onDismiss?)` STICKY info prompts (teal; never
+  auto-dismissed, never folded by the "+N more" cap, removed via
+  `dismissToastById(id)` — restore-session / first-run notice / share-or-stash are
+  state-mirrored `$effect`s in Toasts.svelte). Both z-tiers live in one
+  `.toasts-stack` wrapper (auto-margin centred — a transform would trap the
+  children's z-index and break approvals-above-modals); connection requests are
+  `.tp-toast--req` cards capped at 3 + a fold line; "Watching X" is a MODE BANNER
+  pinned as the stack's first child, not a toast. `anyModalOpen` (appStore, derived)
+  gates shortcuts.js + editorNavigation + inputRuntime behind the non-modal dialogs.
+- **PWA (#15-N)**: `static/sw.js` is a deliberate NO-CACHE passthrough (install
+  prompt without stale-build risk — `version.json` polling stays the update path).
+  Never add caching without wiring skipWaiting to the version poll. Registered in
+  App.svelte onMount, PROD only. `dragWindow` has an opt-in `resizable` option
+  (persists `{w,h}` in the same `win:<key>` record).
 - `$effect` tracks EVERY store read synchronously inside it — side reads (userdata,
   globalScene…) retrigger it and can hit `effect_update_depth_exceeded`, which
   UNMOUNTS the app. Wrap one-shot side work in `untrack(() => …)` so the effect only
@@ -585,10 +612,19 @@ loadable play content. Everything a user does must be visible to connected peers
   never had this (toJSON/ObjectLoader keeps uuids). Any new GLTF round-trip needs
   the same stamp.
 - `selectedObject` is `writable([])` and KEEPS the last object after deselect (the
-  desktop outline relies on it) — "has selection" checks need `?.uuid`, and the
+  open inspector binds to it) — "has selection" checks need `?.uuid`, and the
   init value is a truthy empty array. `deselectObject()` clears ONLY the
   `selectedObjects` SET — anything that must react to deselection (the flow editor's
-  scope-follows-selection) watches the SET, never `selectedObject` (#13-H bit this).
+  scope-follows-selection, the desktop OUTLINE since #15-K) watches the SET, never
+  `selectedObject` (#13-H bit this). Since #15-K the SET is authoritative: creation
+  paths (createGeometry/Light/Group, addImported) populate it alongside the sticky
+  primary, the outline traverses every set member's child MESHES (OutlineEffect
+  renders meshes only — adding a Group outlines nothing), and `duplicateSelection`
+  toasts on an empty set (the locked-VIEW state — set empty, primary = a peer-locked
+  object — is the one deliberate fall-through). #15-O: a plain viewport click only
+  SELECTS; properties open on double-click / the context-menu "Properties" entry /
+  the object list, or always when `inspectorPinned` (pinned + deselect falls back to
+  the Scene inspector via closeSelectionInspector).
 - The Bash tool's `cd` leaks into the shared shell cwd — `Set-Location` back to the
   repo root before PowerShell git/npm calls.
 - **Connect dance (#12 fix)**: the host CLOSES the joiner's original conn pre-approval;
@@ -695,6 +731,19 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-02): **Roadmap #15 in flight — A+J → PR #81, B+C → PR #82,
+  second drop K/L/M/N/O + toast-system rework → PR #84 (stacked on #82), docs
+  batch I → theprototype-docs.** Shipped in #84: properties-panel PIN +
+  double-click/context-menu "Properties" (plain click only selects now), info
+  toast kind + unified toast stack + spectator mode banner, sticky
+  share-or-stash (no more 14s auto-share), progress-toast lifecycle fix,
+  GitHub stars (Welcome + cloud profile — cloud repo carries its own copy),
+  PWA manifest/icons/no-cache SW, outline-follows-the-selection-SET (K).
+  Baseline 419/62. Plan + parked designs: cloud repo
+  plans-core/roadmap-15-editmesh-notes-polish.md (mesh lane D→E→F, G, H notes
+  v2 still pending there). Lane: ../theprototype-lane-ui @ port 5186 (5176 is
+  shadowed by a stale [::1] server — the port-shadow trap; ALWAYS curl a source
+  file and grep your new symbol before trusting a lane server).
 - Status (2026-08-01): **VR sleeve palette (K1+K2) MERGED to release/next (PR #75)**
   — plan: cloud repo plans-core/done/k-vr-sleeve-palette.md (as-built notes there).
   One commit: `$lib/vrSleeve.js` + the `vrsleeve` core-module shell + the generic

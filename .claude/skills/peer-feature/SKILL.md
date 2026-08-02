@@ -84,7 +84,11 @@ keep it off the wire.
    menu (`Controls.svelte objectMenuItems`), shortcuts registry (`shortcuts.js` — one
    registry drives bindings AND the Settings list), VR quick-menu
    (`vrControls.executeVRMenuAction` + `VRMenu.svelte` tiles), action toasts
-   (`showToast(message, [{label, action}])`).
+   (`showToast(message, [{label, action}])` — 15s, auto-expires; a decision the
+   user MUST answer takes `showInfoToast(id, text, actions, onDismiss)` instead:
+   sticky, never folded by the "+N more" cap, removed via `dismissToastById(id)`;
+   make the ✕/onDismiss path take the SAFE default — the share-or-stash gate in
+   sessions.js is the reference, #15-P2).
 9. **Verify two-peer** per `.claude/skills/e2e-verify/SKILL.md`; add a suite in
    `tests/e2e/`; expose new singletons via the App.svelte `__stores` hook; one
    `[feat] ...` commit.

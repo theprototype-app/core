@@ -40,13 +40,19 @@ through on this npm version: it parses them as npm config, vite gets `dev 5177`
 as a positional and binds a random free port over plain http.)
 
 Assigned ports: main checkout 5173 (the user's), lane-c 5174, lane-vr 5175,
-lane-ui 5176, lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. Two-peer suites still meet on the signaling server
+lane-ui 5176 (SHADOWED 2026-08-02 — moved to 5186), lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. Two-peer suites still meet on the signaling server
 (now the self-hosted peerjs.theprototype.app box), so concurrent lanes' test peers
 never collide (random ids). PORT-SHADOW TRAP: another process holding only
 `[::1]:PORT` does NOT trip `--strictPort` (vite binds 0.0.0.0) — but
 curl/playwright resolve localhost to ::1 and hit the STALE server (symptom: new
-modules 404 to index.html, `__stores` missing new keys). `netstat -ano` and
-check BOTH stacks before blaming your build.
+modules 404 to index.html, `__stores` missing new keys, or your edits "not
+applying" while the suite runs old code). `netstat -ano` and check BOTH stacks
+before blaming your build — and before trusting ANY lane server, prove it
+serves YOUR code: `curl -sk https://localhost:PORT/src/lib/<file>.js | grep
+<your-new-symbol>` (a stale pre-PATH-flip node-20 vite on [::1] burned a full
+debug cycle in #15). Remember two-peer runs ALWAYS need the PEER_CONFIG env on
+a localhost APP_URL — `helpers.connect` times out on the Approve button
+otherwise (the app dials the local :9001 server that isn't running).
 
 ## The debugStores hook — the ONLY sanctioned test API
 
@@ -108,6 +114,11 @@ const value = await page.evaluate(() =>
 - Context menus render `role="menuitem"`; group items CONTAIN submenu text — anchored
   regex `/^Exact label$/` + `.last()` if needed.
 - Action toasts have buttons now — `getByRole('button', { name: 'Approve' })` etc.
+  Toast entries may be STICKY (`{id, sticky:true, kind:'info'}` — restore-session,
+  first-run notice, share-or-stash): they never auto-expire and never fold into
+  "+N more", so don't wait them out — click an action or `dismissToastById(id)`.
+  The outline effect isn't in `__stores` (it lives in Outline.svelte) — read it via
+  `window.__outlineDebug()` → `{selected, locked}` mesh counts (debugStores-gated).
 
 ## Repo-external modules (theprototype-app/modules)
 
@@ -270,7 +281,8 @@ drops the P2P session.
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-08-01 = **435 errors / 62 warnings** (node 24, all A-D migrations in) (drifts down as flowbite/typed
+  baseline 2026-08-02 = **419 errors / 62 warnings** (node 24; #15-C's one-way
+  pickers dropped 14, #15-K's outline rework 2 more) (drifts down as flowbite/typed
   code is removed — hold whatever it currently is; add no NEW; the release.yml gate
   hardcodes the numbers — update it when the baseline moves). Note: in the big
   JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —

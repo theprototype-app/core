@@ -269,7 +269,15 @@ h.run(async () => {
 		// it is the stack's FIRST child, so toasts flow below it and can never
 		// displace it (top-centre belongs to the Connect pill, hence not `fixed`)
 		const isFirst = banner.parentElement?.firstElementChild === banner;
-		const before = banner.getBoundingClientRect();
+		// wait out the banner's own intro fly (saturation can stretch the 180ms
+		// transition well past a fixed wait) — sample until the rect is stable
+		let before = banner.getBoundingClientRect();
+		for (let i = 0; i < 20; i++) {
+			await new Promise((r) => setTimeout(r, 150));
+			const now = banner.getBoundingClientRect();
+			if (Math.abs(now.top - before.top) < 0.5) { before = now; break; }
+			before = now;
+		}
 		// a burst of toasts must NOT move it (as a toast, it used to shift)
 		w.toastStore.set(['one', 'two', 'three']);
 		await new Promise((r) => setTimeout(r, 350));
@@ -289,6 +297,69 @@ h.run(async () => {
 	h.check(spectator.moved < 1, `incoming toasts never shift it (${spectator.moved.toFixed(2)}px)`);
 	h.check(spectator.centred, 'it stays centred');
 	h.check(spectator.exit, 'it keeps a prominent Exit button');
+
+	// ---------- P2: the transfer-progress toast HIDES after completion ----------
+	// The old machinery re-armed its "done" branch on every $objectsGroup poke,
+	// so a finished "Receiving objects: N/N" card kept re-showing forever.
+	const progress = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.loadingcount.set(3);
+		w.loading.set(['u1', 'u2']);
+		await new Promise((r) => setTimeout(r, 250));
+		const during = !!document.querySelector('.tp-toast--progress');
+		w.loading.set([]); // transfer completes
+		await new Promise((r) => setTimeout(r, 300));
+		const grace = !!document.querySelector('.tp-toast--progress'); // brief "N/N"
+		await new Promise((r) => setTimeout(r, 2700));
+		const afterGrace = !!document.querySelector('.tp-toast--progress');
+		// the old bug: any scene mutation re-showed it — poke and make sure it stays gone
+		w.objectsGroup.update((v) => v);
+		w.commandsHandler.sceneCommand('/create Box 1 1 1');
+		await new Promise((r) => setTimeout(r, 400));
+		const afterPoke = !!document.querySelector('.tp-toast--progress');
+		w.loadingcount.set(0);
+		return { during, grace, afterGrace, afterPoke };
+	});
+	h.check(progress.during, 'the progress card shows during a transfer');
+	h.check(progress.grace, 'it lingers briefly at N/N');
+	h.check(!progress.afterGrace, 'it hides after the grace period');
+	h.check(!progress.afterPoke, 'scene mutations do not resurrect it (the reported bug)');
+
+	// ---------- P2: share-or-stash WAITS for the user ----------
+	const shareGate = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		// a fake requesting peer with a stubbed open connection (resolveGate replies to it)
+		const p = await new Promise((r) => w.peers.subscribe((v) => r(v))());
+		p.connections['fake-gate-peer'] = { open: true, send() {} };
+		w.commandsHandler.sceneCommand('/create Box 1 1 1'); // we own objects
+		await new Promise((r) => setTimeout(r, 200));
+		w.sessions.deferUntilShareChoice('objects', 'fake-gate-peer', 5);
+		await new Promise((r) => setTimeout(r, 300));
+		const entries = await new Promise((r) => w.toastStore.subscribe((v) => r(v))());
+		const entry = entries.find((e) => e && e.id === 'share-or-stash');
+		const labels = entry?.actions?.map((a) => a.label) ?? [];
+		// answer Share so the gate resolves and later tests see a clean state
+		const card = [...document.querySelectorAll('.tp-toast')].find((c) =>
+			c.textContent?.includes('or stash them')
+		);
+		const shareBtn = [...(card?.querySelectorAll('.tp-toast-action') ?? [])].find(
+			(b) => b.textContent === 'Share'
+		);
+		shareBtn?.click();
+		await new Promise((r) => setTimeout(r, 200));
+		const gone = !(await new Promise((r) =>
+			w.toastStore.subscribe((v) => r(v.some((e) => e && e.id === 'share-or-stash')))()
+		));
+		delete p.connections['fake-gate-peer'];
+		return { present: !!entry, sticky: !!entry?.sticky, labels, gone };
+	});
+	h.check(shareGate.present, 'the share-or-stash prompt rides the toast store');
+	h.check(shareGate.sticky, 'it is STICKY — it waits for the user instead of auto-sharing');
+	h.check(
+		shareGate.labels.includes('Share') && shareGate.labels.includes('Stash'),
+		`both choices offered (${shareGate.labels})`
+	);
+	h.check(shareGate.gone, 'answering resolves and removes it');
 
 	// ---------- M: the Welcome GitHub button shows a star count ----------
 	// The fetch fires at component init, so mocking mid-session is too late —

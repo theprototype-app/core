@@ -9,7 +9,6 @@
 	import { Progressbar, Toast, Button } from 'flowbite-svelte';
     import { fly } from 'svelte/transition';
 
-let showToast = $state(false);
 
 // CN toast routing. The viewport containers are HIDDEN (display:none, not removed —
 // so each toast's expiry timer keeps running) and the live toasts instead render in
@@ -39,7 +38,6 @@ const hiddenCount = $derived(Math.max(0, transientToasts.length - MAX_TOASTS));
 const visibleToasts = $derived([...transientToasts.slice(-MAX_TOASTS), ...stickyToasts]);
 
 $effect(() => {
-    if($loading.length > 0) showToast = true;
     if($loading.length > 0)
     if($objectsGroup)
     // Remove loaded UUIDs from the loading array
@@ -51,26 +49,25 @@ $effect(() => {
             $loading = $loading // Trigger reactivity
         }
     })
-    
-    if (($loadingcount-$loading.length) === $loadingcount) {
-        trigger();
-    }
 });
 
-let toastStatus = $state(true);
-
-let counter = 2;
-
-function trigger() {
-toastStatus = true;
-counter = 2;
-timeout();
-}
-
-function timeout() {
-if (--counter > 0) return setTimeout(timeout, 4000);
-toastStatus = false;
-}
+// 15-P2: "Receiving objects" visibility. The old machinery (showToast +
+// toastStatus + a re-arming trigger()) fired its "done" branch on EVERY effect
+// run once $loading emptied — and $objectsGroup pokes on every scene mutation,
+// so the completed toast kept re-showing forever. One state, one rule: visible
+// while a transfer runs, then a short grace so the user sees "N/N", then gone
+// until the next transfer starts.
+let progressVisible = $state(false);
+let progressHideTimer: any;
+$effect(() => {
+    if ($loading.length > 0) {
+        clearTimeout(progressHideTimer);
+        progressVisible = true;
+    } else if (progressVisible) {
+        clearTimeout(progressHideTimer);
+        progressHideTimer = setTimeout(() => (progressVisible = false), 2500);
+    }
+});
 
 // Approve an incoming connection request. `role` (cloud roles) optionally grants the
 // joiner a role right away — "Approve + edit" makes them an editor instead of the
@@ -243,10 +240,9 @@ style="z-index: var(--z-toast); pointer-events: none;"
 class:cxd-hidden={hideRegular}
 style="z-index: var(--z-toast-low); pointer-events: none;"
 >
-{#if showToast}
-{#if $loadingcount > 0}
-<!-- 15-P: transfer progress wears the shared card too (it is a notification) —
-     it used to be a raw flowbite Toast with green body text -->
+{#if progressVisible && $loadingcount > 0}
+<!-- 15-P: transfer progress wears the shared card too (it is a notification);
+     15-P2: progressVisible hides it 2.5s after the transfer completes -->
 <div class="my-1 tp-toast tp-toast--progress" transition:fly={{ y: -8, duration: 180 }}>
 	<div class="tp-toast-body">
 		<Download size={16} class="tp-toast-icon" aria-hidden="true" />
@@ -256,7 +252,6 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
 		</div>
 	</div>
 </div>
-{/if}
 {/if}
 
 

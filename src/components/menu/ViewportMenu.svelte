@@ -50,12 +50,15 @@
 		};
 	}
 
+	// 15-Q: same chrome family as the object menu — icons, shortcut hints, quiet
+	// section labels; functionality unchanged.
 	$: items = [
 		// 125: real scene-object search + focus — opt-in via settings, hidden otherwise
 		...($objectSearchEnabled
 			? [
 					{
 						label: 'Search objects…',
+						icon: 'search',
 						tooltip: 'Find a scene object and fly to it',
 						action: () => objectSearch.set({ x: menu.x, y: menu.y })
 					}
@@ -63,28 +66,34 @@
 			: []),
 		{
 			label: 'Add',
+			icon: 'plus',
 			children: buildAddChildren(() => menu?.point ?? null)
 		},
-		{ label: 'Undo', disabled: !$canUndo, tooltip: 'Ctrl+Z', action: undo },
-		{ label: 'Redo', disabled: !$canRedo, tooltip: 'Ctrl+Y', action: redo },
+		{ label: 'Undo', icon: 'undo-2', hint: 'Ctrl+Z', disabled: !$canUndo, action: undo },
+		{ label: 'Redo', icon: 'redo-2', hint: 'Ctrl+Y', disabled: !$canRedo, action: redo },
 		{
 			label: 'Ping here',
+			icon: 'radar',
 			tooltip: 'Everyone sees a pulse at this spot (or Alt+click anywhere)',
 			action: () => sendPing(menu?.point ?? [0, 0, 0])
 		},
 		// 124: everything that acts on the CURRENT SELECTION lives in one submenu.
-		// Fixed "Selected" label (object names get very long) + the SAME items as the
-		// direct object right-click menu (buildObjectMenuItems), so the two are in parity.
+		// Fixed "Selected" label (object names get very long — the renderer adds the
+		// ▸ chevron itself) + the SAME items as the direct object right-click menu
+		// (buildObjectMenuItems), so the two are in parity.
 		...($selectedObject?.uuid
 			? [
 					{
-						label: 'Selected ▸',
+						label: 'Selected',
+						icon: 'box',
 						children: buildObjectMenuItems($selectedObject.uuid)
 					}
 				]
 			: []),
+		{ section: 'Tools & view' },
 		{
 			label: 'Tools',
+			icon: 'wrench',
 			children: [
 				{
 					label: ($drawMode ? '● ' : '') + 'Draw mode',
@@ -121,6 +130,7 @@
 		},
 		{
 			label: 'Snapping',
+			icon: 'grid-3x3',
 			children: [
 				{
 					label: $snapEnabled ? 'Disable snapping' : 'Enable snapping',
@@ -143,6 +153,7 @@
 		},
 		{
 			label: 'View',
+			icon: 'eye',
 			children: [
 				{
 					label: $showGrid ? 'Hide grid' : 'Show grid',
@@ -157,6 +168,7 @@
 		},
 		{
 			label: 'Camera bookmarks',
+			icon: 'camera',
 			children: [
 				{ label: 'Save current view', action: () => saveBookmark() },
 				...$bookmarks.map((bookmark, index) => ({

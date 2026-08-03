@@ -342,6 +342,8 @@ h.run(async () => {
 		const card = [...document.querySelectorAll('.tp-toast')].find((c) =>
 			c.textContent?.includes('or stash them')
 		);
+		// a genuine fork renders NO ✕ — an action must decide
+		const hasClose = !!card?.querySelector('.tp-toast-x');
 		const shareBtn = [...(card?.querySelectorAll('.tp-toast-action') ?? [])].find(
 			(b) => b.textContent === 'Share'
 		);
@@ -351,10 +353,11 @@ h.run(async () => {
 			w.toastStore.subscribe((v) => r(v.some((e) => e && e.id === 'share-or-stash')))()
 		));
 		delete p.connections['fake-gate-peer'];
-		return { present: !!entry, sticky: !!entry?.sticky, labels, gone };
+		return { present: !!entry, sticky: !!entry?.sticky, labels, gone, hasClose };
 	});
 	h.check(shareGate.present, 'the share-or-stash prompt rides the toast store');
 	h.check(shareGate.sticky, 'it is STICKY — it waits for the user instead of auto-sharing');
+	h.check(!shareGate.hasClose, 'a fork renders no ✕ — Share or Stash must decide');
 	h.check(
 		shareGate.labels.includes('Share') && shareGate.labels.includes('Stash'),
 		`both choices offered (${shareGate.labels})`

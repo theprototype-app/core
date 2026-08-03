@@ -451,11 +451,14 @@ export function clearToast(toast) {
  * @param {string} text
  * @param {{label: string, action: () => void}[]=} actions
  * @param {(() => void)=} onDismiss side effect for the ✕ (e.g. persist "seen")
+ * @param {boolean=} noClose 15-P2: a genuine FORK renders no ✕ at all — a
+ *   dismiss that silently picks one branch is the auto-decide trap in
+ *   miniature; the user must click one of the actions (share-or-stash)
  */
-export function showInfoToast(id, text, actions, onDismiss) {
+export function showInfoToast(id, text, actions, onDismiss, noClose) {
   toastStore.update((list) => {
     if (list.some((entry) => entry && entry.id === id)) return list; // already up
-    return [...list, { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss }];
+    return [...list, { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss, noClose: !!noClose }];
   });
 }
 

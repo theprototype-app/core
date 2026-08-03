@@ -308,7 +308,9 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
      migrated text across nodes and svelte 5.5x left a stuck duplicate behind -->
 {#each visibleToasts as toast (toast)}
 <div class="my-1 tp-toast" class:tp-toast--info={toast?.kind === 'info'} transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
-    <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => dismiss(toast)}>✕</button>
+    {#if !toast?.noClose}
+        <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => dismiss(toast)}>✕</button>
+    {/if}
     <div class="tp-toast-body">
         <Info size={16} class="tp-toast-icon" aria-hidden="true" />
         <div class="tp-toast-main">

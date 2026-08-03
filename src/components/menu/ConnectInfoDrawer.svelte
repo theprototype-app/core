@@ -238,7 +238,10 @@
 										<button class="cxd-approve" onclick={() => { entry.action(); dismissToast(t); }}>{entry.label}</button>
 									{/each}
 								{/if}
-								<button class="cxd-reject" onclick={() => dismissToast(t)}>Dismiss</button>
+								{#if typeof t === 'string' || !t.noClose}
+									<!-- 15-P2: forks (share-or-stash) offer no Dismiss — an action must decide -->
+									<button class="cxd-reject" onclick={() => dismissToast(t)}>Dismiss</button>
+								{/if}
 							</div>
 						</li>
 					{/each}

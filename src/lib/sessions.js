@@ -467,9 +467,10 @@ export function applySessionProposal(data) {
 // The first time another peer requests our state while we own local objects,
 // the objects/nodes replies DEFER behind a choice: share them into the joint
 // space (old behavior) or stash them to a session and join clean. Asked once
-// per app session; the prompt is STICKY and waits for the user (15-P2 — it
-// used to auto-share after 14s, which could silently publish a scene the user
-// meant to stash). Closing it with ✕ shares (the safe default).
+// per app session; the prompt is STICKY with NO ✕ and waits for an explicit
+// Share/Stash click (15-P2 — it used to auto-share after 14s, which could
+// silently publish a scene the user meant to stash; a dismiss-that-shares
+// would be the same trap smaller).
 
 let shareChoiceMade = false;
 /** @type {{senders: {objects: Set<string>, nodes: Set<string>}, payload: any, uuids: string[], done: boolean} | null} */
@@ -549,11 +550,11 @@ export function deferUntilShareChoice(kind, sender, otherCount = 0) {
 		done: false
 	};
 	gate.senders[kind].add(sender);
-	// 15-P2: a STICKY prompt — this decides whether the user's work merges into
-	// the joint space, so it must never expire underneath them (it used to
-	// auto-share after 14s, which could silently publish a scene they meant to
-	// stash). The joiner's handshake reply simply waits until it is answered;
-	// closing the card with ✕ takes the safe old default (share).
+	// 15-P2: a STICKY prompt with NO ✕ — this decides whether the user's work
+	// merges into the joint space, so nothing may decide it implicitly: the 14s
+	// auto-share could silently publish a scene they meant to stash, and a
+	// dismiss-that-shares would be the same trap smaller. The joiner's handshake
+	// reply simply waits until Share or Stash is clicked.
 	showInfoToast(
 		'share-or-stash',
 		'Share your ' + count + ' object' + (count === 1 ? '' : 's') + ' with ' + nameOf(sender) + ', or stash them to a session first?',
@@ -561,7 +562,8 @@ export function deferUntilShareChoice(kind, sender, otherCount = 0) {
 			{ label: 'Share', action: () => resolveGate() },
 			{ label: 'Stash', action: () => stashAndJoin() }
 		],
-		() => resolveGate()
+		undefined,
+		true
 	);
 }
 

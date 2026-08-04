@@ -1153,12 +1153,26 @@
 						onchange={(v) => setGrid({ size: v })}
 					/>
 				{/if}
-				<Checkbox
-					id="grid-follow"
-					checked={$gridSettings.followCamera}
-					onchange={(/** @type {any} */ e) => setGrid({ followCamera: e.currentTarget.checked })}
-					>Follow the camera</Checkbox
-				>
+				<!-- 16-Q2: three-way follow. The old checkbox tracked your POSITION, which
+				     is not what "follow the camera" should mean while you're looking
+				     somewhere else; Look-at centres the grid under your gaze. -->
+				<div id="grid-follow" class="ui-row items-center gap-1">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Follow</span>
+					{#each [['off', 'Off'], ['lookat', 'Look-at'], ['camera', 'Camera']] as [mode, label]}
+						<button
+							class={'ui-chip ' +
+								($gridSettings.follow === mode
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							title={mode === 'lookat'
+								? 'Centre the grid under what you are looking at (horizontal only)'
+								: mode === 'camera'
+									? 'Centre the grid under the camera itself'
+									: 'Keep the grid at the world origin'}
+							onclick={() => setGrid({ follow: mode })}>{label}</button
+						>
+					{/each}
+				</div>
 				<Checkbox
 					id="grid-axes"
 					checked={$gridSettings.showAxes}
@@ -2101,46 +2115,42 @@
 						</button>
 					{/if}
 					<!-- CL-A A3: sensor = trigger volume; overlaps fire On Enter / On Exit -->
-					<label class="flex items-center gap-1.5 text-xs text-gray-300">
-						<input
-							id="physics-sensor"
-							type="checkbox"
-							checked={!!$selectedObject.userData.physics?.sensor}
-							onchange={(e) => setPhysics({ sensor: e.currentTarget.checked || null })}
-						/>
-						Sensor — no collision, fires On Enter / On Exit
-					</label>
+					<Checkbox
+						id="physics-sensor"
+						checked={!!$selectedObject.userData.physics?.sensor}
+						onchange={(/** @type {any} */ e) => setPhysics({ sensor: e.currentTarget.checked || null })}
+						>Sensor — no collision, fires On Enter / On Exit</Checkbox
+					>
 					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
 						<!-- CL-A A5: freeze axes (dynamic bodies only) -->
 						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-gray-300">
 							<span class="w-20 shrink-0 text-gray-400">Lock rotation</span>
 							{#each [['rx', 'X'], ['ry', 'Y'], ['rz', 'Z']] as [key, label] (key)}
-								<label class="flex items-center gap-1">
-									<input type="checkbox" checked={!!$selectedObject.userData.physics?.freeze?.[key]} onchange={(e) => setFreeze(key, e.currentTarget.checked)} />
-									{label}
-								</label>
+								<Checkbox
+									checked={!!$selectedObject.userData.physics?.freeze?.[key]}
+									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
+									>{label}</Checkbox
+								>
 							{/each}
 						</div>
 						<div id="physics-freeze-pos" class="ui-row items-center gap-2 text-xs text-gray-300">
 							<span class="w-20 shrink-0 text-gray-400">Lock position</span>
 							{#each [['px', 'X'], ['py', 'Y'], ['pz', 'Z']] as [key, label] (key)}
-								<label class="flex items-center gap-1">
-									<input type="checkbox" checked={!!$selectedObject.userData.physics?.freeze?.[key]} onchange={(e) => setFreeze(key, e.currentTarget.checked)} />
-									{label}
-								</label>
+								<Checkbox
+									checked={!!$selectedObject.userData.physics?.freeze?.[key]}
+									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
+									>{label}</Checkbox
+								>
 							{/each}
 						</div>
 					{/if}
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
-					<label class="flex items-center gap-1.5 text-xs text-gray-300">
-						<input
-							id="physics-show-collider"
-							type="checkbox"
-							checked={$colliderVizObjects.has($selectedObject.uuid)}
-							onchange={(e) => setColliderViz($selectedObject.uuid, e.currentTarget.checked)}
-						/>
-						Show collider — this device
-					</label>
+					<Checkbox
+						id="physics-show-collider"
+						checked={$colliderVizObjects.has($selectedObject.uuid)}
+						onchange={(/** @type {any} */ e) => setColliderViz($selectedObject.uuid, e.currentTarget.checked)}
+						>Show collider — this device</Checkbox
+					>
 					<p class="mt-1 text-xs text-gray-400">
 						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
 					</p>

@@ -9,7 +9,7 @@
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks, SHORTCUT_SLOTS } from '$lib/cameraBookmarks';
 	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
-	import { viewportMenu, objectSearch, objectSearchEnabled, showSidebar } from '../../stores/appStore';
+	import { viewportMenu, objectSearch, objectSearchEnabled, openSceneSection } from '../../stores/appStore';
 	import { buildAddChildren } from '$lib/addObjects';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import { sendPing } from '$lib/ping';
@@ -39,9 +39,9 @@
 
 	// 16-P3: the active choice is `checked` (bold + accent) instead of a '● ' label
 	// prefix, which shifted the label sideways as it appeared and read as a glitch.
-	function snapSizeItem(key: 'translate' | 'scale', value: number, label: string) {
+	function snapSizeItem(key: 'translate' | 'scale', value: number, label?: string) {
 		return {
-			label,
+			label: label ?? String(value),
 			checked: $snapSettings[key] === value,
 			action: () => snapSettings.update((s) => ({ ...s, [key]: value }))
 		};
@@ -52,6 +52,18 @@
 			checked: $snapSettings.rotateDeg === value,
 			action: () => snapSettings.update((s) => ({ ...s, rotateDeg: value }))
 		};
+	}
+	// 16-Q2: a step typed in Configure Scene has to be reachable — and visible as the
+	// ACTIVE one — here too, so it joins the presets whenever it isn't one of them.
+	function snapRow(key: 'translate' | 'scale', presets: number[]) {
+		const current = $snapSettings[key];
+		const values = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
+		return values.map((value) => snapSizeItem(key, value));
+	}
+	function snapRotRow(presets: number[]) {
+		const current = $snapSettings.rotateDeg;
+		const values = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
+		return values.map((value) => snapRotItem(value));
 	}
 
 	$: hasSelection =
@@ -158,16 +170,11 @@
 					action: () => snapEnabled.update((v) => !v)
 				},
 				{ section: 'Position' },
-				snapSizeItem('translate', 0.1, '0.1'),
-				snapSizeItem('translate', 0.5, '0.5'),
-				snapSizeItem('translate', 1, '1'),
+				...snapRow('translate', [0.1, 0.25, 0.5, 1]),
 				{ section: 'Rotation' },
-				snapRotItem(5),
-				snapRotItem(15),
-				snapRotItem(45),
+				...snapRotRow([5, 15, 45, 90]),
 				{ section: 'Scale' },
-				snapSizeItem('scale', 0.05, '0.05'),
-				snapSizeItem('scale', 0.1, '0.1'),
+				...snapRow('scale', [0.05, 0.1, 0.25]),
 				{ section: 'Surface' },
 				{
 					label: 'Snap to surface',
@@ -180,7 +187,7 @@
 					label: 'More snapping settings…',
 					icon: 'sliders-horizontal',
 					tooltip: 'Custom steps live in Configure Scene ▸ Snapping',
-					action: () => showSidebar('scene')
+					action: () => openSceneSection('Snapping')
 				}
 			]
 		},
@@ -201,7 +208,7 @@
 					label: 'Grid & axes settings…',
 					icon: 'sliders-horizontal',
 					tooltip: 'Cell size, colours, fade and the origin axes (Configure Scene ▸ Grid)',
-					action: () => showSidebar('scene')
+					action: () => openSceneSection('Grid')
 				},
 				{ label: 'Screenshot', icon: 'camera', action: screenshot }
 			]
@@ -228,7 +235,7 @@
 					label: 'Manage saved views…',
 					icon: 'sliders-horizontal',
 					tooltip: 'Rename, re-shoot, reorder or delete (Configure Scene ▸ Camera)',
-					action: () => showSidebar('scene')
+					action: () => openSceneSection('Camera')
 				},
 				{
 					label: 'Clear bookmarks',

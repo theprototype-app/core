@@ -22,15 +22,35 @@
     //
     // 16-P3: all of the appearance now comes from the LOCAL `gridSettings` prefs
     // (Configure Scene ▸ Grid); 'fixed' fade mode skips the auto math entirely.
+    //
+    // 16-Q2: FOLLOW is ours, not threlte's `followCamera` — that one tracked your
+    // POSITION, which is not what "follow the camera" wants to mean when you are
+    // looking somewhere else. 'lookat' centres the grid under the orbit target,
+    // 'camera' keeps the old behaviour, and both stay HORIZONTAL (y = 0: it is the
+    // ground plane, not a flying sheet). The centre snaps to whole cells so the
+    // lines keep lining up with world coordinates instead of sliding.
     const { camera } = useThrelte()
     let fade = $state(100)
+    let centerX = $state(0)
+    let centerZ = $state(0)
     useTask(() => {
-      if ($gridSettings.fadeMode !== 'auto') return
       const cam = camera.current
       if (!cam) return
       const oc = $orbitControls
-      const dist = oc?.target ? cam.position.distanceTo(oc.target) : cam.position.length()
-      fade = Math.min(Math.max(100, dist * 1.6), 5000)
+      if ($gridSettings.fadeMode === 'auto') {
+        const dist = oc?.target ? cam.position.distanceTo(oc.target) : cam.position.length()
+        fade = Math.min(Math.max(100, dist * 1.6), 5000)
+      }
+      const follow = $gridSettings.follow
+      if (follow === 'off') {
+        centerX = 0
+        centerZ = 0
+        return
+      }
+      const anchor = follow === 'lookat' && oc?.target ? oc.target : cam.position
+      const step = Math.max(0.001, cell)
+      centerX = Math.round(anchor.x / step) * step
+      centerZ = Math.round(anchor.z / step) * step
     })
 
     const cell = $derived(effectiveCell($gridSettings, $snapSettings.translate))
@@ -42,9 +62,8 @@
     <Grid
       infiniteGrid={$gridSettings.infinite}
       gridSize={$gridSettings.infinite ? undefined : [$gridSettings.size, $gridSettings.size]}
-      followCamera={$gridSettings.followCamera}
       renderOrder={9999}
-      position={[0,0,0.03]}
+      position={[centerX, 0, centerZ + 0.03]}
       cellSize={cell}
       sectionSize={section}
       cellColor={$gridSettings.cellColor}

@@ -4,7 +4,7 @@
 	// while $inspectorFilter is non-empty every section force-renders its
 	// content (so hidden rows are searchable), matches the query against its
 	// rendered TEXT, and hides itself when nothing matches.
-	import { inspectorFilter } from '../../stores/appStore';
+	import { inspectorFilter, inspectorScrollTo } from '../../stores/appStore';
 
 	/** @type {{label?: string, collapsible?: boolean, open?: boolean, children?: any}} */
 	let { label = '', collapsible = true, open = $bindable(true), children = null } = $props();
@@ -35,6 +35,20 @@
 
 	const filtering = $derived($inspectorFilter.trim().length > 0);
 	const showContent = $derived(filtering ? true : !collapsible || (open && !collapsed));
+
+	// 16-Q2: a menu deep link ("More snapping settings…") names a section — expand it
+	// even if the user had collapsed it, scroll it into view, then clear the request
+	// so it fires exactly once.
+	$effect(() => {
+		if ($inspectorScrollTo !== label) return;
+		collapsed = false;
+		try {
+			LS?.setItem('inspector:sec:' + label, 'open');
+		} catch {}
+		const node = root;
+		requestAnimationFrame(() => node?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+		inspectorScrollTo.set(null);
+	});
 </script>
 
 <div class="border-b border-gray-700/40 pb-2" class:hidden={filtering && !match} bind:this={root}>

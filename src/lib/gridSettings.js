@@ -27,7 +27,16 @@ export const DEFAULT_GRID = {
 	/** infinite grid vs a finite patch of `size` units */
 	infinite: true,
 	size: 100,
-	followCamera: false,
+	/**
+	 * 16-Q2: what the grid centre tracks — 'off' (world origin), 'camera' (your
+	 * position) or 'lookat' (where you are LOOKING: the orbit target). Always
+	 * horizontal: the grid stays the ground plane at y=0 rather than lifting with
+	 * the camera. The follow position snaps to whole cells so the lines keep
+	 * agreeing with world coordinates instead of sliding under objects.
+	 * (The old boolean `followCamera` migrates to 'lookat' — following your own
+	 * position was what made it feel broken.)
+	 */
+	follow: 'off',
 	/** local origin axes helper (X red / Y green / Z blue) */
 	showAxes: false
 };
@@ -36,7 +45,13 @@ function load() {
 	try {
 		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null;
 		// unknown/missing keys fall back to defaults, so old payloads keep working
-		return raw ? { ...DEFAULT_GRID, ...JSON.parse(raw) } : { ...DEFAULT_GRID };
+		const stored = raw ? JSON.parse(raw) : {};
+		const value = { ...DEFAULT_GRID, ...stored };
+		// migrate the old boolean
+		if (stored.followCamera !== undefined && stored.follow === undefined)
+			value.follow = stored.followCamera ? 'lookat' : 'off';
+		delete value.followCamera;
+		return value;
 	} catch {
 		return { ...DEFAULT_GRID };
 	}

@@ -155,7 +155,10 @@
 		document.getSelection?.()?.removeAllRanges?.();
 		let next = startValue + dx * step * (event.shiftKey ? 0.1 : 1);
 		if (event.ctrlKey || event.metaKey) next = Math.round(next / snap) * snap;
-		next = clamp(next);
+		// 16-Q5: quantize to the field's own precision. A raw scrub produced values
+		// like 0.7999999999999999, which then leaked into menus and saved settings —
+		// what you SEE is what gets stored.
+		next = Number(clamp(next).toFixed(decimals));
 		typed = fmt(next);
 		commit(next);
 	}

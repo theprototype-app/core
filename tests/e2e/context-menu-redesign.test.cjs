@@ -274,5 +274,61 @@ h.run(async () => {
 	h.check(esc.groupedAgain, 'a second Esc leaves search for the grouped menu');
 	h.check(esc.closed, 'a third Esc closes the menu');
 
+
+	// ---------- 16-Q5: opening rules + the search box keeps the top -------------
+	const placement = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const open = async (y) => {
+			w.viewportMenu.set(null);
+			await new Promise((r) => setTimeout(r, 150));
+			w.viewportMenu.set({ x: 240, y, point: [0, 0, 0] });
+			await new Promise((r) => setTimeout(r, 350));
+			const el = document.querySelector('[role="menu"]');
+			const rect = el.getBoundingClientRect();
+			return {
+				top: Math.round(rect.top),
+				bottom: Math.round(rect.bottom),
+				scrolls: el.scrollHeight > el.clientHeight + 1,
+				vh: window.innerHeight
+			};
+		};
+		const roomy = await open(80);
+		const tight = await open(window.innerHeight - 40);
+		const input = document.querySelector('.ctx-filter-input');
+		const topBeforeSearch = document.querySelector('[role="menu"]').getBoundingClientRect().top;
+		input.value = 'e';
+		input.dispatchEvent(new Event('input', { bubbles: true }));
+		await new Promise((r) => setTimeout(r, 400));
+		const menu = document.querySelector('[role="menu"]');
+		const searching = menu.getBoundingClientRect();
+		const grip = !!menu.querySelector('.ctx-grip');
+		w.viewportMenu.set(null);
+		return {
+			roomy,
+			tight,
+			topBeforeSearch: Math.round(topBeforeSearch),
+			searchTop: Math.round(searching.top),
+			searchHeight: Math.round(searching.height),
+			grip
+		};
+	});
+	h.check(
+		Math.abs(placement.roomy.top - 80) <= 2,
+		`with room below, the menu opens AT the cursor (top ${placement.roomy.top})`
+	);
+	h.check(
+		placement.tight.bottom <= placement.tight.vh && !placement.tight.scrolls,
+		`with no room below it shifts UP, bottom inside, no scrollbar (${JSON.stringify(placement.tight)})`
+	);
+	h.check(
+		Math.abs(placement.searchTop - placement.topBeforeSearch) <= 2,
+		`searching keeps the top where it was (${placement.topBeforeSearch} -> ${placement.searchTop})`
+	);
+	h.check(
+		placement.searchHeight <= 400,
+		`the search list keeps a reasonable height instead of unfolding (${placement.searchHeight}px)`
+	);
+	h.check(placement.grip, 'a resize grip appears while searching');
+
 	await h.finish(browser);
 });

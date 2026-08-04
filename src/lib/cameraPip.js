@@ -15,6 +15,8 @@ import { cameraPreview } from './cameraPreview';
 /** default window height in CSS px (width follows the camera's framing aspect) */
 export const PIP_HEIGHT = 170;
 const MARGIN = 16;
+/** room for the round HUD buttons at the right edge (mic, chat) */
+const HUD_CLEARANCE = 64;
 
 /** user-dragged position, or null = auto-park bottom-right (kept per session)
  * @type {import('svelte/store').Writable<{x: number, y: number} | null>} */
@@ -65,8 +67,11 @@ export function pipSize(object) {
  * @param {number} [panelWidth] width of an open right-side panel (0 = none)
  */
 export function autoPosition(size, viewport, panelWidth = 0) {
+	// the right edge keeps clear of the round HUD buttons (mic / chat) that live
+	// there, so the parked window never sits under them
+	const right = panelWidth ? MARGIN : HUD_CLEARANCE;
 	return {
-		x: Math.max(MARGIN, viewport.width - size.w - MARGIN - panelWidth),
+		x: Math.max(MARGIN, viewport.width - size.w - right - panelWidth),
 		y: Math.max(MARGIN, viewport.height - size.h - MARGIN)
 	};
 }

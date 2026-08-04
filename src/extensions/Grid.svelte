@@ -41,16 +41,19 @@
         const dist = oc?.target ? cam.position.distanceTo(oc.target) : cam.position.length()
         fade = Math.min(Math.max(100, dist * 1.6), 5000)
       }
-      const follow = $gridSettings.follow
-      if (follow === 'off') {
+      // 16-Q5: only LOOK-AT is ours. Camera-follow goes through threlte's own
+      // `followCamera` below, which keeps the grid centred on the camera while the
+      // shader keeps drawing lines at WORLD positions — smooth while you pan.
+      // Snapping the mesh by whole cells (what we do for look-at, and what you want
+      // when it is locked to an object) would make a pan step in jerks instead.
+      if ($gridSettings.follow !== 'lookat' || !oc?.target) {
         centerX = 0
         centerZ = 0
         return
       }
-      const anchor = follow === 'lookat' && oc?.target ? oc.target : cam.position
       const step = Math.max(0.001, cell)
-      centerX = Math.round(anchor.x / step) * step
-      centerZ = Math.round(anchor.z / step) * step
+      centerX = Math.round(oc.target.x / step) * step
+      centerZ = Math.round(oc.target.z / step) * step
     })
 
     const cell = $derived(effectiveCell($gridSettings, $snapSettings.translate))
@@ -62,6 +65,7 @@
     <Grid
       infiniteGrid={$gridSettings.infinite}
       gridSize={$gridSettings.infinite ? undefined : [$gridSettings.size, $gridSettings.size]}
+      followCamera={$gridSettings.follow === 'camera'}
       renderOrder={9999}
       position={[centerX, 0, centerZ + 0.03]}
       cellSize={cell}

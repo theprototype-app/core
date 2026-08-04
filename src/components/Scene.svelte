@@ -272,6 +272,13 @@
 	$: if ($TControls && $TControls !== hookedControls) {
 		hookedControls = $TControls;
 		$TControls.addEventListener('dragging-changed', (event) => {
+			// 16-Q5: suppress orbiting for the whole drag OURSELVES — first thing, for
+			// every kind of gizmo target. threlte's TransformControls disables whatever
+			// controls sit in ITS OWN context slot, and after a camera preview that slot
+			// can point at an instance that no longer drives the view, so dragging an
+			// object also orbited the camera ("as if I would move around with mouse").
+			// Writing through `activeOrbit` is instance-proof.
+			if ($activeOrbit) $activeOrbit.enabled = !event.value;
 			const object = hookedControls.object;
 			if (!object) return;
 			// vertex handles record their own history entries
@@ -967,7 +974,12 @@
 </script>
 
 <T.PerspectiveCamera makeDefault position={[-10, 10, 10]} fov={40} far={5000} bind:ref={$editorCam}>
-	<!-- 16-P5: while previewing a camera OBJECT, that camera owns the controls -->
+	<!-- 16-P5: while previewing a camera OBJECT, that camera owns the controls — these
+	     unmount so its own `makeDefault` camera really becomes the render camera.
+	     16-Q5: the instance being replaced is DISPOSED on the way out
+	     (startCameraPreview / releasePreviewOrbit), because an OrbitControls that is
+	     merely dropped keeps its DOM listeners and goes on orbiting whatever camera
+	     threlte points it at — the zombie behind "the gizmo drags rotate my view". -->
 	{#if !$specatorMode && !$cameraPreview}
 		<OrbitControls bind:ref={$orbitControls} enableZoom={true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
 	{/if}

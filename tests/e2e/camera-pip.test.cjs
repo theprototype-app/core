@@ -129,5 +129,52 @@ h.run(async () => {
 		`glRect flips the origin for WebGL (${JSON.stringify(flip)})`
 	);
 
+
+	// ---------- 16-Q5: the title bar drags with the LEFT button too --------------
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuid);
+	await A.page.waitForTimeout(500);
+	await A.page.evaluate(() => window.__stores.cameraPip.resetPipPosition());
+	await A.page.waitForTimeout(300);
+	let bar = await frame(A.page);
+	await A.page.mouse.move(bar.x + bar.w / 2, bar.y + 6); // on the title bar
+	await A.page.mouse.down(); // LEFT button
+	await A.page.mouse.move(bar.x - 180, bar.y - 90, { steps: 8 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(400);
+	const afterLeft = await frame(A.page);
+	h.check(
+		afterLeft && afterLeft.x < bar.x - 80,
+		`a LEFT-drag on the title bar moves the window (${bar.x} -> ${afterLeft?.x})`
+	);
+
+	// a left-drag on the BODY must not move it (that button belongs to the viewport)
+	const bodyStart = await frame(A.page);
+	await A.page.mouse.move(bodyStart.x + bodyStart.w / 2, bodyStart.y + bodyStart.h - 20);
+	await A.page.mouse.down();
+	await A.page.mouse.move(bodyStart.x + 120, bodyStart.y + bodyStart.h - 20, { steps: 6 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(400);
+	const afterBody = await frame(A.page);
+	h.check(
+		afterBody && Math.abs(afterBody.x - bodyStart.x) < 3,
+		`a left-drag on the body leaves it put (${bodyStart.x} -> ${afterBody?.x})`
+	);
+
+	// ---------- 16-Q5: the gizmo is not drawn inside the preview -----------------
+	const gizmoHidden = await A.page.evaluate(async () => {
+		// the gizmo is attached to the selected camera; renderPip must hide it for its
+		// draw and restore it afterwards
+		let controls = null;
+		window.__stores.TControls.subscribe((v) => (controls = v))();
+		const attached = !!controls?.object;
+		await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+		return { attached, visibleAfterFrames: controls?.visible };
+	});
+	h.check(gizmoHidden.attached, 'the gizmo is attached to the selected camera');
+	h.check(
+		gizmoHidden.visibleAfterFrames === true,
+		`the gizmo is restored after each inset draw (visible ${gizmoHidden.visibleAfterFrames})`
+	);
+
 	await h.finish(browser);
 });

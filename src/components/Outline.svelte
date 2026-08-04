@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { objectsGroup, selectedObjects, lockedObjects, viewMode } from '../stores/sceneStore.js';
+	import { objectsGroup, selectedObjects, lockedObjects, viewMode, TControls } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
@@ -145,12 +145,20 @@
 		if (!object) return;
 		pipCamera = buildCamera(object, rect.w / rect.h, pipCamera);
 		// looking through a camera means standing inside its own body — and its
-		// frustum lines would wrap the lens
+		// frustum lines would wrap the lens. The transform GIZMO goes too (16-Q5):
+		// attached to this very camera it sat right on the lens and rendered as a
+		// giant coloured blob across the preview.
 		const markerWasVisible = object.visible;
 		const frustums = scene.getObjectByName('camera-frustums');
 		const frustumsWereVisible = frustums?.visible ?? false;
+		// three r16x+ keeps the gizmo's VISUALS in a separate helper object (the controls
+		// themselves render nothing), so hiding the controls left an arrow poking into
+		// the frame — hide whatever `getHelper()` returns
+		const gizmo = (($TControls as any)?.getHelper?.() ?? $TControls) as any;
+		const gizmoWasVisible = gizmo?.visible ?? false;
 		object.visible = false;
 		if (frustums) frustums.visible = false;
+		if (gizmo) gizmo.visible = false;
 		const box = glRect(rect, renderer.domElement.clientHeight || $size.height);
 		renderer.setScissorTest(true);
 		renderer.setScissor(box.x, box.y, box.w, box.h);
@@ -160,6 +168,7 @@
 		renderer.setViewport(0, 0, $size.width, $size.height);
 		object.visible = markerWasVisible;
 		if (frustums) frustums.visible = frustumsWereVisible;
+		if (gizmo) gizmo.visible = gizmoWasVisible;
 	}
 	// 15-K: collect every mesh under a uuid — OutlineEffect only renders MESHES
 	// in its selection, so adding a Group outlined nothing useful, and adding a

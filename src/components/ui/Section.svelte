@@ -40,13 +40,30 @@
 	// even if the user had collapsed it, scroll it into view, then clear the request
 	// so it fires exactly once.
 	$effect(() => {
-		if ($inspectorScrollTo !== label) return;
+		const request = $inspectorScrollTo;
+		// a request is either "Grid" or "Camera:Saved views" (section:sub-anchor)
+		const [wanted, anchor] = String(request ?? '').split(':');
+		if (!request || wanted !== label) return;
 		collapsed = false;
 		try {
 			LS?.setItem('inspector:sec:' + label, 'open');
 		} catch {}
 		const node = root;
-		requestAnimationFrame(() => node?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+		requestAnimationFrame(() => {
+			// 16-Q5: scroll the CONTAINER, offset by the sticky header (title + property
+			// filter) — plain scrollIntoView tucked the section label underneath it, so
+			// you landed on the section's first row with no idea where you were.
+			const target = (anchor ? node?.querySelector(`[data-anchor="${anchor}"]`) : null) ?? node;
+			const scroller = node?.closest('.overflow-y-auto, .overflow-auto') ?? null;
+			const sticky = scroller?.querySelector('#drawer-label');
+			const pad = (sticky?.getBoundingClientRect().height ?? 0) + 10;
+			if (scroller && target) {
+				const delta = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+				scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + delta - pad), behavior: 'smooth' });
+			} else {
+				target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+			}
+		});
 		inspectorScrollTo.set(null);
 	});
 </script>

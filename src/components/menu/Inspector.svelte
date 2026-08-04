@@ -1002,7 +1002,7 @@
 						Reset feel
 					</button>
 				</div>
-				<p class="ui-section-label">Saved views</p>
+				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
 				<div class="ui-row items-center gap-2">
 					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>
 						Save current view
@@ -1212,8 +1212,8 @@
 						<DragRow
 							id="snap-translate"
 							value={$snapSettings.translate}
-							decimals={3}
-							min={0.001}
+							decimals={2}
+							min={0.01}
 							step={0.005}
 							snap={0.1}
 							ariaLabel="translate snap step"
@@ -1260,8 +1260,8 @@
 						<DragRow
 							id="snap-scale"
 							value={$snapSettings.scale}
-							decimals={3}
-							min={0.001}
+							decimals={2}
+							min={0.01}
 							step={0.005}
 							snap={0.05}
 							ariaLabel="scale snap step"

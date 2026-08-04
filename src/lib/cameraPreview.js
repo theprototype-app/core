@@ -39,6 +39,28 @@ export const cameraPreviews = writable({});
  */
 export const previewOrbit = writable(null);
 
+/**
+ * Kill the preview's controls for good. OrbitControls listens on the DOM, so an
+ * instance that is merely dropped keeps steering whatever camera threlte points it
+ * at — after a preview that is the EDITOR camera again, and since nothing knows
+ * about it any more the gizmo-drag suppression can't switch it off. That zombie is
+ * what made "move an object, the view spins" survive the first fix.
+ */
+export function releasePreviewOrbit() {
+	disposeControls(get(previewOrbit));
+	previewOrbit.set(null);
+}
+
+/** three's dispose() only detaches listeners, so a double call is harmless
+ * @param {any} controls */
+function disposeControls(controls) {
+	try {
+		controls?.dispose?.();
+	} catch {
+		/* nothing to do — the point is that its listeners are gone */
+	}
+}
+
 /** Whichever controls are actually steering the view right now. */
 export const activeOrbit = derived([previewOrbit, orbitControls], ([preview, editor]) => preview ?? editor);
 
@@ -84,6 +106,13 @@ export function startCameraPreview(uuid) {
 	// switching straight from another preview: restore that marker first
 	const previous = get(cameraPreview);
 	if (previous && previous.uuid !== uuid) setMarkerHidden(findCameraObject(previous.uuid), false);
+	// THE fix for "moving an object with the gizmo also rotates my view" (16-Q5).
+	// Scene gates the editor's OrbitControls on this store, so they are about to
+	// UNMOUNT — and threlte does not dispose them, so they keep their DOM listeners
+	// and go on rotating the camera on every left-drag, invisible to the suppression
+	// path (which only knows about the fresh instance that mounts after the preview).
+	// Disposing them here is what makes the zombie impossible.
+	disposeControls(get(orbitControls));
 	cameraPreview.set({ uuid, controlling: false });
 	frustumSuppressed.set(uuid); // you are inside this frustum — hide its wireframe
 	setMarkerHidden(object, true);
@@ -95,6 +124,7 @@ export function stopCameraPreview() {
 	const current = get(cameraPreview);
 	if (!current) return;
 	if (current.controlling) endControl();
+	releasePreviewOrbit(); // before the component unmounts, so no zombie survives
 	setMarkerHidden(findCameraObject(current.uuid), false);
 	cameraPreview.set(null);
 	frustumSuppressed.set(null);
@@ -107,6 +137,7 @@ export function toggleCameraControl() {
 	if (!current) return;
 	if (current.controlling) {
 		endControl();
+		releasePreviewOrbit();
 		cameraPreview.set({ ...current, controlling: false });
 		return;
 	}

@@ -39,16 +39,19 @@
 
 	// 16-P3: the active choice is `checked` (bold + accent) instead of a '● ' label
 	// prefix, which shifted the label sideways as it appeared and read as a glitch.
+	/** 16-Q5: 0.8 typed into the panel arrived here as 0.7999999999999999 — binary
+	 *  floats never print cleanly, so every step label and hint goes through this. */
+	const stepLabel = (value: number) => String(Number(Number(value).toFixed(4)));
 	function snapSizeItem(key: 'translate' | 'scale', value: number, label?: string) {
 		return {
-			label: label ?? String(value),
+			label: label ?? stepLabel(value),
 			checked: $snapSettings[key] === value,
 			action: () => snapSettings.update((s) => ({ ...s, [key]: value }))
 		};
 	}
 	function snapRotItem(value: number) {
 		return {
-			label: `${value}°`,
+			label: `${stepLabel(value)}°`,
 			checked: $snapSettings.rotateDeg === value,
 			action: () => snapSettings.update((s) => ({ ...s, rotateDeg: value }))
 		};
@@ -161,7 +164,7 @@
 			label: 'Snapping',
 			icon: 'grid-3x3',
 			hint: $snapEnabled
-				? `${$snapSettings.translate} · ${$snapSettings.rotateDeg}° · ${$snapSettings.scale}`
+				? `${stepLabel($snapSettings.translate)} · ${stepLabel($snapSettings.rotateDeg)}° · ${stepLabel($snapSettings.scale)}`
 				: 'off',
 			children: [
 				{
@@ -235,7 +238,8 @@
 					label: 'Manage saved views…',
 					icon: 'sliders-horizontal',
 					tooltip: 'Rename, re-shoot, reorder or delete (Configure Scene ▸ Camera)',
-					action: () => openSceneSection('Camera')
+					// 16-Q5: land on SAVED VIEWS, not the top of the Camera section
+					action: () => openSceneSection('Camera:Saved views')
 				},
 				{
 					label: 'Clear bookmarks',

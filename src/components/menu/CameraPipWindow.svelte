@@ -57,7 +57,12 @@
 	/** @param {PointerEvent} event */
 	function onPointerDown(event) {
 		const touch = event.pointerType !== 'mouse';
-		if (!touch && event.button !== 2) return; // mouse: RIGHT button drags
+		// 16-Q5: the title BAR drags with the left button too (that's where a hand
+		// goes); the body keeps right-drag so a left-click there can't move the window
+		// by accident. Touch holds anywhere.
+		const onBar = !!(/** @type {any} */ (event.target)?.closest?.('.pip-bar'));
+		const leftOnBar = event.button === 0 && onBar && !/** @type {any} */ (event.target)?.closest?.('.pip-btn');
+		if (!touch && event.button !== 2 && !leftOnBar) return;
 		startX = event.clientX;
 		startY = event.clientY;
 		origin = { ...position };

@@ -1,6 +1,6 @@
-import { writable, get } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import * as THREE from 'three';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, orbitControls } from '../stores/sceneStore';
 import { peers, showToast, specatorMode } from '../stores/appStore';
 import { recordTransformSet } from './history';
 import { findCameraObject, cameraSpec } from './cameraObjects';
@@ -26,6 +26,21 @@ export const cameraPreview = writable(null);
 /** who else is previewing what: peerId -> uuid (replicated, presence-style)
  * @type {import('svelte/store').Writable<Record<string, string>>} */
 export const cameraPreviews = writable({});
+
+/**
+ * The OrbitControls that belong to the PREVIEW camera while Control is on.
+ * Deliberately its OWN store instead of binding the shared `orbitControls`:
+ * threlte clears a bound ref when the component unmounts, and with both sets of
+ * controls bound to one store the unmount could land AFTER the editor controls
+ * remounted — leaving the store empty. Everything that suppresses orbiting
+ * (notably the transform-gizmo drag) writes through that store, so an empty one
+ * meant dragging the gizmo ALSO orbited the camera, for the rest of the session.
+ * @type {import('svelte/store').Writable<any>}
+ */
+export const previewOrbit = writable(null);
+
+/** Whichever controls are actually steering the view right now. */
+export const activeOrbit = derived([previewOrbit, orbitControls], ([preview, editor]) => preview ?? editor);
 
 /** pose the marker had when Control began (for the single undo entry) */
 /** @type {any} */
@@ -104,6 +119,21 @@ export function toggleCameraControl() {
 	};
 	cameraPreview.set({ ...current, controlling: true });
 	showToast('Flying the camera — WASD to move, drag to look, Exit when done');
+}
+
+/**
+ * Seat OrbitControls behind a camera WITHOUT moving it. OrbitControls.update()
+ * ends with `camera.lookAt(target)`, and a fresh instance targets the world
+ * origin — so mounting it on a camera that was looking elsewhere snapped the view
+ * to (0,0,0) the moment Control was pressed (the "preview jumps" bug). Putting the
+ * target on the camera's own forward axis first makes that lookAt a no-op.
+ * @param {any} controls @param {any} camera @param {number} [distance]
+ */
+export function seatOrbitBehind(controls, camera, distance = 6) {
+	if (!controls?.target || !camera) return;
+	const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+	controls.target.copy(camera.position).add(forward.multiplyScalar(distance));
+	controls.update?.();
 }
 
 /** Seal the ride: ONE undo entry + a final authoritative pose. */

@@ -2,9 +2,9 @@
 	import { T, useTask, useThrelte } from '@threlte/core';
 	import { OrbitControls } from '@threlte/extras';
 	import * as THREE from 'three';
-	import { objectsGroup, orbitControls, TControls } from '../stores/sceneStore';
-	import { cameraPreview, writeBackPose } from '$lib/cameraPreview';
-	import { cameraSpec, aspectRatio } from '$lib/cameraObjects';
+	import { objectsGroup, TControls } from '../stores/sceneStore';
+	import { cameraPreview, writeBackPose, previewOrbit, seatOrbitBehind } from '$lib/cameraPreview';
+	import { cameraSpec, aspectRatio, syncCameraToObject } from '$lib/cameraObjects';
 
 	// 16-P5: while a camera OBJECT is previewed, THIS is the render camera — a real
 	// perspective/orthographic camera (`makeDefault`, so threlte's `camera.current`
@@ -28,6 +28,8 @@
 
 	/** @type {any} */
 	let cameraRef: any = $state(null);
+	/** @type {any} */
+	let controlsRef: any = $state(null);
 
 	// pose sync, both directions
 	const pos = new THREE.Vector3();
@@ -51,6 +53,22 @@
 	$effect(() => {
 		if ($cameraPreview) ($TControls as any)?.detach?.();
 	});
+
+	// Control on/off: publish the preview's controls (own store — see the comment
+	// in cameraPreview.js) and SEAT them behind the camera so pressing Control
+	// doesn't snap the view to the world origin.
+	$effect(() => {
+		const controls = $cameraPreview?.controlling ? controlsRef : null;
+		previewOrbit.set(controls);
+		if (!controls || !cameraRef) return;
+		// OrbitControls already ran one update() during construction, targeting the
+		// world origin — that rotated the camera before this effect runs. Re-sync the
+		// camera from the MARKER (still untouched: the write-back task runs on the next
+		// frame), then seat the target ahead of it so the controls' own lookAt is a
+		// no-op. Without the re-sync the small mount rotation gets baked into the pose.
+		if (object) syncCameraToObject(cameraRef, object);
+		seatOrbitBehind(controls, cameraRef);
+	});
 </script>
 
 {#if $cameraPreview && spec}
@@ -68,7 +86,7 @@
 			{#if $cameraPreview.controlling}
 				<!-- taking the controls: same OrbitControls the editor camera uses, so
 				     mouse look + Scene's WASD nav behave identically -->
-				<OrbitControls bind:ref={$orbitControls} enableZoom={true} enableDamping />
+				<OrbitControls bind:ref={controlsRef} enableZoom={true} enableDamping />
 			{/if}
 		</T.OrthographicCamera>
 	{:else}
@@ -81,7 +99,7 @@
 			bind:ref={cameraRef}
 		>
 			{#if $cameraPreview.controlling}
-				<OrbitControls bind:ref={$orbitControls} enableZoom={true} enableDamping />
+				<OrbitControls bind:ref={controlsRef} enableZoom={true} enableDamping />
 			{/if}
 		</T.PerspectiveCamera>
 	{/if}

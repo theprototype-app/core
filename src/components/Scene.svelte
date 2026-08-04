@@ -32,7 +32,7 @@
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
-	import { cameraPreview } from '$lib/cameraPreview';
+	import { cameraPreview, activeOrbit } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { vrMenuOpen } from '../stores/sceneStore';
@@ -263,7 +263,7 @@
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
-		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);
+		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 	});
 
 	// --- undo/redo: record one history entry per gizmo drag ---
@@ -420,7 +420,7 @@
 			// draw mode: dragging paints a stroke instead of orbiting
 			if ($drawMode && !$isLocked && !$isVRMode) {
 				strokeActive = true;
-				if ($orbitControls) $orbitControls.enabled = false;
+				if ($activeOrbit) $activeOrbit.enabled = false;
 				setRayFromEvent(event);
 				strokePointFromRay(selectionRaycaster);
 				return;
@@ -433,7 +433,7 @@
 				if (hit) {
 					sculptActive = true;
 					lastSculptAt = performance.now();
-					if ($orbitControls) $orbitControls.enabled = false;
+					if ($activeOrbit) $activeOrbit.enabled = false;
 					beginStroke($sculptObject);
 					const local = terrain.worldToLocal(hit.point.clone());
 					strokeMove($sculptObject, local.x, local.z, 0.016, local.y); // y feeds the mesh brush
@@ -443,7 +443,7 @@
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
 			if (event.shiftKey && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
 				marqueeStart = [event.clientX, event.clientY];
-				if ($orbitControls) $orbitControls.enabled = false;
+				if ($activeOrbit) $activeOrbit.enabled = false;
 			}
 			downPosition = [event.clientX, event.clientY];
 			downTime = Date.now();
@@ -507,7 +507,7 @@
 			if (marqueeStart && event.button === 0) {
 				const start = marqueeStart;
 				marqueeStart = null;
-				if ($orbitControls) $orbitControls.enabled = true;
+				if ($activeOrbit) $activeOrbit.enabled = true;
 				const moved = Math.hypot(event.clientX - start[0], event.clientY - start[1]);
 				if ($marqueeRect && moved > 8) {
 					// marquee ADDS to the selection (it already needs Shift to start)
@@ -524,13 +524,13 @@
 			}
 			if (sculptActive && event.button === 0) {
 				sculptActive = false;
-				if ($orbitControls) $orbitControls.enabled = true;
+				if ($activeOrbit) $activeOrbit.enabled = true;
 				sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
 				return;
 			}
 			if (strokeActive && event.button === 0) {
 				strokeActive = false;
-				if ($orbitControls) $orbitControls.enabled = true;
+				if ($activeOrbit) $activeOrbit.enabled = true;
 				endStroke();
 				return;
 			}

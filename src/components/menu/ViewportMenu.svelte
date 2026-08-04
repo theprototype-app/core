@@ -7,7 +7,7 @@
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { measureMode, toggleMeasure } from '$lib/measure';
-	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
+	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks, SHORTCUT_SLOTS } from '$lib/cameraBookmarks';
 	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
 	import { viewportMenu, objectSearch, objectSearchEnabled, showSidebar } from '../../stores/appStore';
 	import { buildAddChildren } from '$lib/addObjects';
@@ -207,16 +207,36 @@
 			]
 		},
 		{
+			// 16-P4: bookmarks are NAMED now (and unlimited) — list them by name with
+			// the Shift+N hint on the first five; managing them lives in the panel
 			label: 'Camera bookmarks',
 			icon: 'camera',
+			hint: $bookmarks.length ? String($bookmarks.length) : '',
 			children: [
-				{ label: 'Save current view', action: () => saveBookmark() },
+				{ label: 'Save current view', icon: 'plus', action: () => saveBookmark() },
+				...($bookmarks.length ? [{ section: 'Saved views' }] : []),
 				...$bookmarks.map((bookmark, index) => ({
-					label: `View ${index + 1} — ${new Date(bookmark.ts).toLocaleTimeString()}`,
-					tooltip: `Shift+${index + 1}`,
+					label: bookmark.name,
+					hint: index < SHORTCUT_SLOTS ? `⇧${index + 1}` : '',
+					tooltip: bookmark.lens
+						? `Restores the view and its lens (${Math.round(bookmark.lens.fov)}° FOV)`
+						: 'Saved before lenses were stored — restores the view only',
 					action: () => recallBookmark(index)
 				})),
-				{ label: 'Clear bookmarks', disabled: $bookmarks.length === 0, action: () => clearBookmarks() }
+				{ section: ' ' },
+				{
+					label: 'Manage saved views…',
+					icon: 'sliders-horizontal',
+					tooltip: 'Rename, re-shoot, reorder or delete (Configure Scene ▸ Camera)',
+					action: () => showSidebar('scene')
+				},
+				{
+					label: 'Clear bookmarks',
+					icon: 'trash-2',
+					danger: true,
+					disabled: $bookmarks.length === 0,
+					action: () => clearBookmarks()
+				}
 			]
 		}
 	];

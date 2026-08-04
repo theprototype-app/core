@@ -33,7 +33,7 @@
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
-	import { moveObjectToGroup, selectObject } from '$lib/objectActions';
+	import { moveObjectToGroup, selectObject, flyTo } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
@@ -42,7 +42,27 @@
 	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
 	import { showLightHelpers } from '$lib/lightHelpers';
-	import { cameraNear, cameraFar, setCameraNear, setCameraFar } from '$lib/cameraClip';
+	import {
+		cameraNear,
+		cameraFar,
+		setCameraNear,
+		setCameraFar,
+		orbitPrefs,
+		setOrbitPrefs,
+		resetOrbitPrefs
+	} from '$lib/cameraClip';
+	// 16-P4: named, lens-carrying camera bookmarks managed right here
+	import {
+		bookmarks,
+		saveBookmark,
+		recallBookmark,
+		renameBookmark,
+		overwriteBookmark,
+		deleteBookmark,
+		moveBookmark,
+		SHORTCUT_SLOTS
+	} from '$lib/cameraBookmarks';
+	import { sceneRadius } from '$lib/sceneBounds';
 	import {
 		music,
 		musicLocalVolume,
@@ -528,6 +548,28 @@
 				: { fog: { color: fogColor ?? '#ffffff', near: fogNear, far: fogFar } }
 		);
 	}
+
+	// 16-P4: framing helpers for the Camera section. Both reuse the existing flyTo
+	// tween (so they're cancellable and consistent with Focus camera).
+	function frameScene() {
+		// pull back along the current view direction far enough to see everything
+		const radius = Math.max(sceneRadius(), 2);
+		/** @type {any} */
+		const camera = $globalCamera;
+		const fov = ((camera?.fov ?? 40) * Math.PI) / 180;
+		const distance = (radius / Math.sin(fov / 2)) * 1.1;
+		const direction = camera
+			? new THREE.Vector3().subVectors(camera.position, new THREE.Vector3(0, 0, 0)).normalize()
+			: new THREE.Vector3(-1, 1, 1).normalize();
+		if (!direction.lengthSq()) direction.set(-1, 1, 1).normalize();
+		flyTo(direction.multiplyScalar(distance).toArray(), [0, 0, 0]);
+	}
+	/** shared look for the small bookmark row buttons (this file has no <style>) */
+	const bmBtn = 'shrink-0 rounded-sm bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40';
+	function resetView() {
+		// the editor camera's mount defaults (Scene.svelte)
+		flyTo([-10, 10, 10], [0, 1.5, 0]);
+	}
 </script>
 
 <!-- flowbite-svelte 1.x turned Drawer into a native <dialog> (focus-stealing, modal
@@ -833,7 +875,12 @@
 				</p>
 				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
 				<Checkbox bind:checked={$showColliders}>Show colliders — this device</Checkbox>
-				<p class="ui-section-label">Camera lens</p>
+			</Section>
+
+			<!-- 16-P4: everything about the VIEWPORT camera in one place (it used to be a
+			     "Camera lens" sub-label buried in View): lens, clip planes, orbit feel,
+			     framing shortcuts and the saved views. All LOCAL, never replicated. -->
+			<Section label="Camera">
 				<div id="lens-presets" class="flex flex-wrap gap-1">
 					{#each LENS_PRESETS as p (p.label)}
 						<button
@@ -889,6 +936,100 @@
 					<span class="text-[10px] text-gray-500">grows to fit the scene</span>
 				</div>
 				<p class="text-[10px] italic text-gray-400">Clip planes are per-device (not shared).</p>
+				<p class="ui-section-label">Orbit feel</p>
+				<SliderRow
+					label="Rotate speed"
+					min={0.1}
+					max={3}
+					step={0.05}
+					decimals={2}
+					value={$orbitPrefs.rotateSpeed}
+					onchange={(v) => setOrbitPrefs({ rotateSpeed: v })}
+				/>
+				<SliderRow
+					label="Zoom speed"
+					min={0.1}
+					max={3}
+					step={0.05}
+					decimals={2}
+					value={$orbitPrefs.zoomSpeed}
+					onchange={(v) => setOrbitPrefs({ zoomSpeed: v })}
+				/>
+				<SliderRow
+					label="Pan speed"
+					min={0.1}
+					max={3}
+					step={0.05}
+					decimals={2}
+					value={$orbitPrefs.panSpeed}
+					onchange={(v) => setOrbitPrefs({ panSpeed: v })}
+				/>
+				<Checkbox
+					id="orbit-damping"
+					checked={$orbitPrefs.damping}
+					onchange={(/** @type {any} */ e) => setOrbitPrefs({ damping: e.currentTarget.checked })}
+					>Smooth (damped) orbiting</Checkbox
+				>
+				<Checkbox
+					id="orbit-invert"
+					checked={$orbitPrefs.invertY}
+					onchange={(/** @type {any} */ e) => setOrbitPrefs({ invertY: e.currentTarget.checked })}
+					>Invert vertical orbit</Checkbox
+				>
+				<div class="ui-row items-center gap-2">
+					<button id="camera-frame-scene" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => frameScene()}>
+						Frame scene
+					</button>
+					<button id="camera-reset-view" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetView()}>
+						Reset view
+					</button>
+					<button id="orbit-reset" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetOrbitPrefs()}>
+						Reset feel
+					</button>
+				</div>
+				<p class="ui-section-label">Saved views</p>
+				<div class="ui-row items-center gap-2">
+					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>
+						Save current view
+					</button>
+					<span class="text-[10px] text-gray-500">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
+				</div>
+				{#if $bookmarks.length === 0}
+					<p class="text-xs text-gray-400">No saved views yet. Frame something you like, then Save current view.</p>
+				{:else}
+					<div id="bookmark-list" class="flex flex-col gap-1">
+						{#each $bookmarks as bookmark, index (bookmark.id)}
+							<div class="bookmark-row flex items-center gap-1">
+								<span class="w-8 shrink-0 text-[10px] text-gray-500">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
+								<input
+									class="ui-input min-w-0 flex-1 px-1 py-0.5 text-xs"
+									aria-label="View name"
+									value={bookmark.name}
+									onchange={(/** @type {any} */ e) => renameBookmark(bookmark.id, e.currentTarget.value)}
+								/>
+								<button class={bmBtn} title="Recall this view" onclick={() => recallBookmark(index)}>
+									<Icon name="eye" size={13} />
+								</button>
+								<button class={bmBtn} title="Overwrite with the current view" onclick={() => overwriteBookmark(bookmark.id)}>
+									<Icon name="camera" size={13} />
+								</button>
+								<button class={bmBtn} title="Move up" disabled={index === 0} onclick={() => moveBookmark(bookmark.id, -1)}>↑</button>
+								<button
+									class={bmBtn}
+									title="Move down"
+									disabled={index === $bookmarks.length - 1}
+									onclick={() => moveBookmark(bookmark.id, 1)}>↓</button
+								>
+								<button class="{bmBtn} text-red-400" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
+									<Icon name="trash-2" size={13} />
+								</button>
+							</div>
+						{/each}
+					</div>
+					<p class="text-[10px] italic text-gray-400">
+						Each view stores its lens (FOV + clip planes) and restores it on recall.
+					</p>
+				{/if}
 			</Section>
 
 			<!-- 16-P3: grid + snapping are LOCAL view prefs (like the clip planes and

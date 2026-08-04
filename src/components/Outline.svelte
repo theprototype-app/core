@@ -13,6 +13,9 @@
 	// @ts-ignore - n8ao ships no bundled type declarations
 	import { N8AOPostPass } from 'n8ao';
 	import { onMount } from 'svelte';
+	// 16-Q4: the camera preview window renders as an inset viewport of THIS renderer
+	import { pipRect, pipTarget, glRect } from '$lib/cameraPip';
+	import { buildCamera } from '$lib/cameraObjects';
 
 	let outlineEffectSelected: OutlineEffect | null = null;
 	let outlineEffectLocked: OutlineEffect | null = null;
@@ -122,10 +125,42 @@
 			else {
 				composer.render(delta);
 				if (!aoWarm && ++warmupFrames > 10) aoWarm = true;
+				renderPip();
 			}
 		},
 		{ stage: renderStage, autoInvalidate: false }
 	);
+
+	// 16-Q4: the camera PREVIEW WINDOW. One extra SCISSORED viewport of the same
+	// renderer, drawn over the composer's output into the rect CameraPipWindow
+	// publishes — no second WebGL context, so no duplicated GPU memory, and it only
+	// runs while a camera object is selected. gl clears respect the scissor box, so
+	// the inset clears just itself.
+	let pipCamera: any = null;
+	function renderPip() {
+		const rect = $pipRect;
+		const uuid = $pipTarget;
+		if (!rect || !uuid) return;
+		const object = $objectsGroup?.getObjectByProperty('uuid', uuid);
+		if (!object) return;
+		pipCamera = buildCamera(object, rect.w / rect.h, pipCamera);
+		// looking through a camera means standing inside its own body — and its
+		// frustum lines would wrap the lens
+		const markerWasVisible = object.visible;
+		const frustums = scene.getObjectByName('camera-frustums');
+		const frustumsWereVisible = frustums?.visible ?? false;
+		object.visible = false;
+		if (frustums) frustums.visible = false;
+		const box = glRect(rect, renderer.domElement.clientHeight || $size.height);
+		renderer.setScissorTest(true);
+		renderer.setScissor(box.x, box.y, box.w, box.h);
+		renderer.setViewport(box.x, box.y, box.w, box.h);
+		renderer.render(scene, pipCamera);
+		renderer.setScissorTest(false);
+		renderer.setViewport(0, 0, $size.width, $size.height);
+		object.visible = markerWasVisible;
+		if (frustums) frustums.visible = frustumsWereVisible;
+	}
 	// 15-K: collect every mesh under a uuid — OutlineEffect only renders MESHES
 	// in its selection, so adding a Group outlined nothing useful, and adding a
 	// parent mesh skipped its children (imported models). Traversal makes the

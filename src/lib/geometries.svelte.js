@@ -110,7 +110,8 @@ export function createGeometry(command, uuid) {
                 near: 0.1,
                 far: 1000,
                 aspect: '16:9',
-                guide: true
+                guide: true,
+                pip: true
             };
             // a viewpoint marker is not scenery you light: no shadows, no physics
             object.userData.shadow = false;

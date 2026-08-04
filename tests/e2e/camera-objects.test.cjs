@@ -241,8 +241,12 @@ h.run(async () => {
 	await A.page.waitForTimeout(900);
 	const back = await activeCamera(A.page);
 	h.check(back.ortho === false, 'exiting returns to your own perspective camera');
-	const bannerGone = await A.page.evaluate(() => !document.querySelector('.preview-banner'));
-	h.check(bannerGone, 'the banner goes with it');
+	// the banner has an intro/outro fly — poll rather than assume one frame is enough
+	await h.eventually(
+		() => A.page.evaluate(() => !document.querySelector('.preview-banner')),
+		(gone) => gone === true,
+		'the banner goes with it'
+	);
 	await h.eventually(
 		() =>
 			B.page.evaluate(

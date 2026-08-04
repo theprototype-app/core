@@ -5,6 +5,7 @@
 	import MeshJobsCard from './menu/MeshJobsCard.svelte';
 	import Toasts from './menu/Toasts.svelte';
 	import FramingGuide from './menu/FramingGuide.svelte';
+	import CameraPipWindow from './menu/CameraPipWindow.svelte';
 	import Connect from './menu/Connect.svelte';
 	import Controls from './menu/Controls.svelte';
 	import Inspector from './menu/Inspector.svelte';
@@ -60,6 +61,9 @@
 <Users />
 <!-- 16-P5: letterbox bars while previewing a camera at a fixed aspect -->
 <FramingGuide />
+<!-- 16-Q4: live preview window for the selected camera (chrome only — the image
+     is an inset viewport drawn by the render loop) -->
+<CameraPipWindow />
 </div>
 
 <div class="dark-mode hidden"><DarkMode /></div>

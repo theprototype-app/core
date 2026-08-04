@@ -1576,12 +1576,6 @@
 							>{$cameraPreview?.uuid === $selectedObject.uuid ? 'Previewing' : 'Preview'}</button
 						>
 						<button
-							id="camera-capture"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
-							title="Render one frame through this camera and download it"
-							onclick={() => captureThroughCamera($selectedObject.uuid)}>Capture</button
-						>
-						<button
 							id="camera-from-view"
 							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
 							title="Move this camera to your current viewpoint (and take its FOV)"
@@ -1594,6 +1588,24 @@
 							onclick={() => alignViewToCamera($selectedObject.uuid)}>Align view</button
 						>
 					</div>
+					<!-- 16-Q4: Capture is a SHOT, not a view change — its own row, with an icon -->
+					<div class="ui-row items-center gap-2">
+						<button
+							id="camera-capture"
+							class="ui-chip inline-flex items-center gap-1 bg-gray-600 text-gray-200 hover:bg-gray-500"
+							title="Render one frame through this camera and download it as a PNG"
+							onclick={() => captureThroughCamera($selectedObject.uuid)}
+						>
+							<Icon name="camera" size={13} />Capture
+						</button>
+						<span class="text-[10px] text-gray-500">saves a PNG at the framing aspect</span>
+					</div>
+					<Checkbox
+						id="camera-pip"
+						checked={cam.pip !== false}
+						onchange={(/** @type {any} */ e) => setCameraFor($selectedObject.uuid, { pip: e.currentTarget.checked })}
+						>Preview window while selected</Checkbox
+					>
 					<Checkbox
 						id="camera-frustums"
 						checked={$showCameraFrustums}

@@ -25,7 +25,9 @@ export const DEFAULT_CAMERA = {
 	/** framing guide aspect: '16:9' | '4:3' | '1:1' | '2.39:1' | 'free' */
 	aspect: '16:9',
 	/** show the letterbox guide while previewing */
-	guide: true
+	guide: true,
+	/** 16-Q4: show the little live preview window when this camera is selected */
+	pip: true
 };
 
 export const ASPECTS = ['16:9', '4:3', '1:1', '2.39:1', 'free'];

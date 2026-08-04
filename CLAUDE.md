@@ -514,6 +514,11 @@ loadable play content. Everything a user does must be visible to connected peers
   (`overflow-x: hidden`); each submenu re-decides its flip locally in `openSubmenu`
   (not inherited from the root click) so deep chains stay on-screen. The fixed
   submenus escape the root's scroll box, so a scrolling root never grows an x-bar.
+  16-Q5 PLACEMENT CONTRACT: open AT the cursor preferring DOWNWARD; when the content
+  doesn't fit below, shift the WHOLE menu up so its bottom stays inside (never flip to
+  the other side of the pointer); a scrollbar appears ONLY when the content is taller
+  than the window; and while SEARCHING the menu keeps the top it opened with, caps the
+  flat list to a bounded height, and offers a corner resize grip.
 - `backdrop-filter`/`filter` ALSO make an element the containing block for
   `position: fixed` descendants (same trap as transform). A `fixed` popup rendered
   inside `.app-sidebar` (which has `backdrop-blur`) centered on the SIDEBAR and spilled
@@ -572,6 +577,23 @@ loadable play content. Everything a user does must be visible to connected peers
   (autoRender off) — its passes target canvas-sized buffers, not the XR framebuffer, so
   in WebXR it must `renderer.render(scene, camera.current)` directly (composer resumes on
   desktop).
+- **Nothing in the app disables OrbitControls during a transform-gizmo drag** —
+  threlte's `<TransformControls>` does it against ITS OWN context slot, so any
+  churn in the default-controls slot (a camera preview unmounting + remounting the
+  editor's OrbitControls) leaves the suppression pointing at an instance that no
+  longer drives the view, and dragging an object ALSO orbits the camera. Scene's
+  `dragging-changed` hook therefore suppresses orbiting itself through
+  `activeOrbit` (16-Q5). Related: three keeps DOM listeners on a merely-dropped
+  OrbitControls — dispose() it, or it goes on steering whatever camera threlte
+  points it at. And its gizmo VISUALS live in a separate object (`getHelper()`),
+  so `controls.visible = false` hides nothing.
+- **Mid-session HMR churn makes e2e runs LIE** (bit hard in 16-Q5): a suite that
+  loads the page while vite is still re-transforming just-edited modules sees
+  half-mounted components — three runs "proved" a working feature broken. Let the
+  server settle (a couple of seconds) after the last edit before trusting red, and
+  when store reads disagree with what you see, add a component-side debug hook
+  (`window.__cameraPreviewDebug`, opt-in like `__outlineDebug`) to compare the
+  COMPONENT's view with the store's.
 - **Svelte 5 DELEGATES `onkeydown`/`onpointerdown`/`onclick` attributes** — the
   handler only runs once the event reaches the app root, so any ancestor that
   stops propagation on the way up silently kills it. Panel widgets are exactly
@@ -802,6 +824,20 @@ override for e2e — never share 5173 (the user's main-checkout server).
   v2 still pending there). Lane: ../theprototype-lane-ui @ port 5186 (5176 is
   shadowed by a stale [::1] server — the port-shadow trap; ALWAYS curl a source
   file and grep your new symbol before trusting a lane server).
+- Status (2026-08-04, drop 3): **#16 Q5 on the SAME PR #86** — the reported
+  "gizmo drags also rotate the camera" bug fixed AT THE ROOT (nothing ever
+  disabled OrbitControls during a gizmo drag; threlte's TransformControls does it
+  against its own context slot, which a camera preview leaves stale — Scene's
+  `dragging-changed` hook now suppresses through `activeOrbit`, and the preview's
+  controls are disposed). Proven by an A/B real-mouse drag on the real gizmo arrow
+  (0.21 rotation before, 0.00000 after, object moves the same 1.04 either way).
+  Plus: menu placement contract (cursor-anchored, shift-up, scroll only past the
+  window, sticky top + bounded + resizable while searching) · grid 'camera' follow
+  via threlte's own followCamera (smooth pans; only look-at snaps) · deep links
+  offset by the sticky header + a `data-anchor` for SAVED VIEWS · snap steps
+  quantized and printed through one formatter · PiP left-drag on the title bar,
+  gizmo hidden for the inset draw, parked clear of the HUD. New suite
+  gizmo-orbit-leak(9); 419/62 held.
 - Status (2026-08-04, drop 2): **#16 follow-ups on the SAME PR #86** — [fix] camera
   Control (no view jump: OrbitControls is seated behind the camera and the pose
   re-synced from the marker, because its constructor already ran one update(); no

@@ -3,7 +3,7 @@
 	import { T, useTask, useThrelte } from '@threlte/core'
 	// @ts-ignore - Text typing clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
-	import { annotations, pinsGroup } from '$lib/annotationsHandler'
+	import { annotations, pinsGroup, showNotePins, DEFAULT_NOTE_COLOR } from '$lib/annotationsHandler'
 	import { objectsGroup, globalScene } from '../stores/sceneStore'
 
 	// Billboarded note pins. Each pin re-anchors to its object every frame
@@ -19,6 +19,7 @@
 	const cameraPosition = new THREE.Vector3()
 
 	useTask(() => {
+		if (!$showNotePins) return
 		camera.current.getWorldPosition(cameraPosition)
 		$annotations.forEach((annotation) => {
 			const pin = pinRefs[annotation.id]
@@ -46,16 +47,24 @@
 	})
 </script>
 
-<T.Group bind:ref={root} name="annotation-pins">
+<!-- H3: the pins group hides wholesale with the LOCAL showNotePins pref (the
+     Scene raycast branch is gated on the same store, so hidden pins can't be
+     clicked either) -->
+<T.Group bind:ref={root} name="annotation-pins" visible={$showNotePins}>
 	{#each $annotations as annotation, index (annotation.id)}
 		<T.Group oncreate={(ref) => (pinRefs[annotation.id] = ref)} name={`pin-${annotation.id}`}>
 			<T.Mesh>
 				<T.CircleGeometry args={[0.16, 20]} />
-				<T.MeshBasicMaterial color="#f59e0b" depthTest={false} side={THREE.DoubleSide} />
+				<!-- H4: per-note color; each pin owns its own material instances -->
+				<T.MeshBasicMaterial
+					color={annotation.color || DEFAULT_NOTE_COLOR}
+					depthTest={false}
+					side={THREE.DoubleSide}
+				/>
 			</T.Mesh>
 			<T.Mesh position={[0, -0.19, 0]}>
 				<T.ConeGeometry args={[0.05, 0.12, 8]} />
-				<T.MeshBasicMaterial color="#f59e0b" depthTest={false} />
+				<T.MeshBasicMaterial color={annotation.color || DEFAULT_NOTE_COLOR} depthTest={false} />
 			</T.Mesh>
 			<Text
 				color="#1c1917"

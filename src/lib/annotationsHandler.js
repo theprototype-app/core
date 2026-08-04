@@ -9,16 +9,69 @@ import { flyTo } from './objectActions';
 // object; one note per pin. Replication mirrors the flow-graph pattern:
 // live CRUD messages + a full-state reply on the connection handshake.
 
-/** @type {import('svelte/store').Writable<{id: string, objectUuid: string, offset: number[], text: string, author: string, ts: number}[]>} */
+/** @type {import('svelte/store').Writable<{id: string, objectUuid: string, offset: number[], text: string, author: string, ts: number, name: string, color: string, label: string}[]>} */
 export const annotations = writable([]);
-/** popover state: { id } for an existing note, { draft: {...} } for a new one, or null */
+/** popover state: { id, mode:'view'|'edit' } for an existing note, { draft: {...} } for a new one, or null */
 /** @type {import('svelte/store').Writable<any>} */
 export const activeAnnotation = writable(null);
 /** the THREE group holding pin meshes, registered by AnnotationPins.svelte */
 /** @type {import('svelte/store').Writable<any>} */
 export const pinsGroup = writable(null);
 
+/** H3: LOCAL pref — pins visible in the viewport (not replicated) */
+export const showNotePins = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('showNotePins') !== 'false'
+);
+if (typeof localStorage !== 'undefined')
+	showNotePins.subscribe((value) => localStorage.setItem('showNotePins', String(value)));
+
+/** H1/H4: the fixed pin palette (amber first = the historical pin color) */
+export const NOTE_COLORS = [
+	'#f59e0b',
+	'#ef4444',
+	'#ec4899',
+	'#a855f7',
+	'#3b82f6',
+	'#22d3ee',
+	'#22c55e',
+	'#a3e635'
+];
+export const DEFAULT_NOTE_COLOR = NOTE_COLORS[0];
+
 const tempVector = new THREE.Vector3();
+
+/**
+ * H1: ONE boundary normalizer. `text` stays the description (replication,
+ * autosave, sessions and the e2e suites all carry it); v2 adds optional
+ * name/color/label, so payloads from old autosaves, .tpscene sessions and
+ * old-version peers load with defaults for free.
+ * @param {any} a
+ */
+export function normalizeAnnotation(a) {
+	return {
+		...a,
+		text: typeof a?.text === 'string' ? a.text : '',
+		name: typeof a?.name === 'string' ? a.name : '',
+		color: typeof a?.color === 'string' && a.color ? a.color : DEFAULT_NOTE_COLOR,
+		label: typeof a?.label === 'string' ? a.label : ''
+	};
+}
+
+/** 1-based GLOBAL index — MUST match the in-scene pin numbering @param {string} id */
+export function noteNumber(id) {
+	return get(annotations).findIndex((a) => a.id === id) + 1;
+}
+
+/** Row/card title: explicit name, else a trimmed description, else "Note n" @param {any} a */
+export function displayName(a) {
+	if (!a) return '';
+	const name = (a.name || '').trim();
+	if (name) return name;
+	const text = (a.text || '').trim().replace(/\s+/g, ' ');
+	if (text) return text.length > 40 ? text.slice(0, 40) + '…' : text;
+	const n = noteNumber(a.id);
+	return 'Note ' + (n > 0 ? n : '');
+}
 
 /** @param {string} uuid */
 function objectOf(uuid) {
@@ -38,16 +91,17 @@ function broadcast(data) {
 
 /** Create/update locally and replicate @param {any} annotation */
 export function setAnnotation(annotation) {
+	const normalized = normalizeAnnotation(annotation);
 	annotations.update((list) => {
-		const index = list.findIndex((a) => a.id === annotation.id);
+		const index = list.findIndex((a) => a.id === normalized.id);
 		if (index >= 0) {
 			const next = [...list];
-			next[index] = annotation;
+			next[index] = normalized;
 			return next;
 		}
-		return [...list, annotation];
+		return [...list, normalized];
 	});
-	broadcast({ type: 'annotation', op: 'set', annotation });
+	broadcast({ type: 'annotation', op: 'set', annotation: normalized });
 }
 
 /** @param {string} id */
@@ -63,14 +117,15 @@ export function applyAnnotation(data) {
 		annotations.update((list) => list.filter((a) => a.id !== data.annotation.id));
 		activeAnnotation.update((active) => (active?.id === data.annotation.id ? null : active));
 	} else {
+		const normalized = normalizeAnnotation(data.annotation);
 		annotations.update((list) => {
-			const index = list.findIndex((a) => a.id === data.annotation.id);
+			const index = list.findIndex((a) => a.id === normalized.id);
 			if (index >= 0) {
 				const next = [...list];
-				next[index] = data.annotation;
+				next[index] = normalized;
 				return next;
 			}
-			return [...list, data.annotation];
+			return [...list, normalized];
 		});
 	}
 }
@@ -122,22 +177,28 @@ export function addAnnotation(uuid, worldPoint = null) {
 	/** @type {any} */
 	const peer = get(peers);
 	activeAnnotation.set({
-		draft: {
+		draft: normalizeAnnotation({
 			id: crypto.randomUUID(),
 			objectUuid: object.uuid,
 			offset,
 			text: '',
 			author: get(username) || peer?.peer?.id || 'me',
 			ts: Date.now()
-		}
+		})
 	});
 }
 
-/** Focus the camera on a pin and open its note @param {string} id */
-export function openAnnotation(id) {
+/**
+ * Focus the camera on a pin and open its note. `mode` picks the popover face
+ * (a bare `{id}` keeps meaning view, for back-compat).
+ * NOTE: `flyTo` bails in VR/spectator and the popover is DOM (invisible
+ * in-headset), so this degrades to a no-visible-change there.
+ * @param {string} id @param {'view'|'edit'=} mode
+ */
+export function openAnnotation(id, mode = 'view') {
 	const annotation = get(annotations).find((a) => a.id === id);
 	if (!annotation) return;
-	activeAnnotation.set({ id });
+	activeAnnotation.set({ id, mode });
 	const object = objectOf(annotation.objectUuid);
 	/** @type {any} */
 	const camera = get(globalCamera);
@@ -151,10 +212,18 @@ export function openAnnotation(id) {
 	}
 }
 
-/** World position of a pin right now (for the popover projection) @param {string} id */
-export function annotationWorldPosition(id) {
-	const annotation = get(annotations).find((a) => a.id === id);
-	if (!annotation) return null;
+/**
+ * World position of a pin right now (drives the popover's projection loop).
+ * Accepts a stored note id OR a draft-shaped object (`{objectUuid, offset}`),
+ * so a not-yet-saved note anchors at the clicked point too.
+ * @param {string | any} idOrAnnotation
+ */
+export function annotationWorldPosition(idOrAnnotation) {
+	const annotation =
+		typeof idOrAnnotation === 'string'
+			? get(annotations).find((a) => a.id === idOrAnnotation)
+			: idOrAnnotation;
+	if (!annotation?.objectUuid || !Array.isArray(annotation.offset)) return null;
 	const object = objectOf(annotation.objectUuid);
 	if (!object) return null;
 	return object.localToWorld(new THREE.Vector3().fromArray(annotation.offset));
@@ -177,5 +246,5 @@ objectsGroup.subscribe(() => {
 // persist with the autosave snapshot
 registerAnnotationsPersistence(
 	() => get(annotations),
-	(list) => annotations.set(list)
+	(list) => annotations.set((Array.isArray(list) ? list : []).map(normalizeAnnotation))
 );

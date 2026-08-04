@@ -26,7 +26,7 @@
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
-	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
+	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
 	import { setParticleRoot } from '$lib/particleRuntime';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
@@ -604,13 +604,14 @@
 					return;
 				}
 			}
-			// note pins take priority over object selection
-			if ($pinsGroup) {
+			// note pins take priority over object selection (H3: skipped entirely
+			// while pins are hidden — never rely on raycaster-vs-invisible semantics)
+			if ($pinsGroup && $showNotePins) {
 				const pinHits = selectionRaycaster.intersectObject($pinsGroup, true);
 				let pinNode = pinHits[0]?.object;
 				while (pinNode && !pinNode.name?.startsWith('pin-')) pinNode = pinNode.parent;
 				if (pinNode) {
-					openAnnotation(pinNode.name.slice(4));
+					openAnnotation(pinNode.name.slice(4), 'view');
 					return;
 				}
 			}

@@ -782,10 +782,10 @@ override for e2e — never share 5173 (the user's main-checkout server).
   core PR #86** (branch fix/roadmap16-menus-cameras, six commits, STACKED on #85 →
   #84 → #82; retarget to release/next as they land; plan + as-built notes in the
   cloud repo plans-core/roadmap-16-menus-grid-cameras.md). P6 deselect broadcasts
-   (peers kept objects locked forever) + "Selected ▸" gates on the SET · P1
+  `unlock` (peers kept objects locked forever) + "Selected ▸" gates on the SET · P1
   menu filter hidden-until-typing + ↑/↓ navigation + Enter-opens-submenu · P2 the
   node editor's private search box retired onto the shared filter · P3 Configure
-  Scene ▸ Grid + Snapping with a  item style replacing  · P4 unlimited
+  Scene ▸ Grid + Snapping with a `checked` item style replacing `●` · P4 unlimited
   NAMED camera bookmarks (lens included) + a Camera section (orbit feel, framing) ·
   P5 scene CAMERA OBJECTS (frustum viz, true-swap preview, WASD Control writing back
   as one undo, framing guide, Capture, replicated preview presence). New suites

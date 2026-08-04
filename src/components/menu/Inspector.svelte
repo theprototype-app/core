@@ -936,15 +936,18 @@
 				/>
 				<div class="ui-row">
 					<span class="w-20 shrink-0 text-xs text-gray-400">Far clip</span>
-					<input
-						id="camera-far"
-						type="number"
-						min="10"
-						step="500"
-						class="ui-input w-24"
-						value={$cameraFar}
-						onchange={(e) => setCameraFar(parseFloat(e.currentTarget.value))}
-					/>
+					<div class="w-24 shrink-0">
+						<DragRow
+							id="camera-far"
+							value={$cameraFar}
+							decimals={0}
+							min={10}
+							step={5}
+							snap={100}
+							ariaLabel="Far clip"
+							onchange={(v) => setCameraFar(v)}
+						/>
+					</div>
 					<span class="text-[10px] text-gray-500">grows to fit the scene</span>
 				</div>
 				<p class="text-[10px] italic text-gray-400">Clip planes are per-device (not shared).</p>
@@ -1205,16 +1208,18 @@
 							onclick={() => snapSettings.update((s) => ({ ...s, translate: step }))}>{step}</button
 						>
 					{/each}
-					<input
-						id="snap-translate"
-						type="number"
-						min="0.001"
-						step="0.05"
-						class="ui-input w-16 px-1 py-0.5 text-right text-xs"
-						value={$snapSettings.translate}
-						onchange={(/** @type {any} */ e) =>
-							snapSettings.update((s) => ({ ...s, translate: parseFloat(e.currentTarget.value) || s.translate }))}
-					/>
+					<div class="w-16 shrink-0">
+						<DragRow
+							id="snap-translate"
+							value={$snapSettings.translate}
+							decimals={3}
+							min={0.001}
+							step={0.005}
+							snap={0.1}
+							ariaLabel="translate snap step"
+							onchange={(v) => snapSettings.update((s) => ({ ...s, translate: v || s.translate }))}
+						/>
+					</div>
 				</div>
 				<div class="ui-row items-center gap-1">
 					<span class="w-20 shrink-0 text-xs text-gray-400">Rotation</span>
@@ -1227,16 +1232,18 @@
 							onclick={() => snapSettings.update((s) => ({ ...s, rotateDeg: step }))}>{step}°</button
 						>
 					{/each}
-					<input
-						id="snap-rotate"
-						type="number"
-						min="0.1"
-						step="1"
-						class="ui-input w-16 px-1 py-0.5 text-right text-xs"
-						value={$snapSettings.rotateDeg}
-						onchange={(/** @type {any} */ e) =>
-							snapSettings.update((s) => ({ ...s, rotateDeg: parseFloat(e.currentTarget.value) || s.rotateDeg }))}
-					/>
+					<div class="w-16 shrink-0">
+						<DragRow
+							id="snap-rotate"
+							value={$snapSettings.rotateDeg}
+							decimals={1}
+							min={0.1}
+							step={0.2}
+							snap={5}
+							ariaLabel="rotateDeg snap step"
+							onchange={(v) => snapSettings.update((s) => ({ ...s, rotateDeg: v || s.rotateDeg }))}
+						/>
+					</div>
 				</div>
 				<div class="ui-row items-center gap-1">
 					<span class="w-20 shrink-0 text-xs text-gray-400">Scale</span>
@@ -1249,16 +1256,18 @@
 							onclick={() => snapSettings.update((s) => ({ ...s, scale: step }))}>{step}</button
 						>
 					{/each}
-					<input
-						id="snap-scale"
-						type="number"
-						min="0.001"
-						step="0.05"
-						class="ui-input w-16 px-1 py-0.5 text-right text-xs"
-						value={$snapSettings.scale}
-						onchange={(/** @type {any} */ e) =>
-							snapSettings.update((s) => ({ ...s, scale: parseFloat(e.currentTarget.value) || s.scale }))}
-					/>
+					<div class="w-16 shrink-0">
+						<DragRow
+							id="snap-scale"
+							value={$snapSettings.scale}
+							decimals={3}
+							min={0.001}
+							step={0.005}
+							snap={0.05}
+							ariaLabel="scale snap step"
+							onchange={(v) => snapSettings.update((s) => ({ ...s, scale: v || s.scale }))}
+						/>
+					</div>
 				</div>
 				<Checkbox
 					id="snap-surface"
@@ -1524,16 +1533,18 @@
 					/>
 					<div class="ui-row items-center gap-2">
 						<span class="w-20 shrink-0 text-xs text-gray-400">Far</span>
-						<input
-							id="camera-object-far"
-							type="number"
-							min="1"
-							step="50"
-							class="ui-input w-24"
-							value={cam.far}
-							onchange={(/** @type {any} */ e) =>
-								setCameraFor($selectedObject.uuid, { far: parseFloat(e.currentTarget.value) || cam.far })}
-						/>
+						<div class="w-24 shrink-0">
+							<DragRow
+								id="camera-object-far"
+								value={cam.far}
+								decimals={0}
+								min={1}
+								step={5}
+								snap={50}
+								ariaLabel="Far plane"
+								onchange={(v) => setCameraFor($selectedObject.uuid, { far: v || cam.far })}
+							/>
+						</div>
 					</div>
 					<div class="ui-row items-center gap-1">
 						<span class="w-20 shrink-0 text-xs text-gray-400">Framing</span>
@@ -1633,14 +1644,17 @@
 				<Section label="Object">
 					<div class="ui-row items-center gap-2">
 						<span class="w-24 shrink-0 text-xs text-gray-400">Render order</span>
-						<input
-							id="inspector-render-order"
-							type="number"
-							step="1"
-							class="ui-input w-20 text-right"
-							value={$selectedObject.renderOrder}
-							onchange={(/** @type {any} */ e) => setObjectParam('renderOrder', +e.currentTarget.value || 0)}
-						/>
+						<div class="w-20 shrink-0">
+							<DragRow
+								id="inspector-render-order"
+								value={$selectedObject.renderOrder}
+								decimals={0}
+								step={0.2}
+								snap={5}
+								ariaLabel="Render order"
+								onchange={(v) => setObjectParam('renderOrder', Math.round(v) || 0)}
+							/>
+						</div>
 					</div>
 					<Checkbox
 						checked={$selectedObject.frustumCulled}
@@ -2230,18 +2244,20 @@
 						<div class="ui-row items-center gap-2">
 							<span class="w-20 shrink-0 text-xs text-gray-400" title="Where particles spawn, relative to the object center (local axes)">Emit from</span>
 							{#each ['x', 'y', 'z'] as axis, i}
-								<input
-									type="number"
-									step="0.1"
-									aria-label={'Emit offset ' + axis}
-									class="w-14 rounded-sm border border-gray-500 bg-transparent px-1 py-0.5 text-xs"
-									value={(p.offset ?? [0, 0, 0])[i] ?? 0}
-									oninput={(/** @type {any} */ e) => {
-										const off = [...(p.offset ?? [0, 0, 0])];
-										off[i] = +e.currentTarget.value;
-										setParticles({ offset: off });
-									}}
-								/>
+								<div class="w-14 shrink-0">
+									<DragRow
+										value={(p.offset ?? [0, 0, 0])[i] ?? 0}
+										decimals={2}
+										step={0.01}
+										snap={0.1}
+										ariaLabel={'Emit offset ' + axis}
+										onchange={(v) => {
+											const off = [...(p.offset ?? [0, 0, 0])];
+											off[i] = v;
+											setParticles({ offset: off });
+										}}
+									/>
+								</div>
 							{/each}
 						</div>
 						<div class="ui-row items-center gap-2">

@@ -2,7 +2,14 @@
 	// The one true slider row: label · range · number. One-way flow: render
 	// from `value`, report through `onchange(next)` (replication stays at the
 	// call site). Phase 64 layers the infinite-drag input on the label.
-	/** @type {{label?: string, value?: number, min?: number, max?: number, step?: number, decimals?: number, onchange?: (next: number) => void}} */
+	//
+	// 16-Q3: the trailing box is the shared DragRow field now — drag to scrub, type
+	// with live updates, arrow keys stepping by one minor unit (Ctrl ×10, Shift
+	// ×100). It used to be a plain <input type="number"> that only committed on
+	// Enter/blur, which made its arrows look broken.
+	import DragRow from './DragRow.svelte';
+
+	/** @type {{label?: string, value?: number, min?: number, max?: number, step?: number, decimals?: number, id?: string, onchange?: (next: number) => void}} */
 	let {
 		label = '',
 		value = 0,
@@ -10,6 +17,7 @@
 		max = 1,
 		step = 0.01,
 		decimals = 2,
+		id = undefined,
 		onchange = () => {}
 	} = $props();
 
@@ -27,17 +35,24 @@
 	<input
 		type="range"
 		class="min-w-0 flex-1 accent-primary-600"
+		aria-label={label}
 		{min}
 		{max}
 		{step}
 		{value}
 		oninput={(e) => commit(e.currentTarget.value)}
 	/>
-	<input
-		type="number"
-		class="ui-input w-16 shrink-0 px-1 py-0.5 text-right text-xs"
-		{step}
-		value={Number(value).toFixed(decimals)}
-		onchange={(e) => commit(e.currentTarget.value)}
-	/>
+	<div class="w-16 shrink-0">
+		<DragRow
+			{id}
+			{value}
+			{decimals}
+			{min}
+			{max}
+			step={step}
+			snap={step * 10}
+			ariaLabel={label}
+			onchange={(next) => onchange(next)}
+		/>
+	</div>
 </div>

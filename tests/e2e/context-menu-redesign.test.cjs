@@ -73,22 +73,42 @@ h.run(async () => {
 	}, uuid);
 	h.check(multiHeader.includes('2 objects selected'), `multi header names the set ("${multiHeader}")`);
 
-	// ---------- type-to-filter (dense menus only) ----------
+	// ---------- 16-P1: the filter is mounted + focused but HIDDEN until typing ----
 	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(400);
+	const hidden = await A.page.evaluate(() => {
+		const input = document.querySelector('.ctx-filter-input');
+		const row = document.querySelector('.ctx-filter');
+		const itemRow = document.querySelector('[role="menu"] [role="menuitem"]');
+		return {
+			present: !!input,
+			focused: document.activeElement === input,
+			rowHeight: row?.getBoundingClientRect().height ?? -1,
+			itemHeight: itemRow?.getBoundingClientRect().height ?? -1
+		};
+	});
+	h.check(hidden.present && hidden.focused, 'the filter input is mounted and focused (it owns the keyboard)');
+	h.check(hidden.rowHeight === 0, `but takes no space until you type (height ${hidden.rowHeight})`);
+
 	const filter = await A.page.evaluate(async () => {
 		const input = document.querySelector('.ctx-filter-input');
-		if (!input) return { present: false };
-		const focused = document.activeElement === input;
-		// type "weld" — a submenu-only action must surface, path-prefixed
+		// type "snap to sur" — a submenu-only action must surface, path-prefixed
 		input.value = 'snap to sur';
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 200));
-		const matches = [...document.querySelectorAll('.ctx-match')].map((m) => m.textContent?.trim());
-		return { present: true, focused, matches };
+		const row = document.querySelector('.ctx-filter');
+		const itemRow = document.querySelector('.ctx-match');
+		return {
+			matches: [...document.querySelectorAll('.ctx-match')].map((m) => m.textContent?.trim()),
+			rowHeight: row?.getBoundingClientRect().height ?? -1,
+			itemHeight: itemRow?.getBoundingClientRect().height ?? -1
+		};
 	});
-	h.check(filter.present, 'a dense menu grows the filter row');
-	h.check(filter.focused, 'typing lands in the filter immediately');
+	h.check(filter.rowHeight > 0, 'typing reveals the filter row');
+	h.check(
+		Math.abs(filter.rowHeight - filter.itemHeight) <= 2,
+		`the revealed row is item-sized (${Math.round(filter.rowHeight)}px vs ${Math.round(filter.itemHeight)}px)`
+	);
 	h.check(
 		filter.matches.some((m) => m.includes('Snapping ▸') && m.includes('Snap to surface')),
 		`submenu actions surface flattened with their path (${filter.matches})`
@@ -109,13 +129,52 @@ h.run(async () => {
 	h.check(ran.toggled, 'Enter runs the top filtered action');
 	h.check(ran.menuGone, 'running an action closes the menu');
 
-	// small menus (few leaves) stay filter-free
-	const smallMenu = await A.page.evaluate(async () => {
-		// the explorer/packs style menus pass small arrays; simulate via a node menu
-		// by opening the object menu for a plain object and counting
-		return true; // covered implicitly: packs-explorer asserts its 1-2 item menus
+	// ---------- 16-P1: arrow navigation ----------
+	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
+	await A.page.waitForTimeout(400);
+	const nav = await A.page.evaluate(async () => {
+		const input = document.querySelector('.ctx-filter-input');
+		const key = async (k) => {
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+			await new Promise((r) => setTimeout(r, 120));
+		};
+		const activeLabel = () => document.querySelector('[data-ctx-active="true"]')?.textContent?.trim() ?? null;
+		const rows = [...document.querySelectorAll('[role="menu"] > [role="menuitem"]')].map((r) =>
+			r.textContent?.trim()
+		);
+		await key('ArrowDown');
+		const first = activeLabel();
+		await key('ArrowDown');
+		const second = activeLabel();
+		await key('ArrowUp');
+		const backToFirst = activeLabel();
+		// walk down to a row WITH children ("Add"), then Enter opens its submenu
+		let guard = 0;
+		while (guard++ < 12 && !(activeLabel() ?? '').startsWith('Add')) await key('ArrowDown');
+		const onParent = activeLabel();
+		await key('Enter');
+		// the submenu is the fixed box without a role
+		const submenuOpen = [...document.querySelectorAll('div[style*="position"], div')].some(
+			(d) => getComputedStyle(d).position === 'fixed' && !d.getAttribute('role') && d.querySelector('[role="menuitem"]')
+		);
+		const insideSubmenu = activeLabel();
+		await key('Escape'); // leaves the submenu, keeps the menu open
+		const stillOpen = !!document.querySelector('[role="menu"]');
+		const submenuClosed = ![...document.querySelectorAll('div')].some(
+			(d) => getComputedStyle(d).position === 'fixed' && !d.getAttribute('role') && d.querySelector('[role="menuitem"]')
+		);
+		return { rows, first, second, backToFirst, onParent, submenuOpen, insideSubmenu, stillOpen, submenuClosed };
 	});
-	h.check(smallMenu, 'small menus keep their old shape (packs-explorer covers it)');
+	h.check(nav.first === nav.rows[0], `ArrowDown highlights the first row (${nav.first})`);
+	h.check(nav.second && nav.second !== nav.first, `ArrowDown moves on (${nav.second})`);
+	h.check(nav.backToFirst === nav.first, 'ArrowUp moves back');
+	h.check(nav.submenuOpen, `Enter on "${nav.onParent}" opens its submenu`);
+	h.check(
+		(nav.insideSubmenu ?? '').startsWith('Mesh'),
+		`the highlight moves INTO the submenu, not the parent row (${nav.insideSubmenu})`
+	);
+	h.check(nav.stillOpen && nav.submenuClosed, 'Escape inside a submenu closes only the submenu');
+	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
 
 	// ---------- Esc semantics: clear the query first, then close ----------
 	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));

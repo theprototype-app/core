@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Info, UserPlus, Download } from '@lucide/svelte';
+    import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
@@ -181,6 +182,37 @@ $effect(() => {
             }}
             >Exit</button
         >
+        </div>
+    </div>
+</div>
+{/if}
+
+<!-- 16-P5: previewing a camera OBJECT is a MODE, so it gets the same always-
+     visible strip as "Watching <peer>" (never queues behind toasts, never
+     auto-expires). Control hands the camera to the normal viewport navigation
+     (WASD + mouse) and writes the pose back onto the marker. -->
+{#if $cameraPreview}
+<div class="spectator-banner preview-banner" transition:fly={{ y: -8, duration: 180 }}>
+    <div class="spectator-inner">
+        <span class="spectator-dot" aria-hidden="true"></span>
+        <div class="inline-flex items-center">
+            <p class="spectator-text">
+                Previewing <strong>{previewLabel($cameraPreview.uuid)}</strong>
+            </p>
+            <button
+                class="preview-control"
+                class:on={$cameraPreview.controlling}
+                title={$cameraPreview.controlling
+                    ? 'Stop flying the camera (its new pose is kept, as one undo step)'
+                    : 'Fly this camera with WASD + mouse, like the viewport camera'}
+                onclick={() => toggleCameraControl()}
+                >{$cameraPreview.controlling ? 'Stop control' : 'Control'}</button
+            >
+            <button
+                class="spectator-exit"
+                title="Leave the preview and return to your own view"
+                onclick={() => stopCameraPreview()}>Exit</button
+            >
         </div>
     </div>
 </div>
@@ -474,6 +506,26 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
         color: #fff;
     }
     .spectator-exit:hover { background: #dc2626; }
+    /* 16-P5: preview banner reuses the strip, in a calmer blue */
+    .preview-banner .spectator-inner {
+        border-color: rgb(138 180 248 / 0.5);
+        background: rgb(30 41 59 / 0.92);
+    }
+    .preview-banner .spectator-dot { background: #8ab4f8; }
+    .preview-control {
+        margin-left: 10px;
+        border-radius: 6px;
+        padding: 2px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #e5e7eb;
+        background: rgb(148 163 184 / 0.25);
+    }
+    .preview-control:hover { background: rgb(148 163 184 / 0.4); }
+    .preview-control.on {
+        color: #0b1220;
+        background: #8ab4f8;
+    }
     @media (prefers-reduced-motion: reduce) {
         .spectator-dot { animation: none; }
     }

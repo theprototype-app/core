@@ -375,6 +375,16 @@ export async function objectParameters(data) {
             else delete mesh.userData.particles;
             objectsGroup.update((value) => value);
         }
+    } else if (data.parameter == 'camera') {
+        // 16-P5: userData.camera holds a camera OBJECT's lens + framing settings
+        // (the marker is a normal mesh; the preview camera and the frustum viz are
+        // built from this at the scene root). null = cleared.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.camera) mesh.userData.camera = data.camera;
+            else delete mesh.userData.camera;
+            objectsGroup.update((value) => value); // frustum viz + preview re-read
+        }
     } else if (data.parameter == 'renderOrder') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.renderOrder = data.renderOrder;

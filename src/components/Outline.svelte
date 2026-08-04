@@ -50,6 +50,24 @@
   // The order is important as the last added pass will be on top
 	composer.addPass(new EffectPass(camera.current, outlineEffectLocked));
 	composer.addPass(new EffectPass(camera.current, outlineEffectSelected));
+
+	// 16-P5: every pass above baked `camera.current` at CONSTRUCTION, so a camera
+	// swap (previewing a camera object makes its real camera the default) would
+	// keep rendering through the old one — you'd still see the editor view, camera
+	// marker and all. Re-point the whole chain whenever the active camera changes;
+	// generic, so any future camera swap is correct for free.
+	// NOTE: track `$camera` (the store), NOT `camera.current` — threlte's
+	// CurrentWritable exposes `.current` as a plain property, so reading it inside
+	// an $effect registers NO dependency and the effect would run exactly once.
+	$effect(() => {
+		const active = $camera as any;
+		if (!active) return;
+		(composer as any).setMainCamera?.(active);
+		// N8AO keeps its own camera reference (third-party pass, not covered by
+		// setMainCamera's `pass.mainCamera` sweep)
+		(aoPass as any).camera = active;
+	});
+
 	$effect(() => {
 		// B2: size the AO pass to the PHYSICAL drawing buffer. postprocessing's
 		// composer.setSize sizes each pass to width*devicePixelRatio; passing the

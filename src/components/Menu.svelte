@@ -4,6 +4,7 @@
 	import MeshGenModal from './menu/MeshGenModal.svelte';
 	import MeshJobsCard from './menu/MeshJobsCard.svelte';
 	import Toasts from './menu/Toasts.svelte';
+	import FramingGuide from './menu/FramingGuide.svelte';
 	import Connect from './menu/Connect.svelte';
 	import Controls from './menu/Controls.svelte';
 	import Inspector from './menu/Inspector.svelte';
@@ -57,6 +58,8 @@
 <Library />
 <Toasts />
 <Users />
+<!-- 16-P5: letterbox bars while previewing a camera at a fixed aspect -->
+<FramingGuide />
 </div>
 
 <div class="dark-mode hidden"><DarkMode /></div>

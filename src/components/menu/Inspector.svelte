@@ -63,6 +63,18 @@
 		SHORTCUT_SLOTS
 	} from '$lib/cameraBookmarks';
 	import { sceneRadius } from '$lib/sceneBounds';
+	// 16-P5: camera OBJECTS (marker + userData.camera)
+	import {
+		isCameraObject,
+		cameraSpec,
+		setCameraFor,
+		setCameraFromView,
+		alignViewToCamera,
+		captureThroughCamera,
+		ASPECTS
+	} from '$lib/cameraObjects';
+	import { cameraPreview, startCameraPreview, stopCameraPreview } from '$lib/cameraPreview';
+	import { showCameraFrustums } from '$lib/cameraHelpers';
 	import {
 		music,
 		musicLocalVolume,
@@ -1451,6 +1463,123 @@
 				</Section>
 			{/if}
 
+			<!-- 16-P5: a camera OBJECT is a marker mesh carrying userData.camera. All
+			     writes go through setCameraFor (props history + objectParameters +
+			     viz/preview poke) — the setPhysicsFor precedent. -->
+			{#if isCameraObject($selectedObject)}
+				{@const cam = cameraSpec($selectedObject)}
+				<Section label="Camera">
+					<div class="ui-row items-center gap-1">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Kind</span>
+						{#each [['perspective', 'Perspective'], ['orthographic', 'Orthographic']] as [kind, label]}
+							<button
+								class={'ui-chip ' + (cam.kind === kind ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								onclick={() => setCameraFor($selectedObject.uuid, { kind })}>{label}</button
+							>
+						{/each}
+					</div>
+					{#if cam.kind === 'perspective'}
+						<SliderRow
+							label="FOV"
+							min={10}
+							max={140}
+							step={1}
+							decimals={0}
+							value={cam.fov}
+							onchange={(v) => setCameraFor($selectedObject.uuid, { fov: v })}
+						/>
+					{:else}
+						<SliderRow
+							label="Size"
+							min={0.5}
+							max={50}
+							step={0.5}
+							decimals={1}
+							value={cam.orthoSize}
+							onchange={(v) => setCameraFor($selectedObject.uuid, { orthoSize: v })}
+						/>
+					{/if}
+					<SliderRow
+						label="Near"
+						min={0.01}
+						max={5}
+						step={0.01}
+						decimals={2}
+						value={cam.near}
+						onchange={(v) => setCameraFor($selectedObject.uuid, { near: v })}
+					/>
+					<div class="ui-row items-center gap-2">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Far</span>
+						<input
+							id="camera-object-far"
+							type="number"
+							min="1"
+							step="50"
+							class="ui-input w-24"
+							value={cam.far}
+							onchange={(/** @type {any} */ e) =>
+								setCameraFor($selectedObject.uuid, { far: parseFloat(e.currentTarget.value) || cam.far })}
+						/>
+					</div>
+					<div class="ui-row items-center gap-1">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Framing</span>
+						{#each ASPECTS as aspect}
+							<button
+								class={'ui-chip ' + (cam.aspect === aspect ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								onclick={() => setCameraFor($selectedObject.uuid, { aspect })}>{aspect}</button
+							>
+						{/each}
+					</div>
+					<Checkbox
+						id="camera-guide"
+						checked={cam.guide}
+						onchange={(/** @type {any} */ e) => setCameraFor($selectedObject.uuid, { guide: e.currentTarget.checked })}
+						>Letterbox guide while previewing</Checkbox
+					>
+					<div class="ui-row flex-wrap items-center gap-2">
+						<button
+							id="camera-preview"
+							class={'ui-chip ' +
+								($cameraPreview?.uuid === $selectedObject.uuid
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							title="Render the scene through this camera (exit from the banner)"
+							onclick={() =>
+								$cameraPreview?.uuid === $selectedObject.uuid
+									? stopCameraPreview()
+									: startCameraPreview($selectedObject.uuid)}
+							>{$cameraPreview?.uuid === $selectedObject.uuid ? 'Previewing' : 'Preview'}</button
+						>
+						<button
+							id="camera-capture"
+							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							title="Render one frame through this camera and download it"
+							onclick={() => captureThroughCamera($selectedObject.uuid)}>Capture</button
+						>
+						<button
+							id="camera-from-view"
+							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							title="Move this camera to your current viewpoint (and take its FOV)"
+							onclick={() => setCameraFromView($selectedObject.uuid)}>Set from view</button
+						>
+						<button
+							id="camera-align-view"
+							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							title="Fly YOUR view to look through this camera (stays your camera)"
+							onclick={() => alignViewToCamera($selectedObject.uuid)}>Align view</button
+						>
+					</div>
+					<Checkbox
+						id="camera-frustums"
+						checked={$showCameraFrustums}
+						onchange={(/** @type {any} */ e) => showCameraFrustums.set(e.currentTarget.checked)}
+						>Show camera frustums — this device</Checkbox
+					>
+					<p class="text-[10px] italic text-gray-400">
+						The camera itself is shared; previewing and the frustum lines are yours alone.
+					</p>
+				</Section>
+			{/if}
 			<Section label="Transform">
 				<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
 					<span class="text-[11px] text-gray-400">Position</span>

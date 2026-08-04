@@ -452,6 +452,14 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'particles', uuid: entry.uuid, particles: state.particles });
 	}
+	if ('camera' in state) {
+		// 16-P5: camera-object settings ride the same kind (viz + any live preview
+		// rebuild from the poke below)
+		if (state.camera) object.userData.camera = state.camera;
+		else delete object.userData.camera;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'camera', uuid: entry.uuid, camera: state.camera });
+	}
 	objectsGroup.update((value) => value);
 	return true;
 });

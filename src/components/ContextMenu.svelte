@@ -30,7 +30,8 @@
 		// 16-P2: `revealFilter` rows (the node editor's "Search nodes…") just show the
 		// filter row — the menu STAYS open and the input keeps the keyboard
 		if (item.revealFilter) {
-			forceFilter = true;
+			searchMode = true;
+			highlight = -1;
 			inputEl?.focus({ preventScroll: true });
 			return;
 		}
@@ -39,6 +40,13 @@
 	}
 
 	let query = '';
+	/** 16-P7: search MODE is sticky — clearing the query keeps the flat list (now
+	 *  showing everything) instead of snapping back to the grouped menu; only Esc
+	 *  leaves search. Entered by typing or by a `revealFilter` row. */
+	let searchMode = false;
+	/** the cursor position we left behind on each level, keyed by its path — so
+	 *  stepping OUT of a submenu lands back on the row you came from */
+	let levelHighlight: Record<string, number> = {};
 	/** labels of the submenu chain currently RENDERED open */
 	let openPath: string[] = [];
 	/** level the keyboard cursor sits on — usually === openPath, but a pointer
@@ -48,15 +56,20 @@
 	let navPath: string[] = [];
 	/** highlighted row at navPath's level; -1 = nothing yet */
 	let highlight = -1;
-	/** a `revealFilter` row asked for the (empty) filter to be shown */
-	let forceFilter = false;
+	/** how many rows the empty-query browse list shows (it scrolls) */
+	const BROWSE_CAP = 200;
 	let inputEl: HTMLInputElement | null = null;
 
 	// the header strip (what this menu acts on) leads the menu, ABOVE the filter
 	$: headerItem = items[0]?.header ? items[0] : null;
 	$: bodyItems = headerItem ? items.slice(1) : items;
 	$: leaves = collectLeaves(items);
-	$: matches = query ? rankMatches(leaves, query) : [];
+	/** With a query: ranked matches. In search mode WITHOUT one: every action, so
+	 *  the box doubles as a full browse list (the node editor's old search box did
+	 *  this, and clearing the query should not throw you out of it). */
+	$: matches = query ? rankMatches(leaves, query) : searchMode ? leaves.slice(0, BROWSE_CAP) : [];
+	/** flat list instead of the grouped tree? */
+	$: listMode = searchMode || !!query;
 
 	/** the item list at a submenu path @param {any[]} list @param {string[]} path */
 	function levelItems(list: any[], path: string[]) {
@@ -69,8 +82,8 @@
 		return current ?? [];
 	}
 	const selectable = (list: any[]) => (list ?? []).filter((item) => item && !item.section && !item.header);
-	/** rows the keyboard walks: the matches while filtering, else the cursor's level */
-	$: navRows = query ? matches.map((entry) => entry.item) : selectable(levelItems(bodyItems, navPath));
+	/** rows the keyboard walks: the flat list while searching, else the cursor's level */
+	$: navRows = listMode ? matches.map((entry) => entry.item) : selectable(levelItems(bodyItems, navPath));
 	$: if (highlight >= navRows.length) highlight = navRows.length - 1;
 
 	function scrollNavIntoView() {
@@ -96,13 +109,17 @@
 		scrollNavIntoView();
 	}
 
+	const levelKey = (path: string[]) => path.join('|');
+
 	/** @param {any} item */
 	function openChildrenOf(item: any) {
 		if (!item?.children) return false;
+		levelHighlight[levelKey(navPath)] = highlight; // remember where we were
 		navPath = [...navPath, item.label];
 		openPath = navPath;
-		highlight = -1;
-		move(1);
+		const remembered = levelHighlight[levelKey(navPath)];
+		highlight = remembered ?? -1;
+		if (highlight < 0) move(1);
 		return true;
 	}
 
@@ -116,9 +133,12 @@
 
 	function back() {
 		if (!navPath.length) return false;
+		// leaving a submenu forgets ITS cursor but restores the parent's (Q1: it used
+		// to reset to the top row every time)
+		delete levelHighlight[levelKey(navPath)];
 		navPath = navPath.slice(0, -1);
 		openPath = navPath;
-		highlight = -1;
+		highlight = levelHighlight[levelKey(navPath)] ?? -1;
 		return true;
 	}
 
@@ -133,13 +153,15 @@
 			activate();
 			event.preventDefault();
 		} else if (event.key === 'Escape') {
-			// Esc unwinds one step at a time: query → revealed filter → open submenu →
-			// the menu itself
+			// Esc unwinds one step at a time: query → search mode → open submenu →
+			// the menu itself. (Clearing the query by BACKSPACE deliberately stays in
+			// search mode showing everything — only Esc goes back to the menu.)
 			if (query) {
 				query = '';
+				highlight = 0;
+			} else if (searchMode) {
+				searchMode = false;
 				highlight = -1;
-			} else if (forceFilter) {
-				forceFilter = false;
 			} else if (!back()) {
 				dispatch('close');
 			}
@@ -156,10 +178,13 @@
 
 	function onFilterInput(event: Event) {
 		query = (event.currentTarget as HTMLInputElement).value;
+		// typing enters search mode; DELETING the text keeps you there (the list simply
+		// widens to every action) — only Esc returns to the grouped menu
+		if (query) searchMode = true;
 		// filtering resets the walk to the top hit so Enter is predictable
 		openPath = [];
 		navPath = [];
-		highlight = query ? 0 : -1;
+		highlight = 0;
 	}
 
 	function focusInput(node: HTMLInputElement) {
@@ -194,9 +219,13 @@
 	function place(node: HTMLElement) {
 		let lastW = -1;
 		let lastH = -1;
+		/** which side of the click we opened toward — decided ONCE (Q1: a growing
+		 *  list used to re-decide and teleport the menu to the top of the screen) */
+		let flipUp: boolean | null = null;
 		const reposition = () => {
 			const vw = window.innerWidth;
 			const vh = window.innerHeight;
+			// measure unconstrained first so the side decision sees the natural height
 			node.style.maxHeight = vh - 8 + 'px';
 			const w = node.offsetWidth;
 			const h = node.offsetHeight;
@@ -204,8 +233,18 @@
 			lastH = h;
 			let left = x > vw - w - 4 ? x - w : x; // near the right edge -> open leftward
 			left = Math.max(4, Math.min(left, vw - w - 4));
-			let top = y > vh - h - 4 ? y - h : y;
-			top = Math.max(4, Math.min(top, vh - h - 4));
+
+			const below = vh - y - 8; // room under the click
+			const above = y - 8; // room over it
+			// first placement picks the roomier side; later ones KEEP it, so filtering
+			// (which changes the height a lot) never re-anchors the menu
+			if (flipUp === null) flipUp = h > below && above > below;
+			// the anchor edge stays ON the click: top edge downward, bottom edge upward.
+			// Anything that doesn't fit gets capped and scrolls (.ctx-scroll).
+			const room = Math.max(120, flipUp ? above : below);
+			const height = Math.min(h, room);
+			node.style.maxHeight = room + 'px';
+			const top = flipUp ? Math.max(4, y - height) : Math.min(y, Math.max(4, vh - height - 4));
 			node.style.left = left + 'px';
 			node.style.top = top + 'px';
 			node.style.right = 'auto';
@@ -257,7 +296,7 @@
 		<ContextMenuItems items={[headerItem]} onrun={run} />
 	{/if}
 	<!-- always mounted (it owns the keyboard) but collapsed until there's a query -->
-	<div class="ctx-filter" class:on={!!query || forceFilter} role="presentation">
+	<div class="ctx-filter" class:on={listMode} role="presentation">
 		<Icon name="search" size={12} />
 		<input
 			class="ctx-filter-input"
@@ -271,8 +310,9 @@
 			on:click|stopPropagation
 		/>
 	</div>
-	{#if query}
-		<!-- flattened command-palette view: every matching leaf, path-prefixed -->
+	{#if listMode}
+		<!-- flattened command-palette view: matches for a query, or EVERY action when
+		     the query is empty (the browse list the node search box used to be) -->
 		{#each matches as match, index}
 			<!-- pointer-driven like every other menu row (the filter input owns the
 			     keyboard: ↑/↓ move, Enter runs the highlighted hit) -->
@@ -295,7 +335,9 @@
 			</div>
 		{/each}
 		{#if !matches.length}
-			<div class="px-3 py-2 text-[11px] italic text-gray-400" role="presentation">No matching action</div>
+			<div class="px-3 py-2 text-[11px] italic text-gray-400" role="presentation">
+				{query ? 'No matching action' : 'Nothing to search here'}
+			</div>
 		{/if}
 	{:else}
 		<ContextMenuItems

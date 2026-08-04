@@ -129,6 +129,50 @@ h.run(async () => {
 	h.check(ran.toggled, 'Enter runs the top filtered action');
 	h.check(ran.menuGone, 'running an action closes the menu');
 
+	// ---------- 16-Q1: search mode is STICKY, and the menu keeps its anchor -------
+	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
+	await A.page.waitForTimeout(400);
+	const sticky = await A.page.evaluate(async () => {
+		const input = document.querySelector('.ctx-filter-input');
+		const menu = () => document.querySelector('[role="menu"]');
+		const type = async (value) => {
+			input.value = value;
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+			await new Promise((r) => setTimeout(r, 200));
+		};
+		const key = async (k) => {
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+			await new Promise((r) => setTimeout(r, 200));
+		};
+		const topBefore = menu().getBoundingClientRect().top;
+		await type('grid');
+		const filtered = document.querySelectorAll('.ctx-match').length;
+		// DELETE the query: the box must stay, now listing everything
+		await type('');
+		const browsing = document.querySelectorAll('.ctx-match').length;
+		const rowStillThere = (document.querySelector('.ctx-filter')?.getBoundingClientRect().height ?? 0) > 0;
+		const topWhileBrowsing = menu().getBoundingClientRect().top;
+		const scrolls = menu().scrollHeight > menu().clientHeight;
+		// Esc leaves search, back to the grouped menu
+		await key('Escape');
+		const grouped = !!menu()?.textContent?.includes('Snapping') && document.querySelectorAll('.ctx-match').length === 0;
+		const rowHidden = (document.querySelector('.ctx-filter')?.getBoundingClientRect().height ?? 0) === 0;
+		return { topBefore, filtered, browsing, rowStillThere, topWhileBrowsing, scrolls, grouped, rowHidden };
+	});
+	h.check(sticky.filtered > 0, `typing filters (${sticky.filtered} matches)`);
+	h.check(
+		sticky.rowStillThere && sticky.browsing > sticky.filtered,
+		`clearing the query KEEPS the search box and lists everything (${sticky.browsing} rows)`
+	);
+	h.check(
+		Math.abs(sticky.topWhileBrowsing - sticky.topBefore) < 2,
+		`the menu keeps the anchor it opened at (top ${sticky.topBefore} -> ${sticky.topWhileBrowsing})`
+	);
+	h.check(sticky.scrolls, 'a long list scrolls inside the menu instead of moving it');
+	h.check(sticky.grouped && sticky.rowHidden, 'Esc returns to the grouped menu and hides the box');
+	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+
 	// ---------- 16-P1: arrow navigation ----------
 	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(400);
@@ -174,26 +218,61 @@ h.run(async () => {
 		`the highlight moves INTO the submenu, not the parent row (${nav.insideSubmenu})`
 	);
 	h.check(nav.stillOpen && nav.submenuClosed, 'Escape inside a submenu closes only the submenu');
+
+	// ---------- 16-Q1: stepping out of a submenu keeps the parent's cursor -------
+	const cursorMemory = await A.page.evaluate(async () => {
+		const input = document.querySelector('.ctx-filter-input');
+		const key = async (k) => {
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+			await new Promise((r) => setTimeout(r, 130));
+		};
+		const activeLabel = () => document.querySelector('[data-ctx-active="true"]')?.textContent?.trim() ?? null;
+		// walk down a few rows to a submenu row that is NOT the first row
+		let guard = 0;
+		while (guard++ < 12 && !(activeLabel() ?? '').startsWith('Tools')) await key('ArrowDown');
+		const parentRow = activeLabel();
+		await key('Enter'); // into Tools
+		const inside = activeLabel();
+		await key('Escape'); // back out
+		const backOn = activeLabel();
+		return { parentRow, inside, backOn };
+	});
+	h.check(
+		(cursorMemory.parentRow ?? '').startsWith('Tools') && !!cursorMemory.inside,
+		`descended into a submenu from a mid-list row (${cursorMemory.parentRow} -> ${cursorMemory.inside})`
+	);
+	h.check(
+		(cursorMemory.backOn ?? '').startsWith('Tools'),
+		`stepping back keeps the cursor on the row we came from (${cursorMemory.backOn})`
+	);
 	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
 
-	// ---------- Esc semantics: clear the query first, then close ----------
+	// ---------- Esc semantics: query → search mode → menu (16-Q1: search is sticky,
+	// so leaving it is its own step) ----------
 	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(400);
 	const esc = await A.page.evaluate(async () => {
 		const input = document.querySelector('.ctx-filter-input');
+		const esc = async () => {
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+			await new Promise((r) => setTimeout(r, 160));
+		};
 		input.value = 'grid';
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 150));
-		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-		await new Promise((r) => setTimeout(r, 150));
+		await esc();
 		const clearedNotClosed = !!document.querySelector('[role="menu"]') && input.value === '';
-		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-		await new Promise((r) => setTimeout(r, 150));
+		const stillSearching = document.querySelectorAll('.ctx-match').length > 0;
+		await esc();
+		const groupedAgain =
+			!!document.querySelector('[role="menu"]') && document.querySelectorAll('.ctx-match').length === 0;
+		await esc();
 		const closed = !document.querySelector('[role="menu"]');
-		return { clearedNotClosed, closed };
+		return { clearedNotClosed, stillSearching, groupedAgain, closed };
 	});
-	h.check(esc.clearedNotClosed, 'Esc clears the query first');
-	h.check(esc.closed, 'a second Esc closes the menu');
+	h.check(esc.clearedNotClosed && esc.stillSearching, 'Esc clears the query but stays in search');
+	h.check(esc.groupedAgain, 'a second Esc leaves search for the grouped menu');
+	h.check(esc.closed, 'a third Esc closes the menu');
 
 	await h.finish(browser);
 });

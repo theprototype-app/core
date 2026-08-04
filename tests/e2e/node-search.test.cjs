@@ -63,14 +63,44 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
+	// 16-Q1: Esc clears the query but STAYS in search (the flat list widens to every
+	// node); a second Esc returns to the grouped menu, a third closes it
 	const afterEsc = await A.page.evaluate(() => ({
 		query: document.querySelector('.ctx-filter-input')?.value ?? null,
-		grouped: !!document.querySelector('[role="menu"]')?.textContent?.includes('Search nodes')
+		browsing: document.querySelectorAll('.ctx-match').length
 	}));
-	h.check(afterEsc.query === '' && afterEsc.grouped, 'Esc clears the query back to the grouped menu');
-	await A.page.keyboard.press('Escape'); // a second Esc closes it
+	h.check(
+		afterEsc.query === '' && afterEsc.browsing > 0,
+		`Esc clears the query but keeps browsing every node (${afterEsc.browsing} rows)`
+	);
+	await A.page.keyboard.press('Escape'); // leaves search for the grouped menu
+	await A.page.waitForTimeout(250);
+	const grouped = await A.page.evaluate(() => ({
+		open: !!document.querySelector('[role="menu"]'),
+		flat: document.querySelectorAll('.ctx-match').length,
+		hasSearchRow: !!document.querySelector('[role="menu"]')?.textContent?.includes('Search nodes')
+	}));
+	h.check(grouped.open && grouped.flat === 0 && grouped.hasSearchRow, 'a second Esc returns to the grouped menu');
+	await A.page.keyboard.press('Escape'); // and a third closes it
+	await A.page.waitForTimeout(250);
+	h.check(!(await A.page.locator('[role="menu"]').isVisible()), 'a third Esc closes the menu');
+
+	// 16-Q1: the row that OPENS the search must not appear among its own results
+	await pane.click({ button: 'right', position: { x: 500, y: 200 } });
+	await A.page.waitForTimeout(250);
+	await A.page.locator('.ctx-filter-input').fill('search');
+	await A.page.waitForTimeout(250);
+	const selfMatch = await A.page.evaluate(() =>
+		[...document.querySelectorAll('.ctx-match')].map((m) => m.textContent?.trim())
+	);
+	h.check(
+		!selfMatch.some((m) => /Search nodes/.test(m ?? '')),
+		`"Search nodes…" is excluded from search results (${selfMatch.length} matches)`
+	);
+	await A.page.keyboard.press('Escape');
+	await A.page.keyboard.press('Escape');
+	await A.page.mouse.click(900, 60);
 	await A.page.waitForTimeout(200);
-	h.check(!(await A.page.locator('[role="menu"]').isVisible()), 'a second Esc closes the menu');
 
 	// module + custom entries searchable: wave from the hello module
 	await pane.click({ button: 'right', position: { x: 240, y: 220 } });

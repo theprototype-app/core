@@ -13,7 +13,9 @@
  */
 export function collectLeaves(list, path = [], out = []) {
 	for (const item of list ?? []) {
-		if (!item || item.section || item.header) continue;
+		// `revealFilter` rows (the node editor's "Search nodes…") open the search box
+		// itself — matching them inside their own results is noise (16-Q1)
+		if (!item || item.section || item.header || item.revealFilter) continue;
 		if (item.children) collectLeaves(item.children, [...path, item.label], out);
 		else if (item.label) out.push({ item, path });
 	}

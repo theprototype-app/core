@@ -79,8 +79,12 @@
 		selectedObject,
 		backgroundColor,
 		globalCamera,
-		viewMode
+		viewMode,
+		showGrid
 	} from '../../stores/sceneStore';
+	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
+	import { gridSettings, setGrid, resetGrid, effectiveCell } from '$lib/gridSettings';
+	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
 
 	// (15-L3 dropped the standalone hex textboxes under each colour picker — the
@@ -885,6 +889,219 @@
 					<span class="text-[10px] text-gray-500">grows to fit the scene</span>
 				</div>
 				<p class="text-[10px] italic text-gray-400">Clip planes are per-device (not shared).</p>
+			</Section>
+
+			<!-- 16-P3: grid + snapping are LOCAL view prefs (like the clip planes and
+			     the render mode above) — peers each get their own. -->
+			<Section label="Grid">
+				<Checkbox
+					id="grid-show"
+					checked={!!$showGrid}
+					onchange={() => {
+						showGrid.update((v) => !v);
+						if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
+						else localStorage.setItem('showGrid', 'false');
+					}}>Show grid</Checkbox
+				>
+				<Checkbox
+					id="grid-match-snap"
+					checked={$gridSettings.matchSnapStep}
+					onchange={(/** @type {any} */ e) => setGrid({ matchSnapStep: e.currentTarget.checked })}
+				>
+					Match snapping step ({$snapSettings.translate})
+				</Checkbox>
+				<SliderRow
+					label="Cell size"
+					min={0.05}
+					max={10}
+					step={0.05}
+					decimals={2}
+					value={effectiveCell($gridSettings, $snapSettings.translate)}
+					onchange={(v) => setGrid({ cellSize: v, matchSnapStep: false })}
+				/>
+				<SliderRow
+					label="Major every"
+					min={2}
+					max={20}
+					step={1}
+					decimals={0}
+					value={$gridSettings.sectionEvery}
+					onchange={(v) => setGrid({ sectionEvery: Math.round(v) })}
+				/>
+				<div class="ui-row items-center gap-2">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Colours</span>
+					<!-- plain swatches: the full picker is overkill for two grid lines,
+					     and v4 pickers must never take bind:hex (15-C) -->
+					<input
+						id="grid-cell-color"
+						type="color"
+						class="h-6 w-10 rounded-sm bg-transparent"
+						aria-label="Grid cell colour"
+						value={$gridSettings.cellColor}
+						oninput={(/** @type {any} */ e) => setGrid({ cellColor: e.currentTarget.value })}
+					/>
+					<input
+						id="grid-section-color"
+						type="color"
+						class="h-6 w-10 rounded-sm bg-transparent"
+						aria-label="Grid major-line colour"
+						value={$gridSettings.sectionColor}
+						oninput={(/** @type {any} */ e) => setGrid({ sectionColor: e.currentTarget.value })}
+					/>
+					<span class="text-[10px] text-gray-500">cell · major</span>
+				</div>
+				<div class="ui-row items-center gap-1">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Fade</span>
+					{#each [['auto', 'Auto'], ['fixed', 'Fixed']] as [mode, label]}
+						<button
+							class={'ui-chip ' +
+								($gridSettings.fadeMode === mode
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							title={mode === 'auto' ? 'Fade scales with the camera distance' : 'A fixed fade radius'}
+							onclick={() => setGrid({ fadeMode: mode })}>{label}</button
+						>
+					{/each}
+				</div>
+				{#if $gridSettings.fadeMode === 'fixed'}
+					<SliderRow
+						label="Fade radius"
+						min={20}
+						max={5000}
+						step={10}
+						decimals={0}
+						value={$gridSettings.fadeDistance}
+						onchange={(v) => setGrid({ fadeDistance: v })}
+					/>
+				{/if}
+				<SliderRow
+					label="Fade edge"
+					min={0}
+					max={4}
+					step={0.1}
+					decimals={1}
+					value={$gridSettings.fadeStrength}
+					onchange={(v) => setGrid({ fadeStrength: v })}
+				/>
+				<Checkbox
+					id="grid-infinite"
+					checked={$gridSettings.infinite}
+					onchange={(/** @type {any} */ e) => setGrid({ infinite: e.currentTarget.checked })}
+					>Infinite grid</Checkbox
+				>
+				{#if !$gridSettings.infinite}
+					<SliderRow
+						label="Extent"
+						min={10}
+						max={1000}
+						step={10}
+						decimals={0}
+						value={$gridSettings.size}
+						onchange={(v) => setGrid({ size: v })}
+					/>
+				{/if}
+				<Checkbox
+					id="grid-follow"
+					checked={$gridSettings.followCamera}
+					onchange={(/** @type {any} */ e) => setGrid({ followCamera: e.currentTarget.checked })}
+					>Follow the camera</Checkbox
+				>
+				<Checkbox
+					id="grid-axes"
+					checked={$gridSettings.showAxes}
+					onchange={(/** @type {any} */ e) => setGrid({ showAxes: e.currentTarget.checked })}
+					>Show origin axes</Checkbox
+				>
+				<div class="ui-row items-center gap-2">
+					<button id="grid-reset" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetGrid()}>
+						Reset grid
+					</button>
+					<span class="text-[10px] italic text-gray-400">Per-device (not shared).</span>
+				</div>
+			</Section>
+
+			<Section label="Snapping">
+				<Checkbox
+					id="snap-enabled"
+					checked={$snapEnabled}
+					onchange={(/** @type {any} */ e) => snapEnabled.set(e.currentTarget.checked)}
+					>Snap transforms to a grid</Checkbox
+				>
+				<div class="ui-row items-center gap-1">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Position</span>
+					{#each [0.1, 0.25, 0.5, 1] as step}
+						<button
+							class={'ui-chip ' +
+								($snapSettings.translate === step
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => snapSettings.update((s) => ({ ...s, translate: step }))}>{step}</button
+						>
+					{/each}
+					<input
+						id="snap-translate"
+						type="number"
+						min="0.001"
+						step="0.05"
+						class="ui-input w-16 px-1 py-0.5 text-right text-xs"
+						value={$snapSettings.translate}
+						onchange={(/** @type {any} */ e) =>
+							snapSettings.update((s) => ({ ...s, translate: parseFloat(e.currentTarget.value) || s.translate }))}
+					/>
+				</div>
+				<div class="ui-row items-center gap-1">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Rotation</span>
+					{#each [5, 15, 45, 90] as step}
+						<button
+							class={'ui-chip ' +
+								($snapSettings.rotateDeg === step
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => snapSettings.update((s) => ({ ...s, rotateDeg: step }))}>{step}°</button
+						>
+					{/each}
+					<input
+						id="snap-rotate"
+						type="number"
+						min="0.1"
+						step="1"
+						class="ui-input w-16 px-1 py-0.5 text-right text-xs"
+						value={$snapSettings.rotateDeg}
+						onchange={(/** @type {any} */ e) =>
+							snapSettings.update((s) => ({ ...s, rotateDeg: parseFloat(e.currentTarget.value) || s.rotateDeg }))}
+					/>
+				</div>
+				<div class="ui-row items-center gap-1">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Scale</span>
+					{#each [0.05, 0.1, 0.25] as step}
+						<button
+							class={'ui-chip ' +
+								($snapSettings.scale === step
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => snapSettings.update((s) => ({ ...s, scale: step }))}>{step}</button
+						>
+					{/each}
+					<input
+						id="snap-scale"
+						type="number"
+						min="0.001"
+						step="0.05"
+						class="ui-input w-16 px-1 py-0.5 text-right text-xs"
+						value={$snapSettings.scale}
+						onchange={(/** @type {any} */ e) =>
+							snapSettings.update((s) => ({ ...s, scale: parseFloat(e.currentTarget.value) || s.scale }))}
+					/>
+				</div>
+				<Checkbox
+					id="snap-surface"
+					checked={$surfaceSnap}
+					onchange={(/** @type {any} */ e) => surfaceSnap.set(e.currentTarget.checked)}
+					>Rest dragged objects on the surface below</Checkbox
+				>
+				<p class="text-[10px] italic text-gray-400">
+					Snapping is per-device; the same steps drive the viewport menu.
+				</p>
 			</Section>
 
 			<Section label="Physics">

@@ -215,10 +215,13 @@
 		background-color: rgb(75 85 99);
 	}
 	/* 16-P3: the ACTIVE choice of a group (replaces the '● ' prefix that used to
-	   shift the label sideways as it appeared) */
+	   shift the label sideways as it appeared). Bold + white on a brand-tinted
+	   pill: the app's accent is a SALMON (#fe795d), so tinting the text itself
+	   would sit uncomfortably close to the red `danger` rows in the same menu. */
 	.ctx-checked {
 		font-weight: 600;
-		color: var(--color-primary-400, #60a5fa);
+		color: #fff;
+		background-color: color-mix(in srgb, var(--color-primary-500, #3b82f6) 22%, transparent);
 	}
 	.ctx-header {
 		padding: 6px 12px 5px;

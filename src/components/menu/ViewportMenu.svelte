@@ -9,7 +9,7 @@
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
 	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
-	import { viewportMenu, objectSearch, objectSearchEnabled } from '../../stores/appStore';
+	import { viewportMenu, objectSearch, objectSearchEnabled, showSidebar } from '../../stores/appStore';
 	import { buildAddChildren } from '$lib/addObjects';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import { sendPing } from '$lib/ping';
@@ -37,15 +37,19 @@
 		});
 	}
 
+	// 16-P3: the active choice is `checked` (bold + accent) instead of a '● ' label
+	// prefix, which shifted the label sideways as it appeared and read as a glitch.
 	function snapSizeItem(key: 'translate' | 'scale', value: number, label: string) {
 		return {
-			label: ($snapSettings[key] === value ? '● ' : '') + label,
+			label,
+			checked: $snapSettings[key] === value,
 			action: () => snapSettings.update((s) => ({ ...s, [key]: value }))
 		};
 	}
 	function snapRotItem(value: number) {
 		return {
-			label: ($snapSettings.rotateDeg === value ? '● ' : '') + `Rotate ${value}°`,
+			label: `${value}°`,
+			checked: $snapSettings.rotateDeg === value,
 			action: () => snapSettings.update((s) => ({ ...s, rotateDeg: value }))
 		};
 	}
@@ -105,12 +109,14 @@
 			icon: 'wrench',
 			children: [
 				{
-					label: ($drawMode ? '● ' : '') + 'Draw mode',
+					label: 'Draw mode',
+					checked: $drawMode,
 					tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
 					action: toggleDrawMode
 				},
 				{
 					label: $measureMode ? 'Stop measuring' : 'Measure distance',
+					checked: $measureMode,
 					tooltip: 'Click two points; Esc stops',
 					action: () => toggleMeasure()
 				},
@@ -138,25 +144,43 @@
 			]
 		},
 		{
+			// 16-P3: sectioned instead of one flat run of steps — the parent row shows
+			// the live values so you can read the current setup without opening it
 			label: 'Snapping',
 			icon: 'grid-3x3',
+			hint: $snapEnabled
+				? `${$snapSettings.translate} · ${$snapSettings.rotateDeg}° · ${$snapSettings.scale}`
+				: 'off',
 			children: [
 				{
 					label: $snapEnabled ? 'Disable snapping' : 'Enable snapping',
+					icon: 'magnet',
 					action: () => snapEnabled.update((v) => !v)
 				},
-				snapSizeItem('translate', 0.1, 'Grid 0.1'),
-				snapSizeItem('translate', 0.5, 'Grid 0.5'),
-				snapSizeItem('translate', 1, 'Grid 1'),
+				{ section: 'Position' },
+				snapSizeItem('translate', 0.1, '0.1'),
+				snapSizeItem('translate', 0.5, '0.5'),
+				snapSizeItem('translate', 1, '1'),
+				{ section: 'Rotation' },
 				snapRotItem(5),
 				snapRotItem(15),
 				snapRotItem(45),
-				snapSizeItem('scale', 0.05, 'Scale 0.05'),
-				snapSizeItem('scale', 0.1, 'Scale 0.1'),
+				{ section: 'Scale' },
+				snapSizeItem('scale', 0.05, '0.05'),
+				snapSizeItem('scale', 0.1, '0.1'),
+				{ section: 'Surface' },
 				{
-					label: ($surfaceSnap ? '● ' : '') + 'Snap to surface',
+					label: 'Snap to surface',
+					checked: $surfaceSnap,
 					tooltip: 'Dragged objects rest on whatever is underneath',
 					action: () => surfaceSnap.update((v) => !v)
+				},
+				{ section: ' ' },
+				{
+					label: 'More snapping settings…',
+					icon: 'sliders-horizontal',
+					tooltip: 'Custom steps live in Configure Scene ▸ Snapping',
+					action: () => showSidebar('scene')
 				}
 			]
 		},
@@ -165,14 +189,21 @@
 			icon: 'eye',
 			children: [
 				{
-					label: $showGrid ? 'Hide grid' : 'Show grid',
+					label: 'Show grid',
+					checked: !!$showGrid,
 					action: () => {
 						showGrid.update((v) => !v);
 						if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
 						else localStorage.setItem('showGrid', 'false');
 					}
 				},
-				{ label: 'Screenshot', action: screenshot }
+				{
+					label: 'Grid & axes settings…',
+					icon: 'sliders-horizontal',
+					tooltip: 'Cell size, colours, fade and the origin axes (Configure Scene ▸ Grid)',
+					action: () => showSidebar('scene')
+				},
+				{ label: 'Screenshot', icon: 'camera', action: screenshot }
 			]
 		},
 		{

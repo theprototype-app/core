@@ -212,6 +212,19 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						action: () => enterEditMode(uuid)
 					}
 				]),
+		// 57.3: a spline carries its authoring record, so it gets its OWN editor
+		// (control-point + radius handles) instead of the raw vertex tools
+		...(multi || !object?.userData?.spline?.points?.length
+			? []
+			: [
+				{
+					label: 'Edit spline',
+					icon: 'spline',
+					disabled: locked,
+					tooltip: locked ? lockedTooltip : 'Move control points, set thickness, insert or delete points',
+					action: () => import('./splineEdit').then((m) => m.enterSplineEdit(uuid))
+				}
+			]),
 		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh
 		// gets the normal-brush MESH sculpt (same toolbar + replication)
 		...(multi

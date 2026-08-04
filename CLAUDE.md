@@ -628,7 +628,22 @@ loadable play content. Everything a user does must be visible to connected peers
   smears across the whole map),
   `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
   `networkQuality` (N6/D3: LOCAL per-peer getStats RTT + relay dot, median, NOT replicated),
-  `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
+  `drawMode` (+`drawTool` 'freehand'|'spline' — the toolbar tool switch, phase 57) +
+  the SPLINE trio: `splineTube` (PURE variable-radius tube builder — TubeGeometry
+  sweeps ONE radius, so the sweep is hand-rolled; radiusAt reuses
+  CatmullRomCurve3's own `(n-(closed?0:1))*t` segment mapping and every arc-length
+  sample converts u→t through getUtoTmapping, plus normal-tested end caps,
+  insert/remove point, `radiusFromDrag` multiplicative response) + `splineTool`
+  (click placement w/ live tube preview, "Spline" mesh carrying its record on
+  `userData.spline` — rides toJSON AND GLTF extras like `__uuid`, so late joiners
+  edit it too; ONE write path: applySplineEdit / streamSplineEdit (throttled) /
+  commitSplineEdit (+ the `'spline'` history kind), `splineedit` message = the
+  RECORD only, receivers rebuild deterministically; Properties setters) +
+  `splineEdit` (the session: scene-root handle group = point/radius/insert-marker
+  InstancedMeshes, gizmo on an `isSplineProxy` for position, vertical drag on the
+  amber dot for per-point radius, span-marker click inserts, right-click deletes;
+  VR rides the GENERIC vrControls hook registries — no vrControls edits at all),
+  `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
   (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
   world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
   dispatcher — namespaces panel:/props:/prefabs:/chat:/kbd:/face:) + `vrRadialMenu`
@@ -1655,6 +1670,13 @@ loadable play content. Everything a user does must be visible to connected peers
 - Grid/pattern FOLLOW must snap by the **section period** (`cell × sectionEvery`),
   not by one cell: a cell-step translation maps the thin lines onto themselves but
   hops every THICK line one cell per step (15-H13).
+- **A three.js XR controller cannot be hand-posed in a test**: `renderer.xr
+  .getController(i)` returns the target-ray Group with **`matrixAutoUpdate = false`**
+  (WebXRManager writes its matrix per frame), so setting `.position`/`.quaternion`
+  and calling `updateMatrixWorld(true)` leaves `matrixWorld` at the IDENTITY —
+  every controller-ray pick then fires from the origin and misses. Set
+  `controller.matrixAutoUpdate = true` first (phase 57's VR spline checks; the app
+  path is unaffected).
 - WebXR hand joints: read them from threlte's `useHand('left'/'right')` store
   (`.current?.hand.joints[name]` — the SAME XRHand space it renders), keyed by
   HANDEDNESS. Raw `renderer.xr.getHand(SLOT).joints` by app slot index is unreliable (the

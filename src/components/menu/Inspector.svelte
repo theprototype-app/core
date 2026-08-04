@@ -62,6 +62,18 @@
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
+	// 57.5: a spline's record is editable right here — same write path the
+	// viewport handles use (apply + broadcast + one 'spline' undo entry)
+	import {
+		splineDataOf,
+		setSplineColor,
+		setSplineRadiusAll,
+		scaleSplineRadii,
+		setSplineClosed,
+		setSplineSides,
+		setSplineSmoothness
+	} from '$lib/splineTool';
+	import { enterSplineEdit, splineEditObject, exitSplineEdit } from '$lib/splineEdit';
 	import { addParticlesPreset, updateObjectParticles, removeObjectParticles, burstObjectParticles } from '$lib/particleActions';
 	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
@@ -495,6 +507,20 @@
 	}
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
+	// 57.5: the live spline record. Derived through $objectsGroup because the
+	// appliers mutate userData in place and poke THAT store (the material trap).
+	const spline = $derived.by(() => {
+		$objectsGroup;
+		return $selectedObject ? splineDataOf($selectedObject) : null;
+	});
+	/** the shared radius when every point agrees, else null (mixed taper) */
+	const splineRadius = $derived.by(() => {
+		if (!spline?.points.length) return null;
+		const first = spline.points[0].radius;
+		return spline.points.every((/** @type {any} */ p) => Math.abs(p.radius - first) < 1e-6)
+			? first
+			: null;
+	});
 	const isGroup = $derived($selectedObject?.type === 'Group');
 	// live geometry params (78): registry-driven rows; geoTick refreshes after edits
 	let geoTick = $state(0);
@@ -3088,6 +3114,88 @@
 						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
 					</p>
 				</Section>
+
+				<!-- 57.5: SPLINE — the record is the source of truth, so these rows edit
+				     it and let every peer rebuild the tube (never the geometry directly) -->
+				{#if spline}
+					<Section label="Spline">
+						<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
+							{spline.points.length} control points
+						</p>
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
+							<input
+								id="spline-color"
+								type="color"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent"
+								aria-label="Spline color"
+								value={spline.color}
+								onchange={(/** @type {any} */ e) => setSplineColor($selectedObject.uuid, e.currentTarget.value)}
+							/>
+						</div>
+						<SliderRow
+							id="spline-thickness"
+							label="Thickness"
+							min={0.005}
+							max={1}
+							step={0.005}
+							decimals={3}
+							value={splineRadius ?? spline.points[0].radius}
+							onchange={(v) => setSplineRadiusAll($selectedObject.uuid, v)}
+						/>
+						{#if splineRadius === null}
+							<div class="ui-row items-center gap-2">
+								<span class="flex-1 text-[10px] text-yellow-200/80"
+									>Points have different radii — Thickness flattens them.</span
+								>
+								<Button size="xs" color="alternative" onclick={() => scaleSplineRadii($selectedObject.uuid, 1.25)}
+									>Thicker</Button
+								>
+								<Button size="xs" color="alternative" onclick={() => scaleSplineRadii($selectedObject.uuid, 0.8)}
+									>Thinner</Button
+								>
+							</div>
+						{/if}
+						<SliderRow
+							id="spline-sides-row"
+							label="Sides"
+							min={3}
+							max={32}
+							step={1}
+							decimals={0}
+							value={spline.radialSegments}
+							onchange={(v) => setSplineSides($selectedObject.uuid, Math.round(v))}
+						/>
+						<SliderRow
+							id="spline-smoothness"
+							label="Smoothness"
+							min={2}
+							max={48}
+							step={1}
+							decimals={0}
+							value={spline.segmentsPerSpan}
+							onchange={(v) => setSplineSmoothness($selectedObject.uuid, Math.round(v))}
+						/>
+						<Checkbox
+							checked={spline.closed}
+							onchange={(/** @type {any} */ e) => setSplineClosed($selectedObject.uuid, e.target.checked)}
+						>
+							Closed loop
+						</Checkbox>
+						<Button
+							id="spline-edit-open"
+							size="xs"
+							color="alternative"
+							onclick={() =>
+								$splineEditObject === $selectedObject.uuid ? exitSplineEdit() : enterSplineEdit($selectedObject.uuid)}
+						>
+							{$splineEditObject === $selectedObject.uuid ? 'Close spline editor' : 'Edit control points'}
+						</Button>
+						<p class="text-[10px] text-gray-500">
+							Per-point thickness lives on the handles — open the editor and drag the amber dot above a point.
+						</p>
+					</Section>
+				{/if}
 
 				<!-- PFX-A: particle emitter — config on userData.particles, every edit
 				     replicates + records a props undo entry (setParticles).

@@ -250,7 +250,10 @@ loadable play content. Everything a user does must be visible to connected peers
   letterbox FramingGuide, Capture (offscreen render at the framing aspect), and
   replicated `campreview` presence + Join in Users), `gridSettings` (#16-P3 LOCAL
   grid look: cell size / match-snap-step / major lines / colours / fade / extent /
-  follow / origin axes, read by extensions/Grid.svelte), `menuFilter` (#16-P1/P2
+  follow / origin axes + #16-Q2 follow modes off/lookat/camera, cell-snapped, read
+  by extensions/Grid.svelte), `cameraPip` (#16-Q4 the camera preview WINDOW: rect +
+  target stores and the DOM→gl y-flip; CameraPipWindow.svelte is chrome only, the
+  inset is drawn by Outline), `menuFilter` (#16-P1/P2
   the ONE context-menu flatten + ranking, shared by every menu incl. node search),
   `sceneAssets` (derived Scene manifest: audio/config/textures in use), `avatarModel`
   (avatar defaults, photo-card rule, per-shape hat anchors), `themes` (data-theme
@@ -281,6 +284,10 @@ loadable play content. Everything a user does must be visible to connected peers
   panels, keys `sculptToolbar`/`meshEditToolbar`), shared
   `ContextMenu.svelte` (caps to viewport + scrolls vertically when tall, never
   horizontally; per-submenu flip via left/right/top/bottom — no transform),
+  `components/ui/DragRow.svelte` (#16-Q3: THE numeric field — drag to scrub, type
+  with LIVE updates, ↑↓ step one minor unit with Ctrl ×10 / Shift ×100, Esc
+  reverts; SliderRow's box and every Inspector number use it, and its key/pointer
+  handlers are DIRECT listeners because panels swallow delegated ones),
   `components/shared/WindowShell.svelte` (197: reusable window CHROME — collapsible/
   resizable/side-switchable primary sidebar + a multi-mode secondary panel that
   reflows opposite it; snippet slots topbar/primary/main/secondary; chrome-only,
@@ -565,6 +572,23 @@ loadable play content. Everything a user does must be visible to connected peers
   (autoRender off) — its passes target canvas-sized buffers, not the XR framebuffer, so
   in WebXR it must `renderer.render(scene, camera.current)` directly (composer resumes on
   desktop).
+- **Svelte 5 DELEGATES `onkeydown`/`onpointerdown`/`onclick` attributes** — the
+  handler only runs once the event reaches the app root, so any ancestor that
+  stops propagation on the way up silently kills it. Panel widgets are exactly
+  where this bites: the drawer chrome swallows pointerdown and the flowbite
+  dialog swallows Escape, so DragRow's Esc-to-revert did nothing and a drag whose
+  pointerdown never arrived jumped the value by the pointer's ABSOLUTE x (+22
+  instead of +2, 16-Q3). For keys and pointer gestures inside panels, attach
+  DIRECT listeners via `use:action` + addEventListener.
+- A `derived` store that reads anything off `userData` must list `objectsGroup` in
+  its dependencies — THREE trees aren't reactive, so the post-write poke is the
+  only signal it gets; and any "is something selected" check reads the SET, never
+  the sticky `selectedObject` (the camera PiP hit both at once, 16-Q4).
+- An INSET viewport (camera PiP) is `setScissorTest(true)` + `setScissor` +
+  `setViewport` on the SAME renderer after the composer pass — no second WebGL
+  context (which would duplicate every texture/geometry on the GPU). gl clears
+  respect the scissor box, so the inset clears only itself; remember gl measures
+  y from the BOTTOM (`glRect`) and restore the full viewport afterwards.
 - **Threlte's `camera.current` is a PLAIN PROPERTY** on a CurrentWritable, so
   reading it inside `$effect` registers NO dependency — the effect runs exactly
   once. Track `$camera` (the store) when you must react to a camera SWAP. This
@@ -778,6 +802,18 @@ override for e2e — never share 5173 (the user's main-checkout server).
   v2 still pending there). Lane: ../theprototype-lane-ui @ port 5186 (5176 is
   shadowed by a stale [::1] server — the port-shadow trap; ALWAYS curl a source
   file and grep your new symbol before trusting a lane server).
+- Status (2026-08-04, drop 2): **#16 follow-ups on the SAME PR #86** — [fix] camera
+  Control (no view jump: OrbitControls is seated behind the camera and the pose
+  re-synced from the marker, because its constructor already ran one update(); no
+  more orbit-controls leak: the preview owns `previewOrbit`, a derived `activeOrbit`
+  drives Scene's suppression + navigation) · [feat] menu (per-level cursor memory,
+  STICKY search mode, one-time side decision so a growing list keeps the anchor,
+  revealFilter rows excluded from their own results) · [feat] panel DEEP LINKS
+  (`openSceneSection` opens+expands+scrolls instead of toggling shut) + grid follow
+  Off/Look-at/Camera + Scale 0.25 and custom snap steps in the menu + themed physics
+  checkboxes + Add opens properties · [feat] ONE numeric field (DragRow everywhere)
+  · [feat] camera PiP window + Capture row. New suites camera-preview-control(9)/
+  panel-deeplinks(16)/number-fields(13)/camera-pip(18); 419/62 held.
 - Status (2026-08-04): **Roadmap #16 (menus, grid & scene cameras) EXECUTED →
   core PR #86** (branch fix/roadmap16-menus-cameras, six commits, STACKED on #85 →
   #84 → #82; retarget to release/next as they land; plan + as-built notes in the

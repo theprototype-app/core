@@ -234,7 +234,24 @@ loadable play content. Everything a user does must be visible to connected peers
   `dungeonPlay` (raster collision/spawns from the dungeon module's userData.play
   contract), `geometryEdit` + `geometryParams`, `lightParams` (+local shadow-quality
   caps), `cameraClip` (LOCAL near/far prefs; far pairs with orbit maxDistance so
-  zooming out can't pass the far plane) + `sceneBounds` (radius sweep feeding it),
+  zooming out can't pass the far plane; #16-P4 also holds `orbitPrefs` — rotate/
+  zoom/pan speed, damping, invertY, re-applied whenever the controls remount) +
+  `sceneBounds` (radius sweep feeding it), `cameraBookmarks` (#16-P4: unlimited
+  NAMED views storing the LENS (fov+clip) and restoring it on recall; rename/
+  overwrite/reorder/delete; legacy 5-slot payloads normalize at read),
+  `cameraObjects` + `cameraHelpers` + `cameraPreview` (#16-P5 scene CAMERAS: a
+  marker MESH carrying `userData.camera` — kind/fov/orthoSize/near/far/aspect/
+  guide — so replication/undo/sessions/prefabs need NOTHING new; `setCameraFor`
+  is the one write path (props history + objectParameters + poke, the
+  setPhysicsFor precedent); scene-root frustum wireframes follow their markers
+  (colliderHelpers pattern, `showCameraFrustums` local pref); PREVIEW mounts a
+  REAL persp/ortho camera as threlte's default (CameraPreview.svelte) with
+  Control = WASD/mouse flying that writes the pose back as ONE undo entry, a
+  letterbox FramingGuide, Capture (offscreen render at the framing aspect), and
+  replicated `campreview` presence + Join in Users), `gridSettings` (#16-P3 LOCAL
+  grid look: cell size / match-snap-step / major lines / colours / fade / extent /
+  follow / origin axes, read by extensions/Grid.svelte), `menuFilter` (#16-P1/P2
+  the ONE context-menu flatten + ranking, shared by every menu incl. node search),
   `sceneAssets` (derived Scene manifest: audio/config/textures in use), `avatarModel`
   (avatar defaults, photo-card rule, per-shape hat anchors), `themes` (data-theme
   token blocks, local-only), `windowTabs` (+`closeGroup` = tab ✕ closes ALL members) +
@@ -548,6 +565,23 @@ loadable play content. Everything a user does must be visible to connected peers
   (autoRender off) — its passes target canvas-sized buffers, not the XR framebuffer, so
   in WebXR it must `renderer.render(scene, camera.current)` directly (composer resumes on
   desktop).
+- **Threlte's `camera.current` is a PLAIN PROPERTY** on a CurrentWritable, so
+  reading it inside `$effect` registers NO dependency — the effect runs exactly
+  once. Track `$camera` (the store) when you must react to a camera SWAP. This
+  bit the #16-P5 camera preview: the swap happened but Outline kept rendering the
+  editor view. Related: postprocessing passes BAKE their camera at construction —
+  `composer.setMainCamera(cam)` re-points the built-ins, and third-party passes
+  (N8AO) keep their own `.camera` that must be set separately.
+- `Object3D.lookAt` faces **+Z** for plain meshes but **-Z** for cameras/lights
+  (three swaps the matrix args), so aiming a camera MARKER with `lookAt` points it
+  backwards. Camera markers, their frustum viz and the preview camera all use the
+  camera convention (-Z forward); aim via Set-from-view or the gizmo. And looking
+  through a marker means standing INSIDE its body mesh — the preview hides it
+  locally (spectator-mode precedent), restoring `visible` on exit, never replicated.
+- A context menu RESIZES while open (#16-P1 filter row, #16-P2 match list), so its
+  `place()` must re-run on size changes (ResizeObserver, guarded against the
+  maxHeight write looping) — it used to place only on open + window resize, and a
+  menu opened near the bottom edge grew straight off the screen while filtering.
 - THREE color management: `setHSL()` works in the LINEAR working space — pass
   `THREE.SRGBColorSpace` or lightness 0.5 hex-round-trips to `#bcbcbc`. Canvas
   ImageData palettes: write bytes straight from the sRGB hex (round-tripping through
@@ -744,6 +778,19 @@ override for e2e — never share 5173 (the user's main-checkout server).
   v2 still pending there). Lane: ../theprototype-lane-ui @ port 5186 (5176 is
   shadowed by a stale [::1] server — the port-shadow trap; ALWAYS curl a source
   file and grep your new symbol before trusting a lane server).
+- Status (2026-08-04): **Roadmap #16 (menus, grid & scene cameras) EXECUTED →
+  core PR #86** (branch fix/roadmap16-menus-cameras, six commits, STACKED on #85 →
+  #84 → #82; retarget to release/next as they land; plan + as-built notes in the
+  cloud repo plans-core/roadmap-16-menus-grid-cameras.md). P6 deselect broadcasts
+   (peers kept objects locked forever) + "Selected ▸" gates on the SET · P1
+  menu filter hidden-until-typing + ↑/↓ navigation + Enter-opens-submenu · P2 the
+  node editor's private search box retired onto the shared filter · P3 Configure
+  Scene ▸ Grid + Snapping with a  item style replacing  · P4 unlimited
+  NAMED camera bookmarks (lens included) + a Camera section (orbit feel, framing) ·
+  P5 scene CAMERA OBJECTS (frustum viz, true-swap preview, WASD Control writing back
+  as one undo, framing guide, Capture, replicated preview presence). New suites
+  deselect-unlock/grid-snapping/camera-bookmarks/camera-objects; 419/62 held.
+  REMAINING from #15: mesh lane D→E→F, G (convert to mesh), H (notes v2).
 - Status (2026-08-01): **VR sleeve palette (K1+K2) MERGED to release/next (PR #75)**
   — plan: cloud repo plans-core/done/k-vr-sleeve-palette.md (as-built notes there).
   One commit: `$lib/vrSleeve.js` + the `vrsleeve` core-module shell + the generic

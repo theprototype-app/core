@@ -8,7 +8,7 @@
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
-	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
+	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
 	import { viewportMenu, objectSearch, objectSearchEnabled } from '../../stores/appStore';
 	import { buildAddChildren } from '$lib/addObjects';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
@@ -50,6 +50,10 @@
 		};
 	}
 
+	$: hasSelection =
+		$selectedObjects.length > 0 ||
+		(!!$selectedObject?.uuid && $lockedObjects.some((lock: any) => lock[1] === $selectedObject.uuid));
+
 	// 15-Q: same chrome family as the object menu — icons, shortcut hints, quiet
 	// section labels; functionality unchanged.
 	$: items = [
@@ -81,7 +85,12 @@
 		// Fixed "Selected" label (object names get very long — the renderer adds the
 		// ▸ chevron itself) + the SAME items as the direct object right-click menu
 		// (buildObjectMenuItems), so the two are in parity.
-		...($selectedObject?.uuid
+		// 16-P6: gate on the live SET — `selectedObject` is STICKY (it keeps the last
+		// object after a deselect so the open inspector has something to bind to), so
+		// this submenu used to linger after clicking empty space. The one legitimate
+		// empty-set state is VIEWING a peer-locked object (15-K), which keeps its
+		// view-only actions (Request control, Focus…).
+		...(hasSelection
 			? [
 					{
 						label: 'Selected',

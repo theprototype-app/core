@@ -1,7 +1,10 @@
-// Phase 62: node search — swap-box replaces the pane menu, type-to-search,
-// Enter drops the node at the right-click spot, Esc returns to the menu.
+// Phase 62: node search — type-to-search from the pane menu, Enter drops the
+// node at the right-click spot, Esc returns to the menu.
 // Phase 91: menus clamp + scroll near the screen edge; node cards show their
 // labels and dark-styled inputs.
+// 16-P2: the private #node-search-box is GONE — search now runs inside the
+// context menu through the shared filter (.ctx-filter-input / .ctx-match), so
+// ranking, arrow keys and shortcut interception are the same as everywhere else.
 const h = require('./helpers.cjs');
 
 const nodeTypes = (page) =>
@@ -24,34 +27,50 @@ h.run(async () => {
 		'menu shows the search entry first'
 	);
 
-	// typing while the menu is open jumps into search with the char prefilled
+	// typing while the menu is open reveals the shared filter with the char in it
 	await A.page.keyboard.type('p');
 	await A.page.waitForTimeout(300);
-	h.check(await A.page.locator('#node-search-box').isVisible(), 'typing swaps the menu for the search box');
-	const value = await A.page.locator('#node-search-input').inputValue();
-	h.check(value === 'p', `typed character carried into the input (${value})`);
+	const revealed = await A.page.evaluate(() => {
+		const row = document.querySelector('.ctx-filter');
+		return {
+			height: row?.getBoundingClientRect().height ?? -1,
+			value: document.querySelector('.ctx-filter-input')?.value ?? null,
+			noOldBox: !document.querySelector('#node-search-box')
+		};
+	});
+	h.check(revealed.height > 0, 'typing reveals the filter row inside the menu');
+	h.check(revealed.value === 'p', `the typed character lands in it (${revealed.value})`);
+	h.check(revealed.noOldBox, 'the separate search popup is gone');
 
-	// narrow to path patrol and Enter-drop it
-	await A.page.locator('#node-search-input').fill('path');
-	await A.page.waitForTimeout(200);
+	// narrow to path patrol and Enter-drop it — matches carry their group path
+	await A.page.locator('.ctx-filter-input').fill('path');
+	await A.page.waitForTimeout(250);
+	const matches = await A.page.evaluate(() =>
+		[...document.querySelectorAll('.ctx-match')].map((m) => m.textContent?.trim())
+	);
 	h.check(
-		await A.page.locator('#node-search-box').getByText('Path patrol').isVisible(),
-		'results show Category · Label matches'
+		matches.some((m) => m.includes('Path patrol')),
+		`results show Group ▸ Label matches (${matches.slice(0, 3).join(' | ')})`
 	);
 	await A.page.keyboard.press('Enter');
 	await h.eventually(() => nodeTypes(A.page), (t) => t.includes('pathpatrol'), 'Enter adds the node');
-	h.check(!(await A.page.locator('#node-search-box').isVisible()), 'search closes after adding');
+	h.check(!(await A.page.locator('[role="menu"]').isVisible()), 'the menu closes after adding');
 
-	// Esc from search returns to the classic grouped menu (empty spot, away from the new node)
+	// Esc clears the query and keeps the grouped menu (empty spot, away from the new node)
 	await pane.click({ button: 'right', position: { x: 660, y: 60 } });
 	await A.page.waitForTimeout(300);
 	await A.page.keyboard.type('w');
 	await A.page.waitForTimeout(200);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
-	h.check(await A.page.getByText('Search nodes…').isVisible(), 'Esc restores the grouped menu');
-	await A.page.mouse.click(900, 400); // backdrop click closes the restored menu
+	const afterEsc = await A.page.evaluate(() => ({
+		query: document.querySelector('.ctx-filter-input')?.value ?? null,
+		grouped: !!document.querySelector('[role="menu"]')?.textContent?.includes('Search nodes')
+	}));
+	h.check(afterEsc.query === '' && afterEsc.grouped, 'Esc clears the query back to the grouped menu');
+	await A.page.keyboard.press('Escape'); // a second Esc closes it
 	await A.page.waitForTimeout(200);
+	h.check(!(await A.page.locator('[role="menu"]').isVisible()), 'a second Esc closes the menu');
 
 	// module + custom entries searchable: wave from the hello module
 	await pane.click({ button: 'right', position: { x: 240, y: 220 } });
@@ -72,8 +91,11 @@ h.run(async () => {
 		`palette filter works (${paletteLabels.join(',')})`
 	);
 
-	// 124: a right-click near the bottom edge FLIPS the menu up (no scrollbar) —
-	// context menus never scroll now (node search keeps its own results scroll)
+	// A right-click near the bottom edge keeps the menu fully on screen. NOTE: the
+	// old assertion here ("never scrolls, never capped") was left stale by the
+	// later change that made tall menus CAP to the viewport and scroll vertically
+	// (context-menu-overflow owns that contract) — this suite is on CLAUDE.md's
+	// known-failing list partly because of it.
 	await pane.click({ button: 'right', position: { x: 150, y: 285 } });
 	await A.page.waitForTimeout(300);
 	const menuBox = await A.page.evaluate(() => {
@@ -81,23 +103,31 @@ h.run(async () => {
 		const rect = el.getBoundingClientRect();
 		return {
 			overflowY: getComputedStyle(el).overflowY,
-			fits: rect.bottom <= window.innerHeight + 1,
-			notCapped: el.style.maxHeight === ''
+			fits: rect.bottom <= window.innerHeight + 1 && rect.top >= 0,
+			capped: el.style.maxHeight !== ''
 		};
 	});
 	h.check(
-		menuBox.overflowY === 'visible' && menuBox.fits && menuBox.notCapped,
-		`pane menu flips on screen without a scrollbar (${JSON.stringify(menuBox)})`
+		menuBox.fits && menuBox.overflowY === 'auto' && menuBox.capped,
+		`pane menu stays on screen, capped + vertically scrollable (${JSON.stringify(menuBox)})`
 	);
-	// ...and the search box opened from down there is clamped into view
+	// ...and filtering from down there keeps the whole menu on screen
 	await A.page.keyboard.type('s');
 	await A.page.waitForTimeout(300);
 	const searchFits = await A.page.evaluate(() => {
-		const rect = document.querySelector('#node-search-box').getBoundingClientRect();
-		return rect.bottom <= window.innerHeight + 1 && rect.top >= 0;
+		const el = document.querySelector('[role="menu"]');
+		if (!el) return { gone: true };
+		const rect = el.getBoundingClientRect();
+		return {
+			ok: rect.bottom <= window.innerHeight + 1 && rect.top >= 0,
+			top: Math.round(rect.top),
+			bottom: Math.round(rect.bottom),
+			vh: window.innerHeight,
+			matches: document.querySelectorAll('.ctx-match').length
+		};
 	});
-	h.check(searchFits, 'search box clamps into the viewport near the bottom');
-	await A.page.keyboard.press('Escape'); // back to the grouped menu
+	h.check(searchFits.ok === true, `the filtered menu stays inside the viewport near the bottom (${JSON.stringify(searchFits)})`);
+	await A.page.keyboard.press('Escape'); // clear the query
 	await A.page.mouse.click(900, 60); // backdrop click closes it
 	await A.page.waitForTimeout(200);
 
@@ -113,9 +143,9 @@ h.run(async () => {
 			(el) => getComputedStyle(el).position === 'fixed' && el.textContent?.includes('Bounce') && !el.getAttribute('role')
 		);
 		return {
-			// 124: no scrollbar can render — the menu doesn't scroll at all
-			// (overflow visible), and submenus are fixed-positioned outside it
-			noHScroll: menu ? getComputedStyle(menu).overflowX === 'visible' : false,
+			// submenus are fixed-positioned OUTSIDE the scroll box, so the root menu
+			// never needs a horizontal scrollbar (overflow-x is hidden outright)
+			noHScroll: menu ? getComputedStyle(menu).overflowX === 'hidden' : false,
 			subFixed: !!sub,
 			subOnScreen: sub
 				? sub.getBoundingClientRect().right <= window.innerWidth + 1 && sub.getBoundingClientRect().top >= 0
@@ -129,20 +159,28 @@ h.run(async () => {
 	await A.page.mouse.click(900, 60); // backdrop click closes the menu
 	await A.page.waitForTimeout(200);
 
-	// 103: empty flow search browses ALL entries (scrollable, Add-search parity)
+	// 16-P2: clicking "Search nodes…" reveals the (empty) filter WITHOUT closing
+	// the menu — the grouped list stays as the browse view it always was
 	await pane.click({ button: 'right', position: { x: 300, y: 100 } });
 	await A.page.waitForTimeout(200);
 	await A.page.getByText('Search nodes…').click();
 	await A.page.waitForTimeout(300);
-	const browseAll = await A.page.evaluate(() => {
-		const list = document.querySelector('#node-search-box .max-h-64');
-		return { rows: list?.children.length ?? 0, scrolls: list ? list.scrollHeight > list.clientHeight : false };
+	const reveal = await A.page.evaluate(() => {
+		const row = document.querySelector('.ctx-filter');
+		const menu = document.querySelector('[role="menu"]');
+		return {
+			shown: (row?.getBoundingClientRect().height ?? 0) > 0,
+			focused: document.activeElement === document.querySelector('.ctx-filter-input'),
+			stillGrouped: !!menu?.textContent?.includes('Animation'),
+			groups: menu ? menu.querySelectorAll('[role="menuitem"]').length : 0
+		};
 	});
+	h.check(reveal.shown && reveal.focused, 'the row reveals the filter and keeps the keyboard');
 	h.check(
-		browseAll.rows > 10 && browseAll.scrolls,
-		`empty search browses everything with a scrollbar (${browseAll.rows} rows)`
+		reveal.stillGrouped && reveal.groups > 5,
+		`the grouped menu stays open behind it (${reveal.groups} rows)`
 	);
-	await A.page.keyboard.press('Escape'); // back to the grouped menu
+	await A.page.keyboard.press('Escape'); // hides the filter again
 	await A.page.mouse.click(900, 60); // backdrop click closes it
 	await A.page.waitForTimeout(200);
 

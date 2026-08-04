@@ -27,6 +27,13 @@
 
 	function run(item: any) {
 		if (!item || item.disabled || item.children || item.section || item.header) return;
+		// 16-P2: `revealFilter` rows (the node editor's "Search nodes…") just show the
+		// filter row — the menu STAYS open and the input keeps the keyboard
+		if (item.revealFilter) {
+			forceFilter = true;
+			inputEl?.focus({ preventScroll: true });
+			return;
+		}
 		item.action?.();
 		dispatch('close');
 	}
@@ -41,6 +48,8 @@
 	let navPath: string[] = [];
 	/** highlighted row at navPath's level; -1 = nothing yet */
 	let highlight = -1;
+	/** a `revealFilter` row asked for the (empty) filter to be shown */
+	let forceFilter = false;
 	let inputEl: HTMLInputElement | null = null;
 
 	// the header strip (what this menu acts on) leads the menu, ABOVE the filter
@@ -124,10 +133,13 @@
 			activate();
 			event.preventDefault();
 		} else if (event.key === 'Escape') {
-			// Esc unwinds one step at a time: query → open submenu → the menu itself
+			// Esc unwinds one step at a time: query → revealed filter → open submenu →
+			// the menu itself
 			if (query) {
 				query = '';
 				highlight = -1;
+			} else if (forceFilter) {
+				forceFilter = false;
 			} else if (!back()) {
 				dispatch('close');
 			}
@@ -180,12 +192,16 @@
 	// but clamp fully into the viewport so it never runs off any edge on a narrow
 	// screen; too-tall menus cap + scroll (.ctx-scroll). Submenus place themselves.
 	function place(node: HTMLElement) {
+		let lastW = -1;
+		let lastH = -1;
 		const reposition = () => {
 			const vw = window.innerWidth;
 			const vh = window.innerHeight;
 			node.style.maxHeight = vh - 8 + 'px';
 			const w = node.offsetWidth;
 			const h = node.offsetHeight;
+			lastW = w;
+			lastH = h;
 			let left = x > vw - w - 4 ? x - w : x; // near the right edge -> open leftward
 			left = Math.max(4, Math.min(left, vw - w - 4));
 			let top = y > vh - h - 4 ? y - h : y;
@@ -197,8 +213,22 @@
 		};
 		reposition();
 		requestAnimationFrame(reposition);
+		// 16-P1: the menu RESIZES while it is open now (the filter row reveals, matches
+		// replace the item list) — a menu opened near the bottom edge and flipped up
+		// would otherwise grow straight off the screen. Re-place on any size change,
+		// guarded so the maxHeight write can't loop.
+		const observer = new ResizeObserver(() => {
+			if (node.offsetWidth === lastW && node.offsetHeight === lastH) return;
+			reposition();
+		});
+		observer.observe(node);
 		window.addEventListener('resize', reposition);
-		return { destroy: () => window.removeEventListener('resize', reposition) };
+		return {
+			destroy: () => {
+				observer.disconnect();
+				window.removeEventListener('resize', reposition);
+			}
+		};
 	}
 </script>
 
@@ -227,7 +257,7 @@
 		<ContextMenuItems items={[headerItem]} onrun={run} />
 	{/if}
 	<!-- always mounted (it owns the keyboard) but collapsed until there's a query -->
-	<div class="ctx-filter" class:on={!!query} role="presentation">
+	<div class="ctx-filter" class:on={!!query || forceFilter} role="presentation">
 		<Icon name="search" size={12} />
 		<input
 			class="ctx-filter-input"

@@ -156,6 +156,11 @@
 			width: 100vw !important;
 			height: calc(100dvh - var(--connect-bottom, 0px)) !important;
 			border-radius: 0;
+			/* a full-screen sheet has to cover the top-right chrome (peers 997,
+			   notifications/notes 998, profile avatar 999) — at the floating-window
+			   tier it was READABLE but with those buttons floating on top of it.
+			   !important beats the inline z-index dragWindow writes. */
+			z-index: 1000 !important;
 		}
 		#whats-new-window :global(.dw-resize) {
 			display: none;

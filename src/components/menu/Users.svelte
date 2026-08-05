@@ -339,11 +339,17 @@
 	<!-- main profile button: a single clean Avatar (no href -> no navigation bug; no
 		 3-branch) that picks the effective avatar (custom upload > stored > cloud
 		 account > default). This is the dropdown trigger. -->
-	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2; z-index: 999;">
-		<div class="flex items-center space-x-3" style="z-index: 999;">
+	<!-- The avatar stays ON TOP of its own dropdown — the panel's rounded top-right
+	     corner is meant to tuck UNDER the profile circle. This regressed because the
+	     z-index sat inside the CLASS attribute ("md:order-2; z-index: 999;"), where it
+	     was just a nonsense class name, and the inner style put it on a STATIC element
+	     where z-index does nothing. It belongs on the positioned Avatar, above the
+	     Dropdown's 998. -->
+	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2">
+		<div class="flex items-center space-x-3">
 			<Avatar
 				src={effAvatar || undefined}
-				style="position: absolute; top: 8px; right: 20px; cursor: pointer;"
+				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 999;"
 				class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
 			/>
 		</div>

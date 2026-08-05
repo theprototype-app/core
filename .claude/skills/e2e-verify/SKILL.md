@@ -48,11 +48,22 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
-- **Prove a regression guard by BREAKING the code**: `git stash push -- <file>`, run
-  the suite, confirm the new check goes red, `git stash pop`. Both release-blocking
-  fixes in 1.2.0 were validated this way (shift-select: 8 page errors and the set
-  stuck at 1; the mesh gizmo: 0/15 vertices moved). A guard you have never seen fail
-  is a guess.
+- **Prove a regression guard by BREAKING the code**: EDIT the fix out (put the old line
+  back), run the suite, confirm the new check goes red, then restore. Both
+  release-blocking fixes in 1.2.0 were validated this way (shift-select: 8 page errors
+  and the set stuck at 1; the mesh gizmo: 0/15 vertices moved). A guard you have never
+  seen fail is a guess. Do NOT use `git stash push -- <file>` for this: if that file is
+  already committed the push saves nothing and the later `pop` takes an unrelated
+  ancestor entry off the stack (it landed a `feature/specator-mode` stash in
+  Controls.svelte as a conflict). Copy to the scratchpad + `git checkout HEAD --` when
+  you need several files reverted at once.
+- **Add a PREMISE check whenever the gesture can miss.** A drag of the object-list
+  window took four attempts to actually move it — the top chrome covers that header at
+  430px so every real-mouse grab hit a BUTTON, and synthesized `pointermove`/`pointerup`
+  default `clientX` to 0, which docking.js reads as the left dock zone (it also PERSISTS
+  that dock, so the next run starts wrong). The three real assertions passed the whole
+  time; only `postDrag.left > preDrag.left + 100` exposed it. If a check depends on a
+  gesture having landed, assert that it landed.
 - **Drive the real INPUT PATH when the bug lives in a handler.** Shift-click
   multi-select broke inside `onPointerUp`; every store-level `selectObject` test
   stayed green. Project the object's world position (`helpers.projectPoint`) and use

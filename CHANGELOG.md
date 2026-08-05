@@ -85,7 +85,15 @@ just objects.
 - 🎨 The colour pickers apply colours again, with hex/RGB/HSV entry.
 - 💾 Notes survive a reload, and a restored scene keeps its notes and flows.
 - 📵 Ambient occlusion no longer starts on phones, where some drivers freeze the
-  viewport with it.
+  viewport with it — and the "old browser" notice now reads your real version.
+- 👁️ Object-list rows show their eye / properties / delete buttons on hover again,
+  and on a touch screen they stay visible — with a long press for the row menu.
+- 📱 Dragging a window off the edge no longer drags the Connect bar, profile button
+  and corner buttons along with it.
+- ⌨️ On a phone the "+" menu and Settings search no longer pop the on-screen
+  keyboard — a real (Bluetooth) keyboard still types straight into the filter, and
+  Settings search filters again.
+- 🎨 Opening Configure Scene no longer repaints a freshly added object.
 - 🧰 Under the hood: three.js 0.185, Threlte stable, a rewritten flow editor
   (xyflow 1.x), Tailwind 4 with native dialogs, Vite 7 and Node 24.
 

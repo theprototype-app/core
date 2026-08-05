@@ -642,6 +642,25 @@ loadable play content. Everything a user does must be visible to connected peers
   `[role='dialog'][aria-modal='true']` rule (unlayered beats Tailwind's layered utility
   without !important). The logo/burger menu sits at `--z-menu` (top-most); opening a
   modal from it calls `closeMenu.set(true)` so the menu can't cover the modal.
+- **Unlayered global CSS silently beats EVERY Tailwind utility** (the flip side of the
+  modal trick above): a plain `.css` file imported from a component is unlayered, so one
+  duplicated utility in it outranks all of `@layer utilities` regardless of specificity.
+  A stray `.hidden { display: none }` in `styles/chat.css` killed every
+  `group-hover/*:flex` reveal in the app (object-list row buttons, Library cards) — the
+  named rule was generated AND matched, and still lost. Never redeclare a Tailwind
+  utility name in global CSS; when a hover-reveal "does nothing", enumerate the matching
+  rules in the CSSOM instead of re-reading the markup (the classes look right).
+- A **`position: absolute`** floating window parked past the right/bottom edge joins the
+  document's scroll overflow and GROWS the page, which slides the fixed chrome (Connect
+  bar, profile, corner HUD) sideways as you drag; `position: fixed` never contributes to
+  that overflow. Every window is fixed — dragWindow, docking, and now the object list's
+  own `dragMe` (the last holdout). `html,body{overflow:hidden}` hides the scrollbars but
+  does NOT stop the growth.
+- **Menus opened by a LONG PRESS need press-and-click backdrops**: the finger is still
+  down when the menu appears, so an outside-click backdrop mounts underneath it and the
+  lift closes what it just opened. ContextMenu's backdrop requires the `pointerdown` too
+  (`backdropPressed`). Synthetic e2e events never produce that lift, so a check has to
+  dispatch the backdrop's own click explicitly.
 - **Mobile/touch** (roadmap 9): there is no `isMobile` store — gate with CSS
   `@media (pointer: coarse), (max-width: …)`. Touch has NO right-click and NO HTML5
   drag-and-drop: the canvas long-press opens the viewport menu (Scene) and a `+` HUD
@@ -827,6 +846,11 @@ loadable play content. Everything a user does must be visible to connected peers
   the Scene inspector via closeSelectionInspector).
 - The Bash tool's `cd` leaks into the shared shell cwd — `Set-Location` back to the
   repo root before PowerShell git/npm calls.
+- **Never `git stash pop` to undo a `git stash push -- <file>`**: if that file had no
+  changes (already committed), push saves NOTHING and the pop takes an unrelated
+  ANCESTOR entry off the stack — this repo's stash list still holds `feature/specator-mode`
+  entries, one of which landed in Controls.svelte as a conflict. To A/B a fix, copy the
+  files to the scratchpad, `git checkout HEAD -- <files>`, run, then copy back.
 - **Connect dance (#12 fix)**: the host CLOSES the joiner's original conn pre-approval;
   real WebRTC often never signals that close, and a fresh reopen can wedge mid-ICE —
   the JOINER could never send anything to the host. peerHandler now ADOPTS an open

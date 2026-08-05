@@ -368,6 +368,29 @@
 		if (obj.groundColor?.getHexString) groundColor = '#' + obj.groundColor.getHexString();
 	});
 
+	/**
+	 * 15-C follow-up: svelte-awesome-color-picker v4 calls `onInput` ONCE just from
+	 * MOUNTING (its updateColor() runs out of an `$effect`, and the first pass always
+	 * "changes" from its empty snapshot). A picker that merely appeared must not read
+	 * as a user edit — that echo made opening Configure Scene write the environment
+	 * and DETACH the preset to custom (the reported "add a box, open configure scene,
+	 * the box goes light"), and made selecting a light or a mesh broadcast a colour
+	 * update plus record an undo entry.
+	 *
+	 * So every onInput handler ignores a value equal to the one it already holds.
+	 * The comparison is normalized because the picker round-trips through colord:
+	 * case, a leading #, and a trailing alpha pair can all differ from THREE's
+	 * getHexString.
+	 * @param {any} a @param {any} b
+	 */
+	function sameHex(a, b) {
+		/** @param {any} v */
+		const norm = (v) =>
+			typeof v === 'string' ? v.trim().toLowerCase().replace(/^#/, '').slice(0, 6) : '';
+		const left = norm(a);
+		return !!left && left === norm(b);
+	}
+
 	// one undo entry per color-drag gesture: remember where it started,
 	// record 600ms after the last input
 	/** @type {any} */
@@ -551,6 +574,7 @@
 	// reload keep the color.
 	/** @param {string} hex */
 	function setBackground(hex) {
+		if (sameHex(hex, $backgroundColor)) return; // mount echo, not an edit
 		backgroundColor.set(hex);
 		editEnvSky({ background: hex });
 	}
@@ -1381,6 +1405,7 @@
 					--slider-width="10px"
 					hex={fogColor}
 					onInput={(/** @type {any} */ c) => {
+						if (sameHex(c.hex, fogColor)) return; // mount echo, not an edit
 						fogColor = c.hex;
 						applyFog();
 					}}
@@ -1748,6 +1773,7 @@
 						--slider-width="10px"
 						hex={color}
 						onInput={(/** @type {any} */ c) => {
+							if (sameHex(c.hex, color)) return; // mount echo, not an edit
 							$selectedObject.color.set(c.hex);
 							color = c.hex;
 							sendLightUpdate();
@@ -1771,6 +1797,7 @@
 							--slider-width="10px"
 							hex={groundColor}
 							onInput={(/** @type {any} */ c) => {
+								if (sameHex(c.hex, groundColor)) return; // mount echo, not an edit
 								$selectedObject.groundColor.set(c.hex);
 								groundColor = c.hex;
 								sendLightUpdate();
@@ -1902,8 +1929,10 @@
 							--slider-width="10px"
 							hex={color}
 							onInput={(/** @type {any} */ c) => {
+								if (sameHex(c.hex, color)) return; // mount echo, not an edit
 								// live drag: ONE debounced undo entry per gesture (setObjectColor
 								// would record on every frame), then apply + replicate
+								color = c.hex;
 								trackColorGesture($selectedObject.uuid, c.hex);
 								$selectedObject.material.color.set(c.hex);
 								$selectedObject.material.needsUpdate = true;

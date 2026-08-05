@@ -115,5 +115,82 @@ h.run(async () => {
 	h.check(String(bg.store).toLowerCase() === '#123456', `the background store follows (${bg.store})`);
 	h.check(bg.applied.toLowerCase() === '#123456', `the three.js scene background applies (${bg.applied})`);
 
+	// ---- MOUNTING a picker must not count as an edit --------------------------
+	// v4 calls onInput once from its own $effect the moment a picker mounts. That
+	// echo made "add a box, then open Configure Scene" rewrite the environment — the
+	// preset detached to custom and the box visibly changed shade — and made
+	// selecting a light or a mesh broadcast a colour update nobody asked for.
+	const openScene = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const envPreset = () =>
+			new Promise((r) => w.environment.environment.subscribe((e) => r(e.preset))());
+		const sceneBg = async () => {
+			const scene = await new Promise((r) => w.globalScene.subscribe((s) => r(s))());
+			return '#' + (scene.background?.getHexString?.() ?? '');
+		};
+		w.environment.setEnvironment('studio'); // a known preset, then close the panel
+		w.inspectorClose.set(true);
+		await new Promise((r) => setTimeout(r, 600));
+		w.commandsHandler.sceneCommand('/create Box 1 1 1');
+		await new Promise((r) => setTimeout(r, 400));
+		let g;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		const before = {
+			preset: await envPreset(),
+			boxColor: '#' + box.material.color.getHexString(),
+			background: await sceneBg()
+		};
+		w.showSidebar('scene'); // <- the reported gesture
+		await new Promise((r) => setTimeout(r, 1000));
+		return {
+			before,
+			after: {
+				preset: await envPreset(),
+				boxColor: '#' + box.material.color.getHexString(),
+				background: await sceneBg()
+			}
+		};
+	});
+	h.check(
+		openScene.after.preset === openScene.before.preset,
+		`opening Configure Scene leaves the environment preset alone (${openScene.before.preset} -> ${openScene.after.preset})`
+	);
+	h.check(
+		openScene.after.boxColor === openScene.before.boxColor,
+		`...and the object's shade (${openScene.before.boxColor} -> ${openScene.after.boxColor})`
+	);
+	h.check(
+		openScene.after.background === openScene.before.background,
+		`...and the scene background (${openScene.before.background} -> ${openScene.after.background})`
+	);
+
+	// selecting a LIGHT must not replicate a colour edit just by showing its picker
+	const lightEcho = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.commandsHandler.sceneCommand('/create pointlight');
+		await new Promise((r) => setTimeout(r, 500));
+		let g;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		const light = g.children[g.children.length - 1];
+		let original;
+		w.peers.subscribe((p) => (original = p))();
+		const sent = [];
+		w.peers.set({ ...original, send: (/** @type {any} */ m) => sent.push(m) });
+		w.objectActions.selectObject(light.uuid);
+		w.showSidebar('object');
+		await new Promise((r) => setTimeout(r, 1000));
+		w.peers.set(original);
+		return sent.map((/** @type {any} */ m) => m.type);
+	});
+	// Selecting only takes a lock. A colour edit would ride either `{type:'color'}`
+	// (material picker) or `{type:'object', override:true}` (sendLightUpdate) — check
+	// for BOTH: watching a single type here produced a check that could not fail,
+	// because the echo that actually escaped was the other one.
+	h.check(
+		!lightEcho.includes('color') && !lightEcho.includes('object'),
+		`selecting a light replicates nothing but the lock (${JSON.stringify(lightEcho)})`
+	);
+
 	await h.finish(browser);
 });

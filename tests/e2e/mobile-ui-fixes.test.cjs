@@ -169,30 +169,79 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.whatsNew.closeWhatsNew());
 	await A.page.setViewportSize({ width: 1280, height: 800 });
 
-	// ---- why the profile panel had to move DOWN, not the avatar up ------------
-	// `.top-right-chrome` is `position: fixed` with a numeric z-index, i.e. a STACKING
-	// CONTEXT: nothing inside it — the avatar included, whatever z-index it is given —
-	// can outrank the profile dropdown, which flowbite portals out to <body>. So the
-	// panel sits BELOW the chrome instead. This check guards the PREMISE; if the chrome
-	// ever stops being a stacking context, the reasoning (and the fix) needs revisiting.
-	// The dropdown itself cannot be opened from a scripted click (flowbite's
-	// `triggeredBy` wants a trusted event), so the visual result — circle on top of its
-	// own menu — is a USER-VISIBLE check, not an automated one. An earlier version of
-	// this compared z-index NUMBERS, passed, and left the bug in place.
-	const chrome = await A.page.evaluate(() => {
-		const el = document.querySelector('.top-right-chrome');
-		const style = el ? getComputedStyle(el) : null;
-		const avatar = document.querySelector('#avatar-menu img, #avatar-menu [class*="rounded-full"]');
+	// ---- the profile circle stays on top of its own menu ----------------------
+	// No z-index can do this: flowbite 1.x renders a Dropdown as a TOP-LAYER popover
+	// (`popover="manual"`, `:popover-open`), and the top layer paints above the whole
+	// page whatever the z-index — measured, the panel at 996 covered an avatar at 2000,
+	// and a screenshot showed the circle gone entirely. So the circle is drawn INSIDE
+	// the panel, seated in the notch its 1.5rem top-right corner exists for. Two earlier
+	// versions of this check compared z-index NUMBERS or asserted the stacking-context
+	// premise; both passed while the user watched the menu swallow the circle. This one
+	// opens the menu with a TRUSTED Playwright click (flowbite's trigger ignores
+	// `el.click()` from evaluate) and asks what is actually at that position.
+	await A.page.locator('#avatar-menu img, #avatar-menu [class*="rounded-full"]').first().click({ force: true });
+	await A.page.waitForTimeout(700);
+	const CIRCLE = '[aria-label="Close profile menu"]';
+	const profile = await A.page.evaluate((sel) => {
+		const panel = document.querySelector('[popover]:popover-open');
+		const circle = panel?.querySelector(sel);
+		if (!panel || !circle) return { open: !!panel, hasCircle: !!circle };
+		const b = circle.getBoundingClientRect();
+		const p = panel.getBoundingClientRect();
+		const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
 		return {
-			position: style?.position ?? null,
-			z: style ? parseInt(style.zIndex) || 0 : -1,
-			avatarInside: !!avatar?.closest('.top-right-chrome')
+			open: true,
+			hasCircle: true,
+			onTop: !!hit?.closest(sel),
+			// it has to sit ON the panel, not float above it: same top, same right edge
+			seated: Math.abs(b.top - p.top) <= 2 && Math.abs(b.right - p.right) <= 2
+		};
+	}, CIRCLE);
+	h.check(
+		profile.open && profile.hasCircle,
+		`the profile menu opens and carries its own avatar circle (${JSON.stringify(profile)})`
+	);
+	h.check(profile.onTop, 'the circle — not the menu under it — is what you see and click at that spot');
+	h.check(profile.seated, 'the circle is seated in the panel top-right notch, matching the closed position');
+	// clicking it closes the menu, like clicking the trigger again
+	await A.page.locator(CIRCLE).first().click({ force: true });
+	await A.page.waitForTimeout(400);
+	const closed = await A.page.evaluate(() => !document.querySelector('[popover]:popover-open'));
+	h.check(closed, 'clicking the circle closes the profile menu');
+
+	// ...and the panel is ANCHORED to that circle. It used to anchor to #avatar-menu, an
+	// invisible 208x0 flex box whose right edge merely coincides with the circle (both
+	// inset 20px) — on a phone the coincidence broke and the menu slid to the window
+	// edge. Desktop-Chromium at a phone-sized viewport does NOT reproduce that slide
+	// (measured identical at 430/412/393/375/360/320), so this asserts the MECHANISM:
+	// the trigger is the 48px circle, not a wide box. The phone itself is the user's
+	// check. Also asserts the alignment at a narrow width, to catch future drift.
+	await A.page.setViewportSize({ width: 393, height: 800 });
+	await A.page.waitForTimeout(400);
+	await A.page.locator('#avatar-trigger').first().click({ force: true });
+	await A.page.waitForTimeout(600);
+	const anchor = await A.page.evaluate(() => {
+		const t = document.querySelector('#avatar-trigger')?.getBoundingClientRect();
+		const p = document.querySelector('[popover]:popover-open')?.getBoundingClientRect();
+		if (!t || !p) return null;
+		return {
+			trigger: [Math.round(t.width), Math.round(t.height)],
+			rightGap: Math.round(p.right - t.right),
+			topGap: Math.round(p.top - t.top),
+			inset: Math.round(window.innerWidth - p.right)
 		};
 	});
 	h.check(
-		chrome.position === 'fixed' && chrome.z > 0 && chrome.avatarInside,
-		`the avatar lives inside the chrome's stacking context, so the panel must sit under it (${JSON.stringify(chrome)})`
+		!!anchor && anchor.trigger[0] <= 60 && anchor.trigger[1] >= 40,
+		`the dropdown's trigger is the avatar circle itself, not a wide invisible box (${JSON.stringify(anchor)})`
 	);
+	h.check(
+		!!anchor && Math.abs(anchor.rightGap) <= 2 && Math.abs(anchor.topGap) <= 2 && anchor.inset >= 12,
+		`on a narrow screen the panel seats on the circle and stays off the window edge (${JSON.stringify(anchor)})`
+	);
+	await A.page.locator(CIRCLE).first().click({ force: true });
+	await A.page.waitForTimeout(300);
+	await A.page.setViewportSize({ width: 1280, height: 800 });
 
 	// ---- narrow: the sheet also outranks the LOGO, and only there -------------
 	await A.page.setViewportSize({ width: 420, height: 780 });

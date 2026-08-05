@@ -642,6 +642,16 @@ loadable play content. Everything a user does must be visible to connected peers
   `[role='dialog'][aria-modal='true']` rule (unlayered beats Tailwind's layered utility
   without !important). The logo/burger menu sits at `--z-menu` (top-most); opening a
   modal from it calls `closeMenu.set(true)` so the menu can't cover the modal.
+- **flowbite 1.x Dropdowns are TOP-LAYER popovers** (`popover="manual"`, `:popover-open`)
+  — they paint above the ENTIRE page whatever the z-index (measured: a panel at 996
+  covered the profile avatar at 2000, in the same stacking context). No z-index on an
+  outside element can ever sit over one; either render that element INSIDE the popover
+  (the profile circle now lives in the panel's 1.5rem notch, so it rides the same layer)
+  or accept the panel on top. Diagnose with `elementFromPoint` + a clipped screenshot,
+  never by comparing z-index numbers. A Dropdown also anchors to its `triggeredBy`
+  ELEMENT: pointing it at a wide invisible wrapper (`#avatar-menu`, 208x0) made the
+  alignment an accident of two matching 20px insets, which broke on phones — anchor it
+  to the visible control and offset with a negative `margin-top` if it must overlap.
 - **Unlayered global CSS silently beats EVERY Tailwind utility** (the flip side of the
   modal trick above): a plain `.css` file imported from a component is unlayered, so one
   duplicated utility in it outranks all of `@layer utilities` regardless of specificity.

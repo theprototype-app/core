@@ -339,36 +339,54 @@
 	<!-- main profile button: a single clean Avatar (no href -> no navigation bug; no
 		 3-branch) that picks the effective avatar (custom upload > stored > cloud
 		 account > default). This is the dropdown trigger. -->
-	<!-- The avatar stays ON TOP of its own dropdown — the panel's rounded top-right
-	     corner is meant to tuck UNDER the profile circle. This regressed because the
-	     z-index sat inside the CLASS attribute ("md:order-2; z-index: 999;"), where it
-	     was just a nonsense class name, and the inner style put it on a STATIC element
-	     where z-index does nothing. It belongs on the positioned Avatar, above the
-	     Dropdown's 998. -->
+	<!-- The panel anchors to THIS wrapper, not to #avatar-menu: that is an invisible
+	     208px-wide flex box whose right edge merely COINCIDES with the circle (both are
+	     inset 20px), so any width or zoom that broke the coincidence slid the menu
+	     sideways — reported as "on mobile the menu shifts to the right edge". Anchored to
+	     the circle, the panel's right edge IS the circle's right edge by construction.
+	     It also stops that invisible box from catching clicks across the whole
+	     top-right corner. -->
 	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2">
 		<div class="flex items-center space-x-3">
-			<Avatar
-				src={effAvatar || undefined}
-				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 999;"
-				class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
-			/>
+			<div
+				id="avatar-trigger"
+				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 999; line-height: 0;"
+			>
+				<Avatar
+					src={effAvatar || undefined}
+					class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
+				/>
+			</div>
 		</div>
 	</div>
-	<!-- The panel's z sits BELOW `.top-right-chrome` (997) on purpose. That chrome is
-	     `position: fixed; z-index: 997`, i.e. a STACKING CONTEXT — so NOTHING inside
-	     it (the avatar included, whatever z-index we hand it) can outrank this panel,
-	     which flowbite portals out to <body>. Raising the chrome instead would start a
-	     cascade: the full-screen changelog, the docked notes drawer and the role menu
-	     all live at 1000. Lowering the panel is the single number that puts the profile
-	     circle back on top of its own menu — which is what its rounded top-right
-	     corner is for. -->
+	<!-- NO z-index will put the profile circle over this panel: flowbite 1.x renders a
+	     Dropdown as a TOP-LAYER popover (`popover="manual"`, `:popover-open`), and the
+	     top layer paints above the entire page whatever the z-index — measured, the panel
+	     at 996 covered an avatar at 2000. Same family as the modal/top-layer trap in
+	     CLAUDE.md. So the circle is drawn INSIDE the panel instead (below), where it
+	     rides the same layer; the z-index here only orders it against ordinary chrome. -->
 	<Dropdown
     placement="bottom-end"
     bind:isOpen={openDropdown}
-    triggeredBy="#avatar-menu"
+    triggeredBy="#avatar-trigger"
     class="w-56"
-    style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996;"
+    style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996; margin-top: -50px;"
 	>
+	<!-- the profile circle, seated in the 1.5rem notch this panel's top-right corner
+	     exists for (24px radius = half of a 48px avatar, so it is exactly inscribed and
+	     the panel's own overflow-hidden does not bite it). Clicking it closes the menu,
+	     the same as clicking the trigger again. -->
+	<button
+		type="button"
+		class="absolute right-0 top-0 z-10 cursor-pointer rounded-full leading-none"
+		aria-label="Close profile menu"
+		onclick={() => (openDropdown = false)}
+	>
+		<Avatar
+			src={effAvatar || undefined}
+			class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
+		/>
+	</button>
 	<!-- PM (roadmap #14): identity header — name, then the cloud email on a new line
 		 when signed in. No avatar here (it's already the profile button). The rounded
 		 top-right corner is KEPT — it echoes the profile circle. -->

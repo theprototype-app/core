@@ -7,7 +7,8 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Architecture map
 
-- `src/stores/` — `appStore` (UI panels, userdata, peers instance, toasts+action-toasts
+- `src/stores/` — `appStore` (UI panels + `openSceneSection(label)`/`inspectorScrollTo`
+  = the Configure-Scene DEEP LINK seam, userdata, peers instance, toasts+action-toasts
   + notification center stores, modulesOpen), `sceneStore` (three refs: objectsGroup/
   TControls/camera/renderer, selection, locks, VR incl. vrFlying/vrSnapAngle),
   `flowStore` (#13-H flow v2: **`flowGraphs` keyed `'scene'|objectUuid` is the source
@@ -518,12 +519,28 @@ loadable play content. Everything a user does must be visible to connected peers
   doesn't fit below, shift the WHOLE menu up so its bottom stays inside (never flip to
   the other side of the pointer); a scrollbar appears ONLY when the content is taller
   than the window; and while SEARCHING the menu keeps the top it opened with, caps the
-  flat list to a bounded height, and offers a corner resize grip.
+  flat list to a bounded height, and offers a corner resize grip whose height is
+  REMEMBERED per menu kind (`sizeKey` prop → `ctx:searchHeight:<viewport|nodes|
+  object>`, a LOCAL pref). Menu rows can carry `revealFilter: true` (opens the
+  search box without closing the menu — the node editor's "Search nodes…"; excluded
+  from its own results).
+- **Configure Scene DEEP LINKS** (`openSceneSection('Grid')`, or
+  `'Camera:Saved views'` for a `data-anchor` sub-heading): never `showSidebar`,
+  which TOGGLES and closed an already-open panel. Section.svelte expands the named
+  section and lands it just under the sticky header by SCROLLING THE CONTAINER with
+  the header height as an offset — plain `scrollIntoView` tucks the label underneath
+  it. Do it as measure → scroll → re-measure → correct with an INSTANT scroll: a
+  `smooth` one is cancelled by the reflow of the section it just expanded, and the
+  scroller must be found by real SCROLLABILITY (computed overflow + scrollHeight),
+  not class names.
 - `backdrop-filter`/`filter` ALSO make an element the containing block for
   `position: fixed` descendants (same trap as transform). A `fixed` popup rendered
   inside `.app-sidebar` (which has `backdrop-blur`) centered on the SIDEBAR and spilled
   off-screen — render such popups at the component ROOT, not inside a blurred/filtered
   ancestor (roadmap 9 export-settings bug).
+- The camera PiP frame deliberately sits BELOW the tiers (z-index 2): it is a
+  viewport overlay whose picture is drawn by the render loop, so panels and HUD must
+  cover it (16-Q6).
 - **z-index tiers** (`ui.css` `:root`): viewport 0 · drawer 30 · bottom 35 · window 40 ·
   hud 45 · **modal 1100 · toast 1200 · menu 1300**. The high modal/toast/menu values
   clear the ad-hoc persistent chrome that lives OUTSIDE the scale — Users (avatar/peers)

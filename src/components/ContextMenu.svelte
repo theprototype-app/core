@@ -60,6 +60,12 @@
 	let navPath: string[] = [];
 	/** highlighted row at navPath's level; -1 = nothing yet */
 	let highlight = -1;
+	/** Did the press that closes this menu also START on the backdrop? A LONG PRESS
+	 *  opens the menu while the finger is still down, so the backdrop mounts UNDER
+	 *  that finger and the lift lands on it — closing the menu the press just
+	 *  opened. Requiring the pointerdown too makes the backdrop dismiss only real
+	 *  outside taps. */
+	let backdropPressed = false;
 	/** how many rows the empty-query browse list shows (it scrolls) */
 	const BROWSE_CAP = 200;
 	/** 16-Q5: default height of the SEARCH list. A menu that unfolds down the whole
@@ -324,13 +330,18 @@
 	}
 </script>
 
-<!-- backdrop to catch outside clicks -->
+<!-- Backdrop to catch outside clicks. It closes only on a click whose PRESS also
+     landed on the backdrop: a long-press opens this menu while the finger is still
+     down, so the backdrop mounts underneath it and the finger's own lift used to
+     land here and shut the menu instantly. Requiring the pointerdown too means the
+     opening gesture cannot close what it just opened, with no timers involved. -->
 <div
 	use:portal
 	class="fixed inset-0"
 	style="z-index: var(--z-menu);"
 	role="presentation"
-	on:click={() => dispatch('close')}
+	on:pointerdown={() => (backdropPressed = true)}
+	on:click={() => backdropPressed && dispatch('close')}
 	on:contextmenu|preventDefault={() => dispatch('close')}
 ></div>
 

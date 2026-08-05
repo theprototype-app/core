@@ -418,7 +418,13 @@
 			node.style.top = `${top}px`;
 		};
 
-		node.style.position = 'absolute';
+		// FIXED, like every other floating window (dragWindow/docking) — this was the
+		// last `absolute` holdout. An absolutely-positioned element shoved past the
+		// right/bottom edge joins the document's scroll overflow and GROWS the page,
+		// which drags the fixed chrome (Connect bar, profile, corner HUD) sideways with
+		// it; fixed elements never contribute to that overflow. The clamp math below was
+		// already in viewport coordinates, so nothing else changes.
+		node.style.position = 'fixed';
 		node.style.userSelect = 'none';
 		clampRect();
 		window.addEventListener('resize', clampRect);

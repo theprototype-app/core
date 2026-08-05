@@ -3,6 +3,10 @@ ul {
 	list-style: none;
 }
 
-.hidden {
-	display: none;
-}
+/* NO `.hidden` rule here. This file is imported as plain global CSS, i.e. it is
+   UNLAYERED — and unlayered styles beat anything inside Tailwind's @layer
+   utilities regardless of specificity. A duplicate `.hidden { display: none }`
+   here therefore outranked every `group-hover/*:flex` reveal in the app (the
+   object-list row buttons and the Library cards silently stopped appearing on
+   hover after the Tailwind 4 migration). Tailwind ships `.hidden` itself, so
+   `class={$chatHidden}` keeps working without it. */

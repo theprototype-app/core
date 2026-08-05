@@ -354,12 +354,20 @@
 			/>
 		</div>
 	</div>
+	<!-- The panel's z sits BELOW `.top-right-chrome` (997) on purpose. That chrome is
+	     `position: fixed; z-index: 997`, i.e. a STACKING CONTEXT — so NOTHING inside
+	     it (the avatar included, whatever z-index we hand it) can outrank this panel,
+	     which flowbite portals out to <body>. Raising the chrome instead would start a
+	     cascade: the full-screen changelog, the docked notes drawer and the role menu
+	     all live at 1000. Lowering the panel is the single number that puts the profile
+	     circle back on top of its own menu — which is what its rounded top-right
+	     corner is for. -->
 	<Dropdown
     placement="bottom-end"
     bind:isOpen={openDropdown}
     triggeredBy="#avatar-menu"
     class="w-56"
-    style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 998;"
+    style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996;"
 	>
 	<!-- PM (roadmap #14): identity header — name, then the cloud email on a new line
 		 when signed in. No avatar here (it's already the profile button). The rounded

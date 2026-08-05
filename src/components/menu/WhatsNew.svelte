@@ -12,6 +12,27 @@
 		if ($whatsNewOpen) setTimeout(() => winEl?.focus(), 0); // so Esc closes it
 	});
 
+	// NARROW ONLY: at full screen this window owns the display, so the logo must not
+	// float on top of the text. The logo lives at --z-menu (1300) — above any sane
+	// window tier — so instead of chasing it upward (which would also put the sheet
+	// over the toast tier, hiding connection requests) we drop the LOGO under the
+	// sheet for exactly as long as it is open. A root class keeps that reversible and
+	// keeps the rule in this component, next to the layout it belongs to.
+	let narrow = $state(false);
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const mq = window.matchMedia('(max-width: 640px)'); // the repo's sheet breakpoint
+		const sync = () => (narrow = mq.matches);
+		sync();
+		mq.addEventListener('change', sync);
+		return () => mq.removeEventListener('change', sync);
+	});
+	$effect(() => {
+		const sheet = $whatsNewOpen && narrow;
+		document.documentElement.classList.toggle('wn-sheet', sheet);
+		return () => document.documentElement.classList.remove('wn-sheet');
+	});
+
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
@@ -162,6 +183,15 @@
 			   !important beats the inline z-index dragWindow writes. */
 			z-index: 1000 !important;
 		}
+	}
+	/* ...and the logo (.burger, at --z-menu = 1300) steps UNDER the sheet for as long
+	   as it is open — see the `wn-sheet` effect. Narrow only: on a wide screen this is
+	   an ordinary floating window and the logo rightly stays on top. Specificity
+	   (0,2,1) beats menu.css's plain `.burger`, so no !important. */
+	:global(:root.wn-sheet .burger) {
+		z-index: 999;
+	}
+	@media (max-width: 640px) {
 		#whats-new-window :global(.dw-resize) {
 			display: none;
 		}

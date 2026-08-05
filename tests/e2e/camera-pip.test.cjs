@@ -176,5 +176,24 @@ h.run(async () => {
 		`the gizmo is restored after each inset draw (visible ${gizmoHidden.visibleAfterFrames})`
 	);
 
+
+	// ---------- 16-Q6: the frame sits BELOW the UI chrome ------------------------
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
+	await A.page.waitForTimeout(600);
+	const layering = await A.page.evaluate(() => {
+		const pip = document.querySelector('.pip');
+		if (!pip) return null;
+		const z = Number(getComputedStyle(pip).zIndex);
+		// the panel that must cover it
+		const panel = document.querySelector('#drawer-label')?.closest('div[class*="z-"]');
+		const panelZ = panel ? Number(getComputedStyle(panel).zIndex) : null;
+		return { z, panelZ };
+	});
+	h.check(layering !== null, 'the frame is up');
+	h.check(
+		layering.z < 30 && (layering.panelZ === null || layering.z < layering.panelZ),
+		`it sits below the panel/drawer tier (pip z ${layering.z} vs panel ${layering.panelZ})`
+	);
+
 	await h.finish(browser);
 });

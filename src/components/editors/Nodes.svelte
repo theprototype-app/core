@@ -731,7 +731,7 @@
 </div>
 
 {#if menu}
-	<ContextMenu x={menu.x} y={menu.y} items={menu.items} on:close={() => (menu = null)} />
+	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey="nodes" on:close={() => (menu = null)} />
 {/if}
 
 <style>

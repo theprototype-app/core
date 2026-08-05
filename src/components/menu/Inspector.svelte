@@ -576,7 +576,7 @@
 		if (!direction.lengthSq()) direction.set(-1, 1, 1).normalize();
 		flyTo(direction.multiplyScalar(distance).toArray(), [0, 0, 0]);
 	}
-	/** shared look for the small bookmark row buttons (this file has no <style>) */
+	/** shared look for the small bookmark row buttons */
 	const bmBtn = 'shrink-0 rounded-sm bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40';
 	function resetView() {
 		// the editor camera's mount defaults (Scene.svelte)
@@ -1197,8 +1197,9 @@
 					onchange={(/** @type {any} */ e) => snapEnabled.set(e.currentTarget.checked)}
 					>Snap transforms to a grid</Checkbox
 				>
-				<div class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Position</span>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Position</span>
+					<div class="snap-chips">
 					{#each [0.1, 0.25, 0.5, 1] as step}
 						<button
 							class={'ui-chip ' +
@@ -1208,7 +1209,8 @@
 							onclick={() => snapSettings.update((s) => ({ ...s, translate: step }))}>{step}</button
 						>
 					{/each}
-					<div class="w-16 shrink-0">
+					</div>
+					<div class="snap-field">
 						<DragRow
 							id="snap-translate"
 							value={$snapSettings.translate}
@@ -1221,8 +1223,9 @@
 						/>
 					</div>
 				</div>
-				<div class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Rotation</span>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Rotation</span>
+					<div class="snap-chips">
 					{#each [5, 15, 45, 90] as step}
 						<button
 							class={'ui-chip ' +
@@ -1232,7 +1235,8 @@
 							onclick={() => snapSettings.update((s) => ({ ...s, rotateDeg: step }))}>{step}°</button
 						>
 					{/each}
-					<div class="w-16 shrink-0">
+					</div>
+					<div class="snap-field">
 						<DragRow
 							id="snap-rotate"
 							value={$snapSettings.rotateDeg}
@@ -1245,8 +1249,9 @@
 						/>
 					</div>
 				</div>
-				<div class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Scale</span>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Scale</span>
+					<div class="snap-chips">
 					{#each [0.05, 0.1, 0.25] as step}
 						<button
 							class={'ui-chip ' +
@@ -1256,7 +1261,8 @@
 							onclick={() => snapSettings.update((s) => ({ ...s, scale: step }))}>{step}</button
 						>
 					{/each}
-					<div class="w-16 shrink-0">
+					</div>
+					<div class="snap-field">
 						<DragRow
 							id="snap-scale"
 							value={$snapSettings.scale}
@@ -2341,3 +2347,29 @@
 	{/if}
 </div>
 {/if}
+
+<style>
+	/* 16-Q6: the three snapping rows line up — label | chips | field in ONE grid, so
+	   the numeric boxes share an edge no matter how many preset chips a row has */
+	.snap-row {
+		display: grid;
+		grid-template-columns: 4.25rem minmax(0, 1fr) 3.75rem;
+		align-items: center;
+		gap: 0.25rem;
+	}
+	.snap-chips {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 0.25rem;
+	}
+	.snap-field {
+		width: 3.75rem;
+	}
+	/* the preset chips must fit on ONE line in a 320px panel — the shared ui-chip
+	   padding + uppercase tracking pushed the fourth one onto a second row */
+	.snap-chips button {
+		padding-inline: 0.3rem;
+		letter-spacing: 0;
+	}
+</style>

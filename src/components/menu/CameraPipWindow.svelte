@@ -132,7 +132,9 @@
 	   the body must stay transparent (no background, no backdrop-filter) */
 	.pip {
 		position: fixed;
-		z-index: var(--z-hud, 45);
+		/* 16-Q6: BELOW every panel and HUD (viewport 0 < this < drawer 30) — the frame
+		   is a viewport overlay, not chrome, so nothing of the UI hides behind it */
+		z-index: 2;
 		border: 1px solid rgb(138 180 248 / 0.55);
 		border-radius: 6px;
 		box-shadow: 0 6px 20px rgb(0 0 0 / 0.45);

@@ -49,21 +49,45 @@
 			LS?.setItem('inspector:sec:' + label, 'open');
 		} catch {}
 		const node = root;
-		requestAnimationFrame(() => {
-			// 16-Q5: scroll the CONTAINER, offset by the sticky header (title + property
-			// filter) — plain scrollIntoView tucked the section label underneath it, so
-			// you landed on the section's first row with no idea where you were.
-			const target = (anchor ? node?.querySelector(`[data-anchor="${anchor}"]`) : null) ?? node;
-			const scroller = node?.closest('.overflow-y-auto, .overflow-auto') ?? null;
-			const sticky = scroller?.querySelector('#drawer-label');
-			const pad = (sticky?.getBoundingClientRect().height ?? 0) + 10;
-			if (scroller && target) {
-				const delta = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-				scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + delta - pad), behavior: 'smooth' });
-			} else {
-				target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		// 16-Q6: measure → scroll → re-measure → correct. The old single-shot version
+		// could fire before the just-expanded content had laid out, and a `smooth`
+		// scroll could be cancelled by that very reflow — so the label sometimes ended
+		// up under the sticky header (or nowhere). The scroller is found by real
+		// SCROLLABILITY, not class names.
+		const findScroller = () => {
+			let el = node?.parentElement;
+			while (el) {
+				const overflow = getComputedStyle(el).overflowY;
+				if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight + 1) return el;
+				el = el.parentElement;
 			}
-		});
+			return null;
+		};
+		/** the label to land on: a named sub-heading, else the section itself */
+		const findTarget = () => (anchor ? node?.querySelector(`[data-anchor="${anchor}"]`) : null) ?? node;
+
+		let attempts = 0;
+		const settle = () => {
+			const scroller = findScroller();
+			const target = findTarget();
+			if (!scroller || !target) {
+				// the section (or its anchor) may still be rendering after expanding
+				if (attempts++ < 12) requestAnimationFrame(settle);
+				else target?.scrollIntoView({ block: 'start' });
+				return;
+			}
+			// the sticky title + property filter sit ON TOP of the scroll area
+			const sticky = scroller.querySelector('#drawer-label');
+			const pad = (sticky?.getBoundingClientRect().height ?? 0) + 8;
+			const delta = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - pad;
+			if (Math.abs(delta) > 2) {
+				// instant, not smooth: a reflow mid-animation used to cancel it
+				scroller.scrollTop = Math.max(0, scroller.scrollTop + delta);
+			}
+			// verify once more next frame — expanding a section changes heights under us
+			if (attempts++ < 6) requestAnimationFrame(settle);
+		};
+		requestAnimationFrame(settle);
 		inspectorScrollTo.set(null);
 	});
 </script>

@@ -254,5 +254,5 @@
 </script>
 
 {#if menu}
-	<ContextMenu x={menu.x} y={menu.y} {items} on:close={close} />
+	<ContextMenu x={menu.x} y={menu.y} {items} sizeKey="viewport" on:close={close} />
 {/if}

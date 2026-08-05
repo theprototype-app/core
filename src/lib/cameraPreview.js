@@ -51,6 +51,33 @@ export function releasePreviewOrbit() {
 	previewOrbit.set(null);
 }
 
+/** the editor's orbit TARGET when the preview took over, and the instance we
+ *  disposed doing so — the controls REMOUNT on exit with a default target
+ *  (0, 1.5, 0), which threw your look-at point back to the world origin (16-Q6) */
+/** @type {any} */ let savedTarget = null;
+/** @type {any} */ let staleControls = null;
+
+/** Put the look-at point back once the editor's controls have REMOUNTED. */
+function restoreEditorTarget() {
+	const target = savedTarget;
+	savedTarget = null;
+	if (!target) return;
+	let tries = 0;
+	const tick = () => {
+		const controls = /** @type {any} */ (get(orbitControls));
+		// wait for the FRESH instance: the store still holds the disposed one until
+		// Scene remounts <OrbitControls>
+		if (controls?.target && controls !== staleControls) {
+			controls.target.copy(target);
+			controls.update?.();
+			staleControls = null;
+			return;
+		}
+		if (tries++ < 60) requestAnimationFrame(tick);
+	};
+	requestAnimationFrame(tick);
+}
+
 /** three's dispose() only detaches listeners, so a double call is harmless
  * @param {any} controls */
 function disposeControls(controls) {
@@ -106,6 +133,12 @@ export function startCameraPreview(uuid) {
 	// switching straight from another preview: restore that marker first
 	const previous = get(cameraPreview);
 	if (previous && previous.uuid !== uuid) setMarkerHidden(findCameraObject(previous.uuid), false);
+	// 16-Q6: remember WHERE YOU WERE LOOKING. These controls are about to unmount and
+	// the pair that mounts on exit starts with the default target, which recentred the
+	// view on the world origin.
+	const editor = /** @type {any} */ (get(orbitControls));
+	savedTarget = editor?.target?.clone?.() ?? null;
+	staleControls = editor ?? null;
 	// THE fix for "moving an object with the gizmo also rotates my view" (16-Q5).
 	// Scene gates the editor's OrbitControls on this store, so they are about to
 	// UNMOUNT — and threlte does not dispose them, so they keep their DOM listeners
@@ -129,6 +162,7 @@ export function stopCameraPreview() {
 	cameraPreview.set(null);
 	frustumSuppressed.set(null);
 	broadcast(null);
+	restoreEditorTarget(); // 16-Q6: your look-at point survives the round trip
 }
 
 /** Take the controls (or give them back). */

@@ -140,6 +140,10 @@
 		startValue = Number(value) || 0;
 		startX = event.clientX;
 		scrubbing = false;
+		// 16-Q6: block the default so a scrub never places or drags the CARET (you could
+		// watch it skate left and right through the digits). Focus is granted on release
+		// instead — see onPointerUp — which is also what makes click-to-type work.
+		if (!focused) event.preventDefault();
 	}
 
 	/** @param {any} event */
@@ -171,8 +175,8 @@
 			return;
 		}
 		scrubbing = false;
-		// a click that did not scrub = "let me type it" (the label counts too)
-		if (event.target !== inputEl) inputEl?.focus();
+		// a click that did not scrub = "let me type it" (anywhere on the field)
+		inputEl?.focus();
 	}
 </script>
 
@@ -219,6 +223,12 @@
 	}
 	.dn-wrap.dn-scrub {
 		border-color: var(--color-primary-400, #60a5fa);
+		/* 16-Q6: a scrub must not smear a selection or show a caret */
+		user-select: none;
+	}
+	.dn-wrap.dn-scrub .dn-input {
+		user-select: none;
+		caret-color: transparent;
 	}
 	.dn-label {
 		flex: 0 0 auto;

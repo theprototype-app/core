@@ -330,5 +330,53 @@ h.run(async () => {
 	);
 	h.check(placement.grip, 'a resize grip appears while searching');
 
+
+	// ---------- 16-Q6: a resized search list is REMEMBERED, per menu kind ---------
+	const resize = async () => {
+		await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+		await A.page.waitForTimeout(150);
+		await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 240, y: 120, point: [0, 0, 0] }));
+		await A.page.waitForTimeout(350);
+		await A.page.evaluate(async () => {
+			const input = document.querySelector('.ctx-filter-input');
+			input.value = 'e';
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+			await new Promise((r) => setTimeout(r, 300));
+		});
+		const grip = await A.page.locator('.ctx-grip').boundingBox();
+		await A.page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+		await A.page.mouse.down();
+		await A.page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 - 120, { steps: 8 });
+		await A.page.mouse.up();
+		await A.page.waitForTimeout(300);
+		return A.page.evaluate(() => Math.round(document.querySelector('[role="menu"]').getBoundingClientRect().height));
+	};
+	const shrunk = await resize();
+	const stored = await A.page.evaluate(() => localStorage.getItem('ctx:searchHeight:viewport'));
+	h.check(stored !== null, `the dragged height is persisted (${stored})`);
+	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.waitForTimeout(200);
+
+	// reopen + search again: the list comes back at the size we left it
+	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 240, y: 120, point: [0, 0, 0] }));
+	await A.page.waitForTimeout(350);
+	await A.page.evaluate(async () => {
+		const input = document.querySelector('.ctx-filter-input');
+		input.value = 'e';
+		input.dispatchEvent(new Event('input', { bubbles: true }));
+		await new Promise((r) => setTimeout(r, 300));
+	});
+	const reopened = await A.page.evaluate(() =>
+		Math.round(document.querySelector('[role="menu"]').getBoundingClientRect().height)
+	);
+	h.check(
+		Math.abs(reopened - shrunk) <= 6,
+		`reopening keeps that height (${shrunk}px -> ${reopened}px)`
+	);
+	// the node editor keeps its OWN size
+	const perKind = await A.page.evaluate(() => localStorage.getItem('ctx:searchHeight:nodes'));
+	h.check(perKind === null, 'the node editor has its own key, untouched by the viewport menu');
+	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+
 	await h.finish(browser);
 });

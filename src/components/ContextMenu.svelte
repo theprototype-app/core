@@ -17,6 +17,9 @@
 	export let x: number;
 	export let y: number;
 	export let items: any[] = [];
+	/** 16-Q6: which menu this is, so the search list REMEMBERS the height you drag
+	 *  it to — per kind ('viewport', 'nodes', 'object'…), persisted locally. */
+	export let sizeKey: string = 'menu';
 
 	const dispatch = createEventDispatcher();
 
@@ -65,8 +68,24 @@
 	const MIN_LIST_HEIGHT = 140;
 	/** the top edge chosen when the menu OPENED — searching keeps it */
 	let placedTop: number | null = null;
+	const heightStore = () => `ctx:searchHeight:${sizeKey}`;
+	/** @param {number} value */
+	function rememberHeight(value: number) {
+		try {
+			localStorage.setItem(heightStore(), String(Math.round(value)));
+		} catch {}
+	}
+	function storedHeight(): number | null {
+		try {
+			const raw = parseInt(localStorage.getItem(heightStore()) ?? "", 10);
+			return Number.isFinite(raw) && raw >= MIN_LIST_HEIGHT ? raw : null;
+		} catch {
+			return null;
+		}
+	}
 	/** user height for the search list, dragged from the corner grip */
-	let searchHeight: number | null = null;
+	// svelte-ignore state_referenced_locally
+	let searchHeight: number | null = storedHeight();
 	/** lets the grip re-run the placement after changing `searchHeight` */
 	let repositionMenu: () => void = () => {};
 	let inputEl: HTMLInputElement | null = null;
@@ -373,6 +392,7 @@
 				const up = () => {
 					window.removeEventListener('pointermove', move);
 					window.removeEventListener('pointerup', up);
+					if (searchHeight) rememberHeight(searchHeight); // 16-Q6: keep it next time
 				};
 				window.addEventListener('pointermove', move);
 				window.addEventListener('pointerup', up);

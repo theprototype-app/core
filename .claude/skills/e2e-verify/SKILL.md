@@ -48,6 +48,20 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **Prove a regression guard by BREAKING the code**: `git stash push -- <file>`, run
+  the suite, confirm the new check goes red, `git stash pop`. Both release-blocking
+  fixes in 1.2.0 were validated this way (shift-select: 8 page errors and the set
+  stuck at 1; the mesh gizmo: 0/15 vertices moved). A guard you have never seen fail
+  is a guess.
+- **Drive the real INPUT PATH when the bug lives in a handler.** Shift-click
+  multi-select broke inside `onPointerUp`; every store-level `selectObject` test
+  stayed green. Project the object's world position (`helpers.projectPoint`) and use
+  `page.mouse.click` with `keyboard.down('Shift')`, and count `pageerror` events
+  while you do it — a swallowed exception is exactly what a store-level test misses.
+- Some behaviour is genuinely NOT testable here and must be labelled an on-device
+  check rather than faked: `(pointer: coarse)` (so the mobile view-mode default),
+  GPU/driver bugs, and VR feel. Say so in the commit instead of writing a check that
+  can only pass.
 
 **Parallel lanes (multi-session work, 2026-07-21):** each session works in its own
 `git worktree` (e.g. `../theprototype-lane-flow`) with its OWN dev server on its own

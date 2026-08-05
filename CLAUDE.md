@@ -481,6 +481,32 @@ loadable play content. Everything a user does must be visible to connected peers
   NOT wrapped: `oncreate={(ref) => …}`, never `oncreate={({ref}) => …}` (the destructure
   silently captures `undefined` — this stranded every annotation pin at the origin +
   killed PingMarkers' animations, N1/roadmap-7).
+- **Never write through a DERIVED store**: svelte compiles `$store.prop = value`
+  into `store_mutate()` → `store.set()`, which a derived store does not have, so
+  every such site throws `TypeError: store.set is not a function` AT RUNTIME while
+  svelte-check and the build stay green. `$activeOrbit.enabled = x` (activeOrbit is
+  derived over previewOrbit + orbitControls) threw inside `onPointerUp` and aborted
+  the handler before `raycastSelect` — which killed SHIFT-click multi-select while a
+  plain click still worked, because only the shift path enters the marquee branch.
+  Mutate the RESOLVED object instead (`cameraPreview.setOrbitEnabled()`). That
+  asymmetry is the tell: one gesture broken and its sibling fine means a throw
+  partway through a shared handler.
+- **The op TARGET in the mesh/face tools is `opTargetFace()`, never
+  `faces[faceEditHighlight]`** — the latter is ONE coplanar group, so any path using
+  it silently ignores Face/Triangle/Shell/Object granularity and the Multi set. The
+  highlight and the toolbar ops always went through the target; the GIZMO drag did
+  not, so a Shell pick lit up a whole island but dragged only the surface under the
+  cursor (its weld-neighbour set stretching the shared corners = "some vertices are
+  stuck"). `beginFaceGrab` accepts a synthesized target and carries its own
+  `triIndices`; `attachFaceGizmo` STASHES that target, because once the pointer sits
+  on a gizmo handle the live hover no longer describes the pick.
+- **AO is a fullscreen pass and mobile GPUs mis-compile it**: `viewMode` defaults to
+  `shaded-ao`, but `defaultViewMode()` starts coarse-pointer devices in plain
+  `shaded`. The Chromium-151 gate in Outline.svelte came from DESKTOP ANGLE/D3D11
+  evidence; on Android the same breakage still appears and the composer stops
+  presenting, so the viewport keeps showing a STALE frame with nothing in the
+  console. Symptom to recognise: visible viewport that never updates while you
+  orbit, cured by switching to Shaded.
 - **A DOM overlay that must AGREE with a threlte frame may not own a
   `requestAnimationFrame`** (15-H). threlte's OrbitControls calls
   `controls.update()` in a task in the MAIN stage; a private rAF is a different
@@ -895,6 +921,18 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-05, release): **`release/next` ASSEMBLED for 1.2.0** — PRs #86 →
+  #85 → #84 (which auto-closed #82, stacked on it), #83, #81 and #87 (15-H notes)
+  all merged, so the branch now carries roadmaps #15 + #16, colliders v2 + edit-mesh
+  pro, the AI flow/physics tools, the VR sleeve and all four deps migrations. Three
+  verification commits sit on top: the DERIVED-store shift-select fix, the
+  gizmo-granularity + Object-granularity fix with the mobile-AO default, and the
+  1.2.0 CHANGELOG + a foldable What's New (one `<details>` per release, newest open).
+  Baseline **419/62** = the release.yml gate. `SESSION_FORMAT`/`MODULE_FORMAT` are
+  still `1`, so 1.2.0 is a MINOR. Remaining ritual: merge to `main`,
+  `npm version minor`, `git push origin main --follow-tags`, then redeploy the cloud
+  with `CORE_REF=v1.2.0`. Do NOT rename `release/next` — the version lives in
+  `npm version` on main, not in the branch name.
 - Status (2026-08-05): **15-H scene notes v2/v3 COMPLETE** — branch
   `feat/roadmap15-h-notes-v2` (lane `../theprototype-lane-notes` @ port 5187,
   branched off `fix/roadmap16-menus-cameras`), 5 commits. (1) v2 model + anchored

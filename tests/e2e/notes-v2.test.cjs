@@ -192,6 +192,12 @@ h.run(async () => {
 		!!m1 && m1.size[1] >= 24 && m1.radius.startsWith('999'),
 		`V3: a pill badge with room for bolder type (${m1?.size?.join('x')}, radius ${m1?.radius})`
 	);
+	// every 2D badge is the SAME pill — the per-note shape is a VR-only distinction
+	const starBadge = await markerInfo(A.page, 3);
+	h.check(
+		!!starBadge && starBadge.radius === m1?.radius,
+		`V3: a 'star' note renders the same pill in 2D — shape only applies to the VR pin (${starBadge?.radius})`
+	);
 	// the leader line runs from the badge to the EXACT projected point
 	const pix1First = await pinPixel(A.page, id1);
 	h.check(
@@ -212,6 +218,79 @@ h.run(async () => {
 			'x'
 		)})`
 	);
+	// --- V3: the badge must not LAG the camera (the "jiggle") -----------------
+	// The positions are published from inside threlte's RENDER stage, so a badge
+	// always matches the camera pose that rendered the frame it sits on. When the
+	// marker layer owned a private requestAnimationFrame loop it could run before
+	// the scheduler updated the camera and trailed the geometry by one frame — the
+	// reported jiggle (and why an XR session "fixed" it: entering VR re-registers
+	// threlte's loop and flips the callback order). Spin the camera fast and compare
+	// each badge against the pin projected with the camera AS IT IS at that instant:
+	// the residual must stay far below the per-frame travel.
+	const drift = await A.page.evaluate(
+		(leader) =>
+			new Promise((resolve) => {
+				const s = window.__stores;
+				const ah = s.annotationsHandler;
+				let controls;
+				let camera;
+				let renderer;
+				let views = [];
+				s.orbitControls.subscribe((v) => (controls = v))();
+				s.globalCamera.subscribe((v) => (camera = v))();
+				s.globalRenderer.subscribe((v) => (renderer = v))();
+				ah.noteMarkers.subscribe((v) => (views = v))();
+				const id = views[0]?.id;
+				if (!id || !controls) return resolve(null);
+				const wasRotating = controls.autoRotate;
+				const wasSpeed = controls.autoRotateSpeed;
+				controls.autoRotate = true;
+				controls.autoRotateSpeed = 40;
+				const residuals = [];
+				const steps = [];
+				let previous = null;
+				let frames = 0;
+				const sample = () => {
+					frames++;
+					const badge = [...document.querySelectorAll('.marker-badge')].find(
+						(b) => b.querySelector('.marker-num')?.textContent?.trim() === '1'
+					);
+					const world = ah.annotationWorldPosition(id);
+					if (badge && world && camera && renderer?.domElement) {
+						const rect = renderer.domElement.getBoundingClientRect();
+						const v = world.clone().project(camera);
+						const px = rect.left + ((v.x + 1) / 2) * rect.width;
+						const py = rect.top + ((1 - v.y) / 2) * rect.height;
+						const r = badge.getBoundingClientRect();
+						// the badge sits `leader` px above the point it describes
+						residuals.push(Math.hypot(r.x + r.width / 2 - px, r.y + r.height / 2 + leader - py));
+						if (previous) steps.push(Math.hypot(px - previous[0], py - previous[1]));
+						previous = [px, py];
+					}
+					if (frames < 45) requestAnimationFrame(sample);
+					else {
+						controls.autoRotate = wasRotating;
+						controls.autoRotateSpeed = wasSpeed;
+						const median = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)] ?? 0;
+						resolve({ residual: median(residuals), step: median(steps), n: residuals.length });
+					}
+				};
+				requestAnimationFrame(sample);
+			}),
+		38
+	);
+	h.check(
+		!!drift && drift.step > 3,
+		`V3: the spin actually moved the marker between frames (${drift?.step?.toFixed(1)}px/frame over ${drift?.n} samples)`
+	);
+	h.check(
+		!!drift && drift.residual < drift.step * 0.35,
+		`V3: no frame lag while the camera spins — badge vs live projection ${drift?.residual?.toFixed(
+			1
+		)}px against a ${drift?.step?.toFixed(1)}px/frame step`
+	);
+	await A.page.waitForTimeout(300);
+
 	// nothing can clip a DOM badge, and the in-scene meshes are VR-only now
 	const meshCount = await A.page.evaluate(
 		() =>
@@ -456,8 +535,8 @@ h.run(async () => {
 	);
 	const recolored = await markerInfo(A.page, 2);
 	h.check(
-		recolored?.background === 'rgb(59, 130, 246)' && recolored?.radius === '8px',
-		`H4/H9: the badge re-colours and takes the square silhouette after the edit (${recolored?.background}, radius ${recolored?.radius})`
+		recolored?.background === 'rgb(59, 130, 246)' && recolored?.radius.startsWith('999'),
+		`H4: the badge re-colours after the edit and stays a pill — shape is VR-only (${recolored?.background}, radius ${recolored?.radius})`
 	);
 
 	// receive path: a peer's v2 payload lands normalized

@@ -1,20 +1,6 @@
 <script lang="ts">
-	import { get } from 'svelte/store';
-	import * as THREE from 'three';
-	import { MessageSquare, Star, Layers } from '@lucide/svelte';
-	import {
-		annotations,
-		activeAnnotation,
-		annotationOwner,
-		openAnnotation,
-		showNotePins,
-		displayName,
-		displayAuthor,
-		contrastOn,
-		rgbaOf,
-		DEFAULT_NOTE_COLOR
-	} from '$lib/annotationsHandler';
-	import { globalCamera, globalRenderer, objectsGroup, isVRMode } from '../../stores/sceneStore';
+	import { MessageSquare, Layers } from '@lucide/svelte';
+	import { activeAnnotation, openAnnotation, noteMarkers, rgbaOf } from '$lib/annotationsHandler';
 
 	// Notes v3 markers: SCREEN-SPACE badges with a leader line to the exact 3D
 	// point. The old in-scene quads could be CUT IN HALF by any surface they
@@ -26,25 +12,25 @@
 	// translucent (fill only — the number stays fully readable) with a dashed
 	// leader. Clusters collapse into a single counted badge that fans out on click.
 	//
-	// VR keeps the in-scene meshes (AnnotationPins.svelte): DOM is invisible in a
-	// headset. Everything here is LOCAL — no replication, no store writes.
+	// This component is PRESENTATION only: the per-frame screen positions arrive on
+	// the `noteMarkers` store, published from inside threlte's render stage
+	// (AnnotationPins.svelte). Owning a `requestAnimationFrame` loop here made the
+	// badges jiggle while orbiting — that loop is a separate callback queue and can
+	// run before the scheduler updates the camera.
+	//
+	// VR keeps the in-scene meshes: DOM is invisible in a headset, and the pin
+	// SHAPE (round/star/square) is a VR-only distinction — every 2D badge is the
+	// same pill, so the marker layer reads consistently.
 
 	const LEADER = 38; // px from the exact point up to the badge centre
 	const BADGE_H = 26; // px, keep in sync with .marker-badge height
 	const CLUSTER_PX = 34; // badges closer than this overlap, so they collapse into one
 	const FAN_RADIUS = 52; // px, expanded cluster members
-	const OCCLUSION_SLACK = 0.08; // 8cm — geometry this close never counts as cover
-	const OCCLUSION_MS = 120; // raycast budget: ~8Hz, positions still update per frame
-	const NEAR_FADE = 0.9; // metres — fade out when the camera is right on top of it
-	const NEAR_HIDE = 0.35;
-
-	const ICONS: Record<string, any> = { round: MessageSquare, star: Star, square: MessageSquare };
 
 	type Marker = {
 		id: string;
 		color: string;
 		ink: string;
-		shape: string;
 		number: number;
 		title: string;
 		author: string;
@@ -59,47 +45,9 @@
 		cluster: string[] | null;
 	};
 
-	let markers = $state<Marker[]>([]);
 	let hoverId = $state('');
 	let expanded = $state(''); // cluster key currently fanned out
 	const active = $derived($activeAnnotation?.id ?? '');
-	const enabled = $derived($showNotePins && !$isVRMode);
-
-	// --- geometry ---------------------------------------------------------------
-	const world = new THREE.Vector3();
-	const projected = new THREE.Vector3();
-	const toPoint = new THREE.Vector3();
-	const raycaster = new THREE.Raycaster();
-	/** id -> resolved owner object (re-resolved on a slow schedule, not per frame) */
-	const owners = new Map<string, any>();
-	/** id -> last occlusion verdict (raycasts are throttled) */
-	const occluded = new Map<string, boolean>();
-	let lastResolve = 0;
-	let lastOcclusion = 0;
-
-	function resolveOwners(list: any[]) {
-		owners.clear();
-		for (const a of list) owners.set(a.id, annotationOwner(a.objectUuid));
-	}
-
-	/** Is `point` genuinely behind scene geometry, ignoring anything within the slack? */
-	function isOccluded(camera: any, point: THREE.Vector3) {
-		const group = get(objectsGroup);
-		if (!group) return false;
-		toPoint.subVectors(point, camera.position);
-		const distance = toPoint.length();
-		if (distance <= OCCLUSION_SLACK) return false;
-		raycaster.set(camera.position, toPoint.normalize());
-		raycaster.near = 0;
-		raycaster.far = distance - OCCLUSION_SLACK;
-		const hits = raycaster.intersectObject(group, true);
-		// three does not filter hidden objects for us — a hidden mesh must not occlude
-		return hits.some((hit) => {
-			for (let node: any = hit.object; node && node !== group; node = node.parent)
-				if (!node.visible) return false;
-			return true;
-		});
-	}
 
 	function when(ts: number) {
 		try {
@@ -109,69 +57,27 @@
 		}
 	}
 
-	$effect(() => {
-		if (!enabled) {
-			markers = [];
-			return;
-		}
-		let raf = requestAnimationFrame(step);
-		function step() {
-			raf = requestAnimationFrame(step);
-			const list = get(annotations);
-			const camera: any = get(globalCamera);
-			const renderer: any = get(globalRenderer);
-			if (!list.length || !camera || !renderer?.domElement) {
-				if (markers.length) markers = [];
-				return;
-			}
-			const now = performance.now();
-			if (now - lastResolve > 250 || owners.size !== list.length) {
-				lastResolve = now;
-				resolveOwners(list);
-			}
-			const testOcclusion = now - lastOcclusion > OCCLUSION_MS;
-			if (testOcclusion) lastOcclusion = now;
-			const rect = renderer.domElement.getBoundingClientRect();
-
-			/** @type {Marker[]} */
-			const next: Marker[] = [];
-			list.forEach((a, index) => {
-				const owner = owners.get(a.id);
-				if (!owner) return;
-				owner.localToWorld(world.fromArray(a.offset));
-				projected.copy(world).project(camera);
-				if (projected.z >= 1) return; // behind the camera
-				const px = rect.left + ((projected.x + 1) / 2) * rect.width;
-				const py = rect.top + ((1 - projected.y) / 2) * rect.height;
-				if (px < -80 || py < -80 || px > window.innerWidth + 80 || py > window.innerHeight + 80)
-					return; // off-screen: skip the raycast too
-				if (testOcclusion) occluded.set(a.id, isOccluded(camera, world));
-				const distance = camera.position.distanceTo(world);
-				if (distance < NEAR_HIDE) return;
-				const color = a.color || DEFAULT_NOTE_COLOR;
-				next.push({
-					id: a.id,
-					color,
-					ink: contrastOn(color),
-					shape: a.shape || 'round',
-					number: index + 1,
-					title: displayName(a),
-					author: displayAuthor(a),
-					when: when(a.ts),
-					text: a.text || '',
-					x: px,
-					y: py - LEADER,
-					px,
-					py,
-					occluded: occluded.get(a.id) ?? false,
-					fade: distance < NEAR_FADE ? 0.35 : 1,
-					cluster: null
-				});
-			});
-			markers = cluster(next);
-		}
-		return () => cancelAnimationFrame(raf);
-	});
+	const markers = $derived(
+		cluster(
+			$noteMarkers.map((view) => ({
+				id: view.id,
+				color: view.color,
+				ink: view.ink,
+				number: view.number,
+				title: view.title,
+				author: view.author,
+				when: when(view.ts),
+				text: view.text,
+				x: view.px,
+				y: view.py - LEADER,
+				px: view.px,
+				py: view.py,
+				occluded: view.occluded,
+				fade: view.fade,
+				cluster: null
+			}))
+		)
+	);
 
 	/**
 	 * Greedy screen-space clustering in note order (deterministic): a marker joins
@@ -229,7 +135,7 @@
 	}
 </script>
 
-{#if enabled && markers.length}
+{#if markers.length}
 	<!-- leader lines live in one SVG under the badges; the whole layer is
 	     pointer-transparent so the viewport keeps every drag it had -->
 	<svg class="marker-lines" aria-hidden="true">
@@ -274,13 +180,12 @@
 
 	<div class="marker-layer">
 		{#each markers as marker (marker.id)}
-			{@const Icon = marker.cluster ? Layers : ICONS[marker.shape] ?? MessageSquare}
+			{@const Icon = marker.cluster ? Layers : MessageSquare}
 			<button
 				class="marker-badge"
 				class:is-occluded={marker.occluded}
 				class:is-active={!marker.cluster && active === marker.id}
 				class:is-cluster={!!marker.cluster}
-				class:is-square={marker.shape === 'square' && !marker.cluster}
 				style="
 					left:{marker.x}px; top:{marker.y}px; opacity:{marker.fade};
 					--fill:{marker.occluded ? rgbaOf(marker.color, 0.5) : marker.color};
@@ -356,9 +261,6 @@
 			border-color 120ms ease;
 		pointer-events: auto;
 		cursor: pointer;
-	}
-	.marker-badge.is-square {
-		border-radius: 8px;
 	}
 	.marker-badge :global(svg) {
 		opacity: 0.75;

@@ -18,6 +18,18 @@ export const activeAnnotation = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const pinsGroup = writable(null);
 
+/**
+ * V3: per-frame screen positions for the DOM marker layer, published from INSIDE
+ * threlte's frame scheduler (AnnotationPins.svelte) so the badge is derived from
+ * the very camera pose that rendered the frame. A separate `requestAnimationFrame`
+ * loop is one frame off whenever it happens to run before the scheduler tick —
+ * that was the marker "jiggle" while orbiting, and why it disappeared after an
+ * XR session (entering VR re-registers threlte's loop, flipping the order).
+ * LOCAL and transient — never replicated, never persisted.
+ * @type {import('svelte/store').Writable<any[]>}
+ */
+export const noteMarkers = writable([]);
+
 /** H3: LOCAL pref — pins visible in the viewport (not replicated) */
 export const showNotePins = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('showNotePins') !== 'false'

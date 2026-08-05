@@ -1,15 +1,18 @@
 <script lang="ts">
 	import * as THREE from 'three'
-	import { T, useTask, useThrelte } from '@threlte/core'
+	import { T, useTask, useThrelte, useScheduler } from '@threlte/core'
 	// @ts-ignore - Text typing clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
 	import {
 		annotations,
 		pinsGroup,
 		showNotePins,
-		DEFAULT_NOTE_COLOR,
+		noteMarkers,
+		displayName,
+		displayAuthor,
+		contrastOn,
 		shadeHex,
-		contrastOn
+		DEFAULT_NOTE_COLOR
 	} from '$lib/annotationsHandler'
 	import { objectsGroup, globalScene, isVRMode } from '../stores/sceneStore'
 
@@ -30,7 +33,7 @@
 	// pass survives dimly, and the number never depth-tests so an overlapping pin
 	// can't hide it. Shapes (round/star/square) + a darker border + contrast ink.
 
-	const { camera } = useThrelte()
+	const { camera, renderer } = useThrelte()
 
 	let root: any
 	$: pinsGroup.set(root ?? null)
@@ -124,6 +127,98 @@
 			// separate follow-up (pre-existing; desktop + normal VR are unaffected).
 		})
 	})
+
+	// --- screen positions for the DOM marker layer ------------------------------
+	// This runs in the RENDER stage, i.e. AFTER the main stage where OrbitControls
+	// calls controls.update(). A plain requestAnimationFrame loop (what the marker
+	// component used to own) is a separate callback queue: when it happened to run
+	// before threlte's tick it projected LAST frame's camera, so the badge trailed
+	// the geometry by a frame while orbiting — the reported jiggle. It "fixed
+	// itself" after an XR session only because entering VR re-registers threlte's
+	// loop and flips the callback order.
+	const { renderStage } = useScheduler()
+	const OCCLUSION_SLACK = 0.08 // 8cm — geometry this close never counts as cover
+	const OCCLUSION_MS = 120 // raycast budget: ~8Hz; positions stay per-frame
+	const NEAR_FADE = 0.9 // metres: fade when the camera is right on top of a marker
+	const NEAR_HIDE = 0.35
+
+	const anchor = new THREE.Vector3()
+	const projected = new THREE.Vector3()
+	const toPoint = new THREE.Vector3()
+	const raycaster = new THREE.Raycaster()
+	const occlusion = new Map<string, boolean>()
+	let lastOcclusion = 0
+
+	/** Is `point` genuinely behind scene geometry, ignoring anything within the slack? */
+	function isOccluded(cameraPos: THREE.Vector3, point: THREE.Vector3) {
+		const group = $objectsGroup
+		if (!group) return false
+		toPoint.subVectors(point, cameraPos)
+		const distance = toPoint.length()
+		if (distance <= OCCLUSION_SLACK) return false
+		raycaster.set(cameraPos, toPoint.normalize())
+		raycaster.near = 0
+		raycaster.far = distance - OCCLUSION_SLACK
+		// three does not skip hidden objects for us — a hidden mesh must not occlude
+		return raycaster.intersectObject(group, true).some((hit) => {
+			for (let node: any = hit.object; node && node !== group; node = node.parent)
+				if (!node.visible) return false
+			return true
+		})
+	}
+
+	useTask(
+		() => {
+			if (!$showNotePins || $isVRMode) {
+				if ($noteMarkers.length) noteMarkers.set([])
+				return
+			}
+			const cam = camera.current as any
+			const element = renderer?.domElement
+			if (!cam || !element || !$annotations.length) {
+				if ($noteMarkers.length) noteMarkers.set([])
+				return
+			}
+			const now = performance.now()
+			const testOcclusion = now - lastOcclusion > OCCLUSION_MS
+			if (testOcclusion) lastOcclusion = now
+			const rect = element.getBoundingClientRect()
+			cam.getWorldPosition(cameraPosition)
+
+			const views: any[] = []
+			$annotations.forEach((annotation, index) => {
+				const pin = pinRefs[annotation.id]
+				if (!pin || !pin.visible) return
+				pin.getWorldPosition(anchor)
+				projected.copy(anchor).project(cam)
+				if (projected.z >= 1) return // behind the camera
+				const x = rect.left + ((projected.x + 1) / 2) * rect.width
+				const y = rect.top + ((1 - projected.y) / 2) * rect.height
+				if (x < -80 || y < -80 || x > window.innerWidth + 80 || y > window.innerHeight + 80)
+					return // off-screen: skip the raycast too
+				if (testOcclusion) occlusion.set(annotation.id, isOccluded(cameraPosition, anchor))
+				const distance = cameraPosition.distanceTo(anchor)
+				if (distance < NEAR_HIDE) return
+				const color = fillOf(annotation)
+				views.push({
+					id: annotation.id,
+					number: index + 1,
+					color,
+					ink: contrastOn(color),
+					title: displayName(annotation),
+					author: displayAuthor(annotation),
+					ts: annotation.ts,
+					text: annotation.text || '',
+					px: x,
+					py: y,
+					occluded: occlusion.get(annotation.id) ?? false,
+					fade: distance < NEAR_FADE ? 0.35 : 1
+				})
+			})
+			noteMarkers.set(views)
+		},
+		{ stage: renderStage }
+	)
 </script>
 
 <!-- H3: the pins group hides wholesale with the LOCAL showNotePins pref (the

@@ -264,7 +264,9 @@
 						></button>
 					{/each}
 				</div>
-				<span class="note-caption">Pin shape</span>
+				<!-- shape is a VR-only distinction now: every 2D marker is the same pill
+				     so the overlay reads consistently (user call) -->
+				<span class="note-caption">Pin shape — VR only</span>
 				<div class="note-shapes" role="group" aria-label="Pin shape">
 					{#each NOTE_SHAPES as s (s)}
 						{@const ShapeIcon = SHAPE_ICONS[s]}

@@ -31,7 +31,7 @@
 				{capturing ? 'Capturing… (click scene)' : 'Capture clicks'}
 			</button>
 			<button
-				class="nodrag rounded bg-gray-600 px-1 py-0.5 text-white"
+				class="nodrag rounded-sm bg-gray-600 px-1 py-0.5 text-white"
 				on:click={() => setNodeData(id, { points: [] })}
 			>
 				Clear

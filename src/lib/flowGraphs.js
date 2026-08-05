@@ -10,6 +10,13 @@ import {
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import { removeEmbedsOf } from './objectFlow';
+import {
+	createFlowNode,
+	createFlowEdge,
+	deleteFlowNodes,
+	deleteFlowEdges,
+	updateFlowNodeData
+} from './nodesHandler';
 
 // H1 (flow v2): object-flow lifecycle -- create/delete graph documents,
 // replicated (graphcreate/graphdelete) and undoable (the 'flowgraph' history
@@ -93,6 +100,64 @@ registerHistoryKind('flowgraph', (entry, state) => {
 		}
 	} else {
 		deleteObjectGraph(entry.uuid, { record: false });
+	}
+	return true;
+});
+
+// 'flownodes' history kind (AI flow tools): node/edge creation, data edits and
+// removals INSIDE one graph as a single undoable entry. Entries carry
+// SERIALIZED node/edge copies (serializeNode/serializeEdge shapes) so replayed
+// re-broadcasts hash identically on every peer (nodesync drift guard).
+
+/**
+ * Record an undoable flow-node mutation.
+ * op 'create'/'delete' take {nodes, edges} (serialized); op 'data' takes
+ * {items: [{id, before, after}]} of node-data patches.
+ * @param {{op: 'create'|'delete'|'data', graphId: string, nodes?: any[],
+ *   edges?: any[], items?: {id: string, before: any, after: any}[]}} info
+ */
+export function recordFlowNodesEntry(info) {
+	recordEntry({ kind: 'flownodes', ...info, before: 'before', after: 'after' });
+}
+
+registerHistoryKind('flownodes', (entry, state) => {
+	const undoing = state === entry.before;
+	/** @type {any} */
+	const peer = get(peers);
+	const graphId = entry.graphId;
+	if (entry.op === 'data') {
+		for (const item of entry.items ?? []) {
+			const data = undoing ? item.before : item.after;
+			updateFlowNodeData(item.id, data, graphId);
+			if (peer) peer.send({ type: 'nodedata', id: item.id, data, graphId });
+		}
+		return true;
+	}
+	const removing = entry.op === 'create' ? undoing : !undoing;
+	if (removing) {
+		const edgeIds = (entry.edges ?? []).map((/** @type {any} */ e) => e.id);
+		const nodeIds = (entry.nodes ?? []).map((/** @type {any} */ n) => n.id);
+		if (edgeIds.length) deleteFlowEdges(edgeIds, graphId);
+		if (nodeIds.length) deleteFlowNodes(nodeIds, graphId);
+		if (peer) {
+			if (edgeIds.length) peer.send({ type: 'edgedelete', ids: edgeIds, graphId });
+			if (nodeIds.length) peer.send({ type: 'nodedelete', ids: nodeIds, graphId });
+		}
+	} else {
+		// resurrect the graph document defensively (redo after its owner graph
+		// was deleted, or undo of a delete in a fresh session)
+		if (graphId !== SCENE_GRAPH && !graphExists(graphId)) {
+			updateGraph(graphId, () => ({ nodes: [], edges: [] }));
+			if (peer) peer.send({ type: 'graphcreate', uuid: graphId });
+		}
+		for (const node of entry.nodes ?? []) {
+			createFlowNode({ ...node }, graphId);
+			if (peer) peer.send({ type: 'nodecreate', node, graphId });
+		}
+		for (const edge of entry.edges ?? []) {
+			createFlowEdge({ ...edge }, graphId);
+			if (peer) peer.send({ type: 'edgecreate', edge, graphId });
+		}
 	}
 	return true;
 });

@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands } from '../stores/sceneStore.js';
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
 import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
 import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
-import { physicsPeerDisconnected } from '$lib/physics'
+import { physicsPeerDisconnected, physicsShapeChanged } from '$lib/physics'
 import { dropPeerCursor } from '$lib/nodesHandler'
 import { dropPeerQuality } from '$lib/networkQuality'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
@@ -15,6 +15,7 @@ import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimat
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
+import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
 import { get } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { peers, userdata } from '../stores/appStore';
@@ -112,6 +113,9 @@ export function sceneCommand(command) {
         if (command.startsWith('/clear')) {
             if (command.split(' ')[1] == 'all')
             {
+                // 15-J: viewer send-gate — peers drop a viewer's clearscene (cloud
+                // capability gate), so clearing locally would only desync this client.
+                if (isViewer()) { warnViewerReadOnly('View-only — ask an editor to clear the scene.'); return; }
                 clearSceneLocal();
                 peer.send({type: 'clearscene', peerId: peer.peer.id});
             } else {
@@ -363,6 +367,8 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.physics) mesh.userData.physics = data.physics;
             else delete mesh.userData.physics;
+            objectsGroup.update((value) => value); // collider viz re-syncs
+            physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
         }
     } else if (data.parameter == 'particles') {
         // PFX-A: userData.particles is the emitter config (Inspector/menus set
@@ -372,6 +378,16 @@ export async function objectParameters(data) {
             if (data.particles) mesh.userData.particles = data.particles;
             else delete mesh.userData.particles;
             objectsGroup.update((value) => value);
+        }
+    } else if (data.parameter == 'camera') {
+        // 16-P5: userData.camera holds a camera OBJECT's lens + framing settings
+        // (the marker is a normal mesh; the preview camera and the frustum viz are
+        // built from this at the scene root). null = cleared.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.camera) mesh.userData.camera = data.camera;
+            else delete mesh.userData.camera;
+            objectsGroup.update((value) => value); // frustum viz + preview re-read
         }
     } else if (data.parameter == 'renderOrder') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);

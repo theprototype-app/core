@@ -7,9 +7,9 @@
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { measureMode, toggleMeasure } from '$lib/measure';
-	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks } from '$lib/cameraBookmarks';
-	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject } from '../../stores/sceneStore';
-	import { viewportMenu, objectSearch, objectSearchEnabled } from '../../stores/appStore';
+	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks, SHORTCUT_SLOTS } from '$lib/cameraBookmarks';
+	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
+	import { viewportMenu, objectSearch, objectSearchEnabled, openSceneSection } from '../../stores/appStore';
 	import { buildAddChildren } from '$lib/addObjects';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import { sendPing } from '$lib/ping';
@@ -37,25 +37,51 @@
 		});
 	}
 
-	function snapSizeItem(key: 'translate' | 'scale', value: number, label: string) {
+	// 16-P3: the active choice is `checked` (bold + accent) instead of a '● ' label
+	// prefix, which shifted the label sideways as it appeared and read as a glitch.
+	/** 16-Q5: 0.8 typed into the panel arrived here as 0.7999999999999999 — binary
+	 *  floats never print cleanly, so every step label and hint goes through this. */
+	const stepLabel = (value: number) => String(Number(Number(value).toFixed(4)));
+	function snapSizeItem(key: 'translate' | 'scale', value: number, label?: string) {
 		return {
-			label: ($snapSettings[key] === value ? '● ' : '') + label,
+			label: label ?? stepLabel(value),
+			checked: $snapSettings[key] === value,
 			action: () => snapSettings.update((s) => ({ ...s, [key]: value }))
 		};
 	}
 	function snapRotItem(value: number) {
 		return {
-			label: ($snapSettings.rotateDeg === value ? '● ' : '') + `Rotate ${value}°`,
+			label: `${stepLabel(value)}°`,
+			checked: $snapSettings.rotateDeg === value,
 			action: () => snapSettings.update((s) => ({ ...s, rotateDeg: value }))
 		};
 	}
+	// 16-Q2: a step typed in Configure Scene has to be reachable — and visible as the
+	// ACTIVE one — here too, so it joins the presets whenever it isn't one of them.
+	function snapRow(key: 'translate' | 'scale', presets: number[]) {
+		const current = $snapSettings[key];
+		const values = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
+		return values.map((value) => snapSizeItem(key, value));
+	}
+	function snapRotRow(presets: number[]) {
+		const current = $snapSettings.rotateDeg;
+		const values = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
+		return values.map((value) => snapRotItem(value));
+	}
 
+	$: hasSelection =
+		$selectedObjects.length > 0 ||
+		(!!$selectedObject?.uuid && $lockedObjects.some((lock: any) => lock[1] === $selectedObject.uuid));
+
+	// 15-Q: same chrome family as the object menu — icons, shortcut hints, quiet
+	// section labels; functionality unchanged.
 	$: items = [
 		// 125: real scene-object search + focus — opt-in via settings, hidden otherwise
 		...($objectSearchEnabled
 			? [
 					{
 						label: 'Search objects…',
+						icon: 'search',
 						tooltip: 'Find a scene object and fly to it',
 						action: () => objectSearch.set({ x: menu.x, y: menu.y })
 					}
@@ -63,36 +89,49 @@
 			: []),
 		{
 			label: 'Add',
+			icon: 'plus',
 			children: buildAddChildren(() => menu?.point ?? null)
 		},
-		{ label: 'Undo', disabled: !$canUndo, tooltip: 'Ctrl+Z', action: undo },
-		{ label: 'Redo', disabled: !$canRedo, tooltip: 'Ctrl+Y', action: redo },
+		{ label: 'Undo', icon: 'undo-2', hint: 'Ctrl+Z', disabled: !$canUndo, action: undo },
+		{ label: 'Redo', icon: 'redo-2', hint: 'Ctrl+Y', disabled: !$canRedo, action: redo },
 		{
 			label: 'Ping here',
+			icon: 'radar',
 			tooltip: 'Everyone sees a pulse at this spot (or Alt+click anywhere)',
 			action: () => sendPing(menu?.point ?? [0, 0, 0])
 		},
 		// 124: everything that acts on the CURRENT SELECTION lives in one submenu.
-		// Fixed "Selected" label (object names get very long) + the SAME items as the
-		// direct object right-click menu (buildObjectMenuItems), so the two are in parity.
-		...($selectedObject?.uuid
+		// Fixed "Selected" label (object names get very long — the renderer adds the
+		// ▸ chevron itself) + the SAME items as the direct object right-click menu
+		// (buildObjectMenuItems), so the two are in parity.
+		// 16-P6: gate on the live SET — `selectedObject` is STICKY (it keeps the last
+		// object after a deselect so the open inspector has something to bind to), so
+		// this submenu used to linger after clicking empty space. The one legitimate
+		// empty-set state is VIEWING a peer-locked object (15-K), which keeps its
+		// view-only actions (Request control, Focus…).
+		...(hasSelection
 			? [
 					{
-						label: 'Selected ▸',
+						label: 'Selected',
+						icon: 'box',
 						children: buildObjectMenuItems($selectedObject.uuid)
 					}
 				]
 			: []),
+		{ section: 'Tools & view' },
 		{
 			label: 'Tools',
+			icon: 'wrench',
 			children: [
 				{
-					label: ($drawMode ? '● ' : '') + 'Draw mode',
+					label: 'Draw mode',
+					checked: $drawMode,
 					tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
 					action: toggleDrawMode
 				},
 				{
 					label: $measureMode ? 'Stop measuring' : 'Measure distance',
+					checked: $measureMode,
 					tooltip: 'Click two points; Esc stops',
 					action: () => toggleMeasure()
 				},
@@ -120,56 +159,100 @@
 			]
 		},
 		{
+			// 16-P3: sectioned instead of one flat run of steps — the parent row shows
+			// the live values so you can read the current setup without opening it
 			label: 'Snapping',
+			icon: 'grid-3x3',
+			hint: $snapEnabled
+				? `${stepLabel($snapSettings.translate)} · ${stepLabel($snapSettings.rotateDeg)}° · ${stepLabel($snapSettings.scale)}`
+				: 'off',
 			children: [
 				{
 					label: $snapEnabled ? 'Disable snapping' : 'Enable snapping',
+					icon: 'magnet',
 					action: () => snapEnabled.update((v) => !v)
 				},
-				snapSizeItem('translate', 0.1, 'Grid 0.1'),
-				snapSizeItem('translate', 0.5, 'Grid 0.5'),
-				snapSizeItem('translate', 1, 'Grid 1'),
-				snapRotItem(5),
-				snapRotItem(15),
-				snapRotItem(45),
-				snapSizeItem('scale', 0.05, 'Scale 0.05'),
-				snapSizeItem('scale', 0.1, 'Scale 0.1'),
+				{ section: 'Position' },
+				...snapRow('translate', [0.1, 0.25, 0.5, 1]),
+				{ section: 'Rotation' },
+				...snapRotRow([5, 15, 45, 90]),
+				{ section: 'Scale' },
+				...snapRow('scale', [0.05, 0.1, 0.25]),
+				{ section: 'Surface' },
 				{
-					label: ($surfaceSnap ? '● ' : '') + 'Snap to surface',
+					label: 'Snap to surface',
+					checked: $surfaceSnap,
 					tooltip: 'Dragged objects rest on whatever is underneath',
 					action: () => surfaceSnap.update((v) => !v)
+				},
+				{ section: ' ' },
+				{
+					label: 'More snapping settings…',
+					icon: 'sliders-horizontal',
+					tooltip: 'Custom steps live in Configure Scene ▸ Snapping',
+					action: () => openSceneSection('Snapping')
 				}
 			]
 		},
 		{
 			label: 'View',
+			icon: 'eye',
 			children: [
 				{
-					label: $showGrid ? 'Hide grid' : 'Show grid',
+					label: 'Show grid',
+					checked: !!$showGrid,
 					action: () => {
 						showGrid.update((v) => !v);
 						if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
 						else localStorage.setItem('showGrid', 'false');
 					}
 				},
-				{ label: 'Screenshot', action: screenshot }
+				{
+					label: 'Grid & axes settings…',
+					icon: 'sliders-horizontal',
+					tooltip: 'Cell size, colours, fade and the origin axes (Configure Scene ▸ Grid)',
+					action: () => openSceneSection('Grid')
+				},
+				{ label: 'Screenshot', icon: 'camera', action: screenshot }
 			]
 		},
 		{
+			// 16-P4: bookmarks are NAMED now (and unlimited) — list them by name with
+			// the Shift+N hint on the first five; managing them lives in the panel
 			label: 'Camera bookmarks',
+			icon: 'camera',
+			hint: $bookmarks.length ? String($bookmarks.length) : '',
 			children: [
-				{ label: 'Save current view', action: () => saveBookmark() },
+				{ label: 'Save current view', icon: 'plus', action: () => saveBookmark() },
+				...($bookmarks.length ? [{ section: 'Saved views' }] : []),
 				...$bookmarks.map((bookmark, index) => ({
-					label: `View ${index + 1} — ${new Date(bookmark.ts).toLocaleTimeString()}`,
-					tooltip: `Shift+${index + 1}`,
+					label: bookmark.name,
+					hint: index < SHORTCUT_SLOTS ? `⇧${index + 1}` : '',
+					tooltip: bookmark.lens
+						? `Restores the view and its lens (${Math.round(bookmark.lens.fov)}° FOV)`
+						: 'Saved before lenses were stored — restores the view only',
 					action: () => recallBookmark(index)
 				})),
-				{ label: 'Clear bookmarks', disabled: $bookmarks.length === 0, action: () => clearBookmarks() }
+				{ section: ' ' },
+				{
+					label: 'Manage saved views…',
+					icon: 'sliders-horizontal',
+					tooltip: 'Rename, re-shoot, reorder or delete (Configure Scene ▸ Camera)',
+					// 16-Q5: land on SAVED VIEWS, not the top of the Camera section
+					action: () => openSceneSection('Camera:Saved views')
+				},
+				{
+					label: 'Clear bookmarks',
+					icon: 'trash-2',
+					danger: true,
+					disabled: $bookmarks.length === 0,
+					action: () => clearBookmarks()
+				}
 			]
 		}
 	];
 </script>
 
 {#if menu}
-	<ContextMenu x={menu.x} y={menu.y} {items} on:close={close} />
+	<ContextMenu x={menu.x} y={menu.y} {items} sizeKey="viewport" on:close={close} />
 {/if}

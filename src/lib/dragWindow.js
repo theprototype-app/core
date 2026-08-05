@@ -32,9 +32,13 @@ export function resetWindowLayout() {
 
 /**
  * @param {any} node
- * @param {{key: string, defaultRect?: {left?: number, top?: number, right?: number, bottom?: number}}} options
+ * @param {{key: string, defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
+ *   resizable?: boolean, minW?: number, minH?: number}} options
+ *   `resizable` (15-B7) adds a bottom-right grabber and persists {w,h} in the
+ *   SAME `win:<key>` record — opt-in, so windows that own their sizing (Flow,
+ *   Explorer, the object list) are untouched.
  */
-export function dragWindow(node, { key, defaultRect = {} }) {
+export function dragWindow(node, { key, defaultRect = {}, resizable = false, minW = 260, minH = 180 }) {
 	/** @type {any} */
 	let rect = null;
 	try {
@@ -72,14 +76,31 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 		rect.top = Math.min(Math.max(minTop, rect.top), Math.max(minTop, window.innerHeight - keepY));
 	}
 
+	/** clamp a persisted size into the current viewport (B7) */
+	function clampSize() {
+		if (typeof rect.w === 'number') rect.w = Math.max(minW, Math.min(rect.w, window.innerWidth - 16));
+		if (typeof rect.h === 'number') rect.h = Math.max(minH, Math.min(rect.h, window.innerHeight - 16));
+	}
+
 	function apply() {
+		if (resizable) {
+			clampSize();
+			if (typeof rect.w === 'number') node.style.width = rect.w + 'px';
+			if (typeof rect.h === 'number') node.style.height = rect.h + 'px';
+		}
 		if (typeof rect.left !== 'number' || typeof rect.top !== 'number') return;
 		node.style.left = rect.left + 'px';
 		node.style.top = rect.top + 'px';
 	}
 
 	function save() {
-		localStorage.setItem('win:' + key, JSON.stringify({ left: rect.left, top: rect.top }));
+		/** @type {any} */
+		const payload = { left: rect.left, top: rect.top };
+		if (resizable && typeof rect.w === 'number') {
+			payload.w = rect.w;
+			payload.h = rect.h;
+		}
+		localStorage.setItem('win:' + key, JSON.stringify(payload));
 	}
 
 	// right/bottom-anchored defaults need the rendered size — resolve on the
@@ -130,6 +151,11 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 			localStorage.removeItem('win:' + key);
 		} catch {}
 		rect = { ...defaultRect };
+		if (resizable) {
+			// drop a persisted size too — back to the CSS default
+			node.style.removeProperty('width');
+			node.style.removeProperty('height');
+		}
 		if (typeof rect.left === 'number' && typeof rect.top === 'number') {
 			clamp(true);
 			apply();
@@ -171,10 +197,68 @@ export function dragWindow(node, { key, defaultRect = {} }) {
 	node.addEventListener('pointermove', move);
 	node.addEventListener('pointerup', up);
 
+	// --- B7: opt-in resize grabber (bottom-right), Flow's corner-resize feel ---
+	/** @type {any} */
+	let grabber = null;
+	if (resizable && typeof document !== 'undefined') {
+		grabber = document.createElement('div');
+		grabber.className = 'dw-resize';
+		grabber.title = 'Drag to resize';
+		// built in JS (no markup change needed in every consumer); the diagonal
+		// hint is drawn with a gradient so it needs no icon import
+		grabber.style.cssText =
+			'position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:se-resize;' +
+			'touch-action:none;z-index:2;background:linear-gradient(135deg,transparent 45%,' +
+			'rgb(255 255 255 / 0.35) 45%,rgb(255 255 255 / 0.35) 55%,transparent 55%);';
+		node.appendChild(grabber);
+
+		let sizing = false;
+		/** @param {any} e */
+		const gdown = (e) => {
+			sizing = true;
+			// take the CURRENT rendered size as the baseline (the window may still be
+			// on its CSS default size, with nothing persisted yet)
+			rect.w = node.offsetWidth;
+			rect.h = node.offsetHeight;
+			grabber.setPointerCapture?.(e.pointerId);
+			e.preventDefault();
+			e.stopPropagation(); // never start a drag from the corner
+		};
+		/** @param {any} e */
+		const gmove = (e) => {
+			if (!sizing) return;
+			rect.w = (rect.w ?? node.offsetWidth) + e.movementX;
+			rect.h = (rect.h ?? node.offsetHeight) + e.movementY;
+			apply();
+		};
+		/** @param {any} e */
+		const gup = (e) => {
+			if (!sizing) return;
+			sizing = false;
+			grabber.releasePointerCapture?.(e.pointerId);
+			clamp(false);
+			apply();
+			save();
+		};
+		grabber.addEventListener('pointerdown', gdown);
+		grabber.addEventListener('pointermove', gmove);
+		grabber.addEventListener('pointerup', gup);
+	}
+
+	// a shrinking viewport must not strand a window at a size that no longer fits
+	const onWindowResize = () => {
+		if (!resizable) return;
+		clampSize();
+		apply();
+	};
+	window.addEventListener('resize', onWindowResize);
+
 	return {
 		destroy() {
 			unregisterReset();
 			io?.disconnect();
+			window.removeEventListener('resize', onWindowResize);
+			grabber?.remove();
 			node.removeEventListener('pointerdown', down);
 			node.removeEventListener('pointermove', move);
 			node.removeEventListener('pointerup', up);

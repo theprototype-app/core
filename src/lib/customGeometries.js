@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Architectural building-block geometries. All builders return a BufferGeometry
 // centered on X/Z and resting on y=0 (bbox bottom at the floor), so surface
@@ -98,11 +99,34 @@ function terrain(a, b) {
 	return geometry;
 }
 
+/**
+ * 16-P5: the body of a scene CAMERA object — a small box with a lens cone
+ * pointing down -Z (three's camera view direction), so the marker reads as
+ * "looking that way" and `getWorldDirection()` agrees with what you see. Unlike
+ * the blocks above it is centered on its ORIGIN (a camera has no floor).
+ * @param {any} a scale (defaults to 1)
+ */
+function cameraBody(a) {
+	const scale = num(a, 1);
+	const box = new THREE.BoxGeometry(0.36 * scale, 0.26 * scale, 0.42 * scale);
+	const lens = new THREE.CylinderGeometry(0.07 * scale, 0.13 * scale, 0.2 * scale, 12);
+	// cylinders build along +Y — lay it along -Z and push it out the front
+	lens.rotateX(-Math.PI / 2);
+	lens.translate(0, 0, -0.3 * scale);
+	const merged = mergeGeometries([box, lens], false) ?? box;
+	box.dispose?.();
+	lens.dispose?.();
+	return merged;
+}
+
 /** @type {Record<string, (a?: any, b?: any, c?: any, d?: any) => THREE.BufferGeometry>} */
 export const customGeometryBuilders = {
 	Wedge: wedge,
 	Stairs: stairs,
 	Arch: arch,
 	Corner: corner,
-	Terrain: terrain
+	Terrain: terrain,
+	// both camera kinds share one body; the KIND lives in userData.camera
+	Camera: cameraBody,
+	CameraOrtho: cameraBody
 };

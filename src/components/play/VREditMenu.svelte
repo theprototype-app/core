@@ -48,7 +48,7 @@
 			// 212: granularity + multi toggles above the ops
 			const nSel = $faceEditSelectedTris.length
 			list.push(
-				{ action: 'edit:granularity', label: `Select: ${$faceEditGranularity === 'polygon' ? 'Polygon' : 'Face'}`, active: $faceEditGranularity === 'polygon' },
+				{ action: 'edit:granularity', label: `Select: ${$faceEditGranularity === 'shell' ? 'Shell' : $faceEditGranularity === 'face' ? 'Face' : 'Triangle'}`, active: $faceEditGranularity !== 'face' },
 				{ action: 'edit:multi', label: `Multi: ${$faceEditMulti ? 'On' : 'Off'}${$faceEditMulti && nSel ? ` (${nSel})` : ''}`, active: $faceEditMulti },
 				{ action: 'face:extrude', label: 'Extrude', active: op === 'extrude' },
 				{ action: 'face:inset', label: 'Inset', active: op === 'inset' },

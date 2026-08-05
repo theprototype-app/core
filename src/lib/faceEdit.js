@@ -51,6 +51,63 @@ function keyOf(x, y, z) {
 }
 
 /**
+ * Union-find over welded vertex keys: the connected components ("shells") of
+ * a triangle soup — a merged-in primitive is one shell, a plane floating off
+ * a box is another. Shared by Shell granularity (CL-B) and custom-collider
+ * piece splitting (CL-A A8). @param {any[]} tris @returns {number[][]} tri-index groups
+ */
+export function shellsOfTris(tris) {
+	const n = tris.length;
+	const parent = [...Array(n).keys()];
+	const find = (/** @type {number} */ a) => {
+		while (parent[a] !== a) {
+			parent[a] = parent[parent[a]];
+			a = parent[a];
+		}
+		return a;
+	};
+	const union = (/** @type {number} */ a, /** @type {number} */ b) => {
+		parent[find(a)] = find(b);
+	};
+	/** @type {Map<string, number>} first tri seen per welded vertex key */
+	const byKey = new Map();
+	tris.forEach((t, ti) => {
+		for (const v of t) {
+			const k = keyOf(v.x, v.y, v.z);
+			const first = byKey.get(k);
+			if (first === undefined) byKey.set(k, ti);
+			else union(first, ti);
+		}
+	});
+	/** @type {Map<number, number[]>} */
+	const groups = new Map();
+	for (let ti = 0; ti < n; ti++) {
+		const root = find(ti);
+		let list = groups.get(root);
+		if (!list) groups.set(root, (list = []));
+		list.push(ti);
+	}
+	return [...groups.values()];
+}
+
+// ---- CL-A A8: scene-root edit proxy ----------------------------------------
+// The custom-collider session edits a PROXY mesh at the scene root (never in
+// objectsGroup, so it can't leak into GLTF sync). objectsGroup lookups in the
+// edit tools fall back to it; peers never learn its uuid, so replicated edit
+// messages (verts/meshgeo/lock) NO-OP on their side.
+/** @type {any} */ let editProxy = null;
+/** @param {any} object the live proxy mesh, or null to clear */
+export function registerEditProxy(object) {
+	editProxy = object;
+}
+/** objectsGroup lookup that also finds the registered edit proxy @param {string} uuid */
+export function lookupEditable(uuid) {
+	const found = get(objectsGroup)?.getObjectByProperty('uuid', uuid) ?? null;
+	if (found) return found;
+	return editProxy && editProxy.uuid === uuid ? editProxy : null;
+}
+
+/**
  * Read a geometry into triangles [[Vector3,Vector3,Vector3], ...] (index
  * expanded). @param {any} geometry
  */
@@ -246,6 +303,162 @@ export function deleteFaceTris(tris, face) {
 	return cloneTris(tris.filter((_, ti) => !faceSet.has(ti)));
 }
 
+/** B4: subdivide each target tri into 4 via edge midpoints. Midpoints of an
+ * edge shared by two SELECTED tris coincide numerically, so the selection
+ * stays stitched (an unselected neighbor keeps its full edge — a T-junction,
+ * visually seamless on a plane). @param {any[]} tris @param {number[]} targetTris */
+export function subdivideFaceTris(tris, targetTris) {
+	const targets = new Set(targetTris);
+	/** @type {any[]} */
+	const out = [];
+	tris.forEach((t, ti) => {
+		if (!targets.has(ti)) {
+			out.push([t[0].clone(), t[1].clone(), t[2].clone()]);
+			return;
+		}
+		const [a, b, c] = t;
+		const ab = a.clone().add(b).multiplyScalar(0.5);
+		const bc = b.clone().add(c).multiplyScalar(0.5);
+		const ca = c.clone().add(a).multiplyScalar(0.5);
+		out.push(
+			[a.clone(), ab.clone(), ca.clone()],
+			[ab.clone(), b.clone(), bc.clone()],
+			[ca.clone(), bc.clone(), c.clone()],
+			[ab, bc, ca]
+		);
+	});
+	return out;
+}
+
+/** B4: reverse the winding (swap b/c) of the target tris — flips their
+ * normals. @param {any[]} tris @param {number[]} targetTris */
+export function flipFaceNormals(tris, targetTris) {
+	const targets = new Set(targetTris);
+	return tris.map((t, ti) =>
+		targets.has(ti)
+			? [t[0].clone(), t[2].clone(), t[1].clone()]
+			: [t[0].clone(), t[1].clone(), t[2].clone()]
+	);
+}
+
+/** Ordered boundary LOOP of a tri set: its directed boundary edges walked
+ * p1 -> next p0. Null unless the boundary is ONE closed loop.
+ * @param {any[]} tris @param {number[]} triIndices @returns {any[] | null} */
+function boundaryLoop(tris, triIndices) {
+	const dir = boundaryEdges(tris, { triIndices });
+	if (dir.length < 3) return null;
+	/** @type {Map<string, any>} */
+	const byStart = new Map();
+	for (const e of dir) byStart.set(keyOf(e.p0.x, e.p0.y, e.p0.z), e);
+	const startKey = keyOf(dir[0].p0.x, dir[0].p0.y, dir[0].p0.z);
+	/** @type {any[]} */
+	const loop = [];
+	let edge = dir[0];
+	do {
+		loop.push(edge.p0.clone());
+		edge = byStart.get(keyOf(edge.p1.x, edge.p1.y, edge.p1.z));
+		if (!edge) return null;
+	} while (keyOf(edge.p0.x, edge.p0.y, edge.p0.z) !== startKey && loop.length <= dir.length);
+	return loop.length === dir.length ? loop : null;
+}
+
+/**
+ * B4: bridge exactly TWO multi-selected faces into a tunnel — delete both
+ * caps, stitch quads between their boundary loops (equal edge counts
+ * required), walking both loops from the closest-vertex-pair anchor and
+ * winding each quad OUTWARD from the tunnel axis. Commits + replicates +
+ * records ONE undoable meshgeo. @returns {boolean}
+ */
+export function bridgeFaces() {
+	if (!faceEdited) return false;
+	const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
+	if (!sel.length) {
+		showToast('Multi-select two faces first (Multi on, click both)');
+		return false;
+	}
+	/** @type {Set<number>} logical faces the selection covers */
+	const faceSet = new Set();
+	sel.forEach((/** @type {number} */ ti) => {
+		const fi = faceIndexForTriangle(ti);
+		if (fi >= 0) faceSet.add(fi);
+	});
+	if (faceSet.size !== 2) {
+		showToast('Bridge needs exactly TWO selected faces (' + faceSet.size + ' selected)');
+		return false;
+	}
+	const [fiA, fiB] = [...faceSet];
+	const setA = faces[fiA].triIndices;
+	const setB = faces[fiB].triIndices;
+	const loopA = boundaryLoop(workingTris, setA);
+	const loopB = boundaryLoop(workingTris, setB);
+	if (!loopA || !loopB) {
+		showToast('Bridge faces need one closed boundary each');
+		return false;
+	}
+	if (loopA.length !== loopB.length) {
+		showToast('Bridge needs matching edge counts (' + loopA.length + ' vs ' + loopB.length + ')');
+		return false;
+	}
+	const before = trisToPositions(workingTris);
+	const remove = new Set([...setA, ...setB]);
+	const next = cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !remove.has(ti)));
+	const n = loopA.length;
+	// anchor: the closest vertex pair between the loops
+	let ai = 0,
+		bi = 0,
+		best = Infinity;
+	for (let i = 0; i < n; i++)
+		for (let j = 0; j < n; j++) {
+			const d = loopA[i].distanceToSquared(loopB[j]);
+			if (d < best) {
+				best = d;
+				ai = i;
+				bi = j;
+			}
+		}
+	// walk B forward or backward — whichever keeps the pairing untwisted
+	const pairingCost = (/** @type {number} */ sign) => {
+		let sum = 0;
+		for (let k = 0; k < n; k++)
+			sum += loopA[(ai + k) % n].distanceToSquared(loopB[(((bi + sign * k) % n) + n) % n]);
+		return sum;
+	};
+	const sign = pairingCost(1) <= pairingCost(-1) ? 1 : -1;
+	const centA = new THREE.Vector3();
+	loopA.forEach((/** @type {any} */ p) => centA.add(p));
+	centA.multiplyScalar(1 / n);
+	const centB = new THREE.Vector3();
+	loopB.forEach((/** @type {any} */ p) => centB.add(p));
+	centB.multiplyScalar(1 / n);
+	const axis = centB.clone().sub(centA);
+	for (let k = 0; k < n; k++) {
+		const a0 = loopA[(ai + k) % n];
+		const a1 = loopA[(ai + k + 1) % n];
+		const b0 = loopB[(((bi + sign * k) % n) + n) % n];
+		const b1 = loopB[(((bi + sign * (k + 1)) % n) + n) % n];
+		const mid = a0.clone().add(a1).add(b0).add(b1).multiplyScalar(0.25);
+		// radial OUT from the tunnel axis at this quad = the visible side
+		let wantDir;
+		if (axis.lengthSq() > 1e-9) {
+			const t = Math.min(Math.max(mid.clone().sub(centA).dot(axis) / axis.lengthSq(), 0), 1);
+			wantDir = mid.clone().sub(centA.clone().addScaledVector(axis, t));
+		} else wantDir = mid.clone().sub(centA);
+		if (wantDir.lengthSq() < 1e-9) wantDir = new THREE.Vector3(0, 1, 0);
+		pushQuad(next, a0.clone(), a1.clone(), b1.clone(), b0.clone(), wantDir.normalize());
+	}
+	const positions = trisToPositions(next);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast('That edit is too large to sync');
+		return false;
+	}
+	applyGeometrySnapshot(positions);
+	broadcastMeshGeo(faceEdited.uuid, positions);
+	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: positions });
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	return true;
+}
+
 /** Triangles → a fresh non-indexed BufferGeometry with recomputed normals @param {any[]} tris */
 export function trisToGeometry(tris) {
 	const positions = new Float32Array(tris.length * 9);
@@ -292,8 +505,7 @@ export function stretchPositions(positions, axis, factor) {
  * @param {string} uuid @param {number[]} positions
  */
 export function applyMeshGeo(uuid, positions) {
-	const group = get(objectsGroup);
-	const object = group?.getObjectByProperty('uuid', uuid);
+	const object = lookupEditable(uuid); // A8: also finds the collider-edit proxy
 	if (!object) return;
 	// positions arrive as a plain array (history replays), an ArrayBuffer (the
 	// wire format) or a typed-array VIEW (binarypack may deliver a view into a
@@ -325,11 +537,13 @@ export function applyMeshGeo(uuid, positions) {
 	if (faceEdited === object) {
 		rebuildFaces();
 		refreshFaceOverlay();
+		refreshFaceWireframe(); // B2: remote/undo swap replaced the geometry
 	}
 	// a live sculpt session's weld map is a cache over THIS geometry — rebuild
-	// it after a remote stroke / undo swap (dynamic: terrainSculpt imports us)
+	// it after a remote stroke / undo swap (dynamic: terrainSculpt imports us);
+	// rebuildSculptCaches picks the terrain OR mesh map by the active mode
 	import('./terrainSculpt').then((m) => {
-		if (get(m.sculptObject) === uuid) m.rebuildWeldMap(object);
+		if (get(m.sculptObject) === uuid) m.rebuildSculptCaches(object);
 	});
 	objectsGroup.update((v) => v);
 }
@@ -378,13 +592,60 @@ export function vrFaceEditable(object) {
 	return tris > 0 && tris <= get(vrFaceCap);
 }
 
+// ---- B2: edit-session wireframe (shared by vertex + face modes) ------------
+
+/** @type {any} face-mode wireframe overlay (child of faceEdited) — declared
+ * BEFORE the store: its subscriber runs at module eval (TDZ) */
+let wire = null;
+
+/** wireframe overlay display toggle — honored by BOTH edit modes, local pref */
+export const meshEditWireframe = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('meshEditWireframe') !== 'false'
+);
+meshEditWireframe.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditWireframe', String(value));
+	if (wire) wire.visible = value; // live toggle mid-session (face mode)
+});
+
+/**
+ * The edit-session wireframe overlay: an object-CHILD LineSegments (follows
+ * the transform for free) whose raycast is stubbed out (D8: three raycasts
+ * lines with a 1-world-unit threshold — a live overlay would eat beams/picks
+ * a metre off the surface). Shared with meshEdit's vertex mode. @param {any} object
+ */
+export function buildEditWireframe(object) {
+	const overlay = new THREE.LineSegments(
+		new THREE.WireframeGeometry(object.geometry),
+		new THREE.LineBasicMaterial({ color: 0x2f81f7, transparent: true, opacity: 0.5 })
+	);
+	overlay.name = 'edit-overlay';
+	overlay.raycast = () => {};
+	overlay.visible = get(meshEditWireframe);
+	return overlay;
+}
+
+/** (Re)build the face-mode wireframe from the CURRENT geometry — called on
+ * enter + after every geometry swap (commit, live gesture, remote, undo). */
+function refreshFaceWireframe() {
+	if (wire) {
+		wire.parent?.remove(wire);
+		wire.geometry?.dispose?.();
+		wire.material?.dispose?.();
+		wire = null;
+	}
+	if (!faceEdited) return;
+	wire = buildEditWireframe(faceEdited);
+	faceEdited.add(wire);
+}
+
 // ---- face edit MODE (VR + desktop-parity hook) ----
 
 /** @type {import('svelte/store').Writable<string|null>} uuid in face-edit mode */
 export const faceEditObject = writable(null);
 /** highlighted face index (ray/selection), or -1 @type {import('svelte/store').Writable<number>} */
 export const faceEditHighlight = writable(-1);
-/** armed op for the next commit @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'>} */
+/** armed op for the next commit (B4 adds the one-shots)
+ * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'>} */
 export const faceEditOp = writable('extrude');
 /** live op amount, stick-driven @type {import('svelte/store').Writable<number>} */
 export const faceEditAmount = writable(0.3);
@@ -401,11 +662,19 @@ export function autoApplyFaceOp() {
 	return commitFaceOp(op, get(faceEditAmount));
 }
 
-/** Arm an op (from the Faces sub-ring) @param {'extrude'|'inset'|'move'|'delete'} op */
+/** Arm an op (from the Faces sub-ring / desktop toolbar)
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'} op */
 export function setFaceOp(op) {
 	faceEditOp.set(op);
 	// inset lives in 0..0.9; the others are signed distances
 	faceEditAmount.set(op === 'inset' ? 0.2 : 0.3);
+	// B1 (inset fix): a seated MOVE gizmo intercepts the next face click (the
+	// $TControls.dragging||axis guard skips face dispatch), so the click DRAGGED
+	// the face instead of applying the armed op. Only Move keeps the gizmo.
+	if (typeof window !== 'undefined') {
+		if (op === 'move') attachFaceGizmo();
+		else detachFaceGizmo();
+	}
 }
 
 /** Nudge the live amount (grab-hand stick) @param {number} delta */
@@ -423,11 +692,19 @@ export function commitArmedFaceOp() {
 	return commitFaceOp(op, get(faceEditAmount));
 }
 
-// ---- 212: polygon-select + multiselect ------------------------------------
-/** face-select granularity: 'face' = coplanar group (default), 'polygon' = the
- * single tri under the ray (so an inset cap, coplanar with its frame, isolates)
- * @type {import('svelte/store').Writable<'face'|'polygon'>} */
+// ---- 212: granularity + multiselect (CL-B B3: Face / Triangle / Shell) -----
+/** face-select granularity: 'face' = coplanar group (default), 'triangle' =
+ * the single tri under the ray (was MISLABELED 'polygon' — still accepted at
+ * read time), 'shell' = the whole connected island of welded triangles.
+ * @type {import('svelte/store').Writable<'face'|'triangle'|'shell'|'polygon'>} */
+/** @type {import('svelte/store').Writable<'face'|'triangle'|'shell'|'object'|'polygon'>} */
 export const faceEditGranularity = writable('face');
+
+/** the granularity with the legacy 'polygon' value migrated at read time */
+function granularity() {
+	const g = get(faceEditGranularity);
+	return g === 'polygon' ? 'triangle' : g;
+}
 /** Multi mode: triggers ACCUMULATE picks; ops apply to the whole set */
 export const faceEditMulti = writable(false);
 /** accumulated selected tri indices (into workingTris) in Multi mode @type {import('svelte/store').Writable<number[]>} */
@@ -438,7 +715,14 @@ export const faceEditHoverTri = writable(-1);
 /** The tri indices a single pick selects, per granularity. @param {number} tri */
 function pickFaceUnitTris(tri) {
 	if (tri < 0 || !workingTris[tri]) return [];
-	if (get(faceEditGranularity) === 'polygon') return [tri];
+	const g = granularity();
+	if (g === 'triangle') return [tri];
+	// the WHOLE mesh. Differs from `shell` only when the mesh has SEVERAL
+	// disconnected islands (a merged group, a multi-part import) — on a plain box
+	// or sphere every triangle is one island, so Shell already is the object.
+	if (g === 'object') return workingTris.map((_, i) => i);
+	// B3: shell = the connected component of welded triangles under the ray
+	if (g === 'shell') return shellsOfTris(workingTris).find((group) => group.includes(tri)) ?? [tri];
 	const fi = faceIndexForTriangle(tri);
 	return fi >= 0 ? [...faces[fi].triIndices] : [];
 }
@@ -463,10 +747,21 @@ export function clearFaceSelection() {
 	refreshFaceOverlay();
 }
 
-/** Toggle FACE <-> POLYGON granularity (units differ, so drop the selection) */
-export function toggleFaceGranularity() {
-	faceEditGranularity.update((g) => (g === 'face' ? 'polygon' : 'face'));
+/** B3: set the pick granularity (units differ, so drop the selection).
+ * Legacy 'polygon' maps to 'triangle'. @param {'face'|'triangle'|'shell'|'object'|'polygon'} mode */
+export function setFaceGranularity(mode) {
+	const next = mode === 'polygon' ? 'triangle' : mode;
+	if (!['face', 'triangle', 'shell', 'object'].includes(next)) return;
+	faceEditGranularity.set(/** @type {any} */ (next));
 	clearFaceSelection();
+}
+
+/** Cycle FACE -> TRIANGLE -> SHELL -> OBJECT (VR menu keeps its one toggle button) */
+export function toggleFaceGranularity() {
+	const order = ['face', 'triangle', 'shell', 'object'];
+	setFaceGranularity(
+		/** @type {any} */ (order[(order.indexOf(granularity()) + 1) % order.length])
+	);
 }
 
 /** Toggle Multi mode on/off (drop the accumulated selection either way) */
@@ -481,10 +776,7 @@ export function toggleFaceMulti() {
 function opTargetTris() {
 	if (get(faceEditMulti) && get(faceEditSelectedTris).length)
 		return get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
-	if (get(faceEditGranularity) === 'polygon') {
-		const t = get(faceEditHoverTri);
-		return t >= 0 && workingTris[t] ? [t] : [];
-	}
+	if (granularity() !== 'face') return pickFaceUnitTris(get(faceEditHoverTri));
 	const fi = get(faceEditHighlight);
 	return fi >= 0 && faces[fi] ? faces[fi].triIndices.filter((/** @type {number} */ ti) => workingTris[ti]) : [];
 }
@@ -540,8 +832,7 @@ export function currentFaces() {
 /** @param {string} uuid */
 export function enterFaceEdit(uuid) {
 	if (get(faceEditObject)) exitFaceEdit();
-	const group = get(objectsGroup);
-	const object = group?.getObjectByProperty('uuid', uuid);
+	const object = lookupEditable(uuid); // A8: also accepts the collider proxy
 	if (!object || !object.geometry?.attributes?.position) {
 		// D7: a multi-mesh GROUP blocks face editing — say how to unblock it
 		if (object?.type === 'Group')
@@ -575,12 +866,14 @@ export function enterFaceEdit(uuid) {
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 	faceEditObject.set(uuid);
+	refreshFaceWireframe(); // B2: face mode gets the same wireframe as vertex mode
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onFaceKeydown);
 	// 175: restore the face selected last time in this object (per-mode memory)
 	if (stashedFace.uuid === uuid && stashedFace.fi >= 0 && faces[stashedFace.fi]) {
 		faceEditHighlight.set(stashedFace.fi);
 		refreshFaceOverlay();
-		attachFaceGizmo();
+		// B1: only the Move op keeps a gizmo on the face (see setFaceOp)
+		if (get(faceEditOp) === 'move') attachFaceGizmo();
 	}
 }
 
@@ -605,6 +898,12 @@ export function exitFaceEdit() {
 		overlay.material?.dispose?.();
 		overlay = null;
 	}
+	if (wire) {
+		wire.parent?.remove(wire);
+		wire.geometry?.dispose?.();
+		wire.material?.dispose?.();
+		wire = null;
+	}
 	faceEdited = null;
 	workingTris = [];
 	faces = [];
@@ -627,7 +926,8 @@ export function highlightFaceByTriangle(triangleIndex) {
 	const fi = triangleIndex < 0 ? -1 : faces.findIndex((f) => f.triIndices.includes(triangleIndex));
 	const prevFi = get(faceEditHighlight);
 	faceEditHighlight.set(fi);
-	const changed = get(faceEditGranularity) === 'polygon' ? triangleIndex !== prevTri : fi !== prevFi;
+	// triangle/shell units are picked per-tri, so refresh per raw tri change
+	const changed = granularity() !== 'face' ? triangleIndex !== prevTri : fi !== prevFi;
 	if (changed) refreshFaceOverlay();
 	return changed;
 }
@@ -692,11 +992,14 @@ function refreshFaceOverlay() {
 
 /**
  * Run an op on the highlighted face and commit: rebuild geometry, replicate
- * the snapshot, record history. @param {'extrude'|'inset'|'move'|'delete'} op
+ * the snapshot, record history. subdivide/flip/bridge take no amount (B4).
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'} op
  * @param {number} amount
  */
 export function commitFaceOp(op, amount) {
-	// 212: target the multi selection / hovered polygon / highlighted face group
+	// B4: bridge validates + commits its own two-face path
+	if (op === 'bridge') return bridgeFaces();
+	// 212: target the multi selection / hovered unit / highlighted face group
 	const face = opTargetFace();
 	if (!faceEdited || !face) return false;
 	const before = trisToPositions(workingTris);
@@ -705,6 +1008,8 @@ export function commitFaceOp(op, amount) {
 	else if (op === 'inset') next = insetFace(workingTris, face, amount);
 	else if (op === 'move') next = moveFaceAlongNormal(workingTris, face, amount);
 	else if (op === 'delete') next = deleteFaceTris(workingTris, face);
+	else if (op === 'subdivide') next = subdivideFaceTris(workingTris, face.triIndices);
+	else if (op === 'flip') next = flipFaceNormals(workingTris, face.triIndices);
 	else return false;
 	const positions = trisToPositions(next);
 	if (positions.length > MAX_SNAPSHOT) {
@@ -732,6 +1037,7 @@ function applyGeometrySnapshot(positions) {
 	faceEdited.userData.faceEdited = true;
 	rebuildFaces();
 	refreshFaceOverlay();
+	refreshFaceWireframe(); // B2: the overlay wraps the NEW geometry
 	objectsGroup.update((v) => v);
 }
 
@@ -850,6 +1156,7 @@ function liveGeometryUpdate() {
 	faceEdited.geometry = geometry;
 	faceEdited.userData.faceEdited = true;
 	refreshFaceOverlay();
+	refreshFaceWireframe(); // B2: track the gesture live
 	objectsGroup.update((v) => v);
 	const now = Date.now();
 	if (now - lastFaceBroadcast > 200) {
@@ -863,15 +1170,26 @@ export function faceGesturePending() {
 	return !!faceGrab || !!faceAdjust;
 }
 
-/** Begin a rigid grab of a face (grip). Captures the pre-edit snapshot + the
- * face's original local vertices. @param {number} index */
-export function beginFaceGrab(index) {
-	if (!faceEdited || index < 0 || !faces[index] || faceGesturePending()) return false;
-	const face = faces[index];
-	// weld-neighbour set (138): verts OUTSIDE the face sharing its corner
-	// positions — the TRANSLATION carries them so the mesh stretches, not tears
-	const faceSet = new Set(face.triIndices);
-	const keys = faceVertexKeys(workingTris, face);
+/** Begin a rigid grab of the target (grip/gizmo). Captures the pre-edit snapshot
+ * + the target's original local vertices.
+ * @param {any} faceOrIndex a synthesized op target, or a face-group index */
+export function beginFaceGrab(faceOrIndex) {
+	if (!faceEdited || faceGesturePending()) return false;
+	// 212-style: accept a SYNTHESIZED target (granularity/multi-aware, see
+	// opTargetFace) or a plain face-group index for back-compat. The gizmo passes
+	// the synthesized one — grabbing `faces[highlight]` was why a Shell pick
+	// highlighted a whole island but only dragged the coplanar face under the
+	// cursor, leaving the rest of the shell behind.
+	const index = typeof faceOrIndex === 'number' ? faceOrIndex : -1;
+	const face = typeof faceOrIndex === 'number' ? faces[faceOrIndex] : faceOrIndex;
+	if (!face || !face.triIndices?.length) return false;
+	const triIndices = face.triIndices.filter((/** @type {number} */ ti) => workingTris[ti]);
+	if (!triIndices.length) return false;
+	// weld-neighbour set (138): verts OUTSIDE the grabbed set sharing its corner
+	// positions — the TRANSLATION carries them so the mesh stretches, not tears.
+	// A whole-shell/object grab has none, which is exactly right: it moves rigidly.
+	const faceSet = new Set(triIndices);
+	const keys = faceVertexKeys(workingTris, { triIndices });
 	/** @type {any[]} */
 	const neighbours = [];
 	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
@@ -882,15 +1200,16 @@ export function beginFaceGrab(index) {
 	});
 	faceGrab = {
 		index,
+		triIndices,
 		before: trisToPositions(workingTris),
-		originals: face.triIndices.map((/** @type {number} */ ti) =>
+		originals: triIndices.map((/** @type {number} */ ti) =>
 			workingTris[ti].map((/** @type {any} */ v) => v.clone())
 		),
 		neighbours,
 		centroid: face.centroid.clone(),
 		normal: face.normal.clone()
 	};
-	faceEditHighlight.set(index);
+	if (index >= 0) faceEditHighlight.set(index);
 	return true;
 }
 
@@ -901,7 +1220,6 @@ export function beginFaceGrab(index) {
  */
 export function applyFaceGrab(t) {
 	if (!faceGrab || !faceEdited) return;
-	const face = faces[faceGrab.index];
 	const pivot = faceGrab.centroid;
 	const dPos = t.dPos || new THREE.Vector3();
 	const dQuat = t.dQuat || new THREE.Quaternion();
@@ -910,7 +1228,7 @@ export function applyFaceGrab(t) {
 	// the ONE rigid transform (about the face centroid) applied to a base vertex
 	const xf = (/** @type {any} */ v) =>
 		v.clone().sub(pivot).multiplyScalar(scale).applyQuaternion(dQuat).add(pivot).add(dPos).add(pushVec);
-	face.triIndices.forEach((/** @type {number} */ ti, /** @type {number} */ k) => {
+	faceGrab.triIndices.forEach((/** @type {number} */ ti, /** @type {number} */ k) => {
 		workingTris[ti] = faceGrab.originals[k].map(xf);
 	});
 	// 162: the welded neighbours sit at the face's CORNER positions, so they get
@@ -949,6 +1267,8 @@ export function cancelFaceGrab() {
 // never leaks into GLTF sync / raycasts, like the vertex proxy. ----
 /** @type {any} */ let faceProxy = null;
 /** @type {any} */ let faceProxyStart = null;
+/** the op target the gizmo was seated on — what a drag actually moves */
+/** @type {any} */ let gizmoTarget = null;
 
 function ensureFaceProxy() {
 	if (faceProxy) return faceProxy;
@@ -972,20 +1292,28 @@ export function focusTargetFace() {
 	return { center, radius: Math.max(objR * 0.3, 0.3) };
 }
 
-/** Attach the transform gizmo to the CURRENTLY highlighted face (desktop). */
+/**
+ * Attach the transform gizmo to the current op TARGET (desktop) — the same
+ * granularity/multi-aware set every other op uses, not just the coplanar face
+ * under the cursor. The target is STASHED here because by the time the user
+ * presses a gizmo handle the pointer is over the gizmo, not the mesh, so the
+ * live hover can no longer be trusted to describe what they meant to grab.
+ */
 export function attachFaceGizmo() {
 	if (typeof window === 'undefined' || !faceEdited) return;
 	/** @type {any} */
 	const controls = get(TControls);
-	const fi = get(faceEditHighlight);
-	if (fi < 0 || !faces[fi] || !controls) {
+	const target = opTargetFace();
+	if (!target || !controls) {
+		gizmoTarget = null;
 		detachFaceGizmo();
 		return;
 	}
+	gizmoTarget = target;
 	const proxy = ensureFaceProxy();
 	if (!proxy) return;
 	faceEdited.updateMatrixWorld(true);
-	proxy.position.copy(faceEdited.localToWorld(faces[fi].centroid.clone()));
+	proxy.position.copy(faceEdited.localToWorld(target.centroid.clone()));
 	proxy.quaternion.copy(faceEdited.getWorldQuaternion(new THREE.Quaternion()));
 	proxy.scale.setScalar(1);
 	controls.setSpace?.('local');
@@ -1002,13 +1330,15 @@ export function detachFaceGizmo() {
 		faceProxy = null;
 	}
 	faceProxyStart = null;
+	gizmoTarget = null;
 }
 
 /** Gizmo dragging-changed for the face proxy (163). @param {boolean} dragging */
 export function onFaceGizmoDragChanged(dragging) {
 	if (!faceEdited || !faceProxy) return;
 	if (dragging) {
-		if (beginFaceGrab(get(faceEditHighlight)))
+		// the target captured when the gizmo was seated (see attachFaceGizmo)
+		if (beginFaceGrab(gizmoTarget ?? get(faceEditHighlight)))
 			faceProxyStart = { pos: faceProxy.position.clone(), quat: faceProxy.quaternion.clone() };
 	} else if (faceProxyStart) {
 		faceProxyStart = null;

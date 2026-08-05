@@ -75,6 +75,32 @@
         };
     }
 
+    // TOUCH: a long press is the row's right-click. Touch has no contextmenu event we
+    // can rely on (and the browser's own long-press gesture selects text / offers to
+    // copy instead), so hold-to-open is explicit — the same deal the canvas already
+    // makes. A finger that MOVES is a scroll or a drag, so it cancels.
+    /** @type {any} */ let holdTimer = null;
+    let holdFrom = { x: 0, y: 0 };
+    /** @param {PointerEvent} event */
+    function onRowPointerDown(event) {
+        if (event.pointerType === 'mouse') return; // mouse keeps right-click
+        holdFrom = { x: event.clientX, y: event.clientY };
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(() => {
+            holdTimer = null;
+            openContextMenu(event);
+        }, 450);
+    }
+    /** @param {PointerEvent} event */
+    function onRowPointerMove(event) {
+        if (!holdTimer) return;
+        if (Math.hypot(event.clientX - holdFrom.x, event.clientY - holdFrom.y) > 10) cancelHold();
+    }
+    function cancelHold() {
+        clearTimeout(holdTimer);
+        holdTimer = null;
+    }
+
     function commitRename(event) {
         const name = event.target.value.trim();
         if (name && name !== element.name) renameObject(element.uuid, name);
@@ -166,16 +192,21 @@
     {#if rowVisible}
     <div id={element.uuid} oncontextmenu={openContextMenu}
         class={'group/row select-none ' +
-            (dropHover ? 'rounded outline outline-2 outline-primary-400 bg-primary-900/20 ' : '') +
+            (dropHover ? 'rounded-sm outline-solid outline-2 outline-primary-400 bg-primary-900/20 ' : '') +
             (lockEntry ? '' : 'cursor-grab active:cursor-grabbing')}
         role="listitem"
         draggable={!lockEntry}
         ondragstart={onRowDragStart}
         ondragover={onRowDragOver}
         ondragleave={clearHoverExpand}
-        ondrop={onRowDrop}>
+        ondrop={onRowDrop}
+        onpointerdown={onRowPointerDown}
+        onpointermove={onRowPointerMove}
+        onpointerup={cancelHold}
+        onpointercancel={cancelHold}
+        onpointerleave={cancelHold}>
         <div
-            class={'flex w-full items-center gap-1 rounded px-1 py-0.5 text-sm ' +
+            class={'flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-sm ' +
                 (isSelected
                     ? 'bg-primary-900/50 text-primary-100'
                     : 'text-gray-800 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600/50')}
@@ -246,7 +277,7 @@
                 </span>
                 <Tooltip placement='left' arrow={false}>Locked by {nameOf(lockEntry[0])} — right-click to request control</Tooltip>
             {:else}
-                <span class="hidden shrink-0 items-center gap-1.5 pr-1 group-hover/row:flex">
+                <span class="row-actions hidden shrink-0 items-center gap-1.5 pr-1 group-hover/row:flex">
                     <button
                         class="text-gray-400 hover:text-gray-100"
                         title={element.visible === false ? 'Show' : 'Hide'}
@@ -273,3 +304,15 @@
     {/if}
     {/if}
 
+
+<style>
+	/* TOUCH: the row's eye / properties / share / delete buttons were reachable only
+	   on HOVER, which a touch screen never produces — so on a phone they did not
+	   exist at all. Show them permanently where there is no hover. Unlayered
+	   component CSS beats Tailwind's layered `hidden` utility, so no !important. */
+	@media (pointer: coarse) {
+		.row-actions {
+			display: flex;
+		}
+	}
+</style>

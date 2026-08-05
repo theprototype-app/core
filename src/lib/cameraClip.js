@@ -73,3 +73,56 @@ export function setCameraFar(v) {
 	} catch {}
 	applyCameraClip();
 }
+
+// ---------------------------------------------------------------------------
+// 16-P4: the rest of the viewport-camera prefs. The clip planes were the only
+// tunable here; orbit feel (speeds, damping, invert) was hardcoded in
+// Scene.svelte's <OrbitControls>. All LOCAL, same as near/far.
+
+export const DEFAULT_ORBIT = { rotateSpeed: 1, zoomSpeed: 1, panSpeed: 1, damping: true, invertY: false };
+
+function storedOrbit() {
+	try {
+		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('orbitPrefs') : null;
+		return raw ? { ...DEFAULT_ORBIT, ...JSON.parse(raw) } : { ...DEFAULT_ORBIT };
+	} catch {
+		return { ...DEFAULT_ORBIT };
+	}
+}
+
+/** @type {import('svelte/store').Writable<typeof DEFAULT_ORBIT>} */
+export const orbitPrefs = writable(storedOrbit());
+
+/** Push the prefs onto the live OrbitControls (call after any change). */
+export function applyOrbitPrefs() {
+	const prefs = get(orbitPrefs);
+	const orbit = /** @type {any} */ (get(orbitControls));
+	if (!orbit) return;
+	// invertY flips the vertical orbit direction; three has no flag for it, so the
+	// sign rides rotateSpeed — the only place that reads it
+	orbit.rotateSpeed = prefs.rotateSpeed * (prefs.invertY ? -1 : 1);
+	orbit.zoomSpeed = prefs.zoomSpeed;
+	orbit.panSpeed = prefs.panSpeed;
+	orbit.enableDamping = prefs.damping;
+}
+
+/** @param {Partial<typeof DEFAULT_ORBIT>} patch */
+export function setOrbitPrefs(patch) {
+	orbitPrefs.update((value) => ({ ...value, ...patch }));
+	try {
+		localStorage.setItem('orbitPrefs', JSON.stringify(get(orbitPrefs)));
+	} catch {}
+	applyOrbitPrefs();
+}
+
+export function resetOrbitPrefs() {
+	orbitPrefs.set({ ...DEFAULT_ORBIT });
+	try {
+		localStorage.setItem('orbitPrefs', JSON.stringify(DEFAULT_ORBIT));
+	} catch {}
+	applyOrbitPrefs();
+}
+
+// re-apply whenever the controls (re)mount — VR exit and spectator mode both
+// unmount them
+orbitControls.subscribe(() => applyOrbitPrefs());

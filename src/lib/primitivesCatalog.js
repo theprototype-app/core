@@ -39,6 +39,15 @@ export const primitivesCatalog = [
 		items: [{ label: 'Terrain', command: '/create Terrain 24 48' }]
 	},
 	{
+		// 16-P5: camera OBJECTS are marker meshes carrying userData.camera, so they
+		// create / replicate / undo through the same /create path as any primitive
+		group: 'Camera',
+		items: [
+			{ label: 'Perspective', command: '/create Camera' },
+			{ label: 'Orthographic', command: '/create CameraOrtho' }
+		]
+	},
+	{
 		group: 'Light',
 		items: [
 			{ label: 'Ambient', command: '/light ambient' },

@@ -42,6 +42,9 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | customnode | (meta) | effect (drives a Selector) | per-def param | FIX (4.5): def params get INPUT sockets (they were unwirable — the runtime already resolved them); def edits prune dangling edges deterministically. |
 | maprange | Logic | number | a | NEW (4.6): remap [inMin..inMax] → [outMin..outMax], optional clamp — the glue between free-range sources and bounded params. |
 | select | Logic | number | index a b | NEW (4.6): outputs a when index < 0.5 else b — pairs with switcher-as-number / compare. |
+| collider | Physics | effect | source scale | NEW (CL-C): overrides the Inspector collider pick at sim start AND live (mid-sim rebuild — no restart). `shape` box/sphere/capsule/cylinder/hull/custom/object; `object` hulls the geometry of the Object Selector wired into `source`; `scale` multiplies the shape; `sensor` makes every piece a trigger volume. Consumed by physics.js collectParams (not per-frame eval), like mass. |
+| onenter / onexit | Triggers | event | — | NEW (CL-C): pulse when a SENSOR pair starts/stops overlapping (initiator-detected in the substep drain, both directions of the pair, per-frame dedupe; sensors bypass the impact downward-velocity filter). Same replicated nodetrigger stamps + BFS/implicit-owner targeting as onimpact. Recipe: sensor box + On Enter -> Particles = checkpoint confetti; On Enter -> Counter = lap counter. |
+| velocity | Scene | number | target | NEW (CL-C): live speed (m/s) of the wired object (or the graph owner unwired in an object graph). LOCAL feed — exact-ish on the sim initiator (per-step write-back deltas), an ~10Hz move-delta APPROXIMATION on other peers (broadcast-gated; documented on the card); 0 at rest / feed quiet >400ms. Never replicated: peers derive their own estimate. |
 
 ## Correctness fixes shipped in 4.1
 - **Edge-id collision (divergence bug)**: ids were `e-<src>-<tgt>` WITHOUT handles, so

@@ -5,6 +5,7 @@ import {
 	objectListClose,
 	chatHidden,
 	settingsOpen,
+	anyModalOpen,
 	settingsSection,
 	specatorMode,
 	aiPromptBarOpen,
@@ -266,9 +267,11 @@ function handleKeydown(event) {
 	const combo = comboOf(event);
 	const shortcut = shortcuts.find((s) => s.keys === combo);
 	if (!shortcut || !shortcut.action) return;
-	// while the settings modal is open only the help shortcut stays active,
-	// so panel toggles can't fight the hidePanels snapshot
-	if (get(settingsOpen) && shortcut.keys !== 'Ctrl+/') return;
+	// 15-B6: app modals are non-modal <dialog>s, so the page behind them is NOT
+	// inert and these window handlers still fire — every modal now mutes them
+	// (was Settings only, which is also why panel toggles couldn't fight the
+	// hidePanels snapshot). Ctrl+/ (help) stays live.
+	if (get(anyModalOpen) && shortcut.keys !== 'Ctrl+/') return;
 
 	event.preventDefault();
 	shortcut.action();

@@ -66,7 +66,7 @@
 <!-- Quick prompt pill (backquote-toggled) -->
 {#if pillVisible}
 	<div
-		class="ai-pill ui-panel flex items-center gap-1.5 bg-gray-900/90 px-2 py-1.5 backdrop-blur"
+		class="ai-pill ui-panel flex items-center gap-1.5 bg-gray-900/90 px-2 py-1.5 backdrop-blur-sm"
 		style="position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bottom-inset, 0px) + 72px); z-index: var(--z-hud); width: min(560px, 92vw);"
 	>
 		<span class="pl-1 text-sm">✨</span>
@@ -97,7 +97,7 @@
 		use:dragWindow={{ key: 'aiAssistant', defaultRect: { right: 15, bottom: 460 } }}
 		use:focusStack
 		use:tabbable={{ key: 'aiAssistant', title: '✨ AI Assistant', openStore: aiAssistantHidden, isOpen: (v: string) => v === '', close: () => aiAssistantHidden.set('hidden') }}
-		class="ui-panel flex h-[440px] w-[min(500px,90vw)] flex-col overflow-hidden bg-gray-900/85 backdrop-blur"
+		class="ui-panel flex h-[440px] w-[min(500px,90vw)] flex-col overflow-hidden bg-gray-900/85 backdrop-blur-sm"
 		style="z-index: var(--z-window)"
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">

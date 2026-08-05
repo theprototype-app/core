@@ -21,15 +21,19 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection } from '$lib/faceEdit';
+	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, lookupEditable } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
-	import { pinsGroup, openAnnotation } from '$lib/annotationsHandler';
+	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
 	import { setParticleRoot } from '$lib/particleRuntime';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
+	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
+	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
+	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
+	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
@@ -257,7 +261,9 @@
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		updateLightHelpers();
-		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);
+		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
+		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
+		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 	});
 
 	// --- undo/redo: record one history entry per gizmo drag ---
@@ -266,6 +272,13 @@
 	$: if ($TControls && $TControls !== hookedControls) {
 		hookedControls = $TControls;
 		$TControls.addEventListener('dragging-changed', (event) => {
+			// 16-Q5: suppress orbiting for the whole drag OURSELVES — first thing, for
+			// every kind of gizmo target. threlte's TransformControls disables whatever
+			// controls sit in ITS OWN context slot, and after a camera preview that slot
+			// can point at an instance that no longer drives the view, so dragging an
+			// object also orbited the camera ("as if I would move around with mouse").
+			// Writing through `activeOrbit` is instance-proof.
+			setOrbitEnabled(!event.value);
 			const object = hookedControls.object;
 			if (!object) return;
 			// vertex handles record their own history entries
@@ -328,6 +341,11 @@
 		return false;
 	}
 
+	// 15-O: double-click detection for "open the properties panel" — reuses the
+	// existing click path instead of a separate dblclick listener. Declared at
+	// COMPONENT scope: raycastSelect lives here, not in the pointer-handler block.
+	let lastPick: { uuid: string | null; t: number } = { uuid: null, t: 0 };
+
 	function raycastSelect(additive = false) {
 		// module-owned interactive groups live at the scene root (piano, pong, ...)
 		for (const name of moduleInteractiveGroups) {
@@ -342,8 +360,15 @@
 			if (runModuleClickHandlers(hits[0].object)) return true;
 			const target = topLevelObjectOf(hits[0].object);
 			if (target) {
+				// 15-O: a plain click SELECTS; the properties panel opens on a
+				// DOUBLE-click (or via the context menu / object list / a pinned
+				// panel). It used to open on EVERY single click — that is exactly
+				// what the pin now controls deliberately.
+				const now = Date.now();
+				const isDouble = !additive && lastPick.uuid === target.uuid && now - lastPick.t < 400;
+				lastPick = { uuid: target.uuid, t: now };
 				// shift-click toggles set membership (13)
-				selectObject(target.uuid, !additive, additive);
+				selectObject(target.uuid, isDouble, additive);
 				fireObjectClick(target.uuid); // 134: pulse any OnClick node targeting it
 				return true;
 			}
@@ -353,6 +378,8 @@
 
 	onMount(() => {
 		startLightHelpers();
+		startColliderHelpers();
+		startCameraHelpers();
 		startEditorNavigation();
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
@@ -400,7 +427,7 @@
 			// draw mode: dragging paints a stroke instead of orbiting
 			if ($drawMode && !$isLocked && !$isVRMode) {
 				strokeActive = true;
-				if ($orbitControls) $orbitControls.enabled = false;
+				setOrbitEnabled(false);
 				setRayFromEvent(event);
 				strokePointFromRay(selectionRaycaster);
 				return;
@@ -413,17 +440,17 @@
 				if (hit) {
 					sculptActive = true;
 					lastSculptAt = performance.now();
-					if ($orbitControls) $orbitControls.enabled = false;
+					setOrbitEnabled(false);
 					beginStroke($sculptObject);
 					const local = terrain.worldToLocal(hit.point.clone());
-					strokeMove($sculptObject, local.x, local.z);
+					strokeMove($sculptObject, local.x, local.z, 0.016, local.y); // y feeds the mesh brush
 				}
 				return;
 			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
 			if (event.shiftKey && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
 				marqueeStart = [event.clientX, event.clientY];
-				if ($orbitControls) $orbitControls.enabled = false;
+				setOrbitEnabled(false);
 			}
 			downPosition = [event.clientX, event.clientY];
 			downTime = Date.now();
@@ -447,13 +474,15 @@
 				setRayFromEvent(event);
 				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
 				if (hit) {
-					showCursorAt(hit.point);
+					// mesh sculpt: orient the brush ring to the surface
+					const worldNormal = hit.face ? hit.face.normal.clone().transformDirection(terrain.matrixWorld) : null;
+					showCursorAt(hit.point, worldNormal);
 					if (sculptActive) {
 						const now = performance.now();
 						const dt = Math.min((now - lastSculptAt) / 1000, 0.1);
 						lastSculptAt = now;
 						const local = terrain.worldToLocal(hit.point.clone());
-						strokeMove($sculptObject, local.x, local.z, dt);
+						strokeMove($sculptObject, local.x, local.z, dt, local.y);
 					}
 				} else hideCursor();
 				if (sculptActive) return;
@@ -485,7 +514,7 @@
 			if (marqueeStart && event.button === 0) {
 				const start = marqueeStart;
 				marqueeStart = null;
-				if ($orbitControls) $orbitControls.enabled = true;
+				setOrbitEnabled(true);
 				const moved = Math.hypot(event.clientX - start[0], event.clientY - start[1]);
 				if ($marqueeRect && moved > 8) {
 					// marquee ADDS to the selection (it already needs Shift to start)
@@ -502,13 +531,13 @@
 			}
 			if (sculptActive && event.button === 0) {
 				sculptActive = false;
-				if ($orbitControls) $orbitControls.enabled = true;
+				setOrbitEnabled(true);
 				sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
 				return;
 			}
 			if (strokeActive && event.button === 0) {
 				strokeActive = false;
-				if ($orbitControls) $orbitControls.enabled = true;
+				setOrbitEnabled(true);
 				endStroke();
 				return;
 			}
@@ -554,7 +583,8 @@
 			// face edit mode (135 desktop): a click highlights the face under it,
 			// and 163 attaches the transform gizmo to it (drag = move/rotate/scale)
 			if ($faceEditObject) {
-				const edited = $objectsGroup?.getObjectByProperty('uuid', $faceEditObject);
+				// A8: lookupEditable also finds the scene-root collider-edit proxy
+				const edited = lookupEditable($faceEditObject);
 				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
 				const tri = hit && hit.faceIndex != null ? hit.faceIndex : -1;
 				highlightFaceByTriangle(tri);
@@ -564,7 +594,12 @@
 					if ($faceEditMulti) toggleFaceSelection(tri);
 					else autoApplyFaceOp();
 				}
-				attachFaceGizmo(); // 163: gizmo on the highlighted face (or detaches on a miss)
+				// B1 (inset fix): a seated MOVE gizmo intercepts the NEXT click (the
+				// dragging||axis guard above skips face dispatch), so click 2 of an
+				// armed inset/extrude DRAGGED the face instead. Only the Move op
+				// seats the gizmo; a miss still detaches it.
+				if ($faceEditOp === 'move' || tri < 0) attachFaceGizmo();
+				else detachFaceGizmo();
 				return;
 			}
 			// light pick-proxies select their light (lights have no raycastable geometry)
@@ -576,13 +611,14 @@
 					return;
 				}
 			}
-			// note pins take priority over object selection
-			if ($pinsGroup) {
+			// note pins take priority over object selection (H3: skipped entirely
+			// while pins are hidden — never rely on raycaster-vs-invisible semantics)
+			if ($pinsGroup && $showNotePins) {
 				const pinHits = selectionRaycaster.intersectObject($pinsGroup, true);
 				let pinNode = pinHits[0]?.object;
 				while (pinNode && !pinNode.name?.startsWith('pin-')) pinNode = pinNode.parent;
 				if (pinNode) {
-					openAnnotation(pinNode.name.slice(4));
+					openAnnotation(pinNode.name.slice(4), 'view');
 					return;
 				}
 			}
@@ -714,6 +750,9 @@
 			// B2.4: a pinch-HOLD that just toggled the radial also fires 'select' on
 			// release — swallow that click so it doesn't immediately pick a sector
 			if (Date.now() - pinchMenuToggledAt < 250) return;
+			// K1: a sleeve ghost pick/place just handled this trigger — the release
+			// must not fall through to raycastSelect
+			if (vrModuleSelectSwallowed()) return;
 			// the keyboard is modal on top of any panel (116)
 			if ($vrKeyboardTarget) {
 				const key = raycastKeyboard(xrControllers.indexOf(controller));
@@ -826,11 +865,15 @@
 		// (the functions no-op unless in vertex mode with the hold setting on)
 		const onXRSelectStart = (event: any) => {
 			const idx = xrControllers.indexOf(event.target);
+			// K1: a module hook (sleeve ghost pick) may consume the press
+			if (vrModuleTriggerStart(idx)) return;
 			vrVertexGrabStart(idx); // 182: hold to move a vertex (no-op unless vertex mode)
 			beginStretchSliderDrag(idx); // 193: grab a stretch slider (no-op unless stretch mode)
 			boxSelectStart(idx); // 214: start a box-select marquee (no-op unless tool = box)
 		};
-		const onXRSelectEnd = () => {
+		const onXRSelectEnd = (event: any) => {
+			// K1: a held sleeve preview places on release
+			if (vrModuleTriggerEnd(xrControllers.indexOf(event?.target))) return;
 			vrVertexGrabEnd();
 			endStretchSliderDrag();
 			boxSelectEnd(); // 214: finalize a box-select marquee (no-op unless active)
@@ -932,7 +975,13 @@
 </script>
 
 <T.PerspectiveCamera makeDefault position={[-10, 10, 10]} fov={40} far={5000} bind:ref={$editorCam}>
-	{#if !$specatorMode}
+	<!-- 16-P5: while previewing a camera OBJECT, that camera owns the controls — these
+	     unmount so its own `makeDefault` camera really becomes the render camera.
+	     16-Q5: the instance being replaced is DISPOSED on the way out
+	     (startCameraPreview / releasePreviewOrbit), because an OrbitControls that is
+	     merely dropped keeps its DOM listeners and goes on orbiting whatever camera
+	     threlte points it at — the zombie behind "the gizmo drags rotate my view". -->
+	{#if !$specatorMode && !$cameraPreview}
 		<OrbitControls bind:ref={$orbitControls} enableZoom={true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
 	{/if}
 </T.PerspectiveCamera>
@@ -960,6 +1009,8 @@
      its transform is LOCAL-only (identity on desktop, reset on VR exit) -->
 <T.Group bind:ref={$worldRig} name="world-grab-rig">
 	<T.Group bind:ref={$objectsGroup} name="sceneObjects" />
+
+	<CameraPreview />
 
 	<Grid showGrid={$showGrid && $viewMode !== 'wireframe'} />
 

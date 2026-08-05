@@ -20,12 +20,16 @@ import { nameOf } from './lockControl';
 
 /** @type {import('svelte/store').Writable<string | null>} uuid being sculpted */
 export const sculptObject = writable(null);
+/** CL-B follow-up: 'terrain' = the classic Y-column brush; 'mesh' = the
+ * normal-direction brush for ANY mesh (welded by full xyz position).
+ * @type {import('svelte/store').Writable<'terrain'|'mesh'>} */
+export const sculptMode = writable('terrain');
 /** @type {import('svelte/store').Writable<'raise'|'lower'|'smooth'|'flatten'>} */
 export const sculptOp = writable('raise');
 export const sculptRadius = writable(3);
 export const sculptStrength = writable(0.5);
 
-/** @type {{uuid: string, columns: Map<string, number[]>, colPos: {x: number, z: number, key: string, indices: number[]}[],
+/** @type {{uuid: string, attr: any, columns: Map<string, number[]>, colPos: {x: number, z: number, key: string, indices: number[]}[],
  *   neighbors: Map<string, string[]>, cell: number} | null} */
 let weld = null;
 /** @type {Float32Array | null} stroke-start snapshot */
@@ -87,15 +91,173 @@ export function rebuildWeldMap(object) {
 		}
 		neighbors.set(a.key, list);
 	}
-	weld = { uuid: object.uuid, columns, colPos, neighbors, cell };
+	weld = { uuid: object.uuid, attr: position, columns, colPos, neighbors, cell };
 	return weld;
 }
 
-/** Enter sculpt mode on a terrain (selects = locks it). @param {string} uuid */
+// ---- MESH sculpt (CL-B follow-up): normal-direction brush on any mesh ------
+// Weld by FULL (x,y,z) position (split copies of a logical vertex move
+// together), neighbors from triangle adjacency (for smooth), displacement
+// along each welded vertex's averaged normal.
+
+/** @type {{uuid: string, attr: any, groups: {indices: number[], pos: any}[],
+ *   neighbors: Map<number, Set<number>>} | null} */
+let meshWeld = null;
+
+const KEY3 = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) =>
+	Math.round(x * 1e4) + '|' + Math.round(y * 1e4) + '|' + Math.round(z * 1e4);
+
+/** Build (or rebuild) the mesh weld map: position indices grouped by their
+ * quantized xyz + tri-adjacency neighbors. Called on enter AND whenever
+ * applyMeshGeo swaps the sculpted geometry. @param {any} object */
+export function rebuildMeshWeldMap(object) {
+	const position = object?.geometry?.attributes?.position;
+	if (!position) return (meshWeld = null);
+	/** @type {Map<string, number>} key -> group index */
+	const byKey = new Map();
+	/** @type {{indices: number[], pos: any}[]} */
+	const groups = [];
+	/** @type {number[]} position index -> group index */
+	const groupOf = new Array(position.count);
+	for (let i = 0; i < position.count; i++) {
+		const x = position.getX(i);
+		const y = position.getY(i);
+		const z = position.getZ(i);
+		const key = KEY3(x, y, z);
+		let gi = byKey.get(key);
+		if (gi === undefined) {
+			gi = groups.length;
+			byKey.set(key, gi);
+			groups.push({ indices: [], pos: new THREE.Vector3(x, y, z) });
+		}
+		groups[gi].indices.push(i);
+		groupOf[i] = gi;
+	}
+	// smooth-neighbors: groups sharing a triangle (non-indexed soup: 3i,3i+1,3i+2)
+	/** @type {Map<number, Set<number>>} */
+	const neighbors = new Map();
+	const link = (/** @type {number} */ a, /** @type {number} */ b) => {
+		if (a === b) return;
+		let set = neighbors.get(a);
+		if (!set) neighbors.set(a, (set = new Set()));
+		set.add(b);
+	};
+	for (let t = 0; t + 2 < position.count; t += 3) {
+		const a = groupOf[t];
+		const b = groupOf[t + 1];
+		const c = groupOf[t + 2];
+		link(a, b);
+		link(b, a);
+		link(b, c);
+		link(c, b);
+		link(c, a);
+		link(a, c);
+	}
+	meshWeld = { uuid: object.uuid, attr: position, groups, neighbors };
+	return meshWeld;
+}
+
+/**
+ * One mesh-brush application at a LOCAL-space point (pure geometry math,
+ * exported for headless tests). Op semantics mirror the terrain brush but in
+ * 3D: raise/lower displace welded vertices along their averaged NORMAL with
+ * a smoothstep falloff; flatten pulls toward the tangent plane at the hit
+ * point; smooth relaxes toward the neighbor average (Laplacian).
+ * @param {string} uuid @param {number} x @param {number} y @param {number} z
+ * @param {'raise'|'lower'|'smooth'|'flatten'} op
+ * @param {number} radius @param {number} strength @param {number=} dt seconds
+ */
+export function applyMeshBrushAt(uuid, x, y, z, op, radius, strength, dt = 0.016) {
+	const object = objectOf(uuid);
+	const position = object?.geometry?.attributes?.position;
+	const normal = object?.geometry?.attributes?.normal;
+	if (!object || !position || !normal) return false;
+	// attr identity: never brush against a stale cache (see applyBrushAt)
+	if (!meshWeld || meshWeld.uuid !== uuid || meshWeld.attr !== position) rebuildMeshWeldMap(object);
+	if (!meshWeld) return false;
+	const map = meshWeld;
+	const center = new THREE.Vector3(x, y, z);
+	/** averaged (welded) normal of a group @param {any} g */
+	const groupNormal = (g) => {
+		const n = new THREE.Vector3();
+		for (const i of g.indices) n.add(new THREE.Vector3(normal.getX(i), normal.getY(i), normal.getZ(i)));
+		return n.lengthSq() > 1e-12 ? n.normalize() : n.set(0, 1, 0);
+	};
+	// the hit group (nearest) anchors flatten's tangent plane
+	let hit = null;
+	let hitDist = Infinity;
+	for (const g of map.groups) {
+		const d = g.pos.distanceTo(center);
+		if (d < hitDist) {
+			hitDist = d;
+			hit = g;
+		}
+	}
+	const hitNormal = hit ? groupNormal(hit) : new THREE.Vector3(0, 1, 0);
+	const hitPos = hit ? hit.pos.clone() : center;
+	let touched = false;
+	const next = new THREE.Vector3();
+	for (let gi = 0; gi < map.groups.length; gi++) {
+		const g = map.groups[gi];
+		const d = g.pos.distanceTo(center);
+		if (d > radius) continue;
+		// smoothstep falloff 1 -> 0 across the radius
+		const t = 1 - d / radius;
+		const w = t * t * (3 - 2 * t);
+		next.copy(g.pos);
+		if (op === 'raise') next.addScaledVector(groupNormal(g), strength * w * dt * 8);
+		else if (op === 'lower') next.addScaledVector(groupNormal(g), -strength * w * dt * 8);
+		else if (op === 'flatten') {
+			const off = next.clone().sub(hitPos).dot(hitNormal);
+			next.addScaledVector(hitNormal, -off * Math.min(w * strength, 1));
+		} else if (op === 'smooth') {
+			const around = map.neighbors.get(gi);
+			if (around && around.size) {
+				const avg = new THREE.Vector3();
+				around.forEach((ni) => avg.add(map.groups[ni].pos));
+				avg.multiplyScalar(1 / around.size);
+				next.lerp(avg, Math.min(w * strength, 1));
+			}
+		}
+		if (!next.equals(g.pos)) {
+			g.pos.copy(next);
+			for (const i of g.indices) position.setXYZ(i, next.x, next.y, next.z);
+			touched = true;
+		}
+	}
+	if (touched) {
+		position.needsUpdate = true;
+		object.geometry.computeVertexNormals();
+		object.geometry.computeBoundingSphere();
+	}
+	return touched;
+}
+
+/** applyMeshGeo hook: rebuild whichever weld cache the live session uses (a
+ * remote stroke / undo swapped the geometry). @param {any} object */
+export function rebuildSculptCaches(object) {
+	if (get(sculptMode) === 'mesh') rebuildMeshWeldMap(object);
+	else rebuildWeldMap(object);
+}
+
+/** hard cap on a sculptable mesh — the meshgeo snapshot limit (floats) */
+const MESH_SCULPT_MAX_FLOATS = 45000;
+
+/** Enter sculpt mode: Terrain gets the column brush, any other mesh the
+ * normal brush (selects = locks it either way). @param {string} uuid */
 export function enterSculpt(uuid) {
 	const object = objectOf(uuid);
-	if (!object?.userData?.terrain) {
-		showToast('Sculpting works on Terrain objects (Add ▸ Ground ▸ Terrain)');
+	if (!object) return false;
+	const isTerrain = !!object.userData?.terrain;
+	if (!isTerrain && (!object.isMesh || !object.geometry?.attributes?.position)) {
+		showToast('Sculpting works on meshes (Terrain gets the height brush)');
+		return false;
+	}
+	// non-indexed size is what replicates — check BEFORE converting
+	const soupFloats =
+		(object.geometry.index ? object.geometry.index.count : object.geometry.attributes.position.count) * 3;
+	if (!isTerrain && soupFloats > MESH_SCULPT_MAX_FLOATS) {
+		showToast('Mesh too detailed to sculpt-sync (' + soupFloats / 3 + ' verts)');
 		return false;
 	}
 	const lock = get(lockedObjects).find((entry) => entry[1] === uuid);
@@ -103,12 +265,12 @@ export function enterSculpt(uuid) {
 		showToast('Locked by ' + nameOf(lock[0]));
 		return false;
 	}
-	// no gizmo while sculpting (accidental terrain moves) — set BEFORE the select
+	// no gizmo while sculpting (accidental moves) — set BEFORE the select
 	// so applySelectionSet never attaches; resets to OFF on every sculpt entry,
 	// the toolbar toggle opts back in per session
 	gizmoSuppressed.set(true);
 	selectObject(uuid);
-	// first sculpt on a fresh terrain: go non-indexed LOCALLY + sync the
+	// first sculpt on a fresh object: go non-indexed LOCALLY + sync the
 	// representation so peers' snapshots line up (no history entry — visually
 	// identical geometry, nothing to undo)
 	if (object.geometry.index) {
@@ -127,7 +289,9 @@ export function enterSculpt(uuid) {
 				positions: new Float32Array(nonIndexed.getAttribute('position').array).buffer
 			});
 	}
-	rebuildWeldMap(object);
+	if (isTerrain) rebuildWeldMap(object);
+	else rebuildMeshWeldMap(object);
+	sculptMode.set(isTerrain ? 'terrain' : 'mesh');
 	sculptObject.set(uuid);
 	return true;
 }
@@ -136,6 +300,8 @@ export function exitSculpt() {
 	if (strokeBefore) endStroke(); // commit a stroke in flight
 	sculptObject.set(null);
 	weld = null;
+	meshWeld = null;
+	sculptMode.set('terrain');
 	hideCursor();
 	gizmoSuppressed.set(false);
 	deselectObject();
@@ -166,7 +332,10 @@ export function applyBrushAt(uuid, x, z, op, radius, strength, dt = 0.016) {
 	const object = objectOf(uuid);
 	const position = object?.geometry?.attributes?.position;
 	if (!object || !position) return false;
-	if (!weld || weld.uuid !== uuid) rebuildWeldMap(object);
+	// attr identity: a meshgeo swap (remote stroke/undo) replaces the attribute
+	// — never brush against a stale cache, even same-tick (the async rebuild
+	// hook in applyMeshGeo may not have run yet)
+	if (!weld || weld.uuid !== uuid || weld.attr !== position) rebuildWeldMap(object);
 	if (!weld) return false;
 	const map = weld; // narrowed non-null for the closures below
 
@@ -226,12 +395,16 @@ export function beginStroke(uuid) {
 	strokeBefore = object.geometry.attributes.position.array.slice();
 }
 
-/** Per-move during a stroke: brush + throttled preview (~5/s).
- * @param {string} uuid @param {number} x @param {number} z @param {number=} dt */
-export function strokeMove(uuid, x, z, dt = 0.016) {
+/** Per-move during a stroke: brush + throttled preview (~5/s). `y` feeds the
+ * 3D mesh brush (the terrain brush works in the xz plane and ignores it).
+ * @param {string} uuid @param {number} x @param {number} z @param {number=} dt @param {number=} y */
+export function strokeMove(uuid, x, z, dt = 0.016, y = 0) {
 	if (!strokeBefore) return;
 	const op = get(sculptOp);
-	const changed = applyBrushAt(uuid, x, z, op, get(sculptRadius), get(sculptStrength), dt);
+	const changed =
+		get(sculptMode) === 'mesh'
+			? applyMeshBrushAt(uuid, x, y, z, op, get(sculptRadius), get(sculptStrength), dt)
+			: applyBrushAt(uuid, x, z, op, get(sculptRadius), get(sculptStrength), dt);
 	if (!changed) return;
 	const now = performance.now();
 	if (now - lastPreview > 200) {
@@ -266,7 +439,7 @@ export function endStroke() {
 
 // ---- brush cursor (scene-root ring: never in objectsGroup -> never syncs) ---
 
-export function showCursorAt(/** @type {any} */ worldPoint) {
+export function showCursorAt(/** @type {any} */ worldPoint, /** @type {any} */ worldNormal = null) {
 	const scene = get(globalScene);
 	if (!scene) return;
 	if (!cursor) {
@@ -280,7 +453,19 @@ export function showCursorAt(/** @type {any} */ worldPoint) {
 		scene.add(cursor);
 	}
 	cursor.visible = true;
-	cursor.position.set(worldPoint.x, worldPoint.y + 0.02, worldPoint.z);
+	// mesh sculpt: the ring hugs the surface (oriented to the hit normal);
+	// terrain keeps the flat overhead ring
+	if (worldNormal && get(sculptMode) === 'mesh') {
+		cursor.rotation.set(0, 0, 0);
+		cursor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), worldNormal);
+		cursor.position
+			.set(worldPoint.x, worldPoint.y, worldPoint.z)
+			.addScaledVector(worldNormal, 0.02);
+	} else {
+		cursor.quaternion.set(0, 0, 0, 1);
+		cursor.rotation.x = -Math.PI / 2;
+		cursor.position.set(worldPoint.x, worldPoint.y + 0.02, worldPoint.z);
+	}
 	const r = get(sculptRadius);
 	cursor.scale.set(r, r, r);
 }

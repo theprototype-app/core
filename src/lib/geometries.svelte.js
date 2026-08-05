@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
@@ -13,8 +13,8 @@ function initRectAreaUniforms() {
     rectAreaReady = true;
     RectAreaLightUniformsLib.init();
 }
-import { notifyExternalMove } from '$lib/flowRuntime';
-import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject } from '../stores/sceneStore.js';
+import { notifyExternalMove, noteObjectPose } from '$lib/flowRuntime';
+import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore.js';
 
 //Access scene Store
 let scene = $state();
@@ -92,6 +92,31 @@ export function createGeometry(command, uuid) {
             object.material.roughness = 0.95;
             object.userData.terrain = true;
         }
+        if (geometry === 'Camera' || geometry === 'CameraOrtho') {
+            // 16-P5: a camera OBJECT is this marker mesh plus its settings on
+            // userData.camera (rides toJSON/GLTF extras like userData.physics, so
+            // replication/sessions/prefabs need nothing new). Deterministic: peers
+            // run the same /create and stamp the same defaults. Kept literal here
+            // rather than imported from cameraObjects.js — that module reaches
+            // history, and geometries sits inside history's import subtree.
+            object.name = geometry === 'CameraOrtho' ? 'Camera (ortho)' : 'Camera';
+            object.material.color.set('#d8dee9');
+            object.material.roughness = 0.5;
+            object.material.metalness = 0.35;
+            object.userData.camera = {
+                kind: geometry === 'CameraOrtho' ? 'orthographic' : 'perspective',
+                fov: 50,
+                orthoSize: 5,
+                near: 0.1,
+                far: 1000,
+                aspect: '16:9',
+                guide: true,
+                pip: true
+            };
+            // a viewpoint marker is not scenery you light: no shadows, no physics
+            object.userData.shadow = false;
+            object.castShadow = false;
+        }
         // PFX-C follow-up: standard primitives are DYNAMIC by default (mass 1) so
         // a fresh cube falls, collides and THROWS the moment a sim runs — fun by
         // default. Explicit allow-list: Terrain + module-registered primitives
@@ -100,12 +125,19 @@ export function createGeometry(command, uuid) {
         // userData.physics like an Inspector edit (Body: Auto reverts it).
         if (FUN_PRIMITIVES.includes(geometry)) object.userData.physics = { mode: 'dynamic', mass: 1 };
         stampGeometryParams(object); // editable params survive sync (78)
+        // 15-A3: the baked building blocks have no geometryParams to infer a
+        // collider from — stamp an explicit hint (rides toJSON/GLTF extras like
+        // the terrain flag) so a rename can't flip their inferred hull to a box.
+        if (['Wedge', 'Stairs', 'Arch', 'Corner'].includes(geometry)) object.userData.colliderHint = 'hull';
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects
         objectsGroup.update((value) => value);
         // console.log('createGeometry: ' + geometry);
         if (!uuid) controls.attach(object);
         if (!uuid) selectedObject.set(object);
+        // 15-K3: the selection SET is the source of truth for the outline +
+        // Ctrl+D — a fresh creation is selected, so the set must say so too
+        if (!uuid) selectedObjects.set([object.uuid]);
         return object.uuid
     } else {
         console.log('Invalid geometry: ' + geometry);
@@ -168,6 +200,9 @@ export function createLight(command, uuid) {
         // console.log('createLight: ' + light);
         if (!uuid) controls.attach(light);
         if (!uuid) selectedObject.set(light);
+        // 15-K3: the selection SET is the source of truth for the outline +
+        // Ctrl+D — a fresh creation is selected, so the set must say so too
+        if (!uuid) selectedObjects.set([light.uuid]);
         return light.uuid
     }
 }
@@ -206,6 +241,9 @@ export function createGroup(command, uuid, groupuuid, name, groupparent, pos, ro
         // console.log('createGroup: ' + group);
         if (!uuid) controls.attach(group);
         if (!uuid) selectedObject.set(group);
+        // 15-K3: the selection SET is the source of truth for the outline +
+        // Ctrl+D — a fresh creation is selected, so the set must say so too
+        if (!uuid) selectedObjects.set([group.uuid]);
         // Attach the group to its parent, if specified
         if (groupparent) {
             let groupParent = sceneObjects.getObjectByProperty('uuid', groupparent)
@@ -237,6 +275,8 @@ export function moveGeometry(uuid, pos, rot, scale) {
         sceneObjects.getObjectByProperty('uuid', uuid).scale.set(scale[0], scale[1], scale[2]);
         // a peer moved it: if it is animated here, this transform is the new base
         notifyExternalMove(uuid);
+        // CL-C C3: ~10Hz speed approximation feed on peers (velocity node)
+        noteObjectPose(uuid, pos[0], pos[1], pos[2]);
     }
 }
 

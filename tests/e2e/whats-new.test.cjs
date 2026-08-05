@@ -100,6 +100,44 @@ h.run(async () => {
 	const seen = await B.page.evaluate(() => localStorage.getItem('lastSeenVersion'));
 	h.check(seen && seen !== '0.0.0-old', 'RW: opening the changelog marks this version seen (' + seen + ')');
 
+	// --- the changelog window folds per RELEASE -------------------------------
+	// The file grows with every release, so the window opens on the newest one and
+	// keeps the history behind its heading. <details> does the folding, so keyboard
+	// and screen readers get it without any open/closed state of ours.
+	const folds = await B.page.evaluate(() => {
+		const sections = [...document.querySelectorAll('#whats-new-window details.wn-release')];
+		return {
+			count: sections.length,
+			first: sections[0]?.querySelector('h2')?.textContent?.trim() ?? '',
+			open: sections.map((s) => s.open),
+			bullets: sections[0]?.querySelectorAll('li').length ?? 0
+		};
+	});
+	h.check(folds.count >= 4, `RW: one foldable section per release (${folds.count})`);
+	h.check(
+		folds.open[0] === true && folds.open.slice(1).every((o) => o === false),
+		`RW: the newest release is open, the rest folded (${JSON.stringify(folds.open)})`
+	);
+	h.check(
+		folds.bullets > 0,
+		`RW: the open release still renders its bullets (${folds.bullets} in "${folds.first}")`
+	);
+	await B.page.evaluate(() =>
+		/** @type {any} */ (
+			document.querySelectorAll('#whats-new-window details.wn-release')[1]
+		).querySelector('summary').click()
+	);
+	await B.page.waitForTimeout(250);
+	h.check(
+		await B.page.evaluate(
+			() =>
+				/** @type {any} */ (
+					document.querySelectorAll('#whats-new-window details.wn-release')[1]
+				).open
+		),
+		'RW: clicking an older heading expands that release'
+	);
+
 	// Esc closes the window
 	await B.page.locator('#whats-new-window').press('Escape');
 	await B.page.waitForTimeout(250);

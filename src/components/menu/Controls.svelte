@@ -380,7 +380,7 @@
 		return () => clearInterval(timer);
 	});
 	let classActive =
-		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-300';
+		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-hidden focus:ring-4 focus:ring-primary-300';
 
 	function dragMe(node) {
 		// 80.1: proper resize (start-size captured, clamped) + persisted rect
@@ -418,7 +418,13 @@
 			node.style.top = `${top}px`;
 		};
 
-		node.style.position = 'absolute';
+		// FIXED, like every other floating window (dragWindow/docking) — this was the
+		// last `absolute` holdout. An absolutely-positioned element shoved past the
+		// right/bottom edge joins the document's scroll overflow and GROWS the page,
+		// which drags the fixed chrome (Connect bar, profile, corner HUD) sideways with
+		// it; fixed elements never contribute to that overflow. The clamp math below was
+		// already in viewport coordinates, so nothing else changes.
+		node.style.position = 'fixed';
 		node.style.userSelect = 'none';
 		clampRect();
 		window.addEventListener('resize', clampRect);
@@ -547,8 +553,8 @@
 <BottomNav
 	position="absolute"
 	navType="application"
-	classOuter="h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 z-[45]"
-	classInner="grid-cols-7"
+	class="h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 z-45"
+	classes={{ inner: 'grid-cols-7' }}
 >
 	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={() => setTransformMode('translate')}>
 		<Move size={18} class={hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF} aria-hidden="true" />
@@ -604,7 +610,7 @@
      dock so an open flow editor / Explorer covers the stack -->
 <button
 	id="chat-button"
-	class="fixed bottom-4 right-4 z-[30] flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 shadow-lg transition-colors hover:bg-gray-600"
+	class="fixed bottom-4 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 shadow-lg transition-colors hover:bg-gray-600"
 	title="Chat (C)"
 	on:click={() => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')}
 >
@@ -690,7 +696,7 @@
 	<div class="flex flex-col gap-1 bg-gray-100 p-1 text-xs dark:bg-gray-700">
 		<div class="relative flex items-center gap-1">
 			<!-- 80.2: one scrollable chip row that never overflows the window -->
-			<div id="filter-chips" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none]" use:chipScroll>
+			<div id="filter-chips" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll>
 				<button
 					class={'shrink-0 rounded-full px-2 py-0.5 ' +
 						(!searchTypes.size && !viewMode
@@ -734,7 +740,7 @@
 			<!-- 80.3: chip visibility popover + reset -->
 			<button
 				id="chip-config"
-				class="shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-gray-600 dark:bg-gray-600 dark:text-gray-200"
+				class="shrink-0 rounded-sm bg-gray-200 px-1.5 py-0.5 text-gray-600 dark:bg-gray-600 dark:text-gray-200"
 				title="Choose which filters show here"
 				on:click={() => (chipPopup = !chipPopup)}
 			>
@@ -757,7 +763,7 @@
 					{/each}
 					<button
 						id="reset-filters"
-						class="mt-1 rounded bg-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+						class="mt-1 rounded-sm bg-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
 						on:click={resetAllFilters}
 					>
 						Reset all filters
@@ -780,7 +786,7 @@
 							from their state and are not editable here.
 						</span>
 						<button
-							class="rounded bg-gray-600 px-1 text-white"
+							class="rounded-sm bg-gray-600 px-1 text-white"
 							on:click={() => {
 								systemNoticeDismissed = true;
 								localStorage.setItem('systemNoticeDismissed', 'true');
@@ -803,15 +809,15 @@
 							</span>
 							<span class="text-[10px] text-gray-400">{row.children.length}</span>
 							<button
-								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Ping it for everyone"
 								on:click={() => pingObject(row.object)}><Pin size={16} aria-hidden="true" /></button>
 							<button
-								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Pin a synced note to it"
 								on:click={() => addAnnotation(row.object.uuid)}><SquarePen size={16} aria-hidden="true" /></button>
 							<button
-								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"
 								on:click={() => focusSystemObject(row.object)}><Eye size={16} aria-hidden="true" /></button>
 						</div>
@@ -833,7 +839,7 @@
 							replaces them. Edit them there, not here.
 						</span>
 						<button
-							class="rounded bg-gray-600 px-1 text-white"
+							class="rounded-sm bg-gray-600 px-1 text-white"
 							on:click={() => {
 								envNoticeDismissed = true;
 								localStorage.setItem('envNoticeDismissed', 'true');
@@ -849,11 +855,11 @@
 							</span>
 							<span class="text-[10px] text-gray-400">{row.type}</span>
 							<button
-								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Ping it for everyone"
 								on:click={() => pingObject(row.object)}><Pin size={16} aria-hidden="true" /></button>
 							<button
-								class="rounded bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"
 								on:click={() => focusSystemObject(row.object)}><Eye size={16} aria-hidden="true" /></button>
 						</div>
@@ -866,7 +872,7 @@
 			  {#if $objectsGroup}
 				<LocalObjects />
 				<!-- drop a local object anywhere here to SHARE it to the scene root -->
-				<div class="min-h-8 rounded transition-colors" use:shareDropZone>
+				<div class="min-h-8 rounded-sm transition-colors" use:shareDropZone>
 					{#if $objectsGroup.children.length > 0}
 						{#each $objectsGroup.children.filter((/** @type {any} */ c) => !c.userData?.__localOnly) as element}
 						<Objects {element} />
@@ -892,6 +898,7 @@
 		x={$objectContextMenu.x}
 		y={$objectContextMenu.y}
 		items={objectMenuItems($objectContextMenu)}
+		sizeKey="object"
 		on:close={() => ($objectContextMenu = null)}
 	/>
 {/if}

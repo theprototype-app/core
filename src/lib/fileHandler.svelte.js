@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { get } from 'svelte/store';
 import { objectsGroup, TControls, selectedObject, selectedObjects } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
@@ -165,6 +165,8 @@ function addAnimatedImport(result, buffer, name) {
 	recordAnimatedImport(root);
 	sendAnimatedImport(peer, root);
 	selectedObject.set(root);
+	// 15-K3: the selection SET drives the outline + Ctrl+D — keep it in sync
+	selectedObjects.set([root.uuid]);
 	peer.send({ type: 'lock', uuid: root.uuid, peerId: peer.peer.id });
 	showToast('Animated model: ' + result.animations.length + ' clip(s), playing the first');
 }
@@ -183,6 +185,8 @@ function addImported(imported, name, position) {
 	sendObjects(/** @type {any} */ (null), imported);
 
 	selectedObject.set(sceneObjects.getObjectByProperty('uuid', imported.uuid));
+	// 15-K3: the selection SET drives the outline + Ctrl+D — keep it in sync
+	selectedObjects.set([imported.uuid]);
 	peer.send({ type: 'lock', uuid: imported.uuid, peerId: peer.peer.id });
 
 	// the environment rig lights every preset except Classic — only nag about

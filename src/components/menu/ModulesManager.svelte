@@ -70,13 +70,11 @@
 <Modal
 	title="Modules"
 	bind:open={$modulesOpen}
+	modal={false} onkeydown={(e) => { if (e.key === 'Escape') modulesOpen.set(false); }}
 	size="lg"
 	outsideclose
 	class="tp-modal-frame"
-	dialogClass="tp-modal-dialog fixed top-0 start-0 end-0 h-modal md:inset-0 md:h-full z-50 w-full p-4 flex"
-	bodyClass="tp-modal-body flex-1 overflow-y-auto overscroll-contain"
-	backdropClass="tp-modal-backdrop fixed inset-0 z-40 bg-gray-900 bg-opacity-50 dark:bg-opacity-80"
-	headerClass="tp-modal-header flex justify-between items-center p-4 md:p-5 rounded-t-lg"
+	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
 >
 	<div class="mod-tabs" role="tablist">
 		<button class="mod-tab" class:active={tab === 'core'} role="tab" aria-selected={tab === 'core'} on:click={() => (tab = 'core')}>
@@ -103,27 +101,27 @@
 							<Toggle
 								size="small"
 								checked={!$disabledModules.includes(mod.id)}
-								on:change={(e) => setModuleEnabled(mod, e.target.checked)}
+								onchange={(e) => setModuleEnabled(mod, e.target.checked)}
 							/>
 						</div>
 						<p class="pt-1 text-sm text-gray-500 dark:text-gray-300">{mod.description ?? ''}</p>
 						<div class="flex flex-wrap items-center gap-2 pt-2">
 							{#if isModuleLoaded(mod.id) && !$disabledModules.includes(mod.id)}
 								{#each $moduleMenuItems.filter((item) => item.moduleId === mod.id) as item}
-									<Button size="xs" on:click={item.action}>{item.label}</Button>
+									<Button size="xs" onclick={item.action}>{item.label}</Button>
 								{/each}
 								{#each primitivesByModule[mod.id] ?? [] as primitive}
 									<Button
 										size="xs"
 										color="green"
 										title={primitive.command}
-										on:click={() => sceneCommand(primitive.command)}
+										onclick={() => sceneCommand(primitive.command)}
 									>
 										+ {primitive.label}
 									</Button>
 								{/each}
 							{/if}
-							<Button size="xs" color="alternative" on:click={() => downloadModule(mod)}>
+							<Button size="xs" color="alternative" onclick={() => downloadModule(mod)}>
 								<Download size={16} class="mr-1" aria-hidden="true" />Download as example
 							</Button>
 						</div>
@@ -138,7 +136,7 @@
 				Every peer needs the same modules for shared behavior to match.
 			</p>
 			<div class="flex items-center gap-2">
-				<Button size="xs" on:click={() => document.getElementById('install-module-zip').click()}>
+				<Button size="xs" onclick={() => document.getElementById('install-module-zip').click()}>
 					Install zip
 				</Button>
 				<input
@@ -154,7 +152,7 @@
 				/>
 				<input
 					id="install-module-url"
-					class="flex-1 rounded border border-gray-600 bg-transparent px-2 py-1 text-sm dark:text-white"
+					class="flex-1 rounded-sm border border-gray-600 bg-transparent px-2 py-1 text-sm dark:text-white"
 					placeholder="https://raw.githubusercontent.com/user/repo/main/mymodule (or github.com/…/tree/…)"
 					bind:value={installUrlValue}
 				/>
@@ -162,7 +160,7 @@
 					size="xs"
 					color="alternative"
 					disabled={!installUrlValue.trim()}
-					on:click={async () => {
+					onclick={async () => {
 						await installUrl(installUrlValue);
 						installUrlValue = '';
 					}}
@@ -186,7 +184,7 @@
 							<Toggle
 								size="small"
 								checked={!$disabledModules.includes(record.id)}
-								on:change={async (e) => {
+								onchange={async (e) => {
 									if (e.target.checked) {
 										$disabledModules = $disabledModules.filter((id) => id !== record.id);
 										await activateUserModule(record);
@@ -201,13 +199,13 @@
 						<div class="flex flex-wrap items-center gap-2 pt-2">
 							{#if isModuleLoaded(record.id) && !$disabledModules.includes(record.id)}
 								{#each $moduleMenuItems.filter((item) => item.moduleId === record.id) as item}
-									<Button size="xs" on:click={item.action}>{item.label}</Button>
+									<Button size="xs" onclick={item.action}>{item.label}</Button>
 								{/each}
 							{/if}
 							{#if record.source !== 'zip'}
-								<Button size="xs" color="alternative" on:click={() => updateUserModule(record)}>Update</Button>
+								<Button size="xs" color="alternative" onclick={() => updateUserModule(record)}>Update</Button>
 							{/if}
-							<Button size="xs" color="red" on:click={() => removeUserModule(record.id)}>Remove</Button>
+							<Button size="xs" color="red" onclick={() => removeUserModule(record.id)}>Remove</Button>
 						</div>
 					</div>
 				{/each}

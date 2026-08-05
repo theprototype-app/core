@@ -5,7 +5,7 @@ import { restoreGraphs, clearGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
 import { jointsSnapshot, jointsRestore } from './joints';
@@ -467,7 +467,10 @@ export function applySessionProposal(data) {
 // The first time another peer requests our state while we own local objects,
 // the objects/nodes replies DEFER behind a choice: share them into the joint
 // space (old behavior) or stash them to a session and join clean. Asked once
-// per app session; no choice within 14s auto-shares (the safe default).
+// per app session; the prompt is STICKY with NO ✕ and waits for an explicit
+// Share/Stash click (15-P2 — it used to auto-share after 14s, which could
+// silently publish a scene the user meant to stash; a dismiss-that-shares
+// would be the same trap smaller).
 
 let shareChoiceMade = false;
 /** @type {{senders: {objects: Set<string>, nodes: Set<string>}, payload: any, uuids: string[], done: boolean} | null} */
@@ -547,15 +550,21 @@ export function deferUntilShareChoice(kind, sender, otherCount = 0) {
 		done: false
 	};
 	gate.senders[kind].add(sender);
-	showToast(
+	// 15-P2: a STICKY prompt with NO ✕ — this decides whether the user's work
+	// merges into the joint space, so nothing may decide it implicitly: the 14s
+	// auto-share could silently publish a scene they meant to stash, and a
+	// dismiss-that-shares would be the same trap smaller. The joiner's handshake
+	// reply simply waits until Share or Stash is clicked.
+	showInfoToast(
+		'share-or-stash',
 		'Share your ' + count + ' object' + (count === 1 ? '' : 's') + ' with ' + nameOf(sender) + ', or stash them to a session first?',
 		[
 			{ label: 'Share', action: () => resolveGate() },
 			{ label: 'Stash', action: () => stashAndJoin() }
-		]
+		],
+		undefined,
+		true
 	);
-	// the toast expires after 15s — sharing is the safe default
-	setTimeout(() => resolveGate(), 14000);
 }
 
 /** Proposer side: collect answers, apply when everyone accepted @param {any} data */

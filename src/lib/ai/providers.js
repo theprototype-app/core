@@ -20,6 +20,9 @@ import { writable, get } from 'svelte/store';
  *   (vLLM 0.26 + Qwen3.5 swallows the call and streams an invented tool name);
  *   ai/client.js also detects that at runtime and falls back for the session.
  * @property {number} [temperature] sampling temperature; omitted = server default
+ * @property {boolean} [physicsTools] offer the physics tool set (set_physics /
+ *   create_joints / control_simulation) to this provider. Off by default —
+ *   multi-step physics is hard for small local models (see the docs page).
  * @property {string[]} [models]   model ids the endpoint reported on the last
  *   successful Test connection (GET /models) — Settings' model-picker suggestions.
  *   Persisted so the picker still works after a reload without re-fetching.
@@ -155,6 +158,7 @@ export function addAiProvider(config) {
 		model: normalizeModel(config.model || preset.defaultModel)
 	};
 	if (config.stream === false) entry.stream = false;
+	if (config.physicsTools === true) entry.physicsTools = true;
 	if (typeof config.temperature === 'number') entry.temperature = config.temperature;
 	if (Array.isArray(config.models) && config.models.length) {
 		entry.models = config.models.map(String).slice(0, 500);

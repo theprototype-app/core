@@ -42,12 +42,13 @@ h.run(async () => {
 	await A.page.waitForTimeout(150);
 	h.check((await A.page.locator('#sim-play').count()) === 0, 'A3: disabling the setting hides it again');
 
-	// --- A6: opening the logo menu closes an open modal ----------------------
+	// --- A6: opening the logo menu closes an open modal (app modals are NON-MODAL
+	// dialogs - the chrome above --z-modal stays clickable, so ONE click works) ----
 	await A.page.evaluate(() => {
 		window.__stores.closeMenu.set(true); // menu closed
 		window.__stores.settingsOpen.set(true); // a modal is open
 	});
-	await A.page.waitForTimeout(200);
+	await A.page.waitForTimeout(300);
 	await A.page.locator('#logo-menu').click();
 	await A.page.waitForTimeout(250);
 	const settingsClosed = await A.page.evaluate(

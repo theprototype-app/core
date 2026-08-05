@@ -22,13 +22,13 @@
 	>
 		<div class="flex items-center justify-between">
 			<span class="font-semibold">Dungeon generator</span>
-			<button class="rounded bg-gray-600 px-2" on:click={() => panelOpen.set(false)}>✕</button>
+			<button class="rounded-sm bg-gray-600 px-2" on:click={() => panelOpen.set(false)}>✕</button>
 		</div>
 
 		<label class="flex items-center gap-2">
 			Seed
-			<input id="dungeon-seed" class="w-28 rounded bg-gray-700 px-2 py-0.5" type="number" bind:value={seed} />
-			<button class="rounded bg-gray-600 px-2" title="Random seed" on:click={dice}><Dices size={16} aria-hidden="true" /></button>
+			<input id="dungeon-seed" class="w-28 rounded-sm bg-gray-700 px-2 py-0.5" type="number" bind:value={seed} />
+			<button class="rounded-sm bg-gray-600 px-2" title="Random seed" on:click={dice}><Dices size={16} aria-hidden="true" /></button>
 		</label>
 
 		<label class="flex flex-col">
@@ -42,10 +42,10 @@
 		</label>
 
 		<div class="flex gap-2">
-			<button id="dungeon-generate" class="flex-1 rounded bg-[#ff4000] px-2 py-1" on:click={generate}>
+			<button id="dungeon-generate" class="flex-1 rounded-sm bg-[#ff4000] px-2 py-1" on:click={generate}>
 				Generate
 			</button>
-			<button class="rounded bg-gray-600 px-2 py-1" on:click={clearAndBroadcast}>Clear</button>
+			<button class="rounded-sm bg-gray-600 px-2 py-1" on:click={clearAndBroadcast}>Clear</button>
 		</div>
 
 		{#if $panelStats}

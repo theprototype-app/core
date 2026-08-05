@@ -8,14 +8,38 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// Settings modal is on the modal tier (>= 1100, above the ~998 avatar chrome)
+	// App modals are NON-MODAL native dialogs (modal={false} -> dialog.show()):
+	// no top layer, no inertness — they sit on the --z-modal tier (1100) so the
+	// chrome ABOVE that tier (approval toasts 1200, logo menu 1300, ThemedSelect
+	// portals 9999) stays visible AND clickable while a modal is open.
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
-	const z = await A.page.evaluate(() => {
-		const d = document.querySelector('[role="dialog"][aria-modal="true"]');
-		return d ? parseInt(getComputedStyle(d).zIndex) : null;
+	const modal = await A.page.evaluate(() => {
+		const d = document.querySelector('dialog.tp-modal-frame');
+		return {
+			exists: !!d,
+			nonModal: !!d && !d.matches(':modal'),
+			z: d ? parseInt(getComputedStyle(d).zIndex) : null
+		};
 	});
-	h.check(z !== null && z >= 1100, `settings modal is on the modal tier, above the avatar (z=${z})`);
+	h.check(modal.exists && modal.nonModal && modal.z >= 1100, `settings modal is a NON-modal dialog on the modal tier (z=${modal.z})`);
+	// the E1 guarantee, now with CLICKABILITY: an approval toast renders above the
+	// open modal and its Approve button takes a REAL mouse click
+	const approvalClickable = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		let before;
+		s.pendingApprovals.subscribe((v) => (before = v))();
+		s.pendingApprovals.set([{ peerId: 'e2etest', status: 'new' }]);
+		await new Promise((r) => setTimeout(r, 300));
+		const btn = [...document.querySelectorAll('.toasts-critical button')].find((b) => /approve/i.test(b.textContent));
+		if (!btn) { s.pendingApprovals.set(before ?? []); return { found: false }; }
+		const r = btn.getBoundingClientRect();
+		const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+		const clickable = !!hit && (hit === btn || btn.contains(hit));
+		s.pendingApprovals.set(before ?? []);
+		return { found: true, clickable };
+	});
+	h.check(approvalClickable.found && approvalClickable.clickable, 'approval toast is hit-testable ABOVE the open modal');
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await A.page.waitForTimeout(200);
 

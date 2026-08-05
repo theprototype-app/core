@@ -1,4 +1,6 @@
 import { writable } from 'svelte/store';
+// dependency-free helper, so importing it keeps this store a leaf
+import { coarsePointer } from '../lib/inputDevice';
 
 /** @type {import('svelte/store').Writable<any>} */
 export const globalScene = writable(null);
@@ -40,6 +42,16 @@ export const camSave = writable(null);
 export const globalRenderer = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const orbitControls = writable(null);
+/**
+ * 15-H11: bumped by `objectActions.flyTo` whenever something DELIBERATELY takes
+ * the editor camera (focus, camera bookmarks, opening a note). A feature that
+ * drives the camera continuously (the note-follow session) watches this counter
+ * to know it has been handed over, instead of guessing from camera deviation —
+ * guessing cannot tell an ordinary user PAN (which also moves the orbit target)
+ * from someone else grabbing the view. It lives here because sceneStore is a
+ * leaf: objectActions and annotationsHandler both already import it.
+ */
+export const cameraClaim = writable(0);
 // peers' VR controller poses: peerId -> { left, right, active, ts }
 /** @type {import('svelte/store').Writable<Record<string, any>>} */
 export const peerHands = writable({});
@@ -61,6 +73,12 @@ export const vrMirrorSnapTurn = writable(
 // teleport locomotion (157): default ON; off disables the right-stick-up arc
 export const vrTeleportEnabled = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('vrTeleportEnabled') !== 'false'
+);
+// VR sleeve palette (K1, experimental): a forearm strip of ghost primitives on
+// the LEFT controller (mirrors right when the menu owns the left hand) —
+// trigger-drag a ghost out to place it. DEFAULT OFF.
+export const vrSleeveEnabled = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('vrSleeveEnabled') === 'true'
 );
 // vertex grab style (182): default HOLD (trigger held = carry, release = drop);
 // OFF = the toggle style (press to grab, press again to drop)
@@ -126,10 +144,18 @@ peerHandStyle.subscribe((v) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('peerHandStyle', String(v));
 });
 // Viewport render mode (V-2): LOCAL per-viewer, never replicated —
-// 'shaded' | 'shaded-ao' (default) | 'wireframe'
-export const viewMode = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('viewMode') || 'shaded-ao' : 'shaded-ao'
-);
+// 'shaded' | 'shaded-ao' (default on desktop) | 'wireframe'
+function defaultViewMode() {
+	const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('viewMode') : null;
+	if (stored) return stored;
+	// AO is a FULLSCREEN pass: a poor default on a phone GPU even when it works,
+	// and several mobile drivers mis-compile it (the viewport then keeps showing a
+	// stale frame until you leave AO mode — no console error). Coarse-pointer
+	// devices therefore start in plain 'shaded'; the view-mode menu still offers AO.
+	// `inputDevice` imports nothing, so this store stays a leaf.
+	return coarsePointer() ? 'shaded' : 'shaded-ao';
+}
+export const viewMode = writable(defaultViewMode());
 viewMode.subscribe((v) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('viewMode', String(v));
 });

@@ -63,15 +63,10 @@ svg.lucide {
 	--dock-inset: 0px;
 }
 
-/* Flowbite hardcodes the modal dialog at z-50 and its backdrop at z-40 — both
-   under the avatar/Connect chrome. Map them onto the modal tier (unlayered, so it
-   beats Tailwind's layered z-40/z-50 utilities without !important). */
-[role='dialog'][aria-modal='true'] {
-	z-index: var(--z-modal);
-}
-*:has(+ [role='dialog'][aria-modal='true']) {
-	z-index: calc(var(--z-modal) - 1);
-}
+/* The old flowbite z-50/z-40 → --z-modal remap is GONE: flowbite-svelte 1.x renders
+   Modal as a native <dialog> (showModal) in the browser TOP LAYER, which stacks above
+   every z-index tier by definition — no remap possible or needed. Backdrop styling
+   now lives on ::backdrop (see .tp-modal-frame below). */
 
 /* The "+" HUD button (MobileAddButton) opens the create/context menu without a
    right-click. Shown on ALL widths (user request): on touch it's the only way in,
@@ -208,106 +203,51 @@ svg.lucide {
 		display: none !important;
 	}
 }
-/* Shared full-screen-on-narrow modal treatment (Settings, Sessions, Modules). The
-   flowbite modal body is the SINGLE scroll container (no extra inner padding, so no
-   double scrollbar). Desktop: capped at 88vh + widened. Narrow: fills the viewport
-   BELOW the Connect bar (which stays visible/undimmed on top), no radius, and the header
-   title is padded left so it clears the top-left logo. */
+/* Shared full-screen-on-narrow modal treatment (Settings, Sessions, Modules,
+   Character/profile). flowbite-svelte 1.x renders a native <dialog> carrying
+   .tp-modal-frame — but these app modals run NON-MODAL (`modal={false}` →
+   dialog.show(), NO top layer): the app's chrome deliberately stays ALIVE above
+   them (logo at --z-menu closes-modal-and-opens-menu in one click, the Connect
+   bar + its drawer keep working, approval toasts at --z-toast, ThemedSelect
+   portals at 9999). A modal showModal() dialog would make ALL of that inert —
+   only ConfirmModal keeps true modality on purpose. The dim layer is a ::before
+   pseudo (non-modal dialogs have no ::backdrop); clicks on it target the dialog
+   element itself, which flowbite's outsideclose bounding-box check treats as
+   outside → closes. The modal body stays the SINGLE scroll container. */
 .tp-modal-body {
 	padding: 0 !important;
 }
-.tp-modal-dialog > div {
+dialog.tp-modal-frame {
+	position: fixed !important;
+	inset: 0;
+	margin: auto;
+	z-index: var(--z-modal);
 	max-width: min(1200px, 94vw) !important;
-}
-.tp-modal-frame {
 	max-height: 88vh;
 }
+dialog.tp-modal-frame::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	background: rgb(17 24 39 / 0.5);
+	z-index: -1;
+}
 @media (max-width: 640px) {
-	.tp-modal-dialog,
-	.tp-modal-backdrop {
+	dialog.tp-modal-frame {
 		top: var(--connect-bottom, 0px) !important;
-	}
-	.tp-modal-dialog {
-		padding: 0 !important;
-		height: auto !important;
 		bottom: 0 !important;
-	}
-	.tp-modal-dialog > div {
-		max-width: 100% !important;
-		max-height: 100% !important;
-		height: 100% !important;
-	}
-	.tp-modal-frame {
+		margin: 0 !important;
+		width: 100vw !important;
+		max-width: 100vw !important;
+		height: auto !important;
+		max-height: none !important;
 		border-radius: 0 !important;
-		height: 100% !important;
-		max-height: 100% !important;
+	}
+	dialog.tp-modal-frame::before {
+		top: var(--connect-bottom, 0px);
 	}
 	/* leave room for the logo (top-left) so the modal title never sits under it */
 	.tp-modal-header {
 		padding-left: 62px !important;
-	}
-}
-
-@layer components {
-	/* panel chrome */
-	.ui-panel {
-		@apply rounded-lg border border-gray-700/60 bg-gray-800 text-gray-200 shadow-xl;
-	}
-	.ui-panel-header {
-		@apply flex items-center gap-2 border-b border-gray-700/60 px-3 py-2 text-sm font-semibold text-gray-100;
-	}
-	.ui-section-label {
-		@apply mb-1 mt-3 px-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400;
-	}
-	.ui-row {
-		@apply flex items-center gap-2 px-1 py-1 text-sm text-gray-200;
-	}
-	.ui-input {
-		@apply rounded border border-gray-600 bg-gray-900/60 px-2 py-1 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500;
-	}
-	.ui-chip {
-		@apply rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider;
-	}
-	.ui-badge-type {
-		@apply ui-chip bg-primary-700 text-white;
-	}
-	.ui-button-quiet {
-		@apply rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-600;
-	}
-	/* resize hot zones (82.4): the highlight shows only after ~600ms of hover,
-	   so casually crossing a panel edge never flashes it; cursor stays instant */
-	.resize-cue {
-		background-color: transparent;
-		transition: background-color 0.15s ease 0.6s;
-	}
-	.resize-cue:hover {
-		background-color: rgb(249 115 22 / 0.5);
-	}
-	/* notebook-tab side buttons (82): trapezoid, narrower at the outer edge;
-	   the shape mirrors when the palette sits on the RIGHT (105) — glyphs stay */
-	.palette-tab {
-		clip-path: polygon(0 0, 100% 14%, 100% 86%, 0 100%);
-	}
-	.palette-tab-mirrored {
-		clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 86%);
-	}
-	/* drag-merge feedback (104): the window you'd merge into lights up */
-	.merge-target {
-		outline: 2px solid rgb(249 115 22 / 0.9);
-		outline-offset: -1px;
-	}
-	.merge-target::before {
-		content: '⧉ Merge into tabs';
-		position: absolute;
-		top: -24px;
-		left: 8px;
-		z-index: 50;
-		padding: 2px 8px;
-		border-radius: 6px;
-		background: rgb(249 115 22);
-		color: white;
-		font-size: 11px;
-		font-weight: 600;
-		white-space: nowrap;
 	}
 }

@@ -8,7 +8,8 @@ description: Verify theprototype.app changes end-to-end with Playwright — the 
 ## The committed suite (start here)
 
 `tests/e2e/*.test.cjs` + `helpers.cjs` (`.cjs` — the package is `"type": "module"`).
-Run with the dev server up (`npm run dev`, https on 5173):
+Run with the dev server up (`npm run dev`, https on 5173 via the repo certs/ —
+vite-plugin-mkcert is gone; node >= 24 required, engines-gated):
 
 ```
 npm run e2e                      # all suites (~80), sequential, ~25-30 min
@@ -23,7 +24,55 @@ peer id), `connect(from, to, settleMs=9000)`, `check(ok, label)`,
 screen pixel for real clicks), `finish(browser)` (exit code), `run(body)`.
 
 Rules: never run suites in parallel AGAINST THE SAME dev server, never edit sources
-while one runs (HMR reloads the pages mid-test).
+while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE").
+
+## Assertion discipline (a check that cannot fail is not a check)
+
+The expensive failures in #16 were not broken code — they were assertions that
+passed while the user watched the feature misbehave:
+
+- **Position/layout asserts need a TIGHT BAND and a forcing start state.** "the
+  section label is somewhere below the sticky header" is true when NO scrolling
+  happened at all (short panel = most sections collapsed), so a deep-link check
+  green-lit a link that never scrolled. The fix: expand every section, scroll the
+  panel to the BOTTOM first, then demand `0 <= gap <= 40px` (panel-deeplinks).
+- **Isolate a REGRESSION with an A/B, not an absolute.** "dragging the gizmo must
+  not rotate the view" can pass vacuously (the drag missed the gizmo) or fail
+  innocently (left-drag on empty space orbits BY DESIGN). Measure the same gesture
+  before and after the suspect sequence and compare — plus assert the gesture did
+  its job (the object moved), so a no-op can never look like a pass
+  (gizmo-orbit-leak).
+- **Match the metric to the gesture**: in OrbitControls LEFT-drag rotates and
+  RIGHT-drag PANS — a right-drag "orbit works" check that compares quaternions
+  reads 0.0000 forever. Compare `camera.position` for pans, `quaternion` for
+  rotation.
+- When a check reports success but the user reports failure, re-read the check
+  before re-reading the code: ask what state would make it fail.
+- **Prove a regression guard by BREAKING the code**: EDIT the fix out (put the old line
+  back), run the suite, confirm the new check goes red, then restore. Both
+  release-blocking fixes in 1.2.0 were validated this way (shift-select: 8 page errors
+  and the set stuck at 1; the mesh gizmo: 0/15 vertices moved). A guard you have never
+  seen fail is a guess. Do NOT use `git stash push -- <file>` for this: if that file is
+  already committed the push saves nothing and the later `pop` takes an unrelated
+  ancestor entry off the stack (it landed a `feature/specator-mode` stash in
+  Controls.svelte as a conflict). Copy to the scratchpad + `git checkout HEAD --` when
+  you need several files reverted at once.
+- **Add a PREMISE check whenever the gesture can miss.** A drag of the object-list
+  window took four attempts to actually move it — the top chrome covers that header at
+  430px so every real-mouse grab hit a BUTTON, and synthesized `pointermove`/`pointerup`
+  default `clientX` to 0, which docking.js reads as the left dock zone (it also PERSISTS
+  that dock, so the next run starts wrong). The three real assertions passed the whole
+  time; only `postDrag.left > preDrag.left + 100` exposed it. If a check depends on a
+  gesture having landed, assert that it landed.
+- **Drive the real INPUT PATH when the bug lives in a handler.** Shift-click
+  multi-select broke inside `onPointerUp`; every store-level `selectObject` test
+  stayed green. Project the object's world position (`helpers.projectPoint`) and use
+  `page.mouse.click` with `keyboard.down('Shift')`, and count `pageerror` events
+  while you do it — a swallowed exception is exactly what a store-level test misses.
+- Some behaviour is genuinely NOT testable here and must be labelled an on-device
+  check rather than faked: `(pointer: coarse)` (so the mobile view-mode default),
+  GPU/driver bugs, and VR feel. Say so in the commit instead of writing a check that
+  can only pass.
 
 **Parallel lanes (multi-session work, 2026-07-21):** each session works in its own
 `git worktree` (e.g. `../theprototype-lane-flow`) with its OWN dev server on its own
@@ -39,9 +88,19 @@ through on this npm version: it parses them as npm config, vite gets `dev 5177`
 as a positional and binds a random free port over plain http.)
 
 Assigned ports: main checkout 5173 (the user's), lane-c 5174, lane-vr 5175,
-lane-ui 5176, lane-flow 5177. Two-peer suites still meet on the signaling server
+lane-ui 5176 (SHADOWED 2026-08-02 — moved to 5186), lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. Two-peer suites still meet on the signaling server
 (now the self-hosted peerjs.theprototype.app box), so concurrent lanes' test peers
-never collide (random ids).
+never collide (random ids). PORT-SHADOW TRAP: another process holding only
+`[::1]:PORT` does NOT trip `--strictPort` (vite binds 0.0.0.0) — but
+curl/playwright resolve localhost to ::1 and hit the STALE server (symptom: new
+modules 404 to index.html, `__stores` missing new keys, or your edits "not
+applying" while the suite runs old code). `netstat -ano` and check BOTH stacks
+before blaming your build — and before trusting ANY lane server, prove it
+serves YOUR code: `curl -sk https://localhost:PORT/src/lib/<file>.js | grep
+<your-new-symbol>` (a stale pre-PATH-flip node-20 vite on [::1] burned a full
+debug cycle in #15). Remember two-peer runs ALWAYS need the PEER_CONFIG env on
+a localhost APP_URL — `helpers.connect` times out on the Approve button
+otherwise (the app dials the local :9001 server that isn't running).
 
 ## The debugStores hook — the ONLY sanctioned test API
 
@@ -56,7 +115,9 @@ palette, viewModeCtl, inputRuntime, shortcutsRegistry, themes, vrRadialMenu,
 vrPalette, vrWindowPoses, vrKeyboard, faceEdit, avatarModel, explorer, bottomDock,
 explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets, THREE,
 GLTFExporterModule, snapping, flowSockets, networkQuality, packs, customNodes,
-nodesHandler, nodeCatalog, objectMenu, flowGraphsCtl, objectFlow` (+ from the
+nodesHandler, nodeCatalog, objectMenu, flowGraphsCtl, objectFlow, vrSleeve,
+gridSettings, cameraBookmarks, cameraObjects, cameraHelpers, cameraPreview,
+cameraPip, addObjects` (+ from the
 flowStore spread: `flowGraphs, activeGraphId, setActiveGraph, allNodes, allEdges,
 findNodeAnyGraph, SCENE_GRAPH`; `moduleSDK.pointerRayNow()` = the api.pointerRay
 internals, `moduleSDK.applyModuleMessage(msg)` = simulate a PEER's module message
@@ -89,6 +150,29 @@ const value = await page.evaluate(() =>
   modules manager via `#open-modules-manager` (drawer: `closeMenu.set(false)` first)
   or `modulesOpen.set(true)`; module cards `#module-card-<id>`; draw `#draw-toolbar`;
   dungeon `#dungeon-panel`; script editor close `#script-panel-close`.
+- **Real-mouse GIZMO drags**: never guess a pixel offset from the object — find the
+  actual picker and project it. `const helper = controls.getHelper?.() ?? controls;`
+  then `helper.traverse(n => { if (n.isMesh && n.name === 'X') pick = n })`,
+  `pick.getWorldPosition(v).project(cam)` → screen px (gizmo-orbit-leak). three keeps
+  the gizmo VISUALS in that helper object, so `controls.visible = false` hides
+  nothing — hide the helper.
+- **Panels scroll**: a field can be off-screen (`y: -664`) after an earlier
+  deep-link/scroll in the same suite — `await locator.scrollIntoViewIfNeeded()`
+  before `boundingBox()`/mouse work, or the events land nowhere and the failure
+  looks like broken behaviour.
+- Inspector section HEADERS are `<button class="ui-section-label">` containing the
+  label AND a `−`/`+` glyph — match with `startsWith`, never `===`. A collapsed
+  section renders no children, so query its contents only after expanding
+  (`localStorage["inspector:sec:<label>"] = "open"` before load, or the deep-link
+  store `inspectorScrollTo`).
+- The numeric field is `.dn-wrap` (wrapper, carries `.dn-scrub`/`.dn-focus`) with
+  `.dn-input` inside — the old `.drag-number` button is gone. It is always a real
+  input: typing applies LIVE, ↑/↓ step one minor unit (Ctrl ×10, Shift ×100), a
+  drag scrubs, Esc reverts.
+- Context menus: `.ctx-filter-input` (always mounted, focused, collapsed until you
+  type), `.ctx-match` rows in search mode, `[data-ctx-active="true"]` = the keyboard
+  cursor, `.ctx-grip` = the search-list resize handle, and a SUBMENU is a fixed div
+  with NO role attribute (several suites locate them that way — do not add one).
 - Programmatic scene setup: `__stores.commandsHandler.sceneCommand('/create box')`
   (geometry names are capitalized THREE types — box/sphere/Button…, NOT "cube").
 - Icons are `@lucide/svelte` `<svg>` components (Font Awesome removed): select
@@ -103,6 +187,36 @@ const value = await page.evaluate(() =>
 - Context menus render `role="menuitem"`; group items CONTAIN submenu text — anchored
   regex `/^Exact label$/` + `.last()` if needed.
 - Action toasts have buttons now — `getByRole('button', { name: 'Approve' })` etc.
+  Toast entries may be STICKY (`{id, sticky:true, kind:'info'}` — restore-session,
+  first-run notice, share-or-stash): they never auto-expire and never fold into
+  "+N more", so don't wait them out — click an action or `dismissToastById(id)`.
+  State that lives INSIDE a component (not a store) needs its own opt-in hook,
+  gated on `debugStores` — the pattern is one `$effect` publishing a getter:
+  `window.__outlineDebug()` → `{selected, locked}` mesh counts,
+  `window.__cameraPreviewDebug()` → `{preview, hasObject, cameraMounted,
+  controlsMounted, defaultCamera, defaultIsMine}` (this is what settled the "is the
+  camera swap broken?" question: the component said `defaultIsMine: true` while a
+  stale page said otherwise). Module-level probes are plain exports:
+  `cameraHelpers.cameraHelpersDebug()`, `cameraPip.pipDebug()`,
+  `colliderHelpers.colliderHelpersDebug()`.
+  The outline effect isn't in `__stores` (it lives in Outline.svelte) — read it via
+  `window.__outlineDebug()` → `{selected, locked}` mesh counts (debugStores-gated).
+- **Scene notes (15-H)**: the desktop marker is a screen-space DOM badge, so read it
+  from the DOM (`.marker-badge` + `.marker-num`, leader lines in `.marker-lines`),
+  not from `pinsGroup` — the in-scene meshes only render in VR now (the pin GROUPS
+  stay live as anchors, which is why `annotation-anchor` is unaffected). App chrome
+  (Connect bar, z 300) sits ABOVE the marker layer (z 28), so a badge under it fails
+  Playwright's actionability check — click it in page context. Markers CLUSTER at
+  34px, so from a distance there is no `#1` to click: frame the note from its own
+  pin (`annotationWorldPosition` → `flyTo`) first. `notes-v2` also carries a
+  frame-lag guard (spin the camera, compare each badge against the pin projected
+  with the live camera) — it was verified to FAIL when a one-frame lag is
+  reintroduced, which is the only reason to trust it.
+- **Camera assertions**: never assert the pose you *asked* for —
+  `OrbitControls.update()` re-derives the camera position from its spherical state.
+  Park the camera, READ the resulting pose, compare against that. And a synthetic
+  click races Svelte's binding: to assert a control's ON styling, reopen the panel
+  so the state comes from STORED data instead of measuring right after the click.
 
 ## Repo-external modules (theprototype-app/modules)
 
@@ -151,6 +265,14 @@ drops the P2P session.
   is flaky to open headlessly — assert profile mounts at the STORE level, not by
   clicking `#avatar-menu`. A `transition:slide` element stays in the DOM through the
   ~200ms out-transition — poll with `eventually`, don't assert `count===0` immediately.
+- **HMR churn makes runs LIE** (cost ~4 cycles in #16-Q5): a page that loads while
+  vite is still re-transforming just-edited modules gets a half-mounted app —
+  components that exist in the source simply are not there, so a WORKING feature
+  reports broken (three runs "proved" the camera preview dead; a fresh run passed
+  untouched). Let the server settle a couple of seconds after your last edit, never
+  edit during a run, and treat a red run that started right after a save as
+  unproven. When store reads disagree with what you see, add a COMPONENT-side debug
+  hook and compare the two (below).
 - First run after adding a dependency: vite re-optimizes and reloads mid-test — rerun.
   Lazy wasm (rapier) needs a throwaway prewarm page first (see physics.test.cjs).
   Physics sims run REAL-time since #12 (fixed-timestep accumulator) — falls/settles
@@ -174,10 +296,16 @@ drops the P2P session.
   full old-deps/new-deps baseline comparison — treat as the dirty baseline, not
   regressions): the drag-drop-SIMULATION cluster (explorer-drop, explorer,
   packs-drop) + user-modules (setup crash), open-core-m1 (1 drawer check),
-  dock-sidebar-inset, layout, node-search, panels, script-nodes, and a few
+  dock-sidebar-inset, layout, panels, script-nodes, and a few
   two-peer timing suites (module-sdk, scene-music, physics-kinematic,
   physics-discoverability, roadmap-13-notifications-notes, scene-assets,
-  view-mode, vr-passthrough).
+  view-mode, vr-passthrough). `node-search` came OFF this list in #16-P2 — two of
+  its assertions were stale (they demanded menus never scroll and are never
+  height-capped, which a later change deliberately reversed). When a "known
+  failing" suite blocks you, check whether it is asserting the OLD contract.
+- `add-menu` documents its own flake in a comment at the failing line (a right-tap
+  that does not open the viewport menu) — the fastest proof that a failure is not
+  yours is still `git stash push -u` → run → `git stash pop`.
 - Long full-suite runs: the Bash tool caps at 10 min — launch the runner DETACHED
   (PowerShell `Start-Process node -ArgumentList 'tests\e2e\run.cjs ...'` with
   output redirects) and poll/Monitor the log. A dev server started via the Bash
@@ -195,7 +323,11 @@ drops the P2P session.
   git/npm in PowerShell.
 - Suites assume a clean session per context (fresh IndexedDB/localStorage); reloading a
   page keeps them — used deliberately for persistence tests (prefabs, user modules,
-  Explorer, themes).
+  Explorer, themes). Two idb traps in persistence tests: fire-and-forget idb writes
+  (sleeve slot capture) are ABORTED by an immediate reload — settle ~800ms before
+  `freshReload`; and a store gated behind a "loaded once" flag never fills on the
+  debug-hook's SECOND module instance — call its loader explicitly after the reload
+  (idempotent on the single-instance path; vr-sleeve.test does both).
 - Flowbite Toggle inputs are `sr-only` — click the wrapping `label`, not the input.
 - File drops: build a `DataTransfer` in `evaluate` and `dispatchEvent(new DragEvent('drop', …))`;
   a known-good 1×1 PNG base64 is in explorer-drop.test.cjs (Image tolerates broken
@@ -261,7 +393,8 @@ drops the P2P session.
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-07-28 = **476 errors / 62 warnings** (drifts down as flowbite/typed
+  baseline 2026-08-02 = **419 errors / 62 warnings** (node 24; #15-C's one-way
+  pickers dropped 14, #15-K's outline rework 2 more) (drifts down as flowbite/typed
   code is removed — hold whatever it currently is; add no NEW; the release.yml gate
   hardcodes the numbers — update it when the baseline moves). Note: in the big
   JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —

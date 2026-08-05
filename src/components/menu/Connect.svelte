@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ChevronDown, Copy, Globe } from '@lucide/svelte';
-	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight } from '../../stores/appStore'
+	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight, toastStore, toastsInDrawerOnly } from '../../stores/appStore'
 	import { Input, Button } from 'flowbite-svelte';
 	import { onMount, tick } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
@@ -44,6 +44,12 @@
 	);
 	// the drawer is visible when open OR pinned (pinned keeps the tab bar under the pill)
 	const drawerVisible = $derived($connectDrawerOpen || $connectDrawerPinned);
+	// 15-B4: toasts routed drawer-only are INVISIBLE while the drawer is closed —
+	// badge the chevron with the same count its Toasts tab shows (approvals ride
+	// along; they turn it amber, matching .cxd-tab-badge.req).
+	const hiddenToastCount = $derived(
+		!$connectDrawerOpen && $toastsInDrawerOnly ? $pendingApprovals.length + $toastStore.length : 0
+	);
 
 	// --- Responsive DOCKING (roadmap follow-up) --------------------------------
 	// The pill is centred at the top. On a wide screen there's room for it between
@@ -213,7 +219,7 @@
 		<Button
 			color="primary"
 			class="nob shrink-0 rounded-lg bg-gray-400 text-white ring-0 dark:bg-gray-600 dark:text-gray-200"
-			on:click={copy}
+			onclick={copy}
 			title="Copy your invite link"><span class="inline-flex items-center gap-1.5" style="white-space: nowrap;"><Copy size={14} aria-hidden="true" />{myidcap}</span></Button
 		>
 		<span class="connect-divider"></span>
@@ -222,32 +228,32 @@
 			<!-- connected: a GRAY disabled input keeps the row the SAME width as idle (so
 				 the drawer, which matches the pill width, never reflows), + red Disconnect.
 				 Connection status lives in the drawer header. -->
-			<div class="cx-connect inline-flex rounded-md shadow-sm">
+			<div class="cx-connect inline-flex rounded-md shadow-xs">
 				<Input type="text" disabled title={connectedText} class="nob cx-input rounded-r-none border-0 opacity-70" value={connectedText} />
 				<Button
 					color="red"
 					id="disconnect-button"
 					class="nob shrink-0 rounded-l-none rounded-r-lg bg-red-600 text-white hover:bg-red-700 dark:bg-red-700 dark:text-gray-100 dark:hover:bg-red-800"
-					on:click={disconnect}
+					onclick={disconnect}
 					title="Leave the session (your local scene is kept)">Disconnect</Button
 				>
 			</div>
 		{:else if connState === 'pending'}
 			<!-- pending: same gray disabled input for a stable width + amber Cancel -->
-			<div class="cx-connect inline-flex rounded-md shadow-sm">
+			<div class="cx-connect inline-flex rounded-md shadow-xs">
 				<Input type="text" disabled title="Waiting for approval" class="nob cx-input rounded-r-none border-0 opacity-70" value={'Requesting ' + String(pendingOut[0]?.[0] ?? peerIdToConnect ?? '').toUpperCase()} />
 				<Button
 					color="yellow"
 					id="cancel-request-button"
 					class="nob shrink-0 rounded-l-none rounded-r-lg bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
-					on:click={cancelPending}
+					onclick={cancelPending}
 					title="Cancel the connection request">Cancel</Button
 				>
 			</div>
 		{:else}
 			<!-- idle: dial a peer — the input shrinks (down to cx-input min-width) so
 				 the Connect button stays visible when the row is tight -->
-			<div class="cx-connect inline-flex rounded-md shadow-sm">
+			<div class="cx-connect inline-flex rounded-md shadow-xs">
 				<!-- autocomplete off + a non-loginish name: Chrome's password manager was
 					 autofilling a saved Settings api-base/key pair into this box -->
 				<Input
@@ -261,7 +267,7 @@
 				<Button
 					color="primary"
 					class="nob shrink-0 rounded-l-none rounded-r-lg bg-blue-500 text-white dark:bg-blue-700 dark:text-gray-200"
-					on:click="{() => {connectToPeer(peerIdToConnect)}}"
+					onclick={() => {connectToPeer(peerIdToConnect)}}
 					>Connect</Button
 				>
 			</div>
@@ -281,6 +287,13 @@
 			onclick={toggleInfo}
 		>
 			<ChevronDown size={16} class="cx-chevron" aria-hidden="true" />
+			<!-- 15-B4: with toasts routed drawer-only, a CLOSED drawer hid them
+				 entirely — surface the same count the Toasts tab shows. -->
+			{#if hiddenToastCount > 0}
+				<span class="cx-toast-badge" class:req={$pendingApprovals.length > 0} data-testid="connect-toast-badge"
+					>{hiddenToastCount > 9 ? '9+' : hiddenToastCount}</span
+				>
+			{/if}
 			{#if srv?.didFallback}
 				<span class="cx-info-warn" data-testid="connect-info-warn" title="Self-hosted server unreachable — on the public cloud"></span>
 			{/if}
@@ -417,6 +430,30 @@
 	}
 	.cx-toggle.open :global(.cx-chevron) {
 		transform: rotate(180deg);
+	}
+	/* B4: live count of toasts the closed drawer is holding (mirrors the drawer's
+	   own .cxd-tab-badge); sits opposite the amber server dot so both can show */
+	.cx-toast-badge {
+		position: absolute;
+		top: -5px;
+		left: -5px;
+		min-width: 15px;
+		height: 15px;
+		padding: 0 3px;
+		border-radius: 9999px;
+		background: var(--color-primary-600, #2563eb);
+		color: #fff;
+		border: 1.5px solid rgb(31 41 55);
+		font-size: 9px;
+		font-weight: 700;
+		line-height: 1;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.cx-toast-badge.req {
+		background: #f59e0b;
+		color: #1f2937;
 	}
 	.cx-info-warn {
 		position: absolute;

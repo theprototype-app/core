@@ -22,6 +22,7 @@
 	} from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
+	import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
@@ -91,6 +92,13 @@
 	}
 
 	function clearScene() {
+		// 15-J: viewers can't wipe the shared scene — peers drop their clearscene
+		// broadcast (cloud capability gate), which would leave this client desynced.
+		// Inert without a roles plugin (isViewer() is false when no rolesInfo).
+		if (isViewer()) {
+			warnViewerReadOnly('View-only — ask an editor to clear the scene.');
+			return;
+		}
 		const count = $objectsGroup?.children.length ?? 0;
 		if (count === 0) {
 			sceneCommand('/clear all'); // still clears module content
@@ -112,7 +120,7 @@
 <!-- 94: the logo IS the menu button. Open state = accent ring. -->
 <button
 	id="logo-menu"
-	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur transition-transform hover:scale-105 {$closeMenu
+	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur-sm transition-transform hover:scale-105 {$closeMenu
 		? 'border-gray-700/60'
 		: 'border-primary-500 ring-2 ring-primary-500/50'}"
 	style="height: 48px; width: 48px; {$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}"
@@ -130,7 +138,7 @@
 	<nav
 		id="sidebar70"
 		transition:fade={{ duration: 130 }}
-		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
+		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
 		style={$connectDocked ? `top: ${$connectBarHeight + 64}px` : ''}
 	>
 		<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
@@ -158,9 +166,12 @@
 		<div class="side-div"></div>
 
 		<!-- Scene -->
-		<button class="side-row" onclick={() => showSidebar('scene')}>
+		<!-- 15-O: the "●" text prefix is gone — it shifted the label as it appeared
+		     (read as a glitch) and duplicated what the open panel already shows.
+		     The row itself carries an `active` highlight instead, like any nav item. -->
+		<button class="side-row" class:active={!$inspectorClose && $inspectorKind === 'scene'} onclick={() => showSidebar('scene')}>
 			<span class="side-ico"><SlidersHorizontal size={16} aria-hidden="true" /></span>
-			<span class="flex-1 whitespace-nowrap">{!$inspectorClose && $inspectorKind === 'scene' ? '● ' : ''}Configure Scene</span>
+			<span class="flex-1 whitespace-nowrap">Configure Scene</span>
 		</button>
 		<button class="side-row" onclick={clearScene}>
 			<span class="side-ico"><Trash2 size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
@@ -194,7 +205,7 @@
 
 {#if exportSettingsOpen}
 	<!-- B3 export settings. Rendered at the component ROOT (not inside .app-sidebar,
-	     whose backdrop-blur would make this fixed panel center on the sidebar and
+	     whose backdrop-blur-sm would make this fixed panel center on the sidebar and
 	     spill off the left edge). Modal tier so it clears the avatar/Connect chrome. -->
 	<button
 		class="fixed inset-0 cursor-default bg-black/40"
@@ -227,7 +238,7 @@
 			Show JSON format
 		</label>
 		<div class="mt-3 flex justify-end">
-			<button class="rounded bg-gray-600 px-2 py-1 text-xs hover:bg-gray-500" onclick={() => (exportSettingsOpen = false)}>Close</button>
+			<button class="rounded-sm bg-gray-600 px-2 py-1 text-xs hover:bg-gray-500" onclick={() => (exportSettingsOpen = false)}>Close</button>
 		</div>
 	</div>
 {/if}
@@ -300,6 +311,13 @@
 	}
 	:global(.dark) .side-row:hover {
 		background-color: rgb(255 255 255 / 0.08);
+	}
+	/* 15-O: active nav row (Configure Scene while its panel is open) — a tinted
+	   row + accent rule, replacing the "●" that used to shift the label */
+	/* 16-P6: tint + accent text only — the inset accent bar read as a stray border */
+	.side-row.active {
+		background-color: rgb(59 130 246 / 0.12);
+		color: var(--color-primary-400, #60a5fa);
 	}
 	.side-ico {
 		width: 1.25rem;

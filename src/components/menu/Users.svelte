@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Check, ChevronDown, Eye, Glasses, StickyNote, VolumeX } from '@lucide/svelte';
+	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
+	import { Check, ChevronDown, Eye, Glasses, StickyNote, VolumeX, Camera } from '@lucide/svelte';
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
 	import {
@@ -7,6 +8,7 @@
 		Modal,
 		Input,
 		Dropdown,
+		DropdownGroup,
 		DropdownHeader,
 		DropdownItem,
 		DropdownDivider
@@ -59,8 +61,8 @@
 	// 	});
 	// });
 
-	let classProfileSettings = 'z-10 z-10 inline-flex w-40 flex-shrink-0 flex-shrink-0 items-center rounded-s-lg border\
-	 border-gray-300 bg-gray-100 px-4 py-2.5 text-center text-sm font-medium text-gray-500 hover:bg-gray-200 focus:outline-none\
+	let classProfileSettings = 'z-10 z-10 inline-flex w-40 shrink-0 shrink-0 items-center rounded-s-lg border\
+	 border-gray-300 bg-gray-100 px-4 py-2.5 text-center text-sm font-medium text-gray-500 hover:bg-gray-200 focus:outline-hidden\
 	 focus:ring-4 focus:ring-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600\
 	 dark:focus:ring-gray-700';
 
@@ -217,7 +219,7 @@
 	<!-- E2: scene-notes drawer toggle -->
 	<button
 		id="notes-toggle"
-		class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur hover:bg-gray-700/85 {$notesDrawerOpen ? 'ring-2 ring-primary-500/60' : ''}"
+		class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur-sm hover:bg-gray-700/85 {$notesDrawerOpen ? 'ring-2 ring-primary-500/60' : ''}"
 		title="Scene notes"
 		aria-label="Scene notes"
 		onclick={() => notesDrawerOpen.update((v) => !v)}
@@ -234,7 +236,7 @@
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
 			id="peers-trigger"
-			class="flex items-center gap-2 rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-1 backdrop-blur hover:bg-gray-700/85"
+			class="flex items-center gap-2 rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-1 backdrop-blur-sm hover:bg-gray-700/85"
 			title="Connected peers"
 			onclick={() => (peersOpen = !peersOpen)}
 		>
@@ -287,6 +289,16 @@
 								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 							{/if}
 						{/if}
+						{#if i > 0 && $cameraPreviews[user[0]]}
+							<!-- 16-P5: this peer is looking through a scene camera — you can join -->
+							<button
+								class="peer-watch peer-preview shrink-0 rounded px-2 py-0.5 text-xs bg-gray-600 text-gray-100 hover:bg-gray-500"
+								title={`Previewing ${previewLabel($cameraPreviews[user[0]])} — click to look through it too`}
+								onclick={() => { joinPeerPreview(user[0]); peersOpen = false; }}
+							>
+								<Camera size={14} class="mr-1" aria-hidden="true" />{previewLabel($cameraPreviews[user[0]])}
+							</button>
+						{/if}
 						{#if i > 0}
 							<button
 								class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {$specatorMode === user[0]
@@ -327,22 +339,55 @@
 	<!-- main profile button: a single clean Avatar (no href -> no navigation bug; no
 		 3-branch) that picks the effective avatar (custom upload > stored > cloud
 		 account > default). This is the dropdown trigger. -->
-	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2; z-index: 999;">
-		<div class="flex items-center space-x-3" style="z-index: 999;">
-			<Avatar
-				src={effAvatar || undefined}
-				style="position: absolute; top: 8px; right: 20px; cursor: pointer;"
-				class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
-			/>
+	<!-- The panel anchors to THIS wrapper, not to #avatar-menu: that is an invisible
+	     208px-wide flex box whose right edge merely COINCIDES with the circle (both are
+	     inset 20px), so any width or zoom that broke the coincidence slid the menu
+	     sideways — reported as "on mobile the menu shifts to the right edge". Anchored to
+	     the circle, the panel's right edge IS the circle's right edge by construction.
+	     It also stops that invisible box from catching clicks across the whole
+	     top-right corner. -->
+	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2">
+		<div class="flex items-center space-x-3">
+			<div
+				id="avatar-trigger"
+				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 999; line-height: 0;"
+			>
+				<Avatar
+					src={effAvatar || undefined}
+					class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
+				/>
+			</div>
 		</div>
 	</div>
+	<!-- NO z-index will put the profile circle over this panel: flowbite 1.x renders a
+	     Dropdown as a TOP-LAYER popover (`popover="manual"`, `:popover-open`), and the
+	     top layer paints above the entire page whatever the z-index — measured, the panel
+	     at 996 covered an avatar at 2000. Same family as the modal/top-layer trap in
+	     CLAUDE.md. So the circle is drawn INSIDE the panel instead (below), where it
+	     rides the same layer; the z-index here only orders it against ordinary chrome. -->
 	<Dropdown
+    id="avatar-dropdown"
     placement="bottom-end"
-    bind:open={openDropdown}
-    triggeredBy="#avatar-menu"
+    bind:isOpen={openDropdown}
+    triggeredBy="#avatar-trigger"
     class="w-56"
-    style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 998;"
+    style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996; margin-top: -50px;"
 	>
+	<!-- the profile circle, seated in the 1.5rem notch this panel's top-right corner
+	     exists for (24px radius = half of a 48px avatar, so it is exactly inscribed and
+	     the panel's own overflow-hidden does not bite it). Clicking it closes the menu,
+	     the same as clicking the trigger again. -->
+	<button
+		type="button"
+		class="absolute right-0 top-0 z-10 cursor-pointer rounded-full leading-none"
+		aria-label="Close profile menu"
+		onclick={() => (openDropdown = false)}
+	>
+		<Avatar
+			src={effAvatar || undefined}
+			class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
+		/>
+	</button>
 	<!-- PM (roadmap #14): identity header — name, then the cloud email on a new line
 		 when signed in. No avatar here (it's already the profile button). The rounded
 		 top-right corner is KEPT — it echoes the profile circle. -->
@@ -354,6 +399,7 @@
 			{/if}
 		</div>
 	</DropdownHeader>
+	<DropdownGroup>
 	<DropdownItem
 		onclick={() => {
 			characterModalOpen.set(true);
@@ -365,6 +411,7 @@
 			profileSettingsOpen.set(true);
 			openDropdown = false;
 		}}>Profile Settings</DropdownItem>
+	</DropdownGroup>
 	<!-- open-core (PM): cloud account section — the plugin mounts Sign in/out +
 		 preferences here (moved out of the Connect pill). Plain block: the plugin
 		 owns its own clicks, so it is NOT a DropdownItem. -->
@@ -393,7 +440,7 @@
 	/>
 {/if}
 
-<Modal title="" bind:open={$profileSettingsOpen} outsideclose>
+<Modal title="" bind:open={$profileSettingsOpen} outsideclose modal={false} onkeydown={(e) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }} class="tp-modal-frame">
 
 	<center><b>Profile Settings</b></center>
 
@@ -424,7 +471,7 @@
 				{/if}
 				<!-- reset to the signed-in account's picture (or the default) -->
 				{#if avatarImage || (typeof localStorage !== 'undefined' && localStorage.getItem('avatar'))}
-				<button id="avatar-reset" class="rounded border border-gray-500 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+				<button id="avatar-reset" class="rounded-sm border border-gray-500 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
 					onclick={resetAvatarToDefault}>Reset to {cid?.avatar ? 'account picture' : 'default'}</button>
 				{/if}
 			</div>
@@ -438,7 +485,7 @@
 			</p>
 			<Input
 				id="peer-id"
-				class="!rounded-s-none rounded-br-none"
+				class="rounded-s-none! rounded-br-none"
 				placeholder={$peers.peer.id}
 				disabled
 			/>
@@ -452,7 +499,7 @@
 			</p>
 			<Input
 				id="update-username"
-				class="!rounded-s-none rounded-tr-none"
+				class="rounded-s-none! rounded-tr-none"
 				placeholder={cid?.username ? '' + cid.username : 'Username'}
 				bind:value={$username}
 				onchange={onUsernameEdited}
@@ -482,6 +529,19 @@
 	.role-badge[data-role='admin'] { background: #7c3aed; }
 	/* keep the peers list scrollable so it never spills off a short/narrow screen */
 	.peers-scroll { max-height: 264px; overflow-y: auto; }
+	/* PROFILE PANEL, horizontal edge only. floating-ui places this from the trigger, and
+	   under a MOBILE viewport (page scale != 1) its math drifts right by exactly the
+	   trigger's inset: on a phone the panel landed flush with the window edge while the
+	   circle stayed 20px in, clipping the circle. Reproduced with Playwright's isMobile
+	   emulation — a coarse pointer alone does NOT do it, which is why touch-emulated runs
+	   looked fine. This edge is fixed chrome geometry (the avatar is right: 20px inside a
+	   right: 0 chrome), so pin it and let floating-ui keep only the vertical placement.
+	   !important beats floating-ui's non-important inline `left`; :global because the
+	   panel is rendered by a child component (no scope class). */
+	:global(#avatar-dropdown) {
+		left: auto !important;
+		right: 20px !important;
+	}
 	/* Profile Settings modal: on a narrow screen stack each label above its control
 	   (the fixed w-40 label beside the input is too cramped) — matches app Settings. */
 	@media (max-width: 640px) {

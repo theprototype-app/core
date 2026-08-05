@@ -7,16 +7,7 @@ const { execSync } = require('child_process');
 
 // deps with a planned, deliberate migration — major drift on these is expected
 const FROZEN = [
-	'three',
-	'@threlte/core',
-	'@threlte/extras',
-	'@threlte/xr',
-	'@xyflow/svelte',
-	'flowbite',
-	'flowbite-svelte',
-	'tailwindcss',
-	'vite',
-	'@sveltejs/vite-plugin-svelte',
+	// TS 7 until svelte-check peers ^7; rapier held for solver-behavior stability
 	'typescript',
 	'@dimforge/rapier3d-compat'
 ];

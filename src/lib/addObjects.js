@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { selectedObject } from '../stores/sceneStore';
-import { peers, meshGenModalOpen } from '../stores/appStore';
+import { peers, meshGenModalOpen, showSidebar } from '../stores/appStore';
 import { sceneCommand } from './commandsHandler.svelte';
 import { primitivesCatalog } from './primitivesCatalog';
 import { meshGenReady } from './ai/meshProviders';
@@ -28,6 +28,10 @@ export function spawnAtPoint(command, point) {
 				scale: object.scale.toArray()
 			});
 	}
+	// 16-Q2: adding from the menu OPENS the new object's properties, even when
+	// another panel (Configure Scene, a different selection) was showing — creation
+	// already selects the object, this makes the "now tweak it" step obvious.
+	if (object?.uuid) showSidebar('properties');
 	return object;
 }
 

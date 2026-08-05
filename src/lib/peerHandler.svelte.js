@@ -18,6 +18,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
+import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } from '$lib/cameraPreview';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVersion, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
@@ -27,6 +28,7 @@ import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } f
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
+import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
@@ -326,6 +328,8 @@ export class PeerConnection {
 					applyRemoteEnvironment(data);
 				} else if(data.type == 'music') {
 					applyRemoteMusic(data);
+				} else if(data.type == 'scenephysics') {
+					applyRemoteScenePhysics(data);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
@@ -435,8 +439,12 @@ export class PeerConnection {
 					checkPeerAppVersion(data.appVersion);
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);
+					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
 				} else if(data.type == 'modulestate') {
 					applyModuleStates(data.states);
+				} else if(data.type == 'campreview') {
+					// 16-P5: presence only — "X is previewing camera Y" (peers may join it)
+					applyRemoteCameraPreview(data);
 				} else if(data.type == 'annotation') {
 					applyAnnotation(data);
 				} else if(data.type == 'annotations') {
@@ -480,6 +488,7 @@ export class PeerConnection {
 		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA})
 		conn.send(environmentState())
 		conn.send(musicState())
+		conn.send(scenePhysicsState())
 		conn.send(handModelState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
@@ -596,6 +605,7 @@ export class PeerConnection {
 		}
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
+		clearPeerPreview(peerId); // 16-P5
 		dropPeerEnvPresets(peerId);
 		dropPeerHandModel(peerId);
 		checkLocks();
@@ -616,6 +626,7 @@ export class PeerConnection {
 			if (this.openedPeers.has(peerId)) {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
+				clearPeerPreview(peerId); // 16-P5
 				dropPeerEnvPresets(peerId);
 				dropPeerHandModel(peerId);
 			}

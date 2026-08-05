@@ -6,7 +6,6 @@ import {
 	focusObject,
 	duplicateObject,
 	duplicateSelection,
-	toggleObjectVisibility,
 	alignToGround,
 	requestDeleteSelection,
 	groupSelection,
@@ -56,31 +55,136 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	/** run a per-object action across the target set */
 	const forEach = (/** @type {(u: string) => void} */ fn) => () => targets.forEach(fn);
 
+	// 15-Q approved layout: header (what this acts on) · transform/create ops ·
+	// EDIT · PHYSICS & EFFECTS · SHARE · Delete. Show/Hide removed — the object
+	// list's eye toggle owns visibility (an object hidden from the menu can't be
+	// right-clicked back). Icons are lucide kebab names (ui/Icon.svelte);
+	// shortcut hints render as the dimmed right column.
 	return [
+		{
+			header: {
+				title: multi ? targets.length + ' objects selected' : object?.name || object?.type || 'Object',
+				badge: multi ? 'set' : object?.type,
+				locked: locked ? nameOf(lockHolder) : null
+			}
+		},
 		...(locked
 			? [
 					{
 						label: 'Request control',
+						icon: 'hand',
 						tooltip: 'Ask ' + nameOf(lockHolder) + ' to hand the object over',
 						action: () => requestControl(uuid)
 					}
 				]
 			: []),
-		{ label: 'Focus camera' + suffix, tooltip: 'F', action: () => focusObject(multi ? undefined : uuid) },
+		{ label: 'Focus camera' + suffix, icon: 'focus', hint: 'F', action: () => focusObject(multi ? undefined : uuid) },
 		{
 			label: 'Duplicate' + suffix,
-			tooltip: 'Ctrl+D',
+			icon: 'copy',
+			hint: 'Ctrl+D',
 			action: () => (multi ? duplicateSelection() : duplicateObject(uuid))
 		},
 		...(multi
 			? [
 					{
 						label: 'Group selection' + suffix,
+						icon: 'group',
 						tooltip: 'Move the selected objects into one new group',
 						action: () => groupSelection()
 					}
 				]
 			: []),
+		...(isGroup
+			? [
+					{
+						label: 'Ungroup',
+						icon: 'ungroup',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Move the children out, then remove the empty group',
+						action: () => ungroupObject(uuid)
+					}
+				]
+			: []),
+		{
+			label: 'Align to ground' + suffix,
+			icon: 'arrow-down-to-line',
+			disabled: locked,
+			tooltip: locked ? lockedTooltip : 'Drop onto the surface below (undoable)',
+			action: forEach((u) => alignToGround(u))
+		},
+		// 16-P5: camera objects get their two headline actions right here (the rest
+		// live in Properties ▸ Camera)
+		...(!multi && object?.userData?.camera
+			? [
+					{
+						label: 'Preview camera',
+						icon: 'camera',
+						tooltip: 'Render the scene through this camera (exit from the banner)',
+						action: () =>
+							import('./cameraPreview').then((m) => m.startCameraPreview(uuid))
+					},
+					{
+						label: 'Set from current view',
+						icon: 'focus',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Move this camera to where you are looking from',
+						action: () => import('./cameraObjects').then((m) => m.setCameraFromView(uuid))
+					}
+				]
+			: []),
+		{ section: 'Edit' },
+		// 15-O: an explicit way in — a plain click only selects now, so this and a
+		// double-click are how the panel opens when it is not pinned
+		{
+			label: 'Properties',
+			icon: 'sliders-horizontal',
+			tooltip: 'Open the properties panel (double-click does this too)',
+			action: () => selectObject(uuid, true)
+		},
+		{ label: 'Rename', icon: 'pencil', disabled: locked, tooltip: lockedTooltip, action: () => renamingObject.set(uuid) },
+		// 15-B8: Edit mesh / Sculpt are SINGLE-object modes — with a set selected
+		// they'd silently act on the last-picked object only (the ViewportMenu path
+		// passes the sticky primary), so hide them rather than mislead.
+		...(multi
+			? []
+			: [
+					{
+						label: 'Edit mesh',
+						icon: 'pen-tool',
+						disabled: locked || !object?.geometry?.attributes?.position,
+						tooltip: locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
+						action: () => enterEditMode(uuid)
+					}
+				]),
+		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh
+		// gets the normal-brush MESH sculpt (same toolbar + replication)
+		...(multi
+			? []
+			: object?.userData?.terrain
+				? [
+						{
+							label: 'Sculpt terrain',
+							icon: 'brush',
+							disabled: locked,
+							tooltip: locked ? lockedTooltip : 'Brush raise/lower/smooth/flatten — drag on the terrain',
+							action: () => import('./terrainSculpt').then((m) => m.enterSculpt(uuid))
+						}
+					]
+				: object?.geometry?.attributes?.position
+					? [
+							{
+								label: 'Sculpt mesh',
+								icon: 'brush',
+								disabled: locked,
+								tooltip: locked
+									? lockedTooltip
+									: 'Brush raise/lower/smooth/flatten along the surface normals',
+								action: () => import('./terrainSculpt').then((m) => m.enterSculpt(uuid))
+							}
+						]
+					: []),
+		{ section: 'Physics & effects' },
 		// P-B: joints — attach exactly TWO objects (weld holds the pose, a hinge
 		// spins about the FIRST-clicked object's chosen local axis, anchored at
 		// the second object's origin); Detach appears when any joint touches this
@@ -88,6 +192,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			? [
 					{
 						label: 'Physics',
+						icon: 'magnet',
 						children: [
 							...(targets.length === 2
 								? [
@@ -119,6 +224,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 		// PFX-A: particle emitters — add a preset / burst / remove, set-aware
 		{
 			label: 'Effects',
+			icon: 'sparkles',
 			children: [
 				...PARTICLE_PRESETS.map((preset) => ({
 					label: preset.name + suffix,
@@ -145,59 +251,9 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					: [])
 			]
 		},
-		...(isGroup
-			? [
-					{
-						label: 'Ungroup',
-						disabled: locked,
-						tooltip: locked ? lockedTooltip : 'Move the children out, then remove the empty group',
-						action: () => ungroupObject(uuid)
-					}
-				]
-			: []),
-		{
-			label: 'Save as prefab' + suffix,
-			tooltip: 'Reusable copy in your Library (local, instances replicate)',
-			action: () => (multi ? savePrefabSelection(targets) : savePrefab(uuid))
-		},
-		{
-			label: 'Align to ground' + suffix,
-			disabled: locked,
-			tooltip: locked ? lockedTooltip : 'Drop onto the surface below (undoable)',
-			action: forEach((u) => alignToGround(u))
-		},
-		{
-			label: 'Edit mesh',
-			disabled: locked || !object?.geometry?.attributes?.position,
-			tooltip: locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
-			action: () => enterEditMode(uuid)
-		},
-		// T-2: brush sculpting, Terrain objects only
-		...(object?.userData?.terrain
-			? [
-					{
-						label: 'Sculpt terrain',
-						disabled: locked,
-						tooltip: locked ? lockedTooltip : 'Brush raise/lower/smooth/flatten — drag on the terrain',
-						action: () => import('./terrainSculpt').then((m) => m.enterSculpt(uuid))
-					}
-				]
-			: []),
-		{ label: 'Add note', tooltip: 'Pin a synced note exactly where you pointed', action: () => addAnnotation(uuid, point) },
-		{
-			label: multi ? 'Ping selection' + suffix : 'Ping this object',
-			tooltip: 'Everyone sees a pulse here (Alt+click pings anywhere)',
-			action: () => (multi ? pingObjects(targets) : pingObject(uuid))
-		},
-		{ label: 'Rename', disabled: locked, tooltip: lockedTooltip, action: () => renamingObject.set(uuid) },
-		{
-			label: object?.visible === false ? 'Show' + suffix : 'Hide' + suffix,
-			disabled: locked,
-			tooltip: lockedTooltip,
-			action: forEach((u) => toggleObjectVisibility(u))
-		},
 		{
 			label: (muted ? 'Enable flow effects' : 'Disable flow effects') + suffix,
+			icon: 'workflow',
 			action: forEach((u) =>
 				mutedFlowObjects.update((list) =>
 					list.includes(u) ? list.filter((entry) => entry !== u) : [...list, u]
@@ -207,6 +263,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 		{
 			// H5: embed this object's flow into the SCENE graph as an Object Flow node
 			label: 'Add flow to Scene graph',
+			icon: 'git-branch-plus',
 			tooltip: 'Embed this object’s flow as a node with its declared inputs/outputs',
 			action: () =>
 				Promise.all([import('./objectFlow'), import('../stores/flowStore'), import('../stores/appStore')]).then(
@@ -220,11 +277,28 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				)
 		},
+		{ section: 'Share' },
+		{
+			label: multi ? 'Ping selection' + suffix : 'Ping this object',
+			icon: 'radar',
+			tooltip: 'Everyone sees a pulse here (Alt+click pings anywhere)',
+			action: () => (multi ? pingObjects(targets) : pingObject(uuid))
+		},
+		{ label: 'Add note', icon: 'sticky-note', tooltip: 'Pin a synced note exactly where you pointed', action: () => addAnnotation(uuid, point) },
+		{
+			label: 'Save as prefab' + suffix,
+			icon: 'package',
+			tooltip: 'Reusable copy in your Library (local, instances replicate)',
+			action: () => (multi ? savePrefabSelection(targets) : savePrefab(uuid))
+		},
+		{ section: ' ' },
 		{
 			label: 'Delete' + suffix,
+			icon: 'trash-2',
+			hint: 'Del',
 			danger: true,
 			disabled: locked,
-			tooltip: locked ? lockedTooltip : 'Del — a group asks first',
+			tooltip: locked ? lockedTooltip : 'A group asks first',
 			// when the clicked object is part of the selection, delete the whole set;
 			// otherwise select just this one first so the delete acts on it
 			action: () => {

@@ -77,6 +77,15 @@ reason. Everything above the floor is the provider's decision (keyed on the
 Pair it with **send-side** gating in the plugin UI (disable a viewer's gizmos/menus)
 so the app doesn't merely swallow actions silently.
 
+Worked example — scene wipe: `{ type: 'clearscene' }` is deliberately **not** in the
+always-allowed floor, so a roles provider can drop it from viewers (the reference
+cloud plugin's viewer allowlist already excludes it). Core pairs that with its own
+send-side gate: a viewer pressing *Clear scene* gets the view-only toast instead of
+clearing — a local clear whose broadcast peers drop would silently desync the viewer.
+The gate lives in [src/lib/objectPermissions.js](src/lib/objectPermissions.js)
+consumers and is inert without a plugin (`isViewer()` is false when no `rolesInfo`
+is published).
+
 ### 2. Identity / auth hook — `authorize(peerId)`
 
 Consulted in `handleConnection` when an unknown peer connects: if the auth provider's

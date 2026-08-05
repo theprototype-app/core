@@ -84,7 +84,7 @@ export function inputContextMenu(input) {
 		menu = document.createElement('div');
 		menu.id = 'input-context-menu';
 		menu.className =
-			'fixed z-[1001] flex overflow-hidden rounded-lg border border-gray-600 bg-gray-800 text-xs text-gray-200 shadow-xl';
+			'fixed z-1001 flex overflow-hidden rounded-lg border border-gray-600 bg-gray-800 text-xs text-gray-200 shadow-xl';
 		menu.style.left = e.clientX + 'px';
 		menu.style.top = e.clientY + 'px';
 		/** @param {string} label @param {() => any} fn */

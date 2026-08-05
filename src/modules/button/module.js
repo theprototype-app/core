@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { allNodes } from '../../stores/flowStore';
 import { setNodeData } from '$lib/nodesHandler';
 import { runtimeNow } from '$lib/moduleSDK';

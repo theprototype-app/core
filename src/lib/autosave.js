@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { objectsGroup, globalCamera, orbitControls } from '../stores/sceneStore';
 import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
@@ -212,6 +212,22 @@ export function dismissRestore() {
 /** Immediate save (Settings action / tests) */
 export function saveNow() {
 	return saveSnapshot();
+}
+
+/**
+ * H12: annotations ride the snapshot but were NOT wired to the dirty tracker —
+ * startAutosave only watched objectsGroup + flowGraphs, so a note added without
+ * touching an object afterwards was never persisted ("some notes disappear on
+ * reload"). annotationsHandler already imports this module for
+ * registerAnnotationsPersistence, so calling in from there adds no import edge.
+ */
+export function markAnnotationsDirty() {
+	markDirty();
+}
+
+/** Is a change waiting to be written? (Settings/tests) */
+export function isDirty() {
+	return dirty;
 }
 
 export async function clearSavedSession() {

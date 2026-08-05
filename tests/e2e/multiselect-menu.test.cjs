@@ -45,7 +45,8 @@ h.run(async () => {
 	const menu = await A.page.evaluate((ids) => {
 		window.__stores.objectActions.applySelectionSet(ids);
 		const items = window.__stores.objectMenu.buildObjectMenuItems(ids[1]);
-		return items.map((i) => i.label);
+		// 15-Q: header/section rows carry no label — drop them
+		return items.map((i) => i.label).filter(Boolean);
 	}, ids);
 	h.check(menu.some((l) => l.startsWith('Group selection')), 'menu offers Group selection when multi');
 	h.check(menu.some((l) => l === 'Delete (3)'), `Delete label is counted (${menu.find((l) => l.startsWith('Delete'))})`);

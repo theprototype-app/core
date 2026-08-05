@@ -33,7 +33,7 @@
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
-	import { moveObjectToGroup, selectObject } from '$lib/objectActions';
+	import { moveObjectToGroup, selectObject, flyTo } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
@@ -42,7 +42,39 @@
 	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
 	import { showLightHelpers } from '$lib/lightHelpers';
-	import { cameraNear, cameraFar, setCameraNear, setCameraFar } from '$lib/cameraClip';
+	import {
+		cameraNear,
+		cameraFar,
+		setCameraNear,
+		setCameraFar,
+		orbitPrefs,
+		setOrbitPrefs,
+		resetOrbitPrefs
+	} from '$lib/cameraClip';
+	// 16-P4: named, lens-carrying camera bookmarks managed right here
+	import {
+		bookmarks,
+		saveBookmark,
+		recallBookmark,
+		renameBookmark,
+		overwriteBookmark,
+		deleteBookmark,
+		moveBookmark,
+		SHORTCUT_SLOTS
+	} from '$lib/cameraBookmarks';
+	import { sceneRadius } from '$lib/sceneBounds';
+	// 16-P5: camera OBJECTS (marker + userData.camera)
+	import {
+		isCameraObject,
+		cameraSpec,
+		setCameraFor,
+		setCameraFromView,
+		alignViewToCamera,
+		captureThroughCamera,
+		ASPECTS
+	} from '$lib/cameraObjects';
+	import { cameraPreview, startCameraPreview, stopCameraPreview } from '$lib/cameraPreview';
+	import { showCameraFrustums } from '$lib/cameraHelpers';
 	import {
 		music,
 		musicLocalVolume,
@@ -79,8 +111,12 @@
 		selectedObject,
 		backgroundColor,
 		globalCamera,
-		viewMode
+		viewMode,
+		showGrid
 	} from '../../stores/sceneStore';
+	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
+	import { gridSettings, setGrid, resetGrid, effectiveCell } from '$lib/gridSettings';
+	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
 	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
 
 	// (15-L3 dropped the standalone hex textboxes under each colour picker — the
@@ -524,6 +560,28 @@
 				: { fog: { color: fogColor ?? '#ffffff', near: fogNear, far: fogFar } }
 		);
 	}
+
+	// 16-P4: framing helpers for the Camera section. Both reuse the existing flyTo
+	// tween (so they're cancellable and consistent with Focus camera).
+	function frameScene() {
+		// pull back along the current view direction far enough to see everything
+		const radius = Math.max(sceneRadius(), 2);
+		/** @type {any} */
+		const camera = $globalCamera;
+		const fov = ((camera?.fov ?? 40) * Math.PI) / 180;
+		const distance = (radius / Math.sin(fov / 2)) * 1.1;
+		const direction = camera
+			? new THREE.Vector3().subVectors(camera.position, new THREE.Vector3(0, 0, 0)).normalize()
+			: new THREE.Vector3(-1, 1, 1).normalize();
+		if (!direction.lengthSq()) direction.set(-1, 1, 1).normalize();
+		flyTo(direction.multiplyScalar(distance).toArray(), [0, 0, 0]);
+	}
+	/** shared look for the small bookmark row buttons */
+	const bmBtn = 'shrink-0 rounded-sm bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40';
+	function resetView() {
+		// the editor camera's mount defaults (Scene.svelte)
+		flyTo([-10, 10, 10], [0, 1.5, 0]);
+	}
 </script>
 
 <!-- flowbite-svelte 1.x turned Drawer into a native <dialog> (focus-stealing, modal
@@ -829,7 +887,12 @@
 				</p>
 				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
 				<Checkbox bind:checked={$showColliders}>Show colliders — this device</Checkbox>
-				<p class="ui-section-label">Camera lens</p>
+			</Section>
+
+			<!-- 16-P4: everything about the VIEWPORT camera in one place (it used to be a
+			     "Camera lens" sub-label buried in View): lens, clip planes, orbit feel,
+			     framing shortcuts and the saved views. All LOCAL, never replicated. -->
+			<Section label="Camera">
 				<div id="lens-presets" class="flex flex-wrap gap-1">
 					{#each LENS_PRESETS as p (p.label)}
 						<button
@@ -873,18 +936,354 @@
 				/>
 				<div class="ui-row">
 					<span class="w-20 shrink-0 text-xs text-gray-400">Far clip</span>
-					<input
-						id="camera-far"
-						type="number"
-						min="10"
-						step="500"
-						class="ui-input w-24"
-						value={$cameraFar}
-						onchange={(e) => setCameraFar(parseFloat(e.currentTarget.value))}
-					/>
+					<div class="w-24 shrink-0">
+						<DragRow
+							id="camera-far"
+							value={$cameraFar}
+							decimals={0}
+							min={10}
+							step={5}
+							snap={100}
+							ariaLabel="Far clip"
+							onchange={(v) => setCameraFar(v)}
+						/>
+					</div>
 					<span class="text-[10px] text-gray-500">grows to fit the scene</span>
 				</div>
 				<p class="text-[10px] italic text-gray-400">Clip planes are per-device (not shared).</p>
+				<p class="ui-section-label">Orbit feel</p>
+				<SliderRow
+					label="Rotate speed"
+					min={0.1}
+					max={3}
+					step={0.05}
+					decimals={2}
+					value={$orbitPrefs.rotateSpeed}
+					onchange={(v) => setOrbitPrefs({ rotateSpeed: v })}
+				/>
+				<SliderRow
+					label="Zoom speed"
+					min={0.1}
+					max={3}
+					step={0.05}
+					decimals={2}
+					value={$orbitPrefs.zoomSpeed}
+					onchange={(v) => setOrbitPrefs({ zoomSpeed: v })}
+				/>
+				<SliderRow
+					label="Pan speed"
+					min={0.1}
+					max={3}
+					step={0.05}
+					decimals={2}
+					value={$orbitPrefs.panSpeed}
+					onchange={(v) => setOrbitPrefs({ panSpeed: v })}
+				/>
+				<Checkbox
+					id="orbit-damping"
+					checked={$orbitPrefs.damping}
+					onchange={(/** @type {any} */ e) => setOrbitPrefs({ damping: e.currentTarget.checked })}
+					>Smooth (damped) orbiting</Checkbox
+				>
+				<Checkbox
+					id="orbit-invert"
+					checked={$orbitPrefs.invertY}
+					onchange={(/** @type {any} */ e) => setOrbitPrefs({ invertY: e.currentTarget.checked })}
+					>Invert vertical orbit</Checkbox
+				>
+				<div class="ui-row items-center gap-2">
+					<button id="camera-frame-scene" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => frameScene()}>
+						Frame scene
+					</button>
+					<button id="camera-reset-view" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetView()}>
+						Reset view
+					</button>
+					<button id="orbit-reset" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetOrbitPrefs()}>
+						Reset feel
+					</button>
+				</div>
+				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
+				<div class="ui-row items-center gap-2">
+					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>
+						Save current view
+					</button>
+					<span class="text-[10px] text-gray-500">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
+				</div>
+				{#if $bookmarks.length === 0}
+					<p class="text-xs text-gray-400">No saved views yet. Frame something you like, then Save current view.</p>
+				{:else}
+					<div id="bookmark-list" class="flex flex-col gap-1">
+						{#each $bookmarks as bookmark, index (bookmark.id)}
+							<div class="bookmark-row flex items-center gap-1">
+								<span class="w-8 shrink-0 text-[10px] text-gray-500">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
+								<input
+									class="ui-input min-w-0 flex-1 px-1 py-0.5 text-xs"
+									aria-label="View name"
+									value={bookmark.name}
+									onchange={(/** @type {any} */ e) => renameBookmark(bookmark.id, e.currentTarget.value)}
+								/>
+								<button class={bmBtn} title="Recall this view" onclick={() => recallBookmark(index)}>
+									<Icon name="eye" size={13} />
+								</button>
+								<button class={bmBtn} title="Overwrite with the current view" onclick={() => overwriteBookmark(bookmark.id)}>
+									<Icon name="camera" size={13} />
+								</button>
+								<button class={bmBtn} title="Move up" disabled={index === 0} onclick={() => moveBookmark(bookmark.id, -1)}>↑</button>
+								<button
+									class={bmBtn}
+									title="Move down"
+									disabled={index === $bookmarks.length - 1}
+									onclick={() => moveBookmark(bookmark.id, 1)}>↓</button
+								>
+								<button class="{bmBtn} text-red-400" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
+									<Icon name="trash-2" size={13} />
+								</button>
+							</div>
+						{/each}
+					</div>
+					<p class="text-[10px] italic text-gray-400">
+						Each view stores its lens (FOV + clip planes) and restores it on recall.
+					</p>
+				{/if}
+			</Section>
+
+			<!-- 16-P3: grid + snapping are LOCAL view prefs (like the clip planes and
+			     the render mode above) — peers each get their own. -->
+			<Section label="Grid">
+				<Checkbox
+					id="grid-show"
+					checked={!!$showGrid}
+					onchange={() => {
+						showGrid.update((v) => !v);
+						if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
+						else localStorage.setItem('showGrid', 'false');
+					}}>Show grid</Checkbox
+				>
+				<Checkbox
+					id="grid-match-snap"
+					checked={$gridSettings.matchSnapStep}
+					onchange={(/** @type {any} */ e) => setGrid({ matchSnapStep: e.currentTarget.checked })}
+				>
+					Match snapping step ({$snapSettings.translate})
+				</Checkbox>
+				<SliderRow
+					label="Cell size"
+					min={0.05}
+					max={10}
+					step={0.05}
+					decimals={2}
+					value={effectiveCell($gridSettings, $snapSettings.translate)}
+					onchange={(v) => setGrid({ cellSize: v, matchSnapStep: false })}
+				/>
+				<SliderRow
+					label="Major every"
+					min={2}
+					max={20}
+					step={1}
+					decimals={0}
+					value={$gridSettings.sectionEvery}
+					onchange={(v) => setGrid({ sectionEvery: Math.round(v) })}
+				/>
+				<div class="ui-row items-center gap-2">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Colours</span>
+					<!-- plain swatches: the full picker is overkill for two grid lines,
+					     and v4 pickers must never take bind:hex (15-C) -->
+					<input
+						id="grid-cell-color"
+						type="color"
+						class="h-6 w-10 rounded-sm bg-transparent"
+						aria-label="Grid cell colour"
+						value={$gridSettings.cellColor}
+						oninput={(/** @type {any} */ e) => setGrid({ cellColor: e.currentTarget.value })}
+					/>
+					<input
+						id="grid-section-color"
+						type="color"
+						class="h-6 w-10 rounded-sm bg-transparent"
+						aria-label="Grid major-line colour"
+						value={$gridSettings.sectionColor}
+						oninput={(/** @type {any} */ e) => setGrid({ sectionColor: e.currentTarget.value })}
+					/>
+					<span class="text-[10px] text-gray-500">cell · major</span>
+				</div>
+				<div class="ui-row items-center gap-1">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Fade</span>
+					{#each [['auto', 'Auto'], ['fixed', 'Fixed']] as [mode, label]}
+						<button
+							class={'ui-chip ' +
+								($gridSettings.fadeMode === mode
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							title={mode === 'auto' ? 'Fade scales with the camera distance' : 'A fixed fade radius'}
+							onclick={() => setGrid({ fadeMode: mode })}>{label}</button
+						>
+					{/each}
+				</div>
+				{#if $gridSettings.fadeMode === 'fixed'}
+					<SliderRow
+						label="Fade radius"
+						min={20}
+						max={5000}
+						step={10}
+						decimals={0}
+						value={$gridSettings.fadeDistance}
+						onchange={(v) => setGrid({ fadeDistance: v })}
+					/>
+				{/if}
+				<SliderRow
+					label="Fade edge"
+					min={0}
+					max={4}
+					step={0.1}
+					decimals={1}
+					value={$gridSettings.fadeStrength}
+					onchange={(v) => setGrid({ fadeStrength: v })}
+				/>
+				<Checkbox
+					id="grid-infinite"
+					checked={$gridSettings.infinite}
+					onchange={(/** @type {any} */ e) => setGrid({ infinite: e.currentTarget.checked })}
+					>Infinite grid</Checkbox
+				>
+				{#if !$gridSettings.infinite}
+					<SliderRow
+						label="Extent"
+						min={10}
+						max={1000}
+						step={10}
+						decimals={0}
+						value={$gridSettings.size}
+						onchange={(v) => setGrid({ size: v })}
+					/>
+				{/if}
+				<!-- 16-Q2: three-way follow. The old checkbox tracked your POSITION, which
+				     is not what "follow the camera" should mean while you're looking
+				     somewhere else; Look-at centres the grid under your gaze. -->
+				<div id="grid-follow" class="ui-row items-center gap-1">
+					<span class="w-20 shrink-0 text-xs text-gray-400">Follow</span>
+					{#each [['off', 'Off'], ['lookat', 'Look-at'], ['camera', 'Camera']] as [mode, label]}
+						<button
+							class={'ui-chip ' +
+								($gridSettings.follow === mode
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							title={mode === 'lookat'
+								? 'Centre the grid under what you are looking at (horizontal only)'
+								: mode === 'camera'
+									? 'Centre the grid under the camera itself'
+									: 'Keep the grid at the world origin'}
+							onclick={() => setGrid({ follow: mode })}>{label}</button
+						>
+					{/each}
+				</div>
+				<Checkbox
+					id="grid-axes"
+					checked={$gridSettings.showAxes}
+					onchange={(/** @type {any} */ e) => setGrid({ showAxes: e.currentTarget.checked })}
+					>Show origin axes</Checkbox
+				>
+				<div class="ui-row items-center gap-2">
+					<button id="grid-reset" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetGrid()}>
+						Reset grid
+					</button>
+					<span class="text-[10px] italic text-gray-400">Per-device (not shared).</span>
+				</div>
+			</Section>
+
+			<Section label="Snapping">
+				<Checkbox
+					id="snap-enabled"
+					checked={$snapEnabled}
+					onchange={(/** @type {any} */ e) => snapEnabled.set(e.currentTarget.checked)}
+					>Snap transforms to a grid</Checkbox
+				>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Position</span>
+					<div class="snap-chips">
+					{#each [0.1, 0.25, 0.5, 1] as step}
+						<button
+							class={'ui-chip ' +
+								($snapSettings.translate === step
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => snapSettings.update((s) => ({ ...s, translate: step }))}>{step}</button
+						>
+					{/each}
+					</div>
+					<div class="snap-field">
+						<DragRow
+							id="snap-translate"
+							value={$snapSettings.translate}
+							decimals={2}
+							min={0.01}
+							step={0.005}
+							snap={0.1}
+							ariaLabel="translate snap step"
+							onchange={(v) => snapSettings.update((s) => ({ ...s, translate: v || s.translate }))}
+						/>
+					</div>
+				</div>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Rotation</span>
+					<div class="snap-chips">
+					{#each [5, 15, 45, 90] as step}
+						<button
+							class={'ui-chip ' +
+								($snapSettings.rotateDeg === step
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => snapSettings.update((s) => ({ ...s, rotateDeg: step }))}>{step}°</button
+						>
+					{/each}
+					</div>
+					<div class="snap-field">
+						<DragRow
+							id="snap-rotate"
+							value={$snapSettings.rotateDeg}
+							decimals={1}
+							min={0.1}
+							step={0.2}
+							snap={5}
+							ariaLabel="rotateDeg snap step"
+							onchange={(v) => snapSettings.update((s) => ({ ...s, rotateDeg: v || s.rotateDeg }))}
+						/>
+					</div>
+				</div>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Scale</span>
+					<div class="snap-chips">
+					{#each [0.05, 0.1, 0.25] as step}
+						<button
+							class={'ui-chip ' +
+								($snapSettings.scale === step
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => snapSettings.update((s) => ({ ...s, scale: step }))}>{step}</button
+						>
+					{/each}
+					</div>
+					<div class="snap-field">
+						<DragRow
+							id="snap-scale"
+							value={$snapSettings.scale}
+							decimals={2}
+							min={0.01}
+							step={0.005}
+							snap={0.05}
+							ariaLabel="scale snap step"
+							onchange={(v) => snapSettings.update((s) => ({ ...s, scale: v || s.scale }))}
+						/>
+					</div>
+				</div>
+				<Checkbox
+					id="snap-surface"
+					checked={$surfaceSnap}
+					onchange={(/** @type {any} */ e) => surfaceSnap.set(e.currentTarget.checked)}
+					>Rest dragged objects on the surface below</Checkbox
+				>
+				<p class="text-[10px] italic text-gray-400">
+					Snapping is per-device; the same steps drive the viewport menu.
+				</p>
 			</Section>
 
 			<Section label="Physics">
@@ -1093,6 +1492,137 @@
 				</Section>
 			{/if}
 
+			<!-- 16-P5: a camera OBJECT is a marker mesh carrying userData.camera. All
+			     writes go through setCameraFor (props history + objectParameters +
+			     viz/preview poke) — the setPhysicsFor precedent. -->
+			{#if isCameraObject($selectedObject)}
+				{@const cam = cameraSpec($selectedObject)}
+				<Section label="Camera">
+					<div class="ui-row items-center gap-1">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Kind</span>
+						{#each [['perspective', 'Perspective'], ['orthographic', 'Orthographic']] as [kind, label]}
+							<button
+								class={'ui-chip ' + (cam.kind === kind ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								onclick={() => setCameraFor($selectedObject.uuid, { kind })}>{label}</button
+							>
+						{/each}
+					</div>
+					{#if cam.kind === 'perspective'}
+						<SliderRow
+							label="FOV"
+							min={10}
+							max={140}
+							step={1}
+							decimals={0}
+							value={cam.fov}
+							onchange={(v) => setCameraFor($selectedObject.uuid, { fov: v })}
+						/>
+					{:else}
+						<SliderRow
+							label="Size"
+							min={0.5}
+							max={50}
+							step={0.5}
+							decimals={1}
+							value={cam.orthoSize}
+							onchange={(v) => setCameraFor($selectedObject.uuid, { orthoSize: v })}
+						/>
+					{/if}
+					<SliderRow
+						label="Near"
+						min={0.01}
+						max={5}
+						step={0.01}
+						decimals={2}
+						value={cam.near}
+						onchange={(v) => setCameraFor($selectedObject.uuid, { near: v })}
+					/>
+					<div class="ui-row items-center gap-2">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Far</span>
+						<div class="w-24 shrink-0">
+							<DragRow
+								id="camera-object-far"
+								value={cam.far}
+								decimals={0}
+								min={1}
+								step={5}
+								snap={50}
+								ariaLabel="Far plane"
+								onchange={(v) => setCameraFor($selectedObject.uuid, { far: v || cam.far })}
+							/>
+						</div>
+					</div>
+					<div class="ui-row items-center gap-1">
+						<span class="w-20 shrink-0 text-xs text-gray-400">Framing</span>
+						{#each ASPECTS as aspect}
+							<button
+								class={'ui-chip ' + (cam.aspect === aspect ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								onclick={() => setCameraFor($selectedObject.uuid, { aspect })}>{aspect}</button
+							>
+						{/each}
+					</div>
+					<Checkbox
+						id="camera-guide"
+						checked={cam.guide}
+						onchange={(/** @type {any} */ e) => setCameraFor($selectedObject.uuid, { guide: e.currentTarget.checked })}
+						>Letterbox guide while previewing</Checkbox
+					>
+					<div class="ui-row flex-wrap items-center gap-2">
+						<button
+							id="camera-preview"
+							class={'ui-chip ' +
+								($cameraPreview?.uuid === $selectedObject.uuid
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							title="Render the scene through this camera (exit from the banner)"
+							onclick={() =>
+								$cameraPreview?.uuid === $selectedObject.uuid
+									? stopCameraPreview()
+									: startCameraPreview($selectedObject.uuid)}
+							>{$cameraPreview?.uuid === $selectedObject.uuid ? 'Previewing' : 'Preview'}</button
+						>
+						<button
+							id="camera-from-view"
+							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							title="Move this camera to your current viewpoint (and take its FOV)"
+							onclick={() => setCameraFromView($selectedObject.uuid)}>Set from view</button
+						>
+						<button
+							id="camera-align-view"
+							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							title="Fly YOUR view to look through this camera (stays your camera)"
+							onclick={() => alignViewToCamera($selectedObject.uuid)}>Align view</button
+						>
+					</div>
+					<!-- 16-Q4: Capture is a SHOT, not a view change — its own row, with an icon -->
+					<div class="ui-row items-center gap-2">
+						<button
+							id="camera-capture"
+							class="ui-chip inline-flex items-center gap-1 bg-gray-600 text-gray-200 hover:bg-gray-500"
+							title="Render one frame through this camera and download it as a PNG"
+							onclick={() => captureThroughCamera($selectedObject.uuid)}
+						>
+							<Icon name="camera" size={13} />Capture
+						</button>
+						<span class="text-[10px] text-gray-500">saves a PNG at the framing aspect</span>
+					</div>
+					<Checkbox
+						id="camera-pip"
+						checked={cam.pip !== false}
+						onchange={(/** @type {any} */ e) => setCameraFor($selectedObject.uuid, { pip: e.currentTarget.checked })}
+						>Preview window while selected</Checkbox
+					>
+					<Checkbox
+						id="camera-frustums"
+						checked={$showCameraFrustums}
+						onchange={(/** @type {any} */ e) => showCameraFrustums.set(e.currentTarget.checked)}
+						>Show camera frustums — this device</Checkbox
+					>
+					<p class="text-[10px] italic text-gray-400">
+						The camera itself is shared; previewing and the frustum lines are yours alone.
+					</p>
+				</Section>
+			{/if}
 			<Section label="Transform">
 				<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
 					<span class="text-[11px] text-gray-400">Position</span>
@@ -1132,14 +1662,17 @@
 				<Section label="Object">
 					<div class="ui-row items-center gap-2">
 						<span class="w-24 shrink-0 text-xs text-gray-400">Render order</span>
-						<input
-							id="inspector-render-order"
-							type="number"
-							step="1"
-							class="ui-input w-20 text-right"
-							value={$selectedObject.renderOrder}
-							onchange={(/** @type {any} */ e) => setObjectParam('renderOrder', +e.currentTarget.value || 0)}
-						/>
+						<div class="w-20 shrink-0">
+							<DragRow
+								id="inspector-render-order"
+								value={$selectedObject.renderOrder}
+								decimals={0}
+								step={0.2}
+								snap={5}
+								ariaLabel="Render order"
+								onchange={(v) => setObjectParam('renderOrder', Math.round(v) || 0)}
+							/>
+						</div>
 					</div>
 					<Checkbox
 						checked={$selectedObject.frustumCulled}
@@ -1614,46 +2147,42 @@
 						</button>
 					{/if}
 					<!-- CL-A A3: sensor = trigger volume; overlaps fire On Enter / On Exit -->
-					<label class="flex items-center gap-1.5 text-xs text-gray-300">
-						<input
-							id="physics-sensor"
-							type="checkbox"
-							checked={!!$selectedObject.userData.physics?.sensor}
-							onchange={(e) => setPhysics({ sensor: e.currentTarget.checked || null })}
-						/>
-						Sensor — no collision, fires On Enter / On Exit
-					</label>
+					<Checkbox
+						id="physics-sensor"
+						checked={!!$selectedObject.userData.physics?.sensor}
+						onchange={(/** @type {any} */ e) => setPhysics({ sensor: e.currentTarget.checked || null })}
+						>Sensor — no collision, fires On Enter / On Exit</Checkbox
+					>
 					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
 						<!-- CL-A A5: freeze axes (dynamic bodies only) -->
 						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-gray-300">
 							<span class="w-20 shrink-0 text-gray-400">Lock rotation</span>
 							{#each [['rx', 'X'], ['ry', 'Y'], ['rz', 'Z']] as [key, label] (key)}
-								<label class="flex items-center gap-1">
-									<input type="checkbox" checked={!!$selectedObject.userData.physics?.freeze?.[key]} onchange={(e) => setFreeze(key, e.currentTarget.checked)} />
-									{label}
-								</label>
+								<Checkbox
+									checked={!!$selectedObject.userData.physics?.freeze?.[key]}
+									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
+									>{label}</Checkbox
+								>
 							{/each}
 						</div>
 						<div id="physics-freeze-pos" class="ui-row items-center gap-2 text-xs text-gray-300">
 							<span class="w-20 shrink-0 text-gray-400">Lock position</span>
 							{#each [['px', 'X'], ['py', 'Y'], ['pz', 'Z']] as [key, label] (key)}
-								<label class="flex items-center gap-1">
-									<input type="checkbox" checked={!!$selectedObject.userData.physics?.freeze?.[key]} onchange={(e) => setFreeze(key, e.currentTarget.checked)} />
-									{label}
-								</label>
+								<Checkbox
+									checked={!!$selectedObject.userData.physics?.freeze?.[key]}
+									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
+									>{label}</Checkbox
+								>
 							{/each}
 						</div>
 					{/if}
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
-					<label class="flex items-center gap-1.5 text-xs text-gray-300">
-						<input
-							id="physics-show-collider"
-							type="checkbox"
-							checked={$colliderVizObjects.has($selectedObject.uuid)}
-							onchange={(e) => setColliderViz($selectedObject.uuid, e.currentTarget.checked)}
-						/>
-						Show collider — this device
-					</label>
+					<Checkbox
+						id="physics-show-collider"
+						checked={$colliderVizObjects.has($selectedObject.uuid)}
+						onchange={(/** @type {any} */ e) => setColliderViz($selectedObject.uuid, e.currentTarget.checked)}
+						>Show collider — this device</Checkbox
+					>
 					<p class="mt-1 text-xs text-gray-400">
 						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
 					</p>
@@ -1733,18 +2262,20 @@
 						<div class="ui-row items-center gap-2">
 							<span class="w-20 shrink-0 text-xs text-gray-400" title="Where particles spawn, relative to the object center (local axes)">Emit from</span>
 							{#each ['x', 'y', 'z'] as axis, i}
-								<input
-									type="number"
-									step="0.1"
-									aria-label={'Emit offset ' + axis}
-									class="w-14 rounded-sm border border-gray-500 bg-transparent px-1 py-0.5 text-xs"
-									value={(p.offset ?? [0, 0, 0])[i] ?? 0}
-									oninput={(/** @type {any} */ e) => {
-										const off = [...(p.offset ?? [0, 0, 0])];
-										off[i] = +e.currentTarget.value;
-										setParticles({ offset: off });
-									}}
-								/>
+								<div class="w-14 shrink-0">
+									<DragRow
+										value={(p.offset ?? [0, 0, 0])[i] ?? 0}
+										decimals={2}
+										step={0.01}
+										snap={0.1}
+										ariaLabel={'Emit offset ' + axis}
+										onchange={(v) => {
+											const off = [...(p.offset ?? [0, 0, 0])];
+											off[i] = v;
+											setParticles({ offset: off });
+										}}
+									/>
+								</div>
 							{/each}
 						</div>
 						<div class="ui-row items-center gap-2">
@@ -1816,3 +2347,29 @@
 	{/if}
 </div>
 {/if}
+
+<style>
+	/* 16-Q6: the three snapping rows line up — label | chips | field in ONE grid, so
+	   the numeric boxes share an edge no matter how many preset chips a row has */
+	.snap-row {
+		display: grid;
+		grid-template-columns: 4.25rem minmax(0, 1fr) 3.75rem;
+		align-items: center;
+		gap: 0.25rem;
+	}
+	.snap-chips {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 0.25rem;
+	}
+	.snap-field {
+		width: 3.75rem;
+	}
+	/* the preset chips must fit on ONE line in a 320px panel — the shared ui-chip
+	   padding + uppercase tracking pushed the fourth one onto a second row */
+	.snap-chips button {
+		padding-inline: 0.3rem;
+		letter-spacing: 0;
+	}
+</style>

@@ -142,5 +142,37 @@ h.run(async () => {
 		'viewing a locked object still allows duplicating a copy'
 	);
 
+	// ---------- 16-P6: the viewport menu's "Selected" follows the SET ----------
+	const menuLabels = async () => {
+		await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
+		await A.page.waitForTimeout(350);
+		const labels = await A.page.evaluate(() =>
+			[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((r) => r.textContent?.trim() ?? '')
+		);
+		await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+		await A.page.waitForTimeout(150);
+		return labels;
+	};
+
+	await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		w.objectActions.selectObject(g.children[0].uuid);
+	});
+	await A.page.waitForTimeout(200);
+	const withSelection = await menuLabels();
+	h.check(
+		withSelection.some((l) => l.startsWith('Selected')),
+		'right-clicking empty space WITH a selection still offers "Selected"'
+	);
+
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.waitForTimeout(200);
+	const afterDeselect = await menuLabels();
+	h.check(
+		!afterDeselect.some((l) => l.startsWith('Selected')),
+		`"Selected" is gone once nothing is selected (${afterDeselect.length} rows)`
+	);
+
 	await h.finish(browser);
 });

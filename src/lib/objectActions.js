@@ -90,10 +90,12 @@ export function applySelectionSet(uuids, openProperties = false) {
 			!locked.find((lockedUuid) => lockedUuid[1] === uuid)
 	);
 	applyMemberTints(group, clean);
+	const previous = get(selectedObjects);
 	selectedObjects.set(clean);
 	if (!clean.length) {
 		releaseMultiPivot();
 		if (controls && !get(isVRMode)) controls.detach();
+		broadcastSelectionRelease(previous);
 		return;
 	}
 	const primary = group.getObjectByProperty('uuid', clean[clean.length - 1]);
@@ -154,6 +156,7 @@ export function selectObject(uuid, openProperties = false, additive = false) {
 		// keep the original locked-view behavior: show it, no gizmo, no lock
 		releaseMultiPivot();
 		applyMemberTints(group, []);
+		broadcastSelectionRelease(get(selectedObjects)); // 16-P6: let go of what we held
 		selectedObjects.set([]);
 		if (controls && !get(isVRMode)) controls.detach();
 		selectedObject.set(object);
@@ -165,11 +168,28 @@ export function selectObject(uuid, openProperties = false, additive = false) {
 	applySelectionSet([uuid], openProperties);
 }
 
+/**
+ * 16-P6: tell peers we let go. A `lock` message only ever REPLACES a peer's set
+ * (`lockGeometry` ignores an empty list), so without this a deselect left the
+ * object highlighted + "locked by X" on every other peer until we happened to
+ * select something else. `unlock` + `applyUnlock` already exist — no new type;
+ * one message per uuid (a selection set is a handful of objects). A peer that
+ * had asked us for control gets it here, which is exactly right.
+ * @param {string[]} uuids
+ */
+export function broadcastSelectionRelease(uuids) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer?.peer?.id || !uuids?.length) return;
+	for (const uuid of uuids) peer.send({ type: 'unlock', peerId: peer.peer.id, uuid });
+}
+
 export function deselectObject() {
 	/** @type {any} */
 	const controls = get(TControls);
 	releaseMultiPivot();
 	applyMemberTints(get(objectsGroup), []);
+	broadcastSelectionRelease(get(selectedObjects));
 	selectedObjects.set([]);
 	if (controls && !get(isVRMode)) controls.detach();
 	// selectedObject keeps the last object on purpose — the open inspector binds
@@ -431,6 +451,14 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.particles;
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'particles', uuid: entry.uuid, particles: state.particles });
+	}
+	if ('camera' in state) {
+		// 16-P5: camera-object settings ride the same kind (viz + any live preview
+		// rebuild from the poke below)
+		if (state.camera) object.userData.camera = state.camera;
+		else delete object.userData.camera;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'camera', uuid: entry.uuid, camera: state.camera });
 	}
 	objectsGroup.update((value) => value);
 	return true;

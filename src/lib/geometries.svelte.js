@@ -92,6 +92,31 @@ export function createGeometry(command, uuid) {
             object.material.roughness = 0.95;
             object.userData.terrain = true;
         }
+        if (geometry === 'Camera' || geometry === 'CameraOrtho') {
+            // 16-P5: a camera OBJECT is this marker mesh plus its settings on
+            // userData.camera (rides toJSON/GLTF extras like userData.physics, so
+            // replication/sessions/prefabs need nothing new). Deterministic: peers
+            // run the same /create and stamp the same defaults. Kept literal here
+            // rather than imported from cameraObjects.js — that module reaches
+            // history, and geometries sits inside history's import subtree.
+            object.name = geometry === 'CameraOrtho' ? 'Camera (ortho)' : 'Camera';
+            object.material.color.set('#d8dee9');
+            object.material.roughness = 0.5;
+            object.material.metalness = 0.35;
+            object.userData.camera = {
+                kind: geometry === 'CameraOrtho' ? 'orthographic' : 'perspective',
+                fov: 50,
+                orthoSize: 5,
+                near: 0.1,
+                far: 1000,
+                aspect: '16:9',
+                guide: true,
+                pip: true
+            };
+            // a viewpoint marker is not scenery you light: no shadows, no physics
+            object.userData.shadow = false;
+            object.castShadow = false;
+        }
         // PFX-C follow-up: standard primitives are DYNAMIC by default (mass 1) so
         // a fresh cube falls, collides and THROWS the moment a sim runs — fun by
         // default. Explicit allow-list: Terrain + module-registered primitives

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Check, ChevronDown, Eye, Glasses, StickyNote, VolumeX } from '@lucide/svelte';
+	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
+	import { Check, ChevronDown, Eye, Glasses, StickyNote, VolumeX, Camera } from '@lucide/svelte';
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
 	import {
@@ -287,6 +288,16 @@
 							{:else}
 								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 							{/if}
+						{/if}
+						{#if i > 0 && $cameraPreviews[user[0]]}
+							<!-- 16-P5: this peer is looking through a scene camera — you can join -->
+							<button
+								class="peer-watch peer-preview shrink-0 rounded px-2 py-0.5 text-xs bg-gray-600 text-gray-100 hover:bg-gray-500"
+								title={`Previewing ${previewLabel($cameraPreviews[user[0]])} — click to look through it too`}
+								onclick={() => { joinPeerPreview(user[0]); peersOpen = false; }}
+							>
+								<Camera size={14} class="mr-1" aria-hidden="true" />{previewLabel($cameraPreviews[user[0]])}
+							</button>
 						{/if}
 						{#if i > 0}
 							<button

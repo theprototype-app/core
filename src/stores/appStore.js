@@ -99,6 +99,23 @@ export function showSidebar(store) {
 }
 
 /**
+ * 16-Q2: DEEP LINK into a Configure Scene section ("More snapping settings…",
+ * "Grid & axes settings…", "Manage saved views…"). Deliberately NOT showSidebar:
+ * that TOGGLES the scene view, so clicking a deep link while the panel was already
+ * open used to CLOSE it. This only ever opens, then names the section to expand +
+ * scroll to (Section.svelte watches the store and clears it).
+ * @param {string} label the Section label to reveal
+ */
+export function openSceneSection(label) {
+	libraryClose.set(true);
+	const wasOpen = !get(inspectorClose) && get(inspectorKind) === 'scene';
+	inspectorKind.set('scene');
+	inspectorClose.set(false);
+	// let the panel mount before asking a section to scroll (it may not exist yet)
+	setTimeout(() => inspectorScrollTo.set(label), wasOpen ? 0 : 140);
+}
+
+/**
  * Close the inspector only when it shows the selection — deselect, lock and
  * delete paths must not close an open scene view.
  */
@@ -322,6 +339,10 @@ export const notificationsUnread = writable(0);
 /** Inspector property search (PFX-C follow-up): non-empty = Sections filter
  * themselves by their rendered text (Section.svelte reads this). LOCAL. */
 export const inspectorFilter = writable('');
+/** 16-Q2: a Section LABEL to expand + scroll into view (set by `openSceneSection`,
+ * consumed and cleared by the matching Section).
+ * @type {import('svelte/store').Writable<string|null>} */
+export const inspectorScrollTo = writable(null);
 /** the notification center panel open state */
 export const notificationCenterOpen = writable(false);
 /** E2: the scene-notes drawer (lists every annotation) open state */
@@ -451,11 +472,14 @@ export function clearToast(toast) {
  * @param {string} text
  * @param {{label: string, action: () => void}[]=} actions
  * @param {(() => void)=} onDismiss side effect for the ✕ (e.g. persist "seen")
+ * @param {boolean=} noClose 15-P2: a genuine FORK renders no ✕ at all — a
+ *   dismiss that silently picks one branch is the auto-decide trap in
+ *   miniature; the user must click one of the actions (share-or-stash)
  */
-export function showInfoToast(id, text, actions, onDismiss) {
+export function showInfoToast(id, text, actions, onDismiss, noClose) {
   toastStore.update((list) => {
     if (list.some((entry) => entry && entry.id === id)) return list; // already up
-    return [...list, { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss }];
+    return [...list, { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss, noClose: !!noClose }];
   });
 }
 

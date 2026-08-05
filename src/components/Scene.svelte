@@ -31,6 +31,9 @@
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
+	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
+	import { cameraPreview, activeOrbit } from '$lib/cameraPreview';
+	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
@@ -259,7 +262,8 @@
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
-		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $orbitControls);
+		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
+		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 	});
 
 	// --- undo/redo: record one history entry per gizmo drag ---
@@ -268,6 +272,13 @@
 	$: if ($TControls && $TControls !== hookedControls) {
 		hookedControls = $TControls;
 		$TControls.addEventListener('dragging-changed', (event) => {
+			// 16-Q5: suppress orbiting for the whole drag OURSELVES — first thing, for
+			// every kind of gizmo target. threlte's TransformControls disables whatever
+			// controls sit in ITS OWN context slot, and after a camera preview that slot
+			// can point at an instance that no longer drives the view, so dragging an
+			// object also orbited the camera ("as if I would move around with mouse").
+			// Writing through `activeOrbit` is instance-proof.
+			if ($activeOrbit) $activeOrbit.enabled = !event.value;
 			const object = hookedControls.object;
 			if (!object) return;
 			// vertex handles record their own history entries
@@ -368,6 +379,7 @@
 	onMount(() => {
 		startLightHelpers();
 		startColliderHelpers();
+		startCameraHelpers();
 		startEditorNavigation();
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
@@ -415,7 +427,7 @@
 			// draw mode: dragging paints a stroke instead of orbiting
 			if ($drawMode && !$isLocked && !$isVRMode) {
 				strokeActive = true;
-				if ($orbitControls) $orbitControls.enabled = false;
+				if ($activeOrbit) $activeOrbit.enabled = false;
 				setRayFromEvent(event);
 				strokePointFromRay(selectionRaycaster);
 				return;
@@ -428,7 +440,7 @@
 				if (hit) {
 					sculptActive = true;
 					lastSculptAt = performance.now();
-					if ($orbitControls) $orbitControls.enabled = false;
+					if ($activeOrbit) $activeOrbit.enabled = false;
 					beginStroke($sculptObject);
 					const local = terrain.worldToLocal(hit.point.clone());
 					strokeMove($sculptObject, local.x, local.z, 0.016, local.y); // y feeds the mesh brush
@@ -438,7 +450,7 @@
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
 			if (event.shiftKey && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
 				marqueeStart = [event.clientX, event.clientY];
-				if ($orbitControls) $orbitControls.enabled = false;
+				if ($activeOrbit) $activeOrbit.enabled = false;
 			}
 			downPosition = [event.clientX, event.clientY];
 			downTime = Date.now();
@@ -502,7 +514,7 @@
 			if (marqueeStart && event.button === 0) {
 				const start = marqueeStart;
 				marqueeStart = null;
-				if ($orbitControls) $orbitControls.enabled = true;
+				if ($activeOrbit) $activeOrbit.enabled = true;
 				const moved = Math.hypot(event.clientX - start[0], event.clientY - start[1]);
 				if ($marqueeRect && moved > 8) {
 					// marquee ADDS to the selection (it already needs Shift to start)
@@ -519,13 +531,13 @@
 			}
 			if (sculptActive && event.button === 0) {
 				sculptActive = false;
-				if ($orbitControls) $orbitControls.enabled = true;
+				if ($activeOrbit) $activeOrbit.enabled = true;
 				sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
 				return;
 			}
 			if (strokeActive && event.button === 0) {
 				strokeActive = false;
-				if ($orbitControls) $orbitControls.enabled = true;
+				if ($activeOrbit) $activeOrbit.enabled = true;
 				endStroke();
 				return;
 			}
@@ -962,7 +974,13 @@
 </script>
 
 <T.PerspectiveCamera makeDefault position={[-10, 10, 10]} fov={40} far={5000} bind:ref={$editorCam}>
-	{#if !$specatorMode}
+	<!-- 16-P5: while previewing a camera OBJECT, that camera owns the controls — these
+	     unmount so its own `makeDefault` camera really becomes the render camera.
+	     16-Q5: the instance being replaced is DISPOSED on the way out
+	     (startCameraPreview / releasePreviewOrbit), because an OrbitControls that is
+	     merely dropped keeps its DOM listeners and goes on orbiting whatever camera
+	     threlte points it at — the zombie behind "the gizmo drags rotate my view". -->
+	{#if !$specatorMode && !$cameraPreview}
 		<OrbitControls bind:ref={$orbitControls} enableZoom={true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
 	{/if}
 </T.PerspectiveCamera>
@@ -990,6 +1008,8 @@
      its transform is LOCAL-only (identity on desktop, reset on VR exit) -->
 <T.Group bind:ref={$worldRig} name="world-grab-rig">
 	<T.Group bind:ref={$objectsGroup} name="sceneObjects" />
+
+	<CameraPreview />
 
 	<Grid showGrid={$showGrid && $viewMode !== 'wireframe'} />
 

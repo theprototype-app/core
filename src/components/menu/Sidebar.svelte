@@ -306,9 +306,9 @@
 	}
 	/* 15-O: active nav row (Configure Scene while its panel is open) — a tinted
 	   row + accent rule, replacing the "●" that used to shift the label */
+	/* 16-P6: tint + accent text only — the inset accent bar read as a stray border */
 	.side-row.active {
 		background-color: rgb(59 130 246 / 0.12);
-		box-shadow: inset 2px 0 0 var(--color-primary-500, #3b82f6);
 		color: var(--color-primary-400, #60a5fa);
 	}
 	.side-ico {

@@ -34,9 +34,40 @@ polled locally), the Explorer **pack library** (imported packs stay local until 
 explicit future "Share"; only a *placed* object replicates through the normal import
 path), input claims (`inputRuntime.claimInput` — a claim only pauses THIS peer's own
 input consumers, nothing on the wire), view mode/shadow quality/sculpt brush prefs,
-and the LOCAL-prefs modules (themes, cameraClip, WindowShell `ws:*`). Rule of thumb:
+the LOCAL-prefs modules (themes, cameraClip + orbit feel, gridSettings, WindowShell
+`ws:*`, remembered menu sizes `ctx:searchHeight:<kind>`), and the whole camera
+PREVIEW/PiP layer (#16: the camera OBJECT is shared scene content, but looking
+through it, the picture-in-picture window and the frustum wireframes are yours
+alone — only "X is previewing camera Y" goes on the wire, as presence). Rule of thumb:
 if two peers would independently compute the same value, or it's a personal setting,
 keep it off the wire.
+
+## The cheapest replicated feature: put it on `userData`
+
+Before designing messages, ask whether the feature is really "extra settings on an
+object". If so, store them on `userData.<feature>` and you inherit replication,
+sessions, autosave, prefabs and GLTF extras for FREE — `userData.physics`,
+`userData.particles`, `userData.terrain`, `userData.camera` (#16-P5 scene cameras)
+and the `__localOnly`/`__uuid` markers all ride this. The recipe:
+
+1. Creation stamps deterministic defaults in the same place the object is built
+   (`geometries.svelte.js` — every peer runs the same `/create`, so no message is
+   needed for the initial state). Keep that literal INLINE if the settings module
+   would close an import cycle (cameraObjects reaches history; geometries sits in
+   history's subtree — the camera defaults are duplicated on purpose, commented).
+2. ONE write path — `setPhysicsFor(uuid, patch)` / `setCameraFor(uuid, patch)`:
+   mutate userData, `recordEntry({kind:'props', before, after})`, send
+   `{type:'objectParameters', parameter:'<feature>', uuid, <feature>}`, then poke
+   `objectsGroup.update(v => v)` (THREE trees are not reactive — the poke is what
+   the UI, the viz and any derived store actually see).
+3. Add the `parameter` case to `commandsHandler.objectParameters` AND the key to the
+   `'props'` history applier in objectActions, so remote writes and undo/redo both
+   land. **Verify the applier with a two-peer suite**: a missing case is invisible
+   locally (a #16 edit to that file silently never hit disk — the peer test caught
+   it when the message provably arrived but nothing changed).
+4. Anything VISUAL built from that data (frustum wireframes, collider proxies)
+   belongs at the SCENE ROOT keyed by uuid, rebuilt from the userData and following
+   the object per frame — never as a child of the object (rule 5 below).
 
 ## Checklist for a new replicated feature
 
@@ -69,7 +100,23 @@ keep it off the wire.
    helpers, env rig, module content; rebuild them from state; they need
    `registerInteractiveGroup(name)` to receive viewport clicks. Content that can't
    round-trip (skinned rigs) syncs as original file bytes (`animatedImports`).
-6. **Cleanup** on peer loss in `commandsHandler.handleDisconnected`.
+6. **Cleanup** on peer loss in `commandsHandler.handleDisconnected` — and if you keep
+   a per-peer map of your own, clear it in BOTH teardown paths in
+   `peerHandler`: `onConnClose` AND `leaveSession` (they are separate call sites;
+   `cameraPreviews` needed the entry removed in both, #16-P5).
+   **PRESENCE-style state** (who is previewing which camera, who is watching whom)
+   is the lightest replicated shape there is: one message on change
+   (`{type:'campreview', peerId, uuid|null}`), a `Record<peerId, value>` store,
+   cleanup on disconnect, and for late joiners piggyback an EXISTING handshake
+   request instead of inventing a `get*` round trip (`sendCameraPreviewState()`
+   rides the `getmodulestate` reply). No history, no undo — presence is not scene
+   content.
+   **Selection LOCKS need an explicit RELEASE**: a `{type:'lock', uuids}` message
+   only ever REPLACES the sender's set (`lockGeometry` ignores an empty list), so
+   dropping a selection must send one `{type:'unlock', peerId, uuid}` per released
+   uuid — otherwise peers keep the object highlighted and "locked by X" forever
+   (#16-P6; `broadcastSelectionRelease` covers deselect, `applySelectionSet([])`
+   and switching to a locked-VIEW).
 7. **Undo** (if it mutates the scene): `history.registerHistoryKind(kind, apply)` —
    the applier replays the normal replicated action; `recordEntry` is auto-muted while
    history applies, so replays can't re-record. Object presence uses

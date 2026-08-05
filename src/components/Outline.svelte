@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { objectsGroup, selectedObjects, lockedObjects, viewMode } from '../stores/sceneStore.js';
+	import { objectsGroup, selectedObjects, lockedObjects, viewMode, TControls } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
@@ -13,6 +13,9 @@
 	// @ts-ignore - n8ao ships no bundled type declarations
 	import { N8AOPostPass } from 'n8ao';
 	import { onMount } from 'svelte';
+	// 16-Q4: the camera preview window renders as an inset viewport of THIS renderer
+	import { pipRect, pipTarget, glRect } from '$lib/cameraPip';
+	import { buildCamera } from '$lib/cameraObjects';
 
 	let outlineEffectSelected: OutlineEffect | null = null;
 	let outlineEffectLocked: OutlineEffect | null = null;
@@ -50,6 +53,24 @@
   // The order is important as the last added pass will be on top
 	composer.addPass(new EffectPass(camera.current, outlineEffectLocked));
 	composer.addPass(new EffectPass(camera.current, outlineEffectSelected));
+
+	// 16-P5: every pass above baked `camera.current` at CONSTRUCTION, so a camera
+	// swap (previewing a camera object makes its real camera the default) would
+	// keep rendering through the old one — you'd still see the editor view, camera
+	// marker and all. Re-point the whole chain whenever the active camera changes;
+	// generic, so any future camera swap is correct for free.
+	// NOTE: track `$camera` (the store), NOT `camera.current` — threlte's
+	// CurrentWritable exposes `.current` as a plain property, so reading it inside
+	// an $effect registers NO dependency and the effect would run exactly once.
+	$effect(() => {
+		const active = $camera as any;
+		if (!active) return;
+		(composer as any).setMainCamera?.(active);
+		// N8AO keeps its own camera reference (third-party pass, not covered by
+		// setMainCamera's `pass.mainCamera` sweep)
+		(aoPass as any).camera = active;
+	});
+
 	$effect(() => {
 		// B2: size the AO pass to the PHYSICAL drawing buffer. postprocessing's
 		// composer.setSize sizes each pass to width*devicePixelRatio; passing the
@@ -104,10 +125,51 @@
 			else {
 				composer.render(delta);
 				if (!aoWarm && ++warmupFrames > 10) aoWarm = true;
+				renderPip();
 			}
 		},
 		{ stage: renderStage, autoInvalidate: false }
 	);
+
+	// 16-Q4: the camera PREVIEW WINDOW. One extra SCISSORED viewport of the same
+	// renderer, drawn over the composer's output into the rect CameraPipWindow
+	// publishes — no second WebGL context, so no duplicated GPU memory, and it only
+	// runs while a camera object is selected. gl clears respect the scissor box, so
+	// the inset clears just itself.
+	let pipCamera: any = null;
+	function renderPip() {
+		const rect = $pipRect;
+		const uuid = $pipTarget;
+		if (!rect || !uuid) return;
+		const object = $objectsGroup?.getObjectByProperty('uuid', uuid);
+		if (!object) return;
+		pipCamera = buildCamera(object, rect.w / rect.h, pipCamera);
+		// looking through a camera means standing inside its own body — and its
+		// frustum lines would wrap the lens. The transform GIZMO goes too (16-Q5):
+		// attached to this very camera it sat right on the lens and rendered as a
+		// giant coloured blob across the preview.
+		const markerWasVisible = object.visible;
+		const frustums = scene.getObjectByName('camera-frustums');
+		const frustumsWereVisible = frustums?.visible ?? false;
+		// three r16x+ keeps the gizmo's VISUALS in a separate helper object (the controls
+		// themselves render nothing), so hiding the controls left an arrow poking into
+		// the frame — hide whatever `getHelper()` returns
+		const gizmo = (($TControls as any)?.getHelper?.() ?? $TControls) as any;
+		const gizmoWasVisible = gizmo?.visible ?? false;
+		object.visible = false;
+		if (frustums) frustums.visible = false;
+		if (gizmo) gizmo.visible = false;
+		const box = glRect(rect, renderer.domElement.clientHeight || $size.height);
+		renderer.setScissorTest(true);
+		renderer.setScissor(box.x, box.y, box.w, box.h);
+		renderer.setViewport(box.x, box.y, box.w, box.h);
+		renderer.render(scene, pipCamera);
+		renderer.setScissorTest(false);
+		renderer.setViewport(0, 0, $size.width, $size.height);
+		object.visible = markerWasVisible;
+		if (frustums) frustums.visible = frustumsWereVisible;
+		if (gizmo) gizmo.visible = gizmoWasVisible;
+	}
 	// 15-K: collect every mesh under a uuid — OutlineEffect only renders MESHES
 	// in its selection, so adding a Group outlined nothing useful, and adding a
 	// parent mesh skipped its children (imported models). Traversal makes the

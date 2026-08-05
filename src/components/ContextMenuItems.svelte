@@ -6,66 +6,93 @@
 	// (103): they escape the scrollable menu container entirely, so long menus
 	// can overflow-y without ever growing a horizontal scrollbar.
 	//
-	// 15-Q redesign — items may additionally carry:
+	// 15-Q — items may additionally carry:
 	//   { header: { title, badge?, locked? } }  a target strip (name + type badge
 	//                                           + optional "locked by X" line)
 	//   { section: 'Edit' }                     a quiet uppercase section label
 	//   icon: 'copy'                            lucide kebab name (ui/Icon.svelte)
 	//   hint: 'Ctrl+D'                          dimmed right-aligned shortcut hint
-	// Functionality is unchanged: action/disabled/tooltip/danger/children as before.
+	// 16-P3 adds `checked: true` — the ACTIVE choice of a group (bold + accent),
+	// which replaced the old '● ' label prefix.
+	//
+	// 16-P1: which submenu is open (`openPath`) and where the keyboard cursor sits
+	// (`navPath` + `highlight`) are owned by ContextMenu — ONE truth shared by mouse
+	// and keyboard. Hover-intent lives here: 120ms to open, 150ms to close.
 	import Icon from './ui/Icon.svelte';
 	export let items: any[] = [];
 	export let onrun: (item: any) => void;
+	/** this level's submenu chain from the root ([] at the top level) */
+	export let path: string[] = [];
+	/** full chain of OPEN submenus */
+	export let openPath: string[] = [];
+	/** level the keyboard cursor is on (usually === openPath) */
+	export let navPath: string[] = [];
+	/** highlighted selectable index at navPath's level */
+	export let highlight: number = -1;
+	/** ask the owner to open/close a submenu chain */
+	export let onopen: (next: string[]) => void = () => {};
+	/** pointer moved onto a row: move the keyboard cursor here too */
+	export let onhover: (levelPath: string[], index: number) => void = () => {};
 
-	let openSub: string | null = null;
-	// the hovered row's rect — the submenu positions itself against it, then clamps
-	let anchorRect: DOMRect | null = null;
-
-	// 15-Q hover-intent: opening waits 120ms (a diagonal pass over a row no longer
-	// flashes its submenu open) and closing waits 150ms (grazing a leaf on the way
-	// INTO an open submenu no longer slams it shut). A new open cancels the close.
 	let openTimer: any = null;
 	let closeTimer: any = null;
 
-	function openSubmenu(e: MouseEvent, item: any) {
-		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		clearTimeout(closeTimer);
-		clearTimeout(openTimer);
-		if (openSub === item.label) return; // already open — just cancel any close
-		openTimer = setTimeout(() => {
-			anchorRect = rect;
-			openSub = item.label;
-		}, 120);
-	}
-	function scheduleSubmenuClose() {
-		clearTimeout(openTimer);
-		clearTimeout(closeTimer);
-		if (openSub === null) return;
-		closeTimer = setTimeout(() => (openSub = null), 150);
-	}
+	/** the child submenu open at THIS level (null = none) */
+	$: openChild = openPath.length > path.length ? openPath[path.length] : null;
+	/** is the keyboard cursor on this level? */
+	$: atNav = navPath.length === path.length && navPath.every((label, i) => label === path[i]);
 
-	// icon column: reserve the slot for EVERY row of a level when any sibling has
-	// an icon, so labels align into one column instead of ragged starts
-	$: hasIcons = items.some((item) => item?.icon);
+	// selectable index per row (section labels + the header strip don't count)
+	$: indexOf = (() => {
+		const map = new Map<any, number>();
+		let index = 0;
+		for (const item of items ?? []) {
+			if (!item || item.section || item.header) continue;
+			map.set(item, index++);
+		}
+		return map;
+	})();
+
+	function hoverRow(item: any, index: number) {
+		clearTimeout(openTimer);
+		onhover(path, index);
+		if (item.children) {
+			clearTimeout(closeTimer);
+			if (openChild === item.label) return; // already open — just cancel any close
+			openTimer = setTimeout(() => onopen([...path, item.label]), 120);
+		} else if (openChild) {
+			// grazing a leaf on the way INTO an open submenu must not slam it shut
+			clearTimeout(closeTimer);
+			closeTimer = setTimeout(() => onopen(path), 150);
+		}
+	}
+	function leaveRow() {
+		clearTimeout(openTimer);
+		if (!openChild) return;
+		clearTimeout(closeTimer);
+		closeTimer = setTimeout(() => onopen(path), 150);
+	}
 
 	// Position the submenu by MEASURING it (no width guess): prefer to the right of
 	// the row, flip to the left if it would cross the right edge, and if it still
 	// won't fit (narrow screen) clamp it fully into the viewport — even if that
 	// covers the parent menu, which is better than running off-screen. Vertically
 	// it aligns to the row then clamps; too-tall submenus cap + scroll (.ctx-scroll).
+	// The anchor is the submenu's own parent element — the ROW it belongs to — so a
+	// keyboard-opened submenu places itself exactly like a hovered one.
 	function placeSubmenu(node: HTMLElement) {
 		const reposition = () => {
-			const a = anchorRect;
-			if (!a) return;
+			const anchor = node.parentElement?.getBoundingClientRect();
+			if (!anchor) return;
 			const vw = window.innerWidth;
 			const vh = window.innerHeight;
 			node.style.maxHeight = vh - 8 + 'px';
 			const w = node.offsetWidth;
 			const h = node.offsetHeight;
-			let left = a.right; // prefer right of the row
-			if (left + w > vw - 4) left = a.left - w; // flip to the left of the row
+			let left = anchor.right; // prefer right of the row
+			if (left + w > vw - 4) left = anchor.left - w; // flip to the left of the row
 			if (left < 4 || left + w > vw - 4) left = Math.max(4, vw - w - 4); // clamp (may cover parent)
-			let top = Math.min(a.top, vh - h - 4);
+			let top = Math.min(anchor.top, vh - h - 4);
 			top = Math.max(4, top);
 			node.style.left = left + 'px';
 			node.style.top = top + 'px';
@@ -78,10 +105,12 @@
 		return { destroy: () => window.removeEventListener('resize', reposition) };
 	}
 
-	const itemClass =
-		'cursor-pointer px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 whitespace-nowrap';
-	const disabledClass =
-		'cursor-default px-3 py-1.5 text-gray-400 dark:text-gray-500 whitespace-nowrap';
+	// icon column: reserve the slot for EVERY row of a level when any sibling has
+	// an icon, so labels align into one column instead of ragged starts
+	$: hasIcons = items.some((item) => item?.icon);
+
+	const itemClass = 'cursor-pointer px-3 py-1.5 whitespace-nowrap';
+	const disabledClass = 'cursor-default px-3 py-1.5 text-gray-400 dark:text-gray-500 whitespace-nowrap';
 </script>
 
 {#each items as item}
@@ -109,19 +138,25 @@
 		{/if}
 	{:else if item.children}
 		<div
-			class="relative {itemClass}"
+			class="relative {itemClass} ctx-row"
+			class:ctx-active={atNav && indexOf.get(item) === highlight}
+			class:ctx-open={openChild === item.label}
+			data-ctx-active={atNav && indexOf.get(item) === highlight}
 			role="menuitem"
-			on:mouseenter={(e) => openSubmenu(e, item)}
-			on:mouseleave={scheduleSubmenuClose}
+			on:mouseenter={() => hoverRow(item, indexOf.get(item) ?? -1)}
+			on:mouseleave={leaveRow}
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
 					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={15} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
+				{#if item.hint}
+					<span class="ctx-hint">{item.hint}</span>
+				{/if}
 				<span class="text-[10px] text-gray-400">▸</span>
 			</span>
-			{#if openSub === item.label}
+			{#if openChild === item.label}
 				<!-- NOTE: deliberately NO role attribute — the menu suites locate submenu
 				     containers by "fixed div without a role" -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -131,16 +166,29 @@
 					class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
 					style="z-index: calc(var(--z-menu) + 2);"
 				>
-					<svelte:self items={item.children} {onrun} />
+					<svelte:self
+						items={item.children}
+						{onrun}
+						path={[...path, item.label]}
+						{openPath}
+						{navPath}
+						{highlight}
+						{onopen}
+						{onhover}
+					/>
 				</div>
 			{/if}
 		</div>
 	{:else}
 		<div
-			class="{item.disabled ? disabledClass : itemClass} {item.danger && !item.disabled ? 'text-red-500' : ''}"
+			class="{item.disabled ? disabledClass : itemClass} ctx-row {item.danger && !item.disabled ? 'text-red-500' : ''}"
+			class:ctx-active={atNav && indexOf.get(item) === highlight}
+			class:ctx-checked={item.checked}
+			data-ctx-active={atNav && indexOf.get(item) === highlight}
 			role="menuitem"
 			title={item.tooltip ?? ''}
-			on:mouseenter={scheduleSubmenuClose}
+			on:mouseenter={() => hoverRow(item, indexOf.get(item) ?? -1)}
+			on:mouseleave={leaveRow}
 			on:click={() => onrun(item)}
 		>
 			<span class="flex items-center gap-2">
@@ -157,6 +205,24 @@
 {/each}
 
 <style>
+	/* ONE highlight for mouse and keyboard — they can never disagree (16-P1) */
+	.ctx-row.ctx-active,
+	.ctx-row.ctx-open {
+		background-color: rgb(243 244 246);
+	}
+	:global(.dark) .ctx-row.ctx-active,
+	:global(.dark) .ctx-row.ctx-open {
+		background-color: rgb(75 85 99);
+	}
+	/* 16-P3: the ACTIVE choice of a group (replaces the '● ' prefix that used to
+	   shift the label sideways as it appeared). Bold + white on a brand-tinted
+	   pill: the app's accent is a SALMON (#fe795d), so tinting the text itself
+	   would sit uncomfortably close to the red `danger` rows in the same menu. */
+	.ctx-checked {
+		font-weight: 600;
+		color: #fff;
+		background-color: color-mix(in srgb, var(--color-primary-500, #3b82f6) 22%, transparent);
+	}
 	.ctx-header {
 		padding: 6px 12px 5px;
 		margin-bottom: 3px;

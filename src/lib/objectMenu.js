@@ -113,6 +113,26 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			tooltip: locked ? lockedTooltip : 'Drop onto the surface below (undoable)',
 			action: forEach((u) => alignToGround(u))
 		},
+		// 16-P5: camera objects get their two headline actions right here (the rest
+		// live in Properties ▸ Camera)
+		...(!multi && object?.userData?.camera
+			? [
+					{
+						label: 'Preview camera',
+						icon: 'camera',
+						tooltip: 'Render the scene through this camera (exit from the banner)',
+						action: () =>
+							import('./cameraPreview').then((m) => m.startCameraPreview(uuid))
+					},
+					{
+						label: 'Set from current view',
+						icon: 'focus',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Move this camera to where you are looking from',
+						action: () => import('./cameraObjects').then((m) => m.setCameraFromView(uuid))
+					}
+				]
+			: []),
 		{ section: 'Edit' },
 		// 15-O: an explicit way in — a plain click only selects now, so this and a
 		// double-click are how the panel opens when it is not pinned

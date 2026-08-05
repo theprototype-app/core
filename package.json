@@ -24,7 +24,7 @@
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.70.2",
 		"@tailwindcss/postcss": "^4.3.3",
-		"flowbite": "^3.1.2",
+		"flowbite": "^4.0.2",
 		"flowbite-svelte": "^1.33.1",
 		"gh-pages": "^6.3.0",
 		"playwright": "^1.62.0",

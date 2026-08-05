@@ -652,6 +652,18 @@ loadable play content. Everything a user does must be visible to connected peers
   ELEMENT: pointing it at a wide invisible wrapper (`#avatar-menu`, 208x0) made the
   alignment an accident of two matching 20px insets, which broke on phones — anchor it
   to the visible control and offset with a negative `margin-top` if it must overlap.
+  Worse, floating-ui's placement DRIFTS under a mobile viewport (page scale != 1): the
+  profile panel landed exactly the trigger's 20px inset too far right on a real phone,
+  flush with the window edge. Where the edge is fixed chrome geometry, PIN it in CSS
+  (`#avatar-dropdown { left: auto !important; right: 20px !important }` — !important
+  beats floating-ui's non-important inline `left`) and leave it only the vertical axis.
+- **`(pointer: coarse)` CAN be emulated after all** — a Playwright context with
+  `hasTouch: true` reports coarse. What a desktop context canNOT emulate is the mobile
+  VIEWPORT: only `isMobile: true` (page scale, mobile meta-viewport handling) reproduced
+  the profile-menu drift, while plain `hasTouch` measured clean at every width from 320
+  to 1280. For layout bugs a user only sees on a phone, add a page with
+  `{ hasTouch: true, isMobile: true, deviceScaleFactor: 2.7 }` before concluding
+  "cannot reproduce headlessly".
 - **Unlayered global CSS silently beats EVERY Tailwind utility** (the flip side of the
   modal trick above): a plain `.css` file imported from a component is unlayered, so one
   duplicated utility in it outranks all of `@layer utilities` regardless of specificity.

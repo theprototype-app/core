@@ -366,6 +366,7 @@
 	     CLAUDE.md. So the circle is drawn INSIDE the panel instead (below), where it
 	     rides the same layer; the z-index here only orders it against ordinary chrome. -->
 	<Dropdown
+    id="avatar-dropdown"
     placement="bottom-end"
     bind:isOpen={openDropdown}
     triggeredBy="#avatar-trigger"
@@ -528,6 +529,19 @@
 	.role-badge[data-role='admin'] { background: #7c3aed; }
 	/* keep the peers list scrollable so it never spills off a short/narrow screen */
 	.peers-scroll { max-height: 264px; overflow-y: auto; }
+	/* PROFILE PANEL, horizontal edge only. floating-ui places this from the trigger, and
+	   under a MOBILE viewport (page scale != 1) its math drifts right by exactly the
+	   trigger's inset: on a phone the panel landed flush with the window edge while the
+	   circle stayed 20px in, clipping the circle. Reproduced with Playwright's isMobile
+	   emulation — a coarse pointer alone does NOT do it, which is why touch-emulated runs
+	   looked fine. This edge is fixed chrome geometry (the avatar is right: 20px inside a
+	   right: 0 chrome), so pin it and let floating-ui keep only the vertical placement.
+	   !important beats floating-ui's non-important inline `left`; :global because the
+	   panel is rendered by a child component (no scope class). */
+	:global(#avatar-dropdown) {
+		left: auto !important;
+		right: 20px !important;
+	}
 	/* Profile Settings modal: on a narrow screen stack each label above its control
 	   (the fixed w-40 label beside the input is too cramped) — matches app Settings. */
 	@media (max-width: 640px) {

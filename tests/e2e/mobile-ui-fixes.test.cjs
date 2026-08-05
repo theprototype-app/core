@@ -243,6 +243,43 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	await A.page.setViewportSize({ width: 1280, height: 800 });
 
+	// The panel's horizontal edge is PINNED in CSS instead of being left to floating-ui:
+	// under a MOBILE viewport (page scale != 1) floating-ui's placement drifts right by
+	// exactly the trigger's 20px inset, so on a phone the panel sat flush with the window
+	// edge and clipped the profile circle. A desktop page does NOT reproduce it — not even
+	// with hasTouch and a coarse pointer (both were measured clean, which is why the first
+	// attempt at this shipped broken) — so it takes its own mobile-emulated page.
+	const M = await h.setupPage(browser, 'M', {
+		context: { viewport: { width: 670, height: 900 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.7 }
+	});
+	await M.page.waitForTimeout(800);
+	await M.page.locator('#avatar-trigger').first().click({ force: true });
+	await M.page.waitForTimeout(700);
+	const mob = await M.page.evaluate(() => {
+		const g = (/** @type {string} */ s) => {
+			const el = document.querySelector(s);
+			return el ? el.getBoundingClientRect() : null;
+		};
+		const t = g('#avatar-trigger');
+		const p = g('[popover]:popover-open');
+		const c = g('[popover]:popover-open [aria-label="Close profile menu"]');
+		if (!t || !p) return null;
+		return {
+			coarse: matchMedia('(pointer: coarse)').matches,
+			rightGap: Math.round(p.right - t.right),
+			circleGap: c ? Math.round(c.right - t.right) : null,
+			inset: Math.round(window.innerWidth - p.right)
+		};
+	});
+	h.check(
+		!!mob && Math.abs(mob.rightGap) <= 2,
+		`on a MOBILE viewport the panel still seats on the circle (${JSON.stringify(mob)})`
+	);
+	h.check(
+		!!mob && mob.inset >= 12 && Math.abs(mob.circleGap ?? 99) <= 2,
+		'it does not slide to the window edge and clip the circle off the screen'
+	);
+
 	// ---- narrow: the sheet also outranks the LOGO, and only there -------------
 	await A.page.setViewportSize({ width: 420, height: 780 });
 	await A.page.evaluate(() => window.__stores.whatsNew.openWhatsNew());

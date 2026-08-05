@@ -82,12 +82,16 @@ h.run(async () => {
 		return grid ? { x: grid.position.x, y: grid.position.y, z: grid.position.z } : null;
 	});
 	h.check(follow !== null, 'found the grid mesh');
+	// 15-H13: the centre snaps by the SECTION period (cell 1 x sectionEvery 10 = 10),
+	// not by a single cell. A per-cell snap kept the thin lines world-locked but hopped
+	// every THICK line one cell per step; a whole-section step maps the pattern onto
+	// itself, so following is invisible. Target 7.4 -> 10, -4.6 -> 0.
 	h.check(
-		follow && Math.abs(follow.x - 7) < 0.001,
-		`the grid centres under the look-at point, snapped to whole cells (x ${follow?.x})`
+		follow && Math.abs(follow.x - 10) < 0.001,
+		`the grid follows the look-at point on the SECTION lattice (x ${follow?.x})`
 	);
 	h.check(follow && Math.abs(follow.y) < 0.001, `it never lifts vertically (y ${follow?.y})`);
-	h.check(follow && Math.abs(follow.z - (-5 + 0.03)) < 0.001, `z follows too (${follow?.z})`);
+	h.check(follow && Math.abs(follow.z - 0.03) < 0.001, `z follows too (${follow?.z})`);
 
 	// 'off' returns it to the origin
 	await A.page.evaluate(() => window.__stores.gridSettings.setGrid({ follow: 'off' }));

@@ -3,6 +3,7 @@
 	import ContextMenuItems from './ContextMenuItems.svelte';
 	import Icon from './ui/Icon.svelte';
 	import { collectLeaves, rankMatches } from '$lib/menuFilter';
+	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 
 	// Generic context menu. items: [{ label, action?, disabled?, tooltip?, danger?,
 	// icon?, hint?, checked?, children?: items[] } | { section } | { header }]
@@ -223,8 +224,22 @@
 		// Deferred one frame: the PARENT's use:portal moves the menu into <body>
 		// AFTER this child action runs, and moving a focused element blurs it.
 		inputEl = node;
-		const id = requestAnimationFrame(() => node.focus({ preventScroll: true }));
-		return { destroy: () => cancelAnimationFrame(id) };
+		// TOUCH: never autofocus. It slides the on-screen keyboard over the menu the
+		// user just opened, and type-to-filter is not why they long-pressed. The
+		// feature is not lost on a touch device that HAS a keyboard: `typeToFocus`
+		// hands the first printable key to this field and inserts it, so a tablet with
+		// a Bluetooth keyboard behaves exactly like a PC. (The "Search nodes…" row
+		// still focuses on demand — that tap IS the request.)
+		const stopTypeToFocus = autofocusOk() ? null : typeToFocus(() => inputEl);
+		const id = autofocusOk()
+			? requestAnimationFrame(() => node.focus({ preventScroll: true }))
+			: 0;
+		return {
+			destroy: () => {
+				if (id) cancelAnimationFrame(id);
+				stopTypeToFocus?.();
+			}
+		};
 	}
 
 	// Clicking a row must NOT steal focus from the (invisible) filter input —

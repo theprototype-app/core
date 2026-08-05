@@ -3,6 +3,7 @@
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
 	import { chromiumMajor, aoSupported } from '$lib/viewMode';
+	import { coarsePointer } from '$lib/inputDevice';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
 	import {
@@ -90,8 +91,7 @@
 	// (sceneStore.defaultViewMode) but may still turn AO on.
 	const engineMajor = chromiumMajor();
 	const aoOk = aoSupported();
-	const coarsePointer =
-		typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)')?.matches;
+	const onTouch = coarsePointer();
 	let aoMobileToasted = false;
 	// Only ever explain AO when the user CHOOSES it. Toasting on the boot state made
 	// every visitor with an unexpected UA (DevTools device emulation reports a canned
@@ -117,7 +117,7 @@
 					') has a rendering bug with it. It returns after a browser update.'
 			);
 		}
-		if (justChosen && aoOk && coarsePointer && !aoMobileToasted) {
+		if (justChosen && aoOk && onTouch && !aoMobileToasted) {
 			aoMobileToasted = true;
 			showToast(
 				'Ambient occlusion is heavy on mobile GPUs, and some drivers render it wrong — if the viewport stops updating as you move, switch the view mode back to Shaded.'

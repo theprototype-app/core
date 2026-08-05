@@ -1,4 +1,6 @@
 import { writable } from 'svelte/store';
+// dependency-free helper, so importing it keeps this store a leaf
+import { coarsePointer } from '../lib/inputDevice';
 
 /** @type {import('svelte/store').Writable<any>} */
 export const globalScene = writable(null);
@@ -150,9 +152,8 @@ function defaultViewMode() {
 	// and several mobile drivers mis-compile it (the viewport then keeps showing a
 	// stale frame until you leave AO mode — no console error). Coarse-pointer
 	// devices therefore start in plain 'shaded'; the view-mode menu still offers AO.
-	const coarse =
-		typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)')?.matches;
-	return coarse ? 'shaded' : 'shaded-ao';
+	// `inputDevice` imports nothing, so this store stays a leaf.
+	return coarsePointer() ? 'shaded' : 'shaded-ao';
 }
 export const viewMode = writable(defaultViewMode());
 viewMode.subscribe((v) => {

@@ -58,12 +58,14 @@
 		meshPresetFor
 	} from '$lib/ai/meshProviders';
 	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST } from '$lib/peerServer';
+	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
 	let aiExpanded = false;
 	let sceneExpanded = false;
 	let connectionExpanded = false;
+	let aboutExpanded = false;
 	let vrExpanded = false; // D7: edit-cap toasts deep-link here ('vr')
 
 	// D7: sanitize a cap edit — an empty/garbage field falls back to the default
@@ -333,17 +335,120 @@
 	// the heterogeneous markup. Rows carry the `.setting-row` class; inner controls
 	// live in <p>, so hiding a row never hides a control inside a shown row.
 	let settingsQuery = '';
-	/** @param {HTMLElement} node @param {string} query */
+	/**
+	 * Searching must EXPAND every section first. flowbite-svelte 1.x renders an
+	 * AccordionItem's body only while it is open, so with the sections collapsed
+	 * there were literally zero `.setting-row` elements in the DOM and the filter had
+	 * nothing to match — that is why search stopped working after the flowbite
+	 * migration (the old Accordion kept its content mounted and merely hidden).
+	 * The previous expansion is restored when the query clears.
+	 */
+	/** @type {any} */
+	let savedExpansion: any = null;
+	$: syncSearchExpansion(settingsQuery);
+	/** @param {string} query */
+	function syncSearchExpansion(query: string) {
+		const searching = !!(query || '').trim();
+		if (searching && !savedExpansion) {
+			savedExpansion = {
+				shortcutsExpanded,
+				aiExpanded,
+				sceneExpanded,
+				connectionExpanded,
+				vrExpanded,
+				aboutExpanded
+			};
+			shortcutsExpanded = true;
+			aiExpanded = true;
+			sceneExpanded = true;
+			connectionExpanded = true;
+			vrExpanded = true;
+			aboutExpanded = true;
+		} else if (!searching && savedExpansion) {
+			({
+				shortcutsExpanded,
+				aiExpanded,
+				sceneExpanded,
+				connectionExpanded,
+				vrExpanded,
+				aboutExpanded
+			} = savedExpansion);
+			savedExpansion = null;
+		}
+	}
+	/**
+	 * Walk the SECTIONS, not the rows: flowbite mounts an item's body only after it
+	 * opens, so a row-first pass sees a partial DOM — and a header hidden on that
+	 * partial view could never be shown again (no rows left to walk back from).
+	 * A MutationObserver re-applies as the bodies arrive, which beats guessing frames.
+	 * @param {HTMLElement} node @param {string} query
+	 */
 	function filterSettings(node: HTMLElement, query: string) {
-		const apply = (q: string) => {
-			const needle = (q || '').trim().toLowerCase();
-			node.querySelectorAll('.setting-row').forEach((row) => {
-				const text = (row.textContent || '').toLowerCase();
-				(row as HTMLElement).style.display = !needle || text.includes(needle) ? '' : 'none';
+		let needle = (query || '').trim().toLowerCase();
+		const apply = () => {
+			// each section is an <h2> header followed by its body element
+			node.querySelectorAll('h2').forEach((header) => {
+				const body = header.nextElementSibling;
+				if (!(body instanceof HTMLElement) || !(header instanceof HTMLElement)) return;
+				const rows = [...body.querySelectorAll('.setting-row')];
+				const sectionText = (header.textContent || '').toLowerCase();
+				let visible = 0;
+				let group = ''; // nearest `ui-section-label` above the row ("GRID", "SNAPPING"…)
+				body.querySelectorAll('.ui-section-label, .setting-row').forEach((el) => {
+					if (!el.classList.contains('setting-row')) {
+						group = (el.textContent || '').toLowerCase();
+						return;
+					}
+					// searching "grid" should find the whole Grid group and "vr" the VR
+					// section, not only rows whose own label happens to contain the word
+					const haystack = (el.textContent || '').toLowerCase() + ' ' + group + ' ' + sectionText;
+					const show = !needle || haystack.includes(needle);
+					(el as HTMLElement).style.display = show ? '' : 'none';
+					if (show) visible++;
+				});
+				// hide a section only when we KNOW it has rows and none of them matched;
+				// an unmounted body (0 rows) is unknown, and the observer will revisit it
+				const hide = !!needle && rows.length > 0 && visible === 0;
+				body.style.display = hide ? 'none' : '';
+				header.style.display = hide ? 'none' : '';
 			});
 		};
-		apply(query);
-		return { update: apply };
+		const observer = new MutationObserver(() => apply());
+		// childList only: our own style writes are attribute changes, so re-entry
+		// cannot loop
+		observer.observe(node, { childList: true, subtree: true });
+		apply();
+		return {
+			update(next: string) {
+				needle = (next || '').trim().toLowerCase();
+				apply();
+			},
+			destroy: () => observer.disconnect()
+		};
+	}
+
+	/**
+	 * flowbite's Modal focuses the first focusable child when it opens — on a phone
+	 * that slides the on-screen keyboard over the settings the user just opened. Keep
+	 * the autofocus on pointer devices (it is genuinely nice there), undo it on touch,
+	 * and let a real keyboard opt in by typing (see inputDevice.typeToFocus).
+	 * @param {HTMLInputElement} node
+	 */
+	function searchFocus(node: HTMLInputElement) {
+		if (autofocusOk()) return;
+		const stop = typeToFocus(() => node);
+		// two frames is after the modal's own focus call and long before any tap
+		const a = requestAnimationFrame(() =>
+			requestAnimationFrame(() => {
+				if (document.activeElement === node) node.blur();
+			})
+		);
+		return {
+			destroy: () => {
+				cancelAnimationFrame(a);
+				stop();
+			}
+		};
 	}
 </script>
 
@@ -363,9 +468,15 @@
 			class="ui-input mb-3 w-full"
 			placeholder="Search settings…"
 			bind:value={settingsQuery}
+			use:searchFocus
 		/>
 		<div use:filterSettings={settingsQuery}>
-		<Accordion>
+		<!-- `multiple`: sections no longer close each other. Required for search — the
+		     filter can only see rows flowbite has MOUNTED, and a single-selection
+		     accordion keeps all but one body unmounted no matter what the open flags
+		     say (it reads `multiple` untracked at init, so this cannot be per-query).
+		     Several open sections is also the norm for a settings panel. -->
+		<Accordion multiple>
 				<AccordionItem bind:open={vrExpanded}>
 					{#snippet header()}VR{/snippet}
 					<SettingRow name="VR override">
@@ -1105,7 +1216,7 @@
 						{/each}
 					</div>
 				</AccordionItem>
-				<AccordionItem>
+				<AccordionItem bind:open={aboutExpanded}>
 					{#snippet header()}About{/snippet}
 					<SettingRow name="Version" noControl>{appVersionString}</SettingRow>
 					{#if $cloudPluginInfo}

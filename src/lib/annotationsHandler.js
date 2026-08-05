@@ -1,7 +1,23 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, selectedObject, globalCamera, globalScene } from '../stores/sceneStore';
-import { peers, username, showToast } from '../stores/appStore';
+import {
+	objectsGroup,
+	selectedObject,
+	globalCamera,
+	globalScene,
+	orbitControls,
+	isVRMode,
+	isLocked,
+	cameraClaim
+} from '../stores/sceneStore';
+import {
+	peers,
+	username,
+	showToast,
+	showInfoToast,
+	dismissToastById,
+	specatorMode
+} from '../stores/appStore';
 import { registerAnnotationsPersistence, markAnnotationsDirty } from './autosave';
 import { flyTo } from './objectActions';
 
@@ -9,7 +25,7 @@ import { flyTo } from './objectActions';
 // object; one note per pin. Replication mirrors the flow-graph pattern:
 // live CRUD messages + a full-state reply on the connection handshake.
 
-/** @type {import('svelte/store').Writable<{id: string, objectUuid: string, objectName: string, offset: number[], text: string, author: string, authorKey: string, ts: number, name: string, color: string, label: string, shape: string}[]>} */
+/** @type {import('svelte/store').Writable<{id: string, objectUuid: string, objectName: string, offset: number[], text: string, author: string, authorKey: string, ts: number, name: string, color: string, label: string, shape: string, camera: {position: number[], target: number[]} | null, follow: boolean}[]>} */
 export const annotations = writable([]);
 /** popover state: { id, mode:'view'|'edit' } for an existing note, { draft: {...} } for a new one, or null */
 /** @type {import('svelte/store').Writable<any>} */
@@ -55,6 +71,16 @@ export const DEFAULT_NOTE_COLOR = NOTE_COLORS[0];
 
 const tempVector = new THREE.Vector3();
 
+/** A stored camera pose is only usable if BOTH vectors survived @param {any} pose */
+function validCameraPose(pose) {
+	/** @param {any} v */
+	const ok = (v) =>
+		Array.isArray(v) && v.length === 3 && v.every((/** @type {any} */ n) => Number.isFinite(n));
+	return pose && ok(pose.position) && ok(pose.target)
+		? { position: [...pose.position], target: [...pose.target] }
+		: null;
+}
+
 /**
  * H1: ONE boundary normalizer. `text` stays the description (replication,
  * autosave, sessions and the e2e suites all carry it); v2 adds optional
@@ -70,6 +96,13 @@ export function normalizeAnnotation(a) {
 		color: typeof a?.color === 'string' && a.color ? a.color : DEFAULT_NOTE_COLOR,
 		label: typeof a?.label === 'string' ? a.label : '',
 		shape: NOTE_SHAPES.includes(a?.shape) ? a.shape : 'round',
+		// H11: an authored FRAMING for the note (replicated). Opening flies here
+		// instead of the generic 4m approach, and a follow session then keeps this
+		// offset live as the object moves.
+		camera: validCameraPose(a?.camera),
+		// H11: author hint — "start following the pin when this note is opened".
+		// The follow SESSION itself is per-viewer and local; this only auto-starts it.
+		follow: a?.follow === true,
 		// H10: who wrote it — `author` is the DISPLAY name at save time, `authorKey`
 		// is the writer's stable device key (only they can match it)
 		authorKey: typeof a?.authorKey === 'string' ? a.authorKey : '',
@@ -243,6 +276,7 @@ export function deleteAnnotation(id) {
 	annotations.update((list) => list.filter((a) => a.id !== id));
 	broadcast({ type: 'annotation', op: 'delete', annotation: { id } });
 	activeAnnotation.update((active) => (active?.id === id ? null : active));
+	if (get(followingNote)?.id === id) stopNoteFollow(); // H11: nothing left to ride
 }
 
 /** Remote CRUD @param {any} data */
@@ -250,6 +284,7 @@ export function applyAnnotation(data) {
 	if (data.op === 'delete') {
 		annotations.update((list) => list.filter((a) => a.id !== data.annotation.id));
 		activeAnnotation.update((active) => (active?.id === data.annotation.id ? null : active));
+		if (get(followingNote)?.id === data.annotation.id) stopNoteFollow();
 	} else {
 		const normalized = normalizeAnnotation(data.annotation);
 		annotations.update((list) => {
@@ -339,16 +374,115 @@ export function openAnnotation(id, mode = 'view') {
 	const annotation = get(annotations).find((a) => a.id === id);
 	if (!annotation) return;
 	activeAnnotation.set({ id, mode });
+	// a new note takes over the camera: never keep riding the previous one
+	if (get(followingNote) && get(followingNote)?.id !== id) stopNoteFollow();
 	const object = objectOf(annotation.objectUuid);
 	/** @type {any} */
 	const camera = get(globalCamera);
 	if (object) {
 		const world = object.localToWorld(new THREE.Vector3().fromArray(annotation.offset));
-		// approach along the current view direction, stopping ~4m from the pin
-		const direction = camera
-			? camera.position.clone().sub(world).normalize()
-			: new THREE.Vector3(0.5, 0.4, 0.5).normalize();
-		flyTo(world.clone().add(direction.multiplyScalar(4)), world);
+		if (annotation.camera) {
+			// H11: the author saved a FRAMING for this note — use it verbatim
+			flyTo(annotation.camera.position, annotation.camera.target);
+		} else {
+			// approach along the current view direction, stopping ~4m from the pin
+			const direction = camera
+				? camera.position.clone().sub(world).normalize()
+				: new THREE.Vector3(0.5, 0.4, 0.5).normalize();
+			flyTo(world.clone().add(direction.multiplyScalar(4)), world);
+		}
+	}
+	// H11: the author asked for this note to be watched — start the LOCAL session
+	// once the fly has settled, so the tween isn't mistaken for someone else
+	// grabbing the camera (see the deviation guard in startNoteFollow)
+	if (annotation.follow) setTimeout(() => startNoteFollow(id), FLY_MS + 60);
+}
+
+// --- H11 follow sessions ------------------------------------------------------
+// A follow session is LOCAL and per-viewer: the editor camera belongs to the
+// person driving it, so nothing here replicates. It deliberately OUTLIVES the
+// popover — you start it, orbit freely while it rides the object, and stop it
+// from the sticky indicator toast or with Esc. Following only while a card was
+// open would have meant keeping a card open to keep tracking.
+
+/** the note whose pin the camera is riding: `{id}` | null (LOCAL) */
+/** @type {import('svelte/store').Writable<any>} */
+export const followingNote = writable(null);
+
+const FLY_MS = 400; // objectActions.flyTo's tween length
+const FOLLOW_TOAST = 'note-follow';
+/** the pin position we last followed */
+let followAnchor = /** @type {any} */ (null);
+/**
+ * The `cameraClaim` value when our session started. HANDOVER is an explicit
+ * signal, not a guess: every flyTo (focus, bookmark, another note) bumps the
+ * counter, so we can let go without ever mistaking a user PAN — which moves the
+ * orbit target exactly like we do — for someone else taking the camera.
+ */
+let followClaim = 0;
+
+/** @param {KeyboardEvent} event */
+function onFollowKey(event) {
+	if (event.key === 'Escape') stopNoteFollow();
+}
+
+/** Ride this note's pin with the camera until something stops us @param {string} id */
+export function startNoteFollow(id) {
+	const annotation = get(annotations).find((a) => a.id === id);
+	if (!annotation) return;
+	// these modes own the camera themselves
+	if (get(isVRMode) || get(specatorMode) || get(isLocked)) return;
+	const world = annotationWorldPosition(id);
+	/** @type {any} */
+	const controls = get(orbitControls);
+	if (!world || !controls) return;
+	followAnchor = world.clone();
+	followClaim = get(cameraClaim);
+	followingNote.set({ id });
+	if (typeof window !== 'undefined') window.addEventListener('keydown', onFollowKey);
+	showInfoToast(
+		FOLLOW_TOAST,
+		'Following note #' + noteNumber(id) + ' — the camera rides it as it moves (Esc to stop)',
+		[{ label: 'Stop following', action: () => stopNoteFollow() }],
+		() => stopNoteFollow()
+	);
+}
+
+export function stopNoteFollow() {
+	if (!get(followingNote)) return;
+	followingNote.set(null);
+	followAnchor = null;
+	if (typeof window !== 'undefined') window.removeEventListener('keydown', onFollowKey);
+	dismissToastById(FOLLOW_TOAST);
+}
+
+/**
+ * One follow step, driven per frame from the scene (AnnotationPins.svelte).
+ * Translating BOTH the camera and the orbit target by the pin's delta keeps the
+ * user's own orbit/zoom intact — the offset they chose is preserved, which is
+ * also how a note's saved framing stays live while its object moves.
+ */
+export function tickNoteFollow() {
+	const session = get(followingNote);
+	if (!session) return;
+	if (get(isVRMode) || get(specatorMode) || get(isLocked)) return stopNoteFollow();
+	const world = annotationWorldPosition(session.id);
+	/** @type {any} */
+	const controls = get(orbitControls);
+	/** @type {any} */
+	const camera = get(globalCamera);
+	if (!world || !controls || !camera) return stopNoteFollow();
+	// HANDOVER: another camera owner announced itself (focus, bookmark, opening a
+	// different note). The user's own orbit/pan/zoom never bumps this, so their
+	// navigation stays free while we ride the pin.
+	if (get(cameraClaim) !== followClaim) return stopNoteFollow();
+	if (!followAnchor) followAnchor = world.clone();
+	const delta = world.clone().sub(followAnchor);
+	if (delta.lengthSq() > 0) {
+		camera.position.add(delta);
+		controls.target.add(delta);
+		controls.update();
+		followAnchor.copy(world);
 	}
 }
 

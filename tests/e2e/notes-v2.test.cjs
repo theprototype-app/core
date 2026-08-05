@@ -127,8 +127,14 @@ h.run(async () => {
 		let list = [];
 		ah.annotations.subscribe((l) => (list = l))();
 		const a = list.find((x) => x.id === 'legacy-note');
-		return a ? { name: a.name, color: a.color, label: a.label, text: a.text } : null;
+		return a
+			? { name: a.name, color: a.color, label: a.label, text: a.text, camera: a.camera, follow: a.follow }
+			: null;
 	});
+	h.check(
+		legacy?.camera === null && legacy?.follow === false,
+		`H11: an old note normalizes to no saved view and follow off (${JSON.stringify(legacy?.camera)}/${legacy?.follow})`
+	);
 	h.check(
 		legacy &&
 			legacy.name === '' &&
@@ -503,7 +509,7 @@ h.run(async () => {
 	await editCard.locator('button[aria-label="Pin color #3b82f6"]').click();
 	await editCard.locator('button[aria-label="Pin shape square"]').click();
 	await editCard.locator('input[list="note-labels"]').fill('review');
-	await editCard.getByRole('button', { name: 'Save' }).click();
+	await editCard.getByRole('button', { name: 'Save', exact: true }).click();
 	await A.page.waitForTimeout(400);
 	const saved = (await store(A.page)).find((a) => a.id === id2);
 	h.check(
@@ -621,7 +627,7 @@ h.run(async () => {
 		id3
 	);
 	await A.page.waitForTimeout(600);
-	await editCard.getByRole('button', { name: 'Save' }).click();
+	await editCard.getByRole('button', { name: 'Save', exact: true }).click();
 	await A.page.waitForTimeout(400);
 	const upgraded = (await store(A.page)).find((a) => a.id === id3);
 	h.check(
@@ -776,6 +782,198 @@ h.run(async () => {
 	h.check(shown === true, 'H3: toggling back shows the pins again');
 	await A.page.waitForTimeout(300);
 	h.check((await badgeCount(A.page)) > 0, 'H3/V3: ...and the markers come back');
+
+	// --- H11: saved camera framing + follow sessions --------------------------
+	const camState = (page) =>
+		page.evaluate(
+			() =>
+				new Promise((r) => {
+					const s = window.__stores;
+					let camera;
+					let controls;
+					s.globalCamera.subscribe((v) => (camera = v))();
+					s.orbitControls.subscribe((v) => (controls = v))();
+					let session = null;
+					s.annotationsHandler.followingNote.subscribe((v) => (session = v))();
+					r({
+						position: camera.position.toArray(),
+						target: controls.target.toArray(),
+						// the offset the viewer chose — follow must preserve it
+						offset: camera.position.clone().sub(controls.target).toArray(),
+						following: session?.id ?? null
+					});
+				})
+		);
+	const toastIds = (page) =>
+		page.evaluate(
+			() =>
+				new Promise((r) =>
+					window.__stores.toastStore.subscribe((list) =>
+						r(list.map((e) => (typeof e === 'string' ? e : e.id || e.text)))
+					)()
+				)
+		);
+
+	// park the camera somewhere deliberate, then store it on the note. NOTE: never
+	// assert the requested numbers — OrbitControls.update() re-derives the camera
+	// position from its own spherical state, so the pose we save is wherever the
+	// controls actually left us. Read it and compare against THAT.
+	await A.page.evaluate((id) => {
+		const s = window.__stores;
+		let camera;
+		let controls;
+		s.globalCamera.subscribe((v) => (camera = v))();
+		s.orbitControls.subscribe((v) => (controls = v))();
+		camera.position.set(3, 2.5, 3);
+		controls.target.set(0, 1, 0);
+		controls.update();
+		s.annotationsHandler.openAnnotation(id, 'edit');
+	}, id1);
+	await A.page.waitForTimeout(600);
+	const parked = await camState(A.page);
+	await editCard.getByRole('button', { name: /camera view/ }).click();
+	await editCard.getByRole('button', { name: 'Save', exact: true }).click();
+	await A.page.waitForTimeout(300);
+	const withPose = (await store(A.page)).find((a) => a.id === id1);
+	const near3 = (a, b, e = 0.05) =>
+		!!a && !!b && Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < e;
+	h.check(
+		!!withPose?.camera &&
+			near3(withPose.camera.position, parked.position) &&
+			near3(withPose.camera.target, parked.target),
+		`H11: "Save camera view" stores the CURRENT framing on the note (${JSON.stringify(
+			withPose?.camera?.position?.map((n) => +n.toFixed(2))
+		)})`
+	);
+	// fly away, then open the note: it must land back on the SAVED pose
+	await A.page.evaluate(() => window.__stores.objectActions.flyTo([-8, 6, -8], [0, 0, 0], 1));
+	await A.page.waitForTimeout(400);
+	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
+	await h.eventually(
+		() => camState(A.page),
+		(c) => near3(c.position, parked.position, 0.3) && near3(c.target, parked.target, 0.3),
+		'H11: opening a note with a saved view flies to THAT pose, not the generic 4m approach'
+	);
+
+	// follow: the camera rides the pin, and the offset the viewer chose survives
+	const before = await camState(A.page);
+	await A.page.evaluate((id) => window.__stores.annotationsHandler.startNoteFollow(id), id1);
+	await A.page.waitForTimeout(200);
+	h.check((await camState(A.page)).following === id1, 'H11: a follow session starts');
+	h.check(
+		(await toastIds(A.page)).includes('note-follow'),
+		'H11: a sticky indicator toast says we are following (and offers Stop)'
+	);
+	await A.page.evaluate((uuid) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		const box = g.getObjectByProperty('uuid', uuid);
+		box.position.x += 3;
+		box.position.y += 1;
+		box.updateMatrixWorld(true);
+	}, boxUuid);
+	await A.page.waitForTimeout(500);
+	const after = await camState(A.page);
+	h.check(
+		Math.abs(after.position[0] - (before.position[0] + 3)) < 0.2 &&
+			Math.abs(after.target[0] - (before.target[0] + 3)) < 0.2,
+		`H11: camera AND orbit target translate with the pin (${before.position[0].toFixed(
+			1
+		)} -> ${after.position[0].toFixed(1)})`
+	);
+	h.check(
+		Math.hypot(
+			after.offset[0] - before.offset[0],
+			after.offset[1] - before.offset[1],
+			after.offset[2] - before.offset[2]
+		) < 0.05,
+		'H11: ...so the viewer keeps the exact offset they had — orbiting stays theirs'
+	);
+	// the user's own navigation must NOT end the session: a PAN moves the orbit
+	// target exactly like our follow step does, so handover has to be an explicit
+	// signal (cameraClaim) rather than a deviation guess
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		let camera;
+		let controls;
+		s.globalCamera.subscribe((v) => (camera = v))();
+		s.orbitControls.subscribe((v) => (controls = v))();
+		camera.position.x += 1.5; // pan: both ends move together
+		controls.target.x += 1.5;
+		controls.update();
+	});
+	await A.page.waitForTimeout(300);
+	h.check(
+		(await camState(A.page)).following === id1,
+		'H11: panning/orbiting keeps the session — navigation stays the user\'s'
+	);
+
+	// the session OUTLIVES the popover (that was the whole point)
+	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await A.page.waitForTimeout(250);
+	h.check(
+		(await camState(A.page)).following === id1,
+		'H11: closing the note card does NOT stop following'
+	);
+	// any other camera owner takes over cleanly (bookmark/focus/another note)
+	await A.page.evaluate(() => window.__stores.objectActions.flyTo([9, 7, 9], [1, 1, 1], 1));
+	await h.eventually(
+		() => camState(A.page),
+		(c) => c.following === null,
+		'H11: an external camera move (flyTo) hands the camera back and ends the session'
+	);
+	h.check(
+		!(await toastIds(A.page)).includes('note-follow'),
+		'H11: the indicator toast goes with it'
+	);
+	// Esc stops a session too
+	await A.page.evaluate((id) => window.__stores.annotationsHandler.startNoteFollow(id), id1);
+	await A.page.waitForTimeout(200);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(250);
+	h.check((await camState(A.page)).following === null, 'H11: Esc stops following');
+	// the author hint auto-starts a session on open, and replicates
+	await A.page.evaluate(() => {
+		let original;
+		window.__stores.peers.subscribe((p) => (original = p))();
+		window.__peerOriginal = original;
+		window.__sent = [];
+		window.__stores.peers.set({ ...original, send: (m) => window.__sent.push(m) });
+	});
+	await A.page.evaluate((id) => {
+		const ah = window.__stores.annotationsHandler;
+		let list = [];
+		ah.annotations.subscribe((l) => (list = l))();
+		const note = list.find((a) => a.id === id);
+		ah.setAnnotation({ ...note, follow: true });
+		ah.activeAnnotation.set(null);
+	}, id1);
+	const followSent = await A.page.evaluate(() => {
+		const list = window.__sent.filter((m) => m.type === 'annotation');
+		window.__stores.peers.set(window.__peerOriginal);
+		return list[list.length - 1]?.annotation;
+	});
+	h.check(
+		followSent?.follow === true && !!followSent?.camera,
+		'H11: the follow flag and the saved view replicate on the same annotation message'
+	);
+	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
+	await h.eventually(
+		() => camState(A.page),
+		(c) => c.following === id1,
+		'H11: a note flagged "follow when opened" auto-starts the session'
+	);
+	// deleting the followed note releases the camera
+	await A.page.evaluate((id) => {
+		const ah = window.__stores.annotationsHandler;
+		let list = [];
+		ah.annotations.subscribe((l) => (list = l))();
+		const note = list.find((a) => a.id === id);
+		ah.setAnnotation({ ...note, follow: false }); // keep the rest of the suite calm
+		ah.applyAnnotation({ op: 'delete', annotation: { id: 'no-such-note' } });
+	}, id1);
+	await A.page.evaluate(() => window.__stores.annotationsHandler.stopNoteFollow());
+	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
 
 	// --- H12: notes actually persist ------------------------------------------
 	// (1) an annotation change ALONE has to schedule an autosave — before the fix

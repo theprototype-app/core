@@ -15,7 +15,8 @@ import {
 	globalCamera,
 	orbitControls,
 	isVRMode,
-	gizmoSuppressed
+	gizmoSuppressed,
+	cameraClaim
 } from '../stores/sceneStore';
 import { attachMultiPivot, releaseMultiPivot } from './multiTransform';
 import { focusTargetFace } from './faceEdit';
@@ -682,6 +683,9 @@ export function flyTo(position, target, duration = 400) {
 
 	const started = performance.now();
 	const token = ++focusAnimation; // cancel a previous camera animation
+	// H11: announce that the camera has a new owner, so anything driving it
+	// continuously (a note-follow session) steps aside instead of fighting the tween
+	cameraClaim.update((n) => n + 1);
 
 	/** @param {number} now */
 	function step(now) {

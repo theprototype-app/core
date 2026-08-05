@@ -8,6 +8,8 @@
 		pinsGroup,
 		showNotePins,
 		noteMarkers,
+		followingNote,
+		tickNoteFollow,
 		displayName,
 		displayAuthor,
 		contrastOn,
@@ -99,6 +101,14 @@
 	const numberBase = new THREE.MeshBasicMaterial({ depthTest: false, transparent: true })
 
 	const fillOf = (a: any) => a.color || DEFAULT_NOTE_COLOR
+
+	// H11: a follow session rides the pin. This runs in the MAIN stage, BEFORE
+	// OrbitControls' own task and the render, so the camera+target translation we
+	// apply is what the frame is composed from — no lag, and the marker positions
+	// published in the render stage below already see the corrected pose.
+	useTask(() => {
+		if ($followingNote) tickNoteFollow()
+	})
 
 	useTask(() => {
 		if (!$showNotePins) return

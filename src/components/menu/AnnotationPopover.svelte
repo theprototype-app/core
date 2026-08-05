@@ -1,13 +1,27 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { Pencil, Trash2, X, Check, Circle, Star, Square } from '@lucide/svelte';
+	import {
+		Pencil,
+		Trash2,
+		X,
+		Check,
+		Circle,
+		Star,
+		Square,
+		Video,
+		VideoOff,
+		LocateFixed
+	} from '@lucide/svelte';
 	import {
 		annotations,
 		activeAnnotation,
 		setAnnotation,
 		deleteAnnotation,
 		annotationWorldPosition,
+		followingNote,
+		startNoteFollow,
+		stopNoteFollow,
 		displayName,
 		displayAuthor,
 		isMyNote,
@@ -18,7 +32,7 @@
 		NOTE_SHAPES,
 		DEFAULT_NOTE_COLOR
 	} from '$lib/annotationsHandler';
-	import { globalCamera, globalRenderer } from '../../stores/sceneStore';
+	import { globalCamera, globalRenderer, orbitControls } from '../../stores/sceneStore';
 	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore.js';
 
 	// H5 (notes v2): ONE note card with a VIEW face and an EDIT face, anchored
@@ -43,6 +57,7 @@
 	const labels = $derived(
 		[...new Set($annotations.map((a) => (a.label || '').trim()).filter(Boolean))].sort()
 	);
+	const following = $derived(!!note && $followingNote?.id === note.id);
 
 	// --- form state, reseeded whenever the open note (or face) changes ---------
 	let name = $state('');
@@ -50,6 +65,8 @@
 	let color = $state(DEFAULT_NOTE_COLOR);
 	let label = $state('');
 	let shape = $state('round');
+	let pose = $state<any>(null); // H11 saved framing {position, target} | null
+	let followOnOpen = $state(false);
 	let seeded = '';
 	$effect(() => {
 		const key = (note?.id ?? '') + ':' + (editing ? 'edit' : 'view');
@@ -62,8 +79,22 @@
 			color = source?.color || DEFAULT_NOTE_COLOR;
 			label = source?.label ?? '';
 			shape = source?.shape || 'round';
+			pose = source?.camera ?? null;
+			followOnOpen = source?.follow === true;
 		});
 	});
+
+	// H11: capture the CURRENT view as this note's framing. Opening the note flies
+	// here, and a follow session then keeps this offset live as the object moves.
+	function saveView() {
+		const camera: any = $globalCamera;
+		const controls: any = $orbitControls;
+		if (!camera || !controls) return;
+		pose = {
+			position: camera.position.toArray(),
+			target: controls.target.toArray()
+		};
+	}
 	const SHAPE_ICONS: Record<string, any> = { round: Circle, star: Star, square: Square };
 
 	let nameInput: HTMLInputElement | null = $state(null);
@@ -159,6 +190,8 @@
 			text: description,
 			color,
 			shape,
+			camera: pose,
+			follow: followOnOpen,
 			label: label.trim(),
 			author: mine ? myAuthorName() : base.author,
 			authorKey: mine ? myAuthorKey() : base.authorKey,
@@ -299,6 +332,27 @@
 				<datalist id="note-labels">
 					{#each labels as l (l)}<option value={l}></option>{/each}
 				</datalist>
+				<span class="note-caption">Camera</span>
+				<div class="note-camera">
+					<button class="note-flat" title="Store the current view with this note" onclick={saveView}>
+						<LocateFixed size={13} aria-hidden="true" />
+						{pose ? 'Update saved view' : 'Save camera view'}
+					</button>
+					{#if pose}
+						<button
+							class="note-icon"
+							title="Forget the saved view"
+							aria-label="Clear the saved camera view"
+							onclick={() => (pose = null)}
+						>
+							<X size={13} aria-hidden="true" />
+						</button>
+					{/if}
+				</div>
+				<label class="note-check">
+					<input type="checkbox" bind:checked={followOnOpen} />
+					<span>Follow the pin when opened</span>
+				</label>
 			</div>
 			<div class="note-actions">
 				{#if existing}
@@ -330,6 +384,21 @@
 					<Trash2 size={14} aria-hidden="true" /> Delete
 				</button>
 				<span class="flex-1"></span>
+				<!-- H11: the follow session outlives this card — closing it keeps riding -->
+				<button
+					class="note-flat"
+					class:is-on={following}
+					title={following
+						? 'Stop riding this pin with the camera'
+						: 'Ride this pin with the camera (keeps going after you close this card)'}
+					onclick={() => (following ? stopNoteFollow() : startNoteFollow(note.id))}
+				>
+					{#if following}
+						<VideoOff size={14} aria-hidden="true" /> Following
+					{:else}
+						<Video size={14} aria-hidden="true" /> Follow
+					{/if}
+				</button>
 				<button
 					class="note-primary"
 					onclick={() => activeAnnotation.set({ id: note.id, mode: 'edit' })}
@@ -480,12 +549,48 @@
 		background: rgb(249 115 22 / 0.15);
 		color: rgb(243 244 246);
 	}
+	.note-camera {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+	.note-check {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		font-size: 11px;
+		color: rgb(209 213 219);
+	}
+	.note-check input {
+		accent-color: rgb(249 115 22);
+	}
 	.note-actions {
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
 		border-top: 1px solid rgb(55 65 81 / 0.6);
 		padding: 0.4rem 0.5rem;
+	}
+	.note-flat {
+		display: inline-flex;
+		flex: 1 1 auto;
+		align-items: center;
+		justify-content: center;
+		gap: 0.25rem;
+		border: 1px solid rgb(75 85 99 / 0.8);
+		border-radius: 0.25rem;
+		padding: 0.15rem 0.4rem;
+		font-size: 0.75rem;
+		color: rgb(209 213 219);
+	}
+	.note-flat:hover {
+		border-color: rgb(148 163 184 / 0.9);
+		color: rgb(243 244 246);
+	}
+	.note-flat.is-on {
+		border-color: rgb(249 115 22);
+		background: rgb(249 115 22 / 0.18);
+		color: rgb(253 230 138);
 	}
 	.note-primary,
 	.note-danger {

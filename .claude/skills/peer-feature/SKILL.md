@@ -95,6 +95,19 @@ and the `__localOnly`/`__uuid` markers all ride this. The recipe:
    sender-side delete-cascade + a presence-style history kind. Per-peer IDENTITY
    choices (avatar photo, hand model) broadcast a content HASH with presence/
    userdata and receivers pull the bytes via assetShare (`handModels.js`).
+   **GROWING an existing replicated record** (annotations gained name/color/shape/
+   label/authorKey/camera/follow in 15-H) needs NO new message type and NO handshake
+   change: keep the message carrying the whole object, put ONE `normalize*()` at
+   every store boundary (local set, remote apply, snapshot, autosave restore) so old
+   payloads gain defaults for free, and make editors SPREAD the base record so a
+   field a newer peer added survives a save by an older one.
+   Distinguish REPLICATED authorship data from a LOCAL view of it: 'Me' is a display
+   mapping over a stored nickname (never store 'me'), and "did I write this?" needs a
+   stable per-DEVICE key — peer ids are re-issued on reconnect and nicknames change,
+   so neither survives a rename or a reload. Anything the viewer alone should feel
+   (a camera follow session, a marker overlay, click-mode prefs) stays LOCAL: the
+   editor camera belongs to whoever is driving it, and a peer's data must never yank
+   another viewer's viewpoint.
 5. **Where does it live in the scene?** `objectsGroup` children = replicated, listed,
    GLTF-synced, anyone edits. Scene-root groups (fixed `name`) = local/derived —
    helpers, env rig, module content; rebuild them from state; they need

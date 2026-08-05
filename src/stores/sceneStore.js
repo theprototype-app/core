@@ -40,6 +40,16 @@ export const camSave = writable(null);
 export const globalRenderer = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const orbitControls = writable(null);
+/**
+ * 15-H11: bumped by `objectActions.flyTo` whenever something DELIBERATELY takes
+ * the editor camera (focus, camera bookmarks, opening a note). A feature that
+ * drives the camera continuously (the note-follow session) watches this counter
+ * to know it has been handed over, instead of guessing from camera deviation —
+ * guessing cannot tell an ordinary user PAN (which also moves the orbit target)
+ * from someone else grabbing the view. It lives here because sceneStore is a
+ * leaf: objectActions and annotationsHandler both already import it.
+ */
+export const cameraClaim = writable(0);
 // peers' VR controller poses: peerId -> { left, right, active, ts }
 /** @type {import('svelte/store').Writable<Record<string, any>>} */
 export const peerHands = writable({});

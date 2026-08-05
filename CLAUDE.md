@@ -261,7 +261,23 @@ loadable play content. Everything a user does must be visible to connected peers
   token blocks, local-only), `windowTabs` (+`closeGroup` = tab ✕ closes ALL members) +
   `windowFocus` + `docking` + `dragWindow` + `searchMenuUx` (floating-window system),
   `fileWindows` (floating text/image editor windows), `autosave` + `idb`,
-  `annotationsHandler`, `sessions` (+ .zip export/import bundling scene assets via
+  `annotationsHandler` (15-H scene notes v2/v3 — model
+  `{id, objectUuid, objectName, offset, text, name, color, shape, label, author,
+  authorKey, camera, follow, ts}`: `text` stays the DESCRIPTION and ONE
+  `normalizeAnnotation()` runs at EVERY store boundary, so old autosaves/.tpscene/
+  old peers load with defaults; the WIRE SHAPE IS UNCHANGED (`{type:'annotation',
+  op:'set'}` carries the whole object and saves spread the base, so a newer peer's
+  fields survive our edit). `authorKey` = a stable per-DEVICE key — 'Me' is
+  DISPLAY-only (`displayAuthor`), a saved file always shows the owner's nickname,
+  and renaming yourself re-stamps your own notes. `noteMarkers` = per-frame screen
+  positions published from the RENDER stage for the DOM marker layer.
+  `followingNote` + `startNoteFollow`/`tickNoteFollow` = the LOCAL follow session
+  (translates camera AND orbit target by the pin delta, so the viewer's own orbit
+  offset survives; handover via `cameraClaim`). `visitedNote` = where you are with
+  no card open; `focusAnnotation` = go there WITHOUT opening (the
+  `noteDoubleClickToOpen` pref); `sweepAnnotations` re-keys scene-root anchors by
+  `objectName` and prunes orphans only after a 3s grace; annotation changes mark
+  the autosave dirty via `markAnnotationsDirty`), `sessions` (+ .zip export/import bundling scene assets via
   fflate; #9: the SAME bundle is the first-class **.tpscene** format — `exportSessionZip`
   takes `{assets,packs,flow}` include-opts, adds a `packs/` section; `fileHandler` saves/
   loads it, Sidebar Files = [GLTF | Scene | ⚙cog]), `measure`, `cameraBookmarks`,
@@ -279,7 +295,17 @@ loadable play content. Everything a user does must be visible to connected peers
   panels: Menu/ObjectsPanel/PropertiesPanel/ColorPalette/PrefabsPanel/Keyboard/
   ChatPanel/Stats — named `vr<x>-*` control meshes, all grip-grabbable),
   scene-overlay components (PingMarkers/PingHighlights (#12: uuid-carrying pings flash
-  an object box)/PathWaypoints/LockHighlights), `SimControls`/`SculptToolbar`/`MeshEditPopup` (#12
+  an object box)/PathWaypoints/LockHighlights), scene NOTES (15-H:
+  `menu/AnnotationMarkers.svelte` = the SCREEN-SPACE marker layer — a pill badge +
+  leader line to the exact 3D point, PRESENTATION-ONLY off the `noteMarkers` store;
+  occluded markers fade their FILL and dash the leader while the number stays
+  readable; screen-space clustering collapses overlapping badges into one counted
+  badge that fans out on click. `AnnotationPins.svelte` keeps the in-scene meshes as
+  the VR path (DOM is invisible in a headset) and its GROUPS remain the anchors in
+  every mode; per-note `shape` is a VR-only distinction.
+  `menu/AnnotationPopover.svelte` = ONE card with view+edit faces anchored beside
+  its pin; `menu/NotesDrawer.svelte` = label groups w/ ‹ › traversal + pins toggle),
+  `SimControls`/`SculptToolbar`/`MeshEditPopup` (#12
   runes-mode HUD pills — the MobileAddButton "own file so onclick doesn't mix with
   on:" precedent; CL-B: the sculpt + mesh-edit toolbars are FLOATING dragWindow
   panels, keys `sculptToolbar`/`meshEditToolbar`), shared
@@ -455,6 +481,37 @@ loadable play content. Everything a user does must be visible to connected peers
   NOT wrapped: `oncreate={(ref) => …}`, never `oncreate={({ref}) => …}` (the destructure
   silently captures `undefined` — this stranded every annotation pin at the origin +
   killed PingMarkers' animations, N1/roadmap-7).
+- **A DOM overlay that must AGREE with a threlte frame may not own a
+  `requestAnimationFrame`** (15-H). threlte's OrbitControls calls
+  `controls.update()` in a task in the MAIN stage; a private rAF is a different
+  callback queue, so whenever it ran first it projected LAST frame's camera and the
+  overlay trailed the geometry by one frame (the note-marker "jiggle"). Project
+  INSIDE the scheduler — `useTask(fn, { stage: renderStage })` from `useScheduler()`,
+  which runs after the main stage — and publish a store the DOM layer renders from.
+  The tell-tale symptom: entering and leaving VR "fixes" it, because XR swaps the
+  loop to `renderer.setAnimationLoop` and threlte re-registers its own rAF
+  afterwards, flipping the callback order.
+- **`OrbitControls.update()` re-derives the camera position from its own spherical
+  state**, so a direct `camera.position.set(...)` is reverted on the next frame (it
+  also means a *test* must never assert the numbers it asked for — park, READ the
+  pose, compare with that). To move the editor camera, go through
+  `objectActions.flyTo` (which also bumps `cameraClaim`, the explicit
+  camera-handover signal in sceneStore) or write BOTH camera and `controls.target`.
+  Continuous camera drivers translate both ends: deviation-watching cannot tell a
+  user PAN from someone else grabbing the view (it would break every pan).
+- An **`<svg>` is a REPLACED element**: `position: fixed; inset: 0` still leaves it
+  at its 300×150 intrinsic box and silently CLIPS every child away — a full-viewport
+  overlay needs explicit `width/height: 100%`.
+- **flowbite's plugin emits `[type='checkbox']:checked { background-color:
+  currentColor !important }`** — no background-color of yours can win the ON state
+  of a custom switch at any specificity (it renders flowbite blue). Drive the fill
+  through `color` instead of fighting it with `!important`.
+- Anything drawn with **`depthWrite: false` loses the postprocessing passes**: the
+  outline and N8AO effects read the depth buffer, so the AO and selection edges of
+  whatever sits BEHIND a non-depth-writing sprite get painted across its face.
+- Grid/pattern FOLLOW must snap by the **section period** (`cell × sectionEvery`),
+  not by one cell: a cell-step translation maps the thin lines onto themselves but
+  hops every THICK line one cell per step (15-H13).
 - WebXR hand joints: read them from threlte's `useHand('left'/'right')` store
   (`.current?.hand.joints[name]` — the SAME XRHand space it renders), keyed by
   HANDEDNESS. Raw `renderer.xr.getHand(SLOT).joints` by app slot index is unreliable (the
@@ -838,6 +895,25 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-05): **15-H scene notes v2/v3 COMPLETE** — branch
+  `feat/roadmap15-h-notes-v2` (lane `../theprototype-lane-notes` @ port 5187,
+  branched off `fix/roadmap16-menus-cameras`), 5 commits. (1) v2 model + anchored
+  view/edit popover + drawer label groups w/ ‹ › traversal + pins toggle. (2)
+  follow-ups: two-pass VR pins, per-note shapes, `authorKey` identity, the
+  persistence fixes (annotations now mark the autosave DIRTY — the real "notes
+  disappear on reload" cause — scene-root anchors re-key by name, orphan prune gets
+  a 3s grace) + the grid look-at section-snap fix. (3) markers v3: SCREEN-SPACE
+  badges with leader lines, ONE raycast occlusion verdict per marker with 8cm slack
+  (occluded = dim fill + dashed leader, number stays readable), screen-space
+  clustering, hover tooltip, selected ring, near-camera fade; in-scene meshes became
+  the VR path only. (4) H11: saved camera FRAMING (`camera` on the note) that
+  opening flies to, plus per-viewer follow SESSIONS that outlive the card (sticky
+  indicator toast, Esc, `cameraClaim` handover). (5) follow-on-open switch,
+  `noteDoubleClickToOpen` (single click / drawer arrows only FLY; dblclick opens) +
+  `visitedNote`, and the Esc order (first stops following, second closes the card).
+  Suite `notes-v2` = 90 checks incl. a PROVEN frame-lag guard; baseline 419/62 held
+  throughout. Plan + as-built notes: cloud `plans-core/pending/15-h-notes-v2.md`.
+  Backlog spinoff: a camera follow/look-at NODE for roadmap-16 camera OBJECTS.
 - Status (2026-08-02): **Roadmap #15 in flight — A+J → PR #81, B+C → PR #82,
   second drop K/L/M/N/O + toast-system rework → PR #84 (stacked on #82), docs
   batch I → theprototype-docs.** Shipped in #84: properties-panel PIN +

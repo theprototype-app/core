@@ -160,5 +160,65 @@ h.run(async () => {
 	);
 	h.check(custom === 7.5, `a custom rotation step is accepted (${custom}°)`);
 
+	// 15-H13: 'lookat' follow snaps the grid centre by the SECTION period, not by a
+	// single cell — a per-cell snap kept the thin lines world-locked but hopped every
+	// THICK line one cell per step (the "grid snaps while panning" report). The fade
+	// circle must stay on the UNSNAPPED camera point (threlte's default) so it glides.
+	await A.page.evaluate(() => {
+		window.__stores.gridSettings.setGrid({
+			follow: 'lookat',
+			cellSize: 1,
+			sectionEvery: 10,
+			matchSnapStep: false,
+			infinite: true,
+			fadeMode: 'auto'
+		});
+		let oc;
+		window.__stores.orbitControls.subscribe((x) => (oc = x))();
+		oc.target.set(3.7, 0, -12.4); // deliberately off both the cell and section lattice
+		oc.update();
+	});
+	await A.page.waitForTimeout(600);
+	const gridMesh = await A.page.evaluate(
+		() =>
+			new Promise((r) => {
+				window.__stores.globalScene.subscribe((scene) => {
+					let found = null;
+					scene.traverse((node) => {
+						if (!found && node.isMesh && node.material?.uniforms?.fadeOrigin) found = node;
+					});
+					if (!found) return r(null);
+					let camera;
+					window.__stores.globalCamera.subscribe((c) => (camera = c))();
+					const origin = found.material.uniforms.fadeOrigin.value;
+					r({
+						x: found.position.x,
+						z: found.position.z,
+						fadeOrigin: [origin.x, origin.y, origin.z],
+						camera: [camera.position.x, camera.position.z]
+					});
+				})();
+			})
+	);
+	const onLattice = (v, step) => Math.abs(v / step - Math.round(v / step)) < 1e-4;
+	h.check(
+		!!gridMesh && onLattice(gridMesh.x, 10) && onLattice(gridMesh.z - 0.03, 10),
+		`H13: the follow centre lands on the SECTION lattice (${gridMesh && gridMesh.x}, ${
+			gridMesh && (gridMesh.z - 0.03).toFixed(2)
+		}) so no line moves`
+	);
+	h.check(
+		!!gridMesh && Math.abs(gridMesh.z - 0.03 + 10) < 1e-4,
+		`H13: it still FOLLOWS the look-at target (z ${gridMesh && (gridMesh.z - 0.03).toFixed(2)} for a target at -12.4)`
+	);
+	h.check(
+		!!gridMesh &&
+			Math.abs(gridMesh.fadeOrigin[0] - gridMesh.camera[0]) < 0.01 &&
+			Math.abs(gridMesh.fadeOrigin[2] - gridMesh.camera[1]) < 0.01,
+		`H13: the fade circle stays on the unsnapped camera point (${gridMesh?.fadeOrigin
+			.map((v) => v.toFixed(1))
+			.join(',')} vs camera ${gridMesh?.camera.map((v) => v.toFixed(1)).join(',')})`
+	);
+
 	await h.finish(browser);
 });

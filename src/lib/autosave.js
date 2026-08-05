@@ -214,6 +214,22 @@ export function saveNow() {
 	return saveSnapshot();
 }
 
+/**
+ * H12: annotations ride the snapshot but were NOT wired to the dirty tracker —
+ * startAutosave only watched objectsGroup + flowGraphs, so a note added without
+ * touching an object afterwards was never persisted ("some notes disappear on
+ * reload"). annotationsHandler already imports this module for
+ * registerAnnotationsPersistence, so calling in from there adds no import edge.
+ */
+export function markAnnotationsDirty() {
+	markDirty();
+}
+
+/** Is a change waiting to be written? (Settings/tests) */
+export function isDirty() {
+	return dirty;
+}
+
 export async function clearSavedSession() {
 	await idbDelete('latest');
 	dirty = false;

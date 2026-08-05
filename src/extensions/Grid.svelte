@@ -23,12 +23,13 @@
     // 16-P3: all of the appearance now comes from the LOCAL `gridSettings` prefs
     // (Configure Scene ▸ Grid); 'fixed' fade mode skips the auto math entirely.
     //
-    // 16-Q2: FOLLOW is ours, not threlte's `followCamera` — that one tracked your
-    // POSITION, which is not what "follow the camera" wants to mean when you are
-    // looking somewhere else. 'lookat' centres the grid under the orbit target,
-    // 'camera' keeps the old behaviour, and both stay HORIZONTAL (y = 0: it is the
-    // ground plane, not a flying sheet). The centre snaps to whole cells so the
-    // lines keep lining up with world coordinates instead of sliding.
+    // 16-Q2: LOOK-AT follow is ours — threlte's `followCamera` tracks your POSITION,
+    // which is not what "follow" should mean when you are looking somewhere else.
+    // 'lookat' centres the grid under the orbit target and stays HORIZONTAL (y = 0:
+    // it is the ground plane, not a flying sheet).
+    //
+    // 15-H13: that centre snaps by the SECTION period, not by one cell (see below),
+    // so the lines stay locked to world coordinates AND no thick line ever hops.
     const { camera } = useThrelte()
     let fade = $state(100)
     let centerX = $state(0)
@@ -51,7 +52,16 @@
         centerZ = 0
         return
       }
-      const step = Math.max(0.001, cell)
+      // 15-H13: snap by the SECTION period, not by one cell. The line pattern only
+      // maps onto itself across a whole section (cell x sectionEvery), so a per-cell
+      // snap kept the THIN lines world-locked while every THICK line hopped one cell
+      // per step — the "grid snaps while panning" report. A section-step snap is
+      // invisible: every line lands exactly where a line already was.
+      // (The fade circle is deliberately NOT tied to this anchor — threlte's Grid
+      // defaults its fadeOrigin to the camera position projected onto the grid plane,
+      // which already glides. Feeding it a snapped point is what re-creates I4's
+      // jumping fade ring.)
+      const step = Math.max(0.001, section)
       centerX = Math.round(oc.target.x / step) * step
       centerZ = Math.round(oc.target.z / step) * step
     })

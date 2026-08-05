@@ -142,10 +142,19 @@ peerHandStyle.subscribe((v) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('peerHandStyle', String(v));
 });
 // Viewport render mode (V-2): LOCAL per-viewer, never replicated —
-// 'shaded' | 'shaded-ao' (default) | 'wireframe'
-export const viewMode = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('viewMode') || 'shaded-ao' : 'shaded-ao'
-);
+// 'shaded' | 'shaded-ao' (default on desktop) | 'wireframe'
+function defaultViewMode() {
+	const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('viewMode') : null;
+	if (stored) return stored;
+	// AO is a FULLSCREEN pass: a poor default on a phone GPU even when it works,
+	// and several mobile drivers mis-compile it (the viewport then keeps showing a
+	// stale frame until you leave AO mode — no console error). Coarse-pointer
+	// devices therefore start in plain 'shaded'; the view-mode menu still offers AO.
+	const coarse =
+		typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)')?.matches;
+	return coarse ? 'shaded' : 'shaded-ao';
+}
+export const viewMode = writable(defaultViewMode());
 viewMode.subscribe((v) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('viewMode', String(v));
 });

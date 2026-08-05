@@ -697,6 +697,7 @@ export function commitArmedFaceOp() {
  * the single tri under the ray (was MISLABELED 'polygon' — still accepted at
  * read time), 'shell' = the whole connected island of welded triangles.
  * @type {import('svelte/store').Writable<'face'|'triangle'|'shell'|'polygon'>} */
+/** @type {import('svelte/store').Writable<'face'|'triangle'|'shell'|'object'|'polygon'>} */
 export const faceEditGranularity = writable('face');
 
 /** the granularity with the legacy 'polygon' value migrated at read time */
@@ -716,6 +717,10 @@ function pickFaceUnitTris(tri) {
 	if (tri < 0 || !workingTris[tri]) return [];
 	const g = granularity();
 	if (g === 'triangle') return [tri];
+	// the WHOLE mesh. Differs from `shell` only when the mesh has SEVERAL
+	// disconnected islands (a merged group, a multi-part import) — on a plain box
+	// or sphere every triangle is one island, so Shell already is the object.
+	if (g === 'object') return workingTris.map((_, i) => i);
 	// B3: shell = the connected component of welded triangles under the ray
 	if (g === 'shell') return shellsOfTris(workingTris).find((group) => group.includes(tri)) ?? [tri];
 	const fi = faceIndexForTriangle(tri);
@@ -743,17 +748,17 @@ export function clearFaceSelection() {
 }
 
 /** B3: set the pick granularity (units differ, so drop the selection).
- * Legacy 'polygon' maps to 'triangle'. @param {'face'|'triangle'|'shell'|'polygon'} mode */
+ * Legacy 'polygon' maps to 'triangle'. @param {'face'|'triangle'|'shell'|'object'|'polygon'} mode */
 export function setFaceGranularity(mode) {
 	const next = mode === 'polygon' ? 'triangle' : mode;
-	if (!['face', 'triangle', 'shell'].includes(next)) return;
+	if (!['face', 'triangle', 'shell', 'object'].includes(next)) return;
 	faceEditGranularity.set(/** @type {any} */ (next));
 	clearFaceSelection();
 }
 
-/** Cycle FACE -> TRIANGLE -> SHELL (VR menu keeps its one toggle button) */
+/** Cycle FACE -> TRIANGLE -> SHELL -> OBJECT (VR menu keeps its one toggle button) */
 export function toggleFaceGranularity() {
-	const order = ['face', 'triangle', 'shell'];
+	const order = ['face', 'triangle', 'shell', 'object'];
 	setFaceGranularity(
 		/** @type {any} */ (order[(order.indexOf(granularity()) + 1) % order.length])
 	);
@@ -1165,15 +1170,26 @@ export function faceGesturePending() {
 	return !!faceGrab || !!faceAdjust;
 }
 
-/** Begin a rigid grab of a face (grip). Captures the pre-edit snapshot + the
- * face's original local vertices. @param {number} index */
-export function beginFaceGrab(index) {
-	if (!faceEdited || index < 0 || !faces[index] || faceGesturePending()) return false;
-	const face = faces[index];
-	// weld-neighbour set (138): verts OUTSIDE the face sharing its corner
-	// positions — the TRANSLATION carries them so the mesh stretches, not tears
-	const faceSet = new Set(face.triIndices);
-	const keys = faceVertexKeys(workingTris, face);
+/** Begin a rigid grab of the target (grip/gizmo). Captures the pre-edit snapshot
+ * + the target's original local vertices.
+ * @param {any} faceOrIndex a synthesized op target, or a face-group index */
+export function beginFaceGrab(faceOrIndex) {
+	if (!faceEdited || faceGesturePending()) return false;
+	// 212-style: accept a SYNTHESIZED target (granularity/multi-aware, see
+	// opTargetFace) or a plain face-group index for back-compat. The gizmo passes
+	// the synthesized one — grabbing `faces[highlight]` was why a Shell pick
+	// highlighted a whole island but only dragged the coplanar face under the
+	// cursor, leaving the rest of the shell behind.
+	const index = typeof faceOrIndex === 'number' ? faceOrIndex : -1;
+	const face = typeof faceOrIndex === 'number' ? faces[faceOrIndex] : faceOrIndex;
+	if (!face || !face.triIndices?.length) return false;
+	const triIndices = face.triIndices.filter((/** @type {number} */ ti) => workingTris[ti]);
+	if (!triIndices.length) return false;
+	// weld-neighbour set (138): verts OUTSIDE the grabbed set sharing its corner
+	// positions — the TRANSLATION carries them so the mesh stretches, not tears.
+	// A whole-shell/object grab has none, which is exactly right: it moves rigidly.
+	const faceSet = new Set(triIndices);
+	const keys = faceVertexKeys(workingTris, { triIndices });
 	/** @type {any[]} */
 	const neighbours = [];
 	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
@@ -1184,15 +1200,16 @@ export function beginFaceGrab(index) {
 	});
 	faceGrab = {
 		index,
+		triIndices,
 		before: trisToPositions(workingTris),
-		originals: face.triIndices.map((/** @type {number} */ ti) =>
+		originals: triIndices.map((/** @type {number} */ ti) =>
 			workingTris[ti].map((/** @type {any} */ v) => v.clone())
 		),
 		neighbours,
 		centroid: face.centroid.clone(),
 		normal: face.normal.clone()
 	};
-	faceEditHighlight.set(index);
+	if (index >= 0) faceEditHighlight.set(index);
 	return true;
 }
 
@@ -1203,7 +1220,6 @@ export function beginFaceGrab(index) {
  */
 export function applyFaceGrab(t) {
 	if (!faceGrab || !faceEdited) return;
-	const face = faces[faceGrab.index];
 	const pivot = faceGrab.centroid;
 	const dPos = t.dPos || new THREE.Vector3();
 	const dQuat = t.dQuat || new THREE.Quaternion();
@@ -1212,7 +1228,7 @@ export function applyFaceGrab(t) {
 	// the ONE rigid transform (about the face centroid) applied to a base vertex
 	const xf = (/** @type {any} */ v) =>
 		v.clone().sub(pivot).multiplyScalar(scale).applyQuaternion(dQuat).add(pivot).add(dPos).add(pushVec);
-	face.triIndices.forEach((/** @type {number} */ ti, /** @type {number} */ k) => {
+	faceGrab.triIndices.forEach((/** @type {number} */ ti, /** @type {number} */ k) => {
 		workingTris[ti] = faceGrab.originals[k].map(xf);
 	});
 	// 162: the welded neighbours sit at the face's CORNER positions, so they get
@@ -1251,6 +1267,8 @@ export function cancelFaceGrab() {
 // never leaks into GLTF sync / raycasts, like the vertex proxy. ----
 /** @type {any} */ let faceProxy = null;
 /** @type {any} */ let faceProxyStart = null;
+/** the op target the gizmo was seated on — what a drag actually moves */
+/** @type {any} */ let gizmoTarget = null;
 
 function ensureFaceProxy() {
 	if (faceProxy) return faceProxy;
@@ -1274,20 +1292,28 @@ export function focusTargetFace() {
 	return { center, radius: Math.max(objR * 0.3, 0.3) };
 }
 
-/** Attach the transform gizmo to the CURRENTLY highlighted face (desktop). */
+/**
+ * Attach the transform gizmo to the current op TARGET (desktop) — the same
+ * granularity/multi-aware set every other op uses, not just the coplanar face
+ * under the cursor. The target is STASHED here because by the time the user
+ * presses a gizmo handle the pointer is over the gizmo, not the mesh, so the
+ * live hover can no longer be trusted to describe what they meant to grab.
+ */
 export function attachFaceGizmo() {
 	if (typeof window === 'undefined' || !faceEdited) return;
 	/** @type {any} */
 	const controls = get(TControls);
-	const fi = get(faceEditHighlight);
-	if (fi < 0 || !faces[fi] || !controls) {
+	const target = opTargetFace();
+	if (!target || !controls) {
+		gizmoTarget = null;
 		detachFaceGizmo();
 		return;
 	}
+	gizmoTarget = target;
 	const proxy = ensureFaceProxy();
 	if (!proxy) return;
 	faceEdited.updateMatrixWorld(true);
-	proxy.position.copy(faceEdited.localToWorld(faces[fi].centroid.clone()));
+	proxy.position.copy(faceEdited.localToWorld(target.centroid.clone()));
 	proxy.quaternion.copy(faceEdited.getWorldQuaternion(new THREE.Quaternion()));
 	proxy.scale.setScalar(1);
 	controls.setSpace?.('local');
@@ -1304,13 +1330,15 @@ export function detachFaceGizmo() {
 		faceProxy = null;
 	}
 	faceProxyStart = null;
+	gizmoTarget = null;
 }
 
 /** Gizmo dragging-changed for the face proxy (163). @param {boolean} dragging */
 export function onFaceGizmoDragChanged(dragging) {
 	if (!faceEdited || !faceProxy) return;
 	if (dragging) {
-		if (beginFaceGrab(get(faceEditHighlight)))
+		// the target captured when the gizmo was seated (see attachFaceGizmo)
+		if (beginFaceGrab(gizmoTarget ?? get(faceEditHighlight)))
 			faceProxyStart = { pos: faceProxy.position.clone(), quat: faceProxy.quaternion.clone() };
 	} else if (faceProxyStart) {
 		faceProxyStart = null;

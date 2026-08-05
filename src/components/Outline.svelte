@@ -90,6 +90,16 @@
 		(typeof navigator !== 'undefined' && navigator.userAgent.match(/Chrom(?:e|ium)\/(\d+)/)?.[1]) ?? 0
 	);
 	const aoSupported = chromiumMajor === 0 || chromiumMajor >= 151;
+	// That 151 threshold came from DESKTOP ANGLE/D3D11 evidence. Mobile GPUs are a
+	// different stack and the same class of breakage still appears there on current
+	// Chromium: the composer stops presenting, so the viewport freezes on a stale
+	// frame — visible, but it never updates while you orbit, and nothing lands in
+	// the console. AO is not force-disabled here (the user may still want it): a
+	// coarse-pointer device starts in plain 'shaded' (sceneStore.defaultViewMode)
+	// and gets ONE explanation if AO is turned on deliberately.
+	const coarsePointer =
+		typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)')?.matches;
+	let aoMobileToasted = false;
 	// belt-and-braces for unknown engines: AO also skips the first composer frames
 	// (the boot-compile window is where the breakage bites hardest)
 	let aoWarm = $state(false);
@@ -101,6 +111,12 @@
 		if (!aoSupported && $viewMode === 'shaded-ao' && !aoGateToasted) {
 			aoGateToasted = true;
 			showToast('Ambient occlusion is off — this browser version (Chromium ' + chromiumMajor + ') has a rendering bug with it. It returns after a browser update.');
+		}
+		if (aoSupported && coarsePointer && $viewMode === 'shaded-ao' && !aoMobileToasted) {
+			aoMobileToasted = true;
+			showToast(
+				'Ambient occlusion is heavy on mobile GPUs, and some drivers render it wrong — if the viewport stops updating as you move, switch the view mode back to Shaded.'
+			);
 		}
 		const q = $shadowQuality;
 		aoPass.configuration.halfRes = q === 'low' || q === 'medium' || q === 'off';

@@ -221,6 +221,117 @@ h.run(async () => {
 	});
 	h.check(shell.pieceB === '3,4', `shell granularity picks the whole disconnected piece (${shell.pieceB})`);
 
+	// --- OBJECT granularity + "the gizmo drags what the highlight promised" ----
+	// The bug: highlight/overlay and the toolbar ops were granularity-aware but the
+	// GIZMO drag grabbed `faces[faceEditHighlight]` — a single coplanar face. With
+	// Shell picked on a box that read as "whole object lit up, one surface moved,
+	// the far vertices stuck". beginFaceGrab now takes the same synthesized target
+	// every other op uses, so a shell/object grab moves rigidly.
+	const grab = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const THREE = s.THREE;
+		// two SEPARATE islands in one mesh: object takes both, shell only the one
+		// under the cursor
+		const tri = (ox, i) =>
+			[
+				[ox, 0, 0, ox + 1, 0, 0, ox, 1, 0],
+				[ox, 0, 0, ox, 0, 1, ox + 1, 0, 0],
+				[ox, 1, 0, ox + 1, 0, 0, ox, 0, 1]
+			][i];
+		const positions = [...tri(0, 0), ...tri(0, 1), ...tri(0, 2), ...tri(5, 0), ...tri(5, 1)];
+		fe.applyMeshGeo(window.__box2.uuid, positions);
+		fe.enterFaceEdit(window.__box2.uuid);
+
+		const readY = () => {
+			let g;
+			s.objectsGroup.subscribe((v) => (g = v))();
+			const arr = g.getObjectByProperty('uuid', window.__box2.uuid).geometry.attributes.position
+				.array;
+			const ys = [];
+			for (let i = 1; i < arr.length; i += 3) ys.push(Math.round(arr[i] * 1000) / 1000);
+			return ys;
+		};
+		/** how many vertices moved by ~dy */
+		const movedCount = (before, after, dy) =>
+			after.filter((y, i) => Math.abs(y - before[i] - dy) < 1e-3).length;
+		const drag = (granularity, tri) => {
+			fe.setFaceGranularity(granularity);
+			fe.highlightFaceByTriangle(tri);
+			const before = readY();
+			const began = fe.beginFaceGrab(fe.currentTargetFace());
+			fe.applyFaceGrab({ dPos: new THREE.Vector3(0, 2, 0) });
+			const after = readY();
+			fe.cancelFaceGrab();
+			return { began, moved: movedCount(before, after, 2), before };
+		};
+
+		const shellDrag = drag('shell', 3); // a tri of the FAR island
+		const objectDrag = drag('object', 3);
+		const faceDrag = drag('face', 0); // the historical default must not change
+		fe.setFaceGranularity('face');
+		fe.exitFaceEdit();
+		return {
+			total: faceDrag.before.length,
+			began: shellDrag.began && objectDrag.began && faceDrag.began,
+			shellMoved: shellDrag.moved,
+			objectMoved: objectDrag.moved,
+			faceMoved: faceDrag.moved,
+			restored: readY().join(',') === faceDrag.before.join(',')
+		};
+	});
+	h.check(grab.began, 'every granularity can begin a gizmo grab');
+	h.check(
+		grab.shellMoved === 6,
+		`a SHELL grab moves its whole island rigidly and nothing else (${grab.shellMoved}/${grab.total} verts)`
+	);
+	h.check(
+		grab.objectMoved === grab.total,
+		`an OBJECT grab moves every vertex, across disconnected islands (${grab.objectMoved}/${grab.total})`
+	);
+	h.check(
+		grab.faceMoved > 0 && grab.faceMoved < grab.total,
+		`FACE granularity still grabs just its own face (${grab.faceMoved}/${grab.total})`
+	);
+	h.check(grab.restored, 'cancelling a grab restores the geometry');
+
+	// the same thing through the REAL gizmo path (seat it, then press a handle):
+	// the target is stashed at seat time, because when the user grabs a handle the
+	// pointer is over the gizmo and the live hover no longer describes the pick
+	const gizmoGrab = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const THREE = s.THREE;
+		fe.enterFaceEdit(window.__box2.uuid);
+		const readY = () => {
+			let g;
+			s.objectsGroup.subscribe((v) => (g = v))();
+			const arr = g.getObjectByProperty('uuid', window.__box2.uuid).geometry.attributes.position
+				.array;
+			const ys = [];
+			for (let i = 1; i < arr.length; i += 3) ys.push(arr[i]);
+			return ys;
+		};
+		fe.setFaceGranularity('shell');
+		fe.highlightFaceByTriangle(3); // a tri of the far island
+		fe.attachFaceGizmo();
+		const before = readY();
+		// the pointer now sits on the gizmo, so the hover is stale/cleared —
+		// the seated target must still be the shell
+		fe.highlightFaceByTriangle(-1);
+		fe.onFaceGizmoDragChanged(true);
+		fe.applyFaceGrab({ dPos: new THREE.Vector3(0, 3, 0) });
+		const after = readY();
+		fe.cancelFaceGrab();
+		fe.setFaceGranularity('face');
+		fe.exitFaceEdit();
+		return { moved: after.filter((y, i) => Math.abs(y - before[i] - 3) < 1e-3).length };
+	});
+	h.check(
+		gizmoGrab.moved === 6,
+		`the seated GIZMO drags the whole shell even after the hover clears (${gizmoGrab.moved} verts)`
+	);
+
 	// --- B4: weld merges the vertex multi-selection ---
 	const weld = await A.page.evaluate((uuid) => {
 		const s = window.__stores;

@@ -79,7 +79,16 @@
 	const GRANULARITIES = [
 		{ value: 'face', label: 'Face', title: 'Pick the whole coplanar face' },
 		{ value: 'triangle', label: 'Tri', title: 'Pick the single triangle under the cursor' },
-		{ value: 'shell', label: 'Shell', title: 'Pick the whole connected island' }
+		{
+			value: 'shell',
+			label: 'Shell',
+			title: 'Pick the connected island under the cursor — on a one-piece mesh that IS the whole object'
+		},
+		{
+			value: 'object',
+			label: 'Object',
+			title: 'Pick every triangle, including islands that are not connected to each other'
+		}
 	];
 
 	/** a target exists for a one-shot op (multi selection or a picked unit) */

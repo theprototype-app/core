@@ -119,6 +119,22 @@ const value = await page.evaluate(() =>
   "+N more", so don't wait them out — click an action or `dismissToastById(id)`.
   The outline effect isn't in `__stores` (it lives in Outline.svelte) — read it via
   `window.__outlineDebug()` → `{selected, locked}` mesh counts (debugStores-gated).
+- **Scene notes (15-H)**: the desktop marker is a screen-space DOM badge, so read it
+  from the DOM (`.marker-badge` + `.marker-num`, leader lines in `.marker-lines`),
+  not from `pinsGroup` — the in-scene meshes only render in VR now (the pin GROUPS
+  stay live as anchors, which is why `annotation-anchor` is unaffected). App chrome
+  (Connect bar, z 300) sits ABOVE the marker layer (z 28), so a badge under it fails
+  Playwright's actionability check — click it in page context. Markers CLUSTER at
+  34px, so from a distance there is no `#1` to click: frame the note from its own
+  pin (`annotationWorldPosition` → `flyTo`) first. `notes-v2` also carries a
+  frame-lag guard (spin the camera, compare each badge against the pin projected
+  with the live camera) — it was verified to FAIL when a one-frame lag is
+  reintroduced, which is the only reason to trust it.
+- **Camera assertions**: never assert the pose you *asked* for —
+  `OrbitControls.update()` re-derives the camera position from its spherical state.
+  Park the camera, READ the resulting pose, compare against that. And a synthetic
+  click races Svelte's binding: to assert a control's ON styling, reopen the panel
+  so the state comes from STORED data instead of measuring right after the click.
 
 ## Repo-external modules (theprototype-app/modules)
 

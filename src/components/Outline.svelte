@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { objectsGroup, selectedObjects, lockedObjects, viewMode, TControls } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
+	import { get } from 'svelte/store';
+	import { chromiumMajor, aoSupported } from '$lib/viewMode';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
 	import {
@@ -81,25 +83,20 @@
 		composer.setSize($size.width, $size.height);
 		aoPass.setSize(Math.round($size.width * dpr), Math.round($size.height * dpr));
 	});
-	// three r185 + Chromium <=150 (ANGLE D3D11): any shader program FIRST COMPILED
-	// while the N8AO pass is enabled links broken — meshes created after boot render
-	// invisible (outline only), and with AO on from boot the whole scene is black.
-	// Chromium 151+ fixed it. AO is therefore gated OFF on affected engines (lights/
-	// shadows/outlines all keep working); it comes back with a browser update.
-	const chromiumMajor = Number(
-		(typeof navigator !== 'undefined' && navigator.userAgent.match(/Chrom(?:e|ium)\/(\d+)/)?.[1]) ?? 0
-	);
-	const aoSupported = chromiumMajor === 0 || chromiumMajor >= 151;
-	// That 151 threshold came from DESKTOP ANGLE/D3D11 evidence. Mobile GPUs are a
-	// different stack and the same class of breakage still appears there on current
-	// Chromium: the composer stops presenting, so the viewport freezes on a stale
-	// frame — visible, but it never updates while you orbit, and nothing lands in
-	// the console. AO is not force-disabled here (the user may still want it): a
-	// coarse-pointer device starts in plain 'shaded' (sceneStore.defaultViewMode)
-	// and gets ONE explanation if AO is turned on deliberately.
+	// The AO capability gate lives in viewMode.js (see chromiumMajor/aoSupported for
+	// the three-r185 + Chromium<=150 story and why the version comes from the brand
+	// list, not the UA string). Mobile is handled by the DEFAULT view mode rather
+	// than a lockout: a coarse-pointer device starts in plain 'shaded'
+	// (sceneStore.defaultViewMode) but may still turn AO on.
+	const engineMajor = chromiumMajor();
+	const aoOk = aoSupported();
 	const coarsePointer =
 		typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)')?.matches;
 	let aoMobileToasted = false;
+	// Only ever explain AO when the user CHOOSES it. Toasting on the boot state made
+	// every visitor with an unexpected UA (DevTools device emulation reports a canned
+	// old Chrome) open the app to a warning about a mode they never picked.
+	let lastMode = get(viewMode);
 	// belt-and-braces for unknown engines: AO also skips the first composer frames
 	// (the boot-compile window is where the breakage bites hardest)
 	let aoWarm = $state(false);
@@ -107,12 +104,20 @@
 	let aoGateToasted = false;
 	// AO on/off + quality follow the local prefs (one perf knob = shadowQuality)
 	$effect(() => {
-		aoPass.enabled = aoSupported && aoWarm && $viewMode === 'shaded-ao';
-		if (!aoSupported && $viewMode === 'shaded-ao' && !aoGateToasted) {
+		aoPass.enabled = aoOk && aoWarm && $viewMode === 'shaded-ao';
+		// only when the user PICKED ambient occlusion just now — never for the mode
+		// the app happened to boot in
+		const justChosen = $viewMode === 'shaded-ao' && lastMode !== 'shaded-ao';
+		lastMode = $viewMode;
+		if (justChosen && !aoOk && !aoGateToasted) {
 			aoGateToasted = true;
-			showToast('Ambient occlusion is off — this browser version (Chromium ' + chromiumMajor + ') has a rendering bug with it. It returns after a browser update.');
+			showToast(
+				'Ambient occlusion stays off — this browser build (Chromium ' +
+					engineMajor +
+					') has a rendering bug with it. It returns after a browser update.'
+			);
 		}
-		if (aoSupported && coarsePointer && $viewMode === 'shaded-ao' && !aoMobileToasted) {
+		if (justChosen && aoOk && coarsePointer && !aoMobileToasted) {
 			aoMobileToasted = true;
 			showToast(
 				'Ambient occlusion is heavy on mobile GPUs, and some drivers render it wrong — if the viewport stops updating as you move, switch the view mode back to Shaded.'

@@ -37,6 +37,37 @@ export function wireframeActive() {
 	return get(viewMode) === 'wireframe' && !get(isVRMode);
 }
 
+/**
+ * The Chromium major version, for the AO capability gate (Outline.svelte).
+ *
+ * Prefers `navigator.userAgentData.brands` over the UA STRING deliberately: the UA
+ * string is what DevTools DEVICE EMULATION overrides, and its canned presets carry
+ * a much older Chrome version — a desktop Chrome 151 with emulation left on
+ * reported "126", failed the >=151 gate and switched AO off with a confusing
+ * toast. The brand list is the modern structured source; the regex stays as the
+ * fallback for engines without it. 0 = unknown, treated as capable.
+ */
+export function chromiumMajor() {
+	if (typeof navigator === 'undefined') return 0;
+	const brands = /** @type {any} */ (navigator).userAgentData?.brands ?? [];
+	const brand = brands.find((/** @type {any} */ b) => /Google Chrome|Chromium/i.test(b.brand));
+	if (brand) return Number(brand.version) || 0;
+	return Number(navigator.userAgent.match(/Chrom(?:e|ium)\/(\d+)/)?.[1] ?? 0);
+}
+
+/**
+ * three r185 + Chromium <=150 (ANGLE D3D11): any shader program FIRST COMPILED
+ * while the N8AO pass is enabled links broken — meshes created after boot render
+ * invisible, and with AO on from boot the whole scene goes black. 151 fixed that on
+ * the desktop. Mobile GPUs are a separate stack where the same class of breakage
+ * still appears, so coarse-pointer devices merely DEFAULT to 'shaded'
+ * (sceneStore.defaultViewMode) instead of being locked out here.
+ */
+export function aoSupported() {
+	const major = chromiumMajor();
+	return major === 0 || major >= 151;
+}
+
 let started = false;
 export function startViewMode() {
 	if (started || typeof window === 'undefined') return;

@@ -587,6 +587,16 @@ loadable play content. Everything a user does must be visible to connected peers
   OrbitControls — dispose() it, or it goes on steering whatever camera threlte
   points it at. And its gizmo VISUALS live in a separate object (`getHelper()`),
   so `controls.visible = false` hides nothing.
+- **A check that cannot fail is not a check** (16-Q6): the first deep-link
+  assertion asked "is the section label somewhere below the sticky header" — true
+  whenever no scrolling happens at all, so it passed while the feature was broken
+  for the user. Assertions about POSITION need a tight band and a starting state
+  that forces the behaviour (expand every section, scroll to the bottom first).
+- **A threlte component that REMOUNTS comes back with its prop defaults** — the
+  editor `<OrbitControls target.y={1.5}>` unmounts while a camera preview owns the
+  view, so exiting threw the look-at point back to the origin. Snapshot such state
+  at handover and copy it onto the FRESH instance (the store still holds the old
+  one for a beat, so wait for a different object).
 - **Mid-session HMR churn makes e2e runs LIE** (bit hard in 16-Q5): a suite that
   loads the page while vite is still re-transforming just-edited modules sees
   half-mounted components — three runs "proved" a working feature broken. Let the

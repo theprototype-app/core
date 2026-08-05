@@ -38,6 +38,7 @@
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
+	import { inferredColliderKind } from '$lib/colliderSpec';
 	import { addParticlesPreset, updateObjectParticles, removeObjectParticles, burstObjectParticles } from '$lib/particleActions';
 	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
@@ -2126,10 +2127,11 @@
 								{ value: 'sphere', name: 'Sphere' },
 								{ value: 'capsule', name: 'Capsule' },
 								{ value: 'cylinder', name: 'Cylinder' },
+									{ value: 'cone', name: 'Cone' },
 								{ value: 'hull', name: 'Convex hull' },
 							{ value: 'custom', name: 'Custom (edit…)' }
 							]}
-							value={$selectedObject.userData.physics?.collider ?? 'box'}
+							value={$selectedObject.userData.physics?.collider ?? inferredColliderKind($selectedObject) ?? 'box'}
 							onchange={(/** @type {any} */ v) => {
 							// A8: picking Custom opens the edit session; Done writes the verts
 							if (v === 'custom') enterColliderEdit($selectedObject.uuid);

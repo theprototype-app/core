@@ -67,6 +67,9 @@ function buildWireframe(spec, sensor) {
 	} else if (spec.kind === 'cylinder') {
 		const r = Math.max(he.x, he.z, 0.02);
 		geometries.push(new THREE.EdgesGeometry(new THREE.CylinderGeometry(r, r, he.y * 2, 16)));
+	} else if (spec.kind === 'cone') {
+		const r = Math.max(he.x, he.z, 0.02);
+		geometries.push(new THREE.EdgesGeometry(new THREE.ConeGeometry(r, he.y * 2, 16)));
 	} else {
 		geometries.push(new THREE.EdgesGeometry(new THREE.BoxGeometry(he.x * 2, he.y * 2, he.z * 2)));
 	}
@@ -78,7 +81,10 @@ function buildWireframe(spec, sensor) {
 	return group;
 }
 
-/** change-detection key: rebuild the wireframe only when the SHAPE changed
+/** change-detection key: rebuild the wireframe only when the SHAPE changed.
+ * Pieces carry a content CHECKSUM (mirrors physics' shapeKeyOf) — a
+ * count-preserving edit (the Move gizmo / vertex drag in the collider session)
+ * must still rebuild, or the viz silently diverges from what rapier gets.
  * @param {any} object @param {any} spec @param {boolean} sensor */
 function keyOf(object, spec, sensor) {
 	const r = (/** @type {number} */ v) => Math.round(v * 1000);
@@ -87,7 +93,14 @@ function keyOf(object, spec, sensor) {
 		r(spec.halfExtents.x),
 		r(spec.halfExtents.y),
 		r(spec.halfExtents.z),
-		spec.pieces ? spec.pieces.map((/** @type {any} */ p) => p.verts.length).join(',') : '',
+		spec.pieces
+			? spec.pieces
+					.map(
+						(/** @type {any} */ p) =>
+							p.verts.length + ':' + p.verts.reduce((/** @type {number} */ a, /** @type {number} */ b) => a + b, 0).toFixed(2)
+					)
+					.join(',')
+			: '',
 		Array.isArray(object.userData?.physics?.colliderVerts)
 			? object.userData.physics.colliderVerts.length
 			: 0,

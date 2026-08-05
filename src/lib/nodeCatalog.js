@@ -187,7 +187,7 @@ export const nodeCatalog = [
 				label: 'Collider',
 				defaults: { shape: 'box', sensor: false, scale: 1 },
 				params: [
-					{ key: 'shape', kind: 'select', options: ['box', 'sphere', 'capsule', 'cylinder', 'hull', 'custom', 'object'] },
+					{ key: 'shape', kind: 'select', options: ['box', 'sphere', 'capsule', 'cylinder', 'cone', 'hull', 'custom', 'object'] },
 					{ key: 'scale', kind: 'range', min: 0.25, max: 4, step: 0.05 },
 					{ key: 'sensor', kind: 'toggle' }
 				]

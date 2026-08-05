@@ -52,12 +52,31 @@ h.run(async () => {
 		`collider banner replaces the normal Done (${JSON.stringify(banner)})`
 	);
 
-	// 3) + Box piece = a second shell
+	// 3) + Box piece = a second shell, seated OUTSIDE the seed (15-A2: it used
+	// to spawn buried inside the seed — invisible through the 0.35 material)
 	const shells = await A.page.evaluate(() => {
 		window.__stores.colliderEdit.addColliderPiece('box');
-		return window.__stores.colliderEdit.colliderShellCount();
+		let scene;
+		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		const proxy = scene.children.find((c) => c.name === 'collider-edit-proxy');
+		const pos = proxy.geometry.attributes.position;
+		// merged order: seed soup first (box = 36 verts), the new piece after
+		let seedMaxX = -Infinity;
+		let pieceMinX = Infinity;
+		for (let i = 0; i < pos.count; i++) {
+			const x = pos.getX(i);
+			if (i < 36) seedMaxX = Math.max(seedMaxX, x);
+			else pieceMinX = Math.min(pieceMinX, x);
+		}
+		return { count: window.__stores.colliderEdit.colliderShellCount(), separated: pieceMinX > seedMaxX };
 	});
-	h.check(shells === 2, `+ Box piece adds a shell (${shells})`);
+	h.check(shells.count === 2, `+ Box piece adds a shell (${shells.count})`);
+	h.check(shells.separated, 'new piece seats outside the seed shell (visible)');
+	await A.page.waitForTimeout(300);
+	const chip = await A.page.evaluate(
+		() => document.querySelector('#collider-shell-count')?.textContent ?? ''
+	);
+	h.check(chip.includes('2'), `shell chip shows the live count ("${chip.trim()}")`);
 
 	// 4) Done writes the compound custom collider + replicates + records undo
 	const done = await A.page.evaluate((uuid) => {
@@ -116,6 +135,42 @@ h.run(async () => {
 	h.check(
 		cancelled.proxyGone && cancelled.faceEditClosed && cancelled.collider !== 'custom',
 		`cancel leaves no trace (${JSON.stringify(cancelled)})`
+	);
+
+	// 7) 15-A1: a count-PRESERVING collider change refreshes the viz wireframe.
+	// keyOf used to hash only vert COUNTS, so a vertex move (the common edit)
+	// left the green proxy stale until Show collider was toggled off/on.
+	const vizRefresh = await A.page.evaluate(async (uuid) => {
+		const w = window.__stores;
+		w.colliderEdit.enterColliderEdit(uuid);
+		w.colliderEdit.commitColliderEdit(); // seed verts stored as custom
+		w.colliderHelpers.setColliderViz(uuid, true);
+		await new Promise((r) => setTimeout(r, 300)); // debounced sync
+		const checksum = () => {
+			let scene;
+			w.globalScene.subscribe((v) => (scene = v))();
+			const root = scene.children.find((c) => c.name === 'collider-proxies');
+			let sum = 0;
+			root?.children.forEach((g) =>
+				g.children.forEach((l) => {
+					const a = l.geometry.attributes.position.array;
+					for (let i = 0; i < a.length; i++) sum += a[i];
+				})
+			);
+			return sum;
+		};
+		const before = checksum();
+		// count-preserving content change — exactly what a vertex move + Done writes
+		const p = window.__target.userData.physics;
+		p.colliderVerts = p.colliderVerts.map((v, i) => (i % 3 === 0 ? v + 0.5 : v));
+		w.objectsGroup.update((v) => v);
+		await new Promise((r) => setTimeout(r, 300));
+		const after = checksum();
+		return { before, after, changed: Math.abs(after - before) > 0.01 };
+	}, uuid);
+	h.check(
+		vizRefresh.changed,
+		`count-preserving collider edit refreshes the viz (${vizRefresh.before.toFixed(1)} -> ${vizRefresh.after.toFixed(1)})`
 	);
 
 	await h.finish(browser);

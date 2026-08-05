@@ -91,6 +91,23 @@ function disposeControls(controls) {
 /** Whichever controls are actually steering the view right now. */
 export const activeOrbit = derived([previewOrbit, orbitControls], ([preview, editor]) => preview ?? editor);
 
+/**
+ * Enable/disable whichever controls are steering the view.
+ *
+ * Use this instead of `$activeOrbit.enabled = x` in a component: `activeOrbit` is a
+ * DERIVED store, and svelte compiles a property assignment through a `$store` into
+ * `store_mutate()` → `store.set()`, which a derived store does not have. Every such
+ * site threw `TypeError: store.set is not a function` mid-handler — and because the
+ * throw aborted the rest of `onPointerUp`, SHIFT-click multi-select silently stopped
+ * adding to the selection. Mutating the resolved OBJECT is perfectly fine; it is the
+ * `$store.prop =` syntax that is not.
+ * @param {boolean} on
+ */
+export function setOrbitEnabled(on) {
+	const controls = /** @type {any} */ (get(activeOrbit));
+	if (controls) controls.enabled = on;
+}
+
 /** pose the marker had when Control began (for the single undo entry) */
 /** @type {any} */
 let controlBefore = null;

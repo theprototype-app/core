@@ -174,5 +174,86 @@ h.run(async () => {
 		`"Selected" is gone once nothing is selected (${afterDeselect.length} rows)`
 	);
 
+	// ---------- SHIFT-click multi-select, through the REAL mouse ----------
+	// Regression guard (found while assembling the release): every
+	// `if ($activeOrbit) $activeOrbit.enabled = ...` in Scene.svelte threw
+	// "store.set is not a function" — activeOrbit is a DERIVED store, and svelte
+	// compiles `$store.prop =` into store_mutate → store.set. The throw aborted the
+	// rest of onPointerUp, so shift-click stopped ADDING to the selection while a
+	// plain click (which never enters the marquee branch) kept working. This has to
+	// drive REAL clicks: a store-level selectObject call never touches that path.
+	const setOf = () =>
+		A.page.evaluate(
+			() => new Promise((r) => window.__stores.selectedObjects.subscribe((s) => r([...(s ?? [])]))())
+		);
+	const trio = await A.page.evaluate(() => {
+		const w = window.__stores;
+		const out = [];
+		let g;
+		for (const x of [-2.5, 0, 2.5]) {
+			w.commandsHandler.sceneCommand('/create Box 1 1 1');
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const box = g.children[g.children.length - 1];
+			box.position.set(x, 0.5, 0);
+			box.updateMatrixWorld(true);
+			out.push(box.uuid);
+		}
+		w.objectActions.deselectObject();
+		return out;
+	});
+	await A.page.evaluate(() => window.__stores.objectActions.flyTo([0, 4, 9], [0, 0.5, 0], 1));
+	await A.page.waitForTimeout(900);
+	let pageErrors = 0;
+	A.page.on('pageerror', () => pageErrors++);
+	/** @param {string} uuid @param {boolean} shift */
+	const clickBox = async (uuid, shift) => {
+		const at = await A.page.evaluate((u) => {
+			let g;
+			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			const o = g.getObjectByProperty('uuid', u);
+			return [o.position.x, o.position.y, o.position.z];
+		}, uuid);
+		const px = await h.projectPoint(A.page, at);
+		if (shift) await A.page.keyboard.down('Shift');
+		await A.page.mouse.click(px.x, px.y);
+		if (shift) await A.page.keyboard.up('Shift');
+		await A.page.waitForTimeout(400);
+	};
+	await clickBox(trio[0], false);
+	h.check((await setOf()).length === 1, 'a plain click selects one object');
+	await clickBox(trio[1], true);
+	const two = await setOf();
+	h.check(
+		two.length === 2 && two.includes(trio[0]) && two.includes(trio[1]),
+		`SHIFT-click ADDS to the selection (${two.length})`
+	);
+	await clickBox(trio[2], true);
+	const three = await setOf();
+	h.check(three.length === 3, `a third SHIFT-click adds again (${three.length})`);
+	await clickBox(trio[1], true);
+	const toggled = await setOf();
+	h.check(
+		toggled.length === 2 && !toggled.includes(trio[1]),
+		`SHIFT-click on a member toggles it OUT (${toggled.length})`
+	);
+	await clickBox(trio[0], false);
+	h.check((await setOf()).length === 1, 'a plain click collapses the set again');
+	h.check(pageErrors === 0, `no page errors during the shift gestures (${pageErrors})`);
+	// member tints are a live highlight, never baked material state
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.waitForTimeout(300);
+	const emissives = await A.page.evaluate((list) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		return list.map((u) => {
+			const o = g.getObjectByProperty('uuid', u);
+			return '#' + (o?.material?.emissive?.getHexString() ?? '??');
+		});
+	}, trio);
+	h.check(
+		emissives.every((hex) => hex === '#000000'),
+		`multi-select tints are restored on deselect (${emissives.join(', ')})`
+	);
+
 	await h.finish(browser);
 });

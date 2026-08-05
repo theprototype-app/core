@@ -93,6 +93,13 @@ export function shadeHex(hex, factor = 0.55) {
 	return '#' + [to(r), to(g), to(b)].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 
+/** `hex` as an rgba() string — an occluded marker fades its FILL, not its text
+ * @param {string} hex @param {number} alpha */
+export function rgbaOf(hex, alpha) {
+	const [r, g, b] = rgbOf(hex);
+	return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /**
  * Readable ink for a pin of this fill color — the classic YIQ brightness split
  * at 0.5 (black on amber/green/lime/cyan, white on blue/red/pink/violet).
@@ -186,6 +193,15 @@ function objectOf(uuid) {
 		get(objectsGroup)?.getObjectByProperty('uuid', uuid) ??
 		get(globalScene)?.getObjectByProperty('uuid', uuid)
 	);
+}
+
+/**
+ * The object a note hangs on (objectsGroup OR the scene root). Exported so the
+ * marker overlay can resolve owners on its own schedule instead of walking the
+ * whole scene per note per frame. @param {string} uuid
+ */
+export function annotationOwner(uuid) {
+	return objectOf(uuid) ?? null;
 }
 
 /** @param {any} data */

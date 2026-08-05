@@ -11,24 +11,24 @@
 		shadeHex,
 		contrastOn
 	} from '$lib/annotationsHandler'
-	import { objectsGroup, globalScene } from '../stores/sceneStore'
+	import { objectsGroup, globalScene, isVRMode } from '../stores/sceneStore'
 
-	// Billboarded note pins. Each pin re-anchors to its object every frame
-	// (objects move) and faces the camera.
+	// In-scene note pins — the VR path. Each pin group re-anchors to its object
+	// every frame (objects move) and faces the camera; the GROUP is the note's
+	// anchor and stays live in every mode (annotationWorldPosition, the popover and
+	// the anchor suite all read it), while the VISUALS only render in a headset.
 	//
-	// H8 (notes v2 follow-up): every pin draws TWICE. The SOLID pass is
-	// depth-tested, so scene geometry hides it; the GHOST pass skips the depth
-	// test at a low opacity, so a pin behind an object stays findable as a dim
-	// silhouette instead of either vanishing or punching through at full strength.
-	// The old single pass was `depthTest: false` with NO renderOrder, which made
-	// "does this pin draw over that object" depend on scene ADD ORDER — that is
-	// why your own new pins floated on top while the ones a late joiner received
-	// (objects added after the pins group) were covered.
-	// The NUMBER is one pass, never depth-tested, on top of every pin mesh: it is
-	// the pin's identity, so it must stay readable even when a neighbouring pin
-	// overlaps it (H8 item: "number should passthrough always").
+	// On desktop the markers are screen-space DOM badges with a leader line
+	// (menu/AnnotationMarkers.svelte): an in-scene quad gets CUT IN HALF by any
+	// surface it touches and its occlusion is a per-pixel depth test, neither of
+	// which we want. DOM can't clip against geometry and gives real typography,
+	// hover states and clustering. Keeping this path for VR is deliberate — DOM is
+	// invisible in a headset.
 	//
-	// H9: shape (round/star/square) + a darker border ring + contrast-aware ink.
+	// Two passes here for the same reason as the DOM badge's translucency: the
+	// depth-tested SOLID pass disappears behind geometry, the depth-test-off GHOST
+	// pass survives dimly, and the number never depth-tests so an overlapping pin
+	// can't hide it. Shapes (round/star/square) + a darker border + contrast ink.
 
 	const { camera } = useThrelte()
 
@@ -136,6 +136,7 @@
 			     every test read it), while the visuals sit a hair toward the camera along
 			     the group's local +Z — which lookAt points at the viewer. Without it a
 			     pin anchored flat ON a face half-sinks into it as the billboard rotates. -->
+			{#if $isVRMode}
 			<T.Group position={[0, 0, 0.06]}>
 			<!-- GHOST pass (no depth test): keeps an occluded pin visible but dim -->
 			<T.Mesh
@@ -161,16 +162,6 @@
 					depthTest={false}
 					depthWrite={false}
 					side={THREE.DoubleSide}
-				/>
-			</T.Mesh>
-			<T.Mesh position={[0, -0.19, 0]} renderOrder={GHOST_FILL}>
-				<T.ConeGeometry args={[0.05, 0.12, 8]} />
-				<T.MeshBasicMaterial
-					color={fillOf(annotation)}
-					transparent
-					opacity={GHOST_OPACITY}
-					depthTest={false}
-					depthWrite={false}
 				/>
 			</T.Mesh>
 			<!-- SOLID pass (depth-tested): an object in front of the pin hides this,
@@ -199,10 +190,6 @@
 					side={THREE.DoubleSide}
 				/>
 			</T.Mesh>
-			<T.Mesh position={[0, -0.19, 0]} renderOrder={SOLID_FILL}>
-				<T.ConeGeometry args={[0.05, 0.12, 8]} />
-				<T.MeshBasicMaterial color={fillOf(annotation)} transparent opacity={SOLID_OPACITY} />
-			</T.Mesh>
 			<Text
 				color={contrastOn(fillOf(annotation))}
 				outlineColor={contrastOn(fillOf(annotation)) === '#1c1917' ? '#ffffff' : '#000000'}
@@ -217,6 +204,7 @@
 				text={String(index + 1)}
 			/>
 			</T.Group>
+			{/if}
 		</T.Group>
 	{/each}
 </T.Group>

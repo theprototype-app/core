@@ -61,57 +61,51 @@ const pinPixel = (page, idOrDraft) =>
 		idOrDraft
 	);
 
-// everything the pin's meshes/text tell us about the H8 two-pass render
-const pinInfo = (page, id) =>
-	page.evaluate(
-		(id) =>
-			new Promise((resolve) => {
-				window.__stores.annotationsHandler.pinsGroup.subscribe((group) => {
-					const pin = group?.getObjectByName('pin-' + id);
-					if (!pin) return resolve(null);
-					const meshes = [];
-					let text = null;
-					pin.traverse((node) => {
-						if (!node.isMesh) return;
-						// troika Text extends Mesh; its (possibly multi-) material is marked
-						const material = Array.isArray(node.material)
-							? node.material[node.material.length - 1]
-							: node.material;
-						if (material?.isTroikaTextMaterial) {
-							text = {
-								renderOrder: node.renderOrder,
-								depthTest: material.depthTest,
-								value: node.text
-							};
-							return;
-						}
-						if (!material?.color) return;
-						meshes.push({
-							hex: '#' + material.color.getHexString(),
-							depthTest: material.depthTest,
-							depthWrite: material.depthWrite,
-							transparent: material.transparent,
-							opacity: material.opacity,
-							renderOrder: node.renderOrder,
-							verts: node.geometry?.attributes?.position?.count ?? 0
-						});
-					});
-					resolve({ meshes, text });
-				})();
-			}),
-		id
-	);
+// V3: the desktop marker is a screen-space DOM badge + leader line, so its state
+// is read from the DOM (the in-scene meshes are the VR path now). Everything one
+// badge tells us:
+const markerInfo = (page, number) =>
+	page.evaluate((number) => {
+		const badge = [...document.querySelectorAll('.marker-badge')].find(
+			(b) => b.querySelector('.marker-num')?.textContent?.trim() === String(number)
+		);
+		if (!badge) return null;
+		const rect = badge.getBoundingClientRect();
+		const style = getComputedStyle(badge);
+		const svg = document.querySelector('.marker-lines');
+		const lines = [...(svg?.querySelectorAll('line') ?? [])].map((l) => ({
+			x1: +l.getAttribute('x1'),
+			y1: +l.getAttribute('y1'),
+			x2: +l.getAttribute('x2'),
+			y2: +l.getAttribute('y2'),
+			dashed: (l.parentElement?.getAttribute('stroke-dasharray') ?? 'none') !== 'none',
+			opacity: +(l.parentElement?.getAttribute('opacity') ?? 1)
+		}));
+		// the leader whose badge end matches THIS badge's centre (x and y — two
+		// markers can share an x)
+		const cx = rect.x + rect.width / 2;
+		const cy = rect.y + rect.height / 2;
+		const leader = lines.find(
+			(l) => Math.abs(l.x1 - cx) < 2 && Math.abs(l.y1 - (cy + rect.height / 2 - 2)) < 3
+		);
+		return {
+			text: badge.textContent.trim(),
+			center: [cx, rect.y + rect.height / 2],
+			size: [Math.round(rect.width), Math.round(rect.height)],
+			background: style.backgroundColor,
+			color: style.color,
+			radius: style.borderTopLeftRadius,
+			opacity: +style.opacity,
+			occluded: badge.classList.contains('is-occluded'),
+			active: badge.classList.contains('is-active'),
+			cluster: badge.classList.contains('is-cluster'),
+			svgSize: svg ? [svg.getBoundingClientRect().width, svg.getBoundingClientRect().height] : null,
+			leader,
+			icon: !!badge.querySelector('svg')
+		};
+	}, number);
 
-// the FILL color of the pin's brightest pass (the note color, not the border)
-const pinColor = async (page, id) => {
-	const info = await pinInfo(page, id);
-	if (!info?.meshes?.length) return null;
-	// the fill passes carry the note color; the border passes are the darker shade
-	const counts = {};
-	for (const m of info.meshes) counts[m.hex] = (counts[m.hex] || 0) + 1;
-	// fill appears on the disc + cone in both passes (4), border only twice
-	return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
-};
+const badgeCount = (page) => page.locator('.marker-badge').count();
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -175,61 +169,146 @@ h.run(async () => {
 	});
 	h.check(!!(id1 && id2 && id3), 'setup: three notes committed');
 
-	// --- H4: the pin takes the note color -------------------------------------
-	await A.page.waitForTimeout(400);
-	h.check((await pinColor(A.page, id1)) === '#22c55e', 'H4: pin material uses the note color');
+	// --- V3 markers: screen-space badge + leader line -------------------------
+	// close in first: from the default distance these three notes overlap on screen
+	// and CLUSTER (that is the feature — checked further down)
+	await A.page.evaluate(() => window.__stores.objectActions.flyTo([1.6, 1.8, 2.6], [0, 1, 0], 1));
+	await A.page.waitForTimeout(900);
+	const m1 = await markerInfo(A.page, 1);
 	h.check(
-		(await pinColor(A.page, id2)) === '#f59e0b',
-		'H4: a note with no explicit color keeps the amber default pin'
+		m1?.background === 'rgb(34, 197, 94)',
+		`V3/H4: the badge fill is the note colour (${m1?.background})`
+	);
+	h.check(
+		(await markerInfo(A.page, 2))?.background === 'rgb(245, 158, 11)',
+		'V3/H4: a note with no explicit colour keeps the amber default'
+	);
+	h.check(
+		m1?.color === 'rgb(28, 25, 23)',
+		`V3/H9: the number ink is contrast-aware — dark on green (${m1?.color})`
+	);
+	h.check(!!m1?.icon, 'V3: the badge carries a small type icon next to the number');
+	h.check(
+		!!m1 && m1.size[1] >= 24 && m1.radius.startsWith('999'),
+		`V3: a pill badge with room for bolder type (${m1?.size?.join('x')}, radius ${m1?.radius})`
+	);
+	// the leader line runs from the badge to the EXACT projected point
+	const pix1First = await pinPixel(A.page, id1);
+	h.check(
+		!!m1?.leader &&
+			!!pix1First &&
+			Math.abs(m1.leader.x2 - pix1First.x) < 2 &&
+			Math.abs(m1.leader.y2 - pix1First.y) < 2 &&
+			m1.leader.y1 < m1.leader.y2,
+		`V3: a leader line joins the badge to the exact 3D point (${m1?.leader?.x2?.toFixed(
+			0
+		)},${m1?.leader?.y2?.toFixed(0)} vs ${pix1First && Math.round(pix1First.x)},${
+			pix1First && Math.round(pix1First.y)
+		})`
+	);
+	h.check(
+		!!m1?.svgSize && m1.svgSize[0] > 1000 && m1.svgSize[1] > 600,
+		`V3: the leader-line layer spans the viewport (an <svg> falls back to 300x150) (${m1?.svgSize?.join(
+			'x'
+		)})`
+	);
+	// nothing can clip a DOM badge, and the in-scene meshes are VR-only now
+	const meshCount = await A.page.evaluate(
+		() =>
+			new Promise((r) => {
+				window.__stores.annotationsHandler.pinsGroup.subscribe((group) => {
+					let meshes = 0;
+					let pins = 0;
+					group?.traverse((node) => {
+						if (node.isMesh) meshes++;
+						if (node.name?.startsWith('pin-')) pins++;
+					});
+					r({ meshes, pins });
+				})();
+			})
+	);
+	h.check(
+		meshCount.pins === 3 && meshCount.meshes === 0,
+		`V3: the pin anchors stay live but render NO in-scene meshes outside VR (${meshCount.pins} anchors, ${meshCount.meshes} meshes)`
 	);
 
-	// --- H8: two render passes + an always-on-top number ----------------------
-	const info1 = await pinInfo(A.page, id1);
-	const tested = (info1?.meshes ?? []).filter((m) => m.depthTest);
-	const ghosts = (info1?.meshes ?? []).filter((m) => !m.depthTest);
+	// --- V3: behind-geometry markers go translucent, never half-clipped --------
+	const behindId = await addNote(A.page, boxUuid, [0, 0.5, -0.55], {
+		name: 'Back face',
+		text: 'behind the box from here'
+	});
+	await A.page.evaluate(() => window.__stores.objectActions.flyTo([0, 1.2, 4], [0, 0.5, 0], 1));
+	await A.page.waitForTimeout(900);
+	const behind = await markerInfo(A.page, 4);
 	h.check(
-		tested.length >= 2 && ghosts.length >= 2,
-		`H8: the pin draws a depth-tested SOLID pass and a depth-test-off GHOST pass (${tested.length}/${ghosts.length} meshes)`
+		!!behind?.occluded && /rgba\(/.test(behind.background),
+		`V3: a marker behind geometry fades its FILL (${behind?.background})`
 	);
 	h.check(
-		ghosts.every((m) => m.transparent && m.opacity < 0.5) &&
-			tested.every((m) => m.transparent && m.opacity > 0.5),
-		`H8: the ghost pass is dim and the solid pass is not (ghost ${ghosts
-			.map((m) => m.opacity)
-			.join('/')} vs solid ${tested.map((m) => m.opacity).join('/')})`
+		behind?.color === 'rgb(28, 25, 23)' && behind?.opacity === 1,
+		'V3: ...while the number itself stays fully readable'
 	);
-	// the SOLID pass paints over the ghost, so a visible pin reads as its own
-	// saturated colour instead of the ghost border bleeding up through the fill
+	h.check(!!behind?.leader?.dashed, 'V3: the occluded leader line is dashed');
+	// a marker sitting ON a surface must NOT count as occluded (the slack window)
+	const onSurface = await markerInfo(A.page, 1);
 	h.check(
-		(info1?.meshes ?? []).every((m) => m.renderOrder > 0) &&
-			Math.max(...ghosts.map((m) => m.renderOrder)) <
-				Math.min(...tested.map((m) => m.renderOrder)),
-		'H8: every pin mesh has an explicit renderOrder, ghost under solid (no add-order lottery)'
+		onSurface?.occluded === false && !/rgba\(/.test(onSurface?.background ?? ''),
+		`V3: a marker resting on its surface stays solid — the few-cm slack (${onSurface?.background})`
 	);
-	h.check(
-		!!info1?.text &&
-			info1.text.depthTest === false &&
-			info1.text.renderOrder > Math.max(...(info1.meshes ?? []).map((m) => m.renderOrder)),
-		`H8: the number draws through everything, above every pin mesh (renderOrder ${info1?.text?.renderOrder})`
-	);
-	// an occluded pin keeps its ghost — the report was "new pins show through, received ones do not"
-	const infoLate = await pinInfo(A.page, id2);
-	h.check(
-		(infoLate?.meshes ?? []).some((m) => !m.depthTest) &&
-			(infoLate?.meshes ?? []).some((m) => m.depthTest),
-		'H8: every pin gets both passes, whenever/however it was created'
-	);
+	await A.page.evaluate((id) => {
+		window.__stores.annotationsHandler.deleteAnnotation(id);
+	}, behindId);
 
-	// --- H9: shape geometry + darker border + contrast ink --------------------
-	const roundVerts = (await pinInfo(A.page, id1))?.meshes?.[0]?.verts ?? 0;
-	const starVerts = (await pinInfo(A.page, id3))?.meshes?.[0]?.verts ?? 0;
+	// --- V3: clustering ------------------------------------------------------
+	// three notes almost on top of each other, low on the box so the cluster badge
+	// does not land under the Connect bar
+	const crowd = [];
+	for (const offset of [
+		[0.45, 0.15, 0.5],
+		[0.5, 0.1, 0.45],
+		[0.4, 0.12, 0.55]
+	])
+		crowd.push(await addNote(A.page, boxUuid, offset, { text: 'crowded ' + crowd.length }));
+	await A.page.waitForTimeout(800);
+	const clusterBadge = await A.page.locator('.marker-badge.is-cluster').count();
+	const beforeExpand = await badgeCount(A.page);
 	h.check(
-		roundVerts > 0 && starVerts > 0 && roundVerts !== starVerts,
-		`H9: a star pin renders a different geometry than a round one (${roundVerts} vs ${starVerts} verts)`
+		clusterBadge === 1,
+		`V3: overlapping markers collapse into ONE counted badge (${clusterBadge} cluster badge, ${beforeExpand} badges total)`
 	);
+	const clusterText = await A.page.locator('.marker-badge.is-cluster .marker-num').first().textContent();
+	h.check(
+		Number(clusterText) >= 3,
+		`V3: the cluster badge shows how many notes are stacked (${clusterText})`
+	);
+	// click in page context: fixed app chrome can sit over a marker and Playwright's
+	// actionability check then refuses (a real user just clicks a visible badge)
+	const clusterClicked = await A.page.evaluate(() => {
+		const badge = document.querySelector('.marker-badge.is-cluster');
+		if (!badge) return false;
+		badge.click();
+		return true;
+	});
+	await A.page.waitForTimeout(500);
+	h.check(
+		clusterClicked &&
+			(await A.page.locator('.marker-badge.is-cluster').count()) === 0 &&
+			(await badgeCount(A.page)) > beforeExpand,
+		'V3: clicking the cluster fans its members out, each with its own leader'
+	);
+	for (const id of crowd)
+		await A.page.evaluate((id) => window.__stores.annotationsHandler.deleteAnnotation(id), id);
+	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+
+	// --- H9 colour maths (shared by the badge and the VR pin) -----------------
 	const border = await A.page.evaluate(() => {
 		const ah = window.__stores.annotationsHandler;
-		return { dark: ah.shadeHex('#22c55e'), inkOnGreen: ah.contrastOn('#22c55e'), inkOnBlue: ah.contrastOn('#3b82f6') };
+		return {
+			dark: ah.shadeHex('#22c55e'),
+			inkOnGreen: ah.contrastOn('#22c55e'),
+			inkOnBlue: ah.contrastOn('#3b82f6'),
+			faded: ah.rgbaOf('#22c55e', 0.5)
+		};
 	});
 	h.check(
 		border.dark === '#136c34',
@@ -237,16 +316,45 @@ h.run(async () => {
 	);
 	h.check(
 		border.inkOnGreen === '#1c1917' && border.inkOnBlue === '#f8fafc',
-		`H9: the number ink is contrast-aware (green -> ${border.inkOnGreen}, blue -> ${border.inkOnBlue})`
+		`H9: the ink is contrast-aware (green -> ${border.inkOnGreen}, blue -> ${border.inkOnBlue})`
 	);
-	const hasBorder = (await pinInfo(A.page, id1))?.meshes?.some((m) => m.hex === border.dark);
-	h.check(!!hasBorder, 'H9: the pin actually renders that darker border shade');
+	h.check(
+		border.faded === 'rgba(34, 197, 94, 0.5)',
+		`V3: rgbaOf fades a fill without touching its text (${border.faded})`
+	);
+
+	// --- V3: hover preview ----------------------------------------------------
+	await A.page.evaluate(() => {
+		const badge = [...document.querySelectorAll('.marker-badge')].find(
+			(b) => b.querySelector('.marker-num')?.textContent?.trim() === '1'
+		);
+		badge?.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
+	});
+	await A.page.waitForTimeout(250);
+	const tip = await A.page.evaluate(() => {
+		const t = document.querySelector('.marker-tip');
+		return t ? t.textContent.replace(/\s+/g, ' ').trim() : null;
+	});
+	h.check(
+		!!tip && tip.includes('Hinge') && tip.includes('this corner needs a hinge') && /Me · /.test(tip),
+		`V3: hovering a marker previews its note, author and date (${tip})`
+	);
+	await A.page.evaluate(() => {
+		document
+			.querySelector('.marker-badge')
+			?.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+	});
 
 	// --- H2/H5: the popover opens ANCHORED near its pin, in VIEW mode ---------
 	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
 	await A.page.waitForTimeout(900); // let the 400ms fly settle
 	const viewCard = A.page.locator('[role="dialog"][aria-label="Note"]');
 	h.check(await viewCard.first().isVisible(), 'H2: pin open lands on the VIEW face');
+	h.check(
+		(await markerInfo(A.page, 1))?.active === true &&
+			(await markerInfo(A.page, 3))?.active === false,
+		'V3: the open note\'s marker takes the selected ring, the others do not'
+	);
 	const box1 = await viewCard.first().boundingBox();
 	const pix1 = await pinPixel(A.page, id1);
 	// the card sits beside the pin on whichever side fits (it flips near an edge)
@@ -346,7 +454,11 @@ h.run(async () => {
 		(await active(A.page))?.mode === 'view',
 		'H5: saving returns the card to its view face'
 	);
-	h.check((await pinColor(A.page, id2)) === '#3b82f6', 'H4: the pin re-colors after the edit');
+	const recolored = await markerInfo(A.page, 2);
+	h.check(
+		recolored?.background === 'rgb(59, 130, 246)' && recolored?.radius === '8px',
+		`H4/H9: the badge re-colours and takes the square silhouette after the edit (${recolored?.background}, radius ${recolored?.radius})`
+	);
 
 	// receive path: a peer's v2 payload lands normalized
 	const remote = await A.page.evaluate(
@@ -568,6 +680,10 @@ h.run(async () => {
 		hidden.visible === false && hidden.pref === false,
 		'H3: the header toggle hides the pins group and flips the local pref'
 	);
+	h.check(
+		(await badgeCount(A.page)) === 0,
+		'H3/V3: the screen-space markers go with it (one pref hides both paths)'
+	);
 	await drawer.locator('button[aria-label="Show note pins"]').click();
 	await A.page.waitForTimeout(300);
 	const shown = await A.page.evaluate(
@@ -579,6 +695,8 @@ h.run(async () => {
 			})
 	);
 	h.check(shown === true, 'H3: toggling back shows the pins again');
+	await A.page.waitForTimeout(300);
+	h.check((await badgeCount(A.page)) > 0, 'H3/V3: ...and the markers come back');
 
 	// --- H12: notes actually persist ------------------------------------------
 	// (1) an annotation change ALONE has to schedule an autosave — before the fix

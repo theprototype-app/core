@@ -57,7 +57,12 @@
 	/** @param {PointerEvent} event */
 	function onPointerDown(event) {
 		const touch = event.pointerType !== 'mouse';
-		if (!touch && event.button !== 2) return; // mouse: RIGHT button drags
+		// 16-Q5: the title BAR drags with the left button too (that's where a hand
+		// goes); the body keeps right-drag so a left-click there can't move the window
+		// by accident. Touch holds anywhere.
+		const onBar = !!(/** @type {any} */ (event.target)?.closest?.('.pip-bar'));
+		const leftOnBar = event.button === 0 && onBar && !/** @type {any} */ (event.target)?.closest?.('.pip-btn');
+		if (!touch && event.button !== 2 && !leftOnBar) return;
 		startX = event.clientX;
 		startY = event.clientY;
 		origin = { ...position };
@@ -127,7 +132,9 @@
 	   the body must stay transparent (no background, no backdrop-filter) */
 	.pip {
 		position: fixed;
-		z-index: var(--z-hud, 45);
+		/* 16-Q6: BELOW every panel and HUD (viewport 0 < this < drawer 30) — the frame
+		   is a viewport overlay, not chrome, so nothing of the UI hides behind it */
+		z-index: 2;
 		border: 1px solid rgb(138 180 248 / 0.55);
 		border-radius: 6px;
 		box-shadow: 0 6px 20px rgb(0 0 0 / 0.45);

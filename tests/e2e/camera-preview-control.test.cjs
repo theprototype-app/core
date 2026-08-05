@@ -150,5 +150,41 @@ h.run(async () => {
 		`a second preview+control cycle leaves the controls clean (${JSON.stringify(state)})`
 	);
 
+
+	// ---------- 16-Q6: exiting must not recentre your look-at on the origin --------
+	const target = () =>
+		A.page.evaluate(
+			() =>
+				new Promise((r) =>
+					window.__stores.orbitControls.subscribe((c) =>
+						r(c?.target ? c.target.toArray().map((n) => Math.round(n * 100) / 100) : null)
+					)()
+				)
+		);
+	// put the look-at somewhere distinctive
+	await A.page.evaluate(() => {
+		let c = null;
+		window.__stores.orbitControls.subscribe((v) => (c = v))();
+		c.target.set(6, 2, -3);
+		c.update();
+	});
+	await A.page.waitForTimeout(300);
+	const before = await target();
+	await A.page.evaluate((u) => window.__stores.cameraPreview.startCameraPreview(u), uuid);
+	await A.page.waitForTimeout(700);
+	await A.page.evaluate(() => window.__stores.cameraPreview.toggleCameraControl());
+	await A.page.waitForTimeout(700);
+	await A.page.evaluate(() => window.__stores.cameraPreview.stopCameraPreview());
+	await A.page.waitForTimeout(1200);
+	const restored = await target();
+	h.check(
+		restored && before && Math.hypot(restored[0] - before[0], restored[1] - before[1], restored[2] - before[2]) < 0.05,
+		`the look-at point survives preview + Control + exit (${JSON.stringify(before)} -> ${JSON.stringify(restored)})`
+	);
+	h.check(
+		restored && Math.hypot(restored[0], restored[2]) > 1,
+		'it did not snap back to the world origin'
+	);
+
 	await h.finish(browser);
 });

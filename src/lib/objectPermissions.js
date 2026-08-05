@@ -83,12 +83,13 @@ export function canEditObject(object) {
 }
 
 let lastReadOnlyWarn = 0;
-/** throttled "you're view-only" nudge when a viewer tries to move a shared object */
-export function warnViewerReadOnly() {
+/** throttled "you're view-only" nudge when a viewer tries to move a shared object
+ * @param {string} [message] optional override for the toast text (e.g. the clear-scene gate) */
+export function warnViewerReadOnly(message) {
 	const now = Date.now();
 	if (now - lastReadOnlyWarn < 4000) return;
 	lastReadOnlyWarn = now;
-	showToast("View-only — you can't move objects shared by others. Ask an admin for edit access.");
+	showToast(message || "View-only — you can't move objects shared by others. Ask an admin for edit access.");
 }
 
 let lastLocalWarn = 0;

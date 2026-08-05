@@ -14,7 +14,7 @@ import {
 	registerEditProxy,
 	applyMeshGeo
 } from './faceEdit';
-import { exitEditMode, editingObject } from './meshEdit';
+import { exitEditMode, enterEditMode, editingObject } from './meshEdit';
 import { colliderSpecOf, CUSTOM_MAX_FLOATS } from './colliderSpec';
 
 // CL-A A8: custom COMPOUND collider editing. Picking "Custom (edit…)" builds a
@@ -136,12 +136,25 @@ export function enterColliderEdit(uuid) {
 	return true;
 }
 
-/** Merge a primitive's geometry into the proxy as a NEW shell at its center.
+/** Merge a primitive's geometry into the proxy as a NEW shell, seated just
+ * OUTSIDE the current content's +X face — spawning at the origin buried the
+ * piece inside the seed shell (invisible through the 0.35-opacity material),
+ * which made the buttons read as dead (15-A2).
  * @param {'box'|'sphere'} kind */
 export function addColliderPiece(kind) {
 	if (!proxy) return false;
+	const half = kind === 'sphere' ? 0.35 : 0.3;
 	const piece =
 		kind === 'sphere' ? new THREE.SphereGeometry(0.35, 6, 4) : new THREE.BoxGeometry(0.6, 0.6, 0.6);
+	proxy.geometry.computeBoundingBox();
+	const bbox = proxy.geometry.boundingBox;
+	if (bbox && isFinite(bbox.max.x)) {
+		piece.translate(
+			bbox.max.x + half + 0.1,
+			(bbox.min.y + bbox.max.y) / 2,
+			(bbox.min.z + bbox.max.z) / 2
+		);
+	}
 	const soup = piece.toNonIndexed();
 	piece.dispose();
 	const add = soup.attributes.position.array;
@@ -153,6 +166,14 @@ export function addColliderPiece(kind) {
 	// swap through the meshgeo applier: re-derives the live face-edit session's
 	// tris/overlay (the proxy uuid no-ops on peers)
 	applyMeshGeo(proxy.uuid, Array.from(merged));
+	// vertices mode: applyMeshGeo only rebuilds FACE-mode state — refresh the
+	// handle set the weld way (exit+enter is synchronous, so the deferred
+	// watchEditModes check never reads it as a session end)
+	if (get(editingObject) === proxy.uuid) {
+		exitEditMode();
+		enterEditMode(proxy.uuid);
+	}
+	showToast('Added a ' + kind + ' piece — ' + colliderShellCount() + ' shells now');
 	return true;
 }
 

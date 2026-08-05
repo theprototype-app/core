@@ -7,7 +7,8 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Architecture map
 
-- `src/stores/` — `appStore` (UI panels, userdata, peers instance, toasts+action-toasts
+- `src/stores/` — `appStore` (UI panels + `openSceneSection(label)`/`inspectorScrollTo`
+  = the Configure-Scene DEEP LINK seam, userdata, peers instance, toasts+action-toasts
   + notification center stores, modulesOpen), `sceneStore` (three refs: objectsGroup/
   TControls/camera/renderer, selection, locks, VR incl. vrFlying/vrSnapAngle),
   `flowStore` (#13-H flow v2: **`flowGraphs` keyed `'scene'|objectUuid` is the source
@@ -571,11 +572,32 @@ loadable play content. Everything a user does must be visible to connected peers
   (`overflow-x: hidden`); each submenu re-decides its flip locally in `openSubmenu`
   (not inherited from the root click) so deep chains stay on-screen. The fixed
   submenus escape the root's scroll box, so a scrolling root never grows an x-bar.
+  16-Q5 PLACEMENT CONTRACT: open AT the cursor preferring DOWNWARD; when the content
+  doesn't fit below, shift the WHOLE menu up so its bottom stays inside (never flip to
+  the other side of the pointer); a scrollbar appears ONLY when the content is taller
+  than the window; and while SEARCHING the menu keeps the top it opened with, caps the
+  flat list to a bounded height, and offers a corner resize grip whose height is
+  REMEMBERED per menu kind (`sizeKey` prop → `ctx:searchHeight:<viewport|nodes|
+  object>`, a LOCAL pref). Menu rows can carry `revealFilter: true` (opens the
+  search box without closing the menu — the node editor's "Search nodes…"; excluded
+  from its own results).
+- **Configure Scene DEEP LINKS** (`openSceneSection('Grid')`, or
+  `'Camera:Saved views'` for a `data-anchor` sub-heading): never `showSidebar`,
+  which TOGGLES and closed an already-open panel. Section.svelte expands the named
+  section and lands it just under the sticky header by SCROLLING THE CONTAINER with
+  the header height as an offset — plain `scrollIntoView` tucks the label underneath
+  it. Do it as measure → scroll → re-measure → correct with an INSTANT scroll: a
+  `smooth` one is cancelled by the reflow of the section it just expanded, and the
+  scroller must be found by real SCROLLABILITY (computed overflow + scrollHeight),
+  not class names.
 - `backdrop-filter`/`filter` ALSO make an element the containing block for
   `position: fixed` descendants (same trap as transform). A `fixed` popup rendered
   inside `.app-sidebar` (which has `backdrop-blur`) centered on the SIDEBAR and spilled
   off-screen — render such popups at the component ROOT, not inside a blurred/filtered
   ancestor (roadmap 9 export-settings bug).
+- The camera PiP frame deliberately sits BELOW the tiers (z-index 2): it is a
+  viewport overlay whose picture is drawn by the render loop, so panels and HUD must
+  cover it (16-Q6).
 - **z-index tiers** (`ui.css` `:root`): viewport 0 · drawer 30 · bottom 35 · window 40 ·
   hud 45 · **modal 1100 · toast 1200 · menu 1300**. The high modal/toast/menu values
   clear the ad-hoc persistent chrome that lives OUTSIDE the scale — Users (avatar/peers)
@@ -629,6 +651,33 @@ loadable play content. Everything a user does must be visible to connected peers
   (autoRender off) — its passes target canvas-sized buffers, not the XR framebuffer, so
   in WebXR it must `renderer.render(scene, camera.current)` directly (composer resumes on
   desktop).
+- **Nothing in the app disables OrbitControls during a transform-gizmo drag** —
+  threlte's `<TransformControls>` does it against ITS OWN context slot, so any
+  churn in the default-controls slot (a camera preview unmounting + remounting the
+  editor's OrbitControls) leaves the suppression pointing at an instance that no
+  longer drives the view, and dragging an object ALSO orbits the camera. Scene's
+  `dragging-changed` hook therefore suppresses orbiting itself through
+  `activeOrbit` (16-Q5). Related: three keeps DOM listeners on a merely-dropped
+  OrbitControls — dispose() it, or it goes on steering whatever camera threlte
+  points it at. And its gizmo VISUALS live in a separate object (`getHelper()`),
+  so `controls.visible = false` hides nothing.
+- **A check that cannot fail is not a check** (16-Q6): the first deep-link
+  assertion asked "is the section label somewhere below the sticky header" — true
+  whenever no scrolling happens at all, so it passed while the feature was broken
+  for the user. Assertions about POSITION need a tight band and a starting state
+  that forces the behaviour (expand every section, scroll to the bottom first).
+- **A threlte component that REMOUNTS comes back with its prop defaults** — the
+  editor `<OrbitControls target.y={1.5}>` unmounts while a camera preview owns the
+  view, so exiting threw the look-at point back to the origin. Snapshot such state
+  at handover and copy it onto the FRESH instance (the store still holds the old
+  one for a beat, so wait for a different object).
+- **Mid-session HMR churn makes e2e runs LIE** (bit hard in 16-Q5): a suite that
+  loads the page while vite is still re-transforming just-edited modules sees
+  half-mounted components — three runs "proved" a working feature broken. Let the
+  server settle (a couple of seconds) after the last edit before trusting red, and
+  when store reads disagree with what you see, add a component-side debug hook
+  (`window.__cameraPreviewDebug`, opt-in like `__outlineDebug`) to compare the
+  COMPONENT's view with the store's.
 - **Svelte 5 DELEGATES `onkeydown`/`onpointerdown`/`onclick` attributes** — the
   handler only runs once the event reaches the app root, so any ancestor that
   stops propagation on the way up silently kills it. Panel widgets are exactly
@@ -878,6 +927,20 @@ override for e2e — never share 5173 (the user's main-checkout server).
   v2 still pending there). Lane: ../theprototype-lane-ui @ port 5186 (5176 is
   shadowed by a stale [::1] server — the port-shadow trap; ALWAYS curl a source
   file and grep your new symbol before trusting a lane server).
+- Status (2026-08-04, drop 3): **#16 Q5 on the SAME PR #86** — the reported
+  "gizmo drags also rotate the camera" bug fixed AT THE ROOT (nothing ever
+  disabled OrbitControls during a gizmo drag; threlte's TransformControls does it
+  against its own context slot, which a camera preview leaves stale — Scene's
+  `dragging-changed` hook now suppresses through `activeOrbit`, and the preview's
+  controls are disposed). Proven by an A/B real-mouse drag on the real gizmo arrow
+  (0.21 rotation before, 0.00000 after, object moves the same 1.04 either way).
+  Plus: menu placement contract (cursor-anchored, shift-up, scroll only past the
+  window, sticky top + bounded + resizable while searching) · grid 'camera' follow
+  via threlte's own followCamera (smooth pans; only look-at snaps) · deep links
+  offset by the sticky header + a `data-anchor` for SAVED VIEWS · snap steps
+  quantized and printed through one formatter · PiP left-drag on the title bar,
+  gizmo hidden for the inset draw, parked clear of the HUD. New suite
+  gizmo-orbit-leak(9); 419/62 held.
 - Status (2026-08-04, drop 2): **#16 follow-ups on the SAME PR #86** — [fix] camera
   Control (no view jump: OrbitControls is seated behind the camera and the pose
   re-synced from the marker, because its constructor already ran one update(); no

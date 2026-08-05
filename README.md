@@ -10,7 +10,7 @@ Peer-to-peer, no account, no server holding your scene. Free and open source.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Svelte 5](https://img.shields.io/badge/Svelte-5-ff3e00.svg)](https://svelte.dev)
-[![three.js](https://img.shields.io/badge/three.js-r171-000000.svg)](https://threejs.org)
+[![three.js](https://img.shields.io/badge/three.js-r185-000000.svg)](https://threejs.org)
 [![WebXR](https://img.shields.io/badge/WebXR-ready-6f42c1.svg)](https://immersiveweb.dev/)
 [![Docs](https://img.shields.io/badge/docs-docs.theprototype.app-3b82f6.svg)](https://docs.theprototype.app)
 
@@ -79,17 +79,28 @@ at your own signalling server or self-host the whole thing.
 **Just use it:** open [theprototype.app](https://theprototype.app). Nothing to install, no
 sign-up. To collaborate, send someone the peer ID in the top bar and approve their request.
 
-**Run it yourself:**
+**Run it yourself:** (needs **node 24 or newer**)
 
 ```bash
 git clone https://github.com/theprototype-app/core.git
 cd core
-npm install --legacy-peer-deps   # three vs postprocessing peer conflict
-npm run dev                      # https://localhost:5173
+npm install
+npm run dev       # https://localhost:5173
 ```
 
-The dev server generates a local certificate automatically (WebXR and getUserMedia need
-HTTPS). By default the app uses a public signalling server; point it at your own under
+WebXR and `getUserMedia` need HTTPS, so the dev server serves over TLS using
+`certs/localhost.crt` and `certs/localhost.key`. Those are gitignored — generate a
+self-signed pair once, from the config already in the repo:
+
+```bash
+npm run certs     # writes certs/localhost.crt + .key via openssl (once per clone)
+```
+
+Without them Vite falls back to plain http, which disables VR and voice chat. The pair is
+self-signed, so the browser warns once per port. `npm run certs -- --force` replaces an
+expired one.
+
+By default the app uses a public signalling server; point it at your own under
 **Settings ▸ Connection**, or set `VITE_PEER_HOST` / `VITE_PEER_PORT` / `VITE_PEER_PATH`
 in `.env` (see `.env.example`).
 

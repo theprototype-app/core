@@ -19,10 +19,57 @@ export const HULL_MAX_VERTS = 5000;
 export const CUSTOM_MAX_FLOATS = 1200;
 
 /**
- * @typedef {{ kind: 'box'|'sphere'|'capsule'|'cylinder'|'hull'|'custom',
+ * @typedef {{ kind: 'box'|'sphere'|'capsule'|'cylinder'|'cone'|'hull'|'custom',
  *   halfExtents: any, center: any, quat: any,
  *   pieces: {verts: Float32Array}[] | null, fallback: boolean }} ColliderSpec
  */
+
+// 15-A3: type-based DEFAULT inference — when nothing explicit is stored, a
+// primitive's stamped geometryParams.gtype picks its natural shape (spheres
+// roll, ramps slide) instead of the universal box. Deterministic across peers:
+// derives only from replicated object data.
+/** @type {Record<string, string>} */
+const INFERRED_KINDS = {
+	Sphere: 'sphere',
+	Cylinder: 'cylinder',
+	Capsule: 'capsule',
+	Cone: 'cone',
+	Torus: 'hull',
+	TorusKnot: 'hull',
+	Dodecahedron: 'hull',
+	Icosahedron: 'hull',
+	Octahedron: 'hull',
+	Tetrahedron: 'hull',
+	Lathe: 'hull',
+	Tube: 'hull',
+	Wedge: 'hull',
+	Stairs: 'hull',
+	Arch: 'hull',
+	Corner: 'hull'
+};
+/** kinds a userData.colliderHint stamp may request (never custom/object) */
+const HINT_KINDS = new Set(['box', 'sphere', 'capsule', 'cylinder', 'cone', 'hull']);
+/** the baked building blocks — identified by replicated NAME in legacy scenes */
+const BLOCK_NAMES = new Set(['Wedge', 'Stairs', 'Arch', 'Corner']);
+
+/**
+ * The inferred default collider kind for an object, or null when there is
+ * nothing to infer (caller falls back to 'box'). Signals, in order:
+ * `userData.colliderHint` (stamped at creation for the building blocks, rides
+ * toJSON/GLTF extras), `userData.geometryParams.gtype` (stock primitives),
+ * and the block NAME for legacy scenes (created before the hint stamp — the
+ * module-KIND-from-NAME precedent; a renamed legacy block reverts to box).
+ * @param {any} object @returns {string | null}
+ */
+export function inferredColliderKind(object) {
+	if (!object) return null;
+	const hint = object.userData?.colliderHint;
+	if (typeof hint === 'string' && HINT_KINDS.has(hint)) return hint;
+	const gtype = object.userData?.geometryParams?.gtype;
+	if (gtype && INFERRED_KINDS[gtype]) return INFERRED_KINDS[gtype];
+	if (BLOCK_NAMES.has(object.name)) return 'hull';
+	return null;
+}
 
 const measureBox = new THREE.Box3();
 const measureSize = new THREE.Vector3();
@@ -107,7 +154,8 @@ function customPieces(object) {
 /**
  * The collider spec for an object: shape kind + dims + compound pieces.
  * `kindOverride` (the collectParams pick — node wins over userData) falls back
- * to userData.physics.collider, then 'box'. Hull/custom degrade to 'box' with
+ * to userData.physics.collider, then the type-INFERRED default (15-A3:
+ * sphere→ball, wedge→hull …), then 'box'. Hull/custom degrade to 'box' with
  * `fallback: true` when ineligible. Returns null for unmeasurable objects.
  * CL-C options: `sourceObject` backs kind 'object' (hull ANOTHER object's
  * geometry onto this body); `scale` multiplies the final shape.
@@ -118,7 +166,7 @@ export function colliderSpecOf(object, kindOverride, opts = {}) {
 	if (!object) return null;
 	const measured = measureLocalAABB(object);
 	if (!measured) return null;
-	let kind = kindOverride ?? object.userData?.physics?.collider ?? 'box';
+	let kind = kindOverride ?? object.userData?.physics?.collider ?? inferredColliderKind(object) ?? 'box';
 	let pieces = null;
 	let fallback = false;
 	if (kind === 'hull') {
@@ -145,7 +193,7 @@ export function colliderSpecOf(object, kindOverride, opts = {}) {
 			kind = 'box';
 			fallback = true;
 		}
-	} else if (!['box', 'sphere', 'capsule', 'cylinder'].includes(kind)) {
+	} else if (!['box', 'sphere', 'capsule', 'cylinder', 'cone'].includes(kind)) {
 		kind = 'box';
 	}
 	// CL-C: uniform shape scale (node param) — primitives scale their extents,

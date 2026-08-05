@@ -125,6 +125,10 @@ export function createGeometry(command, uuid) {
         // userData.physics like an Inspector edit (Body: Auto reverts it).
         if (FUN_PRIMITIVES.includes(geometry)) object.userData.physics = { mode: 'dynamic', mass: 1 };
         stampGeometryParams(object); // editable params survive sync (78)
+        // 15-A3: the baked building blocks have no geometryParams to infer a
+        // collider from — stamp an explicit hint (rides toJSON/GLTF extras like
+        // the terrain flag) so a rename can't flip their inferred hull to a box.
+        if (['Wedge', 'Stairs', 'Arch', 'Corner'].includes(geometry)) object.userData.colliderHint = 'hull';
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects
         objectsGroup.update((value) => value);

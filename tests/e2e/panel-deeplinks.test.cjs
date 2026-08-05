@@ -167,5 +167,101 @@ h.run(async () => {
 		`adding switches the panel to the new object's properties (${JSON.stringify(afterAdd)})`
 	);
 
+
+	// ---------- 16-Q5: the section HEADER must clear the sticky filter header -----
+	const headerVisible = async (label, parent, child) => {
+		await A.page.evaluate(() => window.__stores.inspectorClose.set(true));
+		await A.page.waitForTimeout(250);
+		await pick(parent, child);
+		await A.page.waitForTimeout(900); // smooth scroll settles
+		return A.page.evaluate((wanted) => {
+			const labels = [...document.querySelectorAll('.ui-section-label')];
+			const el = labels.find((n) => n.textContent?.trim().toLowerCase().startsWith(wanted.toLowerCase()));
+			if (!el) return { found: false };
+			const sticky = document.querySelector('#drawer-label')?.getBoundingClientRect();
+			const r = el.getBoundingClientRect();
+			return { found: true, top: Math.round(r.top), stickyBottom: Math.round(sticky?.bottom ?? 0) };
+		}, label);
+	};
+
+	const snapHeader = await headerVisible('Snapping', 'Snapping', 'More snapping settings');
+	h.check(
+		snapHeader.found && snapHeader.top >= snapHeader.stickyBottom - 4,
+		`SNAPPING sits below the filter header, not under it (${JSON.stringify(snapHeader)})`
+	);
+	const gridHeader = await headerVisible('Grid', 'View', 'Grid & axes settings');
+	h.check(
+		gridHeader.found && gridHeader.top >= gridHeader.stickyBottom - 4,
+		`GRID likewise (${JSON.stringify(gridHeader)})`
+	);
+	const savedViews = await headerVisible('Saved views', 'Camera bookmarks', 'Manage saved views');
+	h.check(
+		savedViews.found && savedViews.top >= savedViews.stickyBottom - 4 && savedViews.top < 420,
+		`"Manage saved views…" lands on SAVED VIEWS itself (${JSON.stringify(savedViews)})`
+	);
+
+	// ---------- 16-Q5: snap steps read as clean numbers everywhere ---------------
+	const clean = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.snapping.snapEnabled.set(true);
+		w.snapping.snapSettings.set({ translate: 0.7999999999999999, rotateDeg: 15, scale: 0.1 });
+		w.viewportMenu.set({ x: 240, y: 150, point: [0, 0, 0] });
+		await new Promise((r) => setTimeout(r, 400));
+		const row = [...document.querySelectorAll('[role="menu"] > [role="menuitem"]')].find((n) =>
+			n.textContent?.includes('Snapping')
+		);
+		const hint = row?.querySelector('.ctx-hint')?.textContent?.trim() ?? '';
+		w.viewportMenu.set(null);
+		return { hint, ugly: hint.includes('0.7999') };
+	});
+	h.check(!clean.ugly && clean.hint.startsWith('0.8'), `the menu hint shows 0.8, not float noise (${clean.hint})`);
+
+
+	// ---------- 16-Q6: land JUST below the sticky header, even when the panel was
+	// already open and scrolled somewhere else (the earlier check only asked for
+	// "somewhere below", which passed without any scrolling at all) --------------
+	const landing = async (label, parent, child) => {
+		await A.page.evaluate(() => {
+			// every section expanded => a long panel that really has to scroll
+			for (const k of ['Environment', 'Music', 'View', 'Camera', 'Grid', 'Snapping', 'Physics', 'Background', 'Fog'])
+				localStorage.setItem('inspector:sec:' + k, 'open');
+			window.__stores.showSidebar('scene');
+		});
+		await A.page.waitForTimeout(700);
+		// scroll to the very bottom first
+		await A.page.evaluate(() => {
+			const panels = [...document.querySelectorAll('div')].filter((d) => {
+				const o = getComputedStyle(d).overflowY;
+				return (o === 'auto' || o === 'scroll') && d.scrollHeight > d.clientHeight + 1 && d.querySelector('#drawer-label');
+			});
+			const panel = panels[0];
+			if (panel) panel.scrollTop = panel.scrollHeight;
+		});
+		await A.page.waitForTimeout(300);
+		await pick(parent, child);
+		await A.page.waitForTimeout(900);
+		return A.page.evaluate((wanted) => {
+			const el = [...document.querySelectorAll('.ui-section-label')].find((n) =>
+				n.textContent?.trim().toLowerCase().startsWith(wanted.toLowerCase())
+			);
+			const sticky = document.querySelector('#drawer-label')?.getBoundingClientRect();
+			if (!el || !sticky) return { found: false };
+			const r = el.getBoundingClientRect();
+			return { found: true, gap: Math.round(r.top - sticky.bottom) };
+		}, label);
+	};
+
+	for (const [label, parent, child] of [
+		['Snapping', 'Snapping', 'More snapping settings'],
+		['Grid', 'View', 'Grid & axes settings'],
+		['Saved views', 'Camera bookmarks', 'Manage saved views']
+	]) {
+		const spot = await landing(label, parent, child);
+		h.check(
+			spot.found && spot.gap >= -2 && spot.gap <= 40,
+			`"${child}…" parks ${label} just under the filter header (gap ${spot.gap}px)`
+		);
+	}
+
 	await h.finish(browser);
 });

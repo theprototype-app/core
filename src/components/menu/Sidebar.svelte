@@ -22,6 +22,7 @@
 	} from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
+	import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
@@ -91,6 +92,13 @@
 	}
 
 	function clearScene() {
+		// 15-J: viewers can't wipe the shared scene — peers drop their clearscene
+		// broadcast (cloud capability gate), which would leave this client desynced.
+		// Inert without a roles plugin (isViewer() is false when no rolesInfo).
+		if (isViewer()) {
+			warnViewerReadOnly('View-only — ask an editor to clear the scene.');
+			return;
+		}
 		const count = $objectsGroup?.children.length ?? 0;
 		if (count === 0) {
 			sceneCommand('/clear all'); // still clears module content

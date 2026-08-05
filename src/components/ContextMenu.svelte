@@ -17,6 +17,9 @@
 	export let x: number;
 	export let y: number;
 	export let items: any[] = [];
+	/** 16-Q6: which menu this is, so the search list REMEMBERS the height you drag
+	 *  it to — per kind ('viewport', 'nodes', 'object'…), persisted locally. */
+	export let sizeKey: string = 'menu';
 
 	const dispatch = createEventDispatcher();
 
@@ -58,6 +61,33 @@
 	let highlight = -1;
 	/** how many rows the empty-query browse list shows (it scrolls) */
 	const BROWSE_CAP = 200;
+	/** 16-Q5: default height of the SEARCH list. A menu that unfolds down the whole
+	 *  screen is unusable, so the list gets a sensible box you can resize from the
+	 *  corner grip. */
+	const SEARCH_HEIGHT = 360;
+	const MIN_LIST_HEIGHT = 140;
+	/** the top edge chosen when the menu OPENED — searching keeps it */
+	let placedTop: number | null = null;
+	const heightStore = () => `ctx:searchHeight:${sizeKey}`;
+	/** @param {number} value */
+	function rememberHeight(value: number) {
+		try {
+			localStorage.setItem(heightStore(), String(Math.round(value)));
+		} catch {}
+	}
+	function storedHeight(): number | null {
+		try {
+			const raw = parseInt(localStorage.getItem(heightStore()) ?? "", 10);
+			return Number.isFinite(raw) && raw >= MIN_LIST_HEIGHT ? raw : null;
+		} catch {
+			return null;
+		}
+	}
+	/** user height for the search list, dragged from the corner grip */
+	// svelte-ignore state_referenced_locally
+	let searchHeight: number | null = storedHeight();
+	/** lets the grip re-run the placement after changing `searchHeight` */
+	let repositionMenu: () => void = () => {};
 	let inputEl: HTMLInputElement | null = null;
 
 	// the header strip (what this menu acts on) leads the menu, ABOVE the filter
@@ -219,37 +249,45 @@
 	function place(node: HTMLElement) {
 		let lastW = -1;
 		let lastH = -1;
-		/** which side of the click we opened toward — decided ONCE (Q1: a growing
-		 *  list used to re-decide and teleport the menu to the top of the screen) */
-		let flipUp: boolean | null = null;
 		const reposition = () => {
 			const vw = window.innerWidth;
 			const vh = window.innerHeight;
-			// measure unconstrained first so the side decision sees the natural height
-			node.style.maxHeight = vh - 8 + 'px';
+			// measure the NATURAL height first (uncapped) — every decision needs it
+			node.style.maxHeight = 'none';
 			const w = node.offsetWidth;
-			const h = node.offsetHeight;
+			const natural = node.offsetHeight;
 			lastW = w;
-			lastH = h;
-			let left = x > vw - w - 4 ? x - w : x; // near the right edge -> open leftward
-			left = Math.max(4, Math.min(left, vw - w - 4));
-
-			const below = vh - y - 8; // room under the click
-			const above = y - 8; // room over it
-			// first placement picks the roomier side; later ones KEEP it, so filtering
-			// (which changes the height a lot) never re-anchors the menu
-			if (flipUp === null) flipUp = h > below && above > below;
-			// the anchor edge stays ON the click: top edge downward, bottom edge upward.
-			// Anything that doesn't fit gets capped and scrolls (.ctx-scroll).
-			const room = Math.max(120, flipUp ? above : below);
-			const height = Math.min(h, room);
-			node.style.maxHeight = room + 'px';
-			const top = flipUp ? Math.max(4, y - height) : Math.min(y, Math.max(4, vh - height - 4));
-			node.style.left = left + 'px';
-			node.style.top = top + 'px';
 			node.style.right = 'auto';
 			node.style.bottom = 'auto';
+			let left = x > vw - w - 4 ? x - w : x; // near the right edge -> open leftward
+			node.style.left = Math.max(4, Math.min(left, vw - w - 4)) + 'px';
+
+			if (listMode) {
+				// 16-Q5: SEARCHING must not move the menu. Keep the top it opened with
+				// and give the list a sensible height (resizable from the corner grip)
+				// instead of letting it unfold down the whole screen.
+				const top = placedTop ?? Math.max(4, Math.min(y, vh - Math.min(natural, SEARCH_HEIGHT) - 4));
+				const room = Math.max(MIN_LIST_HEIGHT, vh - top - 8);
+				node.style.top = top + 'px';
+				node.style.maxHeight = Math.min(searchHeight ?? SEARCH_HEIGHT, room) + 'px';
+				lastH = node.offsetHeight;
+				return;
+			}
+
+			// Opening: sit AT the cursor and prefer downward. Not enough room below?
+			// shift the whole menu UP just far enough that its bottom stays inside,
+			// keeping the top as close to the cursor as possible — no flipping, so the
+			// menu never jumps to the other side of the pointer. A scrollbar appears
+			// only when the content is taller than the window itself.
+			const maxH = vh - 8;
+			let top = y;
+			if (natural > vh - y - 4) top = Math.max(4, vh - natural - 4);
+			node.style.top = top + 'px';
+			node.style.maxHeight = maxH + 'px';
+			placedTop = top;
+			lastH = node.offsetHeight;
 		};
+		repositionMenu = reposition;
 		reposition();
 		requestAnimationFrame(reposition);
 		// 16-P1: the menu RESIZES while it is open now (the filter row reveals, matches
@@ -339,6 +377,29 @@
 				{query ? 'No matching action' : 'Nothing to search here'}
 			</div>
 		{/if}
+		<!-- 16-Q5: drag to resize the search list (only while searching) -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="ctx-grip"
+			title="Drag to resize the list"
+			on:pointerdown={(event) => {
+				const startY = event.clientY;
+				const startH = (event.currentTarget as HTMLElement).closest('[role="menu"]')?.clientHeight ?? SEARCH_HEIGHT;
+				const move = (moveEvent: PointerEvent) => {
+					searchHeight = Math.max(MIN_LIST_HEIGHT, startH + (moveEvent.clientY - startY));
+					repositionMenu();
+				};
+				const up = () => {
+					window.removeEventListener('pointermove', move);
+					window.removeEventListener('pointerup', up);
+					if (searchHeight) rememberHeight(searchHeight); // 16-Q6: keep it next time
+				};
+				window.addEventListener('pointermove', move);
+				window.addEventListener('pointerup', up);
+				event.preventDefault();
+				event.stopPropagation();
+			}}
+		></div>
 	{:else}
 		<ContextMenuItems
 			items={bodyItems}
@@ -420,6 +481,23 @@
 	.ctx-filter-input:focus {
 		outline: none !important;
 		box-shadow: none !important;
+	}
+	/* 16-Q5: resize grip for the search list — sticks to the bottom-right corner */
+	.ctx-grip {
+		position: sticky;
+		bottom: 0;
+		margin-left: auto;
+		margin-right: 2px;
+		width: 14px;
+		height: 14px;
+		cursor: ns-resize;
+		background: linear-gradient(
+			135deg,
+			transparent 42%,
+			rgb(148 163 184 / 0.55) 42%,
+			rgb(148 163 184 / 0.55) 58%,
+			transparent 58%
+		);
 	}
 	.ctx-match {
 		padding: 5px 12px;

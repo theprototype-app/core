@@ -135,5 +135,47 @@ h.run(async () => {
 		`it steps with the same rules (${JSON.stringify(sliderBox)})`
 	);
 
+
+	// ---------- 16-Q6: a scrub must not put a caret in the field -----------------
+	await A.page.evaluate(async () => {
+		const w = window.__stores;
+		let g = null;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		w.objectActions.selectObject(g.children[0].uuid, true);
+		localStorage.setItem("inspector:sec:Transform", "open");
+		await new Promise((r) => setTimeout(r, 600));
+	});
+	await A.page.waitForTimeout(700);
+	const caretField = A.page.locator(".dn-wrap").first();
+	// the panel is still scrolled from the deep-link section above
+	await caretField.scrollIntoViewIfNeeded();
+	await A.page.waitForTimeout(300);
+	const caret = await A.page.evaluate(() => document.activeElement?.className ?? '');
+	await A.page.locator('#drawer-label').click({ position: { x: 5, y: 5 } }).catch(() => {});
+	await A.page.waitForTimeout(200);
+	const fieldBox = await caretField.boundingBox();
+	await A.page.mouse.move(fieldBox.x + fieldBox.width / 2, fieldBox.y + fieldBox.height / 2);
+	await A.page.mouse.down();
+	await A.page.mouse.move(fieldBox.x + fieldBox.width / 2 + 30, fieldBox.y + fieldBox.height / 2, { steps: 5 });
+	const duringDrag = await A.page.evaluate(() => ({
+		focused: document.activeElement === document.querySelector('.dn-wrap .dn-input'),
+		selection: (document.getSelection?.()?.toString() ?? '').length,
+		scrubbing: !!document.querySelector('.dn-wrap.dn-scrub')
+	}));
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(200);
+	h.check(duringDrag.scrubbing, 'the field reports a scrub in progress');
+	h.check(!duringDrag.focused, 'no caret: dragging never focuses the input');
+	h.check(duringDrag.selection === 0, 'and never smears a selection');
+
+	// a plain CLICK still hands over the caret for typing
+	await A.page.mouse.click(fieldBox.x + fieldBox.width / 2, fieldBox.y + fieldBox.height / 2);
+	await A.page.waitForTimeout(250);
+	const afterClick = await A.page.evaluate(
+		() => document.activeElement === document.querySelector('.dn-wrap .dn-input')
+	);
+	h.check(afterClick, 'a click focuses it for typing');
+	void caret;
+
 	await h.finish(browser);
 });

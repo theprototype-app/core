@@ -38,6 +38,7 @@
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
+	import { inferredColliderKind } from '$lib/colliderSpec';
 	import { addParticlesPreset, updateObjectParticles, removeObjectParticles, burstObjectParticles } from '$lib/particleActions';
 	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
@@ -576,7 +577,7 @@
 		if (!direction.lengthSq()) direction.set(-1, 1, 1).normalize();
 		flyTo(direction.multiplyScalar(distance).toArray(), [0, 0, 0]);
 	}
-	/** shared look for the small bookmark row buttons (this file has no <style>) */
+	/** shared look for the small bookmark row buttons */
 	const bmBtn = 'shrink-0 rounded-sm bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40';
 	function resetView() {
 		// the editor camera's mount defaults (Scene.svelte)
@@ -1002,7 +1003,7 @@
 						Reset feel
 					</button>
 				</div>
-				<p class="ui-section-label">Saved views</p>
+				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
 				<div class="ui-row items-center gap-2">
 					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>
 						Save current view
@@ -1197,8 +1198,9 @@
 					onchange={(/** @type {any} */ e) => snapEnabled.set(e.currentTarget.checked)}
 					>Snap transforms to a grid</Checkbox
 				>
-				<div class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Position</span>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Position</span>
+					<div class="snap-chips">
 					{#each [0.1, 0.25, 0.5, 1] as step}
 						<button
 							class={'ui-chip ' +
@@ -1208,12 +1210,13 @@
 							onclick={() => snapSettings.update((s) => ({ ...s, translate: step }))}>{step}</button
 						>
 					{/each}
-					<div class="w-16 shrink-0">
+					</div>
+					<div class="snap-field">
 						<DragRow
 							id="snap-translate"
 							value={$snapSettings.translate}
-							decimals={3}
-							min={0.001}
+							decimals={2}
+							min={0.01}
 							step={0.005}
 							snap={0.1}
 							ariaLabel="translate snap step"
@@ -1221,8 +1224,9 @@
 						/>
 					</div>
 				</div>
-				<div class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Rotation</span>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Rotation</span>
+					<div class="snap-chips">
 					{#each [5, 15, 45, 90] as step}
 						<button
 							class={'ui-chip ' +
@@ -1232,7 +1236,8 @@
 							onclick={() => snapSettings.update((s) => ({ ...s, rotateDeg: step }))}>{step}°</button
 						>
 					{/each}
-					<div class="w-16 shrink-0">
+					</div>
+					<div class="snap-field">
 						<DragRow
 							id="snap-rotate"
 							value={$snapSettings.rotateDeg}
@@ -1245,8 +1250,9 @@
 						/>
 					</div>
 				</div>
-				<div class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Scale</span>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Scale</span>
+					<div class="snap-chips">
 					{#each [0.05, 0.1, 0.25] as step}
 						<button
 							class={'ui-chip ' +
@@ -1256,12 +1262,13 @@
 							onclick={() => snapSettings.update((s) => ({ ...s, scale: step }))}>{step}</button
 						>
 					{/each}
-					<div class="w-16 shrink-0">
+					</div>
+					<div class="snap-field">
 						<DragRow
 							id="snap-scale"
 							value={$snapSettings.scale}
-							decimals={3}
-							min={0.001}
+							decimals={2}
+							min={0.01}
 							step={0.005}
 							snap={0.05}
 							ariaLabel="scale snap step"
@@ -2120,10 +2127,11 @@
 								{ value: 'sphere', name: 'Sphere' },
 								{ value: 'capsule', name: 'Capsule' },
 								{ value: 'cylinder', name: 'Cylinder' },
+									{ value: 'cone', name: 'Cone' },
 								{ value: 'hull', name: 'Convex hull' },
 							{ value: 'custom', name: 'Custom (edit…)' }
 							]}
-							value={$selectedObject.userData.physics?.collider ?? 'box'}
+							value={$selectedObject.userData.physics?.collider ?? inferredColliderKind($selectedObject) ?? 'box'}
 							onchange={(/** @type {any} */ v) => {
 							// A8: picking Custom opens the edit session; Done writes the verts
 							if (v === 'custom') enterColliderEdit($selectedObject.uuid);
@@ -2341,3 +2349,29 @@
 	{/if}
 </div>
 {/if}
+
+<style>
+	/* 16-Q6: the three snapping rows line up — label | chips | field in ONE grid, so
+	   the numeric boxes share an edge no matter how many preset chips a row has */
+	.snap-row {
+		display: grid;
+		grid-template-columns: 4.25rem minmax(0, 1fr) 3.75rem;
+		align-items: center;
+		gap: 0.25rem;
+	}
+	.snap-chips {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 0.25rem;
+	}
+	.snap-field {
+		width: 3.75rem;
+	}
+	/* the preset chips must fit on ONE line in a 320px panel — the shared ui-chip
+	   padding + uppercase tracking pushed the fourth one onto a second row */
+	.snap-chips button {
+		padding-inline: 0.3rem;
+		letter-spacing: 0;
+	}
+</style>

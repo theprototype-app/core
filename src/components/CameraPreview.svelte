@@ -14,7 +14,7 @@
 	// OrbitControls, so Scene's existing per-frame nav call just works) and each
 	// frame writes the pose back onto the marker.
 
-	const { size } = useThrelte();
+	const { size, camera: activeCamera } = useThrelte();
 
 	const object = $derived(
 		$cameraPreview ? ($objectsGroup?.getObjectByProperty('uuid', $cameraPreview.uuid) ?? null) : null
@@ -30,6 +30,21 @@
 	let cameraRef: any = $state(null);
 	/** @type {any} */
 	let controlsRef: any = $state(null);
+
+	// debug probe for the suites (opt-in, like __outlineDebug)
+	$effect(() => {
+		if (typeof window === 'undefined' || !localStorage.getItem('debugStores')) return;
+		(window as any).__cameraPreviewDebug = () => ({
+			preview: $cameraPreview,
+			hasObject: !!object,
+			hasSpec: !!spec,
+			cameraMounted: !!cameraRef,
+			controlsMounted: !!controlsRef,
+			cameraParent: cameraRef?.parent?.name || cameraRef?.parent?.type || null,
+			defaultCamera: (activeCamera as any)?.current?.type ?? null,
+			defaultIsMine: (activeCamera as any)?.current === cameraRef
+		});
+	});
 
 	// pose sync, both directions
 	const pos = new THREE.Vector3();

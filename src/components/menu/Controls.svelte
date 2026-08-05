@@ -892,6 +892,7 @@
 		x={$objectContextMenu.x}
 		y={$objectContextMenu.y}
 		items={objectMenuItems($objectContextMenu)}
+		sizeKey="object"
 		on:close={() => ($objectContextMenu = null)}
 	/>
 {/if}

@@ -39,6 +39,55 @@ export const cameraPreviews = writable({});
  */
 export const previewOrbit = writable(null);
 
+/**
+ * Kill the preview's controls for good. OrbitControls listens on the DOM, so an
+ * instance that is merely dropped keeps steering whatever camera threlte points it
+ * at — after a preview that is the EDITOR camera again, and since nothing knows
+ * about it any more the gizmo-drag suppression can't switch it off. That zombie is
+ * what made "move an object, the view spins" survive the first fix.
+ */
+export function releasePreviewOrbit() {
+	disposeControls(get(previewOrbit));
+	previewOrbit.set(null);
+}
+
+/** the editor's orbit TARGET when the preview took over, and the instance we
+ *  disposed doing so — the controls REMOUNT on exit with a default target
+ *  (0, 1.5, 0), which threw your look-at point back to the world origin (16-Q6) */
+/** @type {any} */ let savedTarget = null;
+/** @type {any} */ let staleControls = null;
+
+/** Put the look-at point back once the editor's controls have REMOUNTED. */
+function restoreEditorTarget() {
+	const target = savedTarget;
+	savedTarget = null;
+	if (!target) return;
+	let tries = 0;
+	const tick = () => {
+		const controls = /** @type {any} */ (get(orbitControls));
+		// wait for the FRESH instance: the store still holds the disposed one until
+		// Scene remounts <OrbitControls>
+		if (controls?.target && controls !== staleControls) {
+			controls.target.copy(target);
+			controls.update?.();
+			staleControls = null;
+			return;
+		}
+		if (tries++ < 60) requestAnimationFrame(tick);
+	};
+	requestAnimationFrame(tick);
+}
+
+/** three's dispose() only detaches listeners, so a double call is harmless
+ * @param {any} controls */
+function disposeControls(controls) {
+	try {
+		controls?.dispose?.();
+	} catch {
+		/* nothing to do — the point is that its listeners are gone */
+	}
+}
+
 /** Whichever controls are actually steering the view right now. */
 export const activeOrbit = derived([previewOrbit, orbitControls], ([preview, editor]) => preview ?? editor);
 
@@ -84,6 +133,19 @@ export function startCameraPreview(uuid) {
 	// switching straight from another preview: restore that marker first
 	const previous = get(cameraPreview);
 	if (previous && previous.uuid !== uuid) setMarkerHidden(findCameraObject(previous.uuid), false);
+	// 16-Q6: remember WHERE YOU WERE LOOKING. These controls are about to unmount and
+	// the pair that mounts on exit starts with the default target, which recentred the
+	// view on the world origin.
+	const editor = /** @type {any} */ (get(orbitControls));
+	savedTarget = editor?.target?.clone?.() ?? null;
+	staleControls = editor ?? null;
+	// THE fix for "moving an object with the gizmo also rotates my view" (16-Q5).
+	// Scene gates the editor's OrbitControls on this store, so they are about to
+	// UNMOUNT — and threlte does not dispose them, so they keep their DOM listeners
+	// and go on rotating the camera on every left-drag, invisible to the suppression
+	// path (which only knows about the fresh instance that mounts after the preview).
+	// Disposing them here is what makes the zombie impossible.
+	disposeControls(get(orbitControls));
 	cameraPreview.set({ uuid, controlling: false });
 	frustumSuppressed.set(uuid); // you are inside this frustum — hide its wireframe
 	setMarkerHidden(object, true);
@@ -95,10 +157,12 @@ export function stopCameraPreview() {
 	const current = get(cameraPreview);
 	if (!current) return;
 	if (current.controlling) endControl();
+	releasePreviewOrbit(); // before the component unmounts, so no zombie survives
 	setMarkerHidden(findCameraObject(current.uuid), false);
 	cameraPreview.set(null);
 	frustumSuppressed.set(null);
 	broadcast(null);
+	restoreEditorTarget(); // 16-Q6: your look-at point survives the round trip
 }
 
 /** Take the controls (or give them back). */
@@ -107,6 +171,7 @@ export function toggleCameraControl() {
 	if (!current) return;
 	if (current.controlling) {
 		endControl();
+		releasePreviewOrbit();
 		cameraPreview.set({ ...current, controlling: false });
 		return;
 	}

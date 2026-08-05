@@ -977,6 +977,20 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-06, release): **1.2.0 SHIPPED** — PR #88 (`release/next` → `main`)
+  merged, `npm version minor` → tag `v1.2.0` → release.yml, cloud redeployed with
+  `CORE_REF=v1.2.0` (now PINNED in the cloud repo's gitignored `.env.deploy`). Eight
+  verification commits landed on top of the assembled branch, all from user reports on
+  real hardware; the ones worth remembering as TRAPS are in the gotchas above:
+  unlayered global CSS beating every Tailwind utility (a duplicate `.hidden` in
+  `styles/chat.css` killed every `group-hover/*:flex` reveal app-wide), flowbite 1.x
+  Dropdowns being TOP-LAYER popovers (no z-index can sit over one; the profile circle
+  now lives INSIDE the panel), floating-ui drifting under a mobile viewport (pin the
+  axis that is fixed chrome geometry), `position: absolute` floating windows growing the
+  document and dragging the fixed chrome, long-press menus needing press-and-click
+  backdrops, and `isMobile: true` being the ONLY way to reproduce phone-only layout bugs
+  headlessly. Baseline held **419/62** throughout. Owed on-device checks: VR pins/sleeve
+  feel, PWA install, live vLLM smoke.
 - Status (2026-08-05, release): **`release/next` ASSEMBLED for 1.2.0** — PRs #86 →
   #85 → #84 (which auto-closed #82, stacked on it), #83, #81 and #87 (15-H notes)
   all merged, so the branch now carries roadmaps #15 + #16, colliders v2 + edit-mesh

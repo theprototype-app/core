@@ -93,11 +93,12 @@ WebXR and `getUserMedia` need HTTPS, so the dev server serves over TLS using
 self-signed pair once, from the config already in the repo:
 
 ```bash
-openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
-  -keyout certs/localhost.key -out certs/localhost.crt -config certs/req.cnf
+npm run certs     # writes certs/localhost.crt + .key via openssl (once per clone)
 ```
 
-Without them Vite falls back to plain http, which disables VR and voice chat.
+Without them Vite falls back to plain http, which disables VR and voice chat. The pair is
+self-signed, so the browser warns once per port. `npm run certs -- --force` replaces an
+expired one.
 
 By default the app uses a public signalling server; point it at your own under
 **Settings ▸ Connection**, or set `VITE_PEER_HOST` / `VITE_PEER_PORT` / `VITE_PEER_PATH`

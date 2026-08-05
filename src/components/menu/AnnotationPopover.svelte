@@ -229,12 +229,6 @@
 		role="dialog"
 		tabindex="-1"
 		aria-label={editing ? 'Edit note' : 'Note'}
-		onkeydown={(e) => {
-			if (e.key === 'Escape') {
-				e.stopPropagation();
-				close();
-			}
-		}}
 	>
 		<div class="note-head">
 			<span class="note-num" style="background:{note.color || DEFAULT_NOTE_COLOR}"
@@ -350,7 +344,9 @@
 					{/if}
 				</div>
 				<label class="note-check">
-					<input type="checkbox" bind:checked={followOnOpen} />
+					<!-- a switch, not a checkbox: it arms a MODE (the camera rides this pin),
+					     which is the same reason Settings uses Toggle for behaviour flags -->
+					<input type="checkbox" class="note-switch" bind:checked={followOnOpen} />
 					<span>Follow the pin when opened</span>
 				</label>
 			</div>
@@ -556,13 +552,54 @@
 	}
 	.note-check {
 		display: flex;
+		cursor: pointer;
 		align-items: center;
-		gap: 0.375rem;
+		gap: 0.45rem;
 		font-size: 11px;
 		color: rgb(209 213 219);
 	}
-	.note-check input {
-		accent-color: rgb(249 115 22);
+	/* A compact switch built from the checkbox itself — same visual language as the
+	   flowbite Toggle in Settings, without pulling the component into this card.
+	   GOTCHA: flowbite's plugin emits
+	     [type='checkbox']:checked { background-color: currentColor !important }
+	   so no background-color of ours can ever win the ON state (it rendered
+	   blue-600, flowbite's inherited color). The cure is to work WITH that rule and
+	   drive the fill through `color` instead of fighting it with !important. */
+	input[type='checkbox'].note-switch {
+		position: relative;
+		height: 14px;
+		width: 26px;
+		flex: 0 0 auto;
+		appearance: none;
+		border-radius: 9999px;
+		color: rgb(75 85 99);
+		background-color: rgb(75 85 99);
+		transition:
+			color 120ms ease,
+			background-color 120ms ease;
+		cursor: pointer;
+	}
+	input[type='checkbox'].note-switch::after {
+		content: '';
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		height: 10px;
+		width: 10px;
+		border-radius: 9999px;
+		background: rgb(243 244 246);
+		transition: transform 120ms ease;
+	}
+	input[type='checkbox'].note-switch:checked {
+		/* the !important rule above paints background-color: currentColor */
+		color: rgb(249 115 22);
+	}
+	input[type='checkbox'].note-switch:checked::after {
+		transform: translateX(12px);
+	}
+	input[type='checkbox'].note-switch:focus-visible {
+		outline: 2px solid rgb(249 115 22 / 0.6);
+		outline-offset: 2px;
 	}
 	.note-actions {
 		display: flex;

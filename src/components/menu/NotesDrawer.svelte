@@ -7,11 +7,13 @@
 	// 'General' first) with per-group ‹ › traversal in GLOBAL pin-number order, plus
 	// a header toggle for the in-scene pins.
 	import { ChevronDown, ChevronRight, ChevronLeft, Pencil, Eye, EyeOff } from '@lucide/svelte';
-	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore.js';
+	import { notesDrawerOpen, inspectorClose, noteDoubleClickToOpen } from '../../stores/appStore.js';
 	import {
 		annotations,
 		activeAnnotation,
 		openAnnotation,
+		focusAnnotation,
+		visitedNote,
 		deleteAnnotation,
 		displayName,
 		displayAuthor,
@@ -101,15 +103,28 @@
 	/** @type {Record<string, boolean>} */
 	let collapsed = $state({}); // expanded by default
 
+	/**
+	 * "Go to this note": opens its card, or in double-click mode (Settings ▸
+	 * Interface) only flies there — reviewing a scene then stays pure navigation.
+	 * Either way `visitedNote` records where we are, which is what highlights the
+	 * row and what the arrows step from.
+	 * @param {string} id
+	 */
+	function goTo(id) {
+		if ($noteDoubleClickToOpen) focusAnnotation(id);
+		else openAnnotation(id, 'view');
+	}
+
 	/** Step through a group's notes in pin order, wrapping @param {any} group @param {number} dir */
 	function step(group, dir) {
 		const rows = group.rows;
 		if (!rows.length) return;
-		const current = $activeAnnotation?.id;
+		// walk from the note we last went to, opened or not
+		const current = $activeAnnotation?.id ?? $visitedNote;
 		const at = rows.findIndex((/** @type {any} */ r) => r.a.id === current);
-		// continue from the open note when it belongs to this group, else start at the end
+		// continue from the current note when it belongs to this group, else start at the end
 		const next = at < 0 ? (dir > 0 ? rows[0] : rows[rows.length - 1]) : rows[(at + dir + rows.length) % rows.length];
-		openAnnotation(next.a.id, 'view');
+		goTo(next.a.id);
 	}
 </script>
 
@@ -184,13 +199,16 @@
 								{#each group.rows as row (row.a.id)}
 									<li
 										class="group rounded-sm bg-gray-800/60 hover:bg-gray-700/60"
-										class:notes-row-active={$activeAnnotation?.id === row.a.id}
+										class:notes-row-active={($activeAnnotation?.id ?? $visitedNote) === row.a.id}
 									>
 										<div class="flex items-start gap-2 p-2">
 											<button
 												class="min-w-0 flex-1 text-left"
-												title="Fly to this note"
-												onclick={() => openAnnotation(row.a.id, 'view')}
+												title={$noteDoubleClickToOpen
+													? 'Fly to this note (double-click to open it)'
+													: 'Fly to this note and open it'}
+												onclick={() => goTo(row.a.id)}
+												ondblclick={() => openAnnotation(row.a.id, 'view')}
 											>
 												<div class="flex min-w-0 items-baseline gap-1.5">
 													<span

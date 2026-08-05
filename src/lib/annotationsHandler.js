@@ -16,7 +16,8 @@ import {
 	showToast,
 	showInfoToast,
 	dismissToastById,
-	specatorMode
+	specatorMode,
+	anyModalOpen
 } from '../stores/appStore';
 import { registerAnnotationsPersistence, markAnnotationsDirty } from './autosave';
 import { flyTo } from './objectActions';
@@ -277,6 +278,7 @@ export function deleteAnnotation(id) {
 	broadcast({ type: 'annotation', op: 'delete', annotation: { id } });
 	activeAnnotation.update((active) => (active?.id === id ? null : active));
 	if (get(followingNote)?.id === id) stopNoteFollow(); // H11: nothing left to ride
+	visitedNote.update((v) => (v === id ? '' : v));
 }
 
 /** Remote CRUD @param {any} data */
@@ -374,6 +376,28 @@ export function openAnnotation(id, mode = 'view') {
 	const annotation = get(annotations).find((a) => a.id === id);
 	if (!annotation) return;
 	activeAnnotation.set({ id, mode });
+	flyToAnnotation(id);
+}
+
+/**
+ * Go to a note WITHOUT opening its card — the "double click to open" reading mode
+ * (Settings ▸ Interface) and the drawer's group arrows use this, so stepping
+ * through a scene full of notes is pure navigation.
+ * @param {string} id
+ */
+export function focusAnnotation(id) {
+	const annotation = get(annotations).find((a) => a.id === id);
+	if (!annotation) return;
+	// navigating to a different note dismisses the card that was open
+	activeAnnotation.update((active) => (active?.id && active.id !== id ? null : active));
+	flyToAnnotation(id);
+}
+
+/** Fly to a note's framing (or the generic approach) and honor its follow hint @param {string} id */
+function flyToAnnotation(id) {
+	const annotation = get(annotations).find((a) => a.id === id);
+	if (!annotation) return;
+	visitedNote.set(id);
 	// a new note takes over the camera: never keep riding the previous one
 	if (get(followingNote) && get(followingNote)?.id !== id) stopNoteFollow();
 	const object = objectOf(annotation.objectUuid);
@@ -393,8 +417,7 @@ export function openAnnotation(id, mode = 'view') {
 		}
 	}
 	// H11: the author asked for this note to be watched — start the LOCAL session
-	// once the fly has settled, so the tween isn't mistaken for someone else
-	// grabbing the camera (see the deviation guard in startNoteFollow)
+	// once the fly has settled, so our own tween isn't read as the handover signal
 	if (annotation.follow) setTimeout(() => startNoteFollow(id), FLY_MS + 60);
 }
 
@@ -409,6 +432,15 @@ export function openAnnotation(id, mode = 'view') {
 /** @type {import('svelte/store').Writable<any>} */
 export const followingNote = writable(null);
 
+/**
+ * The last note we travelled to, opened or not (LOCAL). In double-click mode no
+ * card is open to say where you are, so this is what highlights the drawer row
+ * and what the ‹ › arrows step from — otherwise every press would restart at the
+ * top of the group.
+ * @type {import('svelte/store').Writable<string>}
+ */
+export const visitedNote = writable('');
+
 const FLY_MS = 400; // objectActions.flyTo's tween length
 const FOLLOW_TOAST = 'note-follow';
 /** the pin position we last followed */
@@ -421,10 +453,23 @@ let followAnchor = /** @type {any} */ (null);
  */
 let followClaim = 0;
 
-/** @param {KeyboardEvent} event */
-function onFollowKey(event) {
-	if (event.key === 'Escape') stopNoteFollow();
+/**
+ * ONE Escape owner for notes, with a deliberate order: the first Esc gives the
+ * CAMERA back (stops a follow session), the second closes the note card. Two
+ * separate listeners would have raced — and the card's own keydown only fired
+ * when focus happened to be inside it, so Esc did nothing after a marker click.
+ * @param {KeyboardEvent} event
+ */
+function onNotesEscape(event) {
+	if (event.key !== 'Escape') return;
+	if (get(anyModalOpen)) return; // a modal owns Esc while it is up
+	if (get(followingNote)) {
+		stopNoteFollow();
+		return;
+	}
+	if (get(activeAnnotation)) activeAnnotation.set(null);
 }
+if (typeof window !== 'undefined') window.addEventListener('keydown', onNotesEscape);
 
 /** Ride this note's pin with the camera until something stops us @param {string} id */
 export function startNoteFollow(id) {
@@ -439,7 +484,6 @@ export function startNoteFollow(id) {
 	followAnchor = world.clone();
 	followClaim = get(cameraClaim);
 	followingNote.set({ id });
-	if (typeof window !== 'undefined') window.addEventListener('keydown', onFollowKey);
 	showInfoToast(
 		FOLLOW_TOAST,
 		'Following note #' + noteNumber(id) + ' — the camera rides it as it moves (Esc to stop)',
@@ -452,7 +496,6 @@ export function stopNoteFollow() {
 	if (!get(followingNote)) return;
 	followingNote.set(null);
 	followAnchor = null;
-	if (typeof window !== 'undefined') window.removeEventListener('keydown', onFollowKey);
 	dismissToastById(FOLLOW_TOAST);
 }
 

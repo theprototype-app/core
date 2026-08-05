@@ -975,6 +975,208 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.annotationsHandler.stopNoteFollow());
 	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
 
+	// --- H11-B: the follow-on-open control is a SWITCH, driven through the UI ---
+	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'edit'), id2);
+	await A.page.waitForTimeout(600);
+	const switchInfo = await A.page.evaluate(() => {
+		const input = document.querySelector('.note-switch');
+		if (!input) return null;
+		const rect = input.getBoundingClientRect();
+		const style = getComputedStyle(input);
+		return {
+			appearance: style.appearance,
+			radius: style.borderTopLeftRadius,
+			ratio: rect.width / rect.height,
+			checked: input.checked,
+			background: style.backgroundColor,
+			knob: getComputedStyle(input, '::after').transform
+		};
+	});
+	h.check(
+		!!switchInfo && switchInfo.appearance === 'none' && switchInfo.ratio > 1.5,
+		`H11-B: "Follow the pin when opened" is a switch, not a checkbox (${switchInfo?.ratio?.toFixed(
+			1
+		)}:1, appearance ${switchInfo?.appearance})`
+	);
+	await A.page.evaluate(() => document.querySelector('.note-switch').click());
+	await editCard.getByRole('button', { name: 'Save', exact: true }).click();
+	await A.page.waitForTimeout(300);
+	h.check(
+		(await store(A.page)).find((a) => a.id === id2)?.follow === true,
+		'H11-B: flipping the switch and saving stores the follow hint'
+	);
+	// ON must READ as on. flowbite's plugin forces `background-color: currentColor
+	// !important` on every checked checkbox, so the switch has to drive its fill
+	// through `color`; miss that and the ON state silently reverts to flowbite blue
+	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'edit'), id2);
+	await A.page.waitForTimeout(700);
+	const switchOn = await A.page.evaluate(() => {
+		const input = document.querySelector('.note-switch');
+		return {
+			checked: input.checked,
+			background: getComputedStyle(input).backgroundColor,
+			knob: getComputedStyle(input, '::after').transform
+		};
+	});
+	h.check(
+		switchOn.checked === true &&
+			switchOn.background === 'rgb(249, 115, 22)' &&
+			switchOn.knob !== switchInfo?.knob,
+		`H11-B: ON reads as the app accent and the knob slides (${switchOn.background}, knob ${switchOn.knob})`
+	);
+	await A.page.evaluate((id) => {
+		const ah = window.__stores.annotationsHandler;
+		let list = [];
+		ah.annotations.subscribe((l) => (list = l))();
+		ah.setAnnotation({ ...list.find((a) => a.id === id), follow: false });
+		ah.stopNoteFollow();
+		ah.activeAnnotation.set(null);
+	}, id2);
+
+	// --- H11-C: Esc gives the camera back first, closes the card second --------
+	await A.page.evaluate((id) => {
+		const ah = window.__stores.annotationsHandler;
+		ah.openAnnotation(id, 'view');
+	}, id1);
+	await A.page.waitForTimeout(700);
+	await A.page.evaluate((id) => window.__stores.annotationsHandler.startNoteFollow(id), id1);
+	await A.page.waitForTimeout(250);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(250);
+	h.check(
+		(await camState(A.page)).following === null && (await active(A.page))?.id === id1,
+		'H11-C: the FIRST Esc stops following and leaves the card open'
+	);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(250);
+	h.check((await active(A.page)) === null, 'H11-C: the SECOND Esc closes the card');
+	// and with no session running, one Esc is enough — from anywhere, not just
+	// when focus happens to sit inside the card
+	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
+	await A.page.waitForTimeout(600);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(250);
+	h.check((await active(A.page)) === null, 'H11-C: Esc alone closes the card when nothing is followed');
+
+	// --- H11-D: "double-click to open notes" ----------------------------------
+	const clickBadge = (page, number, type = 'click') =>
+		page.evaluate(
+			({ number, type }) => {
+				const badge = [...document.querySelectorAll('.marker-badge')].find(
+					(b) => b.querySelector('.marker-num')?.textContent?.trim() === String(number)
+				);
+				if (!badge) return false;
+				// Svelte 5 DELEGATES onclick/ondblclick, so a synthetic event must bubble
+				if (type === 'click') badge.click();
+				else badge.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+				return true;
+			},
+			{ number, type }
+		);
+	// frame note #1 from its OWN pin (the box has moved around during this suite,
+	// and from a distance the notes cluster into one badge — no #1 to click)
+	const frameNote = (page, id) =>
+		page.evaluate((id) => {
+			const s = window.__stores;
+			const w = s.annotationsHandler.annotationWorldPosition(id);
+			if (!w) return false;
+			s.objectActions.flyTo([w.x + 1.1, w.y + 0.9, w.z + 2.1], [w.x, w.y, w.z], 1);
+			return true;
+		}, id);
+	// default OFF: one click opens, exactly as before
+	await frameNote(A.page, id1);
+	await A.page.waitForTimeout(800);
+	h.check(await clickBadge(A.page, 1), 'H11-D: found a marker to click');
+	await A.page.waitForTimeout(500);
+	h.check(
+		(await active(A.page))?.id === id1,
+		'H11-D: with the setting off, a single click still opens the note'
+	);
+	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	// ON: a click only travels there
+	await A.page.evaluate(() => window.__stores.noteDoubleClickToOpen.set(true));
+	await frameNote(A.page, id1);
+	await A.page.waitForTimeout(700);
+	// step the camera away so the click has somewhere to fly FROM
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		let camera;
+		let controls;
+		s.globalCamera.subscribe((v) => (camera = v))();
+		s.orbitControls.subscribe((v) => (controls = v))();
+		camera.position.y += 4;
+		camera.position.x += 4;
+		controls.update();
+	});
+	await A.page.waitForTimeout(400);
+	const beforeClick = await camState(A.page);
+	await clickBadge(A.page, 1);
+	await A.page.waitForTimeout(700);
+	const afterClick = await camState(A.page);
+	h.check(
+		(await active(A.page)) === null,
+		'H11-D: with the setting on, a single click does NOT open the card'
+	);
+	h.check(
+		Math.hypot(
+			afterClick.position[0] - beforeClick.position[0],
+			afterClick.position[1] - beforeClick.position[1],
+			afterClick.position[2] - beforeClick.position[2]
+		) > 1,
+		'H11-D: ...it flies the camera to the note instead'
+	);
+	// a double click is how you open it now (re-frame first: the click above flew
+	// us to this note's SAVED pose, which was authored before the box moved)
+	await frameNote(A.page, id1);
+	await A.page.waitForTimeout(800);
+	h.check(await clickBadge(A.page, 1, 'dblclick'), 'H11-D: found the marker to double-click');
+	await A.page.waitForTimeout(500);
+	h.check((await active(A.page))?.id === id1, 'H11-D: a double click opens the card');
+	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	// the drawer's group arrows travel without opening anything, and still ADVANCE
+	// one note per press (no open card to remember where we were)
+	await A.page.evaluate(() => {
+		window.__stores.notesDrawerOpen.set(true);
+		// a clean starting point: the earlier click left us parked on note #1
+		window.__stores.annotationsHandler.visitedNote.set('');
+	});
+	await A.page.waitForTimeout(400);
+	// the H6 section collapsed 'mechanics' — expand it so its rows render again
+	if ((await drawer.locator('.notes-group-toggle[aria-expanded="false"]').count()) > 0)
+		await drawer.locator('.notes-group-toggle', { hasText: 'mechanics' }).click();
+	await A.page.waitForTimeout(300);
+	const visited = (page) =>
+		page.evaluate(
+			() => new Promise((r) => window.__stores.annotationsHandler.visitedNote.subscribe(r)())
+		);
+	const walk = [];
+	for (let i = 0; i < 3; i++) {
+		await drawer.locator('button[aria-label="Next note in mechanics"]').click();
+		await A.page.waitForTimeout(650);
+		walk.push({ opened: (await active(A.page))?.id ?? null, at: await visited(A.page) });
+	}
+	h.check(
+		walk.every((w) => w.opened === null),
+		`H11-D: the group arrows travel without opening a popup (${JSON.stringify(walk.map((w) => w.opened))})`
+	);
+	// they still ADVANCE one note per press and wrap — with no open card, the
+	// visited note is what traversal steps from (and what highlights the row)
+	h.check(
+		walk[0].at === id1 && walk[1].at === id3 && walk[2].at === id1,
+		`H11-D: ...and each press advances to the next note in the group, wrapping (${walk
+			.map((w) => (w.at === id1 ? '#1' : w.at === id3 ? '#3' : w.at))
+			.join(' -> ')})`
+	);
+	h.check(
+		await drawer.locator('li.notes-row-active').first().isVisible(),
+		'H11-D: the drawer highlights where you are even with no card open'
+	);
+	await A.page.evaluate(() => {
+		window.__stores.noteDoubleClickToOpen.set(false);
+		window.__stores.notesDrawerOpen.set(false);
+		window.__stores.annotationsHandler.activeAnnotation.set(null);
+	});
+
 	// --- H12: notes actually persist ------------------------------------------
 	// (1) an annotation change ALONE has to schedule an autosave — before the fix
 	// only objectsGroup/flowGraphs marked dirty, so a note added after the last

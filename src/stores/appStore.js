@@ -312,6 +312,21 @@ enableShiftAdd.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('enableShiftAdd', String(on));
 });
 
+/**
+ * 15-H11: with this on, a single click on a note marker — and stepping through a
+ * label group with the drawer's ‹ › arrows — only FLIES the camera to the note;
+ * the card opens on a DOUBLE click. Reading a scene full of notes then becomes
+ * pure navigation, with no card in the way. LOCAL pref, OFF by default so the
+ * click behaviour everyone already knows is unchanged.
+ */
+export const noteDoubleClickToOpen = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('noteDoubleClickToOpen') === 'true'
+);
+noteDoubleClickToOpen.subscribe((on) => {
+	if (typeof localStorage !== 'undefined')
+		localStorage.setItem('noteDoubleClickToOpen', String(on));
+});
+
 // E1 (roadmap #13): notification center — a persisted history of everything that
 // flashed as a toast, so a message missed (or dismissed while a modal was open) is
 // still recoverable. The bell + panel live in NotificationCenter.svelte.

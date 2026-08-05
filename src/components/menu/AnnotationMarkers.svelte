@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { MessageSquare, Layers } from '@lucide/svelte';
-	import { activeAnnotation, openAnnotation, noteMarkers, rgbaOf } from '$lib/annotationsHandler';
+	import {
+		activeAnnotation,
+		openAnnotation,
+		focusAnnotation,
+		noteMarkers,
+		rgbaOf
+	} from '$lib/annotationsHandler';
+	import { noteDoubleClickToOpen } from '../../stores/appStore.js';
 
 	// Notes v3 markers: SCREEN-SPACE badges with a leader line to the exact 3D
 	// point. The old in-scene quads could be CUT IN HALF by any surface they
@@ -125,11 +132,21 @@
 		return out;
 	}
 
+	/** a plain click: expand a cluster, else open the note — or, in double-click
+	 * mode, just fly there and leave the card out of the way */
 	function activate(marker: Marker) {
 		if (marker.cluster) {
 			expanded = expanded === marker.id ? '' : marker.id;
 			return;
 		}
+		expanded = '';
+		if ($noteDoubleClickToOpen) focusAnnotation(marker.id);
+		else openAnnotation(marker.id, 'view');
+	}
+
+	/** in double-click mode this is how the card opens (a cluster still expands) */
+	function activateStrong(marker: Marker) {
+		if (marker.cluster) return;
 		expanded = '';
 		openAnnotation(marker.id, 'view');
 	}
@@ -192,9 +209,12 @@
 					--ink:{marker.ink};
 					--ring:{marker.color};
 				"
-				title={marker.cluster ? marker.title : '#' + marker.number + ' ' + marker.title}
+				title={marker.cluster
+					? marker.title
+					: '#' + marker.number + ' ' + marker.title + ($noteDoubleClickToOpen ? ' (double-click to open)' : '')}
 				aria-label={marker.cluster ? marker.title : 'Note ' + marker.number + ': ' + marker.title}
 				onclick={() => activate(marker)}
+				ondblclick={() => activateStrong(marker)}
 				onpointerenter={() => (hoverId = marker.id)}
 				onpointerleave={() => (hoverId = hoverId === marker.id ? '' : hoverId)}
 			>

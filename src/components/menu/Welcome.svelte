@@ -5,6 +5,12 @@
 	// "Show this on start", which also has a Settings toggle.
 	import { welcomeOpen, closeWelcome, showWelcomeOnStart, openWhatsNew } from '$lib/whatsNew';
 	import { versionString } from '$lib/version';
+	import { githubStars, loadGithubStars } from '$lib/githubStars';
+
+	loadGithubStars(); // cached 12h, no-ops after the first call
+	/** compact star count (1234 -> 1.2k) */
+	const starLabel = (n: number) =>
+		n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
 
 	// The 60s demo/tour video. Points at the channel playlist until a dedicated
 	// release clip exists.
@@ -65,7 +71,13 @@
 		<div class="welcome-actions">
 			<button id="welcome-start" class="welcome-btn welcome-btn-primary" onclick={start}>Start building</button>
 			<button class="welcome-btn" onclick={openDemo}>▶ Watch the demo</button>
-			<button class="welcome-btn" onclick={openRepo}>GitHub</button>
+			<!-- 15-M: the star count doubles as a social cue and a nudge; hidden
+			     entirely when GitHub is unreachable (offline / rate limited) -->
+			<button class="welcome-btn" onclick={openRepo}>
+				GitHub{#if $githubStars !== null}<span class="welcome-stars" title="{$githubStars} stars on GitHub"
+						>★ {starLabel($githubStars)}</span
+					>{/if}
+			</button>
 		</div>
 
 		<div class="welcome-foot">
@@ -180,6 +192,16 @@
 	}
 	.welcome-btn:hover {
 		background: rgb(255 255 255 / 0.1);
+	}
+	/* 15-M: star count chip inside the GitHub button */
+	.welcome-stars {
+		margin-left: 7px;
+		padding: 1px 6px;
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.09);
+		color: #fcd34d;
+		font-size: 11px;
+		font-variant-numeric: tabular-nums;
 	}
 	.welcome-btn-primary {
 		background: #2563eb;

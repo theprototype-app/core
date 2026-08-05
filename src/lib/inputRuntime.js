@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { anyModalOpen } from '../stores/appStore';
 import { registerShortcut } from './shortcuts';
 
 // Module SDK input layer (K-C). STORE-ONLY module (the peerApproval.js pattern):
@@ -114,6 +115,8 @@ function onKeyDown(event) {
 			target.isContentEditable)
 	)
 		return;
+	// 15-B6: module bindings stay quiet behind an open (non-modal) app modal
+	if (get(anyModalOpen)) return;
 	if (!codes.has(event.code)) {
 		codes.add(event.code);
 		listeners.forEach((fn) => {

@@ -158,9 +158,12 @@
 		<div class="side-div"></div>
 
 		<!-- Scene -->
-		<button class="side-row" onclick={() => showSidebar('scene')}>
+		<!-- 15-O: the "●" text prefix is gone — it shifted the label as it appeared
+		     (read as a glitch) and duplicated what the open panel already shows.
+		     The row itself carries an `active` highlight instead, like any nav item. -->
+		<button class="side-row" class:active={!$inspectorClose && $inspectorKind === 'scene'} onclick={() => showSidebar('scene')}>
 			<span class="side-ico"><SlidersHorizontal size={16} aria-hidden="true" /></span>
-			<span class="flex-1 whitespace-nowrap">{!$inspectorClose && $inspectorKind === 'scene' ? '● ' : ''}Configure Scene</span>
+			<span class="flex-1 whitespace-nowrap">Configure Scene</span>
 		</button>
 		<button class="side-row" onclick={clearScene}>
 			<span class="side-ico"><Trash2 size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
@@ -300,6 +303,13 @@
 	}
 	:global(.dark) .side-row:hover {
 		background-color: rgb(255 255 255 / 0.08);
+	}
+	/* 15-O: active nav row (Configure Scene while its panel is open) — a tinted
+	   row + accent rule, replacing the "●" that used to shift the label */
+	/* 16-P6: tint + accent text only — the inset accent bar read as a stray border */
+	.side-row.active {
+		background-color: rgb(59 130 246 / 0.12);
+		color: var(--color-primary-400, #60a5fa);
 	}
 	.side-ico {
 		width: 1.25rem;

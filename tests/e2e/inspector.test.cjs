@@ -45,7 +45,7 @@ h.run(async () => {
 	}
 
 	// ---- drag-to-scrub: +100px at 0.02/px ≈ +2, replicated live, no snap-back ----
-	const scrubber = A.page.locator('#inspector-position .drag-number').first();
+	const scrubber = A.page.locator('#inspector-position .dn-wrap').first();
 	const box = await scrubber.boundingBox();
 	await A.page.mouse.move(box.x + 8, box.y + box.height / 2);
 	await A.page.mouse.down();
@@ -61,8 +61,8 @@ h.run(async () => {
 
 	// ---- click without moving = type the exact value ----
 	await scrubber.click();
-	const typeInput = A.page.locator('#inspector-position input');
-	h.check(await typeInput.isVisible(), 'click swaps the scrubber into typing mode');
+	const typeInput = A.page.locator('#inspector-position .dn-input').first();
+	h.check(await typeInput.isVisible(), 'the scrubber is a typable field (16-Q3: always an input)');
 	await typeInput.fill('5');
 	await A.page.keyboard.press('Enter');
 	h.check((await selectedX(A.page)) === 5, 'typed value commits');
@@ -89,7 +89,7 @@ h.run(async () => {
 		'light badge shown'
 	);
 	h.check(
-		await A.page.locator('#inspector-intensity .drag-number').isVisible(),
+		await A.page.locator('#inspector-intensity .dn-wrap').isVisible(),
 		'intensity scrubber shown for lights'
 	);
 	h.check(

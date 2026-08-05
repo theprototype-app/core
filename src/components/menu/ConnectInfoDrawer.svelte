@@ -230,7 +230,7 @@
 						</li>
 					{/each}
 					{#each $toastStore as t (t)}
-						<li class="cxd-toast cxd-live" data-kind="msg">
+						<li class="cxd-toast cxd-live" data-kind={t?.kind === 'info' ? 'info' : 'msg'}>
 							<div class="cxd-toast-text">{typeof t === 'string' ? t : t.text}</div>
 							<div class="cxd-live-actions">
 								{#if typeof t !== 'string'}
@@ -238,7 +238,10 @@
 										<button class="cxd-approve" onclick={() => { entry.action(); dismissToast(t); }}>{entry.label}</button>
 									{/each}
 								{/if}
-								<button class="cxd-reject" onclick={() => dismissToast(t)}>Dismiss</button>
+								{#if typeof t === 'string' || !t.noClose}
+									<!-- 15-P2: forks (share-or-stash) offer no Dismiss — an action must decide -->
+									<button class="cxd-reject" onclick={() => dismissToast(t)}>Dismiss</button>
+								{/if}
 							</div>
 						</li>
 					{/each}
@@ -414,6 +417,11 @@
 	}
 	.cxd-toast[data-kind='msg'] {
 		border-left-color: #22c55e;
+	}
+	/* 15-L: informational prompts (restore session, first-run notice) — teal,
+	   matching their .tp-toast--info card in the viewport */
+	.cxd-toast[data-kind='info'] {
+		border-left-color: #2dd4bf;
 	}
 	.cxd-toast-text {
 		font-size: 12px;

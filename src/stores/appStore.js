@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 
 /** @type {import('svelte/store').Writable<any>} */
 export const settingsOpen = writable(null);
@@ -11,6 +11,22 @@ export const settingsSection = writable(null);
 export const inspectorClose = writable(true);
 /** @type {import('svelte/store').Writable<'selection'|'scene'|'file'>} */
 export const inspectorKind = writable('selection');
+/**
+ * 15-O: PIN the properties sidebar. Unpinned (default) a click just SELECTS —
+ * properties open on double-click, the context-menu "Properties" entry or the
+ * object-list ⓘ. Pinned, the panel stays up and follows you: object selected →
+ * its properties, nothing selected → the scene's (deselecting no longer closes
+ * it). LOCAL preference.
+ */
+export const inspectorPinned = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('inspectorPinned') === 'true'
+);
+if (typeof localStorage !== 'undefined')
+	inspectorPinned.subscribe((v) => {
+		try {
+			localStorage.setItem('inspectorPinned', String(v));
+		} catch {}
+	});
 export const flowGraphClose = writable(true);
 // Flow Code: an editable JSON view of the flow graph (roadmap 9). Added via the
 // Flow tab "+"; a standalone floating window that can tab-group with Flow.
@@ -83,11 +99,35 @@ export function showSidebar(store) {
 }
 
 /**
+ * 16-Q2: DEEP LINK into a Configure Scene section ("More snapping settings…",
+ * "Grid & axes settings…", "Manage saved views…"). Deliberately NOT showSidebar:
+ * that TOGGLES the scene view, so clicking a deep link while the panel was already
+ * open used to CLOSE it. This only ever opens, then names the section to expand +
+ * scroll to (Section.svelte watches the store and clears it).
+ * @param {string} label the Section label to reveal
+ */
+export function openSceneSection(label) {
+	libraryClose.set(true);
+	const wasOpen = !get(inspectorClose) && get(inspectorKind) === 'scene';
+	inspectorKind.set('scene');
+	inspectorClose.set(false);
+	// let the panel mount before asking a section to scroll (it may not exist yet)
+	setTimeout(() => inspectorScrollTo.set(label), wasOpen ? 0 : 140);
+}
+
+/**
  * Close the inspector only when it shows the selection — deselect, lock and
  * delete paths must not close an open scene view.
  */
 export function closeSelectionInspector() {
-	if (get(inspectorKind) === 'selection') inspectorClose.set(true);
+	if (get(inspectorKind) !== 'selection') return;
+	// 15-O: a PINNED panel never closes itself — with nothing selected there is
+	// still something to show, so it falls back to the scene's settings.
+	if (get(inspectorPinned) && !get(inspectorClose)) {
+		inspectorKind.set('scene');
+		return;
+	}
+	inspectorClose.set(true);
 }
 
 // Snapshot/restore of panel visibility, used when opening Settings or entering
@@ -176,6 +216,21 @@ export const modulesOpen = writable(false);
 
 // sessions manager modal (50)
 export const sessionsOpen = writable(false);
+
+/**
+ * 15-B6: is ANY app modal open? App modals are non-modal native `<dialog>`s
+ * (they must stay non-modal so body-portalled dropdowns/toasts keep working),
+ * which means the page behind them is NOT inert and window key handlers still
+ * fire — WASD flew the camera while Settings was open. One derived signal, so
+ * shortcuts.js / editorNavigation.js / inputRuntime.js all gate the same way.
+ * Drawers, floating windows and menus are deliberately NOT included (they're
+ * meant to coexist with viewport work).
+ */
+export const anyModalOpen = derived(
+	[settingsOpen, sessionsOpen, modulesOpen, characterModalOpen, profileSettingsOpen, meshGenModalOpen],
+	([$settings, $sessions, $modules, $character, $profile, $meshGen]) =>
+		!!$settings || !!$sessions || !!$modules || !!$character || !!$profile || !!$meshGen
+);
 
 // viewport right-click menu (77): { x, y, point: [x,y,z] } | null — rendered
 // by ViewportMenu; Scene routes right-taps here (or to objectContextMenu)
@@ -284,6 +339,10 @@ export const notificationsUnread = writable(0);
 /** Inspector property search (PFX-C follow-up): non-empty = Sections filter
  * themselves by their rendered text (Section.svelte reads this). LOCAL. */
 export const inspectorFilter = writable('');
+/** 16-Q2: a Section LABEL to expand + scroll into view (set by `openSceneSection`,
+ * consumed and cleared by the matching Section).
+ * @type {import('svelte/store').Writable<string|null>} */
+export const inspectorScrollTo = writable(null);
 /** the notification center panel open state */
 export const notificationCenterOpen = writable(false);
 /** E2: the scene-notes drawer (lists every annotation) open state */
@@ -400,6 +459,33 @@ export function showToast(message, actions) {
 
 export function clearToast(toast) {
   toastStore.update((toast) => []);
+}
+
+/**
+ * 15-L: a STICKY INFO toast — informational, visually distinct (blue accent),
+ * never auto-dismissed, and identified by `id` so a state-driven source can
+ * add/remove exactly its own entry. This is how the restore-session prompt and
+ * the first-run notice ride the normal toast pipeline: they get the shared card
+ * chrome AND show up in the Connect drawer's Toasts tab, which hand-rolled
+ * blocks never did.
+ * @param {string} id stable key (also dedupes re-adds)
+ * @param {string} text
+ * @param {{label: string, action: () => void}[]=} actions
+ * @param {(() => void)=} onDismiss side effect for the ✕ (e.g. persist "seen")
+ * @param {boolean=} noClose 15-P2: a genuine FORK renders no ✕ at all — a
+ *   dismiss that silently picks one branch is the auto-decide trap in
+ *   miniature; the user must click one of the actions (share-or-stash)
+ */
+export function showInfoToast(id, text, actions, onDismiss, noClose) {
+  toastStore.update((list) => {
+    if (list.some((entry) => entry && entry.id === id)) return list; // already up
+    return [...list, { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss, noClose: !!noClose }];
+  });
+}
+
+/** Remove a toast by its `id` (no-op when absent). @param {string} id */
+export function dismissToastById(id) {
+  toastStore.update((list) => list.filter((entry) => !(entry && entry.id === id)));
 }
 
 export const loading = writable([]);

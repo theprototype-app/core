@@ -108,5 +108,38 @@ h.run(async () => {
 	// restore
 	await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
 
+	// --- 15-B1: the popup fits the LONGEST option, not the selected label ------
+	// (picking a short option like "Box" used to shrink the trigger, and the
+	// popup copied that width verbatim → every longer name was ellipsised)
+	const widths = await A.page.evaluate(async () => {
+		const sel = () => document.querySelector('#physics-collider');
+		// the Physics section renders the collider select — enable physics first
+		window.__box.userData.physics = { mode: 'dynamic', mass: 1, collider: 'box' };
+		window.__stores.objectsGroup.update((v) => v);
+		window.__stores.selectedObject.update((v) => v);
+		await new Promise((r) => setTimeout(r, 400));
+		if (!sel()) return null;
+		sel().click();
+		await new Promise((r) => setTimeout(r, 250));
+		const list = document.querySelector('.ts-list');
+		const opts = [...list.querySelectorAll('.ts-opt')];
+		const truncated = opts.filter((o) => o.scrollWidth > o.clientWidth + 1).map((o) => o.textContent.trim());
+		const out = {
+			triggerW: Math.round(sel().getBoundingClientRect().width),
+			listW: Math.round(list.getBoundingClientRect().width),
+			truncated,
+			onScreen: list.getBoundingClientRect().right <= window.innerWidth + 1
+		};
+		sel().click();
+		return out;
+	});
+	h.check(!!widths, 'the collider select renders (Physics section)');
+	h.check(widths.truncated.length === 0, `no option name is ellipsised (${JSON.stringify(widths.truncated)})`);
+	h.check(
+		widths.listW >= widths.triggerW,
+		`the popup is at least as wide as its trigger (${widths.triggerW} -> ${widths.listW})`
+	);
+	h.check(widths.onScreen, 'the content-sized popup stays inside the viewport');
+
 	await h.finish(browser);
 });

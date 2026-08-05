@@ -71,6 +71,21 @@ export async function applyExplorerImage(uuid, payload) {
 }
 
 /**
+ * Hold a dismissible "Loading …" toast while a slow CDN pack fetch runs (with
+ * NOTHING on screen otherwise). Uses the raw store so it can be removed by
+ * reference — `showToast` has no handle and would also push a notification;
+ * the 15s object-toast timeout in Toasts.svelte is the failsafe. Shared by the
+ * viewport DROP path and the Explorer's double-click / Enter place (15-B3).
+ * @param {string} name @returns {() => void} dismiss
+ */
+export function holdLoadingToast(name) {
+	/** @type {any} */
+	const loadingToast = { text: `Loading "${name}"…`, actions: [] };
+	toastStore.update((list) => [...list, loadingToast]);
+	return () => toastStore.update((list) => list.filter((t) => t !== loadingToast));
+}
+
+/**
  * Handle a viewport drop of an Explorer card.
  * @param {{id?: string, kind: string, name: string, prefabId?: string | null, url?: string | null}} payload
  * @param {number} clientX @param {number} clientY
@@ -87,13 +102,8 @@ export async function dropExplorerItem(payload, clientX, clientY) {
 	// N6: a default-pack item carries a `url` (not a stored library item) — fetch
 	// its glb and place it at the drop point. The placed object replicates normally.
 	if (payload.url) {
-		// the CDN fetch takes seconds on a first load with NOTHING on screen — hold a
-		// loading toast, removed the moment the import starts (or on failure); the
-		// object-toast 15s timeout in Toasts.svelte is the failsafe if we never return
 		const name = String(payload.name || 'model').replace(/\.\w+$/, '');
-		const loadingToast = { text: `Loading "${name}"…`, actions: [] };
-		toastStore.update((list) => [...list, loadingToast]);
-		const dismiss = () => toastStore.update((list) => list.filter((t) => t !== loadingToast));
+		const dismiss = holdLoadingToast(name);
 		try {
 			const res = await fetch(payload.url);
 			if (!res.ok) {

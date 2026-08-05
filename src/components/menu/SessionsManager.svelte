@@ -34,6 +34,43 @@
 	/** @type {any} */
 	let picker = null;
 
+	// 15-B5: naming a session used a browser prompt() — now an inline textbox in
+	// the toolbar (and inline rename on a card), matching the Explorer's
+	// no-prompt rename. Legacy-mode file: plain lets, never $state.
+	let saving = false;
+	let saveName = '';
+	/** @type {string|null} */
+	let renamingId = null;
+	let renameValue = '';
+
+	/** focus + select a freshly revealed input (autofocus would trip a11y) */
+	/** @param {HTMLInputElement} node */
+	function focusInput(node) {
+		node.focus();
+		node.select();
+	}
+
+	function beginSave() {
+		saveName = 'Session ' + new Date().toLocaleDateString();
+		saving = true;
+	}
+	function confirmSave() {
+		const name = saveName.trim();
+		if (!name) return;
+		saveSession(name);
+		saving = false;
+	}
+	/** @param {any} meta */
+	function beginRename(meta) {
+		renamingId = meta.id;
+		renameValue = meta.name;
+	}
+	function confirmRename() {
+		const name = renameValue.trim();
+		if (renamingId && name) renameSession(renamingId, name);
+		renamingId = null;
+	}
+
 	/** @param {any} meta */
 	async function openPicker(meta) {
 		const payload = await getSession(meta.id);
@@ -121,14 +158,30 @@
 >
 	<div class="modal-content p-1">
 		<div class="mb-3 flex flex-wrap items-center gap-2">
-			<Button
-				id="session-save"
-				size="xs"
-				onclick={() => {
-					const name = prompt('Session name', 'Session ' + new Date().toLocaleDateString());
-					if (name) saveSession(name);
-				}}><Save size={16} class="mr-1" aria-hidden="true" />Save current scene</Button
-			>
+			{#if saving}
+				<!-- B5: inline name entry — Enter saves, Esc cancels -->
+				<input
+					id="session-save-name"
+					class="ui-input w-52 text-sm"
+					type="text"
+					aria-label="Session name"
+					placeholder="Session name"
+					bind:value={saveName}
+					use:focusInput
+					onkeydown={(/** @type {KeyboardEvent} */ e) => {
+						if (e.key === 'Enter') confirmSave();
+						else if (e.key === 'Escape') saving = false;
+					}}
+				/>
+				<Button id="session-save-confirm" size="xs" disabled={!saveName.trim()} onclick={confirmSave}>
+					<Save size={16} class="mr-1" aria-hidden="true" />Save
+				</Button>
+				<Button size="xs" color="alternative" onclick={() => (saving = false)}>Cancel</Button>
+			{:else}
+				<Button id="session-save" size="xs" onclick={beginSave}
+					><Save size={16} class="mr-1" aria-hidden="true" />Save current scene</Button
+				>
+			{/if}
 			<Button size="xs" color="alternative" onclick={() => document.getElementById('session-import-file')?.click()}>
 				<Upload size={16} class="mr-1" aria-hidden="true" />Import session file
 			</Button>
@@ -183,16 +236,29 @@
 							<div class="flex h-24 w-full items-center justify-center bg-gray-700 text-2xl text-gray-400"><Archive size={16} aria-hidden="true" /></div>
 						{/if}
 						<div class="flex flex-col gap-1 p-2">
-							<p
-								class="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-gray-100"
-								title="Double-click to rename"
-								ondblclick={() => {
-									const name = prompt('Session name', meta.name);
-									if (name) renameSession(meta.id, name);
-								}}
-							>
-								{meta.name}
-							</p>
+							{#if renamingId === meta.id}
+								<!-- B5: inline rename (was a prompt) -->
+								<input
+									class="ui-input w-full text-sm"
+									type="text"
+									aria-label="Session name"
+									bind:value={renameValue}
+									use:focusInput
+									onblur={confirmRename}
+									onkeydown={(/** @type {KeyboardEvent} */ e) => {
+										if (e.key === 'Enter') confirmRename();
+										else if (e.key === 'Escape') renamingId = null;
+									}}
+								/>
+							{:else}
+								<p
+									class="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-gray-100"
+									title="Double-click to rename"
+									ondblclick={() => beginRename(meta)}
+								>
+									{meta.name}
+								</p>
+							{/if}
 							<p class="text-[10px] text-gray-400">
 								{meta.count} object{meta.count === 1 ? '' : 's'} · {stamp(meta.createdAt)}
 							</p>

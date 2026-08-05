@@ -45,6 +45,14 @@
 		const listH = Math.min(240, items.length * 30 + 10)
 		const up = r.bottom + listH + 6 > window.innerHeight && r.top > listH
 		pos = { left: r.left, top: up ? Math.max(4, r.top - listH - 4) : r.bottom + 4, width: r.width }
+		// 15-B1: the popup sizes to its CONTENT (the trigger width is only a
+		// MINIMUM) so picking a short option like "Box" no longer ellipsises the
+		// longer ones on reopen. Content width can overflow the right edge —
+		// measure the rendered list and pull it back on screen.
+		await tick()
+		const listW = listEl?.getBoundingClientRect().width ?? r.width
+		const maxLeft = window.innerWidth - listW - 8
+		if (pos.left > maxLeft) pos = { ...pos, left: Math.max(8, maxLeft) }
 	}
 
 	function openList() {
@@ -147,7 +155,7 @@
 		class="ts-list"
 		role="listbox"
 		tabindex="-1"
-		style="left:{pos.left}px; top:{pos.top}px; width:{pos.width}px;"
+		style="left:{pos.left}px; top:{pos.top}px; min-width:{pos.width}px;"
 	>
 		{#each items as item, i (item.value)}
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
@@ -213,6 +221,10 @@
 	.ts-list {
 		position: fixed;
 		z-index: 9999;
+		/* B1: fit the longest option name — the trigger width (inline min-width)
+		   is a floor, not the size, so a short selection can't truncate the list */
+		width: max-content;
+		max-width: min(28rem, calc(100vw - 16px));
 		max-height: 240px;
 		overflow-y: auto;
 		margin: 0;

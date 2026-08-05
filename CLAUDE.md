@@ -7,7 +7,8 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Architecture map
 
-- `src/stores/` — `appStore` (UI panels, userdata, peers instance, toasts+action-toasts
+- `src/stores/` — `appStore` (UI panels + `openSceneSection(label)`/`inspectorScrollTo`
+  = the Configure-Scene DEEP LINK seam, userdata, peers instance, toasts+action-toasts
   + notification center stores, modulesOpen), `sceneStore` (three refs: objectsGroup/
   TControls/camera/renderer, selection, locks, VR incl. vrFlying/vrSnapAngle),
   `flowStore` (#13-H flow v2: **`flowGraphs` keyed `'scene'|objectUuid` is the source
@@ -234,7 +235,27 @@ loadable play content. Everything a user does must be visible to connected peers
   `dungeonPlay` (raster collision/spawns from the dungeon module's userData.play
   contract), `geometryEdit` + `geometryParams`, `lightParams` (+local shadow-quality
   caps), `cameraClip` (LOCAL near/far prefs; far pairs with orbit maxDistance so
-  zooming out can't pass the far plane) + `sceneBounds` (radius sweep feeding it),
+  zooming out can't pass the far plane; #16-P4 also holds `orbitPrefs` — rotate/
+  zoom/pan speed, damping, invertY, re-applied whenever the controls remount) +
+  `sceneBounds` (radius sweep feeding it), `cameraBookmarks` (#16-P4: unlimited
+  NAMED views storing the LENS (fov+clip) and restoring it on recall; rename/
+  overwrite/reorder/delete; legacy 5-slot payloads normalize at read),
+  `cameraObjects` + `cameraHelpers` + `cameraPreview` (#16-P5 scene CAMERAS: a
+  marker MESH carrying `userData.camera` — kind/fov/orthoSize/near/far/aspect/
+  guide — so replication/undo/sessions/prefabs need NOTHING new; `setCameraFor`
+  is the one write path (props history + objectParameters + poke, the
+  setPhysicsFor precedent); scene-root frustum wireframes follow their markers
+  (colliderHelpers pattern, `showCameraFrustums` local pref); PREVIEW mounts a
+  REAL persp/ortho camera as threlte's default (CameraPreview.svelte) with
+  Control = WASD/mouse flying that writes the pose back as ONE undo entry, a
+  letterbox FramingGuide, Capture (offscreen render at the framing aspect), and
+  replicated `campreview` presence + Join in Users), `gridSettings` (#16-P3 LOCAL
+  grid look: cell size / match-snap-step / major lines / colours / fade / extent /
+  follow / origin axes + #16-Q2 follow modes off/lookat/camera, cell-snapped, read
+  by extensions/Grid.svelte), `cameraPip` (#16-Q4 the camera preview WINDOW: rect +
+  target stores and the DOM→gl y-flip; CameraPipWindow.svelte is chrome only, the
+  inset is drawn by Outline), `menuFilter` (#16-P1/P2
+  the ONE context-menu flatten + ranking, shared by every menu incl. node search),
   `sceneAssets` (derived Scene manifest: audio/config/textures in use), `avatarModel`
   (avatar defaults, photo-card rule, per-shape hat anchors), `themes` (data-theme
   token blocks, local-only), `windowTabs` (+`closeGroup` = tab ✕ closes ALL members) +
@@ -264,6 +285,10 @@ loadable play content. Everything a user does must be visible to connected peers
   panels, keys `sculptToolbar`/`meshEditToolbar`), shared
   `ContextMenu.svelte` (caps to viewport + scrolls vertically when tall, never
   horizontally; per-submenu flip via left/right/top/bottom — no transform),
+  `components/ui/DragRow.svelte` (#16-Q3: THE numeric field — drag to scrub, type
+  with LIVE updates, ↑↓ step one minor unit with Ctrl ×10 / Shift ×100, Esc
+  reverts; SliderRow's box and every Inspector number use it, and its key/pointer
+  handlers are DIRECT listeners because panels swallow delegated ones),
   `components/shared/WindowShell.svelte` (197: reusable window CHROME — collapsible/
   resizable/side-switchable primary sidebar + a multi-mode secondary panel that
   reflows opposite it; snippet slots topbar/primary/main/secondary; chrome-only,
@@ -339,9 +364,13 @@ loadable play content. Everything a user does must be visible to connected peers
   (noImplicitAny). Icon-only buttons need `aria-label` (an a11y warning counts against
   the baseline). THREE object trees are **NOT reactive**: mutating `.children`/`.userData`
   needs `objectsGroup.update(v=>v)` to poke, AND rendered components must derive from
-  `$objectsGroup` (or a keyed-each on the same ref won't re-render). svelte-check
-  baseline is **438 errors / 62 warnings** (2026-08-01, release/next after colliders
-  v2 + the icon system) — hold it; the release.yml gate matches. Svelte 5.5x added `state_referenced_locally` (intentional one-time
+  `$objectsGroup` (or a keyed-each on the same ref won't re-render). Related #15-O1
+  trap: **`$derived` compares with `===`**, so a derived returning the SAME
+  (in-place-mutated) THREE object never propagates — return a fresh SNAPSHOT object
+  per poke (the Inspector `material` derived is the reference; adding the store as a
+  dependency alone does NOT fix it). svelte-check
+  baseline is **419 errors / 62 warnings** (2026-08-02, after #15 C's one-way
+  pickers −14 and K's outline rework −2) — hold it; the release.yml gate matches. Svelte 5.5x added `state_referenced_locally` (intentional one-time
   prop reads take a `// svelte-ignore state_referenced_locally` line — WindowShell is
   the reference) and deprecated `<svelte:self>` (use a self-import).
 - **Connection "connected" state = `$peers.openedPeers`, NOT `userdata.length`**:
@@ -390,6 +419,29 @@ loadable play content. Everything a user does must be visible to connected peers
   `bind:X={undefined}` on a prop WITH a fallback hard-errors
   (props_invalid_value) — an uninitialized `let fogColor = $state()` bound via
   bind:hex CRASHED the whole scene inspector drawer; always initialize bound $state.
+- **svelte-awesome-color-picker 4.x (runes rewrite, #15-C)**: it emits NO component
+  events — `on:input` silently never fires; use the **`onInput` PROP** (payload is
+  `{hsv,rgb,hex,color}` directly, not `event.detail`). And it writes its own snapshot
+  back through `bind:hex`, CLOBBERING external writes (an env preset / selection
+  change reverted while the picker was mounted) — all pickers pass `hex` ONE-WAY.
+  Sky (background/fog) edits must go through `editEnvSky()` in environment.js:
+  writing `scene.background`/`scene.fog` directly is reverted by the next
+  `applyEnvironment()` (it re-applies the preset).
+- **Toasts (#15-L/P)**: ONE system — `showToast(msg, actions?)` transient (5s/15s),
+  `showInfoToast(id, text, actions?, onDismiss?)` STICKY info prompts (teal; never
+  auto-dismissed, never folded by the "+N more" cap, removed via
+  `dismissToastById(id)` — restore-session / first-run notice / share-or-stash are
+  state-mirrored `$effect`s in Toasts.svelte). Both z-tiers live in one
+  `.toasts-stack` wrapper (auto-margin centred — a transform would trap the
+  children's z-index and break approvals-above-modals); connection requests are
+  `.tp-toast--req` cards capped at 3 + a fold line; "Watching X" is a MODE BANNER
+  pinned as the stack's first child, not a toast. `anyModalOpen` (appStore, derived)
+  gates shortcuts.js + editorNavigation + inputRuntime behind the non-modal dialogs.
+- **PWA (#15-N)**: `static/sw.js` is a deliberate NO-CACHE passthrough (install
+  prompt without stale-build risk — `version.json` polling stays the update path).
+  Never add caching without wiring skipWaiting to the version poll. Registered in
+  App.svelte onMount, PROD only. `dragWindow` has an opt-in `resizable` option
+  (persists `{w,h}` in the same `win:<key>` record).
 - `$effect` tracks EVERY store read synchronously inside it — side reads (userdata,
   globalScene…) retrigger it and can hit `effect_update_depth_exceeded`, which
   UNMOUNTS the app. Wrap one-shot side work in `untrack(() => …)` so the effect only
@@ -463,11 +515,32 @@ loadable play content. Everything a user does must be visible to connected peers
   (`overflow-x: hidden`); each submenu re-decides its flip locally in `openSubmenu`
   (not inherited from the root click) so deep chains stay on-screen. The fixed
   submenus escape the root's scroll box, so a scrolling root never grows an x-bar.
+  16-Q5 PLACEMENT CONTRACT: open AT the cursor preferring DOWNWARD; when the content
+  doesn't fit below, shift the WHOLE menu up so its bottom stays inside (never flip to
+  the other side of the pointer); a scrollbar appears ONLY when the content is taller
+  than the window; and while SEARCHING the menu keeps the top it opened with, caps the
+  flat list to a bounded height, and offers a corner resize grip whose height is
+  REMEMBERED per menu kind (`sizeKey` prop → `ctx:searchHeight:<viewport|nodes|
+  object>`, a LOCAL pref). Menu rows can carry `revealFilter: true` (opens the
+  search box without closing the menu — the node editor's "Search nodes…"; excluded
+  from its own results).
+- **Configure Scene DEEP LINKS** (`openSceneSection('Grid')`, or
+  `'Camera:Saved views'` for a `data-anchor` sub-heading): never `showSidebar`,
+  which TOGGLES and closed an already-open panel. Section.svelte expands the named
+  section and lands it just under the sticky header by SCROLLING THE CONTAINER with
+  the header height as an offset — plain `scrollIntoView` tucks the label underneath
+  it. Do it as measure → scroll → re-measure → correct with an INSTANT scroll: a
+  `smooth` one is cancelled by the reflow of the section it just expanded, and the
+  scroller must be found by real SCROLLABILITY (computed overflow + scrollHeight),
+  not class names.
 - `backdrop-filter`/`filter` ALSO make an element the containing block for
   `position: fixed` descendants (same trap as transform). A `fixed` popup rendered
   inside `.app-sidebar` (which has `backdrop-blur`) centered on the SIDEBAR and spilled
   off-screen — render such popups at the component ROOT, not inside a blurred/filtered
   ancestor (roadmap 9 export-settings bug).
+- The camera PiP frame deliberately sits BELOW the tiers (z-index 2): it is a
+  viewport overlay whose picture is drawn by the render loop, so panels and HUD must
+  cover it (16-Q6).
 - **z-index tiers** (`ui.css` `:root`): viewport 0 · drawer 30 · bottom 35 · window 40 ·
   hud 45 · **modal 1100 · toast 1200 · menu 1300**. The high modal/toast/menu values
   clear the ad-hoc persistent chrome that lives OUTSIDE the scale — Users (avatar/peers)
@@ -521,6 +594,67 @@ loadable play content. Everything a user does must be visible to connected peers
   (autoRender off) — its passes target canvas-sized buffers, not the XR framebuffer, so
   in WebXR it must `renderer.render(scene, camera.current)` directly (composer resumes on
   desktop).
+- **Nothing in the app disables OrbitControls during a transform-gizmo drag** —
+  threlte's `<TransformControls>` does it against ITS OWN context slot, so any
+  churn in the default-controls slot (a camera preview unmounting + remounting the
+  editor's OrbitControls) leaves the suppression pointing at an instance that no
+  longer drives the view, and dragging an object ALSO orbits the camera. Scene's
+  `dragging-changed` hook therefore suppresses orbiting itself through
+  `activeOrbit` (16-Q5). Related: three keeps DOM listeners on a merely-dropped
+  OrbitControls — dispose() it, or it goes on steering whatever camera threlte
+  points it at. And its gizmo VISUALS live in a separate object (`getHelper()`),
+  so `controls.visible = false` hides nothing.
+- **A check that cannot fail is not a check** (16-Q6): the first deep-link
+  assertion asked "is the section label somewhere below the sticky header" — true
+  whenever no scrolling happens at all, so it passed while the feature was broken
+  for the user. Assertions about POSITION need a tight band and a starting state
+  that forces the behaviour (expand every section, scroll to the bottom first).
+- **A threlte component that REMOUNTS comes back with its prop defaults** — the
+  editor `<OrbitControls target.y={1.5}>` unmounts while a camera preview owns the
+  view, so exiting threw the look-at point back to the origin. Snapshot such state
+  at handover and copy it onto the FRESH instance (the store still holds the old
+  one for a beat, so wait for a different object).
+- **Mid-session HMR churn makes e2e runs LIE** (bit hard in 16-Q5): a suite that
+  loads the page while vite is still re-transforming just-edited modules sees
+  half-mounted components — three runs "proved" a working feature broken. Let the
+  server settle (a couple of seconds) after the last edit before trusting red, and
+  when store reads disagree with what you see, add a component-side debug hook
+  (`window.__cameraPreviewDebug`, opt-in like `__outlineDebug`) to compare the
+  COMPONENT's view with the store's.
+- **Svelte 5 DELEGATES `onkeydown`/`onpointerdown`/`onclick` attributes** — the
+  handler only runs once the event reaches the app root, so any ancestor that
+  stops propagation on the way up silently kills it. Panel widgets are exactly
+  where this bites: the drawer chrome swallows pointerdown and the flowbite
+  dialog swallows Escape, so DragRow's Esc-to-revert did nothing and a drag whose
+  pointerdown never arrived jumped the value by the pointer's ABSOLUTE x (+22
+  instead of +2, 16-Q3). For keys and pointer gestures inside panels, attach
+  DIRECT listeners via `use:action` + addEventListener.
+- A `derived` store that reads anything off `userData` must list `objectsGroup` in
+  its dependencies — THREE trees aren't reactive, so the post-write poke is the
+  only signal it gets; and any "is something selected" check reads the SET, never
+  the sticky `selectedObject` (the camera PiP hit both at once, 16-Q4).
+- An INSET viewport (camera PiP) is `setScissorTest(true)` + `setScissor` +
+  `setViewport` on the SAME renderer after the composer pass — no second WebGL
+  context (which would duplicate every texture/geometry on the GPU). gl clears
+  respect the scissor box, so the inset clears only itself; remember gl measures
+  y from the BOTTOM (`glRect`) and restore the full viewport afterwards.
+- **Threlte's `camera.current` is a PLAIN PROPERTY** on a CurrentWritable, so
+  reading it inside `$effect` registers NO dependency — the effect runs exactly
+  once. Track `$camera` (the store) when you must react to a camera SWAP. This
+  bit the #16-P5 camera preview: the swap happened but Outline kept rendering the
+  editor view. Related: postprocessing passes BAKE their camera at construction —
+  `composer.setMainCamera(cam)` re-points the built-ins, and third-party passes
+  (N8AO) keep their own `.camera` that must be set separately.
+- `Object3D.lookAt` faces **+Z** for plain meshes but **-Z** for cameras/lights
+  (three swaps the matrix args), so aiming a camera MARKER with `lookAt` points it
+  backwards. Camera markers, their frustum viz and the preview camera all use the
+  camera convention (-Z forward); aim via Set-from-view or the gizmo. And looking
+  through a marker means standing INSIDE its body mesh — the preview hides it
+  locally (spectator-mode precedent), restoring `visible` on exit, never replicated.
+- A context menu RESIZES while open (#16-P1 filter row, #16-P2 match list), so its
+  `place()` must re-run on size changes (ResizeObserver, guarded against the
+  maxHeight write looping) — it used to place only on open + window resize, and a
+  menu opened near the bottom edge grew straight off the screen while filtering.
 - THREE color management: `setHSL()` works in the LINEAR working space — pass
   `THREE.SRGBColorSpace` or lightness 0.5 hex-round-trips to `#bcbcbc`. Canvas
   ImageData palettes: write bytes straight from the sRGB hex (round-tripping through
@@ -585,10 +719,19 @@ loadable play content. Everything a user does must be visible to connected peers
   never had this (toJSON/ObjectLoader keeps uuids). Any new GLTF round-trip needs
   the same stamp.
 - `selectedObject` is `writable([])` and KEEPS the last object after deselect (the
-  desktop outline relies on it) — "has selection" checks need `?.uuid`, and the
+  open inspector binds to it) — "has selection" checks need `?.uuid`, and the
   init value is a truthy empty array. `deselectObject()` clears ONLY the
   `selectedObjects` SET — anything that must react to deselection (the flow editor's
-  scope-follows-selection) watches the SET, never `selectedObject` (#13-H bit this).
+  scope-follows-selection, the desktop OUTLINE since #15-K) watches the SET, never
+  `selectedObject` (#13-H bit this). Since #15-K the SET is authoritative: creation
+  paths (createGeometry/Light/Group, addImported) populate it alongside the sticky
+  primary, the outline traverses every set member's child MESHES (OutlineEffect
+  renders meshes only — adding a Group outlines nothing), and `duplicateSelection`
+  toasts on an empty set (the locked-VIEW state — set empty, primary = a peer-locked
+  object — is the one deliberate fall-through). #15-O: a plain viewport click only
+  SELECTS; properties open on double-click / the context-menu "Properties" entry /
+  the object list, or always when `inspectorPinned` (pinned + deselect falls back to
+  the Scene inspector via closeSelectionInspector).
 - The Bash tool's `cd` leaks into the shared shell cwd — `Set-Location` back to the
   repo root before PowerShell git/npm calls.
 - **Connect dance (#12 fix)**: the host CLOSES the joiner's original conn pre-approval;
@@ -695,6 +838,58 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-02): **Roadmap #15 in flight — A+J → PR #81, B+C → PR #82,
+  second drop K/L/M/N/O + toast-system rework → PR #84 (stacked on #82), docs
+  batch I → theprototype-docs.** Shipped in #84: properties-panel PIN +
+  double-click/context-menu "Properties" (plain click only selects now), info
+  toast kind + unified toast stack + spectator mode banner, sticky
+  share-or-stash (no more 14s auto-share), progress-toast lifecycle fix,
+  GitHub stars (Welcome + cloud profile — cloud repo carries its own copy),
+  PWA manifest/icons/no-cache SW, outline-follows-the-selection-SET (K).
+  Baseline 419/62. Plan + parked designs: cloud repo
+  plans-core/roadmap-15-editmesh-notes-polish.md (mesh lane D→E→F, G, H notes
+  v2 still pending there). Lane: ../theprototype-lane-ui @ port 5186 (5176 is
+  shadowed by a stale [::1] server — the port-shadow trap; ALWAYS curl a source
+  file and grep your new symbol before trusting a lane server).
+- Status (2026-08-04, drop 3): **#16 Q5 on the SAME PR #86** — the reported
+  "gizmo drags also rotate the camera" bug fixed AT THE ROOT (nothing ever
+  disabled OrbitControls during a gizmo drag; threlte's TransformControls does it
+  against its own context slot, which a camera preview leaves stale — Scene's
+  `dragging-changed` hook now suppresses through `activeOrbit`, and the preview's
+  controls are disposed). Proven by an A/B real-mouse drag on the real gizmo arrow
+  (0.21 rotation before, 0.00000 after, object moves the same 1.04 either way).
+  Plus: menu placement contract (cursor-anchored, shift-up, scroll only past the
+  window, sticky top + bounded + resizable while searching) · grid 'camera' follow
+  via threlte's own followCamera (smooth pans; only look-at snaps) · deep links
+  offset by the sticky header + a `data-anchor` for SAVED VIEWS · snap steps
+  quantized and printed through one formatter · PiP left-drag on the title bar,
+  gizmo hidden for the inset draw, parked clear of the HUD. New suite
+  gizmo-orbit-leak(9); 419/62 held.
+- Status (2026-08-04, drop 2): **#16 follow-ups on the SAME PR #86** — [fix] camera
+  Control (no view jump: OrbitControls is seated behind the camera and the pose
+  re-synced from the marker, because its constructor already ran one update(); no
+  more orbit-controls leak: the preview owns `previewOrbit`, a derived `activeOrbit`
+  drives Scene's suppression + navigation) · [feat] menu (per-level cursor memory,
+  STICKY search mode, one-time side decision so a growing list keeps the anchor,
+  revealFilter rows excluded from their own results) · [feat] panel DEEP LINKS
+  (`openSceneSection` opens+expands+scrolls instead of toggling shut) + grid follow
+  Off/Look-at/Camera + Scale 0.25 and custom snap steps in the menu + themed physics
+  checkboxes + Add opens properties · [feat] ONE numeric field (DragRow everywhere)
+  · [feat] camera PiP window + Capture row. New suites camera-preview-control(9)/
+  panel-deeplinks(16)/number-fields(13)/camera-pip(18); 419/62 held.
+- Status (2026-08-04): **Roadmap #16 (menus, grid & scene cameras) EXECUTED →
+  core PR #86** (branch fix/roadmap16-menus-cameras, six commits, STACKED on #85 →
+  #84 → #82; retarget to release/next as they land; plan + as-built notes in the
+  cloud repo plans-core/roadmap-16-menus-grid-cameras.md). P6 deselect broadcasts
+  `unlock` (peers kept objects locked forever) + "Selected ▸" gates on the SET · P1
+  menu filter hidden-until-typing + ↑/↓ navigation + Enter-opens-submenu · P2 the
+  node editor's private search box retired onto the shared filter · P3 Configure
+  Scene ▸ Grid + Snapping with a `checked` item style replacing `●` · P4 unlimited
+  NAMED camera bookmarks (lens included) + a Camera section (orbit feel, framing) ·
+  P5 scene CAMERA OBJECTS (frustum viz, true-swap preview, WASD Control writing back
+  as one undo, framing guide, Capture, replicated preview presence). New suites
+  deselect-unlock/grid-snapping/camera-bookmarks/camera-objects; 419/62 held.
+  REMAINING from #15: mesh lane D→E→F, G (convert to mesh), H (notes v2).
 - Status (2026-08-01): **VR sleeve palette (K1+K2) MERGED to release/next (PR #75)**
   — plan: cloud repo plans-core/done/k-vr-sleeve-palette.md (as-built notes there).
   One commit: `$lib/vrSleeve.js` + the `vrsleeve` core-module shell + the generic

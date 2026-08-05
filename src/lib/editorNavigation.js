@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { isLocked, isVRMode } from '../stores/sceneStore';
-import { specatorMode } from '../stores/appStore';
+import { specatorMode, anyModalOpen } from '../stores/appStore';
 import { isClaimed } from './inputRuntime';
 // No new dependency: inputRuntime already imports shortcuts, and nothing in lib/
 // imports editorNavigation, so this closes no cycle.
@@ -53,7 +53,9 @@ export function startEditorNavigation() {
 	// with key === undefined (e.g. saving an API key in Settings) — never dereference
 	window.addEventListener('keydown', (event) => {
 		if (event.key === 'Shift') return pressed.add('shift');
-		if (guarded(event) || event.ctrlKey || event.metaKey) return;
+		// 15-B6: non-modal dialogs leave the page live — don't fly the camera
+		// behind an open Settings/Sessions/Modules modal
+		if (guarded(event) || event.ctrlKey || event.metaKey || get(anyModalOpen)) return;
 		const key = String(event.key || '').toLowerCase();
 		if (event.shiftKey && isShiftCommand(key)) return; // a command, not movement
 		if (KEYS.includes(key)) pressed.add(key);
@@ -78,6 +80,8 @@ export function updateEditorNavigation(delta, camera, controls) {
 	if (pressed.size === 0 || !camera || !controls) return;
 	if (get(isLocked) || get(isVRMode) || get(specatorMode)) return;
 	if (isClaimed('keys')) return; // K-C: a module owns WASD (possession)
+	// a modal opening mid-flight must STOP the camera, not coast on held keys
+	if (get(anyModalOpen)) return pressed.clear();
 
 	movement.set(0, 0, 0);
 	camera.getWorldDirection(forward);

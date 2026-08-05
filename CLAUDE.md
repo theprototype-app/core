@@ -481,6 +481,16 @@ loadable play content. Everything a user does must be visible to connected peers
   NOT wrapped: `oncreate={(ref) => …}`, never `oncreate={({ref}) => …}` (the destructure
   silently captures `undefined` — this stranded every annotation pin at the origin +
   killed PingMarkers' animations, N1/roadmap-7).
+- **svelte-awesome-color-picker v4 fires `onInput` ONCE ON MOUNT** (its
+  `updateColor()` runs from an `$effect` and the first pass always differs from its
+  own empty snapshot). A handler that mutates on every onInput therefore mutates
+  when a PANEL MERELY OPENS: the Inspector's five pickers detached the environment
+  preset to custom (opening Configure Scene relit the scene), broadcast light/object
+  colour updates, and recorded undo entries for selecting a mesh. Every handler must
+  ignore a value equal to the one it already holds (`sameHex()` — normalise, the
+  picker round-trips through colord so case/#/alpha differ from `getHexString`).
+  Suspect this for ANY third-party input component: "opening a panel changed my
+  scene" is the signature.
 - **Never write through a DERIVED store**: svelte compiles `$store.prop = value`
   into `store_mutate()` → `store.set()`, which a derived store does not have, so
   every such site throws `TypeError: store.set is not a function` AT RUNTIME while

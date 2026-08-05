@@ -14,6 +14,7 @@
 		openAnnotation,
 		deleteAnnotation,
 		displayName,
+		displayAuthor,
 		showNotePins,
 		DEFAULT_NOTE_COLOR
 	} from '$lib/annotationsHandler';
@@ -203,7 +204,7 @@
 												</div>
 												<div class="mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-gray-500">
 													<span class="rounded-sm bg-gray-700/70 px-1 text-gray-300">{labelFor(row.a.objectUuid)}</span>
-													<span class="truncate">{row.a.author || 'peer'} · {when(row.a.ts)}</span>
+													<span class="truncate">{displayAuthor(row.a)} · {when(row.a.ts)}</span>
 												</div>
 											</button>
 											<button

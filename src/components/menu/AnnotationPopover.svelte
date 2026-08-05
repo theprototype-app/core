@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { Pencil, Trash2, X, Check } from '@lucide/svelte';
+	import { Pencil, Trash2, X, Check, Circle, Star, Square } from '@lucide/svelte';
 	import {
 		annotations,
 		activeAnnotation,
@@ -9,8 +9,13 @@
 		deleteAnnotation,
 		annotationWorldPosition,
 		displayName,
+		displayAuthor,
+		isMyNote,
+		myAuthorName,
+		myAuthorKey,
 		noteNumber,
 		NOTE_COLORS,
+		NOTE_SHAPES,
 		DEFAULT_NOTE_COLOR
 	} from '$lib/annotationsHandler';
 	import { globalCamera, globalRenderer } from '../../stores/sceneStore';
@@ -44,6 +49,7 @@
 	let text = $state('');
 	let color = $state(DEFAULT_NOTE_COLOR);
 	let label = $state('');
+	let shape = $state('round');
 	let seeded = '';
 	$effect(() => {
 		const key = (note?.id ?? '') + ':' + (editing ? 'edit' : 'view');
@@ -55,8 +61,10 @@
 			text = source?.text ?? '';
 			color = source?.color || DEFAULT_NOTE_COLOR;
 			label = source?.label ?? '';
+			shape = source?.shape || 'round';
 		});
 	});
+	const SHAPE_ICONS: Record<string, any> = { round: Circle, star: Star, square: Square };
 
 	let nameInput: HTMLInputElement | null = $state(null);
 	$effect(() => {
@@ -140,13 +148,20 @@
 		const description = text.trim();
 		const title = name.trim();
 		if (!description && !title) return; // nothing to save yet
+		// H10: our OWN note re-stamps the display name (so renaming yourself, or
+		// setting a nickname after creating notes, fixes what everyone else sees) and
+		// gains the stable key if it predates it. Someone else's note keeps its author.
+		const mine = isMyNote(base);
 		// spread the base so fields a newer peer added survive OUR save
 		setAnnotation({
 			...base,
 			name: title,
 			text: description,
 			color,
+			shape,
 			label: label.trim(),
+			author: mine ? myAuthorName() : base.author,
+			authorKey: mine ? myAuthorKey() : base.authorKey,
 			ts: Date.now()
 		});
 		activeAnnotation.set({ id: base.id, mode: 'view' });
@@ -249,6 +264,23 @@
 						></button>
 					{/each}
 				</div>
+				<span class="note-caption">Pin shape</span>
+				<div class="note-shapes" role="group" aria-label="Pin shape">
+					{#each NOTE_SHAPES as s (s)}
+						{@const ShapeIcon = SHAPE_ICONS[s]}
+						<button
+							class="note-shape"
+							class:is-on={shape === s}
+							title={'Pin shape: ' + s}
+							aria-label={'Pin shape ' + s}
+							aria-pressed={shape === s}
+							onclick={() => (shape = s)}
+						>
+							<ShapeIcon size={14} aria-hidden="true" />
+							<span>{s}</span>
+						</button>
+					{/each}
+				</div>
 				<span class="note-caption">Label — groups notes in the drawer</span>
 				<input
 					class="ui-input w-full"
@@ -288,7 +320,7 @@
 				<div class="note-meta">
 					{#if note.label}<span class="note-chip">{note.label}</span>{/if}
 					<span class="note-dot" style="background:{note.color || DEFAULT_NOTE_COLOR}"></span>
-					<span class="truncate">{note.author || 'peer'} · {when(note.ts)}</span>
+					<span class="truncate">{displayAuthor(note)} · {when(note.ts)}</span>
 				</div>
 			</div>
 			<div class="note-actions">
@@ -420,6 +452,31 @@
 	}
 	.note-swatch.is-on {
 		border-color: rgb(243 244 246);
+	}
+	.note-shapes {
+		display: flex;
+		gap: 0.25rem;
+	}
+	.note-shape {
+		display: inline-flex;
+		flex: 1 1 0;
+		align-items: center;
+		justify-content: center;
+		gap: 0.25rem;
+		border: 1px solid rgb(75 85 99 / 0.8);
+		border-radius: 0.25rem;
+		padding: 0.15rem 0.25rem;
+		font-size: 10px;
+		text-transform: capitalize;
+		color: rgb(156 163 175);
+	}
+	.note-shape:hover {
+		color: rgb(243 244 246);
+	}
+	.note-shape.is-on {
+		border-color: rgb(249 115 22);
+		background: rgb(249 115 22 / 0.15);
+		color: rgb(243 244 246);
 	}
 	.note-actions {
 		display: flex;

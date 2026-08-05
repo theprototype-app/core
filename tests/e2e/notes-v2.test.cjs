@@ -1,5 +1,9 @@
 // 15-H (scene notes v2): the name/description/color/label model, the near-pin
 // view+edit popover, and the drawer's label groups / traversal / pins toggle.
+// Follow-up drop (H8-H12): the two-pass pin render (occluded = dim, never an
+// add-order lottery), pin shapes + border + contrast ink, 'Me' as a DISPLAY-only
+// author, and the persistence fixes (autosave dirty on annotation changes,
+// scene-root re-key, prune grace).
 //
 // Replication is asserted BOTH ways without the signaling cloud: a send spy for
 // the outgoing `{type:'annotation'}` payload and the real applier
@@ -57,23 +61,57 @@ const pinPixel = (page, idOrDraft) =>
 		idOrDraft
 	);
 
-const pinColor = (page, id) =>
+// everything the pin's meshes/text tell us about the H8 two-pass render
+const pinInfo = (page, id) =>
 	page.evaluate(
 		(id) =>
 			new Promise((resolve) => {
 				window.__stores.annotationsHandler.pinsGroup.subscribe((group) => {
 					const pin = group?.getObjectByName('pin-' + id);
 					if (!pin) return resolve(null);
-					let hex = null;
+					const meshes = [];
+					let text = null;
 					pin.traverse((node) => {
-						if (!hex && node.isMesh && node.material?.color)
-							hex = '#' + node.material.color.getHexString();
+						if (!node.isMesh) return;
+						// troika Text extends Mesh; its (possibly multi-) material is marked
+						const material = Array.isArray(node.material)
+							? node.material[node.material.length - 1]
+							: node.material;
+						if (material?.isTroikaTextMaterial) {
+							text = {
+								renderOrder: node.renderOrder,
+								depthTest: material.depthTest,
+								value: node.text
+							};
+							return;
+						}
+						if (!material?.color) return;
+						meshes.push({
+							hex: '#' + material.color.getHexString(),
+							depthTest: material.depthTest,
+							depthWrite: material.depthWrite,
+							transparent: material.transparent,
+							opacity: material.opacity,
+							renderOrder: node.renderOrder,
+							verts: node.geometry?.attributes?.position?.count ?? 0
+						});
 					});
-					resolve(hex);
+					resolve({ meshes, text });
 				})();
 			}),
 		id
 	);
+
+// the FILL color of the pin's brightest pass (the note color, not the border)
+const pinColor = async (page, id) => {
+	const info = await pinInfo(page, id);
+	if (!info?.meshes?.length) return null;
+	// the fill passes carry the note color; the border passes are the darker shade
+	const counts = {};
+	for (const m of info.meshes) counts[m.hex] = (counts[m.hex] || 0) + 1;
+	// fill appears on the disc + cone in both passes (4), border only twice
+	return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+};
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -109,8 +147,11 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.annotationsHandler.annotations.set([]));
 
 	// --- scene: one box, three notes -----------------------------------------
+	// a KNOWN nickname first: authorship must not depend on the live peer id (the
+	// signaling box can hand out a new one on a reconnect mid-suite)
 	const boxUuid = await A.page.evaluate(() => {
 		const s = window.__stores;
+		s.username.set('Old Nick');
 		s.commandsHandler.sceneCommand('/create box');
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -129,7 +170,8 @@ h.run(async () => {
 	const id3 = await addNote(A.page, boxUuid, [0, 1.6, 0.5], {
 		name: 'Motor',
 		text: 'motor mounts here',
-		label: 'mechanics'
+		label: 'mechanics',
+		shape: 'star'
 	});
 	h.check(!!(id1 && id2 && id3), 'setup: three notes committed');
 
@@ -140,6 +182,65 @@ h.run(async () => {
 		(await pinColor(A.page, id2)) === '#f59e0b',
 		'H4: a note with no explicit color keeps the amber default pin'
 	);
+
+	// --- H8: two render passes + an always-on-top number ----------------------
+	const info1 = await pinInfo(A.page, id1);
+	const tested = (info1?.meshes ?? []).filter((m) => m.depthTest);
+	const ghosts = (info1?.meshes ?? []).filter((m) => !m.depthTest);
+	h.check(
+		tested.length >= 2 && ghosts.length >= 2,
+		`H8: the pin draws a depth-tested SOLID pass and a depth-test-off GHOST pass (${tested.length}/${ghosts.length} meshes)`
+	);
+	h.check(
+		ghosts.every((m) => m.transparent && m.opacity < 0.5) &&
+			tested.every((m) => m.transparent && m.opacity > 0.5),
+		`H8: the ghost pass is dim and the solid pass is not (ghost ${ghosts
+			.map((m) => m.opacity)
+			.join('/')} vs solid ${tested.map((m) => m.opacity).join('/')})`
+	);
+	// the SOLID pass paints over the ghost, so a visible pin reads as its own
+	// saturated colour instead of the ghost border bleeding up through the fill
+	h.check(
+		(info1?.meshes ?? []).every((m) => m.renderOrder > 0) &&
+			Math.max(...ghosts.map((m) => m.renderOrder)) <
+				Math.min(...tested.map((m) => m.renderOrder)),
+		'H8: every pin mesh has an explicit renderOrder, ghost under solid (no add-order lottery)'
+	);
+	h.check(
+		!!info1?.text &&
+			info1.text.depthTest === false &&
+			info1.text.renderOrder > Math.max(...(info1.meshes ?? []).map((m) => m.renderOrder)),
+		`H8: the number draws through everything, above every pin mesh (renderOrder ${info1?.text?.renderOrder})`
+	);
+	// an occluded pin keeps its ghost — the report was "new pins show through, received ones do not"
+	const infoLate = await pinInfo(A.page, id2);
+	h.check(
+		(infoLate?.meshes ?? []).some((m) => !m.depthTest) &&
+			(infoLate?.meshes ?? []).some((m) => m.depthTest),
+		'H8: every pin gets both passes, whenever/however it was created'
+	);
+
+	// --- H9: shape geometry + darker border + contrast ink --------------------
+	const roundVerts = (await pinInfo(A.page, id1))?.meshes?.[0]?.verts ?? 0;
+	const starVerts = (await pinInfo(A.page, id3))?.meshes?.[0]?.verts ?? 0;
+	h.check(
+		roundVerts > 0 && starVerts > 0 && roundVerts !== starVerts,
+		`H9: a star pin renders a different geometry than a round one (${roundVerts} vs ${starVerts} verts)`
+	);
+	const border = await A.page.evaluate(() => {
+		const ah = window.__stores.annotationsHandler;
+		return { dark: ah.shadeHex('#22c55e'), inkOnGreen: ah.contrastOn('#22c55e'), inkOnBlue: ah.contrastOn('#3b82f6') };
+	});
+	h.check(
+		border.dark === '#136c34',
+		`H9: the border shade is a darker sRGB shade of the fill (${border.dark})`
+	);
+	h.check(
+		border.inkOnGreen === '#1c1917' && border.inkOnBlue === '#f8fafc',
+		`H9: the number ink is contrast-aware (green -> ${border.inkOnGreen}, blue -> ${border.inkOnBlue})`
+	);
+	const hasBorder = (await pinInfo(A.page, id1))?.meshes?.some((m) => m.hex === border.dark);
+	h.check(!!hasBorder, 'H9: the pin actually renders that darker border shade');
 
 	// --- H2/H5: the popover opens ANCHORED near its pin, in VIEW mode ---------
 	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
@@ -213,6 +314,7 @@ h.run(async () => {
 	h.check(await editCard.first().isVisible(), 'H2: openAnnotation(id, "edit") opens the EDIT face');
 	await editCard.locator('input[placeholder="Name (optional)"]').fill('Latch');
 	await editCard.locator('button[aria-label="Pin color #3b82f6"]').click();
+	await editCard.locator('button[aria-label="Pin shape square"]').click();
 	await editCard.locator('input[list="note-labels"]').fill('review');
 	await editCard.getByRole('button', { name: 'Save' }).click();
 	await A.page.waitForTimeout(400);
@@ -221,6 +323,7 @@ h.run(async () => {
 		saved && saved.name === 'Latch' && saved.color === '#3b82f6' && saved.label === 'review' && saved.text === 'unlabeled thought',
 		'H5: Save writes name + color + label and keeps the description'
 	);
+	h.check(saved?.shape === 'square', `H9: the shape selector saves the pin shape (${saved?.shape})`);
 	const sent = await A.page.evaluate(() => {
 		const list = window.__sent.filter((m) => m.type === 'annotation');
 		window.__stores.peers.set(window.__peerOriginal);
@@ -228,8 +331,16 @@ h.run(async () => {
 	});
 	const sentNote = sent.find((m) => m.annotation?.id === id2)?.annotation;
 	h.check(
-		!!sentNote && sentNote.name === 'Latch' && sentNote.color === '#3b82f6' && sentNote.label === 'review',
-		'H5: the save replicates the v2 fields on the unchanged {type:"annotation"} wire shape'
+		!!sentNote &&
+			sentNote.name === 'Latch' &&
+			sentNote.color === '#3b82f6' &&
+			sentNote.label === 'review' &&
+			sentNote.shape === 'square',
+		'H5/H9: the save replicates the v2 fields (incl. shape) on the unchanged {type:"annotation"} wire shape'
+	);
+	h.check(
+		sentNote?.author === 'Old Nick',
+		`H10: the REPLICATED author is the real nickname, never the literal 'me' (${sentNote?.author})`
 	);
 	h.check(
 		(await active(A.page))?.mode === 'view',
@@ -266,11 +377,88 @@ h.run(async () => {
 		remote && remote.name === 'Peer note' && remote.color === '#a855f7' && remote.label === 'review',
 		'H1: a peer note applies with its v2 fields intact'
 	);
+
+	// --- H10: 'Me' is display-only; the stored/replicated author is a real name --
+	const cardText = () =>
+		viewCard
+			.first()
+			.textContent()
+			.then((t) => (t || '').replace(/\s+/g, ' ').trim())
+			.catch(() => '');
+	await A.page.evaluate(() => window.__stores.annotationsHandler.openAnnotation('remote-note'));
+	await h.eventually(
+		cardText,
+		(t) => t.includes('Peer note') && t.includes('B') && !t.includes('Me'),
+		"H10: someone else's note shows THEIR author, not 'Me'"
+	);
 	await A.page.evaluate(() => {
 		const ah = window.__stores.annotationsHandler;
 		ah.applyAnnotation({ op: 'delete', annotation: { id: 'remote-note' } });
 		ah.activeAnnotation.set(null);
 	});
+	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
+	await h.eventually(
+		cardText,
+		(t) => t.includes('Hinge') && t.includes('Me'),
+		"H10: our own note reads 'Me' in the card"
+	);
+	// ownership rides a stable device key, so it survives renames and reconnects
+	// (peer ids are re-issued; nicknames change) — legacy keyless notes still match
+	// by name
+	const ownership = await A.page.evaluate(() => {
+		const ah = window.__stores.annotationsHandler;
+		return {
+			byKey: ah.isMyNote({ author: 'whoever', authorKey: ah.myAuthorKey() }),
+			foreignKey: ah.isMyNote({ author: 'Old Nick', authorKey: 'someone-elses-key' }),
+			legacyMine: ah.isMyNote({ author: 'Old Nick' }),
+			legacyOther: ah.isMyNote({ author: 'Sam' })
+		};
+	});
+	h.check(
+		ownership.byKey === true &&
+			ownership.foreignKey === false &&
+			ownership.legacyMine === true &&
+			ownership.legacyOther === false,
+		`H10: ownership is the stable authorKey, with a name fallback for old notes (${JSON.stringify(ownership)})`
+	);
+	// renaming yourself upgrades your OWN notes' stored author on the next save
+	await A.page.evaluate(
+		(id) => {
+			window.__stores.username.set('New Nick');
+			window.__stores.annotationsHandler.openAnnotation(id, 'edit');
+		},
+		id3
+	);
+	await A.page.waitForTimeout(600);
+	await editCard.getByRole('button', { name: 'Save' }).click();
+	await A.page.waitForTimeout(400);
+	const upgraded = (await store(A.page)).find((a) => a.id === id3);
+	h.check(
+		upgraded?.author === 'New Nick',
+		`H10: our own note re-stamps the author when we rename ourselves (${upgraded?.author})`
+	);
+	const displayed = await A.page.evaluate((id) => {
+		const ah = window.__stores.annotationsHandler;
+		let list = [];
+		ah.annotations.subscribe((l) => (list = l))();
+		const mine = list.find((a) => a.id === id);
+		return {
+			mine: ah.displayAuthor(mine),
+			// exactly what a DIFFERENT device sees when it loads the saved file: same
+			// note, foreign authorKey → the owner's nickname, never 'Me'
+			saved: ah.displayAuthor({ ...mine, authorKey: 'another-device' }),
+			other: ah.displayAuthor({ author: 'Sam' })
+		};
+	}, id3);
+	h.check(
+		displayed.mine === 'Me' && displayed.other === 'Sam',
+		`H10: displayAuthor maps only OUR notes to 'Me' (${displayed.mine} / ${displayed.other})`
+	);
+	h.check(
+		displayed.saved === 'New Nick',
+		`H10: the same note reads as its owner's NICKNAME for anyone else (${displayed.saved})`
+	);
+	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
 
 	// --- H5: a draft opens at the CLICKED point ------------------------------
 	await A.page.evaluate((uuid) => {
@@ -392,6 +580,96 @@ h.run(async () => {
 	);
 	h.check(shown === true, 'H3: toggling back shows the pins again');
 
+	// --- H12: notes actually persist ------------------------------------------
+	// (1) an annotation change ALONE has to schedule an autosave — before the fix
+	// only objectsGroup/flowGraphs marked dirty, so a note added after the last
+	// object change was never written ("some notes disappear on reload")
+	const dirtyFlow = await A.page.evaluate(async (uuid) => {
+		const s = window.__stores;
+		await s.autosave.saveNow(); // clears the dirty flag
+		const before = s.autosave.isDirty();
+		const ah = s.annotationsHandler;
+		ah.addAnnotation(uuid, [0.2, 1.4, 0.2]);
+		let cur = null;
+		ah.activeAnnotation.subscribe((a) => (cur = a))();
+		ah.setAnnotation({ ...cur.draft, text: 'persist me' });
+		ah.activeAnnotation.set(null);
+		return { before, after: s.autosave.isDirty(), id: cur.draft.id };
+	}, boxUuid);
+	h.check(
+		dirtyFlow.before === false && dirtyFlow.after === true,
+		`H12: an annotation change on its own marks the autosave dirty (${dirtyFlow.before} -> ${dirtyFlow.after})`
+	);
+	const snapshotHasNote = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		await s.autosave.saveNow();
+		const list = s.autosave.annotationsSnapshot();
+		return Array.isArray(list) && list.some((a) => a.id === id);
+	}, dirtyFlow.id);
+	h.check(snapshotHasNote, 'H12: the fresh snapshot carries that note');
+
+	// (2) a SCENE-ROOT anchor is rebuilt with a new uuid every boot — the note
+	// remembers the object NAME and re-keys instead of being pruned
+	const heal = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const THREE = s.THREE;
+		let scene;
+		s.globalScene.subscribe((x) => (scene = x))();
+		const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+		mesh.name = 'sys-anchor-heal';
+		mesh.position.set(-5, 1, 0);
+		mesh.updateMatrixWorld(true);
+		scene.add(mesh);
+		const ah = s.annotationsHandler;
+		ah.addAnnotation(mesh.uuid, [-5, 1.6, 0]);
+		let cur = null;
+		ah.activeAnnotation.subscribe((a) => (cur = a))();
+		const draft = cur.draft;
+		ah.setAnnotation({ ...draft, text: 'on the env rig' });
+		ah.activeAnnotation.set(null);
+		const oldUuid = mesh.uuid;
+		mesh.uuid = THREE.MathUtils.generateUUID(); // simulate the reboot rebuild
+		return { id: draft.id, objectName: draft.objectName, oldUuid, newUuid: mesh.uuid };
+	});
+	h.check(
+		heal.objectName === 'sys-anchor-heal',
+		`H12: a note on a scene-root object remembers its anchor NAME (${heal.objectName})`
+	);
+	await A.page.evaluate(() => window.__stores.annotationsHandler.sweepAnnotations());
+	const healed = (await store(A.page)).find((a) => a.id === heal.id);
+	h.check(
+		!!healed && healed.objectUuid === heal.newUuid && healed.objectUuid !== heal.oldUuid,
+		'H12: the sweep re-keys it to the rebuilt object instead of pruning it'
+	);
+
+	// (3) an orphaned note gets a grace window before the sweep deletes it
+	const doomedBox = await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.commandsHandler.sceneCommand('/create box');
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		return g.children[g.children.length - 1].uuid;
+	});
+	const doomed = await addNote(A.page, doomedBox, [3, 1, 3], { text: 'doomed' });
+	await A.page.evaluate((uuid) => {
+		const s = window.__stores;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const object = g.getObjectByProperty('uuid', uuid);
+		object.parent.remove(object);
+		s.objectsGroup.update((v) => v);
+	}, doomedBox);
+	await A.page.waitForTimeout(900); // first sweep ran (500ms debounce)
+	h.check(
+		(await store(A.page)).some((a) => a.id === doomed),
+		'H12: the first sweep spares an orphan (a restore race used to eat notes here)'
+	);
+	await A.page.waitForTimeout(3500); // grace expires, the re-armed sweep prunes
+	h.check(
+		!(await store(A.page)).some((a) => a.id === doomed),
+		'H12: after the grace window the orphan is pruned'
+	);
+
 	// --- two-peer (opt-in): A's fields arrive on B ----------------------------
 	if (process.env.TWO_PEER === '1') {
 		const B = await h.setupPage(browser, 'B');
@@ -401,6 +679,12 @@ h.run(async () => {
 		h.check(
 			!!mirrored && mirrored.name === 'Hinge' && mirrored.color === '#22c55e' && mirrored.label === 'mechanics',
 			'H1/H5 two-peer: the handshake carries name/color/label to a late joiner'
+		);
+		const starOnB = onB.find((a) => a.id === id3);
+		h.check(!!starOnB && starOnB.shape === 'star', 'H9 two-peer: the pin shape replicates');
+		h.check(
+			!!mirrored && (await B.page.evaluate((a) => window.__stores.annotationsHandler.displayAuthor(a), mirrored)) !== 'Me',
+			"H10 two-peer: A's note does NOT read 'Me' on B"
 		);
 	} else {
 		console.log('SKIP two-peer section (set TWO_PEER=1 with the hosts mapping enabled)');

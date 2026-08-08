@@ -498,8 +498,23 @@ h.run(async () => {
 				me.selectHandle(2);
 				me.toggleVertexSelection(3);
 				const weldOk = me.weldSelectedVerts();
+				// the wireframe overlay must track the welded geometry (user report:
+				// it stayed stale) — fingerprint it against a fresh WireframeGeometry
+				const o = live().children.find((c) => c.name === 'edit-overlay');
+				const fresh = new s.THREE.WireframeGeometry(live().geometry);
+				const sum = (/** @type {any} */ a) => {
+					let t = 0;
+					for (let i = 0; i < a.length; i++) t += a[i];
+					return Math.round(t * 1e3);
+				};
+				const wireTracksWeld =
+					!!o &&
+					o.geometry.attributes.position.array.length === fresh.attributes.position.array.length &&
+					sum(o.geometry.attributes.position.array) === sum(fresh.attributes.position.array);
+				let weldKeptSession;
+				me.editingObject.subscribe((v) => (weldKeptSession = v === uuid))();
 				me.exitEditMode();
-				resolve({ single, gizmoAtAdded, multi, moved, undone, parked, weldOk });
+				resolve({ single, gizmoAtAdded, multi, moved, undone, parked, weldOk, wireTracksWeld, weldKeptSession });
 			}, 400)
 		);
 	});
@@ -518,6 +533,11 @@ h.run(async () => {
 	h.check(multiSel.undone, 'ONE undo restores the whole multi-drag (meshgeo entry)');
 	h.check(multiSel.parked, 'emptying the selection parks the gizmo');
 	h.check(multiSel.weldOk, 'the reported flow welds: plain click + one Ctrl+click');
+	h.check(
+		multiSel.wireTracksWeld,
+		'the edit wireframe overlay tracks the welded geometry (no stale wire)'
+	);
+	h.check(multiSel.weldKeptSession, 'weld refreshes the session in place (no exit/enter dance)');
 
 	await h.finish(browser);
 });

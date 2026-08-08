@@ -65,6 +65,7 @@ export class PeerConnection {
 		this.reconnectAttempts = 0;
 		this.hasOpened = false;   // the signaling link has opened at least once
 		this.didFallback = false; // we've already switched to the public cloud
+		this.idRetries = 0;       // fresh-id attempts after an id collision (B5)
 
 		/** @type {Record<string, any>} outgoing DataConnections, keyed by peer id */
 		this.connections = {};
@@ -164,6 +165,22 @@ export class PeerConnection {
 			if (!this.hasOpened && this.canFallback && !this.didFallback &&
 				['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
 				fallbackToPublic();
+				return;
+			}
+			// B5: session ids are 5 hex chars = 20 bits, so a birthday collision is
+			// likely well before a million concurrent sessions (~1k live ids gives a
+			// ~40% chance of one). The id is generated fresh on every page load and
+			// never persisted, so nothing is pinned to it before the link opens —
+			// take a new one instead of making the user reload. Lengthening the id
+			// was assumed to be a compat break; it isn't, but it also isn't needed.
+			if (err.type === 'unavailable-id' && !this.hasOpened && this.idRetries < 3) {
+				this.idRetries++;
+				this.myId = createPeer();
+				console.log('session id collided — retrying as ' + this.myId);
+				try { this.peer.destroy(); } catch (e) { /* already gone */ }
+				createPeerForMode(this.didFallback);
+				attachVoiceToPeer(this); // rebind the incoming-call handler to the new peer
+				wire();
 				return;
 			}
 			if (err.type === 'peer-unavailable') {

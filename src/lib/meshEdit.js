@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, TControls, lockedObjects } from '../stores/sceneStore';
+import { globalScene, objectsGroup, TControls, lockedObjects, isVRMode } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import {
@@ -309,25 +309,56 @@ export function raycastHandles(raycaster, additive = false) {
 		toggleVertexSelection(idx);
 		return true;
 	}
-	// a plain click starts a fresh single selection
-	vertexSelection.clear();
-	vertexSelectionSize.set(0);
+	// a plain click starts a fresh single selection (the set IS the selection)
 	selectHandle(idx);
 	return true;
 }
 
-/** 177/183: toggle a vertex handle in the Create-face multi-selection (ctrl-click
- * on desktop, trigger-tap in VR). @param {number} index */
+/**
+ * D5 (user report): ONE selection model. selectedHandle is the ANCHOR — it is
+ * always a member of vertexSelection, carries the gizmo, and a gizmo drag
+ * moves the WHOLE selection rigidly. Before this, plain-click (gizmo) and
+ * ctrl-click (weld/create-face set) were two parallel models: the counter
+ * read "0 sel" with a vertex visibly selected, and weld ignored it.
+ * @param {number} index the new anchor, or -1 to drop it (detaches the gizmo)
+ */
+function setAnchor(index) {
+	selectedHandle = index;
+	/** @type {any} */
+	const controls = get(TControls);
+	if (!proxy || !controls) return;
+	// the desktop gizmo never seats in VR (its helper would render in-headset;
+	// VR drags handles directly via vrBeginHandleDrag)
+	if (index >= 0 && !get(isVRMode)) {
+		handleWorldPosition(index, tempVector);
+		proxy.position.copy(tempVector);
+		controls.setMode('translate');
+		controls.attach(proxy);
+	} else if (controls.object === proxy) controls.detach();
+}
+
+/** 177/183: toggle a vertex handle in the selection (ctrl-click on desktop,
+ * trigger-tap in VR). The anchor rides the toggles: last-added handle takes
+ * the gizmo; removing the anchor promotes another member; empty detaches.
+ * @param {number} index */
 export function toggleVertexSelection(index) {
 	if (index < 0 || index >= handles.length) return;
-	if (vertexSelection.has(index)) vertexSelection.delete(index);
-	else vertexSelection.add(index);
+	if (vertexSelection.has(index)) {
+		vertexSelection.delete(index);
+		if (selectedHandle === index)
+			setAnchor(vertexSelection.size ? [...vertexSelection][vertexSelection.size - 1] : -1);
+	} else {
+		vertexSelection.add(index);
+		setAnchor(index);
+	}
 	syncVertexSelection();
 }
 
-/** 177: clear the Create-face multi-selection (back to single-move) */
+/** 177: deselect all vertices (also parks the gizmo) */
 export function clearVertexSelection() {
 	vertexSelection.clear();
+	if (proxy) setAnchor(-1);
+	else selectedHandle = -1;
 	syncVertexSelection();
 }
 
@@ -382,16 +413,12 @@ export function createSelectedFace(viewerPos = null) {
 	return ok;
 }
 
-/** @param {number} index */
+/** Select exactly this handle (fresh single selection + anchor/gizmo).
+ * @param {number} index */
 export function selectHandle(index) {
-	selectedHandle = index;
-	refreshHandleColors();
-	handleWorldPosition(index, tempVector);
-	proxy.position.copy(tempVector);
-	/** @type {any} */
-	const controls = get(TControls);
-	controls.setMode('translate');
-	controls.attach(proxy);
+	vertexSelection = new Set(index >= 0 ? [index] : []);
+	setAnchor(index);
+	syncVertexSelection();
 }
 
 /** World-space focus target {center,radius} for the selected vertex, or null (173). */
@@ -439,20 +466,61 @@ function writeSelectedHandle() {
 	return commitSelectedLocal(edited.worldToLocal(writeVector.copy(proxy.position)));
 }
 
+// D5: a multi-selection drags rigidly — every member moves by the anchor's
+// local-space delta. Dedicated vector (never the shared temps: the loop below
+// calls refreshHandleMatrix, which mutates tempVector).
+const deltaVector = new THREE.Vector3();
+/** @type {number[]|null} index-expanded snapshot at multi-drag start (ONE meshgeo undo) */
+let dragStartExpanded = null;
+
+/** Move every NON-anchor selected handle by delta (local space) + write through
+ * to the attribute. The anchor itself commits via writeSelectedHandle (which
+ * also recomputes normals/bounds/overlay for the whole geometry — call LAST).
+ * @param {THREE.Vector3} delta */
+function applySelectionDelta(delta) {
+	if (delta.lengthSq() === 0) return;
+	const position = edited.geometry.attributes.position;
+	for (const i of vertexSelection) {
+		if (i === selectedHandle) continue;
+		const p = handles[i].position.add(delta);
+		handles[i].indices.forEach((/** @type {number} */ idx) => position.setXYZ(idx, p.x, p.y, p.z));
+		refreshHandleMatrix(i);
+	}
+}
+
 /** Called from Scene.svelte's gizmo onchange when the vertex proxy moves */
 export function onProxyMoved() {
 	if (!edited || selectedHandle < 0) return;
 	// attaching the gizmo fires a change event without an actual move — ignore it
 	const local = edited.worldToLocal(writeVector.copy(proxy.position));
 	if (local.distanceToSquared(handles[selectedHandle].position) < 1e-12) return;
+	// members first, anchor last (writeSelectedHandle recomputes normals/overlay)
+	if (vertexSelection.size > 1)
+		applySelectionDelta(deltaVector.copy(local).sub(handles[selectedHandle].position));
 	const result = writeSelectedHandle();
 	const now = Date.now();
 	if (now - lastSent < 80) return;
 	lastSent = now;
 	broadcastSelected(result);
+	if (vertexSelection.size > 1)
+		for (const i of vertexSelection) if (i !== selectedHandle) broadcastHandle(i);
 }
 
-/** @param {number[]} positionArray - LOCAL coordinates */
+/** Broadcast one handle's current LOCAL position over the `verts` channel
+ * @param {number} index */
+function broadcastHandle(index) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer && edited)
+		peer.send({
+			type: 'verts',
+			uuid: edited.uuid,
+			indices: handles[index].indices,
+			position: handles[index].position.toArray()
+		});
+}
+
+/** @param {number[]} positionArray - LOCAL coordinates of the anchor */
 function broadcastSelected(positionArray) {
 	/** @type {any} */
 	const peer = get(peers);
@@ -470,10 +538,29 @@ export function onProxyDragChanged(dragging) {
 	if (!edited || selectedHandle < 0) return;
 	if (dragging) {
 		dragStartLocal = handles[selectedHandle].position.toArray();
+		// D5: a multi-drag undoes as ONE meshgeo snapshot (a 'verts' entry holds
+		// one position for all its indices — it cannot carry per-handle befores;
+		// same reasoning as weld). Index-expanded per the D1 representation rule.
+		dragStartExpanded =
+			vertexSelection.size > 1 ? trisToPositions(readTriangles(edited.geometry)) : null;
 	} else if (dragStartLocal) {
+		// catch any tail movement since the last change event, members first
+		const local = edited.worldToLocal(writeVector.copy(proxy.position));
+		if (vertexSelection.size > 1)
+			applySelectionDelta(deltaVector.copy(local).sub(handles[selectedHandle].position));
 		const after = writeSelectedHandle();
 		broadcastSelected(after); // final unthrottled state
-		if (JSON.stringify(dragStartLocal) !== JSON.stringify(after)) {
+		if (vertexSelection.size > 1) {
+			for (const i of vertexSelection) if (i !== selectedHandle) broadcastHandle(i);
+			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
+			if (dragStartExpanded && JSON.stringify(dragStartExpanded) !== JSON.stringify(afterExpanded))
+				recordEntry({
+					kind: 'meshgeo',
+					uuid: edited.uuid,
+					before: dragStartExpanded,
+					after: afterExpanded
+				});
+		} else if (JSON.stringify(dragStartLocal) !== JSON.stringify(after)) {
 			recordEntry({
 				kind: 'verts',
 				uuid: edited.uuid,
@@ -483,6 +570,7 @@ export function onProxyDragChanged(dragging) {
 			});
 		}
 		dragStartLocal = null;
+		dragStartExpanded = null;
 	}
 }
 

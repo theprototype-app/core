@@ -577,8 +577,8 @@
 			// while editing a mesh, clicks pick vertex handles instead of objects;
 			// ctrl/shift-click adds to the Create-face multi-selection (177)
 			if ($editingObject) {
-				// D2: a miss clears the vertex multi-pick — the session, the object
-				// selection and the single-handle gizmo all stay (deliberate)
+				// D2: a miss deselects all vertices (parking the gizmo, D5) — the
+				// session and the object selection stay (deliberate)
 				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey))
 					clearVertexSelection();
 				return;

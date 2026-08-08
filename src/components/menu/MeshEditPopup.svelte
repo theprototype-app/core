@@ -136,14 +136,14 @@
 		commitFaceOp(/** @type {any} */ ($faceEditOp), $faceEditAmount);
 	}
 
-	// 177: build a face from the 3-4 ctrl/shift-selected vertices
+	// 177: build a face from the 3-4 selected vertices
 	function createFace() {
-		if (!createSelectedFace()) showToast('Ctrl+click 3 or 4 vertices to create a face');
+		if (!createSelectedFace()) showToast('Select 3 or 4 vertices (Ctrl+click adds) to create a face');
 	}
 
-	// B4: weld the vertex multi-selection to its centroid
+	// B4: weld the vertex selection to its centroid
 	function weld() {
-		if (!weldSelectedVerts()) showToast('Ctrl+click 2+ vertices to weld them');
+		if (!weldSelectedVerts()) showToast('Select 2+ vertices (Ctrl+click adds) to weld them');
 	}
 
 	function finish() {
@@ -264,13 +264,15 @@
 					{/each}
 				</div>
 			{:else}
-				<!-- segment: vertex tools -->
+				<!-- segment: vertex tools (D5: ONE selection — click selects, Ctrl+click
+				     adds, the gizmo on the last pick drags the whole set) -->
 				<div class="flex items-center gap-1.5 text-xs">
 					<button
-						class="rounded-full px-2.5 py-1 {$vertexSelectionSize === 0
+						id="mesh-deselect"
+						class="rounded-full px-2.5 py-1 {$vertexSelectionSize <= 1
 							? 'bg-primary-600 text-white'
 							: 'bg-gray-700 hover:bg-gray-600'}"
-						title="Drag a vertex handle to move it"
+						title="Deselect all (click a vertex to move it, Ctrl+click to add more)"
 						onclick={() => clearVertexSelection()}>Move</button
 					>
 					<button
@@ -278,7 +280,7 @@
 						class="rounded-full px-2.5 py-1 {$vertexSelectionSize >= 2
 							? 'bg-primary-600 text-white hover:bg-primary-500'
 							: 'bg-gray-700 opacity-50'}"
-						title="Merge the selected vertices into one (W)"
+						title="Merge the selected vertices into one (W) — Ctrl+click adds to the selection"
 						onclick={weld}>Weld</button
 					>
 					<button
@@ -286,10 +288,10 @@
 						class="rounded-full px-2.5 py-1 {$vertexSelectionSize >= 3 && $vertexSelectionSize <= 4
 							? 'bg-primary-600 text-white hover:bg-primary-500'
 							: 'bg-gray-700 opacity-50'}"
-						title="Ctrl+click 3-4 vertices, then Create face"
+						title="Select 3-4 vertices (Ctrl+click adds), then Create face"
 						onclick={createFace}>Create face</button
 					>
-					<span class="text-[11px] text-gray-400">{$vertexSelectionSize} sel</span>
+					<span id="mesh-sel-count" class="text-[11px] text-gray-400">{$vertexSelectionSize} sel</span>
 				</div>
 			{/if}
 

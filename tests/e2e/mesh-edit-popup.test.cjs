@@ -111,9 +111,14 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		const s = window.__stores;
 		s.meshEdit.enterEditMode(window.__box.uuid);
-		s.meshEdit.toggleVertexSelection(0);
-		s.meshEdit.toggleVertexSelection(1);
+		s.meshEdit.selectHandle(0); // D5: a plain pick IS the selection
 	});
+	await A.page.waitForTimeout(200);
+	const selCount = await A.page.evaluate(
+		() => document.querySelector('#mesh-sel-count')?.textContent
+	);
+	h.check(selCount === '1 sel', `the counter includes the gizmo pick — no more "0 sel" ("${selCount}")`);
+	await A.page.evaluate(() => window.__stores.meshEdit.toggleVertexSelection(1));
 	await A.page.mouse.click(miss.x, miss.y);
 	await A.page.waitForTimeout(200);
 	const vtxMiss = await A.page.evaluate(() => {

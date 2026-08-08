@@ -432,5 +432,92 @@ h.run(async () => {
 		`the refresh hook rebuilt the handles to match (${weldIndexed.handleCount} handles for ${weldIndexed.k2} welded keys)`
 	);
 
+	// --- D5 (user report): ONE vertex selection model — plain click counts as
+	// "1 sel" and seats the gizmo, ctrl-click adds with the anchor riding the
+	// last pick, a gizmo drag moves the WHOLE selection rigidly (one meshgeo
+	// undo), emptying the selection parks the gizmo, and the reported weld flow
+	// (plain click + one ctrl-click) reaches the >=2 gate.
+	const multiSel = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const me = s.meshEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		const uuid = box.uuid;
+		const live = () => g.getObjectByProperty('uuid', uuid);
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		me.enterEditMode(uuid);
+		const size = () => {
+			let n;
+			me.vertexSelectionSize.subscribe((v) => (n = v))();
+			return n;
+		};
+		const keySet = () => {
+			const p = live().geometry.attributes.position;
+			const set = new Set();
+			for (let i = 0; i < p.count; i++)
+				set.add(
+					[p.getX(i), p.getY(i), p.getZ(i)].map((v) => Math.round(v * 1e4)).join(',')
+				);
+			return [...set].sort().join('|');
+		};
+		const keys0 = keySet();
+		me.selectHandle(0);
+		const single = {
+			size: size(),
+			gizmo: controls?.object?.userData?.isVertexProxy === true,
+			anchor: me.selectedVertexHandle()
+		};
+		me.toggleVertexSelection(1);
+		const beforeArr = Array.from(live().geometry.attributes.position.array);
+		const gizmoAtAdded =
+			Math.hypot(
+				controls.object.position.x - beforeArr[3],
+				controls.object.position.y - beforeArr[4],
+				controls.object.position.z - beforeArr[5]
+			) < 1e-4;
+		const multi = { size: size(), anchor: me.selectedVertexHandle() };
+		me.onProxyDragChanged(true);
+		controls.object.position.y += 2;
+		me.onProxyMoved();
+		me.onProxyDragChanged(false);
+		const p = live().geometry.attributes.position;
+		let moved = 0;
+		for (let i = 0; i < p.count; i++)
+			if (Math.abs(p.getY(i) - beforeArr[i * 3 + 1] - 2) < 1e-4) moved++;
+		s.history.undo();
+		// the meshgeo undo swaps + refreshes the session — allow a tick
+		return new Promise((resolve) =>
+			setTimeout(() => {
+				const undone = keySet() === keys0;
+				me.selectHandle(0);
+				me.toggleVertexSelection(0); // removes the only member
+				const parked = controls?.object?.userData?.isVertexProxy !== true;
+				me.selectHandle(2);
+				me.toggleVertexSelection(3);
+				const weldOk = me.weldSelectedVerts();
+				me.exitEditMode();
+				resolve({ single, gizmoAtAdded, multi, moved, undone, parked, weldOk });
+			}, 400)
+		);
+	});
+	h.check(
+		multiSel.single.size === 1 && multiSel.single.gizmo && multiSel.single.anchor === 0,
+		`plain vertex click counts as 1 sel and seats the gizmo (${multiSel.single.size} sel)`
+	);
+	h.check(
+		multiSel.multi.size === 2 && multiSel.multi.anchor === 1 && multiSel.gizmoAtAdded,
+		`ctrl-click adds; the anchor + gizmo ride the last pick (${multiSel.multi.size} sel, anchor ${multiSel.multi.anchor})`
+	);
+	h.check(
+		multiSel.moved === 6,
+		`a gizmo drag moves the WHOLE selection rigidly (${multiSel.moved}/24 entries by +2y)`
+	);
+	h.check(multiSel.undone, 'ONE undo restores the whole multi-drag (meshgeo entry)');
+	h.check(multiSel.parked, 'emptying the selection parks the gizmo');
+	h.check(multiSel.weldOk, 'the reported flow welds: plain click + one Ctrl+click');
+
 	await h.finish(browser);
 });

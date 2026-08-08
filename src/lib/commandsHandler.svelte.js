@@ -298,22 +298,30 @@ export function checkLocks(data) {
         }, 500)
 
 
-    // console.log(peer.peer.connections);
-    
-    locked.forEach((objectLock) => {
-
-        if(!peer.peer.connections[objectLock[0]]) {
-            console.log('Connection ' + objectLock[0] + ' not found. Releasing...');
-            // release THIS gone peer's lock (was inverted: kept it, dropped others)
-            locked = locked.filter((lockedUuid) => lockedUuid[1] != objectLock[1]);
-        } else if(peer.peer.connections[objectLock[0]].length <= 1) {
-            console.log('Peer ' + objectLock[0] + ' is not connected anymore. Releasing...' + objectLock[1]);
-            locked = locked.filter((lockedUuid) => lockedUuid[1] != objectLock[1]);
-        }
-        lockedObjects.set(locked);
-
-    })
-    
+    // Release the locks of peers that are actually gone (B5).
+    //
+    // This used peerjs's RAW map, `peer.peer.connections[id]` — an ARRAY of every
+    // connection ever made to that id — and treated `length <= 1` as "not
+    // connected anymore". A healthy peer holds exactly ONE DataConnection, so that
+    // matched every LIVE peer: any disconnect anywhere released every remote lock
+    // in the session (seen in the N=5 stress run, where a survivor logged
+    // "Peer <host> is not connected anymore. Releasing..." about the connected
+    // host). `connections[id].open` is the liveness signal PeerConnection actually
+    // maintains — the same test lockControl.startLockSweep already used.
+    //
+    // Rebuilt as ONE filter instead of a reassign-inside-forEach: the old loop
+    // iterated a stale snapshot while `locked` was replaced under it, and matched
+    // by UUID (dropping any peer's lock on that uuid) rather than by holder.
+    const before = locked.length;
+    locked = locked.filter((/** @type {any} */ objectLock) => {
+        const holder = objectLock[0];
+        if (holder === peer.peer.id) return true; // our own lock is ours to release
+        const conn = peer.connections[holder];
+        if (conn && conn.open) return true;
+        console.log('Peer ' + holder + ' is not connected anymore. Releasing...' + objectLock[1]);
+        return false;
+    });
+    if (locked.length !== before) lockedObjects.set(locked);
 }
 
 export async function createLoader(count, uuids) {

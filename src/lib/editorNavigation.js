@@ -6,6 +6,9 @@ import { isClaimed } from './inputRuntime';
 // No new dependency: inputRuntime already imports shortcuts, and nothing in lib/
 // imports editorNavigation, so this closes no cycle.
 import { shortcuts } from './shortcuts';
+// D3 (15): same cycle argument — meshEdit/faceEdit never import editorNavigation
+import { editingObject } from './meshEdit';
+import { faceEditObject, meshEditHotkeys } from './faceEdit';
 
 // WASD fly-panning for the desktop editor, Q down / E up, Shift = 3x.
 // Camera position and orbit target move together. Inert while typing, in
@@ -80,6 +83,12 @@ export function updateEditorNavigation(delta, camera, controls) {
 	if (pressed.size === 0 || !camera || !controls) return;
 	if (get(isLocked) || get(isVRMode) || get(specatorMode)) return;
 	if (isClaimed('keys')) return; // K-C: a module owns WASD (possession)
+	// D3: a mesh-edit session owns W/E/S while its hotkeys are on (W welds, E/S
+	// arm ops) — flying the camera on the same keys fought the tools. Toggling
+	// the hotkeys pref OFF returns the fly keys mid-session (quiz 15-D3).
+	// Deliberately NOT claimInput('keys'): the claim set is not refcounted and
+	// possess/car claim+release the same scope, which would drop ours mid-ride.
+	if ((get(editingObject) || get(faceEditObject)) && get(meshEditHotkeys)) return;
 	// a modal opening mid-flight must STOP the camera, not coast on held keys
 	if (get(anyModalOpen)) return pressed.clear();
 

@@ -20,8 +20,8 @@
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
-	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, lookupEditable } from '$lib/faceEdit';
+	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
+	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, lookupEditable } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
@@ -577,7 +577,10 @@
 			// while editing a mesh, clicks pick vertex handles instead of objects;
 			// ctrl/shift-click adds to the Create-face multi-selection (177)
 			if ($editingObject) {
-				raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey);
+				// D2: a miss deselects all vertices (parking the gizmo, D5) — the
+				// session and the object selection stay (deliberate)
+				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey))
+					clearVertexSelection();
 				return;
 			}
 			// face edit mode (135 desktop): a click highlights the face under it,
@@ -593,7 +596,7 @@
 				if (tri >= 0) {
 					if ($faceEditMulti) toggleFaceSelection(tri);
 					else autoApplyFaceOp();
-				}
+				} else clearFaceSelection(); // D2: a miss drops the accumulated multi-pick
 				// B1 (inset fix): a seated MOVE gizmo intercepts the NEXT click (the
 				// dragging||axis guard above skips face dispatch), so click 2 of an
 				// armed inset/extrude DRAGGED the face instead. Only the Move op

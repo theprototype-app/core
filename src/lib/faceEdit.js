@@ -100,6 +100,15 @@ export function shellsOfTris(tris) {
 export function registerEditProxy(object) {
 	editProxy = object;
 }
+/** D1: meshEdit's live-session refresh hook — registered at ITS module eval
+ * (meshEdit imports us; see the applyMeshGeo call site for why not import()).
+ * @type {((uuid: string) => void) | null} */
+let vertexSessionRefresher = null;
+/** @param {(uuid: string) => void} fn */
+export function registerVertexSessionRefresher(fn) {
+	vertexSessionRefresher = fn;
+}
+
 /** objectsGroup lookup that also finds the registered edit proxy @param {string} uuid */
 export function lookupEditable(uuid) {
 	const found = get(objectsGroup)?.getObjectByProperty('uuid', uuid) ?? null;
@@ -545,6 +554,11 @@ export function applyMeshGeo(uuid, positions) {
 	import('./terrainSculpt').then((m) => {
 		if (get(m.sculptObject) === uuid) m.rebuildSculptCaches(object);
 	});
+	// D1: a live VERTEX session's handles are a cache over THIS geometry too —
+	// rebuild them after an undo / remote commit. meshEdit registers the hook at
+	// module eval (it imports us — a dynamic import back would be a SECOND module
+	// instance under vite's ?t= HMR stamps, whose editingObject is always null).
+	vertexSessionRefresher?.(uuid);
 	objectsGroup.update((v) => v);
 }
 
@@ -607,6 +621,18 @@ meshEditWireframe.subscribe((value) => {
 	if (wire) wire.visible = value; // live toggle mid-session (face mode)
 });
 
+/** D3: mesh-edit hotkeys (E/I/G/S/B/F/X · W) enabled — local pref, default ON.
+ * Read by MeshEditPopup (the local keydown), shortcuts.js (bare mesh-edit keys
+ * never match the registry while a session owns them — F also focuses) and
+ * editorNavigation (W/A/S/D/Q/E fly is suppressed while it's on; toggling the
+ * pref OFF is the escape hatch that returns the camera keys, quiz 15-D3). */
+export const meshEditHotkeys = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('meshEditHotkeys') !== 'false'
+);
+meshEditHotkeys.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditHotkeys', String(value));
+});
+
 /**
  * The edit-session wireframe overlay: an object-CHILD LineSegments (follows
  * the transform for free) whose raycast is stubbed out (D8: three raycasts
@@ -614,9 +640,20 @@ meshEditWireframe.subscribe((value) => {
  * a metre off the surface). Shared with meshEdit's vertex mode. @param {any} object
  */
 export function buildEditWireframe(object) {
+	// D4: pick the wire color at BUILD time from the material's luminance — the
+	// fixed blue disappeared on similar-hued/light materials. Rebuilds happen on
+	// every geometry swap, so material changes are picked up incidentally.
+	const material = Array.isArray(object.material) ? object.material[0] : object.material;
+	const c = material?.color;
+	// relative luminance over three's LINEAR color components
+	const lum = c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0;
 	const overlay = new THREE.LineSegments(
 		new THREE.WireframeGeometry(object.geometry),
-		new THREE.LineBasicMaterial({ color: 0x2f81f7, transparent: true, opacity: 0.5 })
+		new THREE.LineBasicMaterial({
+			color: lum > 0.5 ? 0x1f2937 : 0x2f81f7,
+			transparent: true,
+			opacity: 0.5
+		})
 	);
 	overlay.name = 'edit-overlay';
 	overlay.raycast = () => {};

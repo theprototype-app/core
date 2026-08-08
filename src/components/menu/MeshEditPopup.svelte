@@ -4,8 +4,10 @@
 	// with divider-separated segments — [Mode] [Select granularity + Multi]
 	// [Ops with shortcut hints] [Display] [Done] — plus a contextual amount
 	// row for extrude/inset and the CL-A collider-session banner state.
-	// Keyboard shortcuts are active only while the toolbar is mounted (the
-	// global registry mutes itself during mesh edit); typing in inputs skips.
+	// D3: keyboard shortcuts are active only while the toolbar is mounted AND
+	// the meshEditHotkeys pref is on (the toggle here; while on, shortcuts.js
+	// skips bare mesh-edit keys and editorNavigation parks the fly keys);
+	// typing in inputs skips. Esc always works.
 	import {
 		editingObject,
 		enterEditMode,
@@ -31,8 +33,10 @@
 		faceEditMulti,
 		faceEditSelectedTris,
 		toggleFaceMulti,
-		meshEditWireframe
+		meshEditWireframe,
+		meshEditHotkeys
 	} from '$lib/faceEdit';
+	import { Keyboard, CircleHelp } from '@lucide/svelte';
 	import {
 		colliderEditObject,
 		addColliderPiece,
@@ -132,14 +136,14 @@
 		commitFaceOp(/** @type {any} */ ($faceEditOp), $faceEditAmount);
 	}
 
-	// 177: build a face from the 3-4 ctrl/shift-selected vertices
+	// 177: build a face from the 3-4 selected vertices
 	function createFace() {
-		if (!createSelectedFace()) showToast('Ctrl+click 3 or 4 vertices to create a face');
+		if (!createSelectedFace()) showToast('Select 3 or 4 vertices (Ctrl+click adds) to create a face');
 	}
 
-	// B4: weld the vertex multi-selection to its centroid
+	// B4: weld the vertex selection to its centroid
 	function weld() {
-		if (!weldSelectedVerts()) showToast('Ctrl+click 2+ vertices to weld them');
+		if (!weldSelectedVerts()) showToast('Select 2+ vertices (Ctrl+click adds) to weld them');
 	}
 
 	function finish() {
@@ -154,8 +158,9 @@
 			if (!$colliderEditObject) finish(); // a collider session tears down via its watcher
 			return;
 		}
+		if (!$meshEditHotkeys) return; // D3: toggled off — Esc/Done still work above
 		const target = /** @type {any} */ (event.target);
-		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
 		if (event.ctrlKey || event.metaKey || event.altKey) return;
 		const key = event.key.toLowerCase();
 		if (mode === 'faces') {
@@ -169,6 +174,20 @@
 			event.preventDefault();
 		}
 	}
+
+	// D3: the "?" bindings popover (local, closes with the session)
+	let showKeys = $state(false);
+	$effect(() => {
+		if (!active) showKeys = false;
+	});
+	const KEY_ROWS = [
+		['E / I / G', 'Arm Extrude / Inset / Move (faces)'],
+		['S / B / F / X', 'Subdivide / Bridge / Flip / Delete (faces)'],
+		['W', 'Weld the selected vertices'],
+		['Tab', 'Toggle Edit Mesh'],
+		['Esc', 'Done (exit the session)'],
+		['1 / 2 / 3', 'Gizmo Move / Rotate / Scale']
+	];
 
 	// floating default: near the top center (dragWindow persists win:meshEditToolbar)
 	const defaultRect = {
@@ -245,13 +264,15 @@
 					{/each}
 				</div>
 			{:else}
-				<!-- segment: vertex tools -->
+				<!-- segment: vertex tools (D5: ONE selection — click selects, Ctrl+click
+				     adds, the gizmo on the last pick drags the whole set) -->
 				<div class="flex items-center gap-1.5 text-xs">
 					<button
-						class="rounded-full px-2.5 py-1 {$vertexSelectionSize === 0
+						id="mesh-deselect"
+						class="rounded-full px-2.5 py-1 {$vertexSelectionSize <= 1
 							? 'bg-primary-600 text-white'
 							: 'bg-gray-700 hover:bg-gray-600'}"
-						title="Drag a vertex handle to move it"
+						title="Deselect all (click a vertex to move it, Ctrl+click to add more)"
 						onclick={() => clearVertexSelection()}>Move</button
 					>
 					<button
@@ -259,7 +280,7 @@
 						class="rounded-full px-2.5 py-1 {$vertexSelectionSize >= 2
 							? 'bg-primary-600 text-white hover:bg-primary-500'
 							: 'bg-gray-700 opacity-50'}"
-						title="Merge the selected vertices into one (W)"
+						title="Merge the selected vertices into one (W) — Ctrl+click adds to the selection"
 						onclick={weld}>Weld</button
 					>
 					<button
@@ -267,10 +288,10 @@
 						class="rounded-full px-2.5 py-1 {$vertexSelectionSize >= 3 && $vertexSelectionSize <= 4
 							? 'bg-primary-600 text-white hover:bg-primary-500'
 							: 'bg-gray-700 opacity-50'}"
-						title="Ctrl+click 3-4 vertices, then Create face"
+						title="Select 3-4 vertices (Ctrl+click adds), then Create face"
 						onclick={createFace}>Create face</button
 					>
-					<span class="text-[11px] text-gray-400">{$vertexSelectionSize} sel</span>
+					<span id="mesh-sel-count" class="text-[11px] text-gray-400">{$vertexSelectionSize} sel</span>
 				</div>
 			{/if}
 
@@ -283,6 +304,38 @@
 				title="Show the edit wireframe overlay"
 				onclick={() => meshEditWireframe.update((v) => !v)}>Wire</button
 			>
+			<!-- D3: hotkeys on/off + the "?" bindings popover -->
+			<button
+				id="mesh-hotkeys-toggle"
+				class="flex items-center rounded-full px-2 py-1 {$meshEditHotkeys ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				aria-label="Toggle mesh-edit keyboard shortcuts"
+				title={$meshEditHotkeys
+					? 'Keyboard shortcuts ON — E/I/G/S/B/F/X, W (camera fly keys pause)'
+					: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
+				onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={16} aria-hidden="true" /></button
+			>
+			<span class="relative flex items-center">
+				<button
+					id="mesh-keys-help"
+					class="flex items-center rounded-full px-1.5 py-1 {showKeys ? 'bg-gray-600' : 'bg-gray-700 hover:bg-gray-600'}"
+					aria-label="Show mesh-edit key bindings"
+					title="Key bindings"
+					onclick={() => (showKeys = !showKeys)}><CircleHelp size={16} aria-hidden="true" /></button
+				>
+				{#if showKeys}
+					<div
+						id="mesh-keys-popover"
+						class="absolute right-0 top-full z-10 mt-2 w-64 cursor-default rounded-lg border border-gray-700/60 bg-gray-800/95 p-2 text-xs shadow-xl"
+					>
+						{#each KEY_ROWS as [keys, what] (keys)}
+							<div class="flex items-baseline justify-between gap-2 py-0.5">
+								<span class="shrink-0 font-mono text-primary-300">{keys}</span>
+								<span class="text-right text-gray-300">{what}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</span>
 
 			{#if $colliderEditObject}
 				<!-- CL-A A8: collider session — add compound pieces, commit or drop -->

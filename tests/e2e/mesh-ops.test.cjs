@@ -361,5 +361,76 @@ h.run(async () => {
 	h.check(weld.ok && weld.k1 === weld.k0 - 2, `weld merges 3 welded keys into 1 (${weld.k0} -> ${weld.k1})`);
 	h.check(weld.undoable, 'weld is undoable (one meshgeo entry)');
 
+	// --- D1 (15): weld on a FRESH box — INDEXED geometry. The old snapshot took
+	// the raw position attribute (24 triples) which applyMeshGeo reinterpreted as
+	// 8 arbitrary triangles: the weld mangled the mesh and undo replayed the same
+	// wrong representation. (The block above only passed because ITS box was
+	// de-indexed by the earlier inset commits.) Also covers the vertex-session
+	// refresh hook: undo while STILL editing rebuilds the handles.
+	const weldIndexed = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const me = s.meshEdit;
+		const fe = s.faceEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		const uuid = box.uuid;
+		const live = () => g.getObjectByProperty('uuid', uuid);
+		const indexed = !!box.geometry.index;
+		const tris = () => fe.readTriangles(live().geometry).length;
+		const keys = () => {
+			const p = live().geometry.attributes.position;
+			const set = new Set();
+			for (let i = 0; i < p.count; i++)
+				set.add(Math.round(p.getX(i) * 1e4) + ',' + Math.round(p.getY(i) * 1e4) + ',' + Math.round(p.getZ(i) * 1e4));
+			return set.size;
+		};
+		const t0 = tris(); // 12
+		const k0 = keys(); // 8
+		me.enterEditMode(uuid);
+		me.toggleVertexSelection(0);
+		me.toggleVertexSelection(1);
+		const ok = me.weldSelectedVerts();
+		const t1 = tris();
+		const k1 = keys();
+		let nan = false;
+		const arr = live().geometry.attributes.position.array;
+		for (let i = 0; i < arr.length; i++) if (!Number.isFinite(arr[i])) nan = true;
+		// undo while STILL in vertex mode: the D1 refresh hook rebuilds the handles
+		s.history.undo();
+		// the meshEdit refresh sits behind applyMeshGeo's dynamic import — allow a tick
+		return new Promise((resolve) =>
+			setTimeout(() => {
+				const t2 = tris();
+				const k2 = keys();
+				let editing;
+				me.editingObject.subscribe((v) => (editing = v))();
+				const handleCount = me.vertexHandleMesh() ? me.vertexHandleMesh().count : -1;
+				me.exitEditMode();
+				resolve({ indexed, ok, t0, k0, t1, k1, nan, t2, k2, handleCount, stillEditing: editing === uuid });
+			}, 400)
+		);
+	});
+	h.check(weldIndexed.indexed, 'the fresh box is INDEXED (the D1 repro precondition)');
+	h.check(
+		weldIndexed.ok && weldIndexed.t1 === 12,
+		`weld on the indexed box keeps 12 triangles (${weldIndexed.t1})`
+	);
+	h.check(
+		weldIndexed.k1 === weldIndexed.k0 - 1,
+		`welding 2 verts drops exactly one welded key (${weldIndexed.k0} -> ${weldIndexed.k1})`
+	);
+	h.check(!weldIndexed.nan, 'no NaN in the welded geometry');
+	h.check(
+		weldIndexed.t2 === weldIndexed.t0 && weldIndexed.k2 === weldIndexed.k0,
+		`undo restores exactly (${weldIndexed.t2} tris, ${weldIndexed.k2} welded keys)`
+	);
+	h.check(weldIndexed.stillEditing, 'the vertex session survives the undo (no exit/enter)');
+	h.check(
+		weldIndexed.handleCount === weldIndexed.k2,
+		`the refresh hook rebuilt the handles to match (${weldIndexed.handleCount} handles for ${weldIndexed.k2} welded keys)`
+	);
+
 	await h.finish(browser);
 });

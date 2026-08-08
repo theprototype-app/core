@@ -8,7 +8,10 @@ import {
 	lookupEditable,
 	commitMeshGeoSnapshot,
 	meshEditWireframe,
-	buildEditWireframe
+	buildEditWireframe,
+	readTriangles,
+	trisToPositions,
+	registerVertexSessionRefresher
 } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -75,6 +78,68 @@ function buildHandles(geometry) {
 	}
 	return [...map.values()];
 }
+
+/** Build the vertex-handle InstancedMesh for the current `handles` (one
+ * instanced mesh — cheap for thousands of vertices). @param {any} scene */
+function buildHandleMesh(scene) {
+	const box = new THREE.Box3().setFromObject(edited);
+	const size = THREE.MathUtils.clamp(box.getSize(tempVector).length() * 0.012, 0.02, 0.2);
+	handleMesh = new THREE.InstancedMesh(
+		new THREE.SphereGeometry(size, 8, 8),
+		new THREE.MeshBasicMaterial({ depthTest: false, transparent: true, opacity: 0.9 }),
+		handles.length
+	);
+	handleMesh.renderOrder = 999;
+	handleMesh.name = 'vertex-handles';
+	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
+	refreshHandleColors();
+	scene.add(handleMesh);
+}
+
+/**
+ * D1: rebuild the session's handles + visuals from the LIVE geometry after a
+ * meshgeo swap (undo, remote commit) WITHOUT exit/enter — no re-lock, no
+ * selection-stash churn. applyMeshGeo calls this via dynamic import whenever a
+ * snapshot lands on the object being vertex-edited (only face mode rebuilt
+ * before, so undo mid-session left stale handles pointing at freed geometry).
+ */
+export function refreshVertexEditSession() {
+	if (!edited || !handleMesh) return;
+	const scene = get(globalScene);
+	if (!scene) return;
+	scene.remove(handleMesh);
+	handleMesh.geometry.dispose();
+	handleMesh.material.dispose();
+	handles = buildHandles(edited.geometry);
+	hoveredHandle = -1;
+	// clamp the selection state to the new handle count
+	if (selectedHandle >= handles.length) {
+		selectedHandle = -1;
+		/** @type {any} */
+		const controls = get(TControls);
+		if (controls && proxy && controls.object === proxy) controls.detach();
+	}
+	edited.updateMatrixWorld();
+	lastObjectMatrix.copy(edited.matrixWorld);
+	buildHandleMesh(scene);
+	syncVertexSelection(); // drops out-of-range multi-picks + repaints
+	// re-seat the gizmo proxy on the surviving selected handle
+	if (selectedHandle >= 0 && proxy) {
+		handleWorldPosition(selectedHandle, tempVector);
+		proxy.position.copy(tempVector);
+	}
+	// the overlay wraps the NEW geometry
+	if (overlay) {
+		overlay.geometry.dispose();
+		overlay.geometry = new THREE.WireframeGeometry(edited.geometry);
+	}
+}
+// applyMeshGeo calls back through this whenever a snapshot lands on the object
+// being vertex-edited (weld's own exit->commit->enter dance is unaffected:
+// `edited` is null during its commit)
+registerVertexSessionRefresher((uuid) => {
+	if (edited && edited.uuid === uuid) refreshVertexEditSession();
+});
 
 /** @param {number} index @param {any} target */
 function handleWorldPosition(index, target) {
@@ -159,20 +224,7 @@ export function enterEditMode(uuid) {
 	hoveredHandle = -1;
 	object.updateMatrixWorld();
 	lastObjectMatrix.copy(object.matrixWorld);
-
-	// vertex handles as one instanced mesh (cheap for thousands of vertices)
-	const box = new THREE.Box3().setFromObject(object);
-	const size = THREE.MathUtils.clamp(box.getSize(tempVector).length() * 0.012, 0.02, 0.2);
-	handleMesh = new THREE.InstancedMesh(
-		new THREE.SphereGeometry(size, 8, 8),
-		new THREE.MeshBasicMaterial({ depthTest: false, transparent: true, opacity: 0.9 }),
-		handles.length
-	);
-	handleMesh.renderOrder = 999;
-	handleMesh.name = 'vertex-handles';
-	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
-	refreshHandleColors();
-	scene.add(handleMesh);
+	buildHandleMesh(scene);
 
 	// wireframe overlay as a child so it follows the object's transform (B2:
 	// shared builder, raycast stubbed per D8, honors the display toggle)
@@ -290,7 +342,12 @@ export function weldSelectedVerts() {
 	if (!edited || vertexSelection.size < 2) return false;
 	const uuid = edited.uuid;
 	const position = edited.geometry.attributes.position;
-	const before = Array.from(position.array);
+	// D1: snapshot INDEX-EXPANDED positions — applyMeshGeo rebuilds a NON-indexed
+	// geometry, so snapshotting the raw attribute of an INDEXED mesh (a fresh
+	// Box: 24 positions / 36 indices) reinterpreted the 24 triples as 8 arbitrary
+	// triangles ("weld mangles the mesh"), and undo replayed the same wrong
+	// representation. Both snapshots below are in applyMeshGeo's representation.
+	const before = trisToPositions(readTriangles(edited.geometry));
 	const centroid = new THREE.Vector3();
 	const picked = [...vertexSelection];
 	picked.forEach((i) => centroid.add(handles[i].position));
@@ -300,7 +357,7 @@ export function weldSelectedVerts() {
 			position.setXYZ(idx, centroid.x, centroid.y, centroid.z)
 		)
 	);
-	const after = Array.from(position.array);
+	const after = trisToPositions(readTriangles(edited.geometry));
 	if (JSON.stringify(before) === JSON.stringify(after)) return false; // already coincident
 	exitEditMode(); // handles regroup on re-entry (merged verts share a key now)
 	const ok = commitMeshGeoSnapshot(uuid, before, after);

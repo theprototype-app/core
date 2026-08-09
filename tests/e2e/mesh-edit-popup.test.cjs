@@ -92,5 +92,155 @@ h.run(async () => {
 	});
 	h.check(escaped.gone && escaped.fe === null && escaped.ve === null, 'Esc closes the toolbar and exits both modes');
 
+	// ---- D2 (15): an outside click clears the pick but keeps the session ----
+	// find a real canvas point whose ray misses the box (overlays excluded)
+	const miss = await A.page.evaluate(() => {
+		const cands = [
+			[Math.round(innerWidth * 0.1), Math.round(innerHeight * 0.55)],
+			[Math.round(innerWidth * 0.9), Math.round(innerHeight * 0.6)],
+			[Math.round(innerWidth * 0.5), Math.round(innerHeight * 0.92)]
+		];
+		for (const [x, y] of cands) {
+			const el = document.elementFromPoint(x, y);
+			if (el && el.tagName === 'CANVAS') return { x, y };
+		}
+		return null;
+	});
+	h.check(!!miss, 'found an empty canvas point for the miss click');
+
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.meshEdit.enterEditMode(window.__box.uuid);
+		s.meshEdit.selectHandle(0); // D5: a plain pick IS the selection
+	});
+	await A.page.waitForTimeout(200);
+	const selCount = await A.page.evaluate(
+		() => document.querySelector('#mesh-sel-count')?.textContent
+	);
+	h.check(selCount === '1 sel', `the counter includes the gizmo pick — no more "0 sel" ("${selCount}")`);
+	await A.page.evaluate(() => window.__stores.meshEdit.toggleVertexSelection(1));
+	await A.page.mouse.click(miss.x, miss.y);
+	await A.page.waitForTimeout(200);
+	const vtxMiss = await A.page.evaluate(() => {
+		const s = window.__stores;
+		let size, editing;
+		s.meshEdit.vertexSelectionSize.subscribe((v) => (size = v))();
+		s.meshEdit.editingObject.subscribe((v) => (editing = v))();
+		return { size, stillEditing: editing === window.__box.uuid };
+	});
+	h.check(vtxMiss.size === 0, `outside click clears the vertex multi-pick (${vtxMiss.size} left)`);
+	h.check(vtxMiss.stillEditing, 'the vertex session survives the outside click');
+
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.meshEdit.exitEditMode();
+		s.faceEdit.enterFaceEdit(window.__box.uuid);
+		s.faceEdit.toggleFaceMulti(); // ON
+		s.faceEdit.toggleFaceSelection(0);
+	});
+	await A.page.mouse.click(miss.x, miss.y);
+	await A.page.waitForTimeout(200);
+	const faceMiss = await A.page.evaluate(() => {
+		const s = window.__stores;
+		let sel, fe, multi;
+		s.faceEdit.faceEditSelectedTris.subscribe((v) => (sel = v))();
+		s.faceEdit.faceEditObject.subscribe((v) => (fe = v))();
+		s.faceEdit.faceEditMulti.subscribe((v) => (multi = v))();
+		return { sel: sel.length, stillEditing: fe === window.__box.uuid, multi };
+	});
+	h.check(faceMiss.sel === 0, `outside click clears the face multi-pick (${faceMiss.sel} left)`);
+	h.check(faceMiss.stillEditing && faceMiss.multi, 'the face session (and Multi mode) survive the outside click');
+
+	// ---- D3 (15): hotkeys toggle + fly guard + "?" bindings popover ----
+	await A.page.evaluate(() => window.__stores.faceEdit.toggleFaceMulti()); // OFF again
+	const camPos = () =>
+		A.page.evaluate(
+			() =>
+				new Promise((r) =>
+					window.__stores.globalCamera.subscribe((c) =>
+						r([c.position.x, c.position.y, c.position.z])
+					)()
+				)
+		);
+	const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+	// hotkeys default ON: I arms Inset from the keyboard
+	await A.page.keyboard.press('i');
+	await A.page.waitForTimeout(100);
+	const armedOn = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.faceEdit.faceEditOp.subscribe(r)())
+	);
+	h.check(armedOn === 'inset', `hotkeys ON: I arms inset (${armedOn})`);
+
+	// fly guard: holding W while a session owns the keys must not move the camera
+	const flyBefore = await camPos();
+	await A.page.keyboard.down('w');
+	await A.page.waitForTimeout(700);
+	await A.page.keyboard.up('w');
+	const flyAfter = await camPos();
+	h.check(
+		dist(flyBefore, flyAfter) < 1e-3,
+		`W does not fly the camera during mesh edit (moved ${dist(flyBefore, flyAfter).toFixed(5)})`
+	);
+
+	// "?" opens the bindings popover
+	await A.page.evaluate(() => document.querySelector('#mesh-keys-help').click());
+	await A.page.waitForTimeout(200);
+	const popover = await A.page.evaluate(() => {
+		const el = document.querySelector('#mesh-keys-popover');
+		return { present: !!el, mentionsWeld: el ? el.textContent.includes('Weld') : false };
+	});
+	h.check(popover.present && popover.mentionsWeld, 'the "?" popover lists the bindings');
+
+	// toggle hotkeys OFF: keys stop arming ops and the camera flies again
+	await A.page.evaluate(() => document.querySelector('#mesh-hotkeys-toggle').click());
+	await A.page.waitForTimeout(100);
+	await A.page.keyboard.press('g');
+	await A.page.waitForTimeout(100);
+	const armedOff = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.faceEdit.faceEditOp.subscribe(r)())
+	);
+	h.check(armedOff === 'inset', `hotkeys OFF: G leaves the armed op alone (${armedOff})`);
+	const flyBefore2 = await camPos();
+	await A.page.keyboard.down('w');
+	await A.page.waitForTimeout(700);
+	await A.page.keyboard.up('w');
+	const flyAfter2 = await camPos();
+	h.check(
+		dist(flyBefore2, flyAfter2) > 0.05,
+		`hotkeys OFF returns the fly keys (moved ${dist(flyBefore2, flyAfter2).toFixed(3)})`
+	);
+
+	// ---- D4 (15): contrast-aware edit wireframe ----
+	const contrast = await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.faceEdit.exitFaceEdit();
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		const wireHex = () => box.children.find((c) => c.name === 'edit-overlay').material.color.getHexString();
+		box.material.color.setRGB(1, 1, 1); // light material -> dark wire
+		s.meshEdit.enterEditMode(box.uuid);
+		const onWhite = wireHex();
+		s.meshEdit.exitEditMode();
+		box.material.color.setRGB(0.02, 0.02, 0.02); // dark material -> light wire
+		s.meshEdit.enterEditMode(box.uuid);
+		const onDark = wireHex();
+		s.meshEdit.exitEditMode();
+		return { onWhite, onDark };
+	});
+	h.check(
+		contrast.onWhite === '1f2937' && contrast.onDark !== contrast.onWhite,
+		`the edit wire contrasts with the material (white->#${contrast.onWhite}, dark->#${contrast.onDark})`
+	);
+
+	// ---- D3: the hotkeys pref persists across a reload (it is OFF right now) ----
+	await h.freshReload(A);
+	const persisted = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.faceEdit.meshEditHotkeys.subscribe(r)())
+	);
+	h.check(persisted === false, 'the hotkeys pref persists across a reload');
+
 	await h.finish(browser);
 });

@@ -91,13 +91,14 @@ export function recordTransformSet(items) {
  * Serialize an object (ObjectLoader JSON round-trip, same format the
  * `object` peer message uses for lights/parents) for create/delete entries.
  * Returns null when the object is too heavy to keep in history.
- * @param {any} object
+ * @param {any} object @param {boolean} [quiet] skip the too-large toast (the
+ * removal-time refresh keeps the existing snapshot instead of warning twice)
  */
-export function captureObjectSnapshot(object) {
+export function captureObjectSnapshot(object, quiet = false) {
 	try {
 		const element = object.toJSON();
 		if (JSON.stringify(element).length > SNAPSHOT_LIMIT) {
-			showToast('Object is too large for undo history — this step will not be undoable');
+			if (!quiet) showToast('Object is too large for undo history — this step will not be undoable');
 			return null;
 		}
 		const group = get(objectsGroup);
@@ -162,6 +163,14 @@ function applyPresence(entry, state) {
 		showToast('Cannot undo/redo: the object no longer exists');
 		return false;
 	}
+	// Refresh the snapshot from the LIVE object on its way out, so redo restores
+	// it exactly as it left the scene. A 'create' entry is recorded the instant
+	// the object exists, but several spawn paths position it AFTERWARDS (the Add
+	// menu lands it at the clicked point, the VR sleeve at the release pose) —
+	// the stored snapshot held the default origin pose, so undo+redo teleported
+	// the object to the world centre, on peers too (they replay this element).
+	const fresh = captureObjectSnapshot(existing, true);
+	if (fresh) entry.snapshot = fresh;
 	if (get(selectedObject)?.uuid === entry.uuid) {
 		// selectedObject keeps its last value on purpose (the inspector binds to
 		// it) — just detach the gizmo and close it, like deselectObject does

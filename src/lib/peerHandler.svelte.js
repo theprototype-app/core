@@ -45,6 +45,17 @@ export function createPeer() {
 	});
 }
 
+// B5: how long a freshly dialed conn may sit un-open before a re-entrant
+// connectToPeer is allowed to close-and-redial it. WebRTC negotiation takes
+// seconds (2-3s even on localhost, more over TURN), and the two ends fire
+// 'open' at DIFFERENT times — the stress run caught a peer killing a conn the
+// remote had already adopted as its send channel. Killing young conns is how
+// mesh formation shredded itself above ~5 peers.
+const DIAL_GRACE_MS = 10000;
+// restoreConnection's own retry cadence (pre-existing 4s) — also used to spot
+// a restore dial that is already in flight so parallel calls don't stack.
+const RESTORE_RETRY_MS = 4000;
+
 //Access locked objects
 let locked = $state();
 lockedObjects.subscribe(value => { locked = value });
@@ -529,6 +540,7 @@ export class PeerConnection {
                 showToast('Cannot reach the signaling server - the connection request was not sent.');
                 return;
             }
+            conn.__dialedAt = Date.now();
             this.connections[peerId] = conn;
 
 			conn.on('close', () => this.onConnClose(peerId, conn));
@@ -547,13 +559,40 @@ export class PeerConnection {
 			if (this.connections[peerId].peer == peerId) {
 				console.log(`Peer ${peerId} is already connected or has a pending request. Connection status: ${this.connections[peerId].open}`)
 				if(!this.connections[peerId].open) {
-					this.restoreConnection(peerId, getobjects, id, 0);
+					this.restoreWhenStale(peerId, getobjects, id);
 				}
 
 			}
 
 		}
     }
+
+	// B5: a conn that hasn't opened yet is NOT broken — it's negotiating. During
+	// mesh formation every `hosts` message re-enters connectToPeer for every
+	// known peer, and the old immediate restoreConnection closed conns that were
+	// milliseconds from opening (the remote often had ALREADY adopted the inbound
+	// half). The close then cascaded: the remote ran a full teardown, dropped us
+	// from its whitelist, and every redial after that was refused as a stranger —
+	// two live peers permanently deaf to each other, with a stray approval prompt.
+	// So: young conn -> leave it alone and re-check once the grace expires; only
+	// a genuinely stale conn is closed and redialed.
+	/** @param {string} peerId @param {boolean} getobjects @param {string} id */
+	restoreWhenStale(peerId, getobjects, id) {
+		const conn = this.connections[peerId];
+		if (!conn || conn.open) return;
+		const age = Date.now() - (conn.__dialedAt ?? 0);
+		if (age >= DIAL_GRACE_MS) {
+			this.restoreConnection(peerId, getobjects, id, 0);
+			return;
+		}
+		if (conn.__staleCheck) return; // one deferred check per conn is plenty
+		conn.__staleCheck = true;
+		setTimeout(() => {
+			// same conn, still never opened -> now it's genuinely wedged
+			if (this.connections[peerId] !== conn || conn.open) return;
+			this.restoreConnection(peerId, getobjects, id, 0);
+		}, DIAL_GRACE_MS - age);
+	}
 
 	// Post-approval reopen of OUR outgoing conn to a host. The host closed our
 	// original conn before approving, and real WebRTC often never signals that
@@ -564,6 +603,10 @@ export class PeerConnection {
 	/** @param {string} peerId @param {boolean} getobjects @param {string} id @param {number} attempt */
 	restoreConnection(peerId, getobjects, id, attempt) {
 		if (this.connections[peerId]?.open) return; // an adopted inbound conn already covers this peer
+		// a restore dial from a parallel caller is already in flight — let it
+		// finish its own 4s cycle instead of resetting the negotiation (B5)
+		const inFlight = this.connections[peerId];
+		if (inFlight && Date.now() - (inFlight.__dialedAt ?? 0) < RESTORE_RETRY_MS && attempt === 0) return;
 		console.log('Restoring connection: ' + peerId + (attempt ? ' (attempt ' + (attempt + 1) + ')' : ''));
 		// drop the stale never-opened conn FIRST — left in peerjs's per-peer
 		// bookkeeping it can wedge the fresh negotiation (offer never starts)
@@ -577,6 +620,7 @@ export class PeerConnection {
 			console.log('restore to ' + peerId + ' failed: signaling link is down');
 			return;
 		}
+		conn.__dialedAt = Date.now();
 		this.connections[peerId] = conn;
 		conn.on('close', () => this.onConnClose(peerId, conn));
 		conn.on('open', () => {

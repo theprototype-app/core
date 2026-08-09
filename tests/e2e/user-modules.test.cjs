@@ -121,6 +121,10 @@ export default {
 			window.__devmodTicks${servedVersion} = (window.__devmodTicks${servedVersion} ?? 0) + 1;
 		});
 		api.registerClickHandler(() => false);
+		api.onInput((kind, code) => {
+			if (kind === 'down' && code === 'KeyJ')
+				window.__devmodKeys = (window.__devmodKeys ?? 0) + 1;
+		});
 	}
 };`;
 	// mind the packs-e2e trap: the URL carries a ?t= cache-buster, so match with
@@ -158,6 +162,16 @@ export default {
 	);
 	h.check(installedDev === true, 'dev module installs from the routed URL');
 	h.check((await A.page.evaluate(() => window.__devmodVersion)) === 1, 'v1 code ran');
+	// DEVX #8: an onInput registered during register() must catch a key pressed
+	// IMMEDIATELY after install (the old import().then() subscription dropped it)
+	await A.page.evaluate(() => {
+		window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', key: 'j' }));
+		window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyJ', key: 'j' }));
+	});
+	h.check(
+		(await A.page.evaluate(() => window.__devmodKeys ?? 0)) === 1,
+		'onInput is live from the first keypress after install (DEVX #8)'
+	);
 	const afterInstall = await sdkCounts(A.page);
 	h.check(afterInstall.menu === 1 && afterInstall.effects === 'devmod-effect-v1', 'v1 registered one menu entry + effect');
 
@@ -225,6 +239,15 @@ export default {
 	await h.eventually(() => loadedIds(A.page), (ids) => !ids.includes('devmod'), 'disable deactivates live');
 	const afterDisable = await sdkCounts(A.page);
 	h.check(afterDisable.menu === 0 && afterDisable.effects === '', 'disable tears the registries down');
+	const keysBefore = await A.page.evaluate(() => window.__devmodKeys ?? 0);
+	await A.page.evaluate(() => {
+		window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', key: 'j' }));
+		window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyJ', key: 'j' }));
+	});
+	h.check(
+		(await A.page.evaluate(() => window.__devmodKeys ?? 0)) === keysBefore,
+		'disable also unsubscribes onInput'
+	);
 
 	await h.finish(browser);
 });

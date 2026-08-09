@@ -369,7 +369,8 @@ function makeApi(moduleId) {
 		 * @param {{label: string, keys: string}[]} bindings
 		 */
 		registerBindings(bindings) {
-			import('./inputRuntime').then((m) => m.registerBindings(moduleId, bindings));
+			if (inputRuntimeRef) inputRuntimeRef.registerBindings(moduleId, bindings);
+			else import('./inputRuntime').then((m) => m.registerBindings(moduleId, bindings));
 		},
 		/** Per-frame input snapshot: {codes: Set<'KeyW'...>, axes: {lx,ly,rx,ry}, vrButtons} */
 		input() {
@@ -377,10 +378,26 @@ function makeApi(moduleId) {
 		},
 		/** Key down/up events; returns an unsubscribe. @param {(kind: 'down'|'up', code: string) => void} fn */
 		onInput(fn) {
+			// DEVX #8: subscribe SYNCHRONOUSLY through the primed ref (it resolves
+			// at boot, before any module registers) — routing through a fresh
+			// import().then() dropped keys pressed in the first seconds after a
+			// user-module install. The promise path stays as an SSR-safe fallback,
+			// and unsubscribing before it settles must stick (the `dead` flag).
 			let unsub = () => {};
-			import('./inputRuntime').then((m) => (unsub = m.onInput(fn)));
-			onDispose(() => unsub()); // unsubscribe is idempotent (Set.delete)
-			return () => unsub();
+			let dead = false;
+			if (inputRuntimeRef) {
+				unsub = inputRuntimeRef.onInput(fn);
+			} else {
+				import('./inputRuntime').then((m) => {
+					if (!dead) unsub = m.onInput(fn);
+				});
+			}
+			const off = () => {
+				dead = true;
+				unsub(); // idempotent (Set.delete)
+			};
+			onDispose(off);
+			return off;
 		},
 		/** Pause the host's own use of an input scope while your module drives:
 		 * 'keys' (WASD camera fly / play movement) or 'locomotion' (VR left stick).
@@ -388,12 +405,14 @@ function makeApi(moduleId) {
 		 * @param {'keys'|'locomotion'} scope */
 		claimInput(scope) {
 			claimedScopes.add(scope);
-			import('./inputRuntime').then((m) => m.claimInput(scope));
+			if (inputRuntimeRef) inputRuntimeRef.claimInput(scope);
+			else import('./inputRuntime').then((m) => m.claimInput(scope));
 		},
 		/** @param {'keys'|'locomotion'} scope */
 		releaseInput(scope) {
 			claimedScopes.delete(scope);
-			import('./inputRuntime').then((m) => m.releaseInput(scope));
+			if (inputRuntimeRef) inputRuntimeRef.releaseInput(scope);
+			else import('./inputRuntime').then((m) => m.releaseInput(scope));
 		},
 		/**
 		 * Physics access (P-A/P-B). All mutations are INITIATOR-ONLY (the peer

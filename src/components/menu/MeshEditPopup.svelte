@@ -45,6 +45,7 @@
 		colliderShellCount
 	} from '$lib/colliderEdit';
 	import { dragWindow } from '$lib/dragWindow';
+	import { sealEditHistorySession } from '$lib/editSession';
 	import { isVRMode, selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
 
@@ -152,6 +153,7 @@
 	function finish() {
 		exitEditMode();
 		exitFaceEdit();
+		sealEditHistorySession(); // 15-F: Done seals the session into ONE undo entry
 	}
 
 	/** @param {KeyboardEvent} event */

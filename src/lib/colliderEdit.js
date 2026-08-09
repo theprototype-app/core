@@ -16,6 +16,9 @@ import {
 } from './faceEdit';
 import { exitEditMode, enterEditMode, editingObject } from './meshEdit';
 import { colliderSpecOf, CUSTOM_MAX_FLOATS } from './colliderSpec';
+// 15-F: proxy sessions DISCARD their history (the proxy is disposed on exit,
+// so its meshgeo entries can never replay)
+import { markColliderHistorySession, sealEditHistorySession } from './editSession';
 
 // CL-A A8: custom COMPOUND collider editing. Picking "Custom (edit…)" builds a
 // PROXY mesh at the scene root (never in objectsGroup/GLTF sync) seeded from
@@ -132,6 +135,7 @@ export function enterColliderEdit(uuid) {
 		return false;
 	}
 	watchEditModes();
+	markColliderHistorySession(); // 15-F: seal this session with 'discard'
 	showToast('Editing the collider — each disconnected shell becomes one convex piece');
 	return true;
 }
@@ -231,6 +235,11 @@ export function commitColliderEdit() {
 		colliderVerts,
 		colliderPieces
 	};
+	// 15-F ordering: tear down + SEAL (discard, synchronously — the deferred
+	// watcher would run AFTER the recordEntry below, and the props entry would
+	// land above the barrier and be discarded with the proxy's meshgeo entries)
+	exitColliderEdit(false);
+	sealEditHistorySession();
 	object.userData.physics = next;
 	recordEntry({ kind: 'props', uuid, before: { physics: before }, after: { physics: next } });
 	/** @type {any} */
@@ -240,7 +249,6 @@ export function commitColliderEdit() {
 	selectedObject.update((v) => v);
 	import('./physics').then((m) => m.physicsShapeChanged(uuid)); // live rebuild mid-sim
 	showToast('Custom collider saved — ' + colliderPieces.length + ' convex piece' + (colliderPieces.length === 1 ? '' : 's'));
-	exitColliderEdit(false);
 	return true;
 }
 

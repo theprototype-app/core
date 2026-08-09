@@ -63,6 +63,8 @@ import {
 	clearVertexSelection,
 	vertexSelectionSize
 } from './meshEdit';
+// 15-F: the VR done path seals the edit-history session synchronously
+import { sealEditHistorySession } from './editSession';
 import {
 	faceEditObject,
 	faceEditOp,
@@ -2455,6 +2457,7 @@ export function executeVRMenuAction(name) {
 			commitStretch(); // 161: bake a pending stretch on close
 			exitEditMode();
 			exitFaceEdit();
+			sealEditHistorySession(); // 15-F: the VR done path seals synchronously
 			vrEditMenuOpen.set(false);
 			return;
 		}
@@ -2513,6 +2516,7 @@ export function executeVRMenuAction(name) {
 		vrFaceCreateMode.set(false);
 		exitEditMode();
 		exitFaceEdit();
+		sealEditHistorySession(); // 15-F: the VR done path seals synchronously
 		vrEditMenuOpen.set(false);
 		return;
 	}

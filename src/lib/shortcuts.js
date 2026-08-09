@@ -16,7 +16,7 @@ import { aiReady } from './ai/providers';
 import { focusObject, duplicateSelection, requestDeleteSelection, setTransformMode } from './objectActions';
 import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
-import { faceEditObject } from './faceEdit';
+import { faceEditObject, meshEditHotkeys } from './faceEdit';
 import { recallBookmark } from './cameraBookmarks';
 import { selectedObject } from '../stores/sceneStore';
 
@@ -220,6 +220,13 @@ export const shortcuts = [
 		// handled by voiceChat.js (needs keyup); listed here for discoverability
 	},
 	{
+		keys: 'E I G S B F X / W',
+		group: 'Mesh edit',
+		label: 'Mesh edit ops, only in Edit Mesh (toggle on the toolbar)'
+		// handled by MeshEditPopup's local keydown; ONE bundled display row —
+		// registerShortcut dedupes exact `keys`, so a bare 'F' row would collide
+	},
+	{
 		keys: 'Ctrl+/',
 		group: 'Help',
 		label: 'Show this shortcut list',
@@ -234,6 +241,10 @@ export const shortcuts = [
 export function registerShortcut(shortcut) {
 	if (!shortcuts.some((s) => s.keys === shortcut.keys)) shortcuts.push(shortcut);
 }
+
+/** D3: the bare keys MeshEditPopup's local keydown consumes while a session is
+ * active and its hotkeys pref is on (faces E/I/G/S/B/F/X · vertices W) */
+const MESH_EDIT_KEYS = ['E', 'I', 'G', 'S', 'B', 'F', 'X', 'W'];
 
 /** @param {KeyboardEvent} event */
 function comboOf(event) {
@@ -265,6 +276,15 @@ function handleKeydown(event) {
 	if (get(isLocked)) return;
 
 	const combo = comboOf(event);
+	// D3: while a mesh-edit session owns its hotkeys, bare mesh-edit keys never
+	// match the registry — F would ALSO focus the object mid-edit. Delete
+	// self-guards; 1/2/3 intentionally stay (gizmo mode on the proxy).
+	if (
+		MESH_EDIT_KEYS.includes(combo) &&
+		(get(editingObject) || get(faceEditObject)) &&
+		get(meshEditHotkeys)
+	)
+		return;
 	const shortcut = shortcuts.find((s) => s.keys === combo);
 	if (!shortcut || !shortcut.action) return;
 	// 15-B6: app modals are non-modal <dialog>s, so the page behind them is NOT

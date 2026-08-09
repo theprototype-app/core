@@ -12,6 +12,7 @@
 	import MenuSidebar from './menu/Sidebar.svelte';
 	import MenuSettings from './menu/Settings.svelte';
 	import SessionsManager from './menu/SessionsManager.svelte';
+	import TemplatesModal from './menu/TemplatesModal.svelte';
 	import CharacterModal from './menu/CharacterModal.svelte';
 	import ViewportMenu from './menu/ViewportMenu.svelte';
 	import MeshEditPopup from './menu/MeshEditPopup.svelte';
@@ -47,6 +48,7 @@
 <MenuSidebar />
 <MenuSettings />
 <SessionsManager />
+<TemplatesModal />
 <CharacterModal />
 <ViewportMenu />
 <MeshEditPopup />

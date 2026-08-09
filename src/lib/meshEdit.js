@@ -1,14 +1,20 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, TControls, lockedObjects } from '../stores/sceneStore';
+import { globalScene, objectsGroup, TControls, lockedObjects, isVRMode } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
+// 15-F: session-scoped undo — editSession imports ONLY history (an edge we
+// already have), so this closes no cycle
+import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
 import {
 	createFaceFromVerts,
 	lookupEditable,
 	commitMeshGeoSnapshot,
 	meshEditWireframe,
-	buildEditWireframe
+	buildEditWireframe,
+	readTriangles,
+	trisToPositions,
+	registerVertexSessionRefresher
 } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -75,6 +81,68 @@ function buildHandles(geometry) {
 	}
 	return [...map.values()];
 }
+
+/** Build the vertex-handle InstancedMesh for the current `handles` (one
+ * instanced mesh — cheap for thousands of vertices). @param {any} scene */
+function buildHandleMesh(scene) {
+	const box = new THREE.Box3().setFromObject(edited);
+	const size = THREE.MathUtils.clamp(box.getSize(tempVector).length() * 0.012, 0.02, 0.2);
+	handleMesh = new THREE.InstancedMesh(
+		new THREE.SphereGeometry(size, 8, 8),
+		new THREE.MeshBasicMaterial({ depthTest: false, transparent: true, opacity: 0.9 }),
+		handles.length
+	);
+	handleMesh.renderOrder = 999;
+	handleMesh.name = 'vertex-handles';
+	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
+	refreshHandleColors();
+	scene.add(handleMesh);
+}
+
+/**
+ * D1: rebuild the session's handles + visuals from the LIVE geometry after a
+ * meshgeo swap (undo, remote commit) WITHOUT exit/enter — no re-lock, no
+ * selection-stash churn. applyMeshGeo calls this via dynamic import whenever a
+ * snapshot lands on the object being vertex-edited (only face mode rebuilt
+ * before, so undo mid-session left stale handles pointing at freed geometry).
+ */
+export function refreshVertexEditSession() {
+	if (!edited || !handleMesh) return;
+	const scene = get(globalScene);
+	if (!scene) return;
+	scene.remove(handleMesh);
+	handleMesh.geometry.dispose();
+	handleMesh.material.dispose();
+	handles = buildHandles(edited.geometry);
+	hoveredHandle = -1;
+	// clamp the selection state to the new handle count
+	if (selectedHandle >= handles.length) {
+		selectedHandle = -1;
+		/** @type {any} */
+		const controls = get(TControls);
+		if (controls && proxy && controls.object === proxy) controls.detach();
+	}
+	edited.updateMatrixWorld();
+	lastObjectMatrix.copy(edited.matrixWorld);
+	buildHandleMesh(scene);
+	syncVertexSelection(); // drops out-of-range multi-picks + repaints
+	// re-seat the gizmo proxy on the surviving selected handle
+	if (selectedHandle >= 0 && proxy) {
+		handleWorldPosition(selectedHandle, tempVector);
+		proxy.position.copy(tempVector);
+	}
+	// the overlay wraps the NEW geometry
+	if (overlay) {
+		overlay.geometry.dispose();
+		overlay.geometry = new THREE.WireframeGeometry(edited.geometry);
+	}
+}
+// applyMeshGeo calls back through this whenever a snapshot lands on the object
+// being vertex-edited (weld's own exit->commit->enter dance is unaffected:
+// `edited` is null during its commit)
+registerVertexSessionRefresher((uuid) => {
+	if (edited && edited.uuid === uuid) refreshVertexEditSession();
+});
 
 /** @param {number} index @param {any} target */
 function handleWorldPosition(index, target) {
@@ -159,20 +227,7 @@ export function enterEditMode(uuid) {
 	hoveredHandle = -1;
 	object.updateMatrixWorld();
 	lastObjectMatrix.copy(object.matrixWorld);
-
-	// vertex handles as one instanced mesh (cheap for thousands of vertices)
-	const box = new THREE.Box3().setFromObject(object);
-	const size = THREE.MathUtils.clamp(box.getSize(tempVector).length() * 0.012, 0.02, 0.2);
-	handleMesh = new THREE.InstancedMesh(
-		new THREE.SphereGeometry(size, 8, 8),
-		new THREE.MeshBasicMaterial({ depthTest: false, transparent: true, opacity: 0.9 }),
-		handles.length
-	);
-	handleMesh.renderOrder = 999;
-	handleMesh.name = 'vertex-handles';
-	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
-	refreshHandleColors();
-	scene.add(handleMesh);
+	buildHandleMesh(scene);
 
 	// wireframe overlay as a child so it follows the object's transform (B2:
 	// shared builder, raycast stubbed per D8, honors the display toggle)
@@ -192,6 +247,7 @@ export function enterEditMode(uuid) {
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 
 	editingObject.set(uuid);
+	noteEditEnter('vertex', uuid); // 15-F: opens (or continues) the undo barrier
 	window.addEventListener('keydown', onKeydown);
 
 	// 175: restore the vertex selected last time in this object (per-mode memory)
@@ -236,11 +292,15 @@ export function exitEditMode() {
 	vertexSelection.clear();
 	vertexSelectionSize.set(0);
 	editingObject.set(null);
+	noteEditExit('vertex'); // 15-F: deferred seal unless another mode re-enters
 }
 
 /** @param {KeyboardEvent} event */
 function onKeydown(event) {
-	if (event.key === 'Escape') exitEditMode();
+	if (event.key === 'Escape') {
+		exitEditMode();
+		sealEditHistorySession(); // 15-F: Escape = Done, sealed synchronously
+	}
 }
 
 /**
@@ -257,40 +317,81 @@ export function raycastHandles(raycaster, additive = false) {
 		toggleVertexSelection(idx);
 		return true;
 	}
-	// a plain click starts a fresh single selection
-	vertexSelection.clear();
-	vertexSelectionSize.set(0);
+	// a plain click starts a fresh single selection (the set IS the selection)
 	selectHandle(idx);
 	return true;
 }
 
-/** 177/183: toggle a vertex handle in the Create-face multi-selection (ctrl-click
- * on desktop, trigger-tap in VR). @param {number} index */
+/**
+ * D5 (user report): ONE selection model. selectedHandle is the ANCHOR — it is
+ * always a member of vertexSelection, carries the gizmo, and a gizmo drag
+ * moves the WHOLE selection rigidly. Before this, plain-click (gizmo) and
+ * ctrl-click (weld/create-face set) were two parallel models: the counter
+ * read "0 sel" with a vertex visibly selected, and weld ignored it.
+ * @param {number} index the new anchor, or -1 to drop it (detaches the gizmo)
+ */
+function setAnchor(index) {
+	selectedHandle = index;
+	/** @type {any} */
+	const controls = get(TControls);
+	if (!proxy || !controls) return;
+	// the desktop gizmo never seats in VR (its helper would render in-headset;
+	// VR drags handles directly via vrBeginHandleDrag)
+	if (index >= 0 && !get(isVRMode)) {
+		handleWorldPosition(index, tempVector);
+		proxy.position.copy(tempVector);
+		controls.setMode('translate');
+		controls.attach(proxy);
+	} else if (controls.object === proxy) controls.detach();
+}
+
+/** 177/183: toggle a vertex handle in the selection (ctrl-click on desktop,
+ * trigger-tap in VR). The anchor rides the toggles: last-added handle takes
+ * the gizmo; removing the anchor promotes another member; empty detaches.
+ * @param {number} index */
 export function toggleVertexSelection(index) {
 	if (index < 0 || index >= handles.length) return;
-	if (vertexSelection.has(index)) vertexSelection.delete(index);
-	else vertexSelection.add(index);
+	if (vertexSelection.has(index)) {
+		vertexSelection.delete(index);
+		if (selectedHandle === index)
+			setAnchor(vertexSelection.size ? [...vertexSelection][vertexSelection.size - 1] : -1);
+	} else {
+		vertexSelection.add(index);
+		setAnchor(index);
+	}
 	syncVertexSelection();
 }
 
-/** 177: clear the Create-face multi-selection (back to single-move) */
+/** 177: deselect all vertices (also parks the gizmo) */
 export function clearVertexSelection() {
 	vertexSelection.clear();
+	if (proxy) setAnchor(-1);
+	else selectedHandle = -1;
 	syncVertexSelection();
 }
 
 /**
- * B4: WELD the ctrl-multi-selected vertices (>=2 handles) to their shared
- * centroid — replicated + ONE undo entry. Committed as a meshgeo snapshot
- * (a 'verts' entry holds one position for all indices, so it cannot undo
- * per-handle befores). Re-enters edit mode so the merged handles regroup.
+ * B4: WELD the selected vertices (>=2 handles) to their shared centroid —
+ * replicated + ONE undo entry. Committed as a meshgeo snapshot (a 'verts'
+ * entry holds one position for all indices, so it cannot undo per-handle
+ * befores). The commit's session refresher regroups the merged handles and
+ * rebuilds the wireframe overlay in place.
  * @returns {boolean}
  */
 export function weldSelectedVerts() {
 	if (!edited || vertexSelection.size < 2) return false;
 	const uuid = edited.uuid;
 	const position = edited.geometry.attributes.position;
-	const before = Array.from(position.array);
+	// D1: snapshot INDEX-EXPANDED positions — applyMeshGeo rebuilds a NON-indexed
+	// geometry, so snapshotting the raw attribute of an INDEXED mesh (a fresh
+	// Box: 24 positions / 36 indices) reinterpreted the 24 triples as 8 arbitrary
+	// triangles ("weld mangles the mesh"), and undo replayed the same wrong
+	// representation. Both snapshots below are in applyMeshGeo's representation.
+	const before = trisToPositions(readTriangles(edited.geometry));
+	// raw attribute copy so a FAILED commit (size cap) can revert the in-place
+	// centroid write — without it the attribute silently diverged from what
+	// peers and the GPU see (needsUpdate was never set on that path)
+	const rawBefore = Array.from(position.array);
 	const centroid = new THREE.Vector3();
 	const picked = [...vertexSelection];
 	picked.forEach((i) => centroid.add(handles[i].position));
@@ -300,11 +401,19 @@ export function weldSelectedVerts() {
 			position.setXYZ(idx, centroid.x, centroid.y, centroid.z)
 		)
 	);
-	const after = Array.from(position.array);
+	const after = trisToPositions(readTriangles(edited.geometry));
 	if (JSON.stringify(before) === JSON.stringify(after)) return false; // already coincident
-	exitEditMode(); // handles regroup on re-entry (merged verts share a key now)
+	// NO exit/enter dance (a pre-D1 relic): commitMeshGeoSnapshot swaps the
+	// geometry and applyMeshGeo's session refresher rebuilds handles, wireframe
+	// overlay and selection IN PLACE — the same path undo and remote commits
+	// take, so the overlay can never diverge from the welded mesh (the dance
+	// left it stale whenever re-entry took any early-out).
 	const ok = commitMeshGeoSnapshot(uuid, before, after);
-	enterEditMode(uuid);
+	if (ok) clearVertexSelection(); // the weld consumed the multi-pick
+	else {
+		position.array.set(rawBefore);
+		position.needsUpdate = true;
+	}
 	return ok;
 }
 
@@ -315,26 +424,18 @@ export function createSelectedFace(viewerPos = null) {
 	const uuid = edited.uuid;
 	const verts = [...vertexSelection].map((i) => handles[i].position.clone());
 	const ok = createFaceFromVerts(uuid, verts, viewerPos);
-	if (ok) {
-		// geometry changed under us: rebuild the handle visuals from the new mesh
-		vertexSelection.clear();
-		selectedHandle = -1;
-		exitEditMode();
-		enterEditMode(uuid);
-	}
+	// the commit's applyMeshGeo already rebuilt the session in place (D1
+	// refresher) — same no-dance rule as weldSelectedVerts
+	if (ok) clearVertexSelection();
 	return ok;
 }
 
-/** @param {number} index */
+/** Select exactly this handle (fresh single selection + anchor/gizmo).
+ * @param {number} index */
 export function selectHandle(index) {
-	selectedHandle = index;
-	refreshHandleColors();
-	handleWorldPosition(index, tempVector);
-	proxy.position.copy(tempVector);
-	/** @type {any} */
-	const controls = get(TControls);
-	controls.setMode('translate');
-	controls.attach(proxy);
+	vertexSelection = new Set(index >= 0 ? [index] : []);
+	setAnchor(index);
+	syncVertexSelection();
 }
 
 /** World-space focus target {center,radius} for the selected vertex, or null (173). */
@@ -382,20 +483,61 @@ function writeSelectedHandle() {
 	return commitSelectedLocal(edited.worldToLocal(writeVector.copy(proxy.position)));
 }
 
+// D5: a multi-selection drags rigidly — every member moves by the anchor's
+// local-space delta. Dedicated vector (never the shared temps: the loop below
+// calls refreshHandleMatrix, which mutates tempVector).
+const deltaVector = new THREE.Vector3();
+/** @type {number[]|null} index-expanded snapshot at multi-drag start (ONE meshgeo undo) */
+let dragStartExpanded = null;
+
+/** Move every NON-anchor selected handle by delta (local space) + write through
+ * to the attribute. The anchor itself commits via writeSelectedHandle (which
+ * also recomputes normals/bounds/overlay for the whole geometry — call LAST).
+ * @param {THREE.Vector3} delta */
+function applySelectionDelta(delta) {
+	if (delta.lengthSq() === 0) return;
+	const position = edited.geometry.attributes.position;
+	for (const i of vertexSelection) {
+		if (i === selectedHandle) continue;
+		const p = handles[i].position.add(delta);
+		handles[i].indices.forEach((/** @type {number} */ idx) => position.setXYZ(idx, p.x, p.y, p.z));
+		refreshHandleMatrix(i);
+	}
+}
+
 /** Called from Scene.svelte's gizmo onchange when the vertex proxy moves */
 export function onProxyMoved() {
 	if (!edited || selectedHandle < 0) return;
 	// attaching the gizmo fires a change event without an actual move — ignore it
 	const local = edited.worldToLocal(writeVector.copy(proxy.position));
 	if (local.distanceToSquared(handles[selectedHandle].position) < 1e-12) return;
+	// members first, anchor last (writeSelectedHandle recomputes normals/overlay)
+	if (vertexSelection.size > 1)
+		applySelectionDelta(deltaVector.copy(local).sub(handles[selectedHandle].position));
 	const result = writeSelectedHandle();
 	const now = Date.now();
 	if (now - lastSent < 80) return;
 	lastSent = now;
 	broadcastSelected(result);
+	if (vertexSelection.size > 1)
+		for (const i of vertexSelection) if (i !== selectedHandle) broadcastHandle(i);
 }
 
-/** @param {number[]} positionArray - LOCAL coordinates */
+/** Broadcast one handle's current LOCAL position over the `verts` channel
+ * @param {number} index */
+function broadcastHandle(index) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer && edited)
+		peer.send({
+			type: 'verts',
+			uuid: edited.uuid,
+			indices: handles[index].indices,
+			position: handles[index].position.toArray()
+		});
+}
+
+/** @param {number[]} positionArray - LOCAL coordinates of the anchor */
 function broadcastSelected(positionArray) {
 	/** @type {any} */
 	const peer = get(peers);
@@ -413,10 +555,29 @@ export function onProxyDragChanged(dragging) {
 	if (!edited || selectedHandle < 0) return;
 	if (dragging) {
 		dragStartLocal = handles[selectedHandle].position.toArray();
+		// D5: a multi-drag undoes as ONE meshgeo snapshot (a 'verts' entry holds
+		// one position for all its indices — it cannot carry per-handle befores;
+		// same reasoning as weld). Index-expanded per the D1 representation rule.
+		dragStartExpanded =
+			vertexSelection.size > 1 ? trisToPositions(readTriangles(edited.geometry)) : null;
 	} else if (dragStartLocal) {
+		// catch any tail movement since the last change event, members first
+		const local = edited.worldToLocal(writeVector.copy(proxy.position));
+		if (vertexSelection.size > 1)
+			applySelectionDelta(deltaVector.copy(local).sub(handles[selectedHandle].position));
 		const after = writeSelectedHandle();
 		broadcastSelected(after); // final unthrottled state
-		if (JSON.stringify(dragStartLocal) !== JSON.stringify(after)) {
+		if (vertexSelection.size > 1) {
+			for (const i of vertexSelection) if (i !== selectedHandle) broadcastHandle(i);
+			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
+			if (dragStartExpanded && JSON.stringify(dragStartExpanded) !== JSON.stringify(afterExpanded))
+				recordEntry({
+					kind: 'meshgeo',
+					uuid: edited.uuid,
+					before: dragStartExpanded,
+					after: afterExpanded
+				});
+		} else if (JSON.stringify(dragStartLocal) !== JSON.stringify(after)) {
 			recordEntry({
 				kind: 'verts',
 				uuid: edited.uuid,
@@ -426,6 +587,7 @@ export function onProxyDragChanged(dragging) {
 			});
 		}
 		dragStartLocal = null;
+		dragStartExpanded = null;
 	}
 }
 

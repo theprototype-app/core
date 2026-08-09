@@ -250,6 +250,39 @@ h.run(async () => {
 		fallback.thumbs.every((t) => !t || t.startsWith('/')),
 		'bundled entries resolve to app-origin URLs'
 	);
+	h.check(
+		['level-blockout', 'physics-playground', 'architecture-shell'].every((s) => fallback.slugs.includes(s)),
+		`the three seed templates are bundled (${fallback.slugs.join(',')})`
+	);
+
+	// -- 10: a REAL bundled seed loads end-to-end (app-origin fetch, no mocks)
+	await A.page.locator('#logo-menu').click();
+	await A.page.waitForTimeout(300);
+	await A.page.locator('#open-templates').click();
+	await A.page.waitForTimeout(400);
+	await A.page.locator('[data-scene-slug="level-blockout"]').click();
+	await h.eventually(
+		() =>
+			A.page.evaluate(() => {
+				let group;
+				window.__stores.objectsGroup.subscribe((g) => (group = g))();
+				return (group?.children ?? []).map((c) => c.name);
+			}),
+		(names) => names.includes('Floor') && names.includes('Tower') && names.includes('Ramp'),
+		'bundled level-blockout seed loads its objects',
+		15000
+	);
+	// authoring regression guard: toJSON serializes the composed MATRIX — a seed
+	// exported before a frame ran loads every object at the origin
+	const towerPos = await A.page.evaluate(() => {
+		let group;
+		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		return group?.getObjectByName('Tower')?.position.toArray() ?? null;
+	});
+	h.check(
+		!!towerPos && Math.abs(towerPos[0] - -7) < 0.01 && Math.abs(towerPos[1] - 3) < 0.01,
+		`seed objects keep their authored positions (Tower @ ${JSON.stringify(towerPos)})`
+	);
 
 	await h.finish(browser);
 });

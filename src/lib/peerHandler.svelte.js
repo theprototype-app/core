@@ -454,7 +454,7 @@ export class PeerConnection {
 				} else if(data.type == 'verts') {
 					applyVerts(data.uuid, data.indices, data.position);
 				} else if(data.type == 'meshgeo') {
-					applyMeshGeo(data.uuid, data.positions);
+					applyMeshGeo(data.uuid, data.positions, data.groups);
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,

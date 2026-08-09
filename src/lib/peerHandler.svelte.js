@@ -92,6 +92,11 @@ export class PeerConnection {
 		/** @type {Set<string>} peers that ANNOUNCED they were leaving (the
 		 * `disconnected` self-message) — their close is expected, don't redial */
 		this.gracefulLeft = new Set();
+		/** @type {Set<string>} peers we mean to exchange FULL STATE with — the
+		 * host we're joining (requestConnect) or a joiner we approved. Mesh-fill
+		 * dials (the `hosts` flow) don't request state, and an adopted inbound
+		 * conn requests it only when it stands in for one of these (B5) */
+		this.wantsStateFrom = new Set();
 
 		// CN-3: an invite link can pin the signaling world (#A1B2C~srv=…). Parse it
 		// HERE, before resolvePeerOptions runs — the peer.on('open') hash flow below
@@ -318,7 +323,13 @@ export class PeerConnection {
 				this.openedPeers.add(conn.peer);
 				markPeerJoined(conn.peer);
 				peers.update((value) => value);
-				this.sendHandshake(conn, conn.peer, true, this.peer.id);
+				// the adopted conn stands in for OUR dead outgoing dial, so it asks
+				// for full state only when that dial would have: a join/approve
+				// relationship, or a reconnect resyncing what the blip dropped. A
+				// mesh-fill adoption asking a JOINER for its objects was pure
+				// duplication — and could pop a bogus share-or-stash prompt (B5).
+				const wantState = this.wantsStateFrom.has(conn.peer) || this.reconnecting.has(conn.peer);
+				this.sendHandshake(conn, conn.peer, wantState, this.peer.id);
 			});
 
 			this.wireData(conn);
@@ -339,7 +350,12 @@ export class PeerConnection {
 					console.log('Connecting to received hosts');
 					data.hosts.forEach( id =>
 					{
-						this.connectToPeer(id);
+						// mesh fill: connect, but DON'T request full state — the scene
+						// is one shared state and we already pull it from the peer we
+						// joined. Requesting it from everyone made a joiner download
+						// N-1 copies of the same scene (measured 3x at N=4), and the
+						// mirror-image requests hit every existing peer too (B5).
+						this.connectToPeer(id, false);
 					}
 					);
 				} else if(data.type == 'sent') {
@@ -557,13 +573,19 @@ export class PeerConnection {
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'getmodulestate', sender: this.peer.id})
+		// module state is the one PER-PEER payload in the get* family (each peer
+		// answers with its OWN states — e.g. campreview presence), so it can't be
+		// deduped down to the host like the shared-scene requests above (B5)
+		conn.send({type: 'getmodulestate', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
 	}
 
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {
+		// remember the intent: if this dial dies and an adopted inbound conn takes
+		// its place, the adoption still owes them the full-state requests (B5)
+		if (getobjects) this.wantsStateFrom.add(peerId);
 		if (!this.connections[peerId]) {
 			console.log("Connecting to " + peerId);
             const conn = this.peer.connect(peerId);
@@ -797,6 +819,7 @@ export class PeerConnection {
 		this.broadcast({ type: 'disconnected', peerId: this.peer.id });
 		this.reconnecting.clear(); // pending retry timers see a cleared map and no-op
 		this.gracefulLeft.clear();
+		this.wantsStateFrom.clear();
 		for (const peerId of Object.keys(this.connections)) {
 			const conn = this.connections[peerId];
 			delete this.connections[peerId];

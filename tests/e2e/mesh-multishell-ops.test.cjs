@@ -200,6 +200,119 @@ h.run(async () => {
 	);
 	h.check(insetXs.includes(-0.5) && insetXs.includes(0.5), '...with the original boundary kept as the ring');
 
+	// ------------------ 3b. BRIDGE must act on the SELECTION, not on the
+	// coplanar groups it touches. Extruding a top leaves a wall COPLANAR with
+	// the flat side beneath it, so groupFaces merges the two into one logical
+	// face — picking just the wall band used to bridge the whole side of the
+	// shell (the op-target rule: never expand a selection to faces[...]).
+	const scenario = async () => {
+		await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+		await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+		const row = await mergedRow(A.page, 2);
+		await selectAllTops(A.page, row.uuid);
+		await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('extrude', 0.3));
+		return row.uuid;
+	};
+
+	/** the +X / -X faces flanking the gap, as { minY, maxY, tris } */
+	const innerSides = (page, uuid) =>
+		page.evaluate(async (uuid) => {
+			const w = window.__stores;
+			const T = w.THREE;
+			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+			const pos = g.getObjectByProperty('uuid', uuid).geometry.attributes.position;
+			const tri = (ti) =>
+				[0, 1, 2].map((k) => new T.Vector3(pos.getX(ti * 3 + k), pos.getY(ti * 3 + k), pos.getZ(ti * 3 + k)));
+			return w.faceEdit
+				.currentFaces()
+				.filter((f) => Math.abs(f.normal.x) > 0.99 && (Math.abs(f.centroid.x - 0.5) < 0.01 || Math.abs(f.centroid.x - 2.5) < 0.01))
+				.map((f) => {
+					const box = new T.Box3();
+					f.triIndices.forEach((ti) => tri(ti).forEach((v) => box.expandByPoint(v)));
+					return { x: +f.centroid.x.toFixed(2), maxY: +box.max.y.toFixed(2), tris: f.triIndices.length };
+				})
+				.sort((p, q) => p.x - q.x);
+		}, uuid);
+
+	// (i) TRIANGLE granularity, only the two 2-triangle wall bands selected
+	const bandUuid = await scenario();
+	const bandPick = await A.page.evaluate(async (uuid) => {
+		const w = window.__stores;
+		const T = w.THREE;
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const pos = g.getObjectByProperty('uuid', uuid).geometry.attributes.position;
+		const picked = [];
+		for (let ti = 0; ti < pos.count / 3; ti++) {
+			const p = [0, 1, 2].map((k) => new T.Vector3(pos.getX(ti * 3 + k), pos.getY(ti * 3 + k), pos.getZ(ti * 3 + k)));
+			const c = p[0].clone().add(p[1]).add(p[2]).multiplyScalar(1 / 3);
+			const n = new T.Vector3().subVectors(p[1], p[0]).cross(new T.Vector3().subVectors(p[2], p[0])).normalize();
+			if (c.y <= 0.5 || Math.abs(n.x) < 0.99) continue;
+			if (Math.abs(c.x - 0.5) < 0.01 || Math.abs(c.x - 2.5) < 0.01) picked.push(ti);
+		}
+		w.faceEdit.setFaceGranularity('triangle');
+		w.faceEdit.faceEditMulti.set(true);
+		w.faceEdit.faceEditSelectedTris.set(picked);
+		return picked.length;
+	}, bandUuid);
+	h.check(bandPick === 4, 'the two extruded wall bands are 2 triangles each (premise, ' + bandPick + ')');
+
+	const bandOk = await A.page.evaluate(() => window.__stores.faceEdit.bridgeFaces());
+	h.check(bandOk === true, 'bridge commits on the two extruded bands');
+	const bandSides = await innerSides(A.page, bandUuid);
+	h.check(
+		bandSides.length === 2 && bandSides.every((s) => s.maxY === 0.5 && s.tris === 2),
+		'THE BUG: only the BAND is consumed — each inner side is left intact up to y 0.5 (' +
+			JSON.stringify(bandSides) + ')'
+	);
+	// the tunnel really spans the gap: an underside at y 0.5 between the cubes
+	const floor = await A.page.evaluate(() =>
+		window.__stores.faceEdit
+			.currentFaces()
+			.filter((f) => f.normal.y < -0.99 && Math.abs(f.centroid.y - 0.5) < 0.01)
+			.map((f) => +f.centroid.x.toFixed(2))
+	);
+	h.check(
+		floor.length === 1 && Math.abs(floor[0] - 1.5) < 0.01,
+		'the tunnel floor spans the gap between the cubes (x ' + JSON.stringify(floor) + ')'
+	);
+
+	// (ii) FACE granularity picks the WHOLE coplanar side, and bridging that
+	// consumes the whole side — correct for THAT selection, and it must differ
+	// from (i), which is the proof the selection is honoured
+	const faceUuid = await scenario();
+	await A.page.evaluate(async (uuid) => {
+		const w = window.__stores;
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		void g;
+		const fs = w.faceEdit.currentFaces();
+		const inner = fs.filter(
+			(f) => Math.abs(f.normal.x) > 0.99 && (Math.abs(f.centroid.x - 0.5) < 0.01 || Math.abs(f.centroid.x - 2.5) < 0.01)
+		);
+		w.faceEdit.setFaceGranularity('face');
+		w.faceEdit.faceEditMulti.set(true);
+		w.faceEdit.faceEditSelectedTris.set(inner.flatMap((f) => f.triIndices));
+	}, faceUuid);
+	await A.page.evaluate(() => window.__stores.faceEdit.bridgeFaces());
+	const faceSides = await innerSides(A.page, faceUuid);
+	h.check(
+		faceSides.length === 0,
+		'a whole-face pick consumes the whole side (a DIFFERENT result — the selection decides)'
+	);
+
+	// (iii) two TOUCHING picks are refused with a clear message, not garbage
+	await scenario();
+	const touching = await A.page.evaluate(() => {
+		const w = window.__stores;
+		const fs = w.faceEdit.currentFaces();
+		// the +X and +Z sides of the same cube share an edge
+		const a = fs.find((f) => f.normal.x > 0.99 && f.centroid.x < 1.5);
+		const b = fs.find((f) => f.normal.z > 0.99 && f.centroid.x < 1.5);
+		w.faceEdit.faceEditMulti.set(true);
+		w.faceEdit.faceEditSelectedTris.set([...a.triIndices, ...b.triIndices]);
+		return w.faceEdit.bridgeFaces();
+	});
+	h.check(touching === false, 'two TOUCHING selections are refused rather than bridged into garbage');
+
 	// -------------------------- 4. a plain single-face extrude is unchanged
 	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
 	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));

@@ -226,12 +226,6 @@ function cloneTris(/** @type {any[]} */ tris) {
 	return tris.map((t) => withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi));
 }
 
-/** the material slot of a face's triangles (new geometry an op stitches onto a
- * face inherits it) @param {any[]} tris @param {any} face */
-function faceSlot(tris, face) {
-	return tris[face.triIndices[0]]?.mi || 0;
-}
-
 /** average vertex position of a triangle set @param {any[]} tris @param {number[]} triIndices */
 function centroidOfTris(tris, triIndices) {
 	const centroid = new THREE.Vector3();
@@ -483,7 +477,7 @@ export function boundaryLoop(tris, triIndices) {
 }
 
 /**
- * B4: bridge exactly TWO multi-selected faces into a tunnel — delete both
+ * B4: bridge exactly TWO multi-selected pieces into a tunnel — delete both
  * caps, stitch quads between their boundary loops (equal edge counts
  * required), walking both loops from the closest-vertex-pair anchor and
  * winding each quad OUTWARD from the tunnel axis. Commits + replicates +
@@ -496,23 +490,26 @@ export function bridgeFaces() {
 		showToast('Multi-select two faces first (Multi on, click both)');
 		return false;
 	}
-	/** @type {Set<number>} logical faces the selection covers */
-	const faceSet = new Set();
-	sel.forEach((/** @type {number} */ ti) => {
-		const fi = faceIndexForTriangle(ti);
-		if (fi >= 0) faceSet.add(fi);
-	});
-	if (faceSet.size !== 2) {
-		showToast('Bridge needs exactly TWO selected faces (' + faceSet.size + ' selected)');
+	// The op target is the SELECTION, split into its two connected pieces — NOT
+	// the coplanar groups the selection happens to touch (the opTargetFace rule).
+	// Expanding to whole logical faces silently ignored Face/Triangle/Shell
+	// granularity: extruding a face leaves a wall that is COPLANAR with the flat
+	// side beneath it, so groupFaces merges the two, and picking just the wall
+	// band bridged the entire side of the shell instead (15-G).
+	const parts = componentsOfTris(workingTris, sel);
+	if (parts.length !== 2) {
+		showToast(
+			parts.length < 2
+				? 'Bridge needs TWO separate pieces — the selected faces touch each other'
+				: 'Bridge needs exactly TWO pieces (' + parts.length + ' separate pieces selected)'
+		);
 		return false;
 	}
-	const [fiA, fiB] = [...faceSet];
-	const setA = faces[fiA].triIndices;
-	const setB = faces[fiB].triIndices;
+	const [setA, setB] = parts;
 	const loopA = boundaryLoop(workingTris, setA);
 	const loopB = boundaryLoop(workingTris, setB);
 	if (!loopA || !loopB) {
-		showToast('Bridge faces need one closed boundary each');
+		showToast('Bridge pieces need one closed boundary each');
 		return false;
 	}
 	if (loopA.length !== loopB.length) {
@@ -552,9 +549,9 @@ export function bridgeFaces() {
 	loopB.forEach((/** @type {any} */ p) => centB.add(p));
 	centB.multiplyScalar(1 / n);
 	const axis = centB.clone().sub(centA);
-	// the tunnel walls take the FIRST face's material slot (15-G) — a merged
+	// the tunnel walls take the FIRST piece's material slot (15-G) — a merged
 	// multi-material mesh must stay fully grouped or it renders as nothing
-	const mi = faceSlot(workingTris, faces[fiA]);
+	const mi = workingTris[setA[0]]?.mi || 0;
 	for (let k = 0; k < n; k++) {
 		const a0 = loopA[(ai + k) % n];
 		const a1 = loopA[(ai + k + 1) % n];

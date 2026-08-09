@@ -250,6 +250,7 @@ export function handleDisconnected(peerId) {
     // Full per-peer teardown, idempotent so it's safe to run from both the
     // conn-close path AND a relayed 'disconnected' message. Toast only while the
     // peer is still known, so relayed duplicates don't stack toasts (172).
+    delete rosterFirstSeen[peerId];
     const known = users.some((/** @type {any} */ u) => u[0] === peerId);
     if (known) showToast(peerId + ' disconnected');
     users = users.filter(u => u[0] !== peerId);
@@ -274,27 +275,39 @@ export function handleDisconnected(peerId) {
     physicsPeerDisconnected(peerId);
 }
 
+// Local age-out for roster entries that never grew a connection (a peer that
+// vanished between the roster broadcast and our dial). First sighted -> pruned
+// after ROSTER_GRACE_MS with no conn. LOCAL only, and long enough that mesh
+// formation (roster runs ahead of the dials) never trips it.
+const ROSTER_GRACE_MS = 30000;
+/** @type {Record<string, number>} */
+let rosterFirstSeen = {};
+
 export function checkLocks(data) {
 
-
-    // console.log(users);
-    // console.log("this.connections")
-    // console.log(peer.peer.connections)
-
+    // Roster reaper, 500ms after a connection closes anywhere. This used to
+    // BROADCAST {type:'disconnected'} for every roster entry it had no conn to —
+    // but "I never dialed X" is not "X is gone": during mesh formation the
+    // roster (broadcast at approval) runs ahead of the dials, and the relay
+    // evicted LIVE peers from every other peer in the session (B5). Witnessed
+    // drops now relay from finalizeDisconnect after the reconnect window;
+    // entries nobody ever reached just age out locally.
     setTimeout(() => {
 
-    users.forEach(user => {
-        const connection = peer.peer.connections[user[0]];
-        if (user[0] === peer.peer.id) return true; // ignore current peerId
-        if (!connection || connection.length < 1) {
-            peer.send({type: 'disconnected', peerId: user[0]});
-            console.log("send disconnect of " + user[0])
-            users = users.filter(u => u[0] !== user[0]);
-            userdata.set(users);
-            userdata.update((value) => value);
-        }
+    users.forEach((/** @type {any} */ user) => {
+        const id = user[0];
+        if (id === peer.peer.id) return; // ignore current peerId
+        if (peer.openedPeers.has(id)) { delete rosterFirstSeen[id]; return; } // live
+        if (peer.connections[id] || peer.reconnecting?.has(id)) return; // dial or heal in flight
+        const seen = rosterFirstSeen[id] ?? (rosterFirstSeen[id] = Date.now());
+        if (Date.now() - seen < ROSTER_GRACE_MS) return;
+        delete rosterFirstSeen[id];
+        console.log('pruning roster entry ' + id + ' - no connection ever materialized');
+        users = users.filter((/** @type {any} */ u) => u[0] !== id);
+        userdata.set(users);
+        userdata.update((value) => value);
     });
-        
+
         }, 500)
 
 
@@ -318,6 +331,9 @@ export function checkLocks(data) {
         if (holder === peer.peer.id) return true; // our own lock is ours to release
         const conn = peer.connections[holder];
         if (conn && conn.open) return true;
+        // mid-blip: the holder's conn dropped but the reconnect window is still
+        // running — their lock survives until finalizeDisconnect decides (B5)
+        if (peer.reconnecting?.has(holder)) return true;
         console.log('Peer ' + holder + ' is not connected anymore. Releasing...' + objectLock[1]);
         return false;
     });

@@ -56,9 +56,16 @@ h.run(async () => {
 	h.check(shape.open, 'A holds an OPEN outgoing connection to B');
 	h.check(shape.raw <= 1, 'a live peer really does have <= 1 raw conn entry (the old liveness test)');
 
-	// C drops. Closing A's conn to C directly exercises the same
-	// conn.on('close') -> onConnClose -> checkLocks path a real drop takes; a hard
-	// remote destroy waits on an unbounded ICE timeout that will not fire headless.
+	// C drops FOR REAL: announcement neutered (an announced leave would be the
+	// graceful path) + peer destroyed, then A's conn closed deterministically (a
+	// hard remote destroy waits on an unbounded ICE timeout headless). A's
+	// reconnect window redials a dead registration and exhausts before teardown.
+	await C.page.evaluate(() => {
+		let pc;
+		window.__stores.peers.subscribe((p) => (pc = p))();
+		pc.broadcast = () => {};
+		pc.peer.destroy();
+	});
 	await A.page.evaluate((cid) => {
 		let pc;
 		window.__stores.peers.subscribe((p) => (pc = p))();
@@ -68,7 +75,8 @@ h.run(async () => {
 	await h.eventually(
 		() => rosterOn(A),
 		(u) => !u.some((x) => x[0] === C.id),
-		'A drops C from the roster'
+		'A drops C from the roster',
+		25000
 	);
 	await A.page.waitForTimeout(1500); // let the 500ms reaper inside checkLocks run too
 

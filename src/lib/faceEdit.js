@@ -232,6 +232,54 @@ function faceSlot(tris, face) {
 	return tris[face.triIndices[0]]?.mi || 0;
 }
 
+/** average vertex position of a triangle set @param {any[]} tris @param {number[]} triIndices */
+function centroidOfTris(tris, triIndices) {
+	const centroid = new THREE.Vector3();
+	let count = 0;
+	triIndices.forEach((ti) => tris[ti].forEach((/** @type {any} */ v) => (centroid.add(v), count++)));
+	return centroid.divideScalar(count || 1);
+}
+
+/**
+ * Split a target triangle set into CONNECTED COMPONENTS, welded by vertex
+ * position. `opTargetFace` synthesizes ONE face for a multi-selection, so a
+ * selection spanning two separate shells arrives as a single "face" whose
+ * centroid sits in the empty space between them — any op that reasons about a
+ * face's CENTRE has to work per component or it drags one shell toward the
+ * other (15-G: two merged cubes, both top faces inset, slid together).
+ * @param {any[]} tris @param {number[]} triIndices @returns {number[][]}
+ */
+function componentsOfTris(tris, triIndices) {
+	/** @type {Map<string, string>} */
+	const parent = new Map();
+	const find = (/** @type {string} */ key) => {
+		let root = key;
+		while (parent.get(root) !== root) root = /** @type {string} */ (parent.get(root));
+		while (parent.get(key) !== root) {
+			const next = /** @type {string} */ (parent.get(key));
+			parent.set(key, root);
+			key = next;
+		}
+		return root;
+	};
+	const keysOf = (/** @type {number} */ ti) =>
+		tris[ti].map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+	for (const ti of triIndices) {
+		const keys = keysOf(ti);
+		for (const key of keys) if (!parent.has(key)) parent.set(key, key);
+		for (let i = 1; i < keys.length; i++) parent.set(find(keys[0]), find(keys[i]));
+	}
+	/** @type {Map<string, number[]>} */
+	const byRoot = new Map();
+	for (const ti of triIndices) {
+		const root = find(keysOf(ti)[0]);
+		let list = byRoot.get(root);
+		if (!list) byRoot.set(root, (list = []));
+		list.push(ti);
+	}
+	return [...byRoot.values()];
+}
+
 /** boundary edges of a face group: directed edges appearing once (unordered)
  * within the group @param {any[]} tris @param {any} face */
 function boundaryEdges(tris, face) {
@@ -246,7 +294,9 @@ function boundaryEdges(tris, face) {
 			const p1 = t[(e + 1) % 3];
 			const ek = [keyOf(p0.x, p0.y, p0.z), keyOf(p1.x, p1.y, p1.z)].sort().join('|');
 			count.set(ek, (count.get(ek) || 0) + 1);
-			dir.push({ ek, p0, p1 });
+			// `ti` = the triangle this directed edge belongs to, so a wall stitched
+			// onto it can take that triangle's OWN normal + material slot (15-G)
+			dir.push({ ek, p0, p1, ti });
 		}
 	});
 	return dir.filter((d) => count.get(d.ek) === 1);
@@ -268,13 +318,26 @@ function pushQuad(out, a, b, c, d, wantDir, mi) {
 	out.push(withSlot(t1, mi), withSlot(t2, mi));
 }
 
-/** radial-outward direction at a wall midpoint (perpendicular to the face
- * normal) — the visible side of an extrude wall @param {any} mid @param {any} face */
-function radialOut(mid, face) {
-	const r = mid.clone().sub(face.centroid);
-	r.addScaledVector(face.normal, -r.dot(face.normal)); // drop the normal component
-	if (r.lengthSq() < 1e-9) r.copy(face.normal);
-	return r.normalize();
+/**
+ * Outward direction of the wall stitched onto a boundary edge — the side that
+ * must face the viewer, or the wall backface-culls to invisible.
+ *
+ * Derived LOCALLY from the edge itself: boundary edges inherit their direction
+ * from the triangles' winding, and a face is wound counter-clockwise seen from
+ * +normal, so `edge x normal` points away from the face interior. It used to be
+ * measured from the face CENTROID instead, which is only right for a single
+ * convex face: with two shells multi-selected the synthetic centroid lands in
+ * the gap between them, so the two walls FACING EACH OTHER were wound inward
+ * and vanished (15-G — extruding both top faces of two merged cubes). Concave
+ * faces and faces with holes were wrong for the same reason.
+ * @param {any} p0 @param {any} p1 @param {any} normal
+ */
+function edgeOutward(p0, p1, normal) {
+	const out = new THREE.Vector3().subVectors(p1, p0).cross(normal);
+	// an edge always lies in its own face plane, so this is only ever degenerate
+	// for a zero-area triangle
+	if (out.lengthSq() < 1e-12) return normal.clone();
+	return out.normalize();
 }
 
 /** Extrude a face by dist along its normal, stitching visible side walls @param {any[]} tris @param {any} face @param {number} dist */
@@ -283,17 +346,17 @@ export function extrudeFace(tris, face, dist) {
 	const offset = face.normal.clone().multiplyScalar(dist);
 	const faceSet = new Set(face.triIndices);
 	const boundary = boundaryEdges(tris, face);
-	const mi = faceSlot(tris, face);
 	out.forEach((t, ti) => {
 		if (faceSet.has(ti)) t.forEach((/** @type {any} */ v) => v.add(offset));
 	});
-	boundary.forEach(({ p0, p1 }) => {
+	boundary.forEach(({ p0, p1, ti }) => {
 		const a = p0.clone();
 		const b = p1.clone();
 		const a2 = p0.clone().add(offset);
 		const b2 = p1.clone().add(offset);
-		const mid = a.clone().add(b).add(b2).add(a2).multiplyScalar(0.25);
-		pushQuad(out, a, b, b2, a2, radialOut(mid, face), mi);
+		// each wall takes its OWN triangle's normal + slot: a multi-selection can
+		// span shells (and, in a mixed selection, differently-facing faces)
+		pushQuad(out, a, b, b2, a2, edgeOutward(p0, p1, triNormal(tris[ti])), tris[ti].mi);
 	});
 	return out;
 }
@@ -321,25 +384,32 @@ export function moveFaceAlongNormal(tris, face, dist) {
 }
 
 /** Inset: shrink a face toward its centroid + stitch a visible frame ring so
- * the gap doesn't read as a hole (121). @param {any[]} tris @param {any} face @param {number} amount */
+ * the gap doesn't read as a hole (121).
+ *
+ * 15-G: each CONNECTED COMPONENT shrinks toward its OWN centre. A multi-select
+ * spanning two shells arrives as one synthetic face whose centroid sits between
+ * them, so shrinking toward it slid both faces sideways into the gap instead of
+ * insetting either of them in place.
+ * @param {any[]} tris @param {any} face @param {number} amount */
 export function insetFace(tris, face, amount) {
 	const out = cloneTris(tris);
-	const faceSet = new Set(face.triIndices);
 	const t = Math.min(Math.max(amount, 0), 0.95);
-	const boundary = boundaryEdges(tris, face);
-	const mi = faceSlot(tris, face);
-	out.forEach((tri, ti) => {
-		if (faceSet.has(ti)) tri.forEach((/** @type {any} */ v) => v.lerp(face.centroid, t));
-	});
-	// frame ring: original boundary edge → its inset counterpart, facing outward
-	// like the face did (normal ≈ the face normal)
-	boundary.forEach(({ p0, p1 }) => {
-		const a = p0.clone();
-		const b = p1.clone();
-		const b2 = p1.clone().lerp(face.centroid, t);
-		const a2 = p0.clone().lerp(face.centroid, t);
-		pushQuad(out, a, b, b2, a2, face.normal, mi);
-	});
+	for (const component of componentsOfTris(tris, face.triIndices)) {
+		const centroid = centroidOfTris(tris, component);
+		const componentSet = new Set(component);
+		out.forEach((tri, ti) => {
+			if (componentSet.has(ti)) tri.forEach((/** @type {any} */ v) => v.lerp(centroid, t));
+		});
+		// frame ring: original boundary edge → its inset counterpart, facing outward
+		// like the face did (normal ≈ the face normal)
+		boundaryEdges(tris, { triIndices: component }).forEach(({ p0, p1, ti }) => {
+			const a = p0.clone();
+			const b = p1.clone();
+			const b2 = p1.clone().lerp(centroid, t);
+			const a2 = p0.clone().lerp(centroid, t);
+			pushQuad(out, a, b, b2, a2, triNormal(tris[ti]), tris[ti].mi);
+		});
+	}
 	return out;
 }
 

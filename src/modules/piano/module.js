@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { hapticPulse } from '$lib/vrControls';
 
 // One-octave piano: clicking a key (desktop or VR trigger) plays a synth
 // note locally and broadcasts {op:'note', midi} so every peer hears and sees
@@ -118,7 +117,7 @@ export default {
 			if (midi == null || object.parent?.name !== GROUP_NAME) return false;
 			playNote(midi);
 			pressKey(midi);
-			hapticPulse(0.6, 60);
+			api.haptic(0.6, 60);
 			api.send({ op: 'note', midi: midi });
 			return true;
 		});

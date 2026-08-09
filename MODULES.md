@@ -212,8 +212,15 @@ possess's `startFollowCam` while engaged; the claim itself works anytime).
 // chase camera by default; Esc releases. Possessing SELECTS the object
 // (selection = lock), suspends its flow effects, and records ONE undo entry
 // on release. Movement replicates as plain throttled moves.
-api.possess(api.selectedUuid(), { camera: 'chase' }); // 'chase'|'orbit'|'none'
+api.possess(api.selectedUuid(), { camera: 'chase' }); // 'chase'|'orbit'|'none'|'first'
 api.releasePossess();
+api.possessModes; // this build's camera modes — feature-detect 'first' here
+                  // (an unknown camera value degrades silently on old builds)
+
+// 17-A1 first person: eye at the object + eyeHeight; mouseLook = pointer lock
+// (X turns the OBJECT so movement follows the look, Y pitches the camera;
+// leaving the lock — Esc — releases the possession)
+api.possess(uuid, { camera: 'first', eyeHeight: 1.7, mouseLook: true });
 ```
 
 ### Misc
@@ -230,6 +237,13 @@ api.scene();        // THREE.Scene
 api.objectsGroup(); // the replicated objects root (add scene content here)
 api.peerId();       // our peer id (undefined before the mesh is up)
 api.toast('hi');    // toast in the corner
+api.haptic(0.6, 60);          // buzz the VR controllers (no-op on desktop);
+api.haptic(0.6, 60, 'right'); // optional hand targets one controller (17-A1)
+api.isVR();                   // true inside a VR session
+api.vrHand('left');           // one hand's WORLD pose + buttons, or null:
+                              // {position, quaternion, trigger, gripped, connected}
+api.fireObjectClick(uuid);    // pulse On Click flow nodes targeting the object
+                              // (replicated) — user graphs react to module events
 api.now();          // the runtime clock in seconds — stamp replicated
                     // timestamps with this, never Date.now() directly
 ```

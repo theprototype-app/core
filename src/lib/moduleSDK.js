@@ -310,6 +310,40 @@ function makeApi(moduleId) {
 			joints: () => import('./joints').then((m) => m.jointsSnapshot())
 		},
 		/**
+		 * Buzz the VR controllers (press feedback). No-op on desktop / when
+		 * the session's gamepads lack haptics. `hand` targets one controller
+		 * ('left'|'right', resolved by handedness); omit to pulse both.
+		 * Reaches vrControls via the primed dynamic import (a static edge
+		 * would close a module cycle - same rule as vrRadialMenu). (17-A1)
+		 * @param {number=} intensity 0..1 @param {number=} durationMs
+		 * @param {'left'|'right'=} hand
+		 */
+		haptic(intensity = 0.5, durationMs = 50, hand = undefined) {
+			vrControlsRef?.hapticPulse?.(intensity, durationMs, hand);
+		},
+		/** In a VR session right now? (DEVX #6) @returns {boolean} */
+		isVR() {
+			return !!get(isVRMode);
+		},
+		/**
+		 * One VR hand's WORLD pose + button state, or null when untracked / not
+		 * in VR (DEVX #2): {position:[x,y,z], quaternion:[x,y,z,w], trigger,
+		 * gripped, connected}. Poll it from a frame task (a fresh plain object
+		 * per call — safe to keep). @param {'left'|'right'} hand
+		 */
+		vrHand(hand) {
+			return vrControlsRef?.handSnapshot?.(hand) ?? null;
+		},
+		/**
+		 * Fire the replicated flow click trigger on an object (DEVX #4, the
+		 * essentials pattern) — user graphs with an On Click node targeting the
+		 * object react to your module's events on every peer. @param {string} uuid
+		 */
+		fireObjectClick(uuid) {
+			// dynamic: flowRuntime statically imports moduleSDK (cycle rule)
+			import('./flowRuntime').then((m) => m.fireObjectClick(uuid));
+		},
+		/**
 		 * Possess an object: WASD/arrows or the VR left stick drive it (tank
 		 * controls) with a follow camera; Esc releases. Possessing selects it
 		 * (selection = lock), suspends its flow effects and records ONE undo
@@ -321,6 +355,11 @@ function makeApi(moduleId) {
 		},
 		releasePossess() {
 			possessRef?.release();
+		},
+		/** Camera modes this build's possess supports (DEVX #1) — feature-detect
+		 * 'first' here; an unknown mode degrades silently. */
+		get possessModes() {
+			return possessRef?.possessModes ?? ['chase', 'orbit', 'none'];
 		},
 		/** the currently selected object's uuid (undefined when none) */
 		selectedUuid() {

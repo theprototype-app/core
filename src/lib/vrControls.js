@@ -897,12 +897,17 @@ export function initVRControls(r) {
 
 /**
  * Buzz the VR controllers if the session's gamepads support it (no-op on
- * desktop). Used by modules for press feedback.
+ * desktop). Used by modules for press feedback. Optional `hand` targets one
+ * controller — matched by each inputSource's OWN handedness (never a raw slot
+ * index, which diverges from the controller order after a hands<->controllers
+ * swap — 194/210; axesForSlot resolves the same way).
  * @param {number} intensity 0..1 @param {number} durationMs
+ * @param {'left'|'right'=} hand omit to pulse both
  */
-export function hapticPulse(intensity = 0.5, durationMs = 50) {
+export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined) {
 	const session = renderer?.xr?.getSession?.();
 	session?.inputSources?.forEach((source) => {
+		if (hand && source.handedness !== hand) return;
 		const actuator = source.gamepad?.hapticActuators?.[0];
 		actuator?.pulse?.(intensity, durationMs);
 	});
@@ -922,6 +927,35 @@ export function controllerIndexFor(handedness) {
 	const session = renderer?.xr.getSession();
 	if (!session) return -1;
 	return [...session.inputSources].findIndex((source) => source.handedness === handedness);
+}
+
+const _handPos = new THREE.Vector3();
+const _handQuat = new THREE.Quaternion();
+/** 17-A1 (api.vrHand): one hand's WORLD pose + button state for the module
+ * api. Slot resolved by the stamped handedness (194/210, never a raw index);
+ * buttons read from the inputSource matched by ITS OWN handedness (the
+ * axesForSlot rule). Null when not presenting or the hand is untracked.
+ * @param {'left'|'right'} handedness */
+export function handSnapshot(handedness) {
+	if (!renderer?.xr?.isPresenting) return null;
+	const index = controllerIndexFor(handedness);
+	if (index < 0) return null;
+	const controller = renderer.xr.getController(index);
+	if (!controller) return null;
+	controller.getWorldPosition(_handPos);
+	controller.getWorldQuaternion(_handQuat);
+	const session = renderer.xr.getSession();
+	const source = session
+		? [...session.inputSources].find((s) => s.handedness === handedness)
+		: null;
+	const buttons = source?.gamepad?.buttons ?? [];
+	return {
+		position: _handPos.toArray(),
+		quaternion: _handQuat.toArray(),
+		trigger: !!buttons[0]?.pressed,
+		gripped: !!buttons[1]?.pressed,
+		connected: !!source
+	};
 }
 
 /** 210: gamepad axes for the physical hand at three.js controller SLOT `slot`.

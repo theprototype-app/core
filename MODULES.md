@@ -279,6 +279,22 @@ data (replicated like any node edit); the slide is a pure function of
 `(data, time)` running on each peer — no motion messages at all. The
 `registerClickHandler` consumes the click so pressing doesn't select the button.
 
+## Manager, dev mode & gallery (17-A2/A3)
+
+User modules install, update, disable and remove **live** — `deactivateModule`
+runs the per-module teardown journal (every `api.register*` records an undo
+thunk), so nothing needs a page reload. Core modules keep reload-to-disable
+(they may wire core registries outside the api surface, e.g. vrsleeve).
+
+Every user-module card carries a **Dev URL** row: **Reload** fetches fresh code
+(cache-busted), evaluates it FIRST, then tears down + re-registers — a broken
+body keeps the old instance running. **Auto** polls (~2s) and reloads on
+change. Peers toast the `{id,version}` mismatch while you iterate (correct —
+the dev peer differs). The **Browse** tab lists the community repo
+(`theprototype-app/modules`, `index.json` via jsDelivr — `moduleGallery.js`);
+installs go through `installUrl` with the entry's source folder, so Update and
+the dev reload keep working on gallery installs.
+
 ## Checklist before you ship one
 
 - [ ] Everything a user can do through your module looks the same on a second

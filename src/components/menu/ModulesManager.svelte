@@ -41,8 +41,29 @@
 		devPolling
 	} from '$lib/userModules';
 	import { deactivateModule } from '$lib/moduleSDK';
+	import {
+		galleryModules,
+		galleryState,
+		galleryInstallUrl,
+		loadModuleGallery,
+		versionNewer
+	} from '$lib/moduleGallery';
 	let tab = 'core';
 	let installUrlValue = '';
+	let galleryBusy = '';
+
+	// 17-A3: installed lookup for gallery card state (dim + Update)
+	$: installedById = $userModules.reduce((map, record) => {
+		map[record.id] = record;
+		return map;
+	}, {});
+
+	/** @param {any} entry */
+	async function installFromGallery(entry) {
+		galleryBusy = entry.id;
+		await installUrl(galleryInstallUrl(entry));
+		galleryBusy = '';
+	}
 
 	// raw sources of every core module, bundled so users can download examples
 	const sources = import.meta.glob('../../modules/*/*', { query: '?raw', import: 'default' });
@@ -89,9 +110,76 @@
 		<button class="mod-tab" class:active={tab === 'user'} role="tab" aria-selected={tab === 'user'} on:click={() => (tab = 'user')}>
 			User
 		</button>
+		<button
+			class="mod-tab"
+			class:active={tab === 'browse'}
+			role="tab"
+			aria-selected={tab === 'browse'}
+			on:click={() => {
+				tab = 'browse';
+				loadModuleGallery();
+			}}
+		>
+			Browse
+		</button>
 	</div>
 
-	{#if tab === 'core'}
+	{#if tab === 'browse'}
+		<div id="module-gallery-tab" class="flex flex-col gap-3">
+			<p class="text-xs text-yellow-500">
+				⚠ Modules run unsandboxed in your session — install only sources you trust.
+				This list comes from github.com/theprototype-app/modules.
+			</p>
+			{#if $galleryState === 'loading'}
+				<p class="text-sm italic text-gray-500 dark:text-gray-400">Loading the module list…</p>
+			{:else if $galleryModules.length === 0}
+				<p class="text-sm italic text-gray-500 dark:text-gray-400">
+					The gallery is unavailable right now (offline?) — installs by zip or URL in the
+					User tab still work.
+				</p>
+			{:else}
+				{#each $galleryModules as entry (entry.id)}
+					{@const installed = installedById[entry.id]}
+					<div
+						id={'gallery-card-' + entry.id}
+						class="rounded-lg border border-gray-600 p-3"
+						class:opacity-60={installed && !versionNewer(entry.version, installed.version)}
+					>
+						<div class="flex items-center justify-between">
+							<div>
+								<span class="font-semibold text-gray-900 dark:text-white">{entry.name}</span>
+								<span class="pl-2 text-xs text-gray-400">v{entry.version}</span>
+								{#if entry.author}
+									<span class="pl-2 text-xs text-gray-500">by {entry.author}</span>
+								{/if}
+							</div>
+							{#if !installed}
+								<Button
+									size="xs"
+									disabled={galleryBusy === entry.id || !entry.source}
+									onclick={() => installFromGallery(entry)}
+								>
+									{galleryBusy === entry.id ? 'Installing…' : 'Install'}
+								</Button>
+							{:else if versionNewer(entry.version, installed.version)}
+								<Button
+									size="xs"
+									color="alternative"
+									disabled={galleryBusy === entry.id}
+									onclick={() => installFromGallery(entry)}
+								>
+									{galleryBusy === entry.id ? 'Updating…' : 'Update to v' + entry.version}
+								</Button>
+							{:else}
+								<span class="text-xs text-green-500">Installed</span>
+							{/if}
+						</div>
+						<p class="pt-1 text-sm text-gray-500 dark:text-gray-300">{entry.description}</p>
+					</div>
+				{/each}
+			{/if}
+		</div>
+	{:else if tab === 'core'}
 		<div class="flex flex-col gap-3">
 			{#key $loadedModulesChanged}
 				{#each coreModules as mod (mod.id)}

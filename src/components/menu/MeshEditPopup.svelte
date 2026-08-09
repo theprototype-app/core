@@ -1,9 +1,11 @@
 <script>
-	// Desktop mesh-edit toolbar (135 -> 144 pinned strip -> CL-B B5 redesign):
-	// a FLOATING, draggable segmented toolbar (dragWindow, key meshEditToolbar)
-	// with divider-separated segments — [Mode] [Select granularity + Multi]
-	// [Ops with shortcut hints] [Display] [Done] — plus a contextual amount
-	// row for extrude/inset and the CL-A collider-session banner state.
+	// Desktop mesh-edit toolbar (135 -> 144 pinned strip -> CL-B B5 floating
+	// strip -> M0 TOOLBOX): a professional tool-palette window on the shared
+	// ToolboxWindow shell — header-drag, width-resize reflows the square icon
+	// buttons into more/fewer rows, section labels, a status footer with the
+	// live counts, and per-kind state feedback (armed tool = solid accent +
+	// mesh-op-active; toggles = tinted well via aria-pressed; one-shots flash).
+	// All ids, stores and behavior are the pre-M0 contract, unchanged.
 	// D3: keyboard shortcuts are active only while the toolbar is mounted AND
 	// the meshEditHotkeys pref is on (the toggle here; while on, shortcuts.js
 	// skips bare mesh-edit keys and editorNavigation parks the fly keys);
@@ -36,7 +38,21 @@
 		meshEditWireframe,
 		meshEditHotkeys
 	} from '$lib/faceEdit';
-	import { Keyboard, CircleHelp } from '@lucide/svelte';
+	import {
+		Keyboard,
+		CircleHelp,
+		Check,
+		X,
+		Move,
+		Grid2x2,
+		Trash2,
+		MousePointer,
+		Merge,
+		Box,
+		Circle
+	} from '@lucide/svelte';
+	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
+	import ToolIcon from '../ui/ToolIcon.svelte';
 	import {
 		colliderEditObject,
 		addColliderPiece,
@@ -44,7 +60,6 @@
 		exitColliderEdit,
 		colliderShellCount
 	} from '$lib/colliderEdit';
-	import { dragWindow } from '$lib/dragWindow';
 	import { sealEditHistorySession } from '$lib/editSession';
 	import { isVRMode, selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
@@ -70,15 +85,16 @@
 	}
 
 	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);
-	// one-shots commit immediately on the current target
+	// one-shots commit immediately on the current target. `icon` = custom
+	// ToolIcon name; `lucide` = a lucide component where a good glyph exists.
 	const OPS = [
-		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false },
-		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false },
-		{ op: 'move', label: 'Move', hint: 'G', oneShot: false },
-		{ op: 'subdivide', label: 'Subdiv', hint: 'S', oneShot: true },
-		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true },
-		{ op: 'flip', label: 'Flip', hint: 'F', oneShot: true },
-		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true }
+		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false, icon: 'extrude', desc: 'pull the face out along its normal' },
+		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false, icon: 'inset', desc: 'shrink a copy inside a stitched ring' },
+		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, lucide: Move, desc: 'seat the gizmo on the selection' },
+		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, lucide: Grid2x2, desc: 'split each triangle into four' },
+		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
+		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, icon: 'flip-normals', desc: 'reverse the winding' },
+		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, lucide: Trash2, desc: 'remove the selection' }
 	];
 
 	const GRANULARITIES = [
@@ -117,11 +133,26 @@
 		return faceSelectionInfo();
 	});
 
+	// M0: one-shot buttons FLASH on commit (armed tools stay lit instead).
+	// onanimationend clears it the moment the flash finishes; the timer is the
+	// FALLBACK for prefers-reduced-motion, where animation:none means the end
+	// event never fires and the class would stick forever.
+	let flashOp = $state('');
+	/** @type {any} */
+	let flashTimer = 0;
+	/** @param {string} op */
+	function flash(op) {
+		flashOp = op;
+		clearTimeout(flashTimer);
+		flashTimer = setTimeout(() => (flashOp = ''), 400);
+	}
+
 	/** @param {string} op */
 	function runOp(op) {
 		const spec = OPS.find((o) => o.op === op);
 		if (op === 'bridge') {
-			commitFaceOp('bridge', 0); // validates the two-face selection + toasts
+			// validates the two-piece selection + toasts
+			if (commitFaceOp('bridge', 0)) flash('bridge');
 			return;
 		}
 		if (spec?.oneShot) {
@@ -129,7 +160,7 @@
 				showToast('Click a face first');
 				return;
 			}
-			commitFaceOp(/** @type {any} */ (op), $faceEditAmount);
+			if (commitFaceOp(/** @type {any} */ (op), $faceEditAmount)) flash(op);
 			return;
 		}
 		// Extrude/Inset/Move arm as the current tool; extrude/inset apply on a
@@ -199,29 +230,48 @@
 		['Esc', 'Done (exit the session)'],
 		['1 / 2 / 3', 'Gizmo Move / Rotate / Scale']
 	];
-
-	// floating default: near the top center (dragWindow persists win:meshEditToolbar)
-	const defaultRect = {
-		left: typeof window !== 'undefined' ? Math.max(12, Math.round(window.innerWidth / 2 - 360)) : 120,
-		top: 76
-	};
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
 {#if active}
-	<div
+	<ToolboxWindow
 		id="mesh-edit-popup"
-		use:dragWindow={{ key: 'meshEditToolbar', defaultRect }}
-		class="move-handle z-(--z-window) flex max-w-[min(96vw,780px)] cursor-move select-none flex-col gap-1.5 rounded-xl border border-gray-700/60 bg-gray-800/95 px-3 py-2 text-sm text-white shadow-xl backdrop-blur-sm"
+		key="meshToolbox"
+		title={$colliderEditObject ? 'Edit Collider' : 'Edit Mesh'}
 	>
-		<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-			<span class="font-semibold" title="Drag to move this toolbar"
-				>⠿ {$colliderEditObject ? '🟩 Collider' : '🔷 Mesh'}</span
-			>
+		{#snippet actions()}
+			{#if $colliderEditObject}
+				<!-- CL-A A8: collider session — commit or drop -->
+				<button
+					id="collider-edit-done"
+					class="tbx-hbtn tbx-ok"
+					aria-label="Save the collider"
+					title="Save the custom collider (each shell = one convex piece)"
+					onclick={() => commitColliderEdit()}><Check size={14} aria-hidden="true" /></button
+				>
+				<button
+					id="collider-edit-cancel"
+					class="tbx-hbtn"
+					aria-label="Cancel the collider edit"
+					title="Drop the collider edit (Esc)"
+					onclick={() => exitColliderEdit()}><X size={14} aria-hidden="true" /></button
+				>
+			{:else}
+				<button
+					id="mesh-edit-done"
+					class="tbx-hbtn tbx-done"
+					aria-label="Done"
+					title="Finish (Esc)"
+					onclick={finish}><Check size={14} aria-hidden="true" /></button
+				>
+			{/if}
+		{/snippet}
 
-			<!-- segment: mode -->
-			<div class="flex overflow-hidden rounded-full border border-gray-600">
+		<!-- MODE -->
+		<span class="tbx-label">Mode</span>
+		<div class="tbx-row">
+			<div class="tbx-seg">
 				<button
 					id="mesh-mode-vertices"
 					class="px-3 py-0.5 {mode === 'vertices' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
@@ -233,12 +283,13 @@
 					onclick={() => setMode('faces')}>Faces</button
 				>
 			</div>
+		</div>
 
-			<span class="h-5 w-px shrink-0 bg-gray-600/70"></span>
-
-			{#if mode === 'faces'}
-				<!-- segment: pick granularity (B3 Face/Tri/Shell) + Multi -->
-				<div class="flex overflow-hidden rounded-full border border-gray-600 text-xs">
+		{#if mode === 'faces'}
+			<!-- SELECT: pick granularity (B3 + 15-G Quad) -->
+			<span class="tbx-label">Select</span>
+			<div class="tbx-row">
+				<div class="tbx-seg">
 					{#each GRANULARITIES as g (g.value)}
 						<button
 							id={`mesh-gran-${g.value}`}
@@ -248,41 +299,39 @@
 						>
 					{/each}
 				</div>
-				<!-- E10: Multi button retired — ctrl-click always adds; live counts here -->
-				<span id="mesh-sel-counts" class="text-[11px] text-gray-400" title="Selected faces · triangles (Ctrl+click adds)">
-					{selInfo.faces} face{selInfo.faces === 1 ? '' : 's'} · {selInfo.tris} tri{selInfo.tris === 1 ? '' : 's'}{#if selInfo.loops}<span
-							class={selInfo.loops[0] === selInfo.loops[1] ? '' : 'text-red-400'}
-							title="Boundary edges of the two selected faces — Bridge needs them EQUAL"
-						>
-							· {selInfo.loops[0]} ↔ {selInfo.loops[1]} edges</span
-						>{/if}
-				</span>
+			</div>
 
-				<span class="h-5 w-px shrink-0 bg-gray-600/70"></span>
+			<!-- TOOLS: armed tools stay lit (solid accent); one-shots flash on commit -->
+			<span class="tbx-label">Tools</span>
+			{#each OPS as o (o.op)}
+				<button
+					id={`mesh-op-${o.op}`}
+					class="tbx-btn {o.op === 'delete'
+						? 'tbx-danger'
+						: !o.oneShot && o.op === $faceEditOp
+							? 'tbx-on bg-primary-600 text-white'
+							: ''}"
+					class:mesh-op-active={!o.oneShot && o.op === $faceEditOp}
+					class:tbx-flash={flashOp === o.op}
+					onanimationend={() => (flashOp = '')}
+					aria-label={o.label}
+					title={`${o.label} (${o.hint}) — ${o.desc}`}
+					onclick={() => runOp(o.op)}
+				>
+					{#if o.lucide}
+						<o.lucide size={18} aria-hidden="true" />
+					{:else}
+						<ToolIcon name={o.icon ?? ''} />
+					{/if}
+				</button>
+			{/each}
 
-				<!-- segment: ops (armed tools highlight; one-shots act now) -->
-				<div class="flex items-center gap-1 text-xs">
-					{#each OPS as o (o.op)}
-						<button
-							id={`mesh-op-${o.op}`}
-							class="rounded-full px-2.5 py-1 {o.op === 'delete'
-								? 'bg-red-800/70 hover:bg-red-700'
-								: !o.oneShot && o.op === $faceEditOp
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-700 hover:bg-gray-600'}"
-							class:mesh-op-active={!o.oneShot && o.op === $faceEditOp}
-							title={`${o.label} (${o.hint})`}
-							onclick={() => runOp(o.op)}>{o.label}</button
-						>
-					{/each}
-				</div>
-
-				<span class="h-5 w-px shrink-0 bg-gray-600/70"></span>
-
-				<!-- E9: gizmo orientation (Local = face basis, Z along the normal) -->
+			<!-- GIZMO: orientation (E9 — Local = face basis, Z along the normal) -->
+			<span class="tbx-label">Gizmo</span>
+			<div class="tbx-row">
 				<div
 					id="mesh-gizmo-space"
-					class="flex overflow-hidden rounded-full border border-gray-600 text-xs"
+					class="tbx-seg"
 					title="Gizmo orientation — Local aligns to the face (Z = its normal). Scale handles always orient local."
 				>
 					<button
@@ -296,125 +345,103 @@
 						onclick={() => faceGizmoSpace.set('world')}>World</button
 					>
 				</div>
-			{:else}
-				<!-- segment: vertex tools (D5: ONE selection — click selects, Ctrl+click
-				     adds, the gizmo on the last pick drags the whole set) -->
-				<div class="flex items-center gap-1.5 text-xs">
-					<button
-						id="mesh-deselect"
-						class="rounded-full px-2.5 py-1 {$vertexSelectionSize <= 1
-							? 'bg-primary-600 text-white'
-							: 'bg-gray-700 hover:bg-gray-600'}"
-						title="Deselect all (click a vertex to move it, Ctrl+click to add more)"
-						onclick={() => clearVertexSelection()}>Move</button
-					>
-					<button
-						id="mesh-weld"
-						class="rounded-full px-2.5 py-1 {$vertexSelectionSize >= 2
-							? 'bg-primary-600 text-white hover:bg-primary-500'
-							: 'bg-gray-700 opacity-50'}"
-						title="Merge the selected vertices into one (W) — Ctrl+click adds to the selection"
-						onclick={weld}>Weld</button
-					>
-					<button
-						id="mesh-create-face"
-						class="rounded-full px-2.5 py-1 {$vertexSelectionSize >= 3 && $vertexSelectionSize <= 4
-							? 'bg-primary-600 text-white hover:bg-primary-500'
-							: 'bg-gray-700 opacity-50'}"
-						title="Select 3-4 vertices (Ctrl+click adds), then Create face"
-						onclick={createFace}>Create face</button
-					>
-					<span id="mesh-sel-count" class="text-[11px] text-gray-400">{$vertexSelectionSize} sel</span>
+			</div>
+		{:else}
+			<!-- TOOLS: vertex mode (D5: ONE selection — click selects, Ctrl+click
+			     adds, the gizmo on the last pick drags the whole set) -->
+			<span class="tbx-label">Tools</span>
+			<button
+				id="mesh-deselect"
+				class="tbx-btn {$vertexSelectionSize <= 1 ? 'tbx-on bg-primary-600 text-white' : ''}"
+				aria-label="Deselect all"
+				title="Deselect all — click a vertex to move it, Ctrl+click to add more"
+				onclick={() => clearVertexSelection()}><MousePointer size={18} aria-hidden="true" /></button
+			>
+			<button
+				id="mesh-weld"
+				class="tbx-btn {$vertexSelectionSize >= 2 ? 'tbx-on bg-primary-600 text-white' : 'tbx-disabled'}"
+				aria-label="Weld the selected vertices"
+				title="Weld (W) — merge the selected vertices into one (Ctrl+click adds)"
+				onclick={weld}><Merge size={18} aria-hidden="true" /></button
+			>
+			<button
+				id="mesh-create-face"
+				class="tbx-btn {$vertexSelectionSize >= 3 && $vertexSelectionSize <= 4
+					? 'tbx-on bg-primary-600 text-white'
+					: 'tbx-disabled'}"
+				aria-label="Create a face from the selected vertices"
+				title="Create face — select 3-4 vertices (Ctrl+click adds) first"
+				onclick={createFace}><ToolIcon name="create-face" /></button
+			>
+		{/if}
+
+		<!-- DISPLAY -->
+		<span class="tbx-label">Display</span>
+		<button
+			id="mesh-wireframe-toggle"
+			class="tbx-btn"
+			aria-label="Wireframe overlay"
+			aria-pressed={$meshEditWireframe}
+			title="Show the edit wireframe overlay"
+			onclick={() => meshEditWireframe.update((v) => !v)}><ToolIcon name="wireframe" /></button
+		>
+		<!-- D3: hotkeys on/off + the "?" bindings popover -->
+		<button
+			id="mesh-hotkeys-toggle"
+			class="tbx-btn"
+			aria-label="Toggle mesh-edit keyboard shortcuts"
+			aria-pressed={$meshEditHotkeys}
+			title={$meshEditHotkeys
+				? 'Keyboard shortcuts ON — E/I/G/S/B/F/X, W (camera fly keys pause)'
+				: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
+			onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={18} aria-hidden="true" /></button
+		>
+		<span class="relative">
+			<button
+				id="mesh-keys-help"
+				class="tbx-btn"
+				aria-label="Show mesh-edit key bindings"
+				aria-pressed={showKeys}
+				title="Key bindings"
+				onclick={() => (showKeys = !showKeys)}><CircleHelp size={18} aria-hidden="true" /></button
+			>
+			{#if showKeys}
+				<div
+					id="mesh-keys-popover"
+					class="absolute left-0 top-full z-10 mt-2 w-64 cursor-default rounded-lg border border-gray-700/60 bg-gray-800/95 p-2 text-xs shadow-xl"
+				>
+					{#each KEY_ROWS as [keys, what] (keys)}
+						<div class="flex items-baseline justify-between gap-2 py-0.5">
+							<span class="shrink-0 font-mono text-primary-300">{keys}</span>
+							<span class="text-right text-gray-300">{what}</span>
+						</div>
+					{/each}
 				</div>
 			{/if}
+		</span>
 
-			<span class="h-5 w-px shrink-0 bg-gray-600/70"></span>
-
-			<!-- segment: display -->
+		{#if $colliderEditObject}
+			<!-- CL-A A8: add compound pieces to the collider session -->
+			<span class="tbx-label">Collider</span>
 			<button
-				id="mesh-wireframe-toggle"
-				class="rounded-full px-2.5 py-1 text-xs {$meshEditWireframe ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-				title="Show the edit wireframe overlay"
-				onclick={() => meshEditWireframe.update((v) => !v)}>Wire</button
+				id="collider-add-box"
+				class="tbx-btn"
+				aria-label="Add a box piece"
+				title="Merge a box into the collider as a new convex piece"
+				onclick={() => addColliderPiece('box')}><Box size={18} aria-hidden="true" /></button
 			>
-			<!-- D3: hotkeys on/off + the "?" bindings popover -->
 			<button
-				id="mesh-hotkeys-toggle"
-				class="flex items-center rounded-full px-2 py-1 {$meshEditHotkeys ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-				aria-label="Toggle mesh-edit keyboard shortcuts"
-				title={$meshEditHotkeys
-					? 'Keyboard shortcuts ON — E/I/G/S/B/F/X, W (camera fly keys pause)'
-					: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
-				onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={16} aria-hidden="true" /></button
+				id="collider-add-sphere"
+				class="tbx-btn"
+				aria-label="Add a sphere piece"
+				title="Merge a sphere into the collider as a new convex piece"
+				onclick={() => addColliderPiece('sphere')}><Circle size={18} aria-hidden="true" /></button
 			>
-			<span class="relative flex items-center">
-				<button
-					id="mesh-keys-help"
-					class="flex items-center rounded-full px-1.5 py-1 {showKeys ? 'bg-gray-600' : 'bg-gray-700 hover:bg-gray-600'}"
-					aria-label="Show mesh-edit key bindings"
-					title="Key bindings"
-					onclick={() => (showKeys = !showKeys)}><CircleHelp size={16} aria-hidden="true" /></button
-				>
-				{#if showKeys}
-					<div
-						id="mesh-keys-popover"
-						class="absolute right-0 top-full z-10 mt-2 w-64 cursor-default rounded-lg border border-gray-700/60 bg-gray-800/95 p-2 text-xs shadow-xl"
-					>
-						{#each KEY_ROWS as [keys, what] (keys)}
-							<div class="flex items-baseline justify-between gap-2 py-0.5">
-								<span class="shrink-0 font-mono text-primary-300">{keys}</span>
-								<span class="text-right text-gray-300">{what}</span>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</span>
-
-			{#if $colliderEditObject}
-				<!-- CL-A A8: collider session — add compound pieces, commit or drop -->
-				<span
-					id="collider-shell-count"
-					class="rounded-full bg-gray-800/80 px-2 py-0.5 text-xs text-emerald-300"
-					title="Disconnected shells — each becomes one convex piece"
-					>{shellCount} shell{shellCount === 1 ? '' : 's'}</span
-				>
-				<button
-					id="collider-add-box"
-					class="rounded-full bg-gray-700 px-2.5 py-1 text-xs hover:bg-gray-600"
-					title="Merge a box into the collider as a new convex piece"
-					onclick={() => addColliderPiece('box')}>+ Box piece</button
-				>
-				<button
-					id="collider-add-sphere"
-					class="rounded-full bg-gray-700 px-2.5 py-1 text-xs hover:bg-gray-600"
-					title="Merge a sphere into the collider as a new convex piece"
-					onclick={() => addColliderPiece('sphere')}>+ Sphere piece</button
-				>
-				<button
-					id="collider-edit-done"
-					class="rounded-full bg-[#22c55e] px-3 py-0.5 text-white"
-					title="Save the custom collider (each shell = one convex piece)"
-					onclick={() => commitColliderEdit()}>Done</button
-				>
-				<button
-					id="collider-edit-cancel"
-					class="rounded-full bg-gray-700 px-3 py-0.5"
-					title="Drop the collider edit (Esc)"
-					onclick={() => exitColliderEdit()}>Cancel</button
-				>
-			{:else}
-				<button
-					id="mesh-edit-done"
-					class="rounded-full bg-[#ff4000] px-3 py-0.5 text-white"
-					title="Finish (Esc)"
-					onclick={finish}>Done</button
-				>
-			{/if}
-		</div>
+		{/if}
 
 		<!-- 176: contextual amount row for Extrude/Inset -->
 		{#if mode === 'faces' && ($faceEditOp === 'extrude' || $faceEditOp === 'inset')}
-			<div id="mesh-op-params" class="flex flex-wrap items-center gap-3 text-xs text-gray-300">
+			<div id="mesh-op-params" class="tbx-row text-xs text-gray-300">
 				<label class="flex items-center gap-1">
 					amount
 					<input
@@ -437,5 +464,29 @@
 				>
 			</div>
 		{/if}
-	</div>
+
+		{#snippet status()}
+			{#if mode === 'faces'}
+				<!-- E10: Multi button retired — ctrl-click always adds; live counts here -->
+				<span id="mesh-sel-counts" title="Selected faces · triangles (Ctrl+click adds)">
+					{selInfo.faces} face{selInfo.faces === 1 ? '' : 's'} · {selInfo.tris} tri{selInfo.tris === 1 ? '' : 's'}{#if selInfo.loops}<span
+							class={selInfo.loops[0] === selInfo.loops[1] ? '' : 'text-red-400'}
+							title="Boundary edges of the two selected faces — Bridge needs them EQUAL"
+						>
+							· {selInfo.loops[0]} ↔ {selInfo.loops[1]} edges</span
+						>{/if}
+				</span>
+			{:else}
+				<span id="mesh-sel-count">{$vertexSelectionSize} sel</span>
+			{/if}
+			{#if $colliderEditObject}
+				<span
+					id="collider-shell-count"
+					class="text-emerald-300"
+					title="Disconnected shells — each becomes one convex piece"
+					>{shellCount} shell{shellCount === 1 ? '' : 's'}</span
+				>
+			{/if}
+		{/snippet}
+	</ToolboxWindow>
 {/if}

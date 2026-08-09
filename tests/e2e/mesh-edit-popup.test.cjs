@@ -93,19 +93,24 @@ h.run(async () => {
 	h.check(escaped.gone && escaped.fe === null && escaped.ve === null, 'Esc closes the toolbar and exits both modes');
 
 	// ---- D2 (15): an outside click clears the pick but keeps the session ----
-	// find a real canvas point whose ray misses the box (overlays excluded)
-	const miss = await A.page.evaluate(() => {
-		const cands = [
-			[Math.round(innerWidth * 0.1), Math.round(innerHeight * 0.55)],
-			[Math.round(innerWidth * 0.9), Math.round(innerHeight * 0.6)],
-			[Math.round(innerWidth * 0.5), Math.round(innerHeight * 0.92)]
-		];
-		for (const [x, y] of cands) {
-			const el = document.elementFromPoint(x, y);
-			if (el && el.tagName === 'CANVAS') return { x, y };
-		}
-		return null;
-	});
+	// find a real canvas point whose ray misses the box (overlays excluded).
+	// Recomputed PER PHASE (M0): the toolbox is taller in face mode than in
+	// vertex mode, so a point that was canvas in one phase can sit under the
+	// window in the next — and a click ON the toolbox rightly keeps the pick.
+	const findMiss = () =>
+		A.page.evaluate(() => {
+			const cands = [
+				[Math.round(innerWidth * 0.1), Math.round(innerHeight * 0.55)],
+				[Math.round(innerWidth * 0.9), Math.round(innerHeight * 0.6)],
+				[Math.round(innerWidth * 0.5), Math.round(innerHeight * 0.92)]
+			];
+			for (const [x, y] of cands) {
+				const el = document.elementFromPoint(x, y);
+				if (el && el.tagName === 'CANVAS') return { x, y };
+			}
+			return null;
+		});
+	const miss = await findMiss();
 	h.check(!!miss, 'found an empty canvas point for the miss click');
 
 	await A.page.evaluate(() => {
@@ -138,7 +143,9 @@ h.run(async () => {
 		s.faceEdit.toggleFaceMulti(); // ON
 		s.faceEdit.toggleFaceSelection(0);
 	});
-	await A.page.mouse.click(miss.x, miss.y);
+	const faceMissPoint = await findMiss(); // the face-mode toolbox covers more
+	h.check(!!faceMissPoint, 'found an empty canvas point for the face-phase miss click');
+	await A.page.mouse.click(faceMissPoint.x, faceMissPoint.y);
 	await A.page.waitForTimeout(200);
 	const faceMiss = await A.page.evaluate(() => {
 		const s = window.__stores;

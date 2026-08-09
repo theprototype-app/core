@@ -2,6 +2,9 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, TControls, lockedObjects, isVRMode } from '../stores/sceneStore';
+// 15-F: session-scoped undo — editSession imports ONLY history (an edge we
+// already have), so this closes no cycle
+import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
 import { peers, showToast, settingsOpen, settingsSection } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 
@@ -913,6 +916,7 @@ export function enterFaceEdit(uuid) {
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 	faceEditObject.set(uuid);
+	noteEditEnter('face', uuid); // 15-F: opens (or continues) the undo barrier
 	refreshFaceWireframe(); // B2: face mode gets the same wireframe as vertex mode
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onFaceKeydown);
 	// 175: restore the face selected last time in this object (per-mode memory)
@@ -926,7 +930,10 @@ export function enterFaceEdit(uuid) {
 
 /** @param {KeyboardEvent} event */
 function onFaceKeydown(event) {
-	if (event.key === 'Escape') exitFaceEdit();
+	if (event.key === 'Escape') {
+		exitFaceEdit();
+		sealEditHistorySession(); // 15-F: Escape = Done, sealed synchronously
+	}
 }
 
 export function exitFaceEdit() {
@@ -958,6 +965,7 @@ export function exitFaceEdit() {
 	faceEditHoverTri.set(-1);
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212
 	faceEditObject.set(null);
+	noteEditExit('face'); // 15-F: deferred seal unless another mode re-enters
 }
 
 /**

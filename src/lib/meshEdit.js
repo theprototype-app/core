@@ -3,6 +3,9 @@ import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, TControls, lockedObjects, isVRMode } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
+// 15-F: session-scoped undo — editSession imports ONLY history (an edge we
+// already have), so this closes no cycle
+import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
 import {
 	createFaceFromVerts,
 	lookupEditable,
@@ -244,6 +247,7 @@ export function enterEditMode(uuid) {
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 
 	editingObject.set(uuid);
+	noteEditEnter('vertex', uuid); // 15-F: opens (or continues) the undo barrier
 	window.addEventListener('keydown', onKeydown);
 
 	// 175: restore the vertex selected last time in this object (per-mode memory)
@@ -288,11 +292,15 @@ export function exitEditMode() {
 	vertexSelection.clear();
 	vertexSelectionSize.set(0);
 	editingObject.set(null);
+	noteEditExit('vertex'); // 15-F: deferred seal unless another mode re-enters
 }
 
 /** @param {KeyboardEvent} event */
 function onKeydown(event) {
-	if (event.key === 'Escape') exitEditMode();
+	if (event.key === 'Escape') {
+		exitEditMode();
+		sealEditHistorySession(); // 15-F: Escape = Done, sealed synchronously
+	}
 }
 
 /**

@@ -2579,7 +2579,7 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name === 'edit:granularity') {
-		toggleFaceGranularity(); // B3: cycles FACE -> TRIANGLE -> SHELL
+		toggleFaceGranularity(); // B3/15-G: cycles QUAD -> FACE -> TRIANGLE -> SHELL -> OBJECT
 		return;
 	}
 	if (name === 'edit:multi') {

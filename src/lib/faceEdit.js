@@ -222,6 +222,101 @@ export function groupFaces(tris) {
 	});
 }
 
+/**
+ * 15-G: pair coplanar neighbour triangles into QUADS — the unit a modeler
+ * actually thinks in. The geometry here is a triangle SOUP with no stored face
+ * topology, so quads are re-derived from the mesh whenever it changes.
+ *
+ * Two triangles pair when they share an edge, face the same way, and the quad
+ * they would form is CONVEX (the shared edge has to be a real diagonal —
+ * pairing across a concave joint gives a bow-tie). Every candidate is scored by
+ * how rectangular the result is and matched GREEDILY best-first, so a coplanar
+ * fan pairs the obvious way rather than the first way. A triangle left without
+ * a partner is its own unit (the answer to "a genuine 3-sided face").
+ *
+ * Returns `partner`, where partner[i] is i's quad-mate or -1. Deterministic for
+ * a given geometry: score ties break on triangle index.
+ * @param {any[]} tris @returns {Int32Array}
+ */
+export function pairQuads(tris) {
+	const partner = new Int32Array(tris.length).fill(-1);
+	const normals = tris.map(triNormal);
+	/** @type {Map<string, number[]>} edge key -> the triangles touching it */
+	const edgeMap = new Map();
+	tris.forEach((t, ti) => {
+		for (let e = 0; e < 3; e++) {
+			const k1 = keyOf(t[e].x, t[e].y, t[e].z);
+			const k2 = keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z);
+			const ek = [k1, k2].sort().join('|');
+			let list = edgeMap.get(ek);
+			if (!list) edgeMap.set(ek, (list = []));
+			list.push(ti);
+		}
+	});
+
+	/** the corner of `t` that is NOT on the shared edge @param {any[]} t @param {string[]} shared */
+	const cornerOff = (t, shared) =>
+		t.find((/** @type {any} */ v) => !shared.includes(keyOf(v.x, v.y, v.z)));
+	/** the corner of `t` at a given key @param {any[]} t @param {string} key */
+	const cornerAt = (t, key) => t.find((/** @type {any} */ v) => keyOf(v.x, v.y, v.z) === key);
+
+	/** @type {{ a: number, b: number, score: number }[]} */
+	const candidates = [];
+	for (const [ek, list] of edgeMap) {
+		if (list.length !== 2) continue; // an open or non-manifold edge is no diagonal
+		const [a, b] = list;
+		if (a === b) continue;
+		if (normals[a].dot(normals[b]) < 0.999) continue; // coplanar AND co-facing
+		const shared = ek.split('|');
+		const ra = cornerOff(tris[a], shared);
+		const rb = cornerOff(tris[b], shared);
+		const p = cornerAt(tris[a], shared[0]);
+		const q = cornerAt(tris[a], shared[1]);
+		if (!ra || !rb || !p || !q) continue;
+		// ring order around the quad: the shared edge p-q is the diagonal, so the
+		// two off-corners sit between its ends
+		const score = quadScore([p, ra, q, rb], normals[a]);
+		if (score === null) continue; // concave or degenerate — not a quad
+		candidates.push({ a: Math.min(a, b), b: Math.max(a, b), score });
+	}
+
+	// best-first greedy matching; ties break on index so the result is stable
+	candidates.sort((x, y) => x.score - y.score || x.a - y.a || x.b - y.b);
+	for (const { a, b } of candidates) {
+		if (partner[a] !== -1 || partner[b] !== -1) continue;
+		partner[a] = b;
+		partner[b] = a;
+	}
+	return partner;
+}
+
+/**
+ * How rectangular a candidate quad is (lower is better), or null when the ring
+ * is concave or degenerate — which means those two triangles do NOT form a quad.
+ * @param {any[]} ring 4 corners in order @param {any} normal
+ */
+function quadScore(ring, normal) {
+	let score = 0;
+	let sign = 0;
+	for (let i = 0; i < 4; i++) {
+		const cur = ring[i];
+		const u = new THREE.Vector3().subVectors(ring[(i + 3) % 4], cur);
+		const v = new THREE.Vector3().subVectors(ring[(i + 1) % 4], cur);
+		if (u.lengthSq() < 1e-12 || v.lengthSq() < 1e-12) return null;
+		u.normalize();
+		v.normalize();
+		// every corner must turn the same way around the face normal, or the ring
+		// folds over itself (the bow-tie case)
+		const turn = new THREE.Vector3().crossVectors(v, u).dot(normal);
+		if (Math.abs(turn) < 1e-9) return null; // collinear corner
+		if (sign === 0) sign = Math.sign(turn);
+		else if (Math.sign(turn) !== sign) return null; // concave
+		// squareness: 0 at a right angle, approaching 1 as the corner collapses
+		score += Math.abs(u.dot(v));
+	}
+	return score;
+}
+
 function cloneTris(/** @type {any[]} */ tris) {
 	return tris.map((t) => withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi));
 }
@@ -904,13 +999,16 @@ export function commitArmedFaceOp() {
 	return commitFaceOp(op, get(faceEditAmount));
 }
 
-// ---- 212: granularity + multiselect (CL-B B3: Face / Triangle / Shell) -----
-/** face-select granularity: 'face' = coplanar group (default), 'triangle' =
- * the single tri under the ray (was MISLABELED 'polygon' — still accepted at
- * read time), 'shell' = the whole connected island of welded triangles.
- * @type {import('svelte/store').Writable<'face'|'triangle'|'shell'|'polygon'>} */
-/** @type {import('svelte/store').Writable<'face'|'triangle'|'shell'|'object'|'polygon'>} */
-export const faceEditGranularity = writable('face');
+// ---- 212: granularity + multiselect (CL-B B3, 15-G Quad) -----
+/** face-select granularity: 'quad' = the two triangles forming a quad (DEFAULT
+ * since 15-G — what a modeler expects to click, and unlike 'face' an extrusion
+ * wall stays its own unit instead of merging into the coplanar side beneath it;
+ * on a plain box a quad IS the side); 'face' = the whole coplanar group;
+ * 'triangle' = the single tri under the ray (was MISLABELED 'polygon' — that
+ * RETIRED alias still reads as 'triangle', and must not be confused with
+ * 'quad'); 'shell' = the connected island of welded triangles; 'object' = all.
+ * @type {import('svelte/store').Writable<'quad'|'face'|'triangle'|'shell'|'object'|'polygon'>} */
+export const faceEditGranularity = writable('quad');
 
 /** the granularity with the legacy 'polygon' value migrated at read time */
 function granularity() {
@@ -929,6 +1027,11 @@ function pickFaceUnitTris(tri) {
 	if (tri < 0 || !workingTris[tri]) return [];
 	const g = granularity();
 	if (g === 'triangle') return [tri];
+	// 15-G: the quad the triangle belongs to — what a modeler means by a face.
+	// Sits BETWEEN triangle and face: a box side is one quad either way, but an
+	// extrusion wall stays its own quad instead of merging into the coplanar
+	// side beneath it (which is what `face` does, by design).
+	if (g === 'quad') return quadOfTriangle(tri);
 	// the WHOLE mesh. Differs from `shell` only when the mesh has SEVERAL
 	// disconnected islands (a merged group, a multi-part import) — on a plain box
 	// or sphere every triangle is one island, so Shell already is the object.
@@ -960,17 +1063,19 @@ export function clearFaceSelection() {
 }
 
 /** B3: set the pick granularity (units differ, so drop the selection).
- * Legacy 'polygon' maps to 'triangle'. @param {'face'|'triangle'|'shell'|'object'|'polygon'} mode */
+ * Legacy 'polygon' maps to 'triangle' — it is a RETIRED alias for the old
+ * triangle mode and must NOT be confused with 15-G's 'quad'.
+ * @param {'face'|'quad'|'triangle'|'shell'|'object'|'polygon'} mode */
 export function setFaceGranularity(mode) {
 	const next = mode === 'polygon' ? 'triangle' : mode;
-	if (!['face', 'triangle', 'shell', 'object'].includes(next)) return;
+	if (!['face', 'quad', 'triangle', 'shell', 'object'].includes(next)) return;
 	faceEditGranularity.set(/** @type {any} */ (next));
 	clearFaceSelection();
 }
 
-/** Cycle FACE -> TRIANGLE -> SHELL -> OBJECT (VR menu keeps its one toggle button) */
+/** Cycle QUAD -> FACE -> TRIANGLE -> SHELL -> OBJECT (VR keeps one toggle button) */
 export function toggleFaceGranularity() {
-	const order = ['face', 'triangle', 'shell', 'object'];
+	const order = ['quad', 'face', 'triangle', 'shell', 'object'];
 	setFaceGranularity(
 		/** @type {any} */ (order[(order.indexOf(granularity()) + 1) % order.length])
 	);
@@ -1033,6 +1138,8 @@ function overlayTris() {
 let stashedFace = { uuid: null, fi: -1 };
 /** @type {any[]} */ let workingTris = [];
 /** @type {any[]} */ let faces = [];
+/** 15-G: quad pairing over workingTris — quadPartner[i] is i's mate, or -1
+ * @type {Int32Array} */ let quadPartner = new Int32Array(0);
 /** @type {any} */ let overlay = null; // highlighted-face tint at the scene root
 
 /** rebuild the working triangles + face groups from the live geometry */
@@ -1040,6 +1147,23 @@ function rebuildFaces() {
 	if (!faceEdited) return;
 	workingTris = readTriangles(faceEdited.geometry);
 	faces = groupFaces(workingTris);
+	quadPartner = pairQuads(workingTris);
+}
+
+/** O(1) identity of the quad a triangle belongs to — the lower of the pair, so
+ * both halves key the same. -1 for no triangle. @param {number} tri */
+function quadKey(tri) {
+	if (tri < 0 || !workingTris[tri]) return -1;
+	const mate = quadPartner[tri] ?? -1;
+	return mate >= 0 ? Math.min(tri, mate) : tri;
+}
+
+/** the tri indices of the quad `tri` belongs to — itself when it has no mate
+ * (a genuine 3-sided face, or an odd triangle in a fan). @param {number} tri */
+export function quadOfTriangle(tri) {
+	if (tri < 0 || !workingTris[tri]) return [];
+	const mate = quadPartner[tri] ?? -1;
+	return mate >= 0 ? [tri, mate] : [tri];
 }
 
 export function faceCount() {
@@ -1168,8 +1292,18 @@ export function highlightFaceByTriangle(triangleIndex, healStale = true) {
 			}
 		}
 	}
-	// triangle/shell units are picked per-tri, so refresh per raw tri change
-	const changed = granularity() !== 'face' ? triangleIndex !== prevTri : fi !== prevFi;
+	// "changed" means the picked UNIT changed — that is what the overlay draws.
+	// Face compares the coplanar group; 15-G quad compares the PAIR (crossing a
+	// quad's internal diagonal is not a new unit, so the overlay must not
+	// rebuild); triangle/shell/object stay per raw tri (a shell key would mean
+	// re-running the union-find on every hover frame).
+	const g = granularity();
+	const changed =
+		g === 'face'
+			? fi !== prevFi
+			: g === 'quad'
+				? quadKey(triangleIndex) !== quadKey(prevTri)
+				: triangleIndex !== prevTri;
 	if (changed || healed) refreshFaceOverlay();
 	return changed;
 }

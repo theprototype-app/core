@@ -63,6 +63,33 @@ const messageHandlers = {};
 /** @type {Record<string, {getState: () => any, applyState: (state: any) => void}>} */
 const stateSyncs = {};
 
+/** A2: per-module teardown journal — every api.register* records an undo thunk
+ * here so deactivateModule() can genuinely dispose a module (the dev-mode live
+ * reload tears down and re-registers with fresh code, no page reload).
+ * @type {Record<string, (() => void)[]>} */
+const moduleDisposals = {};
+
+/** remove one value from a plain registry array, in place
+ * @param {any[]} arr @param {any} value */
+function arrayRemove(arr, value) {
+	const index = arr.indexOf(value);
+	if (index >= 0) arr.splice(index, 1);
+}
+
+/** A2: drop a module-owned viewport group at teardown. SCENE-ROOT only (golden
+ * rule 5) — anything inside objectsGroup is replicated user content and stays.
+ * @param {string} name */
+function removeSceneRootGroup(name) {
+	const scene = get(globalScene);
+	const target = scene?.getObjectByName(name);
+	if (!target) return;
+	const objects = get(objectsGroup);
+	for (let node = target; node; node = node.parent) {
+		if (objects && node === objects) return;
+	}
+	target.parent?.remove(target);
+}
+
 // input/physics are reached via primed DYNAMIC imports: static edges would close
 // cycles back into this module (flowRuntime -> moduleSDK; physics -> flowRuntime)
 // — the vite-dev TDZ trap. The refs resolve at boot, long before any module
@@ -114,6 +141,19 @@ function physicsApi() {
 
 /** @param {string} moduleId */
 function makeApi(moduleId) {
+	const disposals = (moduleDisposals[moduleId] ??= []);
+	/** record an undo thunk deactivateModule runs at teardown (A2) @param {() => void} fn */
+	const onDispose = (fn) => disposals.push(fn);
+	/** input scopes this module still holds — released at teardown
+	 * @type {Set<'keys'|'locomotion'>} */
+	const claimedScopes = new Set();
+	let possessing = false;
+	onDispose(() => {
+		claimedScopes.forEach((scope) => import('./inputRuntime').then((m) => m.releaseInput(scope)));
+		claimedScopes.clear();
+		if (possessing) possessRef?.release();
+		import('./inputRuntime').then((m) => m.unregisterBindings(moduleId));
+	});
 	return {
 		/**
 		 * Add a node group to the flow palette/context menu. Items follow the
@@ -131,6 +171,18 @@ function makeApi(moduleId) {
 				return [...list, group];
 			});
 			if (components) Object.assign(moduleNodeComponents, components);
+			onDispose(() => {
+				moduleNodeGroups.update((list) =>
+					list
+						.map((g) =>
+							g.group === group.group
+								? { ...g, items: g.items.filter((/** @type {any} */ item) => !group.items.includes(item)) }
+								: g
+						)
+						.filter((g) => g.items.length > 0)
+				);
+				Object.keys(components ?? {}).forEach((type) => delete moduleNodeComponents[type]);
+			});
 		},
 		/**
 		 * Per-frame effect for edges `your-node -> objectselector`. The runtime
@@ -139,6 +191,9 @@ function makeApi(moduleId) {
 		 */
 		registerEffect(type, fn) {
 			moduleEffects[type] = fn;
+			onDispose(() => {
+				if (moduleEffects[type] === fn) delete moduleEffects[type];
+			});
 		},
 		/**
 		 * H2 (flow v2): ship CODE-EDITABLE node definitions with the module. Each
@@ -157,7 +212,23 @@ function makeApi(moduleId) {
 				for (const def of defs ?? []) {
 					const id = 'mod-' + moduleId + '-' + def.key;
 					if (m.findNodeDef(id)) continue; // user edits win over reseeds
-					m.applyNodeDef({ id, name: def.name ?? def.key, params: def.params ?? [], code: def.code ?? '' });
+					const seeded = { id, name: def.name ?? def.key, params: def.params ?? [], code: def.code ?? '' };
+					m.applyNodeDef(seeded);
+					const seededJson = JSON.stringify(seeded);
+					// teardown removes ONLY a def still byte-equal to what we seeded —
+					// a user-edited def survives (mirrors the absent-only seeding rule),
+					// and the re-register then leaves it alone too.
+					onDispose(() => {
+						const current = m.findNodeDef(id);
+						if (!current) return;
+						const snapshot = JSON.stringify({
+							id: current.id,
+							name: current.name,
+							params: current.params ?? [],
+							code: current.code ?? ''
+						});
+						if (snapshot === seededJson) m.applyNodeDefDelete(id);
+					});
 				}
 			});
 		},
@@ -168,6 +239,9 @@ function makeApi(moduleId) {
 		 */
 		registerPrimitive(name, builder, entry) {
 			customGeometryBuilders[name] = builder;
+			onDispose(() => {
+				if (customGeometryBuilders[name] === builder) delete customGeometryBuilders[name];
+			});
 			if (!entry) return;
 			const tagged = { ...entry, moduleId };
 			modulePrimitiveGroups.update((list) => {
@@ -179,6 +253,13 @@ function makeApi(moduleId) {
 					);
 				return [...list, { group: groupName, items: [tagged] }];
 			});
+			onDispose(() =>
+				modulePrimitiveGroups.update((list) =>
+					list
+						.map((g) => ({ ...g, items: g.items.filter((/** @type {any} */ item) => item !== tagged) }))
+						.filter((g) => g.items.length > 0)
+				)
+			);
 		},
 		/**
 		 * Intercept viewport clicks (desktop click + VR trigger). Receives the
@@ -187,10 +268,12 @@ function makeApi(moduleId) {
 		 */
 		registerClickHandler(fn) {
 			moduleClickHandlers.push(fn);
+			onDispose(() => arrayRemove(moduleClickHandlers, fn));
 		},
 		/** Runs every frame with the synced time (seconds) @param {(time: number) => void} fn */
 		registerFrameTask(fn) {
 			moduleFrameTasks.push(fn);
+			onDispose(() => arrayRemove(moduleFrameTasks, fn));
 		},
 		/**
 		 * Click handlers only see the replicated objects root by default;
@@ -200,10 +283,19 @@ function makeApi(moduleId) {
 		registerInteractiveGroup(name) {
 			moduleInteractiveGroups.push(name);
 			registerSystemGroup(name); // clickable module content is also listable
+			onDispose(() => {
+				arrayRemove(moduleInteractiveGroups, name);
+				arrayRemove(systemGroupNames, name);
+				removeSceneRootGroup(name); // module-owned viewport content goes with the module
+			});
 		},
 		/** List a scene-root group under the object list's System filter @param {string} name */
 		registerSystemGroup(name) {
 			registerSystemGroup(name);
+			onDispose(() => {
+				arrayRemove(systemGroupNames, name);
+				removeSceneRootGroup(name);
+			});
 		},
 		/**
 		 * Runs when the scene is cleared (locally or by a peer) — remove your
@@ -212,6 +304,7 @@ function makeApi(moduleId) {
 		 */
 		onSceneClear(fn) {
 			sceneClearHandlers.push(fn);
+			onDispose(() => arrayRemove(sceneClearHandlers, fn));
 		},
 		/**
 		 * Where the user is POINTING, as a THREE.Raycaster in world space —
@@ -226,6 +319,7 @@ function makeApi(moduleId) {
 		/** Handle messages other peers sent with api.send() @param {(data: any) => void} fn */
 		onMessage(fn) {
 			(messageHandlers[moduleId] ??= []).push(fn);
+			onDispose(() => arrayRemove(messageHandlers[moduleId] ?? [], fn));
 		},
 		/** Broadcast to all peers; arrives at their onMessage handlers @param {any} payload */
 		send(payload) {
@@ -240,10 +334,15 @@ function makeApi(moduleId) {
 		 */
 		registerStateSync(sync) {
 			stateSyncs[moduleId] = sync;
+			onDispose(() => {
+				if (stateSyncs[moduleId] === sync) delete stateSyncs[moduleId];
+			});
 		},
 		/** Adds a button to the sidebar "Modules" section @param {string} label @param {() => void} action */
 		registerMenu(label, action) {
-			moduleMenuItems.update((list) => [...list, { moduleId, label, action }]);
+			const item = { moduleId, label, action };
+			moduleMenuItems.update((list) => [...list, item]);
+			onDispose(() => moduleMenuItems.update((list) => list.filter((entry) => entry !== item)));
 		},
 		/**
 		 * Add a sector to the VR radial menu (74). group 'root' extends the base
@@ -256,8 +355,12 @@ function makeApi(moduleId) {
 		registerVRMenuEntry(entry) {
 			// dynamic import: a static edge here closes a module cycle back into
 			// history via materialsHandler (TDZ crash at boot)
-			import('./vrRadialMenu').then((menu) =>
-				menu.registerVRMenuEntry({ ...entry, id: moduleId + ':' + entry.id })
+			const id = moduleId + ':' + entry.id;
+			import('./vrRadialMenu').then((menu) => menu.registerVRMenuEntry({ ...entry, id }));
+			// same-module import promises resolve in .then order, so this always
+			// runs after the registration even when teardown fires immediately
+			onDispose(() =>
+				import('./vrRadialMenu').then((menu) => menu.unregisterVRMenuEntry(id, entry.group ?? 'root'))
 			);
 		},
 		/**
@@ -276,6 +379,7 @@ function makeApi(moduleId) {
 		onInput(fn) {
 			let unsub = () => {};
 			import('./inputRuntime').then((m) => (unsub = m.onInput(fn)));
+			onDispose(() => unsub()); // unsubscribe is idempotent (Set.delete)
 			return () => unsub();
 		},
 		/** Pause the host's own use of an input scope while your module drives:
@@ -283,10 +387,12 @@ function makeApi(moduleId) {
 		 * ALWAYS release (module disable/error releases everything).
 		 * @param {'keys'|'locomotion'} scope */
 		claimInput(scope) {
+			claimedScopes.add(scope);
 			import('./inputRuntime').then((m) => m.claimInput(scope));
 		},
 		/** @param {'keys'|'locomotion'} scope */
 		releaseInput(scope) {
+			claimedScopes.delete(scope);
 			import('./inputRuntime').then((m) => m.releaseInput(scope));
 		},
 		/**
@@ -351,9 +457,11 @@ function makeApi(moduleId) {
 		 * @param {{camera?: 'chase'|'orbit'|'none', speed?: number, turnSpeed?: number}=} opts
 		 */
 		possess(uuid, opts) {
+			possessing = true;
 			return possessRef?.possess(uuid, opts) ?? false;
 		},
 		releasePossess() {
+			possessing = false;
 			possessRef?.release();
 		},
 		/** Camera modes this build's possess supports (DEVX #1) — feature-detect
@@ -416,6 +524,38 @@ export function initModules(modules) {
 			showToast('Module "' + mod.id + '" failed to load');
 		}
 	});
+	loadedModulesChanged.update((n) => n + 1);
+}
+
+/**
+ * A2: genuinely unload a module — run its teardown journal in reverse
+ * (registries, message/state-sync handlers, input claims + bindings, VR menu
+ * entries, module-owned scene-root viewport groups), then drop its assets and
+ * loadedModules entry so initModules can re-register fresh code. Scene objects
+ * the module CREATED inside objectsGroup stay (replicated user content).
+ * Used by the user-module dev reload / live disable; CORE modules keep
+ * reload-to-disable — they may wire registries outside the api surface
+ * (vrsleeve's vrControls hook registries).
+ * @param {string} id
+ */
+export function deactivateModule(id) {
+	const disposals = moduleDisposals[id] ?? [];
+	moduleDisposals[id] = [];
+	for (let i = disposals.length - 1; i >= 0; i--) {
+		try {
+			disposals[i]();
+		} catch (error) {
+			console.log('module ' + id + ' teardown step failed', error);
+		}
+	}
+	Object.values(moduleAssets[id] ?? {}).forEach((url) => {
+		try {
+			URL.revokeObjectURL(url);
+		} catch {}
+	});
+	delete moduleAssets[id];
+	const index = loadedModules.findIndex((m) => m.id === id);
+	if (index >= 0) loadedModules.splice(index, 1);
 	loadedModulesChanged.update((n) => n + 1);
 }
 

@@ -33,8 +33,14 @@
 		installUrl,
 		activateUserModule,
 		updateUserModule,
-		removeUserModule
+		removeUserModule,
+		reloadUserModule,
+		setDevUrl,
+		setDevPoll,
+		devSourceOf,
+		devPolling
 	} from '$lib/userModules';
+	import { deactivateModule } from '$lib/moduleSDK';
 	let tab = 'core';
 	let installUrlValue = '';
 
@@ -190,7 +196,10 @@
 										await activateUserModule(record);
 									} else {
 										$disabledModules = [...new Set([...$disabledModules, record.id])];
-										if (isModuleLoaded(record.id)) showToast('"' + record.name + '" disabled — reload to apply');
+										if (isModuleLoaded(record.id)) {
+											deactivateModule(record.id);
+											showToast('"' + record.name + '" disabled');
+										}
 									}
 								}}
 							/>
@@ -206,6 +215,34 @@
 								<Button size="xs" color="alternative" onclick={() => updateUserModule(record)}>Update</Button>
 							{/if}
 							<Button size="xs" color="red" onclick={() => removeUserModule(record.id)}>Remove</Button>
+						</div>
+						<!-- A2 dev mode: reload fresh code from a URL without a page reload -->
+						<div class="flex items-center gap-2 pt-2">
+							<input
+								id={'dev-url-' + record.id}
+								class="flex-1 rounded-sm border border-gray-700 bg-transparent px-2 py-1 text-xs dark:text-gray-300"
+								placeholder="Dev URL (serves manifest.json — defaults to the install URL)"
+								value={record.devUrl ?? (record.source !== 'zip' ? record.source : '')}
+								on:change={(e) => setDevUrl(record.id, e.currentTarget.value)}
+							/>
+							<Button
+								size="xs"
+								color="alternative"
+								id={'dev-reload-' + record.id}
+								disabled={!devSourceOf(record)}
+								onclick={() => reloadUserModule(record)}
+							>
+								Reload
+							</Button>
+							<label class="flex items-center gap-1 text-xs text-gray-400" title="Poll the dev URL (~2s) and reload on change">
+								<input
+									type="checkbox"
+									id={'dev-poll-' + record.id}
+									checked={$devPolling.includes(record.id)}
+									on:change={(e) => setDevPoll(record, e.currentTarget.checked)}
+								/>
+								Auto
+							</label>
 						</div>
 					</div>
 				{/each}

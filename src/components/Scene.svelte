@@ -21,7 +21,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, lookupEditable } from '$lib/faceEdit';
+	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
@@ -590,19 +590,33 @@
 				const edited = lookupEditable($faceEditObject);
 				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
 				const tri = hit && hit.faceIndex != null ? hit.faceIndex : -1;
-				highlightFaceByTriangle(tri);
-				// 212: Multi mode accumulates picks (the op button applies to the set);
-				// otherwise 176 auto-applies the active extrude/inset on the click
+				// E10: ctrl/shift-click ADDS to the selection (never auto-applies); a
+				// plain click REPLACES it with the unit under the cursor. The heal
+				// flag is off for additive clicks — the heal would wipe the very
+				// selection they are adding to.
+				const additive = event.ctrlKey || event.shiftKey || event.metaKey || $faceEditMulti;
+				highlightFaceByTriangle(tri, !additive);
 				if (tri >= 0) {
-					if ($faceEditMulti) toggleFaceSelection(tri);
-					else autoApplyFaceOp();
-				} else clearFaceSelection(); // D2: a miss drops the accumulated multi-pick
-				// B1 (inset fix): a seated MOVE gizmo intercepts the NEXT click (the
-				// dragging||axis guard above skips face dispatch), so click 2 of an
-				// armed inset/extrude DRAGGED the face instead. Only the Move op
-				// seats the gizmo; a miss still detaches it.
-				if ($faceEditOp === 'move' || tri < 0) attachFaceGizmo();
-				else detachFaceGizmo();
+					if (additive) {
+						toggleFaceSelection(tri);
+						// B1: only the armed Move op keeps a gizmo on a non-commit click
+						if ($faceEditOp === 'move') attachFaceGizmo();
+						else detachFaceGizmo();
+					} else {
+						pickFaceUnit(tri);
+						const committed = autoApplyFaceOp();
+						// E7: a commit re-seats the gizmo itself (on the new cap);
+						// otherwise the B1 rule holds — a seated gizmo intercepts the
+						// NEXT click, so only Move keeps one armed
+						if (!committed) {
+							if ($faceEditOp === 'move') attachFaceGizmo();
+							else detachFaceGizmo();
+						}
+					}
+				} else {
+					clearFaceSelection(); // D2: a miss drops the accumulated multi-pick
+					attachFaceGizmo(); // no target left -> detaches
+				}
 				return;
 			}
 			// light pick-proxies select their light (lights have no raycastable geometry)

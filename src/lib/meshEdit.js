@@ -363,10 +363,11 @@ export function clearVertexSelection() {
 }
 
 /**
- * B4: WELD the ctrl-multi-selected vertices (>=2 handles) to their shared
- * centroid — replicated + ONE undo entry. Committed as a meshgeo snapshot
- * (a 'verts' entry holds one position for all indices, so it cannot undo
- * per-handle befores). Re-enters edit mode so the merged handles regroup.
+ * B4: WELD the selected vertices (>=2 handles) to their shared centroid —
+ * replicated + ONE undo entry. Committed as a meshgeo snapshot (a 'verts'
+ * entry holds one position for all indices, so it cannot undo per-handle
+ * befores). The commit's session refresher regroups the merged handles and
+ * rebuilds the wireframe overlay in place.
  * @returns {boolean}
  */
 export function weldSelectedVerts() {
@@ -379,6 +380,10 @@ export function weldSelectedVerts() {
 	// triangles ("weld mangles the mesh"), and undo replayed the same wrong
 	// representation. Both snapshots below are in applyMeshGeo's representation.
 	const before = trisToPositions(readTriangles(edited.geometry));
+	// raw attribute copy so a FAILED commit (size cap) can revert the in-place
+	// centroid write — without it the attribute silently diverged from what
+	// peers and the GPU see (needsUpdate was never set on that path)
+	const rawBefore = Array.from(position.array);
 	const centroid = new THREE.Vector3();
 	const picked = [...vertexSelection];
 	picked.forEach((i) => centroid.add(handles[i].position));
@@ -390,9 +395,17 @@ export function weldSelectedVerts() {
 	);
 	const after = trisToPositions(readTriangles(edited.geometry));
 	if (JSON.stringify(before) === JSON.stringify(after)) return false; // already coincident
-	exitEditMode(); // handles regroup on re-entry (merged verts share a key now)
+	// NO exit/enter dance (a pre-D1 relic): commitMeshGeoSnapshot swaps the
+	// geometry and applyMeshGeo's session refresher rebuilds handles, wireframe
+	// overlay and selection IN PLACE — the same path undo and remote commits
+	// take, so the overlay can never diverge from the welded mesh (the dance
+	// left it stale whenever re-entry took any early-out).
 	const ok = commitMeshGeoSnapshot(uuid, before, after);
-	enterEditMode(uuid);
+	if (ok) clearVertexSelection(); // the weld consumed the multi-pick
+	else {
+		position.array.set(rawBefore);
+		position.needsUpdate = true;
+	}
 	return ok;
 }
 
@@ -403,13 +416,9 @@ export function createSelectedFace(viewerPos = null) {
 	const uuid = edited.uuid;
 	const verts = [...vertexSelection].map((i) => handles[i].position.clone());
 	const ok = createFaceFromVerts(uuid, verts, viewerPos);
-	if (ok) {
-		// geometry changed under us: rebuild the handle visuals from the new mesh
-		vertexSelection.clear();
-		selectedHandle = -1;
-		exitEditMode();
-		enterEditMode(uuid);
-	}
+	// the commit's applyMeshGeo already rebuilt the session in place (D1
+	// refresher) — same no-dance rule as weldSelectedVerts
+	if (ok) clearVertexSelection();
 	return ok;
 }
 

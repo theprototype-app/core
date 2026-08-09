@@ -30,9 +30,9 @@
 		commitFaceOp,
 		faceEditGranularity,
 		setFaceGranularity,
-		faceEditMulti,
 		faceEditSelectedTris,
-		toggleFaceMulti,
+		faceSelectionInfo,
+		faceGizmoSpace,
 		meshEditWireframe,
 		meshEditHotkeys
 	} from '$lib/faceEdit';
@@ -95,21 +95,24 @@
 		}
 	];
 
-	/** a target exists for a one-shot op (multi selection or a picked unit) */
+	/** a target exists for a one-shot op (E10: the selection first, else a picked unit) */
 	function hasTarget() {
-		if ($faceEditMulti && $faceEditSelectedTris.length) return true;
+		if ($faceEditSelectedTris.length) return true;
 		if (($faceEditGranularity === 'face' ? $faceEditHighlight : $faceEditHoverTri) >= 0) return true;
 		return false;
 	}
 
+	// E10: live counts — selected faces/tris + boundary-edge counts when exactly
+	// two faces are picked (a bridge mismatch shows BEFORE clicking Bridge)
+	const selInfo = $derived.by(() => {
+		void $faceEditSelectedTris; // the trigger; the geometry poke rides objectsGroup
+		void $objectsGroup;
+		return faceSelectionInfo();
+	});
+
 	/** @param {string} op */
 	function runOp(op) {
 		const spec = OPS.find((o) => o.op === op);
-		// 212: Multi mode — the op button applies to the whole accumulated selection
-		if ($faceEditMulti && $faceEditSelectedTris.length) {
-			commitFaceOp(/** @type {any} */ (op), $faceEditAmount);
-			return;
-		}
 		if (op === 'bridge') {
 			commitFaceOp('bridge', 0); // validates the two-face selection + toasts
 			return;
@@ -237,13 +240,15 @@
 						>
 					{/each}
 				</div>
-				<button
-					id="mesh-multi"
-					class="rounded-full px-2.5 py-1 text-xs {$faceEditMulti ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					title="Accumulate several picks, then apply an op to all"
-					onclick={() => toggleFaceMulti()}
-					>Multi{$faceEditMulti && $faceEditSelectedTris.length ? ` (${$faceEditSelectedTris.length})` : ''}</button
-				>
+				<!-- E10: Multi button retired — ctrl-click always adds; live counts here -->
+				<span id="mesh-sel-counts" class="text-[11px] text-gray-400" title="Selected faces · triangles (Ctrl+click adds)">
+					{selInfo.faces} face{selInfo.faces === 1 ? '' : 's'} · {selInfo.tris} tri{selInfo.tris === 1 ? '' : 's'}{#if selInfo.loops}<span
+							class={selInfo.loops[0] === selInfo.loops[1] ? '' : 'text-red-400'}
+							title="Boundary edges of the two selected faces — Bridge needs them EQUAL"
+						>
+							· {selInfo.loops[0]} ↔ {selInfo.loops[1]} edges</span
+						>{/if}
+				</span>
 
 				<span class="h-5 w-px shrink-0 bg-gray-600/70"></span>
 
@@ -262,6 +267,26 @@
 							onclick={() => runOp(o.op)}>{o.label}</button
 						>
 					{/each}
+				</div>
+
+				<span class="h-5 w-px shrink-0 bg-gray-600/70"></span>
+
+				<!-- E9: gizmo orientation (Local = face basis, Z along the normal) -->
+				<div
+					id="mesh-gizmo-space"
+					class="flex overflow-hidden rounded-full border border-gray-600 text-xs"
+					title="Gizmo orientation — Local aligns to the face (Z = its normal). Scale handles always orient local."
+				>
+					<button
+						id="mesh-space-local"
+						class="px-2 py-0.5 {$faceGizmoSpace === 'local' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						onclick={() => faceGizmoSpace.set('local')}>Local</button
+					>
+					<button
+						id="mesh-space-world"
+						class="px-2 py-0.5 {$faceGizmoSpace === 'world' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						onclick={() => faceGizmoSpace.set('world')}>World</button
+					>
 				</div>
 			{:else}
 				<!-- segment: vertex tools (D5: ONE selection — click selects, Ctrl+click

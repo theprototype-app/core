@@ -22,6 +22,13 @@ function check(ok, label) {
 	if (!ok) failures++;
 }
 
+// Headless Chromium renders WebGL through SwiftShader by default, which makes the
+// viewport the frame-rate bottleneck (measured: ~4.5 fps at 1280x720 with the AO
+// pass on). These flags hand ANGLE the real GPU when there is one — ANGLE falls
+// back to SwiftShader on its own where there isn't, so they are safe everywhere.
+// Only worth passing when a test actually cares about frame rate (net-stress).
+const GPU_ARGS = ['--use-gl=angle', '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'];
+
 /** @param {any=} options e.g. {args: ['--use-fake-device-for-media-stream']} */
 function launch(options = {}) {
 	// background pages must keep full-rate rAF — synced-clock phase checks
@@ -37,6 +44,9 @@ function launch(options = {}) {
 
 /**
  * Fresh context + page with debug stores enabled, waits for hydration.
+ * `options.context` is spread into newContext (viewport, hasTouch, …);
+ * `options.storage` seeds extra localStorage keys BEFORE the app boots, for
+ * prefs that must be in place at module-eval time (e.g. `viewMode`).
  * @returns {{ctx: any, page: any, id: string}}
  */
 async function setupPage(browser, name, options = {}) {
@@ -51,6 +61,12 @@ async function setupPage(browser, name, options = {}) {
 		localStorage.setItem('hasSeenWelcome', 'true');
 		if (peerConfig) localStorage.setItem('peerServerConfig', peerConfig);
 	}, PEER_CONFIG);
+	// caller overrides last, so a test can replace any of the defaults above
+	if (options.storage) {
+		await ctx.addInitScript((extra) => {
+			for (const [k, v] of Object.entries(extra)) localStorage.setItem(k, String(v));
+		}, options.storage);
+	}
 	const page = await ctx.newPage();
 	page.on('pageerror', (err) => console.log(`[${name} pageerror] ` + err.stack));
 	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -135,4 +151,4 @@ function run(body) {
 	});
 }
 
-module.exports = { URL, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run };
+module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run };

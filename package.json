@@ -28,6 +28,7 @@
 		"flowbite": "^3.1.2",
 		"flowbite-svelte": "^1.33.1",
 		"gh-pages": "^6.3.0",
+		"peer": "^1.0.2",
 		"playwright": "^1.62.0",
 		"prettier": "^3.9.6",
 		"prettier-plugin-svelte": "^4.1.1",

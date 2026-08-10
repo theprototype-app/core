@@ -104,6 +104,7 @@
 		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, lucide: Move, desc: 'seat the gizmo on the selection' },
 		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, lucide: Grid2x2, desc: 'split each triangle into four' },
 		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
+		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
 		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, icon: 'flip-normals', desc: 'reverse the winding' },
 		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, lucide: Trash2, desc: 'remove the selection' }
 	];
@@ -174,12 +175,20 @@
 		flashTimer = setTimeout(() => (flashOp = ''), 400);
 	}
 
+	// M3: how many loops a Loop cut inserts (its own field — the extrude/inset
+	// `amount` is a distance, this is a count)
+	let loopCuts = $state(1);
+
 	/** @param {string} op */
 	function runOp(op) {
 		const spec = OPS.find((o) => o.op === op);
 		if (op === 'bridge') {
 			// validates the two-piece selection + toasts
 			if (commitFaceOp('bridge', 0)) flash('bridge');
+			return;
+		}
+		if (op === 'loopcut') {
+			if (commitFaceOp('loopcut', loopCuts)) flash('loopcut');
 			return;
 		}
 		if (spec?.oneShot) {
@@ -249,7 +258,7 @@
 				event.preventDefault();
 				return;
 			}
-			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete' };
+			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete', c: 'loopcut' };
 			const op = key === 'delete' ? 'delete' : /** @type {any} */ (byKey)[key];
 			if (!op) return;
 			runOp(op);
@@ -359,6 +368,22 @@
 					onclick={() => runSelectCmd(c)}><c.lucide size={18} aria-hidden="true" /></button
 				>
 			{/each}
+
+			<!-- M3: how many loops a Loop cut inserts -->
+			<div class="tbx-row text-xs text-gray-300">
+				<label class="flex items-center gap-1" title="How many edge loops Loop cut inserts">
+					loop cuts
+					<input
+						id="mesh-loop-cuts"
+						type="number"
+						min="1"
+						max="20"
+						step="1"
+						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={loopCuts}
+					/>
+				</label>
+			</div>
 
 			<!-- TOOLS: armed tools stay lit (solid accent); one-shots flash on commit -->
 			<span class="tbx-label">Tools</span>

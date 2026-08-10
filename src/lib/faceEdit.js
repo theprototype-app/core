@@ -1130,7 +1130,7 @@ export const faceEditObject = writable(null);
 /** highlighted face index (ray/selection), or -1 @type {import('svelte/store').Writable<number>} */
 export const faceEditHighlight = writable(-1);
 /** armed op for the next commit (B4 adds the one-shots)
- * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'>} */
+ * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'>} */
 export const faceEditOp = writable('extrude');
 /** live op amount, stick-driven @type {import('svelte/store').Writable<number>} */
 export const faceEditAmount = writable(0.3);
@@ -1148,7 +1148,7 @@ export function autoApplyFaceOp() {
 }
 
 /** Arm an op (from the Faces sub-ring / desktop toolbar)
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'} op */
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'} op */
 export function setFaceOp(op) {
 	faceEditOp.set(op);
 	// inset lives in 0..0.9; the others are signed distances
@@ -1345,39 +1345,54 @@ function quadIdOf(tri) {
 }
 
 /**
- * The face loop through a triangle's quad. `axis` picks WHICH of the two loops
- * crossing that quad to walk (0 or 1) — a quad sits on two perpendicular loops,
- * so the toolbar button cycles the axis on a repeat press.
- * @param {number} tri @param {number} [axis] @returns {number[]} tri indices
+ * The face loop through a triangle's quad, as the walk ITSELF: each entry is a
+ * quad plus the pair of opposite edges the loop crosses it by — M3's loop cut
+ * needs that direction, M2's loop select only needs the quads.
+ * `axis` picks WHICH of the two loops crossing the start quad to walk (0 or 1):
+ * a quad sits on two perpendicular loops, so the toolbar cycles it on a repeat.
+ * @param {number} tri @param {number} [axis]
+ * @returns {{ quad: number, cross: string[] }[]}
  */
-export function faceLoopTris(tri, axis = 0) {
+export function faceLoopRing(tri, axis = 0) {
 	const start = quadIdOf(tri);
-	if (start < 0) return tri >= 0 && workingTris[tri] ? [tri] : [];
+	if (start < 0) return [];
 	const topo = quadTopology ?? buildQuadTopology();
 	const startEdges = topo.edges.get(start);
-	if (!startEdges) return [tri];
-	/** @type {Set<number>} */
+	if (!startEdges) return [];
+	const a = axis % 2;
+	/** @type {{ quad: number, cross: string[] }[]} */
+	const ring = [{ quad: start, cross: [startEdges[a], startEdges[a + 2]] }];
 	const seen = new Set([start]);
 	// walk BOTH ways from the chosen axis's pair of opposite edges
-	for (const first of [startEdges[axis % 2], startEdges[(axis % 2) + 2]]) {
+	for (const first of [startEdges[a], startEdges[a + 2]]) {
 		let quad = start;
 		let edge = first;
 		for (let guard = 0; guard < workingTris.length; guard++) {
 			const next = (topo.byEdge.get(edge) ?? []).find((q) => q !== quad);
 			if (next === undefined || seen.has(next)) break; // boundary, non-quad, or closed
+			const edges = topo.edges.get(next);
+			const at = edges ? edges.indexOf(edge) : -1;
+			if (!edges || at < 0) break;
 			seen.add(next);
-			const ring = topo.edges.get(next);
-			const at = ring ? ring.indexOf(edge) : -1;
-			if (!ring || at < 0) break;
-			edge = ring[(at + 2) % 4]; // straight across
+			const out = edges[(at + 2) % 4]; // straight across
+			ring.push({ quad: next, cross: [edge, out] });
+			edge = out;
 			quad = next;
 		}
 	}
+	return ring;
+}
+
+/** The face loop through a triangle's quad, as tri indices. @param {number} tri
+ * @param {number} [axis] @returns {number[]} */
+export function faceLoopTris(tri, axis = 0) {
+	const ring = faceLoopRing(tri, axis);
+	if (!ring.length) return tri >= 0 && workingTris[tri] ? [tri] : [];
 	/** @type {number[]} */
 	const out = [];
-	for (const q of seen) {
-		out.push(q);
-		const mate = quadPartner[q] ?? -1;
+	for (const { quad } of ring) {
+		out.push(quad);
+		const mate = quadPartner[quad] ?? -1;
 		if (mate >= 0) out.push(mate);
 	}
 	return out;
@@ -1397,7 +1412,7 @@ let loopSignature = '';
 export function selectFaceLoop() {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris);
-	const anchor = sel.length ? sel[0] : get(faceEditHoverTri);
+	const anchor = /** @type {number} */ (sel.length ? sel[0] : get(faceEditHoverTri));
 	if (anchor < 0 || !workingTris[anchor]) {
 		showToast('Pick a quad first, then Loop');
 		return false;
@@ -1471,6 +1486,129 @@ export function shrinkSelection() {
 	);
 	faceEditSelectedTris.set(next);
 	refreshFaceOverlay();
+	return true;
+}
+
+// ---- M3: loop cut (insert edge loop) ---------------------------------------
+
+/** the quad's corners resolved to {pos, uv}, keyed by welded position key —
+ * a loop cut interpolates BOTH, so it needs them together.
+ * @param {number} quad @returns {Map<string, {pos: any, uv: number[]}>} */
+function quadCorners(quad) {
+	/** @type {Map<string, {pos: any, uv: number[]}>} */
+	const map = new Map();
+	for (const ti of [quad, quadPartner[quad]]) {
+		const t = workingTris[ti];
+		if (!t) continue;
+		t.forEach((/** @type {any} */ v, /** @type {number} */ c) => {
+			const k = keyOf(v.x, v.y, v.z);
+			if (!map.has(k)) map.set(k, { pos: v, uv: uvAt(t, c) });
+		});
+	}
+	return map;
+}
+
+/**
+ * M3: insert `cuts` edge loops across the ring the current pick lies on — the
+ * single most-used modelling operation. Each quad in the ring is split
+ * PERPENDICULAR to the walk direction into cuts+1 sub-quads, interpolating
+ * positions and UVs, keeping the material slot, as ONE undoable meshgeo.
+ *
+ * Like `subdivideFaceTris`, the quads FLANKING the ring keep their full edge —
+ * a T-junction, and visually seamless because the new vertices sit exactly on
+ * that edge. (Blender turns those into n-gons; a triangle soup has no n-gons.)
+ * @param {number} cuts @returns {boolean}
+ */
+export function commitLoopCut(cuts = 1) {
+	if (!faceEdited) return false;
+	const n = Math.max(1, Math.min(Math.round(cuts) || 1, 20));
+	const sel = get(faceEditSelectedTris);
+	const anchor = /** @type {number} */ (sel.length ? sel[0] : get(faceEditHoverTri));
+	if (anchor < 0 || !workingTris[anchor]) {
+		showToast('Pick a quad first, then Loop cut');
+		return false;
+	}
+	if (quadIdOf(anchor) < 0) {
+		showToast('Loop cut needs a QUAD — this triangle has no pair');
+		return false;
+	}
+	const ring = faceLoopRing(anchor, loopAxis);
+	if (!ring.length) {
+		showToast('No loop runs through that face');
+		return false;
+	}
+	const topo = quadTopology ?? buildQuadTopology();
+
+	const before = trisToPositions(workingTris);
+	const beforeGroups = trisToGroups(workingTris);
+	const beforeUVs = trisToUVs(workingTris);
+
+	/** every triangle the ring consumes */
+	const consumed = new Set();
+	for (const { quad } of ring) {
+		consumed.add(quad);
+		const mate = quadPartner[quad] ?? -1;
+		if (mate >= 0) consumed.add(mate);
+	}
+	const next = cloneTris(
+		workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !consumed.has(ti))
+	);
+
+	for (const { quad, cross } of ring) {
+		const edges = topo.edges.get(quad);
+		const keys = quadRingKeys(quad, quadPartner[quad]);
+		if (!edges || !keys) continue;
+		const at = edges.indexOf(cross[0]);
+		if (at < 0) continue;
+		// relabel so the loop crosses A-B and C-D; the cut then runs from a point
+		// on B-C to a point on D-A
+		const corner = quadCorners(quad);
+		const [A, B, C, D] = [0, 1, 2, 3].map((o) => corner.get(keys[(at + o) % 4]));
+		if (!A || !B || !C || !D) continue;
+		const mi = workingTris[quad]?.mi;
+		const textured = !!workingTris[quad]?.uv;
+		const wantDir = triNormal(workingTris[quad]);
+		// t across the quad: 0 at the A-B edge, 1 at the C-D edge
+		const at1 = (/** @type {number} */ t) => A.pos.clone().lerp(D.pos, t);
+		const at2 = (/** @type {number} */ t) => B.pos.clone().lerp(C.pos, t);
+		const uv1 = (/** @type {number} */ t) => uvLerp(A.uv, D.uv, t);
+		const uv2 = (/** @type {number} */ t) => uvLerp(B.uv, C.uv, t);
+		for (let k = 0; k <= n; k++) {
+			const t0 = k / (n + 1);
+			const t1 = (k + 1) / (n + 1);
+			pushQuad(
+				next,
+				at1(t0),
+				at2(t0),
+				at2(t1),
+				at1(t1),
+				wantDir,
+				mi,
+				textured ? [uv1(t0), uv2(t0), uv2(t1), uv1(t1)] : undefined
+			);
+		}
+	}
+
+	const positions = trisToPositions(next);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast('That edit is too large to sync');
+		return false;
+	}
+	const groups = trisToGroups(next);
+	const uvs = trisToUVs(next);
+	applyGeometrySnapshot(positions, groups, uvs);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
+		after: { positions, groups, uvs }
+	});
+	faceEditSelectedTris.set([]); // the ring's indices are gone
+	faceEditHighlight.set(-1);
+	showToast(
+		'Loop cut: ' + n + ' loop' + (n === 1 ? '' : 's') + ' across ' + ring.length + ' quads'
+	);
 	return true;
 }
 
@@ -1803,13 +1941,16 @@ function refreshFaceOverlay() {
 
 /**
  * Run an op on the highlighted face and commit: rebuild geometry, replicate
- * the snapshot, record history. subdivide/flip/bridge take no amount (B4).
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'} op
+ * the snapshot, record history. subdivide/flip/bridge take no amount (B4); for
+ * M3's loopcut `amount` is the CUT COUNT, not a distance.
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'} op
  * @param {number} amount
  */
 export function commitFaceOp(op, amount) {
 	// B4: bridge validates + commits its own two-face path
 	if (op === 'bridge') return bridgeFaces();
+	// M3: loop cut owns its ring walk + commit, like bridge; `amount` = cut count
+	if (op === 'loopcut') return commitLoopCut(amount);
 	// 212: target the multi selection / hovered unit / highlighted face group
 	const face = opTargetFace();
 	if (!faceEdited || !face) return false;

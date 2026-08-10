@@ -396,7 +396,12 @@ drops the P2P session.
   view-mode, vr-passthrough). `node-search` came OFF this list in #16-P2 — two of
   its assertions were stale (they demanded menus never scroll and are never
   height-capped, which a later change deliberately reversed). When a "known
-  failing" suite blocks you, check whether it is asserting the OLD contract.
+  failing" suite blocks you, check whether it is asserting the OLD contract. That
+  includes assertions YOU wrote earlier in the same session: 17-D's "no hinge
+  button until vertices are picked" went red the moment the fix deliberately made
+  that button always-visible. Fix the assertion, not the code — and replace it with
+  one that still bites (there: pressing the button with nothing picked must change
+  no origin).
 - `add-menu` documents its own flake in a comment at the failing line (a right-tap
   that does not open the viewport menu) — the fastest proof that a failure is not
   yours is still `git stash push -u` → run → `git stash pop`.

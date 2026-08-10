@@ -1066,6 +1066,22 @@ loadable play content. Everything a user does must be visible to connected peers
   (alias/case fixes, and an invented name with object-spec args becomes create_objects).
   Reasoning models also stream `delta.reasoning`/`reasoning_content` — never chat content,
   never in the transcript; it only feeds the `aiStatus` "Thinking…" line.
+- **Re-seating the transform gizmo (17-D)**: `reseatPivot()` runs after every origin
+  write, and two rules are load-bearing. (1) **A RE-SEAT IS NOT A NEW SELECTION** —
+  it must keep `pivotOnly` and any hand-placed origin; resetting them cancelled
+  "Move origin" the instant the button set it, so the gizmo drag moved the OBJECT
+  instead of its origin. Only a genuinely new selection clears that state.
+  (2) **It must ALWAYS leave a gizmo attached.** A preset can legitimately produce a
+  ZERO offset (Centre on an already-centred primitive, Reset), which CLEARS the
+  origin — so no pivot is warranted and the object itself has to take the gizmo
+  back, or it vanishes until the user deselects and reselects. Drag-end lives in
+  `commitOriginDrag()` so the handler and a headless test share one path.
+- **meshEdit has TWO vertex-selection notions**: the `vertexSelection` SET
+  (ctrl-click / `vertexSelectionSize`) and the single anchored `selectedHandle` a
+  PLAIN click sets. Gating UI on the size store alone hides features while a vertex
+  is visibly selected (it hid the origin's hinge button). `vertexSelectionWorldPoint()`
+  falls back to the anchor for exactly this reason — prefer "always offered, toast
+  when nothing is picked" over a count gate.
 - **The Inspector edits the SELECTION SET, not one object (17-D1)**: material/colour/
   object-flag/shadow/particle/physics writes fan through `fanOn()` over the SAME
   per-uuid entry points (wire byte-identical), N>1 wrapped in ONE `beginHistoryBatch`

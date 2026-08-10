@@ -229,9 +229,39 @@
 				⚠ Modules run code inside your session — install only from sources you trust.
 				Every peer needs the same modules for shared behavior to match.
 			</p>
+			<!-- ONE install control: paste a URL and press Install, or pick a .zip.
+			     (The old row had a blue "Install zip" next to a permanently grey
+			     `color="alternative"` "Install URL" — the URL button read as
+			     disabled even though it worked.) -->
 			<div class="flex items-center gap-2">
-				<Button size="xs" onclick={() => document.getElementById('install-module-zip').click()}>
-					Install zip
+				<input
+					id="install-module-url"
+					class="flex-1 rounded-sm border border-gray-600 bg-transparent px-2 py-1 text-sm dark:text-white"
+					placeholder="Module URL — https://raw.githubusercontent.com/user/repo/main/mymodule (or a github.com/…/tree/… link)"
+					bind:value={installUrlValue}
+					on:keydown={async (e) => {
+						if (e.key !== 'Enter' || !installUrlValue.trim()) return;
+						await installUrl(installUrlValue);
+						installUrlValue = '';
+					}}
+				/>
+				<Button
+					size="xs"
+					disabled={!installUrlValue.trim()}
+					onclick={async () => {
+						await installUrl(installUrlValue);
+						installUrlValue = '';
+					}}
+				>
+					Install
+				</Button>
+				<span class="text-xs text-gray-500">or</span>
+				<Button
+					size="xs"
+					color="alternative"
+					onclick={() => document.getElementById('install-module-zip').click()}
+				>
+					Choose .zip…
 				</Button>
 				<input
 					type="file"
@@ -239,28 +269,11 @@
 					style="display: none"
 					accept=".zip"
 					on:change={async (e) => {
-						const file = e.target.files?.[0];
+						const file = e.currentTarget.files?.[0];
 						if (file) await installZip(file);
-						e.target.value = '';
+						e.currentTarget.value = '';
 					}}
 				/>
-				<input
-					id="install-module-url"
-					class="flex-1 rounded-sm border border-gray-600 bg-transparent px-2 py-1 text-sm dark:text-white"
-					placeholder="https://raw.githubusercontent.com/user/repo/main/mymodule (or github.com/…/tree/…)"
-					bind:value={installUrlValue}
-				/>
-				<Button
-					size="xs"
-					color="alternative"
-					disabled={!installUrlValue.trim()}
-					onclick={async () => {
-						await installUrl(installUrlValue);
-						installUrlValue = '';
-					}}
-				>
-					Install URL
-				</Button>
 			</div>
 
 			{#key $loadedModulesChanged}
@@ -277,6 +290,7 @@
 							</div>
 							<Toggle
 								size="small"
+								id={'enable-user-module-' + record.id}
 								checked={!$disabledModules.includes(record.id)}
 								onchange={async (e) => {
 									if (e.target.checked) {
@@ -322,15 +336,16 @@
 							>
 								Reload
 							</Button>
-							<label class="flex items-center gap-1 text-xs text-gray-400" title="Poll the dev URL (~2s) and reload on change">
-								<input
-									type="checkbox"
+							<div class="shrink-0" title="Poll the dev URL (~2s) and reload when the code changes">
+								<Toggle
+									size="small"
 									id={'dev-poll-' + record.id}
 									checked={$devPolling.includes(record.id)}
-									on:change={(e) => setDevPoll(record, e.currentTarget.checked)}
-								/>
-								Auto
-							</label>
+									onchange={(e) => setDevPoll(record, e.currentTarget.checked)}
+								>
+									<span class="text-xs text-gray-400">Auto</span>
+								</Toggle>
+							</div>
 						</div>
 					</div>
 				{/each}

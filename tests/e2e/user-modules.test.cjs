@@ -46,6 +46,15 @@ h.run(async () => {
 	// button-role query never matches and was the suite's known failure
 	await A.page.getByRole('tab', { name: 'User', exact: true }).click();
 	await A.page.waitForTimeout(200);
+	// install row: ONE primary Install driven by the URL field (it used to be a
+	// permanently grey color="alternative" button that read as disabled)
+	const installBtn = A.page.locator('#user-modules-tab').getByRole('button', { name: 'Install', exact: true });
+	h.check(await installBtn.isDisabled(), 'Install is disabled while the URL field is empty');
+	await A.page.locator('#install-module-url').fill('https://example.invalid/mod');
+	await A.page.waitForTimeout(150);
+	h.check(await installBtn.isEnabled(), 'Install enables as soon as a URL is typed');
+	await A.page.locator('#install-module-url').fill('');
+
 	await A.page.locator('#install-module-zip').setInputFiles({
 		name: 'testmod.module.zip',
 		mimeType: 'application/zip',
@@ -234,8 +243,9 @@ export default {
 	});
 
 	// live disable genuinely deactivates (no page reload needed anymore) —
-	// flowbite's Toggle checkbox is sr-only, so click its label
-	await A.page.locator('#user-module-card-devmod label:has(input.sr-only)').click();
+	// flowbite's Toggle checkbox is sr-only, so click the label wrapping THIS
+	// toggle (the card also carries the Auto-poll toggle now)
+	await A.page.locator('label:has(#enable-user-module-devmod)').click();
 	await h.eventually(() => loadedIds(A.page), (ids) => !ids.includes('devmod'), 'disable deactivates live');
 	const afterDisable = await sdkCounts(A.page);
 	h.check(afterDisable.menu === 0 && afterDisable.effects === '', 'disable tears the registries down');

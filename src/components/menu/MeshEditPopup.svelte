@@ -42,7 +42,11 @@
 		shrinkSelection,
 		selectAllFaces,
 		invertFaceSelection,
-		selectLinkedFaces
+		selectLinkedFaces,
+		recalculateNormals,
+		mergeByDistance,
+		setShadingSmooth,
+		shadingMode
 	} from '$lib/faceEdit';
 	import {
 		Keyboard,
@@ -60,7 +64,10 @@
 		Shrink,
 		BoxSelect,
 		FlipHorizontal,
-		Link2
+		Link2,
+		Compass,
+		Combine,
+		Sun
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import ToolIcon from '../ui/ToolIcon.svelte';
@@ -145,6 +152,25 @@
 	function runSelectCmd(cmd) {
 		if (cmd.run()) flash(cmd.id);
 	}
+
+	// M6: whole-mesh cleanup commands — they act on the OBJECT, not the pick
+	let mergeDistance = $state(0.001);
+	const CLEANUP_CMDS = [
+		{
+			id: 'normals',
+			label: 'Recalculate normals',
+			lucide: Compass,
+			run: () => recalculateNormals(),
+			desc: 'rewind every face to point outward'
+		},
+		{
+			id: 'merge',
+			label: 'Merge by distance',
+			lucide: Combine,
+			run: () => mergeByDistance(mergeDistance),
+			desc: 'collapse near-coincident vertices and drop the degenerate faces'
+		}
+	];
 
 	/** a target exists for a one-shot op (E10: the selection first, else a picked unit) */
 	function hasTarget() {
@@ -457,6 +483,49 @@
 				title="Create face — select 3-4 vertices (Ctrl+click adds) first"
 				onclick={createFace}><ToolIcon name="create-face" /></button
 			>
+		{/if}
+
+		{#if mode === 'faces'}
+			<!-- M6: whole-mesh cleanup — acts on the OBJECT, not the pick -->
+			<span class="tbx-label">Cleanup</span>
+			{#each CLEANUP_CMDS as c (c.id)}
+				<button
+					id={`mesh-fix-${c.id}`}
+					class="tbx-btn"
+					class:tbx-flash={flashOp === c.id}
+					onanimationend={() => (flashOp = '')}
+					aria-label={c.label}
+					title={`${c.label} — ${c.desc}`}
+					onclick={() => runSelectCmd(c)}><c.lucide size={18} aria-hidden="true" /></button
+				>
+			{/each}
+			<button
+				id="mesh-shading"
+				class="tbx-btn"
+				aria-label="Smooth shading"
+				aria-pressed={shadingMode() === 'smooth'}
+				title={shadingMode() === 'smooth'
+					? 'Smooth shading — click for flat'
+					: 'Flat shading — click for smooth'}
+				onclick={() => {
+					setShadingSmooth(shadingMode() !== 'smooth');
+					flash('shading');
+				}}><Sun size={18} aria-hidden="true" /></button
+			>
+			<div class="tbx-row text-xs text-gray-300">
+				<label class="flex items-center gap-1" title="Vertices closer than this merge into one">
+					merge dist
+					<input
+						id="mesh-merge-dist"
+						type="number"
+						min="0.0001"
+						max="1"
+						step="0.001"
+						class="w-16 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={mergeDistance}
+					/>
+				</label>
+			</div>
 		{/if}
 
 		<!-- DISPLAY -->

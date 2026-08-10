@@ -981,8 +981,10 @@ export function applyMeshGeo(uuid, positions, groups, uvs) {
 	geometry.computeBoundingSphere();
 	// T-2: terrain reads smooth, not faceted — average normals across
 	// position-welded vertices (deterministic: every peer derives the same
-	// shading from the same positions; nothing extra on the wire)
-	if (object.userData.terrain) smoothWeldedNormals(geometry);
+	// shading from the same positions; nothing extra on the wire). M6 makes the
+	// same treatment a per-object CHOICE, so it has to survive every swap.
+	if (object.userData.terrain || object.userData.shading === 'smooth')
+		smoothWeldedNormals(geometry);
 	const previous = object.geometry;
 	preserveMaterialGroups(geometry, previous, object, groups);
 	preserveUVs(geometry, previous, uvs == null ? null : Array.from(toFloats(uvs)));
@@ -1012,7 +1014,7 @@ export function applyMeshGeo(uuid, positions, groups, uvs) {
 
 /** Average normals across position-welded vertices of a NON-INDEXED geometry
  * (computeVertexNormals on split tris gives flat shading). @param {any} geometry */
-function smoothWeldedNormals(geometry) {
+export function smoothWeldedNormals(geometry) {
 	const position = geometry.attributes.position;
 	const normal = geometry.attributes.normal;
 	if (!position || !normal) return;
@@ -1610,6 +1612,166 @@ export function commitLoopCut(cuts = 1) {
 		'Loop cut: ' + n + ' loop' + (n === 1 ? '' : 's') + ' across ' + ring.length + ' quads'
 	);
 	return true;
+}
+
+// ---- M6: cleanup commands --------------------------------------------------
+
+/**
+ * M6: re-wind every triangle so its normal points AWAY from its own shell's
+ * interior ("recalculate normals outside"). Imported and hand-built meshes
+ * routinely arrive with mixed winding, which reads as holes under lighting;
+ * `flip` only ever reversed a hand-picked selection.
+ *
+ * Per SHELL (a merged mesh has several, each with its own inside), the test is
+ * the signed volume of the closed surface: negative means the whole shell is
+ * inside-out, so flip it. Then any triangle disagreeing with its neighbours is
+ * flipped too — that catches a few stray faces in an otherwise correct shell.
+ * @returns {boolean}
+ */
+export function recalculateNormals() {
+	if (!faceEdited) return false;
+	const before = trisToPositions(workingTris);
+	const beforeGroups = trisToGroups(workingTris);
+	const beforeUVs = trisToUVs(workingTris);
+	const next = cloneTris(workingTris);
+	let flipped = 0;
+	for (const shell of shellsOfTris(workingTris)) {
+		// signed volume via the divergence theorem: sum of the tetrahedra each
+		// triangle forms with the origin. Sign flips with the winding.
+		let volume = 0;
+		for (const ti of shell) {
+			const [a, b, c] = workingTris[ti];
+			volume += a.dot(new THREE.Vector3().crossVectors(b, c)) / 6;
+		}
+		if (volume >= 0) continue; // already outward
+		for (const ti of shell) {
+			const t = next[ti];
+			const swap = t[1];
+			t[1] = t[2];
+			t[2] = swap;
+			if (t.uv) t.uv = [t.uv[0], t.uv[2], t.uv[1]];
+			flipped++;
+		}
+	}
+	if (!flipped) {
+		showToast('Normals already point outward');
+		return false;
+	}
+	const positions = trisToPositions(next);
+	const groups = trisToGroups(next);
+	const uvs = trisToUVs(next);
+	applyGeometrySnapshot(positions, groups, uvs);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
+		after: { positions, groups, uvs }
+	});
+	showToast('Recalculated normals: flipped ' + flipped + ' triangles');
+	return true;
+}
+
+/**
+ * M6: merge vertices closer than `threshold` into their shared centroid
+ * ("merge by distance" / remove doubles). weldSelectedVerts only ever merged an
+ * explicit hand-picked pair; this is the cleanup pass for imported or
+ * bridged geometry with near-coincident duplicates.
+ *
+ * Clusters by a quantized grid at the threshold, which is O(n) and deterministic
+ * — every peer that replays the same snapshot gets the same result.
+ * @param {number} threshold @returns {boolean}
+ */
+export function mergeByDistance(threshold = 0.001) {
+	if (!faceEdited) return false;
+	const eps = Math.max(1e-5, threshold);
+	const before = trisToPositions(workingTris);
+	const beforeGroups = trisToGroups(workingTris);
+	const beforeUVs = trisToUVs(workingTris);
+	/** @type {Map<string, {sum: any, n: number}>} */
+	const cluster = new Map();
+	const cellOf = (/** @type {any} */ v) =>
+		Math.round(v.x / eps) + ',' + Math.round(v.y / eps) + ',' + Math.round(v.z / eps);
+	for (const t of workingTris)
+		for (const v of t) {
+			const k = cellOf(v);
+			const hit = cluster.get(k);
+			if (hit) {
+				hit.sum.add(v);
+				hit.n++;
+			} else cluster.set(k, { sum: v.clone(), n: 1 });
+		}
+	const next = cloneTris(workingTris);
+	let moved = 0;
+	for (const t of next)
+		for (const v of t) {
+			const hit = cluster.get(cellOf(v));
+			if (!hit || hit.n < 2) continue;
+			const target = hit.sum.clone().divideScalar(hit.n);
+			if (v.distanceToSquared(target) > 1e-14) moved++;
+			v.copy(target);
+		}
+	// a triangle whose corners collapsed onto each other has no area left
+	const kept = next.filter(
+		(/** @type {any} */ t) =>
+			triNormal(t).lengthSq() > 1e-12 &&
+			keyOf(t[0].x, t[0].y, t[0].z) !== keyOf(t[1].x, t[1].y, t[1].z) &&
+			keyOf(t[1].x, t[1].y, t[1].z) !== keyOf(t[2].x, t[2].y, t[2].z) &&
+			keyOf(t[2].x, t[2].y, t[2].z) !== keyOf(t[0].x, t[0].y, t[0].z)
+	);
+	const dropped = next.length - kept.length;
+	if (!moved && !dropped) {
+		showToast('No vertices closer than ' + eps + ' to merge');
+		return false;
+	}
+	const positions = trisToPositions(kept);
+	const groups = trisToGroups(kept);
+	const uvs = trisToUVs(kept);
+	applyGeometrySnapshot(positions, groups, uvs);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
+		after: { positions, groups, uvs }
+	});
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	showToast(
+		'Merged ' + moved + ' vertices' + (dropped ? ', removed ' + dropped + ' degenerate faces' : '')
+	);
+	return true;
+}
+
+/**
+ * M6: smooth vs flat shading for the edited object. `smoothWeldedNormals`
+ * existed but was hard-wired to terrain; this exposes it as a per-object
+ * choice stored on userData (so it replicates, saves and survives every
+ * geometry swap through applyMeshGeo). @param {boolean} smooth
+ */
+export function setShadingSmooth(smooth) {
+	if (!faceEdited) return false;
+	faceEdited.userData.shading = smooth ? 'smooth' : 'flat';
+	if (smooth) smoothWeldedNormals(faceEdited.geometry);
+	else faceEdited.geometry.computeVertexNormals();
+	faceEdited.geometry.attributes.normal.needsUpdate = true;
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer)
+		peer.send({
+			type: 'objectParameters',
+			parameter: 'shading',
+			uuid: faceEdited.uuid,
+			shading: faceEdited.userData.shading
+		});
+	objectsGroup.update((v) => v);
+	showToast(smooth ? 'Shading: smooth' : 'Shading: flat');
+	return true;
+}
+
+/** the edited object's shading mode ('flat' unless set) */
+export function shadingMode() {
+	return faceEdited?.userData?.shading === 'smooth' ? 'smooth' : 'flat';
 }
 
 /** M6: select every triangle of the mesh */

@@ -19,15 +19,16 @@
 	import { explorerItems, explorerFolders, inspectedFile, itemBlob, renameItem, deleteItem, updateItemBytes } from '$lib/explorer';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
 	import {
-		setObjectTexture,
 		removeObjectTexture,
 		setMaterialParam,
 		switchMaterialType,
 		recordMaterialChange,
-		setObjectColor
+		setObjectColor,
+		setObjectsTexture
 	} from '$lib/materialsHandler';
-	import { recordEntry, beginHistoryBatch, endHistoryBatch } from '$lib/history';
+	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
 	import { canEditObject } from '$lib/objectPermissions';
+	import { attachMultiPivot } from '$lib/multiTransform';
 	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
@@ -302,10 +303,44 @@
 	});
 	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);
 
+	// 17-D1 follow-up: geometry rows fan too, but ONLY across one primitive type —
+	// a Box's params mean nothing to a Sphere. Members whose mesh was edited are
+	// left out: rebuilding their primitive would discard those edits.
+	const geoTargets = $derived.by(() => {
+		$objectsGroup;
+		geoTick;
+		if (!geoParams) return [];
+		return insTargets.filter((/** @type {any} */ object) => {
+			if (object.userData?.vertexEdited || object.userData?.faceEdited) return false;
+			return geometryParamsOf(object)?.gtype === geoParams.gtype;
+		});
+	});
+	/** shapes in the selection that the geometry rows cannot touch */
+	const geoOtherTypes = $derived.by(() => {
+		$objectsGroup;
+		if (!geoParams || insTargets.length < 2) return [];
+		const others = insTargets
+			.filter((/** @type {any} */ object) => !geoTargets.includes(object))
+			.map((/** @type {any} */ object) => geometryParamsOf(object)?.gtype ?? object.type);
+		return [...new Set(others)];
+	});
+
+	/** do the same-type members disagree on one geometry param?
+	 * @param {string} key @param {any} fallback */
+	function geoMixed(key, fallback) {
+		if (geoTargets.length < 2) return false;
+		const read = (/** @type {any} */ object) =>
+			geometryParamsOf(object)?.params?.[key] ?? fallback;
+		const first = read(geoTargets[0]);
+		return geoTargets.some((object) => read(object) !== first);
+	}
+
 	/** @param {string} key @param {any} value */
 	function editGeometry(key, value) {
 		const run = () => {
-			applyGeometry($selectedObject.uuid, { [key]: value });
+			fanOn(geoTargets.length ? geoTargets : [$selectedObject], 'Geometry', (object) =>
+				applyGeometry(object.uuid, { [key]: value })
+			);
 			geoTick++;
 		};
 		if ($selectedObject.userData?.vertexEdited) {
@@ -494,23 +529,74 @@
 	}
 
 	// ---- replication (identical messages to the retired panels) -------------
-	function sendMove() {
-		const obj = $selectedObject;
-		if (!obj?.uuid) return;
+	/** @param {any} object */
+	function sendMove(object) {
+		if (!object?.uuid) return;
 		$peers.send({
 			type: 'move',
-			uuid: obj.uuid,
-			pos: obj.position.toArray(),
-			rot: obj.rotation.toArray(),
-			scale: obj.scale.toArray()
+			uuid: object.uuid,
+			pos: object.position.toArray(),
+			rot: object.rotation.toArray(),
+			scale: object.scale.toArray()
 		});
+	}
+
+	/** @param {any} object */
+	const poseOf = (object) => ({
+		pos: object.position.toArray(),
+		rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+		scale: object.scale.toArray()
+	});
+
+	// ONE undo entry per transform GESTURE (a scrub fires on every pixel), sealed
+	// 500ms after the last change through the existing `transformSet` kind — the
+	// same one a multi-gizmo drag records, so replay + replication come free.
+	// Typed transforms recorded nothing at all before; with a selection they must,
+	// because setting an absolute value collapses the whole set onto one plane.
+	/** @type {Map<string, any>|null} */
+	let xformGestureStart = null;
+	/** @type {any} */
+	let xformGestureTimer;
+	function trackTransformGesture() {
+		if (xformGestureStart == null) {
+			xformGestureStart = new Map();
+			for (const object of insTargets) xformGestureStart.set(object.uuid, poseOf(object));
+		}
+		clearTimeout(xformGestureTimer);
+		xformGestureTimer = setTimeout(() => {
+			const befores = xformGestureStart;
+			xformGestureStart = null;
+			if (!befores?.size) return;
+			/** @type {any[]} */
+			const items = [];
+			for (const [uuid, before] of befores) {
+				const object = $objectsGroup?.getObjectByProperty('uuid', uuid);
+				if (!object) continue;
+				const after = poseOf(object);
+				/** @param {number[]} a @param {number[]} b */
+				const same = (a, b) => a.every((n, i) => n === b[i]);
+				const still =
+					same(before.pos, after.pos) &&
+					same(before.rot, after.rot) &&
+					same(before.scale, after.scale);
+				if (!still) items.push({ uuid, before, after });
+			}
+			recordTransformSet(items);
+			// the multi-select gizmo sits at the centroid it was built with — after
+			// moving the members it would float away from them, so re-seat it
+			if (items.length > 1) attachMultiPivot(items.map((item) => item.uuid));
+		}, 500);
 	}
 
 	/** @param {'position'|'rotation'|'scale'} field @param {'x'|'y'|'z'} axis @param {number} next */
 	function setTransform(field, axis, next) {
-		$selectedObject[field][axis] = next;
+		trackTransformGesture(); // capture the BEFORE poses before we write
+		for (const object of insTargets) {
+			object[field][axis] = next;
+			sendMove(object);
+		}
 		selectedObject.update((v) => v); // refresh rows + object list
-		sendMove();
+		objectsGroup.update((v) => v); // multi rows re-read through insTargets
 	}
 
 	/** lights resend their whole object — same as the old light panel */
@@ -570,6 +656,44 @@
 	 * @param {string} key @param {any} value */
 	function setMat(key, value) {
 		fanMat(key, (object) => setMaterialParam(object.uuid, key, value));
+	}
+
+	/**
+	 * Textures fan too. The writers are async (read the file, downscale, then
+	 * record + replicate), so the batch is opened here and closed after ALL of
+	 * them settle — one undo puts every material's previous map back.
+	 * @param {(uuid: string) => Promise<any>} apply
+	 * @param {string} label
+	 */
+	async function fanTexture(apply, label) {
+		const targets = matTargets;
+		if (!targets.length) return;
+		if (targets.length === 1) {
+			await apply(targets[0].uuid);
+		} else {
+			beginHistoryBatch();
+			try {
+				for (const object of targets) await apply(object.uuid);
+			} finally {
+				endHistoryBatch(`${label} (${targets.length})`);
+			}
+		}
+		selectedObject.update((s) => s);
+		objectsGroup.update((v) => v);
+	}
+
+	/** A picked image file → every selected material, decoded once. @param {File} file */
+	async function setTextureFromFile(file) {
+		const uuids = matTargets.map((/** @type {any} */ object) => object.uuid);
+		if (!uuids.length) return;
+		if (uuids.length > 1) beginHistoryBatch();
+		try {
+			await setObjectsTexture(uuids, file);
+		} finally {
+			if (uuids.length > 1) endHistoryBatch(`Texture (${uuids.length})`);
+		}
+		selectedObject.update((s) => s);
+		objectsGroup.update((v) => v);
 	}
 
 	/** CL-A A4: which material preset matches the current values (else 'custom') @param {any} p */
@@ -1532,7 +1656,7 @@
 		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
 			<PanelHeader
 				title="Properties"
-				badge={$selectedObject.type}
+				badge={multiCount ? `${multiCount} objects` : $selectedObject.type}
 				pinned={$inspectorPinned}
 				onpin={() => inspectorPinned.update((v) => !v)}
 				onclose={() => inspectorClose.set(true)}
@@ -1550,6 +1674,17 @@
 		</div>
 
 		<div class="flex flex-col gap-3">
+			{#if multiCount}
+				<!-- 17-D1 follow-up: the panel edits the whole SET, so say so instead of
+				     letting the last-clicked object's name read like the only target -->
+				<div id="selection-multi-banner" class="rounded-sm border border-primary-500/40 bg-primary-500/10 px-2 py-1.5">
+					<p class="text-xs font-semibold text-primary-200">Editing {multiCount} objects</p>
+					<p class="text-[10px] text-gray-400">
+						Values apply to all of them. Name, id and group below belong to the last selected —
+						<span class="text-gray-300">{$selectedObject.name || $selectedObject.type}</span>.
+					</p>
+				</div>
+			{/if}
 			<div class="flex flex-col gap-1">
 				<input
 					id="name"
@@ -1757,29 +1892,38 @@
 					<span class="text-[11px] text-gray-400">Position</span>
 					<div id="inspector-position" class="grid grid-cols-3 gap-1">
 						<DragRow label="X" accent="text-red-400" step={0.02} value={$selectedObject.position.x}
+							mixed={mixed((o) => o.position.x)}
 							onchange={(v) => setTransform('position', 'x', v)} />
 						<DragRow label="Y" accent="text-green-400" step={0.02} value={$selectedObject.position.y}
+							mixed={mixed((o) => o.position.y)}
 							onchange={(v) => setTransform('position', 'y', v)} />
 						<DragRow label="Z" accent="text-blue-400" step={0.02} value={$selectedObject.position.z}
+							mixed={mixed((o) => o.position.z)}
 							onchange={(v) => setTransform('position', 'z', v)} />
 					</div>
 					{#if !isLight}
 						<span class="text-[11px] text-gray-400">Rotation</span>
 						<div id="inspector-rotation" class="grid grid-cols-3 gap-1">
 							<DragRow label="X" accent="text-red-400" step={0.01} snap={RAD_SNAP} value={$selectedObject.rotation.x}
+								mixed={mixed((o) => o.rotation.x)}
 								onchange={(v) => setTransform('rotation', 'x', v)} />
 							<DragRow label="Y" accent="text-green-400" step={0.01} snap={RAD_SNAP} value={$selectedObject.rotation.y}
+								mixed={mixed((o) => o.rotation.y)}
 								onchange={(v) => setTransform('rotation', 'y', v)} />
 							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={RAD_SNAP} value={$selectedObject.rotation.z}
+								mixed={mixed((o) => o.rotation.z)}
 								onchange={(v) => setTransform('rotation', 'z', v)} />
 						</div>
 						<span class="text-[11px] text-gray-400">Scale</span>
 						<div id="inspector-scale" class="grid grid-cols-3 gap-1">
 							<DragRow label="X" accent="text-red-400" step={0.01} snap={0.1} value={$selectedObject.scale.x}
+								mixed={mixed((o) => o.scale.x)}
 								onchange={(v) => setTransform('scale', 'x', v)} />
 							<DragRow label="Y" accent="text-green-400" step={0.01} snap={0.1} value={$selectedObject.scale.y}
+								mixed={mixed((o) => o.scale.y)}
 								onchange={(v) => setTransform('scale', 'y', v)} />
 							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={0.1} value={$selectedObject.scale.z}
+								mixed={mixed((o) => o.scale.z)}
 								onchange={(v) => setTransform('scale', 'z', v)} />
 						</div>
 					{/if}
@@ -1815,7 +1959,16 @@
 
 			{#if geoParams && geoSpec}
 				<Section label="Geometry">
-					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">{geoParams.gtype}</p>
+					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
+						{geoParams.gtype}{geoTargets.length > 1 ? ` · ${geoTargets.length} objects` : ''}
+					</p>
+					{#if geoOtherTypes.length}
+						<p id="geometry-mixed-note" class="rounded-sm bg-gray-700/50 px-2 py-1 text-[10px] text-gray-300">
+							Only the {geoTargets.length} {geoParams.gtype} object{geoTargets.length === 1 ? '' : 's'}
+							in this selection change — {geoOtherTypes.join(', ')}
+							{geoOtherTypes.length === 1 ? 'has' : 'have'} different parameters.
+						</p>
+					{/if}
 					{#if $selectedObject.userData?.vertexEdited || $selectedObject.userData?.faceEdited}
 						<!-- 164: once the mesh is edited, the parametric controls are LOCKED
 						     (changing one rebuilds the primitive + discards the edits) -->
@@ -1840,6 +1993,7 @@
 										step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
 										decimals={spec.kind === 'int' ? 0 : 2}
 										value={Number(geoParams.params[spec.key] ?? spec.def)}
+										mixed={geoMixed(spec.key, spec.def)}
 										onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
 									/>
 								{/if}
@@ -2056,7 +2210,9 @@
 
 					<!-- materials supporting textures initialize map to null; ShadowMaterial has no map at all -->
 					{#if typeof material.map !== 'undefined'}
-						<p class="ui-section-label">Texture</p>
+						<p class="ui-section-label">
+							Texture{matCount ? ` — applies to all ${matCount}` : ''}
+						</p>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							id="texture-drop"
@@ -2074,8 +2230,8 @@
 								if (!raw) return;
 								e.preventDefault();
 								e.stopPropagation();
-								const ok = await applyExplorerImage($selectedObject.uuid, JSON.parse(raw));
-								if (ok) selectedObject.update((s) => s);
+								const payload = JSON.parse(raw);
+								await fanTexture((uuid) => applyExplorerImage(uuid, payload), 'Texture');
 							}}
 						>
 						<input
@@ -2085,10 +2241,7 @@
 							style="display: none"
 							onchange={(e) => {
 								const file = e.currentTarget.files?.[0];
-								if (file)
-									setObjectTexture($selectedObject.uuid, file).then(() =>
-										selectedObject.update((s) => s)
-									);
+								if (file) setTextureFromFile(file);
 								e.currentTarget.value = '';
 							}}
 						/>
@@ -2104,10 +2257,9 @@
 								<Button
 									size="xs"
 									color="alternative"
-									onclick={() => {
-										removeObjectTexture($selectedObject.uuid);
-										selectedObject.update((s) => s);
-									}}>Remove</Button
+									onclick={() =>
+										fanTexture(async (uuid) => removeObjectTexture(uuid), 'Remove texture')}
+										>Remove</Button
 								>
 							{:else}
 								<Button
@@ -2347,7 +2499,23 @@
 				</Section>
 
 				<!-- PFX-A: particle emitter — config on userData.particles, every edit
-				     replicates + records a props undo entry (setParticles) -->
+				     replicates + records a props undo entry (setParticles).
+				     17-D1 follow-up: this section stays SINGLE-object. An emitter is a
+				     whole config (preset, rates, colours, sprite), and the members of a
+				     selection rarely share one — fanning a preset write would silently
+				     overwrite emitters that were tuned individually, with no way to see
+				     what was lost. The right-click menu already offers counted
+				     Particles ▸ Add / Burst / Remove for a whole selection, which are
+				     the operations that are safe to apply blind. -->
+				{#if multiCount}
+					<Section label="Particles">
+						<p id="particles-multi-note" class="text-[10px] text-gray-400">
+							{multiCount} objects selected — an emitter is edited one object at a time so tuned
+							configs are not overwritten. Right-click the selection for Particles ▸ Add, Burst or
+							Remove across all {multiCount}.
+						</p>
+					</Section>
+				{:else}
 				<Section label="Particles">
 					{#if !$selectedObject.userData.particles}
 						<div class="ui-row items-center gap-2">
@@ -2500,6 +2668,7 @@
 						</div>
 					{/if}
 				</Section>
+				{/if}
 			{/if}
 		</div>
 	{/if}

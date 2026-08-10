@@ -36,7 +36,13 @@
 		faceSelectionInfo,
 		faceGizmoSpace,
 		meshEditWireframe,
-		meshEditHotkeys
+		meshEditHotkeys,
+		selectFaceLoop,
+		growSelection,
+		shrinkSelection,
+		selectAllFaces,
+		invertFaceSelection,
+		selectLinkedFaces
 	} from '$lib/faceEdit';
 	import {
 		Keyboard,
@@ -49,7 +55,12 @@
 		MousePointer,
 		Merge,
 		Box,
-		Circle
+		Circle,
+		Expand,
+		Shrink,
+		BoxSelect,
+		FlipHorizontal,
+		Link2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import ToolIcon from '../ui/ToolIcon.svelte';
@@ -117,6 +128,22 @@
 			title: 'Pick every triangle, including islands that are not connected to each other'
 		}
 	];
+
+	// M2/M6: selection commands. They change WHAT is picked, never the geometry,
+	// so they flash like one-shots and never stay lit.
+	const SELECT_CMDS = [
+		{ id: 'loop', label: 'Loop select', hint: 'L', lucide: Link2, run: selectFaceLoop, desc: 'the quad ring through this face — press again for the other direction' },
+		{ id: 'grow', label: 'Grow', hint: 'Ctrl +', lucide: Expand, run: growSelection, desc: 'add the neighbouring ring' },
+		{ id: 'shrink', label: 'Shrink', hint: 'Ctrl -', lucide: Shrink, run: shrinkSelection, desc: 'drop the border ring' },
+		{ id: 'all', label: 'Select all', hint: 'Ctrl A', lucide: BoxSelect, run: selectAllFaces, desc: 'every face of the mesh' },
+		{ id: 'invert', label: 'Invert', hint: 'Ctrl I', lucide: FlipHorizontal, run: invertFaceSelection, desc: 'swap picked and unpicked' },
+		{ id: 'linked', label: 'Select linked', hint: '', lucide: Merge, run: selectLinkedFaces, desc: 'the whole connected island' }
+	];
+
+	/** @param {any} cmd */
+	function runSelectCmd(cmd) {
+		if (cmd.run()) flash(cmd.id);
+	}
 
 	/** a target exists for a one-shot op (E10: the selection first, else a picked unit) */
 	function hasTarget() {
@@ -203,9 +230,25 @@
 		if (!$meshEditHotkeys) return; // D3: toggled off — Esc/Done still work above
 		const target = /** @type {any} */ (event.target);
 		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-		if (event.ctrlKey || event.metaKey || event.altKey) return;
 		const key = event.key.toLowerCase();
+		// M2/M6: the SELECTION commands are Ctrl chords, so they are checked before
+		// the plain-key guard below (which deliberately ignores modifier combos)
+		if ((event.ctrlKey || event.metaKey) && !event.altKey && mode === 'faces') {
+			const byChord = { '=': 'grow', '+': 'grow', '-': 'shrink', _: 'shrink', a: 'all', i: 'invert' };
+			const id = /** @type {any} */ (byChord)[key];
+			const cmd = id && SELECT_CMDS.find((c) => c.id === id);
+			if (!cmd) return;
+			runSelectCmd(cmd);
+			event.preventDefault();
+			return;
+		}
+		if (event.ctrlKey || event.metaKey || event.altKey) return;
 		if (mode === 'faces') {
+			if (key === 'l') {
+				runSelectCmd(/** @type {any} */ (SELECT_CMDS[0]));
+				event.preventDefault();
+				return;
+			}
 			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete' };
 			const op = key === 'delete' ? 'delete' : /** @type {any} */ (byKey)[key];
 			if (!op) return;
@@ -225,6 +268,9 @@
 	const KEY_ROWS = [
 		['E / I / G', 'Arm Extrude / Inset / Move (faces)'],
 		['S / B / F / X', 'Subdivide / Bridge / Flip / Delete (faces)'],
+		['L', 'Loop select (again = the other direction)'],
+		['Ctrl + / -', 'Grow / shrink the selection'],
+		['Ctrl A / I', 'Select all / invert'],
 		['W', 'Weld the selected vertices'],
 		['Tab', 'Toggle Edit Mesh'],
 		['Esc', 'Done (exit the session)'],
@@ -300,6 +346,19 @@
 					{/each}
 				</div>
 			</div>
+
+			<!-- M2/M6: selection commands — act on what is already picked -->
+			{#each SELECT_CMDS as c (c.id)}
+				<button
+					id={`mesh-sel-${c.id}`}
+					class="tbx-btn"
+					class:tbx-flash={flashOp === c.id}
+					onanimationend={() => (flashOp = '')}
+					aria-label={c.label}
+					title={c.hint ? `${c.label} (${c.hint}) — ${c.desc}` : `${c.label} — ${c.desc}`}
+					onclick={() => runSelectCmd(c)}><c.lucide size={18} aria-hidden="true" /></button
+				>
+			{/each}
 
 			<!-- TOOLS: armed tools stay lit (solid accent); one-shots flash on commit -->
 			<span class="tbx-label">Tools</span>

@@ -1284,6 +1284,235 @@ export function pickFaceUnit(tri) {
 	refreshFaceOverlay();
 }
 
+// ---- M2: loop select + grow/shrink -----------------------------------------
+// A face LOOP is the classic quad-strip walk: enter a quad through one edge,
+// leave through the OPPOSITE one, repeat until you come back or run out of
+// quads. It only exists because 15-G derives quads (`pairQuads`) from the
+// triangle soup — which is exactly why quad granularity landed first.
+
+/** the quad's 4 ring keys in order (p, ra, q, rb — the shared edge p-q is the
+ * diagonal), or null when the two tris do not actually share an edge.
+ * @param {number} a @param {number} b @returns {string[] | null} */
+function quadRingKeys(a, b) {
+	const ka = workingTris[a]?.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+	const kb = workingTris[b]?.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+	if (!ka || !kb) return null;
+	const shared = ka.filter((/** @type {string} */ k) => kb.includes(k));
+	if (shared.length !== 2) return null;
+	const ra = ka.find((/** @type {string} */ k) => !shared.includes(k));
+	const rb = kb.find((/** @type {string} */ k) => !shared.includes(k));
+	if (!ra || !rb) return null;
+	return [shared[0], ra, shared[1], rb];
+}
+
+/** @param {string} a @param {string} b */
+const edgeKey = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
+
+/** quad adjacency, rebuilt with the faces. `edges` maps a quad id (the LOWER of
+ * its two triangle indices) to its 4 boundary edge keys in ring order; `byEdge`
+ * maps an edge key to the quads touching it.
+ * @type {{ edges: Map<number, string[]>, byEdge: Map<string, number[]> } | null} */
+let quadTopology = null;
+
+function buildQuadTopology() {
+	/** @type {Map<number, string[]>} */
+	const edges = new Map();
+	/** @type {Map<string, number[]>} */
+	const byEdge = new Map();
+	for (let ti = 0; ti < workingTris.length; ti++) {
+		const mate = quadPartner[ti] ?? -1;
+		if (mate < 0 || mate < ti) continue; // one entry per quad, keyed by the lower index
+		const ring = quadRingKeys(ti, mate);
+		if (!ring) continue;
+		const quadEdges = [0, 1, 2, 3].map((i) => edgeKey(ring[i], ring[(i + 1) % 4]));
+		edges.set(ti, quadEdges);
+		for (const ek of quadEdges) {
+			let list = byEdge.get(ek);
+			if (!list) byEdge.set(ek, (list = []));
+			list.push(ti);
+		}
+	}
+	quadTopology = { edges, byEdge };
+	return quadTopology;
+}
+
+/** the quad id a triangle belongs to (the lower of the pair), or -1 when it has
+ * no mate — a lone triangle breaks a loop rather than guessing across it.
+ * @param {number} tri */
+function quadIdOf(tri) {
+	const mate = quadPartner[tri] ?? -1;
+	return mate < 0 ? -1 : Math.min(tri, mate);
+}
+
+/**
+ * The face loop through a triangle's quad. `axis` picks WHICH of the two loops
+ * crossing that quad to walk (0 or 1) — a quad sits on two perpendicular loops,
+ * so the toolbar button cycles the axis on a repeat press.
+ * @param {number} tri @param {number} [axis] @returns {number[]} tri indices
+ */
+export function faceLoopTris(tri, axis = 0) {
+	const start = quadIdOf(tri);
+	if (start < 0) return tri >= 0 && workingTris[tri] ? [tri] : [];
+	const topo = quadTopology ?? buildQuadTopology();
+	const startEdges = topo.edges.get(start);
+	if (!startEdges) return [tri];
+	/** @type {Set<number>} */
+	const seen = new Set([start]);
+	// walk BOTH ways from the chosen axis's pair of opposite edges
+	for (const first of [startEdges[axis % 2], startEdges[(axis % 2) + 2]]) {
+		let quad = start;
+		let edge = first;
+		for (let guard = 0; guard < workingTris.length; guard++) {
+			const next = (topo.byEdge.get(edge) ?? []).find((q) => q !== quad);
+			if (next === undefined || seen.has(next)) break; // boundary, non-quad, or closed
+			seen.add(next);
+			const ring = topo.edges.get(next);
+			const at = ring ? ring.indexOf(edge) : -1;
+			if (!ring || at < 0) break;
+			edge = ring[(at + 2) % 4]; // straight across
+			quad = next;
+		}
+	}
+	/** @type {number[]} */
+	const out = [];
+	for (const q of seen) {
+		out.push(q);
+		const mate = quadPartner[q] ?? -1;
+		if (mate >= 0) out.push(mate);
+	}
+	return out;
+}
+
+/** the axis the last loop select used, so a repeat press walks the OTHER loop */
+let loopAxis = 0;
+/** @type {string} */
+let loopSignature = '';
+
+/**
+ * M2: select the face loop through the current pick. Repeating it on the same
+ * loop switches to the perpendicular one (a quad lies on two) — the standard
+ * "press again to cycle" affordance, since a single click cannot say which.
+ * @returns {boolean}
+ */
+export function selectFaceLoop() {
+	if (!faceEdited) return false;
+	const sel = get(faceEditSelectedTris);
+	const anchor = sel.length ? sel[0] : get(faceEditHoverTri);
+	if (anchor < 0 || !workingTris[anchor]) {
+		showToast('Pick a quad first, then Loop');
+		return false;
+	}
+	if (quadIdOf(anchor) < 0) {
+		showToast('Loop select needs a QUAD — this triangle has no pair');
+		return false;
+	}
+	const signature = quadIdOf(anchor) + ':' + sel.length;
+	if (signature === loopSignature) loopAxis = (loopAxis + 1) % 2;
+	const loop = faceLoopTris(anchor, loopAxis);
+	faceEditSelectedTris.set(loop);
+	loopSignature = quadIdOf(anchor) + ':' + loop.length;
+	refreshFaceOverlay();
+	return true;
+}
+
+/** every welded position key a triangle set touches @param {number[]} triIndices */
+function keysOfTris(triIndices) {
+	const keys = new Set();
+	for (const ti of triIndices)
+		workingTris[ti]?.forEach((/** @type {any} */ v) => keys.add(keyOf(v.x, v.y, v.z)));
+	return keys;
+}
+
+/**
+ * M2: grow the selection by one ring — every triangle touching a selected
+ * vertex joins, then each newcomer expands to its full pick UNIT so quads stay
+ * whole. @returns {boolean}
+ */
+export function growSelection() {
+	if (!faceEdited) return false;
+	const sel = get(faceEditSelectedTris);
+	if (!sel.length) {
+		showToast('Select something first, then Grow');
+		return false;
+	}
+	const keys = keysOfTris(sel);
+	const next = new Set(sel);
+	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		if (next.has(ti)) return;
+		if (t.some((/** @type {any} */ v) => keys.has(keyOf(v.x, v.y, v.z))))
+			pickFaceUnitTris(ti).forEach((u) => next.add(u));
+	});
+	faceEditSelectedTris.set([...next]);
+	refreshFaceOverlay();
+	return true;
+}
+
+/**
+ * M2: shrink by one ring — drop every triangle that touches the selection's
+ * BORDER, i.e. keep only those whose every vertex is interior (i.e. every
+ * triangle sharing that vertex is also selected). @returns {boolean}
+ */
+export function shrinkSelection() {
+	if (!faceEdited) return false;
+	const sel = get(faceEditSelectedTris);
+	if (!sel.length) return false;
+	const selSet = new Set(sel);
+	/** @type {Map<string, boolean>} key -> every toucher selected? */
+	const interior = new Map();
+	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		const mine = selSet.has(ti);
+		t.forEach((/** @type {any} */ v) => {
+			const k = keyOf(v.x, v.y, v.z);
+			interior.set(k, (interior.get(k) ?? true) && mine);
+		});
+	});
+	const next = sel.filter((/** @type {number} */ ti) =>
+		workingTris[ti].every((/** @type {any} */ v) => interior.get(keyOf(v.x, v.y, v.z)))
+	);
+	faceEditSelectedTris.set(next);
+	refreshFaceOverlay();
+	return true;
+}
+
+/** M6: select every triangle of the mesh */
+export function selectAllFaces() {
+	if (!faceEdited) return false;
+	faceEditSelectedTris.set(workingTris.map((/** @type {any} */ _, /** @type {number} */ i) => i));
+	refreshFaceOverlay();
+	return true;
+}
+
+/** M6: invert the selection (by pick UNIT, so quads stay whole) */
+export function invertFaceSelection() {
+	if (!faceEdited) return false;
+	const sel = new Set(get(faceEditSelectedTris));
+	const next = new Set();
+	workingTris.forEach((/** @type {any} */ _, /** @type {number} */ ti) => {
+		if (!sel.has(ti)) pickFaceUnitTris(ti).forEach((u) => next.add(u));
+	});
+	// a unit straddling the border would drag selected tris back in
+	sel.forEach((ti) => next.delete(ti));
+	faceEditSelectedTris.set([...next]);
+	refreshFaceOverlay();
+	return true;
+}
+
+/** M6: grow the selection to every triangle CONNECTED to it (select linked) */
+export function selectLinkedFaces() {
+	if (!faceEdited) return false;
+	const sel = get(faceEditSelectedTris);
+	if (!sel.length) {
+		showToast('Select something first, then Linked');
+		return false;
+	}
+	const next = new Set(sel);
+	for (const shell of shellsOfTris(workingTris))
+		if (shell.some((ti) => next.has(ti))) shell.forEach((ti) => next.add(ti));
+	faceEditSelectedTris.set([...next]);
+	refreshFaceOverlay();
+	return true;
+}
+
 /** Synthesize a face {triIndices, normal, centroid} from the op target tris (212).
  * For a single coplanar group this equals the groupFaces() face, so the default
  * FACE path is unchanged. */
@@ -1326,6 +1555,7 @@ function rebuildFaces() {
 	workingTris = readTriangles(faceEdited.geometry);
 	faces = groupFaces(workingTris);
 	quadPartner = pairQuads(workingTris);
+	quadTopology = null; // M2: the loop-walk adjacency is rebuilt on demand
 }
 
 /** O(1) identity of the quad a triangle belongs to — the lower of the pair, so

@@ -26,6 +26,8 @@
 		'create-face': ['M12 4.5v.01', 'M4.5 19v.01', 'M19.5 19v.01', 'M10.5 7l-4.5 9', 'M13.5 7l4.5 9', 'M7.5 19h9'],
 		// a quad crossed by its wire diagonal
 		wireframe: ['M4 4h16v16H4z', 'M4 20L20 4'],
+		// a quad ring with a new loop inserted across it
+		'loop-cut': ['M4 4h16v16H4z', 'M12 3v18', 'M9.5 8L12 5.5L14.5 8'],
 		// sculpt: a bump pulled up / pushed down, a relaxed wave, a leveled bar
 		raise: ['M3 18c4 0 4.5-5 9-5s5 5 9 5', 'M12 9V3', 'M9 6l3-3 3 3'],
 		lower: ['M3 13c4 0 4.5 5 9 5s5-5 9-5', 'M12 3v6', 'M9 6l3 3 3-3'],

@@ -84,19 +84,30 @@ h.run(async () => {
 	h.check(Math.abs(afterBody - afterHeader) < 2, 'dragging the BODY does not move the window');
 
 	// -------------------------------- 3. resize → the 7 ops REFLOW, size constant
+	// count-driven, so adding a tool in a later phase does not break the check
 	const narrowRows = await opRows(A.page); // default 174px = 4 columns
+	const toolCount = narrowRows.reduce((a, b) => a + b, 0);
+	h.check(toolCount >= 7, 'the Tools section has the face ops (premise, ' + toolCount + ')');
 	h.check(
-		narrowRows.length === 2 && narrowRows[0] === 4 && narrowRows[1] === 3,
-		'at the default width the 7 tools flow 4+3 (' + JSON.stringify(narrowRows) + ')'
+		narrowRows.length > 1 && Math.max(...narrowRows) === 4,
+		'at the default width the tools wrap at 4 per row (' + JSON.stringify(narrowRows) + ')'
 	);
-	// drag the grip 160px right → 8 columns → one row
+	// drag the grip far right → many columns → fewer rows
 	const grip = await A.page.locator('#mesh-edit-popup .dw-resize').boundingBox();
 	await A.page.mouse.move(grip.x + 8, grip.y + 8);
 	await A.page.mouse.down();
-	await A.page.mouse.move(grip.x + 8 + 160, grip.y + 8, { steps: 6 });
+	await A.page.mouse.move(grip.x + 8 + 260, grip.y + 8, { steps: 6 });
 	await A.page.mouse.up();
 	const wideRows = await opRows(A.page);
-	h.check(wideRows.length === 1 && wideRows[0] === 7, 'after widening, all 7 tools sit in ONE row');
+	h.check(
+		wideRows.length < narrowRows.length && Math.max(...wideRows) > Math.max(...narrowRows),
+		'widening REFLOWS them into fewer, longer rows (' +
+			JSON.stringify(narrowRows) + ' -> ' + JSON.stringify(wideRows) + ')'
+	);
+	h.check(
+		wideRows.reduce((a, b) => a + b, 0) === toolCount,
+		'...with every tool still present (' + toolCount + ')'
+	);
 	const stillSquare = await A.page.evaluate(() => {
 		const r = document.querySelector('#mesh-op-extrude').getBoundingClientRect();
 		return Math.round(r.width) === 36 && Math.round(r.height) === 36;

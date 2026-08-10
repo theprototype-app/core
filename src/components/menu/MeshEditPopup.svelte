@@ -17,7 +17,9 @@
 		createSelectedFace,
 		clearVertexSelection,
 		weldSelectedVerts,
-		vertexSelectionSize
+		vertexSelectionSize,
+		selectAllVerts,
+		invertVertexSelection
 	} from '$lib/meshEdit';
 	import {
 		faceEditObject,
@@ -36,7 +38,29 @@
 		faceSelectionInfo,
 		faceGizmoSpace,
 		meshEditWireframe,
-		meshEditHotkeys
+		meshEditHotkeys,
+		selectFaceLoop,
+		growSelection,
+		shrinkSelection,
+		selectAllFaces,
+		invertFaceSelection,
+		selectLinkedFaces,
+		recalculateNormals,
+		mergeByDistance,
+		setShadingSmooth,
+		shadingMode,
+		faceEditSubmode,
+		edgeEditSelected,
+		selectEdgeLoop,
+		dissolveEdges,
+		clearEdgeSelection,
+		stashSelections,
+		restoreSelection,
+		selectEdgeRing,
+		selectAllEdges,
+		invertEdgeSelection,
+		cancelEditSession,
+		sessionHasChanges
 	} from '$lib/faceEdit';
 	import {
 		Keyboard,
@@ -49,7 +73,18 @@
 		MousePointer,
 		Merge,
 		Box,
-		Circle
+		Circle,
+		Expand,
+		Shrink,
+		BoxSelect,
+		FlipHorizontal,
+		Link2,
+		Compass,
+		Combine,
+		Sun,
+		Spline,
+		Eraser,
+		Undo2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import ToolIcon from '../ui/ToolIcon.svelte';
@@ -65,23 +100,35 @@
 	import { showToast } from '../../stores/appStore';
 
 	const active = $derived(!$isVRMode && (!!$editingObject || !!$faceEditObject));
-	const mode = $derived($faceEditObject ? 'faces' : 'vertices');
+	// M4: three modes — vertices | edges | faces. EDGES is a sub-mode of the
+	// face session (same lifecycle, undo barrier, wireframe and VR entry), so
+	// switching to it never tears the session down.
+	const mode = $derived(
+		$faceEditObject ? ($faceEditSubmode === 'edges' ? 'edges' : 'faces') : 'vertices'
+	);
 	// 15-A2: live shell count for the collider banner — applyMeshGeo pokes
 	// objectsGroup on every proxy geometry swap, so this tracks adds/deletes/welds
 	const shellCount = $derived($colliderEditObject && $objectsGroup ? colliderShellCount() : 0);
 
-	/** @param {'vertices' | 'faces'} next */
+	/** @param {'vertices' | 'edges' | 'faces'} next */
 	function setMode(next) {
 		const uuid = /** @type {string} */ ($editingObject || $faceEditObject || $selectedObject?.uuid);
 		if (!uuid) return;
 		if (next === mode) return;
+		// remember what THIS mode had picked before leaving it, so coming back
+		// restores it (unless the geometry changed underneath)
+		stashSelections();
 		if (next === 'vertices') {
 			exitFaceEdit();
 			enterEditMode(uuid);
-		} else {
-			exitEditMode();
-			enterFaceEdit(uuid);
+			return;
 		}
+		// M4: edges and faces share ONE session — only the sub-mode differs, so
+		// switching between them keeps the undo barrier and the wireframe intact
+		exitEditMode();
+		if (!$faceEditObject) enterFaceEdit(uuid);
+		faceEditSubmode.set(next === 'edges' ? 'edges' : 'faces');
+		restoreSelection(next === 'edges' ? 'edges' : 'faces');
 	}
 
 	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);
@@ -93,6 +140,7 @@
 		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, lucide: Move, desc: 'seat the gizmo on the selection' },
 		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, lucide: Grid2x2, desc: 'split each triangle into four' },
 		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
+		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
 		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, icon: 'flip-normals', desc: 'reverse the winding' },
 		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, lucide: Trash2, desc: 'remove the selection' }
 	];
@@ -115,6 +163,63 @@
 			value: 'object',
 			label: 'Object',
 			title: 'Pick every triangle, including islands that are not connected to each other'
+		}
+	];
+
+	// M2/M6: selection COMMANDS. They change what is picked, never the geometry,
+	// so they flash like one-shots and never stay lit.
+	// They render as TEXT, not icons, and deliberately: six near-identical
+	// outline glyphs in a row are indistinguishable at 18px, and two reports
+	// ("loop select selects everything", "invert selects everything") both turn
+	// out to be Select-linked and Select-all being pressed by mistake. Icons are
+	// for TOOLS you arm; commands read better as words. (Photoshop's toolbar is
+	// tools; its Select menu is words.)
+	const FACE_CMDS = [
+		{ id: 'loop', label: 'Loop', hint: 'L', run: selectFaceLoop, desc: 'the quad ring running through this face — press again for the perpendicular one' },
+		{ id: 'grow', label: 'Grow', hint: 'Ctrl +', run: growSelection, desc: 'add the neighbouring ring' },
+		{ id: 'shrink', label: 'Shrink', hint: 'Ctrl -', run: shrinkSelection, desc: 'drop the border ring' },
+		{ id: 'all', label: 'All', hint: 'Ctrl A', run: selectAllFaces, desc: 'every face of the mesh' },
+		{ id: 'invert', label: 'Invert', hint: 'Ctrl I', run: invertFaceSelection, desc: 'swap picked and unpicked' },
+		{ id: 'linked', label: 'Linked', hint: '', run: selectLinkedFaces, desc: 'the whole connected island this face belongs to' }
+	];
+	// Every mode gets the SAME command vocabulary — Ctrl+A / Ctrl+I were wired
+	// for faces only, so they silently did nothing in edges and vertices.
+	const EDGE_CMDS = [
+		{ id: 'eloop', label: 'Loop', hint: 'L', run: selectEdgeLoop, desc: 'the edge chain running end to end through this edge' },
+		{ id: 'ering', label: 'Ring', hint: '', run: selectEdgeRing, desc: 'the parallel rungs a face loop crosses — the other half of the standard pair' },
+		{ id: 'eall', label: 'All', hint: 'Ctrl A', run: selectAllEdges, desc: 'every edge of the mesh' },
+		{ id: 'einvert', label: 'Invert', hint: 'Ctrl I', run: invertEdgeSelection, desc: 'swap picked and unpicked' }
+	];
+	const VERT_CMDS = [
+		{ id: 'vall', label: 'All', hint: 'Ctrl A', run: selectAllVerts, desc: 'every vertex of the mesh' },
+		{ id: 'vinvert', label: 'Invert', hint: 'Ctrl I', run: invertVertexSelection, desc: 'swap picked and unpicked' },
+		{ id: 'vnone', label: 'None', hint: '', run: () => (clearVertexSelection(), true), desc: 'deselect everything' }
+	];
+	const SELECT_CMDS = $derived(
+		mode === 'edges' ? EDGE_CMDS : mode === 'vertices' ? VERT_CMDS : FACE_CMDS
+	);
+
+	/** @param {any} cmd */
+	function runSelectCmd(cmd) {
+		if (cmd.run()) flash(cmd.id);
+	}
+
+	// M6: whole-mesh cleanup commands — they act on the OBJECT, not the pick
+	let mergeDistance = $state(0.001);
+	const CLEANUP_CMDS = [
+		{
+			id: 'normals',
+			label: 'Recalculate normals',
+			lucide: Compass,
+			run: () => recalculateNormals(),
+			desc: 'rewind every face to point outward'
+		},
+		{
+			id: 'merge',
+			label: 'Merge by distance',
+			lucide: Combine,
+			run: () => mergeByDistance(mergeDistance),
+			desc: 'collapse near-coincident vertices and drop the degenerate faces'
 		}
 	];
 
@@ -147,12 +252,20 @@
 		flashTimer = setTimeout(() => (flashOp = ''), 400);
 	}
 
+	// M3: how many loops a Loop cut inserts (its own field — the extrude/inset
+	// `amount` is a distance, this is a count)
+	let loopCuts = $state(1);
+
 	/** @param {string} op */
 	function runOp(op) {
 		const spec = OPS.find((o) => o.op === op);
 		if (op === 'bridge') {
 			// validates the two-piece selection + toasts
 			if (commitFaceOp('bridge', 0)) flash('bridge');
+			return;
+		}
+		if (op === 'loopcut') {
+			if (commitFaceOp('loopcut', loopCuts)) flash('loopcut');
 			return;
 		}
 		if (spec?.oneShot) {
@@ -193,6 +306,30 @@
 		sealEditHistorySession(); // 15-F: Done seals the session into ONE undo entry
 	}
 
+	// Cancel = revert EVERYTHING done since Edit Mesh opened. Destructive and
+	// not undoable-back, so it confirms first — inline in the toolbox rather than
+	// a modal, because a modal over a tool palette is heavier than the action.
+	let confirmCancel = $state(false);
+	$effect(() => {
+		if (!active) confirmCancel = false;
+	});
+	function askCancel() {
+		if (!sessionHasChanges()) {
+			showToast('Nothing to revert — no edits yet this session');
+			return;
+		}
+		confirmCancel = true;
+	}
+	function doCancel() {
+		confirmCancel = false;
+		cancelEditSession();
+		exitEditMode();
+		exitFaceEdit();
+		// 'discard' drops the session's undo entries: they describe edits that no
+		// longer exist, so keeping them would make Ctrl+Z replay into thin air
+		sealEditHistorySession('discard');
+	}
+
 	/** @param {KeyboardEvent} event */
 	function onKeydown(event) {
 		if (!active) return;
@@ -203,10 +340,42 @@
 		if (!$meshEditHotkeys) return; // D3: toggled off — Esc/Done still work above
 		const target = /** @type {any} */ (event.target);
 		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-		if (event.ctrlKey || event.metaKey || event.altKey) return;
 		const key = event.key.toLowerCase();
+		// M2/M6: the SELECTION commands are Ctrl chords, so they are checked before
+		// the plain-key guard below (which deliberately ignores modifier combos)
+		if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+			// resolved against the CURRENT mode's command list, so Ctrl+A / Ctrl+I
+			// work in all three modes instead of faces only
+			const byChord = {
+				'=': ['grow'],
+				'+': ['grow'],
+				'-': ['shrink'],
+				_: ['shrink'],
+				a: ['all', 'eall', 'vall'],
+				i: ['invert', 'einvert', 'vinvert']
+			};
+			const ids = /** @type {any} */ (byChord)[key];
+			const cmd = ids && SELECT_CMDS.find((c) => ids.includes(c.id));
+			if (!cmd) return;
+			runSelectCmd(cmd);
+			event.preventDefault();
+			return;
+		}
+		// 1/2/3 switch ELEMENT mode inside a session — the modeller-standard
+		// binding. Outside a session they stay the gizmo transform modes.
+		if (!event.ctrlKey && !event.metaKey && !event.altKey && ['1', '2', '3'].includes(key)) {
+			setMode(key === '1' ? 'vertices' : key === '2' ? 'edges' : 'faces');
+			event.preventDefault();
+			return;
+		}
+		if (event.ctrlKey || event.metaKey || event.altKey) return;
 		if (mode === 'faces') {
-			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete' };
+			if (key === 'l') {
+				runSelectCmd(/** @type {any} */ (SELECT_CMDS[0]));
+				event.preventDefault();
+				return;
+			}
+			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete', c: 'loopcut' };
 			const op = key === 'delete' ? 'delete' : /** @type {any} */ (byKey)[key];
 			if (!op) return;
 			runOp(op);
@@ -222,13 +391,34 @@
 	$effect(() => {
 		if (!active) showKeys = false;
 	});
-	const KEY_ROWS = [
-		['E / I / G', 'Arm Extrude / Inset / Move (faces)'],
-		['S / B / F / X', 'Subdivide / Bridge / Flip / Delete (faces)'],
-		['W', 'Weld the selected vertices'],
-		['Tab', 'Toggle Edit Mesh'],
-		['Esc', 'Done (exit the session)'],
-		['1 / 2 / 3', 'Gizmo Move / Rotate / Scale']
+	// Grouped by SECTION so the sheet reads as a reference instead of a blob of
+	// text; the section matching the CURRENT mode is marked so the eye lands on
+	// the keys that are live right now.
+	const KEY_SECTIONS = [
+		{
+			id: 'any',
+			title: 'Any mode',
+			rows: [
+				['1 / 2 / 3', 'Switch to Vertices / Edges / Faces'],
+				['Ctrl A', 'Select all'],
+				['Ctrl I', 'Invert the selection'],
+				['Tab', 'Toggle Edit Mesh'],
+				['Esc', 'Done — leave the session']
+			]
+		},
+		{
+			id: 'faces',
+			title: 'Faces',
+			rows: [
+				['E / I / G', 'Arm Extrude / Inset / Move'],
+				['S / C', 'Subdivide / Loop cut'],
+				['B / F / X', 'Bridge / Flip normals / Delete'],
+				['L', 'Loop select (again = perpendicular)'],
+				['Ctrl + / -', 'Grow / shrink the selection']
+			]
+		},
+		{ id: 'edges', title: 'Edges', rows: [['L', 'Edge loop — the chain end to end']] },
+		{ id: 'vertices', title: 'Vertices', rows: [['W', 'Weld the selected vertices']] }
 	];
 </script>
 
@@ -259,6 +449,13 @@
 				>
 			{:else}
 				<button
+					id="mesh-edit-cancel"
+					class="tbx-hbtn"
+					aria-label="Cancel — revert every change made in this session"
+					title="Cancel — revert EVERY change made since Edit Mesh opened"
+					onclick={askCancel}><Undo2 size={14} aria-hidden="true" /></button
+				>
+				<button
 					id="mesh-edit-done"
 					class="tbx-hbtn tbx-done"
 					aria-label="Done"
@@ -267,6 +464,14 @@
 				>
 			{/if}
 		{/snippet}
+
+		{#if confirmCancel}
+			<div id="mesh-cancel-confirm" class="tbx-row text-xs">
+				<span class="text-gray-200">Revert all mesh edits?</span>
+				<button id="mesh-cancel-yes" class="tbx-cmd tbx-danger" onclick={doCancel}>Revert</button>
+				<button id="mesh-cancel-no" class="tbx-cmd" onclick={() => (confirmCancel = false)}>Keep</button>
+			</div>
+		{/if}
 
 		<!-- MODE -->
 		<span class="tbx-label">Mode</span>
@@ -278,6 +483,12 @@
 					onclick={() => setMode('vertices')}>Vertices</button
 				>
 				<button
+					id="mesh-mode-edges"
+					class="px-3 py-0.5 {mode === 'edges' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					title="Pick single edges (M4) — bevel and dissolve act on them"
+					onclick={() => setMode('edges')}>Edges</button
+				>
+				<button
 					id="mesh-mode-faces"
 					class="px-3 py-0.5 {mode === 'faces' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
 					onclick={() => setMode('faces')}>Faces</button
@@ -285,7 +496,55 @@
 			</div>
 		</div>
 
-		{#if mode === 'faces'}
+		<!-- Selection commands — the SAME vocabulary in every mode (the list swaps
+		     with the mode, so Ctrl+A/I mean the right thing everywhere) -->
+		<span class="tbx-label">Select</span>
+		<div class="tbx-row">
+			{#each SELECT_CMDS as c (c.id)}
+				<button
+					id={`mesh-sel-${c.id}`}
+					class="tbx-cmd"
+					class:tbx-flash={flashOp === c.id}
+					onanimationend={() => (flashOp = '')}
+					title={c.hint ? `${c.label} (${c.hint}) — ${c.desc}` : `${c.label} — ${c.desc}`}
+					onclick={() => runSelectCmd(c)}>{c.label}</button
+				>
+			{/each}
+		</div>
+
+		{#if mode === 'edges'}
+			<!-- M4: edge tools — the pick is a set of EDGES, not faces -->
+			<span class="tbx-label">Tools</span>
+			<button
+				id="edge-loop"
+				class="tbx-btn"
+				class:tbx-flash={flashOp === 'edgeloop'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Edge loop select"
+				title="Loop select — the whole edge ring through this edge"
+				onclick={() => {
+					if (selectEdgeLoop()) flash('edgeloop');
+				}}><Spline size={18} aria-hidden="true" /></button
+			>
+			<button
+				id="edge-dissolve"
+				class="tbx-btn tbx-danger"
+				class:tbx-flash={flashOp === 'dissolve'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Dissolve edges"
+				title="Dissolve — remove the edge and merge the two coplanar faces it joins"
+				onclick={() => {
+					if (dissolveEdges()) flash('dissolve');
+				}}><Eraser size={18} aria-hidden="true" /></button
+			>
+			<button
+				id="edge-clear"
+				class="tbx-btn"
+				aria-label="Clear the edge selection"
+				title="Deselect all edges"
+				onclick={() => clearEdgeSelection()}><MousePointer size={18} aria-hidden="true" /></button
+			>
+		{:else if mode === 'faces'}
 			<!-- SELECT: pick granularity (B3 + 15-G Quad) -->
 			<span class="tbx-label">Select</span>
 			<div class="tbx-row">
@@ -299,6 +558,22 @@
 						>
 					{/each}
 				</div>
+			</div>
+
+			<!-- M3: how many loops a Loop cut inserts -->
+			<div class="tbx-row text-xs text-gray-300">
+				<label class="flex items-center gap-1" title="How many edge loops Loop cut inserts">
+					loop cuts
+					<input
+						id="mesh-loop-cuts"
+						type="number"
+						min="1"
+						max="20"
+						step="1"
+						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={loopCuts}
+					/>
+				</label>
 			</div>
 
 			<!-- TOOLS: armed tools stay lit (solid accent); one-shots flash on commit -->
@@ -375,6 +650,49 @@
 			>
 		{/if}
 
+		{#if mode === 'faces'}
+			<!-- M6: whole-mesh cleanup — acts on the OBJECT, not the pick -->
+			<span class="tbx-label">Cleanup</span>
+			{#each CLEANUP_CMDS as c (c.id)}
+				<button
+					id={`mesh-fix-${c.id}`}
+					class="tbx-btn"
+					class:tbx-flash={flashOp === c.id}
+					onanimationend={() => (flashOp = '')}
+					aria-label={c.label}
+					title={`${c.label} — ${c.desc}`}
+					onclick={() => runSelectCmd(c)}><c.lucide size={18} aria-hidden="true" /></button
+				>
+			{/each}
+			<button
+				id="mesh-shading"
+				class="tbx-btn"
+				aria-label="Smooth shading"
+				aria-pressed={shadingMode() === 'smooth'}
+				title={shadingMode() === 'smooth'
+					? 'Smooth shading — click for flat'
+					: 'Flat shading — click for smooth'}
+				onclick={() => {
+					setShadingSmooth(shadingMode() !== 'smooth');
+					flash('shading');
+				}}><Sun size={18} aria-hidden="true" /></button
+			>
+			<div class="tbx-row text-xs text-gray-300">
+				<label class="flex items-center gap-1" title="Vertices closer than this merge into one">
+					merge dist
+					<input
+						id="mesh-merge-dist"
+						type="number"
+						min="0.0001"
+						max="1"
+						step="0.001"
+						class="w-16 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={mergeDistance}
+					/>
+				</label>
+			</div>
+		{/if}
+
 		<!-- DISPLAY -->
 		<span class="tbx-label">Display</span>
 		<button
@@ -396,29 +714,14 @@
 				: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
 			onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={18} aria-hidden="true" /></button
 		>
-		<span class="relative">
-			<button
-				id="mesh-keys-help"
-				class="tbx-btn"
-				aria-label="Show mesh-edit key bindings"
-				aria-pressed={showKeys}
-				title="Key bindings"
-				onclick={() => (showKeys = !showKeys)}><CircleHelp size={18} aria-hidden="true" /></button
-			>
-			{#if showKeys}
-				<div
-					id="mesh-keys-popover"
-					class="absolute left-0 top-full z-10 mt-2 w-64 cursor-default rounded-lg border border-gray-700/60 bg-gray-800/95 p-2 text-xs shadow-xl"
-				>
-					{#each KEY_ROWS as [keys, what] (keys)}
-						<div class="flex items-baseline justify-between gap-2 py-0.5">
-							<span class="shrink-0 font-mono text-primary-300">{keys}</span>
-							<span class="text-right text-gray-300">{what}</span>
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</span>
+		<button
+			id="mesh-keys-help"
+			class="tbx-btn"
+			aria-label="Show mesh-edit key bindings"
+			aria-pressed={showKeys}
+			title="Key bindings — opens a movable cheat sheet you can park anywhere"
+			onclick={() => (showKeys = !showKeys)}><CircleHelp size={18} aria-hidden="true" /></button
+		>
 
 		{#if $colliderEditObject}
 			<!-- CL-A A8: add compound pieces to the collider session -->
@@ -466,7 +769,9 @@
 		{/if}
 
 		{#snippet status()}
-			{#if mode === 'faces'}
+			{#if mode === 'edges'}
+				<span id="edge-sel-count">{$edgeEditSelected.length} edge{$edgeEditSelected.length === 1 ? '' : 's'}</span>
+			{:else if mode === 'faces'}
 				<!-- E10: Multi button retired — ctrl-click always adds; live counts here -->
 				<span id="mesh-sel-counts" title="Selected faces · triangles (Ctrl+click adds)">
 					{selInfo.faces} face{selInfo.faces === 1 ? '' : 's'} · {selInfo.tris} tri{selInfo.tris === 1 ? '' : 's'}{#if selInfo.loops}<span
@@ -489,4 +794,49 @@
 			{/if}
 		{/snippet}
 	</ToolboxWindow>
+
+	<!-- The key bindings are a CHEAT SHEET, so they are their own movable window
+	     rather than a popover glued under the ? button: you park it beside the
+	     viewport and keep working while it stays visible. -->
+	{#if showKeys}
+		<ToolboxWindow
+			id="mesh-keys-popover"
+			key="meshKeysCheatsheet"
+			title="Mesh edit keys"
+			width={260}
+			minW={200}
+			defaultRect={{ left: 12, top: 320 }}
+		>
+			{#snippet actions()}
+				<button
+					id="mesh-keys-close"
+					class="tbx-hbtn"
+					aria-label="Close the key list"
+					title="Close"
+					onclick={() => (showKeys = false)}><X size={14} aria-hidden="true" /></button
+				>
+			{/snippet}
+			<div class="tbx-row flex-col items-stretch gap-0 text-xs">
+				{#each KEY_SECTIONS as section (section.id)}
+					<div
+						class="mt-1.5 mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider first:mt-0 {section.id ===
+						mode
+							? 'text-primary-300'
+							: 'text-gray-500'}"
+					>
+						{section.title}
+						{#if section.id === mode}<span class="rounded-sm bg-primary-600 px-1 text-[9px] text-white"
+								>active</span
+							>{/if}
+					</div>
+					{#each section.rows as [keys, what] (keys)}
+						<div class="flex items-baseline justify-between gap-3 py-0.5">
+							<span class="shrink-0 font-mono text-primary-300">{keys}</span>
+							<span class="text-right text-gray-300">{what}</span>
+						</div>
+					{/each}
+				{/each}
+			</div>
+		</ToolboxWindow>
+	{/if}
 {/if}

@@ -384,6 +384,21 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'receiveShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.receiveShadow = data.receiveShadow;
+    } else if (data.parameter == 'shading') {
+        // M6: smooth/flat shading choice. Deterministic — the receiver derives
+        // the normals from the SAME positions, so nothing but the flag travels.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh?.geometry) {
+            mesh.userData.shading = data.shading;
+            if (data.shading === 'smooth') {
+                // DYNAMIC import: a static commandsHandler -> faceEdit edge would
+                // be a new arc into the history.js cycle family (CLAUDE.md)
+                const { smoothWeldedNormals } = await import('$lib/faceEdit');
+                smoothWeldedNormals(mesh.geometry);
+            } else mesh.geometry.computeVertexNormals();
+            mesh.geometry.attributes.normal.needsUpdate = true;
+            objectsGroup.update((value) => value);
+        }
     } else if (data.parameter == 'physics') {
         // P-A: userData.physics is the source of truth for the Inspector-set
         // body params (mode/mass/restitution/friction/collider); null = cleared

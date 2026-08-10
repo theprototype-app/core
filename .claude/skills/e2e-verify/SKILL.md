@@ -48,6 +48,39 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **A failing check is as often a wrong PREMISE as a wrong fix — verify which before
+  changing code.** Every red in the M1-M6 batch was the test, not the feature: an
+  indexed BoxGeometry counted as 8 triangles; a smooth-shading check used a SPHERE,
+  whose geometry already ships smooth normals, so it could never have failed; a
+  merge-by-distance check expected BOTH near-coincident corners to vanish when only one
+  had a partner; a dissolve check expected 2 triangles where the merged patch's
+  boundary legitimately fans into 4. Re-derive what the code SHOULD do, then fix the
+  assertion — and say so in the commit, because a "fixed" test that was never broken is
+  a lie in the history.
+- **Changing a DEFAULT turns every suite that silently relied on it red.** Making Move
+  the default armed op (so a click stops committing an extrude) broke
+  `faces-nested-toolbar`, whose premise was "Extrude is the default, so the params row
+  is showing". The fix is to ARM the op explicitly in the test, never to weaken the
+  check — and the same batch's `mesh-edge-mode` needed the same treatment when LOOP and
+  RING became different commands. Both belong to the "asserting the OLD contract"
+  family: when a deliberate behaviour change makes a suite red, update the contract it
+  encodes and say so in the commit.
+- **A store-level repro must replay the FULL handler sequence, or it proves nothing.**
+  `autoApplyFaceOp()` returns false unless the highlight was set first, so a probe that
+  called only `pickFaceUnit` + `autoApplyFaceOp` reported "nothing happens" for a path
+  that fires every time in the app. Replicate what the component does — for a face
+  click that is `highlightFaceByTriangle` → `pickFaceUnit` → `autoApplyFaceOp` — or read
+  the handler and mirror it exactly.
+- **`innerText` reflects CSS `text-transform`.** A cheat-sheet check comparing `'Faces'`
+  failed against text CSS had uppercased to `FACES`, while the UI was perfectly correct.
+  Compare case-insensitively, or read `textContent` off the source element.
+- **When a report says "X selects everything" / "the wrong thing happened", check the
+  UI before the algorithm.** Two such reports in this batch reproduced as CORRECT at
+  the store level: six near-identical 18px icon buttons in a row had Select-linked next
+  to Loop and Select-all next to Invert, and Select-linked really does select every
+  face of a one-piece mesh. The fix was making commands read as words, not touching the
+  logic. Reproduce at the STORE level first — if it is right there, the bug is in what
+  the user could see or press.
 - **Prove a regression guard by BREAKING the code**: EDIT the fix out (put the old line
   back), run the suite, confirm the new check goes red, then restore. Both
   release-blocking fixes in 1.2.0 were validated this way (shift-select: 8 page errors
@@ -87,8 +120,11 @@ $env:APP_URL='https://theprototype.app:5177/'; npm run e2e -- <name>
 through on this npm version: it parses them as npm config, vite gets `dev 5177`
 as a positional and binds a random free port over plain http.)
 
-Assigned ports: main checkout 5173 (the user's), lane-c 5174, lane-vr 5175,
-lane-ui 5176 (SHADOWED 2026-08-02 — moved to 5186), lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. Two-peer suites still meet on the signaling server
+Assigned ports: main checkout 5173 (the user's), lane-c 5174 (mesh work 2026-08-09+
+uses **5182** on that same worktree), lane-vr 5175,
+lane-ui 5176 (SHADOWED 2026-08-02 — moved to 5186), lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. A fresh worktree has NO `certs/`, so vite serves plain
+http until you run `npm run certs` — the suite's https URL then fails to connect.
+Two-peer suites still meet on the signaling server
 (now the self-hosted peerjs.theprototype.app box), so concurrent lanes' test peers
 never collide (random ids). PORT-SHADOW TRAP: another process holding only
 `[::1]:PORT` does NOT trip `--strictPort` (vite binds 0.0.0.0) — but
@@ -173,6 +209,47 @@ const value = await page.evaluate(() =>
   type), `.ctx-match` rows in search mode, `[data-ctx-active="true"]` = the keyboard
   cursor, `.ctx-grip` = the search-list resize handle, and a SUBMENU is a fixed div
   with NO role attribute (several suites locate them that way — do not add one).
+- **MESH tests: a fresh `BoxGeometry` is INDEXED.** `position.count / 3` is **8**, not
+  12, and reading a triangle's corners as `position[ti*3 + k]` reads unrelated vertices
+  and invents diagonal normals. This bit FOUR separate premise checks across 15-G and
+  M1-M6 — always `geo.index ? geo.index.count : geo.attributes.position.count`, and
+  index corners through `geo.index.getX(...)`. Anything that has been through
+  `convertToMesh` / `applyMeshGeo` / a face op IS non-indexed, which is why the same
+  helper passes in one suite and lies in the next.
+- **Assert the COMPUTED style, not the class string**, whenever a component's scoped
+  CSS could beat a utility (it is unlayered, so it does). The armed toolbox button
+  carried `bg-primary-600` in `className` while rendering fully transparent in the dark
+  theme; only `getComputedStyle(el).backgroundColor` caught it. Same shape as the
+  global-`.hidden` trap, one scope down.
+- **Render-count checks: calibrate the passes, don't assume one.** Each mesh is drawn
+  once per pass (shadow map + colour = 2 here), so isolate an object by toggling
+  `visible` across two `renderer.render` calls and derive the multiplier from a
+  known-good state (`drawn / tris`) instead of hardcoding it. `renderer.info.render
+  .triangles` after `reset()` is the measurement — it is how "the merged mesh renders 0
+  of its 28 triangles" was proven.
+- Mesh-edit anchors: toolbox root `#mesh-edit-popup` (a `ToolboxWindow`: header
+  `.toolbox-header.move-handle`, body `.toolbox-body`, footer `.toolbox-status`, grip
+  `.dw-resize`); modes `#mesh-mode-vertices|edges|faces`; granularity
+  `#mesh-gran-quad|face|triangle|shell|object`; ops `#mesh-op-<op>` (armed carries
+  `mesh-op-active` + `tbx-on`); cleanup `#mesh-fix-normals|merge` + `#mesh-shading`;
+  edges `#edge-loop|dissolve|clear` + `#edge-sel-count`; session cancel
+  `#mesh-edit-cancel` with the inline `#mesh-cancel-confirm` / `#mesh-cancel-yes` /
+  `#mesh-cancel-no`; the key list is its OWN window `#mesh-keys-popover` opened by
+  `#mesh-keys-help`. Sculpt `#sculpt-toolbar` + `#sculpt-op-*`.
+  **Selection commands are TEXT buttons whose ids are PER MODE** — `#mesh-sel-all` in
+  faces but `#mesh-sel-eall` / `#mesh-sel-vall` in edges / vertices (same for
+  `invert`/`einvert`/`vinvert`), so a selector hardcoding the faces ids silently
+  matches nothing in the other two modes.
+- The face highlight is TWO meshes: `face-edit-overlay` = the SELECTION (opacity ~0.45)
+  and `face-edit-hover` = the cursor wash (~0.14). A check for "is this face
+  highlighted" has to say WHICH — they were one mesh until a deselected face kept
+  looking selected under the cursor.
+- `objectActions.flyTo(pos, target, duration)` divides by `duration` — passing **0**
+  makes the first frame `NaN`, which NaNs the camera and then the spatial-audio panner
+  (`Failed to set the 'value' property on 'AudioParam'`). Use a real duration and wait.
+- Synthetic `pointerdown/up` on a `dragWindow` header logs harmless
+  `setPointerCapture: No active pointer` page errors — expected for synthesized events;
+  don't count them in a pageerror guard for drag tests.
 - Programmatic scene setup: `__stores.commandsHandler.sceneCommand('/create box')`
   (geometry names are capitalized THREE types — box/sphere/Button…, NOT "cube").
 - Icons are `@lucide/svelte` `<svg>` components (Font Awesome removed): select

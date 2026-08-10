@@ -347,7 +347,7 @@
 	let lastPick: { uuid: string | null; t: number } = { uuid: null, t: 0 };
 
 	function raycastSelect(additive = false) {
-		// module-owned interactive groups live at the scene root (piano, pong, ...)
+		// module-owned interactive groups live at the scene root (pong, dungeon, ...)
 		for (const name of moduleInteractiveGroups) {
 			const root = scene.getObjectByName(name);
 			if (!root) continue;

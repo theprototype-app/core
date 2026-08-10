@@ -108,6 +108,10 @@ export function possess(uuid, opts = {}) {
 }
 
 // ---- first-person mouse look (17-A1) ----------------------------------------
+/** @type {any} the element we hold pointer lock on — deliberately NOT the canvas */
+let lockSurface = null;
+/** have we actually held the lock during this possession? */
+let gotLock = false;
 // Pointer lock swallows Esc (the browser exits the lock without a keydown ever
 // reaching the page), so leaving the lock IS the release signal.
 
@@ -122,38 +126,50 @@ function onLookMove(event) {
 }
 
 function onLockChange() {
-	// lock lost (Esc / alt-tab) while we hold a mouse-look possession → release
-	if (state?.opts.mouseLook && document.pointerLockElement !== lockSurface) release();
+	// lock lost (Esc / alt-tab) while we hold a mouse-look possession → release.
+	// `gotLock` guards the FIRST change event: before the lock is granted we
+	// must not read "not locked yet" as "the user pressed Esc".
+	if (!state?.opts.mouseLook) return;
+	if (document.pointerLockElement === lockSurface) {
+		gotLock = true;
+		return;
+	}
+	if (gotLock) release();
 }
 
-/** @type {any} the element we hold pointer lock on — deliberately NOT the canvas */
-let lockSurface = null;
-
 function startMouseLook() {
+	gotLock = false;
 	// Pointer lock on the CANVAS would be seen by PointerLockControls (a
 	// document-level listener on threlte's renderer.domElement, always mounted
 	// via Player) as "play mode started": it flips $isLocked and swaps to the
-	// player camera. Possess drives the EDITOR camera, so hold the lock on a
-	// dedicated offscreen element — locked mouse deltas still arrive at
-	// document level, and PointerLockControls now ignores locks it doesn't own.
-	if (!lockSurface) {
-		lockSurface = document.createElement('div');
-		lockSurface.id = 'possess-look-surface';
-		lockSurface.style.cssText = 'position:fixed;width:1px;height:1px;left:-10px;top:-10px;';
-		document.body.appendChild(lockSurface);
-	}
+	// player camera. Possess drives the EDITOR camera, so lock <body> instead —
+	// locked mouse deltas arrive at document level either way, and
+	// PointerLockControls now ignores locks it does not own.
+	// NOT a synthetic offscreen div: Chromium rejects those with
+	// "WrongDocumentError: The root document of this element is not valid".
+	lockSurface = document.body;
 	document.addEventListener('mousemove', onLookMove);
 	document.addEventListener('pointerlockchange', onLockChange);
 	try {
-		lockSurface.requestPointerLock?.();
-	} catch {}
+		const request = /** @type {any} */ (lockSurface.requestPointerLock?.());
+		// Pointer lock needs USER ACTIVATION and a focused document: called from a
+		// devtools console, or without a click, the browser refuses. Degrade to
+		// plain first-person (tank steering still works) instead of half-locking.
+		request?.catch?.(() => mouseLookUnavailable());
+	} catch {
+		mouseLookUnavailable();
+	}
+}
+
+function mouseLookUnavailable() {
+	if (state) state.opts.mouseLook = false;
+	showToast('Mouse look needs a click in the page first — steering with A/D instead');
 }
 
 function stopMouseLook() {
 	document.removeEventListener('mousemove', onLookMove);
 	document.removeEventListener('pointerlockchange', onLockChange);
-	if (document.pointerLockElement === lockSurface) document.exitPointerLock?.();
-	lockSurface?.remove();
+	if (lockSurface && document.pointerLockElement === lockSurface) document.exitPointerLock?.();
 	lockSurface = null;
 }
 

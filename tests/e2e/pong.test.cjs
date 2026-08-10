@@ -1,4 +1,6 @@
-﻿// Phase 34: piano notes replicate; pong claim/paddle/ball/score sync; spawn-remove toggles.
+﻿// Phase 34: pong claim/paddle/ball/score sync; spawn-remove toggles.
+// (the piano half moved out with the module - its test-flight lives in the
+//  theprototype-app/modules repo now, 17-A)
 const h = require('./helpers.cjs');
 
 const clickMenu = (page, label) =>
@@ -42,26 +44,6 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
-
-	// ---- piano ----
-	await clickMenu(A.page, 'Piano: spawn / remove');
-	await h.eventually(() => groupData(A.page, 'piano-module'), (d) => d !== null, 'piano spawned on A');
-	await h.eventually(() => groupData(B.page, 'piano-module'), (d) => d !== null, 'piano replicated to B');
-
-	// front edge of a white key (black keys sit further back)
-	const keyPixel = await h.projectPoint(A.page, [-1 + 2 * 0.24, 0.93, -2.5 + 0.35]);
-	await A.page.mouse.click(keyPixel.x, keyPixel.y);
-	await h.eventually(
-		() => groupData(A.page, 'piano-module'),
-		(d) => d?.lastNote?.midi != null,
-		'key press registered on A'
-	);
-	const played = (await groupData(A.page, 'piano-module')).lastNote.midi;
-	await h.eventually(
-		() => groupData(B.page, 'piano-module'),
-		(d) => d?.lastNote?.midi === played,
-		`note replicated to B (midi ${played})`
-	);
 
 	// ---- pong ----
 	await clickMenu(A.page, 'Pong: spawn / remove');

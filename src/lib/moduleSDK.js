@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject, globalCamera, isVRMode } from '../stores/sceneStore';
-import { peers, showToast, modulesOpen } from '../stores/appStore';
+import { globalScene, objectsGroup, selectedObject, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
+import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
 import { APP_VERSION } from './version.js';
@@ -98,11 +98,19 @@ function removeSceneRootGroup(name) {
 /** @type {any} */ let physicsRef = null;
 /** @type {any} */ let possessRef = null;
 /** @type {any} */ let vrControlsRef = null;
+/** @type {any} */ let addObjectsRef = null;
+/** @type {any} */ let jointsRef = null;
+/** @type {any} */ let objectActionsRef = null;
+/** @type {any} */ let pingAudioRef = null;
 if (typeof window !== 'undefined') {
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
 	import('./physics').then((m) => (physicsRef = m));
 	import('./possess').then((m) => (possessRef = m));
 	import('./vrControls').then((m) => (vrControlsRef = m));
+	import('./addObjects').then((m) => (addObjectsRef = m));
+	import('./joints').then((m) => (jointsRef = m));
+	import('./objectActions').then((m) => (objectActionsRef = m));
+	import('./pingAudio').then((m) => (pingAudioRef = m));
 }
 
 // --- api.pointerRay (190): where the user is POINTING, as a world ray --------
@@ -432,7 +440,20 @@ function makeApi(moduleId) {
 			setJointMotor: (jointId, vel, maxForce) =>
 				physicsApi()?.setJointMotor(jointId, vel, maxForce) ?? false,
 			/** the replicated joint defs @returns {Promise<any[]>} */
-			joints: () => import('./joints').then((m) => m.jointsSnapshot())
+			joints: () => import('./joints').then((m) => m.jointsSnapshot()),
+			/** Is a simulation running anywhere in the session (ours or a peer's)?
+			 * Gate driving/behaviour on this, not on isInitiator. */
+			running: () =>
+				physicsRef ? !!get(physicsRef.simulating) || !!get(physicsRef.remoteSimulating) : false,
+			/** Replicated physics parameters — the shared setPhysicsFor write path
+			 * (history entry + objectParameters + live collider rebuild).
+			 * @param {string} uuid @param {any} patch */
+			set: (uuid, patch) => physicsApi()?.setPhysicsFor(uuid, patch),
+			/** Replicated joint (P-B): 'weld' | 'revolute', anchored in OBJECT-local
+			 * space. @param {string} kind @param {string} a @param {string} b
+			 * @param {string=} axis @param {any=} motor */
+			createJoint: (kind, a, b, axis, motor) =>
+				jointsRef?.createJoint(kind, a, b, axis ?? 'x', motor) ?? null
 		},
 		/**
 		 * Buzz the VR controllers (press feedback). No-op on desktop / when
@@ -449,6 +470,78 @@ function makeApi(moduleId) {
 		/** In a VR session right now? (DEVX #6) @returns {boolean} */
 		isVR() {
 			return !!get(isVRMode);
+		},
+		/** Is Play mode active (the ▶ button / pointer lock)? Modules that only
+		 * drive things in play gate on this. @returns {boolean} */
+		isPlaying() {
+			return get(isLocked) === true;
+		},
+		/** Connected peer ids (the replicated roster) — use it to free state a
+		 * peer left behind. @returns {string[]} */
+		peerIds() {
+			return (/** @type {any[]} */ (get(userdata)) ?? []).map((entry) => entry[0]);
+		},
+		/**
+		 * DEVX #5: create objects in the SHARED scene, replicated exactly like a
+		 * user typing the command. Returns the uuids that appeared, so you can
+		 * position them (api.moveObject) or joint them together.
+		 * @param {string} command e.g. '/create Box 1 1 1'
+		 * @param {{at?: number[]}=} opts `at` places the object (replicated)
+		 * @returns {Promise<string[]>}
+		 */
+		async create(command, opts) {
+			const group = get(objectsGroup);
+			const before = new Set((group?.children ?? []).map((/** @type {any} */ c) => c.uuid));
+			if (opts?.at && addObjectsRef) addObjectsRef.spawnAtPoint(command, opts.at);
+			else {
+				const commands = await import('./commandsHandler.svelte');
+				commands.sceneCommand(command);
+			}
+			return (get(objectsGroup)?.children ?? [])
+				.filter((/** @type {any} */ c) => !before.has(c.uuid))
+				.map((/** @type {any} */ c) => c.uuid);
+		},
+		/**
+		 * DEVX #5: move/rotate/scale a shared object and tell every peer — the
+		 * same `move` the editor sends. Omitted parts keep their current value.
+		 * @param {string} uuid @param {{pos?: number[], rot?: number[], scale?: number[]}} to
+		 */
+		moveObject(uuid, to) {
+			/** @type {any} */
+			const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+			if (!object) return false;
+			if (to?.pos) object.position.fromArray(to.pos);
+			if (to?.rot) object.rotation.set(to.rot[0], to.rot[1], to.rot[2]);
+			if (to?.scale) object.scale.fromArray(to.scale);
+			object.updateMatrix();
+			/** @type {any} */
+			const peer = get(peers);
+			peer?.send({
+				type: 'move',
+				uuid,
+				pos: object.position.toArray(),
+				rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+				scale: object.scale.toArray()
+			});
+			return true;
+		},
+		/** Fly the LOCAL editor camera somewhere (never replicated — the viewpoint
+		 * is per-viewer). @param {number[]} position @param {number[]=} lookAt */
+		flyTo(position, lookAt) {
+			objectActionsRef?.flyTo(position, lookAt ?? position);
+		},
+		/** A spatial UI chime (the ping sounds). LOCAL — broadcast your own op if
+		 * peers should hear it too. @param {string=} sound @param {number[]=} position */
+		playSound(sound = 'ding', position = undefined) {
+			pingAudioRef?.playPing(sound, position ?? null);
+		},
+		/** Park the editor camera behind an object and follow it (the car's chase
+		 * cam) — LOCAL, no selection, no undo. @param {string} uuid */
+		followCam(uuid) {
+			return possessRef?.startFollowCam(uuid) ?? false;
+		},
+		stopFollowCam() {
+			possessRef?.stopFollowCam();
 		},
 		/**
 		 * One VR hand's WORLD pose + button state, or null when untracked / not

@@ -829,7 +829,7 @@
 					</div>
 				{/each}
 				{#if systemRows.length === 0}
-					<p class="p-2 text-xs italic text-gray-400">No system objects right now — spawn a module (piano, pong, dungeon) to see its content here.</p>
+					<p class="p-2 text-xs italic text-gray-400">No system objects right now — spawn a module (pong, dungeon) to see its content here.</p>
 				{/if}
 			{:else if viewMode === 'environment'}
 				{#if !envNoticeDismissed}

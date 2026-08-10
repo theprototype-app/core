@@ -1,6 +1,6 @@
 <script>
 	import { Download } from '@lucide/svelte';
-	import { Modal, Button, Toggle } from 'flowbite-svelte';
+	import { Modal, Button, Toggle, Checkbox } from 'flowbite-svelte';
 	import { modulesOpen, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { modulePrimitiveGroups } from '$lib/moduleSDK';
@@ -245,10 +245,16 @@
 						installUrlValue = '';
 					}}
 				/>
+				<!-- deliberately NEVER disabled: a greyed-out primary button reads as
+				     broken, and the disabled state was the single most confusing thing
+				     about this row. Validate on click instead. -->
 				<Button
 					size="xs"
-					disabled={!installUrlValue.trim()}
 					onclick={async () => {
+						if (!installUrlValue.trim()) {
+							showToast('Paste a module URL first (or use Choose .zip…)');
+							return;
+						}
 						await installUrl(installUrlValue);
 						installUrlValue = '';
 					}}
@@ -269,9 +275,12 @@
 					style="display: none"
 					accept=".zip"
 					on:change={async (e) => {
-						const file = e.currentTarget.files?.[0];
+						// capture the input BEFORE awaiting: `currentTarget` is only valid
+						// during dispatch and is null once the handler resumes
+						const input = e.currentTarget;
+						const file = input.files?.[0];
 						if (file) await installZip(file);
-						e.currentTarget.value = '';
+						input.value = '';
 					}}
 				/>
 			</div>
@@ -336,15 +345,17 @@
 							>
 								Reload
 							</Button>
+							<!-- a CHECKBOX, not a Toggle: the card's other switch enables/disables
+							     the module, and two toggles side by side read as the same kind of
+							     control -->
 							<div class="shrink-0" title="Poll the dev URL (~2s) and reload when the code changes">
-								<Toggle
-									size="small"
+								<Checkbox
 									id={'dev-poll-' + record.id}
 									checked={$devPolling.includes(record.id)}
 									onchange={(e) => setDevPoll(record, e.currentTarget.checked)}
 								>
 									<span class="text-xs text-gray-400">Auto</span>
-								</Toggle>
+								</Checkbox>
 							</div>
 						</div>
 					</div>

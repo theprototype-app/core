@@ -15,7 +15,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	await A.page.locator('#open-modules-manager').click();
 	await A.page.waitForTimeout(500);
-	h.check(await A.page.locator('#module-card-piano').isVisible(), 'manager opens with module cards');
+	h.check(await A.page.locator('#module-card-pong').isVisible(), 'manager opens with module cards');
 
 	// opening the manager hides side panels like Settings (the sidebar drawer closes)
 	const menuClosed = await A.page.evaluate(
@@ -40,17 +40,17 @@ h.run(async () => {
 	);
 
 	// module action runs from its card
-	await A.page.locator('#module-card-piano').getByRole('button', { name: 'Piano: spawn / remove' }).click();
+	await A.page.locator('#module-card-pong').getByRole('button', { name: 'Pong: spawn / remove' }).click();
 	await h.eventually(
 		() =>
 			A.page.evaluate(
 				() =>
 					new Promise((r) =>
-						window.__stores.globalScene.subscribe((s) => r(!!s?.getObjectByName('piano-module')))()
+						window.__stores.globalScene.subscribe((s) => r(!!s?.getObjectByName('pong-module')))()
 					)
 			),
 		(v) => v === true,
-		'piano spawns from its card'
+		'pong spawns from its card'
 	);
 
 	// download-as-example: zip with manifest + module.js

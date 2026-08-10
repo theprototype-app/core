@@ -46,13 +46,23 @@ h.run(async () => {
 	// button-role query never matches and was the suite's known failure
 	await A.page.getByRole('tab', { name: 'User', exact: true }).click();
 	await A.page.waitForTimeout(200);
-	// install row: ONE primary Install driven by the URL field (it used to be a
-	// permanently grey color="alternative" button that read as disabled)
+	// install row: ONE primary Install driven by the URL field. It is NEVER
+	// disabled — a greyed-out primary button read as broken — so an empty click
+	// has to explain itself instead.
 	const installBtn = A.page.locator('#user-modules-tab').getByRole('button', { name: 'Install', exact: true });
-	h.check(await installBtn.isDisabled(), 'Install is disabled while the URL field is empty');
+	h.check(await installBtn.isEnabled(), 'Install is clickable even with an empty field');
+	await installBtn.click();
+	await h.eventually(
+		() =>
+			A.page.evaluate(
+				() => new Promise((r) => window.__stores.toastStore.subscribe((t) => r(JSON.stringify(t)))())
+			),
+		(t) => t.includes('Paste a module URL'),
+		'empty Install explains itself instead of looking broken'
+	);
 	await A.page.locator('#install-module-url').fill('https://example.invalid/mod');
 	await A.page.waitForTimeout(150);
-	h.check(await installBtn.isEnabled(), 'Install enables as soon as a URL is typed');
+	h.check(await installBtn.isEnabled(), 'Install stays enabled with a URL typed');
 	await A.page.locator('#install-module-url').fill('');
 
 	await A.page.locator('#install-module-zip').setInputFiles({

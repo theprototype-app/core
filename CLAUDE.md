@@ -282,13 +282,18 @@ loadable play content. Everything a user does must be visible to connected peers
   takes `{assets,packs,flow}` include-opts, adds a `packs/` section; `fileHandler` saves/
   loads it, Sidebar Files = [GLTF | Scene | ⚙cog]), `measure`, `cameraBookmarks`,
   `editorNavigation`, `lightHelpers`.
-- `src/modules/` — core modules (hello, button, dungeon, piano, pong; #12: avatar =
-  possess-selected, essentials = 6 clickable interactables whose KIND derives from the
-  replicated object NAME, car = jointed drivable demo w/ click-claim + drive-op
-  forwarding; K: vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only feature,
-  register() just wires the vrControls hook registries, so disabling the module
-  removes the sleeve entirely) + `index.js` `coreModules` list; manager
-  enables/disables (live enable, reload to disable).
+- `src/modules/` — core modules (hello = the smallest complete example, button =
+  custom Svelte node UI, dungeon = entangled with play mode via `dungeonPlay`,
+  pong, vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only, register()
+  just wires the vrControls hook registries, so disabling the module removes
+  the sleeve entirely) + `index.js` `coreModules` list; manager enables/disables
+  (live enable; core still needs a reload to disable, USER modules disable live).
+  **17-A moved piano/avatar/essentials/car OUT to `theprototype-app/modules`**
+  (installable from the manager's Browse tab) — they were pure demo content and
+  are now the flagship gallery entries; the SDK grew what they needed
+  (`api.create`/`moveObject`/`physics.set`/`physics.createJoint`/`isPlaying`/
+  `physics.running`/`followCam`/`peerIds`/`flyTo`/`playSound`). pong stays core
+  only because it still reads `globalCamera`/`userdata` directly.
 - UI: `components/menu/*` (drawers/modals; visibility via stores + `hidePanels/
   restorePanels`), `components/editors/*` (flow editor + CodeMirror panels),
   `components/play/*` (player, avatars — photo = billboard card; the VR follower

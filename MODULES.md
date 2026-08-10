@@ -130,7 +130,7 @@ api.registerFrameTask((time) => { /* runs every frame, synced time */ });
 
 // click handlers only see the replicated objects root by default; if your
 // module adds its own group at the scene root, register it for clicks:
-api.registerInteractiveGroup('piano-module');
+api.registerInteractiveGroup('pong-module');
 ```
 
 ### Messages and state
@@ -198,7 +198,7 @@ api.physics.setJointMotor(jointId, vel, maxForce); // drive a revolute joint
 api.physics.joints();                   // Promise<the replicated joint defs>
 ```
 
-The **car module** (`src/modules/car/`) is the worked example: replicated
+The **car module** (now in the [modules repo](https://github.com/theprototype-app/modules), `modules/car/`) is the worked example: replicated
 primitives + motorized revolute joints, click-to-claim (pong's paddle
 pattern), driver forwards `{op:'drive', throttle, steer}` at ~20Hz and only
 the initiator applies wheel motors. Driving + the chase camera engage only

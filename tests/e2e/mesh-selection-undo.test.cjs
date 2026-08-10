@@ -124,6 +124,42 @@ h.run(async () => {
 	h.check(verts.undone === verts.one, 'undo walks back to the previous vertex selection');
 	h.check(verts.redone === verts.all, 'redo puts it back');
 
+	// --------------- 3b. an OP's own selection tidy-up is not an undo step
+	// weld/create-face clear the multi-pick they consumed. Recording that would
+	// leave a selection entry sitting ON TOP of the op's meshgeo, so the next
+	// Ctrl+Z would undo the housekeeping and the geometry would look stuck.
+	const weld = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const me = s.meshEdit;
+		const keys = () => {
+			const p = window.__box.geometry.attributes.position;
+			const set = new Set();
+			for (let i = 0; i < p.count; i++)
+				set.add(
+					Math.round(p.getX(i) * 1e4) +
+						',' +
+						Math.round(p.getY(i) * 1e4) +
+						',' +
+						Math.round(p.getZ(i) * 1e4)
+				);
+			return set.size;
+		};
+		me.enterEditMode(window.__box.uuid);
+		const before = keys();
+		me.toggleVertexSelection(0);
+		me.toggleVertexSelection(1);
+		me.toggleVertexSelection(2);
+		const ok = me.weldSelectedVerts();
+		const welded = keys();
+		let topKind;
+		s.history.undoStack.subscribe((v) => (topKind = v[v.length - 1]?.kind))();
+		s.history.undo();
+		return { ok, before, welded, topKind, afterUndo: keys() };
+	});
+	h.check(weld.ok && weld.welded < weld.before, 'weld merged the picked vertices (premise)');
+	h.check(weld.topKind === 'meshgeo', "the op's meshgeo is the TOP entry, not its selection tidy-up");
+	h.check(weld.afterUndo === weld.before, 'so ONE undo takes the weld back out');
+
 	// ------------------------------------- 4. Done drops the selection steps
 	const sealedLen = await undoLen(A.page);
 	const sealed = await A.page.evaluate(() => {

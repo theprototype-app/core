@@ -48,6 +48,23 @@ export function editCapToast(message) {
 /** hard ceiling on a snapshot message (floats) — ~5k tris */
 const MAX_SNAPSHOT = 45000;
 
+// Coplanarity thresholds. Two names for one number, because they answer
+// different questions: FACE_COPLANAR judges what a human calls ONE FLAT FACE
+// (grouping, and the dissolve silhouette guard), QUAD_COPLANAR whether two
+// triangles may be READ as a quad.
+//
+// They are equal on purpose, and loosening QUAD_COPLANAR does NOT fix the
+// known gap: rotating an extruded band by 4 degrees twists each wall quad so
+// its two triangles diverge by ~9 (measured), which is indistinguishable from
+// a genuine 9-degree crease in a triangle SOUP - a threshold loose enough to
+// keep the twisted quad would also pair across the segments of a smooth
+// sphere. Only stored face topology can tell those apart, which is why the
+// quad graph loses a rotated band today and why that is the topology
+// workstream's job, not a constant's.
+/** ~2.6 degrees */
+const FACE_COPLANAR = 0.999;
+/** ~2.6 degrees - see above before changing it */
+const QUAD_COPLANAR = 0.999;
 /** rounded position key @param {number} x @param {number} y @param {number} z */
 function keyOf(x, y, z) {
 	return `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
@@ -243,7 +260,7 @@ export function groupFaces(tris) {
 	});
 	for (const list of edgeMap.values()) {
 		for (let i = 1; i < list.length; i++)
-			if (Math.abs(normals[list[0]].dot(normals[list[i]])) > 0.999) union(list[0], list[i]);
+			if (Math.abs(normals[list[0]].dot(normals[list[i]])) > FACE_COPLANAR) union(list[0], list[i]);
 	}
 	/** @type {Map<number, number[]>} */
 	const groups = new Map();
@@ -306,7 +323,7 @@ export function pairQuads(tris) {
 		if (list.length !== 2) continue; // an open or non-manifold edge is no diagonal
 		const [a, b] = list;
 		if (a === b) continue;
-		if (normals[a].dot(normals[b]) < 0.999) continue; // coplanar AND co-facing
+		if (normals[a].dot(normals[b]) < QUAD_COPLANAR) continue; // coplanar AND co-facing
 		const shared = ek.split('|');
 		const ra = cornerOff(tris[a], shared);
 		const rb = cornerOff(tris[b], shared);
@@ -634,6 +651,97 @@ export function subdivideFaceTris(tris, targetTris) {
 		);
 	});
 	return out;
+}
+
+/**
+ * Subdivide the target as QUADS where it can: each paired quad becomes a 2x2
+ * grid of sub-quads, and only genuinely unpaired triangles take the 4-way
+ * triangle split above.
+ *
+ * This matters far beyond tidiness. The triangle split turns one quad (2 tris)
+ * into 8 triangles that have NO grid pairing: pairQuads scores every candidate
+ * by rectangularity, the corner-and-centre "kite" pairings are all legal, and
+ * the greedy match produces a pinwheel. The quad graph the loop tools walk was
+ * then meaningless — which is why "subdivide a face, then Loop" behaved
+ * randomly. Bilinear children of a rectangle are rectangles, so the grid scores
+ * 0 and pairQuads recovers exactly the topology this emitted.
+ *
+ * Unselected neighbours keep their full edge, the same T-junction tradeoff the
+ * triangle split and loop cut already document.
+ * @param {any[]} tris @param {number[]} targetTris @param {Int32Array} partner
+ * @returns {{tris: any[], newIndices: number[]}}
+ */
+export function subdivideFaceUnits(tris, targetTris, partner) {
+	const targets = new Set(targetTris);
+	/** @type {any[]} */
+	const out = [];
+	/** @type {number[]} */
+	const newIndices = [];
+	const done = new Set();
+	const mid = (/** @type {any} */ p, /** @type {any} */ q) => p.clone().add(q).multiplyScalar(0.5);
+	tris.forEach((t, ti) => {
+		if (done.has(ti)) return;
+		if (!targets.has(ti)) {
+			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
+			return;
+		}
+		const mate = partner?.[ti] ?? -1;
+		// both halves must be in the selection, or the quad is only half-targeted
+		// and splitting it as a quad would edit geometry the user did not pick
+		const keys = mate >= 0 && targets.has(mate) ? quadRingKeys(ti, mate) : null;
+		if (!keys) {
+			// unpaired (or half-picked): the classic 4-way split, unchanged
+			const sub = subdivideFaceTris([t], [0]);
+			for (const s of sub) {
+				newIndices.push(out.length);
+				out.push(s);
+			}
+			return;
+		}
+		done.add(ti);
+		done.add(mate);
+		// corners in ring order — quadRingKeys returns [p, ra, q, rb] with the
+		// shared p-q as the diagonal, so ring order is p, ra, q, rb
+		const corner = new Map();
+		for (const idx of [ti, mate]) {
+			const tri = tris[idx];
+			tri.forEach((/** @type {any} */ v, /** @type {number} */ c) => {
+				const k = keyOf(v.x, v.y, v.z);
+				if (!corner.has(k)) corner.set(k, { pos: v, uv: uvAt(tri, c) });
+			});
+		}
+		const ring = keys.map((/** @type {string} */ k) => corner.get(k));
+		if (ring.some((/** @type {any} */ r) => !r)) {
+			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
+			return;
+		}
+		const [A, B, C, D] = ring;
+		const mAB = mid(A.pos, B.pos);
+		const mBC = mid(B.pos, C.pos);
+		const mCD = mid(C.pos, D.pos);
+		const mDA = mid(D.pos, A.pos);
+		// the bilinear centre is the midpoint of either diagonal
+		const ctr = mid(A.pos, C.pos);
+		const uAB = uvLerp(A.uv, B.uv, 0.5);
+		const uBC = uvLerp(B.uv, C.uv, 0.5);
+		const uCD = uvLerp(C.uv, D.uv, 0.5);
+		const uDA = uvLerp(D.uv, A.uv, 0.5);
+		const uCtr = uvLerp(A.uv, C.uv, 0.5);
+		const mi = t.mi;
+		const textured = !!t.uv;
+		const wantDir = triNormal(t);
+		/** @param {any[]} pos @param {any[]} uv */
+		const emit = (pos, uv) => {
+			const at = out.length;
+			pushQuad(out, pos[0], pos[1], pos[2], pos[3], wantDir, mi, textured ? uv : undefined);
+			for (let i = at; i < out.length; i++) newIndices.push(i);
+		};
+		emit([A.pos.clone(), mAB, ctr.clone(), mDA], [A.uv, uAB, uCtr, uDA]);
+		emit([mAB.clone(), B.pos.clone(), mBC, ctr.clone()], [uAB, B.uv, uBC, uCtr]);
+		emit([ctr.clone(), mBC.clone(), C.pos.clone(), mCD], [uCtr, uBC, C.uv, uCD]);
+		emit([mDA.clone(), ctr.clone(), mCD.clone(), D.pos.clone()], [uDA, uCtr, uCD, D.uv]);
+	});
+	return { tris: out, newIndices };
 }
 
 /** B4: reverse the winding (swap b/c) of the target tris — flips their
@@ -1498,7 +1606,13 @@ export function faceLoopRing(tri, axis = 0) {
 		let quad = start;
 		let edge = first;
 		for (let guard = 0; guard < workingTris.length; guard++) {
-			const next = (topo.byEdge.get(edge) ?? []).find((q) => q !== quad);
+			// exactly ONE quad on the other side, or the walk stops. `.find` used to
+			// take the first of several at a non-manifold edge (two shells welded
+			// along a wall, a coplanar T-seam), which sent the loop off into an
+			// arbitrary strip — a stop is the honest answer, and it is what every
+			// modeller does there.
+			const others = (topo.byEdge.get(edge) ?? []).filter((q) => q !== quad);
+			const next = others.length === 1 ? others[0] : undefined;
 			if (next === undefined || seen.has(next)) break; // boundary, non-quad, or closed
 			const edges = topo.edges.get(next);
 			const at = edges ? edges.indexOf(edge) : -1;
@@ -1657,24 +1771,51 @@ function quadCorners(quad) {
  * that edge. (Blender turns those into n-gons; a triangle soup has no n-gons.)
  * @param {number} cuts @returns {boolean}
  */
-export function commitLoopCut(cuts = 1) {
-	if (!faceEdited) return false;
-	const n = Math.max(1, Math.min(Math.round(cuts) || 1, 20));
-	const sel = get(faceEditSelectedTris);
-	const anchor = /** @type {number} */ (sel.length ? sel[0] : get(faceEditHoverTri));
-	if (anchor < 0 || !workingTris[anchor]) {
-		showToast('Pick a quad first, then Loop cut');
-		return false;
+/**
+ * The ring loop cut will run through, chosen from the SELECTION rather than
+ * from `loopAxis`. That module global belongs to the select-cycling UX, and
+ * reading it here meant the cut could run perpendicular to the loop the user
+ * was looking at — or, on a fresh object, along an axis inherited from the
+ * previous session.
+ *
+ * The rule is one comparison: of the two loops through the anchor, take the
+ * one that OVERLAPS the current selection more. After a Loop select (once or
+ * pressed again for the perpendicular one) the selection IS one of those two
+ * rings, so this reproduces exactly what is highlighted; on a bare hover pick
+ * there is nothing to prefer and axis 0 is the deterministic answer.
+ * @returns {{quad: number, cross: string[]}[]}
+ */
+function loopCutRing() {
+	const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
+	// the lowest-indexed PAIRED triangle: a face/shell selection can hold plenty
+	// of unpaired ones, and sel[0] used to be whichever happened to be first
+	const anchor = sel.length
+		? [...sel].sort((a, b) => a - b).find((ti) => quadIdOf(ti) >= 0)
+		: get(faceEditHoverTri);
+	if (anchor === undefined || anchor < 0 || !workingTris[anchor]) {
+		showToast(sel.length ? 'Loop cut needs a QUAD in the selection' : 'Pick a quad first, then Loop cut');
+		return [];
 	}
 	if (quadIdOf(anchor) < 0) {
 		showToast('Loop cut needs a QUAD — this triangle has no pair');
-		return false;
+		return [];
 	}
-	const ring = faceLoopRing(anchor, loopAxis);
-	if (!ring.length) {
-		showToast('No loop runs through that face');
-		return false;
+	const rings = [faceLoopRing(anchor, 0), faceLoopRing(anchor, 1)];
+	let pick = rings[0];
+	if (sel.length) {
+		const selQuads = new Set(sel.map((/** @type {number} */ ti) => quadIdOf(ti)).filter((q) => q >= 0));
+		const overlap = (/** @type {any[]} */ r) => r.filter((e) => selQuads.has(e.quad)).length;
+		if (overlap(rings[1]) > overlap(rings[0])) pick = rings[1];
 	}
+	if (!pick.length) showToast('No loop runs through that face');
+	return pick;
+}
+
+export function commitLoopCut(cuts = 1) {
+	if (!faceEdited) return false;
+	const n = Math.max(1, Math.min(Math.round(cuts) || 1, 20));
+	const ring = loopCutRing();
+	if (!ring.length) return false;
 	const topo = quadTopology ?? buildQuadTopology();
 
 	const before = trisToPositions(workingTris);
@@ -1691,6 +1832,10 @@ export function commitLoopCut(cuts = 1) {
 	const next = cloneTris(
 		workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !consumed.has(ti))
 	);
+	// everything emitted below is NEW geometry appended after the survivors, and
+	// trisToPositions -> readTriangles preserves order, so this range is still
+	// the new band after the snapshot round trip (the E6 cap-selection trick)
+	const firstNew = next.length;
 
 	for (const { quad, cross } of ring) {
 		const edges = topo.edges.get(quad);
@@ -1748,6 +1893,13 @@ export function commitLoopCut(cuts = 1) {
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
 		after: { positions, groups, uvs }
 	});
+	// leave the NEW band selected: it is what you reach for next (scale it, move
+	// it, cut it again), and an empty selection after an op that just rebuilt the
+	// area under the cursor reads as "nothing happened"
+	const band = [];
+	for (let ti = firstNew; ti < next.length; ti++) band.push(ti);
+	faceEditSelectedTris.set(band);
+	refreshFaceOverlay();
 	showToast(
 		'Loop cut: ' + n + ' loop' + (n === 1 ? '' : 's') + ' across ' + ring.length + ' quads'
 	);
@@ -2295,7 +2447,7 @@ export function dissolveEdges() {
 			if (mate >= 0) patch.add(mate);
 		}
 		const tris = [...patch];
-		if (tris.some((ti) => normals[ti].dot(normals[tris[0]]) < 0.999)) {
+		if (tris.some((ti) => normals[ti].dot(normals[tris[0]]) < FACE_COPLANAR)) {
 			skipped++; // dissolving a non-flat join would change the silhouette
 			continue;
 		}
@@ -3037,11 +3189,19 @@ export function commitFaceOp(op, amount) {
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
 	let next;
+	/** @type {number[] | null} subdivide keeps its OWN output selected */
+	let subdivided = null;
 	if (op === 'extrude') next = extrudeFace(workingTris, face, amount);
 	else if (op === 'inset') next = insetFace(workingTris, face, amount);
 	else if (op === 'move') next = moveFaceAlongNormal(workingTris, face, amount);
 	else if (op === 'delete') next = deleteFaceTris(workingTris, face);
-	else if (op === 'subdivide') next = subdivideFaceTris(workingTris, face.triIndices);
+	else if (op === 'subdivide') {
+		// quad-aware: a paired quad becomes a 2x2 grid, so the quad topology (and
+		// with it every loop tool) survives the split
+		const split = subdivideFaceUnits(workingTris, face.triIndices, quadPartner);
+		next = split.tris;
+		subdivided = split.newIndices;
+	}
 	else if (op === 'flip') next = flipFaceNormals(workingTris, face.triIndices);
 	else return false;
 	const positions = trisToPositions(next);
@@ -3085,6 +3245,12 @@ export function commitFaceOp(op, amount) {
 		// E7: the gizmo comes back seated on the new cap (attachFaceGizmo reads
 		// the selection-first op target). NEVER on arm — that's the B1 fix.
 		if (typeof window !== 'undefined') attachFaceGizmo();
+	} else if (subdivided?.length) {
+		// keep the subdivided AREA selected (its new pieces) rather than dropping
+		// to nothing: "subdivide, then loop through one of the new quads" is the
+		// point of the op, and an empty selection there reads as a failed edit
+		faceEditSelectedTris.set(subdivided);
+		refreshFaceOverlay();
 	}
 	return true;
 }

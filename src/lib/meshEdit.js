@@ -486,7 +486,10 @@ export function weldSelectedVerts() {
 	// take, so the overlay can never diverge from the welded mesh (the dance
 	// left it stale whenever re-entry took any early-out).
 	const ok = commitMeshGeoSnapshot(uuid, before, after);
-	if (ok) clearVertexSelection(); // the weld consumed the multi-pick
+	// Inner, deliberately: this is the OP tidying up after itself, not a pick the
+	// user made. Recording it would put a selection entry ON TOP of the weld's
+	// meshgeo, so the next Ctrl+Z would undo the housekeeping instead of the weld.
+	if (ok) clearVertexSelectionInner();
 	else {
 		position.array.set(rawBefore);
 		position.needsUpdate = true;
@@ -503,7 +506,7 @@ export function createSelectedFace(viewerPos = null) {
 	const ok = createFaceFromVerts(uuid, verts, viewerPos);
 	// the commit's applyMeshGeo already rebuilt the session in place (D1
 	// refresher) — same no-dance rule as weldSelectedVerts
-	if (ok) clearVertexSelection();
+	if (ok) clearVertexSelectionInner(); // op housekeeping, not a user pick
 	return ok;
 }
 

@@ -113,9 +113,9 @@ export function possess(uuid, opts = {}) {
 
 /** @param {MouseEvent} event */
 function onLookMove(event) {
-	// only while the lock is actually engaged — an unlocked mousemove still
-	// carries movementX and would steer the object on any cursor travel
-	if (!state || !document.pointerLockElement) return;
+	// only while WE hold the lock — an unlocked mousemove still carries
+	// movementX and would steer the object on any cursor travel
+	if (!state || document.pointerLockElement !== lockSurface) return;
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', state.uuid);
 	if (object) object.rotation.y -= event.movementX * 0.0025;
 	state.pitch = Math.max(-1.45, Math.min(1.45, state.pitch - event.movementY * 0.0025));
@@ -123,24 +123,38 @@ function onLookMove(event) {
 
 function onLockChange() {
 	// lock lost (Esc / alt-tab) while we hold a mouse-look possession → release
-	if (state?.opts.mouseLook && !document.pointerLockElement) release();
+	if (state?.opts.mouseLook && document.pointerLockElement !== lockSurface) release();
 }
 
+/** @type {any} the element we hold pointer lock on — deliberately NOT the canvas */
+let lockSurface = null;
+
 function startMouseLook() {
-	/** @type {any} */
-	const renderer = get(globalRenderer);
-	const target = renderer?.domElement ?? document.body;
+	// Pointer lock on the CANVAS would be seen by PointerLockControls (a
+	// document-level listener on threlte's renderer.domElement, always mounted
+	// via Player) as "play mode started": it flips $isLocked and swaps to the
+	// player camera. Possess drives the EDITOR camera, so hold the lock on a
+	// dedicated offscreen element — locked mouse deltas still arrive at
+	// document level, and PointerLockControls now ignores locks it doesn't own.
+	if (!lockSurface) {
+		lockSurface = document.createElement('div');
+		lockSurface.id = 'possess-look-surface';
+		lockSurface.style.cssText = 'position:fixed;width:1px;height:1px;left:-10px;top:-10px;';
+		document.body.appendChild(lockSurface);
+	}
 	document.addEventListener('mousemove', onLookMove);
 	document.addEventListener('pointerlockchange', onLockChange);
 	try {
-		target.requestPointerLock?.();
+		lockSurface.requestPointerLock?.();
 	} catch {}
 }
 
 function stopMouseLook() {
 	document.removeEventListener('mousemove', onLookMove);
 	document.removeEventListener('pointerlockchange', onLockChange);
-	if (document.pointerLockElement) document.exitPointerLock?.();
+	if (document.pointerLockElement === lockSurface) document.exitPointerLock?.();
+	lockSurface?.remove();
+	lockSurface = null;
 }
 
 /** Release control: restore the camera, record ONE undo entry, final move. */

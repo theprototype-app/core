@@ -57,6 +57,23 @@ passed while the user watched the feature misbehave:
   boundary legitimately fans into 4. Re-derive what the code SHOULD do, then fix the
   assertion — and say so in the commit, because a "fixed" test that was never broken is
   a lie in the history.
+- **Changing a DEFAULT turns every suite that silently relied on it red.** Making Move
+  the default armed op (so a click stops committing an extrude) broke
+  `faces-nested-toolbar`, whose premise was "Extrude is the default, so the params row
+  is showing". The fix is to ARM the op explicitly in the test, never to weaken the
+  check — and the same batch's `mesh-edge-mode` needed the same treatment when LOOP and
+  RING became different commands. Both belong to the "asserting the OLD contract"
+  family: when a deliberate behaviour change makes a suite red, update the contract it
+  encodes and say so in the commit.
+- **A store-level repro must replay the FULL handler sequence, or it proves nothing.**
+  `autoApplyFaceOp()` returns false unless the highlight was set first, so a probe that
+  called only `pickFaceUnit` + `autoApplyFaceOp` reported "nothing happens" for a path
+  that fires every time in the app. Replicate what the component does — for a face
+  click that is `highlightFaceByTriangle` → `pickFaceUnit` → `autoApplyFaceOp` — or read
+  the handler and mirror it exactly.
+- **`innerText` reflects CSS `text-transform`.** A cheat-sheet check comparing `'Faces'`
+  failed against text CSS had uppercased to `FACES`, while the UI was perfectly correct.
+  Compare case-insensitively, or read `textContent` off the source element.
 - **When a report says "X selects everything" / "the wrong thing happened", check the
   UI before the algorithm.** Two such reports in this batch reproduced as CORRECT at
   the store level: six near-identical 18px icon buttons in a row had Select-linked next
@@ -214,11 +231,19 @@ const value = await page.evaluate(() =>
   `.toolbox-header.move-handle`, body `.toolbox-body`, footer `.toolbox-status`, grip
   `.dw-resize`); modes `#mesh-mode-vertices|edges|faces`; granularity
   `#mesh-gran-quad|face|triangle|shell|object`; ops `#mesh-op-<op>` (armed carries
-  `mesh-op-active` + `tbx-on`); selection commands are TEXT buttons `#mesh-sel-<id>`
-  (loop/grow/shrink/all/invert/linked); cleanup `#mesh-fix-normals|merge` +
-  `#mesh-shading`; edges `#edge-loop|dissolve|clear` + `#edge-sel-count`; the key list
-  is its OWN window `#mesh-keys-popover` opened by `#mesh-keys-help`. Sculpt
-  `#sculpt-toolbar` + `#sculpt-op-*`.
+  `mesh-op-active` + `tbx-on`); cleanup `#mesh-fix-normals|merge` + `#mesh-shading`;
+  edges `#edge-loop|dissolve|clear` + `#edge-sel-count`; session cancel
+  `#mesh-edit-cancel` with the inline `#mesh-cancel-confirm` / `#mesh-cancel-yes` /
+  `#mesh-cancel-no`; the key list is its OWN window `#mesh-keys-popover` opened by
+  `#mesh-keys-help`. Sculpt `#sculpt-toolbar` + `#sculpt-op-*`.
+  **Selection commands are TEXT buttons whose ids are PER MODE** — `#mesh-sel-all` in
+  faces but `#mesh-sel-eall` / `#mesh-sel-vall` in edges / vertices (same for
+  `invert`/`einvert`/`vinvert`), so a selector hardcoding the faces ids silently
+  matches nothing in the other two modes.
+- The face highlight is TWO meshes: `face-edit-overlay` = the SELECTION (opacity ~0.45)
+  and `face-edit-hover` = the cursor wash (~0.14). A check for "is this face
+  highlighted" has to say WHICH — they were one mesh until a deselected face kept
+  looking selected under the cursor.
 - `objectActions.flyTo(pos, target, duration)` divides by `duration` — passing **0**
   makes the first frame `NaN`, which NaNs the camera and then the spatial-audio panner
   (`Failed to set the 'value' property on 'AudioParam'`). Use a real duration and wait.

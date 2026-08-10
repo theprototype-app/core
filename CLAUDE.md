@@ -127,6 +127,23 @@ loadable play content. Everything a user does must be visible to connected peers
   canonical welded key pair; `pickEdgeAt` takes the NEAREST edge and SKIPS quad
   diagonals; `dissolveEdges` merges the two QUADS either side and fan-triangulates
   their boundary from a corner that isn't an endpoint (so the edge can't reappear).
+  Edge **LOOP** (`edgeLoopChain`) and edge **RING** (`edgeLoopKeys`) are DIFFERENT
+  commands and were originally conflated: LOOP is the chain walk (continue to the edge
+  sharing no face with the current one, which only exists at a valence-4 vertex, so it
+  stops at poles), RING is the parallel rungs a face loop crosses. On a bare cube every
+  vertex is a pole, so Loop = the picked edge and Ring = the band; on a SUBDIVIDED face
+  Ring is the INNER grid edges — which is what made the conflation look broken.
+  The armed op DEFAULTS TO 'move': auto-apply commits the armed op on a plain click, so
+  extrude-by-default turned every face click into an extrusion. Selection and HOVER are
+  separate overlay meshes (`face-edit-overlay` / `face-edit-hover`) — one shared tint
+  made a just-deselected face look selected while the cursor rested on it. Selection
+  commands + Ctrl+A/Ctrl+I exist in ALL THREE modes (`selectAllEdges`/`selectAllVerts`
+  and their inverts), and 1/2/3 switch element mode inside a session (outside one they
+  stay the gizmo transform modes). `cancelEditSession` reverts the WHOLE session from an
+  entry-time snapshot — `sealEditHistorySession('discard')` only drops undo entries and
+  leaves the geometry edited. Bridge pairs its loops by ANGLE around their centres in
+  one basis perpendicular to the tunnel axis (the old closest-vertex anchor + direction
+  vote was tie-sensitive between aligned caps, and a one-step rotation = a skewed tunnel).
   M6 `recalculateNormals` (signed volume per shell), `mergeByDistance` (quantized-grid
   clusters, deterministic), `setShadingSmooth` (userData.shading, replicates as just
   the FLAG, re-applied by applyMeshGeo). A CLOSED region has no border, so extrude
@@ -538,6 +555,12 @@ loadable play content. Everything a user does must be visible to connected peers
   `.bg-gray-800` class NAMES — so a panel using `ui-panel` stays dark in every
   theme. Own the surface explicitly (`background: var(--surface, #1f2937)`) and keep
   `ui-panel` for radius/shadow + the bit8/contrast personality hooks.
+- **An AUTO-APPLYING tool makes the DEFAULT armed op a behavioural decision.** When a
+  plain click commits whatever is armed (the mesh editor's `faceAutoApply`), defaulting
+  to a topological/destructive op turns every SELECTION click into an edit — the mesh
+  session shipped with `extrude` armed, so clicking a face to look at it extruded it,
+  reported as "clicking twice on a quad breaks the texture". Default to the
+  non-destructive op (Move) and let the destructive ones be one key away.
 - **`prefers-reduced-motion` suppresses `animationend`**, so any class cleared by
   that event sticks forever for those users. A CSS-animation-driven state class
   needs a `setTimeout` fallback alongside `onanimationend` (the toolbox one-shot
@@ -1084,11 +1107,19 @@ override for e2e — never share 5173 (the user's main-checkout server).
   movable keys cheat sheet). Suites added: convert-to-mesh, mesh-edit-materials,
   mesh-multishell-ops, mesh-quad-select, toolbox-window, mesh-uv-preserve,
   mesh-loop-select, mesh-loop-cut, mesh-cleanup, mesh-edge-mode, mesh-fixes-round2.
-  Baseline **419/62** held throughout. REMAINING: M5 bevel, M9 knife + vertex slide,
-  M7 mirror, M8 proportional editing. Two reports ("loop selects everything", "invert
-  selects everything") were CORRECT logic reported through a bad UI — six near-identical
-  icon buttons — which is why selection commands are words now; check the UI before the
-  algorithm when a report says "selects everything".
+  Baseline **419/62** held throughout. Then TWO fix rounds from real use: `dbbfc69`
+  (extrude wall UVs, closed-region guard, quad diagonals unpickable, dissolve that
+  really removes an edge, two-edge loop completion, per-mode selection memory, movable
+  keys cheat sheet) and `4f5a804` (Move as the default op, selection vs hover overlays,
+  session Cancel, Ctrl+A/I in all three modes, 1/2/3 element-mode keys, sectioned cheat
+  sheet, LOOP split from RING, bridge pairing hardened). REMAINING: M5 bevel, M9 knife +
+  vertex slide, **the M4 edge GIZMO** (edges select but cannot be dragged — deferred
+  deliberately), M7 mirror, M8 proportional, and the deferred stored-face-topology item.
+  Two reports ("loop selects everything", "invert selects everything") were CORRECT
+  logic reported through a bad UI — six near-identical icon buttons — which is why
+  selection commands are words now; check the UI before the algorithm when a report says
+  "selects everything". Equally: every red in those rounds was a wrong TEST premise, not
+  a wrong fix — re-derive what the code should do before changing it.
 - Status (2026-08-06, release): **1.2.0 SHIPPED** — PR #88 (`release/next` → `main`)
   merged, `npm version minor` → tag `v1.2.0` → release.yml, cloud redeployed with
   `CORE_REF=v1.2.0` (now PINNED in the cloud repo's gitignored `.env.deploy`). Eight

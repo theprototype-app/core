@@ -2072,8 +2072,21 @@ registerHistoryKind('selection', (entry, state) => {
 		faceEditSubmode.set(entry.mode === 'edges' ? 'edges' : 'faces');
 	if (entry.mode === 'edges') edgeEditSelected.set(sel.filter((k) => !!edgeEndpoints(k)));
 	else faceEditSelectedTris.set(sel.filter((ti) => !!workingTris[ti]));
+	// The click that RECORDED this entry also set the hover + highlight, and the
+	// desktop has no pointermove path to move them off again. Leaving them alone
+	// brings the quad this undo just deselected straight back as the hover wash
+	// ("the last quad keeps its highlight"), and leaves the gizmo seated on a
+	// target the selection no longer contains — the P1 stale-gizmo bug by another
+	// route. VR re-sets the hover from the beam on the next frame.
+	faceEditHoverTri.set(-1);
+	faceEditHighlight.set(-1);
 	refreshFaceOverlay();
 	refreshEdgeOverlay();
+	if (typeof window !== 'undefined') {
+		// attachFaceGizmo detaches itself when the restored selection has no target
+		if (get(faceEditSubmode) === 'faces' && get(faceEditOp) === 'move') attachFaceGizmo();
+		else detachFaceGizmo();
+	}
 	return true;
 });
 

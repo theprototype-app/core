@@ -64,6 +64,56 @@ h.run(async () => {
 	});
 	h.check(noop.after === noop.before, 'picking the same unit twice records nothing');
 
+	// ------- 1b. undo must also drop the HOVER + gizmo the pick left behind
+	// User report: "multiselect a few quads, Ctrl+Z, the last quad selected keeps
+	// its highlight". The click sets faceEditHoverTri and the desktop has no
+	// pointermove path to move it off, so the deselected quad came straight back
+	// as the hover wash — and the gizmo stayed seated on a target the restored
+	// selection no longer contains.
+	const stale = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const scene = await new Promise((r) => s.globalScene.subscribe(r)());
+		const controls = await new Promise((r) => s.TControls.subscribe(r)());
+		const layer = (name) => {
+			const mesh = scene.children.find((n) => n.name === name);
+			return mesh ? mesh.geometry.attributes.position.count : 0;
+		};
+		const gizmoAt = () => {
+			const o = controls?.object;
+			return o?.userData?.isFaceProxy ? [o.position.x, o.position.y, o.position.z] : null;
+		};
+		fe.setFaceSubmode('faces');
+		fe.clearFaceSelection();
+		fe.setFaceOp('move');
+		// the desktop ctrl-click path, verbatim (Scene.svelte): highlight, toggle, seat
+		const ctrlClick = (tri) => {
+			fe.highlightFaceByTriangle(tri, false);
+			fe.toggleFaceSelection(tri);
+			fe.attachFaceGizmo();
+		};
+		ctrlClick(0);
+		ctrlClick(4);
+		ctrlClick(8);
+		const before = { sel: layer('face-edit-overlay'), hover: layer('face-edit-hover'), gizmo: gizmoAt() };
+		s.history.undo();
+		return {
+			before,
+			sel: layer('face-edit-overlay'),
+			hover: layer('face-edit-hover'),
+			gizmo: gizmoAt()
+		};
+	});
+	h.check(stale.before.sel === 18, 'three ctrl-clicked quads tint 6 triangles (premise)');
+	h.check(stale.before.hover === 0, '...with nothing in the hover layer while they are selected');
+	h.check(!!stale.before.gizmo, '...and a Move gizmo seated on the set (premise)');
+	h.check(stale.sel === 12, 'undo drops the last quad from the selection tint');
+	h.check(stale.hover === 0, '...and it does NOT come back as a stale hover wash');
+	h.check(
+		!!stale.gizmo && String(stale.gizmo) !== String(stale.before.gizmo),
+		'...and the gizmo re-seats on the restored selection instead of the undone quad'
+	);
+
 	// --------------------------------------------------- 2. edges
 	const edges = await A.page.evaluate(() => {
 		const s = window.__stores;

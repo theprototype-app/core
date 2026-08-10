@@ -138,6 +138,23 @@ debug cycle in #15). Remember two-peer runs ALWAYS need the PEER_CONFIG env on
 a localhost APP_URL — `helpers.connect` times out on the Approve button
 otherwise (the app dials the local :9001 server that isn't running).
 
+**This is the #1 false regression in a lane, so learn its shape (17-D, cost a
+bisect): SEVERAL unrelated suites fail AT ONCE, every one of them on
+`locator.click: Timeout … waiting for getByRole('button', { name: 'Approve' })`.**
+That is not your diff — it is every TWO-PEER suite (undo, multi-select,
+physics-joints, animated-models, module-sdk, scene-music …) dying inside
+`helpers.connect` because nothing is listening on :9001. Check
+`Test-NetConnection -ComputerName localhost -Port 9001 -InformationLevel Quiet`
+BEFORE bisecting, then re-run with the self-hosted box:
+
+```powershell
+$env:PEER_CONFIG='{"mode":"custom","custom":{"host":"peerjs.theprototype.app","port":443,"path":"/peerjs","secure":true}}'
+```
+
+Starting a fresh dev server on another port is the cheap way to rule out server
+degradation first; if the failures survive that AND cluster on Approve, it is the
+signaling server every time.
+
 ## The debugStores hook — the ONLY sanctioned test API
 
 The init script (helpers does it) sets `localStorage.debugStores='true'` +
@@ -153,7 +170,7 @@ explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets, THREE,
 GLTFExporterModule, snapping, flowSockets, networkQuality, packs, customNodes,
 nodesHandler, nodeCatalog, objectMenu, flowGraphsCtl, objectFlow, vrSleeve,
 gridSettings, cameraBookmarks, cameraObjects, cameraHelpers, cameraPreview,
-cameraPip, addObjects` (+ from the
+cameraPip, addObjects, multiTransform, objectOrigin, bvhPicking` (+ from the
 flowStore spread: `flowGraphs, activeGraphId, setActiveGraph, allNodes, allEdges,
 findNodeAnyGraph, SCENE_GRAPH`; `moduleSDK.pointerRayNow()` = the api.pointerRay
 internals, `moduleSDK.applyModuleMessage(msg)` = simulate a PEER's module message

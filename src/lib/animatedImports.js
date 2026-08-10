@@ -69,6 +69,17 @@ export function animatedImportKind(uuid) {
 	return fileKinds.get(uuid) ?? 'gltf';
 }
 
+/** The clips a model shipped with, for a UI list: [{name, duration}]. The
+ * durations only ever lived inside this module's mixer record. @param {string} uuid */
+export function clipInfo(uuid) {
+	const record = mixers.get(uuid);
+	if (!record) return [];
+	return Object.keys(record.actions).map((name) => ({
+		name,
+		duration: record.durations[name] ?? 0
+	}));
+}
+
 /** @param {string} uuid */
 export function animatedImportPayload(uuid) {
 	return fileBytes.get(uuid) ?? null;
@@ -180,6 +191,114 @@ export function sendAnimatedImport(conn, root) {
 		scale: root.scale.toArray(),
 		anim: state ? { clip: state.clip, playing: state.playing, speed: state.speed } : null
 	});
+}
+
+// ---- saving: rigs travel as their ORIGINAL BYTES here too --------------------
+// A save used to serialize an animated import like any other object — toJSON for
+// a session, the GLTF exporter for an autosave. Neither can carry an
+// AnimationClip (clips live beside the scene, not on the object) and the
+// exporter mangles rigs anyway, so the model came back as a static, dead mesh:
+// "save then load kills object animations". Saves now carry the same file bytes
+// the `objectfile` wire message does, base64 so they ride JSON (idb, session.json
+// and .tpscene all serialize the payload as JSON).
+
+const MAX_SAVED_BYTES = 12 * 1024 * 1024; // per model; the save formats cap totals
+
+/** @param {ArrayBuffer} buffer */
+function bytesToBase64(buffer) {
+	const bytes = new Uint8Array(buffer);
+	let binary = '';
+	// 32k at a time: String.fromCharCode(...wholeArray) overflows the call stack
+	// on real models — the same trap that silently ate big binarypack payloads
+	const CHUNK = 0x8000;
+	for (let i = 0; i < bytes.length; i += CHUNK)
+		binary += String.fromCharCode.apply(null, /** @type {any} */ (bytes.subarray(i, i + CHUNK)));
+	return btoa(binary);
+}
+
+/** @param {string} base64 */
+function base64ToBytes(base64) {
+	const binary = atob(base64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+	return bytes.buffer;
+}
+
+/** uuids in `group` whose bytes a save carries — the caller must NOT serialize
+ * these the normal way. @param {any} group */
+export function animatedImportUuids(group) {
+	return (group?.children ?? [])
+		.filter((/** @type {any} */ child) => fileBytes.has(child.uuid))
+		.map((/** @type {any} */ child) => child.uuid);
+}
+
+/**
+ * Snapshot every animated import for a save file.
+ * @param {any} group @returns {any[]} entries for the payload's `animated` array
+ */
+export function animatedImportsSnapshot(group) {
+	/** @type {any[]} */
+	const out = [];
+	const states = get(animatedObjects);
+	for (const child of group?.children ?? []) {
+		const bytes = fileBytes.get(child.uuid);
+		if (!bytes) continue;
+		if (bytes.byteLength > MAX_SAVED_BYTES) {
+			showToast('"' + (child.name || 'Model') + '" is too large to save with its animation');
+			continue;
+		}
+		const state = states[child.uuid];
+		out.push({
+			uuid: child.uuid,
+			name: child.name,
+			kind: animatedImportKind(child.uuid),
+			pos: child.position.toArray(),
+			rot: [child.rotation.x, child.rotation.y, child.rotation.z],
+			scale: child.scale.toArray(),
+			anim: state ? { clip: state.clip, playing: state.playing, speed: state.speed } : null,
+			bytes: bytesToBase64(bytes)
+		});
+	}
+	return out;
+}
+
+/**
+ * Restore saved animated imports: re-parse the original bytes, rebuild the mixer
+ * and push each one to peers. Any static twin a save format wrote anyway (the
+ * autosave GLTF cannot exclude it) is removed first, since applyObjectFile
+ * declines a uuid that already exists.
+ * @param {any[]} entries
+ */
+export async function animatedImportsRestore(entries) {
+	if (!entries?.length) return 0;
+	const group = get(objectsGroup);
+	/** @type {any} */
+	const peer = get(peers);
+	let restored = 0;
+	for (const entry of entries ?? []) {
+		if (!entry?.bytes) continue;
+		const stale = group?.getObjectByProperty('uuid', entry.uuid);
+		if (stale) stale.parent?.remove(stale);
+		try {
+			await applyObjectFile({
+				uuid: entry.uuid,
+				name: entry.name,
+				kind: entry.kind,
+				buffer: base64ToBytes(entry.bytes),
+				pos: entry.pos,
+				rot: entry.rot,
+				scale: entry.scale,
+				anim: entry.anim
+			});
+			const root = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
+			if (root && peer) sendAnimatedImport(peer, root); // peers reparse the same file
+			if (root) restored++;
+		} catch (error) {
+			console.log('animated import restore failed', error);
+		}
+	}
+	if (restored) objectsGroup.update((value) => value);
+	return restored;
 }
 
 /** Cleanup when the object is removed @param {string} uuid */

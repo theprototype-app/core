@@ -6,6 +6,8 @@ import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
+import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
+import { animationsSnapshot, animationsRestore } from './animationPreview';
 import { peers, showToast } from '../stores/appStore';
 import { idbGet, idbPut, idbDelete } from './idb';
 
@@ -84,6 +86,11 @@ async function saveSnapshot() {
 		ts: Date.now(),
 		objects: get(objectsGroup)?.children.length ?? 0,
 		scene,
+		// the GLTF export carries no AnimationClip and mangles rigs, and authored
+		// tracks live outside the scene graph entirely — both are saved beside it so
+		// a restore does not hand back dead, static models (17-D follow-up)
+		animated: animatedImportsSnapshot(group),
+		animations: animationsSnapshot(),
 		nodes,
 		edges,
 		graphs,
@@ -181,6 +188,10 @@ export async function restoreSnapshot() {
 			});
 			objectsGroup.update((value) => value);
 		}
+		// rigs come back from their ORIGINAL bytes — this also replaces the static
+		// twin the GLTF export wrote — and authored tracks from the snapshot
+		await animatedImportsRestore(snapshot.animated ?? []);
+		animationsRestore(snapshot.animations ?? {});
 		if (snapshot.graphs && typeof snapshot.graphs === 'object') {
 			restoreGraphs(snapshot.graphs); // H1 format: every graph document
 		} else if (snapshot.nodes?.length || snapshot.edges?.length) {

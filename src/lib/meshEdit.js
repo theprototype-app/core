@@ -14,7 +14,9 @@ import {
 	buildEditWireframe,
 	readTriangles,
 	trisToPositions,
-	registerVertexSessionRefresher
+	registerVertexSessionRefresher,
+	registerVertexSelectionHistory,
+	withSelectionHistory
 } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -60,6 +62,47 @@ function syncVertexSelection() {
 	vertexSelection = new Set([...vertexSelection].filter((i) => i < handles.length));
 	vertexSelectionSize.set(vertexSelection.size);
 	if (handleMesh) refreshHandleColors();
+}
+
+// ---- selection history ----------------------------------------------------
+// Picks are undoable inside the session. The machinery lives in faceEdit (this
+// module imports IT — the reverse edge would close a TDZ cycle), so hand it the
+// two accessors it needs. Handle INDICES are the state; they only mean anything
+// inside this session, which is exactly the scope the 15-F seal gives them.
+registerVertexSelectionHistory({
+	snapshot: () => (edited ? { uuid: edited.uuid, sel: [...vertexSelection] } : null),
+	/** @param {number[]} sel */
+	apply: (sel) => {
+		if (!edited || !handles.length) return false;
+		const live = sel.filter((i) => i >= 0 && i < handles.length);
+		vertexSelection = new Set(live);
+		setAnchor(live.length ? live[live.length - 1] : -1);
+		syncVertexSelection();
+		return true;
+	}
+});
+
+// the selection COMMANDS, each wrapped so one press is one undo step
+
+/** 177/183: toggle a vertex handle in the selection. @param {number} index */
+export function toggleVertexSelection(index) {
+	withSelectionHistory('vertices', () => toggleVertexSelectionInner(index));
+}
+/** 177: deselect all vertices (also parks the gizmo) */
+export function clearVertexSelection() {
+	withSelectionHistory('vertices', () => clearVertexSelectionInner());
+}
+/** Select every vertex handle — Ctrl+A in vertices mode. @returns {boolean} */
+export function selectAllVerts() {
+	return withSelectionHistory('vertices', () => selectAllVertsInner());
+}
+/** Invert the vertex selection — Ctrl+I in vertices mode. @returns {boolean} */
+export function invertVertexSelection() {
+	return withSelectionHistory('vertices', () => invertVertexSelectionInner());
+}
+/** plain click: the picked handle becomes the whole selection. @param {number} index */
+export function selectHandle(index) {
+	withSelectionHistory('vertices', () => selectHandleInner(index));
 }
 const tempMatrix = new THREE.Matrix4();
 const tempVector = new THREE.Vector3();
@@ -252,7 +295,7 @@ export function enterEditMode(uuid) {
 
 	// 175: restore the vertex selected last time in this object (per-mode memory)
 	if (stashedVert.uuid === uuid && stashedVert.handle >= 0 && stashedVert.handle < handles.length) {
-		selectHandle(stashedVert.handle);
+		selectHandleInner(stashedVert.handle);
 	}
 }
 
@@ -349,7 +392,7 @@ function setAnchor(index) {
  * trigger-tap in VR). The anchor rides the toggles: last-added handle takes
  * the gizmo; removing the anchor promotes another member; empty detaches.
  * @param {number} index */
-export function toggleVertexSelection(index) {
+function toggleVertexSelectionInner(index) {
 	if (index < 0 || index >= handles.length) return;
 	if (vertexSelection.has(index)) {
 		vertexSelection.delete(index);
@@ -363,7 +406,7 @@ export function toggleVertexSelection(index) {
 }
 
 /** 177: deselect all vertices (also parks the gizmo) */
-export function clearVertexSelection() {
+function clearVertexSelectionInner() {
 	vertexSelection.clear();
 	if (proxy) setAnchor(-1);
 	else selectedHandle = -1;
@@ -373,7 +416,7 @@ export function clearVertexSelection() {
 /** Select every vertex handle — Ctrl+A in vertices mode. The selection commands
  * used to exist for FACES only, so Ctrl+A did nothing in the other two modes.
  * @returns {boolean} */
-export function selectAllVerts() {
+function selectAllVertsInner() {
 	if (!handles.length) return false;
 	vertexSelection = new Set(handles.map((/** @type {any} */ _, /** @type {number} */ i) => i));
 	setAnchor(handles.length - 1);
@@ -382,7 +425,7 @@ export function selectAllVerts() {
 }
 
 /** Invert the vertex selection — Ctrl+I in vertices mode. @returns {boolean} */
-export function invertVertexSelection() {
+function invertVertexSelectionInner() {
 	if (!handles.length) return false;
 	const previous = vertexSelection;
 	vertexSelection = new Set(
@@ -458,7 +501,7 @@ export function createSelectedFace(viewerPos = null) {
 
 /** Select exactly this handle (fresh single selection + anchor/gizmo).
  * @param {number} index */
-export function selectHandle(index) {
+function selectHandleInner(index) {
 	vertexSelection = new Set(index >= 0 ? [index] : []);
 	setAnchor(index);
 	syncVertexSelection();

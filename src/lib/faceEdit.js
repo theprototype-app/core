@@ -1245,7 +1245,7 @@ function pickFaceUnitTris(tri) {
 }
 
 /** Multi mode: toggle the picked unit into the accumulated selection. @param {number} tri */
-export function toggleFaceSelection(tri) {
+function toggleFaceSelectionInner(tri) {
 	const unit = pickFaceUnitTris(tri);
 	if (!unit.length) return false;
 	faceEditSelectedTris.update((sel) => {
@@ -1259,7 +1259,7 @@ export function toggleFaceSelection(tri) {
 }
 
 /** Clear the accumulated multi-selection */
-export function clearFaceSelection() {
+function clearFaceSelectionInner() {
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
 	refreshFaceOverlay();
 }
@@ -1303,7 +1303,7 @@ function opTargetTris() {
 
 /** E10: a plain (non-additive) pick REPLACES the selection with the
  * granularity-aware unit under the cursor. @param {number} tri */
-export function pickFaceUnit(tri) {
+function pickFaceUnitInner(tri) {
 	faceEditSelectedTris.set(pickFaceUnitTris(tri));
 	refreshFaceOverlay();
 }
@@ -1441,7 +1441,7 @@ function resetLoopAxis() {
  * "press again to cycle" affordance, since a single click cannot say which.
  * @returns {boolean}
  */
-export function selectFaceLoop() {
+function selectFaceLoopInner() {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris);
 	const anchor = /** @type {number} */ (sel.length ? sel[0] : get(faceEditHoverTri));
@@ -1475,7 +1475,7 @@ function keysOfTris(triIndices) {
  * vertex joins, then each newcomer expands to its full pick UNIT so quads stay
  * whole. @returns {boolean}
  */
-export function growSelection() {
+function growSelectionInner() {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris);
 	if (!sel.length) {
@@ -1499,7 +1499,7 @@ export function growSelection() {
  * BORDER, i.e. keep only those whose every vertex is interior (i.e. every
  * triangle sharing that vertex is also selected). @returns {boolean}
  */
-export function shrinkSelection() {
+function shrinkSelectionInner() {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris);
 	if (!sel.length) return false;
@@ -1726,6 +1726,164 @@ export function setFaceSubmode(next) {
 	if (next === 'edges') detachFaceGizmo();
 	else if (get(faceEditOp) === 'move') attachFaceGizmo();
 }
+
+// ---- selection history -----------------------------------------------------
+// Picks are undoable INSIDE an edit session (the user's ask): Ctrl+Z walks back
+// a loop select, a grow, an invert. The entries are SESSION-LOCAL — the 15-F
+// seal drops them on Done (history.js), because the sealed entry describes the
+// geometry change, not which faces happened to be lit at the time.
+//
+// This is the ONE history kind that does not broadcast: a selection is per
+// viewer, and the peers never knew about it in the first place.
+
+/** vertices live in meshEdit, which imports THIS module — the reverse edge
+ * would close a TDZ cycle, so meshEdit REGISTERS its accessors here instead.
+ * @type {{snapshot: () => {uuid: string, sel: number[]} | null, apply: (sel: number[]) => boolean} | null} */
+let vertexSelectionHistory = null;
+
+/** @param {{snapshot: () => any, apply: (sel: number[]) => boolean}} hooks */
+export function registerVertexSelectionHistory(hooks) {
+	vertexSelectionHistory = hooks;
+}
+
+/** guards against a wrapped command calling another wrapped command (granularity
+ * changes clear the selection, loop select replaces it) — the OUTER pair wins */
+let recordingSelection = false;
+
+/** @param {'faces'|'edges'|'vertices'} mode */
+function selectionSnapshot(mode) {
+	if (mode === 'vertices') {
+		const state = vertexSelectionHistory?.snapshot();
+		return state ? { uuid: state.uuid, sel: [...state.sel] } : null;
+	}
+	if (!faceEdited) return null;
+	return {
+		uuid: faceEdited.uuid,
+		sel: mode === 'edges' ? [...get(edgeEditSelected)] : [...get(faceEditSelectedTris)]
+	};
+}
+
+/** selections are sets — order is an implementation detail of how they were built
+ * @param {any[]} a @param {any[]} b */
+function sameSelection(a, b) {
+	if (a.length !== b.length) return false;
+	const set = new Set(a);
+	return b.every((v) => set.has(v));
+}
+
+/**
+ * Run a selection command and record what it changed. A no-op records nothing,
+ * so clicking the same face twice does not fill the stack.
+ * @template T @param {'faces'|'edges'|'vertices'} mode @param {() => T} run @returns {T}
+ */
+export function withSelectionHistory(mode, run) {
+	if (recordingSelection) return run();
+	const before = selectionSnapshot(mode);
+	recordingSelection = true;
+	let result;
+	try {
+		result = run();
+	} finally {
+		recordingSelection = false;
+	}
+	const after = selectionSnapshot(mode);
+	if (before && after && before.uuid === after.uuid && !sameSelection(before.sel, after.sel))
+		recordEntry({
+			kind: 'selection',
+			uuid: after.uuid,
+			mode,
+			// the geometry the indices/keys describe: a topology change invalidates
+			// them, and the applier refuses rather than lighting up nonsense
+			sig: mode === 'vertices' ? -1 : selectionSignature(),
+			before: before.sel,
+			after: after.sel
+		});
+	return result;
+}
+
+// replay: set the stores back and rebuild the overlay. LOCAL ONLY — no peer send.
+registerHistoryKind('selection', (entry, state) => {
+	const sel = Array.isArray(state) ? state : [];
+	if (entry.mode === 'vertices') return vertexSelectionHistory?.apply(sel) ?? false;
+	if (!faceEdited || faceEdited.uuid !== entry.uuid || selectionSignature() !== entry.sig) {
+		showToast('That selection belongs to different geometry');
+		return false;
+	}
+	// undoing a face pick made before an edge detour must be VISIBLE
+	if (get(faceEditSubmode) !== (entry.mode === 'edges' ? 'edges' : 'faces'))
+		faceEditSubmode.set(entry.mode === 'edges' ? 'edges' : 'faces');
+	if (entry.mode === 'edges') edgeEditSelected.set(sel.filter((k) => !!edgeEndpoints(k)));
+	else faceEditSelectedTris.set(sel.filter((ti) => !!workingTris[ti]));
+	refreshFaceOverlay();
+	refreshEdgeOverlay();
+	return true;
+});
+
+// The selection COMMANDS, each wrapped so one press is one undo step. The
+// bodies above are the *Inner functions; only these are exported, so every
+// caller (toolbar, shortcuts, VR, Scene dispatch) records without knowing it.
+
+/** Multi mode: toggle the picked unit into the accumulated selection. @param {number} tri */
+export function toggleFaceSelection(tri) {
+	return withSelectionHistory('faces', () => toggleFaceSelectionInner(tri));
+}
+/** Clear the accumulated multi-selection */
+export function clearFaceSelection() {
+	withSelectionHistory('faces', () => clearFaceSelectionInner());
+}
+/** E10: a plain pick REPLACES the selection with the unit under the cursor. @param {number} tri */
+export function pickFaceUnit(tri) {
+	withSelectionHistory('faces', () => pickFaceUnitInner(tri));
+}
+/** M2: select the face loop through the current pick. @returns {boolean} */
+export function selectFaceLoop() {
+	return withSelectionHistory('faces', () => selectFaceLoopInner());
+}
+/** M2: grow the selection by one ring. @returns {boolean} */
+export function growSelection() {
+	return withSelectionHistory('faces', () => growSelectionInner());
+}
+/** M2: shrink the selection by one ring. @returns {boolean} */
+export function shrinkSelection() {
+	return withSelectionHistory('faces', () => shrinkSelectionInner());
+}
+/** M6: select every triangle of the mesh. @returns {boolean} */
+export function selectAllFaces() {
+	return withSelectionHistory('faces', () => selectAllFacesInner());
+}
+/** M6: invert the selection (by pick UNIT, so quads stay whole). @returns {boolean} */
+export function invertFaceSelection() {
+	return withSelectionHistory('faces', () => invertFaceSelectionInner());
+}
+/** M6: grow the selection to every CONNECTED triangle. @returns {boolean} */
+export function selectLinkedFaces() {
+	return withSelectionHistory('faces', () => selectLinkedFacesInner());
+}
+/** M4: pick an edge — additive toggles it into the set, else it replaces it.
+ * @param {string} key @param {boolean} [additive] */
+export function pickEdge(key, additive = false) {
+	return withSelectionHistory('edges', () => pickEdgeInner(key, additive));
+}
+/** M4: drop the edge selection */
+export function clearEdgeSelection() {
+	withSelectionHistory('edges', () => clearEdgeSelectionInner());
+}
+/** M4: the edge LOOP through each pick. @returns {boolean} */
+export function selectEdgeLoop() {
+	return withSelectionHistory('edges', () => selectEdgeLoopInner());
+}
+/** M4: the edge RING through each pick. @returns {boolean} */
+export function selectEdgeRing() {
+	return withSelectionHistory('edges', () => selectEdgeRingInner());
+}
+/** select every REAL edge of the mesh (Ctrl+A in edge mode). @returns {boolean} */
+export function selectAllEdges() {
+	return withSelectionHistory('edges', () => selectAllEdgesInner());
+}
+/** invert the edge selection (Ctrl+I in edge mode). @returns {boolean} */
+export function invertEdgeSelection() {
+	return withSelectionHistory('edges', () => invertEdgeSelectionInner());
+}
 /** selected edge keys, canonical `ka|kb` @type {import('svelte/store').Writable<string[]>} */
 export const edgeEditSelected = writable(/** @type {string[]} */ ([]));
 /** the edge under the cursor, or '' @type {import('svelte/store').Writable<string>} */
@@ -1796,7 +1954,7 @@ export function highlightEdge(key) {
 
 /** M4: pick an edge — additive toggles it into the set, else it replaces it.
  * @param {string} key @param {boolean} [additive] */
-export function pickEdge(key, additive = false) {
+function pickEdgeInner(key, additive = false) {
 	if (!key) return false;
 	edgeEditSelected.update((sel) => {
 		if (!additive) return [key];
@@ -1810,7 +1968,7 @@ export function pickEdge(key, additive = false) {
 }
 
 /** M4: drop the edge selection */
-export function clearEdgeSelection() {
+function clearEdgeSelectionInner() {
 	if (get(edgeEditSelected).length) edgeEditSelected.set([]);
 	edgeEditHover.set('');
 	refreshEdgeOverlay();
@@ -1907,7 +2065,7 @@ export function edgeLoopKeys(key) {
  *     first pick silently winning and the rest being discarded.
  * @returns {boolean}
  */
-export function selectEdgeLoop() {
+function selectEdgeLoopInner() {
 	const sel = get(edgeEditSelected);
 	if (!sel.length) {
 		showToast('Pick an edge first, then Loop');
@@ -1941,7 +2099,7 @@ export function selectEdgeLoop() {
 
 /** M4: the edge RING through each pick (the parallel rungs a face loop crosses)
  * — the other half of the standard pair, offered as its own command. */
-export function selectEdgeRing() {
+function selectEdgeRingInner() {
 	const sel = get(edgeEditSelected);
 	if (!sel.length) {
 		showToast('Pick an edge first, then Ring');
@@ -1956,7 +2114,7 @@ export function selectEdgeRing() {
 }
 
 /** select every REAL edge of the mesh (Ctrl+A in edge mode) */
-export function selectAllEdges() {
+function selectAllEdgesInner() {
 	if (!faceEdited) return false;
 	edgeEditSelected.set([...realEdgeMap().keys()]);
 	refreshEdgeOverlay();
@@ -1964,7 +2122,7 @@ export function selectAllEdges() {
 }
 
 /** invert the edge selection (Ctrl+I in edge mode) */
-export function invertEdgeSelection() {
+function invertEdgeSelectionInner() {
 	if (!faceEdited) return false;
 	const sel = new Set(get(edgeEditSelected));
 	edgeEditSelected.set([...realEdgeMap().keys()].filter((k) => !sel.has(k)));
@@ -2379,7 +2537,7 @@ export function shadingMode() {
 }
 
 /** M6: select every triangle of the mesh */
-export function selectAllFaces() {
+function selectAllFacesInner() {
 	if (!faceEdited) return false;
 	faceEditSelectedTris.set(workingTris.map((/** @type {any} */ _, /** @type {number} */ i) => i));
 	refreshFaceOverlay();
@@ -2387,7 +2545,7 @@ export function selectAllFaces() {
 }
 
 /** M6: invert the selection (by pick UNIT, so quads stay whole) */
-export function invertFaceSelection() {
+function invertFaceSelectionInner() {
 	if (!faceEdited) return false;
 	const sel = new Set(get(faceEditSelectedTris));
 	const next = new Set();
@@ -2402,7 +2560,7 @@ export function invertFaceSelection() {
 }
 
 /** M6: grow the selection to every triangle CONNECTED to it (select linked) */
-export function selectLinkedFaces() {
+function selectLinkedFacesInner() {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris);
 	if (!sel.length) {

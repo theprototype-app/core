@@ -68,7 +68,14 @@ export function recordEntry(entry) {
 	}
 	undoStack.update((stack) => {
 		const next = [...stack, entry];
-		if (next.length > LIMIT) next.shift();
+		while (next.length > LIMIT) {
+			// 'selection' entries are cheap and disposable (a list of indices), so
+			// a click-heavy mesh session must not push a GEOMETRY step off the
+			// stack — that would leave a sealed session unable to reach its own
+			// start. Evict the oldest selection first, the oldest entry otherwise.
+			const i = next.findIndex((e) => e.kind === 'selection');
+			next.splice(i >= 0 ? i : 0, 1);
+		}
 		return next;
 	});
 	redoStack.set([]);
@@ -116,9 +123,13 @@ export function endHistorySession(mode = 'collapse', label = 'Mesh edit') {
 	redoStack.update((s) => s.slice(0, redoBase));
 	const stack = get(undoStack);
 	if (stack.length <= base) return; // nothing landed above the barrier
-	const entries = stack.slice(base);
+	// SELECTION entries are session-local by design: they let Ctrl+Z walk back
+	// picks WHILE editing, and evaporate on Done — the sealed entry describes
+	// the geometry change, not which faces happened to be lit. Dropping them
+	// here also keeps the all-meshgeo/verts compaction test below reachable.
+	const entries = stack.slice(base).filter((e) => e.kind !== 'selection');
 	undoStack.update((s) => s.slice(0, base));
-	if (mode === 'discard') return;
+	if (mode === 'discard' || !entries.length) return;
 	const first = entries[0];
 	const last = entries[entries.length - 1];
 	if (

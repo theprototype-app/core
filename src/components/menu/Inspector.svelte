@@ -28,7 +28,14 @@
 	} from '$lib/materialsHandler';
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
 	import { canEditObject } from '$lib/objectPermissions';
-	import { attachMultiPivot } from '$lib/multiTransform';
+	import {
+		attachMultiPivot,
+		applyPivotTransform,
+		setPivotOrigin,
+		resetPivotOrigin,
+		pivotOnly,
+		pivotPose
+	} from '$lib/multiTransform';
 	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
@@ -564,6 +571,7 @@
 		}
 		clearTimeout(xformGestureTimer);
 		xformGestureTimer = setTimeout(() => {
+			const keepOrigin = true; // a hand-placed origin survives the re-seat
 			const befores = xformGestureStart;
 			xformGestureStart = null;
 			if (!befores?.size) return;
@@ -582,21 +590,46 @@
 				if (!still) items.push({ uuid, before, after });
 			}
 			recordTransformSet(items);
-			// the multi-select gizmo sits at the centroid it was built with — after
-			// moving the members it would float away from them, so re-seat it
-			if (items.length > 1) attachMultiPivot(items.map((item) => item.uuid));
+			// the pivot's rotation/scale are per-gesture handles: re-seat so the next
+			// gesture starts from a fresh frame (and the gizmo tracks the new poses)
+			if (items.length > 1)
+				attachMultiPivot(
+					items.map((item) => item.uuid),
+					keepOrigin
+				);
 		}, 500);
 	}
 
-	/** @param {'position'|'rotation'|'scale'} field @param {'x'|'y'|'z'} axis @param {number} next */
+	/**
+	 * A multi-selection's Transform rows drive the selection's ORIGIN (the same
+	 * pivot the gizmo uses), not each object's own numbers. That is what makes
+	 * them show one value per axis instead of a dash, and it means a typed value
+	 * MOVES the set rigidly instead of collapsing every member onto one plane.
+	 * In "Move origin" mode the rows re-point the origin and leave objects alone.
+	 * A single selection keeps writing its own absolute values.
+	 * @param {'position'|'rotation'|'scale'} field @param {'x'|'y'|'z'} axis @param {number} next
+	 */
 	function setTransform(field, axis, next) {
-		trackTransformGesture(); // capture the BEFORE poses before we write
-		for (const object of insTargets) {
-			object[field][axis] = next;
-			sendMove(object);
+		if (multiCount) {
+			if ($pivotOnly) {
+				// origin only: local editing aid, nothing to replicate or undo
+				if (field !== 'position') return;
+				const pos = ($pivotPose?.pos ?? [0, 0, 0]).slice();
+				pos['xyz'.indexOf(axis)] = next;
+				setPivotOrigin(pos);
+				return;
+			}
+			trackTransformGesture();
+			applyPivotTransform((pivot) => {
+				pivot[field][axis] = next;
+			});
+			selectedObject.update((v) => v);
+			return;
 		}
+		trackTransformGesture(); // capture the BEFORE pose before we write
+		$selectedObject[field][axis] = next;
+		sendMove($selectedObject);
 		selectedObject.update((v) => v); // refresh rows + object list
-		objectsGroup.update((v) => v); // multi rows re-read through insTargets
 	}
 
 	/** lights resend their whole object — same as the old light panel */
@@ -1675,16 +1708,17 @@
 
 		<div class="flex flex-col gap-3">
 			{#if multiCount}
-				<!-- 17-D1 follow-up: the panel edits the whole SET, so say so instead of
-				     letting the last-clicked object's name read like the only target -->
+				<!-- 17-D1 follow-up: the panel edits the whole SET, so say so — and drop
+				     the single-object identity fields entirely rather than let the
+				     last-clicked object's name and id read like the target. Renaming or
+				     re-grouping one member of a selection is what clicking that one
+				     object is for. -->
 				<div id="selection-multi-banner" class="rounded-sm border border-primary-500/40 bg-primary-500/10 px-2 py-1.5">
 					<p class="text-xs font-semibold text-primary-200">Editing {multiCount} objects</p>
-					<p class="text-[10px] text-gray-400">
-						Values apply to all of them. Name, id and group below belong to the last selected —
-						<span class="text-gray-300">{$selectedObject.name || $selectedObject.type}</span>.
-					</p>
+					<p class="text-[10px] text-gray-400">Every value below applies to all of them.</p>
 				</div>
 			{/if}
+			{#if !multiCount}
 			<div class="flex flex-col gap-1">
 				<input
 					id="name"
@@ -1719,6 +1753,7 @@
 					{/key}
 				</div>
 			</div>
+			{/if}
 
 			{#if $animatedObjects[$selectedObject.uuid]}
 				{@const anim = $animatedObjects[$selectedObject.uuid]}
@@ -1888,47 +1923,80 @@
 				</Section>
 			{/if}
 			<Section label="Transform">
+				{#if multiCount}
+					<!-- 17-D1 follow-up: for a SET these rows drive the selection's origin
+					     (the gizmo's pivot), so every axis has one real value instead of a
+					     dash, and typing moves the group rigidly. -->
+					<div class="mb-1 flex items-center justify-between gap-2">
+						<span class="text-[10px] text-gray-400">
+							{$pivotOnly ? 'Moving the origin only' : `Moves all ${multiCount} together`}
+						</span>
+						<div class="flex items-center gap-1">
+							<Button
+								id="origin-mode"
+								size="xs"
+								color={$pivotOnly ? 'primary' : 'alternative'}
+								onclick={() => pivotOnly.update((v) => !v)}
+							>
+								{$pivotOnly ? 'Done' : 'Move origin'}
+							</Button>
+							<Button id="origin-reset" size="xs" color="alternative" onclick={() => resetPivotOrigin()}>
+								Centre
+							</Button>
+						</div>
+					</div>
+				{/if}
 				<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
-					<span class="text-[11px] text-gray-400">Position</span>
+					<span class="text-[11px] text-gray-400">{multiCount ? 'Origin' : 'Position'}</span>
 					<div id="inspector-position" class="grid grid-cols-3 gap-1">
-						<DragRow label="X" accent="text-red-400" step={0.02} value={$selectedObject.position.x}
-							mixed={mixed((o) => o.position.x)}
+						<DragRow label="X" accent="text-red-400" step={0.02}
+							value={multiCount ? ($pivotPose?.pos?.[0] ?? 0) : $selectedObject.position.x}
 							onchange={(v) => setTransform('position', 'x', v)} />
-						<DragRow label="Y" accent="text-green-400" step={0.02} value={$selectedObject.position.y}
-							mixed={mixed((o) => o.position.y)}
+						<DragRow label="Y" accent="text-green-400" step={0.02}
+							value={multiCount ? ($pivotPose?.pos?.[1] ?? 0) : $selectedObject.position.y}
 							onchange={(v) => setTransform('position', 'y', v)} />
-						<DragRow label="Z" accent="text-blue-400" step={0.02} value={$selectedObject.position.z}
-							mixed={mixed((o) => o.position.z)}
+						<DragRow label="Z" accent="text-blue-400" step={0.02}
+							value={multiCount ? ($pivotPose?.pos?.[2] ?? 0) : $selectedObject.position.z}
 							onchange={(v) => setTransform('position', 'z', v)} />
 					</div>
-					{#if !isLight}
+					{#if !isLight && !$pivotOnly}
 						<span class="text-[11px] text-gray-400">Rotation</span>
 						<div id="inspector-rotation" class="grid grid-cols-3 gap-1">
-							<DragRow label="X" accent="text-red-400" step={0.01} snap={RAD_SNAP} value={$selectedObject.rotation.x}
-								mixed={mixed((o) => o.rotation.x)}
+							<DragRow label="X" accent="text-red-400" step={0.01} snap={RAD_SNAP}
+								value={multiCount ? ($pivotPose?.rot?.[0] ?? 0) : $selectedObject.rotation.x}
 								onchange={(v) => setTransform('rotation', 'x', v)} />
-							<DragRow label="Y" accent="text-green-400" step={0.01} snap={RAD_SNAP} value={$selectedObject.rotation.y}
-								mixed={mixed((o) => o.rotation.y)}
+							<DragRow label="Y" accent="text-green-400" step={0.01} snap={RAD_SNAP}
+								value={multiCount ? ($pivotPose?.rot?.[1] ?? 0) : $selectedObject.rotation.y}
 								onchange={(v) => setTransform('rotation', 'y', v)} />
-							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={RAD_SNAP} value={$selectedObject.rotation.z}
-								mixed={mixed((o) => o.rotation.z)}
+							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={RAD_SNAP}
+								value={multiCount ? ($pivotPose?.rot?.[2] ?? 0) : $selectedObject.rotation.z}
 								onchange={(v) => setTransform('rotation', 'z', v)} />
 						</div>
 						<span class="text-[11px] text-gray-400">Scale</span>
 						<div id="inspector-scale" class="grid grid-cols-3 gap-1">
-							<DragRow label="X" accent="text-red-400" step={0.01} snap={0.1} value={$selectedObject.scale.x}
-								mixed={mixed((o) => o.scale.x)}
+							<DragRow label="X" accent="text-red-400" step={0.01} snap={0.1}
+								value={multiCount ? ($pivotPose?.scale?.[0] ?? 1) : $selectedObject.scale.x}
 								onchange={(v) => setTransform('scale', 'x', v)} />
-							<DragRow label="Y" accent="text-green-400" step={0.01} snap={0.1} value={$selectedObject.scale.y}
-								mixed={mixed((o) => o.scale.y)}
+							<DragRow label="Y" accent="text-green-400" step={0.01} snap={0.1}
+								value={multiCount ? ($pivotPose?.scale?.[1] ?? 1) : $selectedObject.scale.y}
 								onchange={(v) => setTransform('scale', 'y', v)} />
-							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={0.1} value={$selectedObject.scale.z}
-								mixed={mixed((o) => o.scale.z)}
+							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={0.1}
+								value={multiCount ? ($pivotPose?.scale?.[2] ?? 1) : $selectedObject.scale.z}
 								onchange={(v) => setTransform('scale', 'z', v)} />
 						</div>
 					{/if}
 				</div>
-				<p class="text-[10px] text-gray-500">Drag to scrub — Shift fine, Ctrl snap, click to type.</p>
+				<p class="text-[10px] text-gray-500">
+					{#if multiCount && $pivotOnly}
+						Re-place the origin, then press Done to rotate or scale the selection around it. The
+						origin is a local editing aid — peers keep their own.
+					{:else if multiCount}
+						Rotation and scale are per-gesture handles: they turn the whole set around the origin,
+						then reset for the next move.
+					{:else}
+						Drag to scrub — Shift fine, Ctrl snap, click to type.
+					{/if}
+				</p>
 			</Section>
 
 			{#if !isLight}

@@ -174,37 +174,64 @@ h.run(async () => {
 		return { text: el?.textContent?.replace(/\s+/g, ' ').trim() ?? '', badge: badge ?? '' };
 	});
 	h.check(/Editing 3 objects/.test(banner.text), `the banner names the count ("${banner.text.slice(0, 60)}")`);
-	h.check(/last selected/.test(banner.text), 'and explains that name/id belong to the last selected');
+	h.check(!/[0-9a-f]{8}-[0-9a-f]{4}/.test(banner.text), 'and does not print a uuid');
 	h.check(banner.badge === '3 objects', `the header badge shows the count ("${banner.badge}")`);
+	const identity = await A.page.evaluate(() => ({
+		name: !!document.querySelector('#name'),
+		uuid: !!document.querySelector('#uuid'),
+		group: !!document.querySelector('#select-group')
+	}));
+	h.check(
+		!identity.name && !identity.uuid && !identity.group,
+		`single-object identity fields are hidden for a set (name ${identity.name}, uuid ${identity.uuid}, group ${identity.group})`
+	);
 
-	// ---------- transforms move the whole selection, one undo ----------
-	// (they were single-target: typing Y moved only the last-clicked object)
+	// ---------- transforms move the whole selection RIGIDLY ----------
+	// The rows drive the selection's ORIGIN, so every axis shows a real number:
+	// the objects sit at different X/Z, which used to render as a useless dash.
 	const posBefore = await A.page.evaluate(() =>
 		window.__d1.uuids.map((u) => window.__d1.group.getObjectByProperty('uuid', u).position.toArray())
 	);
-	const posY = A.page
-		.locator('#inspector-position .dn-wrap', { has: A.page.locator('.dn-label', { hasText: 'Y' }) })
-		.locator('.dn-input')
-		.first();
-	await posY.scrollIntoViewIfNeeded();
-	h.check((await posY.inputValue()) === '—', `differing Y shows a dash (got "${await posY.inputValue()}")`);
-	await posY.click();
+	const axis = (name) =>
+		A.page
+			.locator('#inspector-position .dn-wrap', { has: A.page.locator('.dn-label', { hasText: name }) })
+			.locator('.dn-input')
+			.first();
+	await axis('X').scrollIntoViewIfNeeded();
+	const shown = {
+		x: await axis('X').inputValue(),
+		y: await axis('Y').inputValue(),
+		z: await axis('Z').inputValue()
+	};
+	h.check(
+		![shown.x, shown.y, shown.z].includes('—'),
+		`no axis shows a dash for a selection (${shown.x}, ${shown.y}, ${shown.z})`
+	);
+	// the origin sits at the centroid of the three boxes (x 0/2/4 -> 2)
+	h.check(Math.abs(parseFloat(shown.x) - 2) < 0.01, `X shows the origin, not one member (${shown.x})`);
+
+	// typing an origin value MOVES the set — it must not collapse it onto a plane
+	await axis('Y').click();
 	await A.page.waitForTimeout(150);
-	await posY.fill('3');
-	await A.page.waitForTimeout(300);
+	await axis('Y').fill('3');
+	await A.page.waitForTimeout(350);
 	const posAfter = await A.page.evaluate(() =>
 		window.__d1.uuids.map((u) => window.__d1.group.getObjectByProperty('uuid', u).position.toArray())
 	);
+	const centroidY = posAfter.reduce((sum, p) => sum + p[1], 0) / posAfter.length;
+	h.check(Math.abs(centroidY - 3) < 0.01, `typing origin Y moves the set there (centroid ${centroidY.toFixed(2)})`);
+	const spreadBefore = posBefore.map((p) => p[1] - posBefore.reduce((s, q) => s + q[1], 0) / 3);
+	const spreadAfter = posAfter.map((p) => p[1] - centroidY);
 	h.check(
-		posAfter.every((p) => Math.abs(p[1] - 3) < 0.001),
-		`typing Y moves all three (${posAfter.map((p) => p[1].toFixed(2)).join(', ')})`
+		spreadAfter.every((d, i) => Math.abs(d - spreadBefore[i]) < 0.01),
+		`and keeps them spread out instead of collapsing (${posAfter.map((p) => p[1].toFixed(2)).join(', ')})`
 	);
 	h.check(
 		posAfter.every((p, i) => Math.abs(p[0] - posBefore[i][0]) < 0.001),
-		'and leaves the other axes alone'
+		'the other axes are untouched'
 	);
 	// the gesture seals after ~500ms into ONE transformSet entry
-	await A.page.waitForTimeout(800);
+	await A.page.waitForTimeout(900);
 	await A.page.evaluate(() => window.__stores.history.undo());
 	await A.page.waitForTimeout(400);
 	const posUndone = await A.page.evaluate(() =>
@@ -213,6 +240,72 @@ h.run(async () => {
 	h.check(
 		posUndone.every((p, i) => Math.abs(p[1] - posBefore[i][1]) < 0.001),
 		`ONE undo restores every original Y (${posUndone.map((p) => p[1].toFixed(2)).join(', ')})`
+	);
+
+	// ---------- "Move origin" re-points the gizmo, objects stay put ----------
+	const originMoved = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		document.querySelector('#origin-mode')?.click();
+		await new Promise((r) => setTimeout(r, 250));
+		const on = await new Promise((r) => w.multiTransform.pivotOnly.subscribe(r)());
+		const before = window.__d1.uuids.map((u) =>
+			window.__d1.group.getObjectByProperty('uuid', u).position.toArray()
+		);
+		return { on, before };
+	});
+	h.check(originMoved.on === true, 'the Move origin button turns the mode on');
+	await axis('X').click();
+	await A.page.waitForTimeout(150);
+	await axis('X').fill('7');
+	await A.page.waitForTimeout(350);
+	const afterOrigin = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const pose = await new Promise((r) => w.multiTransform.pivotPose.subscribe(r)());
+		return {
+			originX: pose?.pos?.[0] ?? null,
+			positions: window.__d1.uuids.map((u) =>
+				window.__d1.group.getObjectByProperty('uuid', u).position.toArray()
+			)
+		};
+	});
+	h.check(Math.abs((afterOrigin.originX ?? 0) - 7) < 0.01, `the origin moved to 7 (${afterOrigin.originX})`);
+	h.check(
+		afterOrigin.positions.every((p, i) => Math.abs(p[0] - originMoved.before[i][0]) < 0.001),
+		`and NO object moved with it (${afterOrigin.positions.map((p) => p[0].toFixed(2)).join(', ')})`
+	);
+	// leaving origin mode, a rotation now turns the set about that origin
+	const rotated = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		document.querySelector('#origin-mode')?.click(); // Done
+		await new Promise((r) => setTimeout(r, 250));
+		const before = window.__d1.uuids.map((u) =>
+			window.__d1.group.getObjectByProperty('uuid', u).position.toArray()
+		);
+		// rotate 90 degrees about the origin through the same path the rows use
+		w.multiTransform.applyPivotTransform((pivot) => {
+			pivot.rotation.y = Math.PI / 2;
+		});
+		await new Promise((r) => setTimeout(r, 250));
+		const after = window.__d1.uuids.map((u) =>
+			window.__d1.group.getObjectByProperty('uuid', u).position.toArray()
+		);
+		const pose = await new Promise((r) => w.multiTransform.pivotPose.subscribe(r)());
+		return { before, after, origin: pose?.pos ?? null };
+	});
+	// A 90-degree turn about Y around origin O sends offset (dx,dz) to (dz,-dx):
+	// x' = O.x + dz, z' = O.z - dx. With the origin parked at x=7 and everything
+	// on z=0, all three must land ON x=7 with z = 7 - x. Exact, so a no-op or a
+	// rotation about the old centroid both fail.
+	const ox = rotated.origin?.[0] ?? 0;
+	const oz = rotated.origin?.[2] ?? 0;
+	const turnedRight = rotated.after.every((p, i) => {
+		const dx = rotated.before[i][0] - ox;
+		const dz = rotated.before[i][2] - oz;
+		return Math.abs(p[0] - (ox + dz)) < 0.05 && Math.abs(p[2] - (oz - dx)) < 0.05;
+	});
+	h.check(
+		turnedRight,
+		`rotation swings the set around the placed origin (${rotated.after.map((p) => `${p[0].toFixed(1)}/${p[2].toFixed(1)}`).join(' ')} about ${ox.toFixed(1)})`
 	);
 
 	// ---------- geometry fans across ONE primitive type ----------

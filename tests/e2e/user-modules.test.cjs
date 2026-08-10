@@ -46,24 +46,35 @@ h.run(async () => {
 	// button-role query never matches and was the suite's known failure
 	await A.page.getByRole('tab', { name: 'User', exact: true }).click();
 	await A.page.waitForTimeout(200);
-	// install row: ONE primary Install driven by the URL field. It is NEVER
-	// disabled — a greyed-out primary button read as broken — so an empty click
-	// has to explain itself instead.
-	const installBtn = A.page.locator('#user-modules-tab').getByRole('button', { name: 'Install', exact: true });
-	h.check(await installBtn.isEnabled(), 'Install is clickable even with an empty field');
+	// install row: disabled ONLY while empty, everything else explained inline
+	// under the field (never a toast the user loses while fixing the URL)
+	const installBtn = A.page.locator('#user-modules-tab').getByRole('button', { name: /^Install/ });
+	const status = A.page.locator('#install-status');
+	h.check(await installBtn.isDisabled(), 'Install is disabled while the field is empty');
+	await A.page.locator('#install-module-url').fill('https://example.invalid/mod');
+	await A.page.waitForTimeout(200);
+	h.check(await installBtn.isEnabled(), 'Install enables as soon as a URL is typed');
+	h.check(
+		(await status.textContent()).includes('manifest.json'),
+		'the field previews the manifest URL it will fetch'
+	);
+	// a failing install reports the reason inline AND keeps the URL for editing
 	await installBtn.click();
 	await h.eventually(
-		() =>
-			A.page.evaluate(
-				() => new Promise((r) => window.__stores.toastStore.subscribe((t) => r(JSON.stringify(t)))())
-			),
-		(t) => t.includes('Paste a module URL'),
-		'empty Install explains itself instead of looking broken'
+		() => status.textContent(),
+		(t) => /Could not install/.test(t),
+		'a failed install explains itself under the field'
 	);
-	await A.page.locator('#install-module-url').fill('https://example.invalid/mod');
-	await A.page.waitForTimeout(150);
-	h.check(await installBtn.isEnabled(), 'Install stays enabled with a URL typed');
+	h.check(
+		(await A.page.locator('#install-module-url').inputValue()).includes('example.invalid'),
+		'the failed URL stays in the field so it can be corrected'
+	);
 	await A.page.locator('#install-module-url').fill('');
+	await A.page.waitForTimeout(150);
+	h.check(
+		((await status.textContent()) ?? '').trim() === '',
+		'editing the field clears the previous status'
+	);
 
 	await A.page.locator('#install-module-zip').setInputFiles({
 		name: 'testmod.module.zip',
@@ -74,6 +85,11 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => window.__testmodLoaded)) === 1,
 		'module code actually ran'
+	);
+	await h.eventually(
+		() => A.page.locator('#install-status').textContent(),
+		(t) => /Installed Test Mod v2\.0\.0/.test(t) && /file/.test(t),
+		'a zip install reports what landed (name, version, files + size)'
 	);
 	h.check(
 		await A.page.locator('#user-module-card-testmod').isVisible(),

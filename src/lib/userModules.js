@@ -23,6 +23,43 @@ const KEY = 'user-modules-v1';
 /** @type {import('svelte/store').Writable<any[]>} [{id, name, version, description, entry, files, source, installedAt}] */
 export const userModules = writable([]);
 
+// Install feedback lives INLINE under the install field, not in a toast: an
+// install can fail for a dozen boring reasons (404, no CORS, no manifest at the
+// root, wrong format) and the user needs to READ the reason while fixing the
+// URL. A toast is gone in 5s and stacks badly with retries.
+/** @type {import('svelte/store').Writable<{kind: 'idle'|'busy'|'ok'|'error', text: string, detail?: string}>} */
+export const installStatus = writable({ kind: 'idle', text: '' });
+
+/** @param {'idle'|'busy'|'ok'|'error'} kind @param {string} text @param {string=} detail */
+function setStatus(kind, text, detail) {
+	installStatus.set({ kind, text, detail });
+}
+export function clearInstallStatus() {
+	setStatus('idle', '');
+}
+
+/** @param {number} bytes */
+function humanSize(bytes) {
+	if (bytes < 1024) return bytes + ' B';
+	if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' kB';
+	return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+/** "3 files, 12.4 kB" @param {Record<string, any>} files */
+function describeFiles(files) {
+	const list = Object.values(files ?? {});
+	const total = list.reduce((sum, bytes) => sum + (bytes?.byteLength ?? bytes?.length ?? 0), 0);
+	return list.length + (list.length === 1 ? ' file, ' : ' files, ') + humanSize(total);
+}
+
+/** Turn a fetch failure into something the user can act on. @param {string} url @param {any} error */
+function networkHint(url, error) {
+	const message = error instanceof Error ? error.message : String(error);
+	if (/Failed to fetch|NetworkError|CORS/i.test(message))
+		return message + ' — the host must allow cross-origin requests (CORS). Check the URL opens in a browser tab.';
+	return message + ' — tried ' + url;
+}
+
 async function persist() {
 	try {
 		await idbPut(KEY, get(userModules));
@@ -150,53 +187,98 @@ async function storeAndActivate(record) {
 /** Install from a .zip file @param {File} file */
 export async function installZip(file) {
 	try {
+		setStatus('busy', 'Reading ' + file.name + '…');
 		const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
 		const manifestBytes = entries['manifest.json'];
-		if (!manifestBytes) throw new Error('zip has no manifest.json at its root');
+		if (!manifestBytes)
+			throw new Error(
+				'no manifest.json at the zip root — zip the CONTENTS of the module folder, not the folder itself'
+			);
 		const manifest = validateManifest(JSON.parse(strFromU8(manifestBytes)));
-		if (!(await confirmModuleFormat(manifest))) return false;
+		if (!(await confirmModuleFormat(manifest))) {
+			clearInstallStatus();
+			return false;
+		}
 		/** @type {Record<string, Uint8Array>} */
 		const files = {};
 		Object.entries(entries).forEach(([path, bytes]) => {
 			if (!path.endsWith('/')) files[path] = bytes;
 		});
+		const previous = get(userModules).find((m) => m.id === manifest.id);
 		const record = { ...manifest, files, source: 'zip', installedAt: Date.now(), appVersion: APP_VERSION };
 		const ok = await storeAndActivate(record);
-		if (ok) showToast('Module "' + manifest.name + '" installed');
+		if (ok)
+			setStatus(
+				'ok',
+				(previous ? 'Updated ' : 'Installed ') + manifest.name + ' v' + manifest.version +
+					(previous && previous.version !== manifest.version ? ' (was v' + previous.version + ')' : ''),
+				describeFiles(files) + ' · from ' + file.name
+			);
+		else setStatus('error', 'Install failed', 'The module was stored but did not register — see the console.');
 		return ok;
 	} catch (error) {
 		console.log('zip install failed', error);
-		showToast('Install failed: ' + error.message);
+		const message = error instanceof Error ? error.message : String(error);
+		setStatus('error', 'Could not install ' + file.name, message);
 		return false;
 	}
 }
 
 /** Install from a URL serving manifest.json (+ listed files) @param {string} url */
 export async function installUrl(url) {
+	const base = normalizeRepoUrl(url);
 	try {
-		const base = normalizeRepoUrl(url);
-		const manifestResponse = await fetch(base + '/manifest.json');
-		if (!manifestResponse.ok) throw new Error('manifest.json not reachable (' + manifestResponse.status + ')');
+		setStatus('busy', 'Fetching manifest.json…', base);
+		let manifestResponse;
+		try {
+			manifestResponse = await fetch(base + '/manifest.json');
+		} catch (error) {
+			throw new Error(networkHint(base + '/manifest.json', error));
+		}
+		if (!manifestResponse.ok)
+			throw new Error(
+				'manifest.json returned ' + manifestResponse.status + ' ' + manifestResponse.statusText +
+					' — the URL must be the FOLDER holding manifest.json (not the file, not the repo root)'
+			);
 		const rawManifest = await manifestResponse.json();
 		const manifest = validateManifest(rawManifest);
-		if (!(await confirmModuleFormat(manifest))) return false;
+		if (!(await confirmModuleFormat(manifest))) {
+			clearInstallStatus();
+			return false;
+		}
 		const list = Array.isArray(rawManifest.files) && rawManifest.files.length > 0
 			? [...new Set([manifest.entry, ...rawManifest.files])]
 			: [manifest.entry];
 		/** @type {Record<string, Uint8Array>} */
 		const files = {};
 		for (const path of list) {
-			const response = await fetch(base + '/' + path);
-			if (!response.ok) throw new Error(path + ' not reachable');
+			setStatus('busy', 'Downloading ' + path + '…', manifest.name + ' v' + manifest.version);
+			let response;
+			try {
+				response = await fetch(base + '/' + path);
+			} catch (error) {
+				throw new Error(networkHint(base + '/' + path, error));
+			}
+			if (!response.ok)
+				throw new Error(path + ' returned ' + response.status + ' ' + response.statusText);
 			files[path] = new Uint8Array(await response.arrayBuffer());
 		}
+		const previous = get(userModules).find((m) => m.id === manifest.id);
 		const record = { ...manifest, files, source: base, installedAt: Date.now(), appVersion: APP_VERSION };
 		const ok = await storeAndActivate(record);
-		if (ok) showToast('Module "' + manifest.name + '" installed from URL');
+		if (ok)
+			setStatus(
+				'ok',
+				(previous ? 'Updated ' : 'Installed ') + manifest.name + ' v' + manifest.version +
+					(previous && previous.version !== manifest.version ? ' (was v' + previous.version + ')' : ''),
+				describeFiles(files) + ' · from ' + base
+			);
+		else setStatus('error', 'Install failed', 'The module was stored but did not register — see the console.');
 		return ok;
 	} catch (error) {
 		console.log('url install failed', error);
-		showToast('Install failed: ' + error.message);
+		const message = error instanceof Error ? error.message : String(error);
+		setStatus('error', 'Could not install from that URL', message);
 		return false;
 	}
 }

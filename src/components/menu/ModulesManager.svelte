@@ -38,7 +38,10 @@
 		setDevUrl,
 		setDevPoll,
 		devSourceOf,
-		devPolling
+		devPolling,
+		installStatus,
+		clearInstallStatus,
+		normalizeRepoUrl
 	} from '$lib/userModules';
 	import { deactivateModule } from '$lib/moduleSDK';
 	import {
@@ -51,6 +54,21 @@
 	let tab = 'core';
 	let installUrlValue = '';
 	let galleryBusy = '';
+	let installBusy = false;
+
+	async function runUrlInstall() {
+		if (!installUrlValue.trim() || installBusy) return;
+		installBusy = true;
+		const ok = await installUrl(installUrlValue);
+		installBusy = false;
+		if (ok) installUrlValue = ''; // keep a failed URL so it can be corrected
+	}
+
+	// as-you-type: is this URL already an installed module? (installing updates it)
+	$: typedBase = installUrlValue.trim() ? normalizeRepoUrl(installUrlValue) : '';
+	$: alreadyInstalled = typedBase
+		? $userModules.find((record) => record.source === typedBase)
+		: null;
 
 	// 17-A3: installed lookup for gallery card state (dim + Update)
 	$: installedById = $userModules.reduce((map, record) => {
@@ -239,27 +257,16 @@
 					class="flex-1 rounded-sm border border-gray-600 bg-transparent px-2 py-1 text-sm dark:text-white"
 					placeholder="Module URL — https://raw.githubusercontent.com/user/repo/main/mymodule (or a github.com/…/tree/… link)"
 					bind:value={installUrlValue}
-					on:keydown={async (e) => {
-						if (e.key !== 'Enter' || !installUrlValue.trim()) return;
-						await installUrl(installUrlValue);
-						installUrlValue = '';
+					on:input={() => clearInstallStatus()}
+					on:keydown={(e) => {
+						if (e.key === 'Enter') runUrlInstall();
 					}}
 				/>
-				<!-- deliberately NEVER disabled: a greyed-out primary button reads as
-				     broken, and the disabled state was the single most confusing thing
-				     about this row. Validate on click instead. -->
-				<Button
-					size="xs"
-					onclick={async () => {
-						if (!installUrlValue.trim()) {
-							showToast('Paste a module URL first (or use Choose .zip…)');
-							return;
-						}
-						await installUrl(installUrlValue);
-						installUrlValue = '';
-					}}
-				>
-					Install
+				<!-- disabled ONLY while the field is empty (the one state a user can
+				     read at a glance); every other outcome is explained inline below,
+				     never in a toast that vanishes while they fix the URL -->
+				<Button size="xs" disabled={!installUrlValue.trim() || installBusy} onclick={runUrlInstall}>
+					{installBusy ? 'Installing…' : 'Install'}
 				</Button>
 				<span class="text-xs text-gray-500">or</span>
 				<Button
@@ -283,6 +290,32 @@
 						input.value = '';
 					}}
 				/>
+			</div>
+
+			<!-- ONE status line for both install paths: progress, what landed
+			     (name, version, file count, size) or WHY it failed, with the URL
+			     still in the field so it can be corrected. aria-live so a screen
+			     reader hears the outcome. -->
+			<div id="install-status" class="-mt-1 min-h-[1.25rem] text-xs" aria-live="polite">
+				{#if $installStatus.kind !== 'idle'}
+					<span
+						class:text-gray-400={$installStatus.kind === 'busy'}
+						class:text-green-500={$installStatus.kind === 'ok'}
+						class:text-red-400={$installStatus.kind === 'error'}
+					>
+						{$installStatus.kind === 'busy' ? '⏳' : $installStatus.kind === 'ok' ? '✓' : '⚠'}
+						{$installStatus.text}
+					</span>
+					{#if $installStatus.detail}
+						<span class="block break-all pl-4 text-gray-500">{$installStatus.detail}</span>
+					{/if}
+				{:else if alreadyInstalled}
+					<span class="text-gray-400">
+						Already installed: {alreadyInstalled.name} v{alreadyInstalled.version} — Install will update it
+					</span>
+				{:else if installUrlValue.trim()}
+					<span class="text-gray-500">Will fetch {typedBase}/manifest.json</span>
+				{/if}
 			</div>
 
 			{#key $loadedModulesChanged}

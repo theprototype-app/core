@@ -54,7 +54,8 @@
 		"peerjs": "^1.5.5",
 		"postprocessing": "^6.39.3",
 		"svelte-hamburgers": "^5.0.0",
-		"three": "^0.185.0"
+		"three": "^0.185.0",
+		"three-mesh-bvh": "^0.9.1"
 	},
 	"engines": {
 		"node": ">=24"

@@ -5,6 +5,12 @@ import { restoreGraphs, clearGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
+import {
+	animatedImportUuids,
+	animatedImportsSnapshot,
+	animatedImportsRestore
+} from './animatedImports';
+import { animationsSnapshot, animationsRestore } from './animationPreview';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
@@ -93,6 +99,7 @@ export function buildSessionPayload(name) {
 	// sessions store animation BASE poses, not the current swing (88);
 	// toJSON + thumbnail read the graph synchronously
 	const restore = parkAnimatedAtBase();
+	const animatedUuids = animatedImportUuids(group);
 	/** @type {any} */
 	let graphs;
 	try {
@@ -106,8 +113,16 @@ export function buildSessionPayload(name) {
 			appVersion: APP_VERSION,
 			count: group?.children.length ?? 0,
 			thumbnail: renderSceneThumbnail(group),
-			objects: (group?.children ?? []).map((/** @type {any} */ child) => child.toJSON()),
-			// H1: full graph map (+ legacy SCENE fields so old builds can load it)
+			// animated imports are saved as their ORIGINAL bytes below instead:
+				// toJSON carries no AnimationClip and mangles rigs, so a saved scene
+				// used to come back with dead, static models
+				objects: (group?.children ?? [])
+					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid))
+					.map((/** @type {any} */ child) => child.toJSON()),
+				animated: animatedImportsSnapshot(group),
+				// authored movement tracks (the Animation window) were never saved
+				animations: animationsSnapshot(),
+				// H1: full graph map (+ legacy SCENE fields so old builds can load it)
 			graphs: (graphs = serializeGraphs(serializeNode, serializeEdge, {
 				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
 			})),
@@ -384,6 +399,10 @@ export async function applySession(payload) {
 		if (peer) peer.send({ type: 'object', element });
 	}
 	objectsGroup.update((value) => value);
+	// animated imports come back from their original bytes (mixers rebuilt, peers
+	// reparse the same file) and authored tracks from the payload
+	await animatedImportsRestore(payload.animated ?? []);
+	animationsRestore(payload.animations ?? {});
 	// H1: new format restores EVERY graph document; legacy payloads carry the
 	// scene graph only. One 'nodes' snapshot replicates the whole map.
 	const graphsPayload =

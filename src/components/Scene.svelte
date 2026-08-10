@@ -13,6 +13,7 @@
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
+	import { ensureBoundsTrees } from '$lib/bvhPicking';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
@@ -330,6 +331,16 @@
 	// --- viewport click selection (desktop) and controller ray selection (VR) ---
 	const selectionRaycaster = new THREE.Raycaster();
 
+	// 17-D3: every scene pick goes through here so the BVH trees are current
+	// first. The object of a live edit/sculpt session is excluded — its geometry
+	// changes per frame, and its own tools keep the stock raycast path.
+	function pickSceneObjects() {
+		if (!$objectsGroup) return [];
+		const busy = [$editingObject, $faceEditObject, $sculptObject].filter(Boolean) as string[];
+		ensureBoundsTrees($objectsGroup, busy);
+		return selectionRaycaster.intersectObjects($objectsGroup.children, true);
+	}
+
 	function runModuleClickHandlers(hit) {
 		for (const handler of moduleClickHandlers) {
 			try {
@@ -354,7 +365,7 @@
 			const moduleHits = selectionRaycaster.intersectObject(root, true);
 			if (moduleHits.length > 0 && runModuleClickHandlers(moduleHits[0].object)) return true;
 		}
-		const hits = selectionRaycaster.intersectObjects($objectsGroup.children, true);
+		const hits = pickSceneObjects();
 		if (hits.length > 0) {
 			// modules may consume the click (buttons, instruments, ...)
 			if (runModuleClickHandlers(hits[0].object)) return true;
@@ -559,7 +570,7 @@
 			selectionRaycaster.setFromCamera(ndc, camera.current);
 			// Alt+click pings the pointed spot for every peer
 			if (event.altKey) {
-				const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
+				const hits = pickSceneObjects();
 				const planePoint = new THREE.Vector3();
 				const point = hits[0]?.point ??
 					(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
@@ -672,7 +683,7 @@
 		const openViewportMenuAt = (clientX = 0, clientY = 0, forceEmpty = false, menuX = clientX, menuY = clientY) => {
 			if ($isLocked || $isVRMode || $specatorMode || $drawMode || $editingObject || $faceEditObject || $measureMode) return;
 			setRayFromEvent({ clientX, clientY });
-			const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
+			const hits = pickSceneObjects();
 			const top = !forceEmpty && hits.length ? topLevelObjectOf(hits[0].object) : null;
 			if (top) {
 				// an object under the cursor gets its regular context menu; the
@@ -701,7 +712,7 @@
 		// plane, else the origin. Same resolution the right-click Add menu uses.
 		const scenePointAt = (clientX: number, clientY: number) => {
 			setRayFromEvent({ clientX, clientY });
-			const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
+			const hits = pickSceneObjects();
 			if (hits[0]?.point) return hits[0].point.toArray();
 			const planePoint = new THREE.Vector3();
 			return selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)

@@ -243,7 +243,26 @@ loadable play content. Everything a user does must be visible to connected peers
   wireframe = scene.overrideMaterial, never per-material),
   `environment` (presets + scene-root rig, latest-wins sync,
   `passthroughActive` local sky lift; #12: sun casts w/ scene-fit frustum +
-  env-shadow-catcher ShadowMaterial disc), `animatedImports` (raw-bytes objectfile sync),
+  env-shadow-catcher ShadowMaterial disc), `animatedImports` (raw-bytes objectfile sync;
+  17-D2 the message carries an OPTIONAL `kind` 'gltf'|'fbx' selecting the parser —
+  ABSENT means gltf, which is what every pre-17-D2 peer sends; the animimport undo
+  entry keeps it on `fileKind` because `kind` is the history-kind key. 17-D:
+  `animatedImportsSnapshot`/`animatedImportsRestore` are the ONE shared save path used
+  by BOTH sessions and autosave — toJSON and the GLTF exporter cannot carry an
+  AnimationClip, so a save carries the ORIGINAL file bytes, base64 CHUNKED at 32k;
+  `clipInfo(uuid)` exposes the durations that only lived in the mixer record),
+  `objectOrigin` (17-D: PER-OBJECT transform origin — a LOCAL pivot offset on
+  `userData.origin`, so it replicates/saves/undoes free like userData.physics.
+  Deliberately NOT baked into vertices: baking rides meshgeo, which stamps
+  `faceEdited` and would LOCK the parametric Geometry rows forever. Presets
+  bottom/centre/median/world/children + `vertexSelectionWorldPoint()` in meshEdit for
+  the HINGE point. `bakeOriginForExport` bakes onto an export CLONE because glTF
+  carries only TRS — scale THEN rotate the offset, and shift children too.
+  attachMultiPivot serves ONE object when it has an origin; flow Spin/Orbit turn
+  about it (`originPivotOf`/`spinPositionAbout` exported for headless coverage,
+  userData read INLINE there — importing objectOrigin would close flowRuntime →
+  objectOrigin → history → flowRuntime); joints anchor on it. Colliders/dynamics
+  deliberately untouched: a dynamic body rotates about its CENTRE OF MASS),
   `prefabs` (local IndexedDB library), `explorer` (LOCAL asset library: IndexedDB index
   + per-item blobs, content hashes, thumbnails) + `explorerDrop` (drag-out placement/
   texturing) + `assetShare` (assetfile/getasset hash push+pull → 'Shared' folder) +
@@ -733,6 +752,21 @@ loadable play content. Everything a user does must be visible to connected peers
   when the baseline moves). Full doc: committed `RELEASING.md`. The version bump is
   the SINGLE source of truth (About / peer handshake / .tpscene+.tpmodule
   provenance / static/version.json all derive from it).
+- **BVH picking (17-D3)**: `Mesh.prototype.raycast` is three-mesh-bvh's accelerated
+  version, which uses a geometry's bounds tree WHEN ONE EXISTS and otherwise runs
+  three's original code — so a geometry with no tree behaves exactly as before and
+  the only decision is which get one (`src/lib/bvhPicking.js`, called from Scene's
+  one `pickSceneObjects()`). **Trees MUST be built `{ indirect: true }`: the default
+  build REORDERS the geometry index buffer and renumbers every triangle, and
+  `faceIndex` is how the mesh tools address triangles (Face/Triangle/Shell
+  granularity, welded shells)** — the symptom is identical hit point + distance with
+  a different faceIndex. A tree is stamped with the position attribute AND its
+  `version` (needsUpdate bumps it) so in-place sculpt/vertex edits invalidate it;
+  whole-geometry swaps are safe free (applyMeshGeo builds a NEW BufferGeometry). The
+  live edit/sculpt target never carries a tree, and meshes under 1000 triangles are
+  left alone. A ray landing on a SHARED vertex (a UV sphere seam, an axis-aligned
+  equator ray) may be attributed to either touching triangle — same point, different
+  faceIndex — so jitter parity fans off the symmetry axes.
 - **Deps policy (2026-08-01, post-migrations)**: the A-D migrations SHIPPED — three
   0.185 + threlte stable, @xyflow/svelte 1.6 (flow editor on runes), tailwind 4 +
   flowbite-svelte 1.x (NON-modal native dialogs — see the modal gotcha), vite 7 +
@@ -1071,6 +1105,35 @@ loadable play content. Everything a user does must be visible to connected peers
   (alias/case fixes, and an invented name with object-spec args becomes create_objects).
   Reasoning models also stream `delta.reasoning`/`reasoning_content` — never chat content,
   never in the transcript; it only feeds the `aiStatus` "Thinking…" line.
+- **Re-seating the transform gizmo (17-D)**: `reseatPivot()` runs after every origin
+  write, and two rules are load-bearing. (1) **A RE-SEAT IS NOT A NEW SELECTION** —
+  it must keep `pivotOnly` and any hand-placed origin; resetting them cancelled
+  "Move origin" the instant the button set it, so the gizmo drag moved the OBJECT
+  instead of its origin. Only a genuinely new selection clears that state.
+  (2) **It must ALWAYS leave a gizmo attached.** A preset can legitimately produce a
+  ZERO offset (Centre on an already-centred primitive, Reset), which CLEARS the
+  origin — so no pivot is warranted and the object itself has to take the gizmo
+  back, or it vanishes until the user deselects and reselects. Drag-end lives in
+  `commitOriginDrag()` so the handler and a headless test share one path.
+- **meshEdit has TWO vertex-selection notions**: the `vertexSelection` SET
+  (ctrl-click / `vertexSelectionSize`) and the single anchored `selectedHandle` a
+  PLAIN click sets. Gating UI on the size store alone hides features while a vertex
+  is visibly selected (it hid the origin's hinge button). `vertexSelectionWorldPoint()`
+  falls back to the anchor for exactly this reason — prefer "always offered, toast
+  when nothing is picked" over a count gate.
+- **The Inspector edits the SELECTION SET, not one object (17-D1)**: material/colour/
+  object-flag/shadow/particle/physics writes fan through `fanOn()` over the SAME
+  per-uuid entry points (wire byte-identical), N>1 wrapped in ONE `beginHistoryBatch`
+  so a single undo restores each object's own value. Rows whose members disagree
+  render an em-dash (`mixed` prop on DragRow/SliderRow). What is deliberately NOT
+  fanned: name/uuid/group (hidden for a set — click the one object), particles (an
+  emitter is a whole tuned config; the counted context-menu ops are the safe path),
+  and geometry beyond ONE primitive type. A multi-selection's TRANSFORM rows drive
+  the selection ORIGIN (pivot), not per-object absolutes — typing an absolute value
+  used to collapse the set onto one plane, and a per-axis dash is useless on a
+  spatial field. **Textures fan through `setObjectsTexture(uuids, file)` which decodes
+  ONCE: re-reading one picked `File` per object FAILS on the third
+  `createImageBitmap`** and silently left half a selection untextured.
 - **Inspector.svelte is a plain `<script>` (NOT lang="ts")** — one TypeScript type
   annotation in it hard-breaks `npm run build` with a useless
   `error during build: undefined` (svelte-check never runs; vite dev 500s too).

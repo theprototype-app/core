@@ -113,8 +113,10 @@ export function applyMap(object, dataURL) {
 	});
 }
 
-/** Downscale an image file to maxSize px and encode as a compact dataURL @param {File} file @param {number} maxSize */
-async function downscaleImage(file, maxSize) {
+/** Downscale an image file to maxSize px and encode as a compact dataURL
+ * (exported since 17-D2 — the OBJ/.mtl import path reuses it for its textures)
+ * @param {File} file @param {number} maxSize */
+export async function downscaleImage(file, maxSize) {
 	const bitmap = await createImageBitmap(file);
 	const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
 	const canvas = document.createElement('canvas');
@@ -126,27 +128,50 @@ async function downscaleImage(file, maxSize) {
 	return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', 0.85);
 }
 
-/** Set an image file as the object's texture and replicate @param {string} uuid @param {File} file */
-export async function setObjectTexture(uuid, file) {
-	const object = objectOf(uuid);
-	if (!object?.material) return;
-	if (Array.isArray(object.material)) {
-		showToast('Multi-material objects are not supported yet');
-		return;
-	}
+/**
+ * Set one image file as the texture of MANY objects (17-D1) and replicate.
+ * The file is decoded and downscaled ONCE and the resulting dataURL applied per
+ * uuid — same per-object history entry and `objectParameters` message as the
+ * single-object path, so nothing new goes on the wire. Decoding once is also the
+ * robust order: re-reading the same File per object is both wasteful and
+ * unreliable (the third `createImageBitmap` of one picked file can reject).
+ * @param {string[]} uuids @param {File} file @returns {Promise<number>} how many were textured
+ */
+export async function setObjectsTexture(uuids, file) {
 	if (file.size > 8 * 1024 * 1024) {
 		showToast('Image is too large (max 8 MB)');
-		return;
+		return 0;
 	}
+	/** @type {string} */
+	let dataURL;
 	try {
-		const dataURL = await downscaleImage(file, 1024);
-		recordMaterialChange(uuid, 'map', null, object.material.userData?.mapDataUrl ?? null, dataURL);
-		applyMap(object, dataURL);
-		broadcast({ type: 'objectParameters', parameter: 'map', uuid: uuid, map: dataURL });
+		dataURL = await downscaleImage(file, 1024);
 	} catch (error) {
 		console.log(error);
 		showToast('Could not read the image file');
+		return 0;
 	}
+	let applied = 0;
+	let skippedMulti = 0;
+	for (const uuid of uuids) {
+		const object = objectOf(uuid);
+		if (!object?.material) continue;
+		if (Array.isArray(object.material)) {
+			skippedMulti++;
+			continue;
+		}
+		recordMaterialChange(uuid, 'map', null, object.material.userData?.mapDataUrl ?? null, dataURL);
+		applyMap(object, dataURL);
+		broadcast({ type: 'objectParameters', parameter: 'map', uuid: uuid, map: dataURL });
+		applied++;
+	}
+	if (skippedMulti) showToast('Multi-material objects are not supported yet');
+	return applied;
+}
+
+/** Set an image file as the object's texture and replicate @param {string} uuid @param {File} file */
+export async function setObjectTexture(uuid, file) {
+	await setObjectsTexture([uuid], file);
 }
 
 /** @param {string} uuid */

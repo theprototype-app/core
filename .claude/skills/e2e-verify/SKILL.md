@@ -138,6 +138,23 @@ debug cycle in #15). Remember two-peer runs ALWAYS need the PEER_CONFIG env on
 a localhost APP_URL — `helpers.connect` times out on the Approve button
 otherwise (the app dials the local :9001 server that isn't running).
 
+**This is the #1 false regression in a lane, so learn its shape (17-D, cost a
+bisect): SEVERAL unrelated suites fail AT ONCE, every one of them on
+`locator.click: Timeout … waiting for getByRole('button', { name: 'Approve' })`.**
+That is not your diff — it is every TWO-PEER suite (undo, multi-select,
+physics-joints, animated-models, module-sdk, scene-music …) dying inside
+`helpers.connect` because nothing is listening on :9001. Check
+`Test-NetConnection -ComputerName localhost -Port 9001 -InformationLevel Quiet`
+BEFORE bisecting, then re-run with the self-hosted box:
+
+```powershell
+$env:PEER_CONFIG='{"mode":"custom","custom":{"host":"peerjs.theprototype.app","port":443,"path":"/peerjs","secure":true}}'
+```
+
+Starting a fresh dev server on another port is the cheap way to rule out server
+degradation first; if the failures survive that AND cluster on Approve, it is the
+signaling server every time.
+
 ## The debugStores hook — the ONLY sanctioned test API
 
 The init script (helpers does it) sets `localStorage.debugStores='true'` +
@@ -153,7 +170,7 @@ explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets, THREE,
 GLTFExporterModule, snapping, flowSockets, networkQuality, packs, customNodes,
 nodesHandler, nodeCatalog, objectMenu, flowGraphsCtl, objectFlow, vrSleeve,
 gridSettings, cameraBookmarks, cameraObjects, cameraHelpers, cameraPreview,
-cameraPip, addObjects` (+ from the
+cameraPip, addObjects, multiTransform, objectOrigin, bvhPicking` (+ from the
 flowStore spread: `flowGraphs, activeGraphId, setActiveGraph, allNodes, allEdges,
 findNodeAnyGraph, SCENE_GRAPH`; `moduleSDK.pointerRayNow()` = the api.pointerRay
 internals, `moduleSDK.applyModuleMessage(msg)` = simulate a PEER's module message
@@ -409,7 +426,12 @@ drops the P2P session.
   view-mode, vr-passthrough). `node-search` came OFF this list in #16-P2 — two of
   its assertions were stale (they demanded menus never scroll and are never
   height-capped, which a later change deliberately reversed). When a "known
-  failing" suite blocks you, check whether it is asserting the OLD contract.
+  failing" suite blocks you, check whether it is asserting the OLD contract. That
+  includes assertions YOU wrote earlier in the same session: 17-D's "no hinge
+  button until vertices are picked" went red the moment the fix deliberately made
+  that button always-visible. Fix the assertion, not the code — and replace it with
+  one that still bites (there: pressing the button with nothing picked must change
+  no origin).
 - `add-menu` documents its own flake in a comment at the failing line (a right-tap
   that does not open the viewport menu) — the fastest proof that a failure is not
   yours is still `git stash push -u` → run → `git stash pop`.

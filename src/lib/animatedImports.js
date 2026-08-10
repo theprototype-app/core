@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { objectsGroup } from '../stores/sceneStore';
@@ -8,17 +9,24 @@ import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import { runtimeNow } from './moduleSDK';
 
-// Animated GLTF imports. Rigs cannot survive the per-node GLTF sync (bones
-// are children and the exporter round-trip is lossy), so animated imports
-// keep their ORIGINAL file bytes and replicate as one `objectfile` message —
-// receivers and late joiners parse the exact same file. Mixers tick on the
-// synced clock, so every peer shows the same pose.
+// Animated imports (GLTF/GLB and, since 17-D2, FBX). Rigs cannot survive the
+// per-node GLTF sync (bones are children and the exporter round-trip is lossy),
+// so animated imports keep their ORIGINAL file bytes and replicate as one
+// `objectfile` message — receivers and late joiners parse the exact same file.
+// Mixers tick on the synced clock, so every peer shows the same pose.
+//
+// 17-D2: the message gained a `kind` ('gltf' | 'fbx') so the receiver picks the
+// right parser. It is OPTIONAL on the wire and absent means 'gltf', which is
+// exactly what every pre-D2 peer sent — so old sessions/.tpscene files and a
+// peer on the previous build keep working unchanged.
 
 /** @type {import('svelte/store').Writable<Record<string, {clips: string[], clip: string, playing: boolean, speed: number}>>} */
 export const animatedObjects = writable({});
 
-/** @type {Map<string, ArrayBuffer>} rootUuid -> original glb bytes */
+/** @type {Map<string, ArrayBuffer>} rootUuid -> original file bytes */
 const fileBytes = new Map();
+/** @type {Map<string, 'gltf'|'fbx'>} rootUuid -> which parser those bytes need */
+const fileKinds = new Map();
 /** @type {Map<string, {mixer: any, actions: Record<string, any>, durations: Record<string, number>}>} */
 const mixers = new Map();
 
@@ -32,9 +40,33 @@ export function createGltfLoader() {
 	return loader;
 }
 
+/**
+ * Parse animated-import bytes with the parser that file format needs.
+ * Returns the SAME shape for both formats: FBXLoader hands back a Group that
+ * carries its own `.animations`, GLTFLoader a `{scene, animations}` pair.
+ * @param {ArrayBuffer} bytes @param {'gltf'|'fbx'} [kind]
+ * @returns {Promise<{root: any, animations: any[]}>}
+ */
+async function parseAnimatedBytes(bytes, kind) {
+	if (kind === 'fbx') {
+		const root = new FBXLoader().parse(bytes, '');
+		return { root, animations: root.animations ?? [] };
+	}
+	/** @type {any} */
+	const gltf = await new Promise((resolve, reject) =>
+		createGltfLoader().parse(bytes, '', resolve, reject)
+	);
+	return { root: gltf.scene, animations: gltf.animations ?? [] };
+}
+
 /** @param {string} uuid */
 export function hasAnimatedImport(uuid) {
 	return fileBytes.has(uuid);
+}
+
+/** which parser this import's bytes need @param {string} uuid */
+export function animatedImportKind(uuid) {
+	return fileKinds.get(uuid) ?? 'gltf';
 }
 
 /** @param {string} uuid */
@@ -45,9 +77,11 @@ export function animatedImportPayload(uuid) {
 /**
  * Track an imported animated root: keep bytes, build the mixer, autoplay.
  * @param {any} root @param {any[]} animations @param {ArrayBuffer} bytes
+ * @param {'gltf'|'fbx'} [kind] which parser those bytes need (default gltf)
  */
-export function registerAnimatedImport(root, animations, bytes) {
+export function registerAnimatedImport(root, animations, bytes, kind = 'gltf') {
 	fileBytes.set(root.uuid, bytes);
+	fileKinds.set(root.uuid, kind);
 	const mixer = new THREE.AnimationMixer(root);
 	/** @type {Record<string, any>} */
 	const actions = {};
@@ -115,10 +149,8 @@ export async function applyObjectFile(data) {
 	if (!group || group.getObjectByProperty('uuid', data.uuid)) return;
 	try {
 		const bytes = data.buffer instanceof ArrayBuffer ? data.buffer : data.buffer?.buffer ?? data.buffer;
-		const gltf = await new Promise((resolve, reject) =>
-			createGltfLoader().parse(bytes, '', resolve, reject)
-		);
-		const root = gltf.scene;
+		// absent kind = 'gltf' (every pre-17-D2 sender)
+		const { root, animations } = await parseAnimatedBytes(bytes, data.kind);
 		root.uuid = data.uuid;
 		root.name = data.name ?? 'Animated import';
 		if (data.pos) root.position.fromArray(data.pos);
@@ -126,7 +158,7 @@ export async function applyObjectFile(data) {
 		if (data.scale) root.scale.fromArray(data.scale);
 		group.add(root);
 		objectsGroup.update((value) => value);
-		registerAnimatedImport(root, gltf.animations ?? [], bytes);
+		registerAnimatedImport(root, animations, bytes, data.kind === 'fbx' ? 'fbx' : 'gltf');
 		if (data.anim) setAnimationState(data.uuid, data.anim, false);
 	} catch (error) {
 		console.log('objectfile parse failed', error);
@@ -141,6 +173,7 @@ export function sendAnimatedImport(conn, root) {
 		type: 'objectfile',
 		uuid: root.uuid,
 		name: root.name,
+		kind: animatedImportKind(root.uuid),
 		buffer: fileBytes.get(root.uuid),
 		pos: root.position.toArray(),
 		rot: [root.rotation.x, root.rotation.y, root.rotation.z],
@@ -152,6 +185,7 @@ export function sendAnimatedImport(conn, root) {
 /** Cleanup when the object is removed @param {string} uuid */
 export function dropAnimatedImport(uuid) {
 	fileBytes.delete(uuid);
+	fileKinds.delete(uuid);
 	mixers.delete(uuid);
 	animatedObjects.update((map) => {
 		const next = { ...map };
@@ -163,6 +197,7 @@ export function dropAnimatedImport(uuid) {
 /** Scene was wiped — forget every registry entry */
 export function dropAllAnimatedImports() {
 	fileBytes.clear();
+	fileKinds.clear();
 	mixers.clear();
 	animatedObjects.set({});
 }
@@ -177,7 +212,16 @@ registerHistoryKind('animimport', (entry, state) => {
 	const existing = group.getObjectByProperty('uuid', entry.uuid);
 	if (state.present) {
 		if (existing) return true;
-		applyObjectFile({ uuid: entry.uuid, name: entry.name, buffer: entry.buffer, pos: entry.pos }).then(() => {
+		applyObjectFile({
+			uuid: entry.uuid,
+			name: entry.name,
+			// 17-D2: an undone FBX must come back through FBXLoader. The entry's own
+			// `kind` is the HISTORY kind ('animimport'), so the parser lives on
+			// `fileKind` — reusing `kind` would break the registry dispatch.
+			kind: entry.fileKind,
+			buffer: entry.buffer,
+			pos: entry.pos
+		}).then(() => {
 			const root = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
 			if (root && peer) sendAnimatedImport(peer, root); // peer.send broadcasts
 		});
@@ -199,6 +243,7 @@ export function recordAnimatedImport(root) {
 		kind: 'animimport',
 		uuid: root.uuid,
 		name: root.name,
+		fileKind: animatedImportKind(root.uuid),
 		buffer: fileBytes.get(root.uuid),
 		pos: root.position.toArray(),
 		before: { present: false },

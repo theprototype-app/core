@@ -113,8 +113,10 @@ export function applyMap(object, dataURL) {
 	});
 }
 
-/** Downscale an image file to maxSize px and encode as a compact dataURL @param {File} file @param {number} maxSize */
-async function downscaleImage(file, maxSize) {
+/** Downscale an image file to maxSize px and encode as a compact dataURL
+ * (exported since 17-D2 — the OBJ/.mtl import path reuses it for its textures)
+ * @param {File} file @param {number} maxSize */
+export async function downscaleImage(file, maxSize) {
 	const bitmap = await createImageBitmap(file);
 	const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
 	const canvas = document.createElement('canvas');

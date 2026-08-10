@@ -205,11 +205,15 @@
     if (files.length === 0) return
     const skipped = []
     const modelExt = /\.(glb|gltf|obj|stl|fbx)$/
+    // 17-D2: a .mtl / texture dropped ALONGSIDE a model is its companion, not
+    // an unsupported file — importFile pairs them up.
+    const companionExt = /\.(mtl|png|jpe?g|webp|bmp|gif)$/i
+    const companions = files.filter((file) => companionExt.test(file.name))
     files.forEach((file) => {
       const name = file.name.toLowerCase()
-      if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''))
+      if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
-      else skipped.push(file.name)
+      else if (!companions.includes(file)) skipped.push(file.name)
     })
     if (skipped.length > 0)
       showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .json (scene)')

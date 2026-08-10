@@ -51,7 +51,9 @@
 		edgeEditSelected,
 		selectEdgeLoop,
 		dissolveEdges,
-		clearEdgeSelection
+		clearEdgeSelection,
+		stashSelections,
+		restoreSelection
 	} from '$lib/faceEdit';
 	import {
 		Keyboard,
@@ -105,6 +107,9 @@
 		const uuid = /** @type {string} */ ($editingObject || $faceEditObject || $selectedObject?.uuid);
 		if (!uuid) return;
 		if (next === mode) return;
+		// remember what THIS mode had picked before leaving it, so coming back
+		// restores it (unless the geometry changed underneath)
+		stashSelections();
 		if (next === 'vertices') {
 			exitFaceEdit();
 			enterEditMode(uuid);
@@ -114,11 +119,8 @@
 		// switching between them keeps the undo barrier and the wireframe intact
 		exitEditMode();
 		if (!$faceEditObject) enterFaceEdit(uuid);
-		if (next === 'edges') faceEditSubmode.set('edges');
-		else {
-			faceEditSubmode.set('faces');
-			clearEdgeSelection();
-		}
+		faceEditSubmode.set(next === 'edges' ? 'edges' : 'faces');
+		restoreSelection(next === 'edges' ? 'edges' : 'faces');
 	}
 
 	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);
@@ -156,15 +158,21 @@
 		}
 	];
 
-	// M2/M6: selection commands. They change WHAT is picked, never the geometry,
+	// M2/M6: selection COMMANDS. They change what is picked, never the geometry,
 	// so they flash like one-shots and never stay lit.
+	// They render as TEXT, not icons, and deliberately: six near-identical
+	// outline glyphs in a row are indistinguishable at 18px, and two reports
+	// ("loop select selects everything", "invert selects everything") both turn
+	// out to be Select-linked and Select-all being pressed by mistake. Icons are
+	// for TOOLS you arm; commands read better as words. (Photoshop's toolbar is
+	// tools; its Select menu is words.)
 	const SELECT_CMDS = [
-		{ id: 'loop', label: 'Loop select', hint: 'L', lucide: Link2, run: selectFaceLoop, desc: 'the quad ring through this face — press again for the other direction' },
-		{ id: 'grow', label: 'Grow', hint: 'Ctrl +', lucide: Expand, run: growSelection, desc: 'add the neighbouring ring' },
-		{ id: 'shrink', label: 'Shrink', hint: 'Ctrl -', lucide: Shrink, run: shrinkSelection, desc: 'drop the border ring' },
-		{ id: 'all', label: 'Select all', hint: 'Ctrl A', lucide: BoxSelect, run: selectAllFaces, desc: 'every face of the mesh' },
-		{ id: 'invert', label: 'Invert', hint: 'Ctrl I', lucide: FlipHorizontal, run: invertFaceSelection, desc: 'swap picked and unpicked' },
-		{ id: 'linked', label: 'Select linked', hint: '', lucide: Merge, run: selectLinkedFaces, desc: 'the whole connected island' }
+		{ id: 'loop', label: 'Loop', hint: 'L', run: selectFaceLoop, desc: 'the quad ring running through this face — press again for the perpendicular one' },
+		{ id: 'grow', label: 'Grow', hint: 'Ctrl +', run: growSelection, desc: 'add the neighbouring ring' },
+		{ id: 'shrink', label: 'Shrink', hint: 'Ctrl -', run: shrinkSelection, desc: 'drop the border ring' },
+		{ id: 'all', label: 'All', hint: 'Ctrl A', run: selectAllFaces, desc: 'every face of the mesh' },
+		{ id: 'invert', label: 'Invert', hint: 'Ctrl I', run: invertFaceSelection, desc: 'swap picked and unpicked' },
+		{ id: 'linked', label: 'Linked', hint: '', run: selectLinkedFaces, desc: 'the whole connected island this face belongs to' }
 	];
 
 	/** @param {any} cmd */
@@ -440,17 +448,18 @@
 			</div>
 
 			<!-- M2/M6: selection commands — act on what is already picked -->
-			{#each SELECT_CMDS as c (c.id)}
-				<button
-					id={`mesh-sel-${c.id}`}
-					class="tbx-btn"
-					class:tbx-flash={flashOp === c.id}
-					onanimationend={() => (flashOp = '')}
-					aria-label={c.label}
-					title={c.hint ? `${c.label} (${c.hint}) — ${c.desc}` : `${c.label} — ${c.desc}`}
-					onclick={() => runSelectCmd(c)}><c.lucide size={18} aria-hidden="true" /></button
-				>
-			{/each}
+			<div class="tbx-row">
+				{#each SELECT_CMDS as c (c.id)}
+					<button
+						id={`mesh-sel-${c.id}`}
+						class="tbx-cmd"
+						class:tbx-flash={flashOp === c.id}
+						onanimationend={() => (flashOp = '')}
+						title={c.hint ? `${c.label} (${c.hint}) — ${c.desc}` : `${c.label} — ${c.desc}`}
+						onclick={() => runSelectCmd(c)}>{c.label}</button
+					>
+				{/each}
+			</div>
 
 			<!-- M3: how many loops a Loop cut inserts -->
 			<div class="tbx-row text-xs text-gray-300">
@@ -606,29 +615,14 @@
 				: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
 			onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={18} aria-hidden="true" /></button
 		>
-		<span class="relative">
-			<button
-				id="mesh-keys-help"
-				class="tbx-btn"
-				aria-label="Show mesh-edit key bindings"
-				aria-pressed={showKeys}
-				title="Key bindings"
-				onclick={() => (showKeys = !showKeys)}><CircleHelp size={18} aria-hidden="true" /></button
-			>
-			{#if showKeys}
-				<div
-					id="mesh-keys-popover"
-					class="absolute left-0 top-full z-10 mt-2 w-64 cursor-default rounded-lg border border-gray-700/60 bg-gray-800/95 p-2 text-xs shadow-xl"
-				>
-					{#each KEY_ROWS as [keys, what] (keys)}
-						<div class="flex items-baseline justify-between gap-2 py-0.5">
-							<span class="shrink-0 font-mono text-primary-300">{keys}</span>
-							<span class="text-right text-gray-300">{what}</span>
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</span>
+		<button
+			id="mesh-keys-help"
+			class="tbx-btn"
+			aria-label="Show mesh-edit key bindings"
+			aria-pressed={showKeys}
+			title="Key bindings — opens a movable cheat sheet you can park anywhere"
+			onclick={() => (showKeys = !showKeys)}><CircleHelp size={18} aria-hidden="true" /></button
+		>
 
 		{#if $colliderEditObject}
 			<!-- CL-A A8: add compound pieces to the collider session -->
@@ -701,4 +695,36 @@
 			{/if}
 		{/snippet}
 	</ToolboxWindow>
+
+	<!-- The key bindings are a CHEAT SHEET, so they are their own movable window
+	     rather than a popover glued under the ? button: you park it beside the
+	     viewport and keep working while it stays visible. -->
+	{#if showKeys}
+		<ToolboxWindow
+			id="mesh-keys-popover"
+			key="meshKeysCheatsheet"
+			title="Mesh edit keys"
+			width={260}
+			minW={200}
+			defaultRect={{ left: 12, top: 320 }}
+		>
+			{#snippet actions()}
+				<button
+					id="mesh-keys-close"
+					class="tbx-hbtn"
+					aria-label="Close the key list"
+					title="Close"
+					onclick={() => (showKeys = false)}><X size={14} aria-hidden="true" /></button
+				>
+			{/snippet}
+			<div class="tbx-row flex-col items-stretch gap-0 text-xs">
+				{#each KEY_ROWS as [keys, what] (keys)}
+					<div class="flex items-baseline justify-between gap-2 py-0.5">
+						<span class="shrink-0 font-mono text-primary-300">{keys}</span>
+						<span class="text-right text-gray-300">{what}</span>
+					</div>
+				{/each}
+			</div>
+		</ToolboxWindow>
+	{/if}
 {/if}

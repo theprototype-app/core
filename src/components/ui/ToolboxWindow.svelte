@@ -178,6 +178,23 @@
 		border-radius: 8px;
 		font-size: 12px;
 	}
+	/* text COMMAND button — commands read as words, tools as icons (six
+	   near-identical 18px glyphs in a row are indistinguishable, which is what
+	   made "Loop" and "Linked" / "All" and "Invert" get pressed by mistake) */
+	.toolbox :global(.tbx-cmd) {
+		padding: 2px 7px;
+		border-radius: 6px;
+		font-size: 11px;
+		color: var(--tbx-text);
+		background: var(--surface-2, #374151);
+	}
+	.toolbox :global(.tbx-cmd:hover) {
+		background: var(--tbx-hover);
+	}
+	.toolbox :global(.tbx-cmd:focus-visible) {
+		outline: 2px solid var(--tbx-accent);
+		outline-offset: 1px;
+	}
 	/* square icon tool button */
 	.toolbox :global(.tbx-btn) {
 		width: var(--tbx-btn);

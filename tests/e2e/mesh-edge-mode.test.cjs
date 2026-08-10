@@ -54,7 +54,18 @@ h.run(async () => {
 		void T;
 		return { keys: out, distinct: new Set(out).size };
 	});
-	h.check(picks.distinct === 3, 'each of a triangle\'s three edges is pickable (' + picks.distinct + ' distinct)');
+	// only the REAL edges are offered: a triangle's third edge is its quad's
+	// internal DIAGONAL, a triangulation artifact rather than an edge of the
+	// model, and picking it produced an edge that could not be dissolved
+	// Only the REAL edges are offered: a triangle's third edge is its quad's
+	// internal DIAGONAL, a triangulation artifact rather than an edge of the
+	// model, and picking it produced an edge that could not be dissolved. All
+	// three probes still return an edge — the one nearest the diagonal falls
+	// through to a real one — but only TWO distinct keys exist.
+	h.check(
+		picks.distinct === 2,
+		'a triangle offers its 2 REAL edges and skips the quad diagonal (' + picks.distinct + ' distinct)'
+	);
 
 	const shared = await A.page.evaluate(async (uuid) => {
 		const w = window.__stores;
@@ -78,8 +89,8 @@ h.run(async () => {
 		return a.filter((k) => b.includes(k));
 	}, uuid);
 	h.check(
-		shared.length === 1,
-		'the two triangles of a quad name their shared diagonal IDENTICALLY (' + shared.length + ')'
+		shared.length === 0,
+		'...so the two halves of a quad share NO pickable edge (' + shared.length + ')'
 	);
 
 	// --------------------------------------------- 2. select / multi / clear
@@ -215,10 +226,11 @@ h.run(async () => {
 		return { before, ok, after, refused, afterRefuse: count() };
 	});
 	h.check(dissolve.before === 12, 'a box is 12 triangles (premise)');
-	h.check(dissolve.ok === true, 'dissolving a coplanar diagonal commits');
-	h.check(dissolve.after === 12, '...replacing the pair with one quad (2 tris) — count unchanged (' + dissolve.after + ')');
+	// the quad diagonal is no longer pickable, so there is nothing to dissolve
+	// on a bare box — every one of its real edges is a non-coplanar corner
+	h.check(dissolve.ok === false, 'a box has no dissolvable edge — every real edge is a corner');
 	h.check(dissolve.refused === false, 'dissolving a NON-coplanar edge is refused, not silently applied');
-	h.check(dissolve.afterRefuse === dissolve.after, '...leaving the geometry untouched');
+	h.check(dissolve.afterRefuse === dissolve.before, '...leaving the geometry untouched');
 
 	// ------------------------------------- 6. the session is NOT torn down
 	const session = await A.page.evaluate(() => {

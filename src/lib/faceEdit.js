@@ -497,11 +497,23 @@ export function extrudeFace(tris, face, dist) {
 		const b = p1.clone();
 		const a2 = p0.clone().add(offset);
 		const b2 = p1.clone().add(offset);
-		// M1: the wall inherits the boundary edge's UVs; the offset copies take
-		// their base corner's uv, so the texture runs unbroken up the new side
-		// (Blender's "extrude copies the source face's UVs" behaviour)
+		// The wall's uv runs ALONG the extrusion, at the base edge's own texel
+		// density. The first M1 pass gave the offset copies their base corner's
+		// uv, which collapsed the wall's v range to zero and smeared a single
+		// texel line up the whole side — the "second extrude breaks the texture"
+		// report. Advancing perpendicular in uv space by (world distance x uv
+		// units per world unit) keeps the aspect ratio, so repeated extrudes
+		// stack bands of consistent scale.
 		const uvA = uvAt(tris[ti], c0);
 		const uvB = uvAt(tris[ti], c1);
+		const along = [uvB[0] - uvA[0], uvB[1] - uvA[1]];
+		const uvLen = Math.hypot(along[0], along[1]);
+		const worldLen = p0.distanceTo(p1);
+		const step = uvLen > 1e-9 && worldLen > 1e-9 ? (uvLen / worldLen) * dist : dist;
+		const perp =
+			uvLen > 1e-9 ? [(-along[1] / uvLen) * step, (along[0] / uvLen) * step] : [0, step];
+		const uvA2 = [uvA[0] + perp[0], uvA[1] + perp[1]];
+		const uvB2 = [uvB[0] + perp[0], uvB[1] + perp[1]];
 		// each wall takes its OWN triangle's normal + slot: a multi-selection can
 		// span shells (and, in a mixed selection, differently-facing faces)
 		pushQuad(
@@ -512,7 +524,7 @@ export function extrudeFace(tris, face, dist) {
 			a2,
 			edgeOutward(p0, p1, triNormal(tris[ti])),
 			tris[ti].mi,
-			tris[ti].uv && [uvA, uvB, uvB, uvA]
+			tris[ti].uv ? [uvA, uvB, uvB2, uvA2] : undefined
 		);
 	});
 	return out;
@@ -1624,6 +1636,48 @@ export function commitLoopCut(cuts = 1) {
 /** 'faces' picks coplanar units, 'edges' picks single edges (M4)
  * @type {import('svelte/store').Writable<'faces'|'edges'>} */
 export const faceEditSubmode = writable('faces');
+
+// Per-MODE selection memory: switching Vertices <-> Edges <-> Faces to look at
+// something and coming back should not throw the pick away. Keyed by the object
+// and by a geometry SIGNATURE (its vertex count) — an edit that changes the
+// topology invalidates the stash, because the stored indices/keys would then
+// point at different geometry.
+/** @type {{uuid: string, sig: number, faces: number[], edges: string[]}} */
+let selectionStash = { uuid: '', sig: -1, faces: [], edges: [] };
+
+/** the current geometry's identity for the stash */
+function selectionSignature() {
+	return faceEdited?.geometry?.attributes?.position?.count ?? -1;
+}
+
+/** Remember the current picks before a mode switch. */
+export function stashSelections() {
+	if (!faceEdited) return;
+	selectionStash = {
+		uuid: faceEdited.uuid,
+		sig: selectionSignature(),
+		faces: [...get(faceEditSelectedTris)],
+		edges: [...get(edgeEditSelected)]
+	};
+}
+
+/** Put back what this mode had, unless the geometry changed underneath.
+ * @param {'faces'|'edges'} mode */
+export function restoreSelection(mode) {
+	if (!faceEdited) return false;
+	if (selectionStash.uuid !== faceEdited.uuid || selectionStash.sig !== selectionSignature())
+		return false;
+	if (mode === 'edges') {
+		// drop keys whose vertices no longer exist (a defensive second gate)
+		const live = selectionStash.edges.filter((k) => !!edgeEndpoints(k));
+		edgeEditSelected.set(live);
+		refreshEdgeOverlay();
+	} else {
+		faceEditSelectedTris.set(selectionStash.faces.filter((ti) => !!workingTris[ti]));
+		refreshFaceOverlay();
+	}
+	return true;
+}
 /** selected edge keys, canonical `ka|kb` @type {import('svelte/store').Writable<string[]>} */
 export const edgeEditSelected = writable(/** @type {string[]} */ ([]));
 /** the edge under the cursor, or '' @type {import('svelte/store').Writable<string>} */
@@ -1653,6 +1707,16 @@ export function edgeEndpoints(key) {
 export function pickEdgeAt(tri, point) {
 	const t = workingTris[tri];
 	if (!t || !point) return '';
+	// SKIP the quad's internal diagonal: it is a triangulation artifact, not an
+	// edge of the model. Offering it let a user pick "an edge" that cannot be
+	// dissolved (removing it just re-triangulates the same quad and the line
+	// comes straight back) — the reported "dissolve does nothing".
+	const mate = quadPartner[tri] ?? -1;
+	let diagonal = '';
+	if (mate >= 0) {
+		const ring = quadRingKeys(Math.min(tri, mate), Math.max(tri, mate));
+		if (ring) diagonal = edgeKey(ring[0], ring[2]);
+	}
 	let best = '';
 	let bestD = Infinity;
 	for (let e = 0; e < 3; e++) {
@@ -1662,10 +1726,12 @@ export function pickEdgeAt(tri, point) {
 		const ab = new THREE.Vector3().subVectors(p1, p0);
 		const len = ab.lengthSq();
 		const s = len > 1e-12 ? Math.min(Math.max(new THREE.Vector3().subVectors(point, p0).dot(ab) / len, 0), 1) : 0;
+		const key = edgeKey(keyOf(p0.x, p0.y, p0.z), keyOf(p1.x, p1.y, p1.z));
+		if (key === diagonal) continue;
 		const d = point.distanceToSquared(p0.clone().addScaledVector(ab, s));
 		if (d < bestD) {
 			bestD = d;
-			best = edgeKey(keyOf(p0.x, p0.y, p0.z), keyOf(p1.x, p1.y, p1.z));
+			best = key;
 		}
 	}
 	return best;
@@ -1723,24 +1789,61 @@ export function edgeLoopKeys(key) {
 	return [...keys];
 }
 
-/** M4: grow the edge selection to the whole loop through the first pick */
+/**
+ * M4: grow the edge selection to a loop.
+ *
+ * Two rules, in order, because one click cannot say which loop is meant:
+ *  1. If every picked edge borders ONE COMMON quad, complete THAT quad's
+ *     border. Picking two edges of a box's top face and pressing Loop then
+ *     gives the other two — the reported expectation, and the only reading
+ *     that actually uses the fact that several edges were picked.
+ *  2. Otherwise take the UNION of each pick's edge ring (the parallel rungs a
+ *     face loop crosses), so two unrelated picks give two rings instead of the
+ *     first pick silently winning and the rest being discarded.
+ * @returns {boolean}
+ */
 export function selectEdgeLoop() {
 	const sel = get(edgeEditSelected);
 	if (!sel.length) {
 		showToast('Pick an edge first, then Loop');
 		return false;
 	}
-	edgeEditSelected.set(edgeLoopKeys(sel[0]));
+	const topo = quadTopology ?? buildQuadTopology();
+	// rule 1 — a quad that EVERY pick touches
+	const shared = (topo.byEdge.get(sel[0]) ?? []).filter((quad) =>
+		sel.every((/** @type {string} */ key) => (topo.byEdge.get(key) ?? []).includes(quad))
+	);
+	const border = shared.length ? topo.edges.get(shared[0]) : null;
+	if (border?.length) {
+		edgeEditSelected.set([...border]);
+		refreshEdgeOverlay();
+		return true;
+	}
+	// rule 2 — the union of every pick's ring
+	/** @type {Set<string>} */
+	const keys = new Set();
+	for (const key of sel) for (const k of edgeLoopKeys(key)) keys.add(k);
+	edgeEditSelected.set([...keys]);
 	refreshEdgeOverlay();
 	return true;
 }
 
 /**
- * M4: dissolve the selected edges — remove them by merging the two triangles
- * that share each one back into a single quad's worth of surface. Only legal
- * where the two faces are COPLANAR (otherwise dissolving changes the shape);
- * illegal picks are reported rather than silently skipped.
- * @returns {boolean}
+ * M4: dissolve the selected edges — genuinely REMOVE each one by merging the
+ * two faces it joins and re-triangulating the merged polygon WITHOUT it.
+ *
+ * The first pass merged the two TRIANGLES sharing the edge back into a quad,
+ * which was a no-op the user could see: a triangle soup has to triangulate that
+ * quad again, and the same diagonal came straight back. Two corrections: an
+ * internal quad diagonal is no longer pickable at all (it is a triangulation
+ * artifact, not an edge of the model — see pickEdgeAt), and dissolve now works
+ * on the two QUADS either side of a real edge, fan-triangulating their merged
+ * boundary from a corner that is NOT an endpoint of the dissolved edge, so the
+ * edge cannot reappear.
+ *
+ * Only legal where the faces are COPLANAR — dissolving a real corner would
+ * change the silhouette. Illegal picks are reported with a count, never
+ * silently skipped. @returns {boolean}
  */
 export function dissolveEdges() {
 	if (!faceEdited) return false;
@@ -1749,9 +1852,6 @@ export function dissolveEdges() {
 		showToast('Pick an edge to dissolve');
 		return false;
 	}
-	const before = trisToPositions(workingTris);
-	const beforeGroups = trisToGroups(workingTris);
-	const beforeUVs = trisToUVs(workingTris);
 	/** @type {Map<string, number[]>} edge key -> triangles */
 	const byEdge = new Map();
 	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
@@ -1765,56 +1865,87 @@ export function dissolveEdges() {
 			list.push(ti);
 		}
 	});
+	const normals = workingTris.map(triNormal);
 	const drop = new Set();
 	/** @type {any[]} */
 	const added = [];
+	let dissolved = 0;
 	let skipped = 0;
-	const normals = workingTris.map(triNormal);
+
 	for (const key of sel) {
 		const pair = byEdge.get(key);
 		if (!pair || pair.length !== 2 || pair.some((ti) => drop.has(ti))) {
 			skipped++;
 			continue;
 		}
-		const [a, b] = pair;
-		if (normals[a].dot(normals[b]) < 0.999) {
+		// grow each side to its WHOLE quad, so the merged polygon is the two
+		// quads and the fan can avoid re-creating the dissolved edge
+		const patch = new Set();
+		for (const ti of pair) {
+			patch.add(ti);
+			const mate = quadPartner[ti] ?? -1;
+			if (mate >= 0) patch.add(mate);
+		}
+		const tris = [...patch];
+		if (tris.some((ti) => normals[ti].dot(normals[tris[0]]) < 0.999)) {
 			skipped++; // dissolving a non-flat join would change the silhouette
 			continue;
 		}
-		const ring = quadRingKeys(a, b);
-		if (!ring) {
+		const loop = boundaryLoop(workingTris, tris);
+		if (!loop || loop.length < 3) {
 			skipped++;
 			continue;
 		}
-		// the two triangles become ONE quad across the other diagonal
+		// uv/pos per boundary corner
+		/** @type {Map<string, {pos: any, uv: number[]}>} */
 		const corner = new Map();
-		for (const ti of [a, b])
+		for (const ti of tris)
 			workingTris[ti].forEach((/** @type {any} */ v, /** @type {number} */ c) => {
 				const k = keyOf(v.x, v.y, v.z);
 				if (!corner.has(k)) corner.set(k, { pos: v, uv: uvAt(workingTris[ti], c) });
 			});
-		const pts = ring.map((k) => corner.get(k));
-		if (pts.some((p) => !p)) {
+		// start the fan at a corner that is NOT an endpoint of the dissolved edge,
+		// or the fan's first spoke would BE that edge again
+		const ends = key.split('|');
+		const startAt = loop.findIndex((/** @type {any} */ p) => !ends.includes(keyOf(p.x, p.y, p.z)));
+		if (startAt < 0) {
 			skipped++;
 			continue;
 		}
-		drop.add(a);
-		drop.add(b);
-		pushQuad(
-			added,
-			pts[0].pos.clone(),
-			pts[1].pos.clone(),
-			pts[2].pos.clone(),
-			pts[3].pos.clone(),
-			normals[a],
-			workingTris[a].mi,
-			workingTris[a].uv ? pts.map((p) => p.uv) : undefined
-		);
+		const n = loop.length;
+		const at = (/** @type {number} */ i) => {
+			const p = loop[(startAt + i) % n];
+			return corner.get(keyOf(p.x, p.y, p.z)) ?? { pos: p, uv: [0, 0] };
+		};
+		const mi = workingTris[tris[0]].mi;
+		const textured = !!workingTris[tris[0]].uv;
+		const normal = normals[tris[0]];
+		for (let i = 1; i < n - 1; i++) {
+			const a = at(0);
+			const b = at(i);
+			const c = at(i + 1);
+			// wound to match the source face
+			const tri = [a.pos.clone(), b.pos.clone(), c.pos.clone()];
+			const uv = textured ? [a.uv, b.uv, c.uv] : undefined;
+			if (triNormal(tri).dot(normal) < 0) {
+				added.push(withSlot([tri[0], tri[2], tri[1]], mi, uv && [uv[0], uv[2], uv[1]]));
+			} else {
+				added.push(withSlot(tri, mi, uv));
+			}
+		}
+		tris.forEach((ti) => drop.add(ti));
+		dissolved++;
 	}
-	if (!drop.size) {
-		showToast('Nothing to dissolve — an edge must join TWO coplanar faces');
+
+	if (!dissolved) {
+		showToast(
+			'Nothing to dissolve — an edge must join TWO COPLANAR faces (a model corner cannot be dissolved without changing the shape)'
+		);
 		return false;
 	}
+	const before = trisToPositions(workingTris);
+	const beforeGroups = trisToGroups(workingTris);
+	const beforeUVs = trisToUVs(workingTris);
 	const next = [
 		...cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))),
 		...added
@@ -1832,7 +1963,7 @@ export function dissolveEdges() {
 	});
 	clearEdgeSelection();
 	showToast(
-		'Dissolved ' + drop.size / 2 + ' edge' + (drop.size === 2 ? '' : 's') +
+		'Dissolved ' + dissolved + ' edge' + (dissolved === 1 ? '' : 's') +
 			(skipped ? ' (' + skipped + ' skipped — not a coplanar pair)' : '')
 	);
 	return true;
@@ -2393,6 +2524,17 @@ export function commitFaceOp(op, amount) {
 	// 212: target the multi selection / hovered unit / highlighted face group
 	const face = opTargetFace();
 	if (!faceEdited || !face) return false;
+	// A CLOSED region has no border to extrude from, so the walls degenerate and
+	// every vertex simply moves — the whole object slides sideways along whatever
+	// the averaged normal happened to be. That is what Select-all + Extrude did,
+	// and what Shell/Object granularity does on a one-piece mesh. Refuse and say
+	// why rather than silently translating the object.
+	if (op === 'extrude' && !boundaryEdges(workingTris, face).length) {
+		showToast(
+			'Nothing to extrude from: the selection is a CLOSED surface, so it has no border. Select fewer faces, or use Move/Scale to reposition it.'
+		);
+		return false;
+	}
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);

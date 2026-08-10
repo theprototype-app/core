@@ -46,14 +46,22 @@ h.run(async () => {
 	// button-role query never matches and was the suite's known failure
 	await A.page.getByRole('tab', { name: 'User', exact: true }).click();
 	await A.page.waitForTimeout(200);
-	// install row: disabled ONLY while empty, everything else explained inline
-	// under the field (never a toast the user loses while fixing the URL)
+	// install row: the button is NEVER disabled (stale disabled styling was
+	// reported three times and never reproduced headlessly); every outcome —
+	// including an empty field — is explained inline under the field, where a
+	// toast would have vanished while the user fixed the URL
 	const installBtn = A.page.locator('#user-modules-tab').getByRole('button', { name: /^Install/ });
 	const status = A.page.locator('#install-status');
-	h.check(await installBtn.isDisabled(), 'Install is disabled while the field is empty');
+	h.check(await installBtn.isEnabled(), 'Install is never rendered disabled (empty field)');
+	await installBtn.click();
+	await h.eventually(
+		() => status.textContent(),
+		(t) => /Paste a module URL first/.test(t),
+		'clicking Install with an empty field says why, inline'
+	);
 	await A.page.locator('#install-module-url').fill('https://example.invalid/mod');
 	await A.page.waitForTimeout(200);
-	h.check(await installBtn.isEnabled(), 'Install enables as soon as a URL is typed');
+	h.check(await installBtn.isEnabled(), 'Install stays enabled with a URL typed');
 	h.check(
 		(await status.textContent()).includes('manifest.json'),
 		'the field previews the manifest URL it will fetch'
@@ -75,6 +83,30 @@ h.run(async () => {
 		((await status.textContent()) ?? '').trim() === '',
 		'editing the field clears the previous status'
 	);
+
+	// layout: one row when there is width, field-on-top + buttons below when not
+	const rowLayout = async () =>
+		A.page.evaluate(() => {
+			const input = document.getElementById('install-module-url');
+			const row = input.parentElement;
+			const top = Math.round(input.getBoundingClientRect().top);
+			const buttons = [...row.querySelectorAll('button')].map((b) =>
+				Math.round(b.getBoundingClientRect().top)
+			);
+			return {
+				below: buttons.every((t) => t > top),
+				fullWidth:
+					Math.round(input.getBoundingClientRect().width) >=
+					Math.round(row.getBoundingClientRect().width) - 4
+			};
+		});
+	h.check(!(await rowLayout()).below, 'wide: the field and buttons share one row');
+	await A.page.setViewportSize({ width: 430, height: 900 });
+	await A.page.waitForTimeout(600);
+	const narrowRow = await rowLayout();
+	h.check(narrowRow.below && narrowRow.fullWidth, 'narrow: buttons wrap below and the field keeps the top line');
+	await A.page.setViewportSize({ width: 1280, height: 900 });
+	await A.page.waitForTimeout(400);
 
 	await A.page.locator('#install-module-zip').setInputFiles({
 		name: 'testmod.module.zip',

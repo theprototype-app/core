@@ -57,7 +57,14 @@
 	let installBusy = false;
 
 	async function runUrlInstall() {
-		if (!installUrlValue.trim() || installBusy) return;
+		if (installBusy) return;
+		if (!installUrlValue.trim()) {
+			// the button is never disabled (see the markup), so say why nothing
+			// happened — in the same place every other install outcome appears
+			installStatus.set({ kind: 'error', text: 'Paste a module URL first', detail: 'Or use Choose .zip… to install a packaged module.' });
+			document.getElementById('install-module-url')?.focus();
+			return;
+		}
 		installBusy = true;
 		const ok = await installUrl(installUrlValue);
 		installBusy = false;
@@ -251,10 +258,12 @@
 			     (The old row had a blue "Install zip" next to a permanently grey
 			     `color="alternative"` "Install URL" — the URL button read as
 			     disabled even though it worked.) -->
-			<div class="flex items-center gap-2">
+			<!-- wraps: the field keeps the whole first line and the buttons drop to
+			     the next row when there is not enough width -->
+			<div class="flex flex-wrap items-center gap-2">
 				<input
 					id="install-module-url"
-					class="flex-1 rounded-sm border border-gray-600 bg-transparent px-2 py-1 text-sm dark:text-white"
+					class="min-w-0 flex-1 basis-full rounded-sm border border-gray-600 bg-transparent px-2 py-1 text-sm sm:min-w-[20rem] sm:basis-auto dark:text-white"
 					placeholder="Module URL — https://raw.githubusercontent.com/user/repo/main/mymodule (or a github.com/…/tree/… link)"
 					bind:value={installUrlValue}
 					on:input={() => clearInstallStatus()}
@@ -262,10 +271,13 @@
 						if (e.key === 'Enter') runUrlInstall();
 					}}
 				/>
-				<!-- disabled ONLY while the field is empty (the one state a user can
-				     read at a glance); every other outcome is explained inline below,
-				     never in a toast that vanishes while they fix the URL -->
-				<Button size="xs" disabled={!installUrlValue.trim() || installBusy} onclick={runUrlInstall}>
+				<!-- NO `disabled` binding here. Reported three times as "blocked cursor
+				     even with a URL typed, fixed by reopening the modal" — i.e. the
+				     styling was stale until the Button remounted — and it could never be
+				     reproduced headlessly. The empty-field case is explained by the
+				     status line below, so the prop buys nothing and costs a confusing
+				     dead-looking control. `busy` still guards double-submits. -->
+				<Button size="xs" onclick={runUrlInstall}>
 					{installBusy ? 'Installing…' : 'Install'}
 				</Button>
 				<span class="text-xs text-gray-500">or</span>

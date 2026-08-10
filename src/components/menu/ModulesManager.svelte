@@ -41,7 +41,8 @@
 		devPolling,
 		installStatus,
 		clearInstallStatus,
-		normalizeRepoUrl
+		normalizeRepoUrl,
+		lastInstalled
 	} from '$lib/userModules';
 	import { deactivateModule } from '$lib/moduleSDK';
 	import {
@@ -69,6 +70,36 @@
 		const ok = await installUrl(installUrlValue);
 		installBusy = false;
 		if (ok) installUrlValue = ''; // keep a failed URL so it can be corrected
+	}
+
+	// Installing from Browse leaves you on Browse (so you can install several);
+	// the User tab's count badge is what says "it went over there", and opening
+	// that tab scrolls to the new card and flashes it.
+	let prevUserCount = -1;
+	let userTabPulse = false;
+	$: pulseIfGrown($userModules.length);
+	/** @param {number} count */
+	function pulseIfGrown(count) {
+		if (prevUserCount >= 0 && count > prevUserCount) {
+			userTabPulse = true;
+			setTimeout(() => (userTabPulse = false), 1600);
+		}
+		prevUserCount = count;
+	}
+
+	$: revealInstalled(tab, $lastInstalled);
+	/** @param {string} activeTab @param {string | null} id */
+	function revealInstalled(activeTab, id) {
+		if (activeTab !== 'user' || !id || typeof document === 'undefined') return;
+		// one frame for the card to render before scrolling to it
+		setTimeout(() => {
+			const card = document.getElementById('user-module-card-' + id);
+			if (!card) return;
+			card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+			card.classList.add('just-installed');
+			setTimeout(() => card.classList.remove('just-installed'), 2200);
+			lastInstalled.set(null);
+		}, 60);
 	}
 
 	// as-you-type: is this URL already an installed module? (installing updates it)
@@ -132,8 +163,15 @@
 		<button class="mod-tab" class:active={tab === 'core'} role="tab" aria-selected={tab === 'core'} on:click={() => (tab = 'core')}>
 			Core
 		</button>
-		<button class="mod-tab" class:active={tab === 'user'} role="tab" aria-selected={tab === 'user'} on:click={() => (tab = 'user')}>
-			User
+		<button
+			class="mod-tab"
+			class:active={tab === 'user'}
+			class:pulse={userTabPulse}
+			role="tab"
+			aria-selected={tab === 'user'}
+			on:click={() => (tab = 'user')}
+		>
+			User{$userModules.length ? ' (' + $userModules.length + ')' : ''}
 		</button>
 		<button
 			class="mod-tab"
@@ -418,11 +456,19 @@
 </Modal>
 
 <style>
-	/* Core / User read as real tabs (underline the active one) instead of two buttons. */
+	/* Core / User / Browse read as real tabs (underline the active one) instead
+	   of buttons. STICKY: the modal body is the scroller, so the tab bar stays
+	   put while a long module list scrolls under it — it needs an opaque
+	   background of its own or the cards show through. */
 	.mod-tabs {
+		position: sticky;
+		top: 0;
+		z-index: 2;
 		display: flex;
 		gap: 0.25rem;
 		margin-bottom: 0.85rem;
+		padding-top: 0.25rem;
+		background: var(--surface, #1f2937);
 		border-bottom: 1px solid rgb(75 85 99 / 0.6);
 	}
 	.mod-tab {
@@ -442,5 +488,26 @@
 	.mod-tab.active {
 		color: #fff;
 		border-bottom-color: var(--color-primary-600, #2563eb);
+	}
+	/* the count badge just grew — a short pulse says "your module landed here" */
+	.mod-tab.pulse {
+		animation: mod-tab-pulse 0.5s ease-in-out 3;
+	}
+	@keyframes mod-tab-pulse {
+		50% {
+			color: #fff;
+			transform: scale(1.06);
+		}
+	}
+	/* added imperatively by revealInstalled(), so it must be :global */
+	:global(.just-installed) {
+		outline: 2px solid var(--color-primary-600, #2563eb);
+		outline-offset: 2px;
+		transition: outline-color 0.4s ease-out;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.mod-tab.pulse {
+			animation: none;
+		}
 	}
 </style>

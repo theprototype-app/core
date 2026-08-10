@@ -38,6 +38,11 @@ export function clearInstallStatus() {
 	setStatus('idle', '');
 }
 
+/** id of the most recently installed/updated module — the manager scrolls to it
+ * and flashes its card the next time the User tab is shown, and clears this.
+ * @type {import('svelte/store').Writable<string | null>} */
+export const lastInstalled = writable(null);
+
 /** @param {number} bytes */
 function humanSize(bytes) {
 	if (bytes < 1024) return bytes + ' B';
@@ -158,6 +163,7 @@ export async function activateUserModule(record) {
 /** @param {any} record */
 async function storeAndActivate(record) {
 	userModules.update((list) => [...list.filter((m) => m.id !== record.id), record]);
+	lastInstalled.set(record.id); // the manager points at it from the User tab
 	await persist();
 	// installing implies wanting it on
 	disabledModules.update((list) => list.filter((id) => id !== record.id));

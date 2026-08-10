@@ -44,7 +44,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	// the manager tabs are role="tab" (real tabs since the mobile polish) — a
 	// button-role query never matches and was the suite's known failure
-	await A.page.getByRole('tab', { name: 'User', exact: true }).click();
+	await A.page.getByRole('tab', { name: /^User/ }).click();
 	await A.page.waitForTimeout(200);
 	// install row: the button is NEVER disabled (stale disabled styling was
 	// reported three times and never reproduced headlessly); every outcome —
@@ -248,7 +248,7 @@ export default {
 	await A.page.waitForTimeout(400);
 	// the manager tabs are role="tab" (real tabs since the mobile polish) — a
 	// button-role query never matches and was the suite's known failure
-	await A.page.getByRole('tab', { name: 'User', exact: true }).click();
+	await A.page.getByRole('tab', { name: /^User/ }).click();
 	await A.page.waitForTimeout(200);
 	await A.page.locator('#dev-reload-devmod').click();
 	await h.eventually(

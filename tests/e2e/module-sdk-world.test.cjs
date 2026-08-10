@@ -13,7 +13,7 @@ const REPO = require('path').resolve(__dirname, '../../../theprototype.app-modul
 async function install(page, id) {
 	await page.evaluate(() => window.__stores.modulesOpen.set(true));
 	await page.waitForTimeout(300);
-	await page.getByRole('tab', { name: 'User', exact: true }).click();
+	await page.getByRole('tab', { name: /^User/ }).click();
 	await page.waitForTimeout(200);
 	await page.locator('#install-module-zip').setInputFiles({
 		name: id + '.zip',

@@ -158,7 +158,7 @@ async function installModule(peer, id) {
 	if (!fs.existsSync(zip)) return false;
 	await peer.page.evaluate(() => window.__stores.modulesOpen.set(true));
 	await peer.page.waitForTimeout(400);
-	await peer.page.getByRole('tab', { name: 'User', exact: true }).click();
+	await peer.page.getByRole('tab', { name: /^User/ }).click();
 	await peer.page.waitForTimeout(200);
 	await peer.page.locator('#install-module-zip').setInputFiles({
 		name: id + '.zip',

@@ -100,8 +100,11 @@ loadable play content. Everything a user does must be visible to connected peers
   pick, outward-wound walls); the MOVE gizmo
   seats ONLY while Move is the armed op — a seated gizmo intercepted the next click
   and rigid-moved the face instead of applying the armed inset (the CL-B inset fix);
-  shared edit WIREFRAME overlay (`buildEditWireframe` + `meshEditWireframe` local
-  pref, honored by BOTH modes, rebuilt on every geometry swap);
+  shared edit WIREFRAME overlay (`buildEditWireframe`/`editWireGeometry` +
+  `meshEditWireframe` local pref, honored by BOTH modes, rebuilt on every geometry
+  swap; it draws the QUAD structure by default — the diagonals it used to show are
+  triangulation artifacts `pickEdgeAt` skips and dissolve refuses — with
+  `meshEditTriWire` ("Show triangulation") for the raw mesh);
   `registerEditProxy`/`lookupEditable` let the edit tools run on a SCENE-ROOT proxy
   (collider editing — replicated edit messages no-op on peers); `meshgeo`
   full-geometry snapshots; VR rigid face-grab + live extrude adjust; user-editable VR
@@ -149,11 +152,36 @@ loadable play content. Everything a user does must be visible to connected peers
   the FLAG, re-applied by applyMeshGeo). A CLOSED region has no border, so extrude
   degenerates to a translate — refused with an explanation (that is also what
   Shell/Object granularity means for extrude). `stashSelections`/`restoreSelection`
-  keep a per-mode pick across mode switches, invalidated by a geometry SIGNATURE.
+  keep a per-mode pick across mode switches, invalidated by a geometry SIGNATURE —
+  and the switch itself goes through `setFaceSubmode` (stash/restore + BOTH overlay
+  refreshes + the gizmo: the face tint and a seated face gizmo used to ride into
+  edge mode, where the gizmo silently dragged the quads picked beforehand; hence
+  also the submode guard inside `refreshFaceOverlay`, mirroring its edge twin).
+  Every op that rebuilds the geometry must clear its picks BEFORE
+  `applyGeometrySnapshot` (which rebuilds the overlay from them) and must clear
+  `faceEditHoverTri` too — desktop has no pointermove path, so the hover holds the
+  pre-op triangle forever ("loop cut selects random triangles").
+  SELECTION UNDO: picks record a `'selection'` history kind via
+  `withSelectionHistory` (the exported commands are thin wrappers over `*Inner`
+  bodies) — the ONE kind that never broadcasts, session-scoped because
+  `endHistorySession` filters it out, and `recordEntry`'s LIMIT trim evicts the
+  oldest selection first so clicks can never push a geometry step off the stack.
+  An op's OWN tidy-up (weld/create-face clearing the pick they consumed) calls the
+  `*Inner` body, or its entry would sit on top of the op's meshgeo and Ctrl+Z
+  would undo the housekeeping. Loop CUT derives its ring from the SELECTION
+  (`loopCutRing`: whichever of the anchor's two loops overlaps the pick more), NOT
+  from `loopAxis`, which belongs to Loop select's press-again cycling and leaked
+  across objects; it leaves the new band selected. Subdivide is QUAD-AWARE
+  (`subdivideFaceUnits`, 2x2 per paired quad): the triangle 4-way split gave a quad
+  8 triangles with no grid pairing, `pairQuads` matched the kites, and the pinwheel
+  made every loop tool undefined afterwards. The object selection OUTLINE is
+  suppressed while editing (`meshEditOutline`, default off) — it is a
+  postprocessing pass composited after the scene, so no renderOrder/depthTest on
+  the overlays can beat it.
   Desktop UI = MeshEditPopup on the shared `ToolboxWindow` shell (key `meshToolbox`),
   shortcuts E/I/G/S/B/F/X/C/L + Ctrl +/-/A/I, W in vertices), `history` (kind registry:
-  create/delete/group/material/props/transformSet/verts/animimport/geometry/meshgeo;
-  recording auto-muted while applying; 5 MB snapshot cap), `snapping`, `shortcuts`
+  create/delete/group/material/props/transformSet/verts/animimport/geometry/meshgeo/
+  selection; recording auto-muted while applying; 5 MB snapshot cap), `snapping`, `shortcuts`
   (registry = bindings AND Settings list),
   `flowRuntime` (per-frame tick over ALL graph documents; #13-H: an effect/physics/
   sound/onclick node inside an OBJECT graph with no Object Selector implicitly targets
@@ -550,7 +578,10 @@ loadable play content. Everything a user does must be visible to connected peers
 - Module-level `store.subscribe(cb)` runs cb SYNCHRONOUSLY at module eval — any
   `let` the callback reads must be DECLARED ABOVE the subscribe or the module
   TDZ-crashes the SSR eval ("Cannot access 'x' before initialization"; bit
-  meshEdit/faceEdit twice in CL-B). Related svelte 5.56 strictness:
+  meshEdit/faceEdit twice in CL-B, and a THIRD time in the mesh-hardening batch:
+  a new `meshEditTriWire` subscriber read `faceEdited`, declared 1500 lines
+  lower, and the whole app failed to boot — every suite died in setupPage's
+  `waitForFunction`, which is the signature). Related svelte 5.56 strictness:
   `bind:X={undefined}` on a prop WITH a fallback hard-errors
   (props_invalid_value) — an uninitialized `let fogColor = $state()` bound via
   bind:hex CRASHED the whole scene inspector drawer; always initialize bound $state.
@@ -898,6 +929,21 @@ loadable play content. Everything a user does must be visible to connected peers
   whenever no scrolling happens at all, so it passed while the feature was broken
   for the user. Assertions about POSITION need a tight band and a starting state
   that forces the behaviour (expand every section, scroll to the bottom first).
+- **A viewport point probed while a floating panel is CLOSED is not a viewport
+  point once it reopens.** mesh-edit-popup's outside-click check found an empty
+  canvas pixel after Escape closed the toolbox, then re-entered the mode and
+  clicked there — two extra Display buttons made the toolbox tall enough to cover
+  it, so the click landed on the toolbox and the pick correctly survived. The
+  check looked like a behaviour regression and was a stale measurement. Probe the
+  phase you are about to click in, and when a canvas click "does nothing", print
+  `document.elementFromPoint` at that pixel before reading any handler code.
+- **A change you cannot make FAIL is a guess, so either prove it or drop it.**
+  The mesh-hardening batch wanted a looser quad-pairing threshold; no scenario
+  made it change behaviour, and measuring showed why — a 4-degree rotate twists a
+  quad's triangles ~9 degrees apart, which no safe threshold covers. The constant
+  was reverted to its old value (keeping only the NAME) and the measurement became
+  an assertion documenting the limit for the topology rewrite to beat. Shipping it
+  unproven would have been a silent behaviour change with no evidence behind it.
 - **A threlte component that REMOUNTS comes back with its prop defaults** — the
   editor `<OrbitControls target.y={1.5}>` unmounts while a camera preview owns the
   view, so exiting threw the look-at point back to the origin. Snapshot such state
@@ -1138,6 +1184,28 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-10): **MESH HARDENING — branch `feat/mesh-hardening`** (off
+  release/next @372af29, lane ../theprototype-lane-c @5182, 4 commits + docs),
+  from user reports on the merged M0-M6 tools. (1) `setFaceSubmode` + the
+  submode guard in `refreshFaceOverlay` + a gizmo that refuses to seat in edges
+  (the stale face tint AND a live gizmo rode into edge mode); op commits clear
+  their picks BEFORE `applyGeometrySnapshot` and clear `faceEditHoverTri` too
+  ("loop cut selects random triangles"); `loopAxis` resets per session. (2) NEW
+  `'selection'` history kind — picks are undoable INSIDE a session, never
+  broadcast, filtered out by the 15-F seal, and the LIMIT trim evicts them
+  before any geometry entry. (3) Display: the object outline is suppressed
+  while editing (`meshEditOutline`, default off — it is a postprocessing pass,
+  so nothing in-scene can beat it) and the edit wireframe draws QUADS
+  (`meshEditTriWire` = "Show triangulation"). (4) Loop cut takes its ring from
+  the SELECTION and leaves the new band selected; subdivide is quad-aware (2x2)
+  so the quad graph survives it; `faceLoopRing` stops at a non-manifold edge.
+  New suites mesh-selection-undo(23)/mesh-edit-display(9)/mesh-loop-hardening(22);
+  27-suite mesh+undo battery green; baseline 391/62 (unchanged from base).
+  **NEXT WORKSTREAM (user-approved, ahead of M4 gizmo/M5/M9): stored face
+  topology as a HALF-EDGE structure** — cloud plans-core/pending/
+  mesh-topology-halfedge.md, with the measurement that justifies it (a 4-degree
+  rotate twists a quad's triangles ~9 degrees apart, indistinguishable from a
+  real crease in a soup, so a rotated band leaves the derived topology).
 - Status (2026-08-10): **17-A MODULE PLATFORM SHIPPED — core PR #101** (branch
   feat/module-platform, lane ../theprototype-lane-flow @5186, 13 commits; plan +
   as-built: cloud plans-core/pending/17-a-module-platform.md). **A1** SDK gaps

@@ -1,0 +1,271 @@
+// Selection undo/redo (user ask: "allow to undo/redo vertices and polygon
+// selections"). Picks record a 'selection' history entry — the ONE kind that
+// never broadcasts, because a selection is per viewer. The entries are
+// SESSION-LOCAL: Ctrl+Z walks back a loop select or an invert while you edit,
+// and the 15-F seal drops them on Done, so the sealed entry still describes
+// the geometry change rather than which faces happened to be lit.
+const h = require('./helpers.cjs');
+
+const undoLen = (page) =>
+	page.evaluate(
+		() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))())
+	);
+
+h.run(async () => {
+	const browser = await h.launch();
+	const A = await h.setupPage(browser, 'A');
+
+	// --------------------------------------------------- 1. faces
+	const faces = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		window.__box = g.children[g.children.length - 1];
+		fe.enterFaceEdit(window.__box.uuid);
+		fe.setFaceSubmode('faces');
+		const sel = () => {
+			let v;
+			fe.faceEditSelectedTris.subscribe((x) => (v = [...x]))();
+			return v;
+		};
+		fe.pickFaceUnit(0); // one quad
+		const afterPick = sel().length;
+		fe.selectAllFaces(); // the whole box
+		const afterAll = sel().length;
+		s.history.undo();
+		const undone = sel().length;
+		s.history.redo();
+		const redone = sel().length;
+		s.history.undo();
+		s.history.undo(); // back past the first pick
+		const empty = sel().length;
+		return { afterPick, afterAll, undone, redone, empty };
+	});
+	h.check(faces.afterPick === 2, 'a quad pick selects its 2 triangles (premise)');
+	h.check(faces.afterAll === 12, 'select-all takes the whole box (premise)');
+	h.check(faces.undone === faces.afterPick, 'undo walks back to the previous face selection');
+	h.check(faces.redone === faces.afterAll, 'redo puts it back');
+	h.check(faces.empty === 0, 'a second undo reaches the empty selection the session started with');
+
+	// a no-op pick must not fill the stack
+	const noop = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const len = () => {
+			let n;
+			s.history.undoStack.subscribe((v) => (n = v.length))();
+			return n;
+		};
+		s.faceEdit.pickFaceUnit(0);
+		const before = len();
+		s.faceEdit.pickFaceUnit(0); // the same unit again
+		return { before, after: len() };
+	});
+	h.check(noop.after === noop.before, 'picking the same unit twice records nothing');
+
+	// ------- 1b. undo must also drop the HOVER + gizmo the pick left behind
+	// User report: "multiselect a few quads, Ctrl+Z, the last quad selected keeps
+	// its highlight". The click sets faceEditHoverTri and the desktop has no
+	// pointermove path to move it off, so the deselected quad came straight back
+	// as the hover wash — and the gizmo stayed seated on a target the restored
+	// selection no longer contains.
+	const stale = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const scene = await new Promise((r) => s.globalScene.subscribe(r)());
+		const controls = await new Promise((r) => s.TControls.subscribe(r)());
+		const layer = (name) => {
+			const mesh = scene.children.find((n) => n.name === name);
+			return mesh ? mesh.geometry.attributes.position.count : 0;
+		};
+		const gizmoAt = () => {
+			const o = controls?.object;
+			return o?.userData?.isFaceProxy ? [o.position.x, o.position.y, o.position.z] : null;
+		};
+		fe.setFaceSubmode('faces');
+		fe.clearFaceSelection();
+		fe.setFaceOp('move');
+		// the desktop ctrl-click path, verbatim (Scene.svelte): highlight, toggle, seat
+		const ctrlClick = (tri) => {
+			fe.highlightFaceByTriangle(tri, false);
+			fe.toggleFaceSelection(tri);
+			fe.attachFaceGizmo();
+		};
+		ctrlClick(0);
+		ctrlClick(4);
+		ctrlClick(8);
+		const before = { sel: layer('face-edit-overlay'), hover: layer('face-edit-hover'), gizmo: gizmoAt() };
+		s.history.undo();
+		return {
+			before,
+			sel: layer('face-edit-overlay'),
+			hover: layer('face-edit-hover'),
+			gizmo: gizmoAt()
+		};
+	});
+	h.check(stale.before.sel === 18, 'three ctrl-clicked quads tint 6 triangles (premise)');
+	h.check(stale.before.hover === 0, '...with nothing in the hover layer while they are selected');
+	h.check(!!stale.before.gizmo, '...and a Move gizmo seated on the set (premise)');
+	h.check(stale.sel === 12, 'undo drops the last quad from the selection tint');
+	h.check(stale.hover === 0, '...and it does NOT come back as a stale hover wash');
+	h.check(
+		!!stale.gizmo && String(stale.gizmo) !== String(stale.before.gizmo),
+		'...and the gizmo re-seats on the restored selection instead of the undone quad'
+	);
+
+	// --------------------------------------------------- 2. edges
+	const edges = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		fe.setFaceSubmode('edges');
+		const sel = () => {
+			let v;
+			fe.edgeEditSelected.subscribe((x) => (v = [...x]))();
+			return v;
+		};
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const t = fe.readTriangles(window.__box.geometry)[0];
+		const mid = t[0].clone().add(t[1]).multiplyScalar(0.5);
+		const probe = t[0]
+			.clone()
+			.add(t[1])
+			.add(t[2])
+			.multiplyScalar(1 / 3)
+			.lerp(mid, 0.95);
+		fe.pickEdge(fe.pickEdgeAt(0, probe), false);
+		const afterPick = sel().length;
+		fe.selectAllEdges();
+		const afterAll = sel().length;
+		s.history.undo();
+		const undone = sel().length;
+		// the submode is restored with the entry, so the undo is VISIBLE
+		let mode;
+		fe.faceEditSubmode.subscribe((v) => (mode = v))();
+		return { afterPick, afterAll, undone, mode };
+	});
+	h.check(edges.afterPick === 1, 'an edge pick selects one edge (premise)');
+	h.check(edges.afterAll > edges.afterPick, 'select-all-edges takes the rest (premise)');
+	h.check(edges.undone === edges.afterPick, 'undo walks back to the previous edge selection');
+	h.check(edges.mode === 'edges', '...in the submode the entry belongs to');
+
+	// --------------------------------------------------- 3. vertices
+	const verts = await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.faceEdit.exitFaceEdit();
+		s.meshEdit.enterEditMode(window.__box.uuid);
+		const size = () => {
+			let n;
+			s.meshEdit.vertexSelectionSize.subscribe((v) => (n = v))();
+			return n;
+		};
+		s.meshEdit.selectHandle(0);
+		const one = size();
+		s.meshEdit.selectAllVerts();
+		const all = size();
+		s.history.undo();
+		const undone = size();
+		s.history.redo();
+		return { one, all, undone, redone: size() };
+	});
+	h.check(verts.one === 1, 'a plain vertex click selects one handle (premise)');
+	h.check(verts.all > verts.one, 'select-all takes every handle (premise)');
+	h.check(verts.undone === verts.one, 'undo walks back to the previous vertex selection');
+	h.check(verts.redone === verts.all, 'redo puts it back');
+
+	// --------------- 3b. an OP's own selection tidy-up is not an undo step
+	// weld/create-face clear the multi-pick they consumed. Recording that would
+	// leave a selection entry sitting ON TOP of the op's meshgeo, so the next
+	// Ctrl+Z would undo the housekeeping and the geometry would look stuck.
+	const weld = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const me = s.meshEdit;
+		const keys = () => {
+			const p = window.__box.geometry.attributes.position;
+			const set = new Set();
+			for (let i = 0; i < p.count; i++)
+				set.add(
+					Math.round(p.getX(i) * 1e4) +
+						',' +
+						Math.round(p.getY(i) * 1e4) +
+						',' +
+						Math.round(p.getZ(i) * 1e4)
+				);
+			return set.size;
+		};
+		me.enterEditMode(window.__box.uuid);
+		const before = keys();
+		me.toggleVertexSelection(0);
+		me.toggleVertexSelection(1);
+		me.toggleVertexSelection(2);
+		const ok = me.weldSelectedVerts();
+		const welded = keys();
+		let topKind;
+		s.history.undoStack.subscribe((v) => (topKind = v[v.length - 1]?.kind))();
+		s.history.undo();
+		return { ok, before, welded, topKind, afterUndo: keys() };
+	});
+	h.check(weld.ok && weld.welded < weld.before, 'weld merged the picked vertices (premise)');
+	h.check(weld.topKind === 'meshgeo', "the op's meshgeo is the TOP entry, not its selection tidy-up");
+	h.check(weld.afterUndo === weld.before, 'so ONE undo takes the weld back out');
+
+	// ------------------------------------- 4. Done drops the selection steps
+	const sealedLen = await undoLen(A.page);
+	const sealed = await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.meshEdit.exitEditMode();
+		s.editSession.sealEditHistorySession();
+		let stack;
+		s.history.undoStack.subscribe((v) => (stack = v.map((e) => e.kind)))();
+		return { stack };
+	});
+	h.check(
+		!sealed.stack.includes('selection'),
+		'Done leaves NO selection entries behind (they are session-local)'
+	);
+	h.check(
+		sealed.stack.length < sealedLen,
+		'...so the sealed session is shorter than the live one was'
+	);
+
+	// ------------------------- 5. a geometry op still seals as ONE undo entry
+	// (the seal's meshgeo compaction must survive selection entries sitting
+	// between the geometry steps)
+	const withOps = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const tris = () => fe.readTriangles(window.__box.geometry).length;
+		let stackBefore;
+		s.history.undoStack.subscribe((v) => (stackBefore = v.length))();
+		fe.enterFaceEdit(window.__box.uuid);
+		fe.setFaceSubmode('faces');
+		fe.pickFaceUnit(0); // a selection entry
+		const startTris = tris();
+		fe.commitFaceOp('extrude', 0.3); // a meshgeo entry
+		fe.selectAllFaces(); // another selection entry
+		fe.commitFaceOp('subdivide', 0); // another meshgeo entry
+		const grown = tris();
+		fe.exitFaceEdit();
+		s.editSession.sealEditHistorySession();
+		let kinds;
+		s.history.undoStack.subscribe((v) => (kinds = v.map((e) => e.kind)))();
+		s.history.undo();
+		return {
+			startTris,
+			grown,
+			added: kinds.length - stackBefore,
+			lastKind: kinds[kinds.length - 1],
+			afterUndo: tris()
+		};
+	});
+	h.check(withOps.grown > withOps.startTris, 'extrude + subdivide grew the mesh (premise)');
+	h.check(withOps.added === 1, 'the whole session seals into ONE undo entry');
+	h.check(withOps.lastKind === 'meshgeo', '...compacted to a meshgeo, not a composite');
+	h.check(
+		withOps.afterUndo === withOps.startTris,
+		'...and undoing it restores the geometry the session started with'
+	);
+
+	await h.finish(browser);
+});

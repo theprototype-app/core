@@ -227,6 +227,12 @@ export const shortcuts = [
 		// registerShortcut dedupes exact `keys`, so a bare 'F' row would collide
 	},
 	{
+		keys: 'L / Ctrl+ +- / Ctrl+A / Ctrl+I',
+		group: 'Mesh edit',
+		label: 'M2/M3: loop select · loop cut (C) · grow/shrink · select all/invert (faces)'
+		// same local handler, same bundling reason as the row above
+	},
+	{
 		keys: 'Ctrl+/',
 		group: 'Help',
 		label: 'Show this shortcut list',
@@ -251,8 +257,9 @@ export function unregisterShortcutGroup(group) {
 }
 
 /** D3: the bare keys MeshEditPopup's local keydown consumes while a session is
- * active and its hotkeys pref is on (faces E/I/G/S/B/F/X · vertices W) */
-const MESH_EDIT_KEYS = ['E', 'I', 'G', 'S', 'B', 'F', 'X', 'W'];
+ * active and its hotkeys pref is on (faces E/I/G/S/B/F/X, M2 loop select L ·
+ * vertices W) */
+const MESH_EDIT_KEYS = ['E', 'I', 'G', 'S', 'B', 'F', 'X', 'W', 'L', 'C', '1', '2', '3'];
 
 /** @param {KeyboardEvent} event */
 function comboOf(event) {

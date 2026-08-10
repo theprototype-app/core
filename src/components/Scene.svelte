@@ -21,7 +21,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable } from '$lib/faceEdit';
+	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
@@ -590,6 +590,17 @@
 				const edited = lookupEditable($faceEditObject);
 				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
 				const tri = hit && hit.faceIndex != null ? hit.faceIndex : -1;
+				// M4: the EDGE sub-mode picks the nearest edge of the hit triangle
+				// instead of a face unit (every click picks one, so no threshold)
+				if ($faceEditSubmode === 'edges') {
+					if (tri < 0 || !hit || !edited) {
+						if (!(event.ctrlKey || event.shiftKey || event.metaKey)) clearEdgeSelection();
+						return;
+					}
+					const local = edited.worldToLocal(hit.point.clone());
+					pickEdge(pickEdgeAt(tri, local), event.ctrlKey || event.shiftKey || event.metaKey);
+					return;
+				}
 				// E10: ctrl/shift-click ADDS to the selection (never auto-applies); a
 				// plain click REPLACES it with the unit under the cursor. The heal
 				// flag is off for additive clicks — the heal would wipe the very

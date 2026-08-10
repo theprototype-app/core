@@ -10,7 +10,9 @@ import {
 	requestDeleteSelection,
 	groupSelection,
 	ungroupObject,
+	convertToMesh,
 	selectObject,
+	applySelectionSet,
 	selectionUuids
 } from './objectActions';
 import { requestControl, nameOf } from './lockControl';
@@ -95,7 +97,9 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				]
 			: []),
-		...(isGroup
+		// Ungroup is single-target (the clicked object); during a multi-select the
+		// header says "N objects selected", so acting on one of them would mislead
+		...(isGroup && !multi
 			? [
 					{
 						label: 'Ungroup',
@@ -103,6 +107,21 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						disabled: locked,
 						tooltip: locked ? lockedTooltip : 'Move the children out, then remove the empty group',
 						action: () => ungroupObject(uuid)
+					}
+				]
+			: []),
+		// 15-G: bake a group / a set of meshes down to ONE mesh (materials kept as
+		// slots, originals deleted, one undo step)
+		...(multi || isGroup
+			? [
+					{
+						label: 'Convert to mesh' + suffix,
+						icon: 'combine',
+						disabled: locked,
+						tooltip: locked
+							? lockedTooltip
+							: 'Merge into a single mesh — every material is kept as a slot',
+						action: () => convertToMesh(targets)
 					}
 				]
 			: []),
@@ -140,9 +159,23 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			label: 'Properties',
 			icon: 'sliders-horizontal',
 			tooltip: 'Open the properties panel (double-click does this too)',
-			action: () => selectObject(uuid, true)
+			// 15-G audit: during a multi-select, selectObject(uuid) would COLLAPSE the
+			// set to the clicked object — re-apply the set instead so the panel opens
+			// on what the header says it acts on
+			action: () => (multi ? applySelectionSet(targets, true) : selectObject(uuid, true))
 		},
-		{ label: 'Rename', icon: 'pencil', disabled: locked, tooltip: lockedTooltip, action: () => renamingObject.set(uuid) },
+		// 15-G audit: renaming is inherently single-target (one name field)
+		...(multi
+			? []
+			: [
+					{
+						label: 'Rename',
+						icon: 'pencil',
+						disabled: locked,
+						tooltip: lockedTooltip,
+						action: () => renamingObject.set(uuid)
+					}
+				]),
 		// 15-B8: Edit mesh / Sculpt are SINGLE-object modes — with a set selected
 		// they'd silently act on the last-picked object only (the ViewportMenu path
 		// passes the sticky primary), so hide them rather than mislead.
@@ -260,23 +293,28 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 				)
 			)
 		},
-		{
-			// H5: embed this object's flow into the SCENE graph as an Object Flow node
-			label: 'Add flow to Scene graph',
-			icon: 'git-branch-plus',
-			tooltip: 'Embed this object’s flow as a node with its declared inputs/outputs',
-			action: () =>
-				Promise.all([import('./objectFlow'), import('../stores/flowStore'), import('../stores/appStore')]).then(
-					([objectFlow, flowStore, appStore]) => {
-						if (!flowStore.graphExists(uuid)) {
-							appStore.showToast('This object has no flow yet — select it in the Flow editor and click Create flow.');
-							return;
-						}
-						const added = objectFlow.addObjectFlowToScene(uuid, object?.name || object?.type);
-						appStore.showToast(added ? 'Object Flow node added to the Scene graph' : 'This flow is already embedded in the Scene graph');
+		// 15-G audit: one embed carries ONE object's declared sockets — single-target
+		...(multi
+			? []
+			: [
+					{
+						// H5: embed this object's flow into the SCENE graph as an Object Flow node
+						label: 'Add flow to Scene graph',
+						icon: 'git-branch-plus',
+						tooltip: 'Embed this object’s flow as a node with its declared inputs/outputs',
+						action: () =>
+							Promise.all([import('./objectFlow'), import('../stores/flowStore'), import('../stores/appStore')]).then(
+								([objectFlow, flowStore, appStore]) => {
+									if (!flowStore.graphExists(uuid)) {
+										appStore.showToast('This object has no flow yet — select it in the Flow editor and click Create flow.');
+										return;
+									}
+									const added = objectFlow.addObjectFlowToScene(uuid, object?.name || object?.type);
+									appStore.showToast(added ? 'Object Flow node added to the Scene graph' : 'This flow is already embedded in the Scene graph');
+								}
+							)
 					}
-				)
-		},
+				]),
 		{ section: 'Share' },
 		{
 			label: multi ? 'Ping selection' + suffix : 'Ping this object',
@@ -284,7 +322,19 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			tooltip: 'Everyone sees a pulse here (Alt+click pings anywhere)',
 			action: () => (multi ? pingObjects(targets) : pingObject(uuid))
 		},
-		{ label: 'Add note', icon: 'sticky-note', tooltip: 'Pin a synced note exactly where you pointed', action: () => addAnnotation(uuid, point) },
+		// 15-G audit: a note pins to ONE point on ONE object. The ViewportMenu path
+		// passes the sticky primary (not necessarily what is under the cursor), so
+		// during a multi-select this would anchor somewhere the user did not point.
+		...(multi
+			? []
+			: [
+					{
+						label: 'Add note',
+						icon: 'sticky-note',
+						tooltip: 'Pin a synced note exactly where you pointed',
+						action: () => addAnnotation(uuid, point)
+					}
+				]),
 		{
 			label: 'Save as prefab' + suffix,
 			icon: 'package',

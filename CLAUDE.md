@@ -97,8 +97,7 @@ loadable play content. Everything a user does must be visible to connected peers
   (topology core: coplanar+adjacent tris = logical faces; extrude/inset/move/delete with
   OUTWARD-wound stitching + CL-B subdivide/flip/BRIDGE (two multi-selected faces:
   ordered boundary loops, equal-count gate, closest-pair anchor + untwist direction
-  pick, outward-wound walls); pick granularity Face/Triangle/Shell (`shellsOfTris`
-  union-find over welded keys; legacy 'polygon' migrates at read time); the MOVE gizmo
+  pick, outward-wound walls); the MOVE gizmo
   seats ONLY while Move is the armed op — a seated gizmo intercepted the next click
   and rigid-moved the face instead of applying the armed inset (the CL-B inset fix);
   shared edit WIREFRAME overlay (`buildEditWireframe` + `meshEditWireframe` local
@@ -106,8 +105,53 @@ loadable play content. Everything a user does must be visible to connected peers
   `registerEditProxy`/`lookupEditable` let the edit tools run on a SCENE-ROOT proxy
   (collider editing — replicated edit messages no-op on peers); `meshgeo`
   full-geometry snapshots; VR rigid face-grab + live extrude adjust; user-editable VR
-  caps; desktop UI = MeshEditPopup, a FLOATING draggable dragWindow toolbar
-  (key `meshEditToolbar`) with shortcuts E/I/G/S/B/F/X + W), `history` (kind registry:
+  caps.
+  **The mesh is a triangle SOUP with no stored face topology** — everything below is
+  DERIVED per rebuild (`rebuildFaces`), which is the root cause of several "bugs":
+  an extrusion wall is coplanar+adjacent with the flat side beneath it so `groupFaces`
+  MERGES them (Face granularity can't isolate the band — that is why Quad exists), and
+  a quad's internal DIAGONAL is a triangulation artifact, not an edge of the model.
+  Per-triangle tags ride as properties on the tri array (`withSlot`): `mi` = material
+  SLOT (15-G) and `uv` = per-corner texture coords (M1); every op that clones/maps/
+  splits tris must carry them, and `trisToGroups`/`trisToUVs` return NULL for the
+  single-material / untextured case so it stays byte-identical.
+  Granularity **Quad**(default)/Face/Triangle/Shell/Object — `pairQuads` pairs coplanar
+  co-facing neighbours whose quad is CONVEX, greedy best-first by squareness with
+  index tie-breaks (deterministic); legacy 'polygon' migrates to 'triangle', NOT quad.
+  M2 loop select + grow/shrink + all/invert/linked (`buildQuadTopology` = each quad's 4
+  edges in ring order + an edge→quads map; a quad lies on TWO loops so a repeat press
+  cycles the axis). M3 `commitLoopCut` (the ring walk with direction — flanking quads
+  keep their full edge, a T-junction, same tradeoff `subdivideFaceTris` documents).
+  M4 EDGES are a SUB-MODE of the face session (`faceEditSubmode`), not a third session
+  kind — lifecycle/undo barrier/wireframe/VR entry are all inherited; an edge is its
+  canonical welded key pair; `pickEdgeAt` takes the NEAREST edge and SKIPS quad
+  diagonals; `dissolveEdges` merges the two QUADS either side and fan-triangulates
+  their boundary from a corner that isn't an endpoint (so the edge can't reappear).
+  Edge **LOOP** (`edgeLoopChain`) and edge **RING** (`edgeLoopKeys`) are DIFFERENT
+  commands and were originally conflated: LOOP is the chain walk (continue to the edge
+  sharing no face with the current one, which only exists at a valence-4 vertex, so it
+  stops at poles), RING is the parallel rungs a face loop crosses. On a bare cube every
+  vertex is a pole, so Loop = the picked edge and Ring = the band; on a SUBDIVIDED face
+  Ring is the INNER grid edges — which is what made the conflation look broken.
+  The armed op DEFAULTS TO 'move': auto-apply commits the armed op on a plain click, so
+  extrude-by-default turned every face click into an extrusion. Selection and HOVER are
+  separate overlay meshes (`face-edit-overlay` / `face-edit-hover`) — one shared tint
+  made a just-deselected face look selected while the cursor rested on it. Selection
+  commands + Ctrl+A/Ctrl+I exist in ALL THREE modes (`selectAllEdges`/`selectAllVerts`
+  and their inverts), and 1/2/3 switch element mode inside a session (outside one they
+  stay the gizmo transform modes). `cancelEditSession` reverts the WHOLE session from an
+  entry-time snapshot — `sealEditHistorySession('discard')` only drops undo entries and
+  leaves the geometry edited. Bridge pairs its loops by ANGLE around their centres in
+  one basis perpendicular to the tunnel axis (the old closest-vertex anchor + direction
+  vote was tie-sensitive between aligned caps, and a one-step rotation = a skewed tunnel).
+  M6 `recalculateNormals` (signed volume per shell), `mergeByDistance` (quantized-grid
+  clusters, deterministic), `setShadingSmooth` (userData.shading, replicates as just
+  the FLAG, re-applied by applyMeshGeo). A CLOSED region has no border, so extrude
+  degenerates to a translate — refused with an explanation (that is also what
+  Shell/Object granularity means for extrude). `stashSelections`/`restoreSelection`
+  keep a per-mode pick across mode switches, invalidated by a geometry SIGNATURE.
+  Desktop UI = MeshEditPopup on the shared `ToolboxWindow` shell (key `meshToolbox`),
+  shortcuts E/I/G/S/B/F/X/C/L + Ctrl +/-/A/I, W in vertices), `history` (kind registry:
   create/delete/group/material/props/transformSet/verts/animimport/geometry/meshgeo;
   recording auto-muted while applying; 5 MB snapshot cap), `snapping`, `shortcuts`
   (registry = bindings AND Settings list),
@@ -315,8 +359,24 @@ loadable play content. Everything a user does must be visible to connected peers
   its pin; `menu/NotesDrawer.svelte` = label groups w/ ‹ › traversal + pins toggle),
   `SimControls`/`SculptToolbar`/`MeshEditPopup` (#12
   runes-mode HUD pills — the MobileAddButton "own file so onclick doesn't mix with
-  on:" precedent; CL-B: the sculpt + mesh-edit toolbars are FLOATING dragWindow
-  panels, keys `sculptToolbar`/`meshEditToolbar`), shared
+  on:" precedent; M0: the sculpt + mesh-edit toolbars are TOOLBOX WINDOWS on
+  `components/ui/ToolboxWindow.svelte` — keys `meshToolbox`/`sculptToolbox`/
+  `meshKeysCheatsheet`), `components/ui/ToolboxWindow.svelte` (M0: the shared
+  tool-palette shell — header-only `.move-handle` drag + `focusStack`, dragWindow
+  `axis:'x'` width-resize so the auto-fill grid of FIXED 36px square cells reflows
+  the COLUMN count while the height hugs content, section labels, status footer.
+  Content contract, all styled from the shell via `:global`: `.tbx-label` /
+  `.tbx-row` / `.tbx-seg` / `.tbx-btn` (+`tbx-on` armed, `aria-pressed` toggle,
+  `.tbx-danger`, `.tbx-flash` one-shot) / `.tbx-cmd` TEXT command / `.tbx-hbtn`
+  header button. It owns its SURFACE from `var(--surface, …)` — see the ui-panel
+  gotcha. **Icons are for TOOLS you arm; COMMANDS render as words** — six
+  near-identical 18px glyphs in a row are indistinguishable, and that alone
+  produced two "selects everything" bug reports (Linked next to Loop, All next to
+  Invert)), `components/ui/ToolIcon.svelte` (the custom stroke set for glyphs
+  lucide lacks — extrude/inset/bridge/flip-normals/create-face/wireframe/loop-cut
+  + the sculpt brushes; 24px viewBox, stroke-width 2, `currentColor`, so every
+  theme incl. unlimited custom ones tints them. NO per-theme icon assets, by
+  design — custom themes are token-only, so per-theme artwork cannot scale), shared
   `ContextMenu.svelte` (caps to viewport + scrolls vertically when tall, never
   horizontally; per-submenu flip via left/right/top/bottom — no transform),
   `components/ui/DragRow.svelte` (#16-Q3: THE numeric field — drag to scrub, type
@@ -362,7 +422,17 @@ loadable play content. Everything a user does must be visible to connected peers
    plain number arrays: binarypack recurses per element and a ~40k-number array throws
    "Maximum call stack size exceeded" — which `broadcast()`'s catch SWALLOWS, so the
    message silently never leaves (#12; large face-edits never replicated). applyMeshGeo
-   normalizes plain array / ArrayBuffer / typed-array view.
+   normalizes plain array / ArrayBuffer / typed-array view (`toFloats`).
+   **Extra per-vertex channels ride the SAME message as OPTIONAL fields, absent when
+   they don't apply** — `groups` (15-G material slots, a small plain array) and `uvs`
+   (M1, raw bytes). Absent = "carry the previous attribute over", so an untextured
+   single-material mesh is byte-identical to before and an older peer just ignores the
+   field. The `meshgeo` HISTORY entry mirrors it: topology ops store
+   `{positions, groups, uvs}` while sculpt/vertex/grab paths still store a bare
+   positions array, and the applier discriminates on `state?.positions`. A geometry
+   swap that changes the vertex count MUST recompute both, or a multi-material mesh
+   renders NOTHING (three walks `geometry.groups` for an array material) and a
+   textured one loses its mapping.
 7. Singleton shared state (environment) syncs latest-wins via a `changedAt` stamp;
    symmetric pulls need a deterministic direction (nodesync: lower count pulls,
    peer-id tiebreak) or two drifted peers swap forever.
@@ -506,7 +576,34 @@ loadable play content. Everything a user does must be visible to connected peers
   prompt without stale-build risk — `version.json` polling stays the update path).
   Never add caching without wiring skipWaiting to the version poll. Registered in
   App.svelte onMount, PROD only. `dragWindow` has an opt-in `resizable` option
-  (persists `{w,h}` in the same `win:<key>` record).
+  (persists `{w,h}` in the same `win:<key>` record) and an `axis: 'x'|'xy'` option
+  (M0, default 'xy' so every existing consumer is byte-identical) — `'x'` is a
+  WIDTH-only grip that persists just `w` and leaves the height `auto`, which is how
+  a toolbox reflows its grid instead of growing a scrollbar.
+- **A component's scoped `<style>` is UNLAYERED, so it beats EVERY Tailwind
+  utility** — the flip side of the "unlayered global CSS beats utilities" trap, and
+  it bites INSIDE a component too. `ToolboxWindow`'s `.tbx-btn { background:
+  transparent }` silently beat the armed button's `bg-primary-600`, so the armed
+  fill vanished **in the dark theme only** — every other theme's `theme.css` remap
+  re-applies it with `!important` and therefore still won. The cure is a marker
+  class the shell styles itself (`tbx-on`), and the LESSON for tests: assert the
+  COMPUTED colour, never the class string, because the class string was right the
+  whole time.
+- **`@apply`-built utilities are compiled onto the CLASS, so the theme remap never
+  sees them.** `ui-panel` is `@apply … bg-gray-800`, and `theme.css` remaps literal
+  `.bg-gray-800` class NAMES — so a panel using `ui-panel` stays dark in every
+  theme. Own the surface explicitly (`background: var(--surface, #1f2937)`) and keep
+  `ui-panel` for radius/shadow + the bit8/contrast personality hooks.
+- **An AUTO-APPLYING tool makes the DEFAULT armed op a behavioural decision.** When a
+  plain click commits whatever is armed (the mesh editor's `faceAutoApply`), defaulting
+  to a topological/destructive op turns every SELECTION click into an edit — the mesh
+  session shipped with `extrude` armed, so clicking a face to look at it extruded it,
+  reported as "clicking twice on a quad breaks the texture". Default to the
+  non-destructive op (Move) and let the destructive ones be one key away.
+- **`prefers-reduced-motion` suppresses `animationend`**, so any class cleared by
+  that event sticks forever for those users. A CSS-animation-driven state class
+  needs a `setTimeout` fallback alongside `onanimationend` (the toolbox one-shot
+  flash).
 - `$effect` tracks EVERY store read synchronously inside it — side reads (userdata,
   globalScene…) retrigger it and can hit `effect_update_depth_exceeded`, which
   UNMOUNTS the app. Wrap one-shot side work in `untrack(() => …)` so the effect only
@@ -548,7 +645,26 @@ loadable play content. Everything a user does must be visible to connected peers
   cursor (its weld-neighbour set stretching the shared corners = "some vertices are
   stuck"). `beginFaceGrab` accepts a synthesized target and carries its own
   `triIndices`; `attachFaceGizmo` STASHES that target, because once the pointer sits
-  on a gizmo handle the live hover no longer describes the pick.
+  on a gizmo handle the live hover no longer describes the pick. 15-G hit the SAME
+  anti-pattern in `bridgeFaces` (it expanded the pick to whole logical faces, so
+  Triangle granularity was silently ignored) — the fix there is the general one:
+  split the ACTUAL selection into its connected components (`componentsOfTris`).
+- **Mesh ops must survive a CLOSED region and a MULTI-SHELL pick.** A closed
+  selection has no boundary edges, so extrude's walls degenerate and every vertex
+  just translates — Select-all/Shell/Object + Extrude slid the whole object sideways
+  along whatever the averaged normal was. Refuse and explain. And a multi-selection
+  spanning separate shells arrives as ONE synthetic face whose centroid sits in the
+  gap between them, so ANY op that reasons from a face centroid is wrong there:
+  derive wall directions LOCALLY (`edgeOutward` = edge × the owning triangle's
+  normal) and shrink per CONNECTED COMPONENT (`insetFace`), never from the union.
+- **New geometry needs its UVs authored, not copied.** `applyMeshGeo` rebuilt from
+  positions alone until M1, which silently destroyed the mapping of any textured
+  mesh. Carrying `uv` is only half of it: the first pass gave an extrude wall's far
+  corners their BASE corner's uv, collapsing the wall's v range to zero and smearing
+  one texel line up the side. Advance in uv space by (world distance × the base
+  edge's uv-per-world-unit) so the aspect ratio holds. `preserveUVs` also reads
+  through the PREVIOUS INDEX when the new count matches `index.count` — weld,
+  entering sculpt and create-face all snapshot index-EXPANDED positions.
 - **AO is a fullscreen pass and mobile GPUs mis-compile it**: `viewMode` defaults to
   `shaded-ao`, but `defaultViewMode()` starts coarse-pointer devices in plain
   `shaded`. The Chromium-151 gate in Outline.svelte came from DESKTOP ANGLE/D3D11
@@ -1048,6 +1164,33 @@ override for e2e — never share 5173 (the user's main-checkout server).
   check of first-person mouseLook + VR haptics/vrHand (Pointer Lock and headsets
   are not testable headlessly); dungeon/dungeon-play stop at a THIRD peer on
   this box (setupPage waitForFunction, pre-existing environment limit).
+- Status (2026-08-10): **mesh-editing roadmap M0-M4 + M6 EXECUTED** (plan: cloud
+  `plans-core/pending/mesh-editing-roadmap.md`, which also carries the M5 bevel design
+  notes). Lane `../theprototype-lane-c` @ **port 5182**. Three stacked PRs off
+  `release/next`: **#92** 15-G convert-to-mesh + quad granularity + the three mesh-edit
+  defects it surfaced (multi-material meshes rendering NOTHING after an edit; wall
+  winding from a union centroid; bridge ignoring the selection) → **#102** M0 toolbox
+  windows (ToolboxWindow/ToolIcon, dragWindow `axis:'x'`) → **#103** M1 UV preservation,
+  M2 loop select/grow/shrink/all/invert/linked, M3 loop cut, M4 edge sub-mode, M6
+  recalc-normals/merge-by-distance/smooth-flat, plus a round-2 fix commit from real-use
+  reports (extrude wall UVs, closed-region guard, quad diagonals unpickable, dissolve
+  that really removes an edge, two-edge loop completion, per-mode selection memory,
+  movable keys cheat sheet). Suites added: convert-to-mesh, mesh-edit-materials,
+  mesh-multishell-ops, mesh-quad-select, toolbox-window, mesh-uv-preserve,
+  mesh-loop-select, mesh-loop-cut, mesh-cleanup, mesh-edge-mode, mesh-fixes-round2.
+  Baseline **419/62** held throughout. Then TWO fix rounds from real use: `dbbfc69`
+  (extrude wall UVs, closed-region guard, quad diagonals unpickable, dissolve that
+  really removes an edge, two-edge loop completion, per-mode selection memory, movable
+  keys cheat sheet) and `4f5a804` (Move as the default op, selection vs hover overlays,
+  session Cancel, Ctrl+A/I in all three modes, 1/2/3 element-mode keys, sectioned cheat
+  sheet, LOOP split from RING, bridge pairing hardened). REMAINING: M5 bevel, M9 knife +
+  vertex slide, **the M4 edge GIZMO** (edges select but cannot be dragged — deferred
+  deliberately), M7 mirror, M8 proportional, and the deferred stored-face-topology item.
+  Two reports ("loop selects everything", "invert selects everything") were CORRECT
+  logic reported through a bad UI — six near-identical icon buttons — which is why
+  selection commands are words now; check the UI before the algorithm when a report says
+  "selects everything". Equally: every red in those rounds was a wrong TEST premise, not
+  a wrong fix — re-derive what the code should do before changing it.
 - Status (2026-08-06, release): **1.2.0 SHIPPED** — PR #88 (`release/next` → `main`)
   merged, `npm version minor` → tag `v1.2.0` → release.yml, cloud redeployed with
   `CORE_REF=v1.2.0` (now PINNED in the cloud repo's gitignored `.env.deploy`). Eight

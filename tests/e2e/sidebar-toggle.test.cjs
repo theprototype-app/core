@@ -53,8 +53,12 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	let state = await inspector(A.page);
 	h.check(state.open && state.kind === 'scene', 'Configure Scene opens the scene inspector');
-	h.check(await A.page.getByText('● Configure Scene', { exact: true }).isVisible(), 'active dot shown');
-	await A.page.getByText('● Configure Scene', { exact: true }).click();
+	// 15-O replaced the "● " text prefix with an `active` row highlight
+	h.check(
+		await A.page.evaluate(() => !!document.querySelector('.side-row.active')),
+		'active row highlight shown'
+	);
+	await A.page.getByText('Configure Scene', { exact: true }).click();
 	await A.page.waitForTimeout(300);
 	state = await inspector(A.page);
 	h.check(!state.open, 'second click closes it');

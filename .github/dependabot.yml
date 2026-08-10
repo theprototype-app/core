@@ -20,5 +20,12 @@ updates:
         update-types: [version-update:semver-major]
       # physics solver behavior can shift on 0.x bumps (rapier revolute-axis gotcha)
       - dependency-name: '@dimforge/rapier3d-compat'
-      # 2026-08-01: three/threlte/xyflow/flowbite/tailwind/vite ignores REMOVED -
+      # flowbite 4 is a full plugin-CSS redesign ("50% fewer classes", dark-mode
+      # variants moved to variables) and flowbite-svelte 1.33 depends on
+      # flowbite ^3.1.2 (v3-era markup). The compatible pairing is
+      # flowbite-svelte 2.x (flowbite ^4.0.1), still prerelease (2.0.0-next).
+      # Unfreeze when flowbite-svelte 2.0 goes stable and migrate BOTH together.
+      - dependency-name: flowbite
+        update-types: [version-update:semver-major]
+      # 2026-08-01: three/threlte/xyflow/tailwind/vite ignores REMOVED -
       # the planned migrations (A-D) all shipped; future majors PR normally.

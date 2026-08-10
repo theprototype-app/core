@@ -33,9 +33,12 @@
 		applyPivotTransform,
 		setPivotOrigin,
 		resetPivotOrigin,
+		reseatPivot,
 		pivotOnly,
 		pivotPose
 	} from '$lib/multiTransform';
+	// 17-D: per-object transform ORIGIN (userData.origin, a local pivot offset)
+	import { originOf, originWorld, setOriginFromWorld, resetOrigin, originPreset } from '$lib/objectOrigin';
 	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
@@ -299,6 +302,47 @@
 	}
 	/** @param {(object:any)=>any} read */
 	const matMixed = (read) => mixed(read, matTargets);
+
+	// ---- 17-D: the single object's own ORIGIN -------------------------------
+	// Shown in WORLD space (where the pivot sits), stored as a local offset. A
+	// light has no geometry and its position IS its origin, so it is excluded.
+	const originTarget = $derived(!isLight && !multiCount && $selectedObject?.uuid ? $selectedObject : null);
+	const originPos = $derived.by(() => {
+		$objectsGroup;
+		$selectedObject;
+		$pivotPose; // a gizmo drag in origin mode moves it live
+		return originTarget ? originWorld(originTarget).toArray() : [0, 0, 0];
+	});
+	const originSet = $derived.by(() => {
+		$objectsGroup;
+		return !!(originTarget && originOf(originTarget));
+	});
+
+	/** @param {'x'|'y'|'z'} axis @param {number} next */
+	function setOriginAxis(axis, next) {
+		if (!originTarget) return;
+		const world = originPos.slice();
+		world['xyz'.indexOf(axis)] = next;
+		setOriginFromWorld(originTarget.uuid, new THREE.Vector3().fromArray(world));
+		reseatPivot(); // the gizmo follows the origin it now has
+		selectedObject.update((v) => v);
+	}
+
+	/** @param {'bottom'|'center'|'median'|'world'|'children'} kind */
+	function applyOriginPreset(kind) {
+		if (!originTarget) return;
+		originPreset(originTarget.uuid, kind);
+		reseatPivot();
+		selectedObject.update((v) => v);
+	}
+
+	function clearOrigin() {
+		if (!originTarget) return;
+		resetOrigin(originTarget.uuid);
+		pivotOnly.set(false);
+		reseatPivot();
+		selectedObject.update((v) => v);
+	}
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	const isGroup = $derived($selectedObject?.type === 'Group');
@@ -1986,6 +2030,74 @@
 						</div>
 					{/if}
 				</div>
+				{#if originTarget}
+					<!-- 17-D: this object's OWN origin (userData.origin). Moving it does not
+					     move the mesh — it moves the point rotate/scale happen around, which
+					     is what makes hinges, lids and wheels possible. Saved per object, so
+					     switching selections brings each one's origin back. -->
+					<div id="object-origin" class="mt-1 rounded-sm border border-gray-700/60 p-1.5">
+						<div class="mb-1 flex items-center justify-between gap-2">
+							<span class="text-[11px] text-gray-300">
+								Origin {originSet ? '' : '(default)'}
+							</span>
+							<div class="flex items-center gap-1">
+								<Button
+									id="origin-mode-single"
+									size="xs"
+									color={$pivotOnly ? 'primary' : 'alternative'}
+									onclick={() => {
+										pivotOnly.update((v) => !v);
+										reseatPivot(); // the gizmo has to exist to drag the origin
+									}}
+								>
+									{$pivotOnly ? 'Done' : 'Move origin'}
+								</Button>
+								<Button id="origin-clear" size="xs" color="alternative" onclick={clearOrigin}>
+									Reset
+								</Button>
+							</div>
+						</div>
+						<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
+							<span class="text-[11px] text-gray-400">World</span>
+							<div id="inspector-origin" class="grid grid-cols-3 gap-1">
+								<DragRow label="X" accent="text-red-400" step={0.02} value={originPos[0]}
+									onchange={(v) => setOriginAxis('x', v)} />
+								<DragRow label="Y" accent="text-green-400" step={0.02} value={originPos[1]}
+									onchange={(v) => setOriginAxis('y', v)} />
+								<DragRow label="Z" accent="text-blue-400" step={0.02} value={originPos[2]}
+									onchange={(v) => setOriginAxis('z', v)} />
+							</div>
+						</div>
+						<div class="mt-1 flex flex-wrap gap-1">
+							<Button id="origin-bottom" size="xs" color="alternative" onclick={() => applyOriginPreset('bottom')}>
+								Bottom
+							</Button>
+							<Button id="origin-center" size="xs" color="alternative" onclick={() => applyOriginPreset('center')}>
+								Centre
+							</Button>
+							<Button id="origin-median" size="xs" color="alternative" onclick={() => applyOriginPreset('median')}>
+								Median
+							</Button>
+							<Button id="origin-world" size="xs" color="alternative" onclick={() => applyOriginPreset('world')}>
+								World 0
+							</Button>
+							{#if isGroup}
+								<Button id="origin-children" size="xs" color="alternative" onclick={() => applyOriginPreset('children')}>
+									Children
+								</Button>
+							{/if}
+						</div>
+						<p class="mt-1 text-[10px] text-gray-500">
+							{#if $pivotOnly}
+								Drag the gizmo (or type above) to place the origin — the mesh stays put. Grid and
+								surface snapping apply. Press Done to transform around it.
+							{:else}
+								Bottom puts the pivot on the footprint so the object sits on the ground. Spin and
+								Orbit flow nodes turn around this point — that is how you hinge a door.
+							{/if}
+						</p>
+					</div>
+				{/if}
 				<p class="text-[10px] text-gray-500">
 					{#if multiCount && $pivotOnly}
 						Re-place the origin, then press Done to rotate or scale the selection around it. The

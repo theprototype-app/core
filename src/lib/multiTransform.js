@@ -3,6 +3,7 @@ import { get, writable } from 'svelte/store';
 import { globalScene, objectsGroup, TControls, selectedObjects } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordTransformSet } from './history';
+import { hasOrigin, originWorld, setOriginFromWorld } from './objectOrigin';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 // physics is reached DYNAMICALLY: a static import would close the cycle
 // multiTransform -> physics -> lockControl -> objectActions -> multiTransform
@@ -69,10 +70,17 @@ export function setPivotOrigin(pos) {
 	publishPivotPose();
 }
 
-/** Back to the selection centroid */
+/** Back to the centroid (a selection) or to the object's own saved origin */
 export function resetPivotOrigin() {
 	customOrigin = null;
 	attachMultiPivot(get(selectedObjects));
+}
+
+/** Re-seat the pivot for the CURRENT selection — after an origin write, so the
+ * gizmo jumps to the new pivot without waiting for a reselect. */
+export function reseatPivot() {
+	const members = get(selectedObjects);
+	if (members.length) attachMultiPivot(members, members.length > 1);
 }
 
 /**
@@ -89,7 +97,7 @@ export function applyPivotTransform(mutate) {
 	const members = get(selectedObjects)
 		.map((uuid) => group?.getObjectByProperty('uuid', uuid))
 		.filter(Boolean);
-	if (!pivot || members.length < 2) return false;
+	if (!pivot || members.length < 1) return false;
 	pivot.updateMatrixWorld(true);
 	const startInverse = pivot.matrixWorld.clone().invert();
 	const starts = members.map((member) => {
@@ -147,16 +155,26 @@ export function attachMultiPivot(uuids, keepOrigin = false) {
 	const objects = uuids
 		.map((uuid) => group.getObjectByProperty('uuid', uuid))
 		.filter(Boolean);
-	if (objects.length < 2) return null;
+	// 17-D: ONE object also gets a pivot when it carries its own origin (or while
+	// origin mode is on) — that is what makes rotate/scale happen about the pivot
+	// the user placed rather than the object's local zero.
+	if (objects.length < 1) return null;
+	if (objects.length === 1 && !hasOrigin(objects[0]) && !get(pivotOnly)) return null;
 	pivot = new THREE.Group();
 	pivot.name = PIVOT_NAME;
 	pivot.userData.isMultiPivot = true;
 	const centroid = new THREE.Vector3();
 	const world = new THREE.Vector3();
-	objects.forEach((object) => centroid.add(object.getWorldPosition(world)));
-	centroid.divideScalar(objects.length);
-	// a hand-placed origin outlives the re-seat that follows every panel edit
-	pivot.position.copy(keepOrigin && customOrigin ? customOrigin : centroid);
+	if (objects.length === 1) {
+		// a single object's pivot IS its saved origin (scene data, per object) —
+		// switching objects therefore brings each one's own origin back
+		originWorld(objects[0], centroid);
+	} else {
+		objects.forEach((object) => centroid.add(object.getWorldPosition(world)));
+		centroid.divideScalar(objects.length);
+	}
+	// a hand-placed SELECTION origin outlives the re-seat after every panel edit
+	pivot.position.copy(keepOrigin && customOrigin && objects.length > 1 ? customOrigin : centroid);
 	scene.add(pivot);
 	controls.attach(pivot);
 	publishPivotPose();
@@ -181,10 +199,14 @@ function onDraggingChanged(/** @type {any} */ event) {
 	const controls = get(TControls);
 	const object = controls?.object;
 	if (!object?.userData?.isMultiPivot) return;
-	// origin mode: the drag re-points the gizmo only — no members, no history
+	// origin mode: the drag re-points the pivot only — no members move.
+	// For ONE object that is a persistent, undoable, replicated write to its own
+	// origin; for a selection it stays an ephemeral local aid.
 	if (get(pivotOnly)) {
 		if (!event.value) {
 			customOrigin = pivot.position.clone();
+			const members = get(selectedObjects);
+			if (members.length === 1) setOriginFromWorld(members[0], pivot.position);
 			publishPivotPose();
 		}
 		return;

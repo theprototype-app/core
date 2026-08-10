@@ -46,7 +46,12 @@
 		recalculateNormals,
 		mergeByDistance,
 		setShadingSmooth,
-		shadingMode
+		shadingMode,
+		faceEditSubmode,
+		edgeEditSelected,
+		selectEdgeLoop,
+		dissolveEdges,
+		clearEdgeSelection
 	} from '$lib/faceEdit';
 	import {
 		Keyboard,
@@ -67,7 +72,9 @@
 		Link2,
 		Compass,
 		Combine,
-		Sun
+		Sun,
+		Spline,
+		Eraser
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import ToolIcon from '../ui/ToolIcon.svelte';
@@ -83,12 +90,17 @@
 	import { showToast } from '../../stores/appStore';
 
 	const active = $derived(!$isVRMode && (!!$editingObject || !!$faceEditObject));
-	const mode = $derived($faceEditObject ? 'faces' : 'vertices');
+	// M4: three modes — vertices | edges | faces. EDGES is a sub-mode of the
+	// face session (same lifecycle, undo barrier, wireframe and VR entry), so
+	// switching to it never tears the session down.
+	const mode = $derived(
+		$faceEditObject ? ($faceEditSubmode === 'edges' ? 'edges' : 'faces') : 'vertices'
+	);
 	// 15-A2: live shell count for the collider banner — applyMeshGeo pokes
 	// objectsGroup on every proxy geometry swap, so this tracks adds/deletes/welds
 	const shellCount = $derived($colliderEditObject && $objectsGroup ? colliderShellCount() : 0);
 
-	/** @param {'vertices' | 'faces'} next */
+	/** @param {'vertices' | 'edges' | 'faces'} next */
 	function setMode(next) {
 		const uuid = /** @type {string} */ ($editingObject || $faceEditObject || $selectedObject?.uuid);
 		if (!uuid) return;
@@ -96,9 +108,16 @@
 		if (next === 'vertices') {
 			exitFaceEdit();
 			enterEditMode(uuid);
-		} else {
-			exitEditMode();
-			enterFaceEdit(uuid);
+			return;
+		}
+		// M4: edges and faces share ONE session — only the sub-mode differs, so
+		// switching between them keeps the undo barrier and the wireframe intact
+		exitEditMode();
+		if (!$faceEditObject) enterFaceEdit(uuid);
+		if (next === 'edges') faceEditSubmode.set('edges');
+		else {
+			faceEditSubmode.set('faces');
+			clearEdgeSelection();
 		}
 	}
 
@@ -359,6 +378,12 @@
 					onclick={() => setMode('vertices')}>Vertices</button
 				>
 				<button
+					id="mesh-mode-edges"
+					class="px-3 py-0.5 {mode === 'edges' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					title="Pick single edges (M4) — bevel and dissolve act on them"
+					onclick={() => setMode('edges')}>Edges</button
+				>
+				<button
 					id="mesh-mode-faces"
 					class="px-3 py-0.5 {mode === 'faces' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
 					onclick={() => setMode('faces')}>Faces</button
@@ -366,7 +391,39 @@
 			</div>
 		</div>
 
-		{#if mode === 'faces'}
+		{#if mode === 'edges'}
+			<!-- M4: edge tools — the pick is a set of EDGES, not faces -->
+			<span class="tbx-label">Tools</span>
+			<button
+				id="edge-loop"
+				class="tbx-btn"
+				class:tbx-flash={flashOp === 'edgeloop'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Edge loop select"
+				title="Loop select — the whole edge ring through this edge"
+				onclick={() => {
+					if (selectEdgeLoop()) flash('edgeloop');
+				}}><Spline size={18} aria-hidden="true" /></button
+			>
+			<button
+				id="edge-dissolve"
+				class="tbx-btn tbx-danger"
+				class:tbx-flash={flashOp === 'dissolve'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Dissolve edges"
+				title="Dissolve — remove the edge and merge the two coplanar faces it joins"
+				onclick={() => {
+					if (dissolveEdges()) flash('dissolve');
+				}}><Eraser size={18} aria-hidden="true" /></button
+			>
+			<button
+				id="edge-clear"
+				class="tbx-btn"
+				aria-label="Clear the edge selection"
+				title="Deselect all edges"
+				onclick={() => clearEdgeSelection()}><MousePointer size={18} aria-hidden="true" /></button
+			>
+		{:else if mode === 'faces'}
 			<!-- SELECT: pick granularity (B3 + 15-G Quad) -->
 			<span class="tbx-label">Select</span>
 			<div class="tbx-row">
@@ -619,7 +676,9 @@
 		{/if}
 
 		{#snippet status()}
-			{#if mode === 'faces'}
+			{#if mode === 'edges'}
+				<span id="edge-sel-count">{$edgeEditSelected.length} edge{$edgeEditSelected.length === 1 ? '' : 's'}</span>
+			{:else if mode === 'faces'}
 				<!-- E10: Multi button retired — ctrl-click always adds; live counts here -->
 				<span id="mesh-sel-counts" title="Selected faces · triangles (Ctrl+click adds)">
 					{selInfo.faces} face{selInfo.faces === 1 ? '' : 's'} · {selInfo.tris} tri{selInfo.tris === 1 ? '' : 's'}{#if selInfo.loops}<span

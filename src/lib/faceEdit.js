@@ -1614,6 +1614,282 @@ export function commitLoopCut(cuts = 1) {
 	return true;
 }
 
+// ---- M4: edge selection ----------------------------------------------------
+// Edges are a SUB-MODE of the face session, not a third session kind: the
+// session lifecycle, undo barrier, wireframe, gizmo plumbing and VR entry all
+// already exist for faces, and an edge selection is just a different thing to
+// point at. An edge is its canonical welded key pair, so the two triangles
+// sharing it always name it identically.
+
+/** 'faces' picks coplanar units, 'edges' picks single edges (M4)
+ * @type {import('svelte/store').Writable<'faces'|'edges'>} */
+export const faceEditSubmode = writable('faces');
+/** selected edge keys, canonical `ka|kb` @type {import('svelte/store').Writable<string[]>} */
+export const edgeEditSelected = writable(/** @type {string[]} */ ([]));
+/** the edge under the cursor, or '' @type {import('svelte/store').Writable<string>} */
+export const edgeEditHover = writable('');
+
+/** the two endpoints of a canonical edge key, as live positions from the mesh
+ * @param {string} key @returns {any[] | null} */
+export function edgeEndpoints(key) {
+	const [ka, kb] = key.split('|');
+	/** @type {any} */ let a = null;
+	/** @type {any} */ let b = null;
+	for (const t of workingTris)
+		for (const v of t) {
+			const k = keyOf(v.x, v.y, v.z);
+			if (!a && k === ka) a = v;
+			if (!b && k === kb) b = v;
+		}
+	return a && b ? [a, b] : null;
+}
+
+/**
+ * M4: the edge of triangle `tri` nearest a hit point. In edge mode EVERY click
+ * picks an edge, so no pixel threshold is needed — nearest wins, which is also
+ * zoom-independent (a screen-space threshold is not). @param {number} tri
+ * @param {any} point object-local hit point @returns {string}
+ */
+export function pickEdgeAt(tri, point) {
+	const t = workingTris[tri];
+	if (!t || !point) return '';
+	let best = '';
+	let bestD = Infinity;
+	for (let e = 0; e < 3; e++) {
+		const p0 = t[e];
+		const p1 = t[(e + 1) % 3];
+		// distance from the point to the SEGMENT
+		const ab = new THREE.Vector3().subVectors(p1, p0);
+		const len = ab.lengthSq();
+		const s = len > 1e-12 ? Math.min(Math.max(new THREE.Vector3().subVectors(point, p0).dot(ab) / len, 0), 1) : 0;
+		const d = point.distanceToSquared(p0.clone().addScaledVector(ab, s));
+		if (d < bestD) {
+			bestD = d;
+			best = edgeKey(keyOf(p0.x, p0.y, p0.z), keyOf(p1.x, p1.y, p1.z));
+		}
+	}
+	return best;
+}
+
+/** M4: hover an edge; returns true when it CHANGED (VR/overlay gate)
+ * @param {string} key */
+export function highlightEdge(key) {
+	if (get(edgeEditHover) === key) return false;
+	edgeEditHover.set(key);
+	refreshEdgeOverlay();
+	return true;
+}
+
+/** M4: pick an edge — additive toggles it into the set, else it replaces it.
+ * @param {string} key @param {boolean} [additive] */
+export function pickEdge(key, additive = false) {
+	if (!key) return false;
+	edgeEditSelected.update((sel) => {
+		if (!additive) return [key];
+		const set = new Set(sel);
+		if (set.has(key)) set.delete(key);
+		else set.add(key);
+		return [...set];
+	});
+	refreshEdgeOverlay();
+	return true;
+}
+
+/** M4: drop the edge selection */
+export function clearEdgeSelection() {
+	if (get(edgeEditSelected).length) edgeEditSelected.set([]);
+	edgeEditHover.set('');
+	refreshEdgeOverlay();
+}
+
+/**
+ * M4: the edge loop through an edge — walk the quad ring the edge crosses and
+ * collect the parallel edge on every quad. Reuses M2's ring walk: an edge loop
+ * IS the face ring's rungs. @param {string} key @returns {string[]}
+ */
+export function edgeLoopKeys(key) {
+	const topo = quadTopology ?? buildQuadTopology();
+	// the quad(s) this edge belongs to; start from either
+	const start = (topo.byEdge.get(key) ?? [])[0];
+	if (start === undefined) return [key];
+	const edges = topo.edges.get(start);
+	if (!edges) return [key];
+	const at = edges.indexOf(key);
+	if (at < 0) return [key];
+	// the loop runs across the quad from this edge to the opposite one
+	const ring = faceLoopRing(start, at % 2);
+	const keys = new Set([key]);
+	for (const entry of ring) for (const ek of entry.cross) keys.add(ek);
+	return [...keys];
+}
+
+/** M4: grow the edge selection to the whole loop through the first pick */
+export function selectEdgeLoop() {
+	const sel = get(edgeEditSelected);
+	if (!sel.length) {
+		showToast('Pick an edge first, then Loop');
+		return false;
+	}
+	edgeEditSelected.set(edgeLoopKeys(sel[0]));
+	refreshEdgeOverlay();
+	return true;
+}
+
+/**
+ * M4: dissolve the selected edges — remove them by merging the two triangles
+ * that share each one back into a single quad's worth of surface. Only legal
+ * where the two faces are COPLANAR (otherwise dissolving changes the shape);
+ * illegal picks are reported rather than silently skipped.
+ * @returns {boolean}
+ */
+export function dissolveEdges() {
+	if (!faceEdited) return false;
+	const sel = get(edgeEditSelected);
+	if (!sel.length) {
+		showToast('Pick an edge to dissolve');
+		return false;
+	}
+	const before = trisToPositions(workingTris);
+	const beforeGroups = trisToGroups(workingTris);
+	const beforeUVs = trisToUVs(workingTris);
+	/** @type {Map<string, number[]>} edge key -> triangles */
+	const byEdge = new Map();
+	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		for (let e = 0; e < 3; e++) {
+			const k = edgeKey(
+				keyOf(t[e].x, t[e].y, t[e].z),
+				keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)
+			);
+			let list = byEdge.get(k);
+			if (!list) byEdge.set(k, (list = []));
+			list.push(ti);
+		}
+	});
+	const drop = new Set();
+	/** @type {any[]} */
+	const added = [];
+	let skipped = 0;
+	const normals = workingTris.map(triNormal);
+	for (const key of sel) {
+		const pair = byEdge.get(key);
+		if (!pair || pair.length !== 2 || pair.some((ti) => drop.has(ti))) {
+			skipped++;
+			continue;
+		}
+		const [a, b] = pair;
+		if (normals[a].dot(normals[b]) < 0.999) {
+			skipped++; // dissolving a non-flat join would change the silhouette
+			continue;
+		}
+		const ring = quadRingKeys(a, b);
+		if (!ring) {
+			skipped++;
+			continue;
+		}
+		// the two triangles become ONE quad across the other diagonal
+		const corner = new Map();
+		for (const ti of [a, b])
+			workingTris[ti].forEach((/** @type {any} */ v, /** @type {number} */ c) => {
+				const k = keyOf(v.x, v.y, v.z);
+				if (!corner.has(k)) corner.set(k, { pos: v, uv: uvAt(workingTris[ti], c) });
+			});
+		const pts = ring.map((k) => corner.get(k));
+		if (pts.some((p) => !p)) {
+			skipped++;
+			continue;
+		}
+		drop.add(a);
+		drop.add(b);
+		pushQuad(
+			added,
+			pts[0].pos.clone(),
+			pts[1].pos.clone(),
+			pts[2].pos.clone(),
+			pts[3].pos.clone(),
+			normals[a],
+			workingTris[a].mi,
+			workingTris[a].uv ? pts.map((p) => p.uv) : undefined
+		);
+	}
+	if (!drop.size) {
+		showToast('Nothing to dissolve — an edge must join TWO coplanar faces');
+		return false;
+	}
+	const next = [
+		...cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))),
+		...added
+	];
+	const positions = trisToPositions(next);
+	const groups = trisToGroups(next);
+	const uvs = trisToUVs(next);
+	applyGeometrySnapshot(positions, groups, uvs);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
+		after: { positions, groups, uvs }
+	});
+	clearEdgeSelection();
+	showToast(
+		'Dissolved ' + drop.size / 2 + ' edge' + (drop.size === 2 ? '' : 's') +
+			(skipped ? ' (' + skipped + ' skipped — not a coplanar pair)' : '')
+	);
+	return true;
+}
+
+/** @type {any} scene-root LineSegments showing the edge selection + hover */
+let edgeOverlay = null;
+
+/** M4: rebuild the edge highlight. A 4th visual layer mirroring
+ * refreshFaceOverlay: scene-root, baked into world space, raycast stubbed so it
+ * never eats a pick. */
+function refreshEdgeOverlay() {
+	const scene = get(globalScene);
+	if (edgeOverlay) {
+		edgeOverlay.parent?.remove(edgeOverlay);
+		edgeOverlay.geometry?.dispose?.();
+		edgeOverlay.material?.dispose?.();
+		edgeOverlay = null;
+	}
+	if (!scene || !faceEdited || get(faceEditSubmode) !== 'edges') return;
+	const keys = new Set(get(edgeEditSelected));
+	const hover = get(edgeEditHover);
+	if (hover) keys.add(hover);
+	if (!keys.size) return;
+	/** @type {number[]} */
+	const points = [];
+	for (const key of keys) {
+		const ends = edgeEndpoints(key);
+		if (!ends) continue;
+		points.push(ends[0].x, ends[0].y, ends[0].z, ends[1].x, ends[1].y, ends[1].z);
+	}
+	if (!points.length) return;
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+	edgeOverlay = new THREE.LineSegments(
+		geometry,
+		new THREE.LineBasicMaterial({ color: 0xff7a1a, depthTest: false, transparent: true })
+	);
+	edgeOverlay.renderOrder = 999;
+	edgeOverlay.name = 'edge-edit-overlay';
+	edgeOverlay.raycast = () => {}; // never eat a pick (the buildEditWireframe rule)
+	faceEdited.updateMatrixWorld(true);
+	edgeOverlay.applyMatrix4(faceEdited.matrixWorld);
+	scene.add(edgeOverlay);
+}
+
+/** M4: the edge overlay must be rebuilt on every geometry swap (baked world
+ * space, like the face overlay) — exported so the swap paths can call it */
+export function refreshEdgeHighlight() {
+	refreshEdgeOverlay();
+}
+
+/** M4: how many edges are picked (toolbar counts) */
+export function edgeSelectionSize() {
+	return get(edgeEditSelected).length;
+}
+
 // ---- M6: cleanup commands --------------------------------------------------
 
 /**
@@ -1943,6 +2219,7 @@ export function exitFaceEdit() {
 	if (!faceEdited) return;
 	if (get(faceEditHighlight) >= 0) stashedFace = { uuid: faceEdited.uuid, fi: get(faceEditHighlight) };
 	detachFaceGizmo(); // 163: drop the desktop gizmo + its proxy
+	clearEdgeSelection(); // M4: the edge sub-mode's pick + overlay go with it
 	// revert an uncommitted gesture's live preview before tearing down (122)
 	const pendingBefore = faceGrab?.before ?? faceAdjust?.before ?? null;
 	faceGrab = null;
@@ -2182,6 +2459,7 @@ function applyGeometrySnapshot(positions, groups, uvs) {
 	faceEdited.userData.faceEdited = true;
 	rebuildFaces();
 	refreshFaceOverlay();
+	refreshEdgeHighlight(); // M4: baked in world space, same as the face overlay
 	refreshFaceWireframe(); // B2: the overlay wraps the NEW geometry
 	objectsGroup.update((v) => v);
 }

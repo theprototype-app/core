@@ -720,27 +720,6 @@ export function bridgeFaces() {
 	const remove = new Set([...setA, ...setB]);
 	const next = cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !remove.has(ti)));
 	const n = loopA.length;
-	// anchor: the closest vertex pair between the loops
-	let ai = 0,
-		bi = 0,
-		best = Infinity;
-	for (let i = 0; i < n; i++)
-		for (let j = 0; j < n; j++) {
-			const d = loopA[i].distanceToSquared(loopB[j]);
-			if (d < best) {
-				best = d;
-				ai = i;
-				bi = j;
-			}
-		}
-	// walk B forward or backward — whichever keeps the pairing untwisted
-	const pairingCost = (/** @type {number} */ sign) => {
-		let sum = 0;
-		for (let k = 0; k < n; k++)
-			sum += loopA[(ai + k) % n].distanceToSquared(loopB[(((bi + sign * k) % n) + n) % n]);
-		return sum;
-	};
-	const sign = pairingCost(1) <= pairingCost(-1) ? 1 : -1;
 	const centA = new THREE.Vector3();
 	loopA.forEach((/** @type {any} */ p) => centA.add(p));
 	centA.multiplyScalar(1 / n);
@@ -748,6 +727,32 @@ export function bridgeFaces() {
 	loopB.forEach((/** @type {any} */ p) => centB.add(p));
 	centB.multiplyScalar(1 / n);
 	const axis = centB.clone().sub(centA);
+	// PAIRING: order both loops by their ANGLE around their own centre, measured
+	// in ONE basis perpendicular to the tunnel axis, then pair by index. The old
+	// closest-vertex anchor plus a forward/backward cost vote is tie-sensitive —
+	// between two aligned square caps several vertex pairs are exactly
+	// equidistant, so which one won depended on loop order, and a one-step
+	// rotation there shows up as a SKEWED tunnel. Angles cannot tie like that.
+	const axisN =
+		axis.lengthSq() > 1e-9 ? axis.clone().normalize() : new THREE.Vector3(0, 1, 0);
+	const uAxis = Math.abs(axisN.x) > 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+	uAxis.addScaledVector(axisN, -uAxis.dot(axisN));
+	if (uAxis.lengthSq() < 1e-9) uAxis.set(0, 0, 1);
+	uAxis.normalize();
+	const vAxis = new THREE.Vector3().crossVectors(axisN, uAxis).normalize();
+	/** @param {any} p @param {any} centre */
+	const angleOf = (p, centre) => {
+		const d = p.clone().sub(centre);
+		return Math.atan2(d.dot(vAxis), d.dot(uAxis));
+	};
+	/** @param {any[]} loop @param {any} centre */
+	const byAngle = (loop, centre) =>
+		loop
+			.map((/** @type {any} */ p, /** @type {number} */ i) => ({ i, a: angleOf(p, centre) }))
+			.sort((x, y) => x.a - y.a || x.i - y.i)
+			.map((x) => x.i);
+	const orderA = byAngle(loopA, centA);
+	const orderB = byAngle(loopB, centB);
 	// the tunnel walls take the FIRST piece's material slot (15-G) — a merged
 	// multi-material mesh must stay fully grouped or it renders as nothing
 	const mi = workingTris[setA[0]]?.mi || 0;
@@ -757,10 +762,10 @@ export function bridgeFaces() {
 	// must cover EVERY vertex or three throws.
 	const textured = workingTris.some((/** @type {any} */ t) => !!t.uv);
 	for (let k = 0; k < n; k++) {
-		const a0 = loopA[(ai + k) % n];
-		const a1 = loopA[(ai + k + 1) % n];
-		const b0 = loopB[(((bi + sign * k) % n) + n) % n];
-		const b1 = loopB[(((bi + sign * (k + 1)) % n) + n) % n];
+		const a0 = loopA[orderA[k]];
+		const a1 = loopA[orderA[(k + 1) % n]];
+		const b0 = loopB[orderB[k]];
+		const b1 = loopB[orderB[(k + 1) % n]];
 		const mid = a0.clone().add(a1).add(b0).add(b1).multiplyScalar(0.25);
 		// radial OUT from the tunnel axis at this quad = the visible side
 		let wantDir;
@@ -1145,7 +1150,12 @@ export const faceEditObject = writable(null);
 export const faceEditHighlight = writable(-1);
 /** armed op for the next commit (B4 adds the one-shots)
  * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'>} */
-export const faceEditOp = writable('extrude');
+// MOVE is the default tool, not extrude: with auto-apply on, a plain click
+// COMMITS the armed op, so an extrude-by-default session turned every click on a
+// face into an extrusion — the reported "clicking twice on a quad breaks the
+// texture". Move only selects and seats the gizmo, which is what a click should
+// do; extrude is one key (E) or one button away.
+export const faceEditOp = writable('move');
 /** live op amount, stick-driven @type {import('svelte/store').Writable<number>} */
 export const faceEditAmount = writable(0.3);
 /** 176: desktop auto-apply the active extrude/inset op on face click */
@@ -1773,6 +1783,63 @@ export function clearEdgeSelection() {
  * collect the parallel edge on every quad. Reuses M2's ring walk: an edge loop
  * IS the face ring's rungs. @param {string} key @returns {string[]}
  */
+/** every REAL (non-diagonal) edge of the mesh, with the quads on either side.
+ * @returns {Map<string, number[]>} */
+function realEdgeMap() {
+	const topo = quadTopology ?? buildQuadTopology();
+	return topo.byEdge;
+}
+
+/** the edges meeting a welded vertex key @param {string} vk */
+function edgesAtVertex(vk) {
+	/** @type {string[]} */
+	const out = [];
+	for (const key of realEdgeMap().keys()) {
+		const [a, b] = key.split('|');
+		if (a === vk || b === vk) out.push(key);
+	}
+	return out;
+}
+
+/**
+ * M4 (round 3): the TRUE edge loop — the standard walk every modeller expects.
+ * At each endpoint, continue to the edge that shares NO face with the current
+ * one; that only exists at a regular (valence-4) vertex, so the walk stops at
+ * poles and borders exactly like Blender's. This is a CHAIN of edges running
+ * end to end, which is a different thing from the edge RING below, and mixing
+ * the two is what made "loop select on a subdivided top" pick the inner edges.
+ * @param {string} key @returns {string[]}
+ */
+export function edgeLoopChain(key) {
+	const byEdge = realEdgeMap();
+	if (!byEdge.has(key)) return [key];
+	const facesOf = (/** @type {string} */ k) => new Set(byEdge.get(k) ?? []);
+	const keys = new Set([key]);
+	for (const startVertex of key.split('|')) {
+		let current = key;
+		let vertex = startVertex;
+		for (let guard = 0; guard < 4096; guard++) {
+			const mine = facesOf(current);
+			const candidates = edgesAtVertex(vertex).filter((k) => {
+				if (k === current) return false;
+				// share NO face with the current edge = "straight on" through the fan
+				return [...facesOf(k)].every((q) => !mine.has(q));
+			});
+			// a regular vertex leaves exactly one; a pole leaves 0 or many -> stop
+			if (candidates.length !== 1) break;
+			const next = candidates[0];
+			if (keys.has(next)) break; // closed
+			keys.add(next);
+			const [a, b] = next.split('|');
+			vertex = a === vertex ? b : a;
+			current = next;
+		}
+	}
+	return [...keys];
+}
+
+/** M4: the edge RING — the parallel rungs a FACE loop crosses (not a chain).
+ * @param {string} key @returns {string[]} */
 export function edgeLoopKeys(key) {
 	const topo = quadTopology ?? buildQuadTopology();
 	// the quad(s) this edge belongs to; start from either
@@ -1809,21 +1876,60 @@ export function selectEdgeLoop() {
 		return false;
 	}
 	const topo = quadTopology ?? buildQuadTopology();
-	// rule 1 — a quad that EVERY pick touches
-	const shared = (topo.byEdge.get(sel[0]) ?? []).filter((quad) =>
-		sel.every((/** @type {string} */ key) => (topo.byEdge.get(key) ?? []).includes(quad))
-	);
-	const border = shared.length ? topo.edges.get(shared[0]) : null;
-	if (border?.length) {
-		edgeEditSelected.set([...border]);
-		refreshEdgeOverlay();
-		return true;
+	// rule 1 — SEVERAL picks that all border ONE quad mean "finish this face":
+	// complete that quad's border. This only fires for a genuine multi-pick on a
+	// single quad, so it can never hijack the loop walk on a subdivided surface.
+	if (sel.length > 1) {
+		const shared = (topo.byEdge.get(sel[0]) ?? []).filter((quad) =>
+			sel.every((/** @type {string} */ key) => (topo.byEdge.get(key) ?? []).includes(quad))
+		);
+		const border = shared.length ? topo.edges.get(shared[0]) : null;
+		if (border?.length) {
+			edgeEditSelected.set([...border]);
+			refreshEdgeOverlay();
+			return true;
+		}
 	}
-	// rule 2 — the union of every pick's ring
+	// rule 2 — the true edge LOOP through each pick, unioned. A chain running end
+	// to end, NOT the ring of rungs: on a subdivided face the ring is the inner
+	// edges, which is exactly the wrong answer for "loop select".
+	/** @type {Set<string>} */
+	const keys = new Set();
+	for (const key of sel) for (const k of edgeLoopChain(key)) keys.add(k);
+	edgeEditSelected.set([...keys]);
+	refreshEdgeOverlay();
+	return true;
+}
+
+/** M4: the edge RING through each pick (the parallel rungs a face loop crosses)
+ * — the other half of the standard pair, offered as its own command. */
+export function selectEdgeRing() {
+	const sel = get(edgeEditSelected);
+	if (!sel.length) {
+		showToast('Pick an edge first, then Ring');
+		return false;
+	}
 	/** @type {Set<string>} */
 	const keys = new Set();
 	for (const key of sel) for (const k of edgeLoopKeys(key)) keys.add(k);
 	edgeEditSelected.set([...keys]);
+	refreshEdgeOverlay();
+	return true;
+}
+
+/** select every REAL edge of the mesh (Ctrl+A in edge mode) */
+export function selectAllEdges() {
+	if (!faceEdited) return false;
+	edgeEditSelected.set([...realEdgeMap().keys()]);
+	refreshEdgeOverlay();
+	return true;
+}
+
+/** invert the edge selection (Ctrl+I in edge mode) */
+export function invertEdgeSelection() {
+	if (!faceEdited) return false;
+	const sel = new Set(get(edgeEditSelected));
+	edgeEditSelected.set([...realEdgeMap().keys()].filter((k) => !sel.has(k)));
 	refreshEdgeOverlay();
 	return true;
 }
@@ -2019,6 +2125,56 @@ export function refreshEdgeHighlight() {
 /** M4: how many edges are picked (toolbar counts) */
 export function edgeSelectionSize() {
 	return get(edgeEditSelected).length;
+}
+
+// ---- session cancel --------------------------------------------------------
+// `sealEditHistorySession('discard')` drops the undo entries above the barrier
+// but leaves the GEOMETRY edited, so a cancel needs its own snapshot: the state
+// the object was in when the session opened.
+/** @type {{uuid: string, positions: number[], groups: any, uvs: any} | null} */
+let sessionEntryState = null;
+
+/** Take the "cancel returns here" snapshot. Called on session ENTER only — a
+ * mode switch inside one session must not move the goalposts. @param {any} object */
+function captureSessionEntry(object) {
+	if (!object?.geometry) return;
+	if (sessionEntryState?.uuid === object.uuid) return; // same session continuing
+	const tris = readTriangles(object.geometry);
+	sessionEntryState = {
+		uuid: object.uuid,
+		positions: trisToPositions(tris),
+		groups: trisToGroups(tris),
+		uvs: trisToUVs(tris)
+	};
+}
+
+/** Is there anything a cancel would actually undo? (drives the button's state) */
+export function sessionHasChanges() {
+	const entry = sessionEntryState;
+	if (!faceEdited || !entry || entry.uuid !== faceEdited.uuid) return false;
+	const now = trisToPositions(readTriangles(faceEdited.geometry));
+	if (now.length !== entry.positions.length) return true;
+	for (let i = 0; i < now.length; i++)
+		if (Math.abs(now[i] - entry.positions[i]) > 1e-6) return true;
+	return false;
+}
+
+/**
+ * Revert the WHOLE mesh-edit session: put the entry-time geometry back, tell
+ * peers, and seal the history session as 'discard' so the undo stack is not
+ * left holding steps for edits that no longer exist. @returns {boolean}
+ */
+export function cancelEditSession() {
+	const entry = sessionEntryState;
+	if (!faceEdited || !entry || entry.uuid !== faceEdited.uuid) return false;
+	const { positions, groups, uvs } = entry;
+	applyGeometrySnapshot(positions, groups, uvs);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	clearEdgeSelection();
+	showToast('Mesh edits reverted');
+	return true;
 }
 
 // ---- M6: cleanup commands --------------------------------------------------
@@ -2255,6 +2411,10 @@ let stashedFace = { uuid: null, fi: -1 };
 /** 15-G: quad pairing over workingTris — quadPartner[i] is i's mate, or -1
  * @type {Int32Array} */ let quadPartner = new Int32Array(0);
 /** @type {any} */ let overlay = null; // highlighted-face tint at the scene root
+/** SELECTION and HOVER are separate meshes so they can look different — see
+ * refreshFaceOverlay. `overlay` still points at the selection part, because the
+ * teardown paths hold that one reference. @type {any} */
+const overlayParts = { sel: null, hover: null };
 
 /** rebuild the working triangles + face groups from the live geometry */
 function rebuildFaces() {
@@ -2315,6 +2475,7 @@ export function enterFaceEdit(uuid) {
 		return;
 	}
 	faceEdited = object;
+	captureSessionEntry(object); // the state a Cancel returns to
 	rebuildFaces();
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
@@ -2357,12 +2518,15 @@ export function exitFaceEdit() {
 	faceAdjust = null;
 	if (pendingBefore) applyGeometrySnapshot(pendingBefore);
 	if (typeof window !== 'undefined') window.removeEventListener('keydown', onFaceKeydown);
-	if (overlay) {
-		overlay.parent?.remove(overlay);
-		overlay.geometry?.dispose?.();
-		overlay.material?.dispose?.();
-		overlay = null;
+	for (const key of ['sel', 'hover']) {
+		const part = overlayParts[key];
+		if (!part) continue;
+		part.parent?.remove(part);
+		part.geometry?.dispose?.();
+		part.material?.dispose?.();
+		overlayParts[key] = null;
 	}
+	overlay = null;
 	if (wire) {
 		wire.parent?.remove(wire);
 		wire.geometry?.dispose?.();
@@ -2478,35 +2642,56 @@ export function highlightedFaceInfo() {
 function refreshFaceOverlay() {
 	const scene = get(globalScene);
 	if (!scene || !faceEdited) return;
-	if (overlay) {
-		overlay.parent?.remove(overlay);
-		overlay.geometry?.dispose?.();
-		overlay = null;
+	for (const key of ['sel', 'hover']) {
+		const old = overlayParts[key];
+		if (!old) continue;
+		old.parent?.remove(old);
+		old.geometry?.dispose?.();
+		old.material?.dispose?.();
+		overlayParts[key] = null;
 	}
-	const tris = overlayTris();
-	if (!tris.length) return;
-	/** @type {number[]} */
-	const positions = [];
-	tris.forEach((ti) =>
-		workingTris[ti].forEach((/** @type {any} */ v) => positions.push(v.x, v.y, v.z))
+	overlay = null;
+	// SELECTION and HOVER are drawn as two different layers. They used to share
+	// one tint, so a face you had just DESELECTED stayed lit exactly like a
+	// selected one for as long as the cursor rested on it — reported as "invert
+	// leaves the old face highlighted" and "shift-deselect doesn't clear the
+	// highlight". Selection is a solid fill; hover is a faint wash.
+	const selected = get(faceEditSelectedTris).filter((ti) => workingTris[ti]);
+	const selSet = new Set(selected);
+	const hovered = pickFaceUnitTris(get(faceEditHoverTri)).filter(
+		(ti) => workingTris[ti] && !selSet.has(ti)
 	);
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-	overlay = new THREE.Mesh(
-		geometry,
-		new THREE.MeshBasicMaterial({
-			color: 0xff7a1a,
-			transparent: true,
-			opacity: 0.4,
-			depthTest: false,
-			side: THREE.DoubleSide
-		})
-	);
-	overlay.renderOrder = 999;
-	overlay.name = 'face-edit-overlay';
 	faceEdited.updateMatrixWorld(true);
-	overlay.applyMatrix4(faceEdited.matrixWorld);
-	scene.add(overlay);
+	/** @param {number[]} tris @param {number} opacity @param {string} name */
+	const build = (tris, opacity, name) => {
+		if (!tris.length) return null;
+		/** @type {number[]} */
+		const positions = [];
+		tris.forEach((ti) =>
+			workingTris[ti].forEach((/** @type {any} */ v) => positions.push(v.x, v.y, v.z))
+		);
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+		const mesh = new THREE.Mesh(
+			geometry,
+			new THREE.MeshBasicMaterial({
+				color: 0xff7a1a,
+				transparent: true,
+				opacity,
+				depthTest: false,
+				side: THREE.DoubleSide
+			})
+		);
+		mesh.renderOrder = 999;
+		mesh.name = name;
+		mesh.raycast = () => {};
+		mesh.applyMatrix4(faceEdited.matrixWorld);
+		scene.add(mesh);
+		return mesh;
+	};
+	overlayParts.sel = build(selected, 0.45, 'face-edit-overlay');
+	overlayParts.hover = build(hovered, 0.14, 'face-edit-hover');
+	overlay = overlayParts.sel; // the teardown paths still hold one reference
 }
 
 /**

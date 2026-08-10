@@ -164,16 +164,28 @@ h.run(async () => {
 	h.check(overlay.exists && overlay.segments === 1, 'picking an edge draws exactly one highlight segment');
 	h.check(overlay.inertRaycast, '...whose raycast is stubbed so it never eats a pick');
 
-	// -------------------------------------------------- 4. edge loop select
+	// ------------------------------------------- 4. edge loop vs edge ring
+	// LOOP is the chain walk, and it stops at a pole. EVERY vertex of a bare box
+	// is valence-3, so a cube's loop is correctly just the picked edge — that is
+	// the standard rule, not a bug. RING (the parallel rungs) is the command that
+	// gives a band on a cube; the two used to be conflated, which is what made
+	// "loop select" pick the inner edges of a subdivided face.
 	const loop = await A.page.evaluate(() => {
 		const w = window.__stores;
 		const ok = w.faceEdit.selectEdgeLoop();
 		let v;
 		w.faceEdit.edgeEditSelected.subscribe((x) => (v = [...x]))();
-		return { ok, count: v.length };
+		const loopCount = v.length;
+		const ringOk = w.faceEdit.selectEdgeRing();
+		w.faceEdit.edgeEditSelected.subscribe((x) => (v = [...x]))();
+		return { ok, loopCount, ringOk, ringCount: v.length };
 	});
 	h.check(loop.ok === true, 'edge loop select commits');
-	h.check(loop.count > 1, 'the loop is more than the one picked edge (' + loop.count + ')');
+	h.check(
+		loop.loopCount === 1,
+		'a cube LOOP stops at its valence-3 corners — just the picked edge (' + loop.loopCount + ')'
+	);
+	h.check(loop.ringOk === true && loop.ringCount > 1, 'RING gives the parallel band (' + loop.ringCount + ')');
 
 	// ------------------------------------------------------- 5. dissolve
 	const dissolve = await A.page.evaluate(async () => {

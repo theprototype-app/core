@@ -370,6 +370,32 @@ export function clearVertexSelection() {
 	syncVertexSelection();
 }
 
+/** Select every vertex handle — Ctrl+A in vertices mode. The selection commands
+ * used to exist for FACES only, so Ctrl+A did nothing in the other two modes.
+ * @returns {boolean} */
+export function selectAllVerts() {
+	if (!handles.length) return false;
+	vertexSelection = new Set(handles.map((/** @type {any} */ _, /** @type {number} */ i) => i));
+	setAnchor(handles.length - 1);
+	syncVertexSelection();
+	return true;
+}
+
+/** Invert the vertex selection — Ctrl+I in vertices mode. @returns {boolean} */
+export function invertVertexSelection() {
+	if (!handles.length) return false;
+	const previous = vertexSelection;
+	vertexSelection = new Set(
+		handles
+			.map((/** @type {any} */ _, /** @type {number} */ i) => i)
+			.filter((i) => !previous.has(i))
+	);
+	const members = [...vertexSelection];
+	setAnchor(members.length ? members[members.length - 1] : -1);
+	syncVertexSelection();
+	return true;
+}
+
 /**
  * B4: WELD the selected vertices (>=2 handles) to their shared centroid —
  * replicated + ONE undo entry. Committed as a meshgeo snapshot (a 'verts'

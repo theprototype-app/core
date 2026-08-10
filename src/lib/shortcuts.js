@@ -251,7 +251,7 @@ export function registerShortcut(shortcut) {
 /** D3: the bare keys MeshEditPopup's local keydown consumes while a session is
  * active and its hotkeys pref is on (faces E/I/G/S/B/F/X, M2 loop select L ·
  * vertices W) */
-const MESH_EDIT_KEYS = ['E', 'I', 'G', 'S', 'B', 'F', 'X', 'W', 'L', 'C'];
+const MESH_EDIT_KEYS = ['E', 'I', 'G', 'S', 'B', 'F', 'X', 'W', 'L', 'C', '1', '2', '3'];
 
 /** @param {KeyboardEvent} event */
 function comboOf(event) {

@@ -17,7 +17,9 @@
 		createSelectedFace,
 		clearVertexSelection,
 		weldSelectedVerts,
-		vertexSelectionSize
+		vertexSelectionSize,
+		selectAllVerts,
+		invertVertexSelection
 	} from '$lib/meshEdit';
 	import {
 		faceEditObject,
@@ -53,7 +55,12 @@
 		dissolveEdges,
 		clearEdgeSelection,
 		stashSelections,
-		restoreSelection
+		restoreSelection,
+		selectEdgeRing,
+		selectAllEdges,
+		invertEdgeSelection,
+		cancelEditSession,
+		sessionHasChanges
 	} from '$lib/faceEdit';
 	import {
 		Keyboard,
@@ -76,7 +83,8 @@
 		Combine,
 		Sun,
 		Spline,
-		Eraser
+		Eraser,
+		Undo2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import ToolIcon from '../ui/ToolIcon.svelte';
@@ -166,7 +174,7 @@
 	// out to be Select-linked and Select-all being pressed by mistake. Icons are
 	// for TOOLS you arm; commands read better as words. (Photoshop's toolbar is
 	// tools; its Select menu is words.)
-	const SELECT_CMDS = [
+	const FACE_CMDS = [
 		{ id: 'loop', label: 'Loop', hint: 'L', run: selectFaceLoop, desc: 'the quad ring running through this face — press again for the perpendicular one' },
 		{ id: 'grow', label: 'Grow', hint: 'Ctrl +', run: growSelection, desc: 'add the neighbouring ring' },
 		{ id: 'shrink', label: 'Shrink', hint: 'Ctrl -', run: shrinkSelection, desc: 'drop the border ring' },
@@ -174,6 +182,22 @@
 		{ id: 'invert', label: 'Invert', hint: 'Ctrl I', run: invertFaceSelection, desc: 'swap picked and unpicked' },
 		{ id: 'linked', label: 'Linked', hint: '', run: selectLinkedFaces, desc: 'the whole connected island this face belongs to' }
 	];
+	// Every mode gets the SAME command vocabulary — Ctrl+A / Ctrl+I were wired
+	// for faces only, so they silently did nothing in edges and vertices.
+	const EDGE_CMDS = [
+		{ id: 'eloop', label: 'Loop', hint: 'L', run: selectEdgeLoop, desc: 'the edge chain running end to end through this edge' },
+		{ id: 'ering', label: 'Ring', hint: '', run: selectEdgeRing, desc: 'the parallel rungs a face loop crosses — the other half of the standard pair' },
+		{ id: 'eall', label: 'All', hint: 'Ctrl A', run: selectAllEdges, desc: 'every edge of the mesh' },
+		{ id: 'einvert', label: 'Invert', hint: 'Ctrl I', run: invertEdgeSelection, desc: 'swap picked and unpicked' }
+	];
+	const VERT_CMDS = [
+		{ id: 'vall', label: 'All', hint: 'Ctrl A', run: selectAllVerts, desc: 'every vertex of the mesh' },
+		{ id: 'vinvert', label: 'Invert', hint: 'Ctrl I', run: invertVertexSelection, desc: 'swap picked and unpicked' },
+		{ id: 'vnone', label: 'None', hint: '', run: () => (clearVertexSelection(), true), desc: 'deselect everything' }
+	];
+	const SELECT_CMDS = $derived(
+		mode === 'edges' ? EDGE_CMDS : mode === 'vertices' ? VERT_CMDS : FACE_CMDS
+	);
 
 	/** @param {any} cmd */
 	function runSelectCmd(cmd) {
@@ -282,6 +306,30 @@
 		sealEditHistorySession(); // 15-F: Done seals the session into ONE undo entry
 	}
 
+	// Cancel = revert EVERYTHING done since Edit Mesh opened. Destructive and
+	// not undoable-back, so it confirms first — inline in the toolbox rather than
+	// a modal, because a modal over a tool palette is heavier than the action.
+	let confirmCancel = $state(false);
+	$effect(() => {
+		if (!active) confirmCancel = false;
+	});
+	function askCancel() {
+		if (!sessionHasChanges()) {
+			showToast('Nothing to revert — no edits yet this session');
+			return;
+		}
+		confirmCancel = true;
+	}
+	function doCancel() {
+		confirmCancel = false;
+		cancelEditSession();
+		exitEditMode();
+		exitFaceEdit();
+		// 'discard' drops the session's undo entries: they describe edits that no
+		// longer exist, so keeping them would make Ctrl+Z replay into thin air
+		sealEditHistorySession('discard');
+	}
+
 	/** @param {KeyboardEvent} event */
 	function onKeydown(event) {
 		if (!active) return;
@@ -295,12 +343,28 @@
 		const key = event.key.toLowerCase();
 		// M2/M6: the SELECTION commands are Ctrl chords, so they are checked before
 		// the plain-key guard below (which deliberately ignores modifier combos)
-		if ((event.ctrlKey || event.metaKey) && !event.altKey && mode === 'faces') {
-			const byChord = { '=': 'grow', '+': 'grow', '-': 'shrink', _: 'shrink', a: 'all', i: 'invert' };
-			const id = /** @type {any} */ (byChord)[key];
-			const cmd = id && SELECT_CMDS.find((c) => c.id === id);
+		if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+			// resolved against the CURRENT mode's command list, so Ctrl+A / Ctrl+I
+			// work in all three modes instead of faces only
+			const byChord = {
+				'=': ['grow'],
+				'+': ['grow'],
+				'-': ['shrink'],
+				_: ['shrink'],
+				a: ['all', 'eall', 'vall'],
+				i: ['invert', 'einvert', 'vinvert']
+			};
+			const ids = /** @type {any} */ (byChord)[key];
+			const cmd = ids && SELECT_CMDS.find((c) => ids.includes(c.id));
 			if (!cmd) return;
 			runSelectCmd(cmd);
+			event.preventDefault();
+			return;
+		}
+		// 1/2/3 switch ELEMENT mode inside a session — the modeller-standard
+		// binding. Outside a session they stay the gizmo transform modes.
+		if (!event.ctrlKey && !event.metaKey && !event.altKey && ['1', '2', '3'].includes(key)) {
+			setMode(key === '1' ? 'vertices' : key === '2' ? 'edges' : 'faces');
 			event.preventDefault();
 			return;
 		}
@@ -327,16 +391,34 @@
 	$effect(() => {
 		if (!active) showKeys = false;
 	});
-	const KEY_ROWS = [
-		['E / I / G', 'Arm Extrude / Inset / Move (faces)'],
-		['S / B / F / X', 'Subdivide / Bridge / Flip / Delete (faces)'],
-		['L', 'Loop select (again = the other direction)'],
-		['Ctrl + / -', 'Grow / shrink the selection'],
-		['Ctrl A / I', 'Select all / invert'],
-		['W', 'Weld the selected vertices'],
-		['Tab', 'Toggle Edit Mesh'],
-		['Esc', 'Done (exit the session)'],
-		['1 / 2 / 3', 'Gizmo Move / Rotate / Scale']
+	// Grouped by SECTION so the sheet reads as a reference instead of a blob of
+	// text; the section matching the CURRENT mode is marked so the eye lands on
+	// the keys that are live right now.
+	const KEY_SECTIONS = [
+		{
+			id: 'any',
+			title: 'Any mode',
+			rows: [
+				['1 / 2 / 3', 'Switch to Vertices / Edges / Faces'],
+				['Ctrl A', 'Select all'],
+				['Ctrl I', 'Invert the selection'],
+				['Tab', 'Toggle Edit Mesh'],
+				['Esc', 'Done — leave the session']
+			]
+		},
+		{
+			id: 'faces',
+			title: 'Faces',
+			rows: [
+				['E / I / G', 'Arm Extrude / Inset / Move'],
+				['S / C', 'Subdivide / Loop cut'],
+				['B / F / X', 'Bridge / Flip normals / Delete'],
+				['L', 'Loop select (again = perpendicular)'],
+				['Ctrl + / -', 'Grow / shrink the selection']
+			]
+		},
+		{ id: 'edges', title: 'Edges', rows: [['L', 'Edge loop — the chain end to end']] },
+		{ id: 'vertices', title: 'Vertices', rows: [['W', 'Weld the selected vertices']] }
 	];
 </script>
 
@@ -367,6 +449,13 @@
 				>
 			{:else}
 				<button
+					id="mesh-edit-cancel"
+					class="tbx-hbtn"
+					aria-label="Cancel — revert every change made in this session"
+					title="Cancel — revert EVERY change made since Edit Mesh opened"
+					onclick={askCancel}><Undo2 size={14} aria-hidden="true" /></button
+				>
+				<button
 					id="mesh-edit-done"
 					class="tbx-hbtn tbx-done"
 					aria-label="Done"
@@ -375,6 +464,14 @@
 				>
 			{/if}
 		{/snippet}
+
+		{#if confirmCancel}
+			<div id="mesh-cancel-confirm" class="tbx-row text-xs">
+				<span class="text-gray-200">Revert all mesh edits?</span>
+				<button id="mesh-cancel-yes" class="tbx-cmd tbx-danger" onclick={doCancel}>Revert</button>
+				<button id="mesh-cancel-no" class="tbx-cmd" onclick={() => (confirmCancel = false)}>Keep</button>
+			</div>
+		{/if}
 
 		<!-- MODE -->
 		<span class="tbx-label">Mode</span>
@@ -397,6 +494,22 @@
 					onclick={() => setMode('faces')}>Faces</button
 				>
 			</div>
+		</div>
+
+		<!-- Selection commands — the SAME vocabulary in every mode (the list swaps
+		     with the mode, so Ctrl+A/I mean the right thing everywhere) -->
+		<span class="tbx-label">Select</span>
+		<div class="tbx-row">
+			{#each SELECT_CMDS as c (c.id)}
+				<button
+					id={`mesh-sel-${c.id}`}
+					class="tbx-cmd"
+					class:tbx-flash={flashOp === c.id}
+					onanimationend={() => (flashOp = '')}
+					title={c.hint ? `${c.label} (${c.hint}) — ${c.desc}` : `${c.label} — ${c.desc}`}
+					onclick={() => runSelectCmd(c)}>{c.label}</button
+				>
+			{/each}
 		</div>
 
 		{#if mode === 'edges'}
@@ -445,20 +558,6 @@
 						>
 					{/each}
 				</div>
-			</div>
-
-			<!-- M2/M6: selection commands — act on what is already picked -->
-			<div class="tbx-row">
-				{#each SELECT_CMDS as c (c.id)}
-					<button
-						id={`mesh-sel-${c.id}`}
-						class="tbx-cmd"
-						class:tbx-flash={flashOp === c.id}
-						onanimationend={() => (flashOp = '')}
-						title={c.hint ? `${c.label} (${c.hint}) — ${c.desc}` : `${c.label} — ${c.desc}`}
-						onclick={() => runSelectCmd(c)}>{c.label}</button
-					>
-				{/each}
 			</div>
 
 			<!-- M3: how many loops a Loop cut inserts -->
@@ -718,11 +817,24 @@
 				>
 			{/snippet}
 			<div class="tbx-row flex-col items-stretch gap-0 text-xs">
-				{#each KEY_ROWS as [keys, what] (keys)}
-					<div class="flex items-baseline justify-between gap-2 py-0.5">
-						<span class="shrink-0 font-mono text-primary-300">{keys}</span>
-						<span class="text-right text-gray-300">{what}</span>
+				{#each KEY_SECTIONS as section (section.id)}
+					<div
+						class="mt-1.5 mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider first:mt-0 {section.id ===
+						mode
+							? 'text-primary-300'
+							: 'text-gray-500'}"
+					>
+						{section.title}
+						{#if section.id === mode}<span class="rounded-sm bg-primary-600 px-1 text-[9px] text-white"
+								>active</span
+							>{/if}
 					</div>
+					{#each section.rows as [keys, what] (keys)}
+						<div class="flex items-baseline justify-between gap-3 py-0.5">
+							<span class="shrink-0 font-mono text-primary-300">{keys}</span>
+							<span class="text-right text-gray-300">{what}</span>
+						</div>
+					{/each}
 				{/each}
 			</div>
 		</ToolboxWindow>

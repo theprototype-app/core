@@ -33,8 +33,11 @@ h.run(async () => {
 			return v;
 		});
 
-	// Extrude is the default op -> params row present, amount inside it
-	h.check(await paramsVisible(), 'Extrude (default) shows the nested params row');
+	// MOVE is the default op now (a plain click must not extrude the face), so
+	// extrude has to be ARMED before its params row exists
+	h.check(!(await paramsVisible()), 'the default Move op shows no amount row');
+	await A.page.evaluate(() => window.__stores.faceEdit.setFaceOp('extrude'));
+	h.check(await paramsVisible(), 'arming Extrude shows the nested params row');
 	h.check(await amountInParams(), 'the amount input lives in the nested params row, not row 1');
 
 	// Move hides the params row; Inset shows it again

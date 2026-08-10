@@ -15,7 +15,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	await A.page.locator('#open-modules-manager').click();
 	await A.page.waitForTimeout(500);
-	h.check(await A.page.locator('#module-card-piano').isVisible(), 'manager opens with module cards');
+	h.check(await A.page.locator('#module-card-pong').isVisible(), 'manager opens with module cards');
 
 	// opening the manager hides side panels like Settings (the sidebar drawer closes)
 	const menuClosed = await A.page.evaluate(
@@ -40,17 +40,17 @@ h.run(async () => {
 	);
 
 	// module action runs from its card
-	await A.page.locator('#module-card-piano').getByRole('button', { name: 'Piano: spawn / remove' }).click();
+	await A.page.locator('#module-card-pong').getByRole('button', { name: 'Pong: spawn / remove' }).click();
 	await h.eventually(
 		() =>
 			A.page.evaluate(
 				() =>
 					new Promise((r) =>
-						window.__stores.globalScene.subscribe((s) => r(!!s?.getObjectByName('piano-module')))()
+						window.__stores.globalScene.subscribe((s) => r(!!s?.getObjectByName('pong-module')))()
 					)
 			),
 		(v) => v === true,
-		'piano spawns from its card'
+		'pong spawns from its card'
 	);
 
 	// download-as-example: zip with manifest + module.js
@@ -65,35 +65,37 @@ h.run(async () => {
 		`example zip has the package layout (${entries.join(', ')})`
 	);
 
-	// disable dungeon -> persists -> gone after reload
-	await A.page.locator('#module-card-dungeon input[type="checkbox"]').click({ force: true });
+	// disable button -> persists -> gone after reload
+	await A.page.locator('#module-card-button input[type="checkbox"]').click({ force: true });
 	await A.page.waitForTimeout(300);
 	const disabled = await A.page.evaluate(() => localStorage.getItem('disabledModules'));
-	h.check(disabled?.includes('dungeon'), 'disable persisted');
-	h.check((await loadedIds(A.page)).includes('dungeon'), 'still loaded until reload');
+	h.check(disabled?.includes("button"), "disable persisted");
+	h.check((await loadedIds(A.page)).includes('button'), 'still loaded until reload');
 
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForTimeout(4000);
 	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
 	let ids = await loadedIds(A.page);
-	h.check(!ids.includes('dungeon') && ids.includes('hello'), `dungeon gone after reload (${ids.join(',')})`);
+	h.check(!ids.includes('button') && ids.includes('hello'), `button gone after reload (${ids.join(',')})`);
 
 	// live re-enable (no reload needed)
 	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
 	await A.page.waitForTimeout(400);
-	await A.page.locator('#module-card-dungeon input[type="checkbox"]').click({ force: true });
+	await A.page.locator('#module-card-button input[type="checkbox"]').click({ force: true });
 	await A.page.waitForTimeout(500);
 	ids = await loadedIds(A.page);
-	h.check(ids.includes('dungeon'), 'live re-enable registers the module again');
-	const menuHasDungeon = await A.page.evaluate(
+	h.check(ids.includes('button'), 'live re-enable registers the module again');
+	// the button module contributes a PRIMITIVE, so its card action returning is
+	// the proof that re-enabling re-registered everything
+	const primitiveBack = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.moduleSDK.moduleMenuItems.subscribe((items) =>
-					r(items.some((i) => i.label === 'Dungeon generator'))
+				window.__stores.moduleSDK.modulePrimitiveGroups.subscribe((groups) =>
+					r(groups.some((g) => g.items.some((i) => i.moduleId === 'button')))
 				)()
 			)
 	);
-	h.check(menuHasDungeon, 'its actions are back');
+	h.check(primitiveBack, 'its actions are back');
 
 	await h.finish(browser);
 });

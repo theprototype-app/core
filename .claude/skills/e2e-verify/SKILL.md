@@ -297,20 +297,36 @@ const value = await page.evaluate(() =>
 
 ## Repo-external modules (theprototype-app/modules)
 
-Modules in the SEPARATE modules repo have no committed suite here (the suite must
-not depend on a sibling checkout) — verify them with a SCRATCH playwright script
-through the REAL install path (the untangle test-flight is the reference):
+**17-A moved dungeon/piano/avatar/essentials/car OUT of core**, so several core
+suites now depend on installing a module from the sibling checkout. Use the
+committed helper rather than hand-rolling it:
 
 ```js
-await page.evaluate(() => window.__stores.modulesOpen.set(true));
-await page.getByRole('button', { name: 'User', exact: true }).click(); // the User tab
-await page.locator('#install-module-zip').setInputFiles(ZIP_PATH);     // hidden input — fine
+if (!require('fs').existsSync(h.moduleZipPath('dungeon'))) {
+	console.log('SKIP: ../theprototype.app-modules zips not built');   // never FAIL
+	await h.finish(browser); return;                                    // a fresh clone has none
+}
+await h.installModule(A, 'dungeon');
+await h.installModule(B, 'dungeon');   // EVERY peer — see below
 ```
 
-Then assert the module's scene-root group / behavior, and simulate a PEER's ops via
-`__stores.moduleSDK.applyModuleMessage({type:'module', moduleId, ...})` (the real
-applier path, no cloud dependency). Fresh browser CONTEXT per run — installed user
-modules persist in storage.
+- **Every peer needs it, including the late joiner.** A peer without the module
+  cannot rebuild from the replicated `{seed, params}` — determinism IS the
+  netcode, so the state sync alone is not enough. Forgetting peer C is the
+  failure mode (`dungeon.test`/`dungeon-play` both hit it).
+- `npm run pack -- --all` in the modules repo builds the zips the helper reads.
+- The **User tab's accessible name carries a count** ('User (3)') since 17-A —
+  match it as `getByRole('tab', { name: /^User/ })`, never `exact: true`. The
+  tabs are `role="tab"`, not buttons (a button-role query silently never
+  matches — that was the long-standing user-modules failure).
+- flowbite `Toggle` renders an **sr-only** checkbox: click the wrapping
+  `label`, and give the toggle an id when a card carries more than one.
+
+For a module with no committed suite, drive it through the REAL install path in a
+scratch script, then assert its scene-root group / behavior, and simulate a
+PEER's ops via `__stores.moduleSDK.applyModuleMessage({type:'module', moduleId,
+...})` (the real applier path, no cloud dependency). Fresh browser CONTEXT per
+run — installed user modules persist in storage.
 
 ## Two-peer flow (real replication)
 
@@ -331,6 +347,20 @@ re-read the id (`peer.id = await …peers.subscribe…peer.id`) — a reload mid
 drops the P2P session.
 
 ## Known flakes / traps
+
+- **A two-peer failure is signaling until proven otherwise.** The default PeerJS
+  cloud goes flaky/rate-limited under a long verification run: `pong` failed
+  with ZERO changes to it, then passed immediately under
+  `PEER_CONFIG='{"mode":"custom","custom":{"host":"peerjs.theprototype.app","port":443,"path":"/peerjs","secure":true}}'`.
+  Re-run with PEER_CONFIG before believing a two-peer red — and before blaming
+  your diff.
+- **Three peers is the practical ceiling on a loaded box**: `setupPage`'s
+  `waitForFunction` waiting for `window.__stores` times out booting a THIRD
+  page while suites run back to back (dungeon/dungeon-play stop there). Not a
+  product bug; give the box a rest or run the suite alone.
+- **Pointer Lock is DENIED in headless Chromium** ("Unable to use Pointer Lock
+  API"), so anything gated on it (possess `mouseLook`, play-mode camera swap)
+  cannot be proven here — say so and hand it to the user's manual check.
 
 - **Connect / open-core (#14)**: `connect-states.test.cjs` drives the pill state
   machine single-page by STUBBING the dead-signaling peer (`peer.open=true` +

@@ -248,6 +248,14 @@ export function registerShortcut(shortcut) {
 	if (!shortcuts.some((s) => s.keys === shortcut.keys)) shortcuts.push(shortcut);
 }
 
+/** A2: drop every registered shortcut of one group (module-binding teardown
+ * for the dev-mode reload — a re-register lists them fresh). @param {string} group */
+export function unregisterShortcutGroup(group) {
+	for (let i = shortcuts.length - 1; i >= 0; i--) {
+		if (shortcuts[i].group === group) shortcuts.splice(i, 1);
+	}
+}
+
 /** D3: the bare keys MeshEditPopup's local keydown consumes while a session is
  * active and its hotkeys pref is on (faces E/I/G/S/B/F/X, M2 loop select L ·
  * vertices W) */

@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { anyModalOpen } from '../stores/appStore';
-import { registerShortcut } from './shortcuts';
+import { registerShortcut, unregisterShortcutGroup } from './shortcuts';
 
 // Module SDK input layer (K-C). STORE-ONLY module (the peerApproval.js pattern):
 // imports nothing from peerHandler/vrControls, so vrControls can feed it VR
@@ -60,6 +60,12 @@ export function registerBindings(moduleId, bindings) {
 			// is for discoverability (the V push-to-talk precedent)
 		});
 	}
+}
+
+/** A2: drop a module's declared bindings (teardown for the dev-mode reload).
+ * @param {string} moduleId */
+export function unregisterBindings(moduleId) {
+	unregisterShortcutGroup('Module: ' + moduleId);
 }
 
 /** Per-frame input snapshot for module frame tasks. */

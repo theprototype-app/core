@@ -144,6 +144,38 @@ async function finish(browser) {
 }
 
 /** Wrap a test body so crashes exit non-zero. */
+// 17-A: modules that moved OUT of core (dungeon, piano, car, ...) install from
+// the sibling theprototype.app-modules checkout's packed zip. Returns false when
+// that checkout has no zips, so a suite can SKIP instead of failing on a fresh
+// clone (run "npm run pack -- --all" there to build them).
+const MODULES_REPO = require('path').resolve(__dirname, '../../../theprototype.app-modules') + '/';
+function moduleZipPath(id) {
+	return MODULES_REPO + id + '.zip';
+}
+async function installModule(peer, id) {
+	const fs = require('fs');
+	const zip = moduleZipPath(id);
+	if (!fs.existsSync(zip)) return false;
+	await peer.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await peer.page.waitForTimeout(400);
+	await peer.page.getByRole('tab', { name: /^User/ }).click();
+	await peer.page.waitForTimeout(200);
+	await peer.page.locator('#install-module-zip').setInputFiles({
+		name: id + '.zip',
+		mimeType: 'application/zip',
+		buffer: fs.readFileSync(zip)
+	});
+	await eventually(
+		() => peer.page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id)),
+		(ids) => ids.includes(id),
+		id + ' module installed for the suite',
+		20000
+	);
+	await peer.page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await peer.page.waitForTimeout(300);
+	return true;
+}
+
 function run(body) {
 	body().catch((error) => {
 		console.error('SCRIPT FAILED:', error.message);
@@ -151,4 +183,4 @@ function run(body) {
 	});
 }
 
-module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run };
+module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath };

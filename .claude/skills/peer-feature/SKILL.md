@@ -217,10 +217,53 @@ modal on top of every panel.
 
 `src/modules/<id>/module.js` default-exports `{id, name, version, description,
 register(api)}`; core list in `src/modules/index.js` (`coreModules`); the manager
-enables/disables (live enable, reload to disable — registries are additive). User
-modules install from zip/URL (`userModules.js`) and must be self-contained (no imports;
-`api.THREE`, `api.assetUrl`). Full guide: `MODULES.md` (committed) + `docs/sdk/`
-(uncommitted).
+enables/disables. **17-A: USER modules install/update/disable/remove and
+dev-reload LIVE** (a per-module teardown journal + `deactivateModule`); CORE
+modules still need a reload to disable. User modules install from zip/URL or the
+manager's **Browse** gallery (`moduleGallery.js` off the modules repo's
+index.json) and must be self-contained (no imports; `api.THREE`,
+`api.assetUrl`). Core keeps only hello/button/pong/vrsleeve — dungeon, piano,
+avatar, essentials and car live in `theprototype-app/modules`. Full guide:
+`MODULES.md` (committed) + the docs site.
+
+## Module SDK — the world api (17-A)
+
+A module no longer has to reach into app internals to build shared content.
+Everything below is on the `api` object; the first group REPLICATES, the second
+is deliberately per-viewer:
+
+```js
+const [uuid] = await api.create('/create Box 1 1 1');   // the replicated /create
+await api.create('/create Box 1 1 1', { at: [x, y, z] });
+api.moveObject(uuid, { pos, rot, scale });              // the editor's replicated move
+api.physics.set(uuid, { mode: 'dynamic', mass: 30 });   // setPhysicsFor write path
+api.physics.createJoint('revolute', a, b, 'x', { vel: 0, maxForce: 120 });
+api.physics.running();  api.isPlaying();  api.peerIds();
+api.fireObjectClick(uuid);   // pulse On Click flow nodes (replicated nodetrigger)
+
+api.flyTo(pos, lookAt);  api.playSound('pluck', pos);   // LOCAL — never replicated
+api.followCam(uuid) / api.stopFollowCam();
+api.isVR();  api.vrHand('left');  api.haptic(0.6, 60, 'right');
+api.possess(uuid, { camera: 'first', eyeHeight: 1.7, mouseLook: true });
+api.possessModes;   // capability probe — an unknown camera value degrades silently
+```
+
+Rules that fall out of it:
+
+- **A peer's module must never move another peer's camera.** flyTo/followCam/
+  playSound are local by design; if peers should agree, broadcast your own op.
+- New api surface reaches app libs through **primed dynamic imports** in
+  moduleSDK (addObjects/joints/objectActions/pingAudio join inputRuntime/physics/
+  possess/vrControls) — a static edge closes a cycle back into history and
+  TDZ-crashes the vite-dev SSR pass.
+- **`userData.play` is a PUBLIC contract**, not dungeon-private: publish
+  `{grid, width, height, minX, minY, rooms, floorValue}` on a scene-root group
+  and core's `dungeonPlay.js` gives you play-mode collision, seed-deterministic
+  spawns and the minimap for free.
+- User modules **install, update, disable, remove and dev-reload LIVE**: every
+  `api.register*` records an undo thunk and `deactivateModule(id)` runs the
+  journal in reverse. If you add a register* surface, **add its disposal in the
+  same edit** or a dev reload leaks it.
 
 api surface: `registerNodeGroup(group, components?)` (items with `params` render via
 the generic AnimationNode), `registerEffect(type, fn(object, base, data, time))`

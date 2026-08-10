@@ -197,6 +197,69 @@ h.run(async () => {
 		`a hinge anchors on the origin, not the centre (anchorB ${anchored?.anchorB?.join(', ')})`
 	);
 
+	// ---------- REPORTED: the gizmo must survive every preset ----------
+	// Centre on an already-centred primitive yields a ZERO offset, which clears the
+	// origin — so no pivot is warranted and the OBJECT has to take the gizmo back.
+	// It used to end up detached, and only a deselect/reselect brought it back.
+	const gizmoKept = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const attached = async () => {
+			const controls = await new Promise((r) => w.TControls.subscribe(r)());
+			return !!controls?.object;
+		};
+		w.objectActions.selectObject(window.__oo.box, true);
+		await new Promise((r) => setTimeout(r, 400));
+		const out = { start: await attached(), steps: [] };
+		for (const id of ['#origin-bottom', '#origin-center', '#origin-median', '#origin-world', '#origin-clear']) {
+			document.querySelector(id)?.click();
+			await new Promise((r) => setTimeout(r, 350));
+			out.steps.push({ id, gizmo: await attached() });
+		}
+		return out;
+	});
+	h.check(gizmoKept.start, 'a selected object starts with a gizmo');
+	for (const step of gizmoKept.steps)
+		h.check(step.gizmo, `the gizmo survives ${step.id.replace('#origin-', '')}`);
+
+	// ---------- REPORTED: Move origin must let the GIZMO move the origin ----------
+	// re-seating used to reset pivotOnly, cancelling the mode the instant it was
+	// pressed, so the gizmo dragged the object instead of its origin
+	const modeHeld = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.objectActions.selectObject(window.__oo.box, true);
+		await new Promise((r) => setTimeout(r, 350));
+		document.querySelector('#origin-mode-single')?.click();
+		await new Promise((r) => setTimeout(r, 400));
+		const mode = await new Promise((r) => w.multiTransform.pivotOnly.subscribe(r)());
+		const controls = await new Promise((r) => w.TControls.subscribe(r)());
+		const onPivot = !!controls?.object?.userData?.isMultiPivot;
+		// what a gizmo drag does in origin mode: move the pivot, then drop it
+		const object = window.__oo.group.getObjectByProperty('uuid', window.__oo.box);
+		const posBefore = object.position.toArray();
+		if (controls?.object) controls.object.position.set(2, 1, 0);
+		const committed = w.multiTransform.commitOriginDrag();
+		await new Promise((r) => setTimeout(r, 300));
+		return {
+			mode,
+			onPivot,
+			committed,
+			posBefore,
+			posAfter: object.position.toArray(),
+			origin: w.objectOrigin.originWorld(object).toArray().map((n) => +n.toFixed(3))
+		};
+	});
+	h.check(modeHeld.mode === true, 'Move origin stays ON after the re-seat');
+	h.check(modeHeld.onPivot, 'and the gizmo is attached to the PIVOT, so dragging it moves the origin');
+	h.check(modeHeld.committed === true, 'the drag-end commit runs');
+	h.check(
+		Math.abs(modeHeld.origin[0] - 2) < 0.01 && Math.abs(modeHeld.origin[1] - 1) < 0.01,
+		`a gizmo drag in origin mode WRITES the origin (${modeHeld.origin.join(', ')})`
+	);
+	h.check(
+		modeHeld.posAfter.every((n, i) => Math.abs(n - modeHeld.posBefore[i]) < 0.001),
+		`and leaves the object alone (${modeHeld.posAfter.join(', ')})`
+	);
+
 	// ---------- the HINGE point: origin from picked vertices ----------
 	const hinge = await A.page.evaluate(async () => {
 		const w = window.__stores;
@@ -207,7 +270,10 @@ h.run(async () => {
 		w.objectActions.selectObject(window.__oo.box, true);
 		w.meshEdit.enterEditMode(window.__oo.box);
 		await new Promise((r) => setTimeout(r, 500));
-		// no selection yet -> the app must not offer a hinge
+		// the button is offered for the WHOLE edit session (a plain click selects a
+		// handle without joining the multi-selection set, so a count-gated button
+		// hid while a vertex was visibly picked) — with nothing picked it must
+		// TOAST rather than move anything
 		const before = {
 			offered: !!document.querySelector('#origin-hinge'),
 			point: w.meshEdit.vertexSelectionWorldPoint()
@@ -222,8 +288,8 @@ h.run(async () => {
 			size: await new Promise((r) => w.meshEdit.vertexSelectionSize.subscribe(r)())
 		};
 	});
-	h.check(!hinge.before.offered, 'no hinge button until vertices are picked');
-	h.check(hinge.before.point === null, 'and no hinge point to read yet');
+	h.check(hinge.before.offered, 'Set origin here is offered for the whole edit session');
+	h.check(hinge.before.point === null, 'and reads no point while nothing is picked');
 	h.check(hinge.size > 0, `selecting vertices reports a selection (${hinge.size})`);
 	h.check(
 		!!hinge.allSelected && Math.abs(hinge.allSelected[0]) < 0.01,
@@ -235,6 +301,11 @@ h.run(async () => {
 		const w = window.__stores;
 		w.meshEdit.clearVertexSelection();
 		await new Promise((r) => setTimeout(r, 150));
+		// pressing it with NOTHING picked must not move the origin
+		document.querySelector('#origin-hinge')?.click();
+		await new Promise((r) => setTimeout(r, 250));
+		const object0 = window.__oo.group.getObjectByProperty('uuid', window.__oo.box);
+		const noPick = object0.userData.origin ?? null;
 		w.meshEdit.toggleVertexSelection(0); // a single corner handle
 		await new Promise((r) => setTimeout(r, 250));
 		const point = w.meshEdit.vertexSelectionWorldPoint();
@@ -244,12 +315,14 @@ h.run(async () => {
 		const object = window.__oo.group.getObjectByProperty('uuid', window.__oo.box);
 		return {
 			offered,
+			noPick,
 			picked: point ? point.toArray().map((n) => +n.toFixed(3)) : null,
 			origin: w.objectOrigin.originWorld(object).toArray().map((n) => +n.toFixed(3)),
 			pos: object.position.toArray().map((n) => +n.toFixed(3))
 		};
 	});
-	h.check(cornered.offered, 'the hinge button appears once a vertex is picked');
+	h.check(cornered.noPick === null, 'pressing it with nothing picked changes no origin');
+	h.check(cornered.offered, 'the button is there once a vertex is picked');
 	h.check(
 		!!cornered.picked &&
 			cornered.origin.every((n, i) => Math.abs(n - cornered.picked[i]) < 0.01),

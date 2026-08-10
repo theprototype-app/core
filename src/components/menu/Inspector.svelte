@@ -40,8 +40,12 @@
 	// 17-D: per-object transform ORIGIN (userData.origin, a local pivot offset)
 	import { originOf, originWorld, setOriginFromWorld, resetOrigin, originPreset } from '$lib/objectOrigin';
 	// the HINGE point: snap the origin to the vertices picked in Edit Mesh
-	import { editingObject, vertexSelectionWorldPoint } from '$lib/meshEdit';
-	import { vertexSelectionSize } from '$lib/meshEdit';
+	import {
+		editingObject,
+		vertexSelectionWorldPoint,
+		vertexSelectionSize,
+		enterEditMode
+	} from '$lib/meshEdit';
 	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
@@ -347,23 +351,35 @@
 		selectedObject.update((v) => v);
 	}
 
-	/** The HINGE workflow: in Edit Mesh, pick the vertices of the hinge edge (or one
-	 * corner) and drop the origin there. Spin and a revolute joint then both turn
-	 * about that point. Offered only while a vertex selection exists on THIS object. */
-	const canHinge = $derived(
-		!!originTarget && $editingObject === originTarget.uuid && $vertexSelectionSize > 0
-	);
+	/**
+	 * The HINGE workflow, driven from HERE rather than expecting the user to know
+	 * the Edit Mesh dance: "Pick from mesh…" enters vertex editing on this object,
+	 * then "Set origin here" drops the origin on whatever is picked (one vertex, or
+	 * the centroid of several — two verts of an edge IS the hinge case). Spin and a
+	 * revolute joint then both turn about that point.
+	 *
+	 * The button stays visible for the whole edit session instead of gating on the
+	 * selection count: a plain click selects a handle WITHOUT adding it to the
+	 * multi-selection set, so a size-only gate hid the button while a vertex was
+	 * visibly selected. It toasts when there is genuinely nothing picked.
+	 */
+	const editingThis = $derived(!!originTarget && $editingObject === originTarget.uuid);
+	function pickOriginFromMesh() {
+		if (!originTarget) return;
+		enterEditMode(originTarget.uuid);
+		showToast('Click a vertex (ctrl-click for several, e.g. both ends of a hinge edge), then press Set origin here');
+	}
 	function originFromSelection() {
 		if (!originTarget) return;
 		const point = vertexSelectionWorldPoint();
 		if (!point) {
-			showToast('Select the vertices of the hinge first (Edit Mesh ▸ Vertices)');
+			showToast('Click a vertex first — ctrl-click both ends of an edge to hinge on it');
 			return;
 		}
 		setOriginFromWorld(originTarget.uuid, point);
 		reseatPivot();
 		selectedObject.update((v) => v);
-		showToast('Origin set to the picked vertices — Spin and hinges now turn about it');
+		showToast('Origin set from the mesh — Spin and hinges now turn about it');
 	}
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
@@ -2108,15 +2124,20 @@
 									Children
 								</Button>
 							{/if}
-							{#if canHinge}
+							{#if editingThis}
 								<Button id="origin-hinge" size="xs" color="primary" onclick={originFromSelection}>
-									Hinge from {$vertexSelectionSize} vert{$vertexSelectionSize === 1 ? '' : 's'}
+									Set origin here{$vertexSelectionSize > 1 ? ` (${$vertexSelectionSize} verts)` : ''}
+								</Button>
+							{:else}
+								<Button id="origin-pick" size="xs" color="alternative" onclick={pickOriginFromMesh}>
+									Pick from mesh…
 								</Button>
 							{/if}
 						</div>
-						{#if !canHinge && $editingObject === originTarget.uuid}
-							<p class="mt-1 text-[10px] text-gray-500">
-								Pick the vertices of a hinge edge to snap the origin there.
+						{#if editingThis}
+							<p class="mt-1 text-[10px] text-primary-200">
+								Click a vertex — ctrl-click both ends of an edge to hinge on it — then press Set
+								origin here.
 							</p>
 						{/if}
 						<p class="mt-1 text-[10px] text-gray-500">

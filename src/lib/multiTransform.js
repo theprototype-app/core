@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
-import { globalScene, objectsGroup, TControls, selectedObjects } from '../stores/sceneStore';
+import { globalScene, objectsGroup, TControls, selectedObjects, isVRMode } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordTransformSet } from './history';
 import { hasOrigin, originWorld, setOriginFromWorld } from './objectOrigin';
@@ -70,17 +70,52 @@ export function setPivotOrigin(pos) {
 	publishPivotPose();
 }
 
-/** Back to the centroid (a selection) or to the object's own saved origin */
-export function resetPivotOrigin() {
-	customOrigin = null;
-	attachMultiPivot(get(selectedObjects));
+/**
+ * Commit the pivot's current position as the origin — the drag-end of origin
+ * mode. For ONE object that is a persistent, undoable, replicated write to its
+ * own origin; for a selection it stays an ephemeral local aid. Extracted from the
+ * drag handler so it is also reachable headlessly.
+ * @returns {boolean}
+ */
+export function commitOriginDrag() {
+	if (!pivot) return false;
+	customOrigin = pivot.position.clone();
+	const members = get(selectedObjects);
+	if (members.length === 1) setOriginFromWorld(members[0], pivot.position);
+	publishPivotPose();
+	return true;
 }
 
-/** Re-seat the pivot for the CURRENT selection — after an origin write, so the
- * gizmo jumps to the new pivot without waiting for a reselect. */
+/** Back to the centroid (a selection) or to the object's own saved origin.
+ * Goes through reseatPivot so the gizmo never ends up detached. */
+export function resetPivotOrigin() {
+	customOrigin = null;
+	reseatPivot();
+}
+
+/**
+ * Re-seat the gizmo for the CURRENT selection after an origin write, without
+ * waiting for a reselect.
+ *
+ * Two things this must NOT do, both of which were bugs:
+ *  - it must not reset `pivotOnly`: pressing "Move origin" turns the mode on and
+ *    then re-seats, so clobbering the flag cancelled the mode instantly and the
+ *    gizmo drag moved the OBJECT instead of its origin.
+ *  - it must ALWAYS leave a gizmo attached. A preset can legitimately produce a
+ *    ZERO offset (Centre on an already-centred primitive, or Reset), which means
+ *    no pivot is warranted — and then the object itself has to take the gizmo
+ *    back, or it disappears until the user deselects and reselects.
+ */
 export function reseatPivot() {
 	const members = get(selectedObjects);
-	if (members.length) attachMultiPivot(members, members.length > 1);
+	if (!members.length) return;
+	// keepOrigin: this is a RE-SEAT, not a new selection
+	if (attachMultiPivot(members, true)) return;
+	/** @type {any} */
+	const controls = get(TControls);
+	const group = get(objectsGroup);
+	const primary = group?.getObjectByProperty('uuid', members[members.length - 1]);
+	if (controls && primary && !get(isVRMode)) controls.attach(primary);
 }
 
 /**
@@ -203,12 +238,7 @@ function onDraggingChanged(/** @type {any} */ event) {
 	// For ONE object that is a persistent, undoable, replicated write to its own
 	// origin; for a selection it stays an ephemeral local aid.
 	if (get(pivotOnly)) {
-		if (!event.value) {
-			customOrigin = pivot.position.clone();
-			const members = get(selectedObjects);
-			if (members.length === 1) setOriginFromWorld(members[0], pivot.position);
-			publishPivotPose();
-		}
+		if (!event.value) commitOriginDrag();
 		return;
 	}
 	const group = get(objectsGroup);

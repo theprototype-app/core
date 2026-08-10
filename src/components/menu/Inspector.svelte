@@ -26,7 +26,8 @@
 		recordMaterialChange,
 		setObjectColor
 	} from '$lib/materialsHandler';
-	import { recordEntry } from '$lib/history';
+	import { recordEntry, beginHistoryBatch, endHistoryBatch } from '$lib/history';
+	import { canEditObject } from '$lib/objectPermissions';
 	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
@@ -110,6 +111,7 @@
 		globalScene,
 		objectsGroup,
 		selectedObject,
+		selectedObjects,
 		backgroundColor,
 		globalCamera,
 		viewMode,
@@ -224,6 +226,71 @@
 		$selectedObject;
 		return listPhysicsObjects();
 	});
+
+	// ---- 17-D1: property writes fan over the SELECTION SET --------------------
+	// Material, colour, object-flag, shadow and physics edits apply to EVERY
+	// selected object; transforms and geometry params deliberately stay on the
+	// primary (one shared position would collapse the set onto a point, and
+	// geometry rows are per shape type). Every write still goes through the SAME
+	// per-uuid entry point as before, so the wire messages are byte-identical —
+	// a set of N just wraps them in ONE history batch so undo is a single step.
+	// Members a viewer may not edit (objectPermissions) are skipped.
+	const insTargets = $derived.by(() => {
+		$objectsGroup; // in-place userData/material edits poke this store
+		const uuids = $selectedObjects ?? [];
+		const group = $objectsGroup;
+		const list =
+			uuids.length > 1 && group
+				? uuids
+						.map((/** @type {string} */ uuid) => group.getObjectByProperty('uuid', uuid))
+						.filter(Boolean)
+				: $selectedObject?.uuid
+					? [$selectedObject]
+					: [];
+		return list.filter((/** @type {any} */ object) => canEditObject(object));
+	});
+	/** 0 when a single object is being edited, else the number of targets */
+	const multiCount = $derived(insTargets.length > 1 ? insTargets.length : 0);
+	/** targets that actually carry a single (non-array) material */
+	const matTargets = $derived(
+		insTargets.filter((/** @type {any} */ o) => o?.material && !Array.isArray(o.material))
+	);
+	const matCount = $derived(matTargets.length > 1 ? matTargets.length : 0);
+
+	/** Run a per-object write across `list`; N>1 collapses into ONE undo entry.
+	 * @param {any[]} list @param {string} label @param {(object:any)=>void} fn */
+	function fanOn(list, label, fn) {
+		if (!list.length) return;
+		if (list.length === 1) {
+			fn(list[0]); // single-object undo + replication unchanged
+			return;
+		}
+		beginHistoryBatch();
+		try {
+			for (const object of list) fn(object);
+		} finally {
+			endHistoryBatch(`${label} (${list.length})`);
+		}
+	}
+	/** @param {string} label @param {(object:any)=>void} fn */
+	function fan(label, fn) {
+		fanOn(insTargets, label, fn);
+	}
+	/** material-only fan (skips lights/groups in the set) @param {string} label @param {(object:any)=>void} fn */
+	function fanMat(label, fn) {
+		fanOn(matTargets, label, fn);
+	}
+
+	/** true when the selection disagrees on a value → the row renders a dash.
+	 * @param {(object:any)=>any} read @param {any[]} [list] */
+	function mixed(read, list) {
+		const targets = list ?? insTargets;
+		if (targets.length < 2) return false;
+		const first = read(targets[0]);
+		return targets.some((object) => read(object) !== first);
+	}
+	/** @param {(object:any)=>any} read */
+	const matMixed = (read) => mixed(read, matTargets);
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	const isGroup = $derived($selectedObject?.type === 'Group');
@@ -392,19 +459,37 @@
 	}
 
 	// one undo entry per color-drag gesture: remember where it started,
-	// record 600ms after the last input
-	/** @type {any} */
+	// record 600ms after the last input. 17-D1: with a multi-selection the
+	// gesture remembers EVERY target's own starting colour (they may differ) and
+	// seals them into one batch, so undo restores each object's original.
+	/** @type {Map<string,string>|null} */
 	let colorGestureStart = null;
 	/** @type {any} */
 	let colorGestureTimer;
-	/** @param {string} uuid @param {any} hex */
-	function trackColorGesture(uuid, hex) {
-		if (colorGestureStart == null)
-			colorGestureStart = '#' + $selectedObject.material.color.getHexString();
+	/** @param {any} hex */
+	function trackColorGesture(hex) {
+		if (colorGestureStart == null) {
+			colorGestureStart = new Map();
+			for (const object of matTargets)
+				colorGestureStart.set(object.uuid, '#' + object.material.color.getHexString());
+		}
 		clearTimeout(colorGestureTimer);
 		colorGestureTimer = setTimeout(() => {
-			recordMaterialChange(uuid, 'color', null, colorGestureStart, hex);
+			const befores = colorGestureStart;
 			colorGestureStart = null;
+			if (!befores?.size) return;
+			if (befores.size === 1) {
+				const [uuid, before] = [...befores][0];
+				recordMaterialChange(uuid, 'color', null, before, hex);
+				return;
+			}
+			beginHistoryBatch();
+			try {
+				for (const [uuid, before] of befores)
+					recordMaterialChange(uuid, 'color', null, before, hex);
+			} finally {
+				endHistoryBatch(`Colour (${befores.size})`);
+			}
 		}, 600);
 	}
 
@@ -433,20 +518,32 @@
 		$peers.send({ type: 'object', element: $selectedObject.toJSON(), override: true });
 	}
 
-	/** @param {string} parameter */
+	/** Object flag → the whole selection. The checkbox/row has already written the
+	 * PRIMARY (bind:checked), so the rest of the set is set to that same value and
+	 * every member replicates its own message. No history kind covers these flags,
+	 * so the batch stays empty and records nothing (endHistoryBatch no-ops).
+	 * @param {string} parameter */
 	function sendParam(parameter) {
-		$peers.send({
-			type: 'objectParameters',
-			parameter,
-			uuid: $selectedObject.uuid,
-			[parameter]: $selectedObject[parameter]
+		const value = $selectedObject[parameter];
+		fan(parameter, (object) => {
+			if (object !== $selectedObject) object[parameter] = value;
+			$peers.send({
+				type: 'objectParameters',
+				parameter,
+				uuid: object.uuid,
+				[parameter]: object[parameter]
+			});
 		});
 	}
 
 	// Cast toggle also stamps userData.shadow so the opt-out survives GLTF sync
 	// (the bare castShadow flag does not round-trip through GLTFExporter) — V-1
 	function setCastShadow() {
-		$selectedObject.userData.shadow = $selectedObject.castShadow ? undefined : false;
+		const on = $selectedObject.castShadow;
+		fan('Cast shadow', (object) => {
+			object.castShadow = on;
+			object.userData.shadow = on ? undefined : false;
+		});
 		sendParam('castShadow');
 	}
 
@@ -458,15 +555,21 @@
 	// the props undo entry and replicates each edit via objectParameters.
 	/** @param {any} patch */
 	function setParticles(patch) {
-		updateObjectParticles($selectedObject.uuid, patch);
+		fan('Particles', (object) => updateObjectParticles(object.uuid, patch));
 	}
 
 	/** @param {any} patch */
 	function setPhysics(patch) {
 		// shared write path — replicates, records props undo, pokes the collider
 		// viz and live-rebuilds mid-sim colliders (CL-A A2) for EVERY caller
-		setPhysicsFor($selectedObject.uuid, patch);
+		fan('Physics', (object) => setPhysicsFor(object.uuid, patch));
 		selectedObject.update((v) => v);
+	}
+
+	/** Material parameter → the whole selection (17-D1)
+	 * @param {string} key @param {any} value */
+	function setMat(key, value) {
+		fanMat(key, (object) => setMaterialParam(object.uuid, key, value));
 	}
 
 	/** CL-A A4: which material preset matches the current values (else 'custom') @param {any} p */
@@ -496,7 +599,7 @@
 	function setObjectParam(parameter, value) {
 		$selectedObject[parameter] = value;
 		selectedObject.update((v) => v);
-		sendParam(parameter);
+		sendParam(parameter); // fans the value + messages over the selection
 	}
 
 	// ---- move to group (shared by mesh and light targets) -------------------
@@ -1898,6 +2001,11 @@
 
 			{#if material}
 				<Section label="Material">
+					{#if matCount}
+						<p id="material-multi-note" class="text-[10px] italic text-gray-400">
+							Applies to {matCount} selected objects.
+						</p>
+					{/if}
 					<Checkbox bind:checked={$selectedObject.visible} onchange={() => sendParam('visible')}>
 						Visible
 					</Checkbox>
@@ -1907,7 +2015,7 @@
 						value={material.type}
 						onchange={(/** @type {any} */ val) => {
 							// switches type but keeps color/texture/opacity, locally and on peers
-							switchMaterialType($selectedObject.uuid, val);
+							fanMat('Material type', (object) => switchMaterialType(object.uuid, val));
 							selectedObject.update((s) => s);
 						}}
 					/>
@@ -1931,13 +2039,17 @@
 							onInput={(/** @type {any} */ c) => {
 								if (sameHex(c.hex, color)) return; // mount echo, not an edit
 								// live drag: ONE debounced undo entry per gesture (setObjectColor
-								// would record on every frame), then apply + replicate
+								// would record on every frame), then apply + replicate. 17-D1:
+								// the apply fans over the selection; the gesture (opened here)
+								// remembers each target's own before-colour.
 								color = c.hex;
-								trackColorGesture($selectedObject.uuid, c.hex);
-								$selectedObject.material.color.set(c.hex);
-								$selectedObject.material.needsUpdate = true;
+								trackColorGesture(c.hex);
+								for (const object of matTargets) {
+									object.material.color.set(c.hex);
+									object.material.needsUpdate = true;
+									$peers.send({ type: 'color', uuid: object.uuid, color: c.hex });
+								}
 								objectsGroup.update((v) => v);
-								$peers.send({ type: 'color', uuid: $selectedObject.uuid, color: c.hex });
 							}}
 						/>
 					{/if}
@@ -2013,23 +2125,30 @@
 
 					{#if material.type === 'MeshStandardMaterial' || material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Roughness" min={0} max={1} step={0.05} value={material.roughness}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'roughness', v)} />
+							mixed={matMixed((o) => o.material.roughness)}
+							onchange={(v) => setMat('roughness', v)} />
 						<SliderRow label="Metalness" min={0} max={1} step={0.05} value={material.metalness}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'metalness', v)} />
+							mixed={matMixed((o) => o.material.metalness)}
+							onchange={(v) => setMat('metalness', v)} />
 					{/if}
 					{#if material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Clearcoat" min={0} max={1} step={0.05} value={material.clearcoat}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'clearcoat', v)} />
+							mixed={matMixed((o) => o.material.clearcoat)}
+							onchange={(v) => setMat('clearcoat', v)} />
 						<SliderRow label="Clearcoat rough" min={0} max={1} step={0.05} value={material.clearcoatRoughness}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'clearcoatRoughness', v)} />
+							mixed={matMixed((o) => o.material.clearcoatRoughness)}
+							onchange={(v) => setMat('clearcoatRoughness', v)} />
 						<SliderRow label="Transmission" min={0} max={1} step={0.05} value={material.transmission}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'transmission', v)} />
+							mixed={matMixed((o) => o.material.transmission)}
+							onchange={(v) => setMat('transmission', v)} />
 						<SliderRow label="IOR" min={1} max={2.333} step={0.01} decimals={2} value={material.ior}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'ior', v)} />
+							mixed={matMixed((o) => o.material.ior)}
+							onchange={(v) => setMat('ior', v)} />
 					{/if}
 					{#if material.type === 'MeshPhongMaterial'}
 						<SliderRow label="Shininess" min={0} max={100} step={1} decimals={0} value={material.shininess}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'shininess', v)} />
+							mixed={matMixed((o) => o.material.shininess)}
+							onchange={(v) => setMat('shininess', v)} />
 					{/if}
 					{#if material.type === 'MeshNormalMaterial' || material.type === 'MeshDepthMaterial'}
 						<p class="text-[11px] italic text-gray-400">
@@ -2038,16 +2157,17 @@
 					{/if}
 					{#if typeof material.opacity !== 'undefined' && material.type !== 'ShadowMaterial'}
 						<SliderRow label="Opacity" min={0} max={1} step={0.05} value={material.opacity}
-							onchange={(v) => {
-								setMaterialParam($selectedObject.uuid, 'transparent', v < 1);
-								setMaterialParam($selectedObject.uuid, 'opacity', v);
-							}} />
+							mixed={matMixed((o) => o.material.opacity)}
+							onchange={(v) =>
+								fanMat('Opacity', (object) => {
+									setMaterialParam(object.uuid, 'transparent', v < 1);
+									setMaterialParam(object.uuid, 'opacity', v);
+								})} />
 					{/if}
 					{#if typeof material.wireframe !== 'undefined'}
 						<Checkbox
 							checked={material.wireframe}
-							onchange={(/** @type {any} */ e) =>
-								setMaterialParam($selectedObject.uuid, 'wireframe', e.target.checked)}
+							onchange={(/** @type {any} */ e) => setMat('wireframe', e.target.checked)}
 						>
 							Wireframe
 						</Checkbox>
@@ -2055,8 +2175,7 @@
 					{#if 'flatShading' in material}
 						<Checkbox
 							checked={material.flatShading}
-							onchange={(/** @type {any} */ e) =>
-								setMaterialParam($selectedObject.uuid, 'flatShading', e.target.checked)}
+							onchange={(/** @type {any} */ e) => setMat('flatShading', e.target.checked)}
 						>
 							Flat shading
 						</Checkbox>
@@ -2072,7 +2191,7 @@
 									{ value: 2, name: 'Double' }
 								]}
 								value={material.side}
-								onchange={(/** @type {any} */ v) => setMaterialParam($selectedObject.uuid, 'side', +v)}
+								onchange={(/** @type {any} */ v) => setMat('side', +v)}
 							/>
 						</div>
 					{/if}
@@ -2083,12 +2202,12 @@
 								type="color"
 								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
 								value={'#' + material.emissive.getHexString()}
-								oninput={(/** @type {any} */ e) =>
-									setMaterialParam($selectedObject.uuid, 'emissive', e.currentTarget.value)}
+								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
 						</div>
 						<SliderRow label="Emissive int." min={0} max={4} step={0.05} value={material.emissiveIntensity}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'emissiveIntensity', v)} />
+							mixed={matMixed((o) => o.material.emissiveIntensity)}
+							onchange={(v) => setMat('emissiveIntensity', v)} />
 					{/if}
 
 					<p class="ui-section-label">Shadow</p>
@@ -2108,6 +2227,11 @@
 
 			{#if !$selectedObject.isLight}
 				<Section label="Physics">
+					{#if multiCount}
+						<p id="physics-multi-note" class="text-[10px] italic text-gray-400">
+							Applies to {multiCount} selected objects.
+						</p>
+					{/if}
 					<div class="ui-row items-center gap-2">
 						<span class="w-20 shrink-0 text-xs text-gray-400">Body</span>
 						<ThemedSelect
@@ -2123,6 +2247,7 @@
 					</div>
 					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
 						<SliderRow label="Mass" min={0.1} max={100} step={0.1} value={$selectedObject.userData.physics?.mass ?? 1}
+							mixed={mixed((o) => o.userData.physics?.mass ?? 1)}
 							onchange={(v) => setPhysics({ mass: v })} />
 					{/if}
 					<div class="ui-row items-center gap-2">
@@ -2144,8 +2269,10 @@
 						/>
 					</div>
 					<SliderRow label="Bounciness" min={0} max={1} step={0.05} value={$selectedObject.userData.physics?.restitution ?? 0.3}
+						mixed={mixed((o) => o.userData.physics?.restitution ?? 0.3)}
 						onchange={(v) => setPhysics({ restitution: v })} />
 					<SliderRow label="Friction" min={0} max={2} step={0.05} value={$selectedObject.userData.physics?.friction ?? 0.5}
+						mixed={mixed((o) => o.userData.physics?.friction ?? 0.5)}
 						onchange={(v) => setPhysics({ friction: v })} />
 					<div class="ui-row items-center gap-2">
 						<span class="w-20 shrink-0 text-xs text-gray-400">Collider</span>

@@ -39,6 +39,9 @@
 	} from '$lib/multiTransform';
 	// 17-D: per-object transform ORIGIN (userData.origin, a local pivot offset)
 	import { originOf, originWorld, setOriginFromWorld, resetOrigin, originPreset } from '$lib/objectOrigin';
+	// the HINGE point: snap the origin to the vertices picked in Edit Mesh
+	import { editingObject, vertexSelectionWorldPoint } from '$lib/meshEdit';
+	import { vertexSelectionSize } from '$lib/meshEdit';
 	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
@@ -342,6 +345,25 @@
 		pivotOnly.set(false);
 		reseatPivot();
 		selectedObject.update((v) => v);
+	}
+
+	/** The HINGE workflow: in Edit Mesh, pick the vertices of the hinge edge (or one
+	 * corner) and drop the origin there. Spin and a revolute joint then both turn
+	 * about that point. Offered only while a vertex selection exists on THIS object. */
+	const canHinge = $derived(
+		!!originTarget && $editingObject === originTarget.uuid && $vertexSelectionSize > 0
+	);
+	function originFromSelection() {
+		if (!originTarget) return;
+		const point = vertexSelectionWorldPoint();
+		if (!point) {
+			showToast('Select the vertices of the hinge first (Edit Mesh ▸ Vertices)');
+			return;
+		}
+		setOriginFromWorld(originTarget.uuid, point);
+		reseatPivot();
+		selectedObject.update((v) => v);
+		showToast('Origin set to the picked vertices — Spin and hinges now turn about it');
 	}
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
@@ -2086,7 +2108,17 @@
 									Children
 								</Button>
 							{/if}
+							{#if canHinge}
+								<Button id="origin-hinge" size="xs" color="primary" onclick={originFromSelection}>
+									Hinge from {$vertexSelectionSize} vert{$vertexSelectionSize === 1 ? '' : 's'}
+								</Button>
+							{/if}
 						</div>
+						{#if !canHinge && $editingObject === originTarget.uuid}
+							<p class="mt-1 text-[10px] text-gray-500">
+								Pick the vertices of a hinge edge to snap the origin there.
+							</p>
+						{/if}
 						<p class="mt-1 text-[10px] text-gray-500">
 							{#if $pivotOnly}
 								Drag the gizmo (or type above) to place the origin — the mesh stays put. Grid and

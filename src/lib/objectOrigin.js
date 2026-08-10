@@ -163,14 +163,19 @@ export function bakeOriginForExport(root) {
 		const local = originOf(object);
 		if (!local) return;
 		const offset = new THREE.Vector3().fromArray(local);
+		// everything the object owns shifts by -offset: its own geometry AND any
+		// children, whose positions are relative to the origin being moved
 		if (object.geometry) {
 			object.geometry = object.geometry.clone();
 			object.geometry.translate(-offset.x, -offset.y, -offset.z);
-		} else {
-			// a group: shift the children instead of its (absent) geometry
-			for (const child of object.children) child.position.sub(offset);
 		}
-		object.position.add(offset.clone().applyQuaternion(object.quaternion).multiply(object.scale));
+		for (const child of object.children) child.position.sub(offset);
+		// and the object itself moves by +offset in its PARENT frame: scale first,
+		// then rotate (the other order lands it in the wrong place on a rotated or
+		// non-uniformly scaled object)
+		object.position.add(
+			offset.clone().multiply(object.scale).applyQuaternion(object.quaternion)
+		);
 		delete object.userData.origin;
 	});
 	return root;

@@ -15,6 +15,7 @@ import { recordObjectPresence } from '$lib/history';
 // STATIC on purpose — a lazy import of it from here never settled in dev, and
 // materialsHandler does not import fileHandler, so this closes no cycle.
 import { downscaleImage } from '$lib/materialsHandler';
+import { originOf, bakeOriginForExport } from '$lib/objectOrigin';
 import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
@@ -85,9 +86,22 @@ function selectedRoots() {
 function exportGltf(format, input) {
 	// saves store animation BASE poses, not the current swing (88)
 	const restore = parkAnimatedAtBase();
+	// 17-D: glTF nodes carry only TRS, so a per-object ORIGIN has to become real
+	// geometry on the way out or the exported model pivots where it originally
+	// did. Bake on CLONES — never the live objects, which would cost them their
+	// parametric Geometry rows (meshgeo stamps faceEdited).
+	const roots = Array.isArray(input) ? input : [input];
+	let carriesOrigin = false;
+	for (const root of roots)
+		root?.traverse?.((/** @type {any} */ object) => {
+			if (originOf(object)) carriesOrigin = true;
+		});
+	const payload = carriesOrigin
+		? roots.map((root) => bakeOriginForExport(root.clone(true)))
+		: input;
 	const exporter = new GLTFExporter();
 	exporter.parse(
-		input,
+		payload,
 		function (result) {
 			restore();
 			const blob = new Blob([JSON.stringify(result)], { type: 'application/json' });

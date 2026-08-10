@@ -197,6 +197,100 @@ h.run(async () => {
 		`a hinge anchors on the origin, not the centre (anchorB ${anchored?.anchorB?.join(', ')})`
 	);
 
+	// ---------- the HINGE point: origin from picked vertices ----------
+	const hinge = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.objectOrigin.resetOrigin(window.__oo.box);
+		const object = window.__oo.group.getObjectByProperty('uuid', window.__oo.box);
+		object.position.set(0, 0, 0);
+		object.rotation.set(0, 0, 0);
+		w.objectActions.selectObject(window.__oo.box, true);
+		w.meshEdit.enterEditMode(window.__oo.box);
+		await new Promise((r) => setTimeout(r, 500));
+		// no selection yet -> the app must not offer a hinge
+		const before = {
+			offered: !!document.querySelector('#origin-hinge'),
+			point: w.meshEdit.vertexSelectionWorldPoint()
+		};
+		// select everything through the real API, as a sanity read of the centroid
+		w.meshEdit.selectAllVerts();
+		await new Promise((r) => setTimeout(r, 200));
+		const all = w.meshEdit.vertexSelectionWorldPoint();
+		return {
+			before,
+			allSelected: all ? all.toArray().map((n) => +n.toFixed(3)) : null,
+			size: await new Promise((r) => w.meshEdit.vertexSelectionSize.subscribe(r)())
+		};
+	});
+	h.check(!hinge.before.offered, 'no hinge button until vertices are picked');
+	h.check(hinge.before.point === null, 'and no hinge point to read yet');
+	h.check(hinge.size > 0, `selecting vertices reports a selection (${hinge.size})`);
+	h.check(
+		!!hinge.allSelected && Math.abs(hinge.allSelected[0]) < 0.01,
+		`the whole-mesh selection centres on the box (${hinge.allSelected?.join(', ')})`
+	);
+
+	// now pick ONE corner and snap the origin to it through the button
+	const cornered = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.meshEdit.clearVertexSelection();
+		await new Promise((r) => setTimeout(r, 150));
+		w.meshEdit.toggleVertexSelection(0); // a single corner handle
+		await new Promise((r) => setTimeout(r, 250));
+		const point = w.meshEdit.vertexSelectionWorldPoint();
+		const offered = !!document.querySelector('#origin-hinge');
+		document.querySelector('#origin-hinge')?.click();
+		await new Promise((r) => setTimeout(r, 400));
+		const object = window.__oo.group.getObjectByProperty('uuid', window.__oo.box);
+		return {
+			offered,
+			picked: point ? point.toArray().map((n) => +n.toFixed(3)) : null,
+			origin: w.objectOrigin.originWorld(object).toArray().map((n) => +n.toFixed(3)),
+			pos: object.position.toArray().map((n) => +n.toFixed(3))
+		};
+	});
+	h.check(cornered.offered, 'the hinge button appears once a vertex is picked');
+	h.check(
+		!!cornered.picked &&
+			cornered.origin.every((n, i) => Math.abs(n - cornered.picked[i]) < 0.01),
+		`the origin lands exactly on the picked vertex (${cornered.origin.join(', ')} vs ${cornered.picked?.join(', ')})`
+	);
+	h.check(
+		cornered.pos.every((n) => Math.abs(n) < 0.01),
+		`and the mesh still has not moved (${cornered.pos.join(', ')})`
+	);
+	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.waitForTimeout(300);
+
+	// ---------- a GLTF export bakes the origin (glTF has no pivot) ----------
+	const baked = await A.page.evaluate(() => {
+		const w = window.__stores;
+		const THREE = w.THREE;
+		// a 2-unit-wide box at the world origin with its pivot on the -x face
+		const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1), new THREE.MeshStandardMaterial());
+		mesh.position.set(0, 0, 0);
+		mesh.userData.origin = [-1, 0, 0];
+		const clone = w.objectOrigin.bakeOriginForExport(mesh.clone(true));
+        clone.geometry.computeBoundingBox();
+		return {
+			position: clone.position.toArray().map((n) => +n.toFixed(3)),
+			// the vertices shift the OTHER way, so the box still occupies the same space
+			boxMin: clone.geometry.boundingBox.min.toArray().map((n) => +n.toFixed(3)),
+			cleared: clone.userData.origin === undefined,
+			liveUntouched: mesh.userData.origin?.[0] === -1
+		};
+	});
+	h.check(
+		Math.abs(baked.position[0] + 1) < 0.01,
+		`baking moves the node onto the pivot (${baked.position.join(', ')})`
+	);
+	h.check(
+		Math.abs(baked.boxMin[0]) < 0.01,
+		`and shifts the vertices the other way, so it occupies the same space (min x ${baked.boxMin[0]})`
+	);
+	h.check(baked.cleared, 'the baked clone carries no origin any more');
+	h.check(baked.liveUntouched, 'and the LIVE object was not baked (its parametric rows survive)');
+
 	// ---------- Reset goes back to the default ----------
 	await A.page.evaluate(() => window.__stores.objectOrigin.resetOrigin(window.__oo.box));
 	await A.page.waitForTimeout(300);

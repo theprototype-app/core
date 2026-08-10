@@ -10,9 +10,11 @@
 	// {zoom, panX, panY} and projects UV space itself. v is UP in UV space and
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount } from 'svelte';
-	import { Lasso, MousePointer2, SquareDashed } from '@lucide/svelte';
+	import { ImagePlus, Lasso, MousePointer2, SquareDashed } from '@lucide/svelte';
 	import { selectedObject, objectsGroup } from '../../stores/sceneStore';
-	import { uvEditorClose } from '../../stores/appStore.js';
+	import { uvEditorClose, showToast } from '../../stores/appStore.js';
+	import { setObjectTexture, removeObjectTexture } from '$lib/materialsHandler';
+	import { applyExplorerImage } from '$lib/explorerDrop';
 	import {
 		uvActiveSlot, uvTool, uvEditable, uvTriangles, materialsOf, slotCount,
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
@@ -40,9 +42,19 @@
 		$objectsGroup;
 		return target ? uvEditable(target) : { ok: false, reason: 'Select a mesh to edit its UVs.' };
 	});
+	// A FRESH SNAPSHOT per poke, never the live material array: `$derived`
+	// compares with ===, and materialsOf returns the object's own array, so
+	// mutating a material in place (applyMap sets userData.mapDataUrl) would
+	// never propagate — the thumbnails and the remove button silently never
+	// appeared. The 15-O1 Inspector-material trap, same shape.
 	const slots = $derived.by(() => {
 		$objectsGroup;
-		return target ? materialsOf(target) : [];
+		return materialsOf(target).map((/** @type {any} */ m, /** @type {number} */ i) => ({
+			slot: i,
+			name: m?.name || '',
+			type: m?.type || '',
+			mapUrl: m?.userData?.mapDataUrl ?? null
+		}));
 	});
 	const slotTotal = $derived(target ? slotCount(target) : 0);
 	const slot = $derived(Math.min($uvActiveSlot, Math.max(slotTotal - 1, 0)));
@@ -50,8 +62,7 @@
 		$objectsGroup;
 		return target && editable.ok ? uvTriangles(target, slot) : [];
 	});
-	const activeMaterial = $derived(slots[slot] ?? null);
-	const mapUrl = $derived(activeMaterial?.userData?.mapDataUrl ?? null);
+	const mapUrl = $derived(slots[slot]?.mapUrl ?? null);
 
 	// docked vs floating (starts docked, undockable)
 	let docked = $state(true);
@@ -447,6 +458,58 @@
 		};
 	}
 
+	// --- UV2: per-slot texture assignment ---------------------------------
+	// Each material row accepts an Explorer image card OR an OS image file, and
+	// has an explicit add/replace button. All of it routes through the existing
+	// replicated `map` path, now carrying a `slot`.
+	let dropSlot = $state(-1);
+	let fileInputEl = $state(/** @type {HTMLInputElement|null} */ (null));
+	let pendingSlot = 0;
+
+	const IMAGE_TYPES = 'image/png,image/jpeg,image/webp';
+
+	/** @param {DragEvent} e @param {number} index */
+	function onSlotDragOver(e, index) {
+		const kinds = [...(e.dataTransfer?.types ?? [])];
+		if (!kinds.includes('application/x-explorer-item') && !kinds.includes('Files')) return;
+		e.preventDefault();
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+		dropSlot = index;
+	}
+
+	/** @param {DragEvent} e @param {number} index */
+	async function onSlotDrop(e, index) {
+		e.preventDefault();
+		e.stopPropagation(); // the window-level import drop would place a MODEL
+		dropSlot = -1;
+		if (!target) return;
+		const raw = e.dataTransfer?.getData('application/x-explorer-item');
+		if (raw) {
+			const ok = await applyExplorerImage(target.uuid, JSON.parse(raw), index);
+			if (!ok) showToast('That Explorer item is not an image');
+			return;
+		}
+		const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/'));
+		if (!file) {
+			showToast('Drop an image to texture this material');
+			return;
+		}
+		await setObjectTexture(target.uuid, file, index);
+	}
+
+	/** @param {number} index */
+	function pickImageFor(index) {
+		pendingSlot = index;
+		fileInputEl?.click();
+	}
+
+	async function onFilePicked(/** @type {Event} */ e) {
+		const input = /** @type {HTMLInputElement} */ (e.currentTarget);
+		const file = input.files?.[0];
+		input.value = ''; // so picking the SAME file again still fires change
+		if (file && target) await setObjectTexture(target.uuid, file, pendingSlot);
+	}
+
 	// resize: docked = shared top-edge dock height; floating = corner grip
 	const clampH = (/** @type {number} */ h) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
 	let resizing = $state(false);
@@ -472,16 +535,48 @@
 	}
 </script>
 
-{#snippet slotRow(/** @type {any} */ material, /** @type {number} */ index)}
-	<button
-		class="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-gray-700/60 {index === slot ? 'bg-primary-900/40 text-primary-200' : 'text-gray-300'}"
-		title={material?.name || `Material slot ${index}`}
-		onclick={() => uvActiveSlot.set(index)}
+{#snippet slotRow(/** @type {{slot:number,name:string,type:string,mapUrl:string|null}} */ material, /** @type {number} */ index)}
+	<!-- The row is a DROP TARGET for an Explorer image or an OS file, the
+	     Inspector #texture-drop recipe. svelte-ignore: the drag handlers live on
+	     the wrapper so the whole row (not just the button) accepts a drop. -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="uv-slot group/slot {index === slot ? 'uv-slot-active' : ''} {dropSlot === index ? 'uv-slot-drop' : ''}"
+		data-uv-slot={index}
+		ondragover={(e) => onSlotDragOver(e, index)}
+		ondragleave={() => (dropSlot = dropSlot === index ? -1 : dropSlot)}
+		ondrop={(e) => onSlotDrop(e, index)}
 	>
-		<span class="h-7 w-7 shrink-0 rounded-sm border border-gray-600 bg-gray-900" style={material?.userData?.mapDataUrl ? `background-image:url(${material.userData.mapDataUrl});background-size:cover` : ''}></span>
-		<span class="min-w-0 flex-1 truncate">{material?.name || material?.type || `Slot ${index}`}</span>
-		{#if slotTotal > 1}<span class="shrink-0 text-[10px] text-gray-500">{index}</span>{/if}
-	</button>
+		<button
+			class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs {index === slot ? 'text-primary-200' : 'text-gray-300'}"
+			title={material?.name || `Material slot ${index}`}
+			onclick={() => uvActiveSlot.set(index)}
+		>
+			<span
+				class="h-7 w-7 shrink-0 rounded-sm border border-gray-600 bg-gray-900 bg-cover bg-center"
+				style={material.mapUrl ? `background-image:url(${material.mapUrl})` : ''}
+			></span>
+			<span class="min-w-0 flex-1 truncate">{material?.name || material?.type || `Slot ${index}`}</span>
+		</button>
+		<button
+			class="uv-slot-btn opacity-0 group-hover/slot:opacity-100"
+			id="uv-slot-image-{index}"
+			title={material.mapUrl ? 'Replace this image' : 'Add an image'}
+			aria-label={material.mapUrl ? 'Replace this image' : 'Add an image'}
+			onclick={() => pickImageFor(index)}
+		>
+			<ImagePlus size={14} aria-hidden="true" />
+		</button>
+		{#if material.mapUrl}
+			<button
+				class="uv-slot-btn text-red-400 opacity-0 group-hover/slot:opacity-100"
+				id="uv-slot-remove-{index}"
+				title="Remove this image"
+				aria-label="Remove this image"
+				onclick={() => target && removeObjectTexture(target.uuid, index)}
+			>✕</button>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet body()}
@@ -529,7 +624,20 @@
 				{#each slots as material, index (index)}
 					{@render slotRow(material, index)}
 				{/each}
+				<p class="px-2 pt-1.5 text-[10px] leading-relaxed text-gray-500">
+					Drop an image on a slot to texture it, or use the ＋ button. Textures are
+					shared with peers.
+				</p>
 			{/if}
+			<!-- one hidden input for every row; pendingSlot says which asked -->
+			<input
+				bind:this={fileInputEl}
+				id="uv-texture-file"
+				type="file"
+				accept={IMAGE_TYPES}
+				class="hidden"
+				onchange={onFilePicked}
+			/>
 		{/snippet}
 
 		{#snippet main()}
@@ -649,5 +757,42 @@
 	.uv-tool-active {
 		background: rgb(37 99 235);
 		color: white;
+	}
+	.uv-slot {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		gap: 0.125rem;
+		padding-right: 0.25rem;
+	}
+	.uv-slot:hover {
+		background: rgb(55 65 81 / 0.6);
+	}
+	.uv-slot-active {
+		background: rgb(30 58 138 / 0.4);
+	}
+	/* dashed ring while an image hovers the row (the Inspector drop-zone cue) */
+	.uv-slot-drop {
+		outline: 1px dashed rgb(96 165 250);
+		outline-offset: -1px;
+		background: rgb(30 58 138 / 0.35);
+	}
+	.uv-slot-btn {
+		display: inline-flex;
+		height: 1.25rem;
+		width: 1.25rem;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+		border-radius: 0.25rem;
+		font-size: 0.7rem;
+		color: rgb(203 213 225);
+	}
+	.uv-slot-btn:hover {
+		background: rgb(255 255 255 / 0.12);
+	}
+	/* keyboard users need the row buttons without a hover */
+	.uv-slot:focus-within .uv-slot-btn {
+		opacity: 1;
 	}
 </style>

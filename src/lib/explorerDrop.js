@@ -59,14 +59,18 @@ function placeAt(object, point) {
 /**
  * Apply an Explorer image item as the texture of an object (Inspector drop
  * target + viewport mesh drop share this). Replicates via setObjectTexture.
- * @param {string} uuid @param {any} payload @returns {Promise<boolean>}
+ * @param {string} uuid @param {any} payload
+ * @param {number} [slot] UV2: which material slot to texture (omitted = 0, the
+ *   only slot a single-material object has — so both existing callers are
+ *   unchanged)
+ * @returns {Promise<boolean>}
  */
-export async function applyExplorerImage(uuid, payload) {
+export async function applyExplorerImage(uuid, payload, slot = 0) {
 	const item = get(explorerItems).find((entry) => entry.id === payload.id);
 	if (!item || item.kind !== 'image') return false;
 	const blob = await itemBlob(item.id);
 	if (!blob) return false;
-	await setObjectTexture(uuid, new File([blob], item.name, { type: blob.type || 'image/png' }));
+	await setObjectTexture(uuid, new File([blob], item.name, { type: blob.type || 'image/png' }), slot);
 	return true;
 }
 

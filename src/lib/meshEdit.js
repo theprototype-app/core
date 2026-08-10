@@ -16,7 +16,9 @@ import {
 	trisToPositions,
 	registerVertexSessionRefresher,
 	registerVertexSelectionHistory,
-	withSelectionHistory
+	withSelectionHistory,
+	editWireGeometry,
+	registerVertexWireRebuild
 } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -47,6 +49,12 @@ let lastSent = 0;
 // module eval (the classic store-subscriber TDZ).
 meshEditWireframe.subscribe((value) => {
 	if (overlay) overlay.visible = value; // live toggle mid-session (vertex mode)
+});
+// quad view vs raw triangulation is a different EDGE SET, so it rebuilds
+registerVertexWireRebuild(() => {
+	if (!overlay || !edited) return;
+	overlay.geometry.dispose();
+	overlay.geometry = editWireGeometry(edited.geometry);
 });
 
 const HANDLE_COLOR = 0x2f81f7;
@@ -177,7 +185,7 @@ export function refreshVertexEditSession() {
 	// the overlay wraps the NEW geometry
 	if (overlay) {
 		overlay.geometry.dispose();
-		overlay.geometry = new THREE.WireframeGeometry(edited.geometry);
+		overlay.geometry = editWireGeometry(edited.geometry);
 	}
 }
 // applyMeshGeo calls back through this whenever a snapshot lands on the object
@@ -539,7 +547,7 @@ function commitSelectedLocal(local) {
 	refreshHandleMatrix(selectedHandle);
 	if (overlay) {
 		overlay.geometry.dispose();
-		overlay.geometry = new THREE.WireframeGeometry(edited.geometry);
+		overlay.geometry = editWireGeometry(edited.geometry);
 	}
 	return result;
 }
@@ -682,7 +690,7 @@ export function applyVerts(uuid, indices, positionArray) {
 		}
 		if (overlay) {
 			overlay.geometry.dispose();
-			overlay.geometry = new THREE.WireframeGeometry(object.geometry);
+			overlay.geometry = editWireGeometry(object.geometry);
 		}
 	}
 	objectsGroup.update((value) => value);

@@ -1100,6 +1100,97 @@ meshEditHotkeys.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditHotkeys', String(value));
 });
 
+/** Show the object SELECTION OUTLINE while mesh-editing — local pref, default
+ * OFF. The outline is a postprocessing pass composited after the whole scene,
+ * so it paints OVER the vertex handles and the edge/face highlights no matter
+ * what they do with depthTest/renderOrder: while you are editing elements, the
+ * object-level outline is pure glare. Read by Outline.svelte. */
+export const meshEditOutline = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('meshEditOutline') === 'true'
+);
+meshEditOutline.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditOutline', String(value));
+});
+
+/** Show the raw TRIANGULATION in the edit wireframe — local pref, default OFF.
+ * The default draws the QUAD structure instead: a quad's internal diagonal is
+ * a triangulation artifact, deliberately not pickable (pickEdgeAt skips it) and
+ * not dissolvable, so drawing it advertised an edge the tools refuse to touch.
+ * Every modeller shows quads in edit mode for the same reason. */
+export const meshEditTriWire = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('meshEditTriWire') === 'true'
+);
+
+/** meshEdit owns the vertex-mode overlay; it imports THIS module, so it hands
+ * us a rebuild callback rather than the other way round (the TDZ cycle rule).
+ * Declared ABOVE the subscriber below, which runs at module eval — the classic
+ * store-subscriber TDZ that has bitten this file twice.
+ * @type {(() => void) | null} */
+let vertexWireRebuild = null;
+/** @param {() => void} fn */
+export function registerVertexWireRebuild(fn) {
+	vertexWireRebuild = fn;
+}
+
+meshEditTriWire.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditTriWire', String(value));
+	// the edge set differs, so this rebuilds rather than toggling visibility.
+	// `wire` is the only session state read here: faceEdited lives further down
+	// the file and would TDZ-crash the SSR eval, so refreshFaceWireframe (which
+	// checks it itself) is the gate.
+	if (wire) refreshFaceWireframe();
+	vertexWireRebuild?.();
+});
+
+/** the welded edge keys that are quad DIAGONALS — everything the quad view
+ * leaves out. @param {any[]} tris @param {Int32Array} partner */
+function diagonalEdgeKeys(tris, partner) {
+	const out = new Set();
+	for (let i = 0; i < tris.length; i++) {
+		const mate = partner[i];
+		if (mate < 0 || mate < i) continue;
+		const keys = quadRingKeys(i, mate);
+		// quadRingKeys returns [p, ra, q, rb] — the shared p-q IS the diagonal
+		if (keys) out.add(edgeKey(keys[0], keys[2]));
+	}
+	return out;
+}
+
+/** Quad-structure line geometry: every welded edge of the mesh EXCEPT the
+ * diagonals of paired quads. Unpaired triangles keep all three edges, so a
+ * genuine tri-only mesh looks exactly as it did. @param {any} geometry */
+function quadWireGeometry(geometry) {
+	const tris = readTriangles(geometry);
+	const skip = diagonalEdgeKeys(tris, pairQuads(tris));
+	const seen = new Set();
+	/** @type {number[]} */
+	const points = [];
+	for (const t of tris) {
+		const keys = t.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+		for (let e = 0; e < 3; e++) {
+			const key = edgeKey(keys[e], keys[(e + 1) % 3]);
+			if (skip.has(key) || seen.has(key)) continue;
+			seen.add(key);
+			const a = t[e];
+			const b = t[(e + 1) % 3];
+			points.push(a.x, a.y, a.z, b.x, b.y, b.z);
+		}
+	}
+	const out = new THREE.BufferGeometry();
+	out.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+	return out;
+}
+
+/** The geometry the edit wireframe should draw right now — quad structure by
+ * default, the raw triangulation when the Display toggle asks for it. Exported
+ * because meshEdit swaps `overlay.geometry` in place on every vertex move.
+ * @param {any} geometry */
+export function editWireGeometry(geometry) {
+	return get(meshEditTriWire)
+		? new THREE.WireframeGeometry(geometry)
+		: quadWireGeometry(geometry);
+}
+
 /**
  * The edit-session wireframe overlay: an object-CHILD LineSegments (follows
  * the transform for free) whose raycast is stubbed out (D8: three raycasts
@@ -1115,7 +1206,7 @@ export function buildEditWireframe(object) {
 	// relative luminance over three's LINEAR color components
 	const lum = c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0;
 	const overlay = new THREE.LineSegments(
-		new THREE.WireframeGeometry(object.geometry),
+		editWireGeometry(object.geometry),
 		new THREE.LineBasicMaterial({
 			color: lum > 0.5 ? 0x1f2937 : 0x2f81f7,
 			transparent: true,
@@ -1126,6 +1217,21 @@ export function buildEditWireframe(object) {
 	overlay.raycast = () => {};
 	overlay.visible = get(meshEditWireframe);
 	return overlay;
+}
+
+/** e2e (and a sanity probe): what the face-mode wire actually draws.
+ * `diagonals` must be 0 in quad view — that is the whole point of it. */
+export function wireframeDebug() {
+	if (!wire || !faceEdited) return { segments: 0, diagonals: -1 };
+	const position = wire.geometry.attributes.position;
+	const skip = diagonalEdgeKeys(workingTris, quadPartner);
+	let diagonals = 0;
+	for (let i = 0; i < position.count; i += 2) {
+		const a = keyOf(position.getX(i), position.getY(i), position.getZ(i));
+		const b = keyOf(position.getX(i + 1), position.getY(i + 1), position.getZ(i + 1));
+		if (skip.has(edgeKey(a, b))) diagonals++;
+	}
+	return { segments: position.count / 2, diagonals };
 }
 
 /** (Re)build the face-mode wireframe from the CURRENT geometry — called on

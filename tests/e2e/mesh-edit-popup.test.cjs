@@ -110,15 +110,19 @@ h.run(async () => {
 			}
 			return null;
 		});
-	const miss = await findMiss();
-	h.check(!!miss, 'found an empty canvas point for the miss click');
-
 	await A.page.evaluate(() => {
 		const s = window.__stores;
 		s.meshEdit.enterEditMode(window.__box.uuid);
 		s.meshEdit.selectHandle(0); // D5: a plain pick IS the selection
 	});
 	await A.page.waitForTimeout(200);
+	// AFTER entering the mode: Escape closed the toolbox a moment ago, so a
+	// point probed before this re-entry is measured against a viewport with no
+	// toolbox in it — the window reappears over it and the click then lands on
+	// the toolbox (which rightly keeps the pick, so the check failed for the
+	// wrong reason). Probe the phase you are about to click in.
+	const miss = await findMiss();
+	h.check(!!miss, 'found an empty canvas point for the miss click');
 	const selCount = await A.page.evaluate(
 		() => document.querySelector('#mesh-sel-count')?.textContent
 	);

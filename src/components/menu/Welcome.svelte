@@ -4,6 +4,7 @@
 	// then out of the way. Shown once ever (hasSeenWelcome) unless the user ticks
 	// "Show this on start", which also has a Settings toggle.
 	import { welcomeOpen, closeWelcome, showWelcomeOnStart, openWhatsNew } from '$lib/whatsNew';
+	import { templatesModalOpen } from '../../stores/appStore.js';
 	import { versionString } from '$lib/version';
 	import { githubStars, loadGithubStars } from '$lib/githubStars';
 
@@ -19,6 +20,10 @@
 
 	function start() {
 		closeWelcome();
+	}
+	function openTemplates() {
+		closeWelcome();
+		templatesModalOpen.set(true);
 	}
 	function openDemo() {
 		window.open(DEMO_URL, '_blank', 'noopener');
@@ -65,11 +70,13 @@
 		</p>
 		<p class="welcome-sub">
 			Right&#8209;click the viewport to add something, or open the logo menu for files, modules and
-			settings.
+			settings. Not sure where to start? The logo menu's <strong>Templates</strong> has starting
+			scenes, examples and community creations.
 		</p>
 
 		<div class="welcome-actions">
 			<button id="welcome-start" class="welcome-btn welcome-btn-primary" onclick={start}>Start building</button>
+			<button id="welcome-templates" class="welcome-btn" onclick={openTemplates}>Start from a template</button>
 			<button class="welcome-btn" onclick={openDemo}>▶ Watch the demo</button>
 			<!-- 15-M: the star count doubles as a social cue and a nudge; hidden
 			     entirely when GitHub is unreachable (offline / rate limited) -->

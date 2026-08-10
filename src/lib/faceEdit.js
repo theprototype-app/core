@@ -119,11 +119,13 @@ export function lookupEditable(uuid) {
 	return editProxy && editProxy.uuid === uuid ? editProxy : null;
 }
 
-/** Carry a MATERIAL SLOT onto a triangle. Stored as a property on the triangle
- * array so every op that clones/filters/maps tris keeps it without changing the
- * [v0,v1,v2] shape every caller expects. @param {any} tri @param {number=} mi */
-function withSlot(tri, mi) {
+/** Carry a MATERIAL SLOT (and M1: the per-corner UVs) onto a triangle. Stored as
+ * properties on the triangle array so every op that clones/filters/maps tris
+ * keeps them without changing the [v0,v1,v2] shape every caller expects.
+ * @param {any} tri @param {number=} mi @param {any=} uv */
+function withSlot(tri, mi, uv) {
 	tri.mi = mi || 0;
+	if (uv) tri.uv = uv; // M1: per-corner [[u,v],[u,v],[u,v]], absent when untextured
 	return tri;
 }
 
@@ -149,18 +151,56 @@ function slotLookup(groups, count) {
  */
 export function readTriangles(geometry) {
 	const pos = geometry.attributes.position;
+	const uvAttr = geometry.attributes.uv;
 	const index = geometry.index;
 	const count = index ? index.count : pos.count;
 	const slotAt = slotLookup(geometry.groups, count);
 	const tris = [];
 	for (let i = 0; i < count; i += 3) {
+		const idx = (/** @type {number} */ o) => (index ? index.getX(i + o) : i + o);
 		const vert = (/** @type {number} */ o) => {
-			const j = index ? index.getX(i + o) : i + o;
+			const j = idx(o);
 			return new THREE.Vector3(pos.getX(j), pos.getY(j), pos.getZ(j));
 		};
-		tris.push(withSlot([vert(0), vert(1), vert(2)], slotAt(i)));
+		const tri = withSlot([vert(0), vert(1), vert(2)], slotAt(i));
+		// M1: carry TEXTURE COORDINATES through the edit. Every op used to rebuild
+		// the geometry from positions alone, so editing a textured mesh silently
+		// destroyed its mapping. `uv` is [[u,v],[u,v],[u,v]] per corner, or absent
+		// when the source has no uv attribute (the overwhelmingly common case —
+		// nothing extra is computed, stored or sent for those).
+		if (uvAttr) tri.uv = [0, 1, 2].map((o) => [uvAttr.getX(idx(o)), uvAttr.getY(idx(o))]);
+		tris.push(tri);
 	}
 	return tris;
+}
+
+/** M1: uv of a triangle corner, or [0,0] when the mesh is untextured.
+ * @param {any} tri @param {number} corner */
+function uvAt(tri, corner) {
+	return tri?.uv ? tri.uv[corner] : [0, 0];
+}
+
+/** M1: linear blend of two uv pairs @param {number[]} a @param {number[]} b @param {number} t */
+function uvLerp(a, b, t) {
+	return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}
+
+/** M1: the uv centroid of a triangle set — inset shrinks toward it in uv space
+ * exactly as the positions shrink toward the spatial centroid.
+ * @param {any[]} tris @param {number[]} triIndices */
+function uvCentroidOf(tris, triIndices) {
+	let u = 0;
+	let v = 0;
+	let n = 0;
+	for (const ti of triIndices) {
+		if (!tris[ti]?.uv) continue;
+		for (const pair of tris[ti].uv) {
+			u += pair[0];
+			v += pair[1];
+			n++;
+		}
+	}
+	return n ? [u / n, v / n] : [0, 0];
 }
 
 /** @param {any[]} t triangle */
@@ -318,7 +358,13 @@ function quadScore(ring, normal) {
 }
 
 function cloneTris(/** @type {any[]} */ tris) {
-	return tris.map((t) => withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi));
+	return tris.map((t) =>
+		withSlot(
+			[t[0].clone(), t[1].clone(), t[2].clone()],
+			t.mi,
+			t.uv && t.uv.map((/** @type {number[]} */ p) => [p[0], p[1]])
+		)
+	);
 }
 
 /** average vertex position of a triangle set @param {any[]} tris @param {number[]} triIndices */
@@ -384,8 +430,10 @@ function boundaryEdges(tris, face) {
 			const ek = [keyOf(p0.x, p0.y, p0.z), keyOf(p1.x, p1.y, p1.z)].sort().join('|');
 			count.set(ek, (count.get(ek) || 0) + 1);
 			// `ti` = the triangle this directed edge belongs to, so a wall stitched
-			// onto it can take that triangle's OWN normal + material slot (15-G)
-			dir.push({ ek, p0, p1, ti });
+			// onto it can take that triangle's OWN normal + material slot (15-G);
+			// `c0`/`c1` are the CORNER indices within that triangle, which is how a
+			// stitched wall reads the edge's UVs (M1)
+			dir.push({ ek, p0, p1, ti, c0: e, c1: (e + 1) % 3 });
 		}
 	});
 	return dir.filter((d) => count.get(d.ek) === 1);
@@ -396,15 +444,21 @@ function boundaryEdges(tris, face) {
  * wantDir — otherwise the wall/ring backface-culls to invisible (121 fix).
  * @param {any[]} out @param {any} a @param {any} b @param {any} c @param {any} d @param {any} wantDir
  * @param {number=} mi material slot the new geometry belongs to (15-G)
+ * @param {any[]=} uvs M1: the four corners' [u,v] in a,b,c,d order — the uv
+ *   permutation follows the winding flip, or the texture would shear
  */
-function pushQuad(out, a, b, c, d, wantDir, mi) {
+function pushQuad(out, a, b, c, d, wantDir, mi, uvs) {
 	let t1 = [a, b, c];
 	let t2 = [a, c, d];
+	let uv1 = uvs && [uvs[0], uvs[1], uvs[2]];
+	let uv2 = uvs && [uvs[0], uvs[2], uvs[3]];
 	if (triNormal(t1).dot(wantDir) < 0) {
 		t1 = [a, c, b];
 		t2 = [a, d, c];
+		uv1 = uvs && [uvs[0], uvs[2], uvs[1]];
+		uv2 = uvs && [uvs[0], uvs[3], uvs[2]];
 	}
-	out.push(withSlot(t1, mi), withSlot(t2, mi));
+	out.push(withSlot(t1, mi, uv1), withSlot(t2, mi, uv2));
 }
 
 /**
@@ -438,14 +492,28 @@ export function extrudeFace(tris, face, dist) {
 	out.forEach((t, ti) => {
 		if (faceSet.has(ti)) t.forEach((/** @type {any} */ v) => v.add(offset));
 	});
-	boundary.forEach(({ p0, p1, ti }) => {
+	boundary.forEach(({ p0, p1, ti, c0, c1 }) => {
 		const a = p0.clone();
 		const b = p1.clone();
 		const a2 = p0.clone().add(offset);
 		const b2 = p1.clone().add(offset);
+		// M1: the wall inherits the boundary edge's UVs; the offset copies take
+		// their base corner's uv, so the texture runs unbroken up the new side
+		// (Blender's "extrude copies the source face's UVs" behaviour)
+		const uvA = uvAt(tris[ti], c0);
+		const uvB = uvAt(tris[ti], c1);
 		// each wall takes its OWN triangle's normal + slot: a multi-selection can
 		// span shells (and, in a mixed selection, differently-facing faces)
-		pushQuad(out, a, b, b2, a2, edgeOutward(p0, p1, triNormal(tris[ti])), tris[ti].mi);
+		pushQuad(
+			out,
+			a,
+			b,
+			b2,
+			a2,
+			edgeOutward(p0, p1, triNormal(tris[ti])),
+			tris[ti].mi,
+			tris[ti].uv && [uvA, uvB, uvB, uvA]
+		);
 	});
 	return out;
 }
@@ -485,18 +553,31 @@ export function insetFace(tris, face, amount) {
 	const t = Math.min(Math.max(amount, 0), 0.95);
 	for (const component of componentsOfTris(tris, face.triIndices)) {
 		const centroid = centroidOfTris(tris, component);
+		// M1: the cap shrinks in UV space by the same factor it shrinks in
+		// space, so the texture stays put on the smaller face instead of
+		// stretching across it
+		const uvCentroid = uvCentroidOf(tris, component);
 		const componentSet = new Set(component);
 		out.forEach((tri, ti) => {
-			if (componentSet.has(ti)) tri.forEach((/** @type {any} */ v) => v.lerp(centroid, t));
+			if (!componentSet.has(ti)) return;
+			tri.forEach((/** @type {any} */ v) => v.lerp(centroid, t));
+			if (tri.uv) tri.uv = tri.uv.map((/** @type {number[]} */ p) => uvLerp(p, uvCentroid, t));
 		});
 		// frame ring: original boundary edge → its inset counterpart, facing outward
 		// like the face did (normal ≈ the face normal)
-		boundaryEdges(tris, { triIndices: component }).forEach(({ p0, p1, ti }) => {
+		boundaryEdges(tris, { triIndices: component }).forEach(({ p0, p1, ti, c0, c1 }) => {
 			const a = p0.clone();
 			const b = p1.clone();
 			const b2 = p1.clone().lerp(centroid, t);
 			const a2 = p0.clone().lerp(centroid, t);
-			pushQuad(out, a, b, b2, a2, triNormal(tris[ti]), tris[ti].mi);
+			const uvA = uvAt(tris[ti], c0);
+			const uvB = uvAt(tris[ti], c1);
+			pushQuad(out, a, b, b2, a2, triNormal(tris[ti]), tris[ti].mi, tris[ti].uv && [
+				uvA,
+				uvB,
+				uvLerp(uvB, uvCentroid, t),
+				uvLerp(uvA, uvCentroid, t)
+			]);
 		});
 	}
 	return out;
@@ -518,18 +599,26 @@ export function subdivideFaceTris(tris, targetTris) {
 	const out = [];
 	tris.forEach((t, ti) => {
 		if (!targets.has(ti)) {
-			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi));
+			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
 			return;
 		}
 		const [a, b, c] = t;
 		const ab = a.clone().add(b).multiplyScalar(0.5);
 		const bc = b.clone().add(c).multiplyScalar(0.5);
 		const ca = c.clone().add(a).multiplyScalar(0.5);
+		// M1: uv midpoints are the EXACT analogue of the position midpoints, so a
+		// subdivided face keeps its mapping pixel-for-pixel
+		const uA = uvAt(t, 0);
+		const uB = uvAt(t, 1);
+		const uC = uvAt(t, 2);
+		const uAB = uvLerp(uA, uB, 0.5);
+		const uBC = uvLerp(uB, uC, 0.5);
+		const uCA = uvLerp(uC, uA, 0.5);
 		out.push(
-			withSlot([a.clone(), ab.clone(), ca.clone()], t.mi),
-			withSlot([ab.clone(), b.clone(), bc.clone()], t.mi),
-			withSlot([ca.clone(), bc.clone(), c.clone()], t.mi),
-			withSlot([ab, bc, ca], t.mi)
+			withSlot([a.clone(), ab.clone(), ca.clone()], t.mi, t.uv && [uA, uAB, uCA]),
+			withSlot([ab.clone(), b.clone(), bc.clone()], t.mi, t.uv && [uAB, uB, uBC]),
+			withSlot([ca.clone(), bc.clone(), c.clone()], t.mi, t.uv && [uCA, uBC, uC]),
+			withSlot([ab, bc, ca], t.mi, t.uv && [uAB, uBC, uCA])
 		);
 	});
 	return out;
@@ -544,7 +633,9 @@ export function flipFaceNormals(tris, targetTris) {
 			targets.has(ti)
 				? [t[0].clone(), t[2].clone(), t[1].clone()]
 				: [t[0].clone(), t[1].clone(), t[2].clone()],
-			t.mi
+			t.mi,
+			// M1: the uvs follow the same corner swap, or the texture mirrors
+			t.uv && (targets.has(ti) ? [t.uv[0], t.uv[2], t.uv[1]] : t.uv)
 		)
 	);
 }
@@ -613,6 +704,7 @@ export function bridgeFaces() {
 	}
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
+	const beforeUVs = trisToUVs(workingTris);
 	const remove = new Set([...setA, ...setB]);
 	const next = cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !remove.has(ti)));
 	const n = loopA.length;
@@ -647,6 +739,11 @@ export function bridgeFaces() {
 	// the tunnel walls take the FIRST piece's material slot (15-G) — a merged
 	// multi-material mesh must stay fully grouped or it renders as nothing
 	const mi = workingTris[setA[0]]?.mi || 0;
+	// M1: a tunnel is brand-new surface with no uv to inherit from either cap —
+	// give it the standard strip parametrization (u runs around the loop, v goes
+	// 0 at A to 1 at B). Only when the mesh is textured at all: a uv attribute
+	// must cover EVERY vertex or three throws.
+	const textured = workingTris.some((/** @type {any} */ t) => !!t.uv);
 	for (let k = 0; k < n; k++) {
 		const a0 = loopA[(ai + k) % n];
 		const a1 = loopA[(ai + k + 1) % n];
@@ -660,7 +757,23 @@ export function bridgeFaces() {
 			wantDir = mid.clone().sub(centA.clone().addScaledVector(axis, t));
 		} else wantDir = mid.clone().sub(centA);
 		if (wantDir.lengthSq() < 1e-9) wantDir = new THREE.Vector3(0, 1, 0);
-		pushQuad(next, a0.clone(), a1.clone(), b1.clone(), b0.clone(), wantDir.normalize(), mi);
+		pushQuad(
+			next,
+			a0.clone(),
+			a1.clone(),
+			b1.clone(),
+			b0.clone(),
+			wantDir.normalize(),
+			mi,
+			textured
+				? [
+						[k / n, 0],
+						[(k + 1) / n, 0],
+						[(k + 1) / n, 1],
+						[k / n, 1]
+					]
+				: undefined
+		);
 	}
 	const positions = trisToPositions(next);
 	if (positions.length > MAX_SNAPSHOT) {
@@ -668,13 +781,14 @@ export function bridgeFaces() {
 		return false;
 	}
 	const groups = trisToGroups(next);
-	applyGeometrySnapshot(positions, groups);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups);
+	const uvs = trisToUVs(next);
+	applyGeometrySnapshot(positions, groups, uvs);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
-		before: { positions: before, groups: beforeGroups },
-		after: { positions, groups }
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
+		after: { positions, groups, uvs }
 	});
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
@@ -751,6 +865,62 @@ function preserveMaterialGroups(geometry, previous, object, groups) {
 	if (covered < count) geometry.addGroup(covered, count - covered, last);
 }
 
+/**
+ * M1: the triangles' UVs as a flat array (2 per vertex), or null when the mesh
+ * is untextured — the common case then puts nothing extra on the wire, in
+ * history, or in the geometry, exactly like `trisToGroups`. A triangle that
+ * somehow lost its uv (new geometry an op forgot to tag) contributes zeros
+ * rather than a short array: a uv attribute must cover EVERY vertex.
+ * @param {any[]} tris @returns {number[] | null}
+ */
+export function trisToUVs(tris) {
+	if (!tris.some((t) => !!t.uv)) return null;
+	/** @type {number[]} */
+	const uvs = [];
+	for (const t of tris)
+		for (let c = 0; c < 3; c++) {
+			const pair = t.uv ? t.uv[c] : null;
+			uvs.push(pair ? pair[0] : 0, pair ? pair[1] : 0);
+		}
+	return uvs;
+}
+
+/**
+ * M1: keep a TEXTURED mesh mapped across a geometry swap. Prefer the uvs the
+ * edit computed; else carry the previous geometry's attribute over — exact
+ * whenever the vertex count is unchanged (sculpt strokes, vertex drags, VR
+ * grabs, stretch), clipped or zero-padded when an op grew/shrank the mesh
+ * without tracking uvs (createFaceFromVerts). Never leaves a partial attribute:
+ * three requires uv.count === position.count.
+ * @param {any} geometry @param {any} previous @param {number[] | null} [uvs]
+ */
+function preserveUVs(geometry, previous, uvs) {
+	const count = geometry.attributes.position.count;
+	if (uvs?.length) {
+		const array = new Float32Array(count * 2);
+		array.set(uvs.length > array.length ? uvs.slice(0, array.length) : uvs);
+		geometry.setAttribute('uv', new THREE.BufferAttribute(array, 2));
+		return;
+	}
+	const old = previous?.attributes?.uv;
+	if (!old) return;
+	// Read through the previous geometry's INDEX when it had one: several paths
+	// snapshot INDEX-EXPANDED positions (weld, entering sculpt, create-face), so
+	// the new vertex count is previous.index.count while the old uv attribute is
+	// still in unique-vertex space. Without this a weld on an indexed mesh
+	// zero-padded 12 of a box's 36 uvs.
+	const index = previous.index;
+	const expanded = index && count === index.count;
+	const array = new Float32Array(count * 2);
+	for (let i = 0; i < count; i++) {
+		const j = expanded ? index.getX(i) : i;
+		if (j >= old.count) continue; // grew past what we know — leave 0,0
+		array[i * 2] = old.getX(j);
+		array[i * 2 + 1] = old.getY(j);
+	}
+	geometry.setAttribute('uv', new THREE.BufferAttribute(array, 2));
+}
+
 /** flat positions array for a snapshot message @param {any[]} tris */
 export function trisToPositions(tris) {
 	/** @type {number[]} */
@@ -776,28 +946,35 @@ export function stretchPositions(positions, axis, factor) {
 }
 
 /**
+ * Numbers off the wire: a plain array (history replays), an ArrayBuffer (the
+ * wire format) or a typed-array VIEW — binarypack may deliver a view into a
+ * LARGER buffer, so slice the exact bytes (the assetShare gotcha).
+ * @param {any} data
+ */
+function toFloats(data) {
+	if (data instanceof ArrayBuffer) return new Float32Array(data);
+	if (ArrayBuffer.isView(data))
+		return new Float32Array(
+			/** @type {any} */ (data).buffer.slice(
+				/** @type {any} */ (data).byteOffset,
+				/** @type {any} */ (data).byteOffset + /** @type {any} */ (data).byteLength
+			)
+		);
+	return new Float32Array(data);
+}
+
+/**
  * Swap an object's geometry to a positions snapshot (remote msg / undo replay).
  * @param {string} uuid @param {number[]} positions
  * @param {any[] | null} [groups] material groups for a multi-material mesh (15-G);
  *   omitted by the sculpt/vertex paths, which never change the vertex count
+ * @param {any} [uvs] M1: texture coordinates, same three wire shapes as
+ *   positions; omitted means "carry the previous attribute over"
  */
-export function applyMeshGeo(uuid, positions, groups) {
+export function applyMeshGeo(uuid, positions, groups, uvs) {
 	const object = lookupEditable(uuid); // A8: also finds the collider-edit proxy
 	if (!object) return;
-	// positions arrive as a plain array (history replays), an ArrayBuffer (the
-	// wire format) or a typed-array VIEW (binarypack may deliver a view into a
-	// larger buffer — slice the exact bytes, the assetShare gotcha)
-	const floats =
-		positions instanceof ArrayBuffer
-			? new Float32Array(positions)
-			: ArrayBuffer.isView(positions)
-				? new Float32Array(
-						/** @type {any} */ (positions).buffer.slice(
-							/** @type {any} */ (positions).byteOffset,
-							/** @type {any} */ (positions).byteOffset + /** @type {any} */ (positions).byteLength
-						)
-					)
-				: new Float32Array(positions);
+	const floats = toFloats(positions);
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute('position', new THREE.BufferAttribute(floats, 3));
 	geometry.computeVertexNormals();
@@ -808,6 +985,7 @@ export function applyMeshGeo(uuid, positions, groups) {
 	if (object.userData.terrain) smoothWeldedNormals(geometry);
 	const previous = object.geometry;
 	preserveMaterialGroups(geometry, previous, object, groups);
+	preserveUVs(geometry, previous, uvs == null ? null : Array.from(toFloats(uvs)));
 	previous?.dispose?.();
 	object.geometry = geometry;
 	object.userData.faceEdited = true; // parametric Geometry rows disable (like vertexEdited)
@@ -1407,6 +1585,7 @@ export function commitFaceOp(op, amount) {
 	if (!faceEdited || !face) return false;
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
+	const beforeUVs = trisToUVs(workingTris);
 	let next;
 	if (op === 'extrude') next = extrudeFace(workingTris, face, amount);
 	else if (op === 'inset') next = insetFace(workingTris, face, amount);
@@ -1420,17 +1599,19 @@ export function commitFaceOp(op, amount) {
 		showToast('That edit is too large to sync');
 		return false;
 	}
-	// 15-G: these ops change the triangle COUNT, so a multi-material mesh needs
-	// its groups recomputed (the grab/adjust paths only move vertices, and their
-	// counts match, so applyGeometrySnapshot carries the old groups over)
+	// 15-G / M1: these ops change the triangle COUNT, so a multi-material mesh
+	// needs its groups recomputed and a textured one its uvs (the grab/adjust
+	// paths only move vertices, and their counts match, so applyGeometrySnapshot
+	// carries the old groups/uvs over)
 	const groups = trisToGroups(next);
-	applyGeometrySnapshot(positions, groups);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups);
+	const uvs = trisToUVs(next);
+	applyGeometrySnapshot(positions, groups, uvs);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
-		before: { positions: before, groups: beforeGroups },
-		after: { positions, groups }
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
+		after: { positions, groups, uvs }
 	});
 	if (op === 'inset' || op === 'extrude' || op === 'move') {
 		// E6: keep the CAP selected — its tri indices survive the op (cloneTris
@@ -1453,14 +1634,16 @@ export function commitFaceOp(op, amount) {
 }
 
 /** swap the LIVE edited object's geometry + re-derive faces + overlay
- * @param {number[]} positions @param {any[] | null} [groups] material groups (15-G) */
-function applyGeometrySnapshot(positions, groups) {
+ * @param {number[]} positions @param {any[] | null} [groups] material groups (15-G)
+ * @param {number[] | null} [uvs] texture coordinates (M1) */
+function applyGeometrySnapshot(positions, groups, uvs) {
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
 	geometry.computeVertexNormals();
 	geometry.computeBoundingSphere();
 	const previous = faceEdited.geometry;
 	preserveMaterialGroups(geometry, previous, faceEdited, groups);
+	preserveUVs(geometry, previous, uvs);
 	previous?.dispose?.();
 	faceEdited.geometry = geometry;
 	faceEdited.userData.faceEdited = true;
@@ -1470,8 +1653,9 @@ function applyGeometrySnapshot(positions, groups) {
 	objectsGroup.update((v) => v);
 }
 
-/** @param {string} uuid @param {number[]} positions @param {any[] | null} [groups] */
-function broadcastMeshGeo(uuid, positions, groups) {
+/** @param {string} uuid @param {number[]} positions @param {any[] | null} [groups]
+ * @param {number[] | null} [uvs] */
+function broadcastMeshGeo(uuid, positions, groups, uvs) {
 	/** @type {any} */
 	const peer = get(peers);
 	// raw Float32 BYTES, not a plain number array: binarypack recurses per
@@ -1480,12 +1664,14 @@ function broadcastMeshGeo(uuid, positions, groups) {
 	// bytes are ~half the wire size anyway. applyMeshGeo accepts either shape.
 	// `groups` is a handful of small objects — safe as a plain value, and absent
 	// entirely for the single-material case (an older peer simply ignores it)
+	// M1: `uvs` ride as raw bytes too, and only for a textured mesh
 	if (peer)
 		peer.send({
 			type: 'meshgeo',
 			uuid: uuid,
 			positions: new Float32Array(positions).buffer,
-			...(groups?.length ? { groups } : {})
+			...(groups?.length ? { groups } : {}),
+			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {})
 		});
 }
 
@@ -1589,12 +1775,14 @@ function liveGeometryUpdate() {
 	// multi-material mesh blinks out for the whole gesture (a live extrude/inset
 	// adjust re-stitches walls, so the count changes too)
 	const groups = trisToGroups(workingTris);
+	const uvs = trisToUVs(workingTris); // M1: same reason — the texture must not blink
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
 	geometry.computeVertexNormals();
 	geometry.computeBoundingSphere();
 	const previous = faceEdited.geometry;
 	preserveMaterialGroups(geometry, previous, faceEdited, groups);
+	preserveUVs(geometry, previous, uvs);
 	previous?.dispose?.();
 	faceEdited.geometry = geometry;
 	faceEdited.userData.faceEdited = true;
@@ -1604,7 +1792,7 @@ function liveGeometryUpdate() {
 	const now = Date.now();
 	if (now - lastFaceBroadcast > 200) {
 		lastFaceBroadcast = now;
-		broadcastMeshGeo(faceEdited.uuid, positions, groups);
+		broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	}
 }
 
@@ -1946,9 +2134,18 @@ export function commitFaceAdjust() {
 	const positions = trisToPositions(workingTris);
 	const before = faceAdjust.before;
 	faceAdjust = null;
-	applyGeometrySnapshot(positions);
-	broadcastMeshGeo(faceEdited.uuid, positions);
-	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: positions });
+	// a live extrude/inset RE-STITCHES walls, so the count changes — this path
+	// must carry the recomputed groups + uvs like commitFaceOp does (15-G / M1)
+	const groups = trisToGroups(workingTris);
+	const uvs = trisToUVs(workingTris);
+	applyGeometrySnapshot(positions, groups, uvs);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before,
+		after: { positions, groups, uvs }
+	});
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212: stale after reshape
 	return true;
 }
@@ -1963,12 +2160,14 @@ export function cancelFaceAdjust() {
 
 // undo/redo replays meshgeo snapshots through the same apply + broadcast path
 registerHistoryKind('meshgeo', (entry, state) => {
-	// 15-G: a topology op stores {positions, groups} so a multi-material mesh
-	// keeps its slots through undo/redo; every other producer (sculpt strokes,
-	// vertex drags, VR grabs) still stores a bare positions array
+	// 15-G / M1: a topology op stores {positions, groups, uvs} so a multi-material
+	// TEXTURED mesh keeps its slots and mapping through undo/redo; every other
+	// producer (sculpt strokes, vertex drags, VR grabs) still stores a bare
+	// positions array, and their uvs ride the previous-attribute carry-over
 	const positions = state?.positions ?? state;
 	const groups = state?.positions ? state.groups : undefined;
-	applyMeshGeo(entry.uuid, positions, groups);
+	const uvs = state?.positions ? state.uvs : undefined;
+	applyMeshGeo(entry.uuid, positions, groups, uvs);
 	// same raw-bytes wire format as broadcastMeshGeo (big plain arrays blow
 	// binarypack's recursion and the replay would silently not replicate)
 	/** @type {any} */
@@ -1978,7 +2177,8 @@ registerHistoryKind('meshgeo', (entry, state) => {
 			type: 'meshgeo',
 			uuid: entry.uuid,
 			positions: new Float32Array(positions).buffer,
-			...(groups?.length ? { groups } : {})
+			...(groups?.length ? { groups } : {}),
+			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {})
 		});
 	return true;
 });

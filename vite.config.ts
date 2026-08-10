@@ -1,4 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, type Plugin } from 'vite';
 import pkg from './package.json';
 // @ts-ignore -- no @types/node in this project (adding them shifts the svelte-check baseline)
@@ -90,7 +91,10 @@ export default defineConfig({
 		__APP_VERSION__: JSON.stringify(pkg.version),
 		__COMMIT_SHA__: JSON.stringify(commitSha())
 	},
-	plugins: [devAssetProxy(), emitVersionJson(), sveltekit()],
+	// tailwind 4 runs as a vite plugin since vite 8: the old @tailwindcss/postcss route
+	// broke because vite 8's internal postcss-import resolves `@import 'tailwindcss'`
+	// as a file before the postcss plugin can claim it (build-time ENOENT).
+	plugins: [tailwindcss(), devAssetProxy(), emitVersionJson(), sveltekit()],
 	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
 	// certs/ was already how CI-less https worked before mkcert)
 	server: {

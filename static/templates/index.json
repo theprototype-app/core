@@ -1,0 +1,36 @@
+{
+	"version": 1,
+	"templates": [
+		{
+			"slug": "level-blockout",
+			"title": "Level blockout",
+			"description": "Greybox kit: floor, ramp to a platform, steps, walls and cover blocks",
+			"author": "theprototype",
+			"license": "CC0-1.0",
+			"bytes": 3279,
+			"scene": "/templates/level-blockout/scene.tpscene",
+			"thumb": "/templates/level-blockout/thumb.webp"
+		},
+		{
+			"slug": "physics-playground",
+			"title": "Physics playground",
+			"description": "Static floor and ramp, a dynamic cube pyramid, dominos and a bouncy ball — press P to simulate",
+			"author": "theprototype",
+			"license": "CC0-1.0",
+			"bytes": 3542,
+			"scene": "/templates/physics-playground/scene.tpscene",
+			"thumb": "/templates/physics-playground/thumb.webp"
+		},
+		{
+			"slug": "architecture-shell",
+			"title": "Architecture shell",
+			"description": "Room shell with a door and window opening, columns and a half roof to block out interiors",
+			"author": "theprototype",
+			"license": "CC0-1.0",
+			"bytes": 3720,
+			"scene": "/templates/architecture-shell/scene.tpscene",
+			"thumb": "/templates/architecture-shell/thumb.webp"
+		}
+	],
+	"examples": []
+}

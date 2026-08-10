@@ -261,18 +261,24 @@ export function createGroup(command, uuid, groupuuid, name, groupparent, pos, ro
 }
 
 export function changeName(uuid, name) {
-    if(sceneObjects.getObjectByProperty('uuid', uuid)) {
-        sceneObjects.getObjectByProperty('uuid', uuid).name = name;
+    const object = sceneObjects.getObjectByProperty('uuid', uuid);
+    if(object) {
+        object.name = name;
         //Trigger reactivity for UI list of objects
         objectsGroup.update((value) => value);
     }
 }
    
 export function moveGeometry(uuid, pos, rot, scale) {
-    if(sceneObjects.getObjectByProperty('uuid', uuid)) {
-        sceneObjects.getObjectByProperty('uuid', uuid).position.set(pos[0], pos[1], pos[2]);
-        sceneObjects.getObjectByProperty('uuid', uuid).rotation.set(rot[0], rot[1], rot[2]);
-        sceneObjects.getObjectByProperty('uuid', uuid).scale.set(scale[0], scale[1], scale[2]);
+    // `move` is the hottest replicated message there is (drag streams, physics
+    // write-back, flow-animated poses). getObjectByProperty walks the whole scene
+    // graph, and this walked it FOUR times per message — once to test, then once
+    // per component (B5).
+    const object = sceneObjects.getObjectByProperty('uuid', uuid);
+    if(object) {
+        object.position.set(pos[0], pos[1], pos[2]);
+        object.rotation.set(rot[0], rot[1], rot[2]);
+        object.scale.set(scale[0], scale[1], scale[2]);
         // a peer moved it: if it is animated here, this transform is the new base
         notifyExternalMove(uuid);
         // CL-C C3: ~10Hz speed approximation feed on peers (velocity node)

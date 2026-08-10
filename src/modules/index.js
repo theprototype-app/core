@@ -4,8 +4,7 @@
 
 import hello from './hello/module.js';
 import button from './button/module.js';
-import dungeon from './dungeon/module.js';
 import pong from './pong/module.js';
 import vrsleeve from './vrsleeve/module.js';
 
-export const coreModules = [hello, button, dungeon, pong, vrsleeve];
+export const coreModules = [hello, button, pong, vrsleeve];

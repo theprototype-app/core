@@ -64,6 +64,15 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A, 8000);
+	// 17-A: dungeon lives in the modules repo now — install it on BOTH peers
+	// (every peer needs the same modules for shared behaviour to match)
+	if (!require('fs').existsSync(h.moduleZipPath('dungeon'))) {
+		console.log('SKIP: ../theprototype.app-modules/dungeon.zip not built (npm run pack -- --all there)');
+		await h.finish(browser);
+		return;
+	}
+	await h.installModule(A, 'dungeon');
+	await h.installModule(B, 'dungeon');
 
 	// generate on A through the module panel
 	await A.page.evaluate(
@@ -187,6 +196,9 @@ h.run(async () => {
 
 	// late joiner: gets the dungeon AND the objective state
 	const C = await h.setupPage(browser, 'C');
+	// the late joiner needs the module too - a peer without it cannot rebuild
+	// the dungeon from the replicated {seed, params} (that IS the netcode)
+	await h.installModule(C, 'dungeon');
 	await h.connect(C, A, 12000);
 	await h.eventually(
 		() => playData(C.page),

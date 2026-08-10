@@ -283,17 +283,20 @@ loadable play content. Everything a user does must be visible to connected peers
   loads it, Sidebar Files = [GLTF | Scene | ⚙cog]), `measure`, `cameraBookmarks`,
   `editorNavigation`, `lightHelpers`.
 - `src/modules/` — core modules (hello = the smallest complete example, button =
-  custom Svelte node UI, dungeon = entangled with play mode via `dungeonPlay`,
-  pong, vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only, register()
+  custom Svelte node UI, pong, vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only, register()
   just wires the vrControls hook registries, so disabling the module removes
   the sleeve entirely) + `index.js` `coreModules` list; manager enables/disables
   (live enable; core still needs a reload to disable, USER modules disable live).
-  **17-A moved piano/avatar/essentials/car OUT to `theprototype-app/modules`**
+  **17-A moved piano/avatar/essentials/car/DUNGEON OUT to `theprototype-app/modules`**
   (installable from the manager's Browse tab) — they were pure demo content and
   are now the flagship gallery entries; the SDK grew what they needed
   (`api.create`/`moveObject`/`physics.set`/`physics.createJoint`/`isPlaying`/
   `physics.running`/`followCam`/`peerIds`/`flyTo`/`playSound`). pong stays core
-  only because it still reads `globalCamera`/`userdata` directly.
+  only because it still reads `globalCamera`/`userdata` directly. The dungeon's
+  play layer (`$lib/dungeonPlay` + DungeonMinimap + the spawn/collision code in
+  PointerLockControls/VRControls) STAYS in core: the module only publishes
+  `userData.play` = {grid,width,height,minX,minY,rooms,floorValue} and core
+  consumes it, so that is now a PUBLIC contract any module may publish.
 - UI: `components/menu/*` (drawers/modals; visibility via stores + `hidePanels/
   restorePanels`), `components/editors/*` (flow editor + CodeMirror panels),
   `components/play/*` (player, avatars — photo = billboard card; the VR follower

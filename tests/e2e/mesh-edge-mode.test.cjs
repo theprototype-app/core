@@ -263,6 +263,53 @@ h.run(async () => {
 	);
 	h.check(session.live === true, '...and the undo barrier stays open');
 
+	// ------------------------------------- 6b. the FACE tint + gizmo must NOT
+	// survive the switch (user report: "clicking edges after selecting quads
+	// keeps them highlighted") — every switch goes through setFaceSubmode now
+	const carried = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const scene = await new Promise((r) => w.globalScene.subscribe(r)());
+		const overlayTris = () => {
+			let hit = null;
+			scene.traverse((n) => {
+				if (n.name === 'face-edit-overlay') hit = n;
+			});
+			return hit ? hit.geometry.attributes.position.count / 3 : 0;
+		};
+		let controls;
+		w.TControls.subscribe((v) => (controls = v))();
+		w.faceEdit.setFaceSubmode('faces');
+		w.faceEdit.setFaceOp('move'); // the only op that seats a gizmo (B1)
+		w.faceEdit.pickFaceUnit(0, false);
+		w.faceEdit.attachFaceGizmo();
+		const litInFaces = overlayTris();
+		const gizmoInFaces = !!controls?.object;
+		w.faceEdit.setFaceSubmode('edges');
+		const litInEdges = overlayTris();
+		const gizmoInEdges = !!controls?.object;
+		// a seat ATTEMPT while in edges (an op arm, a peer poke) must stay refused
+		w.faceEdit.attachFaceGizmo();
+		const gizmoAfterReattach = !!controls?.object;
+		w.faceEdit.setFaceSubmode('faces');
+		return {
+			litInFaces,
+			gizmoInFaces,
+			litInEdges,
+			gizmoInEdges,
+			gizmoAfterReattach,
+			backInFaces: overlayTris()
+		};
+	});
+	h.check(carried.litInFaces > 0, 'a quad pick lights the face overlay (premise)');
+	h.check(carried.gizmoInFaces === true, '...and seats the face gizmo (premise)');
+	h.check(carried.litInEdges === 0, 'switching to Edges clears the face tint');
+	h.check(
+		carried.gizmoInEdges === false,
+		'...and drops the face gizmo (it would drag the stale quads)'
+	);
+	h.check(carried.gizmoAfterReattach === false, 'the gizmo refuses to re-seat while in Edges');
+	h.check(carried.backInFaces > 0, 'switching back to Faces restores the remembered pick');
+
 	// exiting clears the edge pick + overlay
 	const cleaned = await A.page.evaluate(async () => {
 		const w = window.__stores;

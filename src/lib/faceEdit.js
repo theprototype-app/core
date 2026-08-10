@@ -1422,10 +1422,18 @@ export function faceLoopTris(tri, axis = 0) {
 	return out;
 }
 
-/** the axis the last loop select used, so a repeat press walks the OTHER loop */
+/** the axis the last loop select used, so a repeat press walks the OTHER loop.
+ * PRIVATE to the select-cycling UX: loop CUT derives its own axis from the
+ * selection (loopCutRing), because this used to leak across objects. */
 let loopAxis = 0;
 /** @type {string} */
 let loopSignature = '';
+
+/** forget the cycling state (a new session must not inherit a direction) */
+function resetLoopAxis() {
+	loopAxis = 0;
+	loopSignature = '';
+}
 
 /**
  * M2: select the face loop through the current pick. Repeating it on the same
@@ -1620,6 +1628,12 @@ export function commitLoopCut(cuts = 1) {
 	}
 	const groups = trisToGroups(next);
 	const uvs = trisToUVs(next);
+	// clear BEFORE the swap — applyGeometrySnapshot rebuilds the overlay, and the
+	// ring's indices now address the reindexed survivor array (the reported
+	// "loop cut selects random triangles"); the hover is never cleared otherwise
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
 	applyGeometrySnapshot(positions, groups, uvs);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
@@ -1628,8 +1642,6 @@ export function commitLoopCut(cuts = 1) {
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
 		after: { positions, groups, uvs }
 	});
-	faceEditSelectedTris.set([]); // the ring's indices are gone
-	faceEditHighlight.set(-1);
 	showToast(
 		'Loop cut: ' + n + ' loop' + (n === 1 ? '' : 's') + ' across ' + ring.length + ' quads'
 	);
@@ -1687,6 +1699,32 @@ export function restoreSelection(mode) {
 		refreshFaceOverlay();
 	}
 	return true;
+}
+
+/**
+ * Switch the face session between its FACES and EDGES submodes. The submode
+ * flip alone was never enough: the face tint and the seated face gizmo both
+ * survived into edge mode, so the quads picked beforehand stayed lit AND the
+ * gizmo went on dragging them while the user thought they were editing edges.
+ * Stash/restore keeps the per-mode selection memory; the two overlay refreshes
+ * are what actually clears the leaving mode's highlight.
+ * @param {'faces'|'edges'} next
+ */
+export function setFaceSubmode(next) {
+	if (get(faceEditSubmode) === next) return;
+	stashSelections();
+	faceEditSubmode.set(next);
+	restoreSelection(next);
+	// order matters only in that both must run: the face overlay tears itself
+	// down and returns early in 'edges' (see refreshFaceOverlay), the edge
+	// overlay does the same in 'faces'
+	refreshFaceOverlay();
+	refreshEdgeOverlay();
+	if (typeof window === 'undefined') return;
+	// Move is the only op that keeps a gizmo seated (setFaceOp's B1 rule), and
+	// edges have no gizmo at all yet (M4 shipped without it)
+	if (next === 'edges') detachFaceGizmo();
+	else if (get(faceEditOp) === 'move') attachFaceGizmo();
 }
 /** selected edge keys, canonical `ka|kb` @type {import('svelte/store').Writable<string[]>} */
 export const edgeEditSelected = writable(/** @type {string[]} */ ([]));
@@ -2290,6 +2328,11 @@ export function mergeByDistance(threshold = 0.001) {
 	const positions = trisToPositions(kept);
 	const groups = trisToGroups(kept);
 	const uvs = trisToUVs(kept);
+	// clear before the swap — welding drops triangles, so the old indices point
+	// somewhere else once applyGeometrySnapshot rebuilds the overlay
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
 	applyGeometrySnapshot(positions, groups, uvs);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
@@ -2298,8 +2341,6 @@ export function mergeByDistance(threshold = 0.001) {
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
 		after: { positions, groups, uvs }
 	});
-	faceEditSelectedTris.set([]);
-	faceEditHighlight.set(-1);
 	showToast(
 		'Merged ' + moved + ' vertices' + (dropped ? ', removed ' + dropped + ' degenerate faces' : '')
 	);
@@ -2477,6 +2518,7 @@ export function enterFaceEdit(uuid) {
 	faceEdited = object;
 	captureSessionEntry(object); // the state a Cancel returns to
 	rebuildFaces();
+	resetLoopAxis(); // never inherit the previous object's loop direction
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212
@@ -2536,6 +2578,7 @@ export function exitFaceEdit() {
 	faceEdited = null;
 	workingTris = [];
 	faces = [];
+	resetLoopAxis();
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212
@@ -2651,6 +2694,12 @@ function refreshFaceOverlay() {
 		overlayParts[key] = null;
 	}
 	overlay = null;
+	// The face tint belongs to the FACES submode only. Without this guard (the
+	// mirror of refreshEdgeOverlay's) every geometry swap made in edge mode —
+	// dissolve, loop cut — resurrected the face overlay from the surviving
+	// faceEditSelectedTris, so the quads you picked before switching stayed lit
+	// under the edge highlight.
+	if (get(faceEditSubmode) === 'edges') return;
 	// SELECTION and HOVER are drawn as two different layers. They used to share
 	// one tint, so a face you had just DESELECTED stayed lit exactly like a
 	// selected one for as long as the cursor rested on it — reported as "invert
@@ -2742,6 +2791,16 @@ export function commitFaceOp(op, amount) {
 	// carries the old groups/uvs over)
 	const groups = trisToGroups(next);
 	const uvs = trisToUVs(next);
+	// Clear the stale picks BEFORE the swap: applyGeometrySnapshot rebuilds the
+	// overlay, and the pre-op indices address the NEW triangle array — they light
+	// up an unrelated scattering. The hover is the worse half: desktop has no
+	// pointermove path, so faceEditHoverTri keeps the pre-op triangle forever.
+	faceEditHoverTri.set(-1);
+	if (op !== 'inset' && op !== 'extrude' && op !== 'move') {
+		// subdivide/flip/delete rebuild the topology: indices are stale (212)
+		if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
+		if (op === 'delete') faceEditHighlight.set(-1);
+	}
 	applyGeometrySnapshot(positions, groups, uvs);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
@@ -2762,10 +2821,6 @@ export function commitFaceOp(op, amount) {
 		// E7: the gizmo comes back seated on the new cap (attachFaceGizmo reads
 		// the selection-first op target). NEVER on arm — that's the B1 fix.
 		if (typeof window !== 'undefined') attachFaceGizmo();
-	} else {
-		// subdivide/flip/delete rebuild the topology: indices are stale (212)
-		if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
-		if (op === 'delete') faceEditHighlight.set(-1);
 	}
 	return true;
 }
@@ -3112,6 +3167,13 @@ export function focusTargetFace() {
 export function attachFaceGizmo() {
 	if (typeof window === 'undefined' || !faceEdited) return;
 	if (get(isVRMode)) return; // the desktop gizmo helper would render in-headset
+	// M4 has no edge gizmo: seating one here would point at the stale FACE
+	// target (opTargetFace reads faceEditSelectedTris/HoverTri), so a drag in
+	// edge mode silently moved the quads picked before the switch
+	if (get(faceEditSubmode) === 'edges') {
+		detachFaceGizmo();
+		return;
+	}
 	/** @type {any} */
 	const controls = get(TControls);
 	const target = opTargetFace();

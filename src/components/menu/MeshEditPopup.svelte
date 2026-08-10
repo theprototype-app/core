@@ -55,7 +55,7 @@
 		dissolveEdges,
 		clearEdgeSelection,
 		stashSelections,
-		restoreSelection,
+		setFaceSubmode,
 		selectEdgeRing,
 		selectAllEdges,
 		invertEdgeSelection,
@@ -124,11 +124,12 @@
 			return;
 		}
 		// M4: edges and faces share ONE session — only the sub-mode differs, so
-		// switching between them keeps the undo barrier and the wireframe intact
+		// switching between them keeps the undo barrier and the wireframe intact.
+		// setFaceSubmode owns the stash/restore + both overlay refreshes + the
+		// gizmo, so the leaving mode's highlight can't survive the switch.
 		exitEditMode();
 		if (!$faceEditObject) enterFaceEdit(uuid);
-		faceEditSubmode.set(next === 'edges' ? 'edges' : 'faces');
-		restoreSelection(next === 'edges' ? 'edges' : 'faces');
+		setFaceSubmode(next === 'edges' ? 'edges' : 'faces');
 	}
 
 	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);

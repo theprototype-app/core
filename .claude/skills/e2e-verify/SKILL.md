@@ -48,6 +48,22 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **A failing check is as often a wrong PREMISE as a wrong fix — verify which before
+  changing code.** Every red in the M1-M6 batch was the test, not the feature: an
+  indexed BoxGeometry counted as 8 triangles; a smooth-shading check used a SPHERE,
+  whose geometry already ships smooth normals, so it could never have failed; a
+  merge-by-distance check expected BOTH near-coincident corners to vanish when only one
+  had a partner; a dissolve check expected 2 triangles where the merged patch's
+  boundary legitimately fans into 4. Re-derive what the code SHOULD do, then fix the
+  assertion — and say so in the commit, because a "fixed" test that was never broken is
+  a lie in the history.
+- **When a report says "X selects everything" / "the wrong thing happened", check the
+  UI before the algorithm.** Two such reports in this batch reproduced as CORRECT at
+  the store level: six near-identical 18px icon buttons in a row had Select-linked next
+  to Loop and Select-all next to Invert, and Select-linked really does select every
+  face of a one-piece mesh. The fix was making commands read as words, not touching the
+  logic. Reproduce at the STORE level first — if it is right there, the bug is in what
+  the user could see or press.
 - **Prove a regression guard by BREAKING the code**: EDIT the fix out (put the old line
   back), run the suite, confirm the new check goes red, then restore. Both
   release-blocking fixes in 1.2.0 were validated this way (shift-select: 8 page errors
@@ -87,8 +103,11 @@ $env:APP_URL='https://theprototype.app:5177/'; npm run e2e -- <name>
 through on this npm version: it parses them as npm config, vite gets `dev 5177`
 as a positional and binds a random free port over plain http.)
 
-Assigned ports: main checkout 5173 (the user's), lane-c 5174, lane-vr 5175,
-lane-ui 5176 (SHADOWED 2026-08-02 — moved to 5186), lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. Two-peer suites still meet on the signaling server
+Assigned ports: main checkout 5173 (the user's), lane-c 5174 (mesh work 2026-08-09+
+uses **5182** on that same worktree), lane-vr 5175,
+lane-ui 5176 (SHADOWED 2026-08-02 — moved to 5186), lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. A fresh worktree has NO `certs/`, so vite serves plain
+http until you run `npm run certs` — the suite's https URL then fails to connect.
+Two-peer suites still meet on the signaling server
 (now the self-hosted peerjs.theprototype.app box), so concurrent lanes' test peers
 never collide (random ids). PORT-SHADOW TRAP: another process holding only
 `[::1]:PORT` does NOT trip `--strictPort` (vite binds 0.0.0.0) — but
@@ -173,6 +192,39 @@ const value = await page.evaluate(() =>
   type), `.ctx-match` rows in search mode, `[data-ctx-active="true"]` = the keyboard
   cursor, `.ctx-grip` = the search-list resize handle, and a SUBMENU is a fixed div
   with NO role attribute (several suites locate them that way — do not add one).
+- **MESH tests: a fresh `BoxGeometry` is INDEXED.** `position.count / 3` is **8**, not
+  12, and reading a triangle's corners as `position[ti*3 + k]` reads unrelated vertices
+  and invents diagonal normals. This bit FOUR separate premise checks across 15-G and
+  M1-M6 — always `geo.index ? geo.index.count : geo.attributes.position.count`, and
+  index corners through `geo.index.getX(...)`. Anything that has been through
+  `convertToMesh` / `applyMeshGeo` / a face op IS non-indexed, which is why the same
+  helper passes in one suite and lies in the next.
+- **Assert the COMPUTED style, not the class string**, whenever a component's scoped
+  CSS could beat a utility (it is unlayered, so it does). The armed toolbox button
+  carried `bg-primary-600` in `className` while rendering fully transparent in the dark
+  theme; only `getComputedStyle(el).backgroundColor` caught it. Same shape as the
+  global-`.hidden` trap, one scope down.
+- **Render-count checks: calibrate the passes, don't assume one.** Each mesh is drawn
+  once per pass (shadow map + colour = 2 here), so isolate an object by toggling
+  `visible` across two `renderer.render` calls and derive the multiplier from a
+  known-good state (`drawn / tris`) instead of hardcoding it. `renderer.info.render
+  .triangles` after `reset()` is the measurement — it is how "the merged mesh renders 0
+  of its 28 triangles" was proven.
+- Mesh-edit anchors: toolbox root `#mesh-edit-popup` (a `ToolboxWindow`: header
+  `.toolbox-header.move-handle`, body `.toolbox-body`, footer `.toolbox-status`, grip
+  `.dw-resize`); modes `#mesh-mode-vertices|edges|faces`; granularity
+  `#mesh-gran-quad|face|triangle|shell|object`; ops `#mesh-op-<op>` (armed carries
+  `mesh-op-active` + `tbx-on`); selection commands are TEXT buttons `#mesh-sel-<id>`
+  (loop/grow/shrink/all/invert/linked); cleanup `#mesh-fix-normals|merge` +
+  `#mesh-shading`; edges `#edge-loop|dissolve|clear` + `#edge-sel-count`; the key list
+  is its OWN window `#mesh-keys-popover` opened by `#mesh-keys-help`. Sculpt
+  `#sculpt-toolbar` + `#sculpt-op-*`.
+- `objectActions.flyTo(pos, target, duration)` divides by `duration` — passing **0**
+  makes the first frame `NaN`, which NaNs the camera and then the spatial-audio panner
+  (`Failed to set the 'value' property on 'AudioParam'`). Use a real duration and wait.
+- Synthetic `pointerdown/up` on a `dragWindow` header logs harmless
+  `setPointerCapture: No active pointer` page errors — expected for synthesized events;
+  don't count them in a pageerror guard for drag tests.
 - Programmatic scene setup: `__stores.commandsHandler.sceneCommand('/create box')`
   (geometry names are capitalized THREE types — box/sphere/Button…, NOT "cube").
 - Icons are `@lucide/svelte` `<svg>` components (Font Awesome removed): select

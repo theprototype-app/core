@@ -48,6 +48,23 @@ export function editCapToast(message) {
 /** hard ceiling on a snapshot message (floats) — ~5k tris */
 const MAX_SNAPSHOT = 45000;
 
+// Coplanarity thresholds. Two names for one number, because they answer
+// different questions: FACE_COPLANAR judges what a human calls ONE FLAT FACE
+// (grouping, and the dissolve silhouette guard), QUAD_COPLANAR whether two
+// triangles may be READ as a quad.
+//
+// They are equal on purpose, and loosening QUAD_COPLANAR does NOT fix the
+// known gap: rotating an extruded band by 4 degrees twists each wall quad so
+// its two triangles diverge by ~9 (measured), which is indistinguishable from
+// a genuine 9-degree crease in a triangle SOUP - a threshold loose enough to
+// keep the twisted quad would also pair across the segments of a smooth
+// sphere. Only stored face topology can tell those apart, which is why the
+// quad graph loses a rotated band today and why that is the topology
+// workstream's job, not a constant's.
+/** ~2.6 degrees */
+const FACE_COPLANAR = 0.999;
+/** ~2.6 degrees - see above before changing it */
+const QUAD_COPLANAR = 0.999;
 /** rounded position key @param {number} x @param {number} y @param {number} z */
 function keyOf(x, y, z) {
 	return `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
@@ -243,7 +260,7 @@ export function groupFaces(tris) {
 	});
 	for (const list of edgeMap.values()) {
 		for (let i = 1; i < list.length; i++)
-			if (Math.abs(normals[list[0]].dot(normals[list[i]])) > 0.999) union(list[0], list[i]);
+			if (Math.abs(normals[list[0]].dot(normals[list[i]])) > FACE_COPLANAR) union(list[0], list[i]);
 	}
 	/** @type {Map<number, number[]>} */
 	const groups = new Map();
@@ -306,7 +323,7 @@ export function pairQuads(tris) {
 		if (list.length !== 2) continue; // an open or non-manifold edge is no diagonal
 		const [a, b] = list;
 		if (a === b) continue;
-		if (normals[a].dot(normals[b]) < 0.999) continue; // coplanar AND co-facing
+		if (normals[a].dot(normals[b]) < QUAD_COPLANAR) continue; // coplanar AND co-facing
 		const shared = ek.split('|');
 		const ra = cornerOff(tris[a], shared);
 		const rb = cornerOff(tris[b], shared);
@@ -634,6 +651,97 @@ export function subdivideFaceTris(tris, targetTris) {
 		);
 	});
 	return out;
+}
+
+/**
+ * Subdivide the target as QUADS where it can: each paired quad becomes a 2x2
+ * grid of sub-quads, and only genuinely unpaired triangles take the 4-way
+ * triangle split above.
+ *
+ * This matters far beyond tidiness. The triangle split turns one quad (2 tris)
+ * into 8 triangles that have NO grid pairing: pairQuads scores every candidate
+ * by rectangularity, the corner-and-centre "kite" pairings are all legal, and
+ * the greedy match produces a pinwheel. The quad graph the loop tools walk was
+ * then meaningless — which is why "subdivide a face, then Loop" behaved
+ * randomly. Bilinear children of a rectangle are rectangles, so the grid scores
+ * 0 and pairQuads recovers exactly the topology this emitted.
+ *
+ * Unselected neighbours keep their full edge, the same T-junction tradeoff the
+ * triangle split and loop cut already document.
+ * @param {any[]} tris @param {number[]} targetTris @param {Int32Array} partner
+ * @returns {{tris: any[], newIndices: number[]}}
+ */
+export function subdivideFaceUnits(tris, targetTris, partner) {
+	const targets = new Set(targetTris);
+	/** @type {any[]} */
+	const out = [];
+	/** @type {number[]} */
+	const newIndices = [];
+	const done = new Set();
+	const mid = (/** @type {any} */ p, /** @type {any} */ q) => p.clone().add(q).multiplyScalar(0.5);
+	tris.forEach((t, ti) => {
+		if (done.has(ti)) return;
+		if (!targets.has(ti)) {
+			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
+			return;
+		}
+		const mate = partner?.[ti] ?? -1;
+		// both halves must be in the selection, or the quad is only half-targeted
+		// and splitting it as a quad would edit geometry the user did not pick
+		const keys = mate >= 0 && targets.has(mate) ? quadRingKeys(ti, mate) : null;
+		if (!keys) {
+			// unpaired (or half-picked): the classic 4-way split, unchanged
+			const sub = subdivideFaceTris([t], [0]);
+			for (const s of sub) {
+				newIndices.push(out.length);
+				out.push(s);
+			}
+			return;
+		}
+		done.add(ti);
+		done.add(mate);
+		// corners in ring order — quadRingKeys returns [p, ra, q, rb] with the
+		// shared p-q as the diagonal, so ring order is p, ra, q, rb
+		const corner = new Map();
+		for (const idx of [ti, mate]) {
+			const tri = tris[idx];
+			tri.forEach((/** @type {any} */ v, /** @type {number} */ c) => {
+				const k = keyOf(v.x, v.y, v.z);
+				if (!corner.has(k)) corner.set(k, { pos: v, uv: uvAt(tri, c) });
+			});
+		}
+		const ring = keys.map((/** @type {string} */ k) => corner.get(k));
+		if (ring.some((/** @type {any} */ r) => !r)) {
+			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
+			return;
+		}
+		const [A, B, C, D] = ring;
+		const mAB = mid(A.pos, B.pos);
+		const mBC = mid(B.pos, C.pos);
+		const mCD = mid(C.pos, D.pos);
+		const mDA = mid(D.pos, A.pos);
+		// the bilinear centre is the midpoint of either diagonal
+		const ctr = mid(A.pos, C.pos);
+		const uAB = uvLerp(A.uv, B.uv, 0.5);
+		const uBC = uvLerp(B.uv, C.uv, 0.5);
+		const uCD = uvLerp(C.uv, D.uv, 0.5);
+		const uDA = uvLerp(D.uv, A.uv, 0.5);
+		const uCtr = uvLerp(A.uv, C.uv, 0.5);
+		const mi = t.mi;
+		const textured = !!t.uv;
+		const wantDir = triNormal(t);
+		/** @param {any[]} pos @param {any[]} uv */
+		const emit = (pos, uv) => {
+			const at = out.length;
+			pushQuad(out, pos[0], pos[1], pos[2], pos[3], wantDir, mi, textured ? uv : undefined);
+			for (let i = at; i < out.length; i++) newIndices.push(i);
+		};
+		emit([A.pos.clone(), mAB, ctr.clone(), mDA], [A.uv, uAB, uCtr, uDA]);
+		emit([mAB.clone(), B.pos.clone(), mBC, ctr.clone()], [uAB, B.uv, uBC, uCtr]);
+		emit([ctr.clone(), mBC.clone(), C.pos.clone(), mCD], [uCtr, uBC, C.uv, uCD]);
+		emit([mDA.clone(), ctr.clone(), mCD.clone(), D.pos.clone()], [uDA, uCtr, uCD, D.uv]);
+	});
+	return { tris: out, newIndices };
 }
 
 /** B4: reverse the winding (swap b/c) of the target tris — flips their
@@ -1100,6 +1208,97 @@ meshEditHotkeys.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditHotkeys', String(value));
 });
 
+/** Show the object SELECTION OUTLINE while mesh-editing — local pref, default
+ * OFF. The outline is a postprocessing pass composited after the whole scene,
+ * so it paints OVER the vertex handles and the edge/face highlights no matter
+ * what they do with depthTest/renderOrder: while you are editing elements, the
+ * object-level outline is pure glare. Read by Outline.svelte. */
+export const meshEditOutline = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('meshEditOutline') === 'true'
+);
+meshEditOutline.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditOutline', String(value));
+});
+
+/** Show the raw TRIANGULATION in the edit wireframe — local pref, default OFF.
+ * The default draws the QUAD structure instead: a quad's internal diagonal is
+ * a triangulation artifact, deliberately not pickable (pickEdgeAt skips it) and
+ * not dissolvable, so drawing it advertised an edge the tools refuse to touch.
+ * Every modeller shows quads in edit mode for the same reason. */
+export const meshEditTriWire = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('meshEditTriWire') === 'true'
+);
+
+/** meshEdit owns the vertex-mode overlay; it imports THIS module, so it hands
+ * us a rebuild callback rather than the other way round (the TDZ cycle rule).
+ * Declared ABOVE the subscriber below, which runs at module eval — the classic
+ * store-subscriber TDZ that has bitten this file twice.
+ * @type {(() => void) | null} */
+let vertexWireRebuild = null;
+/** @param {() => void} fn */
+export function registerVertexWireRebuild(fn) {
+	vertexWireRebuild = fn;
+}
+
+meshEditTriWire.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditTriWire', String(value));
+	// the edge set differs, so this rebuilds rather than toggling visibility.
+	// `wire` is the only session state read here: faceEdited lives further down
+	// the file and would TDZ-crash the SSR eval, so refreshFaceWireframe (which
+	// checks it itself) is the gate.
+	if (wire) refreshFaceWireframe();
+	vertexWireRebuild?.();
+});
+
+/** the welded edge keys that are quad DIAGONALS — everything the quad view
+ * leaves out. @param {any[]} tris @param {Int32Array} partner */
+function diagonalEdgeKeys(tris, partner) {
+	const out = new Set();
+	for (let i = 0; i < tris.length; i++) {
+		const mate = partner[i];
+		if (mate < 0 || mate < i) continue;
+		const keys = quadRingKeys(i, mate);
+		// quadRingKeys returns [p, ra, q, rb] — the shared p-q IS the diagonal
+		if (keys) out.add(edgeKey(keys[0], keys[2]));
+	}
+	return out;
+}
+
+/** Quad-structure line geometry: every welded edge of the mesh EXCEPT the
+ * diagonals of paired quads. Unpaired triangles keep all three edges, so a
+ * genuine tri-only mesh looks exactly as it did. @param {any} geometry */
+function quadWireGeometry(geometry) {
+	const tris = readTriangles(geometry);
+	const skip = diagonalEdgeKeys(tris, pairQuads(tris));
+	const seen = new Set();
+	/** @type {number[]} */
+	const points = [];
+	for (const t of tris) {
+		const keys = t.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+		for (let e = 0; e < 3; e++) {
+			const key = edgeKey(keys[e], keys[(e + 1) % 3]);
+			if (skip.has(key) || seen.has(key)) continue;
+			seen.add(key);
+			const a = t[e];
+			const b = t[(e + 1) % 3];
+			points.push(a.x, a.y, a.z, b.x, b.y, b.z);
+		}
+	}
+	const out = new THREE.BufferGeometry();
+	out.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+	return out;
+}
+
+/** The geometry the edit wireframe should draw right now — quad structure by
+ * default, the raw triangulation when the Display toggle asks for it. Exported
+ * because meshEdit swaps `overlay.geometry` in place on every vertex move.
+ * @param {any} geometry */
+export function editWireGeometry(geometry) {
+	return get(meshEditTriWire)
+		? new THREE.WireframeGeometry(geometry)
+		: quadWireGeometry(geometry);
+}
+
 /**
  * The edit-session wireframe overlay: an object-CHILD LineSegments (follows
  * the transform for free) whose raycast is stubbed out (D8: three raycasts
@@ -1115,7 +1314,7 @@ export function buildEditWireframe(object) {
 	// relative luminance over three's LINEAR color components
 	const lum = c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0;
 	const overlay = new THREE.LineSegments(
-		new THREE.WireframeGeometry(object.geometry),
+		editWireGeometry(object.geometry),
 		new THREE.LineBasicMaterial({
 			color: lum > 0.5 ? 0x1f2937 : 0x2f81f7,
 			transparent: true,
@@ -1126,6 +1325,21 @@ export function buildEditWireframe(object) {
 	overlay.raycast = () => {};
 	overlay.visible = get(meshEditWireframe);
 	return overlay;
+}
+
+/** e2e (and a sanity probe): what the face-mode wire actually draws.
+ * `diagonals` must be 0 in quad view — that is the whole point of it. */
+export function wireframeDebug() {
+	if (!wire || !faceEdited) return { segments: 0, diagonals: -1 };
+	const position = wire.geometry.attributes.position;
+	const skip = diagonalEdgeKeys(workingTris, quadPartner);
+	let diagonals = 0;
+	for (let i = 0; i < position.count; i += 2) {
+		const a = keyOf(position.getX(i), position.getY(i), position.getZ(i));
+		const b = keyOf(position.getX(i + 1), position.getY(i + 1), position.getZ(i + 1));
+		if (skip.has(edgeKey(a, b))) diagonals++;
+	}
+	return { segments: position.count / 2, diagonals };
 }
 
 /** (Re)build the face-mode wireframe from the CURRENT geometry — called on
@@ -1245,7 +1459,7 @@ function pickFaceUnitTris(tri) {
 }
 
 /** Multi mode: toggle the picked unit into the accumulated selection. @param {number} tri */
-export function toggleFaceSelection(tri) {
+function toggleFaceSelectionInner(tri) {
 	const unit = pickFaceUnitTris(tri);
 	if (!unit.length) return false;
 	faceEditSelectedTris.update((sel) => {
@@ -1259,7 +1473,7 @@ export function toggleFaceSelection(tri) {
 }
 
 /** Clear the accumulated multi-selection */
-export function clearFaceSelection() {
+function clearFaceSelectionInner() {
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
 	refreshFaceOverlay();
 }
@@ -1303,7 +1517,7 @@ function opTargetTris() {
 
 /** E10: a plain (non-additive) pick REPLACES the selection with the
  * granularity-aware unit under the cursor. @param {number} tri */
-export function pickFaceUnit(tri) {
+function pickFaceUnitInner(tri) {
 	faceEditSelectedTris.set(pickFaceUnitTris(tri));
 	refreshFaceOverlay();
 }
@@ -1392,7 +1606,13 @@ export function faceLoopRing(tri, axis = 0) {
 		let quad = start;
 		let edge = first;
 		for (let guard = 0; guard < workingTris.length; guard++) {
-			const next = (topo.byEdge.get(edge) ?? []).find((q) => q !== quad);
+			// exactly ONE quad on the other side, or the walk stops. `.find` used to
+			// take the first of several at a non-manifold edge (two shells welded
+			// along a wall, a coplanar T-seam), which sent the loop off into an
+			// arbitrary strip — a stop is the honest answer, and it is what every
+			// modeller does there.
+			const others = (topo.byEdge.get(edge) ?? []).filter((q) => q !== quad);
+			const next = others.length === 1 ? others[0] : undefined;
 			if (next === undefined || seen.has(next)) break; // boundary, non-quad, or closed
 			const edges = topo.edges.get(next);
 			const at = edges ? edges.indexOf(edge) : -1;
@@ -1422,10 +1642,18 @@ export function faceLoopTris(tri, axis = 0) {
 	return out;
 }
 
-/** the axis the last loop select used, so a repeat press walks the OTHER loop */
+/** the axis the last loop select used, so a repeat press walks the OTHER loop.
+ * PRIVATE to the select-cycling UX: loop CUT derives its own axis from the
+ * selection (loopCutRing), because this used to leak across objects. */
 let loopAxis = 0;
 /** @type {string} */
 let loopSignature = '';
+
+/** forget the cycling state (a new session must not inherit a direction) */
+function resetLoopAxis() {
+	loopAxis = 0;
+	loopSignature = '';
+}
 
 /**
  * M2: select the face loop through the current pick. Repeating it on the same
@@ -1433,7 +1661,7 @@ let loopSignature = '';
  * "press again to cycle" affordance, since a single click cannot say which.
  * @returns {boolean}
  */
-export function selectFaceLoop() {
+function selectFaceLoopInner() {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris);
 	const anchor = /** @type {number} */ (sel.length ? sel[0] : get(faceEditHoverTri));
@@ -1467,7 +1695,7 @@ function keysOfTris(triIndices) {
  * vertex joins, then each newcomer expands to its full pick UNIT so quads stay
  * whole. @returns {boolean}
  */
-export function growSelection() {
+function growSelectionInner() {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris);
 	if (!sel.length) {
@@ -1491,7 +1719,7 @@ export function growSelection() {
  * BORDER, i.e. keep only those whose every vertex is interior (i.e. every
  * triangle sharing that vertex is also selected). @returns {boolean}
  */
-export function shrinkSelection() {
+function shrinkSelectionInner() {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris);
 	if (!sel.length) return false;
@@ -1543,24 +1771,51 @@ function quadCorners(quad) {
  * that edge. (Blender turns those into n-gons; a triangle soup has no n-gons.)
  * @param {number} cuts @returns {boolean}
  */
-export function commitLoopCut(cuts = 1) {
-	if (!faceEdited) return false;
-	const n = Math.max(1, Math.min(Math.round(cuts) || 1, 20));
-	const sel = get(faceEditSelectedTris);
-	const anchor = /** @type {number} */ (sel.length ? sel[0] : get(faceEditHoverTri));
-	if (anchor < 0 || !workingTris[anchor]) {
-		showToast('Pick a quad first, then Loop cut');
-		return false;
+/**
+ * The ring loop cut will run through, chosen from the SELECTION rather than
+ * from `loopAxis`. That module global belongs to the select-cycling UX, and
+ * reading it here meant the cut could run perpendicular to the loop the user
+ * was looking at — or, on a fresh object, along an axis inherited from the
+ * previous session.
+ *
+ * The rule is one comparison: of the two loops through the anchor, take the
+ * one that OVERLAPS the current selection more. After a Loop select (once or
+ * pressed again for the perpendicular one) the selection IS one of those two
+ * rings, so this reproduces exactly what is highlighted; on a bare hover pick
+ * there is nothing to prefer and axis 0 is the deterministic answer.
+ * @returns {{quad: number, cross: string[]}[]}
+ */
+function loopCutRing() {
+	const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
+	// the lowest-indexed PAIRED triangle: a face/shell selection can hold plenty
+	// of unpaired ones, and sel[0] used to be whichever happened to be first
+	const anchor = sel.length
+		? [...sel].sort((a, b) => a - b).find((ti) => quadIdOf(ti) >= 0)
+		: get(faceEditHoverTri);
+	if (anchor === undefined || anchor < 0 || !workingTris[anchor]) {
+		showToast(sel.length ? 'Loop cut needs a QUAD in the selection' : 'Pick a quad first, then Loop cut');
+		return [];
 	}
 	if (quadIdOf(anchor) < 0) {
 		showToast('Loop cut needs a QUAD — this triangle has no pair');
-		return false;
+		return [];
 	}
-	const ring = faceLoopRing(anchor, loopAxis);
-	if (!ring.length) {
-		showToast('No loop runs through that face');
-		return false;
+	const rings = [faceLoopRing(anchor, 0), faceLoopRing(anchor, 1)];
+	let pick = rings[0];
+	if (sel.length) {
+		const selQuads = new Set(sel.map((/** @type {number} */ ti) => quadIdOf(ti)).filter((q) => q >= 0));
+		const overlap = (/** @type {any[]} */ r) => r.filter((e) => selQuads.has(e.quad)).length;
+		if (overlap(rings[1]) > overlap(rings[0])) pick = rings[1];
 	}
+	if (!pick.length) showToast('No loop runs through that face');
+	return pick;
+}
+
+export function commitLoopCut(cuts = 1) {
+	if (!faceEdited) return false;
+	const n = Math.max(1, Math.min(Math.round(cuts) || 1, 20));
+	const ring = loopCutRing();
+	if (!ring.length) return false;
 	const topo = quadTopology ?? buildQuadTopology();
 
 	const before = trisToPositions(workingTris);
@@ -1577,6 +1832,10 @@ export function commitLoopCut(cuts = 1) {
 	const next = cloneTris(
 		workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !consumed.has(ti))
 	);
+	// everything emitted below is NEW geometry appended after the survivors, and
+	// trisToPositions -> readTriangles preserves order, so this range is still
+	// the new band after the snapshot round trip (the E6 cap-selection trick)
+	const firstNew = next.length;
 
 	for (const { quad, cross } of ring) {
 		const edges = topo.edges.get(quad);
@@ -1620,6 +1879,12 @@ export function commitLoopCut(cuts = 1) {
 	}
 	const groups = trisToGroups(next);
 	const uvs = trisToUVs(next);
+	// clear BEFORE the swap — applyGeometrySnapshot rebuilds the overlay, and the
+	// ring's indices now address the reindexed survivor array (the reported
+	// "loop cut selects random triangles"); the hover is never cleared otherwise
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
 	applyGeometrySnapshot(positions, groups, uvs);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
@@ -1628,8 +1893,13 @@ export function commitLoopCut(cuts = 1) {
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
 		after: { positions, groups, uvs }
 	});
-	faceEditSelectedTris.set([]); // the ring's indices are gone
-	faceEditHighlight.set(-1);
+	// leave the NEW band selected: it is what you reach for next (scale it, move
+	// it, cut it again), and an empty selection after an op that just rebuilt the
+	// area under the cursor reads as "nothing happened"
+	const band = [];
+	for (let ti = firstNew; ti < next.length; ti++) band.push(ti);
+	faceEditSelectedTris.set(band);
+	refreshFaceOverlay();
 	showToast(
 		'Loop cut: ' + n + ' loop' + (n === 1 ? '' : 's') + ' across ' + ring.length + ' quads'
 	);
@@ -1687,6 +1957,203 @@ export function restoreSelection(mode) {
 		refreshFaceOverlay();
 	}
 	return true;
+}
+
+/**
+ * Switch the face session between its FACES and EDGES submodes. The submode
+ * flip alone was never enough: the face tint and the seated face gizmo both
+ * survived into edge mode, so the quads picked beforehand stayed lit AND the
+ * gizmo went on dragging them while the user thought they were editing edges.
+ * Stash/restore keeps the per-mode selection memory; the two overlay refreshes
+ * are what actually clears the leaving mode's highlight.
+ * @param {'faces'|'edges'} next
+ */
+export function setFaceSubmode(next) {
+	if (get(faceEditSubmode) === next) return;
+	stashSelections();
+	faceEditSubmode.set(next);
+	restoreSelection(next);
+	// order matters only in that both must run: the face overlay tears itself
+	// down and returns early in 'edges' (see refreshFaceOverlay), the edge
+	// overlay does the same in 'faces'
+	refreshFaceOverlay();
+	refreshEdgeOverlay();
+	if (typeof window === 'undefined') return;
+	// Move is the only op that keeps a gizmo seated (setFaceOp's B1 rule), and
+	// edges have no gizmo at all yet (M4 shipped without it)
+	if (next === 'edges') detachFaceGizmo();
+	else if (get(faceEditOp) === 'move') attachFaceGizmo();
+}
+
+// ---- selection history -----------------------------------------------------
+// Picks are undoable INSIDE an edit session (the user's ask): Ctrl+Z walks back
+// a loop select, a grow, an invert. The entries are SESSION-LOCAL — the 15-F
+// seal drops them on Done (history.js), because the sealed entry describes the
+// geometry change, not which faces happened to be lit at the time.
+//
+// This is the ONE history kind that does not broadcast: a selection is per
+// viewer, and the peers never knew about it in the first place.
+
+/** vertices live in meshEdit, which imports THIS module — the reverse edge
+ * would close a TDZ cycle, so meshEdit REGISTERS its accessors here instead.
+ * @type {{snapshot: () => {uuid: string, sel: number[]} | null, apply: (sel: number[]) => boolean} | null} */
+let vertexSelectionHistory = null;
+
+/** @param {{snapshot: () => any, apply: (sel: number[]) => boolean}} hooks */
+export function registerVertexSelectionHistory(hooks) {
+	vertexSelectionHistory = hooks;
+}
+
+/** guards against a wrapped command calling another wrapped command (granularity
+ * changes clear the selection, loop select replaces it) — the OUTER pair wins */
+let recordingSelection = false;
+
+/** @param {'faces'|'edges'|'vertices'} mode */
+function selectionSnapshot(mode) {
+	if (mode === 'vertices') {
+		const state = vertexSelectionHistory?.snapshot();
+		return state ? { uuid: state.uuid, sel: [...state.sel] } : null;
+	}
+	if (!faceEdited) return null;
+	return {
+		uuid: faceEdited.uuid,
+		sel: mode === 'edges' ? [...get(edgeEditSelected)] : [...get(faceEditSelectedTris)]
+	};
+}
+
+/** selections are sets — order is an implementation detail of how they were built
+ * @param {any[]} a @param {any[]} b */
+function sameSelection(a, b) {
+	if (a.length !== b.length) return false;
+	const set = new Set(a);
+	return b.every((v) => set.has(v));
+}
+
+/**
+ * Run a selection command and record what it changed. A no-op records nothing,
+ * so clicking the same face twice does not fill the stack.
+ * @template T @param {'faces'|'edges'|'vertices'} mode @param {() => T} run @returns {T}
+ */
+export function withSelectionHistory(mode, run) {
+	if (recordingSelection) return run();
+	const before = selectionSnapshot(mode);
+	recordingSelection = true;
+	let result;
+	try {
+		result = run();
+	} finally {
+		recordingSelection = false;
+	}
+	const after = selectionSnapshot(mode);
+	if (before && after && before.uuid === after.uuid && !sameSelection(before.sel, after.sel))
+		recordEntry({
+			kind: 'selection',
+			uuid: after.uuid,
+			mode,
+			// the geometry the indices/keys describe: a topology change invalidates
+			// them, and the applier refuses rather than lighting up nonsense
+			sig: mode === 'vertices' ? -1 : selectionSignature(),
+			before: before.sel,
+			after: after.sel
+		});
+	return result;
+}
+
+// replay: set the stores back and rebuild the overlay. LOCAL ONLY — no peer send.
+registerHistoryKind('selection', (entry, state) => {
+	const sel = Array.isArray(state) ? state : [];
+	if (entry.mode === 'vertices') return vertexSelectionHistory?.apply(sel) ?? false;
+	if (!faceEdited || faceEdited.uuid !== entry.uuid || selectionSignature() !== entry.sig) {
+		showToast('That selection belongs to different geometry');
+		return false;
+	}
+	// undoing a face pick made before an edge detour must be VISIBLE
+	if (get(faceEditSubmode) !== (entry.mode === 'edges' ? 'edges' : 'faces'))
+		faceEditSubmode.set(entry.mode === 'edges' ? 'edges' : 'faces');
+	if (entry.mode === 'edges') edgeEditSelected.set(sel.filter((k) => !!edgeEndpoints(k)));
+	else faceEditSelectedTris.set(sel.filter((ti) => !!workingTris[ti]));
+	// The click that RECORDED this entry also set the hover + highlight, and the
+	// desktop has no pointermove path to move them off again. Leaving them alone
+	// brings the quad this undo just deselected straight back as the hover wash
+	// ("the last quad keeps its highlight"), and leaves the gizmo seated on a
+	// target the selection no longer contains — the P1 stale-gizmo bug by another
+	// route. VR re-sets the hover from the beam on the next frame.
+	faceEditHoverTri.set(-1);
+	faceEditHighlight.set(-1);
+	refreshFaceOverlay();
+	refreshEdgeOverlay();
+	if (typeof window !== 'undefined') {
+		// attachFaceGizmo detaches itself when the restored selection has no target
+		if (get(faceEditSubmode) === 'faces' && get(faceEditOp) === 'move') attachFaceGizmo();
+		else detachFaceGizmo();
+	}
+	return true;
+});
+
+// The selection COMMANDS, each wrapped so one press is one undo step. The
+// bodies above are the *Inner functions; only these are exported, so every
+// caller (toolbar, shortcuts, VR, Scene dispatch) records without knowing it.
+
+/** Multi mode: toggle the picked unit into the accumulated selection. @param {number} tri */
+export function toggleFaceSelection(tri) {
+	return withSelectionHistory('faces', () => toggleFaceSelectionInner(tri));
+}
+/** Clear the accumulated multi-selection */
+export function clearFaceSelection() {
+	withSelectionHistory('faces', () => clearFaceSelectionInner());
+}
+/** E10: a plain pick REPLACES the selection with the unit under the cursor. @param {number} tri */
+export function pickFaceUnit(tri) {
+	withSelectionHistory('faces', () => pickFaceUnitInner(tri));
+}
+/** M2: select the face loop through the current pick. @returns {boolean} */
+export function selectFaceLoop() {
+	return withSelectionHistory('faces', () => selectFaceLoopInner());
+}
+/** M2: grow the selection by one ring. @returns {boolean} */
+export function growSelection() {
+	return withSelectionHistory('faces', () => growSelectionInner());
+}
+/** M2: shrink the selection by one ring. @returns {boolean} */
+export function shrinkSelection() {
+	return withSelectionHistory('faces', () => shrinkSelectionInner());
+}
+/** M6: select every triangle of the mesh. @returns {boolean} */
+export function selectAllFaces() {
+	return withSelectionHistory('faces', () => selectAllFacesInner());
+}
+/** M6: invert the selection (by pick UNIT, so quads stay whole). @returns {boolean} */
+export function invertFaceSelection() {
+	return withSelectionHistory('faces', () => invertFaceSelectionInner());
+}
+/** M6: grow the selection to every CONNECTED triangle. @returns {boolean} */
+export function selectLinkedFaces() {
+	return withSelectionHistory('faces', () => selectLinkedFacesInner());
+}
+/** M4: pick an edge — additive toggles it into the set, else it replaces it.
+ * @param {string} key @param {boolean} [additive] */
+export function pickEdge(key, additive = false) {
+	return withSelectionHistory('edges', () => pickEdgeInner(key, additive));
+}
+/** M4: drop the edge selection */
+export function clearEdgeSelection() {
+	withSelectionHistory('edges', () => clearEdgeSelectionInner());
+}
+/** M4: the edge LOOP through each pick. @returns {boolean} */
+export function selectEdgeLoop() {
+	return withSelectionHistory('edges', () => selectEdgeLoopInner());
+}
+/** M4: the edge RING through each pick. @returns {boolean} */
+export function selectEdgeRing() {
+	return withSelectionHistory('edges', () => selectEdgeRingInner());
+}
+/** select every REAL edge of the mesh (Ctrl+A in edge mode). @returns {boolean} */
+export function selectAllEdges() {
+	return withSelectionHistory('edges', () => selectAllEdgesInner());
+}
+/** invert the edge selection (Ctrl+I in edge mode). @returns {boolean} */
+export function invertEdgeSelection() {
+	return withSelectionHistory('edges', () => invertEdgeSelectionInner());
 }
 /** selected edge keys, canonical `ka|kb` @type {import('svelte/store').Writable<string[]>} */
 export const edgeEditSelected = writable(/** @type {string[]} */ ([]));
@@ -1758,7 +2225,7 @@ export function highlightEdge(key) {
 
 /** M4: pick an edge — additive toggles it into the set, else it replaces it.
  * @param {string} key @param {boolean} [additive] */
-export function pickEdge(key, additive = false) {
+function pickEdgeInner(key, additive = false) {
 	if (!key) return false;
 	edgeEditSelected.update((sel) => {
 		if (!additive) return [key];
@@ -1772,7 +2239,7 @@ export function pickEdge(key, additive = false) {
 }
 
 /** M4: drop the edge selection */
-export function clearEdgeSelection() {
+function clearEdgeSelectionInner() {
 	if (get(edgeEditSelected).length) edgeEditSelected.set([]);
 	edgeEditHover.set('');
 	refreshEdgeOverlay();
@@ -1869,7 +2336,7 @@ export function edgeLoopKeys(key) {
  *     first pick silently winning and the rest being discarded.
  * @returns {boolean}
  */
-export function selectEdgeLoop() {
+function selectEdgeLoopInner() {
 	const sel = get(edgeEditSelected);
 	if (!sel.length) {
 		showToast('Pick an edge first, then Loop');
@@ -1903,7 +2370,7 @@ export function selectEdgeLoop() {
 
 /** M4: the edge RING through each pick (the parallel rungs a face loop crosses)
  * — the other half of the standard pair, offered as its own command. */
-export function selectEdgeRing() {
+function selectEdgeRingInner() {
 	const sel = get(edgeEditSelected);
 	if (!sel.length) {
 		showToast('Pick an edge first, then Ring');
@@ -1918,7 +2385,7 @@ export function selectEdgeRing() {
 }
 
 /** select every REAL edge of the mesh (Ctrl+A in edge mode) */
-export function selectAllEdges() {
+function selectAllEdgesInner() {
 	if (!faceEdited) return false;
 	edgeEditSelected.set([...realEdgeMap().keys()]);
 	refreshEdgeOverlay();
@@ -1926,7 +2393,7 @@ export function selectAllEdges() {
 }
 
 /** invert the edge selection (Ctrl+I in edge mode) */
-export function invertEdgeSelection() {
+function invertEdgeSelectionInner() {
 	if (!faceEdited) return false;
 	const sel = new Set(get(edgeEditSelected));
 	edgeEditSelected.set([...realEdgeMap().keys()].filter((k) => !sel.has(k)));
@@ -1993,7 +2460,7 @@ export function dissolveEdges() {
 			if (mate >= 0) patch.add(mate);
 		}
 		const tris = [...patch];
-		if (tris.some((ti) => normals[ti].dot(normals[tris[0]]) < 0.999)) {
+		if (tris.some((ti) => normals[ti].dot(normals[tris[0]]) < FACE_COPLANAR)) {
 			skipped++; // dissolving a non-flat join would change the silhouette
 			continue;
 		}
@@ -2290,6 +2757,11 @@ export function mergeByDistance(threshold = 0.001) {
 	const positions = trisToPositions(kept);
 	const groups = trisToGroups(kept);
 	const uvs = trisToUVs(kept);
+	// clear before the swap — welding drops triangles, so the old indices point
+	// somewhere else once applyGeometrySnapshot rebuilds the overlay
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
 	applyGeometrySnapshot(positions, groups, uvs);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
@@ -2298,8 +2770,6 @@ export function mergeByDistance(threshold = 0.001) {
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
 		after: { positions, groups, uvs }
 	});
-	faceEditSelectedTris.set([]);
-	faceEditHighlight.set(-1);
 	showToast(
 		'Merged ' + moved + ' vertices' + (dropped ? ', removed ' + dropped + ' degenerate faces' : '')
 	);
@@ -2338,7 +2808,7 @@ export function shadingMode() {
 }
 
 /** M6: select every triangle of the mesh */
-export function selectAllFaces() {
+function selectAllFacesInner() {
 	if (!faceEdited) return false;
 	faceEditSelectedTris.set(workingTris.map((/** @type {any} */ _, /** @type {number} */ i) => i));
 	refreshFaceOverlay();
@@ -2346,7 +2816,7 @@ export function selectAllFaces() {
 }
 
 /** M6: invert the selection (by pick UNIT, so quads stay whole) */
-export function invertFaceSelection() {
+function invertFaceSelectionInner() {
 	if (!faceEdited) return false;
 	const sel = new Set(get(faceEditSelectedTris));
 	const next = new Set();
@@ -2361,7 +2831,7 @@ export function invertFaceSelection() {
 }
 
 /** M6: grow the selection to every triangle CONNECTED to it (select linked) */
-export function selectLinkedFaces() {
+function selectLinkedFacesInner() {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris);
 	if (!sel.length) {
@@ -2477,6 +2947,7 @@ export function enterFaceEdit(uuid) {
 	faceEdited = object;
 	captureSessionEntry(object); // the state a Cancel returns to
 	rebuildFaces();
+	resetLoopAxis(); // never inherit the previous object's loop direction
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212
@@ -2536,6 +3007,7 @@ export function exitFaceEdit() {
 	faceEdited = null;
 	workingTris = [];
 	faces = [];
+	resetLoopAxis();
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212
@@ -2651,6 +3123,12 @@ function refreshFaceOverlay() {
 		overlayParts[key] = null;
 	}
 	overlay = null;
+	// The face tint belongs to the FACES submode only. Without this guard (the
+	// mirror of refreshEdgeOverlay's) every geometry swap made in edge mode —
+	// dissolve, loop cut — resurrected the face overlay from the surviving
+	// faceEditSelectedTris, so the quads you picked before switching stayed lit
+	// under the edge highlight.
+	if (get(faceEditSubmode) === 'edges') return;
 	// SELECTION and HOVER are drawn as two different layers. They used to share
 	// one tint, so a face you had just DESELECTED stayed lit exactly like a
 	// selected one for as long as the cursor rested on it — reported as "invert
@@ -2724,11 +3202,19 @@ export function commitFaceOp(op, amount) {
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
 	let next;
+	/** @type {number[] | null} subdivide keeps its OWN output selected */
+	let subdivided = null;
 	if (op === 'extrude') next = extrudeFace(workingTris, face, amount);
 	else if (op === 'inset') next = insetFace(workingTris, face, amount);
 	else if (op === 'move') next = moveFaceAlongNormal(workingTris, face, amount);
 	else if (op === 'delete') next = deleteFaceTris(workingTris, face);
-	else if (op === 'subdivide') next = subdivideFaceTris(workingTris, face.triIndices);
+	else if (op === 'subdivide') {
+		// quad-aware: a paired quad becomes a 2x2 grid, so the quad topology (and
+		// with it every loop tool) survives the split
+		const split = subdivideFaceUnits(workingTris, face.triIndices, quadPartner);
+		next = split.tris;
+		subdivided = split.newIndices;
+	}
 	else if (op === 'flip') next = flipFaceNormals(workingTris, face.triIndices);
 	else return false;
 	const positions = trisToPositions(next);
@@ -2742,6 +3228,16 @@ export function commitFaceOp(op, amount) {
 	// carries the old groups/uvs over)
 	const groups = trisToGroups(next);
 	const uvs = trisToUVs(next);
+	// Clear the stale picks BEFORE the swap: applyGeometrySnapshot rebuilds the
+	// overlay, and the pre-op indices address the NEW triangle array — they light
+	// up an unrelated scattering. The hover is the worse half: desktop has no
+	// pointermove path, so faceEditHoverTri keeps the pre-op triangle forever.
+	faceEditHoverTri.set(-1);
+	if (op !== 'inset' && op !== 'extrude' && op !== 'move') {
+		// subdivide/flip/delete rebuild the topology: indices are stale (212)
+		if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
+		if (op === 'delete') faceEditHighlight.set(-1);
+	}
 	applyGeometrySnapshot(positions, groups, uvs);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
@@ -2762,10 +3258,12 @@ export function commitFaceOp(op, amount) {
 		// E7: the gizmo comes back seated on the new cap (attachFaceGizmo reads
 		// the selection-first op target). NEVER on arm — that's the B1 fix.
 		if (typeof window !== 'undefined') attachFaceGizmo();
-	} else {
-		// subdivide/flip/delete rebuild the topology: indices are stale (212)
-		if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
-		if (op === 'delete') faceEditHighlight.set(-1);
+	} else if (subdivided?.length) {
+		// keep the subdivided AREA selected (its new pieces) rather than dropping
+		// to nothing: "subdivide, then loop through one of the new quads" is the
+		// point of the op, and an empty selection there reads as a failed edit
+		faceEditSelectedTris.set(subdivided);
+		refreshFaceOverlay();
 	}
 	return true;
 }
@@ -3112,6 +3610,13 @@ export function focusTargetFace() {
 export function attachFaceGizmo() {
 	if (typeof window === 'undefined' || !faceEdited) return;
 	if (get(isVRMode)) return; // the desktop gizmo helper would render in-headset
+	// M4 has no edge gizmo: seating one here would point at the stale FACE
+	// target (opTargetFace reads faceEditSelectedTris/HoverTri), so a drag in
+	// edge mode silently moved the quads picked before the switch
+	if (get(faceEditSubmode) === 'edges') {
+		detachFaceGizmo();
+		return;
+	}
 	/** @type {any} */
 	const controls = get(TControls);
 	const target = opTargetFace();

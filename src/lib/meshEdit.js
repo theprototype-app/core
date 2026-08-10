@@ -14,7 +14,11 @@ import {
 	buildEditWireframe,
 	readTriangles,
 	trisToPositions,
-	registerVertexSessionRefresher
+	registerVertexSessionRefresher,
+	registerVertexSelectionHistory,
+	withSelectionHistory,
+	editWireGeometry,
+	registerVertexWireRebuild
 } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -46,6 +50,12 @@ let lastSent = 0;
 meshEditWireframe.subscribe((value) => {
 	if (overlay) overlay.visible = value; // live toggle mid-session (vertex mode)
 });
+// quad view vs raw triangulation is a different EDGE SET, so it rebuilds
+registerVertexWireRebuild(() => {
+	if (!overlay || !edited) return;
+	overlay.geometry.dispose();
+	overlay.geometry = editWireGeometry(edited.geometry);
+});
 
 const HANDLE_COLOR = 0x2f81f7;
 const HANDLE_SELECTED = 0xff4000;
@@ -60,6 +70,47 @@ function syncVertexSelection() {
 	vertexSelection = new Set([...vertexSelection].filter((i) => i < handles.length));
 	vertexSelectionSize.set(vertexSelection.size);
 	if (handleMesh) refreshHandleColors();
+}
+
+// ---- selection history ----------------------------------------------------
+// Picks are undoable inside the session. The machinery lives in faceEdit (this
+// module imports IT — the reverse edge would close a TDZ cycle), so hand it the
+// two accessors it needs. Handle INDICES are the state; they only mean anything
+// inside this session, which is exactly the scope the 15-F seal gives them.
+registerVertexSelectionHistory({
+	snapshot: () => (edited ? { uuid: edited.uuid, sel: [...vertexSelection] } : null),
+	/** @param {number[]} sel */
+	apply: (sel) => {
+		if (!edited || !handles.length) return false;
+		const live = sel.filter((i) => i >= 0 && i < handles.length);
+		vertexSelection = new Set(live);
+		setAnchor(live.length ? live[live.length - 1] : -1);
+		syncVertexSelection();
+		return true;
+	}
+});
+
+// the selection COMMANDS, each wrapped so one press is one undo step
+
+/** 177/183: toggle a vertex handle in the selection. @param {number} index */
+export function toggleVertexSelection(index) {
+	withSelectionHistory('vertices', () => toggleVertexSelectionInner(index));
+}
+/** 177: deselect all vertices (also parks the gizmo) */
+export function clearVertexSelection() {
+	withSelectionHistory('vertices', () => clearVertexSelectionInner());
+}
+/** Select every vertex handle — Ctrl+A in vertices mode. @returns {boolean} */
+export function selectAllVerts() {
+	return withSelectionHistory('vertices', () => selectAllVertsInner());
+}
+/** Invert the vertex selection — Ctrl+I in vertices mode. @returns {boolean} */
+export function invertVertexSelection() {
+	return withSelectionHistory('vertices', () => invertVertexSelectionInner());
+}
+/** plain click: the picked handle becomes the whole selection. @param {number} index */
+export function selectHandle(index) {
+	withSelectionHistory('vertices', () => selectHandleInner(index));
 }
 const tempMatrix = new THREE.Matrix4();
 const tempVector = new THREE.Vector3();
@@ -134,7 +185,7 @@ export function refreshVertexEditSession() {
 	// the overlay wraps the NEW geometry
 	if (overlay) {
 		overlay.geometry.dispose();
-		overlay.geometry = new THREE.WireframeGeometry(edited.geometry);
+		overlay.geometry = editWireGeometry(edited.geometry);
 	}
 }
 // applyMeshGeo calls back through this whenever a snapshot lands on the object
@@ -252,7 +303,7 @@ export function enterEditMode(uuid) {
 
 	// 175: restore the vertex selected last time in this object (per-mode memory)
 	if (stashedVert.uuid === uuid && stashedVert.handle >= 0 && stashedVert.handle < handles.length) {
-		selectHandle(stashedVert.handle);
+		selectHandleInner(stashedVert.handle);
 	}
 }
 
@@ -376,7 +427,7 @@ function setAnchor(index) {
  * trigger-tap in VR). The anchor rides the toggles: last-added handle takes
  * the gizmo; removing the anchor promotes another member; empty detaches.
  * @param {number} index */
-export function toggleVertexSelection(index) {
+function toggleVertexSelectionInner(index) {
 	if (index < 0 || index >= handles.length) return;
 	if (vertexSelection.has(index)) {
 		vertexSelection.delete(index);
@@ -390,7 +441,7 @@ export function toggleVertexSelection(index) {
 }
 
 /** 177: deselect all vertices (also parks the gizmo) */
-export function clearVertexSelection() {
+function clearVertexSelectionInner() {
 	vertexSelection.clear();
 	if (proxy) setAnchor(-1);
 	else selectedHandle = -1;
@@ -400,7 +451,7 @@ export function clearVertexSelection() {
 /** Select every vertex handle — Ctrl+A in vertices mode. The selection commands
  * used to exist for FACES only, so Ctrl+A did nothing in the other two modes.
  * @returns {boolean} */
-export function selectAllVerts() {
+function selectAllVertsInner() {
 	if (!handles.length) return false;
 	vertexSelection = new Set(handles.map((/** @type {any} */ _, /** @type {number} */ i) => i));
 	setAnchor(handles.length - 1);
@@ -409,7 +460,7 @@ export function selectAllVerts() {
 }
 
 /** Invert the vertex selection — Ctrl+I in vertices mode. @returns {boolean} */
-export function invertVertexSelection() {
+function invertVertexSelectionInner() {
 	if (!handles.length) return false;
 	const previous = vertexSelection;
 	vertexSelection = new Set(
@@ -462,7 +513,10 @@ export function weldSelectedVerts() {
 	// take, so the overlay can never diverge from the welded mesh (the dance
 	// left it stale whenever re-entry took any early-out).
 	const ok = commitMeshGeoSnapshot(uuid, before, after);
-	if (ok) clearVertexSelection(); // the weld consumed the multi-pick
+	// Inner, deliberately: this is the OP tidying up after itself, not a pick the
+	// user made. Recording it would put a selection entry ON TOP of the weld's
+	// meshgeo, so the next Ctrl+Z would undo the housekeeping instead of the weld.
+	if (ok) clearVertexSelectionInner();
 	else {
 		position.array.set(rawBefore);
 		position.needsUpdate = true;
@@ -479,13 +533,13 @@ export function createSelectedFace(viewerPos = null) {
 	const ok = createFaceFromVerts(uuid, verts, viewerPos);
 	// the commit's applyMeshGeo already rebuilt the session in place (D1
 	// refresher) — same no-dance rule as weldSelectedVerts
-	if (ok) clearVertexSelection();
+	if (ok) clearVertexSelectionInner(); // op housekeeping, not a user pick
 	return ok;
 }
 
 /** Select exactly this handle (fresh single selection + anchor/gizmo).
  * @param {number} index */
-export function selectHandle(index) {
+function selectHandleInner(index) {
 	vertexSelection = new Set(index >= 0 ? [index] : []);
 	setAnchor(index);
 	syncVertexSelection();
@@ -523,7 +577,7 @@ function commitSelectedLocal(local) {
 	refreshHandleMatrix(selectedHandle);
 	if (overlay) {
 		overlay.geometry.dispose();
-		overlay.geometry = new THREE.WireframeGeometry(edited.geometry);
+		overlay.geometry = editWireGeometry(edited.geometry);
 	}
 	return result;
 }
@@ -666,7 +720,7 @@ export function applyVerts(uuid, indices, positionArray) {
 		}
 		if (overlay) {
 			overlay.geometry.dispose();
-			overlay.geometry = new THREE.WireframeGeometry(object.geometry);
+			overlay.geometry = editWireGeometry(object.geometry);
 		}
 	}
 	objectsGroup.update((value) => value);

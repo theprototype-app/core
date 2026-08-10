@@ -39,6 +39,8 @@
 		faceGizmoSpace,
 		meshEditWireframe,
 		meshEditHotkeys,
+		meshEditOutline,
+		meshEditTriWire,
 		selectFaceLoop,
 		growSelection,
 		shrinkSelection,
@@ -55,7 +57,7 @@
 		dissolveEdges,
 		clearEdgeSelection,
 		stashSelections,
-		restoreSelection,
+		setFaceSubmode,
 		selectEdgeRing,
 		selectAllEdges,
 		invertEdgeSelection,
@@ -65,6 +67,8 @@
 	import {
 		Keyboard,
 		CircleHelp,
+		SquareDashed,
+		Triangle,
 		Check,
 		X,
 		Move,
@@ -124,11 +128,12 @@
 			return;
 		}
 		// M4: edges and faces share ONE session — only the sub-mode differs, so
-		// switching between them keeps the undo barrier and the wireframe intact
+		// switching between them keeps the undo barrier and the wireframe intact.
+		// setFaceSubmode owns the stash/restore + both overlay refreshes + the
+		// gizmo, so the leaving mode's highlight can't survive the switch.
 		exitEditMode();
 		if (!$faceEditObject) enterFaceEdit(uuid);
-		faceEditSubmode.set(next === 'edges' ? 'edges' : 'faces');
-		restoreSelection(next === 'edges' ? 'edges' : 'faces');
+		setFaceSubmode(next === 'edges' ? 'edges' : 'faces');
 	}
 
 	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);
@@ -702,6 +707,32 @@
 			aria-pressed={$meshEditWireframe}
 			title="Show the edit wireframe overlay"
 			onclick={() => meshEditWireframe.update((v) => !v)}><ToolIcon name="wireframe" /></button
+		>
+		<!-- the object outline is a postprocessing pass, so it paints OVER the
+		     handles and highlights — off while editing unless you ask for it -->
+		<button
+			id="mesh-outline-toggle"
+			class="tbx-btn"
+			aria-label="Selection outline"
+			aria-pressed={$meshEditOutline}
+			title={$meshEditOutline
+				? 'Selection outline ON — it draws over vertices and edges'
+				: 'Selection outline OFF while editing (clearer handles)'}
+			onclick={() => meshEditOutline.update((v) => !v)}
+			><SquareDashed size={18} aria-hidden="true" /></button
+		>
+		<!-- quad structure by default; the diagonals are triangulation artifacts
+		     the pick/dissolve tools deliberately refuse to touch -->
+		<button
+			id="mesh-triwire-toggle"
+			class="tbx-btn"
+			aria-label="Show triangulation"
+			aria-pressed={$meshEditTriWire}
+			title={$meshEditTriWire
+				? 'Showing triangulation — every triangle edge, diagonals included'
+				: 'Showing quads — the diagonals are hidden (they cannot be picked)'}
+			onclick={() => meshEditTriWire.update((v) => !v)}
+			><Triangle size={18} aria-hidden="true" /></button
 		>
 		<!-- D3: hotkeys on/off + the "?" bindings popover -->
 		<button

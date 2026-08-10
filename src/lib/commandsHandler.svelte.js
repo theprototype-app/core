@@ -409,6 +409,16 @@ export async function objectParameters(data) {
             objectsGroup.update((value) => value); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
         }
+    } else if (data.parameter == 'origin') {
+        // 17-D: userData.origin is the per-object transform ORIGIN — a local-space
+        // pivot offset the tools transform around. null = the object's own zero.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.origin) mesh.userData.origin = data.origin;
+            else delete mesh.userData.origin;
+            objectsGroup.update((value) => value);
+            physicsShapeChanged(data.uuid); // the body/collider pose follows the pivot
+        }
     } else if (data.parameter == 'particles') {
         // PFX-A: userData.particles is the emitter config (Inspector/menus set
         // it); the particle runtime sweeps it per tick. null = removed

@@ -146,6 +146,34 @@ export function updateAnim(uuid, patch) {
 	});
 }
 
+// --- saving ------------------------------------------------------------------
+// Authored tracks used to live only in memory: saving a scene and loading it back
+// lost every movement the user had built here (17-D follow-up). They are plain
+// JSON, so a save carries them verbatim.
+
+/** Every authored animation, for a save payload. @returns {any} */
+export function animationsSnapshot() {
+	return structuredClone(get(animations));
+}
+
+/** Restore authored animations from a save payload. @param {any} saved */
+export function animationsRestore(saved) {
+	if (!saved || typeof saved !== 'object') return 0;
+	stop(); // never leave a scrub running against objects that just changed
+	const clean = /** @type {any} */ ({});
+	for (const [uuid, anim] of Object.entries(/** @type {any} */ (saved))) {
+		const entry = /** @type {any} */ (anim);
+		if (!entry || !Array.isArray(entry.tracks)) continue;
+		clean[uuid] = {
+			tracks: entry.tracks,
+			duration: Number(entry.duration) || 2,
+			loop: entry.loop === 'once' || entry.loop === 'pingpong' ? entry.loop : 'loop'
+		};
+	}
+	animations.set(clean);
+	return Object.keys(clean).length;
+}
+
 /** Forget an object's animation (removal / scene wipe). @param {string} uuid */
 export function dropAnimation(uuid) {
 	if (playUuid === uuid) stop();

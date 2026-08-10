@@ -9,7 +9,7 @@
 	// Enter/blur, which made its arrows look broken.
 	import DragRow from './DragRow.svelte';
 
-	/** @type {{label?: string, value?: number, min?: number, max?: number, step?: number, decimals?: number, id?: string, onchange?: (next: number) => void}} */
+	/** @type {{label?: string, value?: number, min?: number, max?: number, step?: number, decimals?: number, id?: string, mixed?: boolean, onchange?: (next: number) => void}} */
 	let {
 		label = '',
 		value = 0,
@@ -18,6 +18,9 @@
 		step = 0.01,
 		decimals = 2,
 		id = undefined,
+		// 17-D1: pass-through so a multi-selection with differing values shows a
+		// dash in the box (the range thumb still sits on the primary's value)
+		mixed = false,
 		onchange = () => {}
 	} = $props();
 
@@ -49,6 +52,7 @@
 			{decimals}
 			{min}
 			{max}
+			{mixed}
 			step={step}
 			snap={step * 10}
 			ariaLabel={label}

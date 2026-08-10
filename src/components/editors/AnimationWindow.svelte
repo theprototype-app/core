@@ -12,6 +12,11 @@
 		animations, playback, CHANNELS, EASINGS, channelLabel,
 		addTrack, removeTrack, updateTrack, updateAnim, play, pause, stop, scrub
 	} from '$lib/animationPreview';
+	// the clips a model was IMPORTED with are a different system (replicated,
+	// posed from the synced clock) — the window used to ignore them entirely, so
+	// a rigged model showed "no movements yet" and its own animations were
+	// reachable only from the Inspector.
+	import { animatedObjects, setAnimationState, clipInfo } from '$lib/animatedImports';
 	import DockTabs from '../DockTabs.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
@@ -26,6 +31,15 @@
 	let selId = $state(/** @type {string|null} */ (null));
 	const selTrack = $derived(tracks.find((t) => t.id === selId) ?? tracks[0] ?? null);
 	let newChannel = $state('pos.y');
+
+	// imported clips for the selected object (empty for anything not imported
+	// with animation). clipInfo reads the live mixer, so it needs the store as a
+	// dependency to re-run when an import registers or is dropped.
+	const clipState = $derived(target ? ($animatedObjects[target.uuid] ?? null) : null);
+	const clips = $derived.by(() => {
+		$animatedObjects;
+		return target ? clipInfo(target.uuid) : [];
+	});
 
 	const isPlaying = $derived($playback.playing && $playback.uuid === target?.uuid);
 	const curTime = $derived($playback.uuid === target?.uuid ? $playback.time : 0);
@@ -153,7 +167,8 @@
 {#snippet body()}
 	{#if !target}
 		<div class="flex flex-1 items-center justify-center p-6 text-center text-sm text-gray-400">
-			Select an object in the viewport to animate it.
+			Select an object in the viewport to animate it, or to pick from the clips it was imported
+			with.
 		</div>
 	{:else}
 		<!-- transport -->
@@ -189,8 +204,49 @@
 		</div>
 
 		<div class="flex min-h-0 flex-1">
-			<!-- LEFT: movement tracks (layers) -->
-			<div class="flex w-44 shrink-0 flex-col border-r border-gray-700/60">
+			<!-- LEFT: the object's OWN clips, then authored movement tracks -->
+			<div class="flex w-56 shrink-0 flex-col border-r border-gray-700/60">
+				{#if clips.length}
+					<div id="animation-clips" class="border-b border-gray-700/60">
+						<div class="flex items-center justify-between px-2 pt-1.5">
+							<span class="text-[10px] uppercase tracking-wider text-gray-500">Clips in this model</span>
+							<span class="text-[10px] text-gray-500">{clips.length}</span>
+						</div>
+						<div class="max-h-32 overflow-y-auto p-1">
+							{#each clips as clip (clip.name)}
+								<button
+									class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-gray-700/60 {clipState?.clip === clip.name ? 'bg-primary-900/40 text-primary-200' : 'text-gray-300'}"
+									title="Play this clip — on every peer"
+									onclick={() => target && setAnimationState(target.uuid, { clip: clip.name, playing: true })}
+								>
+									<span class="min-w-0 truncate">{clip.name}</span>
+									<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{clip.duration.toFixed(2)}s</span>
+								</button>
+							{/each}
+						</div>
+						<div class="flex items-center gap-2 px-2 pb-1">
+							<button
+								id="clip-play"
+								class="ui-button-quiet text-primary-400"
+								title={clipState?.playing ? 'Pause the clip' : 'Play the clip'}
+								onclick={() => target && setAnimationState(target.uuid, { playing: !clipState?.playing })}
+							>
+								{clipState?.playing ? '⏸' : '▶'}
+							</button>
+							<input
+								type="range" min="0.1" max="3" step="0.1"
+								class="min-w-0 flex-1 accent-primary-600"
+								aria-label="Clip speed"
+								value={clipState?.speed ?? 1}
+								oninput={(e) => target && setAnimationState(target.uuid, { speed: parseFloat(e.currentTarget.value) })}
+							/>
+							<span class="shrink-0 text-[10px] tabular-nums text-gray-400">{(clipState?.speed ?? 1).toFixed(1)}×</span>
+						</div>
+						<p class="px-2 pb-1.5 text-[10px] text-gray-500">
+							Clips ride the synced clock, so every peer sees the same pose.
+						</p>
+					</div>
+				{/if}
 				<div class="flex items-center gap-1 border-b border-gray-700/60 p-1.5">
 					<select class="min-w-0 flex-1 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs" value={newChannel} onchange={(e) => (newChannel = e.currentTarget.value)}>
 						{#each CHANNELS as c}<option value={c}>{channelLabel(c)}</option>{/each}
@@ -199,7 +255,11 @@
 				</div>
 				<div class="min-h-0 flex-1 overflow-y-auto">
 					{#if !tracks.length}
-						<div class="p-3 text-center text-[11px] text-gray-500">No movements yet. Pick a channel and add one.</div>
+						<div class="p-3 text-center text-[11px] text-gray-500">
+							{clips.length
+								? 'No authored movements. The model’s own clips are listed above.'
+								: 'No movements yet. Pick a channel and add one.'}
+						</div>
 					{/if}
 					{#each tracks as t (t.id)}
 						<div class="flex items-center gap-1 {selTrack?.id === t.id ? 'bg-primary-900/40' : ''}">

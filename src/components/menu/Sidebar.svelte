@@ -4,7 +4,7 @@
 	import '../../styles/menu.css';
 	import { tick } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import { save, load, importFile } from '$lib/fileHandler.svelte';
+	import { save, load, importModelFiles } from '$lib/fileHandler.svelte';
 	import {
 		settingsOpen,
 		inspectorClose,
@@ -117,7 +117,9 @@
 		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
 		style={$connectDocked ? `top: ${$connectBarHeight + 64}px` : ''}
 	>
-		<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
+		<!-- multiple + the companion types so an .obj can be picked TOGETHER with its
+		     .mtl and textures (17-D2); a lone model file behaves exactly as before -->
+		<input type="file" id="import-file" multiple style="display: none" oninput={(e: any) => importModelFiles(e.target.files)} accept=".gltf, .glb, .obj, .stl, .fbx, .mtl, .png, .jpg, .jpeg, .webp" />
 		<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .tpscene" />
 
 		<!-- New scene from a starting point (General / Examples / Community tabs) -->

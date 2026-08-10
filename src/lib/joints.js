@@ -4,6 +4,7 @@ import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
+import { originWorld } from './objectOrigin';
 
 // Physics joints (P-B): a REPLICATED list of joint definitions between object
 // pairs (the annotations pattern — a joint references two uuids, so it can't
@@ -64,8 +65,12 @@ export function createJoint(kind, aUuid, bUuid, axis, motor) {
 	}
 	a.updateWorldMatrix(true, false);
 	b.updateWorldMatrix(true, false);
-	const aPos = a.getWorldPosition(new THREE.Vector3());
-	const bPos = b.getWorldPosition(new THREE.Vector3());
+	// 17-D: anchor on each object's ORIGIN when it has one. That is the whole
+	// point of placing an origin at a hinge: "put the pivot on the hinge, then
+	// hinge it" now does what it says. Objects without an origin behave as before
+	// (originWorld falls back to the world position).
+	const aPos = originWorld(a, new THREE.Vector3());
+	const bPos = originWorld(b, new THREE.Vector3());
 	const anchorWorld = kind === 'revolute' ? bPos.clone() : aPos.clone().lerp(bPos, 0.5);
 	/** @type {JointDef} */
 	const joint = {

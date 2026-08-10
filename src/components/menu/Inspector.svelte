@@ -19,14 +19,33 @@
 	import { explorerItems, explorerFolders, inspectedFile, itemBlob, renameItem, deleteItem, updateItemBytes } from '$lib/explorer';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
 	import {
-		setObjectTexture,
 		removeObjectTexture,
 		setMaterialParam,
 		switchMaterialType,
 		recordMaterialChange,
-		setObjectColor
+		setObjectColor,
+		setObjectsTexture
 	} from '$lib/materialsHandler';
-	import { recordEntry } from '$lib/history';
+	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
+	import { canEditObject } from '$lib/objectPermissions';
+	import {
+		attachMultiPivot,
+		applyPivotTransform,
+		setPivotOrigin,
+		resetPivotOrigin,
+		reseatPivot,
+		pivotOnly,
+		pivotPose
+	} from '$lib/multiTransform';
+	// 17-D: per-object transform ORIGIN (userData.origin, a local pivot offset)
+	import { originOf, originWorld, setOriginFromWorld, resetOrigin, originPreset } from '$lib/objectOrigin';
+	// the HINGE point: snap the origin to the vertices picked in Edit Mesh
+	import {
+		editingObject,
+		vertexSelectionWorldPoint,
+		vertexSelectionSize,
+		enterEditMode
+	} from '$lib/meshEdit';
 	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
@@ -110,6 +129,7 @@
 		globalScene,
 		objectsGroup,
 		selectedObject,
+		selectedObjects,
 		backgroundColor,
 		globalCamera,
 		viewMode,
@@ -225,6 +245,143 @@
 		return listPhysicsObjects();
 	});
 
+	// ---- 17-D1: property writes fan over the SELECTION SET --------------------
+	// Material, colour, object-flag, shadow and physics edits apply to EVERY
+	// selected object; transforms and geometry params deliberately stay on the
+	// primary (one shared position would collapse the set onto a point, and
+	// geometry rows are per shape type). Every write still goes through the SAME
+	// per-uuid entry point as before, so the wire messages are byte-identical —
+	// a set of N just wraps them in ONE history batch so undo is a single step.
+	// Members a viewer may not edit (objectPermissions) are skipped.
+	const insTargets = $derived.by(() => {
+		$objectsGroup; // in-place userData/material edits poke this store
+		const uuids = $selectedObjects ?? [];
+		const group = $objectsGroup;
+		const list =
+			uuids.length > 1 && group
+				? uuids
+						.map((/** @type {string} */ uuid) => group.getObjectByProperty('uuid', uuid))
+						.filter(Boolean)
+				: $selectedObject?.uuid
+					? [$selectedObject]
+					: [];
+		return list.filter((/** @type {any} */ object) => canEditObject(object));
+	});
+	/** 0 when a single object is being edited, else the number of targets */
+	const multiCount = $derived(insTargets.length > 1 ? insTargets.length : 0);
+	/** targets that actually carry a single (non-array) material */
+	const matTargets = $derived(
+		insTargets.filter((/** @type {any} */ o) => o?.material && !Array.isArray(o.material))
+	);
+	const matCount = $derived(matTargets.length > 1 ? matTargets.length : 0);
+
+	/** Run a per-object write across `list`; N>1 collapses into ONE undo entry.
+	 * @param {any[]} list @param {string} label @param {(object:any)=>void} fn */
+	function fanOn(list, label, fn) {
+		if (!list.length) return;
+		if (list.length === 1) {
+			fn(list[0]); // single-object undo + replication unchanged
+			return;
+		}
+		beginHistoryBatch();
+		try {
+			for (const object of list) fn(object);
+		} finally {
+			endHistoryBatch(`${label} (${list.length})`);
+		}
+	}
+	/** @param {string} label @param {(object:any)=>void} fn */
+	function fan(label, fn) {
+		fanOn(insTargets, label, fn);
+	}
+	/** material-only fan (skips lights/groups in the set) @param {string} label @param {(object:any)=>void} fn */
+	function fanMat(label, fn) {
+		fanOn(matTargets, label, fn);
+	}
+
+	/** true when the selection disagrees on a value → the row renders a dash.
+	 * @param {(object:any)=>any} read @param {any[]} [list] */
+	function mixed(read, list) {
+		const targets = list ?? insTargets;
+		if (targets.length < 2) return false;
+		const first = read(targets[0]);
+		return targets.some((object) => read(object) !== first);
+	}
+	/** @param {(object:any)=>any} read */
+	const matMixed = (read) => mixed(read, matTargets);
+
+	// ---- 17-D: the single object's own ORIGIN -------------------------------
+	// Shown in WORLD space (where the pivot sits), stored as a local offset. A
+	// light has no geometry and its position IS its origin, so it is excluded.
+	const originTarget = $derived(!isLight && !multiCount && $selectedObject?.uuid ? $selectedObject : null);
+	const originPos = $derived.by(() => {
+		$objectsGroup;
+		$selectedObject;
+		$pivotPose; // a gizmo drag in origin mode moves it live
+		return originTarget ? originWorld(originTarget).toArray() : [0, 0, 0];
+	});
+	const originSet = $derived.by(() => {
+		$objectsGroup;
+		return !!(originTarget && originOf(originTarget));
+	});
+
+	/** @param {'x'|'y'|'z'} axis @param {number} next */
+	function setOriginAxis(axis, next) {
+		if (!originTarget) return;
+		const world = originPos.slice();
+		world['xyz'.indexOf(axis)] = next;
+		setOriginFromWorld(originTarget.uuid, new THREE.Vector3().fromArray(world));
+		reseatPivot(); // the gizmo follows the origin it now has
+		selectedObject.update((v) => v);
+	}
+
+	/** @param {'bottom'|'center'|'median'|'world'|'children'} kind */
+	function applyOriginPreset(kind) {
+		if (!originTarget) return;
+		originPreset(originTarget.uuid, kind);
+		reseatPivot();
+		selectedObject.update((v) => v);
+	}
+
+	function clearOrigin() {
+		if (!originTarget) return;
+		resetOrigin(originTarget.uuid);
+		pivotOnly.set(false);
+		reseatPivot();
+		selectedObject.update((v) => v);
+	}
+
+	/**
+	 * The HINGE workflow, driven from HERE rather than expecting the user to know
+	 * the Edit Mesh dance: "Pick from mesh…" enters vertex editing on this object,
+	 * then "Set origin here" drops the origin on whatever is picked (one vertex, or
+	 * the centroid of several — two verts of an edge IS the hinge case). Spin and a
+	 * revolute joint then both turn about that point.
+	 *
+	 * The button stays visible for the whole edit session instead of gating on the
+	 * selection count: a plain click selects a handle WITHOUT adding it to the
+	 * multi-selection set, so a size-only gate hid the button while a vertex was
+	 * visibly selected. It toasts when there is genuinely nothing picked.
+	 */
+	const editingThis = $derived(!!originTarget && $editingObject === originTarget.uuid);
+	function pickOriginFromMesh() {
+		if (!originTarget) return;
+		enterEditMode(originTarget.uuid);
+		showToast('Click a vertex (ctrl-click for several, e.g. both ends of a hinge edge), then press Set origin here');
+	}
+	function originFromSelection() {
+		if (!originTarget) return;
+		const point = vertexSelectionWorldPoint();
+		if (!point) {
+			showToast('Click a vertex first — ctrl-click both ends of an edge to hinge on it');
+			return;
+		}
+		setOriginFromWorld(originTarget.uuid, point);
+		reseatPivot();
+		selectedObject.update((v) => v);
+		showToast('Origin set from the mesh — Spin and hinges now turn about it');
+	}
+
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	const isGroup = $derived($selectedObject?.type === 'Group');
 	// live geometry params (78): registry-driven rows; geoTick refreshes after edits
@@ -235,10 +392,44 @@
 	});
 	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);
 
+	// 17-D1 follow-up: geometry rows fan too, but ONLY across one primitive type —
+	// a Box's params mean nothing to a Sphere. Members whose mesh was edited are
+	// left out: rebuilding their primitive would discard those edits.
+	const geoTargets = $derived.by(() => {
+		$objectsGroup;
+		geoTick;
+		if (!geoParams) return [];
+		return insTargets.filter((/** @type {any} */ object) => {
+			if (object.userData?.vertexEdited || object.userData?.faceEdited) return false;
+			return geometryParamsOf(object)?.gtype === geoParams.gtype;
+		});
+	});
+	/** shapes in the selection that the geometry rows cannot touch */
+	const geoOtherTypes = $derived.by(() => {
+		$objectsGroup;
+		if (!geoParams || insTargets.length < 2) return [];
+		const others = insTargets
+			.filter((/** @type {any} */ object) => !geoTargets.includes(object))
+			.map((/** @type {any} */ object) => geometryParamsOf(object)?.gtype ?? object.type);
+		return [...new Set(others)];
+	});
+
+	/** do the same-type members disagree on one geometry param?
+	 * @param {string} key @param {any} fallback */
+	function geoMixed(key, fallback) {
+		if (geoTargets.length < 2) return false;
+		const read = (/** @type {any} */ object) =>
+			geometryParamsOf(object)?.params?.[key] ?? fallback;
+		const first = read(geoTargets[0]);
+		return geoTargets.some((object) => read(object) !== first);
+	}
+
 	/** @param {string} key @param {any} value */
 	function editGeometry(key, value) {
 		const run = () => {
-			applyGeometry($selectedObject.uuid, { [key]: value });
+			fanOn(geoTargets.length ? geoTargets : [$selectedObject], 'Geometry', (object) =>
+				applyGeometry(object.uuid, { [key]: value })
+			);
 			geoTick++;
 		};
 		if ($selectedObject.userData?.vertexEdited) {
@@ -392,40 +583,135 @@
 	}
 
 	// one undo entry per color-drag gesture: remember where it started,
-	// record 600ms after the last input
-	/** @type {any} */
+	// record 600ms after the last input. 17-D1: with a multi-selection the
+	// gesture remembers EVERY target's own starting colour (they may differ) and
+	// seals them into one batch, so undo restores each object's original.
+	/** @type {Map<string,string>|null} */
 	let colorGestureStart = null;
 	/** @type {any} */
 	let colorGestureTimer;
-	/** @param {string} uuid @param {any} hex */
-	function trackColorGesture(uuid, hex) {
-		if (colorGestureStart == null)
-			colorGestureStart = '#' + $selectedObject.material.color.getHexString();
+	/** @param {any} hex */
+	function trackColorGesture(hex) {
+		if (colorGestureStart == null) {
+			colorGestureStart = new Map();
+			for (const object of matTargets)
+				colorGestureStart.set(object.uuid, '#' + object.material.color.getHexString());
+		}
 		clearTimeout(colorGestureTimer);
 		colorGestureTimer = setTimeout(() => {
-			recordMaterialChange(uuid, 'color', null, colorGestureStart, hex);
+			const befores = colorGestureStart;
 			colorGestureStart = null;
+			if (!befores?.size) return;
+			if (befores.size === 1) {
+				const [uuid, before] = [...befores][0];
+				recordMaterialChange(uuid, 'color', null, before, hex);
+				return;
+			}
+			beginHistoryBatch();
+			try {
+				for (const [uuid, before] of befores)
+					recordMaterialChange(uuid, 'color', null, before, hex);
+			} finally {
+				endHistoryBatch(`Colour (${befores.size})`);
+			}
 		}, 600);
 	}
 
 	// ---- replication (identical messages to the retired panels) -------------
-	function sendMove() {
-		const obj = $selectedObject;
-		if (!obj?.uuid) return;
+	/** @param {any} object */
+	function sendMove(object) {
+		if (!object?.uuid) return;
 		$peers.send({
 			type: 'move',
-			uuid: obj.uuid,
-			pos: obj.position.toArray(),
-			rot: obj.rotation.toArray(),
-			scale: obj.scale.toArray()
+			uuid: object.uuid,
+			pos: object.position.toArray(),
+			rot: object.rotation.toArray(),
+			scale: object.scale.toArray()
 		});
 	}
 
-	/** @param {'position'|'rotation'|'scale'} field @param {'x'|'y'|'z'} axis @param {number} next */
+	/** @param {any} object */
+	const poseOf = (object) => ({
+		pos: object.position.toArray(),
+		rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+		scale: object.scale.toArray()
+	});
+
+	// ONE undo entry per transform GESTURE (a scrub fires on every pixel), sealed
+	// 500ms after the last change through the existing `transformSet` kind — the
+	// same one a multi-gizmo drag records, so replay + replication come free.
+	// Typed transforms recorded nothing at all before; with a selection they must,
+	// because setting an absolute value collapses the whole set onto one plane.
+	/** @type {Map<string, any>|null} */
+	let xformGestureStart = null;
+	/** @type {any} */
+	let xformGestureTimer;
+	function trackTransformGesture() {
+		if (xformGestureStart == null) {
+			xformGestureStart = new Map();
+			for (const object of insTargets) xformGestureStart.set(object.uuid, poseOf(object));
+		}
+		clearTimeout(xformGestureTimer);
+		xformGestureTimer = setTimeout(() => {
+			const keepOrigin = true; // a hand-placed origin survives the re-seat
+			const befores = xformGestureStart;
+			xformGestureStart = null;
+			if (!befores?.size) return;
+			/** @type {any[]} */
+			const items = [];
+			for (const [uuid, before] of befores) {
+				const object = $objectsGroup?.getObjectByProperty('uuid', uuid);
+				if (!object) continue;
+				const after = poseOf(object);
+				/** @param {number[]} a @param {number[]} b */
+				const same = (a, b) => a.every((n, i) => n === b[i]);
+				const still =
+					same(before.pos, after.pos) &&
+					same(before.rot, after.rot) &&
+					same(before.scale, after.scale);
+				if (!still) items.push({ uuid, before, after });
+			}
+			recordTransformSet(items);
+			// the pivot's rotation/scale are per-gesture handles: re-seat so the next
+			// gesture starts from a fresh frame (and the gizmo tracks the new poses)
+			if (items.length > 1)
+				attachMultiPivot(
+					items.map((item) => item.uuid),
+					keepOrigin
+				);
+		}, 500);
+	}
+
+	/**
+	 * A multi-selection's Transform rows drive the selection's ORIGIN (the same
+	 * pivot the gizmo uses), not each object's own numbers. That is what makes
+	 * them show one value per axis instead of a dash, and it means a typed value
+	 * MOVES the set rigidly instead of collapsing every member onto one plane.
+	 * In "Move origin" mode the rows re-point the origin and leave objects alone.
+	 * A single selection keeps writing its own absolute values.
+	 * @param {'position'|'rotation'|'scale'} field @param {'x'|'y'|'z'} axis @param {number} next
+	 */
 	function setTransform(field, axis, next) {
+		if (multiCount) {
+			if ($pivotOnly) {
+				// origin only: local editing aid, nothing to replicate or undo
+				if (field !== 'position') return;
+				const pos = ($pivotPose?.pos ?? [0, 0, 0]).slice();
+				pos['xyz'.indexOf(axis)] = next;
+				setPivotOrigin(pos);
+				return;
+			}
+			trackTransformGesture();
+			applyPivotTransform((pivot) => {
+				pivot[field][axis] = next;
+			});
+			selectedObject.update((v) => v);
+			return;
+		}
+		trackTransformGesture(); // capture the BEFORE pose before we write
 		$selectedObject[field][axis] = next;
+		sendMove($selectedObject);
 		selectedObject.update((v) => v); // refresh rows + object list
-		sendMove();
 	}
 
 	/** lights resend their whole object — same as the old light panel */
@@ -433,20 +719,32 @@
 		$peers.send({ type: 'object', element: $selectedObject.toJSON(), override: true });
 	}
 
-	/** @param {string} parameter */
+	/** Object flag → the whole selection. The checkbox/row has already written the
+	 * PRIMARY (bind:checked), so the rest of the set is set to that same value and
+	 * every member replicates its own message. No history kind covers these flags,
+	 * so the batch stays empty and records nothing (endHistoryBatch no-ops).
+	 * @param {string} parameter */
 	function sendParam(parameter) {
-		$peers.send({
-			type: 'objectParameters',
-			parameter,
-			uuid: $selectedObject.uuid,
-			[parameter]: $selectedObject[parameter]
+		const value = $selectedObject[parameter];
+		fan(parameter, (object) => {
+			if (object !== $selectedObject) object[parameter] = value;
+			$peers.send({
+				type: 'objectParameters',
+				parameter,
+				uuid: object.uuid,
+				[parameter]: object[parameter]
+			});
 		});
 	}
 
 	// Cast toggle also stamps userData.shadow so the opt-out survives GLTF sync
 	// (the bare castShadow flag does not round-trip through GLTFExporter) — V-1
 	function setCastShadow() {
-		$selectedObject.userData.shadow = $selectedObject.castShadow ? undefined : false;
+		const on = $selectedObject.castShadow;
+		fan('Cast shadow', (object) => {
+			object.castShadow = on;
+			object.userData.shadow = on ? undefined : false;
+		});
 		sendParam('castShadow');
 	}
 
@@ -458,15 +756,59 @@
 	// the props undo entry and replicates each edit via objectParameters.
 	/** @param {any} patch */
 	function setParticles(patch) {
-		updateObjectParticles($selectedObject.uuid, patch);
+		fan('Particles', (object) => updateObjectParticles(object.uuid, patch));
 	}
 
 	/** @param {any} patch */
 	function setPhysics(patch) {
 		// shared write path — replicates, records props undo, pokes the collider
 		// viz and live-rebuilds mid-sim colliders (CL-A A2) for EVERY caller
-		setPhysicsFor($selectedObject.uuid, patch);
+		fan('Physics', (object) => setPhysicsFor(object.uuid, patch));
 		selectedObject.update((v) => v);
+	}
+
+	/** Material parameter → the whole selection (17-D1)
+	 * @param {string} key @param {any} value */
+	function setMat(key, value) {
+		fanMat(key, (object) => setMaterialParam(object.uuid, key, value));
+	}
+
+	/**
+	 * Textures fan too. The writers are async (read the file, downscale, then
+	 * record + replicate), so the batch is opened here and closed after ALL of
+	 * them settle — one undo puts every material's previous map back.
+	 * @param {(uuid: string) => Promise<any>} apply
+	 * @param {string} label
+	 */
+	async function fanTexture(apply, label) {
+		const targets = matTargets;
+		if (!targets.length) return;
+		if (targets.length === 1) {
+			await apply(targets[0].uuid);
+		} else {
+			beginHistoryBatch();
+			try {
+				for (const object of targets) await apply(object.uuid);
+			} finally {
+				endHistoryBatch(`${label} (${targets.length})`);
+			}
+		}
+		selectedObject.update((s) => s);
+		objectsGroup.update((v) => v);
+	}
+
+	/** A picked image file → every selected material, decoded once. @param {File} file */
+	async function setTextureFromFile(file) {
+		const uuids = matTargets.map((/** @type {any} */ object) => object.uuid);
+		if (!uuids.length) return;
+		if (uuids.length > 1) beginHistoryBatch();
+		try {
+			await setObjectsTexture(uuids, file);
+		} finally {
+			if (uuids.length > 1) endHistoryBatch(`Texture (${uuids.length})`);
+		}
+		selectedObject.update((s) => s);
+		objectsGroup.update((v) => v);
 	}
 
 	/** CL-A A4: which material preset matches the current values (else 'custom') @param {any} p */
@@ -496,7 +838,7 @@
 	function setObjectParam(parameter, value) {
 		$selectedObject[parameter] = value;
 		selectedObject.update((v) => v);
-		sendParam(parameter);
+		sendParam(parameter); // fans the value + messages over the selection
 	}
 
 	// ---- move to group (shared by mesh and light targets) -------------------
@@ -1429,7 +1771,7 @@
 		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
 			<PanelHeader
 				title="Properties"
-				badge={$selectedObject.type}
+				badge={multiCount ? `${multiCount} objects` : $selectedObject.type}
 				pinned={$inspectorPinned}
 				onpin={() => inspectorPinned.update((v) => !v)}
 				onclose={() => inspectorClose.set(true)}
@@ -1447,6 +1789,18 @@
 		</div>
 
 		<div class="flex flex-col gap-3">
+			{#if multiCount}
+				<!-- 17-D1 follow-up: the panel edits the whole SET, so say so — and drop
+				     the single-object identity fields entirely rather than let the
+				     last-clicked object's name and id read like the target. Renaming or
+				     re-grouping one member of a selection is what clicking that one
+				     object is for. -->
+				<div id="selection-multi-banner" class="rounded-sm border border-primary-500/40 bg-primary-500/10 px-2 py-1.5">
+					<p class="text-xs font-semibold text-primary-200">Editing {multiCount} objects</p>
+					<p class="text-[10px] text-gray-400">Every value below applies to all of them.</p>
+				</div>
+			{/if}
+			{#if !multiCount}
 			<div class="flex flex-col gap-1">
 				<input
 					id="name"
@@ -1481,6 +1835,7 @@
 					{/key}
 				</div>
 			</div>
+			{/if}
 
 			{#if $animatedObjects[$selectedObject.uuid]}
 				{@const anim = $animatedObjects[$selectedObject.uuid]}
@@ -1650,38 +2005,163 @@
 				</Section>
 			{/if}
 			<Section label="Transform">
+				{#if multiCount}
+					<!-- 17-D1 follow-up: for a SET these rows drive the selection's origin
+					     (the gizmo's pivot), so every axis has one real value instead of a
+					     dash, and typing moves the group rigidly. -->
+					<div class="mb-1 flex items-center justify-between gap-2">
+						<span class="text-[10px] text-gray-400">
+							{$pivotOnly ? 'Moving the origin only' : `Moves all ${multiCount} together`}
+						</span>
+						<div class="flex items-center gap-1">
+							<Button
+								id="origin-mode"
+								size="xs"
+								color={$pivotOnly ? 'primary' : 'alternative'}
+								onclick={() => pivotOnly.update((v) => !v)}
+							>
+								{$pivotOnly ? 'Done' : 'Move origin'}
+							</Button>
+							<Button id="origin-reset" size="xs" color="alternative" onclick={() => resetPivotOrigin()}>
+								Centre
+							</Button>
+						</div>
+					</div>
+				{/if}
 				<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
-					<span class="text-[11px] text-gray-400">Position</span>
+					<span class="text-[11px] text-gray-400">{multiCount ? 'Origin' : 'Position'}</span>
 					<div id="inspector-position" class="grid grid-cols-3 gap-1">
-						<DragRow label="X" accent="text-red-400" step={0.02} value={$selectedObject.position.x}
+						<DragRow label="X" accent="text-red-400" step={0.02}
+							value={multiCount ? ($pivotPose?.pos?.[0] ?? 0) : $selectedObject.position.x}
 							onchange={(v) => setTransform('position', 'x', v)} />
-						<DragRow label="Y" accent="text-green-400" step={0.02} value={$selectedObject.position.y}
+						<DragRow label="Y" accent="text-green-400" step={0.02}
+							value={multiCount ? ($pivotPose?.pos?.[1] ?? 0) : $selectedObject.position.y}
 							onchange={(v) => setTransform('position', 'y', v)} />
-						<DragRow label="Z" accent="text-blue-400" step={0.02} value={$selectedObject.position.z}
+						<DragRow label="Z" accent="text-blue-400" step={0.02}
+							value={multiCount ? ($pivotPose?.pos?.[2] ?? 0) : $selectedObject.position.z}
 							onchange={(v) => setTransform('position', 'z', v)} />
 					</div>
-					{#if !isLight}
+					{#if !isLight && !$pivotOnly}
 						<span class="text-[11px] text-gray-400">Rotation</span>
 						<div id="inspector-rotation" class="grid grid-cols-3 gap-1">
-							<DragRow label="X" accent="text-red-400" step={0.01} snap={RAD_SNAP} value={$selectedObject.rotation.x}
+							<DragRow label="X" accent="text-red-400" step={0.01} snap={RAD_SNAP}
+								value={multiCount ? ($pivotPose?.rot?.[0] ?? 0) : $selectedObject.rotation.x}
 								onchange={(v) => setTransform('rotation', 'x', v)} />
-							<DragRow label="Y" accent="text-green-400" step={0.01} snap={RAD_SNAP} value={$selectedObject.rotation.y}
+							<DragRow label="Y" accent="text-green-400" step={0.01} snap={RAD_SNAP}
+								value={multiCount ? ($pivotPose?.rot?.[1] ?? 0) : $selectedObject.rotation.y}
 								onchange={(v) => setTransform('rotation', 'y', v)} />
-							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={RAD_SNAP} value={$selectedObject.rotation.z}
+							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={RAD_SNAP}
+								value={multiCount ? ($pivotPose?.rot?.[2] ?? 0) : $selectedObject.rotation.z}
 								onchange={(v) => setTransform('rotation', 'z', v)} />
 						</div>
 						<span class="text-[11px] text-gray-400">Scale</span>
 						<div id="inspector-scale" class="grid grid-cols-3 gap-1">
-							<DragRow label="X" accent="text-red-400" step={0.01} snap={0.1} value={$selectedObject.scale.x}
+							<DragRow label="X" accent="text-red-400" step={0.01} snap={0.1}
+								value={multiCount ? ($pivotPose?.scale?.[0] ?? 1) : $selectedObject.scale.x}
 								onchange={(v) => setTransform('scale', 'x', v)} />
-							<DragRow label="Y" accent="text-green-400" step={0.01} snap={0.1} value={$selectedObject.scale.y}
+							<DragRow label="Y" accent="text-green-400" step={0.01} snap={0.1}
+								value={multiCount ? ($pivotPose?.scale?.[1] ?? 1) : $selectedObject.scale.y}
 								onchange={(v) => setTransform('scale', 'y', v)} />
-							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={0.1} value={$selectedObject.scale.z}
+							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={0.1}
+								value={multiCount ? ($pivotPose?.scale?.[2] ?? 1) : $selectedObject.scale.z}
 								onchange={(v) => setTransform('scale', 'z', v)} />
 						</div>
 					{/if}
 				</div>
-				<p class="text-[10px] text-gray-500">Drag to scrub — Shift fine, Ctrl snap, click to type.</p>
+				{#if originTarget}
+					<!-- 17-D: this object's OWN origin (userData.origin). Moving it does not
+					     move the mesh — it moves the point rotate/scale happen around, which
+					     is what makes hinges, lids and wheels possible. Saved per object, so
+					     switching selections brings each one's origin back. -->
+					<div id="object-origin" class="mt-1 rounded-sm border border-gray-700/60 p-1.5">
+						<div class="mb-1 flex items-center justify-between gap-2">
+							<span class="text-[11px] text-gray-300">
+								Origin {originSet ? '' : '(default)'}
+							</span>
+							<div class="flex items-center gap-1">
+								<Button
+									id="origin-mode-single"
+									size="xs"
+									color={$pivotOnly ? 'primary' : 'alternative'}
+									onclick={() => {
+										pivotOnly.update((v) => !v);
+										reseatPivot(); // the gizmo has to exist to drag the origin
+									}}
+								>
+									{$pivotOnly ? 'Done' : 'Move origin'}
+								</Button>
+								<Button id="origin-clear" size="xs" color="alternative" onclick={clearOrigin}>
+									Reset
+								</Button>
+							</div>
+						</div>
+						<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
+							<span class="text-[11px] text-gray-400">World</span>
+							<div id="inspector-origin" class="grid grid-cols-3 gap-1">
+								<DragRow label="X" accent="text-red-400" step={0.02} value={originPos[0]}
+									onchange={(v) => setOriginAxis('x', v)} />
+								<DragRow label="Y" accent="text-green-400" step={0.02} value={originPos[1]}
+									onchange={(v) => setOriginAxis('y', v)} />
+								<DragRow label="Z" accent="text-blue-400" step={0.02} value={originPos[2]}
+									onchange={(v) => setOriginAxis('z', v)} />
+							</div>
+						</div>
+						<div class="mt-1 flex flex-wrap gap-1">
+							<Button id="origin-bottom" size="xs" color="alternative" onclick={() => applyOriginPreset('bottom')}>
+								Bottom
+							</Button>
+							<Button id="origin-center" size="xs" color="alternative" onclick={() => applyOriginPreset('center')}>
+								Centre
+							</Button>
+							<Button id="origin-median" size="xs" color="alternative" onclick={() => applyOriginPreset('median')}>
+								Median
+							</Button>
+							<Button id="origin-world" size="xs" color="alternative" onclick={() => applyOriginPreset('world')}>
+								World 0
+							</Button>
+							{#if isGroup}
+								<Button id="origin-children" size="xs" color="alternative" onclick={() => applyOriginPreset('children')}>
+									Children
+								</Button>
+							{/if}
+							{#if editingThis}
+								<Button id="origin-hinge" size="xs" color="primary" onclick={originFromSelection}>
+									Set origin here{$vertexSelectionSize > 1 ? ` (${$vertexSelectionSize} verts)` : ''}
+								</Button>
+							{:else}
+								<Button id="origin-pick" size="xs" color="alternative" onclick={pickOriginFromMesh}>
+									Pick from mesh…
+								</Button>
+							{/if}
+						</div>
+						{#if editingThis}
+							<p class="mt-1 text-[10px] text-primary-200">
+								Click a vertex — ctrl-click both ends of an edge to hinge on it — then press Set
+								origin here.
+							</p>
+						{/if}
+						<p class="mt-1 text-[10px] text-gray-500">
+							{#if $pivotOnly}
+								Drag the gizmo (or type above) to place the origin — the mesh stays put. Grid and
+								surface snapping apply. Press Done to transform around it.
+							{:else}
+								Bottom puts the pivot on the footprint so the object sits on the ground. Spin and
+								Orbit flow nodes turn around this point — that is how you hinge a door.
+							{/if}
+						</p>
+					</div>
+				{/if}
+				<p class="text-[10px] text-gray-500">
+					{#if multiCount && $pivotOnly}
+						Re-place the origin, then press Done to rotate or scale the selection around it. The
+						origin is a local editing aid — peers keep their own.
+					{:else if multiCount}
+						Rotation and scale are per-gesture handles: they turn the whole set around the origin,
+						then reset for the next move.
+					{:else}
+						Drag to scrub — Shift fine, Ctrl snap, click to type.
+					{/if}
+				</p>
 			</Section>
 
 			{#if !isLight}
@@ -1712,7 +2192,16 @@
 
 			{#if geoParams && geoSpec}
 				<Section label="Geometry">
-					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">{geoParams.gtype}</p>
+					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
+						{geoParams.gtype}{geoTargets.length > 1 ? ` · ${geoTargets.length} objects` : ''}
+					</p>
+					{#if geoOtherTypes.length}
+						<p id="geometry-mixed-note" class="rounded-sm bg-gray-700/50 px-2 py-1 text-[10px] text-gray-300">
+							Only the {geoTargets.length} {geoParams.gtype} object{geoTargets.length === 1 ? '' : 's'}
+							in this selection change — {geoOtherTypes.join(', ')}
+							{geoOtherTypes.length === 1 ? 'has' : 'have'} different parameters.
+						</p>
+					{/if}
 					{#if $selectedObject.userData?.vertexEdited || $selectedObject.userData?.faceEdited}
 						<!-- 164: once the mesh is edited, the parametric controls are LOCKED
 						     (changing one rebuilds the primitive + discards the edits) -->
@@ -1737,6 +2226,7 @@
 										step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
 										decimals={spec.kind === 'int' ? 0 : 2}
 										value={Number(geoParams.params[spec.key] ?? spec.def)}
+										mixed={geoMixed(spec.key, spec.def)}
 										onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
 									/>
 								{/if}
@@ -1898,6 +2388,11 @@
 
 			{#if material}
 				<Section label="Material">
+					{#if matCount}
+						<p id="material-multi-note" class="text-[10px] italic text-gray-400">
+							Applies to {matCount} selected objects.
+						</p>
+					{/if}
 					<Checkbox bind:checked={$selectedObject.visible} onchange={() => sendParam('visible')}>
 						Visible
 					</Checkbox>
@@ -1907,7 +2402,7 @@
 						value={material.type}
 						onchange={(/** @type {any} */ val) => {
 							// switches type but keeps color/texture/opacity, locally and on peers
-							switchMaterialType($selectedObject.uuid, val);
+							fanMat('Material type', (object) => switchMaterialType(object.uuid, val));
 							selectedObject.update((s) => s);
 						}}
 					/>
@@ -1931,20 +2426,26 @@
 							onInput={(/** @type {any} */ c) => {
 								if (sameHex(c.hex, color)) return; // mount echo, not an edit
 								// live drag: ONE debounced undo entry per gesture (setObjectColor
-								// would record on every frame), then apply + replicate
+								// would record on every frame), then apply + replicate. 17-D1:
+								// the apply fans over the selection; the gesture (opened here)
+								// remembers each target's own before-colour.
 								color = c.hex;
-								trackColorGesture($selectedObject.uuid, c.hex);
-								$selectedObject.material.color.set(c.hex);
-								$selectedObject.material.needsUpdate = true;
+								trackColorGesture(c.hex);
+								for (const object of matTargets) {
+									object.material.color.set(c.hex);
+									object.material.needsUpdate = true;
+									$peers.send({ type: 'color', uuid: object.uuid, color: c.hex });
+								}
 								objectsGroup.update((v) => v);
-								$peers.send({ type: 'color', uuid: $selectedObject.uuid, color: c.hex });
 							}}
 						/>
 					{/if}
 
 					<!-- materials supporting textures initialize map to null; ShadowMaterial has no map at all -->
 					{#if typeof material.map !== 'undefined'}
-						<p class="ui-section-label">Texture</p>
+						<p class="ui-section-label">
+							Texture{matCount ? ` — applies to all ${matCount}` : ''}
+						</p>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							id="texture-drop"
@@ -1962,8 +2463,8 @@
 								if (!raw) return;
 								e.preventDefault();
 								e.stopPropagation();
-								const ok = await applyExplorerImage($selectedObject.uuid, JSON.parse(raw));
-								if (ok) selectedObject.update((s) => s);
+								const payload = JSON.parse(raw);
+								await fanTexture((uuid) => applyExplorerImage(uuid, payload), 'Texture');
 							}}
 						>
 						<input
@@ -1973,10 +2474,7 @@
 							style="display: none"
 							onchange={(e) => {
 								const file = e.currentTarget.files?.[0];
-								if (file)
-									setObjectTexture($selectedObject.uuid, file).then(() =>
-										selectedObject.update((s) => s)
-									);
+								if (file) setTextureFromFile(file);
 								e.currentTarget.value = '';
 							}}
 						/>
@@ -1992,10 +2490,9 @@
 								<Button
 									size="xs"
 									color="alternative"
-									onclick={() => {
-										removeObjectTexture($selectedObject.uuid);
-										selectedObject.update((s) => s);
-									}}>Remove</Button
+									onclick={() =>
+										fanTexture(async (uuid) => removeObjectTexture(uuid), 'Remove texture')}
+										>Remove</Button
 								>
 							{:else}
 								<Button
@@ -2013,23 +2510,30 @@
 
 					{#if material.type === 'MeshStandardMaterial' || material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Roughness" min={0} max={1} step={0.05} value={material.roughness}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'roughness', v)} />
+							mixed={matMixed((o) => o.material.roughness)}
+							onchange={(v) => setMat('roughness', v)} />
 						<SliderRow label="Metalness" min={0} max={1} step={0.05} value={material.metalness}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'metalness', v)} />
+							mixed={matMixed((o) => o.material.metalness)}
+							onchange={(v) => setMat('metalness', v)} />
 					{/if}
 					{#if material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Clearcoat" min={0} max={1} step={0.05} value={material.clearcoat}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'clearcoat', v)} />
+							mixed={matMixed((o) => o.material.clearcoat)}
+							onchange={(v) => setMat('clearcoat', v)} />
 						<SliderRow label="Clearcoat rough" min={0} max={1} step={0.05} value={material.clearcoatRoughness}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'clearcoatRoughness', v)} />
+							mixed={matMixed((o) => o.material.clearcoatRoughness)}
+							onchange={(v) => setMat('clearcoatRoughness', v)} />
 						<SliderRow label="Transmission" min={0} max={1} step={0.05} value={material.transmission}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'transmission', v)} />
+							mixed={matMixed((o) => o.material.transmission)}
+							onchange={(v) => setMat('transmission', v)} />
 						<SliderRow label="IOR" min={1} max={2.333} step={0.01} decimals={2} value={material.ior}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'ior', v)} />
+							mixed={matMixed((o) => o.material.ior)}
+							onchange={(v) => setMat('ior', v)} />
 					{/if}
 					{#if material.type === 'MeshPhongMaterial'}
 						<SliderRow label="Shininess" min={0} max={100} step={1} decimals={0} value={material.shininess}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'shininess', v)} />
+							mixed={matMixed((o) => o.material.shininess)}
+							onchange={(v) => setMat('shininess', v)} />
 					{/if}
 					{#if material.type === 'MeshNormalMaterial' || material.type === 'MeshDepthMaterial'}
 						<p class="text-[11px] italic text-gray-400">
@@ -2038,16 +2542,17 @@
 					{/if}
 					{#if typeof material.opacity !== 'undefined' && material.type !== 'ShadowMaterial'}
 						<SliderRow label="Opacity" min={0} max={1} step={0.05} value={material.opacity}
-							onchange={(v) => {
-								setMaterialParam($selectedObject.uuid, 'transparent', v < 1);
-								setMaterialParam($selectedObject.uuid, 'opacity', v);
-							}} />
+							mixed={matMixed((o) => o.material.opacity)}
+							onchange={(v) =>
+								fanMat('Opacity', (object) => {
+									setMaterialParam(object.uuid, 'transparent', v < 1);
+									setMaterialParam(object.uuid, 'opacity', v);
+								})} />
 					{/if}
 					{#if typeof material.wireframe !== 'undefined'}
 						<Checkbox
 							checked={material.wireframe}
-							onchange={(/** @type {any} */ e) =>
-								setMaterialParam($selectedObject.uuid, 'wireframe', e.target.checked)}
+							onchange={(/** @type {any} */ e) => setMat('wireframe', e.target.checked)}
 						>
 							Wireframe
 						</Checkbox>
@@ -2055,8 +2560,7 @@
 					{#if 'flatShading' in material}
 						<Checkbox
 							checked={material.flatShading}
-							onchange={(/** @type {any} */ e) =>
-								setMaterialParam($selectedObject.uuid, 'flatShading', e.target.checked)}
+							onchange={(/** @type {any} */ e) => setMat('flatShading', e.target.checked)}
 						>
 							Flat shading
 						</Checkbox>
@@ -2072,7 +2576,7 @@
 									{ value: 2, name: 'Double' }
 								]}
 								value={material.side}
-								onchange={(/** @type {any} */ v) => setMaterialParam($selectedObject.uuid, 'side', +v)}
+								onchange={(/** @type {any} */ v) => setMat('side', +v)}
 							/>
 						</div>
 					{/if}
@@ -2083,12 +2587,12 @@
 								type="color"
 								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
 								value={'#' + material.emissive.getHexString()}
-								oninput={(/** @type {any} */ e) =>
-									setMaterialParam($selectedObject.uuid, 'emissive', e.currentTarget.value)}
+								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
 						</div>
 						<SliderRow label="Emissive int." min={0} max={4} step={0.05} value={material.emissiveIntensity}
-							onchange={(v) => setMaterialParam($selectedObject.uuid, 'emissiveIntensity', v)} />
+							mixed={matMixed((o) => o.material.emissiveIntensity)}
+							onchange={(v) => setMat('emissiveIntensity', v)} />
 					{/if}
 
 					<p class="ui-section-label">Shadow</p>
@@ -2108,6 +2612,11 @@
 
 			{#if !$selectedObject.isLight}
 				<Section label="Physics">
+					{#if multiCount}
+						<p id="physics-multi-note" class="text-[10px] italic text-gray-400">
+							Applies to {multiCount} selected objects.
+						</p>
+					{/if}
 					<div class="ui-row items-center gap-2">
 						<span class="w-20 shrink-0 text-xs text-gray-400">Body</span>
 						<ThemedSelect
@@ -2123,6 +2632,7 @@
 					</div>
 					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
 						<SliderRow label="Mass" min={0.1} max={100} step={0.1} value={$selectedObject.userData.physics?.mass ?? 1}
+							mixed={mixed((o) => o.userData.physics?.mass ?? 1)}
 							onchange={(v) => setPhysics({ mass: v })} />
 					{/if}
 					<div class="ui-row items-center gap-2">
@@ -2144,8 +2654,10 @@
 						/>
 					</div>
 					<SliderRow label="Bounciness" min={0} max={1} step={0.05} value={$selectedObject.userData.physics?.restitution ?? 0.3}
+						mixed={mixed((o) => o.userData.physics?.restitution ?? 0.3)}
 						onchange={(v) => setPhysics({ restitution: v })} />
 					<SliderRow label="Friction" min={0} max={2} step={0.05} value={$selectedObject.userData.physics?.friction ?? 0.5}
+						mixed={mixed((o) => o.userData.physics?.friction ?? 0.5)}
 						onchange={(v) => setPhysics({ friction: v })} />
 					<div class="ui-row items-center gap-2">
 						<span class="w-20 shrink-0 text-xs text-gray-400">Collider</span>
@@ -2220,7 +2732,23 @@
 				</Section>
 
 				<!-- PFX-A: particle emitter — config on userData.particles, every edit
-				     replicates + records a props undo entry (setParticles) -->
+				     replicates + records a props undo entry (setParticles).
+				     17-D1 follow-up: this section stays SINGLE-object. An emitter is a
+				     whole config (preset, rates, colours, sprite), and the members of a
+				     selection rarely share one — fanning a preset write would silently
+				     overwrite emitters that were tuned individually, with no way to see
+				     what was lost. The right-click menu already offers counted
+				     Particles ▸ Add / Burst / Remove for a whole selection, which are
+				     the operations that are safe to apply blind. -->
+				{#if multiCount}
+					<Section label="Particles">
+						<p id="particles-multi-note" class="text-[10px] text-gray-400">
+							{multiCount} objects selected — an emitter is edited one object at a time so tuned
+							configs are not overwritten. Right-click the selection for Particles ▸ Add, Burst or
+							Remove across all {multiCount}.
+						</p>
+					</Section>
+				{:else}
 				<Section label="Particles">
 					{#if !$selectedObject.userData.particles}
 						<div class="ui-row items-center gap-2">
@@ -2373,6 +2901,7 @@
 						</div>
 					{/if}
 				</Section>
+				{/if}
 			{/if}
 		</div>
 	{/if}

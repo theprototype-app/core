@@ -116,8 +116,13 @@ export function applySelectionSet(uuids, openProperties = false) {
 			controls.detach();
 			warnViewerReadOnly();
 		} else if (clean.length === 1) {
-			releaseMultiPivot();
-			controls.attach(primary);
+			// 17-D: an object carrying its own ORIGIN gets the pivot, so rotate and
+			// scale happen about the point the user placed. attachMultiPivot declines
+			// for a plain object, which then attaches directly exactly as before.
+			if (!attachMultiPivot(clean)) {
+				releaseMultiPivot();
+				controls.attach(primary);
+			}
 		} else {
 			attachMultiPivot(clean);
 		}
@@ -460,6 +465,14 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.camera;
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'camera', uuid: entry.uuid, camera: state.camera });
+	}
+	if ('origin' in state) {
+		// 17-D: the per-object transform origin (pivot offset) is scene data, so
+		// moving it is undoable and replicated like any other userData write
+		if (state.origin) object.userData.origin = state.origin;
+		else delete object.userData.origin;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'origin', uuid: entry.uuid, origin: state.origin });
 	}
 	objectsGroup.update((value) => value);
 	return true;

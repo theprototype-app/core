@@ -312,6 +312,33 @@ export function selectedVertexHandle() {
 	return selectedHandle;
 }
 
+/**
+ * 17-D: the WORLD point of the current vertex selection — the centroid of a
+ * multi-selection, else the single anchored handle. This is the "hinge point":
+ * pick the two verts of a door edge (or one corner) and snap the object's origin
+ * there, so Spin and a revolute joint both turn about the hinge.
+ * @returns {THREE.Vector3|null} null when nothing is selected
+ */
+export function vertexSelectionWorldPoint() {
+	if (!edited || !handles.length) return null;
+	const indices = vertexSelection.size
+		? [...vertexSelection]
+		: selectedHandle >= 0
+			? [selectedHandle]
+			: [];
+	if (!indices.length) return null;
+	const sum = new THREE.Vector3();
+	const point = new THREE.Vector3();
+	let n = 0;
+	for (const index of indices) {
+		if (index < 0 || index >= handles.length) continue;
+		handleWorldPosition(index, point);
+		sum.add(point);
+		n++;
+	}
+	return n ? sum.divideScalar(n) : null;
+}
+
 export function exitEditMode() {
 	if (!edited) return;
 	if (selectedHandle >= 0) stashedVert = { uuid: edited.uuid, handle: selectedHandle };

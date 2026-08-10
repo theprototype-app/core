@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject, globalCamera, isVRMode } from '../stores/sceneStore';
-import { peers, showToast, modulesOpen } from '../stores/appStore';
+import { globalScene, objectsGroup, selectedObject, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
+import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
 import { APP_VERSION } from './version.js';
@@ -63,6 +63,33 @@ const messageHandlers = {};
 /** @type {Record<string, {getState: () => any, applyState: (state: any) => void}>} */
 const stateSyncs = {};
 
+/** A2: per-module teardown journal — every api.register* records an undo thunk
+ * here so deactivateModule() can genuinely dispose a module (the dev-mode live
+ * reload tears down and re-registers with fresh code, no page reload).
+ * @type {Record<string, (() => void)[]>} */
+const moduleDisposals = {};
+
+/** remove one value from a plain registry array, in place
+ * @param {any[]} arr @param {any} value */
+function arrayRemove(arr, value) {
+	const index = arr.indexOf(value);
+	if (index >= 0) arr.splice(index, 1);
+}
+
+/** A2: drop a module-owned viewport group at teardown. SCENE-ROOT only (golden
+ * rule 5) — anything inside objectsGroup is replicated user content and stays.
+ * @param {string} name */
+function removeSceneRootGroup(name) {
+	const scene = get(globalScene);
+	const target = scene?.getObjectByName(name);
+	if (!target) return;
+	const objects = get(objectsGroup);
+	for (let node = target; node; node = node.parent) {
+		if (objects && node === objects) return;
+	}
+	target.parent?.remove(target);
+}
+
 // input/physics are reached via primed DYNAMIC imports: static edges would close
 // cycles back into this module (flowRuntime -> moduleSDK; physics -> flowRuntime)
 // — the vite-dev TDZ trap. The refs resolve at boot, long before any module
@@ -71,11 +98,19 @@ const stateSyncs = {};
 /** @type {any} */ let physicsRef = null;
 /** @type {any} */ let possessRef = null;
 /** @type {any} */ let vrControlsRef = null;
+/** @type {any} */ let addObjectsRef = null;
+/** @type {any} */ let jointsRef = null;
+/** @type {any} */ let objectActionsRef = null;
+/** @type {any} */ let pingAudioRef = null;
 if (typeof window !== 'undefined') {
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
 	import('./physics').then((m) => (physicsRef = m));
 	import('./possess').then((m) => (possessRef = m));
 	import('./vrControls').then((m) => (vrControlsRef = m));
+	import('./addObjects').then((m) => (addObjectsRef = m));
+	import('./joints').then((m) => (jointsRef = m));
+	import('./objectActions').then((m) => (objectActionsRef = m));
+	import('./pingAudio').then((m) => (pingAudioRef = m));
 }
 
 // --- api.pointerRay (190): where the user is POINTING, as a world ray --------
@@ -114,6 +149,19 @@ function physicsApi() {
 
 /** @param {string} moduleId */
 function makeApi(moduleId) {
+	const disposals = (moduleDisposals[moduleId] ??= []);
+	/** record an undo thunk deactivateModule runs at teardown (A2) @param {() => void} fn */
+	const onDispose = (fn) => disposals.push(fn);
+	/** input scopes this module still holds — released at teardown
+	 * @type {Set<'keys'|'locomotion'>} */
+	const claimedScopes = new Set();
+	let possessing = false;
+	onDispose(() => {
+		claimedScopes.forEach((scope) => import('./inputRuntime').then((m) => m.releaseInput(scope)));
+		claimedScopes.clear();
+		if (possessing) possessRef?.release();
+		import('./inputRuntime').then((m) => m.unregisterBindings(moduleId));
+	});
 	return {
 		/**
 		 * Add a node group to the flow palette/context menu. Items follow the
@@ -131,6 +179,18 @@ function makeApi(moduleId) {
 				return [...list, group];
 			});
 			if (components) Object.assign(moduleNodeComponents, components);
+			onDispose(() => {
+				moduleNodeGroups.update((list) =>
+					list
+						.map((g) =>
+							g.group === group.group
+								? { ...g, items: g.items.filter((/** @type {any} */ item) => !group.items.includes(item)) }
+								: g
+						)
+						.filter((g) => g.items.length > 0)
+				);
+				Object.keys(components ?? {}).forEach((type) => delete moduleNodeComponents[type]);
+			});
 		},
 		/**
 		 * Per-frame effect for edges `your-node -> objectselector`. The runtime
@@ -139,6 +199,9 @@ function makeApi(moduleId) {
 		 */
 		registerEffect(type, fn) {
 			moduleEffects[type] = fn;
+			onDispose(() => {
+				if (moduleEffects[type] === fn) delete moduleEffects[type];
+			});
 		},
 		/**
 		 * H2 (flow v2): ship CODE-EDITABLE node definitions with the module. Each
@@ -157,7 +220,23 @@ function makeApi(moduleId) {
 				for (const def of defs ?? []) {
 					const id = 'mod-' + moduleId + '-' + def.key;
 					if (m.findNodeDef(id)) continue; // user edits win over reseeds
-					m.applyNodeDef({ id, name: def.name ?? def.key, params: def.params ?? [], code: def.code ?? '' });
+					const seeded = { id, name: def.name ?? def.key, params: def.params ?? [], code: def.code ?? '' };
+					m.applyNodeDef(seeded);
+					const seededJson = JSON.stringify(seeded);
+					// teardown removes ONLY a def still byte-equal to what we seeded —
+					// a user-edited def survives (mirrors the absent-only seeding rule),
+					// and the re-register then leaves it alone too.
+					onDispose(() => {
+						const current = m.findNodeDef(id);
+						if (!current) return;
+						const snapshot = JSON.stringify({
+							id: current.id,
+							name: current.name,
+							params: current.params ?? [],
+							code: current.code ?? ''
+						});
+						if (snapshot === seededJson) m.applyNodeDefDelete(id);
+					});
 				}
 			});
 		},
@@ -168,6 +247,9 @@ function makeApi(moduleId) {
 		 */
 		registerPrimitive(name, builder, entry) {
 			customGeometryBuilders[name] = builder;
+			onDispose(() => {
+				if (customGeometryBuilders[name] === builder) delete customGeometryBuilders[name];
+			});
 			if (!entry) return;
 			const tagged = { ...entry, moduleId };
 			modulePrimitiveGroups.update((list) => {
@@ -179,6 +261,13 @@ function makeApi(moduleId) {
 					);
 				return [...list, { group: groupName, items: [tagged] }];
 			});
+			onDispose(() =>
+				modulePrimitiveGroups.update((list) =>
+					list
+						.map((g) => ({ ...g, items: g.items.filter((/** @type {any} */ item) => item !== tagged) }))
+						.filter((g) => g.items.length > 0)
+				)
+			);
 		},
 		/**
 		 * Intercept viewport clicks (desktop click + VR trigger). Receives the
@@ -187,10 +276,12 @@ function makeApi(moduleId) {
 		 */
 		registerClickHandler(fn) {
 			moduleClickHandlers.push(fn);
+			onDispose(() => arrayRemove(moduleClickHandlers, fn));
 		},
 		/** Runs every frame with the synced time (seconds) @param {(time: number) => void} fn */
 		registerFrameTask(fn) {
 			moduleFrameTasks.push(fn);
+			onDispose(() => arrayRemove(moduleFrameTasks, fn));
 		},
 		/**
 		 * Click handlers only see the replicated objects root by default;
@@ -200,10 +291,19 @@ function makeApi(moduleId) {
 		registerInteractiveGroup(name) {
 			moduleInteractiveGroups.push(name);
 			registerSystemGroup(name); // clickable module content is also listable
+			onDispose(() => {
+				arrayRemove(moduleInteractiveGroups, name);
+				arrayRemove(systemGroupNames, name);
+				removeSceneRootGroup(name); // module-owned viewport content goes with the module
+			});
 		},
 		/** List a scene-root group under the object list's System filter @param {string} name */
 		registerSystemGroup(name) {
 			registerSystemGroup(name);
+			onDispose(() => {
+				arrayRemove(systemGroupNames, name);
+				removeSceneRootGroup(name);
+			});
 		},
 		/**
 		 * Runs when the scene is cleared (locally or by a peer) — remove your
@@ -212,6 +312,7 @@ function makeApi(moduleId) {
 		 */
 		onSceneClear(fn) {
 			sceneClearHandlers.push(fn);
+			onDispose(() => arrayRemove(sceneClearHandlers, fn));
 		},
 		/**
 		 * Where the user is POINTING, as a THREE.Raycaster in world space —
@@ -226,6 +327,7 @@ function makeApi(moduleId) {
 		/** Handle messages other peers sent with api.send() @param {(data: any) => void} fn */
 		onMessage(fn) {
 			(messageHandlers[moduleId] ??= []).push(fn);
+			onDispose(() => arrayRemove(messageHandlers[moduleId] ?? [], fn));
 		},
 		/** Broadcast to all peers; arrives at their onMessage handlers @param {any} payload */
 		send(payload) {
@@ -240,10 +342,15 @@ function makeApi(moduleId) {
 		 */
 		registerStateSync(sync) {
 			stateSyncs[moduleId] = sync;
+			onDispose(() => {
+				if (stateSyncs[moduleId] === sync) delete stateSyncs[moduleId];
+			});
 		},
 		/** Adds a button to the sidebar "Modules" section @param {string} label @param {() => void} action */
 		registerMenu(label, action) {
-			moduleMenuItems.update((list) => [...list, { moduleId, label, action }]);
+			const item = { moduleId, label, action };
+			moduleMenuItems.update((list) => [...list, item]);
+			onDispose(() => moduleMenuItems.update((list) => list.filter((entry) => entry !== item)));
 		},
 		/**
 		 * Add a sector to the VR radial menu (74). group 'root' extends the base
@@ -256,8 +363,12 @@ function makeApi(moduleId) {
 		registerVRMenuEntry(entry) {
 			// dynamic import: a static edge here closes a module cycle back into
 			// history via materialsHandler (TDZ crash at boot)
-			import('./vrRadialMenu').then((menu) =>
-				menu.registerVRMenuEntry({ ...entry, id: moduleId + ':' + entry.id })
+			const id = moduleId + ':' + entry.id;
+			import('./vrRadialMenu').then((menu) => menu.registerVRMenuEntry({ ...entry, id }));
+			// same-module import promises resolve in .then order, so this always
+			// runs after the registration even when teardown fires immediately
+			onDispose(() =>
+				import('./vrRadialMenu').then((menu) => menu.unregisterVRMenuEntry(id, entry.group ?? 'root'))
 			);
 		},
 		/**
@@ -266,7 +377,8 @@ function makeApi(moduleId) {
 		 * @param {{label: string, keys: string}[]} bindings
 		 */
 		registerBindings(bindings) {
-			import('./inputRuntime').then((m) => m.registerBindings(moduleId, bindings));
+			if (inputRuntimeRef) inputRuntimeRef.registerBindings(moduleId, bindings);
+			else import('./inputRuntime').then((m) => m.registerBindings(moduleId, bindings));
 		},
 		/** Per-frame input snapshot: {codes: Set<'KeyW'...>, axes: {lx,ly,rx,ry}, vrButtons} */
 		input() {
@@ -274,20 +386,41 @@ function makeApi(moduleId) {
 		},
 		/** Key down/up events; returns an unsubscribe. @param {(kind: 'down'|'up', code: string) => void} fn */
 		onInput(fn) {
+			// DEVX #8: subscribe SYNCHRONOUSLY through the primed ref (it resolves
+			// at boot, before any module registers) — routing through a fresh
+			// import().then() dropped keys pressed in the first seconds after a
+			// user-module install. The promise path stays as an SSR-safe fallback,
+			// and unsubscribing before it settles must stick (the `dead` flag).
 			let unsub = () => {};
-			import('./inputRuntime').then((m) => (unsub = m.onInput(fn)));
-			return () => unsub();
+			let dead = false;
+			if (inputRuntimeRef) {
+				unsub = inputRuntimeRef.onInput(fn);
+			} else {
+				import('./inputRuntime').then((m) => {
+					if (!dead) unsub = m.onInput(fn);
+				});
+			}
+			const off = () => {
+				dead = true;
+				unsub(); // idempotent (Set.delete)
+			};
+			onDispose(off);
+			return off;
 		},
 		/** Pause the host's own use of an input scope while your module drives:
 		 * 'keys' (WASD camera fly / play movement) or 'locomotion' (VR left stick).
 		 * ALWAYS release (module disable/error releases everything).
 		 * @param {'keys'|'locomotion'} scope */
 		claimInput(scope) {
-			import('./inputRuntime').then((m) => m.claimInput(scope));
+			claimedScopes.add(scope);
+			if (inputRuntimeRef) inputRuntimeRef.claimInput(scope);
+			else import('./inputRuntime').then((m) => m.claimInput(scope));
 		},
 		/** @param {'keys'|'locomotion'} scope */
 		releaseInput(scope) {
-			import('./inputRuntime').then((m) => m.releaseInput(scope));
+			claimedScopes.delete(scope);
+			if (inputRuntimeRef) inputRuntimeRef.releaseInput(scope);
+			else import('./inputRuntime').then((m) => m.releaseInput(scope));
 		},
 		/**
 		 * Physics access (P-A/P-B). All mutations are INITIATOR-ONLY (the peer
@@ -307,7 +440,126 @@ function makeApi(moduleId) {
 			setJointMotor: (jointId, vel, maxForce) =>
 				physicsApi()?.setJointMotor(jointId, vel, maxForce) ?? false,
 			/** the replicated joint defs @returns {Promise<any[]>} */
-			joints: () => import('./joints').then((m) => m.jointsSnapshot())
+			joints: () => import('./joints').then((m) => m.jointsSnapshot()),
+			/** Is a simulation running anywhere in the session (ours or a peer's)?
+			 * Gate driving/behaviour on this, not on isInitiator. */
+			running: () =>
+				physicsRef ? !!get(physicsRef.simulating) || !!get(physicsRef.remoteSimulating) : false,
+			/** Replicated physics parameters — the shared setPhysicsFor write path
+			 * (history entry + objectParameters + live collider rebuild).
+			 * @param {string} uuid @param {any} patch */
+			set: (uuid, patch) => physicsApi()?.setPhysicsFor(uuid, patch),
+			/** Replicated joint (P-B): 'weld' | 'revolute', anchored in OBJECT-local
+			 * space. @param {string} kind @param {string} a @param {string} b
+			 * @param {string=} axis @param {any=} motor */
+			createJoint: (kind, a, b, axis, motor) =>
+				jointsRef?.createJoint(kind, a, b, axis ?? 'x', motor) ?? null
+		},
+		/**
+		 * Buzz the VR controllers (press feedback). No-op on desktop / when
+		 * the session's gamepads lack haptics. `hand` targets one controller
+		 * ('left'|'right', resolved by handedness); omit to pulse both.
+		 * Reaches vrControls via the primed dynamic import (a static edge
+		 * would close a module cycle - same rule as vrRadialMenu). (17-A1)
+		 * @param {number=} intensity 0..1 @param {number=} durationMs
+		 * @param {'left'|'right'=} hand
+		 */
+		haptic(intensity = 0.5, durationMs = 50, hand = undefined) {
+			vrControlsRef?.hapticPulse?.(intensity, durationMs, hand);
+		},
+		/** In a VR session right now? (DEVX #6) @returns {boolean} */
+		isVR() {
+			return !!get(isVRMode);
+		},
+		/** Is Play mode active (the ▶ button / pointer lock)? Modules that only
+		 * drive things in play gate on this. @returns {boolean} */
+		isPlaying() {
+			return get(isLocked) === true;
+		},
+		/** Connected peer ids (the replicated roster) — use it to free state a
+		 * peer left behind. @returns {string[]} */
+		peerIds() {
+			return (/** @type {any[]} */ (get(userdata)) ?? []).map((entry) => entry[0]);
+		},
+		/**
+		 * DEVX #5: create objects in the SHARED scene, replicated exactly like a
+		 * user typing the command. Returns the uuids that appeared, so you can
+		 * position them (api.moveObject) or joint them together.
+		 * @param {string} command e.g. '/create Box 1 1 1'
+		 * @param {{at?: number[]}=} opts `at` places the object (replicated)
+		 * @returns {Promise<string[]>}
+		 */
+		async create(command, opts) {
+			const group = get(objectsGroup);
+			const before = new Set((group?.children ?? []).map((/** @type {any} */ c) => c.uuid));
+			if (opts?.at && addObjectsRef) addObjectsRef.spawnAtPoint(command, opts.at);
+			else {
+				const commands = await import('./commandsHandler.svelte');
+				commands.sceneCommand(command);
+			}
+			return (get(objectsGroup)?.children ?? [])
+				.filter((/** @type {any} */ c) => !before.has(c.uuid))
+				.map((/** @type {any} */ c) => c.uuid);
+		},
+		/**
+		 * DEVX #5: move/rotate/scale a shared object and tell every peer — the
+		 * same `move` the editor sends. Omitted parts keep their current value.
+		 * @param {string} uuid @param {{pos?: number[], rot?: number[], scale?: number[]}} to
+		 */
+		moveObject(uuid, to) {
+			/** @type {any} */
+			const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+			if (!object) return false;
+			if (to?.pos) object.position.fromArray(to.pos);
+			if (to?.rot) object.rotation.set(to.rot[0], to.rot[1], to.rot[2]);
+			if (to?.scale) object.scale.fromArray(to.scale);
+			object.updateMatrix();
+			/** @type {any} */
+			const peer = get(peers);
+			peer?.send({
+				type: 'move',
+				uuid,
+				pos: object.position.toArray(),
+				rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+				scale: object.scale.toArray()
+			});
+			return true;
+		},
+		/** Fly the LOCAL editor camera somewhere (never replicated — the viewpoint
+		 * is per-viewer). @param {number[]} position @param {number[]=} lookAt */
+		flyTo(position, lookAt) {
+			objectActionsRef?.flyTo(position, lookAt ?? position);
+		},
+		/** A spatial UI chime (the ping sounds). LOCAL — broadcast your own op if
+		 * peers should hear it too. @param {string=} sound @param {number[]=} position */
+		playSound(sound = 'ding', position = undefined) {
+			pingAudioRef?.playPing(sound, position ?? null);
+		},
+		/** Park the editor camera behind an object and follow it (the car's chase
+		 * cam) — LOCAL, no selection, no undo. @param {string} uuid */
+		followCam(uuid) {
+			return possessRef?.startFollowCam(uuid) ?? false;
+		},
+		stopFollowCam() {
+			possessRef?.stopFollowCam();
+		},
+		/**
+		 * One VR hand's WORLD pose + button state, or null when untracked / not
+		 * in VR (DEVX #2): {position:[x,y,z], quaternion:[x,y,z,w], trigger,
+		 * gripped, connected}. Poll it from a frame task (a fresh plain object
+		 * per call — safe to keep). @param {'left'|'right'} hand
+		 */
+		vrHand(hand) {
+			return vrControlsRef?.handSnapshot?.(hand) ?? null;
+		},
+		/**
+		 * Fire the replicated flow click trigger on an object (DEVX #4, the
+		 * essentials pattern) — user graphs with an On Click node targeting the
+		 * object react to your module's events on every peer. @param {string} uuid
+		 */
+		fireObjectClick(uuid) {
+			// dynamic: flowRuntime statically imports moduleSDK (cycle rule)
+			import('./flowRuntime').then((m) => m.fireObjectClick(uuid));
 		},
 		/**
 		 * Possess an object: WASD/arrows or the VR left stick drive it (tank
@@ -317,10 +569,17 @@ function makeApi(moduleId) {
 		 * @param {{camera?: 'chase'|'orbit'|'none', speed?: number, turnSpeed?: number}=} opts
 		 */
 		possess(uuid, opts) {
+			possessing = true;
 			return possessRef?.possess(uuid, opts) ?? false;
 		},
 		releasePossess() {
+			possessing = false;
 			possessRef?.release();
+		},
+		/** Camera modes this build's possess supports (DEVX #1) — feature-detect
+		 * 'first' here; an unknown mode degrades silently. */
+		get possessModes() {
+			return possessRef?.possessModes ?? ['chase', 'orbit', 'none'];
 		},
 		/** the currently selected object's uuid (undefined when none) */
 		selectedUuid() {
@@ -377,6 +636,38 @@ export function initModules(modules) {
 			showToast('Module "' + mod.id + '" failed to load');
 		}
 	});
+	loadedModulesChanged.update((n) => n + 1);
+}
+
+/**
+ * A2: genuinely unload a module — run its teardown journal in reverse
+ * (registries, message/state-sync handlers, input claims + bindings, VR menu
+ * entries, module-owned scene-root viewport groups), then drop its assets and
+ * loadedModules entry so initModules can re-register fresh code. Scene objects
+ * the module CREATED inside objectsGroup stay (replicated user content).
+ * Used by the user-module dev reload / live disable; CORE modules keep
+ * reload-to-disable — they may wire registries outside the api surface
+ * (vrsleeve's vrControls hook registries).
+ * @param {string} id
+ */
+export function deactivateModule(id) {
+	const disposals = moduleDisposals[id] ?? [];
+	moduleDisposals[id] = [];
+	for (let i = disposals.length - 1; i >= 0; i--) {
+		try {
+			disposals[i]();
+		} catch (error) {
+			console.log('module ' + id + ' teardown step failed', error);
+		}
+	}
+	Object.values(moduleAssets[id] ?? {}).forEach((url) => {
+		try {
+			URL.revokeObjectURL(url);
+		} catch {}
+	});
+	delete moduleAssets[id];
+	const index = loadedModules.findIndex((m) => m.id === id);
+	if (index >= 0) loadedModules.splice(index, 1);
 	loadedModulesChanged.update((n) => n + 1);
 }
 

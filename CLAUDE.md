@@ -345,13 +345,21 @@ loadable play content. Everything a user does must be visible to connected peers
   takes `{assets,packs,flow}` include-opts, adds a `packs/` section; `fileHandler` saves/
   loads it, Sidebar Files = [GLTF | Scene | ⚙cog]), `measure`, `cameraBookmarks`,
   `editorNavigation`, `lightHelpers`.
-- `src/modules/` — core modules (hello, button, dungeon, piano, pong; #12: avatar =
-  possess-selected, essentials = 6 clickable interactables whose KIND derives from the
-  replicated object NAME, car = jointed drivable demo w/ click-claim + drive-op
-  forwarding; K: vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only feature,
-  register() just wires the vrControls hook registries, so disabling the module
-  removes the sleeve entirely) + `index.js` `coreModules` list; manager
-  enables/disables (live enable, reload to disable).
+- `src/modules/` — core modules (hello = the smallest complete example, button =
+  custom Svelte node UI, pong, vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only, register()
+  just wires the vrControls hook registries, so disabling the module removes
+  the sleeve entirely) + `index.js` `coreModules` list; manager enables/disables
+  (live enable; core still needs a reload to disable, USER modules disable live).
+  **17-A moved piano/avatar/essentials/car/DUNGEON OUT to `theprototype-app/modules`**
+  (installable from the manager's Browse tab) — they were pure demo content and
+  are now the flagship gallery entries; the SDK grew what they needed
+  (`api.create`/`moveObject`/`physics.set`/`physics.createJoint`/`isPlaying`/
+  `physics.running`/`followCam`/`peerIds`/`flyTo`/`playSound`). pong stays core
+  only because it still reads `globalCamera`/`userdata` directly. The dungeon's
+  play layer (`$lib/dungeonPlay` + DungeonMinimap + the spawn/collision code in
+  PointerLockControls/VRControls) STAYS in core: the module only publishes
+  `userData.play` = {grid,width,height,minX,minY,rooms,floorValue} and core
+  consumes it, so that is now a PUBLIC contract any module may publish.
 - UI: `components/menu/*` (drawers/modals; visibility via stores + `hidePanels/
   restorePanels`), `components/editors/*` (flow editor + CodeMirror panels),
   `components/play/*` (player, avatars — photo = billboard card; the VR follower
@@ -471,6 +479,37 @@ loadable play content. Everything a user does must be visible to connected peers
    a viewer's bytes; peers also drop gated types via `canApply`.
 
 ## Hard-won gotchas (do not rediscover)
+
+- **threlte's context stores are READ-ONLY now** (the stable migration):
+  `useThrelte().camera` is a `runeToCurrentWritable` whose `.current` is a
+  GETTER ONLY, and `useParent()` has no `.set` at all. So `camera.current = x`
+  throws "Cannot set property current … which has only a getter" and
+  `$cameraParent.position.x = v` (which svelte compiles to `store_mutate` ->
+  `.set()`) throws "store.set is not a function". Both sat in
+  PointerLockControls and silently killed the PLAY-MODE CAMERA SWAP and the
+  DUNGEON SPAWN (every peer landed in one room) until #17-A. Write through
+  `camera.set(...)`, and for a parent/ref store resolve it to a local const and
+  mutate the OBJECT. This extends the never-write-through-a-derived-store rule:
+  `.current` is no longer assignable either.
+- **A document-level `pointerlockchange` listener must ignore locks it does not
+  own** — PointerLockControls' handler fires for ANY pointer lock, so a module
+  possess with `mouseLook` used to yank `$isLocked` and the camera. It tracks a
+  `held` flag now; possess locks `<body>`, never the canvas (a synthetic
+  offscreen div gets `WrongDocumentError`, and from a devtools console there is
+  no user activation at all, so it degrades with a toast).
+- **An async `on:change`/`on:click` must capture `e.currentTarget` BEFORE
+  awaiting** — it is null once the handler resumes ("Cannot set properties of
+  null"). Bit the zip input while fixing svelte-check's `e.target` errors.
+- **Backticks inside a double-quoted bash string are COMMAND SUBSTITUTION** and
+  silently eat the identifiers (mangled a commit message and CLAUDE.md prose
+  three times in one session). Same cure as the PowerShell/emoji rule: write a
+  scratch `.cjs` and run it with node for any text containing backticks.
+- **flowbite `Button disabled` styling can go stale until the component
+  remounts** — reported three times as a blocked cursor with the field filled,
+  cured by closing and reopening the modal, and NEVER reproducible headlessly.
+  Don't bind `disabled` to fast-changing input state; validate on click and say
+  why inline. (Install feedback lives in a status region under the field for the
+  same reason: a toast vanishes while the user is fixing the URL.)
 
 - **#14 file-shape traps**: many core files are **CRLF + tabs** — a node-script rewrite
   must DETECT the newline and match the exact tab depth (a wrong-depth "match" silently
@@ -1113,7 +1152,13 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Verification (mandatory before commit)
 
-Follow `.claude/skills/e2e-verify/SKILL.md`. Short version: the suite lives in
+Follow `.claude/skills/e2e-verify/SKILL.md`. #17-A: suites that need a module
+which MOVED OUT of core use `h.installModule(peer, id)` + `h.moduleZipPath(id)`
+(skip, never fail, when the sibling `theprototype.app-modules` checkout has no
+zips) and must install it on EVERY peer INCLUDING the late joiner — a peer
+without the module cannot rebuild from the replicated seed. A two-peer red is
+SIGNALING until proven otherwise: re-run with `PEER_CONFIG` (the self-hosted
+box) before blaming the diff. Short version: the suite lives in
 `tests/e2e/` — `npm run e2e -- <name>` for the feature suite you add/update (every
 feature phase ships one; update suites broken by UI changes in the same commit).
 Two-peer tests meet on the SELF-HOSTED signaling box (peerjs.theprototype.app, the
@@ -1156,6 +1201,32 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-10): **17-A MODULE PLATFORM SHIPPED — core PR #101** (branch
+  feat/module-platform, lane ../theprototype-lane-flow @5186, 13 commits; plan +
+  as-built: cloud plans-core/pending/17-a-module-platform.md). **A1** SDK gaps
+  from the modules repo's DEVX-REQUESTS.md (api.haptic per-hand, isVR, vrHand,
+  fireObjectClick, possess camera:'first' + possessModes probe; DEVX #8 fix —
+  onInput subscribed via import().then() and DROPPED KEYS for seconds after
+  install). **A2** dev-mode live reload: a per-module teardown JOURNAL +
+  deactivateModule, a Dev URL row (Reload / ~2s Auto-poll), evaluate-the-new-
+  entry-FIRST so a broken body keeps the old version running; install/update/
+  disable/remove all act live. **A3** the Browse gallery off the modules repo's
+  index.json (moduleGallery.js, PACKS_BASE pattern, quiet offline state).
+  **MODULE MOVE**: dungeon/piano/avatar/essentials/car left core for
+  theprototype-app/modules — core keeps hello (canonical example), button
+  (custom Svelte node UI), pong (still reads globalCamera/userdata) and
+  vrsleeve. That needed the world api (see the SDK section) and proved
+  `userData.play` is a PUBLIC contract: the module publishes it, core's
+  dungeonPlay.js/DungeonMinimap/PointerLockControls consume it. Install feedback
+  moved INLINE under the field (progress / what landed / why it failed); the
+  User tab carries an install COUNT and reveals the newest card; the tab bar is
+  sticky. **Two PRE-EXISTING play-mode bugs fixed on the way** (threlte
+  read-only context stores — see the gotcha). New suites: module-gallery,
+  module-sdk-world, modules-discoverability; car-module + essentials deleted,
+  piano-pong → pong. svelte-check **391/62** (417 on base). OWED: user's manual
+  check of first-person mouseLook + VR haptics/vrHand (Pointer Lock and headsets
+  are not testable headlessly); dungeon/dungeon-play stop at a THIRD peer on
+  this box (setupPage waitForFunction, pre-existing environment limit).
 - Status (2026-08-10): **mesh-editing roadmap M0-M4 + M6 EXECUTED** (plan: cloud
   `plans-core/pending/mesh-editing-roadmap.md`, which also carries the M5 bevel design
   notes). Lane `../theprototype-lane-c` @ **port 5182**. Three stacked PRs off
@@ -1523,7 +1594,22 @@ override for e2e — never share 5173 (the user's main-checkout server).
 ## Module SDK (implemented — extend, don't fork)
 
 `src/modules/<id>/module.js` default-exports `{id, name, version, description,
-register(api)}`. api surface: registerNodeGroup (+custom components), registerEffect
+register(api)}`. **#17-A world api** (modules build shared content without reaching
+into app internals): `create(cmd, {at})` -> Promise<uuid[]> (the replicated
+`/create`), `moveObject(uuid, {pos,rot,scale})`, `physics.set(uuid, patch)`
+(setPhysicsFor), `physics.createJoint(kind, a, b, axis, motor)`,
+`physics.running()`, `isPlaying()`, `peerIds()`, `fireObjectClick(uuid)`
+(replicated nodetrigger) — plus DELIBERATELY LOCAL `flyTo(pos, lookAt)`,
+`playSound(sound, pos)`, `followCam(uuid)`/`stopFollowCam()` (a peer's module
+must never move your camera) and VR `isVR()`, `vrHand('left'|'right')`,
+`haptic(intensity, ms, hand?)`, `possess(uuid, {camera:'first', eyeHeight,
+mouseLook})` + the `possessModes` capability probe. All reached via PRIMED
+dynamic imports (addObjects/joints/objectActions/pingAudio alongside inputRuntime/
+physics/possess/vrControls) — a static edge closes a cycle into history.
+**Every `register*` must record its disposal** in the same edit: makeApi keeps a
+per-module teardown JOURNAL and `deactivateModule(id)` runs it in reverse, which
+is what makes user modules install/update/disable/remove and DEV-RELOAD live.
+api surface: registerNodeGroup (+custom components), registerEffect
 (base-managed per-frame), registerPrimitive (replicated `/create`), registerClickHandler
 (desktop+VR), registerInteractiveGroup (scene-root click targets), registerFrameTask,
 send/onMessage (namespaced `{type:'module', moduleId}`), registerStateSync (late-joiner

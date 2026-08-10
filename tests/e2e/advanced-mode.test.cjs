@@ -22,19 +22,19 @@ h.run(async () => {
 		'System chip appears in advanced mode'
 	);
 
-	// spawn piano, open the System view
+	// spawn pong, open the System view
 	await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
 				window.__stores.moduleSDK.moduleMenuItems.subscribe((items) => {
-					items.find((i) => i.label === 'Piano: spawn / remove')?.action();
+					items.find((i) => i.label === 'Pong: spawn / remove')?.action();
 					resolve();
 				})();
 			})
 	);
 	await A.page.getByRole('button', { name: 'System', exact: true }).click();
 	await A.page.waitForTimeout(400);
-	h.check(await A.page.getByText('piano-module', { exact: true }).isVisible(), 'module content listed');
+	h.check(await A.page.getByText('pong-module', { exact: true }).isVisible(), 'module content listed');
 	// phase 70 folded the rig lights under one environment-root group
 	h.check(await A.page.getByText('environment-root', { exact: true }).isVisible(), 'environment root listed');
 	h.check(
@@ -53,12 +53,12 @@ h.run(async () => {
 		'disclaimer stays dismissed'
 	);
 
-	// focus flies the camera toward the piano
+	// focus flies the camera toward the pong table
 	const before = await A.page.evaluate(
 		() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.position.toArray()))())
 	);
 	await A.page
-		.getByText('piano-module', { exact: true })
+		.getByText('pong-module', { exact: true })
 		.locator('..')
 		.getByTitle('Focus the camera on it')
 		.click();

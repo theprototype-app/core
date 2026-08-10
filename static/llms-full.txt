@@ -179,7 +179,7 @@ api.registerFrameTask((time) => { /* runs every frame, synced time */ });
 
 // click handlers only see the replicated objects root by default; if your
 // module adds its own group at the scene root, register it for clicks:
-api.registerInteractiveGroup('piano-module');
+api.registerInteractiveGroup('pong-module');
 ```
 
 ### Messages and state
@@ -247,12 +247,30 @@ api.physics.setJointMotor(jointId, vel, maxForce); // drive a revolute joint
 api.physics.joints();                   // Promise<the replicated joint defs>
 ```
 
-The **car module** (`src/modules/car/`) is the worked example: replicated
+The **car module** (now in the [modules repo](https://github.com/theprototype-app/modules), `modules/car/`) is the worked example: replicated
 primitives + motorized revolute joints, click-to-claim (pong's paddle
 pattern), driver forwards `{op:'drive', throttle, steer}` at ~20Hz and only
 the initiator applies wheel motors. Driving + the chase camera engage only
 in Play mode with a running simulation (the module claims `'keys'` and uses
 possess's `startFollowCam` while engaged; the claim itself works anytime).
+
+### Building in the shared scene (17-A)
+
+```js
+// the replicated /create, handing back what appeared
+const [uuid] = await api.create('/create Box 1 1 1');
+await api.create('/create Box 0.6 0.6 0.6', { at: [x, y, z] });
+api.moveObject(uuid, { pos, rot, scale });        // the editor's replicated move
+api.physics.set(uuid, { mode: 'dynamic', mass: 30 });
+api.physics.createJoint('revolute', a, b, 'x', { vel: 0, maxForce: 120 });
+api.physics.running();   // a sim runs somewhere in the session
+api.isPlaying();         // Play mode active
+api.peerIds();           // roster - free a departed peer's state
+// LOCAL only (a peer's module must never yank your viewpoint):
+api.flyTo([x, y, z], [lx, ly, lz]);
+api.playSound('pluck', [x, y, z]);
+api.followCam(uuid); api.stopFollowCam();
+```
 
 ### Possess (K-D)
 
@@ -261,8 +279,15 @@ possess's `startFollowCam` while engaged; the claim itself works anytime).
 // chase camera by default; Esc releases. Possessing SELECTS the object
 // (selection = lock), suspends its flow effects, and records ONE undo entry
 // on release. Movement replicates as plain throttled moves.
-api.possess(api.selectedUuid(), { camera: 'chase' }); // 'chase'|'orbit'|'none'
+api.possess(api.selectedUuid(), { camera: 'chase' }); // 'chase'|'orbit'|'none'|'first'
 api.releasePossess();
+api.possessModes; // this build's camera modes — feature-detect 'first' here
+                  // (an unknown camera value degrades silently on old builds)
+
+// 17-A1 first person: eye at the object + eyeHeight; mouseLook = pointer lock
+// (X turns the OBJECT so movement follows the look, Y pitches the camera;
+// leaving the lock — Esc — releases the possession)
+api.possess(uuid, { camera: 'first', eyeHeight: 1.7, mouseLook: true });
 ```
 
 ### Misc
@@ -279,6 +304,13 @@ api.scene();        // THREE.Scene
 api.objectsGroup(); // the replicated objects root (add scene content here)
 api.peerId();       // our peer id (undefined before the mesh is up)
 api.toast('hi');    // toast in the corner
+api.haptic(0.6, 60);          // buzz the VR controllers (no-op on desktop);
+api.haptic(0.6, 60, 'right'); // optional hand targets one controller (17-A1)
+api.isVR();                   // true inside a VR session
+api.vrHand('left');           // one hand's WORLD pose + buttons, or null:
+                              // {position, quaternion, trigger, gripped, connected}
+api.fireObjectClick(uuid);    // pulse On Click flow nodes targeting the object
+                              // (replicated) — user graphs react to module events
 api.now();          // the runtime clock in seconds — stamp replicated
                     // timestamps with this, never Date.now() directly
 ```
@@ -313,6 +345,22 @@ How it replicates: the click writes `{pressed, at: api.now()}` into the node's
 data (replicated like any node edit); the slide is a pure function of
 `(data, time)` running on each peer — no motion messages at all. The
 `registerClickHandler` consumes the click so pressing doesn't select the button.
+
+## Manager, dev mode & gallery (17-A2/A3)
+
+User modules install, update, disable and remove **live** — `deactivateModule`
+runs the per-module teardown journal (every `api.register*` records an undo
+thunk), so nothing needs a page reload. Core modules keep reload-to-disable
+(they may wire core registries outside the api surface, e.g. vrsleeve).
+
+Every user-module card carries a **Dev URL** row: **Reload** fetches fresh code
+(cache-busted), evaluates it FIRST, then tears down + re-registers — a broken
+body keeps the old instance running. **Auto** polls (~2s) and reloads on
+change. Peers toast the `{id,version}` mismatch while you iterate (correct —
+the dev peer differs). The **Browse** tab lists the community repo
+(`theprototype-app/modules`, `index.json` via jsDelivr — `moduleGallery.js`);
+installs go through `installUrl` with the entry's source folder, so Update and
+the dev reload keep working on gallery installs.
 
 ## Checklist before you ship one
 

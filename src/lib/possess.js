@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, lockedObjects, orbitControls, globalCamera, isVRMode } from '../stores/sceneStore';
+import { objectsGroup, lockedObjects, orbitControls, globalCamera, globalRenderer, isVRMode } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordTransform } from './history';
 import { suspendAnimation, resumeAnimation, notifyExternalMove } from './flowRuntime';
@@ -38,9 +38,29 @@ function chaseCamera(cam, object, dt) {
 	cam.lookAt(object.position);
 }
 
+/** 17-A1: camera modes this build supports — modules feature-detect via
+ * api.possessModes (an unknown `camera` value degrades silently, so the
+ * capability list is the probe). */
+export const possessModes = ['chase', 'orbit', 'none', 'first'];
+
+const camEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+/** First-person framing (17-A1, the fps-player seam): eye at the object plus
+ * eyeHeight, yaw = the object's tank heading, pitch = accumulated mouse look.
+ * @param {any} cam @param {any} object @param {number} eyeHeight @param {number} pitch */
+function firstCamera(cam, object, eyeHeight, pitch) {
+	cam.position.copy(object.position);
+	cam.position.y += eyeHeight;
+	camEuler.set(pitch, object.rotation.y, 0);
+	cam.quaternion.setFromEuler(camEuler);
+}
+
 /**
  * Take control of an object. @param {string} uuid
- * @param {{camera?: 'chase'|'orbit'|'none', speed?: number, turnSpeed?: number}=} opts
+ * @param {{camera?: 'chase'|'orbit'|'none'|'first', speed?: number, turnSpeed?: number,
+ *   eyeHeight?: number, mouseLook?: boolean}=} opts
+ * 'first' (17-A1) parks the eye at the object + eyeHeight; mouseLook requests
+ * pointer lock — X turns the OBJECT (movement follows the look), Y pitches the
+ * camera only. Leaving pointer lock (Esc) releases the possession.
  * @returns {boolean}
  */
 export function possess(uuid, opts = {}) {
@@ -64,13 +84,14 @@ export function possess(uuid, opts = {}) {
 	const controls = get(orbitControls);
 	state = {
 		uuid,
-		opts: { camera: 'chase', speed: 4, turnSpeed: 2.5, ...opts },
+		opts: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false, ...opts },
 		before: {
 			pos: object.position.toArray(),
 			rot: object.rotation.toArray(),
 			scale: object.scale.toArray()
 		},
 		camSave: controls ? { enabled: controls.enabled, target: controls.target.clone() } : null,
+		pitch: 0,
 		lastSent: 0,
 		raf: 0,
 		lastTime: performance.now(),
@@ -78,10 +99,78 @@ export function possess(uuid, opts = {}) {
 			if (kind === 'down' && code === 'Escape') release();
 		})
 	};
-	if (state.opts.camera === 'chase' && controls) controls.enabled = false;
+	if ((state.opts.camera === 'chase' || state.opts.camera === 'first') && controls)
+		controls.enabled = false;
+	if (state.opts.camera === 'first' && state.opts.mouseLook) startMouseLook();
 	possessed.set(uuid);
 	state.raf = requestAnimationFrame(tick);
 	return true;
+}
+
+// ---- first-person mouse look (17-A1) ----------------------------------------
+/** @type {any} the element we hold pointer lock on — deliberately NOT the canvas */
+let lockSurface = null;
+/** have we actually held the lock during this possession? */
+let gotLock = false;
+// Pointer lock swallows Esc (the browser exits the lock without a keydown ever
+// reaching the page), so leaving the lock IS the release signal.
+
+/** @param {MouseEvent} event */
+function onLookMove(event) {
+	// only while WE hold the lock — an unlocked mousemove still carries
+	// movementX and would steer the object on any cursor travel
+	if (!state || document.pointerLockElement !== lockSurface) return;
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', state.uuid);
+	if (object) object.rotation.y -= event.movementX * 0.0025;
+	state.pitch = Math.max(-1.45, Math.min(1.45, state.pitch - event.movementY * 0.0025));
+}
+
+function onLockChange() {
+	// lock lost (Esc / alt-tab) while we hold a mouse-look possession → release.
+	// `gotLock` guards the FIRST change event: before the lock is granted we
+	// must not read "not locked yet" as "the user pressed Esc".
+	if (!state?.opts.mouseLook) return;
+	if (document.pointerLockElement === lockSurface) {
+		gotLock = true;
+		return;
+	}
+	if (gotLock) release();
+}
+
+function startMouseLook() {
+	gotLock = false;
+	// Pointer lock on the CANVAS would be seen by PointerLockControls (a
+	// document-level listener on threlte's renderer.domElement, always mounted
+	// via Player) as "play mode started": it flips $isLocked and swaps to the
+	// player camera. Possess drives the EDITOR camera, so lock <body> instead —
+	// locked mouse deltas arrive at document level either way, and
+	// PointerLockControls now ignores locks it does not own.
+	// NOT a synthetic offscreen div: Chromium rejects those with
+	// "WrongDocumentError: The root document of this element is not valid".
+	lockSurface = document.body;
+	document.addEventListener('mousemove', onLookMove);
+	document.addEventListener('pointerlockchange', onLockChange);
+	try {
+		const request = /** @type {any} */ (lockSurface.requestPointerLock?.());
+		// Pointer lock needs USER ACTIVATION and a focused document: called from a
+		// devtools console, or without a click, the browser refuses. Degrade to
+		// plain first-person (tank steering still works) instead of half-locking.
+		request?.catch?.(() => mouseLookUnavailable());
+	} catch {
+		mouseLookUnavailable();
+	}
+}
+
+function mouseLookUnavailable() {
+	if (state) state.opts.mouseLook = false;
+	showToast('Mouse look needs a click in the page first — steering with A/D instead');
+}
+
+function stopMouseLook() {
+	document.removeEventListener('mousemove', onLookMove);
+	document.removeEventListener('pointerlockchange', onLockChange);
+	if (lockSurface && document.pointerLockElement === lockSurface) document.exitPointerLock?.();
+	lockSurface = null;
 }
 
 /** Release control: restore the camera, record ONE undo entry, final move. */
@@ -89,6 +178,7 @@ export function release() {
 	if (!state) return;
 	cancelAnimationFrame(state.raf);
 	state.offEsc?.();
+	if (state.opts.camera === 'first' && state.opts.mouseLook) stopMouseLook();
 	releaseInput('keys');
 	releaseInput('locomotion');
 	const { uuid, before, camSave } = state;
@@ -173,6 +263,8 @@ function tick(now) {
 	const cam = get(globalCamera);
 	if (camera === 'chase' && cam) {
 		chaseCamera(cam, object, dt);
+	} else if (camera === 'first' && cam) {
+		firstCamera(cam, object, state.opts.eyeHeight, state.pitch);
 	} else if (camera === 'orbit' && controls) {
 		controls.target.copy(object.position); // free orbit/zoom around the ride
 	}

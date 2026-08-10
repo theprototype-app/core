@@ -205,6 +205,24 @@ the initiator applies wheel motors. Driving + the chase camera engage only
 in Play mode with a running simulation (the module claims `'keys'` and uses
 possess's `startFollowCam` while engaged; the claim itself works anytime).
 
+### Building in the shared scene (17-A)
+
+```js
+// the replicated /create, handing back what appeared
+const [uuid] = await api.create('/create Box 1 1 1');
+await api.create('/create Box 0.6 0.6 0.6', { at: [x, y, z] });
+api.moveObject(uuid, { pos, rot, scale });        // the editor's replicated move
+api.physics.set(uuid, { mode: 'dynamic', mass: 30 });
+api.physics.createJoint('revolute', a, b, 'x', { vel: 0, maxForce: 120 });
+api.physics.running();   // a sim runs somewhere in the session
+api.isPlaying();         // Play mode active
+api.peerIds();           // roster - free a departed peer's state
+// LOCAL only (a peer's module must never yank your viewpoint):
+api.flyTo([x, y, z], [lx, ly, lz]);
+api.playSound('pluck', [x, y, z]);
+api.followCam(uuid); api.stopFollowCam();
+```
+
 ### Possess (K-D)
 
 ```js

@@ -9,16 +9,17 @@
 	// (the node editor's belongs to xyflow), so the canvas keeps its own
 	// {zoom, panX, panY} and projects UV space itself. v is UP in UV space and
 	// DOWN in canvas space, so every mapping flips Y.
-	import { onMount } from 'svelte';
-	import { ImagePlus, Lasso, MousePointer2, SquareDashed } from '@lucide/svelte';
+	import { onMount, untrack } from 'svelte';
+	import { Brush, ImagePlus, Lasso, MousePointer2, SquareDashed } from '@lucide/svelte';
 	import { selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
 	import { setObjectTexture, removeObjectTexture } from '$lib/materialsHandler';
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import {
-		uvActiveSlot, uvTool, uvEditable, uvTriangles, materialsOf, slotCount,
+		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvEditable, uvTriangles, materialsOf, slotCount,
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
-		beginUvDrag, moveUvCluster, endUvDrag, cancelUvDrag
+		beginUvDrag, moveUvCluster, endUvDrag, cancelUvDrag,
+		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke
 	} from '$lib/uvEditor';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
@@ -30,7 +31,8 @@
 	const TOOLS = [
 		{ key: 'select', icon: MousePointer2, title: 'Select (click a vertex; Shift adds)' },
 		{ key: 'box', icon: SquareDashed, title: 'Box select (drag a rectangle; Shift adds)' },
-		{ key: 'lasso', icon: Lasso, title: 'Lasso select (draw around vertices; Shift adds)' }
+		{ key: 'lasso', icon: Lasso, title: 'Lasso select (draw around vertices; Shift adds)' },
+		{ key: 'paint', icon: Brush, title: 'Paint on the texture' }
 	];
 
 	// live-follow the primary selection ($selectedObject keeps the last object
@@ -87,6 +89,14 @@
 		return () => setDockOccupant('uv', false);
 	});
 	const dockVisible = $derived($visibleDockKey === 'uv');
+
+	// Arming the brush opens the Tool panel, so its colour + size are reachable
+	// without hunting for the tab (WindowShell's showSecondary is exactly this
+	// seam — an auto-open stays UNPINNED, so it does not fight the user).
+	let shell = $state(/** @type {any} */ (null));
+	$effect(() => {
+		if ($uvTool === 'paint') untrack(() => shell?.showSecondary('tool'));
+	});
 
 	// --- canvas view state ---
 	let canvasEl = $state(/** @type {HTMLCanvasElement|null} */ (null));
@@ -160,6 +170,8 @@
 			selectedIndices: [...selCluster],
 			marquee,
 			lassoPoints: lasso.length,
+			tool: $uvTool,
+			brush: { color: $uvBrushColor, size: $uvBrushSize },
 			/** @param {number} u @param {number} v */
 			project: (u, v) => ({ x: toScreenX(u), y: toScreenY(v) })
 		});
@@ -175,6 +187,7 @@
 		if (uuid !== lastUuid) {
 			lastUuid = uuid;
 			cancelUvDrag();
+			cancelPaintStroke();
 			selCluster = [];
 			hoverIndex = -1;
 		}
@@ -275,7 +288,7 @@
 	// delegated handler, and a drag whose pointerdown never arrived then jumps by
 	// the pointer's ABSOLUTE position (the DragRow trap, 16-Q3). pointermove/up
 	// live on WINDOW so a drag survives leaving the canvas box.
-	let gesture = $state(/** @type {'idle'|'pan'|'drag'|'box'|'lasso'} */ ('idle'));
+	let gesture = $state(/** @type {'idle'|'pan'|'drag'|'box'|'lasso'|'paint'} */ ('idle'));
 	let lastX = 0;
 	let lastY = 0;
 	/** did this gesture actually move? a press with no movement is a CLICK */
@@ -308,6 +321,25 @@
 		// left button, so panning needs an escape hatch
 		if (e.button === 1) {
 			gesture = 'pan';
+			return;
+		}
+
+		// PAINT owns the left button entirely: vertices are not pickable while the
+		// brush is armed, or every stroke that starts on a corner would drag it.
+		// The stroke opens ASYNChronously (the canvas has to carry the existing
+		// texture before the first dab), so claim the gesture NOW and let the
+		// pending moves queue behind the seed.
+		if ($uvTool === 'paint') {
+			gesture = 'paint';
+			const uuid = target.uuid;
+			const at = { u: toU(x), v: toV(y) };
+			beginPaintStroke(uuid, slot).then((ok) => {
+				if (!ok) {
+					if (gesture === 'paint') gesture = 'idle';
+					return;
+				}
+				paintMove(at.u, at.v, $uvBrushColor, brushUv());
+			});
 			return;
 		}
 
@@ -375,11 +407,21 @@
 			const last = lasso[lasso.length - 1];
 			// thin the path: sub-pixel samples add nothing but work
 			if (!last || Math.abs(last[0] - x) > 1.5 || Math.abs(last[1] - y) > 1.5) lasso = [...lasso, [x, y]];
+		} else if (gesture === 'paint') {
+			const { x, y } = localPoint(e);
+			paintMove(toU(x), toV(y), $uvBrushColor, brushUv());
 		}
 	}
 
+	/** The brush is set in TEXTURE pixels, so it paints the same width whatever
+	 * the view zoom — a brush measured in screen px would get finer as you zoom
+	 * in, which is the opposite of what a painter expects. */
+	const brushUv = () => $uvBrushSize;
+
 	function onPointerUp(/** @type {PointerEvent} */ e) {
-		if (gesture === 'drag' && target) {
+		if (gesture === 'paint') {
+			endPaintStroke($uvBrushColor, brushUv());
+		} else if (gesture === 'drag' && target) {
 			endUvDrag(target.uuid); // no-ops when nothing moved (no wire, no undo entry)
 			if (!moved && collapseTo) selCluster = collapseTo;
 		} else if (gesture === 'box' && marquee && target) {
@@ -581,6 +623,7 @@
 
 {#snippet body()}
 	<WindowShell
+		bind:this={shell}
 		key="uv"
 		primaryLabel="materials"
 		primaryDefaultWidth={168}
@@ -664,6 +707,38 @@
 
 		{#snippet secondary(mode)}
 			{#if mode === 'tool'}
+				{#if $uvTool === 'paint'}
+					<div class="border-b border-gray-700/60 p-2">
+						<div class="ui-section-label">Brush</div>
+						<label class="mb-2 block text-[11px] text-gray-400">
+							Colour
+							<input
+								id="uv-brush-color"
+								type="color"
+								class="mt-1 h-7 w-full cursor-pointer rounded-sm border border-gray-600 bg-gray-900"
+								value={$uvBrushColor}
+								oninput={(e) => uvBrushColor.set(e.currentTarget.value)}
+							/>
+						</label>
+						<label class="block text-[11px] text-gray-400">
+							Size <span class="tabular-nums text-gray-200">{$uvBrushSize}px</span>
+							<input
+								id="uv-brush-size"
+								type="range"
+								min="1"
+								max="128"
+								step="1"
+								class="mt-1 w-full accent-primary-500"
+								value={$uvBrushSize}
+								oninput={(e) => uvBrushSize.set(parseInt(e.currentTarget.value) || 1)}
+							/>
+						</label>
+						<p class="mt-1 text-[10px] leading-relaxed text-gray-500">
+							Size is in texture pixels, so it paints the same width at any zoom.
+							Each stroke is one undo step; peers watch it live.
+						</p>
+					</div>
+				{/if}
 				<div class="p-2 text-[11px] leading-relaxed text-gray-400">
 					<p class="mb-2">Drag a vertex to move its UV corner. Corners that share a point move together, and dragging any selected vertex moves the whole selection.</p>
 					<p class="mb-2"><span class="text-gray-200">Shift</span> (or Ctrl) adds to the selection — clicking a vertex, or with box and lasso.</p>

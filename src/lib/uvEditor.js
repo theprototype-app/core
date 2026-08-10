@@ -1,7 +1,12 @@
+// @ts-ignore - no bundled three type declarations (project-wide)
+import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordEntry } from './history';
+// UV3 painting commits through the EXISTING replicated texture path, so
+// persistence (autosave / .tpscene / the object sync) and undo come free.
+import { applyMap, materialAt, recordMaterialChange } from './materialsHandler';
 // UV1: read-only reuse of the mesh snapshot pipeline. faceEdit owns the triangle
 // <-> geometry conversion AND the 'meshgeo' history kind (which already accepts a
 // {positions, groups, uvs} triple and re-broadcasts uvs on undo), so a UV commit
@@ -320,6 +325,273 @@ function sameFloats(a, b) {
 	for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-7) return false;
 	return true;
 }
+
+// --- UV3: texture painting --------------------------------------------------
+// A stroke draws onto an OFFSCREEN CANVAS per (uuid, slot) that becomes the
+// material's map while painting, so the brush shows up on the model live. Peers
+// see the stroke through throttled `uvpaint` segments (the drawMode cadence) and
+// converge on the real thing when the stroke COMMITS: the finished canvas is
+// encoded once and sent through the existing `objectParameters`/`map` path, so
+// it persists, replicates to late joiners and undoes like any other texture.
+// Per-stroke, not per-move: the encoded image is ~100-300 KB.
+
+/** how many px the painting canvas is when a material has no texture yet */
+const PAINT_CANVAS = 1024;
+/** live-stroke broadcast interval (drawMode uses the same cadence) */
+const PAINT_THROTTLE = 66;
+/** a live stroke nobody finished is dropped after this (a peer vanished mid-drag) */
+const STROKE_STALE_MS = 5000;
+
+/** @type {Map<string, {canvas: any, texture: any, uuid: string, slot: number, seededFrom: string|null}>} */
+const paintCanvases = new Map();
+/** @type {Map<string, {ts: number}>} */
+const liveUvStrokes = new Map();
+/** @type {{id: string, uuid: string, slot: number, before: string|null, sent: number, points: number[][]} | null} */
+let paintStroke = null;
+let strokeSeq = 0;
+
+/** @param {string} uuid @param {number} slot */
+const paintKey = (uuid, slot) => uuid + '#' + slot;
+
+/**
+ * The offscreen canvas for one (uuid, slot), SEEDED from the slot's current
+ * texture so a stroke edits the existing image instead of replacing it, and
+ * installed as the material's live map.
+ *
+ * Async on purpose: decoding the seed image is async, and a brush move that
+ * lands before the seed finishes paints onto a blank canvas — which then commits
+ * over the previous texture and DESTROYS it. (That is exactly what a second
+ * stroke did: it wiped the first.) Callers must await this before the first
+ * segment. `seededFrom` caches which image the canvas currently represents, so
+ * stroke-after-stroke on the same slot needs no reseed at all.
+ * @param {string} uuid @param {number} slot @returns {Promise<any>}
+ */
+async function paintSurface(uuid, slot) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	const material = materialAt(object, slot);
+	if (!material) return null;
+	const url = material.userData?.mapDataUrl ?? null;
+	const key = paintKey(uuid, slot);
+	const existing = paintCanvases.get(key);
+	// reuse only while it still represents the CURRENT image — an undo, a peer's
+	// commit or a dropped image all change it out from under us
+	if (existing && existing.seededFrom === url) {
+		install(material, existing);
+		return existing;
+	}
+	const canvas = existing?.canvas ?? document.createElement('canvas');
+	canvas.width = PAINT_CANVAS;
+	canvas.height = PAINT_CANVAS;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) return null;
+	// a material with no texture starts WHITE, not transparent: painting on a
+	// transparent sheet reads as painting on nothing once it is on the model
+	ctx.fillStyle = '#ffffff';
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	if (url) {
+		const image = await decodeImage(url);
+		if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+	}
+	const texture = existing?.texture ?? new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	texture.needsUpdate = true;
+	const entry = { canvas, texture, uuid, slot, seededFrom: url };
+	paintCanvases.set(key, entry);
+	install(material, entry);
+	return entry;
+}
+
+/** show the paint canvas on the model @param {any} material @param {any} entry */
+function install(material, entry) {
+	if (material.map !== entry.texture) {
+		material.map = entry.texture;
+		material.needsUpdate = true;
+	}
+	entry.texture.needsUpdate = true;
+	objectsGroup.update((v) => v);
+}
+
+/** @param {string} url @returns {Promise<any>} */
+function decodeImage(url) {
+	return new Promise((resolve) => {
+		const image = new Image();
+		image.onload = () => resolve(image);
+		image.onerror = () => resolve(null);
+		image.src = url;
+	});
+}
+
+/** Draw one segment in UV space onto a surface. Canvas y is 1-v (v points up).
+ * @param {any} entry @param {number[]} from @param {number[]} to
+ * @param {string} color @param {number} size */
+function strokeSegment(entry, from, to, color, size) {
+	const ctx = entry.canvas.getContext('2d');
+	if (!ctx) return;
+	ctx.strokeStyle = color;
+	ctx.lineWidth = size;
+	ctx.lineCap = 'round';
+	ctx.lineJoin = 'round';
+	ctx.beginPath();
+	ctx.moveTo(from[0] * entry.canvas.width, (1 - from[1]) * entry.canvas.height);
+	ctx.lineTo(to[0] * entry.canvas.width, (1 - to[1]) * entry.canvas.height);
+	ctx.stroke();
+	entry.texture.needsUpdate = true;
+}
+
+/**
+ * Open a paint stroke on one material slot. AWAIT this before the first
+ * paintMove — the canvas has to carry the existing texture first, or the stroke
+ * commits a blank image over it.
+ * @param {string} uuid @param {number} slot @returns {Promise<boolean>}
+ */
+export async function beginPaintStroke(uuid, slot = 0) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	const material = materialAt(object, slot);
+	if (!material || !('map' in material)) return false;
+	if (!(await paintSurface(uuid, slot))) return false;
+	strokeSeq++;
+	paintStroke = {
+		id: (get(peers)?.peer?.id ?? 'local') + ':' + strokeSeq,
+		uuid,
+		slot,
+		before: material.userData?.mapDataUrl ?? null,
+		sent: 0,
+		points: []
+	};
+	return true;
+}
+
+/** is a stroke open? */
+export function painting() {
+	return !!paintStroke;
+}
+
+let lastPaintSend = 0;
+
+/**
+ * Extend the open stroke to (u, v): draws locally and streams the unsent tail to
+ * peers on a throttle. @param {number} u @param {number} v
+ * @param {string} color @param {number} size
+ */
+export function paintMove(u, v, color, size) {
+	if (!paintStroke) return false;
+	const entry = paintCanvases.get(paintKey(paintStroke.uuid, paintStroke.slot));
+	if (!entry) return false;
+	const previous = paintStroke.points[paintStroke.points.length - 1];
+	paintStroke.points.push([u, v]);
+	if (previous) strokeSegment(entry, previous, [u, v], color, size);
+	objectsGroup.update((value) => value);
+	const now = performance.now();
+	if (now - lastPaintSend < PAINT_THROTTLE) return true;
+	lastPaintSend = now;
+	flushStroke(color, size);
+	return true;
+}
+
+/** send the points peers have not seen yet (small plain arrays — no raw-bytes
+ * need, unlike a geometry snapshot) @param {string} color @param {number} size */
+function flushStroke(color, size) {
+	if (!paintStroke) return;
+	// include the last SENT point so the receiver's line continues unbroken
+	const start = Math.max(paintStroke.sent - 1, 0);
+	const seg = paintStroke.points.slice(start);
+	if (seg.length < 2) return;
+	paintStroke.sent = paintStroke.points.length;
+	/** @type {any} */
+	const peer = get(peers);
+	peer?.send({
+		type: 'uvpaint',
+		id: paintStroke.id,
+		uuid: paintStroke.uuid,
+		...(paintStroke.slot ? { slot: paintStroke.slot } : {}),
+		seg,
+		color,
+		size
+	});
+}
+
+/**
+ * Close the stroke: flush the tail, then COMMIT the canvas as the slot's texture
+ * through the existing replicated map path — one undo entry for the stroke.
+ * @param {string} color @param {number} size @returns {boolean} committed
+ */
+export function endPaintStroke(color, size) {
+	const stroke = paintStroke;
+	if (!stroke) return false;
+	flushStroke(color, size);
+	/** @type {any} */
+	const peer = get(peers);
+	peer?.send({ type: 'uvpaintend', id: stroke.id });
+	paintStroke = null;
+	if (stroke.points.length < 1) return false;
+	const entry = paintCanvases.get(paintKey(stroke.uuid, stroke.slot));
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', stroke.uuid);
+	if (!entry || !object) return false;
+	const dataURL = canvasToDataUrl(entry.canvas);
+	recordMaterialChange(stroke.uuid, 'map', null, stroke.before, dataURL, stroke.slot);
+	applyMap(object, dataURL, stroke.slot);
+	peer?.send({
+		type: 'objectParameters',
+		parameter: 'map',
+		uuid: stroke.uuid,
+		map: dataURL,
+		...(stroke.slot ? { slot: stroke.slot } : {})
+	});
+	// KEEP the canvas: its pixels already ARE the committed image, so the next
+	// stroke reuses it with no decode and no reseed race. Marking what it now
+	// represents is what lets paintSurface trust it (and re-seed when an undo or
+	// a peer's commit changes the texture underneath).
+	entry.seededFrom = dataURL;
+	return true;
+}
+
+/** abandon an open stroke without committing (the paint stays on the canvas
+ * until the next commit or reseed — it is local only) */
+export function cancelPaintStroke() {
+	paintStroke = null;
+}
+
+/** webp when the browser can encode it, else jpeg — the downscaleImage rule
+ * @param {any} canvas */
+function canvasToDataUrl(canvas) {
+	const webp = canvas.toDataURL('image/webp', 0.85);
+	return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', 0.9);
+}
+
+/**
+ * Receive side: draw a peer's live stroke segments. The committed `map` message
+ * that follows overwrites this, so a dropped segment self-heals.
+ * @param {any} data
+ */
+export async function applyUvPaint(data) {
+	const slot = data?.slot ?? 0;
+	const entry = await paintSurface(data?.uuid, slot);
+	if (!entry) return;
+	const seg = data.seg ?? [];
+	for (let i = 1; i < seg.length; i++)
+		strokeSegment(entry, seg[i - 1], seg[i], data.color ?? '#000000', data.size ?? 16);
+	liveUvStrokes.set(data.id, { ts: Date.now() });
+	objectsGroup.update((v) => v);
+}
+
+/** Receive side: a peer finished a stroke. @param {any} data */
+export function applyUvPaintEnd(data) {
+	liveUvStrokes.delete(data?.id);
+}
+
+/** how many live remote strokes we are tracking (test hook) */
+export function liveStrokeCount() {
+	return liveUvStrokes.size;
+}
+
+// A peer that vanished mid-stroke never sends its `uvpaintend`, so sweep stale
+// entries (drawMode's pattern). Stroke-keyed, so no handleDisconnected hook.
+if (typeof window !== 'undefined')
+	setInterval(() => {
+		const now = Date.now();
+		for (const [id, stroke] of liveUvStrokes)
+			if (now - stroke.ts > STROKE_STALE_MS) liveUvStrokes.delete(id);
+	}, STROKE_STALE_MS);
 
 /**
  * The meshgeo wire message, byte-identical to faceEdit's private

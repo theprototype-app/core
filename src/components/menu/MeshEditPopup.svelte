@@ -82,6 +82,12 @@
 	];
 
 	const GRANULARITIES = [
+		{
+			value: 'quad',
+			label: 'Quad',
+			title:
+				'Pick the quad under the cursor — the two triangles that form it (a 3-sided face picks alone)'
+		},
 		{ value: 'face', label: 'Face', title: 'Pick the whole coplanar face' },
 		{ value: 'triangle', label: 'Tri', title: 'Pick the single triangle under the cursor' },
 		{

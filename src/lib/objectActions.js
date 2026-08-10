@@ -4,7 +4,7 @@ import { dropToSurface } from './snapping';
 import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch } from './history';
 import { cascadeJointDeletes } from './joints';
 import { createGroup } from './geometries.svelte';
-import { suspendAnimation, resumeAnimation } from './flowRuntime';
+import { suspendAnimation, resumeAnimation, parkAnimatedAtBase } from './flowRuntime';
 import {
 	objectsGroup,
 	TControls,
@@ -566,8 +566,11 @@ export function ungroupObject(groupUuid) {
 	const grp = root?.getObjectByProperty('uuid', groupUuid);
 	if (!grp || grp.type !== 'Group') return false;
 	const children = [...grp.children]; // snapshot: attach() mutates .children
+	// 15-G: one undo step, not N+1 (a move per child plus the group delete)
+	beginHistoryBatch();
 	for (const child of children) moveObjectToGroup(child.uuid, 'up');
 	deleteObjectsByUuid([groupUuid]); // now empty -> removes just the group
+	endHistoryBatch('Ungroup');
 	return true;
 }
 
@@ -622,6 +625,220 @@ export function groupSelection() {
 	objectsGroup.update((value) => value);
 	applySelectionSet([groupUuid]);
 	return groupUuid;
+}
+
+// --- 15-G: convert a Group / multi-selection into ONE mesh ---------------------
+
+// mergeGeometries wants every input to carry the SAME attribute set, so each
+// source geometry is normalized down to this triple (extras like color/uv1/
+// tangent/skinning are dropped, a missing normal/uv is generated).
+const MERGE_ATTRIBUTES = ['position', 'normal', 'uv'];
+
+/** @param {any} ancestor @param {any} object */
+function isAncestorOf(ancestor, object) {
+	let current = object.parent;
+	while (current) {
+		if (current === ancestor) return true;
+		current = current.parent;
+	}
+	return false;
+}
+
+/** Copy a vertex RANGE of a NON-INDEXED geometry into its own geometry.
+ * @param {any} geometry @param {number} start @param {number} count */
+function sliceGeometry(geometry, start, count) {
+	const out = new THREE.BufferGeometry();
+	for (const name of Object.keys(geometry.attributes)) {
+		const attribute = geometry.attributes[name];
+		const size = attribute.itemSize;
+		out.setAttribute(
+			name,
+			new THREE.BufferAttribute(attribute.array.slice(start * size, (start + count) * size), size)
+		);
+	}
+	return out;
+}
+
+/**
+ * One normalized geometry per MATERIAL SLOT of a source mesh. A multi-material
+ * source has to be split along its own geometry groups first: mergeGeometries
+ * writes exactly ONE group per input geometry and ignores the groups already on
+ * it, so a merged mesh would otherwise collapse every slot onto one material.
+ * @param {any} mesh @returns {{ geometry: any, material: any }[]}
+ */
+function mergePieces(mesh) {
+	const source = mesh.geometry;
+	// toNonIndexed() returns a NEW geometry (and copies the groups, whose
+	// start/count map 1:1 onto the expanded vertices)
+	const base = source.index ? source.toNonIndexed() : source.clone();
+	for (const name of Object.keys(base.attributes))
+		if (!MERGE_ATTRIBUTES.includes(name)) base.deleteAttribute(name);
+	base.morphAttributes = {};
+	if (!base.attributes.normal) base.computeVertexNormals();
+	if (!base.attributes.uv)
+		base.setAttribute(
+			'uv',
+			new THREE.BufferAttribute(new Float32Array(base.attributes.position.count * 2), 2)
+		);
+	const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+	if (materials.length < 2 || !base.groups.length)
+		return [{ geometry: base, material: materials[0] }];
+	const pieces = base.groups.map((/** @type {any} */ slot) => ({
+		geometry: sliceGeometry(base, slot.start, slot.count),
+		material: materials[slot.materialIndex ?? 0] ?? materials[0]
+	}));
+	base.dispose();
+	return pieces;
+}
+
+/**
+ * Merge a Group (or a 2+ multi-selection) into ONE new mesh: geometries baked
+ * into a shared frame, every distinct source material kept as a slot of a
+ * material ARRAY, the originals deleted — all as ONE undo entry.
+ *
+ * Replication goes through the `object` message (ObjectLoader on the receiver),
+ * NOT `sendObjects`: that helper announces a GROUP for the root it is handed and
+ * then walks its CHILDREN, so a bare mesh would arrive as an empty group. The
+ * `object` path is also exactly what the create/delete history entries replay,
+ * so undo/redo and the live convert stay byte-identical for peers.
+ *
+ * @param {string[]=} uuids - defaults to the current selection
+ * @returns {Promise<string|null>} the merged mesh's uuid, or null when refused
+ */
+export async function convertToMesh(uuids) {
+	const group = get(objectsGroup);
+	const requested = uuids?.length ? uuids : selectionUuids();
+	/** @type {any[]} */
+	let targets = requested.map((uuid) => group?.getObjectByProperty('uuid', uuid)).filter(Boolean);
+	// a selection can hold a group AND one of its descendants — merging the child
+	// twice (it is deleted with its parent anyway) would duplicate its geometry
+	targets = targets.filter(
+		(object) => !targets.some((other) => other !== object && isAncestorOf(other, object))
+	);
+	if (!targets.length) {
+		showToast('Nothing selected to convert');
+		return null;
+	}
+
+	const locks = get(lockedObjects);
+	const lockedTarget = targets.find((object) => locks.find((lock) => lock[1] === object.uuid));
+	if (lockedTarget) {
+		showToast('Cannot convert: an object is locked by another peer');
+		return null;
+	}
+	// viewer perms: converting DELETES the sources, so it needs edit rights on all
+	if (!targets.every((object) => canEditObject(object))) {
+		warnViewerReadOnly();
+		return null;
+	}
+
+	/** @type {{ mesh: any, rootUuid: string }[]} */
+	const sources = [];
+	let skinned = false;
+	for (const target of targets)
+		target.traverse((/** @type {any} */ node) => {
+			if (node.isSkinnedMesh) skinned = true;
+			else if (node.isMesh && node.geometry?.attributes?.position)
+				sources.push({ mesh: node, rootUuid: target.uuid });
+		});
+	if (skinned) {
+		showToast('Cannot convert: rigged models keep their skeleton and cannot be merged');
+		return null;
+	}
+	if (sources.length < 2) {
+		showToast('Convert to mesh needs at least 2 meshes');
+		return null;
+	}
+
+	const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
+
+	// serializer rule 10: bake the animation BASE pose, never a mid-swing one
+	const restorePose = parkAnimatedAtBase();
+	/** @type {any[]} */
+	const geometries = [];
+	/** @type {any[]} */
+	const materials = [];
+	/** @type {number[]} */
+	const slotOfGroup = []; // merged group i -> index into `materials`
+	/** @type {Map<string, number>} */
+	const slotOfMaterial = new Map();
+	const origin = new THREE.Vector3();
+	try {
+		targets[0].updateWorldMatrix(true, false);
+		origin.setFromMatrixPosition(targets[0].matrixWorld);
+		const toLocal = new THREE.Matrix4().makeTranslation(-origin.x, -origin.y, -origin.z);
+		for (const { mesh, rootUuid } of sources) {
+			mesh.updateWorldMatrix(true, false);
+			const relative = new THREE.Matrix4().multiplyMatrices(toLocal, mesh.matrixWorld);
+			for (const piece of mergePieces(mesh)) {
+				piece.geometry.applyMatrix4(relative);
+				geometries.push(piece.geometry);
+				const material = piece.material ?? new THREE.MeshStandardMaterial();
+				if (!slotOfMaterial.has(material.uuid)) {
+					const clone = material.clone();
+					// a multi-select member wears the emissive HIGHLIGHT, and the clone
+					// bakes it in forever (the 15-B2 duplicate bug) — put the recorded
+					// pre-selection emissive back on the copy
+					const tint = memberTints.get(rootUuid)?.[mesh.uuid];
+					if (tint !== undefined && clone.emissive) clone.emissive.setHex(tint);
+					slotOfMaterial.set(material.uuid, materials.length);
+					materials.push(clone);
+				}
+				slotOfGroup.push(/** @type {number} */ (slotOfMaterial.get(material.uuid)));
+			}
+		}
+	} finally {
+		restorePose();
+	}
+
+	const merged = mergeGeometries(geometries, true);
+	geometries.forEach((geometry) => geometry.dispose());
+	if (!merged) {
+		showToast('Cannot convert: these geometries could not be merged');
+		return null;
+	}
+	// mergeGeometries numbers its groups by INPUT order; re-point them at the
+	// de-duplicated material slots (two boxes sharing one material = one slot)
+	merged.groups.forEach((/** @type {any} */ slot, /** @type {number} */ index) => {
+		slot.materialIndex = slotOfGroup[index] ?? 0;
+	});
+	if (materials.length === 1) merged.clearGroups();
+	merged.computeBoundingSphere();
+
+	const mesh = new THREE.Mesh(merged, materials.length === 1 ? materials[0] : materials);
+	mesh.name =
+		targets.length === 1 && targets[0].name ? targets[0].name + ' (mesh)' : 'Merged mesh';
+	mesh.castShadow = sources[0].mesh.castShadow;
+	mesh.receiveShadow = sources[0].mesh.receiveShadow;
+
+	// keep the merge where the sources were, and inside the same parent group
+	const parent = targets[0].parent && targets[0].parent !== group ? targets[0].parent : null;
+	const parentUuid = parent?.uuid ?? null;
+
+	/** @type {any} */
+	const peer = get(peers);
+	beginHistoryBatch();
+	// delete FIRST so the batch replays as "restore the originals, then drop the
+	// merge" on undo, and so deselectObject's gizmo detach cannot fight the
+	// selection we set at the end
+	deleteObjectsByUuid(targets.map((object) => object.uuid));
+	group.add(mesh);
+	mesh.position.copy(origin);
+	if (parent) parent.attach(mesh); // keeps the world pose, rewrites the local one
+	mesh.updateMatrix();
+	recordObjectPresence('create', mesh);
+	if (peer)
+		peer.send({
+			type: 'object',
+			element: mesh.toJSON(),
+			groupuuid: parentUuid ?? undefined
+		});
+	endHistoryBatch('Convert to mesh');
+
+	objectsGroup.update((value) => value);
+	applySelectionSet([mesh.uuid]);
+	showToast(`Merged ${sources.length} meshes into "${mesh.name}"`);
+	return mesh.uuid;
 }
 
 /**

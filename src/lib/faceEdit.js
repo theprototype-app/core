@@ -119,21 +119,46 @@ export function lookupEditable(uuid) {
 	return editProxy && editProxy.uuid === uuid ? editProxy : null;
 }
 
+/** Carry a MATERIAL SLOT onto a triangle. Stored as a property on the triangle
+ * array so every op that clones/filters/maps tris keeps it without changing the
+ * [v0,v1,v2] shape every caller expects. @param {any} tri @param {number=} mi */
+function withSlot(tri, mi) {
+	tri.mi = mi || 0;
+	return tri;
+}
+
+/** element index -> material slot, read off a geometry's groups (0 when the
+ * geometry is ungrouped) @param {any[]} groups @param {number} count */
+function slotLookup(groups, count) {
+	if (!groups?.length) return () => 0;
+	const slots = new Int32Array(count);
+	for (const group of groups) {
+		const start = Math.max(group.start | 0, 0);
+		const end = Math.min(start + (group.count | 0), count);
+		for (let i = start; i < end; i++) slots[i] = group.materialIndex || 0;
+	}
+	return (/** @type {number} */ i) => slots[i] || 0;
+}
+
 /**
  * Read a geometry into triangles [[Vector3,Vector3,Vector3], ...] (index
- * expanded). @param {any} geometry
+ * expanded). Each triangle also carries `mi` — the MATERIAL SLOT it came from
+ * (15-G): a merged or imported mesh can wear a material ARRAY, and three draws
+ * an array material by walking `geometry.groups`, so a swapped-in geometry with
+ * no groups renders NOTHING AT ALL. @param {any} geometry
  */
 export function readTriangles(geometry) {
 	const pos = geometry.attributes.position;
 	const index = geometry.index;
 	const count = index ? index.count : pos.count;
+	const slotAt = slotLookup(geometry.groups, count);
 	const tris = [];
 	for (let i = 0; i < count; i += 3) {
 		const vert = (/** @type {number} */ o) => {
 			const j = index ? index.getX(i + o) : i + o;
 			return new THREE.Vector3(pos.getX(j), pos.getY(j), pos.getZ(j));
 		};
-		tris.push([vert(0), vert(1), vert(2)]);
+		tris.push(withSlot([vert(0), vert(1), vert(2)], slotAt(i)));
 	}
 	return tris;
 }
@@ -197,8 +222,151 @@ export function groupFaces(tris) {
 	});
 }
 
+/**
+ * 15-G: pair coplanar neighbour triangles into QUADS — the unit a modeler
+ * actually thinks in. The geometry here is a triangle SOUP with no stored face
+ * topology, so quads are re-derived from the mesh whenever it changes.
+ *
+ * Two triangles pair when they share an edge, face the same way, and the quad
+ * they would form is CONVEX (the shared edge has to be a real diagonal —
+ * pairing across a concave joint gives a bow-tie). Every candidate is scored by
+ * how rectangular the result is and matched GREEDILY best-first, so a coplanar
+ * fan pairs the obvious way rather than the first way. A triangle left without
+ * a partner is its own unit (the answer to "a genuine 3-sided face").
+ *
+ * Returns `partner`, where partner[i] is i's quad-mate or -1. Deterministic for
+ * a given geometry: score ties break on triangle index.
+ * @param {any[]} tris @returns {Int32Array}
+ */
+export function pairQuads(tris) {
+	const partner = new Int32Array(tris.length).fill(-1);
+	const normals = tris.map(triNormal);
+	/** @type {Map<string, number[]>} edge key -> the triangles touching it */
+	const edgeMap = new Map();
+	tris.forEach((t, ti) => {
+		for (let e = 0; e < 3; e++) {
+			const k1 = keyOf(t[e].x, t[e].y, t[e].z);
+			const k2 = keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z);
+			const ek = [k1, k2].sort().join('|');
+			let list = edgeMap.get(ek);
+			if (!list) edgeMap.set(ek, (list = []));
+			list.push(ti);
+		}
+	});
+
+	/** the corner of `t` that is NOT on the shared edge @param {any[]} t @param {string[]} shared */
+	const cornerOff = (t, shared) =>
+		t.find((/** @type {any} */ v) => !shared.includes(keyOf(v.x, v.y, v.z)));
+	/** the corner of `t` at a given key @param {any[]} t @param {string} key */
+	const cornerAt = (t, key) => t.find((/** @type {any} */ v) => keyOf(v.x, v.y, v.z) === key);
+
+	/** @type {{ a: number, b: number, score: number }[]} */
+	const candidates = [];
+	for (const [ek, list] of edgeMap) {
+		if (list.length !== 2) continue; // an open or non-manifold edge is no diagonal
+		const [a, b] = list;
+		if (a === b) continue;
+		if (normals[a].dot(normals[b]) < 0.999) continue; // coplanar AND co-facing
+		const shared = ek.split('|');
+		const ra = cornerOff(tris[a], shared);
+		const rb = cornerOff(tris[b], shared);
+		const p = cornerAt(tris[a], shared[0]);
+		const q = cornerAt(tris[a], shared[1]);
+		if (!ra || !rb || !p || !q) continue;
+		// ring order around the quad: the shared edge p-q is the diagonal, so the
+		// two off-corners sit between its ends
+		const score = quadScore([p, ra, q, rb], normals[a]);
+		if (score === null) continue; // concave or degenerate — not a quad
+		candidates.push({ a: Math.min(a, b), b: Math.max(a, b), score });
+	}
+
+	// best-first greedy matching; ties break on index so the result is stable
+	candidates.sort((x, y) => x.score - y.score || x.a - y.a || x.b - y.b);
+	for (const { a, b } of candidates) {
+		if (partner[a] !== -1 || partner[b] !== -1) continue;
+		partner[a] = b;
+		partner[b] = a;
+	}
+	return partner;
+}
+
+/**
+ * How rectangular a candidate quad is (lower is better), or null when the ring
+ * is concave or degenerate — which means those two triangles do NOT form a quad.
+ * @param {any[]} ring 4 corners in order @param {any} normal
+ */
+function quadScore(ring, normal) {
+	let score = 0;
+	let sign = 0;
+	for (let i = 0; i < 4; i++) {
+		const cur = ring[i];
+		const u = new THREE.Vector3().subVectors(ring[(i + 3) % 4], cur);
+		const v = new THREE.Vector3().subVectors(ring[(i + 1) % 4], cur);
+		if (u.lengthSq() < 1e-12 || v.lengthSq() < 1e-12) return null;
+		u.normalize();
+		v.normalize();
+		// every corner must turn the same way around the face normal, or the ring
+		// folds over itself (the bow-tie case)
+		const turn = new THREE.Vector3().crossVectors(v, u).dot(normal);
+		if (Math.abs(turn) < 1e-9) return null; // collinear corner
+		if (sign === 0) sign = Math.sign(turn);
+		else if (Math.sign(turn) !== sign) return null; // concave
+		// squareness: 0 at a right angle, approaching 1 as the corner collapses
+		score += Math.abs(u.dot(v));
+	}
+	return score;
+}
+
 function cloneTris(/** @type {any[]} */ tris) {
-	return tris.map((t) => [t[0].clone(), t[1].clone(), t[2].clone()]);
+	return tris.map((t) => withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi));
+}
+
+/** average vertex position of a triangle set @param {any[]} tris @param {number[]} triIndices */
+function centroidOfTris(tris, triIndices) {
+	const centroid = new THREE.Vector3();
+	let count = 0;
+	triIndices.forEach((ti) => tris[ti].forEach((/** @type {any} */ v) => (centroid.add(v), count++)));
+	return centroid.divideScalar(count || 1);
+}
+
+/**
+ * Split a target triangle set into CONNECTED COMPONENTS, welded by vertex
+ * position. `opTargetFace` synthesizes ONE face for a multi-selection, so a
+ * selection spanning two separate shells arrives as a single "face" whose
+ * centroid sits in the empty space between them — any op that reasons about a
+ * face's CENTRE has to work per component or it drags one shell toward the
+ * other (15-G: two merged cubes, both top faces inset, slid together).
+ * @param {any[]} tris @param {number[]} triIndices @returns {number[][]}
+ */
+function componentsOfTris(tris, triIndices) {
+	/** @type {Map<string, string>} */
+	const parent = new Map();
+	const find = (/** @type {string} */ key) => {
+		let root = key;
+		while (parent.get(root) !== root) root = /** @type {string} */ (parent.get(root));
+		while (parent.get(key) !== root) {
+			const next = /** @type {string} */ (parent.get(key));
+			parent.set(key, root);
+			key = next;
+		}
+		return root;
+	};
+	const keysOf = (/** @type {number} */ ti) =>
+		tris[ti].map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+	for (const ti of triIndices) {
+		const keys = keysOf(ti);
+		for (const key of keys) if (!parent.has(key)) parent.set(key, key);
+		for (let i = 1; i < keys.length; i++) parent.set(find(keys[0]), find(keys[i]));
+	}
+	/** @type {Map<string, number[]>} */
+	const byRoot = new Map();
+	for (const ti of triIndices) {
+		const root = find(keysOf(ti)[0]);
+		let list = byRoot.get(root);
+		if (!list) byRoot.set(root, (list = []));
+		list.push(ti);
+	}
+	return [...byRoot.values()];
 }
 
 /** boundary edges of a face group: directed edges appearing once (unordered)
@@ -215,7 +383,9 @@ function boundaryEdges(tris, face) {
 			const p1 = t[(e + 1) % 3];
 			const ek = [keyOf(p0.x, p0.y, p0.z), keyOf(p1.x, p1.y, p1.z)].sort().join('|');
 			count.set(ek, (count.get(ek) || 0) + 1);
-			dir.push({ ek, p0, p1 });
+			// `ti` = the triangle this directed edge belongs to, so a wall stitched
+			// onto it can take that triangle's OWN normal + material slot (15-G)
+			dir.push({ ek, p0, p1, ti });
 		}
 	});
 	return dir.filter((d) => count.get(d.ek) === 1);
@@ -225,24 +395,38 @@ function boundaryEdges(tris, face) {
  * Add a quad (a,b,c,d) as two triangles, winding it so its normal aligns with
  * wantDir — otherwise the wall/ring backface-culls to invisible (121 fix).
  * @param {any[]} out @param {any} a @param {any} b @param {any} c @param {any} d @param {any} wantDir
+ * @param {number=} mi material slot the new geometry belongs to (15-G)
  */
-function pushQuad(out, a, b, c, d, wantDir) {
+function pushQuad(out, a, b, c, d, wantDir, mi) {
 	let t1 = [a, b, c];
 	let t2 = [a, c, d];
 	if (triNormal(t1).dot(wantDir) < 0) {
 		t1 = [a, c, b];
 		t2 = [a, d, c];
 	}
-	out.push(t1, t2);
+	out.push(withSlot(t1, mi), withSlot(t2, mi));
 }
 
-/** radial-outward direction at a wall midpoint (perpendicular to the face
- * normal) — the visible side of an extrude wall @param {any} mid @param {any} face */
-function radialOut(mid, face) {
-	const r = mid.clone().sub(face.centroid);
-	r.addScaledVector(face.normal, -r.dot(face.normal)); // drop the normal component
-	if (r.lengthSq() < 1e-9) r.copy(face.normal);
-	return r.normalize();
+/**
+ * Outward direction of the wall stitched onto a boundary edge — the side that
+ * must face the viewer, or the wall backface-culls to invisible.
+ *
+ * Derived LOCALLY from the edge itself: boundary edges inherit their direction
+ * from the triangles' winding, and a face is wound counter-clockwise seen from
+ * +normal, so `edge x normal` points away from the face interior. It used to be
+ * measured from the face CENTROID instead, which is only right for a single
+ * convex face: with two shells multi-selected the synthetic centroid lands in
+ * the gap between them, so the two walls FACING EACH OTHER were wound inward
+ * and vanished (15-G — extruding both top faces of two merged cubes). Concave
+ * faces and faces with holes were wrong for the same reason.
+ * @param {any} p0 @param {any} p1 @param {any} normal
+ */
+function edgeOutward(p0, p1, normal) {
+	const out = new THREE.Vector3().subVectors(p1, p0).cross(normal);
+	// an edge always lies in its own face plane, so this is only ever degenerate
+	// for a zero-area triangle
+	if (out.lengthSq() < 1e-12) return normal.clone();
+	return out.normalize();
 }
 
 /** Extrude a face by dist along its normal, stitching visible side walls @param {any[]} tris @param {any} face @param {number} dist */
@@ -252,15 +436,16 @@ export function extrudeFace(tris, face, dist) {
 	const faceSet = new Set(face.triIndices);
 	const boundary = boundaryEdges(tris, face);
 	out.forEach((t, ti) => {
-		if (faceSet.has(ti)) t.forEach((v) => v.add(offset));
+		if (faceSet.has(ti)) t.forEach((/** @type {any} */ v) => v.add(offset));
 	});
-	boundary.forEach(({ p0, p1 }) => {
+	boundary.forEach(({ p0, p1, ti }) => {
 		const a = p0.clone();
 		const b = p1.clone();
 		const a2 = p0.clone().add(offset);
 		const b2 = p1.clone().add(offset);
-		const mid = a.clone().add(b).add(b2).add(a2).multiplyScalar(0.25);
-		pushQuad(out, a, b, b2, a2, radialOut(mid, face));
+		// each wall takes its OWN triangle's normal + slot: a multi-selection can
+		// span shells (and, in a mixed selection, differently-facing faces)
+		pushQuad(out, a, b, b2, a2, edgeOutward(p0, p1, triNormal(tris[ti])), tris[ti].mi);
 	});
 	return out;
 }
@@ -283,29 +468,37 @@ export function moveFaceAlongNormal(tris, face, dist) {
 	const out = cloneTris(tris);
 	const offset = face.normal.clone().multiplyScalar(dist);
 	const keys = faceVertexKeys(tris, face);
-	out.forEach((t) => t.forEach((v) => { if (keys.has(keyOf(v.x, v.y, v.z))) v.add(offset); }));
+	out.forEach((t) => t.forEach((/** @type {any} */ v) => { if (keys.has(keyOf(v.x, v.y, v.z))) v.add(offset); }));
 	return out;
 }
 
 /** Inset: shrink a face toward its centroid + stitch a visible frame ring so
- * the gap doesn't read as a hole (121). @param {any[]} tris @param {any} face @param {number} amount */
+ * the gap doesn't read as a hole (121).
+ *
+ * 15-G: each CONNECTED COMPONENT shrinks toward its OWN centre. A multi-select
+ * spanning two shells arrives as one synthetic face whose centroid sits between
+ * them, so shrinking toward it slid both faces sideways into the gap instead of
+ * insetting either of them in place.
+ * @param {any[]} tris @param {any} face @param {number} amount */
 export function insetFace(tris, face, amount) {
 	const out = cloneTris(tris);
-	const faceSet = new Set(face.triIndices);
 	const t = Math.min(Math.max(amount, 0), 0.95);
-	const boundary = boundaryEdges(tris, face);
-	out.forEach((tri, ti) => {
-		if (faceSet.has(ti)) tri.forEach((v) => v.lerp(face.centroid, t));
-	});
-	// frame ring: original boundary edge → its inset counterpart, facing outward
-	// like the face did (normal ≈ the face normal)
-	boundary.forEach(({ p0, p1 }) => {
-		const a = p0.clone();
-		const b = p1.clone();
-		const b2 = p1.clone().lerp(face.centroid, t);
-		const a2 = p0.clone().lerp(face.centroid, t);
-		pushQuad(out, a, b, b2, a2, face.normal);
-	});
+	for (const component of componentsOfTris(tris, face.triIndices)) {
+		const centroid = centroidOfTris(tris, component);
+		const componentSet = new Set(component);
+		out.forEach((tri, ti) => {
+			if (componentSet.has(ti)) tri.forEach((/** @type {any} */ v) => v.lerp(centroid, t));
+		});
+		// frame ring: original boundary edge → its inset counterpart, facing outward
+		// like the face did (normal ≈ the face normal)
+		boundaryEdges(tris, { triIndices: component }).forEach(({ p0, p1, ti }) => {
+			const a = p0.clone();
+			const b = p1.clone();
+			const b2 = p1.clone().lerp(centroid, t);
+			const a2 = p0.clone().lerp(centroid, t);
+			pushQuad(out, a, b, b2, a2, triNormal(tris[ti]), tris[ti].mi);
+		});
+	}
 	return out;
 }
 
@@ -325,7 +518,7 @@ export function subdivideFaceTris(tris, targetTris) {
 	const out = [];
 	tris.forEach((t, ti) => {
 		if (!targets.has(ti)) {
-			out.push([t[0].clone(), t[1].clone(), t[2].clone()]);
+			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi));
 			return;
 		}
 		const [a, b, c] = t;
@@ -333,10 +526,10 @@ export function subdivideFaceTris(tris, targetTris) {
 		const bc = b.clone().add(c).multiplyScalar(0.5);
 		const ca = c.clone().add(a).multiplyScalar(0.5);
 		out.push(
-			[a.clone(), ab.clone(), ca.clone()],
-			[ab.clone(), b.clone(), bc.clone()],
-			[ca.clone(), bc.clone(), c.clone()],
-			[ab, bc, ca]
+			withSlot([a.clone(), ab.clone(), ca.clone()], t.mi),
+			withSlot([ab.clone(), b.clone(), bc.clone()], t.mi),
+			withSlot([ca.clone(), bc.clone(), c.clone()], t.mi),
+			withSlot([ab, bc, ca], t.mi)
 		);
 	});
 	return out;
@@ -347,9 +540,12 @@ export function subdivideFaceTris(tris, targetTris) {
 export function flipFaceNormals(tris, targetTris) {
 	const targets = new Set(targetTris);
 	return tris.map((t, ti) =>
-		targets.has(ti)
-			? [t[0].clone(), t[2].clone(), t[1].clone()]
-			: [t[0].clone(), t[1].clone(), t[2].clone()]
+		withSlot(
+			targets.has(ti)
+				? [t[0].clone(), t[2].clone(), t[1].clone()]
+				: [t[0].clone(), t[1].clone(), t[2].clone()],
+			t.mi
+		)
 	);
 }
 
@@ -376,7 +572,7 @@ export function boundaryLoop(tris, triIndices) {
 }
 
 /**
- * B4: bridge exactly TWO multi-selected faces into a tunnel — delete both
+ * B4: bridge exactly TWO multi-selected pieces into a tunnel — delete both
  * caps, stitch quads between their boundary loops (equal edge counts
  * required), walking both loops from the closest-vertex-pair anchor and
  * winding each quad OUTWARD from the tunnel axis. Commits + replicates +
@@ -389,23 +585,26 @@ export function bridgeFaces() {
 		showToast('Multi-select two faces first (Multi on, click both)');
 		return false;
 	}
-	/** @type {Set<number>} logical faces the selection covers */
-	const faceSet = new Set();
-	sel.forEach((/** @type {number} */ ti) => {
-		const fi = faceIndexForTriangle(ti);
-		if (fi >= 0) faceSet.add(fi);
-	});
-	if (faceSet.size !== 2) {
-		showToast('Bridge needs exactly TWO selected faces (' + faceSet.size + ' selected)');
+	// The op target is the SELECTION, split into its two connected pieces — NOT
+	// the coplanar groups the selection happens to touch (the opTargetFace rule).
+	// Expanding to whole logical faces silently ignored Face/Triangle/Shell
+	// granularity: extruding a face leaves a wall that is COPLANAR with the flat
+	// side beneath it, so groupFaces merges the two, and picking just the wall
+	// band bridged the entire side of the shell instead (15-G).
+	const parts = componentsOfTris(workingTris, sel);
+	if (parts.length !== 2) {
+		showToast(
+			parts.length < 2
+				? 'Bridge needs TWO separate pieces — the selected faces touch each other'
+				: 'Bridge needs exactly TWO pieces (' + parts.length + ' separate pieces selected)'
+		);
 		return false;
 	}
-	const [fiA, fiB] = [...faceSet];
-	const setA = faces[fiA].triIndices;
-	const setB = faces[fiB].triIndices;
+	const [setA, setB] = parts;
 	const loopA = boundaryLoop(workingTris, setA);
 	const loopB = boundaryLoop(workingTris, setB);
 	if (!loopA || !loopB) {
-		showToast('Bridge faces need one closed boundary each');
+		showToast('Bridge pieces need one closed boundary each');
 		return false;
 	}
 	if (loopA.length !== loopB.length) {
@@ -413,6 +612,7 @@ export function bridgeFaces() {
 		return false;
 	}
 	const before = trisToPositions(workingTris);
+	const beforeGroups = trisToGroups(workingTris);
 	const remove = new Set([...setA, ...setB]);
 	const next = cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !remove.has(ti)));
 	const n = loopA.length;
@@ -444,6 +644,9 @@ export function bridgeFaces() {
 	loopB.forEach((/** @type {any} */ p) => centB.add(p));
 	centB.multiplyScalar(1 / n);
 	const axis = centB.clone().sub(centA);
+	// the tunnel walls take the FIRST piece's material slot (15-G) — a merged
+	// multi-material mesh must stay fully grouped or it renders as nothing
+	const mi = workingTris[setA[0]]?.mi || 0;
 	for (let k = 0; k < n; k++) {
 		const a0 = loopA[(ai + k) % n];
 		const a1 = loopA[(ai + k + 1) % n];
@@ -457,16 +660,22 @@ export function bridgeFaces() {
 			wantDir = mid.clone().sub(centA.clone().addScaledVector(axis, t));
 		} else wantDir = mid.clone().sub(centA);
 		if (wantDir.lengthSq() < 1e-9) wantDir = new THREE.Vector3(0, 1, 0);
-		pushQuad(next, a0.clone(), a1.clone(), b1.clone(), b0.clone(), wantDir.normalize());
+		pushQuad(next, a0.clone(), a1.clone(), b1.clone(), b0.clone(), wantDir.normalize(), mi);
 	}
 	const positions = trisToPositions(next);
 	if (positions.length > MAX_SNAPSHOT) {
 		showToast('That edit is too large to sync');
 		return false;
 	}
-	applyGeometrySnapshot(positions);
-	broadcastMeshGeo(faceEdited.uuid, positions);
-	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: positions });
+	const groups = trisToGroups(next);
+	applyGeometrySnapshot(positions, groups);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before: { positions: before, groups: beforeGroups },
+		after: { positions, groups }
+	});
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	return true;
@@ -487,6 +696,59 @@ export function trisToGeometry(tris) {
 	geometry.computeVertexNormals();
 	geometry.computeBoundingSphere();
 	return geometry;
+}
+
+/**
+ * 15-G: the triangles' MATERIAL SLOTS run-length encoded into geometry groups
+ * (vertex units, the shape three wants). Returns null when everything is slot 0
+ * — a single-material mesh needs no groups at all, so the overwhelmingly common
+ * case puts nothing extra on the wire and behaves exactly as before.
+ * @param {any[]} tris @returns {any[] | null}
+ */
+export function trisToGroups(tris) {
+	if (!tris.length || !tris.some((t) => (t.mi || 0) > 0)) return null;
+	/** @type {any[]} */
+	const groups = [];
+	let start = 0;
+	let slot = tris[0].mi || 0;
+	for (let i = 1; i <= tris.length; i++) {
+		const next = i < tris.length ? tris[i].mi || 0 : -1;
+		if (next === slot) continue;
+		groups.push({ start: start * 3, count: (i - start) * 3, materialIndex: slot });
+		start = i;
+		slot = next;
+	}
+	return groups;
+}
+
+/**
+ * Keep a MULTI-MATERIAL mesh renderable across a geometry swap (15-G). three
+ * draws an array material by iterating `geometry.groups`, so a fresh geometry
+ * with none draws NOTHING — a merged mesh vanished the moment any face op ran.
+ * Prefer the groups the edit computed; else carry the previous geometry's over
+ * (exact whenever the vertex count is unchanged — the sculpt / vertex-drag
+ * paths); and always cover the tail so no triangle is left unrendered.
+ * @param {any} geometry @param {any} previous the geometry being replaced
+ * @param {any} object @param {any[] | null} [groups]
+ */
+function preserveMaterialGroups(geometry, previous, object, groups) {
+	if (!Array.isArray(object?.material) || object.material.length < 2) return;
+	const count = geometry.attributes.position.count;
+	const source = groups?.length ? groups : previous?.groups;
+	let covered = 0;
+	let last = 0;
+	if (source?.length)
+		for (const group of source) {
+			const start = Math.max(group.start | 0, 0);
+			const size = Math.min(group.count | 0, count - start);
+			if (start >= count || size <= 0) continue;
+			last = group.materialIndex || 0;
+			geometry.addGroup(start, size, last);
+			covered = Math.max(covered, start + size);
+		}
+	// a shorter list than the geometry (an older peer's ungrouped snapshot, or a
+	// path that does not track slots) would leave the tail invisible
+	if (covered < count) geometry.addGroup(covered, count - covered, last);
 }
 
 /** flat positions array for a snapshot message @param {any[]} tris */
@@ -516,8 +778,10 @@ export function stretchPositions(positions, axis, factor) {
 /**
  * Swap an object's geometry to a positions snapshot (remote msg / undo replay).
  * @param {string} uuid @param {number[]} positions
+ * @param {any[] | null} [groups] material groups for a multi-material mesh (15-G);
+ *   omitted by the sculpt/vertex paths, which never change the vertex count
  */
-export function applyMeshGeo(uuid, positions) {
+export function applyMeshGeo(uuid, positions, groups) {
 	const object = lookupEditable(uuid); // A8: also finds the collider-edit proxy
 	if (!object) return;
 	// positions arrive as a plain array (history replays), an ArrayBuffer (the
@@ -542,7 +806,9 @@ export function applyMeshGeo(uuid, positions) {
 	// position-welded vertices (deterministic: every peer derives the same
 	// shading from the same positions; nothing extra on the wire)
 	if (object.userData.terrain) smoothWeldedNormals(geometry);
-	object.geometry?.dispose?.();
+	const previous = object.geometry;
+	preserveMaterialGroups(geometry, previous, object, groups);
+	previous?.dispose?.();
 	object.geometry = geometry;
 	object.userData.faceEdited = true; // parametric Geometry rows disable (like vertexEdited)
 	// if we're editing this object, re-derive working tris + faces (a remote
@@ -733,13 +999,16 @@ export function commitArmedFaceOp() {
 	return commitFaceOp(op, get(faceEditAmount));
 }
 
-// ---- 212: granularity + multiselect (CL-B B3: Face / Triangle / Shell) -----
-/** face-select granularity: 'face' = coplanar group (default), 'triangle' =
- * the single tri under the ray (was MISLABELED 'polygon' — still accepted at
- * read time), 'shell' = the whole connected island of welded triangles.
- * @type {import('svelte/store').Writable<'face'|'triangle'|'shell'|'polygon'>} */
-/** @type {import('svelte/store').Writable<'face'|'triangle'|'shell'|'object'|'polygon'>} */
-export const faceEditGranularity = writable('face');
+// ---- 212: granularity + multiselect (CL-B B3, 15-G Quad) -----
+/** face-select granularity: 'quad' = the two triangles forming a quad (DEFAULT
+ * since 15-G — what a modeler expects to click, and unlike 'face' an extrusion
+ * wall stays its own unit instead of merging into the coplanar side beneath it;
+ * on a plain box a quad IS the side); 'face' = the whole coplanar group;
+ * 'triangle' = the single tri under the ray (was MISLABELED 'polygon' — that
+ * RETIRED alias still reads as 'triangle', and must not be confused with
+ * 'quad'); 'shell' = the connected island of welded triangles; 'object' = all.
+ * @type {import('svelte/store').Writable<'quad'|'face'|'triangle'|'shell'|'object'|'polygon'>} */
+export const faceEditGranularity = writable('quad');
 
 /** the granularity with the legacy 'polygon' value migrated at read time */
 function granularity() {
@@ -758,6 +1027,11 @@ function pickFaceUnitTris(tri) {
 	if (tri < 0 || !workingTris[tri]) return [];
 	const g = granularity();
 	if (g === 'triangle') return [tri];
+	// 15-G: the quad the triangle belongs to — what a modeler means by a face.
+	// Sits BETWEEN triangle and face: a box side is one quad either way, but an
+	// extrusion wall stays its own quad instead of merging into the coplanar
+	// side beneath it (which is what `face` does, by design).
+	if (g === 'quad') return quadOfTriangle(tri);
 	// the WHOLE mesh. Differs from `shell` only when the mesh has SEVERAL
 	// disconnected islands (a merged group, a multi-part import) — on a plain box
 	// or sphere every triangle is one island, so Shell already is the object.
@@ -789,17 +1063,19 @@ export function clearFaceSelection() {
 }
 
 /** B3: set the pick granularity (units differ, so drop the selection).
- * Legacy 'polygon' maps to 'triangle'. @param {'face'|'triangle'|'shell'|'object'|'polygon'} mode */
+ * Legacy 'polygon' maps to 'triangle' — it is a RETIRED alias for the old
+ * triangle mode and must NOT be confused with 15-G's 'quad'.
+ * @param {'face'|'quad'|'triangle'|'shell'|'object'|'polygon'} mode */
 export function setFaceGranularity(mode) {
 	const next = mode === 'polygon' ? 'triangle' : mode;
-	if (!['face', 'triangle', 'shell', 'object'].includes(next)) return;
+	if (!['face', 'quad', 'triangle', 'shell', 'object'].includes(next)) return;
 	faceEditGranularity.set(/** @type {any} */ (next));
 	clearFaceSelection();
 }
 
-/** Cycle FACE -> TRIANGLE -> SHELL -> OBJECT (VR menu keeps its one toggle button) */
+/** Cycle QUAD -> FACE -> TRIANGLE -> SHELL -> OBJECT (VR keeps one toggle button) */
 export function toggleFaceGranularity() {
-	const order = ['face', 'triangle', 'shell', 'object'];
+	const order = ['quad', 'face', 'triangle', 'shell', 'object'];
 	setFaceGranularity(
 		/** @type {any} */ (order[(order.indexOf(granularity()) + 1) % order.length])
 	);
@@ -862,6 +1138,8 @@ function overlayTris() {
 let stashedFace = { uuid: null, fi: -1 };
 /** @type {any[]} */ let workingTris = [];
 /** @type {any[]} */ let faces = [];
+/** 15-G: quad pairing over workingTris — quadPartner[i] is i's mate, or -1
+ * @type {Int32Array} */ let quadPartner = new Int32Array(0);
 /** @type {any} */ let overlay = null; // highlighted-face tint at the scene root
 
 /** rebuild the working triangles + face groups from the live geometry */
@@ -869,6 +1147,23 @@ function rebuildFaces() {
 	if (!faceEdited) return;
 	workingTris = readTriangles(faceEdited.geometry);
 	faces = groupFaces(workingTris);
+	quadPartner = pairQuads(workingTris);
+}
+
+/** O(1) identity of the quad a triangle belongs to — the lower of the pair, so
+ * both halves key the same. -1 for no triangle. @param {number} tri */
+function quadKey(tri) {
+	if (tri < 0 || !workingTris[tri]) return -1;
+	const mate = quadPartner[tri] ?? -1;
+	return mate >= 0 ? Math.min(tri, mate) : tri;
+}
+
+/** the tri indices of the quad `tri` belongs to — itself when it has no mate
+ * (a genuine 3-sided face, or an odd triangle in a fan). @param {number} tri */
+export function quadOfTriangle(tri) {
+	if (tri < 0 || !workingTris[tri]) return [];
+	const mate = quadPartner[tri] ?? -1;
+	return mate >= 0 ? [tri, mate] : [tri];
 }
 
 export function faceCount() {
@@ -997,8 +1292,18 @@ export function highlightFaceByTriangle(triangleIndex, healStale = true) {
 			}
 		}
 	}
-	// triangle/shell units are picked per-tri, so refresh per raw tri change
-	const changed = granularity() !== 'face' ? triangleIndex !== prevTri : fi !== prevFi;
+	// "changed" means the picked UNIT changed — that is what the overlay draws.
+	// Face compares the coplanar group; 15-G quad compares the PAIR (crossing a
+	// quad's internal diagonal is not a new unit, so the overlay must not
+	// rebuild); triangle/shell/object stay per raw tri (a shell key would mean
+	// re-running the union-find on every hover frame).
+	const g = granularity();
+	const changed =
+		g === 'face'
+			? fi !== prevFi
+			: g === 'quad'
+				? quadKey(triangleIndex) !== quadKey(prevTri)
+				: triangleIndex !== prevTri;
 	if (changed || healed) refreshFaceOverlay();
 	return changed;
 }
@@ -1101,6 +1406,7 @@ export function commitFaceOp(op, amount) {
 	const face = opTargetFace();
 	if (!faceEdited || !face) return false;
 	const before = trisToPositions(workingTris);
+	const beforeGroups = trisToGroups(workingTris);
 	let next;
 	if (op === 'extrude') next = extrudeFace(workingTris, face, amount);
 	else if (op === 'inset') next = insetFace(workingTris, face, amount);
@@ -1114,9 +1420,18 @@ export function commitFaceOp(op, amount) {
 		showToast('That edit is too large to sync');
 		return false;
 	}
-	applyGeometrySnapshot(positions);
-	broadcastMeshGeo(faceEdited.uuid, positions);
-	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: positions });
+	// 15-G: these ops change the triangle COUNT, so a multi-material mesh needs
+	// its groups recomputed (the grab/adjust paths only move vertices, and their
+	// counts match, so applyGeometrySnapshot carries the old groups over)
+	const groups = trisToGroups(next);
+	applyGeometrySnapshot(positions, groups);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before: { positions: before, groups: beforeGroups },
+		after: { positions, groups }
+	});
 	if (op === 'inset' || op === 'extrude' || op === 'move') {
 		// E6: keep the CAP selected — its tri indices survive the op (cloneTris
 		// keeps order, ring/walls APPEND). groupFaces re-merges a coplanar inset
@@ -1137,13 +1452,16 @@ export function commitFaceOp(op, amount) {
 	return true;
 }
 
-/** swap the LIVE edited object's geometry + re-derive faces + overlay @param {number[]} positions */
-function applyGeometrySnapshot(positions) {
+/** swap the LIVE edited object's geometry + re-derive faces + overlay
+ * @param {number[]} positions @param {any[] | null} [groups] material groups (15-G) */
+function applyGeometrySnapshot(positions, groups) {
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
 	geometry.computeVertexNormals();
 	geometry.computeBoundingSphere();
-	faceEdited.geometry?.dispose?.();
+	const previous = faceEdited.geometry;
+	preserveMaterialGroups(geometry, previous, faceEdited, groups);
+	previous?.dispose?.();
 	faceEdited.geometry = geometry;
 	faceEdited.userData.faceEdited = true;
 	rebuildFaces();
@@ -1152,15 +1470,23 @@ function applyGeometrySnapshot(positions) {
 	objectsGroup.update((v) => v);
 }
 
-/** @param {string} uuid @param {number[]} positions */
-function broadcastMeshGeo(uuid, positions) {
+/** @param {string} uuid @param {number[]} positions @param {any[] | null} [groups] */
+function broadcastMeshGeo(uuid, positions, groups) {
 	/** @type {any} */
 	const peer = get(peers);
 	// raw Float32 BYTES, not a plain number array: binarypack recurses per
 	// element and blows the call stack on big arrays (a 48-seg terrain snapshot
 	// = 41k numbers silently vanished — broadcast() catches the throw), and
 	// bytes are ~half the wire size anyway. applyMeshGeo accepts either shape.
-	if (peer) peer.send({ type: 'meshgeo', uuid: uuid, positions: new Float32Array(positions).buffer });
+	// `groups` is a handful of small objects — safe as a plain value, and absent
+	// entirely for the single-material case (an older peer simply ignores it)
+	if (peer)
+		peer.send({
+			type: 'meshgeo',
+			uuid: uuid,
+			positions: new Float32Array(positions).buffer,
+			...(groups?.length ? { groups } : {})
+		});
 }
 
 /**
@@ -1259,11 +1585,17 @@ let faceAdjust = null;
  * (indices stay stable through a gesture); broadcasts a preview ~5/s. */
 function liveGeometryUpdate() {
 	const positions = trisToPositions(workingTris);
+	// 15-G: the live preview swaps geometry every frame — without the groups a
+	// multi-material mesh blinks out for the whole gesture (a live extrude/inset
+	// adjust re-stitches walls, so the count changes too)
+	const groups = trisToGroups(workingTris);
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
 	geometry.computeVertexNormals();
 	geometry.computeBoundingSphere();
-	faceEdited.geometry?.dispose?.();
+	const previous = faceEdited.geometry;
+	preserveMaterialGroups(geometry, previous, faceEdited, groups);
+	previous?.dispose?.();
 	faceEdited.geometry = geometry;
 	faceEdited.userData.faceEdited = true;
 	refreshFaceOverlay();
@@ -1272,7 +1604,7 @@ function liveGeometryUpdate() {
 	const now = Date.now();
 	if (now - lastFaceBroadcast > 200) {
 		lastFaceBroadcast = now;
-		broadcastMeshGeo(faceEdited.uuid, positions);
+		broadcastMeshGeo(faceEdited.uuid, positions, groups);
 	}
 }
 
@@ -1631,11 +1963,22 @@ export function cancelFaceAdjust() {
 
 // undo/redo replays meshgeo snapshots through the same apply + broadcast path
 registerHistoryKind('meshgeo', (entry, state) => {
-	applyMeshGeo(entry.uuid, state);
+	// 15-G: a topology op stores {positions, groups} so a multi-material mesh
+	// keeps its slots through undo/redo; every other producer (sculpt strokes,
+	// vertex drags, VR grabs) still stores a bare positions array
+	const positions = state?.positions ?? state;
+	const groups = state?.positions ? state.groups : undefined;
+	applyMeshGeo(entry.uuid, positions, groups);
 	// same raw-bytes wire format as broadcastMeshGeo (big plain arrays blow
 	// binarypack's recursion and the replay would silently not replicate)
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'meshgeo', uuid: entry.uuid, positions: new Float32Array(state).buffer });
+	if (peer)
+		peer.send({
+			type: 'meshgeo',
+			uuid: entry.uuid,
+			positions: new Float32Array(positions).buffer,
+			...(groups?.length ? { groups } : {})
+		});
 	return true;
 });

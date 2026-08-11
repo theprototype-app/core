@@ -19,7 +19,9 @@
 		weldSelectedVerts,
 		vertexSelectionSize,
 		selectAllVerts,
-		invertVertexSelection
+		invertVertexSelection,
+		vertexHandleScale,
+		vertexHandleAdaptive
 	} from '$lib/meshEdit';
 	import {
 		faceEditObject,
@@ -37,6 +39,7 @@
 		faceEditSelectedTris,
 		faceSelectionInfo,
 		faceGizmoSpace,
+		meshGizmoEnabled,
 		meshEditWireframe,
 		meshEditHotkeys,
 		meshEditOutline,
@@ -55,6 +58,7 @@
 		edgeEditSelected,
 		selectEdgeLoop,
 		dissolveEdges,
+		bevelFaces,
 		clearEdgeSelection,
 		stashSelections,
 		setFaceSubmode,
@@ -88,6 +92,7 @@
 		Sun,
 		Spline,
 		Eraser,
+		Scissors,
 		Undo2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
@@ -248,6 +253,10 @@
 	// FALLBACK for prefers-reduced-motion, where animation:none means the end
 	// event never fires and the class would stick forever.
 	let flashOp = $state('');
+	// M5: bevel params live here, not in faceEditAmount — that store is the FACE op's
+	// signed distance and sharing it would make arming Extrude change the bevel width
+	let bevelWidth = $state(0.1);
+	let bevelSegments = $state(1);
 	/** @type {any} */
 	let flashTimer = 0;
 	/** @param {string} op */
@@ -521,6 +530,14 @@
 			<!-- M4: edge tools — the pick is a set of EDGES, not faces -->
 			<span class="tbx-label">Tools</span>
 			<button
+				id="edge-move"
+				class="tbx-btn {$faceEditOp === 'move' ? 'tbx-on bg-primary-600 text-white' : ''}"
+				aria-label="Move edges with the gizmo"
+				title="Move — seat the gizmo on the selected edges (X runs along the edge, Z out of the surface). The welded neighbours stretch with it."
+				onclick={() => setFaceOp('move')}
+				><Move size={18} aria-hidden="true" /></button
+			>
+			<button
 				id="edge-loop"
 				class="tbx-btn"
 				class:tbx-flash={flashOp === 'edgeloop'}
@@ -606,26 +623,6 @@
 				</button>
 			{/each}
 
-			<!-- GIZMO: orientation (E9 — Local = face basis, Z along the normal) -->
-			<span class="tbx-label">Gizmo</span>
-			<div class="tbx-row">
-				<div
-					id="mesh-gizmo-space"
-					class="tbx-seg"
-					title="Gizmo orientation — Local aligns to the face (Z = its normal). Scale handles always orient local."
-				>
-					<button
-						id="mesh-space-local"
-						class="px-2 py-0.5 {$faceGizmoSpace === 'local' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-						onclick={() => faceGizmoSpace.set('local')}>Local</button
-					>
-					<button
-						id="mesh-space-world"
-						class="px-2 py-0.5 {$faceGizmoSpace === 'world' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-						onclick={() => faceGizmoSpace.set('world')}>World</button
-					>
-				</div>
-			</div>
 		{:else}
 			<!-- TOOLS: vertex mode (D5: ONE selection — click selects, Ctrl+click
 			     adds, the gizmo on the last pick drags the whole set) -->
@@ -653,8 +650,70 @@
 				title="Create face — select 3-4 vertices (Ctrl+click adds) first"
 				onclick={createFace}><ToolIcon name="create-face" /></button
 			>
+			<!-- handle size: proportional to the object by default, this scales it -->
+			<div class="tbx-row text-xs text-gray-300">
+				<label class="flex items-center gap-1" title="Vertex dot size — a multiplier over the size derived from the object, so it stays sane on a terrain and on a cube">
+					dots
+					<input
+						id="mesh-handle-scale"
+						type="range"
+						min="0.2"
+						max="3"
+						step="0.1"
+						class="w-20"
+						bind:value={$vertexHandleScale}
+					/>
+					<span class="w-8 text-right tabular-nums">{$vertexHandleScale.toFixed(1)}x</span>
+				</label>
+				<button
+					id="mesh-handle-adaptive"
+					class="rounded-full px-2 py-0.5 {$vertexHandleAdaptive ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					aria-pressed={$vertexHandleAdaptive}
+					title={$vertexHandleAdaptive
+						? 'Adaptive: the dots keep a constant SCREEN size as you zoom (what modelling tools do). Click for a fixed world size.'
+						: 'Fixed world size: the dots grow as you zoom in and shrink away as you zoom out. Click for adaptive.'}
+					onclick={() => vertexHandleAdaptive.set(!$vertexHandleAdaptive)}
+					>{$vertexHandleAdaptive ? 'adaptive' : 'fixed'}</button
+				>
+			</div>
 		{/if}
 
+		<!-- GIZMO: one control for EVERY element mode. It was inside the faces-only
+		     branch, so vertices and edges had no orientation control at all and no way
+		     to turn the gizmo off — the switch is a preference about how you work, not a
+		     property of what you picked. -->
+		<span class="tbx-label">Gizmo</span>
+		<div class="tbx-row">
+			<button
+				id="mesh-gizmo-toggle"
+				class="tbx-btn {$meshGizmoEnabled ? 'tbx-on bg-primary-600 text-white' : ''}"
+				aria-pressed={$meshGizmoEnabled}
+				aria-label="Show the transform gizmo"
+				title={$meshGizmoEnabled
+					? 'Gizmo ON — click to hide it and select/operate without handles in the way'
+					: 'Gizmo OFF — click to show it again (vertices, edges and faces)'}
+				onclick={() => meshGizmoEnabled.set(!$meshGizmoEnabled)}
+				><Move size={18} aria-hidden="true" /></button
+			>
+			<div
+				id="mesh-gizmo-space"
+				class="tbx-seg"
+				title="Gizmo orientation — Local aligns to what is selected (for a face, Z = its normal; for an edge, X runs along it). Scale handles always orient local."
+			>
+				<button
+					id="mesh-space-local"
+					class="px-2 py-0.5 {$faceGizmoSpace === 'local' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					disabled={!$meshGizmoEnabled}
+					onclick={() => faceGizmoSpace.set('local')}>Local</button
+				>
+				<button
+					id="mesh-space-world"
+					class="px-2 py-0.5 {$faceGizmoSpace === 'world' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					disabled={!$meshGizmoEnabled}
+					onclick={() => faceGizmoSpace.set('world')}>World</button
+				>
+			</div>
+		</div>
 		{#if mode === 'faces'}
 			<!-- M6: whole-mesh cleanup — acts on the OBJECT, not the pick -->
 			<span class="tbx-label">Cleanup</span>
@@ -771,6 +830,41 @@
 				title="Merge a sphere into the collider as a new convex piece"
 				onclick={() => addColliderPiece('sphere')}><Circle size={18} aria-hidden="true" /></button
 			>
+		{/if}
+
+		<!-- M5: the face bevel — width, segments and the button (face mode only) -->
+		{#if mode === 'faces'}
+			<div id="face-bevel-params" class="tbx-row text-xs text-gray-300">
+				<label class="flex items-center gap-1" title="How far the chamfer folds into each face">
+					width
+					<input
+						id="face-bevel-width"
+						type="number"
+						step="0.02"
+						min="0.001"
+						class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={bevelWidth}
+					/>
+				</label>
+				<label class="flex items-center gap-1" title="More segments = a rounder edge">
+					segments
+					<input
+						id="face-bevel-segments"
+						type="number"
+						step="1"
+						min="1"
+						max="8"
+						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={bevelSegments}
+					/>
+				</label>
+			<button
+				id="face-bevel"
+				class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
+				title="Bevel the selected face's border into a chamfer (inset + push per segment)"
+				onclick={() => bevelFaces(bevelWidth, bevelSegments)}>Bevel</button
+			>
+			</div>
 		{/if}
 
 		<!-- 176: contextual amount row for Extrude/Inset -->

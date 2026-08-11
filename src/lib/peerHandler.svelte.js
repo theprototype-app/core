@@ -29,6 +29,7 @@ import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate, physicsExternalMove } from '$lib/physics';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
+import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
@@ -389,6 +390,17 @@ export class PeerConnection {
 					applyJointsSnapshot(data.joints);
 				} else if(data.type == 'getjoints') {
 					sendJoints(data.sender);
+				} else if(data.type == 'animdata') {
+					// 17-E: authored keyframes, latest-wins per object
+					applyAnimData(data);
+				} else if(data.type == 'animplay') {
+					// transport only — the pose comes from evaluating the keys on the
+					// synced clock, never off the wire
+					applyAnimPlay(data);
+				} else if(data.type == 'animations') {
+					applyAnimationsSnapshot(data);
+				} else if(data.type == 'getanim') {
+					sendAnimations(data.sender);
 				} else if(data.type == 'handmodel') {
 					applyHandModel(data);
 				} else if(data.type == 'environment') {
@@ -581,6 +593,7 @@ export class PeerConnection {
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getanim', sender: this.peer.id})
 		// module state is the one PER-PEER payload in the get* family (each peer
 		// answers with its OWN states — e.g. campreview presence), so it can't be
 		// deduped down to the host like the shared-scene requests above (B5)

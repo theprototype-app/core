@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
+import { peers } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
+import { recordEntry, registerHistoryKind } from './history';
 
 // Authored object animation, v2 (17-E). Each object owns a set of named CLIPS;
 // a clip owns TRACKS (one per transform channel) and a track owns KEYS at
@@ -20,6 +22,12 @@ import { suspendAnimation, resumeAnimation } from './flowRuntime';
 // every peer evaluates the same keys at the same time (golden rule 8), the model
 // imported clips and sound loops already use. Poses are never streamed. N
 // objects can play at once — a door swinging on every peer is the point.
+//
+// Both halves REPLICATE (17-E A2): the authored data as `animdata` (latest-wins
+// per object on `changedAt`) and the transport as `animplay`, with `getanim` /
+// `animations` covering late joiners. A scrub stays local — it is a look, not an
+// edit. Edits are undoable through the `anim` history kind, one entry per
+// gesture (`beginAnimGesture` / `endAnimGesture` wrap a key drag).
 
 /**
  * @typedef {{ t: number, v: number, ease?: number[] }} Key a value at a clip time; `ease` shapes the NEXT segment
@@ -445,17 +453,195 @@ export function poseAt(obj, clip, seconds, base) {
 	obj.updateMatrix();
 }
 
+// --- replication -------------------------------------------------------------
+
+// set while a remote message is being applied, so an applier can reuse the same
+// mutators without re-broadcasting (golden rule 1) or recording history
+let applyingRemote = false;
+
+/** @type {{uuid: string, before: any, label: string}|null} */
+let gesture = null;
+
+/** @param {string} uuid */
+function broadcastAnim(uuid) {
+	if (applyingRemote) return;
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer) return;
+	const set = get(animations)[uuid];
+	if (set) peer.send({ type: 'animdata', uuid, anim: set });
+	else peer.send({ type: 'animdata', uuid, anim: null });
+}
+
+/** @param {string} uuid */
+function broadcastPlay(uuid) {
+	if (applyingRemote) return;
+	/** @type {any} */
+	const peer = get(peers);
+	const p = get(playback)[uuid];
+	if (!peer || !p) return;
+	peer.send({ type: 'animplay', uuid, ...p });
+}
+
+/** @param {string} uuid @param {any} before @param {any} after */
+function recordAnimEntry(uuid, before, after) {
+	if (applyingRemote) return;
+	if (JSON.stringify(before ?? null) === JSON.stringify(after ?? null)) return;
+	recordEntry({
+		kind: 'anim',
+		uuid,
+		beforeSet: before ?? null,
+		afterSet: after ?? null,
+		before: 'before',
+		after: 'after'
+	});
+}
+
+/**
+ * Collect every edit until `endAnimGesture` into ONE undo entry and ONE
+ * broadcast — a key drag writes the store on every pointermove and would
+ * otherwise flood both. @param {string} uuid @param {string} [label]
+ */
+export function beginAnimGesture(uuid, label) {
+	if (gesture) endAnimGesture();
+	gesture = { uuid, before: structuredClone(get(animations)[uuid] ?? null), label: label ?? 'Animation' };
+}
+
+/** Commit the open gesture (no-op when nothing changed). */
+export function endAnimGesture() {
+	const open = gesture;
+	gesture = null;
+	if (!open) return;
+	const after = get(animations)[open.uuid] ?? null;
+	recordAnimEntry(open.uuid, open.before, after);
+	broadcastAnim(open.uuid);
+}
+
+/** A peer authored (or cleared) an object's animation — latest-wins. @param {any} data */
+export function applyAnimData(data) {
+	if (!data?.uuid) return;
+	const incoming = normalizeAnimSet(data.anim);
+	const current = get(animations)[data.uuid];
+	if (incoming && current && num(current.changedAt) > num(incoming.changedAt)) return;
+	applyingRemote = true;
+	try {
+		animations.update((map) => {
+			const next = { ...map };
+			if (incoming) next[data.uuid] = incoming;
+			else delete next[data.uuid];
+			return next;
+		});
+	} finally {
+		applyingRemote = false;
+	}
+}
+
+/** A peer started/stopped a clip — latest-wins, then evaluated locally. @param {any} data */
+export function applyAnimPlay(data) {
+	if (!data?.uuid) return;
+	const uuid = data.uuid;
+	const current = get(playback)[uuid];
+	if (current && num(current.changedAt) > num(data.changedAt)) return;
+	applyingRemote = true;
+	try {
+		if (!data.playing) {
+			// mirrors stop()/pause() but keeps the SENDER's stamp, so latest-wins
+			// still compares two comparable numbers
+			const pausedAt = num(data.pausedAt);
+			if (pausedAt === 0) {
+				releaseBase(uuid); // a remote stop restores OUR copy of the base pose
+				clearHead(uuid);
+			}
+			setPlay(uuid, { playing: false, pausedAt, changedAt: num(data.changedAt) });
+			if (pausedAt > 0) posePaused(uuid); // land on the sender's exact frame
+			return;
+		}
+		const object = objectFor(uuid);
+		if (!object) return;
+		ensureBase(uuid, object);
+		// with the synced clock off, `at` is the sender's page time and means
+		// nothing here — start from the same offset instead of a garbage elapsed
+		const at = get(syncedAnimations) ? num(data.at) : syncedNow();
+		setPlay(uuid, {
+			clipId: typeof data.clipId === 'string' ? data.clipId : '',
+			playing: true,
+			at,
+			pausedAt: num(data.pausedAt),
+			speed: num(data.speed, 1) || 1,
+			changedAt: num(data.changedAt)
+		});
+	} finally {
+		applyingRemote = false;
+	}
+}
+
+/** Merge a late-joiner snapshot (per-object latest-wins). @param {any} data */
+export function applyAnimationsSnapshot(data) {
+	const sets = data?.sets ?? data?.animations;
+	if (sets && typeof sets === 'object') {
+		for (const [uuid, anim] of Object.entries(sets)) applyAnimData({ uuid, anim });
+	}
+	const play = data?.playback;
+	if (play && typeof play === 'object') {
+		for (const [uuid, p] of Object.entries(/** @type {any} */ (play))) {
+			applyAnimPlay({ uuid, ...(/** @type {any} */ (p)) });
+		}
+	}
+}
+
+/** Full-state reply on handshake (the sendJoints retry pattern — peerjs silently
+ * drops anything sent before the connection opens). @param {string} peerId */
+export function sendAnimations(peerId, attempt = 0) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer) return;
+	const sets = get(animations);
+	if (!Object.keys(sets).length) return;
+	const conn = peer.connections[peerId];
+	if (!conn || !conn.open) {
+		if (attempt < 20) setTimeout(() => sendAnimations(peerId, attempt + 1), 500);
+		return;
+	}
+	conn.send({ type: 'animations', sets, playback: get(playback) });
+}
+
+// --- undo/redo ---------------------------------------------------------------
+
+// One entry per edit (or per gesture): replaying writes the stored set locally
+// AND replicates it, so peers follow an undo like any other edit (the 'joint'
+// presence-kind precedent).
+registerHistoryKind('anim', (entry, state) => {
+	const target = state === entry.before ? entry.beforeSet : entry.afterSet;
+	const set = normalizeAnimSet(target);
+	if (!set) stop(entry.uuid);
+	animations.update((map) => {
+		const next = { ...map };
+		if (set) next[entry.uuid] = { ...set, changedAt: Date.now() };
+		else delete next[entry.uuid];
+		return next;
+	});
+	broadcastAnim(entry.uuid);
+	return true;
+});
+
 // --- authoring ---------------------------------------------------------------
 
-/** Mutate an object's set through normalization, stamping `changedAt`.
+/** Mutate an object's set through normalization, stamping `changedAt`. Records
+ * one undo entry and broadcasts, unless a gesture is collecting both.
  * @param {string} uuid @param {(set: AnimSet) => AnimSet|null} fn */
 function editSet(uuid, fn) {
+	const before = gesture ? null : structuredClone(get(animations)[uuid] ?? null);
+	let changed = false;
 	animations.update((map) => {
 		const set = normalizeAnimSet(map[uuid]) ?? emptySet();
 		const next = fn(structuredClone(set));
 		if (!next) return map;
+		changed = true;
 		return { ...map, [uuid]: { ...next, changedAt: Date.now() } };
 	});
+	if (!changed || gesture) return;
+	recordAnimEntry(uuid, before, get(animations)[uuid]);
+	broadcastAnim(uuid);
 }
 
 /** Mutate one clip. @param {string} uuid @param {string|null} clipId @param {(clip: Clip) => Clip|null} fn */
@@ -644,8 +830,10 @@ export function animationsSnapshot() {
 	return out;
 }
 
-/** Restore authored animations from a save payload. @param {any} saved */
-export function animationsRestore(saved) {
+/** Restore authored animations from a save payload. `replicate` pushes the whole
+ * set to peers, the way a session load re-broadcasts its joints — an autosave
+ * restore at boot leaves it off. @param {any} saved @param {boolean} [replicate] */
+export function animationsRestore(saved, replicate = false) {
 	if (!saved || typeof saved !== 'object') return 0;
 	stopAll(); // never leave a preview running against objects that just changed
 	/** @type {any} */
@@ -655,8 +843,17 @@ export function animationsRestore(saved) {
 		if (set) clean[uuid] = set;
 	}
 	animations.set(clean);
+	if (replicate && Object.keys(clean).length) {
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer) peer.send({ type: 'animations', sets: clean, playback: {} });
+	}
 	return Object.keys(clean).length;
 }
+
+// A wipe is LOCAL on purpose: `clearscene` already replicates and every peer runs
+// clearSceneLocal, so broadcasting here would be a second delete. Deleting one
+// OBJECT deliberately keeps its animation (undo needs it) — the serializer prunes.
 
 /** Forget an object's animation (scene wipe). @param {string} uuid */
 export function dropAnimation(uuid) {
@@ -696,12 +893,23 @@ function elapsedOf(p, now) {
 	return p.playing ? p.pausedAt + (now - p.at) * (p.speed || 1) : p.pausedAt;
 }
 
-/** @param {string} uuid @param {Partial<Play>} patch */
-function setPlay(uuid, patch) {
+/** @param {string} uuid @param {Partial<Play>} patch @param {boolean} [replicate] */
+function setPlay(uuid, patch, replicate = false) {
 	playback.update((map) => ({
 		...map,
-		[uuid]: { ...playOf(uuid), ...patch, changedAt: Date.now() }
+		[uuid]: { ...playOf(uuid), ...patch, changedAt: patch.changedAt ?? Date.now() }
 	}));
+	if (replicate) broadcastPlay(uuid);
+}
+
+/** @param {string} uuid */
+function clearHead(uuid) {
+	playheads.update((map) => {
+		if (!(uuid in map)) return map;
+		const next = { ...map };
+		delete next[uuid];
+		return next;
+	});
 }
 
 /** Current clip seconds for an object (0 when idle). @param {string} uuid */
@@ -726,13 +934,31 @@ export function play(uuid, clipId, opts = {}) {
 	const set = getAnimSet(uuid);
 	ensureBase(uuid, obj);
 	const from = opts.from ?? (prev.pausedAt >= clip.duration && clip.loop === 'once' ? 0 : prev.pausedAt);
-	setPlay(uuid, {
-		clipId: id || set?.active || DEFAULT_CLIP,
-		playing: true,
-		at: syncedNow(),
-		pausedAt: from,
-		speed: opts.speed ?? prev.speed ?? 1
-	});
+	setPlay(
+		uuid,
+		{
+			clipId: id || set?.active || DEFAULT_CLIP,
+			playing: true,
+			at: syncedNow(),
+			pausedAt: from,
+			speed: opts.speed ?? prev.speed ?? 1
+		},
+		true
+	);
+}
+
+/** Pose the object at its paused time, so a pause lands on the same frame on
+ * every peer instead of leaving each one wherever its last tick got to.
+ * @param {string} uuid */
+function posePaused(uuid) {
+	const p = get(playback)[uuid];
+	const clip = clipOf(uuid, p?.clipId);
+	const obj = objectFor(uuid);
+	const base = bases.get(uuid);
+	if (!p || p.playing || !clip || !obj || !base) return;
+	const at = p.pausedAt;
+	poseAt(obj, clip, clip.loop === 'once' ? Math.min(at, clip.duration) : clipTime(clip, at), base);
+	playheads.update((map) => ({ ...map, [uuid]: at }));
 }
 
 /** @param {string} uuid */
@@ -740,7 +966,8 @@ export function pause(uuid) {
 	if (typeof uuid !== 'string') return pauseAll();
 	const p = get(playback)[uuid];
 	if (!p?.playing) return;
-	setPlay(uuid, { playing: false, pausedAt: elapsedOf(p, syncedNow()) });
+	setPlay(uuid, { playing: false, pausedAt: elapsedOf(p, syncedNow()) }, true);
+	posePaused(uuid);
 }
 
 export function pauseAll() {
@@ -753,13 +980,8 @@ export function pauseAll() {
 export function stop(uuid) {
 	if (typeof uuid !== 'string') return stopAll();
 	releaseBase(uuid);
-	if (get(playback)[uuid]) setPlay(uuid, { playing: false, pausedAt: 0 });
-	playheads.update((map) => {
-		if (!(uuid in map)) return map;
-		const next = { ...map };
-		delete next[uuid];
-		return next;
-	});
+	if (get(playback)[uuid]) setPlay(uuid, { playing: false, pausedAt: 0 }, true);
+	clearHead(uuid);
 }
 
 export function stopAll() {
@@ -789,7 +1011,7 @@ export function scrub(uuid, seconds, clipId) {
 export function setSpeed(uuid, speed) {
 	const p = playOf(uuid);
 	const now = syncedNow();
-	setPlay(uuid, { pausedAt: elapsedOf(p, now), at: now, speed: Math.max(0.05, num(speed, 1)) });
+	setPlay(uuid, { pausedAt: elapsedOf(p, now), at: now, speed: Math.max(0.05, num(speed, 1)) }, true);
 }
 
 /** Re-pose everything that is playing. Per-frame from the scene loop (Scene.svelte useTask). */

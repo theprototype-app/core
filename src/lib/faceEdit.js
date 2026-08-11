@@ -1322,16 +1322,22 @@ meshEditTriWire.subscribe((value) => {
 	vertexWireRebuild?.();
 });
 
-/** the welded edge keys that are quad DIAGONALS — everything the quad view
- * leaves out. @param {any[]} tris @param {Int32Array} partner */
+/** the welded edge keys that are quad DIAGONALS — everything the quad view leaves out.
+ *
+ * The shared edge is read from the two TRIANGLES, not through `quadRingKeys`: that helper
+ * indexes the live session's `workingTris`, so this returned an EMPTY set for any geometry
+ * without an open edit session — which is exactly how `internalEdgeSet` is called (the
+ * vertex slide then happily offered a face diagonal as a slide direction).
+ * @param {any[]} tris @param {Int32Array} partner */
 function diagonalEdgeKeys(tris, partner) {
 	const out = new Set();
 	for (let i = 0; i < tris.length; i++) {
 		const mate = partner[i];
-		if (mate < 0 || mate < i) continue;
-		const keys = quadRingKeys(i, mate);
-		// quadRingKeys returns [p, ra, q, rb] — the shared p-q IS the diagonal
-		if (keys) out.add(edgeKey(keys[0], keys[2]));
+		if (mate == null || mate < 0 || mate < i || !tris[i] || !tris[mate]) continue;
+		const ka = tris[i].map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+		const kb = tris[mate].map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+		const shared = ka.filter((/** @type {string} */ k) => kb.includes(k));
+		if (shared.length === 2) out.add(edgeKey(shared[0], shared[1]));
 	}
 	return out;
 }
@@ -1364,6 +1370,27 @@ function internalEdgeKeys(tris, faces, partner) {
 		for (const [key, seen] of count) if (seen >= 2) out.add(key);
 	}
 	return out;
+}
+
+/**
+ * The face-INTERNAL edge keys of a geometry, with NO live edit session required — the
+ * "which edges are real" answer for callers outside this module. meshEdit's vertex slide
+ * needs it: a quad's diagonal is a triangulation artifact (pickEdgeAt already skips them,
+ * dissolve refuses them), so offering one as a slide direction is meaningless — and the
+ * first pass did exactly that, picking the +Z face diagonal over the model edge.
+ * Uses stored topology when the mesh has any, else the derived quad pairing.
+ * @param {any} geometry @returns {Set<string>}
+ */
+export function internalEdgeSet(geometry) {
+	if (!geometry?.attributes?.position) return new Set();
+	const tris = readTriangles(geometry);
+	return internalEdgeKeys(tris, readStoredFaces(geometry));
+}
+
+/** the canonical welded key of the edge between two points, for internalEdgeSet lookups
+ * @param {any} a @param {any} b @returns {string} */
+export function edgeKeyOf(a, b) {
+	return edgeKey(keyOf(a.x, a.y, a.z), keyOf(b.x, b.y, b.z));
 }
 
 /** Quad-structure line geometry: every welded edge of the mesh EXCEPT the ones

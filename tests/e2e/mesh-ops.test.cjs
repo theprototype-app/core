@@ -498,10 +498,15 @@ h.run(async () => {
 				me.selectHandle(2);
 				me.toggleVertexSelection(3);
 				const weldOk = me.weldSelectedVerts();
-				// the wireframe overlay must track the welded geometry (user report:
-				// it stayed stale) — fingerprint it against a fresh WireframeGeometry
+				// the wireframe overlay must track the welded geometry (user report: it stayed
+				// stale) — fingerprint it against what the SHARED BUILDER produces for the live
+				// geometry. It used to compare against a raw WireframeGeometry, which only
+				// matched because the quad view silently degraded to the full triangulation in
+				// VERTEX mode: its diagonal set was computed through the FACE session's
+				// workingTris, empty here, so nothing was ever skipped. The comparison has to be
+				// against the builder, or it asserts a bug.
 				const o = live().children.find((c) => c.name === 'edit-overlay');
-				const fresh = new s.THREE.WireframeGeometry(live().geometry);
+				const fresh = s.faceEdit.editWireGeometry(live().geometry);
 				const sum = (/** @type {any} */ a) => {
 					let t = 0;
 					for (let i = 0; i < a.length; i++) t += a[i];

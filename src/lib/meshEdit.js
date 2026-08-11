@@ -21,7 +21,9 @@ import {
 	registerVertexWireRebuild,
 	meshGizmoEnabled,
 	faceGizmoSpace,
-	registerGizmoPrefListener
+	registerGizmoPrefListener,
+	internalEdgeSet,
+	edgeKeyOf
 } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -499,6 +501,9 @@ export function exitEditMode() {
 	proxy = null;
 	selectedHandle = -1;
 	hoveredHandle = -1;
+	slideEdge = null;
+	slideStart = null;
+	vertexSlide.set(false); // an armed tool never survives the session
 	vertexSelection.clear();
 	vertexSelectionSize.set(0);
 	editingObject.set(null);
@@ -728,7 +733,86 @@ function commitSelectedLocal(local) {
  * @returns {number[]} the resulting LOCAL position, safe to keep (plain array)
  */
 function writeSelectedHandle() {
-	return commitSelectedLocal(edited.worldToLocal(writeVector.copy(proxy.position)));
+	return commitSelectedLocal(proxyLocal());
+}
+
+/**
+ * M9 VERTEX SLIDE: constrain the drag to one of the vertex's own edges.
+ *
+ * Sliding a vertex ALONG an edge is how you adjust a profile without changing the
+ * surface it lies in — a free drag pulls the vertex off both adjacent faces and dents
+ * the silhouette. Armed like a tool: while `vertexSlide` is on, a single-vertex drag
+ * follows the incident edge that best matches the direction you started dragging, and
+ * clamps to that edge's ENDS so the vertex can never leave it.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const vertexSlide = writable(false);
+/** the edge chosen for the live slide: local-space endpoints @type {any} */
+let slideEdge = null;
+/** local-space position at drag start (the origin for the direction vote) @type {any} */
+let slideStart = null;
+
+/** the LOCAL positions a handle shares an edge with, deduped by welded key
+ * @param {number} index @returns {any[]} */
+function incidentEdgeEnds(index) {
+	if (!edited || !handles[index]) return [];
+	const anchor = handles[index].position;
+	const keyOf = (/** @type {any} */ v) =>
+		`${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
+	const anchorKey = keyOf(anchor);
+	/** @type {Map<string, any>} */
+	const ends = new Map();
+	// a quad DIAGONAL is a triangulation artifact, not an edge of the model, so it is not a
+	// direction anyone means to slide along — the same rule pickEdgeAt and dissolve follow
+	const internal = internalEdgeSet(edited.geometry);
+	for (const tri of readTriangles(edited.geometry))
+		for (let c = 0; c < 3; c++) {
+			if (keyOf(tri[c]) !== anchorKey) continue;
+			for (const other of [tri[(c + 1) % 3], tri[(c + 2) % 3]]) {
+				const key = keyOf(other);
+				if (key === anchorKey || ends.has(key)) continue;
+				if (internal.has(edgeKeyOf(tri[c], other))) continue;
+				ends.set(key, other.clone());
+			}
+		}
+	return [...ends.values()];
+}
+
+/**
+ * The proxy's LOCAL position, constrained by the slide if one is armed. Every write path
+ * reads the proxy through here, so the constraint applies to the live drag, the final
+ * commit, the broadcast and the undo snapshot with no extra plumbing.
+ * @returns {any} */
+function proxyLocal() {
+	const local = edited.worldToLocal(writeVector.copy(proxy.position));
+	if (!get(vertexSlide) || !slideStart || vertexSelection.size > 1) return local;
+	if (!slideEdge) {
+		// choose on the first REAL movement: the incident edge whose direction best
+		// matches how the user started dragging (a tiny jitter must not decide it)
+		const drag = local.clone().sub(slideStart);
+		if (drag.lengthSq() < 1e-8) return local.copy(slideStart);
+		let best = null;
+		let bestDot = -Infinity;
+		for (const end of incidentEdgeEnds(selectedHandle)) {
+			const direction = end.clone().sub(slideStart);
+			if (direction.lengthSq() < 1e-12) continue;
+			const dot = drag.clone().normalize().dot(direction.clone().normalize());
+			if (dot > bestDot) {
+				bestDot = dot;
+				best = end;
+			}
+		}
+		if (!best) return local;
+		slideEdge = { a: slideStart.clone(), b: best.clone() };
+	}
+	// project onto the segment and CLAMP: the vertex stays on its edge, ends included
+	const span = slideEdge.b.clone().sub(slideEdge.a);
+	const t = Math.min(Math.max(local.clone().sub(slideEdge.a).dot(span) / span.lengthSq(), 0), 1);
+	return local.copy(slideEdge.a).addScaledVector(span, t);
+}
+
+/** the live slide's edge, for tests/UI @returns {any} */
+export function slideEdgeDebug() {
+	return slideEdge ? { a: slideEdge.a.toArray(), b: slideEdge.b.toArray() } : null;
 }
 
 // D5: a multi-selection drags rigidly — every member moves by the anchor's
@@ -757,7 +841,7 @@ function applySelectionDelta(delta) {
 export function onProxyMoved() {
 	if (!edited || selectedHandle < 0) return;
 	// attaching the gizmo fires a change event without an actual move — ignore it
-	const local = edited.worldToLocal(writeVector.copy(proxy.position));
+	const local = proxyLocal();
 	if (local.distanceToSquared(handles[selectedHandle].position) < 1e-12) return;
 	// members first, anchor last (writeSelectedHandle recomputes normals/overlay)
 	if (vertexSelection.size > 1)
@@ -803,6 +887,9 @@ export function onProxyDragChanged(dragging) {
 	if (!edited || selectedHandle < 0) return;
 	if (dragging) {
 		dragStartLocal = handles[selectedHandle].position.toArray();
+		// M9: the slide picks its edge on the first real movement, from HERE
+		slideStart = handles[selectedHandle].position.clone();
+		slideEdge = null;
 		// D5: a multi-drag undoes as ONE meshgeo snapshot (a 'verts' entry holds
 		// one position for all its indices — it cannot carry per-handle befores;
 		// same reasoning as weld). Index-expanded per the D1 representation rule.
@@ -810,7 +897,7 @@ export function onProxyDragChanged(dragging) {
 			vertexSelection.size > 1 ? trisToPositions(readTriangles(edited.geometry)) : null;
 	} else if (dragStartLocal) {
 		// catch any tail movement since the last change event, members first
-		const local = edited.worldToLocal(writeVector.copy(proxy.position));
+		const local = proxyLocal();
 		if (vertexSelection.size > 1)
 			applySelectionDelta(deltaVector.copy(local).sub(handles[selectedHandle].position));
 		const after = writeSelectedHandle();
@@ -835,6 +922,12 @@ export function onProxyDragChanged(dragging) {
 			});
 		}
 		dragStartLocal = null;
+		slideEdge = null;
+		slideStart = null;
+		// put the gizmo back ON the vertex: a CONSTRAINED drag ends with the proxy away
+		// from the committed point (that is the whole point of a constraint), and the next
+		// gesture would read that stale offset as a delta and fling the vertex there
+		setAnchor(selectedHandle);
 		dragStartExpanded = null;
 	}
 }

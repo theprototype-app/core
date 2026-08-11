@@ -326,8 +326,29 @@ loadable play content. Everything a user does must be visible to connected peers
   seed), strokes stream as throttled `uvpaint`/`uvpaintend`, and the finished canvas
   commits through the existing `map` path so persistence + undo are free;
   `canvasY(entry, v)` maps v per the texture's `flipY`. UV4: `assignTrisToSlot`
-  writes `tri.mi` and commits a meshgeo triple) + `UvEditor.svelte` (the dock tab —
+  writes `tri.mi` and commits a meshgeo triple. PRO TOOLS (#110): `uvIslandsOf` =
+  union-find over quantised (u,v) — the `shellsOfTris` shape but keyed in UV space,
+  because an island is BY DEFINITION connected in 3D and separate in UV space, so
+  position-welding would merge every island of a seamed mesh; `uvBounds` /
+  `transformUvCluster` (absolute rotate/scale/flip about a pivot) / `fitUvToSquare` /
+  `expandToIslands`; `unwrapObject` runs a backend and can be SCOPED to the Edit Mesh
+  pick, rewriting only those faces; `textureInfo` / `resizeSlotTexture` (commits
+  through the replicated map path, aspect preserved) and `uvCheckerOn` /
+  `applyUvChecker` — a LOCAL-only UV test grid via `scene.overrideMaterial`,
+  never per-material, because the object sync AND autosave both serialize
+  `material.map` and would bake the grid into someone's scene) +
+  `UvEditor.svelte` (the dock tab —
   `'uv'` in `FLOW_FAMILY`; hand-rolled 2D zoom/pan because nothing reusable exists),
+  `uvUnwrap` (PR #110: a REGISTRY, not one algorithm — `unwrap(faces, options) →
+  {uvs, islands}` with `registerUnwrapBackend(key, label, fn)`, so a hot-loadable
+  module can add a heavier automatic unwrapper (xatlas/LSCM) or replace a built-in
+  without the core carrying the wasm. Built-ins are box / planar / cylindrical /
+  spherical projections + a SHELF packer; all pure, deterministic, scene-free — a
+  backend maps triangles to UVs and the CALLER commits, which is what makes them
+  testable by property (inside 0..1, aspect preserved, islands don't overlap) rather
+  than by pinning floats. `normalizeAspect` never stretches per-axis (that shears the
+  texture) and `unwrapSeam` shifts triangles that straddle the u wrap, or one face
+  smears across the whole map),
   `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
   `networkQuality` (N6/D3: LOCAL per-peer getStats RTT + relay dot, median, NOT replicated),
   `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`

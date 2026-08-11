@@ -7,6 +7,8 @@ import { recordEntry } from './history';
 // UV3 painting commits through the EXISTING replicated texture path, so
 // persistence (autosave / .tpscene / the object sync) and undo come free.
 import { applyMap, materialAt, recordMaterialChange, copyTextureParams } from './materialsHandler';
+// the unwrap REGISTRY: built-in projections, plus whatever a module registers
+import { unwrap } from './uvUnwrap';
 // UV1: read-only reuse of the mesh snapshot pipeline. faceEdit owns the triangle
 // <-> geometry conversion AND the 'meshgeo' history kind (which already accepts a
 // {positions, groups, uvs} triple and re-broadcasts uvs on undo), so a UV commit
@@ -232,6 +234,165 @@ export function uvTriangles(object, slot, onlyTris = null) {
 	return out;
 }
 
+/**
+ * UV ISLANDS: triangles connected through SHARED UV CORNERS.
+ *
+ * Union-find over quantised (u,v), the shape of faceEdit's `shellsOfTris` — but keyed
+ * in UV space, not position space, and that difference is the whole point. An island
+ * is precisely a set of faces that is connected in 3D yet SEPARATE in UV space (a
+ * seam), so welding by position would merge every island of a seamed mesh into one.
+ * @param {{corners: number[][], indices: number[], tri: number}[]} tris
+ * @returns {number[][]} groups of indices INTO `tris`
+ */
+export function uvIslandsOf(tris) {
+	const n = tris.length;
+	const parent = [...Array(n).keys()];
+	const find = (/** @type {number} */ a) => {
+		while (parent[a] !== a) {
+			parent[a] = parent[parent[a]];
+			a = parent[a];
+		}
+		return a;
+	};
+	const union = (/** @type {number} */ a, /** @type {number} */ b) => {
+		parent[find(a)] = find(b);
+	};
+	/** @type {Map<string, number>} first triangle seen at each welded uv corner */
+	const byCorner = new Map();
+	tris.forEach((tri, ti) => {
+		for (const corner of tri.corners) {
+			const key = uvKey(corner[0], corner[1]);
+			const first = byCorner.get(key);
+			if (first === undefined) byCorner.set(key, ti);
+			else union(first, ti);
+		}
+	});
+	/** @type {Map<number, number[]>} */
+	const groups = new Map();
+	for (let ti = 0; ti < n; ti++) {
+		const root = find(ti);
+		let list = groups.get(root);
+		if (!list) groups.set(root, (list = []));
+		list.push(ti);
+	}
+	return [...groups.values()];
+}
+
+/** quantised uv key, at the same tolerance `weldedCluster` welds with
+ * @param {number} u @param {number} v */
+function uvKey(u, v) {
+	const q = 1 / UV_EPSILON;
+	return Math.round(u * q) + ',' + Math.round(v * q);
+}
+
+/**
+ * Grow a selection to every uv index in the same ISLAND. "Select linked" — the
+ * counterpart of faceEdit's `selectLinkedFaces`, in UV space.
+ * @param {any} object @param {number} slot @param {number[]} selected
+ * @param {Set<number>|null} [onlyTris] @returns {number[]}
+ */
+export function expandToIslands(object, slot, selected, onlyTris = null) {
+	const tris = uvTriangles(object, slot, onlyTris);
+	if (!tris.length || !selected.length) return selected;
+	const picked = new Set(selected);
+	/** @type {Set<number>} */
+	const out = new Set(selected);
+	for (const island of uvIslandsOf(tris)) {
+		const touches = island.some((ti) => tris[ti].indices.some((i) => picked.has(i)));
+		if (!touches) continue;
+		for (const ti of island) for (const i of tris[ti].indices) out.add(i);
+	}
+	return [...out];
+}
+
+/**
+ * The UV bounding box of some uv indices. Nothing computed a SELECTION's bounds
+ * before — every transform needs it as the pivot.
+ * @param {any} object @param {Iterable<number>} indices
+ * @returns {{uMin:number,vMin:number,uMax:number,vMax:number,cu:number,cv:number}|null}
+ */
+export function uvBounds(object, indices) {
+	const uv = object?.geometry?.attributes?.uv;
+	if (!uv) return null;
+	let uMin = Infinity;
+	let vMin = Infinity;
+	let uMax = -Infinity;
+	let vMax = -Infinity;
+	let seen = 0;
+	for (const i of indices) {
+		if (i < 0 || i >= uv.count) continue;
+		const u = uv.getX(i);
+		const v = uv.getY(i);
+		uMin = Math.min(uMin, u);
+		uMax = Math.max(uMax, u);
+		vMin = Math.min(vMin, v);
+		vMax = Math.max(vMax, v);
+		seen++;
+	}
+	if (!seen) return null;
+	return { uMin, vMin, uMax, vMax, cu: (uMin + uMax) / 2, cv: (vMin + vMax) / 2 };
+}
+
+/**
+ * Rotate / scale / flip uv indices about a pivot (their bounds centre by default).
+ * ABSOLUTE writes, unlike `moveUvCluster`'s delta — but the same in-place mutation,
+ * so it commits through `beginUvDrag`/`endUvDrag` like any other gesture (that pair
+ * diffs whole attribute snapshots, so ANY rewrite between them replicates + undoes).
+ * @param {any} object @param {number[]} indices
+ * @param {{rotate?: number, scaleU?: number, scaleV?: number, flipU?: boolean, flipV?: boolean, pivot?: {cu: number, cv: number}}} options
+ * @returns {boolean}
+ */
+export function transformUvCluster(object, indices, options = {}) {
+	const uv = object?.geometry?.attributes?.uv;
+	if (!uv || !indices?.length) return false;
+	// the geometry was swapped under us (remote commit / undo) — same guard as
+	// moveUvCluster, or we would write into a detached buffer
+	if (dragSession && dragSession.uv !== uv) {
+		dragSession = null;
+		return false;
+	}
+	const pivot = options.pivot ?? uvBounds(object, indices);
+	if (!pivot) return false;
+	const rotate = options.rotate ?? 0;
+	const cos = Math.cos(rotate);
+	const sin = Math.sin(rotate);
+	const su = (options.scaleU ?? 1) * (options.flipU ? -1 : 1);
+	const sv = (options.scaleV ?? 1) * (options.flipV ? -1 : 1);
+	for (const i of indices) {
+		const du = (uv.getX(i) - pivot.cu) * su;
+		const dv = (uv.getY(i) - pivot.cv) * sv;
+		uv.setXY(i, pivot.cu + du * cos - dv * sin, pivot.cv + du * sin + dv * cos);
+	}
+	uv.needsUpdate = true;
+	objectsGroup.update((v) => v);
+	return true;
+}
+
+/**
+ * Fit uv indices into the 0..1 square, preserving aspect (a non-uniform fit would
+ * shear the texture across those faces).
+ * @param {any} object @param {number[]} indices @param {number} [margin]
+ * @returns {boolean}
+ */
+export function fitUvToSquare(object, indices, margin = 0.02) {
+	const bounds = uvBounds(object, indices);
+	if (!bounds) return false;
+	const width = bounds.uMax - bounds.uMin;
+	const height = bounds.vMax - bounds.vMin;
+	const span = Math.max(width, height);
+	if (!span) return false;
+	const scale = (1 - margin * 2) / span;
+	const uv = object.geometry.attributes.uv;
+	for (const i of indices) {
+		const u = margin + (uv.getX(i) - bounds.uMin) * scale;
+		const v = margin + (uv.getY(i) - bounds.vMin) * scale;
+		uv.setXY(i, u, v);
+	}
+	uv.needsUpdate = true;
+	objectsGroup.update((v) => v);
+	return true;
+}
+
 /** every uv index the given triangles touch — the scope a drag may weld inside
  * @param {{indices: number[]}[]} tris @returns {Set<number>} */
 export function uvIndicesOf(tris) {
@@ -381,6 +542,60 @@ function pointInPolygon(u, v, poly) {
 		if (vi > v !== vj > v && u < ((uj - ui) * (v - vi)) / (vj - vi) + ui) inside = !inside;
 	}
 	return inside;
+}
+
+/**
+ * Run an unwrap backend over a mesh (or just the faces picked in Edit Mesh) and
+ * commit the result.
+ *
+ * Scoped unwrap only rewrites the picked triangles' UVs and leaves every other face
+ * exactly as it was — which is what makes it safe to unwrap one part of a model.
+ * @param {string} uuid @param {string} backend @param {any} [options]
+ * @param {Set<number>|null} [onlyTris]
+ * @returns {boolean}
+ */
+export function unwrapObject(uuid, backend, options = {}, onlyTris = null) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!object) return false;
+	const editable = uvEditable(object);
+	if (!editable.ok) {
+		showToast(editable.reason);
+		return false;
+	}
+	const triangles = readTriangles(object.geometry);
+	// the backend sees only the faces in scope, but indices must map back to the FULL
+	// triangle list so the commit can leave the rest untouched
+	/** @type {number[]} */
+	const targets = [];
+	/** @type {any[]} */
+	const faces = [];
+	triangles.forEach((/** @type {any} */ tri, /** @type {number} */ i) => {
+		if (onlyTris && !onlyTris.has(i)) return;
+		targets.push(i);
+		faces.push({ corners: [tri[0], tri[1], tri[2]], tri: i });
+	});
+	if (!faces.length) return false;
+	const result = unwrap(backend, faces, options);
+	if (!result?.uvs?.length) {
+		showToast('That unwrap produced nothing');
+		return false;
+	}
+	const before = readUvSnapshot(object);
+	before.groups = before.groups ?? null;
+	targets.forEach((triIndex, k) => {
+		const corners = result.uvs[k];
+		if (corners) triangles[triIndex].uv = corners.map((pair) => [pair[0], pair[1]]);
+	});
+	const positions = trisToPositions(triangles);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast('That edit is too large to sync');
+		return false;
+	}
+	const after = { positions, groups: trisToGroups(triangles), uvs: trisToUVs(triangles) };
+	applyMeshGeo(uuid, after.positions, after.groups, after.uvs);
+	broadcastUvGeo(uuid, after);
+	recordEntry({ kind: 'meshgeo', uuid, before, after });
+	return true;
 }
 
 /**
@@ -914,6 +1129,132 @@ export function paintPreviewCanvas(uuid, slot = 0) {
 /** a monotonic counter bumped on every dab, local or remote — the UV editor
  * redraws off this, because canvas pixels are not reactive state */
 export const uvPaintTick = writable(0);
+
+// ---- texture tools ---------------------------------------------------------
+
+/** the slot's texture size + a rough VRAM figure (RGBA plus ~33% for the mip chain)
+ * @param {any} object @param {number} slot
+ * @returns {{w: number, h: number, bytes: number}|null} */
+export function textureInfo(object, slot = 0) {
+	const image = textureImageOf(object, slot);
+	if (!image) return null;
+	const w = image.width ?? 0;
+	const h = image.height ?? 0;
+	if (!w || !h) return null;
+	return { w, h, bytes: Math.round(w * h * 4 * 1.33) };
+}
+
+/**
+ * Resize a slot's texture and commit it like any other texture change: replicated,
+ * one undo entry, persisted (user decision). `longest` caps the LONG side and the
+ * short side follows, so a non-square texture keeps its aspect.
+ * @param {string} uuid @param {number} slot @param {number} longest
+ * @returns {Promise<boolean>}
+ */
+export async function resizeSlotTexture(uuid, slot, longest) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	const material = materialAt(object, slot);
+	const source = textureImageOf(object, slot);
+	if (!material || !source) {
+		showToast('That slot has no texture to resize');
+		return false;
+	}
+	const scale = longest / Math.max(source.width, source.height);
+	const w = Math.max(Math.round(source.width * scale), 1);
+	const h = Math.max(Math.round(source.height * scale), 1);
+	if (w === source.width && h === source.height) return false;
+	const canvas = document.createElement('canvas');
+	canvas.width = w;
+	canvas.height = h;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) return false;
+	ctx.imageSmoothingEnabled = true;
+	ctx.imageSmoothingQuality = 'high';
+	ctx.drawImage(source, 0, 0, w, h);
+	const before = material.userData?.mapDataUrl ?? null;
+	const dataURL = canvasToDataUrl(canvas);
+	// a stale paint canvas would still hold the OLD resolution
+	paintCanvases.delete(paintKey(uuid, slot));
+	recordMaterialChange(uuid, 'map', null, before, dataURL, slot);
+	applyMap(object, dataURL, slot);
+	/** @type {any} */
+	const peer = get(peers);
+	peer?.send({
+		type: 'objectParameters',
+		parameter: 'map',
+		uuid,
+		map: dataURL,
+		...(slot ? { slot } : {})
+	});
+	showToast('Texture resized to ' + w + 'x' + h);
+	return true;
+}
+
+/**
+ * A LOCAL-ONLY UV test grid.
+ *
+ * Driven through `scene.overrideMaterial`, following the viewMode wireframe precedent
+ * exactly — a per-material map swap would LEAK: the object sync and autosave both
+ * serialize `material.map`, so a peer joining (or an autosave taken) while the
+ * checker was on would bake the checker into the scene, and `userData.mapDataUrl`
+ * would still claim the real texture. Scene-wide is the honest trade for never
+ * corrupting anyone's asset.
+ * @type {import('svelte/store').Writable<boolean>}
+ */
+export const uvCheckerOn = writable(false);
+
+/** @type {any} */ let checkerMaterial = null;
+
+/** the checker texture: RepeatWrapping matters — CanvasTexture defaults to
+ * ClampToEdge, so a UV outside 0..1 would smear instead of tiling (the same default
+ * that made painting a GLB break its tiling) */
+function checkerTexture(size = 512, cells = 8) {
+	const canvas = document.createElement('canvas');
+	canvas.width = canvas.height = size;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) return null;
+	const step = size / cells;
+	for (let y = 0; y < cells; y++)
+		for (let x = 0; x < cells; x++) {
+			const dark = (x + y) % 2 === 0;
+			ctx.fillStyle = dark ? '#3d4653' : '#d7dde6';
+			ctx.fillRect(x * step, y * step, step, step);
+		}
+	// a thin border per cell reads the stretch direction at a glance
+	ctx.strokeStyle = 'rgba(255,120,26,0.9)';
+	ctx.lineWidth = Math.max(size / 256, 1);
+	for (let i = 0; i <= cells; i++) {
+		ctx.beginPath();
+		ctx.moveTo(i * step, 0);
+		ctx.lineTo(i * step, size);
+		ctx.moveTo(0, i * step);
+		ctx.lineTo(size, i * step);
+		ctx.stroke();
+	}
+	const texture = new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	texture.wrapS = THREE.RepeatWrapping;
+	texture.wrapT = THREE.RepeatWrapping;
+	return texture;
+}
+
+/**
+ * Apply / clear the checker override. The caller passes the scene so this module
+ * stays free of scene-store plumbing.
+ * @param {any} scene @param {boolean} on
+ */
+export function applyUvChecker(scene, on) {
+	if (!scene) return;
+	if (on) {
+		if (!checkerMaterial) {
+			const map = checkerTexture();
+			checkerMaterial = new THREE.MeshBasicMaterial({ map });
+		}
+		scene.overrideMaterial = checkerMaterial;
+	} else if (scene.overrideMaterial === checkerMaterial) {
+		scene.overrideMaterial = null;
+	}
+}
 
 /**
  * Does the slot's texture sample v = 0 from the image's TOP row? True for an

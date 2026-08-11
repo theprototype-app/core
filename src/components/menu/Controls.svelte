@@ -2,7 +2,7 @@
 	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -63,11 +63,13 @@
 				flowDockSnapshot = {
 					flow: true,
 					flowcode: !!$dockOccupants.flowcode?.present,
-					animation: !!$dockOccupants.animation?.present
+					animation: !!$dockOccupants.animation?.present,
+					uv: !!$dockOccupants.uv?.present
 				};
 				flowGraphClose.set(true);
 				if (flowDockSnapshot.flowcode) flowCodeClose.set(true);
 				if (flowDockSnapshot.animation) animationClose.set(true);
+				if (flowDockSnapshot.uv) uvEditorClose.set(true);
 			} else {
 				activateDock('flow'); // docked but hidden (Explorer covering) -> bring the dock back
 			}
@@ -76,10 +78,11 @@
 		// Node editor is CLOSED -> show it in its last mode
 		const wasDocked = typeof localStorage === 'undefined' || localStorage.getItem('flowDocked') !== 'false';
 		const snap = flowDockSnapshot;
-		if (snap && (snap.flow || snap.flowcode || snap.animation)) {
+		if (snap && (snap.flow || snap.flowcode || snap.animation || snap.uv)) {
 			if (snap.flow) flowGraphClose.set(false);
 			if (snap.flowcode) flowCodeClose.set(false);
 			if (snap.animation) animationClose.set(false);
+			if (snap.uv) uvEditorClose.set(false);
 			flowDockSnapshot = null;
 			activateDock('flow');
 		} else {

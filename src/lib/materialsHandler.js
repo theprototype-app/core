@@ -40,6 +40,32 @@ function objectOf(uuid) {
 	return get(objectsGroup)?.getObjectByProperty('uuid', uuid);
 }
 
+/**
+ * A mesh's materials as an array, whatever it wears. An imported .obj/.mtl or a
+ * merged mesh carries a material ARRAY (one per `geometry.groups` slot); most
+ * objects carry a single material, which is slot 0.
+ * @param {any} object @returns {any[]}
+ */
+export function materialsOf(object) {
+	const material = object?.material;
+	if (!material) return [];
+	return Array.isArray(material) ? material : [material];
+}
+
+/**
+ * The material at a SLOT. Slot 0 of a single-material object is that material,
+ * so every existing caller (and every older peer's slot-less message) keeps
+ * today's behaviour. Out-of-range slots resolve to nothing rather than slot 0 —
+ * silently texturing the wrong slot is worse than doing nothing.
+ * @param {any} object @param {number} [slot] @returns {any}
+ */
+export function materialAt(object, slot = 0) {
+	const materials = materialsOf(object);
+	if (!materials.length) return null;
+	if (!slot) return materials[0];
+	return materials[slot] ?? null;
+}
+
 /** @param {any} data */
 function broadcast(data) {
 	/** @type {any} */
@@ -58,8 +84,14 @@ registerHistoryKind('material', (entry, state) => {
 	if (entry.param === 'type') {
 		switchMaterialType(entry.uuid, state.value, true);
 	} else if (entry.param === 'map') {
-		applyMap(object, state.value);
-		broadcast({ type: 'objectParameters', parameter: 'map', uuid: entry.uuid, map: state.value });
+		applyMap(object, state.value, entry.slot ?? 0);
+		broadcast({
+			type: 'objectParameters',
+			parameter: 'map',
+			uuid: entry.uuid,
+			map: state.value,
+			...(entry.slot ? { slot: entry.slot } : {})
+		});
 	} else if (entry.param === 'materialParam') {
 		setMaterialParam(entry.uuid, entry.key, state.value, true);
 	} else if (entry.param === 'color') {
@@ -72,28 +104,35 @@ registerHistoryKind('material', (entry, state) => {
 
 /**
  * Record one material history step (also used by the Properties color picker).
- * @param {string} uuid @param {string} param @param {string | null} key @param {any} before @param {any} after
+ * @param {string} uuid @param {string} param @param {string | null} key
+ * @param {any} before @param {any} after
+ * @param {number} [slot] which material slot it applied to (omitted = 0, so
+ *   existing entries and older autosaves replay exactly as before)
  */
-export function recordMaterialChange(uuid, param, key, before, after) {
+export function recordMaterialChange(uuid, param, key, before, after, slot = 0) {
 	if (before === after) return;
 	recordEntry({
 		kind: 'material',
 		uuid,
 		param,
 		...(key ? { key } : {}),
+		...(slot ? { slot } : {}),
 		before: { value: before },
 		after: { value: after }
 	});
 }
 
 /**
- * Apply (or remove, with null) a texture dataURL to an object's material.
- * The dataURL is kept in material.userData so the UI can show a thumbnail.
- * @param {any} object @param {string | null} dataURL
+ * Apply (or remove, with null) a texture dataURL to one material SLOT of an
+ * object. The dataURL is kept in material.userData so the UI can show a
+ * thumbnail. UV2: `slot` addresses a material ARRAY (an imported .obj/.mtl, a
+ * merged mesh); omitted means slot 0, which for a single-material object is
+ * exactly the old behaviour — so older peers' slot-less messages still land.
+ * @param {any} object @param {string | null} dataURL @param {number} [slot]
  */
-export function applyMap(object, dataURL) {
-	const material = object?.material;
-	if (!material || Array.isArray(material) || !('map' in material)) return;
+export function applyMap(object, dataURL, slot = 0) {
+	const material = materialAt(object, slot);
+	if (!material || !('map' in material)) return;
 	if (dataURL == null) {
 		material.map?.dispose();
 		material.map = null;
@@ -135,9 +174,12 @@ export async function downscaleImage(file, maxSize) {
  * single-object path, so nothing new goes on the wire. Decoding once is also the
  * robust order: re-reading the same File per object is both wasteful and
  * unreliable (the third `createImageBitmap` of one picked file can reject).
- * @param {string[]} uuids @param {File} file @returns {Promise<number>} how many were textured
+ * UV2: `slot` picks the material slot, so a multi-material mesh is no longer
+ * refused — it used to toast "not supported yet" and skip.
+ * @param {string[]} uuids @param {File} file @param {number} [slot]
+ * @returns {Promise<number>} how many were textured
  */
-export async function setObjectsTexture(uuids, file) {
+export async function setObjectsTexture(uuids, file, slot = 0) {
 	if (file.size > 8 * 1024 * 1024) {
 		showToast('Image is too large (max 8 MB)');
 		return 0;
@@ -152,36 +194,51 @@ export async function setObjectsTexture(uuids, file) {
 		return 0;
 	}
 	let applied = 0;
-	let skippedMulti = 0;
+	let missingSlot = 0;
 	for (const uuid of uuids) {
 		const object = objectOf(uuid);
-		if (!object?.material) continue;
-		if (Array.isArray(object.material)) {
-			skippedMulti++;
+		const material = materialAt(object, slot);
+		if (!material) {
+			if (object?.material) missingSlot++;
 			continue;
 		}
-		recordMaterialChange(uuid, 'map', null, object.material.userData?.mapDataUrl ?? null, dataURL);
-		applyMap(object, dataURL);
-		broadcast({ type: 'objectParameters', parameter: 'map', uuid: uuid, map: dataURL });
+		recordMaterialChange(uuid, 'map', null, material.userData?.mapDataUrl ?? null, dataURL, slot);
+		applyMap(object, dataURL, slot);
+		broadcast({
+			type: 'objectParameters',
+			parameter: 'map',
+			uuid: uuid,
+			map: dataURL,
+			...(slot ? { slot } : {})
+		});
 		applied++;
 	}
-	if (skippedMulti) showToast('Multi-material objects are not supported yet');
+	if (missingSlot) showToast('That object has no material slot ' + slot);
 	return applied;
 }
 
-/** Set an image file as the object's texture and replicate @param {string} uuid @param {File} file */
-export async function setObjectTexture(uuid, file) {
-	await setObjectsTexture([uuid], file);
+/** Set an image file as the object's texture and replicate
+ * @param {string} uuid @param {File} file @param {number} [slot] */
+export async function setObjectTexture(uuid, file, slot = 0) {
+	await setObjectsTexture([uuid], file, slot);
 }
 
-/** @param {string} uuid */
-export function removeObjectTexture(uuid) {
+/** @param {string} uuid @param {number} [slot] */
+export function removeObjectTexture(uuid, slot = 0) {
 	const object = objectOf(uuid);
 	if (!object) return;
-	const previous = object.material?.userData?.mapDataUrl ?? null;
-	if (previous) recordMaterialChange(uuid, 'map', null, previous, null);
-	applyMap(object, null);
-	broadcast({ type: 'objectParameters', parameter: 'map', uuid: uuid, map: null });
+	const material = materialAt(object, slot);
+	if (!material) return;
+	const previous = material.userData?.mapDataUrl ?? null;
+	if (previous) recordMaterialChange(uuid, 'map', null, previous, null, slot);
+	applyMap(object, null, slot);
+	broadcast({
+		type: 'objectParameters',
+		parameter: 'map',
+		uuid: uuid,
+		map: null,
+		...(slot ? { slot } : {})
+	});
 }
 
 /**

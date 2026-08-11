@@ -11,6 +11,10 @@ import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs }
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
 import { applyMeshGeo } from '$lib/faceEdit';
+// UV3 texture paint: live stroke segments. Safe as a STATIC import — uvEditor
+// registers no history kind at module eval and its own imports (faceEdit,
+// materialsHandler, history) are already in this file's subtree.
+import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride } from '$lib/peerServer';
 import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState';
@@ -531,6 +535,10 @@ export class PeerConnection {
 					applyVerts(data.uuid, data.indices, data.position);
 				} else if(data.type == 'meshgeo') {
 					applyMeshGeo(data.uuid, data.positions, data.groups, data.uvs);
+				} else if(data.type == 'uvpaint') {
+					applyUvPaint(data);
+				} else if(data.type == 'uvpaintend') {
+					applyUvPaintEnd(data);
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,

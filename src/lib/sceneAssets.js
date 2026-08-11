@@ -44,17 +44,29 @@ function compute() {
 		}
 	}
 	get(objectsGroup)?.traverse?.((/** @type {any} */ object) => {
-		const dataUrl = object.material?.userData?.mapDataUrl;
-		if (dataUrl && !Array.isArray(object.material))
+		// UV2: one entry per TEXTURED SLOT. A multi-material mesh (imported
+		// .obj/.mtl, a merged mesh) used to be skipped entirely, so its textures
+		// were missing from the manifest and from a .tpscene export. Slot 0 keeps
+		// the old id so nothing that stored one has to change.
+		if (!object.material) return;
+		const materials = Array.isArray(object.material) ? object.material : [object.material];
+		materials.forEach((/** @type {any} */ material, /** @type {number} */ slot) => {
+			const dataUrl = material?.userData?.mapDataUrl;
+			if (!dataUrl) return;
 			out.push({
-				id: 'tex:' + object.uuid,
+				id: 'tex:' + object.uuid + (slot ? ':' + slot : ''),
 				group: 'textures',
-				name: (object.name || object.type) + '.texture',
+				name:
+					(object.name || object.type) +
+					(materials.length > 1 ? '-' + (material.name || 'slot' + slot) : '') +
+					'.texture',
 				kind: 'image',
 				uuid: object.uuid,
+				...(slot ? { slot } : {}),
 				dataUrl,
 				derived: true
 			});
+		});
 	});
 	sceneAssets.set(out);
 }

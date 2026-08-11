@@ -19,7 +19,7 @@ export function resetWindowLayout() {
 	if (typeof localStorage !== 'undefined') {
 		for (const key of Object.keys(localStorage))
 			if (key.startsWith('win:')) localStorage.removeItem(key);
-		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW'].forEach((k) =>
+		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW', 'uvWinW', 'uvWinH'].forEach((k) =>
 			localStorage.removeItem(k)
 		);
 	}

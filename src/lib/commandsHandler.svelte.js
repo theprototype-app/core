@@ -373,7 +373,9 @@ export async function objectParameters(data) {
         switchMaterialType(data.uuid, data.material, false);
     } else if (data.parameter == 'map') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
-        if (mesh) applyMap(mesh, data.map);
+        // UV2: `slot` addresses one material of an ARRAY. Absent (an older peer,
+        // or any single-material object) means slot 0 = today's behaviour.
+        if (mesh) applyMap(mesh, data.map, data.slot ?? 0);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'animation') {

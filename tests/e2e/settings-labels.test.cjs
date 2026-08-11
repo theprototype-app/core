@@ -11,6 +11,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	await A.page.getByText('Scene', { exact: true }).first().click(); // expand Scene
 	await A.page.waitForTimeout(300);
+	// Theme lives in the Interface section since the settings reorg
+	await A.page.getByText('Interface', { exact: true }).first().click();
+	await A.page.waitForTimeout(300);
 
 	// label prefixes on the descriptions
 	h.check(await A.page.getByText('Shadow quality', { exact: false }).first().isVisible(), 'a "Shadow quality" label renders');

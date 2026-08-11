@@ -67,6 +67,8 @@
 	let connectionExpanded = false;
 	let aboutExpanded = false;
 	let vrExpanded = false; // D7: edit-cap toasts deep-link here ('vr')
+	let interfaceExpanded = false;
+	let controlsExpanded = false;
 
 	// D7: sanitize a cap edit — an empty/garbage field falls back to the default
 	function setCap(store: any, raw: string, fallback: number) {
@@ -325,6 +327,8 @@
 		sceneExpanded = $settingsSection === 'scene';
 		connectionExpanded = $settingsSection === 'connection';
 		vrExpanded = $settingsSection === 'vr';
+		interfaceExpanded = $settingsSection === 'interface';
+		controlsExpanded = $settingsSection === 'controls';
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
@@ -354,6 +358,8 @@
 				shortcutsExpanded,
 				aiExpanded,
 				sceneExpanded,
+				interfaceExpanded,
+				controlsExpanded,
 				connectionExpanded,
 				vrExpanded,
 				aboutExpanded
@@ -361,6 +367,8 @@
 			shortcutsExpanded = true;
 			aiExpanded = true;
 			sceneExpanded = true;
+			interfaceExpanded = true;
+			controlsExpanded = true;
 			connectionExpanded = true;
 			vrExpanded = true;
 			aboutExpanded = true;
@@ -369,6 +377,8 @@
 				shortcutsExpanded,
 				aiExpanded,
 				sceneExpanded,
+				interfaceExpanded,
+				controlsExpanded,
 				connectionExpanded,
 				vrExpanded,
 				aboutExpanded
@@ -477,6 +487,221 @@
 		     say (it reads `multiple` untracked at init, so this cannot be per-query).
 		     Several open sections is also the norm for a settings panel. -->
 		<Accordion multiple>
+				<AccordionItem bind:open={interfaceExpanded}>
+					{#snippet header()}Interface{/snippet}
+					<p class="ui-section-label">Appearance</p>
+					<SettingRow name="Theme">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="theme-select"
+								items={[...THEMES, ...$customThemes].map((t) => ({ value: t.id, name: t.name }))}
+								bind:value={$theme}
+							/>
+						</svelte:fragment>
+						UI theme for THIS device (the 3D viewport follows the environment, not the theme)
+					</SettingRow>
+					<SettingRow name="Custom theme">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<button
+									id="theme-export"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+									on:click={() => exportActiveTheme()}>Export template</button
+								>
+								<button
+									id="theme-browse"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+									on:click={() => themeFileInput?.click()}>Browse…</button
+								>
+								<input
+									type="file"
+									accept=".json,application/json"
+									bind:this={themeFileInput}
+									style="display: none"
+									on:change={onThemeFile}
+								/>
+							</span>
+						</svelte:fragment>
+						Export the active theme as an editable .theme.json, tweak the colors, then Browse to load it back
+						{#if $customThemes.length}
+							<span class="mt-1 flex flex-wrap gap-1">
+								{#each $customThemes as ct (ct.id)}
+									<span class="inline-flex items-center gap-1 rounded-sm bg-gray-800 px-1.5 py-0.5 text-[11px]">
+										{ct.name}
+										<button
+											class="text-gray-400 hover:text-red-400"
+											title="Remove theme"
+											on:click={() => removeCustomTheme(ct.id)}>✕</button
+										>
+									</span>
+								{/each}
+							</span>
+						{/if}
+					</SettingRow>
+					<p class="ui-section-label">Notifications</p>
+					<SettingRow name="Welcome on start">
+						<svelte:fragment slot="control"><Toggle bind:checked={$showWelcomeOnStart} /></svelte:fragment>
+						Show the welcome card every time the app opens. It normally appears only on your first
+						visit — turn this on to keep its quick links handy, or
+						<button class="underline" on:click={() => { settingsOpen.set(false); openWelcome(); }}>open it now</button>
+					</SettingRow>
+					<SettingRow name="Announce new versions">
+						<svelte:fragment slot="control"><Toggle bind:checked={$showWhatsNewNotice} /></svelte:fragment>
+						After an update, mark the logo menu with a dot and show one toast linking to the
+						changelog. Off means updates arrive silently — What's new stays in the logo menu
+					</SettingRow>
+					<SettingRow name="Toasts in drawer only">
+						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>
+						Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy
+					</SettingRow>
+					<p class="ui-section-label">Windows & chrome</p>
+					{#if $drawerSlot}
+						<SettingRow name="Show Rooms button">
+							<svelte:fragment slot="control"><Toggle bind:checked={$showRoomsButton} /></svelte:fragment>
+							Show the "Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab
+						</SettingRow>
+					{/if}
+					<SettingRow name="Window positions">
+						<svelte:fragment slot="control">
+							<button id="reset-windows" class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset</button>
+						</svelte:fragment>
+						Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI
+					</SettingRow>
+					<SettingRow name="Allow undocking (touch)">
+						<svelte:fragment slot="control"><Toggle bind:checked={$mobileUndockAllowed} /></svelte:fragment>
+						On touch / small screens the Flow and Explorer panels stay docked and their "undock" buttons are hidden (floating windows are cramped on a phone). Turn this on to allow undocking them into floating windows anyway
+					</SettingRow>
+					<p class="ui-section-label">Lists & menus</p>
+					<SettingRow name="Advanced mode">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$advancedMode} /></svelte:fragment>
+						Show system objects (module content, environment rig) as a System filter in the object list
+					</SettingRow>
+					<SettingRow name="Environment in list">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$showEnvInList} /></svelte:fragment>
+						Show the environment group as an Environment filter in the object list
+					</SettingRow>
+					<SettingRow name="Object search in menu">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$objectSearchEnabled} /></svelte:fragment>
+						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
+					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={controlsExpanded}>
+					{#snippet header()}Controls{/snippet}
+					<p class="ui-section-label">Keyboard & mouse</p>
+					<SettingRow name="Shift+A quick add">
+						<svelte:fragment slot="control"><Toggle bind:checked={$enableShiftAdd} /></svelte:fragment>
+						Pressing Shift+A opens the Add menu at the cursor and spawns the picked object
+						under it. Off by default — Shift also strafes the camera in fly mode
+					</SettingRow>
+					<SettingRow name="Double-click to open notes">
+						<svelte:fragment slot="control"><Toggle bind:checked={$noteDoubleClickToOpen} /></svelte:fragment>
+						A single click on a note marker — and the notes drawer's ‹ › group arrows — then only
+						flies the camera to the note; the card opens on a double click. Handy for reviewing a
+						scene full of notes without a card in the way
+					</SettingRow>
+					<p class="ui-section-label">Trackpad</p>
+					<SettingRow name="Trackpad gestures">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="trackpad-mode"
+								items={[
+									{ value: 'auto', name: 'Auto' },
+									{ value: 'on', name: 'On' },
+									{ value: 'off', name: 'Off' }
+								]}
+								bind:value={$trackpadMode}
+							/>
+						</svelte:fragment>
+						Two-finger swipes on a laptop trackpad pan the camera; pinch zooms. Auto detects trackpads and leaves mouse wheels zooming as usual — pick On/Off if the detection guesses wrong on your hardware
+					</SettingRow>
+					<SettingRow name="Two-finger pan">
+						<svelte:fragment slot="control"><Toggle bind:checked={$panEnabled} /></svelte:fragment>
+						Two-finger swipes pan the camera. Off: swipes zoom like a mouse wheel, and panning stays available with a right-click drag
+					</SettingRow>
+					<SettingRow name="Reverse trackpad pan">
+						<svelte:fragment slot="control"><Toggle bind:checked={$reversePan} /></svelte:fragment>
+						Flip the two-finger pan direction (default: the scene follows your fingers, like touch scrolling)
+					</SettingRow>
+					<SettingRow name="Pinch zoom">
+						<svelte:fragment slot="control"><Toggle bind:checked={$pinchZoomEnabled} /></svelte:fragment>
+						Pinching in/out on the viewport zooms the camera. Off: pinch does nothing (the page still never zooms) and zooming stays on the mouse wheel
+					</SettingRow>
+					<SettingRow name="Allow browser pinch zoom">
+						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>
+						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
+					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={sceneExpanded}>
+					{#snippet header()}Scene{/snippet}
+					<SettingRow name="Show grid">
+						<svelte:fragment slot="control">
+							<Checkbox
+								bind:checked={$showGrid}
+								onclick={() => {
+									if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
+									else localStorage.setItem('showGrid', 'false');
+								}} />
+						</svelte:fragment>
+						Display grid on floor
+					</SettingRow>
+					<SettingRow name="Shadow quality">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="shadow-quality"
+								items={[
+									{ value: 'off', name: 'Off' },
+									{ value: 'low', name: 'Low' },
+									{ value: 'medium', name: 'Medium' },
+									{ value: 'high', name: 'High' }
+								]}
+								bind:value={$shadowQuality}
+							/>
+						</svelte:fragment>
+						Caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)
+					</SettingRow>
+					<SettingRow name="Simulation controls">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>
+						Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation
+					</SettingRow>
+					<SettingRow name="Sync animations">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$syncedAnimations} /></svelte:fragment>
+						Node animations use wall-clock time so all peers see the same phase
+					</SettingRow>
+					<SettingRow name="Spatial voice">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$spatialVoice} /></svelte:fragment>
+						Voices come from where each peer is (pan + distance falloff)
+					</SettingRow>
+					<SettingRow name="Ping color + sound">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<input
+									type="color"
+									id="ping-color"
+									class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent"
+									value={$pingColor || '#4f83cc'}
+									on:change={(e) => pingColor.set(e.currentTarget.value)}
+								/>
+								<ThemedSelect
+									items={PING_SOUNDS.map((s) => ({ value: s.id, name: s.name }))}
+									bind:value={$pingSound}
+								/>
+								<button
+									id="ping-preview"
+									class="rounded-sm bg-gray-600 px-1.5 py-1 text-white"
+									title="Preview the ping chime"
+									on:click={() => playPing($pingSound)}
+								>
+									▶ Preview
+								</button>
+							</span>
+						</svelte:fragment>
+						Your ping color + sound — peers see and hear YOUR pings this way (color empty = your peer color)
+					</SettingRow>
+					<SettingRow name="Autosave">
+						<svelte:fragment slot="control"><Checkbox bind:checked={$autosaveEnabled} /></svelte:fragment>
+						Keep a local session snapshot (restore offered after a crash/reload)
+					</SettingRow>
+				</AccordionItem>
 				<AccordionItem bind:open={vrExpanded}>
 					{#snippet header()}VR{/snippet}
 					<SettingRow name="VR override">
@@ -695,209 +920,6 @@
 								}}>Reset positions</button>
 						</svelte:fragment>
 						Grabbed VR menus/panels snap back to their default spots on the controllers (111: hold the other grip on one to re-place it)
-					</SettingRow>
-				</AccordionItem>
-				<AccordionItem bind:open={sceneExpanded}>
-					{#snippet header()}Scene{/snippet}
-					<SettingRow name="Theme">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="theme-select"
-								items={[...THEMES, ...$customThemes].map((t) => ({ value: t.id, name: t.name }))}
-								bind:value={$theme}
-							/>
-						</svelte:fragment>
-						UI theme for THIS device (the 3D viewport follows the environment, not the theme)
-					</SettingRow>
-					<SettingRow name="Custom theme">
-						<svelte:fragment slot="control">
-							<span class="sr-stack">
-								<button
-									id="theme-export"
-									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-									on:click={() => exportActiveTheme()}>Export template</button
-								>
-								<button
-									id="theme-browse"
-									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-									on:click={() => themeFileInput?.click()}>Browse…</button
-								>
-								<input
-									type="file"
-									accept=".json,application/json"
-									bind:this={themeFileInput}
-									style="display: none"
-									on:change={onThemeFile}
-								/>
-							</span>
-						</svelte:fragment>
-						Export the active theme as an editable .theme.json, tweak the colors, then Browse to load it back
-						{#if $customThemes.length}
-							<span class="mt-1 flex flex-wrap gap-1">
-								{#each $customThemes as ct (ct.id)}
-									<span class="inline-flex items-center gap-1 rounded-sm bg-gray-800 px-1.5 py-0.5 text-[11px]">
-										{ct.name}
-										<button
-											class="text-gray-400 hover:text-red-400"
-											title="Remove theme"
-											on:click={() => removeCustomTheme(ct.id)}>✕</button
-										>
-									</span>
-								{/each}
-							</span>
-						{/if}
-					</SettingRow>
-					<SettingRow name="Show grid">
-						<svelte:fragment slot="control">
-							<Checkbox
-								bind:checked={$showGrid}
-								onclick={() => {
-									if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
-									else localStorage.setItem('showGrid', 'false');
-								}} />
-						</svelte:fragment>
-						Display grid on floor
-					</SettingRow>
-					<SettingRow name="Simulation controls">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>
-						Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation
-					</SettingRow>
-					<SettingRow name="Sync animations">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$syncedAnimations} /></svelte:fragment>
-						Node animations use wall-clock time so all peers see the same phase
-					</SettingRow>
-					<SettingRow name="Spatial voice">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$spatialVoice} /></svelte:fragment>
-						Voices come from where each peer is (pan + distance falloff)
-					</SettingRow>
-					<SettingRow name="Advanced mode">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$advancedMode} /></svelte:fragment>
-						Show system objects (module content, environment rig) as a System filter in the object list
-					</SettingRow>
-					<SettingRow name="Environment in list">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$showEnvInList} /></svelte:fragment>
-						Show the environment group as an Environment filter in the object list
-					</SettingRow>
-					<SettingRow name="Object search in menu">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$objectSearchEnabled} /></svelte:fragment>
-						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
-					</SettingRow>
-					<SettingRow name="Shift+A quick add">
-						<svelte:fragment slot="control"><Toggle bind:checked={$enableShiftAdd} /></svelte:fragment>
-						Pressing Shift+A opens the Add menu at the cursor and spawns the picked object
-						under it. Off by default — Shift also strafes the camera in fly mode
-					</SettingRow>
-					<SettingRow name="Double-click to open notes">
-						<svelte:fragment slot="control"><Toggle bind:checked={$noteDoubleClickToOpen} /></svelte:fragment>
-						A single click on a note marker — and the notes drawer's ‹ › group arrows — then only
-						flies the camera to the note; the card opens on a double click. Handy for reviewing a
-						scene full of notes without a card in the way
-					</SettingRow>
-					<SettingRow name="Toasts in drawer only">
-						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>
-						Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy
-					</SettingRow>
-					<SettingRow name="Welcome on start">
-						<svelte:fragment slot="control"><Toggle bind:checked={$showWelcomeOnStart} /></svelte:fragment>
-						Show the welcome card every time the app opens. It normally appears only on your first
-						visit — turn this on to keep its quick links handy, or
-						<button class="underline" on:click={() => { settingsOpen.set(false); openWelcome(); }}>open it now</button>
-					</SettingRow>
-					<SettingRow name="Announce new versions">
-						<svelte:fragment slot="control"><Toggle bind:checked={$showWhatsNewNotice} /></svelte:fragment>
-						After an update, mark the logo menu with a dot and show one toast linking to the
-						changelog. Off means updates arrive silently — What's new stays in the logo menu
-					</SettingRow>
-					{#if $drawerSlot}
-						<SettingRow name="Show Rooms button">
-							<svelte:fragment slot="control"><Toggle bind:checked={$showRoomsButton} /></svelte:fragment>
-							Show the "Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab
-						</SettingRow>
-					{/if}
-					<SettingRow name="Shadow quality">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="shadow-quality"
-								items={[
-									{ value: 'off', name: 'Off' },
-									{ value: 'low', name: 'Low' },
-									{ value: 'medium', name: 'Medium' },
-									{ value: 'high', name: 'High' }
-								]}
-								bind:value={$shadowQuality}
-							/>
-						</svelte:fragment>
-						Caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)
-					</SettingRow>
-					<SettingRow name="Ping color + sound">
-						<svelte:fragment slot="control">
-							<span class="sr-stack">
-								<input
-									type="color"
-									id="ping-color"
-									class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent"
-									value={$pingColor || '#4f83cc'}
-									on:change={(e) => pingColor.set(e.currentTarget.value)}
-								/>
-								<ThemedSelect
-									items={PING_SOUNDS.map((s) => ({ value: s.id, name: s.name }))}
-									bind:value={$pingSound}
-								/>
-								<button
-									id="ping-preview"
-									class="rounded-sm bg-gray-600 px-1.5 py-1 text-white"
-									title="Preview the ping chime"
-									on:click={() => playPing($pingSound)}
-								>
-									▶ Preview
-								</button>
-							</span>
-						</svelte:fragment>
-						Your ping color + sound — peers see and hear YOUR pings this way (color empty = your peer color)
-					</SettingRow>
-					<SettingRow name="Autosave">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$autosaveEnabled} /></svelte:fragment>
-						Keep a local session snapshot (restore offered after a crash/reload)
-					</SettingRow>
-					<SettingRow name="Window positions">
-						<svelte:fragment slot="control">
-							<button id="reset-windows" class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset</button>
-						</svelte:fragment>
-						Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI
-					</SettingRow>
-					<SettingRow name="Allow undocking (touch)">
-						<svelte:fragment slot="control"><Toggle bind:checked={$mobileUndockAllowed} /></svelte:fragment>
-						On touch / small screens the Flow and Explorer panels stay docked and their "undock" buttons are hidden (floating windows are cramped on a phone). Turn this on to allow undocking them into floating windows anyway
-					</SettingRow>
-					<SettingRow name="Trackpad gestures">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="trackpad-mode"
-								items={[
-									{ value: 'auto', name: 'Auto' },
-									{ value: 'on', name: 'On' },
-									{ value: 'off', name: 'Off' }
-								]}
-								bind:value={$trackpadMode}
-							/>
-						</svelte:fragment>
-						Two-finger swipes on a laptop trackpad pan the camera; pinch zooms. Auto detects trackpads and leaves mouse wheels zooming as usual — pick On/Off if the detection guesses wrong on your hardware
-					</SettingRow>
-					<SettingRow name="Two-finger pan">
-						<svelte:fragment slot="control"><Toggle bind:checked={$panEnabled} /></svelte:fragment>
-						Two-finger swipes pan the camera. Off: swipes zoom like a mouse wheel, and panning stays available with a right-click drag
-					</SettingRow>
-					<SettingRow name="Reverse trackpad pan">
-						<svelte:fragment slot="control"><Toggle bind:checked={$reversePan} /></svelte:fragment>
-						Flip the two-finger pan direction (default: the scene follows your fingers, like touch scrolling)
-					</SettingRow>
-					<SettingRow name="Pinch zoom">
-						<svelte:fragment slot="control"><Toggle bind:checked={$pinchZoomEnabled} /></svelte:fragment>
-						Pinching in/out on the viewport zooms the camera. Off: pinch does nothing (the page still never zooms) and zooming stays on the mouse wheel
-					</SettingRow>
-					<SettingRow name="Allow browser pinch zoom">
-						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>
-						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>

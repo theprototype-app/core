@@ -605,6 +605,41 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **An editor HANDLE that lives in world space needs a SCREEN-space size.** Vertex dots
+  were a world-size sphere (1.2% of the object diagonal), which vanishes when you zoom
+  out of a large mesh and swallows the geometry up close — the reported "dots are too
+  big" was really "dots are the wrong size at every zoom". They are ADAPTIVE now: the
+  per-instance MATRIX carries a camera-distance scale so each dot covers ~9 CSS pixels
+  (`vertexHandleAdaptive`, default on; `vertexHandleScale` multiplies the pixel size, or
+  the world size in `fixed` mode). Two things this taught: put the size in the instance
+  matrices, NOT the geometry (baked into the sphere the multiplier cancelled itself out,
+  since it scaled both the requested size and the base), and `tickMeshEdit` must watch the
+  CAMERA as well as the object — a screen-constant handle changes on every orbit even
+  though nothing moved. Also mind units: the pixel figure is a DIAMETER, the sphere
+  parameter a RADIUS.
+- **The gizmo is ONE control, so its prefs belong to the session, not to a mode.** The
+  Local/World segment sat inside the faces-only branch of the mesh toolbar, so edges and
+  vertices had no orientation control and the vertex proxy never read the pref at all;
+  there was no way to hide the gizmo either. `meshGizmoEnabled` + `faceGizmoSpace` are now
+  honoured by all three element modes (`attachFaceGizmo` gates on both, meshEdit's
+  `setAnchor` reads them through `registerGizmoPrefListener`). When a control only makes
+  sense in one mode, that is a design decision — check it is a decision and not an
+  accident of where the markup happens to live.
+- **A BRIDGE's walls face inward or outward depending on what the tunnel IS.** Deleting
+  both caps from ONE shell punches a hole THROUGH a solid, and you see a hole's INNER
+  surface; two SEPARATE shells get an exterior tube seen from outside. Winding always
+  outward is right for the tube and inside-out for the hole (reported as "I had to flip
+  normals after bridging two quads of a subdivided cube"). `bridgeFaces` decides with a
+  shell test. Related test trap: bridging a UNIT cube's full top and bottom faces is the
+  DEGENERATE case (the walls land exactly on the cube's own sides, 8 odd edges) — inset
+  both caps first to get the scenario a user actually hits.
+- **`highlightFaceByTriangle` heals a stale selection by CLEARING it** (`healStale`,
+  default TRUE): if the picked unit is not a subset of the current selection, the
+  selection is emptied. Building a multi-selection with `faceEditSelectedTris.set(...)`
+  and then highlighting one of its members therefore WIPES it whenever granularity
+  resolves a bigger unit — e.g. an inset cap is coplanar with the ring it stitched, so
+  Face granularity resolves all 10 triangles and the heal fires. Pass `false` when the
+  selection is the thing you mean.
 - **State attached to a geometry must survive the LIVE PREVIEW, not just the commit.**
   `liveGeometryUpdate` builds a FRESH BufferGeometry on every frame of a face gesture,
   so anything hanging off the geometry (P9's stored topology; anything similar you add)

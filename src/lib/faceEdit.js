@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, TControls, lockedObjects, isVRMode } from '../stores/sceneStore';
+import { globalScene, globalCamera, objectsGroup, TControls, lockedObjects, isVRMode } from '../stores/sceneStore';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
 // already have), so this closes no cycle
 import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
@@ -1494,7 +1494,7 @@ export const faceEditObject = writable(null);
 /** highlighted face index (ray/selection), or -1 @type {import('svelte/store').Writable<number>} */
 export const faceEditHighlight = writable(-1);
 /** armed op for the next commit (B4 adds the one-shots)
- * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'>} */
+ * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'>} */
 // MOVE is the default tool, not extrude: with auto-apply on, a plain click
 // COMMITS the armed op, so an extrude-by-default session turned every click on a
 // face into an extrusion — the reported "clicking twice on a quad breaks the
@@ -1517,7 +1517,7 @@ export function autoApplyFaceOp() {
 }
 
 /** Arm an op (from the Faces sub-ring / desktop toolbar)
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'} op */
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'} op */
 export function setFaceOp(op) {
 	faceEditOp.set(op);
 	// inset lives in 0..0.9; the others are signed distances
@@ -3198,6 +3198,246 @@ function bevelOneEdge(tris, edgeKeyString, width, segments, profile) {
 
 	return { tris: out };}
 
+
+// ---- M9b: KNIFE ------------------------------------------------------------
+// Draw a line across the mesh on SCREEN and every triangle it crosses is split along it.
+//
+// The whole correctness question is where the crossing point lands in 3D, and the obvious
+// answer is wrong. Unprojecting the 2D crossing and intersecting the TRIANGLE'S PLANE gives
+// two different points for the two triangles sharing an edge whenever they are not coplanar —
+// i.e. a crack down every crease the cut touches. So crossings are computed ONCE PER WELDED
+// EDGE and both triangles read the same one: the same trick as the bevel's edge-keyed offsets.
+//
+// The screen parameter is not the 3D parameter either. Under perspective, a point halfway
+// along an edge on screen is NOT halfway along it in space, so the split would drift toward
+// the camera-near end. `perspectiveParam` inverts that exactly, using the clip-space w the
+// projection already produced.
+
+/**
+ * Convert a screen-space parameter along a projected edge into the 3D parameter.
+ * s(t) = lerp(ndc0, ndc1, t) and ndc = clip/w, so u = t*w0 / (w1 + t*(w0 - w1)).
+ * @param {number} t @param {number} w0 @param {number} w1 @returns {number}
+ */
+function perspectiveParam(t, w0, w1) {
+	const denominator = w1 + t * (w0 - w1);
+	if (Math.abs(denominator) < 1e-12) return t;
+	return (t * w0) / denominator;
+}
+
+/** 2D segment intersection parameters, or null when they do not cross
+ * @param {number[]} a @param {number[]} b the cut, screen space
+ * @param {number[]} c @param {number[]} d the edge, screen space
+ * @returns {{onCut: number, onEdge: number}|null} */
+function segmentCross(a, b, c, d) {
+	const rx = b[0] - a[0];
+	const ry = b[1] - a[1];
+	const sx = d[0] - c[0];
+	const sy = d[1] - c[1];
+	const denominator = rx * sy - ry * sx;
+	if (Math.abs(denominator) < 1e-9) return null; // parallel, or a degenerate edge
+	const onCut = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / denominator;
+	const onEdge = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / denominator;
+	if (onCut < 0 || onCut > 1) return null; // the cut line stops short
+	// leave a margin at the ends: a crossing ON a corner splits nothing and produces
+	// degenerate slivers, so it is treated as a miss and that triangle stays whole
+	if (onEdge < 1e-4 || onEdge > 1 - 1e-4) return null;
+	return { onCut, onEdge };
+}
+
+/**
+ * M9b KNIFE: cut the edited mesh along a screen-space line.
+ *
+ * Both points are in CSS pixels, as a click gives them. Everything the cut crosses is split;
+ * everything else is untouched, and a triangle the line only clips at a corner is left whole
+ * rather than turned into slivers.
+ * @param {number[]} from [x, y] in pixels @param {number[]} to [x, y]
+ * @returns {boolean}
+ */
+export function knifeCut(from, to) {
+	if (!faceEdited) return false;
+	const camera = get(globalCamera);
+	if (!camera) return false;
+	const width = typeof window !== 'undefined' ? window.innerWidth : 1280;
+	const height = typeof window !== 'undefined' ? window.innerHeight : 800;
+	if (Math.hypot(to[0] - from[0], to[1] - from[1]) < 4) {
+		showToast('Knife: drag a line across the mesh — that cut was too short');
+		return false;
+	}
+	faceEdited.updateMatrixWorld(true);
+	const tris = readTriangles(faceEdited.geometry);
+	if (!tris.length) return false;
+	/** project a LOCAL point to screen pixels, keeping the clip w for the perspective fix
+	 * @param {any} local @returns {{px: number[], w: number}} */
+	const project = (local) => {
+		const world = faceEdited.localToWorld(local.clone());
+		const ndc = world.clone().project(camera);
+		// project() has already divided by w; recover it from the view-space depth, which is
+		// what the perspective correction needs (1 for an orthographic camera)
+		const view = world.clone().applyMatrix4(camera.matrixWorldInverse);
+		const w = camera.isOrthographicCamera ? 1 : Math.max(-view.z, 1e-6);
+		return { px: [((ndc.x + 1) / 2) * width, ((1 - ndc.y) / 2) * height], w };
+	};
+	/** @type {Map<string, {px: number[], w: number, point: any}>} */
+	const projected = new Map();
+	const pointOf = (/** @type {any} */ v) => {
+		const key = keyOf(v.x, v.y, v.z);
+		let hit = projected.get(key);
+		if (!hit) projected.set(key, (hit = { ...project(v), point: v.clone() }));
+		return hit;
+	};
+	// crossings are computed ONCE PER WELDED EDGE, so the two triangles sharing one get the
+	// SAME 3D point and the cut cannot open a crack along a crease
+	/** @type {Map<string, any>} */
+	const crossings = new Map();
+	for (const tri of tris)
+		for (let e = 0; e < 3; e++) {
+			const a = pointOf(tri[e]);
+			const b = pointOf(tri[(e + 1) % 3]);
+			const key = edgeKeyOf(tri[e], tri[(e + 1) % 3]);
+			if (crossings.has(key)) continue;
+			const hit = segmentCross(from, to, a.px, b.px);
+			if (!hit) continue;
+			const u = perspectiveParam(hit.onEdge, a.w, b.w);
+			crossings.set(key, { point: a.point.clone().lerp(b.point, u), u, from: a, to: b });
+		}
+	if (!crossings.size) {
+		showToast('Knife: that line did not cross the mesh');
+		return false;
+	}
+	const before = {
+		positions: trisToPositions(tris),
+		groups: trisToGroups(tris),
+		uvs: trisToUVs(tris),
+		faces: readStoredFaces(faceEdited.geometry)
+	};
+	/** @type {any[]} */
+	const out = [];
+	let cut = 0;
+	for (const tri of tris) {
+		/** which of the triangle's edges the cut crosses */
+		const hits = [];
+		for (let e = 0; e < 3; e++) {
+			const key = edgeKeyOf(tri[e], tri[(e + 1) % 3]);
+			const crossing = crossings.get(key);
+			if (crossing) hits.push({ e, crossing });
+		}
+		/** the uv of a point INSIDE this triangle, barycentrically */
+		const uvOf = (/** @type {any} */ point) => {
+			if (!tri.uv) return undefined;
+			const bary = barycentricOf(point, tri);
+			return [
+				tri.uv[0][0] * bary[0] + tri.uv[1][0] * bary[1] + tri.uv[2][0] * bary[2],
+				tri.uv[0][1] * bary[0] + tri.uv[1][1] * bary[1] + tri.uv[2][1] * bary[2]
+			];
+		};
+		const faceNormal = triNormal(tri);
+		/** append one triangle wound like the original @param {any[]} points @param {any[]|undefined} uvs */
+		const push = (points, uvs) => {
+			const flip = triNormal(points).dot(faceNormal) < 0;
+			const wound = flip ? [points[0], points[2], points[1]] : points;
+			const uv = uvs && (flip ? [uvs[0], uvs[2], uvs[1]] : uvs);
+			out.push(
+				withSlot(
+					wound.map((/** @type {any} */ v) => v.clone()),
+					tri.mi,
+					uv
+				)
+			);
+		};
+		if (hits.length === 1) {
+			// ONE crossing means the cut ends inside this triangle (or leaves through a corner).
+			// It still has to be split: its neighbour across that edge has the same crossing as a
+			// real vertex, and leaving this side whole is a T-JUNCTION — the mesh reads as
+			// non-manifold there (measured: 10 odd edges from a single cut across a box).
+			// A fan to the opposite corner is the minimal honest split.
+			const e = hits[0].e;
+			const point = hits[0].crossing.point;
+			const pointUv = uvOf(point);
+			const near = tri[e];
+			const far = tri[(e + 1) % 3];
+			const opposite = tri[(e + 2) % 3];
+			push([point, far, opposite], tri.uv && [pointUv, tri.uv[(e + 1) % 3], tri.uv[(e + 2) % 3]]);
+			push([point, opposite, near], tri.uv && [pointUv, tri.uv[(e + 2) % 3], tri.uv[e]]);
+			cut++;
+			continue;
+		}
+		if (hits.length !== 2) {
+			out.push(withSlot([tri[0].clone(), tri[1].clone(), tri[2].clone()], tri.mi, tri.uv));
+			continue;
+		}
+		// the two crossings sit on edges (i, i+1) and (j, j+1); the corner they SHARE is cut
+		// off on its own, and the other two corners keep a quad
+		const [first, second] = hits.sort((x, y) => x.e - y.e);
+		const shared = first.e + 1 === second.e ? second.e : 0; // edges 0,1 -> 1; 1,2 -> 2; 0,2 -> 0
+		const cornerIndex = shared % 3;
+		const p = first.e === (cornerIndex + 2) % 3 ? first : second; // the crossing BEFORE it
+		const q = p === first ? second : first;
+		const corner = tri[cornerIndex];
+		const other0 = tri[(cornerIndex + 1) % 3];
+		const other1 = tri[(cornerIndex + 2) % 3];
+
+		const pUv = uvOf(p.crossing.point);
+		const qUv = uvOf(q.crossing.point);
+
+		// the sliver holding the cut-off corner, then the remaining quad as two triangles
+		// Walk the boundary to get the remaining polygon RIGHT. Going round the triangle
+		// corner -> other0 -> other1, the cut leaves at q (on corner-other0) and re-enters at p
+		// (on other1-corner), so the polygon is q, other0, other1, p — fanned from q. Pairing
+		// them any other way (p, q, other1, other0 was the first attempt) covers a DIFFERENT
+		// quad: the two halves then overlap, and the mesh reads non-manifold where they meet.
+		const uvCorner = tri.uv && tri.uv[cornerIndex];
+		const uv0 = tri.uv && tri.uv[(cornerIndex + 1) % 3];
+		const uv1 = tri.uv && tri.uv[(cornerIndex + 2) % 3];
+		push([p.crossing.point, corner, q.crossing.point], tri.uv && [pUv, uvCorner, qUv]);
+		push([q.crossing.point, other0, other1], tri.uv && [qUv, uv0, uv1]);
+		push([q.crossing.point, other1, p.crossing.point], tri.uv && [qUv, uv1, pUv]);
+		cut++;
+	}
+	const positions = trisToPositions(out);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast('That cut is too large to sync');
+		return false;
+	}
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
+	clearEdgeSelectionInner();
+	const after = {
+		positions,
+		groups: trisToGroups(out),
+		uvs: trisToUVs(out),
+		faces: null
+	};
+	applyGeometrySnapshot(after.positions, after.groups, after.uvs, null);
+	broadcastMeshGeo(faceEdited.uuid, after.positions, after.groups, after.uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before,
+		after: withFaces({ positions: after.positions, groups: after.groups, uvs: after.uvs })
+	});
+	showToast('Knife: cut ' + cut + (cut === 1 ? ' triangle' : ' triangles'));
+	return true;
+}
+
+/** barycentric coordinates of a point assumed to lie in the triangle's plane
+ * @param {any} point @param {any[]} tri @returns {number[]} */
+function barycentricOf(point, tri) {
+	const v0 = tri[1].clone().sub(tri[0]);
+	const v1 = tri[2].clone().sub(tri[0]);
+	const v2 = point.clone().sub(tri[0]);
+	const d00 = v0.dot(v0);
+	const d01 = v0.dot(v1);
+	const d11 = v1.dot(v1);
+	const d20 = v2.dot(v0);
+	const d21 = v2.dot(v1);
+	const denominator = d00 * d11 - d01 * d01;
+	if (Math.abs(denominator) < 1e-12) return [1, 0, 0];
+	const v = (d11 * d20 - d01 * d21) / denominator;
+	const w = (d00 * d21 - d01 * d20) / denominator;
+	return [1 - v - w, v, w];
+}
+
 /**
  * M4: dissolve the selected edges — genuinely REMOVE each one by merging the
  * two faces it joins and re-triangulating the merged polygon WITHOUT it.
@@ -4185,7 +4425,7 @@ function refreshFaceOverlay() {
  * Run an op on the highlighted face and commit: rebuild geometry, replicate
  * the snapshot, record history. subdivide/flip/bridge take no amount (B4); for
  * M3's loopcut `amount` is the CUT COUNT, not a distance.
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'} op
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'} op
  * @param {number} amount
  */
 export function commitFaceOp(op, amount) {

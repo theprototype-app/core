@@ -937,6 +937,148 @@ export function removeKey(uuid, trackId, index, clipId) {
 	}));
 }
 
+// --- presets -----------------------------------------------------------------
+// Recipes for the movements people actually build. The door is the one the whole
+// origin/hinge story exists for: place the origin on the hinge edge (Inspector ▸
+// origin, or "Bottom"/"Move origin"), then this keys rot.y 0 -> 90 and the swing
+// happens about that edge. `once` so a Play Animation toggle opens and shuts it.
+
+/** @type {Record<string, {name: string, duration: number, loop: 'once'|'loop'|'pingpong', tracks: {channel: string, keys: {t: number, v: number, ease?: number[]}[]}[], needsOrigin?: boolean}>} */
+export const PRESETS = {
+	door: {
+		name: 'Door',
+		duration: 0.8,
+		loop: 'once',
+		needsOrigin: true,
+		tracks: [
+			{ channel: 'rot.y', keys: [{ t: 0, v: 0, ease: [...EASINGS['ease-out']] }, { t: 0.8, v: Math.PI / 2 }] }
+		]
+	},
+	drawer: {
+		name: 'Drawer',
+		duration: 0.6,
+		loop: 'once',
+		tracks: [
+			{ channel: 'pos.z', keys: [{ t: 0, v: 0, ease: [...EASINGS['ease-out']] }, { t: 0.6, v: 0.8 }] }
+		]
+	},
+	elevator: {
+		name: 'Elevator',
+		duration: 3,
+		loop: 'pingpong',
+		tracks: [
+			{ channel: 'pos.y', keys: [{ t: 0, v: 0, ease: [...EASINGS['ease-in-out']] }, { t: 3, v: 3 }] }
+		]
+	},
+	turntable: {
+		name: 'Turntable',
+		duration: 6,
+		loop: 'loop',
+		tracks: [{ channel: 'rot.y', keys: [{ t: 0, v: 0 }, { t: 6, v: Math.PI * 2 }] }]
+	},
+	pulse: {
+		name: 'Pulse',
+		duration: 1.2,
+		loop: 'loop',
+		tracks: [
+			{
+				channel: 'scale',
+				keys: [
+					{ t: 0, v: 1, ease: [...EASINGS['ease-in-out']] },
+					{ t: 0.6, v: 1.15, ease: [...EASINGS['ease-in-out']] },
+					{ t: 1.2, v: 1 }
+				]
+			}
+		]
+	},
+	fade: {
+		name: 'Blink out',
+		duration: 1,
+		loop: 'once',
+		tracks: [{ channel: 'visible', keys: [{ t: 0, v: 1 }, { t: 0.5, v: 0 }] }]
+	}
+};
+
+/**
+ * Add a preset as a NEW clip, with its keys offset by the object's current pose
+ * so the movement starts where the object stands.
+ * @param {string} kind @param {string} uuid @param {any} [obj]
+ * @returns {{clipId: string, needsOrigin: boolean}|null}
+ */
+export function applyPreset(kind, uuid, obj) {
+	const preset = PRESETS[kind];
+	if (!preset) return null;
+	const object = obj ?? objectFor(uuid);
+	const id = newId();
+	editSet(uuid, (set) => {
+		set.clips[id] = {
+			name: preset.name,
+			duration: preset.duration,
+			loop: preset.loop,
+			tracks: preset.tracks.map((track) => {
+				const base = channelValue(object, track.channel);
+				const offset = track.channel === 'visible' || track.channel.startsWith('scale') ? 0 : base;
+				return {
+					id: newId(),
+					channel: track.channel,
+					keys: track.keys.map((k) => ({
+						t: k.t,
+						// scale presets are RELATIVE to the object's own scale, transforms
+						// are relative to where it stands, visibility is absolute
+						v: track.channel.startsWith('scale') ? k.v * (base || 1) : k.v + offset,
+						...(k.ease ? { ease: [...k.ease] } : {})
+					}))
+				};
+			})
+		};
+		set.active = id;
+		return set;
+	});
+	return { clipId: id, needsOrigin: !!preset.needsOrigin && !originOffsetOf(object) };
+}
+
+// --- auto-key ----------------------------------------------------------------
+// A record toggle: while it is on, posing the object writes keys at the playhead
+// instead of being lost. This is the workflow difference between "type numbers
+// into a key list" and "pose it, move the playhead, pose it again".
+
+/** @type {import('svelte/store').Writable<string|null>} uuid being recorded, null = off */
+export const autoKeyFor = writable(/** @type {string|null} */ (null));
+
+/** @param {string|null} uuid */
+export function setAutoKey(uuid) {
+	autoKeyFor.set(uuid);
+}
+
+/**
+ * Write a key at `seconds` for every channel whose CURRENT value differs from
+ * what the clip already says there — called after a gizmo drag or an Inspector
+ * transform edit. Existing tracks only: auto-key records the movement you are
+ * building, it does not invent channels you never touched.
+ * @param {string} uuid @param {number} seconds @returns {number} keys written
+ */
+export function captureAutoKey(uuid, seconds) {
+	if (get(autoKeyFor) !== uuid) return 0;
+	const clip = activeClip(uuid);
+	const object = objectFor(uuid);
+	if (!clip || !object) return 0;
+	const at = Math.max(0, num(seconds));
+	/** @type {{trackId: string, v: number}[]} */
+	const writes = [];
+	for (const track of clip.tracks) {
+		const current = channelValue(object, track.channel);
+		const existing = sampleTrack(track, at);
+		const epsilon = STEPPED.has(track.channel) ? 0.5 : 1e-4;
+		if (existing !== null && Math.abs(existing - current) < epsilon) continue;
+		writes.push({ trackId: track.id, v: current });
+	}
+	if (!writes.length) return 0;
+	beginAnimGesture(uuid, 'Auto-key');
+	for (const write of writes) addKey(uuid, write.trackId, at, write.v);
+	endAnimGesture();
+	return writes.length;
+}
+
 // --- saving ------------------------------------------------------------------
 // Authored clips are plain JSON, so a save carries them verbatim (17-D). Orphans
 // are pruned at SERIALIZE time only — the store keeps an entry after its object
@@ -1131,7 +1273,7 @@ export function pauseAll() {
 
 /** Stop and restore the pose captured when playback began. Omit `uuid` to stop
  * everything (the transport button passes a click event — guarded).
- * @param {string} [uuid] */
+ * @param {string} [uuid] @param {{replicate?: boolean}} [opts] */
 export function stop(uuid, opts = {}) {
 	if (typeof uuid !== 'string') return stopAll();
 	releaseBase(uuid);
@@ -1167,6 +1309,7 @@ export function scrub(uuid, seconds, clipId) {
 
 /** @param {string} uuid @param {number} speed */
 export function setSpeed(uuid, speed) {
+	// (transport speed change; rebases the stamp so the pose does not jump)
 	const p = playOf(uuid);
 	const now = syncedNow();
 	setPlay(uuid, { pausedAt: elapsedOf(p, now), at: now, speed: Math.max(0.05, num(speed, 1)) }, true);

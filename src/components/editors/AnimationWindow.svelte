@@ -18,10 +18,12 @@
 	import {
 		animations, playback, playheads, CHANNELS, EASINGS, STEPPED, channelLabel, isRotChannel,
 		activeClip, clipList, addTrack, removeTrack, updateTrack, updateAnim,
-		addKey, updateKey, removeKey, sampleTrack, evaluateClip, channelValue,
+		addKey, updateKey, removeKey, sampleTrack, channelValue,
 		createClip, renameClip, duplicateClip, deleteClip, setActiveClip,
-		beginAnimGesture, endAnimGesture, play, pause, stop, scrub
+		beginAnimGesture, endAnimGesture, play, pause, stop, scrub,
+		PRESETS, applyPreset, autoKeyFor, setAutoKey
 	} from '$lib/animationPreview';
+	import { showToast, openSceneSection } from '../../stores/appStore.js';
 	// the clips a model was IMPORTED with are a different system (replicated,
 	// posed from the synced clock) — the window used to ignore them entirely, so
 	// a rigged model showed "no movements yet" and its own animations were
@@ -80,6 +82,8 @@
 	const isPlaying = $derived(!!pb?.playing);
 	const curTime = $derived(target ? ($playheads[target.uuid] ?? pb?.pausedAt ?? 0) : 0);
 	const duration = $derived(anim?.duration ?? 2);
+	// auto-key is armed for ONE object at a time (the one you are posing)
+	const recording = $derived(!!target && $autoKeyFor === target.uuid);
 
 	// docked vs floating (starts docked, undockable)
 	let docked = $state(true);
@@ -118,6 +122,9 @@
 			const prev = prevUuid;
 			prevUuid = t;
 			selKey = null;
+			// auto-key is armed for ONE object; selecting another disarms it rather
+			// than silently recording the next thing you drag
+			if (prev && prev !== t && get(autoKeyFor) === prev) setAutoKey(null);
 			if (prev && prev !== t && !get(playback)[prev]?.playing) stop(prev);
 		});
 	});
@@ -349,6 +356,25 @@
 						endAnimGesture();
 					}
 				},
+				{ section: 'Presets' },
+				...Object.entries(PRESETS).map(([kind, preset]) => ({
+					label: preset.name,
+					tooltip: preset.needsOrigin
+						? 'Needs its origin on the hinge edge to swing there'
+						: 'Adds a ready-made ' + preset.name.toLowerCase() + ' clip',
+					action: () => {
+						const made = applyPreset(kind, uuid, target);
+						selId = null;
+						selKey = null;
+						if (made?.needsOrigin) {
+							// the swing is only a HINGE once the pivot sits on the edge — say
+							// so where the user can act on it
+							showToast('Door clip added. Move its origin onto the hinge edge to swing there.', [
+								{ label: 'Set origin', action: () => openSceneSection('Transform') }
+							]);
+						}
+					}
+				})),
 				{ section: 'Clip' },
 				{ label: 'New clip', action: () => (selId = null) || createClip(uuid) },
 				{
@@ -477,6 +503,20 @@
 				<option value="once">Once</option>
 				<option value="pingpong">Ping-pong</option>
 			</select>
+			<button
+				id="animation-autokey"
+				class="shrink-0 rounded-sm border px-1.5 py-0.5 text-[11px] {recording
+					? 'border-red-500 bg-red-900/40 text-red-300'
+					: 'border-gray-600 text-gray-400'}"
+				title={recording
+					? 'Recording: posing this object writes keys at the playhead'
+					: 'Auto-key: pose the object and keys are written at the playhead'}
+				aria-label="Auto-key"
+				aria-pressed={recording}
+				onclick={() => target && setAutoKey(recording ? null : target.uuid)}
+			>
+				● REC
+			</button>
 			<button
 				id="animation-add"
 				class="ui-button-quiet shrink-0"

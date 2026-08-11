@@ -17,7 +17,7 @@
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
-	import { tickAnimationPreview } from '$lib/animationPreview';
+	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
@@ -319,6 +319,9 @@
 				const before = { pos: dragStartState.pos, rot: dragStartState.rot, scale: dragStartState.scale };
 				if (JSON.stringify(before) !== JSON.stringify(after))
 					recordTransform({ uuid: object.uuid, before: before, after: after });
+				// 17-E A6: with auto-key armed for this object, posing it with the gizmo
+				// writes keys at the playhead instead of the pose being lost.
+				captureAutoKey(object.uuid, playheadOf(object.uuid));
 				dragStartState = null;
 			}
 		});

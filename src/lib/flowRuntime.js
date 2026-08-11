@@ -114,7 +114,7 @@ const playAnimEdge = new Map();
  * branch from the same shared timestamp and derives the same playback. Sending
  * here as well would fire the transport twice and let the two copies disagree
  * about who started it.
- * @param {{node: any, uuid: string}[]} pairs
+ * @param {{node: any, uuid: string}[]} pairs @param {any} ctx
  */
 function updatePlayAnim(pairs, ctx) {
 	const seen = new Set();

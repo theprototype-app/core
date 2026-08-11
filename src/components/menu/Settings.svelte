@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
+	import { X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
@@ -339,6 +340,7 @@
 	// the heterogeneous markup. Rows carry the `.setting-row` class; inner controls
 	// live in <p>, so hiding a row never hides a control inside a shown row.
 	let settingsQuery = '';
+	let searchInput: any; // the search box, for refocus after the clear (X) button
 	/**
 	 * Searching must EXPAND every section first. flowbite-svelte 1.x renders an
 	 * AccordionItem's body only while it is open, so with the sections collapsed
@@ -472,14 +474,30 @@
 	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
 >
 	<div class="modal-content p-4">
-		<input
-			id="settings-search"
-			type="text"
-			class="ui-input mb-3 w-full"
-			placeholder="Search settings…"
-			bind:value={settingsQuery}
-			use:searchFocus
-		/>
+		<div class="relative mb-3">
+			<input
+				id="settings-search"
+				type="text"
+				class="ui-input w-full pr-8"
+				placeholder="Search settings…"
+				bind:value={settingsQuery}
+				bind:this={searchInput}
+				use:searchFocus
+			/>
+			{#if settingsQuery}
+				<button
+					id="settings-search-clear"
+					class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+					aria-label="Clear search"
+					on:click={() => {
+						settingsQuery = '';
+						searchInput?.focus();
+					}}
+				>
+					<X size={14} aria-hidden="true" />
+				</button>
+			{/if}
+		</div>
 		<div use:filterSettings={settingsQuery}>
 		<!-- `multiple`: sections no longer close each other. Required for search — the
 		     filter can only see rows flowbite has MOUNTED, and a single-selection

@@ -158,6 +158,72 @@ h.run(async () => {
 		`the whole SET came back through Faces (${stash.restored}/${stash.built} — only the anchor used to)`
 	);
 
+	// --- and the FACE / EDGE selections survive a trip through Vertices --------
+	// The mirror of the vertex case: only `setFaceSubmode` restored these, and it returns
+	// early when the submode already IS the requested one — which it always is coming back
+	// from Vertices. So they survived Faces <-> Edges and died through Vertices (reported).
+	const faceStash = await A.page.evaluate((uuid) => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const me = s.meshEdit;
+		const count = () => {
+			let sel;
+			fe.faceEditSelectedTris.subscribe((v) => (sel = [...v]))();
+			return sel.length;
+		};
+		me.exitEditMode();
+		fe.enterFaceEdit(uuid);
+		fe.setFaceSubmode('faces');
+		fe.setFaceGranularity('face');
+		const faces = fe.currentFaces();
+		fe.pickFaceUnit(faces[0].triIndices[0]);
+		fe.toggleFaceSelection(faces[1].triIndices[0]);
+		const built = count();
+		// Faces -> Vertices -> Faces, exactly what the mode buttons do
+		fe.stashSelections();
+		fe.exitFaceEdit();
+		me.enterEditMode(uuid);
+		me.exitEditMode();
+		fe.enterFaceEdit(uuid);
+		const restoredFaces = count();
+		// now the same for EDGES
+		fe.setFaceSubmode('edges');
+		const tris = fe.readTriangles(window.__box.geometry);
+		let picked = 0;
+		for (let ti = 0; ti < tris.length && picked < 2; ti++) {
+			const t = tris[ti];
+			const c = t[0].clone().add(t[1]).add(t[2]).multiplyScalar(1 / 3);
+			for (let e = 0; e < 3 && picked < 2; e++) {
+				const mid = t[e].clone().add(t[(e + 1) % 3]).multiplyScalar(0.5);
+				const key = fe.pickEdgeAt(ti, c.clone().lerp(mid, 0.95));
+				if (!key) continue;
+				fe.pickEdge(key, picked > 0);
+				picked = fe.edgeSelectionSize();
+			}
+		}
+		const builtEdges = fe.edgeSelectionSize();
+		fe.stashSelections();
+		fe.exitFaceEdit();
+		me.enterEditMode(uuid);
+		me.exitEditMode();
+		fe.enterFaceEdit(uuid);
+		const restoredEdges = fe.edgeSelectionSize();
+		return { built, restoredFaces, builtEdges, restoredEdges };
+	}, uuid);
+	h.check(faceStash.built >= 2, `built a multi-FACE selection (${faceStash.built} triangles)`);
+	h.check(
+		faceStash.restoredFaces === faceStash.built,
+		`the face selection came back through Vertices (${faceStash.restoredFaces}/${faceStash.built})`
+	);
+	h.check(faceStash.builtEdges >= 1, `built an EDGE selection (${faceStash.builtEdges})`);
+	h.check(
+		faceStash.restoredEdges === faceStash.builtEdges,
+		`the edge selection came back through Vertices (${faceStash.restoredEdges}/${faceStash.builtEdges})`
+	);
+	await A.page.evaluate((uuid) => {
+		window.__stores.faceEdit.exitFaceEdit();
+		window.__stores.meshEdit.enterEditMode(uuid);
+	}, uuid);
 	// --- handle size: adjustable, live, and ADAPTIVE (constant screen size) --
 	// The size lives in the instance MATRICES now, not in the sphere geometry, which is
 	// what lets one slider mean "x bigger" in fixed mode and "x more pixels" in adaptive

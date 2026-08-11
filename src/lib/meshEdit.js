@@ -23,7 +23,8 @@ import {
 	faceGizmoSpace,
 	registerGizmoPrefListener,
 	internalEdgeSet,
-	edgeKeyOf
+	edgeKeyOf,
+	bevelVertices
 } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -689,6 +690,43 @@ function selectHandleInner(index) {
 	vertexSelection = new Set(index >= 0 ? [index] : []);
 	setAnchor(index);
 	syncVertexSelection();
+}
+
+/**
+ * M5b: bevel the selected vertices — the corner is cut off and capped. Any number of
+ * vertices at once; the geometry work lives in faceEdit (it owns the triangle soup and the
+ * commit path), this only translates the SELECTION into welded position keys.
+ * @param {number} width @param {number} profile -1 dished .. 0 flat .. +1 domed
+ * @returns {boolean}
+ */
+export function bevelSelectedVerts(width = 0.2, profile = 0) {
+	if (!edited || !handles.length) return false;
+	const indices = vertexSelection.size
+		? [...vertexSelection]
+		: selectedHandle >= 0
+			? [selectedHandle]
+			: [];
+	if (!indices.length) {
+		showToast('Select a vertex first, then Bevel');
+		return false;
+	}
+	const keys = indices
+		.filter((index) => handles[index])
+		.map((index) => {
+			const p = handles[index].position;
+			return `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
+		});
+	const uuid = edited.uuid;
+	const ok = bevelVertices(uuid, keys, { width, profile });
+	// the bevel replaced the corner, so the handle list is stale in every sense — rebuild
+	// the session from the new geometry and drop a selection that no longer means anything
+	if (ok) {
+		vertexSelection.clear();
+		syncVertexSelection();
+		setAnchor(-1);
+		refreshVertexEditSession();
+	}
+	return ok;
 }
 
 /** World-space focus target {center,radius} for the selected vertex, or null (173). */

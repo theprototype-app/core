@@ -20,6 +20,7 @@
 		vertexSelectionSize,
 		selectAllVerts,
 		invertVertexSelection,
+		bevelSelectedVerts,
 		vertexHandleScale,
 		vertexHandleAdaptive,
 		vertexSlide
@@ -60,6 +61,7 @@
 		selectEdgeLoop,
 		dissolveEdges,
 		bevelFaces,
+		bevelEdges,
 		clearEdgeSelection,
 		stashSelections,
 		setFaceSubmode,
@@ -258,6 +260,8 @@
 	// signed distance and sharing it would make arming Extrude change the bevel width
 	let bevelWidth = $state(0.1);
 	let bevelSegments = $state(1);
+	// profile: 0 flat, >0 domes the cap out, <0 dishes it in (vertex + edge bevel)
+	let bevelProfile = $state(0);
 	/** @type {any} */
 	let flashTimer = 0;
 	/** @param {string} op */
@@ -550,6 +554,17 @@
 				}}><Spline size={18} aria-hidden="true" /></button
 			>
 			<button
+				id="edge-bevel"
+				class="tbx-btn"
+				class:tbx-flash={flashOp === 'ebevel'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Bevel edges"
+				title="Bevel — replace the edge with a chamfer strip (width, segments and profile below). Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
+				onclick={() => {
+					if (bevelEdges(bevelWidth, bevelSegments, bevelProfile)) flash('ebevel');
+				}}><Scissors size={18} aria-hidden="true" /></button
+			>
+			<button
 				id="edge-dissolve"
 				class="tbx-btn tbx-danger"
 				class:tbx-flash={flashOp === 'dissolve'}
@@ -652,6 +667,17 @@
 				onclick={createFace}><ToolIcon name="create-face" /></button
 			>
 			<button
+				id="mesh-vertex-bevel"
+				class="tbx-btn"
+				class:tbx-flash={flashOp === 'vbevel'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Bevel the selected vertices"
+				title="Bevel — cut the corner off every selected vertex and cap it (width and profile below). Works on any number of vertices."
+				onclick={() => {
+					if (bevelSelectedVerts(bevelWidth, bevelProfile)) flash('vbevel');
+				}}><Scissors size={18} aria-hidden="true" /></button
+			>
+			<button
 				id="mesh-slide"
 				class="tbx-btn {$vertexSlide ? 'tbx-on bg-primary-600 text-white' : ''} {$vertexSelectionSize === 1
 					? ''
@@ -724,6 +750,60 @@
 					onclick={() => faceGizmoSpace.set('world')}>World</button
 				>
 			</div>
+		</div>
+		<!-- BEVEL params, shared by all three modes: the same width and profile mean the
+		     same thing whether the corner being cut is a face border, an edge or a vertex -->
+		<div id="bevel-params" class="tbx-row text-xs text-gray-300">
+			<label class="flex items-center gap-1" title="How far the chamfer reaches (clamped per edge so two bevels can never cross)">
+				width
+				<input
+					id="bevel-width"
+					type="number"
+					step="0.02"
+					min="0.001"
+					class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+					bind:value={bevelWidth}
+				/>
+			</label>
+			{#if mode !== 'vertices'}
+				<label class="flex items-center gap-1" title="More segments = a rounder edge">
+					segments
+					<input
+						id="bevel-segments"
+						type="number"
+						step="1"
+						min="1"
+						max="8"
+						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={bevelSegments}
+					/>
+				</label>
+				{#if mode === 'faces'}
+				<button
+					id="face-bevel"
+					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
+					title="Bevel the selected face's border into a chamfer (inset + push per segment)"
+					onclick={() => bevelFaces(bevelWidth, bevelSegments)}>Bevel</button
+				>
+				{/if}
+			{/if}
+			{#if mode !== 'faces'}
+				<label class="flex items-center gap-1" title="Profile: 0 is a flat chamfer, positive domes the cap OUT, negative dishes it IN">
+					profile
+					<input
+						id="bevel-profile"
+						type="range"
+						min="-1"
+						max="1"
+						step="0.1"
+						class="w-20"
+						bind:value={bevelProfile}
+					/>
+					<span class="w-10 text-right tabular-nums"
+						>{bevelProfile > 0.05 ? 'out' : bevelProfile < -0.05 ? 'in' : 'flat'}</span
+					>
+				</label>
+			{/if}
 		</div>
 		{#if mode === 'faces'}
 			<!-- M6: whole-mesh cleanup — acts on the OBJECT, not the pick -->
@@ -843,40 +923,7 @@
 			>
 		{/if}
 
-		<!-- M5: the face bevel — width, segments and the button (face mode only) -->
-		{#if mode === 'faces'}
-			<div id="face-bevel-params" class="tbx-row text-xs text-gray-300">
-				<label class="flex items-center gap-1" title="How far the chamfer folds into each face">
-					width
-					<input
-						id="face-bevel-width"
-						type="number"
-						step="0.02"
-						min="0.001"
-						class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={bevelWidth}
-					/>
-				</label>
-				<label class="flex items-center gap-1" title="More segments = a rounder edge">
-					segments
-					<input
-						id="face-bevel-segments"
-						type="number"
-						step="1"
-						min="1"
-						max="8"
-						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={bevelSegments}
-					/>
-				</label>
-			<button
-				id="face-bevel"
-				class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
-				title="Bevel the selected face's border into a chamfer (inset + push per segment)"
-				onclick={() => bevelFaces(bevelWidth, bevelSegments)}>Bevel</button
-			>
-			</div>
-		{/if}
+
 
 		<!-- 176: contextual amount row for Extrude/Inset -->
 		{#if mode === 'faces' && ($faceEditOp === 'extrude' || $faceEditOp === 'inset')}

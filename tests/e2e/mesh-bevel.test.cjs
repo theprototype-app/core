@@ -151,12 +151,21 @@ h.run(async () => {
 	h.check(rest.closedRefused, 'bevelling a CLOSED selection is refused (no border to fold)');
 	h.check(rest.closedUntouched, '...leaving the geometry untouched');
 
-	// --- edge mode still says what it cannot do ------------------------------
-	const edgeMode = await A.page.evaluate(() => {
+	// --- the three bevels are three ops, not one wearing hats ----------------
+	// This used to assert that NO edge bevel existed, because the first attempt cracked the
+	// mesh and was dropped. It exists now (mesh-edge-bevel), built on the corner surgery the
+	// vertex bevel introduced — so the check flips to what still matters: each element mode
+	// has its OWN op, and the face one is not quietly delegating to another.
+	const ops = await A.page.evaluate(() => {
 		const fe = window.__stores.faceEdit;
-		return { noEdgeBevel: typeof fe.bevelEdges !== 'function' };
+		const me = window.__stores.meshEdit;
+		return {
+			face: typeof fe.bevelFaces === 'function',
+			edge: typeof fe.bevelEdges === 'function',
+			vertex: typeof me.bevelSelectedVerts === 'function'
+		};
 	});
-	h.check(edgeMode.noEdgeBevel, 'there is no half-working edge bevel exposed — face bevel is the shipped op');
+	h.check(ops.face && ops.edge && ops.vertex, 'all three bevels are exposed: faces, edges and vertices');
 
 	// --- and a peer gets it -------------------------------------------------
 	const B = await h.setupPage(browser, 'B');

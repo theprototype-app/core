@@ -1481,6 +1481,21 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-11, fifth drop): **knife RUBBER BAND + the P12 wasm question ANSWERED —
+  PRs #120 + #121 MERGED @ca9e4ba.** The knife draws a dashed DOM band between its two clicks
+  (the cut is a screen line, so there is no 3D line to draw), and Escape drops a PENDING cut
+  before it drops the session. That needed the answer to travel on the EVENT
+  (`defaultPrevented`): there are TWO Escape handlers (faceEdit's window listener and the
+  toolbox's) and a one-shot store flag was consumed by whichever ran first, so the other tore
+  the session down anyway. **P12**: a module can load WASM by carrying the .wasm in its own zip
+  — `userModules` already exposes packaged files as blob URLs via `api.assetUrl` and the app
+  sets no CSP, so `WebAssembly.instantiateStreaming(fetch(blobUrl))` works with no network and
+  nothing to allow-list (proven with a 41-byte hand-built module). The seam is
+  `api.registerUnwrapBackend(key, label, run)`: same registry as the built-in projections,
+  keys namespaced `mod-<id>-<key>`, backends may be ASYNC (unwrap/unwrapObject/the editor all
+  await now — otherwise a Promise gets committed as a result). Suites `mesh-knife` (26),
+  `uv-unwrap-module` (12). What remains of P12 is module-repo work only: package a real xatlas
+  build and map its API onto `run(faces, options)`. Baseline 391/62.
 - Status (2026-08-11, fourth drop): **M9b KNIFE + M7 SYMMETRIZE — PRs #117 + #118 MERGED
   @f271abc. The mesh roadmap tool list is COMPLETE** (M4 edge gizmo, M5 bevel for
   faces/edges/vertices, M7 symmetrize, M8 proportional, M9 knife + vertex slide). KNIFE: two

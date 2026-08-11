@@ -605,6 +605,20 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A helper that indexes SESSION state cannot be reused outside that session.**
+  `quadRingKeys(a, b)` takes triangle INDICES and reads the face session's `workingTris`,
+  so `diagonalEdgeKeys` — built on it — returned an EMPTY set whenever no face session was
+  open. Two consequences went unnoticed for a long time: the quad-structure WIREFRAME was
+  silently the raw triangulation in VERTEX mode, and M9's vertex slide offered face
+  DIAGONALS as slide directions. It reads the shared edge off the two triangles now.
+  `internalEdgeSet(geometry)`/`edgeKeyOf(a, b)` are the session-free exports for "which
+  edges are real". The tell: a check comparing the overlay against a raw
+  `WireframeGeometry` PASSED — it was asserting the bug.
+- **A CONSTRAINED gizmo drag must re-seat the proxy when it ends.** The proxy is wherever
+  the pointer left it, which under a constraint (vertex slide) is deliberately NOT where
+  the vertex went. The next gesture then reads that offset as its starting delta and flings
+  the vertex across the mesh. `setAnchor(selectedHandle)` at drag end is the fix; the same
+  applies to any future constrained transform.
 - **An editor HANDLE that lives in world space needs a SCREEN-space size.** Vertex dots
   were a world-size sphere (1.2% of the object diagonal), which vanishes when you zoom
   out of a large mesh and swallows the geometry up close — the reported "dots are too

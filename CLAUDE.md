@@ -90,7 +90,15 @@ loadable play content. Everything a user does must be visible to connected peers
 - `src/lib/commandsHandler.svelte.js` — receive-side scene appliers + `sendObjects`
   (GLTF full sync; animated imports detour through `sendAnimatedImport` raw bytes).
 - Domain modules in `src/lib/`: `objectActions`, `geometries.svelte.js`,
-  `materialsHandler`, `meshEdit` (+VR handle drag; `tickMeshEdit` re-poses the WORLD-space
+  `materialsHandler` (textures/params/color, all SLOT-AWARE since UV2: `materialsOf`/
+  `materialAt`, and an optional `slot` on `applyMap`/`setObjectsTexture`/
+  `removeObjectTexture`/`recordMaterialChange` + on the `map` message, present only
+  when non-zero so older peers are unaffected. UV4 adds the `materials` message —
+  `setObjectMaterials`/`addMaterialSlot`/`applyMaterials` carry the slot ARRAY **and**
+  `geometry.groups` TOGETHER, because three renders slot N by walking the groups and
+  an array material with none draws NOTHING. `copyTextureParams` preserves sampler
+  state across a map swap. `switchMaterialType` REFUSES a multi-slot object rather
+  than collapsing the array), `meshEdit` (+VR handle drag; `tickMeshEdit` re-poses the WORLD-space
   handles when the object moves — scene-root handles don't follow for free; CL-B Weld
   merges the ctrl-multi-selection to its centroid as ONE meshgeo undo entry — a 'verts'
   entry can't hold per-handle befores), `faceEdit`
@@ -298,6 +306,28 @@ loadable play content. Everything a user does must be visible to connected peers
   normalized; LOCAL library, only PLACED objects replicate; PACKS_BASE off-bundle CDN
   const; PACKS.md committed format) + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
   three.js preview canvas + popup, `enable3dPreview`),
+  `uvEditor` (UV1-UV5 + UV4, PRs #106/#107/#108/#109: the UV editor's whole core.
+  Editing UVs IS a geometry edit — there is no standalone uv channel — so every UV
+  write REUSES faceEdit's exported `readTriangles`/`trisToPositions`/`trisToGroups`/
+  `trisToUVs`/`applyMeshGeo` + the existing `meshgeo` message + the triple-aware
+  `'meshgeo'` history kind: NO new wire type and NO new history kind for UV work.
+  `beginUvDrag`/`endUvDrag` are SNAPSHOT-DIFF, not delta — any in-place rewrite of
+  `geometry.attributes.uv` between them replicates + undoes for free (the seam
+  unwrap/island ops will use). `uvViewable` gates the CANVAS, `uvEditable` (the
+  45k-float snapshot cap) gates only UV DRAGGING, `UV_WIRE_LIMIT` hides the wire on
+  dense meshes — a model over the cap still shows its texture and still PAINTS,
+  because painting writes a texture and never touches geometry. `uvTargetOf` answers
+  "which object": the selection SET (never the sticky `selectedObject`), an active
+  Edit Mesh session counts, and a Group resolves to its textured child mesh
+  (`meshWithUvs`). `uvFaceFilter`/`selectedFaceTris` scope the view + weld to the
+  Edit Mesh pick — REQUIRED because a primitive's faces share UV space (a default
+  BoxGeometry has 24 uv entries but only FOUR distinct coords, so an unscoped weld
+  drags all six sides). PAINT: `beginPaintStroke` is ASYNC (it awaits the canvas
+  seed), strokes stream as throttled `uvpaint`/`uvpaintend`, and the finished canvas
+  commits through the existing `map` path so persistence + undo are free;
+  `canvasY(entry, v)` maps v per the texture's `flipY`. UV4: `assignTrisToSlot`
+  writes `tri.mi` and commits a meshgeo triple) + `UvEditor.svelte` (the dock tab —
+  `'uv'` in `FLOW_FAMILY`; hand-rolled 2D zoom/pan because nothing reusable exists),
   `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
   `networkQuality` (N6/D3: LOCAL per-peer getStats RTT + relay dot, median, NOT replicated),
   `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
@@ -480,6 +510,15 @@ loadable play content. Everything a user does must be visible to connected peers
    swap that changes the vertex count MUST recompute both, or a multi-material mesh
    renders NOTHING (three walks `geometry.groups` for an array material) and a
    textured one loses its mapping.
+   **`trisToGroups` returns NULL when every triangle is slot 0** — "no groups needed",
+   which is right for a single material and WRONG in a snapshot that must restore an
+   earlier slot layout: on undo `applyMeshGeo` sees no groups and CARRIES THE CURRENT
+   ones over, so the change silently cannot be undone. A before-snapshot that has to
+   pin the all-slot-0 state must write it explicitly (UV4 `assignTrisToSlot`).
+   **A rigid transform must re-wrap through `withSlot`**: `mi`/`uv` hang off the
+   triangle ARRAY, so `Array.prototype.map` drops them and `trisToUVs` zero-pads
+   exactly those corners — the attribute stays full length with a healthy global
+   spread while the face samples texel (0,0). `cloneTris` is the idiom.
 7. Singleton shared state (environment) syncs latest-wins via a `changedAt` stamp;
    symmetric pulls need a deterministic direction (nodesync: lower count pulls,
    peer-id tiebreak) or two drifted peers swap forever.
@@ -507,6 +546,35 @@ loadable play content. Everything a user does must be visible to connected peers
    a viewer's bytes; peers also drop gated types via `canApply`.
 
 ## Hard-won gotchas (do not rediscover)
+
+- **PERSISTENCE has the same GLTF hole the wire had, and it hides better.** autosave
+  snapshots the scene as ONE GLTF export, so a material ARRAY comes back as a Group
+  of single-material child meshes: the scene still LOOKS right — identical pixels —
+  while the object is no longer one mesh with slots, which is why it survived review
+  and only showed up as "after reload the UV editor has one texture and no slots".
+  Anything GLTF cannot round-trip must ride BESIDE the snapshot and REPLACE its GLTF
+  twin on restore, keyed by the `__uuid` stamp: `animated` does it for rigs,
+  `multiMaterial` now does it for slot arrays (`restoreMultiMaterial`). `.tpscene`/
+  sessions were never affected — they use toJSON already. When adding any per-object
+  state, ask which of the FOUR paths carry it: the wire, autosave, sessions, and
+  undo — they do not share a serializer.
+- **A capability gate copied from the WRITE path silently disables READ.** The UV
+  editor gated its whole canvas on the meshgeo snapshot cap, which exists because a
+  GEOMETRY COMMIT must fit one message — nothing to do with viewing a UV map, and
+  nothing to do with painting (which writes a texture, never geometry). Every real
+  model is over that cap, so the editor looked broken for exactly the assets it was
+  built for. Split the gates (`uvViewable` vs `uvEditable`) and say in the UI which
+  one is refusing.
+- **Texture sampler state is NOT part of a texture swap.** Replacing
+  `material.map` preserved only `colorSpace`, so painting over an imported texture
+  changed three things at once: `flipY` false→true (glTF sets false, three's
+  CanvasTexture/TextureLoader default true → the image MIRRORS, permanently, because
+  GLTFExporter then bakes a self-consistent flip), `wrapS/T` Repeat→ClampToEdge
+  (glTF's default sampler wrap is REPEAT → tiling stops and borders smear), plus
+  KHR_texture_transform's repeat/offset/rotation, `channel`, anisotropy and filters.
+  Use `copyTextureParams`, capturing the outgoing map BEFORE `dispose()`. Any
+  UV↔pixel mapping must then branch on `flipY` (`canvasY`): with `flipY=false`, v=0
+  samples the image's TOP row, so canvas y = v·h, not (1−v)·h.
 
 - **threlte's context stores are READ-ONLY now** (the stable migration):
   `useThrelte().camera` is a `runeToCurrentWritable` whose `.current` is a
@@ -1247,6 +1315,26 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-11): **UV EDITOR shipped across five PRs; UV4 unblocked.** #106
+  (UV1 dock tab + UV map + vertex drag w/ shift multi-select + box/lasso, UV2
+  slot-aware textures, UV3 painting) · #107 (real models: `uvViewable` vs
+  `uvEditable` split + `UV_WIRE_LIMIT`, paint seeds from the live texture) · #108
+  (two user-reported bugs: the face GRAB stripped `mi`/`uv` via `Array.map` so the
+  grabbed face collapsed to texel (0,0) while every AGGREGATE uv check stayed green —
+  an earlier investigation wrongly called it a visual artifact; and painting a GLB
+  re-mapped its texture three ways at once, see the sampler-state gotcha) · #109
+  (**UV4**: a `materials` message carrying the slot array AND geometry.groups
+  together, `addMaterialSlot`/`assignTrisToSlot`, multi-material meshes routed via
+  toJSON on BOTH the wire and autosave, `switchMaterialType` no longer collapsing an
+  array). Suites: `uv-editor`/`uv-materials`/`uv-paint`/`uv-target`/`uv-dense`/
+  `uv-live-faces`/`uv-texture-params`/`uv-slots`/`uv-slots-persist`/`mesh-grab-uv`/
+  `object-sync` — the last two are this repo's FIRST coverage of the gizmo-grab uv
+  path and of the late-joiner object sync. Baseline held **391/62** throughout.
+  Method note worth keeping: two fixes were decided by a test rather than by
+  reasoning (the flipY direction had two confident opposite answers; the "empty scene
+  on late join" turned out to be an earlier probe SUPPRESSING delivery, so a planned
+  send-channel rewrite was dropped as aimed at a non-bug). As-built + what remains:
+  cloud `plans-core/pending/uv-editor.md`.
 - Status (2026-08-10): **MESH HARDENING — branch `feat/mesh-hardening`** (off
   release/next @372af29, lane ../theprototype-lane-c @5182, 4 commits + docs),
   from user reports on the merged M0-M6 tools. (1) `setFaceSubmode` + the

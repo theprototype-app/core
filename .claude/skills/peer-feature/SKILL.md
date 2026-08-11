@@ -113,6 +113,25 @@ and the `__localOnly`/`__uuid` markers all ride this. The recipe:
    helpers, env rig, module content; rebuild them from state; they need
    `registerInteractiveGroup(name)` to receive viewport clicks. Content that can't
    round-trip (skinned rigs) syncs as original file bytes (`animatedImports`).
+   **FOUR paths carry per-object state and they do NOT share a serializer** — the peer
+   object sync (GLTF for leaf meshes, toJSON for lights/parents/multi-material),
+   autosave (ONE GLTF export of the whole group), sessions/`.tpscene` (toJSON), and
+   undo (per-kind snapshots). Adding state means asking which of the four keep it.
+   Anything GLTF cannot round-trip must ride BESIDE the autosave snapshot and REPLACE
+   its GLTF twin on restore, keyed by the `__uuid` stamp (`animated` for rigs,
+   `multiMaterial` for slot arrays) — and the failure is quiet: a material array comes
+   back as a Group of single-material children that renders IDENTICAL pixels, so only
+   a per-object shape assertion catches it.
+   **A MATERIAL ARRAY cannot cross GLTF at all**: the exporter splits
+   `geometry.groups` into one primitive per material, the loader reassembles them as
+   separate meshes, and an array material with NO groups exports nothing. Use
+   `serializeMeshWithGroups` (materialsHandler) — and note it flattens a PARAMETRIC
+   geometry into a plain BufferGeometry first, because `{type:'BoxGeometry', …}` makes
+   ObjectLoader re-run the generator and silently discard custom groups.
+   **State with two halves must travel in ONE message**: slots are
+   `object.material` (the array) *plus* `geometry.groups` (which face uses which),
+   and an array material with no groups draws NOTHING — so the `materials` message
+   carries both, and a groups-only send would land on a receiver that cannot use it.
 6. **Cleanup** on peer loss in `commandsHandler.handleDisconnected` — and if you keep
    a per-peer map of your own, clear it in BOTH teardown paths in
    `peerHandler`: `onConnClose` AND `leaveSession` (they are separate call sites;

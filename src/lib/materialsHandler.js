@@ -92,6 +92,8 @@ registerHistoryKind('material', (entry, state) => {
 			map: state.value,
 			...(entry.slot ? { slot: entry.slot } : {})
 		});
+	} else if (entry.param === 'materials') {
+		applyMaterials(object, state.value, true);
 	} else if (entry.param === 'materialParam') {
 		setMaterialParam(entry.uuid, entry.key, state.value, true);
 	} else if (entry.param === 'color') {
@@ -101,6 +103,163 @@ registerHistoryKind('material', (entry, state) => {
 	objectsGroup.update((value) => value);
 	return true;
 });
+
+// ---- material SLOTS (UV4) --------------------------------------------------
+// A mesh's slot list is `object.material` as an ARRAY paired with
+// `geometry.groups`; three renders slot N by walking the groups, so a geometry with
+// no groups and an array material draws NOTHING. Nothing replicated the array
+// itself before: textures/params were slot-addressable, but a slot coming into
+// EXISTENCE was purely local, which is why assigning faces to slots could not be
+// shared. This is the one message that syncs both halves at once.
+
+/** Serialize a material array for the wire. THREE's own toJSON per material, so
+ * textures ride as data-URLs exactly as they do in the object message.
+ * @param {any[]} materials @returns {any} */
+function serializeMaterials(materials) {
+	/** @type {any} */
+	const meta = { textures: [], images: [] };
+	const list = materials.map((material) => material.toJSON(meta));
+	return { materials: list, textures: meta.textures, images: meta.images };
+}
+
+/**
+ * Apply a serialized material array (+ optional geometry groups) to an object.
+ * Rebuilds real THREE materials through ObjectLoader's material parser so textures
+ * come back too, then re-applies the groups — WITHOUT them an array material is
+ * invisible.
+ * @param {any} object @param {any} payload @param {boolean} [replicate]
+ */
+export function applyMaterials(object, payload, replicate = false) {
+	if (!object || !payload?.materials?.length) return;
+	const loader = new THREE.ObjectLoader();
+	const images = loader.parseImages(payload.images ?? [], () => {});
+	const textures = loader.parseTextures(payload.textures ?? [], images);
+	const materials = loader.parseMaterials(payload.materials, textures);
+	const next = payload.materials.map((/** @type {any} */ entry) => materials[entry.uuid]).filter(Boolean);
+	if (!next.length) return;
+	// carry the thumbnail dataURL the UI reads (material.toJSON does not keep it)
+	next.forEach((/** @type {any} */ material, /** @type {number} */ i) => {
+		const url = payload.mapDataUrls?.[i];
+		if (url) material.userData.mapDataUrl = url;
+	});
+	object.material = next.length === 1 ? next[0] : next;
+	if (payload.groups && object.geometry) {
+		object.geometry.clearGroups();
+		for (const group of payload.groups)
+			object.geometry.addGroup(group.start, group.count, group.materialIndex);
+	}
+	object.material.needsUpdate ??= true;
+	objectsGroup.update((value) => value);
+	if (replicate)
+		broadcast({ type: 'objectParameters', parameter: 'materials', uuid: object.uuid, payload });
+}
+
+/** Does this object wear a real material ARRAY (more than one slot)?
+ * @param {any} object */
+export function isMultiMaterial(object) {
+	return Array.isArray(object?.material) && object.material.length > 1;
+}
+
+/**
+ * Serialize a mesh so its material ARRAY and `geometry.groups` actually survive.
+ *
+ * A material array cannot cross a GLTF round trip at all: the exporter splits groups
+ * into one primitive per material and the loader reassembles them as a GROUP of
+ * single-material child meshes. `toJSON`/ObjectLoader does round-trip arrays, groups
+ * and data-URL textures — with one catch. A PARAMETRIC geometry serializes as its
+ * parameters (`{type:'BoxGeometry', ...}`) and the loader RE-RUNS the generator,
+ * regenerating the default groups and silently discarding custom ones, which would
+ * undo every face-to-slot assignment on a primitive. Copy into a plain
+ * BufferGeometry first so real attributes + groups are written.
+ *
+ * Shared by the peer object sync and the autosave snapshot — both had the same hole.
+ * @param {any} element
+ */
+export function serializeMeshWithGroups(element) {
+	const geometry = element.geometry;
+	if (!geometry?.parameters) return element.toJSON();
+	const flat = new THREE.BufferGeometry().copy(geometry); // attributes, groups, index
+	const clone = element.clone();
+	clone.uuid = element.uuid; // clone() re-uuids; everything is keyed by this
+	clone.children = [];
+	clone.geometry = flat;
+	const json = clone.toJSON();
+	flat.dispose();
+	return json;
+}
+
+/** The wire payload for an object's CURRENT slots + groups. @param {any} object */
+export function materialsPayload(object) {
+	const materials = materialsOf(object);
+	const serialized = serializeMaterials(materials);
+	return {
+		...serialized,
+		// toJSON drops userData.mapDataUrl, and the Inspector/UV sidebar read it
+		mapDataUrls: materials.map((m) => m.userData?.mapDataUrl ?? null),
+		groups: (object.geometry?.groups ?? []).map((/** @type {any} */ g) => ({
+			start: g.start,
+			count: g.count,
+			materialIndex: g.materialIndex || 0
+		}))
+	};
+}
+
+/**
+ * Replace an object's material slots (and its geometry groups), replicated and
+ * undoable as ONE step.
+ * @param {string} uuid @param {any[]} materials @param {any[]} [groups]
+ * @returns {boolean}
+ */
+export function setObjectMaterials(uuid, materials, groups) {
+	const object = objectOf(uuid);
+	if (!object || !materials?.length) return false;
+	const before = materialsPayload(object);
+	object.material = materials.length === 1 ? materials[0] : materials;
+	if (groups && object.geometry) {
+		object.geometry.clearGroups();
+		for (const group of groups) object.geometry.addGroup(group.start, group.count, group.materialIndex);
+	}
+	objectsGroup.update((value) => value);
+	const after = materialsPayload(object);
+	recordEntry({
+		kind: 'material',
+		uuid,
+		param: 'materials',
+		before: { value: before },
+		after: { value: after }
+	});
+	broadcast({ type: 'objectParameters', parameter: 'materials', uuid, payload: after });
+	return true;
+}
+
+/**
+ * Append a slot, cloned from the last one so it inherits the look rather than
+ * appearing as an untextured default. Existing geometry groups are preserved, so
+ * nothing changes visually until faces are assigned to the new slot.
+ * @param {string} uuid @returns {number} the new slot index, or -1
+ */
+export function addMaterialSlot(uuid) {
+	const object = objectOf(uuid);
+	if (!object) return -1;
+	const current = materialsOf(object);
+	if (!current.length) return -1;
+	const fresh = current[current.length - 1].clone();
+	fresh.name = 'slot' + current.length;
+	// a cloned material shares its parent's map OBJECT; that is fine (both slots
+	// showing one texture until one is re-textured) and keeps the clone cheap
+	const materials = [...current, fresh];
+	const count = object.geometry?.index?.count ?? object.geometry?.attributes?.position?.count ?? 0;
+	// Growing from a SINGLE material: normalise the groups to one covering group on
+	// slot 0. three ignores groups entirely for a single material, and the
+	// primitives ship them anyway — a plain BoxGeometry has six, materialIndex 0..5 —
+	// so keeping them would suddenly point four faces at slots that do not exist and
+	// those faces would render nothing. Before the add every face showed the one
+	// material; after it, every face must still show slot 0.
+	// With an array already present the groups are real and are left alone.
+	const groups =
+		current.length > 1 ? undefined : [{ start: 0, count, materialIndex: 0 }];
+	return setObjectMaterials(uuid, materials, groups) ? materials.length - 1 : -1;
+}
 
 /**
  * Record one material history step (also used by the Properties color picker).
@@ -302,6 +461,14 @@ export function switchMaterialType(uuid, type, replicate = true) {
 	const object = objectOf(uuid);
 	if (!object || !MATERIAL_TYPES.includes(type)) return;
 	const old = object.material;
+	// A multi-material mesh used to fall through here and have its whole slot array
+	// replaced by ONE fresh material — silently, on both sides, with no history entry
+	// (the carry-over and recordMaterialChange both skip arrays). Refuse instead;
+	// per-slot type switching would need a slot argument and a materials commit.
+	if (Array.isArray(old) && old.length > 1) {
+		if (replicate) showToast('Cannot change the material type of a multi-slot object yet');
+		return;
+	}
 	if (replicate && old && !Array.isArray(old)) recordMaterialChange(uuid, 'type', null, old.type, type);
 	/** @type {any} */
 	const fresh = new (/** @type {any} */ (THREE))[type]();

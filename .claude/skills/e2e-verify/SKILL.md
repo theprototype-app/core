@@ -17,7 +17,13 @@ npm run e2e -- ping drawing      # subset by name (normal during development)
 ```
 
 **Every feature phase adds a suite here** (not in scratchpad) and updates any suite its
-UI changes break — in the same commit. helpers.cjs exports: `launch(options)` (pass
+UI changes break — in the same commit. The UV editor's are `uv-editor` (dock tab, UV
+map, drag, multi-select, box/lasso), `uv-materials` (per-slot textures), `uv-paint`,
+`uv-target` (which object the editor shows), `uv-dense` (models over the snapshot
+cap), `uv-live-faces` (live paint preview + face scoping), `uv-texture-params`
+(sampler state + the orientation arbiter), `uv-slots` + `uv-slots-persist` (UV4
+slots, live and across a reload), plus `mesh-grab-uv` and `object-sync` — the first
+coverage this repo has of the gizmo-grab uv path and of the late-joiner object sync. helpers.cjs exports: `launch(options)` (pass
 `{args:[...]}` for fake media), `setupPage(browser, name)` (init script + hydration +
 peer id), `connect(from, to, settleMs=9000)`, `check(ok, label)`,
 `eventually(fn, predicate, label, timeout)`, `projectPoint(page, [x,y,z])` (world →
@@ -31,6 +37,37 @@ while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE
 The expensive failures in #16 were not broken code — they were assertions that
 passed while the user watched the feature misbehave:
 
+- **An AGGREGATE health check cannot see a LOCAL loss.** `mesh-uv-preserve` asserted
+  the uv attribute exists, `uv.count === position.count`, and a healthy global
+  spread — all three stayed green while six corners of ONE face sat on texel (0,0)
+  and the user watched that face's texture vanish. An earlier investigation used
+  those same aggregates and concluded "visual artifact, the data is fine". Assert the
+  PART the operation touched: capture the picked face's triangle indices first, then
+  read those corners back (`mesh-grab-uv`). Sum/min/max/count over a whole mesh hides
+  any localised defect.
+- **Write the check BEFORE the fix when a design choice is genuinely ambiguous, and
+  let it decide.** Whether a `flipY=false` texture wants canvas y = v·h or (1−v)·h had
+  two confident, opposite answers. Painting a known UV quadrant and demanding the
+  pixels land where that quadrant SAMPLES settled it in one run: tr=656/br=0 before,
+  br=653/tr=0 after (`uv-texture-params`). Reasoning alone was a coin flip on a fix
+  that would have looked plausible either way.
+- **A wire spy that does not CALL THROUGH makes delivery and loss identical.** Every
+  existing spy in this repo replaces `send()` and drops the message. A probe built
+  that way "proved" a late joiner got an empty scene, which aimed a whole planned
+  send-channel rewrite at a non-bug; a pass-through wrapper
+  (`const orig = conn.send.bind(conn); conn.send = m => { record(m); return orig(m) }`)
+  showed the channel was fine. Spy the RIGHT object too: `sendObjects` uses
+  `conn.send` on the raw DataConnection, not `peers.send`.
+- **When the failure signature is SILENCE, instrument the silence.** Nothing threw,
+  nothing logged, the scene was just empty. Add an `unhandledrejection` listener and
+  the connection's own `error` event (neither appears anywhere else in the suite) and
+  record what actually left the wire, or you are reading tea leaves (`object-sync`).
+- **"It still looks right" is not "it survived".** A material array comes back from a
+  GLTF round trip as a Group of single-material children that renders IDENTICAL
+  pixels — that is why the reload bug reached a user. Assert the SHAPE (`type ===
+  'Mesh'`, child-mesh count, slot count, group count, uuid), never the appearance
+  (`uv-slots-persist`). Reload tests must also call `autosave.restoreSnapshot()`
+  explicitly: the restore is offered as a sticky prompt, never applied automatically.
 - **Position/layout asserts need a TIGHT BAND and a forcing start state.** "the
   section label is somewhere below the sticky header" is true when NO scrolling
   happened at all (short panel = most sections collapsed), so a deep-link check

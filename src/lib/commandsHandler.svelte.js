@@ -3,7 +3,7 @@ import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selected
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
-import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
+import { applyMap, switchMaterialType, setMaterialParam, applyMaterials, isMultiMaterial, serializeMeshWithGroups } from '$lib/materialsHandler'
 import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected, physicsShapeChanged } from '$lib/physics'
@@ -371,6 +371,11 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'material') {
         // carries over color/map/opacity from the previous material
         switchMaterialType(data.uuid, data.material, false);
+    } else if (data.parameter == 'materials') {
+        // UV4: the whole slot list + geometry groups. Both halves must arrive
+        // together — an array material with no groups renders nothing.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) applyMaterials(mesh, data.payload, false);
     } else if (data.parameter == 'map') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         // UV2: `slot` addresses one material of an ARRAY. Absent (an older peer,
@@ -549,6 +554,28 @@ export function sendObjects(peerId, element) {
 
 }
 
+/**
+ * Should this leaf mesh be sent as toJSON instead of GLTF? Only a MATERIAL ARRAY
+ * needs it (GLTF loses the array — see the branch that uses this).
+ *
+ * Size is the catch: toJSON writes geometry attributes as PLAIN NUMBER ARRAYS, and
+ * binarypack recurses per element, so a big mesh blows the call stack and
+ * `broadcast`'s catch swallows it — the message would silently never leave. The GLTF
+ * path packs attributes as base64 and has no such limit, so above the cap we fall
+ * back to it and accept losing the slots rather than losing the object.
+ * @param {any} element
+ */
+function multiMaterialSyncable(element) {
+    if (!isMultiMaterial(element)) return false;
+    const position = element.geometry?.attributes?.position;
+    // mirrors faceEdit's MAX_SNAPSHOT budget (45000 floats) for the same reason
+    if (position && position.count * 3 > 45000) {
+        showToast('"' + (element.name || element.type) + '" is too large to share its material slots');
+        return false;
+    }
+    return true;
+}
+
 export function sendObject(conn, element, groupuuid) {
     let objects = [];
     let test = new THREE.Vector3();
@@ -610,6 +637,23 @@ export function sendObject(conn, element, groupuuid) {
                 scale: element.scale.toArray()
             });
             sendObject(conn, element, element.uuid);
+        } else if (multiMaterialSyncable(element)) {
+            // A MATERIAL ARRAY cannot survive the GLTF round trip: the exporter
+            // splits geometry.groups into one primitive per material and the loader
+            // reassembles that as a GROUP of single-material child meshes, so the
+            // receiver ends up with a Group (0 slots, 0 groups, fresh child uuids)
+            // instead of the mesh — measured in tests/e2e/object-sync. toJSON +
+            // ObjectLoader DOES round-trip arrays, geometry.groups and data-URL
+            // textures, which is why lights, parent meshes, convert-to-mesh, prefabs
+            // and sessions all already use it (see objectActions' note on the rule).
+            conn.send({
+                type: 'object',
+                element: serializeMeshWithGroups(element),
+                groupuuid: groupuuid,
+                pos: element.position.toArray(),
+                rot: element.rotation.toArray(),
+                scale: element.scale.toArray()
+            });
         } else {
             // capture the transform NOW (synchronously, while animated objects
             // are parked at their base) — the exporter callback fires later (88)
@@ -631,7 +675,10 @@ export function sendObject(conn, element, groupuuid) {
                     });
                 },
                 function (error) {
+                    // an export failure used to be invisible: nothing was sent and
+                    // nothing said so, leaving a hole in the receiver's scene
                     console.log(error);
+                    showToast('Could not share "' + (element.name || element.type) + '" with peers');
                 }
             );
         }

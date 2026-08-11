@@ -15,7 +15,10 @@ import {
 	facesWireFields,
 	applyFacesWire,
 	carryFaces,
-	packFaces
+	packFaces,
+	composeFaces,
+	appendOrigin,
+	appendedQuads
 } from './meshTopology';
 
 // Face editing core (118, pulled forward from pending/25 and scoped to VR
@@ -678,8 +681,13 @@ export function subdivideFaceTris(tris, targetTris) {
  *
  * Unselected neighbours keep their full edge, the same T-junction tradeoff the
  * triangle split and loop cut already document.
+ * P10: it also reports the TOPOLOGY it built — `origin` maps each output triangle back
+ * to the input one it descends from, and `authored` lists the faces this op knows it
+ * created (one entry per sub-quad, singletons for a 4-way triangle split). A carry-over
+ * alone cannot express that, because all eight children of a split quad descend from the
+ * same old face and would collapse into one eight-triangle face.
  * @param {any[]} tris @param {number[]} targetTris @param {Int32Array} partner
- * @returns {{tris: any[], newIndices: number[]}}
+ * @returns {{tris: any[], newIndices: number[], origin: number[], authored: number[][]}}
  */
 export function subdivideFaceUnits(tris, targetTris, partner) {
 	const targets = new Set(targetTris);
@@ -687,12 +695,22 @@ export function subdivideFaceUnits(tris, targetTris, partner) {
 	const out = [];
 	/** @type {number[]} */
 	const newIndices = [];
+	/** @type {number[]} out index -> the input index it came from (-1 = brand new) */
+	const origin = [];
+	/** @type {number[][]} */
+	const authored = [];
+	/** every push into `out` goes through here so `origin` cannot drift out of step
+	 * @param {any} tri @param {number} from */
+	const keep = (tri, from) => {
+		origin[out.length] = from;
+		out.push(tri);
+	};
 	const done = new Set();
 	const mid = (/** @type {any} */ p, /** @type {any} */ q) => p.clone().add(q).multiplyScalar(0.5);
 	tris.forEach((t, ti) => {
 		if (done.has(ti)) return;
 		if (!targets.has(ti)) {
-			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
+			keep(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv), ti);
 			return;
 		}
 		const mate = partner?.[ti] ?? -1;
@@ -704,7 +722,10 @@ export function subdivideFaceUnits(tris, targetTris, partner) {
 			const sub = subdivideFaceTris([t], [0]);
 			for (const s of sub) {
 				newIndices.push(out.length);
-				out.push(s);
+				// four separate triangular faces, NOT one face of four: they descend
+				// from the same input tri, so only an authored entry can say so
+				authored.push([out.length]);
+				keep(s, ti);
 			}
 			return;
 		}
@@ -722,7 +743,7 @@ export function subdivideFaceUnits(tris, targetTris, partner) {
 		}
 		const ring = keys.map((/** @type {string} */ k) => corner.get(k));
 		if (ring.some((/** @type {any} */ r) => !r)) {
-			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
+			keep(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv), ti);
 			return;
 		}
 		const [A, B, C, D] = ring;
@@ -744,14 +765,24 @@ export function subdivideFaceUnits(tris, targetTris, partner) {
 		const emit = (pos, uv) => {
 			const at = out.length;
 			pushQuad(out, pos[0], pos[1], pos[2], pos[3], wantDir, mi, textured ? uv : undefined);
-			for (let i = at; i < out.length; i++) newIndices.push(i);
+			/** @type {number[]} */
+			const cell = [];
+			for (let i = at; i < out.length; i++) {
+				newIndices.push(i);
+				origin[i] = ti; // the grid cell descends from the quad's first half
+				cell.push(i);
+			}
+			// ONE sub-quad, authored: this is the pinwheel fix made explicit. Bilinear
+			// children of a rectangle score as rectangles so pairQuads would recover
+			// the same pairing here, but a later twist would lose it again.
+			authored.push(cell);
 		};
 		emit([A.pos.clone(), mAB, ctr.clone(), mDA], [A.uv, uAB, uCtr, uDA]);
 		emit([mAB.clone(), B.pos.clone(), mBC, ctr.clone()], [uAB, B.uv, uBC, uCtr]);
 		emit([ctr.clone(), mBC.clone(), C.pos.clone(), mCD], [uCtr, uBC, C.uv, uCD]);
 		emit([mDA.clone(), ctr.clone(), mCD.clone(), D.pos.clone()], [uDA, uCtr, uCD, D.uv]);
 	});
-	return { tris: out, newIndices };
+	return { tris: out, newIndices, origin, authored };
 }
 
 /** B4: reverse the winding (swap b/c) of the target tris — flips their
@@ -1848,6 +1879,13 @@ export function commitLoopCut(cuts = 1) {
 		const mate = quadPartner[quad] ?? -1;
 		if (mate >= 0) consumed.add(mate);
 	}
+	const priorFaces = currentPartition();
+	/** P10: new index -> the input triangle it is, for the survivors. The filter
+	 * REINDEXES everything, so the partition cannot be carried by index alone. */
+	const origin = [];
+	workingTris.forEach((/** @type {any} */ _, /** @type {number} */ ti) => {
+		if (!consumed.has(ti)) origin.push(ti);
+	});
 	const next = cloneTris(
 		workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !consumed.has(ti))
 	);
@@ -1904,7 +1942,15 @@ export function commitLoopCut(cuts = 1) {
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
-	applyGeometrySnapshot(positions, groups, uvs);
+	// every sub-quad the cut emitted is authored: this is the op the whole topology
+	// channel exists for, since a cut band is the thing users rotate next
+	while (origin.length < next.length) origin.push(-1); // the appended band
+	applyGeometrySnapshot(
+		positions,
+		groups,
+		uvs,
+		composeFaces(priorFaces, origin, appendedQuads(firstNew, next.length))
+	);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
 		kind: 'meshgeo',
@@ -2942,17 +2988,52 @@ function storedPartner(geometry, triCount) {
 }
 
 /**
- * Derive the current quad partition and STORE it.
+ * Topology for a geometry nobody authored one for, in order of trust: CARRY the
+ * previous partition when it still fits exactly, else derive one now.
  *
- * Called at COMMIT time, which is the moment derivation is trustworthy: the operator
- * has just authored geometry whose coplanarity still reflects its intent. Storing it
- * then means a later rigid transform carries the partition instead of re-guessing from
- * geometry the rotate has already spoiled.
+ * Carrying first is what makes the twisted band work, and skipping it was the first
+ * pass's real gap: the gizmo rotate has no authored partition, and EVERY live preview
+ * frame swaps the geometry (liveGeometryUpdate), so a derive-only fallback re-guessed
+ * the quads from geometry the rotate had already spoiled — mid-gesture, before the
+ * commit could even see them. The partition has to survive the preview to survive the
+ * commit.
+ * @param {any} geometry the fresh geometry @param {any} previous the one it replaces
+ */
+function carryOrDeriveFaces(geometry, previous) {
+	if (carryFaces(geometry, previous)) return;
+	storeDerivedFaces(geometry, readTriangles(geometry));
+}
+
+/**
+ * Derive a quad partition from coplanarity and STORE it. Only ever reached for geometry
+ * with no authored and no carryable topology — a mesh's first edit — because derivation
+ * is trustworthy exactly once: while the geometry still looks the way whoever built it
+ * meant it to.
  * @param {any} geometry @param {any[]} tris @returns {number[][]|null}
  */
 function storeDerivedFaces(geometry, tris) {
 	if (!geometry || !tris?.length) return null;
-	const partner = pairQuads(tris);
+	const partition = derivePartition(tris, pairQuads(tris));
+	return storeFaces(geometry, partition) ? partition : null;
+}
+
+/**
+ * The partition of the LIVE session's triangles: stored if there is one, derived if not.
+ * This is what an operator consumes — "stored else derived" in one place, so no operator
+ * has to know which world it is in.
+ * @returns {number[][]|null}
+ */
+function currentPartition() {
+	if (!faceEdited || !workingTris.length) return null;
+	return readStoredFaces(faceEdited.geometry) ?? derivePartition(workingTris, quadPartner);
+}
+
+/**
+ * Turn a `quadPartner` pairing into a partition. Every triangle lands in exactly one
+ * face, so the result always satisfies facesValidFor.
+ * @param {any[]} tris @param {Int32Array} partner @returns {number[][]}
+ */
+function derivePartition(tris, partner) {
 	/** @type {number[][]} */
 	const partition = [];
 	const claimed = new Uint8Array(tris.length);
@@ -2967,7 +3048,7 @@ function storeDerivedFaces(geometry, tris) {
 			partition.push([ti]);
 		}
 	}
-	return storeFaces(geometry, partition) ? partition : null;
+	return partition;
 }
 
 /** O(1) identity of the quad a triangle belongs to — the lower of the pair, so
@@ -3293,19 +3374,44 @@ export function commitFaceOp(op, amount) {
 	let next;
 	/** @type {number[] | null} subdivide keeps its OWN output selected */
 	let subdivided = null;
-	if (op === 'extrude') next = extrudeFace(workingTris, face, amount);
-	else if (op === 'inset') next = insetFace(workingTris, face, amount);
-	else if (op === 'move') next = moveFaceAlongNormal(workingTris, face, amount);
-	else if (op === 'delete') next = deleteFaceTris(workingTris, face);
+	/** @type {number[][] | null} P10: the partition the OP authored, when it can
+	 * describe its own output. Null falls back to derive-and-store. */
+	let nextFaces = null;
+	const priorFaces = currentPartition();
+	if (op === 'extrude') {
+		next = extrudeFace(workingTris, face, amount);
+		// the walls arrive as consecutive pushQuad pairs after the untouched input,
+		// so the partition is the input's plus one face per wall quad. Deriving would
+		// agree TODAY and disagree the moment the band is rotated.
+		nextFaces = composeFaces(
+			priorFaces,
+			appendOrigin(workingTris.length, next.length),
+			appendedQuads(workingTris.length, next.length)
+		);
+	} else if (op === 'inset') {
+		next = insetFace(workingTris, face, amount);
+		nextFaces = composeFaces(
+			priorFaces,
+			appendOrigin(workingTris.length, next.length),
+			appendedQuads(workingTris.length, next.length)
+		);
+	} else if (op === 'move') {
+		next = moveFaceAlongNormal(workingTris, face, amount);
+		// a pure vertex move: same triangles, same faces
+		nextFaces = priorFaces;
+	} else if (op === 'delete') next = deleteFaceTris(workingTris, face);
 	else if (op === 'subdivide') {
 		// quad-aware: a paired quad becomes a 2x2 grid, so the quad topology (and
 		// with it every loop tool) survives the split
 		const split = subdivideFaceUnits(workingTris, face.triIndices, quadPartner);
 		next = split.tris;
 		subdivided = split.newIndices;
-	}
-	else if (op === 'flip') next = flipFaceNormals(workingTris, face.triIndices);
-	else return false;
+		nextFaces = composeFaces(priorFaces, split.origin, split.authored);
+	} else if (op === 'flip') {
+		next = flipFaceNormals(workingTris, face.triIndices);
+		// winding only — the grouping is untouched
+		nextFaces = priorFaces;
+	} else return false;
 	const positions = trisToPositions(next);
 	if (positions.length > MAX_SNAPSHOT) {
 		showToast('That edit is too large to sync');
@@ -3327,7 +3433,7 @@ export function commitFaceOp(op, amount) {
 		if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
 		if (op === 'delete') faceEditHighlight.set(-1);
 	}
-	applyGeometrySnapshot(positions, groups, uvs);
+	applyGeometrySnapshot(positions, groups, uvs, nextFaces);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
 		kind: 'meshgeo',
@@ -3373,11 +3479,7 @@ function applyGeometrySnapshot(positions, groups, uvs, faces) {
 	previous?.dispose?.();
 	faceEdited.geometry = geometry;
 	faceEdited.userData.faceEdited = true;
-	// P9: an AUTHORED partition wins; otherwise derive once, HERE, while the operator's
-	// output is still fresh, and store THAT. Storing a derived partition is not
-	// redundant — it is what stops the NEXT rigid transform from re-guessing quads from
-	// geometry a rotate has already spoiled.
-	if (!faces || !storeFaces(geometry, faces)) storeDerivedFaces(geometry, readTriangles(geometry));
+	if (!faces || !storeFaces(geometry, faces)) carryOrDeriveFaces(geometry, previous);
 	rebuildFaces();
 	refreshFaceOverlay();
 	refreshEdgeHighlight(); // M4: baked in world space, same as the face overlay
@@ -3533,6 +3635,10 @@ function liveGeometryUpdate() {
 	const previous = faceEdited.geometry;
 	preserveMaterialGroups(geometry, previous, faceEdited, groups);
 	preserveUVs(geometry, previous, uvs);
+	// P10: the preview swaps geometry every frame, so topology has to survive HERE or
+	// there is nothing left for the commit to carry (this is why a rotated band still
+	// lost its quads after the commit path already carried them)
+	carryOrDeriveFaces(geometry, previous);
 	previous?.dispose?.();
 	faceEdited.geometry = geometry;
 	faceEdited.userData.faceEdited = true;

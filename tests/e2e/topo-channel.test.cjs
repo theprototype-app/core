@@ -245,6 +245,308 @@ h.run(async () => {
 	h.check(save.had, 'the saved mesh had topology to save');
 	h.check(save.got && save.same, 'geometry.userData topology round-trips through toJSON/ObjectLoader (sessions, .tpscene)');
 
+	// ---- P10: composition, and the operators that AUTHOR their faces ---------
+	const compose = await A.page.evaluate(() => {
+		const t = window.__stores.meshTopology;
+		// authored faces WIN over the carry-over: subdivide's eight children all
+		// descend from one old quad, and calling them one face is the pinwheel bug
+		const composed = t.composeFaces(
+			[[0, 1], [2, 3]],
+			[0, 0, 0, 0, 1, 1, 1, 1, 2, 3],
+			[[0, 1], [2, 3], [4, 5], [6, 7]]
+		);
+		const authoredKept = JSON.stringify(composed.slice(0, 4)) === JSON.stringify([[0, 1], [2, 3], [4, 5], [6, 7]]);
+		const carried = JSON.stringify(composed.slice(4)) === JSON.stringify([[8, 9]]);
+		const covers = t.facesValidFor(composed, 10);
+		// a brand-new triangle nobody claimed becomes its own face
+		const orphan = t.composeFaces([[0]], [0, -1], []);
+		const orphanOwn = JSON.stringify(orphan) === JSON.stringify([[1], [0]]);
+		const pairs = t.appendedQuads(4, 10);
+		const odd = t.appendedQuads(4, 9);
+		return {
+			authoredKept,
+			carried,
+			covers,
+			orphanOwn,
+			pairsOk: JSON.stringify(pairs) === JSON.stringify([[4, 5], [6, 7], [8, 9]]),
+			oddTail: JSON.stringify(odd) === JSON.stringify([[4, 5], [6, 7], [8]])
+		};
+	});
+	h.check(compose.authoredKept, 'composeFaces takes authored faces verbatim');
+	h.check(compose.carried, '...and the unclaimed triangles rejoin their old face');
+	h.check(compose.covers, '...producing a partition that still covers the mesh');
+	h.check(compose.orphanOwn, 'a triangle with no ancestor becomes its own face');
+	h.check(compose.pairsOk, 'appended pushQuad output reads as consecutive quads');
+	h.check(compose.oddTail, '...and an odd tail stays a single triangle, not a false pair');
+
+	// The pinwheel: subdividing a quad gives 8 triangles. Derivation can pair the
+	// corner-and-centre "kites" instead of the grid, which made "subdivide then Loop"
+	// behave randomly. The authored partition says four sub-quads, and then survives a
+	// twist that derivation could not have survived either way.
+	const subdiv = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const t = s.meshTopology;
+		const fe = s.faceEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		window.__sub = box;
+		fe.exitFaceEdit?.(); // a stale session targets the PREVIOUS object
+		fe.enterFaceEdit(box.uuid);
+		const faces = fe.currentFaces();
+		const xi = faces.findIndex((f) => f.normal.x > 0.9);
+		fe.highlightFaceByTriangle(faces[xi].triIndices[0]);
+		const committed = fe.commitFaceOp('subdivide', 0);
+		const stored = t.readStoredFaces(box.geometry);
+		if (!stored) return { committed, missing: true };
+		const tris = t.triangleCountOf(box.geometry);
+		// the +X wall now holds 4 sub-quads: 8 triangles in 4 two-triangle faces
+		const wall = [];
+		const position = box.geometry.attributes.position;
+		for (let ti = 0; ti < tris; ti++) {
+			let minX = 1e9;
+			for (let c = 0; c < 3; c++) minX = Math.min(minX, position.getX(ti * 3 + c));
+			if (minX > 0.49) wall.push(ti);
+		}
+		const wallSet = new Set(wall);
+		const wallFaces = stored.filter((f) => f.every((ti) => wallSet.has(ti)));
+		return {
+			committed,
+			tris,
+			wall: wall.length,
+			wallFaces: wallFaces.length,
+			allPairs: wallFaces.every((f) => f.length === 2),
+			valid: t.facesValidFor(stored, tris)
+		};
+	});
+	h.check(subdiv.committed && !subdiv.missing, 'subdivide committed and stored a partition (premise)');
+	h.check(subdiv.wall === 8, `subdivide split the +X quad into 8 triangles (${subdiv.wall})`);
+	h.check(
+		subdiv.wallFaces === 4 && subdiv.allPairs,
+		`...stored as FOUR sub-quads, not one 8-triangle face (${subdiv.wallFaces} faces)`
+	);
+	h.check(subdiv.valid, '...and the whole partition still validates');
+
+	// The case that PROVES authoring rather than describing it: subdivide a quad that
+	// is already NON-PLANAR (a twisted extrusion wall). Deriving at commit time cannot
+	// pair the four sub-quads — each one is twisted, so pairQuads rejects it and the
+	// grid becomes eight loose triangles. Only the operator knows what it built.
+	const twistedSub = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const t = s.meshTopology;
+		const fe = s.faceEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		fe.exitFaceEdit?.();
+		fe.enterFaceEdit(box.uuid);
+		const faces = fe.currentFaces();
+		const xi = faces.findIndex((f) => f.normal.x > 0.9);
+		fe.highlightFaceByTriangle(faces[xi].triIndices[0]);
+		fe.setFaceOp('extrude');
+		fe.autoApplyFaceOp();
+		// twist the extruded cap so every wall quad is non-planar
+		const read = () => {
+			const position = box.geometry.attributes.position;
+			const out = [];
+			for (let i = 0; i < position.count; i++)
+				out.push(position.getX(i), position.getY(i), position.getZ(i));
+			return out;
+		};
+		const before = read();
+		const twisted = before.slice();
+		const angle = (6 * Math.PI) / 180;
+		const cos = Math.cos(angle);
+		const sin = Math.sin(angle);
+		for (let i = 0; i < twisted.length; i += 3)
+			if (twisted[i] > 0.5 + 1e-4) {
+				const y = twisted[i + 1];
+				const z = twisted[i + 2];
+				twisted[i + 1] = y * cos - z * sin;
+				twisted[i + 2] = y * sin + z * cos;
+			}
+		fe.commitMeshGeoSnapshot(box.uuid, before, twisted);
+		// pick ONE twisted wall quad through the stored pairing and subdivide it
+		const stored = t.readStoredFaces(box.geometry);
+		const position = box.geometry.attributes.position;
+		const spansGap = (ti) => {
+			let lo = 1e9;
+			let hi = -1e9;
+			for (let c = 0; c < 3; c++) {
+				lo = Math.min(lo, position.getX(ti * 3 + c));
+				hi = Math.max(hi, position.getX(ti * 3 + c));
+			}
+			return lo < 0.51 && hi > 0.51; // a wall: it bridges base and cap
+		};
+		const wall = stored.find((f) => f.length === 2 && f.every(spansGap));
+		if (!wall) return { missing: true };
+		fe.faceEditSelectedTris.set([...wall]);
+		fe.highlightFaceByTriangle(wall[0]);
+		const committed = fe.commitFaceOp('subdivide', 0);
+		const after = t.readStoredFaces(box.geometry);
+		const tris = t.triangleCountOf(box.geometry);
+		// the 8 children are the last 8 emitted (pushQuad appends), so count the
+		// stored faces that live entirely inside that range
+		const range = new Set();
+		for (let ti = tris - 8; ti < tris; ti++) range.add(ti);
+		const children = after.filter((f) => f.every((ti) => range.has(ti)));
+		// and the counterfactual: what derivation alone would have made of them
+		const live = read();
+		t.clearStoredFaces(box.geometry);
+		fe.applyMeshGeo(box.uuid, live);
+		const derived = [];
+		for (let ti = tris - 8; ti < tris; ti++)
+			if (fe.quadOfTriangle(ti).length === 2) derived.push(ti);
+		return {
+			committed,
+			childFaces: children.length,
+			childPairs: children.filter((f) => f.length === 2).length,
+			derivedQuads: derived.length / 2,
+			valid: t.facesValidFor(after, tris)
+		};
+	});
+	h.check(twistedSub.committed && !twistedSub.missing, 'subdivided a NON-PLANAR wall quad (premise)');
+	h.check(
+		twistedSub.childPairs === 4 && twistedSub.childFaces === 4,
+		`the twisted quad's grid is stored as 4 sub-quads (${twistedSub.childPairs} pairs)`
+	);
+	h.check(
+		twistedSub.derivedQuads < 4,
+		`derivation alone recovers only ${twistedSub.derivedQuads} of the 4 sub-quads — authoring is what saves the rest`
+	);
+	h.check(twistedSub.valid, 'the authored partition validates against the subdivided mesh');
+
+	// Extrude/inset carry the INPUT partition and author only their new walls. The
+	// proof is a non-planar cap: extruding a twisted wall quad moves a face derivation
+	// can no longer recognise, so if the op did not carry the partition forward the cap
+	// would stop being a quad the moment it was extruded.
+	const twistedExtrude = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const t = s.meshTopology;
+		const fe = s.faceEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		fe.exitFaceEdit?.();
+		fe.enterFaceEdit(box.uuid);
+		const read = () => {
+			const p = box.geometry.attributes.position;
+			const out = [];
+			for (let i = 0; i < p.count; i++) out.push(p.getX(i), p.getY(i), p.getZ(i));
+			return out;
+		};
+		const faces = fe.currentFaces();
+		const xi = faces.findIndex((f) => f.normal.x > 0.9);
+		fe.highlightFaceByTriangle(faces[xi].triIndices[0]);
+		fe.setFaceOp('extrude');
+		fe.autoApplyFaceOp();
+		const before = read();
+		const twisted = before.slice();
+		const angle = (6 * Math.PI) / 180;
+		const cos = Math.cos(angle);
+		const sin = Math.sin(angle);
+		for (let i = 0; i < twisted.length; i += 3)
+			if (twisted[i] > 0.5 + 1e-4) {
+				const y = twisted[i + 1];
+				const z = twisted[i + 2];
+				twisted[i + 1] = y * cos - z * sin;
+				twisted[i + 2] = y * sin + z * cos;
+			}
+		fe.commitMeshGeoSnapshot(box.uuid, before, twisted);
+		const position = box.geometry.attributes.position;
+		const spansGap = (ti) => {
+			let lo = 1e9;
+			let hi = -1e9;
+			for (let c = 0; c < 3; c++) {
+				lo = Math.min(lo, position.getX(ti * 3 + c));
+				hi = Math.max(hi, position.getX(ti * 3 + c));
+			}
+			return lo < 0.51 && hi > 0.51;
+		};
+		const wall = (t.readStoredFaces(box.geometry) ?? []).find(
+			(f) => f.length === 2 && f.every(spansGap)
+		);
+		if (!wall) return { missing: true };
+		const trisBefore = t.triangleCountOf(box.geometry);
+		fe.faceEditSelectedTris.set([...wall]);
+		fe.highlightFaceByTriangle(wall[0]);
+		const committed = fe.commitFaceOp('extrude', 0.3);
+		const after = t.readStoredFaces(box.geometry);
+		const trisAfter = t.triangleCountOf(box.geometry);
+		// the cap keeps the input indices (cloneTris preserves order), so the extruded
+		// wall quad must still be ONE two-triangle face
+		const capIntact = !!after?.some(
+			(f) => f.length === 2 && f[0] === wall[0] && f[1] === wall[1]
+		);
+		const capPaired = fe.quadOfTriangle(wall[0]).length === 2;
+		const newWalls = (after ?? []).filter(
+			(f) => f.length === 2 && f.every((ti) => ti >= trisBefore)
+		).length;
+		return { committed, capIntact, capPaired, newWalls, trisBefore, trisAfter };
+	});
+	h.check(twistedExtrude.committed && !twistedExtrude.missing, 'extruded a NON-PLANAR wall quad (premise)');
+	h.check(twistedExtrude.capIntact, 'the extruded cap keeps its face through the op (the input partition is carried, not re-guessed)');
+	h.check(twistedExtrude.capPaired, '...so the live session still treats it as a quad');
+	h.check(
+		twistedExtrude.newWalls === 4,
+		`...and the four new side walls are authored as quads (${twistedExtrude.newWalls})`
+	);
+
+	// loop cut authors its band the same way, and the band keeps its quads after a
+	// twist — the operation users reach for immediately after cutting
+	const loop = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const t = s.meshTopology;
+		const fe = s.faceEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		window.__loop = box;
+		fe.exitFaceEdit?.();
+		fe.enterFaceEdit(box.uuid);
+		const faces = fe.currentFaces();
+		const xi = faces.findIndex((f) => f.normal.x > 0.9);
+		fe.faceEditSelectedTris.set([...faces[xi].triIndices]);
+		fe.highlightFaceByTriangle(faces[xi].triIndices[0]);
+		const cut = fe.commitLoopCut(1);
+		const stored = t.readStoredFaces(box.geometry);
+		const tris = t.triangleCountOf(box.geometry);
+		const quads = stored ? stored.filter((f) => f.length === 2).length : 0;
+		// twist the whole band's far side and commit positions-only
+		const position = box.geometry.attributes.position;
+		const before = [];
+		for (let i = 0; i < position.count; i++)
+			before.push(position.getX(i), position.getY(i), position.getZ(i));
+		const twisted = before.slice();
+		const angle = (4 * Math.PI) / 180;
+		const cos = Math.cos(angle);
+		const sin = Math.sin(angle);
+		for (let i = 0; i < twisted.length; i += 3)
+			if (twisted[i] > 0) {
+				const y = twisted[i + 1];
+				const z = twisted[i + 2];
+				twisted[i + 1] = y * cos - z * sin;
+				twisted[i + 2] = y * sin + z * cos;
+			}
+		fe.commitMeshGeoSnapshot(box.uuid, before, twisted);
+		const after = t.readStoredFaces(box.geometry);
+		return {
+			cut,
+			tris,
+			quads,
+			valid: t.facesValidFor(stored, tris),
+			keptQuads: after ? after.filter((f) => f.length === 2).length : 0
+		};
+	});
+	h.check(loop.cut, 'loop cut committed (premise)');
+	h.check(loop.valid, 'the loop cut authored a partition valid for its output');
+	h.check(loop.quads >= 8, `the cut band is stored as quads (${loop.quads})`);
+	h.check(loop.keptQuads === loop.quads, `a 4-degree twist of the cut mesh keeps all ${loop.quads} quads`);
+
 	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
 
 	// ---- a peer STORES what arrived, and an old-style message still lands ----

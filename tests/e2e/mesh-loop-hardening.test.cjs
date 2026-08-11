@@ -11,9 +11,10 @@
 //     had nothing sane to follow. Quads split 2x2 now.
 //  3. faceLoopRing continued through a NON-MANIFOLD edge by picking an
 //     arbitrary neighbour; it stops there now.
-// Section 3b pins down the one gap a triangle soup cannot close (a rotate
-// TWISTS quads apart, indistinguishable from a real crease) so the topology
-// workstream has a number to beat.
+// Section 3b used to pin down the one gap a triangle soup cannot close (a rotate
+// TWISTS quads apart, indistinguishable from a real crease) as a number for the
+// topology workstream to beat. P10 beat it: the partition is stored data now, so
+// 3b asserts the band SURVIVES the twist and loop select walks it.
 const h = require('./helpers.cjs');
 
 const editBox = (page, cmd = '/create Box 1 1 1') =>
@@ -210,14 +211,19 @@ h.run(async () => {
 	});
 	h.check(undoOne.after < undoOne.before, 'ONE undo takes the loop cut back out');
 
-	// ===================== 3b. KNOWN LIMITATION, pinned down deliberately
-	// A rigid ROTATE twists each wall quad: a 4-degree turn makes its two
-	// triangles diverge by ~9 (measured here), which in a triangle SOUP is
-	// indistinguishable from a genuine 9-degree crease — so pairQuads drops
-	// them and the loop walk has nothing to follow. No threshold fixes it: one
-	// loose enough to keep a twisted quad also pairs across the segments of a
-	// smooth sphere. This check RECORDS the boundary rather than asserting the
-	// bug is gone, so the topology workstream has a number to beat.
+	// ===================== 3b. THE LIMITATION, CLOSED by stored topology (P10)
+	// A rigid ROTATE twists each wall quad: a 4-degree turn makes its two triangles
+	// diverge by ~9 (still measured below), which in a triangle SOUP is
+	// indistinguishable from a genuine 9-degree crease. No coplanarity threshold can
+	// fix that — one loose enough to keep a twisted quad also pairs across the
+	// segments of a smooth sphere — so this section used to RECORD the boundary
+	// (paired === 0, loop select declines) as a number for the topology workstream to
+	// beat.
+	//
+	// It is beaten. The partition is stored DATA now, and a commit that keeps the
+	// triangle count carries it instead of re-deriving. The twist measurement stays
+	// exactly as it was, because it is the proof derivation could not have done this;
+	// what flipped is everything after it.
 	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
 	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
 	await editBox(A.page);
@@ -291,12 +297,12 @@ h.run(async () => {
 		`a 4-degree rotate twists wall quads past any safe pairing threshold (dot ${bent.twist.toFixed(4)})`
 	);
 	h.check(
-		bent.paired === 0,
-		`...so they leave the quad topology — the documented soup limitation (${bent.paired}/${bent.wall} paired)`
+		bent.paired === bent.wall,
+		`...and they KEEP their quads anyway, because the partition is stored (${bent.paired}/${bent.wall} paired)`
 	);
 	h.check(
-		bent.looped === false || bent.ring <= 2,
-		'loop select declines rather than walking a wrong band there'
+		bent.looped === true && bent.ring >= 4,
+		`loop select walks the twisted band now (${bent.ring} triangles selected)`
 	);
 
 	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());

@@ -216,6 +216,77 @@ export function carryFaces(geometry, previous) {
 }
 
 /**
+ * Compose the partition an operator's OUTPUT deserves (P10).
+ *
+ * Three kinds of triangle come out of an operator and each needs different treatment:
+ * `authored` faces are what the operator KNOWS it built (a wall quad, one cell of a
+ * subdivision grid) and are taken verbatim; everything else that came from an old
+ * triangle rejoins that triangle's old face; anything genuinely new and unclaimed
+ * becomes its own single-triangle face.
+ *
+ * Authored faces win over the carry-over on purpose. Subdivide is the case that forces
+ * it: its eight output triangles all descend from ONE old quad, so a pure carry-over
+ * would call them one eight-triangle face, when the truth is four sub-quads.
+ * @param {number[][]|null} oldFaces the partition the operator consumed
+ * @param {number[]} origin newIndex -> the old index it came from, or -1
+ * @param {number[][]} authored faces the operator built, in NEW indices
+ * @returns {number[][]}
+ */
+export function composeFaces(oldFaces, origin, authored) {
+	const claimed = new Set();
+	/** @type {number[][]} */
+	const out = [];
+	for (const face of authored ?? []) {
+		if (!face?.length || face.some((tri) => claimed.has(tri))) continue;
+		face.forEach((tri) => claimed.add(tri));
+		out.push([...face]);
+	}
+	/** @type {Map<number, number>} old tri -> which old face it was in */
+	const faceOf = new Map();
+	(oldFaces ?? []).forEach((face, fi) => face.forEach((tri) => faceOf.set(tri, fi)));
+	/** @type {Map<number, number[]>} */
+	const grouped = new Map();
+	origin.forEach((from, to) => {
+		if (claimed.has(to)) return;
+		const fi = from >= 0 ? faceOf.get(from) : undefined;
+		if (fi === undefined) {
+			out.push([to]);
+			return;
+		}
+		let list = grouped.get(fi);
+		if (!list) grouped.set(fi, (list = []));
+		list.push(to);
+	});
+	return [...out, ...grouped.values()];
+}
+
+/**
+ * The trivial origin map for an operator that KEPT every input triangle at its index and
+ * appended new ones (extrude, inset — `cloneTris` then `pushQuad`).
+ * @param {number} oldCount @param {number} newCount @returns {number[]}
+ */
+export function appendOrigin(oldCount, newCount) {
+	/** @type {number[]} */
+	const origin = [];
+	for (let i = 0; i < newCount; i++) origin.push(i < oldCount ? i : -1);
+	return origin;
+}
+
+/**
+ * The appended triangles read as consecutive PAIRS, which is exactly what `pushQuad`
+ * emits: one quad = two triangles, in order. An odd tail is left as a singleton rather
+ * than paired with something it does not belong to.
+ * @param {number} oldCount @param {number} newCount @returns {number[][]}
+ */
+export function appendedQuads(oldCount, newCount) {
+	/** @type {number[][]} */
+	const quads = [];
+	for (let i = oldCount; i < newCount; i += 2)
+		quads.push(i + 1 < newCount ? [i, i + 1] : [i]);
+	return quads;
+}
+
+/**
  * Re-key a partition after an operator emitted a NEW triangle list, given a map from
  * new triangle index to the OLD index it came from (-1 for genuinely new triangles).
  * New triangles are appended as their own single-triangle faces, which is the honest

@@ -2987,7 +2987,15 @@ export function exitFaceEdit() {
 	const pendingBefore = faceGrab?.before ?? faceAdjust?.before ?? null;
 	faceGrab = null;
 	faceAdjust = null;
-	if (pendingBefore) applyGeometrySnapshot(pendingBefore);
+	// two shapes live here: faceGrab.before is a {positions, groups, uvs} TRIPLE
+	// (so an undo can restore a mapping explicitly), faceAdjust.before is still a
+	// bare positions array. Accept either, exactly like the 'meshgeo' history kind.
+	if (pendingBefore)
+		applyGeometrySnapshot(
+			pendingBefore.positions ?? pendingBefore,
+			pendingBefore.positions ? pendingBefore.groups : undefined,
+			pendingBefore.positions ? pendingBefore.uvs : undefined
+		);
 	if (typeof window !== 'undefined') window.removeEventListener('keydown', onFaceKeydown);
 	for (const key of ['sel', 'hover']) {
 		const part = overlayParts[key];
@@ -3157,6 +3165,11 @@ function refreshFaceOverlay() {
 				transparent: true,
 				opacity,
 				depthTest: false,
+				// depthTest off + depthWrite ON let the tint stamp the depth buffer, so
+				// anything drawn after it (a later pass, the second overlay part) could
+				// be occluded by a surface that is not even visible. A highlight should
+				// never contribute depth.
+				depthWrite: false,
 				side: THREE.DoubleSide
 			})
 		);
@@ -3468,9 +3481,24 @@ export function beginFaceGrab(faceOrIndex) {
 	faceGrab = {
 		index,
 		triIndices,
-		before: trisToPositions(workingTris),
+		// a TRIPLE, matching commitFaceGrab's `after`: an undo then restores the
+		// pre-grab mapping explicitly instead of relying on carry-over
+		before: {
+			positions: trisToPositions(workingTris),
+			groups: trisToGroups(workingTris),
+			uvs: trisToUVs(workingTris)
+		},
+		// withSlot hangs `mi`/`uv` off the triangle ARRAY, and Array.prototype.map
+		// returns a fresh array WITHOUT them — a plain .map here silently dropped the
+		// grabbed face's material slot and texture coordinates (the "clicking a face
+		// again in move mode makes its texture disappear" report). cloneTris is the
+		// idiom; this is the same shape for one triangle.
 		originals: triIndices.map((/** @type {number} */ ti) =>
-			workingTris[ti].map((/** @type {any} */ v) => v.clone())
+			withSlot(
+				workingTris[ti].map((/** @type {any} */ v) => v.clone()),
+				workingTris[ti].mi,
+				workingTris[ti].uv && workingTris[ti].uv.map((/** @type {number[]} */ p) => [p[0], p[1]])
+			)
 		),
 		neighbours,
 		centroid: face.centroid.clone(),
@@ -3508,7 +3536,13 @@ export function applyFaceGrab(t) {
 	const xf = (/** @type {any} */ v) =>
 		applyScale(v.clone().sub(pivot)).applyQuaternion(dQuat).add(pivot).add(dPos).add(pushVec);
 	faceGrab.triIndices.forEach((/** @type {number} */ ti, /** @type {number} */ k) => {
-		workingTris[ti] = faceGrab.originals[k].map(xf);
+		const source = faceGrab.originals[k];
+		// carry mi/uv across the transform — see the note on `originals` above
+		workingTris[ti] = withSlot(
+			source.map(xf),
+			source.mi,
+			source.uv && source.uv.map((/** @type {number[]} */ p) => [p[0], p[1]])
+		);
 	});
 	// 162: the welded neighbours sit at the face's CORNER positions, so they get
 	// the SAME rigid transform — shared corners stay welded under rotate + scale
@@ -3527,9 +3561,19 @@ export function commitFaceGrab() {
 	const positions = trisToPositions(workingTris);
 	const before = faceGrab.before;
 	faceGrab = null;
-	applyGeometrySnapshot(positions);
-	broadcastMeshGeo(faceEdited.uuid, positions);
-	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: positions });
+	// carry groups + uvs explicitly rather than leaning on preserveUVs' carry-over
+	// (commitFaceAdjust's shape). Positions-only meant the undo entry stored a bare
+	// array, so an undo could not heal a mapping the grab had damaged.
+	const groups = trisToGroups(workingTris);
+	const uvs = trisToUVs(workingTris);
+	applyGeometrySnapshot(positions, groups, uvs);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before,
+		after: { positions, groups, uvs }
+	});
 	return true;
 }
 
@@ -3538,7 +3582,7 @@ export function cancelFaceGrab() {
 	if (!faceGrab || !faceEdited) return;
 	const before = faceGrab.before;
 	faceGrab = null;
-	applyGeometrySnapshot(before);
+	applyGeometrySnapshot(before.positions, before.groups, before.uvs);
 }
 
 // ---- 163: desktop face transform gizmo (a scene-root proxy driving the 162
@@ -3742,8 +3786,14 @@ function reapplyFaceAdjust() {
 				? a.originalFace.centroid.clone()
 				: a.originalFace.centroid.clone().add(a.originalFace.normal.clone().multiplyScalar(a.amount));
 		a.originalFace.triIndices.forEach((/** @type {number} */ ti) => {
-			next[ti] = next[ti].map((/** @type {any} */ v) =>
-				v.clone().sub(capCentroid).multiplyScalar(a.scale).add(capCentroid)
+			// same trap as the gizmo grab: a plain .map drops the mi/uv that withSlot
+			// hangs off the triangle array, so a VR live-adjust used to strip the cap
+			next[ti] = withSlot(
+				next[ti].map((/** @type {any} */ v) =>
+					v.clone().sub(capCentroid).multiplyScalar(a.scale).add(capCentroid)
+				),
+				next[ti].mi,
+				next[ti].uv && next[ti].uv.map((/** @type {number[]} */ p) => [p[0], p[1]])
 			);
 		});
 	}

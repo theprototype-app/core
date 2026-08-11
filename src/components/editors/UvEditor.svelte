@@ -20,7 +20,7 @@
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
 		beginUvDrag, moveUvCluster, endUvDrag, cancelUvDrag,
 		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke,
-		selectedFaceTris, uvIndicesOf, paintPreviewCanvas, uvTargetOf, textureImageOf
+		selectedFaceTris, uvIndicesOf, paintPreviewCanvas, uvTargetOf, textureImageOf, slotFlipsV
 	} from '$lib/uvEditor';
 	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
 	import { faceEditSelectedTris, faceEditObject, triangleCount } from '$lib/faceEdit';
@@ -160,6 +160,13 @@
 		return textureImageOf(target, slot);
 	});
 	const backdrop = $derived(paintCanvas ?? mapImage ?? liveImage);
+	// An imported (glTF) texture samples v=0 from the image TOP, while the editor
+	// draws v UP — so its backdrop has to be blitted vertically flipped or the view
+	// disagrees with the model about which end is which.
+	const flipBackdrop = $derived.by(() => {
+		$objectsGroup;
+		return slotFlipsV(target, slot);
+	});
 
 	// The UV unit square maps to a `span`-pixel box, centred, then scaled+panned.
 	const span = $derived(Math.max(Math.min(viewW, viewH) - 32, 32));
@@ -249,7 +256,7 @@
 	// redraw whenever anything visible changes
 	$effect(() => {
 		// dependencies (read them so the effect re-runs)
-		void [tris, backdrop, liveImage, $uvPaintTick, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked];
+		void [tris, backdrop, liveImage, flipBackdrop, $uvPaintTick, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked];
 		draw();
 	});
 
@@ -278,7 +285,15 @@
 				ctx.fillStyle = ((x / cell + y / cell) % 2 === 0) ? '#3a3a3a' : '#2e2e2e';
 				ctx.fillRect(originX + x, originY + y, cell, cell);
 			}
-		if (backdrop) ctx.drawImage(backdrop, originX, originY, box, box);
+		if (backdrop) {
+			if (flipBackdrop) {
+				ctx.save();
+				ctx.translate(0, originY * 2 + box);
+				ctx.scale(1, -1);
+				ctx.drawImage(backdrop, originX, originY, box, box);
+				ctx.restore();
+			} else ctx.drawImage(backdrop, originX, originY, box, box);
+		}
 		ctx.restore();
 
 		// the 0..1 UV square

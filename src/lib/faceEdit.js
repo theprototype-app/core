@@ -2087,10 +2087,11 @@ export function setFaceSubmode(next) {
 	refreshFaceOverlay();
 	refreshEdgeOverlay();
 	if (typeof window === 'undefined') return;
-	// Move is the only op that keeps a gizmo seated (setFaceOp's B1 rule), and
-	// edges have no gizmo at all yet (M4 shipped without it)
-	if (next === 'edges') detachFaceGizmo();
-	else if (get(faceEditOp) === 'move') attachFaceGizmo();
+	// Move is the only op that keeps a gizmo seated (setFaceOp's B1 rule) — in edge mode
+	// too, where attachFaceGizmo seats the EDGE gizmo and detaches itself when nothing
+	// is picked
+	if (get(faceEditOp) === 'move') attachFaceGizmo();
+	else detachFaceGizmo();
 }
 
 // ---- selection history -----------------------------------------------------
@@ -2153,6 +2154,19 @@ export function withSelectionHistory(mode, run) {
 		recordingSelection = false;
 	}
 	const after = selectionSnapshot(mode);
+	// M4: every edge-selection change goes through here (pick/loop/ring/all/invert/
+	// clear), so this is the ONE place the edge gizmo has to be re-seated — it lands on
+	// the new selection's centroid, or detaches itself when nothing is picked.
+	// The LIVE submode has to be checked as well as the argument: `exitFaceEdit`
+	// detaches and THEN clears the edge selection, and while in FACE mode that clear
+	// would otherwise re-attach the gizmo to the still-selected faces on the way out.
+	if (
+		mode === 'edges' &&
+		typeof window !== 'undefined' &&
+		get(faceEditSubmode) === 'edges' &&
+		get(faceEditOp) === 'move'
+	)
+		attachFaceGizmo();
 	if (before && after && before.uuid === after.uuid && !sameSelection(before.sel, after.sel))
 		recordEntry({
 			kind: 'selection',
@@ -2191,8 +2205,9 @@ registerHistoryKind('selection', (entry, state) => {
 	refreshFaceOverlay();
 	refreshEdgeOverlay();
 	if (typeof window !== 'undefined') {
-		// attachFaceGizmo detaches itself when the restored selection has no target
-		if (get(faceEditSubmode) === 'faces' && get(faceEditOp) === 'move') attachFaceGizmo();
+		// attachFaceGizmo detaches itself when the restored selection has no target,
+		// in either submode (M4: the edge gizmo goes through the same call)
+		if (get(faceEditOp) === 'move') attachFaceGizmo();
 		else detachFaceGizmo();
 	}
 	return true;
@@ -2721,6 +2736,56 @@ export function refreshEdgeHighlight() {
 /** M4: how many edges are picked (toolbar counts) */
 export function edgeSelectionSize() {
 	return get(edgeEditSelected).length;
+}
+
+/**
+ * M4 (edge gizmo): the current edge selection as a GRAB TARGET — vertex keys instead of
+ * triangle indices, so `beginFaceGrab` moves exactly those welded vertex groups and
+ * leaves every triangle in place.
+ *
+ * The basis is the reason this is worth building rather than reusing the face gizmo's:
+ * X runs ALONG the edge, Z is the average normal of the faces touching it, so the
+ * handles mean something on an edge (slide along it, pull it out of the surface). For a
+ * multi-edge selection the direction is the longest edge's, which keeps a loop's handles
+ * stable instead of flipping per edge.
+ * @returns {any|null}
+ */
+export function edgeGrabTarget() {
+	if (!faceEdited) return null;
+	const selected = get(edgeEditSelected);
+	if (!selected.length) return null;
+	const keys = new Set();
+	const centroid = new THREE.Vector3();
+	let counted = 0;
+	const direction = new THREE.Vector3();
+	let longest = -1;
+	for (const key of selected) {
+		const ends = edgeEndpoints(key);
+		if (!ends) continue;
+		for (const point of ends) {
+			keys.add(keyOf(point.x, point.y, point.z));
+			centroid.add(point);
+			counted++;
+		}
+		const span = ends[1].clone().sub(ends[0]);
+		if (span.lengthSq() > longest) {
+			longest = span.lengthSq();
+			direction.copy(span);
+		}
+	}
+	if (!keys.size || !counted) return null;
+	centroid.multiplyScalar(1 / counted);
+	// the average normal of every triangle touching a selected vertex — the surface the
+	// edge lies in, which is what "pull the edge outward" has to mean
+	const normal = new THREE.Vector3();
+	workingTris.forEach((/** @type {any} */ t) => {
+		if (t.some((/** @type {any} */ v) => keys.has(keyOf(v.x, v.y, v.z)))) normal.add(triNormal(t));
+	});
+	if (normal.lengthSq() < 1e-9) normal.set(0, 1, 0);
+	normal.normalize();
+	if (direction.lengthSq() < 1e-12) direction.copy(axisLeastAlignedWith(normal));
+	direction.normalize();
+	return { triIndices: [], vertexKeys: keys, centroid, normal, direction };
 }
 
 // ---- session cancel --------------------------------------------------------
@@ -3767,14 +3832,22 @@ export function beginFaceGrab(faceOrIndex) {
 	// cursor, leaving the rest of the shell behind.
 	const index = typeof faceOrIndex === 'number' ? faceOrIndex : -1;
 	const face = typeof faceOrIndex === 'number' ? faces[faceOrIndex] : faceOrIndex;
-	if (!face || !face.triIndices?.length) return false;
-	const triIndices = face.triIndices.filter((/** @type {number} */ ti) => workingTris[ti]);
-	if (!triIndices.length) return false;
+	if (!face) return false;
+	// M4 EDGE grab: a target may name VERTEX KEYS instead of triangles, and an edge
+	// move is then the DEGENERATE case of a face grab — no triangle moves rigidly, and
+	// every corner sitting on one of those keys rides the existing weld-neighbour path,
+	// which is precisely "welded translate of the edge's two vertex groups". Reusing
+	// this gesture rather than writing a second one is what makes the edge gizmo inherit
+	// undo, replication and the topology carry-over for free.
+	const vertexKeys = face.vertexKeys instanceof Set ? face.vertexKeys : null;
+	const triIndices = (face.triIndices ?? []).filter((/** @type {number} */ ti) => workingTris[ti]);
+	if (!vertexKeys && !triIndices.length) return false;
+	if (vertexKeys && !vertexKeys.size) return false;
 	// weld-neighbour set (138): verts OUTSIDE the grabbed set sharing its corner
 	// positions — the TRANSLATION carries them so the mesh stretches, not tears.
 	// A whole-shell/object grab has none, which is exactly right: it moves rigidly.
 	const faceSet = new Set(triIndices);
-	const keys = faceVertexKeys(workingTris, { triIndices });
+	const keys = vertexKeys ?? faceVertexKeys(workingTris, { triIndices });
 	/** @type {any[]} */
 	const neighbours = [];
 	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
@@ -3959,15 +4032,35 @@ export function focusTargetFace() {
 export function attachFaceGizmo() {
 	if (typeof window === 'undefined' || !faceEdited) return;
 	if (get(isVRMode)) return; // the desktop gizmo helper would render in-headset
-	// M4 has no edge gizmo: seating one here would point at the stale FACE
-	// target (opTargetFace reads faceEditSelectedTris/HoverTri), so a drag in
-	// edge mode silently moved the quads picked before the switch
-	if (get(faceEditSubmode) === 'edges') {
-		detachFaceGizmo();
-		return;
-	}
 	/** @type {any} */
 	const controls = get(TControls);
+	// M4 EDGE gizmo. It must never fall through to opTargetFace here: that reads
+	// faceEditSelectedTris/HoverTri, so before the edge target existed a drag in edge
+	// mode silently moved whatever quads were picked BEFORE the switch.
+	if (get(faceEditSubmode) === 'edges') {
+		const edgeTarget = edgeGrabTarget();
+		if (!edgeTarget || !controls) {
+			gizmoTarget = null;
+			detachFaceGizmo();
+			return;
+		}
+		gizmoTarget = edgeTarget;
+		const edgeProxy = ensureFaceProxy();
+		if (!edgeProxy) return;
+		faceEdited.updateMatrixWorld(true);
+		edgeProxy.position.copy(faceEdited.localToWorld(edgeTarget.centroid.clone()));
+		// X along the edge, Z out of the surface (see edgeGrabTarget)
+		const along = edgeTarget.direction.clone().transformDirection(faceEdited.matrixWorld).normalize();
+		const out = edgeTarget.normal.clone().transformDirection(faceEdited.matrixWorld).normalize();
+		const side = new THREE.Vector3().crossVectors(out, along).normalize();
+		if (side.lengthSq() < 1e-9) side.copy(axisLeastAlignedWith(out));
+		const zAxis = new THREE.Vector3().crossVectors(along, side).normalize();
+		edgeProxy.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(along, side, zAxis));
+		edgeProxy.scale.setScalar(1);
+		controls.setSpace?.(get(faceGizmoSpace));
+		controls.attach(edgeProxy);
+		return;
+	}
 	const target = opTargetFace();
 	if (!target || !controls) {
 		gizmoTarget = null;

@@ -521,6 +521,14 @@
 			<!-- M4: edge tools — the pick is a set of EDGES, not faces -->
 			<span class="tbx-label">Tools</span>
 			<button
+				id="edge-move"
+				class="tbx-btn {$faceEditOp === 'move' ? 'tbx-on bg-primary-600 text-white' : ''}"
+				aria-label="Move edges with the gizmo"
+				title="Move — seat the gizmo on the selected edges (X runs along the edge, Z out of the surface). The welded neighbours stretch with it."
+				onclick={() => setFaceOp('move')}
+				><Move size={18} aria-hidden="true" /></button
+			>
+			<button
 				id="edge-loop"
 				class="tbx-btn"
 				class:tbx-flash={flashOp === 'edgeloop'}

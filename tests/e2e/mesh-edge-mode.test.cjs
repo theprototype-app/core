@@ -284,6 +284,10 @@ h.run(async () => {
 		w.faceEdit.attachFaceGizmo();
 		const litInFaces = overlayTris();
 		const gizmoInFaces = !!controls?.object;
+		// M4 completion: edge mode has a gizmo of its own now, and earlier sections of
+		// this suite leave edges picked — clear them so this block still measures what it
+		// was written to measure (no gizmo carried over from the FACE selection)
+		w.faceEdit.clearEdgeSelection();
 		w.faceEdit.setFaceSubmode('edges');
 		const litInEdges = overlayTris();
 		const gizmoInEdges = !!controls?.object;
@@ -303,11 +307,18 @@ h.run(async () => {
 	h.check(carried.litInFaces > 0, 'a quad pick lights the face overlay (premise)');
 	h.check(carried.gizmoInFaces === true, '...and seats the face gizmo (premise)');
 	h.check(carried.litInEdges === 0, 'switching to Edges clears the face tint');
+	// M4 completion: edge mode has its OWN gizmo now, so the rule is no longer "no
+	// gizmo in Edges" — it is "never the FACE target in Edges". With no edge picked
+	// there is nothing to seat on, so switching still detaches; what must never happen
+	// is a gizmo that would drag the quads selected before the switch.
 	h.check(
 		carried.gizmoInEdges === false,
 		'...and drops the face gizmo (it would drag the stale quads)'
 	);
-	h.check(carried.gizmoAfterReattach === false, 'the gizmo refuses to re-seat while in Edges');
+	h.check(
+		carried.gizmoAfterReattach === false,
+		'a re-seat attempt with NO edge picked stays detached — never falling back to the face target'
+	);
 	h.check(carried.backInFaces > 0, 'switching back to Faces restores the remembered pick');
 
 	// exiting clears the edge pick + overlay

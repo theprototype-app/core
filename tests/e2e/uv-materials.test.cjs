@@ -246,15 +246,15 @@ h.run(async () => {
 		25000
 	);
 	const remoteShape = await slotMaps(B.page, netUuid);
-	// KNOWN GAP, pre-existing and NOT introduced by UV2: the object sync exports
-	// each mesh through GLTFExporter, and a material ARRAY does not survive that
-	// round trip — B's copy arrives with a single material. Asserted rather than
-	// wished away, so the day the sync is fixed this check fails loudly and gets
-	// tightened. (Worse still, a LATE joiner receiving a scene that contains a
-	// multi-material mesh gets nothing at all — see the commit body.)
+	// B has ONE slot here, and that is correct for this fixture: `twoSlotBox` builds
+	// the array by assigning `mesh.material = [...]` LOCALLY, and no message
+	// replicates a material array being created (that is the `materials` message,
+	// still to come). What the object SYNC does with an existing array is a
+	// different path and is covered by tests/e2e/object-sync, where a late joiner now
+	// receives one Mesh with both slots and both groups.
 	h.check(
 		!!remoteShape && remoteShape.length === 1,
-		`KNOWN GAP: the GLTF object sync collapses B's material array to ${remoteShape?.length ?? 0} slot (pre-existing)`
+		`creating an array locally does not replicate it yet (${remoteShape?.length ?? 0} slot on B)`
 	);
 
 	// So prove the RECEIVE-SIDE slot handling on a peer that genuinely has two

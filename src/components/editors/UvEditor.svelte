@@ -10,17 +10,18 @@
 	// {zoom, panX, panY} and projects UV space itself. v is UP in UV space and
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
-	import { Brush, Filter, ImagePlus, Lasso, MousePointer2, SquareDashed } from '@lucide/svelte';
+	import { Brush, Filter, ImagePlus, Lasso, MousePointer2, Plus, SquareDashed, Target } from '@lucide/svelte';
 	import { selectedObject, selectedObjects, objectsGroup } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
-	import { setObjectTexture, removeObjectTexture } from '$lib/materialsHandler';
+	import { setObjectTexture, removeObjectTexture, addMaterialSlot } from '$lib/materialsHandler';
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import {
 		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvFaceFilter, uvPaintTick, uvEditable, uvViewable, UV_WIRE_LIMIT, uvTriangles, materialsOf, slotCount,
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
 		beginUvDrag, moveUvCluster, endUvDrag, cancelUvDrag,
 		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke,
-		selectedFaceTris, uvIndicesOf, paintPreviewCanvas, uvTargetOf, textureImageOf, slotFlipsV
+		selectedFaceTris, uvIndicesOf, paintPreviewCanvas, uvTargetOf, textureImageOf, slotFlipsV,
+		assignTrisToSlot
 	} from '$lib/uvEditor';
 	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
 	import { faceEditSelectedTris, faceEditObject, triangleCount } from '$lib/faceEdit';
@@ -609,6 +610,41 @@
 		await setObjectTexture(target.uuid, file, index);
 	}
 
+	// --- UV4: material slots ------------------------------------------------
+	// How many face triangles are picked in Edit Mesh right now. The assign button
+	// needs a pick, and it reads the pick DIRECTLY rather than through the UV face
+	// filter — you should be able to assign without also scoping the view.
+	const pickedTris = $derived.by(() => {
+		$objectsGroup;
+		const picked = $faceEditSelectedTris;
+		return target && $faceEditObject === target.uuid && picked?.length ? picked.length : 0;
+	});
+
+	function addSlot() {
+		if (!target) return;
+		const created = addMaterialSlot(target.uuid);
+		if (created < 0) {
+			showToast('Could not add a material slot to this object');
+			return;
+		}
+		uvActiveSlot.set(created); // land on the new slot, it is what you just asked for
+		showToast(
+			pickedTris
+				? 'Slot ' + created + ' added — use its assign button to give it the selected faces'
+				: 'Slot ' + created + ' added — select faces in Edit Mesh, then assign them to it'
+		);
+	}
+
+	/** @param {number} index */
+	function assignSelectionTo(index) {
+		if (!target || !pickedTris) return;
+		const ok = assignTrisToSlot(target.uuid, $faceEditSelectedTris, index);
+		if (ok) {
+			uvActiveSlot.set(index);
+			showToast(pickedTris + ' face triangles now use slot ' + index);
+		}
+	}
+
 	/** @param {number} index */
 	function pickImageFor(index) {
 		pendingSlot = index;
@@ -669,6 +705,18 @@
 				style={material.mapUrl ? `background-image:url(${material.mapUrl})` : ''}
 			></span>
 			<span class="min-w-0 flex-1 truncate">{material?.name || material?.type || `Slot ${index}`}</span>
+		</button>
+		<button
+			class="uv-slot-btn"
+			id="uv-slot-assign-{index}"
+			title={pickedTris
+				? `Assign the ${pickedTris} selected face triangles to this slot`
+				: 'Select faces in Edit Mesh first, then assign them to a slot'}
+			aria-label="Assign the selected faces to this slot"
+			disabled={!pickedTris}
+			onclick={() => assignSelectionTo(index)}
+		>
+			<Target size={14} aria-hidden="true" />
 		</button>
 		<button
 			class="uv-slot-btn"
@@ -760,10 +808,20 @@
 				{#each slots as material, index (index)}
 					{@render slotRow(material, index)}
 				{/each}
+				<button
+					id="uv-add-slot"
+					class="mt-1 flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[11px] text-gray-300 hover:bg-gray-700/60"
+					title="Add a material slot (a copy of the last one), then assign faces to it"
+					onclick={addSlot}
+				>
+					<Plus size={13} aria-hidden="true" />
+					Add material slot
+				</button>
 				<p class="px-2 pt-1.5 text-[10px] leading-relaxed text-gray-500">
-					Drop an image on a slot, or use its image button, to texture it — shared
-					with peers. Slots come from the model; adding new ones and assigning faces
-					to them is not supported yet.
+					Drop an image on a slot, or use its image button, to texture it. To give
+					one part of the model its own texture: select faces in Edit Mesh, add a
+					slot, then use that slot's ◎ button to assign them. All of it is shared
+					with peers.
 				</p>
 			{/if}
 			<!-- one hidden input for every row; pendingSlot says which asked -->

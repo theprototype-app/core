@@ -383,6 +383,59 @@ function pointInPolygon(u, v, poly) {
 	return inside;
 }
 
+/**
+ * UV4: assign TRIANGLES to a material slot.
+ *
+ * A triangle's slot lives in `geometry.groups`, which `readTriangles` reads onto each
+ * triangle as `mi` and `trisToGroups` writes back — every mesh op already carries
+ * `mi` through, but nothing ever SET it, so there was no way to say "these faces use
+ * material 2". This writes it and commits through the same meshgeo triple every mesh
+ * op uses, so replication, undo and persistence come free: positions are unchanged,
+ * only the groups differ.
+ *
+ * The object must already have the slot (see `addMaterialSlot`) — three renders slot
+ * N by walking the groups, so pointing a group at a material that does not exist
+ * would draw nothing.
+ * @param {string} uuid @param {Iterable<number>} tris triangle indices
+ * @param {number} slot @returns {boolean}
+ */
+export function assignTrisToSlot(uuid, tris, slot) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!object) return false;
+	const slots = materialsOf(object);
+	if (slot < 0 || slot >= slots.length) {
+		showToast('That object has no material slot ' + slot);
+		return false;
+	}
+	const wanted = new Set(tris);
+	if (!wanted.size) return false;
+	const before = readUvSnapshot(object);
+	// `trisToGroups` returns NULL when every triangle is slot 0 — meaning "no groups
+	// needed", which is true for a single material but NOT here: on undo,
+	// applyMeshGeo would see no groups and fall back to carrying the CURRENT
+	// (post-assign) ones over, so the assignment would not be undone at all. Make
+	// the all-slot-0 state explicit instead.
+	before.groups = before.groups ?? [{ start: 0, count: before.positions.length / 3, materialIndex: 0 }];
+	const triangles = readTriangles(object.geometry);
+	let changed = 0;
+	triangles.forEach((/** @type {any} */ tri, /** @type {number} */ i) => {
+		if (!wanted.has(i) || (tri.mi || 0) === slot) return;
+		tri.mi = slot;
+		changed++;
+	});
+	if (!changed) return false;
+	const positions = trisToPositions(triangles);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast('That edit is too large to sync');
+		return false;
+	}
+	const after = { positions, groups: trisToGroups(triangles), uvs: trisToUVs(triangles) };
+	applyMeshGeo(uuid, after.positions, after.groups, after.uvs);
+	broadcastUvGeo(uuid, after);
+	recordEntry({ kind: 'meshgeo', uuid, before, after });
+	return true;
+}
+
 /** a full {positions, groups, uvs} snapshot of an object's current geometry —
  * the shape the meshgeo wire message and the 'meshgeo' history kind both take
  * @param {any} object */

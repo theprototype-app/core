@@ -42,6 +42,16 @@ alone — only "X is previewing camera Y" goes on the wire, as presence). Rule o
 if two peers would independently compute the same value, or it's a personal setting,
 keep it off the wire.
 
+**An ARMED TOOL is neither replicated nor persisted, and must not outlive its session.**
+Knife, Slide, Proportional and the bevel params are in-session modes: a peer must not see
+your armed tool, and finding it still armed after re-entering an edit session is a bug (every
+one of them is reset in `exitEditMode`/`exitFaceEdit`). Sizes and look prefs are the opposite
+— local AND persisted (`vertexHandleScale`, `vertexHandleAdaptive`, `meshGizmoEnabled`,
+`faceGizmoSpace`, `proportionalRadius`) because they are about eyesight and screen, not scene.
+And when two handlers can claim the same KEY (two Escape listeners, in faceEdit and the
+toolbox), let them agree through the EVENT (`defaultPrevented`) — a one-shot store flag is
+consumed by whichever runs first and the other acts anyway.
+
 ## The cheapest replicated feature: put it on `userData`
 
 Before designing messages, ask whether the feature is really "extra settings on an
@@ -171,6 +181,20 @@ and the `__localOnly`/`__uuid` markers all ride this. The recipe:
    (`serializeNode`/`serializeEdge` shapes), never live editor objects — runtime-only
    fields would make the replayed broadcast hash differently (`'flownodes'` kind,
    PR #76, is the reference).
+   **A geometry op that changes the TRIANGLE COUNT must carry groups, uvs and topology
+   itself.** `commitMeshGeoSnapshot` is positions-ONLY and the carry-over cannot save the
+   rest when the count moves, so a textured or multi-material mesh silently came out
+   unmapped (the vertex bevel). `commitMeshGeoTriple(uuid, before, after)` takes the whole
+   `{positions, groups, uvs, faces}` on both sides and works with or without a live face
+   session; inside one, `applyGeometrySnapshot` + `withFaces` is the equivalent.
+   **One gesture is ONE undo entry**, and that decides which recorder to use: a `verts`
+   entry holds a single position for all its indices, so anything moving MANY handles by
+   DIFFERENT amounts (proportional editing, a weld, a multi-drag) has to record a `meshgeo`
+   snapshot instead. If a feature can produce two entries per user action, fold it before
+   shipping — undoing half an operation is worse than no undo.
+   **An op that RUNS ANOTHER op inherits its history**: the one-shot Symmetrize records its
+   own entry, which is why live symmetry (post-processing every commit) needs a decision
+   about entry folding BEFORE it is wired, not after.
 8. **UI entry points**: viewport menu (`ViewportMenu.svelte` items), object context
    menu (`Controls.svelte objectMenuItems`), shortcuts registry (`shortcuts.js` — one
    registry drives bindings AND the Settings list), VR quick-menu

@@ -1390,6 +1390,28 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-11): **MESH PRO TOOLS started — core PR #112 (draft), M4 + M5 in.**
+  Branch `feat/mesh-pro-tools` off release/next, lane `../theprototype-lane-topo` @5194.
+  **M4 completion = the EDGE GIZMO**: edges could be selected/looped/ringed/dissolved but
+  never dragged. An edge move turned out to be the DEGENERATE case of a face grab —
+  `beginFaceGrab` accepts a target naming VERTEX KEYS instead of triangle indices, and
+  with no triangles in the set every corner on those keys rides the weld-neighbour path
+  that already makes face grabs stretch instead of tear, so undo/replication/topology
+  carry-over came for free (`edgeGrabTarget`, X along the edge and Z out of the surface;
+  re-seated from `withSelectionHistory`, the one place every edge-selection change passes
+  through). Suite `mesh-edge-gizmo` (19). **M5 BEVEL is FACE-scoped, and that is a
+  MEASUREMENT**: an edge bevel must delete the edge's vertices and hand the NEIGHBOURING
+  faces two vertices in their place, so folding only the two faces touching the edge
+  leaves the third face at each corner on the old vertex — a bevelled box came out with
+  12 non-manifold edges, so that pass was dropped rather than shipped. `bevelFaces` builds
+  the chamfer from the EXISTING pure ops (`insetFace` + the WELDED `moveFaceAlongNormal`),
+  which is why it stays watertight, with a stepped round at segments > 1. Suite
+  `mesh-bevel` (22), whose watertightness check is the guard that caught the crack.
+  REMAINING: M9 knife + vertex slide, M7 mirror (note: the "post-process every commit"
+  model must hook at the OPERATOR boundary, not in applyGeometrySnapshot — several of its
+  ~13 call sites are RESTORE paths that must not mirror), M8 proportional, and P12 xatlas
+  (dependency survey in the cloud plan: the open question is how a self-contained module
+  loads wasm, not which library). Baseline 391/62.
 - Status (2026-08-11): **MESH TOPOLOGY IS STORED DATA — core PR #111** (branch
   `feat/mesh-topology`, lane `../theprototype-lane-topo` @5194, three commits P9/P10/P11).
   The derived-topology dead end is closed: a face partition lives on

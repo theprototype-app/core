@@ -1,3 +1,5 @@
+// @ts-ignore - no bundled three type declarations (project-wide)
+import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -9,6 +11,7 @@ import { parkAnimatedAtBase } from './flowRuntime';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animationsSnapshot, animationsRestore } from './animationPreview';
 import { peers, showToast } from '../stores/appStore';
+import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
@@ -29,6 +32,27 @@ export const restoreAvailable = writable(null);
 let started = false;
 let dirty = false;
 /** @type {any} */ let debounceTimer = null;
+
+/**
+ * Meshes whose MATERIAL ARRAY the GLTF snapshot cannot carry, as toJSON.
+ *
+ * GLTFExporter splits `geometry.groups` into one primitive per material and
+ * GLTFLoader reassembles them as a GROUP of single-material child meshes: the scene
+ * still LOOKS right (same pixels), which is exactly why this hid — but the object is
+ * no longer one mesh with a slot array, so after a reload the UV editor showed one
+ * texture and no slots. These ride alongside and REPLACE their GLTF twin on restore,
+ * the same shape animated rigs already use for the same reason.
+ */
+function multiMaterialSnapshot() {
+	const group = get(objectsGroup);
+	/** @type {any[]} */
+	const out = [];
+	group?.traverse?.((/** @type {any} */ child) => {
+		if (child !== group && isMultiMaterial(child))
+			out.push({ uuid: child.uuid, element: serializeMeshWithGroups(child) });
+	});
+	return out;
+}
 
 function exportScene() {
 	return new Promise((resolve) => {
@@ -90,6 +114,9 @@ async function saveSnapshot() {
 		// tracks live outside the scene graph entirely — both are saved beside it so
 		// a restore does not hand back dead, static models (17-D follow-up)
 		animated: animatedImportsSnapshot(group),
+		// same reason, different loss: a MATERIAL ARRAY cannot cross the GLTF round
+		// trip either (it comes back as a Group of single-material children)
+		multiMaterial: multiMaterialSnapshot(),
 		animations: animationsSnapshot(),
 		nodes,
 		edges,
@@ -152,6 +179,39 @@ async function checkRestore() {
 	}
 }
 
+/**
+ * Swap each saved multi-material mesh in for the GLTF twin, matching by uuid and
+ * keeping the twin's world transform (the GLTF export baked it; the toJSON copy has
+ * its own matrix, but the twin is what the rest of the restore already positioned).
+ * @param {any[]} entries
+ */
+function restoreMultiMaterial(entries) {
+	if (!entries.length) return;
+	const group = get(objectsGroup);
+	if (!group) return;
+	const loader = new THREE.ObjectLoader();
+	for (const entry of entries) {
+		const twin = group.getObjectByProperty('uuid', entry.uuid);
+		if (!twin) continue;
+		/** @type {any} */
+		let mesh;
+		try {
+			mesh = loader.parse(entry.element);
+		} catch (error) {
+			console.log('multi-material restore failed', error);
+			continue;
+		}
+		mesh.uuid = entry.uuid;
+		mesh.position.copy(twin.position);
+		mesh.quaternion.copy(twin.quaternion);
+		mesh.scale.copy(twin.scale);
+		const parent = twin.parent ?? group;
+		parent.remove(twin);
+		parent.add(mesh);
+	}
+	objectsGroup.update((value) => value);
+}
+
 export async function restoreSnapshot() {
 	/** @type {any} */
 	const offer = get(restoreAvailable);
@@ -188,6 +248,10 @@ export async function restoreSnapshot() {
 			});
 			objectsGroup.update((value) => value);
 		}
+		// multi-material meshes come back from their toJSON, REPLACING the Group of
+		// single-material children the GLTF export left behind (same twin-replacement
+		// shape as rigs below). Keyed by uuid, which the __uuid stamp above restored.
+		restoreMultiMaterial(snapshot.multiMaterial ?? []);
 		// rigs come back from their ORIGINAL bytes — this also replaces the static
 		// twin the GLTF export wrote — and authored tracks from the snapshot
 		await animatedImportsRestore(snapshot.animated ?? []);

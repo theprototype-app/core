@@ -3,7 +3,7 @@ import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selected
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
-import { applyMap, switchMaterialType, setMaterialParam, applyMaterials } from '$lib/materialsHandler'
+import { applyMap, switchMaterialType, setMaterialParam, applyMaterials, isMultiMaterial, serializeMeshWithGroups } from '$lib/materialsHandler'
 import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected, physicsShapeChanged } from '$lib/physics'
@@ -566,7 +566,7 @@ export function sendObjects(peerId, element) {
  * @param {any} element
  */
 function multiMaterialSyncable(element) {
-    if (!Array.isArray(element.material) || element.material.length < 2) return false;
+    if (!isMultiMaterial(element)) return false;
     const position = element.geometry?.attributes?.position;
     // mirrors faceEdit's MAX_SNAPSHOT budget (45000 floats) for the same reason
     if (position && position.count * 3 > 45000) {
@@ -574,32 +574,6 @@ function multiMaterialSyncable(element) {
         return false;
     }
     return true;
-}
-
-/**
- * toJSON a mesh so its geometry.groups actually arrive.
- *
- * A PARAMETRIC geometry (BoxGeometry, SphereGeometry, ...) serializes as its
- * parameters — `{type:'BoxGeometry', width, ...}` — and ObjectLoader rebuilds it by
- * re-running the generator. That regenerates the DEFAULT groups and silently drops
- * any custom ones, so a box whose faces were assigned to material slots would arrive
- * with the slot assignment undone. Copying into a plain BufferGeometry first makes
- * toJSON emit real attributes + groups. Only done for the multi-material path, so
- * ordinary primitives keep travelling as parameters (smaller, and their parametric
- * Geometry rows keep working on the receiver).
- * @param {any} element
- */
-function serializeWithGroups(element) {
-    const geometry = element.geometry;
-    if (!geometry?.parameters) return element.toJSON();
-    const flat = new THREE.BufferGeometry().copy(geometry); // attributes, groups, index
-    const clone = element.clone();
-    clone.uuid = element.uuid; // clone() re-uuids; the scene is keyed by this
-    clone.children = [];
-    clone.geometry = flat;
-    const json = clone.toJSON();
-    flat.dispose();
-    return json;
 }
 
 export function sendObject(conn, element, groupuuid) {
@@ -674,7 +648,7 @@ export function sendObject(conn, element, groupuuid) {
             // and sessions all already use it (see objectActions' note on the rule).
             conn.send({
                 type: 'object',
-                element: serializeWithGroups(element),
+                element: serializeMeshWithGroups(element),
                 groupuuid: groupuuid,
                 pos: element.position.toArray(),
                 rot: element.rotation.toArray(),

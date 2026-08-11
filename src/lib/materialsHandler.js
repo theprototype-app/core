@@ -154,6 +154,40 @@ export function applyMaterials(object, payload, replicate = false) {
 		broadcast({ type: 'objectParameters', parameter: 'materials', uuid: object.uuid, payload });
 }
 
+/** Does this object wear a real material ARRAY (more than one slot)?
+ * @param {any} object */
+export function isMultiMaterial(object) {
+	return Array.isArray(object?.material) && object.material.length > 1;
+}
+
+/**
+ * Serialize a mesh so its material ARRAY and `geometry.groups` actually survive.
+ *
+ * A material array cannot cross a GLTF round trip at all: the exporter splits groups
+ * into one primitive per material and the loader reassembles them as a GROUP of
+ * single-material child meshes. `toJSON`/ObjectLoader does round-trip arrays, groups
+ * and data-URL textures — with one catch. A PARAMETRIC geometry serializes as its
+ * parameters (`{type:'BoxGeometry', ...}`) and the loader RE-RUNS the generator,
+ * regenerating the default groups and silently discarding custom ones, which would
+ * undo every face-to-slot assignment on a primitive. Copy into a plain
+ * BufferGeometry first so real attributes + groups are written.
+ *
+ * Shared by the peer object sync and the autosave snapshot — both had the same hole.
+ * @param {any} element
+ */
+export function serializeMeshWithGroups(element) {
+	const geometry = element.geometry;
+	if (!geometry?.parameters) return element.toJSON();
+	const flat = new THREE.BufferGeometry().copy(geometry); // attributes, groups, index
+	const clone = element.clone();
+	clone.uuid = element.uuid; // clone() re-uuids; everything is keyed by this
+	clone.children = [];
+	clone.geometry = flat;
+	const json = clone.toJSON();
+	flat.dispose();
+	return json;
+}
+
 /** The wire payload for an object's CURRENT slots + groups. @param {any} object */
 export function materialsPayload(object) {
 	const materials = materialsOf(object);

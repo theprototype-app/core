@@ -3438,6 +3438,203 @@ function barycentricOf(point, tri) {
 	return [1 - v - w, v, w];
 }
 
+
+// ---- M7: SYMMETRIZE --------------------------------------------------------
+// Keep one half of the mesh and replace the other with its mirror image, across an
+// object-local axis plane through the origin.
+//
+// The roadmap asked for live symmetry — a session toggle that post-processes EVERY committed
+// meshgeo. That model has to hook the commit path, and several of its call sites are RESTORE
+// paths (cancel, exit, undo replay) which must not mirror; getting that wrong corrupts undo
+// rather than a mesh. A one-shot command is the predictable half of the feature, it is what
+// Blender ships as Symmetrize, and it needs no hook at all: one op, one snapshot, one undo.
+//
+// The seam is what makes it watertight: vertices within a whisker of the plane are SNAPPED
+// onto it before anything is copied, so the mirrored half reuses those exact positions
+// instead of landing a hair away and leaving a crack.
+
+/**
+ * Append the MIRROR of one kept triangle. A reflection flips handedness, so the winding is
+ * reversed — copying the order verbatim turns every mirrored face inside out, which is
+ * invisible from outside until you notice you can see through the model.
+ * @param {any[]} out @param {any[]} pairs @param {number} kept the source index in `out`
+ * @param {any} tri the kept triangle (carries mi/uv like every tri array) @param {any} uv
+ */
+function mirrorInto(out, pairs, kept, tri, uv) {
+	const mirrored = tri.map((/** @type {any} */ v) => {
+		const point = v.clone();
+		mirrorComponent(point);
+		return point;
+	});
+	// a triangle sitting ON the plane maps to itself: mirroring it would double it up
+	if (mirrored.every((/** @type {any} */ v, /** @type {number} */ i) => v.equals(tri[i]))) return;
+	pairs.push({ source: kept, mirrored: out.length });
+	out.push(withSlot([mirrored[0], mirrored[2], mirrored[1]], tri.mi ?? out[kept]?.mi, uv && [uv[0], uv[2], uv[1]]));
+}
+
+/** the axis negation for the mirror in progress — set by symmetrizeMesh, which is the only
+ * caller and runs to completion synchronously @type {(v: any) => void} */
+let mirrorComponent = () => {};
+
+/**
+ * M7 SYMMETRIZE: mirror one half of the edited mesh onto the other.
+ * @param {'x'|'y'|'z'} axis the object-local axis to mirror across
+ * @param {number} keep +1 keeps the positive side, -1 the negative
+ * @returns {boolean}
+ */
+export function symmetrizeMesh(axis = 'x', keep = 1) {
+	if (!faceEdited) return false;
+	const index = axis === 'y' ? 1 : axis === 'z' ? 2 : 0;
+	const component = (/** @type {any} */ v) => (index === 0 ? v.x : index === 1 ? v.y : v.z);
+	const setComponent = (/** @type {any} */ v, /** @type {number} */ value) => {
+		if (index === 0) v.x = value;
+		else if (index === 1) v.y = value;
+		else v.z = value;
+	};
+	const tris = readTriangles(faceEdited.geometry);
+	if (!tris.length) return false;
+	const before = {
+		positions: trisToPositions(tris),
+		groups: trisToGroups(tris),
+		uvs: trisToUVs(tris),
+		faces: readStoredFaces(faceEdited.geometry)
+	};
+	// the snap tolerance scales with the object, so it means the same thing on a chair and on
+	// a terrain; 0.1% of the bounding diagonal is below anything a user models deliberately
+	const box = new THREE.Box3().setFromObject(faceEdited);
+	const tolerance = Math.max(box.getSize(new THREE.Vector3()).length() * 0.001, 1e-5);
+	mirrorComponent = (v) => setComponent(v, -component(v));
+	const working = cloneTris(tris);
+	for (const tri of working)
+		for (const v of tri) if (Math.abs(component(v)) < tolerance) setComponent(v, 0);
+	/** @type {any[]} */
+	const out = [];
+	/** @type {number[]} out index -> source index, for the kept half */
+	const origin = [];
+	/** @type {{source: number, mirrored: number}[]} */
+	const pairs = [];
+	let dropped = 0;
+	let clipped = 0;
+	working.forEach((/** @type {any} */ tri, /** @type {number} */ ti) => {
+		// SIGNED distance to the plane, oriented so positive means "the half we keep"
+		const d = tri.map((/** @type {any} */ v) => component(v) * keep);
+		const positives = d.filter((/** @type {number} */ x) => x > 0).length;
+		const negatives = d.filter((/** @type {number} */ x) => x < 0).length;
+		if (!positives && !negatives) return; // a sliver lying IN the plane has no area to keep
+		if (!negatives) {
+			// wholly on the keep side
+			origin[out.length] = ti;
+			const kept = out.length;
+			out.push(withSlot([tri[0].clone(), tri[1].clone(), tri[2].clone()], tri.mi, tri.uv));
+			mirrorInto(out, pairs, kept, tri, tri.uv);
+			return;
+		}
+		if (!positives) {
+			dropped++;
+			return;
+		}
+		// STRADDLING: clip it. Classifying by centroid instead (the first pass) leaves a
+		// jagged half whose boundary the mirror cannot meet — 8 odd edges on a plain box,
+		// because a box has no vertices on the plane at all and every side face straddles.
+		// Sutherland-Hodgman against one plane: keep the inside corners, add the crossings.
+		/** @type {{pos: any, uv: number[]|undefined}[]} */
+		const polygon = [];
+		for (let i = 0; i < 3; i++) {
+			const j = (i + 1) % 3;
+			const uvI = tri.uv ? tri.uv[i] : undefined;
+			const uvJ = tri.uv ? tri.uv[j] : undefined;
+			if (d[i] >= 0) polygon.push({ pos: tri[i].clone(), uv: uvI });
+			if ((d[i] > 0 && d[j] < 0) || (d[i] < 0 && d[j] > 0)) {
+				const t = d[i] / (d[i] - d[j]);
+				const point = tri[i].clone().lerp(tri[j], t);
+				// force the crossing EXACTLY onto the plane: both triangles sharing this edge
+				// compute the same t, and pinning the component kills the last float wobble, so
+				// the seam welds and the mirror lands on it precisely
+				setComponent(point, 0);
+				polygon.push({ pos: point, uv: uvI && uvJ ? uvLerp(uvI, uvJ, t) : undefined });
+			}
+		}
+		if (polygon.length < 3) {
+			dropped++;
+			return;
+		}
+		clipped++;
+		const normal = triNormal(tri);
+		for (let i = 1; i < polygon.length - 1; i++) {
+			const piece = [polygon[0], polygon[i], polygon[i + 1]];
+			const points = piece.map((entry) => entry.pos.clone());
+			const uvs = tri.uv ? piece.map((entry) => entry.uv ?? tri.uv[0]) : undefined;
+			const flip = triNormal(points).dot(normal) < 0;
+			const wound = flip ? [points[0], points[2], points[1]] : points;
+			const woundUv = uvs && (flip ? [uvs[0], uvs[2], uvs[1]] : uvs);
+			origin[out.length] = ti;
+			const kept = out.length;
+			out.push(withSlot(wound, tri.mi, woundUv));
+			mirrorInto(out, pairs, kept, wound, woundUv);
+		}
+	});
+	if (!pairs.length) {
+		showToast(
+			'Nothing to mirror: no geometry on the ' +
+				(keep > 0 ? 'positive' : 'negative') +
+				' side of the ' +
+				axis.toUpperCase() +
+				' plane'
+		);
+		return false;
+	}
+	const positions = trisToPositions(out);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast('That mirror is too large to sync');
+		return false;
+	}
+	// the partition: a kept triangle keeps its face, and each mirrored triangle joins the
+	// MIRROR of that face — so a quad stays a quad on both sides instead of becoming loose
+	// triangles that coplanarity has to re-guess
+	const prior = currentPartition();
+	/** @type {Map<number, number[]>} source face index -> mirrored out indices */
+	const mirroredFaces = new Map();
+	if (prior) {
+		/** @type {Map<number, number>} source tri -> its face */
+		const faceOf = new Map();
+		prior.forEach((face, fi) => face.forEach((ti) => faceOf.set(ti, fi)));
+		for (const pair of pairs) {
+			const fi = faceOf.get(origin[pair.source]);
+			if (fi === undefined) continue;
+			let list = mirroredFaces.get(fi);
+			if (!list) mirroredFaces.set(fi, (list = []));
+			list.push(pair.mirrored);
+		}
+	}
+	const authored = [...mirroredFaces.values()].filter((list) => list.length);
+	const fullOrigin = [];
+	for (let i = 0; i < out.length; i++) fullOrigin[i] = origin[i] ?? -1;
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
+	clearEdgeSelectionInner();
+	const groups = trisToGroups(out);
+	const uvs = trisToUVs(out);
+	applyGeometrySnapshot(positions, groups, uvs, composeFaces(prior, fullOrigin, authored));
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before,
+		after: withFaces({ positions, groups, uvs })
+	});
+	showToast(
+		'Symmetrized across ' +
+			axis.toUpperCase() +
+			': mirrored ' +
+			pairs.length +
+			(pairs.length === 1 ? ' triangle' : ' triangles') +
+			(clipped ? ', clipped ' + clipped : '') +
+			(dropped ? ', dropped ' + dropped : '')
+	);
+	return true;
+}
+
 /**
  * M4: dissolve the selected edges — genuinely REMOVE each one by merging the
  * two faces it joins and re-triangulating the merged polygon WITHOUT it.

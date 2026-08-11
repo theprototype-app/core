@@ -64,6 +64,7 @@
 		dissolveEdges,
 		bevelFaces,
 		bevelEdges,
+		symmetrizeMesh,
 		clearEdgeSelection,
 		stashSelections,
 		setFaceSubmode,
@@ -265,6 +266,9 @@
 	let bevelSegments = $state(1);
 	// profile: 0 flat, >0 domes the cap out, <0 dishes it in (vertex + edge bevel)
 	let bevelProfile = $state(0);
+	/** M7: symmetrize axis + which half to keep @type {'x'|'y'|'z'} */
+	let symAxis = $state('x');
+	let symKeep = $state(1);
 	/** @type {any} */
 	let flashTimer = 0;
 	/** @param {string} op */
@@ -858,6 +862,32 @@
 					flash('shading');
 				}}><Sun size={18} aria-hidden="true" /></button
 			>
+			<div id="mesh-symmetrize" class="tbx-row text-xs text-gray-300">
+				<span title="Keep one half and replace the other with its mirror image, across an object-local axis through the origin">mirror</span>
+				<div class="tbx-seg">
+					{#each ['x', 'y', 'z'] as a (a)}
+						<button
+							id={`mesh-sym-${a}`}
+							class="px-2 py-0.5 {symAxis === a ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+							title={`Mirror across the ${a.toUpperCase()} plane`}
+							onclick={() => (symAxis = /** @type {'x'|'y'|'z'} */ (a))}>{a.toUpperCase()}</button
+						>
+					{/each}
+				</div>
+				<button
+					id="mesh-sym-side"
+					class="rounded-full bg-gray-700 px-2 py-0.5 hover:bg-gray-600"
+					title="Which half to KEEP — the other one is replaced by its mirror"
+					onclick={() => (symKeep = -symKeep)}>{symKeep > 0 ? 'keep +' : 'keep -'}</button
+				>
+				<button
+					id="mesh-sym-apply"
+					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
+					onclick={() => {
+						if (symmetrizeMesh(symAxis, symKeep)) flash('symmetrize');
+					}}>Symmetrize</button
+				>
+			</div>
 			<div class="tbx-row text-xs text-gray-300">
 				<label class="flex items-center gap-1" title="Vertices closer than this merge into one">
 					merge dist

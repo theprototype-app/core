@@ -547,6 +547,130 @@ h.run(async () => {
 	h.check(loop.quads >= 8, `the cut band is stored as quads (${loop.quads})`);
 	h.check(loop.keptQuads === loop.quads, `a 4-degree twist of the cut mesh keeps all ${loop.quads} quads`);
 
+	// ---- P11: wave-2 operators, and the n-gon the soup could never hold ------
+	// Dissolving an edge between two coplanar quads makes a SIX-sided polygon. The
+	// triangle soup has to fan it, and derivation can only ever see loose triangles
+	// there; the stored partition holds it as one face, and the structure wireframe
+	// hides its internal spokes for the same reason it hides a quad's diagonal.
+	const ngon = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const t = s.meshTopology;
+		const fe = s.faceEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		fe.exitFaceEdit?.();
+		fe.enterFaceEdit(box.uuid);
+		fe.setFaceSubmode?.('faces');
+		// loop cut the box so the top has two quads sharing a real (non-diagonal) edge
+		const faces = fe.currentFaces();
+		const yi = faces.findIndex((f) => f.normal.y > 0.9);
+		fe.faceEditSelectedTris.set([...faces[yi].triIndices]);
+		fe.highlightFaceByTriangle(faces[yi].triIndices[0]);
+		fe.commitLoopCut(1);
+		const wireBefore = fe.wireframeDebug();
+		// find the shared edge between the two coplanar top quads and dissolve it
+		fe.setFaceSubmode?.('edges');
+		const tris0 = fe.readTriangles(box.geometry);
+		const candidates = new Set();
+		tris0.forEach((t, ti) => {
+			if (!t.every((v) => v.y > 0.49)) return; // top surface only
+			const c = t[0].clone().add(t[1]).add(t[2]).multiplyScalar(1 / 3);
+			for (let e = 0; e < 3; e++) {
+				const mid = t[e].clone().add(t[(e + 1) % 3]).multiplyScalar(0.5);
+				const key = fe.pickEdgeAt(ti, c.clone().lerp(mid, 0.95));
+				if (key) candidates.add(key);
+			}
+		});
+		let dissolved = false;
+		for (const key of candidates) {
+			fe.pickEdge(key, false);
+			if (fe.dissolveEdges()) {
+				dissolved = true;
+				break;
+			}
+		}
+		if (!dissolved) return { skipped: true };
+		const stored = t.readStoredFaces(box.geometry);
+		const tris = t.triangleCountOf(box.geometry);
+		// the dissolved region is the appended fan: the LAST face, and it has 3+ tris
+		const big = (stored ?? []).filter((f) => f.length >= 3);
+		fe.setFaceSubmode?.('faces');
+		const wireAfter = fe.wireframeDebug();
+		return {
+			dissolved,
+			tris,
+			valid: t.facesValidFor(stored, tris),
+			ngons: big.length,
+			biggest: Math.max(0, ...(stored ?? []).map((f) => f.length)),
+			wireBeforeDiagonals: wireBefore.diagonals,
+			wireAfterDiagonals: wireAfter.diagonals
+		};
+	});
+	if (ngon.skipped) {
+		h.check(false, 'dissolve had a coplanar edge to work with (premise)');
+	} else {
+		h.check(ngon.valid, 'dissolve left a partition valid for its output');
+		h.check(
+			ngon.ngons >= 1 && ngon.biggest >= 3,
+			`the dissolved region is stored as ONE n-gon of ${ngon.biggest} triangles, not loose tris`
+		);
+		h.check(
+			ngon.wireAfterDiagonals === 0,
+			`the structure wireframe draws no face-internal edges (${ngon.wireAfterDiagonals}) — the n-gon's fan spokes are hidden like a quad diagonal`
+		);
+	}
+
+	// delete / bridge / weld all REINDEX their survivors, so their partitions must be
+	// re-keyed rather than carried. The check that matters is that nothing is lost or
+	// duplicated: an invalid partition would be dropped and silently fall back.
+	const rekey = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const t = s.meshTopology;
+		const fe = s.faceEdit;
+		const out = {};
+		const freshBox = (cmd = '/create Box 1 1 1') => {
+			s.commandsHandler.sceneCommand(cmd);
+			let g;
+			s.objectsGroup.subscribe((v) => (g = v))();
+			const box = g.children[g.children.length - 1];
+			fe.exitFaceEdit?.();
+			fe.enterFaceEdit(box.uuid);
+			return box;
+		};
+		// delete: the face goes, the rest keeps its grouping
+		let box = freshBox();
+		let faces = fe.currentFaces();
+		let yi = faces.findIndex((f) => f.normal.y > 0.9);
+		fe.highlightFaceByTriangle(faces[yi].triIndices[0]);
+		const trisBefore = t.triangleCountOf(box.geometry);
+		out.deleted = fe.commitFaceOp('delete', 0);
+		out.deleteTris = t.triangleCountOf(box.geometry);
+		out.deleteValid = t.facesValidFor(t.readStoredFaces(box.geometry), out.deleteTris);
+		out.deleteShrank = out.deleteTris < trisBefore;
+		// weld: a barely-extruded face gives real near-duplicates to merge, and the
+		// collapse drops the wall triangles — the reindexing case
+		box = freshBox();
+		faces = fe.currentFaces();
+		yi = faces.findIndex((f) => f.normal.y > 0.9);
+		fe.highlightFaceByTriangle(faces[yi].triIndices[0]);
+		fe.commitFaceOp('extrude', 0.002);
+		const beforeWeld = t.triangleCountOf(box.geometry);
+		out.welded = fe.mergeByDistance(0.01);
+		out.weldTris = t.triangleCountOf(box.geometry);
+		out.weldDropped = out.weldTris < beforeWeld;
+		out.weldValid = t.facesValidFor(
+			t.readStoredFaces(box.geometry),
+			t.triangleCountOf(box.geometry)
+		);
+		return out;
+	});
+	h.check(rekey.deleted && rekey.deleteShrank, 'delete committed and removed triangles (premise)');
+	h.check(rekey.deleteValid, 'delete re-keyed its partition across the survivor reindexing');
+	h.check(rekey.welded && rekey.weldDropped, 'merge-by-distance collapsed a thin extrusion (premise)');
+	h.check(rekey.weldValid, 'weld re-keyed its partition after dropping degenerate triangles');
+
 	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
 
 	// ---- a peer STORES what arrived, and an old-style message still lands ----

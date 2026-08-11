@@ -868,7 +868,9 @@ export function bridgeFaces() {
 	const beforeUVs = trisToUVs(workingTris);
 	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	const remove = new Set([...setA, ...setB]);
+	const priorFaces = currentPartition();
 	const next = cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !remove.has(ti)));
+	const survivorCount = next.length;
 	const n = loopA.length;
 	const centA = new THREE.Vector3();
 	loopA.forEach((/** @type {any} */ p) => centA.add(p));
@@ -949,7 +951,16 @@ export function bridgeFaces() {
 	}
 	const groups = trisToGroups(next);
 	const uvs = trisToUVs(next);
-	applyGeometrySnapshot(positions, groups, uvs);
+	// both caps go, the survivors reindex, and every tunnel wall is a quad the op
+	// knows it built (pushQuad pairs, so the appended range reads as quads)
+	const origin = survivorOrigin(workingTris.length, remove);
+	while (origin.length < next.length) origin.push(-1);
+	applyGeometrySnapshot(
+		positions,
+		groups,
+		uvs,
+		composeFaces(priorFaces, origin, appendedQuads(survivorCount, next.length))
+	);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
 		kind: 'meshgeo',
@@ -1313,12 +1324,42 @@ function diagonalEdgeKeys(tris, partner) {
 	return out;
 }
 
-/** Quad-structure line geometry: every welded edge of the mesh EXCEPT the
- * diagonals of paired quads. Unpaired triangles keep all three edges, so a
- * genuine tri-only mesh looks exactly as it did. @param {any} geometry */
+/**
+ * The edges the structure view leaves out: everything INTERNAL to a face.
+ *
+ * P11: with a stored partition this generalises past quads for free — an edge that
+ * appears twice inside one face is internal to it, which is as true of a dissolved
+ * n-gon's fan spokes as of a quad's diagonal. Without one it falls back to the derived
+ * quad diagonals, so an unedited mesh draws exactly as it always did.
+ * @param {any[]} tris @param {number[][]|null} faces @param {Int32Array} [partner]
+ */
+function internalEdgeKeys(tris, faces, partner) {
+	if (!faces) return diagonalEdgeKeys(tris, partner ?? pairQuads(tris));
+	const out = new Set();
+	for (const face of faces) {
+		if (face.length < 2) continue;
+		/** @type {Map<string, number>} */
+		const count = new Map();
+		for (const ti of face) {
+			const t = tris[ti];
+			if (!t) continue;
+			const keys = t.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+			for (let e = 0; e < 3; e++) {
+				const key = edgeKey(keys[e], keys[(e + 1) % 3]);
+				count.set(key, (count.get(key) ?? 0) + 1);
+			}
+		}
+		for (const [key, seen] of count) if (seen >= 2) out.add(key);
+	}
+	return out;
+}
+
+/** Quad-structure line geometry: every welded edge of the mesh EXCEPT the ones
+ * internal to a face. Unpaired triangles keep all three edges, so a genuine
+ * tri-only mesh looks exactly as it did. @param {any} geometry */
 function quadWireGeometry(geometry) {
 	const tris = readTriangles(geometry);
-	const skip = diagonalEdgeKeys(tris, pairQuads(tris));
+	const skip = internalEdgeKeys(tris, readStoredFaces(geometry));
 	const seen = new Set();
 	/** @type {number[]} */
 	const points = [];
@@ -1377,11 +1418,13 @@ export function buildEditWireframe(object) {
 }
 
 /** e2e (and a sanity probe): what the face-mode wire actually draws.
- * `diagonals` must be 0 in quad view — that is the whole point of it. */
+ * `diagonals` must be 0 in quad view — that is the whole point of it. P11: the skip
+ * set comes from the same place the wire's does, so an n-gon's internal spokes count
+ * as hidden structure too. */
 export function wireframeDebug() {
 	if (!wire || !faceEdited) return { segments: 0, diagonals: -1 };
 	const position = wire.geometry.attributes.position;
-	const skip = diagonalEdgeKeys(workingTris, quadPartner);
+	const skip = internalEdgeKeys(workingTris, currentPartition(), quadPartner);
 	let diagonals = 0;
 	for (let i = 0; i < position.count; i += 2) {
 		const a = keyOf(position.getX(i), position.getY(i), position.getZ(i));
@@ -2507,6 +2550,10 @@ export function dissolveEdges() {
 	const drop = new Set();
 	/** @type {any[]} */
 	const added = [];
+	/** P11: the fan each dissolved region emits is ONE polygon — an n-gon, the thing
+	 * dissolve is FOR. `[start, end)` in `added` per region, so the partition can say
+	 * so instead of leaving n-2 loose triangles for coplanarity to re-guess. */
+	const fans = [];
 	let dissolved = 0;
 	let skipped = 0;
 
@@ -2558,6 +2605,7 @@ export function dissolveEdges() {
 		const mi = workingTris[tris[0]].mi;
 		const textured = !!workingTris[tris[0]].uv;
 		const normal = normals[tris[0]];
+		const fanStart = added.length;
 		for (let i = 1; i < n - 1; i++) {
 			const a = at(0);
 			const b = at(i);
@@ -2571,6 +2619,7 @@ export function dissolveEdges() {
 				added.push(withSlot(tri, mi, uv));
 			}
 		}
+		fans.push([fanStart, added.length]);
 		tris.forEach((ti) => drop.add(ti));
 		dissolved++;
 	}
@@ -2585,14 +2634,28 @@ export function dissolveEdges() {
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
 	const beforeFaces = readStoredFaces(faceEdited?.geometry);
-	const next = [
-		...cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))),
-		...added
-	];
+	const survivors = cloneTris(
+		workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))
+	);
+	const next = [...survivors, ...added];
 	const positions = trisToPositions(next);
 	const groups = trisToGroups(next);
 	const uvs = trisToUVs(next);
-	applyGeometrySnapshot(positions, groups, uvs);
+	// each fan becomes ONE face: the n-gon the user just made by removing an edge
+	const origin = survivorOrigin(workingTris.length, drop);
+	while (origin.length < next.length) origin.push(-1);
+	const fanFaces = fans.map(([from, to]) => {
+		/** @type {number[]} */
+		const face = [];
+		for (let i = from; i < to; i++) face.push(survivors.length + i);
+		return face;
+	});
+	applyGeometrySnapshot(
+		positions,
+		groups,
+		uvs,
+		composeFaces(currentPartition(), origin, fanFaces)
+	);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
 		kind: 'meshgeo',
@@ -2799,6 +2862,7 @@ export function mergeByDistance(threshold = 0.001) {
 				hit.n++;
 			} else cluster.set(k, { sum: v.clone(), n: 1 });
 		}
+	const priorFaces = currentPartition();
 	const next = cloneTris(workingTris);
 	let moved = 0;
 	for (const t of next)
@@ -2810,6 +2874,18 @@ export function mergeByDistance(threshold = 0.001) {
 			v.copy(target);
 		}
 	// a triangle whose corners collapsed onto each other has no area left
+	/** which input triangles survived the collapse — the origin map for the partition
+	 * @type {number[]} */
+	const survived = [];
+	next.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		if (
+			triNormal(t).lengthSq() > 1e-12 &&
+			keyOf(t[0].x, t[0].y, t[0].z) !== keyOf(t[1].x, t[1].y, t[1].z) &&
+			keyOf(t[1].x, t[1].y, t[1].z) !== keyOf(t[2].x, t[2].y, t[2].z) &&
+			keyOf(t[2].x, t[2].y, t[2].z) !== keyOf(t[0].x, t[0].y, t[0].z)
+		)
+			survived.push(ti);
+	});
 	const kept = next.filter(
 		(/** @type {any} */ t) =>
 			triNormal(t).lengthSq() > 1e-12 &&
@@ -2830,7 +2906,9 @@ export function mergeByDistance(threshold = 0.001) {
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
-	applyGeometrySnapshot(positions, groups, uvs);
+	// a weld only MOVES vertices and drops degenerate triangles, so every survivor
+	// keeps the face it was in; a face whose triangles all collapsed simply goes away
+	applyGeometrySnapshot(positions, groups, uvs, composeFaces(priorFaces, survived, []));
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
 		kind: 'meshgeo',
@@ -2985,6 +3063,21 @@ function storedPartner(geometry, triCount) {
 			partner[face[1]] = face[0];
 		}
 	return partner;
+}
+
+/**
+ * The origin map for an op that DROPPED some input triangles and kept the rest in order
+ * (`tris.filter(...)`): every survivor's new index maps to the input index it was. Any
+ * appended geometry is the caller's business — pad with -1 or hand `composeFaces` its
+ * own authored faces.
+ * @param {number} count input triangle count @param {Set<number>} dropped
+ * @returns {number[]}
+ */
+function survivorOrigin(count, dropped) {
+	/** @type {number[]} */
+	const origin = [];
+	for (let ti = 0; ti < count; ti++) if (!dropped.has(ti)) origin.push(ti);
+	return origin;
 }
 
 /**
@@ -3399,8 +3492,13 @@ export function commitFaceOp(op, amount) {
 		next = moveFaceAlongNormal(workingTris, face, amount);
 		// a pure vertex move: same triangles, same faces
 		nextFaces = priorFaces;
-	} else if (op === 'delete') next = deleteFaceTris(workingTris, face);
-	else if (op === 'subdivide') {
+	} else if (op === 'delete') {
+		next = deleteFaceTris(workingTris, face);
+		// the survivors are REINDEXED by the filter, so the partition has to be
+		// re-keyed rather than carried; the deleted face simply disappears from it
+		const gone = new Set(face.triIndices);
+		nextFaces = composeFaces(priorFaces, survivorOrigin(workingTris.length, gone), []);
+	} else if (op === 'subdivide') {
 		// quad-aware: a paired quad becomes a 2x2 grid, so the quad topology (and
 		// with it every loop tool) survives the split
 		const split = subdivideFaceUnits(workingTris, face.triIndices, quadPartner);

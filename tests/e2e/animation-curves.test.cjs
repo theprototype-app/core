@@ -293,5 +293,155 @@ h.run(async () => {
 	h.check(multi.heads === 2, `the per-frame playhead readout tracks both (${multi.heads})`);
 	h.check(multi.restored, 'stopping each restores its own base pose');
 
+	// ---------- 7. named CLIPS per object ----------
+	const clipsState = await A.page.evaluate((id) => {
+		const ap = window.__stores.animationPreview;
+		const open = ap.createClip(id, 'Open');
+		ap.addTrack(id, 'rot.y', null, open);
+		const copy = ap.duplicateClip(id, open);
+		ap.renameClip(id, copy, 'Close');
+		const list = ap.clipList(id);
+		// a duplicate must not SHARE track ids with its source, or a UI selection
+		// (and every per-track lookup) would hit two clips at once
+		let map;
+		ap.animations.subscribe((v) => (map = v))();
+		const set = map[id];
+		const sourceTracks = set.clips[open].tracks.map((/** @type {any} */ t) => t.id);
+		const copyTracks = set.clips[copy].tracks.map((/** @type {any} */ t) => t.id);
+		ap.setActiveClip(id, open);
+		const activeAfter = ap.clipList(id).find((/** @type {any} */ c) => c.active)?.name;
+		ap.deleteClip(id, copy);
+		return {
+			names: list.map((/** @type {any} */ c) => c.name),
+			activeWasCopy: list.find((/** @type {any} */ c) => c.active)?.name,
+			shared: sourceTracks.filter((/** @type {any} */ t) => copyTracks.includes(t)).length,
+			activeAfter,
+			afterDelete: ap.clipList(id).map((/** @type {any} */ c) => c.name)
+		};
+	}, first);
+	h.check(
+		clipsState.names.includes('Open') && clipsState.names.includes('Close'),
+		`an object holds several named clips (${clipsState.names.join(', ')})`
+	);
+	h.check(clipsState.activeWasCopy === 'Close', 'a new clip becomes the one being edited');
+	h.check(clipsState.shared === 0, `a duplicate gets fresh track ids (${clipsState.shared} shared)`);
+	h.check(clipsState.activeAfter === 'Open', 'and any clip can be made the default');
+	h.check(!clipsState.afterDelete.includes('Close'), `deleting one leaves the rest (${clipsState.afterDelete.join(', ')})`);
+
+	// ---------- 8. the timeline, through the real DOM ----------
+	const ui = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		s.objectActions.selectObject(id, false);
+		s.animationClose.set(false);
+		s.bottomDock.activateDock('animation');
+		await new Promise((r) => setTimeout(r, 400));
+		const svg = document.querySelector('#animation-timeline');
+		return {
+			svg: !!svg,
+			diamonds: svg ? svg.querySelectorAll('rect[transform^="rotate(45"]').length : 0,
+			clipsPanel: !!document.querySelector('#authored-clips'),
+			addButton: !!document.querySelector('#animation-add')
+		};
+	}, first);
+	h.check(ui.svg, 'the timeline renders for the selected object');
+	h.check(ui.diamonds >= 2, `with a diamond per key (${ui.diamonds})`);
+	h.check(ui.clipsPanel, 'and the authored-clip list is shown');
+	h.check(ui.addButton, 'the + button is present');
+
+	// double-click the sheet to INSERT a key, then drag it with a real mouse
+	const before = await A.page.evaluate((id) => {
+		const ap = window.__stores.animationPreview;
+		let map;
+		ap.animations.subscribe((v) => (map = v))();
+		const set = map[id];
+		return set.clips[set.active].tracks[0].keys.map((/** @type {any} */ k) => [k.t, k.v]);
+	}, first);
+	const box = await A.page.locator('#animation-timeline').boundingBox();
+	// the sheet's first track row sits just under the 16px ruler
+	const rowY = box.y + 16 + 11;
+	await A.page.mouse.dblclick(box.x + box.width * 0.5, rowY);
+	await A.page.waitForTimeout(250);
+	const afterInsert = await A.page.evaluate((id) => {
+		const ap = window.__stores.animationPreview;
+		let map;
+		ap.animations.subscribe((v) => (map = v))();
+		const set = map[id];
+		return set.clips[set.active].tracks[0].keys.map((/** @type {any} */ k) => [k.t, k.v]);
+	}, first);
+	h.check(
+		afterInsert.length === before.length + 1,
+		`a double-click on a row inserts a key (${before.length} -> ${afterInsert.length})`
+	);
+	const inserted = afterInsert.findIndex(
+		(/** @type {any[]} */ k) => !before.some((/** @type {any[]} */ b) => Math.abs(b[0] - k[0]) < 1e-9)
+	);
+	h.check(
+		inserted >= 0 && Math.abs(afterInsert[inserted][0] - 1) < 0.16,
+		`at the time it was clicked (${afterInsert[inserted]?.[0]}s of a 2s clip)`
+	);
+
+	// drag that key left with a real pointer gesture: ONE undo entry, one broadcast
+	const depthBefore = await A.page.evaluate(() => {
+		let stack = [];
+		window.__stores.history.undoStack.subscribe((/** @type {any[]} */ v) => (stack = v))();
+		return stack.length;
+	});
+	const keyX = box.x + 10 + (afterInsert[inserted][0] / 2) * (box.width - 4 - 20);
+	await A.page.mouse.move(keyX, rowY);
+	await A.page.mouse.down();
+	for (let i = 1; i <= 6; i++) await A.page.mouse.move(keyX - i * 8, rowY, { steps: 2 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(250);
+	const dragged = await A.page.evaluate((id) => {
+		const ap = window.__stores.animationPreview;
+		let map;
+		ap.animations.subscribe((v) => (map = v))();
+		const set = map[id];
+		let stack = [];
+		window.__stores.history.undoStack.subscribe((/** @type {any[]} */ v) => (stack = v))();
+		return {
+			times: set.clips[set.active].tracks[0].keys.map((/** @type {any} */ k) => Math.round(k.t * 1000) / 1000),
+			depth: stack.length,
+			kinds: stack.slice(-1).map((/** @type {any} */ e) => e.kind)
+		};
+	}, first);
+	h.check(
+		dragged.times.some((/** @type {number} */ t) => t > 0 && t < afterInsert[inserted][0] - 0.05),
+		`dragging a key moves it in time (${JSON.stringify(dragged.times)})`
+	);
+	h.check(
+		dragged.depth === depthBefore + 1 && dragged.kinds[0] === 'anim',
+		`and the whole drag is ONE undo entry (+${dragged.depth - depthBefore}, kind ${dragged.kinds[0]})`
+	);
+
+	// ---------- 9. the "+" menu ----------
+	const clipsBefore = await A.page.evaluate(
+		(id) => window.__stores.animationPreview.clipList(id).length,
+		first
+	);
+	await A.page.locator('#animation-add').click();
+	await A.page.waitForTimeout(300);
+	// submenu parents carry a trailing marker, so match the label loosely
+	const menuRows = await A.page.evaluate(() =>
+		[...document.querySelectorAll('.ctx-item, [role="menuitem"], button')]
+			.map((b) => b.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+			.filter((t) => /^(Movement|Key at playhead|New clip|Delete clip)\b/.test(t))
+	);
+	h.check(
+		menuRows.some((/** @type {string} */ t) => t.startsWith('Movement')) && menuRows.includes('New clip'),
+		`the + button opens a real menu (${menuRows.join(' | ')})`
+	);
+	await A.page.getByText('New clip', { exact: true }).click();
+	await A.page.waitForTimeout(300);
+	const clipsAfter = await A.page.evaluate(
+		(id) => window.__stores.animationPreview.clipList(id).length,
+		first
+	);
+	h.check(clipsAfter === clipsBefore + 1, `and its actions run (${clipsBefore} -> ${clipsAfter} clips)`);
+	const menuGone = await A.page.evaluate(
+		() => !document.body.textContent?.includes('Keys on every movement')
+	);
+	h.check(menuGone, 'the menu closes after a pick');
+
 	await h.finish(browser);
 });

@@ -868,6 +868,17 @@ export function bridgeFaces() {
 	const beforeUVs = trisToUVs(workingTris);
 	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	const remove = new Set([...setA, ...setB]);
+	// WHICH WAY DO THE TUNNEL WALLS FACE? It depends on what the tunnel IS, and the first
+	// pass got one of the two cases backwards (reported: bridging two parallel quads of a
+	// subdivided cube needed a manual Flip Normals, while bridging two separate shells was
+	// fine). Deleting both caps from ONE shell punches a HOLE THROUGH a solid, and you
+	// look at a hole's INNER surface — so those walls face the axis. Two SEPARATE shells
+	// get an exterior connection, a tube you see from outside, facing away from the axis.
+	/** @type {Map<number, number>} tri -> shell id, built once (a scan per lookup would
+	 * be quadratic on a dense mesh) */
+	const shellOf = new Map();
+	shellsOfTris(workingTris).forEach((shell, id) => shell.forEach((ti) => shellOf.set(ti, id)));
+	const sameShell = shellOf.get(setA[0]) === shellOf.get(setB[0]);
 	const priorFaces = currentPartition();
 	const next = cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !remove.has(ti)));
 	const survivorCount = next.length;
@@ -926,6 +937,7 @@ export function bridgeFaces() {
 			wantDir = mid.clone().sub(centA.clone().addScaledVector(axis, t));
 		} else wantDir = mid.clone().sub(centA);
 		if (wantDir.lengthSq() < 1e-9) wantDir = new THREE.Vector3(0, 1, 0);
+		if (sameShell) wantDir.negate(); // a hole through a solid shows its INNER surface
 		pushQuad(
 			next,
 			a0.clone(),
@@ -4068,6 +4080,19 @@ export function cancelFaceGrab() {
 /** the op target the gizmo was seated on — what a drag actually moves */
 /** @type {any} */ let gizmoTarget = null;
 
+/** meshEdit registers here so the vertex proxy follows both prefs without importing
+ * faceEdit's internals (and without a cycle — meshEdit already imports this module)
+ * @type {(() => void)[]} */
+const gizmoPrefListeners = [];
+/** @param {() => void} fn */
+export function registerGizmoPrefListener(fn) {
+	gizmoPrefListeners.push(fn);
+}
+
+// ^ declared ABOVE the stores below: their subscribers run SYNCHRONOUSLY at module
+// eval, and reading a `let`/`const` declared later TDZ-crashes the SSR prerender
+// (the documented store-subscriber gotcha — this cost one 500 while wiring it).
+
 /** E9: face-gizmo space — 'local' = the FACE basis (Z = normal), 'world' =
  * world axes. Persisted local pref. NOTE three r185: scale mode always
  * orients local, whatever `.space` says. Declared AFTER faceProxy: the
@@ -4084,6 +4109,29 @@ faceGizmoSpace.subscribe((value) => {
 	const controls = get(TControls);
 	// live flip while the face gizmo is seated
 	if (faceProxy && controls && controls.object === faceProxy) controls.setSpace?.(value);
+	// vertex mode seats its own proxy (meshEdit) — it re-reads this store on change
+	gizmoPrefListeners.forEach((fn) => fn());
+});
+
+/**
+ * Whether a transform gizmo seats at all, in EVERY element mode (vertices/edges/faces).
+ * One switch rather than three: the gizmo is a preference about how you like to work, not
+ * a property of what you happen to have selected, and a per-mode toggle would need
+ * explaining. Local pref, default ON.
+ *
+ * Modes with no selection detach anyway; this is the answer to "let me get the gizmo out
+ * of the way" — modelling with click-select and the ops toolbar only.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const meshGizmoEnabled = writable(
+	typeof localStorage !== 'undefined' ? localStorage.getItem('meshGizmoEnabled') !== '0' : true
+);
+meshGizmoEnabled.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('meshGizmoEnabled', value ? '1' : '0');
+	if (typeof window === 'undefined') return;
+	// live: seat or drop the gizmo the moment the switch flips, in whichever mode is open
+	if (value) attachFaceGizmo();
+	else detachFaceGizmo();
+	gizmoPrefListeners.forEach((fn) => fn());
 });
 
 /** E9: pick the world axis least aligned with n (deterministic tangent seed)
@@ -4131,6 +4179,12 @@ export function attachFaceGizmo() {
 	if (get(isVRMode)) return; // the desktop gizmo helper would render in-headset
 	/** @type {any} */
 	const controls = get(TControls);
+	// the one switch, honoured for every mode (see meshGizmoEnabled)
+	if (!get(meshGizmoEnabled)) {
+		gizmoTarget = null;
+		detachFaceGizmo();
+		return;
+	}
 	// M4 EDGE gizmo. It must never fall through to opTargetFace here: that reads
 	// faceEditSelectedTris/HoverTri, so before the edge target existed a drag in edge
 	// mode silently moved whatever quads were picked BEFORE the switch.

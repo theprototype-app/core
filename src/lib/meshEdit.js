@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, TControls, lockedObjects, isVRMode } from '../stores/sceneStore';
+import { globalScene, globalCamera, objectsGroup, TControls, lockedObjects, isVRMode } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
@@ -18,7 +18,10 @@ import {
 	registerVertexSelectionHistory,
 	withSelectionHistory,
 	editWireGeometry,
-	registerVertexWireRebuild
+	registerVertexWireRebuild,
+	meshGizmoEnabled,
+	faceGizmoSpace,
+	registerGizmoPrefListener
 } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -36,9 +39,14 @@ export const editingObject = writable(null);
 /** @type {any} */ let overlay = null; // wireframe overlay child
 /** @type {any} */ let proxy = null; // gizmo target for the selected handle
 let selectedHandle = -1;
-/** 175: remember the last vertex selected per object, restored on re-entry
- * @type {{uuid: string|null, handle: number}} */
-let stashedVert = { uuid: null, handle: -1 };
+/** 175: remember the vertex SELECTION per object, restored on re-entry. The whole SET is
+ * stashed, not just the anchor: switching Vertices -> Faces -> Vertices kept only the
+ * anchored handle, so a carefully built multi-selection vanished on the way through
+ * another mode (reported). `count` is the geometry signature — a topology change
+ * invalidates handle indices, so a stale set is dropped rather than lighting up whatever
+ * happens to sit at those indices now.
+ * @type {{uuid: string|null, handle: number, set: number[], count: number}} */
+let stashedVert = { uuid: null, handle: -1, set: [], count: -1 };
 /** @type {number[] | null} */
 let dragStartLocal = null;
 let lastSent = 0;
@@ -61,6 +69,72 @@ const HANDLE_COLOR = 0x2f81f7;
 const HANDLE_SELECTED = 0xff4000;
 const HANDLE_HOVER = 0xffa000; // ray hover (119): selected still wins
 const HANDLE_MULTI = 0x22c55e; // 177: ctrl/shift multi-select for Create face
+
+/** Vertex-handle size MULTIPLIER over the proportional base (see baseRadius). In adaptive mode it multiplies
+ * the APPARENT pixel size instead. A local
+ * pref, like every other look setting in the editor — it is about eyesight and screen
+ * size, not about the scene, so it must not replicate.
+ * @type {import('svelte/store').Writable<number>} */
+export const vertexHandleScale = writable(
+	typeof localStorage !== 'undefined'
+		? Math.min(Math.max(parseFloat(localStorage.getItem('vertexHandleScale') ?? '') || 1, 0.1), 4)
+		: 1
+);
+/** Screen-constant handle size (default ON — see refreshHandleMatrix). A local pref.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const vertexHandleAdaptive = writable(
+	typeof localStorage !== 'undefined' ? localStorage.getItem('vertexHandleAdaptive') !== '0' : true
+);
+/** reused so the per-frame path allocates nothing */
+const scaleVector = new THREE.Vector3();
+
+/**
+ * The world scale a handle at `worldPoint` needs to cover `APPARENT_PX` pixels.
+ *
+ * Perspective: apparent size is proportional to worldSize / distance, so the scale is
+ * proportional to distance — one multiply per handle per frame. Orthographic has no
+ * distance term at all; its apparent size follows the zoom instead.
+ * @param {any} worldPoint @returns {number} multiplier over the built sphere radius
+ */
+function adaptiveScaleAt(worldPoint) {
+	const camera = get(globalCamera);
+	if (!camera) return 0;
+	const base = baseRadius();
+	if (base <= 0) return 0;
+	const height = typeof window !== 'undefined' ? window.innerHeight : 800;
+	const px = APPARENT_PX * get(vertexHandleScale);
+	let world;
+	if (camera.isOrthographicCamera) {
+		world = ((camera.top - camera.bottom) / (camera.zoom || 1)) * (px / height);
+	} else {
+		const distance = camera.position.distanceTo(worldPoint);
+		const fov = ((camera.fov ?? 50) * Math.PI) / 180;
+		world = 2 * Math.tan(fov / 2) * distance * (px / height);
+	}
+	// `world` spans APPARENT_PX pixels, so it is a DIAMETER, while the sphere's parameter is
+	// a RADIUS — skipping the halving drew every dot at twice the size asked for.
+	return world / 2 / base;
+}
+
+/** apparent DIAMETER of a handle at scale 1x, in CSS pixels. 9 reads as a clickable dot
+ * without hiding the vertex under it; the scale slider multiplies it. */
+const APPARENT_PX = 9;
+
+vertexHandleAdaptive.subscribe((value) => {
+	if (typeof localStorage !== 'undefined')
+		localStorage.setItem('vertexHandleAdaptive', value ? '1' : '0');
+	if (!handleMesh || !edited) return;
+	// re-pose every handle: the matrices carry the scale, so switching modes is a rewrite
+	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
+});
+
+vertexHandleScale.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('vertexHandleScale', String(value));
+	// live, and cheap: the size lives in the instance MATRICES, so nothing is rebuilt and
+	// no handle index moves — the selection survives a size change
+	if (!handleMesh || !edited) return;
+	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
+});
 
 /** 177: handle indices ctrl/shift-selected for Create face */
 let vertexSelection = new Set();
@@ -118,6 +192,8 @@ const tempVector = new THREE.Vector3();
 let hoveredHandle = -1;
 /** last object world matrix we posed the handles against (119: follow moves) */
 const lastObjectMatrix = new THREE.Matrix4();
+const lastCameraPosition = new THREE.Vector3(NaN, NaN, NaN);
+let lastCameraZoom = NaN;
 
 /** Group position-attribute indices by (rounded) location @param {any} geometry */
 function buildHandles(geometry) {
@@ -133,11 +209,25 @@ function buildHandles(geometry) {
 	return [...map.values()];
 }
 
+/**
+ * D-final: handle size, in two parts.
+ *
+ * `baseRadius` is PROPORTIONAL to the object (1.2% of its bounding diagonal) so a chair
+ * and a terrain both get usable dots with no per-object setting. The user preference is
+ * then an instance SCALE on top, never baked into the geometry — which is what lets the
+ * same slider mean "x times bigger" in fixed mode and "x times more pixels" in adaptive
+ * mode. (Baking it into the sphere made the slider cancel itself out in adaptive mode:
+ * both the numerator and the denominator scaled.)
+ * @returns {number} */
+function baseRadius() {
+	const box = new THREE.Box3().setFromObject(edited);
+	return THREE.MathUtils.clamp(box.getSize(tempVector).length() * 0.012, 0.002, 0.4);
+}
+
 /** Build the vertex-handle InstancedMesh for the current `handles` (one
  * instanced mesh — cheap for thousands of vertices). @param {any} scene */
 function buildHandleMesh(scene) {
-	const box = new THREE.Box3().setFromObject(edited);
-	const size = THREE.MathUtils.clamp(box.getSize(tempVector).length() * 0.012, 0.02, 0.2);
+	const size = baseRadius();
 	handleMesh = new THREE.InstancedMesh(
 		new THREE.SphereGeometry(size, 8, 8),
 		new THREE.MeshBasicMaterial({ depthTest: false, transparent: true, opacity: 0.9 }),
@@ -204,6 +294,14 @@ function handleWorldPosition(index, target) {
 function refreshHandleMatrix(index) {
 	handleWorldPosition(index, tempVector);
 	tempMatrix.makeTranslation(tempVector.x, tempVector.y, tempVector.z);
+	// ADAPTIVE size: scale each handle by its distance to the camera so it covers a
+	// constant number of PIXELS. A world-size dot is wrong at both ends of the zoom — it
+	// disappears on a large mesh seen from far away and swallows the geometry up close —
+	// which is why every DCC tool draws vertices at a fixed pixel size.
+	const scale = get(vertexHandleAdaptive)
+		? adaptiveScaleAt(tempVector)
+		: get(vertexHandleScale);
+	if (scale > 0) tempMatrix.scale(scaleVector.setScalar(scale));
 	handleMesh.setMatrixAt(index, tempMatrix);
 	handleMesh.instanceMatrix.needsUpdate = true;
 	// D2 (roadmap 13): three caches an InstancedMesh boundingSphere for its
@@ -248,8 +346,19 @@ export function setHoveredHandle(index) {
 export function tickMeshEdit() {
 	if (!edited || !handleMesh) return;
 	edited.updateMatrixWorld();
-	if (lastObjectMatrix.equals(edited.matrixWorld)) return;
-	lastObjectMatrix.copy(edited.matrixWorld);
+	const moved = !lastObjectMatrix.equals(edited.matrixWorld);
+	// ADAPTIVE mode also has to follow the CAMERA: the handles keep a constant pixel size,
+	// so an orbit or a zoom changes every one of them even though the object never moved.
+	// Compared against the last pose (and zoom, for ortho) so a still camera costs nothing.
+	const camera = get(vertexHandleAdaptive) ? get(globalCamera) : null;
+	const zoom = camera?.zoom ?? 1;
+	const cameraMoved = !!camera && (!lastCameraPosition.equals(camera.position) || lastCameraZoom !== zoom);
+	if (!moved && !cameraMoved) return;
+	if (moved) lastObjectMatrix.copy(edited.matrixWorld);
+	if (camera) {
+		lastCameraPosition.copy(camera.position);
+		lastCameraZoom = zoom;
+	}
 	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
 }
 
@@ -301,9 +410,25 @@ export function enterEditMode(uuid) {
 	noteEditEnter('vertex', uuid); // 15-F: opens (or continues) the undo barrier
 	window.addEventListener('keydown', onKeydown);
 
-	// 175: restore the vertex selected last time in this object (per-mode memory)
-	if (stashedVert.uuid === uuid && stashedVert.handle >= 0 && stashedVert.handle < handles.length) {
-		selectHandleInner(stashedVert.handle);
+	// 175: restore the selection this object had last time (per-mode memory). The whole
+	// SET comes back, and only when the handle count still matches — a topology change
+	// makes the stashed indices meaningless.
+	if (stashedVert.uuid === uuid && stashedVert.count === handles.length) {
+		const live = stashedVert.set.filter((index) => index >= 0 && index < handles.length);
+		const anchor =
+			stashedVert.handle >= 0 && stashedVert.handle < handles.length
+				? stashedVert.handle
+				: live.length
+					? live[live.length - 1]
+					: -1;
+		if (anchor >= 0) {
+			// the anchor is always a member of the set (the D5 invariant), and setAnchor
+			// is the one place the gizmo seats
+			vertexSelection = new Set(live.length ? live : [anchor]);
+			vertexSelection.add(anchor);
+			setAnchor(anchor);
+			syncVertexSelection();
+		}
 	}
 }
 
@@ -341,7 +466,14 @@ export function vertexSelectionWorldPoint() {
 
 export function exitEditMode() {
 	if (!edited) return;
-	if (selectedHandle >= 0) stashedVert = { uuid: edited.uuid, handle: selectedHandle };
+	// stash the SELECTION (set + anchor) so a trip through Faces/Edges does not lose it
+	if (selectedHandle >= 0 || vertexSelection.size)
+		stashedVert = {
+			uuid: edited.uuid,
+			handle: selectedHandle,
+			set: [...vertexSelection],
+			count: handles.length
+		};
 	const scene = get(globalScene);
 	/** @type {any} */
 	const controls = get(TControls);
@@ -414,14 +546,23 @@ function setAnchor(index) {
 	const controls = get(TControls);
 	if (!proxy || !controls) return;
 	// the desktop gizmo never seats in VR (its helper would render in-headset;
-	// VR drags handles directly via vrBeginHandleDrag)
-	if (index >= 0 && !get(isVRMode)) {
+	// VR drags handles directly via vrBeginHandleDrag), and never when the user has
+	// switched the gizmo off (meshGizmoEnabled covers all three element modes)
+	if (index >= 0 && !get(isVRMode) && get(meshGizmoEnabled)) {
 		handleWorldPosition(index, tempVector);
 		proxy.position.copy(tempVector);
 		controls.setMode('translate');
+		// vertex mode used to ignore the space pref entirely, so Local/World in the
+		// toolbox only affected faces — the gizmo is one control, it should mean one thing
+		controls.setSpace?.(get(faceGizmoSpace));
 		controls.attach(proxy);
 	} else if (controls.object === proxy) controls.detach();
 }
+
+// live: flipping either gizmo pref re-seats (or drops) the VERTEX proxy too
+registerGizmoPrefListener(() => {
+	if (edited && selectedHandle >= 0) setAnchor(selectedHandle);
+});
 
 /** 177/183: toggle a vertex handle in the selection (ctrl-click on desktop,
  * trigger-tap in VR). The anchor rides the toggles: last-added handle takes

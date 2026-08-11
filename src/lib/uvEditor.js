@@ -159,18 +159,42 @@ export function textureImageOf(object, slot = 0) {
 }
 
 /**
- * Can this object be UV-edited? Needs a uv attribute to edit and has to fit in
- * one snapshot message (the commit swaps the WHOLE geometry).
+ * Can the editor SHOW this object? Only needs geometry with a uv attribute.
+ *
+ * Deliberately separate from `uvEditable`: the snapshot cap exists because a
+ * GEOMETRY commit has to fit one meshgeo message, which has nothing to do with
+ * viewing a UV map or PAINTING (painting writes a texture, never the geometry).
+ * Gating the whole editor on the cap meant any real model — a GLB over ~5000
+ * triangles — showed no texture at all.
  * @param {any} object @returns {{ok: boolean, reason: string}}
  */
-export function uvEditable(object) {
+export function uvViewable(object) {
 	if (!object?.geometry?.attributes?.position) return { ok: false, reason: 'Select a mesh to edit its UVs.' };
 	if (!object.geometry.attributes.uv)
 		return { ok: false, reason: 'This mesh has no texture coordinates to edit.' };
-	if (triangleCount(object) * 9 > MAX_SNAPSHOT)
-		return { ok: false, reason: 'This mesh is too large to UV-edit (its edits could not sync).' };
 	return { ok: true, reason: '' };
 }
+
+/**
+ * Can its UVs be DRAGGED? Viewable, and small enough that a commit fits one
+ * snapshot message (a commit swaps the WHOLE geometry). Painting is unaffected.
+ * @param {any} object @returns {{ok: boolean, reason: string}}
+ */
+export function uvEditable(object) {
+	const viewable = uvViewable(object);
+	if (!viewable.ok) return viewable;
+	if (triangleCount(object) * 9 > MAX_SNAPSHOT)
+		return {
+			ok: false,
+			reason: 'This mesh is too large to move UVs on (an edit could not sync), but you can still paint it.'
+		};
+	return { ok: true, reason: '' };
+}
+
+/** Above this triangle count the UV wireframe and its vertex handles are hidden:
+ * a 100k-triangle model would draw 300k line segments and 300k handles every
+ * frame. The texture still shows and painting still works. */
+export const UV_WIRE_LIMIT = 20000;
 
 /**
  * The UV triangles to draw, as flat screen-agnostic data: one entry per triangle
@@ -498,17 +522,25 @@ async function paintSurface(uuid, slot) {
 	const material = materialAt(object, slot);
 	if (!material) return null;
 	const url = material.userData?.mapDataUrl ?? null;
+	// An IMPORTED texture (GLB/OBJ) never went through applyMap, so there is no
+	// dataURL to seed from — seed from the live texture's own image instead, or
+	// the first stroke commits a blank white sheet OVER the model's texture.
+	const live = url ? null : textureImageOf(object, slot);
+	const seedKey = url ?? (live ? liveSeedKey(material) : null);
 	const key = paintKey(uuid, slot);
 	const existing = paintCanvases.get(key);
 	// reuse only while it still represents the CURRENT image — an undo, a peer's
 	// commit or a dropped image all change it out from under us
-	if (existing && existing.seededFrom === url) {
+	if (existing && existing.seededFrom === seedKey) {
 		install(material, existing);
 		return existing;
 	}
 	const canvas = existing?.canvas ?? document.createElement('canvas');
-	canvas.width = PAINT_CANVAS;
-	canvas.height = PAINT_CANVAS;
+	// Match the SOURCE resolution (clamped) rather than always 1024: committing a
+	// 1024 re-encode of a 2048 texture would silently halve the user's texture.
+	const size = paintSize(live);
+	canvas.width = size;
+	canvas.height = size;
 	const ctx = canvas.getContext('2d');
 	if (!ctx) return null;
 	// a material with no texture starts WHITE, not transparent: painting on a
@@ -518,11 +550,13 @@ async function paintSurface(uuid, slot) {
 	if (url) {
 		const image = await decodeImage(url);
 		if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+	} else if (live) {
+		ctx.drawImage(live, 0, 0, canvas.width, canvas.height);
 	}
 	const texture = existing?.texture ?? new THREE.CanvasTexture(canvas);
 	texture.colorSpace = THREE.SRGBColorSpace;
 	texture.needsUpdate = true;
-	const entry = { canvas, texture, uuid, slot, seededFrom: url };
+	const entry = { canvas, texture, uuid, slot, seededFrom: seedKey };
 	paintCanvases.set(key, entry);
 	install(material, entry);
 	return entry;
@@ -536,6 +570,21 @@ function install(material, entry) {
 	}
 	entry.texture.needsUpdate = true;
 	objectsGroup.update((v) => v);
+}
+
+/** A live texture identifies its seed by uuid+version, so a blank canvas (seed
+ * key null) is never mistaken for one seeded from the model's own texture.
+ * @param {any} material @returns {string} */
+function liveSeedKey(material) {
+	return 'tex:' + material.map.uuid + ':' + material.map.version;
+}
+
+/** the paint canvas size: the source texture's own resolution, clamped, so a
+ * commit never silently downscales it @param {any} image @returns {number} */
+function paintSize(image) {
+	const source = Math.max(image?.width ?? 0, image?.height ?? 0);
+	if (!source) return PAINT_CANVAS;
+	return Math.min(Math.max(2 ** Math.round(Math.log2(source)), 256), 2048);
 }
 
 /** @param {string} url @returns {Promise<any>} */

@@ -21,7 +21,8 @@
 		selectAllVerts,
 		invertVertexSelection,
 		vertexHandleScale,
-		vertexHandleAdaptive
+		vertexHandleAdaptive,
+		vertexSlide
 	} from '$lib/meshEdit';
 	import {
 		faceEditObject,
@@ -649,6 +650,16 @@
 				aria-label="Create a face from the selected vertices"
 				title="Create face — select 3-4 vertices (Ctrl+click adds) first"
 				onclick={createFace}><ToolIcon name="create-face" /></button
+			>
+			<button
+				id="mesh-slide"
+				class="tbx-btn {$vertexSlide ? 'tbx-on bg-primary-600 text-white' : ''} {$vertexSelectionSize === 1
+					? ''
+					: 'tbx-disabled'}"
+				aria-pressed={$vertexSlide}
+				aria-label="Slide the vertex along an edge"
+				title="Slide — constrain the drag to one of this vertex's own edges (it picks the edge you drag toward and clamps to its ends). Adjusts a profile without pulling the vertex off the surface."
+				onclick={() => vertexSlide.set(!$vertexSlide)}><Spline size={18} aria-hidden="true" /></button
 			>
 			<!-- handle size: proportional to the object by default, this scales it -->
 			<div class="tbx-row text-xs text-gray-300">

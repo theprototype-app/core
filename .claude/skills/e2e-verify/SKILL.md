@@ -23,7 +23,10 @@ map, drag, multi-select, box/lasso), `uv-materials` (per-slot textures), `uv-pai
 cap), `uv-live-faces` (live paint preview + face scoping), `uv-texture-params`
 (sampler state + the orientation arbiter), `uv-slots` + `uv-slots-persist` (UV4
 slots, live and across a reload), plus `mesh-grab-uv` and `object-sync` — the first
-coverage this repo has of the gizmo-grab uv path and of the late-joiner object sync. helpers.cjs exports: `launch(options)` (pass
+coverage this repo has of the gizmo-grab uv path and of the late-joiner object sync.
+Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
+operators that author it, two-peer delivery and an old-peer message), and
+`mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
 `{args:[...]}` for fake media), `setupPage(browser, name)` (init script + hydration +
 peer id), `connect(from, to, settleMs=9000)`, `check(ok, label)`,
 `eventually(fn, predicate, label, timeout)`, `projectPoint(page, [x,y,z])` (world →
@@ -51,6 +54,19 @@ passed while the user watched the feature misbehave:
   pixels land where that quadrant SAMPLES settled it in one run: tr=656/br=0 before,
   br=653/tr=0 after (`uv-texture-params`). Reasoning alone was a coin flip on a fix
   that would have looked plausible either way.
+- **COMPUTE THE COUNTERFACTUAL in-test when a fix replaces an unreliable heuristic.**
+  Stored mesh topology exists because deriving quads from coplanarity fails on a twisted
+  band — but the first subdivide guard used a FLAT box face, where derivation produces
+  the same answer, so it passed with the feature ripped out. The fix is not just a
+  harder input: it is asserting the gap. Clear the stored data, re-run the derived path
+  in the same evaluate, and compare (`derivation alone recovers 1 of the 4 sub-quads`,
+  `10 quads kept where derived gives 6`). The check then carries its own proof that the
+  scenario is adversarial, and a reader six months later can see WHY it matters.
+- **A regression guard that RECORDS a limitation must be flipped, not deleted, when the
+  limitation goes.** `mesh-loop-hardening` 3b asserted `paired === 0` — the number to
+  beat. Landing stored topology made it assert `paired === wall` instead, keeping the
+  twist MEASUREMENT (dot -0.07) that proves derivation could never have done it. Deleting
+  the section would have thrown away the only evidence of why the feature exists.
 - **A wire spy that does not CALL THROUGH makes delivery and loss identical.** Every
   existing spy in this repo replaces `send()` and drops the message. A probe built
   that way "proved" a late joiner got an empty scene, which aimed a whole planned

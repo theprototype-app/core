@@ -23,6 +23,7 @@
 	import VoiceChat from './menu/VoiceChat.svelte';
 	import AnnotationPopover from './menu/AnnotationPopover.svelte';
 	import AnnotationMarkers from './menu/AnnotationMarkers.svelte';
+	import KnifeOverlay from './menu/KnifeOverlay.svelte';
 	import NotesDrawer from './menu/NotesDrawer.svelte';
 	import Library from './menu/Library.svelte';
 	import { DarkMode } from 'flowbite-svelte';
@@ -59,6 +60,7 @@
 <VoiceChat />
 <!-- screen-space note markers (badge + leader line); VR uses the in-scene pins -->
 <AnnotationMarkers />
+<KnifeOverlay />
 <AnnotationPopover />
 <NotesDrawer />
 <Library />

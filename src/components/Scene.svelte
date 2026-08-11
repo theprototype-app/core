@@ -22,7 +22,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp } from '$lib/faceEdit';
+	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
@@ -474,6 +474,8 @@
 			// remember where the cursor is so keyboard commands (Shift+A) can anchor to
 			// it and spawn under it — null until the pointer has moved at least once
 			lastPointerXY = [event.clientX, event.clientY];
+			// M9b: the knife's rubber band follows the pointer between the two clicks
+			if (knifeFrom) $knifePreview = { from: knifeFrom, to: [event.clientX, event.clientY] };
 			if (marqueeStart) {
 				$marqueeRect = {
 					x0: Math.min(marqueeStart[0], event.clientX),
@@ -606,10 +608,12 @@
 				if ($faceEditOp === 'knife') {
 					if (!knifeFrom) {
 						knifeFrom = [event.clientX, event.clientY];
+						$knifePreview = { from: knifeFrom, to: [event.clientX, event.clientY] };
 						showToast('Knife: click the far end of the cut (Esc cancels)');
 					} else {
 						const from = knifeFrom;
 						knifeFrom = null;
+						cancelKnife();
 						knifeCut(from, [event.clientX, event.clientY]);
 						setFaceOp('move'); // a one-shot tool: back to the default after a cut
 					}

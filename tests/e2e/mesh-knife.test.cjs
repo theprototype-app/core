@@ -135,6 +135,84 @@ h.run(async () => {
 		`the new vertex landed on the edge MIDPOINT in space, not where the screen parameter alone would put it (off by ${perspective.offset.toFixed(4)})`
 	);
 
+	// --- the rubber band: a REAL two-click gesture in the viewport ------------
+	// The band is DOM (the cut is a screen line, so there is no 3D line to draw), and it has to
+	// appear on the first click, follow the pointer, and never eat the second click.
+	const band = await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.commandsHandler.sceneCommand('/create Box 2 2 2');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		window.__box = g.children[g.children.length - 1];
+		s.faceEdit.exitFaceEdit?.();
+		s.faceEdit.enterFaceEdit(window.__box.uuid);
+		s.faceEdit.setFaceOp('knife');
+		let armed;
+		s.faceEdit.faceEditOp.subscribe((v) => (armed = v))();
+		return { armed, tris: s.faceEdit.readTriangles(window.__box.geometry).length };
+	});
+	h.check(band.armed === 'knife', 'Knife arms as a tool (premise)');
+	const centre = await h.projectPoint(A.page, [0, 0, 0]);
+	await A.page.mouse.click(Math.round(centre.x - 250), Math.round(centre.y));
+	await A.page.waitForTimeout(150);
+	const afterFirst = await A.page.evaluate(() => {
+		const line = document.querySelector('.knife-overlay line');
+		let preview;
+		window.__stores.faceEdit.knifePreview.subscribe((v) => (preview = v))();
+		return {
+			drawn: !!line,
+			preview: !!preview,
+			pointerEvents: line ? getComputedStyle(line.parentElement).pointerEvents : null,
+			tris: window.__stores.faceEdit.readTriangles(window.__box.geometry).length
+		};
+	});
+	h.check(afterFirst.preview && afterFirst.drawn, 'the first click draws the rubber band');
+	h.check(afterFirst.pointerEvents === 'none', '...which cannot eat the second click');
+	h.check(afterFirst.tris === 12, '...and cuts nothing yet');
+	await A.page.mouse.move(Math.round(centre.x + 100), Math.round(centre.y + 30));
+	await A.page.waitForTimeout(120);
+	const moved = await A.page.evaluate(() => {
+		const line = document.querySelector('.knife-overlay line');
+		return line ? Number(line.getAttribute('x2')) : null;
+	});
+	h.check(
+		moved !== null && Math.abs(moved - (centre.x + 100)) < 2,
+		`the band follows the pointer (x2 ${moved === null ? 'missing' : moved.toFixed(0)})`
+	);
+	await A.page.mouse.click(Math.round(centre.x + 250), Math.round(centre.y));
+	await A.page.waitForTimeout(250);
+	const afterSecond = await A.page.evaluate(() => {
+		let preview;
+		window.__stores.faceEdit.knifePreview.subscribe((v) => (preview = v))();
+		let op;
+		window.__stores.faceEdit.faceEditOp.subscribe((v) => (op = v))();
+		return {
+			preview: !!preview,
+			drawn: !!document.querySelector('.knife-overlay line'),
+			op,
+			tris: window.__stores.faceEdit.readTriangles(window.__box.geometry).length
+		};
+	});
+	h.check(afterSecond.tris > 12, `the second click CUT the mesh (12 -> ${afterSecond.tris})`);
+	h.check(!afterSecond.preview && !afterSecond.drawn, '...and the band disappeared');
+	h.check(afterSecond.op === 'move', 'Knife is a one-shot: it disarms after a cut');
+	// Escape drops a PENDING cut without leaving the session — the notes-follow Escape order
+	await A.page.evaluate(() => window.__stores.faceEdit.setFaceOp('knife'));
+	await A.page.mouse.click(Math.round(centre.x - 250), Math.round(centre.y + 60));
+	await A.page.waitForTimeout(120);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(150);
+	const afterEscape = await A.page.evaluate(() => {
+		const s = window.__stores;
+		let preview;
+		s.faceEdit.knifePreview.subscribe((v) => (preview = v))();
+		let session;
+		s.faceEdit.faceEditObject.subscribe((v) => (session = v))();
+		return { preview: !!preview, session: !!session };
+	});
+	h.check(!afterEscape.preview, 'Escape drops a pending cut');
+	h.check(afterEscape.session, '...and does NOT leave the edit session (that is the second Escape)');
+
 	// --- the refusals -------------------------------------------------------
 	const refusals = await A.page.evaluate(() => {
 		const s = window.__stores;

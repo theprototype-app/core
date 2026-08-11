@@ -3244,6 +3244,35 @@ function segmentCross(a, b, c, d) {
 	return { onCut, onEdge };
 }
 
+/** M9b: the live rubber band while a cut is being placed, in CSS pixels. A store rather than
+ * component state because the two ends come from different places — the first CLICK (kept in
+ * Scene.svelte) and the moving pointer.
+ * @type {import('svelte/store').Writable<{from: number[], to: number[]}|null>} */
+export const knifePreview = writable(null);
+
+/** Drop a pending cut: the first point is forgotten and the band disappears. */
+export function cancelKnife() {
+	knifePreview.set(null);
+}
+
+/**
+ * Does Escape belong to a PENDING knife cut rather than to the session?
+ *
+ * Every Escape handler that could tear the session down asks this FIRST — there are two (this
+ * module's window listener and the toolbox's). The answer has to travel on the EVENT, not in a
+ * flag: a one-shot flag is consumed by whichever handler runs first, and the second then sees a
+ * cleared preview and exits the session anyway (measured). `defaultPrevented` is the mechanism
+ * the DOM already provides for exactly this.
+ * @param {any} [event] @returns {boolean} true when the key was consumed
+ */
+export function escapeConsumedByKnife(event) {
+	if (event?.defaultPrevented) return true; // another handler took it for the same reason
+	if (!get(knifePreview)) return false;
+	cancelKnife();
+	event?.preventDefault?.();
+	return true;
+}
+
 /**
  * M9b KNIFE: cut the edited mesh along a screen-space line.
  *
@@ -4406,6 +4435,7 @@ export function enterFaceEdit(uuid) {
 /** @param {KeyboardEvent} event */
 function onFaceKeydown(event) {
 	if (event.key === 'Escape') {
+		if (escapeConsumedByKnife(event)) return;
 		exitFaceEdit();
 		sealEditHistorySession(); // 15-F: Escape = Done, sealed synchronously
 	}
@@ -4414,6 +4444,7 @@ function onFaceKeydown(event) {
 export function exitFaceEdit() {
 	if (!faceEdited) return;
 	if (get(faceEditHighlight) >= 0) stashedFace = { uuid: faceEdited.uuid, fi: get(faceEditHighlight) };
+	cancelKnife(); // a pending cut must not outlive the session
 	detachFaceGizmo(); // 163: drop the desktop gizmo + its proxy
 	clearEdgeSelection(); // M4: the edge sub-mode's pick + overlay go with it
 	// revert an uncommitted gesture's live preview before tearing down (122)

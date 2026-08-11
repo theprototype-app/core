@@ -65,6 +65,7 @@
 		bevelFaces,
 		bevelEdges,
 		symmetrizeMesh,
+		escapeConsumedByKnife,
 		clearEdgeSelection,
 		stashSelections,
 		setFaceSubmode,
@@ -360,6 +361,9 @@
 	function onKeydown(event) {
 		if (!active) return;
 		if (event.key === 'Escape') {
+			// M9b: a pending knife cut owns Escape first. BOTH Escape handlers have to ask, since
+			// whichever runs first would otherwise tear the session down mid-gesture.
+			if (escapeConsumedByKnife(event)) return;
 			if (!$colliderEditObject) finish(); // a collider session tears down via its watcher
 			return;
 		}

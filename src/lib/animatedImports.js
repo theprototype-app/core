@@ -64,6 +64,13 @@ export function hasAnimatedImport(uuid) {
 	return fileBytes.has(uuid);
 }
 
+/** This model's clip transport, for a caller that must not import the store
+ * (17-E: the Play Animation node reaches this module through a primed dynamic
+ * import, so it reads state through accessors). @param {string} uuid */
+export function animationState(uuid) {
+	return get(animatedObjects)[uuid] ?? null;
+}
+
 /** which parser this import's bytes need @param {string} uuid */
 export function animatedImportKind(uuid) {
 	return fileKinds.get(uuid) ?? 'gltf';

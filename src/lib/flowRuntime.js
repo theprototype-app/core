@@ -18,6 +18,13 @@ import { startObjectFlowWatcher } from './objectFlow';
 // whose module body registers a history kind while history is mid-init).
 /** @type {any} */ let inputRuntimeRef = null;
 
+// 17-E A5: same treatment for animationPreview (the Play Animation node drives
+// authored clips) — it registers the 'anim' history kind in its own module body,
+// so a static edge here would close history -> flowRuntime -> animationPreview ->
+// history and TDZ-crash the SSR prerender.
+/** @type {any} */ let animRef = null;
+/** @type {any} */ let animImportsRef = null;
+
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
 // Lives outside the Flow drawer so animations keep running when it is closed.
@@ -92,6 +99,89 @@ export function spinPositionAbout(basePos, pivot, axis, angle) {
 		.applyQuaternion(spinQuat)
 		.add(pivot)
 		.toArray();
+}
+
+// 17-E A5: rising-edge memory for Play Animation, keyed by node id — the trigger
+// pulse stays high for ~0.3s and must act ONCE, not every frame it is high.
+/** @type {Map<string, boolean>} */
+const playAnimEdge = new Map();
+
+/**
+ * Start/stop an authored clip (or an imported one) from a flow event.
+ *
+ * The node applies the action LOCALLY and does NOT broadcast: the trigger stamp
+ * that woke it already replicated (`nodetrigger`), so every peer runs this same
+ * branch from the same shared timestamp and derives the same playback. Sending
+ * here as well would fire the transport twice and let the two copies disagree
+ * about who started it.
+ * @param {{node: any, uuid: string}[]} pairs
+ */
+function updatePlayAnim(pairs, ctx) {
+	const seen = new Set();
+	for (const { node, uuid } of pairs) {
+		seen.add(node.id);
+		const data = node.data ?? {};
+		const high = !!data.trigger;
+		const was = playAnimEdge.get(node.id) ?? false;
+		playAnimEdge.set(node.id, high);
+		if (!high || was) continue; // act on the rising edge only
+		const clip = typeof data.clip === 'string' ? data.clip.trim() : '';
+		const action = data.action ?? 'toggle';
+		const speed = Number(data.speed) || 1;
+		// Stamp playback with the TRIGGER's shared timestamp, not this peer's
+		// arrival time: the nodetrigger message reaches each peer at a different
+		// moment, so reading the clock here would leave every door a message
+		// latency out of phase.
+		const at = triggerStampFor(node.id, ctx) ?? syncedNow();
+
+		// an imported clip NAME funnels to the mixer path, which is already
+		// replicated — one node drives both animation systems
+		const imported = animImportsRef?.clipInfo?.(uuid) ?? [];
+		if (clip && imported.some((/** @type {any} */ c) => c.name === clip)) {
+			const state = animImportsRef.animationState?.(uuid);
+			const playing = !!state?.playing && state?.clip === clip;
+			const next = action === 'stop' ? false : action === 'toggle' ? !playing : true;
+			animImportsRef.setAnimationState(uuid, { clip, playing: next, speed });
+			continue;
+		}
+		if (!animRef) continue;
+		const clipId = clip ? animRef.clipIdByName?.(uuid, clip) : undefined;
+		/** @type {any} */
+		const t = animRef.transportOf?.(uuid) ?? { playing: false, reverse: false, duration: 0, position: 0 };
+		const opts = { speed, at, replicate: false };
+		if (action === 'stop') {
+			animRef.stop(uuid, { replicate: false });
+		} else if (action === 'restart') {
+			animRef.play(uuid, clipId, { ...opts, from: 0, reverse: false });
+		} else if (action === 'toggle') {
+			// A door PLAYS BACKWARDS to shut instead of needing a second clip. Mid
+			// swing, toggling reverses from where it stands; fully open, it closes;
+			// otherwise it opens.
+			const atEnd = t.duration > 0 && t.position >= t.duration - 1e-3;
+			const reverse = t.playing ? !t.reverse : atEnd;
+			const from = reverse ? Math.max(t.duration - t.position, 0) : atEnd ? 0 : t.position;
+			animRef.play(uuid, clipId, { ...opts, from, reverse });
+		} else {
+			const atEnd = t.duration > 0 && t.position >= t.duration - 1e-3;
+			animRef.play(uuid, clipId, { ...opts, from: atEnd ? 0 : t.position, reverse: false });
+		}
+	}
+	// forget nodes that no longer exist, so a rebuilt node starts fresh
+	for (const id of [...playAnimEdge.keys()]) if (!seen.has(id)) playAnimEdge.delete(id);
+}
+
+/** The shared timestamp of whatever event is wired into this node's `trigger`
+ * (the newest, with several sources fanned in). @param {string} nodeId @param {any} ctx */
+function triggerStampFor(nodeId, ctx) {
+	if (!ctx?.triggers) return null;
+	let newest = null;
+	for (const edge of edges) {
+		if (edge.target !== nodeId) continue;
+		if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
+		const stamp = ctx.triggers[edge.source]?.lastT;
+		if (typeof stamp === 'number' && (newest === null || stamp > newest)) newest = stamp;
+	}
+	return newest;
 }
 
 /** @param {any} object @param {any} base */
@@ -954,6 +1044,23 @@ function runTick(now) {
 	});
 	updateParticles(particlePairs, sceneObjects, time);
 
+	// 17-E A5: Play Animation. Same pair collection as sound/particles, then a
+	// RISING-EDGE read of the wired event (the pulse is high ~0.3s; act once).
+	/** @type {{node: any, uuid: string}[]} */
+	const animPairs = [];
+	edges.forEach((edge) => {
+		const source = nodes.find((n) => n.id === edge.source);
+		if (source?.type !== 'playanim') return;
+		const uuid = targetUuidOf(edge);
+		if (uuid) animPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+	});
+	nodes.forEach((node) => {
+		if (node.type !== 'playanim') return;
+		const uuid = implicitOwnerOf(node);
+		if (uuid) animPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
+	});
+	updatePlayAnim(animPairs, ctx);
+
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
 	if (now - lastValuesAt > 150) {
 		lastValuesAt = now;
@@ -1060,6 +1167,9 @@ export function startFlowRuntime() {
 			});
 		});
 	});
+	// primed for the Play Animation node (see the TDZ note at the top)
+	import('./animationPreview').then((m) => (animRef = m));
+	import('./animatedImports').then((m) => (animImportsRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

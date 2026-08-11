@@ -145,6 +145,19 @@ export const nodeCatalog = [
 				type: 'pathpatrol',
 				label: 'Path patrol',
 				defaults: { points: [], speed: 1, mode: 'loop' }
+			},
+			{
+				// 17-E A5: drives an AUTHORED clip (or a clip the model was imported
+				// with) from a flow event — wire On Click to it and a door opens when
+				// someone clicks it. Not in `animationTypes`: it is an event consumer
+				// that starts a keyed clip, not a per-frame offset.
+				type: 'playanim',
+				label: 'Play Animation',
+				defaults: { clip: '', action: 'toggle', speed: 1 },
+				params: [
+					{ key: 'action', kind: 'select', options: ['toggle', 'play', 'stop', 'restart'] },
+					{ key: 'speed', kind: 'range', min: 0.1, max: 4, step: 0.1 }
+				]
 			}
 		]
 	},

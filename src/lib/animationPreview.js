@@ -34,7 +34,7 @@ import { recordEntry, registerHistoryKind } from './history';
  * @typedef {{ id: string, channel: string, keys: Key[] }} Track keys sorted by t
  * @typedef {{ name: string, tracks: Track[], duration: number, loop: 'once'|'loop'|'pingpong' }} Clip
  * @typedef {{ clips: Record<string, Clip>, active: string, changedAt: number }} AnimSet
- * @typedef {{ clipId: string, playing: boolean, at: number, pausedAt: number, speed: number, changedAt: number }} Play
+ * @typedef {{ clipId: string, playing: boolean, at: number, pausedAt: number, speed: number, reverse?: boolean, changedAt: number }} Play
  */
 
 /** @type {import('svelte/store').Writable<Record<string, AnimSet>>} uuid -> authored clips */
@@ -205,6 +205,24 @@ export function clipOf(uuid, clipId) {
 	return set.clips[clipId ?? set.active] ?? set.clips[set.active] ?? null;
 }
 
+/** The clip id behind a NAME — flow nodes and the SDK name clips, they do not
+ * know ids. Falls back to null so a caller can use the object's default clip.
+ * @param {string} uuid @param {string} name */
+export function clipIdByName(uuid, name) {
+	const set = getAnimSet(uuid);
+	if (!set || !name) return null;
+	const wanted = String(name).trim().toLowerCase();
+	for (const [id, clip] of Object.entries(set.clips)) {
+		if (id === name || clip.name.trim().toLowerCase() === wanted) return id;
+	}
+	return null;
+}
+
+/** Is this object's authored animation running? @param {string} uuid */
+export function isPlaying(uuid) {
+	return !!get(playback)[uuid]?.playing;
+}
+
 /** `[{id, name, duration, tracks}]` for a list UI. @param {string} uuid */
 export function clipList(uuid) {
 	const set = getAnimSet(uuid);
@@ -336,6 +354,20 @@ export function phase(clip, elapsed) {
  * @param {Clip} clip @param {number} elapsed */
 export function clipTime(clip, elapsed) {
 	return phase(clip, elapsed) * Math.max(clip.duration, 0.001);
+}
+
+/**
+ * The clip position to pose, honouring direction. Playback REVERSES rather than
+ * needing a mirrored clip: a door authored closed->open plays backwards to shut,
+ * which is what "toggle" means on a door and what the Play Animation node uses.
+ * Elapsed always counts UP; only the mapping to clip time flips.
+ * @param {Clip} clip @param {number} elapsed @param {boolean} [reverse]
+ */
+export function clipSecondsFor(clip, elapsed, reverse = false) {
+	const dur = Math.max(clip.duration, 0.001);
+	if (!reverse) return clip.loop === 'once' ? Math.min(elapsed, dur) : clipTime(clip, elapsed);
+	if (clip.loop === 'once') return Math.max(dur - elapsed, 0);
+	return dur - clipTime(clip, elapsed);
 }
 
 /** @param {any} obj @param {string} channel @param {number} v */
@@ -568,6 +600,7 @@ export function applyAnimPlay(data) {
 			at,
 			pausedAt: num(data.pausedAt),
 			speed: num(data.speed, 1) || 1,
+			reverse: !!data.reverse,
 			changedAt: num(data.changedAt)
 		});
 	} finally {
@@ -733,6 +766,7 @@ export function updateTrack(uuid, trackId, patch, clipId) {
  * @param {string} uuid @param {Partial<Clip>} patch @param {string} [clipId]
  */
 export function updateAnim(uuid, patch, clipId) {
+	let ratio = 1;
 	editClip(uuid, clipId ?? null, (clip) => {
 		const next = { ...clip, ...patch };
 		next.duration = Math.max(num(next.duration, 2) || 2, 0.01);
@@ -740,15 +774,26 @@ export function updateAnim(uuid, patch, clipId) {
 		if (patch.duration !== undefined && next.duration !== clip.duration && clip.duration > 0) {
 			const lastT = clip.tracks.reduce((m, t) => Math.max(m, t.keys[t.keys.length - 1]?.t ?? 0), 0);
 			if (lastT >= clip.duration - 1e-4) {
-				const k = next.duration / clip.duration;
+				ratio = next.duration / clip.duration;
 				next.tracks = clip.tracks.map((t) => ({
 					...t,
-					keys: t.keys.map((key) => ({ ...key, t: key.t * k }))
+					keys: t.keys.map((key) => ({ ...key, t: key.t * ratio }))
 				}));
 			}
 		}
 		return next;
 	});
+	// The transport stores ELAPSED seconds, so rescaling the keys without rescaling
+	// it leaves the playhead pointing somewhere else entirely: a door that had just
+	// finished shutting reported itself two thirds open, and the next toggle swung
+	// it the wrong way.
+	if (ratio !== 1) {
+		const p = get(playback)[uuid];
+		if (p) {
+			const now = syncedNow();
+			setPlay(uuid, { at: now, pausedAt: elapsedOf(p, now) * ratio });
+		}
+	}
 }
 
 // --- clips -------------------------------------------------------------------
@@ -967,7 +1012,9 @@ export function dropAllAnimations() {
 /** @param {string} uuid @returns {Play} */
 function playOf(uuid) {
 	return (
-		get(playback)[uuid] ?? { clipId: '', playing: false, at: 0, pausedAt: 0, speed: 1, changedAt: 0 }
+		get(playback)[uuid] ?? {
+			clipId: '', playing: false, at: 0, pausedAt: 0, speed: 1, reverse: false, changedAt: 0
+		}
 	);
 }
 
@@ -995,17 +1042,39 @@ function clearHead(uuid) {
 	});
 }
 
-/** Current clip seconds for an object (0 when idle). @param {string} uuid */
-export function playheadOf(uuid) {
+/** Where an object's clip currently sits, for a caller deciding what to do next
+ * (the Play Animation node's toggle). @param {string} uuid */
+export function transportOf(uuid) {
 	const p = get(playback)[uuid];
-	if (!p) return 0;
-	const clip = clipOf(uuid, p.clipId);
-	if (!clip) return 0;
-	const elapsed = elapsedOf(p, syncedNow());
-	return clip.loop === 'once' ? Math.min(elapsed, clip.duration) : clipTime(clip, elapsed);
+	const clip = clipOf(uuid, p?.clipId);
+	const duration = clip ? Math.max(clip.duration, 0.001) : 0;
+	const reverse = !!p?.reverse;
+	const elapsed = p ? elapsedOf(p, syncedNow()) : 0;
+	return {
+		playing: !!p?.playing,
+		reverse,
+		duration,
+		position: clip ? clipSecondsFor(clip, elapsed, reverse) : 0,
+		clipId: p?.clipId ?? ''
+	};
 }
 
-/** Start (or resume) playback. @param {string} uuid @param {string} [clipId] @param {{speed?: number, from?: number}} [opts] */
+/** Current clip seconds for an object (0 when idle). @param {string} uuid */
+export function playheadOf(uuid) {
+	return transportOf(uuid).position;
+}
+
+/**
+ * Start (or resume) playback.
+ *
+ * `at` lets a caller stamp playback with a moment every peer agrees on — the Play
+ * Animation node passes the replicated TRIGGER timestamp, so a door opens in phase
+ * even though the message reaches each peer at a different time. `replicate: false`
+ * is for exactly that case: the trigger stamp already travelled, so re-sending the
+ * transport would fire it twice.
+ * @param {string} uuid @param {string|null} [clipId]
+ * @param {{speed?: number, from?: number, reverse?: boolean, at?: number, replicate?: boolean}} [opts]
+ */
 export function play(uuid, clipId, opts = {}) {
 	if (typeof uuid !== 'string') return;
 	const obj = objectFor(uuid);
@@ -1016,17 +1085,20 @@ export function play(uuid, clipId, opts = {}) {
 	if (!clip) return;
 	const set = getAnimSet(uuid);
 	ensureBase(uuid, obj);
-	const from = opts.from ?? (prev.pausedAt >= clip.duration && clip.loop === 'once' ? 0 : prev.pausedAt);
+	const reverse = opts.reverse ?? false;
+	const from =
+		opts.from ?? (prev.pausedAt >= clip.duration && clip.loop === 'once' ? 0 : prev.pausedAt);
 	setPlay(
 		uuid,
 		{
 			clipId: id || set?.active || DEFAULT_CLIP,
 			playing: true,
-			at: syncedNow(),
+			at: opts.at ?? syncedNow(),
 			pausedAt: from,
-			speed: opts.speed ?? prev.speed ?? 1
+			speed: opts.speed ?? prev.speed ?? 1,
+			reverse
 		},
-		true
+		opts.replicate !== false
 	);
 }
 
@@ -1039,9 +1111,9 @@ function posePaused(uuid) {
 	const obj = objectFor(uuid);
 	const base = bases.get(uuid);
 	if (!p || p.playing || !clip || !obj || !base) return;
-	const at = p.pausedAt;
-	poseAt(obj, clip, clip.loop === 'once' ? Math.min(at, clip.duration) : clipTime(clip, at), base);
-	playheads.update((map) => ({ ...map, [uuid]: at }));
+	const seconds = clipSecondsFor(clip, p.pausedAt, !!p.reverse);
+	poseAt(obj, clip, seconds, base);
+	playheads.update((map) => ({ ...map, [uuid]: seconds }));
 }
 
 /** @param {string} uuid */
@@ -1060,10 +1132,12 @@ export function pauseAll() {
 /** Stop and restore the pose captured when playback began. Omit `uuid` to stop
  * everything (the transport button passes a click event — guarded).
  * @param {string} [uuid] */
-export function stop(uuid) {
+export function stop(uuid, opts = {}) {
 	if (typeof uuid !== 'string') return stopAll();
 	releaseBase(uuid);
-	if (get(playback)[uuid]) setPlay(uuid, { playing: false, pausedAt: 0 }, true);
+	if (get(playback)[uuid]) {
+		setPlay(uuid, { playing: false, pausedAt: 0, reverse: false }, opts.replicate !== false);
+	}
 	clearHead(uuid);
 }
 
@@ -1084,9 +1158,10 @@ export function scrub(uuid, seconds, clipId) {
 	setPlay(uuid, {
 		clipId: clipId ?? (p.clipId || DEFAULT_CLIP),
 		pausedAt: at,
-		at: syncedNow()
+		at: syncedNow(),
+		reverse: false // a scrub reads the timeline left to right
 	});
-	poseAt(obj, clip, clip.loop === 'once' ? Math.min(at, clip.duration) : clipTime(clip, at), base);
+	poseAt(obj, clip, clipSecondsFor(clip, at, false), base);
 	playheads.update((map) => ({ ...map, [uuid]: at }));
 }
 
@@ -1118,8 +1193,9 @@ export function tickAnimationPreview() {
 		const elapsed = elapsedOf(p, now);
 		const dur = Math.max(clip.duration, 0.001);
 		const done = clip.loop === 'once' && elapsed >= dur;
-		poseAt(obj, clip, done ? dur : clipTime(clip, elapsed), base);
-		heads[uuid] = done ? dur : elapsed % dur;
+		const seconds = clipSecondsFor(clip, done ? dur : elapsed, !!p.reverse);
+		poseAt(obj, clip, seconds, base);
+		heads[uuid] = seconds;
 		any = true;
 		if (done) finished.push(uuid);
 	}

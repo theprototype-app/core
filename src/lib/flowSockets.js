@@ -45,6 +45,8 @@ const INPUT = {
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	counter: { pulse: 'event' },
+	// 17-E A5: the trigger that starts/stops an authored clip, plus a wired speed
+	playanim: { trigger: 'event', speed: 'number' },
 	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
 	// a burst fired from any event (On Click / Key Press / On Impact)
 	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' }

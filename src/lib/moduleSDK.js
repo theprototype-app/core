@@ -598,7 +598,26 @@ function makeApi(moduleId) {
 		// user modules are self-contained (no imports) — THREE + assets come via the api
 		THREE: THREE,
 		/** blob URL for a packaged file, e.g. api.assetUrl('assets/pling.mp3') @param {string} path */
-		assetUrl: (path) => moduleAssets[moduleId]?.[path] ?? null
+		assetUrl: (path) => moduleAssets[moduleId]?.[path] ?? null,
+		/**
+		 * P12 seam: add a UV UNWRAP backend, which then appears in the UV editor's Unwrap menu
+		 * beside the built-in projections.
+		 *
+		 * This is how a heavier unwrapper (xatlas and friends) can ship WITHOUT weighing down
+		 * the core bundle: the module owns the library, core keeps the projections that always
+		 * work. `run(faces, options)` is the same contract the built-ins implement, and it may
+		 * be ASYNC — which is what makes a wasm backend possible. A module can carry the .wasm
+		 * INSIDE its own zip and reach it through `api.assetUrl`, so it needs no network and
+		 * trips no CSP.
+		 * @param {string} key @param {string} label
+		 * @param {(faces: any[], options: any) => any} run
+		 */
+		registerUnwrapBackend: (key, label, run) =>
+			// dynamic, like the other late imports here: uvUnwrap stays out of the SDK's static
+			// graph (the cycle guard)
+			import('./uvUnwrap').then((m) =>
+				m.registerUnwrapBackend(`mod-${moduleId}-${key}`, label, run)
+			)
 	};
 }
 

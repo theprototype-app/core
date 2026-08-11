@@ -552,9 +552,9 @@ function pointInPolygon(u, v, poly) {
  * exactly as it was — which is what makes it safe to unwrap one part of a model.
  * @param {string} uuid @param {string} backend @param {any} [options]
  * @param {Set<number>|null} [onlyTris]
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function unwrapObject(uuid, backend, options = {}, onlyTris = null) {
+export async function unwrapObject(uuid, backend, options = {}, onlyTris = null) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
 	if (!object) return false;
 	const editable = uvEditable(object);
@@ -575,7 +575,9 @@ export function unwrapObject(uuid, backend, options = {}, onlyTris = null) {
 		faces.push({ corners: [tri[0], tri[1], tri[2]], tri: i });
 	});
 	if (!faces.length) return false;
-	const result = unwrap(backend, faces, options);
+	// AWAIT: a module backend may be wasm-backed and asynchronous (the P12 seam). A built-in
+	// projection returns synchronously and awaiting it costs one microtask.
+	const result = await unwrap(backend, faces, options);
 	if (!result?.uvs?.length) {
 		showToast('That unwrap produced nothing');
 		return false;

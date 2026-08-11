@@ -534,7 +534,7 @@ export class PeerConnection {
 				} else if(data.type == 'verts') {
 					applyVerts(data.uuid, data.indices, data.position);
 				} else if(data.type == 'meshgeo') {
-					applyMeshGeo(data.uuid, data.positions, data.groups, data.uvs);
+					applyMeshGeo(data.uuid, data.positions, data.groups, data.uvs, data.faceCounts, data.faceTris);
 				} else if(data.type == 'uvpaint') {
 					applyUvPaint(data);
 				} else if(data.type == 'uvpaintend') {

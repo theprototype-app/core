@@ -132,6 +132,18 @@ and the `__localOnly`/`__uuid` markers all ride this. The recipe:
    `object.material` (the array) *plus* `geometry.groups` (which face uses which),
    and an array material with no groups draws NOTHING — so the `materials` message
    carries both, and a groups-only send would land on a receiver that cannot use it.
+   **State DERIVED from geometry can become stored DATA, and then it needs all four
+   paths too.** Stored face topology (P9, `meshTopology.js`) is the worked example:
+   optional CSR Int32 raw-BUFFER siblings on `meshgeo` (never nested arrays), read off
+   the object the sender just committed to so no call site threads them through; the
+   partition INSIDE the history state object (compaction drops sibling fields on the
+   entry); `geometry.userData` for toJSON/sessions; and GLTF autosave simply losing it,
+   which is fine ONLY because absence means "re-derive". That is the design rule for an
+   optional channel: absent must be a LESS CAPABLE result, never a wrong one — and a
+   payload that does not fit the mesh it arrives with is DROPPED, not trusted. Also
+   check every geometry-swap site, not just the commit: a live gesture rebuilds the
+   geometry per frame (`liveGeometryUpdate`), so a channel that only survives commits
+   is already gone by the time the commit runs.
 6. **Cleanup** on peer loss in `commandsHandler.handleDisconnected` — and if you keep
    a per-peer map of your own, clear it in BOTH teardown paths in
    `peerHandler`: `onConnClose` AND `leaveSession` (they are separate call sites;

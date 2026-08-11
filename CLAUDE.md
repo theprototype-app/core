@@ -117,11 +117,35 @@ loadable play content. Everything a user does must be visible to connected peers
   (collider editing — replicated edit messages no-op on peers); `meshgeo`
   full-geometry snapshots; VR rigid face-grab + live extrude adjust; user-editable VR
   caps.
-  **The mesh is a triangle SOUP with no stored face topology** — everything below is
-  DERIVED per rebuild (`rebuildFaces`), which is the root cause of several "bugs":
-  an extrusion wall is coplanar+adjacent with the flat side beneath it so `groupFaces`
-  MERGES them (Face granularity can't isolate the band — that is why Quad exists), and
-  a quad's internal DIAGONAL is a triangulation artifact, not an edge of the model.
+  **The mesh is a triangle soup, but the face TOPOLOGY IS STORED NOW** (P9-P11,
+  `meshTopology.js`): a partition of triangle indices lives on
+  `geometry.userData.__topo` as `{counts, tris}`, and derivation (`pairQuads`) is only
+  the FALLBACK for a mesh nobody has edited yet. Read it with `readStoredFaces`, and
+  inside faceEdit through `currentPartition()` (stored else derived) — never re-derive
+  where a partition might exist. Order of trust on every geometry swap:
+  AUTHORED (the operator describes its own output) → CARRIED (`carryFaces`, kept only
+  when the triangle count still matches exactly) → derived once and stored. The whole
+  point: rotating an extruded band 4 degrees leaves each wall quad's two triangles ~9
+  degrees apart, which NO coplanarity threshold can tell from a real crease, so a
+  derived partition lost every wall quad and the loop tools declined (the number
+  mesh-loop-hardening 3b used to record; it now asserts 8/8 survive). Operators author
+  through `composeFaces(oldFaces, origin, authored)`: authored faces win, unclaimed
+  triangles rejoin their ancestor's face, brand-new ones become singletons; helpers
+  `appendOrigin`/`appendedQuads` cover the append-only ops (pushQuad emits consecutive
+  PAIRS) and `survivorOrigin` the ones that drop triangles and reindex.
+  A face may hold MORE than two triangles — dissolve stores its fan as ONE n-gon —
+  and the structure wireframe hides every edge internal to a face
+  (`internalEdgeKeys`), which is the same rule as the old quad-diagonal skip.
+  Two traps live here. The LIVE PREVIEW (`liveGeometryUpdate`) swaps geometry every
+  frame, so topology has to survive the preview or there is nothing left for the
+  commit to carry — that was the real reason a rotated band still lost its quads after
+  the commit path already carried them. And GLTF-based autosave does NOT round-trip
+  geometry.userData (toJSON/ObjectLoader does), so a restored autosave re-derives:
+  acceptable degradation, never a wrong result.
+  Still true of the soup: an extrusion wall is coplanar+adjacent with the flat side
+  beneath it so `groupFaces` MERGES them (Face granularity can't isolate the band —
+  that is why Quad exists), and a quad's internal DIAGONAL is a triangulation
+  artifact, not an edge of the model.
   Per-triangle tags ride as properties on the tri array (`withSlot`): `mi` = material
   SLOT (15-G) and `uv` = per-corner texture coords (M1); every op that clones/maps/
   splits tris must carry them, and `trisToGroups`/`trisToUVs` return NULL for the
@@ -306,6 +330,12 @@ loadable play content. Everything a user does must be visible to connected peers
   normalized; LOCAL library, only PLACED objects replicate; PACKS_BASE off-bundle CDN
   const; PACKS.md committed format) + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
   three.js preview canvas + popup, `enable3dPreview`),
+  `meshTopology` (P9-P11, PR #111: STORED face partitions — the storage location, the
+  validity invariant, the CSR raw-byte wire packing, `carryFaces`, and the
+  `composeFaces`/`appendOrigin`/`appendedQuads`/`survivorOrigin` composition helpers the
+  operators author through. Imports NOTHING, deliberately: it stays a pure unit outside
+  the history-cycle family, and derivation stays in faceEdit where the operators live.
+  Full contract in the faceEdit entry below),
   `uvEditor` (UV1-UV5 + UV4, PRs #106/#107/#108/#109: the UV editor's whole core.
   Editing UVs IS a geometry edit — there is no standalone uv channel — so every UV
   write REUSES faceEdit's exported `readTriangles`/`trisToPositions`/`trisToGroups`/
@@ -530,7 +560,14 @@ loadable play content. Everything a user does must be visible to connected peers
    positions array, and the applier discriminates on `state?.positions`. A geometry
    swap that changes the vertex count MUST recompute both, or a multi-material mesh
    renders NOTHING (three walks `geometry.groups` for an array material) and a
-   textured one loses its mapping.
+   textured one loses its mapping. P9 added the stored TOPOLOGY the same way:
+   `faceCounts`/`faceTris` are optional CSR Int32 raw BUFFERS (never nested arrays —
+   binarypack), `broadcastMeshGeo` reads them off the object it just committed to so no
+   call site threads them through, and absent means "re-derive", which is exactly what
+   an older peer does anyway. A partition that doesn't fit the incoming mesh is DROPPED,
+   never trusted (`applyFacesWire`). In the HISTORY entry the topology lives INSIDE the
+   state object next to positions/groups/uvs, because `endHistorySession` compaction
+   synthesises one entry from `first.before`/`last.after` and would drop a sibling field.
    **`trisToGroups` returns NULL when every triangle is slot 0** — "no groups needed",
    which is right for a single material and WRONG in a snapshot that must restore an
    earlier slot layout: on undo `applyMeshGeo` sees no groups and CARRIES THE CURRENT
@@ -568,6 +605,23 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **State attached to a geometry must survive the LIVE PREVIEW, not just the commit.**
+  `liveGeometryUpdate` builds a FRESH BufferGeometry on every frame of a face gesture,
+  so anything hanging off the geometry (P9's stored topology; anything similar you add)
+  is gone by the time the commit runs — and a commit-side carry-over then finds nothing
+  to carry. The symptom is maddening because the commit path looks correct in isolation:
+  the rotated band still lost its quads after `applyGeometrySnapshot` already carried
+  them. Any per-geometry channel needs the carry in EVERY swap site (there are ~13
+  `applyGeometrySnapshot`/`applyMeshGeo` calls), which is why both routes go through one
+  `carryOrDeriveFaces`.
+- **A guard whose adversarial case isn't adversarial proves nothing.** Subdivide's
+  authored partition was verified on a flat box face — and derivation produces the SAME
+  four sub-quads there (bilinear children of a rectangle are rectangles), so the check
+  passed with the feature ripped out. Only a NON-PLANAR quad separates them (4 authored
+  vs 1 derived). Same shape as the "check that cannot fail" trap: when a fix exists
+  because derivation is unreliable, the test input must be one derivation actually gets
+  wrong, and the honest way to show that is to COMPUTE THE COUNTERFACTUAL in-test
+  (clear the stored data, re-run the derived path, assert the numbers differ).
 - **PERSISTENCE has the same GLTF hole the wire had, and it hides better.** autosave
   snapshots the scene as ONE GLTF export, so a material ARRAY comes back as a Group
   of single-material child meshes: the scene still LOOKS right — identical pixels —
@@ -1336,6 +1390,24 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-11): **MESH TOPOLOGY IS STORED DATA — core PR #111** (branch
+  `feat/mesh-topology`, lane `../theprototype-lane-topo` @5194, three commits P9/P10/P11).
+  The derived-topology dead end is closed: a face partition lives on
+  `geometry.userData.__topo`, operators author it, and `pairQuads` is now only the
+  fallback for a mesh nobody has edited. mesh-loop-hardening section 3b flipped from
+  RECORDING the limitation (0/8 wall quads survive a 4-degree rotate, loop select
+  declines) to asserting it is gone (8/8 paired, 12 triangles walked) while keeping the
+  twist MEASUREMENT that proves derivation could not have done it. Dissolve now stores
+  its fan as ONE n-gon — the first real n-gon in the app — and the structure wireframe
+  hides face-internal edges from the same partition. Suite `topo-channel` (66 checks:
+  validation, CSR pack/unpack incl. a view into a larger buffer, sender-stored == wire,
+  undo/redo, toJSON round-trip, A7 drops, two-peer delivery + an old-peer message, and
+  in-test DERIVED COUNTERFACTUALS so no guard can pass vacuously). Baseline **391/62**.
+  Two findings worth remembering, both now in the gotchas: the LIVE PREVIEW swaps
+  geometry every frame so topology must survive the preview to survive the commit (the
+  reason a rotated band still lost its quads after the commit path already carried
+  them), and a flat-grid subdivide check CANNOT prove authoring because derivation
+  agrees there — the guard needs a non-planar quad (4 authored sub-quads vs 1 derived).
 - Status (2026-08-11): **UV EDITOR shipped across five PRs; UV4 unblocked.** #106
   (UV1 dock tab + UV map + vertex drag w/ shift multi-select + box/lasso, UV2
   slot-aware textures, UV3 painting) · #107 (real models: `uvViewable` vs

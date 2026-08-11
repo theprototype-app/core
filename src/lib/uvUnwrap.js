@@ -41,8 +41,12 @@ export function unwrapBackends() {
 }
 
 /**
- * Run a backend. @param {string} key @param {UnwrapFace[]} faces @param {any} [options]
- * @returns {UnwrapResult|null}
+ * Run a backend.
+ *
+ * The result may be a PROMISE: a module-supplied backend can be wasm-backed (P12), and the
+ * whole point of the seam is that core does not care which. Every caller awaits.
+ * @param {string} key @param {UnwrapFace[]} faces @param {any} [options]
+ * @returns {UnwrapResult|Promise<UnwrapResult|null>|null}
  */
 export function unwrap(key, faces, options = {}) {
 	const backend = backends.get(key);

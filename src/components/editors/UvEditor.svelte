@@ -644,13 +644,14 @@
 	const backends = unwrapBackends();
 
 	/** @param {string} key */
-	function runUnwrap(key) {
+	async function runUnwrap(key) {
 		unwrapOpen = false;
 		if (!target) return;
 		// scope to the Edit Mesh pick when there is one — unwrapping ONE part of a
 		// model is the common case, and it must leave the rest untouched
 		const scope = faceScope ?? selectedFaceTris(target.uuid);
-		const ok = unwrapObject(target.uuid, key, { margin: 0.02 }, scope);
+		// awaited: a module-supplied backend may be wasm-backed and asynchronous (P12)
+		const ok = await unwrapObject(target.uuid, key, { margin: 0.02 }, scope);
 		if (ok) showToast(scope ? 'Unwrapped the selected faces' : 'Unwrapped ' + (target.name || 'the mesh'));
 	}
 

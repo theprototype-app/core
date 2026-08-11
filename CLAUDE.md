@@ -605,6 +605,27 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **BEVEL means three different operations, and only one of them is cheap.** A FACE bevel
+  is inset+push, watertight for free. A VERTEX or EDGE bevel has to REMOVE the corner and
+  hand every face around it the offset points that belong to it — skip that and the mesh
+  cracks along the edges those faces shared (12 non-manifold edges on a box; the first edge
+  bevel was dropped over exactly this). The surgery that works is per LOGICAL FACE: the
+  face BOUNDARY names the two real edges at the corner (a diagonal never appears in a
+  boundary), offsets are keyed by EDGE so the two faces sharing one land on the SAME point,
+  and the face is re-fanned from its new polygon. Two follow-on traps: a multi-segment edge
+  bevel turns the strip side into a CHAIN, so the endpoint face needs every point on it, not
+  just the two ends (2 odd edges per extra segment otherwise); and the width must be clamped
+  per edge (0.45 of its length) or two bevels on one edge cross.
+- **`commitMeshGeoSnapshot` is POSITIONS-ONLY.** Any op that changes the triangle count
+  loses groups and uvs through it, because the carry-over cannot apply — a textured mesh
+  came out unmapped. Use `commitMeshGeoTriple` for anything outside a face session (it also
+  carries the stored topology).
+- **A geometric assertion has to measure the part that MOVES.** "How far does the mesh
+  reach" reported the same number for a flat chamfer and a hollow one, because a hollow
+  moves the INTERIOR rings while the outer corners stay — and on a box it was reading a
+  different corner entirely. Measure inside the band, and take the min or the max depending
+  on which way the feature pushes (this cost three wrong red/green readings across the
+  vertex and edge bevels).
 - **A helper that indexes SESSION state cannot be reused outside that session.**
   `quadRingKeys(a, b)` takes triangle INDICES and reads the face session's `workingTris`,
   so `diagonalEdgeKeys` — built on it — returned an EMPTY set whenever no face session was

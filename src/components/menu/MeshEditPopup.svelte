@@ -21,6 +21,8 @@
 		selectAllVerts,
 		invertVertexSelection,
 		bevelSelectedVerts,
+		proportionalEdit,
+		proportionalRadius,
 		vertexHandleScale,
 		vertexHandleAdaptive,
 		vertexSlide
@@ -678,6 +680,14 @@
 				}}><Scissors size={18} aria-hidden="true" /></button
 			>
 			<button
+				id="mesh-proportional"
+				class="tbx-btn {$proportionalEdit ? 'tbx-on bg-primary-600 text-white' : ''}"
+				aria-pressed={$proportionalEdit}
+				aria-label="Proportional editing"
+				title="Proportional editing — drag one vertex and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
+				onclick={() => proportionalEdit.set(!$proportionalEdit)}><Expand size={18} aria-hidden="true" /></button
+			>
+			<button
 				id="mesh-slide"
 				class="tbx-btn {$vertexSlide ? 'tbx-on bg-primary-600 text-white' : ''} {$vertexSelectionSize === 1
 					? ''
@@ -687,6 +697,21 @@
 				title="Slide — constrain the drag to one of this vertex's own edges (it picks the edge you drag toward and clamps to its ends). Adjusts a profile without pulling the vertex off the surface."
 				onclick={() => vertexSlide.set(!$vertexSlide)}><Spline size={18} aria-hidden="true" /></button
 			>
+			{#if $proportionalEdit}
+				<div class="tbx-row text-xs text-gray-300">
+					<label class="flex items-center gap-1" title="How far the drag carries its neighbours (local units). Weight fades smoothly to zero at the radius.">
+						radius
+						<input
+							id="mesh-proportional-radius"
+							type="number"
+							step="0.1"
+							min="0.01"
+							class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+							bind:value={$proportionalRadius}
+						/>
+					</label>
+				</div>
+			{/if}
 			<!-- handle size: proportional to the object by default, this scales it -->
 			<div class="tbx-row text-xs text-gray-300">
 				<label class="flex items-center gap-1" title="Vertex dot size — a multiplier over the size derived from the object, so it stays sane on a terrain and on a cube">

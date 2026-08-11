@@ -19,7 +19,10 @@ import {
 	trisToGroups,
 	trisToUVs,
 	applyMeshGeo,
-	triangleCount
+	triangleCount,
+	// UV5 reads the Edit Mesh pick to scope the UV view — read-only, no writes
+	faceEditObject,
+	faceEditSelectedTris
 } from './faceEdit';
 
 // UV editor core (UV1). The editor is a 2D view of a mesh's `uv` attribute: the
@@ -47,6 +50,40 @@ export const uvTool = writable('select');
 export const uvBrushColor = writable('#ff3b30');
 /** UV3 brush @type {import('svelte/store').Writable<number>} */
 export const uvBrushSize = writable(24);
+
+/**
+ * UV5: restrict the editor to the faces picked in Edit Mesh mode.
+ *
+ * Why this is needed at all: a primitive's faces routinely SHARE UV space. A
+ * default BoxGeometry has 24 uv entries but only FOUR distinct coordinates — all
+ * six sides map onto the same 0..1 square — so a welded cluster is six corners
+ * from six different faces, and dragging one moves the whole cube's mapping.
+ * Nothing in UV space can tell those faces apart; the only thing that can is the
+ * 3D face selection. 'all' | 'selection'. LOCAL pref.
+ * @type {import('svelte/store').Writable<string>}
+ */
+export const uvFaceFilter = writable(
+	typeof localStorage !== 'undefined' ? localStorage.getItem('uvFaceFilter') ?? 'all' : 'all'
+);
+if (typeof localStorage !== 'undefined')
+	uvFaceFilter.subscribe((value) => {
+		try {
+			localStorage.setItem('uvFaceFilter', value);
+		} catch {}
+	});
+
+/**
+ * The triangles picked in Edit Mesh mode for `uuid`, or null when the filter is
+ * off / nothing is picked / the mode is on another object. Triangle indices line
+ * up with ours: both walk `readTriangles` order, one triangle per 3 elements.
+ * @param {string|undefined|null} uuid @returns {Set<number>|null}
+ */
+export function selectedFaceTris(uuid) {
+	if (!uuid || get(uvFaceFilter) !== 'selection') return null;
+	if (get(faceEditObject) !== uuid) return null;
+	const picked = get(faceEditSelectedTris);
+	return picked?.length ? new Set(picked) : null;
+}
 
 /** materials as an array, whatever the object wears (a mesh may carry ONE
  * material or an array of slots) @param {any} object */
@@ -82,9 +119,11 @@ export function uvEditable(object) {
  * six-material. Filtering an ordinary textured box by materialIndex therefore
  * hid ten of its twelve triangles. Same test as `preserveMaterialGroups`.
  * @param {any} object @param {number} slot
- * @returns {{corners: number[][], indices: number[]}[]}
+ * @param {Set<number>|null} [onlyTris] UV5: keep only these TRIANGLE indices
+ *   (the Edit Mesh pick), so faces that share UV space can be edited apart
+ * @returns {{corners: number[][], indices: number[], tri: number}[]}
  */
-export function uvTriangles(object, slot) {
+export function uvTriangles(object, slot, onlyTris = null) {
 	const geometry = object?.geometry;
 	const uv = geometry?.attributes?.uv;
 	if (!uv) return [];
@@ -92,14 +131,25 @@ export function uvTriangles(object, slot) {
 	const count = index ? index.count : uv.count;
 	const perSlot = Array.isArray(object.material) && object.material.length >= 2;
 	const slotAt = perSlot ? slotRanges(geometry.groups, count) : () => 0;
-	/** @type {{corners: number[][], indices: number[]}[]} */
+	/** @type {{corners: number[][], indices: number[], tri: number}[]} */
 	const out = [];
 	for (let i = 0; i < count; i += 3) {
 		if (slotAt(i) !== slot) continue;
+		const tri = i / 3;
+		if (onlyTris && !onlyTris.has(tri)) continue;
 		const indices = [0, 1, 2].map((o) => (index ? index.getX(i + o) : i + o));
-		out.push({ corners: indices.map((j) => [uv.getX(j), uv.getY(j)]), indices });
+		out.push({ corners: indices.map((j) => [uv.getX(j), uv.getY(j)]), indices, tri });
 	}
 	return out;
+}
+
+/** every uv index the given triangles touch — the scope a drag may weld inside
+ * @param {{indices: number[]}[]} tris @returns {Set<number>} */
+export function uvIndicesOf(tris) {
+	/** @type {Set<number>} */
+	const set = new Set();
+	for (const tri of tris) for (const i of tri.indices) set.add(i);
+	return set;
 }
 
 /** element index -> material slot (0 for an ungrouped geometry). Same shape as
@@ -127,18 +177,25 @@ export function slotCount(object) {
  * and a non-indexed mesh (OBJ imports, and anything that has been through a mesh
  * op) stores each corner separately, so moving one index alone would tear the
  * mapping apart.
- * @param {any} geometry @param {number} uvIndex @returns {number[]}
+ * @param {any} geometry @param {number} uvIndex
+ * @param {Set<number>|null} [scope] UV5: weld only WITHIN these uv indices. On a
+ *   cube every side shares the same four UV corners, so an unscoped weld drags
+ *   all six faces — scoping to the visible/selected faces is what makes editing
+ *   one side possible at all.
+ * @returns {number[]}
  */
-export function weldedCluster(geometry, uvIndex) {
+export function weldedCluster(geometry, uvIndex, scope = null) {
 	const uv = geometry?.attributes?.uv;
 	if (!uv || uvIndex < 0 || uvIndex >= uv.count) return [];
 	const u = uv.getX(uvIndex);
 	const v = uv.getY(uvIndex);
 	/** @type {number[]} */
 	const cluster = [];
-	for (let i = 0; i < uv.count; i++)
+	for (let i = 0; i < uv.count; i++) {
+		if (scope && !scope.has(i)) continue;
 		if (Math.abs(uv.getX(i) - u) <= UV_EPSILON && Math.abs(uv.getY(i) - v) <= UV_EPSILON)
 			cluster.push(i);
+	}
 	return cluster;
 }
 
@@ -147,11 +204,12 @@ export function weldedCluster(geometry, uvIndex) {
  * `radius` (both in UV units, so the caller converts its pixel tolerance).
  * Restricted to the given slot's triangles so a hidden slot can't be grabbed.
  * @param {any} object @param {number} slot @param {number} u @param {number} v @param {number} radius
+ * @param {Set<number>|null} [onlyTris] UV5 face scope
  */
-export function nearestUvIndex(object, slot, u, v, radius) {
+export function nearestUvIndex(object, slot, u, v, radius, onlyTris = null) {
 	let best = -1;
 	let bestDist = radius * radius;
-	for (const tri of uvTriangles(object, slot))
+	for (const tri of uvTriangles(object, slot, onlyTris))
 		tri.corners.forEach((corner, c) => {
 			const du = corner[0] - u;
 			const dv = corner[1] - v;
@@ -168,14 +226,16 @@ export function nearestUvIndex(object, slot, u, v, radius) {
  * Grow a set of uv indices to the full welded cluster of each member. Selecting
  * or marquee-hitting one corner has to take its co-located twins with it, or a
  * drag tears the mapping at every seam.
- * @param {any} geometry @param {Iterable<number>} indices @returns {number[]}
+ * @param {any} geometry @param {Iterable<number>} indices
+ * @param {Set<number>|null} [scope] UV5: weld only within these uv indices
+ * @returns {number[]}
  */
-export function expandClusters(geometry, indices) {
+export function expandClusters(geometry, indices, scope = null) {
 	/** @type {Set<number>} */
 	const out = new Set();
 	for (const i of indices) {
 		if (out.has(i)) continue;
-		for (const j of weldedCluster(geometry, i)) out.add(j);
+		for (const j of weldedCluster(geometry, i, scope)) out.add(j);
 	}
 	return [...out];
 }
@@ -185,16 +245,17 @@ export function expandClusters(geometry, indices) {
  * Corners exactly on the edge count as inside.
  * @param {any} object @param {number} slot
  * @param {{u0: number, v0: number, u1: number, v1: number}} rect
+ * @param {Set<number>|null} [onlyTris] UV5 face scope
  * @returns {number[]}
  */
-export function uvIndicesInRect(object, slot, rect) {
+export function uvIndicesInRect(object, slot, rect, onlyTris = null) {
 	const uMin = Math.min(rect.u0, rect.u1);
 	const uMax = Math.max(rect.u0, rect.u1);
 	const vMin = Math.min(rect.v0, rect.v1);
 	const vMax = Math.max(rect.v0, rect.v1);
 	/** @type {Set<number>} */
 	const hit = new Set();
-	for (const tri of uvTriangles(object, slot))
+	for (const tri of uvTriangles(object, slot, onlyTris))
 		tri.corners.forEach((corner, c) => {
 			if (corner[0] >= uMin && corner[0] <= uMax && corner[1] >= vMin && corner[1] <= vMax)
 				hit.add(tri.indices[c]);
@@ -207,13 +268,14 @@ export function uvIndicesInRect(object, slot, rect) {
  * even-odd ray-crossing rule. `polygon` is [[u,v], ...] and is treated as
  * closed. Fewer than 3 points selects nothing.
  * @param {any} object @param {number} slot @param {number[][]} polygon
+ * @param {Set<number>|null} [onlyTris] UV5 face scope
  * @returns {number[]}
  */
-export function uvIndicesInPolygon(object, slot, polygon) {
+export function uvIndicesInPolygon(object, slot, polygon, onlyTris = null) {
 	if (!polygon || polygon.length < 3) return [];
 	/** @type {Set<number>} */
 	const hit = new Set();
-	for (const tri of uvTriangles(object, slot))
+	for (const tri of uvTriangles(object, slot, onlyTris))
 		tri.corners.forEach((corner, c) => {
 			if (pointInPolygon(corner[0], corner[1], polygon)) hit.add(tri.indices[c]);
 		});
@@ -436,6 +498,8 @@ function strokeSegment(entry, from, to, color, size) {
 	ctx.lineTo(to[0] * entry.canvas.width, (1 - to[1]) * entry.canvas.height);
 	ctx.stroke();
 	entry.texture.needsUpdate = true;
+	// canvas pixels are not reactive: the UV editor redraws off this tick
+	uvPaintTick.update((n) => n + 1);
 }
 
 /**
@@ -583,6 +647,32 @@ export function applyUvPaintEnd(data) {
 export function liveStrokeCount() {
 	return liveUvStrokes.size;
 }
+
+/**
+ * The live paint canvas for one slot, for the UV editor to draw as its backdrop.
+ *
+ * Without this the UV view showed a stroke only on RELEASE: the backdrop is
+ * decoded from `userData.mapDataUrl`, which only changes when the stroke commits,
+ * while the 3D model (and a peer) sees the CanvasTexture updating per dab. The
+ * canvas is only trustworthy while it represents the current image — mid-stroke
+ * (it is the truth) or right after a commit (`seededFrom` matches). After an undo
+ * or someone else's commit it is stale, so the caller falls back to the decoded
+ * image until the next stroke re-seeds it.
+ * @param {string|undefined|null} uuid @param {number} slot @returns {any}
+ */
+export function paintPreviewCanvas(uuid, slot = 0) {
+	if (!uuid) return null;
+	const entry = paintCanvases.get(paintKey(uuid, slot));
+	if (!entry) return null;
+	if (paintStroke && paintStroke.uuid === uuid && paintStroke.slot === slot) return entry.canvas;
+	const material = materialAt(get(objectsGroup)?.getObjectByProperty('uuid', uuid), slot);
+	const url = material?.userData?.mapDataUrl ?? null;
+	return entry.seededFrom === url ? entry.canvas : null;
+}
+
+/** a monotonic counter bumped on every dab, local or remote — the UV editor
+ * redraws off this, because canvas pixels are not reactive state */
+export const uvPaintTick = writable(0);
 
 // A peer that vanished mid-stroke never sends its `uvpaintend`, so sweep stale
 // entries (drawMode's pattern). Stroke-keyed, so no handleDisconnected hook.

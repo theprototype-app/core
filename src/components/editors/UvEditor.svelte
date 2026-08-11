@@ -10,17 +10,20 @@
 	// {zoom, panX, panY} and projects UV space itself. v is UP in UV space and
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
-	import { Brush, ImagePlus, Lasso, MousePointer2, SquareDashed } from '@lucide/svelte';
+	import { Brush, Filter, ImagePlus, Lasso, MousePointer2, SquareDashed } from '@lucide/svelte';
 	import { selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
 	import { setObjectTexture, removeObjectTexture } from '$lib/materialsHandler';
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import {
-		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvEditable, uvTriangles, materialsOf, slotCount,
+		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvFaceFilter, uvPaintTick, uvEditable, uvTriangles, materialsOf, slotCount,
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
 		beginUvDrag, moveUvCluster, endUvDrag, cancelUvDrag,
-		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke
+		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke,
+		selectedFaceTris, uvIndicesOf, paintPreviewCanvas
 	} from '$lib/uvEditor';
+	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
+	import { faceEditSelectedTris } from '$lib/faceEdit';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import { dragWindow } from '$lib/dragWindow';
@@ -60,10 +63,20 @@
 	});
 	const slotTotal = $derived(target ? slotCount(target) : 0);
 	const slot = $derived(Math.min($uvActiveSlot, Math.max(slotTotal - 1, 0)));
+	// UV5: the Edit Mesh pick scopes the view. A cube's six sides share one UV
+	// square, so without a scope every drag moves all of them.
+	const faceScope = $derived.by(() => {
+		$objectsGroup;
+		$uvFaceFilter;
+		$faceEditSelectedTris;
+		return selectedFaceTris(target?.uuid);
+	});
 	const tris = $derived.by(() => {
 		$objectsGroup;
-		return target && editable.ok ? uvTriangles(target, slot) : [];
+		return target && editable.ok ? uvTriangles(target, slot, faceScope) : [];
 	});
+	/** a drag may only weld among the uv corners currently in view */
+	const weldScope = $derived(faceScope ? uvIndicesOf(tris) : null);
 	const mapUrl = $derived(slots[slot]?.mapUrl ?? null);
 
 	// docked vs floating (starts docked, undockable)
@@ -114,6 +127,15 @@
 	let viewH = $state(320);
 	/** the decoded texture, redrawn when the slot's image changes */
 	let mapImage = $state(/** @type {HTMLImageElement|null} */ (null));
+	// The BACKDROP prefers the live paint canvas: mapDataUrl only changes when a
+	// stroke COMMITS, so drawing the decoded image showed a stroke only on release
+	// even though the model (and a peer) updated per dab.
+	const paintCanvas = $derived.by(() => {
+		$uvPaintTick;
+		$objectsGroup;
+		return paintPreviewCanvas(target?.uuid, slot);
+	});
+	const backdrop = $derived(paintCanvas ?? mapImage);
 
 	// The UV unit square maps to a `span`-pixel box, centred, then scaled+panned.
 	const span = $derived(Math.max(Math.min(viewW, viewH) - 32, 32));
@@ -171,6 +193,13 @@
 			marquee,
 			lassoPoints: lasso.length,
 			tool: $uvTool,
+			faceFilter: $uvFaceFilter,
+			scopedTris: faceScope ? faceScope.size : null,
+			weldScope: weldScope ? weldScope.size : null,
+			// what the backdrop actually IS, not merely what is available: asserting
+			// availability made the check unable to fail
+			backdropIsLiveCanvas: !!paintCanvas && backdrop === paintCanvas,
+			tick: $uvPaintTick,
 			brush: { color: $uvBrushColor, size: $uvBrushSize },
 			/** @param {number} u @param {number} v */
 			project: (u, v) => ({ x: toScreenX(u), y: toScreenY(v) })
@@ -196,7 +225,7 @@
 	// redraw whenever anything visible changes
 	$effect(() => {
 		// dependencies (read them so the effect re-runs)
-		void [tris, mapImage, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked];
+		void [tris, backdrop, $uvPaintTick, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked];
 		draw();
 	});
 
@@ -225,7 +254,7 @@
 				ctx.fillStyle = ((x / cell + y / cell) % 2 === 0) ? '#3a3a3a' : '#2e2e2e';
 				ctx.fillRect(originX + x, originY + y, cell, cell);
 			}
-		if (mapImage) ctx.drawImage(mapImage, originX, originY, box, box);
+		if (backdrop) ctx.drawImage(backdrop, originX, originY, box, box);
 		ctx.restore();
 
 		// the 0..1 UV square
@@ -343,9 +372,9 @@
 			return;
 		}
 
-		const index = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius());
+		const index = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope);
 		if (index >= 0) {
-			const cluster = weldedCluster(target.geometry, index);
+			const cluster = weldedCluster(target.geometry, index, weldScope);
 			const already = cluster.some((i) => selCluster.includes(i));
 			if (extendKey(e)) {
 				// shift-click toggles this cluster in or out of the selection
@@ -427,11 +456,11 @@
 		} else if (gesture === 'box' && marquee && target) {
 			const hits = uvIndicesInRect(target, slot, {
 				u0: toU(marquee.x0), v0: toV(marquee.y0), u1: toU(marquee.x1), v1: toV(marquee.y1)
-			});
+			}, faceScope);
 			commitMarquee(hits, e);
 		} else if (gesture === 'lasso' && target) {
 			const polygon = lasso.map(([x, y]) => [toU(x), toV(y)]);
-			commitMarquee(uvIndicesInPolygon(target, slot, polygon), e);
+			commitMarquee(uvIndicesInPolygon(target, slot, polygon, faceScope), e);
 		} else if (gesture === 'pan' && !moved && pendingClear) {
 			selCluster = []; // a plain click on empty space deselects
 		}
@@ -445,7 +474,7 @@
 	/** @param {number[]} hits @param {PointerEvent} e */
 	function commitMarquee(hits, e) {
 		if (!target) return;
-		const grown = expandClusters(target.geometry, hits);
+		const grown = expandClusters(target.geometry, hits, weldScope);
 		selCluster = extendKey(e) ? [...new Set([...selCluster, ...grown])] : grown;
 	}
 
@@ -458,7 +487,7 @@
 	function onHover(/** @type {PointerEvent} */ e) {
 		if (gesture !== 'idle' || !target || !editable.ok) return;
 		const { x, y } = localPoint(e);
-		hoverIndex = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius());
+		hoverIndex = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope);
 	}
 
 	function onWheel(/** @type {WheelEvent} */ e) {
@@ -647,7 +676,22 @@
 						</button>
 					{/each}
 				</div>
+				<button
+					class="uv-tool {$uvFaceFilter === 'selection' ? 'uv-tool-active' : ''}"
+					id="uv-filter-faces"
+					title="Only the faces selected in Edit Mesh (a cube's six sides share one UV square, so this is how you edit one side)"
+					aria-label="Only the faces selected in Edit Mesh"
+					aria-pressed={$uvFaceFilter === 'selection'}
+					onclick={() => uvFaceFilter.set($uvFaceFilter === 'selection' ? 'all' : 'selection')}
+				>
+					<Filter size={15} aria-hidden="true" />
+				</button>
 				<span class="truncate text-[11px] text-gray-400">{target ? target.name || 'object' : 'no selection'}</span>
+				{#if $uvFaceFilter === 'selection'}
+					<span id="uv-filter-note" class="shrink-0 text-[10px] {faceScope ? 'text-primary-300' : 'text-amber-400'}">
+						{faceScope ? `${faceScope.size} face tris` : 'no face selection'}
+					</span>
+				{/if}
 				<span class="flex-1"></span>
 				{#if selCluster.length}
 					<span id="uv-sel-count" class="shrink-0 text-[11px] tabular-nums text-amber-400">{selCluster.length} selected</span>

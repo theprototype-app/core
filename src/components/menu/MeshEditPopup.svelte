@@ -55,6 +55,7 @@
 		edgeEditSelected,
 		selectEdgeLoop,
 		dissolveEdges,
+		bevelFaces,
 		clearEdgeSelection,
 		stashSelections,
 		setFaceSubmode,
@@ -88,6 +89,7 @@
 		Sun,
 		Spline,
 		Eraser,
+		Scissors,
 		Undo2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
@@ -248,6 +250,10 @@
 	// FALLBACK for prefers-reduced-motion, where animation:none means the end
 	// event never fires and the class would stick forever.
 	let flashOp = $state('');
+	// M5: bevel params live here, not in faceEditAmount — that store is the FACE op's
+	// signed distance and sharing it would make arming Extrude change the bevel width
+	let bevelWidth = $state(0.1);
+	let bevelSegments = $state(1);
 	/** @type {any} */
 	let flashTimer = 0;
 	/** @param {string} op */
@@ -779,6 +785,41 @@
 				title="Merge a sphere into the collider as a new convex piece"
 				onclick={() => addColliderPiece('sphere')}><Circle size={18} aria-hidden="true" /></button
 			>
+		{/if}
+
+		<!-- M5: the face bevel — width, segments and the button (face mode only) -->
+		{#if mode === 'faces'}
+			<div id="face-bevel-params" class="tbx-row text-xs text-gray-300">
+				<label class="flex items-center gap-1" title="How far the chamfer folds into each face">
+					width
+					<input
+						id="face-bevel-width"
+						type="number"
+						step="0.02"
+						min="0.001"
+						class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={bevelWidth}
+					/>
+				</label>
+				<label class="flex items-center gap-1" title="More segments = a rounder edge">
+					segments
+					<input
+						id="face-bevel-segments"
+						type="number"
+						step="1"
+						min="1"
+						max="8"
+						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
+						bind:value={bevelSegments}
+					/>
+				</label>
+			<button
+				id="face-bevel"
+				class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
+				title="Bevel the selected face's border into a chamfer (inset + push per segment)"
+				onclick={() => bevelFaces(bevelWidth, bevelSegments)}>Bevel</button
+			>
+			</div>
 		{/if}
 
 		<!-- 176: contextual amount row for Extrude/Inset -->

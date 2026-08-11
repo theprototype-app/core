@@ -2525,6 +2525,103 @@ function invertEdgeSelectionInner() {
 }
 
 /**
+ * M5 BEVEL, on a FACE selection: fold the face's border into a chamfer.
+ *
+ * Each step insets the face and pushes the shrinking cap along its normal, so the border
+ * becomes a ring of chamfer quads; `segments` steps make it a faceted round. Both halves
+ * are the EXISTING pure ops (`insetFace` + the welded `moveFaceAlongNormal`), which is
+ * the whole reason this is watertight — the ring insetFace stitches shares the cap's
+ * corners, and the welded move carries them together.
+ *
+ * Why not on an EDGE selection, which is where a modeller reaches for bevel first: a true
+ * edge bevel deletes the edge's vertices and hands the NEIGHBOURING faces two vertices in
+ * their place, so every face around each endpoint gains a corner. Folding only the two
+ * faces that touch the edge leaves the third face at each corner still using the old
+ * vertex, and the mesh cracks along the edges it shared with them — measured as 12
+ * non-manifold edges on a box, which is why that pass was dropped rather than shipped.
+ * The vertex-fan surgery on adjacent faces is the remaining work; edge mode says so.
+ * @param {number} width inset fraction per step (0..0.95 total) @param {number} segments
+ * @returns {boolean}
+ */
+export function bevelFaces(width = 0.15, segments = 1) {
+	if (!faceEdited) return false;
+	const face = opTargetFace();
+	if (!face?.triIndices?.length) {
+		showToast('Select a face first, then Bevel');
+		return false;
+	}
+	if (!boundaryEdges(workingTris, face).length) {
+		showToast(
+			'Nothing to bevel: that selection is a CLOSED surface, so it has no border to fold. Select fewer faces.'
+		);
+		return false;
+	}
+	const n = Math.max(1, Math.min(Math.round(segments) || 1, 8));
+	const total = Math.min(Math.max(width, 0.01), 0.9);
+	const before = trisToPositions(workingTris);
+	const beforeGroups = trisToGroups(workingTris);
+	const beforeUVs = trisToUVs(workingTris);
+	const beforeFaces = readStoredFaces(faceEdited?.geometry);
+	let priorFaces = currentPartition();
+	// the cap keeps its triangle INDICES through inset (it shrinks in place) and through
+	// the welded move, so one descriptor drives every step
+	const cap = {
+		triIndices: [...face.triIndices],
+		normal: face.normal.clone(),
+		centroid: face.centroid.clone()
+	};
+	let tris = cloneTris(workingTris);
+	/** @type {number[][]} */
+	const authored = [];
+	// a quarter-circle profile: the step insets track cos and the pushes track sin, so
+	// the chamfer reads as a round rather than a straight ramp at segments > 1
+	const depth = total;
+	for (let k = 1; k <= n; k++) {
+		const from = ((k - 1) / n) * (Math.PI / 2);
+		const to = (k / n) * (Math.PI / 2);
+		const insetStep = (Math.sin(to) - Math.sin(from)) * total;
+		const pushStep = (Math.cos(from) - Math.cos(to)) * depth;
+		const startLength = tris.length;
+		tris = insetFace(tris, cap, insetStep);
+		// the appended ring is consecutive pushQuad pairs — the same authoring shape
+		// every append-only op uses
+		for (const quad of appendedQuads(startLength, tris.length)) authored.push(quad);
+		if (pushStep) {
+			// re-read the cap's live centroid: it moved with the previous step
+			cap.centroid = centroidOfTris(tris, cap.triIndices);
+			tris = moveFaceAlongNormal(tris, cap, pushStep);
+		}
+	}
+	const positions = trisToPositions(tris);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast('That bevel is too large to sync');
+		return false;
+	}
+	const groups = trisToGroups(tris);
+	const uvs = trisToUVs(tris);
+	faceEditHoverTri.set(-1);
+	applyGeometrySnapshot(
+		positions,
+		groups,
+		uvs,
+		composeFaces(priorFaces, appendOrigin(workingTris.length, tris.length), authored)
+	);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
+		after: withFaces({ positions, groups, uvs })
+	});
+	// the cap stays selected: scaling or moving it is the usual next move
+	faceEditSelectedTris.set([...cap.triIndices]);
+	faceEditHighlight.set(faceIndexForTriangle(cap.triIndices[0]));
+	refreshFaceOverlay();
+	showToast('Bevelled the border in ' + n + ' segment' + (n === 1 ? '' : 's'));
+	return true;
+}
+
+/**
  * M4: dissolve the selected edges — genuinely REMOVE each one by merging the
  * two faces it joins and re-triangulating the merged polygon WITHOUT it.
  *

@@ -123,6 +123,47 @@ export function recordMaterialChange(uuid, param, key, before, after, slot = 0) 
 }
 
 /**
+ * SAMPLER STATE that must survive replacing a material's map.
+ *
+ * Every texture write here used to set `colorSpace` and nothing else, so painting
+ * over an IMPORTED texture silently re-mapped it three ways at once: GLTFLoader
+ * sets `flipY = false` (the glTF convention) while three's CanvasTexture and
+ * TextureLoader default to `true`, so the image flipped vertically; glTF's default
+ * sampler wrap is REPEAT while three's is CLAMP, so anything relying on tiling
+ * smeared its border; and KHR_texture_transform's repeat/offset/rotation plus
+ * `channel` (which UV set the map reads) were dropped entirely. The user-visible
+ * result was "the UV map broke" after one brush stroke.
+ * @type {string[]}
+ */
+const TEXTURE_PARAMS = [
+	'flipY',
+	'wrapS',
+	'wrapT',
+	'rotation',
+	'channel',
+	'anisotropy',
+	'magFilter',
+	'minFilter',
+	'generateMipmaps',
+	'premultiplyAlpha',
+	'unpackAlignment'
+];
+
+/**
+ * Copy sampler state from one texture to another. Vector-valued params
+ * (repeat/offset/center) are COPIED, never aliased — sharing the Vector2 would let
+ * a later edit of one texture move the other. Capture `from` BEFORE disposing it.
+ * @param {any} from @param {any} to
+ */
+export function copyTextureParams(from, to) {
+	if (!from || !to) return;
+	for (const key of TEXTURE_PARAMS) if (from[key] !== undefined) to[key] = from[key];
+	for (const key of ['repeat', 'offset', 'center'])
+		if (from[key] && to[key]?.copy) to[key].copy(from[key]);
+	to.needsUpdate = true;
+}
+
+/**
  * Apply (or remove, with null) a texture dataURL to one material SLOT of an
  * object. The dataURL is kept in material.userData so the UI can show a
  * thumbnail. UV2: `slot` addresses a material ARRAY (an imported .obj/.mtl, a
@@ -143,8 +184,19 @@ export function applyMap(object, dataURL, slot = 0) {
 	}
 	// set synchronously so the UI thumbnail appears immediately
 	material.userData.mapDataUrl = dataURL;
+	// capture the OUTGOING sampler state now: the load callback runs after we would
+	// have disposed it, and the new texture must inherit flipY/wrap/repeat or an
+	// imported texture is re-mapped by the replacement (see TEXTURE_PARAMS)
+	const previous = material.map;
+	const inherit = previous && {
+		...Object.fromEntries(TEXTURE_PARAMS.map((k) => [k, previous[k]])),
+		repeat: previous.repeat?.clone?.(),
+		offset: previous.offset?.clone?.(),
+		center: previous.center?.clone?.()
+	};
 	new THREE.TextureLoader().load(dataURL, (texture) => {
 		texture.colorSpace = THREE.SRGBColorSpace;
+		if (inherit) copyTextureParams(inherit, texture);
 		material.map?.dispose();
 		material.map = texture;
 		material.needsUpdate = true;

@@ -6,7 +6,7 @@ import { peers, showToast } from '../stores/appStore';
 import { recordEntry } from './history';
 // UV3 painting commits through the EXISTING replicated texture path, so
 // persistence (autosave / .tpscene / the object sync) and undo come free.
-import { applyMap, materialAt, recordMaterialChange } from './materialsHandler';
+import { applyMap, materialAt, recordMaterialChange, copyTextureParams } from './materialsHandler';
 // UV1: read-only reuse of the mesh snapshot pipeline. faceEdit owns the triangle
 // <-> geometry conversion AND the 'meshgeo' history kind (which already accepts a
 // {positions, groups, uvs} triple and re-broadcasts uvs on undo), so a UV commit
@@ -493,7 +493,7 @@ const PAINT_THROTTLE = 66;
 /** a live stroke nobody finished is dropped after this (a peer vanished mid-drag) */
 const STROKE_STALE_MS = 5000;
 
-/** @type {Map<string, {canvas: any, texture: any, uuid: string, slot: number, seededFrom: string|null}>} */
+/** @type {Map<string, {canvas: any, texture: any, uuid: string, slot: number, seededFrom: string|null, flipY: boolean, previousMap: any}>} */
 const paintCanvases = new Map();
 /** @type {Map<string, {ts: number}>} */
 const liveUvStrokes = new Map();
@@ -532,34 +532,64 @@ async function paintSurface(uuid, slot) {
 	// reuse only while it still represents the CURRENT image — an undo, a peer's
 	// commit or a dropped image all change it out from under us
 	if (existing && existing.seededFrom === seedKey) {
+		// remember what we are about to cover, so a cancel can restore it. Must be
+		// re-read per install, not kept from the first one: after a commit the
+		// material wears applyMap's texture, and a stale previousMap would restore
+		// something from two strokes ago.
+		existing.previousMap = mapToRestore(material, existing);
 		install(material, existing);
 		return existing;
 	}
 	const canvas = existing?.canvas ?? document.createElement('canvas');
-	// Match the SOURCE resolution (clamped) rather than always 1024: committing a
-	// 1024 re-encode of a 2048 texture would silently halve the user's texture.
-	const size = paintSize(live);
-	canvas.width = size;
-	canvas.height = size;
+	// Match the SOURCE resolution (clamped) rather than always 1024, and keep its
+	// ASPECT: a square canvas built from max(w,h) stretched a 2048x1024 albedo to
+	// 2048x2048, doubling everything vertically.
+	const seedImage = url ? await decodeImage(url) : live;
+	const size = paintSize(seedImage);
+	canvas.width = size.w;
+	canvas.height = size.h;
 	const ctx = canvas.getContext('2d');
 	if (!ctx) return null;
 	// a material with no texture starts WHITE, not transparent: painting on a
 	// transparent sheet reads as painting on nothing once it is on the model
 	ctx.fillStyle = '#ffffff';
 	ctx.fillRect(0, 0, canvas.width, canvas.height);
-	if (url) {
-		const image = await decodeImage(url);
-		if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-	} else if (live) {
-		ctx.drawImage(live, 0, 0, canvas.width, canvas.height);
-	}
+	// the canvas always holds the texture in IMAGE orientation (row 0 = image top);
+	// which UV row that corresponds to is `flipY`'s business, handled per stroke
+	if (seedImage) ctx.drawImage(seedImage, 0, 0, canvas.width, canvas.height);
+	const source = material.map ?? null;
 	const texture = existing?.texture ?? new THREE.CanvasTexture(canvas);
 	texture.colorSpace = THREE.SRGBColorSpace;
+	// inherit the sampler state of the texture we are about to replace, or an
+	// imported map's flipY/wrap/repeat are silently rewritten by the brush
+	copyTextureParams(source, texture);
 	texture.needsUpdate = true;
-	const entry = { canvas, texture, uuid, slot, seededFrom: seedKey };
+	const entry = {
+		canvas,
+		texture,
+		uuid,
+		slot,
+		seededFrom: seedKey,
+		// false for imported (glTF) textures — the stroke mapping depends on it
+		flipY: source ? source.flipY !== false : true,
+		// so a cancelled stroke can put the model back exactly as it was
+		previousMap: mapToRestore(material, existing)
+	};
 	paintCanvases.set(key, entry);
 	install(material, entry);
 	return entry;
+}
+
+/**
+ * What a cancelled stroke should put back: whatever is on the material right now,
+ * unless that is already OUR canvas texture (a re-install during the same session),
+ * in which case the previously remembered map still stands.
+ * @param {any} material @param {any} existing @returns {any}
+ */
+function mapToRestore(material, existing) {
+	const current = material.map ?? null;
+	if (current && current === existing?.texture) return existing?.previousMap ?? null;
+	return current;
 }
 
 /** show the paint canvas on the model @param {any} material @param {any} entry */
@@ -579,12 +609,21 @@ function liveSeedKey(material) {
 	return 'tex:' + material.map.uuid + ':' + material.map.version;
 }
 
-/** the paint canvas size: the source texture's own resolution, clamped, so a
- * commit never silently downscales it @param {any} image @returns {number} */
+/**
+ * The paint canvas size: the source texture's own resolution, clamped, so a commit
+ * never silently downscales it — and its ASPECT, so a 2048x1024 albedo does not
+ * come back square with everything doubled vertically.
+ * @param {any} image @returns {{w: number, h: number}}
+ */
 function paintSize(image) {
-	const source = Math.max(image?.width ?? 0, image?.height ?? 0);
-	if (!source) return PAINT_CANVAS;
-	return Math.min(Math.max(2 ** Math.round(Math.log2(source)), 256), 2048);
+	const sw = image?.width ?? 0;
+	const sh = image?.height ?? 0;
+	if (!sw || !sh) return { w: PAINT_CANVAS, h: PAINT_CANVAS };
+	const clamp = (/** @type {number} */ n) => Math.min(Math.max(Math.round(n), 8), 4096);
+	// scale the LONG side into range and carry the short side with it
+	const longest = Math.max(sw, sh);
+	const scale = longest > 2048 ? 2048 / longest : longest < 256 ? Math.min(256 / longest, 8) : 1;
+	return { w: clamp(sw * scale), h: clamp(sh * scale) };
 }
 
 /** @param {string} url @returns {Promise<any>} */
@@ -597,7 +636,24 @@ function decodeImage(url) {
 	});
 }
 
-/** Draw one segment in UV space onto a surface. Canvas y is 1-v (v points up).
+/**
+ * Where a UV `v` lands on the paint canvas, which always holds the texture in
+ * IMAGE orientation (row 0 = image top).
+ *
+ * `flipY` decides which image row a `v` samples, so it decides where a brush must
+ * write. With three's default `flipY = true` the image is flipped at upload, so
+ * v = 1 is the image top and canvas y = (1 - v) * h. An IMPORTED glTF texture is
+ * `flipY = false` — no flip, so v = 0 is the image top and canvas y = v * h.
+ * Painting a GLB with the flipY=true mapping wrote every stroke into the mirrored
+ * half of the image. (Verified by the quadrant assertion in uv-texture-params:
+ * reasoning alone had this backwards.)
+ * @param {any} entry @param {number} v
+ */
+function canvasY(entry, v) {
+	return (entry.flipY === false ? v : 1 - v) * entry.canvas.height;
+}
+
+/** Draw one segment in UV space onto a surface.
  * @param {any} entry @param {number[]} from @param {number[]} to
  * @param {string} color @param {number} size */
 function strokeSegment(entry, from, to, color, size) {
@@ -608,8 +664,8 @@ function strokeSegment(entry, from, to, color, size) {
 	ctx.lineCap = 'round';
 	ctx.lineJoin = 'round';
 	ctx.beginPath();
-	ctx.moveTo(from[0] * entry.canvas.width, (1 - from[1]) * entry.canvas.height);
-	ctx.lineTo(to[0] * entry.canvas.width, (1 - to[1]) * entry.canvas.height);
+	ctx.moveTo(from[0] * entry.canvas.width, canvasY(entry, from[1]));
+	ctx.lineTo(to[0] * entry.canvas.width, canvasY(entry, to[1]));
 	ctx.stroke();
 	entry.texture.needsUpdate = true;
 	// canvas pixels are not reactive: the UV editor redraws off this tick
@@ -723,10 +779,28 @@ export function endPaintStroke(color, size) {
 	return true;
 }
 
-/** abandon an open stroke without committing (the paint stays on the canvas
- * until the next commit or reseed — it is local only) */
+/**
+ * Abandon an open stroke without committing, and put the model back: installing
+ * the paint canvas REPLACED `material.map`, so bailing out used to leave the
+ * CanvasTexture (with the brush marks, and previously with rewritten sampler
+ * state) on the material with nothing ever committed.
+ */
 export function cancelPaintStroke() {
+	const stroke = paintStroke;
 	paintStroke = null;
+	if (!stroke) return;
+	const entry = paintCanvases.get(paintKey(stroke.uuid, stroke.slot));
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', stroke.uuid);
+	const material = materialAt(object, stroke.slot);
+	if (!entry || !material) return;
+	if (material.map === entry.texture) {
+		material.map = entry.previousMap ?? null;
+		material.needsUpdate = true;
+		objectsGroup.update((v) => v);
+	}
+	// the canvas now disagrees with the material — drop it so the next stroke
+	// re-seeds from whatever is actually on the model
+	paintCanvases.delete(paintKey(stroke.uuid, stroke.slot));
 }
 
 /** webp when the browser can encode it, else jpeg — the downscaleImage rule
@@ -787,6 +861,19 @@ export function paintPreviewCanvas(uuid, slot = 0) {
 /** a monotonic counter bumped on every dab, local or remote — the UV editor
  * redraws off this, because canvas pixels are not reactive state */
 export const uvPaintTick = writable(0);
+
+/**
+ * Does the slot's texture sample v = 0 from the image's TOP row? True for an
+ * imported glTF texture (`flipY = false`).
+ *
+ * The editor draws the UV square with v UP (v = 1 at the top), so a flipY=true
+ * texture's image can be blitted as-is, while a flipY=false one has to be drawn
+ * vertically FLIPPED for the backdrop to agree with where the model samples.
+ * @param {any} object @param {number} slot @returns {boolean}
+ */
+export function slotFlipsV(object, slot = 0) {
+	return materialsOf(object)[slot]?.map?.flipY === false;
+}
 
 // A peer that vanished mid-stroke never sends its `uvpaintend`, so sweep stale
 // entries (drawMode's pattern). Stroke-keyed, so no handleDisconnected hook.

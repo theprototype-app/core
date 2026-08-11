@@ -751,6 +751,89 @@ export function updateAnim(uuid, patch, clipId) {
 	});
 }
 
+// --- clips -------------------------------------------------------------------
+// An object can hold several named movements ("Open", "Close", "Idle") and the
+// window lists them beside the clips an imported model shipped with. `active` is
+// the object's DEFAULT clip: it is scene data, so it replicates and saves, and it
+// is what play() and the Play Animation node use when nobody names a clip.
+
+/** @param {string} uuid @param {string} [name] @returns {string} the new clip id */
+export function createClip(uuid, name) {
+	const id = newId();
+	editSet(uuid, (set) => {
+		const count = Object.keys(set.clips).length + 1;
+		set.clips[id] = {
+			name: name || 'Clip ' + count,
+			tracks: [],
+			duration: 2,
+			loop: 'loop'
+		};
+		set.active = id;
+		return set;
+	});
+	return id;
+}
+
+/** @param {string} uuid @param {string} clipId @param {string} name */
+export function renameClip(uuid, clipId, name) {
+	const clean = String(name ?? '').trim();
+	if (!clean) return;
+	editClip(uuid, clipId, (clip) => ({ ...clip, name: clean }));
+}
+
+/** @param {string} uuid @param {string} clipId @returns {string} the copy's id */
+export function duplicateClip(uuid, clipId) {
+	const id = newId();
+	editSet(uuid, (set) => {
+		const source = set.clips[clipId] ?? set.clips[set.active];
+		if (!source) return null;
+		set.clips[id] = {
+			...structuredClone(source),
+			name: source.name + ' copy',
+			// fresh track ids: two clips must never share one (a UI selection, and any
+			// per-track lookup, is keyed by it)
+			tracks: source.tracks.map((t) => ({ ...structuredClone(t), id: newId() }))
+		};
+		set.active = id;
+		return set;
+	});
+	return id;
+}
+
+/** Delete a clip. Removing the last one clears the object's animation entirely.
+ * @param {string} uuid @param {string} clipId */
+export function deleteClip(uuid, clipId) {
+	const set = getAnimSet(uuid);
+	if (!set || !set.clips[clipId]) return;
+	if (get(playback)[uuid]?.clipId === clipId) stop(uuid);
+	if (Object.keys(set.clips).length <= 1) {
+		const before = structuredClone(get(animations)[uuid] ?? null);
+		animations.update((map) => {
+			const next = { ...map };
+			delete next[uuid];
+			return next;
+		});
+		recordAnimEntry(uuid, before, null);
+		broadcastAnim(uuid);
+		return;
+	}
+	editSet(uuid, (next) => {
+		delete next.clips[clipId];
+		if (next.active === clipId) next.active = Object.keys(next.clips)[0];
+		return next;
+	});
+}
+
+/** Make a clip the object's default (replicated — it is scene data).
+ * @param {string} uuid @param {string} clipId */
+export function setActiveClip(uuid, clipId) {
+	editSet(uuid, (set) => {
+		if (!set.clips[clipId] || set.active === clipId) return null;
+		set.active = clipId;
+		return set;
+	});
+}
+
 /** Insert (or replace) a key. Extends the clip when the key lands past its end.
  * @param {string} uuid @param {string} trackId @param {number} t @param {number} v
  * @param {{ease?: number[], clipId?: string}} [opts] */

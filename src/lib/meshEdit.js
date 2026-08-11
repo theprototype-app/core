@@ -505,6 +505,9 @@ export function exitEditMode() {
 	slideEdge = null;
 	slideStart = null;
 	vertexSlide.set(false); // an armed tool never survives the session
+	proportionalEdit.set(false);
+	falloffStart = null;
+	falloffWeights = null;
 	vertexSelection.clear();
 	vertexSelectionSize.set(0);
 	editingObject.set(null);
@@ -853,6 +856,90 @@ export function slideEdgeDebug() {
 	return slideEdge ? { a: slideEdge.a.toArray(), b: slideEdge.b.toArray() } : null;
 }
 
+// ---- M8: PROPORTIONAL EDITING ---------------------------------------------
+// Dragging one vertex normally leaves a dent: its neighbours stay put and the surface
+// creases. Proportional editing drags the neighbourhood WITH it, weighted by distance, which
+// is how a smooth bulge or a soft dip gets made.
+//
+// Two rules make it behave: weights come from the positions AT DRAG START (recomputing them
+// mid-drag makes the falloff chase the vertex), and the move is written ABSOLUTELY
+// (start + total * weight) rather than accumulated per frame, so a long drag cannot drift.
+
+/** armed like a tool — an in-session mode, not a saved preference
+ * @type {import('svelte/store').Writable<boolean>} */
+export const proportionalEdit = writable(false);
+/** falloff radius in LOCAL units. Local pref: it is a working-scale choice, and the same
+ * number is right for the next session on the same kind of model.
+ * @type {import('svelte/store').Writable<number>} */
+export const proportionalRadius = writable(
+	typeof localStorage !== 'undefined'
+		? Math.min(Math.max(parseFloat(localStorage.getItem('proportionalRadius') ?? '') || 1, 0.01), 100)
+		: 1
+);
+proportionalRadius.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('proportionalRadius', String(value));
+});
+
+/** handle positions captured at drag start, for the absolute write @type {any[]|null} */
+let falloffStart = null;
+/** per-handle weight for this drag, 0 for anything out of range @type {number[]|null} */
+let falloffWeights = null;
+
+/**
+ * Smooth falloff: 1 at the dragged vertex, 0 at the radius, with zero slope at both ends so
+ * neither the centre nor the rim shows a crease. (Smoothstep — Blender's "Smooth" preset.)
+ * @param {number} t 0..1 @returns {number}
+ */
+function falloffWeight(t) {
+	if (t <= 0) return 1;
+	if (t >= 1) return 0;
+	return 1 - t * t * (3 - 2 * t);
+}
+
+/** Capture the neighbourhood this drag will carry. Called at drag start, so the weights
+ * cannot chase the vertex as it moves. */
+function beginFalloff() {
+	falloffStart = null;
+	falloffWeights = null;
+	if (!get(proportionalEdit) || !edited || selectedHandle < 0) return;
+	const radius = Math.max(get(proportionalRadius), 1e-4);
+	const anchor = handles[selectedHandle].position.clone();
+	falloffStart = handles.map((handle) => handle.position.clone());
+	falloffWeights = handles.map((handle, index) => {
+		if (index === selectedHandle || vertexSelection.has(index)) return 1; // the selection moves fully
+		return falloffWeight(handle.position.distanceTo(anchor) / radius);
+	});
+}
+
+/** the anchor's position when the drag started — the origin every weighted move measures
+ * from. Only ever called behind `falloffActive()`. @returns {any} */
+function falloffOrigin() {
+	return falloffStart?.[selectedHandle] ?? handles[selectedHandle].position;
+}
+
+/** Is a falloff drag live, i.e. is anything beyond the selection moving? */
+function falloffActive() {
+	return !!falloffWeights && falloffWeights.some((w, i) => w > 0 && i !== selectedHandle && !vertexSelection.has(i));
+}
+
+/**
+ * Write the whole weighted neighbourhood for a total drag delta. Replaces the incremental
+ * `applySelectionDelta` while a falloff drag is live (absolute writes, see the note above).
+ * @param {any} total local-space delta from the drag's start
+ */
+function applyFalloff(total) {
+	if (!falloffStart || !falloffWeights) return;
+	const position = edited.geometry.attributes.position;
+	for (let i = 0; i < handles.length; i++) {
+		const weight = falloffWeights[i];
+		if (weight <= 0 || i === selectedHandle) continue;
+		const p = handles[i].position.copy(falloffStart[i]).addScaledVector(total, weight);
+		handles[i].indices.forEach((/** @type {number} */ idx) => position.setXYZ(idx, p.x, p.y, p.z));
+		refreshHandleMatrix(i);
+	}
+}
+
+
 // D5: a multi-selection drags rigidly — every member moves by the anchor's
 // local-space delta. Dedicated vector (never the shared temps: the loop below
 // calls refreshHandleMatrix, which mutates tempVector).
@@ -882,7 +969,11 @@ export function onProxyMoved() {
 	const local = proxyLocal();
 	if (local.distanceToSquared(handles[selectedHandle].position) < 1e-12) return;
 	// members first, anchor last (writeSelectedHandle recomputes normals/overlay)
-	if (vertexSelection.size > 1)
+	if (falloffActive())
+		// M8: the weighted neighbourhood is written ABSOLUTELY from the drag start, so it
+		// covers the selected members too — an incremental pass on top would double-move them
+		applyFalloff(deltaVector.copy(local).sub(falloffOrigin()));
+	else if (vertexSelection.size > 1)
 		applySelectionDelta(deltaVector.copy(local).sub(handles[selectedHandle].position));
 	const result = writeSelectedHandle();
 	const now = Date.now();
@@ -931,16 +1022,22 @@ export function onProxyDragChanged(dragging) {
 		// D5: a multi-drag undoes as ONE meshgeo snapshot (a 'verts' entry holds
 		// one position for all its indices — it cannot carry per-handle befores;
 		// same reasoning as weld). Index-expanded per the D1 representation rule.
+		beginFalloff();
+		// a falloff drag moves many handles, so it undoes as ONE meshgeo snapshot for the same
+		// reason a multi-drag does (a `verts` entry holds one position for all its indices)
 		dragStartExpanded =
-			vertexSelection.size > 1 ? trisToPositions(readTriangles(edited.geometry)) : null;
+			vertexSelection.size > 1 || falloffActive()
+				? trisToPositions(readTriangles(edited.geometry))
+				: null;
 	} else if (dragStartLocal) {
 		// catch any tail movement since the last change event, members first
 		const local = proxyLocal();
-		if (vertexSelection.size > 1)
+		if (falloffActive()) applyFalloff(deltaVector.copy(local).sub(falloffOrigin()));
+		else if (vertexSelection.size > 1)
 			applySelectionDelta(deltaVector.copy(local).sub(handles[selectedHandle].position));
 		const after = writeSelectedHandle();
 		broadcastSelected(after); // final unthrottled state
-		if (vertexSelection.size > 1) {
+		if (vertexSelection.size > 1 || falloffActive()) {
 			for (const i of vertexSelection) if (i !== selectedHandle) broadcastHandle(i);
 			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
 			if (dragStartExpanded && JSON.stringify(dragStartExpanded) !== JSON.stringify(afterExpanded))
@@ -959,6 +1056,8 @@ export function onProxyDragChanged(dragging) {
 				after: after
 			});
 		}
+		falloffStart = null;
+		falloffWeights = null;
 		dragStartLocal = null;
 		slideEdge = null;
 		slideStart = null;

@@ -7,6 +7,16 @@ import { globalScene, objectsGroup, TControls, lockedObjects, isVRMode } from '.
 import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
 import { peers, showToast, settingsOpen, settingsSection } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
+// STORED topology (phase 1). meshTopology imports nothing — no cycle to worry about.
+import {
+	readStoredFaces,
+	storeFaces,
+	clearStoredFaces,
+	facesWireFields,
+	applyFacesWire,
+	carryFaces,
+	packFaces
+} from './meshTopology';
 
 // Face editing core (118, pulled forward from pending/25 and scoped to VR
 // blockout). Desktop-agnostic geometry math: read a BufferGeometry into a flat
@@ -825,6 +835,7 @@ export function bridgeFaces() {
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
+	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	const remove = new Set([...setA, ...setB]);
 	const next = cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !remove.has(ti)));
 	const n = loopA.length;
@@ -912,8 +923,8 @@ export function bridgeFaces() {
 	recordEntry({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
-		after: { positions, groups, uvs }
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
+		after: withFaces({ positions, groups, uvs })
 	});
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
@@ -1095,8 +1106,13 @@ function toFloats(data) {
  *   omitted by the sculpt/vertex paths, which never change the vertex count
  * @param {any} [uvs] M1: texture coordinates, same three wire shapes as
  *   positions; omitted means "carry the previous attribute over"
+ * @param {any} [faceCounts] P9 stored topology, CSR half one — one Int32 per face.
+ *   Absent means "the sender did not author faces": the previous partition is CARRIED
+ *   when it still fits the new mesh exactly and dropped otherwise (A7), which is what
+ *   an older peer's positions-only message does too.
+ * @param {any} [faceTris] P9 stored topology, CSR half two — the flat triangle run
  */
-export function applyMeshGeo(uuid, positions, groups, uvs) {
+export function applyMeshGeo(uuid, positions, groups, uvs, faceCounts, faceTris) {
 	const object = lookupEditable(uuid); // A8: also finds the collider-edit proxy
 	if (!object) return;
 	const floats = toFloats(positions);
@@ -1113,6 +1129,8 @@ export function applyMeshGeo(uuid, positions, groups, uvs) {
 	const previous = object.geometry;
 	preserveMaterialGroups(geometry, previous, object, groups);
 	preserveUVs(geometry, previous, uvs == null ? null : Array.from(toFloats(uvs)));
+	if (faceCounts != null && faceTris != null) applyFacesWire(geometry, faceCounts, faceTris);
+	else if (!carryFaces(geometry, previous)) clearStoredFaces(geometry);
 	previous?.dispose?.();
 	object.geometry = geometry;
 	object.userData.faceEdited = true; // parametric Geometry rows disable (like vertexEdited)
@@ -1821,6 +1839,7 @@ export function commitLoopCut(cuts = 1) {
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
+	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 
 	/** every triangle the ring consumes */
 	const consumed = new Set();
@@ -1890,8 +1909,8 @@ export function commitLoopCut(cuts = 1) {
 	recordEntry({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
-		after: { positions, groups, uvs }
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
+		after: withFaces({ positions, groups, uvs })
 	});
 	// leave the NEW band selected: it is what you reach for next (scale it, move
 	// it, cut it again), and an empty selection after an op that just rebuilt the
@@ -2519,6 +2538,7 @@ export function dissolveEdges() {
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
+	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	const next = [
 		...cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))),
 		...added
@@ -2531,8 +2551,8 @@ export function dissolveEdges() {
 	recordEntry({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
-		after: { positions, groups, uvs }
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
+		after: withFaces({ positions, groups, uvs })
 	});
 	clearEdgeSelection();
 	showToast(
@@ -2663,6 +2683,7 @@ export function recalculateNormals() {
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
+	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	const next = cloneTris(workingTris);
 	let flipped = 0;
 	for (const shell of shellsOfTris(workingTris)) {
@@ -2695,8 +2716,8 @@ export function recalculateNormals() {
 	recordEntry({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
-		after: { positions, groups, uvs }
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
+		after: withFaces({ positions, groups, uvs })
 	});
 	showToast('Recalculated normals: flipped ' + flipped + ' triangles');
 	return true;
@@ -2718,6 +2739,7 @@ export function mergeByDistance(threshold = 0.001) {
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
+	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	/** @type {Map<string, {sum: any, n: number}>} */
 	const cluster = new Map();
 	const cellOf = (/** @type {any} */ v) =>
@@ -2767,8 +2789,8 @@ export function mergeByDistance(threshold = 0.001) {
 	recordEntry({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
-		after: { positions, groups, uvs }
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
+		after: withFaces({ positions, groups, uvs })
 	});
 	showToast(
 		'Merged ' + moved + ' vertices' + (dropped ? ', removed ' + dropped + ' degenerate faces' : '')
@@ -2891,8 +2913,61 @@ function rebuildFaces() {
 	if (!faceEdited) return;
 	workingTris = readTriangles(faceEdited.geometry);
 	faces = groupFaces(workingTris);
-	quadPartner = pairQuads(workingTris);
+	// STORED topology wins over re-derivation. Deriving quads from coplanarity is
+	// only ever as good as the last operator's luck: a 4-degree rotate twists a wall
+	// quad's two triangles ~9 degrees apart, which no threshold separates from a real
+	// crease, so every derived quad in a rotated band silently vanished and the loop
+	// tools declined. When a partition was authored we trust it instead.
+	quadPartner = storedPartner(faceEdited.geometry, workingTris.length) ?? pairQuads(workingTris);
 	quadTopology = null; // M2: the loop-walk adjacency is rebuilt on demand
+}
+
+/**
+ * A `quadPartner` array built from a STORED partition, or null when there is none.
+ * Only 2-triangle faces become quads; a stored n-gon larger than that is left to
+ * `groupFaces` for now (the quad model cannot express it, and phase 1 deliberately
+ * does not change what a "quad" means).
+ * @param {any} geometry @param {number} triCount @returns {Int32Array|null}
+ */
+function storedPartner(geometry, triCount) {
+	const stored = readStoredFaces(geometry);
+	if (!stored) return null;
+	const partner = new Int32Array(triCount).fill(-1);
+	for (const face of stored)
+		if (face.length === 2) {
+			partner[face[0]] = face[1];
+			partner[face[1]] = face[0];
+		}
+	return partner;
+}
+
+/**
+ * Derive the current quad partition and STORE it.
+ *
+ * Called at COMMIT time, which is the moment derivation is trustworthy: the operator
+ * has just authored geometry whose coplanarity still reflects its intent. Storing it
+ * then means a later rigid transform carries the partition instead of re-guessing from
+ * geometry the rotate has already spoiled.
+ * @param {any} geometry @param {any[]} tris @returns {number[][]|null}
+ */
+function storeDerivedFaces(geometry, tris) {
+	if (!geometry || !tris?.length) return null;
+	const partner = pairQuads(tris);
+	/** @type {number[][]} */
+	const partition = [];
+	const claimed = new Uint8Array(tris.length);
+	for (let ti = 0; ti < tris.length; ti++) {
+		if (claimed[ti]) continue;
+		const mate = partner[ti] ?? -1;
+		if (mate > ti && !claimed[mate]) {
+			claimed[ti] = claimed[mate] = 1;
+			partition.push([ti, mate]);
+		} else {
+			claimed[ti] = 1;
+			partition.push([ti]);
+		}
+	}
+	return storeFaces(geometry, partition) ? partition : null;
 }
 
 /** O(1) identity of the quad a triangle belongs to — the lower of the pair, so
@@ -3214,6 +3289,7 @@ export function commitFaceOp(op, amount) {
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
+	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	let next;
 	/** @type {number[] | null} subdivide keeps its OWN output selected */
 	let subdivided = null;
@@ -3256,8 +3332,8 @@ export function commitFaceOp(op, amount) {
 	recordEntry({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs },
-		after: { positions, groups, uvs }
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
+		after: withFaces({ positions, groups, uvs })
 	});
 	if (op === 'inset' || op === 'extrude' || op === 'move') {
 		// E6: keep the CAP selected — its tri indices survive the op (cloneTris
@@ -3283,8 +3359,10 @@ export function commitFaceOp(op, amount) {
 
 /** swap the LIVE edited object's geometry + re-derive faces + overlay
  * @param {number[]} positions @param {any[] | null} [groups] material groups (15-G)
- * @param {number[] | null} [uvs] texture coordinates (M1) */
-function applyGeometrySnapshot(positions, groups, uvs) {
+ * @param {number[] | null} [uvs] texture coordinates (M1)
+ * @param {number[][] | null} [faces] P9: the partition the operator AUTHORED. Omitted
+ *   means "derive it here", which this function then STORES — see storeDerivedFaces. */
+function applyGeometrySnapshot(positions, groups, uvs, faces) {
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
 	geometry.computeVertexNormals();
@@ -3295,6 +3373,11 @@ function applyGeometrySnapshot(positions, groups, uvs) {
 	previous?.dispose?.();
 	faceEdited.geometry = geometry;
 	faceEdited.userData.faceEdited = true;
+	// P9: an AUTHORED partition wins; otherwise derive once, HERE, while the operator's
+	// output is still fresh, and store THAT. Storing a derived partition is not
+	// redundant — it is what stops the NEXT rigid transform from re-guessing quads from
+	// geometry a rotate has already spoiled.
+	if (!faces || !storeFaces(geometry, faces)) storeDerivedFaces(geometry, readTriangles(geometry));
 	rebuildFaces();
 	refreshFaceOverlay();
 	refreshEdgeHighlight(); // M4: baked in world space, same as the face overlay
@@ -3302,11 +3385,28 @@ function applyGeometrySnapshot(positions, groups, uvs) {
 	objectsGroup.update((v) => v);
 }
 
+/**
+ * P9: stamp the topology that is CURRENTLY stored on the edited geometry into a meshgeo
+ * history state. It lives INSIDE the state object because `endHistorySession` compaction
+ * synthesises one entry from `first.before`/`last.after` — a sibling field on the entry
+ * would be dropped by that merge (design answer A5).
+ * @param {any} state @returns {any}
+ */
+function withFaces(state) {
+	const faces = readStoredFaces(faceEdited?.geometry);
+	return faces ? { ...state, faces } : state;
+}
+
 /** @param {string} uuid @param {number[]} positions @param {any[] | null} [groups]
  * @param {number[] | null} [uvs] */
 function broadcastMeshGeo(uuid, positions, groups, uvs) {
 	/** @type {any} */
 	const peer = get(peers);
+	// P9: the topology rides as OPTIONAL sibling fields read off the object we just
+	// committed to — that is the partition by construction, so no call site has to
+	// thread it through. An older peer ignores the fields and re-derives, exactly as it
+	// does today: absent topology is never WRONG, only less capable.
+	const faceFields = facesWireFields(readStoredFaces(lookupEditable(uuid)?.geometry));
 	// raw Float32 BYTES, not a plain number array: binarypack recurses per
 	// element and blows the call stack on big arrays (a 48-seg terrain snapshot
 	// = 41k numbers silently vanished — broadcast() catches the throw), and
@@ -3320,7 +3420,8 @@ function broadcastMeshGeo(uuid, positions, groups, uvs) {
 			uuid: uuid,
 			positions: new Float32Array(positions).buffer,
 			...(groups?.length ? { groups } : {}),
-			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {})
+			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {}),
+			...faceFields
 		});
 }
 
@@ -3572,7 +3673,7 @@ export function commitFaceGrab() {
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before,
-		after: { positions, groups, uvs }
+		after: withFaces({ positions, groups, uvs })
 	});
 	return true;
 }
@@ -3837,7 +3938,7 @@ export function commitFaceAdjust() {
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before,
-		after: { positions, groups, uvs }
+		after: withFaces({ positions, groups, uvs })
 	});
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]); // 212: stale after reshape
 	return true;
@@ -3860,7 +3961,10 @@ registerHistoryKind('meshgeo', (entry, state) => {
 	const positions = state?.positions ?? state;
 	const groups = state?.positions ? state.groups : undefined;
 	const uvs = state?.positions ? state.uvs : undefined;
-	applyMeshGeo(entry.uuid, positions, groups, uvs);
+	// P9: topology travels INSIDE the state object (A5), and only for producers that
+	// authored one. Packed here so the replay and the re-broadcast agree byte for byte.
+	const packed = state?.faces ? packFaces(state.faces) : null;
+	applyMeshGeo(entry.uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris);
 	// same raw-bytes wire format as broadcastMeshGeo (big plain arrays blow
 	// binarypack's recursion and the replay would silently not replicate)
 	/** @type {any} */
@@ -3871,7 +3975,8 @@ registerHistoryKind('meshgeo', (entry, state) => {
 			uuid: entry.uuid,
 			positions: new Float32Array(positions).buffer,
 			...(groups?.length ? { groups } : {}),
-			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {})
+			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {}),
+			...(packed ? packed : {})
 		});
 	return true;
 });

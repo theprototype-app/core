@@ -10,18 +10,23 @@
 	// {zoom, panX, panY} and projects UV space itself. v is UP in UV space and
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
-	import { Brush, Filter, ImagePlus, Lasso, MousePointer2, Plus, SquareDashed, Target } from '@lucide/svelte';
-	import { selectedObject, selectedObjects, objectsGroup } from '../../stores/sceneStore';
+	import {
+		Brush, Filter, FlipHorizontal, FlipVertical, Grid3x3, ImagePlus, Lasso, Link2,
+		Maximize2, MousePointer2, Plus, RotateCw, SquareDashed, Target
+	} from '@lucide/svelte';
+	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
 	import { setObjectTexture, removeObjectTexture, addMaterialSlot } from '$lib/materialsHandler';
 	import { applyExplorerImage } from '$lib/explorerDrop';
+	import { unwrapBackends } from '$lib/uvUnwrap';
 	import {
 		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvFaceFilter, uvPaintTick, uvEditable, uvViewable, UV_WIRE_LIMIT, uvTriangles, materialsOf, slotCount,
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
 		beginUvDrag, moveUvCluster, endUvDrag, cancelUvDrag,
 		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke,
 		selectedFaceTris, uvIndicesOf, paintPreviewCanvas, uvTargetOf, textureImageOf, slotFlipsV,
-		assignTrisToSlot
+		assignTrisToSlot, unwrapObject, uvBounds, transformUvCluster, fitUvToSquare, expandToIslands,
+		textureInfo, resizeSlotTexture, uvCheckerOn, applyUvChecker
 	} from '$lib/uvEditor';
 	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
 	import { faceEditSelectedTris, faceEditObject, triangleCount } from '$lib/faceEdit';
@@ -610,6 +615,70 @@
 		await setObjectTexture(target.uuid, file, index);
 	}
 
+	// --- selection ops + unwrap ---------------------------------------------
+	// Each of these mutates the uv attribute in place between beginUvDrag and
+	// endUvDrag, which is snapshot-DIFF — so replication and a single undo entry come
+	// free without any of them knowing about the wire.
+	const canTransform = $derived(editable.ok && !wireTooDense && selCluster.length > 0);
+
+	/** @param {(indices: number[]) => void} run */
+	function withUvCommit(run) {
+		if (!target || !canTransform) return;
+		if (!beginUvDrag(target.uuid)) return;
+		run(selCluster);
+		endUvDrag(target.uuid);
+	}
+
+	const rotateSelection = () =>
+		withUvCommit((indices) => transformUvCluster(target, indices, { rotate: Math.PI / 2 }));
+	const flipSelectionU = () => withUvCommit((indices) => transformUvCluster(target, indices, { flipU: true }));
+	const flipSelectionV = () => withUvCommit((indices) => transformUvCluster(target, indices, { flipV: true }));
+	const fitSelection = () => withUvCommit((indices) => fitUvToSquare(target, indices, 0.02));
+
+	function selectLinked() {
+		if (!target || !editable.ok || !selCluster.length) return;
+		selCluster = expandToIslands(target, slot, selCluster, faceScope);
+	}
+
+	let unwrapOpen = $state(false);
+	const backends = unwrapBackends();
+
+	/** @param {string} key */
+	function runUnwrap(key) {
+		unwrapOpen = false;
+		if (!target) return;
+		// scope to the Edit Mesh pick when there is one — unwrapping ONE part of a
+		// model is the common case, and it must leave the rest untouched
+		const scope = faceScope ?? selectedFaceTris(target.uuid);
+		const ok = unwrapObject(target.uuid, key, { margin: 0.02 }, scope);
+		if (ok) showToast(scope ? 'Unwrapped the selected faces' : 'Unwrapped ' + (target.name || 'the mesh'));
+	}
+
+	// --- texture tools ------------------------------------------------------
+	const texInfo = $derived.by(() => {
+		$objectsGroup;
+		$uvPaintTick;
+		return target ? textureInfo(target, slot) : null;
+	});
+	const texMb = $derived(texInfo ? (texInfo.bytes / (1024 * 1024)).toFixed(1) : null);
+
+	/** @param {number} longest */
+	async function resizeTo(longest) {
+		if (!target) return;
+		await resizeSlotTexture(target.uuid, slot, longest);
+	}
+
+	// LOCAL-only checker override, scene-wide through scene.overrideMaterial following
+	// the viewMode wireframe precedent — a per-material swap would be serialized by
+	// BOTH the object sync and autosave and bake the checker into the scene.
+	$effect(() => {
+		applyUvChecker($globalScene, $uvCheckerOn);
+	});
+	// never leave it on when the editor closes — it affects the whole scene
+	$effect(() => {
+		if ($uvEditorClose && $uvCheckerOn) untrack(() => uvCheckerOn.set(false));
+	});
+
 	// --- UV4: material slots ------------------------------------------------
 	// How many face triangles are picked in Edit Mesh right now. The assign button
 	// needs a pick, and it reads the pick DIRECTLY rather than through the UV face
@@ -775,6 +844,58 @@
 				>
 					<Filter size={15} aria-hidden="true" />
 				</button>
+				<!-- selection ops: they act on the UV selection, so they live next to the
+				     selection tools rather than in a panel -->
+				<div class="flex shrink-0 items-center gap-0.5 border-l border-gray-700/60 pl-1">
+					<button
+						class="uv-tool"
+						id="uv-op-linked"
+						title="Select the whole UV island (grow to everything connected in UV space)"
+						aria-label="Select linked UV island"
+						disabled={!editable.ok || !selCluster.length}
+						onclick={selectLinked}
+					>
+						<Link2 size={15} aria-hidden="true" />
+					</button>
+					<button class="uv-tool" id="uv-op-rotate" title="Rotate the selection 90 degrees" aria-label="Rotate the selection 90 degrees" disabled={!canTransform} onclick={rotateSelection}>
+						<RotateCw size={15} aria-hidden="true" />
+					</button>
+					<button class="uv-tool" id="uv-op-flip-u" title="Flip the selection horizontally" aria-label="Flip the selection horizontally" disabled={!canTransform} onclick={flipSelectionU}>
+						<FlipHorizontal size={15} aria-hidden="true" />
+					</button>
+					<button class="uv-tool" id="uv-op-flip-v" title="Flip the selection vertically" aria-label="Flip the selection vertically" disabled={!canTransform} onclick={flipSelectionV}>
+						<FlipVertical size={15} aria-hidden="true" />
+					</button>
+					<button class="uv-tool" id="uv-op-fit" title="Fit the selection to the 0..1 square (keeps its aspect)" aria-label="Fit the selection to the UV square" disabled={!canTransform} onclick={fitSelection}>
+						<Maximize2 size={15} aria-hidden="true" />
+					</button>
+				</div>
+				<!-- unwrap is a destructive whole-mesh action, so it is a labelled menu -->
+				<div class="relative shrink-0">
+					<button
+						class="ui-button-quiet"
+						id="uv-unwrap"
+						title={editable.ok
+							? 'Generate new UVs for this mesh, or just the faces selected in Edit Mesh'
+							: editable.reason}
+						disabled={!editable.ok}
+						onclick={() => (unwrapOpen = !unwrapOpen)}
+					>Unwrap ▾</button>
+					{#if unwrapOpen}
+						<div id="uv-unwrap-menu" class="absolute left-0 top-full z-30 mt-1 w-44 rounded-sm border border-gray-600 bg-gray-800 py-1 shadow-lg">
+							{#each backends as backend (backend.key)}
+								<button
+									class="block w-full px-2 py-1 text-left text-[11px] text-gray-200 hover:bg-gray-700"
+									id="uv-unwrap-{backend.key}"
+									onclick={() => runUnwrap(backend.key)}
+								>{backend.label}</button>
+							{/each}
+							<p class="border-t border-gray-700 px-2 pt-1 text-[10px] leading-relaxed text-gray-500">
+								{pickedTris ? `Applies to the ${pickedTris} selected face triangles.` : 'Applies to the whole mesh.'}
+							</p>
+						</div>
+					{/if}
+				</div>
 				<span class="truncate text-[11px] text-gray-400">{target ? target.name || 'object' : 'no selection'}</span>
 				{#if $selectedObjects.length > 1}
 					<span id="uv-multi-note" class="shrink-0 text-[10px] text-amber-400">1 of {$selectedObjects.length} selected</span>
@@ -899,6 +1020,46 @@
 				</div>
 			{:else}
 				<div class="p-2 text-[11px] text-gray-400">
+					<div class="ui-section-label">Texture</div>
+					{#if texInfo}
+						<div id="uv-tex-size" class="mb-1">
+							Size <span class="tabular-nums text-gray-200">{texInfo.w} × {texInfo.h}</span>
+							<span class="text-gray-500">(~{texMb} MB on the GPU)</span>
+						</div>
+						<div class="mb-2 flex flex-wrap gap-1">
+							<button
+								class="uv-chip"
+								id="uv-tex-half"
+								title="Halve the longest side"
+								onclick={() => resizeTo(Math.max(Math.round(Math.max(texInfo.w, texInfo.h) / 2), 8))}
+							>Half</button>
+							{#each [512, 1024, 2048] as size (size)}
+								<button class="uv-chip" id="uv-tex-{size}" title="Resize the longest side to {size}px" onclick={() => resizeTo(size)}>{size}</button>
+							{/each}
+						</div>
+						<p class="mb-2 text-[10px] leading-relaxed text-gray-500">
+							Resizing keeps the aspect and is shared with peers as one undo step.
+						</p>
+					{:else}
+						<div class="mb-2 text-gray-500">This slot has no texture yet.</div>
+					{/if}
+					<button
+						class="uv-tool mb-2 w-auto gap-1.5 px-2 {$uvCheckerOn ? 'uv-tool-active' : ''}"
+						id="uv-checker"
+						title="Show a UV test grid instead of the scene's textures — LOCAL only, never saved or sent"
+						aria-pressed={$uvCheckerOn}
+						onclick={() => uvCheckerOn.set(!$uvCheckerOn)}
+					>
+						<Grid3x3 size={14} aria-hidden="true" />
+						<span class="text-[11px]">UV test grid</span>
+					</button>
+					{#if $uvCheckerOn}
+						<p class="mb-2 text-[10px] leading-relaxed text-amber-400">
+							The grid replaces every material in the scene while it is on. It is local
+							to you and is never saved or sent.
+						</p>
+					{/if}
+					<div class="ui-section-label">Mesh</div>
 					<div class="mb-1">Triangles in this slot: <span class="tabular-nums text-gray-200">{tris.length}</span></div>
 					<div>Material slots: <span class="tabular-nums text-gray-200">{slotTotal}</span></div>
 				</div>
@@ -984,6 +1145,23 @@
 	.uv-tool-active {
 		background: rgb(37 99 235);
 		color: white;
+	}
+	.uv-tool:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+	.uv-tool:disabled:hover {
+		background: transparent;
+	}
+	.uv-chip {
+		border-radius: 0.25rem;
+		border: 1px solid rgb(75 85 99);
+		padding: 0.1rem 0.4rem;
+		font-size: 0.65rem;
+		color: rgb(203 213 225);
+	}
+	.uv-chip:hover {
+		background: rgb(255 255 255 / 0.1);
 	}
 	.uv-slot {
 		display: flex;

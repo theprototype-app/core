@@ -605,6 +605,27 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **Any op that turns a SCREEN gesture into geometry has two traps.** (1) Compute the
+  crossing point per WELDED EDGE, never by intersecting each triangle's own plane: two
+  triangles sharing an edge get different points wherever they are not coplanar, i.e. a crack
+  down every crease (the knife). (2) A screen-space parameter along a projected edge is NOT
+  the 3D parameter under perspective — convert with the view-space depth
+  (`u = t*w0 / (w1 + t*(w0 - w1))`) or the split drifts toward the camera.
+- **Splitting a triangle: WALK THE BOUNDARY to pair the remaining polygon.** Going round
+  corner -> other0 -> other1, a cut leaving at q and re-entering at p makes the polygon
+  q, other0, other1, p. Any other pairing (p, q, other1, other0 was the knife's first
+  attempt) covers a DIFFERENT quad, so the halves overlap and the mesh reads non-manifold
+  where they meet. Also: a triangle with only ONE crossing must still be split, or its
+  neighbour — which has that crossing as a real vertex — meets a T-junction.
+- **Classifying a straddling triangle by its CENTROID is not clipping.** Symmetrize's first
+  pass did that and left a jagged half the mirror could not meet (8 odd edges on a plain box,
+  which has no vertices on the plane at all, so every side face straddles). Clip against the
+  plane (Sutherland-Hodgman) and PIN each crossing exactly onto it, so the two triangles
+  sharing an edge weld. And remember a reflection flips HANDEDNESS: copy the winding verbatim
+  and every mirrored face is inside out, which looks fine until you can see through the model.
+- **`Scene.svelte` is `lang="ts"`** — a JSDoc `@type` cast on a `let` there is IGNORED, so an
+  un-annotated `let x = null` counts against the baseline. Use TS syntax in that file (the
+  mirror of the Inspector rule: JSDoc in plain-`<script>` components, TS in `lang="ts"` ones).
 - **BEVEL means three different operations, and only one of them is cheap.** A FACE bevel
   is inset+push, watertight for free. A VERTEX or EDGE bevel has to REMOVE the corner and
   hand every face around it the offset points that belong to it — skip that and the mesh
@@ -1460,6 +1481,19 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-11, fourth drop): **M9b KNIFE + M7 SYMMETRIZE — PRs #117 + #118 MERGED
+  @f271abc. The mesh roadmap tool list is COMPLETE** (M4 edge gizmo, M5 bevel for
+  faces/edges/vertices, M7 symmetrize, M8 proportional, M9 knife + vertex slide). KNIFE: two
+  clicks define a SCREEN line and every triangle it crosses splits; crossings are computed
+  ONCE PER WELDED EDGE (intersecting each triangle's own PLANE cracks every crease) and the
+  screen parameter is converted to the 3D one with the view-space depth (a cut aimed at a
+  known midpoint from an oblique camera lands on it to 0.0000). SYMMETRIZE: a ONE-SHOT mirror
+  rather than the live session mode the plan sketched, because the live model has to hook the
+  commit path and several of its call sites are RESTORE paths that must not mirror — a way to
+  corrupt UNDO. Straddling triangles are CLIPPED against the plane with each crossing pinned
+  exactly onto it, and the mirrored half carries the MIRROR of each source face. New suites
+  `mesh-knife` (15), `mesh-symmetrize` (16). REMAINING in the batch: P12 xatlas, a knife
+  preview + polyline, live symmetry, and edge bevel's mitered corner. Baseline 391/62.
 - Status (2026-08-11, third drop): **BEVEL in all three modes + M8 proportional —
   PRs #114 + #115 MERGED to release/next @78fb25e.** The edge bevel that was dropped for
   cracking the mesh works now, because the VERTEX bevel needed the same CORNER SURGERY and

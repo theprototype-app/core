@@ -9,8 +9,9 @@
 	import { selectedObject } from '../../stores/sceneStore';
 	import { animationClose } from '../../stores/appStore.js';
 	import {
-		animations, playback, CHANNELS, EASINGS, channelLabel,
-		addTrack, removeTrack, updateTrack, updateAnim, play, pause, stop, scrub
+		animations, playback, playheads, CHANNELS, EASINGS, channelLabel, isRotChannel,
+		activeClip, addTrack, removeTrack, updateTrack, updateKey, updateAnim,
+		play, pause, stop, scrub
 	} from '$lib/animationPreview';
 	// the clips a model was IMPORTED with are a different system (replicated,
 	// posed from the synced clock) — the window used to ignore them entirely, so
@@ -25,7 +26,11 @@
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
 	const target = $derived($selectedObject && $selectedObject.uuid ? $selectedObject : null);
-	const anim = $derived(target ? ($animations[target.uuid] ?? null) : null);
+	// the ACTIVE clip of the object's set, normalized (a v1 save migrates on read)
+	const anim = $derived.by(() => {
+		$animations; // the store is the dependency; activeClip reads it with get()
+		return target ? activeClip(target.uuid) : null;
+	});
 	const tracks = $derived(anim?.tracks ?? []);
 
 	let selId = $state(/** @type {string|null} */ (null));
@@ -41,8 +46,11 @@
 		return target ? clipInfo(target.uuid) : [];
 	});
 
-	const isPlaying = $derived($playback.playing && $playback.uuid === target?.uuid);
-	const curTime = $derived($playback.uuid === target?.uuid ? $playback.time : 0);
+	// transport is per object now (N objects can play at once); the playhead time
+	// comes from the per-frame `playheads` store, the transport state does not.
+	const pb = $derived(target ? ($playback[target.uuid] ?? null) : null);
+	const isPlaying = $derived(!!pb?.playing);
+	const curTime = $derived(target ? ($playheads[target.uuid] ?? pb?.pausedAt ?? 0) : 0);
 
 	// docked vs floating (starts docked, undockable)
 	let docked = $state(true);
@@ -70,15 +78,17 @@
 	});
 	const dockVisible = $derived($visibleDockKey === 'animation');
 
-	// selecting a different object stops a preview left running on the previous one.
+	// Selecting a different object releases a SCRUB left on the previous one (it
+	// holds a base pose that must be restored). Something actually PLAYING keeps
+	// playing — playback is shared with peers, not a property of the selection.
 	let prevUuid = /** @type {string|null} */ (null);
 	$effect(() => {
 		const t = target?.uuid ?? null;
 		untrack(() => {
 			if (t === prevUuid) return;
+			const prev = prevUuid;
 			prevUuid = t;
-			const pb = get(playback);
-			if (pb.uuid && pb.uuid !== t && pb.playing) stop();
+			if (prev && prev !== t && !get(playback)[prev]?.playing) stop(prev);
 		});
 	});
 
@@ -88,19 +98,26 @@
 	}
 	function togglePlay() {
 		if (!target) return;
-		if (isPlaying) pause();
+		if (isPlaying) pause(target.uuid);
 		else play(target.uuid);
 	}
 
-	const isRot = (/** @type {string} */ ch) => ch.startsWith('rot');
-	function dispVal(/** @type {any} */ track, /** @type {string} */ key) {
-		const v = track[key];
-		return isRot(track.channel) ? Math.round((v * 180) / Math.PI * 100) / 100 : Math.round(v * 1000) / 1000;
+	// a track's endpoints are its first and last KEY now; the number fields edit
+	// those, and the curve below shapes the segment that follows the first key.
+	const firstKey = $derived(selTrack?.keys?.[0] ?? null);
+	const lastKey = $derived(selTrack?.keys?.length ? selTrack.keys[selTrack.keys.length - 1] : null);
+	const segEase = $derived(firstKey?.ease ?? EASINGS.linear);
+	const isRot = (/** @type {string} */ ch) => isRotChannel(ch);
+	function dispVal(/** @type {number|undefined} */ v, /** @type {string} */ channel) {
+		const n = v ?? 0;
+		return isRot(channel) ? Math.round((n * 180) / Math.PI * 100) / 100 : Math.round(n * 1000) / 1000;
 	}
-	function setVal(/** @type {any} */ track, /** @type {string} */ key, /** @type {string} */ raw) {
-		const num = parseFloat(raw);
-		if (Number.isNaN(num) || !target) return;
-		updateTrack(target.uuid, track.id, { [key]: isRot(track.channel) ? (num * Math.PI) / 180 : num });
+	function setKeyVal(/** @type {number} */ index, /** @type {string} */ raw) {
+		const n = parseFloat(raw);
+		if (Number.isNaN(n) || !target || !selTrack) return;
+		updateKey(target.uuid, selTrack.id, index, {
+			v: isRot(selTrack.channel) ? (n * Math.PI) / 180 : n
+		});
 	}
 
 	// --- curve editor geometry (unit square, y up) ---
@@ -125,9 +142,9 @@
 		let y = 1 - (e.clientY - r.top - PAD) / INNER;
 		x = Math.min(1, Math.max(0, x));
 		y = Math.min(1, Math.max(0, y));
-		const b = [...selTrack.bezier];
+		const b = [...segEase];
 		if (dragIdx === 0) { b[0] = x; b[1] = y; } else { b[2] = x; b[3] = y; }
-		updateTrack(target.uuid, selTrack.id, { bezier: b });
+		updateKey(target.uuid, selTrack.id, 0, { ease: b });
 	}
 	function onUp() {
 		dragIdx = -1;
@@ -136,7 +153,7 @@
 	}
 	function applyEasing(/** @type {string} */ name) {
 		if (!selTrack || !target) return;
-		updateTrack(target.uuid, selTrack.id, { bezier: [...EASINGS[name]] });
+		updateKey(target.uuid, selTrack.id, 0, { ease: [...EASINGS[name]] });
 	}
 
 	// resize: docked = shared top-edge dock height; floating = corner grip
@@ -176,7 +193,7 @@
 			<button class="ui-button-quiet text-primary-400" title={isPlaying ? 'Pause' : 'Play'} onclick={togglePlay}>
 				{isPlaying ? '⏸' : '▶'}
 			</button>
-			<button class="ui-button-quiet" title="Stop and reset" onclick={stop}>⏹</button>
+			<button class="ui-button-quiet" title="Stop and reset" onclick={() => target && stop(target.uuid)}>⏹</button>
 			<input
 				type="range" min="0" max={anim?.duration ?? 2} step="0.01" class="flex-1 accent-primary-500"
 				value={curTime} oninput={(e) => target && scrub(target.uuid, parseFloat(e.currentTarget.value))}
@@ -281,16 +298,16 @@
 					<svg bind:this={svgEl} width={SIZE} height={SIZE} viewBox="0 0 {SIZE} {SIZE}" class="touch-none rounded-sm bg-gray-900/60">
 						<rect x={PAD} y={PAD} width={INNER} height={INNER} fill="none" stroke="rgb(75 85 99 / 0.6)" />
 						<line x1={sx(0)} y1={sy(0)} x2={sx(1)} y2={sy(1)} stroke="rgb(75 85 99 / 0.35)" stroke-dasharray="3 3" />
-						<line x1={sx(0)} y1={sy(0)} x2={sx(selTrack.bezier[0])} y2={sy(selTrack.bezier[1])} stroke="rgb(129 140 248 / 0.5)" />
-						<line x1={sx(1)} y1={sy(1)} x2={sx(selTrack.bezier[2])} y2={sy(selTrack.bezier[3])} stroke="rgb(129 140 248 / 0.5)" />
+						<line x1={sx(0)} y1={sy(0)} x2={sx(segEase[0])} y2={sy(segEase[1])} stroke="rgb(129 140 248 / 0.5)" />
+						<line x1={sx(1)} y1={sy(1)} x2={sx(segEase[2])} y2={sy(segEase[3])} stroke="rgb(129 140 248 / 0.5)" />
 						<path
-							d="M {sx(0)} {sy(0)} C {sx(selTrack.bezier[0])} {sy(selTrack.bezier[1])} {sx(selTrack.bezier[2])} {sy(selTrack.bezier[3])} {sx(1)} {sy(1)}"
+							d="M {sx(0)} {sy(0)} C {sx(segEase[0])} {sy(segEase[1])} {sx(segEase[2])} {sy(segEase[3])} {sx(1)} {sy(1)}"
 							fill="none" stroke="rgb(129 140 248)" stroke-width="2"
 						/>
 						<circle cx={sx(0)} cy={sy(0)} r="3" fill="rgb(148 163 184)" />
 						<circle cx={sx(1)} cy={sy(1)} r="3" fill="rgb(148 163 184)" />
-						<circle class="cursor-grab" cx={sx(selTrack.bezier[0])} cy={sy(selTrack.bezier[1])} r="6" fill="rgb(99 102 241)" onpointerdown={(e) => onHandleDown(0, e)} />
-						<circle class="cursor-grab" cx={sx(selTrack.bezier[2])} cy={sy(selTrack.bezier[3])} r="6" fill="rgb(99 102 241)" onpointerdown={(e) => onHandleDown(1, e)} />
+						<circle class="cursor-grab" cx={sx(segEase[0])} cy={sy(segEase[1])} r="6" fill="rgb(99 102 241)" onpointerdown={(e) => onHandleDown(0, e)} />
+						<circle class="cursor-grab" cx={sx(segEase[2])} cy={sy(segEase[3])} r="6" fill="rgb(99 102 241)" onpointerdown={(e) => onHandleDown(1, e)} />
 					</svg>
 					<div class="flex flex-wrap justify-center gap-1">
 						{#each Object.keys(EASINGS) as name}
@@ -319,15 +336,15 @@
 					<div class="mb-2 grid grid-cols-2 gap-2">
 						<label class="text-[11px] text-gray-400">
 							From{isRot(selTrack.channel) ? ' (deg)' : ''}
-							<input type="number" step="0.1" class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs" value={dispVal(selTrack, 'from')} oninput={(e) => setVal(selTrack, 'from', e.currentTarget.value)} />
+							<input type="number" step="0.1" class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs" value={dispVal(firstKey?.v, selTrack.channel)} oninput={(e) => setKeyVal(0, e.currentTarget.value)} />
 						</label>
 						<label class="text-[11px] text-gray-400">
 							To{isRot(selTrack.channel) ? ' (deg)' : ''}
-							<input type="number" step="0.1" class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs" value={dispVal(selTrack, 'to')} oninput={(e) => setVal(selTrack, 'to', e.currentTarget.value)} />
+							<input type="number" step="0.1" class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs" value={dispVal(lastKey?.v, selTrack.channel)} oninput={(e) => setKeyVal(selTrack.keys.length - 1, e.currentTarget.value)} />
 						</label>
 					</div>
 					<div class="text-[10px] leading-relaxed text-gray-500">
-						Local preview only — this animation is not shared with peers or saved yet.
+						{selTrack.keys.length} keys — saved with the scene.
 					</div>
 				{:else}
 					<div class="text-[11px] text-gray-500">Select a movement on the left.</div>

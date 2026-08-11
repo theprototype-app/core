@@ -1,7 +1,11 @@
-// Animation window v1 (roadmap #9 tail): a LOCAL-ONLY transform animator opened
-// from the Flow "+" menu. Verifies the easing math, that the window renders for the
-// selected object with movement tracks, and that Play drives the object per frame
-// while Stop restores the pose captured at Play. Local-only => not replicated.
+// Animation window (roadmap #9 tail, keyframes since 17-E): a transform animator
+// opened from the Flow "+" menu. Verifies the easing math, that the window renders
+// for the selected object with movement tracks, and that Play drives the object per
+// frame while Stop restores the pose captured at Play.
+//
+// Since 17-E the store holds named CLIPS of keyed tracks (v1's single from->to
+// segment migrates to two keys) and the data is saved + replicated, so the old
+// "nothing lands anywhere but a local store" check became a SHAPE check instead.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -71,13 +75,13 @@ h.run(async () => {
 		const obj = g.getObjectByProperty('uuid', id);
 		let pb;
 		s.animationPreview.playback.subscribe((v) => (pb = v))();
-		return { y: obj.position.y, playing: pb.playing, uuid: pb.uuid };
+		return { y: obj.position.y, playing: !!pb[id]?.playing, uuid: pb[id] ? id : null };
 	}, uuid);
 	h.check(during.playing && during.uuid === uuid, 'playback reports the object is playing');
 	h.check(during.y > 0.01 && during.y < 4.1, `the object is driven along pos.y while playing (y=${during.y.toFixed(2)})`);
 
 	// --- Stop restores the pose captured at Play ---
-	await A.page.evaluate(() => window.__stores.animationPreview.stop());
+	await A.page.evaluate((id) => window.__stores.animationPreview.stop(id), uuid);
 	await A.page.waitForTimeout(80);
 	const after = await A.page.evaluate((id) => {
 		const s = window.__stores;
@@ -86,24 +90,40 @@ h.run(async () => {
 		const obj = g.getObjectByProperty('uuid', id);
 		let pb;
 		s.animationPreview.playback.subscribe((v) => (pb = v))();
-		return { y: obj.position.y, playing: pb.playing };
+		return { y: obj.position.y, playing: !!pb[id]?.playing };
 	}, uuid);
 	h.check(!after.playing, 'Stop clears the playing state');
 	h.check(Math.abs(after.y) < 0.001, `Stop restores the base pose (y back to 0, got ${after.y.toFixed(3)})`);
 
-	// --- local-only: nothing about the authored animation is broadcast ---
-	// (sanity: the animation lives in a local store, not the object's userData that
-	//  would ride GLTF sync)
-	const localOnly = await A.page.evaluate((id) => {
+	// --- the v2 shape: named clips of KEYED tracks, in the side-channel store ---
+	// (it stays off userData: a uuid-keyed store is what the save/replication paths
+	//  read, and userData would ride the lossy GLTF round trip)
+	const shape = await A.page.evaluate((id) => {
 		const s = window.__stores;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
 		let map;
 		s.animationPreview.animations.subscribe((v) => (map = v))();
-		return { inStore: !!map[id], inUserData: !!obj.userData.animation };
+		const set = map[id];
+		const clip = set?.clips?.[set.active];
+		const track = clip?.tracks?.[0];
+		return {
+			inStore: !!set,
+			inUserData: !!obj.userData.animation,
+			clipIds: Object.keys(set?.clips ?? {}),
+			active: set?.active ?? null,
+			keys: track?.keys?.map((/** @type {any} */ k) => [k.t, k.v]) ?? [],
+			easeOnFirstKey: Array.isArray(track?.keys?.[0]?.ease)
+		};
 	}, uuid);
-	h.check(localOnly.inStore && !localOnly.inUserData, 'authored animation is local (store only, not on userData)');
+	h.check(shape.inStore && !shape.inUserData, 'authored animation lives in the uuid-keyed store, not on userData');
+	h.check(shape.clipIds.length === 1 && shape.active === shape.clipIds[0], `the object has one active clip (${shape.active})`);
+	h.check(
+		shape.keys.length === 2 && shape.keys[0][0] === 0 && Math.abs(shape.keys[0][1]) < 1e-6 && Math.abs(shape.keys[1][1] - 4) < 1e-6,
+		`the from/to edit became two keys (${JSON.stringify(shape.keys)})`
+	);
+	h.check(shape.easeOnFirstKey, 'the easing rides the key that opens the segment');
 
 	await h.finish(browser);
 });

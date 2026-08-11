@@ -12,6 +12,7 @@ import { dropPeerQuality } from '$lib/networkQuality'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
 import { environment } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
@@ -229,6 +230,9 @@ export function clearSceneLocal() {
     lockedObjects.set([]);
     // animated-import bytes/mixers are per-object — all gone now
     dropAllAnimatedImports();
+    // authored clips were the one registry a wipe used to leak (dropAnimation had
+    // no call site at all before 17-E)
+    dropAllAnimations();
     objectsGroup.update((value) => value);
 }
 

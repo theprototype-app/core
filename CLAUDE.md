@@ -1460,6 +1460,23 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-11, third drop): **BEVEL in all three modes + M8 proportional —
+  PRs #114 + #115 MERGED to release/next @78fb25e.** The edge bevel that was dropped for
+  cracking the mesh works now, because the VERTEX bevel needed the same CORNER SURGERY and
+  that is where it got solved: per LOGICAL FACE, whose ordered boundary names the two REAL
+  edges at the corner (a diagonal never appears in a boundary), with offsets keyed by EDGE
+  so the two faces sharing one land on the SAME point. `bevelVertices`/`bevelSelectedVerts`
+  cuts any number of selected corners and authors each cap as ONE n-gon face; `bevelEdges`
+  adds the chamfer strip and REFUSES an endpoint with 4+ faces (that needs a miter).
+  Options are shared across modes: width (clamped per edge to 0.45 of its length),
+  segments, and `profile` as the in/out control. `commitMeshGeoTriple` exists because the
+  positions-only commit dropped groups and uvs on any count-changing op. **M8 proportional**
+  editing landed too (smoothstep falloff, weights from the DRAG START, absolute writes so a
+  slow drag cannot drift, one meshgeo undo). Also fixed from a report: a FACE or EDGE
+  selection died on any trip through Vertices (only `setFaceSubmode` restored it, and it
+  returns early when the submode already matches). New suites `mesh-vertex-bevel` (24),
+  `mesh-edge-bevel` (18), `mesh-proportional` (15). REMAINING: M9b knife, M7 mirror,
+  P12 xatlas. Baseline 391/62.
 - Status (2026-08-11): **MESH PRO TOOLS started — core PR #112 (draft), M4 + M5 in.**
   Branch `feat/mesh-pro-tools` off release/next, lane `../theprototype-lane-topo` @5194.
   **M4 completion = the EDGE GIZMO**: edges could be selected/looped/ringed/dissolved but

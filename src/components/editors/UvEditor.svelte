@@ -16,14 +16,14 @@
 	import { setObjectTexture, removeObjectTexture } from '$lib/materialsHandler';
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import {
-		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvFaceFilter, uvPaintTick, uvEditable, uvTriangles, materialsOf, slotCount,
+		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvFaceFilter, uvPaintTick, uvEditable, uvViewable, UV_WIRE_LIMIT, uvTriangles, materialsOf, slotCount,
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
 		beginUvDrag, moveUvCluster, endUvDrag, cancelUvDrag,
 		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke,
 		selectedFaceTris, uvIndicesOf, paintPreviewCanvas, uvTargetOf, textureImageOf
 	} from '$lib/uvEditor';
 	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
-	import { faceEditSelectedTris, faceEditObject } from '$lib/faceEdit';
+	import { faceEditSelectedTris, faceEditObject, triangleCount } from '$lib/faceEdit';
 	import { editingObject } from '$lib/meshEdit';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
@@ -50,9 +50,20 @@
 	});
 	// THREE trees aren't reactive: derive off $objectsGroup so a geometry swap
 	// (a commit, an undo, a remote meshgeo) re-runs these
+	// VIEWABLE gates the canvas; EDITABLE gates only UV dragging, so a model over
+	// the snapshot cap still shows its texture and can still be painted.
+	const viewable = $derived.by(() => {
+		$objectsGroup;
+		return target ? uvViewable(target) : { ok: false, reason: 'Select a mesh to edit its UVs.' };
+	});
 	const editable = $derived.by(() => {
 		$objectsGroup;
 		return target ? uvEditable(target) : { ok: false, reason: 'Select a mesh to edit its UVs.' };
+	});
+	/** a dense mesh would draw hundreds of thousands of segments and handles */
+	const wireTooDense = $derived.by(() => {
+		$objectsGroup;
+		return target ? triangleCount(target) > UV_WIRE_LIMIT : false;
 	});
 	// A FRESH SNAPSHOT per poke, never the live material array: `$derived`
 	// compares with ===, and materialsOf returns the object's own array, so
@@ -80,7 +91,7 @@
 	});
 	const tris = $derived.by(() => {
 		$objectsGroup;
-		return target && editable.ok ? uvTriangles(target, slot, faceScope) : [];
+		return target && viewable.ok && !wireTooDense ? uvTriangles(target, slot, faceScope) : [];
 	});
 	/** a drag may only weld among the uv corners currently in view */
 	const weldScope = $derived(faceScope ? uvIndicesOf(tris) : null);
@@ -349,7 +360,7 @@
 	const extendKey = (e) => e.shiftKey || e.ctrlKey || e.metaKey;
 
 	function onPointerDown(/** @type {PointerEvent} */ e) {
-		if (!target || !editable.ok) return;
+		if (!target || !viewable.ok) return;
 		const { x, y } = localPoint(e);
 		lastX = e.clientX;
 		lastY = e.clientY;
@@ -385,7 +396,9 @@
 			return;
 		}
 
-		const index = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope);
+		// no vertex picking when a commit could not sync, or when the wireframe is
+		// hidden for density — the press pans instead of silently doing nothing
+		const index = editable.ok && !wireTooDense ? nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope) : -1;
 		if (index >= 0) {
 			const cluster = weldedCluster(target.geometry, index, weldScope);
 			const already = cluster.some((i) => selCluster.includes(i));
@@ -498,7 +511,7 @@
 	}
 
 	function onHover(/** @type {PointerEvent} */ e) {
-		if (gesture !== 'idle' || !target || !editable.ok) return;
+		if (gesture !== 'idle' || !target || !editable.ok || wireTooDense) return;
 		const { x, y } = localPoint(e);
 		hoverIndex = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope);
 	}
@@ -703,6 +716,11 @@
 				{#if $selectedObjects.length > 1}
 					<span id="uv-multi-note" class="shrink-0 text-[10px] text-amber-400">1 of {$selectedObjects.length} selected</span>
 				{/if}
+				{#if !editable.ok && viewable.ok}
+					<span id="uv-paint-only" class="shrink-0 text-[10px] text-amber-400" title={editable.reason}>paint only</span>
+				{:else if wireTooDense}
+					<span id="uv-dense-note" class="shrink-0 text-[10px] text-amber-400">UV wireframe hidden (dense mesh)</span>
+				{/if}
 				{#if $uvFaceFilter === 'selection'}
 					<span id="uv-filter-note" class="shrink-0 text-[10px] {faceScope ? 'text-primary-300' : 'text-amber-400'}">
 						{faceScope ? `${faceScope.size} face tris` : 'no face selection'}
@@ -750,9 +768,9 @@
 					<div class="flex h-full items-center justify-center p-6 text-center text-sm text-gray-400">
 						Select a mesh in the viewport to see and edit its UV map.
 					</div>
-				{:else if !editable.ok}
+				{:else if !viewable.ok}
 					<div class="flex h-full items-center justify-center p-6 text-center text-sm text-gray-400">
-						{editable.reason}
+						{viewable.reason}
 					</div>
 				{:else}
 					<canvas

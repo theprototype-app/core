@@ -11,7 +11,7 @@
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
 	import { Brush, Filter, ImagePlus, Lasso, MousePointer2, SquareDashed } from '@lucide/svelte';
-	import { selectedObject, objectsGroup } from '../../stores/sceneStore';
+	import { selectedObject, selectedObjects, objectsGroup } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
 	import { setObjectTexture, removeObjectTexture } from '$lib/materialsHandler';
 	import { applyExplorerImage } from '$lib/explorerDrop';
@@ -20,10 +20,11 @@
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
 		beginUvDrag, moveUvCluster, endUvDrag, cancelUvDrag,
 		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke,
-		selectedFaceTris, uvIndicesOf, paintPreviewCanvas
+		selectedFaceTris, uvIndicesOf, paintPreviewCanvas, uvTargetOf, textureImageOf
 	} from '$lib/uvEditor';
 	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
-	import { faceEditSelectedTris } from '$lib/faceEdit';
+	import { faceEditSelectedTris, faceEditObject } from '$lib/faceEdit';
+	import { editingObject } from '$lib/meshEdit';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import { dragWindow } from '$lib/dragWindow';
@@ -38,9 +39,15 @@
 		{ key: 'paint', icon: Brush, title: 'Paint on the texture' }
 	];
 
-	// live-follow the primary selection ($selectedObject keeps the last object
-	// after a deselect and starts as a truthy [], so check uuid)
-	const target = $derived($selectedObject && $selectedObject.uuid ? $selectedObject : null);
+	// The SET decides whether anything is selected ($selectedObject is sticky and
+	// kept showing a deselected object's texture); an active Edit Mesh session
+	// counts as the target (right-click ▸ Edit Mesh never sets the primary); and a
+	// selected GROUP resolves to the child mesh that carries the UVs.
+	const editingUuid = $derived($faceEditObject ?? $editingObject ?? null);
+	const target = $derived.by(() => {
+		$objectsGroup;
+		return uvTargetOf($selectedObject, $selectedObjects, editingUuid);
+	});
 	// THREE trees aren't reactive: derive off $objectsGroup so a geometry swap
 	// (a commit, an undo, a remote meshgeo) re-runs these
 	const editable = $derived.by(() => {
@@ -135,7 +142,13 @@
 		$objectsGroup;
 		return paintPreviewCanvas(target?.uuid, slot);
 	});
-	const backdrop = $derived(paintCanvas ?? mapImage);
+	// an imported model's texture never went through applyMap, so there is no
+	// dataURL to decode — fall back to the live THREE texture's own image
+	const liveImage = $derived.by(() => {
+		$objectsGroup;
+		return textureImageOf(target, slot);
+	});
+	const backdrop = $derived(paintCanvas ?? mapImage ?? liveImage);
 
 	// The UV unit square maps to a `span`-pixel box, centred, then scaled+panned.
 	const span = $derived(Math.max(Math.min(viewW, viewH) - 32, 32));
@@ -225,7 +238,7 @@
 	// redraw whenever anything visible changes
 	$effect(() => {
 		// dependencies (read them so the effect re-runs)
-		void [tris, backdrop, $uvPaintTick, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked];
+		void [tris, backdrop, liveImage, $uvPaintTick, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked];
 		draw();
 	});
 
@@ -630,7 +643,7 @@
 			<span class="min-w-0 flex-1 truncate">{material?.name || material?.type || `Slot ${index}`}</span>
 		</button>
 		<button
-			class="uv-slot-btn opacity-0 group-hover/slot:opacity-100"
+			class="uv-slot-btn"
 			id="uv-slot-image-{index}"
 			title={material.mapUrl ? 'Replace this image' : 'Add an image'}
 			aria-label={material.mapUrl ? 'Replace this image' : 'Add an image'}
@@ -640,7 +653,7 @@
 		</button>
 		{#if material.mapUrl}
 			<button
-				class="uv-slot-btn text-red-400 opacity-0 group-hover/slot:opacity-100"
+				class="uv-slot-btn text-red-400"
 				id="uv-slot-remove-{index}"
 				title="Remove this image"
 				aria-label="Remove this image"
@@ -679,7 +692,7 @@
 				<button
 					class="uv-tool {$uvFaceFilter === 'selection' ? 'uv-tool-active' : ''}"
 					id="uv-filter-faces"
-					title="Only the faces selected in Edit Mesh (a cube's six sides share one UV square, so this is how you edit one side)"
+					title="Edit only the faces selected in Edit Mesh. Needed wherever faces share UV space, so a drag moves one face instead of all of them."
 					aria-label="Only the faces selected in Edit Mesh"
 					aria-pressed={$uvFaceFilter === 'selection'}
 					onclick={() => uvFaceFilter.set($uvFaceFilter === 'selection' ? 'all' : 'selection')}
@@ -687,6 +700,9 @@
 					<Filter size={15} aria-hidden="true" />
 				</button>
 				<span class="truncate text-[11px] text-gray-400">{target ? target.name || 'object' : 'no selection'}</span>
+				{#if $selectedObjects.length > 1}
+					<span id="uv-multi-note" class="shrink-0 text-[10px] text-amber-400">1 of {$selectedObjects.length} selected</span>
+				{/if}
 				{#if $uvFaceFilter === 'selection'}
 					<span id="uv-filter-note" class="shrink-0 text-[10px] {faceScope ? 'text-primary-300' : 'text-amber-400'}">
 						{faceScope ? `${faceScope.size} face tris` : 'no face selection'}
@@ -712,8 +728,9 @@
 					{@render slotRow(material, index)}
 				{/each}
 				<p class="px-2 pt-1.5 text-[10px] leading-relaxed text-gray-500">
-					Drop an image on a slot to texture it, or use the ＋ button. Textures are
-					shared with peers.
+					Drop an image on a slot, or use its image button, to texture it — shared
+					with peers. Slots come from the model; adding new ones and assigning faces
+					to them is not supported yet.
 				</p>
 			{/if}
 			<!-- one hidden input for every row; pendingSlot says which asked -->

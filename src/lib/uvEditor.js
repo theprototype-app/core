@@ -94,6 +94,71 @@ export function materialsOf(object) {
 }
 
 /**
+ * Which object the UV editor should show, given the selection and edit mode.
+ * Four reported problems come back to this one question:
+ *
+ * - `selectedObject` is STICKY (it keeps the last object after a deselect), so
+ *   deselecting left the previous object's texture on screen. The SET is what
+ *   answers "is anything selected".
+ * - Right-click ▸ Edit Mesh enters face-edit WITHOUT making the object the
+ *   primary selection, so the editor stayed empty until you clicked the object
+ *   first. An active edit session now counts as the target.
+ * - An imported .obj/.gltf arrives as a GROUP with no geometry of its own, so
+ *   resolve down to a child mesh that actually has UVs.
+ * - Multi-select: the editor edits ONE object, so it takes the primary and the
+ *   UI says how many are selected.
+ *
+ * @param {any} primary `$selectedObject` @param {string[]} set `$selectedObjects`
+ * @param {string|null} editing an active mesh/face edit uuid, if any
+ * @returns {any}
+ */
+export function uvTargetOf(primary, set, editing) {
+	const group = get(objectsGroup);
+	// an active edit session wins: you are demonstrably working on that object
+	if (editing) {
+		const edited = group?.getObjectByProperty('uuid', editing);
+		if (edited) return meshWithUvs(edited);
+	}
+	// nothing selected — do NOT fall back to the sticky primary
+	if (!set?.length) return null;
+	const candidate =
+		primary && primary.uuid && set.includes(primary.uuid)
+			? primary
+			: group?.getObjectByProperty('uuid', set[0]);
+	return candidate ? meshWithUvs(candidate) : null;
+}
+
+/** The object itself when it is a mesh, else its first descendant mesh WITH uvs
+ * (an imported .obj/.gltf is a Group of meshes), else its first mesh.
+ * @param {any} object @returns {any} */
+export function meshWithUvs(object) {
+	if (!object) return null;
+	if (object.geometry?.attributes?.position) return object;
+	/** @type {any} */ let firstMesh = null;
+	/** @type {any} */ let textured = null;
+	object.traverse?.((/** @type {any} */ child) => {
+		if (!child.geometry?.attributes?.position) return;
+		if (!firstMesh) firstMesh = child;
+		if (!textured && child.geometry.attributes.uv) textured = child;
+	});
+	return textured ?? firstMesh ?? null;
+}
+
+/**
+ * The slot's texture IMAGE for the editor backdrop when there is no
+ * `mapDataUrl`. An imported model's textures are real THREE.Textures that never
+ * went through applyMap, so the editor drew an empty square for every OBJ/GLTF
+ * import. `texture.image` is an HTMLImageElement / ImageBitmap / canvas, all of
+ * which drawImage accepts — but an undecoded <img> has no size and would throw.
+ * @param {any} object @param {number} slot @returns {any}
+ */
+export function textureImageOf(object, slot = 0) {
+	const image = materialsOf(object)[slot]?.map?.image;
+	if (!image) return null;
+	return image.width || image.videoWidth ? image : null;
+}
+
+/**
  * Can this object be UV-edited? Needs a uv attribute to edit and has to fit in
  * one snapshot message (the commit swaps the WHOLE geometry).
  * @param {any} object @returns {{ok: boolean, reason: string}}

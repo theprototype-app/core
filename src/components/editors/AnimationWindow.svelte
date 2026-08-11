@@ -21,7 +21,7 @@
 		addKey, updateKey, removeKey, sampleTrack, channelValue,
 		createClip, renameClip, duplicateClip, deleteClip, setActiveClip,
 		beginAnimGesture, endAnimGesture, play, pause, stop, scrub,
-		PRESETS, applyPreset, autoKeyFor, setAutoKey
+		PRESETS, applyPreset, autoKeyFor, setAutoKey, bakeAnimations
 	} from '$lib/animationPreview';
 	import { showToast, openSceneSection } from '../../stores/appStore.js';
 	// the clips a model was IMPORTED with are a different system (replicated,
@@ -392,6 +392,22 @@
 					danger: true,
 					disabled: !authoredClips.length,
 					action: () => activeClipId && deleteClip(uuid, activeClipId)
+				},
+				{ section: 'Export' },
+				{
+					label: 'Check the GLTF bake',
+					disabled: !tracks.length,
+					tooltip:
+						'Authored clips are sampled into real animation tracks whenever you export GLTF — this reports what this object would carry',
+					action: () => {
+						const baked = bakeAnimations(target, uuid);
+						const names = baked.map((/** @type {any} */ c) => c.name + ' (' + c.duration.toFixed(2) + 's)');
+						showToast(
+							baked.length
+								? 'A GLTF export carries ' + names.join(', ') + ' with this object.'
+								: 'This object has no clip that a GLTF export can carry yet.'
+						);
+					}
 				}
 			]
 		};

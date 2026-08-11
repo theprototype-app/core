@@ -937,6 +937,132 @@ export function removeKey(uuid, trackId, index, clipId) {
 	}));
 }
 
+// --- baking to a THREE clip --------------------------------------------------
+// An authored clip is keys over OUR channels, which nothing outside this module
+// understands. Baking SAMPLES it into real KeyframeTracks so the same movement
+// can leave through the GLTF exporter or drive an AnimationMixer.
+//
+// It is a sample, not a translation, on purpose: our per-segment cubic-bezier
+// easing has no glTF equivalent (glTF interpolation is LINEAR, STEP or
+// CUBICSPLINE with tangents), and euler tracks do not exist there at all — so
+// rotation is composed to quaternions per sample. 30 fps keeps a 2s door at 61
+// keys, small enough to ship and dense enough that the ease reads correctly.
+
+const BAKE_FPS = 30;
+
+/**
+ * Sample an authored clip into a THREE.AnimationClip targeting `object`.
+ * @param {any} object @param {Clip} clip @param {{fps?: number, name?: string}} [opts]
+ * @returns {any} an AnimationClip, or null when the clip drives nothing
+ */
+export function clipToThreeClip(object, clip, opts = {}) {
+	if (!object || !clip?.tracks?.length) return null;
+	const fps = Math.max(4, num(opts.fps, BAKE_FPS) || BAKE_FPS);
+	const duration = Math.max(clip.duration, 0.001);
+	const frames = Math.max(1, Math.round(duration * fps));
+	const times = [];
+	for (let i = 0; i <= frames; i++) times.push(Math.min((i / fps), duration));
+
+	const channels = new Set(clip.tracks.map((t) => t.channel));
+	const wantsPos = ['pos.x', 'pos.y', 'pos.z'].some((c) => channels.has(c));
+	const wantsRot = ['rot.x', 'rot.y', 'rot.z'].some((c) => channels.has(c));
+	const wantsScale = ['scale', 'scale.x', 'scale.y', 'scale.z'].some((c) => channels.has(c));
+	const wantsVisible = channels.has('visible');
+
+	const base = {
+		pos: object.position.toArray(),
+		rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+		scale: object.scale.toArray()
+	};
+	const local = originOffsetOf(object);
+	/** @type {number[]} */
+	const pos = [];
+	/** @type {number[]} */
+	const rot = [];
+	/** @type {number[]} */
+	const scale = [];
+	/** @type {boolean[]} */
+	const visible = [];
+	const quat = new THREE.Quaternion();
+	const euler = new THREE.Euler();
+	const originVec = new THREE.Vector3();
+	const scaleVec = new THREE.Vector3();
+	const offsetA = new THREE.Vector3();
+	const offsetB = new THREE.Vector3();
+
+	for (const t of times) {
+		const values = evaluateClip(clip, t);
+		const px = values['pos.x'] ?? base.pos[0];
+		const py = values['pos.y'] ?? base.pos[1];
+		const pz = values['pos.z'] ?? base.pos[2];
+		const rx = values['rot.x'] ?? base.rot[0];
+		const ry = values['rot.y'] ?? base.rot[1];
+		const rz = values['rot.z'] ?? base.rot[2];
+		const uniform = values['scale'];
+		const sx = values['scale.x'] ?? uniform ?? base.scale[0];
+		const sy = values['scale.y'] ?? uniform ?? base.scale[1];
+		const sz = values['scale.z'] ?? uniform ?? base.scale[2];
+		let fx = px;
+		let fy = py;
+		let fz = pz;
+		// the ORIGIN pivot has to be baked in as well, or an exported door spins
+		// about its own centre (glTF has no pivot concept)
+		if (local && wantsRot) {
+			originVec.fromArray(local);
+			offsetA
+				.copy(originVec)
+				.multiply(scaleVec.fromArray(base.scale))
+				.applyEuler(euler.set(base.rot[0], base.rot[1], base.rot[2]));
+			offsetB.copy(originVec).multiply(scaleVec.set(sx, sy, sz)).applyEuler(euler.set(rx, ry, rz));
+			fx += offsetA.x - offsetB.x;
+			fy += offsetA.y - offsetB.y;
+			fz += offsetA.z - offsetB.z;
+		}
+		if (wantsPos || (local && wantsRot)) pos.push(fx, fy, fz);
+		if (wantsRot) {
+			quat.setFromEuler(euler.set(rx, ry, rz));
+			rot.push(quat.x, quat.y, quat.z, quat.w);
+		}
+		if (wantsScale) scale.push(sx, sy, sz);
+		if (wantsVisible) visible.push((values['visible'] ?? 1) >= 0.5);
+	}
+
+	const name = object.name || object.uuid;
+	const tracks = [];
+	if (pos.length) tracks.push(new THREE.VectorKeyframeTrack(name + '.position', times, pos));
+	if (rot.length) tracks.push(new THREE.QuaternionKeyframeTrack(name + '.quaternion', times, rot));
+	if (scale.length) tracks.push(new THREE.VectorKeyframeTrack(name + '.scale', times, scale));
+	if (visible.length) tracks.push(new THREE.BooleanKeyframeTrack(name + '.visible', times, visible));
+	if (!tracks.length) return null;
+	return new THREE.AnimationClip(opts.name ?? clip.name, duration, tracks);
+}
+
+/** Every authored clip of an object, baked. @param {any} object @param {string} uuid */
+export function bakeAnimations(object, uuid) {
+	const set = getAnimSet(uuid);
+	if (!set) return [];
+	return Object.values(set.clips)
+		.map((clip) => clipToThreeClip(object, clip))
+		.filter(Boolean);
+}
+
+/** Baked clips for every object in a subtree that has authored animation — what a
+ * GLTF export hands to the exporter's `animations` option. @param {any} root */
+export function bakeAnimationsForExport(root) {
+	if (!root) return [];
+	const sets = get(animations);
+	/** @type {any[]} */
+	const clips = [];
+	root.traverse?.((/** @type {any} */ object) => {
+		if (!sets[object.uuid]) return;
+		for (const clip of bakeAnimations(object, object.uuid)) clips.push(clip);
+	});
+	// a root that IS the animated object (traverse covers it, but a bare mesh
+	// passed straight in has no traverse in some call paths)
+	if (!root.traverse && sets[root.uuid]) clips.push(...bakeAnimations(root, root.uuid));
+	return clips;
+}
+
 // --- presets -----------------------------------------------------------------
 // Recipes for the movements people actually build. The door is the one the whole
 // origin/hinge story exists for: place the origin on the hinge edge (Inspector ▸

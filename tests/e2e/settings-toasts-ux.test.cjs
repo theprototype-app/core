@@ -50,13 +50,17 @@ h.run(async () => {
 	h.check(filtered.hidden > 0, `search hides non-matching rows (${filtered.hidden} hidden)`);
 	h.check(filtered.shown > 0 && filtered.shownAllMatch, `only rows matching "shadow" remain (${filtered.shown} shown)`);
 
-	// clearing the query restores the rows
-	await A.page.locator('#settings-search').fill('');
+	// clearing via the X button restores the rows (the button only exists with a query)
+	h.check(await A.page.locator('#settings-search-clear').isVisible(), 'a clear (X) button shows while a query is entered');
+	await A.page.locator('#settings-search-clear').click();
 	await A.page.waitForTimeout(300);
-	const restored = await A.page.evaluate(
-		() => [...document.querySelectorAll('.setting-row')].filter((r) => r.style.display === 'none').length
-	);
-	h.check(restored === 0, `clearing the search restores every row (${restored} still hidden)`);
+	const restored = await A.page.evaluate(() => ({
+		hidden: [...document.querySelectorAll('.setting-row')].filter((r) => r.style.display === 'none').length,
+		query: document.querySelector('#settings-search').value,
+		clearGone: !document.querySelector('#settings-search-clear')
+	}));
+	h.check(restored.query === '' && restored.hidden === 0, `the X clears the query and restores every row (${restored.hidden} still hidden)`);
+	h.check(restored.clearGone, 'and the X button disappears once the box is empty');
 
 	await h.finish(browser);
 });

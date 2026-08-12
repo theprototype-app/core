@@ -3,6 +3,8 @@
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
 	import { chromiumMajor, aoSupported } from '$lib/viewMode';
+	import { faceEditObject, meshEditOutline } from '$lib/faceEdit';
+	import { editingObject } from '$lib/meshEdit';
 	import { coarsePointer } from '$lib/inputDevice';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
@@ -208,7 +210,13 @@
 		// cleared outline; a multi-selection outlines every member. $objectsGroup
 		// is a live dependency, so late-arriving children re-outline on the poke.
 		outlineEffectSelected.selection.clear();
-		if ($objectsGroup)
+		// While a mesh-edit session is open the outline is glare, not information:
+		// it is composited AFTER the whole scene, so it paints over the vertex
+		// handles and the edge/face highlights (which already draw depthTest-off
+		// on top of the geometry) and hides exactly what you are selecting. The
+		// Display section of the mesh toolbox turns it back on.
+		const editing = !!($editingObject || $faceEditObject) && !$meshEditOutline;
+		if ($objectsGroup && !editing)
 			for (const uuid of $selectedObjects) addMeshes(outlineEffectSelected.selection, uuid);
 		if ($lockedObjects && $objectsGroup) {
 			outlineEffectLocked.selection.clear();

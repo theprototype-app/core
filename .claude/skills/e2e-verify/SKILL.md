@@ -17,7 +17,20 @@ npm run e2e -- ping drawing      # subset by name (normal during development)
 ```
 
 **Every feature phase adds a suite here** (not in scratchpad) and updates any suite its
-UI changes break — in the same commit. helpers.cjs exports: `launch(options)` (pass
+UI changes break — in the same commit. The UV editor's are `uv-editor` (dock tab, UV
+map, drag, multi-select, box/lasso), `uv-materials` (per-slot textures), `uv-paint`,
+`uv-target` (which object the editor shows), `uv-dense` (models over the snapshot
+cap), `uv-live-faces` (live paint preview + face scoping), `uv-texture-params`
+(sampler state + the orientation arbiter), `uv-slots` + `uv-slots-persist` (UV4
+slots, live and across a reload), plus `mesh-grab-uv` and `object-sync` — the first
+coverage this repo has of the gizmo-grab uv path and of the late-joiner object sync.
+The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh-vertex-bevel`,
+`mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
+`mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
+clicks) and `uv-unwrap-module` (a module supplying an unwrap backend, and wasm from a blob URL).
+Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
+operators that author it, two-peer delivery and an old-peer message), and
+`mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
 `{args:[...]}` for fake media), `setupPage(browser, name)` (init script + hydration +
 peer id), `connect(from, to, settleMs=9000)`, `check(ok, label)`,
 `eventually(fn, predicate, label, timeout)`, `projectPoint(page, [x,y,z])` (world →
@@ -31,6 +44,76 @@ while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE
 The expensive failures in #16 were not broken code — they were assertions that
 passed while the user watched the feature misbehave:
 
+- **An AGGREGATE health check cannot see a LOCAL loss.** `mesh-uv-preserve` asserted
+  the uv attribute exists, `uv.count === position.count`, and a healthy global
+  spread — all three stayed green while six corners of ONE face sat on texel (0,0)
+  and the user watched that face's texture vanish. An earlier investigation used
+  those same aggregates and concluded "visual artifact, the data is fine". Assert the
+  PART the operation touched: capture the picked face's triangle indices first, then
+  read those corners back (`mesh-grab-uv`). Sum/min/max/count over a whole mesh hides
+  any localised defect.
+- **Write the check BEFORE the fix when a design choice is genuinely ambiguous, and
+  let it decide.** Whether a `flipY=false` texture wants canvas y = v·h or (1−v)·h had
+  two confident, opposite answers. Painting a known UV quadrant and demanding the
+  pixels land where that quadrant SAMPLES settled it in one run: tr=656/br=0 before,
+  br=653/tr=0 after (`uv-texture-params`). Reasoning alone was a coin flip on a fix
+  that would have looked plausible either way.
+- **A GEOMETRIC assertion must measure the part that MOVES.** "How far does the mesh reach"
+  reported the SAME number for a flat chamfer and a hollow one — a hollow moves the INTERIOR
+  rings while the outer corners stay — and on a box it was reading a different corner entirely.
+  This cost three wrong red/green readings across the two bevels before the metric was fixed to
+  look inside the affected band and take the min or max according to which way the feature
+  pushes. Before writing the number, ask which vertices the op is supposed to move.
+- **WATERTIGHTNESS is the single best check for any op that rebuilds geometry.** Count the mesh
+  edges shared by exactly two triangles; anything else is a crack or an overlap. It caught four
+  separate defects in one batch that no visual check would have: the edge bevel leaving the
+  third face at a corner on the old vertex (12 odd edges), a multi-segment bevel strip becoming
+  a chain the endpoint face did not meet (2 per extra segment), the knife passing a
+  single-crossing triangle through unchanged (10), and its quad decomposition pairing two
+  corners the wrong way so the halves overlapped (8). Fifteen lines of helper, reusable in
+  every mesh suite.
+- **Drive the REAL input path, not the store, when the report is about input.** The first
+  edge-gizmo suite called `pickEdge` directly: correct seating math, and it could not have
+  caught a broken pick path — which is exactly what "edges still have no gizmo" would have
+  meant. `mesh-gizmo-modes` and `mesh-knife` click the viewport with `page.mouse` through
+  `h.projectPoint`, and the knife suite drives the whole two-click gesture including the
+  rubber band and Escape.
+- **An ASYNC seam hands back a promise: await it, do not sleep on it.** `uv-unwrap-module`
+  first slept 200 ms for a module's backend registration and read the registry too early, then
+  blamed a plausible-sounding second module instance under vite's HMR stamps. That hypothesis
+  was TESTED and disproved; the actual answer was that `api.registerUnwrapBackend` returns the
+  promise precisely so nobody has to guess. When a fixed sleep is load-bearing, look for the
+  promise you were meant to await.
+- **COMPUTE THE COUNTERFACTUAL in-test when a fix replaces an unreliable heuristic.**
+  Stored mesh topology exists because deriving quads from coplanarity fails on a twisted
+  band — but the first subdivide guard used a FLAT box face, where derivation produces
+  the same answer, so it passed with the feature ripped out. The fix is not just a
+  harder input: it is asserting the gap. Clear the stored data, re-run the derived path
+  in the same evaluate, and compare (`derivation alone recovers 1 of the 4 sub-quads`,
+  `10 quads kept where derived gives 6`). The check then carries its own proof that the
+  scenario is adversarial, and a reader six months later can see WHY it matters.
+- **A regression guard that RECORDS a limitation must be flipped, not deleted, when the
+  limitation goes.** `mesh-loop-hardening` 3b asserted `paired === 0` — the number to
+  beat. Landing stored topology made it assert `paired === wall` instead, keeping the
+  twist MEASUREMENT (dot -0.07) that proves derivation could never have done it. Deleting
+  the section would have thrown away the only evidence of why the feature exists.
+- **A wire spy that does not CALL THROUGH makes delivery and loss identical.** Every
+  existing spy in this repo replaces `send()` and drops the message. A probe built
+  that way "proved" a late joiner got an empty scene, which aimed a whole planned
+  send-channel rewrite at a non-bug; a pass-through wrapper
+  (`const orig = conn.send.bind(conn); conn.send = m => { record(m); return orig(m) }`)
+  showed the channel was fine. Spy the RIGHT object too: `sendObjects` uses
+  `conn.send` on the raw DataConnection, not `peers.send`.
+- **When the failure signature is SILENCE, instrument the silence.** Nothing threw,
+  nothing logged, the scene was just empty. Add an `unhandledrejection` listener and
+  the connection's own `error` event (neither appears anywhere else in the suite) and
+  record what actually left the wire, or you are reading tea leaves (`object-sync`).
+- **"It still looks right" is not "it survived".** A material array comes back from a
+  GLTF round trip as a Group of single-material children that renders IDENTICAL
+  pixels — that is why the reload bug reached a user. Assert the SHAPE (`type ===
+  'Mesh'`, child-mesh count, slot count, group count, uuid), never the appearance
+  (`uv-slots-persist`). Reload tests must also call `autosave.restoreSnapshot()`
+  explicitly: the restore is offered as a sticky prompt, never applied automatically.
 - **Position/layout asserts need a TIGHT BAND and a forcing start state.** "the
   section label is somewhere below the sticky header" is true when NO scrolling
   happened at all (short panel = most sections collapsed), so a deep-link check
@@ -48,6 +131,39 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **A failing check is as often a wrong PREMISE as a wrong fix — verify which before
+  changing code.** Every red in the M1-M6 batch was the test, not the feature: an
+  indexed BoxGeometry counted as 8 triangles; a smooth-shading check used a SPHERE,
+  whose geometry already ships smooth normals, so it could never have failed; a
+  merge-by-distance check expected BOTH near-coincident corners to vanish when only one
+  had a partner; a dissolve check expected 2 triangles where the merged patch's
+  boundary legitimately fans into 4. Re-derive what the code SHOULD do, then fix the
+  assertion — and say so in the commit, because a "fixed" test that was never broken is
+  a lie in the history.
+- **Changing a DEFAULT turns every suite that silently relied on it red.** Making Move
+  the default armed op (so a click stops committing an extrude) broke
+  `faces-nested-toolbar`, whose premise was "Extrude is the default, so the params row
+  is showing". The fix is to ARM the op explicitly in the test, never to weaken the
+  check — and the same batch's `mesh-edge-mode` needed the same treatment when LOOP and
+  RING became different commands. Both belong to the "asserting the OLD contract"
+  family: when a deliberate behaviour change makes a suite red, update the contract it
+  encodes and say so in the commit.
+- **A store-level repro must replay the FULL handler sequence, or it proves nothing.**
+  `autoApplyFaceOp()` returns false unless the highlight was set first, so a probe that
+  called only `pickFaceUnit` + `autoApplyFaceOp` reported "nothing happens" for a path
+  that fires every time in the app. Replicate what the component does — for a face
+  click that is `highlightFaceByTriangle` → `pickFaceUnit` → `autoApplyFaceOp` — or read
+  the handler and mirror it exactly.
+- **`innerText` reflects CSS `text-transform`.** A cheat-sheet check comparing `'Faces'`
+  failed against text CSS had uppercased to `FACES`, while the UI was perfectly correct.
+  Compare case-insensitively, or read `textContent` off the source element.
+- **When a report says "X selects everything" / "the wrong thing happened", check the
+  UI before the algorithm.** Two such reports in this batch reproduced as CORRECT at
+  the store level: six near-identical 18px icon buttons in a row had Select-linked next
+  to Loop and Select-all next to Invert, and Select-linked really does select every
+  face of a one-piece mesh. The fix was making commands read as words, not touching the
+  logic. Reproduce at the STORE level first — if it is right there, the bug is in what
+  the user could see or press.
 - **Prove a regression guard by BREAKING the code**: EDIT the fix out (put the old line
   back), run the suite, confirm the new check goes red, then restore. Both
   release-blocking fixes in 1.2.0 were validated this way (shift-select: 8 page errors
@@ -87,8 +203,11 @@ $env:APP_URL='https://theprototype.app:5177/'; npm run e2e -- <name>
 through on this npm version: it parses them as npm config, vite gets `dev 5177`
 as a positional and binds a random free port over plain http.)
 
-Assigned ports: main checkout 5173 (the user's), lane-c 5174, lane-vr 5175,
-lane-ui 5176 (SHADOWED 2026-08-02 — moved to 5186), lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. Two-peer suites still meet on the signaling server
+Assigned ports: main checkout 5173 (the user's), lane-c 5174 (mesh work 2026-08-09+
+uses **5182** on that same worktree), lane-vr 5175,
+lane-ui 5176 (SHADOWED 2026-08-02 — moved to 5186), lane-flow 5177, lane-aiphys 5178, lane-editmesh 5183. A fresh worktree has NO `certs/`, so vite serves plain
+http until you run `npm run certs` — the suite's https URL then fails to connect.
+Two-peer suites still meet on the signaling server
 (now the self-hosted peerjs.theprototype.app box), so concurrent lanes' test peers
 never collide (random ids). PORT-SHADOW TRAP: another process holding only
 `[::1]:PORT` does NOT trip `--strictPort` (vite binds 0.0.0.0) — but
@@ -101,6 +220,23 @@ serves YOUR code: `curl -sk https://localhost:PORT/src/lib/<file>.js | grep
 debug cycle in #15). Remember two-peer runs ALWAYS need the PEER_CONFIG env on
 a localhost APP_URL — `helpers.connect` times out on the Approve button
 otherwise (the app dials the local :9001 server that isn't running).
+
+**This is the #1 false regression in a lane, so learn its shape (17-D, cost a
+bisect): SEVERAL unrelated suites fail AT ONCE, every one of them on
+`locator.click: Timeout … waiting for getByRole('button', { name: 'Approve' })`.**
+That is not your diff — it is every TWO-PEER suite (undo, multi-select,
+physics-joints, animated-models, module-sdk, scene-music …) dying inside
+`helpers.connect` because nothing is listening on :9001. Check
+`Test-NetConnection -ComputerName localhost -Port 9001 -InformationLevel Quiet`
+BEFORE bisecting, then re-run with the self-hosted box:
+
+```powershell
+$env:PEER_CONFIG='{"mode":"custom","custom":{"host":"peerjs.theprototype.app","port":443,"path":"/peerjs","secure":true}}'
+```
+
+Starting a fresh dev server on another port is the cheap way to rule out server
+degradation first; if the failures survive that AND cluster on Approve, it is the
+signaling server every time.
 
 ## The debugStores hook — the ONLY sanctioned test API
 
@@ -117,7 +253,7 @@ explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets, THREE,
 GLTFExporterModule, snapping, flowSockets, networkQuality, packs, customNodes,
 nodesHandler, nodeCatalog, objectMenu, flowGraphsCtl, objectFlow, vrSleeve,
 gridSettings, cameraBookmarks, cameraObjects, cameraHelpers, cameraPreview,
-cameraPip, addObjects` (+ from the
+cameraPip, addObjects, multiTransform, objectOrigin, bvhPicking` (+ from the
 flowStore spread: `flowGraphs, activeGraphId, setActiveGraph, allNodes, allEdges,
 findNodeAnyGraph, SCENE_GRAPH`; `moduleSDK.pointerRayNow()` = the api.pointerRay
 internals, `moduleSDK.applyModuleMessage(msg)` = simulate a PEER's module message
@@ -173,6 +309,47 @@ const value = await page.evaluate(() =>
   type), `.ctx-match` rows in search mode, `[data-ctx-active="true"]` = the keyboard
   cursor, `.ctx-grip` = the search-list resize handle, and a SUBMENU is a fixed div
   with NO role attribute (several suites locate them that way — do not add one).
+- **MESH tests: a fresh `BoxGeometry` is INDEXED.** `position.count / 3` is **8**, not
+  12, and reading a triangle's corners as `position[ti*3 + k]` reads unrelated vertices
+  and invents diagonal normals. This bit FOUR separate premise checks across 15-G and
+  M1-M6 — always `geo.index ? geo.index.count : geo.attributes.position.count`, and
+  index corners through `geo.index.getX(...)`. Anything that has been through
+  `convertToMesh` / `applyMeshGeo` / a face op IS non-indexed, which is why the same
+  helper passes in one suite and lies in the next.
+- **Assert the COMPUTED style, not the class string**, whenever a component's scoped
+  CSS could beat a utility (it is unlayered, so it does). The armed toolbox button
+  carried `bg-primary-600` in `className` while rendering fully transparent in the dark
+  theme; only `getComputedStyle(el).backgroundColor` caught it. Same shape as the
+  global-`.hidden` trap, one scope down.
+- **Render-count checks: calibrate the passes, don't assume one.** Each mesh is drawn
+  once per pass (shadow map + colour = 2 here), so isolate an object by toggling
+  `visible` across two `renderer.render` calls and derive the multiplier from a
+  known-good state (`drawn / tris`) instead of hardcoding it. `renderer.info.render
+  .triangles` after `reset()` is the measurement — it is how "the merged mesh renders 0
+  of its 28 triangles" was proven.
+- Mesh-edit anchors: toolbox root `#mesh-edit-popup` (a `ToolboxWindow`: header
+  `.toolbox-header.move-handle`, body `.toolbox-body`, footer `.toolbox-status`, grip
+  `.dw-resize`); modes `#mesh-mode-vertices|edges|faces`; granularity
+  `#mesh-gran-quad|face|triangle|shell|object`; ops `#mesh-op-<op>` (armed carries
+  `mesh-op-active` + `tbx-on`); cleanup `#mesh-fix-normals|merge` + `#mesh-shading`;
+  edges `#edge-loop|dissolve|clear` + `#edge-sel-count`; session cancel
+  `#mesh-edit-cancel` with the inline `#mesh-cancel-confirm` / `#mesh-cancel-yes` /
+  `#mesh-cancel-no`; the key list is its OWN window `#mesh-keys-popover` opened by
+  `#mesh-keys-help`. Sculpt `#sculpt-toolbar` + `#sculpt-op-*`.
+  **Selection commands are TEXT buttons whose ids are PER MODE** — `#mesh-sel-all` in
+  faces but `#mesh-sel-eall` / `#mesh-sel-vall` in edges / vertices (same for
+  `invert`/`einvert`/`vinvert`), so a selector hardcoding the faces ids silently
+  matches nothing in the other two modes.
+- The face highlight is TWO meshes: `face-edit-overlay` = the SELECTION (opacity ~0.45)
+  and `face-edit-hover` = the cursor wash (~0.14). A check for "is this face
+  highlighted" has to say WHICH — they were one mesh until a deselected face kept
+  looking selected under the cursor.
+- `objectActions.flyTo(pos, target, duration)` divides by `duration` — passing **0**
+  makes the first frame `NaN`, which NaNs the camera and then the spatial-audio panner
+  (`Failed to set the 'value' property on 'AudioParam'`). Use a real duration and wait.
+- Synthetic `pointerdown/up` on a `dragWindow` header logs harmless
+  `setPointerCapture: No active pointer` page errors — expected for synthesized events;
+  don't count them in a pageerror guard for drag tests.
 - Programmatic scene setup: `__stores.commandsHandler.sceneCommand('/create box')`
   (geometry names are capitalized THREE types — box/sphere/Button…, NOT "cube").
 - Icons are `@lucide/svelte` `<svg>` components (Font Awesome removed): select
@@ -220,20 +397,36 @@ const value = await page.evaluate(() =>
 
 ## Repo-external modules (theprototype-app/modules)
 
-Modules in the SEPARATE modules repo have no committed suite here (the suite must
-not depend on a sibling checkout) — verify them with a SCRATCH playwright script
-through the REAL install path (the untangle test-flight is the reference):
+**17-A moved dungeon/piano/avatar/essentials/car OUT of core**, so several core
+suites now depend on installing a module from the sibling checkout. Use the
+committed helper rather than hand-rolling it:
 
 ```js
-await page.evaluate(() => window.__stores.modulesOpen.set(true));
-await page.getByRole('button', { name: 'User', exact: true }).click(); // the User tab
-await page.locator('#install-module-zip').setInputFiles(ZIP_PATH);     // hidden input — fine
+if (!require('fs').existsSync(h.moduleZipPath('dungeon'))) {
+	console.log('SKIP: ../theprototype.app-modules zips not built');   // never FAIL
+	await h.finish(browser); return;                                    // a fresh clone has none
+}
+await h.installModule(A, 'dungeon');
+await h.installModule(B, 'dungeon');   // EVERY peer — see below
 ```
 
-Then assert the module's scene-root group / behavior, and simulate a PEER's ops via
-`__stores.moduleSDK.applyModuleMessage({type:'module', moduleId, ...})` (the real
-applier path, no cloud dependency). Fresh browser CONTEXT per run — installed user
-modules persist in storage.
+- **Every peer needs it, including the late joiner.** A peer without the module
+  cannot rebuild from the replicated `{seed, params}` — determinism IS the
+  netcode, so the state sync alone is not enough. Forgetting peer C is the
+  failure mode (`dungeon.test`/`dungeon-play` both hit it).
+- `npm run pack -- --all` in the modules repo builds the zips the helper reads.
+- The **User tab's accessible name carries a count** ('User (3)') since 17-A —
+  match it as `getByRole('tab', { name: /^User/ })`, never `exact: true`. The
+  tabs are `role="tab"`, not buttons (a button-role query silently never
+  matches — that was the long-standing user-modules failure).
+- flowbite `Toggle` renders an **sr-only** checkbox: click the wrapping
+  `label`, and give the toggle an id when a card carries more than one.
+
+For a module with no committed suite, drive it through the REAL install path in a
+scratch script, then assert its scene-root group / behavior, and simulate a
+PEER's ops via `__stores.moduleSDK.applyModuleMessage({type:'module', moduleId,
+...})` (the real applier path, no cloud dependency). Fresh browser CONTEXT per
+run — installed user modules persist in storage.
 
 ## Two-peer flow (real replication)
 
@@ -254,6 +447,36 @@ re-read the id (`peer.id = await …peers.subscribe…peer.id`) — a reload mid
 drops the P2P session.
 
 ## Known flakes / traps
+
+- **A two-peer failure is signaling until proven otherwise.** The default PeerJS
+  cloud goes flaky/rate-limited under a long verification run: `pong` failed
+  with ZERO changes to it, then passed immediately under
+  `PEER_CONFIG='{"mode":"custom","custom":{"host":"peerjs.theprototype.app","port":443,"path":"/peerjs","secure":true}}'`.
+  Re-run with PEER_CONFIG before believing a two-peer red — and before blaming
+  your diff.
+- **Probing indices past the end of a collection can THROW, killing the whole evaluate.**
+  `meshEdit.selectHandle(i)` for an out-of-range `i` dereferences `handles[index]`, so a search
+  loop bounded by a guessed 400 died where one bounded by the vertex count did not. If a probe
+  loop is how the test finds its target, bound it by something real.
+- **A search that MUTATES cannot also build.** Finding handles by calling `selectHandle(i)` and
+  watching the proxy REPLACES the selection on every step, so searching while building a
+  multi-selection destroys what it just built (0 selected, silently). Find all the indices
+  first, then select.
+- **`PlaneGeometry` lies in XY, not XZ** — a flat test grid spans x/y and "out of plane" is z.
+  Worth double-checking any axis assumption against the geometry three actually builds.
+- **`highlightFaceByTriangle` HEALS a stale selection by clearing it** (`healStale`, default
+  true): if the picked unit is not a subset of the current selection, the selection is emptied.
+  Building a set with `faceEditSelectedTris.set(...)` and then highlighting one of its members
+  therefore WIPES it whenever granularity resolves a bigger unit — an inset cap is coplanar
+  with its ring, so Face granularity resolves all ten triangles and the heal fires. Pass
+  `false` when the selection is the thing you mean.
+- **Three peers is the practical ceiling on a loaded box**: `setupPage`'s
+  `waitForFunction` waiting for `window.__stores` times out booting a THIRD
+  page while suites run back to back (dungeon/dungeon-play stop there). Not a
+  product bug; give the box a rest or run the suite alone.
+- **Pointer Lock is DENIED in headless Chromium** ("Unable to use Pointer Lock
+  API"), so anything gated on it (possess `mouseLook`, play-mode camera swap)
+  cannot be proven here — say so and hand it to the user's manual check.
 
 - **Connect / open-core (#14)**: `connect-states.test.cjs` drives the pill state
   machine single-page by STUBBING the dead-signaling peer (`peer.open=true` +
@@ -302,7 +525,12 @@ drops the P2P session.
   view-mode, vr-passthrough). `node-search` came OFF this list in #16-P2 — two of
   its assertions were stale (they demanded menus never scroll and are never
   height-capped, which a later change deliberately reversed). When a "known
-  failing" suite blocks you, check whether it is asserting the OLD contract.
+  failing" suite blocks you, check whether it is asserting the OLD contract. That
+  includes assertions YOU wrote earlier in the same session: 17-D's "no hinge
+  button until vertices are picked" went red the moment the fix deliberately made
+  that button always-visible. Fix the assertion, not the code — and replace it with
+  one that still bites (there: pressing the button with nothing picked must change
+  no origin).
 - `add-menu` documents its own flake in a comment at the failing line (a right-tap
   that does not open the viewport menu) — the fastest proof that a failure is not
   yours is still `git stash push -u` → run → `git stash pop`.

@@ -19,7 +19,7 @@ export function resetWindowLayout() {
 	if (typeof localStorage !== 'undefined') {
 		for (const key of Object.keys(localStorage))
 			if (key.startsWith('win:')) localStorage.removeItem(key);
-		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW'].forEach((k) =>
+		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW', 'uvWinW', 'uvWinH'].forEach((k) =>
 			localStorage.removeItem(k)
 		);
 	}
@@ -33,12 +33,16 @@ export function resetWindowLayout() {
 /**
  * @param {any} node
  * @param {{key: string, defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
- *   resizable?: boolean, minW?: number, minH?: number}} options
+ *   resizable?: boolean, axis?: 'x'|'xy', minW?: number, minH?: number}} options
  *   `resizable` (15-B7) adds a bottom-right grabber and persists {w,h} in the
  *   SAME `win:<key>` record — opt-in, so windows that own their sizing (Flow,
  *   Explorer, the object list) are untouched.
+ *   `axis: 'x'` (M0 toolbox) makes the grip WIDTH-only: height stays `auto` so
+ *   the window hugs its content while the grid inside reflows to the width —
+ *   the Photoshop tool-palette idiom. Only `w` is persisted; the cursor becomes
+ *   ew-resize. Default 'xy' keeps every existing consumer byte-identical.
  */
-export function dragWindow(node, { key, defaultRect = {}, resizable = false, minW = 260, minH = 180 }) {
+export function dragWindow(node, { key, defaultRect = {}, resizable = false, axis = 'xy', minW = 260, minH = 180 }) {
 	/** @type {any} */
 	let rect = null;
 	try {
@@ -86,7 +90,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, min
 		if (resizable) {
 			clampSize();
 			if (typeof rect.w === 'number') node.style.width = rect.w + 'px';
-			if (typeof rect.h === 'number') node.style.height = rect.h + 'px';
+			if (axis !== 'x' && typeof rect.h === 'number') node.style.height = rect.h + 'px';
 		}
 		if (typeof rect.left !== 'number' || typeof rect.top !== 'number') return;
 		node.style.left = rect.left + 'px';
@@ -98,7 +102,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, min
 		const payload = { left: rect.left, top: rect.top };
 		if (resizable && typeof rect.w === 'number') {
 			payload.w = rect.w;
-			payload.h = rect.h;
+			if (axis !== 'x') payload.h = rect.h;
 		}
 		localStorage.setItem('win:' + key, JSON.stringify(payload));
 	}
@@ -207,7 +211,8 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, min
 		// built in JS (no markup change needed in every consumer); the diagonal
 		// hint is drawn with a gradient so it needs no icon import
 		grabber.style.cssText =
-			'position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:se-resize;' +
+			'position:absolute;right:0;bottom:0;width:16px;height:16px;' +
+			'cursor:' + (axis === 'x' ? 'ew-resize' : 'se-resize') + ';' +
 			'touch-action:none;z-index:2;background:linear-gradient(135deg,transparent 45%,' +
 			'rgb(255 255 255 / 0.35) 45%,rgb(255 255 255 / 0.35) 55%,transparent 55%);';
 		node.appendChild(grabber);
@@ -219,7 +224,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, min
 			// take the CURRENT rendered size as the baseline (the window may still be
 			// on its CSS default size, with nothing persisted yet)
 			rect.w = node.offsetWidth;
-			rect.h = node.offsetHeight;
+			if (axis !== 'x') rect.h = node.offsetHeight;
 			grabber.setPointerCapture?.(e.pointerId);
 			e.preventDefault();
 			e.stopPropagation(); // never start a drag from the corner
@@ -228,7 +233,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, min
 		const gmove = (e) => {
 			if (!sizing) return;
 			rect.w = (rect.w ?? node.offsetWidth) + e.movementX;
-			rect.h = (rect.h ?? node.offsetHeight) + e.movementY;
+			if (axis !== 'x') rect.h = (rect.h ?? node.offsetHeight) + e.movementY;
 			apply();
 		};
 		/** @param {any} e */

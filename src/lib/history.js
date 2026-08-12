@@ -68,10 +68,86 @@ export function recordEntry(entry) {
 	}
 	undoStack.update((stack) => {
 		const next = [...stack, entry];
-		if (next.length > LIMIT) next.shift();
+		while (next.length > LIMIT) {
+			// 'selection' entries are cheap and disposable (a list of indices), so
+			// a click-heavy mesh session must not push a GEOMETRY step off the
+			// stack — that would leave a sealed session unable to reach its own
+			// start. Evict the oldest selection first, the oldest entry otherwise.
+			const i = next.findIndex((e) => e.kind === 'selection');
+			next.splice(i >= 0 ? i : 0, 1);
+		}
 		return next;
 	});
 	redoStack.set([]);
+	// 15-F: the pre-session redo entries this barrier protected are gone now
+	if (sessionBase >= 0) sessionRedoBase = 0;
+}
+
+// --- 15-F: session-scoped undo (mesh-edit sessions) -------------------------
+// While an Edit Mesh session is active, a live BARRIER keeps undo/redo inside
+// the session's own steps: entries keep landing on undoStack normally (NOT the
+// batch API — beginHistoryBatch diverts entries away, so a mid-session Ctrl+Z
+// would pop PRE-session entries, strictly worse), and sealing on Done collapses
+// everything above the barrier into ONE entry. Driven by editSession.js.
+
+let sessionBase = -1; // undoStack length at session start; -1 = no session
+let sessionRedoBase = 0; // redoStack length at session start (protected below)
+
+/** Open the barrier: undo/redo stop at the CURRENT stack tops. */
+export function beginHistorySession() {
+	sessionBase = get(undoStack).length;
+	sessionRedoBase = get(redoStack).length;
+}
+
+/**
+ * Seal the session.
+ * - 'collapse' (default): pop the session's entries; all-meshgeo/verts on ONE
+ *   uuid with meshgeo at both ends compacts to a single synthetic meshgeo
+ *   (2 position arrays, each already ≤ the per-commit cap — replays and
+ *   replicates through the registered kind, no new wire messages); anything
+ *   else becomes a composite 'session' entry (the aibatch replayer).
+ * - 'keep': just lift the barrier (per-op entries remain).
+ * - 'discard': drop the session's entries (collider PROXY sessions — their
+ *   meshgeo targets a disposed proxy and can never replay).
+ * @param {'collapse'|'keep'|'discard'} [mode] @param {string} [label]
+ */
+export function endHistorySession(mode = 'collapse', label = 'Mesh edit') {
+	if (sessionBase < 0) return;
+	const base = sessionBase;
+	const redoBase = sessionRedoBase;
+	sessionBase = -1;
+	sessionRedoBase = 0;
+	if (mode === 'keep') return;
+	// drop IN-SESSION redo remnants (ops undone just before Done are sealed
+	// away); pre-session redos survive if no in-session entry cleared them
+	redoStack.update((s) => s.slice(0, redoBase));
+	const stack = get(undoStack);
+	if (stack.length <= base) return; // nothing landed above the barrier
+	// SELECTION entries are session-local by design: they let Ctrl+Z walk back
+	// picks WHILE editing, and evaporate on Done — the sealed entry describes
+	// the geometry change, not which faces happened to be lit. Dropping them
+	// here also keeps the all-meshgeo/verts compaction test below reachable.
+	const entries = stack.slice(base).filter((e) => e.kind !== 'selection');
+	undoStack.update((s) => s.slice(0, base));
+	if (mode === 'discard' || !entries.length) return;
+	const first = entries[0];
+	const last = entries[entries.length - 1];
+	if (
+		new Set(entries.map((e) => e.uuid)).size === 1 &&
+		entries.every((e) => e.kind === 'meshgeo' || e.kind === 'verts') &&
+		first.kind === 'meshgeo' &&
+		last.kind === 'meshgeo'
+	) {
+		// compact — NOTE the both-ends-meshgeo guard (a refinement over the plan):
+		// a 'verts' entry carries ONE vertex position, not a full snapshot, so it
+		// cannot bracket the compacted before/after; verts-only or verts-bracketed
+		// sessions take the composite path below, which replays each sub-entry
+		// through its own kind
+		if (JSON.stringify(first.before) !== JSON.stringify(last.after))
+			recordEntry({ kind: 'meshgeo', uuid: first.uuid, before: first.before, after: last.after });
+		return;
+	}
+	recordEntry({ kind: 'session', label, entries, before: 'before', after: 'after' });
 }
 
 /** @param {any} entry */
@@ -91,13 +167,14 @@ export function recordTransformSet(items) {
  * Serialize an object (ObjectLoader JSON round-trip, same format the
  * `object` peer message uses for lights/parents) for create/delete entries.
  * Returns null when the object is too heavy to keep in history.
- * @param {any} object
+ * @param {any} object @param {boolean} [quiet] skip the too-large toast (the
+ * removal-time refresh keeps the existing snapshot instead of warning twice)
  */
-export function captureObjectSnapshot(object) {
+export function captureObjectSnapshot(object, quiet = false) {
 	try {
 		const element = object.toJSON();
 		if (JSON.stringify(element).length > SNAPSHOT_LIMIT) {
-			showToast('Object is too large for undo history — this step will not be undoable');
+			if (!quiet) showToast('Object is too large for undo history — this step will not be undoable');
 			return null;
 		}
 		const group = get(objectsGroup);
@@ -162,6 +239,14 @@ function applyPresence(entry, state) {
 		showToast('Cannot undo/redo: the object no longer exists');
 		return false;
 	}
+	// Refresh the snapshot from the LIVE object on its way out, so redo restores
+	// it exactly as it left the scene. A 'create' entry is recorded the instant
+	// the object exists, but several spawn paths position it AFTERWARDS (the Add
+	// menu lands it at the clicked point, the VR sleeve at the release pose) —
+	// the stored snapshot held the default origin pose, so undo+redo teleported
+	// the object to the world centre, on peers too (they replay this element).
+	const fresh = captureObjectSnapshot(existing, true);
+	if (fresh) entry.snapshot = fresh;
 	if (get(selectedObject)?.uuid === entry.uuid) {
 		// selectedObject keeps its last value on purpose (the inspector binds to
 		// it) — just detach the gizmo and close it, like deselectObject does
@@ -222,10 +307,11 @@ function applyState(entry, state) {
 	return true;
 }
 
-// --- aibatch: a composite of sub-entries replayed through applyState, so an AI
-// prompt (or any grouped edit) is ONE undo step. Reverse order on undo so ops
-// that depend on earlier ones (e.g. color-after-create) unwind correctly.
-registerHistoryKind('aibatch', (entry, state) => {
+// --- aibatch/session: a composite of sub-entries replayed through applyState,
+// so an AI prompt or a sealed mesh-edit session is ONE undo step. Reverse
+// order on undo so ops that depend on earlier ones unwind correctly.
+/** @param {any} entry @param {any} state */
+function applyComposite(entry, state) {
 	const undoing = state === 'before';
 	const list = undoing ? [...entry.entries].reverse() : entry.entries;
 	let any = false;
@@ -234,15 +320,22 @@ registerHistoryKind('aibatch', (entry, state) => {
 		try {
 			if (applyState(sub, target)) any = true;
 		} catch (error) {
-			console.log('aibatch sub-entry failed', error);
+			console.log('composite sub-entry failed', error);
 		}
 	}
 	if (!any) showToast('Cannot undo/redo: those objects no longer exist');
 	return any;
-});
+}
+registerHistoryKind('aibatch', applyComposite);
+registerHistoryKind('session', applyComposite); // 15-F mixed-kind seals
 
 export function undo() {
 	const stack = get(undoStack);
+	// 15-F: inside an edit session, undo stops at the session's first step
+	if (sessionBase >= 0 && stack.length <= sessionBase) {
+		showToast('Start of this edit session — press Done to undo earlier steps');
+		return;
+	}
 	if (stack.length === 0) {
 		showToast('Nothing to undo');
 		return;
@@ -259,6 +352,11 @@ export function undo() {
 
 export function redo() {
 	const stack = get(redoStack);
+	// 15-F: pre-session redo entries are protected while a session is open
+	if (sessionBase >= 0 && stack.length <= sessionRedoBase) {
+		showToast('That redo is outside this edit session — press Done first');
+		return;
+	}
 	if (stack.length === 0) {
 		showToast('Nothing to redo');
 		return;

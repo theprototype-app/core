@@ -17,6 +17,16 @@
 	// Control meshes stay named vredit-<full action> for the vrControls raycast;
 	// the 111 grab/persist applies (id editmenu).
 
+	// 15-G: one label map instead of a nested ternary — that ternary predated
+	// 'object' and would have shown BOTH 'quad' and 'object' as "Triangle"
+	const GRAN_LABELS: Record<string, string> = {
+		quad: 'Quad',
+		face: 'Face',
+		triangle: 'Triangle',
+		shell: 'Shell',
+		object: 'Object'
+	}
+
 	const { renderer } = useThrelte()
 
 	const WIDTH = 0.22
@@ -48,7 +58,7 @@
 			// 212: granularity + multi toggles above the ops
 			const nSel = $faceEditSelectedTris.length
 			list.push(
-				{ action: 'edit:granularity', label: `Select: ${$faceEditGranularity === 'shell' ? 'Shell' : $faceEditGranularity === 'face' ? 'Face' : 'Triangle'}`, active: $faceEditGranularity !== 'face' },
+				{ action: 'edit:granularity', label: `Select: ${GRAN_LABELS[$faceEditGranularity] ?? 'Quad'}`, active: $faceEditGranularity !== 'quad' },
 				{ action: 'edit:multi', label: `Multi: ${$faceEditMulti ? 'On' : 'Off'}${$faceEditMulti && nSel ? ` (${nSel})` : ''}`, active: $faceEditMulti },
 				{ action: 'face:extrude', label: 'Extrude', active: op === 'extrude' },
 				{ action: 'face:inset', label: 'Inset', active: op === 'inset' },

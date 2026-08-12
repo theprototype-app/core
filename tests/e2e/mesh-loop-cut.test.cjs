@@ -1,0 +1,172 @@
+// M3: loop cut — insert edge loops across the quad ring a face lies on.
+// The most-used modelling operation, and it stacks directly on M2's ring walk.
+const h = require('./helpers.cjs');
+
+/** triangle count, index-aware */
+const triCount = (page, uuid) =>
+	page.evaluate(async (uuid) => {
+		const w = window.__stores;
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const geo = g.getObjectByProperty('uuid', uuid).geometry;
+		return (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
+	}, uuid);
+
+/** distinct Y planes of the +X side's vertices — a loop cut around the vertical
+ * ring adds one horizontal plane per cut */
+const planes = (page, uuid, axisName) =>
+	page.evaluate(
+		({ uuid, axisName }) => {
+			const w = window.__stores;
+			let group;
+			w.objectsGroup.subscribe((v) => (group = v))();
+			const geo = group.getObjectByProperty('uuid', uuid).geometry;
+			const pos = geo.attributes.position;
+			const vals = new Set();
+			for (let i = 0; i < pos.count; i++) {
+				const v = axisName === 'y' ? pos.getY(i) : axisName === 'x' ? pos.getX(i) : pos.getZ(i);
+				vals.add(+v.toFixed(3));
+			}
+			return [...vals].sort((a, b) => a - b);
+		},
+		{ uuid, axisName }
+	);
+
+/** a box in face-edit mode with the top face picked */
+const setup = (page) =>
+	page.evaluate(async () => {
+		const w = window.__stores;
+		w.commandsHandler.sceneCommand('/create Box 1 1 1');
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const box = g.children[g.children.length - 1];
+		w.faceEdit.enterFaceEdit(box.uuid);
+		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
+		w.faceEdit.pickFaceUnit(top.triIndices[0]);
+		return box.uuid;
+	});
+
+h.run(async () => {
+	const browser = await h.launch();
+	const A = await h.setupPage(browser, 'A');
+
+	// ------------------------------------------------------ 1. one cut
+	const uuid = await setup(A.page);
+	const before = await triCount(A.page, uuid);
+	h.check(before === 12, 'a box is 12 triangles (premise)');
+
+	const ok = await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('loopcut', 1));
+	const after = await triCount(A.page, uuid);
+	h.check(ok === true, 'loop cut commits');
+	// the ring is 4 quads; each becomes 2 quads = 4 tris, so 8 tris replace 8
+	// and the 4 untouched tris stay: 4 + 4*4 = 20
+	h.check(after === 20, 'one cut across a 4-quad ring: 12 -> 20 triangles (' + after + ')');
+
+	// geometrically it really is a LOOP: a new plane appears midway
+	const p = await planes(A.page, uuid, 'y');
+	h.check(
+		p.length === 3 && Math.abs(p[1]) < 0.001,
+		'a new vertex plane appears exactly midway (' + JSON.stringify(p) + ')'
+	);
+
+	// ------------------------------------------------------ 2. N cuts
+	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	const uuid3 = await setup(A.page);
+	const ok3 = await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('loopcut', 3));
+	const after3 = await triCount(A.page, uuid3);
+	const p3 = await planes(A.page, uuid3, 'y');
+	h.check(ok3 === true, '3 cuts commit');
+	h.check(after3 === 4 + 4 * 8, '3 cuts across a 4-quad ring: 12 -> 36 triangles (' + after3 + ')');
+	h.check(p3.length === 5, '...adding 3 evenly spaced planes (' + JSON.stringify(p3) + ')');
+	const gaps = p3.slice(1).map((v, i) => +(v - p3[i]).toFixed(3));
+	h.check(new Set(gaps).size === 1, '...evenly spaced (' + JSON.stringify(gaps) + ')');
+
+	// ------------------------------------------------- 3. undo is ONE step
+	await A.page.evaluate(() => window.__stores.history.undo());
+	const undone = await triCount(A.page, uuid3);
+	h.check(undone === 12, 'ONE undo removes all 3 loops (' + undone + ')');
+	await A.page.evaluate(() => window.__stores.history.redo());
+	h.check((await triCount(A.page, uuid3)) === 36, 'redo re-cuts in one step');
+
+	// ------------------------------- 4. the cut is watertight (no stray verts)
+	const solid = await A.page.evaluate(async (uuid) => {
+		const w = window.__stores;
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const geo = g.getObjectByProperty('uuid', uuid).geometry;
+		const tris = w.faceEdit.readTriangles(geo);
+		// one connected shell, and the bounding box is unchanged (a cut adds
+		// vertices ON the surface, it never moves the silhouette)
+		const shells = w.faceEdit.shellsOfTris(tris).length;
+		const box = new w.THREE.Box3().setFromBufferAttribute(geo.attributes.position);
+		return { shells, min: box.min.toArray().map((v) => +v.toFixed(3)), max: box.max.toArray().map((v) => +v.toFixed(3)) };
+	}, uuid3);
+	h.check(solid.shells === 1, 'the cut mesh is still ONE connected shell');
+	h.check(
+		solid.min.every((v) => Math.abs(v + 0.5) < 0.001) && solid.max.every((v) => Math.abs(v - 0.5) < 0.001),
+		'...and the silhouette is unchanged (' + JSON.stringify(solid.min) + ' ' + JSON.stringify(solid.max) + ')'
+	);
+
+	// ---------------------------------------- 5. UVs + material slots survive
+	const merged = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.faceEdit.exitFaceEdit();
+		w.commandsHandler.sceneCommand('/clear all');
+		const mk = async (x) => {
+			w.commandsHandler.sceneCommand('/create Box 1 1 1');
+			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+			const b = g.children[g.children.length - 1];
+			b.position.set(x, 0, 0);
+			return b.uuid;
+		};
+		const uuid = await w.objectActions.convertToMesh([await mk(0), await mk(3)]);
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const mesh = g.getObjectByProperty('uuid', uuid);
+		// give it real UVs so the cut has something to interpolate
+		const n = mesh.geometry.attributes.position.count;
+		const uv = new Float32Array(n * 2);
+		for (let i = 0; i < n; i++) {
+			uv[i * 2] = (mesh.geometry.attributes.position.getX(i) + 2) / 6;
+			uv[i * 2 + 1] = mesh.geometry.attributes.position.getY(i) + 0.5;
+		}
+		mesh.geometry.setAttribute('uv', new w.THREE.BufferAttribute(uv, 2));
+		w.faceEdit.enterFaceEdit(uuid);
+		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
+		w.faceEdit.pickFaceUnit(top.triIndices[0]);
+		const ok = w.faceEdit.commitFaceOp('loopcut', 2);
+		const geo = g.getObjectByProperty('uuid', uuid).geometry;
+		const slots = [...new Set(geo.groups.map((x) => x.materialIndex))].sort();
+		return {
+			ok,
+			uvCovers: !!geo.attributes.uv && geo.attributes.uv.count === geo.attributes.position.count,
+			slots,
+			mats: Array.isArray(mesh.material) ? mesh.material.length : 1
+		};
+	});
+	h.check(merged.ok === true, 'loop cut commits on a merged, textured mesh');
+	h.check(merged.uvCovers, '...keeping a complete uv attribute (M1 contract)');
+	h.check(
+		merged.mats === 2 && merged.slots.length === 2,
+		'...and both material slots (' + JSON.stringify(merged.slots) + ')'
+	);
+
+	// ------------------------------------------------------ 6. guards
+	const guards = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.faceEdit.exitFaceEdit();
+		w.commandsHandler.sceneCommand('/clear all');
+		w.commandsHandler.sceneCommand('/create Box 1 1 1');
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const box = g.children[g.children.length - 1];
+		w.faceEdit.applyMeshGeo(box.uuid, [0, 0, 0, 1, 0, 0, 0, 1, 0]);
+		w.faceEdit.enterFaceEdit(box.uuid);
+		w.faceEdit.pickFaceUnit(0);
+		const lone = w.faceEdit.commitFaceOp('loopcut', 1);
+		w.faceEdit.clearFaceSelection();
+		w.faceEdit.faceEditHoverTri.set(-1);
+		const nothing = w.faceEdit.commitFaceOp('loopcut', 1);
+		return { lone, nothing };
+	});
+	h.check(guards.lone === false, 'a triangle with no quad mate refuses loop cut');
+	h.check(guards.nothing === false, 'no pick at all refuses loop cut');
+
+	await h.finish(browser);
+});

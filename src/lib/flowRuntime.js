@@ -46,6 +46,54 @@ function captureBase(object) {
 	};
 }
 
+// 17-D: the per-object transform ORIGIN, read straight off userData. Importing
+// objectOrigin here would close flowRuntime -> objectOrigin -> history ->
+// flowRuntime and TDZ-crash the SSR prerender (the documented cycle family around
+// history.js), and the data is a plain 3-array anyway.
+const AXIS_VECTORS = {
+	x: new THREE.Vector3(1, 0, 0),
+	y: new THREE.Vector3(0, 1, 0),
+	z: new THREE.Vector3(0, 0, 1)
+};
+const pivotVec = new THREE.Vector3();
+const offsetVec = new THREE.Vector3();
+const scaleVec = new THREE.Vector3();
+const eulerTmp = new THREE.Euler();
+const spinQuat = new THREE.Quaternion();
+
+/** @param {any} object @returns {number[]|null} */
+function originOffsetOf(object) {
+	const origin = object?.userData?.origin;
+	if (!Array.isArray(origin) || origin.length !== 3) return null;
+	return origin.some((n) => n !== 0) ? origin : null;
+}
+
+/** The origin in the PARENT frame, derived from the BASE pose so the result stays
+ * a pure function of base + time. Exported for headless coverage (the
+ * computeMoveOffset pattern). @param {any} object @param {any} base */
+export function originPivotOf(object, base) {
+	const local = originOffsetOf(object) ?? [0, 0, 0];
+	offsetVec
+		.fromArray(local)
+		.multiply(scaleVec.fromArray(base.scale))
+		.applyEuler(eulerTmp.set(base.rot[0], base.rot[1], base.rot[2]));
+	return pivotVec.fromArray(base.pos).add(offsetVec);
+}
+
+/** Where the body lands when it turns `angle` about `pivot` from its base pose —
+ * the spin-about-origin math, exported so a test asserts THIS and not THREE.
+ * @param {number[]} basePos @param {any} pivot @param {'x'|'y'|'z'} axis @param {number} angle
+ * @returns {number[]} */
+export function spinPositionAbout(basePos, pivot, axis, angle) {
+	spinQuat.setFromAxisAngle(AXIS_VECTORS[axis] ?? AXIS_VECTORS.y, angle);
+	return new THREE.Vector3()
+		.fromArray(basePos)
+		.sub(pivot)
+		.applyQuaternion(spinQuat)
+		.add(pivot)
+		.toArray();
+}
+
 /** @param {any} object @param {any} base */
 function restoreBase(object, base) {
 	object.position.fromArray(base.pos);
@@ -664,6 +712,28 @@ function applyAnimation(object, base, anim, time, ctx) {
 		}
 		return;
 	}
+	// 17-D: spin and orbit turn about the object's ORIGIN when it carries one, so a
+	// hinged door swings on its hinge and a wheel turns on its axle. Still a pure
+	// function of (base pose, time) — determinism IS the netcode for these.
+	if ((anim.type === 'spin' || anim.type === 'orbit') && originOffsetOf(object)) {
+		const speed = data.speed ?? 1;
+		originPivotOf(object, base);
+		if (anim.type === 'spin') {
+			const axis = data.axis ?? 'y';
+			const angle = time * speed;
+			object.rotation[axis] += angle;
+			object.position.fromArray(spinPositionAbout(base.pos, pivotVec, axis, angle));
+		} else {
+			// the orbit circle is centred ON the origin instead of the base pose
+			const radius = data.radius ?? 1;
+			object.position.set(
+				pivotVec.x + Math.cos(time * speed) * radius,
+				object.position.y,
+				pivotVec.z + Math.sin(time * speed) * radius
+			);
+		}
+		return;
+	}
 	if (anim.type === 'shake') {
 		const intensity = data.intensity ?? 0.2;
 		const speed = data.speed ?? 10;
@@ -845,7 +915,7 @@ function runTick(now) {
 		const base = baseState.get(uuid);
 		// reset to base, then let each animation add its offset
 		restoreBase(object, base);
-		anims.forEach((anim) => applyAnimation(object, base, anim, time, ctx));
+		anims.forEach((/** @type {any} */ anim) => applyAnimation(object, base, anim, time, ctx));
 	});
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs

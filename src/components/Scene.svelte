@@ -5,7 +5,7 @@
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand, useHand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
-	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener } from '../stores/appStore';
+	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
 	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
@@ -13,6 +13,7 @@
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
+	import { ensureBoundsTrees } from '$lib/bvhPicking';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
@@ -20,9 +21,12 @@
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
-	import { editingObject, exitEditMode, raycastHandles, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, lookupEditable } from '$lib/faceEdit';
+	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
+	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
+	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
+	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
+	let knifeFrom: number[] | null = null;
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
@@ -330,6 +334,16 @@
 	// --- viewport click selection (desktop) and controller ray selection (VR) ---
 	const selectionRaycaster = new THREE.Raycaster();
 
+	// 17-D3: every scene pick goes through here so the BVH trees are current
+	// first. The object of a live edit/sculpt session is excluded — its geometry
+	// changes per frame, and its own tools keep the stock raycast path.
+	function pickSceneObjects() {
+		if (!$objectsGroup) return [];
+		const busy = [$editingObject, $faceEditObject, $sculptObject].filter(Boolean) as string[];
+		ensureBoundsTrees($objectsGroup, busy);
+		return selectionRaycaster.intersectObjects($objectsGroup.children, true);
+	}
+
 	function runModuleClickHandlers(hit) {
 		for (const handler of moduleClickHandlers) {
 			try {
@@ -347,14 +361,14 @@
 	let lastPick: { uuid: string | null; t: number } = { uuid: null, t: 0 };
 
 	function raycastSelect(additive = false) {
-		// module-owned interactive groups live at the scene root (piano, pong, ...)
+		// module-owned interactive groups live at the scene root (pong, dungeon, ...)
 		for (const name of moduleInteractiveGroups) {
 			const root = scene.getObjectByName(name);
 			if (!root) continue;
 			const moduleHits = selectionRaycaster.intersectObject(root, true);
 			if (moduleHits.length > 0 && runModuleClickHandlers(moduleHits[0].object)) return true;
 		}
-		const hits = selectionRaycaster.intersectObjects($objectsGroup.children, true);
+		const hits = pickSceneObjects();
 		if (hits.length > 0) {
 			// modules may consume the click (buttons, instruments, ...)
 			if (runModuleClickHandlers(hits[0].object)) return true;
@@ -460,6 +474,8 @@
 			// remember where the cursor is so keyboard commands (Shift+A) can anchor to
 			// it and spawn under it — null until the pointer has moved at least once
 			lastPointerXY = [event.clientX, event.clientY];
+			// M9b: the knife's rubber band follows the pointer between the two clicks
+			if (knifeFrom) $knifePreview = { from: knifeFrom, to: [event.clientX, event.clientY] };
 			if (marqueeStart) {
 				$marqueeRect = {
 					x0: Math.min(marqueeStart[0], event.clientX),
@@ -559,7 +575,7 @@
 			selectionRaycaster.setFromCamera(ndc, camera.current);
 			// Alt+click pings the pointed spot for every peer
 			if (event.altKey) {
-				const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
+				const hits = pickSceneObjects();
 				const planePoint = new THREE.Vector3();
 				const point = hits[0]?.point ??
 					(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
@@ -577,29 +593,74 @@
 			// while editing a mesh, clicks pick vertex handles instead of objects;
 			// ctrl/shift-click adds to the Create-face multi-selection (177)
 			if ($editingObject) {
-				raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey);
+				// D2: a miss deselects all vertices (parking the gizmo, D5) — the
+				// session and the object selection stay (deliberate)
+				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey))
+					clearVertexSelection();
 				return;
 			}
 			// face edit mode (135 desktop): a click highlights the face under it,
 			// and 163 attaches the transform gizmo to it (drag = move/rotate/scale)
 			if ($faceEditObject) {
+				// M9b KNIFE: two clicks, anywhere — the cut is a SCREEN line, so it does not need
+				// to hit the mesh at all (that is the point: you cut across a silhouette). The
+				// first click only records; the second cuts and disarms.
+				if ($faceEditOp === 'knife') {
+					if (!knifeFrom) {
+						knifeFrom = [event.clientX, event.clientY];
+						$knifePreview = { from: knifeFrom, to: [event.clientX, event.clientY] };
+						showToast('Knife: click the far end of the cut (Esc cancels)');
+					} else {
+						const from = knifeFrom;
+						knifeFrom = null;
+						cancelKnife();
+						knifeCut(from, [event.clientX, event.clientY]);
+						setFaceOp('move'); // a one-shot tool: back to the default after a cut
+					}
+					return;
+				}
 				// A8: lookupEditable also finds the scene-root collider-edit proxy
 				const edited = lookupEditable($faceEditObject);
 				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
 				const tri = hit && hit.faceIndex != null ? hit.faceIndex : -1;
-				highlightFaceByTriangle(tri);
-				// 212: Multi mode accumulates picks (the op button applies to the set);
-				// otherwise 176 auto-applies the active extrude/inset on the click
-				if (tri >= 0) {
-					if ($faceEditMulti) toggleFaceSelection(tri);
-					else autoApplyFaceOp();
+				// M4: the EDGE sub-mode picks the nearest edge of the hit triangle
+				// instead of a face unit (every click picks one, so no threshold)
+				if ($faceEditSubmode === 'edges') {
+					if (tri < 0 || !hit || !edited) {
+						if (!(event.ctrlKey || event.shiftKey || event.metaKey)) clearEdgeSelection();
+						return;
+					}
+					const local = edited.worldToLocal(hit.point.clone());
+					pickEdge(pickEdgeAt(tri, local), event.ctrlKey || event.shiftKey || event.metaKey);
+					return;
 				}
-				// B1 (inset fix): a seated MOVE gizmo intercepts the NEXT click (the
-				// dragging||axis guard above skips face dispatch), so click 2 of an
-				// armed inset/extrude DRAGGED the face instead. Only the Move op
-				// seats the gizmo; a miss still detaches it.
-				if ($faceEditOp === 'move' || tri < 0) attachFaceGizmo();
-				else detachFaceGizmo();
+				// E10: ctrl/shift-click ADDS to the selection (never auto-applies); a
+				// plain click REPLACES it with the unit under the cursor. The heal
+				// flag is off for additive clicks — the heal would wipe the very
+				// selection they are adding to.
+				const additive = event.ctrlKey || event.shiftKey || event.metaKey || $faceEditMulti;
+				highlightFaceByTriangle(tri, !additive);
+				if (tri >= 0) {
+					if (additive) {
+						toggleFaceSelection(tri);
+						// B1: only the armed Move op keeps a gizmo on a non-commit click
+						if ($faceEditOp === 'move') attachFaceGizmo();
+						else detachFaceGizmo();
+					} else {
+						pickFaceUnit(tri);
+						const committed = autoApplyFaceOp();
+						// E7: a commit re-seats the gizmo itself (on the new cap);
+						// otherwise the B1 rule holds — a seated gizmo intercepts the
+						// NEXT click, so only Move keeps one armed
+						if (!committed) {
+							if ($faceEditOp === 'move') attachFaceGizmo();
+							else detachFaceGizmo();
+						}
+					}
+				} else {
+					clearFaceSelection(); // D2: a miss drops the accumulated multi-pick
+					attachFaceGizmo(); // no target left -> detaches
+				}
 				return;
 			}
 			// light pick-proxies select their light (lights have no raycastable geometry)
@@ -644,7 +705,7 @@
 		const openViewportMenuAt = (clientX = 0, clientY = 0, forceEmpty = false, menuX = clientX, menuY = clientY) => {
 			if ($isLocked || $isVRMode || $specatorMode || $drawMode || $editingObject || $faceEditObject || $measureMode) return;
 			setRayFromEvent({ clientX, clientY });
-			const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
+			const hits = pickSceneObjects();
 			const top = !forceEmpty && hits.length ? topLevelObjectOf(hits[0].object) : null;
 			if (top) {
 				// an object under the cursor gets its regular context menu; the
@@ -673,7 +734,7 @@
 		// plane, else the origin. Same resolution the right-click Add menu uses.
 		const scenePointAt = (clientX: number, clientY: number) => {
 			setRayFromEvent({ clientX, clientY });
-			const hits = $objectsGroup ? selectionRaycaster.intersectObjects($objectsGroup.children, true) : [];
+			const hits = pickSceneObjects();
 			if (hits[0]?.point) return hits[0].point.toArray();
 			const planePoint = new THREE.Vector3();
 			return selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)

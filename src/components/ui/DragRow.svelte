@@ -13,7 +13,7 @@
 	// is always available, ids keep working for tests and labels, and touch gets the
 	// numeric keypad via inputmode. type="text" on purpose — the native number
 	// spinner would fight our own arrow-key steps.
-	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, onchange?: (next: number) => void}} */
+	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, onchange?: (next: number) => void}} */
 	let {
 		label = '',
 		value = 0,
@@ -26,6 +26,10 @@
 		id = undefined,
 		title = '',
 		ariaLabel = '',
+		// 17-D1: the selection disagrees on this value — show a dash instead of one
+		// member's number. Editing still commits a real value (to the whole set),
+		// and `value` stays the primary's so scrubs/arrow steps have an origin.
+		mixed = false,
 		onchange = () => {}
 	} = $props();
 
@@ -46,7 +50,8 @@
 	let startX = 0;
 
 	// while typing show exactly what was typed; otherwise render the live value
-	const display = $derived(focused ? typed : fmt(value));
+	// (or an em-dash when the selection holds several different values)
+	const display = $derived(focused ? typed : mixed ? '—' : fmt(value));
 
 	/** @param {number} next */
 	function commit(next) {

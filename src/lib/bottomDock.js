@@ -9,9 +9,9 @@ import { explorerClose } from '../stores/appStore';
 // via setDockOccupant; only the visible one renders (the rest hide). The visible
 // panel's height publishes as --bottom-inset so drawers/edge-docked windows sit above it.
 
-export const FLOW_FAMILY = ['flow', 'flowcode', 'animation'];
+export const FLOW_FAMILY = ['flow', 'flowcode', 'animation', 'uv'];
 /** @type {Record<string, string>} */
-export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', explorer: 'Explorer' };
+export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', explorer: 'Explorer' };
 
 const ls = typeof localStorage !== 'undefined' ? localStorage : null;
 

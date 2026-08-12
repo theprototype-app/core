@@ -109,6 +109,20 @@ export function registerVRMenuEntry(entry) {
 }
 
 /**
+ * Remove a registered entry (A2: module teardown for the dev-mode reload).
+ * @param {string} id the FULL id as registered (module entries carry the
+ * `moduleId:` prefix the SDK adds) @param {string=} group
+ */
+export function unregisterVRMenuEntry(id, group = 'root') {
+	const list = registry.get(group);
+	if (!list) return;
+	const index = list.findIndex((e) => e.id === id);
+	if (index < 0) return;
+	list.splice(index, 1);
+	ringVersion.update((v) => v + 1);
+}
+
+/**
  * Entries of a ring, in order, minus any whose `visible()` predicate is false.
  * @param {string} group
  */

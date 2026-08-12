@@ -361,5 +361,188 @@ h.run(async () => {
 	h.check(weld.ok && weld.k1 === weld.k0 - 2, `weld merges 3 welded keys into 1 (${weld.k0} -> ${weld.k1})`);
 	h.check(weld.undoable, 'weld is undoable (one meshgeo entry)');
 
+	// --- D1 (15): weld on a FRESH box — INDEXED geometry. The old snapshot took
+	// the raw position attribute (24 triples) which applyMeshGeo reinterpreted as
+	// 8 arbitrary triangles: the weld mangled the mesh and undo replayed the same
+	// wrong representation. (The block above only passed because ITS box was
+	// de-indexed by the earlier inset commits.) Also covers the vertex-session
+	// refresh hook: undo while STILL editing rebuilds the handles.
+	const weldIndexed = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const me = s.meshEdit;
+		const fe = s.faceEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		const uuid = box.uuid;
+		const live = () => g.getObjectByProperty('uuid', uuid);
+		const indexed = !!box.geometry.index;
+		const tris = () => fe.readTriangles(live().geometry).length;
+		const keys = () => {
+			const p = live().geometry.attributes.position;
+			const set = new Set();
+			for (let i = 0; i < p.count; i++)
+				set.add(Math.round(p.getX(i) * 1e4) + ',' + Math.round(p.getY(i) * 1e4) + ',' + Math.round(p.getZ(i) * 1e4));
+			return set.size;
+		};
+		const t0 = tris(); // 12
+		const k0 = keys(); // 8
+		me.enterEditMode(uuid);
+		me.toggleVertexSelection(0);
+		me.toggleVertexSelection(1);
+		const ok = me.weldSelectedVerts();
+		const t1 = tris();
+		const k1 = keys();
+		let nan = false;
+		const arr = live().geometry.attributes.position.array;
+		for (let i = 0; i < arr.length; i++) if (!Number.isFinite(arr[i])) nan = true;
+		// undo while STILL in vertex mode: the D1 refresh hook rebuilds the handles
+		s.history.undo();
+		// the meshEdit refresh sits behind applyMeshGeo's dynamic import — allow a tick
+		return new Promise((resolve) =>
+			setTimeout(() => {
+				const t2 = tris();
+				const k2 = keys();
+				let editing;
+				me.editingObject.subscribe((v) => (editing = v))();
+				const handleCount = me.vertexHandleMesh() ? me.vertexHandleMesh().count : -1;
+				me.exitEditMode();
+				resolve({ indexed, ok, t0, k0, t1, k1, nan, t2, k2, handleCount, stillEditing: editing === uuid });
+			}, 400)
+		);
+	});
+	h.check(weldIndexed.indexed, 'the fresh box is INDEXED (the D1 repro precondition)');
+	h.check(
+		weldIndexed.ok && weldIndexed.t1 === 12,
+		`weld on the indexed box keeps 12 triangles (${weldIndexed.t1})`
+	);
+	h.check(
+		weldIndexed.k1 === weldIndexed.k0 - 1,
+		`welding 2 verts drops exactly one welded key (${weldIndexed.k0} -> ${weldIndexed.k1})`
+	);
+	h.check(!weldIndexed.nan, 'no NaN in the welded geometry');
+	h.check(
+		weldIndexed.t2 === weldIndexed.t0 && weldIndexed.k2 === weldIndexed.k0,
+		`undo restores exactly (${weldIndexed.t2} tris, ${weldIndexed.k2} welded keys)`
+	);
+	h.check(weldIndexed.stillEditing, 'the vertex session survives the undo (no exit/enter)');
+	h.check(
+		weldIndexed.handleCount === weldIndexed.k2,
+		`the refresh hook rebuilt the handles to match (${weldIndexed.handleCount} handles for ${weldIndexed.k2} welded keys)`
+	);
+
+	// --- D5 (user report): ONE vertex selection model — plain click counts as
+	// "1 sel" and seats the gizmo, ctrl-click adds with the anchor riding the
+	// last pick, a gizmo drag moves the WHOLE selection rigidly (one meshgeo
+	// undo), emptying the selection parks the gizmo, and the reported weld flow
+	// (plain click + one ctrl-click) reaches the >=2 gate.
+	const multiSel = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const me = s.meshEdit;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children[g.children.length - 1];
+		const uuid = box.uuid;
+		const live = () => g.getObjectByProperty('uuid', uuid);
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		me.enterEditMode(uuid);
+		const size = () => {
+			let n;
+			me.vertexSelectionSize.subscribe((v) => (n = v))();
+			return n;
+		};
+		const keySet = () => {
+			const p = live().geometry.attributes.position;
+			const set = new Set();
+			for (let i = 0; i < p.count; i++)
+				set.add(
+					[p.getX(i), p.getY(i), p.getZ(i)].map((v) => Math.round(v * 1e4)).join(',')
+				);
+			return [...set].sort().join('|');
+		};
+		const keys0 = keySet();
+		me.selectHandle(0);
+		const single = {
+			size: size(),
+			gizmo: controls?.object?.userData?.isVertexProxy === true,
+			anchor: me.selectedVertexHandle()
+		};
+		me.toggleVertexSelection(1);
+		const beforeArr = Array.from(live().geometry.attributes.position.array);
+		const gizmoAtAdded =
+			Math.hypot(
+				controls.object.position.x - beforeArr[3],
+				controls.object.position.y - beforeArr[4],
+				controls.object.position.z - beforeArr[5]
+			) < 1e-4;
+		const multi = { size: size(), anchor: me.selectedVertexHandle() };
+		me.onProxyDragChanged(true);
+		controls.object.position.y += 2;
+		me.onProxyMoved();
+		me.onProxyDragChanged(false);
+		const p = live().geometry.attributes.position;
+		let moved = 0;
+		for (let i = 0; i < p.count; i++)
+			if (Math.abs(p.getY(i) - beforeArr[i * 3 + 1] - 2) < 1e-4) moved++;
+		s.history.undo();
+		// the meshgeo undo swaps + refreshes the session — allow a tick
+		return new Promise((resolve) =>
+			setTimeout(() => {
+				const undone = keySet() === keys0;
+				me.selectHandle(0);
+				me.toggleVertexSelection(0); // removes the only member
+				const parked = controls?.object?.userData?.isVertexProxy !== true;
+				me.selectHandle(2);
+				me.toggleVertexSelection(3);
+				const weldOk = me.weldSelectedVerts();
+				// the wireframe overlay must track the welded geometry (user report: it stayed
+				// stale) — fingerprint it against what the SHARED BUILDER produces for the live
+				// geometry. It used to compare against a raw WireframeGeometry, which only
+				// matched because the quad view silently degraded to the full triangulation in
+				// VERTEX mode: its diagonal set was computed through the FACE session's
+				// workingTris, empty here, so nothing was ever skipped. The comparison has to be
+				// against the builder, or it asserts a bug.
+				const o = live().children.find((c) => c.name === 'edit-overlay');
+				const fresh = s.faceEdit.editWireGeometry(live().geometry);
+				const sum = (/** @type {any} */ a) => {
+					let t = 0;
+					for (let i = 0; i < a.length; i++) t += a[i];
+					return Math.round(t * 1e3);
+				};
+				const wireTracksWeld =
+					!!o &&
+					o.geometry.attributes.position.array.length === fresh.attributes.position.array.length &&
+					sum(o.geometry.attributes.position.array) === sum(fresh.attributes.position.array);
+				let weldKeptSession;
+				me.editingObject.subscribe((v) => (weldKeptSession = v === uuid))();
+				me.exitEditMode();
+				resolve({ single, gizmoAtAdded, multi, moved, undone, parked, weldOk, wireTracksWeld, weldKeptSession });
+			}, 400)
+		);
+	});
+	h.check(
+		multiSel.single.size === 1 && multiSel.single.gizmo && multiSel.single.anchor === 0,
+		`plain vertex click counts as 1 sel and seats the gizmo (${multiSel.single.size} sel)`
+	);
+	h.check(
+		multiSel.multi.size === 2 && multiSel.multi.anchor === 1 && multiSel.gizmoAtAdded,
+		`ctrl-click adds; the anchor + gizmo ride the last pick (${multiSel.multi.size} sel, anchor ${multiSel.multi.anchor})`
+	);
+	h.check(
+		multiSel.moved === 6,
+		`a gizmo drag moves the WHOLE selection rigidly (${multiSel.moved}/24 entries by +2y)`
+	);
+	h.check(multiSel.undone, 'ONE undo restores the whole multi-drag (meshgeo entry)');
+	h.check(multiSel.parked, 'emptying the selection parks the gizmo');
+	h.check(multiSel.weldOk, 'the reported flow welds: plain click + one Ctrl+click');
+	h.check(
+		multiSel.wireTracksWeld,
+		'the edit wireframe overlay tracks the welded geometry (no stale wire)'
+	);
+	h.check(multiSel.weldKeptSession, 'weld refreshes the session in place (no exit/enter dance)');
+
 	await h.finish(browser);
 });

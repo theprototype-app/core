@@ -1,5 +1,9 @@
 // Phase 46: user modules — zip install activates live, persists across reload,
 // disable respected on boot, github URL normalization, bad URL fails gracefully.
+// 17-A2: dev-mode live reload — install by URL (page.route-served), mutate the
+// served body, Reload swaps the new code in WITHOUT page.reload(); teardown is
+// genuine (old menu entry/effect/frame task/click handler gone); a broken body
+// keeps the old instance running; auto-poll picks up changes; live disable.
 const h = require('./helpers.cjs');
 const { zipSync, strToU8 } = require('fflate');
 
@@ -38,8 +42,72 @@ h.run(async () => {
 	// install via the manager's file input
 	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
 	await A.page.waitForTimeout(400);
-	await A.page.getByRole('button', { name: 'User', exact: true }).click();
+	// the manager tabs are role="tab" (real tabs since the mobile polish) — a
+	// button-role query never matches and was the suite's known failure
+	await A.page.getByRole('tab', { name: /^User/ }).click();
 	await A.page.waitForTimeout(200);
+	// install row: the button is NEVER disabled (stale disabled styling was
+	// reported three times and never reproduced headlessly); every outcome —
+	// including an empty field — is explained inline under the field, where a
+	// toast would have vanished while the user fixed the URL
+	const installBtn = A.page.locator('#user-modules-tab').getByRole('button', { name: /^Install/ });
+	const status = A.page.locator('#install-status');
+	h.check(await installBtn.isEnabled(), 'Install is never rendered disabled (empty field)');
+	await installBtn.click();
+	await h.eventually(
+		() => status.textContent(),
+		(t) => /Paste a module URL first/.test(t),
+		'clicking Install with an empty field says why, inline'
+	);
+	await A.page.locator('#install-module-url').fill('https://example.invalid/mod');
+	await A.page.waitForTimeout(200);
+	h.check(await installBtn.isEnabled(), 'Install stays enabled with a URL typed');
+	h.check(
+		(await status.textContent()).includes('manifest.json'),
+		'the field previews the manifest URL it will fetch'
+	);
+	// a failing install reports the reason inline AND keeps the URL for editing
+	await installBtn.click();
+	await h.eventually(
+		() => status.textContent(),
+		(t) => /Could not install/.test(t),
+		'a failed install explains itself under the field'
+	);
+	h.check(
+		(await A.page.locator('#install-module-url').inputValue()).includes('example.invalid'),
+		'the failed URL stays in the field so it can be corrected'
+	);
+	await A.page.locator('#install-module-url').fill('');
+	await A.page.waitForTimeout(150);
+	h.check(
+		((await status.textContent()) ?? '').trim() === '',
+		'editing the field clears the previous status'
+	);
+
+	// layout: one row when there is width, field-on-top + buttons below when not
+	const rowLayout = async () =>
+		A.page.evaluate(() => {
+			const input = document.getElementById('install-module-url');
+			const row = input.parentElement;
+			const top = Math.round(input.getBoundingClientRect().top);
+			const buttons = [...row.querySelectorAll('button')].map((b) =>
+				Math.round(b.getBoundingClientRect().top)
+			);
+			return {
+				below: buttons.every((t) => t > top),
+				fullWidth:
+					Math.round(input.getBoundingClientRect().width) >=
+					Math.round(row.getBoundingClientRect().width) - 4
+			};
+		});
+	h.check(!(await rowLayout()).below, 'wide: the field and buttons share one row');
+	await A.page.setViewportSize({ width: 430, height: 900 });
+	await A.page.waitForTimeout(600);
+	const narrowRow = await rowLayout();
+	h.check(narrowRow.below && narrowRow.fullWidth, 'narrow: buttons wrap below and the field keeps the top line');
+	await A.page.setViewportSize({ width: 1280, height: 900 });
+	await A.page.waitForTimeout(400);
+
 	await A.page.locator('#install-module-zip').setInputFiles({
 		name: 'testmod.module.zip',
 		mimeType: 'application/zip',
@@ -49,6 +117,11 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => window.__testmodLoaded)) === 1,
 		'module code actually ran'
+	);
+	await h.eventually(
+		() => A.page.locator('#install-status').textContent(),
+		(t) => /Installed Test Mod v2\.0\.0/.test(t) && /file/.test(t),
+		'a zip install reports what landed (name, version, files + size)'
 	);
 	h.check(
 		await A.page.locator('#user-module-card-testmod').isVisible(),
@@ -96,6 +169,153 @@ h.run(async () => {
 		window.__stores.userModules.installUrl('https://theprototype.app:5173/definitely-not-a-module')
 	);
 	h.check(badInstall === false, 'unreachable URL fails gracefully');
+
+	// --- 17-A2: dev-mode live reload -----------------------------------------
+	let servedVersion = 1;
+	let serveBroken = false;
+	const devSource = () =>
+		serveBroken
+			? 'export default { this is not javascript'
+			: `
+export default {
+	id: 'devmod', name: 'Dev Mod', version: '${servedVersion}.0.0',
+	description: 'dev reload test',
+	register(api) {
+		window.__devmodVersion = ${servedVersion};
+		api.registerMenu('Devmod v${servedVersion}', () => api.toast('devmod v${servedVersion}'));
+		api.registerEffect('devmod-effect-v${servedVersion}', () => {});
+		api.registerFrameTask(() => {
+			window.__devmodTicks${servedVersion} = (window.__devmodTicks${servedVersion} ?? 0) + 1;
+		});
+		api.registerClickHandler(() => false);
+		api.onInput((kind, code) => {
+			if (kind === 'down' && code === 'KeyJ')
+				window.__devmodKeys = (window.__devmodKeys ?? 0) + 1;
+		});
+	}
+};`;
+	// mind the packs-e2e trap: the URL carries a ?t= cache-buster, so match with
+	// includes(), never endsWith()
+	await A.page.route('**/devmod/**', (route) => {
+		const url = route.request().url();
+		if (url.includes('manifest.json'))
+			return route.fulfill({
+				contentType: 'application/json',
+				body: JSON.stringify({
+					id: 'devmod', name: 'Dev Mod', version: servedVersion + '.0.0', entry: 'module.js'
+				})
+			});
+		return route.fulfill({ contentType: 'text/javascript', body: devSource() });
+	});
+
+	const sdkCounts = (page) =>
+		page.evaluate(() => {
+			const sdk = window.__stores.moduleSDK;
+			return new Promise((resolve) =>
+				sdk.moduleMenuItems.subscribe((items) =>
+					resolve({
+						menu: items.filter((i) => i.moduleId === 'devmod').length,
+						effects: Object.keys(sdk.moduleEffects).filter((t) => t.startsWith('devmod-effect')).join(','),
+						clicks: sdk.moduleClickHandlers.length,
+						frames: sdk.moduleFrameTasks.length
+					})
+				)()
+			);
+		});
+
+	const clicksBefore = (await sdkCounts(A.page)).clicks;
+	const installedDev = await A.page.evaluate(() =>
+		window.__stores.userModules.installUrl('https://dev.local/devmod')
+	);
+	h.check(installedDev === true, 'dev module installs from the routed URL');
+	h.check((await A.page.evaluate(() => window.__devmodVersion)) === 1, 'v1 code ran');
+	// DEVX #8: an onInput registered during register() must catch a key pressed
+	// IMMEDIATELY after install (the old import().then() subscription dropped it)
+	await A.page.evaluate(() => {
+		window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', key: 'j' }));
+		window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyJ', key: 'j' }));
+	});
+	h.check(
+		(await A.page.evaluate(() => window.__devmodKeys ?? 0)) === 1,
+		'onInput is live from the first keypress after install (DEVX #8)'
+	);
+	const afterInstall = await sdkCounts(A.page);
+	h.check(afterInstall.menu === 1 && afterInstall.effects === 'devmod-effect-v1', 'v1 registered one menu entry + effect');
+
+	// mutate the served body, click Reload in the manager — new code live, NO page.reload()
+	servedVersion = 2;
+	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await A.page.waitForTimeout(400);
+	// the manager tabs are role="tab" (real tabs since the mobile polish) — a
+	// button-role query never matches and was the suite's known failure
+	await A.page.getByRole('tab', { name: /^User/ }).click();
+	await A.page.waitForTimeout(200);
+	await A.page.locator('#dev-reload-devmod').click();
+	await h.eventually(
+		() => A.page.evaluate(() => window.__devmodVersion),
+		(v) => v === 2,
+		'Reload swaps v2 in without a page reload'
+	);
+	const afterReload = await sdkCounts(A.page);
+	h.check(afterReload.menu === 1, 'single menu entry after reload (old one torn down)');
+	h.check(afterReload.effects === 'devmod-effect-v2', 'old effect unregistered, new one live');
+	h.check(afterReload.clicks === clicksBefore + 1, 'old click handler gone (no accumulation)');
+	const t1a = await A.page.evaluate(() => window.__devmodTicks1 ?? 0);
+	const t2a = await A.page.evaluate(() => window.__devmodTicks2 ?? 0);
+	await A.page.waitForTimeout(600);
+	const t1b = await A.page.evaluate(() => window.__devmodTicks1 ?? 0);
+	const t2b = await A.page.evaluate(() => window.__devmodTicks2 ?? 0);
+	h.check(t1b === t1a, 'old frame task no longer ticks');
+	h.check(t2b > t2a, 'new frame task ticks');
+
+	// a broken served body keeps the old instance running
+	serveBroken = true;
+	const brokenReload = await A.page.evaluate(() =>
+		window.__stores.userModules.reloadUserModule({ id: 'devmod' })
+	);
+	h.check(brokenReload === false, 'broken body reports failure');
+	h.check((await A.page.evaluate(() => window.__devmodVersion)) === 2, 'v2 keeps running after a broken reload');
+	h.check((await loadedIds(A.page)).includes('devmod'), 'module still loaded after a broken reload');
+	serveBroken = false;
+
+	// auto-poll: enable, mutate the source, the change lands without any click
+	servedVersion = 3;
+	await A.page.evaluate(() => {
+		const um = window.__stores.userModules;
+		return new Promise((resolve) =>
+			um.userModules.subscribe((list) => {
+				um.setDevPoll(list.find((m) => m.id === 'devmod'), true);
+				resolve();
+			})()
+		);
+	});
+	await h.eventually(
+		() => A.page.evaluate(() => window.__devmodVersion),
+		(v) => v === 3,
+		'auto-poll picks the change up',
+		15000
+	);
+	await A.page.evaluate(() => {
+		const um = window.__stores.userModules;
+		um.setDevPoll({ id: 'devmod' }, false);
+	});
+
+	// live disable genuinely deactivates (no page reload needed anymore) —
+	// flowbite's Toggle checkbox is sr-only, so click the label wrapping THIS
+	// toggle (the card also carries the Auto-poll toggle now)
+	await A.page.locator('label:has(#enable-user-module-devmod)').click();
+	await h.eventually(() => loadedIds(A.page), (ids) => !ids.includes('devmod'), 'disable deactivates live');
+	const afterDisable = await sdkCounts(A.page);
+	h.check(afterDisable.menu === 0 && afterDisable.effects === '', 'disable tears the registries down');
+	const keysBefore = await A.page.evaluate(() => window.__devmodKeys ?? 0);
+	await A.page.evaluate(() => {
+		window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', key: 'j' }));
+		window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyJ', key: 'j' }));
+	});
+	h.check(
+		(await A.page.evaluate(() => window.__devmodKeys ?? 0)) === keysBefore,
+		'disable also unsubscribes onInput'
+	);
 
 	await h.finish(browser);
 });

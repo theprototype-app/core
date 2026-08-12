@@ -7,6 +7,7 @@
   import Flow from './components/Flow.svelte'
   import FlowCode from './components/editors/FlowCode.svelte'
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
+  import UvEditor from './components/editors/UvEditor.svelte'
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
   import ImagePreviewWindow from './components/editors/ImagePreviewWindow.svelte'
@@ -173,6 +174,7 @@
         import('./lib/colliderSpec'),
         import('./lib/colliderHelpers'),
         import('./lib/colliderEdit'),
+        import('./lib/editSession'),
         import('./lib/trackpadNav'),
         import('./lib/vrSleeve'),
         import('./lib/gridSettings'),
@@ -182,9 +184,17 @@
         import('./lib/cameraPreview'),
         import('./lib/addObjects'),
         import('./lib/cameraPip'),
-        import('./lib/inputDevice')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, jointsLib, possessLib, handModelsLib, terrainSculptLib, userModulesLib, environmentLib, sceneMusicLib, animatedImports, fileHandler, fileWindowsLib, sceneBounds, cameraClip, ping, sessionsLib, geometryEdit, lightParams, shadowDefaultsLib, paletteLib, viewModeLib, inputRuntimeLib, shortcutsLib, themesLib, vrRadialMenu, vrPaletteLib, vrWindowPosesLib, vrKeyboardLib, faceEditLib, avatarModelLib, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssetsLib, THREE, GLTFExporterModule, snappingLib, flowSocketsLib, networkQualityLib, packsLib, customNodesLib, nodesHandlerLib, nodeCatalogLib, objectMenuLib, animationPreviewLib, aiProvidersLib, aiToolsLib, aiAssistantLib, meshProvidersLib, meshJobsLib, flowGraphsLib, objectFlowLib, peerServerLib, cloudHooksLib, cloudPluginLib, connectionStateLib, peerApprovalLib, particleRuntimeLib, particleActionsLib, particlePresetsLib, versionLib, whatsNewLib, confirmDialogLib, scenePhysicsLib, colliderSpecLib, colliderHelpersLib, colliderEditLib, trackpadNavLib, vrSleeveLib, gridSettingsLib, cameraBookmarksLib, cameraObjectsLib, cameraHelpersLib, cameraPreviewLib, addObjectsLib, cameraPipLib, inputDeviceLib]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, joints: jointsLib, possess: possessLib, handModels: handModelsLib, terrainSculpt: terrainSculptLib, userModules: userModulesLib, environment: environmentLib, sceneMusic: sceneMusicLib, animatedImports, fileHandler, fileWindows: fileWindowsLib, sceneBounds, cameraClip, ping, sessions: sessionsLib, geometryEdit, lightParams, shadowDefaults: shadowDefaultsLib, palette: paletteLib, viewModeCtl: viewModeLib, inputRuntime: inputRuntimeLib, shortcutsRegistry: shortcutsLib, themes: themesLib, vrRadialMenu, vrPalette: vrPaletteLib, vrWindowPoses: vrWindowPosesLib, vrKeyboard: vrKeyboardLib, faceEdit: faceEditLib, avatarModel: avatarModelLib, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets: sceneAssetsLib, THREE, GLTFExporterModule, snapping: snappingLib, flowSockets: flowSocketsLib, networkQuality: networkQualityLib, packs: packsLib, customNodes: customNodesLib, nodesHandler: nodesHandlerLib, nodeCatalog: nodeCatalogLib, objectMenu: objectMenuLib, animationPreview: animationPreviewLib, aiProviders: aiProvidersLib, aiTools: aiToolsLib, aiAssistant: aiAssistantLib, meshProviders: meshProvidersLib, meshJobs: meshJobsLib, flowGraphsCtl: flowGraphsLib, objectFlow: objectFlowLib, peerServer: peerServerLib, cloudHooks: cloudHooksLib, cloudPlugin: cloudPluginLib, connectionState: connectionStateLib, peerApproval: peerApprovalLib, particleRuntime: particleRuntimeLib, particleActions: particleActionsLib, particlePresets: particlePresetsLib, version: versionLib, whatsNew: whatsNewLib, confirmDialog: confirmDialogLib, scenePhysics: scenePhysicsLib, colliderSpec: colliderSpecLib, colliderHelpers: colliderHelpersLib, colliderEdit: colliderEditLib, trackpadNav: trackpadNavLib, vrSleeve: vrSleeveLib, gridSettings: gridSettingsLib, cameraBookmarks: cameraBookmarksLib, cameraObjects: cameraObjectsLib, cameraHelpers: cameraHelpersLib, cameraPreview: cameraPreviewLib, addObjects: addObjectsLib, cameraPip: cameraPipLib, inputDevice: inputDeviceLib }
+        import('./lib/inputDevice'),
+        import('./lib/sceneTemplates'),
+        import('./lib/bvhPicking'),
+        import('./lib/multiTransform'),
+        import('./lib/objectOrigin'),
+        import('./lib/moduleGallery'),
+        import('./lib/uvEditor'),
+        import('./lib/uvUnwrap'),
+        import('./lib/meshTopology')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, jointsLib, possessLib, handModelsLib, terrainSculptLib, userModulesLib, environmentLib, sceneMusicLib, animatedImports, fileHandler, fileWindowsLib, sceneBounds, cameraClip, ping, sessionsLib, geometryEdit, lightParams, shadowDefaultsLib, paletteLib, viewModeLib, inputRuntimeLib, shortcutsLib, themesLib, vrRadialMenu, vrPaletteLib, vrWindowPosesLib, vrKeyboardLib, faceEditLib, avatarModelLib, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssetsLib, THREE, GLTFExporterModule, snappingLib, flowSocketsLib, networkQualityLib, packsLib, customNodesLib, nodesHandlerLib, nodeCatalogLib, objectMenuLib, animationPreviewLib, aiProvidersLib, aiToolsLib, aiAssistantLib, meshProvidersLib, meshJobsLib, flowGraphsLib, objectFlowLib, peerServerLib, cloudHooksLib, cloudPluginLib, connectionStateLib, peerApprovalLib, particleRuntimeLib, particleActionsLib, particlePresetsLib, versionLib, whatsNewLib, confirmDialogLib, scenePhysicsLib, colliderSpecLib, colliderHelpersLib, colliderEditLib, editSessionLib, trackpadNavLib, vrSleeveLib, gridSettingsLib, cameraBookmarksLib, cameraObjectsLib, cameraHelpersLib, cameraPreviewLib, addObjectsLib, cameraPipLib, inputDeviceLib, sceneTemplatesLib, bvhPickingLib, multiTransformLib, objectOriginLib, moduleGalleryLib, uvEditorLib, uvUnwrapLib, meshTopologyLib]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, joints: jointsLib, possess: possessLib, handModels: handModelsLib, terrainSculpt: terrainSculptLib, userModules: userModulesLib, environment: environmentLib, sceneMusic: sceneMusicLib, animatedImports, fileHandler, fileWindows: fileWindowsLib, sceneBounds, cameraClip, ping, sessions: sessionsLib, geometryEdit, lightParams, shadowDefaults: shadowDefaultsLib, palette: paletteLib, viewModeCtl: viewModeLib, inputRuntime: inputRuntimeLib, shortcutsRegistry: shortcutsLib, themes: themesLib, vrRadialMenu, vrPalette: vrPaletteLib, vrWindowPoses: vrWindowPosesLib, vrKeyboard: vrKeyboardLib, faceEdit: faceEditLib, avatarModel: avatarModelLib, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets: sceneAssetsLib, THREE, GLTFExporterModule, snapping: snappingLib, flowSockets: flowSocketsLib, networkQuality: networkQualityLib, packs: packsLib, customNodes: customNodesLib, nodesHandler: nodesHandlerLib, nodeCatalog: nodeCatalogLib, objectMenu: objectMenuLib, animationPreview: animationPreviewLib, aiProviders: aiProvidersLib, aiTools: aiToolsLib, aiAssistant: aiAssistantLib, meshProviders: meshProvidersLib, meshJobs: meshJobsLib, flowGraphsCtl: flowGraphsLib, objectFlow: objectFlowLib, peerServer: peerServerLib, cloudHooks: cloudHooksLib, cloudPlugin: cloudPluginLib, connectionState: connectionStateLib, peerApproval: peerApprovalLib, particleRuntime: particleRuntimeLib, particleActions: particleActionsLib, particlePresets: particlePresetsLib, version: versionLib, whatsNew: whatsNewLib, confirmDialog: confirmDialogLib, scenePhysics: scenePhysicsLib, colliderSpec: colliderSpecLib, colliderHelpers: colliderHelpersLib, colliderEdit: colliderEditLib, editSession: editSessionLib, trackpadNav: trackpadNavLib, vrSleeve: vrSleeveLib, gridSettings: gridSettingsLib, cameraBookmarks: cameraBookmarksLib, cameraObjects: cameraObjectsLib, cameraHelpers: cameraHelpersLib, cameraPreview: cameraPreviewLib, addObjects: addObjectsLib, cameraPip: cameraPipLib, inputDevice: inputDeviceLib, sceneTemplates: sceneTemplatesLib, bvhPicking: bvhPickingLib, multiTransform: multiTransformLib, objectOrigin: objectOriginLib, moduleGallery: moduleGalleryLib, uvEditor: uvEditorLib, uvUnwrap: uvUnwrapLib, meshTopology: meshTopologyLib }
       })
     }
   })
@@ -203,11 +213,15 @@
     if (files.length === 0) return
     const skipped = []
     const modelExt = /\.(glb|gltf|obj|stl|fbx)$/
+    // 17-D2: a .mtl / texture dropped ALONGSIDE a model is its companion, not
+    // an unsupported file — importFile pairs them up.
+    const companionExt = /\.(mtl|png|jpe?g|webp|bmp|gif)$/i
+    const companions = files.filter((file) => companionExt.test(file.name))
     files.forEach((file) => {
       const name = file.name.toLowerCase()
-      if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''))
+      if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
-      else skipped.push(file.name)
+      else if (!companions.includes(file)) skipped.push(file.name)
     })
     if (skipped.length > 0)
       showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .json (scene)')
@@ -220,6 +234,7 @@
 <Flow />
 <FlowCode />
 <AnimationWindow />
+<UvEditor />
 <Explorer />
 <TextEditorWindow />
 <ImagePreviewWindow />

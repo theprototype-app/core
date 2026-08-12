@@ -3,7 +3,7 @@ import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selected
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
-import { applyMap, switchMaterialType, setMaterialParam } from '$lib/materialsHandler'
+import { applyMap, switchMaterialType, setMaterialParam, applyMaterials, isMultiMaterial, serializeMeshWithGroups } from '$lib/materialsHandler'
 import { recordObjectPresence } from '$lib/history'
 import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected, physicsShapeChanged } from '$lib/physics'
@@ -250,6 +250,7 @@ export function handleDisconnected(peerId) {
     // Full per-peer teardown, idempotent so it's safe to run from both the
     // conn-close path AND a relayed 'disconnected' message. Toast only while the
     // peer is still known, so relayed duplicates don't stack toasts (172).
+    delete rosterFirstSeen[peerId];
     const known = users.some((/** @type {any} */ u) => u[0] === peerId);
     if (known) showToast(peerId + ' disconnected');
     users = users.filter(u => u[0] !== peerId);
@@ -274,46 +275,69 @@ export function handleDisconnected(peerId) {
     physicsPeerDisconnected(peerId);
 }
 
+// Local age-out for roster entries that never grew a connection (a peer that
+// vanished between the roster broadcast and our dial). First sighted -> pruned
+// after ROSTER_GRACE_MS with no conn. LOCAL only, and long enough that mesh
+// formation (roster runs ahead of the dials) never trips it.
+const ROSTER_GRACE_MS = 30000;
+/** @type {Record<string, number>} */
+let rosterFirstSeen = {};
+
 export function checkLocks(data) {
 
-
-    // console.log(users);
-    // console.log("this.connections")
-    // console.log(peer.peer.connections)
-
+    // Roster reaper, 500ms after a connection closes anywhere. This used to
+    // BROADCAST {type:'disconnected'} for every roster entry it had no conn to —
+    // but "I never dialed X" is not "X is gone": during mesh formation the
+    // roster (broadcast at approval) runs ahead of the dials, and the relay
+    // evicted LIVE peers from every other peer in the session (B5). Witnessed
+    // drops now relay from finalizeDisconnect after the reconnect window;
+    // entries nobody ever reached just age out locally.
     setTimeout(() => {
 
-    users.forEach(user => {
-        const connection = peer.peer.connections[user[0]];
-        if (user[0] === peer.peer.id) return true; // ignore current peerId
-        if (!connection || connection.length < 1) {
-            peer.send({type: 'disconnected', peerId: user[0]});
-            console.log("send disconnect of " + user[0])
-            users = users.filter(u => u[0] !== user[0]);
-            userdata.set(users);
-            userdata.update((value) => value);
-        }
+    users.forEach((/** @type {any} */ user) => {
+        const id = user[0];
+        if (id === peer.peer.id) return; // ignore current peerId
+        if (peer.openedPeers.has(id)) { delete rosterFirstSeen[id]; return; } // live
+        if (peer.connections[id] || peer.reconnecting?.has(id)) return; // dial or heal in flight
+        const seen = rosterFirstSeen[id] ?? (rosterFirstSeen[id] = Date.now());
+        if (Date.now() - seen < ROSTER_GRACE_MS) return;
+        delete rosterFirstSeen[id];
+        console.log('pruning roster entry ' + id + ' - no connection ever materialized');
+        users = users.filter((/** @type {any} */ u) => u[0] !== id);
+        userdata.set(users);
+        userdata.update((value) => value);
     });
-        
+
         }, 500)
 
 
-    // console.log(peer.peer.connections);
-    
-    locked.forEach((objectLock) => {
-
-        if(!peer.peer.connections[objectLock[0]]) {
-            console.log('Connection ' + objectLock[0] + ' not found. Releasing...');
-            // release THIS gone peer's lock (was inverted: kept it, dropped others)
-            locked = locked.filter((lockedUuid) => lockedUuid[1] != objectLock[1]);
-        } else if(peer.peer.connections[objectLock[0]].length <= 1) {
-            console.log('Peer ' + objectLock[0] + ' is not connected anymore. Releasing...' + objectLock[1]);
-            locked = locked.filter((lockedUuid) => lockedUuid[1] != objectLock[1]);
-        }
-        lockedObjects.set(locked);
-
-    })
-    
+    // Release the locks of peers that are actually gone (B5).
+    //
+    // This used peerjs's RAW map, `peer.peer.connections[id]` — an ARRAY of every
+    // connection ever made to that id — and treated `length <= 1` as "not
+    // connected anymore". A healthy peer holds exactly ONE DataConnection, so that
+    // matched every LIVE peer: any disconnect anywhere released every remote lock
+    // in the session (seen in the N=5 stress run, where a survivor logged
+    // "Peer <host> is not connected anymore. Releasing..." about the connected
+    // host). `connections[id].open` is the liveness signal PeerConnection actually
+    // maintains — the same test lockControl.startLockSweep already used.
+    //
+    // Rebuilt as ONE filter instead of a reassign-inside-forEach: the old loop
+    // iterated a stale snapshot while `locked` was replaced under it, and matched
+    // by UUID (dropping any peer's lock on that uuid) rather than by holder.
+    const before = locked.length;
+    locked = locked.filter((/** @type {any} */ objectLock) => {
+        const holder = objectLock[0];
+        if (holder === peer.peer.id) return true; // our own lock is ours to release
+        const conn = peer.connections[holder];
+        if (conn && conn.open) return true;
+        // mid-blip: the holder's conn dropped but the reconnect window is still
+        // running — their lock survives until finalizeDisconnect decides (B5)
+        if (peer.reconnecting?.has(holder)) return true;
+        console.log('Peer ' + holder + ' is not connected anymore. Releasing...' + objectLock[1]);
+        return false;
+    });
+    if (locked.length !== before) lockedObjects.set(locked);
 }
 
 export async function createLoader(count, uuids) {
@@ -347,9 +371,16 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'material') {
         // carries over color/map/opacity from the previous material
         switchMaterialType(data.uuid, data.material, false);
+    } else if (data.parameter == 'materials') {
+        // UV4: the whole slot list + geometry groups. Both halves must arrive
+        // together — an array material with no groups renders nothing.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) applyMaterials(mesh, data.payload, false);
     } else if (data.parameter == 'map') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
-        if (mesh) applyMap(mesh, data.map);
+        // UV2: `slot` addresses one material of an ARRAY. Absent (an older peer,
+        // or any single-material object) means slot 0 = today's behaviour.
+        if (mesh) applyMap(mesh, data.map, data.slot ?? 0);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'animation') {
@@ -360,6 +391,21 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'receiveShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.receiveShadow = data.receiveShadow;
+    } else if (data.parameter == 'shading') {
+        // M6: smooth/flat shading choice. Deterministic — the receiver derives
+        // the normals from the SAME positions, so nothing but the flag travels.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh?.geometry) {
+            mesh.userData.shading = data.shading;
+            if (data.shading === 'smooth') {
+                // DYNAMIC import: a static commandsHandler -> faceEdit edge would
+                // be a new arc into the history.js cycle family (CLAUDE.md)
+                const { smoothWeldedNormals } = await import('$lib/faceEdit');
+                smoothWeldedNormals(mesh.geometry);
+            } else mesh.geometry.computeVertexNormals();
+            mesh.geometry.attributes.normal.needsUpdate = true;
+            objectsGroup.update((value) => value);
+        }
     } else if (data.parameter == 'physics') {
         // P-A: userData.physics is the source of truth for the Inspector-set
         // body params (mode/mass/restitution/friction/collider); null = cleared
@@ -369,6 +415,16 @@ export async function objectParameters(data) {
             else delete mesh.userData.physics;
             objectsGroup.update((value) => value); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
+        }
+    } else if (data.parameter == 'origin') {
+        // 17-D: userData.origin is the per-object transform ORIGIN — a local-space
+        // pivot offset the tools transform around. null = the object's own zero.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.origin) mesh.userData.origin = data.origin;
+            else delete mesh.userData.origin;
+            objectsGroup.update((value) => value);
+            physicsShapeChanged(data.uuid); // the body/collider pose follows the pivot
         }
     } else if (data.parameter == 'particles') {
         // PFX-A: userData.particles is the emitter config (Inspector/menus set
@@ -498,6 +554,28 @@ export function sendObjects(peerId, element) {
 
 }
 
+/**
+ * Should this leaf mesh be sent as toJSON instead of GLTF? Only a MATERIAL ARRAY
+ * needs it (GLTF loses the array — see the branch that uses this).
+ *
+ * Size is the catch: toJSON writes geometry attributes as PLAIN NUMBER ARRAYS, and
+ * binarypack recurses per element, so a big mesh blows the call stack and
+ * `broadcast`'s catch swallows it — the message would silently never leave. The GLTF
+ * path packs attributes as base64 and has no such limit, so above the cap we fall
+ * back to it and accept losing the slots rather than losing the object.
+ * @param {any} element
+ */
+function multiMaterialSyncable(element) {
+    if (!isMultiMaterial(element)) return false;
+    const position = element.geometry?.attributes?.position;
+    // mirrors faceEdit's MAX_SNAPSHOT budget (45000 floats) for the same reason
+    if (position && position.count * 3 > 45000) {
+        showToast('"' + (element.name || element.type) + '" is too large to share its material slots');
+        return false;
+    }
+    return true;
+}
+
 export function sendObject(conn, element, groupuuid) {
     let objects = [];
     let test = new THREE.Vector3();
@@ -559,6 +637,23 @@ export function sendObject(conn, element, groupuuid) {
                 scale: element.scale.toArray()
             });
             sendObject(conn, element, element.uuid);
+        } else if (multiMaterialSyncable(element)) {
+            // A MATERIAL ARRAY cannot survive the GLTF round trip: the exporter
+            // splits geometry.groups into one primitive per material and the loader
+            // reassembles that as a GROUP of single-material child meshes, so the
+            // receiver ends up with a Group (0 slots, 0 groups, fresh child uuids)
+            // instead of the mesh — measured in tests/e2e/object-sync. toJSON +
+            // ObjectLoader DOES round-trip arrays, geometry.groups and data-URL
+            // textures, which is why lights, parent meshes, convert-to-mesh, prefabs
+            // and sessions all already use it (see objectActions' note on the rule).
+            conn.send({
+                type: 'object',
+                element: serializeMeshWithGroups(element),
+                groupuuid: groupuuid,
+                pos: element.position.toArray(),
+                rot: element.rotation.toArray(),
+                scale: element.scale.toArray()
+            });
         } else {
             // capture the transform NOW (synchronously, while animated objects
             // are parked at their base) — the exporter callback fires later (88)
@@ -580,7 +675,10 @@ export function sendObject(conn, element, groupuuid) {
                     });
                 },
                 function (error) {
+                    // an export failure used to be invisible: nothing was sent and
+                    // nothing said so, leaving a hole in the receiver's scene
                     console.log(error);
+                    showToast('Could not share "' + (element.name || element.type) + '" with peers');
                 }
             );
         }

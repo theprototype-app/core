@@ -42,6 +42,16 @@ alone — only "X is previewing camera Y" goes on the wire, as presence). Rule o
 if two peers would independently compute the same value, or it's a personal setting,
 keep it off the wire.
 
+**An ARMED TOOL is neither replicated nor persisted, and must not outlive its session.**
+Knife, Slide, Proportional and the bevel params are in-session modes: a peer must not see
+your armed tool, and finding it still armed after re-entering an edit session is a bug (every
+one of them is reset in `exitEditMode`/`exitFaceEdit`). Sizes and look prefs are the opposite
+— local AND persisted (`vertexHandleScale`, `vertexHandleAdaptive`, `meshGizmoEnabled`,
+`faceGizmoSpace`, `proportionalRadius`) because they are about eyesight and screen, not scene.
+And when two handlers can claim the same KEY (two Escape listeners, in faceEdit and the
+toolbox), let them agree through the EVENT (`defaultPrevented`) — a one-shot store flag is
+consumed by whichever runs first and the other acts anyway.
+
 ## The cheapest replicated feature: put it on `userData`
 
 Before designing messages, ask whether the feature is really "extra settings on an
@@ -113,6 +123,37 @@ and the `__localOnly`/`__uuid` markers all ride this. The recipe:
    helpers, env rig, module content; rebuild them from state; they need
    `registerInteractiveGroup(name)` to receive viewport clicks. Content that can't
    round-trip (skinned rigs) syncs as original file bytes (`animatedImports`).
+   **FOUR paths carry per-object state and they do NOT share a serializer** — the peer
+   object sync (GLTF for leaf meshes, toJSON for lights/parents/multi-material),
+   autosave (ONE GLTF export of the whole group), sessions/`.tpscene` (toJSON), and
+   undo (per-kind snapshots). Adding state means asking which of the four keep it.
+   Anything GLTF cannot round-trip must ride BESIDE the autosave snapshot and REPLACE
+   its GLTF twin on restore, keyed by the `__uuid` stamp (`animated` for rigs,
+   `multiMaterial` for slot arrays) — and the failure is quiet: a material array comes
+   back as a Group of single-material children that renders IDENTICAL pixels, so only
+   a per-object shape assertion catches it.
+   **A MATERIAL ARRAY cannot cross GLTF at all**: the exporter splits
+   `geometry.groups` into one primitive per material, the loader reassembles them as
+   separate meshes, and an array material with NO groups exports nothing. Use
+   `serializeMeshWithGroups` (materialsHandler) — and note it flattens a PARAMETRIC
+   geometry into a plain BufferGeometry first, because `{type:'BoxGeometry', …}` makes
+   ObjectLoader re-run the generator and silently discard custom groups.
+   **State with two halves must travel in ONE message**: slots are
+   `object.material` (the array) *plus* `geometry.groups` (which face uses which),
+   and an array material with no groups draws NOTHING — so the `materials` message
+   carries both, and a groups-only send would land on a receiver that cannot use it.
+   **State DERIVED from geometry can become stored DATA, and then it needs all four
+   paths too.** Stored face topology (P9, `meshTopology.js`) is the worked example:
+   optional CSR Int32 raw-BUFFER siblings on `meshgeo` (never nested arrays), read off
+   the object the sender just committed to so no call site threads them through; the
+   partition INSIDE the history state object (compaction drops sibling fields on the
+   entry); `geometry.userData` for toJSON/sessions; and GLTF autosave simply losing it,
+   which is fine ONLY because absence means "re-derive". That is the design rule for an
+   optional channel: absent must be a LESS CAPABLE result, never a wrong one — and a
+   payload that does not fit the mesh it arrives with is DROPPED, not trusted. Also
+   check every geometry-swap site, not just the commit: a live gesture rebuilds the
+   geometry per frame (`liveGeometryUpdate`), so a channel that only survives commits
+   is already gone by the time the commit runs.
 6. **Cleanup** on peer loss in `commandsHandler.handleDisconnected` — and if you keep
    a per-peer map of your own, clear it in BOTH teardown paths in
    `peerHandler`: `onConnClose` AND `leaveSession` (they are separate call sites;
@@ -140,6 +181,20 @@ and the `__localOnly`/`__uuid` markers all ride this. The recipe:
    (`serializeNode`/`serializeEdge` shapes), never live editor objects — runtime-only
    fields would make the replayed broadcast hash differently (`'flownodes'` kind,
    PR #76, is the reference).
+   **A geometry op that changes the TRIANGLE COUNT must carry groups, uvs and topology
+   itself.** `commitMeshGeoSnapshot` is positions-ONLY and the carry-over cannot save the
+   rest when the count moves, so a textured or multi-material mesh silently came out
+   unmapped (the vertex bevel). `commitMeshGeoTriple(uuid, before, after)` takes the whole
+   `{positions, groups, uvs, faces}` on both sides and works with or without a live face
+   session; inside one, `applyGeometrySnapshot` + `withFaces` is the equivalent.
+   **One gesture is ONE undo entry**, and that decides which recorder to use: a `verts`
+   entry holds a single position for all its indices, so anything moving MANY handles by
+   DIFFERENT amounts (proportional editing, a weld, a multi-drag) has to record a `meshgeo`
+   snapshot instead. If a feature can produce two entries per user action, fold it before
+   shipping — undoing half an operation is worse than no undo.
+   **An op that RUNS ANOTHER op inherits its history**: the one-shot Symmetrize records its
+   own entry, which is why live symmetry (post-processing every commit) needs a decision
+   about entry folding BEFORE it is wired, not after.
 8. **UI entry points**: viewport menu (`ViewportMenu.svelte` items), object context
    menu (`Controls.svelte objectMenuItems`), shortcuts registry (`shortcuts.js` — one
    registry drives bindings AND the Settings list), VR quick-menu
@@ -217,10 +272,53 @@ modal on top of every panel.
 
 `src/modules/<id>/module.js` default-exports `{id, name, version, description,
 register(api)}`; core list in `src/modules/index.js` (`coreModules`); the manager
-enables/disables (live enable, reload to disable — registries are additive). User
-modules install from zip/URL (`userModules.js`) and must be self-contained (no imports;
-`api.THREE`, `api.assetUrl`). Full guide: `MODULES.md` (committed) + `docs/sdk/`
-(uncommitted).
+enables/disables. **17-A: USER modules install/update/disable/remove and
+dev-reload LIVE** (a per-module teardown journal + `deactivateModule`); CORE
+modules still need a reload to disable. User modules install from zip/URL or the
+manager's **Browse** gallery (`moduleGallery.js` off the modules repo's
+index.json) and must be self-contained (no imports; `api.THREE`,
+`api.assetUrl`). Core keeps only hello/button/pong/vrsleeve — dungeon, piano,
+avatar, essentials and car live in `theprototype-app/modules`. Full guide:
+`MODULES.md` (committed) + the docs site.
+
+## Module SDK — the world api (17-A)
+
+A module no longer has to reach into app internals to build shared content.
+Everything below is on the `api` object; the first group REPLICATES, the second
+is deliberately per-viewer:
+
+```js
+const [uuid] = await api.create('/create Box 1 1 1');   // the replicated /create
+await api.create('/create Box 1 1 1', { at: [x, y, z] });
+api.moveObject(uuid, { pos, rot, scale });              // the editor's replicated move
+api.physics.set(uuid, { mode: 'dynamic', mass: 30 });   // setPhysicsFor write path
+api.physics.createJoint('revolute', a, b, 'x', { vel: 0, maxForce: 120 });
+api.physics.running();  api.isPlaying();  api.peerIds();
+api.fireObjectClick(uuid);   // pulse On Click flow nodes (replicated nodetrigger)
+
+api.flyTo(pos, lookAt);  api.playSound('pluck', pos);   // LOCAL — never replicated
+api.followCam(uuid) / api.stopFollowCam();
+api.isVR();  api.vrHand('left');  api.haptic(0.6, 60, 'right');
+api.possess(uuid, { camera: 'first', eyeHeight: 1.7, mouseLook: true });
+api.possessModes;   // capability probe — an unknown camera value degrades silently
+```
+
+Rules that fall out of it:
+
+- **A peer's module must never move another peer's camera.** flyTo/followCam/
+  playSound are local by design; if peers should agree, broadcast your own op.
+- New api surface reaches app libs through **primed dynamic imports** in
+  moduleSDK (addObjects/joints/objectActions/pingAudio join inputRuntime/physics/
+  possess/vrControls) — a static edge closes a cycle back into history and
+  TDZ-crashes the vite-dev SSR pass.
+- **`userData.play` is a PUBLIC contract**, not dungeon-private: publish
+  `{grid, width, height, minX, minY, rooms, floorValue}` on a scene-root group
+  and core's `dungeonPlay.js` gives you play-mode collision, seed-deterministic
+  spawns and the minimap for free.
+- User modules **install, update, disable, remove and dev-reload LIVE**: every
+  `api.register*` records an undo thunk and `deactivateModule(id)` runs the
+  journal in reverse. If you add a register* surface, **add its disposal in the
+  same edit** or a dev reload leaks it.
 
 api surface: `registerNodeGroup(group, components?)` (items with `params` render via
 the generic AnimationNode), `registerEffect(type, fn(object, base, data, time))`

@@ -52,13 +52,18 @@
         // untracked: the effect must only depend on $isLocked.
         untrack(() => {
           const data = dungeonData($globalScene)
-          if (data && $cameraParent) {
+          // resolve the rig ONCE and mutate the object: `$cameraParent.position.x = v`
+          // compiles to store_mutate -> cameraParent.set(), and useParent() is a
+          // READ-ONLY store (no .set) — it threw "store.set is not a function"
+          // and aborted the spawn, dropping everyone in the same room.
+          const rig: any = $cameraParent
+          if (data && rig) {
             const my = ($peers as any)?.peer?.id ?? 'me'
             const spawn = spawnPointFor(data, ($userdata ?? []).map((u: any) => u[0]), my)
             if (spawn) {
-              $cameraParent.position.x = spawn.x
-              $cameraParent.position.y = 0.8
-              $cameraParent.position.z = spawn.z
+              rig.position.x = spawn.x
+              rig.position.y = 0.8
+              rig.position.z = spawn.z
             }
           }
         })
@@ -99,12 +104,14 @@
       }
 
       // dungeon collision (58.1): slide the XZ step along the raster walls
-      if ($isLocked && $cameraParent) {
+      const rig: any = $cameraParent
+      if ($isLocked && rig) {
         const data = dungeonData($globalScene)
         if (data) {
-          const c = slideMove(data, beforeX, beforeZ, $cameraParent.position.x - beforeX, $cameraParent.position.z - beforeZ, 0.3)
-          $cameraParent.position.x = c.x
-          $cameraParent.position.z = c.z
+          // same store_mutate trap as the spawn above — mutate the resolved rig
+          const c = slideMove(data, beforeX, beforeZ, rig.position.x - beforeX, rig.position.z - beforeZ, 0.3)
+          rig.position.x = c.x
+          rig.position.z = c.z
         }
       }
 
@@ -186,15 +193,24 @@
       onChange()
     }
   
+    // threlte's context camera is a runeToCurrentWritable: `current` is a
+    // GETTER ONLY, so `camera.current = x` throws "Cannot set property current
+    // ... which has only a getter" and the swap never happened (play mode kept
+    // rendering the editor camera). Write through .set().
+    // `held` also makes this document-level listener ignore locks it does NOT
+    // own — anything else that requests pointer lock (module possess with
+    // mouseLook) used to yank $isLocked and the camera with it.
+    let held = false
+
     function onPointerlockChange() {
       if (document.pointerLockElement === domElement) {
-        // console.log("locked")
+        held = true
         $isLocked = true
-        camera.current = $playerCam
-      } else {
-        // console.log("unlocked")
+        camera.set($playerCam)
+      } else if (held) {
+        held = false
         $isLocked = false
-        camera.current = $editorCam
+        camera.set($editorCam)
       }
     }
   

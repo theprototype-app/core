@@ -1,28 +1,25 @@
 <script lang="ts">
-	import { Archive, BookOpen, FileInput, FolderOpen, Puzzle, Save, Settings, SlidersHorizontal, Trash2 } from '@lucide/svelte';
+	import { Archive, BookOpen, FileInput, FolderOpen, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2 } from '@lucide/svelte';
 	import '../../app.css';
 	import '../../styles/menu.css';
 	import { tick } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import { save, load, importFile } from '$lib/fileHandler.svelte';
+	import { save, load, importModelFiles } from '$lib/fileHandler.svelte';
 	import {
 		settingsOpen,
 		inspectorClose,
 		inspectorKind,
-		closeSelectionInspector,
 		showSidebar,
 		closeMenu,
 		modulesOpen,
 		sessionsOpen,
+		templatesModalOpen,
 		characterModalOpen,
 		profileSettingsOpen,
-		showToast,
 		connectDocked,
 		connectBarHeight
 	} from '../../stores/appStore.js';
-	import { objectsGroup } from '../../stores/sceneStore';
-	import { sceneCommand } from '$lib/commandsHandler.svelte';
-	import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions';
+	import { confirmClearScene } from '$lib/sceneTemplates';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
@@ -75,10 +72,11 @@
 	// opened from the avatar — where the menu was already "open" — flipped the menu shut
 	// and only the modal's own outside-click closed it, causing a flicker.)
 	async function toggleMenu() {
-		if ($settingsOpen || $modulesOpen || $sessionsOpen || $characterModalOpen || $profileSettingsOpen) {
+		if ($settingsOpen || $modulesOpen || $sessionsOpen || $templatesModalOpen || $characterModalOpen || $profileSettingsOpen) {
 			settingsOpen.set(false);
 			modulesOpen.set(false);
 			sessionsOpen.set(false);
+			templatesModalOpen.set(false);
 			characterModalOpen.set(false);
 			profileSettingsOpen.set(false);
 			// closing a modal fires its restorePanels(), which resets closeMenu to the
@@ -91,30 +89,8 @@
 		closeMenu.update((value) => !value);
 	}
 
-	function clearScene() {
-		// 15-J: viewers can't wipe the shared scene — peers drop their clearscene
-		// broadcast (cloud capability gate), which would leave this client desynced.
-		// Inert without a roles plugin (isViewer() is false when no rolesInfo).
-		if (isViewer()) {
-			warnViewerReadOnly('View-only — ask an editor to clear the scene.');
-			return;
-		}
-		const count = $objectsGroup?.children.length ?? 0;
-		if (count === 0) {
-			sceneCommand('/clear all'); // still clears module content
-			return;
-		}
-		showToast('Clear the scene for everyone? ' + count + ' object' + (count === 1 ? '' : 's') + ' will be removed.', [
-			{
-				label: 'Clear',
-				action: () => {
-					closeSelectionInspector();
-					sceneCommand('/clear all');
-				}
-			},
-			{ label: 'Cancel', action: () => {} }
-		]);
-	}
+	// 15-J viewer gate + confirm toast live in $lib/sceneTemplates.confirmClearScene
+	// now — shared with the Templates modal's "Blank scene" card.
 </script>
 
 <!-- 94: the logo IS the menu button. Open state = accent ring. -->
@@ -141,8 +117,17 @@
 		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
 		style={$connectDocked ? `top: ${$connectBarHeight + 64}px` : ''}
 	>
-		<input type="file" id="import-file" style="display: none" oninput={(e: any) => importFile(e.target.files[0])} accept=".gltf, .glb, .obj, .stl, .fbx" />
+		<!-- multiple + the companion types so an .obj can be picked TOGETHER with its
+		     .mtl and textures (17-D2); a lone model file behaves exactly as before -->
+		<input type="file" id="import-file" multiple style="display: none" oninput={(e: any) => importModelFiles(e.target.files)} accept=".gltf, .glb, .obj, .stl, .fbx, .mtl, .png, .jpg, .jpeg, .webp" />
 		<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .tpscene" />
+
+		<!-- New scene from a starting point (General / Examples / Community tabs) -->
+		<button id="open-templates" class="side-row" onclick={() => { templatesModalOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico"><LayoutTemplate size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Templates</span>
+		</button>
+
+		<div class="side-div"></div>
 
 		<!-- Files -->
 		<button class="side-row" onclick={() => pickFile('import-file')}>
@@ -173,7 +158,7 @@
 			<span class="side-ico"><SlidersHorizontal size={16} aria-hidden="true" /></span>
 			<span class="flex-1 whitespace-nowrap">Configure Scene</span>
 		</button>
-		<button class="side-row" onclick={clearScene}>
+		<button class="side-row" onclick={() => void confirmClearScene()}>
 			<span class="side-ico"><Trash2 size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
 		</button>
 		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>

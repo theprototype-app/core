@@ -12,6 +12,7 @@
 	import MenuSidebar from './menu/Sidebar.svelte';
 	import MenuSettings from './menu/Settings.svelte';
 	import SessionsManager from './menu/SessionsManager.svelte';
+	import TemplatesModal from './menu/TemplatesModal.svelte';
 	import CharacterModal from './menu/CharacterModal.svelte';
 	import ViewportMenu from './menu/ViewportMenu.svelte';
 	import MeshEditPopup from './menu/MeshEditPopup.svelte';
@@ -22,6 +23,7 @@
 	import VoiceChat from './menu/VoiceChat.svelte';
 	import AnnotationPopover from './menu/AnnotationPopover.svelte';
 	import AnnotationMarkers from './menu/AnnotationMarkers.svelte';
+	import KnifeOverlay from './menu/KnifeOverlay.svelte';
 	import NotesDrawer from './menu/NotesDrawer.svelte';
 	import Library from './menu/Library.svelte';
 	import { DarkMode } from 'flowbite-svelte';
@@ -47,6 +49,7 @@
 <MenuSidebar />
 <MenuSettings />
 <SessionsManager />
+<TemplatesModal />
 <CharacterModal />
 <ViewportMenu />
 <MeshEditPopup />
@@ -57,6 +60,7 @@
 <VoiceChat />
 <!-- screen-space note markers (badge + leader line); VR uses the in-scene pins -->
 <AnnotationMarkers />
+<KnifeOverlay />
 <AnnotationPopover />
 <NotesDrawer />
 <Library />

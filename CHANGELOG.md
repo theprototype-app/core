@@ -5,6 +5,113 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.3.0 — Shape it ✂️
+
+A modelling release. The mesh tools grew up — bevel, knife, mirror, loops and
+proportional editing — the app finally *remembers* your mesh's faces instead of
+guessing them from triangles, and there is a whole new UV editor for laying out
+and painting textures.
+
+### ✂️ Mesh editing
+
+- 🔷 **Edges are a real mode** — select them, walk a loop or a ring, dissolve
+  them, and drag them with the gizmo like anything else. Press 1 / 2 / 3 to
+  switch between vertices, edges and faces.
+- 🪒 **Bevel** — round off a face, an edge or a corner, with width, segments and
+  a shape control.
+- 🔪 **Knife** — draw a line across the model and it cuts every face it crosses,
+  with a rubber band showing where the cut will land.
+- 🪞 **Symmetrize** — model one half, mirror it onto the other.
+- 🎈 **Proportional editing** — move one vertex and its neighbours follow, fading
+  off with distance.
+- ➰ **Loops** — loop select, loop cut, grow and shrink a selection, select all,
+  invert, or grab everything connected.
+- 🎚️ **Vertex slide** — slide a vertex along its own edge instead of freehand.
+- 🧮 **Clean-up** — recalculate normals, merge vertices by distance, and switch a
+  mesh between smooth and flat shading.
+- 🧩 **Quad picking** — clicking a face picks the quad you see, not one of the two
+  triangles behind it.
+- 🧰 **Real toolbars** — mesh edit and sculpt are proper tool palettes now: drag
+  them, resize them, and read the shortcut cheat sheet next to them.
+- ↩️ **Undo that fits the job** — selections undo too, a whole edit session
+  collapses into one step when you finish, and Cancel puts the mesh back exactly
+  as you found it.
+- 👓 **Display options** — the selection outline steps out of the way while you
+  edit, and the wireframe shows your quads rather than the raw triangles (the
+  triangles are one toggle away).
+- 🔗 **Convert to mesh** — turn a group or a whole selection into a single
+  editable mesh, materials intact, in one undo step.
+
+### 🧠 Your mesh remembers its faces
+
+The app used to work out what a face was every time, by looking for triangles
+lying flat against each other. That guess broke the moment you rotated an
+extruded band, and the loop tools would quietly refuse to work. The face
+structure is stored with the mesh now: the tools keep working after any edit,
+and faces with more than four corners are finally a real thing.
+
+### 🗺️ UV editor (new)
+
+- 🧭 **A UV tab** — see how a texture wraps your model, and drag, box-select or
+  lasso the points to fix it.
+- 📐 **Unwrap** — box, planar, cylindrical and spherical projections, packed into
+  the square for you, and it can unwrap just the faces you have selected.
+- 🏝️ **Island tools** — rotate, flip, scale and fit a chunk of the map; select
+  everything connected to what you picked.
+- 🖌️ **Paint on the texture** — paint straight onto the model or the UV map, live
+  for everyone in the session, one undo per stroke.
+- 🎨 **Material slots** — a mesh can carry several materials, and you can assign
+  faces to a slot and give each slot its own texture.
+- 🔍 **Texture panel** — see a texture's size and cost, resize it, and switch on a
+  test grid to spot stretching.
+
+### 📦 Modules
+
+- 🛍️ **Browse gallery** — a Browse tab in the modules manager lists everything
+  published in the module gallery, one click to install.
+- 🚚 **More in the gallery** — the piano, avatar, car, essentials and dungeon
+  generator moved out of the app and into it, so the app starts leaner and they
+  can improve on their own schedule.
+- 🔁 **Live reload for authors** — point the manager at a local dev URL and your
+  module reloads as you save it, disposing the old version cleanly.
+- 📊 **Clearer installs** — progress, what actually landed and why something
+  failed, right under the field.
+- 🧱 **A world-building API** — modules can create objects, move them, set up
+  physics and joints, follow a camera and read VR hands, without reaching into
+  the app's internals.
+
+### 🪄 Editing & scene
+
+- 🎯 **The properties panel edits your whole selection** — change a colour,
+  material or physics setting once and it applies to everything picked, as a
+  single undo step. Values that differ show a dash.
+- 📍 **Every object has its own origin** — set it to the bottom, the centre, the
+  world, or place it by hand, and everything rotates and hinges around it.
+- 🎞️ **FBX animations** — imported `.fbx` clips play, and an `.obj` picks up its
+  `.mtl` materials.
+- ⚡ **Faster picking** — clicking around a heavy scene is noticeably quicker.
+- 🗂️ **Templates** — start from a ready-made scene: general starters, worked
+  examples, and a community tab.
+- ⚙️ **Settings, reorganised** — the overgrown Scene section split into Interface,
+  Controls and Scene, and the search box has a clear button.
+
+### 🌐 Sessions
+
+- 👥 **Bigger sessions hold together** — everyone now really connects to everyone
+  in a busy room (past five or so peers, some links used to be dropped while they
+  were still forming).
+- 🩹 **Blips heal** — a peer who drops for a moment reconnects instead of being
+  torn out of the session, and a disconnect no longer frees other people's locks.
+
+### 🧹 Fixes & housekeeping
+
+- 💾 Saving a scene no longer kills its animations — imported clips and animations
+  you authored both come back.
+- 🖼️ Editing a textured model keeps its texture mapping, and painting an imported
+  model no longer mirrors or untiles its texture.
+- ↪️ Redo puts a created object back where you placed it, not at the world centre.
+- 🧰 Under the hood: Vite 8 and a dependency refresh.
+
 ## 1.2.0 — Make it real 🔨
 
 The biggest release since 1.0: physics you can shape, cameras you can frame,

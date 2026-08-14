@@ -76,7 +76,10 @@
 	const easeKey = $derived(selKeyObj ?? selTrack?.keys?.[0] ?? null);
 	const segEase = $derived(easeKey?.ease ?? EASINGS.linear);
 	let view = $state(/** @type {'sheet'|'graph'} */ ('sheet'));
-	let snap = $state(true);
+	/** 'off' | 'frame' | a step in seconds as a string */
+	let snapMode = $state(
+		typeof localStorage !== 'undefined' ? (localStorage.getItem('animationSnap') ?? 'frame') : 'frame'
+	);
 	let renaming = $state(/** @type {string|null} */ (null));
 	// how tall the clip list is allowed to be, dragged by the divider under it
 	let clipsH = $state(
@@ -149,20 +152,26 @@
 		viewStart = 0;
 		viewEnd = duration;
 	}
-	/** ctrl/⌘+wheel zooms about the cursor, plain wheel pans — the video-editor idiom */
+	/**
+	 * The WHEEL ZOOMS about the cursor — up zooms in, down zooms out — because that
+	 * is what the wheel does over a timeline everywhere else, and it is the gesture
+	 * reached for most. Shift+wheel pans, as do right- and middle-drag.
+	 */
 	function onPlotWheel(/** @type {WheelEvent} */ e) {
 		if (!plotEl) return;
 		e.preventDefault();
 		const r = plotEl.getBoundingClientRect();
 		const at = xt(e.clientX - r.left);
-		if (e.ctrlKey || e.metaKey) {
-			zoomView(e.deltaY > 0 ? 1.2 : 1 / 1.2, at);
+		const away = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+		if (e.shiftKey) {
+			const span = viewSpan;
+			const step = away * 0.0015 * span;
+			const from = Math.min(Math.max(viewStart + step, 0), Math.max(0, duration - span));
+			viewStart = from;
+			viewEnd = Math.min(from + span, duration);
 			return;
 		}
-		const step = (e.deltaY !== 0 ? e.deltaY : e.deltaX) * 0.0015 * viewSpan;
-		const from = Math.min(Math.max(viewStart + step, 0), Math.max(0, duration - viewSpan));
-		viewStart = from;
-		viewEnd = Math.min(from + viewSpan, duration);
+		zoomView(away < 0 ? 1 / 1.2 : 1.2, at);
 	}
 	// auto-key is armed for ONE object at a time (the one you are posing)
 	const recording = $derived(!!target && $autoKeyFor === target.uuid);
@@ -332,7 +341,25 @@
 		return out;
 	});
 
-	const snapT = (/** @type {number} */ t) => (snap ? Math.round(t * 10) / 10 : Math.round(t * 1000) / 1000);
+	// FRAMES. An animator thinks in frames, so the arrow keys step in them and
+	// snapping can too. 30 is the default; localStorage overrides it for a 24 or 60
+	// fps pipeline (there is nothing else in the app that owns a frame rate yet).
+	const FPS = (() => {
+		const raw = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('animationFps')) : NaN;
+		return Number.isFinite(raw) && raw >= 1 && raw <= 240 ? raw : 30;
+	})();
+	const frame = 1 / FPS;
+
+	/** @param {number} t */
+	function snapT(t) {
+		if (snapMode === 'frame') return Math.round(t * FPS) / FPS;
+		if (snapMode === 'off') return Math.round(t * 1000) / 1000;
+		return Math.round(t / Number(snapMode)) * Number(snapMode);
+	}
+
+	/** which transform the selection is under: 1 = move, 2 = scale (mesh tools use
+	 *  1/2/3 the same way, so the digits mean "pick a tool" everywhere) */
+	let xform = $state(/** @type {'move'|'scale'} */ ('move'));
 
 	// --- moving keys -------------------------------------------------------------
 	// Three ways in, one engine:
@@ -344,31 +371,51 @@
 	// through `moveKeys`, so a drag across two channels is one store write, one
 	// broadcast and (through the gesture) one undo entry.
 	let plotEl = $state(/** @type {any} */ (null));
-	/** @type {{origin: {x: number, y: number}, snapshot: any[], modal: boolean}|null} */
+	/** the element carrying the key handler — focused on any press in the plot */
+	let plotHost = $state(/** @type {any} */ (null));
+	/** @type {{origin: {x: number, y: number}, snapshot: any[], modal: boolean, pivot: {t: number, v: number}}|null} */
 	let move = null;
 	let grabbing = $state(false);
 
 	/** the selected keys with their CURRENT times/values, to apply a delta against */
 	function keySnapshot() {
-		return selKeys
-			.map(([trackId, index]) => {
-				const track = tracks.find((t) => t.id === trackId);
-				const key = track?.keys[index];
-				if (!track || !key) return null;
-				return { trackId, index, t0: key.t, v0: key.v, stepped: STEPPED.has(track.channel) };
-			})
-			.filter(Boolean);
+		/** @type {{trackId: string, index: number, t0: number, v0: number, stepped: boolean}[]} */
+		const out = [];
+		for (const [trackId, index] of selKeys) {
+			const track = tracks.find((t) => t.id === trackId);
+			const key = track?.keys[index];
+			if (!track || !key) continue;
+			out.push({ trackId, index, t0: key.t, v0: key.v, stepped: STEPPED.has(track.channel) });
+		}
+		return out;
 	}
 
-	/** @param {number} dt @param {number|null} dv */
+	/**
+	 * Write the gesture's current offset onto every selected key.
+	 *
+	 * MOVE shifts them; SCALE stretches them about a pivot — the PLAYHEAD in time
+	 * (which is what you want: park the head where the movement should stay put and
+	 * pull the rest out) and the selection's own middle in value.
+	 * @param {number} dt @param {number|null} dv
+	 */
 	function applyDelta(dt, dv) {
 		if (!target || !move?.snapshot.length) return;
-		const moves = move.snapshot.map((s) => ({
-			trackId: s.trackId,
-			index: s.index,
-			t: snapT(Math.max(0, Math.min(duration, s.t0 + dt))),
-			...(dv !== null && !s.stepped ? { v: s.v0 + dv } : {})
-		}));
+		const scaling = xform === 'scale';
+		// a horizontal offset becomes a FACTOR when scaling; 200px doubles it
+		const kt = scaling ? Math.max(0.05, 1 + dt / Math.max(viewSpan, 0.001) * 1.5) : 1;
+		const kv = scaling && dv !== null ? Math.max(0.05, 1 + dv / Math.max(range.hi - range.lo, 1e-6) * 1.5) : 1;
+		const pivotT = move.pivot.t;
+		const pivotV = move.pivot.v;
+		const moves = move.snapshot.map((s) => {
+			const t = scaling ? pivotT + (s.t0 - pivotT) * kt : s.t0 + dt;
+			const value = scaling ? pivotV + (s.v0 - pivotV) * kv : s.v0 + (dv ?? 0);
+			return {
+				trackId: s.trackId,
+				index: s.index,
+				t: snapT(Math.max(0, Math.min(duration, t))),
+				...((scaling || dv !== null) && !s.stepped ? { v: value } : {})
+			};
+		});
 		// keys re-sort as they pass one another; moveKeys reports where each one
 		// LANDED, which is the only reliable identity once two of them share a time
 		const landed = moveKeys(target.uuid, moves);
@@ -402,7 +449,12 @@
 		move = {
 			origin: { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) },
 			snapshot,
-			modal
+			modal,
+			// scale pivots: the playhead in time, the selection's middle in value
+			pivot: {
+				t: curTime,
+				v: snapshot.reduce((sum, s) => sum + s.v0, 0) / snapshot.length
+			}
 		};
 		// hold the y axis still for the whole gesture (see `frozenRange`)
 		if (view === 'graph') frozenRange = { lo: range.lo, hi: range.hi };
@@ -461,13 +513,24 @@
 		}
 	}
 
-	/** press on a key: select (shift adds) and start a drag */
+	/**
+	 * Press on a key. LEFT selects (shift adds) and drags; MIDDLE locks the selection
+	 * to the pointer (the modal grab), which leaves RIGHT free for the menu — the
+	 * split you end up wanting once both exist.
+	 */
 	function keyDown(/** @type {PointerEvent} */ e, /** @type {string} */ trackId, /** @type {number} */ index) {
 		if (!target) return;
 		if (move?.modal) return; // a grab is running; its own handler commits
+		if (e.button === 2) return; // the menu opens on contextmenu, not here
 		e.preventDefault();
 		e.stopPropagation();
+		plotHost?.focus?.({ preventScroll: true }); // so the keyboard works
 		selId = trackId;
+		if (e.button === 1) {
+			if (!isKeySelected(trackId, index)) selKeys = [[trackId, index]];
+			beginMove(e, true);
+			return;
+		}
 		if (e.shiftKey) {
 			selKeys = isKeySelected(trackId, index)
 				? selKeys.filter(([id, i]) => !(id === trackId && i === index))
@@ -478,15 +541,16 @@
 		beginMove(e, false);
 	}
 
-	/** right-click a key: lock the selection to the pointer until a click commits */
+	/** right-click a key: its menu (and a running grab commits, so the button that
+	 *  ends the gesture can be either one) */
 	function keyContext(/** @type {MouseEvent} */ e, /** @type {string} */ trackId, /** @type {number} */ index) {
 		if (!target) return;
 		e.preventDefault();
 		e.stopPropagation();
-		if (move) return finishMove(true); // a second right-click commits
+		if (move) return finishMove(true);
 		selId = trackId;
 		if (!isKeySelected(trackId, index)) selKeys = [[trackId, index]];
-		beginMove(e, true);
+		openPlotMenu(e);
 	}
 
 	// --- scrubbing by dragging the timeline --------------------------------------
@@ -509,6 +573,9 @@
 	 */
 	function plotDown(/** @type {PointerEvent} */ e) {
 		if (!target || !plotEl) return;
+		// any press in the plot gives it the keyboard, so the arrows and 1/2 work
+		// without hunting for what to click first
+		plotEl.parentElement?.parentElement?.focus?.({ preventScroll: true });
 		const r = plotEl.getBoundingClientRect();
 		// RIGHT or MIDDLE button on the plot body: a pan if the pointer travels, and
 		// the context menu if it does not (the Blender split — the view is dragged far
@@ -542,6 +609,34 @@
 		viewStart = from;
 		viewEnd = Math.min(from + pan.span, duration);
 	}
+	// --- the navigator strip -----------------------------------------------------
+	/** @type {{el: any, span: number}|null} */
+	let navDrag = null;
+	function navTo(/** @type {number} */ clientX, /** @type {number} */ span) {
+		if (!navDrag) return;
+		const r = navDrag.el.getBoundingClientRect();
+		const at = ((clientX - r.left) / Math.max(r.width, 1)) * duration;
+		const from = Math.min(Math.max(at - span / 2, 0), Math.max(0, duration - span));
+		viewStart = from;
+		viewEnd = Math.min(from + span, duration);
+	}
+	function navDown(/** @type {PointerEvent} */ e) {
+		e.preventDefault();
+		// freeze the span, like the pan: it is derived from the ends we are writing
+		navDrag = { el: e.currentTarget, span: viewSpan };
+		navTo(e.clientX, navDrag.span);
+		window.addEventListener('pointermove', navMove);
+		window.addEventListener('pointerup', navUp);
+	}
+	function navMove(/** @type {PointerEvent} */ e) {
+		if (navDrag) navTo(e.clientX, navDrag.span);
+	}
+	function navUp() {
+		navDrag = null;
+		window.removeEventListener('pointermove', navMove);
+		window.removeEventListener('pointerup', navUp);
+	}
+
 	function panUp(/** @type {PointerEvent} */ e) {
 		const dragged = pan?.moved;
 		pan = null;
@@ -599,21 +694,124 @@
 		addKey(target.uuid, track.id, t, v);
 	}
 
-	/** Del removes every selected key. Panels swallow DELEGATED handlers, so this is
-	 *  a direct listener (the DragRow lesson, 16-Q3). @param {HTMLElement} node */
+	/** delete every selected key, highest index first so the rest keep their spots */
+	function deleteSelectedKeys() {
+		if (!target || !selKeys.length) return;
+		const doomed = [...selKeys].sort((a, b) => b[1] - a[1]);
+		beginAnimGesture(target.uuid, doomed.length > 1 ? 'Remove keys' : 'Remove key');
+		for (const [trackId, index] of doomed) removeKey(target.uuid, trackId, index);
+		endAnimGesture();
+		selKeys = [];
+	}
+
+	/** the keys of the channel(s) on screen, at (or nearest) the playhead */
+	function keysAtPlayhead() {
+		const list = view === 'graph' && selTrack ? [selTrack] : tracks;
+		/** @type {[string, number][]} */
+		const hits = [];
+		for (const track of list) {
+			let best = -1;
+			let bestGap = frame * 1.5;
+			track.keys.forEach((/** @type {any} */ k, /** @type {number} */ i) => {
+				const gap = Math.abs(k.t - curTime);
+				if (gap <= bestGap) {
+					bestGap = gap;
+					best = i;
+				}
+			});
+			if (best >= 0) hits.push([track.id, best]);
+		}
+		return hits;
+	}
+
+	/** nudge the selection with the keyboard: X in time, Y in value (graph view),
+	 *  through the same gesture machinery so it is one undo entry per press */
+	function nudge(/** @type {number} */ dx, /** @type {number} */ dy, /** @type {number} */ mult) {
+		if (!target || !selKeys.length) return;
+		const snapshot = keySnapshot();
+		if (!snapshot.length) return;
+		move = {
+			origin: { x: 0, y: 0 },
+			snapshot,
+			modal: false,
+			pivot: { t: curTime, v: snapshot.reduce((sum, s) => sum + s.v0, 0) / snapshot.length }
+		};
+		beginAnimGesture(target.uuid, xform === 'scale' ? 'Scale keys' : 'Move keys');
+		if (xform === 'scale') {
+			// a keypress is a fixed 2% step per unit, so it reads as a nudge either way
+			applyDelta(dx * mult * viewSpan * 0.0133, dy ? dy * mult * (range.hi - range.lo) * 0.0133 : null);
+		} else {
+			const step = frame * mult;
+			const vStep = ((range.hi - range.lo) / 100) * mult;
+			applyDelta(dx * step, dy ? dy * vStep : null);
+		}
+		move = null;
+		endAnimGesture();
+	}
+
+	/**
+	 * The editor's keyboard. Panels swallow DELEGATED handlers, so this is a direct
+	 * listener (the DragRow lesson, 16-Q3).
+	 *
+	 *   ←/→            playhead by one FRAME (Ctrl x10, Shift x100 — the DragRow
+	 *                  convention, so the modifiers mean the same thing everywhere)
+	 *   Alt+←/→        jump to the previous/next key
+	 *   Ctrl+Space     add the key at the playhead to the selection
+	 *   Esc            drop the selection (or cancel a grab)
+	 *   1 / 2          arm Move / Scale
+	 *   Shift+arrows   transform the selection: ←/→ in time, ↑/↓ in value
+	 *   Del            remove the selection
+	 * @param {HTMLElement} node
+	 */
 	function keyNav(node) {
 		const onKey = (/** @type {KeyboardEvent} */ e) => {
-			if (!target || !selKeys.length) return;
-			if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+			if (!target) return;
 			const tag = /** @type {any} */ (e.target)?.tagName;
 			if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+			const mult = e.ctrlKey || e.metaKey ? 10 : e.shiftKey ? 100 : 1;
+			const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+
+			if (e.key === 'Delete' || e.key === 'Backspace') {
+				if (!selKeys.length) return;
+				e.preventDefault();
+				deleteSelectedKeys();
+				return;
+			}
+			if (e.key === 'Escape') {
+				if (move?.modal) return; // its own handler cancels the grab
+				if (!selKeys.length) return;
+				e.preventDefault();
+				selKeys = [];
+				return;
+			}
+			if (e.key === '1' || e.key === '2') {
+				e.preventDefault();
+				xform = e.key === '1' ? 'move' : 'scale';
+				return;
+			}
+			if (e.code === 'Space' && (e.ctrlKey || e.metaKey)) {
+				e.preventDefault();
+				const hits = keysAtPlayhead();
+				if (!hits.length) return;
+				const fresh = hits.filter(([id, i]) => !isKeySelected(id, i));
+				selKeys = fresh.length ? [...selKeys, ...fresh] : selKeys.filter(([id, i]) => !hits.some(([hid, hi]) => hid === id && hi === i));
+				if (hits[0]) selId = hits[0][0];
+				return;
+			}
+			if (!arrow) return;
 			e.preventDefault();
-			// highest index first, so the earlier ones keep their positions
-			const doomed = [...selKeys].sort((a, b) => b[1] - a[1]);
-			beginAnimGesture(target.uuid, doomed.length > 1 ? 'Remove keys' : 'Remove key');
-			for (const [trackId, index] of doomed) removeKey(target.uuid, trackId, index);
-			endAnimGesture();
-			selKeys = [];
+			// SHIFT + arrows transform the selection; otherwise the arrows drive the
+			// playhead (where Shift is free to be the big multiplier)
+			if (e.shiftKey && selKeys.length) {
+				nudge(arrow[0], view === 'graph' ? arrow[1] : 0, e.ctrlKey || e.metaKey ? 10 : 1);
+				return;
+			}
+			if (arrow[1] !== 0) return; // up/down does nothing to the playhead
+			if (e.altKey) {
+				stepKey(arrow[0]);
+				return;
+			}
+			scrub(target.uuid, Math.max(0, Math.min(duration, curTime + arrow[0] * frame * mult)));
 		};
 		node.addEventListener('keydown', onKey);
 		return { destroy: () => node.removeEventListener('keydown', onKey) };
@@ -749,9 +947,13 @@
 			}
 		});
 		items.push({
-			label: snap ? 'Snapping: 0.1s (on)' : 'Snapping: off',
-			checked: snap,
-			action: () => (snap = !snap)
+			label: 'Snap to frames',
+			checked: snapMode === 'frame',
+			tooltip: FPS + ' fps',
+			action: () => {
+				snapMode = snapMode === 'frame' ? 'off' : 'frame';
+				localStorage.setItem('animationSnap', snapMode);
+			}
 		});
 		menu = { x: e.clientX, y: e.clientY, items };
 	}
@@ -1219,7 +1421,7 @@
 
 			<!-- CENTRE: the timeline (dope sheet / value graph) -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-			<div class="flex min-w-0 flex-1 flex-col" tabindex="-1" use:keyNav>
+			<div class="flex min-w-0 flex-1 flex-col" tabindex="-1" bind:this={plotHost} use:keyNav>
 				<div class="flex shrink-0 items-center gap-2 border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-400">
 					<button
 						class="rounded-sm border px-1.5 py-0.5 {view === 'sheet' ? 'border-primary-500 text-primary-300' : 'border-gray-600'}"
@@ -1229,9 +1431,40 @@
 						class="rounded-sm border px-1.5 py-0.5 {view === 'graph' ? 'border-primary-500 text-primary-300' : 'border-gray-600'}"
 						onclick={() => (view = 'graph')}>Graph</button
 					>
-					<label class="flex items-center gap-1">
-						<input type="checkbox" class="accent-primary-500" checked={snap} onchange={(e) => (snap = e.currentTarget.checked)} />
-						snap 0.1s
+				<!-- 1 / 2 arm the transform, the way the digits pick a tool in the mesh
+					     editor; they drive both the drag and Shift+arrows -->
+					<div class="flex items-center overflow-hidden rounded-sm border border-gray-600">
+						<button
+							id="animation-mode-move"
+							class="px-1.5 py-0.5 {xform === 'move' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							title="Move keys (1)"
+							aria-pressed={xform === 'move'}
+							onclick={() => (xform = 'move')}>Move</button
+						>
+						<button
+							id="animation-mode-scale"
+							class="border-l border-gray-600 px-1.5 py-0.5 {xform === 'scale' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							title="Scale keys about the playhead (2)"
+							aria-pressed={xform === 'scale'}
+							onclick={() => (xform = 'scale')}>Scale</button
+						>
+					</div>
+					<label class="flex items-center gap-1" title="What key times snap to while you drag">
+						snap
+						<select
+							id="animation-snap"
+							class="rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-[11px]"
+							value={snapMode}
+							onchange={(e) => {
+								snapMode = e.currentTarget.value;
+								localStorage.setItem('animationSnap', snapMode);
+							}}
+						>
+							<option value="off">off</option>
+							<option value="frame">frame ({FPS}fps)</option>
+							<option value="0.1">0.1s</option>
+							<option value="0.5">0.5s</option>
+						</select>
 					</label>
 
 					<!-- A/B: loop the seconds you are tuning. It rides the transport, so a
@@ -1371,11 +1604,47 @@
 							<line
 								x1={tx(Math.min(curTime, duration))} y1={0}
 								x2={tx(Math.min(curTime, duration))} y2={plotH}
-								stroke="rgb(250 204 21 / 0.9)" stroke-width="1.5"
+							stroke="rgb(250 204 21 / 0.9)" stroke-width="1.5"
 							/>
 						</svg>
 					{/if}
 				</div>
+
+				<!-- NAVIGATOR: the whole clip at a glance with the visible window as a
+				     thumb, so a zoomed-in view still shows where it sits and can be
+				     dragged along. A native scrollbar cannot do this job — the plot is
+				     one screen wide by construction, the zoom is a view WINDOW rather
+				     than a wider canvas. -->
+				{#if tracks.length}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						id="animation-navigator"
+						class="relative mx-2 mb-1.5 h-3 shrink-0 cursor-pointer rounded-full bg-gray-900/70"
+						style="touch-action: none"
+						title="The whole clip — drag the bar to move the visible window"
+						onpointerdown={navDown}
+					>
+						{#each tracks as track (track.id)}
+							{#each track.keys as key (key.t)}
+								<span
+									class="pointer-events-none absolute top-1/2 h-1 w-px -translate-y-1/2 bg-gray-500/70"
+									style="left: {(key.t / Math.max(duration, 0.001)) * 100}%"
+								></span>
+							{/each}
+						{/each}
+						<span
+							class="pointer-events-none absolute inset-y-0 rounded-full border border-primary-500/70 bg-primary-500/25"
+							style="left: {(viewStart / Math.max(duration, 0.001)) * 100}%; width: {Math.max(
+								2,
+								(viewSpan / Math.max(duration, 0.001)) * 100
+							)}%"
+						></span>
+						<span
+							class="pointer-events-none absolute inset-y-0 w-px bg-amber-400"
+							style="left: {(Math.min(curTime, duration) / Math.max(duration, 0.001)) * 100}%"
+						></span>
+					</div>
+				{/if}
 			</div>
 
 			<!-- RIGHT: selected key + the easing that leaves it -->

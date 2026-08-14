@@ -603,14 +603,16 @@ h.run(async () => {
 		`dragging one moves every SELECTED key and leaves the rest (${JSON.stringify(beforeDrag)} -> ${JSON.stringify(afterDrag)})`
 	);
 
-	// right-click LOCKS the selection to the pointer; a click places it, Esc undoes
+	// MIDDLE-click LOCKS the selection to the pointer; a click places it, Esc undoes.
+	// (Right-click is the context menu — one button cannot be both.)
 	dots = await diamonds();
 	const beforeGrab = await keyTimes();
 	await A.page.mouse.move(dots[2].x, dots[2].y);
-	await A.page.mouse.click(dots[2].x, dots[2].y, { button: 'right' });
+	await A.page.mouse.down({ button: 'middle' });
+	await A.page.mouse.up({ button: 'middle' });
 	await A.page.waitForTimeout(200);
 	const grabbing = await A.page.evaluate(() => /moving key|moving \d+ keys/.test(document.body.textContent ?? ''));
-	h.check(grabbing, 'right-clicking a key locks it to the pointer');
+	h.check(grabbing, 'middle-clicking a key locks it to the pointer');
 	await A.page.mouse.move(dots[2].x - 60, dots[2].y, { steps: 6 });
 	await A.page.waitForTimeout(150);
 	const midGrab = await keyTimes();
@@ -633,7 +635,8 @@ h.run(async () => {
 	dots = await diamonds();
 	const beforeCancel = await keyTimes();
 	await A.page.mouse.click(dots[1].x, dots[1].y); // single selection
-	await A.page.mouse.click(dots[1].x, dots[1].y, { button: 'right' });
+	await A.page.mouse.down({ button: 'middle' });
+	await A.page.mouse.up({ button: 'middle' });
 	await A.page.mouse.move(dots[1].x + 70, dots[1].y, { steps: 5 });
 	await A.page.waitForTimeout(150);
 	await A.page.keyboard.press('Escape');
@@ -792,6 +795,187 @@ h.run(async () => {
 		easedAway.now < easedAway.hadEase || easedAway.hadEase === 0,
 		`Reset easing clears the curve on a key (${easedAway.hadEase} -> ${easedAway.now} with easing)`
 	);
+
+	// ---------- 9c5. the keyboard: frames, key navigation, nudging, modes ----------
+	const kbSetup = await A.page.evaluate((id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', id);
+		const clipId = ap.createClip(id, 'Keyboard');
+		const track = ap.addTrack(id, 'pos.y', obj, clipId);
+		ap.updateKey(id, track, 0, { t: 0, v: 0 }, clipId);
+		ap.updateKey(id, track, 1, { t: 1, v: 3 }, clipId);
+		ap.updateAnim(id, { duration: 2, loop: 'loop' }, clipId);
+		ap.scrub(id, 0);
+		ap.setActiveClip(id, clipId);
+		return { fps: 30 };
+	}, first);
+	void kbSetup;
+	await A.page.waitForTimeout(350);
+	// click the plot so it owns the keyboard, then walk the playhead by frames
+	const plotArea = await A.page.locator('#animation-timeline').boundingBox();
+	await A.page.mouse.click(plotArea.x + 6, plotArea.y + plotArea.height - 6);
+	await A.page.waitForTimeout(150);
+	const head = () => A.page.evaluate((id) => window.__stores.animationPreview.playheadOf(id), first);
+	await A.page.evaluate((id) => window.__stores.animationPreview.scrub(id, 0), first);
+	await A.page.keyboard.press('ArrowRight');
+	await A.page.waitForTimeout(120);
+	const oneFrame = await head();
+	await A.page.keyboard.press('Control+ArrowRight');
+	await A.page.waitForTimeout(120);
+	const tenMore = await head();
+	h.check(
+		Math.abs(oneFrame - 1 / 30) < 1e-6,
+		`Right steps the playhead one frame (${oneFrame.toFixed(4)}s at 30fps)`
+	);
+	h.check(
+		Math.abs(tenMore - 11 / 30) < 1e-6,
+		`and Ctrl+Right steps ten (${tenMore.toFixed(4)}s)`
+	);
+	// Alt+arrows jump between keys
+	await A.page.keyboard.press('Alt+ArrowRight');
+	await A.page.waitForTimeout(150);
+	const jumped = await head();
+	h.check(Math.abs(jumped - 1) < 1e-6, `Alt+Right jumps to the next key (${jumped}s)`);
+
+	// Ctrl+Space selects the key at the playhead, Shift+arrows nudge it, Esc drops it
+	await A.page.keyboard.press('Control+Space');
+	await A.page.waitForTimeout(150);
+	const picked = await A.page.evaluate(() =>
+		/(\d+) keys selected/.test(document.body.textContent ?? '') ||
+		!!document.querySelector('#animation-timeline rect[fill="rgb(250 204 21)"]')
+	);
+	h.check(picked, 'Ctrl+Space selects the key at the playhead');
+	const keyTimesNow = () =>
+		A.page.evaluate(
+			(id) => window.__stores.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t),
+			first
+		);
+	const beforeNudge = await keyTimesNow();
+	await A.page.keyboard.press('Shift+ArrowRight');
+	await A.page.waitForTimeout(200);
+	const afterNudge = await keyTimesNow();
+	h.check(
+		Math.abs(afterNudge[1] - (beforeNudge[1] + 1 / 30)) < 1e-6,
+		`Shift+Right nudges the selected key one frame (${beforeNudge[1]} -> ${afterNudge[1]})`
+	);
+	const undoOne = await A.page.evaluate(async (id) => {
+		window.__stores.history.undo();
+		await new Promise((r) => setTimeout(r, 200));
+		return window.__stores.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t);
+	}, first);
+	h.check(
+		Math.abs(undoOne[1] - beforeNudge[1]) < 1e-6,
+		`each nudge is its own undo step (${JSON.stringify(undoOne)})`
+	);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(150);
+	const cleared = await A.page.evaluate(
+		() => !document.querySelector('#animation-timeline rect[fill="rgb(250 204 21)"]')
+	);
+	h.check(cleared, 'Escape drops the selection');
+
+	// 1 / 2 arm move and scale, and scale really scales about the playhead
+	await A.page.keyboard.press('2');
+	await A.page.waitForTimeout(150);
+	const scaleArmed = await A.page.evaluate(
+		() => document.getElementById('animation-mode-scale')?.getAttribute('aria-pressed')
+	);
+	h.check(scaleArmed === 'true', 'the 2 key arms Scale');
+	const scaled = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		ap.scrub(id, 0); // pivot at 0
+		return ap.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t);
+	}, first);
+	// select both keys through the plot menu, opened with a REAL right-click (the
+	// menu is opened on the button RELEASE, so a synthetic contextmenu never shows it)
+	await A.page.mouse.click(plotArea.x + 30, plotArea.y + plotArea.height - 8, { button: 'right' });
+	await A.page.waitForTimeout(250);
+	await A.page.getByText('Select every key', { exact: true }).click();
+	await A.page.waitForTimeout(200);
+	// a press in the plot body hands the keyboard back (the menu had it) without
+	// touching the selection
+	await A.page.mouse.click(plotArea.x + 6, plotArea.y + plotArea.height - 6);
+	await A.page.waitForTimeout(150);
+	await A.page.keyboard.press('Shift+ArrowRight');
+	await A.page.waitForTimeout(200);
+	const afterScale = await keyTimesNow();
+	h.check(
+		afterScale[0] === scaled[0] && afterScale[1] > scaled[1],
+		`Scale stretches the keys away from the playhead pivot (${JSON.stringify(scaled)} -> ${JSON.stringify(afterScale)})`
+	);
+	await A.page.keyboard.press('1');
+
+	// ---------- 9c6. the navigator strip, and wheel direction ----------
+	const nav = await A.page.evaluate(() => {
+		const el = document.getElementById('animation-navigator');
+		if (!el) return null;
+		const r = el.getBoundingClientRect();
+		const thumb = el.querySelector('span.border-primary-500\\/70');
+		const tr = thumb?.getBoundingClientRect();
+		return {
+			x: r.x, y: r.y, w: r.width,
+			thumbFrac: tr ? tr.width / r.width : null
+		};
+	});
+	h.check(!!nav, 'a navigator strip shows the whole clip');
+	// zoom in with the WHEEL (up = in) — the thumb must shrink
+	await A.page.mouse.move(plotArea.x + plotArea.width / 2, plotArea.y + plotArea.height / 2);
+	await A.page.mouse.wheel(0, -300);
+	await A.page.waitForTimeout(250);
+	const zoomedIn = await A.page.evaluate(() => {
+		const el = document.getElementById('animation-navigator');
+		const r = el.getBoundingClientRect();
+		const thumb = el.querySelector('span.border-primary-500\\/70');
+		return thumb ? thumb.getBoundingClientRect().width / r.width : null;
+	});
+	h.check(
+		nav.thumbFrac !== null && zoomedIn !== null && zoomedIn < nav.thumbFrac - 0.05,
+		`scrolling UP zooms in (thumb ${(nav.thumbFrac * 100).toFixed(0)}% -> ${(zoomedIn * 100).toFixed(0)}% of the clip)`
+	);
+	await A.page.mouse.wheel(0, 600);
+	await A.page.waitForTimeout(250);
+	const zoomedOut = await A.page.evaluate(() => {
+		const el = document.getElementById('animation-navigator');
+		const r = el.getBoundingClientRect();
+		const thumb = el.querySelector('span.border-primary-500\\/70');
+		return thumb ? thumb.getBoundingClientRect().width / r.width : null;
+	});
+	h.check(zoomedOut > zoomedIn, `and scrolling down zooms out (${(zoomedOut * 100).toFixed(0)}%)`);
+
+	// dragging the strip moves the window
+	await A.page.mouse.move(plotArea.x + plotArea.width / 2, plotArea.y + plotArea.height / 2);
+	await A.page.mouse.wheel(0, -400);
+	await A.page.waitForTimeout(200);
+	const readView = () =>
+		A.page.evaluate(() => {
+			const m = document.body.textContent?.match(/([\d.]+)–([\d.]+)s/);
+			return m ? { from: +m[1], to: +m[2] } : null;
+		});
+	const viewBefore = await readView();
+	await A.page.mouse.move(nav.x + nav.w * 0.85, nav.y + 6);
+	await A.page.mouse.down();
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(250);
+	const viewAfter = await readView();
+	h.check(
+		!!viewBefore && !!viewAfter && viewAfter.from > viewBefore.from + 0.05,
+		`clicking the strip moves the visible window there (${viewBefore?.from.toFixed(2)} -> ${viewAfter?.from.toFixed(2)}s)`
+	);
+	await A.page.evaluate(() => document.getElementById('animation-fit')?.click());
+
+	// the browser menu must never come up alongside ours
+	const noNative = await A.page.evaluate(() => {
+		const el = document.querySelector('#animation-timeline');
+		const r = el.getBoundingClientRect();
+		const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.x + 40, clientY: r.y + r.height - 8 });
+		el.dispatchEvent(ev);
+		return ev.defaultPrevented;
+	});
+	h.check(noNative, 'the plot cancels the browser context menu');
 
 	// ---------- 9d. the transport deck, in real icons and real buttons ----------
 	const deck = await A.page.evaluate((id) => {

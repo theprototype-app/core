@@ -33,7 +33,8 @@
 	// reachable only from the Inspector.
 	import { animatedObjects, setAnimationState, clipInfo } from '$lib/animatedImports';
 	import {
-		SkipBack, SkipForward, StepBack, StepForward, Play, Pause, Square, Rewind, ZoomIn, ZoomOut, Maximize2
+		SkipBack, SkipForward, StepBack, StepForward, Play, Pause, Square, Rewind, ZoomIn, ZoomOut, Maximize2,
+		SquareDashed, Lasso
 	} from '@lucide/svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
@@ -366,6 +367,135 @@
 			to: { x: tx(b.t), y: vy(b.v) }
 		};
 	});
+
+	// --- marquee selection: box + lasso over the keys -----------------------------
+	// The same pair the UV editor offers, over the same free gesture: a LEFT drag on
+	// the plot BODY did nothing before (only the ruler scrubbed), so neither tool has
+	// to take a gesture away from anything.
+	//
+	// A key's hit point is wherever it is DRAWN — (t, row) in the sheet and (t, value)
+	// in the graph — so the test is done in plot pixels rather than in clip seconds.
+	// That is what makes one implementation cover both views, and it means the tools
+	// select exactly what the eye picks out, including under zoom and pan.
+	/** @type {'box'|'lasso'} */
+	let marqMode = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem('animationMarquee') === 'lasso'
+			? 'lasso'
+			: 'box'
+	);
+	/** live rectangle while box-selecting, in plot px */
+	let marq = $state(/** @type {{x0: number, y0: number, x1: number, y1: number}|null} */ (null));
+	/** live path while lasso-selecting, in plot px */
+	let lasso = $state(/** @type {number[][]} */ ([]));
+	/** the selection the gesture started from (Shift adds to it) — never rendered */
+	let marqBase = /** @type {[string, number][]} */ ([]);
+	/** $state, not a plain let: the markup gates the live shape on it */
+	let marqMoved = $state(false);
+
+	function setMarqMode(/** @type {'box'|'lasso'} */ mode) {
+		marqMode = mode;
+		try {
+			localStorage.setItem('animationMarquee', mode);
+		} catch {}
+	}
+
+	/** every key drawn inside the live shape, as [trackId, index] pairs */
+	function keysInShape() {
+		/** @type {[string, number][]} */
+		const hits = [];
+		// the graph plots ONE track, so only its keys are on screen to be caught
+		const rows = view === 'graph' ? (selTrack ? [selTrack] : []) : tracks;
+		const box = marq
+			? {
+					lo: Math.min(marq.x0, marq.x1),
+					hi: Math.max(marq.x0, marq.x1),
+					top: Math.min(marq.y0, marq.y1),
+					bottom: Math.max(marq.y0, marq.y1)
+				}
+			: null;
+		rows.forEach((track, row) => {
+			const y = view === 'graph' ? null : rowY(row);
+			track.keys.forEach((key, index) => {
+				const px = tx(key.t);
+				const py = y ?? vy(key.v);
+				const inside = box
+					? px >= box.lo && px <= box.hi && py >= box.top && py <= box.bottom
+					: pointInLasso(px, py);
+				if (inside) hits.push([track.id, index]);
+			});
+		});
+		return hits;
+	}
+
+	/** even-odd point-in-polygon, the uvEditor test in plot px @param {number} x @param {number} y */
+	function pointInLasso(x, y) {
+		if (lasso.length < 3) return false;
+		let inside = false;
+		for (let i = 0, j = lasso.length - 1; i < lasso.length; j = i++) {
+			const [xi, yi] = lasso[i];
+			const [xj, yj] = lasso[j];
+			if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+		}
+		return inside;
+	}
+
+	/** Fold the shape's hits into the selection, live, so it fills in as you draw. */
+	function applyMarquee() {
+		const hits = keysInShape();
+		if (!marqBase.length) {
+			selKeys = hits;
+		} else {
+			const merged = [...marqBase];
+			for (const [id, i] of hits) {
+				if (!merged.some(([mid, mi]) => mid === id && mi === i)) merged.push([id, i]);
+			}
+			selKeys = merged;
+		}
+		if (hits[0]) selId = hits[0][0];
+	}
+
+	function marqueeMove(/** @type {PointerEvent} */ e) {
+		if (!plotEl) return;
+		const r = plotEl.getBoundingClientRect();
+		const x = e.clientX - r.left;
+		const y = e.clientY - r.top;
+		if (!marqMoved && Math.abs(x - (marq?.x0 ?? lasso[0]?.[0] ?? x)) < 3 && Math.abs(y - (marq?.y0 ?? lasso[0]?.[1] ?? y)) < 3) return;
+		marqMoved = true;
+		if (marq) marq = { ...marq, x1: x, y1: y };
+		else {
+			// thin the path: sub-pixel samples add nothing but work (the UV editor rule)
+			const last = lasso[lasso.length - 1];
+			if (!last || Math.abs(last[0] - x) > 1.5 || Math.abs(last[1] - y) > 1.5) lasso = [...lasso, [x, y]];
+		}
+		applyMarquee();
+	}
+
+	// The key selection is COMPONENT state, so a check has no store to read it from.
+	// Opt-in debug hook, the __cameraPreviewDebug precedent — it also means a suite
+	// compares the COMPONENT's view of the selection with what it drew.
+	$effect(() => {
+		/** @type {any} */ (window).__animationDebug = {
+			selKeys: () => selKeys.map(([id, i]) => id + ':' + i),
+			marqueeMode: () => marqMode,
+			markerCount: () => clipMarkers.length
+		};
+		return () => delete /** @type {any} */ (window).__animationDebug;
+	});
+
+	function marqueeUp() {
+		// A press that never TRAVELLED deliberately leaves the selection alone, unlike
+		// the UV editor's click-to-deselect. A body press is how the plot takes the
+		// keyboard back — after picking "Select every key" from the menu, say — and
+		// clearing there would throw away the selection you just made. Esc is the
+		// documented way to drop it.
+		if (marqMoved) applyMarquee();
+		marq = null;
+		lasso = [];
+		marqMoved = false;
+		marqBase = [];
+		window.removeEventListener('pointermove', marqueeMove);
+		window.removeEventListener('pointerup', marqueeUp);
+	}
 
 	// --- F5: the marker band -----------------------------------------------------
 	/** index of the marker being dragged along the band, -1 = none */
@@ -765,12 +895,32 @@
 			window.addEventListener('pointerup', panUp);
 			return;
 		}
-		if (e.clientY - r.top > RULER_H) return; // below the ruler: not a scrub
+		const y = e.clientY - r.top;
+		if (y <= RULER_H) {
+			e.preventDefault();
+			scrubbing = true;
+			scrubAt(e.clientX);
+			window.addEventListener('pointermove', rulerMove);
+			window.addEventListener('pointerup', rulerUp);
+			return;
+		}
+		if (y <= TOP_H) return; // the marker band: its flags own their own presses
+		// the plot BODY: draw a marquee over the keys. Shift adds to what is already
+		// selected; a press that never travels is a click on empty space, which drops
+		// the selection.
+		if (move?.modal) return; // a modal grab owns the pointer
 		e.preventDefault();
-		scrubbing = true;
-		scrubAt(e.clientX);
-		window.addEventListener('pointermove', rulerMove);
-		window.addEventListener('pointerup', rulerUp);
+		marqBase = e.shiftKey ? [...selKeys] : [];
+		marqMoved = false;
+		if (marqMode === 'lasso') {
+			lasso = [[e.clientX - r.left, y]];
+			marq = null;
+		} else {
+			marq = { x0: e.clientX - r.left, y0: y, x1: e.clientX - r.left, y1: y };
+			lasso = [];
+		}
+		window.addEventListener('pointermove', marqueeMove);
+		window.addEventListener('pointerup', marqueeUp);
 	}
 
 	/** @type {{x: number, y: number, start: number, span: number, moved: boolean}|null} */
@@ -1813,6 +1963,26 @@
 							onclick={() => (xform = 'scale')}>Scale</button
 						>
 					</div>
+					<!-- marquee tools, the pair the UV editor offers: a LEFT drag on the plot
+					     body draws one over the keys -->
+					<div class="flex items-center overflow-hidden rounded-sm border border-gray-600">
+						<button
+							id="animation-marquee-box"
+							class="px-1.5 py-0.5 {marqMode === 'box' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							title="Box select keys (drag a rectangle on the plot; Shift adds)"
+							aria-label="Box select"
+							aria-pressed={marqMode === 'box'}
+							onclick={() => setMarqMode('box')}><SquareDashed size={13} aria-hidden="true" /></button
+						>
+						<button
+							id="animation-marquee-lasso"
+							class="border-l border-gray-600 px-1.5 py-0.5 {marqMode === 'lasso' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							title="Lasso select keys (draw around them on the plot; Shift adds)"
+							aria-label="Lasso select"
+							aria-pressed={marqMode === 'lasso'}
+							onclick={() => setMarqMode('lasso')}><Lasso size={13} aria-hidden="true" /></button
+						>
+					</div>
 					<label class="flex items-center gap-1" title="What key times snap to while you drag">
 						snap
 						<select
@@ -2077,6 +2247,24 @@
 								x2={tx(Math.min(curTime, duration))} y2={plotH}
 							stroke="rgb(250 204 21 / 0.9)" stroke-width="1.5"
 							/>
+
+							<!-- the live marquee, on top of everything and never a pointer target -->
+							{#if marq && marqMoved}
+								<rect
+									id="animation-marquee"
+									x={Math.min(marq.x0, marq.x1)} y={Math.min(marq.y0, marq.y1)}
+									width={Math.abs(marq.x1 - marq.x0)} height={Math.abs(marq.y1 - marq.y0)}
+									fill="rgb(129 140 248 / 0.12)" stroke="rgb(129 140 248 / 0.9)"
+									stroke-width="1" stroke-dasharray="4 3" pointer-events="none"
+								/>
+							{:else if lasso.length > 1 && marqMoved}
+								<polygon
+									id="animation-lasso"
+									points={lasso.map(([x, y]) => x + ',' + y).join(' ')}
+									fill="rgb(129 140 248 / 0.12)" stroke="rgb(129 140 248 / 0.9)"
+									stroke-width="1" stroke-dasharray="4 3" pointer-events="none"
+								/>
+							{/if}
 						</svg>
 					{/if}
 				</div>

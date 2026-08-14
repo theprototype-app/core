@@ -310,7 +310,33 @@ loadable play content. Everything a user does must be visible to connected peers
   `animatedImportsSnapshot`/`animatedImportsRestore` are the ONE shared save path used
   by BOTH sessions and autosave — toJSON and the GLTF exporter cannot carry an
   AnimationClip, so a save carries the ORIGINAL file bytes, base64 CHUNKED at 32k;
-  `clipInfo(uuid)` exposes the durations that only lived in the mixer record),
+  `clipInfo(uuid)` exposes the durations that only lived in the mixer record;
+  `animationState(uuid)` is the accessor the Play Animation node reads through),
+  `animationPreview` (17-E AUTHORED animation, the keyframe half: an object owns
+  named CLIPS (`animations[uuid] = {clips:{id:{name,tracks,duration,loop}}, active,
+  changedAt}`) of TRACKS of KEYS at absolute clip seconds, each key carrying the
+  `ease` of the segment that FOLLOWS it. `normalizeAnimSet` runs at every store
+  boundary, so a v1 `{from,to,bezier}` save becomes two keys and evaluates
+  IDENTICALLY. `evaluateClip`/`sampleTrack` are the ONE read path (runtime + editor
+  + auto-key). Channels: pos/rot/scale + a STEPPED `visible` + the LOOK set
+  (opacity, color.r/g/b, metalness, roughness, emissive, light.intensity) —
+  `channelApplies` gates them per object, `captureBase`/`restoreBase` carry the
+  material state (incl. `transparent`, a render-program change) so Clear preview
+  is faithful, and the bake SKIPS them (glTF needs KHR_animation_pointer).
+  Rotation honours `userData.origin`, which is what makes a door swing on its
+  hinge (read INLINE, like flowRuntime, to avoid the objectOrigin cycle).
+  TIMING is three separate things: `updateAnim({duration})` = clip LENGTH, moves
+  no keys · `retimeClip` = scale the movement · `setSpeed` = playback rate, no
+  data change. TRANSPORT lives in `playback` keyed by uuid — clipId/playing/`at`
+  (synced-clock stamp)/pausedAt/speed/reverse/`startedFrom`/`rangeIn`+`rangeOut`
+  (the A/B window every peer evaluates); `playheads` is the per-frame readout.
+  `stop` returns to `startedFrom`, `resetPreview` is the one that restores the
+  base pose and releases it. Both halves REPLICATE (`animdata` latest-wins on
+  changedAt, `animplay`, `getanim`→`animations`), undo through the `anim` history
+  kind with `beginAnimGesture`/`endAnimGesture` collapsing a drag into ONE entry
+  and ONE broadcast, and `parkAuthoredAtBase` (called from
+  flowRuntime.parkAnimatedAtBase) keeps a scrubbed pose out of every save.
+  `clipToThreeClip` samples a clip into real KeyframeTracks for GLTF export),
   `objectOrigin` (17-D: PER-OBJECT transform origin — a LOCAL pivot offset on
   `userData.origin`, so it replicates/saves/undoes free like userData.physics.
   Deliberately NOT baked into vertices: baking rides meshgeo, which stamps
@@ -604,6 +630,37 @@ loadable play content. Everything a user does must be visible to connected peers
    a viewer's bytes; peers also drop gated types via `canApply`.
 
 ## Hard-won gotchas (do not rediscover)
+
+- **An SVG sibling drawn AFTER your hit target steals the press, and bubbling
+  cannot save you.** The animation ruler's tick `<line>`s and labels are drawn over
+  the ruler `<rect>` as SIBLINGS, so pressing a tick hit the line, and a line has
+  no ancestor with the handler — the rect is beside it, not above it. Put the
+  handler on the `<svg>` and decide by coordinate (or mark decoration
+  `pointer-events="none"`). The tell: a CLICK between ticks worked while a press ON
+  one did nothing, and `document.elementFromPoint` named a `<line>`.
+- **A value axis derived from the data cannot be live while you drag the data.**
+  The graph editor's y range comes from the keys' min/max, so dragging a key moved
+  the range, which moved the pixel→value mapping, which moved the value: the key
+  barely followed the pointer and the axis looked locked. FREEZE the range for the
+  gesture (`frozenRange`).
+- **A parked playhead must not be read through the loop wrap.** `(duration/duration)
+  % 1` is 0, so a playhead parked at the end of a looping clip read back as the
+  START — "go to end" looked like a no-op and the next key-step went the wrong way.
+  Read a not-playing transport straight off `pausedAt` (`parkedPosition`).
+- **Whatever else changes the current clip must move the TRANSPORT too.** The
+  transport stores which clip it plays, so setting `active` alone left the panel
+  showing the new clip while playback carried on with the old one (reported twice:
+  once for picking a clip, once for creating one). Every such path goes through one
+  `switchTransportTo`.
+- **A "length" field that silently retimes is a bug, not a convenience.** Clip
+  length, retiming the movement and playback speed are three different operations;
+  collapsing them made a door change speed when it was given more room. Split them
+  and let the destructive one be asked for.
+- **A modal move needs a way out.** Right-click-to-grab (the key follows the pointer
+  with no button held) is only usable because a click/Enter commits and Escape puts
+  every key back — implemented by re-applying the drag SNAPSHOT, which is also what
+  keeps a long multi-key drag from drifting (absolute from the snapshot, never
+  incremental).
 
 - **Any op that turns a SCREEN gesture into geometry has two traps.** (1) Compute the
   crossing point per WELDED EDGE, never by intersecting each triangle's own plane: two
@@ -1481,6 +1538,24 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-14): **17-E ANIMATION KEYFRAMES — branch `feat/17e-animation-curves`,
+  lane `../theprototype-lane-anim` @ port 5195, 9 commits, NOT PR'd yet.** The authored
+  animator went from one `{from,to,bezier}` segment per channel to a real keyframe
+  system: named CLIPS of keyed tracks, a dope-sheet + graph TIMELINE (zoom/pan, A/B
+  in-out window, multi-select, right-click modal grab), deterministic REPLICATION of
+  both the data (`animdata`) and the transport (`animplay`, synced-clock stamp) with a
+  late-joiner `getanim`, the `anim` history kind (one entry per gesture), auto-key
+  recording that CREATES the channels you pose (gizmo + Inspector), a preset library
+  (Door/Drawer/Elevator/Turntable/Pulse/Blink), the **`playanim` flow node** (On Click →
+  a door opens on every peer, toggle plays the clip BACKWARDS to shut), and a GLTF
+  export that samples clips into real KeyframeTracks (round-trip delta 0.0000).
+  Look channels (opacity/colour/metalness/roughness/glow/light intensity) ride the same
+  keys. Suites: animation-curves (90), animation-node (17), animation-autokey (24),
+  animation-bake (12), animation-sync (24, two peers + late joiner) + the updated
+  animation-window/animation-persist. Baseline **391/62** held; build green. Traps from
+  this batch are in the gotchas (SVG sibling hit-stealing, a live-derived drag axis, the
+  loop-wrap on a parked playhead, transport-follows-clip, length vs retime vs speed).
+  OWED: user's on-device/feel pass, then the PR to release/next.
 - Status (2026-08-11, fifth drop): **knife RUBBER BAND + the P12 wasm question ANSWERED —
   PRs #120 + #121 MERGED @ca9e4ba.** The knife draws a dashed DOM band between its two clicks
   (the cut is a screen line, so there is no 3D line to draw), and Escape drops a PENDING cut

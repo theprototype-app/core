@@ -11,8 +11,8 @@
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
 	import {
-		Brush, Crosshair, Filter, FlipHorizontal, FlipVertical, Grid3x3, ImagePlus, Lasso, Link2,
-		Maximize2, MousePointer2, Plus, RotateCw, SquareDashed, Target
+		Brush, Crosshair, Filter, FlipHorizontal, FlipVertical, Grid3x3, ImagePlus, Keyboard,
+		Lasso, Link2, Maximize2, MousePointer2, Plus, RotateCw, SquareDashed, Target
 	} from '@lucide/svelte';
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
@@ -239,6 +239,8 @@
 			grabbing,
 			pivot: pivotMark ? { ...pivotMark } : null,
 			pivotPlaced: pivotPlaced ? { ...pivotPlaced } : null,
+			navMode,
+			navCursor,
 			pixelStep: pixelStep(),
 			hoverIndex,
 			selected: selCluster.length,
@@ -276,6 +278,7 @@
 			selCluster = [];
 			hoverIndex = -1;
 			pivotPlaced = null; // an origin belongs to the map you placed it on
+			leaveNav();
 		}
 	});
 
@@ -283,7 +286,7 @@
 	// newly drawn has to join it or the canvas simply will not repaint it.
 	$effect(() => {
 		// dependencies (read them so the effect re-runs)
-		void [tris, backdrop, liveImage, flipBackdrop, $uvPaintTick, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked, pivotMark, pivotPlaced, grabbing];
+		void [tris, backdrop, liveImage, flipBackdrop, $uvPaintTick, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked, pivotMark, pivotPlaced, grabbing, navMode, navCursor];
 		draw();
 	});
 
@@ -376,6 +379,22 @@
 			ctx.stroke();
 		}
 
+		// the keyboard cursor: deliberately BIGGER than a handle and transparent, so it
+		// reads as "the arrows are pointing at this one" rather than as a selected point
+		if (navMode && navCursor >= 0) {
+			const uv = target?.geometry?.attributes?.uv;
+			if (uv && navCursor < uv.count) {
+				const cx = toScreenX(uv.getX(navCursor));
+				const cy = toScreenY(uv.getY(navCursor));
+				const size = 18;
+				ctx.fillStyle = 'rgba(251,191,36,0.18)';
+				ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+				ctx.strokeStyle = '#fbbf24';
+				ctx.lineWidth = 1.5;
+				ctx.strokeRect(cx - size / 2, cy - size / 2, size, size);
+			}
+		}
+
 		// live marquee / lasso on top
 		ctx.setLineDash([4, 3]);
 		ctx.strokeStyle = '#fbbf24';
@@ -428,6 +447,16 @@
 	 * @type {{cu: number, cv: number}|null}
 	 */
 	let pivotPlaced = $state(/** @type {any} */ (null));
+	/**
+	 * KEYBOARD NAVIGATION: a cursor that walks vertex to vertex, so a selection can be
+	 * built without the mouse at all. It has to be a MODE, because the arrows already
+	 * transform the selection — and `Ctrl+Space` is both the way IN and the way to
+	 * select, so there is one key to learn instead of two. (It is also what Ctrl+Space
+	 * means in the animation timeline: take what is under the cursor.) The cursor is a
+	 * uv index; -1 = none.
+	 */
+	let navMode = $state(false);
+	let navCursor = $state(-1);
 
 	function localPoint(/** @type {PointerEvent | WheelEvent} */ e) {
 		const rect = canvasEl?.getBoundingClientRect();
@@ -454,17 +483,31 @@
 	function selectionCoords(/** @type {any} */ object) {
 		return uvSnapshotOf(object, selCluster).map((s) => ({ u: s.u, v: s.v }));
 	}
+	/** and where the keyboard cursor sits — it is an index too, so it goes stale the
+	 *  same way (arrow-transform then arrow-walk would jump to a stranger) */
+	function navCoord(/** @type {any} */ object) {
+		const uv = object?.geometry?.attributes?.uv;
+		if (!uv || navCursor < 0 || navCursor >= uv.count) return null;
+		return { u: uv.getX(navCursor), v: uv.getY(navCursor) };
+	}
 	/**
 	 * Re-derive the selection after a commit. `applyMeshGeo` rebuilds the geometry
 	 * index-expanded, renumbering every uv index — so indices picked BEFORE a commit
 	 * address different corners after it. Harmless when one drag was all you did; with
 	 * the keyboard committing per keypress, the second press would move points nobody
 	 * picked. @param {any} object @param {{u: number, v: number}[]} coords
+	 * @param {{u: number, v: number}|null} [cursorAt]
 	 */
-	function reselect(object, coords) {
-		if (!object || !coords.length) return;
-		const found = uvIndicesAt(object, coords, weldScope);
-		if (found.length) selCluster = found;
+	function reselect(object, coords, cursorAt = null) {
+		if (!object) return;
+		if (coords.length) {
+			const found = uvIndicesAt(object, coords, weldScope);
+			if (found.length) selCluster = found;
+		}
+		if (cursorAt) {
+			const found = uvIndicesAt(object, [cursorAt], weldScope);
+			navCursor = found.length ? found[0] : -1;
+		}
 	}
 
 	/** one texture pixel in UV units, so an arrow key lands on texel boundaries */
@@ -545,7 +588,8 @@
 			// after a revert the diff is empty, so this commits nothing and records no
 			// undo entry — one exit path either way
 			const coords = object ? selectionCoords(object) : [];
-			if (object && endUvDrag(object.uuid)) reselect(object, coords);
+			const cursorAt = object ? navCoord(object) : null;
+			if (object && endUvDrag(object.uuid)) reselect(object, coords, cursorAt);
 			// a plain CLICK on an already-selected vertex isolates it (deferred from
 			// the press, because only pointerup knows it never moved)
 			if (kept && !ctx.dx && !ctx.dy && ctx.data?.collapseTo) selCluster = ctx.data.collapseTo;
@@ -616,6 +660,89 @@
 		grab.finish(true);
 		return true;
 	}
+
+	/**
+	 * Rotate or scale from the keyboard, about the SAME origin a drag uses (the placed
+	 * one, else the selection's centre — `start` resolves it either way). One press is
+	 * one undo entry, like a nudge.
+	 *
+	 * ROTATE: left/right are counter-clockwise/clockwise, and up/down mirror them, so
+	 * any arrow turns. SCALE: left/right work in U and up/down in V — a UV editor
+	 * stretches one axis far more often than both, and Alt asks for uniform. Steps are
+	 * 1 degree and 1%, with the app's Ctrl x10 / Shift x100 (so Shift is the coarse
+	 * press: a big swing, or a doubling).
+	 * @param {number} dx @param {number} dy @param {number} mult @param {boolean} uniform
+	 */
+	function keyTransform(dx, dy, mult, uniform) {
+		if (!target || !canTransform || xform === 'move') return false;
+		if (!startTransform(null, false)) return false;
+		const ctx = /** @type {any} */ (grab.ctx());
+		const pivot = ctx.pivot;
+		const sign = dx + dy >= 0 ? 1 : -1; // right/up grow or turn one way, left/down the other
+		if (xform === 'rotate') {
+			applyUvSnapshot(target, ctx.snapshot, { rotate: sign * mult * (Math.PI / 180), pivot });
+		} else {
+			const amount = 0.01 * mult;
+			// the shrink is the RECIPROCAL, so a press and its opposite round-trip
+			const k = sign > 0 ? 1 + amount : 1 / (1 + amount);
+			const bothAxes = uniform || (dx !== 0 && dy !== 0);
+			applyUvSnapshot(target, ctx.snapshot, {
+				scaleU: bothAxes || dx !== 0 ? k : 1,
+				scaleV: bothAxes || dy !== 0 ? k : 1,
+				pivot
+			});
+		}
+		grab.finish(true);
+		return true;
+	}
+
+	// --- keyboard navigation ------------------------------------------------------
+
+	/** the vertex the cursor should start on: the selection's first member, else what
+	 *  the pointer last hovered, else whatever is nearest the middle of the view */
+	function firstNavCursor() {
+		if (selCluster.length) return selCluster[0];
+		if (hoverIndex >= 0) return hoverIndex;
+		if (!target) return -1;
+		return nearestUvIndex(target, slot, toU(viewW / 2), toV(viewH / 2), Infinity, faceScope);
+	}
+
+	/** Ctrl+Space: enter navigation, or (already in it) take the cursor's vertex into
+	 *  the selection — or out of it again. */
+	function navSelect() {
+		if (!target || !viewable.ok) return false;
+		if (!navMode) {
+			navMode = true;
+			navCursor = firstNavCursor();
+			// entering must not CHANGE the selection: the first press is "start here"
+			return navCursor >= 0;
+		}
+		if (navCursor < 0) {
+			navCursor = firstNavCursor();
+			return navCursor >= 0;
+		}
+		const cluster = weldedCluster(target.geometry, navCursor, weldScope);
+		if (!cluster.length) return false;
+		const already = cluster.some((i) => selCluster.includes(i));
+		selCluster = already
+			? selCluster.filter((i) => !cluster.includes(i))
+			: [...new Set([...selCluster, ...cluster])];
+		return true;
+	}
+
+	/** walk the cursor to the nearest vertex in a direction */
+	function navMove(/** @type {number} */ du, /** @type {number} */ dv) {
+		if (!target || navCursor < 0) return false;
+		const next = nearestUvInDirection(target, slot, [navCursor], du, dv, faceScope);
+		if (next < 0) return false;
+		navCursor = next;
+		return true;
+	}
+
+	function leaveNav() {
+		navMode = false;
+		navCursor = -1;
+	}
 	/** SHIFT extends the selection (the viewport's shift-click convention and
 	 * every DCC UV editor); CTRL is accepted as an alias because the mesh tools
 	 * use ctrl-multi-select. @param {PointerEvent} e */
@@ -684,6 +811,7 @@
 		// hidden for density — the press pans instead of silently doing nothing
 		const index = canPick ? nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope) : -1;
 		if (index >= 0) {
+			if (navMode) navCursor = index; // mouse and keyboard point at the same vertex
 			const cluster = weldedCluster(target.geometry, index, weldScope);
 			const already = cluster.some((i) => selCluster.includes(i));
 			/** @type {number[]|null} */
@@ -857,12 +985,17 @@
 	// swallows those on the way up (the DragRow lesson, 16-Q3).
 	//
 	//   1 / 2 / 3        arm Move / Rotate / Scale
-	//   arrows           nudge by one TEXTURE PIXEL (Ctrl x10, Shift x100)
-	//   Ctrl+Shift+arrow grow the selection in that direction
+	//   arrows           apply the ARMED transform: nudge by one TEXTURE PIXEL, turn by
+	//                    a degree, or scale by 1% (Ctrl x10, Shift x100; Alt makes a
+	//                    scale uniform), always about the current origin
+	//   Ctrl+Space       enter keyboard NAVIGATION, then take the cursor's vertex into
+	//                    the selection (or out of it); the arrows walk the cursor while
+	//                    it is on, and Esc leaves
+	//   Ctrl+Shift+arrow grow the selection in that direction (in either mode)
 	//   Ctrl+A / Ctrl+I  select all / invert (the mesh editor's pair)
 	//   L                grow to the whole UV island
-	//   Esc              drop the selection (a running grab is cancelled first, by
-	//                    the engine's own capture handler)
+	//   Esc              leave navigation, else drop the selection (a running grab is
+	//                    cancelled first, by the engine's own capture handler)
 	/** @param {KeyboardEvent} e */
 	function onKey(e) {
 		if (!target || !viewable.ok) return;
@@ -880,8 +1013,19 @@
 			armXform(e.key === '1' ? 'move' : e.key === '2' ? 'rotate' : 'scale');
 			return;
 		}
+		if (e.code === 'Space' && ctrl) {
+			claim();
+			navSelect();
+			return;
+		}
 		if (e.key === 'Escape') {
 			if (grab.active()) return; // the engine cancels it (and stops the event)
+			// navigation goes first, so Esc walks back out one step at a time
+			if (navMode) {
+				claim();
+				leaveNav();
+				return;
+			}
 			if (!selCluster.length) return;
 			claim();
 			selCluster = [];
@@ -918,8 +1062,16 @@
 			growSelection(arrow[0], arrow[1]);
 			return;
 		}
+		// while NAVIGATING the arrows belong to the cursor — that is the whole point of
+		// it being a mode
+		if (navMode) {
+			navMove(arrow[0], arrow[1]);
+			return;
+		}
 		// the DragRow convention, so the modifiers mean the same thing everywhere
-		nudgeSelection(arrow[0], arrow[1], ctrl ? 10 : e.shiftKey ? 100 : 1);
+		const mult = ctrl ? 10 : e.shiftKey ? 100 : 1;
+		if (xform === 'move') nudgeSelection(arrow[0], arrow[1], mult);
+		else keyTransform(arrow[0], arrow[1], mult, e.altKey);
 	}
 
 	/**
@@ -1051,6 +1203,13 @@
 			action: () => (pivotPlaced = null)
 		});
 		items.push({ section: 'Selection' });
+		items.push({
+			label: 'Pick with the keyboard',
+			hint: 'Ctrl+Space',
+			checked: navMode,
+			tooltip: 'The arrows walk a cursor from vertex to vertex; Ctrl+Space takes the one under it',
+			action: () => (navMode ? leaveNav() : navSelect())
+		});
 		items.push({ label: 'Select all', hint: 'Ctrl+A', disabled: !tris.length, action: selectAllUv });
 		items.push({ label: 'Invert', hint: 'Ctrl+I', disabled: !tris.length, action: invertUv });
 		items.push({ section: 'Unwrap' });
@@ -1180,7 +1339,8 @@
 		run(selCluster);
 		// keep the selection pointing at the same POINTS across the commit's renumber
 		const coords = selectionCoords(object);
-		if (endUvDrag(object.uuid)) reselect(object, coords);
+		const cursorAt = navCoord(object);
+		if (endUvDrag(object.uuid)) reselect(object, coords, cursorAt);
 	}
 
 	/** @param {number} radians */
@@ -1420,6 +1580,16 @@
 					{/each}
 				</div>
 				<button
+					class="uv-tool {navMode ? 'uv-tool-active' : ''}"
+					id="uv-nav"
+					title="Pick vertices with the keyboard (Ctrl+Space): the arrows walk a cursor from vertex to vertex, Ctrl+Space takes the one under it into the selection, Esc leaves"
+					aria-label="Keyboard vertex navigation"
+					aria-pressed={navMode}
+					onclick={() => (navMode ? leaveNav() : navSelect())}
+				>
+					<Keyboard size={15} aria-hidden="true" />
+				</button>
+				<button
 					class="uv-tool {pivotPlaced ? 'uv-tool-active' : ''}"
 					id="uv-origin"
 					title={pivotPlaced
@@ -1569,7 +1739,13 @@
 						style="touch-action: none"
 						use:uvCanvas
 					></canvas>
-					{#if grabbing}
+					{#if navMode && !grabbing}
+					<!-- a mode the arrows belong to has to announce itself -->
+					<div id="uv-nav-badge" class="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-sm bg-gray-900/85 px-2 py-0.5 text-[11px] text-amber-300">
+						Picking with the keyboard — arrows move the cursor, Ctrl+Space selects, Esc leaves
+					</div>
+				{/if}
+				{#if grabbing}
 						<!-- a modal grab has no button held, so it needs to SAY it is running -->
 						<div id="uv-grab-badge" class="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-sm bg-amber-500/90 px-2 py-0.5 text-[11px] font-medium text-gray-900">
 							{xform === 'rotate' ? 'Rotating' : xform === 'scale' ? 'Scaling' : 'Moving'}
@@ -1621,7 +1797,8 @@
 					<p class="mb-2"><span class="text-gray-200">1 / 2 / 3</span> arm Move, Rotate and Scale.</p>
 					<p class="mb-2">Rotate and scale turn about the selection's centre. The <span class="text-gray-200">origin</span> button places one you can <span class="text-gray-200">drag</span> instead — it snaps onto a point when you come near one, Alt places it freely — and right-click ▸ Origin puts it under the pointer. <span class="text-gray-200">Alt</span> while STARTING a gesture uses the cursor for that gesture alone.</p>
 					<p class="mb-2"><span class="text-gray-200">Middle-press a selected point</span> to grab the selection: it follows the pointer with no button held until a click or <span class="text-gray-200">Enter</span> places it, and <span class="text-gray-200">Esc</span> puts it back.</p>
-					<p class="mb-2"><span class="text-gray-200">Arrows</span> nudge by one texture pixel (Ctrl ×10, Shift ×100). <span class="text-gray-200">Ctrl+Shift+arrow</span> grows the selection that way. <span class="text-gray-200">Ctrl+A</span> / <span class="text-gray-200">Ctrl+I</span> select all and invert, <span class="text-gray-200">L</span> takes the whole island.</p>
+					<p class="mb-2"><span class="text-gray-200">Arrows</span> apply the armed transform about the origin: one texture pixel, one degree, or 1% — <span class="text-gray-200">Ctrl</span> ×10 and <span class="text-gray-200">Shift</span> ×100. Scaling works per axis (left/right in U, up/down in V); Alt scales both.</p>
+					<p class="mb-2"><span class="text-gray-200">Ctrl+Space</span> picks with the keyboard: a cursor appears, the arrows walk it vertex to vertex, each Ctrl+Space takes the one under it into the selection (or out again), Esc leaves. <span class="text-gray-200">Ctrl+Shift+arrow</span> grows the selection in a direction, <span class="text-gray-200">Ctrl+A</span> / <span class="text-gray-200">Ctrl+I</span> select all and invert, <span class="text-gray-200">L</span> takes the whole island.</p>
 					<p class="mb-2"><span class="text-gray-200">Right-click</span> for everything above on the point under the pointer.</p>
 					<p class="text-gray-500">Each drag, nudge and menu action is one undo step and is shared with connected peers.</p>
 				</div>

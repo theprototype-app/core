@@ -65,6 +65,17 @@ const boundsOf = (points) => {
 	};
 };
 
+/**
+ * The MEAN of the points — the only summary that rotates with them. A bounding-box
+ * centre does NOT: a rotated point set has a differently shaped box, so measuring a
+ * rotation from `boundsOf(...).cu/cv` reported 1.51 degrees for a 1 degree turn and
+ * 16.1 for 10. Any "how far did it turn" check needs a rotation-equivariant quantity.
+ */
+const centroidOf = (points) => ({
+	cu: points.reduce((s, p) => s + p[0], 0) / points.length,
+	cv: points.reduce((s, p) => s + p[1], 0) / points.length
+});
+
 /** viewport pixel for a uv point, through the COMPONENT's own projection (a copy of
  *  the projection in the test could drift and would then "prove" a working feature
  *  broken) */
@@ -86,26 +97,32 @@ const pointAt = (page, u, v) =>
  * corner at all — so the press landed on empty space and PANNED, and the three
  * assertions around it (pivot held still, radii preserved) all passed vacuously.
  */
-const farGrip = async (page, points) => {
+const farGrip = async (page, points, avoid = null) => {
 	const b = boundsOf(points);
 	const from = (p) => Math.hypot(p[0] - b.cu, p[1] - b.cv);
 	// furthest first, but the pixel has to BE the canvas: the corners of the UV square
 	// sit under the app's corner chrome, and a press there hit a button (found with
 	// elementFromPoint, not by reading handler code)
 	const ranked = [...points].sort((p, q) => from(q) - from(p));
-	const found = await page.evaluate((candidates) => {
-		const el = document.getElementById('uv-canvas');
-		const r = el.getBoundingClientRect();
-		for (const c of candidates) {
-			const p = window.__uvDebug().project(c[0], c[1]);
-			if (p.x < 8 || p.y < 8 || p.x > r.width - 8 || p.y > r.height - 8) continue;
-			const x = Math.round(r.left + p.x);
-			const y = Math.round(r.top + p.y);
-			if (document.elementFromPoint(x, y) !== el) continue;
-			return { uv: c, x, y };
-		}
-		return null;
-	}, ranked);
+	const found = await page.evaluate(
+		([candidates, avoidPx]) => {
+			const el = document.getElementById('uv-canvas');
+			const r = el.getBoundingClientRect();
+			for (const c of candidates) {
+				const p = window.__uvDebug().project(c[0], c[1]);
+				if (p.x < 8 || p.y < 8 || p.x > r.width - 8 || p.y > r.height - 8) continue;
+				const x = Math.round(r.left + p.x);
+				const y = Math.round(r.top + p.y);
+				// keep clear of the PLACED ORIGIN: it is a handle and wins the press by
+				// design, so a grip on top of it drags the origin instead of transforming
+				if (avoidPx && Math.hypot(x - avoidPx.x, y - avoidPx.y) < 28) continue;
+				if (document.elementFromPoint(x, y) !== el) continue;
+				return { uv: c, x, y };
+			}
+			return null;
+		},
+		[ranked, avoid]
+	);
 	const px = found ? { x: found.x, y: found.y } : await pointAt(page, ranked[0][0], ranked[0][1]);
 	const pivotPx = await pointAt(page, b.cu, b.cv);
 	return {
@@ -329,6 +346,190 @@ h.run(async () => {
 	}, uuid);
 	h.check(stillThere, 'Delete in the UV editor does NOT delete the object');
 
+	// ---------- the arrows follow the ARMED mode, about the origin ----------
+	// They used to always nudge, whatever was armed. Rotate and scale by key have to
+	// turn about the same origin a drag does, and the modifiers have to scale the step.
+	await focusUv(A.page);
+	await A.page.keyboard.press('Control+a');
+	await A.page.waitForTimeout(150);
+	// put the origin somewhere OFF-CENTRE, so a rotation about it moves the centroid —
+	// about the selection's own centre the centroid cannot move at all, and the check
+	// would pass with the pivot wired to anything
+	const keyRotPoints = await selectionUvs(A.page, uuid);
+	// farGrip picks the furthest selected point whose PIXEL is really the canvas — the
+	// same reason the drag sections use it (the square's corners sit under app chrome)
+	const offCentre = await farGrip(A.page, keyRotPoints);
+	h.check(offCentre.found, 'an off-centre spot on the canvas was found to place the origin');
+	h.check(
+		await clickMenuRow(A.page, 'place the origin here', offCentre.px),
+		'the menu places the origin under the pointer'
+	);
+	const keyOrigin = (await dbg(A.page)).pivotPlaced;
+	h.check(!!keyOrigin, 'premise: the origin is placed, so a key rotate has something off-centre to turn about');
+	const angleAbout = (points, c) => {
+		const m = centroidOf(points);
+		return (Math.atan2(m.cv - c.cv, m.cu - c.cu) * 180) / Math.PI;
+	};
+	const norm = (deg) => {
+		let d = deg;
+		while (d > 180) d -= 360;
+		while (d < -180) d += 360;
+		return d;
+	};
+	await focusUv(A.page);
+	await A.page.keyboard.press('2'); // rotate
+	const rotKeyBefore = await selectionUvs(A.page, uuid);
+	const depthBeforeKeyRot = await undoDepth(A.page);
+	await A.page.keyboard.press('ArrowRight');
+	await A.page.waitForTimeout(300);
+	const rotKeyOnce = await selectionUvs(A.page, uuid);
+	const oneDegree = norm(angleAbout(rotKeyOnce, keyOrigin) - angleAbout(rotKeyBefore, keyOrigin));
+	h.check(
+		Math.abs(Math.abs(oneDegree) - 1) < 0.25,
+		`an arrow with Rotate armed turns one degree about the origin (${oneDegree.toFixed(3)})`
+	);
+	h.check(
+		(await undoDepth(A.page)) === depthBeforeKeyRot + 1,
+		'and it is one undo entry, like a nudge'
+	);
+	await A.page.keyboard.press('Control+ArrowRight');
+	await A.page.waitForTimeout(300);
+	const rotKeyTen = await selectionUvs(A.page, uuid);
+	const tenDegrees = norm(angleAbout(rotKeyTen, keyOrigin) - angleAbout(rotKeyOnce, keyOrigin));
+	h.check(
+		Math.abs(Math.abs(tenDegrees) - 10) < 1,
+		`Ctrl makes it ten degrees (${tenDegrees.toFixed(3)})`
+	);
+	// the opposite arrow turns the other way
+	await A.page.keyboard.press('ArrowLeft');
+	await A.page.waitForTimeout(300);
+	const backOne = norm(angleAbout(await selectionUvs(A.page, uuid), keyOrigin) - angleAbout(rotKeyTen, keyOrigin));
+	h.check(
+		Math.abs(backOne + Math.sign(oneDegree) * 1) < 0.25,
+		`and the opposite arrow turns back (${backOne.toFixed(3)})`
+	);
+
+	// SCALE by key: per axis, about the origin, reciprocal on the way back
+	await A.page.keyboard.press('3');
+	await A.page.waitForTimeout(150);
+	const scaleKeyBefore = boundsOf(await selectionUvs(A.page, uuid));
+	await A.page.keyboard.press('Control+ArrowRight'); // +10% in U
+	await A.page.waitForTimeout(300);
+	const scaleKeyAfter = boundsOf(await selectionUvs(A.page, uuid));
+	const uFactor = scaleKeyAfter.w / Math.max(scaleKeyBefore.w, 1e-6);
+	const vFactor = scaleKeyAfter.hgt / Math.max(scaleKeyBefore.hgt, 1e-6);
+	h.check(
+		Math.abs(uFactor - 1.1) < 0.02,
+		`Ctrl+Right with Scale armed grows U by 10% (${uFactor.toFixed(4)})`
+	);
+	h.check(
+		Math.abs(vFactor - 1) < 0.02,
+		`and leaves V alone — a UV editor stretches one axis far more often than both (${vFactor.toFixed(4)})`
+	);
+	await A.page.keyboard.press('Alt+Control+ArrowUp'); // uniform +10%
+	await A.page.waitForTimeout(300);
+	const uniformAfter = boundsOf(await selectionUvs(A.page, uuid));
+	h.check(
+		Math.abs(uniformAfter.w / Math.max(scaleKeyAfter.w, 1e-6) - 1.1) < 0.02 &&
+			Math.abs(uniformAfter.hgt / Math.max(scaleKeyAfter.hgt, 1e-6) - 1.1) < 0.02,
+		`Alt makes the key scale uniform (${(uniformAfter.w / scaleKeyAfter.w).toFixed(4)} x ${(uniformAfter.hgt / scaleKeyAfter.hgt).toFixed(4)})`
+	);
+	// and Move still nudges, so arming a mode is what changed the arrows
+	await A.page.keyboard.press('1');
+	const moveAgainBefore = boundsOf(await selectionUvs(A.page, uuid));
+	await A.page.keyboard.press('ArrowRight');
+	await A.page.waitForTimeout(300);
+	const moveAgainAfter = boundsOf(await selectionUvs(A.page, uuid));
+	h.check(
+		Math.abs(moveAgainAfter.cu - moveAgainBefore.cu - 1 / 64) < 1e-4 &&
+			Math.abs(moveAgainAfter.w - moveAgainBefore.w) < 1e-4,
+		'with Move armed the same arrow nudges one pixel again, and scales nothing'
+	);
+	// clear the origin for the sections below
+	await A.page.click('#uv-origin');
+	await A.page.waitForTimeout(150);
+
+	// ---------- picking vertices with the keyboard (Ctrl+Space) ----------
+	await focusUv(A.page);
+	await A.page.keyboard.press('Escape'); // drop the selection first
+	await A.page.waitForTimeout(150);
+	const navStart = await dbg(A.page);
+	h.check(!navStart.navMode, 'navigation is off to begin with');
+	await A.page.keyboard.press('Control+Space');
+	await A.page.waitForTimeout(200);
+	const navOn = await dbg(A.page);
+	h.check(navOn.navMode && navOn.navCursor >= 0, `Ctrl+Space enters navigation with a cursor (${navOn.navCursor})`);
+	h.check(
+		navOn.selected === navStart.selected,
+		`entering does not CHANGE the selection — the first press is "start here" (${navOn.selected})`
+	);
+	h.check(
+		await A.page.evaluate(() => !!document.getElementById('uv-nav-badge')),
+		'and the mode announces itself, since the arrows now belong to the cursor'
+	);
+	// the arrows walk it
+	const cursorUv = (page) =>
+		page.evaluate(async (uuid) => {
+			const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			const uv = g.getObjectByProperty('uuid', uuid).geometry.attributes.uv;
+			const i = window.__uvDebug().navCursor;
+			return i >= 0 ? [uv.getX(i), uv.getY(i)] : null;
+		}, uuid);
+	const walkFrom = await cursorUv(A.page);
+	await A.page.keyboard.press('ArrowRight');
+	await A.page.waitForTimeout(200);
+	const walkTo = await cursorUv(A.page);
+	h.check(
+		walkTo && walkFrom && walkTo[0] > walkFrom[0] + 1e-6,
+		`ArrowRight walks the cursor to a vertex further along u (${walkFrom && walkFrom[0].toFixed(3)} -> ${walkTo && walkTo[0].toFixed(3)})`
+	);
+	// walking must not EDIT anything — while navigating, the arrows are borrowed from
+	// the transform, and a stray commit here would be silent
+	const uvChecksum = () =>
+		A.page.evaluate(async (uuid) => {
+			const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			const uv = g.getObjectByProperty('uuid', uuid).geometry.attributes.uv;
+			let sum = 0;
+			for (let i = 0; i < uv.count; i++) sum += uv.getX(i) + uv.getY(i);
+			return +sum.toFixed(5);
+		}, uuid);
+	const geoBeforeWalk = await uvChecksum();
+	const depthBeforeWalk = await undoDepth(A.page);
+	await A.page.keyboard.press('ArrowUp');
+	await A.page.keyboard.press('ArrowLeft');
+	await A.page.waitForTimeout(250);
+	h.check(
+		(await uvChecksum()) === geoBeforeWalk && (await undoDepth(A.page)) === depthBeforeWalk,
+		'walking the cursor edits nothing and records nothing'
+	);
+	// Ctrl+Space takes it, and again gives it back
+	await A.page.keyboard.press('Control+Space');
+	await A.page.waitForTimeout(200);
+	const took = await dbg(A.page);
+	h.check(took.selected > 0, `Ctrl+Space takes the cursor's vertex into the selection (${took.selected})`);
+	await A.page.keyboard.press('ArrowRight');
+	await A.page.keyboard.press('Control+Space');
+	await A.page.waitForTimeout(250);
+	const tookTwo = await dbg(A.page);
+	h.check(
+		tookTwo.selected > took.selected,
+		`walking on and pressing again ADDS to it (${took.selected} -> ${tookTwo.selected})`
+	);
+	await A.page.keyboard.press('Control+Space');
+	await A.page.waitForTimeout(200);
+	h.check(
+		(await dbg(A.page)).selected === took.selected,
+		'pressing on the same vertex takes it back out again'
+	);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+	const leftNav = await dbg(A.page);
+	h.check(!leftNav.navMode, 'Esc leaves navigation');
+	h.check(leftNav.selected === took.selected, 'and KEEPS what you picked (the second Esc is what clears it)');
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(150);
+	h.check((await dbg(A.page)).selected === 0, 'a second Esc clears the selection');
+
 	// ---------- rotate: absolute from the snapshot, about a FROZEN pivot ----------
 	// The counterfactual is computed in-test: the same gesture applied the way
 	// `transformUvCluster` works (reading the CURRENT values per step) COMPOUNDS, so
@@ -453,6 +654,9 @@ h.run(async () => {
 	await A.page.keyboard.press('Control+a');
 	await A.page.keyboard.press('2'); // rotate
 	await A.page.waitForTimeout(200);
+	// the sections above moved and grew the mapping; frame it, or every grip below is
+	// off-canvas (see the same call before the grab section)
+	await clickMenuRow(A.page, 'zoom to the selection');
 	const originPoints = await selectionUvs(A.page, uuid);
 	const originBounds = boundsOf(originPoints);
 	h.check((await dbg(A.page)).pivotPlaced === null, 'the origin starts automatic (the selection centre)');
@@ -492,11 +696,16 @@ h.run(async () => {
 	// a rotate now turns about the PLACED origin: the point it sits on cannot move,
 	// while the selection's old centre must
 	const beforePlacedRot = await selectionUvs(A.page, uuid);
-	g = await farGrip(A.page, beforePlacedRot);
-	h.check(g.found, 'a grip point on the canvas was found for the placed-origin rotate');
+	const originPivotPx = await pointAt(A.page, dragged.cu, dragged.cv);
+	g = await farGrip(A.page, beforePlacedRot, originPivotPx);
+	h.check(g.found, 'a grip point clear of the origin handle was found on the canvas');
 	await A.page.mouse.move(g.px.x, g.px.y);
 	await A.page.mouse.down();
-	const originPivotPx = await pointAt(A.page, dragged.cu, dragged.cv);
+	const placedPress = await dbg(A.page);
+	h.check(
+		placedPress.gesture === 'drag',
+		`the press started a transform, not an origin drag (${placedPress.gesture})`
+	);
 	const rad = Math.hypot(g.px.x - originPivotPx.x, g.px.y - originPivotPx.y);
 	const startAngle = Math.atan2(g.px.y - originPivotPx.y, g.px.x - originPivotPx.x);
 	for (let i = 1; i <= 8; i++) {
@@ -532,8 +741,8 @@ h.run(async () => {
 	// selection's centroid is one well-defined point to measure: it must swing by the
 	// angle the pointer swept.
 	const centreAngle = (points) => {
-		const b = boundsOf(points);
-		return Math.atan2(b.cv - dragged.cv, b.cu - dragged.cu);
+		const m = centroidOf(points); // the MEAN, which rotates with the points
+		return Math.atan2(m.cv - dragged.cv, m.cu - dragged.cu);
 	};
 	let swept = ((centreAngle(afterPlacedRot) - centreAngle(beforePlacedRot)) * 180) / Math.PI;
 	while (swept > 180) swept -= 360;

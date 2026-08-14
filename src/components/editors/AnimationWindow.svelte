@@ -76,6 +76,9 @@
 	/** the easing being edited: the selected key's, else the first key's */
 	const easeKey = $derived(selKeyObj ?? selTrack?.keys?.[0] ?? null);
 	const segEase = $derived(easeKey?.ease ?? EASINGS.linear);
+	/** the index of the key whose outgoing segment BOTH easing editors act on —
+	 * the numeric pad on the right and F4's tangent handles on the curve */
+	const easeIndex = $derived(selKey && selKeyObj ? selKey[1] : 0);
 	let view = $state(/** @type {'sheet'|'graph'} */ ('sheet'));
 	/** 'off' | 'frame' | a step in seconds as a string */
 	let snapMode = $state(
@@ -324,6 +327,83 @@
 		RULER_H + GRAPH_H - ((v - range.lo) / (range.hi - range.lo)) * GRAPH_H;
 	const yv = (/** @type {number} */ y) =>
 		range.lo + ((RULER_H + GRAPH_H - y) / GRAPH_H) * (range.hi - range.lo);
+
+	// --- F4: the tangent handles ON the curve ------------------------------------
+	// `ease` already shapes the segment that FOLLOWS each key as a cubic bezier in
+	// the segment's own unit square, and the 132px pad on the right edits exactly
+	// that. This is the same numbers dragged in place: control point 1 sits at
+	// (t0 + dt*x1, v0 + dv*y1) and control point 2 the same way from the far end,
+	// which is where the curve's slope out of one key and into the next comes from.
+	//
+	// Only for the key whose easing is being EDITED (`easeIndex`), so both editors
+	// always show one segment, and only when a NEXT key exists — the last key opens
+	// no segment. A stepped channel has no curve at all.
+	const tangents = $derived.by(() => {
+		if (view !== 'graph' || !selTrack || STEPPED.has(selTrack.channel)) return null;
+		const a = selTrack.keys[easeIndex];
+		const b = selTrack.keys[easeIndex + 1];
+		if (!a || !b) return null;
+		const dt = b.t - a.t;
+		const dv = b.v - a.v;
+		const e = a.ease ?? EASINGS.linear;
+		return {
+			dt,
+			dv,
+			// a FLAT segment cannot express its y control spatially (dv is 0, so every
+			// y maps to the same pixel) — the pad stays the way in for those
+			flat: Math.abs(dv) < 1e-9,
+			p1: { x: tx(a.t + dt * e[0]), y: vy(a.v + dv * e[1]) },
+			p2: { x: tx(a.t + dt * e[2]), y: vy(a.v + dv * e[3]) },
+			from: { x: tx(a.t), y: vy(a.v) },
+			to: { x: tx(b.t), y: vy(b.v) }
+		};
+	});
+
+	/** which tangent is being dragged on the plot: 0 = P1, 1 = P2, -1 = none */
+	let tanDrag = $state(-1);
+	function tangentDown(/** @type {number} */ idx, /** @type {PointerEvent} */ e) {
+		if (!target || !selTrack || !tangents) return;
+		// LEFT button only, the same guard keyDown carries. Swallowing a right-click
+		// here would start an easing gesture AND eat the plot's context menu, since
+		// the menu opens from the plot's own handler further up.
+		if (e.button !== 0) return;
+		if (move?.modal) return; // a modal grab owns the pointer
+		e.preventDefault();
+		e.stopPropagation(); // never let the plot read this as a key drag or a pan
+		tanDrag = idx;
+		beginAnimGesture(target.uuid, 'Easing');
+		window.addEventListener('pointermove', tangentMove);
+		window.addEventListener('pointerup', tangentUp);
+	}
+	function tangentMove(/** @type {PointerEvent} */ e) {
+		if (tanDrag < 0 || !target || !selTrack || !plotEl) return;
+		const a = selTrack.keys[easeIndex];
+		const b = selTrack.keys[easeIndex + 1];
+		if (!a || !b) return;
+		const r = plotEl.getBoundingClientRect();
+		const dt = b.t - a.t;
+		const dv = b.v - a.v;
+		// x is the segment PARAMETER and is clamped to [0,1] — a control point
+		// outside its own segment is not a curve. y is deliberately free: overshoot
+		// is legitimate and is exactly what makes a bounce readable.
+		const x = dt > 1e-9 ? Math.min(1, Math.max(0, (xt(e.clientX - r.left) - a.t) / dt)) : 0;
+		const ease = [...(a.ease ?? EASINGS.linear)];
+		if (tanDrag === 0) ease[0] = x;
+		else ease[2] = x;
+		if (Math.abs(dv) > 1e-9) {
+			const y = (yv(e.clientY - r.top) - a.v) / dv;
+			if (tanDrag === 0) ease[1] = y;
+			else ease[3] = y;
+		}
+		updateKey(target.uuid, selTrack.id, easeIndex, { ease });
+	}
+	function tangentUp() {
+		if (tanDrag < 0) return;
+		tanDrag = -1;
+		endAnimGesture();
+		window.removeEventListener('pointermove', tangentMove);
+		window.removeEventListener('pointerup', tangentUp);
+	}
 
 	/** the curve of the selected track, sampled through the real evaluator */
 	const curve = $derived.by(() => {
@@ -1205,16 +1285,23 @@
 	const activeClipId = $derived(authoredClips.find((c) => c.active)?.id ?? null);
 
 	// --- easing (the segment leaving the selected key) ---------------------------
+	// The numeric way in, beside F4's handles on the curve; both write the same four
+	// numbers on the same key. Its y range matches the plot's OVERSHOOT allowance
+	// (`Y_LO`..`Y_HI` rather than 0..1) for one reason: a bounce authored by dragging
+	// a tangent above the next key has y > 1, and a pad that clamped to 1 would draw
+	// that handle outside its own box and then silently flatten the bounce the moment
+	// you touched it. x stays [0,1] in both — a control point outside its own segment
+	// is not a curve.
 	const SIZE = 132;
 	const PAD = 10;
+	const Y_LO = -0.5;
+	const Y_HI = 1.5;
 	const INNER = SIZE - 2 * PAD;
 	const sx = (/** @type {number} */ x) => PAD + x * INNER;
-	const sy = (/** @type {number} */ y) => PAD + (1 - y) * INNER;
+	const sy = (/** @type {number} */ y) => PAD + ((Y_HI - y) / (Y_HI - Y_LO)) * INNER;
 
 	let svgEl = $state(/** @type {any} */ (null));
 	let dragIdx = $state(-1); // 0 = P1, 1 = P2
-	/** the index of the key whose outgoing segment the curve edits */
-	const easeIndex = $derived(selKey && selKeyObj ? selKey[1] : 0);
 	function onHandleDown(/** @type {number} */ idx, /** @type {PointerEvent} */ e) {
 		if (!target || !selTrack) return;
 		dragIdx = idx;
@@ -1227,9 +1314,9 @@
 		if (dragIdx < 0 || !svgEl || !selTrack || !target) return;
 		const r = svgEl.getBoundingClientRect();
 		let x = (e.clientX - r.left - PAD) / INNER;
-		let y = 1 - (e.clientY - r.top - PAD) / INNER;
+		let y = Y_HI - ((e.clientY - r.top - PAD) / INNER) * (Y_HI - Y_LO);
 		x = Math.min(1, Math.max(0, x));
-		y = Math.min(1, Math.max(0, y));
+		y = Math.min(Y_HI, Math.max(Y_LO, y));
 		const b = [...segEase];
 		if (dragIdx === 0) { b[0] = x; b[1] = y; } else { b[2] = x; b[3] = y; }
 		updateKey(target.uuid, selTrack.id, easeIndex, { ease: b });
@@ -1765,6 +1852,38 @@
 								{/each}
 							{:else if selTrack}
 								<path d={curve} fill="none" stroke="rgb(129 140 248)" stroke-width="2" />
+								<!-- F4: the easing of the segment leaving the edited key, dragged in
+								     place. Drawn BEFORE the keys deliberately: an ease of [0, 0] puts P1
+								     exactly ON its key, and the later sibling wins the press (the SVG
+								     hit-stealing rule this batch already paid for), which would leave
+								     the key itself ungrabbable. The key is the primary object; when a
+								     tangent hides under one, the numeric pad is the way in. -->
+								{#if tangents}
+									<g data-anim-tangents="1">
+										<line
+											x1={tangents.from.x} y1={tangents.from.y} x2={tangents.p1.x} y2={tangents.p1.y}
+											stroke="rgb(56 189 248 / 0.7)" stroke-width="1" stroke-dasharray="2 2" pointer-events="none"
+										/>
+										<line
+											x1={tangents.to.x} y1={tangents.to.y} x2={tangents.p2.x} y2={tangents.p2.y}
+											stroke="rgb(56 189 248 / 0.7)" stroke-width="1" stroke-dasharray="2 2" pointer-events="none"
+										/>
+										<circle
+											id="animation-tangent-1"
+											cx={tangents.p1.x} cy={tangents.p1.y} r="4.5"
+											class={tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}
+											fill="rgb(56 189 248)" stroke="rgb(17 24 39)"
+											onpointerdown={(e) => tangentDown(0, e)}
+										/>
+										<circle
+											id="animation-tangent-2"
+											cx={tangents.p2.x} cy={tangents.p2.y} r="4.5"
+											class={tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}
+											fill="rgb(56 189 248)" stroke="rgb(17 24 39)"
+											onpointerdown={(e) => tangentDown(1, e)}
+										/>
+									</g>
+								{/if}
 								{#each selTrack.keys as key, index (index)}
 									<circle
 										cx={tx(key.t)} cy={vy(key.v)} r="5"
@@ -1849,6 +1968,11 @@
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<svg bind:this={svgEl} width={SIZE} height={SIZE} viewBox="0 0 {SIZE} {SIZE}" class="touch-none rounded-sm bg-gray-900/60">
 							<rect x={PAD} y={PAD} width={INNER} height={INNER} fill="none" stroke="rgb(75 85 99 / 0.6)" />
+							<!-- the box spans the OVERSHOOT range, so mark the unit band: without
+							     these two lines a control point at y=1 looks like an arbitrary
+							     spot rather than "level with the next key" -->
+							<line x1={PAD} y1={sy(0)} x2={PAD + INNER} y2={sy(0)} stroke="rgb(75 85 99 / 0.45)" />
+							<line x1={PAD} y1={sy(1)} x2={PAD + INNER} y2={sy(1)} stroke="rgb(75 85 99 / 0.45)" />
 							<line x1={sx(0)} y1={sy(0)} x2={sx(1)} y2={sy(1)} stroke="rgb(75 85 99 / 0.35)" stroke-dasharray="3 3" />
 							<line x1={sx(0)} y1={sy(0)} x2={sx(segEase[0])} y2={sy(segEase[1])} stroke="rgb(129 140 248 / 0.5)" />
 							<line x1={sx(1)} y1={sy(1)} x2={sx(segEase[2])} y2={sy(segEase[3])} stroke="rgb(129 140 248 / 0.5)" />

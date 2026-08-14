@@ -1609,5 +1609,98 @@ h.run(async () => {
 		'and the preview is put straight back afterwards'
 	);
 
+	// ---------- 14. F2: no browser menu on a graph KEY, nor on our own menu -------
+	// Reported again after 9c6's pane-root blocker: right-clicking a key in graph
+	// view still showed the native menu. 9c6 covers the pane's own surfaces; what it
+	// cannot cover is our ContextMenu, which is PORTALED to <body> and therefore
+	// outside the pane root — and it opens UNDER the cursor, so the next right-click
+	// lands on the menu, not on the pane.
+	// a clip authored HERE, so the graph is guaranteed to draw handles whatever the
+	// sections above left active
+	const g2 = await A.page.evaluate((id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', id);
+		const clipId = ap.createClip(id, 'RightClick');
+		const track = ap.addTrack(id, 'pos.y', obj, clipId);
+		ap.updateKey(id, track, 0, { t: 0, v: 0 }, clipId);
+		ap.updateKey(id, track, 1, { t: 1, v: 3 }, clipId);
+		ap.updateAnim(id, { duration: 2, loop: 'loop' }, clipId);
+		ap.setActiveClip(id, clipId);
+		s.objectActions.selectObject(id, false);
+		s.animationClose.set(false);
+		s.bottomDock.activateDock('animation');
+		return ap.activeClip(id)?.tracks?.[0]?.keys?.length ?? 0;
+	}, first);
+	h.check(g2 === 2, `a two-key clip is active for the graph checks (${g2} keys)`);
+	await A.page.waitForTimeout(400);
+	await A.page.getByRole('button', { name: 'Graph', exact: true }).click();
+	await A.page.waitForTimeout(400);
+
+	await A.page.evaluate(() => {
+		/** @type {any} */ (window).__ctx2 = [];
+		// bubble phase on window: this runs AFTER every direct listener, so it reports
+		// whether anything actually cancelled the default
+		window.addEventListener('contextmenu', (e) => {
+			const el = /** @type {any} */ (e.target);
+			/** @type {any} */ (window).__ctx2.push({
+				prevented: e.defaultPrevented,
+				tag: el?.tagName,
+				onMenu: !!el?.closest?.('[role="menu"]'),
+				inPane: !!el?.closest?.('#animation-dock, #animation-window')
+			});
+		});
+	});
+
+	// a real right-click on a key HANDLE in the graph. Take a handle with a REAL
+	// size and confirm it is the topmost thing at that point: a zero-size rect is
+	// truthy, and clicking its (0,0) lands on <html>, where the check would report a
+	// browser menu that no code of ours was ever asked about.
+	const keyDot = await A.page.evaluate(() => {
+		const sized = [...document.querySelectorAll('#animation-timeline circle')]
+			.map((c) => c.getBoundingClientRect())
+			.filter((r) => r.width > 2 && r.height > 2);
+		const r = sized[sized.length - 1];
+		if (!r) return null;
+		const at = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+		return { ...at, hit: document.elementFromPoint(at.x, at.y)?.tagName };
+	});
+	h.check(
+		keyDot?.hit === 'circle',
+		`the graph draws a key handle to right-click (topmost at it: ${keyDot?.hit ?? 'nothing'})`
+	);
+	await A.page.mouse.click(keyDot.x, keyDot.y, { button: 'right' });
+	await A.page.waitForTimeout(300);
+	const onKeyEvents = await A.page.evaluate(() => /** @type {any} */ (window).__ctx2);
+	h.check(
+		onKeyEvents.length > 0 && onKeyEvents.every((/** @type {any} */ e) => e.prevented),
+		`right-clicking a graph KEY cancels the browser menu (${onKeyEvents
+			.map((/** @type {any} */ e) => e.tag + ':' + e.prevented)
+			.join(', ')})`
+	);
+
+	// our menu is now open UNDER the cursor: the next right-click lands on IT
+	const menuOpen = await A.page.evaluate(() => !!document.querySelector('[role="menu"]'));
+	h.check(menuOpen, 'and our own menu opened there');
+	await A.page.evaluate(() => (/** @type {any} */ (window).__ctx2 = []));
+	const menuSpot = await A.page.evaluate(() => {
+		const r = document.querySelector('[role="menu"]')?.getBoundingClientRect();
+		return r ? { x: r.x + r.width / 2, y: r.y + Math.min(20, r.height / 2) } : null;
+	});
+	h.check(!!menuSpot, 'the open menu has a surface to right-click');
+	await A.page.mouse.click(menuSpot.x, menuSpot.y, { button: 'right' });
+	await A.page.waitForTimeout(300);
+	const onMenuEvents = await A.page.evaluate(() => /** @type {any} */ (window).__ctx2);
+	h.check(
+		onMenuEvents.length > 0 && onMenuEvents.every((/** @type {any} */ e) => e.prevented),
+		`right-clicking OUR MENU cancels it too (${onMenuEvents
+			.map((/** @type {any} */ e) => (e.onMenu ? 'menu' : e.inPane ? 'pane' : 'other') + ':' + e.prevented)
+			.join(', ')})`
+	);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+
 	await h.finish(browser);
 });

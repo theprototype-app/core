@@ -83,6 +83,16 @@
 		--tbx-btn: 36px;
 		position: fixed;
 		width: var(--tbx-w, 174px);
+		/* 18-B: the window may never be taller than the screen. The height is not
+		   resizable (axis:'x' — it hugs its content), so a tall toolbox used to
+		   simply overflow the bottom, taking its own resize grip off-screen with
+		   it: measured at y=830 on a 720px viewport, where no real mouse can
+		   reach it. The BODY scrolls instead (below); header and status stay put. */
+		display: flex;
+		flex-direction: column;
+		/* `--dw-top` is the window's own offset, published by dragWindow — the cap
+		   is the space BELOW the window, not the whole viewport */
+		max-height: calc(100vh - var(--dw-top, 24px) - 12px);
 		user-select: none;
 		font-size: 13px;
 		/* own the SURFACE from tokens: `ui-panel`'s background is compiled from
@@ -123,6 +133,13 @@
 		gap: 4px;
 		justify-content: start;
 		padding: 8px;
+		/* the scrolling part of the max-height above. `min-height: 0` is what lets a
+		   grid child of a flex column actually shrink instead of forcing the parent
+		   past its max-height; `overscroll-behavior` keeps a scroll at the end of
+		   the list from chaining to the page behind. */
+		min-height: 0;
+		overflow-y: auto;
+		overscroll-behavior: contain;
 	}
 	.toolbox-status {
 		display: flex;

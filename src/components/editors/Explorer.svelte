@@ -55,10 +55,15 @@
 	import { dockable } from '$lib/docking';
 	import ContextMenu from '../ContextMenu.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
+	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { fly } from 'svelte/transition';
 
 	const clampH = (h: number) =>
 		Math.min(Math.max(h || 300, 200), Math.round(window.innerHeight * 0.8));
+
+	// 18-B: floating-window size limits, shared with the clamp helpers
+	const WIN_MIN = { minW: 420, minH: 280 };
+	const WIN_DEFAULT = { w: 720, h: 440 };
 
 	let height = $state(300);
 	let inlineStats: any = $state(null); // N4: poly stats for the Properties inline preview
@@ -76,8 +81,16 @@
 	if (typeof localStorage !== 'undefined') {
 		height = clampH(parseInt(localStorage.getItem('explorerHeight') ?? '300'));
 		docked = localStorage.getItem('explorerDocked') !== 'false';
-		winW = parseInt(localStorage.getItem('explorerWinW') ?? '720') || 720;
-		winH = parseInt(localStorage.getItem('explorerWinH') ?? '440') || 440;
+		// 18-B: a size saved on a bigger screen must not come back oversized —
+		// that is the state whose resize grip sits off-screen. Fitted BEFORE the
+		// assignment so nothing reads $state during init (state_referenced_locally).
+		const savedWin = clampWinSize(
+			parseInt(localStorage.getItem('explorerWinW') ?? '720') || 720,
+			parseInt(localStorage.getItem('explorerWinH') ?? '440') || 440,
+			WIN_MIN
+		);
+		winW = savedWin.w;
+		winH = savedWin.h;
 		singleClickOpen = localStorage.getItem('explorerSingleClickOpen') === 'true';
 		showBreadcrumb = localStorage.getItem('explorerBreadcrumb') !== 'false';
 	}
@@ -144,16 +157,38 @@
 		if (!winResizing) return;
 		const baseW = myGroup ? myGroup.rect.width : winW;
 		const baseH = myGroup ? myGroup.rect.height : winH;
-		winW = Math.min(Math.max(420, baseW + e.movementX), window.innerWidth);
-		winH = Math.min(Math.max(280, baseH + e.movementY), window.innerHeight);
+		// 18-B: the corner stops at the viewport edge, so this grip stays reachable
+		const at = anchorOf(e.currentTarget.parentElement);
+		const fit = clampResize(baseW + e.movementX, baseH + e.movementY, at.left, at.top, WIN_MIN);
+		winW = fit.w;
+		winH = fit.h;
 		resizeGroup('explorer', winW, winH); // if grouped, resize the whole group
 	}
 	function endWinResize(e: any) {
 		if (!winResizing) return;
 		winResizing = false;
 		e.currentTarget.releaseCapture?.(e.pointerId);
+		saveWinSize();
+	}
+	function saveWinSize() {
 		localStorage.setItem('explorerWinW', String(winW));
 		localStorage.setItem('explorerWinH', String(winH));
+	}
+	/** 18-B: double-click the grip — back to the default size, position kept */
+	function resetWinSize() {
+		const fit = clampWinSize(WIN_DEFAULT.w, WIN_DEFAULT.h, WIN_MIN);
+		winW = fit.w;
+		winH = fit.h;
+		resizeGroup('explorer', winW, winH);
+		saveWinSize();
+	}
+	/** a shrinking viewport must not strand the window at a size that no longer fits */
+	function fitToViewport() {
+		const fit = clampWinSize(winW, winH, WIN_MIN);
+		if (fit.w === winW && fit.h === winH) return;
+		winW = fit.w;
+		winH = fit.h;
+		resizeGroup('explorer', winW, winH);
 	}
 
 	// --- content state ---
@@ -954,6 +989,8 @@
 </script>
 
 
+<svelte:window onresize={fitToViewport} />
+
 {#snippet editRow(depth: number)}
 	<div class="flex flex-col gap-0.5" style="padding-left: {8 + depth * 14}px">
 		<input
@@ -1512,10 +1549,11 @@
 			<div
 				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
 				style="touch-action: none"
-				title="Drag to resize"
+				title="Drag to resize · double-click to reset size"
 				onpointerdown={startWinResize}
 				onpointermove={doWinResize}
 				onpointerup={endWinResize}
+				ondblclick={resetWinSize}
 			></div>
 		</div>
 	{/if}

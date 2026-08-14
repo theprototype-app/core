@@ -43,6 +43,7 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
+	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
@@ -202,12 +203,22 @@
 
 	// docked vs floating (starts docked, undockable)
 	let docked = $state(true);
+	// 18-B: floating-window size limits, shared with the clamp helpers
+	const WIN_MIN = { minW: 360, minH: 260 };
+	const WIN_DEFAULT = { w: 660, h: 460 };
 	let winW = $state(660);
 	let winH = $state(460);
 	if (typeof localStorage !== 'undefined') {
 		docked = localStorage.getItem('animationDocked') !== 'false';
-		winW = parseInt(localStorage.getItem('animationWinW') ?? '660') || 660;
-		winH = parseInt(localStorage.getItem('animationWinH') ?? '460') || 460;
+		// 18-B: a size saved on a bigger screen must not come back oversized.
+		// Fitted before the assignment so nothing reads $state during init.
+		const savedWin = clampWinSize(
+			parseInt(localStorage.getItem('animationWinW') ?? '660') || 660,
+			parseInt(localStorage.getItem('animationWinH') ?? '460') || 460,
+			WIN_MIN
+		);
+		winW = savedWin.w;
+		winH = savedWin.h;
 	}
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
@@ -1574,18 +1585,42 @@
 		if (!winResizing) return;
 		const baseW = myGroup ? myGroup.rect.width : winW;
 		const baseH = myGroup ? myGroup.rect.height : winH;
-		winW = Math.min(Math.max(360, baseW + e.movementX), window.innerWidth - 8);
-		winH = Math.min(Math.max(260, baseH + e.movementY), window.innerHeight);
+		// 18-B: the corner stops at the viewport edge, so this grip stays reachable
+		const at = anchorOf(e.currentTarget.parentElement);
+		const fit = clampResize(baseW + e.movementX, baseH + e.movementY, at.left, at.top, WIN_MIN);
+		winW = fit.w;
+		winH = fit.h;
 		resizeGroup('animation', winW, winH); // if grouped, resize the whole group
 	}
 	function endWinResize(/** @type {any} */ e) {
 		if (!winResizing) return;
 		winResizing = false;
 		e.currentTarget.releasePointerCapture?.(e.pointerId);
+		saveWinSize();
+	}
+	function saveWinSize() {
 		localStorage.setItem('animationWinW', String(winW));
 		localStorage.setItem('animationWinH', String(winH));
 	}
+	/** 18-B: double-click the grip — back to the default size, position kept */
+	function resetWinSize() {
+		const fit = clampWinSize(WIN_DEFAULT.w, WIN_DEFAULT.h, WIN_MIN);
+		winW = fit.w;
+		winH = fit.h;
+		resizeGroup('animation', winW, winH);
+		saveWinSize();
+	}
+	/** a shrinking viewport must not strand the window at a size that no longer fits */
+	function fitToViewport() {
+		const fit = clampWinSize(winW, winH, WIN_MIN);
+		if (fit.w === winW && fit.h === winH) return;
+		winW = fit.w;
+		winH = fit.h;
+		resizeGroup('animation', winW, winH);
+	}
 </script>
+
+<svelte:window onresize={fitToViewport} />
 
 {#snippet body()}
 	{#if !target}
@@ -2414,10 +2449,11 @@
 			<div
 				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
 				style="touch-action: none"
-				title="Drag to resize"
+				title="Drag to resize · double-click to reset size"
 				onpointerdown={startWinResize}
 				onpointermove={doWinResize}
 				onpointerup={endWinResize}
+				ondblclick={resetWinSize}
 			></div>
 		</div>
 	{/if}

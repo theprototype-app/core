@@ -25,6 +25,7 @@
 	--icon-object: #6ee7a0;
 	--icon-prefab: #f0a35e;
 	--icon-danger: #f87171;
+	--icon-accent: #60a5fa;
 }
 
 :root[data-theme='light'] {
@@ -35,6 +36,7 @@
 	--icon-object: #16a34a;
 	--icon-prefab: #ea580c;
 	--icon-danger: #dc2626;
+	--icon-accent: #2563eb;
 	--surface-deep: #eef0f3;
 	--surface-deep-rgb: 238 240 243;
 	--surface: #ffffff;
@@ -58,6 +60,7 @@
 	--icon-object: #4ade80;
 	--icon-prefab: #a7f3d0;
 	--icon-danger: #f87171;
+	--icon-accent: #4ade80;
 	--surface-deep: #020f06;
 	--surface-deep-rgb: 2 15 6;
 	--surface: #04170a;
@@ -83,6 +86,7 @@
 	--icon-object: #4ade80;
 	--icon-prefab: #fb923c;
 	--icon-danger: #f43f5e;
+	--icon-accent: #f472b6;
 	--surface-deep: #16123a;
 	--surface-deep-rgb: 22 18 58;
 	--surface: #201a4e;
@@ -108,6 +112,7 @@
 	--icon-object: #00ff88;
 	--icon-prefab: #ff9933;
 	--icon-danger: #ff5555;
+	--icon-accent: #ffd400;
 	--surface-deep: #000000;
 	--surface-deep-rgb: 0 0 0;
 	--surface: #000000;

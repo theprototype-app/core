@@ -283,7 +283,12 @@
 			/* never rise above the Connect bar + the top-right chrome */
 			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px) !important;
 			border-radius: 0.75rem 0.75rem 0 0 !important;
-			z-index: 1000 !important;
+			/* The sheet's BACKGROUND runs to the very bottom, but its CONTENTS stop
+			   above the Controls HUD — the Inspector sheet's contract. The padding
+			   is on the ROOT, not the body, so the status footer clears the HUD too.
+			   Deliberately NO z-index override: Controls sits on --z-hud, above the
+			   window tier, so it stays visible AND clickable over the sheet. */
+			padding-bottom: var(--controls-inset, 0px) !important;
 		}
 		.toolbox.tbx-sheet .tbx-sheet-resize {
 			display: flex;
@@ -295,12 +300,10 @@
 		.toolbox.tbx-sheet :global(.dw-resize) {
 			display: none !important;
 		}
-		/* the body is the only scrolling part: header, tabs and status stay put,
-		   and the content clears the Controls HUD at the bottom */
+		/* the body is the only scrolling part: header, tabs and status stay put */
 		.toolbox.tbx-sheet .toolbox-body {
 			max-height: none;
 			flex: 1 1 auto;
-			padding-bottom: calc(8px + var(--controls-inset, 0px));
 		}
 	}
 
@@ -475,6 +478,10 @@
 	.toolbox :global(.tbx-btn.tbx-on:hover) {
 		background: var(--tbx-accent);
 		color: #fff;
+		/* 18-C4: on the solid accent fill the duotone would be accent-on-accent,
+		   so the armed glyph collapses to white monochrome — the Blender
+		   active-tool convention */
+		--icon-accent: #fff;
 	}
 	/* 18-C1: SELECTED but not armed — a parameterized one-shot (Bevel, Loop cut)
 	   whose options are showing, waiting for Apply. Deliberately a ring rather
@@ -490,6 +497,10 @@
 		background: var(--surface-3, #4b5563);
 		box-shadow: inset 0 0 0 1px var(--tbx-accent);
 		color: var(--tbx-accent);
+		/* 18-C4: one state, one colour. A duotone glyph inside an accent-coloured
+		   toggle put two accents in one 18px square and read as noise, so a
+		   toggled button goes monochrome the way armed and danger already do. */
+		--icon-accent: currentColor;
 	}
 	/* AFTER the aria-pressed rule on purpose: a selected parameterized tool also
 	   reports aria-pressed (it IS a state a screen reader should hear), and with
@@ -501,10 +512,16 @@
 		background: transparent;
 		box-shadow: inset 0 0 0 2px var(--tbx-accent);
 		color: var(--tbx-text);
+		/* selected is not a toggle: the ring says "chosen", and the glyph keeps
+		   its duotone so it still reads as the same tool */
+		--icon-accent: var(--tbx-accent);
 	}
 	/* destructive one-shot */
 	.toolbox :global(.tbx-danger) {
 		color: var(--tbx-danger);
+		/* a destructive tool reads as ONE colour: a blue accent inside a red
+		   button would say the highlighted part is something else */
+		--icon-accent: var(--tbx-danger);
 	}
 	.toolbox :global(.tbx-danger:hover) {
 		background: color-mix(in srgb, var(--tbx-danger) 18%, transparent);

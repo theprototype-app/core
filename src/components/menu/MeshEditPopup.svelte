@@ -95,27 +95,15 @@
 	import {
 		Keyboard,
 		CircleHelp,
-		SquareDashed,
-		Triangle,
 		Check,
 		X,
-		Move,
 		Grid2x2,
-		Trash2,
-		Merge,
 		Box,
 		Circle,
-		Expand,
 		Shrink,
 		BoxSelect,
 		FlipHorizontal,
-		Link2,
-		Compass,
-		Combine,
-		Sun,
-		Spline,
-		Eraser,
-		Scissors,
+		Link2,
 		Undo2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
@@ -165,8 +153,9 @@
 	}
 
 	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);
-	// one-shots commit immediately on the current target. `icon` = custom
-	// ToolIcon name; `lucide` = a lucide component where a good glyph exists.
+	// one-shots commit immediately on the current target. 18-C4: every tool has a
+	// custom duotone glyph now — lucide had no vocabulary for these operations, so
+	// Bevel and Knife both ended up as Scissors, i.e. the same button twice.
 	// `param: true` = a PARAMETERIZED one-shot: clicking it in the grid selects
 	// the tool and shows its options, and the pane's own button commits. With the
 	// parameters no longer permanently on screen, a click that committed straight
@@ -175,14 +164,14 @@
 	const OPS = [
 		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false, icon: 'extrude', desc: 'pull the face out along its normal' },
 		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false, icon: 'inset', desc: 'shrink a copy inside a stitched ring' },
-		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, lucide: Move, desc: 'seat the gizmo on the selection' },
-		{ op: 'bevel', label: 'Bevel', hint: '', oneShot: true, param: true, lucide: Scissors, desc: "chamfer the selected face's border" },
+		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, icon: 'move', desc: 'seat the gizmo on the selection' },
+		{ op: 'bevel', label: 'Bevel', hint: '', oneShot: true, param: true, icon: 'bevel', desc: "chamfer the selected face's border" },
 		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, param: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
-		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, lucide: Grid2x2, desc: 'split each triangle into four' },
+		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, icon: 'subdivide', desc: 'split each triangle into four' },
 		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
-		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, lucide: Scissors, desc: 'cut across the mesh: click one end of the line, then the other' },
+		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, icon: 'knife', desc: 'cut across the mesh: click one end of the line, then the other' },
 		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, icon: 'flip-normals', desc: 'reverse the winding' },
-		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, lucide: Trash2, desc: 'remove the selection' }
+		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, icon: 'delete-face', desc: 'remove the selection' }
 	];
 
 	const GRANULARITIES = [
@@ -250,14 +239,14 @@
 		{
 			id: 'normals',
 			label: 'Recalculate normals',
-			lucide: Compass,
+			icon: 'recalc-normals',
 			run: () => recalculateNormals(),
 			desc: 'rewind every face to point outward'
 		},
 		{
 			id: 'merge',
 			label: 'Merge by distance',
-			lucide: Combine,
+			icon: 'merge-distance',
 			run: () => mergeByDistance($mergeDistance),
 			desc: 'collapse near-coincident vertices and drop the degenerate faces'
 		}
@@ -671,7 +660,7 @@
 				aria-label="Move edges with the gizmo"
 				title="Move — seat the gizmo on the selected edges (X runs along the edge, Z out of the surface). The welded neighbours stretch with it."
 				onclick={() => setFaceOp('move')}
-				><Move size={18} aria-hidden="true" /></button
+				><ToolIcon name="move" /></button
 			>
 			<button
 				id="edge-bevel"
@@ -679,7 +668,7 @@
 				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel edges"
 				title="Bevel — replace the edge with a chamfer strip. Sets width, segments and profile below, then Apply. Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
-				onclick={() => focusTool('bevel')}><Scissors size={18} aria-hidden="true" /></button
+				onclick={() => focusTool('bevel')}><ToolIcon name="bevel" /></button
 			>
 			<button
 				id="edge-dissolve"
@@ -690,7 +679,7 @@
 				title="Dissolve — remove the edge and merge the two coplanar faces it joins"
 				onclick={() => {
 					if (dissolveEdges()) flash('dissolve');
-				}}><Eraser size={18} aria-hidden="true" /></button
+				}}><ToolIcon name="dissolve" /></button
 			>
 		{:else if mode === 'faces'}
 			<!-- TOOLS: armed tools stay lit (solid accent); one-shots flash on commit -->
@@ -713,11 +702,7 @@
 					title={o.hint ? `${o.label} (${o.hint}) — ${o.desc}` : `${o.label} — ${o.desc}`}
 					onclick={() => runOp(o.op)}
 				>
-					{#if o.lucide}
-						<o.lucide size={18} aria-hidden="true" />
-					{:else}
-						<ToolIcon name={o.icon ?? ''} />
-					{/if}
+					<ToolIcon name={o.icon} />
 				</button>
 			{/each}
 
@@ -731,7 +716,7 @@
 				class="tbx-btn {$vertexSelectionSize >= 2 ? 'tbx-on bg-primary-600 text-white' : 'tbx-disabled'}"
 				aria-label="Weld the selected vertices"
 				title="Weld (W) — merge the selected vertices into one (Ctrl+click adds)"
-				onclick={weld}><Merge size={18} aria-hidden="true" /></button
+				onclick={weld}><ToolIcon name="weld" /></button
 			>
 			<button
 				id="mesh-create-face"
@@ -748,7 +733,7 @@
 				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel the selected vertices"
 				title="Bevel — cut the corner off every selected vertex and cap it. Sets width and profile below, then Apply. Works on any number of vertices."
-				onclick={() => focusTool('bevel')}><Scissors size={18} aria-hidden="true" /></button
+				onclick={() => focusTool('bevel')}><ToolIcon name="bevel" /></button
 			>
 			<button
 				id="mesh-proportional"
@@ -756,7 +741,7 @@
 				aria-pressed={$proportionalEdit}
 				aria-label="Proportional editing"
 				title="Proportional editing — drag one vertex and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
-				onclick={() => proportionalEdit.set(!$proportionalEdit)}><Expand size={18} aria-hidden="true" /></button
+				onclick={() => proportionalEdit.set(!$proportionalEdit)}><ToolIcon name="proportional" /></button
 			>
 			<button
 				id="mesh-slide"
@@ -766,7 +751,7 @@
 				aria-pressed={$vertexSlide}
 				aria-label="Slide the vertex along an edge"
 				title="Slide — constrain the drag to one of this vertex's own edges (it picks the edge you drag toward and clamps to its ends). Adjusts a profile without pulling the vertex off the surface."
-				onclick={() => vertexSlide.set(!$vertexSlide)}><Spline size={18} aria-hidden="true" /></button
+				onclick={() => vertexSlide.set(!$vertexSlide)}><ToolIcon name="vertex-slide" /></button
 			>
 		{/if}
 
@@ -785,7 +770,7 @@
 					? 'Gizmo ON — click to hide it and select/operate without handles in the way'
 					: 'Gizmo OFF — click to show it again (vertices, edges and faces)'}
 				onclick={() => meshGizmoEnabled.set(!$meshGizmoEnabled)}
-				><Move size={18} aria-hidden="true" /></button
+				><ToolIcon name="gizmo" /></button
 			>
 			<div
 				id="mesh-gizmo-space"
@@ -832,7 +817,7 @@
 					aria-label={c.label}
 					title={`${c.label} — ${c.desc}`}
 					onclick={() => runWholeMesh(() => runSelectCmd(c))}
-					><c.lucide size={18} aria-hidden="true" /></button
+					><ToolIcon name={c.icon} /></button
 				>
 			{/each}
 			<button
@@ -847,7 +832,7 @@
 					runWholeMesh(() => {
 						setShadingSmooth(shadingMode() !== 'smooth');
 						flash('shading');
-					})}><Sun size={18} aria-hidden="true" /></button
+					})}><ToolIcon name="shading" /></button
 			>
 			<!-- the merge threshold sits with its own button now -->
 			<div class="tbx-row text-xs text-gray-300">
@@ -916,7 +901,7 @@
 					? 'Selection outline ON — it draws over vertices and edges'
 					: 'Selection outline OFF while editing (clearer handles)'}
 				onclick={() => meshEditOutline.update((v) => !v)}
-				><SquareDashed size={18} aria-hidden="true" /></button
+				><ToolIcon name="outline" /></button
 			>
 			<!-- quad structure by default; the diagonals are triangulation artifacts
 			     the pick/dissolve tools deliberately refuse to touch -->
@@ -929,7 +914,7 @@
 					? 'Showing triangulation — every triangle edge, diagonals included'
 					: 'Showing quads — the diagonals are hidden (they cannot be picked)'}
 				onclick={() => meshEditTriWire.update((v) => !v)}
-				><Triangle size={18} aria-hidden="true" /></button
+				><ToolIcon name="triangulation" /></button
 			>
 			<!-- D3: hotkeys on/off (the "?" cheat sheet lives in the window header) -->
 			<button

@@ -92,6 +92,22 @@
 		typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('animationClipsH') ?? '96') || 96 : 96
 	);
 	let clipsResizing = $state(false);
+	/** the sidebar's own height, measured — the resize ceiling comes from it */
+	let sideH = $state(0);
+	// How tall the clip list may get. The old cap was a flat 360px with no relation to
+	// the pane, so on a short dock the grip was pushed clean off the bottom of the
+	// window and there was no way back. The ceiling is the SIDEBAR's height less the
+	// room the sections below it need (the Channels header, its add row, and one row
+	// to see) — which still lets the list reach the bottom of the pane, just not past
+	// it. The floor stays 48 so the grip is always grabbable.
+	const CLIPS_RESERVE = 104;
+	const clipsMax = $derived(Math.max(48, (sideH || 320) - CLIPS_RESERVE));
+	// re-clamp whenever the pane SHRINKS (dock resize, window resize, undock): a
+	// height that was legal at the old size must not strand the grip off-screen
+	$effect(() => {
+		const max = clipsMax;
+		if (clipsH > max) clipsH = max;
+	});
 	function startClipsResize(/** @type {any} */ e) {
 		clipsResizing = true;
 		e.currentTarget.setPointerCapture(e.pointerId);
@@ -99,7 +115,7 @@
 	}
 	function doClipsResize(/** @type {any} */ e) {
 		if (!clipsResizing) return;
-		clipsH = Math.min(Math.max(48, clipsH + e.movementY), 360);
+		clipsH = Math.min(Math.max(48, clipsH + e.movementY), clipsMax);
 	}
 	function endClipsResize(/** @type {any} */ e) {
 		if (!clipsResizing) return;
@@ -1766,7 +1782,10 @@
 
 		<div class="flex min-h-0 flex-1">
 			<!-- LEFT: the object's OWN clips, then authored clips + movement tracks -->
-			<div class="flex w-56 shrink-0 flex-col border-r border-gray-700/60">
+			<!-- clientHeight is the clip list's resize CEILING: the grip used to clamp at
+			     a flat 360px whatever the pane's own height, so on a short dock it went
+			     straight off the bottom of the window -->
+			<div class="flex w-56 shrink-0 flex-col border-r border-gray-700/60" bind:clientHeight={sideH}>
 				{#if clips.length}
 					<div id="animation-clips" class="border-b border-gray-700/60">
 						<div class="flex items-center justify-between px-2 pt-1.5">

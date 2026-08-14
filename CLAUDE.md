@@ -1604,12 +1604,21 @@ override for e2e — never share 5173 (the user's main-checkout server).
   snapping while you sweep the ruler; and the browser context menu blocked by a DIRECT
   listener on both pane shells.
   OWED: user's on-device/feel pass, then the PR to release/next.
-  REMAINING (asked for, not built): curve TANGENT HANDLES on the graph (the storage
-  already carries them — `ease` per key — so it is the UI half only), timeline MARKERS
-  plus a trigger that fires when the playhead crosses one, ONION-SKIN ghosts at the
-  neighbouring keys, and an **Animation State node** (playing / progress / finished
-  outputs) so a clip can feed the rest of a flow graph — that last one is what the
-  user meant by hooking clips into door logic. NEXT (planned): the same transform tools
+  The clip->graph handoff shipped as **`animfinished`** (Animation Finished): pulses
+  when a once-clip reaches its end, LOCALLY on every peer — each runtime reaches that
+  elapsed time itself, the same reasoning as the once-clip end, so no message. Wire it
+  into a Counter, a sound, or the next door's Play Animation.
+  REMAINING → the handoff plan is cloud `plans-core/pending/17-e-animation-followups.md`
+  (F1-F6), including two LIVE BUGS diagnosed but unfixed: **Ctrl+V fires push-to-talk**
+  (`voiceChat.js:257` checks the key but no MODIFIERS; chat is correct by contrast
+  because `comboOf` builds 'Ctrl+C' while the registry holds 'C' — and the Animation
+  pane should `stopPropagation` on keys it consumes, since M/1/2 also reach the global
+  registry), and the **browser context menu still appearing on graph KEYS** (most likely
+  our own portaled `ContextMenu`, which a pane-root blocker cannot cover — block it in
+  ContextMenu.svelte and/or in capture phase). Then: a PROGRESS output beside
+  animfinished, curve TANGENT HANDLES (storage already carries `ease` per key — the UI
+  half only), clip MARKERS plus a crossing trigger, and ONION-SKIN ghosts.
+  NEXT (planned): the same transform tools
   in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
 - Status (2026-08-11, fifth drop): **knife RUBBER BAND + the P12 wasm question ANSWERED —
   PRs #120 + #121 MERGED @ca9e4ba.** The knife draws a dashed DOM band between its two clicks

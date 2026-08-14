@@ -638,6 +638,19 @@ loadable play content. Everything a user does must be visible to connected peers
   handler on the `<svg>` and decide by coordinate (or mark decoration
   `pointer-events="none"`). The tell: a CLICK between ticks worked while a press ON
   one did nothing, and `document.elementFromPoint` named a `<line>`.
+- **Re-identifying moved items by their VALUE after a sort is not tracking them.**
+  A multi-key drag re-found each key by matching the time it had just written; with
+  snapping on, two keys of one track land on the same time constantly, both matched
+  the same key, and one of the pair was dropped or duplicated. The fix is to TAG each
+  moved item with the ordinal of the move that produced it and have the mutator
+  REPORT where each one landed (`moveKeys`); `Array.sort` is stable, so an identical
+  key still keeps its order. Any "apply a delta to N selected things" gesture has
+  this shape.
+- **A window derived from the two ends you are writing feeds back on itself.** The
+  timeline's `viewSpan` is `viewEnd - viewStart`, so a pan that read it per move
+  widened the view as it went — the same bug as the graph's value axis, one level up.
+  Capture the span at gesture start. (Generally: a derived quantity used to compute
+  the write it feeds is a loop; freeze it for the gesture.)
 - **A value axis derived from the data cannot be live while you drag the data.**
   The graph editor's y range comes from the keys' min/max, so dragging a key moved
   the range, which moved the pixel→value mapping, which moved the value: the key
@@ -1555,7 +1568,18 @@ override for e2e — never share 5173 (the user's main-checkout server).
   animation-window/animation-persist. Baseline **391/62** held; build green. Traps from
   this batch are in the gotchas (SVG sibling hit-stealing, a live-derived drag axis, the
   loop-wrap on a parked playhead, transport-follows-clip, length vs retime vs speed).
-  OWED: user's on-device/feel pass, then the PR to release/next.
+  The EDITOR keymap is one model, shared with the rest of the app's conventions:
+  arrows step the playhead by FRAMES (Ctrl x10, Shift x100 — the DragRow modifiers),
+  Alt+arrows jump key to key, Ctrl+Space adds the key at the playhead to the
+  selection, Esc drops it, 1/2 arm Move/Scale (the mesh editor's digits), Shift+arrows
+  transform the selection (X time, Y value), Del removes it. MIDDLE-click locks the
+  selection to the pointer (modal grab: click/Enter commits, Esc reverts), RIGHT-click
+  is the context menu, right/middle-drag and Shift+wheel pan, the wheel zooms (up =
+  in), and a NAVIGATOR strip under the plot carries the whole clip with the visible
+  window as its thumb. Frames are 30fps by default (`animationFps` in localStorage).
+  OWED: user's on-device/feel pass, then the PR to release/next. NEXT (planned, not
+  started): the same transform tools in the UV editor →
+  cloud `plans-core/pending/uv-editor-transform-tools.md`.
 - Status (2026-08-11, fifth drop): **knife RUBBER BAND + the P12 wasm question ANSWERED —
   PRs #120 + #121 MERGED @ca9e4ba.** The knife draws a dashed DOM band between its two clicks
   (the cut is a screen line, so there is no 3D line to draw), and Escape drops a PENDING cut

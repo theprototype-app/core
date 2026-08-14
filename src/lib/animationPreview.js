@@ -1192,6 +1192,151 @@ export function moveKeys(uuid, moves, clipId) {
 	return landed;
 }
 
+// --- the key clipboard -------------------------------------------------------
+// One clipboard for the app, holding keys BY CHANNEL and relative to the earliest
+// one copied. That is what makes it useful across clips and objects: paste puts the
+// whole shape down at the playhead, and a channel the target has no track for gets
+// one, so copying a door's swing onto another door is two keystrokes.
+
+/** @type {{channel: string, keys: Key[]}[]} */
+let clipboard = [];
+
+/** @type {import('svelte/store').Writable<number>} how many keys are on the clipboard */
+export const clipboardSize = writable(0);
+
+/** Copy the given [trackId, index] pairs of a clip. @param {string} uuid
+ * @param {[string, number][]} picks @param {string} [clipId] @returns {number} */
+export function copyKeys(uuid, picks, clipId) {
+	const clip = clipOf(uuid, clipId);
+	if (!clip || !picks?.length) return 0;
+	/** @type {Map<string, Key[]>} */
+	const byChannel = new Map();
+	let earliest = Infinity;
+	for (const [trackId, index] of picks) {
+		const track = clip.tracks.find((t) => t.id === trackId);
+		const key = track?.keys[index];
+		if (!track || !key) continue;
+		earliest = Math.min(earliest, key.t);
+		const list = byChannel.get(track.channel) ?? [];
+		list.push({ t: key.t, v: key.v, ...(key.ease ? { ease: [...key.ease] } : {}) });
+		byChannel.set(track.channel, list);
+	}
+	if (!byChannel.size) return 0;
+	// store RELATIVE times, so a paste lands wherever the playhead is
+	clipboard = [...byChannel.entries()].map(([channel, keys]) => ({
+		channel,
+		keys: keys
+			.map((k) => ({ ...k, t: k.t - earliest }))
+			.sort((a, b) => a.t - b.t)
+	}));
+	const total = clipboard.reduce((sum, entry) => sum + entry.keys.length, 0);
+	clipboardSize.set(total);
+	return total;
+}
+
+/** What is on the clipboard (for a menu label). */
+export function clipboardInfo() {
+	return {
+		channels: clipboard.map((entry) => entry.channel),
+		keys: clipboard.reduce((sum, entry) => sum + entry.keys.length, 0)
+	};
+}
+
+/**
+ * Paste the clipboard at `seconds`, creating a track for any channel the target
+ * clip does not have yet (a paste that silently dropped half the shape would be
+ * worse than refusing). Returns the pasted keys, so the caller can select them.
+ * @param {string} uuid @param {number} seconds @param {string} [clipId]
+ * @returns {[string, number][]}
+ */
+export function pasteKeys(uuid, seconds, clipId) {
+	if (!clipboard.length) return [];
+	const at = Math.max(0, num(seconds));
+	const object = objectFor(uuid);
+	/** @type {[string, number][]} */
+	const landed = [];
+	beginAnimGesture(uuid, 'Paste keys');
+	for (const entry of clipboard) {
+		let clip = clipOf(uuid, clipId);
+		let track = clip?.tracks.find((t) => t.channel === entry.channel);
+		if (!track) {
+			const id = addTrack(uuid, entry.channel, object, clipId);
+			clip = clipOf(uuid, clipId);
+			track = clip?.tracks.find((t) => t.id === id);
+			// addTrack seeds a demo pair; the paste owns this track
+			if (track) {
+				for (let i = track.keys.length - 1; i >= 1; i--) removeKey(uuid, track.id, i, clipId);
+			}
+		}
+		if (!track) continue;
+		for (const key of entry.keys) {
+			addKey(uuid, track.id, at + key.t, key.v, { ease: key.ease, clipId });
+		}
+		const fresh = clipOf(uuid, clipId)?.tracks.find((t) => t.id === track.id);
+		for (const key of entry.keys) {
+			const index = fresh?.keys.findIndex((k) => Math.abs(k.t - (at + key.t)) < 1e-6) ?? -1;
+			if (index >= 0) landed.push([track.id, index]);
+		}
+	}
+	endAnimGesture();
+	return landed;
+}
+
+/** Duplicate the given keys, offset by `offset` seconds (defaults to one clip after
+ * the last of them). @param {string} uuid @param {[string, number][]} picks
+ * @param {number} [offset] @param {string} [clipId] @returns {[string, number][]} */
+export function duplicateKeys(uuid, picks, offset, clipId) {
+	const clip = clipOf(uuid, clipId);
+	if (!clip || !picks?.length) return [];
+	const times = picks
+		.map(([trackId, index]) => clip.tracks.find((t) => t.id === trackId)?.keys[index]?.t)
+		.filter((t) => t !== undefined);
+	if (!times.length) return [];
+	const earliest = Math.min(...(/** @type {number[]} */ (times)));
+	const latest = Math.max(...(/** @type {number[]} */ (times)));
+	const shift = offset ?? Math.max(latest - earliest, 1 / 30) + (latest - earliest > 0 ? 0 : 0);
+	/** @type {[string, number][]} */
+	const landed = [];
+	beginAnimGesture(uuid, 'Duplicate keys');
+	for (const [trackId, index] of picks) {
+		const track = clipOf(uuid, clipId)?.tracks.find((t) => t.id === trackId);
+		const key = track?.keys[index];
+		if (!track || !key) continue;
+		const at = key.t + shift;
+		addKey(uuid, trackId, at, key.v, { ease: key.ease, clipId });
+		const fresh = clipOf(uuid, clipId)?.tracks.find((t) => t.id === trackId);
+		const found = fresh?.keys.findIndex((k) => Math.abs(k.t - at) < 1e-6) ?? -1;
+		if (found >= 0) landed.push([trackId, found]);
+	}
+	endAnimGesture();
+	return landed;
+}
+
+/**
+ * MIRROR the given keys in time about a pivot (the playhead by default): the shape
+ * plays backwards. Values are untouched — a door closing is the same angles in the
+ * other order, not the negative of them.
+ * @param {string} uuid @param {[string, number][]} picks @param {number} pivot
+ * @param {string} [clipId] @returns {number} how many moved
+ */
+export function mirrorKeys(uuid, picks, pivot, clipId) {
+	const clip = clipOf(uuid, clipId);
+	if (!clip || !picks?.length) return 0;
+	/** @type {{trackId: string, index: number, t: number}[]} */
+	const moves = [];
+	for (const [trackId, index] of picks) {
+		const track = clip.tracks.find((t) => t.id === trackId);
+		const key = track?.keys[index];
+		if (!track || !key) continue;
+		moves.push({ trackId, index, t: Math.max(0, 2 * pivot - key.t) });
+	}
+	if (!moves.length) return 0;
+	beginAnimGesture(uuid, 'Mirror keys');
+	moveKeys(uuid, moves, clipId);
+	endAnimGesture();
+	return moves.length;
+}
+
 /** @param {string} uuid @param {string} trackId @param {number} index @param {string} [clipId] */
 export function removeKey(uuid, trackId, index, clipId) {
 	editClip(uuid, clipId ?? null, (clip) => ({

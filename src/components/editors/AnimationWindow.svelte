@@ -19,6 +19,7 @@
 		animations, playback, playheads, CHANNELS, EASINGS, STEPPED, channelLabel, isRotChannel,
 		activeClip, clipList, addTrack, removeTrack, updateTrack, updateAnim, retimeClip,
 		addKey, updateKey, removeKey, moveKeys, sampleTrack, channelValue, channelApplies, isMaterialChannel,
+		copyKeys, pasteKeys, duplicateKeys, mirrorKeys, clipboardSize, clipboardInfo,
 		createClip, renameClip, duplicateClip, deleteClip, setActiveClip, keyTimes,
 		beginAnimGesture, endAnimGesture, play, pause, stop, resetPreview, scrub, setSpeed, setRange,
 		PRESETS, applyPreset, autoKeyFor, setAutoKey, rememberAutoKeyReference, captureAutoKey,
@@ -711,6 +712,21 @@
 		addKey(target.uuid, track.id, t, v);
 	}
 
+	/**
+	 * Kill the BROWSER menu anywhere in this pane.
+	 *
+	 * `oncontextmenu` on the plot was not enough: svelte DELEGATES it, so the panel
+	 * chrome that stops pointer events on their way up stopped this too and the
+	 * native menu came up beside ours. A direct listener on the pane root sees it
+	 * first and covers the toolbar, the lists, the navigator and the plot at once.
+	 * @param {HTMLElement} node
+	 */
+	function noNativeMenu(node) {
+		const block = (/** @type {Event} */ e) => e.preventDefault();
+		node.addEventListener('contextmenu', block);
+		return { destroy: () => node.removeEventListener('contextmenu', block) };
+	}
+
 	/** delete every selected key, highest index first so the rest keep their spots */
 	function deleteSelectedKeys() {
 		if (!target || !selKeys.length) return;
@@ -799,6 +815,36 @@
 				if (!selKeys.length) return;
 				e.preventDefault();
 				selKeys = [];
+				return;
+			}
+			if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+				if (!selKeys.length) return;
+				e.preventDefault();
+				const n = copyKeys(target.uuid, selKeys);
+				if (n) showToast(n === 1 ? 'Copied 1 key' : 'Copied ' + n + ' keys');
+				return;
+			}
+			if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+				if (!$clipboardSize) return;
+				e.preventDefault();
+				const landed = pasteKeys(target.uuid, snapT(curTime));
+				if (landed.length) {
+					selKeys = landed;
+					selId = landed[0][0];
+				}
+				return;
+			}
+			if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+				if (!selKeys.length) return;
+				e.preventDefault();
+				const landed = duplicateKeys(target.uuid, selKeys);
+				if (landed.length) selKeys = landed;
+				return;
+			}
+			if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey) {
+				if (!selKeys.length) return;
+				e.preventDefault();
+				mirrorKeys(target.uuid, selKeys, snapT(curTime));
 				return;
 			}
 			if (e.key === '1' || e.key === '2') {
@@ -911,6 +957,30 @@
 				}
 			});
 			items.push({
+				label: count > 1 ? 'Copy ' + count + ' keys' : 'Copy key',
+				hint: 'Ctrl+C',
+				tooltip: 'Keeps their spacing and channels — paste lands at the playhead, in any clip or on any object',
+				action: () => {
+					const n = copyKeys(uuid, selKeys);
+					if (n) showToast(n === 1 ? 'Copied 1 key' : 'Copied ' + n + ' keys');
+				}
+			});
+			items.push({
+				label: 'Duplicate',
+				hint: 'Ctrl+D',
+				tooltip: 'Repeat the selection after itself, keeping its spacing',
+				action: () => {
+					const landed = duplicateKeys(uuid, selKeys);
+					if (landed.length) selKeys = landed;
+				}
+			});
+			items.push({
+				label: 'Mirror around the playhead',
+				hint: 'M',
+				tooltip: 'The same shape backwards — a close made from an open',
+				action: () => mirrorKeys(uuid, selKeys, snapT(curTime))
+			});
+			items.push({
 				label: 'Value from the object now',
 				tooltip: 'Read the object as it stands and store that as the key value',
 				action: () => {
@@ -923,6 +993,21 @@
 				}
 			});
 			items.push({ section: 'Timeline' });
+		}
+		if ($clipboardSize) {
+			const what = clipboardInfo();
+			items.push({
+				label: 'Paste ' + what.keys + (what.keys === 1 ? ' key' : ' keys') + ' here',
+				hint: 'Ctrl+V',
+				tooltip: what.channels.join(', ') + ' — a channel this clip lacks gets a track',
+				action: () => {
+					const landed = pasteKeys(uuid, snapT(curTime));
+					if (landed.length) {
+						selKeys = landed;
+						selId = landed[0][0];
+					}
+				}
+			});
 		}
 		items.push({
 			label: 'Add key here',
@@ -1793,6 +1878,7 @@
 	{#if docked}
 		<div
 			id="animation-dock"
+			use:noNativeMenu
 			class="fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 text-gray-800 dark:bg-gray-800 dark:text-gray-200 {dockVisible ? '' : 'hidden'}"
 			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 		>
@@ -1819,6 +1905,7 @@
 	{:else}
 		<div
 			id="animation-window"
+			use:noNativeMenu
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'animation', defaultRect: { left: 200, top: 120 } }}
 			use:focusStack

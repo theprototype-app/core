@@ -967,15 +967,47 @@ h.run(async () => {
 	);
 	await A.page.evaluate(() => document.getElementById('animation-fit')?.click());
 
-	// the browser menu must never come up alongside ours
-	const noNative = await A.page.evaluate(() => {
-		const el = document.querySelector('#animation-timeline');
-		const r = el.getBoundingClientRect();
-		const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.x + 40, clientY: r.y + r.height - 8 });
-		el.dispatchEvent(ev);
-		return ev.defaultPrevented;
+	// The browser menu must never come up alongside ours, ANYWHERE in the pane. This
+	// watches the real event: a synthetic dispatch on the plot passed while the native
+	// menu still appeared for the user, because svelte DELEGATES contextmenu and the
+	// panel chrome swallowed it before the app root ever saw it.
+	await A.page.evaluate(() => {
+		/** @type {any} */ (window).__ctx = [];
+		// bubble phase on window: runs AFTER the pane's own direct listener, so this
+		// reports whether anything actually cancelled the default
+		window.addEventListener('contextmenu', (e) => {
+			const el = /** @type {any} */ (e.target);
+			/** @type {any} */ (window).__ctx.push({
+				prevented: e.defaultPrevented,
+				where: el?.closest?.('#animation-dock, #animation-window') ? 'pane' : 'outside'
+			});
+		});
 	});
-	h.check(noNative, 'the plot cancels the browser context menu');
+	const spots = await A.page.evaluate(() => {
+		const pick = (/** @type {string} */ sel, /** @type {number} */ fx, /** @type {number} */ fy) => {
+			const r = document.querySelector(sel)?.getBoundingClientRect();
+			return r ? { x: r.x + r.width * fx, y: r.y + r.height * fy } : null;
+		};
+		return {
+			plot: pick('#animation-timeline', 0.5, 0.8),
+			navigator: pick('#animation-navigator', 0.5, 0.5),
+			toolbar: pick('#animation-add', 0.5, 0.5),
+			list: pick('#animation-clips', 0.5, 0.5) ?? pick('#authored-clips', 0.5, 0.5)
+		};
+	});
+	for (const [name, at] of Object.entries(spots)) {
+		if (!at) continue;
+		await A.page.mouse.click(at.x, at.y, { button: 'right' });
+		await A.page.waitForTimeout(150);
+		await A.page.keyboard.press('Escape');
+	}
+	const native = await A.page.evaluate(() => /** @type {any} */ (window).__ctx);
+	const inPane = native.filter((/** @type {any} */ e) => e.where === 'pane');
+	h.check(inPane.length >= 3, `real right-clicks reached the pane (${inPane.length} of ${native.length})`);
+	h.check(
+		inPane.every((/** @type {any} */ e) => e.prevented),
+		`and every one of them cancelled the browser menu (${inPane.filter((/** @type {any} */ e) => !e.prevented).length} slipped through)`
+	);
 
 	// ---------- 9c7. the polish round: layout, snapping and horizontal scale -------
 	await A.page.getByRole('button', { name: 'Graph', exact: true }).click();

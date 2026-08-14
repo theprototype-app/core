@@ -1021,7 +1021,7 @@
 				<span id="mesh-sel-counts" title="Selected faces · triangles (Ctrl+click adds)">
 					{selInfo.faces} face{selInfo.faces === 1 ? '' : 's'} · {selInfo.tris} tri{selInfo.tris === 1 ? '' : 's'}{#if selInfo.loops}<span
 							class={selInfo.loops[0] === selInfo.loops[1] ? '' : 'text-red-400'}
-							title="Boundary edges of the two selected faces — Bridge needs them EQUAL"
+							title="Boundary edges of the two selected pieces — Bridge needs them EQUAL"
 						>
 							· {selInfo.loops[0]} ↔ {selInfo.loops[1]} edges</span
 						>{/if}

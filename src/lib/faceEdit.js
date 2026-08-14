@@ -416,7 +416,7 @@ function centroidOfTris(tris, triIndices) {
  * other (15-G: two merged cubes, both top faces inset, slid together).
  * @param {any[]} tris @param {number[]} triIndices @returns {number[][]}
  */
-function componentsOfTris(tris, triIndices) {
+export function componentsOfTris(tris, triIndices) {
 	/** @type {Map<string, string>} */
 	const parent = new Map();
 	const find = (/** @type {string} */ key) => {
@@ -4582,29 +4582,37 @@ export function faceIndexForTriangle(triangleIndex) {
 
 /**
  * E10: live counts for the toolbar — selected tris, the logical faces they
- * cover, and (with EXACTLY two faces) their boundary-edge counts, so a bridge
- * mismatch is visible BEFORE clicking. @returns {{tris: number, faces: number,
+ * cover, the connected PIECES they form, and (with EXACTLY two pieces) their
+ * boundary-edge counts, so a bridge mismatch is visible BEFORE clicking.
+ *
+ * 19-A: the loop counts key off PIECES, not logical faces, because that is
+ * bridgeFaces' real precondition — it splits the selection with
+ * `componentsOfTris` and takes one `boundaryLoop` per component. Reading two
+ * logical faces instead reported edge counts for a gate that does not exist
+ * (two coplanar-merged groups on ONE piece showed numbers; one piece made of
+ * two selected bands showed none).
+ * @returns {{tris: number, faces: number, pieces: number,
  * loops: [number, number] | null}}
  */
 export function faceSelectionInfo() {
 	const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
-	if (!sel.length) return { tris: 0, faces: 0, loops: null };
+	if (!sel.length) return { tris: 0, faces: 0, pieces: 0, loops: null };
 	/** @type {Set<number>} */
 	const faceSet = new Set();
 	sel.forEach((/** @type {number} */ ti) => {
 		const fi = faceIndexForTriangle(ti);
 		if (fi >= 0) faceSet.add(fi);
 	});
+	const parts = componentsOfTris(workingTris, sel);
 	/** @type {[number, number] | null} */
 	let loops = null;
-	if (faceSet.size === 2) {
-		const [a, b] = [...faceSet];
-		loops = [
-			boundaryLoop(workingTris, faces[a].triIndices)?.length ?? 0,
-			boundaryLoop(workingTris, faces[b].triIndices)?.length ?? 0
-		];
+	if (parts.length === 2) {
+		const a = boundaryLoop(workingTris, parts[0]);
+		const b = boundaryLoop(workingTris, parts[1]);
+		// null = an OPEN boundary, which bridge refuses outright — no numbers to show
+		if (a && b) loops = [a.length, b.length];
 	}
-	return { tris: sel.length, faces: faceSet.size, loops };
+	return { tris: sel.length, faces: faceSet.size, pieces: parts.length, loops };
 }
 
 /** the op target's world-space centroid + normal (for ghost/preview) — the

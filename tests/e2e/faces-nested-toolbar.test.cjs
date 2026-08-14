@@ -51,8 +51,11 @@ h.run(async () => {
 	// auto-apply checkbox toggles the store
 	h.check((await autoState()) === true, 'auto-apply defaults on');
 	await A.page.locator('#mesh-op-autoapply').click();
-	await A.page.waitForTimeout(100);
-	h.check((await autoState()) === false, 'toggling the checkbox turns auto-apply off');
+	// POLL, don't read in the click's own tick: a synthetic click races Svelte's
+	// binding flush, and under machine load the fixed 100ms wait read the store
+	// before bind:checked had written it (the check below it, which depends on
+	// the same flip, kept PASSING — the flip was real, the read was early)
+	await h.eventually(autoState, (v) => v === false, 'toggling the checkbox turns auto-apply off');
 	await A.page.locator('#mesh-op-autoapply').click();
 	await A.page.waitForTimeout(100);
 

@@ -589,11 +589,39 @@ loadable play content. Everything a user does must be visible to connected peers
   gotcha. **Icons are for TOOLS you arm; COMMANDS render as words** — six
   near-identical 18px glyphs in a row are indistinguishable, and that alone
   produced two "selects everything" bug reports (Linked next to Loop, All next to
-  Invert)), `components/ui/ToolIcon.svelte` (the custom stroke set for glyphs
-  lucide lacks — extrude/inset/bridge/flip-normals/create-face/wireframe/loop-cut
-  + the sculpt brushes; 24px viewBox, stroke-width 2, `currentColor`, so every
-  theme incl. unlimited custom ones tints them. NO per-theme icon assets, by
-  design — custom themes are token-only, so per-theme artwork cannot scale), shared
+  Invert). #18-C adds: an optional `tabs` SNIPPET rendered between header and
+  body (outside the scrolling body, so the element-mode tabs stay pinned) with
+  `.tbx-tab`/`.tbx-tab-on`; `.tbx-primary` (pill Apply/Commit), `.tbx-sel` (a
+  parameterized tool SELECTED but not armed — a RING, because an armed tool
+  changes what a viewport click does and a selected one does not; its CSS must
+  sit AFTER the `aria-pressed` rule, which a selected tool also carries, or the
+  tinted well fills it at equal specificity); `.tbx-sec-head` +
+  `components/ui/ToolboxSection.svelte`, a collapsible that renders NO WRAPPER
+  element — the body is a grid and its rows span it, so a wrapper would make the
+  whole section one cell. `max-height: calc(100vh - var(--dw-top) - 12px)` +
+  a scrolling body (18-B: a tall toolbox used to hang its own resize grip off
+  the bottom — measured at y=830 on a 720px viewport). At **≤640px it is a
+  bottom SHEET** (`tbx-sheet`): full width, grabber-resized height persisted to
+  `tbxSheetH:<key>`, drag/grip disabled via dragWindow's `inert`, and NO z-index
+  override — Controls sits on --z-hud, so the sheet keeps its background under
+  the HUD and pads its CONTENTS above it, the Inspector's contract),
+  `components/menu/MeshToolOptions.svelte` (#18-C2: the contextual TOOL OPTIONS
+  pane — one tool's parameters at a time, nothing when it has none; layout only,
+  the toolbox keeps the toasts/flash/target checks and the Apply buttons call
+  back) + `src/lib/meshToolParams.js` (its stores: bevel width/segments/profile,
+  loopCuts, bridgeCuts, mergeDistance, symAxis/symKeep, and `optionsFocus` —
+  which tool's options show, NOT the same as the armed `faceEditOp`),
+  `components/ui/ToolIcon.svelte` (the custom stroke set for glyphs
+  lucide lacks; 24px viewBox, stroke-width 2. **#18-C4 DUOTONE**: each glyph is
+  `{base, accent?, accentFill?}` — base = the neutral geometry in
+  `currentColor`, accent = what the tool CREATES/CHANGES in `--icon-accent`
+  (a THEME_TOKENS entry falling back through `--accent`). A plain array is still
+  a base-only glyph. ONE COLOUR PER STATE: armed sets `--icon-accent:#fff`,
+  danger the danger red, a toggle `currentColor`; only resting and `.tbx-sel`
+  are duotone. Rendering the SHEET is what caught wireframe and subdivide being
+  the same square-plus-cross, and Bevel and Knife both being lucide Scissors.
+  NO per-theme icon assets, by design — custom themes are token-only, so
+  per-theme artwork cannot scale), shared
   `ContextMenu.svelte` (caps to viewport + scrolls vertically when tall, never
   horizontally; per-submenu flip via left/right/top/bottom — no transform),
   `components/ui/DragRow.svelte` (#16-Q3: THE numeric field — drag to scrub, type
@@ -1390,6 +1418,25 @@ loadable play content. Everything a user does must be visible to connected peers
   `measureDock()`. Bottom-sheet mode (Inspector/NotesDrawer) is `≤640px` and its slide-UP
   transition must gate on that EXACT breakpoint, NOT the `≤820` `narrowDrawer` used for the
   floating-corner rounding, or the 641–820 side drawer wrongly slides up.
+- **A window bigger than the screen can never be shrunk again** (18-B): the
+  bottom-right grip is the only way to resize, so once it is off-screen the user
+  is stuck — `document.elementFromPoint` at the grip returns nothing and a real
+  mouse cannot reach it (measured on the mesh toolbox: grip at y=830 on a 720px
+  viewport, which also meant that toolbox had NEVER been resizable with a real
+  mouse at that height). `windowSize.js` has the two rules, and they answer
+  different questions: `clampWinSize` = "does this size fit at all?" for LOAD
+  and viewport-shrink, position-independent, with the viewport cap WINNING over
+  the minimum (`Math.max(minW, …)` last is itself a way to end up wider than the
+  screen) and the top chrome subtracted (a window may not sit under the Connect
+  bar, so that strip is not usable height); `clampResize` = "can the corner go
+  there?" while dragging — it stops at the viewport edge, the OS window rule,
+  which is also what stops the window JUMPING out from under the cursor. Three
+  more things that were not obvious: a window that GROWS needs its POSITION
+  re-clamped (consumers apply their height after dragWindow has already clamped,
+  so the initial clamp measured a smaller window — hence the ResizeObserver);
+  `--dw-top` lets a content-height window cap against the space BELOW it
+  (`max-height: 100vh` ignores the offset); and double-click on any grip resets
+  the size while keeping the position.
 - **A floating/absolute element off the RIGHT or BOTTOM edge grows the document (scrollbars
   + shifts the centred Connect pill); off the LEFT/TOP does not** — hence `body,html {
   overflow:hidden }` in `routes/+page.svelte` (full-viewport app; panels/modals scroll
@@ -1818,6 +1865,33 @@ override for e2e — never share 5173 (the user's main-checkout server).
   the PR of the whole 17-E branch to release/next.
   NEXT (planned): the same transform tools
   in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
+- Status (2026-08-14): **ROADMAP #18 EXECUTED — settings polish, window sizing, Edit Mesh
+  toolbox redesign.** 7 commits on two stacked branches off release/next (not PR'd):
+  `feat/roadmap18-settings-windows` = **18-A** `37370be` (auto-restore-on-load pref,
+  default OFF, restoring straight away and REPORTING it in a sticky toast — its own id,
+  since Toasts' mirror owns 'restore-session'; `restoreSnapshot` split into
+  `applyRestore` + two callers; new LOCAL `viewPrefs.js` for the wireframe / selection-
+  outline / edit-overlay colours, the edit one keeping 'auto' so the luminance pick
+  stays the default) + **18-B** `81fa20a` (see the window-sizing gotcha — one clamp rule
+  in `windowSize.js` across dragWindow and the five hand-rolled resizers, dblclick-grip
+  reset, and the toolbox height bound that made `toolbox-window` green again: it was RED
+  on release/next because the grip sat off-screen). `feat/mesh-toolbox-redesign` stacks
+  C1 `b66e315` (tabs + shell primitives + ToolboxSection) · C2 `3e39a55` (contextual
+  Tool options, whole-mesh work in collapsible sections available in EVERY element mode,
+  Bevel/Loop cut as select-then-Apply) · C3 `246cb95` (bottom sheet ≤640px, in the shell
+  so Sculpt inherits it) · C4 `cc675db` (duotone icons — the user reviewed a rendered
+  5-theme sheet before this commit) · C5 `0b7359c` (**TOOLS vs OPERATIONS** in faces —
+  armed tools vs selection actions, the Blender toolbar/menu split — **Bridge gained a
+  `cuts` parameter**, and DragRow replaced the last bare number inputs). Baseline held
+  **391/62** throughout. New suites `settings-autorestore-colors` (32),
+  `window-size-clamp` (30), `mesh-toolbox-redesign` (71); 16 mesh suites + sculpt/uv/
+  camera-pip/number-fields re-verified. Two method notes worth keeping: RENDERING the
+  icon sheet is what exposed two glyph collisions that reading the code did not, and the
+  bridge-cuts check had to measure WALLS not the triangle delta (the op deletes the caps
+  too, so a clean 3x looked like 4→20). Pre-existing reds proven by A/B and NOT from this
+  work: `view-mode`'s shadow catcher (a DEV-ONLY ~1.2s dynamic-import latency —
+  `applyEnvironment` itself runs in 0ms), `ui-fixes-15lmno`'s two Roughness checks,
+  `mesh-fixes-round2`'s real-mouse face-click premise.
 - Status (2026-08-11, fifth drop): **knife RUBBER BAND + the P12 wasm question ANSWERED —
   PRs #120 + #121 MERGED @ca9e4ba.** The knife draws a dashed DOM band between its two clicks
   (the cut is a screen line, so there is no 3D line to draw), and Escape drops a PENDING cut

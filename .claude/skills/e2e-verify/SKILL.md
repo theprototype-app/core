@@ -332,10 +332,24 @@ const value = await page.evaluate(() =>
   `.dw-resize`); modes `#mesh-mode-vertices|edges|faces`; granularity
   `#mesh-gran-quad|face|triangle|shell|object`; ops `#mesh-op-<op>` (armed carries
   `mesh-op-active` + `tbx-on`); cleanup `#mesh-fix-normals|merge` + `#mesh-shading`;
-  edges `#edge-loop|dissolve|clear` + `#edge-sel-count`; session cancel
+  edges `#edge-move|bevel|dissolve` + `#edge-sel-count`; session cancel
   `#mesh-edit-cancel` with the inline `#mesh-cancel-confirm` / `#mesh-cancel-yes` /
   `#mesh-cancel-no`; the key list is its OWN window `#mesh-keys-popover` opened by
   `#mesh-keys-help`. Sculpt `#sculpt-toolbar` + `#sculpt-op-*`.
+  **18-C reshaped this window** and several old anchors are gone: the modes are a
+  TAB BAR (`.tbx-tabs`, still `#mesh-mode-*`) OUTSIDE `.toolbox-body`; the whole-mesh
+  work lives in COLLAPSIBLE sections (`#mesh-sec-cleanup|symmetry|display|collider`,
+  Cleanup and Symmetry CLOSED by default — their contents are not in the DOM until
+  the header is clicked, and the open state persists in `tbx:sec:<key>`);
+  `#mesh-keys-help` moved into the window HEADER; `#mesh-deselect`, `#edge-loop` and
+  `#edge-clear` were retired for the word commands that duplicated them. Tool
+  parameters are CONTEXTUAL now — `#mesh-op-params` (extrude/inset), `#bevel-params`,
+  `#loopcut-params`, `#bridge-params` render only while that tool is selected, and
+  every numeric field inside them is a DragRow (`.dn-input`), not a number input.
+  Bevel / Loop cut / Bridge are parameterized: the grid click SELECTS (`.tbx-sel`
+  ring, `aria-pressed`) and the pane's `.tbx-primary` button (`#face-bevel`,
+  `#mesh-loopcut-apply`, `#mesh-bridge-apply`) commits — a grid click on them commits
+  NOTHING, while the hotkey still commits outright.
   **Selection commands are TEXT buttons whose ids are PER MODE** — `#mesh-sel-all` in
   faces but `#mesh-sel-eall` / `#mesh-sel-vall` in edges / vertices (same for
   `invert`/`einvert`/`vinvert`), so a selector hardcoding the faces ids silently

@@ -402,7 +402,9 @@ export async function applySession(payload) {
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload
 	await animatedImportsRestore(payload.animated ?? []);
-	animationsRestore(payload.animations ?? {});
+	// replicate: a loaded scene's movements reach the peers already in the room,
+	// the way each restored joint is re-broadcast below
+	animationsRestore(payload.animations ?? {}, true);
 	// H1: new format restores EVERY graph document; legacy payloads carry the
 	// scene graph only. One 'nodes' snapshot replicates the whole map.
 	const graphsPayload =

@@ -9,7 +9,7 @@ import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
-import { animationsSnapshot, animationsRestore } from './animationPreview';
+import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { peers, showToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
@@ -316,6 +316,12 @@ export function startAutosave() {
 	started = true;
 	objectsGroup.subscribe(() => markDirty());
 	flowGraphs.subscribe(() => markDirty()); // H1: any graph document change
+	// authored animation is its own uuid-keyed store, so building a movement
+	// without touching an object afterwards left nothing to trigger a save (the
+	// H12 annotations bug). This module already imports animationPreview for the
+	// snapshot, so watching the store here adds no import edge — and the edge must
+	// NOT go the other way: autosave <-> animationPreview would be a cycle.
+	animations.subscribe(() => markDirty());
 	setInterval(() => {
 		if (dirty) saveSnapshot();
 	}, INTERVAL_MS);

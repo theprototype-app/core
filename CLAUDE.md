@@ -310,7 +310,54 @@ loadable play content. Everything a user does must be visible to connected peers
   `animatedImportsSnapshot`/`animatedImportsRestore` are the ONE shared save path used
   by BOTH sessions and autosave — toJSON and the GLTF exporter cannot carry an
   AnimationClip, so a save carries the ORIGINAL file bytes, base64 CHUNKED at 32k;
-  `clipInfo(uuid)` exposes the durations that only lived in the mixer record),
+  `clipInfo(uuid)` exposes the durations that only lived in the mixer record;
+  `animationState(uuid)` is the accessor the Play Animation node reads through),
+  `animationPreview` (17-E AUTHORED animation, the keyframe half: an object owns
+  named CLIPS (`animations[uuid] = {clips:{id:{name,tracks,duration,loop}}, active,
+  changedAt}`) of TRACKS of KEYS at absolute clip seconds, each key carrying the
+  `ease` of the segment that FOLLOWS it. `normalizeAnimSet` runs at every store
+  boundary, so a v1 `{from,to,bezier}` save becomes two keys and evaluates
+  IDENTICALLY. `evaluateClip`/`sampleTrack` are the ONE read path (runtime + editor
+  + auto-key). Channels: pos/rot/scale + a STEPPED `visible` + the LOOK set
+  (opacity, color.r/g/b, metalness, roughness, emissive, light.intensity) —
+  `channelApplies` gates them per object, `captureBase`/`restoreBase` carry the
+  material state (incl. `transparent`, a render-program change) so Clear preview
+  is faithful, and the bake SKIPS them (glTF needs KHR_animation_pointer).
+  Rotation honours `userData.origin`, which is what makes a door swing on its
+  hinge (read INLINE, like flowRuntime, to avoid the objectOrigin cycle).
+  TIMING is three separate things: `updateAnim({duration})` = clip LENGTH, moves
+  no keys · `retimeClip` = scale the movement · `setSpeed` = playback rate, no
+  data change. TRANSPORT lives in `playback` keyed by uuid — clipId/playing/`at`
+  (synced-clock stamp)/pausedAt/speed/reverse/`startedFrom`/`rangeIn`+`rangeOut`
+  (the A/B window every peer evaluates); `playheads` is the per-frame readout.
+  `stop` returns to `startedFrom`, `resetPreview` is the one that restores the
+  base pose and releases it. Both halves REPLICATE (`animdata` latest-wins on
+  changedAt, `animplay`, `getanim`→`animations`), undo through the `anim` history
+  kind with `beginAnimGesture`/`endAnimGesture` collapsing a drag into ONE entry
+  and ONE broadcast, and `parkAuthoredAtBase` (called from
+  flowRuntime.parkAnimatedAtBase) keeps a scrubbed pose out of every save.
+  `clipToThreeClip` samples a clip into real KeyframeTracks for GLTF export.
+  17-E F5 MARKERS: `Clip.markers = {t,name}[]` carried by normalizeClip like
+  fps/step — absent means absent, so old saves are byte-unchanged — with
+  `addMarker`/`updateMarker`/`removeMarker`/`markersOf` writing through `editClip`,
+  so they replicate/save/undo with the clip and need no channel of their own.
+  Crossing one is an INTERVAL test in the tick between the previous playhead
+  position and this one (`lastHead`, `markersCrossed`), destination end inclusive
+  so a marker under a resting playhead cannot re-fire; a LOOP WRAP fires the two
+  real pieces (prev..end, start..now) because the naive interval between the two
+  positions is the part NOT travelled — measured with the branch removed: the late
+  marker never fired, the early one twice, and one in the MIDDLE spuriously.
+  F3 `ghostBase(uuid, object)` = a TRANSFORM-ONLY, read-only base for onion skin),
+  `onionSkin` (17-E F6: faint SCENE-ROOT clones of the selected object at the keys
+  either side of the playhead, the colliderHelpers/cameraHelpers pattern —
+  `showOnionSkin` LOCAL pref, default OFF, per-frame `updateOnionSkin` from Scene's
+  useTask. `depthWrite` stays TRUE (the documented postprocessing trap); each ghost
+  owns its material and re-asserts its faintness after `poseAt`, which is posed
+  from `ghostBase` because `restoreBase` would otherwise write the base's opacity
+  over it; the clone keeps ONLY `userData.origin` (poseAt hinges on it) and is
+  lifted into the object's PARENT frame afterwards, since poseAt writes a LOCAL
+  pose; disposal frees the materials this module made and NEVER the geometry, which
+  the clone shares with the real mesh),
   `objectOrigin` (17-D: PER-OBJECT transform origin — a LOCAL pivot offset on
   `userData.origin`, so it replicates/saves/undoes free like userData.physics.
   Deliberately NOT baked into vertices: baking rides meshgeo, which stamps
@@ -605,6 +652,113 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **An SVG sibling drawn AFTER your hit target steals the press, and bubbling
+  cannot save you.** The animation ruler's tick `<line>`s and labels are drawn over
+  the ruler `<rect>` as SIBLINGS, so pressing a tick hit the line, and a line has
+  no ancestor with the handler — the rect is beside it, not above it. Put the
+  handler on the `<svg>` and decide by coordinate (or mark decoration
+  `pointer-events="none"`). The tell: a CLICK between ticks worked while a press ON
+  one did nothing, and `document.elementFromPoint` named a `<line>`.
+- **A crash on mount is invisible to a suite that only reads STORES.** A duplicate
+  `{#each}` KEY (two animation keys legitimately share a time while a multi-selection
+  is dragged through itself) THROWS in svelte and took the whole Animation window
+  down — the pane stopped opening for real users while eight green suites sailed
+  past, because every check around it read a store rather than the DOM. `pageerror`
+  was logged and nothing more. helpers.cjs now COLLECTS page errors and `finish`
+  FAILS the run on a render crash (`h.pageErrors(peer)` exposes them); never key an
+  each-block by a value that can repeat.
+- **A SYNTHETIC event does not travel the path a real one does.** The check for "the
+  browser context menu must not appear" dispatched `new MouseEvent('contextmenu')` on
+  the plot and passed while the native menu still came up for the user. `contextmenu`
+  is DELEGATED by svelte, so panel chrome that stops pointer events on their way up
+  stopped it too, and the app-root handler never ran. Block it with a DIRECT listener
+  on the pane root, and assert with REAL right-clicks plus a window-level listener
+  watching `defaultPrevented`.
+- **Re-identifying moved items by their VALUE after a sort is not tracking them.**
+  A multi-key drag re-found each key by matching the time it had just written; with
+  snapping on, two keys of one track land on the same time constantly, both matched
+  the same key, and one of the pair was dropped or duplicated. The fix is to TAG each
+  moved item with the ordinal of the move that produced it and have the mutator
+  REPORT where each one landed (`moveKeys`); `Array.sort` is stable, so an identical
+  key still keeps its order. Any "apply a delta to N selected things" gesture has
+  this shape.
+- **A window derived from the two ends you are writing feeds back on itself.** The
+  timeline's `viewSpan` is `viewEnd - viewStart`, so a pan that read it per move
+  widened the view as it went — the same bug as the graph's value axis, one level up.
+  Capture the span at gesture start. (Generally: a derived quantity used to compute
+  the write it feeds is a loop; freeze it for the gesture.)
+- **A value axis derived from the data cannot be live while you drag the data.**
+  The graph editor's y range comes from the keys' min/max, so dragging a key moved
+  the range, which moved the pixel→value mapping, which moved the value: the key
+  barely followed the pointer and the axis looked locked. FREEZE the range for the
+  gesture (`frozenRange`).
+- **A parked playhead must not be read through the loop wrap.** `(duration/duration)
+  % 1` is 0, so a playhead parked at the end of a looping clip read back as the
+  START — "go to end" looked like a no-op and the next key-step went the wrong way.
+  Read a not-playing transport straight off `pausedAt` (`parkedPosition`).
+- **Whatever else changes the current clip must move the TRANSPORT too.** The
+  transport stores which clip it plays, so setting `active` alone left the panel
+  showing the new clip while playback carried on with the old one (reported twice:
+  once for picking a clip, once for creating one). Every such path goes through one
+  `switchTransportTo`.
+- **A "length" field that silently retimes is a bug, not a convenience.** Clip
+  length, retiming the movement and playback speed are three different operations;
+  collapsing them made a door change speed when it was given more room. Split them
+  and let the destructive one be asked for.
+- **A modal move needs a way out.** Right-click-to-grab (the key follows the pointer
+  with no button held) is only usable because a click/Enter commits and Escape puts
+  every key back — implemented by re-applying the drag SNAPSHOT, which is also what
+  keeps a long multi-key drag from drifting (absolute from the snapshot, never
+  incremental).
+
+- **A menu opens on the button RELEASE, and `contextmenu` is dispatched AFTER mouseup**,
+  so by the time that event exists our own portaled ContextMenu is already mounted under
+  the cursor and IS its target. No `contextmenu` blocker on the surface that was
+  right-clicked can help, in bubble OR capture phase, because the event never travels
+  through it - the pane-root blocker looked broken for two rounds for exactly this
+  reason. Block it on the MENU (one line covers every menu in the app; submenus are DOM
+  children and bubble to it). Diagnose with a window-level listener recording
+  `{target, defaultPrevented}` for REAL right-clicks: it reported target DIV inside
+  [role=menu], inPane false.
+- **An overlay handle drawn AFTER the thing it belongs to steals its press.** The easing
+  tangents were drawn after the key circles so they would win a coincident hit - but an
+  ease of [0,0] puts control point 1 exactly ON its key, which made the KEY ungrabbable
+  (caught as the graph key-drag silently dragging a tangent: 2 -> 2). Draw the secondary
+  handle FIRST; the primary object wins. And give it the same button guard the primary
+  has (`e.button !== 0`), or a right-click starts a drag AND eats the context menu.
+- **A pair of editors on the same numbers must agree on their RANGES.** The curve lets
+  an easing y overshoot past 1 (that is what a bounce is); the 132px numeric pad clamped
+  0..1, so it drew an authored bounce outside its own box and would have flattened it the
+  moment you touched the handle. Widen both, or clamp both.
+- **A LOOP WRAP inverts an interval test.** Detecting "what did the playhead pass" from
+  the previous tick position to this one is right until the playhead jumps from the
+  window end back to its start - then the interval between the two positions is exactly
+  the part it did NOT travel. Fire the two real pieces instead. Measured with the branch
+  removed: the marker before the end never fired, the one after the start fired twice, and
+  one in the MIDDLE that the wrap jumped over fired spuriously. pingpong needs none of
+  this, its reflection being continuous. The test lesson is the same shape: asserting
+  only that the near-end and near-start markers fire PASSES with the branch gone - the
+  reading that separates them is the middle marker that must NOT fire.
+- **A resize grip capped by a CONSTANT escapes a short pane.** The clip list clamped at a
+  flat 360px whatever the pane’s height, which fits inside a tall dock and pushes the
+  grip past the window bottom on a short one - with no way back, because the thing you
+  would grab is gone. Take the ceiling from the measured container, and re-clamp when it
+  SHRINKS (dock resize, window resize, undock, or a stored pref from a bigger pane).
+- **`updateKey` only PATCHES a key that exists; `addKey` is what inserts.** A test that
+  seeded four keys with `updateKey(uuid, track, 0..3, ...)` silently got two, because
+  addTrack seeds exactly two - and the suite then measured a two-key row while claiming
+  four. Related: `play(uuid, clip, {from})` takes an ELAPSED offset into the run, NOT a
+  clip time, so `{from: 2, reverse: true}` on a 2s clip means "already finished", not
+  "start at the end" (which is `{from: 0}`).
+- **A brief keystroke cannot be caught by a settled store read.** Probing Ctrl+V with
+  `keyboard.press` showed the mic closed even with the bug in, because the keyup resets
+  the flag on the way out - HOLD the combo and record whether the mic EVER opened. And
+  order matters: the first-ever `getUserMedia` outlasts a short hold, so a modified-key
+  probe made before a bare-V probe has warmed the stream passes vacuously.
+- **Counting the undo stack is not a safe way to assert "one entry per gesture"** late in
+  a long suite: `recordEntry`’s LIMIT trim evicts the oldest, so a correct gesture can
+  leave the depth unchanged (it read +0 while undo worked perfectly). Assert the
+  PROPERTY - that ONE undo reverts the whole drag - and redo to carry on.
 - **Any op that turns a SCREEN gesture into geometry has two traps.** (1) Compute the
   crossing point per WELDED EDGE, never by intersecting each triangle's own plane: two
   triangles sharing an edge get different points wherever they are not coplanar, i.e. a crack
@@ -1481,6 +1635,85 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-14): **17-E ANIMATION KEYFRAMES — branch `feat/17e-animation-curves`,
+  lane `../theprototype-lane-anim` @ port 5195, 9 commits, NOT PR'd yet.** The authored
+  animator went from one `{from,to,bezier}` segment per channel to a real keyframe
+  system: named CLIPS of keyed tracks, a dope-sheet + graph TIMELINE (zoom/pan, A/B
+  in-out window, multi-select, right-click modal grab), deterministic REPLICATION of
+  both the data (`animdata`) and the transport (`animplay`, synced-clock stamp) with a
+  late-joiner `getanim`, the `anim` history kind (one entry per gesture), auto-key
+  recording that CREATES the channels you pose (gizmo + Inspector), a preset library
+  (Door/Drawer/Elevator/Turntable/Pulse/Blink), the **`playanim` flow node** (On Click →
+  a door opens on every peer, toggle plays the clip BACKWARDS to shut), and a GLTF
+  export that samples clips into real KeyframeTracks (round-trip delta 0.0000).
+  Look channels (opacity/colour/metalness/roughness/glow/light intensity) ride the same
+  keys. Suites: animation-curves (90), animation-node (17), animation-autokey (24),
+  animation-bake (12), animation-sync (24, two peers + late joiner) + the updated
+  animation-window/animation-persist. Baseline **391/62** held; build green. Traps from
+  this batch are in the gotchas (SVG sibling hit-stealing, a live-derived drag axis, the
+  loop-wrap on a parked playhead, transport-follows-clip, length vs retime vs speed).
+  The EDITOR keymap is one model, shared with the rest of the app's conventions:
+  arrows step the playhead by FRAMES (Ctrl x10, Shift x100 — the DragRow modifiers),
+  Alt+arrows jump key to key, Ctrl+Space adds the key at the playhead to the
+  selection, Esc drops it, 1/2 arm Move/Scale (the mesh editor's digits), Shift+arrows
+  transform the selection (X time, Y value), Del removes it. MIDDLE-click locks the
+  selection to the pointer (modal grab: click/Enter commits, Esc reverts), RIGHT-click
+  is the context menu, right/middle-drag and Shift+wheel pan, the wheel zooms (up =
+  in), and a NAVIGATOR strip under the plot carries the whole clip with the visible
+  window as its thumb. Frames are 30fps by default (`animationFps` in localStorage).
+  Later rounds added: per-clip **fps** (what a clip's key times MEAN — the editor's
+  frame grid follows it; `animationFps` is only the default for new clips) and per-clip
+  **step** (sample on a coarser grid = the "on twos" stepped look, applied at `poseAt`
+  so playback, scrub and bake agree); a **key clipboard** (Ctrl+C/V/D and M to mirror,
+  held BY CHANNEL and relative to the earliest key, so a paste crosses clips and
+  objects and creates channels the target lacks); the **navigator above** the plot; the
+  graph FILLING the pane (no scrollbars, and the svg sized to the content box, since
+  `clientWidth` includes padding); scale no longer snapping (near the pivot a factor
+  step is worth less than a frame, so snapping ate the horizontal half); the playhead
+  snapping while you sweep the ruler; and the browser context menu blocked by a DIRECT
+  listener on both pane shells.
+  OWED: user's on-device/feel pass, then the PR to release/next.
+  The clip->graph handoff shipped as **`animfinished`** (Animation Finished): pulses
+  when a once-clip reaches its end, LOCALLY on every peer — each runtime reaches that
+  elapsed time itself, the same reasoning as the once-clip end, so no message. Wire it
+  into a Counter, a sound, or the next door's Play Animation.
+  **FOLLOW-UP DROP (2026-08-14, plan `plans-core/pending/17-e-animation-followups.md`,
+  F1-F6 ALL EXECUTED + two user requests, 8 commits):** F1 the reported
+  **Ctrl+V fires push-to-talk** (voiceChat matched the KEY and no modifiers; PTT is
+  a BARE hold, and the keyup path is deliberately NOT modifier-guarded or pressing
+  Ctrl mid-hold strands the mic open) plus the Animation pane STOPPING propagation
+  on keys it consumes (1/2 armed its Move/Scale AND drove the gizmo at once) - suite
+  `voice-ptt`. F2 the **browser menu on graph keys**, whose real cause is a timing
+  one: a menu opens on the button RELEASE and `contextmenu` is dispatched AFTER
+  mouseup, so our own portaled ContextMenu is already under the cursor and IS the
+  target - no blocker on the right-clicked surface can see that event in either
+  phase, so the fix is one line on ContextMenu itself and covers every menu in the
+  app. F3 **`animstate`** (progress / playing / position / duration / remaining as
+  ONE number socket picked by a `read` param, progress measured through the A/B
+  WINDOW). F4 **easing tangents dragged ON the curve** (x clamped to the segment,
+  y free because overshoot is what makes a bounce readable; the handles are drawn
+  BEFORE the keys, since an ease of [0,0] puts P1 exactly on its key and the later
+  SVG sibling wins the press; the numeric pad widened to -0.5..1.5 to match, or it
+  would draw an authored bounce outside its own box and flatten it on the next
+  touch). F5 **clip MARKERS + the `animmarker` node** (see the animationPreview
+  entry for the wrap reasoning). F6 **onion skin**. Plus, asked for mid-batch:
+  **box + lasso selection of keys** (the UV editor pair, on the free LEFT-drag
+  gesture, hit-tested in PLOT PIXELS so one implementation covers sheet and graph;
+  a press that does not TRAVEL deliberately keeps the selection, because a body
+  press is how the plot takes the keyboard back after using the menu) and a fix for
+  the **clip-list resize grip going off-screen** (its cap was a flat 360px with no
+  relation to the pane, so a short dock pushed it past the window bottom with no
+  way back; the ceiling is the sidebar height less what the sections below need,
+  re-clamped whenever the pane shrinks). New suites `voice-ptt`(15),
+  `animation-markers`(28), `animation-marquee`(21), `animation-onion`(19),
+  `animation-clips-resize`(11), plus sections 14/15 in `animation-curves` and the F3
+  section in `animation-node`. Also fixed a PRE-EXISTING flake in animation-node
+  (the reversal check sampled a 0.6s clip at a fixed 250ms and read exactly 90.0
+  when the first tick arrived late; it watches the swing from inside the page now).
+  Baseline held **391/62**; build green. OWED: the user’s on-device/feel pass, then
+  the PR of the whole 17-E branch to release/next.
+  NEXT (planned): the same transform tools
+  in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
 - Status (2026-08-11, fifth drop): **knife RUBBER BAND + the P12 wasm question ANSWERED —
   PRs #120 + #121 MERGED @ca9e4ba.** The knife draws a dashed DOM band between its two clicks
   (the cut is a screen line, so there is no 3D line to draw), and Escape drops a PENDING cut

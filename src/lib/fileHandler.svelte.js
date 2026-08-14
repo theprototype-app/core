@@ -16,6 +16,7 @@ import { recordObjectPresence } from '$lib/history';
 // materialsHandler does not import fileHandler, so this closes no cycle.
 import { downscaleImage } from '$lib/materialsHandler';
 import { originOf, bakeOriginForExport } from '$lib/objectOrigin';
+import { bakeAnimationsForExport } from '$lib/animationPreview';
 import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
@@ -99,6 +100,11 @@ function exportGltf(format, input) {
 	const payload = carriesOrigin
 		? roots.map((root) => bakeOriginForExport(root.clone(true)))
 		: input;
+	// 17-E A7: authored keyframes are OUR channels, which nothing downstream
+	// understands — sample them into real KeyframeTracks so the movement leaves
+	// with the model. Baked from the LIVE roots (the origin clones have the pivot
+	// folded into their geometry already, and the bake reads the same origin).
+	const animations = roots.flatMap((root) => bakeAnimationsForExport(root));
 	const exporter = new GLTFExporter();
 	exporter.parse(
 		payload,
@@ -118,7 +124,8 @@ function exportGltf(format, input) {
 		function (error) {
 			restore();
 			console.log(error);
-		}
+		},
+		animations.length ? { animations } : undefined
 	);
 }
 

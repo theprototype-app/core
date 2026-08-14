@@ -145,6 +145,57 @@ export const nodeCatalog = [
 				type: 'pathpatrol',
 				label: 'Path patrol',
 				defaults: { points: [], speed: 1, mode: 'loop' }
+			},
+			{
+				// 17-E: the other half of Play Animation — pulses when a clip FINISHES,
+				// so a movement can hand off to whatever comes next (a door that has
+				// finished opening plays a latch sound, or starts the next door). Fired
+				// locally on every peer from the same deterministic end-of-clip the
+				// runtime already computes, so it needs no message of its own.
+				type: 'animfinished',
+				label: 'Animation Finished',
+				defaults: { clip: '', pulse: 0.3 }
+			},
+			{
+				// 17-E F5: pulses as the playhead CROSSES a named point in the clip, so
+				// a footstep sound or a puff of dust can sit at the exact frame of a
+				// movement instead of only at its end. `name` empty = any marker on the
+				// clip, which is one node for "every beat". Fired locally on every peer:
+				// each travels the same clip interval from the same synced stamp.
+				type: 'animmarker',
+				label: 'Animation Marker',
+				defaults: { name: '', pulse: 0.3 }
+			},
+			{
+				// 17-E F3: the READABLE half of Animation Finished — a value node, so
+				// the clip can drive something continuously instead of only handing
+				// off at its end (progress into a Map Range that fades a light, or
+				// `playing` into a Gate). One number socket whose meaning `read`
+				// picks: a boolean rides a number socket already, and it keeps the
+				// card in the same shape as Math / Select.
+				type: 'animstate',
+				label: 'Animation State',
+				defaults: { clip: '', read: 'progress' },
+				params: [
+					{
+						key: 'read',
+						kind: 'select',
+						options: ['progress', 'playing', 'position', 'duration', 'remaining']
+					}
+				]
+			},
+			{
+				// 17-E A5: drives an AUTHORED clip (or a clip the model was imported
+				// with) from a flow event — wire On Click to it and a door opens when
+				// someone clicks it. Not in `animationTypes`: it is an event consumer
+				// that starts a keyed clip, not a per-frame offset.
+				type: 'playanim',
+				label: 'Play Animation',
+				defaults: { clip: '', action: 'toggle', speed: 1 },
+				params: [
+					{ key: 'action', kind: 'select', options: ['toggle', 'play', 'stop', 'restart'] },
+					{ key: 'speed', kind: 'range', min: 0.1, max: 4, step: 0.1 }
+				]
 			}
 		]
 	},
@@ -281,7 +332,7 @@ export function findNodeSpec(type) {
 		if (item) return item;
 	}
 	for (const group of get(moduleNodeGroups)) {
-		const item = group.items.find((i) => i.type === type);
+		const item = group.items.find((/** @type {any} */ i) => i.type === type);
 		if (item) return item;
 	}
 	return null;

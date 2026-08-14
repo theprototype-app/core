@@ -17,7 +17,7 @@
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
-	import { tickAnimationPreview } from '$lib/animationPreview';
+	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
@@ -36,6 +36,7 @@
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
+	import { updateOnionSkin } from '$lib/onionSkin';
 	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
@@ -267,6 +268,7 @@
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
+		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 	});
 
@@ -319,6 +321,9 @@
 				const before = { pos: dragStartState.pos, rot: dragStartState.rot, scale: dragStartState.scale };
 				if (JSON.stringify(before) !== JSON.stringify(after))
 					recordTransform({ uuid: object.uuid, before: before, after: after });
+				// 17-E A6: with auto-key armed for this object, posing it with the gizmo
+				// writes keys at the playhead instead of the pose being lost.
+				captureAutoKey(object.uuid, playheadOf(object.uuid));
 				dragStartState = null;
 			}
 		});

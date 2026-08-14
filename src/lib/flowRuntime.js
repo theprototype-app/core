@@ -18,6 +18,13 @@ import { startObjectFlowWatcher } from './objectFlow';
 // whose module body registers a history kind while history is mid-init).
 /** @type {any} */ let inputRuntimeRef = null;
 
+// 17-E A5: same treatment for animationPreview (the Play Animation node drives
+// authored clips) — it registers the 'anim' history kind in its own module body,
+// so a static edge here would close history -> flowRuntime -> animationPreview ->
+// history and TDZ-crash the SSR prerender.
+/** @type {any} */ let animRef = null;
+/** @type {any} */ let animImportsRef = null;
+
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
 // Lives outside the Flow drawer so animations keep running when it is closed.
@@ -92,6 +99,89 @@ export function spinPositionAbout(basePos, pivot, axis, angle) {
 		.applyQuaternion(spinQuat)
 		.add(pivot)
 		.toArray();
+}
+
+// 17-E A5: rising-edge memory for Play Animation, keyed by node id — the trigger
+// pulse stays high for ~0.3s and must act ONCE, not every frame it is high.
+/** @type {Map<string, boolean>} */
+const playAnimEdge = new Map();
+
+/**
+ * Start/stop an authored clip (or an imported one) from a flow event.
+ *
+ * The node applies the action LOCALLY and does NOT broadcast: the trigger stamp
+ * that woke it already replicated (`nodetrigger`), so every peer runs this same
+ * branch from the same shared timestamp and derives the same playback. Sending
+ * here as well would fire the transport twice and let the two copies disagree
+ * about who started it.
+ * @param {{node: any, uuid: string}[]} pairs @param {any} ctx
+ */
+function updatePlayAnim(pairs, ctx) {
+	const seen = new Set();
+	for (const { node, uuid } of pairs) {
+		seen.add(node.id);
+		const data = node.data ?? {};
+		const high = !!data.trigger;
+		const was = playAnimEdge.get(node.id) ?? false;
+		playAnimEdge.set(node.id, high);
+		if (!high || was) continue; // act on the rising edge only
+		const clip = typeof data.clip === 'string' ? data.clip.trim() : '';
+		const action = data.action ?? 'toggle';
+		const speed = Number(data.speed) || 1;
+		// Stamp playback with the TRIGGER's shared timestamp, not this peer's
+		// arrival time: the nodetrigger message reaches each peer at a different
+		// moment, so reading the clock here would leave every door a message
+		// latency out of phase.
+		const at = triggerStampFor(node.id, ctx) ?? syncedNow();
+
+		// an imported clip NAME funnels to the mixer path, which is already
+		// replicated — one node drives both animation systems
+		const imported = animImportsRef?.clipInfo?.(uuid) ?? [];
+		if (clip && imported.some((/** @type {any} */ c) => c.name === clip)) {
+			const state = animImportsRef.animationState?.(uuid);
+			const playing = !!state?.playing && state?.clip === clip;
+			const next = action === 'stop' ? false : action === 'toggle' ? !playing : true;
+			animImportsRef.setAnimationState(uuid, { clip, playing: next, speed });
+			continue;
+		}
+		if (!animRef) continue;
+		const clipId = clip ? animRef.clipIdByName?.(uuid, clip) : undefined;
+		/** @type {any} */
+		const t = animRef.transportOf?.(uuid) ?? { playing: false, reverse: false, duration: 0, position: 0 };
+		const opts = { speed, at, replicate: false };
+		if (action === 'stop') {
+			animRef.stop(uuid, { replicate: false });
+		} else if (action === 'restart') {
+			animRef.play(uuid, clipId, { ...opts, from: 0, reverse: false });
+		} else if (action === 'toggle') {
+			// A door PLAYS BACKWARDS to shut instead of needing a second clip. Mid
+			// swing, toggling reverses from where it stands; fully open, it closes;
+			// otherwise it opens.
+			const atEnd = t.duration > 0 && t.position >= t.duration - 1e-3;
+			const reverse = t.playing ? !t.reverse : atEnd;
+			const from = reverse ? Math.max(t.duration - t.position, 0) : atEnd ? 0 : t.position;
+			animRef.play(uuid, clipId, { ...opts, from, reverse });
+		} else {
+			const atEnd = t.duration > 0 && t.position >= t.duration - 1e-3;
+			animRef.play(uuid, clipId, { ...opts, from: atEnd ? 0 : t.position, reverse: false });
+		}
+	}
+	// forget nodes that no longer exist, so a rebuilt node starts fresh
+	for (const id of [...playAnimEdge.keys()]) if (!seen.has(id)) playAnimEdge.delete(id);
+}
+
+/** The shared timestamp of whatever event is wired into this node's `trigger`
+ * (the newest, with several sources fanned in). @param {string} nodeId @param {any} ctx */
+function triggerStampFor(nodeId, ctx) {
+	if (!ctx?.triggers) return null;
+	let newest = null;
+	for (const edge of edges) {
+		if (edge.target !== nodeId) continue;
+		if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
+		const stamp = ctx.triggers[edge.source]?.lastT;
+		if (typeof stamp === 'number' && (newest === null || stamp > newest)) newest = stamp;
+	}
+	return newest;
 }
 
 /** @param {any} object @param {any} base */
@@ -201,11 +291,17 @@ export function resumeAnimation(uuid) {
 export function parkAnimatedAtBase() {
 	const parked = [...baseState.keys()].filter((uuid) => !suspended.has(uuid));
 	parked.forEach(suspendAnimation);
+	// 17-E: AUTHORED clips are a second animation runtime with its own base poses,
+	// and since a scrub now survives switching objects a previewed pose can sit in
+	// the scene for minutes. Park those too, through the primed ref, so every
+	// serializer that already calls in here keeps saving base poses.
+	const unpark = animRef?.parkAuthoredAtBase?.() ?? null;
 	let restored = false;
 	return () => {
 		if (restored) return;
 		restored = true;
 		parked.forEach(resumeAnimation);
+		unpark?.();
 	};
 }
 
@@ -225,6 +321,7 @@ export function notifyExternalMove(uuid) {
 
 // node types that produce an OUTPUT value (not a scene effect)
 export const valueTypes = [
+	'animfinished',
 	'number', 'vector3', 'toggle', 'random', 'time', 'math', 'compare', 'gate',
 	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter', // 134
 	'maprange', 'select', // 4.6
@@ -232,7 +329,9 @@ export const valueTypes = [
 	'keypress', // H3: keyboard trigger
 	'onimpact', // PFX-C: physics impact trigger
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
-	'velocity' // CL-C: live speed readout (m/s)
+	'velocity', // CL-C: live speed readout (m/s)
+	'animstate', // 17-E F3: the readable half of animfinished
+	'animmarker' // 17-E F5: the playhead crossed a named point in a clip
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -462,6 +561,8 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const pb = pointOf(input('b', d.b), ctx);
 			return pa && pb ? pa.distanceTo(pb) <= num(d.radius ?? 3) : false;
 		}
+		case 'animfinished': // 17-E: fired locally when a clip reaches its end
+		case 'animmarker': // 17-E F5: fired locally when the playhead crosses one
 		case 'onclick': {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
@@ -494,6 +595,41 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// exact-ish on the stepping peer (per-step write-back deltas).
 			const target = input('target', null) || implicitOwnerOf(node);
 			return typeof target === 'string' && ctx && ctx.speed ? ctx.speed(target) : 0;
+		}
+		case 'animstate': {
+			// 17-E F3: the readable half of animfinished. ONE number output whose
+			// meaning the `read` param picks, rather than a multi-output handle map:
+			// a boolean rides a number socket already (the COERCE table), and this
+			// keeps the node in the same shape as math/select.
+			//
+			// LOCAL like velocity, and for a stronger reason — the transport itself
+			// replicates (animplay, a synced-clock stamp), so every peer computes the
+			// same reading from the same data with no message of its own.
+			const target = input('target', null) || implicitOwnerOf(node);
+			if (typeof target !== 'string' || !animRef?.transportOf) return 0;
+			const t = animRef.transportOf(target);
+			// an empty clip name means "whatever is loaded"; a named one reports 0
+			// unless THAT clip is the one on the transport
+			if (d.clip) {
+				const wanted = animRef.clipIdByName?.(target, d.clip);
+				if (!wanted || wanted !== t.clipId) return 0;
+			}
+			const span = t.rangeOut - t.rangeIn;
+			switch (d.read ?? 'progress') {
+				case 'playing':
+					return t.playing ? 1 : 0;
+				case 'position':
+					return t.position;
+				case 'duration':
+					return t.duration;
+				case 'remaining':
+					return Math.max(0, t.rangeOut - t.position);
+				default:
+					// progress through the A/B window, which is what the transport
+					// actually loops over — clamped, because a parked playhead can sit
+					// outside a window set after it was parked
+					return span > 1e-6 ? Math.min(1, Math.max(0, (t.position - t.rangeIn) / span)) : 0;
+			}
 		}
 		case 'counter':
 			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;
@@ -640,6 +776,40 @@ function reachesObjectSelector(startId, uuid) {
 }
 
 /** A user clicked an object — pulse any OnClick node targeting it (134). @param {string} uuid */
+/**
+ * A clip on `uuid` just finished — pulse every Animation Finished node aimed at it.
+ * LOCAL on purpose: every peer's runtime ends the same once-clip at the same elapsed
+ * time, so each fires its own pulse and no message is needed (the same reasoning as
+ * the once-clip end itself). animationPreview calls this from its tick.
+ * @param {string} uuid
+ */
+export function fireAnimFinished(/** @type {string} */ uuid) {
+	nodes.forEach((node) => {
+		if (node.type !== 'animfinished') return;
+		if (!reachesObjectSelector(node.id, uuid) && implicitOwnerOf(node) !== uuid) return;
+		applyNodeTrigger(node.id, syncedNow(), false);
+	});
+}
+
+/**
+ * F5: the playhead on `uuid` just CROSSED the marker called `name` — pulse every
+ * Animation Marker node aimed at it. A node with an empty `name` takes any marker,
+ * so one node can drive "something happens at each beat".
+ *
+ * LOCAL for the same reason as animfinished: every peer's runtime travels the same
+ * clip interval from the same synced stamp, so each detects the crossing itself.
+ * @param {string} uuid @param {string} name
+ */
+export function fireAnimMarker(uuid, name) {
+	nodes.forEach((node) => {
+		if (node.type !== 'animmarker') return;
+		const wanted = String(node.data?.name ?? '').trim();
+		if (wanted && wanted.toLowerCase() !== String(name).trim().toLowerCase()) return;
+		if (!reachesObjectSelector(node.id, uuid) && implicitOwnerOf(node) !== uuid) return;
+		applyNodeTrigger(node.id, syncedNow(), false);
+	});
+}
+
 export function fireObjectClick(uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
@@ -954,6 +1124,23 @@ function runTick(now) {
 	});
 	updateParticles(particlePairs, sceneObjects, time);
 
+	// 17-E A5: Play Animation. Same pair collection as sound/particles, then a
+	// RISING-EDGE read of the wired event (the pulse is high ~0.3s; act once).
+	/** @type {{node: any, uuid: string}[]} */
+	const animPairs = [];
+	edges.forEach((edge) => {
+		const source = nodes.find((n) => n.id === edge.source);
+		if (source?.type !== 'playanim') return;
+		const uuid = targetUuidOf(edge);
+		if (uuid) animPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+	});
+	nodes.forEach((node) => {
+		if (node.type !== 'playanim') return;
+		const uuid = implicitOwnerOf(node);
+		if (uuid) animPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
+	});
+	updatePlayAnim(animPairs, ctx);
+
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
 	if (now - lastValuesAt > 150) {
 		lastValuesAt = now;
@@ -1060,6 +1247,9 @@ export function startFlowRuntime() {
 			});
 		});
 	});
+	// primed for the Play Animation node (see the TDZ note at the top)
+	import('./animationPreview').then((m) => (animRef = m));
+	import('./animatedImports').then((m) => (animImportsRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

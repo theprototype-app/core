@@ -459,8 +459,21 @@
 		id="mesh-edit-popup"
 		key="meshToolbox"
 		title={$colliderEditObject ? 'Edit Collider' : 'Edit Mesh'}
+		width={212}
+		minW={180}
 	>
 		{#snippet actions()}
+			<!-- 18-C1: the cheat sheet is HELP for the whole toolbox, not a display
+			     toggle for the current mode — it belongs with the window's own
+			     controls, where it is reachable from every tab without scrolling. -->
+			<button
+				id="mesh-keys-help"
+				class="tbx-hbtn"
+				aria-label="Show mesh-edit key bindings"
+				aria-pressed={showKeys}
+				title="Key bindings — opens a movable cheat sheet you can park anywhere"
+				onclick={() => (showKeys = !showKeys)}><CircleHelp size={14} aria-hidden="true" /></button
+			>
 			{#if $colliderEditObject}
 				<!-- CL-A A8: collider session — commit or drop -->
 				<button
@@ -495,6 +508,37 @@
 			{/if}
 		{/snippet}
 
+		<!-- 18-C1: element MODE is the toolbox's primary navigation, so it reads as
+		     a TAB BAR pinned under the header rather than one control among the
+		     rows. The active tab keeps the literal `bg-primary-600` (e2e contract +
+		     the theme remap) alongside the `tbx-tab-on` marker the shell paints. -->
+		{#snippet tabs()}
+			<button
+				id="mesh-mode-vertices"
+				role="tab"
+				aria-selected={mode === 'vertices'}
+				class="tbx-tab {mode === 'vertices' ? 'tbx-tab-on bg-primary-600 text-white' : ''}"
+				title="Vertices (1) — drag single points"
+				onclick={() => setMode('vertices')}>Vertices</button
+			>
+			<button
+				id="mesh-mode-edges"
+				role="tab"
+				aria-selected={mode === 'edges'}
+				class="tbx-tab {mode === 'edges' ? 'tbx-tab-on bg-primary-600 text-white' : ''}"
+				title="Edges (2) — loops, rings, bevel and dissolve act on them"
+				onclick={() => setMode('edges')}>Edges</button
+			>
+			<button
+				id="mesh-mode-faces"
+				role="tab"
+				aria-selected={mode === 'faces'}
+				class="tbx-tab {mode === 'faces' ? 'tbx-tab-on bg-primary-600 text-white' : ''}"
+				title="Faces (3) — extrude, inset, bridge and the rest"
+				onclick={() => setMode('faces')}>Faces</button
+			>
+		{/snippet}
+
 		{#if confirmCancel}
 			<div id="mesh-cancel-confirm" class="tbx-row text-xs">
 				<span class="text-gray-200">Revert all mesh edits?</span>
@@ -502,29 +546,6 @@
 				<button id="mesh-cancel-no" class="tbx-cmd" onclick={() => (confirmCancel = false)}>Keep</button>
 			</div>
 		{/if}
-
-		<!-- MODE -->
-		<span class="tbx-label">Mode</span>
-		<div class="tbx-row">
-			<div class="tbx-seg">
-				<button
-					id="mesh-mode-vertices"
-					class="px-3 py-0.5 {mode === 'vertices' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					onclick={() => setMode('vertices')}>Vertices</button
-				>
-				<button
-					id="mesh-mode-edges"
-					class="px-3 py-0.5 {mode === 'edges' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					title="Pick single edges (M4) — bevel and dissolve act on them"
-					onclick={() => setMode('edges')}>Edges</button
-				>
-				<button
-					id="mesh-mode-faces"
-					class="px-3 py-0.5 {mode === 'faces' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					onclick={() => setMode('faces')}>Faces</button
-				>
-			</div>
-		</div>
 
 		<!-- Selection commands — the SAME vocabulary in every mode (the list swaps
 		     with the mode, so Ctrl+A/I mean the right thing everywhere) -->
@@ -955,15 +976,6 @@
 				: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
 			onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={18} aria-hidden="true" /></button
 		>
-		<button
-			id="mesh-keys-help"
-			class="tbx-btn"
-			aria-label="Show mesh-edit key bindings"
-			aria-pressed={showKeys}
-			title="Key bindings — opens a movable cheat sheet you can park anywhere"
-			onclick={() => (showKeys = !showKeys)}><CircleHelp size={18} aria-hidden="true" /></button
-		>
-
 		{#if $colliderEditObject}
 			<!-- CL-A A8: add compound pieces to the collider session -->
 			<span class="tbx-label">Collider</span>

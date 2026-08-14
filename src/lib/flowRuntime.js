@@ -291,11 +291,17 @@ export function resumeAnimation(uuid) {
 export function parkAnimatedAtBase() {
 	const parked = [...baseState.keys()].filter((uuid) => !suspended.has(uuid));
 	parked.forEach(suspendAnimation);
+	// 17-E: AUTHORED clips are a second animation runtime with its own base poses,
+	// and since a scrub now survives switching objects a previewed pose can sit in
+	// the scene for minutes. Park those too, through the primed ref, so every
+	// serializer that already calls in here keeps saving base poses.
+	const unpark = animRef?.parkAuthoredAtBase?.() ?? null;
 	let restored = false;
 	return () => {
 		if (restored) return;
 		restored = true;
 		parked.forEach(resumeAnimation);
+		unpark?.();
 	};
 }
 

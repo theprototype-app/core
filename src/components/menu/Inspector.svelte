@@ -52,6 +52,7 @@
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
+	import { captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { moveObjectToGroup, selectObject, flyTo } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
@@ -281,6 +282,7 @@
 		if (!list.length) return;
 		if (list.length === 1) {
 			fn(list[0]); // single-object undo + replication unchanged
+			autoKeyAfterEdit(list);
 			return;
 		}
 		beginHistoryBatch();
@@ -288,6 +290,20 @@
 			for (const object of list) fn(object);
 		} finally {
 			endHistoryBatch(`${label} (${list.length})`);
+		}
+		autoKeyAfterEdit(list);
+	}
+
+	/**
+	 * 17-E: with auto-key armed, an edit made HERE keys the channel it changed, the
+	 * same as posing the object with the gizmo — typing a position, picking a colour
+	 * or dragging opacity all become keys instead of being lost. `captureAutoKey`
+	 * checks the arming itself, so this is a no-op for every other object.
+	 * @param {any[]} list
+	 */
+	function autoKeyAfterEdit(list) {
+		for (const object of list ?? []) {
+			if (object?.uuid) captureAutoKey(object.uuid, playheadOf(object.uuid));
 		}
 	}
 	/** @param {string} label @param {(object:any)=>void} fn */
@@ -712,6 +728,7 @@
 		$selectedObject[field][axis] = next;
 		sendMove($selectedObject);
 		selectedObject.update((v) => v); // refresh rows + object list
+		autoKeyAfterEdit([$selectedObject]); // a typed transform keys too (17-E)
 	}
 
 	/** lights resend their whole object — same as the old light panel */

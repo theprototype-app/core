@@ -17,11 +17,12 @@
 	import { animationClose } from '../../stores/appStore.js';
 	import {
 		animations, playback, playheads, CHANNELS, EASINGS, STEPPED, channelLabel, isRotChannel,
-		activeClip, clipList, addTrack, removeTrack, updateTrack, updateAnim,
-		addKey, updateKey, removeKey, sampleTrack, channelValue,
-		createClip, renameClip, duplicateClip, deleteClip, setActiveClip,
-		beginAnimGesture, endAnimGesture, play, pause, stop, scrub,
-		PRESETS, applyPreset, autoKeyFor, setAutoKey, bakeAnimations
+		activeClip, clipList, addTrack, removeTrack, updateTrack, updateAnim, retimeClip,
+		addKey, updateKey, removeKey, moveKeys, sampleTrack, channelValue, channelApplies, isMaterialChannel,
+		createClip, renameClip, duplicateClip, deleteClip, setActiveClip, keyTimes,
+		beginAnimGesture, endAnimGesture, play, pause, stop, resetPreview, scrub, setSpeed, setRange,
+		PRESETS, applyPreset, autoKeyFor, setAutoKey, rememberAutoKeyReference, captureAutoKey,
+		bakeAnimations
 	} from '$lib/animationPreview';
 	import { showToast, openSceneSection } from '../../stores/appStore.js';
 	// the clips a model was IMPORTED with are a different system (replicated,
@@ -29,6 +30,9 @@
 	// a rigged model showed "no movements yet" and its own animations were
 	// reachable only from the Inspector.
 	import { animatedObjects, setAnimationState, clipInfo } from '$lib/animatedImports';
+	import {
+		SkipBack, SkipForward, StepBack, StepForward, Play, Pause, Square, Rewind, ZoomIn, ZoomOut, Maximize2
+	} from '@lucide/svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import { dragWindow } from '$lib/dragWindow';
@@ -52,20 +56,48 @@
 	let selId = $state(/** @type {string|null} */ (null));
 	const selTrack = $derived(tracks.find((t) => t.id === selId) ?? tracks[0] ?? null);
 	let newChannel = $state('pos.y');
-	/** which key is selected: [trackId, index] */
-	let selKey = $state(/** @type {[string, number]|null} */ (null));
+	// only offer channels the object actually HAS — a light intensity track on a box,
+	// or a metalness track on a material without one, would never animate anything
+	const addableChannels = $derived(target ? CHANNELS.filter((c) => channelApplies(target, c)) : CHANNELS);
+	/** the selected keys as [trackId, index] pairs — shift-click adds to it, and a
+	 *  drag moves every one of them by the same delta */
+	let selKeys = $state(/** @type {[string, number][]} */ ([]));
+	/** the single selected key, when there is exactly one (the fields on the right) */
+	const selKey = $derived(selKeys.length === 1 ? selKeys[0] : null);
 	const selKeyObj = $derived.by(() => {
 		const sel = selKey;
 		if (!sel) return null;
 		const track = tracks.find((t) => t.id === sel[0]);
 		return track?.keys[sel[1]] ?? null;
 	});
+	const isKeySelected = (/** @type {string} */ trackId, /** @type {number} */ index) =>
+		selKeys.some(([id, i]) => id === trackId && i === index);
 	/** the easing being edited: the selected key's, else the first key's */
 	const easeKey = $derived(selKeyObj ?? selTrack?.keys?.[0] ?? null);
 	const segEase = $derived(easeKey?.ease ?? EASINGS.linear);
 	let view = $state(/** @type {'sheet'|'graph'} */ ('sheet'));
 	let snap = $state(true);
 	let renaming = $state(/** @type {string|null} */ (null));
+	// how tall the clip list is allowed to be, dragged by the divider under it
+	let clipsH = $state(
+		typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('animationClipsH') ?? '96') || 96 : 96
+	);
+	let clipsResizing = $state(false);
+	function startClipsResize(/** @type {any} */ e) {
+		clipsResizing = true;
+		e.currentTarget.setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+	function doClipsResize(/** @type {any} */ e) {
+		if (!clipsResizing) return;
+		clipsH = Math.min(Math.max(48, clipsH + e.movementY), 360);
+	}
+	function endClipsResize(/** @type {any} */ e) {
+		if (!clipsResizing) return;
+		clipsResizing = false;
+		e.currentTarget.releasePointerCapture?.(e.pointerId);
+		localStorage.setItem('animationClipsH', String(clipsH));
+	}
 
 	// imported clips for the selected object (empty for anything not imported
 	// with animation). clipInfo reads the live mixer, so it needs the store as a
@@ -82,6 +114,56 @@
 	const isPlaying = $derived(!!pb?.playing);
 	const curTime = $derived(target ? ($playheads[target.uuid] ?? pb?.pausedAt ?? 0) : 0);
 	const duration = $derived(anim?.duration ?? 2);
+	const speed = $derived(pb?.speed ?? 1);
+	// A/B window: part of the transport, so both peers loop the same seconds
+	const rangeIn = $derived(Math.min(Math.max(pb?.rangeIn ?? 0, 0), duration));
+	const rangeOut = $derived(Math.min(pb?.rangeOut ?? duration, duration));
+	const ranged = $derived(rangeIn > 1e-6 || rangeOut < duration - 1e-6);
+
+	// VIEW window (zoom + pan). Local, and shared by every channel: the sheet and
+	// the graph are one time axis, which is the whole point of a dope sheet — a
+	// per-channel zoom would stop the rows lining up.
+	let viewStart = $state(0);
+	let viewEnd = $state(2);
+	$effect(() => {
+		// follow the clip when it changes length, unless the user has zoomed in
+		const d = duration;
+		untrack(() => {
+			if (viewEnd <= viewStart || viewEnd > d + 1e-6 || (viewStart === 0 && Math.abs(viewEnd - 2) < 1e-9)) {
+				viewStart = 0;
+				viewEnd = d;
+			}
+		});
+	});
+	const viewSpan = $derived(Math.max(viewEnd - viewStart, 0.05));
+	/** @param {number} factor @param {number} [around] the time to keep under the cursor */
+	function zoomView(factor, around) {
+		const centre = around ?? (viewStart + viewEnd) / 2;
+		const span = Math.min(Math.max(viewSpan * factor, 0.1), duration);
+		let from = centre - (centre - viewStart) * (span / viewSpan);
+		from = Math.min(Math.max(from, 0), Math.max(0, duration - span));
+		viewStart = from;
+		viewEnd = Math.min(from + span, duration);
+	}
+	function fitView() {
+		viewStart = 0;
+		viewEnd = duration;
+	}
+	/** ctrl/⌘+wheel zooms about the cursor, plain wheel pans — the video-editor idiom */
+	function onPlotWheel(/** @type {WheelEvent} */ e) {
+		if (!plotEl) return;
+		e.preventDefault();
+		const r = plotEl.getBoundingClientRect();
+		const at = xt(e.clientX - r.left);
+		if (e.ctrlKey || e.metaKey) {
+			zoomView(e.deltaY > 0 ? 1.2 : 1 / 1.2, at);
+			return;
+		}
+		const step = (e.deltaY !== 0 ? e.deltaY : e.deltaX) * 0.0015 * viewSpan;
+		const from = Math.min(Math.max(viewStart + step, 0), Math.max(0, duration - viewSpan));
+		viewStart = from;
+		viewEnd = Math.min(from + viewSpan, duration);
+	}
 	// auto-key is armed for ONE object at a time (the one you are posing)
 	const recording = $derived(!!target && $autoKeyFor === target.uuid);
 
@@ -111,9 +193,12 @@
 	});
 	const dockVisible = $derived($visibleDockKey === 'animation');
 
-	// Selecting a different object releases a SCRUB left on the previous one (it
-	// holds a base pose that must be restored). Something actually PLAYING keeps
-	// playing — playback is shared with peers, not a property of the selection.
+	// Switching objects LEAVES the previous one where it was: its playhead, its
+	// pose and its clip all stay put (they live per uuid in `playback`), so coming
+	// back finds the frame you were working on instead of a rewound clip. That was
+	// a real complaint — the old code stopped any non-playing preview here, which
+	// restored the base pose and threw the time away. ⏹ is how you rewind, and a
+	// serializer never sees the previewed pose (parkAuthoredAtBase).
 	let prevUuid = /** @type {string|null} */ (null);
 	$effect(() => {
 		const t = target?.uuid ?? null;
@@ -121,23 +206,38 @@
 			if (t === prevUuid) return;
 			const prev = prevUuid;
 			prevUuid = t;
-			selKey = null;
+			selKeys = [];
 			// auto-key is armed for ONE object; selecting another disarms it rather
 			// than silently recording the next thing you drag
 			if (prev && prev !== t && get(autoKeyFor) === prev) setAutoKey(null);
-			if (prev && prev !== t && !get(playback)[prev]?.playing) stop(prev);
 		});
 	});
 
 	function add() {
 		if (!target) return;
 		selId = addTrack(target.uuid, newChannel, target);
-		selKey = null;
+		selKeys = [];
 	}
 	function togglePlay() {
 		if (!target) return;
 		if (isPlaying) pause(target.uuid);
-		else play(target.uuid);
+		else play(target.uuid, undefined, { from: Math.max(0, curTime - rangeIn), reverse: false });
+	}
+	/** play backwards from where the playhead stands */
+	function playBack() {
+		if (!target) return;
+		play(target.uuid, undefined, { from: Math.max(0, rangeOut - curTime), reverse: true });
+	}
+	/** step to the previous / next key time (0 and the clip end always count) */
+	function stepKey(/** @type {number} */ dir) {
+		if (!target) return;
+		const stops = [...new Set([...keyTimes(target.uuid), duration])].sort((a, b) => a - b);
+		const here = curTime;
+		const next =
+			dir < 0
+				? [...stops].reverse().find((t) => t < here - 1e-4)
+				: stops.find((t) => t > here + 1e-4);
+		scrub(target.uuid, next ?? (dir < 0 ? 0 : duration));
 	}
 
 	const isRot = (/** @type {string} */ ch) => isRotChannel(ch);
@@ -172,12 +272,18 @@
 	const innerW = $derived(Math.max(60, plotW - PAD_X * 2));
 	const sheetH = $derived(RULER_H + Math.max(1, tracks.length) * ROW_H + 6);
 	const plotH = $derived(view === 'graph' ? RULER_H + GRAPH_H + 6 : sheetH);
-	const tx = (/** @type {number} */ t) => PAD_X + (t / Math.max(duration, 0.001)) * innerW;
-	const xt = (/** @type {number} */ x) => ((x - PAD_X) / innerW) * Math.max(duration, 0.001);
+	// x maps the VISIBLE window, so zooming and panning move every channel together
+	const tx = (/** @type {number} */ t) => PAD_X + ((t - viewStart) / viewSpan) * innerW;
+	const xt = (/** @type {number} */ x) => viewStart + ((x - PAD_X) / innerW) * viewSpan;
 	const rowY = (/** @type {number} */ i) => RULER_H + i * ROW_H + ROW_H / 2;
 
-	// value range of the selected track, for the graph's y axis
+	// Value range of the selected track, for the graph's y axis. FROZEN while a key
+	// is dragged: the range is derived from the keys, so letting it breathe under
+	// the cursor moved the value->pixel mapping with the value, and the key barely
+	// followed the pointer at all (it looked like the y axis was locked).
+	let frozenRange = $state(/** @type {{lo: number, hi: number}|null} */ (null));
 	const range = $derived.by(() => {
+		if (frozenRange) return frozenRange;
 		const keys = selTrack?.keys ?? [];
 		if (!keys.length) return { lo: 0, hi: 1 };
 		let lo = Infinity;
@@ -201,10 +307,10 @@
 	/** the curve of the selected track, sampled through the real evaluator */
 	const curve = $derived.by(() => {
 		if (view !== 'graph' || !selTrack) return '';
-		const steps = 64;
+		const steps = 96;
 		let d = '';
 		for (let i = 0; i <= steps; i++) {
-			const t = (i / steps) * duration;
+			const t = viewStart + (i / steps) * viewSpan;
 			const v = sampleTrack(selTrack, t);
 			if (v === null) continue;
 			d += (d ? ' L ' : 'M ') + tx(t).toFixed(2) + ' ' + vy(v).toFixed(2);
@@ -212,91 +318,273 @@
 		return d;
 	});
 
+	/** tick times for the visible window, at a sensible step for its span */
+	const ticks = $derived.by(() => {
+		const raw = viewSpan / 8;
+		const step = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60].find((s) => s >= raw) ?? 60;
+		const out = [];
+		for (let t = Math.ceil(viewStart / step) * step; t <= viewEnd + 1e-6; t += step) {
+			out.push(Math.round(t * 1e4) / 1e4);
+		}
+		return out;
+	});
+
 	const snapT = (/** @type {number} */ t) => (snap ? Math.round(t * 10) / 10 : Math.round(t * 1000) / 1000);
 
-	// --- key dragging ------------------------------------------------------------
+	// --- moving keys -------------------------------------------------------------
+	// Three ways in, one engine:
+	//   * left drag  — press a key and pull (shift-click first to take several);
+	//   * RIGHT click — a modal GRAB: the selection follows the pointer with no
+	//     button held, until a click or Enter commits it and Escape puts it back;
+	//   * the number fields on the right, for an exact value.
+	// Every one of them moves the WHOLE selection by the same delta and writes it
+	// through `moveKeys`, so a drag across two channels is one store write, one
+	// broadcast and (through the gesture) one undo entry.
 	let plotEl = $state(/** @type {any} */ (null));
-	/** @type {{trackId: string, index: number, axis: 'time'|'both'}|null} */
-	let drag = null;
+	/** @type {{origin: {x: number, y: number}, snapshot: any[], modal: boolean}|null} */
+	let move = null;
+	let grabbing = $state(false);
+
+	/** the selected keys with their CURRENT times/values, to apply a delta against */
+	function keySnapshot() {
+		return selKeys
+			.map(([trackId, index]) => {
+				const track = tracks.find((t) => t.id === trackId);
+				const key = track?.keys[index];
+				if (!track || !key) return null;
+				return { trackId, index, t0: key.t, v0: key.v, stepped: STEPPED.has(track.channel) };
+			})
+			.filter(Boolean);
+	}
+
+	/** @param {number} dt @param {number|null} dv */
+	function applyDelta(dt, dv) {
+		if (!target || !move?.snapshot.length) return;
+		const moves = move.snapshot.map((s) => ({
+			trackId: s.trackId,
+			index: s.index,
+			t: snapT(Math.max(0, Math.min(duration, s.t0 + dt))),
+			...(dv !== null && !s.stepped ? { v: s.v0 + dv } : {})
+		}));
+		moveKeys(target.uuid, moves);
+		// keys re-sort as they pass one another, so re-find each one by the time we
+		// just wrote (absolute from the snapshot, so nothing drifts over a long drag)
+		const live = get(animations)[target.uuid];
+		const clip = live?.clips?.[live.active];
+		/** @type {[string, number][]} */
+		const next = [];
+		move.snapshot.forEach((s, i) => {
+			const track = clip?.tracks?.find((/** @type {any} */ tr) => tr.id === s.trackId);
+			const at = track
+				? track.keys.findIndex((/** @type {any} */ k) => Math.abs(k.t - moves[i].t) < 1e-6)
+				: -1;
+			if (at >= 0) {
+				s.index = at;
+				next.push([s.trackId, at]);
+			}
+		});
+		if (next.length) selKeys = next;
+	}
+
+	/** @param {PointerEvent|MouseEvent} e */
+	function deltaFrom(e) {
+		if (!plotEl || !move) return { dt: 0, dv: /** @type {number|null} */ (null) };
+		const r = plotEl.getBoundingClientRect();
+		const x = e.clientX - r.left;
+		const y = e.clientY - r.top;
+		const dt = xt(x) - xt(move.origin.x);
+		const dv = view === 'graph' ? yv(y) - yv(move.origin.y) : null;
+		return { dt, dv };
+	}
+
+	function beginMove(/** @type {PointerEvent|MouseEvent} */ e, /** @type {boolean} */ modal) {
+		if (!target) return;
+		const snapshot = keySnapshot();
+		if (!snapshot.length) return;
+		const r = plotEl?.getBoundingClientRect();
+		move = {
+			origin: { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) },
+			snapshot,
+			modal
+		};
+		// hold the y axis still for the whole gesture (see `frozenRange`)
+		if (view === 'graph') frozenRange = { lo: range.lo, hi: range.hi };
+		beginAnimGesture(target.uuid, selKeys.length > 1 ? 'Move keys' : 'Move key');
+		if (modal) {
+			grabbing = true;
+			window.addEventListener('pointermove', onMoveMove);
+			window.addEventListener('pointerdown', grabConfirm, true);
+			window.addEventListener('keydown', grabKeys, true);
+		} else {
+			window.addEventListener('pointermove', onMoveMove);
+			window.addEventListener('pointerup', endDrag);
+		}
+	}
+	function onMoveMove(/** @type {PointerEvent} */ e) {
+		if (!move) return;
+		const { dt, dv } = deltaFrom(e);
+		applyDelta(dt, dv);
+	}
+	function finishMove(/** @type {boolean} */ keep) {
+		const open = move;
+		move = null;
+		grabbing = false;
+		frozenRange = null;
+		window.removeEventListener('pointermove', onMoveMove);
+		window.removeEventListener('pointerup', endDrag);
+		window.removeEventListener('pointerdown', grabConfirm, true);
+		window.removeEventListener('keydown', grabKeys, true);
+		if (!keep && open && target) {
+			// put every key back exactly where it was
+			moveKeys(
+				target.uuid,
+				open.snapshot.map((s) => ({ trackId: s.trackId, index: s.index, t: s.t0, v: s.v0 }))
+			);
+		}
+		endAnimGesture(); // one entry either way (none if nothing changed)
+	}
+	function endDrag() {
+		finishMove(true);
+	}
+	function grabConfirm(/** @type {PointerEvent} */ e) {
+		if (!move?.modal) return;
+		e.preventDefault();
+		e.stopPropagation(); // the committing click must not start a fresh drag
+		finishMove(true);
+	}
+	function grabKeys(/** @type {KeyboardEvent} */ e) {
+		if (!move?.modal) return;
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			e.stopPropagation();
+			finishMove(false);
+		} else if (e.key === 'Enter') {
+			e.preventDefault();
+			finishMove(true);
+		}
+	}
+
+	/** press on a key: select (shift adds) and start a drag */
 	function keyDown(/** @type {PointerEvent} */ e, /** @type {string} */ trackId, /** @type {number} */ index) {
 		if (!target) return;
+		if (move?.modal) return; // a grab is running; its own handler commits
 		e.preventDefault();
 		e.stopPropagation();
 		selId = trackId;
-		selKey = [trackId, index];
-		drag = { trackId, index, axis: view === 'graph' ? 'both' : 'time' };
-		beginAnimGesture(target.uuid, 'Move key');
-		window.addEventListener('pointermove', keyMove);
-		window.addEventListener('pointerup', keyUp);
-	}
-	function keyMove(/** @type {PointerEvent} */ e) {
-		if (!drag || !plotEl || !target) return;
-		const r = plotEl.getBoundingClientRect();
-		const t = snapT(Math.max(0, Math.min(duration, xt(e.clientX - r.left))));
-		/** @type {any} */
-		const patch = { t };
-		if (drag.axis === 'both') {
-			const track = tracks.find((tr) => tr.id === drag?.trackId);
-			if (track && !STEPPED.has(track.channel)) patch.v = yv(e.clientY - r.top);
+		if (e.shiftKey) {
+			selKeys = isKeySelected(trackId, index)
+				? selKeys.filter(([id, i]) => !(id === trackId && i === index))
+				: [...selKeys, [trackId, index]];
+			return; // shift is for building the set, not for dragging it
 		}
-		updateKey(target.uuid, drag.trackId, drag.index, patch);
-		// keys re-sort while dragging, so follow this key by its new position
-		const track = get(animations)[target.uuid]?.clips?.[
-			get(animations)[target.uuid].active
-		]?.tracks?.find((/** @type {any} */ tr) => tr.id === drag?.trackId);
-		if (track) {
-			const at = track.keys.findIndex((/** @type {any} */ k) => Math.abs(k.t - t) < 1e-6);
-			if (at >= 0 && drag) {
-				drag.index = at;
-				selKey = [drag.trackId, at];
-			}
-		}
-	}
-	function keyUp() {
-		drag = null;
-		endAnimGesture();
-		window.removeEventListener('pointermove', keyMove);
-		window.removeEventListener('pointerup', keyUp);
+		if (!isKeySelected(trackId, index)) selKeys = [[trackId, index]];
+		beginMove(e, false);
 	}
 
-	/** double-click on a row (or the graph) inserts a key at that time */
+	/** right-click a key: lock the selection to the pointer until a click commits */
+	function keyContext(/** @type {MouseEvent} */ e, /** @type {string} */ trackId, /** @type {number} */ index) {
+		if (!target) return;
+		e.preventDefault();
+		e.stopPropagation();
+		if (move) return finishMove(true); // a second right-click commits
+		selId = trackId;
+		if (!isKeySelected(trackId, index)) selKeys = [[trackId, index]];
+		beginMove(e, true);
+	}
+
+	// --- scrubbing by dragging the timeline --------------------------------------
+	// A click on the ruler jumped the playhead; a DRAG has to follow the pointer, so
+	// you can watch the movement while you sweep through it. The Threlte canvas
+	// swallows pointermove/up mid-gesture, so these live on `window` like every
+	// other drag in the app.
+	let scrubbing = false;
+	function scrubAt(/** @type {number} */ clientX) {
+		if (!target || !plotEl) return;
+		const r = plotEl.getBoundingClientRect();
+		scrub(target.uuid, Math.max(0, Math.min(duration, xt(clientX - r.left))));
+	}
+	/**
+	 * Starts a scrub when the press lands in the ruler BAND. It listens on the whole
+	 * plot rather than on the ruler rect: the tick lines and their labels are drawn
+	 * over that rect as SIBLINGS, so a press on a tick had nothing to bubble to and
+	 * silently did nothing (found with elementFromPoint — the pixel reported a
+	 * `<line>`, not the rect). Key handles stop propagation, so they still win.
+	 */
+	function plotDown(/** @type {PointerEvent} */ e) {
+		if (!target || !plotEl) return;
+		const r = plotEl.getBoundingClientRect();
+		if (e.clientY - r.top > RULER_H) return; // below the ruler: not a scrub
+		e.preventDefault();
+		scrubbing = true;
+		scrubAt(e.clientX);
+		window.addEventListener('pointermove', rulerMove);
+		window.addEventListener('pointerup', rulerUp);
+	}
+	function rulerMove(/** @type {PointerEvent} */ e) {
+		if (scrubbing) scrubAt(e.clientX);
+	}
+	function rulerUp() {
+		scrubbing = false;
+		window.removeEventListener('pointermove', rulerMove);
+		window.removeEventListener('pointerup', rulerUp);
+	}
+
+	/** how close (in pixels) counts as "on" an existing key */
+	const PICK_PX = 9;
+	/** Is there already a key within a few pixels of this time on `track`? Inserting
+	 *  one there would stack two keys nobody can tell apart, and a double-click that
+	 *  lands NEAR a key means "that one", not "a new one". @param {any} track */
+	function keyNear(track, /** @type {number} */ t) {
+		if (!track) return -1;
+		let best = -1;
+		let bestPx = PICK_PX;
+		track.keys.forEach((/** @type {any} */ k, /** @type {number} */ i) => {
+			const px = Math.abs(tx(k.t) - tx(t));
+			if (px <= bestPx) {
+				bestPx = px;
+				best = i;
+			}
+		});
+		return best;
+	}
+
+	/** double-click on empty space inserts a key; ON (or beside) an existing key it
+	 *  selects that one instead of stacking a duplicate on top of it */
 	function plotDblClick(/** @type {MouseEvent} */ e) {
 		if (!target || !plotEl) return;
 		const r = plotEl.getBoundingClientRect();
 		const x = e.clientX - r.left;
 		const y = e.clientY - r.top;
+		if (y <= RULER_H) return; // the ruler scrubs, it does not author
 		const t = snapT(Math.max(0, Math.min(duration, xt(x))));
-		if (view === 'graph') {
-			if (!selTrack) return;
-			const v = STEPPED.has(selTrack.channel) ? (sampleTrack(selTrack, t) ?? 0) : yv(y);
-			addKey(target.uuid, selTrack.id, t, v);
-			return;
-		}
-		const row = Math.floor((y - RULER_H) / ROW_H);
-		const track = tracks[row];
+		const track = view === 'graph' ? selTrack : tracks[Math.floor((y - RULER_H) / ROW_H)];
 		if (!track) return;
 		selId = track.id;
-		addKey(target.uuid, track.id, t, sampleTrack(track, t) ?? 0);
+		const near = keyNear(track, t);
+		if (near >= 0) {
+			selKeys = [[track.id, near]];
+			return;
+		}
+		const v =
+			view === 'graph' && !STEPPED.has(track.channel) ? yv(y) : (sampleTrack(track, t) ?? 0);
+		addKey(target.uuid, track.id, t, v);
 	}
 
-	/** clicking the ruler scrubs */
-	function rulerDown(/** @type {PointerEvent} */ e) {
-		if (!target || !plotEl) return;
-		const r = plotEl.getBoundingClientRect();
-		scrub(target.uuid, Math.max(0, Math.min(duration, xt(e.clientX - r.left))));
-	}
-
-	/** Del removes the selected key. Panels swallow DELEGATED handlers, so this is a
-	 *  direct listener (the DragRow lesson, 16-Q3). @param {HTMLElement} node */
+	/** Del removes every selected key. Panels swallow DELEGATED handlers, so this is
+	 *  a direct listener (the DragRow lesson, 16-Q3). @param {HTMLElement} node */
 	function keyNav(node) {
 		const onKey = (/** @type {KeyboardEvent} */ e) => {
-			if (!target || !selKey) return;
+			if (!target || !selKeys.length) return;
 			if (e.key !== 'Delete' && e.key !== 'Backspace') return;
 			const tag = /** @type {any} */ (e.target)?.tagName;
 			if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 			e.preventDefault();
-			removeKey(target.uuid, selKey[0], selKey[1]);
-			selKey = null;
+			// highest index first, so the earlier ones keep their positions
+			const doomed = [...selKeys].sort((a, b) => b[1] - a[1]);
+			beginAnimGesture(target.uuid, doomed.length > 1 ? 'Remove keys' : 'Remove key');
+			for (const [trackId, index] of doomed) removeKey(target.uuid, trackId, index);
+			endAnimGesture();
+			selKeys = [];
 		};
 		node.addEventListener('keydown', onKey);
 		return { destroy: () => node.removeEventListener('keydown', onKey) };
@@ -314,28 +602,28 @@
 			items: [
 				{ header: 'Add' },
 				{
-					label: 'Movement',
-					children: CHANNELS.map((c) => ({
+					label: 'Channel',
+					children: addableChannels.map((c) => ({
 						label: channelLabel(c),
 						action: () => {
 							selId = addTrack(uuid, c, target);
-							selKey = null;
+							selKeys = [];
 						}
 					}))
 				},
 				{
 					label: 'Key at playhead',
 					disabled: !selTrack,
-					tooltip: 'Insert a key on the selected movement at ' + t.toFixed(2) + 's',
+					tooltip: 'Insert a key on the selected channel at ' + t.toFixed(2) + 's',
 					action: () => {
 						if (!selTrack) return;
 						addKey(uuid, selTrack.id, snapT(t), sampleTrack(selTrack, t) ?? 0);
 					}
 				},
 				{
-					label: 'Keys on every movement',
+					label: 'Keys on every channel',
 					disabled: !tracks.length,
-					tooltip: 'Pose the object, then drop a key on every track at once',
+					tooltip: 'Hold this frame: drop a key on every channel at once',
 					action: () => {
 						beginAnimGesture(uuid, 'Add keys');
 						for (const track of tracks) {
@@ -345,16 +633,45 @@
 					}
 				},
 				{
-					label: 'Key from the current pose',
-					disabled: !tracks.length,
-					tooltip: 'Read the object where it stands now and key every channel',
+					label: 'Key the current pose',
+					tooltip:
+						'Read the object as it stands now and key every channel that moved — the same thing REC does after a drag, on demand',
 					action: () => {
+						// go through auto-key so a channel with no track yet is CREATED,
+						// exactly as an armed drag would do it
+						const armed = get(autoKeyFor);
+						if (armed !== uuid) {
+							rememberAutoKeyReference(uuid);
+							setAutoKey(uuid);
+						}
 						beginAnimGesture(uuid, 'Key pose');
 						for (const track of tracks) {
 							addKey(uuid, track.id, snapT(t), channelValue(target, track.channel));
 						}
 						endAnimGesture();
+						captureAutoKey(uuid, snapT(t));
+						if (armed !== uuid) setAutoKey(armed);
 					}
+				},
+				{ section: 'Timing' },
+				{
+					label: 'Clear the preview',
+					tooltip:
+						'Put the object back to the pose it had before anything previewed it, and rewind. Stop only returns to where the run began.',
+					action: () => resetPreview(uuid)
+				},
+				{
+					label: 'Retime the movement…',
+					disabled: !tracks.length,
+					tooltip:
+						'Stretch or squash every key time by the same ratio, so the movement keeps its shape and only its pace changes',
+					children: [0.5, 1, 2, 4, 8].map((seconds) => ({
+						label: seconds + 's',
+						action: () => {
+							retimeClip(uuid, seconds);
+							showToast('Retimed the movement to ' + seconds + 's.');
+						}
+					}))
 				},
 				{ section: 'Presets' },
 				...Object.entries(PRESETS).map(([kind, preset]) => ({
@@ -365,7 +682,7 @@
 					action: () => {
 						const made = applyPreset(kind, uuid, target);
 						selId = null;
-						selKey = null;
+						selKeys = [];
 						if (made?.needsOrigin) {
 							// the swing is only a HINGE once the pivot sits on the edge — say
 							// so where the user can act on it
@@ -483,63 +800,135 @@
 {#snippet body()}
 	{#if !target}
 		<div class="flex flex-1 items-center justify-center p-6 text-center text-sm text-gray-400">
-			Select an object in the viewport to animate it, or to pick from the clips it was imported
-			with.
+			Select an object in the viewport to see and edit its animation.
 		</div>
 	{:else}
-		<!-- transport -->
-		<div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-700/60 px-2 py-1.5">
-			<button class="ui-button-quiet text-primary-400" title={isPlaying ? 'Pause' : 'Play'} onclick={togglePlay}>
-				{isPlaying ? '⏸' : '▶'}
-			</button>
-			<button class="ui-button-quiet" title="Stop and reset" onclick={() => target && stop(target.uuid)}>⏹</button>
-			<input
-				type="range" min="0" max={duration} step="0.01" class="min-w-24 flex-1 accent-primary-500"
-				aria-label="Playhead"
-				value={curTime} oninput={(e) => target && scrub(target.uuid, parseFloat(e.currentTarget.value))}
-			/>
-			<span class="w-24 text-right text-[11px] tabular-nums text-gray-400">
-				{curTime.toFixed(2)} / {duration.toFixed(2)}s
-			</span>
-			<label class="flex items-center gap-1 text-[11px] text-gray-400">
-				dur
+		<!-- TRANSPORT. Grouped like a player: the deck (rewind / play / stop) sits in
+		     one segmented control, the playhead owns the whole middle with a monospaced
+		     readout beside it, and the clip settings are a second group on the right so
+		     "how long is this clip" never reads as part of "where am I in it". -->
+		<div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-gray-700/60 px-2 py-1.5">
+			<div class="flex items-center overflow-hidden rounded-md border border-gray-600/80 bg-gray-900/60 text-gray-300 [&>button]:px-1.5 [&>button]:py-1 [&>button:hover]:bg-gray-700/70">
+				<button
+					id="animation-rewind"
+					title="Go to the start of the clip"
+					aria-label="Go to start"
+					onclick={() => target && scrub(target.uuid, rangeIn)}><SkipBack size={14} /></button
+				>
+				<button
+					id="animation-prev-key"
+					title="Previous key"
+					aria-label="Previous key"
+					onclick={() => stepKey(-1)}><StepBack size={14} /></button
+				>
+				<button
+					id="animation-play-back"
+					class="border-l border-gray-600/80 {isPlaying && pb?.reverse ? 'bg-primary-600/30 text-primary-200' : 'text-primary-300'}"
+					title="Play backwards from here"
+					aria-label="Play backwards"
+					aria-pressed={!!(isPlaying && pb?.reverse)}
+					onclick={playBack}><Rewind size={14} /></button
+				>
+				<button
+					id="animation-play"
+					class="border-x border-gray-600/80 {isPlaying && !pb?.reverse
+						? 'bg-primary-600/30 text-primary-200'
+						: 'text-primary-300'}"
+					title={isPlaying ? 'Pause' : 'Play from here'}
+					aria-label={isPlaying ? 'Pause' : 'Play'}
+					aria-pressed={isPlaying}
+					onclick={togglePlay}
+				>
+					{#if isPlaying}<Pause size={14} />{:else}<Play size={14} />{/if}
+				</button>
+				<button
+					id="animation-stop"
+					title="Stop and go back to the frame this run started from"
+					aria-label="Stop"
+					onclick={() => target && stop(target.uuid)}><Square size={13} /></button
+				>
+				<button
+					id="animation-next-key"
+					class="border-l border-gray-600/80"
+					title="Next key"
+					aria-label="Next key"
+					onclick={() => stepKey(1)}><StepForward size={14} /></button
+				>
+				<button
+					id="animation-end"
+					title="Go to the end of the clip"
+					aria-label="Go to end"
+					onclick={() => target && scrub(target.uuid, rangeOut)}><SkipForward size={14} /></button
+				>
+			</div>
+
+			<div class="flex min-w-40 flex-1 items-center gap-2">
 				<input
-					type="number" min="0.1" step="0.1" class="w-14 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs"
-					value={duration}
-					oninput={(e) => target && updateAnim(target.uuid, { duration: Math.max(0.1, parseFloat(e.currentTarget.value) || 0.1) })}
+					type="range" min="0" max={duration} step="0.01"
+					class="min-w-0 flex-1 accent-primary-500"
+					aria-label="Playhead"
+					value={curTime} oninput={(e) => target && scrub(target.uuid, parseFloat(e.currentTarget.value))}
 				/>
-			</label>
-			<select
-				class="rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs"
-				aria-label="Loop mode"
-				value={anim?.loop ?? 'loop'}
-				onchange={(e) => target && updateAnim(target.uuid, { loop: /** @type {any} */ (e.currentTarget.value) })}
-			>
-				<option value="loop">Loop</option>
-				<option value="once">Once</option>
-				<option value="pingpong">Ping-pong</option>
-			</select>
-			<button
-				id="animation-autokey"
-				class="shrink-0 rounded-sm border px-1.5 py-0.5 text-[11px] {recording
-					? 'border-red-500 bg-red-900/40 text-red-300'
-					: 'border-gray-600 text-gray-400'}"
-				title={recording
-					? 'Recording: posing this object writes keys at the playhead'
-					: 'Auto-key: pose the object and keys are written at the playhead'}
-				aria-label="Auto-key"
-				aria-pressed={recording}
-				onclick={() => target && setAutoKey(recording ? null : target.uuid)}
-			>
-				● REC
-			</button>
-			<button
-				id="animation-add"
-				class="ui-button-quiet shrink-0"
-				title="Add movements, keys and clips"
-				aria-label="Add"
-				onclick={openAddMenu}>＋</button
-			>
+				<span class="shrink-0 font-mono text-[11px] tabular-nums text-gray-300">
+					{curTime.toFixed(2)}<span class="text-gray-500">/{duration.toFixed(2)}s</span>
+				</span>
+			</div>
+
+			<div class="flex items-center gap-1.5">
+				<label class="flex items-center gap-1 text-[11px] text-gray-400" title="Clip length. Keys keep their times — use ＋ ▸ Retime to stretch the movement itself.">
+					<span>length</span>
+					<input
+						type="number" min="0.1" step="0.1"
+						class="w-14 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs tabular-nums"
+						value={duration}
+						oninput={(e) => target && updateAnim(target.uuid, { duration: Math.max(0.1, parseFloat(e.currentTarget.value) || 0.1) })}
+					/>
+				</label>
+				<label class="flex items-center gap-1 text-[11px] text-gray-400" title="Playback rate — how fast it runs, without changing any keys">
+					<span>speed</span>
+					<input
+						id="animation-speed"
+						type="number" min="0.1" max="8" step="0.1"
+						class="w-14 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs tabular-nums"
+						value={speed}
+						oninput={(e) => target && setSpeed(target.uuid, parseFloat(e.currentTarget.value) || 1)}
+					/>
+				</label>
+				<select
+					class="rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs"
+					aria-label="Loop mode"
+					value={anim?.loop ?? 'loop'}
+					onchange={(e) => target && updateAnim(target.uuid, { loop: /** @type {any} */ (e.currentTarget.value) })}
+				>
+					<option value="loop">Loop</option>
+					<option value="once">Once</option>
+					<option value="pingpong">Ping-pong</option>
+				</select>
+			</div>
+
+			<div class="flex items-center gap-1.5">
+				<button
+					id="animation-autokey"
+					class="flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium {recording
+						? 'border-red-500 bg-red-500/20 text-red-300'
+						: 'border-gray-600 text-gray-400 hover:bg-gray-700/70'}"
+					title={recording
+						? 'Recording: posing this object writes keys at the playhead'
+						: 'Auto-key: pose the object and keys are written at the playhead'}
+					aria-label="Auto-key"
+					aria-pressed={recording}
+					onclick={() => target && setAutoKey(recording ? null : target.uuid)}
+				>
+					<span class={recording ? 'animate-pulse' : ''}>●</span> REC
+				</button>
+				<button
+					id="animation-add"
+					class="shrink-0 rounded-md border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700/70"
+					title="Add movements, keys, presets and clips"
+					aria-label="Add"
+					onclick={openAddMenu}>＋</button
+				>
+			</div>
 		</div>
 
 		<div class="flex min-h-0 flex-1">
@@ -548,7 +937,7 @@
 				{#if clips.length}
 					<div id="animation-clips" class="border-b border-gray-700/60">
 						<div class="flex items-center justify-between px-2 pt-1.5">
-							<span class="text-[10px] uppercase tracking-wider text-gray-500">Clips in this model</span>
+							<span class="text-[10px] uppercase tracking-wider text-gray-500">Imported clips</span>
 							<span class="text-[10px] text-gray-500">{clips.length}</span>
 						</div>
 						<div class="max-h-24 overflow-y-auto p-1">
@@ -588,10 +977,10 @@
 				{#if authoredClips.length}
 					<div id="authored-clips" class="border-b border-gray-700/60">
 						<div class="flex items-center justify-between px-2 pt-1.5">
-							<span class="text-[10px] uppercase tracking-wider text-gray-500">Clips you authored</span>
+							<span class="text-[10px] uppercase tracking-wider text-gray-500">Clips</span>
 							<span class="text-[10px] text-gray-500">{authoredClips.length}</span>
 						</div>
-						<div class="max-h-24 overflow-y-auto p-1">
+						<div class="overflow-y-auto p-1" style="max-height: {clipsH}px">
 							{#each authoredClips as clip (clip.id)}
 								{#if renaming === clip.id}
 									<!-- svelte-ignore a11y_autofocus -->
@@ -610,7 +999,7 @@
 									<button
 										class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-gray-700/60 {clip.active ? 'bg-primary-900/40 text-primary-200' : 'text-gray-300'}"
 										title="Edit this clip (and make it the object's default)"
-										onclick={() => { if (target) { setActiveClip(target.uuid, clip.id); selId = null; selKey = null; } }}
+										onclick={() => { if (target) { setActiveClip(target.uuid, clip.id); selId = null; selKeys = []; } }}
 										ondblclick={() => (renaming = clip.id)}
 									>
 										<span class="min-w-0 truncate">{clip.name}</span>
@@ -619,31 +1008,47 @@
 								{/if}
 							{/each}
 						</div>
+						<!-- drag to give the clip list more (or less) room -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							id="animation-clips-resize"
+							class="group h-1.5 cursor-ns-resize border-t border-gray-700/60 bg-gray-800/40 hover:bg-primary-700/40"
+							style="touch-action: none"
+							title="Drag to resize the clip list"
+							onpointerdown={startClipsResize}
+							onpointermove={doClipsResize}
+							onpointerup={endClipsResize}
+						></div>
 					</div>
 				{/if}
 
+				<div class="flex items-center justify-between px-2 pt-1.5">
+					<span class="text-[10px] uppercase tracking-wider text-gray-500">Channels</span>
+					<span class="text-[10px] text-gray-500">{tracks.length}</span>
+				</div>
 				<div class="flex items-center gap-1 border-b border-gray-700/60 p-1.5">
 					<select class="min-w-0 flex-1 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs" aria-label="Channel to animate" value={newChannel} onchange={(e) => (newChannel = e.currentTarget.value)}>
-						{#each CHANNELS as c}<option value={c}>{channelLabel(c)}</option>{/each}
+						{#each addableChannels as c}<option value={c}>{channelLabel(c)}</option>{/each}
 					</select>
-					<button class="ui-button-quiet shrink-0" title="Add movement" aria-label="Add movement" onclick={add}>＋</button>
+					<button class="ui-button-quiet shrink-0" title="Animate this channel" aria-label="Add channel" onclick={add}>＋</button>
 				</div>
 				<div class="min-h-0 flex-1 overflow-y-auto">
 					{#if !tracks.length}
 						<div class="p-3 text-center text-[11px] text-gray-500">
 							{clips.length
-								? 'No authored movements. The model’s own clips are listed above.'
-								: 'No movements yet. Pick a channel and add one.'}
+								? 'This clip is empty. The model’s own clips are listed above.'
+								: 'Nothing animated yet. Pick a channel and add it, or use ＋ ▸ Presets.'}
 						</div>
 					{/if}
 					{#each tracks as t (t.id)}
 						<div class="flex items-center gap-1 {selTrack?.id === t.id ? 'bg-primary-900/40' : ''}">
 							<button
 								class="min-w-0 flex-1 truncate px-2 py-1 text-left text-xs hover:bg-gray-700/60 {selTrack?.id === t.id ? 'text-primary-200' : 'text-gray-300'}"
-								onclick={() => { selId = t.id; selKey = null; }}>{channelLabel(t.channel)}</button
+								title={isMaterialChannel(t.channel) ? channelLabel(t.channel) + ' — a look channel: it drives the material, so a GLTF export cannot carry it' : channelLabel(t.channel)}
+								onclick={() => { selId = t.id; selKeys = []; }}>{channelLabel(t.channel)}</button
 							>
 							<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{t.keys.length}</span>
-							<button class="ui-button-quiet shrink-0 text-red-400" title="Remove" aria-label="Remove movement" onclick={() => { if (target) removeTrack(target.uuid, t.id); }}>✕</button>
+							<button class="ui-button-quiet shrink-0 text-red-400" title="Remove" aria-label="Remove channel" onclick={() => { if (target) removeTrack(target.uuid, t.id); }}>✕</button>
 						</div>
 					{/each}
 				</div>
@@ -665,9 +1070,55 @@
 						<input type="checkbox" class="accent-primary-500" checked={snap} onchange={(e) => (snap = e.currentTarget.checked)} />
 						snap 0.1s
 					</label>
+
+					<!-- A/B: loop the seconds you are tuning. It rides the transport, so a
+					     peer watching sees the same window. -->
+					<div class="flex items-center gap-1">
+						<button
+							id="animation-mark-in"
+							class="rounded-sm border border-gray-600 px-1.5 py-0.5 hover:bg-gray-700/70"
+							title="Set the loop START here (A)"
+							onclick={() => target && setRange(target.uuid, curTime, rangeOut > curTime ? rangeOut : null)}
+							>A</button
+						>
+						<button
+							id="animation-mark-out"
+							class="rounded-sm border border-gray-600 px-1.5 py-0.5 hover:bg-gray-700/70"
+							title="Set the loop END here (B)"
+							onclick={() => target && setRange(target.uuid, rangeIn < curTime ? rangeIn : null, curTime)}
+							>B</button
+						>
+						{#if ranged}
+							<button
+								id="animation-clear-range"
+								class="rounded-sm border border-primary-600 px-1.5 py-0.5 text-primary-300 hover:bg-gray-700/70"
+								title="Play the whole clip again ({rangeIn.toFixed(2)}–{rangeOut.toFixed(2)}s now)"
+								onclick={() => target && setRange(target.uuid, null, null)}
+								>A/B ✕</button
+							>
+						{/if}
+					</div>
+
+					<span
+						class="cursor-help text-gray-500"
+						title="Double-click empty space adds a key · drag moves it · shift-click builds a selection · RIGHT-CLICK locks the selection to the pointer (click to place, Esc to cancel) · Del removes · ctrl+wheel zooms, wheel pans"
+						>?</span
+					>
+					<div class="flex items-center gap-0.5">
+						<button class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Zoom out" aria-label="Zoom out" onclick={() => zoomView(1.4)}><ZoomOut size={12} /></button>
+						<button class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Zoom in" aria-label="Zoom in" onclick={() => zoomView(1 / 1.4)}><ZoomIn size={12} /></button>
+						<button id="animation-fit" class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Fit the whole clip" aria-label="Fit" onclick={fitView}><Maximize2 size={12} /></button>
+					</div>
 					<span class="flex-1"></span>
-					<span class="truncate">
-						{tracks.length ? 'Double-click to add a key · drag to move · Del removes' : ''}
+					{#if grabbing}
+						<span class="shrink-0 rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+							moving {selKeys.length > 1 ? selKeys.length + ' keys' : 'key'} — click to place, Esc to cancel
+						</span>
+					{:else if selKeys.length > 1}
+						<span class="shrink-0 text-[10px] text-primary-300">{selKeys.length} keys selected</span>
+					{/if}
+					<span class="truncate font-mono text-[10px] text-gray-500">
+						{viewStart.toFixed(2)}–{viewEnd.toFixed(2)}s
 					</span>
 				</div>
 				<div class="min-h-0 flex-1 overflow-auto p-2" bind:clientWidth={plotW}>
@@ -683,27 +1134,41 @@
 							width={plotW - 4}
 							height={plotH}
 							class="touch-none select-none rounded-sm bg-gray-900/60"
+							role="application"
+							aria-label="Timeline"
 							ondblclick={plotDblClick}
+							onpointerdown={plotDown}
+							onwheel={onPlotWheel}
 						>
-							<!-- ruler -->
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<!-- ruler: drag anywhere along it to sweep the playhead -->
 							<rect
 								x="0" y="0" width={plotW - 4} height={RULER_H}
 								fill="rgb(31 41 55 / 0.8)" class="cursor-ew-resize"
-								onpointerdown={rulerDown}
 							/>
-							{#each Array(Math.min(21, Math.max(2, Math.round(duration / (duration > 4 ? 1 : 0.5)) + 1))) as _, i}
-								{@const t = i * (duration > 4 ? 1 : 0.5)}
-								{#if t <= duration}
-									<line x1={tx(t)} y1={0} x2={tx(t)} y2={plotH} stroke="rgb(75 85 99 / 0.35)" />
-									<text x={tx(t) + 2} y={11} font-size="9" fill="rgb(107 114 128)">{t}s</text>
-								{/if}
+							{#each ticks as t (t)}
+								<line x1={tx(t)} y1={0} x2={tx(t)} y2={plotH} stroke="rgb(75 85 99 / 0.35)" pointer-events="none" />
+								<text x={tx(t) + 2} y={11} font-size="9" fill="rgb(107 114 128)" pointer-events="none">{t}s</text>
 							{/each}
+
+							<!-- everything outside the A/B window is dimmed, the way a video
+							     editor shades the part it will not play -->
+							{#if ranged}
+								{#if rangeIn > viewStart}
+									<rect x={tx(viewStart)} y={RULER_H} width={Math.max(0, tx(Math.min(rangeIn, viewEnd)) - tx(viewStart))} height={plotH - RULER_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
+								{/if}
+								{#if rangeOut < viewEnd}
+									<rect x={tx(Math.max(rangeOut, viewStart))} y={RULER_H} width={Math.max(0, tx(viewEnd) - tx(Math.max(rangeOut, viewStart)))} height={plotH - RULER_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
+								{/if}
+								<line x1={tx(rangeIn)} y1={0} x2={tx(rangeIn)} y2={plotH} stroke="rgb(34 197 94 / 0.9)" stroke-width="1.5" pointer-events="none" />
+								<line x1={tx(rangeOut)} y1={0} x2={tx(rangeOut)} y2={plotH} stroke="rgb(239 68 68 / 0.9)" stroke-width="1.5" pointer-events="none" />
+								<text x={tx(rangeIn) + 2} y={RULER_H + 9} font-size="8" fill="rgb(34 197 94)" pointer-events="none">A</text>
+								<text x={tx(rangeOut) - 8} y={RULER_H + 9} font-size="8" fill="rgb(239 68 68)" pointer-events="none">B</text>
+							{/if}
 
 							{#if view === 'sheet'}
 								{#each tracks as track, row (track.id)}
 									<line
-										x1={PAD_X} y1={rowY(row)} x2={tx(duration)} y2={rowY(row)}
+										x1={tx(viewStart)} y1={rowY(row)} x2={tx(viewEnd)} y2={rowY(row)}
 										stroke={selTrack?.id === track.id ? 'rgb(129 140 248 / 0.5)' : 'rgb(75 85 99 / 0.5)'}
 									/>
 									{#each track.keys as key, index (index)}
@@ -711,9 +1176,10 @@
 											x={tx(key.t) - 4} y={rowY(row) - 4} width="8" height="8"
 											transform="rotate(45 {tx(key.t)} {rowY(row)})"
 											class="cursor-ew-resize"
-											fill={selKey && selKey[0] === track.id && selKey[1] === index ? 'rgb(250 204 21)' : 'rgb(99 102 241)'}
+											fill={isKeySelected(track.id, index) ? 'rgb(250 204 21)' : 'rgb(99 102 241)'}
 											stroke="rgb(17 24 39)"
 											onpointerdown={(e) => keyDown(e, track.id, index)}
+											oncontextmenu={(e) => keyContext(e, track.id, index)}
 										/>
 									{/each}
 								{/each}
@@ -723,9 +1189,10 @@
 									<circle
 										cx={tx(key.t)} cy={vy(key.v)} r="5"
 										class="cursor-move"
-										fill={selKey && selKey[0] === selTrack.id && selKey[1] === index ? 'rgb(250 204 21)' : 'rgb(99 102 241)'}
+										fill={isKeySelected(selTrack.id, index) ? 'rgb(250 204 21)' : 'rgb(99 102 241)'}
 										stroke="rgb(17 24 39)"
 										onpointerdown={(e) => keyDown(e, selTrack.id, index)}
+										oncontextmenu={(e) => keyContext(e, selTrack.id, index)}
 									/>
 								{/each}
 								<text x={PAD_X} y={RULER_H + 10} font-size="9" fill="rgb(107 114 128)">
@@ -786,7 +1253,7 @@
 						</div>
 						<button
 							class="mb-2 w-full rounded-sm border border-gray-600 px-1.5 py-0.5 text-[11px] text-gray-300 hover:bg-gray-700"
-							onclick={() => { if (target && selKey) { removeKey(target.uuid, selKey[0], selKey[1]); selKey = null; } }}
+							onclick={() => { if (target && selKey) { removeKey(target.uuid, selKey[0], selKey[1]); selKeys = []; } }}
 						>Remove key</button>
 					{:else}
 						<div class="mb-2 text-[11px] text-gray-500">

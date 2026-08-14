@@ -151,6 +151,67 @@ h.run(async () => {
 	h.check(Math.abs(replaced.value - 3.5) < 1e-6, `with the new value (${replaced.value})`);
 	h.check(replaced.second === 0, 'and an unchanged pose records nothing at all');
 
+	// ---------- REC creates the channels you pose, not just the ones you listed ----
+	// Auto-key used to update EXISTING tracks only, so recording a rotation onto a
+	// clip that had only a position track silently did nothing.
+	const created = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		await new Promise((r) => setTimeout(r, 350));
+		let g;
+		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+		const obj = g.children[g.children.length - 1];
+		obj.position.set(0, 0, 0);
+		obj.rotation.set(0, 0, 0);
+		obj.scale.set(1, 1, 1);
+		obj.updateMatrix();
+		const material = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+		// a clip with ONE position channel
+		ap.addTrack(obj.uuid, 'pos.y', obj);
+		ap.updateAnim(obj.uuid, { duration: 2, loop: 'loop' });
+		ap.setAutoKey(obj.uuid); // arming takes the reference pose
+
+		// now pose rotation, scale, visibility and the look, all at 1s
+		obj.rotation.y = Math.PI / 4;
+		obj.scale.set(1, 2, 1);
+		obj.visible = false;
+		material.opacity = 0.4;
+		obj.updateMatrix();
+		const written = ap.captureAutoKey(obj.uuid, 1);
+		const clip = ap.activeClip(obj.uuid);
+		const byChannel = {};
+		for (const track of clip.tracks) {
+			byChannel[track.channel] = track.keys.map((/** @type {any} */ k) => [
+				Math.round(k.t * 100) / 100,
+				Math.round(k.v * 1000) / 1000
+			]);
+		}
+		ap.setAutoKey(null);
+		ap.stop(obj.uuid);
+		return { written, channels: Object.keys(byChannel).sort(), byChannel };
+	});
+	h.check(
+		created.channels.includes('rot.y') && created.channels.includes('scale.y'),
+		`REC creates a channel for anything you pose (${created.channels.join(', ')})`
+	);
+	h.check(
+		created.channels.includes('visible') && created.channels.includes('opacity'),
+		'including visibility and the look channels'
+	);
+	h.check(
+		!created.channels.includes('pos.z') && !created.channels.includes('metalness'),
+		'and nothing for the channels you did not touch'
+	);
+	h.check(
+		JSON.stringify(created.byChannel['rot.y']?.[0]) === JSON.stringify([0, 0]),
+		`a created channel opens with the pose it came FROM (${JSON.stringify(created.byChannel['rot.y'])})`
+	);
+	h.check(
+		Math.abs((created.byChannel['rot.y']?.[1]?.[1] ?? 0) - 0.785) < 0.01,
+		'and keys the new pose at the playhead'
+	);
+
 	// ---------- the presets ----------
 	const presets = await A.page.evaluate(() => {
 		const s = window.__stores;

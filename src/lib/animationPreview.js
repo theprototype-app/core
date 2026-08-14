@@ -34,7 +34,7 @@ import { recordEntry, registerHistoryKind } from './history';
  * @typedef {{ id: string, channel: string, keys: Key[] }} Track keys sorted by t
  * @typedef {{ name: string, tracks: Track[], duration: number, loop: 'once'|'loop'|'pingpong' }} Clip
  * @typedef {{ clips: Record<string, Clip>, active: string, changedAt: number }} AnimSet
- * @typedef {{ clipId: string, playing: boolean, at: number, pausedAt: number, speed: number, reverse?: boolean, changedAt: number }} Play
+ * @typedef {{ clipId: string, playing: boolean, at: number, pausedAt: number, speed: number, reverse?: boolean, startedFrom?: number, rangeIn?: number, rangeOut?: number, changedAt: number }} Play
  */
 
 /** @type {import('svelte/store').Writable<Record<string, AnimSet>>} uuid -> authored clips */
@@ -50,16 +50,43 @@ export const playback = writable({});
  * derive layout or run expensive work off it. */
 export const playheads = writable({});
 
-// transform channels a track can drive (rotation in radians here, degrees at the UI)
+// Channels a track can drive (rotation in radians here, degrees at the UI).
+// Transform first, then the look: fading something out, tinting it, dimming a lamp
+// and dulling a highlight are the everyday product-viz moves, and each is one
+// scalar — the same shape as a position, which is why they fit the same keys. A
+// colour is three channels, exactly as a scalar keyframe system does it.
 export const CHANNELS = [
 	'pos.x', 'pos.y', 'pos.z',
 	'rot.x', 'rot.y', 'rot.z',
 	'scale', 'scale.x', 'scale.y', 'scale.z',
-	'visible'
+	'visible',
+	'opacity',
+	'color.r', 'color.g', 'color.b',
+	'metalness', 'roughness', 'emissive',
+	'light.intensity'
 ];
 
 /** channels that HOLD their value until the next key instead of interpolating */
 export const STEPPED = new Set(['visible']);
+
+/** channels that drive the MATERIAL rather than the transform (they need the
+ * material state captured so Stop can put it back, and glTF cannot carry them) */
+export const MATERIAL_CHANNELS = new Set([
+	'opacity', 'color.r', 'color.g', 'color.b', 'metalness', 'roughness', 'emissive'
+]);
+
+/** @param {string} channel */
+export function isMaterialChannel(channel) {
+	return MATERIAL_CHANNELS.has(channel) || channel === 'light.intensity';
+}
+
+/** Every material of an object as a flat list — a mesh with UV slots has an ARRAY,
+ * and an animated look should drive all of them. @param {any} obj */
+function materialsOf(obj) {
+	const material = obj?.material;
+	if (!material) return [];
+	return Array.isArray(material) ? material.filter(Boolean) : [material];
+}
 
 /** cubic-bezier control points [x1,y1,x2,y2] with fixed endpoints (0,0),(1,1) */
 export const EASINGS = /** @type {Record<string, number[]>} */ ({
@@ -239,6 +266,7 @@ export function clipList(uuid) {
 /** Read the object's current value for a channel (radians for rotation). @param {any} obj @param {string} channel */
 export function channelValue(obj, channel) {
 	if (!obj) return 0;
+	const material = materialsOf(obj)[0];
 	switch (channel) {
 		case 'pos.x': return obj.position.x;
 		case 'pos.y': return obj.position.y;
@@ -251,8 +279,32 @@ export function channelValue(obj, channel) {
 		case 'scale.y': return obj.scale.y;
 		case 'scale.z': return obj.scale.z;
 		case 'visible': return obj.visible ? 1 : 0;
+		case 'opacity': return material?.opacity ?? 1;
+		case 'color.r': return material?.color?.r ?? 1;
+		case 'color.g': return material?.color?.g ?? 1;
+		case 'color.b': return material?.color?.b ?? 1;
+		case 'metalness': return material?.metalness ?? 0;
+		case 'roughness': return material?.roughness ?? 1;
+		case 'emissive': return material?.emissiveIntensity ?? 0;
+		case 'light.intensity': return obj.isLight ? (obj.intensity ?? 1) : 0;
 		default: return 0;
 	}
+}
+
+/** Can this object be animated on this channel at all? (the picker greys out the
+ * rest — offering `light.intensity` on a box is a dead track) @param {any} obj
+ * @param {string} channel */
+export function channelApplies(obj, channel) {
+	if (!obj) return false;
+	if (channel === 'light.intensity') return !!obj.isLight;
+	if (!MATERIAL_CHANNELS.has(channel)) return true;
+	const material = materialsOf(obj)[0];
+	if (!material) return false;
+	if (channel === 'metalness') return material.metalness !== undefined;
+	if (channel === 'roughness') return material.roughness !== undefined;
+	if (channel === 'emissive') return material.emissiveIntensity !== undefined;
+	if (channel.startsWith('color')) return !!material.color;
+	return true;
 }
 
 /** @param {string} channel */
@@ -262,7 +314,11 @@ export function channelLabel(channel) {
 			'pos.x': 'Position X', 'pos.y': 'Position Y', 'pos.z': 'Position Z',
 			'rot.x': 'Rotation X', 'rot.y': 'Rotation Y', 'rot.z': 'Rotation Z',
 			scale: 'Scale', 'scale.x': 'Scale X', 'scale.y': 'Scale Y', 'scale.z': 'Scale Z',
-			visible: 'Visible'
+			visible: 'Visible',
+			opacity: 'Opacity',
+			'color.r': 'Colour R', 'color.g': 'Colour G', 'color.b': 'Colour B',
+			metalness: 'Metalness', roughness: 'Roughness', emissive: 'Glow',
+			'light.intensity': 'Light intensity'
 		}[channel] ?? channel
 	);
 }
@@ -357,17 +413,40 @@ export function clipTime(clip, elapsed) {
 }
 
 /**
- * The clip position to pose, honouring direction. Playback REVERSES rather than
- * needing a mirrored clip: a door authored closed->open plays backwards to shut,
- * which is what "toggle" means on a door and what the Play Animation node uses.
- * Elapsed always counts UP; only the mapping to clip time flips.
- * @param {Clip} clip @param {number} elapsed @param {boolean} [reverse]
+ * The A/B window playback runs inside: the whole clip unless in/out points are
+ * set. Animators loop a few seconds while they tune them, and it is part of the
+ * TRANSPORT (so it replicates and every peer evaluates the same window) rather
+ * than a local view setting — a door can legitimately play only part of a clip.
+ * Absent fields mean the whole clip, so existing data behaves exactly as before.
+ * @param {Clip} clip @param {{rangeIn?: number, rangeOut?: number}} [play]
  */
-export function clipSecondsFor(clip, elapsed, reverse = false) {
+export function rangeOf(clip, play) {
 	const dur = Math.max(clip.duration, 0.001);
-	if (!reverse) return clip.loop === 'once' ? Math.min(elapsed, dur) : clipTime(clip, elapsed);
-	if (clip.loop === 'once') return Math.max(dur - elapsed, 0);
-	return dur - clipTime(clip, elapsed);
+	const from = Math.min(Math.max(num(play?.rangeIn, 0), 0), dur);
+	const toRaw = play?.rangeOut === undefined ? dur : num(play.rangeOut, dur);
+	const to = Math.min(Math.max(toRaw, from + 0.01), dur);
+	return { from, to, span: to - from };
+}
+
+/**
+ * The clip position to pose, honouring direction and the A/B window.
+ *
+ * Playback REVERSES rather than needing a mirrored clip: a door authored
+ * closed->open plays backwards to shut, which is what "toggle" means on a door
+ * and what the Play Animation node uses. Elapsed always counts UP; only the
+ * mapping to clip time flips.
+ * @param {Clip} clip @param {number} elapsed @param {boolean} [reverse]
+ * @param {{rangeIn?: number, rangeOut?: number}} [play]
+ */
+export function clipSecondsFor(clip, elapsed, reverse = false, play = undefined) {
+	const { from, to, span } = rangeOf(clip, play);
+	let phase01;
+	if (clip.loop === 'once') phase01 = Math.min(elapsed / span, 1);
+	else if (clip.loop === 'pingpong') {
+		const p = (elapsed / span) % 2;
+		phase01 = p <= 1 ? p : 2 - p;
+	} else phase01 = (elapsed / span) % 1;
+	return reverse ? to - phase01 * span : from + phase01 * span;
 }
 
 /** @param {any} obj @param {string} channel @param {number} v */
@@ -384,6 +463,43 @@ function setChannel(obj, channel, v) {
 		case 'scale.y': obj.scale.y = v; break;
 		case 'scale.z': obj.scale.z = v; break;
 		case 'visible': obj.visible = v >= 0.5; break;
+		case 'light.intensity':
+			if (obj.isLight) obj.intensity = Math.max(0, v);
+			break;
+		case 'opacity': {
+			// An opacity below 1 does NOTHING without the transparent flag, and that
+			// flag changes the render program, so it needs needsUpdate — and Stop has
+			// to put both back (restoreBase does).
+			const opacity = Math.min(1, Math.max(0, v));
+			for (const material of materialsOf(obj)) {
+				material.opacity = opacity;
+				const wantsTransparent = opacity < 1 || material.transparent;
+				if (wantsTransparent && !material.transparent) {
+					material.transparent = true;
+					material.needsUpdate = true;
+				}
+			}
+			break;
+		}
+		case 'color.r': case 'color.g': case 'color.b': {
+			const key = channel.slice(-1);
+			for (const material of materialsOf(obj)) {
+				if (material.color) material.color[key] = Math.min(1, Math.max(0, v));
+			}
+			break;
+		}
+		case 'metalness': case 'roughness': {
+			for (const material of materialsOf(obj)) {
+				if (material[channel] !== undefined) material[channel] = Math.min(1, Math.max(0, v));
+			}
+			break;
+		}
+		case 'emissive': {
+			for (const material of materialsOf(obj)) {
+				if (material.emissiveIntensity !== undefined) material.emissiveIntensity = Math.max(0, v);
+			}
+			break;
+		}
 	}
 }
 
@@ -394,11 +510,24 @@ const bases = new Map();
 
 /** @param {any} object */
 function captureBase(object) {
+	// The LOOK is captured beside the transform, so Stop restores a faded or tinted
+	// object as faithfully as a moved one. `transparent` rides along because
+	// animating opacity has to switch it on and that is a render-program change.
+	const materials = materialsOf(object).map((material) => ({
+		opacity: material.opacity,
+		transparent: !!material.transparent,
+		color: material.color ? [material.color.r, material.color.g, material.color.b] : null,
+		metalness: material.metalness,
+		roughness: material.roughness,
+		emissiveIntensity: material.emissiveIntensity
+	}));
 	return {
 		pos: object.position.toArray(),
 		rot: [object.rotation.x, object.rotation.y, object.rotation.z],
 		scale: object.scale.toArray(),
-		visible: object.visible !== false
+		visible: object.visible !== false,
+		materials,
+		intensity: object.isLight ? object.intensity : undefined
 	};
 }
 
@@ -408,6 +537,23 @@ function restoreBase(object, base) {
 	object.rotation.set(base.rot[0], base.rot[1], base.rot[2]);
 	object.scale.fromArray(base.scale);
 	object.visible = base.visible !== false;
+	if (base.intensity !== undefined && object.isLight) object.intensity = base.intensity;
+	if (base.materials?.length) {
+		const live = materialsOf(object);
+		for (let i = 0; i < live.length && i < base.materials.length; i++) {
+			const material = live[i];
+			const saved = base.materials[i];
+			if (saved.opacity !== undefined) material.opacity = saved.opacity;
+			if (material.transparent !== saved.transparent) {
+				material.transparent = saved.transparent;
+				material.needsUpdate = true;
+			}
+			if (saved.color && material.color) material.color.setRGB(saved.color[0], saved.color[1], saved.color[2]);
+			if (saved.metalness !== undefined) material.metalness = saved.metalness;
+			if (saved.roughness !== undefined) material.roughness = saved.roughness;
+			if (saved.emissiveIntensity !== undefined) material.emissiveIntensity = saved.emissiveIntensity;
+		}
+	}
 	object.updateMatrix(); // serializers read object.matrix, not the live pose (see flowRuntime)
 }
 
@@ -758,30 +904,49 @@ export function updateTrack(uuid, trackId, patch, clipId) {
 /**
  * Patch the active clip (duration / loop / name).
  *
- * Changing `duration` RESCALES key times when the movement FILLS the clip (its
- * last key sits at the old end) — that is what a length control means, and it
- * keeps the v1 "dur stretches the movement" behaviour a migrated save expects.
- * When the keys stop short of the end the tail is a deliberate hold, so their
- * times are left alone and only the loop length changes.
+ * `duration` is the clip's LENGTH and nothing else: keys keep the times they were
+ * authored at, so lengthening leaves a hold at the end and shortening parks the
+ * tail past it (the keys are still there — nothing is destroyed by typing in a
+ * number field). That is the split every animation tool makes:
+ *   - length  -> this, non-destructive;
+ *   - timing  -> `retimeClip`, an explicit "make the movement itself longer";
+ *   - speed   -> `setSpeed`, playback rate, which changes no data at all.
  * @param {string} uuid @param {Partial<Clip>} patch @param {string} [clipId]
  */
 export function updateAnim(uuid, patch, clipId) {
-	let ratio = 1;
 	editClip(uuid, clipId ?? null, (clip) => {
 		const next = { ...clip, ...patch };
 		next.duration = Math.max(num(next.duration, 2) || 2, 0.01);
 		if (next.loop !== 'once' && next.loop !== 'pingpong') next.loop = 'loop';
-		if (patch.duration !== undefined && next.duration !== clip.duration && clip.duration > 0) {
-			const lastT = clip.tracks.reduce((m, t) => Math.max(m, t.keys[t.keys.length - 1]?.t ?? 0), 0);
-			if (lastT >= clip.duration - 1e-4) {
-				ratio = next.duration / clip.duration;
-				next.tracks = clip.tracks.map((t) => ({
-					...t,
-					keys: t.keys.map((key) => ({ ...key, t: key.t * ratio }))
-				}));
-			}
-		}
 		return next;
+	});
+}
+
+/**
+ * RETIME: stretch or squash the movement itself, scaling every key time by the
+ * same ratio so the shape is preserved and only its pace changes. This is the
+ * destructive half of the old duration field, now something you ask for.
+ * @param {string} uuid @param {number} duration @param {string} [clipId]
+ */
+export function retimeClip(uuid, duration, clipId) {
+	const target = Math.max(num(duration, 2) || 2, 0.01);
+	let ratio = 1;
+	editClip(uuid, clipId ?? null, (clip) => {
+		if (clip.duration <= 0) return null;
+		// scale against the movement's own SPAN when it stops short of the clip end,
+		// so "retime to 4s" makes the movement take 4s either way
+		const lastT = clip.tracks.reduce((m, t) => Math.max(m, t.keys[t.keys.length - 1]?.t ?? 0), 0);
+		const span = lastT > 1e-4 ? lastT : clip.duration;
+		ratio = target / span;
+		if (Math.abs(ratio - 1) < 1e-9) return null;
+		return {
+			...clip,
+			duration: target,
+			tracks: clip.tracks.map((t) => ({
+				...t,
+				keys: t.keys.map((key) => ({ ...key, t: key.t * ratio }))
+			}))
+		};
 	});
 	// The transport stores ELAPSED seconds, so rescaling the keys without rescaling
 	// it leaves the playhead pointing somewhere else entirely: a door that had just
@@ -794,6 +959,7 @@ export function updateAnim(uuid, patch, clipId) {
 			setPlay(uuid, { at: now, pausedAt: elapsedOf(p, now) * ratio });
 		}
 	}
+	return ratio;
 }
 
 // --- clips -------------------------------------------------------------------
@@ -801,6 +967,21 @@ export function updateAnim(uuid, patch, clipId) {
 // window lists them beside the clips an imported model shipped with. `active` is
 // the object's DEFAULT clip: it is scene data, so it replicates and saves, and it
 // is what play() and the Play Animation node use when nobody names a clip.
+
+/**
+ * Point the TRANSPORT at a clip: stop whatever was running (which restores the
+ * base pose) and rewind onto the new one.
+ *
+ * Every path that changes which clip is current goes through here — picking one in
+ * the list, creating one, duplicating one, adding a preset. Without it the panel
+ * showed the new clip while playback carried on with the old one, which is exactly
+ * what "after creating a new clip it still plays the old animation" was.
+ * @param {string} uuid @param {string} clipId
+ */
+function switchTransportTo(uuid, clipId) {
+	stop(uuid);
+	setPlay(uuid, { clipId, pausedAt: 0, reverse: false }, true);
+}
 
 /** @param {string} uuid @param {string} [name] @returns {string} the new clip id */
 export function createClip(uuid, name) {
@@ -816,6 +997,7 @@ export function createClip(uuid, name) {
 		set.active = id;
 		return set;
 	});
+	switchTransportTo(uuid, id);
 	return id;
 }
 
@@ -842,6 +1024,7 @@ export function duplicateClip(uuid, clipId) {
 		set.active = id;
 		return set;
 	});
+	switchTransportTo(uuid, id);
 	return id;
 }
 
@@ -850,7 +1033,7 @@ export function duplicateClip(uuid, clipId) {
 export function deleteClip(uuid, clipId) {
 	const set = getAnimSet(uuid);
 	if (!set || !set.clips[clipId]) return;
-	if (get(playback)[uuid]?.clipId === clipId) stop(uuid);
+	if (get(playback)[uuid]?.clipId === clipId) resetPreview(uuid);
 	if (Object.keys(set.clips).length <= 1) {
 		const before = structuredClone(get(animations)[uuid] ?? null);
 		animations.update((map) => {
@@ -869,14 +1052,34 @@ export function deleteClip(uuid, clipId) {
 	});
 }
 
-/** Make a clip the object's default (replicated — it is scene data).
- * @param {string} uuid @param {string} clipId */
+/**
+ * Make a clip the one being edited, and the object's default (it is scene data,
+ * so it replicates and saves).
+ *
+ * The TRANSPORT has to follow. It stores which clip it is playing, and leaving
+ * that pointing at the previous clip is what made picking a clip in the list look
+ * like nothing happened: the panel showed the new clip's keys while play() still
+ * ran the old one ("the previous clip got stuck"). Switching therefore returns the
+ * object to its base pose and rewinds — a clip is an absolute statement about the
+ * channels it drives, so continuing at the old clip's time would be meaningless.
+ * @param {string} uuid @param {string} clipId
+ */
 export function setActiveClip(uuid, clipId) {
-	editSet(uuid, (set) => {
-		if (!set.clips[clipId] || set.active === clipId) return null;
-		set.active = clipId;
-		return set;
-	});
+	const set = getAnimSet(uuid);
+	if (!set || !set.clips[clipId]) return;
+	const p = get(playback)[uuid];
+	const wasPlaying = !!p?.playing;
+	if (set.active !== clipId) {
+		editSet(uuid, (next) => {
+			if (!next.clips[clipId] || next.active === clipId) return null;
+			next.active = clipId;
+			return next;
+		});
+	}
+	if (p && p.clipId === clipId) return; // transport already on this clip
+	switchTransportTo(uuid, clipId);
+	// picking a clip while something was running keeps it running — on the new clip
+	if (wasPlaying) play(uuid, clipId, { from: 0 });
 }
 
 /** Insert (or replace) a key. Extends the clip when the key lands past its end.
@@ -915,6 +1118,39 @@ export function updateKey(uuid, trackId, index, patch, clipId) {
 					if (ease) next.ease = ease;
 					else delete next.ease;
 				}
+				end = Math.max(end, next.t);
+				return next;
+			});
+			keys.sort((a, b) => a.t - b.t);
+			return { ...track, keys };
+		});
+		return { ...clip, tracks, duration: end };
+	});
+}
+
+/**
+ * Move SEVERAL keys in one edit — what a multi-selection drag needs. Each entry
+ * names a track, the key's CURRENT index and its new time/value; every track is
+ * rewritten once and re-sorted afterwards, so a drag across two channels stays one
+ * store write (and therefore one broadcast, one undo entry through the gesture).
+ * @param {string} uuid
+ * @param {{trackId: string, index: number, t?: number, v?: number}[]} moves
+ * @param {string} [clipId]
+ */
+export function moveKeys(uuid, moves, clipId) {
+	if (!moves?.length) return;
+	editClip(uuid, clipId ?? null, (clip) => {
+		let end = clip.duration;
+		const tracks = clip.tracks.map((track) => {
+			const mine = moves.filter((m) => m.trackId === track.id);
+			if (!mine.length) return track;
+			const keys = track.keys.map((key, i) => {
+				const move = mine.find((m) => m.index === i);
+				if (!move) return key;
+				/** @type {Key} */
+				const next = { t: key.t, v: key.v, ...(key.ease ? { ease: key.ease } : {}) };
+				if (move.t !== undefined) next.t = Math.max(0, num(move.t));
+				if (move.v !== undefined) next.v = num(move.v);
 				end = Math.max(end, next.t);
 				return next;
 			});
@@ -1160,6 +1396,7 @@ export function applyPreset(kind, uuid, obj) {
 		set.active = id;
 		return set;
 	});
+	switchTransportTo(uuid, id); // a preset is a new clip: the transport follows it
 	return { clipId: id, needsOrigin: !!preset.needsOrigin && !originOffsetOf(object) };
 }
 
@@ -1174,13 +1411,36 @@ export const autoKeyFor = writable(/** @type {string|null} */ (null));
 /** @param {string|null} uuid */
 export function setAutoKey(uuid) {
 	autoKeyFor.set(uuid);
+	// arming takes the reference pose; disarming forgets it
+	if (uuid) rememberAutoKeyReference(uuid);
+	else autoKeyReference.clear();
 }
 
 /**
- * Write a key at `seconds` for every channel whose CURRENT value differs from
- * what the clip already says there — called after a gizmo drag or an Inspector
- * transform edit. Existing tracks only: auto-key records the movement you are
- * building, it does not invent channels you never touched.
+ * The pose auto-key measures against: the base an armed object was captured at,
+ * or its live values when nothing has posed it yet. Kept per object so a drag can
+ * be compared with where the object STARTED, not with the clip.
+ * @type {Map<string, any>}
+ */
+const autoKeyReference = new Map();
+
+/** Channels worth watching for a change. Transform always; the look only where
+ * the object actually has it, so a box is never offered a light intensity.
+ * @param {any} object */
+function watchableChannels(object) {
+	return CHANNELS.filter((channel) => channel !== 'scale' && channelApplies(object, channel));
+}
+
+/**
+ * Write a key at `seconds` for every channel that CHANGED — called after a gizmo
+ * drag, an Inspector edit, or from the window's "key the pose" action.
+ *
+ * A channel with a track is compared against what the clip says at that time; a
+ * channel with NO track is compared against the reference pose and, if the user
+ * moved it, gets a track created (with a key at 0 holding the value it started
+ * from, so the movement runs FROM the original pose rather than snapping). That
+ * is the difference between recording an animation and filling in a table: arm
+ * REC, drag at 1s, and the movement exists.
  * @param {string} uuid @param {number} seconds @returns {number} keys written
  */
 export function captureAutoKey(uuid, seconds) {
@@ -1189,20 +1449,60 @@ export function captureAutoKey(uuid, seconds) {
 	const object = objectFor(uuid);
 	if (!clip || !object) return 0;
 	const at = Math.max(0, num(seconds));
-	/** @type {{trackId: string, v: number}[]} */
+	const reference = autoKeyReference.get(uuid) ?? null;
+	/** @type {{trackId: string|null, channel: string, v: number, from: number|null}[]} */
 	const writes = [];
-	for (const track of clip.tracks) {
-		const current = channelValue(object, track.channel);
-		const existing = sampleTrack(track, at);
-		const epsilon = STEPPED.has(track.channel) ? 0.5 : 1e-4;
-		if (existing !== null && Math.abs(existing - current) < epsilon) continue;
-		writes.push({ trackId: track.id, v: current });
+	const byChannel = new Map(clip.tracks.map((track) => [track.channel, track]));
+	// uniform scale is a legacy alias for the three axes; if a track already drives
+	// it, keep using that one rather than adding per-axis tracks beside it
+	const uniform = byChannel.get('scale');
+	for (const channel of watchableChannels(object)) {
+		const current = channelValue(object, channel);
+		const epsilon = STEPPED.has(channel) ? 0.5 : 1e-4;
+		const track = byChannel.get(channel) ?? (channel.startsWith('scale.') ? uniform : undefined);
+		if (track) {
+			const existing = sampleTrack(track, at);
+			if (existing !== null && Math.abs(existing - current) < epsilon) continue;
+			writes.push({ trackId: track.id, channel: track.channel, v: current, from: null });
+			continue;
+		}
+		// no track yet: only record a channel the user actually MOVED, which needs a
+		// reference pose to compare with (armed REC takes one)
+		const before = reference?.values?.[channel];
+		if (before === undefined || Math.abs(before - current) < epsilon) continue;
+		writes.push({ trackId: null, channel, v: current, from: at > 1e-4 ? before : null });
 	}
 	if (!writes.length) return 0;
 	beginAnimGesture(uuid, 'Auto-key');
-	for (const write of writes) addKey(uuid, write.trackId, at, write.v);
+	for (const write of writes) {
+		let trackId = write.trackId;
+		if (!trackId) {
+			trackId = addTrack(uuid, write.channel, object);
+			// addTrack seeds a demo two-key movement; auto-key owns this track, so
+			// replace it with just the pose the object came FROM
+			const fresh = activeClip(uuid)?.tracks.find((t) => t.id === trackId);
+			if (fresh) {
+				for (let i = fresh.keys.length - 1; i >= 0; i--) removeKey(uuid, trackId, i);
+				updateKey(uuid, trackId, 0, { t: 0, v: write.from ?? write.v });
+			}
+		}
+		addKey(uuid, trackId, at, write.v);
+	}
 	endAnimGesture();
+	// the new pose becomes the reference, so the NEXT drag is measured from here
+	rememberAutoKeyReference(uuid);
 	return writes.length;
+}
+
+/** Snapshot the object's values so the next change can be detected per channel.
+ * @param {string} uuid */
+export function rememberAutoKeyReference(uuid) {
+	const object = objectFor(uuid);
+	if (!object) return;
+	/** @type {Record<string, number>} */
+	const values = {};
+	for (const channel of watchableChannels(object)) values[channel] = channelValue(object, channel);
+	autoKeyReference.set(uuid, { values });
 }
 
 // --- saving ------------------------------------------------------------------
@@ -1231,7 +1531,7 @@ export function animationsSnapshot() {
  * restore at boot leaves it off. @param {any} saved @param {boolean} [replicate] */
 export function animationsRestore(saved, replicate = false) {
 	if (!saved || typeof saved !== 'object') return 0;
-	stopAll(); // never leave a preview running against objects that just changed
+	resetPreview(); // never leave a preview posing objects that just changed
 	/** @type {any} */
 	const clean = {};
 	for (const [uuid, raw] of Object.entries(/** @type {any} */ (saved))) {
@@ -1291,6 +1591,19 @@ function elapsedOf(p, now) {
 	return p.playing ? p.pausedAt + (now - p.at) * (p.speed || 1) : p.pausedAt;
 }
 
+/**
+ * Where a PARKED playhead sits, read straight off the transport instead of through
+ * the loop wrap: parking exactly at the end of a looping clip is a real thing to do
+ * (the End button), and `(2/2) % 1` is 0, so it used to read back as the start —
+ * which made "go to end" look like it did nothing and stepped the wrong way next.
+ * @param {Clip} clip @param {Play} [p]
+ */
+function parkedPosition(clip, p) {
+	const { from, to } = rangeOf(clip, p);
+	const raw = p?.reverse ? to - num(p?.pausedAt) : from + num(p?.pausedAt);
+	return Math.min(Math.max(raw, 0), Math.max(clip.duration, 0.001));
+}
+
 /** @param {string} uuid @param {Partial<Play>} patch @param {boolean} [replicate] */
 function setPlay(uuid, patch, replicate = false) {
 	playback.update((map) => ({
@@ -1318,13 +1631,33 @@ export function transportOf(uuid) {
 	const duration = clip ? Math.max(clip.duration, 0.001) : 0;
 	const reverse = !!p?.reverse;
 	const elapsed = p ? elapsedOf(p, syncedNow()) : 0;
+	const range = clip ? rangeOf(clip, p) : { from: 0, to: 0, span: 0 };
 	return {
 		playing: !!p?.playing,
 		reverse,
 		duration,
-		position: clip ? clipSecondsFor(clip, elapsed, reverse) : 0,
-		clipId: p?.clipId ?? ''
+		position: !clip ? 0 : p?.playing ? clipSecondsFor(clip, elapsed, reverse, p) : parkedPosition(clip, p),
+		clipId: p?.clipId ?? '',
+		rangeIn: range.from,
+		rangeOut: range.to,
+		ranged: !!clip && (range.from > 1e-6 || range.to < duration - 1e-6),
+		startedFrom: p?.startedFrom ?? 0
 	};
+}
+
+/** Set the A/B window playback loops inside (absolute clip seconds). Pass nulls
+ * to clear it. @param {string} uuid @param {number|null} from @param {number|null} to */
+export function setRange(uuid, from, to) {
+	const clip = clipOf(uuid, get(playback)[uuid]?.clipId);
+	if (!clip) return;
+	/** @type {any} */
+	const patch = {};
+	patch.rangeIn = from === null ? 0 : Math.max(0, num(from));
+	patch.rangeOut = to === null ? clip.duration : Math.max(patch.rangeIn + 0.01, num(to, clip.duration));
+	// restart the window so the playhead cannot sit outside it
+	patch.at = syncedNow();
+	patch.pausedAt = 0;
+	setPlay(uuid, patch, true);
 }
 
 /** Current clip seconds for an object (0 when idle). @param {string} uuid */
@@ -1348,14 +1681,17 @@ export function play(uuid, clipId, opts = {}) {
 	const obj = objectFor(uuid);
 	if (!obj) return;
 	const prev = playOf(uuid);
-	const id = clipId ?? prev.clipId;
+	const set = getAnimSet(uuid);
+	// a stale stored id (its clip was deleted, or a peer renamed the set) must not
+	// strand playback — fall back to the object's default clip
+	const asked = clipId ?? prev.clipId;
+	const id = set?.clips?.[asked] ? asked : (set?.active ?? asked);
 	const clip = clipOf(uuid, id);
 	if (!clip) return;
-	const set = getAnimSet(uuid);
 	ensureBase(uuid, obj);
 	const reverse = opts.reverse ?? false;
-	const from =
-		opts.from ?? (prev.pausedAt >= clip.duration && clip.loop === 'once' ? 0 : prev.pausedAt);
+	const { span } = rangeOf(clip, prev);
+	const from = opts.from ?? (prev.pausedAt >= span && clip.loop === 'once' ? 0 : prev.pausedAt);
 	setPlay(
 		uuid,
 		{
@@ -1364,7 +1700,11 @@ export function play(uuid, clipId, opts = {}) {
 			at: opts.at ?? syncedNow(),
 			pausedAt: from,
 			speed: opts.speed ?? prev.speed ?? 1,
-			reverse
+			reverse,
+			// where this run began, so Stop can come back to it rather than to the
+			// start of the clip (that was a real complaint: pressing stop threw away
+			// the frame you were working from)
+			startedFrom: from
 		},
 		opts.replicate !== false
 	);
@@ -1379,7 +1719,7 @@ function posePaused(uuid) {
 	const obj = objectFor(uuid);
 	const base = bases.get(uuid);
 	if (!p || p.playing || !clip || !obj || !base) return;
-	const seconds = clipSecondsFor(clip, p.pausedAt, !!p.reverse);
+	const seconds = parkedPosition(clip, p);
 	poseAt(obj, clip, seconds, base);
 	playheads.update((map) => ({ ...map, [uuid]: seconds }));
 }
@@ -1397,21 +1737,45 @@ export function pauseAll() {
 	for (const uuid of Object.keys(get(playback))) pause(uuid);
 }
 
-/** Stop and restore the pose captured when playback began. Omit `uuid` to stop
- * everything (the transport button passes a click event — guarded).
- * @param {string} [uuid] @param {{replicate?: boolean}} [opts] */
+/**
+ * Stop playing and return to the frame this run STARTED from — the deck-standard
+ * behaviour, and what "stop" has to mean while you are tuning a movement: pressing
+ * it used to rewind to the beginning of the clip and throw away the frame you had
+ * scrubbed to. `resetPreview` is the separate, explicit way back to the untouched
+ * pose. Omit `uuid` to stop everything (the transport button passes a click event
+ * — guarded).
+ * @param {string} [uuid] @param {{replicate?: boolean}} [opts]
+ */
 export function stop(uuid, opts = {}) {
 	if (typeof uuid !== 'string') return stopAll();
-	releaseBase(uuid);
-	if (get(playback)[uuid]) {
-		setPlay(uuid, { playing: false, pausedAt: 0, reverse: false }, opts.replicate !== false);
-	}
-	clearHead(uuid);
+	const p = get(playback)[uuid];
+	if (!p) return;
+	const back = num(p.startedFrom, 0);
+	setPlay(uuid, { playing: false, pausedAt: back, reverse: false }, opts.replicate !== false);
+	posePaused(uuid);
 }
 
 export function stopAll() {
-	for (const uuid of new Set([...bases.keys(), ...Object.keys(get(playback))])) stop(uuid);
-	playheads.set({});
+	for (const uuid of Object.keys(get(playback))) stop(uuid);
+}
+
+/**
+ * Drop the preview entirely: the object goes back to the pose it had before
+ * anything previewed it and the playhead rewinds. This is the one that RELEASES
+ * the captured base, so the next play captures a fresh one.
+ * @param {string} [uuid]
+ */
+export function resetPreview(uuid) {
+	if (typeof uuid !== 'string') {
+		for (const id of new Set([...bases.keys(), ...Object.keys(get(playback))])) resetPreview(id);
+		playheads.set({});
+		return;
+	}
+	releaseBase(uuid);
+	if (get(playback)[uuid]) {
+		setPlay(uuid, { playing: false, pausedAt: 0, reverse: false, startedFrom: 0 }, true);
+	}
+	clearHead(uuid);
 }
 
 /** Preview a specific time without running (scrubber drag). LOCAL — a scrub is a
@@ -1421,16 +1785,31 @@ export function scrub(uuid, seconds, clipId) {
 	const p = playOf(uuid);
 	const clip = clipOf(uuid, clipId ?? p.clipId);
 	if (!obj || !clip) return;
-	const at = Math.max(0, num(seconds));
+	// the caller works in absolute clip seconds; the transport counts ELAPSED from
+	// the A/B window's start, so convert once here
+	const { from } = rangeOf(clip, p);
+	const position = Math.min(Math.max(num(seconds), 0), clip.duration);
+	const elapsed = Math.max(0, position - from);
 	const base = ensureBase(uuid, obj);
 	setPlay(uuid, {
 		clipId: clipId ?? (p.clipId || DEFAULT_CLIP),
-		pausedAt: at,
+		pausedAt: elapsed,
 		at: syncedNow(),
-		reverse: false // a scrub reads the timeline left to right
+		reverse: false, // a scrub reads the timeline left to right
+		startedFrom: elapsed // Stop comes back to the frame you scrubbed to
 	});
-	poseAt(obj, clip, clipSecondsFor(clip, at, false), base);
-	playheads.update((map) => ({ ...map, [uuid]: at }));
+	poseAt(obj, clip, position, base);
+	playheads.update((map) => ({ ...map, [uuid]: position }));
+}
+
+/** Every distinct key time in the active clip, sorted — what the prev/next-key
+ * transport buttons step through. @param {string} uuid @param {string} [clipId] */
+export function keyTimes(uuid, clipId) {
+	const clip = clipOf(uuid, clipId);
+	if (!clip) return [];
+	const times = new Set([0]);
+	for (const track of clip.tracks) for (const key of track.keys) times.add(Math.round(key.t * 1e4) / 1e4);
+	return [...times].sort((a, b) => a - b);
 }
 
 /** @param {string} uuid @param {number} speed */
@@ -1439,6 +1818,43 @@ export function setSpeed(uuid, speed) {
 	const p = playOf(uuid);
 	const now = syncedNow();
 	setPlay(uuid, { pausedAt: elapsedOf(p, now), at: now, speed: Math.max(0.05, num(speed, 1)) }, true);
+}
+
+/**
+ * Park every previewed object at its BASE pose while a serializer reads the scene,
+ * and return a closure that puts the previews back.
+ *
+ * The same rule as flow animations (golden rule 10): a save must carry the pose
+ * the user authored, not the frame a scrub happens to be showing. This matters
+ * more now that a scrub SURVIVES switching objects — the previewed pose can sit
+ * there for minutes, and without this an autosave would bake it.
+ * flowRuntime.parkAnimatedAtBase calls in here, so every existing serializer gets
+ * it for free.
+ * @returns {() => void} idempotent restore
+ */
+export function parkAuthoredAtBase() {
+	/** @type {string[]} */
+	const parked = [];
+	for (const [uuid, base] of bases) {
+		const object = objectFor(uuid);
+		if (!object) continue;
+		restoreBase(object, base);
+		parked.push(uuid);
+	}
+	let done = false;
+	return () => {
+		if (done) return;
+		done = true;
+		for (const uuid of parked) {
+			const p = get(playback)[uuid];
+			const clip = clipOf(uuid, p?.clipId);
+			const object = objectFor(uuid);
+			const base = bases.get(uuid);
+			if (!p || !clip || !object || !base) continue;
+			const elapsed = elapsedOf(p, syncedNow());
+			poseAt(object, clip, clipSecondsFor(clip, elapsed, !!p.reverse, p), base);
+		}
+	};
 }
 
 /** Re-pose everything that is playing. Per-frame from the scene loop (Scene.svelte useTask). */
@@ -1460,9 +1876,11 @@ export function tickAnimationPreview() {
 		if (!clip || !obj) continue;
 		const base = ensureBase(uuid, obj);
 		const elapsed = elapsedOf(p, now);
-		const dur = Math.max(clip.duration, 0.001);
-		const done = clip.loop === 'once' && elapsed >= dur;
-		const seconds = clipSecondsFor(clip, done ? dur : elapsed, !!p.reverse);
+		// a once-clip ends at the end of its A/B WINDOW, which is the whole clip
+		// unless in/out points were set
+		const { span } = rangeOf(clip, p);
+		const done = clip.loop === 'once' && elapsed >= span;
+		const seconds = clipSecondsFor(clip, done ? span : elapsed, !!p.reverse, p);
 		poseAt(obj, clip, seconds, base);
 		heads[uuid] = seconds;
 		any = true;
@@ -1474,6 +1892,6 @@ export function tickAnimationPreview() {
 	for (const uuid of finished) {
 		const p = get(playback)[uuid];
 		const clip = clipOf(uuid, p?.clipId);
-		setPlay(uuid, { playing: false, pausedAt: clip ? clip.duration : 0 });
+		setPlay(uuid, { playing: false, pausedAt: clip ? rangeOf(clip, p).span : 0 });
 	}
 }

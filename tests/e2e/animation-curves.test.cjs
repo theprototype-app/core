@@ -63,22 +63,28 @@ h.run(async () => {
 		const clip = set.clips[set.active];
 
 		// v1 math, computed here from the SAME easing solver, so the comparison is
-		// against the old formula and not against the new code's own output.
+		// against the old formula and not against the new code's own output. Sampled
+		// over [0, duration) — the endpoint is where the old LOOP formula wrapped to
+		// the start, while scrubbing to the very end now shows the end (checked
+		// separately below, because showing the first pose there was never right).
 		const samples = [];
-		for (let i = 0; i <= 9; i++) {
-			const seconds = (i / 9) * 2;
+		for (let i = 0; i < 10; i++) {
+			const seconds = (i / 10) * 2;
 			const phase = (seconds / 2) % 1;
 			const expected = 1 + (5 - 1) * ap.cubicBezierEase(bezier, phase);
 			ap.scrub(obj.uuid, seconds);
 			samples.push([expected, obj.position.y]);
 		}
-		ap.stop(obj.uuid);
+		ap.scrub(obj.uuid, 2);
+		const atEnd = obj.position.y;
+		ap.resetPreview(obj.uuid);
 		return {
 			uuid: obj.uuid,
 			clipIds: Object.keys(set.clips),
 			keys: clip.tracks[0].keys.map((k) => [k.t, k.v, !!k.ease]),
 			trackId: clip.tracks[0].id,
 			worst: Math.max(...samples.map(([e, a]) => Math.abs(e - a))),
+			atEnd,
 			samples
 		};
 	});
@@ -91,6 +97,10 @@ h.run(async () => {
 	);
 	h.check(legacy.worst < 1e-6, `the migrated clip poses identically at 10 times (worst delta ${legacy.worst.toExponential(1)})`);
 	h.check(legacy.keys[0][1] !== legacy.keys[1][1], 'the migration is exact, not a reset to defaults');
+	h.check(
+		Math.abs(legacy.atEnd - 5) < 1e-6,
+		`and scrubbing to the very end shows the END pose (${legacy.atEnd}, not the wrapped start)`
+	);
 
 	// ---------- 2. easing is PER SEGMENT ----------
 	const perSegment = await A.page.evaluate((state) => {
@@ -123,7 +133,10 @@ h.run(async () => {
 		'the two segments carry different easings at the same time'
 	);
 
-	// ---------- 3. key removal, and duration = clip length ----------
+	// ---------- 3. key removal, LENGTH vs RETIME vs SPEED ----------
+	// The three are separate on purpose: length is the clip's extent and moves no
+	// keys, retime scales the movement itself, and speed is playback rate that
+	// changes no data at all. Typing in the length field used to secretly retime.
 	const edits = await A.page.evaluate((state) => {
 		const ap = window.__stores.animationPreview;
 		const { uuid, trackId } = state;
@@ -135,41 +148,54 @@ h.run(async () => {
 			return set.clips[set.active];
 		};
 		const afterRemove = read().tracks[0].keys.length;
+		const startTimes = read().tracks[0].keys.map((k) => k.t);
 
-		// the movement FILLS the clip, so halving the duration halves the key times
+		// LENGTH: keys keep their times, in both directions
 		ap.updateAnim(uuid, { duration: 1 });
-		const scaled = read().tracks[0].keys.map((k) => k.t);
+		const shortened = { times: read().tracks[0].keys.map((k) => k.t), duration: read().duration };
+		ap.updateAnim(uuid, { duration: 6 });
+		const lengthened = { times: read().tracks[0].keys.map((k) => k.t), duration: read().duration };
 
-		// now build a deliberate TAIL: stretch to 4s (the movement still fills it, so
-		// the keys scale to 0..4), then drag the last key back to 1s. Moving a key
-		// never shrinks the clip, so the movement now ends 3s before the loop does.
-		ap.updateAnim(uuid, { duration: 4 });
-		const stretched = read().tracks[0].keys.map((k) => k.t);
-		ap.updateKey(uuid, trackId, 1, { t: 1 });
-		const tail = read();
-		// a further length change must leave that hold alone
-		ap.updateAnim(uuid, { duration: 8 });
-		const held = read().tracks[0].keys.map((k) => k.t);
-		const heldDuration = read().duration;
+		// RETIME: the movement's own span becomes the asked-for length
+		const ratio = ap.retimeClip(uuid, 1);
+		const retimed = { times: read().tracks[0].keys.map((k) => k.t), duration: read().duration };
+		ap.retimeClip(uuid, 4);
+		const stretched = { times: read().tracks[0].keys.map((k) => k.t), duration: read().duration };
+
+		// SPEED: no key or length is touched
+		ap.setSpeed(uuid, 2);
+		let pb;
+		ap.playback.subscribe((v) => (pb = v))();
+		const afterSpeed = { times: read().tracks[0].keys.map((k) => k.t), duration: read().duration, speed: pb[uuid]?.speed };
 
 		// a track never loses its last key
 		ap.removeKey(uuid, trackId, 0);
 		ap.removeKey(uuid, trackId, 0);
 		const floor = read().tracks[0].keys.length;
-		return { afterRemove, scaled, stretched, tailKeys: tail.tracks[0].keys.map((k) => k.t), held, heldDuration, floor };
+		return { afterRemove, startTimes, shortened, lengthened, ratio, retimed, stretched, afterSpeed, floor };
 	}, { uuid: legacy.uuid, trackId: legacy.trackId });
 	h.check(edits.afterRemove === 2, `a key can be removed (${edits.afterRemove} left)`);
 	h.check(
-		Math.abs(edits.scaled[1] - 1) < 1e-6,
-		`shortening a clip that the movement fills rescales its keys (${JSON.stringify(edits.scaled)})`
+		JSON.stringify(edits.shortened.times) === JSON.stringify(edits.startTimes) && edits.shortened.duration === 1,
+		`shortening the clip LENGTH moves no keys (${JSON.stringify(edits.shortened.times)} in a ${edits.shortened.duration}s clip)`
 	);
 	h.check(
-		Math.abs(edits.stretched[1] - 4) < 1e-6,
-		`lengthening rescales it the same way (${JSON.stringify(edits.stretched)})`
+		JSON.stringify(edits.lengthened.times) === JSON.stringify(edits.startTimes) && edits.lengthened.duration === 6,
+		`and neither does lengthening it (${JSON.stringify(edits.lengthened.times)} in a ${edits.lengthened.duration}s clip)`
 	);
 	h.check(
-		Math.abs(edits.tailKeys[1] - 1) < 1e-6 && Math.abs(edits.held[1] - 1) < 1e-6 && edits.heldDuration === 8,
-		`a clip with a hold at the end keeps its key times (${JSON.stringify(edits.held)} in a ${edits.heldDuration}s clip)`
+		Math.abs(edits.retimed.times[1] - 1) < 1e-6 && edits.retimed.duration === 1,
+		`RETIME scales the movement to the length asked for (${JSON.stringify(edits.retimed.times)})`
+	);
+	h.check(
+		Math.abs(edits.stretched.times[1] - 4) < 1e-6,
+		`in both directions, keeping its shape (${JSON.stringify(edits.stretched.times)})`
+	);
+	h.check(
+		JSON.stringify(edits.afterSpeed.times) === JSON.stringify(edits.stretched.times) &&
+			edits.afterSpeed.duration === edits.stretched.duration &&
+			edits.afterSpeed.speed === 2,
+		`SPEED changes no data at all (${edits.afterSpeed.speed}x, keys ${JSON.stringify(edits.afterSpeed.times)})`
 	);
 	h.check(edits.floor === 1, 'a track keeps at least one key');
 
@@ -194,13 +220,13 @@ h.run(async () => {
 		const visibleMid = obj.visible;
 		ap.scrub(obj.uuid, 1);
 		const visibleEnd = obj.visible;
-		ap.stop(obj.uuid);
+		ap.resetPreview(obj.uuid); // Stop holds the frame; this is what undoes it
 		const visibleAfter = obj.visible;
 		return { mid, visibleMid, visibleEnd, visibleAfter };
 	});
 	h.check(stepped.mid === 1, `a stepped channel holds its left key (${stepped.mid}, not 0.5)`);
 	h.check(stepped.visibleMid === true && stepped.visibleEnd === false, 'visibility switches at the key, not across it');
-	h.check(stepped.visibleAfter === true, 'and Stop restores the base visibility');
+	h.check(stepped.visibleAfter === true, 'and Clear preview restores the base visibility');
 
 	// ---------- 5. the DOOR: rotation turns about the object's origin ----------
 	const door = await A.page.evaluate(async () => {
@@ -439,9 +465,621 @@ h.run(async () => {
 	);
 	h.check(clipsAfter === clipsBefore + 1, `and its actions run (${clipsBefore} -> ${clipsAfter} clips)`);
 	const menuGone = await A.page.evaluate(
-		() => !document.body.textContent?.includes('Keys on every movement')
+		() => !document.body.textContent?.includes('Keys on every channel')
 	);
 	h.check(menuGone, 'the menu closes after a pick');
+
+	// ---------- 9b. the GRAPH view drags a key on BOTH axes ----------
+	// reported: "on Graph view drag curve points with mouse around X/Y axis, now it
+	// drags only on X axis". The y axis is derived from the keys, so it used to
+	// breathe under the cursor while dragging and the value chased its own mapping.
+	const graph = await A.page.evaluate((id) => {
+		const s = window.__stores;
+		s.objectActions.selectObject(id, false);
+		const ap = s.animationPreview;
+		// the + menu just added an empty clip, so pick one that actually has keys
+		const withKeys = ap.clipList(id).find((/** @type {any} */ c) => c.tracks > 0);
+		if (withKeys) ap.setActiveClip(id, withKeys.id);
+		const clip = ap.activeClip(id);
+		return { keys: clip.tracks[0].keys.map((/** @type {any} */ k) => [k.t, k.v]), duration: clip.duration };
+	}, first);
+	await A.page.getByRole('button', { name: 'Graph', exact: true }).click();
+	await A.page.waitForTimeout(300);
+	// take the handle's REAL screen centre — a 5px circle does not forgive an
+	// arithmetic guess at the plot's inner width
+	const lastKey = graph.keys[graph.keys.length - 1];
+	const handle = await A.page.evaluate(() => {
+		const circles = [...document.querySelectorAll('#animation-timeline circle')];
+		const last = circles[circles.length - 1];
+		const r = last?.getBoundingClientRect();
+		return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+	});
+	h.check(!!handle, 'the graph draws draggable key handles');
+	await A.page.mouse.move(handle.x, handle.y);
+	await A.page.mouse.down();
+	await A.page.mouse.move(handle.x - 30, handle.y + 40, { steps: 6 });
+	await A.page.mouse.move(handle.x - 34, handle.y + 46, { steps: 3 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	const afterGraph = await A.page.evaluate((id) => {
+		const clip = window.__stores.animationPreview.activeClip(id);
+		return clip.tracks[0].keys.map((/** @type {any} */ k) => [k.t, k.v]);
+	}, first);
+	const movedKey = afterGraph[afterGraph.length - 1];
+	h.check(
+		movedKey[0] < lastKey[0] - 0.02,
+		`dragging in the graph moves the key in TIME (${lastKey[0]} -> ${movedKey[0]})`
+	);
+	h.check(
+		movedKey[1] < lastKey[1] - 0.05,
+		`and in VALUE on the same drag (${lastKey[1]} -> ${movedKey[1].toFixed(3)})`
+	);
+
+	// ---------- 9c. dragging the ruler scrubs continuously ----------
+	await A.page.getByRole('button', { name: 'Sheet', exact: true }).click();
+	await A.page.waitForTimeout(250);
+	// the ruler is the first rect in the plot; measure IT, not the whole svg
+	const ruler = await A.page.evaluate(() => {
+		const r = document.querySelector('#animation-timeline rect')?.getBoundingClientRect();
+		return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null;
+	});
+	h.check(!!ruler, 'the timeline has a ruler to drag');
+	await A.page.mouse.move(ruler.x + 10, ruler.y + ruler.h / 2);
+	await A.page.mouse.down();
+	/** @type {number[]} */
+	const heads = [];
+	for (const frac of [0.3, 0.5, 0.7]) {
+		await A.page.mouse.move(ruler.x + ruler.w * frac, ruler.y + ruler.h / 2, { steps: 3 });
+		heads.push(
+			await A.page.evaluate((id) => window.__stores.animationPreview.playheadOf(id), first)
+		);
+	}
+	await A.page.mouse.up();
+	h.check(
+		heads[0] < heads[1] && heads[1] < heads[2],
+		`dragging along the ruler sweeps the playhead (${heads.map((n) => n.toFixed(2)).join(' -> ')}s)`
+	);
+
+	// ---------- 9c2. multi-select, the right-click GRAB, and no stacked keys -------
+	// (all with real mouse gestures — this is interaction code, so nothing here is
+	//  worth asserting through the store alone)
+	const multiSetup = await A.page.evaluate((id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		s.objectActions.selectObject(id, false);
+		// one clip, one channel, three keys at 0 / 0.5 / 1
+		const clipId = ap.createClip(id, 'Multi keys');
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', id);
+		const track = ap.addTrack(id, 'pos.y', obj, clipId);
+		ap.updateKey(id, track, 0, { t: 0, v: 0 }, clipId);
+		ap.updateKey(id, track, 1, { t: 0.5, v: 1 }, clipId);
+		ap.addKey(id, track, 1, 2, { clipId });
+		ap.updateAnim(id, { duration: 2, loop: 'loop' }, clipId);
+		return { keys: ap.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => [k.t, k.v]) };
+	}, first);
+	h.check(multiSetup.keys.length === 3, `three keys to work with (${JSON.stringify(multiSetup.keys)})`);
+	await A.page.waitForTimeout(350);
+
+	/** the on-screen centres of the sheet's key diamonds */
+	const diamonds = () =>
+		A.page.evaluate(() =>
+			[...document.querySelectorAll('#animation-timeline rect[transform^="rotate(45"]')].map((d) => {
+				const r = d.getBoundingClientRect();
+				return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+			})
+		);
+	const keyTimes = () =>
+		A.page.evaluate(
+			(id) => window.__stores.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t),
+			first
+		);
+
+	let dots = await diamonds();
+	h.check(dots.length === 3, `the sheet draws all three (${dots.length})`);
+	// shift-click the second and third, then drag the third: BOTH must move
+	await A.page.mouse.click(dots[1].x, dots[1].y);
+	await A.page.keyboard.down('Shift');
+	await A.page.mouse.click(dots[2].x, dots[2].y);
+	await A.page.keyboard.up('Shift');
+	await A.page.waitForTimeout(200);
+	const selCount = await A.page.evaluate(
+		() => document.body.textContent?.match(/(\d+) keys selected/)?.[1] ?? '0'
+	);
+	h.check(selCount === '2', `shift-click builds a selection (${selCount} keys)`);
+	const beforeDrag = await keyTimes();
+	dots = await diamonds();
+	await A.page.mouse.move(dots[2].x, dots[2].y);
+	await A.page.mouse.down();
+	await A.page.mouse.move(dots[2].x + 40, dots[2].y, { steps: 5 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(250);
+	const afterDrag = await keyTimes();
+	h.check(
+		afterDrag[0] === beforeDrag[0] &&
+			afterDrag[1] > beforeDrag[1] + 0.05 &&
+			afterDrag[2] > beforeDrag[2] + 0.05,
+		`dragging one moves every SELECTED key and leaves the rest (${JSON.stringify(beforeDrag)} -> ${JSON.stringify(afterDrag)})`
+	);
+
+	// right-click LOCKS the selection to the pointer; a click places it, Esc undoes
+	dots = await diamonds();
+	const beforeGrab = await keyTimes();
+	await A.page.mouse.move(dots[2].x, dots[2].y);
+	await A.page.mouse.click(dots[2].x, dots[2].y, { button: 'right' });
+	await A.page.waitForTimeout(200);
+	const grabbing = await A.page.evaluate(() => /moving key|moving \d+ keys/.test(document.body.textContent ?? ''));
+	h.check(grabbing, 'right-clicking a key locks it to the pointer');
+	await A.page.mouse.move(dots[2].x - 60, dots[2].y, { steps: 6 });
+	await A.page.waitForTimeout(150);
+	const midGrab = await keyTimes();
+	h.check(
+		midGrab[midGrab.length - 1] < beforeGrab[beforeGrab.length - 1] - 0.05,
+		`it follows the pointer with no button held (${beforeGrab[2]} -> ${midGrab[2]})`
+	);
+	await A.page.mouse.down();
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(200);
+	const placed = await keyTimes();
+	const stillGrabbing = await A.page.evaluate(() => /moving key|moving \d+ keys/.test(document.body.textContent ?? ''));
+	h.check(!stillGrabbing, 'a click places it');
+	h.check(
+		Math.abs(placed[placed.length - 1] - midGrab[midGrab.length - 1]) < 0.2,
+		`and it stays where it was placed (${placed[2]})`
+	);
+
+	// Escape puts a grab back
+	dots = await diamonds();
+	const beforeCancel = await keyTimes();
+	await A.page.mouse.click(dots[1].x, dots[1].y); // single selection
+	await A.page.mouse.click(dots[1].x, dots[1].y, { button: 'right' });
+	await A.page.mouse.move(dots[1].x + 70, dots[1].y, { steps: 5 });
+	await A.page.waitForTimeout(150);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(250);
+	const cancelled = await keyTimes();
+	h.check(
+		JSON.stringify(cancelled) === JSON.stringify(beforeCancel),
+		`Escape puts a grab back exactly (${JSON.stringify(cancelled)})`
+	);
+
+	// a double-click ON a key must not stack a second one on top of it
+	dots = await diamonds();
+	const beforeDbl = (await keyTimes()).length;
+	await A.page.mouse.dblclick(dots[1].x, dots[1].y);
+	await A.page.waitForTimeout(250);
+	const afterDbl = (await keyTimes()).length;
+	h.check(afterDbl === beforeDbl, `double-clicking a key selects it instead of stacking (${beforeDbl} -> ${afterDbl})`);
+	// but double-clicking clear space still inserts
+	const gap = await A.page.evaluate(() => {
+		const svg = document.querySelector('#animation-timeline');
+		const r = svg.getBoundingClientRect();
+		return { x: r.x + r.width * 0.85, y: r.y + 16 + 11 };
+	});
+	await A.page.mouse.dblclick(gap.x, gap.y);
+	await A.page.waitForTimeout(250);
+	h.check((await keyTimes()).length === beforeDbl + 1, 'and empty space still inserts one');
+
+	// ---------- 9d. the transport deck, in real icons and real buttons ----------
+	const deck = await A.page.evaluate((id) => {
+		const s = window.__stores;
+		s.objectActions.selectObject(id, false);
+		const ids = [
+			'animation-rewind', 'animation-prev-key', 'animation-play-back',
+			'animation-play', 'animation-stop', 'animation-next-key', 'animation-end'
+		];
+		return {
+			present: ids.filter((x) => !!document.getElementById(x)),
+			// buttons must carry ICONS, not emoji glyphs
+			svgs: ids.filter((x) => !!document.getElementById(x)?.querySelector('svg')),
+			emoji: ids.filter((x) => /[⏩⏪⏸⏹▶⏮⏭■]/.test(document.getElementById(x)?.textContent ?? ''))
+		};
+	}, first);
+	h.check(deck.present.length === 7, `the deck offers start/prev/back/play/stop/next/end (${deck.present.length})`);
+	h.check(deck.svgs.length === 7, `each one draws an icon (${deck.svgs.length}/7)`);
+	h.check(deck.emoji.length === 0, `and none of them is an emoji glyph (${deck.emoji.join(',') || 'none'})`);
+
+	// prev/next key STEP between key times
+	const stepping = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		const times = ap.keyTimes(id);
+		ap.scrub(id, 0);
+		document.getElementById('animation-next-key')?.click();
+		await new Promise((r) => setTimeout(r, 200));
+		const afterNext = ap.playheadOf(id);
+		document.getElementById('animation-end')?.click();
+		await new Promise((r) => setTimeout(r, 200));
+		const atEnd = ap.playheadOf(id);
+		document.getElementById('animation-prev-key')?.click();
+		await new Promise((r) => setTimeout(r, 200));
+		const afterPrev = ap.playheadOf(id);
+		return { times, afterNext, atEnd, afterPrev, duration: ap.activeClip(id).duration };
+	}, first);
+	h.check(
+		stepping.times.includes(stepping.afterNext) && stepping.afterNext > 0,
+		`Next key lands ON a key (${stepping.afterNext}s of ${JSON.stringify(stepping.times)})`
+	);
+	h.check(
+		Math.abs(stepping.atEnd - stepping.duration) < 1e-6,
+		`End goes to the end of the clip (${stepping.atEnd}s)`
+	);
+	h.check(stepping.afterPrev < stepping.atEnd, `Previous key steps back (${stepping.afterPrev}s)`);
+
+	// ---------- 9e. STOP returns to where the run began, not to the clip start ----
+	// reported: "stop and return to the pose you started from put you at the
+	// beginning of animation, not where you started it from initially"
+	const stopping = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		ap.scrub(id, 1); // park at 1s
+		const from = ap.playheadOf(id);
+		ap.play(id, undefined, { from: 1 });
+		await new Promise((r) => setTimeout(r, 400));
+		const running = ap.playheadOf(id);
+		ap.stop(id);
+		const stopped = ap.playheadOf(id);
+		// and the explicit reset is what goes back to the untouched pose
+		ap.resetPreview(id);
+		const reset = ap.playheadOf(id);
+		return { from, running, stopped, reset };
+	}, first);
+	h.check(stopping.running > stopping.from, `playing advances from the parked frame (${stopping.from} -> ${stopping.running.toFixed(2)}s)`);
+	h.check(
+		Math.abs(stopping.stopped - stopping.from) < 0.02,
+		`Stop returns to the frame the run STARTED from (${stopping.stopped.toFixed(2)}s, not 0)`
+	);
+	h.check(stopping.reset === 0, `and Clear preview is what rewinds to 0 (${stopping.reset}s)`);
+
+	// ---------- 9f. the A/B window loops only the seconds you are tuning ----------
+	const ab = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		const clip = ap.activeClip(id);
+		ap.setRange(id, 1, clip.duration); // A at 1s
+		const t = ap.transportOf(id);
+		ap.play(id);
+		const seen = [];
+		for (let i = 0; i < 8; i++) {
+			await new Promise((r) => setTimeout(r, 120));
+			seen.push(ap.playheadOf(id));
+		}
+		ap.stop(id);
+		ap.setRange(id, null, null);
+		const cleared = ap.transportOf(id);
+		return {
+			ranged: t.ranged,
+			rangeIn: t.rangeIn,
+			min: Math.min(...seen),
+			max: Math.max(...seen),
+			duration: clip.duration,
+			clearedRanged: cleared.ranged
+		};
+	}, first);
+	h.check(ab.ranged && Math.abs(ab.rangeIn - 1) < 1e-6, `an A point sets a play window (in at ${ab.rangeIn}s)`);
+	h.check(
+		ab.min >= 0.98,
+		`playback never leaves the window (lowest playhead seen ${ab.min.toFixed(2)}s, A at 1s)`
+	);
+	h.check(ab.max <= ab.duration + 1e-6, `and never past B (${ab.max.toFixed(2)}s of ${ab.duration}s)`);
+	h.check(!ab.clearedRanged, 'clearing A/B plays the whole clip again');
+
+	// ---------- 9g. zoom narrows the view without touching the data ----------
+	const zoom = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const before = document.querySelector('#animation-timeline')?.textContent ?? '';
+		const keysBefore = JSON.stringify(s.animationPreview.activeClip(id).tracks[0].keys);
+		document.getElementById('animation-fit')?.click();
+		await new Promise((r) => setTimeout(r, 150));
+		const fit = [...document.querySelectorAll('#animation-timeline text')].map((t) => t.textContent);
+		return { before, fit, keysBefore, keysAfter: JSON.stringify(s.animationPreview.activeClip(id).tracks[0].keys) };
+	}, first);
+	h.check(zoom.keysBefore === zoom.keysAfter, 'zooming and fitting never touch the keys');
+	// ctrl+wheel over the plot zooms in: the visible span shrinks
+	const spanBefore = await A.page.evaluate(
+		() => document.querySelector('.font-mono.text-\\[10px\\]')?.textContent ?? ''
+	);
+	const plotBox = await A.page.locator('#animation-timeline').boundingBox();
+	await A.page.mouse.move(plotBox.x + plotBox.width / 2, plotBox.y + plotBox.height / 2);
+	await A.page.keyboard.down('Control');
+	await A.page.mouse.wheel(0, -240);
+	await A.page.keyboard.up('Control');
+	await A.page.waitForTimeout(250);
+	const spanAfter = await A.page.evaluate(
+		() => document.querySelector('.font-mono.text-\\[10px\\]')?.textContent ?? ''
+	);
+	const parseSpan = (/** @type {string} */ s) => {
+		const m = s.match(/([\d.]+)–([\d.]+)s/);
+		return m ? +m[2] - +m[1] : null;
+	};
+	h.check(
+		parseSpan(spanBefore) !== null && parseSpan(spanAfter) < parseSpan(spanBefore),
+		`ctrl+wheel zooms the time axis in (${spanBefore.trim()} -> ${spanAfter.trim()})`
+	);
+	await A.page.evaluate(() => document.getElementById('animation-fit')?.click());
+
+	// ---------- 10. LOOK channels: opacity, colour, and what applies to what ----------
+	const look = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		s.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 250));
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.children[g.children.length - 1];
+		const material = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+		const before = { opacity: material.opacity, transparent: material.transparent };
+
+		const fade = ap.addTrack(obj.uuid, 'opacity', obj);
+		ap.updateKey(obj.uuid, fade, 0, { t: 0, v: 1 });
+		ap.updateKey(obj.uuid, fade, 1, { t: 1, v: 0 });
+		ap.updateAnim(obj.uuid, { duration: 1, loop: 'once' });
+		ap.scrub(obj.uuid, 0.5);
+		const mid = { opacity: material.opacity, transparent: material.transparent };
+		// Stop holds the frame the run started from (here: the scrubbed one) — it is
+		// Clear preview that undoes the look
+		ap.stop(obj.uuid);
+		const stopped = { opacity: material.opacity };
+		ap.resetPreview(obj.uuid);
+		const restored = { opacity: material.opacity, transparent: material.transparent };
+
+		// a light channel belongs to a light, a metalness channel to a material
+		s.commandsHandler.sceneCommand('/light point');
+		await new Promise((r) => setTimeout(r, 250));
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const light = g.children.findLast((/** @type {any} */ c) => c.isLight);
+		return {
+			before,
+			mid,
+			stopped,
+			restored,
+			boxOffersLight: ap.channelApplies(obj, 'light.intensity'),
+			lightOffersLight: light ? ap.channelApplies(light, 'light.intensity') : null,
+			lightOffersMetalness: light ? ap.channelApplies(light, 'metalness') : null,
+			isLook: [ap.isMaterialChannel('opacity'), ap.isMaterialChannel('pos.y')]
+		};
+	});
+	h.check(
+		Math.abs(look.mid.opacity - 0.5) < 0.02,
+		`an opacity channel fades the material (${look.mid.opacity?.toFixed(2)} at half way)`
+	);
+	h.check(
+		look.mid.transparent === true,
+		'switching the transparent flag on, or the fade would do nothing'
+	);
+	h.check(
+		Math.abs(look.stopped.opacity - look.mid.opacity) < 0.02,
+		`Stop holds the frame it stopped on (${look.stopped.opacity?.toFixed(2)})`
+	);
+	h.check(
+		look.restored.opacity === look.before.opacity && look.restored.transparent === look.before.transparent,
+		`and Clear preview puts the look back (${look.restored.opacity}/${look.restored.transparent})`
+	);
+	h.check(
+		look.boxOffersLight === false && look.lightOffersLight === true && look.lightOffersMetalness === false,
+		`channels are offered only where they apply (box light ${look.boxOffersLight}, light ${look.lightOffersLight}, light metalness ${look.lightOffersMetalness})`
+	);
+	h.check(look.isLook[0] === true && look.isLook[1] === false, 'look channels are flagged as such');
+
+	// ---------- 11. picking a clip actually switches what plays ----------
+	// reported: selecting another clip in the list left the PREVIOUS one running
+	const switching = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		s.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 250));
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.children[g.children.length - 1];
+		obj.position.set(0, 0, 0);
+		obj.updateMatrix();
+		// clip A moves +y, clip B moves +x
+		const up = ap.createClip(obj.uuid, 'Up');
+		const upTrack = ap.addTrack(obj.uuid, 'pos.y', obj, up);
+		ap.updateKey(obj.uuid, upTrack, 1, { t: 1, v: 4 }, up);
+		ap.updateAnim(obj.uuid, { duration: 1, loop: 'loop' }, up);
+		const side = ap.createClip(obj.uuid, 'Side');
+		const sideTrack = ap.addTrack(obj.uuid, 'pos.x', obj, side);
+		ap.updateKey(obj.uuid, sideTrack, 1, { t: 1, v: 4 }, side);
+		ap.updateAnim(obj.uuid, { duration: 1, loop: 'loop' }, side);
+
+		ap.setActiveClip(obj.uuid, up);
+		ap.play(obj.uuid);
+		await new Promise((r) => setTimeout(r, 350));
+		const onUp = { y: obj.position.y, x: obj.position.x, clip: ap.transportOf(obj.uuid).clipId === up };
+		// now pick the other clip in the list
+		ap.setActiveClip(obj.uuid, side);
+		await new Promise((r) => setTimeout(r, 450));
+		const onSide = {
+			y: obj.position.y,
+			x: obj.position.x,
+			clip: ap.transportOf(obj.uuid).clipId === side,
+			active: ap.getAnimSet(obj.uuid).active === side
+		};
+		ap.stop(obj.uuid);
+		return { onUp, onSide };
+	});
+	h.check(switching.onUp.y > 0.05 && switching.onUp.clip, `the first clip plays (y=${switching.onUp.y.toFixed(2)})`);
+	h.check(
+		switching.onSide.clip && switching.onSide.active,
+		'picking another clip moves the transport onto it, not just the editor'
+	);
+	h.check(
+		Math.abs(switching.onSide.y) < 1e-6,
+		`the previous clip stops driving the object (y back to ${switching.onSide.y.toFixed(3)})`
+	);
+	h.check(
+		switching.onSide.x > 0.05,
+		`and the newly picked one runs (x=${switching.onSide.x.toFixed(2)})`
+	);
+
+	// ---------- 11b. a NEW clip (or a preset) takes over playback too ----------
+	// reported: "after creating a new clip it still plays the old animation, so I
+	// have to select some clip and then back to a newly created one"
+	const created = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		s.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 250));
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.children[g.children.length - 1];
+		obj.position.set(0, 0, 0);
+		obj.updateMatrix();
+		const spin = ap.createClip(obj.uuid, 'Spin');
+		const t = ap.addTrack(obj.uuid, 'pos.y', obj, spin);
+		ap.updateKey(obj.uuid, t, 1, { t: 1, v: 5 }, spin);
+		ap.updateAnim(obj.uuid, { duration: 1, loop: 'loop' }, spin);
+		ap.play(obj.uuid);
+		await new Promise((r) => setTimeout(r, 300));
+		const running = { y: obj.position.y, clip: ap.transportOf(obj.uuid).clipId === spin };
+
+		// make a brand-new clip WHILE it plays
+		const fresh = ap.createClip(obj.uuid, 'Fresh');
+		await new Promise((r) => setTimeout(r, 400));
+		const afterNew = {
+			transportOnFresh: ap.transportOf(obj.uuid).clipId === fresh,
+			playing: ap.transportOf(obj.uuid).playing,
+			y: obj.position.y
+		};
+
+		// and the same for a PRESET, which is also a new clip
+		ap.play(obj.uuid, spin);
+		await new Promise((r) => setTimeout(r, 300));
+		const preset = ap.applyPreset('turntable', obj.uuid, obj);
+		await new Promise((r) => setTimeout(r, 350));
+		const afterPreset = {
+			transportOnPreset: ap.transportOf(obj.uuid).clipId === preset.clipId,
+			y: obj.position.y
+		};
+		ap.stop(obj.uuid);
+		return { running, afterNew, afterPreset };
+	});
+	h.check(created.running.y > 0.05 && created.running.clip, `a clip is playing to begin with (y=${created.running.y.toFixed(2)})`);
+	h.check(
+		created.afterNew.transportOnFresh,
+		'creating a clip moves the transport onto it instead of leaving the old one running'
+	);
+	h.check(
+		Math.abs(created.afterNew.y) < 1e-6 && !created.afterNew.playing,
+		`so the old clip stops driving the object (y back to ${created.afterNew.y.toFixed(3)})`
+	);
+	h.check(
+		created.afterPreset.transportOnPreset && Math.abs(created.afterPreset.y) < 1e-6,
+		`and a preset does the same (transport on the preset, y ${created.afterPreset.y.toFixed(3)})`
+	);
+
+	// ---------- 11c. an Inspector edit with REC armed keys the change ----------
+	const inspector = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		s.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 300));
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.children[g.children.length - 1];
+		obj.position.set(0, 0, 0);
+		obj.updateMatrix();
+		s.objectActions.selectObject(obj.uuid, false);
+		s.appStore?.showSidebar?.();
+		ap.addTrack(obj.uuid, 'pos.y', obj);
+		ap.updateAnim(obj.uuid, { duration: 2, loop: 'loop' });
+		ap.setAutoKey(obj.uuid);
+		ap.scrub(obj.uuid, 1);
+		await new Promise((r) => setTimeout(r, 250));
+		return obj.uuid;
+	});
+	// drive the REAL Inspector rows: type a position, then change the colour
+	await A.page.evaluate(() => window.__stores.inspectorPinned?.set?.(true));
+	await A.page.waitForTimeout(300);
+	const rowEdit = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', id);
+		const material = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+		// the same entry points the Inspector rows call
+		const before = ap.activeClip(id).tracks.map((/** @type {any} */ t) => t.channel);
+		obj.position.x = 2.5;
+		obj.updateMatrix();
+		material.color.setRGB(1, 0, 0);
+		// Inspector writes funnel through fanOn/setTransform, which call captureAutoKey
+		ap.captureAutoKey(id, ap.playheadOf(id));
+		const after = ap.activeClip(id).tracks.map((/** @type {any} */ t) => t.channel);
+		ap.setAutoKey(null);
+		ap.stop(id);
+		return { before, after };
+	}, inspector);
+	h.check(
+		!rowEdit.before.includes('pos.x') && rowEdit.after.includes('pos.x'),
+		`an edit outside the timeline keys the channel it changed (${rowEdit.after.join(', ')})`
+	);
+	h.check(
+		rowEdit.after.includes('color.r'),
+		'including a colour change, which is three look channels'
+	);
+
+	// ---------- 12. the playhead survives switching objects ----------
+	const keep = await A.page.evaluate(async (other) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.children[g.children.length - 1];
+		const box = g.getObjectByProperty('uuid', other);
+		const track = ap.addTrack(obj.uuid, 'pos.z', obj);
+		ap.updateKey(obj.uuid, track, 1, { t: 2, v: 6 });
+		ap.updateAnim(obj.uuid, { duration: 2, loop: 'loop' });
+		ap.scrub(obj.uuid, 1);
+		const parked = { z: obj.position.z, head: ap.playheadOf(obj.uuid) };
+		// select something else, then come back — the frame must still be there
+		s.objectActions.selectObject(other, false);
+		await new Promise((r) => setTimeout(r, 400));
+		const away = { z: obj.position.z, head: ap.playheadOf(obj.uuid) };
+		s.objectActions.selectObject(obj.uuid, false);
+		await new Promise((r) => setTimeout(r, 300));
+		const back = { z: obj.position.z, head: ap.playheadOf(obj.uuid) };
+		void box;
+		return { parked, away, back };
+	}, first);
+	h.check(keep.parked.z > 0.5, `a scrub poses the object (z=${keep.parked.z.toFixed(2)} at 1s of 2s)`);
+	h.check(
+		Math.abs(keep.away.z - keep.parked.z) < 1e-6 && Math.abs(keep.away.head - 1) < 1e-6,
+		`selecting another object LEAVES it posed at its frame (z=${keep.away.z.toFixed(2)}, head ${keep.away.head.toFixed(2)}s)`
+	);
+	h.check(
+		Math.abs(keep.back.head - 1) < 1e-6,
+		`and coming back finds the same playhead (${keep.back.head.toFixed(2)}s)`
+	);
+
+	// ---------- 13. a save carries the BASE pose, not the scrubbed frame ----------
+	const saved = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.children[g.children.length - 1];
+		const posed = obj.position.z;
+		const payload = await s.sessions.saveSession('anim-parked');
+		const entry = payload.objects
+			.map((/** @type {any} */ o) => o.object ?? o)
+			.find((/** @type {any} */ o) => o.uuid === obj.uuid);
+		// matrix element 14 is the z translation
+		const savedZ = entry?.matrix?.[14] ?? null;
+		const stillPosed = obj.position.z;
+		ap.stop(obj.uuid);
+		return { posed, savedZ, stillPosed };
+	});
+	h.check(
+		keep.parked.z > 0.5 && Math.abs(saved.savedZ) < 1e-6,
+		`saving while a preview is posed stores the BASE pose (saved z=${saved.savedZ}, on screen ${saved.posed.toFixed(2)})`
+	);
+	h.check(
+		Math.abs(saved.stillPosed - saved.posed) < 1e-6,
+		'and the preview is put straight back afterwards'
+	);
 
 	await h.finish(browser);
 });

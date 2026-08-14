@@ -106,8 +106,10 @@ h.run(async () => {
 	// The clip is stretched to 2s first: the On Click pulse is high for 0.3s and a
 	// second click inside that window is CORRECTLY swallowed (the pulse debounces),
 	// so the reversal has to be triggered after it expires but before the clip ends.
+	// RETIME (not the length field): stretching the movement itself is what gives
+	// the swing room — a length change deliberately leaves key times alone now
 	await A.page.evaluate((id) => {
-		window.__stores.animationPreview.updateAnim(id, { duration: 2 });
+		window.__stores.animationPreview.retimeClip(id, 2);
 		window.__stores.flowRuntime.fireObjectClick(id);
 	}, uuid);
 	await A.page.waitForTimeout(800); // past the pulse, mid-swing
@@ -143,8 +145,8 @@ h.run(async () => {
 		`so the door closes rather than restarting (${half.deg.toFixed(1)} -> ${reversed.deg.toFixed(1)}deg)`
 	);
 	await A.page.evaluate((id) => {
-		window.__stores.animationPreview.stop(id);
-		window.__stores.animationPreview.updateAnim(id, { duration: 0.6 });
+		window.__stores.animationPreview.resetPreview(id);
+		window.__stores.animationPreview.retimeClip(id, 0.6);
 	}, uuid);
 	await A.page.waitForTimeout(300);
 

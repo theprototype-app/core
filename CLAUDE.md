@@ -414,8 +414,50 @@ loadable play content. Everything a user does must be visible to connected peers
   `applyUvChecker` — a LOCAL-only UV test grid via `scene.overrideMaterial`,
   never per-material, because the object sync AND autosave both serialize
   `material.map` and would bake the grid into someone's scene) +
+  UV-TX adds the ABSOLUTE half the live gestures need: `uvSnapshotOf` +
+  `applyUvSnapshot` (idempotent move/rotate/scale of a snapshot about an explicit
+  pivot — `transformUvCluster` reads the CURRENT values, so a call per pointermove
+  MULTIPLIES, and its default pivot is the LIVE bounds centre, which drifts as the
+  cluster it measures scales), `snapUvToPixels`, `nearestUvInDirection` (keyboard
+  selection growth: UV space has no linear order, so a DIRECTION is the only
+  traversal) and `uvIndicesAt` (re-derive a selection by COORDINATE after a commit —
+  `applyMeshGeo` rebuilds index-expanded and renumbers every uv index, so a box's 24
+  entries become 36 and a selection captured before it addresses different corners;
+  harmless for one drag, a torn cluster once the KEYBOARD commits per keypress)),
+  `modalGrab` (UV-TX U1: `createGesture({snapshot, start, apply, revert, end,
+  onActive})` -> `{begin, move, refresh, finish, cancel, active, isModal, ctx}` — the
+  confirm/cancel half of a drag, shared by the animation timeline and the UV editor.
+  It owns the origin (in CLIENT coords), the snapshot, the window listeners and the
+  commit-or-revert contract; the consumer owns all of the maths. `begin` with NO event
+  is a keyboard gesture: no listeners, apply once, finish — which is how a nudge
+  becomes one undo entry through the drag's path. `start` may set `ctx.pivot` and may
+  ABORT by returning false (`beginUvDrag` can refuse). A MODAL grab listens in CAPTURE
+  phase so the committing click cannot start the next gesture),
   `UvEditor.svelte` (the dock tab —
-  `'uv'` in `FLOW_FAMILY`; hand-rolled 2D zoom/pan because nothing reusable exists),
+  `'uv'` in `FLOW_FAMILY`; hand-rolled 2D zoom/pan because nothing reusable exists.
+  UV-TX: Move/Rotate/Scale armed on 1/2/3 (WORDS in the topbar), a left drag / a
+  MODAL grab (middle-press a SELECTED point; middle elsewhere still pans) / the
+  ARROWS all through `modalGrab`. The arrows apply WHATEVER IS ARMED about the
+  current origin — one texture pixel, one degree, or 1% (Ctrl x10, Shift x100;
+  scale is PER AXIS, left/right in U and up/down in V, Alt for uniform, and the
+  shrink is the reciprocal so a press pair round-trips) — one undo entry per press.
+  `Ctrl+Space` = keyboard vertex PICKING: the first press enters the mode and drops
+  a cursor without touching the selection, later presses toggle the cursor's cluster
+  in/out, the ARROWS walk the cursor while it is on (which is why it is a mode),
+  Esc leaves and keeps the picks, a second Esc clears. One key for both entering
+  and selecting, matching the timeline's Ctrl+Space; the cursor draws as a bigger
+  transparent box and is re-derived by coordinate across a commit like the
+  selection. `Ctrl+Shift+arrow` grows the selection directionally,
+  `Ctrl+A`/`Ctrl+I`/`L`/`Esc`, Delete
+  SWALLOWED (unhandled it deletes the object). Keys are claimed in CAPTURE phase on
+  `#uv-canvas-wrap` (tabindex="-1", focused on every press) with stopPropagation,
+  because 1/2/3 are taken TWICE over — the gizmo transform modes and, whenever a mesh
+  session is open (the common UV case, since face scoping needs one), MeshEditPopup's
+  element modes — and `anyModalOpen` does not cover this editor. Right-click opens the
+  shared ContextMenu; both the keydown and the contextmenu listener are DIRECT, since
+  svelte delegates them and panel chrome swallows delegated handlers. The transform
+  ORIGIN is placeable (⌖ button / menu) and DRAGGABLE, snapping onto a uv point unless
+  Alt is held — LOCAL, never replicated or saved),
   `uvUnwrap` (PR #110: a REGISTRY, not one algorithm — `unwrap(faces, options) →
   {uvs, islands}` with `registerUnwrapBackend(key, label, fn)`, so a hot-loadable
   module can add a heavier automatic unwrapper (xatlas/LSCM) or replace a built-in
@@ -878,6 +920,41 @@ loadable play content. Everything a user does must be visible to connected peers
   sessions were never affected — they use toJSON already. When adding any per-object
   state, ask which of the FOUR paths carry it: the wire, autosave, sessions, and
   undo — they do not share a serializer.
+- **Measure a rotation from the CENTROID, never the bounding-box centre.** The box of
+  a rotated point set has a DIFFERENT SHAPE, so its centre is not the rotated image of
+  the old centre: a 1-degree key rotate measured 1.51 degrees and a 10-degree one
+  16.1. The mean of the points is rotation-equivariant and reads exactly 1.000 /
+  10.000. (The same check with a loose 12-degree tolerance had passed, which is how a
+  wrong metric survives.)
+- **A HANDLE that wins the press will win a test's press too.** The placed UV origin
+  deliberately takes priority over vertex picking, and the placed-origin rotate check
+  aimed its grip at the furthest selected point — which is exactly where the origin had
+  just been dragged, so the "rotate" dragged the origin and reported the feature dead.
+  A synthesized grip must keep clear of every handle, and the section needs a premise
+  check that the press started the gesture it meant to (`gesture === 'drag'`).
+- **A ROTATION guard needs an angle; every invariant a rotation preserves is also
+  preserved by a WRONG rotation.** The UV rotate's first checks were "the pivot did
+  not move" and "every point kept its distance from it" — both stay GREEN when the
+  gesture COMPOUNDS (a compounding rotation is still a rotation, just eight times too
+  far), proven by putting the compounding call back. What catches it is the swept angle
+  of the selection's centroid about an OFF-CENTRE origin: 0.0 degrees instead of 90,
+  because eight 90-degree steps come to five full turns. Measure the quantity the bug
+  changes, and pick a gesture count that does not land the wrong answer back on the
+  right one (a 4-step sweep would have read 360 = 0 too).
+- **A RELATIVE check cannot see a stale selection: it reads through the same stale
+  lens.** After a UV commit renumbers the indices, `du === 1/64` still held for the
+  selection's own reported points — they had all drifted together onto a different
+  cluster. The guard has to anchor OUTSIDE the suspect state: on the coordinate the
+  user clicked, demanding nothing is left one pixel behind (the real symptom is a
+  cluster tearing, 4 of 6 corners stranded).
+- **A grip for a synthesized gesture must be a point that EXISTS, and its pixel must
+  really be the target.** Aiming a UV rotate at (uMax, cv) picked a spot a box has no
+  corner at, so the press PANNED and three assertions passed vacuously; aiming at the
+  furthest corner instead put the pixel under the app's corner chrome, and the press
+  hit a button (`elementFromPoint` said so — reading handler code would not have).
+  Choose from the actual selected points and verify the pixel resolves to the canvas.
+  Related: a rotate can push the mapping outside 0..1, after which every later section
+  aims off-canvas — re-frame between sections.
 - **A capability gate copied from the WRITE path silently disables READ.** The UV
   editor gated its whole canvas on the meshgeo snapshot cap, which exists because a
   GEOMETRY COMMIT must fit one message — nothing to do with viewing a UV map, and
@@ -1635,6 +1712,33 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-14, later): **UV TRANSFORM TOOLS — branch `feat/uv-transform-tools`**
+  (lane `../theprototype-lane-uv` @ port 5193, 2 commits, NOT PR'd yet; **branched off
+  `feat/17e-animation-curves`**, because U1 re-points the TIMELINE at the extracted
+  engine — retarget once 17-E lands). Plan + as-built: cloud
+  `plans-core/pending/uv-editor-transform-tools.md`. **U1** `$lib/modalGrab.js` =
+  `createGesture` (see the architecture entry); shipped by moving the timeline onto it
+  FIRST, with animation-curves/animation-window as the safety net, so the extraction is
+  provably behaviour-preserving. **U2/U3** the UV editor gained the timeline's whole
+  interaction model — Move/Rotate/Scale on 1/2/3, a modal grab, an arrow keyboard in
+  TEXTURE PIXELS, `Ctrl+Shift+arrow` selection growth, and a right-click ContextMenu
+  that also fixes an old bug (a right-press fell through to the drag/marquee/pan code
+  AND raised the browser's menu). Plus, from the user mid-batch, a **placeable +
+  draggable transform ORIGIN** (snaps onto a uv point, Alt places freely; local, never
+  replicated). ONE latent bug fixed: a commit renumbers uv indices, so the second
+  keypress tore the picked cluster (4 of 6 corners stranded) — the selection is
+  re-derived by COORDINATE now (`uvIndicesAt`). No new wire type and no new history
+  kind: everything commits through `beginUvDrag`/`endUvDrag`. A third commit answered
+  two user reports: the ARROWS now apply the armed mode (rotate/scale about the origin,
+  per-axis scale, Alt uniform) instead of always nudging, and `Ctrl+Space` opens
+  KEYBOARD vertex picking (cursor + transparent box, arrows walk it, Ctrl+Space takes
+  or drops it, Esc leaves keeping the picks) — activation deliberately reuses the
+  selecting key so there is one to learn. Suite `uv-transform` (96 checks, real mouse +
+  real keys), with two guards proven by breaking the code; baseline **391/62**. Traps
+  from this batch are in the gotchas (a rotation guard needs an ANGLE, and must measure
+  the CENTROID not the bounding box; a relative check cannot see a stale selection; a
+  grip must be a point that EXISTS, whose pixel is really the canvas, and which is
+  clear of any handle that wins the press).
 - Status (2026-08-14): **17-E ANIMATION KEYFRAMES — branch `feat/17e-animation-curves`,
   lane `../theprototype-lane-anim` @ port 5195, 9 commits, NOT PR'd yet.** The authored
   animator went from one `{from,to,bezier}` segment per channel to a real keyframe

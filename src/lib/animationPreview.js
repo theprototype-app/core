@@ -3,7 +3,7 @@ import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
-import { suspendAnimation, resumeAnimation } from './flowRuntime';
+import { suspendAnimation, resumeAnimation, fireAnimFinished as notifyClipFinished } from './flowRuntime';
 import { recordEntry, registerHistoryKind } from './history';
 
 // Authored object animation, v2 (17-E). Each object owns a set of named CLIPS;
@@ -2071,5 +2071,8 @@ export function tickAnimationPreview() {
 		const p = get(playback)[uuid];
 		const clip = clipOf(uuid, p?.clipId);
 		setPlay(uuid, { playing: false, pausedAt: clip ? rangeOf(clip, p).span : 0 });
+		// hand off to the graph: an Animation Finished node can start the next thing.
+		// LOCAL like the end itself — every peer reaches it at the same elapsed time.
+		notifyClipFinished(uuid);
 	}
 }

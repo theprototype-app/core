@@ -321,6 +321,7 @@ export function notifyExternalMove(uuid) {
 
 // node types that produce an OUTPUT value (not a scene effect)
 export const valueTypes = [
+	'animfinished',
 	'number', 'vector3', 'toggle', 'random', 'time', 'math', 'compare', 'gate',
 	'loop', 'timer', 'distance', 'proximity', 'onclick', 'counter', // 134
 	'maprange', 'select', // 4.6
@@ -558,6 +559,7 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const pb = pointOf(input('b', d.b), ctx);
 			return pa && pb ? pa.distanceTo(pb) <= num(d.radius ?? 3) : false;
 		}
+		case 'animfinished': // 17-E: fired locally when a clip reaches its end
 		case 'onclick': {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
@@ -736,6 +738,21 @@ function reachesObjectSelector(startId, uuid) {
 }
 
 /** A user clicked an object — pulse any OnClick node targeting it (134). @param {string} uuid */
+/**
+ * A clip on `uuid` just finished — pulse every Animation Finished node aimed at it.
+ * LOCAL on purpose: every peer's runtime ends the same once-clip at the same elapsed
+ * time, so each fires its own pulse and no message is needed (the same reasoning as
+ * the once-clip end itself). animationPreview calls this from its tick.
+ * @param {string} uuid
+ */
+export function fireAnimFinished(/** @type {string} */ uuid) {
+	nodes.forEach((node) => {
+		if (node.type !== 'animfinished') return;
+		if (!reachesObjectSelector(node.id, uuid) && implicitOwnerOf(node) !== uuid) return;
+		applyNodeTrigger(node.id, syncedNow(), false);
+	});
+}
+
 export function fireObjectClick(uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;

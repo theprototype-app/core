@@ -119,6 +119,7 @@
 		objectflow: ObjectFlowNode,
 		keypress: KeyPressNode,
 		playanim: PlayAnimNode, // 17-E A5
+		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
 		...moduleTypes
 	};
 

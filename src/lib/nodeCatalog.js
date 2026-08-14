@@ -147,6 +147,16 @@ export const nodeCatalog = [
 				defaults: { points: [], speed: 1, mode: 'loop' }
 			},
 			{
+				// 17-E: the other half of Play Animation — pulses when a clip FINISHES,
+				// so a movement can hand off to whatever comes next (a door that has
+				// finished opening plays a latch sound, or starts the next door). Fired
+				// locally on every peer from the same deterministic end-of-clip the
+				// runtime already computes, so it needs no message of its own.
+				type: 'animfinished',
+				label: 'Animation Finished',
+				defaults: { clip: '', pulse: 0.3 }
+			},
+			{
 				// 17-E A5: drives an AUTHORED clip (or a clip the model was imported
 				// with) from a flow event — wire On Click to it and a door opens when
 				// someone clicks it. Not in `animationTypes`: it is an event consumer
@@ -294,7 +304,7 @@ export function findNodeSpec(type) {
 		if (item) return item;
 	}
 	for (const group of get(moduleNodeGroups)) {
-		const item = group.items.find((i) => i.type === type);
+		const item = group.items.find((/** @type {any} */ i) => i.type === type);
 		if (item) return item;
 	}
 	return null;

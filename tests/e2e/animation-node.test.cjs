@@ -228,6 +228,41 @@ h.run(async () => {
 		`the node plays the clip it NAMES, not the default (${named.deg.toFixed(2)}deg)`
 	);
 
+	// ---------- Animation Finished: a clip hands off to the rest of the graph ------
+	// This is what "hook clips into the logic" needs: the door that has just opened
+	// starts the next thing. Fired LOCALLY when the once-clip ends, because every
+	// peer's runtime reaches that same elapsed time on its own — no message needed.
+	const handoff = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const nh = s.nodesHandler;
+		// Animation Finished on the door -> a Counter, so a pulse is observable
+		nh.createFlowNode(
+			{ id: 'door-done', type: 'animfinished', position: { x: 0, y: 200 }, data: { type: 'animfinished', pulse: 0.4 } },
+			id
+		);
+		nh.createFlowNode(
+			{ id: 'done-count', type: 'counter', position: { x: 220, y: 200 }, data: { type: 'counter', op: 'up', step: 1 } },
+			id
+		);
+		nh.createFlowEdge(
+			{ id: 'e-done', source: 'door-done', target: 'done-count', targetHandle: 'pulse' },
+			id
+		);
+		await new Promise((r) => setTimeout(r, 400));
+		const before = await new Promise((r) => s.flowValues.subscribe((/** @type {any} */ v) => r(v['done-count']))());
+		// run the door: a 0.6s once-clip
+		s.animationPreview.resetPreview(id);
+		s.animationPreview.play(id, undefined, { from: 0, reverse: false });
+		await new Promise((r) => setTimeout(r, 1400));
+		const after = await new Promise((r) => s.flowValues.subscribe((/** @type {any} */ v) => r(v['done-count']))());
+		const pulsed = await new Promise((r) => s.flowValues.subscribe((/** @type {any} */ v) => r(v['door-done']))());
+		return { before: before ?? 0, after: after ?? 0, pulsed };
+	}, uuid);
+	h.check(
+		handoff.after > handoff.before,
+		`a finished clip pulses Animation Finished, and the Counter downstream sees it (${handoff.before} -> ${handoff.after})`
+	);
+
 	// ---------- the node is in the catalog and the editor can render it ----------
 	const catalog = await A.page.evaluate(() => {
 		const s = window.__stores;

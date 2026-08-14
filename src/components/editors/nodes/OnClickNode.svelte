@@ -16,7 +16,8 @@
 	const COPY: Record<string, [string, string]> = {
 		onclick: ['clicked!', 'connect to the object; pulses on click'],
 		onenter: ['entered!', 'pulses when something enters the sensor object'],
-		onexit: ['exited!', 'pulses when a sensor overlap ends']
+		onexit: ['exited!', 'pulses when a sensor overlap ends'],
+		animfinished: ['finished!', 'pulses when the clip on this object reaches its end']
 	};
 	$: copy = COPY[data.type] ?? COPY.onclick;
 </script>

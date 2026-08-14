@@ -20,6 +20,7 @@ const OUTPUT = {
 	keypress: 'event', // H3
 	onimpact: 'event', // PFX-C
 	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
+	animfinished: 'event', // 17-E: a clip reached its end
 	velocity: 'number', // CL-C: live speed readout
 	flowinput: 'number' // H5 fallback; the live check reads data.vtype
 };

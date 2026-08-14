@@ -638,6 +638,27 @@ drops the P2P session.
   to eyeball it, then DELETE the throwaway (never commit a machine-specific scratchpad
   path). The runner only matches `*.test.cjs`.
 
+## Two ways a green suite lies (both cost a user-visible bug in 17-E)
+
+- **A component that CRASHED on mount is invisible to store-reading checks.** A
+  duplicate `{#each}` key threw inside the Animation window; the pane stopped opening
+  for real users while eight suites stayed green, because every check around it read
+  `window.__stores` rather than the DOM. `pageerror` was logged and ignored. helpers
+  now COLLECT page errors and `finish` FAILS on a render crash (`each_key_duplicate`,
+  `effect_update_depth_exceeded`, `store.set is not a function`, …); `h.pageErrors(peer)`
+  exposes them to a suite. So: **assert something RENDERED**, not only that a store
+  changed — and when a feature has a window, check it still OPENS after your edit.
+- **A SYNTHETIC event does not travel the path a real one does.** "The browser context
+  menu must not appear" was asserted by dispatching `new MouseEvent('contextmenu')` and
+  reading `defaultPrevented`; it passed for two rounds while the native menu kept
+  appearing for the user, because `contextmenu` is DELEGATED by svelte and panel chrome
+  swallowed it before the app root. Drive real gestures (`page.mouse.click(x, y,
+  {button:'right'})`, `mouse.down({button:'middle'})`) and observe the outcome from a
+  window-level listener. Same family as the older note that synthetic events aimed at
+  delegated handlers need `{bubbles: true}`.
+- Corollary: **prove a new guard can fail.** Put the bug back, watch it go red, restore.
+  Both fixes above were confirmed that way (4 failures, then 3 slipped through).
+
 ## Definition of done
 
 Feature suite green (+ any suites your UI changes touched) + `npm run build` passes +

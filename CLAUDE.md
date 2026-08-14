@@ -638,6 +638,21 @@ loadable play content. Everything a user does must be visible to connected peers
   handler on the `<svg>` and decide by coordinate (or mark decoration
   `pointer-events="none"`). The tell: a CLICK between ticks worked while a press ON
   one did nothing, and `document.elementFromPoint` named a `<line>`.
+- **A crash on mount is invisible to a suite that only reads STORES.** A duplicate
+  `{#each}` KEY (two animation keys legitimately share a time while a multi-selection
+  is dragged through itself) THROWS in svelte and took the whole Animation window
+  down — the pane stopped opening for real users while eight green suites sailed
+  past, because every check around it read a store rather than the DOM. `pageerror`
+  was logged and nothing more. helpers.cjs now COLLECTS page errors and `finish`
+  FAILS the run on a render crash (`h.pageErrors(peer)` exposes them); never key an
+  each-block by a value that can repeat.
+- **A SYNTHETIC event does not travel the path a real one does.** The check for "the
+  browser context menu must not appear" dispatched `new MouseEvent('contextmenu')` on
+  the plot and passed while the native menu still came up for the user. `contextmenu`
+  is DELEGATED by svelte, so panel chrome that stops pointer events on their way up
+  stopped it too, and the app-root handler never ran. Block it with a DIRECT listener
+  on the pane root, and assert with REAL right-clicks plus a window-level listener
+  watching `defaultPrevented`.
 - **Re-identifying moved items by their VALUE after a sort is not tracking them.**
   A multi-key drag re-found each key by matching the time it had just written; with
   snapping on, two keys of one track land on the same time constantly, both matched
@@ -1577,9 +1592,25 @@ override for e2e — never share 5173 (the user's main-checkout server).
   is the context menu, right/middle-drag and Shift+wheel pan, the wheel zooms (up =
   in), and a NAVIGATOR strip under the plot carries the whole clip with the visible
   window as its thumb. Frames are 30fps by default (`animationFps` in localStorage).
-  OWED: user's on-device/feel pass, then the PR to release/next. NEXT (planned, not
-  started): the same transform tools in the UV editor →
-  cloud `plans-core/pending/uv-editor-transform-tools.md`.
+  Later rounds added: per-clip **fps** (what a clip's key times MEAN — the editor's
+  frame grid follows it; `animationFps` is only the default for new clips) and per-clip
+  **step** (sample on a coarser grid = the "on twos" stepped look, applied at `poseAt`
+  so playback, scrub and bake agree); a **key clipboard** (Ctrl+C/V/D and M to mirror,
+  held BY CHANNEL and relative to the earliest key, so a paste crosses clips and
+  objects and creates channels the target lacks); the **navigator above** the plot; the
+  graph FILLING the pane (no scrollbars, and the svg sized to the content box, since
+  `clientWidth` includes padding); scale no longer snapping (near the pivot a factor
+  step is worth less than a frame, so snapping ate the horizontal half); the playhead
+  snapping while you sweep the ruler; and the browser context menu blocked by a DIRECT
+  listener on both pane shells.
+  OWED: user's on-device/feel pass, then the PR to release/next.
+  REMAINING (asked for, not built): curve TANGENT HANDLES on the graph (the storage
+  already carries them — `ease` per key — so it is the UI half only), timeline MARKERS
+  plus a trigger that fires when the playhead crosses one, ONION-SKIN ghosts at the
+  neighbouring keys, and an **Animation State node** (playing / progress / finished
+  outputs) so a clip can feed the rest of a flow graph — that last one is what the
+  user meant by hooking clips into door logic. NEXT (planned): the same transform tools
+  in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
 - Status (2026-08-11, fifth drop): **knife RUBBER BAND + the P12 wasm question ANSWERED —
   PRs #120 + #121 MERGED @ca9e4ba.** The knife draws a dashed DOM band between its two clicks
   (the cut is a screen line, so there is no 3D line to draw), and Escape drops a PENDING cut

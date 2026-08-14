@@ -24,6 +24,10 @@ cap), `uv-live-faces` (live paint preview + face scoping), `uv-texture-params`
 (sampler state + the orientation arbiter), `uv-slots` + `uv-slots-persist` (UV4
 slots, live and across a reload), plus `mesh-grab-uv` and `object-sync` — the first
 coverage this repo has of the gizmo-grab uv path and of the late-joiner object sync.
+The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh-vertex-bevel`,
+`mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
+`mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
+clicks) and `uv-unwrap-module` (a module supplying an unwrap backend, and wasm from a blob URL).
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
@@ -54,6 +58,32 @@ passed while the user watched the feature misbehave:
   pixels land where that quadrant SAMPLES settled it in one run: tr=656/br=0 before,
   br=653/tr=0 after (`uv-texture-params`). Reasoning alone was a coin flip on a fix
   that would have looked plausible either way.
+- **A GEOMETRIC assertion must measure the part that MOVES.** "How far does the mesh reach"
+  reported the SAME number for a flat chamfer and a hollow one — a hollow moves the INTERIOR
+  rings while the outer corners stay — and on a box it was reading a different corner entirely.
+  This cost three wrong red/green readings across the two bevels before the metric was fixed to
+  look inside the affected band and take the min or max according to which way the feature
+  pushes. Before writing the number, ask which vertices the op is supposed to move.
+- **WATERTIGHTNESS is the single best check for any op that rebuilds geometry.** Count the mesh
+  edges shared by exactly two triangles; anything else is a crack or an overlap. It caught four
+  separate defects in one batch that no visual check would have: the edge bevel leaving the
+  third face at a corner on the old vertex (12 odd edges), a multi-segment bevel strip becoming
+  a chain the endpoint face did not meet (2 per extra segment), the knife passing a
+  single-crossing triangle through unchanged (10), and its quad decomposition pairing two
+  corners the wrong way so the halves overlapped (8). Fifteen lines of helper, reusable in
+  every mesh suite.
+- **Drive the REAL input path, not the store, when the report is about input.** The first
+  edge-gizmo suite called `pickEdge` directly: correct seating math, and it could not have
+  caught a broken pick path — which is exactly what "edges still have no gizmo" would have
+  meant. `mesh-gizmo-modes` and `mesh-knife` click the viewport with `page.mouse` through
+  `h.projectPoint`, and the knife suite drives the whole two-click gesture including the
+  rubber band and Escape.
+- **An ASYNC seam hands back a promise: await it, do not sleep on it.** `uv-unwrap-module`
+  first slept 200 ms for a module's backend registration and read the registry too early, then
+  blamed a plausible-sounding second module instance under vite's HMR stamps. That hypothesis
+  was TESTED and disproved; the actual answer was that `api.registerUnwrapBackend` returns the
+  promise precisely so nobody has to guess. When a fixed sleep is load-bearing, look for the
+  promise you were meant to await.
 - **COMPUTE THE COUNTERFACTUAL in-test when a fix replaces an unreliable heuristic.**
   Stored mesh topology exists because deriving quads from coplanarity fails on a twisted
   band — but the first subdivide guard used a FLAT box face, where derivation produces
@@ -424,6 +454,22 @@ drops the P2P session.
   `PEER_CONFIG='{"mode":"custom","custom":{"host":"peerjs.theprototype.app","port":443,"path":"/peerjs","secure":true}}'`.
   Re-run with PEER_CONFIG before believing a two-peer red — and before blaming
   your diff.
+- **Probing indices past the end of a collection can THROW, killing the whole evaluate.**
+  `meshEdit.selectHandle(i)` for an out-of-range `i` dereferences `handles[index]`, so a search
+  loop bounded by a guessed 400 died where one bounded by the vertex count did not. If a probe
+  loop is how the test finds its target, bound it by something real.
+- **A search that MUTATES cannot also build.** Finding handles by calling `selectHandle(i)` and
+  watching the proxy REPLACES the selection on every step, so searching while building a
+  multi-selection destroys what it just built (0 selected, silently). Find all the indices
+  first, then select.
+- **`PlaneGeometry` lies in XY, not XZ** — a flat test grid spans x/y and "out of plane" is z.
+  Worth double-checking any axis assumption against the geometry three actually builds.
+- **`highlightFaceByTriangle` HEALS a stale selection by clearing it** (`healStale`, default
+  true): if the picked unit is not a subset of the current selection, the selection is emptied.
+  Building a set with `faceEditSelectedTris.set(...)` and then highlighting one of its members
+  therefore WIPES it whenever granularity resolves a bigger unit — an inset cap is coplanar
+  with its ring, so Face granularity resolves all ten triangles and the heal fires. Pass
+  `false` when the selection is the thing you mean.
 - **Three peers is the practical ceiling on a loaded box**: `setupPage`'s
   `waitForFunction` waiting for `window.__stores` times out booting a THIRD
   page while suites run back to back (dungeon/dungeon-play stop there). Not a

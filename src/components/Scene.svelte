@@ -13,7 +13,7 @@
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
-	import { ensureBoundsTrees } from '$lib/bvhPicking';
+	import { sceneHits } from '$lib/scenePick';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
@@ -339,14 +339,13 @@
 	// --- viewport click selection (desktop) and controller ray selection (VR) ---
 	const selectionRaycaster = new THREE.Raycaster();
 
-	// 17-D3: every scene pick goes through here so the BVH trees are current
-	// first. The object of a live edit/sculpt session is excluded — its geometry
-	// changes per frame, and its own tools keep the stock raycast path.
+	// 17-D3: every scene pick goes through the ONE path in $lib/scenePick, which
+	// keeps the BVH trees current first and excludes the object of a live
+	// edit/sculpt session — its geometry changes per frame, and its own tools keep
+	// the stock raycast path. (19-B P1 lifted the body there so Explorer drops and
+	// the snap engine pick exactly the same way.)
 	function pickSceneObjects() {
-		if (!$objectsGroup) return [];
-		const busy = [$editingObject, $faceEditObject, $sculptObject].filter(Boolean) as string[];
-		ensureBoundsTrees($objectsGroup, busy);
-		return selectionRaycaster.intersectObjects($objectsGroup.children, true);
+		return sceneHits(selectionRaycaster);
 	}
 
 	function runModuleClickHandlers(hit) {

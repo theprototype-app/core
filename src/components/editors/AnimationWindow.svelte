@@ -593,7 +593,7 @@
 		// here would start an easing gesture AND eat the plot's context menu, since
 		// the menu opens from the plot's own handler further up.
 		if (e.button !== 0) return;
-		if (move?.modal) return; // a modal grab owns the pointer
+		if (grab.isModal()) return; // a modal grab owns the pointer
 		e.preventDefault();
 		e.stopPropagation(); // never let the plot read this as a key drag or a pan
 		tanDrag = idx;
@@ -903,7 +903,7 @@
 		// the plot BODY: draw a marquee over the keys. Shift adds to what is already
 		// selected; a press that never travels is a click on empty space, which drops
 		// the selection.
-		if (move?.modal) return; // a modal grab owns the pointer
+		if (grab.isModal()) return; // a modal grab owns the pointer
 		e.preventDefault();
 		marqBase = e.shiftKey ? [...selKeys] : [];
 		marqMoved = false;

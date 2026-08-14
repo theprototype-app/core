@@ -36,6 +36,7 @@
 	} from '@lucide/svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
+	import { createGesture } from '$lib/modalGrab';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
@@ -381,11 +382,14 @@
 	// Every one of them moves the WHOLE selection by the same delta and writes it
 	// through `moveKeys`, so a drag across two channels is one store write, one
 	// broadcast and (through the gesture) one undo entry.
+	//
+	// The confirm/cancel machinery itself lives in `$lib/modalGrab` — the UV editor
+	// transforms a selected set of 2D points the same way, and two copies of "snapshot,
+	// re-apply the total, commit or revert once" is exactly how the two editors would
+	// drift apart.
 	let plotEl = $state(/** @type {any} */ (null));
 	/** the element carrying the key handler — focused on any press in the plot */
 	let plotHost = $state(/** @type {any} */ (null));
-	/** @type {{origin: {x: number, y: number}, snapshot: any[], modal: boolean, pivot: {t: number, v: number}}|null} */
-	let move = null;
 	let grabbing = $state(false);
 
 	/** the selected keys with their CURRENT times/values, to apply a delta against */
@@ -407,9 +411,10 @@
 	 * MOVE shifts them; SCALE stretches them about a pivot — the PLAYHEAD in time
 	 * (which is what you want: park the head where the movement should stay put and
 	 * pull the rest out) and the selection's own middle in value.
+	 * @param {import('$lib/modalGrab').GestureContext} move
 	 * @param {number} dt @param {number|null} dv
 	 */
-	function applyDelta(dt, dv) {
+	function applyDelta(move, dt, dv) {
 		if (!target || !move?.snapshot.length) return;
 		const scaling = xform === 'scale';
 		// a horizontal offset becomes a FACTOR when scaling; 200px doubles it
@@ -446,87 +451,60 @@
 		if (next.length) selKeys = next;
 	}
 
-	/** @param {PointerEvent|MouseEvent} e */
-	function deltaFrom(e) {
-		if (!plotEl || !move) return { dt: 0, dv: /** @type {number|null} */ (null) };
+	/** the gesture's pointer offset in DATA units. The engine keeps the origin in
+	 *  CLIENT coordinates; both ends convert through the same mapping, so the
+	 *  difference is the same one the old rect-relative version computed.
+	 *  @param {import('$lib/modalGrab').GestureContext} move */
+	function deltaFrom(move) {
+		if (!plotEl) return { dt: 0, dv: /** @type {number|null} */ (null) };
 		const r = plotEl.getBoundingClientRect();
-		const x = e.clientX - r.left;
-		const y = e.clientY - r.top;
-		const dt = xt(x) - xt(move.origin.x);
-		const dv = view === 'graph' ? yv(y) - yv(move.origin.y) : null;
+		const x0 = move.origin.x - r.left;
+		const y0 = move.origin.y - r.top;
+		const dt = xt(x0 + move.dx) - xt(x0);
+		const dv = view === 'graph' ? yv(y0 + move.dy) - yv(y0) : null;
 		return { dt, dv };
 	}
 
-	function beginMove(/** @type {PointerEvent|MouseEvent} */ e, /** @type {boolean} */ modal) {
-		if (!target) return;
-		const snapshot = keySnapshot();
-		if (!snapshot.length) return;
-		const r = plotEl?.getBoundingClientRect();
-		move = {
-			origin: { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) },
-			snapshot,
-			modal,
-			// scale pivots: the playhead in time, the selection's middle in value
-			pivot: {
+	/** The one engine behind a drag, a modal grab and an arrow nudge (`$lib/modalGrab`). */
+	const grab = createGesture({
+		snapshot: keySnapshot,
+		start: (ctx) => {
+			if (!target) return false;
+			// scale pivots: the playhead in time, the selection's middle in value.
+			// Frozen here, because the value pivot is derived from the very keys the
+			// gesture is about to move.
+			ctx.pivot = {
 				t: curTime,
-				v: snapshot.reduce((sum, s) => sum + s.v0, 0) / snapshot.length
-			}
-		};
-		// hold the y axis still for the whole gesture (see `frozenRange`)
-		if (view === 'graph') frozenRange = { lo: range.lo, hi: range.hi };
-		beginAnimGesture(target.uuid, selKeys.length > 1 ? 'Move keys' : 'Move key');
-		if (modal) {
-			grabbing = true;
-			window.addEventListener('pointermove', onMoveMove);
-			window.addEventListener('pointerdown', grabConfirm, true);
-			window.addEventListener('keydown', grabKeys, true);
-		} else {
-			window.addEventListener('pointermove', onMoveMove);
-			window.addEventListener('pointerup', endDrag);
-		}
-	}
-	function onMoveMove(/** @type {PointerEvent} */ e) {
-		if (!move) return;
-		const { dt, dv } = deltaFrom(e);
-		applyDelta(dt, dv);
-	}
-	function finishMove(/** @type {boolean} */ keep) {
-		const open = move;
-		move = null;
-		grabbing = false;
-		frozenRange = null;
-		window.removeEventListener('pointermove', onMoveMove);
-		window.removeEventListener('pointerup', endDrag);
-		window.removeEventListener('pointerdown', grabConfirm, true);
-		window.removeEventListener('keydown', grabKeys, true);
-		if (!keep && open && target) {
+				v: ctx.snapshot.reduce((/** @type {number} */ sum, /** @type {any} */ s) => sum + s.v0, 0) / ctx.snapshot.length
+			};
+			// hold the y axis still for the whole gesture (see `frozenRange`)
+			if (view === 'graph') frozenRange = { lo: range.lo, hi: range.hi };
+			beginAnimGesture(target.uuid, ctx.data?.label ?? 'Move keys');
+		},
+		apply: (ctx) => {
+			const { dt, dv } = deltaFrom(ctx);
+			applyDelta(ctx, dt, dv);
+		},
+		revert: (ctx) => {
+			if (!target) return;
 			// put every key back exactly where it was
 			moveKeys(
 				target.uuid,
-				open.snapshot.map((s) => ({ trackId: s.trackId, index: s.index, t: s.t0, v: s.v0 }))
+				ctx.snapshot.map((/** @type {any} */ s) => ({ trackId: s.trackId, index: s.index, t: s.t0, v: s.v0 }))
 			);
+		},
+		end: () => {
+			frozenRange = null;
+			endAnimGesture(); // one entry either way (none if nothing changed)
+		},
+		onActive: (on, modal) => {
+			grabbing = on && modal;
 		}
-		endAnimGesture(); // one entry either way (none if nothing changed)
-	}
-	function endDrag() {
-		finishMove(true);
-	}
-	function grabConfirm(/** @type {PointerEvent} */ e) {
-		if (!move?.modal) return;
-		e.preventDefault();
-		e.stopPropagation(); // the committing click must not start a fresh drag
-		finishMove(true);
-	}
-	function grabKeys(/** @type {KeyboardEvent} */ e) {
-		if (!move?.modal) return;
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			e.stopPropagation();
-			finishMove(false);
-		} else if (e.key === 'Enter') {
-			e.preventDefault();
-			finishMove(true);
-		}
+	});
+
+	function beginMove(/** @type {PointerEvent|MouseEvent} */ e, /** @type {boolean} */ modal) {
+		if (!target) return;
+		grab.begin(e, { modal, data: { label: selKeys.length > 1 ? 'Move keys' : 'Move key' } });
 	}
 
 	/**
@@ -536,7 +514,7 @@
 	 */
 	function keyDown(/** @type {PointerEvent} */ e, /** @type {string} */ trackId, /** @type {number} */ index) {
 		if (!target) return;
-		if (move?.modal) return; // a grab is running; its own handler commits
+		if (grab.isModal()) return; // a grab is running; its own handler commits
 		if (e.button === 2) return; // the menu opens on contextmenu, not here
 		e.preventDefault();
 		e.stopPropagation();
@@ -563,7 +541,7 @@
 		if (!target) return;
 		e.preventDefault();
 		e.stopPropagation();
-		if (move) return finishMove(true);
+		if (grab.active()) return grab.finish(true);
 		selId = trackId;
 		if (!isKeySelected(trackId, index)) selKeys = [[trackId, index]];
 		openPlotMenu(e);
@@ -761,25 +739,19 @@
 	 *  through the same gesture machinery so it is one undo entry per press */
 	function nudge(/** @type {number} */ dx, /** @type {number} */ dy, /** @type {number} */ mult) {
 		if (!target || !selKeys.length) return;
-		const snapshot = keySnapshot();
-		if (!snapshot.length) return;
-		move = {
-			origin: { x: 0, y: 0 },
-			snapshot,
-			modal: false,
-			pivot: { t: curTime, v: snapshot.reduce((sum, s) => sum + s.v0, 0) / snapshot.length }
-		};
-		beginAnimGesture(target.uuid, xform === 'scale' ? 'Scale keys' : 'Move keys');
+		// a KEYBOARD gesture: no listeners, applied once, closed straight away — but
+		// through the same engine, so it is one undo entry like a drag
+		if (!grab.begin(null, { data: { label: xform === 'scale' ? 'Scale keys' : 'Move keys' } })) return;
+		const ctx = /** @type {any} */ (grab.ctx());
 		if (xform === 'scale') {
 			// a keypress is a fixed 2% step per unit, so it reads as a nudge either way
-			applyDelta(dx * mult * viewSpan * 0.0133, dy ? dy * mult * (range.hi - range.lo) * 0.0133 : null);
+			applyDelta(ctx, dx * mult * viewSpan * 0.0133, dy ? dy * mult * (range.hi - range.lo) * 0.0133 : null);
 		} else {
 			const step = frame * mult;
 			const vStep = ((range.hi - range.lo) / 100) * mult;
-			applyDelta(dx * step, dy ? dy * vStep : null);
+			applyDelta(ctx, dx * step, dy ? dy * vStep : null);
 		}
-		move = null;
-		endAnimGesture();
+		grab.finish(true);
 	}
 
 	/**
@@ -811,7 +783,7 @@
 				return;
 			}
 			if (e.key === 'Escape') {
-				if (move?.modal) return; // its own handler cancels the grab
+				if (grab.isModal()) return; // its own handler cancels the grab
 				if (!selKeys.length) return;
 				e.preventDefault();
 				selKeys = [];

@@ -661,6 +661,138 @@ h.run(async () => {
 	await A.page.waitForTimeout(250);
 	h.check((await keyTimes()).length === beforeDbl + 1, 'and empty space still inserts one');
 
+	// ---------- 9c3. a multi-drag keeps every key, even when two share a time ------
+	// reported: "moving around multiple points also change current keys position for
+	// some". Identity was re-derived by matching TIMES after the sort, and with snap
+	// on, two keys of one track dragged together land on the same time constantly —
+	// both matched the same key, so one of the pair was dropped or duplicated.
+	const identity = await A.page.evaluate((id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', id);
+		const clipId = ap.createClip(id, 'Identity');
+		const track = ap.addTrack(id, 'pos.y', obj, clipId);
+		ap.updateKey(id, track, 0, { t: 0, v: 0 }, clipId);
+		ap.updateKey(id, track, 1, { t: 0.4, v: 1 }, clipId);
+		ap.addKey(id, track, 0.8, 2, { clipId });
+		ap.addKey(id, track, 1.2, 3, { clipId });
+		const before = ap.activeClip(id).tracks[0].keys.length;
+
+		// drag the two middle keys ON TOP of one another, then apart again — the exact
+		// case that used to lose one
+		const t0 = ap.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t);
+		let moves = [
+			{ trackId: track, index: 1, t: 0.9 },
+			{ trackId: track, index: 2, t: 0.9 }
+		];
+		const landedTogether = ap.moveKeys(id, moves);
+		const midCount = ap.activeClip(id).tracks[0].keys.length;
+		// pull them apart using the indices moveKeys REPORTED
+		ap.moveKeys(id, [
+			{ trackId: track, index: landedTogether[0].index, t: 0.5 },
+			{ trackId: track, index: landedTogether[1].index, t: 1.5 }
+		]);
+		const after = ap.activeClip(id).tracks[0].keys;
+		return {
+			before,
+			midCount,
+			t0,
+			landed: landedTogether.map((/** @type {any} */ l) => l && l.index),
+			afterTimes: after.map((/** @type {any} */ k) => k.t),
+			afterValues: after.map((/** @type {any} */ k) => k.v)
+		};
+	}, first);
+	h.check(identity.before === 4, `four keys to start (${identity.before})`);
+	h.check(
+		identity.midCount === 4,
+		`dragging two keys onto the same time keeps BOTH (${identity.midCount} keys)`
+	);
+	h.check(
+		identity.landed[0] !== identity.landed[1] && identity.landed.every((/** @type {any} */ i) => i !== null),
+		`each moved key reports where it landed (${JSON.stringify(identity.landed)})`
+	);
+	h.check(
+		identity.afterTimes.length === 4 &&
+			identity.afterTimes.includes(0.5) &&
+			identity.afterTimes.includes(1.5),
+		`and pulling them apart again restores both (${JSON.stringify(identity.afterTimes)})`
+	);
+	h.check(
+		new Set(identity.afterValues).size === 4,
+		`with their own values intact (${JSON.stringify(identity.afterValues)})`
+	);
+
+	// ---------- 9c4. right-drag PANS, right-click opens the plot menu ----------
+	await A.page.waitForTimeout(200);
+	const panned = await A.page.evaluate(() => {
+		const el = document.querySelector('#animation-timeline');
+		const r = el.getBoundingClientRect();
+		return { x: r.x + r.width / 2, y: r.y + r.height - 12 };
+	});
+	// zoom in first, so there is somewhere to pan to
+	await A.page.mouse.move(panned.x, panned.y);
+	await A.page.keyboard.down('Control');
+	await A.page.mouse.wheel(0, -300);
+	await A.page.keyboard.up('Control');
+	await A.page.waitForTimeout(200);
+	const readSpan = () =>
+		A.page.evaluate(() => {
+			const m = document.body.textContent?.match(/([\d.]+)–([\d.]+)s/);
+			return m ? { from: +m[1], to: +m[2] } : null;
+		});
+	const zoomed = await readSpan();
+	await A.page.mouse.move(panned.x, panned.y);
+	await A.page.mouse.down({ button: 'right' });
+	await A.page.mouse.move(panned.x - 80, panned.y, { steps: 6 });
+	await A.page.mouse.up({ button: 'right' });
+	await A.page.waitForTimeout(250);
+	const afterPan = await readSpan();
+	h.check(
+		!!zoomed && !!afterPan && afterPan.from > zoomed.from + 0.01,
+		`right-dragging pans the view (${zoomed?.from.toFixed(2)} -> ${afterPan?.from.toFixed(2)}s)`
+	);
+	h.check(
+		!!zoomed && !!afterPan && Math.abs((afterPan.to - afterPan.from) - (zoomed.to - zoomed.from)) < 0.02,
+		'without changing the zoom level'
+	);
+	const menuGoneFirst = await A.page.evaluate(() => !document.body.textContent?.includes('Reset view'));
+	h.check(menuGoneFirst, 'a pan does not also open the menu');
+
+	// a right-click that stays put opens it
+	await A.page.mouse.click(panned.x, panned.y, { button: 'right' });
+	await A.page.waitForTimeout(300);
+	const plotMenu = await A.page.evaluate(() => {
+		const text = document.body.textContent ?? '';
+		return {
+			reset: text.includes('Reset view'),
+			easing: /Reset easing|Easing/.test(text),
+			del: /Delete key/.test(text),
+			selectAll: text.includes('Select every key')
+		};
+	});
+	h.check(plotMenu.reset, 'a right-click that stays put opens the plot menu with Reset view');
+	h.check(plotMenu.selectAll, 'and the timeline actions');
+	// with a selection it offers the key operations
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+	const easedAway = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		const clip = ap.activeClip(id);
+		const track = clip.tracks[0];
+		const hadEase = track.keys.filter((/** @type {any} */ k) => !!k.ease).length;
+		// the menu's Reset easing, driven through the same call it makes
+		ap.updateKey(id, track.id, 0, { ease: null });
+		const now = ap.activeClip(id).tracks[0].keys.filter((/** @type {any} */ k) => !!k.ease).length;
+		return { hadEase, now };
+	}, first);
+	h.check(
+		easedAway.now < easedAway.hadEase || easedAway.hadEase === 0,
+		`Reset easing clears the curve on a key (${easedAway.hadEase} -> ${easedAway.now} with easing)`
+	);
+
 	// ---------- 9d. the transport deck, in real icons and real buttons ----------
 	const deck = await A.page.evaluate((id) => {
 		const s = window.__stores;

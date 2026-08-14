@@ -1138,27 +1138,42 @@ export function updateKey(uuid, trackId, index, patch, clipId) {
  * @param {string} [clipId]
  */
 export function moveKeys(uuid, moves, clipId) {
-	if (!moves?.length) return;
+	if (!moves?.length) return [];
+	/** @type {({trackId: string, index: number}|null)[]} */
+	const landed = moves.map(() => null);
 	editClip(uuid, clipId ?? null, (clip) => {
 		let end = clip.duration;
 		const tracks = clip.tracks.map((track) => {
-			const mine = moves.filter((m) => m.trackId === track.id);
+			const mine = moves
+				.map((m, ordinal) => ({ ...m, ordinal }))
+				.filter((m) => m.trackId === track.id);
 			if (!mine.length) return track;
-			const keys = track.keys.map((key, i) => {
+			// Tag each moved key with the ordinal of the move that produced it, so its
+			// identity survives the re-sort. Matching them back up by TIME afterwards
+			// looked equivalent and is not: two keys of one track dragged together
+			// snap onto the same time constantly, both matched the same key, and one
+			// of the pair was left behind or duplicated (the reported "moving multiple
+			// points changes the position of some of them"). Array.sort is stable, so
+			// two keys at an identical time keep their order and stay distinguishable.
+			const tagged = track.keys.map((key, i) => {
 				const move = mine.find((m) => m.index === i);
-				if (!move) return key;
-				/** @type {Key} */
+				/** @type {any} */
 				const next = { t: key.t, v: key.v, ...(key.ease ? { ease: key.ease } : {}) };
+				if (!move) return { key: next, ordinal: -1 };
 				if (move.t !== undefined) next.t = Math.max(0, num(move.t));
 				if (move.v !== undefined) next.v = num(move.v);
 				end = Math.max(end, next.t);
-				return next;
+				return { key: next, ordinal: move.ordinal };
 			});
-			keys.sort((a, b) => a.t - b.t);
-			return { ...track, keys };
+			tagged.sort((a, b) => a.key.t - b.key.t);
+			tagged.forEach((entry, index) => {
+				if (entry.ordinal >= 0) landed[entry.ordinal] = { trackId: track.id, index };
+			});
+			return { ...track, keys: tagged.map((entry) => entry.key) };
 		});
 		return { ...clip, tracks, duration: end };
 	});
+	return landed;
 }
 
 /** @param {string} uuid @param {string} trackId @param {number} index @param {string} [clipId] */

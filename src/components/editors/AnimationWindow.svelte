@@ -228,10 +228,13 @@
 		if (!target) return;
 		play(target.uuid, undefined, { from: Math.max(0, rangeOut - curTime), reverse: true });
 	}
-	/** step to the previous / next key time (0 and the clip end always count) */
+	/** Step to the previous / next key time. In GRAPH view that means the keys of
+	 *  the channel on screen — stepping through every channel's keys while looking at
+	 *  one curve lands the playhead where nothing visible happens. */
 	function stepKey(/** @type {number} */ dir) {
 		if (!target) return;
-		const stops = [...new Set([...keyTimes(target.uuid), duration])].sort((a, b) => a - b);
+		const own = view === 'graph' && selTrack ? selTrack.keys.map((k) => k.t) : keyTimes(target.uuid);
+		const stops = [...new Set([...own, 0, duration])].sort((a, b) => a - b);
 		const here = curTime;
 		const next =
 			dir < 0
@@ -366,22 +369,16 @@
 			t: snapT(Math.max(0, Math.min(duration, s.t0 + dt))),
 			...(dv !== null && !s.stepped ? { v: s.v0 + dv } : {})
 		}));
-		moveKeys(target.uuid, moves);
-		// keys re-sort as they pass one another, so re-find each one by the time we
-		// just wrote (absolute from the snapshot, so nothing drifts over a long drag)
-		const live = get(animations)[target.uuid];
-		const clip = live?.clips?.[live.active];
+		// keys re-sort as they pass one another; moveKeys reports where each one
+		// LANDED, which is the only reliable identity once two of them share a time
+		const landed = moveKeys(target.uuid, moves);
 		/** @type {[string, number][]} */
 		const next = [];
 		move.snapshot.forEach((s, i) => {
-			const track = clip?.tracks?.find((/** @type {any} */ tr) => tr.id === s.trackId);
-			const at = track
-				? track.keys.findIndex((/** @type {any} */ k) => Math.abs(k.t - moves[i].t) < 1e-6)
-				: -1;
-			if (at >= 0) {
-				s.index = at;
-				next.push([s.trackId, at]);
-			}
+			const spot = landed[i];
+			if (!spot) return;
+			s.index = spot.index;
+			next.push([spot.trackId, spot.index]);
 		});
 		if (next.length) selKeys = next;
 	}
@@ -513,12 +510,44 @@
 	function plotDown(/** @type {PointerEvent} */ e) {
 		if (!target || !plotEl) return;
 		const r = plotEl.getBoundingClientRect();
+		// RIGHT or MIDDLE button on the plot body: a pan if the pointer travels, and
+		// the context menu if it does not (the Blender split — the view is dragged far
+		// more often than the menu is opened, and a menu on press would fight it)
+		if (e.button === 2 || e.button === 1) {
+			e.preventDefault();
+			// capture the SPAN too: it is derived from the two ends we are about to
+			// write, so reading it per move feeds the zoom level back into the pan
+			pan = { x: e.clientX, y: e.clientY, start: viewStart, span: viewSpan, moved: false };
+			window.addEventListener('pointermove', panMove);
+			window.addEventListener('pointerup', panUp);
+			return;
+		}
 		if (e.clientY - r.top > RULER_H) return; // below the ruler: not a scrub
 		e.preventDefault();
 		scrubbing = true;
 		scrubAt(e.clientX);
 		window.addEventListener('pointermove', rulerMove);
 		window.addEventListener('pointerup', rulerUp);
+	}
+
+	/** @type {{x: number, y: number, start: number, span: number, moved: boolean}|null} */
+	let pan = null;
+	function panMove(/** @type {PointerEvent} */ e) {
+		if (!pan || !plotEl) return;
+		const dx = e.clientX - pan.x;
+		if (!pan.moved && Math.abs(dx) < 4 && Math.abs(e.clientY - pan.y) < 4) return;
+		pan.moved = true;
+		const seconds = (dx / Math.max(innerW, 1)) * pan.span;
+		const from = Math.min(Math.max(pan.start - seconds, 0), Math.max(0, duration - pan.span));
+		viewStart = from;
+		viewEnd = Math.min(from + pan.span, duration);
+	}
+	function panUp(/** @type {PointerEvent} */ e) {
+		const dragged = pan?.moved;
+		pan = null;
+		window.removeEventListener('pointermove', panMove);
+		window.removeEventListener('pointerup', panUp);
+		if (!dragged && e.button === 2) openPlotMenu(e); // a right-click that stayed put
 	}
 	function rulerMove(/** @type {PointerEvent} */ e) {
 		if (scrubbing) scrubAt(e.clientX);
@@ -592,6 +621,140 @@
 
 	// --- the "+" menu ------------------------------------------------------------
 	let menu = $state(/** @type {any} */ (null));
+
+	/**
+	 * The plot's own context menu (a right-click that did not pan). It carries what
+	 * you want where you are pointing: the key operations when something is selected,
+	 * and the view controls always — a right-click that only produced the BROWSER
+	 * menu was the reported gap.
+	 * @param {PointerEvent|MouseEvent} e
+	 */
+	function openPlotMenu(e) {
+		if (!target || !plotEl) return;
+		const uuid = target.uuid;
+		const r = plotEl.getBoundingClientRect();
+		const x = e.clientX - r.left;
+		const y = e.clientY - r.top;
+		const t = snapT(Math.max(0, Math.min(duration, xt(x))));
+		const row = view === 'graph' ? selTrack : tracks[Math.floor((y - RULER_H) / ROW_H)];
+		const count = selKeys.length;
+		/** @type {any[]} */
+		const items = [];
+		if (count) {
+			items.push({ header: count > 1 ? count + ' keys' : 'Key' });
+			items.push({
+				label: count > 1 ? 'Delete ' + count + ' keys' : 'Delete key',
+				danger: true,
+				action: () => {
+					const doomed = [...selKeys].sort((a, b) => b[1] - a[1]);
+					beginAnimGesture(uuid, count > 1 ? 'Remove keys' : 'Remove key');
+					for (const [trackId, index] of doomed) removeKey(uuid, trackId, index);
+					endAnimGesture();
+					selKeys = [];
+				}
+			});
+			items.push({
+				label: 'Reset easing (linear)',
+				tooltip: 'Drop the curve on the segment leaving each selected key',
+				action: () => {
+					beginAnimGesture(uuid, 'Reset easing');
+					for (const [trackId, index] of selKeys) updateKey(uuid, trackId, index, { ease: null });
+					endAnimGesture();
+				}
+			});
+			items.push({
+				label: 'Easing',
+				children: Object.keys(EASINGS).map((name) => ({
+					label: name,
+					action: () => {
+						beginAnimGesture(uuid, 'Easing');
+						for (const [trackId, index] of selKeys) {
+							updateKey(uuid, trackId, index, { ease: [...EASINGS[name]] });
+						}
+						endAnimGesture();
+					}
+				}))
+			});
+			items.push({
+				label: 'Move to the playhead',
+				tooltip: 'Put the selection at ' + curTime.toFixed(2) + 's, keeping their spacing',
+				action: () => {
+					const first = Math.min(...selKeys.map(([id, i]) => {
+						const track = tracks.find((tr) => tr.id === id);
+						return track?.keys[i]?.t ?? 0;
+					}));
+					const shift = snapT(curTime) - first;
+					beginAnimGesture(uuid, 'Move keys');
+					moveKeys(
+						uuid,
+						selKeys.map(([id, i]) => {
+							const track = tracks.find((tr) => tr.id === id);
+							return { trackId: id, index: i, t: Math.max(0, (track?.keys[i]?.t ?? 0) + shift) };
+						})
+					);
+					endAnimGesture();
+				}
+			});
+			items.push({
+				label: 'Value from the object now',
+				tooltip: 'Read the object as it stands and store that as the key value',
+				action: () => {
+					beginAnimGesture(uuid, 'Key pose');
+					for (const [trackId, index] of selKeys) {
+						const track = tracks.find((tr) => tr.id === trackId);
+						if (track) updateKey(uuid, trackId, index, { v: channelValue(target, track.channel) });
+					}
+					endAnimGesture();
+				}
+			});
+			items.push({ section: 'Timeline' });
+		}
+		items.push({
+			label: 'Add key here',
+			disabled: !row,
+			tooltip: row ? channelLabel(row.channel) + ' at ' + t.toFixed(2) + 's' : 'No channel here',
+			action: () => {
+				if (!row) return;
+				selId = row.id;
+				const v = view === 'graph' && !STEPPED.has(row.channel) ? yv(y) : (sampleTrack(row, t) ?? 0);
+				addKey(uuid, row.id, t, v);
+			}
+		});
+		items.push({
+			label: 'Select every key',
+			disabled: !tracks.length,
+			action: () => {
+				selKeys = tracks.flatMap((track) =>
+					view === 'graph' && selTrack && track.id !== selTrack.id
+						? []
+						: track.keys.map((_, i) => /** @type {[string, number]} */ ([track.id, i]))
+				);
+			}
+		});
+		items.push({ section: 'View' });
+		items.push({ label: 'Reset view (fit the clip)', action: fitView });
+		items.push({
+			label: 'Zoom to the selection',
+			disabled: selKeys.length < 2,
+			action: () => {
+				const times = selKeys.map(([id, i]) => {
+					const track = tracks.find((tr) => tr.id === id);
+					return track?.keys[i]?.t ?? 0;
+				});
+				const lo = Math.min(...times);
+				const hi = Math.max(...times);
+				const padding = Math.max((hi - lo) * 0.15, 0.05);
+				viewStart = Math.max(0, lo - padding);
+				viewEnd = Math.min(duration, hi + padding);
+			}
+		});
+		items.push({
+			label: snap ? 'Snapping: 0.1s (on)' : 'Snapping: off',
+			checked: snap,
+			action: () => (snap = !snap)
+		});
+		menu = { x: e.clientX, y: e.clientY, items };
+	}
 	function openAddMenu(/** @type {MouseEvent} */ e) {
 		if (!target) return;
 		const uuid = target.uuid;
@@ -1139,6 +1302,7 @@
 							ondblclick={plotDblClick}
 							onpointerdown={plotDown}
 							onwheel={onPlotWheel}
+							oncontextmenu={(e) => e.preventDefault()}
 						>
 							<!-- ruler: drag anywhere along it to sweep the playhead -->
 							<rect

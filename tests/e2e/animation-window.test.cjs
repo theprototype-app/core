@@ -125,5 +125,61 @@ h.run(async () => {
 	);
 	h.check(shape.easeOnFirstKey, 'the easing rides the key that opens the segment');
 
+	// --- the pane must SURVIVE two keys sharing a time -------------------------
+	// Reported as "animation pane does not open anymore". A presentational each-block
+	// in the navigator strip was keyed by key TIME, and two keys legitimately share
+	// one while a multi-selection is dragged through itself — a duplicate each-key
+	// THROWS in svelte, which took the whole window down. Nothing about the crash was
+	// visible to a store-reading check, which is why the helper now fails a suite on
+	// a render error at all.
+	await A.page.evaluate((id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		const clip = ap.activeClip(id);
+		const track = clip.tracks[0];
+		ap.addKey(id, track.id, 0.5, 1);
+		ap.addKey(id, track.id, 0.9, 2);
+		// put two of them on the SAME time, as a drag does in passing
+		const fresh = ap.activeClip(id).tracks[0];
+		ap.moveKeys(id, [
+			{ trackId: fresh.id, index: 1, t: 0.7 },
+			{ trackId: fresh.id, index: 2, t: 0.7 }
+		]);
+	}, uuid);
+	await A.page.waitForTimeout(400);
+	const survived = await A.page.evaluate((id) => {
+		const ap = window.__stores.animationPreview;
+		return {
+			dock: !!document.querySelector('#animation-dock'),
+			timeline: !!document.querySelector('#animation-timeline'),
+			navigator: !!document.querySelector('#animation-navigator'),
+			deck: !!document.getElementById('animation-play'),
+			keys: ap.activeClip(id).tracks[0].keys.length
+		};
+	}, uuid);
+	h.check(survived.keys === 4, `four keys, two of them at the same time (${survived.keys})`);
+	h.check(survived.dock && survived.timeline, 'the pane still renders with two keys on one time');
+	h.check(survived.navigator && survived.deck, 'navigator and transport included');
+	h.check(
+		h.pageErrors(A).length === 0,
+		`and the page threw nothing (${h.pageErrors(A).slice(0, 1).join('') || 'clean'})`
+	);
+
+	// closing and reopening it must work too — that is the actual reported symptom
+	await A.page.evaluate(() => window.__stores.animationClose.set(true));
+	await A.page.waitForTimeout(250);
+	const closed = await A.page.evaluate(() => !document.querySelector('#animation-dock'));
+	await A.page.evaluate(() => {
+		window.__stores.animationClose.set(false);
+		window.__stores.bottomDock.activateDock('animation');
+	});
+	await A.page.waitForTimeout(500);
+	const reopened = await A.page.evaluate(() => ({
+		dock: !!document.querySelector('#animation-dock'),
+		timeline: !!document.querySelector('#animation-timeline')
+	}));
+	h.check(closed, 'the pane closes');
+	h.check(reopened.dock && reopened.timeline, 'and OPENS AGAIN');
+
 	await h.finish(browser);
 });

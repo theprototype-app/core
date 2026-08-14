@@ -1624,8 +1624,12 @@
 						title="The whole clip — drag the bar to move the visible window"
 						onpointerdown={navDown}
 					>
+					<!-- keyed by INDEX, never by time: two keys legitimately share a time
+						     while a multi-selection is dragged through one another, and a
+						     duplicate each-key is a THROW in svelte, which took the whole
+						     window down — the pane stopped opening at all -->
 						{#each tracks as track (track.id)}
-							{#each track.keys as key (key.t)}
+							{#each track.keys as key, ki (ki)}
 								<span
 									class="pointer-events-none absolute top-1/2 h-1 w-px -translate-y-1/2 bg-gray-500/70"
 									style="left: {(key.t / Math.max(duration, 0.001)) * 100}%"

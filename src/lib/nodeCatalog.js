@@ -157,6 +157,16 @@ export const nodeCatalog = [
 				defaults: { clip: '', pulse: 0.3 }
 			},
 			{
+				// 17-E F5: pulses as the playhead CROSSES a named point in the clip, so
+				// a footstep sound or a puff of dust can sit at the exact frame of a
+				// movement instead of only at its end. `name` empty = any marker on the
+				// clip, which is one node for "every beat". Fired locally on every peer:
+				// each travels the same clip interval from the same synced stamp.
+				type: 'animmarker',
+				label: 'Animation Marker',
+				defaults: { name: '', pulse: 0.3 }
+			},
+			{
 				// 17-E F3: the READABLE half of Animation Finished — a value node, so
 				// the clip can drive something continuously instead of only handing
 				// off at its end (progress into a Map Range that fades a light, or

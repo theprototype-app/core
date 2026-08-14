@@ -21,6 +21,7 @@ const OUTPUT = {
 	onimpact: 'event', // PFX-C
 	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
 	animfinished: 'event', // 17-E: a clip reached its end
+	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip
 	animstate: 'number', // 17-E F3: progress / playing / position, one at a time
 	velocity: 'number', // CL-C: live speed readout
 	flowinput: 'number' // H5 fallback; the live check reads data.vtype

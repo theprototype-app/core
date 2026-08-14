@@ -23,7 +23,8 @@
 		createClip, renameClip, duplicateClip, deleteClip, setActiveClip, keyTimes,
 		beginAnimGesture, endAnimGesture, play, pause, stop, resetPreview, scrub, setSpeed, setRange,
 		PRESETS, applyPreset, autoKeyFor, setAutoKey, rememberAutoKeyReference, captureAutoKey,
-		bakeAnimations
+		bakeAnimations,
+		addMarker, updateMarker, removeMarker
 	} from '$lib/animationPreview';
 	import { showToast, openSceneSection } from '../../stores/appStore.js';
 	// the clips a model was IMPORTED with are a different system (replicated,
@@ -285,21 +286,28 @@
 	const PAD_X = 10;
 	const RULER_H = 16;
 	const ROW_H = 22;
+	// F5: the marker band. A thin strip between the ruler and the plot, present ONLY
+	// while the clip has markers — so a clip without them lays out exactly as before
+	// and nothing that measures the first track row moves. Everything below the ruler
+	// is positioned from TOP_H rather than RULER_H for that reason.
+	const clipMarkers = $derived(anim?.markers ?? []);
+	const MARK_H = $derived(clipMarkers.length ? 12 : 0);
+	const TOP_H = $derived(RULER_H + MARK_H);
 	// The graph FILLS the pane instead of sitting at a fixed height: a short dock
 	// clipped the curve and grew a scrollbar, and a tall one wasted the room. There
 	// is nothing below the curve to reveal, so scrolling was never the answer.
-	const GRAPH_H = $derived(Math.max(80, plotVH - RULER_H - 22));
+	const GRAPH_H = $derived(Math.max(80, plotVH - TOP_H - 22));
 	// plotW is the container's clientWidth, which INCLUDES its 8px padding either
 	// side, so sizing the svg from it overflowed the content box by 12px — no visible
 	// bar (overflow-x is hidden) but a scrollable width all the same
 	const plotAvail = $derived(Math.max(80, plotW - 16));
 	const innerW = $derived(Math.max(60, plotAvail - PAD_X * 2));
-	const sheetH = $derived(RULER_H + Math.max(1, tracks.length) * ROW_H + 6);
-	const plotH = $derived(view === 'graph' ? RULER_H + GRAPH_H + 6 : sheetH);
+	const sheetH = $derived(TOP_H + Math.max(1, tracks.length) * ROW_H + 6);
+	const plotH = $derived(view === 'graph' ? TOP_H + GRAPH_H + 6 : sheetH);
 	// x maps the VISIBLE window, so zooming and panning move every channel together
 	const tx = (/** @type {number} */ t) => PAD_X + ((t - viewStart) / viewSpan) * innerW;
 	const xt = (/** @type {number} */ x) => viewStart + ((x - PAD_X) / innerW) * viewSpan;
-	const rowY = (/** @type {number} */ i) => RULER_H + i * ROW_H + ROW_H / 2;
+	const rowY = (/** @type {number} */ i) => TOP_H + i * ROW_H + ROW_H / 2;
 
 	// Value range of the selected track, for the graph's y axis. FROZEN while a key
 	// is dragged: the range is derived from the keys, so letting it breathe under
@@ -324,9 +332,9 @@
 		return { lo: lo - pad, hi: hi + pad };
 	});
 	const vy = (/** @type {number} */ v) =>
-		RULER_H + GRAPH_H - ((v - range.lo) / (range.hi - range.lo)) * GRAPH_H;
+		TOP_H + GRAPH_H - ((v - range.lo) / (range.hi - range.lo)) * GRAPH_H;
 	const yv = (/** @type {number} */ y) =>
-		range.lo + ((RULER_H + GRAPH_H - y) / GRAPH_H) * (range.hi - range.lo);
+		range.lo + ((TOP_H + GRAPH_H - y) / GRAPH_H) * (range.hi - range.lo);
 
 	// --- F4: the tangent handles ON the curve ------------------------------------
 	// `ease` already shapes the segment that FOLLOWS each key as a cubic bezier in
@@ -358,6 +366,76 @@
 			to: { x: tx(b.t), y: vy(b.v) }
 		};
 	});
+
+	// --- F5: the marker band -----------------------------------------------------
+	/** index of the marker being dragged along the band, -1 = none */
+	let markDrag = $state(-1);
+	/** index of the marker being renamed inline, -1 = none */
+	let markEdit = $state(-1);
+
+	function markerDown(/** @type {number} */ index, /** @type {PointerEvent} */ e) {
+		if (!target) return;
+		if (e.button === 2) return; // the menu opens on contextmenu, like a key
+		e.preventDefault();
+		e.stopPropagation(); // the band sits over the ruler's scrub area
+		markDrag = index;
+		beginAnimGesture(target.uuid, 'Move marker');
+		window.addEventListener('pointermove', markerMove);
+		window.addEventListener('pointerup', markerUp);
+	}
+	function markerMove(/** @type {PointerEvent} */ e) {
+		if (markDrag < 0 || !target || !plotEl) return;
+		const r = plotEl.getBoundingClientRect();
+		const t = Math.max(0, Math.min(duration, snapT(xt(e.clientX - r.left))));
+		// markers re-SORT on every write, so follow the moving one by identity
+		const moving = clipMarkers[markDrag];
+		if (!moving) return;
+		updateMarker(target.uuid, markDrag, { t });
+		const next = (anim?.markers ?? []).findIndex((m) => m.name === moving.name);
+		if (next >= 0) markDrag = next;
+	}
+	function markerUp() {
+		if (markDrag < 0) return;
+		markDrag = -1;
+		endAnimGesture();
+		window.removeEventListener('pointermove', markerMove);
+		window.removeEventListener('pointerup', markerUp);
+	}
+
+	/** Drop a marker at the playhead — the ＋ menu and the plot menu both land here */
+	function dropMarker() {
+		if (!target) return;
+		addMarker(target.uuid, snapT(curTime));
+		showToast('Marker added at ' + snapT(curTime).toFixed(2) + 's');
+	}
+
+	function markerContext(/** @type {number} */ index, /** @type {MouseEvent} */ e) {
+		if (!target) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const uuid = target.uuid;
+		const marker = clipMarkers[index];
+		if (!marker) return;
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ header: marker.name },
+				{ label: 'Rename', action: () => (markEdit = index) },
+				{
+					label: 'Move to the playhead',
+					tooltip: 'Put it at ' + snapT(curTime).toFixed(2) + 's',
+					action: () => updateMarker(uuid, index, { t: snapT(curTime) })
+				},
+				{
+					label: 'Go to it',
+					tooltip: marker.t.toFixed(2) + 's',
+					action: () => scrub(uuid, marker.t)
+				},
+				{ label: 'Delete marker', danger: true, action: () => removeMarker(uuid, index) }
+			]
+		};
+	}
 
 	/** which tangent is being dragged on the plot: 0 = P1, 1 = P2, -1 = none */
 	let tanDrag = $state(-1);
@@ -777,9 +855,9 @@
 		const r = plotEl.getBoundingClientRect();
 		const x = e.clientX - r.left;
 		const y = e.clientY - r.top;
-		if (y <= RULER_H) return; // the ruler scrubs, it does not author
+		if (y <= TOP_H) return; // the ruler + marker band scrub/carry markers, they do not author
 		const t = snapT(Math.max(0, Math.min(duration, xt(x))));
-		const track = view === 'graph' ? selTrack : tracks[Math.floor((y - RULER_H) / ROW_H)];
+		const track = view === 'graph' ? selTrack : tracks[Math.floor((y - TOP_H) / ROW_H)];
 		if (!track) return;
 		selId = track.id;
 		const near = keyNear(track, t);
@@ -983,7 +1061,7 @@
 		const x = e.clientX - r.left;
 		const y = e.clientY - r.top;
 		const t = snapT(Math.max(0, Math.min(duration, xt(x))));
-		const row = view === 'graph' ? selTrack : tracks[Math.floor((y - RULER_H) / ROW_H)];
+		const row = view === 'graph' ? selTrack : tracks[Math.floor((y - TOP_H) / ROW_H)];
 		const count = selKeys.length;
 		/** @type {any[]} */
 		const items = [];
@@ -1107,6 +1185,12 @@
 			}
 		});
 		items.push({
+			// F5: a named point in the clip that an Animation Marker node pulses on
+			label: 'Marker at the playhead',
+			tooltip: 'A named point at ' + snapT(curTime).toFixed(2) + 's — an Animation Marker node pulses as the playhead crosses it',
+			action: dropMarker
+		});
+		items.push({
 			label: 'Select every key',
 			disabled: !tracks.length,
 			action: () => {
@@ -1205,6 +1289,13 @@
 						captureAutoKey(uuid, snapT(t));
 						if (armed !== uuid) setAutoKey(armed);
 					}
+				},
+				{
+					// F5: markers ride the clip, so they replicate / save / undo with it
+					label: 'Marker at playhead',
+					tooltip:
+						'A named point at ' + snapT(t).toFixed(2) + 's. An Animation Marker node pulses as the playhead crosses it, so a footstep or a puff of dust can sit at an exact frame of the movement.',
+					action: dropMarker
 				},
 				{ section: 'Timing' },
 				{
@@ -1644,6 +1735,52 @@
 						</div>
 					{/each}
 				</div>
+
+				<!-- F5: the marker list. The band on the plot is for placing and dragging
+				     them; this is where they are NAMED, with the same inline rename the
+				     clip list uses. Hidden entirely while the clip has none. -->
+				{#if clipMarkers.length}
+					<div id="animation-marker-list" class="shrink-0 border-t border-gray-700/60">
+						<div class="flex items-center justify-between px-2 pt-1.5">
+							<span class="text-[10px] uppercase tracking-wider text-gray-500">Markers</span>
+							<span class="text-[10px] text-gray-500">{clipMarkers.length}</span>
+						</div>
+						<div class="overflow-y-auto p-1" style="max-height: 96px">
+							{#each clipMarkers as marker, index (index)}
+								{#if markEdit === index}
+									<!-- svelte-ignore a11y_autofocus -->
+									<input
+										class="w-full rounded-sm border border-primary-500 bg-gray-900 px-1 py-0.5 text-xs text-gray-100"
+										autofocus
+										value={marker.name}
+										aria-label="Marker name"
+										onblur={(e) => { if (target) updateMarker(target.uuid, index, { name: e.currentTarget.value }); markEdit = -1; }}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') e.currentTarget.blur();
+											else if (e.key === 'Escape') markEdit = -1;
+										}}
+									/>
+								{:else}
+									<div class="flex items-center gap-1">
+										<button
+											class="min-w-0 flex-1 truncate px-2 py-1 text-left text-xs text-gray-300 hover:bg-gray-700/60"
+											title="Go to this marker (double-click to rename)"
+											onclick={() => { if (target) scrub(target.uuid, marker.t); }}
+											ondblclick={() => (markEdit = index)}>{marker.name}</button
+										>
+										<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{marker.t.toFixed(2)}s</span>
+										<button
+											class="ui-button-quiet shrink-0 text-red-400"
+											title="Remove marker"
+											aria-label="Remove marker"
+											onclick={() => { if (target) removeMarker(target.uuid, index); }}>✕</button
+										>
+									</div>
+								{/if}
+							{/each}
+						</div>
+					</div>
+				{/if}
 			</div>
 
 			<!-- CENTRE: the timeline (dope sheet / value graph) -->
@@ -1817,19 +1954,51 @@
 								<text x={tx(t) + 2} y={11} font-size="9" fill="rgb(107 114 128)" pointer-events="none">{t}s</text>
 							{/each}
 
+							<!-- F5: the MARKER band. Only rendered when the clip has markers, so
+							     MARK_H is 0 otherwise and the plot below is unchanged. Each marker
+							     is a flag in the band plus a full-height line, drawn like A/B. -->
+							{#if clipMarkers.length}
+								<rect
+									id="animation-markers"
+									x="0" y={RULER_H} width={plotAvail} height={MARK_H}
+									fill="rgb(17 24 39 / 0.7)" pointer-events="none"
+								/>
+								{#each clipMarkers as marker, index (index)}
+									<line
+										x1={tx(marker.t)} y1={RULER_H} x2={tx(marker.t)} y2={plotH}
+										stroke="rgb(45 212 191 / 0.55)" stroke-width="1" stroke-dasharray="3 2"
+										pointer-events="none"
+									/>
+									<!-- a wide-enough flag to grab on a touchscreen; the label sits
+									     to its right and is not itself a target -->
+									<rect
+										data-marker={index}
+										x={tx(marker.t) - 3} y={RULER_H} width="7" height={MARK_H}
+										class="cursor-ew-resize"
+										fill={markDrag === index ? 'rgb(250 204 21)' : 'rgb(45 212 191)'}
+										onpointerdown={(e) => markerDown(index, e)}
+										oncontextmenu={(e) => markerContext(index, e)}
+									/>
+									<text
+										x={tx(marker.t) + 6} y={RULER_H + MARK_H - 3}
+										font-size="8" fill="rgb(153 246 228)" pointer-events="none"
+									>{marker.name}</text>
+								{/each}
+							{/if}
+
 							<!-- everything outside the A/B window is dimmed, the way a video
 							     editor shades the part it will not play -->
 							{#if ranged}
 								{#if rangeIn > viewStart}
-									<rect x={tx(viewStart)} y={RULER_H} width={Math.max(0, tx(Math.min(rangeIn, viewEnd)) - tx(viewStart))} height={plotH - RULER_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
+									<rect x={tx(viewStart)} y={TOP_H} width={Math.max(0, tx(Math.min(rangeIn, viewEnd)) - tx(viewStart))} height={plotH - TOP_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
 								{/if}
 								{#if rangeOut < viewEnd}
-									<rect x={tx(Math.max(rangeOut, viewStart))} y={RULER_H} width={Math.max(0, tx(viewEnd) - tx(Math.max(rangeOut, viewStart)))} height={plotH - RULER_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
+									<rect x={tx(Math.max(rangeOut, viewStart))} y={TOP_H} width={Math.max(0, tx(viewEnd) - tx(Math.max(rangeOut, viewStart)))} height={plotH - TOP_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
 								{/if}
 								<line x1={tx(rangeIn)} y1={0} x2={tx(rangeIn)} y2={plotH} stroke="rgb(34 197 94 / 0.9)" stroke-width="1.5" pointer-events="none" />
 								<line x1={tx(rangeOut)} y1={0} x2={tx(rangeOut)} y2={plotH} stroke="rgb(239 68 68 / 0.9)" stroke-width="1.5" pointer-events="none" />
-								<text x={tx(rangeIn) + 2} y={RULER_H + 9} font-size="8" fill="rgb(34 197 94)" pointer-events="none">A</text>
-								<text x={tx(rangeOut) - 8} y={RULER_H + 9} font-size="8" fill="rgb(239 68 68)" pointer-events="none">B</text>
+								<text x={tx(rangeIn) + 2} y={TOP_H + 9} font-size="8" fill="rgb(34 197 94)" pointer-events="none">A</text>
+								<text x={tx(rangeOut) - 8} y={TOP_H + 9} font-size="8" fill="rgb(239 68 68)" pointer-events="none">B</text>
 							{/if}
 
 							{#if view === 'sheet'}
@@ -1894,10 +2063,10 @@
 										oncontextmenu={(e) => keyContext(e, selTrack.id, index)}
 									/>
 								{/each}
-								<text x={PAD_X} y={RULER_H + 10} font-size="9" fill="rgb(107 114 128)">
+								<text x={PAD_X} y={TOP_H + 10} font-size="9" fill="rgb(107 114 128)">
 									{dispVal(range.hi, selTrack.channel)}
 								</text>
-								<text x={PAD_X} y={RULER_H + GRAPH_H - 2} font-size="9" fill="rgb(107 114 128)">
+								<text x={PAD_X} y={TOP_H + GRAPH_H - 2} font-size="9" fill="rgb(107 114 128)">
 									{dispVal(range.lo, selTrack.channel)}
 								</text>
 							{/if}

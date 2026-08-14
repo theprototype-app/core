@@ -121,6 +121,7 @@
 		keypress: KeyPressNode,
 		playanim: PlayAnimNode, // 17-E A5
 		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
+		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip
 		animstate: AnimStateNode, // 17-E F3: the readable half of it
 		...moduleTypes
 	};

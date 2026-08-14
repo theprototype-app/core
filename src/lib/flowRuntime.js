@@ -330,7 +330,8 @@ export const valueTypes = [
 	'onimpact', // PFX-C: physics impact trigger
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
-	'animstate' // 17-E F3: the readable half of animfinished
+	'animstate', // 17-E F3: the readable half of animfinished
+	'animmarker' // 17-E F5: the playhead crossed a named point in a clip
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -561,6 +562,7 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			return pa && pb ? pa.distanceTo(pb) <= num(d.radius ?? 3) : false;
 		}
 		case 'animfinished': // 17-E: fired locally when a clip reaches its end
+		case 'animmarker': // 17-E F5: fired locally when the playhead crosses one
 		case 'onclick': {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
@@ -784,6 +786,25 @@ function reachesObjectSelector(startId, uuid) {
 export function fireAnimFinished(/** @type {string} */ uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'animfinished') return;
+		if (!reachesObjectSelector(node.id, uuid) && implicitOwnerOf(node) !== uuid) return;
+		applyNodeTrigger(node.id, syncedNow(), false);
+	});
+}
+
+/**
+ * F5: the playhead on `uuid` just CROSSED the marker called `name` — pulse every
+ * Animation Marker node aimed at it. A node with an empty `name` takes any marker,
+ * so one node can drive "something happens at each beat".
+ *
+ * LOCAL for the same reason as animfinished: every peer's runtime travels the same
+ * clip interval from the same synced stamp, so each detects the crossing itself.
+ * @param {string} uuid @param {string} name
+ */
+export function fireAnimMarker(uuid, name) {
+	nodes.forEach((node) => {
+		if (node.type !== 'animmarker') return;
+		const wanted = String(node.data?.name ?? '').trim();
+		if (wanted && wanted.toLowerCase() !== String(name).trim().toLowerCase()) return;
 		if (!reachesObjectSelector(node.id, uuid) && implicitOwnerOf(node) !== uuid) return;
 		applyNodeTrigger(node.id, syncedNow(), false);
 	});

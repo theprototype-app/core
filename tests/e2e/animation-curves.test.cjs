@@ -1071,6 +1071,92 @@ h.run(async () => {
 	);
 	await A.page.keyboard.press('1');
 
+	// ---------- 9c8. per-clip frame rate, and STEP sampling ----------
+	// Frame rate belongs to the clip (it is what that clip's key times mean, and one
+	// object can hold a 24fps swing beside a 60fps flourish); `step` is the separate
+	// "on twos" control — sample the movement on a coarser grid than its keys.
+	const rates = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', id);
+		const previous = ap.getAnimSet(id).active;
+		const clipId = ap.createClip(id, 'Rates');
+		const track = ap.addTrack(id, 'pos.y', obj, clipId);
+		ap.updateKey(id, track, 0, { t: 0, v: 0 }, clipId);
+		ap.updateKey(id, track, 1, { t: 1, v: 10 }, clipId);
+		ap.updateAnim(id, { duration: 1, loop: 'loop', fps: 24 }, clipId);
+		ap.setActiveClip(id, clipId);
+		const stored = ap.activeClip(id);
+
+		// SMOOTH first: two nearby times give two different poses
+		ap.scrub(id, 0.50);
+		const smoothA = obj.position.y;
+		ap.scrub(id, 0.54);
+		const smoothB = obj.position.y;
+
+		// now on FOURS: both land on the same sample, so the pose HOLDS
+		ap.updateAnim(id, { step: 4 }, clipId);
+		ap.scrub(id, 0.50);
+		const steppedA = obj.position.y;
+		ap.scrub(id, 0.54);
+		const steppedB = obj.position.y;
+		ap.scrub(id, 0.80);
+		const steppedC = obj.position.y;
+
+		// and it survives a save/load, being clip data
+		const payload = ap.animationsSnapshot();
+		const savedClip = payload[id]?.clips?.[clipId];
+		ap.updateAnim(id, { step: 0 }, clipId);
+		ap.resetPreview(id);
+		return {
+			fps: stored.fps,
+			smoothMoved: Math.abs(smoothA - smoothB) > 1e-6,
+			steppedHeld: Math.abs(steppedA - steppedB) < 1e-9,
+			steppedAdvanced: Math.abs(steppedC - steppedA) > 1e-6,
+			savedFps: savedClip?.fps,
+			savedStep: savedClip?.step,
+			previous
+		};
+	}, first);
+	h.check(rates.fps === 24, `a clip carries its own frame rate (${rates.fps}fps)`);
+	h.check(rates.smoothMoved, 'a smooth clip gives a different pose 0.04s later');
+	h.check(rates.steppedHeld, 'with step 4 the same two times land on ONE sample (the stepped look)');
+	h.check(rates.steppedAdvanced, 'and a later sample still advances');
+	h.check(
+		rates.savedFps === 24 && rates.savedStep === 4,
+		`both ride the save as clip data (fps ${rates.savedFps}, step ${rates.savedStep})`
+	);
+
+	// the editor's frame grid follows the clip: at 24fps an arrow step is 1/24
+	const gridFollows = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		s.animationPreview.scrub(id, 0);
+		const shown = document.getElementById('animation-fps')?.value;
+		document.getElementById('animation-play')?.focus();
+		return { shown };
+	}, first);
+	h.check(gridFollows.shown === '24', `the fps field shows the clip's rate (${gridFollows.shown})`);
+	await A.page.mouse.click(plotArea.x + 6, plotArea.y + plotArea.height - 6);
+	await A.page.keyboard.press('ArrowRight');
+	await A.page.waitForTimeout(150);
+	const step24 = await head();
+	h.check(
+		Math.abs(step24 - 1 / 24) < 1e-6,
+		`and an arrow steps ONE 24fps frame (${step24.toFixed(4)}s = 1/24)`
+	);
+	// hand the editor back the clip the later blocks expect
+	await A.page.evaluate(
+		(args) => {
+			const ap = window.__stores.animationPreview;
+			ap.setActiveClip(args.id, args.clip);
+			ap.resetPreview(args.id);
+		},
+		{ id: first, clip: rates.previous }
+	);
+	await A.page.waitForTimeout(250);
+
 	// ---------- 9d. the transport deck, in real icons and real buttons ----------
 	const deck = await A.page.evaluate((id) => {
 		const s = window.__stores;

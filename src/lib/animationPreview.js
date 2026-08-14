@@ -175,7 +175,19 @@ function normalizeClip(raw) {
 	const tracks = /** @type {Track[]} */ (
 		(Array.isArray(raw.tracks) ? raw.tracks : []).map((/** @type {any} */ t) => normalizeTrack(t, duration)).filter(Boolean)
 	);
-	return { name, tracks, duration, loop };
+	/** @type {Clip} */
+	const clip = { name, tracks, duration, loop };
+	// FRAME RATE belongs to the clip, not the object and not the app: one object can
+	// hold a 24fps swing and a 60fps flourish, and the rate is what its key times
+	// MEAN. Absent = the editor default, so nothing existing changes.
+	const fps = num(raw.fps, 0);
+	if (fps >= 1 && fps <= 240) clip.fps = fps;
+	// STEP is the second, different control: evaluate on a COARSER grid than the keys
+	// were authored on — "on twos", the stepped look animators use deliberately, and
+	// incidentally a cheap way to calm a heavy scene. Absent = smooth.
+	const step = num(raw.step, 0);
+	if (step >= 1 && step <= 240) clip.step = step;
+	return clip;
 }
 
 /** Accept a v1 anim, a v2 set, or anything in between. @param {any} raw @returns {AnimSet|null} */
@@ -625,7 +637,11 @@ function applyOriginPivot(obj, base, values) {
  */
 export function poseAt(obj, clip, seconds, base) {
 	restoreBase(obj, base);
-	const values = evaluateClip(clip, seconds);
+	// STEP quantises the time we sample at, which is what "on twos" means: the keys
+	// keep their own resolution, the LOOK is coarser. Done here, at the single pose
+	// choke point, so playback, a scrub and a bake all agree.
+	const at = clip.step ? Math.floor(seconds * clip.step + 1e-6) / clip.step : seconds;
+	const values = evaluateClip(clip, at);
 	for (const channel in values) setChannel(obj, channel, values[channel]);
 	applyOriginPivot(obj, base, values);
 	obj.updateMatrix();
@@ -1242,7 +1258,9 @@ export function clipToThreeClip(object, clip, opts = {}) {
 	const offsetB = new THREE.Vector3();
 
 	for (const t of times) {
-		const values = evaluateClip(clip, t);
+		// a STEPPED clip exports stepped: the look is part of the movement, so a
+		// baked copy that smoothed it would not be the same animation
+		const values = evaluateClip(clip, clip.step ? Math.floor(t * clip.step + 1e-6) / clip.step : t);
 		const px = values['pos.x'] ?? base.pos[0];
 		const py = values['pos.y'] ?? base.pos[1];
 		const pz = values['pos.z'] ?? base.pos[2];

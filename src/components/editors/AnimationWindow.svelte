@@ -349,14 +349,16 @@
 		return out;
 	});
 
-	// FRAMES. An animator thinks in frames, so the arrow keys step in them and
-	// snapping can too. 30 is the default; localStorage overrides it for a 24 or 60
-	// fps pipeline (there is nothing else in the app that owns a frame rate yet).
-	const FPS = (() => {
+	// FRAMES. An animator thinks in frames, so the arrows step in them and snapping
+	// lands on them. The rate belongs to the CLIP — it is what that clip's key times
+	// MEAN, and one object can hold a 24fps swing beside a 60fps flourish — with a
+	// LOCAL default for clips that never set one (`animationFps` in localStorage).
+	const DEFAULT_FPS = (() => {
 		const raw = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('animationFps')) : NaN;
 		return Number.isFinite(raw) && raw >= 1 && raw <= 240 ? raw : 30;
 	})();
-	const frame = 1 / FPS;
+	const FPS = $derived(anim?.fps ?? DEFAULT_FPS);
+	const frame = $derived(1 / FPS);
 
 	/** @param {number} t */
 	function snapT(t) {
@@ -1272,6 +1274,38 @@
 						class="w-14 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs tabular-nums"
 						value={speed}
 						oninput={(e) => target && setSpeed(target.uuid, parseFloat(e.currentTarget.value) || 1)}
+					/>
+				</label>
+				<label
+					class="flex items-center gap-1 text-[11px] text-gray-400"
+					title="Frames per second for THIS clip — what its key times mean, and the grid the arrows and snapping use"
+				>
+					<span>fps</span>
+					<input
+						id="animation-fps"
+						type="number" min="1" max="240" step="1"
+						class="w-12 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs tabular-nums"
+						value={FPS}
+						oninput={(e) => {
+							const next = parseInt(e.currentTarget.value);
+							if (target && next >= 1 && next <= 240) updateAnim(target.uuid, { fps: next });
+						}}
+					/>
+				</label>
+				<label
+					class="flex items-center gap-1 text-[11px] text-gray-400"
+					title="Sample the movement on a COARSER grid than its keys — the stepped 'on twos' look. 0 = smooth."
+				>
+					<span>step</span>
+					<input
+						id="animation-step"
+						type="number" min="0" max="240" step="1"
+						class="w-12 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs tabular-nums"
+						value={anim?.step ?? 0}
+						oninput={(e) => {
+							const next = parseInt(e.currentTarget.value) || 0;
+							if (target) updateAnim(target.uuid, { step: next >= 1 ? next : 0 });
+						}}
 					/>
 				</label>
 				<select

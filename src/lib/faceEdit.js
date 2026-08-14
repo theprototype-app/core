@@ -832,7 +832,15 @@ export function boundaryLoop(tris, triIndices) {
  * winding each quad OUTWARD from the tunnel axis. Commits + replicates +
  * records ONE undoable meshgeo. @returns {boolean}
  */
-export function bridgeFaces() {
+/**
+ * Bridge two selected pieces with a tunnel.
+ * @param {number} [cuts] 18-C5: intermediate loops along the tunnel, the "Number
+ *   of Cuts" every DCC bridge offers. 0 = one band (the original behaviour, so
+ *   every existing caller and replayed message is unchanged); each cut adds a
+ *   ring, which is what makes a bridged tunnel deformable afterwards instead of
+ *   a rigid sleeve with nothing to grab in the middle.
+ */
+export function bridgeFaces(cuts = 0) {
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
 	if (!sel.length) {
@@ -926,37 +934,50 @@ export function bridgeFaces() {
 	// 0 at A to 1 at B). Only when the mesh is textured at all: a uv attribute
 	// must cover EVERY vertex or three throws.
 	const textured = workingTris.some((/** @type {any} */ t) => !!t.uv);
-	for (let k = 0; k < n; k++) {
-		const a0 = loopA[orderA[k]];
-		const a1 = loopA[orderA[(k + 1) % n]];
-		const b0 = loopB[orderB[k]];
-		const b1 = loopB[orderB[(k + 1) % n]];
-		const mid = a0.clone().add(a1).add(b0).add(b1).multiplyScalar(0.25);
-		// radial OUT from the tunnel axis at this quad = the visible side
-		let wantDir;
-		if (axis.lengthSq() > 1e-9) {
-			const t = Math.min(Math.max(mid.clone().sub(centA).dot(axis) / axis.lengthSq(), 0), 1);
-			wantDir = mid.clone().sub(centA.clone().addScaledVector(axis, t));
-		} else wantDir = mid.clone().sub(centA);
-		if (wantDir.lengthSq() < 1e-9) wantDir = new THREE.Vector3(0, 1, 0);
-		if (sameShell) wantDir.negate(); // a hole through a solid shows its INNER surface
-		pushQuad(
-			next,
-			a0.clone(),
-			a1.clone(),
-			b1.clone(),
-			b0.clone(),
-			wantDir.normalize(),
-			mi,
-			textured
-				? [
-						[k / n, 0],
-						[(k + 1) / n, 0],
-						[(k + 1) / n, 1],
-						[k / n, 1]
-					]
-				: undefined
-		);
+	// SEGMENTS along the tunnel: `cuts` intermediate rings, so cuts=0 is the one
+	// band this always built. Each ring is a straight lerp between the paired
+	// loop points — the pairing is already settled above, so a cut cannot
+	// introduce a twist the single-band version did not have.
+	const segs = Math.max(1, Math.round(cuts) + 1);
+	for (let s = 0; s < segs; s++) {
+		const t0 = s / segs;
+		const t1 = (s + 1) / segs;
+		for (let k = 0; k < n; k++) {
+			const a0 = loopA[orderA[k]];
+			const a1 = loopA[orderA[(k + 1) % n]];
+			const b0 = loopB[orderB[k]];
+			const b1 = loopB[orderB[(k + 1) % n]];
+			const p00 = a0.clone().lerp(b0, t0);
+			const p10 = a1.clone().lerp(b1, t0);
+			const p11 = a1.clone().lerp(b1, t1);
+			const p01 = a0.clone().lerp(b0, t1);
+			const mid = p00.clone().add(p10).add(p11).add(p01).multiplyScalar(0.25);
+			// radial OUT from the tunnel axis at this quad = the visible side
+			let wantDir;
+			if (axis.lengthSq() > 1e-9) {
+				const t = Math.min(Math.max(mid.clone().sub(centA).dot(axis) / axis.lengthSq(), 0), 1);
+				wantDir = mid.clone().sub(centA.clone().addScaledVector(axis, t));
+			} else wantDir = mid.clone().sub(centA);
+			if (wantDir.lengthSq() < 1e-9) wantDir = new THREE.Vector3(0, 1, 0);
+			if (sameShell) wantDir.negate(); // a hole through a solid shows its INNER surface
+			pushQuad(
+				next,
+				p00,
+				p10,
+				p11,
+				p01,
+				wantDir.normalize(),
+				mi,
+				textured
+					? [
+							[k / n, t0],
+							[(k + 1) / n, t0],
+							[(k + 1) / n, t1],
+							[k / n, t1]
+						]
+					: undefined
+			);
+		}
 	}
 	const positions = trisToPositions(next);
 	if (positions.length > MAX_SNAPSHOT) {
@@ -4668,14 +4689,14 @@ function refreshFaceOverlay() {
 
 /**
  * Run an op on the highlighted face and commit: rebuild geometry, replicate
- * the snapshot, record history. subdivide/flip/bridge take no amount (B4); for
- * M3's loopcut `amount` is the CUT COUNT, not a distance.
+ * the snapshot, record history. subdivide/flip take no amount (B4); for M3's
+ * loopcut and 18-C5's bridge `amount` is the CUT COUNT, not a distance.
  * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'} op
  * @param {number} amount
  */
 export function commitFaceOp(op, amount) {
 	// B4: bridge validates + commits its own two-face path
-	if (op === 'bridge') return bridgeFaces();
+	if (op === 'bridge') return bridgeFaces(amount);
 	// M3: loop cut owns its ring walk + commit, like bridge; `amount` = cut count
 	if (op === 'loopcut') return commitLoopCut(amount);
 	// 212: target the multi selection / hovered unit / highlighted face group

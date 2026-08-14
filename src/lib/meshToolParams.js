@@ -22,6 +22,9 @@ export const bevelSegments = writable(1);
 export const bevelProfile = writable(0);
 /** M3: how many loops a Loop cut inserts — a COUNT, not the extrude distance */
 export const loopCuts = writable(1);
+/** 18-C5: intermediate rings along a Bridge. 0 = the single band it always
+ * built, so the default is the previous behaviour exactly. */
+export const bridgeCuts = writable(0);
 /** M6: merge-by-distance threshold */
 export const mergeDistance = writable(0.001);
 /** M7: symmetrize axis + which half to keep @type {import('svelte/store').Writable<'x'|'y'|'z'>} */
@@ -43,7 +46,16 @@ export function focusTool(tool) {
 }
 
 /** Tools whose options pane has content — the rest leave the pane out entirely. */
-const WITH_OPTIONS = new Set(['extrude', 'inset', 'move', 'knife', 'bevel', 'loopcut', 'proportional']);
+const WITH_OPTIONS = new Set([
+	'extrude',
+	'inset',
+	'move',
+	'knife',
+	'bevel',
+	'loopcut',
+	'bridge',
+	'proportional'
+]);
 
 /** @param {string} tool */
 export function hasOptions(tool) {
@@ -67,6 +79,7 @@ export function resetToolParams() {
 	bevelSegments.set(1);
 	bevelProfile.set(0);
 	loopCuts.set(1);
+	bridgeCuts.set(0);
 	mergeDistance.set(0.001);
 	symAxis.set('x');
 	symKeep.set(1);
@@ -80,6 +93,7 @@ export function toolParams() {
 		bevelSegments: get(bevelSegments),
 		bevelProfile: get(bevelProfile),
 		loopCuts: get(loopCuts),
+		bridgeCuts: get(bridgeCuts),
 		mergeDistance: get(mergeDistance),
 		symAxis: get(symAxis),
 		symKeep: get(symKeep),

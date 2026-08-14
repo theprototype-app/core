@@ -17,11 +17,13 @@
 		faceAutoApply
 	} from '$lib/faceEdit';
 	import { proportionalRadius } from '$lib/meshEdit';
-	import { bevelWidth, bevelSegments, bevelProfile, loopCuts } from '$lib/meshToolParams';
+	import { bevelWidth, bevelSegments, bevelProfile, loopCuts, bridgeCuts } from '$lib/meshToolParams';
+	import DragRow from '../ui/DragRow.svelte';
 
 	/** @type {{ mode: 'vertices'|'edges'|'faces', focus: string,
-	 *   onApplyOp: () => void, onApplyBevel: () => void, onApplyLoopCut: () => void }} */
-	let { mode, focus, onApplyOp, onApplyBevel, onApplyLoopCut } = $props();
+	 *   onApplyOp: () => void, onApplyBevel: () => void, onApplyLoopCut: () => void,
+	 *   onApplyBridge: () => void }} */
+	let { mode, focus, onApplyOp, onApplyBevel, onApplyLoopCut, onApplyBridge } = $props();
 
 	// faces bevel takes (width, segments); edges (width, segments, profile);
 	// vertices (width, profile) — the pane mirrors the operator signatures
@@ -33,16 +35,15 @@
 	<!-- 176: the amount row keeps its id — it is the toolbox's oldest e2e contract -->
 	<span class="tbx-label">{focus} options</span>
 	<div id="mesh-op-params" class="tbx-row text-xs text-gray-300">
-		<label class="flex items-center gap-1">
-			amount
-			<input
-				id="mesh-op-amount"
-				type="number"
-				step="0.05"
-				class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-				bind:value={$faceEditAmount}
-			/>
-		</label>
+		<DragRow
+			id="mesh-op-amount"
+			label="amount"
+			value={$faceEditAmount}
+			step={0.01}
+			decimals={2}
+			title="How far Extrude pushes, or how far Inset shrinks (drag to scrub, type, arrows step)"
+			onchange={(v) => faceEditAmount.set(v)}
+		/>
 		<label class="flex items-center gap-1" title="Apply the op when you click a face">
 			<input id="mesh-op-autoapply" type="checkbox" bind:checked={$faceAutoApply} />
 			auto-apply
@@ -57,33 +58,29 @@
 {:else if focus === 'bevel'}
 	<span class="tbx-label">Bevel options</span>
 	<div id="bevel-params" class="tbx-row text-xs text-gray-300">
-		<label
-			class="flex items-center gap-1"
+		<DragRow
+			id="bevel-width"
+			label="width"
+			value={$bevelWidth}
+			step={0.005}
+			snap={0.05}
+			decimals={3}
+			min={0.001}
 			title="How far the chamfer reaches (clamped per edge so two bevels can never cross)"
-		>
-			width
-			<input
-				id="bevel-width"
-				type="number"
-				step="0.02"
-				min="0.001"
-				class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-				bind:value={$bevelWidth}
-			/>
-		</label>
+			onchange={(v) => bevelWidth.set(v)}
+		/>
 		{#if showSegments}
-			<label class="flex items-center gap-1" title="More segments = a rounder edge">
-				segments
-				<input
-					id="bevel-segments"
-					type="number"
-					step="1"
-					min="1"
-					max="8"
-					class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-					bind:value={$bevelSegments}
-				/>
-			</label>
+			<DragRow
+				id="bevel-segments"
+				label="segments"
+				value={$bevelSegments}
+				step={0.05}
+				decimals={0}
+				min={1}
+				max={8}
+				title="More segments = a rounder edge"
+				onchange={(v) => bevelSegments.set(Math.round(v))}
+			/>
 		{/if}
 		{#if showProfile}
 			<label
@@ -119,18 +116,17 @@
 {:else if focus === 'loopcut'}
 	<span class="tbx-label">Loop cut options</span>
 	<div id="loopcut-params" class="tbx-row text-xs text-gray-300">
-		<label class="flex items-center gap-1" title="How many edge loops Loop cut inserts">
-			cuts
-			<input
-				id="mesh-loop-cuts"
-				type="number"
-				min="1"
-				max="20"
-				step="1"
-				class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-				bind:value={$loopCuts}
-			/>
-		</label>
+		<DragRow
+			id="mesh-loop-cuts"
+			label="cuts"
+			value={$loopCuts}
+			step={0.05}
+			decimals={0}
+			min={1}
+			max={20}
+			title="How many edge loops Loop cut inserts"
+			onchange={(v) => loopCuts.set(Math.round(v))}
+		/>
 		<button
 			id="mesh-loopcut-apply"
 			class="tbx-primary"
@@ -138,23 +134,40 @@
 			onclick={onApplyLoopCut}>Cut</button
 		>
 	</div>
+{:else if focus === 'bridge'}
+	<span class="tbx-label">Bridge options</span>
+	<div id="bridge-params" class="tbx-row text-xs text-gray-300">
+		<DragRow
+			id="mesh-bridge-cuts"
+			label="cuts"
+			value={$bridgeCuts}
+			step={0.05}
+			decimals={0}
+			min={0}
+			max={20}
+			title="Extra loops along the tunnel. 0 is a single band; more rings give the bridge something to deform with afterwards."
+			onchange={(v) => bridgeCuts.set(Math.round(v))}
+		/>
+		<button
+			id="mesh-bridge-apply"
+			class="tbx-primary"
+			title="Bridge the two selected pieces (B) — they need one closed boundary each and matching edge counts"
+			onclick={onApplyBridge}>Bridge</button
+		>
+	</div>
 {:else if focus === 'proportional'}
 	<span class="tbx-label">Proportional options</span>
 	<div class="tbx-row text-xs text-gray-300">
-		<label
-			class="flex items-center gap-1"
+		<DragRow
+			id="mesh-proportional-radius"
+			label="radius"
+			value={$proportionalRadius}
+			step={0.02}
+			decimals={2}
+			min={0.01}
 			title="How far the drag carries its neighbours (local units). Weight fades smoothly to zero at the radius."
-		>
-			radius
-			<input
-				id="mesh-proportional-radius"
-				type="number"
-				step="0.1"
-				min="0.01"
-				class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-				bind:value={$proportionalRadius}
-			/>
-		</label>
+			onchange={(v) => proportionalRadius.set(v)}
+		/>
 	</div>
 {:else if focus === 'move'}
 	<span class="tbx-label">Move options</span>

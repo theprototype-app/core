@@ -17,6 +17,7 @@
 		bevelSegments,
 		bevelProfile,
 		loopCuts,
+		bridgeCuts,
 		mergeDistance,
 		symAxis,
 		symKeep,
@@ -26,6 +27,7 @@
 		defaultFocus
 	} from '$lib/meshToolParams';
 	import ToolboxSection from '../ui/ToolboxSection.svelte';
+	import DragRow from '../ui/DragRow.svelte';
 	import MeshToolOptions from './MeshToolOptions.svelte';
 	import {
 		editingObject,
@@ -103,7 +105,7 @@
 		Shrink,
 		BoxSelect,
 		FlipHorizontal,
-		Link2,
+		Link2,
 		Undo2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
@@ -161,18 +163,32 @@
 	// parameters no longer permanently on screen, a click that committed straight
 	// away would be committing with numbers the user cannot see. The hotkey still
 	// commits immediately — a toolbar arms, a shortcut executes.
-	const OPS = [
-		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false, icon: 'extrude', desc: 'pull the face out along its normal' },
-		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false, icon: 'inset', desc: 'shrink a copy inside a stitched ring' },
-		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, icon: 'move', desc: 'seat the gizmo on the selection' },
+	// 18-C5: split into TOOLS and OPERATIONS, the split every DCC makes (Blender's
+	// toolbar vs its Mesh menu, Maya's tools vs actions). A TOOL is armed and
+	// changes what your next viewport click/drag does; an OPERATION runs on the
+	// current selection right now. Mixing them in one grid meant a row where
+	// clicking Move armed a mode, clicking Delete destroyed geometry, and nothing
+	// in the layout said which was which.
+	//
+	// `param: true` = the operation carries settings: clicking it in the grid
+	// SELECTS the tool and opens its options, and the pane's button commits. The
+	// parameterized ones come first within each group so the two kinds are not
+	// interleaved either.
+	const TOOL_OPS = [
+		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, param: false, icon: 'move', desc: 'seat the gizmo on the selection and drag it' },
+		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false, param: false, icon: 'extrude', desc: 'pull the face out along its normal' },
+		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false, param: false, icon: 'inset', desc: 'shrink a copy inside a stitched ring' },
+		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, param: false, icon: 'knife', desc: 'cut across the mesh: click one end of the line, then the other' }
+	];
+	const ACTION_OPS = [
 		{ op: 'bevel', label: 'Bevel', hint: '', oneShot: true, param: true, icon: 'bevel', desc: "chamfer the selected face's border" },
 		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, param: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
-		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, icon: 'subdivide', desc: 'split each triangle into four' },
-		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
-		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, icon: 'knife', desc: 'cut across the mesh: click one end of the line, then the other' },
-		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, icon: 'flip-normals', desc: 'reverse the winding' },
-		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, icon: 'delete-face', desc: 'remove the selection' }
+		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, param: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
+		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, param: false, icon: 'subdivide', desc: 'split each triangle into four' },
+		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, param: false, icon: 'flip-normals', desc: 'reverse the winding' },
+		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, param: false, icon: 'delete-face', desc: 'remove the selection' }
 	];
+	const OPS = [...TOOL_OPS, ...ACTION_OPS];
 
 	const GRANULARITIES = [
 		{
@@ -289,11 +305,6 @@
 			focusTool(op);
 			return;
 		}
-		if (op === 'bridge') {
-			// validates the two-piece selection + toasts
-			if (commitFaceOp('bridge', 0)) flash('bridge');
-			return;
-		}
 		if (spec?.oneShot) {
 			if (!hasTarget()) {
 				showToast('Click a face first');
@@ -331,6 +342,12 @@
 	/** Loop cut, from the options pane or the C hotkey. */
 	function applyLoopCut() {
 		if (commitFaceOp('loopcut', $loopCuts)) flash('loopcut');
+	}
+
+	/** Bridge, from the options pane or the B hotkey. It validates the two-piece
+	 * selection and toasts on its own. */
+	function applyBridge() {
+		if (commitFaceOp('bridge', $bridgeCuts)) flash('bridge');
 	}
 
 	// Cleanup and Symmetry act on the whole OBJECT, so they are offered in every
@@ -474,7 +491,12 @@
 				event.preventDefault();
 				return;
 			}
-			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete' };
+			if (key === 'b') {
+				applyBridge();
+				event.preventDefault();
+				return;
+			}
+			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', f: 'flip', x: 'delete' };
 			const op = key === 'delete' ? 'delete' : /** @type {any} */ (byKey)[key];
 			if (!op) return;
 			runOp(op);
@@ -522,6 +544,32 @@
 </script>
 
 <svelte:window onkeydown={onKeydown} />
+
+<!-- one button per op, shared by the Tools and Operations groups so the two
+     differ only in WHICH ops they list, never in how a button behaves -->
+{#snippet opGrid(/** @type {any[]} */ ops)}
+	{#each ops as o (o.op)}
+		<button
+			id={`mesh-op-${o.op}`}
+			class="tbx-btn {o.op === 'delete'
+				? 'tbx-danger'
+				: o.param && $optionsFocus === o.op
+					? 'tbx-sel'
+					: !o.oneShot && o.op === $faceEditOp
+						? 'tbx-on bg-primary-600 text-white'
+						: ''}"
+			class:mesh-op-active={!o.oneShot && o.op === $faceEditOp}
+			class:tbx-flash={flashOp === o.op}
+			onanimationend={() => (flashOp = '')}
+			aria-label={o.label}
+			aria-pressed={o.param ? $optionsFocus === o.op : undefined}
+			title={`${o.hint ? `${o.label} (${o.hint})` : o.label} — ${o.desc}${o.param ? ' (sets options below)' : ''}`}
+			onclick={() => runOp(o.op)}
+		>
+			<ToolIcon name={o.icon} />
+		</button>
+	{/each}
+{/snippet}
 
 {#if active}
 	<ToolboxWindow
@@ -682,30 +730,15 @@
 				}}><ToolIcon name="dissolve" /></button
 			>
 		{:else if mode === 'faces'}
-			<!-- TOOLS: armed tools stay lit (solid accent); one-shots flash on commit -->
+			<!-- TOOLS = armed: they change what your next viewport click does, and
+			     stay lit (solid accent) until you pick another. -->
 			<span class="tbx-label">Tools</span>
-			{#each OPS as o (o.op)}
-				<button
-					id={`mesh-op-${o.op}`}
-					class="tbx-btn {o.op === 'delete'
-						? 'tbx-danger'
-						: o.param && $optionsFocus === o.op
-							? 'tbx-sel'
-							: !o.oneShot && o.op === $faceEditOp
-								? 'tbx-on bg-primary-600 text-white'
-								: ''}"
-					class:mesh-op-active={!o.oneShot && o.op === $faceEditOp}
-					class:tbx-flash={flashOp === o.op}
-					onanimationend={() => (flashOp = '')}
-					aria-label={o.label}
-					aria-pressed={o.param ? $optionsFocus === o.op : undefined}
-					title={o.hint ? `${o.label} (${o.hint}) — ${o.desc}` : `${o.label} — ${o.desc}`}
-					onclick={() => runOp(o.op)}
-				>
-					<ToolIcon name={o.icon} />
-				</button>
-			{/each}
-
+			{@render opGrid(TOOL_OPS)}
+			<!-- OPERATIONS = they run on the CURRENT selection. The ones carrying
+			     settings come first and open the options pane (accent ring); the
+			     rest commit on the spot and flash. -->
+			<span class="tbx-label">Operations</span>
+			{@render opGrid(ACTION_OPS)}
 		{:else}
 			<!-- TOOLS: vertex mode (D5: ONE selection — click selects, Ctrl+click
 			     adds, the gizmo on the last pick drags the whole set) -->
@@ -801,6 +834,7 @@
 			onApplyOp={applyActive}
 			onApplyBevel={applyBevel}
 			onApplyLoopCut={applyLoopCut}
+			onApplyBridge={applyBridge}
 		/>
 
 		<!-- WHOLE-MESH work below. None of it depends on which element mode is open,
@@ -836,18 +870,18 @@
 			>
 			<!-- the merge threshold sits with its own button now -->
 			<div class="tbx-row text-xs text-gray-300">
-				<label class="flex items-center gap-1" title="Vertices closer than this merge into one">
-					merge dist
-					<input
-						id="mesh-merge-dist"
-						type="number"
-						min="0.0001"
-						max="1"
-						step="0.001"
-						class="w-16 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={$mergeDistance}
-					/>
-				</label>
+				<DragRow
+					id="mesh-merge-dist"
+					label="merge dist"
+					value={$mergeDistance}
+					step={0.0005}
+					snap={0.01}
+					decimals={4}
+					min={0.0001}
+					max={1}
+					title="Vertices closer than this merge into one"
+					onchange={(v) => mergeDistance.set(v)}
+				/>
 			</div>
 		</ToolboxSection>
 

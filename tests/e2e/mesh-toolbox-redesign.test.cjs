@@ -243,6 +243,114 @@ h.run(async () => {
 	});
 	h.check(inVerts.section && inVerts.normals, 'Cleanup is offered in Vertices too (it acts on the whole mesh)');
 	h.check(inVerts.looksDisabled, 'but reads as unavailable there, where there is no face session');
+
+	// ------------- 8. TOOLS vs OPERATIONS, and Bridge's own options (18-C5)
+	await A.page.evaluate(() => document.querySelector('#mesh-mode-faces').click());
+	await A.page.waitForTimeout(500);
+	const groups = await A.page.evaluate(() => {
+		const body = document.querySelector('#mesh-edit-popup .toolbox-body');
+		// walk the body in DOM order: each .tbx-label starts a group, the buttons
+		// after it belong to it
+		const out = {};
+		let current = null;
+		for (const el of body.children) {
+			if (el.classList.contains('tbx-label')) {
+				current = el.textContent.trim().toLowerCase();
+				out[current] = [];
+			} else if (current && el.id?.startsWith('mesh-op-')) out[current].push(el.id.replace('mesh-op-', ''));
+		}
+		return out;
+	});
+	h.check(
+		JSON.stringify(groups.tools) === JSON.stringify(['move', 'extrude', 'inset', 'knife']),
+		`TOOLS holds only the ARMED tools (${(groups.tools ?? []).join(', ')})`
+	);
+	h.check(
+		JSON.stringify(groups.operations) ===
+			JSON.stringify(['bevel', 'loopcut', 'bridge', 'subdivide', 'flip', 'delete']),
+		`OPERATIONS holds the selection actions, parameterized first (${(groups.operations ?? []).join(', ')})`
+	);
+
+	// Bridge is parameterized now: the grid click opens options, it does not commit
+	await A.page.evaluate(() => document.querySelector('#mesh-op-bridge').click());
+	await A.page.waitForTimeout(350);
+	const bridgePane = await A.page.evaluate(() => ({
+		params: !!document.querySelector('#bridge-params'),
+		cuts: !!document.querySelector('#mesh-bridge-cuts'),
+		apply: !!document.querySelector('#mesh-bridge-apply'),
+		ring: getComputedStyle(document.querySelector('#mesh-op-bridge')).boxShadow !== 'none'
+	}));
+	h.check(bridgePane.params && bridgePane.cuts && bridgePane.apply, 'Bridge opens its own options with a cut count');
+	h.check(bridgePane.ring, 'and reads as selected, like the other parameterized operations');
+
+	// the cuts actually build extra rings — bridge the same shape at 0 and at 2
+	// and compare, on the inset-caps scenario (bridging a unit cube's FULL top and
+	// bottom is the degenerate case: the walls land on the cube's own sides)
+	const bridged = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const oddEdges = (tris) => {
+			const seen = new Map();
+			const key = (p) => [p.x, p.y, p.z].map((v) => Math.round(v * 1e4)).join(',');
+			for (const t of tris)
+				for (let i = 0; i < 3; i++) {
+					const a = key(t[i]);
+					const b = key(t[(i + 1) % 3]);
+					const e = a < b ? a + '|' + b : b + '|' + a;
+					seen.set(e, (seen.get(e) ?? 0) + 1);
+				}
+			return [...seen.values()].filter((n) => n !== 2).length;
+		};
+		const run = async (cuts) => {
+			s.commandsHandler.sceneCommand('/clear all');
+			await new Promise((r) => setTimeout(r, 400));
+			s.commandsHandler.sceneCommand('/create Box 1 1 1');
+			await new Promise((r) => setTimeout(r, 500));
+			let g;
+			s.objectsGroup.subscribe((v) => (g = v))();
+			const box = g.children[g.children.length - 1];
+			fe.enterFaceEdit(box.uuid);
+			fe.setFaceGranularity('face');
+			// the inset leaves its CAP selected, which is the quad to bridge
+			// (mesh-bridge-normals' recipe, verbatim)
+			const insetCap = (pick) => {
+				const face = fe.currentFaces().find(pick);
+				if (!face) return null;
+				fe.faceEditSelectedTris.set([...face.triIndices]);
+				fe.highlightFaceByTriangle(face.triIndices[0]);
+				if (!fe.commitFaceOp('inset', 0.45)) return null;
+				let cap;
+				fe.faceEditSelectedTris.subscribe((v) => (cap = [...v]))();
+				return cap;
+			};
+			const top = insetCap((f) => f.normal.y > 0.9);
+			const bottom = insetCap((f) => f.normal.y < -0.9);
+			if (!top?.length || !bottom?.length) return null;
+			fe.faceEditSelectedTris.set([...top, ...bottom]);
+			fe.highlightFaceByTriangle(top[0], false);
+			const before = fe.readTriangles(box.geometry).length;
+			// the bridge DELETES both caps as well as adding walls, so the raw
+			// delta is walls-minus-caps — count the caps to get the walls alone
+			const caps = top.length + bottom.length;
+			const ok = fe.commitFaceOp('bridge', cuts);
+			const after = fe.readTriangles(box.geometry);
+			fe.exitFaceEdit();
+			return { ok, before, caps, after: after.length, walls: after.length - before + caps, odd: oddEdges(after) };
+		};
+		return { zero: await run(0), two: await run(2) };
+	});
+	h.check(!!bridged.zero?.ok && !!bridged.two?.ok, 'both bridges committed (premise)');
+	if (bridged.zero?.ok && bridged.two?.ok) {
+		// cuts=2 means 3 segments, so three times the wall triangles of one band
+		h.check(
+			bridged.two.walls === bridged.zero.walls * 3 && bridged.zero.walls > 0,
+			`2 cuts builds three rings instead of one (${bridged.zero.walls} -> ${bridged.two.walls} wall triangles)`
+		);
+		// and the tunnel is still closed — the single best check for any op that
+		// rebuilds geometry
+		h.check(bridged.zero.odd === 0, `a plain bridge stays watertight (${bridged.zero.odd} odd edges)`);
+		h.check(bridged.two.odd === 0, `and so does a 2-cut bridge (${bridged.two.odd} odd edges)`);
+	}
 	await A.ctx.close();
 
 	// ---------------------------------- 7. the bottom SHEET on a phone (18-C3)

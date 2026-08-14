@@ -122,6 +122,18 @@ h.run(async () => {
 	}
 
 	// ---- the toolbox (dragWindow's own resizable path) ----------------------
+	// close the editor windows first: on a small viewport they cover most of the
+	// screen, and "another window is on top of this one" is normal windowing, not
+	// the bug under test (an unreachable grip on an EMPTY desktop is)
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.explorerClose.set(true);
+		s.flowGraphClose.set(true);
+		s.uvEditorClose.set(true);
+		s.animationClose.set(true);
+		s.objectListClose.set(true);
+	});
+	await A.page.waitForTimeout(500);
 	await A.page.evaluate(async () => {
 		const { commandsHandler, objectsGroup, objectActions, faceEdit } = window.__stores;
 		commandsHandler.sceneCommand('/create box');

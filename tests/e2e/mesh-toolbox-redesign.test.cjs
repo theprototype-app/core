@@ -243,6 +243,95 @@ h.run(async () => {
 	});
 	h.check(inVerts.section && inVerts.normals, 'Cleanup is offered in Vertices too (it acts on the whole mesh)');
 	h.check(inVerts.looksDisabled, 'but reads as unavailable there, where there is no face session');
+	await A.ctx.close();
+
+	// ---------------------------------- 7. the bottom SHEET on a phone (18-C3)
+	// A floating palette you have to drag around is unusable on a phone. The
+	// breakpoint is width-based, so this IS testable headlessly (the coarse-
+	// pointer half of mobile behaviour is not, and is not asserted here).
+	const M = await h.setupPage(browser, 'M', {
+		context: { viewport: { width: 400, height: 800 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }
+	});
+	await openSession(M.page);
+
+	const sheet = await M.page.evaluate(() => {
+		const el = document.querySelector('#mesh-edit-popup');
+		if (!el) return null;
+		const r = el.getBoundingClientRect();
+		const body = el.querySelector('.toolbox-body');
+		const grip = el.querySelector('.dw-resize');
+		const grab = el.querySelector('.tbx-sheet-grab');
+		const tabs = el.querySelector('.tbx-tabs');
+		return {
+			left: Math.round(r.left),
+			width: Math.round(r.width),
+			bottom: Math.round(r.bottom),
+			top: Math.round(r.top),
+			gripHidden: !grip || getComputedStyle(grip).display === 'none',
+			hasGrabber: !!grab && getComputedStyle(grab.parentElement).display !== 'none',
+			bodyScrolls: getComputedStyle(body).overflowY === 'auto',
+			// tabs must stay OUT of the scrolling area so they are always reachable
+			tabsPinned: !body.contains(tabs)
+		};
+	});
+	h.check(!!sheet, 'the toolbox is up on a phone-sized viewport');
+	h.check(sheet.left === 0 && sheet.width === 400, `it spans the full width (left ${sheet.left}, w ${sheet.width})`);
+	h.check(sheet.bottom === 800, `it is anchored to the bottom (${sheet.bottom})`);
+	h.check(sheet.top > 0, `and stops below the top chrome (top ${sheet.top})`);
+	h.check(sheet.gripHidden, 'the width grip is gone — a sheet has no width to drag');
+	h.check(sheet.hasGrabber, 'a drag grabber takes its place');
+	h.check(sheet.bodyScrolls && sheet.tabsPinned, 'the body scrolls while the tabs stay pinned');
+
+	// the grabber resizes and the height persists
+	const resized = await M.page.evaluate(async () => {
+		const el = document.querySelector('#mesh-edit-popup');
+		const handle = el.querySelector('.tbx-sheet-resize');
+		const before = Math.round(el.getBoundingClientRect().height);
+		const send = (type, y) =>
+			handle.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, clientY: y }));
+		send('pointerdown', window.innerHeight - before);
+		send('pointermove', 300); // drag the top edge up => taller
+		send('pointerup', 300);
+		await new Promise((r) => setTimeout(r, 250));
+		return {
+			before,
+			after: Math.round(el.getBoundingClientRect().height),
+			stored: localStorage.getItem('tbxSheetH:meshToolbox')
+		};
+	});
+	h.check(resized.after > resized.before, `the grabber resizes the sheet (${resized.before} -> ${resized.after})`);
+	h.check(!!resized.stored, `and the height persists (${resized.stored})`);
+
+	// back to a desktop viewport: it is a floating window again
+	await M.page.setViewportSize({ width: 1200, height: 800 });
+	await M.page.waitForTimeout(700);
+	const backToWindow = await M.page.evaluate(() => {
+		const el = document.querySelector('#mesh-edit-popup');
+		const r = el.getBoundingClientRect();
+		let stored = null;
+		try {
+			stored = JSON.parse(localStorage.getItem('win:meshToolbox') ?? 'null');
+		} catch {}
+		return {
+			left: Math.round(r.left),
+			width: Math.round(r.width),
+			bottom: Math.round(r.bottom),
+			sheet: el.className.includes('tbx-sheet'),
+			stored
+		};
+	});
+	h.check(!backToWindow.sheet, 'widening the viewport returns it to a floating window');
+	h.check(
+		backToWindow.width > 0 && backToWindow.width < 400,
+		`with its own width back, not the sheet's full width (${backToWindow.width}px)`
+	);
+	h.check(backToWindow.bottom < 800, `and it is no longer pinned to the bottom (${backToWindow.bottom})`);
+	// the sheet's geometry must never be SAVED as the window's — dragWindow is
+	// suspended while the toolbox renders as a sheet
+	h.check(
+		!backToWindow.stored || backToWindow.stored.w === undefined || backToWindow.stored.w < 400,
+		`the sheet's full-bleed width was not persisted (${JSON.stringify(backToWindow.stored)})`
+	);
 
 	await h.finish(browser);
 });

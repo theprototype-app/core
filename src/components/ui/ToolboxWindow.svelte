@@ -30,9 +30,13 @@
 	// - 18-C1: an optional `tabs` snippet renders BETWEEN the header and the
 	//   body. It sits outside the scrolling body on purpose, so the element-mode
 	//   tabs stay pinned while the tool list scrolls.
+	// - 18-C3: at <=640px the toolbox is a bottom SHEET instead of a floating
+	//   window — a tool palette you have to drag around is unusable on a phone.
+	//   Solved here rather than in each toolbox, so Sculpt gets it for free.
 	import { GripVertical } from '@lucide/svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
+	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore';
 
 	/** @type {{ id: string, title: string, key: string,
 	 *   defaultRect?: { left?: number, top?: number, right?: number, bottom?: number },
@@ -49,15 +53,88 @@
 		status = null,
 		children
 	} = $props();
+
+	// 18-C3: the exact 640 breakpoint the Inspector and the notes drawer use for
+	// their sheets — NOT the 820 "narrow drawer" one, or the 641-820 range would
+	// get a bottom sheet where a floating palette still fits.
+	let sheetMode = $state(false);
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const mq = window.matchMedia('(max-width: 640px)');
+		sheetMode = mq.matches;
+		const on = () => (sheetMode = mq.matches);
+		mq.addEventListener('change', on);
+		return () => mq.removeEventListener('change', on);
+	});
+	// One bottom sheet at a time. The toolbox cannot close itself (it belongs to
+	// an edit session — Done/Esc end it), so it closes the others instead.
+	$effect(() => {
+		if (!sheetMode) return;
+		notesDrawerOpen.set(false);
+		inspectorClose.set(true);
+	});
+
+	// sheet height, dragged from the grabber and persisted per toolbox
+	let sheetH = $state(0);
+	const sheetKey = $derived('tbxSheetH:' + key);
+	$effect(() => {
+		if (sheetH || typeof window === 'undefined') return;
+		const saved = parseInt(localStorage.getItem(sheetKey) || '');
+		sheetH = !saved || Number.isNaN(saved) ? Math.round(window.innerHeight * 0.4) : saved;
+	});
+	let sheetResizing = $state(false);
+	/** @param {PointerEvent} e */
+	function startSheetResize(e) {
+		sheetResizing = true;
+		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture?.(e.pointerId);
+		e.preventDefault();
+		e.stopPropagation(); // never start a window DRAG from the grabber
+	}
+	/** @param {PointerEvent} e */
+	function doSheetResize(e) {
+		if (!sheetResizing) return;
+		// bottom:0, so height = viewport height - finger y; the ceiling clears the
+		// Connect bar + the top-right chrome, exactly as the Inspector sheet does
+		const cb =
+			parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--connect-bottom')) || 54;
+		const maxH = Math.max(180, window.innerHeight - cb - 56);
+		sheetH = Math.min(Math.max(140, window.innerHeight - e.clientY), maxH);
+	}
+	/** @param {PointerEvent} e */
+	function endSheetResize(e) {
+		if (!sheetResizing) return;
+		sheetResizing = false;
+		// releasePointerCapture THROWS when the pointer was never captured, and it
+		// used to run before the write — so a capture quirk silently cost the user
+		// their height. The persist does not depend on it.
+		try {
+			/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
+		} catch {}
+		try {
+			localStorage.setItem(sheetKey, String(sheetH));
+		} catch {}
+	}
 </script>
 
 <div
 	{id}
 	class="ui-panel toolbox"
-	style="z-index: var(--z-window); --tbx-w: {width}px"
-	use:dragWindow={{ key, defaultRect, resizable: true, axis: 'x', minW }}
+	class:tbx-sheet={sheetMode}
+	style="z-index: var(--z-window); --tbx-w: {width}px; --tbx-sheet-h: {sheetH}px"
+	use:dragWindow={{ key, defaultRect, resizable: true, axis: 'x', minW, inert: () => sheetMode }}
 	use:focusStack={key}
 >
+	{#if sheetMode}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="tbx-sheet-resize"
+			onpointerdown={startSheetResize}
+			onpointermove={doSheetResize}
+			onpointerup={endSheetResize}
+		>
+			<div class="tbx-sheet-grab"></div>
+		</div>
+	{/if}
 	<div class="toolbox-header move-handle">
 		<GripVertical size={14} aria-hidden="true" />
 		<span class="toolbox-title">{title}</span>
@@ -172,6 +249,59 @@
 			transparent 55%
 		) !important;
 		opacity: 0.6;
+	}
+
+	/* ---- 18-C3: bottom SHEET at <=640px ----
+	   The !important is load-bearing, not laziness: dragWindow writes left/top/
+	   width (and --dw-top) as INLINE styles, which no stylesheet rule can beat.
+	   The action stays mounted and harmless — this is the same override the
+	   What's New window uses to become a full-screen sheet. */
+	.tbx-sheet-resize {
+		display: none;
+		flex: 0 0 auto;
+		height: 18px;
+		align-items: center;
+		justify-content: center;
+		cursor: ns-resize;
+		touch-action: none;
+	}
+	.tbx-sheet-grab {
+		width: 40px;
+		height: 4px;
+		border-radius: 9999px;
+		background: rgb(148 163 184 / 0.7);
+	}
+	@media (max-width: 640px) {
+		.toolbox.tbx-sheet {
+			left: 0 !important;
+			right: 0 !important;
+			top: auto !important;
+			bottom: 0 !important;
+			width: 100vw !important;
+			max-width: 100vw !important;
+			height: var(--tbx-sheet-h, 40vh) !important;
+			/* never rise above the Connect bar + the top-right chrome */
+			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px) !important;
+			border-radius: 0.75rem 0.75rem 0 0 !important;
+			z-index: 1000 !important;
+		}
+		.toolbox.tbx-sheet .tbx-sheet-resize {
+			display: flex;
+		}
+		/* a sheet is not draggable, and its width grip is meaningless */
+		.toolbox.tbx-sheet .toolbox-header {
+			cursor: default;
+		}
+		.toolbox.tbx-sheet :global(.dw-resize) {
+			display: none !important;
+		}
+		/* the body is the only scrolling part: header, tabs and status stay put,
+		   and the content clears the Controls HUD at the bottom */
+		.toolbox.tbx-sheet .toolbox-body {
+			max-height: none;
+			flex: 1 1 auto;
+			padding-bottom: calc(8px + var(--controls-inset, 0px));
+		}
 	}
 
 	/* ---- 18-C1: element-mode TABS (pinned above the scrolling body) ---- */

@@ -20,6 +20,8 @@ import {
 	appendOrigin,
 	appendedQuads
 } from './meshTopology';
+// 18-A: LOCAL viewport line colours (store-only module, imports nothing — no cycle)
+import { viewPrefs, editWireOverride } from './viewPrefs';
 
 // Face editing core (118, pulled forward from pending/25 and scoped to VR
 // blockout). Desktop-agnostic geometry math: read a BufferGeometry into a flat
@@ -1322,6 +1324,18 @@ meshEditTriWire.subscribe((value) => {
 	vertexWireRebuild?.();
 });
 
+/** 18-A: the overlay colour is baked into its material at BUILD time (and 'auto'
+ * re-reads the object's luminance), so a colour change rebuilds — the same shape
+ * as the triangulation toggle above, and subject to the same TDZ rule: everything
+ * read here is declared above. */
+let lastEditWireColor = get(viewPrefs).editWireColor;
+viewPrefs.subscribe((prefs) => {
+	if (prefs.editWireColor === lastEditWireColor) return;
+	lastEditWireColor = prefs.editWireColor;
+	if (wire) refreshFaceWireframe();
+	vertexWireRebuild?.();
+});
+
 /** the welded edge keys that are quad DIAGONALS — everything the quad view leaves out.
  *
  * The shared edge is read from the two TRIANGLES, not through `quadRingKeys`: that helper
@@ -1442,10 +1456,13 @@ export function buildEditWireframe(object) {
 	const c = material?.color;
 	// relative luminance over three's LINEAR color components
 	const lum = c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0;
+	// 18-A: an explicit colour preference wins; 'auto' (the default) keeps the
+	// luminance pick, which is why the pref is not simply a hex.
+	const chosen = editWireOverride(get(viewPrefs)) ?? (lum > 0.5 ? 0x1f2937 : 0x2f81f7);
 	const overlay = new THREE.LineSegments(
 		editWireGeometry(object.geometry),
 		new THREE.LineBasicMaterial({
-			color: lum > 0.5 ? 0x1f2937 : 0x2f81f7,
+			color: chosen,
 			transparent: true,
 			opacity: 0.5
 		})

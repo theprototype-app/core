@@ -6,6 +6,7 @@
 	import { faceEditObject, meshEditOutline } from '$lib/faceEdit';
 	import { editingObject } from '$lib/meshEdit';
 	import { coarsePointer } from '$lib/inputDevice';
+	import { viewPrefs } from '$lib/viewPrefs';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
 	import {
@@ -45,6 +46,14 @@
 		hiddenEdgeColor: 0x353535,
 		xRay: true,
 		blur: true
+	});
+	// 18-A: the SELECTION outline follows the local colour preference. The LOCKED
+	// outline below deliberately does not — it means "a peer holds this", which is
+	// protocol state, not a look.
+	$effect(() => {
+		const hex = $viewPrefs.outlineColor;
+		outlineEffectSelected?.visibleEdgeColor.set(hex);
+		outlineEffectSelected?.hiddenEdgeColor.set(hex);
 	});
 	outlineEffectLocked = new OutlineEffect(scene, camera.current, {
 		blendFunction: BlendFunction.ALPHA,
@@ -229,7 +238,10 @@
 		if (typeof localStorage !== 'undefined' && localStorage.getItem('debugStores'))
 			(window as any).__outlineDebug = () => ({
 				selected: outlineEffectSelected?.selection.size ?? -1,
-				locked: outlineEffectLocked?.selection.size ?? -1
+				locked: outlineEffectLocked?.selection.size ?? -1,
+				// 18-A: the colour lives on the effect's uniform, nowhere a store can see
+				selectedColor: outlineEffectSelected?.visibleEdgeColor.getHexString() ?? '',
+				lockedColor: outlineEffectLocked?.visibleEdgeColor.getHexString() ?? ''
 			});
 	});
 </script>

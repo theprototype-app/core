@@ -10,7 +10,7 @@ import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
 
@@ -24,6 +24,14 @@ const MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024;
 
 export const autosaveEnabled = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('autosave') !== 'false'
+);
+/**
+ * 18-A: restore the snapshot on boot instead of asking. OFF by default — an
+ * automatic scene load is a surprise unless it was asked for. Safe by
+ * construction because checkRestore only ever fires on an EMPTY scene.
+ */
+export const autoRestoreEnabled = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('autoRestore') === 'true'
 );
 /** restore offer for the toast: { ts, objects, snapshot } | null */
 /** @type {import('svelte/store').Writable<any>} */
@@ -171,12 +179,36 @@ async function checkRestore() {
 		const unsubscribe = objectsGroup.subscribe((group) => {
 			if (!group) return;
 			setTimeout(() => unsubscribe(), 0);
-			if (group.children.length === 0)
-				restoreAvailable.set({ ts: snapshot.ts, objects: snapshot.objects ?? 0, snapshot });
+			if (group.children.length !== 0) return;
+			const offer = { ts: snapshot.ts, objects: snapshot.objects ?? 0, snapshot };
+			// 18-A: with auto-restore on, restore straight away and REPORT it. The
+			// offer deliberately never reaches `restoreAvailable` — the Toasts mirror
+			// would flash the "Restore previous session?" prompt for a frame before
+			// the restore nulled the store again.
+			if (get(autoRestoreEnabled)) autoRestore(offer);
+			else restoreAvailable.set(offer);
 		});
 	} catch (error) {
 		console.log('autosave restore check failed', error);
 	}
+}
+
+/**
+ * The auto-restore path: no prompt, but a STICKY report the user dismisses, so a
+ * scene that appeared by itself is always accounted for. Its own toast id —
+ * 'restore-session' is owned by the prompt mirror in Toasts.svelte, which
+ * dismisses it whenever `restoreAvailable` is null (i.e. immediately).
+ * @param {any} offer
+ */
+async function autoRestore(offer) {
+	const ok = await applyRestore(offer.snapshot);
+	if (!ok) return showToast('Could not restore the saved session');
+	const count = offer.objects ?? 0;
+	const when = new Date(offer.ts).toLocaleString();
+	showInfoToast(
+		'restore-done',
+		`Restored ${count} object${count === 1 ? '' : 's'} from your last session (saved ${when})`
+	);
 }
 
 /**
@@ -212,12 +244,13 @@ function restoreMultiMaterial(entries) {
 	objectsGroup.update((value) => value);
 }
 
-export async function restoreSnapshot() {
-	/** @type {any} */
-	const offer = get(restoreAvailable);
-	if (!offer) return;
-	restoreAvailable.set(null);
-	const { snapshot } = offer;
+/**
+ * Put a snapshot back into the scene. Shared by the prompt and the 18-A
+ * auto-restore path, which report the outcome differently.
+ * @param {any} snapshot
+ * @returns {Promise<boolean>} did it land?
+ */
+async function applyRestore(snapshot) {
 	const group = get(objectsGroup);
 	try {
 		if (snapshot.scene && group) {
@@ -273,11 +306,24 @@ export async function restoreSnapshot() {
 				controls.update();
 			}
 		}
-		showToast('Session restored (' + (snapshot.objects ?? 0) + ' objects)');
+		return true;
 	} catch (error) {
 		console.log('restore failed', error);
-		showToast('Could not restore the saved session');
+		return false;
 	}
+}
+
+export async function restoreSnapshot() {
+	/** @type {any} */
+	const offer = get(restoreAvailable);
+	if (!offer) return;
+	restoreAvailable.set(null);
+	const ok = await applyRestore(offer.snapshot);
+	showToast(
+		ok
+			? 'Session restored (' + (offer.snapshot?.objects ?? 0) + ' objects)'
+			: 'Could not restore the saved session'
+	);
 }
 
 export function dismissRestore() {
@@ -330,5 +376,6 @@ export function startAutosave() {
 		if (dirty) saveSnapshot();
 	});
 	autosaveEnabled.subscribe((value) => localStorage.setItem('autosave', String(value)));
+	autoRestoreEnabled.subscribe((value) => localStorage.setItem('autoRestore', String(value)));
 	checkRestore();
 }

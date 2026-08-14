@@ -27,7 +27,8 @@
 		importThemeFile,
 		removeCustomTheme
 	} from '$lib/themes';
-	import { autosaveEnabled, clearSavedSession } from '$lib/autosave';
+	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
+	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
 	import { resetWindowLayout } from '$lib/dragWindow';
@@ -718,6 +719,73 @@
 					<SettingRow name="Autosave">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$autosaveEnabled} /></svelte:fragment>
 						Keep a local session snapshot (restore offered after a crash/reload)
+					</SettingRow>
+					<SettingRow name="Auto-restore on load">
+						<svelte:fragment slot="control">
+							<Checkbox id="auto-restore" bind:checked={$autoRestoreEnabled} />
+						</svelte:fragment>
+						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
+					</SettingRow>
+					<p class="ui-section-label">Wireframe &amp; outline</p>
+					<SettingRow name="Wireframe color">
+						<svelte:fragment slot="control">
+							<input
+								type="color"
+								id="wire-color"
+								class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent"
+								value={$viewPrefs.wireColor}
+								on:input={(e) => setViewPrefs({ wireColor: e.currentTarget.value })}
+							/>
+						</svelte:fragment>
+						Line color of the Wireframe view mode (Configure Scene ▸ View mode)
+					</SettingRow>
+					<SettingRow name="Selection outline color">
+						<svelte:fragment slot="control">
+							<input
+								type="color"
+								id="outline-color"
+								class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent"
+								value={$viewPrefs.outlineColor}
+								on:input={(e) => setViewPrefs({ outlineColor: e.currentTarget.value })}
+							/>
+						</svelte:fragment>
+						Outline drawn around your selected objects (objects a peer has locked keep their own color)
+					</SettingRow>
+					<SettingRow name="Edit Mesh wireframe">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<label class="flex items-center gap-1.5 text-xs whitespace-nowrap">
+									<Checkbox
+										id="edit-wire-auto"
+										checked={$viewPrefs.editWireColor === 'auto'}
+										onchange={(e) =>
+											setViewPrefs({
+												editWireColor: e.currentTarget.checked ? 'auto' : '#2f81f7'
+											})}
+									/>
+									Auto
+								</label>
+								<input
+									type="color"
+									id="edit-wire-color"
+									class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent disabled:opacity-40"
+									disabled={$viewPrefs.editWireColor === 'auto'}
+									value={$viewPrefs.editWireColor === 'auto' ? '#2f81f7' : $viewPrefs.editWireColor}
+									on:input={(e) => setViewPrefs({ editWireColor: e.currentTarget.value })}
+								/>
+							</span>
+						</svelte:fragment>
+						Edge overlay while editing a mesh. Auto picks dark or light from the object's own color; turn it off to pin one color
+					</SettingRow>
+					<SettingRow name="Reset line colors">
+						<svelte:fragment slot="control">
+							<button
+								id="reset-view-colors"
+								class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+								on:click={() => { resetViewPrefs(); showToast('Line colors reset'); }}
+							>Reset</button>
+						</svelte:fragment>
+						Back to the defaults ({DEFAULT_VIEW_PREFS.wireColor} / {DEFAULT_VIEW_PREFS.outlineColor} / auto). Per-device, never shared
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={vrExpanded}>

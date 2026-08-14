@@ -415,9 +415,19 @@ loadable play content. Everything a user does must be visible to connected peers
   `UvEditor.svelte` (the dock tab —
   `'uv'` in `FLOW_FAMILY`; hand-rolled 2D zoom/pan because nothing reusable exists.
   UV-TX: Move/Rotate/Scale armed on 1/2/3 (WORDS in the topbar), a left drag / a
-  MODAL grab (middle-press a SELECTED point; middle elsewhere still pans) / arrow
-  nudges of one TEXTURE PIXEL (Ctrl x10, Shift x100) all through `modalGrab`;
-  `Ctrl+Shift+arrow` grows the selection, `Ctrl+A`/`Ctrl+I`/`L`/`Esc`, Delete
+  MODAL grab (middle-press a SELECTED point; middle elsewhere still pans) / the
+  ARROWS all through `modalGrab`. The arrows apply WHATEVER IS ARMED about the
+  current origin — one texture pixel, one degree, or 1% (Ctrl x10, Shift x100;
+  scale is PER AXIS, left/right in U and up/down in V, Alt for uniform, and the
+  shrink is the reciprocal so a press pair round-trips) — one undo entry per press.
+  `Ctrl+Space` = keyboard vertex PICKING: the first press enters the mode and drops
+  a cursor without touching the selection, later presses toggle the cursor's cluster
+  in/out, the ARROWS walk the cursor while it is on (which is why it is a mode),
+  Esc leaves and keeps the picks, a second Esc clears. One key for both entering
+  and selecting, matching the timeline's Ctrl+Space; the cursor draws as a bigger
+  transparent box and is re-derived by coordinate across a commit like the
+  selection. `Ctrl+Shift+arrow` grows the selection directionally,
+  `Ctrl+A`/`Ctrl+I`/`L`/`Esc`, Delete
   SWALLOWED (unhandled it deletes the object). Keys are claimed in CAPTURE phase on
   `#uv-canvas-wrap` (tabindex="-1", focused on every press) with stopPropagation,
   because 1/2/3 are taken TWICE over — the gizmo transform modes and, whenever a mesh
@@ -841,6 +851,18 @@ loadable play content. Everything a user does must be visible to connected peers
   sessions were never affected — they use toJSON already. When adding any per-object
   state, ask which of the FOUR paths carry it: the wire, autosave, sessions, and
   undo — they do not share a serializer.
+- **Measure a rotation from the CENTROID, never the bounding-box centre.** The box of
+  a rotated point set has a DIFFERENT SHAPE, so its centre is not the rotated image of
+  the old centre: a 1-degree key rotate measured 1.51 degrees and a 10-degree one
+  16.1. The mean of the points is rotation-equivariant and reads exactly 1.000 /
+  10.000. (The same check with a loose 12-degree tolerance had passed, which is how a
+  wrong metric survives.)
+- **A HANDLE that wins the press will win a test's press too.** The placed UV origin
+  deliberately takes priority over vertex picking, and the placed-origin rotate check
+  aimed its grip at the furthest selected point — which is exactly where the origin had
+  just been dragged, so the "rotate" dragged the origin and reported the feature dead.
+  A synthesized grip must keep clear of every handle, and the section needs a premise
+  check that the press started the gesture it meant to (`gesture === 'drag'`).
 - **A ROTATION guard needs an angle; every invariant a rotation preserves is also
   preserved by a WRONG rotation.** The UV rotate's first checks were "the pivot did
   not move" and "every point kept its distance from it" — both stay GREEN when the
@@ -1637,11 +1659,17 @@ override for e2e — never share 5173 (the user's main-checkout server).
   replicated). ONE latent bug fixed: a commit renumbers uv indices, so the second
   keypress tore the picked cluster (4 of 6 corners stranded) — the selection is
   re-derived by COORDINATE now (`uvIndicesAt`). No new wire type and no new history
-  kind: everything commits through `beginUvDrag`/`endUvDrag`. Suite `uv-transform` (72
-  checks, real mouse + real keys), with TWO guards proven by breaking the code; baseline
-  **391/62**. Traps from this batch are in the gotchas (a rotation guard needs an ANGLE;
-  a relative check cannot see a stale selection; a grip must be a point that EXISTS and
-  whose pixel is really the canvas).
+  kind: everything commits through `beginUvDrag`/`endUvDrag`. A third commit answered
+  two user reports: the ARROWS now apply the armed mode (rotate/scale about the origin,
+  per-axis scale, Alt uniform) instead of always nudging, and `Ctrl+Space` opens
+  KEYBOARD vertex picking (cursor + transparent box, arrows walk it, Ctrl+Space takes
+  or drops it, Esc leaves keeping the picks) — activation deliberately reuses the
+  selecting key so there is one to learn. Suite `uv-transform` (96 checks, real mouse +
+  real keys), with two guards proven by breaking the code; baseline **391/62**. Traps
+  from this batch are in the gotchas (a rotation guard needs an ANGLE, and must measure
+  the CENTROID not the bounding box; a relative check cannot see a stale selection; a
+  grip must be a point that EXISTS, whose pixel is really the canvas, and which is
+  clear of any handle that wins the press).
 - Status (2026-08-14): **17-E ANIMATION KEYFRAMES — branch `feat/17e-animation-curves`,
   lane `../theprototype-lane-anim` @ port 5195, 9 commits, NOT PR'd yet.** The authored
   animator went from one `{from,to,bezier}` segment per channel to a real keyframe

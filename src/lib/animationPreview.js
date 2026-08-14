@@ -32,7 +32,7 @@ import { recordEntry, registerHistoryKind } from './history';
 /**
  * @typedef {{ t: number, v: number, ease?: number[] }} Key a value at a clip time; `ease` shapes the NEXT segment
  * @typedef {{ id: string, channel: string, keys: Key[] }} Track keys sorted by t
- * @typedef {{ name: string, tracks: Track[], duration: number, loop: 'once'|'loop'|'pingpong' }} Clip
+ * @typedef {{ name: string, tracks: Track[], duration: number, loop: 'once'|'loop'|'pingpong', fps?: number, step?: number }} Clip
  * @typedef {{ clips: Record<string, Clip>, active: string, changedAt: number }} AnimSet
  * @typedef {{ clipId: string, playing: boolean, at: number, pausedAt: number, speed: number, reverse?: boolean, startedFrom?: number, rangeIn?: number, rangeOut?: number, changedAt: number }} Play
  */

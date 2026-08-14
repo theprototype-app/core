@@ -977,6 +977,100 @@ h.run(async () => {
 	});
 	h.check(noNative, 'the plot cancels the browser context menu');
 
+	// ---------- 9c7. the polish round: layout, snapping and horizontal scale -------
+	await A.page.getByRole('button', { name: 'Graph', exact: true }).click();
+	await A.page.waitForTimeout(300);
+	const layout = await A.page.evaluate(() => {
+		const nav = document.getElementById('animation-navigator');
+		const svg = document.querySelector('#animation-timeline');
+		const wrap = svg?.parentElement;
+		const style = wrap ? getComputedStyle(wrap) : null;
+		return {
+			navAbove: !!nav && !!svg && nav.getBoundingClientRect().bottom <= svg.getBoundingClientRect().top + 1,
+			overflowX: style?.overflowX,
+			// with the graph's fixed height nothing should be scrollable at all
+			scrollsY: wrap ? wrap.scrollHeight > wrap.clientHeight + 1 : null,
+			scrollsX: wrap ? wrap.scrollWidth > wrap.clientWidth + 1 : null
+		};
+	});
+	h.check(layout.navAbove, 'the navigator sits ABOVE the plot');
+	h.check(layout.overflowX === 'hidden', `and the plot never scrolls horizontally (${layout.overflowX})`);
+	h.check(
+		layout.scrollsX === false && layout.scrollsY === false,
+		`no scrollbars in graph view (x ${layout.scrollsX}, y ${layout.scrollsY})`
+	);
+	await A.page.getByRole('button', { name: 'Sheet', exact: true }).click();
+	await A.page.waitForTimeout(200);
+
+	// dragging the ruler lands the playhead on the snap grid
+	await A.page.evaluate(() => {
+		const el = document.getElementById('animation-snap');
+		if (el) {
+			el.value = 'frame';
+			el.dispatchEvent(new Event('change', { bubbles: true }));
+		}
+	});
+	await A.page.waitForTimeout(200);
+	const ruler2 = await A.page.evaluate(() => {
+		const r = document.querySelector('#animation-timeline rect').getBoundingClientRect();
+		return { x: r.x, y: r.y, w: r.width, h: r.height };
+	});
+	await A.page.mouse.move(ruler2.x + 12, ruler2.y + ruler2.h / 2);
+	await A.page.mouse.down();
+	await A.page.mouse.move(ruler2.x + ruler2.w * 0.43, ruler2.y + ruler2.h / 2, { steps: 4 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(200);
+	const snappedHead = await head();
+	h.check(
+		Math.abs(snappedHead * 30 - Math.round(snappedHead * 30)) < 1e-6,
+		`sweeping the ruler snaps the playhead to a frame (${snappedHead.toFixed(4)}s = frame ${(snappedHead * 30).toFixed(2)})`
+	);
+
+	// horizontal scaling of a multi-selection: it used to be swallowed by snapping
+	const hScale = await A.page.evaluate(async (id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		const clipId = ap.createClip(id, 'Hscale');
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', id);
+		const track = ap.addTrack(id, 'pos.y', obj, clipId);
+		ap.updateKey(id, track, 0, { t: 0.2, v: 0 }, clipId);
+		ap.updateKey(id, track, 1, { t: 0.4, v: 1 }, clipId);
+		ap.updateAnim(id, { duration: 2 }, clipId);
+		ap.setActiveClip(id, clipId);
+		ap.scrub(id, 0); // pivot
+		return ap.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t);
+	}, first);
+	await A.page.waitForTimeout(300);
+	// select both keys and scale them with a small horizontal drag
+	const hDots = await A.page.evaluate(() =>
+		[...document.querySelectorAll('#animation-timeline rect[transform^="rotate(45"]')].map((d) => {
+			const r = d.getBoundingClientRect();
+			return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+		})
+	);
+	await A.page.mouse.click(hDots[0].x, hDots[0].y);
+	await A.page.keyboard.down('Shift');
+	await A.page.mouse.click(hDots[1].x, hDots[1].y);
+	await A.page.keyboard.up('Shift');
+	await A.page.keyboard.press('2'); // arm Scale
+	await A.page.waitForTimeout(150);
+	await A.page.mouse.move(hDots[1].x, hDots[1].y);
+	await A.page.mouse.down();
+	await A.page.mouse.move(hDots[1].x + 25, hDots[1].y, { steps: 5 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(250);
+	const afterHScale = await A.page.evaluate(
+		(id) => window.__stores.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t),
+		first
+	);
+	h.check(
+		afterHScale[1] > hScale[1] + 0.005 && afterHScale[0] > hScale[0] + 0.001,
+		`a small horizontal scale drag moves BOTH keys away from the pivot (${JSON.stringify(hScale)} -> ${JSON.stringify(afterHScale.map((/** @type {number} */ t) => +t.toFixed(3)))})`
+	);
+	await A.page.keyboard.press('1');
+
 	// ---------- 9d. the transport deck, in real icons and real buttons ----------
 	const deck = await A.page.evaluate((id) => {
 		const s = window.__stores;

@@ -277,11 +277,19 @@
 	// x is clip SECONDS across the plot; the dope sheet stacks one row per track and
 	// the graph plots the selected track's values.
 	let plotW = $state(420);
+	let plotVH = $state(220);
 	const PAD_X = 10;
 	const RULER_H = 16;
 	const ROW_H = 22;
-	const GRAPH_H = 150;
-	const innerW = $derived(Math.max(60, plotW - PAD_X * 2));
+	// The graph FILLS the pane instead of sitting at a fixed height: a short dock
+	// clipped the curve and grew a scrollbar, and a tall one wasted the room. There
+	// is nothing below the curve to reveal, so scrolling was never the answer.
+	const GRAPH_H = $derived(Math.max(80, plotVH - RULER_H - 22));
+	// plotW is the container's clientWidth, which INCLUDES its 8px padding either
+	// side, so sizing the svg from it overflowed the content box by 12px — no visible
+	// bar (overflow-x is hidden) but a scrollable width all the same
+	const plotAvail = $derived(Math.max(80, plotW - 16));
+	const innerW = $derived(Math.max(60, plotAvail - PAD_X * 2));
 	const sheetH = $derived(RULER_H + Math.max(1, tracks.length) * ROW_H + 6);
 	const plotH = $derived(view === 'graph' ? RULER_H + GRAPH_H + 6 : sheetH);
 	// x maps the VISIBLE window, so zooming and panning move every channel together
@@ -412,7 +420,12 @@
 			return {
 				trackId: s.trackId,
 				index: s.index,
-				t: snapT(Math.max(0, Math.min(duration, t))),
+				// SCALE does not snap: near the pivot a whole factor step is worth less
+				// than one frame, so snapping rounded it straight back — the horizontal
+				// half of the gesture looked dead while the vertical (unsnapped) worked
+				t: scaling
+					? Math.max(0, Math.min(duration, t))
+					: snapT(Math.max(0, Math.min(duration, t))),
 				...((scaling || dv !== null) && !s.stepped ? { v: value } : {})
 			};
 		});
@@ -562,7 +575,9 @@
 	function scrubAt(/** @type {number} */ clientX) {
 		if (!target || !plotEl) return;
 		const r = plotEl.getBoundingClientRect();
-		scrub(target.uuid, Math.max(0, Math.min(duration, xt(clientX - r.left))));
+		// the playhead lands on the snap grid too: a frame grid you can scrub off is
+		// not a frame grid, and it showed times no key could ever sit on
+		scrub(target.uuid, snapT(Math.max(0, Math.min(duration, xt(clientX - r.left)))));
 	}
 	/**
 	 * Starts a scrub when the press lands in the ruler BAND. It listens on the whole
@@ -1517,7 +1532,50 @@
 						{viewStart.toFixed(2)}–{viewEnd.toFixed(2)}s
 					</span>
 				</div>
-				<div class="min-h-0 flex-1 overflow-auto p-2" bind:clientWidth={plotW}>
+				<!-- NAVIGATOR: the whole clip at a glance with the visible window as a
+				     thumb, so a zoomed-in view still shows where it sits and can be
+				     dragged along. A native scrollbar cannot do this job — the plot is
+				     one screen wide by construction, the zoom is a view WINDOW rather
+				     than a wider canvas. -->
+				{#if tracks.length}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						id="animation-navigator"
+						class="relative mx-2 mt-1.5 mb-1 h-3 shrink-0 cursor-pointer rounded-full bg-gray-900/70"
+						style="touch-action: none"
+						title="The whole clip — drag the bar to move the visible window"
+						onpointerdown={navDown}
+					>
+					<!-- keyed by INDEX, never by time: two keys legitimately share a time
+						     while a multi-selection is dragged through one another, and a
+						     duplicate each-key is a THROW in svelte, which took the whole
+						     window down — the pane stopped opening at all -->
+						{#each tracks as track (track.id)}
+							{#each track.keys as key, ki (ki)}
+								<span
+									class="pointer-events-none absolute top-1/2 h-1 w-px -translate-y-1/2 bg-gray-500/70"
+									style="left: {(key.t / Math.max(duration, 0.001)) * 100}%"
+								></span>
+							{/each}
+						{/each}
+						<span
+							class="pointer-events-none absolute inset-y-0 rounded-full border border-primary-500/70 bg-primary-500/25"
+							style="left: {(viewStart / Math.max(duration, 0.001)) * 100}%; width: {Math.max(
+								2,
+								(viewSpan / Math.max(duration, 0.001)) * 100
+							)}%"
+						></span>
+						<span
+							class="pointer-events-none absolute inset-y-0 w-px bg-amber-400"
+							style="left: {(Math.min(curTime, duration) / Math.max(duration, 0.001)) * 100}%"
+						></span>
+					</div>
+				{/if}
+				<div
+					class="min-h-0 flex-1 overflow-x-hidden {view === 'graph' ? 'overflow-y-hidden' : 'overflow-y-auto'} p-2"
+					bind:clientWidth={plotW}
+					bind:clientHeight={plotVH}
+				>
 					{#if !tracks.length}
 						<div class="flex h-full items-center justify-center text-center text-sm text-gray-500">
 							Add a movement to build a timeline.
@@ -1527,7 +1585,7 @@
 						<svg
 							bind:this={plotEl}
 							id="animation-timeline"
-							width={plotW - 4}
+							width={plotAvail}
 							height={plotH}
 							class="touch-none select-none rounded-sm bg-gray-900/60"
 							role="application"
@@ -1539,7 +1597,7 @@
 						>
 							<!-- ruler: drag anywhere along it to sweep the playhead -->
 							<rect
-								x="0" y="0" width={plotW - 4} height={RULER_H}
+								x="0" y="0" width={plotAvail} height={RULER_H}
 								fill="rgb(31 41 55 / 0.8)" class="cursor-ew-resize"
 							/>
 							{#each ticks as t (t)}
@@ -1610,45 +1668,6 @@
 					{/if}
 				</div>
 
-				<!-- NAVIGATOR: the whole clip at a glance with the visible window as a
-				     thumb, so a zoomed-in view still shows where it sits and can be
-				     dragged along. A native scrollbar cannot do this job — the plot is
-				     one screen wide by construction, the zoom is a view WINDOW rather
-				     than a wider canvas. -->
-				{#if tracks.length}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div
-						id="animation-navigator"
-						class="relative mx-2 mb-1.5 h-3 shrink-0 cursor-pointer rounded-full bg-gray-900/70"
-						style="touch-action: none"
-						title="The whole clip — drag the bar to move the visible window"
-						onpointerdown={navDown}
-					>
-					<!-- keyed by INDEX, never by time: two keys legitimately share a time
-						     while a multi-selection is dragged through one another, and a
-						     duplicate each-key is a THROW in svelte, which took the whole
-						     window down — the pane stopped opening at all -->
-						{#each tracks as track (track.id)}
-							{#each track.keys as key, ki (ki)}
-								<span
-									class="pointer-events-none absolute top-1/2 h-1 w-px -translate-y-1/2 bg-gray-500/70"
-									style="left: {(key.t / Math.max(duration, 0.001)) * 100}%"
-								></span>
-							{/each}
-						{/each}
-						<span
-							class="pointer-events-none absolute inset-y-0 rounded-full border border-primary-500/70 bg-primary-500/25"
-							style="left: {(viewStart / Math.max(duration, 0.001)) * 100}%; width: {Math.max(
-								2,
-								(viewSpan / Math.max(duration, 0.001)) * 100
-							)}%"
-						></span>
-						<span
-							class="pointer-events-none absolute inset-y-0 w-px bg-amber-400"
-							style="left: {(Math.min(curTime, duration) / Math.max(duration, 0.001)) * 100}%"
-						></span>
-					</div>
-				{/if}
 			</div>
 
 			<!-- RIGHT: selected key + the easing that leaves it -->

@@ -10,6 +10,23 @@
 	// the meshEditHotkeys pref is on (the toggle here; while on, shortcuts.js
 	// skips bare mesh-edit keys and editorNavigation parks the fly keys);
 	// typing in inputs skips. Esc always works.
+	import { untrack } from 'svelte';
+	import { get } from 'svelte/store';
+	import {
+		bevelWidth,
+		bevelSegments,
+		bevelProfile,
+		loopCuts,
+		mergeDistance,
+		symAxis,
+		symKeep,
+		optionsFocus,
+		focusTool,
+		hasOptions,
+		defaultFocus
+	} from '$lib/meshToolParams';
+	import ToolboxSection from '../ui/ToolboxSection.svelte';
+	import MeshToolOptions from './MeshToolOptions.svelte';
 	import {
 		editingObject,
 		enterEditMode,
@@ -85,7 +102,6 @@
 		Move,
 		Grid2x2,
 		Trash2,
-		MousePointer,
 		Merge,
 		Box,
 		Circle,
@@ -151,13 +167,19 @@
 	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);
 	// one-shots commit immediately on the current target. `icon` = custom
 	// ToolIcon name; `lucide` = a lucide component where a good glyph exists.
+	// `param: true` = a PARAMETERIZED one-shot: clicking it in the grid selects
+	// the tool and shows its options, and the pane's own button commits. With the
+	// parameters no longer permanently on screen, a click that committed straight
+	// away would be committing with numbers the user cannot see. The hotkey still
+	// commits immediately — a toolbar arms, a shortcut executes.
 	const OPS = [
 		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false, icon: 'extrude', desc: 'pull the face out along its normal' },
 		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false, icon: 'inset', desc: 'shrink a copy inside a stitched ring' },
 		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, lucide: Move, desc: 'seat the gizmo on the selection' },
+		{ op: 'bevel', label: 'Bevel', hint: '', oneShot: true, param: true, lucide: Scissors, desc: "chamfer the selected face's border" },
+		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, param: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
 		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, lucide: Grid2x2, desc: 'split each triangle into four' },
 		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
-		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
 		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, lucide: Scissors, desc: 'cut across the mesh: click one end of the line, then the other' },
 		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, icon: 'flip-normals', desc: 'reverse the winding' },
 		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, lucide: Trash2, desc: 'remove the selection' }
@@ -206,7 +228,8 @@
 		{ id: 'eloop', label: 'Loop', hint: 'L', run: selectEdgeLoop, desc: 'the edge chain running end to end through this edge' },
 		{ id: 'ering', label: 'Ring', hint: '', run: selectEdgeRing, desc: 'the parallel rungs a face loop crosses — the other half of the standard pair' },
 		{ id: 'eall', label: 'All', hint: 'Ctrl A', run: selectAllEdges, desc: 'every edge of the mesh' },
-		{ id: 'einvert', label: 'Invert', hint: 'Ctrl I', run: invertEdgeSelection, desc: 'swap picked and unpicked' }
+		{ id: 'einvert', label: 'Invert', hint: 'Ctrl I', run: invertEdgeSelection, desc: 'swap picked and unpicked' },
+		{ id: 'enone', label: 'None', hint: '', run: () => (clearEdgeSelection(), true), desc: 'deselect everything' }
 	];
 	const VERT_CMDS = [
 		{ id: 'vall', label: 'All', hint: 'Ctrl A', run: selectAllVerts, desc: 'every vertex of the mesh' },
@@ -223,7 +246,6 @@
 	}
 
 	// M6: whole-mesh cleanup commands — they act on the OBJECT, not the pick
-	let mergeDistance = $state(0.001);
 	const CLEANUP_CMDS = [
 		{
 			id: 'normals',
@@ -236,7 +258,7 @@
 			id: 'merge',
 			label: 'Merge by distance',
 			lucide: Combine,
-			run: () => mergeByDistance(mergeDistance),
+			run: () => mergeByDistance($mergeDistance),
 			desc: 'collapse near-coincident vertices and drop the degenerate faces'
 		}
 	];
@@ -261,15 +283,6 @@
 	// FALLBACK for prefers-reduced-motion, where animation:none means the end
 	// event never fires and the class would stick forever.
 	let flashOp = $state('');
-	// M5: bevel params live here, not in faceEditAmount — that store is the FACE op's
-	// signed distance and sharing it would make arming Extrude change the bevel width
-	let bevelWidth = $state(0.1);
-	let bevelSegments = $state(1);
-	// profile: 0 flat, >0 domes the cap out, <0 dishes it in (vertex + edge bevel)
-	let bevelProfile = $state(0);
-	/** M7: symmetrize axis + which half to keep @type {'x'|'y'|'z'} */
-	let symAxis = $state('x');
-	let symKeep = $state(1);
 	/** @type {any} */
 	let flashTimer = 0;
 	/** @param {string} op */
@@ -279,20 +292,17 @@
 		flashTimer = setTimeout(() => (flashOp = ''), 400);
 	}
 
-	// M3: how many loops a Loop cut inserts (its own field — the extrude/inset
-	// `amount` is a distance, this is a count)
-	let loopCuts = $state(1);
-
-	/** @param {string} op */
+	/** From the tool GRID. Parameterized tools only SELECT here (their options
+	 * pane commits); everything else behaves as before. @param {string} op */
 	function runOp(op) {
 		const spec = OPS.find((o) => o.op === op);
+		if (spec?.param) {
+			focusTool(op);
+			return;
+		}
 		if (op === 'bridge') {
 			// validates the two-piece selection + toasts
 			if (commitFaceOp('bridge', 0)) flash('bridge');
-			return;
-		}
-		if (op === 'loopcut') {
-			if (commitFaceOp('loopcut', loopCuts)) flash('loopcut');
 			return;
 		}
 		if (spec?.oneShot) {
@@ -316,6 +326,68 @@
 		}
 		commitFaceOp(/** @type {any} */ ($faceEditOp), $faceEditAmount);
 	}
+
+	/** Commit the bevel for whichever element mode is open — three different
+	 * operators with three different signatures, one button. */
+	function applyBevel() {
+		const ok =
+			mode === 'vertices'
+				? bevelSelectedVerts($bevelWidth, $bevelProfile)
+				: mode === 'edges'
+					? bevelEdges($bevelWidth, $bevelSegments, $bevelProfile)
+					: bevelFaces($bevelWidth, $bevelSegments);
+		if (ok) flash('bevel');
+	}
+
+	/** Loop cut, from the options pane or the C hotkey. */
+	function applyLoopCut() {
+		if (commitFaceOp('loopcut', $loopCuts)) flash('loopcut');
+	}
+
+	// Cleanup and Symmetry act on the whole OBJECT, so they are offered in every
+	// element mode — but they all guard on the face session's `faceEdited`, and
+	// vertices is a separate meshEdit session where that is null. Rather than
+	// hiding them (they were faces-only, so recalculating normals meant leaving
+	// edge mode), they show disabled-but-clickable and say why: the repo's
+	// convention, and it keeps the section's contents stable across tabs.
+	const wholeMeshReady = $derived(!!$faceEditObject);
+	/** @param {() => void} fn */
+	function runWholeMesh(fn) {
+		if (!wholeMeshReady) {
+			showToast('Switch to Edges or Faces to run whole-mesh tools');
+			return;
+		}
+		fn();
+	}
+
+	// Which tool's options are showing. Arming a tool takes the pane with it, so
+	// the parameters are always the ones the next commit will use.
+	$effect(() => {
+		const armed = $faceEditOp;
+		untrack(() => {
+			if (mode === 'vertices') return; // vertices has no armed op
+			if (hasOptions(armed)) focusTool(armed);
+		});
+	});
+	// A mode switch resets the pane: the previous tab's tool may not exist here
+	// (a face bevel and a vertex bevel are different operators), and a stale
+	// options block would be describing a tool that is no longer selectable.
+	$effect(() => {
+		void mode;
+		untrack(() => focusTool(defaultFocus(mode, $faceEditOp)));
+	});
+	$effect(() => {
+		if (!active) focusTool('');
+	});
+	// the proportional toggle owns the pane while it is ON (its radius is the
+	// only thing to set), and hands it back when switched off
+	$effect(() => {
+		const on = $proportionalEdit;
+		untrack(() => {
+			if (on) focusTool('proportional');
+			else if (get(optionsFocus) === 'proportional') focusTool('');
+		});
+	});
 
 	// 177: build a face from the 3-4 selected vertices
 	function createFace() {
@@ -405,7 +477,15 @@
 				event.preventDefault();
 				return;
 			}
-			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete', c: 'loopcut' };
+			// C commits the loop cut outright: a toolbar ARMS, a shortcut EXECUTES.
+			// Clicking Loop cut in the grid only selects it (its cut count is in the
+			// options pane), but someone typing C already knows what they want.
+			if (key === 'c') {
+				applyLoopCut();
+				event.preventDefault();
+				return;
+			}
+			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete' };
 			const op = key === 'delete' ? 'delete' : /** @type {any} */ (byKey)[key];
 			if (!op) return;
 			runOp(op);
@@ -547,9 +627,25 @@
 			</div>
 		{/if}
 
-		<!-- Selection commands — the SAME vocabulary in every mode (the list swaps
-		     with the mode, so Ctrl+A/I mean the right thing everywhere) -->
+		<!-- SELECT: how a click picks (faces only), then the selection commands.
+		     The SAME vocabulary in every mode (the list swaps with the mode, so
+		     Ctrl+A/I mean the right thing everywhere) and always in the same place,
+		     so the muscle memory survives a tab switch. -->
 		<span class="tbx-label">Select</span>
+		{#if mode === 'faces'}
+			<div class="tbx-row">
+				<div class="tbx-seg">
+					{#each GRANULARITIES as g (g.value)}
+						<button
+							id={`mesh-gran-${g.value}`}
+							class="px-2 py-0.5 {$faceEditGranularity === g.value ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+							title={g.title}
+							onclick={() => setFaceGranularity(/** @type {any} */ (g.value))}>{g.label}</button
+						>
+					{/each}
+				</div>
+			</div>
+		{/if}
 		<div class="tbx-row">
 			{#each SELECT_CMDS as c (c.id)}
 				<button
@@ -564,7 +660,10 @@
 		</div>
 
 		{#if mode === 'edges'}
-			<!-- M4: edge tools — the pick is a set of EDGES, not faces -->
+			<!-- M4: edge tools — the pick is a set of EDGES, not faces.
+			     Loop select and Clear are WORD commands in the Select row above:
+			     they duplicated two of these icons, and near-identical glyphs in a
+			     row is exactly what got the wrong one pressed. -->
 			<span class="tbx-label">Tools</span>
 			<button
 				id="edge-move"
@@ -575,26 +674,12 @@
 				><Move size={18} aria-hidden="true" /></button
 			>
 			<button
-				id="edge-loop"
-				class="tbx-btn"
-				class:tbx-flash={flashOp === 'edgeloop'}
-				onanimationend={() => (flashOp = '')}
-				aria-label="Edge loop select"
-				title="Loop select — the whole edge ring through this edge"
-				onclick={() => {
-					if (selectEdgeLoop()) flash('edgeloop');
-				}}><Spline size={18} aria-hidden="true" /></button
-			>
-			<button
 				id="edge-bevel"
-				class="tbx-btn"
-				class:tbx-flash={flashOp === 'ebevel'}
-				onanimationend={() => (flashOp = '')}
+				class="tbx-btn {$optionsFocus === 'bevel' ? 'tbx-sel' : ''}"
+				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel edges"
-				title="Bevel — replace the edge with a chamfer strip (width, segments and profile below). Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
-				onclick={() => {
-					if (bevelEdges(bevelWidth, bevelSegments, bevelProfile)) flash('ebevel');
-				}}><Scissors size={18} aria-hidden="true" /></button
+				title="Bevel — replace the edge with a chamfer strip. Sets width, segments and profile below, then Apply. Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
+				onclick={() => focusTool('bevel')}><Scissors size={18} aria-hidden="true" /></button
 			>
 			<button
 				id="edge-dissolve"
@@ -607,45 +692,7 @@
 					if (dissolveEdges()) flash('dissolve');
 				}}><Eraser size={18} aria-hidden="true" /></button
 			>
-			<button
-				id="edge-clear"
-				class="tbx-btn"
-				aria-label="Clear the edge selection"
-				title="Deselect all edges"
-				onclick={() => clearEdgeSelection()}><MousePointer size={18} aria-hidden="true" /></button
-			>
 		{:else if mode === 'faces'}
-			<!-- SELECT: pick granularity (B3 + 15-G Quad) -->
-			<span class="tbx-label">Select</span>
-			<div class="tbx-row">
-				<div class="tbx-seg">
-					{#each GRANULARITIES as g (g.value)}
-						<button
-							id={`mesh-gran-${g.value}`}
-							class="px-2 py-0.5 {$faceEditGranularity === g.value ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-							title={g.title}
-							onclick={() => setFaceGranularity(/** @type {any} */ (g.value))}>{g.label}</button
-						>
-					{/each}
-				</div>
-			</div>
-
-			<!-- M3: how many loops a Loop cut inserts -->
-			<div class="tbx-row text-xs text-gray-300">
-				<label class="flex items-center gap-1" title="How many edge loops Loop cut inserts">
-					loop cuts
-					<input
-						id="mesh-loop-cuts"
-						type="number"
-						min="1"
-						max="20"
-						step="1"
-						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={loopCuts}
-					/>
-				</label>
-			</div>
-
 			<!-- TOOLS: armed tools stay lit (solid accent); one-shots flash on commit -->
 			<span class="tbx-label">Tools</span>
 			{#each OPS as o (o.op)}
@@ -653,14 +700,17 @@
 					id={`mesh-op-${o.op}`}
 					class="tbx-btn {o.op === 'delete'
 						? 'tbx-danger'
-						: !o.oneShot && o.op === $faceEditOp
-							? 'tbx-on bg-primary-600 text-white'
-							: ''}"
+						: o.param && $optionsFocus === o.op
+							? 'tbx-sel'
+							: !o.oneShot && o.op === $faceEditOp
+								? 'tbx-on bg-primary-600 text-white'
+								: ''}"
 					class:mesh-op-active={!o.oneShot && o.op === $faceEditOp}
 					class:tbx-flash={flashOp === o.op}
 					onanimationend={() => (flashOp = '')}
 					aria-label={o.label}
-					title={`${o.label} (${o.hint}) — ${o.desc}`}
+					aria-pressed={o.param ? $optionsFocus === o.op : undefined}
+					title={o.hint ? `${o.label} (${o.hint}) — ${o.desc}` : `${o.label} — ${o.desc}`}
 					onclick={() => runOp(o.op)}
 				>
 					{#if o.lucide}
@@ -674,14 +724,8 @@
 		{:else}
 			<!-- TOOLS: vertex mode (D5: ONE selection — click selects, Ctrl+click
 			     adds, the gizmo on the last pick drags the whole set) -->
+			<!-- Deselect is the "None" WORD command in the Select row above -->
 			<span class="tbx-label">Tools</span>
-			<button
-				id="mesh-deselect"
-				class="tbx-btn {$vertexSelectionSize <= 1 ? 'tbx-on bg-primary-600 text-white' : ''}"
-				aria-label="Deselect all"
-				title="Deselect all — click a vertex to move it, Ctrl+click to add more"
-				onclick={() => clearVertexSelection()}><MousePointer size={18} aria-hidden="true" /></button
-			>
 			<button
 				id="mesh-weld"
 				class="tbx-btn {$vertexSelectionSize >= 2 ? 'tbx-on bg-primary-600 text-white' : 'tbx-disabled'}"
@@ -700,14 +744,11 @@
 			>
 			<button
 				id="mesh-vertex-bevel"
-				class="tbx-btn"
-				class:tbx-flash={flashOp === 'vbevel'}
-				onanimationend={() => (flashOp = '')}
+				class="tbx-btn {$optionsFocus === 'bevel' ? 'tbx-sel' : ''}"
+				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel the selected vertices"
-				title="Bevel — cut the corner off every selected vertex and cap it (width and profile below). Works on any number of vertices."
-				onclick={() => {
-					if (bevelSelectedVerts(bevelWidth, bevelProfile)) flash('vbevel');
-				}}><Scissors size={18} aria-hidden="true" /></button
+				title="Bevel — cut the corner off every selected vertex and cap it. Sets width and profile below, then Apply. Works on any number of vertices."
+				onclick={() => focusTool('bevel')}><Scissors size={18} aria-hidden="true" /></button
 			>
 			<button
 				id="mesh-proportional"
@@ -727,47 +768,6 @@
 				title="Slide — constrain the drag to one of this vertex's own edges (it picks the edge you drag toward and clamps to its ends). Adjusts a profile without pulling the vertex off the surface."
 				onclick={() => vertexSlide.set(!$vertexSlide)}><Spline size={18} aria-hidden="true" /></button
 			>
-			{#if $proportionalEdit}
-				<div class="tbx-row text-xs text-gray-300">
-					<label class="flex items-center gap-1" title="How far the drag carries its neighbours (local units). Weight fades smoothly to zero at the radius.">
-						radius
-						<input
-							id="mesh-proportional-radius"
-							type="number"
-							step="0.1"
-							min="0.01"
-							class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-							bind:value={$proportionalRadius}
-						/>
-					</label>
-				</div>
-			{/if}
-			<!-- handle size: proportional to the object by default, this scales it -->
-			<div class="tbx-row text-xs text-gray-300">
-				<label class="flex items-center gap-1" title="Vertex dot size — a multiplier over the size derived from the object, so it stays sane on a terrain and on a cube">
-					dots
-					<input
-						id="mesh-handle-scale"
-						type="range"
-						min="0.2"
-						max="3"
-						step="0.1"
-						class="w-20"
-						bind:value={$vertexHandleScale}
-					/>
-					<span class="w-8 text-right tabular-nums">{$vertexHandleScale.toFixed(1)}x</span>
-				</label>
-				<button
-					id="mesh-handle-adaptive"
-					class="rounded-full px-2 py-0.5 {$vertexHandleAdaptive ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					aria-pressed={$vertexHandleAdaptive}
-					title={$vertexHandleAdaptive
-						? 'Adaptive: the dots keep a constant SCREEN size as you zoom (what modelling tools do). Click for a fixed world size.'
-						: 'Fixed world size: the dots grow as you zoom in and shrink away as you zoom out. Click for adaptive.'}
-					onclick={() => vertexHandleAdaptive.set(!$vertexHandleAdaptive)}
-					>{$vertexHandleAdaptive ? 'adaptive' : 'fixed'}</button
-				>
-			</div>
 		{/if}
 
 		<!-- GIZMO: one control for EVERY element mode. It was inside the faces-only
@@ -806,113 +806,50 @@
 				>
 			</div>
 		</div>
-		<!-- BEVEL params, shared by all three modes: the same width and profile mean the
-		     same thing whether the corner being cut is a face border, an edge or a vertex -->
-		<div id="bevel-params" class="tbx-row text-xs text-gray-300">
-			<label class="flex items-center gap-1" title="How far the chamfer reaches (clamped per edge so two bevels can never cross)">
-				width
-				<input
-					id="bevel-width"
-					type="number"
-					step="0.02"
-					min="0.001"
-					class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-					bind:value={bevelWidth}
-				/>
-			</label>
-			{#if mode !== 'vertices'}
-				<label class="flex items-center gap-1" title="More segments = a rounder edge">
-					segments
-					<input
-						id="bevel-segments"
-						type="number"
-						step="1"
-						min="1"
-						max="8"
-						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={bevelSegments}
-					/>
-				</label>
-				{#if mode === 'faces'}
-				<button
-					id="face-bevel"
-					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
-					title="Bevel the selected face's border into a chamfer (inset + push per segment)"
-					onclick={() => bevelFaces(bevelWidth, bevelSegments)}>Bevel</button
-				>
-				{/if}
-			{/if}
-			{#if mode !== 'faces'}
-				<label class="flex items-center gap-1" title="Profile: 0 is a flat chamfer, positive domes the cap OUT, negative dishes it IN">
-					profile
-					<input
-						id="bevel-profile"
-						type="range"
-						min="-1"
-						max="1"
-						step="0.1"
-						class="w-20"
-						bind:value={bevelProfile}
-					/>
-					<span class="w-10 text-right tabular-nums"
-						>{bevelProfile > 0.05 ? 'out' : bevelProfile < -0.05 ? 'in' : 'flat'}</span
-					>
-				</label>
-			{/if}
-		</div>
-		{#if mode === 'faces'}
-			<!-- M6: whole-mesh cleanup — acts on the OBJECT, not the pick -->
-			<span class="tbx-label">Cleanup</span>
+		<!-- TOOL OPTIONS: the parameters of whichever tool is selected, directly
+		     under the grid that selected it. Before this they were scattered — the
+		     bevel width lived under GIZMO, the extrude amount at the very bottom of
+		     the window, the merge distance two sections from its own button. -->
+		<MeshToolOptions
+			{mode}
+			focus={$optionsFocus}
+			onApplyOp={applyActive}
+			onApplyBevel={applyBevel}
+			onApplyLoopCut={applyLoopCut}
+		/>
+
+		<!-- WHOLE-MESH work below. None of it depends on which element mode is open,
+		     so it is offered in all three (it used to be faces-only, which meant
+		     leaving edge mode to recalculate normals). Collapsed by default so the
+		     tools stay the first thing in the window. -->
+		<ToolboxSection key="cleanup" label="Cleanup" id="mesh-sec-cleanup">
 			{#each CLEANUP_CMDS as c (c.id)}
 				<button
 					id={`mesh-fix-${c.id}`}
-					class="tbx-btn"
+					class="tbx-btn {wholeMeshReady ? '' : 'tbx-disabled'}"
 					class:tbx-flash={flashOp === c.id}
 					onanimationend={() => (flashOp = '')}
 					aria-label={c.label}
 					title={`${c.label} — ${c.desc}`}
-					onclick={() => runSelectCmd(c)}><c.lucide size={18} aria-hidden="true" /></button
+					onclick={() => runWholeMesh(() => runSelectCmd(c))}
+					><c.lucide size={18} aria-hidden="true" /></button
 				>
 			{/each}
 			<button
 				id="mesh-shading"
-				class="tbx-btn"
+				class="tbx-btn {wholeMeshReady ? '' : 'tbx-disabled'}"
 				aria-label="Smooth shading"
 				aria-pressed={shadingMode() === 'smooth'}
 				title={shadingMode() === 'smooth'
 					? 'Smooth shading — click for flat'
 					: 'Flat shading — click for smooth'}
-				onclick={() => {
-					setShadingSmooth(shadingMode() !== 'smooth');
-					flash('shading');
-				}}><Sun size={18} aria-hidden="true" /></button
+				onclick={() =>
+					runWholeMesh(() => {
+						setShadingSmooth(shadingMode() !== 'smooth');
+						flash('shading');
+					})}><Sun size={18} aria-hidden="true" /></button
 			>
-			<div id="mesh-symmetrize" class="tbx-row text-xs text-gray-300">
-				<span title="Keep one half and replace the other with its mirror image, across an object-local axis through the origin">mirror</span>
-				<div class="tbx-seg">
-					{#each ['x', 'y', 'z'] as a (a)}
-						<button
-							id={`mesh-sym-${a}`}
-							class="px-2 py-0.5 {symAxis === a ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-							title={`Mirror across the ${a.toUpperCase()} plane`}
-							onclick={() => (symAxis = /** @type {'x'|'y'|'z'} */ (a))}>{a.toUpperCase()}</button
-						>
-					{/each}
-				</div>
-				<button
-					id="mesh-sym-side"
-					class="rounded-full bg-gray-700 px-2 py-0.5 hover:bg-gray-600"
-					title="Which half to KEEP — the other one is replaced by its mirror"
-					onclick={() => (symKeep = -symKeep)}>{symKeep > 0 ? 'keep +' : 'keep -'}</button
-				>
-				<button
-					id="mesh-sym-apply"
-					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
-					onclick={() => {
-						if (symmetrizeMesh(symAxis, symKeep)) flash('symmetrize');
-					}}>Symmetrize</button
-				>
-			</div>
+			<!-- the merge threshold sits with its own button now -->
 			<div class="tbx-row text-xs text-gray-300">
 				<label class="flex items-center gap-1" title="Vertices closer than this merge into one">
 					merge dist
@@ -923,105 +860,139 @@
 						max="1"
 						step="0.001"
 						class="w-16 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={mergeDistance}
+						bind:value={$mergeDistance}
 					/>
 				</label>
 			</div>
-		{/if}
+		</ToolboxSection>
 
-		<!-- DISPLAY -->
-		<span class="tbx-label">Display</span>
-		<button
-			id="mesh-wireframe-toggle"
-			class="tbx-btn"
-			aria-label="Wireframe overlay"
-			aria-pressed={$meshEditWireframe}
-			title="Show the edit wireframe overlay"
-			onclick={() => meshEditWireframe.update((v) => !v)}><ToolIcon name="wireframe" /></button
-		>
-		<!-- the object outline is a postprocessing pass, so it paints OVER the
-		     handles and highlights — off while editing unless you ask for it -->
-		<button
-			id="mesh-outline-toggle"
-			class="tbx-btn"
-			aria-label="Selection outline"
-			aria-pressed={$meshEditOutline}
-			title={$meshEditOutline
-				? 'Selection outline ON — it draws over vertices and edges'
-				: 'Selection outline OFF while editing (clearer handles)'}
-			onclick={() => meshEditOutline.update((v) => !v)}
-			><SquareDashed size={18} aria-hidden="true" /></button
-		>
-		<!-- quad structure by default; the diagonals are triangulation artifacts
-		     the pick/dissolve tools deliberately refuse to touch -->
-		<button
-			id="mesh-triwire-toggle"
-			class="tbx-btn"
-			aria-label="Show triangulation"
-			aria-pressed={$meshEditTriWire}
-			title={$meshEditTriWire
-				? 'Showing triangulation — every triangle edge, diagonals included'
-				: 'Showing quads — the diagonals are hidden (they cannot be picked)'}
-			onclick={() => meshEditTriWire.update((v) => !v)}
-			><Triangle size={18} aria-hidden="true" /></button
-		>
-		<!-- D3: hotkeys on/off + the "?" bindings popover -->
-		<button
-			id="mesh-hotkeys-toggle"
-			class="tbx-btn"
-			aria-label="Toggle mesh-edit keyboard shortcuts"
-			aria-pressed={$meshEditHotkeys}
-			title={$meshEditHotkeys
-				? 'Keyboard shortcuts ON — E/I/G/S/B/F/X, W (camera fly keys pause)'
-				: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
-			onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={18} aria-hidden="true" /></button
-		>
-		{#if $colliderEditObject}
-			<!-- CL-A A8: add compound pieces to the collider session -->
-			<span class="tbx-label">Collider</span>
-			<button
-				id="collider-add-box"
-				class="tbx-btn"
-				aria-label="Add a box piece"
-				title="Merge a box into the collider as a new convex piece"
-				onclick={() => addColliderPiece('box')}><Box size={18} aria-hidden="true" /></button
-			>
-			<button
-				id="collider-add-sphere"
-				class="tbx-btn"
-				aria-label="Add a sphere piece"
-				title="Merge a sphere into the collider as a new convex piece"
-				onclick={() => addColliderPiece('sphere')}><Circle size={18} aria-hidden="true" /></button
-			>
-		{/if}
-
-
-
-		<!-- 176: contextual amount row for Extrude/Inset -->
-		{#if mode === 'faces' && ($faceEditOp === 'extrude' || $faceEditOp === 'inset')}
-			<div id="mesh-op-params" class="tbx-row text-xs text-gray-300">
-				<label class="flex items-center gap-1">
-					amount
-					<input
-						id="mesh-op-amount"
-						type="number"
-						step="0.05"
-						class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={$faceEditAmount}
-					/>
-				</label>
-				<label class="flex items-center gap-1" title="Apply the op when you click a face">
-					<input id="mesh-op-autoapply" type="checkbox" bind:checked={$faceAutoApply} />
-					auto-apply
-				</label>
+		<ToolboxSection key="symmetry" label="Symmetry" id="mesh-sec-symmetry">
+			<div id="mesh-symmetrize" class="tbx-row text-xs text-gray-300">
+				<span title="Keep one half and replace the other with its mirror image, across an object-local axis through the origin">mirror</span>
+				<div class="tbx-seg">
+					{#each ['x', 'y', 'z'] as a (a)}
+						<button
+							id={`mesh-sym-${a}`}
+							class="px-2 py-0.5 {$symAxis === a ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+							title={`Mirror across the ${a.toUpperCase()} plane`}
+							onclick={() => symAxis.set(/** @type {'x'|'y'|'z'} */ (a))}>{a.toUpperCase()}</button
+						>
+					{/each}
+				</div>
 				<button
-					id="mesh-op-apply"
-					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
-					title="Apply the active op to the selected face"
-					onclick={applyActive}>Apply</button
+					id="mesh-sym-side"
+					class="tbx-cmd"
+					title="Which half to KEEP — the other one is replaced by its mirror"
+					onclick={() => symKeep.set(-$symKeep)}>{$symKeep > 0 ? 'keep +' : 'keep -'}</button
+				>
+				<button
+					id="mesh-sym-apply"
+					class="tbx-primary"
+					onclick={() =>
+						runWholeMesh(() => {
+							if (symmetrizeMesh($symAxis, $symKeep)) flash('symmetrize');
+						})}>Symmetrize</button
 				>
 			</div>
+		</ToolboxSection>
+
+		<ToolboxSection key="display" label="Display" open={true} id="mesh-sec-display">
+			<button
+				id="mesh-wireframe-toggle"
+				class="tbx-btn"
+				aria-label="Wireframe overlay"
+				aria-pressed={$meshEditWireframe}
+				title="Show the edit wireframe overlay"
+				onclick={() => meshEditWireframe.update((v) => !v)}><ToolIcon name="wireframe" /></button
+			>
+			<!-- the object outline is a postprocessing pass, so it paints OVER the
+			     handles and highlights — off while editing unless you ask for it -->
+			<button
+				id="mesh-outline-toggle"
+				class="tbx-btn"
+				aria-label="Selection outline"
+				aria-pressed={$meshEditOutline}
+				title={$meshEditOutline
+					? 'Selection outline ON — it draws over vertices and edges'
+					: 'Selection outline OFF while editing (clearer handles)'}
+				onclick={() => meshEditOutline.update((v) => !v)}
+				><SquareDashed size={18} aria-hidden="true" /></button
+			>
+			<!-- quad structure by default; the diagonals are triangulation artifacts
+			     the pick/dissolve tools deliberately refuse to touch -->
+			<button
+				id="mesh-triwire-toggle"
+				class="tbx-btn"
+				aria-label="Show triangulation"
+				aria-pressed={$meshEditTriWire}
+				title={$meshEditTriWire
+					? 'Showing triangulation — every triangle edge, diagonals included'
+					: 'Showing quads — the diagonals are hidden (they cannot be picked)'}
+				onclick={() => meshEditTriWire.update((v) => !v)}
+				><Triangle size={18} aria-hidden="true" /></button
+			>
+			<!-- D3: hotkeys on/off (the "?" cheat sheet lives in the window header) -->
+			<button
+				id="mesh-hotkeys-toggle"
+				class="tbx-btn"
+				aria-label="Toggle mesh-edit keyboard shortcuts"
+				aria-pressed={$meshEditHotkeys}
+				title={$meshEditHotkeys
+					? 'Keyboard shortcuts ON — E/I/G/S/B/F/X, W (camera fly keys pause)'
+					: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
+				onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={18} aria-hidden="true" /></button
+			>
+			{#if mode === 'vertices'}
+				<!-- vertex HANDLE size is a display preference, not a tool -->
+				<div class="tbx-row text-xs text-gray-300">
+					<label class="flex items-center gap-1" title="Vertex dot size — a multiplier over the size derived from the object, so it stays sane on a terrain and on a cube">
+						dots
+						<input
+							id="mesh-handle-scale"
+							type="range"
+							min="0.2"
+							max="3"
+							step="0.1"
+							class="w-20"
+							bind:value={$vertexHandleScale}
+						/>
+						<span class="w-8 text-right tabular-nums">{$vertexHandleScale.toFixed(1)}x</span>
+					</label>
+					<button
+						id="mesh-handle-adaptive"
+						class="tbx-cmd"
+						aria-pressed={$vertexHandleAdaptive}
+						title={$vertexHandleAdaptive
+							? 'Adaptive: the dots keep a constant SCREEN size as you zoom (what modelling tools do). Click for a fixed world size.'
+							: 'Fixed world size: the dots grow as you zoom in and shrink away as you zoom out. Click for adaptive.'}
+						onclick={() => vertexHandleAdaptive.set(!$vertexHandleAdaptive)}
+						>{$vertexHandleAdaptive ? 'adaptive' : 'fixed'}</button
+					>
+				</div>
+			{/if}
+		</ToolboxSection>
+
+		{#if $colliderEditObject}
+			<!-- CL-A A8: add compound pieces to the collider session. Forced open —
+			     it only exists while a collider session is running. -->
+			<ToolboxSection key="collider" label="Collider" forceOpen id="mesh-sec-collider">
+				<button
+					id="collider-add-box"
+					class="tbx-btn"
+					aria-label="Add a box piece"
+					title="Merge a box into the collider as a new convex piece"
+					onclick={() => addColliderPiece('box')}><Box size={18} aria-hidden="true" /></button
+				>
+				<button
+					id="collider-add-sphere"
+					class="tbx-btn"
+					aria-label="Add a sphere piece"
+					title="Merge a sphere into the collider as a new convex piece"
+					onclick={() => addColliderPiece('sphere')}><Circle size={18} aria-hidden="true" /></button
+				>
+			</ToolboxSection>
 		{/if}
+
 
 		{#snippet status()}
 			{#if mode === 'edges'}

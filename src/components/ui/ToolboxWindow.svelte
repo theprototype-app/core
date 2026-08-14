@@ -350,12 +350,6 @@
 	   whose options are showing, waiting for Apply. Deliberately a ring rather
 	   than a fill: an armed tool changes what a viewport CLICK does, a selected
 	   one does not, and the two must not look the same. */
-	.toolbox :global(.tbx-btn.tbx-sel),
-	.toolbox :global(.tbx-btn.tbx-sel:hover) {
-		background: transparent;
-		box-shadow: inset 0 0 0 2px var(--tbx-accent);
-		color: var(--tbx-text);
-	}
 	.toolbox :global(.tbx-btn:focus-visible) {
 		outline: 2px solid var(--tbx-accent);
 		outline-offset: 1px;
@@ -366,6 +360,17 @@
 		background: var(--surface-3, #4b5563);
 		box-shadow: inset 0 0 0 1px var(--tbx-accent);
 		color: var(--tbx-accent);
+	}
+	/* AFTER the aria-pressed rule on purpose: a selected parameterized tool also
+	   reports aria-pressed (it IS a state a screen reader should hear), and with
+	   equal specificity the later rule wins — placed earlier, the tinted well
+	   filled the button and the ring stopped being distinguishable from armed. */
+	.toolbox :global(.tbx-btn.tbx-sel),
+	.toolbox :global(.tbx-btn.tbx-sel:hover),
+	.toolbox :global(.tbx-btn.tbx-sel[aria-pressed='true']) {
+		background: transparent;
+		box-shadow: inset 0 0 0 2px var(--tbx-accent);
+		color: var(--tbx-text);
 	}
 	/* destructive one-shot */
 	.toolbox :global(.tbx-danger) {

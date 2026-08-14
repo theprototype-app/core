@@ -11,7 +11,7 @@
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
 	import {
-		Brush, Filter, FlipHorizontal, FlipVertical, Grid3x3, ImagePlus, Lasso, Link2,
+		Brush, Crosshair, Filter, FlipHorizontal, FlipVertical, Grid3x3, ImagePlus, Lasso, Link2,
 		Maximize2, MousePointer2, Plus, RotateCw, SquareDashed, Target
 	} from '@lucide/svelte';
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
@@ -22,12 +22,16 @@
 	import {
 		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvFaceFilter, uvPaintTick, uvEditable, uvViewable, UV_WIRE_LIMIT, uvTriangles, materialsOf, slotCount,
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
-		beginUvDrag, moveUvCluster, endUvDrag, cancelUvDrag,
+		beginUvDrag, endUvDrag, cancelUvDrag,
 		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke,
 		selectedFaceTris, uvIndicesOf, paintPreviewCanvas, uvTargetOf, textureImageOf, slotFlipsV,
 		assignTrisToSlot, unwrapObject, uvBounds, transformUvCluster, fitUvToSquare, expandToIslands,
-		textureInfo, resizeSlotTexture, uvCheckerOn, applyUvChecker
+		textureInfo, resizeSlotTexture, uvCheckerOn, applyUvChecker,
+		uvSnapshotOf, applyUvSnapshot, snapUvToPixels, nearestUvInDirection, uvIndicesAt
 	} from '$lib/uvEditor';
+	// the timeline's gesture engine: snapshot, re-apply the total, commit or revert once
+	import { createGesture } from '$lib/modalGrab';
+	import ContextMenu from '../ContextMenu.svelte';
 	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
 	import { faceEditSelectedTris, faceEditObject, triangleCount } from '$lib/faceEdit';
 	import { editingObject } from '$lib/meshEdit';
@@ -37,6 +41,13 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+
+	/** the armed transform modes, in 1/2/3 order */
+	const MODES = /** @type {['move'|'rotate'|'scale', string, string][]} */ ([
+		['move', 'Move', '1'],
+		['rotate', 'Rotate', '2'],
+		['scale', 'Scale', '3']
+	]);
 
 	const TOOLS = [
 		{ key: 'select', icon: MousePointer2, title: 'Select (click a vertex; Shift adds)' },
@@ -224,6 +235,11 @@
 			viewW, viewH, zoom, panX, panY, span, slot, slotTotal,
 			tris: tris.length,
 			gesture,
+			xform,
+			grabbing,
+			pivot: pivotMark ? { ...pivotMark } : null,
+			pivotPlaced: pivotPlaced ? { ...pivotPlaced } : null,
+			pixelStep: pixelStep(),
 			hoverIndex,
 			selected: selCluster.length,
 			selectedIndices: [...selCluster],
@@ -252,17 +268,22 @@
 		const uuid = target?.uuid ?? null;
 		if (uuid !== lastUuid) {
 			lastUuid = uuid;
+			// a running grab reverts onto the object it STARTED on (which it carries),
+			// so the outgoing mesh is left as the user found it
+			grab.cancel();
 			cancelUvDrag();
 			cancelPaintStroke();
 			selCluster = [];
 			hoverIndex = -1;
+			pivotPlaced = null; // an origin belongs to the map you placed it on
 		}
 	});
 
-	// redraw whenever anything visible changes
+	// redraw whenever anything visible changes. The list is EXPLICIT, so anything
+	// newly drawn has to join it or the canvas simply will not repaint it.
 	$effect(() => {
 		// dependencies (read them so the effect re-runs)
-		void [tris, backdrop, liveImage, flipBackdrop, $uvPaintTick, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked];
+		void [tris, backdrop, liveImage, flipBackdrop, $uvPaintTick, zoom, panX, panY, viewW, viewH, hoverIndex, selCluster, marquee, lasso, dockVisible, docked, pivotMark, pivotPlaced, grabbing];
 		draw();
 	});
 
@@ -334,6 +355,27 @@
 				ctx.fillRect(x - size / 2, y - size / 2, size, size);
 			});
 
+		// The ORIGIN: the frozen pivot while a rotate/scale runs (without it the
+		// gesture looks like it is turning about nothing in particular), otherwise the
+		// one the user placed — drawn as a handle, because it is one.
+		const origin = pivotMark ?? pivotPlaced;
+		if (origin) {
+			const px = toScreenX(origin.cu);
+			const py = toScreenY(origin.cv);
+			const arm = pivotMark ? 7 : 9;
+			ctx.strokeStyle = '#f59e0b';
+			ctx.lineWidth = pivotMark ? 1 : 1.5;
+			ctx.beginPath();
+			ctx.moveTo(px - arm, py);
+			ctx.lineTo(px + arm, py);
+			ctx.moveTo(px, py - arm);
+			ctx.lineTo(px, py + arm);
+			ctx.stroke();
+			ctx.beginPath();
+			ctx.arc(px, py, pivotMark ? 3.5 : 4.5, 0, Math.PI * 2);
+			ctx.stroke();
+		}
+
 		// live marquee / lasso on top
 		ctx.setLineDash([4, 3]);
 		ctx.strokeStyle = '#fbbf24';
@@ -362,11 +404,30 @@
 	// delegated handler, and a drag whose pointerdown never arrived then jumps by
 	// the pointer's ABSOLUTE position (the DragRow trap, 16-Q3). pointermove/up
 	// live on WINDOW so a drag survives leaving the canvas box.
-	let gesture = $state(/** @type {'idle'|'pan'|'drag'|'box'|'lasso'|'paint'} */ ('idle'));
+	let gesture = $state(/** @type {'idle'|'pan'|'drag'|'box'|'lasso'|'paint'|'pivot'} */ ('idle'));
 	let lastX = 0;
 	let lastY = 0;
 	/** did this gesture actually move? a press with no movement is a CLICK */
 	let moved = false;
+	/** the focus host for the keyboard (the canvas itself has no tabindex) */
+	let wrapEl = $state(/** @type {HTMLElement|null} */ (null));
+	/** which transform the selection is under: 1/2/3, the digits the mesh tools and
+	 *  the animation timeline already use for "pick a tool" */
+	let xform = $state(/** @type {'move'|'rotate'|'scale'} */ ('move'));
+	/** a modal grab is running (the selection follows the pointer, no button held) */
+	let grabbing = $state(false);
+	/** the frozen pivot of a rotate/scale, drawn while it runs
+	 * @type {{cu: number, cv: number}|null} */
+	let pivotMark = $state(/** @type {any} */ (null));
+	/**
+	 * A pivot the USER placed, which rotate and scale then turn about instead of the
+	 * selection's own centre. Null = automatic (that centre), which is where it starts
+	 * and what Reset goes back to. It is DRAGGABLE, because "adjust the origin" is a
+	 * gesture, not a dialog — and LOCAL: an origin is a way of working, not scene data,
+	 * so it is never replicated and never saved.
+	 * @type {{cu: number, cv: number}|null}
+	 */
+	let pivotPlaced = $state(/** @type {any} */ (null));
 
 	function localPoint(/** @type {PointerEvent | WheelEvent} */ e) {
 		const rect = canvasEl?.getBoundingClientRect();
@@ -375,6 +436,186 @@
 
 	/** grab tolerance: 8 screen px expressed in UV units at the current zoom */
 	const grabRadius = () => 8 / (span * zoom);
+
+	// --- transforms: the armed mode, run by the shared gesture engine -------------
+	// Move / Rotate / Scale on 1/2/3, driven three ways: a left drag, a MODAL grab
+	// (middle-press a selected vertex — the selection follows the pointer with no
+	// button held), and the arrow keys. All three go through `$lib/modalGrab`, so
+	// each is ONE meshgeo undo entry and one broadcast, and a cancel puts the UVs
+	// back — which `cancelUvDrag` alone does NOT do (it only drops the session; the
+	// in-place writes are already on screen).
+	//
+	// Every frame re-applies the TOTAL offset from the gesture's own snapshot against
+	// a pivot frozen at its start. `transformUvCluster` cannot serve here: it reads
+	// the CURRENT uv values (so per-move calls multiply) and its default pivot is the
+	// LIVE bounds centre, which drifts as the cluster it measures scales.
+
+	/** where the selection SITS, so it can be found again after a commit */
+	function selectionCoords(/** @type {any} */ object) {
+		return uvSnapshotOf(object, selCluster).map((s) => ({ u: s.u, v: s.v }));
+	}
+	/**
+	 * Re-derive the selection after a commit. `applyMeshGeo` rebuilds the geometry
+	 * index-expanded, renumbering every uv index — so indices picked BEFORE a commit
+	 * address different corners after it. Harmless when one drag was all you did; with
+	 * the keyboard committing per keypress, the second press would move points nobody
+	 * picked. @param {any} object @param {{u: number, v: number}[]} coords
+	 */
+	function reselect(object, coords) {
+		if (!object || !coords.length) return;
+		const found = uvIndicesAt(object, coords, weldScope);
+		if (found.length) selCluster = found;
+	}
+
+	/** one texture pixel in UV units, so an arrow key lands on texel boundaries */
+	function pixelStep() {
+		const info = target ? textureInfo(target, slot) : null;
+		return { u: 1 / (info?.w || 1024), v: 1 / (info?.h || 1024) };
+	}
+
+	/** the pointer, and where it started, in UV space
+	 * @param {import('$lib/modalGrab').GestureContext} ctx */
+	function gesturePoints(ctx) {
+		const rect = canvasEl?.getBoundingClientRect();
+		const x0 = ctx.origin.x - (rect?.left ?? 0);
+		const y0 = ctx.origin.y - (rect?.top ?? 0);
+		return {
+			from: { u: toU(x0), v: toV(y0) },
+			to: { u: toU(x0 + ctx.dx), v: toV(y0 + ctx.dy) }
+		};
+	}
+
+	/** @param {import('$lib/modalGrab').GestureContext} ctx */
+	function applyGesture(ctx) {
+		const object = ctx.data?.object;
+		if (!object) return;
+		if (xform === 'move') {
+			// screen delta -> UV delta (dv negated: v is up)
+			const scale = span * zoom;
+			applyUvSnapshot(object, ctx.snapshot, { du: ctx.dx / scale, dv: -ctx.dy / scale });
+			return;
+		}
+		const pivot = ctx.pivot;
+		if (!pivot) return;
+		const { from, to } = gesturePoints(ctx);
+		if (xform === 'rotate') {
+			const a0 = Math.atan2(from.v - pivot.cv, from.u - pivot.cu);
+			const a1 = Math.atan2(to.v - pivot.cv, to.u - pivot.cu);
+			applyUvSnapshot(object, ctx.snapshot, { rotate: a1 - a0, pivot });
+		} else {
+			// distance from the pivot as a FACTOR: the pointer keeps whatever grip it
+			// started with, so a long drag cannot drift
+			const r0 = Math.hypot(from.u - pivot.cu, from.v - pivot.cv);
+			const r1 = Math.hypot(to.u - pivot.cu, to.v - pivot.cv);
+			const k = r0 > 1e-6 ? Math.max(r1 / r0, 0.01) : 1;
+			applyUvSnapshot(object, ctx.snapshot, { scaleU: k, scaleV: k, pivot });
+		}
+	}
+
+	const grab = createGesture({
+		snapshot: () => (target && canTransform ? uvSnapshotOf(target, selCluster) : []),
+		start: (ctx) => {
+			// the OBJECT rides on the gesture, never re-read from `target`: a selection
+			// change mid-gesture would otherwise revert one mesh's UVs onto another's
+			// attribute indices
+			const object = ctx.data?.object;
+			if (!object || !beginUvDrag(object.uuid)) return false;
+			// The pivot, in order: Alt = the cursor for this one gesture, then a pivot
+			// the user PLACED, then the selection's own bounds centre. Captured ONCE
+			// either way, because the automatic one drifts with the cluster it measures.
+			if (ctx.data?.pivotAtCursor) {
+				const { from } = gesturePoints(ctx);
+				ctx.pivot = { cu: from.u, cv: from.v };
+			} else if (pivotPlaced) {
+				ctx.pivot = { ...pivotPlaced };
+			} else {
+				const bounds = uvBounds(object, ctx.snapshot.map((/** @type {any} */ s) => s.i));
+				ctx.pivot = bounds ? { cu: bounds.cu, cv: bounds.cv } : null;
+			}
+			if (xform !== 'move') pivotMark = ctx.pivot;
+			return true;
+		},
+		apply: applyGesture,
+		revert: (ctx) => {
+			// put the UVs back ourselves — see the note above
+			applyUvSnapshot(ctx.data?.object, ctx.snapshot, {});
+		},
+		end: (ctx, kept) => {
+			const object = ctx.data?.object;
+			// after a revert the diff is empty, so this commits nothing and records no
+			// undo entry — one exit path either way
+			const coords = object ? selectionCoords(object) : [];
+			if (object && endUvDrag(object.uuid)) reselect(object, coords);
+			// a plain CLICK on an already-selected vertex isolates it (deferred from
+			// the press, because only pointerup knows it never moved)
+			if (kept && !ctx.dx && !ctx.dy && ctx.data?.collapseTo) selCluster = ctx.data.collapseTo;
+			gesture = 'idle';
+			pivotMark = null;
+		},
+		onActive: (on, modal) => {
+			grabbing = on && modal;
+		}
+	});
+
+	/** open a transform gesture on the current selection
+	 * @param {PointerEvent|null} e @param {boolean} modal @param {number[]|null} [collapseTo] */
+	function startTransform(e, modal, collapseTo = null) {
+		if (!target) return false;
+		gesture = 'drag';
+		const ok = grab.begin(e, {
+			modal,
+			data: { object: target, collapseTo, pivotAtCursor: !!e?.altKey }
+		});
+		if (!ok) gesture = 'idle';
+		return ok;
+	}
+
+	// --- the placeable origin -----------------------------------------------------
+	// Rotate and scale turn about the selection's centre by default. That is right
+	// most of the time and useless the rest: turning a face about its corner, or
+	// scaling an island towards a seam, needs the origin somewhere else. So it can be
+	// PLACED — and once placed it is a handle you drag, which snaps onto a uv point
+	// when you come near one (hold Alt to place it freely).
+
+	/** put the origin under the pointer, snapped to a nearby point unless Alt is held
+	 * @param {PointerEvent} e */
+	function movePivotTo(e) {
+		const { x, y } = localPoint(e);
+		let u = toU(x);
+		let v = toV(y);
+		if (!e.altKey && target && editable.ok && !wireTooDense) {
+			const near = nearestUvIndex(target, slot, u, v, grabRadius(), faceScope);
+			if (near >= 0) {
+				const uv = target.geometry.attributes.uv;
+				u = uv.getX(near);
+				v = uv.getY(near);
+			}
+		}
+		pivotPlaced = { cu: u, cv: v };
+	}
+
+	/** the topbar toggle: place it on the selection (or the square's middle), or go
+	 *  back to the automatic centre */
+	function toggleOrigin() {
+		if (pivotPlaced) {
+			pivotPlaced = null;
+			return;
+		}
+		const bounds = target && selCluster.length ? uvBounds(target, selCluster) : null;
+		pivotPlaced = bounds ? { cu: bounds.cu, cv: bounds.cv } : { cu: 0.5, cv: 0.5 };
+	}
+
+	/** nudge the selection by whole texture pixels, as ONE undo entry per press */
+	function nudgeSelection(/** @type {number} */ dx, /** @type {number} */ dy, /** @type {number} */ mult) {
+		if (!target || !canTransform) return false;
+		// a KEYBOARD gesture: no listeners, applied once, closed straight away
+		if (!startTransform(null, false)) return false;
+		const ctx = /** @type {any} */ (grab.ctx());
+		const step = pixelStep();
+		applyUvSnapshot(target, ctx.snapshot, { du: dx * step.u * mult, dv: dy * step.v * mult });
+		grab.finish(true);
+		return true;
+	}
 	/** SHIFT extends the selection (the viewport's shift-click convention and
 	 * every DCC UV editor); CTRL is accepted as an alias because the mesh tools
 	 * use ctrl-multi-select. @param {PointerEvent} e */
@@ -382,20 +623,42 @@
 
 	function onPointerDown(/** @type {PointerEvent} */ e) {
 		if (!target || !viewable.ok) return;
+		// a modal grab is running: its own capture handler commits on this press
+		if (grab.isModal()) return;
+		// RIGHT is the context menu (`onContextMenu`). It used to fall through to the
+		// drag/marquee/pan code AND show the browser's menu on top of everything.
+		if (e.button === 2) return;
 		const { x, y } = localPoint(e);
 		lastX = e.clientX;
 		lastY = e.clientY;
 		moved = false;
-		collapseTo = null;
 		e.preventDefault();
-		window.addEventListener('pointermove', onPointerMove);
-		window.addEventListener('pointerup', onPointerUp);
+		// any press hands the editor the keyboard, so 1/2/3 and the arrows work
+		// without hunting for what to click first
+		wrapEl?.focus?.({ preventScroll: true });
+		/** is a vertex under the pointer at all */
+		const canPick = editable.ok && !wireTooDense;
 
-		// MIDDLE button always pans, whatever the tool — the marquee tools own the
-		// left button, so panning needs an escape hatch
+		// MIDDLE on a SELECTED vertex is the MODAL GRAB; middle anywhere else pans,
+		// which is what it has always done and the only escape hatch the marquee
+		// tools leave for panning.
 		if (e.button === 1) {
+			const hit = canPick ? nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope) : -1;
+			if (hit >= 0 && selCluster.includes(hit) && startTransform(e, true)) return;
 			gesture = 'pan';
+			attachDragListeners();
 			return;
+		}
+
+		// the placed ORIGIN is a handle, and it wins the press: it is a deliberate
+		// thing to grab, and it usually sits right among the points
+		if (e.button === 0 && pivotPlaced && $uvTool !== 'paint') {
+			const off = Math.hypot(toU(x) - pivotPlaced.cu, toV(y) - pivotPlaced.cv);
+			if (off <= grabRadius() * 1.5) {
+				gesture = 'pivot';
+				attachDragListeners();
+				return;
+			}
 		}
 
 		// PAINT owns the left button entirely: vertices are not pickable while the
@@ -419,10 +682,12 @@
 
 		// no vertex picking when a commit could not sync, or when the wireframe is
 		// hidden for density — the press pans instead of silently doing nothing
-		const index = editable.ok && !wireTooDense ? nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope) : -1;
+		const index = canPick ? nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope) : -1;
 		if (index >= 0) {
 			const cluster = weldedCluster(target.geometry, index, weldScope);
 			const already = cluster.some((i) => selCluster.includes(i));
+			/** @type {number[]|null} */
+			let isolate = null;
 			if (extendKey(e)) {
 				// shift-click toggles this cluster in or out of the selection
 				selCluster = already
@@ -436,14 +701,16 @@
 				// selection, but a CLICK collapses down to just this cluster (the
 				// standard "click to isolate one of many" behaviour). Which one it
 				// was is only known on pointerup, so defer.
-				collapseTo = cluster;
+				isolate = cluster;
 			}
-			if (!beginUvDrag(target.uuid)) return;
-			gesture = 'drag';
+			// the gesture owns its own listeners from here (the engine's), so this
+			// press does not need the drag pair below
+			startTransform(e, false, isolate);
 			return;
 		}
 
 		// empty space: the tool decides
+		attachDragListeners();
 		if ($uvTool === 'box') {
 			marquee = { x0: x, y0: y, x1: x, y1: y };
 			gesture = 'box';
@@ -455,12 +722,16 @@
 		}
 		if (!extendKey(e)) pendingClear = true; // a plain marquee/click replaces
 	}
+
+	/** pan / marquee / lasso / paint keep their own window pair; a TRANSFORM does
+	 *  not — `createGesture` attaches (and removes) its own */
+	function attachDragListeners() {
+		window.addEventListener('pointermove', onPointerMove);
+		window.addEventListener('pointerup', onPointerUp);
+	}
 	/** a plain (un-shifted) press on empty space clears the selection when it
 	 * turns out to be a click, or when the marquee finishes */
 	let pendingClear = false;
-	/** set when a plain press landed on an ALREADY-selected vertex: a click (no
-	 * movement) collapses the selection to this cluster @type {number[]|null} */
-	let collapseTo = null;
 
 	function onPointerMove(/** @type {PointerEvent} */ e) {
 		const dx = e.clientX - lastX;
@@ -471,10 +742,8 @@
 		if (gesture === 'pan') {
 			panX += dx;
 			panY += dy;
-		} else if (gesture === 'drag' && target) {
-			// screen delta -> UV delta (dv negated: v is up)
-			const scale = span * zoom;
-			if (!moveUvCluster(target, selCluster, dx / scale, -dy / scale)) endGesture();
+		} else if (gesture === 'pivot') {
+			movePivotTo(e);
 		} else if (gesture === 'box' && marquee) {
 			const { x, y } = localPoint(e);
 			marquee = { ...marquee, x1: x, y1: y };
@@ -497,9 +766,6 @@
 	function onPointerUp(/** @type {PointerEvent} */ e) {
 		if (gesture === 'paint') {
 			endPaintStroke($uvBrushColor, brushUv());
-		} else if (gesture === 'drag' && target) {
-			endUvDrag(target.uuid); // no-ops when nothing moved (no wire, no undo entry)
-			if (!moved && collapseTo) selCluster = collapseTo;
 		} else if (gesture === 'box' && marquee && target) {
 			const hits = uvIndicesInRect(target, slot, {
 				u0: toU(marquee.x0), v0: toV(marquee.y0), u1: toU(marquee.x1), v1: toV(marquee.y1)
@@ -514,7 +780,6 @@
 		marquee = null;
 		lasso = [];
 		pendingClear = false;
-		collapseTo = null;
 		endGesture();
 	}
 
@@ -535,6 +800,292 @@
 		if (gesture !== 'idle' || !target || !editable.ok || wireTooDense) return;
 		const { x, y } = localPoint(e);
 		hoverIndex = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope);
+	}
+
+	// --- selection by keyboard ----------------------------------------------------
+
+	/** every uv index the current view offers (this slot, inside the face scope) */
+	const selectableUv = () => [...uvIndicesOf(tris)];
+
+	function selectAllUv() {
+		if (!tris.length) return false;
+		selCluster = selectableUv();
+		return true;
+	}
+	function invertUv() {
+		const current = new Set(selCluster);
+		selCluster = selectableUv().filter((i) => !current.has(i));
+		return true;
+	}
+	/** grow the selection to the nearest unselected vertex in a direction — the
+	 *  "select vertices with the keyboard" ask (Ctrl+Shift+arrow) */
+	function growSelection(/** @type {number} */ du, /** @type {number} */ dv) {
+		if (!target || !editable.ok || !selCluster.length) return false;
+		const next = nearestUvInDirection(target, slot, selCluster, du, dv, faceScope);
+		if (next < 0) return false;
+		selCluster = [...new Set([...selCluster, ...weldedCluster(target.geometry, next, weldScope)])];
+		return true;
+	}
+
+	/** quantise the selection onto texel boundaries */
+	function snapSelectionToPixels() {
+		const info = target ? textureInfo(target, slot) : null;
+		const w = info?.w || 1024;
+		const h = info?.h || 1024;
+		withUvCommit((indices) => snapUvToPixels(target, indices, w, h));
+	}
+
+	/** @param {'move'|'rotate'|'scale'} mode */
+	function armXform(mode) {
+		xform = mode;
+		// a mode change mid-gesture re-derives from the SAME snapshot, so switching
+		// while a grab runs is not a fresh gesture (and cannot compound)
+		if (grab.active()) {
+			pivotMark = mode === 'move' ? null : (grab.ctx()?.pivot ?? null);
+			grab.refresh();
+		}
+	}
+
+	// --- the keyboard -------------------------------------------------------------
+	// Claimed in CAPTURE phase on the wrap, with stopPropagation, because 1/2/3 are
+	// taken TWICE over: globally by the gizmo's transform modes (shortcuts.js) and,
+	// whenever an Edit Mesh session is open — the common UV case, since face scoping
+	// needs one — by MeshEditPopup's element modes. WASD/QE also fly the camera and
+	// Delete removes the VIEWPORT selection. `anyModalOpen` does not cover this
+	// editor, so stopping them here while it holds focus is the only way they can
+	// mean UV. Direct listener, never svelte's delegated attribute form: panel chrome
+	// swallows those on the way up (the DragRow lesson, 16-Q3).
+	//
+	//   1 / 2 / 3        arm Move / Rotate / Scale
+	//   arrows           nudge by one TEXTURE PIXEL (Ctrl x10, Shift x100)
+	//   Ctrl+Shift+arrow grow the selection in that direction
+	//   Ctrl+A / Ctrl+I  select all / invert (the mesh editor's pair)
+	//   L                grow to the whole UV island
+	//   Esc              drop the selection (a running grab is cancelled first, by
+	//                    the engine's own capture handler)
+	/** @param {KeyboardEvent} e */
+	function onKey(e) {
+		if (!target || !viewable.ok) return;
+		/** @type {any} */
+		const from = e.target;
+		if (from && (from.tagName === 'INPUT' || from.tagName === 'TEXTAREA' || from.tagName === 'SELECT' || from.isContentEditable))
+			return;
+		const ctrl = e.ctrlKey || e.metaKey;
+		const claim = () => {
+			e.preventDefault();
+			e.stopPropagation();
+		};
+		if (!ctrl && !e.altKey && (e.key === '1' || e.key === '2' || e.key === '3')) {
+			claim();
+			armXform(e.key === '1' ? 'move' : e.key === '2' ? 'rotate' : 'scale');
+			return;
+		}
+		if (e.key === 'Escape') {
+			if (grab.active()) return; // the engine cancels it (and stops the event)
+			if (!selCluster.length) return;
+			claim();
+			selCluster = [];
+			return;
+		}
+		if (ctrl && !e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+			claim();
+			selectAllUv();
+			return;
+		}
+		if (ctrl && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+			claim();
+			invertUv();
+			return;
+		}
+		if (!ctrl && !e.altKey && (e.key === 'l' || e.key === 'L')) {
+			claim();
+			selectLinked();
+			return;
+		}
+		if (e.key === 'Delete' || e.key === 'Backspace') {
+			// left alone, these delete the OBJECT (shortcuts.js) — never what a UV
+			// keyboard means. There is no "delete a UV vertex": say so and stop here.
+			claim();
+			if (selCluster.length) showToast('UV vertices cannot be deleted — Esc clears the selection');
+			return;
+		}
+		const arrow = /** @type {any} */ ({
+			ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1]
+		})[e.key];
+		if (!arrow) return;
+		claim();
+		if (ctrl && e.shiftKey) {
+			growSelection(arrow[0], arrow[1]);
+			return;
+		}
+		// the DragRow convention, so the modifiers mean the same thing everywhere
+		nudgeSelection(arrow[0], arrow[1], ctrl ? 10 : e.shiftKey ? 100 : 1);
+	}
+
+	/**
+	 * The wrap's own listeners. BOTH are direct, and for the same reason: svelte
+	 * DELEGATES `onkeydown`/`oncontextmenu`, so the panel chrome that stops events on
+	 * their way up silently kills them — the timeline showed the browser menu beside
+	 * its own until it stopped relying on the attribute form.
+	 * @param {HTMLElement} node
+	 */
+	function uvSurface(node) {
+		const keys = /** @type {any} */ (onKey);
+		const menuHandler = /** @type {any} */ (onContextMenu);
+		node.addEventListener('keydown', keys, true);
+		node.addEventListener('contextmenu', menuHandler);
+		return {
+			destroy: () => {
+				node.removeEventListener('keydown', keys, true);
+				node.removeEventListener('contextmenu', menuHandler);
+			}
+		};
+	}
+
+	// --- U3: the canvas context menu ---------------------------------------------
+	// Right-click used to fall THROUGH to the drag/marquee/pan code and show the
+	// browser's menu on top of it, so this fixes a bug as much as it adds a menu.
+	let menu = $state(/** @type {{x: number, y: number, items: any[]}|null} */ (null));
+
+	/** frame the selection: zoom so its bounds fill the view, centred */
+	function zoomToSelection() {
+		if (!target || !selCluster.length) return;
+		const bounds = uvBounds(target, selCluster);
+		if (!bounds) return;
+		const w = Math.max(bounds.uMax - bounds.uMin, 1e-3);
+		const h = Math.max(bounds.vMax - bounds.vMin, 1e-3);
+		zoom = Math.min(Math.max(0.85 / Math.max(w, h), 0.1), 32);
+		panX = 0;
+		panY = 0;
+		// read the projection AFTER the zoom write (the zoomBy/onWheel pattern)
+		panX = viewW / 2 - toScreenX(bounds.cu);
+		panY = viewH / 2 - toScreenY(bounds.cv);
+	}
+
+	/** @param {MouseEvent} e */
+	function onContextMenu(e) {
+		if (!target || !viewable.ok) return;
+		e.preventDefault(); // ours, not the browser's — the timeline showed both
+		e.stopPropagation();
+		// a running grab commits on ANY press, so the button that ends it can be
+		// either one (the timeline's rule)
+		if (grab.active()) {
+			grab.finish(true);
+			return;
+		}
+		wrapEl?.focus?.({ preventScroll: true });
+		const { x, y } = localPoint(/** @type {any} */ (e));
+		const hit = editable.ok && !wireTooDense
+			? nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope)
+			: -1;
+		const count = selCluster.length;
+		const info = textureInfo(target, slot);
+		/** @type {any[]} */
+		const items = [];
+		if (count) {
+			items.push({ header: count === 1 ? '1 point' : count + ' points' });
+			items.push({
+				label: 'Transform',
+				children: MODES.map(([mode, label, key]) => ({
+					label,
+					hint: key,
+					checked: xform === mode,
+					tooltip: 'Drag the selection, middle-press it to grab, or nudge with the arrows',
+					action: () => armXform(mode)
+				}))
+			});
+			items.push({ label: 'Rotate 90', action: () => rotateSelectionBy(Math.PI / 2) });
+			items.push({ label: 'Rotate -90', action: () => rotateSelectionBy(-Math.PI / 2) });
+			items.push({ label: 'Flip U', action: flipSelectionU });
+			items.push({ label: 'Flip V', action: flipSelectionV });
+			items.push({
+				label: 'Scale to fit the square',
+				tooltip: 'Fill 0..1, keeping the aspect',
+				action: fitSelection
+			});
+			items.push({
+				label: 'Snap to pixels',
+				tooltip: info
+					? 'Land every point on a texel boundary of the ' + info.w + ' x ' + info.h + ' texture'
+					: 'Land every point on a texel boundary (assuming 1024 x 1024 — this slot has no texture)',
+				action: snapSelectionToPixels
+			});
+			items.push({ section: 'Selection' });
+			items.push({ label: 'Select the island', hint: 'L', action: selectLinked });
+			items.push({
+				label: hit >= 0 && selCluster.includes(hit) ? 'Remove this point from the selection' : 'Clear the selection',
+				hint: hit >= 0 && selCluster.includes(hit) ? undefined : 'Esc',
+				action: () => {
+					if (hit >= 0 && selCluster.includes(hit)) {
+						const cluster = weldedCluster(target.geometry, hit, weldScope);
+						selCluster = selCluster.filter((i) => !cluster.includes(i));
+					} else selCluster = [];
+				}
+			});
+		} else if (hit >= 0) {
+			items.push({
+				label: 'Select this point',
+				action: () => (selCluster = weldedCluster(target.geometry, hit, weldScope))
+			});
+		}
+		// the ORIGIN rotate and scale turn about
+		items.push({ section: 'Origin' });
+		items.push({
+			label: 'Place the origin here',
+			tooltip: 'Rotate and scale turn about it — drag it to adjust, and it snaps onto a point when you come near one (Alt to place it freely)',
+			action: () => (pivotPlaced = { cu: toU(x), cv: toV(y) })
+		});
+		items.push({
+			label: 'Origin on the selection',
+			disabled: !count,
+			tooltip: 'Place it at the middle of the selection, where you can then drag it',
+			action: () => {
+				const bounds = uvBounds(target, selCluster);
+				if (bounds) pivotPlaced = { cu: bounds.cu, cv: bounds.cv };
+			}
+		});
+		items.push({
+			label: 'Automatic origin',
+			checked: !pivotPlaced,
+			tooltip: "The selection's own centre, recomputed for every gesture",
+			action: () => (pivotPlaced = null)
+		});
+		items.push({ section: 'Selection' });
+		items.push({ label: 'Select all', hint: 'Ctrl+A', disabled: !tris.length, action: selectAllUv });
+		items.push({ label: 'Invert', hint: 'Ctrl+I', disabled: !tris.length, action: invertUv });
+		items.push({ section: 'Unwrap' });
+		items.push({
+			label: 'Unwrap',
+			disabled: !editable.ok,
+			tooltip: pickedTris
+				? 'Applies to the ' + pickedTris + ' face triangles selected in Edit Mesh'
+				: 'Applies to the whole mesh',
+			children: backends.map((backend) => ({
+				label: backend.label,
+				action: () => runUnwrap(backend.key)
+			}))
+		});
+		items.push({ section: 'View' });
+		items.push({ label: 'Reset view', action: fitView });
+		items.push({ label: 'Zoom to the selection', disabled: !count, action: zoomToSelection });
+		items.push({
+			label: 'Paint on the texture',
+			checked: $uvTool === 'paint',
+			action: () => uvTool.set($uvTool === 'paint' ? 'select' : 'paint')
+		});
+		items.push({
+			label: 'Only the faces picked in Edit Mesh',
+			checked: $uvFaceFilter === 'selection',
+			tooltip: 'Needed wherever faces share UV space, so a drag moves one face instead of all of them',
+			action: () => uvFaceFilter.set($uvFaceFilter === 'selection' ? 'all' : 'selection')
+		});
+		items.push({
+			label: 'UV test grid',
+			checked: $uvCheckerOn,
+			tooltip: 'A checker instead of the scene textures — local to you, never saved or sent',
+			action: () => uvCheckerOn.set(!$uvCheckerOn)
+		});
+		menu = { x: e.clientX, y: e.clientY, items };
 	}
 
 	function onWheel(/** @type {WheelEvent} */ e) {
@@ -624,13 +1175,18 @@
 	/** @param {(indices: number[]) => void} run */
 	function withUvCommit(run) {
 		if (!target || !canTransform) return;
-		if (!beginUvDrag(target.uuid)) return;
+		const object = target;
+		if (!beginUvDrag(object.uuid)) return;
 		run(selCluster);
-		endUvDrag(target.uuid);
+		// keep the selection pointing at the same POINTS across the commit's renumber
+		const coords = selectionCoords(object);
+		if (endUvDrag(object.uuid)) reselect(object, coords);
 	}
 
-	const rotateSelection = () =>
-		withUvCommit((indices) => transformUvCluster(target, indices, { rotate: Math.PI / 2 }));
+	/** @param {number} radians */
+	const rotateSelectionBy = (radians) =>
+		withUvCommit((indices) => transformUvCluster(target, indices, { rotate: radians }));
+	const rotateSelection = () => rotateSelectionBy(Math.PI / 2);
 	const flipSelectionU = () => withUvCommit((indices) => transformUvCluster(target, indices, { flipU: true }));
 	const flipSelectionV = () => withUvCommit((indices) => transformUvCluster(target, indices, { flipV: true }));
 	const fitSelection = () => withUvCommit((indices) => fitUvToSquare(target, indices, 0.02));
@@ -847,6 +1403,34 @@
 				</button>
 				<!-- selection ops: they act on the UV selection, so they live next to the
 				     selection tools rather than in a panel -->
+				<div class="flex shrink-0 items-center overflow-hidden rounded-sm border border-gray-600 text-[10px] uppercase tracking-wide text-gray-300">
+					<!-- The armed TRANSFORM, on 1/2/3 — the digits the mesh tools and the
+					     animation timeline already use for "pick a tool". Words, not icons:
+					     a second rotate glyph beside the Rotate-90 command would be
+					     indistinguishable from it, which is the lesson the mesh toolbar
+					     already paid for. -->
+					{#each MODES as [mode, label, key] (mode)}
+						<button
+							id="uv-mode-{mode}"
+							class="px-1.5 py-0.5 {xform === mode ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							title="{label} the selection ({key}) — drag it, middle-press a selected vertex to grab it, or nudge with the arrows"
+							aria-pressed={xform === mode}
+							onclick={() => armXform(/** @type {any} */ (mode))}>{label}</button
+						>
+					{/each}
+				</div>
+				<button
+					class="uv-tool {pivotPlaced ? 'uv-tool-active' : ''}"
+					id="uv-origin"
+					title={pivotPlaced
+						? 'Rotating and scaling about the origin you placed — drag it on the canvas to adjust it (Alt while dragging places it freely). Click to go back to the selection centre.'
+						: 'Rotate and scale turn about the selection centre. Click to place an origin you can drag instead.'}
+					aria-label="Transform origin"
+					aria-pressed={!!pivotPlaced}
+					onclick={toggleOrigin}
+				>
+					<Crosshair size={15} aria-hidden="true" />
+				</button>
 				<div class="flex shrink-0 items-center gap-0.5 border-l border-gray-700/60 pl-1">
 					<button
 						class="uv-tool"
@@ -958,7 +1542,17 @@
 		{/snippet}
 
 		{#snippet main()}
-			<div id="uv-canvas-wrap" class="relative h-full w-full overflow-hidden bg-gray-900">
+			<!-- The KEYBOARD host: the canvas has no tabindex, so the wrap takes focus on
+			     every press and carries the capture-phase key handler. tabindex="-1" keeps
+			     it out of the tab order (and out of a11y_no_noninteractive_tabindex). -->
+			<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_static_element_interactions -->
+			<div
+				bind:this={wrapEl}
+				id="uv-canvas-wrap"
+				class="relative h-full w-full overflow-hidden bg-gray-900 outline-none"
+				tabindex="-1"
+				use:uvSurface
+			>
 				{#if !target}
 					<div class="flex h-full items-center justify-center p-6 text-center text-sm text-gray-400">
 						Select a mesh in the viewport to see and edit its UV map.
@@ -975,6 +1569,13 @@
 						style="touch-action: none"
 						use:uvCanvas
 					></canvas>
+					{#if grabbing}
+						<!-- a modal grab has no button held, so it needs to SAY it is running -->
+						<div id="uv-grab-badge" class="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-sm bg-amber-500/90 px-2 py-0.5 text-[11px] font-medium text-gray-900">
+							{xform === 'rotate' ? 'Rotating' : xform === 'scale' ? 'Scaling' : 'Moving'}
+							{selCluster.length === 1 ? '1 point' : selCluster.length + ' points'} — click or Enter to place, Esc to cancel
+						</div>
+					{/if}
 				{/if}
 			</div>
 		{/snippet}
@@ -1017,7 +1618,12 @@
 					<p class="mb-2">Drag a vertex to move its UV corner. Corners that share a point move together, and dragging any selected vertex moves the whole selection.</p>
 					<p class="mb-2"><span class="text-gray-200">Shift</span> (or Ctrl) adds to the selection — clicking a vertex, or with box and lasso.</p>
 					<p class="mb-2"><span class="text-gray-200">Box</span> and <span class="text-gray-200">Lasso</span> select everything they enclose. Middle-drag pans in any tool; in Select, dragging the background pans and clicking it deselects.</p>
-					<p class="text-gray-500">Each drag is one undo step and is shared with connected peers.</p>
+					<p class="mb-2"><span class="text-gray-200">1 / 2 / 3</span> arm Move, Rotate and Scale.</p>
+					<p class="mb-2">Rotate and scale turn about the selection's centre. The <span class="text-gray-200">origin</span> button places one you can <span class="text-gray-200">drag</span> instead — it snaps onto a point when you come near one, Alt places it freely — and right-click ▸ Origin puts it under the pointer. <span class="text-gray-200">Alt</span> while STARTING a gesture uses the cursor for that gesture alone.</p>
+					<p class="mb-2"><span class="text-gray-200">Middle-press a selected point</span> to grab the selection: it follows the pointer with no button held until a click or <span class="text-gray-200">Enter</span> places it, and <span class="text-gray-200">Esc</span> puts it back.</p>
+					<p class="mb-2"><span class="text-gray-200">Arrows</span> nudge by one texture pixel (Ctrl ×10, Shift ×100). <span class="text-gray-200">Ctrl+Shift+arrow</span> grows the selection that way. <span class="text-gray-200">Ctrl+A</span> / <span class="text-gray-200">Ctrl+I</span> select all and invert, <span class="text-gray-200">L</span> takes the whole island.</p>
+					<p class="mb-2"><span class="text-gray-200">Right-click</span> for everything above on the point under the pointer.</p>
+					<p class="text-gray-500">Each drag, nudge and menu action is one undo step and is shared with connected peers.</p>
 				</div>
 			{:else}
 				<div class="p-2 text-[11px] text-gray-400">
@@ -1128,6 +1734,10 @@
 			></div>
 		</div>
 	{/if}
+{/if}
+
+{#if menu}
+	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey="uv" on:close={() => (menu = null)} />
 {/if}
 
 <style>

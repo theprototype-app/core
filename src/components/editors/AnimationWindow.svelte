@@ -422,7 +422,7 @@
 		const kv = scaling && dv !== null ? Math.max(0.05, 1 + dv / Math.max(range.hi - range.lo, 1e-6) * 1.5) : 1;
 		const pivotT = move.pivot.t;
 		const pivotV = move.pivot.v;
-		const moves = move.snapshot.map((s) => {
+		const moves = move.snapshot.map((/** @type {any} */ s) => {
 			const t = scaling ? pivotT + (s.t0 - pivotT) * kt : s.t0 + dt;
 			const value = scaling ? pivotV + (s.v0 - pivotV) * kv : s.v0 + (dv ?? 0);
 			return {
@@ -442,7 +442,7 @@
 		const landed = moveKeys(target.uuid, moves);
 		/** @type {[string, number][]} */
 		const next = [];
-		move.snapshot.forEach((s, i) => {
+		move.snapshot.forEach((/** @type {any} */ s, /** @type {number} */ i) => {
 			const spot = landed[i];
 			if (!spot) return;
 			s.index = spot.index;

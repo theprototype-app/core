@@ -27,6 +27,7 @@
 		addMarker, updateMarker, removeMarker
 	} from '$lib/animationPreview';
 	import { showToast, openSceneSection } from '../../stores/appStore.js';
+	import { showOnionSkin, setOnionSkin } from '$lib/onionSkin';
 	// the clips a model was IMPORTED with are a different system (replicated,
 	// posed from the synced clock) — the window used to ignore them entirely, so
 	// a rigged model showed "no movements yet" and its own animations were
@@ -34,7 +35,7 @@
 	import { animatedObjects, setAnimationState, clipInfo } from '$lib/animatedImports';
 	import {
 		SkipBack, SkipForward, StepBack, StepForward, Play, Pause, Square, Rewind, ZoomIn, ZoomOut, Maximize2,
-		SquareDashed, Lasso
+		SquareDashed, Lasso, Ghost
 	} from '@lucide/svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
@@ -2002,6 +2003,16 @@
 							onclick={() => setMarqMode('lasso')}><Lasso size={13} aria-hidden="true" /></button
 						>
 					</div>
+					<!-- F6: onion skin. A LOCAL viewing aid, off by default, exactly like
+					     showColliders — nothing about it replicates or reaches a save. -->
+					<button
+						id="animation-onion"
+						class="rounded-sm border px-1.5 py-0.5 {$showOnionSkin ? 'border-primary-500 text-primary-300' : 'border-gray-600'}"
+						title="Onion skin: faint copies of the object at the keys either side of the playhead (local only)"
+						aria-label="Onion skin"
+						aria-pressed={$showOnionSkin}
+						onclick={() => setOnionSkin(!$showOnionSkin)}><Ghost size={13} aria-hidden="true" /></button
+					>
 					<label class="flex items-center gap-1" title="What key times snap to while you drag">
 						snap
 						<select

@@ -648,6 +648,27 @@ function ensureBase(uuid, object) {
 	return base;
 }
 
+/**
+ * F6: the base an ONION-SKIN ghost should be posed from — the stored base while a
+ * preview is running, else the object exactly as it stands. Read-only: unlike
+ * ensureBase it never stores anything and never suspends flow, because a viewing
+ * aid must not change what the real object does.
+ *
+ * TRANSFORM ONLY (`materials: []`), which is what stops `restoreBase` writing the
+ * base's opacity and colour over a ghost's own faint material.
+ * @param {string} uuid @param {any} object
+ */
+export function ghostBase(uuid, object) {
+	const stored = bases.get(uuid);
+	return {
+		pos: stored ? [...stored.pos] : object.position.toArray(),
+		rot: stored ? [...stored.rot] : [object.rotation.x, object.rotation.y, object.rotation.z],
+		scale: stored ? [...stored.scale] : object.scale.toArray(),
+		visible: true,
+		materials: []
+	};
+}
+
 /** @param {string} uuid */
 function releaseBase(uuid) {
 	const base = bases.get(uuid);

@@ -329,7 +329,8 @@ export const valueTypes = [
 	'keypress', // H3: keyboard trigger
 	'onimpact', // PFX-C: physics impact trigger
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
-	'velocity' // CL-C: live speed readout (m/s)
+	'velocity', // CL-C: live speed readout (m/s)
+	'animstate' // 17-E F3: the readable half of animfinished
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -592,6 +593,41 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// exact-ish on the stepping peer (per-step write-back deltas).
 			const target = input('target', null) || implicitOwnerOf(node);
 			return typeof target === 'string' && ctx && ctx.speed ? ctx.speed(target) : 0;
+		}
+		case 'animstate': {
+			// 17-E F3: the readable half of animfinished. ONE number output whose
+			// meaning the `read` param picks, rather than a multi-output handle map:
+			// a boolean rides a number socket already (the COERCE table), and this
+			// keeps the node in the same shape as math/select.
+			//
+			// LOCAL like velocity, and for a stronger reason — the transport itself
+			// replicates (animplay, a synced-clock stamp), so every peer computes the
+			// same reading from the same data with no message of its own.
+			const target = input('target', null) || implicitOwnerOf(node);
+			if (typeof target !== 'string' || !animRef?.transportOf) return 0;
+			const t = animRef.transportOf(target);
+			// an empty clip name means "whatever is loaded"; a named one reports 0
+			// unless THAT clip is the one on the transport
+			if (d.clip) {
+				const wanted = animRef.clipIdByName?.(target, d.clip);
+				if (!wanted || wanted !== t.clipId) return 0;
+			}
+			const span = t.rangeOut - t.rangeIn;
+			switch (d.read ?? 'progress') {
+				case 'playing':
+					return t.playing ? 1 : 0;
+				case 'position':
+					return t.position;
+				case 'duration':
+					return t.duration;
+				case 'remaining':
+					return Math.max(0, t.rangeOut - t.position);
+				default:
+					// progress through the A/B window, which is what the transport
+					// actually loops over — clamped, because a parked playhead can sit
+					// outside a window set after it was parked
+					return span > 1e-6 ? Math.min(1, Math.max(0, (t.position - t.rangeIn) / span)) : 0;
+			}
 		}
 		case 'counter':
 			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;

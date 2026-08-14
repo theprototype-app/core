@@ -21,6 +21,7 @@ const OUTPUT = {
 	onimpact: 'event', // PFX-C
 	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
 	animfinished: 'event', // 17-E: a clip reached its end
+	animstate: 'number', // 17-E F3: progress / playing / position, one at a time
 	velocity: 'number', // CL-C: live speed readout
 	flowinput: 'number' // H5 fallback; the live check reads data.vtype
 };
@@ -32,6 +33,7 @@ const INPUT = {
 	// velocity reads the wired object's live speed
 	collider: { source: 'object', scale: 'number' },
 	velocity: { target: 'object' },
+	animstate: { target: 'object' }, // 17-E F3: whose clip to read (or the graph owner)
 	math: { a: 'number', b: 'number' },
 	compare: { a: 'number', b: 'number' },
 	gate: { a: 'boolean', b: 'boolean' },

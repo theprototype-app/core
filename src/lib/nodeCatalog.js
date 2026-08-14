@@ -157,6 +157,24 @@ export const nodeCatalog = [
 				defaults: { clip: '', pulse: 0.3 }
 			},
 			{
+				// 17-E F3: the READABLE half of Animation Finished — a value node, so
+				// the clip can drive something continuously instead of only handing
+				// off at its end (progress into a Map Range that fades a light, or
+				// `playing` into a Gate). One number socket whose meaning `read`
+				// picks: a boolean rides a number socket already, and it keeps the
+				// card in the same shape as Math / Select.
+				type: 'animstate',
+				label: 'Animation State',
+				defaults: { clip: '', read: 'progress' },
+				params: [
+					{
+						key: 'read',
+						kind: 'select',
+						options: ['progress', 'playing', 'position', 'duration', 'remaining']
+					}
+				]
+			},
+			{
 				// 17-E A5: drives an AUTHORED clip (or a clip the model was imported
 				// with) from a flow event — wire On Click to it and a door opens when
 				// someone clicks it. Not in `animationTypes`: it is an event consumer

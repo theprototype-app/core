@@ -50,6 +50,7 @@
 	import ObjectFlowNode from './nodes/ObjectFlowNode.svelte';
 	import KeyPressNode from './nodes/KeyPressNode.svelte';
 	import PlayAnimNode from './nodes/PlayAnimNode.svelte';
+	import AnimStateNode from './nodes/AnimStateNode.svelte';
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
 	import { deselectObject } from '$lib/objectActions';
@@ -120,6 +121,7 @@
 		keypress: KeyPressNode,
 		playanim: PlayAnimNode, // 17-E A5
 		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
+		animstate: AnimStateNode, // 17-E F3: the readable half of it
 		...moduleTypes
 	};
 

@@ -797,6 +797,12 @@
 	 * @param {HTMLElement} node
 	 */
 	function keyNav(node) {
+		// a key the pane HANDLES must not also reach the global registry: M, 1 and 2
+		// are claimed by the gizmo/mesh shortcuts too, so both fired at once.
+		const claim = (/** @type {KeyboardEvent} */ ev) => {
+			ev.preventDefault();
+			ev.stopPropagation();
+		};
 		const onKey = (/** @type {KeyboardEvent} */ e) => {
 			if (!target) return;
 			const tag = /** @type {any} */ (e.target)?.tagName;
@@ -806,27 +812,27 @@
 
 			if (e.key === 'Delete' || e.key === 'Backspace') {
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				deleteSelectedKeys();
 				return;
 			}
 			if (e.key === 'Escape') {
 				if (move?.modal) return; // its own handler cancels the grab
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				selKeys = [];
 				return;
 			}
 			if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				const n = copyKeys(target.uuid, selKeys);
 				if (n) showToast(n === 1 ? 'Copied 1 key' : 'Copied ' + n + ' keys');
 				return;
 			}
 			if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
 				if (!$clipboardSize) return;
-				e.preventDefault();
+				claim(e);
 				const landed = pasteKeys(target.uuid, snapT(curTime));
 				if (landed.length) {
 					selKeys = landed;
@@ -836,24 +842,24 @@
 			}
 			if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				const landed = duplicateKeys(target.uuid, selKeys);
 				if (landed.length) selKeys = landed;
 				return;
 			}
 			if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey) {
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				mirrorKeys(target.uuid, selKeys, snapT(curTime));
 				return;
 			}
 			if (e.key === '1' || e.key === '2') {
-				e.preventDefault();
+				claim(e);
 				xform = e.key === '1' ? 'move' : 'scale';
 				return;
 			}
 			if (e.code === 'Space' && (e.ctrlKey || e.metaKey)) {
-				e.preventDefault();
+				claim(e);
 				const hits = keysAtPlayhead();
 				if (!hits.length) return;
 				const fresh = hits.filter(([id, i]) => !isKeySelected(id, i));
@@ -862,7 +868,7 @@
 				return;
 			}
 			if (!arrow) return;
-			e.preventDefault();
+			claim(e);
 			// SHIFT + arrows transform the selection; otherwise the arrows drive the
 			// playhead (where Shift is free to be the big multiplier)
 			if (e.shiftKey && selKeys.length) {

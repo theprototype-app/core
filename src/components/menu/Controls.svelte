@@ -27,6 +27,7 @@
 	import SimControls from './SimControls.svelte';
 	import { focusStack, raiseWindow, isTopWindow } from '$lib/windowFocus';
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
+	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
 	import { visibleDockKey, bottomDockActive, activateDock, dockOccupants, FLOW_FAMILY } from '$lib/bottomDock';
 	import { VRButton, XRButton } from '@threlte/xr'
@@ -385,6 +386,10 @@
 	let classActive =
 		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-hidden focus:ring-4 focus:ring-primary-300';
 
+	// 18-B: object-list window size limits, shared with the clamp helpers
+	const OBJ_WIN_MIN = { minW: 250, minH: 200 };
+	const OBJ_WIN_DEFAULT = { w: 300, h: 250 };
+
 	function dragMe(node) {
 		// 80.1: proper resize (start-size captured, clamped) + persisted rect
 		let saved: any = null;
@@ -411,8 +416,9 @@
 		// the clipped tree rows (same bug the Flow window had)
 		const clampRect = () => {
 			if (grouped()) return; // the group rect drives size/pos while grouped
-			width = Math.min(width, window.innerWidth - 8);
-			height = Math.min(height, window.innerHeight);
+			// 18-B: the viewport cap wins over the minimum, so this can never leave
+			// the window wider than the screen
+			({ w: width, h: height } = clampWinSize(width, height, OBJ_WIN_MIN));
 			left = Math.max(0, Math.min(left, window.innerWidth - width));
 			top = Math.max(0, Math.min(top, window.innerHeight - height));
 			node.style.width = `${width}px`;
@@ -496,8 +502,18 @@
 				}
 			}
 			if (resizing) {
-				width = Math.min(Math.max(250, startWidth + (e.clientX - startX)), window.innerWidth - 8);
-				height = Math.min(Math.max(200, startHeight + (e.clientY - startY)), window.innerHeight);
+				// 18-B: the corner stops at the viewport edge, so the handle stays
+				// reachable — an oversized window used to have no grabbable grip left
+				const at = anchorOf(node);
+				const fit = clampResize(
+					startWidth + (e.clientX - startX),
+					startHeight + (e.clientY - startY),
+					at.left,
+					at.top,
+					OBJ_WIN_MIN
+				);
+				width = fit.w;
+				height = fit.h;
 				if (grouped()) {
 					resizeGroup('objects', width, height); // resize the whole group (all tabs)
 				} else {
@@ -511,6 +527,17 @@
 			if ((moving || resizing) && !grouped()) persist();
 			moving = false;
 			resizing = false;
+		});
+
+		// 18-B: double-click the grip — back to the default size, position kept.
+		// A direct listener, like every other gesture in this action: the panel
+		// chrome swallows delegated events.
+		node.addEventListener('dblclick', (e: any) => {
+			if (!e.target?.classList?.contains('resize-handle') || grouped()) return;
+			({ w: width, h: height } = clampWinSize(OBJ_WIN_DEFAULT.w, OBJ_WIN_DEFAULT.h, OBJ_WIN_MIN));
+			node.style.width = `${width}px`;
+			node.style.height = `${height}px`;
+			persist();
 		});
 
 		// 169: Settings "Reset window positions" recentres the object list too
@@ -892,6 +919,7 @@
 	<!-- corner grip INSIDE the window (was parked 38px below the box and unreachable, 92) -->
 	<div
 		class="resize-handle resize-cue"
+		title="Drag to resize · double-click to reset size"
 		style="position: absolute; bottom: 0; right: 0; width: 16px; height: 16px; cursor: se-resize; border-bottom-right-radius: 0.5rem; z-index: 5;"
 	></div>
 </div>

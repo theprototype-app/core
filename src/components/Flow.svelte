@@ -14,11 +14,15 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
+	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
 	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
 	import { fly } from 'svelte/transition';
 
 	const clampH = (h: number) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
+	// 18-B: floating-window size limits, shared with the clamp helpers
+	const WIN_MIN = { minW: 280, minH: 240 };
+	const WIN_DEFAULT = { w: 760, h: 480 };
 	let docked = $state(true);
 	// mirrors Nodes' palette-open (bound below) so the docked content only insets above
 	// the Controls HUD when the node palette is actually shown (overlapping the HUD)
@@ -31,8 +35,9 @@
 	// the header buttons off a narrow screen)
 	function clampWin() {
 		if (typeof window === 'undefined') return;
-		winW = Math.min(winW, window.innerWidth - 8);
-		winH = Math.min(winH, Math.round(window.innerHeight * 0.9));
+		const fit = clampWinSize(winW, winH, WIN_MIN);
+		winW = fit.w;
+		winH = Math.min(fit.h, Math.round(window.innerHeight * 0.9));
 	}
 	if (typeof localStorage !== 'undefined') {
 		docked = localStorage.getItem('flowDocked') !== 'false';
@@ -117,9 +122,21 @@
 		if (!winResizing) return;
 		const baseW = myGroup ? myGroup.rect.width : winW;
 		const baseH = myGroup ? myGroup.rect.height : winH;
-		winW = Math.min(Math.max(280, baseW + e.movementX), window.innerWidth - 8);
-		winH = Math.min(Math.max(240, baseH + e.movementY), window.innerHeight);
+		// 18-B: the corner stops at the viewport edge, so this grip stays reachable
+		const at = anchorOf(e.currentTarget.parentElement);
+		const fit = clampResize(baseW + e.movementX, baseH + e.movementY, at.left, at.top, WIN_MIN);
+		winW = fit.w;
+		winH = fit.h;
 		resizeGroup('flow', winW, winH); // if grouped, resize the whole group
+	}
+	/** 18-B: double-click the grip — back to the default size, position kept */
+	function resetWinSize() {
+		const fit = clampWinSize(WIN_DEFAULT.w, WIN_DEFAULT.h, WIN_MIN);
+		winW = fit.w;
+		winH = fit.h;
+		resizeGroup('flow', winW, winH);
+		localStorage.setItem('flowWinW', String(winW));
+		localStorage.setItem('flowWinH', String(winH));
 	}
 	function endWinResize(e: any) {
 		if (!winResizing) return;
@@ -187,10 +204,11 @@
 			<div
 				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
 				style="touch-action: none"
-				title="Drag to resize"
+				title="Drag to resize · double-click to reset size"
 				onpointerdown={startWinResize}
 				onpointermove={doWinResize}
 				onpointerup={endWinResize}
+				ondblclick={resetWinSize}
 			></div>
 		</div>
 	{/if}

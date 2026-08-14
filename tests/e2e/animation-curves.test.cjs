@@ -1609,5 +1609,337 @@ h.run(async () => {
 		'and the preview is put straight back afterwards'
 	);
 
+	// ---------- 14. F2: no browser menu on a graph KEY, nor on our own menu -------
+	// Reported again after 9c6's pane-root blocker: right-clicking a key in graph
+	// view still showed the native menu. 9c6 covers the pane's own surfaces; what it
+	// cannot cover is our ContextMenu, which is PORTALED to <body> and therefore
+	// outside the pane root — and it opens UNDER the cursor, so the next right-click
+	// lands on the menu, not on the pane.
+	// a clip authored HERE, so the graph is guaranteed to draw handles whatever the
+	// sections above left active
+	const g2 = await A.page.evaluate((id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', id);
+		const clipId = ap.createClip(id, 'RightClick');
+		const track = ap.addTrack(id, 'pos.y', obj, clipId);
+		ap.updateKey(id, track, 0, { t: 0, v: 0 }, clipId);
+		ap.updateKey(id, track, 1, { t: 1, v: 3 }, clipId);
+		ap.updateAnim(id, { duration: 2, loop: 'loop' }, clipId);
+		ap.setActiveClip(id, clipId);
+		s.objectActions.selectObject(id, false);
+		s.animationClose.set(false);
+		s.bottomDock.activateDock('animation');
+		return ap.activeClip(id)?.tracks?.[0]?.keys?.length ?? 0;
+	}, first);
+	h.check(g2 === 2, `a two-key clip is active for the graph checks (${g2} keys)`);
+	await A.page.waitForTimeout(400);
+	await A.page.getByRole('button', { name: 'Graph', exact: true }).click();
+	await A.page.waitForTimeout(400);
+
+	await A.page.evaluate(() => {
+		/** @type {any} */ (window).__ctx2 = [];
+		// bubble phase on window: this runs AFTER every direct listener, so it reports
+		// whether anything actually cancelled the default
+		window.addEventListener('contextmenu', (e) => {
+			const el = /** @type {any} */ (e.target);
+			/** @type {any} */ (window).__ctx2.push({
+				prevented: e.defaultPrevented,
+				tag: el?.tagName,
+				onMenu: !!el?.closest?.('[role="menu"]'),
+				inPane: !!el?.closest?.('#animation-dock, #animation-window')
+			});
+		});
+	});
+
+	// a real right-click on a key HANDLE in the graph. Take a handle with a REAL
+	// size and confirm it is the topmost thing at that point: a zero-size rect is
+	// truthy, and clicking its (0,0) lands on <html>, where the check would report a
+	// browser menu that no code of ours was ever asked about.
+	const keyDot = await A.page.evaluate(() => {
+		const sized = [...document.querySelectorAll('#animation-timeline circle')]
+			// F4's easing handles are circles in the same svg — this check is about a
+			// KEY, and they are drawn last, so an unfiltered "take the last one" picks
+			// a tangent
+			.filter((c) => !c.id.startsWith('animation-tangent'))
+			.map((c) => c.getBoundingClientRect())
+			.filter((r) => r.width > 2 && r.height > 2);
+		const r = sized[sized.length - 1];
+		if (!r) return null;
+		const at = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+		return { ...at, hit: document.elementFromPoint(at.x, at.y)?.tagName };
+	});
+	h.check(
+		keyDot?.hit === 'circle',
+		`the graph draws a key handle to right-click (topmost at it: ${keyDot?.hit ?? 'nothing'})`
+	);
+	await A.page.mouse.click(keyDot.x, keyDot.y, { button: 'right' });
+	await A.page.waitForTimeout(300);
+	const onKeyEvents = await A.page.evaluate(() => /** @type {any} */ (window).__ctx2);
+	h.check(
+		onKeyEvents.length > 0 && onKeyEvents.every((/** @type {any} */ e) => e.prevented),
+		`right-clicking a graph KEY cancels the browser menu (${onKeyEvents
+			.map((/** @type {any} */ e) => e.tag + ':' + e.prevented)
+			.join(', ')})`
+	);
+
+	// our menu is now open UNDER the cursor: the next right-click lands on IT
+	const menuOpen = await A.page.evaluate(() => !!document.querySelector('[role="menu"]'));
+	h.check(menuOpen, 'and our own menu opened there');
+	await A.page.evaluate(() => (/** @type {any} */ (window).__ctx2 = []));
+	const menuSpot = await A.page.evaluate(() => {
+		const r = document.querySelector('[role="menu"]')?.getBoundingClientRect();
+		return r ? { x: r.x + r.width / 2, y: r.y + Math.min(20, r.height / 2) } : null;
+	});
+	h.check(!!menuSpot, 'the open menu has a surface to right-click');
+	await A.page.mouse.click(menuSpot.x, menuSpot.y, { button: 'right' });
+	await A.page.waitForTimeout(300);
+	const onMenuEvents = await A.page.evaluate(() => /** @type {any} */ (window).__ctx2);
+	h.check(
+		onMenuEvents.length > 0 && onMenuEvents.every((/** @type {any} */ e) => e.prevented),
+		`right-clicking OUR MENU cancels it too (${onMenuEvents
+			.map((/** @type {any} */ e) => (e.onMenu ? 'menu' : e.inPane ? 'pane' : 'other') + ':' + e.prevented)
+			.join(', ')})`
+	);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+
+	// ---------- 15. F4: the easing tangents, dragged ON the curve ----------
+	// `ease` per key already shaped the following segment, and the 132px pad on the
+	// right edited it numerically. These are the same four numbers as handles at the
+	// bezier control points in (t, value) space.
+	//
+	// The plot maps t and v AFFINELY to pixels, which is what lets this drive the
+	// gesture by interpolating between the two KEY handles' own screen positions: a
+	// pixel a quarter of the way from one key to the other IS parameter 0.25, with no
+	// arithmetic guess at the plot's inner width (the lesson from 9b).
+	const tanSetup = await A.page.evaluate((id) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', id);
+		const clipId = ap.createClip(id, 'Tangents');
+		const track = ap.addTrack(id, 'pos.y', obj, clipId);
+		// two keys with a real value SPAN, so the y axis is not degenerate
+		ap.updateKey(id, track, 0, { t: 0, v: 0, ease: [0.25, 0.25, 0.75, 0.75] }, clipId);
+		ap.updateKey(id, track, 1, { t: 1, v: 4 }, clipId);
+		ap.updateAnim(id, { duration: 2, loop: 'loop' }, clipId);
+		ap.setActiveClip(id, clipId);
+		s.objectActions.selectObject(id, false);
+		return { clipId, track };
+	}, first);
+	await A.page.waitForTimeout(500);
+	await A.page.getByRole('button', { name: 'Graph', exact: true }).click();
+	await A.page.waitForTimeout(400);
+
+	/** the two key handles' screen centres, and the two tangent handles' */
+	const tanGeom = () =>
+		A.page.evaluate(() => {
+			const mid = (/** @type {Element|null} */ el) => {
+				const r = el?.getBoundingClientRect();
+				return r && r.width > 0 ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+			};
+			const keys = [...document.querySelectorAll('#animation-timeline circle')].filter(
+				(c) => !c.id.startsWith('animation-tangent')
+			);
+			return {
+				keys: keys.map(mid),
+				t1: mid(document.getElementById('animation-tangent-1')),
+				t2: mid(document.getElementById('animation-tangent-2')),
+				guides: document.querySelectorAll('[data-anim-tangents] line').length
+			};
+		});
+	const geom0 = await tanGeom();
+	h.check(
+		!!geom0.t1 && !!geom0.t2,
+		`the graph draws both tangent handles (${geom0.t1 ? 'P1' : '-'}, ${geom0.t2 ? 'P2' : '-'})`
+	);
+	h.check(geom0.guides === 2, `each with a guide line back to its key (${geom0.guides})`);
+
+	const easeOf = () =>
+		A.page.evaluate(
+			(args) => {
+				const ap = window.__stores.animationPreview;
+				const clip = ap.activeClip(args.id);
+				return clip?.tracks?.find((/** @type {any} */ t) => t.id === args.track)?.keys?.[0]?.ease ?? null;
+			},
+			{ id: first, track: tanSetup.track }
+		);
+
+	// P1 starts at 0.25 of the way along the segment in BOTH axes, so it must sit a
+	// quarter of the way between the two key handles on screen
+	const a = geom0.keys[0];
+	const b = geom0.keys[1];
+	h.check(
+		!!a && !!b && Math.abs(geom0.t1.x - (a.x + (b.x - a.x) * 0.25)) < 3 &&
+			Math.abs(geom0.t1.y - (a.y + (b.y - a.y) * 0.25)) < 3,
+		`P1 sits where ease [0.25, 0.25] puts it (${geom0.t1.x.toFixed(0)},${geom0.t1.y.toFixed(0)} vs ${(a.x + (b.x - a.x) * 0.25).toFixed(0)},${(a.y + (b.y - a.y) * 0.25).toFixed(0)})`
+	);
+
+	// drag P1 to (0.6 along, 0.35 up) and read the ease back
+	const lerp = (/** @type {number} */ fx, /** @type {number} */ fy) => ({
+		x: a.x + (b.x - a.x) * fx,
+		y: a.y + (b.y - a.y) * fy
+	});
+	let dropAt = lerp(0.6, 0.35);
+	await A.page.mouse.move(geom0.t1.x, geom0.t1.y);
+	await A.page.mouse.down();
+	await A.page.mouse.move(dropAt.x, dropAt.y, { steps: 6 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	const dragged1 = await easeOf();
+	h.check(
+		!!dragged1 && Math.abs(dragged1[0] - 0.6) < 0.05 && Math.abs(dragged1[1] - 0.35) < 0.05,
+		`dragging P1 writes that segment's ease (${dragged1?.map((/** @type {number} */ n) => n.toFixed(2)).join(', ')})`
+	);
+	h.check(
+		!!dragged1 && Math.abs(dragged1[2] - 0.75) < 1e-6 && Math.abs(dragged1[3] - 0.75) < 1e-6,
+		'and leaves the OTHER control point alone'
+	);
+	// ONE undo must revert the WHOLE drag — the property, tested directly rather
+	// than by counting the stack. Counting is not safe this late in a long suite:
+	// recordEntry's LIMIT trim evicts the oldest entry, so a correct gesture can
+	// leave the depth unchanged (it read +0 here while undo worked perfectly).
+	const topKind = await A.page.evaluate(() => {
+		let stack = [];
+		window.__stores.history.undoStack.subscribe((/** @type {any[]} */ v) => (stack = v))();
+		return stack[stack.length - 1]?.kind;
+	});
+	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.waitForTimeout(250);
+	const afterOneUndo = await easeOf();
+	h.check(
+		topKind === 'anim' &&
+			!!afterOneUndo &&
+			Math.abs(afterOneUndo[0] - 0.25) < 1e-6 &&
+			Math.abs(afterOneUndo[1] - 0.25) < 1e-6,
+		`ONE undo reverts the whole drag (kind ${topKind}, back to ${afterOneUndo?.slice(0, 2).join(', ')})`
+	);
+	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.waitForTimeout(250);
+	const afterRedo = await easeOf();
+	h.check(
+		!!afterRedo && Math.abs(afterRedo[0] - 0.6) < 0.05,
+		`and redo puts it back (${afterRedo?.[0]?.toFixed(2)})`
+	);
+
+	// x is the segment PARAMETER: dragging P2 past the far key clamps it at 1
+	const geom1 = await tanGeom();
+	await A.page.mouse.move(geom1.t2.x, geom1.t2.y);
+	await A.page.mouse.down();
+	await A.page.mouse.move(b.x + 200, geom1.t2.y, { steps: 6 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	const clamped = await easeOf();
+	h.check(
+		!!clamped && Math.abs(clamped[2] - 1) < 1e-6,
+		`dragging P2 past the far key clamps x at 1 (${clamped?.[2]})`
+	);
+
+	// y is deliberately NOT clamped — overshoot is what makes a bounce readable
+	const geom2 = await tanGeom();
+	dropAt = lerp(0.5, 1.4);
+	await A.page.mouse.move(geom2.t1.x, geom2.t1.y);
+	await A.page.mouse.down();
+	await A.page.mouse.move(dropAt.x, dropAt.y, { steps: 6 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	const over = await easeOf();
+	h.check(
+		!!over && over[1] > 1.2,
+		`but y overshoots past 1 freely (${over?.[1]?.toFixed(2)})`
+	);
+
+	// The numeric pad edits the SAME four numbers, so it has to SHOW the overshoot
+	// rather than clip it away: its y range covers -0.5..1.5 for exactly this reason.
+	// A pad that still mapped 0..1 would draw this handle above its own box, and the
+	// next touch of it would silently flatten the bounce.
+	const padAgrees = await A.page.evaluate(() => {
+		const svgs = [...document.querySelectorAll('#animation-dock svg, #animation-window svg')];
+		const pad = svgs.find((s) => s.id !== 'animation-timeline' && s.querySelectorAll('circle').length >= 4);
+		if (!pad) return null;
+		const box = pad.getBoundingClientRect();
+		// the two big ones (r=6) are the draggable controls
+		const controls = [...pad.querySelectorAll('circle')].filter(
+			(c) => Number(c.getAttribute('r')) >= 5
+		);
+		if (controls.length < 2) return null;
+		const r = controls[0].getBoundingClientRect();
+		return { fy: (r.y + r.height / 2 - box.y) / box.height };
+	});
+	// y = 1.4 in a -0.5..1.5 box, inset by 10px of a 132px square: ~0.13 down
+	h.check(
+		!!padAgrees && padAgrees.fy > 0.02 && padAgrees.fy < 0.3,
+		`the numeric pad shows the overshoot INSIDE its box (P1 at ${padAgrees?.fy?.toFixed(2)} of its height)`
+	);
+
+	// a STEPPED channel has no curve, so it has no tangents either
+	await A.page.evaluate((args) => {
+		const s = window.__stores;
+		const ap = s.animationPreview;
+		let g;
+		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', args.id);
+		const track = ap.addTrack(args.id, 'visible', obj, args.clipId);
+		ap.updateKey(args.id, track, 0, { t: 0, v: 1 }, args.clipId);
+		ap.updateKey(args.id, track, 1, { t: 1, v: 0 }, args.clipId);
+	}, { id: first, clipId: tanSetup.clipId });
+	await A.page.waitForTimeout(400);
+	// the channel list rows are buttons labelled by channel — click the stepped one
+	// so the graph plots IT
+	await A.page.getByRole('button', { name: 'Visible', exact: true }).click();
+	await A.page.waitForTimeout(400);
+	const afterStepped = await A.page.evaluate(() => ({
+		tangents: !!document.getElementById('animation-tangent-1'),
+		saysStepped: !!document.body.textContent?.includes('is stepped')
+	}));
+	h.check(
+		!afterStepped.tangents && afterStepped.saysStepped,
+		`a stepped channel draws no tangents and says so (tangents ${afterStepped.tangents}, notice ${afterStepped.saysStepped})`
+	);
+
+	// and back on a smooth channel they return — otherwise the check above would
+	// pass just as well with the feature removed
+	await A.page.getByRole('button', { name: 'Position Y', exact: true }).first().click();
+	await A.page.waitForTimeout(400);
+	const backOnSmooth = await A.page.evaluate(() => !!document.getElementById('animation-tangent-1'));
+	h.check(backOnSmooth, 'and come back on a smooth one');
+
+	// A FLAT segment (both keys the same value) cannot express its y control
+	// spatially — every y maps to the same pixel — so the handle must still exist and
+	// still drag in x, and must leave y alone rather than writing a divide-by-zero.
+	await A.page.evaluate(
+		(args) => {
+			const ap = window.__stores.animationPreview;
+			ap.updateKey(args.id, args.track, 0, { t: 0, v: 2, ease: [0.3, 0.8, 0.7, 0.2] }, args.clipId);
+			ap.updateKey(args.id, args.track, 1, { t: 1, v: 2 }, args.clipId);
+		},
+		{ id: first, track: tanSetup.track, clipId: tanSetup.clipId }
+	);
+	await A.page.waitForTimeout(450);
+	const flatGeom = await tanGeom();
+	h.check(!!flatGeom.t1, 'a FLAT segment still offers its tangent handles');
+	if (flatGeom.t1 && flatGeom.keys[0] && flatGeom.keys[1]) {
+		const fa = flatGeom.keys[0];
+		const fb = flatGeom.keys[1];
+		await A.page.mouse.move(flatGeom.t1.x, flatGeom.t1.y);
+		await A.page.mouse.down();
+		await A.page.mouse.move(fa.x + (fb.x - fa.x) * 0.8, flatGeom.t1.y - 40, { steps: 6 });
+		await A.page.mouse.up();
+		await A.page.waitForTimeout(300);
+		const flatEase = await easeOf();
+		h.check(
+			!!flatEase && Math.abs(flatEase[0] - 0.8) < 0.05,
+			`dragging it still sets x (${flatEase?.[0]?.toFixed(2)})`
+		);
+		h.check(
+			!!flatEase && Math.abs(flatEase[1] - 0.8) < 1e-6 && Number.isFinite(flatEase[1]),
+			`and leaves y untouched rather than writing a divide-by-zero (${flatEase?.[1]})`
+		);
+	}
+
 	await h.finish(browser);
 });

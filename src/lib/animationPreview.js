@@ -3,7 +3,12 @@ import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
-import { suspendAnimation, resumeAnimation, fireAnimFinished as notifyClipFinished } from './flowRuntime';
+import {
+	suspendAnimation,
+	resumeAnimation,
+	fireAnimFinished as notifyClipFinished,
+	fireAnimMarker as notifyMarker
+} from './flowRuntime';
 import { recordEntry, registerHistoryKind } from './history';
 
 // Authored object animation, v2 (17-E). Each object owns a set of named CLIPS;
@@ -32,7 +37,8 @@ import { recordEntry, registerHistoryKind } from './history';
 /**
  * @typedef {{ t: number, v: number, ease?: number[] }} Key a value at a clip time; `ease` shapes the NEXT segment
  * @typedef {{ id: string, channel: string, keys: Key[] }} Track keys sorted by t
- * @typedef {{ name: string, tracks: Track[], duration: number, loop: 'once'|'loop'|'pingpong', fps?: number, step?: number }} Clip
+ * @typedef {{ t: number, name: string }} Marker a named point in a clip (F5); crossing one pulses an Animation Marker node
+ * @typedef {{ name: string, tracks: Track[], duration: number, loop: 'once'|'loop'|'pingpong', fps?: number, step?: number, markers?: Marker[] }} Clip
  * @typedef {{ clips: Record<string, Clip>, active: string, changedAt: number }} AnimSet
  * @typedef {{ clipId: string, playing: boolean, at: number, pausedAt: number, speed: number, reverse?: boolean, startedFrom?: number, rangeIn?: number, rangeOut?: number, changedAt: number }} Play
  */
@@ -187,7 +193,69 @@ function normalizeClip(raw) {
 	// incidentally a cheap way to calm a heavy scene. Absent = smooth.
 	const step = num(raw.step, 0);
 	if (step >= 1 && step <= 240) clip.step = step;
+	// F5 MARKERS belong to the CLIP, so they replicate, save and undo with everything
+	// else and need no channel of their own. Carried like fps/step: absent = none, so
+	// every existing save is byte-unchanged. Kept SORTED, which is what lets the
+	// crossing test walk them in travel order.
+	const markers = normalizeMarkers(raw.markers);
+	if (markers.length) clip.markers = markers;
 	return clip;
+}
+
+/** @param {any} raw @returns {{t: number, name: string}[]} */
+function normalizeMarkers(raw) {
+	if (!Array.isArray(raw)) return [];
+	return raw
+		.map((/** @type {any} */ m) => ({
+			t: Math.max(0, num(m?.t, 0)),
+			name: typeof m?.name === 'string' && m.name.trim() ? m.name.trim() : 'Marker'
+		}))
+		.sort((a, b) => a.t - b.t);
+}
+
+/** Drop a marker at `t` on a clip (replicated + undoable through editClip).
+ * @param {string} uuid @param {number} t @param {string} [name] @param {string} [clipId] */
+export function addMarker(uuid, t, name, clipId) {
+	const at = Math.max(0, num(t, 0));
+	editClip(uuid, clipId ?? null, (clip) => {
+		const markers = [...(clip.markers ?? [])];
+		// a default name that says WHERE it is, so several markers stay tellable apart
+		const label = (name ?? '').trim() || 'Marker ' + (markers.length + 1);
+		markers.push({ t: at, name: label });
+		markers.sort((a, b) => a.t - b.t);
+		return { ...clip, markers };
+	});
+}
+
+/** @param {string} uuid @param {number} index @param {{t?: number, name?: string}} patch @param {string} [clipId] */
+export function updateMarker(uuid, index, patch, clipId) {
+	editClip(uuid, clipId ?? null, (clip) => {
+		const markers = [...(clip.markers ?? [])];
+		const m = markers[index];
+		if (!m) return null;
+		markers[index] = {
+			t: patch.t === undefined ? m.t : Math.max(0, num(patch.t, m.t)),
+			name: patch.name === undefined ? m.name : String(patch.name).trim() || m.name
+		};
+		markers.sort((a, b) => a.t - b.t);
+		return { ...clip, markers };
+	});
+}
+
+/** @param {string} uuid @param {number} index @param {string} [clipId] */
+export function removeMarker(uuid, index, clipId) {
+	editClip(uuid, clipId ?? null, (clip) => {
+		const markers = [...(clip.markers ?? [])];
+		if (!markers[index]) return null;
+		markers.splice(index, 1);
+		return markers.length ? { ...clip, markers } : { ...clip, markers: [] };
+	});
+}
+
+/** Markers of the clip on `uuid`'s transport (or its active clip).
+ * @param {string} uuid @param {string} [clipId] */
+export function markersOf(uuid, clipId) {
+	return clipOf(uuid, clipId ?? get(playback)[uuid]?.clipId)?.markers ?? [];
 }
 
 /** Accept a v1 anim, a v2 set, or anything in between. @param {any} raw @returns {AnimSet|null} */
@@ -578,6 +646,27 @@ function ensureBase(uuid, object) {
 		suspendAnimation(uuid); // park a flow-driven object at its base so it doesn't fight us
 	}
 	return base;
+}
+
+/**
+ * F6: the base an ONION-SKIN ghost should be posed from — the stored base while a
+ * preview is running, else the object exactly as it stands. Read-only: unlike
+ * ensureBase it never stores anything and never suspends flow, because a viewing
+ * aid must not change what the real object does.
+ *
+ * TRANSFORM ONLY (`materials: []`), which is what stops `restoreBase` writing the
+ * base's opacity and colour over a ghost's own faint material.
+ * @param {string} uuid @param {any} object
+ */
+export function ghostBase(uuid, object) {
+	const stored = bases.get(uuid);
+	return {
+		pos: stored ? [...stored.pos] : object.position.toArray(),
+		rot: stored ? [...stored.rot] : [object.rotation.x, object.rotation.y, object.rotation.z],
+		scale: stored ? [...stored.scale] : object.scale.toArray(),
+		visible: true,
+		materials: []
+	};
 }
 
 /** @param {string} uuid */
@@ -2035,6 +2124,26 @@ export function parkAuthoredAtBase() {
 	};
 }
 
+// F5: where each playing object's playhead was on the PREVIOUS tick, so a marker
+// crossing can be detected as an interval rather than an instant (a marker is a
+// point and the playhead never lands exactly on one). Keyed by uuid and stamped
+// with the clip, so switching clips cannot report a bogus crossing. LOCAL, like
+// the once-clip end: every peer's runtime travels the same interval from the same
+// synced stamp, so each fires its own pulse and no message is needed.
+/** @type {Map<string, {clipId: string, seconds: number}>} */
+const lastHead = new Map();
+
+/**
+ * Every marker the playhead passed travelling `from` -> `to`, in travel order.
+ * The DESTINATION end is inclusive and the origin exclusive: a marker exactly
+ * under a resting playhead would otherwise re-fire on every frame.
+ * @param {{t: number, name: string}[]} markers @param {number} from @param {number} to
+ */
+function markersCrossed(markers, from, to) {
+	if (to >= from) return markers.filter((m) => m.t > from && m.t <= to);
+	return markers.filter((m) => m.t < from && m.t >= to).reverse();
+}
+
 /** Re-pose everything that is playing. Per-frame from the scene loop (Scene.svelte useTask). */
 export function tickAnimationPreview() {
 	const map = get(playback);
@@ -2045,10 +2154,15 @@ export function tickAnimationPreview() {
 	const heads = {};
 	/** @type {string[]} */
 	const finished = [];
+	/** @type {{uuid: string, name: string}[]} */
+	const crossed = [];
 	let any = false;
 	for (const uuid of uuids) {
 		const p = map[uuid];
-		if (!p?.playing) continue;
+		if (!p?.playing) {
+			lastHead.delete(uuid); // a fresh start must not cross from where it stopped
+			continue;
+		}
 		const clip = clipOf(uuid, p.clipId);
 		const obj = objectFor(uuid);
 		if (!clip || !obj) continue;
@@ -2056,14 +2170,40 @@ export function tickAnimationPreview() {
 		const elapsed = elapsedOf(p, now);
 		// a once-clip ends at the end of its A/B WINDOW, which is the whole clip
 		// unless in/out points were set
-		const { span } = rangeOf(clip, p);
+		const { from: rangeFrom, to: rangeTo, span } = rangeOf(clip, p);
 		const done = clip.loop === 'once' && elapsed >= span;
 		const seconds = clipSecondsFor(clip, done ? span : elapsed, !!p.reverse, p);
 		poseAt(obj, clip, seconds, base);
 		heads[uuid] = seconds;
 		any = true;
 		if (done) finished.push(uuid);
+
+		// F5 marker crossings. Evaluated on the FINAL tick too — `seconds` is clamped
+		// to the window end there, so a marker sitting on the last frame still fires.
+		const markers = clip.markers;
+		const prev = lastHead.get(uuid);
+		if (markers?.length && prev && prev.clipId === (p.clipId ?? '')) {
+			// A LOOP wraps: the playhead jumps from the window's far end back to its
+			// near end, and the interval between prev and now is then the part it did
+			// NOT travel. Fire the two real pieces instead of the empty gap between
+			// them. 'pingpong' needs none of this — its reflection is continuous.
+			const forward = !p.reverse;
+			const wrapped = clip.loop === 'loop' && (forward ? seconds < prev.seconds : seconds > prev.seconds);
+			if (!wrapped) {
+				for (const m of markersCrossed(markers, prev.seconds, seconds)) crossed.push({ uuid, name: m.name });
+			} else if (forward) {
+				for (const m of markersCrossed(markers, prev.seconds, rangeTo)) crossed.push({ uuid, name: m.name });
+				// nudge the origin below the window start so a marker sitting exactly
+				// on it fires on every lap rather than never
+				for (const m of markersCrossed(markers, rangeFrom - 1e-9, seconds)) crossed.push({ uuid, name: m.name });
+			} else {
+				for (const m of markersCrossed(markers, prev.seconds, rangeFrom)) crossed.push({ uuid, name: m.name });
+				for (const m of markersCrossed(markers, rangeTo + 1e-9, seconds)) crossed.push({ uuid, name: m.name });
+			}
+		}
+		lastHead.set(uuid, { clipId: p.clipId ?? '', seconds });
 	}
+	for (const { uuid, name } of crossed) notifyMarker(uuid, name);
 	if (any || Object.keys(get(playheads)).length) playheads.set(heads);
 	// a 'once' clip ends on its own on EVERY peer at the same elapsed time, so
 	// this is a local state change — never a broadcast.

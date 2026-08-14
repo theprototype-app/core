@@ -36,6 +36,7 @@
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
+	import { updateOnionSkin } from '$lib/onionSkin';
 	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
@@ -267,6 +268,7 @@
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
+		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 	});
 

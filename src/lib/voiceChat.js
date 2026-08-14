@@ -255,6 +255,10 @@ function keyGuard(event) {
 async function onKeydown(event) {
 	// key can be undefined on synthetic events (Chrome password-manager autofill)
 	if (String(event.key || '').toLowerCase() !== 'v' || event.repeat || keyGuard(event)) return;
+	// PTT is a BARE hold — no modified form of it exists, so Ctrl+V (paste) must not
+	// open the mic. The registry gets this for free (it holds 'V' while comboOf builds
+	// 'Ctrl+V'), which is why Ctrl+C never toggled chat; this listener is our own.
+	if (event.ctrlKey || event.metaKey || event.altKey) return;
 	if (get(micActive) || get(vrMicMode) === 'off') return;
 	pttHeld = true;
 	if (await ensureStream()) applyTrackState();
@@ -263,7 +267,10 @@ async function onKeydown(event) {
 
 /** @param {KeyboardEvent} event */
 function onKeyup(event) {
-	if (String(event.key || '').toLowerCase() !== 'v') return;
+	// deliberately NOT modifier-guarded: pressing Ctrl mid-hold and then releasing V
+	// must still close the mic, or the hold sticks open forever. Gating on pttHeld is
+	// what keeps the Ctrl+V release from doing any work.
+	if (String(event.key || '').toLowerCase() !== 'v' || !pttHeld) return;
 	pttHeld = false;
 	applyTrackState();
 }

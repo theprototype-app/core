@@ -23,16 +23,19 @@
 		createClip, renameClip, duplicateClip, deleteClip, setActiveClip, keyTimes,
 		beginAnimGesture, endAnimGesture, play, pause, stop, resetPreview, scrub, setSpeed, setRange,
 		PRESETS, applyPreset, autoKeyFor, setAutoKey, rememberAutoKeyReference, captureAutoKey,
-		bakeAnimations
+		bakeAnimations,
+		addMarker, updateMarker, removeMarker
 	} from '$lib/animationPreview';
 	import { showToast, openSceneSection } from '../../stores/appStore.js';
+	import { showOnionSkin, setOnionSkin } from '$lib/onionSkin';
 	// the clips a model was IMPORTED with are a different system (replicated,
 	// posed from the synced clock) — the window used to ignore them entirely, so
 	// a rigged model showed "no movements yet" and its own animations were
 	// reachable only from the Inspector.
 	import { animatedObjects, setAnimationState, clipInfo } from '$lib/animatedImports';
 	import {
-		SkipBack, SkipForward, StepBack, StepForward, Play, Pause, Square, Rewind, ZoomIn, ZoomOut, Maximize2
+		SkipBack, SkipForward, StepBack, StepForward, Play, Pause, Square, Rewind, ZoomIn, ZoomOut, Maximize2,
+		SquareDashed, Lasso, Ghost
 	} from '@lucide/svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
@@ -77,6 +80,9 @@
 	/** the easing being edited: the selected key's, else the first key's */
 	const easeKey = $derived(selKeyObj ?? selTrack?.keys?.[0] ?? null);
 	const segEase = $derived(easeKey?.ease ?? EASINGS.linear);
+	/** the index of the key whose outgoing segment BOTH easing editors act on —
+	 * the numeric pad on the right and F4's tangent handles on the curve */
+	const easeIndex = $derived(selKey && selKeyObj ? selKey[1] : 0);
 	let view = $state(/** @type {'sheet'|'graph'} */ ('sheet'));
 	/** 'off' | 'frame' | a step in seconds as a string */
 	let snapMode = $state(
@@ -88,6 +94,22 @@
 		typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('animationClipsH') ?? '96') || 96 : 96
 	);
 	let clipsResizing = $state(false);
+	/** the sidebar's own height, measured — the resize ceiling comes from it */
+	let sideH = $state(0);
+	// How tall the clip list may get. The old cap was a flat 360px with no relation to
+	// the pane, so on a short dock the grip was pushed clean off the bottom of the
+	// window and there was no way back. The ceiling is the SIDEBAR's height less the
+	// room the sections below it need (the Channels header, its add row, and one row
+	// to see) — which still lets the list reach the bottom of the pane, just not past
+	// it. The floor stays 48 so the grip is always grabbable.
+	const CLIPS_RESERVE = 104;
+	const clipsMax = $derived(Math.max(48, (sideH || 320) - CLIPS_RESERVE));
+	// re-clamp whenever the pane SHRINKS (dock resize, window resize, undock): a
+	// height that was legal at the old size must not strand the grip off-screen
+	$effect(() => {
+		const max = clipsMax;
+		if (clipsH > max) clipsH = max;
+	});
 	function startClipsResize(/** @type {any} */ e) {
 		clipsResizing = true;
 		e.currentTarget.setPointerCapture(e.pointerId);
@@ -95,7 +117,7 @@
 	}
 	function doClipsResize(/** @type {any} */ e) {
 		if (!clipsResizing) return;
-		clipsH = Math.min(Math.max(48, clipsH + e.movementY), 360);
+		clipsH = Math.min(Math.max(48, clipsH + e.movementY), clipsMax);
 	}
 	function endClipsResize(/** @type {any} */ e) {
 		if (!clipsResizing) return;
@@ -283,21 +305,28 @@
 	const PAD_X = 10;
 	const RULER_H = 16;
 	const ROW_H = 22;
+	// F5: the marker band. A thin strip between the ruler and the plot, present ONLY
+	// while the clip has markers — so a clip without them lays out exactly as before
+	// and nothing that measures the first track row moves. Everything below the ruler
+	// is positioned from TOP_H rather than RULER_H for that reason.
+	const clipMarkers = $derived(anim?.markers ?? []);
+	const MARK_H = $derived(clipMarkers.length ? 12 : 0);
+	const TOP_H = $derived(RULER_H + MARK_H);
 	// The graph FILLS the pane instead of sitting at a fixed height: a short dock
 	// clipped the curve and grew a scrollbar, and a tall one wasted the room. There
 	// is nothing below the curve to reveal, so scrolling was never the answer.
-	const GRAPH_H = $derived(Math.max(80, plotVH - RULER_H - 22));
+	const GRAPH_H = $derived(Math.max(80, plotVH - TOP_H - 22));
 	// plotW is the container's clientWidth, which INCLUDES its 8px padding either
 	// side, so sizing the svg from it overflowed the content box by 12px — no visible
 	// bar (overflow-x is hidden) but a scrollable width all the same
 	const plotAvail = $derived(Math.max(80, plotW - 16));
 	const innerW = $derived(Math.max(60, plotAvail - PAD_X * 2));
-	const sheetH = $derived(RULER_H + Math.max(1, tracks.length) * ROW_H + 6);
-	const plotH = $derived(view === 'graph' ? RULER_H + GRAPH_H + 6 : sheetH);
+	const sheetH = $derived(TOP_H + Math.max(1, tracks.length) * ROW_H + 6);
+	const plotH = $derived(view === 'graph' ? TOP_H + GRAPH_H + 6 : sheetH);
 	// x maps the VISIBLE window, so zooming and panning move every channel together
 	const tx = (/** @type {number} */ t) => PAD_X + ((t - viewStart) / viewSpan) * innerW;
 	const xt = (/** @type {number} */ x) => viewStart + ((x - PAD_X) / innerW) * viewSpan;
-	const rowY = (/** @type {number} */ i) => RULER_H + i * ROW_H + ROW_H / 2;
+	const rowY = (/** @type {number} */ i) => TOP_H + i * ROW_H + ROW_H / 2;
 
 	// Value range of the selected track, for the graph's y axis. FROZEN while a key
 	// is dragged: the range is derived from the keys, so letting it breathe under
@@ -322,9 +351,285 @@
 		return { lo: lo - pad, hi: hi + pad };
 	});
 	const vy = (/** @type {number} */ v) =>
-		RULER_H + GRAPH_H - ((v - range.lo) / (range.hi - range.lo)) * GRAPH_H;
+		TOP_H + GRAPH_H - ((v - range.lo) / (range.hi - range.lo)) * GRAPH_H;
 	const yv = (/** @type {number} */ y) =>
-		range.lo + ((RULER_H + GRAPH_H - y) / GRAPH_H) * (range.hi - range.lo);
+		range.lo + ((TOP_H + GRAPH_H - y) / GRAPH_H) * (range.hi - range.lo);
+
+	// --- F4: the tangent handles ON the curve ------------------------------------
+	// `ease` already shapes the segment that FOLLOWS each key as a cubic bezier in
+	// the segment's own unit square, and the 132px pad on the right edits exactly
+	// that. This is the same numbers dragged in place: control point 1 sits at
+	// (t0 + dt*x1, v0 + dv*y1) and control point 2 the same way from the far end,
+	// which is where the curve's slope out of one key and into the next comes from.
+	//
+	// Only for the key whose easing is being EDITED (`easeIndex`), so both editors
+	// always show one segment, and only when a NEXT key exists — the last key opens
+	// no segment. A stepped channel has no curve at all.
+	const tangents = $derived.by(() => {
+		if (view !== 'graph' || !selTrack || STEPPED.has(selTrack.channel)) return null;
+		const a = selTrack.keys[easeIndex];
+		const b = selTrack.keys[easeIndex + 1];
+		if (!a || !b) return null;
+		const dt = b.t - a.t;
+		const dv = b.v - a.v;
+		const e = a.ease ?? EASINGS.linear;
+		return {
+			dt,
+			dv,
+			// a FLAT segment cannot express its y control spatially (dv is 0, so every
+			// y maps to the same pixel) — the pad stays the way in for those
+			flat: Math.abs(dv) < 1e-9,
+			p1: { x: tx(a.t + dt * e[0]), y: vy(a.v + dv * e[1]) },
+			p2: { x: tx(a.t + dt * e[2]), y: vy(a.v + dv * e[3]) },
+			from: { x: tx(a.t), y: vy(a.v) },
+			to: { x: tx(b.t), y: vy(b.v) }
+		};
+	});
+
+	// --- marquee selection: box + lasso over the keys -----------------------------
+	// The same pair the UV editor offers, over the same free gesture: a LEFT drag on
+	// the plot BODY did nothing before (only the ruler scrubbed), so neither tool has
+	// to take a gesture away from anything.
+	//
+	// A key's hit point is wherever it is DRAWN — (t, row) in the sheet and (t, value)
+	// in the graph — so the test is done in plot pixels rather than in clip seconds.
+	// That is what makes one implementation cover both views, and it means the tools
+	// select exactly what the eye picks out, including under zoom and pan.
+	/** @type {'box'|'lasso'} */
+	let marqMode = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem('animationMarquee') === 'lasso'
+			? 'lasso'
+			: 'box'
+	);
+	/** live rectangle while box-selecting, in plot px */
+	let marq = $state(/** @type {{x0: number, y0: number, x1: number, y1: number}|null} */ (null));
+	/** live path while lasso-selecting, in plot px */
+	let lasso = $state(/** @type {number[][]} */ ([]));
+	/** the selection the gesture started from (Shift adds to it) — never rendered */
+	let marqBase = /** @type {[string, number][]} */ ([]);
+	/** $state, not a plain let: the markup gates the live shape on it */
+	let marqMoved = $state(false);
+
+	function setMarqMode(/** @type {'box'|'lasso'} */ mode) {
+		marqMode = mode;
+		try {
+			localStorage.setItem('animationMarquee', mode);
+		} catch {}
+	}
+
+	/** every key drawn inside the live shape, as [trackId, index] pairs */
+	function keysInShape() {
+		/** @type {[string, number][]} */
+		const hits = [];
+		// the graph plots ONE track, so only its keys are on screen to be caught
+		const rows = view === 'graph' ? (selTrack ? [selTrack] : []) : tracks;
+		const box = marq
+			? {
+					lo: Math.min(marq.x0, marq.x1),
+					hi: Math.max(marq.x0, marq.x1),
+					top: Math.min(marq.y0, marq.y1),
+					bottom: Math.max(marq.y0, marq.y1)
+				}
+			: null;
+		rows.forEach((track, row) => {
+			const y = view === 'graph' ? null : rowY(row);
+			track.keys.forEach((key, index) => {
+				const px = tx(key.t);
+				const py = y ?? vy(key.v);
+				const inside = box
+					? px >= box.lo && px <= box.hi && py >= box.top && py <= box.bottom
+					: pointInLasso(px, py);
+				if (inside) hits.push([track.id, index]);
+			});
+		});
+		return hits;
+	}
+
+	/** even-odd point-in-polygon, the uvEditor test in plot px @param {number} x @param {number} y */
+	function pointInLasso(x, y) {
+		if (lasso.length < 3) return false;
+		let inside = false;
+		for (let i = 0, j = lasso.length - 1; i < lasso.length; j = i++) {
+			const [xi, yi] = lasso[i];
+			const [xj, yj] = lasso[j];
+			if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+		}
+		return inside;
+	}
+
+	/** Fold the shape's hits into the selection, live, so it fills in as you draw. */
+	function applyMarquee() {
+		const hits = keysInShape();
+		if (!marqBase.length) {
+			selKeys = hits;
+		} else {
+			const merged = [...marqBase];
+			for (const [id, i] of hits) {
+				if (!merged.some(([mid, mi]) => mid === id && mi === i)) merged.push([id, i]);
+			}
+			selKeys = merged;
+		}
+		if (hits[0]) selId = hits[0][0];
+	}
+
+	function marqueeMove(/** @type {PointerEvent} */ e) {
+		if (!plotEl) return;
+		const r = plotEl.getBoundingClientRect();
+		const x = e.clientX - r.left;
+		const y = e.clientY - r.top;
+		if (!marqMoved && Math.abs(x - (marq?.x0 ?? lasso[0]?.[0] ?? x)) < 3 && Math.abs(y - (marq?.y0 ?? lasso[0]?.[1] ?? y)) < 3) return;
+		marqMoved = true;
+		if (marq) marq = { ...marq, x1: x, y1: y };
+		else {
+			// thin the path: sub-pixel samples add nothing but work (the UV editor rule)
+			const last = lasso[lasso.length - 1];
+			if (!last || Math.abs(last[0] - x) > 1.5 || Math.abs(last[1] - y) > 1.5) lasso = [...lasso, [x, y]];
+		}
+		applyMarquee();
+	}
+
+	// The key selection is COMPONENT state, so a check has no store to read it from.
+	// Opt-in debug hook, the __cameraPreviewDebug precedent — it also means a suite
+	// compares the COMPONENT's view of the selection with what it drew.
+	$effect(() => {
+		/** @type {any} */ (window).__animationDebug = {
+			selKeys: () => selKeys.map(([id, i]) => id + ':' + i),
+			marqueeMode: () => marqMode,
+			markerCount: () => clipMarkers.length
+		};
+		return () => delete /** @type {any} */ (window).__animationDebug;
+	});
+
+	function marqueeUp() {
+		// A press that never TRAVELLED deliberately leaves the selection alone, unlike
+		// the UV editor's click-to-deselect. A body press is how the plot takes the
+		// keyboard back — after picking "Select every key" from the menu, say — and
+		// clearing there would throw away the selection you just made. Esc is the
+		// documented way to drop it.
+		if (marqMoved) applyMarquee();
+		marq = null;
+		lasso = [];
+		marqMoved = false;
+		marqBase = [];
+		window.removeEventListener('pointermove', marqueeMove);
+		window.removeEventListener('pointerup', marqueeUp);
+	}
+
+	// --- F5: the marker band -----------------------------------------------------
+	/** index of the marker being dragged along the band, -1 = none */
+	let markDrag = $state(-1);
+	/** index of the marker being renamed inline, -1 = none */
+	let markEdit = $state(-1);
+
+	function markerDown(/** @type {number} */ index, /** @type {PointerEvent} */ e) {
+		if (!target) return;
+		if (e.button === 2) return; // the menu opens on contextmenu, like a key
+		e.preventDefault();
+		e.stopPropagation(); // the band sits over the ruler's scrub area
+		markDrag = index;
+		beginAnimGesture(target.uuid, 'Move marker');
+		window.addEventListener('pointermove', markerMove);
+		window.addEventListener('pointerup', markerUp);
+	}
+	function markerMove(/** @type {PointerEvent} */ e) {
+		if (markDrag < 0 || !target || !plotEl) return;
+		const r = plotEl.getBoundingClientRect();
+		const t = Math.max(0, Math.min(duration, snapT(xt(e.clientX - r.left))));
+		// markers re-SORT on every write, so follow the moving one by identity
+		const moving = clipMarkers[markDrag];
+		if (!moving) return;
+		updateMarker(target.uuid, markDrag, { t });
+		const next = (anim?.markers ?? []).findIndex((m) => m.name === moving.name);
+		if (next >= 0) markDrag = next;
+	}
+	function markerUp() {
+		if (markDrag < 0) return;
+		markDrag = -1;
+		endAnimGesture();
+		window.removeEventListener('pointermove', markerMove);
+		window.removeEventListener('pointerup', markerUp);
+	}
+
+	/** Drop a marker at the playhead — the ＋ menu and the plot menu both land here */
+	function dropMarker() {
+		if (!target) return;
+		addMarker(target.uuid, snapT(curTime));
+		showToast('Marker added at ' + snapT(curTime).toFixed(2) + 's');
+	}
+
+	function markerContext(/** @type {number} */ index, /** @type {MouseEvent} */ e) {
+		if (!target) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const uuid = target.uuid;
+		const marker = clipMarkers[index];
+		if (!marker) return;
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ header: marker.name },
+				{ label: 'Rename', action: () => (markEdit = index) },
+				{
+					label: 'Move to the playhead',
+					tooltip: 'Put it at ' + snapT(curTime).toFixed(2) + 's',
+					action: () => updateMarker(uuid, index, { t: snapT(curTime) })
+				},
+				{
+					label: 'Go to it',
+					tooltip: marker.t.toFixed(2) + 's',
+					action: () => scrub(uuid, marker.t)
+				},
+				{ label: 'Delete marker', danger: true, action: () => removeMarker(uuid, index) }
+			]
+		};
+	}
+
+	/** which tangent is being dragged on the plot: 0 = P1, 1 = P2, -1 = none */
+	let tanDrag = $state(-1);
+	function tangentDown(/** @type {number} */ idx, /** @type {PointerEvent} */ e) {
+		if (!target || !selTrack || !tangents) return;
+		// LEFT button only, the same guard keyDown carries. Swallowing a right-click
+		// here would start an easing gesture AND eat the plot's context menu, since
+		// the menu opens from the plot's own handler further up.
+		if (e.button !== 0) return;
+		if (move?.modal) return; // a modal grab owns the pointer
+		e.preventDefault();
+		e.stopPropagation(); // never let the plot read this as a key drag or a pan
+		tanDrag = idx;
+		beginAnimGesture(target.uuid, 'Easing');
+		window.addEventListener('pointermove', tangentMove);
+		window.addEventListener('pointerup', tangentUp);
+	}
+	function tangentMove(/** @type {PointerEvent} */ e) {
+		if (tanDrag < 0 || !target || !selTrack || !plotEl) return;
+		const a = selTrack.keys[easeIndex];
+		const b = selTrack.keys[easeIndex + 1];
+		if (!a || !b) return;
+		const r = plotEl.getBoundingClientRect();
+		const dt = b.t - a.t;
+		const dv = b.v - a.v;
+		// x is the segment PARAMETER and is clamped to [0,1] — a control point
+		// outside its own segment is not a curve. y is deliberately free: overshoot
+		// is legitimate and is exactly what makes a bounce readable.
+		const x = dt > 1e-9 ? Math.min(1, Math.max(0, (xt(e.clientX - r.left) - a.t) / dt)) : 0;
+		const ease = [...(a.ease ?? EASINGS.linear)];
+		if (tanDrag === 0) ease[0] = x;
+		else ease[2] = x;
+		if (Math.abs(dv) > 1e-9) {
+			const y = (yv(e.clientY - r.top) - a.v) / dv;
+			if (tanDrag === 0) ease[1] = y;
+			else ease[3] = y;
+		}
+		updateKey(target.uuid, selTrack.id, easeIndex, { ease });
+	}
+	function tangentUp() {
+		if (tanDrag < 0) return;
+		tanDrag = -1;
+		endAnimGesture();
+		window.removeEventListener('pointermove', tangentMove);
+		window.removeEventListener('pointerup', tangentUp);
+	}
 
 	/** the curve of the selected track, sampled through the real evaluator */
 	const curve = $derived.by(() => {
@@ -585,12 +890,32 @@
 			window.addEventListener('pointerup', panUp);
 			return;
 		}
-		if (e.clientY - r.top > RULER_H) return; // below the ruler: not a scrub
+		const y = e.clientY - r.top;
+		if (y <= RULER_H) {
+			e.preventDefault();
+			scrubbing = true;
+			scrubAt(e.clientX);
+			window.addEventListener('pointermove', rulerMove);
+			window.addEventListener('pointerup', rulerUp);
+			return;
+		}
+		if (y <= TOP_H) return; // the marker band: its flags own their own presses
+		// the plot BODY: draw a marquee over the keys. Shift adds to what is already
+		// selected; a press that never travels is a click on empty space, which drops
+		// the selection.
+		if (move?.modal) return; // a modal grab owns the pointer
 		e.preventDefault();
-		scrubbing = true;
-		scrubAt(e.clientX);
-		window.addEventListener('pointermove', rulerMove);
-		window.addEventListener('pointerup', rulerUp);
+		marqBase = e.shiftKey ? [...selKeys] : [];
+		marqMoved = false;
+		if (marqMode === 'lasso') {
+			lasso = [[e.clientX - r.left, y]];
+			marq = null;
+		} else {
+			marq = { x0: e.clientX - r.left, y0: y, x1: e.clientX - r.left, y1: y };
+			lasso = [];
+		}
+		window.addEventListener('pointermove', marqueeMove);
+		window.addEventListener('pointerup', marqueeUp);
 	}
 
 	/** @type {{x: number, y: number, start: number, span: number, moved: boolean}|null} */
@@ -675,9 +1000,9 @@
 		const r = plotEl.getBoundingClientRect();
 		const x = e.clientX - r.left;
 		const y = e.clientY - r.top;
-		if (y <= RULER_H) return; // the ruler scrubs, it does not author
+		if (y <= TOP_H) return; // the ruler + marker band scrub/carry markers, they do not author
 		const t = snapT(Math.max(0, Math.min(duration, xt(x))));
-		const track = view === 'graph' ? selTrack : tracks[Math.floor((y - RULER_H) / ROW_H)];
+		const track = view === 'graph' ? selTrack : tracks[Math.floor((y - TOP_H) / ROW_H)];
 		if (!track) return;
 		selId = track.id;
 		const near = keyNear(track, t);
@@ -769,6 +1094,12 @@
 	 * @param {HTMLElement} node
 	 */
 	function keyNav(node) {
+		// a key the pane HANDLES must not also reach the global registry: M, 1 and 2
+		// are claimed by the gizmo/mesh shortcuts too, so both fired at once.
+		const claim = (/** @type {KeyboardEvent} */ ev) => {
+			ev.preventDefault();
+			ev.stopPropagation();
+		};
 		const onKey = (/** @type {KeyboardEvent} */ e) => {
 			if (!target) return;
 			const tag = /** @type {any} */ (e.target)?.tagName;
@@ -778,27 +1109,27 @@
 
 			if (e.key === 'Delete' || e.key === 'Backspace') {
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				deleteSelectedKeys();
 				return;
 			}
 			if (e.key === 'Escape') {
 				if (grab.isModal()) return; // its own handler cancels the grab
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				selKeys = [];
 				return;
 			}
 			if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				const n = copyKeys(target.uuid, selKeys);
 				if (n) showToast(n === 1 ? 'Copied 1 key' : 'Copied ' + n + ' keys');
 				return;
 			}
 			if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
 				if (!$clipboardSize) return;
-				e.preventDefault();
+				claim(e);
 				const landed = pasteKeys(target.uuid, snapT(curTime));
 				if (landed.length) {
 					selKeys = landed;
@@ -808,24 +1139,24 @@
 			}
 			if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				const landed = duplicateKeys(target.uuid, selKeys);
 				if (landed.length) selKeys = landed;
 				return;
 			}
 			if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey) {
 				if (!selKeys.length) return;
-				e.preventDefault();
+				claim(e);
 				mirrorKeys(target.uuid, selKeys, snapT(curTime));
 				return;
 			}
 			if (e.key === '1' || e.key === '2') {
-				e.preventDefault();
+				claim(e);
 				xform = e.key === '1' ? 'move' : 'scale';
 				return;
 			}
 			if (e.code === 'Space' && (e.ctrlKey || e.metaKey)) {
-				e.preventDefault();
+				claim(e);
 				const hits = keysAtPlayhead();
 				if (!hits.length) return;
 				const fresh = hits.filter(([id, i]) => !isKeySelected(id, i));
@@ -834,7 +1165,7 @@
 				return;
 			}
 			if (!arrow) return;
-			e.preventDefault();
+			claim(e);
 			// SHIFT + arrows transform the selection; otherwise the arrows drive the
 			// playhead (where Shift is free to be the big multiplier)
 			if (e.shiftKey && selKeys.length) {
@@ -869,7 +1200,7 @@
 		const x = e.clientX - r.left;
 		const y = e.clientY - r.top;
 		const t = snapT(Math.max(0, Math.min(duration, xt(x))));
-		const row = view === 'graph' ? selTrack : tracks[Math.floor((y - RULER_H) / ROW_H)];
+		const row = view === 'graph' ? selTrack : tracks[Math.floor((y - TOP_H) / ROW_H)];
 		const count = selKeys.length;
 		/** @type {any[]} */
 		const items = [];
@@ -993,6 +1324,12 @@
 			}
 		});
 		items.push({
+			// F5: a named point in the clip that an Animation Marker node pulses on
+			label: 'Marker at the playhead',
+			tooltip: 'A named point at ' + snapT(curTime).toFixed(2) + 's — an Animation Marker node pulses as the playhead crosses it',
+			action: dropMarker
+		});
+		items.push({
 			label: 'Select every key',
 			disabled: !tracks.length,
 			action: () => {
@@ -1092,6 +1429,13 @@
 						if (armed !== uuid) setAutoKey(armed);
 					}
 				},
+				{
+					// F5: markers ride the clip, so they replicate / save / undo with it
+					label: 'Marker at playhead',
+					tooltip:
+						'A named point at ' + snapT(t).toFixed(2) + 's. An Animation Marker node pulses as the playhead crosses it, so a footstep or a puff of dust can sit at an exact frame of the movement.',
+					action: dropMarker
+				},
 				{ section: 'Timing' },
 				{
 					label: 'Clear the preview',
@@ -1171,16 +1515,23 @@
 	const activeClipId = $derived(authoredClips.find((c) => c.active)?.id ?? null);
 
 	// --- easing (the segment leaving the selected key) ---------------------------
+	// The numeric way in, beside F4's handles on the curve; both write the same four
+	// numbers on the same key. Its y range matches the plot's OVERSHOOT allowance
+	// (`Y_LO`..`Y_HI` rather than 0..1) for one reason: a bounce authored by dragging
+	// a tangent above the next key has y > 1, and a pad that clamped to 1 would draw
+	// that handle outside its own box and then silently flatten the bounce the moment
+	// you touched it. x stays [0,1] in both — a control point outside its own segment
+	// is not a curve.
 	const SIZE = 132;
 	const PAD = 10;
+	const Y_LO = -0.5;
+	const Y_HI = 1.5;
 	const INNER = SIZE - 2 * PAD;
 	const sx = (/** @type {number} */ x) => PAD + x * INNER;
-	const sy = (/** @type {number} */ y) => PAD + (1 - y) * INNER;
+	const sy = (/** @type {number} */ y) => PAD + ((Y_HI - y) / (Y_HI - Y_LO)) * INNER;
 
 	let svgEl = $state(/** @type {any} */ (null));
 	let dragIdx = $state(-1); // 0 = P1, 1 = P2
-	/** the index of the key whose outgoing segment the curve edits */
-	const easeIndex = $derived(selKey && selKeyObj ? selKey[1] : 0);
 	function onHandleDown(/** @type {number} */ idx, /** @type {PointerEvent} */ e) {
 		if (!target || !selTrack) return;
 		dragIdx = idx;
@@ -1193,9 +1544,9 @@
 		if (dragIdx < 0 || !svgEl || !selTrack || !target) return;
 		const r = svgEl.getBoundingClientRect();
 		let x = (e.clientX - r.left - PAD) / INNER;
-		let y = 1 - (e.clientY - r.top - PAD) / INNER;
+		let y = Y_HI - ((e.clientY - r.top - PAD) / INNER) * (Y_HI - Y_LO);
 		x = Math.min(1, Math.max(0, x));
-		y = Math.min(1, Math.max(0, y));
+		y = Math.min(Y_HI, Math.max(Y_LO, y));
 		const b = [...segEase];
 		if (dragIdx === 0) { b[0] = x; b[1] = y; } else { b[2] = x; b[3] = y; }
 		updateKey(target.uuid, selTrack.id, easeIndex, { ease: b });
@@ -1404,7 +1755,10 @@
 
 		<div class="flex min-h-0 flex-1">
 			<!-- LEFT: the object's OWN clips, then authored clips + movement tracks -->
-			<div class="flex w-56 shrink-0 flex-col border-r border-gray-700/60">
+			<!-- clientHeight is the clip list's resize CEILING: the grip used to clamp at
+			     a flat 360px whatever the pane's own height, so on a short dock it went
+			     straight off the bottom of the window -->
+			<div class="flex w-56 shrink-0 flex-col border-r border-gray-700/60" bind:clientHeight={sideH}>
 				{#if clips.length}
 					<div id="animation-clips" class="border-b border-gray-700/60">
 						<div class="flex items-center justify-between px-2 pt-1.5">
@@ -1523,6 +1877,52 @@
 						</div>
 					{/each}
 				</div>
+
+				<!-- F5: the marker list. The band on the plot is for placing and dragging
+				     them; this is where they are NAMED, with the same inline rename the
+				     clip list uses. Hidden entirely while the clip has none. -->
+				{#if clipMarkers.length}
+					<div id="animation-marker-list" class="shrink-0 border-t border-gray-700/60">
+						<div class="flex items-center justify-between px-2 pt-1.5">
+							<span class="text-[10px] uppercase tracking-wider text-gray-500">Markers</span>
+							<span class="text-[10px] text-gray-500">{clipMarkers.length}</span>
+						</div>
+						<div class="overflow-y-auto p-1" style="max-height: 96px">
+							{#each clipMarkers as marker, index (index)}
+								{#if markEdit === index}
+									<!-- svelte-ignore a11y_autofocus -->
+									<input
+										class="w-full rounded-sm border border-primary-500 bg-gray-900 px-1 py-0.5 text-xs text-gray-100"
+										autofocus
+										value={marker.name}
+										aria-label="Marker name"
+										onblur={(e) => { if (target) updateMarker(target.uuid, index, { name: e.currentTarget.value }); markEdit = -1; }}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') e.currentTarget.blur();
+											else if (e.key === 'Escape') markEdit = -1;
+										}}
+									/>
+								{:else}
+									<div class="flex items-center gap-1">
+										<button
+											class="min-w-0 flex-1 truncate px-2 py-1 text-left text-xs text-gray-300 hover:bg-gray-700/60"
+											title="Go to this marker (double-click to rename)"
+											onclick={() => { if (target) scrub(target.uuid, marker.t); }}
+											ondblclick={() => (markEdit = index)}>{marker.name}</button
+										>
+										<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{marker.t.toFixed(2)}s</span>
+										<button
+											class="ui-button-quiet shrink-0 text-red-400"
+											title="Remove marker"
+											aria-label="Remove marker"
+											onclick={() => { if (target) removeMarker(target.uuid, index); }}>✕</button
+										>
+									</div>
+								{/if}
+							{/each}
+						</div>
+					</div>
+				{/if}
 			</div>
 
 			<!-- CENTRE: the timeline (dope sheet / value graph) -->
@@ -1555,6 +1955,36 @@
 							onclick={() => (xform = 'scale')}>Scale</button
 						>
 					</div>
+					<!-- marquee tools, the pair the UV editor offers: a LEFT drag on the plot
+					     body draws one over the keys -->
+					<div class="flex items-center overflow-hidden rounded-sm border border-gray-600">
+						<button
+							id="animation-marquee-box"
+							class="px-1.5 py-0.5 {marqMode === 'box' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							title="Box select keys (drag a rectangle on the plot; Shift adds)"
+							aria-label="Box select"
+							aria-pressed={marqMode === 'box'}
+							onclick={() => setMarqMode('box')}><SquareDashed size={13} aria-hidden="true" /></button
+						>
+						<button
+							id="animation-marquee-lasso"
+							class="border-l border-gray-600 px-1.5 py-0.5 {marqMode === 'lasso' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							title="Lasso select keys (draw around them on the plot; Shift adds)"
+							aria-label="Lasso select"
+							aria-pressed={marqMode === 'lasso'}
+							onclick={() => setMarqMode('lasso')}><Lasso size={13} aria-hidden="true" /></button
+						>
+					</div>
+					<!-- F6: onion skin. A LOCAL viewing aid, off by default, exactly like
+					     showColliders — nothing about it replicates or reaches a save. -->
+					<button
+						id="animation-onion"
+						class="rounded-sm border px-1.5 py-0.5 {$showOnionSkin ? 'border-primary-500 text-primary-300' : 'border-gray-600'}"
+						title="Onion skin: faint copies of the object at the keys either side of the playhead (local only)"
+						aria-label="Onion skin"
+						aria-pressed={$showOnionSkin}
+						onclick={() => setOnionSkin(!$showOnionSkin)}><Ghost size={13} aria-hidden="true" /></button
+					>
 					<label class="flex items-center gap-1" title="What key times snap to while you drag">
 						snap
 						<select
@@ -1696,19 +2126,51 @@
 								<text x={tx(t) + 2} y={11} font-size="9" fill="rgb(107 114 128)" pointer-events="none">{t}s</text>
 							{/each}
 
+							<!-- F5: the MARKER band. Only rendered when the clip has markers, so
+							     MARK_H is 0 otherwise and the plot below is unchanged. Each marker
+							     is a flag in the band plus a full-height line, drawn like A/B. -->
+							{#if clipMarkers.length}
+								<rect
+									id="animation-markers"
+									x="0" y={RULER_H} width={plotAvail} height={MARK_H}
+									fill="rgb(17 24 39 / 0.7)" pointer-events="none"
+								/>
+								{#each clipMarkers as marker, index (index)}
+									<line
+										x1={tx(marker.t)} y1={RULER_H} x2={tx(marker.t)} y2={plotH}
+										stroke="rgb(45 212 191 / 0.55)" stroke-width="1" stroke-dasharray="3 2"
+										pointer-events="none"
+									/>
+									<!-- a wide-enough flag to grab on a touchscreen; the label sits
+									     to its right and is not itself a target -->
+									<rect
+										data-marker={index}
+										x={tx(marker.t) - 3} y={RULER_H} width="7" height={MARK_H}
+										class="cursor-ew-resize"
+										fill={markDrag === index ? 'rgb(250 204 21)' : 'rgb(45 212 191)'}
+										onpointerdown={(e) => markerDown(index, e)}
+										oncontextmenu={(e) => markerContext(index, e)}
+									/>
+									<text
+										x={tx(marker.t) + 6} y={RULER_H + MARK_H - 3}
+										font-size="8" fill="rgb(153 246 228)" pointer-events="none"
+									>{marker.name}</text>
+								{/each}
+							{/if}
+
 							<!-- everything outside the A/B window is dimmed, the way a video
 							     editor shades the part it will not play -->
 							{#if ranged}
 								{#if rangeIn > viewStart}
-									<rect x={tx(viewStart)} y={RULER_H} width={Math.max(0, tx(Math.min(rangeIn, viewEnd)) - tx(viewStart))} height={plotH - RULER_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
+									<rect x={tx(viewStart)} y={TOP_H} width={Math.max(0, tx(Math.min(rangeIn, viewEnd)) - tx(viewStart))} height={plotH - TOP_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
 								{/if}
 								{#if rangeOut < viewEnd}
-									<rect x={tx(Math.max(rangeOut, viewStart))} y={RULER_H} width={Math.max(0, tx(viewEnd) - tx(Math.max(rangeOut, viewStart)))} height={plotH - RULER_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
+									<rect x={tx(Math.max(rangeOut, viewStart))} y={TOP_H} width={Math.max(0, tx(viewEnd) - tx(Math.max(rangeOut, viewStart)))} height={plotH - TOP_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
 								{/if}
 								<line x1={tx(rangeIn)} y1={0} x2={tx(rangeIn)} y2={plotH} stroke="rgb(34 197 94 / 0.9)" stroke-width="1.5" pointer-events="none" />
 								<line x1={tx(rangeOut)} y1={0} x2={tx(rangeOut)} y2={plotH} stroke="rgb(239 68 68 / 0.9)" stroke-width="1.5" pointer-events="none" />
-								<text x={tx(rangeIn) + 2} y={RULER_H + 9} font-size="8" fill="rgb(34 197 94)" pointer-events="none">A</text>
-								<text x={tx(rangeOut) - 8} y={RULER_H + 9} font-size="8" fill="rgb(239 68 68)" pointer-events="none">B</text>
+								<text x={tx(rangeIn) + 2} y={TOP_H + 9} font-size="8" fill="rgb(34 197 94)" pointer-events="none">A</text>
+								<text x={tx(rangeOut) - 8} y={TOP_H + 9} font-size="8" fill="rgb(239 68 68)" pointer-events="none">B</text>
 							{/if}
 
 							{#if view === 'sheet'}
@@ -1731,6 +2193,38 @@
 								{/each}
 							{:else if selTrack}
 								<path d={curve} fill="none" stroke="rgb(129 140 248)" stroke-width="2" />
+								<!-- F4: the easing of the segment leaving the edited key, dragged in
+								     place. Drawn BEFORE the keys deliberately: an ease of [0, 0] puts P1
+								     exactly ON its key, and the later sibling wins the press (the SVG
+								     hit-stealing rule this batch already paid for), which would leave
+								     the key itself ungrabbable. The key is the primary object; when a
+								     tangent hides under one, the numeric pad is the way in. -->
+								{#if tangents}
+									<g data-anim-tangents="1">
+										<line
+											x1={tangents.from.x} y1={tangents.from.y} x2={tangents.p1.x} y2={tangents.p1.y}
+											stroke="rgb(56 189 248 / 0.7)" stroke-width="1" stroke-dasharray="2 2" pointer-events="none"
+										/>
+										<line
+											x1={tangents.to.x} y1={tangents.to.y} x2={tangents.p2.x} y2={tangents.p2.y}
+											stroke="rgb(56 189 248 / 0.7)" stroke-width="1" stroke-dasharray="2 2" pointer-events="none"
+										/>
+										<circle
+											id="animation-tangent-1"
+											cx={tangents.p1.x} cy={tangents.p1.y} r="4.5"
+											class={tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}
+											fill="rgb(56 189 248)" stroke="rgb(17 24 39)"
+											onpointerdown={(e) => tangentDown(0, e)}
+										/>
+										<circle
+											id="animation-tangent-2"
+											cx={tangents.p2.x} cy={tangents.p2.y} r="4.5"
+											class={tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}
+											fill="rgb(56 189 248)" stroke="rgb(17 24 39)"
+											onpointerdown={(e) => tangentDown(1, e)}
+										/>
+									</g>
+								{/if}
 								{#each selTrack.keys as key, index (index)}
 									<circle
 										cx={tx(key.t)} cy={vy(key.v)} r="5"
@@ -1741,10 +2235,10 @@
 										oncontextmenu={(e) => keyContext(e, selTrack.id, index)}
 									/>
 								{/each}
-								<text x={PAD_X} y={RULER_H + 10} font-size="9" fill="rgb(107 114 128)">
+								<text x={PAD_X} y={TOP_H + 10} font-size="9" fill="rgb(107 114 128)">
 									{dispVal(range.hi, selTrack.channel)}
 								</text>
-								<text x={PAD_X} y={RULER_H + GRAPH_H - 2} font-size="9" fill="rgb(107 114 128)">
+								<text x={PAD_X} y={TOP_H + GRAPH_H - 2} font-size="9" fill="rgb(107 114 128)">
 									{dispVal(range.lo, selTrack.channel)}
 								</text>
 							{/if}
@@ -1755,6 +2249,24 @@
 								x2={tx(Math.min(curTime, duration))} y2={plotH}
 							stroke="rgb(250 204 21 / 0.9)" stroke-width="1.5"
 							/>
+
+							<!-- the live marquee, on top of everything and never a pointer target -->
+							{#if marq && marqMoved}
+								<rect
+									id="animation-marquee"
+									x={Math.min(marq.x0, marq.x1)} y={Math.min(marq.y0, marq.y1)}
+									width={Math.abs(marq.x1 - marq.x0)} height={Math.abs(marq.y1 - marq.y0)}
+									fill="rgb(129 140 248 / 0.12)" stroke="rgb(129 140 248 / 0.9)"
+									stroke-width="1" stroke-dasharray="4 3" pointer-events="none"
+								/>
+							{:else if lasso.length > 1 && marqMoved}
+								<polygon
+									id="animation-lasso"
+									points={lasso.map(([x, y]) => x + ',' + y).join(' ')}
+									fill="rgb(129 140 248 / 0.12)" stroke="rgb(129 140 248 / 0.9)"
+									stroke-width="1" stroke-dasharray="4 3" pointer-events="none"
+								/>
+							{/if}
 						</svg>
 					{/if}
 				</div>
@@ -1815,6 +2327,11 @@
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<svg bind:this={svgEl} width={SIZE} height={SIZE} viewBox="0 0 {SIZE} {SIZE}" class="touch-none rounded-sm bg-gray-900/60">
 							<rect x={PAD} y={PAD} width={INNER} height={INNER} fill="none" stroke="rgb(75 85 99 / 0.6)" />
+							<!-- the box spans the OVERSHOOT range, so mark the unit band: without
+							     these two lines a control point at y=1 looks like an arbitrary
+							     spot rather than "level with the next key" -->
+							<line x1={PAD} y1={sy(0)} x2={PAD + INNER} y2={sy(0)} stroke="rgb(75 85 99 / 0.45)" />
+							<line x1={PAD} y1={sy(1)} x2={PAD + INNER} y2={sy(1)} stroke="rgb(75 85 99 / 0.45)" />
 							<line x1={sx(0)} y1={sy(0)} x2={sx(1)} y2={sy(1)} stroke="rgb(75 85 99 / 0.35)" stroke-dasharray="3 3" />
 							<line x1={sx(0)} y1={sy(0)} x2={sx(segEase[0])} y2={sy(segEase[1])} stroke="rgb(129 140 248 / 0.5)" />
 							<line x1={sx(1)} y1={sy(1)} x2={sx(segEase[2])} y2={sy(segEase[3])} stroke="rgb(129 140 248 / 0.5)" />

@@ -35,7 +35,8 @@ export function resetWindowLayout() {
 /**
  * @param {any} node
  * @param {{key: string, defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
- *   resizable?: boolean, axis?: 'x'|'xy', minW?: number, minH?: number}} options
+ *   resizable?: boolean, axis?: 'x'|'xy', minW?: number, minH?: number,
+ *   inert?: (() => boolean) | null}} options
  *   `resizable` (15-B7) adds a bottom-right grabber and persists {w,h} in the
  *   SAME `win:<key>` record — opt-in, so windows that own their sizing (Flow,
  *   Explorer, the object list) are untouched.
@@ -43,8 +44,12 @@ export function resetWindowLayout() {
  *   the window hugs its content while the grid inside reflows to the width —
  *   the Photoshop tool-palette idiom. Only `w` is persisted; the cursor becomes
  *   ew-resize. Default 'xy' keeps every existing consumer byte-identical.
+ *   `inert: () => boolean` (18-C3) suspends the action while the consumer is
+ *   rendering as something else — the toolbox becomes a full-width bottom SHEET
+ *   on a phone, and a sheet pinned to left:0 would otherwise be clamped and
+ *   SAVED as position 0, losing the desktop placement on the way back.
  */
-export function dragWindow(node, { key, defaultRect = {}, resizable = false, axis = 'xy', minW = 260, minH = 180 }) {
+export function dragWindow(node, { key, defaultRect = {}, resizable = false, axis = 'xy', minW = 260, minH = 180, inert = null }) {
 	/** @type {any} */
 	let rect = null;
 	try {
@@ -55,6 +60,16 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	rect = rect ?? { ...defaultRect };
 
 	node.style.position = 'fixed';
+
+	/** 18-C3: is the consumer currently rendering as something this action must
+	 * not touch (a bottom sheet)? A predicate, so it tracks without an update(). */
+	function suspended() {
+		try {
+			return !!inert?.();
+		} catch {
+			return false;
+		}
+	}
 
 	// min px of the window kept on-screen while DRAGGING — you can shove a window mostly
 	// off the left/right/bottom (to get it out of the way) but a grabbable strip always
@@ -93,6 +108,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	}
 
 	function apply() {
+		if (suspended()) return;
 		if (resizable) {
 			clampSize();
 			if (typeof rect.w === 'number') node.style.width = rect.w + 'px';
@@ -109,6 +125,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	}
 
 	function save() {
+		if (suspended()) return;
 		/** @type {any} */
 		const payload = { left: rect.left, top: rect.top };
 		if (resizable && typeof rect.w === 'number') {
@@ -206,6 +223,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 
 	/** @param {any} e */
 	function down(e) {
+		if (suspended()) return;
 		if (!e.target.closest('.move-handle')) return;
 		if (e.target.closest('button, input, select, textarea')) return; // header controls stay clickable
 		dragging = true;

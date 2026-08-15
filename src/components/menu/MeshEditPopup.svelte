@@ -39,13 +39,14 @@
 		vertexSelectionSize,
 		selectAllVerts,
 		invertVertexSelection,
-		bevelSelectedVerts,
+		beginVertexBevelAdjust,
 		proportionalEdit,
 		proportionalRadius,
 		vertexHandleScale,
 		vertexHandleAdaptive,
 		vertexSlide
 	} from '$lib/meshEdit';
+	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import {
 		faceEditObject,
 		enterFaceEdit,
@@ -81,8 +82,6 @@
 		edgeEditSelected,
 		selectEdgeLoop,
 		dissolveEdges,
-		bevelFaces,
-		bevelEdges,
 		symmetrizeMesh,
 		escapeConsumedByKnife,
 		clearEdgeSelection,
@@ -92,7 +91,15 @@
 		selectAllEdges,
 		invertEdgeSelection,
 		cancelEditSession,
-		sessionHasChanges
+		sessionHasChanges,
+		beginOpAdjust,
+		reapplyOpAdjust,
+		settleOpAdjust,
+		cancelOpAdjust,
+		endOpAdjust,
+		opAdjustState,
+		faceBevelReady,
+		loopCutReady
 	} from '$lib/faceEdit';
 	import {
 		Keyboard,
@@ -106,7 +113,8 @@
 		BoxSelect,
 		FlipHorizontal,
 		Link2,
-		Undo2
+		Undo2,
+		Redo2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import ToolIcon from '../ui/ToolIcon.svelte';
@@ -137,6 +145,7 @@
 		const uuid = /** @type {string} */ ($editingObject || $faceEditObject || $selectedObject?.uuid);
 		if (!uuid) return;
 		if (next === mode) return;
+		endOpAdjust(); // 19-A P2: a mode switch ends a live adjust (the edit stays)
 		// remember what THIS mode had picked before leaving it, so coming back
 		// restores it (unless the geometry changed underneath)
 		stashSelections();
@@ -283,6 +292,50 @@
 		return faceSelectionInfo();
 	});
 
+	// 19-A P2: the PRECONDITION map — what the focused tool's pane says when its
+	// op cannot apply yet (the selInfo pattern: reactive triggers voided, cheap
+	// exported checkers do the work). '' = ready, so the grid click auto-applies.
+	const paneHint = $derived.by(() => {
+		void $faceEditSelectedTris;
+		void $objectsGroup;
+		void $faceEditHoverTri;
+		void $faceEditHighlight;
+		void $edgeEditSelected;
+		void $faceEditGranularity;
+		const focus = $optionsFocus;
+		if (mode === 'vertices') {
+			if (focus === 'bevel' && !$vertexSelectionSize) return 'Pick a vertex first (Ctrl+click adds)';
+			return '';
+		}
+		if (mode === 'edges') {
+			if (focus === 'bevel' && !$edgeEditSelected.length) return 'Pick an edge first';
+			return '';
+		}
+		if (focus === 'extrude' || focus === 'inset') {
+			if (!hasTarget()) return 'Click a face first';
+			if (focus === 'extrude' && !faceBevelReady())
+				return 'The selection is a closed surface — nothing to extrude from';
+			return '';
+		}
+		if (focus === 'bevel') {
+			if (!hasTarget()) return 'Select a face with a border';
+			if (!faceBevelReady()) return 'The selection is a closed surface — no border to fold';
+			return '';
+		}
+		if (focus === 'loopcut') return loopCutReady() ? '' : 'Click a quad to choose the ring';
+		if (focus === 'bridge') {
+			if (selInfo.pieces !== 2) return 'Select two separate pieces (Ctrl+click both)';
+			if (!selInfo.loops) return 'Each piece needs one closed boundary';
+			if (selInfo.loops[0] !== selInfo.loops[1])
+				return `${selInfo.loops[0]} ↔ ${selInfo.loops[1]} edges — the counts must match`;
+			return '';
+		}
+		return '';
+	});
+
+	// the pane is the LIVE ADJUST while the engine's op is the focused tool
+	const adjusting = $derived(!!$opAdjustState && $opAdjustState.op === $optionsFocus);
+
 	// M0: one-shot buttons FLASH on commit (armed tools stay lit instead).
 	// onanimationend clears it the moment the flash finishes; the timer is the
 	// FALLBACK for prefers-reduced-motion, where animation:none means the end
@@ -297,12 +350,50 @@
 		flashTimer = setTimeout(() => (flashOp = ''), 400);
 	}
 
-	/** From the tool GRID. Parameterized tools only SELECT here (their options
-	 * pane commits); everything else behaves as before. @param {string} op */
+	/** 19-A P2: attempt an op through the ADJUST ENGINE — it applies immediately
+	 * (one history entry, recorded at apply) and the options pane becomes the
+	 * live adjust. Returns false when a precondition refused (the pane's hint
+	 * line says why). ONE path for the grid, the pane's Apply buttons and the
+	 * C/B hotkeys. @param {string} op */
+	function applyOp(op) {
+		let ok = false;
+		if (op === 'extrude' || op === 'inset') {
+			if (!hasTarget()) {
+				showToast('Click a face first');
+				return false;
+			}
+			ok = beginOpAdjust(/** @type {any} */ (op), { distance: $faceEditAmount });
+		} else if (op === 'bevel') {
+			// three different operators with three different signatures, one entry
+			ok =
+				mode === 'vertices'
+					? beginVertexBevelAdjust($bevelWidth, $bevelProfile)
+					: mode === 'edges'
+						? beginOpAdjust(
+								'bevel',
+								{ width: $bevelWidth, segments: $bevelSegments, profile: $bevelProfile },
+								{ kind: 'edges' }
+							)
+						: beginOpAdjust('bevel', { width: $bevelWidth, segments: $bevelSegments }, { kind: 'faces' });
+		} else if (op === 'loopcut') {
+			ok = beginOpAdjust('loopcut', { cuts: $loopCuts });
+		} else if (op === 'bridge') {
+			ok = beginOpAdjust('bridge', { cuts: $bridgeCuts });
+		}
+		if (ok) flash(op);
+		return ok;
+	}
+
+	/** From the tool GRID. 19-A P2 (the contract FLIP): selecting a parameterized
+	 * op also ATTEMPTS the apply with the current pane values — with a valid
+	 * target it commits on the spot and the pane becomes the live adjust; without
+	 * one it only focuses, and the pane's hint says what is missing.
+	 * @param {string} op */
 	function runOp(op) {
 		const spec = OPS.find((o) => o.op === op);
 		if (spec?.param) {
 			focusTool(op);
+			applyOp(op);
 			return;
 		}
 		if (spec?.oneShot) {
@@ -318,36 +409,33 @@
 		setFaceOp(/** @type {any} */ (op));
 	}
 
-	// 176: force-apply the active op on the currently highlighted face
+	// 176: force-apply the active op on the currently highlighted face.
+	// 19-A P2: extrude/inset route through the adjust engine (same as a face
+	// click with auto-apply); the other armed ops keep the direct commit.
 	function applyActive() {
 		if (!hasTarget()) {
 			showToast('Click a face first');
 			return;
 		}
-		commitFaceOp(/** @type {any} */ ($faceEditOp), $faceEditAmount);
+		const op = $faceEditOp;
+		if (op === 'extrude' || op === 'inset') applyOp(op);
+		else commitFaceOp(/** @type {any} */ (op), $faceEditAmount);
 	}
 
-	/** Commit the bevel for whichever element mode is open — three different
-	 * operators with three different signatures, one button. */
+	/** Bevel for whichever element mode is open, via the adjust engine. */
 	function applyBevel() {
-		const ok =
-			mode === 'vertices'
-				? bevelSelectedVerts($bevelWidth, $bevelProfile)
-				: mode === 'edges'
-					? bevelEdges($bevelWidth, $bevelSegments, $bevelProfile)
-					: bevelFaces($bevelWidth, $bevelSegments);
-		if (ok) flash('bevel');
+		applyOp('bevel');
 	}
 
-	/** Loop cut, from the options pane or the C hotkey. */
+	/** Loop cut, from the options pane or the C hotkey (via the engine). */
 	function applyLoopCut() {
-		if (commitFaceOp('loopcut', $loopCuts)) flash('loopcut');
+		applyOp('loopcut');
 	}
 
-	/** Bridge, from the options pane or the B hotkey. It validates the two-piece
-	 * selection and toasts on its own. */
+	/** Bridge, from the options pane or the B hotkey. The engine validates the
+	 * two-piece selection and toasts on its own. */
 	function applyBridge() {
-		if (commitFaceOp('bridge', $bridgeCuts)) flash('bridge');
+		applyOp('bridge');
 	}
 
 	// Cleanup and Symmetry act on the whole OBJECT, so they are offered in every
@@ -483,16 +571,16 @@
 				event.preventDefault();
 				return;
 			}
-			// C commits the loop cut outright: a toolbar ARMS, a shortcut EXECUTES.
-			// Clicking Loop cut in the grid only selects it (its cut count is in the
-			// options pane), but someone typing C already knows what they want.
+			// C commits the loop cut outright: a shortcut EXECUTES. 19-A P2: it
+			// routes through runOp — the same focus-and-apply path as the grid — so
+			// the pane follows the hotkey and becomes the live adjust (or the hint).
 			if (key === 'c') {
-				applyLoopCut();
+				runOp('loopcut');
 				event.preventDefault();
 				return;
 			}
 			if (key === 'b') {
-				applyBridge();
+				runOp('bridge');
 				event.preventDefault();
 				return;
 			}
@@ -608,6 +696,26 @@
 					onclick={() => exitColliderEdit()}><X size={14} aria-hidden="true" /></button
 				>
 			{:else}
+				<!-- 19-A P2 (plan §6): undo/redo IN the toolbox header, before
+				     Cancel/Done. Session-barrier semantics come free (history.js
+				     stops at the session's first step), and the adjust engine's
+				     identity guard makes undo-under-a-live-adjust safe. -->
+				<button
+					id="mesh-undo"
+					class="tbx-hbtn"
+					aria-label="Undo"
+					disabled={!$canUndo}
+					title="Undo (Ctrl+Z) — steps back inside this edit session"
+					onclick={() => undo()}><Undo2 size={14} aria-hidden="true" /></button
+				>
+				<button
+					id="mesh-redo"
+					class="tbx-hbtn"
+					aria-label="Redo"
+					disabled={!$canRedo}
+					title="Redo (Ctrl+Y) — replay the step you just undid"
+					onclick={() => redo()}><Redo2 size={14} aria-hidden="true" /></button
+				>
 				<button
 					id="mesh-edit-cancel"
 					class="tbx-hbtn"
@@ -831,10 +939,15 @@
 		<MeshToolOptions
 			{mode}
 			focus={$optionsFocus}
+			hint={paneHint}
+			{adjusting}
 			onApplyOp={applyActive}
 			onApplyBevel={applyBevel}
 			onApplyLoopCut={applyLoopCut}
 			onApplyBridge={applyBridge}
+			onAdjust={(patch) => reapplyOpAdjust(patch)}
+			onSettle={() => settleOpAdjust()}
+			onRevert={() => cancelOpAdjust()}
 		/>
 
 		<!-- WHOLE-MESH work below. None of it depends on which element mode is open,

@@ -161,7 +161,13 @@ h.run(async () => {
 	h.check(bevelState.armed === 'extrude', `the ARMED op is untouched by selecting Bevel (${bevelState.armed})`);
 	h.check(bevelState.pressed === 'true', 'and it reports aria-pressed');
 
-	// the behaviour change: the grid click does NOT commit, the pane's Apply does
+	// ---- 19-A P2, THE CONTRACT FLIP: apply-on-click + the adjust panel ----
+	// The 18-C contract this suite used to pin ("selecting Bevel commits
+	// nothing / Apply commits") is GONE by design: selecting a parameterized op
+	// WITH a valid target now applies it immediately (Blender's F9 model), the
+	// pane becomes a live adjust, and ✕ Revert undoes it + drops its history
+	// entry. Without a target the click still commits nothing — and the pane's
+	// hint line says what is missing instead of leaving a dead button.
 	const triCount = () =>
 		A.page.evaluate(() => {
 			let g = null;
@@ -172,22 +178,83 @@ h.run(async () => {
 			const geo = obj?.geometry;
 			return geo ? (geo.index ? geo.index.count : geo.attributes.position.count) / 3 : -1;
 		});
+	// a checksum of the vertex positions — "same tri count, different shape" is
+	// what a live width re-run looks like
+	const geoSum = () =>
+		A.page.evaluate(() => {
+			let g = null;
+			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			let uuid = null;
+			window.__stores.faceEdit.faceEditObject.subscribe((v) => (uuid = v))();
+			const pos = g.getObjectByProperty('uuid', uuid)?.geometry?.attributes?.position;
+			if (!pos) return null;
+			let sum = 0;
+			for (let i = 0; i < pos.array.length; i++) sum += pos.array[i] * (i + 1);
+			return Math.round(sum * 1e4) / 1e4;
+		});
 	const beforeBevel = await triCount();
+	// no target: the grid click applies NOTHING and the pane explains itself
 	await A.page.evaluate(() => document.querySelector('#mesh-op-bevel').click());
 	await A.page.waitForTimeout(400);
-	h.check((await triCount()) === beforeBevel, `selecting Bevel commits nothing (${beforeBevel} tris)`);
+	h.check((await triCount()) === beforeBevel, `without a target the grid click applies nothing (${beforeBevel} tris)`);
+	const idlePane = await A.page.evaluate(() => ({
+		hint: document.querySelector('#mesh-op-hint')?.textContent?.trim() ?? '',
+		revert: !!document.querySelector('#mesh-adjust-revert'),
+		apply: !!document.querySelector('#face-bevel')
+	}));
+	h.check(!!idlePane.hint, `the pane's hint names the missing precondition ("${idlePane.hint}")`);
+	h.check(!idlePane.revert && idlePane.apply, 'and it offers Apply, not the adjust ✕');
 
-	// select a face, then Apply
-	await A.page.evaluate(async () => {
+	// select a face, then the grid click APPLIES IMMEDIATELY
+	await A.page.evaluate(() => {
 		const fe = window.__stores.faceEdit;
 		fe.highlightFaceByTriangle(0);
 		fe.pickFaceUnit?.(0);
 	});
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => document.querySelector('#face-bevel').click());
-	await A.page.waitForTimeout(700);
-	const afterBevel = await triCount();
-	h.check(afterBevel > beforeBevel, `Apply bevel commits (${beforeBevel} -> ${afterBevel} tris)`);
+	await A.page.evaluate(() => document.querySelector('#mesh-op-bevel').click());
+	await A.page.waitForTimeout(500);
+	const afterApply = await triCount();
+	h.check(afterApply > beforeBevel, `click-with-selection applies immediately (${beforeBevel} -> ${afterApply} tris)`);
+	const adjustPane = await A.page.evaluate(() => {
+		let st = null;
+		window.__stores.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		const labels = [...document.querySelectorAll('#mesh-edit-popup .tbx-label')].map((l) =>
+			l.textContent.trim()
+		);
+		return {
+			op: st?.op ?? null,
+			adjustingLabel: labels.some((t) => /^Adjusting/i.test(t)),
+			revert: !!document.querySelector('#mesh-adjust-revert'),
+			apply: !!document.querySelector('#face-bevel')
+		};
+	});
+	h.check(adjustPane.op === 'bevel', `the adjust engine holds the op (${adjustPane.op})`);
+	h.check(adjustPane.adjustingLabel, 'the pane label reads "Adjusting"');
+	h.check(adjustPane.revert && !adjustPane.apply, 'the primary button is ✕ Revert now');
+
+	// typing a new width into the pane re-runs the op LIVE: same triangle
+	// count, different shape
+	const sumBefore = await geoSum();
+	await A.page.evaluate(() => {
+		const input = document.querySelector('#bevel-width');
+		input.value = '0.35';
+		input.dispatchEvent(new Event('input', { bubbles: true }));
+	});
+	await A.page.waitForTimeout(500); // covers the 300ms typed-input settle too
+	const sumAfter = await geoSum();
+	h.check((await triCount()) === afterApply, `the re-run keeps the bevel's triangle count (${afterApply})`);
+	h.check(sumBefore !== sumAfter, `scrubbing the width re-runs the bevel live (${sumBefore} -> ${sumAfter})`);
+
+	// ✕ reverts to the pre-op geometry and the pane goes back to Apply
+	await A.page.evaluate(() => document.querySelector('#mesh-adjust-revert').click());
+	await A.page.waitForTimeout(400);
+	h.check((await triCount()) === beforeBevel, `✕ Revert restores the pre-op geometry (${beforeBevel} tris)`);
+	const afterRevert = await A.page.evaluate(() => ({
+		apply: !!document.querySelector('#face-bevel'),
+		revert: !!document.querySelector('#mesh-adjust-revert')
+	}));
+	h.check(afterRevert.apply && !afterRevert.revert, 'the pane returns to Apply after the revert');
 
 	// ------------------------------------------ 5. collapsible sections
 	const sections = await A.page.evaluate(() =>
@@ -271,17 +338,27 @@ h.run(async () => {
 		`OPERATIONS holds the selection actions, parameterized first (${(groups.operations ?? []).join(', ')})`
 	);
 
-	// Bridge is parameterized now: the grid click opens options, it does not commit
+	// Bridge is parameterized: the grid click opens its options — and 19-A P2,
+	// with no valid two-piece selection it applies NOTHING while the hint line
+	// names the precondition (a selection that qualifies would auto-apply; that
+	// path is pinned in mesh-adjust.test.cjs)
 	await A.page.evaluate(() => document.querySelector('#mesh-op-bridge').click());
 	await A.page.waitForTimeout(350);
-	const bridgePane = await A.page.evaluate(() => ({
-		params: !!document.querySelector('#bridge-params'),
-		cuts: !!document.querySelector('#mesh-bridge-cuts'),
-		apply: !!document.querySelector('#mesh-bridge-apply'),
-		ring: getComputedStyle(document.querySelector('#mesh-op-bridge')).boxShadow !== 'none'
-	}));
+	const bridgePane = await A.page.evaluate(() => {
+		let st = null;
+		window.__stores.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		return {
+			params: !!document.querySelector('#bridge-params'),
+			cuts: !!document.querySelector('#mesh-bridge-cuts'),
+			apply: !!document.querySelector('#mesh-bridge-apply'),
+			hint: document.querySelector('#mesh-op-hint')?.textContent?.trim() ?? '',
+			applied: !!st,
+			ring: getComputedStyle(document.querySelector('#mesh-op-bridge')).boxShadow !== 'none'
+		};
+	});
 	h.check(bridgePane.params && bridgePane.cuts && bridgePane.apply, 'Bridge opens its own options with a cut count');
 	h.check(bridgePane.ring, 'and reads as selected, like the other parameterized operations');
+	h.check(!bridgePane.applied && !!bridgePane.hint, `an unmet bridge shows the hint instead of applying ("${bridgePane.hint}")`);
 
 	// the cuts actually build extra rings — bridge the same shape at 0 and at 2
 	// and compare, on the inset-caps scenario (bridging a unit cube's FULL top and

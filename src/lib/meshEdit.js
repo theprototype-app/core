@@ -24,7 +24,8 @@ import {
 	registerGizmoPrefListener,
 	internalEdgeSet,
 	edgeKeyOf,
-	bevelVertices
+	bevelVertices,
+	beginOpAdjust
 } from './faceEdit';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -730,6 +731,37 @@ export function bevelSelectedVerts(width = 0.2, profile = 0) {
 		refreshVertexEditSession();
 	}
 	return ok;
+}
+
+/**
+ * 19-A P2: the vertex bevel through the ADJUST ENGINE — applies immediately and
+ * leaves the width/profile scrubbable in the options pane. Same selection
+ * translation as `bevelSelectedVerts` (which stays as the one-shot path); the
+ * engine owns the commit, the history entry and the selection housekeeping.
+ * @param {number} width @param {number} profile @returns {boolean}
+ */
+export function beginVertexBevelAdjust(width = 0.2, profile = 0) {
+	if (!edited || !handles.length) return false;
+	const indices = vertexSelection.size
+		? [...vertexSelection]
+		: selectedHandle >= 0
+			? [selectedHandle]
+			: [];
+	if (!indices.length) {
+		showToast('Select a vertex first, then Bevel');
+		return false;
+	}
+	const keys = indices
+		.filter((index) => handles[index])
+		.map((index) => {
+			const p = handles[index].position;
+			return `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
+		});
+	return beginOpAdjust(
+		'bevel',
+		{ width, profile },
+		{ kind: 'vertices', uuid: edited.uuid, vertexKeys: keys }
+	);
 }
 
 /** World-space focus target {center,radius} for the selected vertex, or null (173). */

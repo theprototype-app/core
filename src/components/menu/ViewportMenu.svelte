@@ -5,7 +5,7 @@
 	import { drawMode, toggleDrawMode } from '$lib/drawMode';
 	import { simulating, simPaused, remoteSimulating, toggleSimulation, pauseSimulation, resetSimulation } from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
-	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
+	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks, SHORTCUT_SLOTS } from '$lib/cameraBookmarks';
 	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
@@ -68,6 +68,26 @@
 		const values = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
 		return values.map((value) => snapRotItem(value));
 	}
+	// 19-B: element snap targets — independent checked rows + a compact hint tag
+	const ELEMENT_TARGETS: [string, string][] = [
+		['vertex', 'Vertex'],
+		['face', 'Face'],
+		['surface', 'Surface'],
+		['object', 'Object']
+	];
+	function elementTargetItem(key: string, label: string) {
+		return {
+			label,
+			checked: !!($snapTargets as any)[key],
+			action: () => snapTargets.update((t: any) => ({ ...t, [key]: !t[key] }))
+		};
+	}
+	// 'V F' when vertex + face are on — rides the parent row's hint
+	$: elementTag = $snapTargets.enabled
+		? ELEMENT_TARGETS.filter(([key]) => ($snapTargets as any)[key])
+				.map(([, label]) => label[0])
+				.join(' ')
+		: '';
 
 	$: hasSelection =
 		$selectedObjects.length > 0 ||
@@ -163,9 +183,10 @@
 			// the live values so you can read the current setup without opening it
 			label: 'Snapping',
 			icon: 'grid-3x3',
-			hint: $snapEnabled
-				? `${stepLabel($snapSettings.translate)} · ${stepLabel($snapSettings.rotateDeg)}° · ${stepLabel($snapSettings.scale)}`
-				: 'off',
+			hint:
+				($snapEnabled
+					? `${stepLabel($snapSettings.translate)} · ${stepLabel($snapSettings.rotateDeg)}° · ${stepLabel($snapSettings.scale)}`
+					: 'off') + (elementTag ? ` · ${elementTag}` : ''),
 			children: [
 				{
 					label: $snapEnabled ? 'Disable snapping' : 'Enable snapping',
@@ -185,6 +206,10 @@
 					tooltip: 'Dragged objects rest on whatever is underneath',
 					action: () => surfaceSnap.update((v) => !v)
 				},
+				// 19-B: element targets — while one is under the cursor during a gizmo
+				// translate drag, it takes priority over the grid steps
+				{ section: 'Elements' },
+				...ELEMENT_TARGETS.map(([key, label]) => elementTargetItem(key, label)),
 				{ section: ' ' },
 				{
 					label: 'More snapping settings…',

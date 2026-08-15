@@ -138,7 +138,18 @@
 	} from '../../stores/sceneStore';
 	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
 	import { gridSettings, setGrid, resetGrid, effectiveCell } from '$lib/gridSettings';
-	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
+	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
+	/** 19-B: the element snap target chips (key, label) @type {any[]} */
+	const elementTargets = [
+		['vertex', 'Vertex'],
+		['face', 'Face'],
+		['surface', 'Surface'],
+		['object', 'Object']
+	];
+	/** whether one element target flag is on @param {any} t @param {any} key */
+	const targetOn = (t, key) => !!t[key];
+	/** @param {any} key */
+	const toggleTarget = (key) => snapTargets.update((t) => ({ ...t, [key]: !targetOn(t, key) }));
 	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
 
 	// (15-L3 dropped the standalone hex textboxes under each colour picker — the
@@ -1665,6 +1676,47 @@
 					onchange={(/** @type {any} */ e) => surfaceSnap.set(e.currentTarget.checked)}
 					>Rest dragged objects on the surface below</Checkbox
 				>
+				<!-- 19-B: element snap targets — independent multi-select flags -->
+				<span class="text-xs font-semibold text-gray-300">Snap to elements</span>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Targets</span>
+					<div class="snap-chips">
+						{#each elementTargets as target}
+							<button
+								id={'snap-target-' + target[0]}
+								class={'ui-chip ' +
+									(targetOn($snapTargets, target[0])
+										? 'bg-primary-600 text-white'
+										: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								aria-pressed={targetOn($snapTargets, target[0])}
+								onclick={() => toggleTarget(target[0])}
+								>{target[1]}</button
+							>
+						{/each}
+					</div>
+				</div>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Radius</span>
+					<div class="snap-field">
+						<DragRow
+							id="snap-radius"
+							value={$snapTargets.radiusPx}
+							decimals={0}
+							min={5}
+							max={60}
+							step={1}
+							ariaLabel="element snap radius (screen px)"
+							onchange={(v) =>
+								snapTargets.update((t) => ({
+									...t,
+									radiusPx: Math.min(60, Math.max(5, Math.round(v) || 25))
+								}))}
+						/>
+					</div>
+				</div>
+				<p class="text-[10px] italic text-gray-400">
+					While an element target is under the cursor, it takes priority over grid steps. Per-device.
+				</p>
 				<p class="text-[10px] italic text-gray-400">
 					Snapping is per-device; the same steps drive the viewport menu.
 				</p>

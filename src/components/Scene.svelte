@@ -21,6 +21,7 @@
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
+	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo } from '$lib/snapEngine';
 	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
@@ -287,6 +288,15 @@
 			setOrbitEnabled(!event.value);
 			const object = hookedControls.object;
 			if (!object) return;
+			// 19-B: element-snap drag lifecycle — the object-point cache lives for one
+			// drag, and drag end always clears the candidate + highlight
+			if (!event.value) endSnapDrag();
+			else if (
+				!object.userData?.isVertexProxy &&
+				!object.userData?.isFaceProxy &&
+				!object.userData?.isMultiPivot
+			)
+				beginSnapDrag([object.uuid]);
 			// vertex handles record their own history entries
 			if (object.userData?.isVertexProxy) {
 				onProxyDragChanged(event.value);
@@ -399,6 +409,7 @@
 		startColliderHelpers();
 		startCameraHelpers();
 		startEditorNavigation();
+		startSnapEngine(); // 19-B: wires the element-snap candidate marker
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
 			exitEditMode(); // leave vertex edit mode cleanly (113)
@@ -478,6 +489,9 @@
 			// remember where the cursor is so keyboard commands (Shift+A) can anchor to
 			// it and spawn under it — null until the pointer has moved at least once
 			lastPointerXY = [event.clientX, event.clientY];
+			// 19-B: the element-snap search is cursor-based — track the pointer while a
+			// gizmo drag runs (this listener is on window, so mid-gesture moves arrive)
+			if ($TControls?.dragging) setSnapPointer(event.clientX, event.clientY);
 			// M9b: the knife's rubber band follows the pointer between the two clicks
 			if (knifeFrom) $knifePreview = { from: knifeFrom, to: [event.clientX, event.clientY] };
 			if (marqueeStart) {
@@ -998,9 +1012,14 @@
 		if (typeof $TControls.object !== 'undefined')
 			if (typeof $TControls.object.parent !== 'undefined')
 				if (typeof $TControls.object.uuid !== 'undefined') {
+					// 19-B: element snap — while a candidate is live it OVERRIDES the grid
+					// steps (the gizmo quantizes first, we reposition after) and it owns Y,
+					// so surface snap is skipped for that frame (they'd fight over height)
+					const elementSnapped = maybeSnapGizmo($TControls.object);
 					// surface snap: keep the dragged object resting on whatever is below
 					// (skipped when dragging the Y axis on purpose — that's a lift)
 					if (
+						!elementSnapped &&
 						$surfaceSnap &&
 						$TControls.dragging &&
 						$TControls.mode === 'translate' &&

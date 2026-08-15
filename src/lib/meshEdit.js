@@ -26,6 +26,7 @@ import {
 	edgeKeyOf,
 	bevelVertices,
 	deleteVertices,
+	smoothVertices,
 	beginOpAdjust
 } from './faceEdit';
 // 19-A P4: the proportional stores/falloff moved to a LEAF (faceEdit needs them
@@ -808,6 +809,29 @@ export function deleteSelectedVerts() {
 		refreshVertexEditSession();
 	}
 	return ok;
+}
+
+/**
+ * 19-A P5b: SMOOTH / RELAX the selected vertices — the meshEdit-shell -> faceEdit-work
+ * split of `deleteSelectedVerts`/`bevelSelectedVerts`: this module owns the handles,
+ * faceEdit owns the triangle soup and the commit, and welded position keys cross the
+ * boundary. One commit per click (a positions-only meshgeo snapshot — counts never
+ * change, so groups/uvs/topology all carry; see smoothVertices).
+ *
+ * The selection deliberately SURVIVES: counts are unchanged, so applyMeshGeo's session
+ * refresher rebuilds the handles at the same indices and a second Apply keeps relaxing
+ * the same picks — the natural way to use an iterative tool.
+ * @param {number} [factor] 0..1 lerp toward the neighbour average
+ * @param {number} [iterations] 1..10 passes @returns {boolean}
+ */
+export function smoothSelectedVerts(factor = 0.5, iterations = 1) {
+	if (!edited || !handles.length) return false;
+	const keys = selectedVertexKeys();
+	if (!keys.length) {
+		showToast('Select a vertex first, then Smooth');
+		return false;
+	}
+	return smoothVertices(edited.uuid, keys, { factor, iterations });
 }
 
 /** World-space focus target {center,radius} for the selected vertex, or null (173). */

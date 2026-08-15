@@ -93,6 +93,22 @@
 			base: ['M3 5h18v14H3z'],
 			accent: ['M12 6v2', 'M12 11v2', 'M12 16v2']
 		},
+		// the base edge, and the raised parallel copy + the two side rails of the strip
+		'edge-extrude': {
+			base: ['M4 19h16'],
+			accent: ['M4 7h16', 'M4 19V7', 'M20 19V7']
+		},
+		// the edge, and the midpoint vertex the split inserts
+		'edge-subdivide': {
+			base: ['M3 12h18'],
+			accent: ['M12 7v2', 'M12 15v2'],
+			accentFill: ['M12 10.4a1.6 1.6 0 100 3.2 1.6 1.6 0 100-3.2z']
+		},
+		// a face, and the offset copy laid over it
+		'duplicate-face': {
+			base: ['M4 4h11v11H4z'],
+			accent: ['M9 9h11v11H9z']
+		},
 		// ---- vertex tools -----------------------------------------------------
 		// two vertices, and the arrows bringing them together
 		weld: {

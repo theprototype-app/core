@@ -3390,6 +3390,96 @@ export function deleteVertices(uuid, vertexKeys) {
 }
 
 /**
+ * 19-A P5b: SMOOTH / RELAX the selected vertices — a Laplacian lerp toward the average
+ * of each vertex's welded neighbours, `iterations` passes.
+ *
+ * Keyed by welded position like `bevelVertices`/`deleteVertices` (vertex mode is a
+ * meshEdit session, so no face session exists), and the WORK lives here for the same
+ * reason theirs does: readTriangles, the commit path and the size cap are this
+ * module's. Neighbours = welded keys sharing a TRIANGLE edge (quad diagonals included:
+ * the relax wants the full welded star, and the diagonal connections are what keep a
+ * quad's interior from lagging its corners). Each pass is JACOBI — every average reads
+ * the PRE-pass positions, then all moves land at once — so the result is
+ * order-independent and a test can derive it exactly.
+ *
+ * Counts never change, so this commits POSITIONS-ONLY (`commitMeshGeoSnapshot`):
+ * groups/uvs ride the applier's carry-over and the stored topology rides `carryFaces`,
+ * both of which succeed here BY CONSTRUCTION because the triangle count matches
+ * (verified: applyMeshGeo's positions-only path calls carryFaces, and storeFaces
+ * validates against the unchanged count).
+ * @param {string} uuid @param {string[]} vertexKeys welded position keys
+ * @param {{factor?: number, iterations?: number}} [options]
+ * @returns {boolean}
+ */
+export function smoothVertices(uuid, vertexKeys, options = {}) {
+	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
+	const object = lookupEditable(uuid);
+	if (!object?.geometry?.attributes?.position) return false;
+	if (!vertexKeys?.length) {
+		showToast('Select a vertex first, then Smooth');
+		return false;
+	}
+	const factor = Math.min(Math.max(options.factor ?? 0.5, 0), 1);
+	const iterations = Math.max(1, Math.min(Math.round(options.iterations ?? 1) || 1, 10));
+	const inputTris = readTriangles(object.geometry);
+	// welded positions (evolving, keyed by the ORIGINAL welded key — the map never
+	// re-keys, so the write-back below can look corners up by their pre-op position)
+	/** @type {Map<string, any>} */
+	const pos = new Map();
+	/** @type {Map<string, Set<string>>} */
+	const adj = new Map();
+	for (const t of inputTris) {
+		const keys = t.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+		keys.forEach((/** @type {string} */ k, /** @type {number} */ c) => {
+			if (!pos.has(k)) pos.set(k, t[c].clone());
+		});
+		for (let e = 0; e < 3; e++) {
+			const a = keys[e];
+			const b = keys[(e + 1) % 3];
+			if (a === b) continue;
+			let sa = adj.get(a);
+			if (!sa) adj.set(a, (sa = new Set()));
+			sa.add(b);
+			let sb = adj.get(b);
+			if (!sb) adj.set(b, (sb = new Set()));
+			sb.add(a);
+		}
+	}
+	const selected = vertexKeys.filter((k) => pos.has(k));
+	if (!selected.length) {
+		showToast('Nothing to smooth — those vertices are not on this mesh');
+		return false;
+	}
+	for (let pass = 0; pass < iterations; pass++) {
+		/** @type {Map<string, any>} */
+		const moved = new Map();
+		for (const k of selected) {
+			const around = adj.get(k);
+			if (!around?.size) continue; // an isolated vertex has no average to move toward
+			const avg = new THREE.Vector3();
+			for (const nk of around) avg.add(pos.get(nk));
+			avg.multiplyScalar(1 / around.size);
+			moved.set(k, pos.get(k).clone().lerp(avg, factor));
+		}
+		for (const [k, p] of moved) pos.set(k, p);
+	}
+	// write through: every corner on a selected key takes its relaxed position. The
+	// lookup key is the corner's ORIGINAL position, so all members of a welded group
+	// land on the identical Vector3 — no tearing by construction.
+	const selSet = new Set(selected);
+	const out = cloneTris(inputTris);
+	for (const t of out)
+		t.forEach((/** @type {any} */ v) => {
+			const k = keyOf(v.x, v.y, v.z);
+			if (selSet.has(k)) v.copy(pos.get(k));
+		});
+	const before = trisToPositions(inputTris);
+	const after = trisToPositions(out);
+	if (JSON.stringify(before) === JSON.stringify(after)) return false; // factor 0 / already flat
+	return commitMeshGeoSnapshot(uuid, before, after);
+}
+
+/**
  * M5c EDGE BEVEL: replace the edge with a chamfer strip, doing the corner surgery properly
  * this time.
  *
@@ -4381,6 +4471,191 @@ export function deleteSelectedEdges() {
 	return true;
 }
 
+/**
+ * 19-A P5b: SUBDIVIDE the selected edges — every triangle that uses one is split at the
+ * edge's midpoint.
+ *
+ * The knife's two crack rules apply verbatim. The midpoint is computed ONCE per welded
+ * edge key and both sharers reuse the same Vector3, so the two sides split at the
+ * NUMERICALLY IDENTICAL point (per-triangle midpoints drift wherever the corners are
+ * not exactly welded, and the mesh cracks along the seam). And a triangle is split for
+ * EVERY selected edge it carries — leaving one side whole while its neighbour gains a
+ * real vertex on the shared edge is a T-junction.
+ *
+ * Splits rejoin their PARENT's stored face via the composeFaces origin (every piece
+ * maps to the parent triangle): the new spokes are internal to that face, so the
+ * structure wireframe keeps drawing the model's edges plus the new half-edges on the
+ * face borders — the same rule that hides a quad's diagonal. The knife cannot author
+ * this (an arbitrary screen line crosses faces it cannot describe, so it drops the
+ * partition); a midpoint split is exactly describable, so here it is authored.
+ *
+ * Afterwards the two HALF-EDGES of each original pick are selected, ready for another
+ * subdivide or a gizmo move. `mi` rides each piece; midpoint uvs are the per-corner
+ * LERP of the owning triangle's own corners (per triangle, so a uv seam stays a seam —
+ * the knife's uv rule at the u=0.5 special case).
+ * @returns {boolean}
+ */
+export function subdivideSelectedEdges() {
+	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
+	if (!faceEdited) return false;
+	const sel = get(edgeEditSelected);
+	if (!sel.length) {
+		showToast('Pick an edge to subdivide');
+		return false;
+	}
+	const wanted = new Set(sel);
+	// ONE midpoint per welded edge key — the crack rule (the knife's crossings map)
+	/** @type {Map<string, any>} */
+	const midpoints = new Map();
+	workingTris.forEach((/** @type {any} */ t) => {
+		for (let e = 0; e < 3; e++) {
+			const key = edgeKey(
+				keyOf(t[e].x, t[e].y, t[e].z),
+				keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)
+			);
+			if (!wanted.has(key) || midpoints.has(key)) continue;
+			midpoints.set(key, t[e].clone().add(t[(e + 1) % 3]).multiplyScalar(0.5));
+		}
+	});
+	if (!midpoints.size) {
+		showToast('Nothing to subdivide — no face uses those edges');
+		return false;
+	}
+	const priorFaces = currentPartition();
+	const before = {
+		positions: trisToPositions(workingTris),
+		groups: trisToGroups(workingTris),
+		uvs: trisToUVs(workingTris),
+		faces: readStoredFaces(faceEdited?.geometry)
+	};
+	/** @type {any[]} */
+	const out = [];
+	/** new tri -> the input triangle it came from: EVERY piece maps to its parent, so
+	 * composeFaces folds the split back into the parent's face
+	 * @type {number[]} */
+	const origin = [];
+	let split = 0;
+	workingTris.forEach((/** @type {any} */ tri, /** @type {number} */ ti) => {
+		/** the triangle's edges that carry a midpoint */
+		const hits = [];
+		for (let e = 0; e < 3; e++) {
+			const key = edgeKey(
+				keyOf(tri[e].x, tri[e].y, tri[e].z),
+				keyOf(tri[(e + 1) % 3].x, tri[(e + 1) % 3].y, tri[(e + 1) % 3].z)
+			);
+			const m = midpoints.get(key);
+			if (m)
+				hits.push({
+					e,
+					m,
+					uv: tri.uv ? uvLerp(tri.uv[e], tri.uv[(e + 1) % 3], 0.5) : undefined
+				});
+		}
+		const faceNormal = triNormal(tri);
+		/** append one triangle wound like the parent (the knife's push)
+		 * @param {any[]} points @param {any[]|undefined} uvs */
+		const emit = (points, uvs) => {
+			const flip = triNormal(points).dot(faceNormal) < 0;
+			const wound = flip ? [points[0], points[2], points[1]] : points;
+			const uv = uvs && (flip ? [uvs[0], uvs[2], uvs[1]] : uvs);
+			out.push(
+				withSlot(
+					wound.map((/** @type {any} */ v) => v.clone()),
+					tri.mi,
+					uv
+				)
+			);
+			origin.push(ti);
+		};
+		if (!hits.length) {
+			out.push(withSlot([tri[0].clone(), tri[1].clone(), tri[2].clone()], tri.mi, tri.uv));
+			origin.push(ti);
+			return;
+		}
+		if (hits.length === 1) {
+			// fan to the opposite corner — the knife's single-crossing split
+			const { e, m, uv } = hits[0];
+			const near = tri[e];
+			const far = tri[(e + 1) % 3];
+			const opposite = tri[(e + 2) % 3];
+			emit([m, far, opposite], tri.uv && [uv, tri.uv[(e + 1) % 3], tri.uv[(e + 2) % 3]]);
+			emit([m, opposite, near], tri.uv && [uv, tri.uv[(e + 2) % 3], tri.uv[e]]);
+		} else if (hits.length === 2) {
+			// two midpoints: the corner they share comes off as a sliver and the rest is
+			// a quad — paired by WALKING THE BOUNDARY, the knife's rule (any other
+			// pairing covers a different quad and the halves overlap)
+			const [first, second] = hits.sort((x, y) => x.e - y.e);
+			const shared = first.e + 1 === second.e ? second.e : 0; // edges 0,1 -> 1; 1,2 -> 2; 0,2 -> 0
+			const cornerIndex = shared % 3;
+			const p = first.e === (cornerIndex + 2) % 3 ? first : second; // the midpoint BEFORE the corner
+			const q = p === first ? second : first;
+			const corner = tri[cornerIndex];
+			const other0 = tri[(cornerIndex + 1) % 3];
+			const other1 = tri[(cornerIndex + 2) % 3];
+			const uvCorner = tri.uv && tri.uv[cornerIndex];
+			const uv0 = tri.uv && tri.uv[(cornerIndex + 1) % 3];
+			const uv1 = tri.uv && tri.uv[(cornerIndex + 2) % 3];
+			emit([p.m, corner, q.m], tri.uv && [p.uv, uvCorner, q.uv]);
+			emit([q.m, other0, other1], tri.uv && [q.uv, uv0, uv1]);
+			emit([q.m, other1, p.m], tri.uv && [q.uv, uv1, p.uv]);
+		} else {
+			// all three edges picked: the standard 4-way — three corner triangles plus
+			// the middle one spanning the midpoints. Three hits on three edges sort
+			// to exactly e = 0, 1, 2.
+			const [m01, m12, m20] = [...hits].sort((x, y) => x.e - y.e);
+			emit([tri[0], m01.m, m20.m], tri.uv && [tri.uv[0], m01.uv, m20.uv]);
+			emit([m01.m, tri[1], m12.m], tri.uv && [m01.uv, tri.uv[1], m12.uv]);
+			emit([m20.m, m12.m, tri[2]], tri.uv && [m20.uv, m12.uv, tri.uv[2]]);
+			emit([m01.m, m12.m, m20.m], tri.uv && [m01.uv, m12.uv, m20.uv]);
+		}
+		split++;
+	});
+	const positions = trisToPositions(out);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast('That edit is too large to sync');
+		return false;
+	}
+	const groups = trisToGroups(out);
+	const uvs = trisToUVs(out);
+	// the two halves of each pick — what stays selected for the next step
+	/** @type {string[]} */
+	const halves = [];
+	for (const [key, m] of midpoints) {
+		const [ka, kb] = key.split('|');
+		const km = keyOf(m.x, m.y, m.z);
+		halves.push(edgeKey(ka, km), edgeKey(km, kb));
+	}
+	// clear the picks BEFORE the swap (applyGeometrySnapshot rebuilds both overlays
+	// from them) + the hover always — desktop has no pointermove path here
+	clearEdgeSelectionInner(); // op housekeeping, not a user pick
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
+	applyGeometrySnapshot(positions, groups, uvs, composeFaces(priorFaces, origin, []));
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before,
+		after: withFaces({ positions, groups, uvs })
+	});
+	// select the half-edges (direct store write — withSelectionHistory would put a
+	// selection entry ON TOP of the meshgeo and Ctrl+Z would undo the housekeeping)
+	edgeEditSelected.set(halves.filter((key) => !!edgeEndpoints(key)));
+	refreshEdgeOverlay();
+	if (typeof window !== 'undefined' && get(faceEditOp) === 'move') attachFaceGizmo();
+	showToast(
+		'Subdivided ' +
+			midpoints.size +
+			(midpoints.size === 1 ? ' edge' : ' edges') +
+			' (' +
+			split +
+			(split === 1 ? ' triangle' : ' triangles') +
+			' split)'
+	);
+	return true;
+}
+
 /** @type {any} scene-root LineSegments showing the edge selection + hover */
 let edgeOverlay = null;
 
@@ -4481,6 +4756,150 @@ export function edgeGrabTarget() {
 	if (direction.lengthSq() < 1e-12) direction.copy(axisLeastAlignedWith(normal));
 	direction.normalize();
 	return { triIndices: [], vertexKeys: keys, centroid, normal, direction };
+}
+
+/**
+ * 19-A P5b: the PURE core of EDGE EXTRUDE — pull each selected BORDER edge out into a
+ * quad strip. Triangles in, triangles out, no session reads (the adjust engine re-runs
+ * it from the original snapshot on every scrub).
+ *
+ * Only a BORDER edge extrudes — one that appears in exactly ONE triangle. An interior
+ * edge has a face on both sides, so a strip grown from it would be a zero-thickness fin
+ * buried in the surface; those are counted and refused (`refusedInterior`, the
+ * bevelEdgesCore refusal shape).
+ *
+ * DIRECTION: the offset is one averaged normal PER CHAIN (border edges connected
+ * through shared endpoints), from every owning triangle along it. Per-edge normals
+ * would give a shared endpoint two different offset copies — a torn corner; one
+ * direction per chain both WELDS the corner by construction (each welded endpoint key
+ * gets exactly one copy) and reads smoother around a curved rim.
+ *
+ * WINDING: each strip quad is wound toward `edgeOutward(p0, p1, owning normal)` — away
+ * from the owning face across the border, exactly how extrudeFace winds its walls. The
+ * strip stands roughly PERPENDICULAR to the owning surface, so the owning normal
+ * itself is useless as a wantDir (it is perpendicular to the strip's normal — the dot
+ * that picks the winding would be ~0 and the sign would be numeric noise).
+ *
+ * UVs advance perpendicular to the base edge at its own texel density — the
+ * extrudeFace wall rule, copied rather than reinvented.
+ * @param {any[]} tris @param {string[]} edgeKeys canonical welded edge keys
+ * @param {{distance?: number}} [options]
+ * @returns {{tris: any[], done: number, refusedInterior: number, newEdgeKeys: string[]}}
+ */
+export function edgeExtrudeCore(tris, edgeKeys, options = {}) {
+	const distance = options.distance ?? 0.5;
+	const wanted = new Set(edgeKeys);
+	/** @type {Map<string, {ti: number, e: number}[]>} selected welded edge -> occurrences */
+	const byEdge = new Map();
+	tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		for (let e = 0; e < 3; e++) {
+			const key = edgeKey(
+				keyOf(t[e].x, t[e].y, t[e].z),
+				keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)
+			);
+			if (!wanted.has(key)) continue;
+			let list = byEdge.get(key);
+			if (!list) byEdge.set(key, (list = []));
+			list.push({ ti, e });
+		}
+	});
+	/** @type {{key: string, ti: number, e: number, ka: string, kb: string}[]} */
+	const borders = [];
+	let refusedInterior = 0;
+	for (const [key, list] of byEdge) {
+		if (list.length !== 1) {
+			refusedInterior++;
+			continue;
+		}
+		const [ka, kb] = key.split('|');
+		borders.push({ key, ...list[0], ka, kb });
+	}
+	if (!borders.length) return { tris: cloneTris(tris), done: 0, refusedInterior, newEdgeKeys: [] };
+	// CHAINS: union-find over the border edges' endpoint keys
+	/** @type {Map<string, string>} */
+	const parent = new Map();
+	const find = (/** @type {string} */ k) => {
+		let root = k;
+		while (parent.get(root) !== root) root = /** @type {string} */ (parent.get(root));
+		while (parent.get(k) !== root) {
+			const next = /** @type {string} */ (parent.get(k));
+			parent.set(k, root);
+			k = next;
+		}
+		return root;
+	};
+	for (const b of borders) {
+		for (const k of [b.ka, b.kb]) if (!parent.has(k)) parent.set(k, k);
+		parent.set(find(b.ka), find(b.kb));
+	}
+	// one averaged owning-triangle normal per chain — the offset direction
+	/** @type {Map<string, any>} */
+	const chainNormal = new Map();
+	for (const b of borders) {
+		const root = find(b.ka);
+		const sum = chainNormal.get(root) ?? new THREE.Vector3();
+		sum.add(triNormal(tris[b.ti]));
+		chainNormal.set(root, sum);
+	}
+	for (const sum of chainNormal.values()) {
+		if (sum.lengthSq() < 1e-12) sum.set(0, 1, 0);
+		sum.normalize();
+	}
+	// ONE offset copy per welded endpoint key — the weld that makes a chain of edges
+	// extrude as one strip instead of separate flaps
+	/** @type {Map<string, any>} */
+	const copies = new Map();
+	const copyOf = (/** @type {any} */ point, /** @type {string} */ k) => {
+		let copy = copies.get(k);
+		if (!copy) {
+			copy = point.clone().addScaledVector(chainNormal.get(find(k)), distance);
+			copies.set(k, copy);
+		}
+		return copy;
+	};
+	const out = cloneTris(tris);
+	/** @type {string[]} */
+	const newEdgeKeys = [];
+	for (const b of borders) {
+		const t = tris[b.ti];
+		const p0 = t[b.e];
+		const p1 = t[(b.e + 1) % 3];
+		const q0 = copyOf(p0, keyOf(p0.x, p0.y, p0.z));
+		const q1 = copyOf(p1, keyOf(p1.x, p1.y, p1.z));
+		// uv: along the base edge at its own density, advanced perpendicular by the
+		// world distance (the extrudeFace wall rule)
+		const uvA = uvAt(t, b.e);
+		const uvB = uvAt(t, (b.e + 1) % 3);
+		const along = [uvB[0] - uvA[0], uvB[1] - uvA[1]];
+		const uvLen = Math.hypot(along[0], along[1]);
+		const worldLen = p0.distanceTo(p1);
+		const step = uvLen > 1e-9 && worldLen > 1e-9 ? (uvLen / worldLen) * distance : distance;
+		const perp = uvLen > 1e-9 ? [(-along[1] / uvLen) * step, (along[0] / uvLen) * step] : [0, step];
+		const uvA2 = [uvA[0] + perp[0], uvA[1] + perp[1]];
+		const uvB2 = [uvB[0] + perp[0], uvB[1] + perp[1]];
+		pushQuad(
+			out,
+			p0.clone(),
+			p1.clone(),
+			q1.clone(),
+			q0.clone(),
+			edgeOutward(p0, p1, triNormal(t)),
+			t.mi,
+			t.uv ? [uvA, uvB, uvB2, uvA2] : undefined
+		);
+		newEdgeKeys.push(edgeKey(keyOf(q0.x, q0.y, q0.z), keyOf(q1.x, q1.y, q1.z)));
+	}
+	return { tris: out, done: borders.length, refusedInterior, newEdgeKeys };
+}
+
+/**
+ * 19-A P5b: extrude the selected border edges through the ADJUST ENGINE — the op
+ * applies at `distance` immediately and stays scrubbable in the options pane (the
+ * engine owns the commit, the ONE history entry, the new-edge selection and the edge
+ * gizmo re-seat). @param {number} [distance] @returns {boolean}
+ */
+export function extrudeSelectedEdges(distance = 0.5) {
+	return beginOpAdjust('edge-extrude', { distance });
 }
 
 // ---- session cancel --------------------------------------------------------
@@ -5484,6 +5903,87 @@ export function commitFaceOp(op, amount) {
 	return true;
 }
 
+/**
+ * 19-A P5b: DUPLICATE the selected faces — append an exact copy of the picked
+ * triangles, COINCIDENT with the source until moved (Blender's Shift+D).
+ *
+ * mi/uv ride cloneTris; the copies are authored with the SOURCE's stored grouping
+ * mapped onto the appended range, so a duplicated quad is still a quad to the loop
+ * tools (and a duplicated n-gon an n-gon). The copies become the selection and the
+ * gizmo seats on them, ready to drag — beginFaceGrab recognises a fully-coincident
+ * patch and skips the weld stitch, which is what lets the copy peel OFF its source
+ * instead of dragging the source (and everything welded to it) along.
+ * @returns {boolean}
+ */
+export function duplicateSelectedFaces() {
+	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
+	if (!faceEdited) return false;
+	const face = opTargetFace();
+	if (!face?.triIndices?.length) {
+		showToast('Select a face first, then Duplicate');
+		return false;
+	}
+	const sel = [...face.triIndices];
+	const base = workingTris.length;
+	const next = [...cloneTris(workingTris), ...cloneTris(sel.map((ti) => workingTris[ti]))];
+	const positions = trisToPositions(next);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast('That edit is too large to sync');
+		return false;
+	}
+	const priorFaces = currentPartition();
+	// the SOURCE's grouping, re-keyed onto the appended range
+	/** @type {Map<number, number>} */
+	const newIndexOf = new Map();
+	sel.forEach((ti, i) => newIndexOf.set(ti, base + i));
+	/** @type {number[][]} */
+	const authored = [];
+	for (const group of priorFaces ?? []) {
+		const members = group
+			.filter((/** @type {number} */ ti) => newIndexOf.has(ti))
+			.map((/** @type {number} */ ti) => /** @type {number} */ (newIndexOf.get(ti)));
+		if (members.length) authored.push(members);
+	}
+	const before = {
+		positions: trisToPositions(workingTris),
+		groups: trisToGroups(workingTris),
+		uvs: trisToUVs(workingTris),
+		faces: readStoredFaces(faceEdited?.geometry)
+	};
+	const groups = trisToGroups(next);
+	const uvs = trisToUVs(next);
+	// the survivors keep their indices (append-only), so the selection needs no
+	// pre-swap clear — but the hover does, always (no desktop pointermove path)
+	faceEditHoverTri.set(-1);
+	applyGeometrySnapshot(
+		positions,
+		groups,
+		uvs,
+		composeFaces(priorFaces, appendOrigin(base, next.length), authored)
+	);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before,
+		after: withFaces({ positions, groups, uvs })
+	});
+	// the COPIES are the selection now (they are what you drag next); the gizmo seats
+	// on them exactly like commitFaceOp's extrude cap
+	/** @type {number[]} */
+	const copyIndices = [];
+	for (let i = base; i < next.length; i++) copyIndices.push(i);
+	faceEditSelectedTris.set(copyIndices);
+	faceEditHighlight.set(faceIndexForTriangle(base));
+	refreshFaceOverlay();
+	if (typeof window !== 'undefined') attachFaceGizmo();
+	const count = authored.length || sel.length;
+	showToast(
+		'Duplicated ' + count + (count === 1 ? ' face' : ' faces') + ' — drag to move the copy'
+	);
+	return true;
+}
+
 /** swap the LIVE edited object's geometry + re-derive faces + overlay
  * @param {number[]} positions @param {any[] | null} [groups] material groups (15-G)
  * @param {number[] | null} [uvs] texture coordinates (M1)
@@ -5771,8 +6271,30 @@ export function beginFaceGrab(faceOrIndex) {
 			})
 		);
 	}
+	// 19-A P5b: a grab whose EVERY triangle has a coincident TWIN outside the set is a
+	// freshly-duplicated patch (Duplicate faces leaves the copy exactly on its source).
+	// Position-welding cannot tell the copy from its source, so the normal stitch would
+	// hand the source's corners — and everything welded to them — a w=1 ride, and the
+	// copy could never be moved OFF its source at all, which is the whole point of the
+	// op. Such a grab captures NO neighbours (proportional included): it peels off
+	// cleanly, Blender's semantics for duplicated geometry. Tri-based grabs only; an
+	// edge grab names keys, not triangles, and keeps its stitch.
+	const sigOf = (/** @type {any} */ t) =>
+		t.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z)).sort().join('~');
+	let coincidentPatch = false;
+	if (triIndices.length) {
+		const grabSigs = new Set(triIndices.map((/** @type {number} */ ti) => sigOf(workingTris[ti])));
+		const twinned = new Set();
+		workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+			if (faceSet.has(ti)) return;
+			const sig = sigOf(t);
+			if (grabSigs.has(sig)) twinned.add(sig);
+		});
+		coincidentPatch = twinned.size === grabSigs.size;
+	}
 	/** @type {any[]} */
 	const neighbours = [];
+	if (!coincidentPatch)
 	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
 		if (faceSet.has(ti)) return;
 		t.forEach((/** @type {any} */ v, /** @type {number} */ k) => {
@@ -6198,6 +6720,9 @@ function mergeAdjustParams(a, patch) {
 	} else if (a.op === 'subdivide') {
 		// P3: 4^levels growth — MAX_SNAPSHOT backstops the big-face case
 		p.levels = Math.max(1, Math.min(Math.round(p.levels ?? 1) || 1, 3));
+	} else if (a.op === 'edge-extrude') {
+		// P5b: world units, signed — negative pulls the strip the other way
+		p.distance = Math.min(Math.max(p.distance ?? 0.5, -5), 5);
 	}
 	a.params = p;
 }
@@ -6358,6 +6883,26 @@ function runAdjustCore(a) {
 			select: { kind: 'set', tris: r.newIndices }
 		};
 	}
+	if (a.op === 'edge-extrude') {
+		const r = edgeExtrudeCore(a.originalTris, a.target, { distance: p.distance });
+		if (!r.done)
+			return {
+				error:
+					'Edge extrude needs a BORDER edge — every picked edge has a face on BOTH sides. Delete a face first to open the mesh, or extrude the face instead.'
+			};
+		return {
+			tris: r.tris,
+			// the strips arrive as consecutive pushQuad pairs after the untouched
+			// input — the extrude/inset partition shape exactly
+			faces: composeFaces(
+				a.priorFaces,
+				appendOrigin(origLen, r.tris.length),
+				appendedQuads(origLen, r.tris.length)
+			),
+			select: { kind: 'edges', keys: r.newEdgeKeys },
+			info: { done: r.done, refusedInterior: r.refusedInterior }
+		};
+	}
 	return { error: 'Unknown adjust operation' };
 }
 
@@ -6405,6 +6950,17 @@ function applyAdjustSelection(a, select, seatGizmo) {
 		// commitFaceOp rule; unlike the band these indices are not contiguous
 		faceEditSelectedTris.set([...select.tris]);
 		refreshFaceOverlay();
+	} else if (select.kind === 'edges') {
+		// P5b edge extrude: the NEW outer edges are the selection — they MOVE as the
+		// distance is scrubbed, so this re-applies on every run. Direct store writes,
+		// never withSelectionHistory: its interruptOpAdjust would end this very
+		// adjust. The edge gizmo re-seats at apply/settle only (the seatGizmo rule),
+		// and only under the Move op — the session's B1 rule.
+		edgeEditSelected.set(select.keys.filter((/** @type {string} */ k) => !!edgeEndpoints(k)));
+		edgeEditHover.set('');
+		refreshEdgeHighlight();
+		if (seatGizmo && typeof window !== 'undefined' && get(faceEditOp) === 'move')
+			attachFaceGizmo();
 	} else if (select.kind === 'cleared') {
 		faceEditSelectedTris.set([]);
 		faceEditHighlight.set(-1);
@@ -6451,6 +7007,16 @@ function adjustBeginToast(a, result) {
 				(done === 1 ? ' vertex' : ' vertices') +
 				(skipped ? ' (' + skipped + ' skipped: open border)' : '')
 		);
+	} else if (a.op === 'edge-extrude' && result.info) {
+		const { done, refusedInterior } = result.info;
+		showToast(
+			'Extruded ' +
+				done +
+				(done === 1 ? ' edge' : ' edges') +
+				(refusedInterior
+					? ' (' + refusedInterior + ' skipped: interior edge — a face on both sides)'
+					: '')
+		);
 	}
 }
 
@@ -6459,7 +7025,7 @@ function adjustBeginToast(a, result) {
  * recorded at apply, kept on the adjust so settle can update it in place), then
  * leave the engine live for `reapplyOpAdjust` scrubs.
  *
- * @param {'extrude'|'inset'|'bevel'|'loopcut'|'bridge'|'subdivide'} op
+ * @param {'extrude'|'inset'|'bevel'|'loopcut'|'bridge'|'subdivide'|'edge-extrude'} op
  * @param {any} params op parameters (distance / width+segments+profile / cuts / levels)
  * @param {{target?: any, record?: 'deferred', kind?: 'faces'|'edges'|'vertices',
  *   uuid?: string, vertexKeys?: string[]}} [opts] `target` = a pre-resolved face
@@ -6577,6 +7143,15 @@ export function beginOpAdjust(op, params, opts = {}) {
 			return false;
 		}
 		a.target = { setA: parts[0], setB: parts[1] };
+	} else if (op === 'edge-extrude') {
+		// P5b: the picked edge KEYS are the target; the core sorts border from
+		// interior itself (and the run refuses when nothing extrudable remains)
+		const selected = get(edgeEditSelected).filter((/** @type {string} */ k) => !!edgeEndpoints(k));
+		if (!selected.length) {
+			showToast('Pick an edge first, then Extrude');
+			return false;
+		}
+		a.target = selected;
 	} else return false;
 	mergeAdjustParams(a, params ?? {});
 	// the before-triple + stored topology + the selection ✕ restores

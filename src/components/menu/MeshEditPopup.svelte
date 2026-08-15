@@ -26,6 +26,9 @@
 		insetDepth,
 		insetIndividual,
 		subdivideLevelCount,
+		edgeExtrudeDistance,
+		smoothFactor,
+		smoothIterations,
 		mergeDistance,
 		symAxis,
 		symKeep,
@@ -49,6 +52,7 @@
 		invertVertexSelection,
 		beginVertexBevelAdjust,
 		deleteSelectedVerts,
+		smoothSelectedVerts,
 		proportionalEdit,
 		proportionalRadius,
 		vertexHandleScale,
@@ -92,6 +96,8 @@
 		selectEdgeLoop,
 		dissolveEdges,
 		deleteSelectedEdges,
+		subdivideSelectedEdges,
+		duplicateSelectedFaces,
 		triangulateMesh,
 		trisToQuadsMesh,
 		symmetrizeMesh,
@@ -206,10 +212,18 @@
 		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, param: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
 		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, param: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
 		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, param: true, icon: 'subdivide', desc: 'split each quad into four, once per level' },
+		{ op: 'duplicate', label: 'Duplicate', hint: '', oneShot: true, param: false, icon: 'duplicate-face', desc: 'copy the selected faces in place — coincident until you drag the gizmo' },
 		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, param: false, icon: 'flip-normals', desc: 'reverse the winding' },
 		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, param: false, icon: 'delete-face', desc: 'remove the selection' }
 	];
-	const OPS = [...TOOL_OPS, ...ACTION_OPS];
+	// 19-A P5b: pane-only param ops — they live in a MODE's hand-written tool row
+	// (edges / vertices), never in the faces grids, but runOp still needs their spec
+	// so a button click focuses the pane AND attempts the apply, like Bevel's.
+	const PANE_OPS = [
+		{ op: 'edge-extrude', label: 'Extrude edges', hint: '', oneShot: true, param: true, icon: 'edge-extrude', desc: '' },
+		{ op: 'smooth', label: 'Smooth', hint: '', oneShot: true, param: true, icon: 'smooth', desc: '' }
+	];
+	const OPS = [...TOOL_OPS, ...ACTION_OPS, ...PANE_OPS];
 
 	const GRANULARITIES = [
 		{
@@ -335,10 +349,12 @@
 		const focus = $optionsFocus;
 		if (mode === 'vertices') {
 			if (focus === 'bevel' && !$vertexSelectionSize) return 'Pick a vertex first (Ctrl+click adds)';
+			if (focus === 'smooth' && !$vertexSelectionSize) return 'Pick a vertex first (Ctrl+click adds)';
 			return '';
 		}
 		if (mode === 'edges') {
 			if (focus === 'bevel' && !$edgeEditSelected.length) return 'Pick an edge first';
+			if (focus === 'edge-extrude' && !$edgeEditSelected.length) return 'Pick a border edge first';
 			return '';
 		}
 		if (focus === 'extrude' || focus === 'inset') {
@@ -433,6 +449,13 @@
 				return false;
 			}
 			ok = beginOpAdjust('subdivide', { levels: $subdivideLevelCount });
+		} else if (op === 'edge-extrude') {
+			// P5b: an adjust-engine op — the engine validates the edge pick and the
+			// border rule, and toasts its own refusals
+			ok = beginOpAdjust('edge-extrude', { distance: $edgeExtrudeDistance });
+		} else if (op === 'smooth') {
+			// P5b: a plain one-shot — one meshgeo commit per click, never an adjust
+			ok = smoothSelectedVerts($smoothFactor, $smoothIterations);
 		}
 		if (ok) flash(op);
 		return ok;
@@ -444,6 +467,13 @@
 	 * one it only focuses, and the pane's hint says what is missing.
 	 * @param {string} op */
 	function runOp(op) {
+		// P5b: Duplicate is an instant one-shot with its own operator (it is not a
+		// commitFaceOp case — it appends and re-seats the gizmo itself, and it owns
+		// its refusal toast)
+		if (op === 'duplicate') {
+			if (duplicateSelectedFaces()) flash(op);
+			return;
+		}
 		const spec = OPS.find((o) => o.op === op);
 		if (spec?.param) {
 			focusTool(op);
@@ -903,6 +933,27 @@
 				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
 			>
 			<button
+				id="edge-extrude"
+				class="tbx-btn {$optionsFocus === 'edge-extrude' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'edge-extrude'}
+				onanimationend={() => (flashOp = '')}
+				aria-pressed={$optionsFocus === 'edge-extrude'}
+				aria-label="Extrude edges"
+				title="Extrude — pull the selected BORDER edges out into a new strip, distance adjustable below (with an edge picked the click applies immediately). A chain of edges extrudes as ONE welded strip; an interior edge (a face on both sides) is refused."
+				onclick={() => runOp('edge-extrude')}><ToolIcon name="edge-extrude" /></button
+			>
+			<button
+				id="edge-subdivide"
+				class="tbx-btn"
+				class:tbx-flash={flashOp === 'esubdivide'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Subdivide edges"
+				title="Subdivide — split every face along the selected edges at their midpoints. Both sides split at the identical welded point, so the mesh stays watertight; the two halves stay selected."
+				onclick={() => {
+					if (subdivideSelectedEdges()) flash('esubdivide');
+				}}><ToolIcon name="edge-subdivide" /></button
+			>
+			<button
 				id="edge-dissolve"
 				class="tbx-btn tbx-danger"
 				class:tbx-flash={flashOp === 'dissolve'}
@@ -966,6 +1017,16 @@
 				aria-label="Bevel the selected vertices"
 				title="Bevel — cut the corner off every selected vertex and cap it, adjustable below (P3: with a vertex picked the click applies immediately, like the faces grid). Works on any number of vertices."
 				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
+			>
+			<button
+				id="mesh-smooth"
+				class="tbx-btn {$optionsFocus === 'smooth' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'smooth'}
+				onanimationend={() => (flashOp = '')}
+				aria-pressed={$optionsFocus === 'smooth'}
+				aria-label="Smooth the selected vertices"
+				title="Smooth — relax each selected vertex toward the average of its neighbours (factor and passes below; with a vertex picked the click applies immediately). Evens out lumps; unselected vertices never move."
+				onclick={() => runOp('smooth')}><ToolIcon name="smooth" /></button
 			>
 			{@render proportionalBtn()}
 			<button
@@ -1041,6 +1102,8 @@
 			onApplyLoopCut={applyLoopCut}
 			onApplyBridge={applyBridge}
 			onApplySubdivide={applySubdivide}
+			onApplyEdgeExtrude={() => applyOp('edge-extrude')}
+			onApplySmooth={() => applyOp('smooth')}
 			onAdjust={(patch) => reapplyOpAdjust(patch)}
 			onSettle={() => settleOpAdjust()}
 			onRevert={() => cancelOpAdjust()}

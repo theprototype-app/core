@@ -40,7 +40,10 @@
 		extrudeIndividual,
 		insetDepth,
 		insetIndividual,
-		subdivideLevelCount
+		subdivideLevelCount,
+		edgeExtrudeDistance,
+		smoothFactor,
+		smoothIterations
 	} from '$lib/meshToolParams';
 	import DragRow from '../ui/DragRow.svelte';
 
@@ -48,6 +51,7 @@
 	 *   adjusting?: boolean,
 	 *   onApplyOp: () => void, onApplyBevel: () => void, onApplyLoopCut: () => void,
 	 *   onApplyBridge: () => void, onApplySubdivide?: () => void,
+	 *   onApplyEdgeExtrude?: () => void, onApplySmooth?: () => void,
 	 *   onAdjust?: (patch: any) => void, onSettle?: () => void, onRevert?: () => void }} */
 	let {
 		mode,
@@ -59,6 +63,8 @@
 		onApplyLoopCut,
 		onApplyBridge,
 		onApplySubdivide = () => {},
+		onApplyEdgeExtrude = () => {},
+		onApplySmooth = () => {},
 		onAdjust = () => {},
 		onSettle = () => {},
 		onRevert = () => {}
@@ -455,6 +461,70 @@
 				onclick={onApplySubdivide}>Apply</button
 			>
 		{/if}
+	</div>
+{:else if focus === 'edge-extrude'}
+	<span class="tbx-label">{adjusting ? 'Adjusting edge extrude' : 'Edge extrude options'}</span>
+	{@render hintLine()}
+	<div id="edge-extrude-params" class="tbx-row text-xs text-gray-300">
+		<DragRow
+			id="edge-extrude-distance"
+			label="distance"
+			value={$edgeExtrudeDistance}
+			step={0.01}
+			decimals={2}
+			min={-5}
+			max={5}
+			title="How far the strip reaches, along the border's averaged surface normal (world units; negative pulls the other way)"
+			onchange={(v) => {
+				edgeExtrudeDistance.set(v);
+				if (adjusting) adjustChanged({ distance: v });
+			}}
+			onscrubstart={scrubStart}
+			onscrubend={scrubEnd}
+		/>
+		{#if adjusting}
+			{@render revertBtn()}
+		{:else}
+			<button
+				id="edge-extrude-apply"
+				class="tbx-primary"
+				title="Extrude the selected border edges into one welded strip"
+				onclick={onApplyEdgeExtrude}>Extrude</button
+			>
+		{/if}
+	</div>
+{:else if focus === 'smooth'}
+	<span class="tbx-label">Smooth options</span>
+	{@render hintLine()}
+	<div id="smooth-params" class="tbx-row text-xs text-gray-300">
+		<DragRow
+			id="smooth-factor"
+			label="factor"
+			value={$smoothFactor}
+			step={0.01}
+			decimals={2}
+			min={0}
+			max={1}
+			title="How far each vertex moves toward the average of its neighbours (1 = lands exactly on it)"
+			onchange={(v) => smoothFactor.set(v)}
+		/>
+		<DragRow
+			id="smooth-iterations"
+			label="passes"
+			value={$smoothIterations}
+			step={0.05}
+			decimals={0}
+			min={1}
+			max={10}
+			title="How many relax passes one click runs (each pass reads the previous pass's result)"
+			onchange={(v) => smoothIterations.set(Math.round(v))}
+		/>
+		<button
+			id="mesh-smooth-apply"
+			class="tbx-primary"
+			title="Relax the selected vertices — one undoable commit per click"
+			onclick={onApplySmooth}>Smooth</button
+		>
 	</div>
 {:else if focus === 'proportional'}
 	<span class="tbx-label">Proportional options</span>

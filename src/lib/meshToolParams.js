@@ -62,6 +62,14 @@ export const insetIndividual = writable(false);
  * NOT named `subdivideLevels` — faceEdit exports a pure HELPER of that name
  * and the two would shadow each other at every import site. */
 export const subdivideLevelCount = writable(1);
+/** 19-A P5b: how far Edge extrude pulls the strip (world units, signed — negative
+ * goes the other way along the chain's averaged normal). */
+export const edgeExtrudeDistance = writable(0.5);
+/** 19-A P5b: Smooth/relax lerp toward the neighbour average (0 = no move, 1 = land
+ * exactly on the average). */
+export const smoothFactor = writable(0.5);
+/** 19-A P5b: Smooth/relax passes per click (each pass re-reads the evolving mesh). */
+export const smoothIterations = writable(1);
 /** M6: merge-by-distance threshold */
 export const mergeDistance = writable(0.001);
 /** M7: symmetrize axis + which half to keep @type {import('svelte/store').Writable<'x'|'y'|'z'>} */
@@ -92,7 +100,9 @@ const WITH_OPTIONS = new Set([
 	'loopcut',
 	'bridge',
 	'subdivide',
-	'proportional'
+	'proportional',
+	'edge-extrude',
+	'smooth'
 ]);
 
 /** @param {string} tool */
@@ -126,6 +136,9 @@ export function resetToolParams() {
 	insetDepth.set(0);
 	insetIndividual.set(false);
 	subdivideLevelCount.set(1);
+	edgeExtrudeDistance.set(0.5);
+	smoothFactor.set(0.5);
+	smoothIterations.set(1);
 	mergeDistance.set(0.001);
 	symAxis.set('x');
 	symKeep.set(1);
@@ -148,6 +161,9 @@ export function toolParams() {
 		insetDepth: get(insetDepth),
 		insetIndividual: get(insetIndividual),
 		subdivideLevelCount: get(subdivideLevelCount),
+		edgeExtrudeDistance: get(edgeExtrudeDistance),
+		smoothFactor: get(smoothFactor),
+		smoothIterations: get(smoothIterations),
 		mergeDistance: get(mergeDistance),
 		symAxis: get(symAxis),
 		symKeep: get(symKeep),

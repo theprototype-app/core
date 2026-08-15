@@ -34,6 +34,21 @@ const PIVOT_NAME = 'multi-select-pivot';
 /** @type {any} */ let pivotStartInverse = null;
 let lastLiveSend = 0;
 /** @type {any} */ let customOrigin = null; // user-placed origin; null = centroid
+// 19-B P3: the TRANSIENT snap anchor's pivot — a LOCAL editing aid like the
+// gizmo's own position, deliberately never written to userData.origin (the
+// only path there is commitOriginDrag, which only fires under pivotOnly; the
+// snap-anchor flow keeps pivotOnly false). Cleared by a fresh selection.
+/** @type {any} */ let transientPivot = null;
+// 19-B P3: the snap engine adjusts the pivot mid-drag through this seam. A
+// static snapEngine import here would close a cycle (snapEngine -> scenePick
+// -> terrainSculpt -> objectActions -> multiTransform), and a dynamic import
+// risks the documented HMR dual-instance trap — so the engine registers.
+/** @type {any} */ let pivotSnapAdjuster = null;
+
+/** @param {(pivot: any, primary: any) => void} fn */
+export function registerPivotSnapAdjuster(fn) {
+	pivotSnapAdjuster = fn;
+}
 
 /** "Move origin" mode: the gizmo and the panel's rows move the PIVOT only */
 export const pivotOnly = writable(false);
@@ -91,6 +106,23 @@ export function commitOriginDrag() {
 export function resetPivotOrigin() {
 	customOrigin = null;
 	reseatPivot();
+}
+
+/**
+ * 19-B P3: seat (or clear, with null) the transient snap-anchor pivot — the
+ * gizmo re-seats at a picked anchor point WITHOUT touching userData.origin.
+ * Goes through reseatPivot, which keeps `pivotOnly` and always leaves a gizmo
+ * attached (the two documented re-seat invariants).
+ * @param {any} worldPos THREE.Vector3 | null
+ */
+export function setTransientPivot(worldPos) {
+	transientPivot = worldPos ? worldPos.clone() : null;
+	reseatPivot();
+}
+
+/** whether the gizmo currently sits on a transient snap anchor */
+export function hasTransientPivot() {
+	return !!transientPivot;
 }
 
 /**
@@ -161,8 +193,10 @@ export function applyPivotTransform(mutate) {
 				scale: entry.object.scale.toArray()
 			});
 	}
-	// the origin travels with the set it just moved
+	// the origin travels with the set it just moved (the transient anchor too,
+	// or the next re-seat would snap the gizmo back to the stale point)
 	if (customOrigin) customOrigin.copy(pivot.position);
+	if (transientPivot) transientPivot.copy(pivot.position);
 	publishPivotPose();
 	objectsGroup.update((value) => value);
 	return true;
@@ -179,6 +213,7 @@ export function applyPivotTransform(mutate) {
 export function attachMultiPivot(uuids, keepOrigin = false) {
 	if (!keepOrigin) {
 		customOrigin = null;
+		transientPivot = null; // a fresh selection drops the snap anchor's seat too
 		pivotOnly.set(false);
 	}
 	const scene = get(globalScene);
@@ -194,7 +229,9 @@ export function attachMultiPivot(uuids, keepOrigin = false) {
 	// origin mode is on) — that is what makes rotate/scale happen about the pivot
 	// the user placed rather than the object's local zero.
 	if (objects.length < 1) return null;
-	if (objects.length === 1 && !hasOrigin(objects[0]) && !get(pivotOnly)) return null;
+	// 19-B: a transient snap anchor also warrants a pivot on a plain single object
+	if (objects.length === 1 && !hasOrigin(objects[0]) && !get(pivotOnly) && !transientPivot)
+		return null;
 	pivot = new THREE.Group();
 	pivot.name = PIVOT_NAME;
 	pivot.userData.isMultiPivot = true;
@@ -208,8 +245,11 @@ export function attachMultiPivot(uuids, keepOrigin = false) {
 		objects.forEach((object) => centroid.add(object.getWorldPosition(world)));
 		centroid.divideScalar(objects.length);
 	}
-	// a hand-placed SELECTION origin outlives the re-seat after every panel edit
-	pivot.position.copy(keepOrigin && customOrigin && objects.length > 1 ? customOrigin : centroid);
+	// a hand-placed SELECTION origin outlives the re-seat after every panel edit;
+	// a transient snap anchor WINS over both while it exists (19-B)
+	pivot.position.copy(
+		transientPivot ?? (keepOrigin && customOrigin && objects.length > 1 ? customOrigin : centroid)
+	);
 	scene.add(pivot);
 	controls.attach(pivot);
 	publishPivotPose();
@@ -291,6 +331,8 @@ function onDraggingChanged(/** @type {any} */ event) {
 		recordTransformSet(set);
 		dragMembers = [];
 		pivotStartInverse = null;
+		// the transient snap anchor rides where the drag left the pivot (19-B)
+		if (transientPivot) transientPivot.copy(pivot.position);
 		objectsGroup.update((value) => value);
 	}
 }
@@ -310,6 +352,13 @@ function onObjectChange() {
 		return;
 	}
 	if (!pivotStartInverse || !dragMembers.length) return;
+	// 19-B: element snap adjusts the PIVOT here, BEFORE the delta is computed,
+	// so every member re-derives from the snapped pose the same frame. (Scene's
+	// onchange early-returns for the pivot, so this is the only hook point.)
+	if (pivotSnapAdjuster) {
+		const primary = dragMembers[dragMembers.length - 1]?.object ?? null;
+		pivotSnapAdjuster(pivot, primary);
+	}
 	pivot.updateMatrixWorld(true);
 	deltaMatrix.multiplyMatrices(pivot.matrixWorld, pivotStartInverse);
 	for (const entry of dragMembers) {

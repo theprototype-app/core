@@ -18,6 +18,7 @@ import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
 import { faceEditObject, meshEditHotkeys } from './faceEdit';
 import { recallBookmark } from './cameraBookmarks';
+import { snapTargets } from './snapping';
 import { selectedObject } from '../stores/sceneStore';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
@@ -211,6 +212,21 @@ export const shortcuts = [
 				]);
 			}
 			import('./physics').then((m) => m.toggleSimulation());
+		}
+	},
+	{
+		// 19-B P4: the element-snap master switch. Deliberately NOT the grid switch
+		// — the grid keeps `snapEnabled` (VR's applySnapMode owns that one).
+		keys: 'M',
+		group: 'Scene',
+		label: 'Toggle element snapping (vertex/face/surface targets)',
+		action: () => {
+			let enabled = false;
+			snapTargets.update((t) => {
+				enabled = !t.enabled;
+				return { ...t, enabled };
+			});
+			showToast(enabled ? 'Element snapping on' : 'Element snapping off');
 		}
 	},
 	{

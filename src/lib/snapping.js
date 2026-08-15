@@ -52,6 +52,43 @@ export function startSnapping() {
 	});
 }
 
+// ---- 19-B: element snap targets --------------------------------------------
+// Element snapping (vertex/face/surface/object during gizmo translate drags)
+// is gated by `snapTargets.enabled` + at least one flag — deliberately NOT by
+// `snapEnabled`: VR's applySnapMode sets snapEnabled=false for its 'surface'
+// mode, and hanging element targets off it would let a VR mode switch silently
+// kill desktop element snapping. All LOCAL prefs, never replicated.
+export const DEFAULT_SNAP_TARGETS = {
+	enabled: true, // master switch for ELEMENT snapping (the grid keeps snapEnabled)
+	vertex: false,
+	edge: false, // schema now — the edge target ships last (diagonal-skip care)
+	face: false, // the DISCRETE stored-logical-face centroid
+	surface: false, // cursor-follow: land on the exact hit point
+	object: false, // other objects' pivots + bbox center + 6 face centers
+	alignNormal: false, // rotate to the candidate normal (face/surface only)
+	radiusPx: 25, // screen-space candidate radius
+	// the anchor PREFERENCE: 'auto' | 'pivot'. A picked anchor ('picked') lives
+	// in the transient snapAnchor store and never persists here.
+	anchorMode: 'auto'
+};
+
+function loadSnapTargets() {
+	try {
+		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('snapTargets') : null;
+		// unknown/missing keys fall back to defaults, so old payloads keep working
+		return { ...DEFAULT_SNAP_TARGETS, ...(raw ? JSON.parse(raw) : {}) };
+	} catch {
+		return { ...DEFAULT_SNAP_TARGETS };
+	}
+}
+
+/** @type {import('svelte/store').Writable<typeof DEFAULT_SNAP_TARGETS>} */
+export const snapTargets = writable(loadSnapTargets());
+
+snapTargets.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('snapTargets', JSON.stringify(value));
+});
+
 const DOWN = new THREE.Vector3(0, -1, 0);
 const surfaceRaycaster = new THREE.Raycaster();
 

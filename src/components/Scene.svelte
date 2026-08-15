@@ -21,7 +21,7 @@
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
-	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo } from '$lib/snapEngine';
+	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
@@ -268,6 +268,7 @@
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
+		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
 		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
@@ -289,13 +290,11 @@
 			const object = hookedControls.object;
 			if (!object) return;
 			// 19-B: element-snap drag lifecycle — the object-point cache lives for one
-			// drag, and drag end always clears the candidate + highlight
+			// drag, and drag end always clears the candidate + highlight. The
+			// multi-select pivot excludes EVERY member (P3: its drags snap too).
 			if (!event.value) endSnapDrag();
-			else if (
-				!object.userData?.isVertexProxy &&
-				!object.userData?.isFaceProxy &&
-				!object.userData?.isMultiPivot
-			)
+			else if (object.userData?.isMultiPivot) beginSnapDrag([...$selectedObjects]);
+			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy)
 				beginSnapDrag([object.uuid]);
 			// vertex handles record their own history entries
 			if (object.userData?.isVertexProxy) {
@@ -581,6 +580,14 @@
 			// only a short, stationary click selects — dragging orbits the camera
 			if (moved > 5 || Date.now() - downTime > 400) return;
 			if ($isLocked || $isVRMode || $specatorMode) return;
+			// 19-B P3: snap-anchor pick mode captures ONE click (the measure shape) —
+			// BEFORE the gizmo guard, because the attached gizmo's hover (axis set)
+			// would swallow a pick click anywhere near the object's centre
+			if ($snapAnchorPicking) {
+				setRayFromEvent(event);
+				snapAnchorClick(selectionRaycaster, [event.clientX, event.clientY]);
+				return;
+			}
 			// ignore clicks on the transform gizmo (axis is set while hovering a handle)
 			if ($TControls && ($TControls.dragging || $TControls.axis)) return;
 			if (!$objectsGroup) return;

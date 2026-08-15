@@ -150,6 +150,8 @@
 	const targetOn = (t, key) => !!t[key];
 	/** @param {any} key */
 	const toggleTarget = (key) => snapTargets.update((t) => ({ ...t, [key]: !targetOn(t, key) }));
+	// 19-B P3: the transient snap anchor (picked point; local-only, never replicated)
+	import { snapAnchor, startSnapAnchorPick, clearSnapAnchor } from '$lib/snapEngine';
 	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
 
 	// (15-L3 dropped the standalone hex textboxes under each colour picker — the
@@ -1712,6 +1714,50 @@
 									radiusPx: Math.min(60, Math.max(5, Math.round(v) || 25))
 								}))}
 						/>
+					</div>
+				</div>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Snap origin</span>
+					<div class="snap-chips">
+						<button
+							id="snap-anchor-auto"
+							class={'ui-chip ' +
+								($snapTargets.anchorMode === 'auto' && $snapAnchor.mode !== 'picked'
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => {
+								clearSnapAnchor();
+								snapTargets.update((t) => ({ ...t, anchorMode: 'auto' }));
+							}}>Auto</button
+						>
+						<button
+							id="snap-anchor-pivot"
+							class={'ui-chip ' +
+								($snapTargets.anchorMode === 'pivot' && $snapAnchor.mode !== 'picked'
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => {
+								clearSnapAnchor();
+								snapTargets.update((t) => ({ ...t, anchorMode: 'pivot' }));
+							}}>Pivot</button
+						>
+						<button
+							id="snap-anchor-pick"
+							class={'ui-chip ' +
+								($snapAnchor.mode === 'picked'
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							onclick={() => startSnapAnchorPick()}>Pick on object…</button
+						>
+						{#if $snapAnchor.mode === 'picked'}
+							<span class="text-xs text-emerald-400">Picked ✓</span>
+							<button
+								id="snap-anchor-clear"
+								class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+								aria-label="clear the picked snap origin"
+								onclick={() => clearSnapAnchor()}>✕</button
+							>
+						{/if}
 					</div>
 				</div>
 				<p class="text-[10px] italic text-gray-400">

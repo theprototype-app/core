@@ -6,6 +6,7 @@
 	import { simulating, simPaused, remoteSimulating, toggleSimulation, pauseSimulation, resetSimulation } from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
+	import { startSnapAnchorPick } from '$lib/snapEngine';
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks, SHORTCUT_SLOTS } from '$lib/cameraBookmarks';
 	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
@@ -210,6 +211,17 @@
 				// translate drag, it takes priority over the grid steps
 				{ section: 'Elements' },
 				...ELEMENT_TARGETS.map(([key, label]) => elementTargetItem(key, label)),
+				// P3: pick the transient snap anchor (needs exactly one selection)
+				...($selectedObjects.length === 1
+					? [
+							{
+								label: 'Pick snap origin',
+								icon: 'crosshair',
+								tooltip: 'Click a point on the selected object — drags snap that point',
+								action: () => startSnapAnchorPick()
+							}
+						]
+					: []),
 				{ section: ' ' },
 				{
 					label: 'More snapping settings…',

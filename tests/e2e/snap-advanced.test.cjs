@@ -393,5 +393,263 @@ h.run(async () => {
 	}, ids);
 	h.check(inert === false, 'with every target off, the engine declines (defaults byte-identical)');
 
+	// ---------- 8. P3: the transient snap anchor ----------
+	// Pick a VERTEX anchor on A with a real click, drag the re-seated gizmo
+	// (through the REAL multiTransform handlers), and assert the PICKED point
+	// lands on B's corner — while userData.origin stays absent and nothing but
+	// 'move' broadcasts (the locked "local-only, never replicated" fork).
+	await A.page.evaluate(
+		({ a, b }) => {
+			const w = window.__stores;
+			let g = null;
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const boxA = g.getObjectByProperty('uuid', a);
+			const boxB = g.getObjectByProperty('uuid', b);
+			boxA.position.set(0, 1, 0);
+			boxB.position.set(4.13, 1.63, 0); // tall B from section 6, corner (3.13, 3.63, 1)
+			boxA.updateMatrixWorld(true);
+			boxB.updateMatrixWorld(true);
+			w.objectsGroup.update((v) => v);
+			w.snapping.snapEnabled.set(false);
+			w.snapping.snapTargets.update((v) => ({ ...v, vertex: true, radiusPx: 40 }));
+			// record every outgoing message type from here on
+			let p = null;
+			w.peers.subscribe((v) => (p = v))();
+			window.__sentTypes = [];
+			const orig = p.send.bind(p);
+			p.send = (m) => {
+				window.__sentTypes.push(m?.type);
+				return orig(m);
+			};
+		},
+		ids
+	);
+	// a CHANGED primary is what resets the anchor lifecycle — cycle B → A
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.b);
+	await A.page.waitForTimeout(200);
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.waitForTimeout(500);
+	const armed = await A.page.evaluate(() => window.__stores.snapEngine.startSnapAnchorPick());
+	h.check(armed === true, 'pick mode arms with one selected object');
+	// REAL click just inside A's front face at its corner (1, 2, 1)
+	const pickPx = await A.page.evaluate(() => {
+		let camera = null;
+		window.__stores.globalCamera.subscribe((v) => (camera = v))();
+		const v = new window.__stores.THREE.Vector3(0.94, 1.94, 1).project(camera);
+		return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
+	});
+	await A.page.mouse.click(pickPx[0], pickPx[1]);
+	await A.page.waitForTimeout(400);
+	const picked = await A.page.evaluate(({ a }) => {
+		const w = window.__stores;
+		let anchor = null;
+		let picking = null;
+		let controls = null;
+		let pivotOnly = null;
+		let scene = null;
+		w.snapEngine.snapAnchor.subscribe((v) => (anchor = v))();
+		w.snapEngine.snapAnchorPicking.subscribe((v) => (picking = v))();
+		w.TControls.subscribe((v) => (controls = v))();
+		w.multiTransform.pivotOnly.subscribe((v) => (pivotOnly = v))();
+		w.globalScene.subscribe((v) => (scene = v))();
+		return {
+			picking,
+			mode: anchor?.mode,
+			uuid: anchor?.uuid,
+			local: anchor?.local,
+			gizmoIsPivot: !!controls?.object?.userData?.isMultiPivot,
+			pivotPos: controls?.object?.position?.toArray?.() ?? null,
+			pivotOnly,
+			anchorUuidIsA: anchor?.uuid === a,
+			markerVisible: !!scene.getObjectByName('snap-anchor-marker')?.visible
+		};
+	}, ids);
+	h.check(picked.picking === false, 'the click exits pick mode');
+	h.check(
+		picked.mode === 'picked' && picked.anchorUuidIsA,
+		`a picked anchor exists on A (${picked.mode})`
+	);
+	h.check(
+		!!picked.local &&
+			Math.hypot(picked.local[0] - 1, picked.local[1] - 1, picked.local[2] - 1) < 1e-3,
+		`the corner won as a VERTEX anchor, stored LOCAL (${picked.local?.map((v) => v.toFixed(3))})`
+	);
+	h.check(
+		picked.gizmoIsPivot &&
+			!!picked.pivotPos &&
+			Math.hypot(picked.pivotPos[0] - 1, picked.pivotPos[1] - 2, picked.pivotPos[2] - 1) < 1e-3,
+		`the gizmo RE-SEATED on the picked point (${picked.pivotPos?.map((v) => v.toFixed(3))})`
+	);
+	h.check(picked.pivotOnly === false, 'reseat invariant 1: pivotOnly untouched (drags move the OBJECT)');
+	h.check(picked.markerVisible === true, 'the anchor marker renders at the picked point');
+	// drag the pivot through the REAL multiTransform handlers
+	const anchorDrag = await A.page.evaluate(({ a }) => {
+		const w = window.__stores;
+		let controls = null;
+		let camera = null;
+		let g = null;
+		w.TControls.subscribe((v) => (controls = v))();
+		w.globalCamera.subscribe((v) => (camera = v))();
+		w.objectsGroup.subscribe((v) => (g = v))();
+		const boxA = g.getObjectByProperty('uuid', a);
+		const preDrag = boxA.position.toArray();
+		// aim just inside tall B's front face at its top corner (3.13, 3.63, 1)
+		const aim = new w.THREE.Vector3(3.2, 3.5, 1).project(camera);
+		w.snapEngine.setSnapPointer(
+			(aim.x * 0.5 + 0.5) * window.innerWidth,
+			(-aim.y * 0.5 + 0.5) * window.innerHeight
+		);
+		controls.dragging = true;
+		controls.dispatchEvent({ type: 'dragging-changed', value: true });
+		controls.object.position.x += 0.5;
+		controls.dispatchEvent({ type: 'objectChange' });
+		// the picked point in WORLD space after the snap
+		boxA.updateMatrixWorld(true);
+		const pickedWorld = new w.THREE.Vector3(1, 1, 1).applyMatrix4(boxA.matrixWorld);
+		controls.dragging = false;
+		controls.dispatchEvent({ type: 'dragging-changed', value: false });
+		return {
+			preDrag,
+			pickedWorld: pickedWorld.toArray(),
+			postDrag: boxA.position.toArray(),
+			origin: boxA.userData?.origin ?? null,
+			sent: [...new Set(window.__sentTypes)]
+		};
+	}, ids);
+	h.check(
+		Math.hypot(
+			anchorDrag.pickedWorld[0] - 3.13,
+			anchorDrag.pickedWorld[1] - 3.63,
+			anchorDrag.pickedWorld[2] - 1
+		) < 1e-3,
+		`the PICKED point lands on B's corner (${anchorDrag.pickedWorld.map((v) => v.toFixed(3))})`
+	);
+	h.check(anchorDrag.origin === null, 'userData.origin stays ABSENT — the anchor never became a real origin');
+	h.check(
+		anchorDrag.sent.includes('move') && !anchorDrag.sent.includes('objectParameters'),
+		`only normal move broadcasts left the machine (${anchorDrag.sent.join(',')})`
+	);
+	// one undo entry reverts the whole snap drag (the property, not the count)
+	const undone = await A.page.evaluate(
+		({ a, preDrag }) => {
+			const w = window.__stores;
+			w.history.undo();
+			let g = null;
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const p = g.getObjectByProperty('uuid', a).position.toArray();
+			w.history.redo();
+			return Math.hypot(p[0] - preDrag[0], p[1] - preDrag[1], p[2] - preDrag[2]);
+		},
+		{ a: ids.a, preDrag: anchorDrag.preDrag }
+	);
+	h.check(undone < 1e-6, `ONE undo reverts the whole anchor drag (delta ${undone})`);
+	// clear: the gizmo must come BACK to the object (reseat invariant 2)
+	const cleared = await A.page.evaluate(({ a }) => {
+		const w = window.__stores;
+		w.snapEngine.clearSnapAnchor();
+		let controls = null;
+		let anchor = null;
+		let scene = null;
+		w.TControls.subscribe((v) => (controls = v))();
+		w.snapEngine.snapAnchor.subscribe((v) => (anchor = v))();
+		w.globalScene.subscribe((v) => (scene = v))();
+		return {
+			mode: anchor?.mode,
+			gizmoOnObject: controls?.object?.uuid === a,
+			markerVisible: !!scene.getObjectByName('snap-anchor-marker')?.visible
+		};
+	}, ids);
+	h.check(cleared.mode === 'auto', 'clear resets the anchor store');
+	h.check(
+		cleared.gizmoOnObject === true,
+		'reseat invariant 2: clearing ALWAYS leaves a gizmo — it comes back to the object'
+	);
+	await A.page.waitForTimeout(300);
+	const markerGone = await A.page.evaluate(
+		() =>
+			new Promise((r) =>
+				window.__stores.globalScene.subscribe((s) =>
+					r(!!s.getObjectByName('snap-anchor-marker')?.visible)
+				)()
+			)
+	);
+	h.check(markerGone === false, 'the anchor marker hides after clear');
+	// lifecycle: a NEW primary selection drops a picked anchor. A moved during
+	// the drag, so put it back FIRST — pickPx aims at its original corner
+	// (re-identifying a moved target by its old pixel was the first bug here)
+	await A.page.evaluate(({ a }) => {
+		const w = window.__stores;
+		let g = null;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		const boxA = g.getObjectByProperty('uuid', a);
+		boxA.position.set(0, 1, 0);
+		boxA.updateMatrixWorld(true);
+		w.objectsGroup.update((v) => v);
+	}, ids);
+	await A.page.waitForTimeout(300);
+	await A.page.evaluate(() => window.__stores.snapEngine.startSnapAnchorPick());
+	await A.page.mouse.click(pickPx[0], pickPx[1]);
+	await A.page.waitForTimeout(300);
+	const lifecycle = await A.page.evaluate(({ b }) => {
+		const w = window.__stores;
+		let anchor = null;
+		w.snapEngine.snapAnchor.subscribe((v) => (anchor = v))();
+		const rePicked = anchor?.mode === 'picked';
+		w.objectActions.selectObject(b);
+		w.snapEngine.snapAnchor.subscribe((v) => (anchor = v))();
+		let controls = null;
+		w.TControls.subscribe((v) => (controls = v))();
+		return { rePicked, modeAfter: anchor?.mode, gizmoOnB: controls?.object?.uuid === b };
+	}, ids);
+	h.check(lifecycle.rePicked, 'a second pick works after clearing');
+	h.check(
+		lifecycle.modeAfter === 'auto' && lifecycle.gizmoOnB,
+		'a fresh primary selection drops the anchor AND the transient pivot (gizmo on the new object)'
+	);
+	// Esc leaves pick mode
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.waitForTimeout(200);
+	await A.page.evaluate(() => window.__stores.snapEngine.startSnapAnchorPick());
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+	const escd = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.snapEngine.snapAnchorPicking.subscribe((v) => r(v))())
+	);
+	h.check(escd === false, 'Escape cancels pick mode');
+	// a miss exits pick mode without picking (synthetic sky ray)
+	const missed = await A.page.evaluate(() => {
+		const w = window.__stores;
+		w.snapEngine.snapAnchorPicking.set(true);
+		let camera = null;
+		w.globalCamera.subscribe((v) => (camera = v))();
+		const ray = new w.THREE.Raycaster();
+		ray.setFromCamera(new w.THREE.Vector2(0, 0.95), camera); // the sky
+		const tookAnchor = w.snapEngine.snapAnchorClick(ray, [10, 10]);
+		let picking = null;
+		let anchor = null;
+		w.snapEngine.snapAnchorPicking.subscribe((v) => (picking = v))();
+		w.snapEngine.snapAnchor.subscribe((v) => (anchor = v))();
+		return { tookAnchor, picking, mode: anchor?.mode };
+	});
+	h.check(
+		missed.tookAnchor === false && missed.picking === false && missed.mode === 'auto',
+		'a miss exits pick mode without an anchor'
+	);
+	// the Inspector anchor row
+	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.waitForTimeout(500);
+	const anchorUi = await A.page.evaluate(() => ({
+		auto: !!document.querySelector('#snap-anchor-auto'),
+		pivot: !!document.querySelector('#snap-anchor-pivot'),
+		pick: !!document.querySelector('#snap-anchor-pick')
+	}));
+	h.check(anchorUi.auto && anchorUi.pivot && anchorUi.pick, 'the Snap origin row renders (Auto | Pivot | Pick)');
+	await A.page.evaluate(() => document.querySelector('#snap-anchor-pivot').click());
+	await A.page.waitForTimeout(200);
+	t = await targets(A.page);
+	h.check(t.anchorMode === 'pivot', 'the Pivot chip writes the anchorMode preference');
+	await A.page.evaluate(() => document.querySelector('#snap-anchor-auto').click());
+	await A.page.waitForTimeout(200);
+
 	await h.finish(browser);
 });

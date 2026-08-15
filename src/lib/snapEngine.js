@@ -1,11 +1,14 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
-import { globalScene, globalCamera, globalRenderer, objectsGroup, TControls } from '../stores/sceneStore';
+import { globalScene, globalCamera, globalRenderer, objectsGroup, TControls, selectedObjects } from '../stores/sceneStore';
+import { showToast } from '../stores/appStore';
 import { snapTargets } from './snapping';
 import { sceneHits, hitWorldNormal } from './scenePick';
 import { originWorld } from './objectOrigin';
 import { readStoredFaces } from './meshTopology';
+import { ensureBoundsTrees } from './bvhPicking';
+import { setTransientPivot, registerPivotSnapAdjuster } from './multiTransform';
 
 // 19-B P2: the element snap engine.
 //
@@ -37,6 +40,15 @@ import { readStoredFaces } from './meshTopology';
  * @type {import('svelte/store').Writable<any>} */
 export const activeSnapCandidate = writable(null);
 
+// 19-B P3: the TRANSIENT snap anchor — a picked point on the selected object,
+// LOCAL-ONLY (never userData.origin, never replicated, never persisted; only
+// the anchorMode PREFERENCE persists, in snapTargets). Resting shape below;
+// 'picked' carries the object uuid + the point in that object's local frame.
+/** @type {import('svelte/store').Writable<{mode: string, uuid: string|null, local: number[]|null}>} */
+export const snapAnchor = writable({ mode: 'auto', uuid: null, local: null });
+/** one-click pick mode: the next viewport click picks the anchor (Scene intercept) */
+export const snapAnchorPicking = writable(false);
+
 // ---- module state (declared above every subscriber — the TDZ rule) ---------
 /** @type {number[]|null} last pointer position in CLIENT px (tracked by Scene while dragging) */
 let pointerClient = null;
@@ -46,6 +58,13 @@ let dragExclude = [];
 /** @type {{point: any, uuid: string}[]|null} object-target points cached at drag start */
 let dragObjectPoints = null;
 let dragActive = false;
+/** P3, pivot drags only: the drag-start frame the pivot-path anchor is
+ * evaluated in. The members re-derive AFTER the adjuster runs, so an anchor
+ * read off the primary's live pose is one frame stale and double-counts the
+ * pivot's own offset (measured: the picked point landed exactly one manual
+ * pivot move off the candidate).
+ * @type {{pivotPos: any, primaryBox: any, originOffset: any}|null} */
+let pivotDragStart = null;
 /** @type {any} scene-root candidate marker group */
 let marker = null;
 /** @type {any} */ let markerDot = null;
@@ -108,10 +127,28 @@ export function beginSnapDrag(excludeUuids) {
 	dragActive = true;
 	dragExclude = excludeUuids ?? [];
 	dragObjectPoints = null;
+	pivotDragStart = null;
 	lastSearchAt = 0;
+	const group = get(objectsGroup);
+	/** @type {any} */
+	const controls = get(TControls);
+	// a PIVOT drag captures its start frame (this runs from dragging-changed,
+	// before the gizmo has moved anything): the pivot's seat, the primary's box
+	// and the primary's origin offset — what the pivot-path anchor reads from
+	if (controls?.object?.userData?.isMultiPivot && group) {
+		const primaryUuid = dragExclude[dragExclude.length - 1];
+		const primary = primaryUuid ? group.getObjectByProperty('uuid', primaryUuid) : null;
+		if (primary) {
+			primary.updateMatrixWorld(true);
+			pivotDragStart = {
+				pivotPos: controls.object.position.clone(),
+				primaryBox: new THREE.Box3().setFromObject(primary),
+				originOffset: originWorld(primary, new THREE.Vector3()).sub(controls.object.position)
+			};
+		}
+	}
 	const targets = get(snapTargets);
 	if (!targets.enabled || !targets.object) return;
-	const group = get(objectsGroup);
 	if (!group) return;
 	dragObjectPoints = [];
 	for (const child of group.children) {
@@ -125,6 +162,7 @@ export function endSnapDrag() {
 	dragActive = false;
 	dragExclude = [];
 	dragObjectPoints = null;
+	pivotDragStart = null;
 	pointerClient = null;
 	if (get(activeSnapCandidate)) activeSnapCandidate.set(null);
 }
@@ -306,13 +344,26 @@ export function findSnapCandidate(camera, pointerNdc, excludeUuids) {
 
 /**
  * The anchor: where on the dragged object the candidate should land.
- * 'auto' (default): the candidate point CLAMPED to the object's world Box3 —
- * the nearest point on the box toward the target. The search is cursor-based
- * and anchor-independent, so this is not circular: computed once per frame
- * from the proposed pose, it converges. 'pivot': the object's own origin.
+ * A PICKED anchor (P3) wins: the stored local point on its object, followed
+ * live through matrixWorld. Otherwise the preference: 'auto' (default) is the
+ * candidate point CLAMPED to the object's world Box3 — the nearest point on
+ * the box toward the target; the search is cursor-based and
+ * anchor-independent, so this is not circular: computed once per frame from
+ * the proposed pose, it converges. 'pivot': the object's own origin.
  * @param {any} object @param {any} candidate @returns {any} THREE.Vector3
  */
 export function anchorWorldPoint(object, candidate) {
+	const anchor = get(snapAnchor);
+	if (anchor.mode === 'picked' && anchor.uuid && anchor.local) {
+		const picked =
+			object?.uuid === anchor.uuid
+				? object
+				: get(objectsGroup)?.getObjectByProperty('uuid', anchor.uuid);
+		if (picked) {
+			picked.updateMatrixWorld(true);
+			return _anchor.fromArray(anchor.local).applyMatrix4(picked.matrixWorld);
+		}
+	}
 	const targets = get(snapTargets);
 	if (targets.anchorMode === 'pivot') return originWorld(object, _anchor.set(0, 0, 0));
 	_box.setFromObject(object);
@@ -340,16 +391,9 @@ export function applyElementSnap(target, primaryObject) {
 	return true;
 }
 
-/**
- * The Scene plain-branch hook: search (throttled — the last candidate holds
- * between searches) and apply, every objectChange of a translate drag.
- * Returns true when the pose was element-snapped this frame, so the caller
- * skips dropToSurface (they would fight over Y).
- * @param {any} object the gizmo's plain object
- * @returns {boolean}
- */
-export function maybeSnapGizmo(object) {
-	if (!dragActive || !object) return false;
+/** the shared drag gates: an active translate drag with element snapping on */
+function snapGatesOpen() {
+	if (!dragActive) return false;
 	const targets = get(snapTargets);
 	if (!targets.enabled) return false;
 	if (!(targets.vertex || targets.edge || targets.face || targets.surface || targets.object))
@@ -357,24 +401,81 @@ export function maybeSnapGizmo(object) {
 	/** @type {any} */
 	const controls = get(TControls);
 	if (!controls?.dragging || controls.mode !== 'translate') return false;
+	return true;
+}
+
+/** run the throttled search — the last candidate holds between searches */
+function runThrottledSearch() {
 	const camera = get(globalCamera);
-	if (!camera) return false;
+	if (!camera) return;
 	const now = performance.now();
-	if (now - lastSearchAt >= SEARCH_INTERVAL_MS) {
-		lastSearchAt = now;
-		/** @type {any} */
-		const renderer = get(globalRenderer);
-		const rect = renderer?.domElement?.getBoundingClientRect?.();
-		let ndc = null;
-		if (pointerClient && rect?.width && rect?.height) {
-			ndc = [
-				((pointerClient[0] - rect.left) / rect.width) * 2 - 1,
-				-((pointerClient[1] - rect.top) / rect.height) * 2 + 1
-			];
-		}
-		findSnapCandidate(camera, ndc, dragExclude);
+	if (now - lastSearchAt < SEARCH_INTERVAL_MS) return;
+	lastSearchAt = now;
+	/** @type {any} */
+	const renderer = get(globalRenderer);
+	const rect = renderer?.domElement?.getBoundingClientRect?.();
+	let ndc = null;
+	if (pointerClient && rect?.width && rect?.height) {
+		ndc = [
+			((pointerClient[0] - rect.left) / rect.width) * 2 - 1,
+			-((pointerClient[1] - rect.top) / rect.height) * 2 + 1
+		];
 	}
+	findSnapCandidate(camera, ndc, dragExclude);
+}
+
+/**
+ * The Scene plain-branch hook: search + apply, every objectChange of a
+ * translate drag. Returns true when the pose was element-snapped this frame,
+ * so the caller skips dropToSurface (they would fight over Y).
+ * @param {any} object the gizmo's plain object
+ * @returns {boolean}
+ */
+export function maybeSnapGizmo(object) {
+	if (!object || !snapGatesOpen()) return false;
+	runThrottledSearch();
 	return applyElementSnap(object, object);
+}
+
+const _boxProposed = new THREE.Box3();
+const _pivotShift = new THREE.Vector3();
+
+/**
+ * The multiTransform hook (P3, registered through the seam — see the module
+ * header): adjust the PIVOT before the member delta is computed, so the set
+ * re-derives from the snapped pose the same frame. The anchor is evaluated in
+ * the PIVOT's frame — the members still sit at LAST frame's pose here, so an
+ * anchor read off the primary's live matrix double-counts the pivot's own
+ * offset. A picked anchor IS the pivot (it is seated on the picked point and
+ * rides rigidly); 'pivot' mode is the primary's origin at its drag-start
+ * offset from the pivot; 'auto' clamps to the primary's box TRANSLATED by the
+ * pivot's delta (a translate drag only translates it).
+ * @param {any} pivot @param {any} primary
+ */
+function adjustPivotForSnap(pivot, primary) {
+	if (!pivot || !primary || !snapGatesOpen()) return;
+	runThrottledSearch();
+	const candidate = get(activeSnapCandidate);
+	if (!candidate || !pivot.parent) return;
+	const anchor = get(snapAnchor);
+	const targets = get(snapTargets);
+	if (anchor.mode === 'picked' && anchor.uuid && anchor.local) {
+		_anchor.copy(pivot.position);
+	} else if (targets.anchorMode === 'pivot' && pivotDragStart) {
+		_anchor.copy(pivot.position).add(pivotDragStart.originOffset);
+	} else if (pivotDragStart) {
+		_pivotShift.copy(pivot.position).sub(pivotDragStart.pivotPos);
+		_boxProposed.copy(pivotDragStart.primaryBox).translate(_pivotShift);
+		_boxProposed.clampPoint(candidate.point, _anchor);
+	} else {
+		_anchor.copy(pivot.position);
+	}
+	_delta.copy(candidate.point).sub(_anchor);
+	if (_delta.lengthSq() < 1e-14) return;
+	pivot.getWorldPosition(_world).add(_delta);
+	pivot.parent.updateMatrixWorld(true);
+	pivot.position.copy(pivot.parent.worldToLocal(_world));
+	pivot.updateMatrixWorld(true);
 }
 
 // ---- candidate highlight ----------------------------------------------------
@@ -437,9 +538,188 @@ function updateMarker(candidate) {
 	}
 }
 
-/** Wire the engine once (Scene onMount): the marker follows the candidate. */
+// ---- the snap anchor (P3) ---------------------------------------------------
+
+/**
+ * Arm pick mode from the UI. Deliberately always offered — the toast explains
+ * when the selection does not fit (the meshEdit "always offered, toast when
+ * nothing is picked" rule) — but it needs exactly one selected object, because
+ * the anchor is a point ON the thing that drags.
+ * @returns {boolean}
+ */
+export function startSnapAnchorPick() {
+	const selection = get(selectedObjects);
+	if (selection.length !== 1) {
+		showToast('Select exactly one object to pick its snap origin');
+		return false;
+	}
+	snapAnchorPicking.set(true);
+	showToast('Click a point on the selected object — a nearby vertex wins (Esc cancels)');
+	return true;
+}
+
+/**
+ * The one-click Scene intercept (the measureClick shape): raycast ONLY the
+ * selected object's subtree; the nearest hit-triangle corner within ~14px
+ * becomes a VERTEX anchor (the corner's position IS the welded position),
+ * anything else a FACE anchor at the exact local hit point. Re-seats the
+ * gizmo there through setTransientPivot — pivotOnly stays false, so nothing
+ * can reach userData.origin. A miss exits pick mode (the measure/knife idiom).
+ * @param {any} raycaster already aimed @param {number[]} [clientPx] the click, CSS px
+ * @returns {boolean} whether an anchor was picked
+ */
+export function snapAnchorClick(raycaster, clientPx) {
+	snapAnchorPicking.set(false);
+	const selection = get(selectedObjects);
+	const uuid = selection[selection.length - 1];
+	const object = uuid ? get(objectsGroup)?.getObjectByProperty('uuid', uuid) : null;
+	if (!object) {
+		showToast('Snap origin: no selected object (pick cancelled)');
+		return false;
+	}
+	ensureBoundsTrees(object, []);
+	const hit = raycaster.intersectObject(object, true)[0];
+	if (!hit) {
+		showToast('Snap origin: click landed off the object (pick cancelled)');
+		return false;
+	}
+	let anchorWorld = hit.point.clone();
+	let kind = 'face point';
+	const camera = get(globalCamera);
+	/** @type {any} */
+	const renderer = get(globalRenderer);
+	const rect = renderer?.domElement?.getBoundingClientRect?.();
+	if (hit.faceIndex != null && hit.object?.isMesh && camera && rect && clientPx) {
+		let best = null;
+		let bestDist = 14; // screen px — a corner within reach wins over the hit point
+		for (let corner = 0; corner < 3; corner++) {
+			const point = triCornerWorld(hit.object, hit.faceIndex, corner);
+			if (!point) continue;
+			const px = projectPx(point, camera, rect);
+			if (!px) continue;
+			const dist = Math.hypot(px[0] - clientPx[0], px[1] - clientPx[1]);
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = point;
+			}
+		}
+		if (best) {
+			anchorWorld = best;
+			kind = 'vertex';
+		}
+	}
+	// stored LOCAL to the selected TOP-LEVEL object — the thing that drags —
+	// so the anchor rides every later move of it
+	object.updateMatrixWorld(true);
+	const local = anchorWorld.clone().applyMatrix4(object.matrixWorld.clone().invert());
+	snapAnchor.set({ mode: 'picked', uuid: object.uuid, local: local.toArray() });
+	setTransientPivot(anchorWorld);
+	showToast(`Snap origin picked (${kind}) — drags snap this point; ✕ in Snapping clears it`);
+	return true;
+}
+
+/** Drop the picked anchor: the gizmo re-seats through setTransientPivot(null),
+ * which keeps pivotOnly and always leaves a gizmo attached. */
+export function clearSnapAnchor() {
+	snapAnchorPicking.set(false);
+	if (get(snapAnchor).mode !== 'picked') return;
+	snapAnchor.set({ mode: 'auto', uuid: null, local: null });
+	setTransientPivot(null);
+}
+
+// ---- anchor viz ---------------------------------------------------------------
+// A scene-root marker (sphere + 3-axis cross) at the picked anchor, followed
+// per frame from Scene's useTask — scene-root markers don't follow for free
+// (the tickMeshEdit lesson).
+
+/** @type {any} */ let anchorMarker = null;
+/** @type {any} */ let anchorDot = null;
+const ANCHOR_COLOR = 0x59c8ff;
+
+function ensureAnchorMarker() {
+	if (anchorMarker) return anchorMarker;
+	const scene = get(globalScene);
+	if (!scene) return null;
+	anchorMarker = new THREE.Group();
+	anchorMarker.name = 'snap-anchor-marker';
+	anchorDot = new THREE.Mesh(
+		new THREE.SphereGeometry(1, 12, 8),
+		new THREE.MeshBasicMaterial({ color: ANCHOR_COLOR, depthTest: false, transparent: true, opacity: 0.9 })
+	);
+	anchorDot.renderOrder = 999;
+	const crossGeometry = new THREE.BufferGeometry().setFromPoints([
+		new THREE.Vector3(-2.4, 0, 0),
+		new THREE.Vector3(2.4, 0, 0),
+		new THREE.Vector3(0, -2.4, 0),
+		new THREE.Vector3(0, 2.4, 0),
+		new THREE.Vector3(0, 0, -2.4),
+		new THREE.Vector3(0, 0, 2.4)
+	]);
+	const cross = new THREE.LineSegments(
+		crossGeometry,
+		new THREE.LineBasicMaterial({ color: ANCHOR_COLOR, depthTest: false, transparent: true, opacity: 0.9 })
+	);
+	cross.renderOrder = 999;
+	anchorDot.add(cross); // the cross rides the dot's camera-distance scale
+	anchorMarker.add(anchorDot);
+	anchorMarker.visible = false;
+	scene.add(anchorMarker);
+	return anchorMarker;
+}
+
+const _anchorFollow = new THREE.Vector3();
+
+/** Per-frame follow (Scene's useTask): the marker sits on the picked anchor. */
+export function updateSnapAnchor() {
+	const anchor = get(snapAnchor);
+	if (anchor.mode !== 'picked' || !anchor.uuid || !anchor.local) {
+		if (anchorMarker) anchorMarker.visible = false;
+		return;
+	}
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', anchor.uuid);
+	if (!object) {
+		if (anchorMarker) anchorMarker.visible = false;
+		return;
+	}
+	const marker = ensureAnchorMarker();
+	if (!marker) return;
+	marker.visible = true;
+	marker.position.fromArray(anchor.local).applyMatrix4(object.matrixWorld);
+	const camera = get(globalCamera);
+	const distance = camera ? camera.getWorldPosition(_anchorFollow).distanceTo(marker.position) : 10;
+	anchorDot.scale.setScalar(Math.max(distance * 0.005, 0.01));
+}
+
+// ---- lifecycle ----------------------------------------------------------------
+
+/** @type {string|null} */ let lastPrimaryUuid = null;
+
+/** @param {KeyboardEvent} event */
+function onSnapKeydown(event) {
+	if (event.key !== 'Escape' || !get(snapAnchorPicking)) return;
+	// direct CAPTURE listener: panel chrome swallows delegated/bubbled keys
+	event.preventDefault();
+	event.stopPropagation();
+	snapAnchorPicking.set(false);
+	showToast('Snap origin pick cancelled');
+}
+
+/** Wire the engine once (Scene onMount): the candidate marker, the anchor
+ * lifecycle (cleared on primary-selection change — never persisted per
+ * object), Esc for pick mode, and the multiTransform pivot adjuster. */
 export function startSnapEngine() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
 	activeSnapCandidate.subscribe(updateMarker);
+	registerPivotSnapAdjuster(adjustPivotForSnap);
+	window.addEventListener('keydown', onSnapKeydown, true);
+	selectedObjects.subscribe((uuids) => {
+		const primary = uuids?.length ? uuids[uuids.length - 1] : null;
+		if (primary === lastPrimaryUuid) return;
+		lastPrimaryUuid = primary;
+		// the anchor is a per-pick aid: a new primary drops it (the transient
+		// pivot itself is cleared by attachMultiPivot's fresh-selection branch)
+		if (get(snapAnchor).mode === 'picked') snapAnchor.set({ mode: 'auto', uuid: null, local: null });
+		if (get(snapAnchorPicking)) snapAnchorPicking.set(false);
+	});
 }

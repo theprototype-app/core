@@ -25,6 +25,7 @@ import {
 	internalEdgeSet,
 	edgeKeyOf,
 	bevelVertices,
+	deleteVertices,
 	beginOpAdjust
 } from './faceEdit';
 // 19-A P4: the proportional stores/falloff moved to a LEAF (faceEdit needs them
@@ -709,6 +710,29 @@ function selectHandleInner(index) {
 }
 
 /**
+ * The vertex SELECTION as welded position KEYS — the ctrl-picked set, or the single
+ * anchored handle when nothing was added to it (meshEdit has TWO selection notions and a
+ * plain click only sets the anchor).
+ *
+ * Every vertex OPERATOR crosses the same boundary: this module owns the handles, faceEdit
+ * owns the triangle soup, and a welded key is the only thing both agree on.
+ * @returns {string[]}
+ */
+function selectedVertexKeys() {
+	const indices = vertexSelection.size
+		? [...vertexSelection]
+		: selectedHandle >= 0
+			? [selectedHandle]
+			: [];
+	return indices
+		.filter((index) => handles[index])
+		.map((index) => {
+			const p = handles[index].position;
+			return `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
+		});
+}
+
+/**
  * M5b: bevel the selected vertices — the corner is cut off and capped. Any number of
  * vertices at once; the geometry work lives in faceEdit (it owns the triangle soup and the
  * commit path), this only translates the SELECTION into welded position keys.
@@ -717,21 +741,11 @@ function selectHandleInner(index) {
  */
 export function bevelSelectedVerts(width = 0.2, profile = 0) {
 	if (!edited || !handles.length) return false;
-	const indices = vertexSelection.size
-		? [...vertexSelection]
-		: selectedHandle >= 0
-			? [selectedHandle]
-			: [];
-	if (!indices.length) {
+	const keys = selectedVertexKeys();
+	if (!keys.length) {
 		showToast('Select a vertex first, then Bevel');
 		return false;
 	}
-	const keys = indices
-		.filter((index) => handles[index])
-		.map((index) => {
-			const p = handles[index].position;
-			return `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
-		});
 	const uuid = edited.uuid;
 	const ok = bevelVertices(uuid, keys, { width, profile });
 	// the bevel replaced the corner, so the handle list is stale in every sense — rebuild
@@ -754,26 +768,46 @@ export function bevelSelectedVerts(width = 0.2, profile = 0) {
  */
 export function beginVertexBevelAdjust(width = 0.2, profile = 0) {
 	if (!edited || !handles.length) return false;
-	const indices = vertexSelection.size
-		? [...vertexSelection]
-		: selectedHandle >= 0
-			? [selectedHandle]
-			: [];
-	if (!indices.length) {
+	const keys = selectedVertexKeys();
+	if (!keys.length) {
 		showToast('Select a vertex first, then Bevel');
 		return false;
 	}
-	const keys = indices
-		.filter((index) => handles[index])
-		.map((index) => {
-			const p = handles[index].position;
-			return `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
-		});
 	return beginOpAdjust(
 		'bevel',
 		{ width, profile },
 		{ kind: 'vertices', uuid: edited.uuid, vertexKeys: keys }
 	);
+}
+
+/**
+ * 19-A P5a: DELETE the selected vertices — every face that uses one of them goes away,
+ * leaving a hole. The destructive counterpart of Weld: weld pulls the picks together and
+ * keeps the surface, delete opens it up.
+ *
+ * Same split as the vertex bevel: the selection becomes welded keys here, and faceEdit
+ * does the triangle work and owns the commit (one `meshgeo` entry, replicated).
+ * @returns {boolean}
+ */
+export function deleteSelectedVerts() {
+	if (!edited || !handles.length) return false;
+	const keys = selectedVertexKeys();
+	if (!keys.length) {
+		showToast('Select a vertex first, then Delete');
+		return false;
+	}
+	const ok = deleteVertices(edited.uuid, keys);
+	if (ok) {
+		// the triangles those handles belonged to are gone, so the handle list is stale in
+		// every sense — rebuild the session and drop a selection that no longer means
+		// anything. Inner/direct, deliberately: a selection entry recorded ON TOP of the
+		// delete would make the next Ctrl+Z undo the housekeeping instead of the delete.
+		vertexSelection.clear();
+		syncVertexSelection();
+		setAnchor(-1);
+		refreshVertexEditSession();
+	}
+	return ok;
 }
 
 /** World-space focus target {center,radius} for the selected vertex, or null (173). */

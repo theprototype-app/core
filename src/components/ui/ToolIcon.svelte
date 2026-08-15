@@ -156,6 +156,14 @@
 			base: ['M8.5 8.5h7v7h-7z'],
 			accent: ['M4 4h4', 'M16 4h4', 'M4 20h4', 'M16 20h4', 'M4 4v4', 'M20 4v4', 'M4 16v4', 'M20 16v4']
 		},
+		// loose triangles on the left, and the quad they pair into on the right.
+		// Reading left-to-right (the `shading` icon's trick) rather than as another
+		// square-plus-a-mark: as a grid it would have been the subdivide glyph, and
+		// as a square-plus-diagonal it would have been `triangulation` inverted.
+		'tris-to-quads': {
+			base: ['M3 4h8L3 12z', 'M3 20h8l-8-8z'],
+			accent: ['M13 8h8v8h-8z']
+		},
 		// a quad, and the triangulation hidden inside it
 		triangulation: {
 			base: ['M4 4h16v16H4z'],

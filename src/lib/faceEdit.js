@@ -3326,6 +3326,70 @@ export function commitMeshGeoTriple(uuid, before, after) {
 
 
 /**
+ * 19-A P5a: DELETE the selected vertices — every triangle touching one of the welded
+ * keys goes away with them.
+ *
+ * Keyed by welded position like `bevelVertices`, so it needs no live face session: the
+ * vertex mode is a meshEdit session and the triangle soup lives here. Deletion makes
+ * HOLES by design — that is what the tool is for — so there is deliberately no
+ * watertightness check, only the two refusals that would leave nothing behind.
+ * @param {string} uuid @param {string[]} vertexKeys welded position keys
+ * @returns {boolean}
+ */
+export function deleteVertices(uuid, vertexKeys) {
+	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
+	const object = lookupEditable(uuid);
+	if (!object?.geometry?.attributes?.position) return false;
+	if (!vertexKeys?.length) {
+		showToast('Select a vertex first, then Delete');
+		return false;
+	}
+	const keys = new Set(vertexKeys);
+	const inputTris = readTriangles(object.geometry);
+	/** @type {Set<number>} */
+	const drop = new Set();
+	inputTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		if (t.some((/** @type {any} */ v) => keys.has(keyOf(v.x, v.y, v.z)))) drop.add(ti);
+	});
+	if (!drop.size) {
+		showToast('Nothing to delete — no face uses those vertices');
+		return false;
+	}
+	if (drop.size >= inputTris.length) {
+		showToast('That would delete every face of the mesh — pick fewer vertices');
+		return false;
+	}
+	const priorFaces = readStoredFaces(object.geometry);
+	const before = {
+		positions: trisToPositions(inputTris),
+		groups: trisToGroups(inputTris),
+		uvs: trisToUVs(inputTris),
+		faces: priorFaces
+	};
+	const kept = cloneTris(
+		inputTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))
+	);
+	const after = {
+		positions: trisToPositions(kept),
+		groups: trisToGroups(kept),
+		uvs: trisToUVs(kept),
+		// every survivor keeps the face it was in; a face whose triangles all went simply
+		// goes away with them — the mergeByDistance shape
+		faces: composeFaces(priorFaces, survivorOrigin(inputTris.length, drop), [])
+	};
+	if (!commitMeshGeoTriple(uuid, before, after)) return false;
+	showToast(
+		'Deleted ' +
+			drop.size +
+			(drop.size === 1 ? ' face' : ' faces') +
+			' around ' +
+			vertexKeys.length +
+			(vertexKeys.length === 1 ? ' vertex' : ' vertices')
+	);
+	return true;
+}
+
+/**
  * M5c EDGE BEVEL: replace the edge with a chamfer strip, doing the corner surgery properly
  * this time.
  *
@@ -4238,6 +4302,85 @@ export function dissolveEdges() {
 	return true;
 }
 
+/**
+ * 19-A P5a: DELETE the selected edges — every triangle that USES one of them goes.
+ *
+ * The destructive sibling of `dissolveEdges`: dissolve keeps the surface and merges the
+ * two coplanar faces, delete removes the faces on both sides and leaves a hole. That is
+ * the point of the tool (it is how you open a mesh up before bridging or filling), so
+ * nothing here checks watertightness — only that something is picked and that the mesh
+ * does not vanish entirely.
+ * @returns {boolean}
+ */
+export function deleteSelectedEdges() {
+	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
+	if (!faceEdited) return false;
+	const sel = get(edgeEditSelected);
+	if (!sel.length) {
+		showToast('Pick an edge to delete');
+		return false;
+	}
+	const keys = new Set(sel);
+	/** @type {Set<number>} */
+	const drop = new Set();
+	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		for (let e = 0; e < 3; e++) {
+			const k = edgeKey(
+				keyOf(t[e].x, t[e].y, t[e].z),
+				keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)
+			);
+			if (keys.has(k)) {
+				drop.add(ti);
+				return;
+			}
+		}
+	});
+	if (!drop.size) {
+		showToast('Nothing to delete — no face uses those edges');
+		return false;
+	}
+	if (drop.size >= workingTris.length) {
+		showToast('That would delete every face of the mesh — pick fewer edges');
+		return false;
+	}
+	const before = trisToPositions(workingTris);
+	const beforeGroups = trisToGroups(workingTris);
+	const beforeUVs = trisToUVs(workingTris);
+	const beforeFaces = readStoredFaces(faceEdited?.geometry);
+	const priorFaces = currentPartition();
+	const kept = cloneTris(
+		workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))
+	);
+	const positions = trisToPositions(kept);
+	const groups = trisToGroups(kept);
+	const uvs = trisToUVs(kept);
+	const origin = survivorOrigin(workingTris.length, drop);
+	// clear the picks BEFORE the swap: applyGeometrySnapshot rebuilds both overlays from
+	// them, and every index past a dropped triangle has moved. The hover goes too —
+	// desktop has no pointermove path here, so it would hold a pre-op triangle forever.
+	clearEdgeSelectionInner(); // the op tidying up after itself, not a user pick
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
+	applyGeometrySnapshot(positions, groups, uvs, composeFaces(priorFaces, origin, []));
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({
+		kind: 'meshgeo',
+		uuid: faceEdited.uuid,
+		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
+		after: withFaces({ positions, groups, uvs })
+	});
+	showToast(
+		'Deleted ' +
+			drop.size +
+			(drop.size === 1 ? ' face' : ' faces') +
+			' along ' +
+			sel.length +
+			(sel.length === 1 ? ' edge' : ' edges')
+	);
+	return true;
+}
+
 /** @type {any} scene-root LineSegments showing the edge selection + hover */
 let edgeOverlay = null;
 
@@ -4539,6 +4682,112 @@ export function mergeByDistance(threshold = 0.001) {
 	showToast(
 		'Merged ' + moved + ' vertices' + (dropped ? ', removed ' + dropped + ' degenerate faces' : '')
 	);
+	return true;
+}
+
+/** A partition's IDENTITY, order-independent: two partitions are the same when they
+ * group the same triangles, however the faces and their members happen to be ordered.
+ * Only used by the two cleanup ops, to tell "nothing to do" from a real change.
+ * @param {number[][]|null} faces @returns {string} */
+function partitionKey(faces) {
+	return (faces ?? [])
+		.map((face) => [...face].sort((a, b) => a - b).join(','))
+		.sort()
+		.join(';');
+}
+
+/**
+ * 19-A P5a CLEANUP: TRIANGULATE — one face per triangle.
+ *
+ * Positions, material slots and UVs are byte-identical: this op rewrites ONLY the stored
+ * face partition, which is what Quad granularity, the loop tools and the structure
+ * wireframe read. It is the escape hatch for a partition that no longer describes the
+ * model, and the exact inverse of Tris to Quads below.
+ *
+ * BOTH sides of the history entry write `faces` EXPLICITLY. An absent `faces` means
+ * "carry the current partition" to applyMeshGeo, and because the positions do NOT change
+ * here the carry always succeeds — so an implicit before would restore the partition this
+ * op just wrote, and the change would be silently un-undoable (the trisToGroups-null
+ * lesson, generalized).
+ * @returns {boolean}
+ */
+export function triangulateMesh() {
+	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
+	if (!faceEdited || !workingTris.length) return false;
+	const priorFaces = currentPartition();
+	const singles = workingTris.map((/** @type {any} */ _, /** @type {number} */ ti) => [ti]);
+	if (partitionKey(priorFaces) === partitionKey(singles)) {
+		showToast('Already one face per triangle — nothing to split');
+		return false;
+	}
+	const before = {
+		positions: trisToPositions(workingTris),
+		groups: trisToGroups(workingTris),
+		uvs: trisToUVs(workingTris),
+		faces: priorFaces
+	};
+	const after = {
+		positions: trisToPositions(workingTris),
+		groups: trisToGroups(workingTris),
+		uvs: trisToUVs(workingTris),
+		faces: singles
+	};
+	// the pick UNITS change under the user (a quad becomes two separate triangles), so the
+	// picks go before the swap rebuilds the overlays from them
+	clearEdgeSelectionInner();
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
+	if (!commitMeshGeoTriple(faceEdited.uuid, before, after)) return false;
+	showToast('Triangulated: ' + singles.length + ' triangles');
+	return true;
+}
+
+/**
+ * 19-A P5a CLEANUP: TRIS TO QUADS — pair the triangles up and STORE the pairing.
+ *
+ * The same derivation the fallback uses (`pairQuads`: coplanar, co-facing, convex,
+ * greedy best-first by squareness with index tie-breaks, so it is deterministic and every
+ * peer replaying the snapshot agrees). This op is "re-derive the pairing and store it",
+ * never a second algorithm — reimplementing it would give the toolbar button and the
+ * fallback two different ideas of what a quad is.
+ *
+ * Positions are untouched; `faces` is explicit on both sides for the same reason
+ * triangulate needs it.
+ * @returns {boolean}
+ */
+export function trisToQuadsMesh() {
+	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
+	if (!faceEdited || !workingTris.length) return false;
+	const priorFaces = currentPartition();
+	const paired = derivePartition(workingTris, pairQuads(workingTris));
+	const quads = paired.filter((/** @type {number[]} */ face) => face.length === 2).length;
+	if (!quads) {
+		showToast('No triangle pairs here form a quad (they must be coplanar and convex)');
+		return false;
+	}
+	if (partitionKey(priorFaces) === partitionKey(paired)) {
+		showToast('Already paired — the stored faces are exactly these quads');
+		return false;
+	}
+	const before = {
+		positions: trisToPositions(workingTris),
+		groups: trisToGroups(workingTris),
+		uvs: trisToUVs(workingTris),
+		faces: priorFaces
+	};
+	const after = {
+		positions: trisToPositions(workingTris),
+		groups: trisToGroups(workingTris),
+		uvs: trisToUVs(workingTris),
+		faces: paired
+	};
+	clearEdgeSelectionInner();
+	faceEditSelectedTris.set([]);
+	faceEditHighlight.set(-1);
+	faceEditHoverTri.set(-1);
+	if (!commitMeshGeoTriple(faceEdited.uuid, before, after)) return false;
+	showToast(quads + (quads === 1 ? ' quad paired' : ' quads paired'));
 	return true;
 }
 

@@ -48,6 +48,7 @@
 		selectAllVerts,
 		invertVertexSelection,
 		beginVertexBevelAdjust,
+		deleteSelectedVerts,
 		proportionalEdit,
 		proportionalRadius,
 		vertexHandleScale,
@@ -90,6 +91,9 @@
 		edgeEditSelected,
 		selectEdgeLoop,
 		dissolveEdges,
+		deleteSelectedEdges,
+		triangulateMesh,
+		trisToQuadsMesh,
 		symmetrizeMesh,
 		escapeConsumedByKnife,
 		clearEdgeSelection,
@@ -282,6 +286,24 @@
 			icon: 'merge-distance',
 			run: () => mergeByDistance($mergeDistance),
 			desc: 'collapse near-coincident vertices and drop the degenerate faces'
+		},
+		// P5a: the two TOPOLOGY-only ops. They move no vertex — they rewrite the
+		// stored face partition, which is what Quad granularity, the loop tools and
+		// the structure wireframe read — so they belong with the other whole-mesh
+		// repairs rather than in a mode's tool row.
+		{
+			id: 'triangulate',
+			label: 'Triangulate',
+			icon: 'triangulation',
+			run: () => triangulateMesh(),
+			desc: 'split every quad and n-gon back into its triangles (positions are untouched)'
+		},
+		{
+			id: 'quads',
+			label: 'Tris to quads',
+			icon: 'tris-to-quads',
+			run: () => trisToQuadsMesh(),
+			desc: 'pair coplanar triangles back into quads (positions are untouched)'
 		}
 	];
 
@@ -891,6 +913,17 @@
 					if (dissolveEdges()) flash('dissolve');
 				}}><ToolIcon name="dissolve" /></button
 			>
+			<button
+				id="edge-delete"
+				class="tbx-btn tbx-danger"
+				class:tbx-flash={flashOp === 'edelete'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Delete edges"
+				title="Delete — remove the faces on BOTH sides of the selected edges, leaving a hole. (Dissolve keeps the surface; this opens it up, which is how you make a hole to bridge or fill.)"
+				onclick={() => {
+					if (deleteSelectedEdges()) flash('edelete');
+				}}><ToolIcon name="delete-face" /></button
+			>
 			{@render proportionalBtn()}
 		{:else if mode === 'faces'}
 			<!-- TOOLS = armed: they change what your next viewport click does, and
@@ -944,6 +977,17 @@
 				aria-label="Slide the vertex along an edge"
 				title="Slide — constrain the drag to one of this vertex's own edges (it picks the edge you drag toward and clamps to its ends). Adjusts a profile without pulling the vertex off the surface."
 				onclick={() => vertexSlide.set(!$vertexSlide)}><ToolIcon name="vertex-slide" /></button
+			>
+			<button
+				id="mesh-delete-verts"
+				class="tbx-btn tbx-danger {$vertexSelectionSize >= 1 ? '' : 'tbx-disabled'}"
+				class:tbx-flash={flashOp === 'vdelete'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Delete the selected vertices"
+				title="Delete — remove every face that uses a selected vertex, leaving a hole (Ctrl+click adds vertices)"
+				onclick={() => {
+					if (deleteSelectedVerts()) flash('vdelete');
+				}}><ToolIcon name="delete-face" /></button
 			>
 		{/if}
 

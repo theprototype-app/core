@@ -2,10 +2,10 @@
 import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
 import { globalScene, globalCamera, globalRenderer, objectsGroup, TControls, selectedObjects } from '../stores/sceneStore';
-import { showToast } from '../stores/appStore';
+import { showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { snapTargets } from './snapping';
 import { sceneHits, hitWorldNormal } from './scenePick';
-import { originWorld } from './objectOrigin';
+import { originWorld, setOriginFromWorld } from './objectOrigin';
 import { readStoredFaces } from './meshTopology';
 import { ensureBoundsTrees } from './bvhPicking';
 import { setTransientPivot, registerPivotSnapAdjuster } from './multiTransform';
@@ -820,6 +820,11 @@ function updateMarker(candidate) {
 
 // ---- the snap anchor (P3) ---------------------------------------------------
 
+/** the pick-mode instruction toast: STICKY, so it stays up for as long as the
+ * mode is actually armed instead of timing out mid-aim (a 5s transient toast
+ * vanished while the user was still lining the click up) */
+const PICK_TOAST_ID = 'snap-anchor-pick';
+
 /**
  * Arm pick mode from the UI. Deliberately always offered — the toast explains
  * when the selection does not fit (the meshEdit "always offered, toast when
@@ -834,7 +839,22 @@ export function startSnapAnchorPick() {
 		return false;
 	}
 	snapAnchorPicking.set(true);
-	showToast('Click a point on the selected object — a nearby vertex wins (Esc cancels)');
+	// the instruction holds until the mode ends (click / Esc / ✕ / a miss /
+	// a selection change), so every exit path below dismisses it by id
+	showInfoToast(
+		PICK_TOAST_ID,
+		'Click a point on the selected object — a nearby vertex wins (Esc cancels)',
+		[],
+		() => snapAnchorPicking.set(false) // its own ✕ leaves the mode too
+	);
+	return true;
+}
+
+/** Leave pick mode without picking (the ✕ next to "Selecting", Esc, a miss). */
+export function cancelSnapAnchorPick() {
+	dismissToastById(PICK_TOAST_ID);
+	if (!get(snapAnchorPicking)) return false;
+	snapAnchorPicking.set(false);
 	return true;
 }
 
@@ -850,6 +870,7 @@ export function startSnapAnchorPick() {
  */
 export function snapAnchorClick(raycaster, clientPx) {
 	snapAnchorPicking.set(false);
+	dismissToastById(PICK_TOAST_ID); // the mode is over, whatever the outcome
 	const selection = get(selectedObjects);
 	const uuid = selection[selection.length - 1];
 	const object = uuid ? get(objectsGroup)?.getObjectByProperty('uuid', uuid) : null;
@@ -901,10 +922,46 @@ export function snapAnchorClick(raycaster, clientPx) {
 /** Drop the picked anchor: the gizmo re-seats through setTransientPivot(null),
  * which keeps pivotOnly and always leaves a gizmo attached. */
 export function clearSnapAnchor() {
-	snapAnchorPicking.set(false);
+	cancelSnapAnchorPick();
 	if (get(snapAnchor).mode !== 'picked') return;
 	snapAnchor.set({ mode: 'auto', uuid: null, local: null });
 	setTransientPivot(null);
+}
+
+/**
+ * Promote the picked anchor to the object's OWN origin (17-D `userData.origin`).
+ *
+ * The transient anchor is deliberately per-pick and local — selecting another
+ * object drops it — which is right for a throwaway aim but wrong when the point
+ * is a real feature of the model (a hinge, a stud, a socket). This is the
+ * explicit way across that line: `setOriginFromWorld` is REPLICATED, undoable
+ * (the `props` kind) and saved with the scene, so the point survives
+ * reselecting, peers, and a reload.
+ *
+ * Anchor mode moves to 'pivot' as part of it — otherwise the saved origin would
+ * exist but snapping would go on measuring from the bounding box, and the
+ * button would look like it had done nothing.
+ * @returns {boolean}
+ */
+export function saveSnapAnchorAsOrigin() {
+	const anchor = get(snapAnchor);
+	if (anchor.mode !== 'picked' || !anchor.uuid || !anchor.local) {
+		showToast('Pick a point on the object first');
+		return false;
+	}
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', anchor.uuid);
+	if (!object) return false;
+	object.updateMatrixWorld(true);
+	const world = new THREE.Vector3().fromArray(anchor.local).applyMatrix4(object.matrixWorld);
+	setOriginFromWorld(anchor.uuid, world);
+	// the object carries the point itself now: hand the gizmo back to the real
+	// origin (the transient seat is at the same place, so nothing jumps) and let
+	// the anchor fall back to the pivot it just became
+	snapTargets.update((t) => ({ ...t, anchorMode: 'pivot' }));
+	snapAnchor.set({ mode: 'auto', uuid: null, local: null });
+	setTransientPivot(null);
+	showToast("Saved as the object's origin — shared with peers, undoable, and it survives reselecting");
+	return true;
 }
 
 // ---- anchor viz ---------------------------------------------------------------
@@ -980,7 +1037,7 @@ function onSnapKeydown(event) {
 	// direct CAPTURE listener: panel chrome swallows delegated/bubbled keys
 	event.preventDefault();
 	event.stopPropagation();
-	snapAnchorPicking.set(false);
+	cancelSnapAnchorPick();
 	showToast('Snap origin pick cancelled');
 }
 
@@ -1000,6 +1057,6 @@ export function startSnapEngine() {
 		// the anchor is a per-pick aid: a new primary drops it (the transient
 		// pivot itself is cleared by attachMultiPivot's fresh-selection branch)
 		if (get(snapAnchor).mode === 'picked') snapAnchor.set({ mode: 'auto', uuid: null, local: null });
-		if (get(snapAnchorPicking)) snapAnchorPicking.set(false);
+		cancelSnapAnchorPick(); // and its instruction toast never outlives the mode
 	});
 }

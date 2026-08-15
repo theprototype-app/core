@@ -1034,6 +1034,167 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	const edgeChip = await A.page.evaluate(() => !!document.querySelector('#snap-target-edge'));
 	h.check(edgeChip, 'the Edge chip renders in Configure Scene ▸ Snapping');
+
+	// ---------- 13. anchor UX: armed state, sticky instruction, save-as-origin ----------
+	// (the Configure Scene panel is OPEN from the check above — these read its DOM)
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.waitForTimeout(400);
+	// ARMED: the pick button changes colour and the status line says "Selecting…"
+	await A.page.evaluate(() => document.querySelector('#snap-anchor-pick').click());
+	await A.page.waitForTimeout(300);
+	const armedUi = await A.page.evaluate(() => {
+		const pick = document.querySelector('#snap-anchor-pick');
+		const status = document.querySelector('.snap-status');
+		const text = status?.querySelector('.snap-status-text');
+		return {
+			// the COMPUTED colour, never the class string (the documented lesson —
+			// the class was right the whole time in the toolbox bug)
+			bg: pick ? getComputedStyle(pick).backgroundColor : null,
+			pressed: pick?.getAttribute('aria-pressed'),
+			statusText: text?.textContent?.trim() ?? null,
+			statusColor: text ? getComputedStyle(text).color : null,
+			hasCancel: !!document.querySelector('#snap-anchor-cancel')
+		};
+	});
+	h.check(
+		armedUi.bg === 'rgb(217, 119, 6)',
+		`the armed pick button is amber, not the accent (${armedUi.bg})`
+	);
+	h.check(armedUi.pressed === 'true', 'the armed button reports aria-pressed');
+	h.check(armedUi.statusText === 'Selecting…', `the status line reads "Selecting…" (${armedUi.statusText})`);
+	h.check(
+		armedUi.statusColor === 'rgb(251, 191, 36)',
+		`and it is yellow (${armedUi.statusColor})`
+	);
+	h.check(armedUi.hasCancel, 'a ✕ cancels the selecting mode');
+	const toastUp = await A.page.evaluate(
+		() =>
+			new Promise((r) =>
+				window.__stores.toastStore.subscribe((list) =>
+					r((list ?? []).some((e) => e && e.id === 'snap-anchor-pick' && e.sticky))
+				)()
+			)
+	);
+	h.check(toastUp === true, 'the instruction toast is STICKY, so it cannot time out mid-aim');
+	// the ✕ leaves the mode AND takes the toast with it
+	await A.page.evaluate(() => document.querySelector('#snap-anchor-cancel').click());
+	await A.page.waitForTimeout(300);
+	const cancelled = await A.page.evaluate(
+		() =>
+			new Promise((r) => {
+				let picking = null;
+				window.__stores.snapEngine.snapAnchorPicking.subscribe((v) => (picking = v))();
+				window.__stores.toastStore.subscribe((list) =>
+					r({
+						picking,
+						toast: (list ?? []).some((e) => e && e.id === 'snap-anchor-pick'),
+						status: !!document.querySelector('.snap-status')
+					})
+				)();
+			})
+	);
+	h.check(
+		cancelled.picking === false && cancelled.status === false,
+		'the ✕ leaves pick mode and the status line goes'
+	);
+	h.check(cancelled.toast === false, 'and the instruction toast never outlives the mode');
+
+	// SAVE AS OBJECT ORIGIN — the point survives selecting something else
+	await A.page.evaluate(
+		({ a }) => {
+			const w = window.__stores;
+			let g = null;
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const boxA = g.getObjectByProperty('uuid', a);
+			boxA.position.set(0, 1, 0);
+			boxA.rotation.set(0, 0, 0);
+			boxA.updateMatrixWorld(true);
+			delete boxA.userData.origin; // a clean slate for the promotion
+			w.objectsGroup.update((v) => v);
+			w.snapping.snapTargets.update((t) => ({ ...t, anchorMode: 'auto' }));
+			window.__sentTypes = [];
+			let p = null;
+			w.peers.subscribe((v) => (p = v))();
+			const orig = p.send.bind(p);
+			p.send = (m) => {
+				window.__sentTypes.push(m?.type);
+				return orig(m);
+			};
+		},
+		ids
+	);
+	await A.page.evaluate(() => window.__stores.snapEngine.startSnapAnchorPick());
+	await A.page.mouse.click(pickPx[0], pickPx[1]);
+	await A.page.waitForTimeout(400);
+	const beforeSave = await A.page.evaluate(
+		() => !!document.querySelector('#snap-anchor-save-origin')
+	);
+	h.check(beforeSave, 'a picked anchor offers "Save as object origin"');
+	await A.page.evaluate(() => document.querySelector('#snap-anchor-save-origin').click());
+	await A.page.waitForTimeout(400);
+	const saved = await A.page.evaluate(({ a }) => {
+		const w = window.__stores;
+		let g = null;
+		let anchor = null;
+		let t = null;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		w.snapEngine.snapAnchor.subscribe((v) => (anchor = v))();
+		w.snapping.snapTargets.subscribe((v) => (t = v))();
+		const boxA = g.getObjectByProperty('uuid', a);
+		return {
+			origin: boxA.userData?.origin ?? null,
+			anchorMode: t?.anchorMode,
+			mode: anchor?.mode,
+			sent: [...new Set(window.__sentTypes)]
+		};
+	}, ids);
+	h.check(
+		!!saved.origin &&
+			Math.hypot(saved.origin[0] - 1, saved.origin[1] - 1, saved.origin[2] - 1) < 1e-3,
+		`the picked point became the object's own origin (${saved.origin})`
+	);
+	h.check(
+		saved.sent.includes('objectParameters'),
+		`saving REPLICATES it, unlike the transient anchor (${saved.sent.join(',')})`
+	);
+	h.check(
+		saved.anchorMode === 'pivot' && saved.mode === 'auto',
+		'the anchor hands over to the real origin (mode → pivot), so snapping keeps using that point'
+	);
+	// the whole point: select away and come back — the point is still there
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.b);
+	await A.page.waitForTimeout(300);
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.waitForTimeout(400);
+	const survived = await A.page.evaluate(({ a }) => {
+		const w = window.__stores;
+		let g = null;
+		let controls = null;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		w.TControls.subscribe((v) => (controls = v))();
+		const boxA = g.getObjectByProperty('uuid', a);
+		const origin = boxA.userData?.origin ?? null;
+		// 17-D: an object WITH an origin gets a pivot seated on it
+		const pivot = controls?.object?.userData?.isMultiPivot ? controls.object.position.toArray() : null;
+		return { origin, pivot };
+	}, ids);
+	h.check(
+		!!survived.origin && Math.hypot(survived.origin[0] - 1, survived.origin[1] - 1, survived.origin[2] - 1) < 1e-3,
+		'it SURVIVES selecting another object and coming back (the reported gap)'
+	);
+	h.check(
+		!!survived.pivot && Math.hypot(survived.pivot[0] - 1, survived.pivot[1] - 2, survived.pivot[2] - 1) < 1e-3,
+		`and the gizmo seats on it again by itself (${survived.pivot?.map((v) => v.toFixed(3))})`
+	);
+	// one undo takes the promotion back (it is a props entry, not a silent write)
+	const undoneOrigin = await A.page.evaluate(({ a }) => {
+		const w = window.__stores;
+		w.history.undo();
+		let g = null;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		return g.getObjectByProperty('uuid', a).userData?.origin ?? null;
+	}, ids);
+	h.check(undoneOrigin === null, 'and ONE undo takes the promotion back');
 	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
 
 	await h.finish(browser);

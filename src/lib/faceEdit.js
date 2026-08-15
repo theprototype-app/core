@@ -22,6 +22,10 @@ import {
 } from './meshTopology';
 // 18-A: LOCAL viewport line colours (store-only module, imports nothing — no cycle)
 import { viewPrefs, editWireOverride } from './viewPrefs';
+// 19-A P3: the desktop pane's extrude/inset extras, read at BEGIN so a click-
+// extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
+// leaf, so this cannot close a cycle into history.
+import { extrudeIndividual, insetDepth, insetIndividual } from './meshToolParams';
 
 // Face editing core (118, pulled forward from pending/25 and scoped to VR
 // blockout). Desktop-agnostic geometry math: read a BufferGeometry into a flat
@@ -633,6 +637,115 @@ export function deleteFaceTris(tris, face) {
 	return cloneTris(tris.filter((_, ti) => !faceSet.has(ti)));
 }
 
+/**
+ * 19-A P3: convert a WORLD inset distance to the FRACTION `insetFace` lerps by,
+ * for ONE connected component. The face bevel takes its width in world units
+ * now, like the edge and vertex bevels always did — the same number used to
+ * mean two different sizes depending on which bevel you were in.
+ *
+ * A boundary vertex lerped by `t` travels `t * dist(v, centroid)`, so dividing
+ * the wanted world distance by the MEAN boundary radius makes the border travel
+ * ≈ `width` world units (exact on a symmetric face, approximate on an
+ * irregular one — the vertices farther out travel proportionally farther,
+ * which is also what keeps the inset similar in shape). Clamped to 0.95 like
+ * every inset, so an oversized width collapses toward the centre instead of
+ * overshooting past it.
+ * @param {any[]} tris @param {number[]} componentTriIndices ONE welded component
+ * @param {number} width world distance @returns {number} lerp fraction 0..0.95
+ */
+export function insetDistanceToFraction(tris, componentTriIndices, width) {
+	const centroid = centroidOfTris(tris, componentTriIndices);
+	/** @type {Set<string>} */
+	const seen = new Set();
+	let sum = 0;
+	let count = 0;
+	for (const edge of boundaryEdges(tris, { triIndices: componentTriIndices })) {
+		for (const p of [edge.p0, edge.p1]) {
+			const key = keyOf(p.x, p.y, p.z);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			sum += p.distanceTo(centroid);
+			count++;
+		}
+	}
+	const mean = count ? sum / count : 0;
+	if (mean < 1e-9) return 0.95; // a degenerate/closed component: fully collapsed
+	return Math.min(Math.max(width / mean, 0), 0.95);
+}
+
+/** averaged (unit) normal of a triangle subset — the per-piece direction the
+ * individual ops move along @param {any[]} tris @param {number[]} triIndices */
+function averagedNormal(tris, triIndices) {
+	const normal = new THREE.Vector3();
+	for (const ti of triIndices) normal.add(triNormal(tris[ti]));
+	if (normal.lengthSq() < 1e-9) normal.copy(triNormal(tris[triIndices[0]]));
+	return normal.normalize();
+}
+
+/**
+ * 19-A P3: EXTRUDE INDIVIDUAL — split the target into its connected pieces
+ * (componentsOfTris) and extrude each along its OWN averaged normal, instead
+ * of the one direction the synthesized target face averages across all of
+ * them. Pure: it just loops `extrudeFace` per component, which appends its
+ * walls after the survivors, so the component indices stay valid throughout
+ * and `appendedQuads(origLen, out.length)` still authors every wall.
+ * @param {any[]} tris @param {any} face the op target ({triIndices})
+ * @param {number} dist @returns {any[]}
+ */
+export function extrudeFacesIndividual(tris, face, dist) {
+	let out = tris;
+	for (const component of componentsOfTris(tris, face.triIndices)) {
+		// the normal comes from the INPUT triangles: components are disjoint, so
+		// no earlier component's move has touched this one's triangles
+		out = extrudeFace(out, { triIndices: component, normal: averagedNormal(tris, component) }, dist);
+	}
+	return out;
+}
+
+/**
+ * 19-A P3: INSET, extended — `insetFace` stays as the {amount} fast path (VR,
+ * commitFaceOp and every replayed message go through it unchanged).
+ *
+ * `individual` insets each face UNIT separately, one ring apiece. The units are
+ * the granularity units the selection was built from, captured by the engine
+ * onto `face.units` (per QUAD at the default granularity — per connected
+ * component alone would make Individual a no-op on the common case, since
+ * several coplanar quads on one surface are ONE component). A caller without
+ * captured units falls back to components, which is still correct across
+ * shells.
+ *
+ * `depth` then pushes the resulting cap along its normal (world units), per
+ * connected component of the CAP so a multi-piece target rises along each
+ * piece's own direction — via the welded `moveFaceAlongNormal`, so the ring
+ * stretches with it.
+ * @param {any[]} tris @param {any} face the op target ({triIndices, units?})
+ * @param {{amount?: number, depth?: number, individual?: boolean}} [options]
+ * @returns {any[]}
+ */
+export function insetFaceEx(tris, face, options = {}) {
+	const amount = options.amount ?? 0.2;
+	const depth = options.depth ?? 0;
+	let out = tris;
+	if (options.individual) {
+		const units =
+			face.units?.length ? face.units : componentsOfTris(tris, face.triIndices);
+		// insetFace appends each ring after the survivors, so unit indices stay valid
+		for (const unit of units) out = insetFace(out, { triIndices: unit }, amount);
+	} else {
+		out = insetFace(out, face, amount);
+	}
+	if (depth) {
+		for (const component of componentsOfTris(out, face.triIndices)) {
+			out = moveFaceAlongNormal(
+				out,
+				{ triIndices: component, normal: averagedNormal(out, component) },
+				depth
+			);
+		}
+	}
+	return out;
+}
+
 /** B4: subdivide each target tri into 4 via edge midpoints. Midpoints of an
  * edge shared by two SELECTED tris coincide numerically, so the selection
  * stays stitched (an unselected neighbor keeps its full edge — a T-junction,
@@ -874,11 +987,16 @@ export function boundaryLoop(tris, triIndices) {
  * preconditions (a selection exists, exactly two pieces) stay in the wrapper.
  * @param {any[]} tris @param {number[]} setA @param {number[]} setB the two
  *   connected components (indices into `tris`)
- * @param {{cuts?: number}} [options] cuts = intermediate loops along the tunnel
+ * @param {{cuts?: number, twist?: number}} [options] cuts = intermediate loops
+ *   along the tunnel. P3: `twist` rotates the loop PAIRING by N steps (the
+ *   angle ordering is deterministic but blind to which vertex should meet
+ *   which — a skewed tunnel is one twist step away from a straight one).
+ *   0 = byte-identical to before.
  * @returns {{tris: any[], origin: number[], authored: number[][]} | {error: string}}
  */
 export function bridgeFacesCore(tris, setA, setB, options = {}) {
 	const cuts = options.cuts ?? 0;
+	const twist = Math.round(options.twist ?? 0) || 0;
 	const loopA = boundaryLoop(tris, setA);
 	const loopB = boundaryLoop(tris, setB);
 	if (!loopA || !loopB) {
@@ -937,6 +1055,8 @@ export function bridgeFacesCore(tris, setA, setB, options = {}) {
 			.map((x) => x.i);
 	const orderA = byAngle(loopA, centA);
 	const orderB = byAngle(loopB, centB);
+	// the twist as a non-negative offset into orderB (JS % keeps the sign)
+	const tw = ((twist % n) + n) % n;
 	// the tunnel walls take the FIRST piece's material slot (15-G) — a merged
 	// multi-material mesh must stay fully grouped or it renders as nothing
 	const mi = tris[setA[0]]?.mi || 0;
@@ -956,8 +1076,8 @@ export function bridgeFacesCore(tris, setA, setB, options = {}) {
 		for (let k = 0; k < n; k++) {
 			const a0 = loopA[orderA[k]];
 			const a1 = loopA[orderA[(k + 1) % n]];
-			const b0 = loopB[orderB[k]];
-			const b1 = loopB[orderB[(k + 1) % n]];
+			const b0 = loopB[orderB[(k + tw) % n]];
+			const b1 = loopB[orderB[(k + 1 + tw) % n]];
 			const p00 = a0.clone().lerp(b0, t0);
 			const p10 = a1.clone().lerp(b1, t0);
 			const p11 = a1.clone().lerp(b1, t1);
@@ -1011,8 +1131,10 @@ export function bridgeFacesCore(tris, setA, setB, options = {}) {
  *   every existing caller and replayed message is unchanged); each cut adds a
  *   ring, which is what makes a bridged tunnel deformable afterwards instead of
  *   a rigid sleeve with nothing to grab in the middle.
+ * @param {number} [twist] P3: rotate the loop pairing by N steps (0 = the
+ *   angle-ordered pairing, unchanged).
  */
-export function bridgeFaces(cuts = 0) {
+export function bridgeFaces(cuts = 0, twist = 0) {
 	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
@@ -1041,7 +1163,7 @@ export function bridgeFaces(cuts = 0) {
 	const beforeUVs = trisToUVs(workingTris);
 	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	const priorFaces = currentPartition();
-	const result = bridgeFacesCore(workingTris, setA, setB, { cuts });
+	const result = bridgeFacesCore(workingTris, setA, setB, { cuts, twist });
 	if ('error' in result) {
 		showToast(result.error);
 		return false;
@@ -1625,7 +1747,14 @@ export function autoApplyFaceOp() {
 	const op = get(faceEditOp);
 	if (op !== 'extrude' && op !== 'inset') return false;
 	if (get(faceEditHighlight) < 0) return false;
-	return beginOpAdjust(op, { distance: get(faceEditAmount) });
+	// P3: a click-apply reads the SAME pane params the toolbox's Apply would —
+	// two entry points with different parameters is a support ticket
+	return beginOpAdjust(
+		op,
+		op === 'inset'
+			? { distance: get(faceEditAmount), depth: get(insetDepth), individual: get(insetIndividual) }
+			: { distance: get(faceEditAmount), individual: get(extrudeIndividual) }
+	);
 }
 
 /** Arm an op (from the Faces sub-ring / desktop toolbar)
@@ -2093,11 +2222,21 @@ export function faceBevelReady() {
  * @param {any[]} tris @param {{quad: number, cross: string[]}[]} ring the walk
  *   from `loopCutRing`/`faceLoopRing`, indices into `tris`
  * @param {Int32Array | number[]} quadPartnerArr quad pairing for `tris`
- * @param {{cuts?: number}} [options] cuts = loops to insert (already clamped)
+ * @param {{cuts?: number, position?: number}} [options] cuts = loops to insert
+ *   (already clamped). P3: `position` places a SINGLE cut along the ring
+ *   segment (0..1, default 0.5 = the previous hardwired midpoint); with
+ *   cuts > 1 the schedule stays evenly spaced — the Blender rule.
  * @returns {{tris: any[], origin: number[], authored: number[][], firstNew: number}}
  */
 export function loopCutCore(tris, ring, quadPartnerArr, options = {}) {
 	const n = options.cuts ?? 1;
+	// clamped short of 0/1: a cut AT the boundary would emit a zero-width band
+	// of degenerate quads
+	const position = Math.min(Math.max(options.position ?? 0.5, 0.01), 0.99);
+	// the cut parameters, then the band boundaries they induce
+	const cutsAt =
+		n === 1 ? [position] : Array.from({ length: n }, (_, i) => (i + 1) / (n + 1));
+	const bounds = [0, ...cutsAt, 1];
 	/** every triangle the ring consumes */
 	const consumed = new Set();
 	for (const { quad } of ring) {
@@ -2140,9 +2279,9 @@ export function loopCutCore(tris, ring, quadPartnerArr, options = {}) {
 		const at2 = (/** @type {number} */ t) => B.pos.clone().lerp(C.pos, t);
 		const uv1 = (/** @type {number} */ t) => uvLerp(A.uv, D.uv, t);
 		const uv2 = (/** @type {number} */ t) => uvLerp(B.uv, C.uv, t);
-		for (let k = 0; k <= n; k++) {
-			const t0 = k / (n + 1);
-			const t1 = (k + 1) / (n + 1);
+		for (let k = 0; k < bounds.length - 1; k++) {
+			const t0 = bounds[k];
+			const t1 = bounds[k + 1];
 			pushQuad(
 				next,
 				at1(t0),
@@ -2161,7 +2300,10 @@ export function loopCutCore(tris, ring, quadPartnerArr, options = {}) {
 	return { tris: next, origin, authored: appendedQuads(firstNew, next.length), firstNew };
 }
 
-export function commitLoopCut(cuts = 1) {
+/** @param {number} [cuts] @param {number} [position] P3: single-cut placement
+ * along the ring (0..1, default 0.5 = the previous behaviour; ignored at
+ * cuts > 1, where the schedule stays even) */
+export function commitLoopCut(cuts = 1, position = 0.5) {
 	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
 	if (!faceEdited) return false;
 	const n = Math.max(1, Math.min(Math.round(cuts) || 1, 20));
@@ -2174,7 +2316,7 @@ export function commitLoopCut(cuts = 1) {
 	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 
 	const priorFaces = currentPartition();
-	const result = loopCutCore(workingTris, ring, quadPartner, { cuts: n });
+	const result = loopCutCore(workingTris, ring, quadPartner, { cuts: n, position });
 	const next = result.tris;
 
 	const positions = trisToPositions(next);
@@ -2750,16 +2892,30 @@ function invertEdgeSelectionInner() {
  * The vertex-fan surgery on adjacent faces is the remaining work; edge mode says so.
  */
 /**
- * P1 (19-A): the PURE core of the FACE bevel — the inset+push quarter-circle
- * loop, triangles in, triangles out, no session reads. The wrapper (and later
- * the adjust engine) owns the clamps, stores and the commit block.
+ * P1 (19-A): the PURE core of the FACE bevel — the inset+push loop, triangles
+ * in, triangles out, no session reads. The wrapper (and later the adjust
+ * engine) owns the clamps, stores and the commit block.
+ *
+ * P3: `width` is a WORLD distance now, like the edge and vertex bevels — each
+ * step converts its share to an inset fraction PER CONNECTED COMPONENT
+ * (`insetDistanceToFraction`), so the border travels ≈ width world units
+ * whatever the face size (it used to be an inset fraction, so the same number
+ * meant two different chamfer sizes across the three modes). `profile` lerps
+ * the step SCHEDULE between linear (0 — a straight 45° chamfer) and the
+ * sin/cos quarter-circle (1 — the only schedule until P3, hence the default);
+ * both columns sum to 1 across the steps, so the total reach is
+ * profile-independent. `direction` signs the push: 'in' recesses the cap
+ * (depth used to be hardwired to +total).
  * @param {any[]} tris @param {{triIndices: number[], normal: any, centroid: any}} face
- * @param {{width?: number, segments?: number}} [options] both already clamped
+ * @param {{width?: number, segments?: number, profile?: number, direction?: 'out'|'in'}} [options]
+ *   width/segments already clamped
  * @returns {{tris: any[], authored: number[][], capTriIndices: number[]}}
  */
 export function bevelFacesCore(tris, face, options = {}) {
 	const n = options.segments ?? 1;
 	const total = options.width ?? 0.15;
+	const profile = Math.min(Math.max(options.profile ?? 1, 0), 1);
+	const depth = (options.direction === 'in' ? -1 : 1) * total;
 	// the cap keeps its triangle INDICES through inset (it shrinks in place) and through
 	// the welded move, so one descriptor drives every step
 	const cap = {
@@ -2770,19 +2926,28 @@ export function bevelFacesCore(tris, face, options = {}) {
 	let out = cloneTris(tris);
 	/** @type {number[][]} */
 	const authored = [];
-	// a quarter-circle profile: the step insets track cos and the pushes track sin, so
-	// the chamfer reads as a round rather than a straight ramp at segments > 1
-	const depth = total;
 	for (let k = 1; k <= n; k++) {
 		const from = ((k - 1) / n) * (Math.PI / 2);
 		const to = (k / n) * (Math.PI / 2);
-		const insetStep = (Math.sin(to) - Math.sin(from)) * total;
-		const pushStep = (Math.cos(from) - Math.cos(to)) * depth;
-		const startLength = out.length;
-		out = insetFace(out, cap, insetStep);
-		// the appended ring is consecutive pushQuad pairs — the same authoring shape
-		// every append-only op uses
-		for (const quad of appendedQuads(startLength, out.length)) authored.push(quad);
+		// quarter-circle: the step insets track sin and the pushes track cos, so the
+		// chamfer reads as a round rather than a straight ramp at segments > 1;
+		// linear: equal shares. `profile` blends the two schedules.
+		const insetShare = ((1 - profile) * 1) / n + profile * (Math.sin(to) - Math.sin(from));
+		const pushShare = ((1 - profile) * 1) / n + profile * (Math.cos(from) - Math.cos(to));
+		const worldStep = insetShare * total;
+		if (worldStep > 1e-9) {
+			// convert per component: a multi-piece cap insets each piece toward its
+			// OWN centre by the SAME world distance
+			for (const component of componentsOfTris(out, cap.triIndices)) {
+				const t = insetDistanceToFraction(out, component, worldStep);
+				const startLength = out.length;
+				out = insetFace(out, { triIndices: component }, t);
+				// the appended ring is consecutive pushQuad pairs — the same authoring
+				// shape every append-only op uses
+				for (const quad of appendedQuads(startLength, out.length)) authored.push(quad);
+			}
+		}
+		const pushStep = pushShare * depth;
 		if (pushStep) {
 			// re-read the cap's live centroid: it moved with the previous step
 			cap.centroid = centroidOfTris(out, cap.triIndices);
@@ -2792,9 +2957,10 @@ export function bevelFacesCore(tris, face, options = {}) {
 	return { tris: out, authored, capTriIndices: cap.triIndices };
 }
 
-/** @param {number} width inset fraction per step (0..0.95 total) @param {number} segments
- * @returns {boolean} */
-export function bevelFaces(width = 0.15, segments = 1) {
+/** @param {number} width WORLD distance the border travels (P3 — was an inset fraction)
+ * @param {number} segments @param {number} [profile] 0 linear .. 1 quarter-circle
+ * @param {'out'|'in'} [direction] @returns {boolean} */
+export function bevelFaces(width = 0.15, segments = 1, profile = 1, direction = 'out') {
 	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
 	if (!faceEdited) return false;
 	const face = opTargetFace();
@@ -2809,13 +2975,16 @@ export function bevelFaces(width = 0.15, segments = 1) {
 		return false;
 	}
 	const n = Math.max(1, Math.min(Math.round(segments) || 1, 8));
-	const total = Math.min(Math.max(width, 0.01), 0.9);
+	// world units since P3: no upper clamp — the per-step fraction conversion
+	// saturates at 0.95 per component, so an oversized width collapses inward
+	// instead of overshooting past the centre
+	const total = Math.max(width, 0.001);
 	const before = trisToPositions(workingTris);
 	const beforeGroups = trisToGroups(workingTris);
 	const beforeUVs = trisToUVs(workingTris);
 	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	let priorFaces = currentPartition();
-	const result = bevelFacesCore(workingTris, face, { width: total, segments: n });
+	const result = bevelFacesCore(workingTris, face, { width: total, segments: n, profile, direction });
 	const tris = result.tris;
 	const positions = trisToPositions(tris);
 	if (positions.length > MAX_SNAPSHOT) {
@@ -4449,6 +4618,30 @@ function opTargetFace() {
 	return { triIndices: tris, normal: normal.normalize(), centroid: centroid.divideScalar(cnt || 1) };
 }
 
+/**
+ * 19-A P3: decompose a target's tri indices into the face UNITS the current
+ * granularity picks — per QUAD at the default, logical faces, single tris, or
+ * connected components for shell/object. Session-reading (quadPartner, faces),
+ * so it runs at the engine's CAPTURE time only; the pure `insetFaceEx` then
+ * consumes the result as plain data (`face.units`).
+ * @param {number[]} triIndices @returns {number[][]}
+ */
+function selectionUnits(triIndices) {
+	const g = granularity();
+	if (g === 'triangle') return triIndices.map((ti) => [ti]);
+	if (g === 'shell' || g === 'object') return componentsOfTris(workingTris, triIndices);
+	/** @type {Map<number, number[]>} */
+	const byUnit = new Map();
+	for (const ti of triIndices) {
+		// quad: the pair id; face: the logical face index — one bucket per unit
+		const unit = g === 'face' ? faceIndexForTriangle(ti) : quadKey(ti);
+		let list = byUnit.get(unit);
+		if (!list) byUnit.set(unit, (list = []));
+		list.push(ti);
+	}
+	return [...byUnit.values()];
+}
+
 /** Tris to tint in the overlay: the selection plus the hovered unit (212;
  * E10 — the selection always shows, Multi no longer gates it) */
 function overlayTris() {
@@ -5637,14 +5830,30 @@ function mergeAdjustParams(a, patch) {
 		const max = a.op === 'inset' ? 0.9 : 5;
 		p.distance = Math.min(Math.max(p.distance ?? (a.op === 'inset' ? 0.2 : 0.3), min), max);
 		p.capScale = Math.min(Math.max(p.capScale ?? 1, 0.05), 5);
+		p.individual = !!p.individual; // P3: per-piece direction / per-unit rings
+		if (a.op === 'inset') p.depth = Math.min(Math.max(p.depth ?? 0, -2), 2);
 	} else if (a.op === 'bevel') {
 		p.width = p.width ?? 0.1;
 		if (a.kind !== 'vertices') p.segments = p.segments ?? 1;
-		if (a.kind !== 'faces') p.profile = Math.min(Math.max(p.profile ?? 0, -1), 1);
+		if (a.kind === 'faces') {
+			// P3: the faces profile is the 0..1 STEP SCHEDULE (1 = quarter-circle,
+			// the pre-P3 behaviour); direction signs the push
+			p.profile = Math.min(Math.max(p.profile ?? 1, 0), 1);
+			p.direction = p.direction === 'in' ? 'in' : 'out';
+		} else {
+			p.profile = Math.min(Math.max(p.profile ?? 0, -1), 1);
+		}
 	} else if (a.op === 'loopcut') {
 		p.cuts = Math.max(1, Math.min(Math.round(p.cuts ?? 1) || 1, 20));
+		// P3: single-cut placement; clamped short of the boundary (a cut AT 0/1
+		// emits a zero-width band)
+		p.position = Math.min(Math.max(p.position ?? 0.5, 0.01), 0.99);
 	} else if (a.op === 'bridge') {
 		p.cuts = Math.max(0, Math.min(Math.round(p.cuts ?? 0) || 0, 20));
+		p.twist = Math.max(-20, Math.min(Math.round(p.twist ?? 0) || 0, 20));
+	} else if (a.op === 'subdivide') {
+		// P3: 4^levels growth — MAX_SNAPSHOT backstops the big-face case
+		p.levels = Math.max(1, Math.min(Math.round(p.levels ?? 1) || 1, 3));
 	}
 	a.params = p;
 }
@@ -5663,13 +5872,21 @@ function runAdjustCore(a) {
 	if (a.op === 'extrude' || a.op === 'inset') {
 		const next =
 			a.op === 'inset'
-				? insetFace(a.originalTris, a.target, p.distance)
-				: extrudeFace(a.originalTris, a.target, p.distance);
+				? insetFaceEx(a.originalTris, a.target, {
+						amount: p.distance,
+						depth: p.depth,
+						individual: p.individual
+					})
+				: p.individual
+					? extrudeFacesIndividual(a.originalTris, a.target, p.distance)
+					: extrudeFace(a.originalTris, a.target, p.distance);
 		// scale the cap (the original face tris, moved in place) around its
 		// centroid — the VR stick's second axis. Same trap as the gizmo grab: a
 		// plain .map drops the mi/uv that withSlot hangs off the triangle array,
-		// so a live adjust used to strip the cap's texture.
-		if ((p.capScale ?? 1) !== 1) {
+		// so a live adjust used to strip the cap's texture. Skipped for
+		// `individual` (the union centroid means nothing across pieces — and the
+		// cap-scale stick is VR-only, which never sets individual).
+		if ((p.capScale ?? 1) !== 1 && !p.individual) {
 			const capCentroid =
 				a.op === 'inset'
 					? a.target.centroid.clone()
@@ -5696,8 +5913,15 @@ function runAdjustCore(a) {
 	}
 	if (a.op === 'bevel' && a.kind === 'faces') {
 		const n = Math.max(1, Math.min(Math.round(p.segments) || 1, 8));
-		const total = Math.min(Math.max(p.width, 0.01), 0.9);
-		const r = bevelFacesCore(a.originalTris, a.target, { width: total, segments: n });
+		// world units since P3 — no upper clamp, the per-step fraction conversion
+		// saturates at 0.95 per component (the wrapper's rule)
+		const total = Math.max(p.width, 0.001);
+		const r = bevelFacesCore(a.originalTris, a.target, {
+			width: total,
+			segments: n,
+			profile: p.profile,
+			direction: p.direction
+		});
 		return {
 			tris: r.tris,
 			faces: composeFaces(a.priorFaces, appendOrigin(origLen, r.tris.length), r.authored),
@@ -5756,7 +5980,10 @@ function runAdjustCore(a) {
 		};
 	}
 	if (a.op === 'loopcut') {
-		const r = loopCutCore(a.originalTris, a.target, a.quadPartner, { cuts: p.cuts });
+		const r = loopCutCore(a.originalTris, a.target, a.quadPartner, {
+			cuts: p.cuts,
+			position: p.position
+		});
 		return {
 			tris: r.tris,
 			faces: composeFaces(a.priorFaces, r.origin, r.authored),
@@ -5764,12 +5991,27 @@ function runAdjustCore(a) {
 		};
 	}
 	if (a.op === 'bridge') {
-		const r = bridgeFacesCore(a.originalTris, a.target.setA, a.target.setB, { cuts: p.cuts });
+		const r = bridgeFacesCore(a.originalTris, a.target.setA, a.target.setB, {
+			cuts: p.cuts,
+			twist: p.twist
+		});
 		if ('error' in r) return { error: r.error };
 		return {
 			tris: r.tris,
 			faces: composeFaces(a.priorFaces, r.origin, r.authored),
 			select: { kind: 'cleared' }
+		};
+	}
+	if (a.op === 'subdivide') {
+		// P3: the P1 helper — iterate the quad-aware split `levels` times, origin
+		// maps composed back to originalTris so composeFaces sees real ancestors
+		const r = subdivideLevels(a.originalTris, a.target.triIndices, a.quadPartner, p.levels);
+		return {
+			tris: r.tris,
+			faces: composeFaces(a.priorFaces, r.origin, r.authored),
+			// newIndices are NOT one contiguous range (untouched survivors
+			// interleave), so the band rule cannot describe them
+			select: { kind: 'set', tris: r.newIndices }
 		};
 	}
 	return { error: 'Unknown adjust operation' };
@@ -5813,6 +6055,11 @@ function applyAdjustSelection(a, select, seatGizmo) {
 		const band = [];
 		for (let ti = select.firstNew; ti < select.total; ti++) band.push(ti);
 		faceEditSelectedTris.set(band);
+		refreshFaceOverlay();
+	} else if (select.kind === 'set') {
+		// P3 subdivide: keep the SPLIT AREA selected (its new pieces) — the
+		// commitFaceOp rule; unlike the band these indices are not contiguous
+		faceEditSelectedTris.set([...select.tris]);
 		refreshFaceOverlay();
 	} else if (select.kind === 'cleared') {
 		faceEditSelectedTris.set([]);
@@ -5868,8 +6115,8 @@ function adjustBeginToast(a, result) {
  * recorded at apply, kept on the adjust so settle can update it in place), then
  * leave the engine live for `reapplyOpAdjust` scrubs.
  *
- * @param {'extrude'|'inset'|'bevel'|'loopcut'|'bridge'} op
- * @param {any} params op parameters (distance / width+segments+profile / cuts)
+ * @param {'extrude'|'inset'|'bevel'|'loopcut'|'bridge'|'subdivide'} op
+ * @param {any} params op parameters (distance / width+segments+profile / cuts / levels)
  * @param {{target?: any, record?: 'deferred', kind?: 'faces'|'edges'|'vertices',
  *   uuid?: string, vertexKeys?: string[]}} [opts] `target` = a pre-resolved face
  *   (VR); `record: 'deferred'` skips the history entry (VR commits explicitly —
@@ -5924,6 +6171,11 @@ export function beginOpAdjust(op, params, opts = {}) {
 			normal: face.normal.clone(),
 			centroid: face.centroid.clone()
 		};
+		// P3: the granularity units the selection was built from, for inset's
+		// Individual mode — captured HERE because the pure core cannot read the
+		// session (a VR pre-resolved target has none; insetFaceEx falls back to
+		// connected components)
+		if (op === 'inset' && !opts.target) a.target.units = selectionUnits(a.target.triIndices);
 	} else if (op === 'bevel' && kind === 'faces') {
 		const face = opTargetFace();
 		if (!face?.triIndices?.length) {
@@ -5957,6 +6209,13 @@ export function beginOpAdjust(op, params, opts = {}) {
 		a.target = ring;
 		// the pairing that matches originalTris — rebuildFaces REPLACES the module
 		// array after the apply, so holding this reference stays correct
+		a.quadPartner = quadPartner;
+	} else if (op === 'subdivide') {
+		// P3: the target is the picked tri set; the pairing rides along exactly
+		// like loopcut's (subdivideLevels is quad-aware through it)
+		const face = opts.target ?? opTargetFace();
+		if (!face?.triIndices?.length) return false;
+		a.target = { triIndices: [...face.triIndices] };
 		a.quadPartner = quadPartner;
 	} else if (op === 'bridge') {
 		const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
@@ -6005,7 +6264,8 @@ export function beginOpAdjust(op, params, opts = {}) {
 	// overlay from them) + the hover always — desktop has no pointermove path,
 	// so it would hold the pre-op triangle forever
 	faceEditHoverTri.set(-1);
-	if (op === 'loopcut' || op === 'bridge') {
+	if (op === 'loopcut' || op === 'bridge' || op === 'subdivide') {
+		// these rebuild the topology — the pre-op indices address the NEW array
 		faceEditSelectedTris.set([]);
 		faceEditHighlight.set(-1);
 	}

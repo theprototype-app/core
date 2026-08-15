@@ -238,6 +238,54 @@ h.run(async () => {
 	h.check(textured.has && textured.covers, 'the bevel kept a COMPLETE uv attribute (the positions-only commit dropped it)');
 	h.check(textured.nonZero > 0, '...with real coordinates, not zeros');
 
+	// --- 19-A P3: the toolbox #mesh-vertex-bevel button APPLIES on click ------
+	// Same contract flip as the faces grid (P2) and #edge-bevel: with a vertex
+	// picked the click ITSELF bevels through the adjust engine; with nothing
+	// picked it only focuses the tool and the pane hint says what is missing.
+	await editBox(A.page);
+	await A.page.waitForTimeout(700); // let the toolbox render in vertices mode
+	const emptyClick = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		// clears the SET and the anchored handle, so nothing can bevel
+		s.meshEdit.clearVertexSelection();
+		const before = fe.readTriangles(window.__box.geometry).length;
+		document.querySelector('#mesh-vertex-bevel').click();
+		await new Promise((r) => setTimeout(r, 350));
+		let st = null;
+		fe.opAdjustState.subscribe((v) => (st = v))();
+		return {
+			before,
+			after: fe.readTriangles(window.__box.geometry).length,
+			state: st,
+			hint: document.querySelector('#mesh-op-hint')?.textContent?.trim() ?? ''
+		};
+	});
+	h.check(
+		emptyClick.after === emptyClick.before && !emptyClick.state,
+		'clicking Bevel with no vertex picked applies nothing'
+	);
+	h.check(!!emptyClick.hint, `...and the pane hint names the missing pick ("${emptyClick.hint}")`);
+	const clickPick = await selectAt(A.page, [[1, 1, 1]]);
+	h.check(clickPick.found === 1 && clickPick.size === 1, 'selected a corner for the click-apply (premise)');
+	const clickApplied = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const before = fe.readTriangles(window.__box.geometry).length;
+		document.querySelector('#mesh-vertex-bevel').click();
+		await new Promise((r) => setTimeout(r, 450));
+		let st = null;
+		fe.opAdjustState.subscribe((v) => (st = v))();
+		return { before, after: fe.readTriangles(window.__box.geometry).length, op: st?.op ?? null };
+	});
+	h.check(
+		clickApplied.after > clickApplied.before,
+		`with a corner picked the CLICK bevels (${clickApplied.before} -> ${clickApplied.after} tris)`
+	);
+	h.check(clickApplied.op === 'bevel', 'and the pane becomes the live adjust');
+	const oddClickV = await oddEdges(A.page);
+	h.check(oddClickV === 0, `the click-applied vertex bevel is watertight (${oddClickV} odd edges)`);
+
 	// --- and a peer gets it -------------------------------------------------
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);

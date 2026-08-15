@@ -105,6 +105,56 @@ h.run(async () => {
 		'...and the silhouette is unchanged (' + JSON.stringify(solid.min) + ' ' + JSON.stringify(solid.max) + ')'
 	);
 
+	// -------------------------------------- 4b. 19-A P3: cut POSITION
+	// One cut at 0.25 lands at the 1/4 parameter along each ring quad, measured
+	// from that quad's ENTRY edge — the walk circulates one way around a closed
+	// ring, so the two SIDE quads of a box enter from opposite edges and their
+	// cuts land at y = +0.25 and y = -0.25 (position 0.5 degenerates to the one
+	// symmetric y=0 plane the sections above pin). Vertex POSITIONS, not counts.
+	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	const uuidQ = await setup(A.page);
+	const okQ = await A.page.evaluate(() => window.__stores.faceEdit.commitLoopCut(1, 0.25));
+	h.check(okQ === true, 'a single cut at position 0.25 commits');
+	h.check((await triCount(A.page, uuidQ)) === 20, 'it is still one loop: 12 -> 20 triangles');
+	const pQ = await planes(A.page, uuidQ, 'y');
+	h.check(
+		pQ.length === 4 &&
+			Math.abs(pQ[1] + 0.25) < 0.001 &&
+			Math.abs(pQ[2] - 0.25) < 0.001,
+		'the cut sits at the 1/4 parameter of each side quad, walk-oriented (' + JSON.stringify(pQ) + ')'
+	);
+
+	// with cuts > 1 the position is IGNORED — the schedule stays even (the
+	// Blender rule; the pane's position row disables to say so)
+	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	const uuidE = await setup(A.page);
+	await A.page.evaluate(() => window.__stores.faceEdit.commitLoopCut(2, 0.2));
+	const pE = await planes(A.page, uuidE, 'y');
+	// even 2-cut schedule: t = 1/3 and 2/3 across each side quad = y ±1/6
+	h.check(
+		pE.length === 4 &&
+			Math.abs(pE[1] + 1 / 6) < 0.001 &&
+			Math.abs(pE[2] - 1 / 6) < 0.001,
+		'cuts=2 ignores the position and stays evenly spaced at y ±1/6 (' + JSON.stringify(pE) + ')'
+	);
+	// ...and the pane's position row is DISABLED at cuts > 1, saying why
+	const rowDisabled = await A.page.evaluate(async () => {
+		const mt = window.__stores.meshToolParams;
+		mt.focusTool('loopcut');
+		mt.loopCuts.set(2);
+		await new Promise((r) => setTimeout(r, 250));
+		const at2 = document.querySelector('#loopcut-position');
+		const state2 = at2 ? at2.disabled : null;
+		mt.loopCuts.set(1);
+		await new Promise((r) => setTimeout(r, 250));
+		const at1 = document.querySelector('#loopcut-position');
+		return { at2: state2, at1: at1 ? at1.disabled : null };
+	});
+	h.check(rowDisabled.at2 === true, 'the position row disables at cuts > 1');
+	h.check(rowDisabled.at1 === false, '...and re-enables at cuts = 1');
+
 	// ---------------------------------------- 5. UVs + material slots survive
 	const merged = await A.page.evaluate(async () => {
 		const w = window.__stores;

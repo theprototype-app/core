@@ -16,8 +16,16 @@
 		bevelWidth,
 		bevelSegments,
 		bevelProfile,
+		bevelDirection,
+		bevelFaceProfile,
 		loopCuts,
+		loopCutPosition,
 		bridgeCuts,
+		bridgeTwist,
+		extrudeIndividual,
+		insetDepth,
+		insetIndividual,
+		subdivideLevelCount,
 		mergeDistance,
 		symAxis,
 		symKeep,
@@ -193,7 +201,7 @@
 		{ op: 'bevel', label: 'Bevel', hint: '', oneShot: true, param: true, icon: 'bevel', desc: "chamfer the selected face's border" },
 		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, param: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
 		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, param: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
-		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, param: false, icon: 'subdivide', desc: 'split each triangle into four' },
+		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, param: true, icon: 'subdivide', desc: 'split each quad into four, once per level' },
 		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, param: false, icon: 'flip-normals', desc: 'reverse the winding' },
 		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, param: false, icon: 'delete-face', desc: 'remove the selection' }
 	];
@@ -323,6 +331,7 @@
 			return '';
 		}
 		if (focus === 'loopcut') return loopCutReady() ? '' : 'Click a quad to choose the ring';
+		if (focus === 'subdivide') return hasTarget() ? '' : 'Click a face first';
 		if (focus === 'bridge') {
 			if (selInfo.pieces !== 2) return 'Select two separate pieces (Ctrl+click both)';
 			if (!selInfo.loops) return 'Each piece needs one closed boundary';
@@ -357,28 +366,51 @@
 	 * C/B hotkeys. @param {string} op */
 	function applyOp(op) {
 		let ok = false;
+		// P3: the direction buttons own the SIGN of the edge/vertex cap profile
+		// (the store keeps the magnitude), so the two controls cannot disagree
+		const signedProfile = ($bevelDirection === 'in' ? -1 : 1) * Math.abs($bevelProfile);
 		if (op === 'extrude' || op === 'inset') {
 			if (!hasTarget()) {
 				showToast('Click a face first');
 				return false;
 			}
-			ok = beginOpAdjust(/** @type {any} */ (op), { distance: $faceEditAmount });
+			ok = beginOpAdjust(
+				/** @type {any} */ (op),
+				op === 'inset'
+					? { distance: $faceEditAmount, depth: $insetDepth, individual: $insetIndividual }
+					: { distance: $faceEditAmount, individual: $extrudeIndividual }
+			);
 		} else if (op === 'bevel') {
 			// three different operators with three different signatures, one entry
 			ok =
 				mode === 'vertices'
-					? beginVertexBevelAdjust($bevelWidth, $bevelProfile)
+					? beginVertexBevelAdjust($bevelWidth, signedProfile)
 					: mode === 'edges'
 						? beginOpAdjust(
 								'bevel',
-								{ width: $bevelWidth, segments: $bevelSegments, profile: $bevelProfile },
+								{ width: $bevelWidth, segments: $bevelSegments, profile: signedProfile },
 								{ kind: 'edges' }
 							)
-						: beginOpAdjust('bevel', { width: $bevelWidth, segments: $bevelSegments }, { kind: 'faces' });
+						: beginOpAdjust(
+								'bevel',
+								{
+									width: $bevelWidth,
+									segments: $bevelSegments,
+									profile: $bevelFaceProfile,
+									direction: $bevelDirection
+								},
+								{ kind: 'faces' }
+							);
 		} else if (op === 'loopcut') {
-			ok = beginOpAdjust('loopcut', { cuts: $loopCuts });
+			ok = beginOpAdjust('loopcut', { cuts: $loopCuts, position: $loopCutPosition });
 		} else if (op === 'bridge') {
-			ok = beginOpAdjust('bridge', { cuts: $bridgeCuts });
+			ok = beginOpAdjust('bridge', { cuts: $bridgeCuts, twist: $bridgeTwist });
+		} else if (op === 'subdivide') {
+			if (!hasTarget()) {
+				showToast('Click a face first');
+				return false;
+			}
+			ok = beginOpAdjust('subdivide', { levels: $subdivideLevelCount });
 		}
 		if (ok) flash(op);
 		return ok;
@@ -436,6 +468,11 @@
 	 * two-piece selection and toasts on its own. */
 	function applyBridge() {
 		applyOp('bridge');
+	}
+
+	/** Subdivide at the pane's level count, via the engine (P3). */
+	function applySubdivide() {
+		applyOp('subdivide');
 	}
 
 	// Cleanup and Symmetry act on the whole OBJECT, so they are offered in every
@@ -821,10 +858,12 @@
 			<button
 				id="edge-bevel"
 				class="tbx-btn {$optionsFocus === 'bevel' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'bevel'}
+				onanimationend={() => (flashOp = '')}
 				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel edges"
-				title="Bevel — replace the edge with a chamfer strip. Sets width, segments and profile below, then Apply. Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
-				onclick={() => focusTool('bevel')}><ToolIcon name="bevel" /></button
+				title="Bevel — replace the selected edge with a chamfer strip, adjustable below (P3: with an edge picked the click applies immediately, like the faces grid). Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
+				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
 			>
 			<button
 				id="edge-dissolve"
@@ -871,10 +910,12 @@
 			<button
 				id="mesh-vertex-bevel"
 				class="tbx-btn {$optionsFocus === 'bevel' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'bevel'}
+				onanimationend={() => (flashOp = '')}
 				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel the selected vertices"
-				title="Bevel — cut the corner off every selected vertex and cap it. Sets width and profile below, then Apply. Works on any number of vertices."
-				onclick={() => focusTool('bevel')}><ToolIcon name="bevel" /></button
+				title="Bevel — cut the corner off every selected vertex and cap it, adjustable below (P3: with a vertex picked the click applies immediately, like the faces grid). Works on any number of vertices."
+				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
 			>
 			<button
 				id="mesh-proportional"
@@ -945,6 +986,7 @@
 			onApplyBevel={applyBevel}
 			onApplyLoopCut={applyLoopCut}
 			onApplyBridge={applyBridge}
+			onApplySubdivide={applySubdivide}
 			onAdjust={(patch) => reapplyOpAdjust(patch)}
 			onSettle={() => settleOpAdjust()}
 			onRevert={() => cancelOpAdjust()}

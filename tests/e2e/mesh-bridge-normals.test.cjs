@@ -156,6 +156,83 @@ h.run(async () => {
 		`every tube wall faces OUTWARD, because you see a tube from outside (worst ${Math.min(...tubeSigns).toFixed(2)})`
 	);
 
+	// ===================== 3. 19-A P3: TWIST rotates the loop pairing
+	// The tunnel's RAIL edges run from a left-cap corner (x=0.5) to its paired
+	// right-cap corner (x=2.5). With twist 0 the angle pairing lines the two
+	// square caps up, so all 4 rails are STRAIGHT (same y,z at both ends); one
+	// twist step pairs every corner with its neighbour instead, so no rail is
+	// straight — and the tunnel must still close watertight.
+	const straightRails = (page) =>
+		page.evaluate(() => {
+			const tris = window.__stores.faceEdit.readTriangles(window.__box.geometry);
+			let straight = 0;
+			const seen = new Set();
+			for (const t of tris)
+				for (let e = 0; e < 3; e++) {
+					const p = t[e];
+					const q = t[(e + 1) % 3];
+					// a rail spans the tunnel: one end on each cap plane
+					const spans =
+						(Math.abs(p.x - 0.5) < 1e-4 && Math.abs(q.x - 2.5) < 1e-4) ||
+						(Math.abs(q.x - 0.5) < 1e-4 && Math.abs(p.x - 2.5) < 1e-4);
+					if (!spans) continue;
+					// UNDIRECTED key: a rail is shared by two wall quads and shows up
+					// in both directions — sort the endpoints or every rail counts twice
+					const ends = [p, q]
+						.map((v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e4)).join(','))
+						.sort()
+						.join('|');
+					if (seen.has(ends)) continue;
+					seen.add(ends);
+					if (Math.abs(p.y - q.y) < 1e-4 && Math.abs(p.z - q.z) < 1e-4) straight++;
+				}
+			return straight;
+		});
+	// premise on the twist-0 tube built above: all 4 rails are straight
+	const straight0 = await straightRails(A.page);
+	h.check(straight0 === 4, `twist 0 pairs the aligned corners — 4 straight rails (${straight0})`);
+	const twisted = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		fe.exitFaceEdit();
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		window.__box = g.children[g.children.length - 1];
+		const T = s.THREE;
+		const cube = (ox) => {
+			const geo = new T.BoxGeometry(1, 1, 1).toNonIndexed();
+			const arr = Array.from(geo.attributes.position.array);
+			geo.dispose();
+			for (let i = 0; i < arr.length; i += 3) arr[i] += ox;
+			return arr;
+		};
+		fe.applyMeshGeo(window.__box.uuid, [...cube(0), ...cube(3)]);
+		fe.enterFaceEdit(window.__box.uuid);
+		fe.setFaceGranularity('face');
+		const faces = fe.currentFaces();
+		const left = faces.find((f) => f.normal.x > 0.9 && Math.abs(f.centroid.x - 0.5) < 0.01);
+		const right = faces.find((f) => f.normal.x < -0.9 && Math.abs(f.centroid.x - 2.5) < 0.01);
+		if (!left || !right) return { missing: true };
+		fe.faceEditSelectedTris.set([...left.triIndices, ...right.triIndices]);
+		fe.highlightFaceByTriangle(left.triIndices[0]);
+		const trisBefore = fe.readTriangles(window.__box.geometry).length;
+		const ok = fe.bridgeFaces(0, 1); // one twist step
+		return { ok, trisBefore, trisAfter: fe.readTriangles(window.__box.geometry).length };
+	});
+	h.check(!twisted.missing && twisted.ok, 'bridged the same caps with twist 1 (premise)');
+	h.check(
+		twisted.trisAfter === twisted.trisBefore - 4 + 8,
+		`twist changes the pairing, never the count (${twisted.trisBefore} -> ${twisted.trisAfter})`
+	);
+	const straight1 = await straightRails(A.page);
+	h.check(
+		straight1 === 0,
+		`twist 1 pairs every corner with its NEIGHBOUR — no straight rail survives (${straight1})`
+	);
+	const twistedOdd = await oddEdges(A.page);
+	h.check(twistedOdd === 0, `and the twisted tunnel is still watertight (${twistedOdd} odd edges)`);
+
 	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
 	await h.finish(browser);
 });

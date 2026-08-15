@@ -18,7 +18,7 @@
 	// scrub's pointer is released. Typed input and arrow steps do NOT fire either
 	// (there is no gesture to bracket); consumers that need those debounce
 	// `onchange` instead.
-	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
+	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
 	let {
 		label = '',
 		value = 0,
@@ -35,6 +35,10 @@
 		// member's number. Editing still commits a real value (to the whole set),
 		// and `value` stays the primary's so scrubs/arrow steps have an origin.
 		mixed = false,
+		// 19-A P3: a row whose parameter does not apply right now (the loop-cut
+		// position at cuts > 1). The value still SHOWS and the title says why —
+		// no scrub, no typing, no arrow steps. Default off: ~40 call sites untouched.
+		disabled = false,
 		onchange = () => {},
 		onscrubstart = () => {},
 		onscrubend = () => {}
@@ -148,6 +152,7 @@
 
 	/** @param {any} event */
 	function onPointerDown(event) {
+		if (disabled) return;
 		if (event.button !== 0) return;
 		startValue = Number(value) || 0;
 		startX = event.clientX;
@@ -160,6 +165,7 @@
 
 	/** @param {any} event */
 	function onPointerMove(event) {
+		if (disabled) return;
 		if (event.buttons !== 1) return;
 		const dx = event.clientX - startX;
 		if (!scrubbing) {
@@ -182,6 +188,7 @@
 
 	/** @param {any} event */
 	function onPointerUp(event) {
+		if (disabled) return;
 		// read the flag BEFORE anything clears it — both branches below do, and a
 		// blur racing the release would too (onBlur resets it as well)
 		const wasScrubbing = scrubbing;
@@ -196,7 +203,7 @@
 	}
 </script>
 
-<div class="dn-wrap" class:dn-scrub={scrubbing} class:dn-focus={focused} use:drag>
+<div class="dn-wrap" class:dn-scrub={scrubbing} class:dn-focus={focused} class:dn-disabled={disabled} use:drag>
 	{#if label}
 		<span class={'dn-label ' + accent}>{label}</span>
 	{/if}
@@ -211,6 +218,7 @@
 		aria-label={ariaLabel || label || 'value'}
 		title={title || 'Drag to scrub · type to set · ↑↓ steps (Ctrl ×10, Shift ×100) · Esc reverts'}
 		value={display}
+		{disabled}
 		use:keys
 		oninput={onInput}
 		onchange={onInput}
@@ -269,6 +277,12 @@
 	}
 	.dn-wrap.dn-focus .dn-input {
 		cursor: text;
+	}
+	.dn-wrap.dn-disabled {
+		opacity: 0.45;
+	}
+	.dn-wrap.dn-disabled .dn-input {
+		cursor: default;
 	}
 	/* the app's global input ring would double up on the wrapper's border */
 	.dn-input:focus {

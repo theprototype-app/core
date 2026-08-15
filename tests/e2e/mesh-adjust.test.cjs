@@ -273,6 +273,54 @@ h.run(async () => {
 	);
 	h.check(bridged.revert && !bridged.hint, 'and the pane becomes the live adjust');
 
+	// ---- (e2) 19-A P3: SUBDIVIDE through the engine, with LEVELS -------------
+	// levels=2 on a 2-tri quad target -> 16 sub-quads = 32 tris (16x the target,
+	// 4^levels), the authored pairs survive as stored topology (the wireframe
+	// draws no diagonals), and apply+scrub+settle is still ONE undo entry.
+	await editBox(A.page);
+	await pickTop(A.page);
+	const subdiv = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const count = () => fe.readTriangles(window.__box.geometry).length;
+		const ok = fe.beginOpAdjust('subdivide', { levels: 1 });
+		const atOne = count(); // 10 untouched + 4 sub-quads (8 tris) = 18
+		fe.reapplyOpAdjust({ levels: 2 });
+		const atTwo = count(); // 10 untouched + 16 sub-quads (32 tris) = 42
+		fe.settleOpAdjust();
+		let sel = [];
+		fe.faceEditSelectedTris.subscribe((v) => (sel = [...v]))();
+		const stored = s.meshTopology.readStoredFaces(window.__box.geometry);
+		const wire = fe.wireframeDebug();
+		s.history.undo();
+		const undone = count();
+		s.history.redo();
+		const redone = count();
+		return {
+			ok,
+			atOne,
+			atTwo,
+			sel: sel.length,
+			quads: stored ? stored.filter((f) => f.length === 2).length : -1,
+			allPairs: stored ? stored.every((f) => f.length === 2) : false,
+			diagonals: wire.diagonals,
+			undone,
+			redone
+		};
+	});
+	h.check(subdiv.ok, 'subdivide applied through the engine');
+	h.check(subdiv.atOne === 18, `levels=1 splits the quad 2x2 (12 -> ${subdiv.atOne} tris)`);
+	h.check(subdiv.atTwo === 42, `scrubbing to levels=2 gives 16x the 2-tri target (${subdiv.atTwo} tris)`);
+	h.check(subdiv.sel === 32, `the split area stays selected (${subdiv.sel} of 32 new tris)`);
+	// 5 untouched box sides + 16 authored sub-quads = 21 faces, all 2-tri pairs
+	h.check(
+		subdiv.allPairs && subdiv.quads === 21,
+		`the stored partition is 21 quad pairs — authored, not re-derived (${subdiv.quads})`
+	);
+	h.check(subdiv.diagonals === 0, 'the structure wireframe hides every pair diagonal');
+	h.check(subdiv.undone === 12, `ONE undo removes both levels (${subdiv.atTwo} -> ${subdiv.undone})`);
+	h.check(subdiv.redone === 42, 'redo replays the settled two-level split');
+
 	// ---- (f) two peers: B holds A's FINAL geometry after apply+scrub+settle --
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);

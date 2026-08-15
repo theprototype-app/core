@@ -24,13 +24,27 @@
 		faceAutoApply
 	} from '$lib/faceEdit';
 	import { proportionalRadius } from '$lib/meshEdit';
-	import { bevelWidth, bevelSegments, bevelProfile, loopCuts, bridgeCuts } from '$lib/meshToolParams';
+	import {
+		bevelWidth,
+		bevelSegments,
+		bevelProfile,
+		bevelDirection,
+		bevelFaceProfile,
+		loopCuts,
+		loopCutPosition,
+		bridgeCuts,
+		bridgeTwist,
+		extrudeIndividual,
+		insetDepth,
+		insetIndividual,
+		subdivideLevelCount
+	} from '$lib/meshToolParams';
 	import DragRow from '../ui/DragRow.svelte';
 
 	/** @type {{ mode: 'vertices'|'edges'|'faces', focus: string, hint?: string,
 	 *   adjusting?: boolean,
 	 *   onApplyOp: () => void, onApplyBevel: () => void, onApplyLoopCut: () => void,
-	 *   onApplyBridge: () => void,
+	 *   onApplyBridge: () => void, onApplySubdivide?: () => void,
 	 *   onAdjust?: (patch: any) => void, onSettle?: () => void, onRevert?: () => void }} */
 	let {
 		mode,
@@ -41,15 +55,35 @@
 		onApplyBevel,
 		onApplyLoopCut,
 		onApplyBridge,
+		onApplySubdivide = () => {},
 		onAdjust = () => {},
 		onSettle = () => {},
 		onRevert = () => {}
 	} = $props();
 
-	// faces bevel takes (width, segments); edges (width, segments, profile);
-	// vertices (width, profile) — the pane mirrors the operator signatures
+	// faces bevel takes (width, segments, profile, direction); edges (width,
+	// segments, profile); vertices (width, profile) — the pane mirrors the
+	// operator signatures
 	const showSegments = $derived(mode !== 'vertices');
 	const showProfile = $derived(mode !== 'faces');
+
+	// 19-A P3: what the edge/vertex CORES receive as `profile` — the direction
+	// buttons own the SIGN (dome vs dish) and the slider the magnitude, so the
+	// two controls can never disagree. The cores' own -1..1 range is unchanged;
+	// only this pane wiring maps the pair onto it.
+	/** @param {'out'|'in'} dir @param {number} magnitude */
+	function effectiveProfile(dir, magnitude) {
+		return (dir === 'in' ? -1 : 1) * Math.abs(magnitude);
+	}
+	/** @param {'out'|'in'} dir */
+	function setDirection(dir) {
+		bevelDirection.set(dir);
+		if (!adjusting) return;
+		// faces carry direction as its own param; edges/verts fold it into the
+		// signed profile the cores already understand
+		if (mode === 'faces') adjustChanged({ direction: dir });
+		else adjustChanged({ profile: effectiveProfile(dir, $bevelProfile) });
+	}
 
 	// 19-A P2: adjust plumbing. A row change while adjusting re-runs the op
 	// live; SETTLING (the full-quality apply + the unconditional broadcast + the
@@ -114,6 +148,42 @@
 			onscrubstart={scrubStart}
 			onscrubend={scrubEnd}
 		/>
+		{#if focus === 'inset'}
+			<DragRow
+				id="inset-depth"
+				label="depth"
+				value={$insetDepth}
+				step={0.01}
+				decimals={2}
+				min={-2}
+				max={2}
+				title="Push the inset cap along its normal (world units) — 0 keeps it in the surface, negative sinks it"
+				onchange={(v) => {
+					insetDepth.set(v);
+					if (adjusting) adjustChanged({ depth: v });
+				}}
+				onscrubstart={scrubStart}
+				onscrubend={scrubEnd}
+			/>
+		{/if}
+		<label
+			class="flex items-center gap-1"
+			title={focus === 'extrude'
+				? 'Extrude each separate piece along its OWN normal instead of one averaged direction'
+				: 'Inset each picked face separately — one ring apiece instead of one shared ring'}
+		>
+			<input
+				id={focus === 'extrude' ? 'extrude-individual' : 'inset-individual'}
+				type="checkbox"
+				checked={focus === 'extrude' ? $extrudeIndividual : $insetIndividual}
+				onchange={(e) => {
+					const on = e.currentTarget.checked;
+					(focus === 'extrude' ? extrudeIndividual : insetIndividual).set(on);
+					if (adjusting) adjustChanged({ individual: on });
+				}}
+			/>
+			individual
+		</label>
 		<label class="flex items-center gap-1" title="Apply the op when you click a face">
 			<input id="mesh-op-autoapply" type="checkbox" bind:checked={$faceAutoApply} />
 			auto-apply
@@ -167,28 +237,72 @@
 				onscrubend={scrubEnd}
 			/>
 		{/if}
+		<!-- 19-A P3: direction, in ALL THREE modes. Faces: Out raises the cap
+		     along +normal (the old hardwired behaviour), In recesses it.
+		     Edges/verts: the sign of the dome/dish — Out domes, In dishes. -->
+		<div
+			class="tbx-seg"
+			title={mode === 'faces'
+				? 'Chamfer direction — Out raises the cap along the face normal, In recesses it into the surface'
+				: 'Cap direction — Out domes the cap outward, In dishes it inward (needs profile > 0)'}
+		>
+			<button
+				id="bevel-dir-out"
+				class="px-2 py-0.5 {$bevelDirection === 'out' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				onclick={() => setDirection('out')}>Out</button
+			>
+			<button
+				id="bevel-dir-in"
+				class="px-2 py-0.5 {$bevelDirection === 'in' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				onclick={() => setDirection('in')}>In</button
+			>
+		</div>
+		{#if mode === 'faces'}
+			<!-- P3: the faces profile is the step SCHEDULE — 1 = quarter-circle
+			     round (the pre-P3 behaviour), 0 = straight 45° chamfer -->
+			<DragRow
+				id="bevel-face-profile"
+				label="profile"
+				value={$bevelFaceProfile}
+				step={0.01}
+				decimals={2}
+				min={0}
+				max={1}
+				title="Profile of the chamfer: 1 rounds it (quarter-circle), 0 is a straight 45° ramp"
+				onchange={(v) => {
+					bevelFaceProfile.set(v);
+					if (adjusting) adjustChanged({ profile: v });
+				}}
+				onscrubstart={scrubStart}
+				onscrubend={scrubEnd}
+			/>
+		{/if}
 		{#if showProfile}
 			<label
 				class="flex items-center gap-1"
-				title="Profile: 0 is a flat chamfer, positive domes the cap OUT, negative dishes it IN"
+				title="Profile: 0 is a flat cap, more bulges it — the Out/In buttons pick dome vs dish"
 			>
 				profile
 				<input
 					id="bevel-profile"
 					type="range"
-					min="-1"
+					min="0"
 					max="1"
 					step="0.1"
 					class="w-20"
-					value={$bevelProfile}
+					value={Math.abs($bevelProfile)}
 					oninput={(e) => {
 						const v = parseFloat(e.currentTarget.value);
+						// the STORE keeps the magnitude; the sign belongs to the
+						// direction buttons and is applied where the cores are called
 						bevelProfile.set(v);
-						if (adjusting) adjustChanged({ profile: v });
+						if (adjusting) adjustChanged({ profile: effectiveProfile($bevelDirection, v) });
 					}}
 				/>
 				<span class="w-10 text-right tabular-nums"
-					>{$bevelProfile > 0.05 ? 'out' : $bevelProfile < -0.05 ? 'in' : 'flat'}</span
+					>{Math.abs($bevelProfile) < 0.05
+						? 'flat'
+						: ($bevelDirection === 'in' ? 'in ' : 'out ') + Math.abs($bevelProfile).toFixed(1)}</span
 				>
 			</label>
 		{/if}
@@ -227,6 +341,27 @@
 			onscrubstart={scrubStart}
 			onscrubend={scrubEnd}
 		/>
+		<!-- 19-A P3: single-cut placement; multi-cut is ALWAYS evenly spaced
+		     (the Blender rule), so the row disables at cuts > 1 -->
+		<DragRow
+			id="loopcut-position"
+			label="position"
+			value={$loopCutPosition}
+			step={0.005}
+			decimals={2}
+			min={0.01}
+			max={0.99}
+			disabled={$loopCuts > 1}
+			title={$loopCuts > 1
+				? 'Multiple cuts are always evenly spaced — set cuts to 1 to place a single cut'
+				: 'Where the single cut lands along the ring (0.5 = midway)'}
+			onchange={(v) => {
+				loopCutPosition.set(v);
+				if (adjusting) adjustChanged({ position: v });
+			}}
+			onscrubstart={scrubStart}
+			onscrubend={scrubEnd}
+		/>
 		{#if adjusting}
 			{@render revertBtn()}
 		{:else}
@@ -258,6 +393,24 @@
 			onscrubstart={scrubStart}
 			onscrubend={scrubEnd}
 		/>
+		<!-- 19-A P3: rotate the loop pairing — a skewed tunnel is one step away
+		     from a straight one, and the angle ordering cannot know which -->
+		<DragRow
+			id="bridge-twist"
+			label="twist"
+			value={$bridgeTwist}
+			step={0.05}
+			decimals={0}
+			min={-20}
+			max={20}
+			title="Rotate how the two loops pair up, one edge per step — untwists a skewed tunnel"
+			onchange={(v) => {
+				bridgeTwist.set(Math.round(v));
+				if (adjusting) adjustChanged({ twist: Math.round(v) });
+			}}
+			onscrubstart={scrubStart}
+			onscrubend={scrubEnd}
+		/>
 		{#if adjusting}
 			{@render revertBtn()}
 		{:else}
@@ -266,6 +419,37 @@
 				class="tbx-primary"
 				title="Bridge the two selected pieces (B) — they need one closed boundary each and matching edge counts"
 				onclick={onApplyBridge}>Bridge</button
+			>
+		{/if}
+	</div>
+{:else if focus === 'subdivide'}
+	<span class="tbx-label">{adjusting ? 'Adjusting subdivide' : 'Subdivide options'}</span>
+	{@render hintLine()}
+	<div id="subdivide-params" class="tbx-row text-xs text-gray-300">
+		<DragRow
+			id="subdivide-levels"
+			label="levels"
+			value={$subdivideLevelCount}
+			step={0.05}
+			decimals={0}
+			min={1}
+			max={3}
+			title="How many times to split — each level turns every quad into four (growth is 4^levels, capped by the sync limit)"
+			onchange={(v) => {
+				subdivideLevelCount.set(Math.round(v));
+				if (adjusting) adjustChanged({ levels: Math.round(v) });
+			}}
+			onscrubstart={scrubStart}
+			onscrubend={scrubEnd}
+		/>
+		{#if adjusting}
+			{@render revertBtn()}
+		{:else}
+			<button
+				id="mesh-subdivide-apply"
+				class="tbx-primary"
+				title="Split the selected faces (S) — quad-aware, so the loop tools survive it"
+				onclick={onApplySubdivide}>Apply</button
 			>
 		{/if}
 	</div>

@@ -366,6 +366,17 @@ const value = await page.evaluate(() =>
   faces but `#mesh-sel-eall` / `#mesh-sel-vall` in edges / vertices (same for
   `invert`/`einvert`/`vinvert`), so a selector hardcoding the faces ids silently
   matches nothing in the other two modes.
+- **19-A P5 suites + anchors**: `mesh-edge-vertex-ops` (P5a: `#edge-delete`,
+  `#mesh-delete-verts`, `#mesh-fix-triangulate`, `#mesh-fix-quads`; the
+  undo-restores-the-quad-partition counterfactual lives here) and `mesh-ops-p5b`
+  (`#edge-subdivide`, `#edge-extrude` + `#edge-extrude-params`,
+  `#mesh-op-duplicate`, `#mesh-smooth` + `#smooth-params`). P5b test techniques
+  worth reusing: prove a welded chain by UNIQUE CORNER COUNT (6 welded vs 7 =
+  torn); derive extrude offsets in-test from the documented chain-normal rule
+  at TWO distances; Jacobi smoothing (pre-pass reads) so factor-1 results are
+  derivable exactly; a real-gizmo "peel" asserts sources byte-unchanged while
+  copies move. Edge extrude needs an OPEN surface — a box has no border edges
+  (delete a face first).
 - The face highlight is TWO meshes: `face-edit-overlay` = the SELECTION (opacity ~0.45)
   and `face-edit-hover` = the cursor wash (~0.14). A check for "is this face
   highlighted" has to say WHICH — they were one mesh until a deselected face kept

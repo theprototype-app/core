@@ -920,5 +920,121 @@ h.run(async () => {
 	);
 	h.check(listed === true, 'the M binding is in the registry, so Settings ▸ Shortcuts lists it');
 
+	// ---------- 12. P5: the edge target ----------
+	// Fresh box B: its front face is two coplanar triangles, so the face DIAGONAL
+	// passes through the face centre — the exact adversarial input for the
+	// diagonal skip (aim at the centre: a broken skip snaps to the diagonal AT
+	// the cursor, the working one reaches out to a boundary edge ~1 world unit
+	// away — the counterfactual is computable, not assumed).
+	await A.page.evaluate(
+		({ a, b }) => {
+			const w = window.__stores;
+			let g = null;
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const boxA = g.getObjectByProperty('uuid', a);
+			const boxB = g.getObjectByProperty('uuid', b);
+			boxA.position.set(0, 1, 0);
+			boxA.rotation.set(0, 0, 0);
+			boxB.position.set(4, 1, 0);
+			boxB.scale.set(1, 1, 1);
+			boxA.updateMatrixWorld(true);
+			boxB.updateMatrixWorld(true);
+			w.objectsGroup.update((v) => v);
+			w.snapping.snapTargets.update((v) => ({
+				...v,
+				enabled: true,
+				vertex: false,
+				edge: true,
+				face: false,
+				surface: false,
+				object: false,
+				alignNormal: false,
+				radiusPx: 99
+			}));
+		},
+		ids
+	);
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.waitForTimeout(600);
+	const edges = await A.page.evaluate(({ a }) => {
+		const w = window.__stores;
+		let controls = null;
+		let camera = null;
+		let g = null;
+		w.TControls.subscribe((v) => (controls = v))();
+		w.globalCamera.subscribe((v) => (camera = v))();
+		w.objectsGroup.subscribe((v) => (g = v))();
+		const boxA = g.getObjectByProperty('uuid', a);
+		if (!controls || controls.object !== boxA) return { attached: false };
+		const aimAt = (/** @type {number[]} */ p) => {
+			const v = new w.THREE.Vector3(p[0], p[1], p[2]).project(camera);
+			w.snapEngine.setSnapPointer(
+				(v.x * 0.5 + 0.5) * window.innerWidth,
+				(-v.y * 0.5 + 0.5) * window.innerHeight
+			);
+		};
+		const search = () =>
+			new Promise((r) => {
+				// past the 33ms throttle, then one change event runs the search
+				setTimeout(() => {
+					controls.dispatchEvent({ type: 'change' });
+					let candidate = null;
+					w.snapEngine.activeSnapCandidate.subscribe((v) => (candidate = v))();
+					r(candidate ? { type: candidate.type, point: candidate.point.toArray() } : null);
+				}, 60);
+			});
+		controls.dragging = true;
+		controls.dispatchEvent({ type: 'dragging-changed', value: true });
+		boxA.position.x += 0.25;
+		boxA.updateMatrixWorld(true);
+		return (async () => {
+			// (1) near the top edge, OFF centre: the sliding closest point
+			aimAt([3.55, 1.9, 1]);
+			const slide = await search();
+			// (2) near the top edge MIDPOINT: the bonus pulls it onto (4, 2, 1)
+			aimAt([4.0, 1.92, 1]);
+			const mid = await search();
+			// (3) the ADVERSARIAL centre aim: the diagonal passes right here — a
+			// broken skip returns a point at the centre, the fix reaches the boundary
+			aimAt([4.0, 1.0, 1]);
+			const centre = await search();
+			controls.dragging = false;
+			controls.dispatchEvent({ type: 'dragging-changed', value: false });
+			return { attached: true, slide, mid, centre };
+		})();
+	}, ids);
+	h.check(edges.attached === true, 'the gizmo is attached for the edge drag');
+	h.check(
+		edges.slide?.type === 'edge' &&
+			Math.abs(edges.slide.point[1] - 2) < 1e-3 &&
+			Math.abs(edges.slide.point[2] - 1) < 1e-3 &&
+			edges.slide.point[0] > 3 &&
+			edges.slide.point[0] < 5,
+		`an off-centre aim slides along the top edge (${edges.slide?.point?.map((v) => v.toFixed(3))})`
+	);
+	h.check(
+		edges.mid?.type === 'edge' &&
+			Math.hypot(edges.mid.point[0] - 4, edges.mid.point[1] - 2, edges.mid.point[2] - 1) < 0.05,
+		`near the middle, the MIDPOINT bonus wins (${edges.mid?.point?.map((v) => v.toFixed(3))})`
+	);
+	const boundaryDist = edges.centre
+		? Math.min(
+				Math.abs(edges.centre.point[0] - 3),
+				Math.abs(edges.centre.point[0] - 5),
+				Math.abs(edges.centre.point[1] - 0),
+				Math.abs(edges.centre.point[1] - 2)
+			)
+		: 9;
+	h.check(
+		edges.centre?.type === 'edge' && boundaryDist < 1e-3,
+		`a face-centre aim skips the DIAGONAL and lands on a boundary edge (${edges.centre?.point?.map((v) => v.toFixed(3))})`
+	);
+	// the Edge chip is in both UIs now
+	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.waitForTimeout(500);
+	const edgeChip = await A.page.evaluate(() => !!document.querySelector('#snap-target-edge'));
+	h.check(edgeChip, 'the Edge chip renders in Configure Scene ▸ Snapping');
+	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+
 	await h.finish(browser);
 });

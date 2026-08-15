@@ -72,6 +72,7 @@
 	// 19-B: element snap targets — independent checked rows + a compact hint tag
 	const ELEMENT_TARGETS: [string, string][] = [
 		['vertex', 'Vertex'],
+		['edge', 'Edge'],
 		['face', 'Face'],
 		['surface', 'Surface'],
 		['object', 'Object']

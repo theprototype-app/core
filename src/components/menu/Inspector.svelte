@@ -142,6 +142,7 @@
 	/** 19-B: the element snap target chips (key, label) @type {any[]} */
 	const elementTargets = [
 		['vertex', 'Vertex'],
+		['edge', 'Edge'],
 		['face', 'Face'],
 		['surface', 'Surface'],
 		['object', 'Object']

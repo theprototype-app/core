@@ -219,6 +219,90 @@ function triCornerWorld(mesh, triIndex, corner) {
 	return _corner.fromBufferAttribute(position, index).applyMatrix4(mesh.matrixWorld).clone();
 }
 
+// ---- P5: edge candidates --------------------------------------------------
+// A quad's internal DIAGONAL is a triangulation artifact, not an edge of the
+// model (the wireframe rule) — so edge snapping must skip it. Two sources of
+// truth, in order: the STORED topology (an edge shared by two triangles of the
+// same logical face is internal — covers dissolve's n-gon fans too), and for a
+// mesh nobody has edited (no __topo) an exactly-coplanar welded neighbour
+// (a fresh primitive's quad diagonal is exact; edited meshes never reach this
+// fragile test because they carry stored topology). Adjacency comes from a
+// welded edge→triangles map cached per geometry with the bvhPicking stamp
+// idiom, capped — above the cap all three edges are offered rather than
+// hitching the search.
+
+const EDGE_MAP_TRI_CAP = 50000;
+/** @type {WeakMap<any, {attribute: any, version: number, map: Map<string, number[]>}>} */
+const edgeMapCache = new WeakMap();
+
+/** a welded corner key from LOCAL position (stable under object transforms)
+ * @param {any} position @param {number} index */
+function cornerKey(position, index) {
+	return (
+		position.getX(index).toFixed(5) +
+		',' +
+		position.getY(index).toFixed(5) +
+		',' +
+		position.getZ(index).toFixed(5)
+	);
+}
+
+/** the resolved position index of one triangle corner
+ * @param {any} geometry @param {number} triIndex @param {number} corner */
+function cornerIndex(geometry, triIndex, corner) {
+	const at = triIndex * 3 + corner;
+	return geometry.index ? geometry.index.getX(at) : at;
+}
+
+/** welded edge→triangle-indices map, or null over the cap @param {any} geometry */
+function weldedEdgeMap(geometry) {
+	const position = geometry?.attributes?.position;
+	if (!position) return null;
+	const triCount = (geometry.index ? geometry.index.count : position.count) / 3;
+	if (triCount > EDGE_MAP_TRI_CAP) return null;
+	const cached = edgeMapCache.get(geometry);
+	if (cached && cached.attribute === position && cached.version === position.version)
+		return cached.map;
+	const map = new Map();
+	for (let tri = 0; tri < triCount; tri++) {
+		const keys = [
+			cornerKey(position, cornerIndex(geometry, tri, 0)),
+			cornerKey(position, cornerIndex(geometry, tri, 1)),
+			cornerKey(position, cornerIndex(geometry, tri, 2))
+		];
+		for (let e = 0; e < 3; e++) {
+			const a = keys[e];
+			const b = keys[(e + 1) % 3];
+			const key = a < b ? a + '|' + b : b + '|' + a;
+			const list = map.get(key);
+			if (list) list.push(tri);
+			else map.set(key, [tri]);
+		}
+	}
+	edgeMapCache.set(geometry, { attribute: position, version: position.version, map });
+	return map;
+}
+
+const _triA = new THREE.Vector3();
+const _triB = new THREE.Vector3();
+const _triC = new THREE.Vector3();
+const _normA = new THREE.Vector3();
+const _normB = new THREE.Vector3();
+
+/** whether two triangles are EXACTLY coplanar (local space, 1e-6 on the dot —
+ * a primitive's quad diagonal is exact; anything looser re-derives topology,
+ * the documented dead end) @param {any} geometry @param {number} t0 @param {number} t1 */
+function trisCoplanar(geometry, t0, t1) {
+	const position = geometry.attributes.position;
+	const normalOf = (/** @type {number} */ tri, /** @type {any} */ out) => {
+		_triA.fromBufferAttribute(position, cornerIndex(geometry, tri, 0));
+		_triB.fromBufferAttribute(position, cornerIndex(geometry, tri, 1));
+		_triC.fromBufferAttribute(position, cornerIndex(geometry, tri, 2));
+		return out.copy(_triB).sub(_triA).cross(_triC.sub(_triA)).normalize();
+	};
+	return normalOf(t0, _normA).dot(normalOf(t1, _normB)) > 1 - 1e-6;
+}
+
 /** the DISCRETE logical-face candidate for a hit: the stored-topology face
  * containing the hit triangle (readStoredFaces) when one exists, else the hit
  * triangle itself — centroid + the triangle list it was measured over (P4: the
@@ -246,7 +330,7 @@ function faceCentroid(mesh, faceIndex) {
  * Pick the best candidate: screen-px distance plus a type bias (an exact-point
  * target beats the continuous surface at equal distance), rejected outside
  * radiusPx. PURE — the e2e suite drives it headlessly with synthetic lists.
- * @param {{type: string, px: number[]|null}[]} list
+ * @param {{type: string, px: number[]|null, bonus?: number}[]} list
  * @param {number[]} cursorPx @param {number} radiusPx
  */
 export function scoreCandidates(list, cursorPx, radiusPx) {
@@ -258,7 +342,9 @@ export function scoreCandidates(list, cursorPx, radiusPx) {
 		if (!candidate?.px) continue;
 		const dist = Math.hypot(candidate.px[0] - cursorPx[0], candidate.px[1] - cursorPx[1]);
 		if (dist > radiusPx) continue;
-		const score = dist + (BIAS[candidate.type] ?? 0);
+		// P5: an optional per-candidate bonus (an edge MIDPOINT edges out the
+	// sliding closest-point when the cursor is near it)
+	const score = dist + (BIAS[candidate.type] ?? 0) + (candidate.bonus ?? 0);
 		// strict less-than: the first of two equal scores wins (stable build order)
 		if (score < bestScore) {
 			bestScore = score;
@@ -362,6 +448,55 @@ export function findSnapCandidate(camera, pointerNdc, excludeUuids) {
 				uuid,
 				faceIndex: hit.faceIndex,
 				px: projectPx(point, camera, rect)
+			});
+		}
+	}
+	if (targets.edge && hit.faceIndex != null && hit.object?.isMesh) {
+		const geometry = hit.object.geometry;
+		const position = geometry?.attributes?.position;
+		const map = position ? weldedEdgeMap(geometry) : null;
+		const stored = readStoredFaces(geometry);
+		const hasStoredTopo = !!stored;
+		const faceTris =
+			stored?.find((/** @type {number[]} */ f) => f.includes(hit.faceIndex)) ?? [hit.faceIndex];
+		for (let e = 0; e < 3; e++) {
+			const i0 = cornerIndex(geometry, hit.faceIndex, e);
+			const i1 = cornerIndex(geometry, hit.faceIndex, (e + 1) % 3);
+			// the diagonal skip (see the section header): internal to a stored face,
+			// or — on an unedited mesh — mirrored by an exactly-coplanar neighbour
+			if (map) {
+				const a = cornerKey(position, i0);
+				const b = cornerKey(position, i1);
+				const neighbours = map.get(a < b ? a + '|' + b : b + '|' + a);
+				if (neighbours && neighbours.length === 2) {
+					const other = neighbours[0] === hit.faceIndex ? neighbours[1] : neighbours[0];
+					if (faceTris.includes(other)) continue;
+					if (!hasStoredTopo && trisCoplanar(geometry, hit.faceIndex, other)) continue;
+				}
+			}
+			const v0 = new THREE.Vector3().fromBufferAttribute(position, i0).applyMatrix4(hit.object.matrixWorld);
+			const v1 = new THREE.Vector3().fromBufferAttribute(position, i1).applyMatrix4(hit.object.matrixWorld);
+			// the point ON the edge under the cursor — the ray/segment closest pair
+			// is perspective-exact by construction (the knife's screen-parameter trap)
+			const onEdge = new THREE.Vector3();
+			_raycaster.ray.distanceSqToSegment(v0, v1, undefined, onEdge);
+			candidates.push({
+				type: 'edge',
+				point: onEdge,
+				normal,
+				uuid,
+				faceIndex: hit.faceIndex,
+				px: projectPx(onEdge, camera, rect)
+			});
+			const mid = v0.clone().add(v1).multiplyScalar(0.5);
+			candidates.push({
+				type: 'edge',
+				bonus: -2, // the midpoint wins when the cursor is close to it
+				point: mid,
+				normal,
+				uuid,
+				faceIndex: hit.faceIndex,
+				px: projectPx(mid, camera, rect)
 			});
 		}
 	}

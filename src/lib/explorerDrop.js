@@ -9,6 +9,7 @@ import { importFile } from './fileHandler.svelte';
 import { setObjectTexture } from './materialsHandler';
 import { topLevelObjectOf } from './objectActions';
 import { sceneHits, hitWorldNormal } from './scenePick';
+import { snapTargets } from './snapping';
 
 // Explorer -> scene drops (96): place objects/prefabs at the pointed spot,
 // texture the mesh under the cursor with a dropped image. Everything goes
@@ -51,9 +52,31 @@ export function dropTarget(clientX, clientY) {
 	return { point: planePoint.toArray(), object: null, normal: [0, 1, 0] };
 }
 
-/** @param {any} object @param {number[]} point */
-function placeAt(object, point) {
+const _dropUp = new THREE.Vector3(0, 1, 0);
+const _dropNormal = new THREE.Vector3();
+const _dropQuat = new THREE.Quaternion();
+
+/**
+ * @param {any} object @param {number[]} point
+ * @param {number[]|null} [normal] 19-B P4: the surface normal under the drop.
+ *   With `snapTargets.alignNormal` on, the object's +Y is turned onto it BEFORE
+ *   the move broadcast (which already carries rot, so nothing new goes on the
+ *   wire). A +Y normal — the ground plane, i.e. every flat drop — is skipped, so
+ *   the default path stays byte-identical.
+ */
+function placeAt(object, point, normal = null) {
 	object.position.set(point[0], point[1], point[2]);
+	if (normal && get(snapTargets).alignNormal) {
+		_dropNormal.fromArray(normal);
+		if (_dropNormal.lengthSq() > 1e-12) {
+			_dropNormal.normalize();
+			if (_dropNormal.distanceTo(_dropUp) > 1e-6) {
+				_dropQuat.setFromUnitVectors(_dropUp, _dropNormal);
+				object.quaternion.premultiply(_dropQuat);
+				object.updateMatrixWorld(true);
+			}
+		}
+	}
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer)
@@ -110,7 +133,7 @@ export async function dropExplorerItem(payload, clientX, clientY) {
 		const prefab = get(prefabs).find((entry) => entry.id === payload.prefabId);
 		if (!prefab) return;
 		const object = instantiatePrefab(prefab);
-		if (object && target.point) placeAt(object, target.point);
+		if (object && target.point) placeAt(object, target.point, target.normal);
 		return;
 	}
 	// N6: a default-pack item carries a `url` (not a stored library item) — fetch

@@ -1716,6 +1716,14 @@
 						/>
 					</div>
 				</div>
+				<!-- 19-B P4: align to the candidate normal (face/surface targets only) -->
+				<Checkbox
+					id="snap-align-normal"
+					checked={$snapTargets.alignNormal}
+					onchange={(/** @type {any} */ e) =>
+						snapTargets.update((t) => ({ ...t, alignNormal: e.currentTarget.checked }))}
+					>Rotate to the surface (align to normal)</Checkbox
+				>
 				<div class="snap-row">
 					<span class="text-xs text-gray-400">Snap origin</span>
 					<div class="snap-chips">

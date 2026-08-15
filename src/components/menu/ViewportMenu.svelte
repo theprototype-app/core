@@ -211,6 +211,13 @@
 				// translate drag, it takes priority over the grid steps
 				{ section: 'Elements' },
 				...ELEMENT_TARGETS.map(([key, label]) => elementTargetItem(key, label)),
+				// P4: rotate the dragged object onto the candidate normal (face/surface)
+				{
+					label: 'Align to normal',
+					checked: $snapTargets.alignNormal,
+					tooltip: 'Snapping to a face also turns the object onto that surface',
+					action: () => snapTargets.update((t: any) => ({ ...t, alignNormal: !t.alignNormal }))
+				},
 				// P3: pick the transient snap anchor (needs exactly one selection)
 				...($selectedObjects.length === 1
 					? [

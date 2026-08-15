@@ -650,6 +650,275 @@ h.run(async () => {
 	h.check(t.anchorMode === 'pivot', 'the Pivot chip writes the anchorMode preference');
 	await A.page.evaluate(() => document.querySelector('#snap-anchor-auto').click());
 	await A.page.waitForTimeout(200);
+	// close the sidebar again — sections 9-11 want the bare viewport (and section
+	// 11 presses a bare key, which a focused panel widget could swallow)
+	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.waitForTimeout(300);
+
+	// ---------- 9. P4: align to normal ----------
+	// A RAMP: a 2x2x2 box rotated 30° about Z, so its top face normal is
+	// (-sin30, cos30, 0) — a direction NO axis-aligned box has, which is what
+	// makes "the object turned onto the surface" measurable at all. The editor
+	// camera sits at (-10, 10, 10), so that top face is the one it looks at, and
+	// the ramp is parked at x = -4 where the aim ray passes nothing else.
+	const ramp = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.commandsHandler.sceneCommand('/create Box 2 2 2');
+		await new Promise((r) => setTimeout(r, 500));
+		let g = null;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		const boxes = g.children.filter((c) => c.name?.startsWith('Box'));
+		const r = boxes[boxes.length - 1];
+		r.position.set(-4, 1, 0);
+		r.rotation.set(0, 0, Math.PI / 6);
+		r.updateMatrixWorld(true);
+		w.objectsGroup.update((v) => v);
+		// the top face centre in WORLD space + the normal it must hand out
+		const n = new w.THREE.Vector3(-Math.sin(Math.PI / 6), Math.cos(Math.PI / 6), 0);
+		const top = r.position.clone().add(n);
+		return { uuid: r.uuid, normal: n.toArray(), top: top.toArray() };
+	});
+	h.check(!!ramp.uuid, 'a 30°-tilted ramp exists to align against');
+	await A.page.evaluate(
+		({ a }) => {
+			const w = window.__stores;
+			let g = null;
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const boxA = g.getObjectByProperty('uuid', a);
+			boxA.position.set(0, 1, 0);
+			// a NON-identity base rotation: restoring identity would be a weaker
+			// check, and `align × base` must still map +Y onto the normal exactly
+			boxA.rotation.set(0, 0.3, 0);
+			boxA.updateMatrixWorld(true);
+			w.objectsGroup.update((v) => v);
+			w.snapping.snapEnabled.set(false);
+			w.snapping.snapTargets.update((v) => ({
+				...v,
+				enabled: true,
+				vertex: false,
+				face: false,
+				surface: true,
+				object: false,
+				alignNormal: true,
+				radiusPx: 40
+			}));
+		},
+		ids
+	);
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.waitForTimeout(600);
+	const aligned = await A.page.evaluate(
+		({ a, top }) => {
+			const w = window.__stores;
+			let controls = null;
+			let camera = null;
+			let g = null;
+			w.TControls.subscribe((v) => (controls = v))();
+			w.globalCamera.subscribe((v) => (camera = v))();
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const boxA = g.getObjectByProperty('uuid', a);
+			if (!controls || controls.object !== boxA) return { attached: false };
+			const preDrag = boxA.quaternion.toArray();
+			const aim = new w.THREE.Vector3(top[0], top[1], top[2]).project(camera);
+			w.snapEngine.setSnapPointer(
+				(aim.x * 0.5 + 0.5) * window.innerWidth,
+				(-aim.y * 0.5 + 0.5) * window.innerHeight
+			);
+			controls.dragging = true;
+			controls.dispatchEvent({ type: 'dragging-changed', value: true });
+			boxA.position.x -= 0.5;
+			boxA.updateMatrixWorld(true);
+			// Scene binds `change` (onchange) — that is the plain-object hook
+			controls.dispatchEvent({ type: 'change' });
+			let candidate = null;
+			w.snapEngine.activeSnapCandidate.subscribe((v) => (candidate = v))();
+			const first = boxA.quaternion.toArray();
+			const up = new w.THREE.Vector3(0, 1, 0).applyQuaternion(boxA.quaternion);
+			// COMPOUNDING guard: every invariant a rotation preserves is preserved by
+			// a WRONG rotation too, so measure the thing an accumulating multiply
+			// changes — five more identical frames must not move the quaternion
+			for (let i = 0; i < 5; i++) controls.dispatchEvent({ type: 'change' });
+			const repeated = boxA.quaternion.toArray();
+			return {
+				attached: true,
+				preDrag,
+				type: candidate?.type ?? null,
+				normal: candidate?.normal ? candidate.normal.toArray() : null,
+				up: up.toArray(),
+				drift: Math.max(...first.map((v, i) => Math.abs(v - repeated[i])))
+			};
+		},
+		{ a: ids.a, top: ramp.top }
+	);
+	h.check(aligned.attached === true, 'the gizmo is attached to box A for the align drag');
+	h.check(
+		aligned.type === 'surface' &&
+			!!aligned.normal &&
+			Math.hypot(
+				aligned.normal[0] - ramp.normal[0],
+				aligned.normal[1] - ramp.normal[1],
+				aligned.normal[2] - ramp.normal[2]
+			) < 1e-3,
+		`the candidate is the tilted top face (${aligned.type}, n = ${aligned.normal?.map((v) => v.toFixed(4))})`
+	);
+	h.check(
+		!!aligned.up &&
+			Math.hypot(
+				aligned.up[0] - ramp.normal[0],
+				aligned.up[1] - ramp.normal[1],
+				aligned.up[2] - ramp.normal[2]
+			) < 1e-3,
+		`A's own +Y now points along the surface normal (${aligned.up?.map((v) => v.toFixed(4))})`
+	);
+	h.check(
+		aligned.drift < 1e-9,
+		`five more frames on the same candidate change NOTHING — no compounding (drift ${aligned.drift})`
+	);
+	// losing the candidate must put the base rotation back EXACTLY: a translate
+	// drag never rewrites rotation, so the restore has to be explicit. Park A in
+	// the sky so BOTH rays miss (the cursor ray AND the anchor-projection
+	// fallback, which would otherwise find the ramp again through A's own point).
+	await A.page.evaluate(
+		({ a }) => {
+			const w = window.__stores;
+			let g = null;
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const boxA = g.getObjectByProperty('uuid', a);
+			boxA.position.set(0, 60, 0);
+			boxA.updateMatrixWorld(true);
+			w.snapEngine.setSnapPointer(30, 8); // top-left of the viewport = sky
+		},
+		ids
+	);
+	await A.page.waitForTimeout(120); // past the 33ms search throttle
+	const restored = await A.page.evaluate(
+		({ a, preDrag }) => {
+			const w = window.__stores;
+			let controls = null;
+			let g = null;
+			w.TControls.subscribe((v) => (controls = v))();
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const boxA = g.getObjectByProperty('uuid', a);
+			controls.dispatchEvent({ type: 'change' });
+			let candidate = null;
+			w.snapEngine.activeSnapCandidate.subscribe((v) => (candidate = v))();
+			const now = boxA.quaternion.toArray();
+			controls.dragging = false;
+			controls.dispatchEvent({ type: 'dragging-changed', value: false });
+			return {
+				candidateNull: candidate === null,
+				delta: Math.max(...now.map((v, i) => Math.abs(v - preDrag[i])))
+			};
+		},
+		{ a: ids.a, preDrag: aligned.preDrag }
+	);
+	h.check(restored.candidateNull === true, 'aiming at the sky drops the candidate');
+	h.check(
+		restored.delta < 1e-9,
+		`losing the candidate restores the pre-drag rotation component-wise (max delta ${restored.delta})`
+	);
+
+	// ---------- 10. P4: the face tint ----------
+	await A.page.evaluate(
+		({ a, b }) => {
+			const w = window.__stores;
+			let g = null;
+			w.objectsGroup.subscribe((v) => (g = v))();
+			const boxA = g.getObjectByProperty('uuid', a);
+			const boxB = g.getObjectByProperty('uuid', b);
+			boxA.position.set(0, 1, 0);
+			boxA.rotation.set(0, 0, 0);
+			boxB.position.set(4, 1, 0);
+			boxB.scale.set(1, 1, 1);
+			boxA.updateMatrixWorld(true);
+			boxB.updateMatrixWorld(true);
+			w.objectsGroup.update((v) => v);
+			w.snapping.snapTargets.update((v) => ({
+				...v,
+				vertex: false,
+				face: true,
+				surface: false,
+				object: false,
+				alignNormal: false,
+				radiusPx: 200
+			}));
+		},
+		ids
+	);
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.waitForTimeout(600);
+	const tint = await A.page.evaluate(
+		({ a }) => {
+			const w = window.__stores;
+			let controls = null;
+			let camera = null;
+			let g = null;
+			let scene = null;
+			w.TControls.subscribe((v) => (controls = v))();
+			w.globalCamera.subscribe((v) => (camera = v))();
+			w.objectsGroup.subscribe((v) => (g = v))();
+			w.globalScene.subscribe((v) => (scene = v))();
+			const boxA = g.getObjectByProperty('uuid', a);
+			if (!controls || controls.object !== boxA) return { attached: false };
+			// a point on B's front (+z) face
+			const aim = new w.THREE.Vector3(3.5, 1.5, 1).project(camera);
+			w.snapEngine.setSnapPointer(
+				(aim.x * 0.5 + 0.5) * window.innerWidth,
+				(-aim.y * 0.5 + 0.5) * window.innerHeight
+			);
+			controls.dragging = true;
+			controls.dispatchEvent({ type: 'dragging-changed', value: true });
+			boxA.position.x += 0.5;
+			boxA.updateMatrixWorld(true);
+			controls.dispatchEvent({ type: 'change' });
+			let candidate = null;
+			w.snapEngine.activeSnapCandidate.subscribe((v) => (candidate = v))();
+			const mesh = scene.getObjectByName('snap-candidate-face');
+			const during = {
+				attached: true,
+				type: candidate?.type ?? null,
+				exists: !!mesh,
+				visible: !!mesh?.visible,
+				verts: mesh?.geometry?.attributes?.position?.count ?? 0,
+				atSceneRoot: mesh?.parent === scene
+			};
+			controls.dragging = false;
+			controls.dispatchEvent({ type: 'dragging-changed', value: false });
+			return { during, hiddenAfter: !scene.getObjectByName('snap-candidate-face')?.visible };
+		},
+		ids
+	);
+	h.check(tint.during?.type === 'face', `a face candidate is live (${tint.during?.type})`);
+	h.check(
+		tint.during?.exists === true && tint.during?.atSceneRoot === true,
+		'the tint mesh "snap-candidate-face" lives at the SCENE ROOT (never in objectsGroup)'
+	);
+	h.check(tint.during?.visible === true, 'the tint is visible while a face candidate is live');
+	h.check(
+		tint.during?.verts >= 3,
+		`the tint carries the face's own triangles (${tint.during?.verts} vertices)`
+	);
+	h.check(tint.hiddenAfter === true, 'the tint hides when the drag ends');
+
+	// ---------- 11. P4: the M shortcut ----------
+	await A.page.keyboard.press('Escape');
+	await A.page.evaluate(() => document.activeElement?.blur?.());
+	await A.page.waitForTimeout(200);
+	const before = (await targets(A.page)).enabled;
+	await A.page.keyboard.press('m');
+	await A.page.waitForTimeout(250);
+	const afterFirst = (await targets(A.page)).enabled;
+	await A.page.keyboard.press('m');
+	await A.page.waitForTimeout(250);
+	const afterSecond = (await targets(A.page)).enabled;
+	h.check(afterFirst === !before, `M toggles element snapping (${before} → ${afterFirst})`);
+	h.check(afterSecond === before, `M toggles it back (${afterFirst} → ${afterSecond})`);
+	const listed = await A.page.evaluate(() =>
+		window.__stores.shortcutsRegistry.shortcuts.some(
+			(s) => s.keys === 'M' && /element snapping/i.test(s.label)
+		)
+	);
+	h.check(listed === true, 'the M binding is in the registry, so Settings ▸ Shortcuts lists it');
 
 	await h.finish(browser);
 });

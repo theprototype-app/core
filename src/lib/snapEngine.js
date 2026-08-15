@@ -69,10 +69,20 @@ let pivotDragStart = null;
 let marker = null;
 /** @type {any} */ let markerDot = null;
 /** @type {any} */ let markerTick = null;
+/** @type {any} scene-root face tint (P4) */ let faceTint = null;
+/** P4 align-to-normal: the drag target's quaternion at drag START. Every
+ * application recomputes from it (align × baseQuat), so nothing accumulates —
+ * a per-frame multiply into the LIVE quaternion would spin the object.
+ * @type {any} THREE.Quaternion | null */
+let baseQuat = null;
+/** whether the live pose carries an alignment (so losing the candidate knows to
+ * put baseQuat back — a translate drag never rewrites rotation by itself) */
+let alignApplied = false;
 let started = false;
 
 const SEARCH_INTERVAL_MS = 33;
 const MARKER_NAME = 'snap-candidate-marker';
+const FACE_TINT_NAME = 'snap-candidate-face';
 const MARKER_COLOR = 0xffa02e;
 
 const _raycaster = new THREE.Raycaster();
@@ -83,6 +93,9 @@ const _anchor = new THREE.Vector3();
 const _world = new THREE.Vector3();
 const _delta = new THREE.Vector3();
 const _corner = new THREE.Vector3();
+const _alignUp = new THREE.Vector3(0, 1, 0);
+const _alignNormal = new THREE.Vector3();
+const _alignQuat = new THREE.Quaternion();
 
 /** Scene feeds the pointer while a gizmo drag runs (window pointermove — the
  * canvas swallows moves mid-gesture). CLIENT px; NDC is derived at search time.
@@ -124,6 +137,13 @@ function objectSnapPoints(object) {
  * @param {string[]} excludeUuids
  */
 export function beginSnapDrag(excludeUuids) {
+	// P4: a drag-start that arrives TWICE must not redefine the base pose.
+	// three's TransformControls property setters dispatch BOTH `<prop>-changed`
+	// AND `change`, so `controls.dragging = true` already starts the drag and can
+	// align the object before a hand-dispatched dragging-changed arrives — and
+	// re-capturing THAT as the base compounds the rotation by one more alignment
+	// (measured: 60 degrees on a 30-degree ramp).
+	const reentrant = dragActive;
 	dragActive = true;
 	dragExclude = excludeUuids ?? [];
 	dragObjectPoints = null;
@@ -132,6 +152,14 @@ export function beginSnapDrag(excludeUuids) {
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const controls = get(TControls);
+	// P4 align-to-normal: the drag target's rotation BEFORE the gizmo moves
+	// anything. Alignment is always recomputed from this, never from the live
+	// quaternion, so repeated frames are idempotent and losing the candidate can
+	// restore the pose exactly.
+	if (!reentrant) {
+		baseQuat = controls?.object?.quaternion ? controls.object.quaternion.clone() : null;
+		alignApplied = false;
+	}
 	// a PIVOT drag captures its start frame (this runs from dragging-changed,
 	// before the gizmo has moved anything): the pivot's seat, the primary's box
 	// and the primary's origin offset — what the pivot-path anchor reads from
@@ -164,6 +192,11 @@ export function endSnapDrag() {
 	dragObjectPoints = null;
 	pivotDragStart = null;
 	pointerClient = null;
+	// P4: deliberately NO restore here — a drag that ENDS on a live candidate
+	// keeps its aligned pose (that is the feature); the move broadcast and the
+	// transform history entry already carry the rotation.
+	baseQuat = null;
+	alignApplied = false;
 	if (get(activeSnapCandidate)) activeSnapCandidate.set(null);
 }
 
@@ -188,9 +221,11 @@ function triCornerWorld(mesh, triIndex, corner) {
 
 /** the DISCRETE logical-face candidate for a hit: the stored-topology face
  * containing the hit triangle (readStoredFaces) when one exists, else the hit
- * triangle itself — centroid + plane normal.
- * @param {any} mesh @param {number} faceIndex @param {any} hit */
-function faceCentroid(mesh, faceIndex, hit) {
+ * triangle itself — centroid + the triangle list it was measured over (P4: the
+ * face tint draws exactly those triangles, so it must not re-derive them).
+ * @param {any} mesh @param {number} faceIndex
+ * @returns {{centroid: any, tris: number[]}|null} */
+function faceCentroid(mesh, faceIndex) {
 	const faces = readStoredFaces(mesh.geometry);
 	const tris = faces?.find((/** @type {number[]} */ f) => f.includes(faceIndex)) ?? [faceIndex];
 	const centroid = new THREE.Vector3();
@@ -204,7 +239,7 @@ function faceCentroid(mesh, faceIndex, hit) {
 		}
 	}
 	if (!count) return null;
-	return centroid.divideScalar(count);
+	return { centroid: centroid.divideScalar(count), tris };
 }
 
 /**
@@ -298,15 +333,19 @@ export function findSnapCandidate(camera, pointerNdc, excludeUuids) {
 		});
 	}
 	if (targets.face && hit.faceIndex != null && hit.object?.isMesh) {
-		const centroid = faceCentroid(hit.object, hit.faceIndex, hit);
-		if (centroid)
+		const face = faceCentroid(hit.object, hit.faceIndex);
+		if (face)
 			candidates.push({
 				type: 'face',
-				point: centroid,
+				point: face.centroid,
 				normal,
 				uuid,
 				faceIndex: hit.faceIndex,
-				px: projectPx(centroid, camera, rect)
+				// P4, PRIVATE: the tint's source. `uuid` is the TOP-LEVEL object, so
+				// the hit mesh (which may be nested) cannot be re-found from it.
+				__mesh: hit.object,
+				__tris: face.tris,
+				px: projectPx(face.centroid, camera, rect)
 			});
 	}
 	if (targets.vertex && hit.faceIndex != null && hit.object?.isMesh) {
@@ -372,6 +411,36 @@ export function anchorWorldPoint(object, candidate) {
 }
 
 /**
+ * P4: rotate the drag target so its +Y maps onto the candidate normal, gated on
+ * `snapTargets.alignNormal`. IDEMPOTENT — always `align × baseQuat`, never a
+ * multiply into the live quaternion, so any number of frames on one candidate
+ * gives the same pose. A candidate without a normal (vertex/object targets) or
+ * no candidate at all restores baseQuat, because a translate drag rewrites only
+ * the position and would otherwise leave the rotation stranded.
+ * @param {any} target @param {any} candidate the live candidate, or null
+ */
+function applyAlignToNormal(target, candidate) {
+	if (!target) return;
+	const normal = get(snapTargets).alignNormal ? candidate?.normal : null;
+	if (!normal) {
+		if (alignApplied && baseQuat) {
+			target.quaternion.copy(baseQuat);
+			target.updateMatrixWorld(true);
+		}
+		alignApplied = false;
+		return;
+	}
+	if (!baseQuat) return;
+	_alignNormal.copy(normal);
+	if (_alignNormal.lengthSq() < 1e-12) return;
+	_alignNormal.normalize();
+	_alignQuat.setFromUnitVectors(_alignUp, _alignNormal);
+	target.quaternion.copy(_alignQuat).multiply(baseQuat);
+	target.updateMatrixWorld(true);
+	alignApplied = true;
+}
+
+/**
  * World-shift the PROPOSED gizmo pose so the anchor lands on the live
  * candidate (parent-frame corrected, the dropToSurface idiom).
  * @param {any} target the object the gizmo drives (the object itself, or the pivot)
@@ -380,7 +449,14 @@ export function anchorWorldPoint(object, candidate) {
  */
 export function applyElementSnap(target, primaryObject) {
 	const candidate = get(activeSnapCandidate);
-	if (!candidate || !target?.parent) return false;
+	if (!candidate || !target?.parent) {
+		applyAlignToNormal(target, null);
+		return false;
+	}
+	// rotation FIRST: the 'auto' anchor clamps to the object's world box, which
+	// the alignment reshapes — anchoring on the pre-rotation box would aim at a
+	// point the object no longer has there
+	applyAlignToNormal(target, candidate);
 	const anchor = anchorWorldPoint(primaryObject, candidate);
 	_delta.copy(candidate.point).sub(anchor);
 	if (_delta.lengthSq() < 1e-14) return true; // already there — still snapped
@@ -456,7 +532,14 @@ function adjustPivotForSnap(pivot, primary) {
 	if (!pivot || !primary || !snapGatesOpen()) return;
 	runThrottledSearch();
 	const candidate = get(activeSnapCandidate);
-	if (!candidate || !pivot.parent) return;
+	if (!candidate || !pivot.parent) {
+		applyAlignToNormal(pivot, null);
+		return;
+	}
+	// P4: the PIVOT takes the alignment — the members re-derive their own
+	// rotation about it through deltaMatrix, which is what makes a set turn
+	// together instead of each object spinning in place
+	applyAlignToNormal(pivot, candidate);
 	const anchor = get(snapAnchor);
 	const targets = get(snapTargets);
 	if (anchor.mode === 'picked' && anchor.uuid && anchor.local) {
@@ -512,11 +595,73 @@ function ensureMarker() {
 	return marker;
 }
 
+/** P4: the face TINT — a scene-root overlay mesh over the logical face's own
+ * triangles (the face-edit-hover pattern), so a Face candidate shows WHICH face
+ * it means instead of one dot in the middle of it. `depthWrite: false` is the
+ * face-overlay convention: it loses the postprocessing passes (the documented
+ * trap), which is the right trade for a transient drag overlay. */
+function ensureFaceTint() {
+	if (faceTint) return faceTint;
+	const scene = get(globalScene);
+	if (!scene) return null;
+	faceTint = new THREE.Mesh(
+		new THREE.BufferGeometry(),
+		new THREE.MeshBasicMaterial({
+			color: MARKER_COLOR,
+			transparent: true,
+			opacity: 0.35,
+			depthTest: false,
+			depthWrite: false,
+			side: THREE.DoubleSide
+		})
+	);
+	faceTint.name = FACE_TINT_NAME;
+	faceTint.renderOrder = 998;
+	faceTint.frustumCulled = false; // world-space verts, no meaningful local bounds
+	faceTint.visible = false;
+	scene.add(faceTint);
+	return faceTint;
+}
+
+/** Rebuild the tint from the candidate's own triangles, in WORLD space. Runs on
+ * candidate CHANGE (the search cadence), never per frame. @param {any} candidate */
+function updateFaceTint(candidate) {
+	if (!candidate || candidate.type !== 'face' || !candidate.__mesh || !candidate.__tris?.length) {
+		if (faceTint) faceTint.visible = false;
+		return;
+	}
+	/** @type {number[]} */
+	const positions = [];
+	for (const tri of candidate.__tris) {
+		/** @type {number[]} */
+		const corners = [];
+		for (let corner = 0; corner < 3; corner++) {
+			const point = triCornerWorld(candidate.__mesh, tri, corner);
+			if (!point) break;
+			corners.push(point.x, point.y, point.z);
+		}
+		if (corners.length === 9) positions.push(...corners); // whole triangles only
+	}
+	const tint = ensureFaceTint();
+	if (!tint) return;
+	if (positions.length < 9) {
+		tint.visible = false;
+		return;
+	}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+	const previous = tint.geometry;
+	tint.geometry = geometry;
+	previous?.dispose?.();
+	tint.visible = true;
+}
+
 const _tickQuat = new THREE.Quaternion();
 const _up = new THREE.Vector3(0, 1, 0);
 
 /** @param {any} candidate */
 function updateMarker(candidate) {
+	updateFaceTint(candidate);
 	if (!candidate) {
 		if (marker) marker.visible = false;
 		return;

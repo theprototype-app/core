@@ -27,6 +27,17 @@ import {
 	bevelVertices,
 	beginOpAdjust
 } from './faceEdit';
+// 19-A P4: the proportional stores/falloff moved to a LEAF (faceEdit needs them
+// too, and it cannot import this module — we import faceEdit above). Re-exported
+// below so MeshEditPopup/MeshToolOptions/__stores.meshEdit.* stay byte-compatible.
+import {
+	proportionalEdit,
+	proportionalRadius,
+	falloffWeight,
+	registerProportionalAnchor
+} from './proportional';
+export { proportionalEdit, proportionalRadius, falloffWeight } from './proportional';
+import { showProportionalRingAt, hideProportionalRing } from './proportionalRing';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
 // regular gizmo. Handles that share a position (e.g. the 24 position entries
@@ -509,6 +520,7 @@ export function exitEditMode() {
 	proportionalEdit.set(false);
 	falloffStart = null;
 	falloffWeights = null;
+	hideProportionalRing();
 	vertexSelection.clear();
 	vertexSelectionSize.set(0);
 	editingObject.set(null);
@@ -896,37 +908,50 @@ export function slideEdgeDebug() {
 // Two rules make it behave: weights come from the positions AT DRAG START (recomputing them
 // mid-drag makes the falloff chase the vertex), and the move is written ABSOLUTELY
 // (start + total * weight) rather than accumulated per frame, so a long drag cannot drift.
-
-/** armed like a tool — an in-session mode, not a saved preference
- * @type {import('svelte/store').Writable<boolean>} */
-export const proportionalEdit = writable(false);
-/** falloff radius in LOCAL units. Local pref: it is a working-scale choice, and the same
- * number is right for the next session on the same kind of model.
- * @type {import('svelte/store').Writable<number>} */
-export const proportionalRadius = writable(
-	typeof localStorage !== 'undefined'
-		? Math.min(Math.max(parseFloat(localStorage.getItem('proportionalRadius') ?? '') || 1, 0.01), 100)
-		: 1
-);
-proportionalRadius.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('proportionalRadius', String(value));
-});
+//
+// P4: the stores + the smoothstep live in ./proportional now (faceEdit shares them for
+// edge/face grabs; re-exported at the top of this file), and the radius shows as a
+// scene-root RING during the drag (./proportionalRing).
 
 /** handle positions captured at drag start, for the absolute write @type {any[]|null} */
 let falloffStart = null;
 /** per-handle weight for this drag, 0 for anything out of range @type {number[]|null} */
 let falloffWeights = null;
 
-/**
- * Smooth falloff: 1 at the dragged vertex, 0 at the radius, with zero slope at both ends so
- * neither the centre nor the rim shows a crease. (Smoothstep — Blender's "Smooth" preset.)
- * @param {number} t 0..1 @returns {number}
- */
-function falloffWeight(t) {
-	if (t <= 0) return 1;
-	if (t >= 1) return 0;
-	return 1 - t * t * (3 - 2 * t);
+/** WORLD-space averaged vertex normal of the anchor handle, or null (no anchor /
+ * no normal attribute / degenerate sum). @returns {any} */
+function anchorVertexNormalWorld() {
+	if (!edited || selectedHandle < 0) return null;
+	const normalAttr = edited.geometry?.attributes?.normal;
+	if (!normalAttr) return null;
+	const sum = new THREE.Vector3();
+	const one = new THREE.Vector3();
+	handles[selectedHandle].indices.forEach((/** @type {number} */ idx) => {
+		sum.add(one.fromBufferAttribute(normalAttr, idx));
+	});
+	if (sum.lengthSq() < 1e-9) return null;
+	return sum.transformDirection(edited.matrixWorld);
 }
+
+/** camera-facing fallback normal for the ring (a vertex on a crease can have a
+ * meaningless average) @param {any} point @returns {any} */
+function cameraFacingNormal(point) {
+	/** @type {any} */
+	const camera = get(globalCamera);
+	if (!camera) return new THREE.Vector3(0, 1, 0);
+	const toCamera = camera.getWorldPosition(new THREE.Vector3()).sub(point);
+	return toCamera.lengthSq() > 1e-9 ? toCamera.normalize() : new THREE.Vector3(0, 1, 0);
+}
+
+// P4: the radius ring's VERTICES anchor provider — the registration seam (a
+// static import of this module from proportionalRing would be a cycle, and a
+// primed dynamic import risks the HMR dual-instance trap). Registering is a
+// plain registry push, so module-eval order is safe.
+registerProportionalAnchor('vertices', () => {
+	const point = vertexSelectionWorldPoint();
+	if (!point || !edited) return null;
+	return { point, normal: anchorVertexNormalWorld() ?? cameraFacingNormal(point), object: edited };
+});
 
 /** Capture the neighbourhood this drag will carry. Called at drag start, so the weights
  * cannot chase the vertex as it moves. */
@@ -940,6 +965,13 @@ function beginFalloff() {
 	falloffWeights = handles.map((handle, index) => {
 		if (index === selectedHandle || vertexSelection.has(index)) return 1; // the selection moves fully
 		return falloffWeight(handle.position.distanceTo(anchor) / radius);
+	});
+	// P4: show the falloff radius for the duration of the drag (hidden at drag end)
+	const anchorWorld = handleWorldPosition(selectedHandle, new THREE.Vector3());
+	showProportionalRingAt({
+		point: anchorWorld,
+		normal: anchorVertexNormalWorld() ?? cameraFacingNormal(anchorWorld),
+		object: edited
 	});
 }
 
@@ -1090,6 +1122,7 @@ export function onProxyDragChanged(dragging) {
 		}
 		falloffStart = null;
 		falloffWeights = null;
+		hideProportionalRing(); // P4: the radius ring lives for the drag only
 		dragStartLocal = null;
 		slideEdge = null;
 		slideStart = null;

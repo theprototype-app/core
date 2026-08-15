@@ -24,6 +24,9 @@
 		faceAutoApply
 	} from '$lib/faceEdit';
 	import { proportionalRadius } from '$lib/meshEdit';
+	// 19-A P4: scrubbing the radius previews the falloff RING at the current
+	// selection (live — the ring re-scales as the store changes under the scrub)
+	import { showRadiusPreview, hideProportionalRing } from '$lib/proportionalRing';
 	import {
 		bevelWidth,
 		bevelSegments,
@@ -465,6 +468,8 @@
 			min={0.01}
 			title="How far the drag carries its neighbours (local units). Weight fades smoothly to zero at the radius."
 			onchange={(v) => proportionalRadius.set(v)}
+			onscrubstart={() => showRadiusPreview(mode)}
+			onscrubend={() => hideProportionalRing()}
 		/>
 	</div>
 {:else if focus === 'move'}

@@ -696,6 +696,21 @@
 	{/each}
 {/snippet}
 
+<!-- 19-A P4: proportional editing works in ALL THREE element modes now (the
+     falloff rides beginFaceGrab for edges/faces), so the toggle renders in each
+     mode's Tools area. One snippet, one id — only one mode branch mounts at a
+     time. A TOGGLE, not an armed op: it never joins TOOL_OPS. -->
+{#snippet proportionalBtn()}
+	<button
+		id="mesh-proportional"
+		class="tbx-btn {$proportionalEdit ? 'tbx-on bg-primary-600 text-white' : ''}"
+		aria-pressed={$proportionalEdit}
+		aria-label="Proportional editing"
+		title="Proportional editing — drag a vertex, edge or face and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
+		onclick={() => proportionalEdit.set(!$proportionalEdit)}><ToolIcon name="proportional" /></button
+	>
+{/snippet}
+
 {#if active}
 	<ToolboxWindow
 		id="mesh-edit-popup"
@@ -876,11 +891,13 @@
 					if (dissolveEdges()) flash('dissolve');
 				}}><ToolIcon name="dissolve" /></button
 			>
+			{@render proportionalBtn()}
 		{:else if mode === 'faces'}
 			<!-- TOOLS = armed: they change what your next viewport click does, and
 			     stay lit (solid accent) until you pick another. -->
 			<span class="tbx-label">Tools</span>
 			{@render opGrid(TOOL_OPS)}
+			{@render proportionalBtn()}
 			<!-- OPERATIONS = they run on the CURRENT selection. The ones carrying
 			     settings come first and open the options pane (accent ring); the
 			     rest commit on the spot and flash. -->
@@ -917,14 +934,7 @@
 				title="Bevel — cut the corner off every selected vertex and cap it, adjustable below (P3: with a vertex picked the click applies immediately, like the faces grid). Works on any number of vertices."
 				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
 			>
-			<button
-				id="mesh-proportional"
-				class="tbx-btn {$proportionalEdit ? 'tbx-on bg-primary-600 text-white' : ''}"
-				aria-pressed={$proportionalEdit}
-				aria-label="Proportional editing"
-				title="Proportional editing — drag one vertex and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
-				onclick={() => proportionalEdit.set(!$proportionalEdit)}><ToolIcon name="proportional" /></button
-			>
+			{@render proportionalBtn()}
 			<button
 				id="mesh-slide"
 				class="tbx-btn {$vertexSlide ? 'tbx-on bg-primary-600 text-white' : ''} {$vertexSelectionSize === 1

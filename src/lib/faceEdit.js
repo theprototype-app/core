@@ -26,6 +26,17 @@ import { viewPrefs, editWireOverride } from './viewPrefs';
 // extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
 // leaf, so this cannot close a cycle into history.
 import { extrudeIndividual, insetDepth, insetIndividual } from './meshToolParams';
+// 19-A P4: proportional editing shared with the vertex path. Both are LEAVES
+// (proportional = svelte/store only; proportionalRing = three + sceneStore +
+// proportional) — this module must NEVER import meshEdit (meshEdit imports us),
+// which is exactly why the stores moved out of it.
+import {
+	proportionalEdit,
+	proportionalRadius,
+	falloffWeight,
+	registerProportionalAnchor
+} from './proportional';
+import { showProportionalRingAt, hideProportionalRing } from './proportionalRing';
 
 // Face editing core (118, pulled forward from pending/25 and scoped to VR
 // blockout). Desktop-agnostic geometry math: read a BufferGeometry into a flat
@@ -4884,6 +4895,7 @@ export function exitFaceEdit() {
 		endOpAdjust();
 	}
 	cancelKnife(); // a pending cut must not outlive the session
+	hideProportionalRing(); // P4: nor the radius ring (safety — grabs hide it themselves)
 	detachFaceGizmo(); // 163: drop the desktop gizmo + its proxy
 	clearEdgeSelection(); // M4: the edge sub-mode's pick + overlay go with it
 	// revert an uncommitted gesture's live preview before tearing down (122)
@@ -5423,6 +5435,33 @@ export function faceGesturePending() {
 	return !!faceGrab || !!opAdjust;
 }
 
+// 19-A P4: the radius ring's EDGES/FACES anchor providers — the registration
+// seam (proportionalRing cannot import this module's internals, and this module
+// cannot be imported from proportional's leaf). Both convert the LOCAL target
+// into a WORLD anchor; null when nothing is selected, which hides the ring.
+registerProportionalAnchor('faces', () => {
+	if (!faceEdited) return null;
+	const target = opTargetFace();
+	if (!target) return null;
+	faceEdited.updateMatrixWorld(true);
+	return {
+		point: faceEdited.localToWorld(target.centroid.clone()),
+		normal: target.normal.clone().transformDirection(faceEdited.matrixWorld).normalize(),
+		object: faceEdited
+	};
+});
+registerProportionalAnchor('edges', () => {
+	if (!faceEdited) return null;
+	const target = edgeGrabTarget();
+	if (!target) return null;
+	faceEdited.updateMatrixWorld(true);
+	return {
+		point: faceEdited.localToWorld(target.centroid.clone()),
+		normal: target.normal.clone().transformDirection(faceEdited.matrixWorld).normalize(),
+		object: faceEdited
+	};
+});
+
 /** Begin a rigid grab of the target (grip/gizmo). Captures the pre-edit snapshot
  * + the target's original local vertices.
  * @param {any} faceOrIndex a synthesized op target, or a face-group index */
@@ -5455,12 +5494,52 @@ export function beginFaceGrab(faceOrIndex) {
 	// A whole-shell/object grab has none, which is exactly right: it moves rigidly.
 	const faceSet = new Set(triIndices);
 	const keys = vertexKeys ?? faceVertexKeys(workingTris, { triIndices });
+	// 19-A P4 PROPORTIONAL: with the toggle on, the capture widens — every corner
+	// within `radius` of the grab set joins `neighbours` with a smoothstep weight
+	// (the welded corners keep w = 1: they ARE the grab). Weights are captured
+	// HERE, at grab start, so a re-grab (the gizmo re-seats + re-runs this on
+	// every drag) recaptures them — the same "weights cannot chase the drag" rule
+	// as the vertex path. Distances are OBJECT-LOCAL (workingTris is local
+	// space), matching the vertex path's radius semantics; the distance measured
+	// is to the NEAREST grabbed corner, so a long edge or face carries a band
+	// around itself, not a sphere around its centroid.
+	const proportional = get(proportionalEdit);
+	const radius = proportional ? Math.max(get(proportionalRadius), 1e-4) : 0;
+	const radius2 = radius * radius;
+	/** @type {any[]} one position per welded key of the grab set */
+	const grabPoints = [];
+	if (proportional) {
+		const seen = new Set();
+		const source = triIndices.length
+			? triIndices.map((/** @type {number} */ ti) => workingTris[ti])
+			: workingTris; // an edge grab names KEYS only — scan for their positions
+		source.forEach((/** @type {any} */ t) =>
+			t.forEach((/** @type {any} */ v) => {
+				const key = keyOf(v.x, v.y, v.z);
+				if (!keys.has(key) || seen.has(key)) return;
+				seen.add(key);
+				grabPoints.push(v.clone());
+			})
+		);
+	}
 	/** @type {any[]} */
 	const neighbours = [];
 	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
 		if (faceSet.has(ti)) return;
 		t.forEach((/** @type {any} */ v, /** @type {number} */ k) => {
-			if (keys.has(keyOf(v.x, v.y, v.z))) neighbours.push({ ti, k, orig: v.clone() });
+			if (keys.has(keyOf(v.x, v.y, v.z))) {
+				neighbours.push({ ti, k, orig: v.clone(), w: 1 });
+				return;
+			}
+			if (!proportional || !grabPoints.length) return;
+			let min2 = Infinity;
+			for (const p of grabPoints) {
+				const d2 = v.distanceToSquared(p);
+				if (d2 < min2) min2 = d2;
+			}
+			if (min2 >= radius2) return; // outside the radius — squared early-out, no sqrt
+			const w = falloffWeight(Math.sqrt(min2) / radius);
+			if (w > 0) neighbours.push({ ti, k, orig: v.clone(), w });
 		});
 	});
 	faceGrab = {
@@ -5490,6 +5569,15 @@ export function beginFaceGrab(faceOrIndex) {
 		normal: face.normal.clone()
 	};
 	if (index >= 0) faceEditHighlight.set(index);
+	// P4: the radius ring for the duration of the drag (hidden on commit/cancel)
+	if (proportional && grabPoints.length) {
+		faceEdited.updateMatrixWorld(true);
+		showProportionalRingAt({
+			point: faceEdited.localToWorld(face.centroid.clone()),
+			normal: face.normal.clone().transformDirection(faceEdited.matrixWorld).normalize(),
+			object: faceEdited
+		});
+	}
 	return true;
 }
 
@@ -5535,7 +5623,12 @@ export function applyFaceGrab(t) {
 	// controller rotated). Their far verts aren't in the set, so adjacent faces
 	// stretch instead of moving rigidly.
 	faceGrab.neighbours.forEach((/** @type {any} */ n) => {
-		workingTris[n.ti][n.k] = xf(n.orig);
+		// P4: a partial-weight corner (proportional falloff) BLENDS from its original
+		// toward the full transform. Absolute from `orig` on every call — like the
+		// rigid path above, a long drag cannot drift. `n.w` is 1 for the welded set
+		// (and for any pre-P4 entry without a weight).
+		const moved = xf(n.orig);
+		workingTris[n.ti][n.k] = (n.w ?? 1) >= 1 ? moved : n.orig.clone().lerp(moved, n.w);
 	});
 	liveGeometryUpdate();
 }
@@ -5543,6 +5636,7 @@ export function applyFaceGrab(t) {
 /** Commit the grab: finalize geometry, replicate, one undo entry. */
 export function commitFaceGrab() {
 	if (!faceGrab || !faceEdited) return false;
+	hideProportionalRing(); // P4: the radius ring lives for the drag only
 	const positions = trisToPositions(workingTris);
 	const before = faceGrab.before;
 	faceGrab = null;
@@ -5565,6 +5659,7 @@ export function commitFaceGrab() {
 /** Drop a grab without committing — restore the pre-grab geometry. */
 export function cancelFaceGrab() {
 	if (!faceGrab || !faceEdited) return;
+	hideProportionalRing();
 	const before = faceGrab.before;
 	faceGrab = null;
 	applyGeometrySnapshot(before.positions, before.groups, before.uvs);

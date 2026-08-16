@@ -1875,7 +1875,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   the PR of the whole 17-E branch to release/next.
   NEXT (planned): the same transform tools
   in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
-- Status (2026-08-15, handoff): **19-A P0–P5b COMMITTED; REMAINING: P7a → P7b → P6 → P7c → wrap.**
+- Status (2026-08-15, handoff): **19-A P0–P5b COMMITTED; REMAINING: P7a → P7b → P6 → wrap/merge; P7c PARKED by the user (2026-08-16, executes later on their explicit go as a follow-up branch).**
   Commits on `feat/mesh-tool-interaction` (NOT pushed): P0 `bf6f2df` · P1 `8b0352f` ·
   P2 `e259d6b` · docs `a1c9f88` · P3 `0cc844e` · P4 `95df8b0` · P5a `7179a6f` (Opus) ·
   P5b `d224cc2`. Baseline **391/62** at every step. The P7 feedback round (user items,

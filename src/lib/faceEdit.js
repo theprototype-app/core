@@ -22,6 +22,7 @@ import {
 } from './meshTopology';
 // 18-A: LOCAL viewport line colours (store-only module, imports nothing — no cycle)
 import { viewPrefs, editWireOverride } from './viewPrefs';
+import { editOverlaysParked } from './editOverlays';
 // 19-A P3: the desktop pane's extrude/inset extras, read at BEGIN so a click-
 // extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
 // leaf, so this cannot close a cycle into history.
@@ -1489,6 +1490,10 @@ export function vrFaceEditable(object) {
 /** @type {any} face-mode wireframe overlay (child of faceEdited) — declared
  * BEFORE the store: its subscriber runs at module eval (TDZ) */
 let wire = null;
+/** @type {any} the geometry `wire` was built from — the identity half of
+ * `tickEditWireframe`'s guard. Declared HERE for the same TDZ reason as `wire`:
+ * refreshFaceWireframe writes it and a module-eval subscriber can reach that. */
+let wireSource = null;
 
 /** wireframe overlay display toggle — honored by BOTH edit modes, local pref */
 export const meshEditWireframe = writable(
@@ -1728,9 +1733,34 @@ function refreshFaceWireframe() {
 		wire.material?.dispose?.();
 		wire = null;
 	}
+	wireSource = null;
 	if (!faceEdited) return;
 	wire = buildEditWireframe(faceEdited);
 	faceEdited.add(wire);
+	wireSource = faceEdited.geometry;
+}
+
+/**
+ * Per-frame invariant check for the edit wireframe. It is a CHILD of the edited
+ * object, so it follows every transform for free — until something takes that
+ * parenting away: an object swapped out by a remote sync / a restore / an undo
+ * that rebuilds the node, or a re-parent (pivot, grouping) that moves the mesh
+ * but not the overlay. The wire is then left behind in the scene at whatever
+ * pose it last had, which is the reported "the wireframe detaches from the
+ * object". The same call heals a wire built from a geometry that has since been
+ * REPLACED, so a swap site that forgets its `refreshFaceWireframe` degrades to
+ * one stale frame instead of a wrong overlay for the rest of the session.
+ *
+ * Two reference comparisons per frame when nothing is wrong, and it rebuilds
+ * ONLY on a real mismatch — never on a healthy frame.
+ */
+export function tickEditWireframe() {
+	if (!wire || !faceEdited) return;
+	// a serializer has the overlays parked (async for the GLTF paths, so frames
+	// pass) — healing now would put one back INTO the snapshot being written
+	if (editOverlaysParked()) return;
+	if (wire.parent === faceEdited && wireSource === faceEdited.geometry) return;
+	refreshFaceWireframe();
 }
 
 // ---- face edit MODE (VR + desktop-parity hook) ----
@@ -2415,15 +2445,29 @@ function selectionSignature() {
 	return faceEdited?.geometry?.attributes?.position?.count ?? -1;
 }
 
-/** Remember the current picks before a mode switch. */
-export function stashSelections() {
+/**
+ * Remember the pick of the mode being LEFT — one slot, never both.
+ *
+ * Writing both slots from the live stores looks harmless and is not: the store
+ * of the mode you are NOT in is empty whenever the session was just entered
+ * (`enterFaceEdit` clears the set and restores only the submode it enters), so
+ * a stash that copies both slots writes that emptiness over the other mode's
+ * remembered pick. That is what lost a face selection on the way back from
+ * Vertices whenever the session had last been in EDGES: enter (restores edges,
+ * faces empty) -> setFaceSubmode('faces') -> stash both -> faces := [] ->
+ * restore faces -> nothing (reported). The invalidation rules are unchanged —
+ * a different object or a different vertex count resets the whole record.
+ * @param {'faces'|'edges'} [mode] which slot to write; defaults to the live submode
+ */
+export function stashSelections(mode) {
 	if (!faceEdited) return;
-	selectionStash = {
-		uuid: faceEdited.uuid,
-		sig: selectionSignature(),
-		faces: [...get(faceEditSelectedTris)],
-		edges: [...get(edgeEditSelected)]
-	};
+	const which = mode ?? (get(faceEditSubmode) === 'edges' ? 'edges' : 'faces');
+	const uuid = faceEdited.uuid;
+	const sig = selectionSignature();
+	if (selectionStash.uuid !== uuid || selectionStash.sig !== sig)
+		selectionStash = { uuid, sig, faces: [], edges: [] };
+	if (which === 'edges') selectionStash.edges = [...get(edgeEditSelected)];
+	else selectionStash.faces = [...get(faceEditSelectedTris)];
 }
 
 /** Put back what this mode had, unless the geometry changed underneath.
@@ -2456,7 +2500,7 @@ export function restoreSelection(mode) {
 export function setFaceSubmode(next) {
 	if (get(faceEditSubmode) === next) return;
 	interruptOpAdjust(); // 19-A P2: a mode switch ends a live adjust (the edit stays)
-	stashSelections();
+	stashSelections(get(faceEditSubmode) === 'edges' ? 'edges' : 'faces'); // the mode being LEFT
 	faceEditSubmode.set(next);
 	restoreSelection(next);
 	// order matters only in that both must run: the face overlay tears itself

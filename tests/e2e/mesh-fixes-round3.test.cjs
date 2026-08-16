@@ -224,14 +224,17 @@ h.run(async () => {
 		return {
 			sections: ['any mode', 'faces', 'edges', 'vertices'].filter((t) => text.includes(t)).length,
 			marksActive: text.includes('active'),
-			hasModeKeys: text.includes('1 / 2 / 3')
+			hasModeKeys: text.includes('tab')
 		};
 	});
 	h.check(sheet.sections === 4, 'the cheat sheet is split into 4 mode sections (' + sheet.sections + ')');
 	h.check(sheet.marksActive, '...marking the section for the mode you are in');
-	h.check(sheet.hasModeKeys, '...and documents 1/2/3 for switching mode');
+	h.check(sheet.hasModeKeys, '...and documents Tab for switching mode');
 
-	// 1/2/3 really switch mode
+	// CONTRACT FLIP (the Tab commit): element modes cycle on Tab/Shift+Tab, and
+	// 1/2/3 went back to being the gizmo's Move/Rotate/Scale everywhere. They
+	// used to switch modes, which is why shortcuts.js had to suppress them for
+	// the whole session - leaving a live session with no transform keys at all.
 	const modeKeys = await A.page.evaluate(() => {
 		const read = () => {
 			let f, v;
@@ -241,19 +244,36 @@ h.run(async () => {
 			window.__stores.faceEdit.faceEditSubmode.subscribe((x) => (sub = x))();
 			return v ? 'vertices' : f ? sub : 'none';
 		};
-		const press = (k) =>
-			window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+		const press = (k, shift = false) =>
+			window.dispatchEvent(new KeyboardEvent('keydown', { key: k, shiftKey: shift, bubbles: true }));
 		const start = read();
+		press('Tab');
+		const afterTab = read();
+		press('Tab');
+		const afterTab2 = read();
+		press('Tab', true);
+		const afterBack = read();
+		// and a digit must leave the element mode alone now
+		const beforeDigit = read();
 		press('2');
-		const after2 = read();
-		press('1');
-		const after1 = read();
-		press('3');
-		return { start, after2, after1, after3: read() };
+		return { start, afterTab, afterTab2, afterBack, beforeDigit, afterDigit: read() };
 	});
-	h.check(modeKeys.after2 === 'edges', '2 switches to Edges (' + modeKeys.after2 + ')');
-	h.check(modeKeys.after1 === 'vertices', '1 switches to Vertices (' + modeKeys.after1 + ')');
-	h.check(modeKeys.after3 === 'faces', '3 switches to Faces (' + modeKeys.after3 + ')');
+	h.check(
+		modeKeys.afterTab !== modeKeys.start,
+		'Tab moves to the next element mode (' + modeKeys.start + ' -> ' + modeKeys.afterTab + ')'
+	);
+	h.check(
+		modeKeys.afterTab2 !== modeKeys.afterTab,
+		'...and again (' + modeKeys.afterTab2 + ')'
+	);
+	h.check(
+		modeKeys.afterBack === modeKeys.afterTab,
+		'Shift+Tab steps back (' + modeKeys.afterBack + ')'
+	);
+	h.check(
+		modeKeys.afterDigit === modeKeys.beforeDigit,
+		'a digit no longer changes the element mode (' + modeKeys.afterDigit + ')'
+	);
 
 	await h.finish(browser);
 });

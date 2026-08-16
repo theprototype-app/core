@@ -8,6 +8,7 @@ import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
+import { stripEditOverlays } from './editOverlays';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
@@ -233,6 +234,7 @@ function restoreMultiMaterial(entries) {
 			console.log('multi-material restore failed', error);
 			continue;
 		}
+		stripEditOverlays(mesh);
 		mesh.uuid = entry.uuid;
 		mesh.position.copy(twin.position);
 		mesh.quaternion.copy(twin.quaternion);
@@ -266,6 +268,7 @@ async function applyRestore(snapshot) {
 			// H1 fix: restore the ORIGINAL uuids stamped at export time — object
 			// flows/annotations are keyed by them, and the re-broadcast below then
 			// carries the same uuids to peers
+			stripEditOverlays(container); // a wireframe an older build baked into the snapshot
 			container.traverse((/** @type {any} */ child) => {
 				const saved = child.userData?.__uuid;
 				if (saved) {

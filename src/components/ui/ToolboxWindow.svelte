@@ -33,6 +33,15 @@
 	// - 18-C3: at <=640px the toolbox is a bottom SHEET instead of a floating
 	//   window — a tool palette you have to drag around is unusable on a phone.
 	//   Solved here rather than in each toolbox, so Sculpt gets it for free.
+	// - The reactive parts of the root `style` are `style:` DIRECTIVES, never
+	//   interpolations inside the style ATTRIBUTE. Svelte re-renders an attribute
+	//   by re-setting the whole thing, which wipes every inline property
+	//   dragWindow wrote — left/top/width and `--dw-top`. `sheetH` is filled in by
+	//   an effect one tick after mount, so every toolbox painted at the top-left
+	//   corner and then jumped to its parked spot when the next observer
+	//   re-applied it (reported as "the keys window appears in the corner first").
+	//   `style:` writes ONE property via setProperty and leaves the rest alone —
+	//   the pattern Flow.svelte already uses for its width/height.
 	import { GripVertical } from '@lucide/svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
@@ -120,7 +129,9 @@
 	{id}
 	class="ui-panel toolbox"
 	class:tbx-sheet={sheetMode}
-	style="z-index: var(--z-window); --tbx-w: {width}px; --tbx-sheet-h: {sheetH}px"
+	style="z-index: var(--z-window)"
+	style:--tbx-w="{width}px"
+	style:--tbx-sheet-h="{sheetH}px"
 	use:dragWindow={{ key, defaultRect, resizable: true, axis: 'x', minW, inert: () => sheetMode }}
 	use:focusStack={key}
 >

@@ -23,7 +23,7 @@
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife } from '$lib/faceEdit';
+	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
@@ -266,6 +266,7 @@
 		tickAnimatedMixers(); // imported clips run on the synced clock
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
+		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object

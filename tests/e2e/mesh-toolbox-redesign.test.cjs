@@ -428,6 +428,114 @@ h.run(async () => {
 		h.check(bridged.zero.odd === 0, `a plain bridge stays watertight (${bridged.zero.odd} odd edges)`);
 		h.check(bridged.two.odd === 0, `and so does a 2-cut bridge (${bridged.two.odd} odd edges)`);
 	}
+	// ------------------------------------- 12. the header's Cancel is not a
+	// second Undo, and Tab owns the element modes
+	//
+	// One report, two causes: the session-discard button drew Undo2 while
+	// sitting immediately beside #mesh-undo's Undo2, and 1/2/3 were spent on
+	// element modes (shortcuts.js SUPPRESSED them during a session), so the
+	// gizmo's own Move/Rotate/Scale were unreachable mid-edit. This section runs
+	// BEFORE the mobile block, which closes A's context.
+	// whatever the sections above left behind, these checks need a LIVE
+	// session: the header buttons only exist while the toolbox is up
+	await openSession(A.page);
+	const headerUp = await A.page.evaluate(
+		() => !!document.querySelector('#mesh-edit-cancel') && !!document.querySelector('#mesh-undo')
+	);
+	h.check(headerUp, 'PREMISE: the toolbox header is up with a fresh session');
+
+	const glyphs = await A.page.evaluate(() => {
+		// the class lands on the child <svg> (a lucide component forwards it into
+		// its own scope) and svg.className is an SVGAnimatedString - read the
+		// ATTRIBUTE, the documented icon-assertion rule
+		const iconOf = (id) => document.querySelector('#' + id + ' svg')?.getAttribute('class') ?? null;
+		return {
+			cancel: iconOf('mesh-edit-cancel'),
+			undo: iconOf('mesh-undo'),
+			redo: iconOf('mesh-redo'),
+			done: iconOf('mesh-edit-done'),
+			danger: !!document.querySelector('#mesh-edit-cancel')?.className.includes('tbx-danger')
+		};
+	});
+	h.check(!!glyphs.cancel && !!glyphs.undo, 'the header has both a Cancel and an Undo button');
+	h.check(
+		glyphs.cancel !== glyphs.undo,
+		`Cancel no longer draws Undo's glyph (${glyphs.cancel} vs ${glyphs.undo})`
+	);
+	h.check(glyphs.cancel !== glyphs.redo, "nor Redo's");
+	h.check(glyphs.cancel !== glyphs.done, 'and it stays distinct from Done');
+	h.check(glyphs.danger, 'the session discard carries the danger tint');
+	// askCancel only asks when the session HAS something to throw away — give it
+	// one edit, or it just toasts "nothing to revert" and the row never appears
+	await A.page.evaluate(() => {
+		const fe = window.__stores.faceEdit;
+		fe.pickFaceUnit(0);
+		fe.commitFaceOp('extrude', 0.3);
+	});
+	await A.page.waitForTimeout(400);
+	await A.page.click('#mesh-edit-cancel');
+	await A.page.waitForTimeout(250);
+	const confirmUp = await A.page.evaluate(() => !!document.querySelector('#mesh-cancel-confirm'));
+	h.check(confirmUp, 'pressing it still ASKS before reverting the session');
+	await A.page.click('#mesh-cancel-no');
+	await A.page.waitForTimeout(250);
+
+	const modeNow = async () => {
+		const st = await submode(A.page);
+		return st.inVertexMode ? 'vertices' : st.submode;
+	};
+	await A.page.evaluate(() => window.__stores.faceEdit.setFaceSubmode('faces'));
+	await A.page.waitForTimeout(250);
+	h.check((await modeNow()) === 'faces', 'starting the key checks in faces');
+	await A.page.keyboard.press('Tab');
+	await A.page.waitForTimeout(350);
+	const tab1 = await modeNow();
+	h.check(tab1 === 'vertices', `Tab wraps faces -> vertices (${tab1})`);
+	await A.page.keyboard.press('Tab');
+	await A.page.waitForTimeout(350);
+	const tab2 = await modeNow();
+	h.check(tab2 === 'edges', `Tab again -> edges (${tab2})`);
+	await A.page.keyboard.press('Shift+Tab');
+	await A.page.waitForTimeout(350);
+	const back1 = await modeNow();
+	h.check(back1 === 'vertices', `Shift+Tab steps BACK -> vertices (${back1})`);
+
+	// 1/2/3 belong to the gizmo again: they must move the TRANSFORM mode and
+	// leave the element mode alone - the whole reason the cycle moved to Tab
+	// back to faces through the real tab: Shift+Tab left us in VERTEX mode, which
+	// is a meshEdit session — setFaceSubmode cannot get us out of it
+	await A.page.click('#mesh-mode-faces');
+	await A.page.waitForTimeout(400);
+	h.check((await modeNow()) === 'faces', 'PREMISE: back in faces for the gizmo keys');
+	const tmode = () =>
+		A.page.evaluate(() => {
+			let v = null;
+			window.__stores.transformMode.subscribe((x) => (v = x))();
+			return v;
+		});
+	await A.page.keyboard.press('Digit2');
+	await A.page.waitForTimeout(300);
+	const t2 = await tmode();
+	h.check(t2 === 'rotate', `2 sets the gizmo to ROTATE during a session (${t2})`);
+	h.check((await modeNow()) === 'faces', 'and does NOT change the element mode');
+	await A.page.keyboard.press('Digit3');
+	await A.page.waitForTimeout(300);
+	const t3 = await tmode();
+	h.check(t3 === 'scale', `3 sets it to SCALE (${t3})`);
+	h.check((await modeNow()) === 'faces', 'element mode still untouched');
+
+	// the cheat sheet has to TEACH the new binding or the keys are invisible
+	const sheetText = await A.page.evaluate(async () => {
+		document.querySelector('#mesh-keys-help').click();
+		await new Promise((r) => setTimeout(r, 400));
+		return document.querySelector('#mesh-keys-popover')?.textContent ?? '';
+	});
+	h.check(/Tab/.test(sheetText), 'the cheat sheet lists Tab');
+	h.check(/Shift ?Tab/i.test(sheetText), 'and Shift+Tab for the backwards step');
+	h.check(!/Switch to Vertices/.test(sheetText), 'and no longer teaches 1/2/3 as element modes');
+	await A.page.evaluate(() => document.querySelector('#mesh-keys-close')?.click());
+	await A.page.waitForTimeout(200);
+
 	await A.ctx.close();
 
 	// ---------------------------------- 7. the bottom SHEET on a phone (18-C3)

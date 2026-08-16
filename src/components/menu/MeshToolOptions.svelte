@@ -198,6 +198,7 @@
 		>
 			<input
 				id={focus === 'extrude' ? 'extrude-individual' : 'inset-individual'}
+				class="tbx-check"
 				type="checkbox"
 				checked={focus === 'extrude' ? $extrudeIndividual : $insetIndividual}
 				onchange={(e) => {
@@ -209,7 +210,7 @@
 			individual
 		</label>
 		<label class="flex items-center gap-1" title="Apply the op when you click a face">
-			<input id="mesh-op-autoapply" type="checkbox" bind:checked={$faceAutoApply} />
+			<input id="mesh-op-autoapply" class="tbx-check" type="checkbox" bind:checked={$faceAutoApply} />
 			auto-apply
 		</label>
 		{#if adjusting}
@@ -472,6 +473,7 @@
 		>
 			<input
 				id="bridge-invert"
+				class="tbx-check"
 				type="checkbox"
 				checked={$bridgeInvert}
 				onchange={(e) => {
@@ -613,6 +615,7 @@
 		>
 			<input
 				id="slide-clamp"
+				class="tbx-check"
 				type="checkbox"
 				checked={$slideClamp}
 				onchange={(e) => slideClamp.set(e.currentTarget.checked)}
@@ -620,9 +623,6 @@
 			clamp to edge
 		</label>
 	</div>
-{:else if focus === 'move'}
-	<span class="tbx-label">Move options</span>
-	<div class="tbx-row text-xs text-gray-400">Drag the gizmo. Its orientation is above.</div>
 {:else if focus === 'knife'}
 	<span class="tbx-label">Knife options</span>
 	<div class="tbx-row text-xs text-gray-400">

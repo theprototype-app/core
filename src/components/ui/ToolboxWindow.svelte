@@ -26,6 +26,7 @@
 	//   feedback, `.tbx-disabled`) · `.tbx-hbtn` header icon button
 	//   (+`.tbx-done` / `.tbx-ok`) · `.tbx-primary` pill action (Apply/Commit) ·
 	//   `.tbx-sel` a parameterized tool that is SELECTED but not armed ·
+	//   `.tbx-check` a boolean option's checkbox ·
 	//   `.tbx-sec-head` collapsible section header (see ToolboxSection.svelte).
 	// - 18-C1: an optional `tabs` snippet renders BETWEEN the header and the
 	//   body. It sits outside the scrolling body on purpose, so the element-mode
@@ -539,6 +540,37 @@
 		/* selected is not a toggle: the ring says "chosen", and the glyph keeps
 		   its duotone so it still reads as the same tool */
 		--icon-accent: var(--tbx-accent);
+	}
+	/* a boolean option's CHECKBOX (auto-apply, individual, invert faces, clamp,
+	   grid snap). It has to be styled from here for the same reason every other
+	   primitive does — but the colour goes on `color`, NOT `background`, and
+	   that is load-bearing: flowbite's plugin puts `appearance: none` on every
+	   `[type='checkbox']` (so `accent-color` is a no-op) and paints the checked
+	   state with `background-color: currentColor !important`, which no
+	   background of ours can beat at any specificity. Driving `color` instead
+	   makes the tick block the toolbox accent in every theme; measured before
+	   this rule, the boxes rendered flowbite blue while the whole palette was
+	   orange. `accent-color` is kept for the case where something removes the
+	   appearance override — then the native control paints itself correctly. */
+	.toolbox :global(.tbx-check) {
+		flex: 0 0 auto;
+		width: 14px;
+		height: 14px;
+		margin: 0;
+		border: 1px solid var(--tbx-border);
+		border-radius: 3px;
+		background-color: var(--surface-2, #374151);
+		color: var(--tbx-accent);
+		accent-color: var(--tbx-accent);
+		cursor: pointer;
+	}
+	.toolbox :global(.tbx-check:focus-visible) {
+		outline: 2px solid var(--tbx-accent);
+		outline-offset: 1px;
+	}
+	.toolbox :global(.tbx-check:disabled) {
+		opacity: 0.45;
+		cursor: default;
 	}
 	/* destructive one-shot */
 	.toolbox :global(.tbx-danger) {

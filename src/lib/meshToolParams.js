@@ -108,11 +108,15 @@ export function focusTool(tool) {
 	optionsFocus.set(tool);
 }
 
-/** Tools whose options pane has content — the rest leave the pane out entirely. */
+/** Tools whose options pane has content — the rest leave the pane out entirely.
+ * 'move' was in here for a pane that only said "Drag the gizmo. Its orientation
+ * is above.", which is filler: the pane's contract is one tool's PARAMETERS and
+ * nothing when it has none, and Move has none. Arming it now clears the pane
+ * (see the focus effect in MeshEditPopup) instead of leaving the previous
+ * tool's rows up. */
 const WITH_OPTIONS = new Set([
 	'extrude',
 	'inset',
-	'move',
 	'knife',
 	'bevel',
 	'loopcut',

@@ -337,6 +337,105 @@ h.run(async () => {
 	}
 
 	// ======================================================================
+	// 3b. GRID SNAP reaches the mesh element gizmo
+	// ======================================================================
+	// `snapping.apply()` writes setTranslationSnap onto the SHARED TControls
+	// instance, and the element gizmo attaches its proxy to that very instance —
+	// so a vertex drag has ALWAYS obeyed the app-wide snap setting. That is why
+	// the toolbox's Gizmo section surfaces `snapEnabled`/`snapSettings` rather
+	// than inventing a mesh-only twin, and this is the measurement behind that
+	// decision, so it must keep holding: a real drag lands on a step multiple
+	// with snapping on and off-grid with it off.
+	//
+	// A SINGLE-vertex pick, deliberately: the vertex is written straight from the
+	// proxy's position (`worldToLocal(proxy.position)`), and the box is unrotated
+	// at the origin, so "landed on a multiple" reads directly off the geometry. A
+	// multi-selection moves by the proxy's DELTA instead, which says nothing
+	// about where any one vertex ends up.
+	const snapWas = await A.page.evaluate(() => {
+		const s = window.__stores;
+		let on;
+		let cfg;
+		s.snapping.snapEnabled.subscribe((v) => (on = v))();
+		s.snapping.snapSettings.subscribe((v) => (cfg = { ...v }))();
+		return { on, cfg };
+	});
+	const STEP = 0.5;
+	/** set the snap, drag the X arrow of a single-vertex gizmo, undo, report */
+	async function snapDrag(on) {
+		await A.page.evaluate(
+			({ on, step }) => {
+				const s = window.__stores;
+				s.snapping.snapSettings.update((v) => ({ ...v, translate: step }));
+				s.snapping.snapEnabled.set(on);
+				s.meshEdit.selectHandle(0);
+			},
+			{ on, step: STEP }
+		);
+		await A.page.waitForTimeout(300);
+		const wired = await A.page.evaluate(
+			() =>
+				new Promise((r) =>
+					window.__stores.TControls.subscribe((c) => r(c?.translationSnap ?? null))()
+				)
+		);
+		const g = await findGrip(A.page, 'X');
+		if (!g) return { wired, grip: false, pairs: [] };
+		const before = await readPositions(A.page);
+		await A.page.mouse.move(g[0], g[1]);
+		await A.page.mouse.down();
+		await A.page.mouse.move(g[0] + 83, g[1] + 11, { steps: 12 });
+		await A.page.mouse.move(g[0] + 84, g[1] + 11);
+		await A.page.mouse.up();
+		await A.page.waitForTimeout(320);
+		const pairs = movedPairs(before, await readPositions(A.page));
+		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.waitForTimeout(400);
+		return { wired, grip: true, pairs };
+	}
+	const snapOff = await snapDrag(false);
+	const snapOn = await snapDrag(true);
+	h.check(
+		snapOff.wired === null,
+		`snapping OFF leaves the shared gizmo unsnapped (translationSnap ${snapOff.wired})`
+	);
+	h.check(
+		snapOn.wired === STEP,
+		`snapping ON writes the step onto the SAME TControls the element gizmo uses (${snapOn.wired})`
+	);
+	h.check(snapOff.grip && snapOn.grip, 'found a confirmed X grip for both snap drags (premise)');
+	h.check(
+		snapOff.pairs.length === 1 && snapOn.pairs.length === 1,
+		`each drag moved exactly one welded vertex (${snapOff.pairs.length} / ${snapOn.pairs.length})`
+	);
+	if (snapOff.pairs.length === 1 && snapOn.pairs.length === 1) {
+		const onGrid = (p) => p.every((v) => Math.abs(v / STEP - Math.round(v / STEP)) < 1e-6);
+		const travelled = (p) => dist(p.from, p.to);
+		// the corners of a 2x2x2 box are ALREADY on a 0.5 grid, so a drag that did
+		// nothing would satisfy the snapped case by accident
+		h.check(
+			travelled(snapOff.pairs[0]) > 0.2 && travelled(snapOn.pairs[0]) > 0.2,
+			`both drags actually moved the vertex (${travelled(snapOff.pairs[0]).toFixed(3)} / ${travelled(snapOn.pairs[0]).toFixed(3)} world units)`
+		);
+		h.check(
+			onGrid(snapOn.pairs[0].to),
+			`snap ON: the vertex lands on a ${STEP} multiple — ${JSON.stringify(snapOn.pairs[0].to.map((n) => +n.toFixed(4)))}`
+		);
+		h.check(
+			!onGrid(snapOff.pairs[0].to),
+			`snap OFF: the same drag lands off-grid — ${JSON.stringify(snapOff.pairs[0].to.map((n) => +n.toFixed(4)))}`
+		);
+	}
+	// restore: snapping is a PERSISTED app-wide pref, and a live rotation snap
+	// would quantize every gizmo drag the sections below measure
+	await A.page.evaluate((was) => {
+		const s = window.__stores;
+		s.snapping.snapSettings.set(was.cfg);
+		s.snapping.snapEnabled.set(was.on);
+	}, snapWas);
+	await A.page.waitForTimeout(250);
+
+	// ======================================================================
 	// 4. the PIVOT: placed, honoured, and the rotation measured as an ANGLE
 	// ======================================================================
 	// pivot on the box's (1, -1, 1) corner — deliberately OFF the selection's own

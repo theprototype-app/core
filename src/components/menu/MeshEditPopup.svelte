@@ -157,6 +157,14 @@
 		toggleMeshPivotMove,
 		escapeConsumedByPivotMove
 	} from '$lib/meshPivot';
+	// The app-wide GRID SNAP, surfaced in the Gizmo section. `snapping.apply()`
+	// writes the step onto the SHARED TControls instance, and the mesh element
+	// gizmo attaches its proxy to that very instance — so vertex/edge/face drags
+	// have always obeyed this setting. Measured before wiring the row: the same
+	// real-mouse vertex drag landed on (1.904, 0.956, 1.941) with it off and
+	// exactly (2.5, 1, 3) with it on at 0.5. So this is the EXISTING setting
+	// brought to where the modelling happens, never a mesh-only twin.
+	import { snapEnabled, snapSettings } from '$lib/snapping';
 	import { isVRMode, selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
 
@@ -565,12 +573,14 @@
 	}
 
 	// Which tool's options are showing. Arming a tool takes the pane with it, so
-	// the parameters are always the ones the next commit will use.
+	// the parameters are always the ones the next commit will use — and arming a
+	// tool with NO parameters (Move) CLEARS the pane rather than leaving the
+	// previous tool's rows describing something that is no longer selected.
 	$effect(() => {
 		const armed = $faceEditOp;
 		untrack(() => {
 			if (mode === 'vertices') return; // vertices has no armed op
-			if (hasOptions(armed)) focusTool(armed);
+			focusTool(hasOptions(armed) ? armed : '');
 		});
 	});
 	// A mode switch resets the pane: the previous tab's tool may not exist here
@@ -1103,90 +1113,12 @@
 			>
 		{/if}
 
-		<!-- GIZMO: one control for EVERY element mode. It was inside the faces-only
-		     branch, so vertices and edges had no orientation control at all and no way
-		     to turn the gizmo off — the switch is a preference about how you work, not a
-		     property of what you picked. -->
-		<span class="tbx-label">Gizmo</span>
-		<div class="tbx-row">
-			<button
-				id="mesh-gizmo-toggle"
-				class="tbx-btn {$meshGizmoEnabled ? 'tbx-on bg-primary-600 text-white' : ''}"
-				aria-pressed={$meshGizmoEnabled}
-				aria-label="Show the transform gizmo"
-				title={$meshGizmoEnabled
-					? 'Gizmo ON — click to hide it and select/operate without handles in the way'
-					: 'Gizmo OFF — click to show it again (vertices, edges and faces)'}
-				onclick={() => meshGizmoEnabled.set(!$meshGizmoEnabled)}
-				><ToolIcon name="gizmo" /></button
-			>
-			<div
-				id="mesh-gizmo-space"
-				class="tbx-seg"
-				title="Gizmo orientation — Local aligns to what is selected (for a face, Z = its normal; for an edge, X runs along it). Scale handles always orient local."
-			>
-				<button
-					id="mesh-space-local"
-					class="px-2 py-0.5 {$faceGizmoSpace === 'local' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					disabled={!$meshGizmoEnabled}
-					onclick={() => faceGizmoSpace.set('local')}>Local</button
-				>
-				<button
-					id="mesh-space-world"
-					class="px-2 py-0.5 {$faceGizmoSpace === 'world' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					disabled={!$meshGizmoEnabled}
-					onclick={() => faceGizmoSpace.set('world')}>World</button
-				>
-			</div>
-		</div>
-		<!-- PIVOT: where the gizmo sits, and what rotate/scale turn around. Without
-		     one the answer is "the middle of what you picked", which is the right
-		     default and no help at all for rotating a face about a corner or scaling
-		     a row of vertices toward one end. Placed per object and REMEMBERED
-		     (local pref) — re-placing it on every re-entry would make it a gesture
-		     rather than a setting. COMMANDS, so they read as words. -->
-		<span class="tbx-label">Pivot</span>
-		<div class="tbx-row" id="mesh-pivot-row">
-			<button
-				id="mesh-pivot-set"
-				class="tbx-cmd"
-				title="Put the pivot at the centre of what is selected right now"
-				onclick={() => setMeshPivotFromSelection(mode)}>Set here</button
-			>
-			<button
-				id="mesh-pivot-pick"
-				class="tbx-cmd {$meshPivotPicking ? 'tbx-on bg-primary-600 text-white' : ''}"
-				aria-pressed={$meshPivotPicking}
-				title="Click a point on the mesh to place the pivot (a nearby vertex wins; Esc cancels)"
-				onclick={() => ($meshPivotPicking ? cancelMeshPivotPick() : startMeshPivotPick())}
-				>{$meshPivotPicking ? 'Picking…' : 'Pick…'}</button
-			>
-			<button
-				id="mesh-pivot-move"
-				class="tbx-cmd {$meshPivotMoving ? 'tbx-on bg-primary-600 text-white' : ''}"
-				aria-pressed={$meshPivotMoving}
-				title="Drag the transform gizmo to place the pivot — the mesh does not move (Esc leaves)"
-				onclick={() => toggleMeshPivotMove()}>{$meshPivotMoving ? 'Moving…' : 'Move'}</button
-			>
-			<button
-				id="mesh-pivot-clear"
-				class="tbx-cmd tbx-danger"
-				disabled={!pivotSet}
-				title="Back to the selection's own centre"
-				onclick={() => clearMeshPivot(editedUuid)}>Clear</button
-			>
-		</div>
-		<div id="mesh-pivot-state" class="tbx-row text-[11px] text-gray-400">
-			{$meshPivotMoving
-				? 'Drag the gizmo to place the pivot — the mesh stays put.'
-				: pivotSet
-					? 'Rotate and scale turn about the placed pivot.'
-					: 'Rotate and scale turn about the selection centre.'}
-		</div>
 		<!-- TOOL OPTIONS: the parameters of whichever tool is selected, directly
 		     under the grid that selected it. Before this they were scattered — the
 		     bevel width lived under GIZMO, the extrude amount at the very bottom of
-		     the window, the merge distance two sections from its own button. -->
+		     the window, the merge distance two sections from its own button.
+		     It sits IMMEDIATELY under the grid now: the Gizmo/Pivot rows used to
+		     stand between the two, which is the adjacency this pane exists for. -->
 		<MeshToolOptions
 			{mode}
 			focus={$optionsFocus}
@@ -1203,6 +1135,141 @@
 			onSettle={() => settleOpAdjust()}
 			onRevert={() => cancelOpAdjust()}
 		/>
+
+		<!-- GIZMO & PIVOT: ONE collapsible section, offered in EVERY element mode.
+		     The switch and the orientation used to live inside the faces-only
+		     branch (so vertices and edges had neither), and the pivot commands
+		     arrived beside them as loose rows — five rows of chrome permanently
+		     between the tool grid and the tool options. They are one subject:
+		     WHERE the gizmo sits, HOW it is oriented, and WHAT it lands on.
+		     Open by default, like Display: a modeller reaches the orientation and
+		     the snap step constantly, while Cleanup and Symmetry are occasional. -->
+		<ToolboxSection key="gizmo" label="Gizmo & pivot" open={true} id="mesh-sec-gizmo">
+			<div class="tbx-row" id="mesh-gizmo-row">
+				<button
+					id="mesh-gizmo-toggle"
+					class="tbx-btn {$meshGizmoEnabled ? 'tbx-on bg-primary-600 text-white' : ''}"
+					aria-pressed={$meshGizmoEnabled}
+					aria-label="Show the transform gizmo"
+					title={$meshGizmoEnabled
+						? 'Gizmo ON — click to hide it and select/operate without handles in the way'
+						: 'Gizmo OFF — click to show it again (vertices, edges and faces)'}
+					onclick={() => meshGizmoEnabled.set(!$meshGizmoEnabled)}
+					><ToolIcon name="gizmo" /></button
+				>
+				<div
+					id="mesh-gizmo-space"
+					class="tbx-seg"
+					title="Gizmo orientation — Local aligns to what is selected (for a face, Z = its normal; for an edge, X runs along it). Scale handles always orient local."
+				>
+					<button
+						id="mesh-space-local"
+						class="px-2 py-0.5 {$faceGizmoSpace === 'local' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						disabled={!$meshGizmoEnabled}
+						onclick={() => faceGizmoSpace.set('local')}>Local</button
+					>
+					<button
+						id="mesh-space-world"
+						class="px-2 py-0.5 {$faceGizmoSpace === 'world' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						disabled={!$meshGizmoEnabled}
+						onclick={() => faceGizmoSpace.set('world')}>World</button
+					>
+				</div>
+			</div>
+			<!-- SNAP: the APP-WIDE grid snap, not a mesh-only twin. snapping.js
+			     writes the step onto the shared TControls instance and the element
+			     gizmo attaches its proxy to that same instance, so these drags have
+			     always obeyed this setting — it was just unreachable from here
+			     (Configure Scene ▸ Snapping was the only place). Same stores, so
+			     changing it here changes it for object drags too, which the note
+			     line says out loud. -->
+			<div class="tbx-row" id="mesh-snap-row">
+				<label
+					class="flex items-center gap-1"
+					title="Snap gizmo drags to a grid — vertices, edges, faces AND whole objects, the one app-wide setting"
+				>
+					<input
+						id="mesh-snap-enabled"
+						class="tbx-check"
+						type="checkbox"
+						checked={$snapEnabled}
+						onchange={(e) => snapEnabled.set(e.currentTarget.checked)}
+					/>
+					grid snap
+				</label>
+				<DragRow
+					id="mesh-snap-translate"
+					label="step"
+					value={$snapSettings.translate}
+					step={0.005}
+					snap={0.1}
+					decimals={2}
+					min={0.01}
+					disabled={!$snapEnabled}
+					title="Translate drags land on multiples of this (world units)"
+					onchange={(v) => snapSettings.update((s) => ({ ...s, translate: v || s.translate }))}
+				/>
+				<DragRow
+					id="mesh-snap-rotate"
+					label="angle"
+					value={$snapSettings.rotateDeg}
+					step={0.2}
+					snap={5}
+					decimals={1}
+					min={0.1}
+					disabled={!$snapEnabled}
+					title="Rotate drags land on multiples of this (degrees)"
+					onchange={(v) => snapSettings.update((s) => ({ ...s, rotateDeg: v || s.rotateDeg }))}
+				/>
+			</div>
+			<div id="mesh-snap-note" class="tbx-row text-[10px] italic text-gray-400">
+				App-wide — the same setting as Configure Scene ▸ Snapping.
+			</div>
+			<!-- PIVOT: where the gizmo sits, and what rotate/scale turn around. Without
+			     one the answer is "the middle of what you picked", which is the right
+			     default and no help at all for rotating a face about a corner or scaling
+			     a row of vertices toward one end. Placed per object and REMEMBERED
+			     (local pref) — re-placing it on every re-entry would make it a gesture
+			     rather than a setting. COMMANDS, so they read as words. -->
+			<span class="tbx-label">Pivot</span>
+			<div class="tbx-row" id="mesh-pivot-row">
+				<button
+					id="mesh-pivot-set"
+					class="tbx-cmd"
+					title="Put the pivot at the centre of what is selected right now"
+					onclick={() => setMeshPivotFromSelection(mode)}>Set here</button
+				>
+				<button
+					id="mesh-pivot-pick"
+					class="tbx-cmd {$meshPivotPicking ? 'tbx-on bg-primary-600 text-white' : ''}"
+					aria-pressed={$meshPivotPicking}
+					title="Click a point on the mesh to place the pivot (a nearby vertex wins; Esc cancels)"
+					onclick={() => ($meshPivotPicking ? cancelMeshPivotPick() : startMeshPivotPick())}
+					>{$meshPivotPicking ? 'Picking…' : 'Pick…'}</button
+				>
+				<button
+					id="mesh-pivot-move"
+					class="tbx-cmd {$meshPivotMoving ? 'tbx-on bg-primary-600 text-white' : ''}"
+					aria-pressed={$meshPivotMoving}
+					title="Drag the transform gizmo to place the pivot — the mesh does not move (Esc leaves)"
+					onclick={() => toggleMeshPivotMove()}>{$meshPivotMoving ? 'Moving…' : 'Move'}</button
+				>
+				<button
+					id="mesh-pivot-clear"
+					class="tbx-cmd tbx-danger"
+					disabled={!pivotSet}
+					title="Back to the selection's own centre"
+					onclick={() => clearMeshPivot(editedUuid)}>Clear</button
+				>
+			</div>
+			<div id="mesh-pivot-state" class="tbx-row text-[11px] text-gray-400">
+				{$meshPivotMoving
+					? 'Drag the gizmo to place the pivot — the mesh stays put.'
+					: pivotSet
+						? 'Rotate and scale turn about the placed pivot.'
+						: 'Rotate and scale turn about the selection centre.'}
+			</div>
+		</ToolboxSection>
 
 		<!-- WHOLE-MESH work below. None of it depends on which element mode is open,
 		     so it is offered in all three (it used to be faces-only, which meant

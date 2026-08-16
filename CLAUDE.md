@@ -1875,33 +1875,46 @@ override for e2e — never share 5173 (the user's main-checkout server).
   the PR of the whole 17-E branch to release/next.
   NEXT (planned): the same transform tools
   in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
-- Status (2026-08-15, handoff): **19-A P0–P5b COMMITTED; REMAINING: P7a → P7b → P6 → wrap/merge; P7c PARKED by the user (2026-08-16, executes later on their explicit go as a follow-up branch).**
-  Commits on `feat/mesh-tool-interaction` (NOT pushed): P0 `bf6f2df` · P1 `8b0352f` ·
-  P2 `e259d6b` · docs `a1c9f88` · P3 `0cc844e` · P4 `95df8b0` · P5a `7179a6f` (Opus) ·
-  P5b `d224cc2`. Baseline **391/62** at every step. The P7 feedback round (user items,
-  routing + exact specs) is §8 of cloud `plans-core/pending/19-a-mesh-tool-interaction.md`:
-  **P7a Opus** (bridge invert-faces; face-bevel NEGATIVE profile — concave schedule =
-  swap the sin/cos roles, lerp by |profile|, columns sum to 1, mid-ring-bulge SIGN check)
-  → **P7b Fable** (stale-overlay-during-grab bug; lost-edge-selection bug = the welded
-  KEY is position-quantized so moving the edge changes it — remap through the grab
-  transform at commit; loop-cut axis toggle with BOTH rings captured at begin;
-  wheel-radius during proportional drags — must suppress trackpadNav's window wheel +
-  orbit zoom while live; vertex-slide clamp toggle + landing marker) → **P6** (connect,
-  dissolve verts, fill hole, edge slide, solidify, separate — separate touches
-  REPLICATION, two-peer recipe) → **P7c Fable LAST** (vertex-bevel segments + THE
-  MITERED CORNER at valence≥4 — the crack history is the gate). WRAP: merge
-  origin/release/next INTO the branch (19-B MERGED there @921be45 — expected trivial
-  conflict: App.svelte debugStores lines; Scene.svelte is B's), full sweep, PR, as-built
-  notes in the cloud plan. EXECUTION MODEL: subagents implement (Opus = spec-tight,
-  Fable = operator-layer), the ORCHESTRATOR reviews diffs first-hand, re-runs the new +
-  flipped suites + svelte-check itself, and commits with explicit paths (a `git add -A`
-  once swept a curl artifact named `-w` into a commit). Subagents get: fresh-5174
-  restart + curl-grep-a-new-symbol before the final battery, PEER_CONFIG on every
-  two-peer run, DO-NOT-COMMIT. Session-limit kills leave work ON DISK — resume the same
-  agent via its transcript with the tree state spelled out.
-  P5b's load-bearing find: `beginFaceGrab` skips the weld-stitch neighbour capture when
-  EVERY grabbed tri has a coincident twin outside the set (a freshly-duplicated patch)
-  — position-welding otherwise makes a duplicate immovable off its source.
+- Status (2026-08-16): **19-A READY TO PR — P0–P5b + P7a + P7b COMMITTED (12 commits,
+  branch `feat/mesh-tool-interaction`, NOT pushed); P6 and P7c are PARKED by the user
+  and execute later as their own branches.** Hashes: P0 `bf6f2df` · P1 `8b0352f` ·
+  P2 `e259d6b` (THE ADJUST ENGINE) · docs `a1c9f88` · P3 `0cc844e` · P4 `95df8b0` ·
+  P5a `7179a6f` (Opus) · P5b `d224cc2` · docs `497ef8e`/`cfff1c8` · P7a `5da6fe8`
+  (Opus) · P7b `7edcbed`. Baseline **391/62 at EVERY commit**; build green; 28 files,
+  +7195/-487. As-built table + the parked specs: cloud
+  `plans-core/pending/19-a-mesh-tool-interaction.md` §9 (§4 keeps P6's spec, §8 P7c's).
+  P7a = bridge **invert faces** (negate the wall dir AFTER the shell-test guess) +
+  face-bevel **negative profile** (the concave quarter circle is the same arc with the
+  sin/cos roles SWAPPED; every schedule column telescopes to 1, so total reach is
+  bit-identical across profiles — that invariance is what makes the sign safe).
+  P7b = the two edge-move bugs + three interaction items: the edge overlay is drawn
+  from the grab's own transformed ORIGINAL endpoints while a grab is live and the
+  selected keys are REMAPPED through the grab at commit (welded keys are
+  position-quantized, so moving an edge changes its key — that single fact caused
+  both reports); loop-cut Along/Across with BOTH rings captured at begin; the wheel
+  resizes the proportional radius mid-drag with weights recaptured against drag-START
+  positions (suppression is TWO-SIDED: stopPropagation from the window-CAPTURE
+  listener kills the OrbitControls canvas dolly, and trackpadNav early-outs on
+  `proportionalWheelActive()` because two listeners on the SAME node cannot stop each
+  other); vertex-slide clamp toggle + landing marker; and the ring BILLBOARDS to the
+  camera via `onBeforeRender` (a normal-oriented circle vanishes edge-on).
+  PARKED, nothing started: **P6** (connect, dissolve verts, fill hole, edge slide,
+  solidify, separate-to-object — the batch's ONLY replication surface) and **P7c**
+  (vertex-bevel segments + THE MITERED CORNER at valence>=4, whose crack history is
+  the gate). WRAP still owed: merge origin/release/next INTO the branch (19-B merged
+  there @921be45 — `git merge-tree` says exactly ONE conflict, App.svelte's debugStores
+  lines), full sweep, push, PR. EXECUTION MODEL that worked: subagents implement (Opus
+  = spec-tight, Fable = operator-layer), the ORCHESTRATOR reviews every diff
+  first-hand, re-runs svelte-check + the affected suites itself, and commits with
+  EXPLICIT paths (a `git add -A` once swept a curl artifact named `-w` into a commit).
+  Subagents get: fresh-5174 restart + curl-grep-a-new-symbol before the final battery,
+  PEER_CONFIG on every two-peer run, DO-NOT-COMMIT, and "your final text IS the
+  report" (one parked itself waiting on a detached run the harness could not track).
+  Session-limit kills leave work ON DISK — resume the same agent with the tree state
+  spelled out. P5b's load-bearing find: `beginFaceGrab` skips the weld-stitch
+  neighbour capture when EVERY grabbed tri has a coincident twin outside the set (a
+  freshly-duplicated patch) — position-welding otherwise makes a duplicate immovable
+  off its source.
 - Status (2026-08-15, superseded by the entry above): **ROADMAP #19-A IN FLIGHT — the mesh tool APPLY-AND-ADJUST model.**
   Branch `feat/mesh-tool-interaction` off release/next @608e852; plans in the cloud repo
   (`plans-core/roadmap-19-tool-interaction-snapping.md` + `pending/19-a/-b`); 19-B

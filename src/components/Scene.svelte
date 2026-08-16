@@ -22,6 +22,7 @@
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
+	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
 	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
 	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
@@ -267,6 +268,7 @@
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
+		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
@@ -587,6 +589,18 @@
 			if ($snapAnchorPicking) {
 				setRayFromEvent(event);
 				snapAnchorClick(selectionRaycaster, [event.clientX, event.clientY]);
+				return;
+			}
+			// mesh PIVOT pick mode captures ONE click the same way — and for the same
+			// reason it sits ahead of the gizmo guard: the seated mesh gizmo's hover
+			// would swallow a click anywhere near the point you are aiming at
+			if ($meshPivotPicking) {
+				setRayFromEvent(event);
+				meshPivotClick(
+					lookupEditable($editingObject ?? $faceEditObject ?? ''),
+					selectionRaycaster,
+					[event.clientX, event.clientY]
+				);
 				return;
 			}
 			// ignore clicks on the transform gizmo (axis is set while hovering a handle)

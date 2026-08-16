@@ -472,11 +472,18 @@ h.run(async () => {
 		};
 		me.toggleVertexSelection(1);
 		const beforeArr = Array.from(live().geometry.attributes.position.array);
-		const gizmoAtAdded =
+		// the ANCHOR still rides the last pick, but the GIZMO does not: it sits at
+		// the selection's CENTROID since mesh-pivot-gizmo (seating it on the last
+		// handle clicked is exactly the reported defect — "I cannot scale a few
+		// selected vertices, it just attaches to the last one selected"). This
+		// asserted the old contract; it now asserts the new one, and would fail
+		// again if the gizmo went back to either endpoint.
+		const midpoint = [0, 1, 2].map((k) => (beforeArr[k] + beforeArr[3 + k]) / 2);
+		const gizmoAtCentroid =
 			Math.hypot(
-				controls.object.position.x - beforeArr[3],
-				controls.object.position.y - beforeArr[4],
-				controls.object.position.z - beforeArr[5]
+				controls.object.position.x - midpoint[0],
+				controls.object.position.y - midpoint[1],
+				controls.object.position.z - midpoint[2]
 			) < 1e-4;
 		const multi = { size: size(), anchor: me.selectedVertexHandle() };
 		me.onProxyDragChanged(true);
@@ -519,7 +526,7 @@ h.run(async () => {
 				let weldKeptSession;
 				me.editingObject.subscribe((v) => (weldKeptSession = v === uuid))();
 				me.exitEditMode();
-				resolve({ single, gizmoAtAdded, multi, moved, undone, parked, weldOk, wireTracksWeld, weldKeptSession });
+				resolve({ single, gizmoAtCentroid, multi, moved, undone, parked, weldOk, wireTracksWeld, weldKeptSession });
 			}, 400)
 		);
 	});
@@ -528,8 +535,8 @@ h.run(async () => {
 		`plain vertex click counts as 1 sel and seats the gizmo (${multiSel.single.size} sel)`
 	);
 	h.check(
-		multiSel.multi.size === 2 && multiSel.multi.anchor === 1 && multiSel.gizmoAtAdded,
-		`ctrl-click adds; the anchor + gizmo ride the last pick (${multiSel.multi.size} sel, anchor ${multiSel.multi.anchor})`
+		multiSel.multi.size === 2 && multiSel.multi.anchor === 1 && multiSel.gizmoAtCentroid,
+		`ctrl-click adds; the ANCHOR rides the last pick and the GIZMO sits at the pair MIDPOINT (${multiSel.multi.size} sel, anchor ${multiSel.multi.anchor})`
 	);
 	h.check(
 		multiSel.moved === 6,

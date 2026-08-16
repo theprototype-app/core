@@ -40,6 +40,16 @@ import {
 	endProportionalWheel
 } from './proportional';
 import { showProportionalRingAt, hideProportionalRing } from './proportionalRing';
+// the custom transform PIVOT (a LOCAL per-object pref). Another leaf — meshPivot
+// imports THREE, the two stores and `proportional`, and nothing from here.
+import {
+	meshPivotLocal,
+	registerMeshPivotListener,
+	refreshMeshPivotMarker,
+	disposeMeshPivotMarker,
+	cancelMeshPivotPick,
+	escapeConsumedByPivotPick
+} from './meshPivot';
 
 // Face editing core (118, pulled forward from pending/25 and scoped to VR
 // blockout). Desktop-agnostic geometry math: read a BufferGeometry into a flat
@@ -5621,6 +5631,7 @@ export function enterFaceEdit(uuid) {
 	faceEditObject.set(uuid);
 	noteEditEnter('face', uuid); // 15-F: opens (or continues) the undo barrier
 	refreshFaceWireframe(); // B2: face mode gets the same wireframe as vertex mode
+	refreshMeshPivotMarker(object); // a placed pivot comes back with the session
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onFaceKeydown);
 	// 175: restore the face selected last time in this object (per-mode memory)
 	if (stashedFace.uuid === uuid && stashedFace.fi >= 0 && faces[stashedFace.fi]) {
@@ -5643,6 +5654,7 @@ export function enterFaceEdit(uuid) {
 function onFaceKeydown(event) {
 	if (event.key === 'Escape') {
 		if (escapeConsumedByKnife(event)) return;
+		if (escapeConsumedByPivotPick(event)) return; // an armed pivot pick first
 		exitFaceEdit();
 		sealEditHistorySession(); // 15-F: Escape = Done, sealed synchronously
 	}
@@ -5663,6 +5675,8 @@ export function exitFaceEdit() {
 		endOpAdjust();
 	}
 	cancelKnife(); // a pending cut must not outlive the session
+	cancelMeshPivotPick(); // nor an armed pivot pick
+	disposeMeshPivotMarker(); // ...and its viewport helper goes with the session
 	hideProportionalRing(); // P4: nor the radius ring (safety — grabs hide it themselves)
 	endProportionalWheel(); // P7b: nor the wheel claim (faceGrab is dropped below)
 	detachFaceGizmo(); // 163: drop the desktop gizmo + its proxy
@@ -6442,6 +6456,11 @@ export function beginFaceGrab(faceOrIndex) {
 		),
 		neighbours,
 		centroid: face.centroid.clone(),
+		// what rotate/scale turn AROUND. The target's own centroid unless the user
+		// has placed a custom pivot on this object (meshPivot, LOCAL pref) — which
+		// is the whole point of placing one: rotating a face about a corner rather
+		// than about its middle.
+		pivot: meshPivotLocal(faceEdited.uuid) ?? face.centroid.clone(),
 		normal: face.normal.clone(),
 		// P7b: what the mid-drag WHEEL recapture needs — the welded grab keys, the
 		// original grab-corner positions (proportional only) and the duplicate-patch
@@ -6541,7 +6560,9 @@ function recaptureGrabFalloff() {
  */
 export function applyFaceGrab(t) {
 	if (!faceGrab || !faceEdited) return;
-	const pivot = faceGrab.centroid;
+	// `pivot` is the placed pivot when there is one, else the target's centroid
+	// (pre-pivot grabs, and every VR caller, still see exactly the centroid)
+	const pivot = faceGrab.pivot ?? faceGrab.centroid;
 	const dPos = t.dPos || new THREE.Vector3();
 	const dQuat = t.dQuat || new THREE.Quaternion();
 	const scale = t.scale ?? 1;
@@ -6669,6 +6690,15 @@ export function cancelFaceGrab() {
 /** the op target the gizmo was seated on — what a drag actually moves */
 /** @type {any} */ let gizmoTarget = null;
 
+// placing / clearing the pivot re-seats the FACE-or-EDGE gizmo on it, and moves
+// its marker. Registered here rather than watched as a store so the two element
+// modes and the vertex mode share one seam (meshEdit registers its own).
+registerMeshPivotListener(() => {
+	if (!faceEdited) return;
+	attachFaceGizmo();
+	refreshMeshPivotMarker(faceEdited);
+});
+
 /** meshEdit registers here so the vertex proxy follows both prefs without importing
  * faceEdit's internals (and without a cycle — meshEdit already imports this module)
  * @type {(() => void)[]} */
@@ -6788,7 +6818,9 @@ export function attachFaceGizmo() {
 		const edgeProxy = ensureFaceProxy();
 		if (!edgeProxy) return;
 		faceEdited.updateMatrixWorld(true);
-		edgeProxy.position.copy(faceEdited.localToWorld(edgeTarget.centroid.clone()));
+		edgeProxy.position.copy(
+			faceEdited.localToWorld(meshPivotLocal(faceEdited.uuid) ?? edgeTarget.centroid.clone())
+		);
 		// X along the edge, Z out of the surface (see edgeGrabTarget)
 		const along = edgeTarget.direction.clone().transformDirection(faceEdited.matrixWorld).normalize();
 		const out = edgeTarget.normal.clone().transformDirection(faceEdited.matrixWorld).normalize();
@@ -6811,7 +6843,11 @@ export function attachFaceGizmo() {
 	const proxy = ensureFaceProxy();
 	if (!proxy) return;
 	faceEdited.updateMatrixWorld(true);
-	proxy.position.copy(faceEdited.localToWorld(target.centroid.clone()));
+	// a placed pivot seats the gizmo, and `beginFaceGrab` makes the grab turn
+	// about the same point — the two must agree or the handles lie
+	proxy.position.copy(
+		faceEdited.localToWorld(meshPivotLocal(faceEdited.uuid) ?? target.centroid.clone())
+	);
 	// E9: FACE basis — gizmo Z = the face WORLD normal (push/pull), X/Y = its
 	// tangents (deterministic seed: the world axis least aligned with n). The
 	// old object-quaternion copy gave every face of an axis-aligned box the

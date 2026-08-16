@@ -145,6 +145,15 @@
 		colliderShellCount
 	} from '$lib/colliderEdit';
 	import { sealEditHistorySession } from '$lib/editSession';
+	import {
+		meshPivots,
+		meshPivotPicking,
+		setMeshPivotFromSelection,
+		startMeshPivotPick,
+		cancelMeshPivotPick,
+		clearMeshPivot,
+		escapeConsumedByPivotPick
+	} from '$lib/meshPivot';
 	import { isVRMode, selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
 
@@ -158,6 +167,10 @@
 	// 15-A2: live shell count for the collider banner — applyMeshGeo pokes
 	// objectsGroup on every proxy geometry swap, so this tracks adds/deletes/welds
 	const shellCount = $derived($colliderEditObject && $objectsGroup ? colliderShellCount() : 0);
+	/** the uuid the session is editing, whichever element mode is open */
+	const editedUuid = $derived($editingObject ?? $faceEditObject ?? null);
+	/** does this object carry a placed pivot? reads the STORE so it stays live */
+	const pivotSet = $derived(!!editedUuid && !!$meshPivots[editedUuid]);
 
 	/** @param {'vertices' | 'edges' | 'faces'} next */
 	function setMode(next) {
@@ -621,9 +634,12 @@
 	function onKeydown(event) {
 		if (!active) return;
 		if (event.key === 'Escape') {
-			// M9b: a pending knife cut owns Escape first. BOTH Escape handlers have to ask, since
-			// whichever runs first would otherwise tear the session down mid-gesture.
+			// M9b: a pending knife cut owns Escape first. ALL THREE Escape handlers
+			// (here, meshEdit's and faceEdit's) have to ask, since whichever runs
+			// first would otherwise tear the session down mid-gesture — which is why
+			// the verdict rides the EVENT and not a one-shot store flag.
 			if (escapeConsumedByKnife(event)) return;
+			if (escapeConsumedByPivotPick(event)) return; // ...and so does an armed pivot pick
 			if (!$colliderEditObject) finish(); // a collider session tears down via its watcher
 			return;
 		}
@@ -1118,6 +1134,41 @@
 					onclick={() => faceGizmoSpace.set('world')}>World</button
 				>
 			</div>
+		</div>
+		<!-- PIVOT: where the gizmo sits, and what rotate/scale turn around. Without
+		     one the answer is "the middle of what you picked", which is the right
+		     default and no help at all for rotating a face about a corner or scaling
+		     a row of vertices toward one end. Placed per object and REMEMBERED
+		     (local pref) — re-placing it on every re-entry would make it a gesture
+		     rather than a setting. COMMANDS, so they read as words. -->
+		<span class="tbx-label">Pivot</span>
+		<div class="tbx-row" id="mesh-pivot-row">
+			<button
+				id="mesh-pivot-set"
+				class="tbx-cmd"
+				title="Put the pivot at the centre of what is selected right now"
+				onclick={() => setMeshPivotFromSelection(mode)}>Set here</button
+			>
+			<button
+				id="mesh-pivot-pick"
+				class="tbx-cmd {$meshPivotPicking ? 'tbx-on bg-primary-600 text-white' : ''}"
+				aria-pressed={$meshPivotPicking}
+				title="Click a point on the mesh to place the pivot (a nearby vertex wins; Esc cancels)"
+				onclick={() => ($meshPivotPicking ? cancelMeshPivotPick() : startMeshPivotPick())}
+				>{$meshPivotPicking ? 'Picking…' : 'Pick…'}</button
+			>
+			<button
+				id="mesh-pivot-clear"
+				class="tbx-cmd tbx-danger"
+				disabled={!pivotSet}
+				title="Back to the selection's own centre"
+				onclick={() => clearMeshPivot(editedUuid)}>Clear</button
+			>
+		</div>
+		<div id="mesh-pivot-state" class="tbx-row text-[11px] text-gray-400">
+			{pivotSet
+				? 'Rotate and scale turn about the placed pivot.'
+				: 'Rotate and scale turn about the selection centre.'}
 		</div>
 		<!-- TOOL OPTIONS: the parameters of whichever tool is selected, directly
 		     under the grid that selected it. Before this they were scattered — the

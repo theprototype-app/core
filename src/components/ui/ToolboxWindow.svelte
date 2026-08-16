@@ -444,6 +444,19 @@
 		outline: 2px solid var(--tbx-accent);
 		outline-offset: 1px;
 	}
+	/* an ARMED command (a word button that puts the app in a mode — the pivot
+	   pick). Same reasoning as .tbx-btn.tbx-on: `.tbx-cmd`'s own background is an
+	   UNLAYERED component style and beats the `bg-primary-600` utility outright,
+	   so without this the armed state renders plain grey in the dark theme.
+	   After :hover, so armed wins while hovered. */
+	.toolbox :global(.tbx-cmd.tbx-on),
+	.toolbox :global(.tbx-cmd.tbx-on:hover) {
+		background: var(--tbx-accent);
+		color: #fff;
+	}
+	.toolbox :global(.tbx-cmd:disabled) {
+		opacity: 0.45;
+	}
 	/* 18-C1: the PRIMARY action of a tool's options (Apply Bevel, Symmetrize…).
 	   Replaces four hand-rolled `rounded-full bg-primary-600` pills, which each
 	   carried their own padding and none of the theme fallbacks. */

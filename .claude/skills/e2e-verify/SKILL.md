@@ -332,14 +332,51 @@ const value = await page.evaluate(() =>
   `.dw-resize`); modes `#mesh-mode-vertices|edges|faces`; granularity
   `#mesh-gran-quad|face|triangle|shell|object`; ops `#mesh-op-<op>` (armed carries
   `mesh-op-active` + `tbx-on`); cleanup `#mesh-fix-normals|merge` + `#mesh-shading`;
-  edges `#edge-loop|dissolve|clear` + `#edge-sel-count`; session cancel
+  edges `#edge-move|bevel|dissolve` + `#edge-sel-count`; session cancel
   `#mesh-edit-cancel` with the inline `#mesh-cancel-confirm` / `#mesh-cancel-yes` /
   `#mesh-cancel-no`; the key list is its OWN window `#mesh-keys-popover` opened by
   `#mesh-keys-help`. Sculpt `#sculpt-toolbar` + `#sculpt-op-*`.
+  **18-C reshaped this window** and several old anchors are gone: the modes are a
+  TAB BAR (`.tbx-tabs`, still `#mesh-mode-*`) OUTSIDE `.toolbox-body`; the whole-mesh
+  work lives in COLLAPSIBLE sections (`#mesh-sec-cleanup|symmetry|display|collider`,
+  Cleanup and Symmetry CLOSED by default — their contents are not in the DOM until
+  the header is clicked, and the open state persists in `tbx:sec:<key>`);
+  `#mesh-keys-help` moved into the window HEADER; `#mesh-deselect`, `#edge-loop` and
+  `#edge-clear` were retired for the word commands that duplicated them. Tool
+  parameters are CONTEXTUAL now — `#mesh-op-params` (extrude/inset), `#bevel-params`,
+  `#loopcut-params`, `#bridge-params` render only while that tool is selected, and
+  every numeric field inside them is a DragRow (`.dn-input`), not a number input.
+  **19-A P2 flipped the parameterized-op contract AGAIN** (deliberately): a grid
+  click on Bevel / Loop cut / Bridge now APPLIES IMMEDIATELY when the op's
+  precondition holds (bridge: two closed matching pieces; bevel: a bordered
+  target) and the pane becomes a live ADJUST panel — label "Adjusting <op>",
+  rows re-run the op on change, `#mesh-adjust-revert` (✕) reverts, scrub-end /
+  a 300ms typed-input debounce settles. Precondition unmet → nothing applies and
+  `#mesh-op-hint` names the reason with the old Apply button offered. Engine
+  state is readable via `__stores.faceEdit.opAdjustState`; the header gained
+  `#mesh-undo`/`#mesh-redo`. Consequences for suites: geometry equality must be
+  compared as the CANONICAL SOUP (`trisToPositions(readTriangles(...))` — a
+  fresh primitive is indexed, replays are soups); assert one-undo as a PROPERTY
+  (Ctrl+Z returns the pre-op geometry), never stack depth; and `toolbox-window`
+  drags `.toolbox-title`, not the header midpoint — the midpoint lands on the
+  new header buttons, which rightly refuse to drag the window. Reference suite:
+  `mesh-adjust.test.cjs` (26 checks incl. revert-retraction and two-peer settle
+  parity).
   **Selection commands are TEXT buttons whose ids are PER MODE** — `#mesh-sel-all` in
   faces but `#mesh-sel-eall` / `#mesh-sel-vall` in edges / vertices (same for
   `invert`/`einvert`/`vinvert`), so a selector hardcoding the faces ids silently
   matches nothing in the other two modes.
+- **19-A P5 suites + anchors**: `mesh-edge-vertex-ops` (P5a: `#edge-delete`,
+  `#mesh-delete-verts`, `#mesh-fix-triangulate`, `#mesh-fix-quads`; the
+  undo-restores-the-quad-partition counterfactual lives here) and `mesh-ops-p5b`
+  (`#edge-subdivide`, `#edge-extrude` + `#edge-extrude-params`,
+  `#mesh-op-duplicate`, `#mesh-smooth` + `#smooth-params`). P5b test techniques
+  worth reusing: prove a welded chain by UNIQUE CORNER COUNT (6 welded vs 7 =
+  torn); derive extrude offsets in-test from the documented chain-normal rule
+  at TWO distances; Jacobi smoothing (pre-pass reads) so factor-1 results are
+  derivable exactly; a real-gizmo "peel" asserts sources byte-unchanged while
+  copies move. Edge extrude needs an OPEN surface — a box has no border edges
+  (delete a face first).
 - The face highlight is TWO meshes: `face-edit-overlay` = the SELECTION (opacity ~0.45)
   and `face-edit-hover` = the cursor wash (~0.14). A check for "is this face
   highlighted" has to say WHICH — they were one mesh until a deselected face kept
@@ -496,6 +533,20 @@ drops the P2P session.
   edit during a run, and treat a red run that started right after a save as
   unproven. When store reads disagree with what you see, add a COMPONENT-side debug
   hook and compare the two (below).
+- **A DAY-LIVED server escalates that to stale DUAL MODULE INSTANCES** (19-A P0):
+  `bind:checked={$faceAutoApply}` flipped the DOM checkbox while the app's real
+  store never moved — the component was bound to a SECOND faceEdit instance from
+  an older transform. The deterministic-looking probe signature (click reaches
+  the element via `elementFromPoint`, DOM state flips, store frozen) is THIS, not
+  a broken binding. Two rules: **restart the verification server after heavy
+  editing and before the final battery** — kill by port
+  (`Get-NetTCPConnection -LocalPort N … | Stop-Process`), relaunch DETACHED
+  (`Start-Process cmd /c "npx vite dev --port N --strictPort --host > log 2>&1"`),
+  wait ~14s, then curl-grep a NEW symbol off the served file to prove it serves
+  your code; and **an A/B where both sides ran the same long-lived server proves
+  nothing** — pristine HEAD fails identically for environmental reasons, so
+  "reproduces on HEAD" only means "pre-existing" when the server was fresh for
+  both sides.
 - First run after adding a dependency: vite re-optimizes and reloads mid-test — rerun.
   Lazy wasm (rapier) needs a throwaway prewarm page first (see physics.test.cjs).
   Physics sims run REAL-time since #12 (fixed-timestep accumulator) — falls/settles
@@ -637,6 +688,27 @@ drops the P2P session.
   `page.locator('#explorer-list').screenshot({ path: <scratchpad>/x.png })`. Read the PNG
   to eyeball it, then DELETE the throwaway (never commit a machine-specific scratchpad
   path). The runner only matches `*.test.cjs`.
+
+## Two ways a green suite lies (both cost a user-visible bug in 17-E)
+
+- **A component that CRASHED on mount is invisible to store-reading checks.** A
+  duplicate `{#each}` key threw inside the Animation window; the pane stopped opening
+  for real users while eight suites stayed green, because every check around it read
+  `window.__stores` rather than the DOM. `pageerror` was logged and ignored. helpers
+  now COLLECT page errors and `finish` FAILS on a render crash (`each_key_duplicate`,
+  `effect_update_depth_exceeded`, `store.set is not a function`, …); `h.pageErrors(peer)`
+  exposes them to a suite. So: **assert something RENDERED**, not only that a store
+  changed — and when a feature has a window, check it still OPENS after your edit.
+- **A SYNTHETIC event does not travel the path a real one does.** "The browser context
+  menu must not appear" was asserted by dispatching `new MouseEvent('contextmenu')` and
+  reading `defaultPrevented`; it passed for two rounds while the native menu kept
+  appearing for the user, because `contextmenu` is DELEGATED by svelte and panel chrome
+  swallowed it before the app root. Drive real gestures (`page.mouse.click(x, y,
+  {button:'right'})`, `mouse.down({button:'middle'})`) and observe the outcome from a
+  window-level listener. Same family as the older note that synthetic events aimed at
+  delegated handlers need `{bubbles: true}`.
+- Corollary: **prove a new guard can fail.** Put the bug back, watch it go red, restore.
+  Both fixes above were confirmed that way (4 failures, then 3 slipped through).
 
 ## Definition of done
 

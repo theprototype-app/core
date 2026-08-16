@@ -33,6 +33,7 @@ import {
 	toggleExpand
 } from '../stores/appStore';
 import { canEditObject, warnViewerReadOnly } from './objectPermissions';
+import { stripEditOverlays } from './editOverlays';
 
 // Shared object selection used by the object list, viewport clicks and VR rays.
 // Mirrors the original Objects.svelte behavior: selecting an unlocked object
@@ -349,6 +350,12 @@ export function duplicateObject(uuid, options = {}) {
 		return null;
 	}
 	const clone = source.clone(true);
+	// `clone(true)` copies CHILDREN, and the mesh-edit wireframe is one of them —
+	// duplicating the object you are editing handed the copy a frozen wireframe
+	// that no session owns (they stack up: the reported file had two on one mesh).
+	// It also keeps the node COUNT the same on both sides of applyRemoteDuplicate,
+	// whose uuid assignment walks the clone in depth-first order.
+	stripEditOverlays(clone);
 	detachMaterials(clone);
 	stripSelectionTint(source, clone);
 	const cloneNodes = collectTree(clone);
@@ -415,6 +422,7 @@ export function applyRemoteDuplicate(sourceUuid, uuids, name, pos) {
 	const source = group?.getObjectByProperty('uuid', sourceUuid);
 	if (!source) return;
 	const clone = source.clone(true);
+	stripEditOverlays(clone); // see duplicateObject: the index walk below counts nodes
 	detachMaterials(clone);
 	collectTree(clone).forEach((node, index) => {
 		if (uuids[index]) node.uuid = uuids[index];

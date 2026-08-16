@@ -13,16 +13,18 @@
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
-	import { ensureBoundsTrees } from '$lib/bvhPicking';
+	import { sceneHits } from '$lib/scenePick';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
-	import { tickAnimationPreview } from '$lib/animationPreview';
+	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
+	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
+	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
 	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife } from '$lib/faceEdit';
+	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
@@ -36,6 +38,7 @@
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
+	import { updateOnionSkin } from '$lib/onionSkin';
 	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
@@ -264,9 +267,13 @@
 		tickAnimatedMixers(); // imported clips run on the synced clock
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
+		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
+		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
+		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
+		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 	});
 
@@ -285,6 +292,13 @@
 			setOrbitEnabled(!event.value);
 			const object = hookedControls.object;
 			if (!object) return;
+			// 19-B: element-snap drag lifecycle — the object-point cache lives for one
+			// drag, and drag end always clears the candidate + highlight. The
+			// multi-select pivot excludes EVERY member (P3: its drags snap too).
+			if (!event.value) endSnapDrag();
+			else if (object.userData?.isMultiPivot) beginSnapDrag([...$selectedObjects]);
+			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy)
+				beginSnapDrag([object.uuid]);
 			// vertex handles record their own history entries
 			if (object.userData?.isVertexProxy) {
 				onProxyDragChanged(event.value);
@@ -319,6 +333,9 @@
 				const before = { pos: dragStartState.pos, rot: dragStartState.rot, scale: dragStartState.scale };
 				if (JSON.stringify(before) !== JSON.stringify(after))
 					recordTransform({ uuid: object.uuid, before: before, after: after });
+				// 17-E A6: with auto-key armed for this object, posing it with the gizmo
+				// writes keys at the playhead instead of the pose being lost.
+				captureAutoKey(object.uuid, playheadOf(object.uuid));
 				dragStartState = null;
 			}
 		});
@@ -334,14 +351,13 @@
 	// --- viewport click selection (desktop) and controller ray selection (VR) ---
 	const selectionRaycaster = new THREE.Raycaster();
 
-	// 17-D3: every scene pick goes through here so the BVH trees are current
-	// first. The object of a live edit/sculpt session is excluded — its geometry
-	// changes per frame, and its own tools keep the stock raycast path.
+	// 17-D3: every scene pick goes through the ONE path in $lib/scenePick, which
+	// keeps the BVH trees current first and excludes the object of a live
+	// edit/sculpt session — its geometry changes per frame, and its own tools keep
+	// the stock raycast path. (19-B P1 lifted the body there so Explorer drops and
+	// the snap engine pick exactly the same way.)
 	function pickSceneObjects() {
-		if (!$objectsGroup) return [];
-		const busy = [$editingObject, $faceEditObject, $sculptObject].filter(Boolean) as string[];
-		ensureBoundsTrees($objectsGroup, busy);
-		return selectionRaycaster.intersectObjects($objectsGroup.children, true);
+		return sceneHits(selectionRaycaster);
 	}
 
 	function runModuleClickHandlers(hit) {
@@ -395,6 +411,7 @@
 		startColliderHelpers();
 		startCameraHelpers();
 		startEditorNavigation();
+		startSnapEngine(); // 19-B: wires the element-snap candidate marker
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
 			exitEditMode(); // leave vertex edit mode cleanly (113)
@@ -474,6 +491,9 @@
 			// remember where the cursor is so keyboard commands (Shift+A) can anchor to
 			// it and spawn under it — null until the pointer has moved at least once
 			lastPointerXY = [event.clientX, event.clientY];
+			// 19-B: the element-snap search is cursor-based — track the pointer while a
+			// gizmo drag runs (this listener is on window, so mid-gesture moves arrive)
+			if ($TControls?.dragging) setSnapPointer(event.clientX, event.clientY);
 			// M9b: the knife's rubber band follows the pointer between the two clicks
 			if (knifeFrom) $knifePreview = { from: knifeFrom, to: [event.clientX, event.clientY] };
 			if (marqueeStart) {
@@ -563,6 +583,26 @@
 			// only a short, stationary click selects — dragging orbits the camera
 			if (moved > 5 || Date.now() - downTime > 400) return;
 			if ($isLocked || $isVRMode || $specatorMode) return;
+			// 19-B P3: snap-anchor pick mode captures ONE click (the measure shape) —
+			// BEFORE the gizmo guard, because the attached gizmo's hover (axis set)
+			// would swallow a pick click anywhere near the object's centre
+			if ($snapAnchorPicking) {
+				setRayFromEvent(event);
+				snapAnchorClick(selectionRaycaster, [event.clientX, event.clientY]);
+				return;
+			}
+			// mesh PIVOT pick mode captures ONE click the same way — and for the same
+			// reason it sits ahead of the gizmo guard: the seated mesh gizmo's hover
+			// would swallow a click anywhere near the point you are aiming at
+			if ($meshPivotPicking) {
+				setRayFromEvent(event);
+				meshPivotClick(
+					lookupEditable($editingObject ?? $faceEditObject ?? ''),
+					selectionRaycaster,
+					[event.clientX, event.clientY]
+				);
+				return;
+			}
 			// ignore clicks on the transform gizmo (axis is set while hovering a handle)
 			if ($TControls && ($TControls.dragging || $TControls.axis)) return;
 			if (!$objectsGroup) return;
@@ -994,9 +1034,14 @@
 		if (typeof $TControls.object !== 'undefined')
 			if (typeof $TControls.object.parent !== 'undefined')
 				if (typeof $TControls.object.uuid !== 'undefined') {
+					// 19-B: element snap — while a candidate is live it OVERRIDES the grid
+					// steps (the gizmo quantizes first, we reposition after) and it owns Y,
+					// so surface snap is skipped for that frame (they'd fight over height)
+					const elementSnapped = maybeSnapGizmo($TControls.object);
 					// surface snap: keep the dragged object resting on whatever is below
 					// (skipped when dragging the Y axis on purpose — that's a lift)
 					if (
+						!elementSnapped &&
 						$surfaceSnap &&
 						$TControls.dragging &&
 						$TControls.mode === 'translate' &&

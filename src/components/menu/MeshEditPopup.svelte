@@ -10,6 +10,37 @@
 	// the meshEditHotkeys pref is on (the toggle here; while on, shortcuts.js
 	// skips bare mesh-edit keys and editorNavigation parks the fly keys);
 	// typing in inputs skips. Esc always works.
+	import { untrack } from 'svelte';
+	import { get } from 'svelte/store';
+	import {
+		bevelWidth,
+		bevelSegments,
+		bevelProfile,
+		bevelDirection,
+		bevelFaceProfile,
+		loopCuts,
+		loopCutPosition,
+		bridgeCuts,
+		bridgeTwist,
+		bridgeInvert,
+		extrudeIndividual,
+		insetDepth,
+		insetIndividual,
+		subdivideLevelCount,
+		edgeExtrudeDistance,
+		smoothFactor,
+		smoothIterations,
+		mergeDistance,
+		symAxis,
+		symKeep,
+		optionsFocus,
+		focusTool,
+		hasOptions,
+		defaultFocus
+	} from '$lib/meshToolParams';
+	import ToolboxSection from '../ui/ToolboxSection.svelte';
+	import DragRow from '../ui/DragRow.svelte';
+	import MeshToolOptions from './MeshToolOptions.svelte';
 	import {
 		editingObject,
 		enterEditMode,
@@ -20,13 +51,16 @@
 		vertexSelectionSize,
 		selectAllVerts,
 		invertVertexSelection,
-		bevelSelectedVerts,
+		beginVertexBevelAdjust,
+		deleteSelectedVerts,
+		smoothSelectedVerts,
 		proportionalEdit,
 		proportionalRadius,
 		vertexHandleScale,
 		vertexHandleAdaptive,
 		vertexSlide
 	} from '$lib/meshEdit';
+	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import {
 		faceEditObject,
 		enterFaceEdit,
@@ -62,8 +96,11 @@
 		edgeEditSelected,
 		selectEdgeLoop,
 		dissolveEdges,
-		bevelFaces,
-		bevelEdges,
+		deleteSelectedEdges,
+		subdivideSelectedEdges,
+		duplicateSelectedFaces,
+		triangulateMesh,
+		trisToQuadsMesh,
 		symmetrizeMesh,
 		escapeConsumedByKnife,
 		clearEdgeSelection,
@@ -73,34 +110,30 @@
 		selectAllEdges,
 		invertEdgeSelection,
 		cancelEditSession,
-		sessionHasChanges
+		sessionHasChanges,
+		beginOpAdjust,
+		reapplyOpAdjust,
+		settleOpAdjust,
+		cancelOpAdjust,
+		endOpAdjust,
+		opAdjustState,
+		faceBevelReady,
+		loopCutReady
 	} from '$lib/faceEdit';
 	import {
 		Keyboard,
 		CircleHelp,
-		SquareDashed,
-		Triangle,
 		Check,
 		X,
-		Move,
 		Grid2x2,
-		Trash2,
-		MousePointer,
-		Merge,
 		Box,
 		Circle,
-		Expand,
 		Shrink,
 		BoxSelect,
 		FlipHorizontal,
 		Link2,
-		Compass,
-		Combine,
-		Sun,
-		Spline,
-		Eraser,
-		Scissors,
-		Undo2
+		Undo2,
+		Redo2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import ToolIcon from '../ui/ToolIcon.svelte';
@@ -112,6 +145,26 @@
 		colliderShellCount
 	} from '$lib/colliderEdit';
 	import { sealEditHistorySession } from '$lib/editSession';
+	import {
+		meshPivots,
+		meshPivotPicking,
+		setMeshPivotFromSelection,
+		startMeshPivotPick,
+		cancelMeshPivotPick,
+		clearMeshPivot,
+		escapeConsumedByPivotPick,
+		meshPivotMoving,
+		toggleMeshPivotMove,
+		escapeConsumedByPivotMove
+	} from '$lib/meshPivot';
+	// The app-wide GRID SNAP, surfaced in the Gizmo section. `snapping.apply()`
+	// writes the step onto the SHARED TControls instance, and the mesh element
+	// gizmo attaches its proxy to that very instance — so vertex/edge/face drags
+	// have always obeyed this setting. Measured before wiring the row: the same
+	// real-mouse vertex drag landed on (1.904, 0.956, 1.941) with it off and
+	// exactly (2.5, 1, 3) with it on at 0.5. So this is the EXISTING setting
+	// brought to where the modelling happens, never a mesh-only twin.
+	import { snapEnabled, snapSettings } from '$lib/snapping';
 	import { isVRMode, selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
 
@@ -125,12 +178,17 @@
 	// 15-A2: live shell count for the collider banner — applyMeshGeo pokes
 	// objectsGroup on every proxy geometry swap, so this tracks adds/deletes/welds
 	const shellCount = $derived($colliderEditObject && $objectsGroup ? colliderShellCount() : 0);
+	/** the uuid the session is editing, whichever element mode is open */
+	const editedUuid = $derived($editingObject ?? $faceEditObject ?? null);
+	/** does this object carry a placed pivot? reads the STORE so it stays live */
+	const pivotSet = $derived(!!editedUuid && !!$meshPivots[editedUuid]);
 
 	/** @param {'vertices' | 'edges' | 'faces'} next */
 	function setMode(next) {
 		const uuid = /** @type {string} */ ($editingObject || $faceEditObject || $selectedObject?.uuid);
 		if (!uuid) return;
 		if (next === mode) return;
+		endOpAdjust(); // 19-A P2: a mode switch ends a live adjust (the edit stays)
 		// remember what THIS mode had picked before leaving it, so coming back
 		// restores it (unless the geometry changed underneath)
 		stashSelections();
@@ -149,19 +207,48 @@
 	}
 
 	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);
-	// one-shots commit immediately on the current target. `icon` = custom
-	// ToolIcon name; `lucide` = a lucide component where a good glyph exists.
-	const OPS = [
-		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false, icon: 'extrude', desc: 'pull the face out along its normal' },
-		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false, icon: 'inset', desc: 'shrink a copy inside a stitched ring' },
-		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, lucide: Move, desc: 'seat the gizmo on the selection' },
-		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, lucide: Grid2x2, desc: 'split each triangle into four' },
-		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
-		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
-		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, lucide: Scissors, desc: 'cut across the mesh: click one end of the line, then the other' },
-		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, icon: 'flip-normals', desc: 'reverse the winding' },
-		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, lucide: Trash2, desc: 'remove the selection' }
+	// one-shots commit immediately on the current target. 18-C4: every tool has a
+	// custom duotone glyph now — lucide had no vocabulary for these operations, so
+	// Bevel and Knife both ended up as Scissors, i.e. the same button twice.
+	// `param: true` = a PARAMETERIZED one-shot: clicking it in the grid selects
+	// the tool and shows its options, and the pane's own button commits. With the
+	// parameters no longer permanently on screen, a click that committed straight
+	// away would be committing with numbers the user cannot see. The hotkey still
+	// commits immediately — a toolbar arms, a shortcut executes.
+	// 18-C5: split into TOOLS and OPERATIONS, the split every DCC makes (Blender's
+	// toolbar vs its Mesh menu, Maya's tools vs actions). A TOOL is armed and
+	// changes what your next viewport click/drag does; an OPERATION runs on the
+	// current selection right now. Mixing them in one grid meant a row where
+	// clicking Move armed a mode, clicking Delete destroyed geometry, and nothing
+	// in the layout said which was which.
+	//
+	// `param: true` = the operation carries settings: clicking it in the grid
+	// SELECTS the tool and opens its options, and the pane's button commits. The
+	// parameterized ones come first within each group so the two kinds are not
+	// interleaved either.
+	const TOOL_OPS = [
+		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, param: false, icon: 'move', desc: 'seat the gizmo on the selection and drag it' },
+		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false, param: false, icon: 'extrude', desc: 'pull the face out along its normal' },
+		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false, param: false, icon: 'inset', desc: 'shrink a copy inside a stitched ring' },
+		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, param: false, icon: 'knife', desc: 'cut across the mesh: click one end of the line, then the other' }
 	];
+	const ACTION_OPS = [
+		{ op: 'bevel', label: 'Bevel', hint: '', oneShot: true, param: true, icon: 'bevel', desc: "chamfer the selected face's border" },
+		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, param: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
+		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, param: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
+		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, param: true, icon: 'subdivide', desc: 'split each quad into four, once per level' },
+		{ op: 'duplicate', label: 'Duplicate', hint: '', oneShot: true, param: false, icon: 'duplicate-face', desc: 'copy the selected faces in place — coincident until you drag the gizmo' },
+		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, param: false, icon: 'flip-normals', desc: 'reverse the winding' },
+		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, param: false, icon: 'delete-face', desc: 'remove the selection' }
+	];
+	// 19-A P5b: pane-only param ops — they live in a MODE's hand-written tool row
+	// (edges / vertices), never in the faces grids, but runOp still needs their spec
+	// so a button click focuses the pane AND attempts the apply, like Bevel's.
+	const PANE_OPS = [
+		{ op: 'edge-extrude', label: 'Extrude edges', hint: '', oneShot: true, param: true, icon: 'edge-extrude', desc: '' },
+		{ op: 'smooth', label: 'Smooth', hint: '', oneShot: true, param: true, icon: 'smooth', desc: '' }
+	];
+	const OPS = [...TOOL_OPS, ...ACTION_OPS, ...PANE_OPS];
 
 	const GRANULARITIES = [
 		{
@@ -206,7 +293,8 @@
 		{ id: 'eloop', label: 'Loop', hint: 'L', run: selectEdgeLoop, desc: 'the edge chain running end to end through this edge' },
 		{ id: 'ering', label: 'Ring', hint: '', run: selectEdgeRing, desc: 'the parallel rungs a face loop crosses — the other half of the standard pair' },
 		{ id: 'eall', label: 'All', hint: 'Ctrl A', run: selectAllEdges, desc: 'every edge of the mesh' },
-		{ id: 'einvert', label: 'Invert', hint: 'Ctrl I', run: invertEdgeSelection, desc: 'swap picked and unpicked' }
+		{ id: 'einvert', label: 'Invert', hint: 'Ctrl I', run: invertEdgeSelection, desc: 'swap picked and unpicked' },
+		{ id: 'enone', label: 'None', hint: '', run: () => (clearEdgeSelection(), true), desc: 'deselect everything' }
 	];
 	const VERT_CMDS = [
 		{ id: 'vall', label: 'All', hint: 'Ctrl A', run: selectAllVerts, desc: 'every vertex of the mesh' },
@@ -223,21 +311,38 @@
 	}
 
 	// M6: whole-mesh cleanup commands — they act on the OBJECT, not the pick
-	let mergeDistance = $state(0.001);
 	const CLEANUP_CMDS = [
 		{
 			id: 'normals',
 			label: 'Recalculate normals',
-			lucide: Compass,
+			icon: 'recalc-normals',
 			run: () => recalculateNormals(),
 			desc: 'rewind every face to point outward'
 		},
 		{
 			id: 'merge',
 			label: 'Merge by distance',
-			lucide: Combine,
-			run: () => mergeByDistance(mergeDistance),
+			icon: 'merge-distance',
+			run: () => mergeByDistance($mergeDistance),
 			desc: 'collapse near-coincident vertices and drop the degenerate faces'
+		},
+		// P5a: the two TOPOLOGY-only ops. They move no vertex — they rewrite the
+		// stored face partition, which is what Quad granularity, the loop tools and
+		// the structure wireframe read — so they belong with the other whole-mesh
+		// repairs rather than in a mode's tool row.
+		{
+			id: 'triangulate',
+			label: 'Triangulate',
+			icon: 'triangulation',
+			run: () => triangulateMesh(),
+			desc: 'split every quad and n-gon back into its triangles (positions are untouched)'
+		},
+		{
+			id: 'quads',
+			label: 'Tris to quads',
+			icon: 'tris-to-quads',
+			run: () => trisToQuadsMesh(),
+			desc: 'pair coplanar triangles back into quads (positions are untouched)'
 		}
 	];
 
@@ -256,20 +361,58 @@
 		return faceSelectionInfo();
 	});
 
+	// 19-A P2: the PRECONDITION map — what the focused tool's pane says when its
+	// op cannot apply yet (the selInfo pattern: reactive triggers voided, cheap
+	// exported checkers do the work). '' = ready, so the grid click auto-applies.
+	const paneHint = $derived.by(() => {
+		void $faceEditSelectedTris;
+		void $objectsGroup;
+		void $faceEditHoverTri;
+		void $faceEditHighlight;
+		void $edgeEditSelected;
+		void $faceEditGranularity;
+		const focus = $optionsFocus;
+		if (mode === 'vertices') {
+			if (focus === 'bevel' && !$vertexSelectionSize) return 'Pick a vertex first (Ctrl+click adds)';
+			if (focus === 'smooth' && !$vertexSelectionSize) return 'Pick a vertex first (Ctrl+click adds)';
+			return '';
+		}
+		if (mode === 'edges') {
+			if (focus === 'bevel' && !$edgeEditSelected.length) return 'Pick an edge first';
+			if (focus === 'edge-extrude' && !$edgeEditSelected.length) return 'Pick a border edge first';
+			return '';
+		}
+		if (focus === 'extrude' || focus === 'inset') {
+			if (!hasTarget()) return 'Click a face first';
+			if (focus === 'extrude' && !faceBevelReady())
+				return 'The selection is a closed surface — nothing to extrude from';
+			return '';
+		}
+		if (focus === 'bevel') {
+			if (!hasTarget()) return 'Select a face with a border';
+			if (!faceBevelReady()) return 'The selection is a closed surface — no border to fold';
+			return '';
+		}
+		if (focus === 'loopcut') return loopCutReady() ? '' : 'Click a quad to choose the ring';
+		if (focus === 'subdivide') return hasTarget() ? '' : 'Click a face first';
+		if (focus === 'bridge') {
+			if (selInfo.pieces !== 2) return 'Select two separate pieces (Ctrl+click both)';
+			if (!selInfo.loops) return 'Each piece needs one closed boundary';
+			if (selInfo.loops[0] !== selInfo.loops[1])
+				return `${selInfo.loops[0]} ↔ ${selInfo.loops[1]} edges — the counts must match`;
+			return '';
+		}
+		return '';
+	});
+
+	// the pane is the LIVE ADJUST while the engine's op is the focused tool
+	const adjusting = $derived(!!$opAdjustState && $opAdjustState.op === $optionsFocus);
+
 	// M0: one-shot buttons FLASH on commit (armed tools stay lit instead).
 	// onanimationend clears it the moment the flash finishes; the timer is the
 	// FALLBACK for prefers-reduced-motion, where animation:none means the end
 	// event never fires and the class would stick forever.
 	let flashOp = $state('');
-	// M5: bevel params live here, not in faceEditAmount — that store is the FACE op's
-	// signed distance and sharing it would make arming Extrude change the bevel width
-	let bevelWidth = $state(0.1);
-	let bevelSegments = $state(1);
-	// profile: 0 flat, >0 domes the cap out, <0 dishes it in (vertex + edge bevel)
-	let bevelProfile = $state(0);
-	/** M7: symmetrize axis + which half to keep @type {'x'|'y'|'z'} */
-	let symAxis = $state('x');
-	let symKeep = $state(1);
 	/** @type {any} */
 	let flashTimer = 0;
 	/** @param {string} op */
@@ -279,20 +422,91 @@
 		flashTimer = setTimeout(() => (flashOp = ''), 400);
 	}
 
-	// M3: how many loops a Loop cut inserts (its own field — the extrude/inset
-	// `amount` is a distance, this is a count)
-	let loopCuts = $state(1);
+	/** 19-A P2: attempt an op through the ADJUST ENGINE — it applies immediately
+	 * (one history entry, recorded at apply) and the options pane becomes the
+	 * live adjust. Returns false when a precondition refused (the pane's hint
+	 * line says why). ONE path for the grid, the pane's Apply buttons and the
+	 * C/B hotkeys. @param {string} op */
+	function applyOp(op) {
+		let ok = false;
+		// P3: the direction buttons own the SIGN of the edge/vertex cap profile
+		// (the store keeps the magnitude), so the two controls cannot disagree
+		const signedProfile = ($bevelDirection === 'in' ? -1 : 1) * Math.abs($bevelProfile);
+		if (op === 'extrude' || op === 'inset') {
+			if (!hasTarget()) {
+				showToast('Click a face first');
+				return false;
+			}
+			ok = beginOpAdjust(
+				/** @type {any} */ (op),
+				op === 'inset'
+					? { distance: $faceEditAmount, depth: $insetDepth, individual: $insetIndividual }
+					: { distance: $faceEditAmount, individual: $extrudeIndividual }
+			);
+		} else if (op === 'bevel') {
+			// three different operators with three different signatures, one entry
+			ok =
+				mode === 'vertices'
+					? beginVertexBevelAdjust($bevelWidth, signedProfile)
+					: mode === 'edges'
+						? beginOpAdjust(
+								'bevel',
+								{ width: $bevelWidth, segments: $bevelSegments, profile: signedProfile },
+								{ kind: 'edges' }
+							)
+						: beginOpAdjust(
+								'bevel',
+								{
+									width: $bevelWidth,
+									segments: $bevelSegments,
+									profile: $bevelFaceProfile,
+									direction: $bevelDirection
+								},
+								{ kind: 'faces' }
+							);
+		} else if (op === 'loopcut') {
+			ok = beginOpAdjust('loopcut', { cuts: $loopCuts, position: $loopCutPosition });
+		} else if (op === 'bridge') {
+			ok = beginOpAdjust('bridge', {
+				cuts: $bridgeCuts,
+				twist: $bridgeTwist,
+				invert: $bridgeInvert
+			});
+		} else if (op === 'subdivide') {
+			if (!hasTarget()) {
+				showToast('Click a face first');
+				return false;
+			}
+			ok = beginOpAdjust('subdivide', { levels: $subdivideLevelCount });
+		} else if (op === 'edge-extrude') {
+			// P5b: an adjust-engine op — the engine validates the edge pick and the
+			// border rule, and toasts its own refusals
+			ok = beginOpAdjust('edge-extrude', { distance: $edgeExtrudeDistance });
+		} else if (op === 'smooth') {
+			// P5b: a plain one-shot — one meshgeo commit per click, never an adjust
+			ok = smoothSelectedVerts($smoothFactor, $smoothIterations);
+		}
+		if (ok) flash(op);
+		return ok;
+	}
 
-	/** @param {string} op */
+	/** From the tool GRID. 19-A P2 (the contract FLIP): selecting a parameterized
+	 * op also ATTEMPTS the apply with the current pane values — with a valid
+	 * target it commits on the spot and the pane becomes the live adjust; without
+	 * one it only focuses, and the pane's hint says what is missing.
+	 * @param {string} op */
 	function runOp(op) {
-		const spec = OPS.find((o) => o.op === op);
-		if (op === 'bridge') {
-			// validates the two-piece selection + toasts
-			if (commitFaceOp('bridge', 0)) flash('bridge');
+		// P5b: Duplicate is an instant one-shot with its own operator (it is not a
+		// commitFaceOp case — it appends and re-seats the gizmo itself, and it owns
+		// its refusal toast)
+		if (op === 'duplicate') {
+			if (duplicateSelectedFaces()) flash(op);
 			return;
 		}
-		if (op === 'loopcut') {
-			if (commitFaceOp('loopcut', loopCuts)) flash('loopcut');
+		const spec = OPS.find((o) => o.op === op);
+		if (spec?.param) {
+			focusTool(op);
+			applyOp(op);
 			return;
 		}
 		if (spec?.oneShot) {
@@ -308,14 +522,86 @@
 		setFaceOp(/** @type {any} */ (op));
 	}
 
-	// 176: force-apply the active op on the currently highlighted face
+	// 176: force-apply the active op on the currently highlighted face.
+	// 19-A P2: extrude/inset route through the adjust engine (same as a face
+	// click with auto-apply); the other armed ops keep the direct commit.
 	function applyActive() {
 		if (!hasTarget()) {
 			showToast('Click a face first');
 			return;
 		}
-		commitFaceOp(/** @type {any} */ ($faceEditOp), $faceEditAmount);
+		const op = $faceEditOp;
+		if (op === 'extrude' || op === 'inset') applyOp(op);
+		else commitFaceOp(/** @type {any} */ (op), $faceEditAmount);
 	}
+
+	/** Bevel for whichever element mode is open, via the adjust engine. */
+	function applyBevel() {
+		applyOp('bevel');
+	}
+
+	/** Loop cut, from the options pane or the C hotkey (via the engine). */
+	function applyLoopCut() {
+		applyOp('loopcut');
+	}
+
+	/** Bridge, from the options pane or the B hotkey. The engine validates the
+	 * two-piece selection and toasts on its own. */
+	function applyBridge() {
+		applyOp('bridge');
+	}
+
+	/** Subdivide at the pane's level count, via the engine (P3). */
+	function applySubdivide() {
+		applyOp('subdivide');
+	}
+
+	// Cleanup and Symmetry act on the whole OBJECT, so they are offered in every
+	// element mode — but they all guard on the face session's `faceEdited`, and
+	// vertices is a separate meshEdit session where that is null. Rather than
+	// hiding them (they were faces-only, so recalculating normals meant leaving
+	// edge mode), they show disabled-but-clickable and say why: the repo's
+	// convention, and it keeps the section's contents stable across tabs.
+	const wholeMeshReady = $derived(!!$faceEditObject);
+	/** @param {() => void} fn */
+	function runWholeMesh(fn) {
+		if (!wholeMeshReady) {
+			showToast('Switch to Edges or Faces to run whole-mesh tools');
+			return;
+		}
+		fn();
+	}
+
+	// Which tool's options are showing. Arming a tool takes the pane with it, so
+	// the parameters are always the ones the next commit will use — and arming a
+	// tool with NO parameters (Move) CLEARS the pane rather than leaving the
+	// previous tool's rows describing something that is no longer selected.
+	$effect(() => {
+		const armed = $faceEditOp;
+		untrack(() => {
+			if (mode === 'vertices') return; // vertices has no armed op
+			focusTool(hasOptions(armed) ? armed : '');
+		});
+	});
+	// A mode switch resets the pane: the previous tab's tool may not exist here
+	// (a face bevel and a vertex bevel are different operators), and a stale
+	// options block would be describing a tool that is no longer selectable.
+	$effect(() => {
+		void mode;
+		untrack(() => focusTool(defaultFocus(mode, $faceEditOp)));
+	});
+	$effect(() => {
+		if (!active) focusTool('');
+	});
+	// the proportional toggle owns the pane while it is ON (its radius is the
+	// only thing to set), and hands it back when switched off
+	$effect(() => {
+		const on = $proportionalEdit;
+		untrack(() => {
+			if (on) focusTool('proportional');
+			else if (get(optionsFocus) === 'proportional') focusTool('');
+		});
+	});
 
 	// 177: build a face from the 3-4 selected vertices
 	function createFace() {
@@ -361,9 +647,13 @@
 	function onKeydown(event) {
 		if (!active) return;
 		if (event.key === 'Escape') {
-			// M9b: a pending knife cut owns Escape first. BOTH Escape handlers have to ask, since
-			// whichever runs first would otherwise tear the session down mid-gesture.
+			// M9b: a pending knife cut owns Escape first. ALL THREE Escape handlers
+			// (here, meshEdit's and faceEdit's) have to ask, since whichever runs
+			// first would otherwise tear the session down mid-gesture — which is why
+			// the verdict rides the EVENT and not a one-shot store flag.
 			if (escapeConsumedByKnife(event)) return;
+			if (escapeConsumedByPivotPick(event)) return; // ...and so does an armed pivot pick
+			if (escapeConsumedByPivotMove(event)) return; // ...and an armed pivot MOVE
 			if (!$colliderEditObject) finish(); // a collider session tears down via its watcher
 			return;
 		}
@@ -391,10 +681,23 @@
 			event.preventDefault();
 			return;
 		}
-		// 1/2/3 switch ELEMENT mode inside a session — the modeller-standard
-		// binding. Outside a session they stay the gizmo transform modes.
-		if (!event.ctrlKey && !event.metaKey && !event.altKey && ['1', '2', '3'].includes(key)) {
-			setMode(key === '1' ? 'vertices' : key === '2' ? 'edges' : 'faces');
+		// TAB CYCLES the element mode (Shift+Tab backwards). It used to be 1/2/3,
+		// which cost the session its gizmo transform modes: 1/2/3 are Move/Rotate/
+		// Scale everywhere else in the app, and shortcuts.js SUPPRESSED them while
+		// a session was open so the modeller binding could have them. One pair of
+		// keys cannot mean two things in the same session, and the transform modes
+		// are the ones you reach for mid-edit — so the element modes moved to a key
+		// nothing else in a session wants. Tab still enters Edit Mesh from outside
+		// (shortcuts.js); Esc/Done is still how you leave.
+		if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'Tab') {
+			const order = /** @type {('vertices'|'edges'|'faces')[]} */ ([
+				'vertices',
+				'edges',
+				'faces'
+			]);
+			const at = order.indexOf(mode);
+			const step = event.shiftKey ? -1 : 1;
+			setMode(order[(at + step + order.length) % order.length]);
 			event.preventDefault();
 			return;
 		}
@@ -405,7 +708,20 @@
 				event.preventDefault();
 				return;
 			}
-			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', b: 'bridge', f: 'flip', x: 'delete', c: 'loopcut' };
+			// C commits the loop cut outright: a shortcut EXECUTES. 19-A P2: it
+			// routes through runOp — the same focus-and-apply path as the grid — so
+			// the pane follows the hotkey and becomes the live adjust (or the hint).
+			if (key === 'c') {
+				runOp('loopcut');
+				event.preventDefault();
+				return;
+			}
+			if (key === 'b') {
+				runOp('bridge');
+				event.preventDefault();
+				return;
+			}
+			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', f: 'flip', x: 'delete' };
 			const op = key === 'delete' ? 'delete' : /** @type {any} */ (byKey)[key];
 			if (!op) return;
 			runOp(op);
@@ -429,10 +745,11 @@
 			id: 'any',
 			title: 'Any mode',
 			rows: [
-				['1 / 2 / 3', 'Switch to Vertices / Edges / Faces'],
+				['Tab', 'Next element mode (Vertices - Edges - Faces)'],
+				['Shift Tab', 'Previous element mode'],
+				['1 / 2 / 3', 'Gizmo: Move / Rotate / Scale'],
 				['Ctrl A', 'Select all'],
 				['Ctrl I', 'Invert the selection'],
-				['Tab', 'Toggle Edit Mesh'],
 				['Esc', 'Done — leave the session']
 			]
 		},
@@ -454,13 +771,67 @@
 
 <svelte:window onkeydown={onKeydown} />
 
+<!-- one button per op, shared by the Tools and Operations groups so the two
+     differ only in WHICH ops they list, never in how a button behaves -->
+{#snippet opGrid(/** @type {any[]} */ ops)}
+	{#each ops as o (o.op)}
+		<button
+			id={`mesh-op-${o.op}`}
+			class="tbx-btn {o.op === 'delete'
+				? 'tbx-danger'
+				: o.param && $optionsFocus === o.op
+					? 'tbx-sel'
+					: !o.oneShot && o.op === $faceEditOp
+						? 'tbx-on bg-primary-600 text-white'
+						: ''}"
+			class:mesh-op-active={!o.oneShot && o.op === $faceEditOp}
+			class:tbx-flash={flashOp === o.op}
+			onanimationend={() => (flashOp = '')}
+			aria-label={o.label}
+			aria-pressed={o.param ? $optionsFocus === o.op : undefined}
+			title={`${o.hint ? `${o.label} (${o.hint})` : o.label} — ${o.desc}${o.param ? ' (sets options below)' : ''}`}
+			onclick={() => runOp(o.op)}
+		>
+			<ToolIcon name={o.icon} />
+		</button>
+	{/each}
+{/snippet}
+
+<!-- 19-A P4: proportional editing works in ALL THREE element modes now (the
+     falloff rides beginFaceGrab for edges/faces), so the toggle renders in each
+     mode's Tools area. One snippet, one id — only one mode branch mounts at a
+     time. A TOGGLE, not an armed op: it never joins TOOL_OPS. -->
+{#snippet proportionalBtn()}
+	<button
+		id="mesh-proportional"
+		class="tbx-btn {$proportionalEdit ? 'tbx-on bg-primary-600 text-white' : ''}"
+		aria-pressed={$proportionalEdit}
+		aria-label="Proportional editing"
+		title="Proportional editing — drag a vertex, edge or face and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
+		onclick={() => proportionalEdit.set(!$proportionalEdit)}><ToolIcon name="proportional" /></button
+	>
+{/snippet}
+
 {#if active}
 	<ToolboxWindow
 		id="mesh-edit-popup"
 		key="meshToolbox"
 		title={$colliderEditObject ? 'Edit Collider' : 'Edit Mesh'}
+		width={212}
+		minW={180}
 	>
 		{#snippet actions()}
+			<!-- 18-C1: the cheat sheet is HELP for the whole toolbox, not a display
+			     toggle for the current mode — it belongs with the window's own
+			     controls, where it is reachable from every tab without scrolling. -->
+			<button
+				id="mesh-keys-help"
+				class="tbx-hbtn"
+				aria-label="Show mesh-edit key bindings"
+				aria-pressed={showKeys}
+				title="Key bindings — opens a movable cheat sheet you can park anywhere"
+				onclick={() => (showKeys = !showKeys)}><CircleHelp size={14} aria-hidden="true" /></button
+			>
 			{#if $colliderEditObject}
 				<!-- CL-A A8: collider session — commit or drop -->
 				<button
@@ -478,12 +849,37 @@
 					onclick={() => exitColliderEdit()}><X size={14} aria-hidden="true" /></button
 				>
 			{:else}
+				<!-- 19-A P2 (plan §6): undo/redo IN the toolbox header, before
+				     Cancel/Done. Session-barrier semantics come free (history.js
+				     stops at the session's first step), and the adjust engine's
+				     identity guard makes undo-under-a-live-adjust safe. -->
+				<button
+					id="mesh-undo"
+					class="tbx-hbtn"
+					aria-label="Undo"
+					disabled={!$canUndo}
+					title="Undo (Ctrl+Z) — steps back inside this edit session"
+					onclick={() => undo()}><Undo2 size={14} aria-hidden="true" /></button
+				>
+				<button
+					id="mesh-redo"
+					class="tbx-hbtn"
+					aria-label="Redo"
+					disabled={!$canRedo}
+					title="Redo (Ctrl+Y) — replay the step you just undid"
+					onclick={() => redo()}><Redo2 size={14} aria-hidden="true" /></button
+				>
+				<!-- The session discard is NOT a bigger undo, and drawing it as one
+				     (it used Undo2, sitting immediately beside #mesh-undo's Undo2)
+				     read as a duplicate button. It is the Cancel half of a
+				     Cancel/Done pair — the same X/Check the collider branch above
+				     uses — and it is the destructive one, hence the danger tint. -->
 				<button
 					id="mesh-edit-cancel"
-					class="tbx-hbtn"
+					class="tbx-hbtn tbx-danger"
 					aria-label="Cancel — revert every change made in this session"
-					title="Cancel — revert EVERY change made since Edit Mesh opened"
-					onclick={askCancel}><Undo2 size={14} aria-hidden="true" /></button
+					title="Cancel — revert EVERY change made since Edit Mesh opened (asks first)"
+					onclick={askCancel}><X size={14} aria-hidden="true" /></button
 				>
 				<button
 					id="mesh-edit-done"
@@ -495,6 +891,37 @@
 			{/if}
 		{/snippet}
 
+		<!-- 18-C1: element MODE is the toolbox's primary navigation, so it reads as
+		     a TAB BAR pinned under the header rather than one control among the
+		     rows. The active tab keeps the literal `bg-primary-600` (e2e contract +
+		     the theme remap) alongside the `tbx-tab-on` marker the shell paints. -->
+		{#snippet tabs()}
+			<button
+				id="mesh-mode-vertices"
+				role="tab"
+				aria-selected={mode === 'vertices'}
+				class="tbx-tab {mode === 'vertices' ? 'tbx-tab-on bg-primary-600 text-white' : ''}"
+				title="Vertices (1) — drag single points"
+				onclick={() => setMode('vertices')}>Vertices</button
+			>
+			<button
+				id="mesh-mode-edges"
+				role="tab"
+				aria-selected={mode === 'edges'}
+				class="tbx-tab {mode === 'edges' ? 'tbx-tab-on bg-primary-600 text-white' : ''}"
+				title="Edges (2) — loops, rings, bevel and dissolve act on them"
+				onclick={() => setMode('edges')}>Edges</button
+			>
+			<button
+				id="mesh-mode-faces"
+				role="tab"
+				aria-selected={mode === 'faces'}
+				class="tbx-tab {mode === 'faces' ? 'tbx-tab-on bg-primary-600 text-white' : ''}"
+				title="Faces (3) — extrude, inset, bridge and the rest"
+				onclick={() => setMode('faces')}>Faces</button
+			>
+		{/snippet}
+
 		{#if confirmCancel}
 			<div id="mesh-cancel-confirm" class="tbx-row text-xs">
 				<span class="text-gray-200">Revert all mesh edits?</span>
@@ -503,32 +930,25 @@
 			</div>
 		{/if}
 
-		<!-- MODE -->
-		<span class="tbx-label">Mode</span>
-		<div class="tbx-row">
-			<div class="tbx-seg">
-				<button
-					id="mesh-mode-vertices"
-					class="px-3 py-0.5 {mode === 'vertices' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					onclick={() => setMode('vertices')}>Vertices</button
-				>
-				<button
-					id="mesh-mode-edges"
-					class="px-3 py-0.5 {mode === 'edges' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					title="Pick single edges (M4) — bevel and dissolve act on them"
-					onclick={() => setMode('edges')}>Edges</button
-				>
-				<button
-					id="mesh-mode-faces"
-					class="px-3 py-0.5 {mode === 'faces' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					onclick={() => setMode('faces')}>Faces</button
-				>
-			</div>
-		</div>
-
-		<!-- Selection commands — the SAME vocabulary in every mode (the list swaps
-		     with the mode, so Ctrl+A/I mean the right thing everywhere) -->
+		<!-- SELECT: how a click picks (faces only), then the selection commands.
+		     The SAME vocabulary in every mode (the list swaps with the mode, so
+		     Ctrl+A/I mean the right thing everywhere) and always in the same place,
+		     so the muscle memory survives a tab switch. -->
 		<span class="tbx-label">Select</span>
+		{#if mode === 'faces'}
+			<div class="tbx-row">
+				<div class="tbx-seg">
+					{#each GRANULARITIES as g (g.value)}
+						<button
+							id={`mesh-gran-${g.value}`}
+							class="px-2 py-0.5 {$faceEditGranularity === g.value ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+							title={g.title}
+							onclick={() => setFaceGranularity(/** @type {any} */ (g.value))}>{g.label}</button
+						>
+					{/each}
+				</div>
+			</div>
+		{/if}
 		<div class="tbx-row">
 			{#each SELECT_CMDS as c (c.id)}
 				<button
@@ -543,7 +963,10 @@
 		</div>
 
 		{#if mode === 'edges'}
-			<!-- M4: edge tools — the pick is a set of EDGES, not faces -->
+			<!-- M4: edge tools — the pick is a set of EDGES, not faces.
+			     Loop select and Clear are WORD commands in the Select row above:
+			     they duplicated two of these icons, and near-identical glyphs in a
+			     row is exactly what got the wrong one pressed. -->
 			<span class="tbx-label">Tools</span>
 			<button
 				id="edge-move"
@@ -551,29 +974,38 @@
 				aria-label="Move edges with the gizmo"
 				title="Move — seat the gizmo on the selected edges (X runs along the edge, Z out of the surface). The welded neighbours stretch with it."
 				onclick={() => setFaceOp('move')}
-				><Move size={18} aria-hidden="true" /></button
-			>
-			<button
-				id="edge-loop"
-				class="tbx-btn"
-				class:tbx-flash={flashOp === 'edgeloop'}
-				onanimationend={() => (flashOp = '')}
-				aria-label="Edge loop select"
-				title="Loop select — the whole edge ring through this edge"
-				onclick={() => {
-					if (selectEdgeLoop()) flash('edgeloop');
-				}}><Spline size={18} aria-hidden="true" /></button
+				><ToolIcon name="move" /></button
 			>
 			<button
 				id="edge-bevel"
-				class="tbx-btn"
-				class:tbx-flash={flashOp === 'ebevel'}
+				class="tbx-btn {$optionsFocus === 'bevel' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'bevel'}
 				onanimationend={() => (flashOp = '')}
+				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel edges"
-				title="Bevel — replace the edge with a chamfer strip (width, segments and profile below). Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
+				title="Bevel — replace the selected edge with a chamfer strip, adjustable below (P3: with an edge picked the click applies immediately, like the faces grid). Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
+				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
+			>
+			<button
+				id="edge-extrude"
+				class="tbx-btn {$optionsFocus === 'edge-extrude' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'edge-extrude'}
+				onanimationend={() => (flashOp = '')}
+				aria-pressed={$optionsFocus === 'edge-extrude'}
+				aria-label="Extrude edges"
+				title="Extrude — pull the selected BORDER edges out into a new strip, distance adjustable below (with an edge picked the click applies immediately). A chain of edges extrudes as ONE welded strip; an interior edge (a face on both sides) is refused."
+				onclick={() => runOp('edge-extrude')}><ToolIcon name="edge-extrude" /></button
+			>
+			<button
+				id="edge-subdivide"
+				class="tbx-btn"
+				class:tbx-flash={flashOp === 'esubdivide'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Subdivide edges"
+				title="Subdivide — split every face along the selected edges at their midpoints. Both sides split at the identical welded point, so the mesh stays watertight; the two halves stay selected."
 				onclick={() => {
-					if (bevelEdges(bevelWidth, bevelSegments, bevelProfile)) flash('ebevel');
-				}}><Scissors size={18} aria-hidden="true" /></button
+					if (subdivideSelectedEdges()) flash('esubdivide');
+				}}><ToolIcon name="edge-subdivide" /></button
 			>
 			<button
 				id="edge-dissolve"
@@ -584,89 +1016,42 @@
 				title="Dissolve — remove the edge and merge the two coplanar faces it joins"
 				onclick={() => {
 					if (dissolveEdges()) flash('dissolve');
-				}}><Eraser size={18} aria-hidden="true" /></button
+				}}><ToolIcon name="dissolve" /></button
 			>
 			<button
-				id="edge-clear"
-				class="tbx-btn"
-				aria-label="Clear the edge selection"
-				title="Deselect all edges"
-				onclick={() => clearEdgeSelection()}><MousePointer size={18} aria-hidden="true" /></button
+				id="edge-delete"
+				class="tbx-btn tbx-danger"
+				class:tbx-flash={flashOp === 'edelete'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Delete edges"
+				title="Delete — remove the faces on BOTH sides of the selected edges, leaving a hole. (Dissolve keeps the surface; this opens it up, which is how you make a hole to bridge or fill.)"
+				onclick={() => {
+					if (deleteSelectedEdges()) flash('edelete');
+				}}><ToolIcon name="delete-face" /></button
 			>
+			{@render proportionalBtn()}
 		{:else if mode === 'faces'}
-			<!-- SELECT: pick granularity (B3 + 15-G Quad) -->
-			<span class="tbx-label">Select</span>
-			<div class="tbx-row">
-				<div class="tbx-seg">
-					{#each GRANULARITIES as g (g.value)}
-						<button
-							id={`mesh-gran-${g.value}`}
-							class="px-2 py-0.5 {$faceEditGranularity === g.value ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-							title={g.title}
-							onclick={() => setFaceGranularity(/** @type {any} */ (g.value))}>{g.label}</button
-						>
-					{/each}
-				</div>
-			</div>
-
-			<!-- M3: how many loops a Loop cut inserts -->
-			<div class="tbx-row text-xs text-gray-300">
-				<label class="flex items-center gap-1" title="How many edge loops Loop cut inserts">
-					loop cuts
-					<input
-						id="mesh-loop-cuts"
-						type="number"
-						min="1"
-						max="20"
-						step="1"
-						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={loopCuts}
-					/>
-				</label>
-			</div>
-
-			<!-- TOOLS: armed tools stay lit (solid accent); one-shots flash on commit -->
+			<!-- TOOLS = armed: they change what your next viewport click does, and
+			     stay lit (solid accent) until you pick another. -->
 			<span class="tbx-label">Tools</span>
-			{#each OPS as o (o.op)}
-				<button
-					id={`mesh-op-${o.op}`}
-					class="tbx-btn {o.op === 'delete'
-						? 'tbx-danger'
-						: !o.oneShot && o.op === $faceEditOp
-							? 'tbx-on bg-primary-600 text-white'
-							: ''}"
-					class:mesh-op-active={!o.oneShot && o.op === $faceEditOp}
-					class:tbx-flash={flashOp === o.op}
-					onanimationend={() => (flashOp = '')}
-					aria-label={o.label}
-					title={`${o.label} (${o.hint}) — ${o.desc}`}
-					onclick={() => runOp(o.op)}
-				>
-					{#if o.lucide}
-						<o.lucide size={18} aria-hidden="true" />
-					{:else}
-						<ToolIcon name={o.icon ?? ''} />
-					{/if}
-				</button>
-			{/each}
-
+			{@render opGrid(TOOL_OPS)}
+			{@render proportionalBtn()}
+			<!-- OPERATIONS = they run on the CURRENT selection. The ones carrying
+			     settings come first and open the options pane (accent ring); the
+			     rest commit on the spot and flash. -->
+			<span class="tbx-label">Operations</span>
+			{@render opGrid(ACTION_OPS)}
 		{:else}
 			<!-- TOOLS: vertex mode (D5: ONE selection — click selects, Ctrl+click
 			     adds, the gizmo on the last pick drags the whole set) -->
+			<!-- Deselect is the "None" WORD command in the Select row above -->
 			<span class="tbx-label">Tools</span>
-			<button
-				id="mesh-deselect"
-				class="tbx-btn {$vertexSelectionSize <= 1 ? 'tbx-on bg-primary-600 text-white' : ''}"
-				aria-label="Deselect all"
-				title="Deselect all — click a vertex to move it, Ctrl+click to add more"
-				onclick={() => clearVertexSelection()}><MousePointer size={18} aria-hidden="true" /></button
-			>
 			<button
 				id="mesh-weld"
 				class="tbx-btn {$vertexSelectionSize >= 2 ? 'tbx-on bg-primary-600 text-white' : 'tbx-disabled'}"
 				aria-label="Weld the selected vertices"
 				title="Weld (W) — merge the selected vertices into one (Ctrl+click adds)"
-				onclick={weld}><Merge size={18} aria-hidden="true" /></button
+				onclick={weld}><ToolIcon name="weld" /></button
 			>
 			<button
 				id="mesh-create-face"
@@ -679,23 +1064,25 @@
 			>
 			<button
 				id="mesh-vertex-bevel"
-				class="tbx-btn"
-				class:tbx-flash={flashOp === 'vbevel'}
+				class="tbx-btn {$optionsFocus === 'bevel' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'bevel'}
 				onanimationend={() => (flashOp = '')}
+				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel the selected vertices"
-				title="Bevel — cut the corner off every selected vertex and cap it (width and profile below). Works on any number of vertices."
-				onclick={() => {
-					if (bevelSelectedVerts(bevelWidth, bevelProfile)) flash('vbevel');
-				}}><Scissors size={18} aria-hidden="true" /></button
+				title="Bevel — cut the corner off every selected vertex and cap it, adjustable below (P3: with a vertex picked the click applies immediately, like the faces grid). Works on any number of vertices."
+				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
 			>
 			<button
-				id="mesh-proportional"
-				class="tbx-btn {$proportionalEdit ? 'tbx-on bg-primary-600 text-white' : ''}"
-				aria-pressed={$proportionalEdit}
-				aria-label="Proportional editing"
-				title="Proportional editing — drag one vertex and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
-				onclick={() => proportionalEdit.set(!$proportionalEdit)}><Expand size={18} aria-hidden="true" /></button
+				id="mesh-smooth"
+				class="tbx-btn {$optionsFocus === 'smooth' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'smooth'}
+				onanimationend={() => (flashOp = '')}
+				aria-pressed={$optionsFocus === 'smooth'}
+				aria-label="Smooth the selected vertices"
+				title="Smooth — relax each selected vertex toward the average of its neighbours (factor and passes below; with a vertex picked the click applies immediately). Evens out lumps; unselected vertices never move."
+				onclick={() => runOp('smooth')}><ToolIcon name="smooth" /></button
 			>
+			{@render proportionalBtn()}
 			<button
 				id="mesh-slide"
 				class="tbx-btn {$vertexSlide ? 'tbx-on bg-primary-600 text-white' : ''} {$vertexSelectionSize === 1
@@ -704,312 +1091,361 @@
 				aria-pressed={$vertexSlide}
 				aria-label="Slide the vertex along an edge"
 				title="Slide — constrain the drag to one of this vertex's own edges (it picks the edge you drag toward and clamps to its ends). Adjusts a profile without pulling the vertex off the surface."
-				onclick={() => vertexSlide.set(!$vertexSlide)}><Spline size={18} aria-hidden="true" /></button
+				onclick={() => {
+					const on = !$vertexSlide;
+					vertexSlide.set(on);
+					// P7b: arming Slide brings up its options (the clamp toggle) — the
+					// proportional button's shape
+					if (on) focusTool('slide');
+					else if (get(optionsFocus) === 'slide') focusTool('');
+				}}><ToolIcon name="vertex-slide" /></button
 			>
-			{#if $proportionalEdit}
-				<div class="tbx-row text-xs text-gray-300">
-					<label class="flex items-center gap-1" title="How far the drag carries its neighbours (local units). Weight fades smoothly to zero at the radius.">
-						radius
-						<input
-							id="mesh-proportional-radius"
-							type="number"
-							step="0.1"
-							min="0.01"
-							class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-							bind:value={$proportionalRadius}
-						/>
-					</label>
-				</div>
-			{/if}
-			<!-- handle size: proportional to the object by default, this scales it -->
-			<div class="tbx-row text-xs text-gray-300">
-				<label class="flex items-center gap-1" title="Vertex dot size — a multiplier over the size derived from the object, so it stays sane on a terrain and on a cube">
-					dots
-					<input
-						id="mesh-handle-scale"
-						type="range"
-						min="0.2"
-						max="3"
-						step="0.1"
-						class="w-20"
-						bind:value={$vertexHandleScale}
-					/>
-					<span class="w-8 text-right tabular-nums">{$vertexHandleScale.toFixed(1)}x</span>
-				</label>
-				<button
-					id="mesh-handle-adaptive"
-					class="rounded-full px-2 py-0.5 {$vertexHandleAdaptive ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					aria-pressed={$vertexHandleAdaptive}
-					title={$vertexHandleAdaptive
-						? 'Adaptive: the dots keep a constant SCREEN size as you zoom (what modelling tools do). Click for a fixed world size.'
-						: 'Fixed world size: the dots grow as you zoom in and shrink away as you zoom out. Click for adaptive.'}
-					onclick={() => vertexHandleAdaptive.set(!$vertexHandleAdaptive)}
-					>{$vertexHandleAdaptive ? 'adaptive' : 'fixed'}</button
-				>
-			</div>
+			<button
+				id="mesh-delete-verts"
+				class="tbx-btn tbx-danger {$vertexSelectionSize >= 1 ? '' : 'tbx-disabled'}"
+				class:tbx-flash={flashOp === 'vdelete'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Delete the selected vertices"
+				title="Delete — remove every face that uses a selected vertex, leaving a hole (Ctrl+click adds vertices)"
+				onclick={() => {
+					if (deleteSelectedVerts()) flash('vdelete');
+				}}><ToolIcon name="delete-face" /></button
+			>
 		{/if}
 
-		<!-- GIZMO: one control for EVERY element mode. It was inside the faces-only
-		     branch, so vertices and edges had no orientation control at all and no way
-		     to turn the gizmo off — the switch is a preference about how you work, not a
-		     property of what you picked. -->
-		<span class="tbx-label">Gizmo</span>
-		<div class="tbx-row">
-			<button
-				id="mesh-gizmo-toggle"
-				class="tbx-btn {$meshGizmoEnabled ? 'tbx-on bg-primary-600 text-white' : ''}"
-				aria-pressed={$meshGizmoEnabled}
-				aria-label="Show the transform gizmo"
-				title={$meshGizmoEnabled
-					? 'Gizmo ON — click to hide it and select/operate without handles in the way'
-					: 'Gizmo OFF — click to show it again (vertices, edges and faces)'}
-				onclick={() => meshGizmoEnabled.set(!$meshGizmoEnabled)}
-				><Move size={18} aria-hidden="true" /></button
-			>
-			<div
-				id="mesh-gizmo-space"
-				class="tbx-seg"
-				title="Gizmo orientation — Local aligns to what is selected (for a face, Z = its normal; for an edge, X runs along it). Scale handles always orient local."
-			>
+		<!-- TOOL OPTIONS: the parameters of whichever tool is selected, directly
+		     under the grid that selected it. Before this they were scattered — the
+		     bevel width lived under GIZMO, the extrude amount at the very bottom of
+		     the window, the merge distance two sections from its own button.
+		     It sits IMMEDIATELY under the grid now: the Gizmo/Pivot rows used to
+		     stand between the two, which is the adjacency this pane exists for. -->
+		<MeshToolOptions
+			{mode}
+			focus={$optionsFocus}
+			hint={paneHint}
+			{adjusting}
+			onApplyOp={applyActive}
+			onApplyBevel={applyBevel}
+			onApplyLoopCut={applyLoopCut}
+			onApplyBridge={applyBridge}
+			onApplySubdivide={applySubdivide}
+			onApplyEdgeExtrude={() => applyOp('edge-extrude')}
+			onApplySmooth={() => applyOp('smooth')}
+			onAdjust={(patch) => reapplyOpAdjust(patch)}
+			onSettle={() => settleOpAdjust()}
+			onRevert={() => cancelOpAdjust()}
+		/>
+
+		<!-- GIZMO & PIVOT: ONE collapsible section, offered in EVERY element mode.
+		     The switch and the orientation used to live inside the faces-only
+		     branch (so vertices and edges had neither), and the pivot commands
+		     arrived beside them as loose rows — five rows of chrome permanently
+		     between the tool grid and the tool options. They are one subject:
+		     WHERE the gizmo sits, HOW it is oriented, and WHAT it lands on.
+		     Open by default, like Display: a modeller reaches the orientation and
+		     the snap step constantly, while Cleanup and Symmetry are occasional. -->
+		<ToolboxSection key="gizmo" label="Gizmo & pivot" open={true} id="mesh-sec-gizmo">
+			<div class="tbx-row" id="mesh-gizmo-row">
 				<button
-					id="mesh-space-local"
-					class="px-2 py-0.5 {$faceGizmoSpace === 'local' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					disabled={!$meshGizmoEnabled}
-					onclick={() => faceGizmoSpace.set('local')}>Local</button
+					id="mesh-gizmo-toggle"
+					class="tbx-btn {$meshGizmoEnabled ? 'tbx-on bg-primary-600 text-white' : ''}"
+					aria-pressed={$meshGizmoEnabled}
+					aria-label="Show the transform gizmo"
+					title={$meshGizmoEnabled
+						? 'Gizmo ON — click to hide it and select/operate without handles in the way'
+						: 'Gizmo OFF — click to show it again (vertices, edges and faces)'}
+					onclick={() => meshGizmoEnabled.set(!$meshGizmoEnabled)}
+					><ToolIcon name="gizmo" /></button
+				>
+				<div
+					id="mesh-gizmo-space"
+					class="tbx-seg"
+					title="Gizmo orientation — Local aligns to what is selected (for a face, Z = its normal; for an edge, X runs along it). Scale handles always orient local."
+				>
+					<button
+						id="mesh-space-local"
+						class="px-2 py-0.5 {$faceGizmoSpace === 'local' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						disabled={!$meshGizmoEnabled}
+						onclick={() => faceGizmoSpace.set('local')}>Local</button
+					>
+					<button
+						id="mesh-space-world"
+						class="px-2 py-0.5 {$faceGizmoSpace === 'world' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						disabled={!$meshGizmoEnabled}
+						onclick={() => faceGizmoSpace.set('world')}>World</button
+					>
+				</div>
+			</div>
+			<!-- SNAP: the APP-WIDE grid snap, not a mesh-only twin. snapping.js
+			     writes the step onto the shared TControls instance and the element
+			     gizmo attaches its proxy to that same instance, so these drags have
+			     always obeyed this setting — it was just unreachable from here
+			     (Configure Scene ▸ Snapping was the only place). Same stores, so
+			     changing it here changes it for object drags too, which the note
+			     line says out loud. -->
+			<div class="tbx-row" id="mesh-snap-row">
+				<label
+					class="flex items-center gap-1"
+					title="Snap gizmo drags to a grid — vertices, edges, faces AND whole objects, the one app-wide setting"
+				>
+					<input
+						id="mesh-snap-enabled"
+						class="tbx-check"
+						type="checkbox"
+						checked={$snapEnabled}
+						onchange={(e) => snapEnabled.set(e.currentTarget.checked)}
+					/>
+					grid snap
+				</label>
+				<DragRow
+					id="mesh-snap-translate"
+					label="step"
+					value={$snapSettings.translate}
+					step={0.005}
+					snap={0.1}
+					decimals={2}
+					min={0.01}
+					disabled={!$snapEnabled}
+					title="Translate drags land on multiples of this (world units)"
+					onchange={(v) => snapSettings.update((s) => ({ ...s, translate: v || s.translate }))}
+				/>
+				<DragRow
+					id="mesh-snap-rotate"
+					label="angle"
+					value={$snapSettings.rotateDeg}
+					step={0.2}
+					snap={5}
+					decimals={1}
+					min={0.1}
+					disabled={!$snapEnabled}
+					title="Rotate drags land on multiples of this (degrees)"
+					onchange={(v) => snapSettings.update((s) => ({ ...s, rotateDeg: v || s.rotateDeg }))}
+				/>
+			</div>
+			<div id="mesh-snap-note" class="tbx-row text-[10px] italic text-gray-400">
+				App-wide — the same setting as Configure Scene ▸ Snapping.
+			</div>
+			<!-- PIVOT: where the gizmo sits, and what rotate/scale turn around. Without
+			     one the answer is "the middle of what you picked", which is the right
+			     default and no help at all for rotating a face about a corner or scaling
+			     a row of vertices toward one end. Placed per object and REMEMBERED
+			     (local pref) — re-placing it on every re-entry would make it a gesture
+			     rather than a setting. COMMANDS, so they read as words. -->
+			<span class="tbx-label">Pivot</span>
+			<div class="tbx-row" id="mesh-pivot-row">
+				<button
+					id="mesh-pivot-set"
+					class="tbx-cmd"
+					title="Put the pivot at the centre of what is selected right now"
+					onclick={() => setMeshPivotFromSelection(mode)}>Set here</button
 				>
 				<button
-					id="mesh-space-world"
-					class="px-2 py-0.5 {$faceGizmoSpace === 'world' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
-					disabled={!$meshGizmoEnabled}
-					onclick={() => faceGizmoSpace.set('world')}>World</button
+					id="mesh-pivot-pick"
+					class="tbx-cmd {$meshPivotPicking ? 'tbx-on bg-primary-600 text-white' : ''}"
+					aria-pressed={$meshPivotPicking}
+					title="Click a point on the mesh to place the pivot (a nearby vertex wins; Esc cancels)"
+					onclick={() => ($meshPivotPicking ? cancelMeshPivotPick() : startMeshPivotPick())}
+					>{$meshPivotPicking ? 'Picking…' : 'Pick…'}</button
+				>
+				<button
+					id="mesh-pivot-move"
+					class="tbx-cmd {$meshPivotMoving ? 'tbx-on bg-primary-600 text-white' : ''}"
+					aria-pressed={$meshPivotMoving}
+					title="Drag the transform gizmo to place the pivot — the mesh does not move (Esc leaves)"
+					onclick={() => toggleMeshPivotMove()}>{$meshPivotMoving ? 'Moving…' : 'Move'}</button
+				>
+				<button
+					id="mesh-pivot-clear"
+					class="tbx-cmd tbx-danger"
+					disabled={!pivotSet}
+					title="Back to the selection's own centre"
+					onclick={() => clearMeshPivot(editedUuid)}>Clear</button
 				>
 			</div>
-		</div>
-		<!-- BEVEL params, shared by all three modes: the same width and profile mean the
-		     same thing whether the corner being cut is a face border, an edge or a vertex -->
-		<div id="bevel-params" class="tbx-row text-xs text-gray-300">
-			<label class="flex items-center gap-1" title="How far the chamfer reaches (clamped per edge so two bevels can never cross)">
-				width
-				<input
-					id="bevel-width"
-					type="number"
-					step="0.02"
-					min="0.001"
-					class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-					bind:value={bevelWidth}
-				/>
-			</label>
-			{#if mode !== 'vertices'}
-				<label class="flex items-center gap-1" title="More segments = a rounder edge">
-					segments
-					<input
-						id="bevel-segments"
-						type="number"
-						step="1"
-						min="1"
-						max="8"
-						class="w-12 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={bevelSegments}
-					/>
-				</label>
-				{#if mode === 'faces'}
-				<button
-					id="face-bevel"
-					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
-					title="Bevel the selected face's border into a chamfer (inset + push per segment)"
-					onclick={() => bevelFaces(bevelWidth, bevelSegments)}>Bevel</button
-				>
-				{/if}
-			{/if}
-			{#if mode !== 'faces'}
-				<label class="flex items-center gap-1" title="Profile: 0 is a flat chamfer, positive domes the cap OUT, negative dishes it IN">
-					profile
-					<input
-						id="bevel-profile"
-						type="range"
-						min="-1"
-						max="1"
-						step="0.1"
-						class="w-20"
-						bind:value={bevelProfile}
-					/>
-					<span class="w-10 text-right tabular-nums"
-						>{bevelProfile > 0.05 ? 'out' : bevelProfile < -0.05 ? 'in' : 'flat'}</span
-					>
-				</label>
-			{/if}
-		</div>
-		{#if mode === 'faces'}
-			<!-- M6: whole-mesh cleanup — acts on the OBJECT, not the pick -->
-			<span class="tbx-label">Cleanup</span>
+			<div id="mesh-pivot-state" class="tbx-row text-[11px] text-gray-400">
+				{$meshPivotMoving
+					? 'Drag the gizmo to place the pivot — the mesh stays put.'
+					: pivotSet
+						? 'Rotate and scale turn about the placed pivot.'
+						: 'Rotate and scale turn about the selection centre.'}
+			</div>
+		</ToolboxSection>
+
+		<!-- WHOLE-MESH work below. None of it depends on which element mode is open,
+		     so it is offered in all three (it used to be faces-only, which meant
+		     leaving edge mode to recalculate normals). Collapsed by default so the
+		     tools stay the first thing in the window. -->
+		<ToolboxSection key="cleanup" label="Cleanup" id="mesh-sec-cleanup">
 			{#each CLEANUP_CMDS as c (c.id)}
 				<button
 					id={`mesh-fix-${c.id}`}
-					class="tbx-btn"
+					class="tbx-btn {wholeMeshReady ? '' : 'tbx-disabled'}"
 					class:tbx-flash={flashOp === c.id}
 					onanimationend={() => (flashOp = '')}
 					aria-label={c.label}
 					title={`${c.label} — ${c.desc}`}
-					onclick={() => runSelectCmd(c)}><c.lucide size={18} aria-hidden="true" /></button
+					onclick={() => runWholeMesh(() => runSelectCmd(c))}
+					><ToolIcon name={c.icon} /></button
 				>
 			{/each}
 			<button
 				id="mesh-shading"
-				class="tbx-btn"
+				class="tbx-btn {wholeMeshReady ? '' : 'tbx-disabled'}"
 				aria-label="Smooth shading"
 				aria-pressed={shadingMode() === 'smooth'}
 				title={shadingMode() === 'smooth'
 					? 'Smooth shading — click for flat'
 					: 'Flat shading — click for smooth'}
-				onclick={() => {
-					setShadingSmooth(shadingMode() !== 'smooth');
-					flash('shading');
-				}}><Sun size={18} aria-hidden="true" /></button
+				onclick={() =>
+					runWholeMesh(() => {
+						setShadingSmooth(shadingMode() !== 'smooth');
+						flash('shading');
+					})}><ToolIcon name="shading" /></button
 			>
+			<!-- the merge threshold sits with its own button now -->
+			<div class="tbx-row text-xs text-gray-300">
+				<DragRow
+					id="mesh-merge-dist"
+					label="merge dist"
+					value={$mergeDistance}
+					step={0.0005}
+					snap={0.01}
+					decimals={4}
+					min={0.0001}
+					max={1}
+					title="Vertices closer than this merge into one"
+					onchange={(v) => mergeDistance.set(v)}
+				/>
+			</div>
+		</ToolboxSection>
+
+		<ToolboxSection key="symmetry" label="Symmetry" id="mesh-sec-symmetry">
 			<div id="mesh-symmetrize" class="tbx-row text-xs text-gray-300">
 				<span title="Keep one half and replace the other with its mirror image, across an object-local axis through the origin">mirror</span>
 				<div class="tbx-seg">
 					{#each ['x', 'y', 'z'] as a (a)}
 						<button
 							id={`mesh-sym-${a}`}
-							class="px-2 py-0.5 {symAxis === a ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+							class="px-2 py-0.5 {$symAxis === a ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
 							title={`Mirror across the ${a.toUpperCase()} plane`}
-							onclick={() => (symAxis = /** @type {'x'|'y'|'z'} */ (a))}>{a.toUpperCase()}</button
+							onclick={() => symAxis.set(/** @type {'x'|'y'|'z'} */ (a))}>{a.toUpperCase()}</button
 						>
 					{/each}
 				</div>
 				<button
 					id="mesh-sym-side"
-					class="rounded-full bg-gray-700 px-2 py-0.5 hover:bg-gray-600"
+					class="tbx-cmd"
 					title="Which half to KEEP — the other one is replaced by its mirror"
-					onclick={() => (symKeep = -symKeep)}>{symKeep > 0 ? 'keep +' : 'keep -'}</button
+					onclick={() => symKeep.set(-$symKeep)}>{$symKeep > 0 ? 'keep +' : 'keep -'}</button
 				>
 				<button
 					id="mesh-sym-apply"
-					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
-					onclick={() => {
-						if (symmetrizeMesh(symAxis, symKeep)) flash('symmetrize');
-					}}>Symmetrize</button
+					class="tbx-primary"
+					onclick={() =>
+						runWholeMesh(() => {
+							if (symmetrizeMesh($symAxis, $symKeep)) flash('symmetrize');
+						})}>Symmetrize</button
 				>
 			</div>
-			<div class="tbx-row text-xs text-gray-300">
-				<label class="flex items-center gap-1" title="Vertices closer than this merge into one">
-					merge dist
-					<input
-						id="mesh-merge-dist"
-						type="number"
-						min="0.0001"
-						max="1"
-						step="0.001"
-						class="w-16 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={mergeDistance}
-					/>
-				</label>
-			</div>
-		{/if}
+		</ToolboxSection>
 
-		<!-- DISPLAY -->
-		<span class="tbx-label">Display</span>
-		<button
-			id="mesh-wireframe-toggle"
-			class="tbx-btn"
-			aria-label="Wireframe overlay"
-			aria-pressed={$meshEditWireframe}
-			title="Show the edit wireframe overlay"
-			onclick={() => meshEditWireframe.update((v) => !v)}><ToolIcon name="wireframe" /></button
-		>
-		<!-- the object outline is a postprocessing pass, so it paints OVER the
-		     handles and highlights — off while editing unless you ask for it -->
-		<button
-			id="mesh-outline-toggle"
-			class="tbx-btn"
-			aria-label="Selection outline"
-			aria-pressed={$meshEditOutline}
-			title={$meshEditOutline
-				? 'Selection outline ON — it draws over vertices and edges'
-				: 'Selection outline OFF while editing (clearer handles)'}
-			onclick={() => meshEditOutline.update((v) => !v)}
-			><SquareDashed size={18} aria-hidden="true" /></button
-		>
-		<!-- quad structure by default; the diagonals are triangulation artifacts
-		     the pick/dissolve tools deliberately refuse to touch -->
-		<button
-			id="mesh-triwire-toggle"
-			class="tbx-btn"
-			aria-label="Show triangulation"
-			aria-pressed={$meshEditTriWire}
-			title={$meshEditTriWire
-				? 'Showing triangulation — every triangle edge, diagonals included'
-				: 'Showing quads — the diagonals are hidden (they cannot be picked)'}
-			onclick={() => meshEditTriWire.update((v) => !v)}
-			><Triangle size={18} aria-hidden="true" /></button
-		>
-		<!-- D3: hotkeys on/off + the "?" bindings popover -->
-		<button
-			id="mesh-hotkeys-toggle"
-			class="tbx-btn"
-			aria-label="Toggle mesh-edit keyboard shortcuts"
-			aria-pressed={$meshEditHotkeys}
-			title={$meshEditHotkeys
-				? 'Keyboard shortcuts ON — E/I/G/S/B/F/X, W (camera fly keys pause)'
-				: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
-			onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={18} aria-hidden="true" /></button
-		>
-		<button
-			id="mesh-keys-help"
-			class="tbx-btn"
-			aria-label="Show mesh-edit key bindings"
-			aria-pressed={showKeys}
-			title="Key bindings — opens a movable cheat sheet you can park anywhere"
-			onclick={() => (showKeys = !showKeys)}><CircleHelp size={18} aria-hidden="true" /></button
-		>
+		<ToolboxSection key="display" label="Display" open={true} id="mesh-sec-display">
+			<button
+				id="mesh-wireframe-toggle"
+				class="tbx-btn"
+				aria-label="Wireframe overlay"
+				aria-pressed={$meshEditWireframe}
+				title="Show the edit wireframe overlay"
+				onclick={() => meshEditWireframe.update((v) => !v)}><ToolIcon name="wireframe" /></button
+			>
+			<!-- the object outline is a postprocessing pass, so it paints OVER the
+			     handles and highlights — off while editing unless you ask for it -->
+			<button
+				id="mesh-outline-toggle"
+				class="tbx-btn"
+				aria-label="Selection outline"
+				aria-pressed={$meshEditOutline}
+				title={$meshEditOutline
+					? 'Selection outline ON — it draws over vertices and edges'
+					: 'Selection outline OFF while editing (clearer handles)'}
+				onclick={() => meshEditOutline.update((v) => !v)}
+				><ToolIcon name="outline" /></button
+			>
+			<!-- quad structure by default; the diagonals are triangulation artifacts
+			     the pick/dissolve tools deliberately refuse to touch -->
+			<button
+				id="mesh-triwire-toggle"
+				class="tbx-btn"
+				aria-label="Show triangulation"
+				aria-pressed={$meshEditTriWire}
+				title={$meshEditTriWire
+					? 'Showing triangulation — every triangle edge, diagonals included'
+					: 'Showing quads — the diagonals are hidden (they cannot be picked)'}
+				onclick={() => meshEditTriWire.update((v) => !v)}
+				><ToolIcon name="triangulation" /></button
+			>
+			<!-- D3: hotkeys on/off (the "?" cheat sheet lives in the window header) -->
+			<button
+				id="mesh-hotkeys-toggle"
+				class="tbx-btn"
+				aria-label="Toggle mesh-edit keyboard shortcuts"
+				aria-pressed={$meshEditHotkeys}
+				title={$meshEditHotkeys
+					? 'Keyboard shortcuts ON — E/I/G/S/B/F/X, W (camera fly keys pause)'
+					: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
+				onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={18} aria-hidden="true" /></button
+			>
+			{#if mode === 'vertices'}
+				<!-- vertex HANDLE size is a display preference, not a tool -->
+				<div class="tbx-row text-xs text-gray-300">
+					<label class="flex items-center gap-1" title="Vertex dot size — a multiplier over the size derived from the object, so it stays sane on a terrain and on a cube">
+						dots
+						<input
+							id="mesh-handle-scale"
+							type="range"
+							min="0.2"
+							max="3"
+							step="0.1"
+							class="w-20"
+							bind:value={$vertexHandleScale}
+						/>
+						<span class="w-8 text-right tabular-nums">{$vertexHandleScale.toFixed(1)}x</span>
+					</label>
+					<button
+						id="mesh-handle-adaptive"
+						class="tbx-cmd"
+						aria-pressed={$vertexHandleAdaptive}
+						title={$vertexHandleAdaptive
+							? 'Adaptive: the dots keep a constant SCREEN size as you zoom (what modelling tools do). Click for a fixed world size.'
+							: 'Fixed world size: the dots grow as you zoom in and shrink away as you zoom out. Click for adaptive.'}
+						onclick={() => vertexHandleAdaptive.set(!$vertexHandleAdaptive)}
+						>{$vertexHandleAdaptive ? 'adaptive' : 'fixed'}</button
+					>
+				</div>
+			{/if}
+		</ToolboxSection>
 
 		{#if $colliderEditObject}
-			<!-- CL-A A8: add compound pieces to the collider session -->
-			<span class="tbx-label">Collider</span>
-			<button
-				id="collider-add-box"
-				class="tbx-btn"
-				aria-label="Add a box piece"
-				title="Merge a box into the collider as a new convex piece"
-				onclick={() => addColliderPiece('box')}><Box size={18} aria-hidden="true" /></button
-			>
-			<button
-				id="collider-add-sphere"
-				class="tbx-btn"
-				aria-label="Add a sphere piece"
-				title="Merge a sphere into the collider as a new convex piece"
-				onclick={() => addColliderPiece('sphere')}><Circle size={18} aria-hidden="true" /></button
-			>
-		{/if}
-
-
-
-		<!-- 176: contextual amount row for Extrude/Inset -->
-		{#if mode === 'faces' && ($faceEditOp === 'extrude' || $faceEditOp === 'inset')}
-			<div id="mesh-op-params" class="tbx-row text-xs text-gray-300">
-				<label class="flex items-center gap-1">
-					amount
-					<input
-						id="mesh-op-amount"
-						type="number"
-						step="0.05"
-						class="w-14 rounded-sm bg-gray-900 px-1 py-0.5 text-right"
-						bind:value={$faceEditAmount}
-					/>
-				</label>
-				<label class="flex items-center gap-1" title="Apply the op when you click a face">
-					<input id="mesh-op-autoapply" type="checkbox" bind:checked={$faceAutoApply} />
-					auto-apply
-				</label>
+			<!-- CL-A A8: add compound pieces to the collider session. Forced open —
+			     it only exists while a collider session is running. -->
+			<ToolboxSection key="collider" label="Collider" forceOpen id="mesh-sec-collider">
 				<button
-					id="mesh-op-apply"
-					class="rounded-full bg-primary-600 px-3 py-0.5 text-white hover:bg-primary-500"
-					title="Apply the active op to the selected face"
-					onclick={applyActive}>Apply</button
+					id="collider-add-box"
+					class="tbx-btn"
+					aria-label="Add a box piece"
+					title="Merge a box into the collider as a new convex piece"
+					onclick={() => addColliderPiece('box')}><Box size={18} aria-hidden="true" /></button
 				>
-			</div>
+				<button
+					id="collider-add-sphere"
+					class="tbx-btn"
+					aria-label="Add a sphere piece"
+					title="Merge a sphere into the collider as a new convex piece"
+					onclick={() => addColliderPiece('sphere')}><Circle size={18} aria-hidden="true" /></button
+				>
+			</ToolboxSection>
 		{/if}
+
 
 		{#snippet status()}
 			{#if mode === 'edges'}
@@ -1019,7 +1455,7 @@
 				<span id="mesh-sel-counts" title="Selected faces · triangles (Ctrl+click adds)">
 					{selInfo.faces} face{selInfo.faces === 1 ? '' : 's'} · {selInfo.tris} tri{selInfo.tris === 1 ? '' : 's'}{#if selInfo.loops}<span
 							class={selInfo.loops[0] === selInfo.loops[1] ? '' : 'text-red-400'}
-							title="Boundary edges of the two selected faces — Bridge needs them EQUAL"
+							title="Boundary edges of the two selected pieces — Bridge needs them EQUAL"
 						>
 							· {selInfo.loops[0]} ↔ {selInfo.loops[1]} edges</span
 						>{/if}

@@ -5,7 +5,8 @@
 	import { drawMode, toggleDrawMode } from '$lib/drawMode';
 	import { simulating, simPaused, remoteSimulating, toggleSimulation, pauseSimulation, resetSimulation } from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
-	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
+	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
+	import { startSnapAnchorPick } from '$lib/snapEngine';
 	import { measureMode, toggleMeasure } from '$lib/measure';
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks, SHORTCUT_SLOTS } from '$lib/cameraBookmarks';
 	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
@@ -68,6 +69,27 @@
 		const values = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
 		return values.map((value) => snapRotItem(value));
 	}
+	// 19-B: element snap targets — independent checked rows + a compact hint tag
+	const ELEMENT_TARGETS: [string, string][] = [
+		['vertex', 'Vertex'],
+		['edge', 'Edge'],
+		['face', 'Face'],
+		['surface', 'Surface'],
+		['object', 'Object']
+	];
+	function elementTargetItem(key: string, label: string) {
+		return {
+			label,
+			checked: !!($snapTargets as any)[key],
+			action: () => snapTargets.update((t: any) => ({ ...t, [key]: !t[key] }))
+		};
+	}
+	// 'V F' when vertex + face are on — rides the parent row's hint
+	$: elementTag = $snapTargets.enabled
+		? ELEMENT_TARGETS.filter(([key]) => ($snapTargets as any)[key])
+				.map(([, label]) => label[0])
+				.join(' ')
+		: '';
 
 	$: hasSelection =
 		$selectedObjects.length > 0 ||
@@ -163,9 +185,10 @@
 			// the live values so you can read the current setup without opening it
 			label: 'Snapping',
 			icon: 'grid-3x3',
-			hint: $snapEnabled
-				? `${stepLabel($snapSettings.translate)} · ${stepLabel($snapSettings.rotateDeg)}° · ${stepLabel($snapSettings.scale)}`
-				: 'off',
+			hint:
+				($snapEnabled
+					? `${stepLabel($snapSettings.translate)} · ${stepLabel($snapSettings.rotateDeg)}° · ${stepLabel($snapSettings.scale)}`
+					: 'off') + (elementTag ? ` · ${elementTag}` : ''),
 			children: [
 				{
 					label: $snapEnabled ? 'Disable snapping' : 'Enable snapping',
@@ -185,6 +208,28 @@
 					tooltip: 'Dragged objects rest on whatever is underneath',
 					action: () => surfaceSnap.update((v) => !v)
 				},
+				// 19-B: element targets — while one is under the cursor during a gizmo
+				// translate drag, it takes priority over the grid steps
+				{ section: 'Elements' },
+				...ELEMENT_TARGETS.map(([key, label]) => elementTargetItem(key, label)),
+				// P4: rotate the dragged object onto the candidate normal (face/surface)
+				{
+					label: 'Align to normal',
+					checked: $snapTargets.alignNormal,
+					tooltip: 'Snapping to a face also turns the object onto that surface',
+					action: () => snapTargets.update((t: any) => ({ ...t, alignNormal: !t.alignNormal }))
+				},
+				// P3: pick the transient snap anchor (needs exactly one selection)
+				...($selectedObjects.length === 1
+					? [
+							{
+								label: 'Pick snap origin',
+								icon: 'crosshair',
+								tooltip: 'Click a point on the selected object — drags snap that point',
+								action: () => startSnapAnchorPick()
+							}
+						]
+					: []),
 				{ section: ' ' },
 				{
 					label: 'More snapping settings…',

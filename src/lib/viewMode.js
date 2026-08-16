@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalScene, viewMode, isVRMode } from '../stores/sceneStore';
+import { viewPrefs } from './viewPrefs';
 
 // Viewport view modes (V-2). LOCAL, per-viewer, never replicated.
 //  - 'shaded'      : normal
@@ -22,7 +23,7 @@ function apply() {
 	const wire = get(viewMode) === 'wireframe' && !get(isVRMode);
 	if (wire) {
 		if (!wireMaterial)
-			wireMaterial = new THREE.MeshBasicMaterial({ wireframe: true, color: 0x9aa4b0 });
+			wireMaterial = new THREE.MeshBasicMaterial({ wireframe: true, color: get(viewPrefs).wireColor });
 		scene.overrideMaterial = wireMaterial;
 	} else if (scene.overrideMaterial === wireMaterial) {
 		scene.overrideMaterial = null;
@@ -75,4 +76,7 @@ export function startViewMode() {
 	viewMode.subscribe(() => apply());
 	isVRMode.subscribe(() => apply());
 	globalScene.subscribe(() => apply());
+	// 18-A: the override material is a singleton, so a colour change is a live
+	// write — no rebuild, and nothing to do when wireframe isn't the active mode.
+	viewPrefs.subscribe((prefs) => wireMaterial?.color.set(prefs.wireColor));
 }

@@ -53,7 +53,13 @@ const animState = (page) =>
 				? (group.getObjectByProperty('uuid', entries[0][0])?.getObjectByName('mover')?.position.x ?? null)
 				: null,
 			authoredUuids: Object.keys(authored),
-			authoredTracks: Object.values(authored)[0]?.tracks?.length ?? 0,
+			// v2 shape: a set of named clips per object, the active one is what the window edits
+			authoredTracks: (() => {
+				const set = Object.values(authored)[0];
+				if (!set) return 0;
+				const clip = set.clips?.[set.active] ?? Object.values(set.clips ?? {})[0];
+				return clip?.tracks?.length ?? 0;
+			})(),
 			children: group.children.length
 		};
 	});

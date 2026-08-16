@@ -18,6 +18,7 @@ import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
 import { faceEditObject, meshEditHotkeys } from './faceEdit';
 import { recallBookmark } from './cameraBookmarks';
+import { snapTargets } from './snapping';
 import { selectedObject } from '../stores/sceneStore';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
@@ -106,7 +107,7 @@ export const shortcuts = [
 	{
 		keys: 'Tab',
 		group: 'Objects',
-		label: 'Toggle mesh edit mode (Esc also exits)',
+		label: 'Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)',
 		action: () => {
 			if (get(editingObject)) exitEditMode();
 			else if (get(selectedObject)?.uuid) enterEditMode(get(selectedObject).uuid);
@@ -214,6 +215,21 @@ export const shortcuts = [
 		}
 	},
 	{
+		// 19-B P4: the element-snap master switch. Deliberately NOT the grid switch
+		// — the grid keeps `snapEnabled` (VR's applySnapMode owns that one).
+		keys: 'M',
+		group: 'Scene',
+		label: 'Toggle element snapping (vertex/face/surface targets)',
+		action: () => {
+			let enabled = false;
+			snapTargets.update((t) => {
+				enabled = !t.enabled;
+				return { ...t, enabled };
+			});
+			showToast(enabled ? 'Element snapping on' : 'Element snapping off');
+		}
+	},
+	{
 		keys: 'V (hold)',
 		group: 'Voice',
 		label: 'Push to talk while the mic toggle is off'
@@ -259,7 +275,15 @@ export function unregisterShortcutGroup(group) {
 /** D3: the bare keys MeshEditPopup's local keydown consumes while a session is
  * active and its hotkeys pref is on (faces E/I/G/S/B/F/X, M2 loop select L ·
  * vertices W) */
-const MESH_EDIT_KEYS = ['E', 'I', 'G', 'S', 'B', 'F', 'X', 'W', 'L', 'C', '1', '2', '3'];
+// Keys a live mesh-edit session owns outright — the registry stands down for
+// these while one is open (two window keydown listeners cannot stop each other,
+// so the global side has to ask).
+// 1/2/3 came OFF this list: they are Move/Rotate/Scale everywhere in the app,
+// and suppressing them here to spend them on element modes left a session with
+// no way to switch the gizmo. Element modes moved to Tab/Shift+Tab, which the
+// session now owns instead — Tab still ENTERS Edit Mesh from outside, and Esc
+// (or Done) is still how you leave.
+const MESH_EDIT_KEYS = ['E', 'I', 'G', 'S', 'B', 'F', 'X', 'W', 'L', 'C', 'Tab', 'Shift+Tab'];
 
 /** @param {KeyboardEvent} event */
 function comboOf(event) {

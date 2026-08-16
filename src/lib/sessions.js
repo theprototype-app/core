@@ -5,6 +5,7 @@ import { restoreGraphs, clearGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
+import { stripEditOverlays } from './editOverlays';
 import {
 	animatedImportUuids,
 	animatedImportsSnapshot,
@@ -369,6 +370,7 @@ export function importObjects(payload, indices) {
 		} catch {
 			continue;
 		}
+		stripEditOverlays(object); // a stale wireframe saved by an older build
 		object.traverse((/** @type {any} */ node) => (node.uuid = crypto.randomUUID()));
 		group.add(object);
 		recordObjectPresence('create', object);
@@ -395,6 +397,12 @@ export async function applySession(payload) {
 		} catch {
 			continue;
 		}
+		// A scene saved while a mesh-edit session was open carries the edit
+		// wireframe as a real child object — it comes back as a permanent,
+		// un-updatable wireframe nobody can switch off, and it accumulates on
+		// every save/load round trip (the reported "wireframe glitch"). Drop it
+		// on the way in; the peers do the same in `createObject`.
+		stripEditOverlays(object);
 		group.add(object); // keep original uuids — every peer converges on them
 		if (peer) peer.send({ type: 'object', element });
 	}
@@ -402,7 +410,9 @@ export async function applySession(payload) {
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload
 	await animatedImportsRestore(payload.animated ?? []);
-	animationsRestore(payload.animations ?? {});
+	// replicate: a loaded scene's movements reach the peers already in the room,
+	// the way each restored joint is re-broadcast below
+	animationsRestore(payload.animations ?? {}, true);
 	// H1: new format restores EVERY graph document; legacy payloads carry the
 	// scene graph only. One 'nodes' snapshot replicates the whole map.
 	const graphsPayload =

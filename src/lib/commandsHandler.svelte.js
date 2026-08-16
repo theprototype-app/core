@@ -12,7 +12,9 @@ import { dropPeerQuality } from '$lib/networkQuality'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
 import { environment } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
+import { stripEditOverlays } from '$lib/editOverlays'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -229,6 +231,9 @@ export function clearSceneLocal() {
     lockedObjects.set([]);
     // animated-import bytes/mixers are per-object — all gone now
     dropAllAnimatedImports();
+    // authored clips were the one registry a wipe used to leak (dropAnimation had
+    // no call site at all before 17-E)
+    dropAllAnimations();
     objectsGroup.update((value) => value);
 }
 
@@ -469,6 +474,9 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
     let parent;
     if (uuid == null) {
     let mesh = loader.parse(object.element);
+    // an incoming object can only carry a STALE edit wireframe (a peer on an
+    // older build, or a scene saved with a session open) — never a live one
+    stripEditOverlays(mesh);
     if (override) {
         let overrideObject = sceneObjects.getObjectByProperty('uuid', mesh.uuid)
         parent = overrideObject.parent

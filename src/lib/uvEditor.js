@@ -368,6 +368,189 @@ export function transformUvCluster(object, indices, options = {}) {
 	return true;
 }
 
+// --- absolute transforms, for a live gesture ---------------------------------
+// `transformUvCluster` reads the CURRENT uv values, so calling it once per
+// pointermove MULTIPLIES (a 1.1x scale becomes 1.1^n) and its default pivot —
+// the live bounds centre — DRIFTS as the cluster it is measuring moves. That is
+// fine for the one-shot toolbar ops it was written for and wrong for a drag.
+//
+// A gesture therefore snapshots [u, v] per index at the start and re-applies the
+// TOTAL every frame, against a pivot frozen at the same moment. Same rule as the
+// animation timeline's keys; the engine that runs it is `$lib/modalGrab`.
+
+/**
+ * The current uv of some indices, to transform absolutely against.
+ * @param {any} object @param {Iterable<number>} indices
+ * @returns {{i: number, u: number, v: number}[]}
+ */
+export function uvSnapshotOf(object, indices) {
+	const uv = object?.geometry?.attributes?.uv;
+	if (!uv) return [];
+	/** @type {{i: number, u: number, v: number}[]} */
+	const out = [];
+	for (const i of indices) {
+		if (i < 0 || i >= uv.count) continue;
+		out.push({ i, u: uv.getX(i), v: uv.getY(i) });
+	}
+	return out;
+}
+
+/**
+ * Write an ABSOLUTE move / rotate / scale of a snapshot back onto the uv attribute.
+ * Idempotent: calling it twice with the same arguments lands in the same place, which
+ * is what makes it safe per pointermove.
+ * @param {any} object
+ * @param {{i: number, u: number, v: number}[]} snapshot
+ * @param {{du?: number, dv?: number, rotate?: number, scaleU?: number, scaleV?: number,
+ *          pivot?: {cu: number, cv: number}|null}} options
+ * @returns {boolean}
+ */
+export function applyUvSnapshot(object, snapshot, options = {}) {
+	const uv = object?.geometry?.attributes?.uv;
+	if (!uv || !snapshot?.length) return false;
+	// the geometry was swapped under us (remote commit / undo) — same guard as
+	// moveUvCluster, or we would write into a detached buffer
+	if (dragSession && dragSession.uv !== uv) {
+		dragSession = null;
+		return false;
+	}
+	const du = options.du ?? 0;
+	const dv = options.dv ?? 0;
+	const rotate = options.rotate ?? 0;
+	const su = options.scaleU ?? 1;
+	const sv = options.scaleV ?? 1;
+	const cos = Math.cos(rotate);
+	const sin = Math.sin(rotate);
+	// no pivot given: the snapshot's own bounds centre, computed ONCE from the
+	// snapshot (not from the moving attribute)
+	let pivot = options.pivot ?? null;
+	if (!pivot && (rotate || su !== 1 || sv !== 1)) {
+		let uMin = Infinity;
+		let uMax = -Infinity;
+		let vMin = Infinity;
+		let vMax = -Infinity;
+		for (const s of snapshot) {
+			uMin = Math.min(uMin, s.u);
+			uMax = Math.max(uMax, s.u);
+			vMin = Math.min(vMin, s.v);
+			vMax = Math.max(vMax, s.v);
+		}
+		pivot = { cu: (uMin + uMax) / 2, cv: (vMin + vMax) / 2 };
+	}
+	for (const s of snapshot) {
+		let u = s.u;
+		let v = s.v;
+		if (pivot) {
+			const ru = (u - pivot.cu) * su;
+			const rv = (v - pivot.cv) * sv;
+			u = pivot.cu + ru * cos - rv * sin;
+			v = pivot.cv + ru * sin + rv * cos;
+		}
+		uv.setXY(s.i, u + du, v + dv);
+	}
+	uv.needsUpdate = true;
+	objectsGroup.update((v) => v);
+	return true;
+}
+
+/**
+ * Every uv index sitting at one of the given COORDINATES.
+ *
+ * A commit rebuilds the geometry index-EXPANDED (`applyMeshGeo`), which renumbers
+ * every uv index: a box's 24 entries become 36. So a selection captured before a
+ * commit addresses different corners afterwards — with the keyboard making a commit
+ * per keypress, the second nudge would move points nobody picked. A selection has
+ * always MEANT a set of uv coordinates, so it is re-derived from those.
+ * @param {any} object @param {{u: number, v: number}[]} coords
+ * @param {Set<number>|null} [scope] UV5 face scope
+ * @returns {number[]}
+ */
+export function uvIndicesAt(object, coords, scope = null) {
+	const uv = object?.geometry?.attributes?.uv;
+	if (!uv || !coords?.length) return [];
+	const wanted = new Set(coords.map((c) => uvKey(c.u, c.v)));
+	/** @type {number[]} */
+	const out = [];
+	for (let i = 0; i < uv.count; i++) {
+		if (scope && !scope.has(i)) continue;
+		if (wanted.has(uvKey(uv.getX(i), uv.getY(i)))) out.push(i);
+	}
+	return out;
+}
+
+/**
+ * Quantise uv indices onto TEXEL boundaries. A hand-placed corner sits at an
+ * arbitrary fraction, which samples a blend of two texels — snapping makes pixel
+ * art and hand-authored atlases land exactly.
+ * @param {any} object @param {number[]} indices @param {number} w @param {number} h
+ * @returns {boolean}
+ */
+export function snapUvToPixels(object, indices, w, h) {
+	const uv = object?.geometry?.attributes?.uv;
+	if (!uv || !indices?.length || !(w > 0) || !(h > 0)) return false;
+	for (const i of indices) {
+		if (i < 0 || i >= uv.count) continue;
+		uv.setXY(i, Math.round(uv.getX(i) * w) / w, Math.round(uv.getY(i) * h) / h);
+	}
+	uv.needsUpdate = true;
+	objectsGroup.update((v) => v);
+	return true;
+}
+
+/**
+ * The nearest uv index NOT already selected, in a given direction — the keyboard's
+ * way of growing a selection (Ctrl+Shift+arrow). UV space has no linear order, so a
+ * direction is the only traversal that means anything.
+ *
+ * The walk starts from the selected corner FURTHEST along that direction, so
+ * repeating the key marches across the island instead of re-picking the same
+ * neighbour. Candidates must lie beyond that anchor; the winner minimises distance
+ * along the axis plus a penalty for straying off it, and ties break on the lower
+ * index so a repeat press is deterministic.
+ * @param {any} object @param {number} slot @param {number[]} selected
+ * @param {number} du @param {number} dv unit direction in UV space (v is UP)
+ * @param {Set<number>|null} [onlyTris] UV5 face scope
+ * @returns {number} the uv index, or -1
+ */
+export function nearestUvInDirection(object, slot, selected, du, dv, onlyTris = null) {
+	const uv = object?.geometry?.attributes?.uv;
+	if (!uv || !selected?.length) return -1;
+	const length = Math.hypot(du, dv) || 1;
+	const dirU = du / length;
+	const dirV = dv / length;
+	const picked = new Set(selected);
+	// how far along the direction the selection already reaches
+	let anchorAlong = -Infinity;
+	let anchor = null;
+	for (const i of picked) {
+		if (i < 0 || i >= uv.count) continue;
+		const along = uv.getX(i) * dirU + uv.getY(i) * dirV;
+		if (along > anchorAlong) {
+			anchorAlong = along;
+			anchor = { u: uv.getX(i), v: uv.getY(i) };
+		}
+	}
+	if (!anchor) return -1;
+	let best = -1;
+	let bestCost = Infinity;
+	for (const tri of uvTriangles(object, slot, onlyTris))
+		tri.corners.forEach((corner, c) => {
+			const index = tri.indices[c];
+			if (picked.has(index)) return;
+			const offU = corner[0] - anchor.u;
+			const offV = corner[1] - anchor.v;
+			const along = offU * dirU + offV * dirV;
+			if (along <= UV_EPSILON) return; // behind the anchor, or level with it
+			const perp = Math.abs(offU * -dirV + offV * dirU);
+			const cost = along + perp * 3; // straying off the axis costs
+			if (cost < bestCost - UV_EPSILON || (Math.abs(cost - bestCost) <= UV_EPSILON && index < best)) {
+				bestCost = cost;
+				best = index;
+			}
+		});
+	return best;
+}
+
 /**
  * Fit uv indices into the 0..1 square, preserving aspect (a non-uniform fit would
  * shear the texture across those faces).

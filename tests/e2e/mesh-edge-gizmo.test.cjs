@@ -177,6 +177,141 @@ h.run(async () => {
 	h.check(Math.abs(rest.redone - rest.lifted) < 1e-6, 'redo returns the exact same geometry');
 	h.check(!rest.afterClear, 'clearing the edge selection DETACHES the gizmo');
 
+	// --- 19-A P7b item 3+4: LIVE overlay during the drag + the key remap -------
+	// The edge highlight is baked in world space and its keys are POSITION-
+	// quantized, so before P7b (a) it sat stranded at the pre-drag place until
+	// release, and (b) the commit changed the keys and the selection stopped
+	// resolving — overlay gone, gizmo detached. Both guards proven red by
+	// reverting the fix lines (see the P7b handoff notes).
+	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await editBox(A.page);
+	const picked3 = await pickTopEdge(A.page);
+	h.check(!!picked3, 'picked a fresh edge for the live-overlay section (premise)');
+	const live = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const THREE = s.THREE;
+		fe.setFaceOp('move');
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		let scene;
+		s.globalScene.subscribe((v) => (scene = v))();
+		const overlayYs = () => {
+			const o = scene.getObjectByName('edge-edit-overlay');
+			if (!o) return null;
+			o.updateMatrixWorld(true);
+			const p = o.geometry.attributes.position;
+			const v = new THREE.Vector3();
+			let min = 1e9;
+			let max = -1e9;
+			for (let i = 0; i < p.count; i++) {
+				v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+				min = Math.min(min, v.y);
+				max = Math.max(max, v.y);
+			}
+			return { min, max, count: p.count };
+		};
+		const before = overlayYs();
+		fe.onFaceGizmoDragChanged(true);
+		controls.object.position.y += 0.5;
+		fe.onFaceGizmoMoved();
+		const mid = overlayYs(); // item 3: must already be at the MOVED position
+		// the REAL release path: commit + re-seat (onFaceGizmoDragChanged(false))
+		fe.onFaceGizmoDragChanged(false);
+		const after = overlayYs();
+		let sel = [];
+		fe.edgeEditSelected.subscribe((v) => (sel = v))();
+		// item 4: the remapped keys must RESOLVE to the moved edge
+		const ends = sel.map((k) => fe.edgeEndpoints(k)).filter(Boolean);
+		const proxy = controls.object;
+		const target = fe.edgeGrabTarget();
+		window.__box.updateMatrixWorld(true);
+		const expect = target ? window.__box.localToWorld(target.centroid.clone()) : null;
+		return {
+			before,
+			mid,
+			after,
+			selCount: sel.length,
+			resolved: ends.length,
+			endYs: ends.length ? ends[0].map((p) => p.y) : [],
+			overlayPresent: !!scene.getObjectByName('edge-edit-overlay'),
+			gizmoSeated: !!target && proxy?.userData?.isFaceProxy === true,
+			gizmoOff: expect && proxy ? proxy.position.distanceTo(expect) : 1e9
+		};
+	});
+	h.check(
+		!!live.before && Math.abs(live.before.max - 0.5) < 1e-4 && live.before.count === 2,
+		`the pre-drag overlay draws the picked top edge at y = 0.5 (${live.before?.max})`
+	);
+	h.check(
+		!!live.mid && Math.abs(live.mid.min - 1.0) < 1e-4 && Math.abs(live.mid.max - 1.0) < 1e-4,
+		`item 3: MID-drag the edge overlay is at the MOVED position y = 1.0, not stranded at 0.5 (${live.mid?.min}..${live.mid?.max})`
+	);
+	h.check(
+		live.selCount === 1 && live.resolved === 1,
+		`item 4: after the commit the selection still names ONE edge and it RESOLVES (${live.selCount} selected, ${live.resolved} resolved)`
+	);
+	h.check(
+		live.endYs.length === 2 && live.endYs.every((y) => Math.abs(y - 1.0) < 1e-4),
+		`...and it is THAT edge — both endpoints at the moved y = 1.0 (${JSON.stringify(live.endYs)})`
+	);
+	h.check(
+		!!live.after && Math.abs(live.after.max - 1.0) < 1e-4,
+		'...with the overlay rebuilt at the moved position'
+	);
+	h.check(
+		live.gizmoSeated && live.gizmoOff < 1e-6,
+		`...and the gizmo re-seated ON the moved edge (off by ${live.gizmoOff})`
+	);
+
+	// item 3, faces flank: the FACE overlay must track a live grab too (it
+	// already did — this pins the behaviour so the edge fix can't regress it)
+	const faceLive = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const THREE = s.THREE;
+		// a FRESH box: the edge section tilted the previous one's top face
+		fe.exitFaceEdit();
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		window.__box = g.children[g.children.length - 1];
+		fe.enterFaceEdit(window.__box.uuid);
+		fe.setFaceSubmode('faces'); // the edge section left the submode at 'edges'
+		const top = fe.currentFaces().find((f) => f.normal.y > 0.99);
+		fe.pickFaceUnit(top.triIndices[0]);
+		fe.setFaceOp('move');
+		fe.attachFaceGizmo(); // op was already 'move', so arming alone won't re-seat
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		let scene;
+		s.globalScene.subscribe((v) => (scene = v))();
+		const overlayMaxY = () => {
+			const o = scene.getObjectByName('face-edit-overlay');
+			if (!o) return null;
+			o.updateMatrixWorld(true);
+			const p = o.geometry.attributes.position;
+			const v = new THREE.Vector3();
+			let max = -1e9;
+			for (let i = 0; i < p.count; i++) {
+				v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+				max = Math.max(max, v.y);
+			}
+			return max;
+		};
+		const before = overlayMaxY();
+		fe.onFaceGizmoDragChanged(true);
+		controls.object.position.y += 0.4;
+		fe.onFaceGizmoMoved();
+		const mid = overlayMaxY();
+		fe.onFaceGizmoDragChanged(false);
+		return { before, mid };
+	});
+	h.check(
+		faceLive.before !== null && faceLive.mid !== null && Math.abs(faceLive.mid - faceLive.before - 0.4) < 1e-4,
+		`the FACE overlay tracks a live grab as well (${faceLive.before} -> ${faceLive.mid})`
+	);
+
 	// --- and the peer sees it ------------------------------------------------
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);

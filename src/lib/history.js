@@ -3,6 +3,7 @@ import { writable, derived, get } from 'svelte/store';
 import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore';
 import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { notifyExternalMove } from '$lib/flowRuntime';
+import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
 // histories stay per-user.
@@ -81,6 +82,14 @@ export function recordEntry(entry) {
 	redoStack.set([]);
 	// 15-F: the pre-session redo entries this barrier protected are gone now
 	if (sessionBase >= 0) sessionRedoBase = 0;
+}
+
+/** Remove a specific entry from the undo stack by IDENTITY (19-A: the adjust
+ * engine's revert — the op's own geometry restore already replicated, so this
+ * touches no wire and leaves the redo stack alone). No-op when the entry was
+ * already undone or evicted by the LIMIT trim. @param {any} entry */
+export function retractEntry(entry) {
+	undoStack.update((stack) => stack.filter((e) => e !== entry));
 }
 
 // --- 15-F: session-scoped undo (mesh-edit sessions) -------------------------
@@ -171,6 +180,11 @@ export function recordTransformSet(items) {
  * removal-time refresh keeps the existing snapshot instead of warning twice)
  */
 export function captureObjectSnapshot(object, quiet = false) {
+	// a snapshot is a serialize like any other: an object deleted (or duplicated)
+	// while its mesh-edit session is open must not carry the edit WIREFRAME into
+	// the entry, or undo brings back a permanently wireframed object and the
+	// re-broadcast hands one to every peer (editOverlays.js)
+	const unpark = parkEditOverlays(object);
 	try {
 		const element = object.toJSON();
 		if (JSON.stringify(element).length > SNAPSHOT_LIMIT) {
@@ -183,6 +197,8 @@ export function captureObjectSnapshot(object, quiet = false) {
 	} catch (error) {
 		console.log('captureObjectSnapshot failed', error);
 		return null;
+	} finally {
+		unpark();
 	}
 }
 
@@ -219,6 +235,7 @@ function applyPresence(entry, state) {
 		let object;
 		try {
 			object = snapshotLoader.parse(entry.snapshot.element);
+			stripEditOverlays(object); // an entry an older build recorded mid-session
 		} catch (error) {
 			console.log('history restore failed', error);
 			showToast('Cannot restore the object from history');

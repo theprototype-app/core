@@ -68,7 +68,18 @@ async function setupPage(browser, name, options = {}) {
 		}, options.storage);
 	}
 	const page = await ctx.newPage();
-	page.on('pageerror', (err) => console.log(`[${name} pageerror] ` + err.stack));
+	// Page errors were LOGGED and nothing more, so a suite could sail past a
+	// component that had crashed on mount: a duplicate each-key threw inside the
+	// Animation window, the pane stopped opening for real users, and every check
+	// that read a store still passed. They are collected now — `finish` fails the
+	// run on anything that looks like a svelte/render crash, and `pageErrors(peer)`
+	// lets a suite assert on them directly.
+	/** @type {string[]} */
+	page.__errors = [];
+	page.on('pageerror', (err) => {
+		page.__errors.push(err.message ?? String(err));
+		console.log(`[${name} pageerror] ` + err.stack);
+	});
 	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForTimeout(4000);
 	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
@@ -136,9 +147,31 @@ async function freshReload(peer) {
 	await peer.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
 }
 
+/** Everything the page threw, for a suite that wants to assert on it.
+ * @param {any} peer @returns {string[]} */
+function pageErrors(peer) {
+	return peer?.page?.__errors ?? [];
+}
+
+/** A RENDER crash is never acceptable, whatever the checks said: a component that
+ * threw on mount is not there for the user at all. Anything else (a network hiccup,
+ * a module's own console noise) still only prints. */
+const FATAL_ERROR = /each_key_duplicate|effect_update_depth_exceeded|store\.set is not a function|is not a function.*svelte|Cannot read properties of undefined \(reading 'call'\)|derived_references_self|state_unsafe_mutation/;
+
 /** Close up and exit with the right code. */
 async function finish(browser) {
+	// collect before the browser goes away
+	/** @type {string[]} */
+	const fatal = [];
+	for (const ctx of browser.contexts?.() ?? []) {
+		for (const page of ctx.pages?.() ?? []) {
+			for (const message of page.__errors ?? []) {
+				if (FATAL_ERROR.test(message)) fatal.push(message);
+			}
+		}
+	}
 	await browser.close();
+	for (const message of fatal) check(false, 'the page threw a render error: ' + message.split('\n')[0]);
 	console.log(failures === 0 ? 'ALL PASS' : failures + ' FAILURES');
 	process.exit(failures === 0 ? 0 : 1);
 }
@@ -183,4 +216,4 @@ function run(body) {
 	});
 }
 
-module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath };
+module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath, pageErrors };

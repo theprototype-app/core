@@ -1,13 +1,15 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup, globalCamera, selectedObject } from '../stores/sceneStore';
+import { globalCamera, selectedObject } from '../stores/sceneStore';
 import { peers, showToast, toastStore } from '../stores/appStore';
 import { explorerItems, itemBlob } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
 import { importFile } from './fileHandler.svelte';
 import { setObjectTexture } from './materialsHandler';
 import { topLevelObjectOf } from './objectActions';
+import { sceneHits, hitWorldNormal } from './scenePick';
+import { snapTargets } from './snapping';
 
 // Explorer -> scene drops (96): place objects/prefabs at the pointed spot,
 // texture the mesh under the cursor with a dropped image. Everything goes
@@ -17,33 +19,64 @@ import { topLevelObjectOf } from './objectActions';
 const raycaster = new THREE.Raycaster();
 
 /**
- * Raycast the drop coordinates: `{point, object}` — object is null over
- * empty ground; point is null when aiming at the sky.
+ * Raycast the drop coordinates: `{point, object, normal}` — object is null over
+ * empty ground; point is null when aiming at the sky. `normal` is the world
+ * normal of the surface hit (19-B P1, for align-to-normal placement): the hit's
+ * face normal on a mesh, `[0, 1, 0]` on the ground plane, null when aiming at
+ * the sky or when the hit carries no face data.
  * @param {number} clientX @param {number} clientY
+ * @returns {{point: number[] | null, object: any, normal: number[] | null}}
  */
 export function dropTarget(clientX, clientY) {
 	/** @type {any} */
 	const camera = get(globalCamera);
-	const group = get(objectsGroup);
-	if (!camera) return { point: null, object: null };
+	if (!camera) return { point: null, object: null, normal: null };
 	const ndc = new THREE.Vector2(
 		(clientX / window.innerWidth) * 2 - 1,
 		-(clientY / window.innerHeight) * 2 + 1
 	);
 	raycaster.setFromCamera(ndc, camera);
-	const hits = group ? raycaster.intersectObjects(group.children, true) : [];
-	if (hits[0]) return { point: hits[0].point.toArray(), object: topLevelObjectOf(hits[0].object) };
+	const hits = sceneHits(raycaster);
+	if (hits[0])
+		return {
+			point: hits[0].point.toArray(),
+			object: topLevelObjectOf(hits[0].object),
+			normal: hitWorldNormal(hits[0])?.toArray() ?? null
+		};
 	const planePoint = new THREE.Vector3();
 	const onGround = raycaster.ray.intersectPlane(
 		new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
 		planePoint
 	);
-	return { point: onGround ? planePoint.toArray() : null, object: null };
+	if (!onGround) return { point: null, object: null, normal: null };
+	return { point: planePoint.toArray(), object: null, normal: [0, 1, 0] };
 }
 
-/** @param {any} object @param {number[]} point */
-function placeAt(object, point) {
+const _dropUp = new THREE.Vector3(0, 1, 0);
+const _dropNormal = new THREE.Vector3();
+const _dropQuat = new THREE.Quaternion();
+
+/**
+ * @param {any} object @param {number[]} point
+ * @param {number[]|null} [normal] 19-B P4: the surface normal under the drop.
+ *   With `snapTargets.alignNormal` on, the object's +Y is turned onto it BEFORE
+ *   the move broadcast (which already carries rot, so nothing new goes on the
+ *   wire). A +Y normal — the ground plane, i.e. every flat drop — is skipped, so
+ *   the default path stays byte-identical.
+ */
+function placeAt(object, point, normal = null) {
 	object.position.set(point[0], point[1], point[2]);
+	if (normal && get(snapTargets).alignNormal) {
+		_dropNormal.fromArray(normal);
+		if (_dropNormal.lengthSq() > 1e-12) {
+			_dropNormal.normalize();
+			if (_dropNormal.distanceTo(_dropUp) > 1e-6) {
+				_dropQuat.setFromUnitVectors(_dropUp, _dropNormal);
+				object.quaternion.premultiply(_dropQuat);
+				object.updateMatrixWorld(true);
+			}
+		}
+	}
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer)
@@ -100,7 +133,7 @@ export async function dropExplorerItem(payload, clientX, clientY) {
 		const prefab = get(prefabs).find((entry) => entry.id === payload.prefabId);
 		if (!prefab) return;
 		const object = instantiatePrefab(prefab);
-		if (object && target.point) placeAt(object, target.point);
+		if (object && target.point) placeAt(object, target.point, target.normal);
 		return;
 	}
 	// N6: a default-pack item carries a `url` (not a stored library item) — fetch

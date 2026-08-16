@@ -278,16 +278,20 @@ h.run(async () => {
 		};
 		let controls;
 		w.TControls.subscribe((v) => (controls = v))();
+		// M4 completion: edge mode has a gizmo of its own now, and earlier sections of
+		// this suite leave edges picked — clear them so this block still measures what it
+		// was written to measure (no gizmo carried over from the FACE selection).
+		// The clear happens INSIDE edges mode on purpose: the per-mode memory is
+		// what a switch restores, so clearing the live store from another mode is
+		// undone by the very next switch (that memory is section 7's subject).
+		w.faceEdit.setFaceSubmode('edges');
+		w.faceEdit.clearEdgeSelection();
 		w.faceEdit.setFaceSubmode('faces');
 		w.faceEdit.setFaceOp('move'); // the only op that seats a gizmo (B1)
 		w.faceEdit.pickFaceUnit(0, false);
 		w.faceEdit.attachFaceGizmo();
 		const litInFaces = overlayTris();
 		const gizmoInFaces = !!controls?.object;
-		// M4 completion: edge mode has a gizmo of its own now, and earlier sections of
-		// this suite leave edges picked — clear them so this block still measures what it
-		// was written to measure (no gizmo carried over from the FACE selection)
-		w.faceEdit.clearEdgeSelection();
 		w.faceEdit.setFaceSubmode('edges');
 		const litInEdges = overlayTris();
 		const gizmoInEdges = !!controls?.object;
@@ -335,6 +339,116 @@ h.run(async () => {
 		return { overlay: !!hit, sel: sel.length };
 	});
 	h.check(!cleaned.overlay && cleaned.sel === 0, 'leaving the session drops the edge pick and its overlay');
+
+	// ------------------------------- 7. per-mode memory across VERTICES
+	// Vertices is NOT a face submode — it is a separate meshEdit session, so a
+	// trip through it TEARS THE FACE SESSION DOWN and the next one starts with
+	// empty stores. The stash used to copy BOTH slots from those stores on every
+	// mode switch, which wrote that emptiness over the other mode's remembered
+	// pick: with the session last left in EDGES, coming back to Faces restored
+	// the (empty) edge slot, then the faces stash overwrote the real face pick
+	// with [] and restored nothing. Reported as "select faces, go to Vertices,
+	// come back — the selection is gone".
+	//
+	// Driven through the REAL mode buttons: `setFaceSubmode` alone cannot
+	// reproduce it (it returns early when the submode already matches, which is
+	// exactly why the bug only appears on the way back from Vertices).
+	const modeBtn = async (m) => {
+		await A.page.evaluate((m) => document.querySelector('#mesh-mode-' + m)?.click(), m);
+		await A.page.waitForTimeout(250);
+	};
+	const facePick = () =>
+		A.page.evaluate(
+			() =>
+				new Promise((r) =>
+					window.__stores.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v].sort((a, b) => a - b)))()
+				)
+		);
+
+	const memoryUuid = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.faceEdit.exitFaceEdit();
+		w.meshEdit.exitEditMode();
+		w.faceEdit.faceEditSubmode.set('faces');
+		w.commandsHandler.sceneCommand('/create Box 1 1 1');
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const box = g.children[g.children.length - 1];
+		w.objectActions.selectObject(box.uuid);
+		w.meshEdit.enterEditMode(box.uuid); // start where the user did: Vertices
+		return box.uuid;
+	});
+	await A.page.waitForTimeout(400);
+
+	await modeBtn('faces');
+	await A.page.evaluate(() => window.__stores.faceEdit.pickFaceUnit(0));
+	const picked = await facePick();
+	h.check(picked.length > 0, 'a face pick to remember (' + picked.length + ' tris) (premise)');
+
+	// the reported round trip, and the two orders around it. Asserted by
+	// CONTENT: a count alone would pass on a different quad.
+	const same = (a) => a.length === picked.length && a.every((t, i) => t === picked[i]);
+	await modeBtn('vertices');
+	await modeBtn('faces');
+	h.check(same(await facePick()), 'the face pick survives Faces -> Vertices -> Faces');
+
+	await modeBtn('edges');
+	await modeBtn('vertices');
+	await modeBtn('faces');
+	h.check(
+		same(await facePick()),
+		'...and Faces -> Edges -> Vertices -> Faces, the order that lost it (the stash is PER MODE)'
+	);
+
+	await modeBtn('vertices');
+	await modeBtn('edges');
+	await modeBtn('vertices');
+	await modeBtn('faces');
+	h.check(same(await facePick()), '...and a double trip through Vertices with an Edges stop between');
+
+	// the EDGE slot has the same memory, and the two slots do not fight: picking
+	// edges must not cost the remembered faces (that is the whole per-mode point)
+	await modeBtn('edges');
+	await A.page.evaluate(() => window.__stores.faceEdit.selectAllEdges());
+	const edgesPicked = await edgeSel(A.page);
+	await modeBtn('vertices');
+	await modeBtn('edges');
+	const edgesBack = await edgeSel(A.page);
+	h.check(
+		edgesPicked.length > 0 && edgesBack.length === edgesPicked.length,
+		'the EDGE pick survives the same round trip (' + edgesBack.length + '/' + edgesPicked.length + ')'
+	);
+	await modeBtn('faces');
+	h.check(same(await facePick()), '...and the face pick is still there underneath it');
+
+	// invalidation must SURVIVE the fix: a real topology change makes the stored
+	// indices meaningless, so the stash is dropped rather than mis-restored
+	const invalidated = await A.page.evaluate(async (uuid) => {
+		const w = window.__stores;
+		const before = await new Promise((r) => w.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v]))());
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const o = g.getObjectByProperty('uuid', uuid);
+		const countBefore = o.geometry.attributes.position.count;
+		w.faceEdit.commitFaceOp('extrude', 0.3); // changes the vertex count
+		await new Promise((r) => setTimeout(r, 200));
+		const countAfter = o.geometry.attributes.position.count;
+		// stash the (post-op) state, then ask for a restore of the OLD signature
+		return { before: before.length, countBefore, countAfter };
+	}, memoryUuid);
+	h.check(
+		invalidated.countAfter !== invalidated.countBefore,
+		'extrude changed the vertex count (' + invalidated.countBefore + ' -> ' + invalidated.countAfter + ') (premise)'
+	);
+	const stale = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		// a stash recorded under the OLD signature can never come back: force one
+		// by rewinding the geometry under it
+		w.faceEdit.stashSelections('faces');
+		w.faceEdit.faceEditSelectedTris.set([]);
+		w.history.undo(); // back to the pre-extrude geometry = a different signature
+		await new Promise((r) => setTimeout(r, 400));
+		return w.faceEdit.restoreSelection('faces');
+	});
+	h.check(stale === false, 'a geometry change still INVALIDATES the stash (no mis-restore)');
 
 	await h.finish(browser);
 });

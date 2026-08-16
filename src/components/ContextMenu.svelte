@@ -346,7 +346,14 @@
 ></div>
 
 <!-- the menu container takes a mousedown handler only to KEEP focus in the filter
-     input (see keepFocus); it is not itself a focus target -->
+     input (see keepFocus); it is not itself a focus target.
+
+     It also kills the BROWSER menu on itself, which is what makes a right-click
+     anywhere in the app show only ours. The menu opens on the button RELEASE, and
+     the browser dispatches `contextmenu` AFTER mouseup — so by the time that event
+     exists, this menu is already mounted under the cursor and IS its target. No
+     blocker on the surface that was right-clicked can help: the event never reaches
+     it, in either phase. Submenus are DOM children here, so they bubble to this. -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_interactive_supports_focus -->
 <div
 	use:portal
@@ -355,6 +362,7 @@
 	style="left: 0; top: 0; z-index: calc(var(--z-menu) + 1);"
 	role="menu"
 	on:mousedown={keepFocus}
+	on:contextmenu|preventDefault
 >
 	{#if headerItem}
 		<ContextMenuItems items={[headerItem]} onrun={run} />

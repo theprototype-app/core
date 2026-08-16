@@ -20,6 +20,9 @@ const OUTPUT = {
 	keypress: 'event', // H3
 	onimpact: 'event', // PFX-C
 	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
+	animfinished: 'event', // 17-E: a clip reached its end
+	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip
+	animstate: 'number', // 17-E F3: progress / playing / position, one at a time
 	velocity: 'number', // CL-C: live speed readout
 	flowinput: 'number' // H5 fallback; the live check reads data.vtype
 };
@@ -31,6 +34,7 @@ const INPUT = {
 	// velocity reads the wired object's live speed
 	collider: { source: 'object', scale: 'number' },
 	velocity: { target: 'object' },
+	animstate: { target: 'object' }, // 17-E F3: whose clip to read (or the graph owner)
 	math: { a: 'number', b: 'number' },
 	compare: { a: 'number', b: 'number' },
 	gate: { a: 'boolean', b: 'boolean' },
@@ -45,6 +49,8 @@ const INPUT = {
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	counter: { pulse: 'event' },
+	// 17-E A5: the trigger that starts/stops an authored clip, plus a wired speed
+	playanim: { trigger: 'event', speed: 'number' },
 	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
 	// a burst fired from any event (On Click / Key Press / On Impact)
 	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' }

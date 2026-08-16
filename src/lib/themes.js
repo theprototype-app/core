@@ -52,7 +52,11 @@ export const THEME_TOKENS = [
 	'--icon-doc',
 	'--icon-object',
 	'--icon-prefab',
-	'--icon-danger'
+	'--icon-danger',
+	// 18-C4: the duotone TOOL-icon accent (what a tool changes). A custom theme
+	// that omits it falls through :root and then --accent, so old .theme.json
+	// files still get a coherent icon set.
+	'--icon-accent'
 ];
 
 function loadCustomThemes() {

@@ -13,7 +13,12 @@
 	// is always available, ids keep working for tests and labels, and touch gets the
 	// numeric keypad via inputmode. type="text" on purpose — the native number
 	// spinner would fight our own arrow-key steps.
-	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, onchange?: (next: number) => void}} */
+	// 19-A: `onscrubstart` fires when a drag-scrub actually BEGINS — the 3px dead
+	// zone crossed, so a plain click never fires it — and `onscrubend` when that
+	// scrub's pointer is released. Typed input and arrow steps do NOT fire either
+	// (there is no gesture to bracket); consumers that need those debounce
+	// `onchange` instead.
+	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
 	let {
 		label = '',
 		value = 0,
@@ -30,7 +35,13 @@
 		// member's number. Editing still commits a real value (to the whole set),
 		// and `value` stays the primary's so scrubs/arrow steps have an origin.
 		mixed = false,
-		onchange = () => {}
+		// 19-A P3: a row whose parameter does not apply right now (the loop-cut
+		// position at cuts > 1). The value still SHOWS and the title says why —
+		// no scrub, no typing, no arrow steps. Default off: ~40 call sites untouched.
+		disabled = false,
+		onchange = () => {},
+		onscrubstart = () => {},
+		onscrubend = () => {}
 	} = $props();
 
 	/** @param {number} n */
@@ -141,6 +152,7 @@
 
 	/** @param {any} event */
 	function onPointerDown(event) {
+		if (disabled) return;
 		if (event.button !== 0) return;
 		startValue = Number(value) || 0;
 		startX = event.clientX;
@@ -153,12 +165,14 @@
 
 	/** @param {any} event */
 	function onPointerMove(event) {
+		if (disabled) return;
 		if (event.buttons !== 1) return;
 		const dx = event.clientX - startX;
 		if (!scrubbing) {
 			if (Math.abs(dx) < 3) return; // dead zone keeps a click a click
 			scrubbing = true;
 			event.currentTarget.setPointerCapture?.(event.pointerId);
+			onscrubstart();
 		}
 		// dragging must not smear a text selection across the field
 		document.getSelection?.()?.removeAllRanges?.();
@@ -174,18 +188,22 @@
 
 	/** @param {any} event */
 	function onPointerUp(event) {
-		if (scrubbing) {
+		if (disabled) return;
+		// read the flag BEFORE anything clears it — both branches below do, and a
+		// blur racing the release would too (onBlur resets it as well)
+		const wasScrubbing = scrubbing;
+		scrubbing = false;
+		if (wasScrubbing) {
 			event.currentTarget.releasePointerCapture?.(event.pointerId);
-			scrubbing = false;
+			onscrubend();
 			return;
 		}
-		scrubbing = false;
 		// a click that did not scrub = "let me type it" (anywhere on the field)
 		inputEl?.focus();
 	}
 </script>
 
-<div class="dn-wrap" class:dn-scrub={scrubbing} class:dn-focus={focused} use:drag>
+<div class="dn-wrap" class:dn-scrub={scrubbing} class:dn-focus={focused} class:dn-disabled={disabled} use:drag>
 	{#if label}
 		<span class={'dn-label ' + accent}>{label}</span>
 	{/if}
@@ -200,6 +218,7 @@
 		aria-label={ariaLabel || label || 'value'}
 		title={title || 'Drag to scrub · type to set · ↑↓ steps (Ctrl ×10, Shift ×100) · Esc reverts'}
 		value={display}
+		{disabled}
 		use:keys
 		oninput={onInput}
 		onchange={onInput}
@@ -258,6 +277,12 @@
 	}
 	.dn-wrap.dn-focus .dn-input {
 		cursor: text;
+	}
+	.dn-wrap.dn-disabled {
+		opacity: 0.45;
+	}
+	.dn-wrap.dn-disabled .dn-input {
+		cursor: default;
 	}
 	/* the app's global input ring would double up on the wrapper's border */
 	.dn-input:focus {

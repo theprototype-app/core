@@ -83,7 +83,16 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	emitter: 'particle',
 	weight: 'mass',
 	restitution: 'bounciness',
-	torque: 'angularvelocity'
+	torque: 'angularvelocity',
+	// 17-E A5: the authored-clip trigger, which a model reaches for by verb
+	playanimation: 'playanim',
+	play_animation: 'playanim',
+	startanimation: 'playanim',
+	start_animation: 'playanim',
+	stopanimation: 'playanim',
+	animate: 'playanim',
+	opendoor: 'playanim',
+	door: 'playanim'
 });
 
 /**

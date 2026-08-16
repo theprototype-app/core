@@ -310,7 +310,54 @@ loadable play content. Everything a user does must be visible to connected peers
   `animatedImportsSnapshot`/`animatedImportsRestore` are the ONE shared save path used
   by BOTH sessions and autosave — toJSON and the GLTF exporter cannot carry an
   AnimationClip, so a save carries the ORIGINAL file bytes, base64 CHUNKED at 32k;
-  `clipInfo(uuid)` exposes the durations that only lived in the mixer record),
+  `clipInfo(uuid)` exposes the durations that only lived in the mixer record;
+  `animationState(uuid)` is the accessor the Play Animation node reads through),
+  `animationPreview` (17-E AUTHORED animation, the keyframe half: an object owns
+  named CLIPS (`animations[uuid] = {clips:{id:{name,tracks,duration,loop}}, active,
+  changedAt}`) of TRACKS of KEYS at absolute clip seconds, each key carrying the
+  `ease` of the segment that FOLLOWS it. `normalizeAnimSet` runs at every store
+  boundary, so a v1 `{from,to,bezier}` save becomes two keys and evaluates
+  IDENTICALLY. `evaluateClip`/`sampleTrack` are the ONE read path (runtime + editor
+  + auto-key). Channels: pos/rot/scale + a STEPPED `visible` + the LOOK set
+  (opacity, color.r/g/b, metalness, roughness, emissive, light.intensity) —
+  `channelApplies` gates them per object, `captureBase`/`restoreBase` carry the
+  material state (incl. `transparent`, a render-program change) so Clear preview
+  is faithful, and the bake SKIPS them (glTF needs KHR_animation_pointer).
+  Rotation honours `userData.origin`, which is what makes a door swing on its
+  hinge (read INLINE, like flowRuntime, to avoid the objectOrigin cycle).
+  TIMING is three separate things: `updateAnim({duration})` = clip LENGTH, moves
+  no keys · `retimeClip` = scale the movement · `setSpeed` = playback rate, no
+  data change. TRANSPORT lives in `playback` keyed by uuid — clipId/playing/`at`
+  (synced-clock stamp)/pausedAt/speed/reverse/`startedFrom`/`rangeIn`+`rangeOut`
+  (the A/B window every peer evaluates); `playheads` is the per-frame readout.
+  `stop` returns to `startedFrom`, `resetPreview` is the one that restores the
+  base pose and releases it. Both halves REPLICATE (`animdata` latest-wins on
+  changedAt, `animplay`, `getanim`→`animations`), undo through the `anim` history
+  kind with `beginAnimGesture`/`endAnimGesture` collapsing a drag into ONE entry
+  and ONE broadcast, and `parkAuthoredAtBase` (called from
+  flowRuntime.parkAnimatedAtBase) keeps a scrubbed pose out of every save.
+  `clipToThreeClip` samples a clip into real KeyframeTracks for GLTF export.
+  17-E F5 MARKERS: `Clip.markers = {t,name}[]` carried by normalizeClip like
+  fps/step — absent means absent, so old saves are byte-unchanged — with
+  `addMarker`/`updateMarker`/`removeMarker`/`markersOf` writing through `editClip`,
+  so they replicate/save/undo with the clip and need no channel of their own.
+  Crossing one is an INTERVAL test in the tick between the previous playhead
+  position and this one (`lastHead`, `markersCrossed`), destination end inclusive
+  so a marker under a resting playhead cannot re-fire; a LOOP WRAP fires the two
+  real pieces (prev..end, start..now) because the naive interval between the two
+  positions is the part NOT travelled — measured with the branch removed: the late
+  marker never fired, the early one twice, and one in the MIDDLE spuriously.
+  F3 `ghostBase(uuid, object)` = a TRANSFORM-ONLY, read-only base for onion skin),
+  `onionSkin` (17-E F6: faint SCENE-ROOT clones of the selected object at the keys
+  either side of the playhead, the colliderHelpers/cameraHelpers pattern —
+  `showOnionSkin` LOCAL pref, default OFF, per-frame `updateOnionSkin` from Scene's
+  useTask. `depthWrite` stays TRUE (the documented postprocessing trap); each ghost
+  owns its material and re-asserts its faintness after `poseAt`, which is posed
+  from `ghostBase` because `restoreBase` would otherwise write the base's opacity
+  over it; the clone keeps ONLY `userData.origin` (poseAt hinges on it) and is
+  lifted into the object's PARENT frame afterwards, since poseAt writes a LOCAL
+  pose; disposal frees the materials this module made and NEVER the geometry, which
+  the clone shares with the real mesh),
   `objectOrigin` (17-D: PER-OBJECT transform origin — a LOCAL pivot offset on
   `userData.origin`, so it replicates/saves/undoes free like userData.physics.
   Deliberately NOT baked into vertices: baking rides meshgeo, which stamps
@@ -330,6 +377,37 @@ loadable play content. Everything a user does must be visible to connected peers
   normalized; LOCAL library, only PLACED objects replicate; PACKS_BASE off-bundle CDN
   const; PACKS.md committed format) + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
   three.js preview canvas + popup, `enable3dPreview`),
+  `meshPivot` (PR #134, LEAF — imports THREE + two stores + the `proportional`
+  leaf, and NOTHING from meshEdit/faceEdit, which import it): the mesh editor's
+  custom transform PIVOT — where the gizmo sits and what rotate/scale turn
+  around, in all three element modes. LOCAL per-object pref in localStorage,
+  stored in OBJECT-LOCAL coords so it rides the object's own transform;
+  deliberately NOT `userData.origin` (that one is REPLICATED and drives joints /
+  flow Spin/Orbit / the export bake). Three ways to place it: from the selection
+  centre (reuses the `proportionalAnchor` providers), a PICK mode (the 19-B
+  `snapAnchorPicking` shape), and an armed MOVE mode where the gizmo carries the
+  pivot (the 17-D `pivotOnly` shape — the divert is the FIRST statement of both
+  gizmo hook pairs, ahead of `proxyGesture`/`beginFaceGrab`, so an armed drag
+  never opens a gesture it must unwind; no geometry, no history, no wire). The
+  marker PREVIEWS during a drag without writing the store — a write notifies the
+  re-seat listeners and the proxy would fight the pointer. `registerMeshPivotListener`
+  is the seam both element modes re-seat through. Pick and Move are mutually
+  exclusive and both answer Escape through the EVENT verdict (three handlers).
+  THE VERTEX GIZMO went with it: `gizmoSeatLocal` = pivot -> multi-selection
+  CENTROID -> single handle (it used to seat on the LAST-clicked handle), and
+  `setAnchor` no longer hardwires `setMode('translate')`, which is why vertex mode
+  never offered rotate/scale at all; `applyPivotTransform` mirrors applyFaceGrab's
+  frame conjugation, absolute from a `proxyGesture` drag-start snapshot. Snapping
+  needed NO new code — `snapping.apply()` writes the increments on the SHARED
+  TControls the mesh proxy attaches to, so element drags always obeyed it; the
+  toolbox just surfaces `snapEnabled`/`snapSettings`.
+  `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
+  which is a LineSegments CHILD of the edited mesh and therefore inside the
+  serialized tree — a save taken mid-session wrote it into the file as a
+  permanent, un-updatable wireframe that ACCUMULATED every round trip. Park hooks
+  into `parkAnimatedAtBase` (the one ritual every serializer performs); strip runs
+  at every object-parse site IN (sessions/autosave/peer create/history) plus both
+  clone paths. Detaches WITHOUT disposing — clone() shares geometry/material.
   `meshTopology` (P9-P11, PR #111: STORED face partitions — the storage location, the
   validity invariant, the CSR raw-byte wire packing, `carryFaces`, and the
   `composeFaces`/`appendOrigin`/`appendedQuads`/`survivorOrigin` composition helpers the
@@ -367,8 +445,50 @@ loadable play content. Everything a user does must be visible to connected peers
   `applyUvChecker` — a LOCAL-only UV test grid via `scene.overrideMaterial`,
   never per-material, because the object sync AND autosave both serialize
   `material.map` and would bake the grid into someone's scene) +
+  UV-TX adds the ABSOLUTE half the live gestures need: `uvSnapshotOf` +
+  `applyUvSnapshot` (idempotent move/rotate/scale of a snapshot about an explicit
+  pivot — `transformUvCluster` reads the CURRENT values, so a call per pointermove
+  MULTIPLIES, and its default pivot is the LIVE bounds centre, which drifts as the
+  cluster it measures scales), `snapUvToPixels`, `nearestUvInDirection` (keyboard
+  selection growth: UV space has no linear order, so a DIRECTION is the only
+  traversal) and `uvIndicesAt` (re-derive a selection by COORDINATE after a commit —
+  `applyMeshGeo` rebuilds index-expanded and renumbers every uv index, so a box's 24
+  entries become 36 and a selection captured before it addresses different corners;
+  harmless for one drag, a torn cluster once the KEYBOARD commits per keypress)),
+  `modalGrab` (UV-TX U1: `createGesture({snapshot, start, apply, revert, end,
+  onActive})` -> `{begin, move, refresh, finish, cancel, active, isModal, ctx}` — the
+  confirm/cancel half of a drag, shared by the animation timeline and the UV editor.
+  It owns the origin (in CLIENT coords), the snapshot, the window listeners and the
+  commit-or-revert contract; the consumer owns all of the maths. `begin` with NO event
+  is a keyboard gesture: no listeners, apply once, finish — which is how a nudge
+  becomes one undo entry through the drag's path. `start` may set `ctx.pivot` and may
+  ABORT by returning false (`beginUvDrag` can refuse). A MODAL grab listens in CAPTURE
+  phase so the committing click cannot start the next gesture),
   `UvEditor.svelte` (the dock tab —
-  `'uv'` in `FLOW_FAMILY`; hand-rolled 2D zoom/pan because nothing reusable exists),
+  `'uv'` in `FLOW_FAMILY`; hand-rolled 2D zoom/pan because nothing reusable exists.
+  UV-TX: Move/Rotate/Scale armed on 1/2/3 (WORDS in the topbar), a left drag / a
+  MODAL grab (middle-press a SELECTED point; middle elsewhere still pans) / the
+  ARROWS all through `modalGrab`. The arrows apply WHATEVER IS ARMED about the
+  current origin — one texture pixel, one degree, or 1% (Ctrl x10, Shift x100;
+  scale is PER AXIS, left/right in U and up/down in V, Alt for uniform, and the
+  shrink is the reciprocal so a press pair round-trips) — one undo entry per press.
+  `Ctrl+Space` = keyboard vertex PICKING: the first press enters the mode and drops
+  a cursor without touching the selection, later presses toggle the cursor's cluster
+  in/out, the ARROWS walk the cursor while it is on (which is why it is a mode),
+  Esc leaves and keeps the picks, a second Esc clears. One key for both entering
+  and selecting, matching the timeline's Ctrl+Space; the cursor draws as a bigger
+  transparent box and is re-derived by coordinate across a commit like the
+  selection. `Ctrl+Shift+arrow` grows the selection directionally,
+  `Ctrl+A`/`Ctrl+I`/`L`/`Esc`, Delete
+  SWALLOWED (unhandled it deletes the object). Keys are claimed in CAPTURE phase on
+  `#uv-canvas-wrap` (tabindex="-1", focused on every press) with stopPropagation,
+  because 1/2/3 are taken TWICE over — the gizmo transform modes and, whenever a mesh
+  session is open (the common UV case, since face scoping needs one), MeshEditPopup's
+  element modes — and `anyModalOpen` does not cover this editor. Right-click opens the
+  shared ContextMenu; both the keydown and the contextmenu listener are DIRECT, since
+  svelte delegates them and panel chrome swallows delegated handlers. The transform
+  ORIGIN is placeable (⌖ button / menu) and DRAGGABLE, snapping onto a uv point unless
+  Alt is held — LOCAL, never replicated or saved),
   `uvUnwrap` (PR #110: a REGISTRY, not one algorithm — `unwrap(faces, options) →
   {uvs, islands}` with `registerUnwrapBackend(key, label, fn)`, so a hot-loadable
   module can add a heavier automatic unwrapper (xatlas/LSCM) or replace a built-in
@@ -500,11 +620,39 @@ loadable play content. Everything a user does must be visible to connected peers
   gotcha. **Icons are for TOOLS you arm; COMMANDS render as words** — six
   near-identical 18px glyphs in a row are indistinguishable, and that alone
   produced two "selects everything" bug reports (Linked next to Loop, All next to
-  Invert)), `components/ui/ToolIcon.svelte` (the custom stroke set for glyphs
-  lucide lacks — extrude/inset/bridge/flip-normals/create-face/wireframe/loop-cut
-  + the sculpt brushes; 24px viewBox, stroke-width 2, `currentColor`, so every
-  theme incl. unlimited custom ones tints them. NO per-theme icon assets, by
-  design — custom themes are token-only, so per-theme artwork cannot scale), shared
+  Invert). #18-C adds: an optional `tabs` SNIPPET rendered between header and
+  body (outside the scrolling body, so the element-mode tabs stay pinned) with
+  `.tbx-tab`/`.tbx-tab-on`; `.tbx-primary` (pill Apply/Commit), `.tbx-sel` (a
+  parameterized tool SELECTED but not armed — a RING, because an armed tool
+  changes what a viewport click does and a selected one does not; its CSS must
+  sit AFTER the `aria-pressed` rule, which a selected tool also carries, or the
+  tinted well fills it at equal specificity); `.tbx-sec-head` +
+  `components/ui/ToolboxSection.svelte`, a collapsible that renders NO WRAPPER
+  element — the body is a grid and its rows span it, so a wrapper would make the
+  whole section one cell. `max-height: calc(100vh - var(--dw-top) - 12px)` +
+  a scrolling body (18-B: a tall toolbox used to hang its own resize grip off
+  the bottom — measured at y=830 on a 720px viewport). At **≤640px it is a
+  bottom SHEET** (`tbx-sheet`): full width, grabber-resized height persisted to
+  `tbxSheetH:<key>`, drag/grip disabled via dragWindow's `inert`, and NO z-index
+  override — Controls sits on --z-hud, so the sheet keeps its background under
+  the HUD and pads its CONTENTS above it, the Inspector's contract),
+  `components/menu/MeshToolOptions.svelte` (#18-C2: the contextual TOOL OPTIONS
+  pane — one tool's parameters at a time, nothing when it has none; layout only,
+  the toolbox keeps the toasts/flash/target checks and the Apply buttons call
+  back) + `src/lib/meshToolParams.js` (its stores: bevel width/segments/profile,
+  loopCuts, bridgeCuts, mergeDistance, symAxis/symKeep, and `optionsFocus` —
+  which tool's options show, NOT the same as the armed `faceEditOp`),
+  `components/ui/ToolIcon.svelte` (the custom stroke set for glyphs
+  lucide lacks; 24px viewBox, stroke-width 2. **#18-C4 DUOTONE**: each glyph is
+  `{base, accent?, accentFill?}` — base = the neutral geometry in
+  `currentColor`, accent = what the tool CREATES/CHANGES in `--icon-accent`
+  (a THEME_TOKENS entry falling back through `--accent`). A plain array is still
+  a base-only glyph. ONE COLOUR PER STATE: armed sets `--icon-accent:#fff`,
+  danger the danger red, a toggle `currentColor`; only resting and `.tbx-sel`
+  are duotone. Rendering the SHEET is what caught wireframe and subdivide being
+  the same square-plus-cross, and Bevel and Knife both being lucide Scissors.
+  NO per-theme icon assets, by design — custom themes are token-only, so
+  per-theme artwork cannot scale), shared
   `ContextMenu.svelte` (caps to viewport + scrolls vertically when tall, never
   horizontally; per-submenu flip via left/right/top/bottom — no transform),
   `components/ui/DragRow.svelte` (#16-Q3: THE numeric field — drag to scrub, type
@@ -605,6 +753,113 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **An SVG sibling drawn AFTER your hit target steals the press, and bubbling
+  cannot save you.** The animation ruler's tick `<line>`s and labels are drawn over
+  the ruler `<rect>` as SIBLINGS, so pressing a tick hit the line, and a line has
+  no ancestor with the handler — the rect is beside it, not above it. Put the
+  handler on the `<svg>` and decide by coordinate (or mark decoration
+  `pointer-events="none"`). The tell: a CLICK between ticks worked while a press ON
+  one did nothing, and `document.elementFromPoint` named a `<line>`.
+- **A crash on mount is invisible to a suite that only reads STORES.** A duplicate
+  `{#each}` KEY (two animation keys legitimately share a time while a multi-selection
+  is dragged through itself) THROWS in svelte and took the whole Animation window
+  down — the pane stopped opening for real users while eight green suites sailed
+  past, because every check around it read a store rather than the DOM. `pageerror`
+  was logged and nothing more. helpers.cjs now COLLECTS page errors and `finish`
+  FAILS the run on a render crash (`h.pageErrors(peer)` exposes them); never key an
+  each-block by a value that can repeat.
+- **A SYNTHETIC event does not travel the path a real one does.** The check for "the
+  browser context menu must not appear" dispatched `new MouseEvent('contextmenu')` on
+  the plot and passed while the native menu still came up for the user. `contextmenu`
+  is DELEGATED by svelte, so panel chrome that stops pointer events on their way up
+  stopped it too, and the app-root handler never ran. Block it with a DIRECT listener
+  on the pane root, and assert with REAL right-clicks plus a window-level listener
+  watching `defaultPrevented`.
+- **Re-identifying moved items by their VALUE after a sort is not tracking them.**
+  A multi-key drag re-found each key by matching the time it had just written; with
+  snapping on, two keys of one track land on the same time constantly, both matched
+  the same key, and one of the pair was dropped or duplicated. The fix is to TAG each
+  moved item with the ordinal of the move that produced it and have the mutator
+  REPORT where each one landed (`moveKeys`); `Array.sort` is stable, so an identical
+  key still keeps its order. Any "apply a delta to N selected things" gesture has
+  this shape.
+- **A window derived from the two ends you are writing feeds back on itself.** The
+  timeline's `viewSpan` is `viewEnd - viewStart`, so a pan that read it per move
+  widened the view as it went — the same bug as the graph's value axis, one level up.
+  Capture the span at gesture start. (Generally: a derived quantity used to compute
+  the write it feeds is a loop; freeze it for the gesture.)
+- **A value axis derived from the data cannot be live while you drag the data.**
+  The graph editor's y range comes from the keys' min/max, so dragging a key moved
+  the range, which moved the pixel→value mapping, which moved the value: the key
+  barely followed the pointer and the axis looked locked. FREEZE the range for the
+  gesture (`frozenRange`).
+- **A parked playhead must not be read through the loop wrap.** `(duration/duration)
+  % 1` is 0, so a playhead parked at the end of a looping clip read back as the
+  START — "go to end" looked like a no-op and the next key-step went the wrong way.
+  Read a not-playing transport straight off `pausedAt` (`parkedPosition`).
+- **Whatever else changes the current clip must move the TRANSPORT too.** The
+  transport stores which clip it plays, so setting `active` alone left the panel
+  showing the new clip while playback carried on with the old one (reported twice:
+  once for picking a clip, once for creating one). Every such path goes through one
+  `switchTransportTo`.
+- **A "length" field that silently retimes is a bug, not a convenience.** Clip
+  length, retiming the movement and playback speed are three different operations;
+  collapsing them made a door change speed when it was given more room. Split them
+  and let the destructive one be asked for.
+- **A modal move needs a way out.** Right-click-to-grab (the key follows the pointer
+  with no button held) is only usable because a click/Enter commits and Escape puts
+  every key back — implemented by re-applying the drag SNAPSHOT, which is also what
+  keeps a long multi-key drag from drifting (absolute from the snapshot, never
+  incremental).
+
+- **A menu opens on the button RELEASE, and `contextmenu` is dispatched AFTER mouseup**,
+  so by the time that event exists our own portaled ContextMenu is already mounted under
+  the cursor and IS its target. No `contextmenu` blocker on the surface that was
+  right-clicked can help, in bubble OR capture phase, because the event never travels
+  through it - the pane-root blocker looked broken for two rounds for exactly this
+  reason. Block it on the MENU (one line covers every menu in the app; submenus are DOM
+  children and bubble to it). Diagnose with a window-level listener recording
+  `{target, defaultPrevented}` for REAL right-clicks: it reported target DIV inside
+  [role=menu], inPane false.
+- **An overlay handle drawn AFTER the thing it belongs to steals its press.** The easing
+  tangents were drawn after the key circles so they would win a coincident hit - but an
+  ease of [0,0] puts control point 1 exactly ON its key, which made the KEY ungrabbable
+  (caught as the graph key-drag silently dragging a tangent: 2 -> 2). Draw the secondary
+  handle FIRST; the primary object wins. And give it the same button guard the primary
+  has (`e.button !== 0`), or a right-click starts a drag AND eats the context menu.
+- **A pair of editors on the same numbers must agree on their RANGES.** The curve lets
+  an easing y overshoot past 1 (that is what a bounce is); the 132px numeric pad clamped
+  0..1, so it drew an authored bounce outside its own box and would have flattened it the
+  moment you touched the handle. Widen both, or clamp both.
+- **A LOOP WRAP inverts an interval test.** Detecting "what did the playhead pass" from
+  the previous tick position to this one is right until the playhead jumps from the
+  window end back to its start - then the interval between the two positions is exactly
+  the part it did NOT travel. Fire the two real pieces instead. Measured with the branch
+  removed: the marker before the end never fired, the one after the start fired twice, and
+  one in the MIDDLE that the wrap jumped over fired spuriously. pingpong needs none of
+  this, its reflection being continuous. The test lesson is the same shape: asserting
+  only that the near-end and near-start markers fire PASSES with the branch gone - the
+  reading that separates them is the middle marker that must NOT fire.
+- **A resize grip capped by a CONSTANT escapes a short pane.** The clip list clamped at a
+  flat 360px whatever the pane’s height, which fits inside a tall dock and pushes the
+  grip past the window bottom on a short one - with no way back, because the thing you
+  would grab is gone. Take the ceiling from the measured container, and re-clamp when it
+  SHRINKS (dock resize, window resize, undock, or a stored pref from a bigger pane).
+- **`updateKey` only PATCHES a key that exists; `addKey` is what inserts.** A test that
+  seeded four keys with `updateKey(uuid, track, 0..3, ...)` silently got two, because
+  addTrack seeds exactly two - and the suite then measured a two-key row while claiming
+  four. Related: `play(uuid, clip, {from})` takes an ELAPSED offset into the run, NOT a
+  clip time, so `{from: 2, reverse: true}` on a 2s clip means "already finished", not
+  "start at the end" (which is `{from: 0}`).
+- **A brief keystroke cannot be caught by a settled store read.** Probing Ctrl+V with
+  `keyboard.press` showed the mic closed even with the bug in, because the keyup resets
+  the flag on the way out - HOLD the combo and record whether the mic EVER opened. And
+  order matters: the first-ever `getUserMedia` outlasts a short hold, so a modified-key
+  probe made before a bare-V probe has warmed the stream passes vacuously.
+- **Counting the undo stack is not a safe way to assert "one entry per gesture"** late in
+  a long suite: `recordEntry`’s LIMIT trim evicts the oldest, so a correct gesture can
+  leave the depth unchanged (it read +0 while undo worked perfectly). Assert the
+  PROPERTY - that ONE undo reverts the whole drag - and redo to carry on.
 - **Any op that turns a SCREEN gesture into geometry has two traps.** (1) Compute the
   crossing point per WELDED EDGE, never by intersecting each triangle's own plane: two
   triangles sharing an edge get different points wherever they are not coplanar, i.e. a crack
@@ -724,6 +979,41 @@ loadable play content. Everything a user does must be visible to connected peers
   sessions were never affected — they use toJSON already. When adding any per-object
   state, ask which of the FOUR paths carry it: the wire, autosave, sessions, and
   undo — they do not share a serializer.
+- **Measure a rotation from the CENTROID, never the bounding-box centre.** The box of
+  a rotated point set has a DIFFERENT SHAPE, so its centre is not the rotated image of
+  the old centre: a 1-degree key rotate measured 1.51 degrees and a 10-degree one
+  16.1. The mean of the points is rotation-equivariant and reads exactly 1.000 /
+  10.000. (The same check with a loose 12-degree tolerance had passed, which is how a
+  wrong metric survives.)
+- **A HANDLE that wins the press will win a test's press too.** The placed UV origin
+  deliberately takes priority over vertex picking, and the placed-origin rotate check
+  aimed its grip at the furthest selected point — which is exactly where the origin had
+  just been dragged, so the "rotate" dragged the origin and reported the feature dead.
+  A synthesized grip must keep clear of every handle, and the section needs a premise
+  check that the press started the gesture it meant to (`gesture === 'drag'`).
+- **A ROTATION guard needs an angle; every invariant a rotation preserves is also
+  preserved by a WRONG rotation.** The UV rotate's first checks were "the pivot did
+  not move" and "every point kept its distance from it" — both stay GREEN when the
+  gesture COMPOUNDS (a compounding rotation is still a rotation, just eight times too
+  far), proven by putting the compounding call back. What catches it is the swept angle
+  of the selection's centroid about an OFF-CENTRE origin: 0.0 degrees instead of 90,
+  because eight 90-degree steps come to five full turns. Measure the quantity the bug
+  changes, and pick a gesture count that does not land the wrong answer back on the
+  right one (a 4-step sweep would have read 360 = 0 too).
+- **A RELATIVE check cannot see a stale selection: it reads through the same stale
+  lens.** After a UV commit renumbers the indices, `du === 1/64` still held for the
+  selection's own reported points — they had all drifted together onto a different
+  cluster. The guard has to anchor OUTSIDE the suspect state: on the coordinate the
+  user clicked, demanding nothing is left one pixel behind (the real symptom is a
+  cluster tearing, 4 of 6 corners stranded).
+- **A grip for a synthesized gesture must be a point that EXISTS, and its pixel must
+  really be the target.** Aiming a UV rotate at (uMax, cv) picked a spot a box has no
+  corner at, so the press PANNED and three assertions passed vacuously; aiming at the
+  furthest corner instead put the pixel under the app's corner chrome, and the press
+  hit a button (`elementFromPoint` said so — reading handler code would not have).
+  Choose from the actual selected points and verify the pixel resolves to the canvas.
+  Related: a rotate can push the mapping outside 0..1, after which every later section
+  aims off-canvas — re-frame between sections.
 - **A capability gate copied from the WRITE path silently disables READ.** The UV
   editor gated its whole canvas on the meshgeo snapshot cap, which exists because a
   GEOMETRY COMMIT must fit one message — nothing to do with viewing a UV map, and
@@ -1159,6 +1449,25 @@ loadable play content. Everything a user does must be visible to connected peers
   `measureDock()`. Bottom-sheet mode (Inspector/NotesDrawer) is `≤640px` and its slide-UP
   transition must gate on that EXACT breakpoint, NOT the `≤820` `narrowDrawer` used for the
   floating-corner rounding, or the 641–820 side drawer wrongly slides up.
+- **A window bigger than the screen can never be shrunk again** (18-B): the
+  bottom-right grip is the only way to resize, so once it is off-screen the user
+  is stuck — `document.elementFromPoint` at the grip returns nothing and a real
+  mouse cannot reach it (measured on the mesh toolbox: grip at y=830 on a 720px
+  viewport, which also meant that toolbox had NEVER been resizable with a real
+  mouse at that height). `windowSize.js` has the two rules, and they answer
+  different questions: `clampWinSize` = "does this size fit at all?" for LOAD
+  and viewport-shrink, position-independent, with the viewport cap WINNING over
+  the minimum (`Math.max(minW, …)` last is itself a way to end up wider than the
+  screen) and the top chrome subtracted (a window may not sit under the Connect
+  bar, so that strip is not usable height); `clampResize` = "can the corner go
+  there?" while dragging — it stops at the viewport edge, the OS window rule,
+  which is also what stops the window JUMPING out from under the cursor. Three
+  more things that were not obvious: a window that GROWS needs its POSITION
+  re-clamped (consumers apply their height after dragWindow has already clamped,
+  so the initial clamp measured a smaller window — hence the ResizeObserver);
+  `--dw-top` lets a content-height window cap against the space BELOW it
+  (`max-height: 100vh` ignores the offset); and double-click on any grip resets
+  the size while keeping the position.
 - **A floating/absolute element off the RIGHT or BOTTOM edge grows the document (scrollbars
   + shifts the centred Connect pill); off the LEFT/TOP does not** — hence `body,html {
   overflow:hidden }` in `routes/+page.svelte` (full-viewport app; panels/modals scroll
@@ -1224,6 +1533,16 @@ loadable play content. Everything a user does must be visible to connected peers
   when store reads disagree with what you see, add a component-side debug hook
   (`window.__cameraPreviewDebug`, opt-in like `__outlineDebug`) to compare the
   COMPONENT's view with the store's.
+  **19-A escalation — a DAY-LIVED server serves stale DUAL MODULE INSTANCES**,
+  not just half-mounted pages: MeshToolOptions' `bind:checked={$faceAutoApply}`
+  flipped the DOM checkbox while the app's real store never moved — the
+  component was bound to a SECOND faceEdit instance from an older transform.
+  Real users in that tab are broken too, not only tests. Two consequences:
+  RESTART the dev server after heavy editing and BEFORE the final verification
+  battery (kill-by-port + detached relaunch, then curl-grep a new symbol to
+  prove it serves YOUR code); and never trust an A/B where both sides ran
+  against the same long-lived server — it "proves pre-existing" for failures
+  that are purely environmental, because both sides lie identically.
 - **Svelte 5 DELEGATES `onkeydown`/`onpointerdown`/`onclick` attributes** — the
   handler only runs once the event reaches the app root, so any ancestor that
   stops propagation on the way up silently kills it. Panel widgets are exactly
@@ -1481,6 +1800,231 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-14, later): **UV TRANSFORM TOOLS — branch `feat/uv-transform-tools`**
+  (lane `../theprototype-lane-uv` @ port 5193, 2 commits, NOT PR'd yet; **branched off
+  `feat/17e-animation-curves`**, because U1 re-points the TIMELINE at the extracted
+  engine — retarget once 17-E lands). Plan + as-built: cloud
+  `plans-core/pending/uv-editor-transform-tools.md`. **U1** `$lib/modalGrab.js` =
+  `createGesture` (see the architecture entry); shipped by moving the timeline onto it
+  FIRST, with animation-curves/animation-window as the safety net, so the extraction is
+  provably behaviour-preserving. **U2/U3** the UV editor gained the timeline's whole
+  interaction model — Move/Rotate/Scale on 1/2/3, a modal grab, an arrow keyboard in
+  TEXTURE PIXELS, `Ctrl+Shift+arrow` selection growth, and a right-click ContextMenu
+  that also fixes an old bug (a right-press fell through to the drag/marquee/pan code
+  AND raised the browser's menu). Plus, from the user mid-batch, a **placeable +
+  draggable transform ORIGIN** (snaps onto a uv point, Alt places freely; local, never
+  replicated). ONE latent bug fixed: a commit renumbers uv indices, so the second
+  keypress tore the picked cluster (4 of 6 corners stranded) — the selection is
+  re-derived by COORDINATE now (`uvIndicesAt`). No new wire type and no new history
+  kind: everything commits through `beginUvDrag`/`endUvDrag`. A third commit answered
+  two user reports: the ARROWS now apply the armed mode (rotate/scale about the origin,
+  per-axis scale, Alt uniform) instead of always nudging, and `Ctrl+Space` opens
+  KEYBOARD vertex picking (cursor + transparent box, arrows walk it, Ctrl+Space takes
+  or drops it, Esc leaves keeping the picks) — activation deliberately reuses the
+  selecting key so there is one to learn. Suite `uv-transform` (96 checks, real mouse +
+  real keys), with two guards proven by breaking the code; baseline **391/62**. Traps
+  from this batch are in the gotchas (a rotation guard needs an ANGLE, and must measure
+  the CENTROID not the bounding box; a relative check cannot see a stale selection; a
+  grip must be a point that EXISTS, whose pixel is really the canvas, and which is
+  clear of any handle that wins the press).
+- Status (2026-08-14): **17-E ANIMATION KEYFRAMES — branch `feat/17e-animation-curves`,
+  lane `../theprototype-lane-anim` @ port 5195, 9 commits, NOT PR'd yet.** The authored
+  animator went from one `{from,to,bezier}` segment per channel to a real keyframe
+  system: named CLIPS of keyed tracks, a dope-sheet + graph TIMELINE (zoom/pan, A/B
+  in-out window, multi-select, right-click modal grab), deterministic REPLICATION of
+  both the data (`animdata`) and the transport (`animplay`, synced-clock stamp) with a
+  late-joiner `getanim`, the `anim` history kind (one entry per gesture), auto-key
+  recording that CREATES the channels you pose (gizmo + Inspector), a preset library
+  (Door/Drawer/Elevator/Turntable/Pulse/Blink), the **`playanim` flow node** (On Click →
+  a door opens on every peer, toggle plays the clip BACKWARDS to shut), and a GLTF
+  export that samples clips into real KeyframeTracks (round-trip delta 0.0000).
+  Look channels (opacity/colour/metalness/roughness/glow/light intensity) ride the same
+  keys. Suites: animation-curves (90), animation-node (17), animation-autokey (24),
+  animation-bake (12), animation-sync (24, two peers + late joiner) + the updated
+  animation-window/animation-persist. Baseline **391/62** held; build green. Traps from
+  this batch are in the gotchas (SVG sibling hit-stealing, a live-derived drag axis, the
+  loop-wrap on a parked playhead, transport-follows-clip, length vs retime vs speed).
+  The EDITOR keymap is one model, shared with the rest of the app's conventions:
+  arrows step the playhead by FRAMES (Ctrl x10, Shift x100 — the DragRow modifiers),
+  Alt+arrows jump key to key, Ctrl+Space adds the key at the playhead to the
+  selection, Esc drops it, 1/2 arm Move/Scale (the mesh editor's digits), Shift+arrows
+  transform the selection (X time, Y value), Del removes it. MIDDLE-click locks the
+  selection to the pointer (modal grab: click/Enter commits, Esc reverts), RIGHT-click
+  is the context menu, right/middle-drag and Shift+wheel pan, the wheel zooms (up =
+  in), and a NAVIGATOR strip under the plot carries the whole clip with the visible
+  window as its thumb. Frames are 30fps by default (`animationFps` in localStorage).
+  Later rounds added: per-clip **fps** (what a clip's key times MEAN — the editor's
+  frame grid follows it; `animationFps` is only the default for new clips) and per-clip
+  **step** (sample on a coarser grid = the "on twos" stepped look, applied at `poseAt`
+  so playback, scrub and bake agree); a **key clipboard** (Ctrl+C/V/D and M to mirror,
+  held BY CHANNEL and relative to the earliest key, so a paste crosses clips and
+  objects and creates channels the target lacks); the **navigator above** the plot; the
+  graph FILLING the pane (no scrollbars, and the svg sized to the content box, since
+  `clientWidth` includes padding); scale no longer snapping (near the pivot a factor
+  step is worth less than a frame, so snapping ate the horizontal half); the playhead
+  snapping while you sweep the ruler; and the browser context menu blocked by a DIRECT
+  listener on both pane shells.
+  OWED: user's on-device/feel pass, then the PR to release/next.
+  The clip->graph handoff shipped as **`animfinished`** (Animation Finished): pulses
+  when a once-clip reaches its end, LOCALLY on every peer — each runtime reaches that
+  elapsed time itself, the same reasoning as the once-clip end, so no message. Wire it
+  into a Counter, a sound, or the next door's Play Animation.
+  **FOLLOW-UP DROP (2026-08-14, plan `plans-core/pending/17-e-animation-followups.md`,
+  F1-F6 ALL EXECUTED + two user requests, 8 commits):** F1 the reported
+  **Ctrl+V fires push-to-talk** (voiceChat matched the KEY and no modifiers; PTT is
+  a BARE hold, and the keyup path is deliberately NOT modifier-guarded or pressing
+  Ctrl mid-hold strands the mic open) plus the Animation pane STOPPING propagation
+  on keys it consumes (1/2 armed its Move/Scale AND drove the gizmo at once) - suite
+  `voice-ptt`. F2 the **browser menu on graph keys**, whose real cause is a timing
+  one: a menu opens on the button RELEASE and `contextmenu` is dispatched AFTER
+  mouseup, so our own portaled ContextMenu is already under the cursor and IS the
+  target - no blocker on the right-clicked surface can see that event in either
+  phase, so the fix is one line on ContextMenu itself and covers every menu in the
+  app. F3 **`animstate`** (progress / playing / position / duration / remaining as
+  ONE number socket picked by a `read` param, progress measured through the A/B
+  WINDOW). F4 **easing tangents dragged ON the curve** (x clamped to the segment,
+  y free because overshoot is what makes a bounce readable; the handles are drawn
+  BEFORE the keys, since an ease of [0,0] puts P1 exactly on its key and the later
+  SVG sibling wins the press; the numeric pad widened to -0.5..1.5 to match, or it
+  would draw an authored bounce outside its own box and flatten it on the next
+  touch). F5 **clip MARKERS + the `animmarker` node** (see the animationPreview
+  entry for the wrap reasoning). F6 **onion skin**. Plus, asked for mid-batch:
+  **box + lasso selection of keys** (the UV editor pair, on the free LEFT-drag
+  gesture, hit-tested in PLOT PIXELS so one implementation covers sheet and graph;
+  a press that does not TRAVEL deliberately keeps the selection, because a body
+  press is how the plot takes the keyboard back after using the menu) and a fix for
+  the **clip-list resize grip going off-screen** (its cap was a flat 360px with no
+  relation to the pane, so a short dock pushed it past the window bottom with no
+  way back; the ceiling is the sidebar height less what the sections below need,
+  re-clamped whenever the pane shrinks). New suites `voice-ptt`(15),
+  `animation-markers`(28), `animation-marquee`(21), `animation-onion`(19),
+  `animation-clips-resize`(11), plus sections 14/15 in `animation-curves` and the F3
+  section in `animation-node`. Also fixed a PRE-EXISTING flake in animation-node
+  (the reversal check sampled a 0.6s clip at a fixed 250ms and read exactly 90.0
+  when the first tick arrived late; it watches the swing from inside the page now).
+  Baseline held **391/62**; build green. OWED: the user’s on-device/feel pass, then
+  the PR of the whole 17-E branch to release/next.
+  NEXT (planned): the same transform tools
+  in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
+- Status (2026-08-17): **THE MESH-EDIT ROUND IS MERGED TO release/next — PRs #132
+  (19-A), #133 (two fix rounds) and #134 (the pivot work) @9972a24.** #133:
+  the Cancel button drew Undo2 beside #mesh-undo's Undo2 (now the X of a
+  Cancel/Done pair) · Tab/Shift+Tab own the element modes so 1/2/3 go back to
+  the gizmo (they were SUPPRESSED for the whole session, leaving it with no
+  transform keys) · the per-mode selection stash wrote BOTH slots and so
+  clobbered the other mode's pick with the emptiness of a freshly-entered
+  session · the toolbox interpolated reactive values into the style ATTRIBUTE,
+  which svelte re-renders whole, wiping dragWindow's inline position (the
+  window painted in the corner then jumped; they are `style:` DIRECTIVES now)
+  and dragWindow's reveal no longer save()s its clamp · and THE EDIT WIREFRAME
+  WAS BEING SAVED INTO SCENE FILES (see the `editOverlays` entry above — a
+  user's .tpscene had three stacked on one mesh). #134: the vertex gizmo seats
+  on the selection CENTROID and does rotate/scale, plus a placeable pivot with
+  three ways to set it (see the `meshPivot` entry), themed `.tbx-check`
+  checkboxes, ONE collapsible Gizmo & pivot section, and the app-wide snap
+  surfaced in the toolbox. Baseline **391/62** at every commit. New suites:
+  mesh-pivot-gizmo (124+). OWED: the user's on-device feel pass (incl. the
+  non-dark themes, which headless cannot judge). PENDING follow-ups written up
+  in cloud `plans-core/pending/mesh-proportional-pivot-followups.md`: F1
+  proportional falloff for ROTATE/SCALE (needs the user's fork answer), F2
+  vertex slide under a custom pivot (probably WONTFIX, make it visible), F3 a
+  proportional TRANSLATE never replicates its falloff neighbours — the only
+  user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
+  separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-16): **19-A READY TO PR — P0–P5b + P7a + P7b COMMITTED (12 commits,
+  branch `feat/mesh-tool-interaction`, NOT pushed); P6 and P7c are PARKED by the user
+  and execute later as their own branches.** Hashes: P0 `bf6f2df` · P1 `8b0352f` ·
+  P2 `e259d6b` (THE ADJUST ENGINE) · docs `a1c9f88` · P3 `0cc844e` · P4 `95df8b0` ·
+  P5a `7179a6f` (Opus) · P5b `d224cc2` · docs `497ef8e`/`cfff1c8` · P7a `5da6fe8`
+  (Opus) · P7b `7edcbed`. Baseline **391/62 at EVERY commit**; build green; 28 files,
+  +7195/-487. As-built table + the parked specs: cloud
+  `plans-core/pending/19-a-mesh-tool-interaction.md` §9 (§4 keeps P6's spec, §8 P7c's).
+  P7a = bridge **invert faces** (negate the wall dir AFTER the shell-test guess) +
+  face-bevel **negative profile** (the concave quarter circle is the same arc with the
+  sin/cos roles SWAPPED; every schedule column telescopes to 1, so total reach is
+  bit-identical across profiles — that invariance is what makes the sign safe).
+  P7b = the two edge-move bugs + three interaction items: the edge overlay is drawn
+  from the grab's own transformed ORIGINAL endpoints while a grab is live and the
+  selected keys are REMAPPED through the grab at commit (welded keys are
+  position-quantized, so moving an edge changes its key — that single fact caused
+  both reports); loop-cut Along/Across with BOTH rings captured at begin; the wheel
+  resizes the proportional radius mid-drag with weights recaptured against drag-START
+  positions (suppression is TWO-SIDED: stopPropagation from the window-CAPTURE
+  listener kills the OrbitControls canvas dolly, and trackpadNav early-outs on
+  `proportionalWheelActive()` because two listeners on the SAME node cannot stop each
+  other); vertex-slide clamp toggle + landing marker; and the ring BILLBOARDS to the
+  camera via `onBeforeRender` (a normal-oriented circle vanishes edge-on).
+  PARKED, nothing started: **P6** (connect, dissolve verts, fill hole, edge slide,
+  solidify, separate-to-object — the batch's ONLY replication surface) and **P7c**
+  (vertex-bevel segments + THE MITERED CORNER at valence>=4, whose crack history is
+  the gate). WRAP still owed: merge origin/release/next INTO the branch (19-B merged
+  there @921be45 — `git merge-tree` says exactly ONE conflict, App.svelte's debugStores
+  lines), full sweep, push, PR. EXECUTION MODEL that worked: subagents implement (Opus
+  = spec-tight, Fable = operator-layer), the ORCHESTRATOR reviews every diff
+  first-hand, re-runs svelte-check + the affected suites itself, and commits with
+  EXPLICIT paths (a `git add -A` once swept a curl artifact named `-w` into a commit).
+  Subagents get: fresh-5174 restart + curl-grep-a-new-symbol before the final battery,
+  PEER_CONFIG on every two-peer run, DO-NOT-COMMIT, and "your final text IS the
+  report" (one parked itself waiting on a detached run the harness could not track).
+  Session-limit kills leave work ON DISK — resume the same agent with the tree state
+  spelled out. P5b's load-bearing find: `beginFaceGrab` skips the weld-stitch
+  neighbour capture when EVERY grabbed tri has a coincident twin outside the set (a
+  freshly-duplicated patch) — position-welding otherwise makes a duplicate immovable
+  off its source.
+- Status (2026-08-15, superseded by the entry above): **ROADMAP #19-A IN FLIGHT — the mesh tool APPLY-AND-ADJUST model.**
+  Branch `feat/mesh-tool-interaction` off release/next @608e852; plans in the cloud repo
+  (`plans-core/roadmap-19-tool-interaction-snapping.md` + `pending/19-a/-b`); 19-B
+  (advanced snapping) runs in a PARALLEL user session on a worktree lane — Scene.svelte
+  belongs to 19-B in that split. Committed so far: **P0** `bf6f2df` (DragRow
+  onscrubstart/onscrubend; meshToolParams into debugStores; componentsOfTris exported;
+  faceSelectionInfo gains `pieces` + component-keyed loops = bridge's REAL precondition;
+  history `retractEntry`) · **P1** `8b0352f` (pure cores bevelFacesCore/bevelEdgesCore/
+  bevelVerticesCore/loopCutCore/bridgeFacesCore + the proven-but-unused subdivideLevels;
+  wrappers byte-equivalent; quadRingKeysIn/quadCornersIn de-session-ized with shims) ·
+  **P2** `e259d6b` (THE ADJUST ENGINE in faceEdit.js: beginOpAdjust/reapplyOpAdjust/
+  settleOpAdjust/cancelOpAdjust/endOpAdjust + opAdjustState — ops apply on click when
+  preconditions hold, the pane becomes a live "Adjusting" panel, ✕ reverts via
+  retractEntry; ONE history entry recorded AT APPLY, `entry.after` MUTATED IN PLACE on
+  settle; identity guard on installedGeometry drops the adjust under undo/remote swaps;
+  interruptions REVERT a deferred VR adjust first (no entry yet = stranded geometry
+  otherwise); VR beginFaceAdjust/adjustFaceGesture/commitFaceAdjust are consumers;
+  #mesh-undo/#mesh-redo header buttons; mesh-toolbox-redesign's "click does not commit"
+  contract DELIBERATELY FLIPPED; new mesh-adjust suite, 26 checks incl. two-peer settle
+  parity). P3 (params: bevel WORLD-units fix + in/out direction + faces profile, extrude
+  individual, inset depth, loopcut position, bridge twist, subdivide levels, and the
+  edge/vertex bevel apply-on-click carry-over with its suite flips) was IN FLIGHT at the
+  pause. Remaining after P3: P4 proportional ring + edge/face falloff, P5 safe new ops,
+  P6 risky new ops (separate-to-object = replication, LAST). Execution model this
+  roadmap: implementation by subagents (Opus for spec-tight mechanical phases, Fable for
+  operator-layer), orchestrator reviews diffs first-hand, re-runs the gates and commits.
+  Baseline 391/62 held through P0-P2.
+- Status (2026-08-14): **ROADMAP #18 EXECUTED — settings polish, window sizing, Edit Mesh
+  toolbox redesign.** 7 commits on two stacked branches off release/next (not PR'd):
+  `feat/roadmap18-settings-windows` = **18-A** `37370be` (auto-restore-on-load pref,
+  default OFF, restoring straight away and REPORTING it in a sticky toast — its own id,
+  since Toasts' mirror owns 'restore-session'; `restoreSnapshot` split into
+  `applyRestore` + two callers; new LOCAL `viewPrefs.js` for the wireframe / selection-
+  outline / edit-overlay colours, the edit one keeping 'auto' so the luminance pick
+  stays the default) + **18-B** `81fa20a` (see the window-sizing gotcha — one clamp rule
+  in `windowSize.js` across dragWindow and the five hand-rolled resizers, dblclick-grip
+  reset, and the toolbox height bound that made `toolbox-window` green again: it was RED
+  on release/next because the grip sat off-screen). `feat/mesh-toolbox-redesign` stacks
+  C1 `b66e315` (tabs + shell primitives + ToolboxSection) · C2 `3e39a55` (contextual
+  Tool options, whole-mesh work in collapsible sections available in EVERY element mode,
+  Bevel/Loop cut as select-then-Apply) · C3 `246cb95` (bottom sheet ≤640px, in the shell
+  so Sculpt inherits it) · C4 `cc675db` (duotone icons — the user reviewed a rendered
+  5-theme sheet before this commit) · C5 `0b7359c` (**TOOLS vs OPERATIONS** in faces —
+  armed tools vs selection actions, the Blender toolbar/menu split — **Bridge gained a
+  `cuts` parameter**, and DragRow replaced the last bare number inputs). Baseline held
+  **391/62** throughout. New suites `settings-autorestore-colors` (32),
+  `window-size-clamp` (30), `mesh-toolbox-redesign` (71); 16 mesh suites + sculpt/uv/
+  camera-pip/number-fields re-verified. Two method notes worth keeping: RENDERING the
+  icon sheet is what exposed two glyph collisions that reading the code did not, and the
+  bridge-cuts check had to measure WALLS not the triangle delta (the op deletes the caps
+  too, so a clean 3x looked like 4→20). Pre-existing reds proven by A/B and NOT from this
+  work: `view-mode`'s shadow catcher (a DEV-ONLY ~1.2s dynamic-import latency —
+  `applyEnvironment` itself runs in 0ms), `ui-fixes-15lmno`'s two Roughness checks,
+  `mesh-fixes-round2`'s real-mouse face-click premise.
 - Status (2026-08-11, fifth drop): **knife RUBBER BAND + the P12 wasm question ANSWERED —
   PRs #120 + #121 MERGED @ca9e4ba.** The knife draws a dashed DOM band between its two clicks
   (the cut is a screen line, so there is no 3D line to draw), and Escape drops a PENDING cut

@@ -34,7 +34,9 @@ import {
 	proportionalEdit,
 	proportionalRadius,
 	falloffWeight,
-	registerProportionalAnchor
+	registerProportionalAnchor,
+	beginProportionalWheel,
+	endProportionalWheel
 } from './proportional';
 import { showProportionalRingAt, hideProportionalRing } from './proportionalRing';
 
@@ -2190,8 +2192,13 @@ function quadCornersIn(tris, partner, quad) {
  * @returns {{quad: number, cross: string[]}[]}
  */
 /** @param {boolean} [quiet] 19-A P2: the popup's readiness map probes this
- * reactively — it must never toast on a mere selection change */
-function loopCutRing(quiet = false) {
+ * reactively — it must never toast on a mere selection change
+ * @returns {{pick: {quad: number, cross: string[]}[], alt: {quad: number, cross: string[]}[]}}
+ * 19-A P7b: BOTH rings through the anchor — `pick` is the selection-overlap
+ * choice (the pre-P7b return value), `alt` the PERPENDICULAR one. The adjust
+ * engine captures both at begin so an axis toggle can re-run the cut across
+ * the other ring; `alt` may be empty (a pole), which disables the toggle. */
+function loopCutRingPair(quiet = false) {
 	const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
 	// the lowest-indexed PAIRED triangle: a face/shell selection can hold plenty
 	// of unpaired ones, and sel[0] used to be whichever happened to be first
@@ -2201,21 +2208,27 @@ function loopCutRing(quiet = false) {
 	if (anchor === undefined || anchor < 0 || !workingTris[anchor]) {
 		if (!quiet)
 			showToast(sel.length ? 'Loop cut needs a QUAD in the selection' : 'Pick a quad first, then Loop cut');
-		return [];
+		return { pick: [], alt: [] };
 	}
 	if (quadIdOf(anchor) < 0) {
 		if (!quiet) showToast('Loop cut needs a QUAD — this triangle has no pair');
-		return [];
+		return { pick: [], alt: [] };
 	}
 	const rings = [faceLoopRing(anchor, 0), faceLoopRing(anchor, 1)];
-	let pick = rings[0];
+	let axis = 0;
 	if (sel.length) {
 		const selQuads = new Set(sel.map((/** @type {number} */ ti) => quadIdOf(ti)).filter((q) => q >= 0));
 		const overlap = (/** @type {any[]} */ r) => r.filter((e) => selQuads.has(e.quad)).length;
-		if (overlap(rings[1]) > overlap(rings[0])) pick = rings[1];
+		if (overlap(rings[1]) > overlap(rings[0])) axis = 1;
 	}
+	const pick = rings[axis];
 	if (!pick.length && !quiet) showToast('No loop runs through that face');
-	return pick;
+	return { pick, alt: rings[1 - axis] };
+}
+
+/** the ring a loop cut runs across (the selection-overlap pick) @param {boolean} [quiet] */
+function loopCutRing(quiet = false) {
+	return loopCutRingPair(quiet).pick;
 }
 
 /** 19-A P2: cheap precondition probe — does a loop cut have a ring to work on?
@@ -4704,16 +4717,26 @@ function refreshEdgeOverlay() {
 		edgeOverlay = null;
 	}
 	if (!scene || !faceEdited || get(faceEditSubmode) !== 'edges') return;
-	const keys = new Set(get(edgeEditSelected));
-	const hover = get(edgeEditHover);
-	if (hover) keys.add(hover);
-	if (!keys.size) return;
 	/** @type {number[]} */
 	const points = [];
-	for (const key of keys) {
-		const ends = edgeEndpoints(key);
-		if (!ends) continue;
-		points.push(ends[0].x, ends[0].y, ends[0].z, ends[1].x, ends[1].y, ends[1].z);
+	if (faceGrab?.edgeLive) {
+		// 19-A P7b: a LIVE grab — the selection's keys are POSITION-quantized, so
+		// once the endpoints move they resolve to nothing and the overlay would
+		// vanish (or, before this, sit stranded at the pre-drag place until
+		// release). The grab captured the selected edges' original endpoints and
+		// applyFaceGrab transforms them per frame; draw those instead.
+		for (const pair of faceGrab.edgeLive)
+			points.push(pair[0].x, pair[0].y, pair[0].z, pair[1].x, pair[1].y, pair[1].z);
+	} else {
+		const keys = new Set(get(edgeEditSelected));
+		const hover = get(edgeEditHover);
+		if (hover) keys.add(hover);
+		if (!keys.size) return;
+		for (const key of keys) {
+			const ends = edgeEndpoints(key);
+			if (!ends) continue;
+			points.push(ends[0].x, ends[0].y, ends[0].z, ends[1].x, ends[1].y, ends[1].z);
+		}
 	}
 	if (!points.length) return;
 	const geometry = new THREE.BufferGeometry();
@@ -5597,6 +5620,7 @@ export function exitFaceEdit() {
 	}
 	cancelKnife(); // a pending cut must not outlive the session
 	hideProportionalRing(); // P4: nor the radius ring (safety — grabs hide it themselves)
+	endProportionalWheel(); // P7b: nor the wheel claim (faceGrab is dropped below)
 	detachFaceGizmo(); // 163: drop the desktop gizmo + its proxy
 	clearEdgeSelection(); // M4: the edge sub-mode's pick + overlay go with it
 	// revert an uncommitted gesture's live preview before tearing down (122)
@@ -6203,6 +6227,10 @@ function liveGeometryUpdate() {
 	faceEdited.geometry = geometry;
 	faceEdited.userData.faceEdited = true;
 	refreshFaceOverlay();
+	// P7b: the EDGE highlight tracks the gesture too (it used to sit at the
+	// pre-drag position until release); submode-guarded inside, and during a
+	// grab it draws from the grab's own live endpoints (see refreshEdgeOverlay)
+	refreshEdgeOverlay();
 	refreshFaceWireframe(); // B2: track the gesture live
 	objectsGroup.update((v) => v);
 	const now = Date.now();
@@ -6370,8 +6398,27 @@ export function beginFaceGrab(faceOrIndex) {
 		),
 		neighbours,
 		centroid: face.centroid.clone(),
-		normal: face.normal.clone()
+		normal: face.normal.clone(),
+		// P7b: what the mid-drag WHEEL recapture needs — the welded grab keys, the
+		// original grab-corner positions (proportional only) and the duplicate-patch
+		// verdict, all captured against the PRE-drag positions
+		grabKeys: keys,
+		grabPoints,
+		coincident: coincidentPatch
 	};
+	// P7b: the edge overlay is keyed by POSITION, so a live grab strands it at the
+	// pre-drag place (and the lookups fail outright once the endpoints move).
+	// Capture the selected edges' ORIGINAL endpoints; applyFaceGrab transforms
+	// them per frame and refreshEdgeOverlay draws those while the grab lives.
+	if (get(faceEditSubmode) === 'edges') {
+		/** @type {any[][]} */
+		const pairs = [];
+		for (const key of get(edgeEditSelected)) {
+			const ends = edgeEndpoints(key);
+			if (ends) pairs.push([ends[0].clone(), ends[1].clone()]);
+		}
+		faceGrab.edgeOrig = pairs;
+	}
 	if (index >= 0) faceEditHighlight.set(index);
 	// P4: the radius ring for the duration of the drag (hidden on commit/cancel)
 	if (proportional && grabPoints.length) {
@@ -6381,8 +6428,63 @@ export function beginFaceGrab(faceOrIndex) {
 			normal: face.normal.clone().transformDirection(faceEdited.matrixWorld).normalize(),
 			object: faceEdited
 		});
+		// P7b: the wheel resizes the radius mid-drag; weights recapture from the
+		// new radius against the SAME original positions (disarmed on commit/cancel)
+		beginProportionalWheel(recaptureGrabFalloff);
 	}
 	return true;
+}
+
+/**
+ * 19-A P7b: re-derive the grab's proportional NEIGHBOUR set from the CURRENT
+ * radius — the mid-drag wheel's recapture. Everything is measured against the
+ * ORIGINAL positions (`before.positions` / `grabPoints`), never the live mesh:
+ * the falloff must not chase the drag, and a moved corner's welded key no
+ * longer even resolves. Previously-carried corners are restored to their
+ * originals first, so one that fell OUT of the shrunken radius snaps back, and
+ * the re-applied gesture (absolute from originals) moves the new set.
+ */
+function recaptureGrabFalloff() {
+	const g = faceGrab;
+	if (!g || !faceEdited || !g.grabPoints?.length || g.coincident) return;
+	const radius = Math.max(get(proportionalRadius), 1e-4);
+	const radius2 = radius * radius;
+	// restore every previously-carried corner — the new set re-moves its members
+	for (const n of g.neighbours) workingTris[n.ti][n.k] = n.orig.clone();
+	const faceSet = new Set(g.triIndices);
+	const keys = g.grabKeys;
+	const before = g.before.positions;
+	/** @type {any[]} */
+	const neighbours = [];
+	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		if (faceSet.has(ti)) return;
+		t.forEach((/** @type {any} */ _v, /** @type {number} */ k) => {
+			const at = ti * 9 + k * 3;
+			const ox = before[at];
+			const oy = before[at + 1];
+			const oz = before[at + 2];
+			if (keys.has(keyOf(ox, oy, oz))) {
+				neighbours.push({ ti, k, orig: new THREE.Vector3(ox, oy, oz), w: 1 });
+				return;
+			}
+			let min2 = Infinity;
+			for (const p of g.grabPoints) {
+				const dx = ox - p.x;
+				const dy = oy - p.y;
+				const dz = oz - p.z;
+				const d2 = dx * dx + dy * dy + dz * dz;
+				if (d2 < min2) min2 = d2;
+			}
+			if (min2 >= radius2) return;
+			const w = falloffWeight(Math.sqrt(min2) / radius);
+			if (w > 0) neighbours.push({ ti, k, orig: new THREE.Vector3(ox, oy, oz), w });
+		});
+	});
+	g.neighbours = neighbours;
+	// re-apply the gesture so the surface reshapes NOW (the ring re-scales via
+	// its own radius subscriber); before any movement there is nothing to redo
+	if (g.lastT) applyFaceGrab(g.lastT);
+	else liveGeometryUpdate();
 }
 
 /**
@@ -6434,13 +6536,55 @@ export function applyFaceGrab(t) {
 		const moved = xf(n.orig);
 		workingTris[n.ti][n.k] = (n.w ?? 1) >= 1 ? moved : n.orig.clone().lerp(moved, n.w);
 	});
+	// P7b: keep the last gesture so the wheel recapture can re-apply it, and
+	// carry the selected edges' live endpoints for the overlay (the keys are
+	// position-quantized, so the moved edge can't be looked up mid-drag)
+	faceGrab.lastT = t;
+	if (faceGrab.edgeOrig)
+		faceGrab.edgeLive = faceGrab.edgeOrig.map((/** @type {any[]} */ pair) => pair.map(xf));
 	liveGeometryUpdate();
+}
+
+/**
+ * 19-A P7b (the lost-edge-selection bug): the welded edge KEYS are position-
+ * quantized, so moving an edge CHANGES its key and the stored selection stops
+ * resolving — the highlight vanished and the gizmo detached the moment a drag
+ * committed. Remap every selected key through the grab's actual movement:
+ * old corner position -> its moved position, read straight off the before/after
+ * pair, which also covers proportional partial-weight carries for free.
+ * Direct store write — op housekeeping, not a user pick (the weld rule).
+ * @param {number[]} beforePositions the grab's before snapshot
+ */
+function remapEdgeSelectionAfterGrab(beforePositions) {
+	const sel = get(edgeEditSelected);
+	if (!sel.length) return;
+	/** @type {Map<string, string>} old welded key -> the moved corner's key */
+	const movedKeys = new Map();
+	workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		t.forEach((/** @type {any} */ v, /** @type {number} */ k) => {
+			const at = ti * 9 + k * 3;
+			const ox = beforePositions[at];
+			const oy = beforePositions[at + 1];
+			const oz = beforePositions[at + 2];
+			if (ox === v.x && oy === v.y && oz === v.z) return;
+			const oldKey = keyOf(ox, oy, oz);
+			if (!movedKeys.has(oldKey)) movedKeys.set(oldKey, keyOf(v.x, v.y, v.z));
+		});
+	});
+	if (!movedKeys.size) return;
+	const next = new Set();
+	for (const key of sel) {
+		const [ka, kb] = key.split('|');
+		next.add(edgeKey(movedKeys.get(ka) ?? ka, movedKeys.get(kb) ?? kb));
+	}
+	edgeEditSelected.set([...next]);
 }
 
 /** Commit the grab: finalize geometry, replicate, one undo entry. */
 export function commitFaceGrab() {
 	if (!faceGrab || !faceEdited) return false;
 	hideProportionalRing(); // P4: the radius ring lives for the drag only
+	endProportionalWheel(); // P7b: the wheel belongs to the live drag only
 	const positions = trisToPositions(workingTris);
 	const before = faceGrab.before;
 	faceGrab = null;
@@ -6449,6 +6593,9 @@ export function commitFaceGrab() {
 	// array, so an undo could not heal a mapping the grab had damaged.
 	const groups = trisToGroups(workingTris);
 	const uvs = trisToUVs(workingTris);
+	// P7b: BEFORE the swap — applyGeometrySnapshot rebuilds the edge overlay from
+	// the selection, which must already carry the moved edges' NEW keys
+	remapEdgeSelectionAfterGrab(before.positions);
 	applyGeometrySnapshot(positions, groups, uvs);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
@@ -6464,6 +6611,7 @@ export function commitFaceGrab() {
 export function cancelFaceGrab() {
 	if (!faceGrab || !faceEdited) return;
 	hideProportionalRing();
+	endProportionalWheel(); // P7b
 	const before = faceGrab.before;
 	faceGrab = null;
 	applyGeometrySnapshot(before.positions, before.groups, before.uvs);
@@ -6748,6 +6896,9 @@ function mergeAdjustParams(a, patch) {
 		// P3: single-cut placement; clamped short of the boundary (a cut AT 0/1
 		// emits a zero-width band)
 		p.position = Math.min(Math.max(p.position ?? 0.5, 0.01), 0.99);
+		// P7b: which of the anchor quad's TWO rings the cut runs across — 0 = the
+		// begin-time selection pick, 1 = the perpendicular ring captured with it
+		p.axis = p.axis === 1 ? 1 : 0;
 	} else if (a.op === 'bridge') {
 		p.cuts = Math.max(0, Math.min(Math.round(p.cuts ?? 0) || 0, 20));
 		p.twist = Math.max(-20, Math.min(Math.round(p.twist ?? 0) || 0, 20));
@@ -6884,7 +7035,11 @@ function runAdjustCore(a) {
 		};
 	}
 	if (a.op === 'loopcut') {
-		const r = loopCutCore(a.originalTris, a.target, a.quadPartner, {
+		// P7b: axis 1 = the PERPENDICULAR ring, captured at begin. Both rings index
+		// into originalTris, so either re-runs from the same snapshot; an empty alt
+		// (a pole) falls back to the picked ring — the UI disables the toggle then.
+		const ring = p.axis === 1 && a.altTarget?.length ? a.altTarget : a.target;
+		const r = loopCutCore(a.originalTris, ring, a.quadPartner, {
 			cuts: p.cuts,
 			position: p.position
 		});
@@ -7056,6 +7211,13 @@ function adjustBeginToast(a, result) {
 	}
 }
 
+/** P7b: op-specific extras the UI reads off the state mirror — for loopcut,
+ * whether a PERPENDICULAR ring exists at all (the axis toggle disables at a
+ * pole). @param {any} a */
+function adjustStateExtras(a) {
+	return a.op === 'loopcut' ? { axisAlt: !!a.altTarget?.length } : {};
+}
+
 /**
  * Begin a live adjust: APPLY the op immediately (replicated + ONE history entry
  * recorded at apply, kept on the adjust so settle can update it in place), then
@@ -7150,9 +7312,12 @@ export function beginOpAdjust(op, params, opts = {}) {
 		if (!opts.vertexKeys?.length) return false;
 		a.target = [...opts.vertexKeys];
 	} else if (op === 'loopcut') {
-		const ring = loopCutRing();
-		if (!ring.length) return false;
-		a.target = ring;
+		// P7b: capture BOTH rings — the axis toggle re-runs across the other one,
+		// and the walk must happen NOW, while the module state matches originalTris
+		const pair = loopCutRingPair();
+		if (!pair.pick.length) return false;
+		a.target = pair.pick;
+		a.altTarget = pair.alt;
 		// the pairing that matches originalTris — rebuildFaces REPLACES the module
 		// array after the apply, so holding this reference stays correct
 		a.quadPartner = quadPartner;
@@ -7242,7 +7407,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 	}
 	a.installedGeometry = liveObjectOf(a)?.geometry ?? null;
 	opAdjust = a;
-	opAdjustState.set({ op, params: { ...a.params } });
+	opAdjustState.set({ op, params: { ...a.params }, ...adjustStateExtras(a) });
 	return true;
 }
 
@@ -7289,7 +7454,7 @@ export function reapplyOpAdjust(patch = {}) {
 	}
 	applyAdjustSelection(a, result.select, false);
 	a.installedGeometry = liveObjectOf(a)?.geometry ?? null;
-	opAdjustState.set({ op: a.op, params: { ...a.params } });
+	opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
 	return true;
 }
 

@@ -35,6 +35,56 @@ export function falloffWeight(t) {
 	return 1 - t * t * (3 - 2 * t);
 }
 
+// ---- 19-A P7b: WHEEL-driven radius during a live drag ------------------------
+// While a proportional drag is live the mouse wheel resizes the falloff radius
+// (multiplicative, ~1.1 per step) and the owner RECAPTURES its weights from the
+// new radius against the drag-start positions. The owners (meshEdit's vertex
+// drag, faceEdit's face/edge grab) register a recapture callback at drag begin
+// and clear it at drag end — the callback doubling as the "is a proportional
+// drag live" predicate that trackpadNav's window-wheel pan checks.
+//
+// The listener suppresses BOTH competing wheel consumers: OrbitControls listens
+// on the CANVAS, so stopPropagation from this window-CAPTURE handler never lets
+// the event descend to it; trackpadNav's own listener is on the SAME node
+// (window, capture) where stopPropagation cannot help — it imports
+// `proportionalWheelActive` and early-outs instead. This module stays a leaf:
+// the listener adds no imports, only a `window` guard.
+
+/** @type {(() => void) | null} the live drag's recapture, or null (no drag) */
+let wheelRecapture = null;
+
+/** Arm the wheel for a live proportional drag. @param {() => void} recapture
+ * re-derives the falloff weights from the CURRENT radius (against drag-start
+ * positions) and re-applies the gesture so the surface reshapes immediately. */
+export function beginProportionalWheel(recapture) {
+	wheelRecapture = recapture;
+}
+
+/** Disarm the wheel (drag end/commit/cancel/session exit). Idempotent. */
+export function endProportionalWheel() {
+	wheelRecapture = null;
+}
+
+/** True while a proportional drag owns the wheel — trackpadNav's pan guard. */
+export function proportionalWheelActive() {
+	return !!wheelRecapture;
+}
+
+/** @param {WheelEvent} e */
+function onProportionalWheel(e) {
+	if (!wheelRecapture) return;
+	// the PAGE must not scroll/zoom, and OrbitControls (canvas) must not dolly —
+	// capture at window runs before the event ever descends to the canvas
+	e.preventDefault();
+	e.stopPropagation();
+	const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+	proportionalRadius.update((r) => Math.min(Math.max(r * factor, 0.01), 100));
+	wheelRecapture();
+}
+
+if (typeof window !== 'undefined')
+	window.addEventListener('wheel', onProportionalWheel, { passive: false, capture: true });
+
 // ---- anchor providers (registration seam) -----------------------------------
 // The radius RING needs "where is the current selection" per element mode, but
 // that state lives in meshEdit (vertices) and faceEdit (edges/faces) — importing

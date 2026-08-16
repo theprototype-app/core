@@ -1042,7 +1042,14 @@
 				aria-pressed={$vertexSlide}
 				aria-label="Slide the vertex along an edge"
 				title="Slide — constrain the drag to one of this vertex's own edges (it picks the edge you drag toward and clamps to its ends). Adjusts a profile without pulling the vertex off the surface."
-				onclick={() => vertexSlide.set(!$vertexSlide)}><ToolIcon name="vertex-slide" /></button
+				onclick={() => {
+					const on = !$vertexSlide;
+					vertexSlide.set(on);
+					// P7b: arming Slide brings up its options (the clamp toggle) — the
+					// proportional button's shape
+					if (on) focusTool('slide');
+					else if (get(optionsFocus) === 'slide') focusTool('');
+				}}><ToolIcon name="vertex-slide" /></button
 			>
 			<button
 				id="mesh-delete-verts"

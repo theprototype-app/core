@@ -21,8 +21,6 @@ import { proportionalRadius, proportionalAnchor } from './proportional';
  * @type {{point: any, normal: any, object: any}|null} */
 let anchorState = null;
 
-const Z_AXIS = new THREE.Vector3(0, 0, 1);
-
 /** Average of the object's world-scale components. The proportional radius is
  * OBJECT-LOCAL units, the ring lives in world space — under a NON-UNIFORM scale
  * the true iso-distance contour is an ellipse, so the circle at the mean is an
@@ -53,15 +51,27 @@ function ensureRing(scene) {
 	ring.name = 'proportional-ring';
 	ring.renderOrder = 997;
 	ring.raycast = () => {}; // a viewport helper must never be a pick target
+	// 19-A P7b (item 10): BILLBOARD — the ring faces the viewer every frame. The
+	// old surface-normal orientation vanished the moment the camera looked along
+	// the surface (a circle seen edge-on is a line). Self-contained per-frame via
+	// onBeforeRender, so no Scene.svelte task is involved; the small normal
+	// offset in `place` stays, purely to keep the CENTRE off the surface.
+	ring.onBeforeRender = (
+		/** @type {any} */ _renderer,
+		/** @type {any} */ _scene,
+		/** @type {any} */ camera
+	) => {
+		ring.quaternion.copy(camera.quaternion);
+	};
 	scene.add(ring);
 	return ring;
 }
 
-/** Position/orient/scale the ring from the current anchor + radius. */
+/** Position/scale the ring from the current anchor + radius (orientation is
+ * the per-frame camera billboard above). */
 function place() {
 	if (!ring || !anchorState) return;
 	ring.position.copy(anchorState.point).addScaledVector(anchorState.normal, 0.02);
-	ring.quaternion.setFromUnitVectors(Z_AXIS, anchorState.normal);
 	const s = Math.max(get(proportionalRadius), 1e-4) * meanWorldScale(anchorState.object);
 	ring.scale.setScalar(s);
 }

@@ -21,7 +21,8 @@
 	// AND the adjust callbacks call back into it. This component is layout.
 	import {
 		faceEditAmount,
-		faceAutoApply
+		faceAutoApply,
+		opAdjustState
 	} from '$lib/faceEdit';
 	import { proportionalRadius } from '$lib/meshEdit';
 	// 19-A P4: scrubbing the radius previews the falloff RING at the current
@@ -44,7 +45,8 @@
 		subdivideLevelCount,
 		edgeExtrudeDistance,
 		smoothFactor,
-		smoothIterations
+		smoothIterations,
+		slideClamp
 	} from '$lib/meshToolParams';
 	import DragRow from '../ui/DragRow.svelte';
 
@@ -121,6 +123,18 @@
 		scrubActive = false;
 		clearTimeout(settleTimer);
 		onSettle();
+	}
+
+	// 19-A P7b: the loop-cut AXIS — a quad lies on TWO rings, and the begin-time
+	// selection pick can be the wrong one. The engine captured both, so the
+	// toggle just re-runs the cut across the other; `axisAlt` is false at a pole
+	// (no perpendicular ring), which disables the second button.
+	const loopAxis = $derived($opAdjustState?.params?.axis === 1 ? 1 : 0);
+	const loopAxisAlt = $derived(!!$opAdjustState?.axisAlt);
+	/** @param {0|1} axis */
+	function setLoopAxis(axis) {
+		if (!adjusting || axis === loopAxis) return;
+		adjustChanged({ axis });
 	}
 </script>
 
@@ -375,6 +389,32 @@
 			onscrubend={scrubEnd}
 		/>
 		{#if adjusting}
+			<!-- 19-A P7b: which of the quad's TWO rings the cut runs across. Only
+			     meaningful while the adjust is live (the rings were captured at
+			     apply); Across disables when no perpendicular ring exists (a pole). -->
+			<div
+				id="loopcut-axis"
+				class="tbx-seg"
+				title="A quad lies on two rings — flip the cut onto the perpendicular one"
+			>
+				<button
+					id="loopcut-axis-along"
+					class="px-2 py-0.5 {loopAxis === 0 ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					title="Cut across the ring the pick chose"
+					onclick={() => setLoopAxis(0)}>Along</button
+				>
+				<button
+					id="loopcut-axis-across"
+					class="px-2 py-0.5 {loopAxis === 1 ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					disabled={!loopAxisAlt}
+					title={loopAxisAlt
+						? 'Cut across the PERPENDICULAR ring instead'
+						: 'No perpendicular loop runs through that quad'}
+					onclick={() => setLoopAxis(1)}>Across</button
+				>
+			</div>
+		{/if}
+		{#if adjusting}
 			{@render revertBtn()}
 		{:else}
 			<button
@@ -563,6 +603,22 @@
 			onscrubstart={() => showRadiusPreview(mode)}
 			onscrubend={() => hideProportionalRing()}
 		/>
+	</div>
+{:else if focus === 'slide'}
+	<span class="tbx-label">Slide options</span>
+	<div id="slide-params" class="tbx-row text-xs text-gray-300">
+		<label
+			class="flex items-center gap-1"
+			title="ON (default): the vertex stops at the edge's ends. OFF: it may slide PAST either end, continuing the edge's direction — a marker shows where it will land while it is off the edge."
+		>
+			<input
+				id="slide-clamp"
+				type="checkbox"
+				checked={$slideClamp}
+				onchange={(e) => slideClamp.set(e.currentTarget.checked)}
+			/>
+			clamp to edge
+		</label>
 	</div>
 {:else if focus === 'move'}
 	<span class="tbx-label">Move options</span>

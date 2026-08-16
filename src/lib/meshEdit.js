@@ -36,10 +36,15 @@ import {
 	proportionalEdit,
 	proportionalRadius,
 	falloffWeight,
-	registerProportionalAnchor
+	registerProportionalAnchor,
+	beginProportionalWheel,
+	endProportionalWheel
 } from './proportional';
 export { proportionalEdit, proportionalRadius, falloffWeight } from './proportional';
 import { showProportionalRingAt, hideProportionalRing } from './proportionalRing';
+// 19-A P7b: the vertex slide's clamp toggle — meshToolParams is a svelte/store
+// leaf, so this closes no cycle
+import { slideClamp } from './meshToolParams';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
 // regular gizmo. Handles that share a position (e.g. the 24 position entries
@@ -523,6 +528,8 @@ export function exitEditMode() {
 	falloffStart = null;
 	falloffWeights = null;
 	hideProportionalRing();
+	endProportionalWheel(); // P7b
+	hideSlideMarker(); // P7b
 	vertexSelection.clear();
 	vertexSelectionSize.set(0);
 	editingObject.set(null);
@@ -893,6 +900,49 @@ export const vertexSlide = writable(false);
 let slideEdge = null;
 /** local-space position at drag start (the origin for the direction vote) @type {any} */
 let slideStart = null;
+/** the live slide's parameter along its edge (0 = start, 1 = far end) — kept
+ * for the landing marker + tests @type {number} */
+let lastSlideT = 0;
+/** 19-A P7b: scene-root LANDING MARKER — shown while an UNCLAMPED slide sits
+ * outside the edge's own span (t < 0 or t > 1), at the point the vertex will
+ * land. The proportional-ring recipe: scene root (never objectsGroup — GLTF
+ * sync), raycast stubbed, hidden the moment the drag ends. @type {any} */
+let slideMarker = null;
+
+/** @param {number} t @param {any} landedLocal the constrained LOCAL position */
+function updateSlideMarker(t, landedLocal) {
+	const outside = t < 0 || t > 1;
+	if (!outside) {
+		if (slideMarker) slideMarker.visible = false;
+		return;
+	}
+	const scene = get(globalScene);
+	if (!scene || !edited) return;
+	if (!slideMarker) {
+		slideMarker = new THREE.Mesh(
+			new THREE.SphereGeometry(1, 12, 12),
+			new THREE.MeshBasicMaterial({
+				color: 0xffc21a,
+				transparent: true,
+				opacity: 0.85,
+				depthTest: false
+			})
+		);
+		slideMarker.name = 'slide-landing-marker';
+		slideMarker.renderOrder = 998;
+		slideMarker.raycast = () => {}; // a viewport helper must never be a pick target
+	}
+	if (!slideMarker.parent) scene.add(slideMarker);
+	slideMarker.visible = true;
+	edited.updateMatrixWorld();
+	slideMarker.position.copy(edited.localToWorld(landedLocal.clone()));
+	// a touch larger than a vertex dot so it reads as "the landing", not a handle
+	slideMarker.scale.setScalar(baseRadius() * 1.6);
+}
+
+function hideSlideMarker() {
+	if (slideMarker) slideMarker.visible = false;
+}
 
 /** the LOCAL positions a handle shares an edge with, deduped by welded key
  * @param {number} index @returns {any[]} */
@@ -947,15 +997,22 @@ function proxyLocal() {
 		if (!best) return local;
 		slideEdge = { a: slideStart.clone(), b: best.clone() };
 	}
-	// project onto the segment and CLAMP: the vertex stays on its edge, ends included
+	// project onto the segment. CLAMPED (the default) the vertex stays on its
+	// edge, ends included; with the P7b clamp toggle OFF the parameter
+	// EXTRAPOLATES past either end, continuing the edge's direction — and a
+	// landing marker shows where the vertex will go whenever it is off the edge.
 	const span = slideEdge.b.clone().sub(slideEdge.a);
-	const t = Math.min(Math.max(local.clone().sub(slideEdge.a).dot(span) / span.lengthSq(), 0), 1);
-	return local.copy(slideEdge.a).addScaledVector(span, t);
+	let t = local.clone().sub(slideEdge.a).dot(span) / span.lengthSq();
+	if (get(slideClamp)) t = Math.min(Math.max(t, 0), 1);
+	lastSlideT = t;
+	const landed = local.copy(slideEdge.a).addScaledVector(span, t);
+	updateSlideMarker(t, landed);
+	return landed;
 }
 
-/** the live slide's edge, for tests/UI @returns {any} */
+/** the live slide's edge (+ its current parameter), for tests/UI @returns {any} */
 export function slideEdgeDebug() {
-	return slideEdge ? { a: slideEdge.a.toArray(), b: slideEdge.b.toArray() } : null;
+	return slideEdge ? { a: slideEdge.a.toArray(), b: slideEdge.b.toArray(), t: lastSlideT } : null;
 }
 
 // ---- M8: PROPORTIONAL EDITING ---------------------------------------------
@@ -1037,6 +1094,39 @@ function beginFalloff() {
  * from. Only ever called behind `falloffActive()`. @returns {any} */
 function falloffOrigin() {
 	return falloffStart?.[selectedHandle] ?? handles[selectedHandle].position;
+}
+
+/**
+ * 19-A P7b: re-derive the falloff weights from the CURRENT radius — the
+ * mid-drag wheel's recapture. Distances are measured against the drag-START
+ * positions (`falloffStart`), the same rule as `beginFalloff`: the falloff must
+ * never chase the vertex. A handle that fell OUT of the shrunken radius is
+ * written back to its start (applyFalloff skips w = 0, so it would otherwise
+ * stay stranded where the old weight had carried it), then the whole
+ * neighbourhood re-applies absolutely at the current drag delta.
+ */
+function recaptureVertexFalloff() {
+	if (!edited || selectedHandle < 0 || !falloffStart) return;
+	const radius = Math.max(get(proportionalRadius), 1e-4);
+	const anchor = falloffStart[selectedHandle];
+	const previous = falloffWeights;
+	falloffWeights = falloffStart.map((p, index) => {
+		if (index === selectedHandle || vertexSelection.has(index)) return 1;
+		return falloffWeight(p.distanceTo(anchor) / radius);
+	});
+	const position = edited.geometry.attributes.position;
+	for (let i = 0; i < handles.length; i++) {
+		if (i === selectedHandle || vertexSelection.has(i)) continue;
+		if ((previous?.[i] ?? 0) > 0 && falloffWeights[i] <= 0) {
+			const p = handles[i].position.copy(falloffStart[i]);
+			handles[i].indices.forEach((/** @type {number} */ idx) => position.setXYZ(idx, p.x, p.y, p.z));
+			refreshHandleMatrix(i);
+		}
+	}
+	// members first, anchor last — the tail writeSelectedHandle refreshes
+	// normals/bounds/overlay and sets needsUpdate (the onProxyMoved shape)
+	applyFalloff(deltaVector.copy(handles[selectedHandle].position).sub(falloffOrigin()));
+	commitSelectedLocal(handles[selectedHandle].position.clone());
 }
 
 /** Is a falloff drag live, i.e. is anything beyond the selection moving? */
@@ -1145,10 +1235,16 @@ export function onProxyDragChanged(dragging) {
 		// one position for all its indices — it cannot carry per-handle befores;
 		// same reasoning as weld). Index-expanded per the D1 representation rule.
 		beginFalloff();
+		// P7b: while the proportional drag lives, the wheel resizes the radius and
+		// the weights recapture (disarmed at drag end / session exit)
+		if (falloffStart) beginProportionalWheel(recaptureVertexFalloff);
 		// a falloff drag moves many handles, so it undoes as ONE meshgeo snapshot for the same
-		// reason a multi-drag does (a `verts` entry holds one position for all its indices)
+		// reason a multi-drag does (a `verts` entry holds one position for all its indices).
+		// P7b: captured whenever falloff COULD engage (`falloffStart`, i.e. the tool is on),
+		// not only when a neighbour is in range NOW — the wheel can grow the radius mid-drag,
+		// and a bare 'verts' entry could not undo the neighbours that pulls in.
 		dragStartExpanded =
-			vertexSelection.size > 1 || falloffActive()
+			vertexSelection.size > 1 || !!falloffStart
 				? trisToPositions(readTriangles(edited.geometry))
 				: null;
 	} else if (dragStartLocal) {
@@ -1181,6 +1277,8 @@ export function onProxyDragChanged(dragging) {
 		falloffStart = null;
 		falloffWeights = null;
 		hideProportionalRing(); // P4: the radius ring lives for the drag only
+		endProportionalWheel(); // P7b: the wheel belongs to the live drag only
+		hideSlideMarker(); // P7b: the landing marker too
 		dragStartLocal = null;
 		slideEdge = null;
 		slideStart = null;

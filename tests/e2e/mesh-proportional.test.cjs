@@ -469,6 +469,261 @@ h.run(async () => {
 	h.check(scrub.hidden, 'scrub end hides the ring');
 	h.check(scrub.noAnchor, 'no selection -> the preview stays hidden instead of showing a stale ring');
 
+	// ==== 19-A P7b item 6: WHEEL resizes the radius DURING a drag ==============
+	// Driven through the REAL input path (page.mouse.wheel): while the drag is
+	// live the wheel must (a) scale proportionalRadius ~1.1 per step, (b) make
+	// the weights RECAPTURE against the drag-start positions so the surface
+	// reshapes immediately, and (c) reach NEITHER OrbitControls (canvas dolly)
+	// nor trackpadNav (window pan) — the camera must not move at all. After the
+	// drag ends the suppression lifts.
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		const me = s.meshEdit;
+		s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		window.__mesh = g.children[g.children.length - 1];
+		me.exitEditMode();
+		me.enterEditMode(window.__mesh.uuid);
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		for (let i = 0; i < 81; i++) {
+			me.selectHandle(i);
+			const p = controls.object?.position;
+			if (!p) break;
+			if (Math.hypot(p.x, p.y) < 1e-6) break;
+		}
+		me.proportionalEdit.set(true);
+		me.proportionalRadius.set(1);
+		me.onProxyDragChanged(true);
+		controls.object.position.z += 1;
+		me.onProxyMoved();
+	});
+	// find a pixel that really is the CANVAS — probed AFTER the session opened,
+	// because entering edit mode raises the toolbox window and a pixel measured
+	// beforehand can now be covered (the documented stale-probe trap): a wheel
+	// aimed at the toolbox reaches neither OrbitControls nor trackpadNav's
+	// overCanvas branch, and the camera-still check would pass VACUOUSLY.
+	const canvasPx = await A.page.evaluate(() => {
+		for (let fx = 0.3; fx <= 0.72; fx += 0.07)
+			for (let fy = 0.35; fy <= 0.66; fy += 0.1) {
+				const x = Math.round(innerWidth * fx);
+				const y = Math.round(innerHeight * fy);
+				const el = document.elementFromPoint(x, y);
+				if (el && el.tagName === 'CANVAS') return { x, y };
+			}
+		return null;
+	});
+	h.check(!!canvasPx, `found a real canvas pixel for the wheel, toolbox open (${JSON.stringify(canvasPx)})`);
+	await A.page.mouse.move(canvasPx.x, canvasPx.y);
+	const zOf = (x, y) =>
+		A.page.evaluate(
+			({ x, y }) => {
+				const position = window.__mesh.geometry.attributes.position;
+				for (let i = 0; i < position.count; i++)
+					if (Math.abs(position.getX(i) - x) < 1e-4 && Math.abs(position.getY(i) - y) < 1e-4)
+						return position.getZ(i);
+				return null;
+			},
+			{ x, y }
+		);
+	const camPose = () =>
+		A.page.evaluate(() => {
+			let camera;
+			window.__stores.globalCamera.subscribe((v) => (camera = v))();
+			return { p: camera.position.toArray(), q: camera.quaternion.toArray() };
+		});
+	const stateNow = () =>
+		A.page.evaluate(() => {
+			const s = window.__stores;
+			let radius;
+			s.meshEdit.proportionalRadius.subscribe((v) => (radius = v))();
+			let scene;
+			s.globalScene.subscribe((v) => (scene = v))();
+			const ring = scene.getObjectByName('proportional-ring');
+			return { radius, ringScale: ring?.visible ? ring.scale.x : null };
+		});
+	const smoothW = (d, r) => {
+		const t = d / r;
+		return t <= 0 ? 1 : t >= 1 ? 0 : 1 - t * t * (3 - 2 * t);
+	};
+	h.check(Math.abs((await zOf(0.5, 0)) - 0.5) < 1e-3, 'drag live: the halfway ring sits at w = 0.5 (premise)');
+	h.check(Math.abs(await zOf(1, 0)) < 1e-6, 'drag live: the rim vertex (d = radius) has not moved (premise)');
+	const cam0 = await camPose();
+	// grow: 8 trackpad-sized steps UP (deltaY -30 would PAN via trackpadNav unguarded)
+	for (let i = 0; i < 8; i++) await A.page.mouse.wheel(0, -30);
+	const grown = await stateNow();
+	const rGrown = Math.pow(1.1, 8);
+	h.check(
+		Math.abs(grown.radius - rGrown) < 1e-9,
+		`8 wheel steps up multiplied the radius by 1.1^8 (${grown.radius} vs ${rGrown})`
+	);
+	h.check(
+		grown.ringScale !== null && Math.abs(grown.ringScale - grown.radius) < 1e-9,
+		`...and the viewport ring re-scaled live (${grown.ringScale})`
+	);
+	const rimZ = await zOf(1, 0);
+	h.check(
+		Math.abs(rimZ - smoothW(1, rGrown)) < 1e-3,
+		`the old rim vertex NOW FOLLOWS at its recaptured weight (${rimZ?.toFixed(4)} vs ${smoothW(1, rGrown).toFixed(4)}) — weights recomputed mid-drag`
+	);
+	// camera checked HERE, after a ONE-DIRECTION batch: the later up/down steps
+	// sum to zero deltaY, and a screen-space pan preserves the target distance,
+	// so a leaked pan would cancel itself by the end and hide from an end-only
+	// read (this check read +0.0000 with the trackpadNav guard removed until it
+	// moved here; afterwards it read the leak at 0.86 world units)
+	const camMid = await camPose();
+	const camStillMid =
+		cam0.p.every((v, i) => Math.abs(v - camMid.p[i]) < 1e-9) &&
+		cam0.q.every((v, i) => Math.abs(v - camMid.q[i]) < 1e-9);
+	h.check(
+		camStillMid,
+		'8 one-direction REAL wheel steps moved the camera NOT AT ALL — OrbitControls and trackpadNav both suppressed'
+	);
+	// shrink far enough that the halfway ring drops OUT — it must return to 0
+	for (let i = 0; i < 16; i++) await A.page.mouse.wheel(0, 30);
+	const shrunk = await stateNow();
+	h.check(
+		Math.abs(shrunk.radius - Math.pow(1.1, -8)) < 1e-9,
+		`16 steps down land at 1.1^-8 (${shrunk.radius})`
+	);
+	h.check(
+		Math.abs(await zOf(0.5, 0)) < 1e-9,
+		'a vertex that fell OUT of the shrunken radius RETURNED to its start — not stranded mid-air'
+	);
+	// back to 1: the halfway ring re-acquires exactly w = 0.5
+	for (let i = 0; i < 8; i++) await A.page.mouse.wheel(0, -30);
+	h.check(
+		Math.abs((await zOf(0.5, 0)) - 0.5) < 1e-3,
+		'growing back re-acquires the halfway ring at w = 0.5 — the recapture is lossless'
+	);
+	const cam1 = await camPose();
+	const camStill =
+		cam0.p.every((v, i) => Math.abs(v - cam1.p[i]) < 1e-9) &&
+		cam0.q.every((v, i) => Math.abs(v - cam1.q[i]) < 1e-9);
+	h.check(camStill, '32 REAL wheel events moved the camera NOT AT ALL — OrbitControls and trackpadNav both suppressed');
+	// end the drag: ONE undoable entry, and the wheel goes back to navigation
+	await A.page.evaluate(() => window.__stores.meshEdit.onProxyDragChanged(false));
+	const afterEnd = await stateNow();
+	await A.page.mouse.wheel(0, -30);
+	await A.page.waitForTimeout(120);
+	const postDrag = await stateNow();
+	h.check(
+		Math.abs(postDrag.radius - afterEnd.radius) < 1e-12,
+		'after the drag ends the wheel no longer touches the radius'
+	);
+	const cam2 = await camPose();
+	const camMoved = cam1.p.some((v, i) => Math.abs(v - cam2.p[i]) > 1e-6);
+	h.check(camMoved, '...and the SAME wheel gesture pans the view again (suppression was drag-scoped)');
+
+	// --- the FACE/EDGE grab path recaptures through the same wheel ------------
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const THREE = s.THREE;
+		s.meshEdit.exitEditMode();
+		fe.exitFaceEdit();
+		s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		window.__mesh = g.children[g.children.length - 1];
+		fe.enterFaceEdit(window.__mesh.uuid);
+		s.meshEdit.proportionalEdit.set(true);
+		s.meshEdit.proportionalRadius.set(0.4); // ring-1 (d = 0.5) starts OUTSIDE
+		const tris = fe.readTriangles(window.__mesh.geometry);
+		const inQuad = [];
+		tris.forEach((t, ti) => {
+			if (t.every((v) => v.x > -1e-4 && v.x < 0.5 + 1e-4 && v.y > -1e-4 && v.y < 0.5 + 1e-4))
+				inQuad.push(ti);
+		});
+		const target = {
+			triIndices: inQuad,
+			centroid: new THREE.Vector3(0.25, 0.25, 0),
+			normal: new THREE.Vector3(0, 0, 1)
+		};
+		fe.beginFaceGrab(target);
+		fe.applyFaceGrab({ dPos: new THREE.Vector3(0, 0, 1) });
+	});
+	h.check(Math.abs(await zOf(-0.5, 0)) < 1e-9, 'face grab live: ring-1 starts outside the 0.4 radius (premise)');
+	for (let i = 0; i < 8; i++) await A.page.mouse.wheel(0, -30);
+	const grabState = await stateNow();
+	const rGrab = 0.4 * Math.pow(1.1, 8);
+	h.check(Math.abs(grabState.radius - rGrab) < 1e-9, `the wheel grew the radius under a FACE grab too (${grabState.radius})`);
+	const ring1Now = await zOf(-0.5, 0);
+	h.check(
+		Math.abs(ring1Now - smoothW(0.5, rGrab)) < 1e-3,
+		`ring-1 joined the grab at its recaptured smoothstep weight (${ring1Now?.toFixed(4)} vs ${smoothW(0.5, rGrab).toFixed(4)})`
+	);
+	await A.page.evaluate(() => window.__stores.faceEdit.commitFaceGrab());
+	await A.page.mouse.wheel(0, -30);
+	await A.page.waitForTimeout(120);
+	const postGrab = await stateNow();
+	h.check(
+		Math.abs(postGrab.radius - grabState.radius) < 1e-12,
+		'commit disarms the wheel (the radius holds still afterwards)'
+	);
+
+	// ==== 19-A P7b item 10: the radius ring BILLBOARDS to the camera ===========
+	// The old surface-normal orientation vanished edge-on; the ring now copies
+	// the camera quaternion in onBeforeRender, so its pose must track the camera
+	// across two different orbit poses (and the camera must really have moved,
+	// or the check is vacuous).
+	const bbRead = () =>
+		A.page.evaluate(
+			() =>
+				new Promise((resolve) => {
+					const s = window.__stores;
+					let camera;
+					s.globalCamera.subscribe((v) => (camera = v))();
+					let scene;
+					s.globalScene.subscribe((v) => (scene = v))();
+					const ring = scene.getObjectByName('proportional-ring');
+					requestAnimationFrame(() =>
+						requestAnimationFrame(() =>
+							resolve({
+								visible: !!ring?.visible,
+								ring: ring ? ring.quaternion.toArray() : null,
+								cam: camera.quaternion.toArray()
+							})
+						)
+					);
+				})
+		);
+	const qDot = (a, b) => Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.faceEdit.exitFaceEdit();
+		s.meshEdit.enterEditMode(window.__mesh.uuid);
+		s.meshEdit.selectHandle(0);
+		s.meshEdit.proportionalRadius.set(1.2);
+		s.proportionalRing.showRadiusPreview('vertices');
+	});
+	const bb1 = await bbRead();
+	h.check(bb1.visible && !!bb1.ring, 'the ring shows for the billboard check (premise)');
+	h.check(
+		qDot(bb1.ring, bb1.cam) > 0.9999,
+		`the ring's quaternion matches the camera's (dot ${qDot(bb1.ring, bb1.cam).toFixed(5)})`
+	);
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		const THREE = s.THREE;
+		s.objectActions.flyTo(new THREE.Vector3(4, 3, -5), new THREE.Vector3(0, 0, 0), 250);
+	});
+	await A.page.waitForTimeout(700);
+	const bb2 = await bbRead();
+	h.check(
+		qDot(bb1.cam, bb2.cam) < 0.999,
+		`the camera really orbited between the two reads (dot ${qDot(bb1.cam, bb2.cam).toFixed(5)})`
+	);
+	h.check(
+		qDot(bb2.ring, bb2.cam) > 0.9999,
+		`...and the ring still faces it (dot ${qDot(bb2.ring, bb2.cam).toFixed(5)}) — billboarded, not surface-glued`
+	);
+	await A.page.evaluate(() => {
+		window.__stores.proportionalRing.hideProportionalRing();
+		window.__stores.meshEdit.exitEditMode();
+	});
+
 	// --- and a peer sees the whole neighbourhood, not just the anchor --------
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);

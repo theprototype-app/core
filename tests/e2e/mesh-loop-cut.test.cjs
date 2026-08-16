@@ -218,5 +218,89 @@ h.run(async () => {
 	h.check(guards.lone === false, 'a triangle with no quad mate refuses loop cut');
 	h.check(guards.nothing === false, 'no pick at all refuses loop cut');
 
+	// ------------------------------------- 7. 19-A P7b: the AXIS toggle
+	// A quad lies on TWO rings and the begin-time selection pick can be the
+	// wrong one. The adjust captured BOTH rings, so `axis: 1` re-runs the cut
+	// across the perpendicular ring — measured by WHICH vertex plane appears:
+	// the top-face pick cuts around Y (a new y = 0 plane); the perpendicular
+	// ring adds a mid plane on x or z instead, and the y one goes away.
+	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	const uuidA = await setup(A.page);
+	const midOf = async (axisName) => {
+		const list = await planes(A.page, uuidA, axisName);
+		return list.some((v) => Math.abs(v) < 0.001);
+	};
+	const axisBegin = await A.page.evaluate(() => {
+		const w = window.__stores;
+		w.meshToolParams.focusTool('loopcut'); // the pane shows the live adjust
+		const ok = w.faceEdit.beginOpAdjust('loopcut', { cuts: 1, position: 0.5 });
+		let st;
+		w.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		return { ok, axis: st?.params?.axis, axisAlt: st?.axisAlt };
+	});
+	h.check(axisBegin.ok === true, 'loop cut begins as a live adjust (premise)');
+	h.check(axisBegin.axis === 0, 'the adjust starts on the picked ring (axis 0)');
+	h.check(axisBegin.axisAlt === true, 'the state mirror reports a PERPENDICULAR ring exists on a box');
+	// The distinguisher: BOTH rings through the top quad are vertical belts (one
+	// walks in x, one in z), and each cut adds a y-mid line on its side quads —
+	// so y = 0 tells them apart not at all. What differs is which HORIZONTAL
+	// axis gains a mid plane from the top/bottom quads: x for one ring, z for
+	// the other, never both.
+	h.check(await midOf('y'), 'axis 0: the cut adds a y = 0 line on the belt sides (premise)');
+	const x0 = await midOf('x');
+	const z0 = await midOf('z');
+	h.check(x0 !== z0, `axis 0: EXACTLY one horizontal mid plane exists (x: ${x0}, z: ${z0})`);
+	const flipped = await A.page.evaluate(() => window.__stores.faceEdit.reapplyOpAdjust({ axis: 1 }));
+	h.check(flipped === true, 'reapply with axis 1 re-runs the cut');
+	const x1 = await midOf('x');
+	const z1 = await midOf('z');
+	h.check(
+		x1 === !x0 && z1 === !z0,
+		`axis 1: the cut SWAPPED onto the perpendicular belt (x: ${x0}->${x1}, z: ${z0}->${z1})`
+	);
+	// flip back — the toggle is reversible because both rings were captured at begin
+	await A.page.evaluate(() => window.__stores.faceEdit.reapplyOpAdjust({ axis: 0 }));
+	h.check(
+		(await midOf('x')) === x0 && (await midOf('z')) === z0,
+		'axis 0 again restores the original ring (both rings live on the adjust)'
+	);
+	h.check(
+		(await triCount(A.page, uuidA)) === 20,
+		'still exactly ONE loop after all the flipping (12 -> 20 tris)'
+	);
+
+	// the toggle in the PANE drives the same path (the real button)
+	const xBefore = await midOf('x');
+	const dom = await A.page.evaluate(async () => {
+		const seg = document.querySelector('#loopcut-axis');
+		const across = document.querySelector('#loopcut-axis-across');
+		if (!seg || !across) return { seg: !!seg, across: !!across };
+		const disabled = across.disabled;
+		across.click();
+		await new Promise((r) => setTimeout(r, 400)); // the typed-change debounce settles
+		let st;
+		window.__stores.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		return { seg: true, across: true, disabled, axisAfter: st?.params?.axis };
+	});
+	h.check(dom.seg && dom.across, 'the axis seg control renders while the adjust is live (#loopcut-axis)');
+	h.check(dom.disabled === false, '...with Across ENABLED (a perpendicular ring exists)');
+	h.check(dom.axisAfter === 1, 'clicking Across flips the engine to axis 1');
+	h.check(
+		(await midOf('x')) === !xBefore,
+		'...and the geometry followed the button (the horizontal mid plane swapped axes)'
+	);
+	// settle happened via the debounce; ONE undo returns the uncut box
+	await A.page.evaluate(() => window.__stores.history.undo());
+	h.check((await triCount(A.page, uuidA)) === 12, 'ONE undo removes the axis-flipped cut entirely');
+	// ...and once the adjust ENDS the toggle leaves the pane (undo drops the
+	// adjust lazily via the identity guard, so end it the way a pick would)
+	const segGone = await A.page.evaluate(async () => {
+		window.__stores.faceEdit.endOpAdjust();
+		await new Promise((r) => setTimeout(r, 120));
+		return !document.querySelector('#loopcut-axis');
+	});
+	h.check(segGone, 'the axis toggle only exists while the adjust is live');
+
 	await h.finish(browser);
 });

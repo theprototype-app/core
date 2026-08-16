@@ -83,6 +83,11 @@ export const edgeExtrudeDistance = writable(0.5);
 export const smoothFactor = writable(0.5);
 /** 19-A P5b: Smooth/relax passes per click (each pass re-reads the evolving mesh). */
 export const smoothIterations = writable(1);
+/** 19-A P7b: vertex slide clamps to the edge's ENDS by default (today's
+ * behaviour). OFF lets the slide EXTRAPOLATE past either end, continuing the
+ * edge's direction — a landing marker shows where the vertex will go whenever
+ * it is off the edge itself. */
+export const slideClamp = writable(true);
 /** M6: merge-by-distance threshold */
 export const mergeDistance = writable(0.001);
 /** M7: symmetrize axis + which half to keep @type {import('svelte/store').Writable<'x'|'y'|'z'>} */
@@ -114,6 +119,7 @@ const WITH_OPTIONS = new Set([
 	'bridge',
 	'subdivide',
 	'proportional',
+	'slide',
 	'edge-extrude',
 	'smooth'
 ]);
@@ -153,6 +159,7 @@ export function resetToolParams() {
 	edgeExtrudeDistance.set(0.5);
 	smoothFactor.set(0.5);
 	smoothIterations.set(1);
+	slideClamp.set(true);
 	mergeDistance.set(0.001);
 	symAxis.set('x');
 	symKeep.set(1);
@@ -179,6 +186,7 @@ export function toolParams() {
 		edgeExtrudeDistance: get(edgeExtrudeDistance),
 		smoothFactor: get(smoothFactor),
 		smoothIterations: get(smoothIterations),
+		slideClamp: get(slideClamp),
 		mergeDistance: get(mergeDistance),
 		symAxis: get(symAxis),
 		symKeep: get(symKeep),

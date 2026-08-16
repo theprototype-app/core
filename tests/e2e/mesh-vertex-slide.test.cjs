@@ -127,6 +127,137 @@ h.run(async () => {
 	h.check(disarmed.maxY > 1.6, `an unarmed drag moves freely again (max y ${disarmed.maxY.toFixed(2)})`);
 	h.check(disarmed.edge === null, 'no slide edge is held between gestures');
 
+	// --- 19-A P7b item 7: clamp OFF lets the slide EXTRAPOLATE past the ends --
+	// The clamp toggle (#slide-clamp, default ON = every check above) releases
+	// the [0,1] parameter bound so the vertex continues along the edge's own
+	// direction, and a scene-root LANDING MARKER shows where it will go while
+	// the parameter is outside the edge.
+	const extend = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const me = s.meshEdit;
+		const mt = s.meshToolParams;
+		// a fresh box — earlier sections deformed the current one
+		s.commandsHandler.sceneCommand('/create Box 2 2 2');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		window.__box = g.children[g.children.length - 1];
+		me.exitEditMode();
+		me.enterEditMode(window.__box.uuid);
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		let handle = -1;
+		for (let i = 0; i < 8; i++) {
+			me.selectHandle(i);
+			const at = controls.object?.position;
+			if (at && Math.abs(at.x - 1) < 1e-6 && Math.abs(at.y - 1) < 1e-6 && Math.abs(at.z - 1) < 1e-6) {
+				handle = i;
+				break;
+			}
+		}
+		if (handle < 0) return { missing: true };
+		let params;
+		mt.slideClamp.subscribe((v) => (params = v))();
+		const defaultOn = params === true;
+		mt.slideClamp.set(false);
+		me.vertexSlide.set(true);
+		me.selectHandle(handle);
+		let scene;
+		s.globalScene.subscribe((v) => (scene = v))();
+		me.onProxyDragChanged(true);
+		// toward the (-1,1,1) edge and PAST it: projected t = 1.5 -> lands at (-2,1,1)
+		controls.object.position.x -= 3;
+		me.onProxyMoved();
+		const marker = scene.getObjectByName('slide-landing-marker');
+		const midMarker = marker ? { visible: marker.visible, at: marker.position.toArray() } : null;
+		const edge = me.slideEdgeDebug();
+		me.onProxyDragChanged(false);
+		const markerAfter = scene.getObjectByName('slide-landing-marker')?.visible ?? false;
+		const p = window.__box.geometry.attributes.position;
+		let minX = 1e9;
+		let strayed = 0;
+		for (let i = 0; i < p.count; i++) {
+			minX = Math.min(minX, p.getX(i));
+			if (p.getY(i) > 0 && Math.abs(p.getY(i) - 1) > 1e-6) strayed++;
+		}
+		let underObjects = false;
+		if (marker) for (let n = marker; n; n = n.parent) if (n === g) underObjects = true;
+		mt.slideClamp.set(true); // restore the default for whatever runs next
+		return { defaultOn, midMarker, markerAfter, edge, minX, strayed, underObjects };
+	});
+	h.check(!extend.missing, 'found the (1,1,1) corner on a fresh box (premise)');
+	h.check(extend.defaultOn, 'the clamp defaults ON — every earlier section ran today\'s behaviour');
+	h.check(
+		!!extend.edge && extend.edge.t > 1.4 && extend.edge.t < 1.6,
+		`clamp OFF: the parameter extrapolated past the far end (t = ${extend.edge?.t})`
+	);
+	h.check(
+		Math.abs(extend.minX + 2) < 1e-6,
+		`the vertex slid PAST the edge end, continuing its direction (min x ${extend.minX})`
+	);
+	h.check(extend.strayed === 0, 'and still nothing left the edge\'s line (y = 1 plane holds)');
+	h.check(
+		!!extend.midMarker && extend.midMarker.visible === true,
+		'the landing marker shows while t is outside [0, 1]'
+	);
+	h.check(
+		!!extend.midMarker &&
+			Math.hypot(
+				extend.midMarker.at[0] + 2,
+				extend.midMarker.at[1] - 1,
+				extend.midMarker.at[2] - 1
+			) < 1e-3,
+		`...AT the landing point (-2, 1, 1) (${JSON.stringify(extend.midMarker?.at)})`
+	);
+	h.check(!extend.underObjects, '...at the scene root, never under objectsGroup');
+	h.check(extend.markerAfter === false, 'drag end hides the marker');
+
+	// clamped drags never show the marker (t is pinned inside [0, 1])
+	const clampMarker = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const me = s.meshEdit;
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		me.vertexSlide.set(true);
+		me.onProxyDragChanged(true);
+		controls.object.position.x += 10; // way past the end — the clamp pins it
+		me.onProxyMoved();
+		let scene;
+		s.globalScene.subscribe((v) => (scene = v))();
+		const mid = scene.getObjectByName('slide-landing-marker')?.visible ?? false;
+		const t = me.slideEdgeDebug()?.t;
+		me.onProxyDragChanged(false);
+		return { mid, t };
+	});
+	h.check(
+		clampMarker.mid === false && clampMarker.t !== undefined && clampMarker.t <= 1,
+		`clamp ON: the parameter pins inside the edge and NO marker shows (t = ${clampMarker.t})`
+	);
+
+	// the pane: arming Slide focuses its options and #slide-clamp drives the store
+	const pane = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		document.querySelector('#mesh-slide')?.click(); // disarm (left armed above)
+		await new Promise((r) => setTimeout(r, 80));
+		const before = !!document.querySelector('#slide-clamp');
+		document.querySelector('#mesh-slide')?.click(); // arm -> focuses the slide pane
+		await new Promise((r) => setTimeout(r, 120));
+		const input = document.querySelector('#slide-clamp');
+		if (!input) return { before, present: false };
+		const checkedDefault = input.checked;
+		input.click();
+		await new Promise((r) => setTimeout(r, 80));
+		let store;
+		s.meshToolParams.slideClamp.subscribe((v) => (store = v))();
+		input.click();
+		await new Promise((r) => setTimeout(r, 80));
+		let restored;
+		s.meshToolParams.slideClamp.subscribe((v) => (restored = v))();
+		return { before, present: true, checkedDefault, store, restored };
+	});
+	h.check(pane.present, 'arming Slide opens its options pane (#slide-clamp exists)');
+	h.check(pane.checkedDefault === true, '...checked by default (clamp ON)');
+	h.check(pane.store === false && pane.restored === true, 'the checkbox drives the slideClamp store both ways');
+
 	// --- the tool disarms itself when the session ends -----------------------
 	const reset = await A.page.evaluate((uuid) => {
 		const s = window.__stores;

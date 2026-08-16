@@ -75,7 +75,10 @@ h.run(async () => {
 		A.page.evaluate(() => document.querySelector('#mesh-edit-popup').getBoundingClientRect().left);
 
 	const before = await leftOf();
-	await dragBy('#mesh-edit-popup .toolbox-header', 80);
+	// grab the TITLE: it is header chrome, not a button. The header's midpoint
+	// stopped being safe in 19-A P2 — the undo/redo buttons joined Cancel/Done
+	// there, and a drag started on a BUTTON deliberately does not move the window
+	await dragBy('#mesh-edit-popup .toolbox-header .toolbox-title', 80);
 	const afterHeader = await leftOf();
 	h.check(afterHeader > before + 60, 'dragging the header moves the window (' + before + ' -> ' + afterHeader + ')');
 	// the body: grab the section label (not a button — buttons are excluded anyway)

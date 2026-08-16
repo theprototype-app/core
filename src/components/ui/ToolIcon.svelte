@@ -93,6 +93,22 @@
 			base: ['M3 5h18v14H3z'],
 			accent: ['M12 6v2', 'M12 11v2', 'M12 16v2']
 		},
+		// the base edge, and the raised parallel copy + the two side rails of the strip
+		'edge-extrude': {
+			base: ['M4 19h16'],
+			accent: ['M4 7h16', 'M4 19V7', 'M20 19V7']
+		},
+		// the edge, and the midpoint vertex the split inserts
+		'edge-subdivide': {
+			base: ['M3 12h18'],
+			accent: ['M12 7v2', 'M12 15v2'],
+			accentFill: ['M12 10.4a1.6 1.6 0 100 3.2 1.6 1.6 0 100-3.2z']
+		},
+		// a face, and the offset copy laid over it
+		'duplicate-face': {
+			base: ['M4 4h11v11H4z'],
+			accent: ['M9 9h11v11H9z']
+		},
 		// ---- vertex tools -----------------------------------------------------
 		// two vertices, and the arrows bringing them together
 		weld: {
@@ -155,6 +171,14 @@
 		outline: {
 			base: ['M8.5 8.5h7v7h-7z'],
 			accent: ['M4 4h4', 'M16 4h4', 'M4 20h4', 'M16 20h4', 'M4 4v4', 'M20 4v4', 'M4 16v4', 'M20 16v4']
+		},
+		// loose triangles on the left, and the quad they pair into on the right.
+		// Reading left-to-right (the `shading` icon's trick) rather than as another
+		// square-plus-a-mark: as a grid it would have been the subdivide glyph, and
+		// as a square-plus-diagonal it would have been `triangulation` inverted.
+		'tris-to-quads': {
+			base: ['M3 4h8L3 12z', 'M3 20h8l-8-8z'],
+			accent: ['M13 8h8v8h-8z']
 		},
 		// a quad, and the triangulation hidden inside it
 		triangulation: {

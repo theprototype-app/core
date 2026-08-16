@@ -217,6 +217,54 @@ h.run(async () => {
 		h.check(refusals.valenceUntouched, '...leaving the geometry untouched');
 	}
 
+	// --- 19-A P3: the toolbox #edge-bevel button APPLIES on click -------------
+	// P2 flipped the FACES grid to apply-on-click but left this button focus-only.
+	// The encoded contract is the same now: with an edge picked, the click ITSELF
+	// bevels (through the adjust engine, one history entry); with nothing picked
+	// it only focuses the tool and the pane's hint names the missing pick.
+	await editBox(A.page);
+	await A.page.waitForTimeout(700); // let the toolbox render in edges mode
+	const emptyClick = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		fe.clearEdgeSelection();
+		const before = fe.readTriangles(window.__box.geometry).length;
+		document.querySelector('#edge-bevel').click();
+		await new Promise((r) => setTimeout(r, 350));
+		let st = null;
+		fe.opAdjustState.subscribe((v) => (st = v))();
+		return {
+			before,
+			after: fe.readTriangles(window.__box.geometry).length,
+			state: st,
+			hint: document.querySelector('#mesh-op-hint')?.textContent?.trim() ?? ''
+		};
+	});
+	h.check(
+		emptyClick.after === emptyClick.before && !emptyClick.state,
+		'clicking Bevel with no edge picked applies nothing'
+	);
+	h.check(!!emptyClick.hint, `...and the pane hint names the missing pick ("${emptyClick.hint}")`);
+	const clickKey = await pickTopEdge(A.page);
+	h.check(!!clickKey, 'picked an edge for the click-apply (premise)');
+	const clickApplied = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const fe = s.faceEdit;
+		const before = fe.readTriangles(window.__box.geometry).length;
+		document.querySelector('#edge-bevel').click();
+		await new Promise((r) => setTimeout(r, 450));
+		let st = null;
+		fe.opAdjustState.subscribe((v) => (st = v))();
+		return { before, after: fe.readTriangles(window.__box.geometry).length, op: st?.op ?? null };
+	});
+	h.check(
+		clickApplied.after > clickApplied.before,
+		`with an edge picked the CLICK bevels (${clickApplied.before} -> ${clickApplied.after} tris)`
+	);
+	h.check(clickApplied.op === 'bevel', 'and the pane becomes the live adjust');
+	const oddClick = await oddEdges(A.page);
+	h.check(oddClick === 0, `the click-applied bevel is watertight (${oddClick} odd edges)`);
+
 	// --- and a peer gets it -------------------------------------------------
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);

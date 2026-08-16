@@ -24,8 +24,27 @@ import {
 	registerGizmoPrefListener,
 	internalEdgeSet,
 	edgeKeyOf,
-	bevelVertices
+	bevelVertices,
+	deleteVertices,
+	smoothVertices,
+	beginOpAdjust
 } from './faceEdit';
+// 19-A P4: the proportional stores/falloff moved to a LEAF (faceEdit needs them
+// too, and it cannot import this module — we import faceEdit above). Re-exported
+// below so MeshEditPopup/MeshToolOptions/__stores.meshEdit.* stay byte-compatible.
+import {
+	proportionalEdit,
+	proportionalRadius,
+	falloffWeight,
+	registerProportionalAnchor,
+	beginProportionalWheel,
+	endProportionalWheel
+} from './proportional';
+export { proportionalEdit, proportionalRadius, falloffWeight } from './proportional';
+import { showProportionalRingAt, hideProportionalRing } from './proportionalRing';
+// 19-A P7b: the vertex slide's clamp toggle — meshToolParams is a svelte/store
+// leaf, so this closes no cycle
+import { slideClamp } from './meshToolParams';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
 // regular gizmo. Handles that share a position (e.g. the 24 position entries
@@ -508,6 +527,9 @@ export function exitEditMode() {
 	proportionalEdit.set(false);
 	falloffStart = null;
 	falloffWeights = null;
+	hideProportionalRing();
+	endProportionalWheel(); // P7b
+	hideSlideMarker(); // P7b
 	vertexSelection.clear();
 	vertexSelectionSize.set(0);
 	editingObject.set(null);
@@ -696,6 +718,29 @@ function selectHandleInner(index) {
 }
 
 /**
+ * The vertex SELECTION as welded position KEYS — the ctrl-picked set, or the single
+ * anchored handle when nothing was added to it (meshEdit has TWO selection notions and a
+ * plain click only sets the anchor).
+ *
+ * Every vertex OPERATOR crosses the same boundary: this module owns the handles, faceEdit
+ * owns the triangle soup, and a welded key is the only thing both agree on.
+ * @returns {string[]}
+ */
+function selectedVertexKeys() {
+	const indices = vertexSelection.size
+		? [...vertexSelection]
+		: selectedHandle >= 0
+			? [selectedHandle]
+			: [];
+	return indices
+		.filter((index) => handles[index])
+		.map((index) => {
+			const p = handles[index].position;
+			return `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
+		});
+}
+
+/**
  * M5b: bevel the selected vertices — the corner is cut off and capped. Any number of
  * vertices at once; the geometry work lives in faceEdit (it owns the triangle soup and the
  * commit path), this only translates the SELECTION into welded position keys.
@@ -704,21 +749,11 @@ function selectHandleInner(index) {
  */
 export function bevelSelectedVerts(width = 0.2, profile = 0) {
 	if (!edited || !handles.length) return false;
-	const indices = vertexSelection.size
-		? [...vertexSelection]
-		: selectedHandle >= 0
-			? [selectedHandle]
-			: [];
-	if (!indices.length) {
+	const keys = selectedVertexKeys();
+	if (!keys.length) {
 		showToast('Select a vertex first, then Bevel');
 		return false;
 	}
-	const keys = indices
-		.filter((index) => handles[index])
-		.map((index) => {
-			const p = handles[index].position;
-			return `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
-		});
 	const uuid = edited.uuid;
 	const ok = bevelVertices(uuid, keys, { width, profile });
 	// the bevel replaced the corner, so the handle list is stale in every sense — rebuild
@@ -730,6 +765,80 @@ export function bevelSelectedVerts(width = 0.2, profile = 0) {
 		refreshVertexEditSession();
 	}
 	return ok;
+}
+
+/**
+ * 19-A P2: the vertex bevel through the ADJUST ENGINE — applies immediately and
+ * leaves the width/profile scrubbable in the options pane. Same selection
+ * translation as `bevelSelectedVerts` (which stays as the one-shot path); the
+ * engine owns the commit, the history entry and the selection housekeeping.
+ * @param {number} width @param {number} profile @returns {boolean}
+ */
+export function beginVertexBevelAdjust(width = 0.2, profile = 0) {
+	if (!edited || !handles.length) return false;
+	const keys = selectedVertexKeys();
+	if (!keys.length) {
+		showToast('Select a vertex first, then Bevel');
+		return false;
+	}
+	return beginOpAdjust(
+		'bevel',
+		{ width, profile },
+		{ kind: 'vertices', uuid: edited.uuid, vertexKeys: keys }
+	);
+}
+
+/**
+ * 19-A P5a: DELETE the selected vertices — every face that uses one of them goes away,
+ * leaving a hole. The destructive counterpart of Weld: weld pulls the picks together and
+ * keeps the surface, delete opens it up.
+ *
+ * Same split as the vertex bevel: the selection becomes welded keys here, and faceEdit
+ * does the triangle work and owns the commit (one `meshgeo` entry, replicated).
+ * @returns {boolean}
+ */
+export function deleteSelectedVerts() {
+	if (!edited || !handles.length) return false;
+	const keys = selectedVertexKeys();
+	if (!keys.length) {
+		showToast('Select a vertex first, then Delete');
+		return false;
+	}
+	const ok = deleteVertices(edited.uuid, keys);
+	if (ok) {
+		// the triangles those handles belonged to are gone, so the handle list is stale in
+		// every sense — rebuild the session and drop a selection that no longer means
+		// anything. Inner/direct, deliberately: a selection entry recorded ON TOP of the
+		// delete would make the next Ctrl+Z undo the housekeeping instead of the delete.
+		vertexSelection.clear();
+		syncVertexSelection();
+		setAnchor(-1);
+		refreshVertexEditSession();
+	}
+	return ok;
+}
+
+/**
+ * 19-A P5b: SMOOTH / RELAX the selected vertices — the meshEdit-shell -> faceEdit-work
+ * split of `deleteSelectedVerts`/`bevelSelectedVerts`: this module owns the handles,
+ * faceEdit owns the triangle soup and the commit, and welded position keys cross the
+ * boundary. One commit per click (a positions-only meshgeo snapshot — counts never
+ * change, so groups/uvs/topology all carry; see smoothVertices).
+ *
+ * The selection deliberately SURVIVES: counts are unchanged, so applyMeshGeo's session
+ * refresher rebuilds the handles at the same indices and a second Apply keeps relaxing
+ * the same picks — the natural way to use an iterative tool.
+ * @param {number} [factor] 0..1 lerp toward the neighbour average
+ * @param {number} [iterations] 1..10 passes @returns {boolean}
+ */
+export function smoothSelectedVerts(factor = 0.5, iterations = 1) {
+	if (!edited || !handles.length) return false;
+	const keys = selectedVertexKeys();
+	if (!keys.length) {
+		showToast('Select a vertex first, then Smooth');
+		return false;
+	}
+	return smoothVertices(edited.uuid, keys, { factor, iterations });
 }
 
 /** World-space focus target {center,radius} for the selected vertex, or null (173). */
@@ -791,6 +900,49 @@ export const vertexSlide = writable(false);
 let slideEdge = null;
 /** local-space position at drag start (the origin for the direction vote) @type {any} */
 let slideStart = null;
+/** the live slide's parameter along its edge (0 = start, 1 = far end) — kept
+ * for the landing marker + tests @type {number} */
+let lastSlideT = 0;
+/** 19-A P7b: scene-root LANDING MARKER — shown while an UNCLAMPED slide sits
+ * outside the edge's own span (t < 0 or t > 1), at the point the vertex will
+ * land. The proportional-ring recipe: scene root (never objectsGroup — GLTF
+ * sync), raycast stubbed, hidden the moment the drag ends. @type {any} */
+let slideMarker = null;
+
+/** @param {number} t @param {any} landedLocal the constrained LOCAL position */
+function updateSlideMarker(t, landedLocal) {
+	const outside = t < 0 || t > 1;
+	if (!outside) {
+		if (slideMarker) slideMarker.visible = false;
+		return;
+	}
+	const scene = get(globalScene);
+	if (!scene || !edited) return;
+	if (!slideMarker) {
+		slideMarker = new THREE.Mesh(
+			new THREE.SphereGeometry(1, 12, 12),
+			new THREE.MeshBasicMaterial({
+				color: 0xffc21a,
+				transparent: true,
+				opacity: 0.85,
+				depthTest: false
+			})
+		);
+		slideMarker.name = 'slide-landing-marker';
+		slideMarker.renderOrder = 998;
+		slideMarker.raycast = () => {}; // a viewport helper must never be a pick target
+	}
+	if (!slideMarker.parent) scene.add(slideMarker);
+	slideMarker.visible = true;
+	edited.updateMatrixWorld();
+	slideMarker.position.copy(edited.localToWorld(landedLocal.clone()));
+	// a touch larger than a vertex dot so it reads as "the landing", not a handle
+	slideMarker.scale.setScalar(baseRadius() * 1.6);
+}
+
+function hideSlideMarker() {
+	if (slideMarker) slideMarker.visible = false;
+}
 
 /** the LOCAL positions a handle shares an edge with, deduped by welded key
  * @param {number} index @returns {any[]} */
@@ -845,15 +997,22 @@ function proxyLocal() {
 		if (!best) return local;
 		slideEdge = { a: slideStart.clone(), b: best.clone() };
 	}
-	// project onto the segment and CLAMP: the vertex stays on its edge, ends included
+	// project onto the segment. CLAMPED (the default) the vertex stays on its
+	// edge, ends included; with the P7b clamp toggle OFF the parameter
+	// EXTRAPOLATES past either end, continuing the edge's direction — and a
+	// landing marker shows where the vertex will go whenever it is off the edge.
 	const span = slideEdge.b.clone().sub(slideEdge.a);
-	const t = Math.min(Math.max(local.clone().sub(slideEdge.a).dot(span) / span.lengthSq(), 0), 1);
-	return local.copy(slideEdge.a).addScaledVector(span, t);
+	let t = local.clone().sub(slideEdge.a).dot(span) / span.lengthSq();
+	if (get(slideClamp)) t = Math.min(Math.max(t, 0), 1);
+	lastSlideT = t;
+	const landed = local.copy(slideEdge.a).addScaledVector(span, t);
+	updateSlideMarker(t, landed);
+	return landed;
 }
 
-/** the live slide's edge, for tests/UI @returns {any} */
+/** the live slide's edge (+ its current parameter), for tests/UI @returns {any} */
 export function slideEdgeDebug() {
-	return slideEdge ? { a: slideEdge.a.toArray(), b: slideEdge.b.toArray() } : null;
+	return slideEdge ? { a: slideEdge.a.toArray(), b: slideEdge.b.toArray(), t: lastSlideT } : null;
 }
 
 // ---- M8: PROPORTIONAL EDITING ---------------------------------------------
@@ -864,37 +1023,50 @@ export function slideEdgeDebug() {
 // Two rules make it behave: weights come from the positions AT DRAG START (recomputing them
 // mid-drag makes the falloff chase the vertex), and the move is written ABSOLUTELY
 // (start + total * weight) rather than accumulated per frame, so a long drag cannot drift.
-
-/** armed like a tool — an in-session mode, not a saved preference
- * @type {import('svelte/store').Writable<boolean>} */
-export const proportionalEdit = writable(false);
-/** falloff radius in LOCAL units. Local pref: it is a working-scale choice, and the same
- * number is right for the next session on the same kind of model.
- * @type {import('svelte/store').Writable<number>} */
-export const proportionalRadius = writable(
-	typeof localStorage !== 'undefined'
-		? Math.min(Math.max(parseFloat(localStorage.getItem('proportionalRadius') ?? '') || 1, 0.01), 100)
-		: 1
-);
-proportionalRadius.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('proportionalRadius', String(value));
-});
+//
+// P4: the stores + the smoothstep live in ./proportional now (faceEdit shares them for
+// edge/face grabs; re-exported at the top of this file), and the radius shows as a
+// scene-root RING during the drag (./proportionalRing).
 
 /** handle positions captured at drag start, for the absolute write @type {any[]|null} */
 let falloffStart = null;
 /** per-handle weight for this drag, 0 for anything out of range @type {number[]|null} */
 let falloffWeights = null;
 
-/**
- * Smooth falloff: 1 at the dragged vertex, 0 at the radius, with zero slope at both ends so
- * neither the centre nor the rim shows a crease. (Smoothstep — Blender's "Smooth" preset.)
- * @param {number} t 0..1 @returns {number}
- */
-function falloffWeight(t) {
-	if (t <= 0) return 1;
-	if (t >= 1) return 0;
-	return 1 - t * t * (3 - 2 * t);
+/** WORLD-space averaged vertex normal of the anchor handle, or null (no anchor /
+ * no normal attribute / degenerate sum). @returns {any} */
+function anchorVertexNormalWorld() {
+	if (!edited || selectedHandle < 0) return null;
+	const normalAttr = edited.geometry?.attributes?.normal;
+	if (!normalAttr) return null;
+	const sum = new THREE.Vector3();
+	const one = new THREE.Vector3();
+	handles[selectedHandle].indices.forEach((/** @type {number} */ idx) => {
+		sum.add(one.fromBufferAttribute(normalAttr, idx));
+	});
+	if (sum.lengthSq() < 1e-9) return null;
+	return sum.transformDirection(edited.matrixWorld);
 }
+
+/** camera-facing fallback normal for the ring (a vertex on a crease can have a
+ * meaningless average) @param {any} point @returns {any} */
+function cameraFacingNormal(point) {
+	/** @type {any} */
+	const camera = get(globalCamera);
+	if (!camera) return new THREE.Vector3(0, 1, 0);
+	const toCamera = camera.getWorldPosition(new THREE.Vector3()).sub(point);
+	return toCamera.lengthSq() > 1e-9 ? toCamera.normalize() : new THREE.Vector3(0, 1, 0);
+}
+
+// P4: the radius ring's VERTICES anchor provider — the registration seam (a
+// static import of this module from proportionalRing would be a cycle, and a
+// primed dynamic import risks the HMR dual-instance trap). Registering is a
+// plain registry push, so module-eval order is safe.
+registerProportionalAnchor('vertices', () => {
+	const point = vertexSelectionWorldPoint();
+	if (!point || !edited) return null;
+	return { point, normal: anchorVertexNormalWorld() ?? cameraFacingNormal(point), object: edited };
+});
 
 /** Capture the neighbourhood this drag will carry. Called at drag start, so the weights
  * cannot chase the vertex as it moves. */
@@ -909,12 +1081,52 @@ function beginFalloff() {
 		if (index === selectedHandle || vertexSelection.has(index)) return 1; // the selection moves fully
 		return falloffWeight(handle.position.distanceTo(anchor) / radius);
 	});
+	// P4: show the falloff radius for the duration of the drag (hidden at drag end)
+	const anchorWorld = handleWorldPosition(selectedHandle, new THREE.Vector3());
+	showProportionalRingAt({
+		point: anchorWorld,
+		normal: anchorVertexNormalWorld() ?? cameraFacingNormal(anchorWorld),
+		object: edited
+	});
 }
 
 /** the anchor's position when the drag started — the origin every weighted move measures
  * from. Only ever called behind `falloffActive()`. @returns {any} */
 function falloffOrigin() {
 	return falloffStart?.[selectedHandle] ?? handles[selectedHandle].position;
+}
+
+/**
+ * 19-A P7b: re-derive the falloff weights from the CURRENT radius — the
+ * mid-drag wheel's recapture. Distances are measured against the drag-START
+ * positions (`falloffStart`), the same rule as `beginFalloff`: the falloff must
+ * never chase the vertex. A handle that fell OUT of the shrunken radius is
+ * written back to its start (applyFalloff skips w = 0, so it would otherwise
+ * stay stranded where the old weight had carried it), then the whole
+ * neighbourhood re-applies absolutely at the current drag delta.
+ */
+function recaptureVertexFalloff() {
+	if (!edited || selectedHandle < 0 || !falloffStart) return;
+	const radius = Math.max(get(proportionalRadius), 1e-4);
+	const anchor = falloffStart[selectedHandle];
+	const previous = falloffWeights;
+	falloffWeights = falloffStart.map((p, index) => {
+		if (index === selectedHandle || vertexSelection.has(index)) return 1;
+		return falloffWeight(p.distanceTo(anchor) / radius);
+	});
+	const position = edited.geometry.attributes.position;
+	for (let i = 0; i < handles.length; i++) {
+		if (i === selectedHandle || vertexSelection.has(i)) continue;
+		if ((previous?.[i] ?? 0) > 0 && falloffWeights[i] <= 0) {
+			const p = handles[i].position.copy(falloffStart[i]);
+			handles[i].indices.forEach((/** @type {number} */ idx) => position.setXYZ(idx, p.x, p.y, p.z));
+			refreshHandleMatrix(i);
+		}
+	}
+	// members first, anchor last — the tail writeSelectedHandle refreshes
+	// normals/bounds/overlay and sets needsUpdate (the onProxyMoved shape)
+	applyFalloff(deltaVector.copy(handles[selectedHandle].position).sub(falloffOrigin()));
+	commitSelectedLocal(handles[selectedHandle].position.clone());
 }
 
 /** Is a falloff drag live, i.e. is anything beyond the selection moving? */
@@ -1023,10 +1235,16 @@ export function onProxyDragChanged(dragging) {
 		// one position for all its indices — it cannot carry per-handle befores;
 		// same reasoning as weld). Index-expanded per the D1 representation rule.
 		beginFalloff();
+		// P7b: while the proportional drag lives, the wheel resizes the radius and
+		// the weights recapture (disarmed at drag end / session exit)
+		if (falloffStart) beginProportionalWheel(recaptureVertexFalloff);
 		// a falloff drag moves many handles, so it undoes as ONE meshgeo snapshot for the same
-		// reason a multi-drag does (a `verts` entry holds one position for all its indices)
+		// reason a multi-drag does (a `verts` entry holds one position for all its indices).
+		// P7b: captured whenever falloff COULD engage (`falloffStart`, i.e. the tool is on),
+		// not only when a neighbour is in range NOW — the wheel can grow the radius mid-drag,
+		// and a bare 'verts' entry could not undo the neighbours that pulls in.
 		dragStartExpanded =
-			vertexSelection.size > 1 || falloffActive()
+			vertexSelection.size > 1 || !!falloffStart
 				? trisToPositions(readTriangles(edited.geometry))
 				: null;
 	} else if (dragStartLocal) {
@@ -1058,6 +1276,9 @@ export function onProxyDragChanged(dragging) {
 		}
 		falloffStart = null;
 		falloffWeights = null;
+		hideProportionalRing(); // P4: the radius ring lives for the drag only
+		endProportionalWheel(); // P7b: the wheel belongs to the live drag only
+		hideSlideMarker(); // P7b: the landing marker too
 		dragStartLocal = null;
 		slideEdge = null;
 		slideStart = null;

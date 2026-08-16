@@ -11,6 +11,12 @@
 // started from App.svelte before the scene exists. LOCAL prefs, nothing replicates.
 import { get, writable } from 'svelte/store';
 import { globalCamera, globalRenderer, orbitControls } from '../stores/sceneStore';
+// 19-A P7b: while a proportional mesh drag is live the wheel resizes the falloff
+// radius (proportional.js owns that listener). Both listeners sit on WINDOW in
+// the capture phase, where stopPropagation cannot stop a same-node sibling — so
+// this one has to ask and stand down itself. proportional is a svelte/store-only
+// leaf: no cycle.
+import { proportionalWheelActive } from './proportional';
 
 /** How two-finger swipes are treated: 'auto' (heuristic) | 'on' | 'off'.
  *  @type {import('svelte/store').Writable<string>} */
@@ -104,6 +110,8 @@ function panCamera(dx, dy) {
 
 /** @param {WheelEvent} e */
 function onWheel(e) {
+	// a live proportional drag owns the wheel (radius resize) — never pan under it
+	if (proportionalWheelActive()) return;
 	const canvas = get(globalRenderer)?.domElement;
 	const overCanvas = !!canvas && e.target === canvas;
 	// the canvas must sit OUTSIDE the body's pan-x/pan-y guard: Chromium

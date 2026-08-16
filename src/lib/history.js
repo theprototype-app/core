@@ -83,6 +83,14 @@ export function recordEntry(entry) {
 	if (sessionBase >= 0) sessionRedoBase = 0;
 }
 
+/** Remove a specific entry from the undo stack by IDENTITY (19-A: the adjust
+ * engine's revert — the op's own geometry restore already replicated, so this
+ * touches no wire and leaves the redo stack alone). No-op when the entry was
+ * already undone or evicted by the LIMIT trim. @param {any} entry */
+export function retractEntry(entry) {
+	undoStack.update((stack) => stack.filter((e) => e !== entry));
+}
+
 // --- 15-F: session-scoped undo (mesh-edit sessions) -------------------------
 // While an Edit Mesh session is active, a live BARRIER keeps undo/redo inside
 // the session's own steps: entries keep landing on undoStack normally (NOT the

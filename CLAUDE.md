@@ -1502,6 +1502,16 @@ loadable play content. Everything a user does must be visible to connected peers
   when store reads disagree with what you see, add a component-side debug hook
   (`window.__cameraPreviewDebug`, opt-in like `__outlineDebug`) to compare the
   COMPONENT's view with the store's.
+  **19-A escalation — a DAY-LIVED server serves stale DUAL MODULE INSTANCES**,
+  not just half-mounted pages: MeshToolOptions' `bind:checked={$faceAutoApply}`
+  flipped the DOM checkbox while the app's real store never moved — the
+  component was bound to a SECOND faceEdit instance from an older transform.
+  Real users in that tab are broken too, not only tests. Two consequences:
+  RESTART the dev server after heavy editing and BEFORE the final verification
+  battery (kill-by-port + detached relaunch, then curl-grep a new symbol to
+  prove it serves YOUR code); and never trust an A/B where both sides ran
+  against the same long-lived server — it "proves pre-existing" for failures
+  that are purely environmental, because both sides lie identically.
 - **Svelte 5 DELEGATES `onkeydown`/`onpointerdown`/`onclick` attributes** — the
   handler only runs once the event reaches the app root, so any ancestor that
   stops propagation on the way up silently kills it. Panel widgets are exactly
@@ -1865,6 +1875,73 @@ override for e2e — never share 5173 (the user's main-checkout server).
   the PR of the whole 17-E branch to release/next.
   NEXT (planned): the same transform tools
   in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
+- Status (2026-08-16): **19-A READY TO PR — P0–P5b + P7a + P7b COMMITTED (12 commits,
+  branch `feat/mesh-tool-interaction`, NOT pushed); P6 and P7c are PARKED by the user
+  and execute later as their own branches.** Hashes: P0 `bf6f2df` · P1 `8b0352f` ·
+  P2 `e259d6b` (THE ADJUST ENGINE) · docs `a1c9f88` · P3 `0cc844e` · P4 `95df8b0` ·
+  P5a `7179a6f` (Opus) · P5b `d224cc2` · docs `497ef8e`/`cfff1c8` · P7a `5da6fe8`
+  (Opus) · P7b `7edcbed`. Baseline **391/62 at EVERY commit**; build green; 28 files,
+  +7195/-487. As-built table + the parked specs: cloud
+  `plans-core/pending/19-a-mesh-tool-interaction.md` §9 (§4 keeps P6's spec, §8 P7c's).
+  P7a = bridge **invert faces** (negate the wall dir AFTER the shell-test guess) +
+  face-bevel **negative profile** (the concave quarter circle is the same arc with the
+  sin/cos roles SWAPPED; every schedule column telescopes to 1, so total reach is
+  bit-identical across profiles — that invariance is what makes the sign safe).
+  P7b = the two edge-move bugs + three interaction items: the edge overlay is drawn
+  from the grab's own transformed ORIGINAL endpoints while a grab is live and the
+  selected keys are REMAPPED through the grab at commit (welded keys are
+  position-quantized, so moving an edge changes its key — that single fact caused
+  both reports); loop-cut Along/Across with BOTH rings captured at begin; the wheel
+  resizes the proportional radius mid-drag with weights recaptured against drag-START
+  positions (suppression is TWO-SIDED: stopPropagation from the window-CAPTURE
+  listener kills the OrbitControls canvas dolly, and trackpadNav early-outs on
+  `proportionalWheelActive()` because two listeners on the SAME node cannot stop each
+  other); vertex-slide clamp toggle + landing marker; and the ring BILLBOARDS to the
+  camera via `onBeforeRender` (a normal-oriented circle vanishes edge-on).
+  PARKED, nothing started: **P6** (connect, dissolve verts, fill hole, edge slide,
+  solidify, separate-to-object — the batch's ONLY replication surface) and **P7c**
+  (vertex-bevel segments + THE MITERED CORNER at valence>=4, whose crack history is
+  the gate). WRAP still owed: merge origin/release/next INTO the branch (19-B merged
+  there @921be45 — `git merge-tree` says exactly ONE conflict, App.svelte's debugStores
+  lines), full sweep, push, PR. EXECUTION MODEL that worked: subagents implement (Opus
+  = spec-tight, Fable = operator-layer), the ORCHESTRATOR reviews every diff
+  first-hand, re-runs svelte-check + the affected suites itself, and commits with
+  EXPLICIT paths (a `git add -A` once swept a curl artifact named `-w` into a commit).
+  Subagents get: fresh-5174 restart + curl-grep-a-new-symbol before the final battery,
+  PEER_CONFIG on every two-peer run, DO-NOT-COMMIT, and "your final text IS the
+  report" (one parked itself waiting on a detached run the harness could not track).
+  Session-limit kills leave work ON DISK — resume the same agent with the tree state
+  spelled out. P5b's load-bearing find: `beginFaceGrab` skips the weld-stitch
+  neighbour capture when EVERY grabbed tri has a coincident twin outside the set (a
+  freshly-duplicated patch) — position-welding otherwise makes a duplicate immovable
+  off its source.
+- Status (2026-08-15, superseded by the entry above): **ROADMAP #19-A IN FLIGHT — the mesh tool APPLY-AND-ADJUST model.**
+  Branch `feat/mesh-tool-interaction` off release/next @608e852; plans in the cloud repo
+  (`plans-core/roadmap-19-tool-interaction-snapping.md` + `pending/19-a/-b`); 19-B
+  (advanced snapping) runs in a PARALLEL user session on a worktree lane — Scene.svelte
+  belongs to 19-B in that split. Committed so far: **P0** `bf6f2df` (DragRow
+  onscrubstart/onscrubend; meshToolParams into debugStores; componentsOfTris exported;
+  faceSelectionInfo gains `pieces` + component-keyed loops = bridge's REAL precondition;
+  history `retractEntry`) · **P1** `8b0352f` (pure cores bevelFacesCore/bevelEdgesCore/
+  bevelVerticesCore/loopCutCore/bridgeFacesCore + the proven-but-unused subdivideLevels;
+  wrappers byte-equivalent; quadRingKeysIn/quadCornersIn de-session-ized with shims) ·
+  **P2** `e259d6b` (THE ADJUST ENGINE in faceEdit.js: beginOpAdjust/reapplyOpAdjust/
+  settleOpAdjust/cancelOpAdjust/endOpAdjust + opAdjustState — ops apply on click when
+  preconditions hold, the pane becomes a live "Adjusting" panel, ✕ reverts via
+  retractEntry; ONE history entry recorded AT APPLY, `entry.after` MUTATED IN PLACE on
+  settle; identity guard on installedGeometry drops the adjust under undo/remote swaps;
+  interruptions REVERT a deferred VR adjust first (no entry yet = stranded geometry
+  otherwise); VR beginFaceAdjust/adjustFaceGesture/commitFaceAdjust are consumers;
+  #mesh-undo/#mesh-redo header buttons; mesh-toolbox-redesign's "click does not commit"
+  contract DELIBERATELY FLIPPED; new mesh-adjust suite, 26 checks incl. two-peer settle
+  parity). P3 (params: bevel WORLD-units fix + in/out direction + faces profile, extrude
+  individual, inset depth, loopcut position, bridge twist, subdivide levels, and the
+  edge/vertex bevel apply-on-click carry-over with its suite flips) was IN FLIGHT at the
+  pause. Remaining after P3: P4 proportional ring + edge/face falloff, P5 safe new ops,
+  P6 risky new ops (separate-to-object = replication, LAST). Execution model this
+  roadmap: implementation by subagents (Opus for spec-tight mechanical phases, Fable for
+  operator-layer), orchestrator reviews diffs first-hand, re-runs the gates and commits.
+  Baseline 391/62 held through P0-P2.
 - Status (2026-08-14): **ROADMAP #18 EXECUTED — settings polish, window sizing, Edit Mesh
   toolbox redesign.** 7 commits on two stacked branches off release/next (not PR'd):
   `feat/roadmap18-settings-windows` = **18-A** `37370be` (auto-restore-on-load pref,

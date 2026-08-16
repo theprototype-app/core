@@ -16,8 +16,20 @@
 		bevelWidth,
 		bevelSegments,
 		bevelProfile,
+		bevelDirection,
+		bevelFaceProfile,
 		loopCuts,
+		loopCutPosition,
 		bridgeCuts,
+		bridgeTwist,
+		bridgeInvert,
+		extrudeIndividual,
+		insetDepth,
+		insetIndividual,
+		subdivideLevelCount,
+		edgeExtrudeDistance,
+		smoothFactor,
+		smoothIterations,
 		mergeDistance,
 		symAxis,
 		symKeep,
@@ -39,13 +51,16 @@
 		vertexSelectionSize,
 		selectAllVerts,
 		invertVertexSelection,
-		bevelSelectedVerts,
+		beginVertexBevelAdjust,
+		deleteSelectedVerts,
+		smoothSelectedVerts,
 		proportionalEdit,
 		proportionalRadius,
 		vertexHandleScale,
 		vertexHandleAdaptive,
 		vertexSlide
 	} from '$lib/meshEdit';
+	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import {
 		faceEditObject,
 		enterFaceEdit,
@@ -81,8 +96,11 @@
 		edgeEditSelected,
 		selectEdgeLoop,
 		dissolveEdges,
-		bevelFaces,
-		bevelEdges,
+		deleteSelectedEdges,
+		subdivideSelectedEdges,
+		duplicateSelectedFaces,
+		triangulateMesh,
+		trisToQuadsMesh,
 		symmetrizeMesh,
 		escapeConsumedByKnife,
 		clearEdgeSelection,
@@ -92,7 +110,15 @@
 		selectAllEdges,
 		invertEdgeSelection,
 		cancelEditSession,
-		sessionHasChanges
+		sessionHasChanges,
+		beginOpAdjust,
+		reapplyOpAdjust,
+		settleOpAdjust,
+		cancelOpAdjust,
+		endOpAdjust,
+		opAdjustState,
+		faceBevelReady,
+		loopCutReady
 	} from '$lib/faceEdit';
 	import {
 		Keyboard,
@@ -106,7 +132,8 @@
 		BoxSelect,
 		FlipHorizontal,
 		Link2,
-		Undo2
+		Undo2,
+		Redo2
 	} from '@lucide/svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import ToolIcon from '../ui/ToolIcon.svelte';
@@ -137,6 +164,7 @@
 		const uuid = /** @type {string} */ ($editingObject || $faceEditObject || $selectedObject?.uuid);
 		if (!uuid) return;
 		if (next === mode) return;
+		endOpAdjust(); // 19-A P2: a mode switch ends a live adjust (the edit stays)
 		// remember what THIS mode had picked before leaving it, so coming back
 		// restores it (unless the geometry changed underneath)
 		stashSelections();
@@ -184,11 +212,19 @@
 		{ op: 'bevel', label: 'Bevel', hint: '', oneShot: true, param: true, icon: 'bevel', desc: "chamfer the selected face's border" },
 		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, param: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
 		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, param: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
-		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, param: false, icon: 'subdivide', desc: 'split each triangle into four' },
+		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, param: true, icon: 'subdivide', desc: 'split each quad into four, once per level' },
+		{ op: 'duplicate', label: 'Duplicate', hint: '', oneShot: true, param: false, icon: 'duplicate-face', desc: 'copy the selected faces in place — coincident until you drag the gizmo' },
 		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, param: false, icon: 'flip-normals', desc: 'reverse the winding' },
 		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, param: false, icon: 'delete-face', desc: 'remove the selection' }
 	];
-	const OPS = [...TOOL_OPS, ...ACTION_OPS];
+	// 19-A P5b: pane-only param ops — they live in a MODE's hand-written tool row
+	// (edges / vertices), never in the faces grids, but runOp still needs their spec
+	// so a button click focuses the pane AND attempts the apply, like Bevel's.
+	const PANE_OPS = [
+		{ op: 'edge-extrude', label: 'Extrude edges', hint: '', oneShot: true, param: true, icon: 'edge-extrude', desc: '' },
+		{ op: 'smooth', label: 'Smooth', hint: '', oneShot: true, param: true, icon: 'smooth', desc: '' }
+	];
+	const OPS = [...TOOL_OPS, ...ACTION_OPS, ...PANE_OPS];
 
 	const GRANULARITIES = [
 		{
@@ -265,6 +301,24 @@
 			icon: 'merge-distance',
 			run: () => mergeByDistance($mergeDistance),
 			desc: 'collapse near-coincident vertices and drop the degenerate faces'
+		},
+		// P5a: the two TOPOLOGY-only ops. They move no vertex — they rewrite the
+		// stored face partition, which is what Quad granularity, the loop tools and
+		// the structure wireframe read — so they belong with the other whole-mesh
+		// repairs rather than in a mode's tool row.
+		{
+			id: 'triangulate',
+			label: 'Triangulate',
+			icon: 'triangulation',
+			run: () => triangulateMesh(),
+			desc: 'split every quad and n-gon back into its triangles (positions are untouched)'
+		},
+		{
+			id: 'quads',
+			label: 'Tris to quads',
+			icon: 'tris-to-quads',
+			run: () => trisToQuadsMesh(),
+			desc: 'pair coplanar triangles back into quads (positions are untouched)'
 		}
 	];
 
@@ -283,6 +337,53 @@
 		return faceSelectionInfo();
 	});
 
+	// 19-A P2: the PRECONDITION map — what the focused tool's pane says when its
+	// op cannot apply yet (the selInfo pattern: reactive triggers voided, cheap
+	// exported checkers do the work). '' = ready, so the grid click auto-applies.
+	const paneHint = $derived.by(() => {
+		void $faceEditSelectedTris;
+		void $objectsGroup;
+		void $faceEditHoverTri;
+		void $faceEditHighlight;
+		void $edgeEditSelected;
+		void $faceEditGranularity;
+		const focus = $optionsFocus;
+		if (mode === 'vertices') {
+			if (focus === 'bevel' && !$vertexSelectionSize) return 'Pick a vertex first (Ctrl+click adds)';
+			if (focus === 'smooth' && !$vertexSelectionSize) return 'Pick a vertex first (Ctrl+click adds)';
+			return '';
+		}
+		if (mode === 'edges') {
+			if (focus === 'bevel' && !$edgeEditSelected.length) return 'Pick an edge first';
+			if (focus === 'edge-extrude' && !$edgeEditSelected.length) return 'Pick a border edge first';
+			return '';
+		}
+		if (focus === 'extrude' || focus === 'inset') {
+			if (!hasTarget()) return 'Click a face first';
+			if (focus === 'extrude' && !faceBevelReady())
+				return 'The selection is a closed surface — nothing to extrude from';
+			return '';
+		}
+		if (focus === 'bevel') {
+			if (!hasTarget()) return 'Select a face with a border';
+			if (!faceBevelReady()) return 'The selection is a closed surface — no border to fold';
+			return '';
+		}
+		if (focus === 'loopcut') return loopCutReady() ? '' : 'Click a quad to choose the ring';
+		if (focus === 'subdivide') return hasTarget() ? '' : 'Click a face first';
+		if (focus === 'bridge') {
+			if (selInfo.pieces !== 2) return 'Select two separate pieces (Ctrl+click both)';
+			if (!selInfo.loops) return 'Each piece needs one closed boundary';
+			if (selInfo.loops[0] !== selInfo.loops[1])
+				return `${selInfo.loops[0]} ↔ ${selInfo.loops[1]} edges — the counts must match`;
+			return '';
+		}
+		return '';
+	});
+
+	// the pane is the LIVE ADJUST while the engine's op is the focused tool
+	const adjusting = $derived(!!$opAdjustState && $opAdjustState.op === $optionsFocus);
+
 	// M0: one-shot buttons FLASH on commit (armed tools stay lit instead).
 	// onanimationend clears it the moment the flash finishes; the timer is the
 	// FALLBACK for prefers-reduced-motion, where animation:none means the end
@@ -297,12 +398,91 @@
 		flashTimer = setTimeout(() => (flashOp = ''), 400);
 	}
 
-	/** From the tool GRID. Parameterized tools only SELECT here (their options
-	 * pane commits); everything else behaves as before. @param {string} op */
+	/** 19-A P2: attempt an op through the ADJUST ENGINE — it applies immediately
+	 * (one history entry, recorded at apply) and the options pane becomes the
+	 * live adjust. Returns false when a precondition refused (the pane's hint
+	 * line says why). ONE path for the grid, the pane's Apply buttons and the
+	 * C/B hotkeys. @param {string} op */
+	function applyOp(op) {
+		let ok = false;
+		// P3: the direction buttons own the SIGN of the edge/vertex cap profile
+		// (the store keeps the magnitude), so the two controls cannot disagree
+		const signedProfile = ($bevelDirection === 'in' ? -1 : 1) * Math.abs($bevelProfile);
+		if (op === 'extrude' || op === 'inset') {
+			if (!hasTarget()) {
+				showToast('Click a face first');
+				return false;
+			}
+			ok = beginOpAdjust(
+				/** @type {any} */ (op),
+				op === 'inset'
+					? { distance: $faceEditAmount, depth: $insetDepth, individual: $insetIndividual }
+					: { distance: $faceEditAmount, individual: $extrudeIndividual }
+			);
+		} else if (op === 'bevel') {
+			// three different operators with three different signatures, one entry
+			ok =
+				mode === 'vertices'
+					? beginVertexBevelAdjust($bevelWidth, signedProfile)
+					: mode === 'edges'
+						? beginOpAdjust(
+								'bevel',
+								{ width: $bevelWidth, segments: $bevelSegments, profile: signedProfile },
+								{ kind: 'edges' }
+							)
+						: beginOpAdjust(
+								'bevel',
+								{
+									width: $bevelWidth,
+									segments: $bevelSegments,
+									profile: $bevelFaceProfile,
+									direction: $bevelDirection
+								},
+								{ kind: 'faces' }
+							);
+		} else if (op === 'loopcut') {
+			ok = beginOpAdjust('loopcut', { cuts: $loopCuts, position: $loopCutPosition });
+		} else if (op === 'bridge') {
+			ok = beginOpAdjust('bridge', {
+				cuts: $bridgeCuts,
+				twist: $bridgeTwist,
+				invert: $bridgeInvert
+			});
+		} else if (op === 'subdivide') {
+			if (!hasTarget()) {
+				showToast('Click a face first');
+				return false;
+			}
+			ok = beginOpAdjust('subdivide', { levels: $subdivideLevelCount });
+		} else if (op === 'edge-extrude') {
+			// P5b: an adjust-engine op — the engine validates the edge pick and the
+			// border rule, and toasts its own refusals
+			ok = beginOpAdjust('edge-extrude', { distance: $edgeExtrudeDistance });
+		} else if (op === 'smooth') {
+			// P5b: a plain one-shot — one meshgeo commit per click, never an adjust
+			ok = smoothSelectedVerts($smoothFactor, $smoothIterations);
+		}
+		if (ok) flash(op);
+		return ok;
+	}
+
+	/** From the tool GRID. 19-A P2 (the contract FLIP): selecting a parameterized
+	 * op also ATTEMPTS the apply with the current pane values — with a valid
+	 * target it commits on the spot and the pane becomes the live adjust; without
+	 * one it only focuses, and the pane's hint says what is missing.
+	 * @param {string} op */
 	function runOp(op) {
+		// P5b: Duplicate is an instant one-shot with its own operator (it is not a
+		// commitFaceOp case — it appends and re-seats the gizmo itself, and it owns
+		// its refusal toast)
+		if (op === 'duplicate') {
+			if (duplicateSelectedFaces()) flash(op);
+			return;
+		}
 		const spec = OPS.find((o) => o.op === op);
 		if (spec?.param) {
 			focusTool(op);
+			applyOp(op);
 			return;
 		}
 		if (spec?.oneShot) {
@@ -318,36 +498,38 @@
 		setFaceOp(/** @type {any} */ (op));
 	}
 
-	// 176: force-apply the active op on the currently highlighted face
+	// 176: force-apply the active op on the currently highlighted face.
+	// 19-A P2: extrude/inset route through the adjust engine (same as a face
+	// click with auto-apply); the other armed ops keep the direct commit.
 	function applyActive() {
 		if (!hasTarget()) {
 			showToast('Click a face first');
 			return;
 		}
-		commitFaceOp(/** @type {any} */ ($faceEditOp), $faceEditAmount);
+		const op = $faceEditOp;
+		if (op === 'extrude' || op === 'inset') applyOp(op);
+		else commitFaceOp(/** @type {any} */ (op), $faceEditAmount);
 	}
 
-	/** Commit the bevel for whichever element mode is open — three different
-	 * operators with three different signatures, one button. */
+	/** Bevel for whichever element mode is open, via the adjust engine. */
 	function applyBevel() {
-		const ok =
-			mode === 'vertices'
-				? bevelSelectedVerts($bevelWidth, $bevelProfile)
-				: mode === 'edges'
-					? bevelEdges($bevelWidth, $bevelSegments, $bevelProfile)
-					: bevelFaces($bevelWidth, $bevelSegments);
-		if (ok) flash('bevel');
+		applyOp('bevel');
 	}
 
-	/** Loop cut, from the options pane or the C hotkey. */
+	/** Loop cut, from the options pane or the C hotkey (via the engine). */
 	function applyLoopCut() {
-		if (commitFaceOp('loopcut', $loopCuts)) flash('loopcut');
+		applyOp('loopcut');
 	}
 
-	/** Bridge, from the options pane or the B hotkey. It validates the two-piece
-	 * selection and toasts on its own. */
+	/** Bridge, from the options pane or the B hotkey. The engine validates the
+	 * two-piece selection and toasts on its own. */
 	function applyBridge() {
-		if (commitFaceOp('bridge', $bridgeCuts)) flash('bridge');
+		applyOp('bridge');
+	}
+
+	/** Subdivide at the pane's level count, via the engine (P3). */
+	function applySubdivide() {
+		applyOp('subdivide');
 	}
 
 	// Cleanup and Symmetry act on the whole OBJECT, so they are offered in every
@@ -483,16 +665,16 @@
 				event.preventDefault();
 				return;
 			}
-			// C commits the loop cut outright: a toolbar ARMS, a shortcut EXECUTES.
-			// Clicking Loop cut in the grid only selects it (its cut count is in the
-			// options pane), but someone typing C already knows what they want.
+			// C commits the loop cut outright: a shortcut EXECUTES. 19-A P2: it
+			// routes through runOp — the same focus-and-apply path as the grid — so
+			// the pane follows the hotkey and becomes the live adjust (or the hint).
 			if (key === 'c') {
-				applyLoopCut();
+				runOp('loopcut');
 				event.preventDefault();
 				return;
 			}
 			if (key === 'b') {
-				applyBridge();
+				runOp('bridge');
 				event.preventDefault();
 				return;
 			}
@@ -571,6 +753,21 @@
 	{/each}
 {/snippet}
 
+<!-- 19-A P4: proportional editing works in ALL THREE element modes now (the
+     falloff rides beginFaceGrab for edges/faces), so the toggle renders in each
+     mode's Tools area. One snippet, one id — only one mode branch mounts at a
+     time. A TOGGLE, not an armed op: it never joins TOOL_OPS. -->
+{#snippet proportionalBtn()}
+	<button
+		id="mesh-proportional"
+		class="tbx-btn {$proportionalEdit ? 'tbx-on bg-primary-600 text-white' : ''}"
+		aria-pressed={$proportionalEdit}
+		aria-label="Proportional editing"
+		title="Proportional editing — drag a vertex, edge or face and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
+		onclick={() => proportionalEdit.set(!$proportionalEdit)}><ToolIcon name="proportional" /></button
+	>
+{/snippet}
+
 {#if active}
 	<ToolboxWindow
 		id="mesh-edit-popup"
@@ -608,6 +805,26 @@
 					onclick={() => exitColliderEdit()}><X size={14} aria-hidden="true" /></button
 				>
 			{:else}
+				<!-- 19-A P2 (plan §6): undo/redo IN the toolbox header, before
+				     Cancel/Done. Session-barrier semantics come free (history.js
+				     stops at the session's first step), and the adjust engine's
+				     identity guard makes undo-under-a-live-adjust safe. -->
+				<button
+					id="mesh-undo"
+					class="tbx-hbtn"
+					aria-label="Undo"
+					disabled={!$canUndo}
+					title="Undo (Ctrl+Z) — steps back inside this edit session"
+					onclick={() => undo()}><Undo2 size={14} aria-hidden="true" /></button
+				>
+				<button
+					id="mesh-redo"
+					class="tbx-hbtn"
+					aria-label="Redo"
+					disabled={!$canRedo}
+					title="Redo (Ctrl+Y) — replay the step you just undid"
+					onclick={() => redo()}><Redo2 size={14} aria-hidden="true" /></button
+				>
 				<button
 					id="mesh-edit-cancel"
 					class="tbx-hbtn"
@@ -713,10 +930,33 @@
 			<button
 				id="edge-bevel"
 				class="tbx-btn {$optionsFocus === 'bevel' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'bevel'}
+				onanimationend={() => (flashOp = '')}
 				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel edges"
-				title="Bevel — replace the edge with a chamfer strip. Sets width, segments and profile below, then Apply. Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
-				onclick={() => focusTool('bevel')}><ToolIcon name="bevel" /></button
+				title="Bevel — replace the selected edge with a chamfer strip, adjustable below (P3: with an edge picked the click applies immediately, like the faces grid). Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
+				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
+			>
+			<button
+				id="edge-extrude"
+				class="tbx-btn {$optionsFocus === 'edge-extrude' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'edge-extrude'}
+				onanimationend={() => (flashOp = '')}
+				aria-pressed={$optionsFocus === 'edge-extrude'}
+				aria-label="Extrude edges"
+				title="Extrude — pull the selected BORDER edges out into a new strip, distance adjustable below (with an edge picked the click applies immediately). A chain of edges extrudes as ONE welded strip; an interior edge (a face on both sides) is refused."
+				onclick={() => runOp('edge-extrude')}><ToolIcon name="edge-extrude" /></button
+			>
+			<button
+				id="edge-subdivide"
+				class="tbx-btn"
+				class:tbx-flash={flashOp === 'esubdivide'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Subdivide edges"
+				title="Subdivide — split every face along the selected edges at their midpoints. Both sides split at the identical welded point, so the mesh stays watertight; the two halves stay selected."
+				onclick={() => {
+					if (subdivideSelectedEdges()) flash('esubdivide');
+				}}><ToolIcon name="edge-subdivide" /></button
 			>
 			<button
 				id="edge-dissolve"
@@ -729,11 +969,24 @@
 					if (dissolveEdges()) flash('dissolve');
 				}}><ToolIcon name="dissolve" /></button
 			>
+			<button
+				id="edge-delete"
+				class="tbx-btn tbx-danger"
+				class:tbx-flash={flashOp === 'edelete'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Delete edges"
+				title="Delete — remove the faces on BOTH sides of the selected edges, leaving a hole. (Dissolve keeps the surface; this opens it up, which is how you make a hole to bridge or fill.)"
+				onclick={() => {
+					if (deleteSelectedEdges()) flash('edelete');
+				}}><ToolIcon name="delete-face" /></button
+			>
+			{@render proportionalBtn()}
 		{:else if mode === 'faces'}
 			<!-- TOOLS = armed: they change what your next viewport click does, and
 			     stay lit (solid accent) until you pick another. -->
 			<span class="tbx-label">Tools</span>
 			{@render opGrid(TOOL_OPS)}
+			{@render proportionalBtn()}
 			<!-- OPERATIONS = they run on the CURRENT selection. The ones carrying
 			     settings come first and open the options pane (accent ring); the
 			     rest commit on the spot and flash. -->
@@ -763,19 +1016,24 @@
 			<button
 				id="mesh-vertex-bevel"
 				class="tbx-btn {$optionsFocus === 'bevel' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'bevel'}
+				onanimationend={() => (flashOp = '')}
 				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel the selected vertices"
-				title="Bevel — cut the corner off every selected vertex and cap it. Sets width and profile below, then Apply. Works on any number of vertices."
-				onclick={() => focusTool('bevel')}><ToolIcon name="bevel" /></button
+				title="Bevel — cut the corner off every selected vertex and cap it, adjustable below (P3: with a vertex picked the click applies immediately, like the faces grid). Works on any number of vertices."
+				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
 			>
 			<button
-				id="mesh-proportional"
-				class="tbx-btn {$proportionalEdit ? 'tbx-on bg-primary-600 text-white' : ''}"
-				aria-pressed={$proportionalEdit}
-				aria-label="Proportional editing"
-				title="Proportional editing — drag one vertex and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
-				onclick={() => proportionalEdit.set(!$proportionalEdit)}><ToolIcon name="proportional" /></button
+				id="mesh-smooth"
+				class="tbx-btn {$optionsFocus === 'smooth' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'smooth'}
+				onanimationend={() => (flashOp = '')}
+				aria-pressed={$optionsFocus === 'smooth'}
+				aria-label="Smooth the selected vertices"
+				title="Smooth — relax each selected vertex toward the average of its neighbours (factor and passes below; with a vertex picked the click applies immediately). Evens out lumps; unselected vertices never move."
+				onclick={() => runOp('smooth')}><ToolIcon name="smooth" /></button
 			>
+			{@render proportionalBtn()}
 			<button
 				id="mesh-slide"
 				class="tbx-btn {$vertexSlide ? 'tbx-on bg-primary-600 text-white' : ''} {$vertexSelectionSize === 1
@@ -784,7 +1042,25 @@
 				aria-pressed={$vertexSlide}
 				aria-label="Slide the vertex along an edge"
 				title="Slide — constrain the drag to one of this vertex's own edges (it picks the edge you drag toward and clamps to its ends). Adjusts a profile without pulling the vertex off the surface."
-				onclick={() => vertexSlide.set(!$vertexSlide)}><ToolIcon name="vertex-slide" /></button
+				onclick={() => {
+					const on = !$vertexSlide;
+					vertexSlide.set(on);
+					// P7b: arming Slide brings up its options (the clamp toggle) — the
+					// proportional button's shape
+					if (on) focusTool('slide');
+					else if (get(optionsFocus) === 'slide') focusTool('');
+				}}><ToolIcon name="vertex-slide" /></button
+			>
+			<button
+				id="mesh-delete-verts"
+				class="tbx-btn tbx-danger {$vertexSelectionSize >= 1 ? '' : 'tbx-disabled'}"
+				class:tbx-flash={flashOp === 'vdelete'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Delete the selected vertices"
+				title="Delete — remove every face that uses a selected vertex, leaving a hole (Ctrl+click adds vertices)"
+				onclick={() => {
+					if (deleteSelectedVerts()) flash('vdelete');
+				}}><ToolIcon name="delete-face" /></button
 			>
 		{/if}
 
@@ -831,10 +1107,18 @@
 		<MeshToolOptions
 			{mode}
 			focus={$optionsFocus}
+			hint={paneHint}
+			{adjusting}
 			onApplyOp={applyActive}
 			onApplyBevel={applyBevel}
 			onApplyLoopCut={applyLoopCut}
 			onApplyBridge={applyBridge}
+			onApplySubdivide={applySubdivide}
+			onApplyEdgeExtrude={() => applyOp('edge-extrude')}
+			onApplySmooth={() => applyOp('smooth')}
+			onAdjust={(patch) => reapplyOpAdjust(patch)}
+			onSettle={() => settleOpAdjust()}
+			onRevert={() => cancelOpAdjust()}
 		/>
 
 		<!-- WHOLE-MESH work below. None of it depends on which element mode is open,
@@ -1021,7 +1305,7 @@
 				<span id="mesh-sel-counts" title="Selected faces · triangles (Ctrl+click adds)">
 					{selInfo.faces} face{selInfo.faces === 1 ? '' : 's'} · {selInfo.tris} tri{selInfo.tris === 1 ? '' : 's'}{#if selInfo.loops}<span
 							class={selInfo.loops[0] === selInfo.loops[1] ? '' : 'text-red-400'}
-							title="Boundary edges of the two selected faces — Bridge needs them EQUAL"
+							title="Boundary edges of the two selected pieces — Bridge needs them EQUAL"
 						>
 							· {selInfo.loops[0]} ↔ {selInfo.loops[1]} edges</span
 						>{/if}

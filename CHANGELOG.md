@@ -5,6 +5,90 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.4.0 — Move it 🎞️
+
+An animation release. Objects can be keyframed now — real clips with a timeline,
+curves and markers — the mesh tools apply and then let you tune the result, and
+everything snaps to the geometry that is already there.
+
+### 🎞️ Animation (new)
+
+- 🎬 **Clips** — give an object named animations and keyframe its position,
+  rotation, scale, visibility, colour, opacity, glow and light intensity.
+- 📊 **A real timeline** — a dope sheet and a curve editor in one window: zoom,
+  pan, box- or lasso-select keys, drag them, and set an A/B window to loop just
+  the part you are working on.
+- ✏️ **Easing you can grab** — pull the curve handles straight on the graph, or
+  type the numbers.
+- 🔴 **Auto-key** — switch it on and posing an object records the key for you.
+- 🧅 **Onion skin** — faint ghosts of the keys either side of the playhead.
+- 📌 **Markers** — name a moment in a clip and have a flow node fire when the
+  playhead crosses it.
+- 🎛️ **Presets** — door, drawer, elevator, turntable, pulse and blink, ready to
+  drop on any object.
+- 📤 **Export** — clips bake into the glTF you save.
+- 🔗 **Flow nodes** — play a clip on click, react when one finishes, read its
+  progress, or trigger on a marker. Everyone in the session sees the same thing
+  at the same time.
+
+### 🧰 Mesh tools that adjust
+
+- 🎯 **Apply, then tune** — clicking bevel, loop cut or bridge does the thing
+  immediately and turns the panel into a live adjust panel: change width, cuts
+  or twist and watch it re-run. ✕ puts it back.
+- 🎚️ **Real parameters** — bevel width in world units with an in/out shape,
+  extrude each face on its own, inset depth, where a loop cut sits and which way
+  it runs, bridge twist, cuts and flip, subdivide levels.
+- 🎈 **Proportional editing everywhere** — vertices, edges and faces, with a ring
+  on the model showing the falloff. The wheel resizes it mid-drag.
+- ➕ **More operations** — extrude and subdivide edges, delete edges or vertices,
+  duplicate faces, smooth a selection, triangulate, and turn triangles back into
+  quads.
+- 🎯 **Your own pivot** — transform a multi-selection about its centre, or drag
+  the gizmo to park the pivot exactly where you want it.
+- ↩️ **Undo and redo in the toolbox**, next to the tools.
+
+### 🧲 Snapping
+
+- 📍 **Snap to what is there** — vertices, edges, faces, surfaces or whole
+  objects, with the target highlighted as you drag.
+- 📐 **Align to a surface** — drop an object onto a face and let it take that
+  face's angle.
+- ⚓ **Pick your snap point** — click any point to snap FROM there instead of the
+  object's centre.
+
+### 🗺️ UV editor
+
+- 🔀 **Move, rotate and scale** the map on 1 / 2 / 3, by drag, by a grab that
+  follows the pointer, or with the arrow keys in exact texture pixels.
+- ⌖ **A pivot you place** — drop the transform origin where you want it and drag
+  it around.
+- ⌨️ **Keyboard picking** — walk the points with the arrows and take them as you
+  go.
+
+### 🪟 Windows, toolbox & settings
+
+- 🧰 **The mesh toolbox, redesigned** — element modes as tabs, the options for
+  the tool you picked right under it, collapsible sections for whole-mesh work,
+  and a new icon set. On a phone it becomes a bottom sheet.
+- 📏 **Windows stay reachable** — no window can be sized past the screen any
+  more, and double-clicking its corner resets it.
+- 💾 **Pick up where you left off** — an option to restore your last scene
+  automatically when the app opens.
+- 🎨 **Your colours** — set the wireframe, selection outline and edit overlay
+  colours.
+
+### 🩹 Fixes
+
+- 🖼️ **The edit wireframe is no longer saved into your scenes** — it used to be
+  written into the file as a real object and come back as a permanent wireframe
+  that stacked up on every save.
+- ⌨️ **Tab switches element modes** while editing a mesh, so 1 / 2 / 3 stay move,
+  rotate and scale like everywhere else.
+- ❌ **Cancel is not a second undo** — it ends the session and restores the mesh,
+  and now looks different from the undo button beside it.
+- 🎙️ **Ctrl+V no longer opens the mic** — push-to-talk is a bare V hold.
+
 ## 1.3.0 — Shape it ✂️
 
 A modelling release. The mesh tools grew up — bevel, knife, mirror, loops and

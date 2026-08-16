@@ -651,10 +651,23 @@
 			event.preventDefault();
 			return;
 		}
-		// 1/2/3 switch ELEMENT mode inside a session — the modeller-standard
-		// binding. Outside a session they stay the gizmo transform modes.
-		if (!event.ctrlKey && !event.metaKey && !event.altKey && ['1', '2', '3'].includes(key)) {
-			setMode(key === '1' ? 'vertices' : key === '2' ? 'edges' : 'faces');
+		// TAB CYCLES the element mode (Shift+Tab backwards). It used to be 1/2/3,
+		// which cost the session its gizmo transform modes: 1/2/3 are Move/Rotate/
+		// Scale everywhere else in the app, and shortcuts.js SUPPRESSED them while
+		// a session was open so the modeller binding could have them. One pair of
+		// keys cannot mean two things in the same session, and the transform modes
+		// are the ones you reach for mid-edit — so the element modes moved to a key
+		// nothing else in a session wants. Tab still enters Edit Mesh from outside
+		// (shortcuts.js); Esc/Done is still how you leave.
+		if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'Tab') {
+			const order = /** @type {('vertices'|'edges'|'faces')[]} */ ([
+				'vertices',
+				'edges',
+				'faces'
+			]);
+			const at = order.indexOf(mode);
+			const step = event.shiftKey ? -1 : 1;
+			setMode(order[(at + step + order.length) % order.length]);
 			event.preventDefault();
 			return;
 		}
@@ -702,10 +715,11 @@
 			id: 'any',
 			title: 'Any mode',
 			rows: [
-				['1 / 2 / 3', 'Switch to Vertices / Edges / Faces'],
+				['Tab', 'Next element mode (Vertices - Edges - Faces)'],
+				['Shift Tab', 'Previous element mode'],
+				['1 / 2 / 3', 'Gizmo: Move / Rotate / Scale'],
 				['Ctrl A', 'Select all'],
 				['Ctrl I', 'Invert the selection'],
-				['Tab', 'Toggle Edit Mesh'],
 				['Esc', 'Done — leave the session']
 			]
 		},
@@ -825,12 +839,17 @@
 					title="Redo (Ctrl+Y) — replay the step you just undid"
 					onclick={() => redo()}><Redo2 size={14} aria-hidden="true" /></button
 				>
+				<!-- The session discard is NOT a bigger undo, and drawing it as one
+				     (it used Undo2, sitting immediately beside #mesh-undo's Undo2)
+				     read as a duplicate button. It is the Cancel half of a
+				     Cancel/Done pair — the same X/Check the collider branch above
+				     uses — and it is the destructive one, hence the danger tint. -->
 				<button
 					id="mesh-edit-cancel"
-					class="tbx-hbtn"
+					class="tbx-hbtn tbx-danger"
 					aria-label="Cancel — revert every change made in this session"
-					title="Cancel — revert EVERY change made since Edit Mesh opened"
-					onclick={askCancel}><Undo2 size={14} aria-hidden="true" /></button
+					title="Cancel — revert EVERY change made since Edit Mesh opened (asks first)"
+					onclick={askCancel}><X size={14} aria-hidden="true" /></button
 				>
 				<button
 					id="mesh-edit-done"

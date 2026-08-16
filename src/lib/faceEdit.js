@@ -1489,6 +1489,10 @@ export function vrFaceEditable(object) {
 /** @type {any} face-mode wireframe overlay (child of faceEdited) — declared
  * BEFORE the store: its subscriber runs at module eval (TDZ) */
 let wire = null;
+/** @type {any} the geometry `wire` was built from — the identity half of
+ * `tickEditWireframe`'s guard. Declared HERE for the same TDZ reason as `wire`:
+ * refreshFaceWireframe writes it and a module-eval subscriber can reach that. */
+let wireSource = null;
 
 /** wireframe overlay display toggle — honored by BOTH edit modes, local pref */
 export const meshEditWireframe = writable(
@@ -1728,9 +1732,31 @@ function refreshFaceWireframe() {
 		wire.material?.dispose?.();
 		wire = null;
 	}
+	wireSource = null;
 	if (!faceEdited) return;
 	wire = buildEditWireframe(faceEdited);
 	faceEdited.add(wire);
+	wireSource = faceEdited.geometry;
+}
+
+/**
+ * Per-frame invariant check for the edit wireframe. It is a CHILD of the edited
+ * object, so it follows every transform for free — until something takes that
+ * parenting away: an object swapped out by a remote sync / a restore / an undo
+ * that rebuilds the node, or a re-parent (pivot, grouping) that moves the mesh
+ * but not the overlay. The wire is then left behind in the scene at whatever
+ * pose it last had, which is the reported "the wireframe detaches from the
+ * object". The same call heals a wire built from a geometry that has since been
+ * REPLACED, so a swap site that forgets its `refreshFaceWireframe` degrades to
+ * one stale frame instead of a wrong overlay for the rest of the session.
+ *
+ * Two reference comparisons per frame when nothing is wrong, and it rebuilds
+ * ONLY on a real mismatch — never on a healthy frame.
+ */
+export function tickEditWireframe() {
+	if (!wire || !faceEdited) return;
+	if (wire.parent === faceEdited && wireSource === faceEdited.geometry) return;
+	refreshFaceWireframe();
 }
 
 // ---- face edit MODE (VR + desktop-parity hook) ----

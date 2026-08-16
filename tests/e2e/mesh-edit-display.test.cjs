@@ -51,6 +51,75 @@ h.run(async () => {
 	h.check((await outlineSize(A.page)) > 0, 'the Display toggle brings it back mid-session');
 
 	await A.page.evaluate(() => window.__stores.faceEdit.meshEditOutline.set(false));
+	// ---- the wireframe must never be left behind by its object -------------
+	// Reported as "the wireframe detaches from the object, from time to time,
+	// in different occasions". The overlay is a CHILD of the edited mesh, so it
+	// follows every transform for free - which means a detach is not a posing
+	// bug at all: something took the parenting away (an object swapped by a
+	// remote sync / restore / undo, or a re-parent) and the orphan stayed in the
+	// scene at its last pose. tickEditWireframe restores the invariant per
+	// frame. The trigger is intermittent, so the guard is tested directly:
+	// break the invariant on purpose and demand the next frames heal it.
+	const parented = await A.page.evaluate(() => {
+		let g = null;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g?.getObjectByProperty('uuid', window.__box.uuid);
+		const w = obj?.children.find((c) => c.name === 'edit-overlay');
+		return { found: !!w, isChild: w?.parent === obj };
+	});
+	h.check(parented.found && parented.isChild, 'PREMISE: the wire is a child of the edited object');
+
+	// 1. ORPHAN it the way a re-parent would, then let the loop run
+	const healed = await A.page.evaluate(async () => {
+		let g = null;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', window.__box.uuid);
+		const w = obj.children.find((c) => c.name === 'edit-overlay');
+		let scene = null;
+		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		scene.add(w); // three re-parents: the overlay is now loose in the scene
+		const orphaned = w.parent !== obj;
+		await new Promise((r) => setTimeout(r, 500)); // a few frames
+		const now = obj.children.find((c) => c.name === 'edit-overlay');
+		return { orphaned, reattached: !!now && now.parent === obj };
+	});
+	h.check(healed.orphaned, 'PREMISE: the overlay really was orphaned into the scene');
+	h.check(healed.reattached, 'the per-frame guard re-parents it to the object');
+
+	// 2. a geometry swapped BEHIND the wire's back (a swap site that forgot its
+	//    refresh) must degrade to one stale frame, not a permanently wrong wire
+	const rebuilt = await A.page.evaluate(async () => {
+		const THREE = window.__stores.THREE;
+		let g = null;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		const obj = g.getObjectByProperty('uuid', window.__box.uuid);
+		const segs = () => {
+			const w = obj.children.find((c) => c.name === 'edit-overlay');
+			return w ? w.geometry.attributes.position.count / 2 : -1;
+		};
+		const before = segs();
+		const original = obj.geometry;
+		// a much denser geometry, installed WITHOUT calling refreshFaceWireframe
+		const probe = new THREE.SphereGeometry(1, 16, 12);
+		obj.geometry = probe;
+		await new Promise((r) => setTimeout(r, 500));
+		const after = segs();
+		// put the box back - the checks below this one measure ITS wire
+		obj.geometry = original;
+		await new Promise((r) => setTimeout(r, 500));
+		probe.dispose();
+		return { before, after, restored: segs() };
+	});
+	h.check(rebuilt.before > 0, `PREMISE: the wire had segments before the swap (${rebuilt.before})`);
+	h.check(
+		rebuilt.after !== rebuilt.before,
+		`a geometry swapped behind its back rebuilds the wire (${rebuilt.before} -> ${rebuilt.after})`
+	);
+	h.check(
+		rebuilt.restored === rebuilt.before,
+		`and restoring the geometry restores the wire (${rebuilt.restored})`
+	);
+
 	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
 	await A.page.waitForTimeout(200);
 	h.check((await outlineSize(A.page)) > 0, 'leaving the session restores it');

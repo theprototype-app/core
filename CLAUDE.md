@@ -377,6 +377,37 @@ loadable play content. Everything a user does must be visible to connected peers
   normalized; LOCAL library, only PLACED objects replicate; PACKS_BASE off-bundle CDN
   const; PACKS.md committed format) + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
   three.js preview canvas + popup, `enable3dPreview`),
+  `meshPivot` (PR #134, LEAF — imports THREE + two stores + the `proportional`
+  leaf, and NOTHING from meshEdit/faceEdit, which import it): the mesh editor's
+  custom transform PIVOT — where the gizmo sits and what rotate/scale turn
+  around, in all three element modes. LOCAL per-object pref in localStorage,
+  stored in OBJECT-LOCAL coords so it rides the object's own transform;
+  deliberately NOT `userData.origin` (that one is REPLICATED and drives joints /
+  flow Spin/Orbit / the export bake). Three ways to place it: from the selection
+  centre (reuses the `proportionalAnchor` providers), a PICK mode (the 19-B
+  `snapAnchorPicking` shape), and an armed MOVE mode where the gizmo carries the
+  pivot (the 17-D `pivotOnly` shape — the divert is the FIRST statement of both
+  gizmo hook pairs, ahead of `proxyGesture`/`beginFaceGrab`, so an armed drag
+  never opens a gesture it must unwind; no geometry, no history, no wire). The
+  marker PREVIEWS during a drag without writing the store — a write notifies the
+  re-seat listeners and the proxy would fight the pointer. `registerMeshPivotListener`
+  is the seam both element modes re-seat through. Pick and Move are mutually
+  exclusive and both answer Escape through the EVENT verdict (three handlers).
+  THE VERTEX GIZMO went with it: `gizmoSeatLocal` = pivot -> multi-selection
+  CENTROID -> single handle (it used to seat on the LAST-clicked handle), and
+  `setAnchor` no longer hardwires `setMode('translate')`, which is why vertex mode
+  never offered rotate/scale at all; `applyPivotTransform` mirrors applyFaceGrab's
+  frame conjugation, absolute from a `proxyGesture` drag-start snapshot. Snapping
+  needed NO new code — `snapping.apply()` writes the increments on the SHARED
+  TControls the mesh proxy attaches to, so element drags always obeyed it; the
+  toolbox just surfaces `snapEnabled`/`snapSettings`.
+  `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
+  which is a LineSegments CHILD of the edited mesh and therefore inside the
+  serialized tree — a save taken mid-session wrote it into the file as a
+  permanent, un-updatable wireframe that ACCUMULATED every round trip. Park hooks
+  into `parkAnimatedAtBase` (the one ritual every serializer performs); strip runs
+  at every object-parse site IN (sessions/autosave/peer create/history) plus both
+  clone paths. Detaches WITHOUT disposing — clone() shares geometry/material.
   `meshTopology` (P9-P11, PR #111: STORED face partitions — the storage location, the
   validity invariant, the CSR raw-byte wire packing, `carryFaces`, and the
   `composeFaces`/`appendOrigin`/`appendedQuads`/`survivorOrigin` composition helpers the
@@ -1875,6 +1906,31 @@ override for e2e — never share 5173 (the user's main-checkout server).
   the PR of the whole 17-E branch to release/next.
   NEXT (planned): the same transform tools
   in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
+- Status (2026-08-17): **THE MESH-EDIT ROUND IS MERGED TO release/next — PRs #132
+  (19-A), #133 (two fix rounds) and #134 (the pivot work) @9972a24.** #133:
+  the Cancel button drew Undo2 beside #mesh-undo's Undo2 (now the X of a
+  Cancel/Done pair) · Tab/Shift+Tab own the element modes so 1/2/3 go back to
+  the gizmo (they were SUPPRESSED for the whole session, leaving it with no
+  transform keys) · the per-mode selection stash wrote BOTH slots and so
+  clobbered the other mode's pick with the emptiness of a freshly-entered
+  session · the toolbox interpolated reactive values into the style ATTRIBUTE,
+  which svelte re-renders whole, wiping dragWindow's inline position (the
+  window painted in the corner then jumped; they are `style:` DIRECTIVES now)
+  and dragWindow's reveal no longer save()s its clamp · and THE EDIT WIREFRAME
+  WAS BEING SAVED INTO SCENE FILES (see the `editOverlays` entry above — a
+  user's .tpscene had three stacked on one mesh). #134: the vertex gizmo seats
+  on the selection CENTROID and does rotate/scale, plus a placeable pivot with
+  three ways to set it (see the `meshPivot` entry), themed `.tbx-check`
+  checkboxes, ONE collapsible Gizmo & pivot section, and the app-wide snap
+  surfaced in the toolbox. Baseline **391/62** at every commit. New suites:
+  mesh-pivot-gizmo (124+). OWED: the user's on-device feel pass (incl. the
+  non-dark themes, which headless cannot judge). PENDING follow-ups written up
+  in cloud `plans-core/pending/mesh-proportional-pivot-followups.md`: F1
+  proportional falloff for ROTATE/SCALE (needs the user's fork answer), F2
+  vertex slide under a custom pivot (probably WONTFIX, make it visible), F3 a
+  proportional TRANSLATE never replicates its falloff neighbours — the only
+  user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
+  separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
 - Status (2026-08-16): **19-A READY TO PR — P0–P5b + P7a + P7b COMMITTED (12 commits,
   branch `feat/mesh-tool-interaction`, NOT pushed); P6 and P7c are PARKED by the user
   and execute later as their own branches.** Hashes: P0 `bf6f2df` · P1 `8b0352f` ·

@@ -283,5 +283,109 @@ h.run(async () => {
 		);
 	}
 
+	// ---- a window may not PAINT before it is positioned ---------------------
+	// Reported: "the Mesh edit keys window appears top-left, then jumps to where
+	// it was parked". dragWindow writes left/top as INLINE styles at action init
+	// — before the first paint — but ToolboxWindow's root carried a reactive
+	// `style` ATTRIBUTE, and svelte re-renders an attribute by re-setting the
+	// WHOLE string, which wiped every inline property the action had written
+	// (left, top, width, --dw-top). The sheet height is filled in by an effect
+	// one tick after mount, so the wipe landed right after the positioning and
+	// the window sat at 0,0 until the next observer re-applied it (measured: two
+	// full frames, ~470ms in a headless run).
+	//
+	// The sampler must be installed BEFORE the window is opened: an earlier probe
+	// read the rect after `click()` had already resolved and saw a clean window.
+	await A.page.setViewportSize({ width: 1200, height: 800 });
+	await A.page.waitForTimeout(400);
+
+	const parkKeys = { left: 480, top: 180, w: 260 };
+	const flash = await A.page.evaluate(async (parked) => {
+		const open = () => document.querySelector('#mesh-keys-help');
+		const close = () => document.querySelector('#mesh-keys-close');
+		// park it somewhere unmistakable, then close it so the next open is a mount
+		open()?.click();
+		await new Promise((r) => setTimeout(r, 400));
+		localStorage.setItem('win:meshKeysCheatsheet', JSON.stringify(parked));
+		close()?.click();
+		await new Promise((r) => setTimeout(r, 400));
+
+		/** @type {any[]} */
+		const frames = [];
+		let stop = false;
+		const read = () => {
+			const el = document.querySelector('#mesh-keys-popover');
+			if (!el) return null;
+			const r = el.getBoundingClientRect();
+			return { left: Math.round(r.left), top: Math.round(r.top), inline: !!el.style.left };
+		};
+		const tick = () => {
+			// `pre` = the start of the frame, `post` = a microtask queued from it,
+			// i.e. the last moment before this frame paints
+			const entry = { pre: read(), post: /** @type {any} */ (null) };
+			frames.push(entry);
+			queueMicrotask(() => (entry.post = read()));
+			if (!stop) requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+		await new Promise((r) => setTimeout(r, 80));
+		open()?.click();
+		await new Promise((r) => setTimeout(r, 900));
+		stop = true;
+		const live = frames.filter((f) => f.pre || f.post);
+		return { first: live[0] ?? null, count: live.length, settled: live[live.length - 1]?.pre ?? null };
+	}, parkKeys);
+
+	h.check(!!flash.first && flash.count > 2, 'the keys window opened and was sampled per frame (premise)');
+	if (flash.first) {
+		// the FIRST frame the window exists on is already at its parked spot —
+		// there is no frame at the unpositioned top-left corner
+		h.check(
+			flash.first.pre?.inline === true,
+			'the window carries its inline position on the first frame it exists'
+		);
+		h.check(
+			flash.first.pre?.left === parkKeys.left,
+			`...at the parked left (${flash.first.pre?.left} of ${parkKeys.left}), never the 0,0 corner`
+		);
+		h.check(
+			flash.first.pre?.left === flash.settled?.left && flash.first.pre?.top === flash.settled?.top,
+			'...and it never moves afterwards (no jump)'
+		);
+	}
+
+	// A REVEAL may clamp for visibility, but it must not rewrite the parked spot:
+	// a window taller than the space under its top came back permanently moved up
+	// and the original position was gone, even after the viewport grew again.
+	// The park has to be a spot the clamp really MOVES, or the check cannot fail:
+	// low enough that the window's own height pushes it past the bottom edge.
+	const persisted = await A.page.evaluate(async () => {
+		const el0 = document.querySelector('#mesh-keys-popover');
+		const height = el0 ? Math.round(el0.getBoundingClientRect().height) : 0;
+		document.querySelector('#mesh-keys-close')?.click();
+		await new Promise((r) => setTimeout(r, 300));
+		// deliberately too low to fit
+		const low = { left: 480, top: window.innerHeight - Math.round(height / 3), w: 260 };
+		localStorage.setItem('win:meshKeysCheatsheet', JSON.stringify(low));
+		document.querySelector('#mesh-keys-help')?.click();
+		await new Promise((r) => setTimeout(r, 600));
+		const el = document.querySelector('#mesh-keys-popover');
+		const r = el?.getBoundingClientRect();
+		return {
+			height,
+			asked: low,
+			stored: JSON.parse(localStorage.getItem('win:meshKeysCheatsheet') ?? 'null'),
+			live: r ? { left: Math.round(r.left), top: Math.round(r.top) } : null
+		};
+	});
+	h.check(
+		!!persisted.live && persisted.live.top < persisted.asked.top,
+		`the reveal clamps a too-low window into view (${persisted.asked.top} -> ${persisted.live?.top}) (premise)`
+	);
+	h.check(
+		persisted.stored?.top === persisted.asked.top,
+		`...but leaves the STORED position alone (stored ${persisted.stored?.top}, asked ${persisted.asked.top})`
+	);
+
 	await h.finish(browser);
 });

@@ -10,6 +10,7 @@ import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { updateParticles } from './particleRuntime';
 import { startObjectFlowWatcher } from './objectFlow';
+import { parkEditOverlays } from './editOverlays';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -296,12 +297,19 @@ export function parkAnimatedAtBase() {
 	// the scene for minutes. Park those too, through the primed ref, so every
 	// serializer that already calls in here keeps saving base poses.
 	const unpark = animRef?.parkAuthoredAtBase?.() ?? null;
+	// ...and the mesh-edit WIREFRAME, which is a CHILD of the edited object and so
+	// sits inside the tree every one of these serializers reads. A save taken with
+	// a session open wrote it into the file as a permanent, un-updatable wireframe
+	// (see editOverlays.js). Same reasoning as the two parks above: one ritual, and
+	// every serializer that already calls in here is covered.
+	const unpark2 = parkEditOverlays(sceneObjects);
 	let restored = false;
 	return () => {
 		if (restored) return;
 		restored = true;
 		parked.forEach(resumeAnimation);
 		unpark?.();
+		unpark2();
 	};
 }
 

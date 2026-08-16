@@ -184,6 +184,11 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 
 	// Reveal: when the window goes from hidden back to visible ("called again"), snap it
 	// FULLY on-screen so a window that was shoved partly off doesn't reappear off-screen.
+	// It deliberately does NOT `save()`: a reveal is a DISPLAY decision, and persisting
+	// it rewrote the user's parked spot with whatever the current viewport allowed —
+	// a window taller than the space below its top came back permanently moved up, and
+	// the original position was gone even after the viewport grew again. The drag/resize
+	// handlers are the only things that write the stored rect.
 	let wasVisible = false;
 	const io =
 		typeof IntersectionObserver !== 'undefined'
@@ -192,7 +197,6 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 					if (vis && !wasVisible && typeof rect.left === 'number') {
 						clamp(true);
 						apply();
-						save();
 					}
 					wasVisible = vis;
 				})

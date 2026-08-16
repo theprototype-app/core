@@ -3,6 +3,7 @@ import { writable, derived, get } from 'svelte/store';
 import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore';
 import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { notifyExternalMove } from '$lib/flowRuntime';
+import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
 // histories stay per-user.
@@ -179,6 +180,11 @@ export function recordTransformSet(items) {
  * removal-time refresh keeps the existing snapshot instead of warning twice)
  */
 export function captureObjectSnapshot(object, quiet = false) {
+	// a snapshot is a serialize like any other: an object deleted (or duplicated)
+	// while its mesh-edit session is open must not carry the edit WIREFRAME into
+	// the entry, or undo brings back a permanently wireframed object and the
+	// re-broadcast hands one to every peer (editOverlays.js)
+	const unpark = parkEditOverlays(object);
 	try {
 		const element = object.toJSON();
 		if (JSON.stringify(element).length > SNAPSHOT_LIMIT) {
@@ -191,6 +197,8 @@ export function captureObjectSnapshot(object, quiet = false) {
 	} catch (error) {
 		console.log('captureObjectSnapshot failed', error);
 		return null;
+	} finally {
+		unpark();
 	}
 }
 
@@ -227,6 +235,7 @@ function applyPresence(entry, state) {
 		let object;
 		try {
 			object = snapshotLoader.parse(entry.snapshot.element);
+			stripEditOverlays(object); // an entry an older build recorded mid-session
 		} catch (error) {
 			console.log('history restore failed', error);
 			showToast('Cannot restore the object from history');

@@ -138,7 +138,36 @@
 	} from '../../stores/sceneStore';
 	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
 	import { gridSettings, setGrid, resetGrid, effectiveCell } from '$lib/gridSettings';
-	import { snapEnabled, snapSettings, surfaceSnap } from '$lib/snapping';
+	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
+	/** 19-B: the element snap target chips (key, label) @type {any[]} */
+	const elementTargets = [
+		['vertex', 'Vertex'],
+		['edge', 'Edge'],
+		['face', 'Face'],
+		['surface', 'Surface'],
+		['object', 'Object']
+	];
+	/** whether one element target flag is on @param {any} t @param {any} key */
+	const targetOn = (t, key) => !!t[key];
+	/** how many element targets are armed — the header says so, because five
+	 * chips read as "some are on" long before you can tell WHICH.
+	 * `$derived`, NOT `$:`: this file is RUNES mode, where a `$:` is a compile
+	 * error that takes the whole panel down on mount (the documented trap — it
+	 * showed up as the app never finishing boot, not as a styling problem). */
+	const activeTargetCount = $derived(
+		elementTargets.filter((/** @type {any} */ e) => targetOn($snapTargets, e[0])).length
+	);
+	/** @param {any} key */
+	const toggleTarget = (key) => snapTargets.update((t) => ({ ...t, [key]: !targetOn(t, key) }));
+	// 19-B P3: the transient snap anchor (picked point; local-only, never replicated)
+	import {
+		snapAnchor,
+		snapAnchorPicking,
+		startSnapAnchorPick,
+		cancelSnapAnchorPick,
+		clearSnapAnchor,
+		saveSnapAnchorAsOrigin
+	} from '$lib/snapEngine';
 	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
 
 	// (15-L3 dropped the standalone hex textboxes under each colour picker — the
@@ -1665,6 +1694,157 @@
 					onchange={(/** @type {any} */ e) => surfaceSnap.set(e.currentTarget.checked)}
 					>Rest dragged objects on the surface below</Checkbox
 				>
+				<!-- 19-B: element snap targets. Same three-column grid as the steps
+				     above (label | chips | number), so every control in the section
+				     lines up on the same two edges. -->
+				<div class="snap-group">
+					<span class="ui-section-label">Snap to elements</span>
+					<span class="snap-group-hint">beats the grid steps</span>
+				</div>
+				<!-- five peer toggles are a chip CLOUD, not presets: right-aligning them
+				     in the numeric grid stranded the fifth chip alone against the right
+				     edge. Own line, left-aligned, wrapping naturally. -->
+				<div class="snap-sub">
+					<span class="text-xs text-gray-400">Targets</span>
+					<span class="snap-sub-hint">
+						{activeTargetCount === 0 ? 'none — element snap is idle' : `${activeTargetCount} on`}
+					</span>
+				</div>
+				<div class="snap-cloud">
+					{#each elementTargets as target}
+						<button
+							id={'snap-target-' + target[0]}
+							class={'ui-chip ' +
+								(targetOn($snapTargets, target[0])
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							aria-pressed={targetOn($snapTargets, target[0])}
+							onclick={() => toggleTarget(target[0])}
+							>{target[1]}</button
+						>
+					{/each}
+				</div>
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Radius</span>
+					<div class="snap-chips">
+						{#each [15, 25, 40] as preset}
+							<button
+								class={'ui-chip ' +
+									($snapTargets.radiusPx === preset
+										? 'bg-primary-600 text-white'
+										: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								onclick={() => snapTargets.update((t) => ({ ...t, radiusPx: preset }))}
+								>{preset}</button
+							>
+						{/each}
+					</div>
+					<div class="snap-field">
+						<DragRow
+							id="snap-radius"
+							value={$snapTargets.radiusPx}
+							decimals={0}
+							min={5}
+							max={60}
+							step={1}
+							ariaLabel="element snap radius (screen px)"
+							onchange={(v) =>
+								snapTargets.update((t) => ({
+									...t,
+									radiusPx: Math.min(60, Math.max(5, Math.round(v) || 25))
+								}))}
+						/>
+					</div>
+				</div>
+				<!-- 19-B P4: align to the candidate normal (face/surface targets only) -->
+				<Checkbox
+					id="snap-align-normal"
+					checked={$snapTargets.alignNormal}
+					onchange={(/** @type {any} */ e) =>
+						snapTargets.update((t) => ({ ...t, alignNormal: e.currentTarget.checked }))}
+					>Rotate to the surface (align to normal)</Checkbox
+				>
+				<!-- Auto/Pivot are the MODE (two chips, so the numeric grid fits them);
+				     picking is an ACTION that arms the next viewport click, so it gets a
+				     full-width button of its own rather than a third, much wider chip -->
+				<div class="snap-row">
+					<span class="text-xs text-gray-400">Snap origin</span>
+					<div class="snap-chips">
+						<button
+							id="snap-anchor-auto"
+							class={'ui-chip ' +
+								($snapTargets.anchorMode === 'auto' && $snapAnchor.mode !== 'picked'
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							title="Snap from the nearest point on the object's bounding box"
+							onclick={() => {
+								clearSnapAnchor();
+								snapTargets.update((t) => ({ ...t, anchorMode: 'auto' }));
+							}}>Auto</button
+						>
+						<button
+							id="snap-anchor-pivot"
+							class={'ui-chip ' +
+								($snapTargets.anchorMode === 'pivot' && $snapAnchor.mode !== 'picked'
+									? 'bg-primary-600 text-white'
+									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+							title="Snap from the object's own origin"
+							onclick={() => {
+								clearSnapAnchor();
+								snapTargets.update((t) => ({ ...t, anchorMode: 'pivot' }));
+							}}>Pivot</button
+						>
+					</div>
+				</div>
+				<!-- ARMED is a state the VIEWPORT is in, not a selection: it changes what
+				     the next click does, so it takes its own colour instead of the accent
+				     every other active control uses. -->
+				<button
+					id="snap-anchor-pick"
+					class={'snap-action ' + ($snapAnchorPicking ? 'snap-action-armed' : '')}
+					aria-pressed={$snapAnchorPicking}
+					title="Click a point on the selected object to snap from"
+					onclick={() => ($snapAnchorPicking ? cancelSnapAnchorPick() : startSnapAnchorPick())}
+				>
+					<span aria-hidden="true">⌖</span>
+					{$snapAnchorPicking ? 'Click a point on the object…' : 'Pick a point on the object'}
+				</button>
+				<!-- the anchor's STATE lives on its own line: crammed in beside the mode
+				     chips it wrapped them onto a second row the moment it appeared -->
+				{#if $snapAnchorPicking}
+					<div class="snap-status snap-status-armed">
+						<span class="snap-status-text">Selecting…</span>
+						<!-- the button above already says what to do; this line carries what
+						     it cannot — the way out that isn't a click -->
+						<span class="snap-status-hint">Esc cancels</span>
+						<button
+							id="snap-anchor-cancel"
+							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							aria-label="cancel picking the snap origin"
+							title="Cancel (Esc)"
+							onclick={() => cancelSnapAnchorPick()}>✕</button
+						>
+					</div>
+				{:else if $snapAnchor.mode === 'picked'}
+					<div class="snap-status snap-status-picked">
+						<span class="snap-status-text">Picked ✓</span>
+						<button
+							id="snap-anchor-save-origin"
+							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							title="Keep this point for good: it becomes the object's own origin — shared with peers, undoable, and it survives selecting something else"
+							onclick={() => saveSnapAnchorAsOrigin()}>Save as object origin</button
+						>
+						<button
+							id="snap-anchor-clear"
+							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							aria-label="clear the picked snap origin"
+							title="Forget this point"
+							onclick={() => clearSnapAnchor()}>✕</button
+						>
+					</div>
+				{/if}
+				<p class="text-[10px] italic text-gray-400">
+					A picked origin is local and lasts until you select something else — save it to keep it.
+				</p>
 				<p class="text-[10px] italic text-gray-400">
 					Snapping is per-device; the same steps drive the viewport menu.
 				</p>
@@ -2948,5 +3128,103 @@
 	.snap-chips button {
 		padding-inline: 0.3rem;
 		letter-spacing: 0;
+	}
+	/* 19-B: a label line for a control that owns its own full width (the target
+	   cloud) — same type scale as a .snap-row label, with the state on the right */
+	.snap-sub {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.snap-sub-hint {
+		font-size: 10px;
+		font-style: italic;
+		color: rgb(156 163 175);
+	}
+	/* five PEER toggles, not presets: right-aligning them in the numeric grid
+	   stranded the fifth chip on a line of its own against the right edge */
+	.snap-cloud {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+	.snap-cloud button {
+		padding-inline: 0.3rem;
+		letter-spacing: 0;
+	}
+	/* the pick ACTION: full width, so the armed state is unmissable and the long
+	   label never has to compete with the mode chips for room */
+	.snap-action {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.35rem;
+		width: 100%;
+		padding: 0.3rem 0.5rem;
+		border-radius: 0.375rem;
+		border: 1px dashed rgb(255 255 255 / 0.25);
+		background: rgb(255 255 255 / 0.04);
+		color: rgb(209 213 219);
+		font-size: 11px;
+	}
+	.snap-action:hover {
+		background: rgb(255 255 255 / 0.09);
+		color: #fff;
+	}
+	.snap-action-armed,
+	.snap-action-armed:hover {
+		background: #d97706;
+		border-style: solid;
+		border-color: #f59e0b;
+		color: #fff;
+	}
+	.snap-group {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-top: 0.35rem;
+		padding-top: 0.4rem;
+		border-top: 1px solid rgb(255 255 255 / 0.08);
+	}
+	.snap-group-hint {
+		font-size: 10px;
+		font-style: italic;
+		color: rgb(156 163 175);
+	}
+	.snap-status {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.3rem 0.45rem;
+		border-radius: 0.375rem;
+		border: 1px solid transparent;
+	}
+	.snap-status-text {
+		font-size: 11px;
+		font-weight: 600;
+	}
+	.snap-status-hint {
+		flex: 1;
+		min-width: 0;
+		font-size: 10px;
+		font-style: italic;
+		color: rgb(156 163 175);
+	}
+	.snap-status-armed {
+		background: rgb(217 119 6 / 0.14);
+		border-color: rgb(217 119 6 / 0.45);
+	}
+	.snap-status-armed .snap-status-text {
+		color: #fbbf24;
+	}
+	.snap-status-picked {
+		background: rgb(16 185 129 / 0.12);
+		border-color: rgb(16 185 129 / 0.35);
+	}
+	.snap-status-picked .snap-status-text {
+		color: #34d399;
+		margin-right: auto;
 	}
 </style>

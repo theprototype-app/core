@@ -824,13 +824,417 @@ h.run(async () => {
 	h.check(!cleared.markerVisible, '...and the marker goes away with it');
 
 	// ======================================================================
-	// 10. it PERSISTS across a reload (a local pref, not session state)
+	// 10. MOVE PIVOT — place it by DRAGGING THE GIZMO ITSELF
 	// ======================================================================
+	// The third placement route ("additionally I want also to have free move of
+	// pivot by moving gizmo to set it"), modelled on 17-D's `pivotOnly`: while
+	// the mode is armed the gizmo re-points the PIVOT and the mesh does not move.
+	//
+	// The load-bearing assertion is the NEGATIVE one. Everything else here could
+	// be satisfied by a drag that ALSO deformed the mesh, so each drag compares
+	// the FULL position array before and after — an aggregate "nothing moved" is
+	// exactly right for an op whose whole contract is that it touches no vertex.
+
+	/** capture the top of the undo stack BY REFERENCE — the property the spec
+	 * cares about ("no entry was recorded"), and immune to recordEntry's LIMIT
+	 * trim, which can leave a raw depth unchanged after a real entry lands */
+	const historyMark = (page) =>
+		page.evaluate(() => {
+			let stack;
+			window.__stores.history.undoStack.subscribe((v) => (stack = v))();
+			window.__histTop = stack[stack.length - 1] ?? null;
+			window.__histLen = stack.length;
+			return { len: stack.length, kind: window.__histTop?.kind ?? null };
+		});
+	const historySame = (page) =>
+		page.evaluate(() => {
+			let stack;
+			window.__stores.history.undoStack.subscribe((v) => (stack = v))();
+			return {
+				same: (stack[stack.length - 1] ?? null) === window.__histTop,
+				len: stack.length,
+				was: window.__histLen,
+				kind: stack[stack.length - 1]?.kind ?? null
+			};
+		});
+	/** install a PASS-THROUGH send spy (a swallowing spy makes delivery and loss
+	 * look identical — the documented rule). Patched as an OWN property on the
+	 * live PeerConnection rather than swapping the store for a spread copy: a
+	 * spread loses every prototype method, and this spy has to survive a real
+	 * mouse drag with the whole app reacting around it. */
+	const spyOn = (page) =>
+		page.evaluate(() => {
+			let original;
+			window.__stores.peers.subscribe((v) => (original = v))();
+			window.__peersOriginal = original;
+			window.__sent = [];
+			const through = original.send.bind(original);
+			original.send = (m) => {
+				window.__sent.push(m?.type ?? '?');
+				return through(m);
+			};
+		});
+	const spyOff = (page) =>
+		page.evaluate(() => {
+			delete window.__peersOriginal.send; // back to the prototype method
+			return window.__sent;
+		});
+	/** the whole live position attribute, plus the pivot / gizmo / marker */
+	const pivotState = (page, uuid) =>
+		page.evaluate((uuid) => {
+			const s = window.__stores;
+			let map;
+			s.meshPivot.meshPivots.subscribe((v) => (map = v))();
+			let controls;
+			s.TControls.subscribe((c) => (controls = c))();
+			let moving;
+			s.meshPivot.meshPivotMoving.subscribe((v) => (moving = v))();
+			let mode;
+			s.transformMode.subscribe((v) => (mode = v))();
+			let session;
+			s.meshEdit.editingObject.subscribe((v) => (session = v))();
+			return {
+				pivot: map[uuid] ?? null,
+				gizmo: controls?.object?.position?.toArray() ?? null,
+				controlMode: controls?.mode ?? null,
+				storeMode: mode,
+				moving,
+				session,
+				marker: s.meshPivot.meshPivotMarkerDebug()?.position ?? null
+			};
+		}, uuid);
+
+	// (a) ARMING. The mode the user was in is remembered and translate is forced:
+	// a pivot is a POINT, so rotate/scale handles on it could not mean anything.
+	const armMove = await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.objectActions.setTransformMode('rotate'); // something to restore later
+		const ok = s.meshPivot.startMeshPivotMove();
+		return ok;
+	});
+	h.check(armMove === true, 'the Move button arms move-pivot mode');
+	let mv = await pivotState(A.page, uuid);
+	h.check(mv.moving === true, 'meshPivotMoving is set');
+	h.check(
+		mv.controlMode === 'translate' && mv.storeMode === 'translate',
+		`...and it FORCES translate for its duration (controls ${mv.controlMode} / store ${mv.storeMode}) — a point has no rotation or scale`
+	);
+	h.check(
+		!!mv.gizmo && dist(mv.gizmo, [0, 1, 0]) < 1e-6,
+		`with no pivot placed the gizmo sits at the seat it would otherwise use — the selection centroid ${JSON.stringify(mv.gizmo?.map((n) => +n.toFixed(4)))} — so arming and dragging is a complete way to place the FIRST one`
+	);
+
+	// (b) a REAL mouse drag of the X arrow moves the PIVOT and NOTHING else
+	let dragPivot = null;
+	const moveGrip = await findGrip(A.page, 'X');
+	h.check(!!moveGrip, `found a confirmed grip on the translate X arrow (${JSON.stringify(moveGrip)})`);
+	if (moveGrip) {
+		const before = await readPositions(A.page);
+		const histBefore = await historyMark(A.page);
+		h.check(histBefore.len > 0, `the undo stack has something on it to protect (${histBefore.len} entries, top '${histBefore.kind}')`);
+		await spyOn(A.page);
+		await A.page.mouse.move(moveGrip[0], moveGrip[1]);
+		await A.page.mouse.down();
+		await A.page.mouse.move(moveGrip[0] + 100, moveGrip[1], { steps: 12 });
+		await A.page.mouse.move(moveGrip[0] + 101, moveGrip[1]);
+		await A.page.mouse.up();
+		await A.page.waitForTimeout(350);
+		const sent = await spyOff(A.page);
+		const after = await readPositions(A.page);
+		const hist = await historySame(A.page);
+		mv = await pivotState(A.page, uuid);
+		dragPivot = mv.pivot;
+
+		// THE negative check: not one vertex of the mesh may have moved
+		const worst = Math.max(...after.map((p, i) => (i < before.length ? dist(before[i], p) : 9)));
+		h.check(
+			after.length === before.length && worst < 1e-9,
+			`the drag moved NO vertex at all — the whole position array is byte-identical (${after.length} entries, worst delta ${worst.toExponential(1)})`
+		);
+		h.check(
+			movedPairs(before, after).length === 0,
+			`...and no welded position moved either (${movedPairs(before, after).length})`
+		);
+		// ...while the pivot really did move (or the check above is vacuous)
+		h.check(
+			!!dragPivot && Math.abs(dragPivot[0]) > 0.2,
+			`the PIVOT moved along X to ${JSON.stringify(dragPivot?.map((n) => +n.toFixed(4)))} (premise: the gesture did something)`
+		);
+		h.check(
+			!!dragPivot && Math.abs(dragPivot[1] - 1) < 1e-6 && Math.abs(dragPivot[2]) < 1e-6,
+			`...along the X arrow only, from the (0,1,0) seat (y ${dragPivot?.[1].toFixed(4)}, z ${dragPivot?.[2].toFixed(4)})`
+		);
+		h.check(
+			hist.same && hist.len === hist.was,
+			`the drag recorded NO history entry — the stack's top object is the SAME one (${hist.was} -> ${hist.len}, top '${hist.kind}')`
+		);
+		h.check(
+			sent.length === 0,
+			`...and sent NOTHING over the wire: the pivot is a LOCAL working preference (${sent.length} messages${sent.length ? ': ' + JSON.stringify(sent) : ''})`
+		);
+		h.check(
+			!!mv.gizmo && !!dragPivot && dist(mv.gizmo, dragPivot) < 1e-6,
+			`the gizmo re-seated exactly on the placed pivot (${JSON.stringify(mv.gizmo?.map((n) => +n.toFixed(4)))})`
+		);
+		h.check(
+			!!mv.marker && !!dragPivot && dist(mv.marker, dragPivot) < 1e-6,
+			`...and the marker followed it (${JSON.stringify(mv.marker?.map((n) => +n.toFixed(4)))})`
+		);
+		h.check(
+			mv.moving === true,
+			'the mode STAYS armed after the drag — one press, many placements (17-D: a re-seat is not a new selection, so committing must not cancel the mode)'
+		);
+	}
+
+	// (c) a RE-SEAT must not disarm it (the 17-D rule that cost the most to learn:
+	// resetting the armed state on a re-seat made the button cancel itself)
+	const reseat = await A.page.evaluate((i) => {
+		const s = window.__stores;
+		s.meshEdit.toggleVertexSelection(i); // the selection changes -> setAnchor runs
+		let moving;
+		s.meshPivot.meshPivotMoving.subscribe((v) => (moving = v))();
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		s.meshEdit.toggleVertexSelection(i); // put it back
+		return { moving, gizmo: controls?.object?.position?.toArray() ?? null };
+	}, TOP[2]);
+	h.check(reseat.moving === true, 'changing the selection while armed does NOT disarm it');
+	h.check(
+		!!reseat.gizmo && !!dragPivot && dist(reseat.gizmo, dragPivot) < 1e-6,
+		`...and the re-seat put the gizmo back on the pivot, not on the new centroid (${JSON.stringify(reseat.gizmo?.map((n) => +n.toFixed(4)))})`
+	);
+
+	// (d) a pivot placed this way is a pivot like any other: it survives leaving
+	// and re-entering the session (the reload is section 11)
+	const afterReenter = await A.page.evaluate((uuid) => {
+		const s = window.__stores;
+		s.meshEdit.exitEditMode(); // also disarms — an armed tool never outlives the session
+		s.meshEdit.enterEditMode(uuid);
+		s.meshEdit.selectHandle(0);
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		let moving;
+		s.meshPivot.meshPivotMoving.subscribe((v) => (moving = v))();
+		return { gizmo: controls?.object?.position?.toArray() ?? null, moving };
+	}, uuid);
+	h.check(
+		!!afterReenter.gizmo && !!dragPivot && dist(afterReenter.gizmo, dragPivot) < 1e-6,
+		`the drag-placed pivot survives leaving and re-entering the session (${JSON.stringify(afterReenter.gizmo?.map((n) => +n.toFixed(4)))})`
+	);
+	h.check(
+		afterReenter.moving === false,
+		'...and leaving the session DISARMED the mode (an armed tool never outlives it — the vertexSlide/pick rule)'
+	);
+
+	// (e) disarming puts the transform mode back where it was
+	const restored = await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.objectActions.setTransformMode('rotate');
+		s.meshPivot.startMeshPivotMove();
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		const forced = controls?.mode;
+		s.meshPivot.cancelMeshPivotMove();
+		// read the live controls BEFORE tidying up: `controls.mode` in the return
+		// literal is evaluated last, so the tidy-up below would be what it reports
+		const back = controls?.mode;
+		let mode;
+		s.transformMode.subscribe((v) => (mode = v))();
+		let moving;
+		s.meshPivot.meshPivotMoving.subscribe((v) => (moving = v))();
+		s.objectActions.setTransformMode('translate'); // leave the suite in Move
+		return { forced, back, store: mode, moving };
+	});
+	h.check(restored.forced === 'translate', `arming from ROTATE forces translate (${restored.forced})`);
+	h.check(restored.moving === false, 'the button again disarms');
+	h.check(
+		restored.back === 'rotate' && restored.store === 'rotate',
+		`...and disarming restores the mode the user had (controls ${restored.back} / store ${restored.store})`
+	);
+
+	// (f) the point of the whole feature: a rotate now turns about the pivot the
+	// GIZMO DRAG placed. Measured as the swept ANGLE of the selection's centroid
+	// about it — every invariant a rotation preserves survives a rotation about
+	// the WRONG centre, so only an angle separates them.
+	rows = await probeHandles(A.page);
+	TOP = topFour(rows);
+	h.check(new Set(TOP).size === 4, `...resolving to four DISTINCT top corners (${JSON.stringify(TOP)})`);
+	await A.page.evaluate((TOP) => {
+		const s = window.__stores;
+		s.meshEdit.selectHandle(TOP[0]);
+		TOP.slice(1).forEach((i) => s.meshEdit.toggleVertexSelection(i));
+	}, TOP);
+	const aboutDragged = await gesture(A.page, { mode: 'rotate', axis: [0, 1, 0], degrees: 90 });
+	h.check(aboutDragged.ran, 'the rotate gesture found a seated gizmo to drive (premise)');
+	const dragPairs = movedPairs(aboutDragged.before, aboutDragged.after);
+	h.check(dragPairs.length === 4, `it turned the four selected corners (${dragPairs.length})`);
+	if (dragPairs.length === 4 && dragPivot) {
+		const cFrom = mean(dragPairs.map((p) => p.from));
+		const cTo = mean(dragPairs.map((p) => p.to));
+		const sweptDrag = Math.abs(sweptAboutY(cFrom, cTo, dragPivot));
+		h.check(
+			Math.abs(sweptDrag - 90) < 0.01,
+			`the centroid swept ${sweptDrag.toFixed(3)} degrees about the DRAG-PLACED pivot (about the selection's own centre it sweeps exactly 0)`
+		);
+		const sgn = dist(cTo, rotY90(cFrom, dragPivot, 1)) < 1e-5 ? 1 : -1;
+		const err = Math.max(...dragPairs.map((p) => dist(p.to, rotY90(p.from, dragPivot, sgn))));
+		h.check(
+			err < 1e-5,
+			`...every corner landing on dragPivot + R90(v - dragPivot) (max error ${err.toExponential(1)})`
+		);
+	}
+	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.waitForTimeout(400);
+
+	// (g) ESCAPE disarms and KEEPS the session (three window handlers see that
+	// key, so the verdict rides the event — the same contract as the pick)
+	await A.page.evaluate(() => window.__stores.meshPivot.startMeshPivotMove());
+	const armedSeat = await pivotState(A.page, uuid);
+	h.check(
+		!!armedSeat.gizmo && !!dragPivot && dist(armedSeat.gizmo, dragPivot) < 1e-6,
+		`arming with a pivot ALREADY placed seats the gizmo on IT (${JSON.stringify(armedSeat.gizmo?.map((n) => +n.toFixed(4)))})`
+	);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(250);
+	const escaped = await pivotState(A.page, uuid);
+	h.check(escaped.moving === false, 'Escape leaves move-pivot mode');
+	h.check(!!escaped.session, '...and the edit session SURVIVES it — a later Escape is what ends that');
+	h.check(
+		escaped.storeMode === 'translate',
+		`...restoring the transform mode on the way out (${escaped.storeMode})`
+	);
+
+	// (h) the two placement modes are MUTUALLY EXCLUSIVE
+	const exclusive = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const read = () => {
+			let moving;
+			let picking;
+			s.meshPivot.meshPivotMoving.subscribe((v) => (moving = v))();
+			s.meshPivot.meshPivotPicking.subscribe((v) => (picking = v))();
+			return { moving, picking };
+		};
+		s.meshPivot.startMeshPivotMove();
+		s.meshPivot.startMeshPivotPick();
+		const pickWins = read();
+		s.meshPivot.startMeshPivotMove();
+		const moveWins = read();
+		s.meshPivot.cancelMeshPivotMove();
+		return { pickWins, moveWins, off: read() };
+	});
+	h.check(
+		exclusive.pickWins.picking === true && exclusive.pickWins.moving === false,
+		`arming Pick cancels an armed Move (${JSON.stringify(exclusive.pickWins)})`
+	);
+	h.check(
+		exclusive.moveWins.moving === true && exclusive.moveWins.picking === false,
+		`...and arming Move cancels an armed Pick (${JSON.stringify(exclusive.moveWins)})`
+	);
+	h.check(!exclusive.off.moving && !exclusive.off.picking, 'both end up off');
+
+	// (i) CLEARING the pivot while armed leaves the mode usable — it falls back
+	// to the seat it would otherwise use
+	const clearedArmed = await A.page.evaluate((uuid) => {
+		const s = window.__stores;
+		s.meshPivot.startMeshPivotMove();
+		s.meshPivot.clearMeshPivot(uuid);
+		let moving;
+		s.meshPivot.meshPivotMoving.subscribe((v) => (moving = v))();
+		let controls;
+		s.TControls.subscribe((c) => (controls = c))();
+		const gizmo = controls?.object?.position?.toArray() ?? null;
+		s.meshPivot.cancelMeshPivotMove();
+		return { moving, gizmo };
+	}, uuid);
+	h.check(clearedArmed.moving === true, 'clearing the pivot while armed keeps the mode armed');
+	h.check(
+		!!clearedArmed.gizmo && dist(clearedArmed.gizmo, [0, 1, 0]) < 1e-6,
+		`...with the gizmo back on the selection centroid, ready to place a new one (${JSON.stringify(clearedArmed.gizmo?.map((n) => +n.toFixed(4)))})`
+	);
+
+	// (j) FACES: the same divert on the OTHER gizmo hook pair, driven end to end
+	// with a real mouse. Faces and edges share this proxy, so covering faces
+	// covers the sub-mode too (the seat is asserted for both in section 9).
 	await A.page.evaluate((uuid) => {
 		const s = window.__stores;
-		s.meshPivot.setMeshPivotLocal(uuid, new s.THREE.Vector3(1, -1, 1));
 		s.meshEdit.exitEditMode();
+		s.faceEdit.enterFaceEdit(uuid);
+		s.faceEdit.setFaceSubmode('faces');
+		s.faceEdit.setFaceGranularity('face');
+		const faces = s.faceEdit.currentFaces();
+		const top = faces.findIndex((f) => f.normal.y > 0.9);
+		s.faceEdit.highlightFaceByTriangle(faces[top].triIndices[0]);
+		s.faceEdit.setFaceOp('move');
+		s.faceEdit.attachFaceGizmo();
+		s.meshPivot.startMeshPivotMove();
 	}, uuid);
+	await A.page.waitForTimeout(200);
+	const faceArmed = await gizmo(A.page);
+	h.check(faceArmed?.kind === 'face', `FACES: the face gizmo is the one seated (${faceArmed?.kind})`);
+	h.check(
+		!!faceArmed && dist(faceArmed.position, [0, 1, 0]) < 1e-6,
+		`...at the top face's centroid, the pivot having just been cleared (${JSON.stringify(faceArmed?.position.map((n) => +n.toFixed(4)))})`
+	);
+	const faceGrip = await findGrip(A.page, 'X');
+	h.check(!!faceGrip, `found a confirmed grip on the FACE gizmo's X arrow (${JSON.stringify(faceGrip)})`);
+	let facePivot = null;
+	if (faceGrip) {
+		const before = await readPositions(A.page);
+		await historyMark(A.page);
+		await spyOn(A.page);
+		await A.page.mouse.move(faceGrip[0], faceGrip[1]);
+		await A.page.mouse.down();
+		await A.page.mouse.move(faceGrip[0] + 80, faceGrip[1] - 30, { steps: 12 });
+		await A.page.mouse.move(faceGrip[0] + 81, faceGrip[1] - 30);
+		await A.page.mouse.up();
+		await A.page.waitForTimeout(350);
+		const sent = await spyOff(A.page);
+		const after = await readPositions(A.page);
+		const hist = await historySame(A.page);
+		const state = await pivotState(A.page, uuid);
+		facePivot = state.pivot;
+		const worst = Math.max(...after.map((p, i) => (i < before.length ? dist(before[i], p) : 9)));
+		h.check(
+			after.length === before.length && worst < 1e-9,
+			`FACES: the drag moved NO vertex — the position array is byte-identical (worst delta ${worst.toExponential(1)}); without the divert this is a rigid FACE GRAB`
+		);
+		h.check(
+			!!facePivot && dist(facePivot, [0, 1, 0]) > 0.2,
+			`...while the pivot moved off the face centroid to ${JSON.stringify(facePivot?.map((n) => +n.toFixed(4)))} (premise)`
+		);
+		h.check(
+			hist.same && hist.len === hist.was,
+			`...recording no history entry (${hist.was} -> ${hist.len}, same top object: ${hist.same})`
+		);
+		h.check(
+			sent.length === 0,
+			`...and sending nothing (${sent.length} messages${sent.length ? ': ' + JSON.stringify(sent) : ''})`
+		);
+		h.check(
+			!!state.gizmo && !!facePivot && dist(state.gizmo, facePivot) < 1e-6,
+			`...with the face gizmo re-seated on the new pivot (${JSON.stringify(state.gizmo?.map((n) => +n.toFixed(4)))})`
+		);
+	}
+	// Escape in the FACE session disarms without ending it either
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(250);
+	const faceEsc = await A.page.evaluate(() => {
+		const s = window.__stores;
+		let moving;
+		let session;
+		s.meshPivot.meshPivotMoving.subscribe((v) => (moving = v))();
+		s.faceEdit.faceEditObject.subscribe((v) => (session = v))();
+		return { moving, session };
+	});
+	h.check(faceEsc.moving === false, 'FACES: Escape disarms move-pivot');
+	h.check(!!faceEsc.session, '...and the FACE session survives it (the second Escape ends that)');
+
+	// ======================================================================
+	// 11. it PERSISTS across a reload (a local pref, not session state)
+	// ======================================================================
+	// carrying the pivot the FACE gizmo drag placed, so the reload proves the
+	// real thing rather than a value the test wrote through the store
+	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
 	await A.page.waitForTimeout(500);
 	await h.freshReload(A);
 	await A.page.waitForTimeout(1200);
@@ -844,12 +1248,12 @@ h.run(async () => {
 		return map[uuid] ?? null;
 	}, uuid);
 	h.check(
-		!!survived && dist(survived, [1, -1, 1]) < 1e-6,
-		`the pivot survives a page RELOAD, keyed by object uuid (${JSON.stringify(survived)})`
+		!!survived && !!facePivot && dist(survived, facePivot) < 1e-6,
+		`the GIZMO-PLACED pivot survives a page RELOAD, keyed by object uuid (${JSON.stringify(survived)} vs ${JSON.stringify(facePivot?.map((n) => +n.toFixed(4)))})`
 	);
 
 	// ======================================================================
-	// 11. two peers: a rotate about the pivot lands on the peer
+	// 12. two peers: a rotate about the pivot lands on the peer
 	// ======================================================================
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);

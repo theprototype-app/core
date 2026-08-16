@@ -62,7 +62,12 @@ import {
 	refreshMeshPivotMarker,
 	disposeMeshPivotMarker,
 	cancelMeshPivotPick,
-	escapeConsumedByPivotPick
+	escapeConsumedByPivotPick,
+	meshPivotMoving,
+	cancelMeshPivotMove,
+	escapeConsumedByPivotMove,
+	commitMeshPivotDrag,
+	setMeshPivotPreview
 } from './meshPivot';
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
@@ -570,6 +575,7 @@ export function exitEditMode() {
 	vertexSelectionSize.set(0);
 	proxyGesture = null;
 	cancelMeshPivotPick(); // an armed pick never outlives the session
+	cancelMeshPivotMove(); // ...nor an armed move (it also puts the gizmo mode back)
 	disposeMeshPivotMarker(); // ...and neither does its viewport helper
 	editingObject.set(null);
 	noteEditExit('vertex'); // 15-F: deferred seal unless another mode re-enters
@@ -581,6 +587,7 @@ function onKeydown(event) {
 		// an armed pivot pick eats the FIRST Escape (the knife rule — the verdict
 		// rides the event, because faceEdit has a second Escape handler)
 		if (escapeConsumedByPivotPick(event)) return;
+		if (escapeConsumedByPivotMove(event)) return; // ...then an armed pivot MOVE
 		exitEditMode();
 		sealEditHistorySession(); // 15-F: Escape = Done, sealed synchronously
 	}
@@ -1356,6 +1363,14 @@ function applyProxyGesture() {
 
 /** Called from Scene.svelte's gizmo onchange when the vertex proxy moves */
 export function onProxyMoved() {
+	// MOVE PIVOT armed: the gizmo carries the PIVOT, so the only thing that
+	// follows it is the marker — the geometry must not move at all. Checked
+	// FIRST, above every gesture read (there is no `proxyGesture` in this mode,
+	// and there must never be one).
+	if (get(meshPivotMoving)) {
+		if (edited && proxy) setMeshPivotPreview(proxy.position.clone());
+		return;
+	}
 	// no live gesture = the 'change' TransformControls fires on attach and on
 	// hover, which must never write geometry (this used to be a distance test
 	// against the anchor, which the centroid seat no longer sits on)
@@ -1402,7 +1417,18 @@ function broadcastSelected(positionArray) {
 
 /** Called from Scene.svelte on dragging-changed for the proxy @param {boolean} dragging */
 export function onProxyDragChanged(dragging) {
-	if (!edited || selectedHandle < 0) return;
+	if (!edited || !proxy) return;
+	// MOVE PIVOT armed: the drag re-points the pivot and touches nothing else.
+	// Diverted HERE, BEFORE the gesture machinery below, so the drag can never
+	// open a `proxyGesture` (or a falloff capture, or a meshgeo snapshot) that
+	// would then have to be unwound — the 17-D `pivotOnly` shape. Drag end writes
+	// the pivot: no geometry, no history entry, no `verts` message.
+	if (get(meshPivotMoving)) {
+		if (dragging) setMeshPivotPreview(proxy.position.clone());
+		else commitMeshPivotDrag(edited, proxy.position);
+		return;
+	}
+	if (selectedHandle < 0) return;
 	if (dragging) {
 		dragStartLocal = handles[selectedHandle].position.toArray();
 		// M9: the slide picks its edge on the first real movement, from HERE

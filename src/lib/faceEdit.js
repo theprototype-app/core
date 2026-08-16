@@ -48,7 +48,12 @@ import {
 	refreshMeshPivotMarker,
 	disposeMeshPivotMarker,
 	cancelMeshPivotPick,
-	escapeConsumedByPivotPick
+	escapeConsumedByPivotPick,
+	meshPivotMoving,
+	cancelMeshPivotMove,
+	escapeConsumedByPivotMove,
+	commitMeshPivotDrag,
+	setMeshPivotPreview
 } from './meshPivot';
 
 // Face editing core (118, pulled forward from pending/25 and scoped to VR
@@ -5655,6 +5660,7 @@ function onFaceKeydown(event) {
 	if (event.key === 'Escape') {
 		if (escapeConsumedByKnife(event)) return;
 		if (escapeConsumedByPivotPick(event)) return; // an armed pivot pick first
+		if (escapeConsumedByPivotMove(event)) return; // ...then an armed pivot move
 		exitFaceEdit();
 		sealEditHistorySession(); // 15-F: Escape = Done, sealed synchronously
 	}
@@ -5676,6 +5682,7 @@ export function exitFaceEdit() {
 	}
 	cancelKnife(); // a pending cut must not outlive the session
 	cancelMeshPivotPick(); // nor an armed pivot pick
+	cancelMeshPivotMove(); // ...nor an armed pivot MOVE (puts the gizmo mode back)
 	disposeMeshPivotMarker(); // ...and its viewport helper goes with the session
 	hideProportionalRing(); // P4: nor the radius ring (safety — grabs hide it themselves)
 	endProportionalWheel(); // P7b: nor the wheel claim (faceGrab is dropped below)
@@ -6880,6 +6887,15 @@ export function detachFaceGizmo() {
 /** Gizmo dragging-changed for the face proxy (163). @param {boolean} dragging */
 export function onFaceGizmoDragChanged(dragging) {
 	if (!faceEdited || !faceProxy) return;
+	// MOVE PIVOT armed: the drag re-points the pivot, in faces AND edges (both
+	// seat this one proxy). Diverted BEFORE `beginFaceGrab`, so no grab is ever
+	// opened — a face grab that had to be unwound would leave a live preview
+	// behind. Drag end writes the pivot only: no geometry, no undo, no message.
+	if (get(meshPivotMoving)) {
+		if (dragging) setMeshPivotPreview(faceProxy.position.clone());
+		else commitMeshPivotDrag(faceEdited, faceProxy.position);
+		return;
+	}
 	if (dragging) {
 		// the target captured when the gizmo was seated (see attachFaceGizmo)
 		if (beginFaceGrab(gizmoTarget ?? get(faceEditHighlight))) {
@@ -6903,6 +6919,13 @@ export function onFaceGizmoDragChanged(dragging) {
 /** Gizmo onchange for the face proxy — apply the rigid transform (163/162;
  * E9 face-basis frame conjugation; E8 per-axis scale). */
 export function onFaceGizmoMoved() {
+	// MOVE PIVOT armed: only the marker follows the gizmo (no grab was opened
+	// above, so `faceProxyStart` is null and the geometry path below is dead
+	// anyway — this branch exists for the live feedback)
+	if (get(meshPivotMoving)) {
+		if (faceProxy) setMeshPivotPreview(faceProxy.position.clone());
+		return;
+	}
 	if (!faceEdited || !faceProxy || !faceProxyStart) return;
 	const dPos = faceEdited
 		.worldToLocal(faceProxy.position.clone())

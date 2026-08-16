@@ -152,7 +152,10 @@
 		startMeshPivotPick,
 		cancelMeshPivotPick,
 		clearMeshPivot,
-		escapeConsumedByPivotPick
+		escapeConsumedByPivotPick,
+		meshPivotMoving,
+		toggleMeshPivotMove,
+		escapeConsumedByPivotMove
 	} from '$lib/meshPivot';
 	import { isVRMode, selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
@@ -640,6 +643,7 @@
 			// the verdict rides the EVENT and not a one-shot store flag.
 			if (escapeConsumedByKnife(event)) return;
 			if (escapeConsumedByPivotPick(event)) return; // ...and so does an armed pivot pick
+			if (escapeConsumedByPivotMove(event)) return; // ...and an armed pivot MOVE
 			if (!$colliderEditObject) finish(); // a collider session tears down via its watcher
 			return;
 		}
@@ -1158,6 +1162,13 @@
 				>{$meshPivotPicking ? 'Picking…' : 'Pick…'}</button
 			>
 			<button
+				id="mesh-pivot-move"
+				class="tbx-cmd {$meshPivotMoving ? 'tbx-on bg-primary-600 text-white' : ''}"
+				aria-pressed={$meshPivotMoving}
+				title="Drag the transform gizmo to place the pivot — the mesh does not move (Esc leaves)"
+				onclick={() => toggleMeshPivotMove()}>{$meshPivotMoving ? 'Moving…' : 'Move'}</button
+			>
+			<button
 				id="mesh-pivot-clear"
 				class="tbx-cmd tbx-danger"
 				disabled={!pivotSet}
@@ -1166,9 +1177,11 @@
 			>
 		</div>
 		<div id="mesh-pivot-state" class="tbx-row text-[11px] text-gray-400">
-			{pivotSet
-				? 'Rotate and scale turn about the placed pivot.'
-				: 'Rotate and scale turn about the selection centre.'}
+			{$meshPivotMoving
+				? 'Drag the gizmo to place the pivot — the mesh stays put.'
+				: pivotSet
+					? 'Rotate and scale turn about the placed pivot.'
+					: 'Rotate and scale turn about the selection centre.'}
 		</div>
 		<!-- TOOL OPTIONS: the parameters of whichever tool is selected, directly
 		     under the grid that selected it. Before this they were scattered — the

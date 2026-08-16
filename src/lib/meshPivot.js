@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, globalCamera, globalRenderer } from '../stores/sceneStore';
+import { globalScene, globalCamera, globalRenderer, TControls, transformMode } from '../stores/sceneStore';
 import { showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { proportionalAnchor } from './proportional';
 
@@ -63,6 +63,13 @@ export const meshPivots = writable(load());
  * snapAnchorPicking shape — one click, and every exit path clears the toast)
  * @type {import('svelte/store').Writable<boolean>} */
 export const meshPivotPicking = writable(false);
+
+/** armed MOVE mode: the transform GIZMO re-points the pivot instead of moving
+ * geometry — the mesh session's twin of 17-D's `pivotOnly` (multiTransform.js).
+ * Mutually exclusive with the pick: arming either cancels the other, because
+ * both answer "where does the pivot go" and two armed answers is one too many.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const meshPivotMoving = writable(false);
 
 meshPivots.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(value));
@@ -154,6 +161,7 @@ const PICK_TOAST_ID = 'mesh-pivot-pick';
 
 /** Arm pick mode. @returns {boolean} */
 export function startMeshPivotPick() {
+	cancelMeshPivotMove(); // the two placement modes are mutually exclusive
 	meshPivotPicking.set(true);
 	showInfoToast(
 		PICK_TOAST_ID,
@@ -260,6 +268,129 @@ export function meshPivotClick(object, raycaster, clientPx) {
 	return ok;
 }
 
+// ---- move mode: place the pivot by DRAGGING THE GIZMO ------------------------
+// The third way to place it, and the one the user asked for last ("free move of
+// pivot by moving gizmo to set it"). Set-here needs a selection that already
+// surrounds the point you want; Pick needs the point to be ON the mesh. Dragging
+// the gizmo has neither constraint, and it is the same gesture as every other
+// placement in the app.
+//
+// Modelled on 17-D's `pivotOnly` (multiTransform.js): the two gizmo hooks of
+// each element mode early-return into a pivot-only path, so the drag NEVER opens
+// a grab/gesture it would then have to unwind. One deliberate difference — that
+// mode's drag end records history and writes the REPLICATED `userData.origin`,
+// while this pivot is a local working preference, so a drag here records no undo
+// entry and sends no message. Nothing about it is worth a peer's attention.
+//
+// Desktop only, implicitly: neither element mode seats a desktop gizmo in VR
+// (its helper would render in-headset), so there is nothing to drag there.
+
+/** the instruction toast — STICKY like the pick's: the mode outlives one drag */
+const MOVE_TOAST_ID = 'mesh-pivot-move';
+
+/** the transform mode the user was in before arming, restored on disarm.
+ * Declared above the subscribers/functions that read it (the module-eval TDZ
+ * rule this file's neighbours have been bitten by). @type {string|null} */
+let modeBeforeMove = null;
+
+/** Both halves of forcing a gizmo mode: the store the toolbar renders from AND
+ * the live controls (a face gizmo never re-reads the store on its own).
+ * @param {string} mode */
+function setGizmoMode(mode) {
+	transformMode.set(mode);
+	/** @type {any} */
+	const controls = get(TControls);
+	controls?.setMode?.(mode);
+}
+
+/** is a mesh-session gizmo actually seated right now? (the thing to drag) */
+function gizmoSeated() {
+	/** @type {any} */
+	const controls = get(TControls);
+	const data = controls?.object?.userData;
+	return !!(data?.isVertexProxy || data?.isFaceProxy);
+}
+
+/**
+ * Arm move mode. FORCES translate for its duration — the pivot is a POINT, and
+ * a point has no rotation and no scale, so leaving rotate armed would offer
+ * handles that cannot mean anything. The mode the user had is put back on
+ * disarm.
+ * @returns {boolean}
+ */
+export function startMeshPivotMove() {
+	cancelMeshPivotPick(); // mutually exclusive (see meshPivotMoving)
+	if (get(meshPivotMoving)) return false;
+	modeBeforeMove = get(transformMode);
+	meshPivotMoving.set(true);
+	setGizmoMode('translate');
+	notifyPivotChanged(); // re-seat in whichever element mode is open
+	showInfoToast(
+		MOVE_TOAST_ID,
+		'Drag the gizmo to place the pivot — nothing else moves (Esc leaves)',
+		[],
+		() => cancelMeshPivotMove() // its own X leaves the mode too
+	);
+	// the gizmo IS the control here, so say so when there is none rather than
+	// leaving the button looking dead (no selection / gizmo switched off / VR)
+	if (!gizmoSeated())
+		showToast('Move pivot: no gizmo is seated — select something in the mesh first');
+	return true;
+}
+
+/** Leave move mode (the button again, Esc, session exit). @returns {boolean} */
+export function cancelMeshPivotMove() {
+	dismissToastById(MOVE_TOAST_ID);
+	if (!get(meshPivotMoving)) return false;
+	meshPivotMoving.set(false);
+	setMeshPivotPreview(null);
+	if (modeBeforeMove) setGizmoMode(modeBeforeMove);
+	modeBeforeMove = null;
+	notifyPivotChanged(); // re-seat with the restored mode
+	return true;
+}
+
+/** The toolbox button: one control, on and off. @returns {boolean} */
+export function toggleMeshPivotMove() {
+	return get(meshPivotMoving) ? cancelMeshPivotMove() : startMeshPivotMove();
+}
+
+/**
+ * Drag end in move mode: wherever the gizmo ended up BECOMES the pivot. Goes
+ * through `setMeshPivotWorld`, so it persists, re-seats the gizmo and moves the
+ * marker by the same path every other placement uses — and, like them, records
+ * nothing and sends nothing. The mode STAYS armed (17-D's rule: a re-seat is not
+ * a new selection, and pressing the button must not cancel itself).
+ * @param {any} object the edited mesh @param {any} worldPos the proxy's position
+ * @returns {boolean}
+ */
+export function commitMeshPivotDrag(object, worldPos) {
+	setMeshPivotPreview(null); // the stored pivot takes over from the live preview
+	const ok = setMeshPivotWorld(object, worldPos);
+	if (ok) showToast('Pivot moved — rotate and scale turn about it');
+	return ok;
+}
+
+/**
+ * Escape while move mode is armed disarms it and KEEPS the session, on the same
+ * event-verdict contract as the pick.
+ *
+ * ORDER: the pick is asked first, this second, in all three window handlers. The
+ * two modes are mutually exclusive, so at most one of them can ever consume the
+ * key and the order cannot change an outcome — it is fixed only so every handler
+ * agrees. Both return false when nothing is armed, which is what lets the next
+ * Escape reach "leave the session".
+ * @param {any} event @returns {boolean} true when this handler owns the key
+ */
+export function escapeConsumedByPivotMove(event) {
+	if (event?.defaultPrevented) return true; // another handler took it for the same reason
+	if (!get(meshPivotMoving)) return false;
+	cancelMeshPivotMove();
+	showToast('Move pivot off');
+	event?.preventDefault?.();
+	return true;
+}
+
 // ---- the marker --------------------------------------------------------------
 // A SCENE-ROOT helper, never a child of the edited mesh: objectsGroup is the
 // replicated, serialized tree, and an editor helper parked in there is written
@@ -268,6 +399,22 @@ export function meshPivotClick(object, raycaster, clientPx) {
 
 /** @type {any} */ let marker = null;
 /** the object whose pivot the marker is currently showing @type {any} */ let markerObject = null;
+/** a WORLD point the marker shows INSTEAD of the stored pivot, while a move
+ * drag is live. Nothing is written to the store until the drag ends: a write
+ * mid-drag notifies the listeners, which re-seat the gizmo — under the pointer
+ * that is a fight, and the proxy would jump back on every frame. @type {any} */
+let previewWorld = null;
+
+/**
+ * Show the marker at a point that is not (yet) the stored pivot — the live
+ * feedback of a move drag, and the only way the FIRST pivot on an object is
+ * visible at all before it is committed. Null drops the preview.
+ * @param {any} world THREE.Vector3 | null
+ */
+export function setMeshPivotPreview(world) {
+	previewWorld = world ? world.clone() : null;
+	if (markerObject) refreshMeshPivotMarker(markerObject);
+}
 
 /** @param {any} scene */
 function ensureMarker(scene) {
@@ -307,7 +454,8 @@ function ensureMarker(scene) {
 export function refreshMeshPivotMarker(object) {
 	markerObject = object ?? null;
 	const local = object ? meshPivotLocal(object.uuid) : null;
-	if (!local) {
+	const preview = object ? previewWorld : null;
+	if (!local && !preview) {
 		if (marker) marker.visible = false;
 		return;
 	}
@@ -316,7 +464,8 @@ export function refreshMeshPivotMarker(object) {
 	const group = ensureMarker(scene);
 	group.visible = true;
 	object.updateMatrixWorld(true);
-	group.position.copy(object.localToWorld(local));
+	// a live drag wins: it IS where the pivot is about to be
+	group.position.copy(preview ?? object.localToWorld(local));
 	// SCREEN-constant size: a world-size marker vanishes on a large mesh and
 	// swallows a small one (the vertex-handle lesson, one helper down)
 	const camera = get(globalCamera);
@@ -335,6 +484,7 @@ export function tickMeshPivotMarker() {
 /** Hide + free the marker — session exit. */
 export function disposeMeshPivotMarker() {
 	markerObject = null;
+	previewWorld = null;
 	if (!marker) return;
 	marker.traverse((/** @type {any} */ node) => {
 		node.geometry?.dispose?.();

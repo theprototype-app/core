@@ -209,6 +209,121 @@ h.run(async () => {
 	const oddLinear = await oddEdges(A.page);
 	h.check(oddLinear === 0, `a linear-profile bevel is watertight (${oddLinear} odd edges)`);
 
+	// --- 19-A P7a: the profile goes NEGATIVE, and that is the CONCAVE arc ------
+	// The chamfer is a 2D curve, so measure it as one. Every ring of a bevelled
+	// box face is a SQUARE, so its +x+z DIAGONAL corner describes the whole ring:
+	// s = how far that corner travelled inward along the diagonal, rise = how far
+	// it climbed above the original face. The two together are the step schedule
+	// with the geometry stripped away.
+	const ringProfile = (page) =>
+		page.evaluate(() => {
+			const tris = window.__stores.faceEdit.readTriangles(window.__box.geometry);
+			/** @type {Map<number, {s: number, rise: number}>} */
+			const seen = new Map();
+			for (const v of tris.flat()) {
+				if (v.y < 0.4999) continue; // below the original +Y face: the box body
+				if (Math.abs(v.x - v.z) > 1e-4 || v.x <= 0) continue; // the +x+z corner column
+				const key = Math.round(v.y * 1e6);
+				if (!seen.has(key)) seen.set(key, { s: Math.SQRT2 * (0.5 - v.x), rise: v.y - 0.5 });
+			}
+			return [...seen.values()].sort((a, b) => a.rise - b.rise);
+		});
+	/**
+	 * The signed distance of each INTERIOR ring from the straight chord between
+	 * the first ring (the face border, at the origin of this 2D frame) and the
+	 * last (the cap). The chord passes through the origin, so the perpendicular
+	 * offset of a point is just its dot with the chord's normal. POSITIVE = the
+	 * side the quarter circle leaves the ramp on at profile +1: it runs inward
+	 * fast and rises late, so the chamfer leaves the surrounding surface
+	 * tangentially and turns up into the cap. Negative is the mirror of that.
+	 */
+	const bulges = (rings) => {
+		const last = rings[rings.length - 1];
+		const len = Math.hypot(last.s, last.rise) || 1;
+		const ds = last.s / len;
+		const dy = last.rise / len;
+		return rings.slice(1, -1).map((p) => p.s * dy - p.rise * ds);
+	};
+	const bevelAt = async (profile) => {
+		await editBox(A.page);
+		await pickTop(A.page);
+		const ok = await A.page.evaluate((p) => window.__stores.faceEdit.bevelFaces(0.3, 3, p), profile);
+		return { ok, rings: await ringProfile(A.page), odd: await oddEdges(A.page) };
+	};
+	const convex = await bevelAt(0.5);
+	const concave = await bevelAt(-0.5);
+	h.check(
+		convex.ok && concave.ok && convex.rings.length === 4 && concave.rings.length === 4,
+		`both profiles committed with 4 rings each (${convex.rings.length} / ${concave.rings.length})`
+	);
+	const convexBulge = bulges(convex.rings);
+	const concaveBulge = bulges(concave.rings);
+	h.check(
+		convexBulge.length === 2 && convexBulge.every((b) => b > 0.02),
+		`profile +0.5 bulges to the CONVEX side (${convexBulge.map((b) => b.toFixed(5)).join(', ')})`
+	);
+	h.check(
+		concaveBulge.length === 2 && concaveBulge.every((b) => b < -0.02),
+		`profile -0.5 bulges the other way (${concaveBulge.map((b) => b.toFixed(5)).join(', ')})`
+	);
+	// RE-DERIVED: at profile ±0.5, n=3, width 0.3 the blended schedule puts both
+	// interior rings at (0.125, 0.0701) and (0.2299, 0.175) — a chord direction of
+	// (1,1)/√2, so the offset is (s − rise)/√2 = ±0.03882. The two signs are exact
+	// mirrors because the swap only exchanges the two columns.
+	h.check(
+		convexBulge.every((b) => Math.abs(b - 0.03882) < 1e-3) &&
+			concaveBulge.every((b) => Math.abs(b + 0.03882) < 1e-3),
+		`the two curves are exact mirrors of the ramp (expected ±0.03882)`
+	);
+	h.check(
+		convex.odd === 0 && concave.odd === 0,
+		`both curved profiles are watertight (${convex.odd} / ${concave.odd} odd edges)`
+	);
+
+	// REACH is profile-independent — that is the whole point of every step column
+	// summing to 1, and it is what lets the sign be a pure shape control. The cap
+	// plane must land at 0.5 + width = 0.8 at profile -1, 0 and +1 alike.
+	const reaches = [];
+	for (const p of [-1, 0, 1]) {
+		await editBox(A.page);
+		await pickTop(A.page);
+		const r = await A.page.evaluate((prof) => {
+			const fe = window.__stores.faceEdit;
+			const ok = fe.bevelFaces(0.3, 3, prof);
+			const tris = fe.readTriangles(window.__box.geometry);
+			const heights = [...new Set(tris.flat().map((v) => Math.round(v.y * 1e4) / 1e4))]
+				.filter((y) => y > 0.501)
+				.sort((a, b) => a - b);
+			return { ok, maxY: Math.max(...tris.flat().map((v) => v.y)), heights };
+		}, p);
+		reaches.push({ p, ...r, odd: await oddEdges(A.page) });
+	}
+	h.check(
+		reaches.every((r) => r.ok && r.odd === 0),
+		`profiles -1 / 0 / +1 all commit watertight (${reaches.map((r) => r.odd).join(', ')} odd edges)`
+	);
+	const spread = Math.max(...reaches.map((r) => r.maxY)) - Math.min(...reaches.map((r) => r.maxY));
+	h.check(
+		spread < 1e-6 && Math.abs(reaches[0].maxY - 0.8) < 1e-6,
+		`the cap tops out at 0.8 whatever the profile (spread ${spread.toExponential(2)}, maxY ${reaches[0].maxY.toFixed(8)})`
+	);
+	// REGRESSION PIN: profile +1 is the pre-P7a schedule, unchanged. RE-DERIVED —
+	// the quarter circle's cumulative push is (1 − cos θ)·depth at θ = 30/60/90°,
+	// so the rings sit at 0.5 + 0.3·{0.13397, 0.5, 1} = 0.5402 / 0.65 / 0.8.
+	const pinned = reaches.find((r) => r.p === 1);
+	h.check(
+		pinned.heights.length === 3 &&
+			[0.5402, 0.65, 0.8].every((y, i) => Math.abs(pinned.heights[i] - y) < 1e-3),
+		`profile 1 still spaces the rings on the quarter circle (${JSON.stringify(pinned.heights)})`
+	);
+	// ...and -1 is its mirror: 0.5 + 0.3·sin θ = 0.65 / 0.7598 / 0.8
+	const mirrored = reaches.find((r) => r.p === -1);
+	h.check(
+		mirrored.heights.length === 3 &&
+			[0.65, 0.7598, 0.8].every((y, i) => Math.abs(mirrored.heights[i] - y) < 1e-3),
+		`profile -1 is its mirror, rising early instead of late (${JSON.stringify(mirrored.heights)})`
+	);
+
 	// direction: 'out' raises the cap along +normal, 'in' recesses it — the cap
 	// centroid's displacement SIGN against the face normal is the whole contract
 	const directions = await A.page.evaluate(() => {

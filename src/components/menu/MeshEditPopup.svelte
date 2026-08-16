@@ -22,6 +22,7 @@
 		loopCutPosition,
 		bridgeCuts,
 		bridgeTwist,
+		bridgeInvert,
 		extrudeIndividual,
 		insetDepth,
 		insetIndividual,
@@ -442,7 +443,11 @@
 		} else if (op === 'loopcut') {
 			ok = beginOpAdjust('loopcut', { cuts: $loopCuts, position: $loopCutPosition });
 		} else if (op === 'bridge') {
-			ok = beginOpAdjust('bridge', { cuts: $bridgeCuts, twist: $bridgeTwist });
+			ok = beginOpAdjust('bridge', {
+				cuts: $bridgeCuts,
+				twist: $bridgeTwist,
+				invert: $bridgeInvert
+			});
 		} else if (op === 'subdivide') {
 			if (!hasTarget()) {
 				showToast('Click a face first');

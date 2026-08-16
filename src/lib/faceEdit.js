@@ -998,16 +998,20 @@ export function boundaryLoop(tris, triIndices) {
  * preconditions (a selection exists, exactly two pieces) stay in the wrapper.
  * @param {any[]} tris @param {number[]} setA @param {number[]} setB the two
  *   connected components (indices into `tris`)
- * @param {{cuts?: number, twist?: number}} [options] cuts = intermediate loops
- *   along the tunnel. P3: `twist` rotates the loop PAIRING by N steps (the
- *   angle ordering is deterministic but blind to which vertex should meet
- *   which — a skewed tunnel is one twist step away from a straight one).
- *   0 = byte-identical to before.
+ * @param {{cuts?: number, twist?: number, invert?: boolean}} [options] cuts =
+ *   intermediate loops along the tunnel. P3: `twist` rotates the loop PAIRING
+ *   by N steps (the angle ordering is deterministic but blind to which vertex
+ *   should meet which — a skewed tunnel is one twist step away from a straight
+ *   one). P7a: `invert` flips every wall AFTER the shell test has had its say —
+ *   the shell test is a heuristic GUESS about which surface of the tunnel you
+ *   are meant to see, and this is the user's correction when the guess is wrong
+ *   on an unusual shape. Both default to the pre-existing behaviour exactly.
  * @returns {{tris: any[], origin: number[], authored: number[][]} | {error: string}}
  */
 export function bridgeFacesCore(tris, setA, setB, options = {}) {
 	const cuts = options.cuts ?? 0;
 	const twist = Math.round(options.twist ?? 0) || 0;
+	const invert = !!options.invert;
 	const loopA = boundaryLoop(tris, setA);
 	const loopB = boundaryLoop(tris, setB);
 	if (!loopA || !loopB) {
@@ -1102,6 +1106,9 @@ export function bridgeFacesCore(tris, setA, setB, options = {}) {
 			} else wantDir = mid.clone().sub(centA);
 			if (wantDir.lengthSq() < 1e-9) wantDir = new THREE.Vector3(0, 1, 0);
 			if (sameShell) wantDir.negate(); // a hole through a solid shows its INNER surface
+			// P7a: the user's override, applied AFTER the heuristic — whichever way
+			// the shell test guessed, this is the other one
+			if (invert) wantDir.negate();
 			pushQuad(
 				next,
 				p00,
@@ -1144,8 +1151,10 @@ export function bridgeFacesCore(tris, setA, setB, options = {}) {
  *   a rigid sleeve with nothing to grab in the middle.
  * @param {number} [twist] P3: rotate the loop pairing by N steps (0 = the
  *   angle-ordered pairing, unchanged).
+ * @param {boolean} [invert] P7a: flip every wall, correcting the shell test's
+ *   guess about which side of the tunnel you see (false = the guess).
  */
-export function bridgeFaces(cuts = 0, twist = 0) {
+export function bridgeFaces(cuts = 0, twist = 0, invert = false) {
 	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
 	if (!faceEdited) return false;
 	const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => workingTris[ti]);
@@ -1174,7 +1183,7 @@ export function bridgeFaces(cuts = 0, twist = 0) {
 	const beforeUVs = trisToUVs(workingTris);
 	const beforeFaces = readStoredFaces(faceEdited?.geometry);
 	const priorFaces = currentPartition();
-	const result = bridgeFacesCore(workingTris, setA, setB, { cuts, twist });
+	const result = bridgeFacesCore(workingTris, setA, setB, { cuts, twist, invert });
 	if ('error' in result) {
 		showToast(result.error);
 		return false;
@@ -2917,6 +2926,10 @@ function invertEdgeSelectionInner() {
  * both columns sum to 1 across the steps, so the total reach is
  * profile-independent. `direction` signs the push: 'in' recesses the cap
  * (depth used to be hardwired to +total).
+ *
+ * P7a: `profile` is -1..1 now. A NEGATIVE profile blends toward the CONCAVE
+ * quarter circle, which is the same arc with the trig roles swapped — see the
+ * schedule comment in the loop below.
  * @param {any[]} tris @param {{triIndices: number[], normal: any, centroid: any}} face
  * @param {{width?: number, segments?: number, profile?: number, direction?: 'out'|'in'}} [options]
  *   width/segments already clamped
@@ -2925,7 +2938,11 @@ function invertEdgeSelectionInner() {
 export function bevelFacesCore(tris, face, options = {}) {
 	const n = options.segments ?? 1;
 	const total = options.width ?? 0.15;
-	const profile = Math.min(Math.max(options.profile ?? 1, 0), 1);
+	const profile = Math.min(Math.max(options.profile ?? 1, -1), 1);
+	// P7a: the sign picks WHICH curve the schedule blends toward, the magnitude
+	// how far from the straight ramp it goes
+	const concave = profile < 0;
+	const curve = Math.abs(profile);
 	const depth = (options.direction === 'in' ? -1 : 1) * total;
 	// the cap keeps its triangle INDICES through inset (it shrinks in place) and through
 	// the welded move, so one descriptor drives every step
@@ -2940,11 +2957,26 @@ export function bevelFacesCore(tris, face, options = {}) {
 	for (let k = 1; k <= n; k++) {
 		const from = ((k - 1) / n) * (Math.PI / 2);
 		const to = (k / n) * (Math.PI / 2);
-		// quarter-circle: the step insets track sin and the pushes track cos, so the
-		// chamfer reads as a round rather than a straight ramp at segments > 1;
-		// linear: equal shares. `profile` blends the two schedules.
-		const insetShare = ((1 - profile) * 1) / n + profile * (Math.sin(to) - Math.sin(from));
-		const pushShare = ((1 - profile) * 1) / n + profile * (Math.cos(from) - Math.cos(to));
+		// THE STEP SCHEDULE. Linear = equal shares, a straight ramp. The CONVEX
+		// quarter circle (profile > 0) tracks sin with the insets and cos with the
+		// pushes: the border runs inward first and the cap rises late, so the
+		// chamfer leaves the surrounding surface tangentially and turns up into
+		// the cap. The CONCAVE quarter circle (P7a, profile < 0) is the same arc
+		// with the two trig roles SWAPPED — cos drives the insets and sin the
+		// pushes — so it rises first and runs inward late, curving the other side
+		// of the ramp. `curve` = |profile| blends linear -> the chosen curve.
+		//
+		// EVERY column here sums to exactly 1 over the n steps, which is what keeps
+		// the total reach profile-independent (the suite asserts it): the linear
+		// column is n copies of 1/n; sin(to)-sin(from) telescopes to
+		// sin(pi/2) - sin(0) = 1; cos(from)-cos(to) telescopes to
+		// cos(0) - cos(pi/2) = 1. A blend of columns that each sum to 1 sums to 1.
+		const arcSin = Math.sin(to) - Math.sin(from);
+		const arcCos = Math.cos(from) - Math.cos(to);
+		const curveInset = concave ? arcCos : arcSin;
+		const curvePush = concave ? arcSin : arcCos;
+		const insetShare = ((1 - curve) * 1) / n + curve * curveInset;
+		const pushShare = ((1 - curve) * 1) / n + curve * curvePush;
 		const worldStep = insetShare * total;
 		if (worldStep > 1e-9) {
 			// convert per component: a multi-piece cap insets each piece toward its
@@ -2969,7 +3001,8 @@ export function bevelFacesCore(tris, face, options = {}) {
 }
 
 /** @param {number} width WORLD distance the border travels (P3 — was an inset fraction)
- * @param {number} segments @param {number} [profile] 0 linear .. 1 quarter-circle
+ * @param {number} segments @param {number} [profile] -1 concave quarter-circle ..
+ *   0 linear .. 1 convex quarter-circle (P7a widened the range; 1 is unchanged)
  * @param {'out'|'in'} [direction] @returns {boolean} */
 export function bevelFaces(width = 0.15, segments = 1, profile = 1, direction = 'out') {
 	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
@@ -6702,9 +6735,10 @@ function mergeAdjustParams(a, patch) {
 		p.width = p.width ?? 0.1;
 		if (a.kind !== 'vertices') p.segments = p.segments ?? 1;
 		if (a.kind === 'faces') {
-			// P3: the faces profile is the 0..1 STEP SCHEDULE (1 = quarter-circle,
-			// the pre-P3 behaviour); direction signs the push
-			p.profile = Math.min(Math.max(p.profile ?? 1, 0), 1);
+			// P3: the faces profile is the STEP SCHEDULE (1 = quarter-circle, the
+			// pre-P3 behaviour); direction signs the push. P7a: -1 = the CONCAVE
+			// quarter circle, so the range matches the edge/vertex profile's.
+			p.profile = Math.min(Math.max(p.profile ?? 1, -1), 1);
 			p.direction = p.direction === 'in' ? 'in' : 'out';
 		} else {
 			p.profile = Math.min(Math.max(p.profile ?? 0, -1), 1);
@@ -6717,6 +6751,7 @@ function mergeAdjustParams(a, patch) {
 	} else if (a.op === 'bridge') {
 		p.cuts = Math.max(0, Math.min(Math.round(p.cuts ?? 0) || 0, 20));
 		p.twist = Math.max(-20, Math.min(Math.round(p.twist ?? 0) || 0, 20));
+		p.invert = !!p.invert; // P7a: the user's override on the shell-test guess
 	} else if (a.op === 'subdivide') {
 		// P3: 4^levels growth — MAX_SNAPSHOT backstops the big-face case
 		p.levels = Math.max(1, Math.min(Math.round(p.levels ?? 1) || 1, 3));
@@ -6862,7 +6897,8 @@ function runAdjustCore(a) {
 	if (a.op === 'bridge') {
 		const r = bridgeFacesCore(a.originalTris, a.target.setA, a.target.setB, {
 			cuts: p.cuts,
-			twist: p.twist
+			twist: p.twist,
+			invert: p.invert
 		});
 		if ('error' in r) return { error: r.error };
 		return {

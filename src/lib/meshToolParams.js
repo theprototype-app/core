@@ -33,10 +33,17 @@ export const bevelProfile = writable(0);
  * 'in' recesses the face cap / dishes the edge+vertex cap.
  * @type {import('svelte/store').Writable<'out'|'in'>} */
 export const bevelDirection = writable('out');
-/** 19-A P3: FACE bevel step schedule, 0..1 — 1 = the sin/cos quarter-circle
- * (the only schedule until P3, so the default is byte-equivalent), 0 = linear
- * steps, i.e. a straight 45° chamfer. Separate from `bevelProfile`: that one
- * is the edge/vertex dome-dish MAGNITUDE with a different range and default. */
+/** 19-A P3: FACE bevel step schedule. 1 = the sin/cos quarter-circle (the only
+ * schedule until P3, so the default is byte-equivalent), 0 = linear steps, i.e.
+ * a straight 45° chamfer. Separate from `bevelProfile`: that one is the
+ * edge/vertex dome-dish MAGNITUDE with a different range and default.
+ * 19-A P7a: the range is -1..1 now. A NEGATIVE profile is the CONCAVE quarter
+ * circle — the same arc with the trig roles swapped, so the chamfer curves the
+ * other way while its total reach is unchanged (both step columns still sum to
+ * 1). The magnitude is still "how far from a straight ramp"; the sign picks
+ * which side of the ramp the curve leaves. Clamped in `bevelFacesCore` and in
+ * the adjust engine's `mergeAdjustParams` — the store itself is a plain
+ * writable like every other tool param, and the DragRow carries the range. */
 export const bevelFaceProfile = writable(1);
 /** M3: how many loops a Loop cut inserts — a COUNT, not the extrude distance */
 export const loopCuts = writable(1);
@@ -49,6 +56,12 @@ export const bridgeCuts = writable(0);
 /** 19-A P3: rotate the bridge's loop pairing by N steps (fixes a skewed
  * tunnel). 0 = the angle-ordered pairing, byte-identical to before. */
 export const bridgeTwist = writable(0);
+/** 19-A P7a: flip every tunnel wall. `bridgeFacesCore` GUESSES which way the
+ * walls should face from a shell test (a hole punched through one solid shows
+ * its inner surface; two separate shells make a tube seen from outside), and
+ * an unusual shape can fool that heuristic. This is the user's correction on
+ * top of it — false = the guess, which is the previous behaviour exactly. */
+export const bridgeInvert = writable(false);
 /** 19-A P3: extrude each separate PIECE of the selection along its own
  * averaged normal instead of one shared direction. */
 export const extrudeIndividual = writable(false);
@@ -132,6 +145,7 @@ export function resetToolParams() {
 	loopCutPosition.set(0.5);
 	bridgeCuts.set(0);
 	bridgeTwist.set(0);
+	bridgeInvert.set(false);
 	extrudeIndividual.set(false);
 	insetDepth.set(0);
 	insetIndividual.set(false);
@@ -157,6 +171,7 @@ export function toolParams() {
 		loopCutPosition: get(loopCutPosition),
 		bridgeCuts: get(bridgeCuts),
 		bridgeTwist: get(bridgeTwist),
+		bridgeInvert: get(bridgeInvert),
 		extrudeIndividual: get(extrudeIndividual),
 		insetDepth: get(insetDepth),
 		insetIndividual: get(insetIndividual),

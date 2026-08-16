@@ -37,6 +37,7 @@
 		loopCutPosition,
 		bridgeCuts,
 		bridgeTwist,
+		bridgeInvert,
 		extrudeIndividual,
 		insetDepth,
 		insetIndividual,
@@ -268,16 +269,18 @@
 		</div>
 		{#if mode === 'faces'}
 			<!-- P3: the faces profile is the step SCHEDULE — 1 = quarter-circle
-			     round (the pre-P3 behaviour), 0 = straight 45° chamfer -->
+			     round (the pre-P3 behaviour), 0 = straight 45° chamfer.
+			     P7a: negative = the CONCAVE quarter circle (the same arc, curving
+			     the other way); the reach is the same at every profile. -->
 			<DragRow
 				id="bevel-face-profile"
 				label="profile"
 				value={$bevelFaceProfile}
 				step={0.01}
 				decimals={2}
-				min={0}
+				min={-1}
 				max={1}
-				title="Profile of the chamfer: 1 rounds it (quarter-circle), 0 is a straight 45° ramp"
+				title="Profile of the chamfer: 1 rounds it outward (quarter-circle), 0 is a straight 45° ramp, -1 hollows it the other way. The chamfer reaches just as far whichever you pick."
 				onchange={(v) => {
 					bevelFaceProfile.set(v);
 					if (adjusting) adjustChanged({ profile: v });
@@ -420,6 +423,25 @@
 			onscrubstart={scrubStart}
 			onscrubend={scrubEnd}
 		/>
+		<!-- 19-A P7a: the wall direction is a GUESS (a hole through one solid shows
+		     its inner surface, two shells make a tube seen from outside) — this is
+		     the correction for the shapes the guess gets wrong -->
+		<label
+			class="flex items-center gap-1"
+			title="Flip which way the tunnel walls face. The bridge guesses from the shape — a hole through one solid shows its inner surface, two separate pieces make a tube seen from outside — and an unusual shape can fool that guess."
+		>
+			<input
+				id="bridge-invert"
+				type="checkbox"
+				checked={$bridgeInvert}
+				onchange={(e) => {
+					const on = e.currentTarget.checked;
+					bridgeInvert.set(on);
+					if (adjusting) adjustChanged({ invert: on });
+				}}
+			/>
+			invert faces
+		</label>
 		{#if adjusting}
 			{@render revertBtn()}
 		{:else}

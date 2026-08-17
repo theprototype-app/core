@@ -59,8 +59,20 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(1600);
 
-	// ---- 1. the tab OPENS and renders -----------------------------------------
-	await page.evaluate(() => window.__stores.shaderEditorClose.set(false));
+	// ---- 1. the tab is REACHABLE from the UI, then renders --------------------
+	// Opening it by setting the store (what this suite used to do) proves the panel
+	// works and proves NOTHING about whether a user can get to it — the first build
+	// shipped with no entry point at all and every check here still passed.
+	await page.locator('p[title="Node editor (N)"]').click();
+	await page.waitForTimeout(1200);
+	const addBtn = page.locator('.tab-note', { hasText: '＋' }).first();
+	h.check(await addBtn.count() === 1, 'premise — the dock tab strip has its + button');
+	await addBtn.click();
+	await page.waitForTimeout(500);
+	const shaderItem = page.getByRole('menuitem', { name: /Shader/ });
+	h.check(await shaderItem.count() >= 1, 'the + menu OFFERS Shader (this is what was missing)');
+	await shaderItem.first().click();
+	await page.waitForTimeout(1200);
 	await page.waitForTimeout(900);
 	h.check(await page.locator('#shader-editor').count() === 1, 'the Shader tab renders in the dock');
 	const scopeText = await page.locator('#shader-scope').innerText().catch(() => '');

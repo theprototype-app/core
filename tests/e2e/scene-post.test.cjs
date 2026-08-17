@@ -129,8 +129,10 @@ h.run(async () => {
 				stack: normalizeScenePost({ enabled: false, effects: [{ id: 'a', kind: 'test-fill' }] }),
 				mode: 'custom'
 			}).map((e) => e.kind),
-			customAoGated: kindsOf({ mode: 'custom', aoOk: false }),
-			customNotWarm: kindsOf({ mode: 'custom', aoWarm: false }),
+			// L4 GENERALISED the gate: it empties the WHOLE stack now, not just AO
+			customGated: kindsOf({ mode: 'custom', postOk: false }),
+			customNotWarm: kindsOf({ mode: 'custom', postWarm: false }),
+			aoModeGated: kindsOf({ mode: 'shaded-ao', postOk: false }),
 			// a disabled entry is skipped but a disabled AO is not the same thing as a gate
 			customEntryOff: effectivePostStack({
 				stack: normalizeScenePost({ effects: [{ id: 'a', kind: 'test-fill', enabled: false }, { id: 'b', kind: 'ao' }] }),
@@ -154,10 +156,14 @@ h.run(async () => {
 	);
 	h.check(matrix.customLocalOff.length === 0, '1.14 the LOCAL kill switch empties the stack in `custom`');
 	h.check(matrix.customStackOff.length === 0, '1.15 the scene-level `enabled: false` empties the stack');
+	// L4 deliberately CHANGED this contract: the engine gate and the boot warm-up
+	// are properties of running any fullscreen pass, so they empty the whole stack
+	// rather than dropping the AO entry and rendering the rest.
 	h.check(
-		matrix.customAoGated.join(',') === 'test-fill' && matrix.customNotWarm.join(',') === 'test-fill',
-		'1.16 the AO capability gate + warm-up drop only AO, leaving the rest of the stack'
+		matrix.customGated.length === 0 && matrix.customNotWarm.length === 0,
+		'1.16 the capability gate and the warm-up empty the WHOLE stack, not just AO'
 	);
+	h.check(matrix.aoModeGated.length === 0, '1.16b ...and the legacy shaded-ao mode with it');
 	h.check(matrix.customEntryOff.join(',') === 'ao', '1.17 a per-entry disable drops just that entry');
 
 	// ---------------------------------------------------------------- section 2
@@ -216,9 +222,9 @@ h.run(async () => {
 	);
 	// AO deliberately skips the first composer frames (the boot-compile window)
 	await h.eventually(
-		() => page.evaluate(() => window.__postDebug().aoWarm),
+		() => page.evaluate(() => window.__postDebug().postWarm),
 		(warm) => warm === true,
-		'3.2 the AO warm-up completes',
+		'3.2 the boot-compile warm-up completes',
 		20000
 	);
 
@@ -783,9 +789,201 @@ h.run(async () => {
 		'8.8 registering that kind afterwards makes the preserved entry render (the signature folds in registry state)'
 	);
 
+	// ---------------------------------------------------------------- section 9
+	// L4 — AO's parameters, the generalised gate, and tone mapping
+	console.log('\n=== 9. AO parameters + tone mapping ===');
+
+	await page.evaluate(async () => {
+		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 20 });
+		window.__stores.viewMode.set('shaded-ao');
+		await new Promise((r) => setTimeout(r, 900));
+	});
+	const aoDefaults = await page.evaluate(() => window.__postDebug().ao);
+	h.check(
+		aoDefaults &&
+			aoDefaults.aoRadius === 1.5 &&
+			aoDefaults.intensity === 2.5 &&
+			aoDefaults.distanceFalloff === 1.0,
+		'9.1 shaded-ao still builds AO at the numbers Outline.svelte used to hardcode: ' + JSON.stringify(aoDefaults)
+	);
+
+	// the params reach the PASS, which is the only place they live
+	const aoTuned = await page.evaluate(async () => {
+		const post = window.__stores.scenePost;
+		post.scenePost.set({ enabled: true, effects: [], changedAt: 21 });
+		const id = post.addPostEffect('ao');
+		post.setPostEffectParams(id, { aoRadius: 4.25, intensity: 0.75, distanceFalloff: 2.5 });
+		window.__stores.viewMode.set('custom');
+		await new Promise((r) => setTimeout(r, 1200));
+		return window.__postDebug().ao;
+	});
+	h.check(
+		aoTuned &&
+			aoTuned.aoRadius === 4.25 &&
+			aoTuned.intensity === 0.75 &&
+			aoTuned.distanceFalloff === 2.5,
+		'9.2 authored AO params reach the pass (they had no UI at all before L4): ' + JSON.stringify(aoTuned)
+	);
+
+	// quality / halfRes: 'auto' follows the LOCAL shadow pref, a pinned value wins
+	const halfRes = await page.evaluate(async () => {
+		const post = window.__stores.scenePost;
+		const quality = window.__stores.lightParams.shadowQuality;
+		let state = null;
+		post.scenePost.subscribe((s) => (state = s))();
+		const id = state.effects[0].id;
+		const read = async () => {
+			await new Promise((r) => setTimeout(r, 700));
+			return window.__postDebug().ao?.halfRes;
+		};
+		quality.set('high');
+		const autoHigh = await read();
+		quality.set('low');
+		const autoLow = await read();
+		post.setPostEffectParams(id, { halfRes: 'off' });
+		const pinnedOff = await read();
+		quality.set('high');
+		const pinnedOffStillHigh = await read();
+		post.setPostEffectParams(id, { halfRes: 'auto' });
+		quality.set('low');
+		const backToAuto = await read();
+		return { autoHigh, autoLow, pinnedOff, pinnedOffStillHigh, backToAuto };
+	});
+	h.check(
+		halfRes.autoHigh === false && halfRes.autoLow === true,
+		'9.3 halfRes "auto" follows this device\'s shadow-quality pref (high -> false, low -> true)'
+	);
+	h.check(
+		halfRes.pinnedOff === false && halfRes.pinnedOffStillHigh === false,
+		'9.4 a PINNED halfRes wins over the local pref, in both directions'
+	);
+	h.check(halfRes.backToAuto === true, '9.5 setting it back to auto returns control to the device');
+
+	// TONE MAPPING. The renderer applies ACES Filmic + environment's exposure by
+	// default; a ToneMapping entry maps the same image, so the renderer has to stand
+	// down or the frame is graded twice.
+	// read the enum from THREE rather than hardcoding numbers that can be renumbered
+	const { NO_TONE_MAPPING, ACES } = await page.evaluate(() => ({
+		NO_TONE_MAPPING: window.__stores.THREE.NoToneMapping,
+		ACES: window.__stores.THREE.ACESFilmicToneMapping
+	}));
+	const tone = await page.evaluate(async () => {
+		const post = window.__stores.scenePost;
+		post.scenePost.set({ enabled: true, effects: [], changedAt: 22 });
+		window.__stores.viewMode.set('custom');
+		await new Promise((r) => setTimeout(r, 900));
+		const before = window.__postDebug();
+		post.addPostEffect('tonemapping');
+		await new Promise((r) => setTimeout(r, 1200));
+		const withEntry = window.__postDebug();
+		let state = null;
+		post.scenePost.subscribe((s) => (state = s))();
+		post.removePostEffect(state.effects[0].id);
+		await new Promise((r) => setTimeout(r, 1200));
+		return { before, withEntry, after: window.__postDebug() };
+	});
+	h.check(
+		tone.before.rendererToneMapping === ACES && tone.before.stackTonemaps === false,
+		'9.6 premise: with no Tone mapping entry the RENDERER maps the frame (ACES Filmic)'
+	);
+	h.check(
+		tone.withEntry.stackTonemaps === true && tone.withEntry.rendererToneMapping === NO_TONE_MAPPING,
+		'9.7 a Tone mapping entry makes the renderer stand down (NoToneMapping) — no double grading'
+	);
+	h.check(
+		tone.after.rendererToneMapping === ACES,
+		'9.8 removing it hands tone mapping back to the renderer'
+	);
+
+	// WHAT THE RENDERER'S TONE MAPPING ACTUALLY DOES TO A COMPOSED FRAME: nothing.
+	//
+	// three applies `renderer.toneMapping` to a material only when the current
+	// render target is the CANVAS (or an XR target), and the composer renders the
+	// scene into a target — so while post-processing is running, the renderer's own
+	// mapping never reaches the image. This section MEASURES that rather than
+	// assuming it, because it is the fact the whole reconciliation rests on: the
+	// stand-down matters for VR and the PiP (which do render straight to the
+	// canvas), NOT because the desktop frame would otherwise be graded twice.
+	const clip9 = await h.centeredClip(A, [0, 0, 0], 360);
+	const staged = await page.evaluate(async () => {
+		const post = window.__stores.scenePost;
+		post.scenePost.set({ enabled: true, effects: [], changedAt: 23 });
+		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__stores.viewMode.set('custom');
+		await new Promise((r) => setTimeout(r, 1600));
+		return window.__postDebug();
+	});
+	h.check(staged.stackPasses === 0, '9.9 premise: an empty stack, so only the renderer could be mapping');
+	const plainFrame = await h.grabFrame(A, clip9);
+	const spread9 = await h.framePixelsOffColor(page, plainFrame, [0, 0, 0], 10);
+	h.check(
+		spread9.off > spread9.total * 0.05,
+		'9.9b premise: the measured region has a rendered scene in it (' + Math.round(spread9.fraction * 100) + '% non-black)'
+	);
+
+	await page.evaluate(async () => {
+		// flip the RENDERER's own tone mapping, through the public seam
+		window.__stores.environment.registerToneMappingOwner(() => true);
+		await new Promise((r) => setTimeout(r, 1000));
+	});
+	const rendererOffFrame = await h.grabFrame(A, clip9);
+	const rendererDelta = await h.frameDelta(page, plainFrame, rendererOffFrame);
+	h.check(
+		rendererDelta.changed === 0,
+		'9.10 MEASURED: the renderer\'s tone mapping does not reach a COMPOSED frame — ' +
+			rendererDelta.changed +
+			' px change when it is switched off (three only applies it when the target is the canvas)'
+	);
+
+	// the effect, by contrast, is the thing that actually maps the composed image
+	await page.evaluate(async () => {
+		window.__stores.environment.registerToneMappingOwner(null);
+		const post = window.__stores.scenePost;
+		const id = post.addPostEffect('tonemapping');
+		post.setPostEffectParams(id, { mode: 'REINHARD' });
+		await new Promise((r) => setTimeout(r, 1400));
+	});
+	const effectFrame = await h.grabFrame(A, clip9);
+	const effectDelta = await h.frameDelta(page, plainFrame, effectFrame);
+	h.check(
+		effectDelta.changed > 2000 && effectDelta.max > 10,
+		'9.10b ...while the Tone mapping EFFECT does map it: ' +
+			effectDelta.changed +
+			' px differ, max ' +
+			effectDelta.max
+	);
+	await page.evaluate(() => {
+		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 24 });
+	});
+
+	// a COARSE-POINTER device is never auto-promoted into a full post stack — the
+	// mobile-AO default one level up. `(pointer: coarse)` really is emulable with a
+	// hasTouch context (unlike the mobile VIEWPORT, which needs isMobile too).
+	const T = await h.setupPage(browser, 'Touch', { context: { hasTouch: true } });
+	const touch = await T.page.evaluate(() => {
+		const read = () => {
+			let value = '';
+			window.__stores.viewMode.subscribe((v) => (value = v))();
+			return value;
+		};
+		localStorage.removeItem('viewModeChosen');
+		window.__stores.viewMode.set('shaded');
+		window.__stores.scenePost.scenePostRestore({
+			enabled: true,
+			effects: [{ id: 'a', kind: 'ao' }],
+			changedAt: 99
+		});
+		return { coarse: window.__stores.inputDevice.coarsePointer(), mode: read() };
+	});
+	h.check(touch.coarse === true, '9.11 premise: the touch context really reports a coarse pointer');
+	h.check(
+		touch.mode === 'shaded',
+		'9.12 a scene arriving with a look does NOT promote a touch device to Scene look (' + touch.mode + ')'
+	);
+
 	h.check(
 		h.pageErrors(A).concat(h.pageErrors(B)).filter((m) => /scenePost|postEffects|Outline/.test(m)).length === 0,
-		'8.9 no page errors from the post stack on either peer'
+		'9.13 no page errors from the post stack on either peer'
 	);
 
 	await h.finish(browser);

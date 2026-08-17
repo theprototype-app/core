@@ -1,6 +1,8 @@
 import { writable, get } from 'svelte/store';
 import { peers } from '../stores/appStore';
 import { viewMode } from '../stores/sceneStore';
+// dependency-free helper (sceneStore imports it too), so this stays a leaf
+import { coarsePointer } from './inputDevice';
 // L2: the 'look' history kind. Safe as a static import — history's own subtree is
 // three/stores/flowRuntime/editOverlays/meshBudget, and nothing in it reaches this
 // module, so the registerHistoryKind-in-the-body rule is not violated.
@@ -23,7 +25,7 @@ import { registerHistoryKind, recordEntry } from './history';
 /**
  * @typedef {{id: string, kind: string, enabled: boolean, params: Record<string, any>}} PostEntry
  * @typedef {{enabled: boolean, effects: PostEntry[], changedAt: number}} PostStack
- * @typedef {{key: string, label: string, min?: number, max?: number, step?: number, decimals?: number, default: any, options?: {value: any, label: string}[]}} PostParam
+ * @typedef {{key: string, label: string, type?: 'number'|'select'|'bool'|'asset', min?: number, max?: number, step?: number, decimals?: number, default: any, hint?: string, options?: {value: any, label: string}[]}} PostParam
  */
 
 // ---- the kind REGISTRY -----------------------------------------------------
@@ -44,10 +46,11 @@ const postKinds = {};
  *
  * @param {string} kind stable wire identifier
  * @param {{label: string, group?: string, isPass?: boolean, params?: PostParam[],
+ *   ownsToneMapping?: boolean,
  *   make: (params: Record<string, any>, ctx: any) => any,
  *   retarget?: (object: any, camera: any) => void,
  *   resize?: (object: any, width: number, height: number, dpr: number) => void,
- *   applyLocal?: (object: any, prefs: any) => void,
+ *   applyLocal?: (object: any, prefs: any, params: any) => void,
  *   dispose?: (object: any) => void}} def
  */
 export function registerPostEffect(kind, def) {
@@ -165,22 +168,28 @@ export const BUILTIN_AO = Object.freeze({ id: 'builtin-ao', kind: 'ao', enabled:
  *  - `shaded-ao`  the built-in AO only — today's chain, unchanged.
  *  - `custom`     the scene's authored stack.
  *
- * @param {{stack: PostStack, mode: string, localEnabled?: boolean, aoOk?: boolean, aoWarm?: boolean}} input
+ * L4 generalised the capability gate from AO to the WHOLE stack: `postOk` is the
+ * engine gate (viewMode.postSupported) and `postWarm` the boot-compile warm-up.
+ * Both now empty the entire effective stack rather than dropping the AO entry
+ * alone — the boot-compile window and the broken-link driver bug are properties of
+ * running ANY fullscreen pass, and AO was simply where we met them.
+ *
+ * @param {{stack: PostStack, mode: string, localEnabled?: boolean, postOk?: boolean, postWarm?: boolean}} input
  * @returns {PostEntry[]}
  */
-export function effectivePostStack({ stack, mode, localEnabled = true, aoOk = true, aoWarm = true }) {
+export function effectivePostStack({ stack, mode, localEnabled = true, postOk = true, postWarm = true }) {
 	if (mode === 'wireframe') return [];
-	const aoAllowed = aoOk && aoWarm;
+	if (!postOk || !postWarm) return [];
 	if (mode === 'shaded-ao') {
 		// deliberately NOT gated on localEnabled: this mode is not the authored
 		// look, it is the viewer's own choice of viewport shading
-		return aoAllowed ? [{ ...BUILTIN_AO, params: defaultPostParams('ao') }] : [];
+		return [{ ...BUILTIN_AO, params: defaultPostParams('ao') }];
 	}
 	if (mode !== 'custom') return [];
 	if (!localEnabled) return [];
 	const state = normalizeScenePost(stack);
 	if (!state.enabled) return [];
-	return state.effects.filter((entry) => entry.enabled && (entry.kind !== 'ao' || aoAllowed));
+	return state.effects.filter((entry) => entry.enabled);
 }
 
 /**
@@ -216,6 +225,18 @@ export function planPostStack(entries) {
 		else groups.push({ type: 'effects', entries: [entry] });
 	}
 	return { groups, skipped, passCount: groups.length };
+}
+
+/**
+ * L4: does anything in this EFFECTIVE stack map the frame itself?
+ *
+ * `environment.applyEnvironment` asks (through the seam Outline registers) so the
+ * renderer can drop to NoToneMapping — otherwise a Tone mapping entry maps an
+ * image the renderer has already mapped and the highlights crush twice.
+ * @param {PostEntry[]} entries
+ */
+export function stackOwnsToneMapping(entries) {
+	return (entries ?? []).some((entry) => !!postKinds[entry.kind]?.ownsToneMapping);
 }
 
 /**
@@ -456,6 +477,12 @@ export function sendScenePost(peerId, attempt = 0) {
  */
 export function adoptCustomView() {
 	if (typeof localStorage !== 'undefined' && localStorage.getItem('viewModeChosen') === 'true') return;
+	// L4: never promote a COARSE-POINTER device into a full post stack. The whole
+	// stack is fullscreen passes; AO alone was already a poor default on a phone
+	// GPU (defaultViewMode starts those devices in plain 'shaded') and several
+	// mobile drivers mis-compile such passes — the viewport then keeps showing a
+	// STALE frame with nothing in the console. They can still pick Scene look.
+	if (coarsePointer()) return;
 	const state = get(scenePost);
 	if (!state.enabled || !state.effects.some((entry) => entry.enabled)) return;
 	if (get(viewMode) === 'wireframe') return;

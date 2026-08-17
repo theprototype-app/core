@@ -180,6 +180,24 @@ function reconcileExtraLights(scene, defs) {
 	}
 }
 
+/**
+ * L4: "does the post stack tone-map the frame itself?"
+ *
+ * A REGISTRATION SEAM rather than an import: this module is reached from the
+ * viewMode/scene side, and importing scenePost (which imports history, which
+ * imports flowRuntime) to answer one boolean is exactly the kind of edge that
+ * TDZ-crashes the SSR prerender. Outline.svelte owns the composer and registers
+ * the answer — the registerAnnotationsPersistence pattern.
+ * @type {() => boolean}
+ */
+let toneMappingOwner = () => false;
+
+/** @param {(() => boolean) | null} fn */
+export function registerToneMappingOwner(fn) {
+	toneMappingOwner = fn ?? (() => false);
+	applyEnvironment(); // the answer may have changed since the last apply
+}
+
 /** Re-apply the current environment to the scene/renderer */
 export function applyEnvironment() {
 	const scene = get(globalScene);
@@ -208,7 +226,15 @@ export function applyEnvironment() {
 	backgroundColor.set(preset.background);
 
 	if (renderer) {
-		renderer.toneMapping = THREE.ACESFilmicToneMapping;
+		// L4: the post stack may own tone mapping. A ToneMapping entry maps the same
+		// image the renderer would, so leaving the renderer's own pass on grades it
+		// TWICE — visibly crushed highlights. The stack says so through the seam
+		// below rather than this module importing it, which keeps environment out of
+		// the post/history import family entirely.
+		const stackTonemaps = toneMappingOwner();
+		renderer.toneMapping = stackTonemaps ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+		// exposure is only read by three's tone mapping chunk, so it is inert under
+		// NoToneMapping — left as authored so switching back needs no re-apply
 		renderer.toneMappingExposure = (preset.exposure ?? 1) * (state.exposure ?? 1);
 		// honor a persisted 'off' shadow pref here too: the renderer arrives
 		// after lightParams' first subscribe fires (which would no-op on a null

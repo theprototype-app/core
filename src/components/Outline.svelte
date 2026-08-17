@@ -2,12 +2,14 @@
 	import { objectsGroup, selectedObjects, lockedObjects, viewMode, TControls } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
-	import { chromiumMajor, aoSupported } from '$lib/viewMode';
+	import { chromiumMajor, postSupported } from '$lib/viewMode';
+	import { registerToneMappingOwner, applyEnvironment } from '$lib/environment';
 	import {
 		scenePost,
 		postEnabledLocal,
 		effectivePostStack,
-		postStackSignature
+		postStackSignature,
+		stackOwnsToneMapping
 	} from '$lib/scenePost';
 	// side-effecting import: registers the built-in effect kinds. It also owns the
 	// postprocessing/n8ao imports, which is what keeps scenePost.js a pure leaf.
@@ -88,16 +90,29 @@
 	let stackInstances: any[] = [];
 	let stackPlan: any[] = [];
 	let stackSkipped: any[] = [];
+	/** L4: does the built stack map the frame itself? (environment reads this) */
+	let stackTonemaps = false;
 	// "would the compiled chain differ?" — a param scrub that changes nothing must
 	// not thrash the composer, and the effect below re-runs on every store write
 	let stackSignature = '';
+
+	// L4: answer environment's "does the post stack map the frame itself?" ONCE —
+	// the closure reads the live flag, so rebuildStack never re-registers.
+	// It must sit BELOW `stackTonemaps`: registerToneMappingOwner re-applies the
+	// environment synchronously, which calls this closure, and reading the `let`
+	// from above its declaration is a TDZ ReferenceError that takes the whole app
+	// down (every suite then dies in setupPage's waitForFunction — the signature).
+	registerToneMappingOwner(() => stackTonemaps && !renderer.xr.isPresenting);
 
 	/** Re-apply the LOCAL perf prefs to whatever is currently built. Kept off the
 	 * scene data: shadowQuality is one viewer's knob, so it pokes live instead of
 	 * forcing a rebuild. */
 	function applyLocalPrefs() {
 		const prefs = { shadowQuality: get(shadowQuality) };
-		for (const instance of stackInstances) instance.def?.applyLocal?.(instance.object, prefs);
+		// the entry's own PARAMS go along: L4 lets an author PIN AO's quality and
+		// half-resolution, in which case the local pref must not override them
+		for (const instance of stackInstances)
+			instance.def?.applyLocal?.(instance.object, prefs, instance.params);
 	}
 
 	function rebuildStack(entries: any[]) {
@@ -112,7 +127,8 @@
 			camera: camera.current,
 			width: size.current.width,
 			height: size.current.height,
-			dpr
+			dpr,
+			prefs: { shadowQuality: get(shadowQuality) }
 		});
 		stackPasses = compiled.passes;
 		stackInstances = compiled.instances;
@@ -123,6 +139,30 @@
 		// the outlines keep presenting.
 		stackPasses.forEach((pass, offset) => (composer as any).addPass(pass, 1 + offset));
 		applyLocalPrefs();
+		// L4 — TONE MAPPING, where the SCOPING is the whole point.
+		//
+		// MEASURED (three r18x, WebGLPrograms): `renderer.toneMapping` is applied to
+		// a material only when the current render target is the CANVAS (or an XR
+		// target) — `if (currentRenderTarget === null || isXRRenderTarget)`. The
+		// composer renders the scene into a TARGET, so on the desktop the renderer's
+		// own tone mapping never reaches the composed frame at all: flipping it
+		// changes exactly 0 pixels, which the suite asserts. The paths that DO render
+		// straight to the canvas are WebXR and the camera PiP inset.
+		//
+		// So the renderer stands down only where the stack genuinely replaces it —
+		// while the composer is presenting. In VR the composer does not run and the
+		// stack is skipped entirely, so standing down there would strip tone mapping
+		// with nothing to take its place: a regression in the headset.
+		// Registered ONCE below (the predicate reads the live flag), and the
+		// environment is re-applied only when ownership actually FLIPS: a param scrub
+		// rebuilds this chain on every pointermove, and applyEnvironment rebuilds the
+		// light rig, so re-registering per rebuild would rebuild the rig per frame of
+		// a slider drag.
+		const nextTonemaps = stackOwnsToneMapping(entries);
+		if (nextTonemaps !== stackTonemaps) {
+			stackTonemaps = nextTonemaps;
+			applyEnvironment();
+		}
 	}
 
 	// 16-P5: every pass above baked `camera.current` at CONSTRUCTION, so a camera
@@ -156,36 +196,39 @@
 		for (const instance of stackInstances)
 			instance.def?.resize?.(instance.object, $size.width, $size.height, dpr);
 	});
-	// The AO capability gate lives in viewMode.js (see chromiumMajor/aoSupported for
-	// the three-r185 + Chromium<=150 story and why the version comes from the brand
-	// list, not the UA string). Mobile is handled by the DEFAULT view mode rather
-	// than a lockout: a coarse-pointer device starts in plain 'shaded'
-	// (sceneStore.defaultViewMode) but may still turn AO on.
+	// L4: the capability gate now covers the WHOLE stack, not just AO (see
+	// viewMode.postSupported for the three-r185 + Chromium<=150 story, why the
+	// version comes from the brand list rather than the UA string, and why the
+	// generalisation is deliberately conservative). Mobile is handled by the
+	// DEFAULT view mode rather than a lockout: a coarse-pointer device starts in
+	// plain 'shaded' and is never auto-promoted to the scene's look, but may still
+	// choose either.
 	const engineMajor = chromiumMajor();
-	const aoOk = aoSupported();
+	const postOk = postSupported();
 	const onTouch = coarsePointer();
-	let aoMobileToasted = false;
-	// Only ever explain AO when the user CHOOSES it. Toasting on the boot state made
-	// every visitor with an unexpected UA (DevTools device emulation reports a canned
-	// old Chrome) open the app to a warning about a mode they never picked.
+	let postMobileToasted = false;
+	// Only ever explain the gate when the user CHOOSES a mode it affects. Toasting
+	// on the boot state made every visitor with an unexpected UA (DevTools device
+	// emulation reports a canned old Chrome) open the app to a warning about a mode
+	// they never picked.
 	let lastMode = get(viewMode);
-	// belt-and-braces for unknown engines: AO also skips the first composer frames
+	// belt-and-braces for unknown engines: post also skips the first composer frames
 	// (the boot-compile window is where the breakage bites hardest)
-	let aoWarm = $state(false);
+	let postWarm = $state(false);
 	let warmupFrames = 0;
-	let aoGateToasted = false;
+	let postGateToasted = false;
 
 	// THE CHAIN. Rebuilt only when the EFFECTIVE stack would compile differently:
 	// the scene's authored stack filtered through this viewer's own state (view
-	// mode, the local kill switch, the AO capability gate and the warm-up).
-	// `aoWarm` flipping after 10 frames is one extra rebuild, once.
+	// mode, the local kill switch, the capability gate and the warm-up).
+	// `postWarm` flipping after 10 frames is one extra rebuild, once.
 	$effect(() => {
 		const entries = effectivePostStack({
 			stack: $scenePost,
 			mode: $viewMode,
 			localEnabled: $postEnabledLocal,
-			aoOk,
-			aoWarm
+			postOk,
+			postWarm
 		});
 		const signature = postStackSignature(entries);
 		if (signature === stackSignature) return;
@@ -199,36 +242,42 @@
 		untrack(() => applyLocalPrefs());
 	});
 
-	// Only ever explain AO when the user CHOOSES a mode that would render it —
-	// never for the mode the app happened to boot in. Generalised past
-	// 'shaded-ao' because a scene's authored stack can carry AO too, and the
-	// answer to "would this mode render AO" is the planner's, not a string match.
+	// Only ever explain the gate when the user CHOOSES a mode that would render
+	// post — never for the mode the app happened to boot in. "Would this mode
+	// render anything" is the planner's answer, not a string match, so it covers a
+	// scene whose authored stack carries AO as well as the legacy shaded-ao mode.
 	$effect(() => {
 		const mode = $viewMode;
 		const justChosen = mode !== lastMode;
 		lastMode = mode;
 		if (!justChosen) return;
 		untrack(() => {
-			const wantsAo = effectivePostStack({
+			const wanted = effectivePostStack({
 				stack: get(scenePost),
 				mode,
 				localEnabled: get(postEnabledLocal),
-				aoOk: true,
-				aoWarm: true
-			}).some((entry) => entry.kind === 'ao');
-			if (!wantsAo) return;
-			if (!aoOk && !aoGateToasted) {
-				aoGateToasted = true;
+				postOk: true,
+				postWarm: true
+			});
+			if (!wanted.length) return;
+			// name what is actually being skipped: "ambient occlusion" when that is
+			// the whole of it, "the scene look" when a stack is involved
+			const onlyAo = wanted.every((entry) => entry.kind === 'ao');
+			const subject = onlyAo ? 'Ambient occlusion' : 'The scene look (post-processing)';
+			if (!postOk && !postGateToasted) {
+				postGateToasted = true;
 				showToast(
-					'Ambient occlusion stays off — this browser build (Chromium ' +
+					subject +
+						' stays off — this browser build (Chromium ' +
 						engineMajor +
-						') has a rendering bug with it. It returns after a browser update.'
+						') has a rendering bug with fullscreen effects. It returns after a browser update.'
 				);
 			}
-			if (aoOk && onTouch && !aoMobileToasted) {
-				aoMobileToasted = true;
+			if (postOk && onTouch && !postMobileToasted) {
+				postMobileToasted = true;
 				showToast(
-					'Ambient occlusion is heavy on mobile GPUs, and some drivers render it wrong — if the viewport stops updating as you move, switch the view mode back to Shaded.'
+					subject +
+						' is heavy on mobile GPUs, and some drivers render it wrong — if the viewport stops updating as you move, switch the view mode back to Shaded.'
 				);
 			}
 		});
@@ -250,7 +299,7 @@
 			if (renderer.xr.isPresenting) renderer.render(scene, camera.current);
 			else {
 				composer.render(delta);
-				if (!aoWarm && ++warmupFrames > 10) aoWarm = true;
+				if (!postWarm && ++warmupFrames > 10) postWarm = true;
 				renderPip();
 			}
 		},
@@ -359,8 +408,26 @@
 				outlinesLast:
 					((composer as any).passes ?? []).at(-2) === outlinePassLocked &&
 					((composer as any).passes ?? []).at(-1) === outlinePassSelected,
-				aoWarm,
-				aoOk
+				postWarm,
+				postOk,
+				// L4: what the renderer was TOLD about tone mapping and what it actually
+				// holds - double grading is invisible in the stack itself
+				stackTonemaps,
+				rendererToneMapping: (renderer as any).toneMapping,
+				// the RESOLVED AO knobs, which live on the pass and nowhere a store can
+				// see (the outline-colour precedent)
+				ao: (() => {
+					const found = stackInstances.find((instance: any) => instance.kind === 'ao');
+					const config = found?.object?.configuration;
+					return config
+						? {
+								aoRadius: config.aoRadius,
+								intensity: config.intensity,
+								distanceFalloff: config.distanceFalloff,
+								halfRes: config.halfRes
+							}
+						: null;
+				})()
 			});
 	});
 </script>

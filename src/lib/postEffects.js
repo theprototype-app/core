@@ -1,4 +1,4 @@
-import { EffectPass } from 'postprocessing';
+import { EffectPass, ToneMappingEffect, ToneMappingMode } from 'postprocessing';
 // @ts-ignore - n8ao ships no bundled type declarations
 import { N8AOPostPass } from 'n8ao';
 import { registerPostEffect, postEffectDef, planPostStack } from './scenePost';
@@ -18,7 +18,7 @@ import { registerPostEffect, postEffectDef, planPostStack } from './scenePost';
  * `EffectPass`; each `Pass` entry becomes itself.
  *
  * @param {any[]} entries the EFFECTIVE stack (already filtered by view mode)
- * @param {{scene: any, camera: any, width: number, height: number, dpr: number}} ctx
+ * @param {{scene: any, camera: any, width: number, height: number, dpr: number, prefs?: any}} ctx
  * @returns {{passes: any[], instances: {kind: string, id: string, object: any, def: any, isPass: boolean}[], skipped: any[], plan: any[]}}
  */
 export function compilePostStack(entries, ctx) {
@@ -46,7 +46,16 @@ export function compilePostStack(entries, ctx) {
 			}
 			if (!object) continue;
 			made.push(object);
-			instances.push({ kind: entry.kind, id: entry.id, object, def, isPass: !!def.isPass });
+			// the entry's PARAMS ride along: `applyLocal` needs them to know whether
+			// this author pinned a value the local pref would otherwise override (L4)
+			instances.push({
+				kind: entry.kind,
+				id: entry.id,
+				object,
+				def,
+				params: entry.params ?? {},
+				isPass: !!def.isPass
+			});
 		}
 		if (!made.length) continue;
 		if (group.type === 'pass') {
@@ -92,9 +101,31 @@ registerPostEffect('ao', {
 	// planner needs and the reason `isPass` is part of the registry contract.
 	isPass: true,
 	params: [
-		{ key: 'aoRadius', label: 'Radius', min: 0.05, max: 10, step: 0.05, decimals: 2, default: 1.5 },
+		{ key: 'aoRadius', label: 'Radius', min: 0.05, max: 10, step: 0.05, decimals: 2, default: 1.5,
+			hint: 'How far a surface looks for occluders, in world units.' },
 		{ key: 'intensity', label: 'Intensity', min: 0, max: 10, step: 0.1, decimals: 2, default: 2.5 },
-		{ key: 'distanceFalloff', label: 'Falloff', min: 0, max: 5, step: 0.05, decimals: 2, default: 1.0 }
+		{ key: 'distanceFalloff', label: 'Falloff', min: 0, max: 5, step: 0.05, decimals: 2, default: 1.0 },
+		// L4: quality and half-resolution have never had a UI. They default to
+		// 'auto', which is the pre-L4 behaviour exactly — follow this VIEWER's
+		// shadow-quality pref — so a scene that does not pin them behaves as before
+		// and each viewer keeps their own performance trade-off. Pinning them makes
+		// the look deterministic across the session, which is what an author wants
+		// when AO is doing real work in the image.
+		{ key: 'quality', label: 'Quality', type: 'select', default: 'auto',
+			hint: 'Auto follows this device’s shadow-quality setting.',
+			options: [
+				{ value: 'auto', label: 'Auto (follow device)' },
+				{ value: 'low', label: 'Low' },
+				{ value: 'medium', label: 'Medium' },
+				{ value: 'high', label: 'High' }
+			] },
+		{ key: 'halfRes', label: 'Half resolution', type: 'select', default: 'auto',
+			hint: 'Renders AO at half size — much cheaper, slightly softer.',
+			options: [
+				{ value: 'auto', label: 'Auto (follow device)' },
+				{ value: 'on', label: 'On' },
+				{ value: 'off', label: 'Off' }
+			] }
 	],
 	make: (params, ctx) => {
 		const pass = new N8AOPostPass(ctx.scene, ctx.camera, ctx.width, ctx.height);
@@ -105,6 +136,7 @@ registerPostEffect('ao', {
 		// ctx carries — the logical CSS size under-sizes the buffer and its output is
 		// upsampled into a "ghost" of the shading offset from the objects
 		pass.setSize(Math.round(ctx.width * ctx.dpr), Math.round(ctx.height * ctx.dpr));
+		applyAoQuality(pass, params, ctx.prefs ?? {});
 		return pass;
 	},
 	// third-party passes keep their OWN camera reference, outside the sweep
@@ -115,12 +147,62 @@ registerPostEffect('ao', {
 	resize: (pass, width, height, dpr) => {
 		pass.setSize(Math.round(width * dpr), Math.round(height * dpr));
 	},
-	// one local perf knob = shadowQuality, applied live without a rebuild
-	applyLocal: (/** @type {any} */ pass, /** @type {any} */ prefs) => {
-		const q = prefs?.shadowQuality;
-		pass.configuration.halfRes = q === 'low' || q === 'medium' || q === 'off';
-		if (pass.setQualityMode) pass.setQualityMode(q === 'high' ? 'High' : q === 'medium' ? 'Medium' : 'Low');
-	}
+	// the local perf knob (shadowQuality) still applies LIVE without a rebuild —
+	// but only for whichever of the two params is left on 'auto'
+	applyLocal: (/** @type {any} */ pass, /** @type {any} */ prefs, /** @type {any} */ params) =>
+		applyAoQuality(pass, params ?? {}, prefs ?? {})
+});
+
+/**
+ * Resolve AO's two performance params against the viewer's own pref.
+ *
+ * 'auto' reproduces the pre-L4 mapping EXACTLY (halfRes on for anything below
+ * high; quality mirrored from shadowQuality), which is what keeps a scene that
+ * never touches these rows rendering as it did.
+ * @param {any} pass @param {any} params @param {any} prefs
+ */
+function applyAoQuality(pass, params, prefs) {
+	const q = prefs?.shadowQuality;
+	const quality = params?.quality && params.quality !== 'auto' ? params.quality : q;
+	const half = params?.halfRes;
+	pass.configuration.halfRes =
+		half === 'on' ? true : half === 'off' ? false : q === 'low' || q === 'medium' || q === 'off';
+	if (pass.setQualityMode)
+		pass.setQualityMode(quality === 'high' ? 'High' : quality === 'medium' ? 'Medium' : 'Low');
+}
+
+// L4 — TONE MAPPING. It lands here rather than with the rest of the grading set
+// because it is half of the reconciliation story: the renderer applies
+// ACESFilmic + environment's exposure by default, so a ToneMapping entry in the
+// stack would map an already-mapped image. `ownsToneMapping` is what
+// Outline.svelte reports through environment's registerToneMappingOwner, which
+// switches the renderer to NoToneMapping while this entry is live.
+registerPostEffect('tonemapping', {
+	label: 'Tone mapping',
+	group: 'grading',
+	ownsToneMapping: true,
+	params: [
+		{ key: 'mode', label: 'Curve', type: 'select', default: 'AGX',
+			hint: 'Replaces the renderer’s own ACES Filmic mapping while this effect is in the stack.',
+			options: [
+				{ value: 'AGX', label: 'AgX' },
+				{ value: 'ACES_FILMIC', label: 'ACES Filmic' },
+				{ value: 'NEUTRAL', label: 'Neutral' },
+				{ value: 'REINHARD', label: 'Reinhard' },
+				{ value: 'REINHARD2', label: 'Reinhard 2' },
+				{ value: 'CINEON', label: 'Cineon' },
+				{ value: 'UNCHARTED2', label: 'Uncharted 2' },
+				{ value: 'LINEAR', label: 'Linear (none)' }
+			] },
+		{ key: 'whitePoint', label: 'White point', min: 0.1, max: 32, step: 0.1, decimals: 2, default: 4 },
+		{ key: 'middleGrey', label: 'Middle grey', min: 0.01, max: 2, step: 0.01, decimals: 2, default: 0.6 }
+	],
+	make: (params) =>
+		new ToneMappingEffect({
+			mode: /** @type {any} */ (ToneMappingMode)[params.mode] ?? ToneMappingMode.AGX,
+			whitePoint: num(params.whitePoint, 4),
+			middleGrey: num(params.middleGrey, 0.6)
+		})
 });
 
 /** @param {any} value @param {number} fallback */

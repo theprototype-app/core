@@ -2086,11 +2086,32 @@ override for e2e — never share 5173 (the user's main-checkout server).
   and the playhead the tick deleted, plus the Inspector Glow block (Strength +
   Colour) that never existed. New suites: `mesh-budget`, `selection-extras`,
   `edit-overlay-gaps`, `animation-look-channels`, `animation-loop-pause`.
-  KNOWN PRE-EXISTING RED: `prefabs.test.cjs` (a locator.click timeout in its own
-  flow) fails on clean release/next too — proven by an A/B, needs its own ticket.
+  The KNOWN PRE-EXISTING RED noted here (`prefabs` + its cluster) is CLEARED — see
+  the 2026-08-17 PR #142 entry below; the A/B that "proved" it was invalid.
   OWED: the user's repro for "the animation frame resets" (the autosave
   park/unpark ritual was measured INNOCENT), a decision on RELATIVE position
   channels, and the `vrFaceCap` measurement that would finish the #136 story.
+- Status (2026-08-17, before the 1.5.0 tag): **PR #141 MERGED (animation polish) and
+  PR #142 OPEN — every standing e2e red cleared, and NONE of them was a code
+  defect.** The `prefabs`/`mesh-edit-materials`/`uv-materials` "cluster" was a stale
+  long-lived dev server: those suites contain no `locator.click` of their own (their
+  only clicks come from `h.connect`), and all three are green on a fresh server — the
+  earlier A/B ran both sides against the same lying server. `h.connect` self-diagnoses
+  now instead of surfacing a bare 30s timeout. The other four were all ONE shape: a
+  fixed `waitForTimeout` racing something async — `animation-markers` (the playhead
+  tracks wall-clock to the millisecond; the PULSE reaches its Counter a flow tick
+  later, so a 1.5s marker lands at ~1.59s against a 1600ms read), `explorer` (a
+  per-file import landing at ~1.2s/~2.0s against a 1200ms sleep, PLUS a dock section
+  asserting the contract 5651aaa replaced, PLUS a reload racing `persistIndex`'s
+  un-awaited write), `view-mode` (a dynamic import ~1.2s cold vs a 600ms settle) and
+  `ui-fixes-15lmno` (looking for `input[type=number]` after 16-Q3 made every number
+  box a DragRow, which is `type="text"` on purpose). Each now waits on the THING —
+  playhead, stored record, item count — with a premise check pinning the window; the
+  wrap guard was re-proven by removing the branch. Also found: `explorer` had been
+  dying two thirds through, so its last third had not run in a long time. Baseline
+  **391/62**, build green. Full method notes in the e2e skill's flakes section.
+  DEFERRED to the next release by the user: scale-0 selection, duplicate carrying
+  clips + object flows, material sharing (cloud `pending/1.5.0-loose-ends.md`).
 - Status (2026-08-16): **19-A READY TO PR — P0–P5b + P7a + P7b COMMITTED (12 commits,
   branch `feat/mesh-tool-interaction`, NOT pushed); P6 and P7c are PARKED by the user
   and execute later as their own branches.** Hashes: P0 `bf6f2df` · P1 `8b0352f` ·

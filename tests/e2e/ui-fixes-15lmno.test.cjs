@@ -25,12 +25,17 @@ h.run(async () => {
 		w.objectActions.selectObject(window.__box.uuid, true);
 	});
 	await A.page.waitForTimeout(600);
+	// 16-Q3 replaced every bare `<input type="number">` with the shared DragRow field,
+	// which is deliberately `type="text"` (the native number spinner steals the arrow
+	// keys DragRow binds). The row itself is unchanged, so only the box selector moved:
+	// `.dn-input`. The check is the same one — the readout must show the material's own
+	// value, and must follow it when the material changes.
 	const readRoughness = () =>
 		A.page.evaluate(() => {
 			const row = [...document.querySelectorAll('.ui-row')].find((r) =>
 				r.textContent?.trim().startsWith('Roughness')
 			);
-			const num = row?.querySelector('input[type="number"]');
+			const num = row?.querySelector('input.dn-input');
 			return num ? Number(num.value) : null;
 		});
 	h.check((await readRoughness()) === 0.85, `the Roughness readout shows the material (${await readRoughness()})`);

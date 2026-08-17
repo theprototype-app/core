@@ -549,6 +549,41 @@ drops the P2P session.
 
 ## Known flakes / traps
 
+- **An assertion whose deadline is a `waitForTimeout` asserts the SCHEDULER as much
+  as the feature — and that is what a "flaky suite" almost always turns out to be.**
+  Every standing red cleared before the 1.5.0 tag (PR #142) was this one shape: a
+  fixed sleep racing something asynchronous, never a code defect. `animation-markers`
+  looked tick-rate sensitive for weeks; measured, the playhead tracks wall-clock TO
+  THE MILLISECOND, and what lags is the pulse reaching its Counter on the NEXT flow
+  tick — so a marker at 1.5s lands at ~1.59s and the suite read at a flat 1600ms,
+  about 10ms of margin. `explorer` slept 1200ms while a per-file import landed at
+  ~1.2s and ~2.0s. `view-mode` gave the shadow catcher 600ms when it comes back
+  through a dynamic import costing ~1.2s cold in dev.
+  The cure is never a bigger number. **Wait on the thing you actually mean** — the
+  playhead, the stored IndexedDB record, the item count — and add a PREMISE CHECK
+  pinning the window you waited into (`head >= 1.7 && head < 2`: past both markers,
+  short of the wrap). The premise check is what keeps the loosened wait honest, and
+  what tells you next time whether a failure is timing or behaviour.
+  Two sub-rules that fell out of it: a negative assertion ("the unsupported file is
+  skipped") still needs a bounded settle, so poll for ARRIVAL of what must appear and
+  then assert the FULL set on a finished state; and when the app fires and forgets a
+  write (`createFolder` does not await `persistIndex`), watch the RECORD rather than
+  sleeping — it is the thing the reload actually reads.
+- **Before believing any standing red, restart the dev server.** Three suites
+  (`prefabs`, `mesh-edit-materials`, `uv-materials`) were carried as a "known cluster"
+  with a shared cause. The shared cause was real but external: none of them contains a
+  `locator.click` of its own — their only clicks come from `h.connect` — and all three
+  are green on a freshly restarted server. The A/B that "proved pre-existing" ran both
+  sides against the same long-lived server, which lies identically to both.
+  `h.connect` self-diagnoses now (the peer, its collected page errors, whether the
+  connect chrome rendered) so this class names itself instead of surfacing as a bare
+  30s timeout. When a suite that touches no UI dies on a `locator.click`, the click is
+  in a HELPER — read the helper before reading your diff.
+- **A suite can die two thirds of the way through and nobody notices.** `explorer`
+  crashed on a null `#explorer-list` at its dock section; everything after it — folder
+  CRUD, cascade delete, the sidebar splitter, persistence — had not run in a long
+  time. A red you have learned to ignore is not one failing check, it is every check
+  BELOW it silently not running. Read how far the output got, not just its last line.
 - **A two-peer failure is signaling until proven otherwise.** The default PeerJS
   cloud goes flaky/rate-limited under a long verification run: `pong` failed
   with ZERO changes to it, then passed immediately under

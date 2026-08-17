@@ -576,7 +576,18 @@ function setChannel(obj, channel, v) {
 		}
 		case 'emissive': {
 			for (const material of materialsOf(obj)) {
-				if (material.emissiveIntensity !== undefined) material.emissiveIntensity = Math.max(0, v);
+				if (material.emissiveIntensity === undefined) continue;
+				material.emissiveIntensity = Math.max(0, v);
+				// three MULTIPLIES emissiveIntensity by the emissive COLOUR, and that
+				// colour is black on every default material — so animating Glow moved
+				// a number and changed no pixels (reported as "glow channel not
+				// working"). Give it something to scale the first time it is driven:
+				// white, i.e. a glow the object's own colour does not tint. An emissive
+				// colour the user (or a model) already chose is left alone, and
+				// captureBase/restoreBase carry the original so Stop puts the black
+				// back. Set a colour in the Inspector for a tinted glow.
+				if (material.emissive && material.emissive.getHex() === 0x000000 && v > 0)
+					material.emissive.setHex(0xffffff);
 			}
 			break;
 		}
@@ -599,7 +610,10 @@ function captureBase(object) {
 		color: material.color ? [material.color.r, material.color.g, material.color.b] : null,
 		metalness: material.metalness,
 		roughness: material.roughness,
-		emissiveIntensity: material.emissiveIntensity
+		emissiveIntensity: material.emissiveIntensity,
+		// the emissive COLOUR rides along because driving Glow lights a black
+		// emissive white (setChannel says why) — Stop has to put the black back
+		emissive: material.emissive ? material.emissive.getHex() : null
 	}));
 	return {
 		pos: object.position.toArray(),
@@ -632,6 +646,7 @@ function restoreBase(object, base) {
 			if (saved.metalness !== undefined) material.metalness = saved.metalness;
 			if (saved.roughness !== undefined) material.roughness = saved.roughness;
 			if (saved.emissiveIntensity !== undefined) material.emissiveIntensity = saved.emissiveIntensity;
+			if (saved.emissive != null && material.emissive) material.emissive.setHex(saved.emissive);
 		}
 	}
 	object.updateMatrix(); // serializers read object.matrix, not the live pose (see flowRuntime)
@@ -941,11 +956,27 @@ function editClip(uuid, clipId, fn) {
 	});
 }
 
-/** A visible default for the second key of a fresh track. @param {string} channel @param {number} from */
+/**
+ * A visible default for the second key of a fresh track.
+ *
+ * `from + 2` is right for a position or a light intensity, and WRONG for every
+ * channel `setChannel` CLAMPS to 0..1: opacity 1 -> 3 clamps straight back to 1,
+ * so a fresh Opacity track ran 1 -> 1 and adding the channel appeared to do
+ * nothing whatsoever. Roughness (default 1) and any colour component already at 1
+ * were dead the same way. Reported as "animations don't apply immediately" — it
+ * was never about timing, the track really was flat.
+ *
+ * The clamped channels therefore TOGGLE to the far end, whichever of 0/1 is
+ * further from where the object already is: the rule `visible` always used.
+ * @param {string} channel @param {number} from
+ */
 function defaultTo(channel, from) {
 	if (channel === 'visible') return from >= 0.5 ? 0 : 1;
 	if (channel.startsWith('scale')) return from * 1.5 || 1.5;
 	if (isRotChannel(channel)) return from + Math.PI / 2;
+	if (channel === 'opacity' || channel === 'metalness' || channel === 'roughness')
+		return from >= 0.5 ? 0 : 1;
+	if (channel.startsWith('color')) return from >= 0.5 ? 0 : 1;
 	return from + 2;
 }
 

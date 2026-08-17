@@ -740,9 +740,60 @@ function applyOriginPivot(obj, base, values) {
 	obj.position.add(offsetBase).sub(offsetNow);
 }
 
+// --- R1: position is RELATIVE ------------------------------------------------
+//
+// Position keys used to be absolute world values, so moving an object and pressing
+// play snapped it back to wherever the clip had been authored. A movement is a
+// movement — it should happen from where the thing IS. So a position track is read
+// as an offset from its FIRST key, replayed on top of the pose the run started at:
+//
+//     world = base.pos[axis] + (key - firstKey)
+//
+// The stored data does not change shape, only its meaning, and clips saved before
+// this reinterpret the same way (the user's call — a door authored at the origin
+// and then moved now opens where it stands, which is what people expected it to do
+// all along). Rotation and scale stay absolute: an angle and a factor already mean
+// the same thing wherever the object sits.
+//
+// Every reader of a position key goes through these two functions, and the INVERSE
+// matters as much as the forward direction: auto-key records the object's current
+// WORLD value, so without `keyValueOf` it would bake the current base into the key
+// and the movement would double on the next run.
+
+/** @type {Record<string, number>} */
+const POS_AXIS = { 'pos.x': 0, 'pos.y': 1, 'pos.z': 2 };
+
+/** The anchor a relative replay measures from: the value of the channel's FIRST
+ * key. @param {Clip} clip @param {string} channel */
+function channelAnchor(clip, channel) {
+	const track = clip?.tracks?.find((entry) => entry.channel === channel);
+	if (!track?.keys?.length) return 0;
+	let first = track.keys[0];
+	for (const key of track.keys) if (num(key.t) < num(first.t)) first = key;
+	return num(first.v);
+}
+
+/** The WORLD value a key means for an object whose run started at `basePos`.
+ * @param {Clip} clip @param {string} channel @param {number} v @param {number[]} [basePos] */
+export function worldValueOf(clip, channel, v, basePos) {
+	const axis = POS_AXIS[channel];
+	if (axis === undefined || !basePos) return v;
+	return num(basePos[axis]) + (num(v) - channelAnchor(clip, channel));
+}
+
+/** The KEY value that records an object currently at `current` — the inverse of
+ * worldValueOf, and what every write path must use.
+ * @param {Clip} clip @param {string} channel @param {number} current @param {number[]} [basePos] */
+export function keyValueOf(clip, channel, current, basePos) {
+	const axis = POS_AXIS[channel];
+	if (axis === undefined || !basePos) return current;
+	return channelAnchor(clip, channel) + (num(current) - num(basePos[axis]));
+}
+
 /**
  * Pose the object at `seconds` of clip time. Unkeyed channels return to the base
- * pose first, so a clip is an absolute statement about the channels it drives.
+ * pose first, so a clip is an absolute statement about the channels it drives —
+ * except position, which is relative to the base (see above).
  * @param {any} obj @param {Clip} clip @param {number} seconds @param {any} base
  */
 export function poseAt(obj, clip, seconds, base) {
@@ -752,7 +803,8 @@ export function poseAt(obj, clip, seconds, base) {
 	// choke point, so playback, a scrub and a bake all agree.
 	const at = clip.step ? Math.floor(seconds * clip.step + 1e-6) / clip.step : seconds;
 	const values = evaluateClip(clip, at);
-	for (const channel in values) setChannel(obj, channel, values[channel]);
+	for (const channel in values)
+		setChannel(obj, channel, worldValueOf(clip, channel, values[channel], base?.pos));
 	applyOriginPivot(obj, base, values);
 	obj.updateMatrix();
 }
@@ -1532,9 +1584,14 @@ export function clipToThreeClip(object, clip, opts = {}) {
 		// a STEPPED clip exports stepped: the look is part of the movement, so a
 		// baked copy that smoothed it would not be the same animation
 		const values = evaluateClip(clip, clip.step ? Math.floor(t * clip.step + 1e-6) / clip.step : t);
-		const px = values['pos.x'] ?? base.pos[0];
-		const py = values['pos.y'] ?? base.pos[1];
-		const pz = values['pos.z'] ?? base.pos[2];
+		// R1: position keys are relative, so the bake replays them from the object's
+		// CURRENT pose — the same mapping poseAt uses, or the exported clip would
+		// teleport the model back to wherever it was authored. Only a channel that
+		// HAS a value is mapped: an unkeyed one is already the base, and running it
+		// through the mapping would add the base to itself (its anchor is 0).
+		const px = 'pos.x' in values ? worldValueOf(clip, 'pos.x', values['pos.x'], base.pos) : base.pos[0];
+		const py = 'pos.y' in values ? worldValueOf(clip, 'pos.y', values['pos.y'], base.pos) : base.pos[1];
+		const pz = 'pos.z' in values ? worldValueOf(clip, 'pos.z', values['pos.z'], base.pos) : base.pos[2];
 		const rx = values['rot.x'] ?? base.rot[0];
 		const ry = values['rot.y'] ?? base.rot[1];
 		const rz = values['rot.z'] ?? base.rot[2];
@@ -1760,14 +1817,27 @@ export function captureAutoKey(uuid, seconds) {
 	// uniform scale is a legacy alias for the three axes; if a track already drives
 	// it, keep using that one rather than adding per-axis tracks beside it
 	const uniform = byChannel.get('scale');
+	// R1: position keys are RELATIVE, so a recorded key is the INVERSE of the pose
+	// mapping — without this, auto-key stores the current world value, the next run
+	// adds the base to it again, and the movement doubles every time. The anchor is
+	// the base the preview posed from, or the reference taken when REC was armed.
+	const anchorPos = bases.get(uuid)?.pos ?? reference?.pos ?? null;
 	for (const channel of watchableChannels(object)) {
 		const current = channelValue(object, channel);
 		const epsilon = STEPPED.has(channel) ? 0.5 : 1e-4;
 		const track = byChannel.get(channel) ?? (channel.startsWith('scale.') ? uniform : undefined);
 		if (track) {
-			const existing = sampleTrack(track, at);
+			const sampled = sampleTrack(track, at);
+			// compare in WORLD space: `sampled` is a key value, `current` is where the
+			// object actually is
+			const existing = sampled === null ? null : worldValueOf(clip, channel, sampled, anchorPos);
 			if (existing !== null && Math.abs(existing - current) < epsilon) continue;
-			writes.push({ trackId: track.id, channel: track.channel, v: current, from: null });
+			writes.push({
+				trackId: track.id,
+				channel: track.channel,
+				v: keyValueOf(clip, channel, current, anchorPos),
+				from: null
+			});
 			continue;
 		}
 		// no track yet: only record a channel the user actually MOVED, which needs a
@@ -1806,7 +1876,10 @@ export function rememberAutoKeyReference(uuid) {
 	/** @type {Record<string, number>} */
 	const values = {};
 	for (const channel of watchableChannels(object)) values[channel] = channelValue(object, channel);
-	autoKeyReference.set(uuid, { values });
+	// `pos` beside the values: R1 makes position keys relative, and a recorded key
+	// is measured from this pose when no preview base exists (the object was posed
+	// by hand rather than scrubbed to)
+	autoKeyReference.set(uuid, { values, pos: object.position.toArray() });
 }
 
 // --- saving ------------------------------------------------------------------

@@ -33,6 +33,22 @@ h.run(async () => {
 		'the commit ceiling is far above the preview one — that is the whole change'
 	);
 
+	// ---- 1b. the face-edit ENTRY cap, measured (R3) ------------------------
+	// A separate ceiling from the sync ones: it bounds INTERACTION cost, and it is
+	// what actually decides whether an imported model can be face-edited. R3
+	// measured the per-frame grab (5.4 us/triangle) and set the default from it.
+	const faceCap = await A.page.evaluate(() => {
+		const fe = window.__stores.faceEdit;
+		let live;
+		fe.vrFaceCap.subscribe((v) => (live = v))();
+		return { def: fe.VR_FACE_CAP, live };
+	});
+	h.check(faceCap.def === 2500, `the face-edit cap default is the measured 2500 (${faceCap.def})`);
+	h.check(
+		faceCap.live >= faceCap.def,
+		`and the live setting starts at least there (${faceCap.live})`
+	);
+
 	// ---- 2. a mesh in the newly-allowed band edits for real ----------------
 	// A sphere dense enough to be over the OLD cap and under the new one.
 	const built = await A.page.evaluate(async () => {

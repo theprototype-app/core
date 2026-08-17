@@ -67,10 +67,32 @@ import {
 // commit ships a full `meshgeo` snapshot (positions array + uuid, size-capped);
 // receivers swap the geometry wholesale. History kind 'meshgeo' is undoable.
 
-/** Default VR face cap — D7 (roadmap 13): raised from 300 so the default
- * sphere (960 tris) edits out of the box; the LIVE limit is the user-editable
- * `vrFaceCap` setting below */
-export const VR_FACE_CAP = 1000;
+/**
+ * Default face-edit cap — the number of triangles a session will OPEN on.
+ *
+ * D7 (roadmap 13) raised it from 300 to 1000 so the default sphere (960 tris)
+ * edits out of the box. R3 (2026-08-17) is the first time it was MEASURED, on a
+ * headless page, against the cost that actually decides how it feels — the LIVE
+ * GRAB, which runs every frame:
+ *
+ *   tris     enterFaceEdit   grab step (per frame)
+ *   528      8.7 ms          6.2 ms
+ *   2 208    22 ms           12.3 ms
+ *   9 800    87 ms           49 ms
+ *   25 280   245 ms          151 ms
+ *   67 080   822 ms          363 ms
+ *
+ * Roughly 5.4 microseconds per triangle per frame, so 16 ms (60fps) buys about
+ * 3000 and 9800 already drags at 20fps. 2500 is the honest default: it opens
+ * every primitive and most props, and it is the largest round number the
+ * measurement supports. A headless page under load is the pessimistic end, so a
+ * real desktop has headroom — which is why raising this in Settings ▸ VR (up to a
+ * dense import) stays a supported thing to do rather than a warning.
+ *
+ * The SYNC ceilings are separate and much higher (meshBudget.js): this one is
+ * about interaction cost, not about what can be replicated.
+ */
+export const VR_FACE_CAP = 2500;
 /** D7: user-editable face-edit triangle limit (Settings ▸ VR, local pref)
  * @type {import('svelte/store').Writable<number>} */
 export const vrFaceCap = writable(

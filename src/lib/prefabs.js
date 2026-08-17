@@ -4,6 +4,7 @@ import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { selectObject } from './objectActions';
+import { parkEditOverlays, stripEditOverlays } from './editOverlays';
 import { idbGet, idbPut } from './idb';
 
 // Personal prefab library: save any object/group as a reusable asset
@@ -67,7 +68,17 @@ export async function savePrefab(uuid, name) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
 	if (!object) return null;
-	const element = object.toJSON();
+	// a prefab is a serialize like any other: saving the object you are editing
+	// baked the mesh-edit WIREFRAME into the library entry, and every instance
+	// spread it to peers from then on (editOverlays.js)
+	const unpark = parkEditOverlays(object);
+	/** @type {any} */
+	let element;
+	try {
+		element = object.toJSON();
+	} finally {
+		unpark();
+	}
 	if (JSON.stringify(element).length > 5_000_000) {
 		showToast('Object is too large for a prefab (>5 MB)');
 		return null;
@@ -97,6 +108,7 @@ export async function savePrefabSelection(uuids, name) {
 		const object = group?.getObjectByProperty('uuid', uuid);
 		if (!object) continue;
 		const clone = object.clone(true);
+		stripEditOverlays(clone); // clone(true) copies the edit wireframe with it
 		object.updateWorldMatrix(true, false);
 		clone.matrix.copy(object.matrixWorld);
 		clone.matrix.decompose(clone.position, clone.quaternion, clone.scale);
@@ -134,6 +146,7 @@ export function instantiatePrefab(prefab, position) {
 		showToast('This prefab could not be loaded');
 		return null;
 	}
+	stripEditOverlays(object); // heals a prefab an older build saved mid-session
 	object.traverse((node) => (node.uuid = crypto.randomUUID()));
 	object.name = prefab.name;
 	if (position) object.position.copy(position);

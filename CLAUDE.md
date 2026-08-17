@@ -401,6 +401,35 @@ loadable play content. Everything a user does must be visible to connected peers
   needed NO new code — `snapping.apply()` writes the increments on the SHARED
   TControls the mesh proxy attaches to, so element drags always obeyed it; the
   toolbox just surfaces `snapEnabled`/`snapSettings`.
+  **SHADER GRAPHS** (branch `feat/shader-graph-spike`, SH0-SH4) — per-object and
+  scene-default node materials, four leaf-ish modules plus a dock tab:
+  `shaderBackends` = the `registerShaderBackend(key,label,compile)` REGISTRY (the
+  uvUnwrap shape; backends may be async) with TWO built-ins — `inject`
+  (onBeforeCompile, patching three's OWN shader at its chunk anchors; SH0.5 measured
+  it ~1000x faster than the alternative AND it is the only one that tracks a scene's
+  LIGHT SET, so it is the DEFAULT) and `shaderfrog` (@shaderfrog/core behind a
+  dynamic import — it can rewrite the whole program, so it stays as the "power"
+  backend, and `fixShaderfrogArrayVaryings()` in vite.config.ts is what makes it
+  work with shadows at all). `shaderCatalog` = curated node defs as pure DATA + a
+  GLSL emitter each (+ one raw-GLSL escape node). `shaderCompile` =
+  `compileShaderGraphToIR`: a memoised DFS from the Surface node's wired taps that
+  hoists every node into a TEMP (a reused subgraph compiles ONCE), coerces types
+  explicitly, guards cycles, and folds per-node `requires` into three's defines.
+  `shaderGraph` = the documents, keyed `'scene' | objectUuid | 'post:<id>'` (the
+  flowGraphs precedent) with `graphKeyFor` = own -> scene default -> the object's
+  real material; `setShaderGraphFor` is the SINGLE write path (setPhysicsFor
+  precedent, `silent` for the applier); `captureBase`/`detachFrom`;
+  `parkShaderMaterials` hooked into `parkAnimatedAtBase`; a debounced compile that
+  KEEPS the last good material on failure. `shaderSync` = the wire + the
+  `'shadergraph'` history kind (it is the module whose BODY calls
+  registerHistoryKind, so nothing in history's import subtree may reach it).
+  Multi-slot objects are REFUSED, the switchMaterialType precedent. UI:
+  `components/editors/ShaderEditor.svelte` (a FLOW_FAMILY dock tab, its own xyflow
+  instance so flowGraphs/nodesync stay byte-untouched; scope follows the SELECTION
+  like the node editor's flow graphs, so there is no scope control) +
+  `ShaderSidebar.svelte` + `nodes/ShaderNode.svelte` (ONE generic node for the whole
+  catalog). Plan + as-built: cloud `plans-core/pending/shader-graph-editor.md`; the
+  scene-wide half (post stack, layer 2) is `scene-look-post-processing.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
   serialized tree — a save taken mid-session wrote it into the file as a
@@ -793,6 +822,45 @@ loadable play content. Everything a user does must be visible to connected peers
   `enterFaceEdit` and was always the tighter gate. A suite that entered a session
   on a 19k-triangle sphere silently did nothing, and the "no preview was streamed"
   check after it passed VACUOUSLY — the premise check is what caught it.
+- **A uniform's VALUE must be runtime-ready, not the authored form.** A colour param
+  authored as `'#e62610'` handed to three throws `uniform3fv ... cannot be converted
+  to a sequence` from INSIDE the render loop, every frame. Literals were converted
+  sRGB->linear and uniform values were not; a sampler's value must start `null` with
+  the asset reference carried alongside, since three cannot upload a hash string.
+- **three's varyings are CONDITIONAL, so a generated shader must ask for them.** A
+  graph reading UV needs `USE_UV` in `material.defines` or `vUv` is not declared at
+  all on an untextured material. And an injected body that runs BEFORE
+  `<normal_fragment_begin>` must read the varying `vNormal`, not three's shaded
+  `normal`, which does not exist yet at that point.
+- **The FIRST render after installing a material is where three builds its program**,
+  so a pixel probe must render TWICE (or discard a warm-up sample) or it reads the
+  pre-injection picture — intermittently, which is worse than never.
+- **`palette.js` derives each object's colour from its uuid, so any pixel threshold
+  measured against "the base" is a bet on which cube the run produced.** Measured: a
+  red-multiply's r:g swing was 1.42->1.52 on a reddish cube and 0.86->1.09 on a blue
+  one. Compare two GRAPH colours on the SAME object, compare a shadow response to the
+  base material's own IN THE SAME CHANNEL (letting each pick its own dominant channel
+  compares a base's blue against a shader's red), and neutralise the base colour at
+  setup — that took one metric from a 20-38 spread to a stable 82.3.
+- **A feature with no ENTRY POINT is invisible to a suite that supplies its own.** The
+  Shader tab shipped with 20 green checks and no way for a user to open it: the suite
+  set `shaderEditorClose` directly. Same family as "a component that crashed on mount
+  is invisible to store-reading checks", one step earlier. Drive the real opener. Note
+  the two "+" add-menus (DockTabs.svelte AND Flow.svelte) keep SEPARATE item lists.
+- **xyflow dereferences `node.position` while adopting nodes**, so a graph document
+  without positions — created programmatically, arriving from a peer, or written by a
+  tool that ignored layout — crashes the whole editor on mount. Fill it in at
+  normalize time, on a DETERMINISTIC grid so two peers still agree byte for byte.
+- **A latest-wins stamp must be MONOTONIC per key.** A gesture writes several times
+  inside one millisecond, so those edits share a `Date.now()` and a `>=` guard drops
+  every one after the first — the drag AND the undo after it silently fail to
+  replicate. Bump past the previous stamp, and refuse only a STRICTLY older document
+  (an ordered DataConnection means an equal stamp arrived later).
+- **A document can arrive BEFORE the object it targets.** The handshake requests
+  objects and per-object records together and the small reply wins the race, so the
+  apply finds no target and nothing ever retries — a late joiner sat with the data and
+  a plain material forever. Reconcile off `objectsGroup` (debounced); it also covers
+  undoing an object delete.
 - **`ObjectLoader` cannot rebuild a `WireframeGeometry`**, so a fixture that crafts
   a stale edit-overlay with one fails to parse for a reason that has nothing to do
   with the thing under test (it returned null and the check read -1). Craft such
@@ -1976,6 +2044,28 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-17): **SHADER GRAPH EDITOR — SH0 through SH4 EXECUTED**, lane
+  `../theprototype-lane-shader` @ port 5197, branch `feat/shader-graph-spike`, 9
+  commits @be8cb0d off release/next @78e71d7 (merged in; the one conflict was
+  App.svelte's debugStores, as `git merge-tree` predicted). NOT PR'd. Baseline
+  **391/62** at every commit. Plan + as-built: cloud
+  `plans-core/pending/shader-graph-editor.md`. SH0 spike (all four gates measured) ->
+  the ShaderFrog array-varying vite patch -> **SH0.5, which flipped the backend
+  choice on CORRECTNESS**: adding a light to a scene leaves ShaderFrog-driven objects
+  byte-identically unchanged (it bakes three's light set into the source) while the
+  inject backend responds, and it compiles ~1000x faster -> SH1 (catalog + compiler +
+  documents) -> SH2 (replication + history + the shared clock) -> SH3 (+3b redesign:
+  scope follows the SELECTION, flow-style node cards with category-tinted headers,
+  typed sockets, wire removal, a searchable pane menu, both sidebars) -> SH4 (all
+  four save paths, proven by removing the park and watching the injected material
+  leak into the GLTF snapshot and the session toJSON). Suites: `shader-compile`(33,
+  NO browser), `shader-graph`(26), `shader-sync`(20, three peers), `shader-editor`(33,
+  real UI), `shader-persist`(19). **OWED, agreed with the user and NOT started**: the
+  Texture node cannot load a texture (it shows the hash — needs Explorer-reference
+  resolution + a real picker), four more Surface taps (normal / opacity / AO / vertex
+  displacement — the last needs a VERTEX-stage injection and a second compiler pass),
+  and the missing catalog nodes (Split/Combine, Tiling & offset, Panner, more maths,
+  Gradient). Then SH5 (Inspector integration) and SH6 (the SDK seam).
 - Status (2026-08-17): **v1.4.0 RELEASED + four follow-up PRs.** `main` @2d68fdb
   (tag `v1.4.0`, CHANGELOG "Move it"), release workflow green, cloud deployed at
   `CORE_REF=v1.4.0` (version.json 1.4.0 on both hosts), docs site deployed with the

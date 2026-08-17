@@ -37,12 +37,22 @@ h.run(async () => {
 	h.check(s.hasOverride === true && s.wireframe === true, 'Wireframe sets a wireframe scene override (local-only)');
 	h.check(s.catcherVisible === false, 'shadow catcher hides in wireframe mode');
 
-	// back to shaded-ao: override cleared, catcher back
+	// back to shaded-ao: override cleared, catcher back.
+	// The override clears synchronously, but the catcher comes back through
+	// `applyEnvironment`, which reaches the environment module by DYNAMIC import —
+	// free in a build, ~1.2s on a cold dev server (applyEnvironment itself runs in
+	// 0ms once loaded). A fixed 600ms settle raced that import and made this a
+	// standing red. Poll for the outcome instead: it still FAILS if the catcher
+	// never returns, it just no longer depends on how warm the module graph is.
 	await A.page.evaluate(() => window.__stores.viewMode.set('shaded-ao'));
-	await A.page.waitForTimeout(600);
+	await A.page.waitForTimeout(200);
 	s = await overrideState(A.page);
 	h.check(s.hasOverride === false, 'leaving wireframe clears the override');
-	h.check(s.catcherVisible === true, 'shadow catcher returns when not in wireframe');
+	await h.eventually(
+		() => overrideState(A.page),
+		(state) => state.catcherVisible === true,
+		'shadow catcher returns when not in wireframe'
+	);
 
 	// the choice is a persisted LOCAL pref (never on the wire)
 	const persisted = await A.page.evaluate(() => localStorage.getItem('viewMode'));

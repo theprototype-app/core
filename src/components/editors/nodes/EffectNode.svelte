@@ -10,7 +10,12 @@
 	type $$Props = NodeProps;
 	export let id: string;
 	export let data;
-	const INPUT: Record<string, string> = { lookat: 'target', setcolor: 'color', visibility: 'on' };
+	const INPUT: Record<string, string> = {
+		lookat: 'target',
+		setcolor: 'color',
+		visibility: 'on',
+		setuniform: 'value'
+	};
 	$: handleId = INPUT[data.type] ?? 'in';
 </script>
 
@@ -26,6 +31,16 @@
 					on:input={(e) => setNodeData(id, { color: e.currentTarget.value })} />
 				<span class="text-[10px] text-gray-400">or wire a color</span>
 			</label>
+		{:else if data.type === 'setuniform'}
+			<label class="flex w-full flex-col gap-0.5">
+				<span class="text-[9px] text-gray-400">uniform</span>
+				<input class="nodrag w-full font-mono text-[10px]" type="text" placeholder="u_c1_value"
+					value={data.uniform ?? ''}
+					on:change={(e) => setNodeData(id, { uniform: e.currentTarget.value })} />
+			</label>
+			<p class="text-[9px] leading-tight text-gray-500">
+				the name shown beside that param in the Shader editor
+			</p>
 		{:else if data.type === 'visibility'}
 			<label class="flex items-center gap-2">
 				<input class="nodrag" type="checkbox" checked={data.on !== false}

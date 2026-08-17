@@ -134,6 +134,14 @@
 	// ---- the selected node, for the properties pane ----------------------------
 	const selectedNode = $derived(nodes.find((/** @type {any} */ n) => n.selected) ?? null);
 	const selectedDef = $derived(selectedNode ? shaderNodeDef(selectedNode.type) : null);
+	// SH7: the uniform NAMES this node's params compile to. Mirrors the compiler's naming
+	// rule (`u_<nodeId>_<param>`) — the one place a user can read it, since a Set Shader
+	// Uniform flow node has to name a uniform to write it.
+	const uniformNames = $derived(
+		(selectedDef?.params ?? [])
+			.filter((/** @type {any} */ p) => p.uniform && p.type !== 'texture')
+			.map((/** @type {any} */ p) => 'u_' + String(selectedNode?.id ?? '').replace(/[^A-Za-z0-9_]/g, '_') + '_' + p.name)
+	);
 
 	// ---- actions ---------------------------------------------------------------
 	function createGraph() {
@@ -534,6 +542,15 @@
 							<p class="shader-hint">
 								{(selectedDef.inputs ?? []).length} in · {(selectedDef.outputs ?? []).length} out
 							</p>
+							<!-- SH7: the generated UNIFORM NAMES, so a Set Shader Uniform flow node has
+							     something to address. Without this the name is only discoverable by
+							     reading the compiler's naming rule. -->
+							{#if uniformNames.length}
+								<p class="shader-hint">uniforms — paste into a Set Shader Uniform node:</p>
+								{#each uniformNames as name (name)}
+									<code class="shader-uniform-name">{name}</code>
+								{/each}
+							{/if}
 						</div>
 					{:else}
 						<!-- no node selected: the GRAPH's own settings -->
@@ -747,5 +764,17 @@
 		font-size: 9px;
 		line-height: 1.35;
 		color: #6b7280;
+	}
+	.shader-uniform-name {
+		display: block;
+		font-family: ui-monospace, monospace;
+		font-size: 9px;
+		color: #a5b4fc;
+		background: rgba(0, 0, 0, 0.3);
+		border-radius: 3px;
+		padding: 1px 4px;
+		/* selectable, so it can be copied: the graph canvas otherwise eats the drag */
+		user-select: text;
+		overflow-wrap: anywhere;
 	}
 </style>

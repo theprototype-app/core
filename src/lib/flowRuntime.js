@@ -962,6 +962,19 @@ function applyAnimation(object, base, anim, time, ctx) {
 		if (object.material?.color && typeof data.color === 'string') object.material.color.set(data.color);
 	} else if (anim.type === 'visibility') {
 		object.visible = !!data.on; // boolean input shows/hides, base-managed
+	} else if (anim.type === 'setuniform') {
+		// SH7: drive a shader-graph uniform from a behaviour graph. LOCAL per peer, exactly
+		// like setcolor above: the VALUE arrives through the flow graph, which is already
+		// deterministic and replicated, so this needs no message of its own. Writing a
+		// uniform also needs no recompile — that is what the live uniform record is for.
+		const name = typeof data.uniform === 'string' ? data.uniform.trim() : '';
+		if (name && shaderRef?.shaderUniform) {
+			const slot = shaderRef.shaderUniform(object.uuid, name);
+			// NUMBERS only in v1: a flow number socket is what drives this, and a vecN would
+			// need an array that socket cannot carry
+			const value = Number(data.value);
+			if (slot && Number.isFinite(value)) slot.value = value;
+		}
 	}
 }
 

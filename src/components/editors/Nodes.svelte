@@ -108,6 +108,7 @@
 		lookat: EffectNode,
 		setcolor: EffectNode,
 		visibility: EffectNode,
+		setuniform: EffectNode,
 		onclick: OnClickNode,
 		onimpact: AnimationNode,
 		onenter: OnClickNode, // CL-C: same pulse card, sensor copy

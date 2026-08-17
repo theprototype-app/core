@@ -337,6 +337,32 @@ export function reconcileShaderGraphs() {
 	}
 }
 
+/**
+ * SH6: a module that supplied a backend has been disabled. Every graph naming it now has
+ * to compile through something that exists — so recompile them, which falls back to the
+ * built-in, and say so ONCE rather than per graph.
+ *
+ * The document keeps naming the module's backend on purpose: re-enabling the module (or
+ * opening the scene on a peer that has it) restores the intended compile without the
+ * graph having been rewritten behind the user's back.
+ * @param {string} key the full backend key (`mod-<id>-<key>`)
+ * @param {string} [label]
+ * @returns {Promise<number>} how many graphs fell back
+ */
+export async function fallBackFromBackend(key, label) {
+	const all = get(shaderGraphs);
+	const affected = Object.entries(all).filter(([, doc]) => doc?.backend === key);
+	if (!affected.length) return 0;
+	for (const [graphKey] of affected) scheduleCompile(graphKey, 0);
+	const { showToast } = await import('../stores/appStore.js');
+	showToast(
+		affected.length +
+			(affected.length === 1 ? ' shader graph uses' : ' shader graphs use') +
+			' the "' + (label || key) + '" backend, which is no longer loaded — using the built-in compiler instead.'
+	);
+	return affected.length;
+}
+
 /** Test seam. */
 export function stopReconcile() {
 	if (reconcileStop) reconcileStop();

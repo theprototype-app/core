@@ -74,9 +74,27 @@ export const DEFAULT_SHADER_BACKEND = 'shaderfrog';
 export async function compileShaderGraph(graph, ctx, key = DEFAULT_SHADER_BACKEND) {
 	if (key === 'shaderfrog') await ensureShaderfrogBackend();
 	if (key === INJECT_SHADER_BACKEND) ensureInjectBackend();
-	const backend = backends.get(key);
-	if (!backend) throw new Error('No shader backend registered for "' + key + '"');
-	return backend.compile(graph, ctx);
+	let backend = backends.get(key);
+	/** @type {string|null} */
+	let fellBackFrom = null;
+	if (!backend) {
+		// SH6: an unknown backend FALLS BACK to the built-in rather than throwing. This is
+		// not only the module-disabled case — a peer that never installed the module at all
+		// receives a graph naming it, and refusing to compile would leave that peer looking
+		// at a plain material with an error it cannot act on. The document keeps the original
+		// key, so the intended compile returns when the module does.
+		ensureInjectBackend();
+		backend = backends.get(INJECT_SHADER_BACKEND);
+		if (!backend) throw new Error('No shader backend registered for "' + key + '"');
+		fellBackFrom = key;
+	}
+	const material = await backend.compile(graph, ctx);
+	// stamp it so the editor (and a test) can tell a fallback from an intended compile
+	if (material && fellBackFrom) {
+		material.userData = material.userData ?? {};
+		material.userData.shaderBackendFallback = fellBackFrom;
+	}
+	return material;
 }
 
 // ---- the built-in INJECT backend (SH0.5) ---------------------------------------

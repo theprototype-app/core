@@ -1,6 +1,10 @@
 import { writable, get } from 'svelte/store';
 import { peers } from '../stores/appStore';
 import { viewMode } from '../stores/sceneStore';
+// L2: the 'look' history kind. Safe as a static import — history's own subtree is
+// three/stores/flowRuntime/editOverlays/meshBudget, and nothing in it reaches this
+// module, so the registerHistoryKind-in-the-body rule is not violated.
+import { registerHistoryKind, recordEntry } from './history';
 
 // L1 — the SCENE POST-PROCESSING STACK.
 //
@@ -235,14 +239,80 @@ export function postStackSignature(entries) {
 
 // ---- editing (local + replicate) ------------------------------------------
 
-/** Write the stack locally and replicate it (latest-wins). @param {(state: PostStack) => PostStack} fn */
+/** the open gesture: {before} while a slider drag is collecting */
+/** @type {{before: PostStack} | null} */
+let gesture = null;
+/** true while a history replay is writing, so the replay records nothing */
+let applyingHistory = false;
+
+/**
+ * Write the stack locally, record ONE undo entry, and replicate it (latest-wins).
+ *
+ * While a GESTURE is open (a DragRow scrub) the write is LOCAL only: the entry
+ * and the broadcast both wait for `endLookGesture`, so a drag that writes the
+ * store on every pointermove leaves one undo step and puts one message on the
+ * wire. The beginAnimGesture/endAnimGesture precedent exactly.
+ * @param {(state: PostStack) => PostStack} fn
+ */
 function commit(fn) {
+	const before = gesture || applyingHistory ? null : structuredClone(get(scenePost));
 	const next = normalizeScenePost(fn(get(scenePost)));
 	next.changedAt = Date.now();
 	scenePost.set(next);
+	if (gesture) return next; // the gesture owns the entry and the broadcast
+	if (before) recordLookEntry(before, next);
 	broadcastScenePost();
 	return next;
 }
+
+/** @param {PostStack} before @param {PostStack} after */
+function recordLookEntry(before, after) {
+	if (applyingHistory) return;
+	if (JSON.stringify(before.effects) === JSON.stringify(after.effects) && before.enabled === after.enabled) return;
+	recordEntry({
+		kind: 'look',
+		beforeStack: before,
+		afterStack: after,
+		before: 'before',
+		after: 'after'
+	});
+}
+
+/**
+ * Collect every edit until `endLookGesture` into ONE undo entry and ONE
+ * broadcast. Wire it to DragRow's `onscrubstart` / `onscrubend` (19-A P0): those
+ * fire only once the 3px dead zone is crossed, so a plain click never opens a
+ * gesture it would have to close again.
+ */
+export function beginLookGesture() {
+	if (gesture) endLookGesture();
+	gesture = { before: structuredClone(get(scenePost)) };
+}
+
+/** Commit the open gesture (no-op when nothing changed). */
+export function endLookGesture() {
+	const open = gesture;
+	gesture = null;
+	if (!open) return;
+	recordLookEntry(open.before, get(scenePost));
+	broadcastScenePost();
+}
+
+// Replaying writes the stored stack locally AND replicates it, so peers follow an
+// undo like any other edit (the 'joint'/'anim' presence-kind precedent).
+registerHistoryKind('look', (entry, state) => {
+	const target = state === entry.before ? entry.beforeStack : entry.afterStack;
+	applyingHistory = true;
+	try {
+		const next = normalizeScenePost(target);
+		next.changedAt = Date.now();
+		scenePost.set(next);
+		broadcastScenePost();
+	} finally {
+		applyingHistory = false;
+	}
+	return true;
+});
 
 /** Send the current stack to every peer. */
 export function broadcastScenePost() {
@@ -323,6 +393,34 @@ export function scenePostState() {
 	const state = get(scenePost);
 	return { type: 'scenepost', enabled: state.enabled, effects: state.effects, changedAt: state.changedAt };
 }
+
+/**
+ * Answer a `getscenepost` request, retrying until the connection opens (peerjs
+ * silently drops anything sent before that — the sendJoints/sendAnimations
+ * pattern). The handshake also PUSHES `scenePostState()` in both directions, so
+ * this is the explicit re-pull path rather than the only one.
+ * @param {string} peerId
+ */
+export function sendScenePost(peerId, attempt = 0) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer) return;
+	if (!get(scenePost).effects.length) return; // nothing authored, nothing to say
+	const conn = peer.connections[peerId];
+	if (!conn || !conn.open) {
+		if (attempt < 20) setTimeout(() => sendScenePost(peerId, attempt + 1), 500);
+		return;
+	}
+	conn.send(scenePostState());
+}
+
+// NO per-peer teardown, deliberately. Golden rule 3 asks for cleanup in
+// handleDisconnected because per-peer state outlives the peer that contributed
+// it — but the post stack is a SHARED SINGLETON with no per-peer keying, exactly
+// like `environment`, `music` and `scenephysics`, none of which have a
+// handleDisconnected entry either. A departing peer's authored look is the
+// scene's look and stays, the same way their objects do. When L5 adds LUT
+// textures those ride the content-hash push/pull, which has its own lifecycle.
 
 /**
  * A scene that ARRIVES carrying a look should be seen as its author intended, so

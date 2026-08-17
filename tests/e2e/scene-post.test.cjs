@@ -74,14 +74,18 @@ h.run(async () => {
 			]
 		};
 		const out = normalizeScenePost(raw);
+		// read defensively: if a regression DROPS the unknown entry, these checks
+		// must report a clean red rather than crashing the whole suite on an
+		// undefined index and taking every later section down with it
+		const at = (index) => out.effects[index] ?? {};
 		return {
 			enabled: out.enabled,
 			ids: out.effects.map((e) => e.id),
 			kinds: out.effects.map((e) => e.kind),
-			aoParams: out.effects[0].params,
-			fillEnabled: out.effects[1].enabled,
-			futureParams: out.effects[2].params,
-			futureExtra: out.effects[2].extraField,
+			aoParams: at(0).params ?? {},
+			fillEnabled: at(1).enabled,
+			futureParams: at(2).params ?? {},
+			futureExtra: at(2).extraField,
 			changedAt: out.changedAt
 		};
 	});
@@ -423,9 +427,365 @@ h.run(async () => {
 	h.check(adopt.wireKept === 'wireframe', '5.3 wireframe is never overridden (an active diagnostic view)');
 	h.check(adopt.emptyKept === 'shaded', '5.4 an empty stack promotes nobody');
 
+	// ---------------------------------------------------------------- section 6
+	// undo: ONE entry and ONE message per gesture
+	console.log('\n=== 6. the `look` history kind ===');
+
+	const undoResult = await page.evaluate(() => {
+		const post = window.__stores.scenePost;
+		const history = window.__stores.history;
+		const peers = window.__stores.peers;
+		// "did it broadcast?" through a capture stub — the public cloud is the
+		// slowest, flakiest layer and a message COUNT needs neither peer
+		let original = null;
+		peers.subscribe((p) => (original = p))();
+		const sent = [];
+		peers.set({ ...original, send: (message) => sent.push(message) });
+		try {
+			post.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+			const id = post.addPostEffect('ao');
+			const intensity = () => {
+				let value = -1;
+				post.scenePost.subscribe((s) => (value = s.effects.find((e) => e.id === id)?.params?.intensity ?? -1))();
+				return value;
+			};
+
+			// ONE discrete edit
+			sent.length = 0;
+			post.setPostEffectParams(id, { intensity: 5 });
+			const discreteSends = sent.filter((m) => m.type === 'scenepost').length;
+			const beforeGesture = intensity();
+
+			// a GESTURE (a DragRow scrub): many store writes, one entry, one message
+			sent.length = 0;
+			post.beginLookGesture();
+			for (let step = 0; step < 12; step++) post.setPostEffectParams(id, { intensity: 1 + step * 0.25 });
+			const midGestureSends = sent.filter((m) => m.type === 'scenepost').length;
+			post.endLookGesture();
+			const gestureSends = sent.filter((m) => m.type === 'scenepost').length;
+			const afterGesture = intensity();
+
+			// assert one-undo as a PROPERTY, never as a stack depth: recordEntry's
+			// LIMIT trim means a correct gesture can leave the depth unchanged
+			sent.length = 0;
+			history.undo();
+			const afterUndo = intensity();
+			const undoSends = sent.filter((m) => m.type === 'scenepost').length;
+			// ...and a SECOND undo must skip past the whole drag to what came before
+			// the discrete edit. Without this, "one undo reverts the drag" passes even
+			// when every pointermove recorded its own entry, because the gesture's
+			// entry still sits on top of them (measured: it does).
+			history.undo();
+			const afterSecondUndo = intensity();
+			history.redo();
+			history.redo();
+			const afterRedo = intensity();
+			return {
+				discreteSends,
+				beforeGesture,
+				midGestureSends,
+				gestureSends,
+				afterGesture,
+				afterUndo,
+				afterSecondUndo,
+				undoSends,
+				afterRedo
+			};
+		} finally {
+			peers.set(original);
+		}
+	});
+	h.check(undoResult.discreteSends === 1, '6.1 a discrete edit broadcasts exactly once (' + undoResult.discreteSends + ')');
 	h.check(
-		h.pageErrors(A).filter((m) => /scenePost|postEffects|Outline/.test(m)).length === 0,
-		'5.5 no page errors from the post stack'
+		undoResult.midGestureSends === 0,
+		'6.2 a gesture puts NOTHING on the wire mid-drag (' + undoResult.midGestureSends + ' messages over 12 writes)'
+	);
+	h.check(undoResult.gestureSends === 1, '6.3 ...and exactly one on gesture end (' + undoResult.gestureSends + ')');
+	h.check(
+		Math.abs(undoResult.afterGesture - 3.75) < 1e-6,
+		'6.4 premise: the drag really moved the value (' + undoResult.afterGesture + ')'
+	);
+	h.check(
+		Math.abs(undoResult.afterUndo - undoResult.beforeGesture) < 1e-6,
+		'6.5 ONE undo reverts the WHOLE drag: ' + undoResult.afterGesture + ' -> ' + undoResult.afterUndo
+	);
+	h.check(
+		Math.abs(undoResult.afterSecondUndo - 2.5) < 1e-6,
+		'6.6 a SECOND undo skips the whole drag to the AO default, not into it (' + undoResult.afterSecondUndo + ')'
+	);
+	h.check(undoResult.undoSends === 1, '6.7 an undo replicates, so peers follow it like any edit');
+	h.check(
+		Math.abs(undoResult.afterRedo - 3.75) < 1e-6,
+		'6.8 redo re-applies the gesture (' + undoResult.afterRedo + ')'
+	);
+
+	// ---------------------------------------------------------------- section 7
+	// replication: the handshake, live edits, latest-wins, and the unknown kind
+	console.log('\n=== 7. two peers ===');
+
+	// author BEFORE connecting, so B receives the stack through the HANDSHAKE —
+	// which is the late-joiner path, exercised without a third browser context
+	// (three pages is the practical ceiling on a loaded box)
+	await page.evaluate(() => {
+		const post = window.__stores.scenePost;
+		post.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+		const id = post.addPostEffect('ao');
+		post.setPostEffectParams(id, { intensity: 3.75, aoRadius: 2.25 });
+	});
+	const B = await h.setupPage(browser, 'B');
+	await h.connect(B, A);
+
+	const readStack = (peer) =>
+		peer.page.evaluate(() => {
+			let state = null;
+			window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+			return {
+				enabled: state.enabled,
+				changedAt: state.changedAt,
+				effects: state.effects.map((e) => ({ kind: e.kind, params: e.params, enabled: e.enabled }))
+			};
+		});
+
+	await h.eventually(
+		() => readStack(B),
+		(stack) => stack.effects.length === 1 && Math.abs(stack.effects[0].params.intensity - 3.75) < 1e-6,
+		'7.1 the handshake carries the authored stack to a joining peer, params and all',
+		20000
+	);
+	let stackB = await readStack(B);
+	h.check(
+		stackB.effects[0].kind === 'ao' && Math.abs(stackB.effects[0].params.aoRadius - 2.25) < 1e-6,
+		'7.2 ...every param, not just the first (aoRadius ' + stackB.effects[0]?.params?.aoRadius + ')'
+	);
+
+	// B RENDERS it: switching B to `custom` runs A's authored AO and the pixels move
+	const clipB = await h.centeredClip(B, [0, 0, 0], 360);
+	await B.page.evaluate(() => window.__stores.viewMode.set('shaded'));
+	await B.page.waitForTimeout(1500);
+	const bShaded = await h.grabFrame(B, clipB);
+	await B.page.evaluate(() => window.__stores.viewMode.set('custom'));
+	await B.page.waitForTimeout(1800);
+	const bCustom = await h.grabFrame(B, clipB);
+	const bDelta = await h.frameDelta(B.page, bShaded, bCustom);
+	h.check(
+		bDelta.changed > 300 && bDelta.max > 15,
+		'7.3 B RENDERS the stack it received: ' + bDelta.changed + ' px changed, max delta ' + bDelta.max
+	);
+
+	// a live edit on A follows to B
+	await page.evaluate(() => {
+		const post = window.__stores.scenePost;
+		let state = null;
+		post.scenePost.subscribe((s) => (state = s))();
+		post.setPostEffectParams(state.effects[0].id, { intensity: 7.5 });
+	});
+	await h.eventually(
+		() => readStack(B),
+		(stack) => Math.abs(stack.effects[0]?.params?.intensity - 7.5) < 1e-6,
+		'7.4 a live param edit on A reaches B',
+		15000
+	);
+
+	// AN UNKNOWN KIND, arriving from a peer on a newer build, must survive a round
+	// trip THROUGH A'S EDITOR — this is the check that a spread-the-base-record
+	// normalize buys, and the one a "drop what we cannot render" normalize fails
+	await B.page.evaluate(() => {
+		let peer = null;
+		window.__stores.peers.subscribe((p) => (peer = p))();
+		peer.send({
+			type: 'scenepost',
+			enabled: true,
+			changedAt: Date.now() + 200,
+			effects: [
+				{ id: 'u1', kind: 'from-the-future', params: { mystery: 42 } },
+				{ id: 'a1', kind: 'ao', params: { intensity: 2.5 } }
+			]
+		});
+	});
+	await h.eventually(
+		() => readStack(A),
+		(stack) => stack.effects.some((e) => e.kind === 'from-the-future'),
+		'7.5 A keeps an effect kind it cannot render',
+		15000
+	);
+	const skippedOnA = await page.evaluate(() => window.__postDebug());
+	h.check(
+		skippedOnA.skipped.includes('from-the-future') && skippedOnA.kinds.includes('ao'),
+		'7.6 ...and SKIPS it at render time while still compiling the rest: skipped ' +
+			JSON.stringify(skippedOnA.skipped) +
+			' built ' +
+			JSON.stringify(skippedOnA.kinds)
+	);
+
+	// now A edits the stack — the unknown entry must come back out on the wire
+	await page.evaluate(() => window.__stores.scenePost.addPostEffect('test-noop'));
+	await h.eventually(
+		() => readStack(B),
+		(stack) => stack.effects.some((e) => e.kind === 'from-the-future') && stack.effects.length === 3,
+		'7.7 the unknown kind survives a round trip through A\'s editor and comes back to B',
+		15000
+	);
+	stackB = await readStack(B);
+	h.check(
+		stackB.effects.find((e) => e.kind === 'from-the-future')?.params?.mystery === 42,
+		'7.8 ...with its params intact'
+	);
+
+	// latest-wins: an older stamp is ignored, or two drifted peers swap forever
+	const beforeStale = await readStack(A);
+	await B.page.evaluate(() => {
+		let peer = null;
+		window.__stores.peers.subscribe((p) => (peer = p))();
+		peer.send({ type: 'scenepost', enabled: true, changedAt: 1, effects: [] });
+	});
+	await page.waitForTimeout(3000);
+	const afterStale = await readStack(A);
+	h.check(
+		afterStale.effects.length === beforeStale.effects.length && afterStale.changedAt === beforeStale.changedAt,
+		'7.9 an OLDER changedAt is ignored (latest-wins, golden rule 7)'
+	);
+
+	// the explicit full-state request path
+	const answered = await B.page.evaluate(async () => {
+		let peer = null;
+		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+		let id = '';
+		window.__stores.peers.subscribe((p) => (id = p?.peer?.id))();
+		peer.send({ type: 'getscenepost', sender: id });
+		return true;
+	});
+	h.check(answered, '7.10 premise: B issued a getscenepost request');
+	await h.eventually(
+		() => readStack(B),
+		(stack) => stack.effects.length === 3,
+		'7.11 `getscenepost` is answered with the full stack (the explicit re-pull path)',
+		15000
+	);
+
+	// ---------------------------------------------------------------- section 8
+	// persistence: sessions/.tpscene and autosave across a real reload
+	console.log('\n=== 8. persistence ===');
+
+	const sessionRound = await page.evaluate(async () => {
+		const post = window.__stores.scenePost;
+		const sessions = window.__stores.sessions;
+		post.scenePost.set({ enabled: true, effects: [], changedAt: 5 });
+		const id = post.addPostEffect('ao');
+		post.setPostEffectParams(id, { intensity: 6.25 });
+		post.addPostEffect('from-the-future'); // an unknown kind must be SAVED too
+		const payload = sessions.buildSessionPayload('post-stack test');
+		// wipe the live stack, then restore from the payload
+		post.scenePost.set({ enabled: true, effects: [], changedAt: 6 });
+		post.scenePostRestore(payload.post);
+		let state = null;
+		post.scenePost.subscribe((s) => (state = s))();
+		return {
+			payloadKinds: (payload.post?.effects ?? []).map((e) => e.kind),
+			payloadIntensity: payload.post?.effects?.[0]?.params?.intensity,
+			restoredKinds: state.effects.map((e) => e.kind),
+			restoredIntensity: state.effects[0]?.params?.intensity
+		};
+	});
+	h.check(
+		sessionRound.payloadKinds.join(',') === 'ao,from-the-future' && sessionRound.payloadIntensity === 6.25,
+		'8.1 a session payload carries the stack (.tpscene rides the same payload)'
+	);
+	h.check(
+		sessionRound.restoredKinds.join(',') === 'ao,from-the-future' && sessionRound.restoredIntensity === 6.25,
+		'8.2 a session restore brings it back, unknown kind included'
+	);
+
+	const emptyPayload = await page.evaluate(() => {
+		const post = window.__stores.scenePost;
+		post.scenePost.set({ enabled: true, effects: [], changedAt: 7 });
+		return window.__stores.sessions.buildSessionPayload('no look').post;
+	});
+	h.check(emptyPayload === null, '8.3 a scene with no look adds no field (an older build sees nothing new)');
+
+	// AUTOSAVE across a real reload. "It still looks right" is not "it survived",
+	// so assert the SHAPE: the exact kinds, and the params, off a restored snapshot.
+	await page.evaluate(async () => {
+		const post = window.__stores.scenePost;
+		post.scenePost.set({ enabled: true, effects: [], changedAt: 8 });
+		const id = post.addPostEffect('ao');
+		post.setPostEffectParams(id, { intensity: 4.5, aoRadius: 3.5 });
+		post.addPostEffect('test-fill'); // becomes UNKNOWN after the reload
+		// only sceneStore/appStore/flowStore are SPREAD into __stores; a lib's own
+		// exports live under its module key
+		window.__stores.autosave.autosaveEnabled.set(true);
+		window.__stores.commandsHandler.sceneCommand('/create box');
+		await window.__stores.autosave.saveNow();
+	});
+	await page.waitForTimeout(1200);
+	await h.freshReload(A);
+	await page.waitForTimeout(2500);
+	const restored = await page.evaluate(async () => {
+		// the restore is offered as a sticky prompt, never applied automatically
+		let offer = null;
+		window.__stores.autosave.restoreAvailable.subscribe((value) => (offer = value))();
+		if (!offer) return { offered: false };
+		await window.__stores.autosave.restoreSnapshot();
+		let state = null;
+		window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+		return {
+			offered: true,
+			kinds: state.effects.map((e) => e.kind),
+			intensity: state.effects[0]?.params?.intensity,
+			radius: state.effects[0]?.params?.aoRadius,
+			enabled: state.enabled
+		};
+	});
+	h.check(restored.offered === true, '8.4 premise: the autosave snapshot was offered after the reload');
+	h.check(
+		restored.kinds?.join(',') === 'ao,test-fill',
+		'8.5 the stack survives a reload with its kinds and ORDER: ' + JSON.stringify(restored.kinds)
+	);
+	h.check(
+		restored.intensity === 4.5 && restored.radius === 3.5,
+		'8.6 ...and its params (intensity ' + restored.intensity + ', radius ' + restored.radius + ')'
+	);
+	// `test-fill` was registered by this suite in the OLD page, so after the reload
+	// it is a genuinely unknown kind — the preservation rule again, this time across
+	// persistence rather than across the wire. viewMode must be set explicitly:
+	// `skipped` is only populated for the EFFECTIVE stack, which is empty in
+	// `shaded`, so reading it in any other mode would report nothing skipped and
+	// pass whatever happened.
+	const afterReload = await page.evaluate(async () => {
+		window.__stores.viewMode.set('custom');
+		await new Promise((r) => setTimeout(r, 900));
+		return window.__postDebug();
+	});
+	h.check(
+		afterReload.skipped.includes('test-fill') && afterReload.kinds.includes('ao'),
+		'8.7 an unknown kind is kept and SKIPPED while the rest of the restored stack builds: skipped ' +
+			JSON.stringify(afterReload.skipped) +
+			' built ' +
+			JSON.stringify(afterReload.kinds)
+	);
+	const reRegistered = await page.evaluate(async () => {
+		const { Effect, BlendFunction } = window.__stores.postprocessing;
+		window.__stores.scenePost.registerPostEffect('test-fill', {
+			label: 'Test fill',
+			make: () =>
+				new Effect(
+					'TestFill',
+					'void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) { outputColor = vec4(0.0, 1.0, 0.0, 1.0); }',
+					{ blendFunction: BlendFunction.SET }
+				)
+		});
+		window.__stores.viewMode.set('custom');
+		await new Promise((r) => setTimeout(r, 900));
+		return window.__postDebug();
+	});
+	h.check(
+		reRegistered.kinds.includes('test-fill') && !reRegistered.skipped.includes('test-fill'),
+		'8.8 registering that kind afterwards makes the preserved entry render (the signature folds in registry state)'
+	);
+
+	h.check(
+		h.pageErrors(A).concat(h.pageErrors(B)).filter((m) => /scenePost|postEffects|Outline/.test(m)).length === 0,
+		'8.9 no page errors from the post stack on either peer'
 	);
 
 	await h.finish(browser);

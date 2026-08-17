@@ -16,6 +16,7 @@ import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
 import { jointsSnapshot, jointsRestore } from './joints';
+import { scenePostSnapshot, scenePostRestore } from './scenePost';
 import { sceneCommand, sendObjects } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
@@ -131,6 +132,10 @@ export function buildSessionPayload(name) {
 			edges: graphs[SCENE_GRAPH]?.edges ?? [],
 			annotations: annotationsSnapshot(),
 			joints: jointsSnapshot(),
+			// L2: the authored post stack rides BESIDE the objects like joints and
+			// annotations — it is scene data, not per-object data. Absent (null) when
+			// the scene has no look, so an older build reading this file sees no field.
+			post: scenePostSnapshot(),
 			camera: camera
 				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 				: null
@@ -434,6 +439,9 @@ export async function applySession(payload) {
 	annotationsRestore(payload.annotations ?? []);
 	// P-B: joints restore locally + replicate each def (receivers only apply)
 	jointsRestore(payload.joints ?? []);
+	// the look replicates on restore too, so loading a scene into a live room
+	// brings its art direction along (the jointsRestore precedent below)
+	scenePostRestore(payload.post, true);
 	if (peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
 	/** @type {any} */
 	const camera = get(globalCamera);

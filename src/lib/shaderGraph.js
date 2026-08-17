@@ -424,6 +424,11 @@ export function baseMaterialOf(uuid) {
 function applyMaterial(object, material) {
 	object.material = material;
 	installed.set(object.uuid, material);
+	// THREE trees are NOT reactive, so nothing observing the scene can see this: the
+	// Inspector's `material` derived and its shader-driven notice both read through
+	// `objectsGroup`, and without the poke they keep showing the pre-shader state. Safe
+	// from the reconcile's own subscriber because a compile always runs off a timer.
+	objectsGroup.update((v) => v);
 }
 
 // ---- texture uniforms ------------------------------------------------------------
@@ -486,11 +491,43 @@ export function detachFrom(object) {
 	forgetShaderContext(object);
 	// dispose only what WE made, never the base (the onionSkin rule)
 	if (mine && mine !== base && typeof mine.dispose === 'function') mine.dispose();
+	// and poke, for the same reason the install does — otherwise the Inspector keeps
+	// offering Detach for an object that is no longer shader-driven
+	objectsGroup.update((v) => v);
 }
 
 /** Is this object currently shader-driven? @param {string} uuid */
 export function isShaderDriven(uuid) {
 	return installed.has(uuid);
+}
+
+/**
+ * Does this object have (or inherit) a graph AT ALL? `isShaderDriven` answers "is a
+ * compiled material installed right now", which is false for a graph whose compile has
+ * not run yet — so the Inspector needs this one to decide what to OFFER.
+ * @param {string} uuid @returns {boolean}
+ */
+export function hasShaderGraph(uuid) {
+	return !!graphKeyFor(uuid);
+}
+
+/**
+ * Show the Shader editor (and bring its dock tab to the front). The seam the Inspector's
+ * "Open in Shader editor" button and the object context menu both go through, so there is
+ * one definition of what that means.
+ *
+ * Both imports are DYNAMIC: this module is reached from the compile/persist path, and a
+ * static edge into appStore/bottomDock from here would put UI chrome inside the graph
+ * store's import subtree for no gain.
+ * @returns {Promise<void>}
+ */
+export async function openShaderEditor() {
+	const [appStore, dock] = await Promise.all([
+		import('../stores/appStore.js'),
+		import('./bottomDock.js')
+	]);
+	appStore.shaderEditorClose.set(false);
+	dock.activateDock('shader');
 }
 
 /**

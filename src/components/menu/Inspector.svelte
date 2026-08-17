@@ -56,6 +56,8 @@
 	import { moveObjectToGroup, selectObject, flyTo } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
+	import { postEnabledLocal } from '$lib/scenePost';
+	import { chooseViewMode } from '$lib/viewMode';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
@@ -1285,11 +1287,11 @@
 			<Section label="View">
 				<p class="ui-section-label">Viewport — this device</p>
 				<div id="view-mode-switch" class="flex flex-wrap gap-1">
-					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
+					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['custom', 'Scene look'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
 						<button
 							class={'ui-chip ' +
 								($viewMode === mode ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
-							onclick={() => viewMode.set(mode)}
+							onclick={() => chooseViewMode(mode)}
 						>
 							{label}
 						</button>
@@ -1297,7 +1299,10 @@
 				</div>
 				<p class="mb-1 text-xs text-gray-400">
 					Local render mode (ambient occlusion + wireframe are desktop-only; not shown to peers).
+					"Scene look" renders the post-processing stack saved with the scene — post-processing
+					does not run in VR.
 				</p>
+				<Checkbox bind:checked={$postEnabledLocal}>Render the scene look on this device</Checkbox>
 				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
 				<Checkbox bind:checked={$showColliders}>Show colliders — this device</Checkbox>
 			</Section>

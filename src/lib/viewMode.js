@@ -8,6 +8,9 @@ import { viewPrefs } from './viewPrefs';
 //  - 'shaded'      : normal
 //  - 'shaded-ao'   : normal + N8AO (the AO pass toggles itself off the store)
 //  - 'wireframe'   : scene.overrideMaterial = a wireframe MeshBasicMaterial.
+//  - 'custom'      : L1 — render the SCENE's authored post stack (scenePost.js).
+// The mode stays local while the stack is scene data, which is the DCC convention:
+// viewport shading is a per-viewport setting in every one of those tools.
 // Wireframe uses overrideMaterial (not a per-material sweep) so it stays LOCAL —
 // a sweep would set `wireframe` on REPLICATED materials and any subsequent
 // full-object resend would leak the local view mode to peers. VR never uses the
@@ -31,6 +34,20 @@ function apply() {
 	// the shadow catcher hides in wireframe — dynamic import keeps the graph
 	// acyclic (environment statically imports wireframeActive from here)
 	import('./environment').then((m) => m.applyEnvironment());
+}
+
+/**
+ * The view-mode picker's write path.
+ *
+ * It records that the viewer PICKED a mode, which `scenePost.adoptCustomView`
+ * needs: `viewMode` persists to localStorage on every write, so the stored value
+ * alone cannot tell a deliberate choice from the boot default, and a scene
+ * arriving with a look would keep overriding someone who had chosen 'shaded'.
+ * @param {string} mode
+ */
+export function chooseViewMode(mode) {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('viewModeChosen', 'true');
+	viewMode.set(mode);
 }
 
 /** Whether the grid + shadow catcher should hide (wireframe renders them as junk). */

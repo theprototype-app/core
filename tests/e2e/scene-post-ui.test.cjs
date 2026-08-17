@@ -157,33 +157,68 @@ h.run(async () => {
 		'2.1 an empty stack shows the add row and no list'
 	);
 
-	let picked = await pickSelect(page, 'post-add-kind', 'Ambient occlusion');
-	h.check(picked.picked === true, '2.2 the add menu offers the registered kinds' + (picked.seen ? ' (saw ' + JSON.stringify(picked.seen) + ')' : ''));
-	await page.waitForTimeout(250);
-	await page.evaluate(() => document.querySelector('#post-add').click());
-	await page.waitForTimeout(500);
+	// the add flow is ONE action now: a button opening the shared ContextMenu,
+	// grouped by family, instead of a select + a separate Add press
+	const opened = await page.evaluate(async () => {
+		document.querySelector('#post-add').click();
+		await new Promise((r) => setTimeout(r, 350));
+		const menu = document.querySelector('[role="menu"]');
+		return {
+			open: !!menu,
+			groups: [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])].map((r) => r.textContent.trim())
+		};
+	});
+	h.check(opened.open === true, '2.2 the Add button opens a menu');
+	h.check(
+		opened.groups.some((g) => g.startsWith('Ambient occlusion')) &&
+			opened.groups.some((g) => g.startsWith('Colour grading')) &&
+			opened.groups.some((g) => g.startsWith('Camera FX')),
+		'2.2b it is grouped by family, one row per group: ' + JSON.stringify(opened.groups)
+	);
+	// hover the group to open its submenu, then click the leaf
+	const addedViaMenu = await page.evaluate(async () => {
+		const groupRow = [...document.querySelectorAll('[role="menuitem"]')].find((r) =>
+			r.textContent.trim().startsWith('Ambient occlusion')
+		);
+		groupRow?.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
+		groupRow?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+		await new Promise((r) => setTimeout(r, 400));
+		const leaf = [...document.querySelectorAll('[role="menuitem"]')].find(
+			(r) => r.textContent.trim() === 'Ambient occlusion'
+		);
+		leaf?.click();
+		await new Promise((r) => setTimeout(r, 500));
+		return !!leaf;
+	});
+	h.check(addedViaMenu, '2.3 premise: the submenu leaf was reachable and clicked');
 	let stack = await readStack(page);
-	h.check(stack.length === 1 && stack[0].kind === 'ao', '2.3 Add puts the picked kind on the stack');
+	h.check(stack.length === 1 && stack[0].kind === 'ao', '2.3b one click on the leaf adds that effect');
 	h.check(
 		await page.evaluate((id) => !!document.querySelector('#post-row-' + id), stack[0].id),
 		'2.4 ...and the list RENDERS a row for it'
 	);
 
-	// grouped labels: the add menu must not be a flat dozen
-	const grouped = await page.evaluate(() => {
-		document.querySelector('#post-add-kind').click();
-		return new Promise((resolve) =>
-			setTimeout(() => {
-				const rows = [...document.querySelectorAll('.ts-list [role="option"]')].map((r) => r.textContent.trim());
-				resolve(rows);
-			}, 250)
-		);
+	// THE REPORTED BUG: nothing in the add row may leave the panel. The old design
+	// put the group name INSIDE each option ("Colour grading · LUT (colour grade)"),
+	// which made the select refuse to shrink and pushed the Add button off the edge.
+	const fits = await page.evaluate(() => {
+		const button = document.querySelector('#post-add');
+		const box = button.getBoundingClientRect();
+		const panel = button.closest('[class*="drawer"], aside, .app-drawer') ?? document.body;
+		const panelBox = panel.getBoundingClientRect();
+		return {
+			right: box.right,
+			panelRight: panelBox.right,
+			viewport: window.innerWidth,
+			// and the pixel at its centre must BE the button, not something over it
+			hit: document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.id ?? ''
+		};
 	});
-	await closeSelect(page);
 	h.check(
-		grouped.some((r) => r.startsWith('Colour grading')) && grouped.some((r) => r.startsWith('Camera FX')),
-		'2.5 the add menu is grouped by family: ' + JSON.stringify(grouped)
+		fits.right <= fits.viewport && fits.right <= fits.panelRight + 1,
+		'2.5 the Add control stays inside the panel (' + Math.round(fits.right) + ' <= ' + Math.round(fits.panelRight) + ')'
 	);
+	h.check(fits.hit === 'post-add', '2.5b ...and is the element at its own centre (' + fits.hit + ')');
 
 	// per-entry enable
 	await page.evaluate((id) => document.querySelector('#post-toggle-' + id).click(), stack[0].id);
@@ -456,6 +491,24 @@ h.run(async () => {
 			inView: box.left >= -1 && box.right <= window.innerWidth + 1
 		};
 	});
+	// the reported overflow was a NARROW-panel failure, so assert it where it bit:
+	// every control in the section must stay inside the viewport at phone width
+	const narrowFit = await page.evaluate(() => {
+		const ids = ['post-add', 'post-counts', 'post-enabled'];
+		const over = [];
+		for (const id of ids) {
+			const el = document.querySelector('#' + id);
+			if (!el) continue;
+			const box = el.getBoundingClientRect();
+			if (box.right > window.innerWidth + 1 || box.left < -1)
+				over.push(id + '@' + Math.round(box.left) + '..' + Math.round(box.right));
+		}
+		return { over, width: window.innerWidth };
+	});
+	h.check(
+		narrowFit.over.length === 0,
+		'7.0 nothing in the section overflows at ' + narrowFit.width + 'px: ' + JSON.stringify(narrowFit.over)
+	);
 	h.check(sheet.present === true, '7.1 the section still renders at 420px wide');
 	h.check(sheet.wide === true && sheet.low === true, '7.2 it inherits the Inspector bottom SHEET (full width, bottom-anchored)');
 	h.check(sheet.inView === true, '7.3 nothing spills off the side');

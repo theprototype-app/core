@@ -10,6 +10,7 @@
 	// TypeScript annotation breaks the build with a useless error.
 	import DragRow from '../ui/DragRow.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
+	import ContextMenu from '../ContextMenu.svelte';
 	import { Checkbox } from 'flowbite-svelte';
 	import { onMount } from 'svelte';
 	import { viewMode } from '../../stores/sceneStore';
@@ -34,8 +35,9 @@
 	/** which entry has its parameters open (one at a time — the stack is the subject,
 	 * a single entry's knobs are the detail) */
 	let openId = $state('');
-	/** the kind picked in the add row */
-	let addKind = $state('');
+	/** the add menu's anchor while it is open: {x, y} | null */
+	/** @type {any} */
+	let menu = $state(null);
 	/** a live pointer reorder: {id, from, to} */
 	/** @type {any} */
 	let drag = $state(null);
@@ -56,18 +58,36 @@
 		test: 'Test',
 		other: 'Other'
 	};
-	const addItems = $derived(
-		postEffectKinds()
-			.slice()
-			.sort(
-				(a, b) =>
-					GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group) || a.label.localeCompare(b.label)
-			)
-			.map((def) => ({
-				value: def.kind,
-				name: (GROUP_LABEL[def.group] ?? def.group) + ' · ' + def.label
-			}))
-	);
+	/**
+	 * The add menu, as GROUPED SUBMENUS on the shared ContextMenu.
+	 *
+	 * It was a ThemedSelect whose item names carried their group as a prefix
+	 * ("Colour grading · LUT (colour grade)"). That pushed the Add button off the
+	 * edge of a narrow panel, made every entry read as a sentence, and only gets
+	 * worse — L6's post-domain presets land in this same menu. A context menu is the
+	 * app's own idiom for exactly this: it portals itself, clamps to the viewport,
+	 * nests by family, and brings type-to-filter over the flattened leaves for free.
+	 * It also collapses the old two-step "choose, then press Add" into one action.
+	 */
+	const addMenuItems = $derived.by(() => {
+		/** @type {Record<string, any[]>} */
+		const byGroup = {};
+		for (const def of postEffectKinds()) (byGroup[def.group] ??= []).push(def);
+		// known families first, in a deliberate order; anything a module registers
+		// under a new group follows, alphabetically
+		const extra = Object.keys(byGroup)
+			.filter((group) => !GROUP_ORDER.includes(group))
+			.sort();
+		return [...GROUP_ORDER, ...extra]
+			.filter((group) => byGroup[group]?.length)
+			.map((group) => ({
+				label: GROUP_LABEL[group] ?? group,
+				children: byGroup[group]
+					.slice()
+					.sort((a, b) => a.label.localeCompare(b.label))
+					.map((def) => ({ label: def.label, action: () => add(def.kind) }))
+			}));
+	});
 
 	/** @param {any} entry */
 	function labelOf(entry) {
@@ -79,9 +99,18 @@
 		return !postEffectDef(entry.kind);
 	}
 
-	function add() {
-		if (!addKind) return;
-		openId = addPostEffect(addKind);
+	/** @param {string} kind */
+	function add(kind) {
+		menu = null;
+		openId = addPostEffect(kind);
+	}
+
+	/** @param {any} event */
+	function openAddMenu(event) {
+		const box = event.currentTarget.getBoundingClientRect();
+		// anchor UNDER the button, left-aligned; ContextMenu clamps into the viewport
+		// from there (and shifts up rather than flipping when it will not fit below)
+		menu = { x: Math.round(box.left), y: Math.round(box.bottom + 4) };
 	}
 
 	// L5: the asset picker (a LUT today). The Explorer index has to be loaded or
@@ -254,10 +283,13 @@
 						{:else}
 							{#each postEffectDef(entry.kind).params as param (param.key)}
 								{#if param.type === 'select'}
+									<!-- min-w-0 + flex-1: without it a long option name makes the select
+										 refuse to shrink and pushes the row past the panel edge -->
 									<div class="ui-row items-center gap-2">
-										<span class="w-24 shrink-0 text-xs text-gray-300">{param.label}</span>
+										<span class="w-20 shrink-0 text-xs text-gray-300">{param.label}</span>
 										<ThemedSelect
 											id={'post-param-' + entry.id + '-' + param.key}
+											class="min-w-0 flex-1"
 											items={(param.options ?? []).map((/** @type {any} */ o) => ({ value: o.value, name: o.label }))}
 											value={entry.params[param.key]}
 											onchange={(v) => setPostEffectParams(entry.id, { [param.key]: v })}
@@ -265,9 +297,10 @@
 									</div>
 								{:else if param.type === 'asset'}
 									<div class="ui-row items-center gap-2">
-										<span class="w-24 shrink-0 text-xs text-gray-300">{param.label}</span>
+										<span class="w-20 shrink-0 text-xs text-gray-300">{param.label}</span>
 										<ThemedSelect
 											id={'post-param-' + entry.id + '-' + param.key}
+											class="min-w-0 flex-1"
 											items={assetItems}
 											value={entry.params[param.key] ?? ''}
 											placeholder="Pick a file…"
@@ -309,12 +342,23 @@
 	</div>
 {/if}
 
-<div class="ui-row items-center gap-2">
-	<ThemedSelect id="post-add-kind" items={addItems} value={addKind} placeholder="Add an effect…" onchange={(v) => (addKind = v)} />
-	<button id="post-add" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" disabled={!addKind} onclick={add}>
-		Add
-	</button>
-</div>
+<button
+	id="post-add"
+	class="ui-chip w-full justify-center bg-gray-600 text-gray-200 hover:bg-gray-500"
+	title="Add a post-processing effect to the scene's look"
+	onclick={openAddMenu}
+>
+	+ Add effect
+</button>
+{#if menu}
+	<ContextMenu
+		x={menu.x}
+		y={menu.y}
+		items={addMenuItems}
+		sizeKey="post-add"
+		onclose={() => (menu = null)}
+	/>
+{/if}
 
 <p class="text-[10px] italic text-gray-400">
 	The stack is part of the scene: everyone sees it and it is saved with the file. Whether YOUR

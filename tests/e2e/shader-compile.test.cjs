@@ -117,8 +117,36 @@ const edge = (from, to, targetHandle, sourceHandle = 'out') => ({
     res = compileShaderGraphToIR({ nodes: [tex, s6], edges: [edge(tex, s6, 'albedo', 'rgb')] });
     check(res.ok, 'a texture -> albedo graph compiles: ' + JSON.stringify(res.errors ?? []));
     const sampler = res.ir.uniforms.find((u) => u.type === 'sampler2D');
-    check(!!sampler && sampler.value === 'abc123', 'the sampler uniform carries the content HASH for assetShare to resolve: ' + JSON.stringify(sampler));
+    check(!!sampler && sampler.hash === 'abc123', 'the sampler uniform carries the content HASH for assetShare to resolve: ' + JSON.stringify(sampler));
+    check(sampler.value === null, 'and its VALUE starts null — three cannot upload a hash string as a sampler');
     check(/\.rgb/.test(res.ir.albedo), 'the rgb output swizzles the sampled temp: ' + res.ir.albedo);
+
+	// ---- 10. EVERY uniform value must be runtime-ready ---------------------
+	// Regression guard: a colour param authored as '#e62610' was handed to three
+	// verbatim, and `uniform3fv` threw from inside the render loop every frame.
+	const c2 = node('color', { value: '#e62610' });
+	const fl = node('float', { value: 3 });
+	const nz = node('noise', { scale: 5 });
+	const s7 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [c2, fl, nz, s7],
+		edges: [edge(c2, s7, 'albedo'), edge(fl, s7, 'roughness'), edge(nz, s7, 'metalness')]
+	});
+	check(res.ok, 'a graph with colour + float + noise params compiles');
+	const badUniforms = res.ir.uniforms.filter((u) => {
+		if (u.type === 'sampler2D') return u.value !== null;
+		if (u.type === 'float') return typeof u.value !== 'number';
+		return !Array.isArray(u.value) || u.value.some((n) => typeof n !== 'number' || !Number.isFinite(n));
+	});
+	check(
+		badUniforms.length === 0,
+		res.ir.uniforms.length + ' uniform values are all numbers/arrays three can upload: ' + JSON.stringify(badUniforms)
+	);
+	const colourUniform = res.ir.uniforms.find((u) => u.param === 'value' && u.type === 'vec3');
+	check(
+		Array.isArray(colourUniform.value) && colourUniform.value[0] > colourUniform.value[1],
+		'the colour uniform is a LINEAR triple, red-dominant: ' + JSON.stringify(colourUniform.value)
+	);
 
 	console.log(failures === 0 ? '\nALL PASS' : '\n' + failures + ' FAILURES');
 	process.exit(failures === 0 ? 0 : 1);

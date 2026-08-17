@@ -58,6 +58,7 @@
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
 	import { postEnabledLocal } from '$lib/scenePost';
 	import { chooseViewMode } from '$lib/viewMode';
+	import PostStack from './PostStack.svelte';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
@@ -1305,6 +1306,12 @@
 				<Checkbox bind:checked={$postEnabledLocal}>Render the scene look on this device</Checkbox>
 				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
 				<Checkbox bind:checked={$showColliders}>Show colliders — this device</Checkbox>
+			</Section>
+
+			<!-- L3: the scene's authored post stack. Its whole UI lives in PostStack.svelte
+				 so this shared file keeps a one-line edit. -->
+			<Section label="Post-processing">
+				<PostStack />
 			</Section>
 
 			<!-- 16-P4: everything about the VIEWPORT camera in one place (it used to be a

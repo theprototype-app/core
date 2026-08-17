@@ -219,6 +219,29 @@ export function planPostStack(entries) {
 }
 
 /**
+ * The cost model, for the UI to SHOW (L3's "Effects: N, passes: M" line).
+ *
+ * Measured over the whole AUTHORED stack rather than the effective one, because
+ * this answers "what did I build", not "what is this viewer rendering". The
+ * difference between `enabled` and `passes` is the merge doing its job, and
+ * making that visible is the point — otherwise an eight-entry stack looks eight
+ * times as expensive as it is.
+ * @param {PostStack} stack
+ */
+export function stackCounts(stack) {
+	const state = normalizeScenePost(stack);
+	const active = state.effects.filter((entry) => entry.enabled);
+	const plan = planPostStack(active);
+	return {
+		effects: state.effects.length,
+		enabled: active.length,
+		passes: plan.passCount,
+		skipped: plan.skipped.map((entry) => entry.kind),
+		merged: active.length - plan.skipped.length - plan.passCount
+	};
+}
+
+/**
  * A cheap identity for "would the compiled chain differ?" — the chain is rebuilt
  * only when this changes, so a param scrub that changes nothing does not thrash
  * the composer.

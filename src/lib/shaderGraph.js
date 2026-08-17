@@ -54,7 +54,20 @@ const installed = new Map();
 export function normalizeShaderGraph(doc) {
 	return {
 		...(doc ?? {}),
-		nodes: Array.isArray(doc?.nodes) ? doc.nodes : [],
+		// Every node needs a POSITION and a `data` object. xyflow dereferences
+		// `node.position` while adopting nodes, so a document without one — created
+		// programmatically, arriving from a peer, or from a save written by a tool that
+		// did not care about layout — takes the whole editor down on mount. Laid out on a
+		// deterministic grid, never randomly, so two peers normalizing the same document
+		// still agree byte for byte.
+		nodes: (Array.isArray(doc?.nodes) ? doc.nodes : []).map((/** @type {any} */ node, /** @type {number} */ i) => ({
+			...node,
+			position:
+				node?.position && Number.isFinite(node.position.x) && Number.isFinite(node.position.y)
+					? node.position
+					: { x: 60 + (i % 4) * 170, y: 40 + Math.floor(i / 4) * 130 },
+			data: node?.data ?? {}
+		})),
 		edges: Array.isArray(doc?.edges) ? doc.edges : [],
 		domain: doc?.domain === 'post' ? 'post' : 'surface',
 		backend: typeof doc?.backend === 'string' ? doc.backend : INJECT_SHADER_BACKEND,

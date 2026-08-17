@@ -8,6 +8,7 @@
   import FlowCode from './components/editors/FlowCode.svelte'
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
   import UvEditor from './components/editors/UvEditor.svelte'
+  import ShaderEditor from './components/editors/ShaderEditor.svelte'
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
   import ImagePreviewWindow from './components/editors/ImagePreviewWindow.svelte'
@@ -255,6 +256,7 @@
 <FlowCode />
 <AnimationWindow />
 <UvEditor />
+<ShaderEditor />
 <Explorer />
 <TextEditorWindow />
 <ImagePreviewWindow />

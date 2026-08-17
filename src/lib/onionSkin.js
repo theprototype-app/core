@@ -49,15 +49,29 @@ let live = null;
  *
  * Each ghost gets its OWN material instance, so two ghosts cannot fight over a
  * shared one and an animated look channel tints only the ghost it belongs to.
- * @param {any} object @param {number} colour
+ * @param {any} object @param {number} colour @param {number} [bias] depth-sort rank
  */
-function buildGhost(object, colour) {
+function buildGhost(object, colour, bias = 0) {
 	const material = new THREE.MeshBasicMaterial({
 		color: colour,
 		transparent: true,
 		opacity: OPACITY,
 		depthWrite: true,
-		side: THREE.FrontSide
+		side: THREE.FrontSide,
+		// A ghost sits ON the object whenever the movement between two keys is small,
+		// and two almost-coplanar surfaces at equal depth SHIMMER — the classic
+		// z-fight, reported as "they glitch like two planes in the same place".
+		// Pushing the ghost's fragments slightly FURTHER in depth settles it: where
+		// the two coincide the real object simply wins, and where the ghost really is
+		// in front it still draws. The standard fix for coplanar overlay geometry,
+		// and it keeps `depthWrite: true` — turning that off would lose the
+		// postprocessing passes (the documented AO/outline trap above).
+		//
+		// Each ghost takes its OWN bias, so two ghosts cannot fight each other
+		// either: they layer in a fixed order instead of flickering between frames.
+		polygonOffset: true,
+		polygonOffsetFactor: 1 + bias,
+		polygonOffsetUnits: 1 + bias
 	});
 	const clone = object.clone(true);
 	clone.traverse((/** @type {any} */ node) => {
@@ -150,8 +164,10 @@ export function updateOnionSkin() {
 		clearGhosts();
 		/** @type {{mesh: any, material: any, when: number}[]} */
 		const ghosts = [];
-		want.forEach((when) => {
-			const built = buildGhost(object, when < head ? PAST : FUTURE);
+		want.forEach((when, index) => {
+			// index = the depth-sort rank: every ghost sits behind the real object, and
+			// behind the ghost built before it, so nothing shimmers against anything
+			const built = buildGhost(object, when < head ? PAST : FUTURE, index);
 			ghostRoot.add(built.mesh);
 			ghosts.push({ ...built, when });
 		});

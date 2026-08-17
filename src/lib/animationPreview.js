@@ -1079,6 +1079,35 @@ function editClip(uuid, clipId, fn) {
 		set.clips[id] = next;
 		return set;
 	});
+	repose(uuid);
+}
+
+/**
+ * Show an edit IMMEDIATELY.
+ *
+ * Every clip mutation lands in `editClip` — a key value typed or dragged, a track
+ * added, a retime, a marker moved — and none of them re-posed the object, so the
+ * change only appeared once something else moved the playhead ("I have to click on
+ * the timeframe to see what changed"). One re-pose at the current parked position
+ * is what makes editing feel live, and it belongs at the single choke point rather
+ * than at each of a dozen call sites.
+ *
+ * Skipped while PLAYING (the tick owns the pose that frame) and when nothing is
+ * previewing this object (no base means the clip is not on screen at all, so there
+ * is nothing to refresh and no pose to disturb).
+ * @param {string} uuid
+ */
+function repose(uuid) {
+	const base = bases.get(uuid);
+	if (!base) return;
+	const p = get(playback)[uuid];
+	if (!p || p.playing) return;
+	const object = objectFor(uuid);
+	const clip = clipOf(uuid, p.clipId);
+	if (!object || !clip) return;
+	const seconds = parkedPosition(clip, p);
+	poseAt(object, clip, seconds, base);
+	playheads.update((map) => ({ ...map, [uuid]: seconds }));
 }
 
 /**

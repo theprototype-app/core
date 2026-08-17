@@ -246,5 +246,68 @@ h.run(async () => {
 		noMotion.showing === 0,
 		`...and none of them DRAWS, because each would sit exactly on the object (${noMotion.showing} showing)`
 	);
+	// ---- ghosts must not Z-FIGHT the object they copy ------------------------
+	// Reported as "they glitch, like two planes in the same place": a ghost sits ON
+	// the object whenever the movement between two keys is small, and two coplanar
+	// surfaces at equal depth shimmer. Each ghost carries a polygon offset instead —
+	// pushed further in depth than the real object, and than the ghost before it.
+	// Structural check: this asserts the STATE that prevents the fight, not the
+	// pixels (a shimmer is a per-frame race no headless read can see).
+	const depth = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const ap = w.animationPreview;
+		w.commandsHandler.sceneCommand('/create box 1 1 1');
+		await new Promise((r) => setTimeout(r, 700));
+		let g;
+		w.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+		const object = g.children[g.children.length - 1];
+		object.position.set(9, 1, 0);
+		w.objectActions.selectObject(object.uuid);
+		const id = ap.addTrack(object.uuid, 'pos.y', object);
+		// a TINY movement: the keys are 0.01 apart, so the ghosts all but coincide
+		let set;
+		ap.animations.subscribe((/** @type {any} */ v) => (set = v))();
+		const clipId = set[object.uuid].active;
+		const track = set[object.uuid].clips[clipId].tracks.find((/** @type {any} */ x) => x.id === id);
+		ap.updateKey(object.uuid, id, track.keys.length - 1, { v: track.keys[0].v + 0.01 }, clipId);
+		w.onionSkin.setOnionSkin(true);
+		ap.scrub(object.uuid, 1);
+		await new Promise((r) => setTimeout(r, 500));
+		let scene;
+		w.globalScene.subscribe((/** @type {any} */ v) => (scene = v))();
+		const root = scene.getObjectByName('onion-skin');
+		const mats = [];
+		for (const ghost of root?.children ?? []) {
+			let found = null;
+			ghost.traverse((/** @type {any} */ n) => {
+				if (!found && n.material) found = n.material;
+			});
+			if (found)
+				mats.push({
+					offset: !!found.polygonOffset,
+					factor: found.polygonOffsetFactor,
+					depthWrite: !!found.depthWrite,
+					visible: ghost.visible
+				});
+		}
+		return mats;
+	});
+	h.check(depth.length === 2, `two ghosts for the near-coincident clip (premise: ${depth.length})`);
+	h.check(
+		depth.every((m) => m.offset),
+		`every ghost carries a polygon offset, so it cannot fight the object (${JSON.stringify(depth.map((m) => m.factor))})`
+	);
+	h.check(
+		new Set(depth.map((m) => m.factor)).size === depth.length,
+		"...and each has its OWN, so two ghosts cannot fight each other either"
+	);
+	h.check(
+		depth.every((m) => m.depthWrite),
+		"depthWrite stays TRUE — turning it off would break the postprocessing passes"
+	);
+	h.check(
+		depth.some((m) => m.visible),
+		`a tiny movement still SHOWS its ghosts (${depth.filter((m) => m.visible).length} drawing)`
+	);
 	await h.finish(browser);
 });

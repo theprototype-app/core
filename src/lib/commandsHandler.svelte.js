@@ -576,7 +576,10 @@ export function sendObjects(peerId, element) {
 function multiMaterialSyncable(element) {
     if (!isMultiMaterial(element)) return false;
     const position = element.geometry?.attributes?.position;
-    // mirrors faceEdit's MAX_SNAPSHOT budget (45000 floats) for the same reason
+    // 45000 floats, and this one does NOT follow the raised meshBudget ceiling:
+    // that ceiling was raised because RAW BYTES ride the wire fine (12 MB measured),
+    // while this path sends toJSON's PLAIN NUMBER ARRAYS, whose limit is binarypack's
+    // per-element recursion — an unrelated constraint that did not move.
     if (position && position.count * 3 > 45000) {
         showToast('"' + (element.name || element.type) + '" is too large to share its material slots');
         return false;

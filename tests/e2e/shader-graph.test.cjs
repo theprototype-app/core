@@ -466,6 +466,202 @@ h.run(async () => {
 	);
 	h.check(glsl.length === 0, 'no GLSL errors from any texture state: ' + JSON.stringify(glsl.slice(0, 2)));
 
+
+	// ---- 8. the four extra taps, measured on the PICTURE ---------------------
+	//
+	// Every metric here compares two of OUR OWN values on the SAME object, because
+	// palette.js derives the base colour from the uuid and anything measured against
+	// "the base" is a bet on which cube the run produced.
+	const taps = await page.evaluate(async () => {
+		const S = window.__stores.shaderGraph;
+		const { mesh, renderer, scene, THREE, rt } = window.__g;
+		const out = {};
+
+		// sample a 20x20 window at an arbitrary WORLD point (the shared sampler projects an
+		// object's own position, and displacement needs a point above the cube)
+		const sampleAt = (x, y, z) => {
+			const r = renderer, prev = r.getRenderTarget();
+			r.setRenderTarget(rt);
+			r.render(scene, window.__g.camera);
+			r.render(scene, window.__g.camera); // twice: the first builds the program
+			r.setRenderTarget(prev);
+			const v = new THREE.Vector3(x, y, z).project(window.__g.camera);
+			const W = rt.width, H = rt.height, sz = 20;
+			const px = Math.round((v.x * 0.5 + 0.5) * W - sz / 2);
+			const py = Math.round((v.y * 0.5 + 0.5) * H - sz / 2);
+			if (px < 0 || py < 0 || px + sz > W || py + sz > H) return null;
+			const buf = new Uint8Array(sz * sz * 4);
+			r.readRenderTargetPixels(rt, px, py, sz, sz, buf);
+			return Array.from(buf);
+		};
+		const graph = (nodes, edges) => ({ nodes, edges });
+		const uuid = mesh.uuid;
+		const apply = async (g) => {
+			S.setShaderGraphFor(uuid, g);
+			await S.compileAndApply(uuid);
+		};
+
+		// --- OPACITY: the tap has to make the material BLEND, and must not touch the base
+		out.baseTransparentBefore = !!S.baseMaterialOf(uuid)?.transparent;
+		await apply(
+			graph(
+				[
+					{ id: 'c', type: 'color', data: { value: '#ff2020' } },
+					{ id: 'o', type: 'float', data: { value: 1 } },
+					{ id: 's', type: 'surface', data: {} }
+				],
+				[
+					{ id: 'e1', source: 'c', sourceHandle: 'out', target: 's', targetHandle: 'albedo' },
+					{ id: 'e2', source: 'o', sourceHandle: 'out', target: 's', targetHandle: 'opacity' }
+				]
+			)
+		);
+		out.materialTransparent = !!mesh.material.transparent;
+		out.baseTransparentAfter = !!S.baseMaterialOf(uuid)?.transparent;
+		out.injected = mesh.material.userData.shaderInjected;
+		out.opaque = sampleAt(0, 0.5, 0);
+		// now nearly see-through: the cube must blend toward whatever is behind it
+		S.setShaderParam(uuid, 'o', 'value', 0.08);
+		await S.compileAndApply(uuid);
+		out.seeThrough = sampleAt(0, 0.5, 0);
+
+		// --- NORMAL: overwrite the shading normal and the lighting must respond
+		const normalGraph = (nx, ny, nz) =>
+			graph(
+				[
+					{ id: 'c', type: 'color', data: { value: '#cccccc' } },
+					{ id: 'n', type: 'vector3', data: { value: [nx, ny, nz] } },
+					{ id: 's', type: 'surface', data: {} }
+				],
+				[
+					{ id: 'e1', source: 'c', sourceHandle: 'out', target: 's', targetHandle: 'albedo' },
+					{ id: 'e2', source: 'n', sourceHandle: 'out', target: 's', targetHandle: 'normal' }
+				]
+			);
+		await apply(normalGraph(0, 1, 0));
+		out.normalUp = sampleAt(0, 0.5, 0);
+		await apply(normalGraph(0, -1, 0));
+		out.normalDown = sampleAt(0, 0.5, 0);
+		out.normalApplied = mesh.material.userData.shaderInjected;
+
+		// --- AO: scales the INDIRECT diffuse, so give the scene something indirect to scale
+		// intensity 1, not 3: at 3 the lit sample CLIPS at 255 and the bright end of the
+		// comparison stops being able to move, which makes the number meaningless even
+		// though the check still passes
+		const amb = new THREE.AmbientLight(0xffffff, 1);
+		scene.add(amb);
+		const aoGraph = (v) =>
+			graph(
+				[
+					{ id: 'c', type: 'color', data: { value: '#cccccc' } },
+					{ id: 'a', type: 'float', data: { value: v } },
+					{ id: 's', type: 'surface', data: {} }
+				],
+				[
+					{ id: 'e1', source: 'c', sourceHandle: 'out', target: 's', targetHandle: 'albedo' },
+					{ id: 'e2', source: 'a', sourceHandle: 'out', target: 's', targetHandle: 'ao' }
+				]
+			);
+		await apply(aoGraph(1));
+		out.aoFull = sampleAt(0, 0.5, 0);
+		await apply(aoGraph(0.05));
+		out.aoDark = sampleAt(0, 0.5, 0);
+		scene.remove(amb);
+
+		// --- VERTEX DISPLACEMENT: a constant vector translates every vertex, so the
+		// SILHOUETTE moves. Probe a point above the cube: background before, cube after.
+		const box = new THREE.Box3().setFromObject(mesh);
+		const topY = box.max.y;
+		const probeY = topY + 0.35;
+		await apply(
+			graph(
+				[
+					{ id: 'c', type: 'color', data: { value: '#ff2020' } },
+					{ id: 's', type: 'surface', data: {} }
+				],
+				[{ id: 'e1', source: 'c', sourceHandle: 'out', target: 's', targetHandle: 'albedo' }]
+			)
+		);
+		out.aboveBefore = sampleAt(0, probeY, 0);
+		await apply(
+			graph(
+				[
+					{ id: 'c', type: 'color', data: { value: '#ff2020' } },
+					{ id: 'd', type: 'vector3', data: { value: [0, 0.7, 0] } },
+					{ id: 's', type: 'surface', data: {} }
+				],
+				[
+					{ id: 'e1', source: 'c', sourceHandle: 'out', target: 's', targetHandle: 'albedo' },
+					{ id: 'e2', source: 'd', sourceHandle: 'out', target: 's', targetHandle: 'position' }
+				]
+			)
+		);
+		out.aboveAfter = sampleAt(0, probeY, 0);
+		out.displaceInjected = mesh.material.userData.shaderInjected;
+		out.vertexIr = !!S.shaderGraphOf(uuid);
+		return out;
+	});
+
+	// opacity
+	h.check(taps.materialTransparent, 'an opacity tap makes the injected material BLEND (transparent = true)');
+	h.check(
+		!taps.baseTransparentBefore && !taps.baseTransparentAfter,
+		'and the object OWN material stays opaque — the backend works on a clone, so Detach and every serializer are unaffected'
+	);
+	const opq = stats(taps.opaque), thru = stats(taps.seeThrough);
+	h.check(
+		Math.abs(opq.r - thru.r) > 15,
+		'dropping opacity to 0.08 changes the picture: r ' + opq.r.toFixed(1) + ' -> ' + thru.r.toFixed(1)
+	);
+	h.check(
+		thru.r < opq.r,
+		'and it blends AWAY from the shader colour rather than toward it: r ' + opq.r.toFixed(1) + ' -> ' + thru.r.toFixed(1)
+	);
+
+	// normal
+	const nUp = stats(taps.normalUp), nDown = stats(taps.normalDown);
+	h.check(
+		Math.abs(nUp.mean - nDown.mean) > 8,
+		'a normal tap re-lights the surface: normal +Y mean ' + nUp.mean.toFixed(1) + ' vs -Y ' + nDown.mean.toFixed(1)
+	);
+	h.check(
+		nUp.mean > nDown.mean,
+		'facing the sun is brighter than facing away, which is the right SIGN: ' + nUp.mean.toFixed(1) + ' > ' + nDown.mean.toFixed(1)
+	);
+	h.check(
+		(taps.normalApplied?.applied ?? []).some((a) => a.includes('normal_fragment_maps')),
+		'and it lands at three own normal anchor: ' + JSON.stringify(taps.normalApplied)
+	);
+
+	// ao
+	const aoFull = stats(taps.aoFull), aoDark = stats(taps.aoDark);
+	h.check(
+		aoDark.mean < aoFull.mean - 4,
+		'an ao tap darkens the indirect light: ao 1.0 mean ' + aoFull.mean.toFixed(1) + ' -> ao 0.05 ' + aoDark.mean.toFixed(1)
+	);
+
+	// vertex displacement
+	const dispBefore = stats(taps.aboveBefore), dispAfter = stats(taps.aboveAfter);
+	h.check(
+		Math.abs(dispAfter.r - dispBefore.r) > 25,
+		'vertex displacement moves the SILHOUETTE: a point above the cube reads r ' +
+			dispBefore.r.toFixed(1) + ' undisplaced -> ' + dispAfter.r.toFixed(1) + ' displaced'
+	);
+	h.check(
+		dispAfter.r > dispBefore.r,
+		'the cube moved INTO that point rather than away from it (its albedo is red): ' +
+			dispBefore.r.toFixed(1) + ' -> ' + dispAfter.r.toFixed(1)
+	);
+	h.check(
+		(taps.displaceInjected?.applied ?? []).some((a) => a.startsWith('vertex:')),
+		'and the injection reports reaching the VERTEX shader: ' + JSON.stringify(taps.displaceInjected)
+	);
+	h.check(
+		(taps.displaceInjected?.missed ?? []).length === 0,
+		'with no missed anchors, so nothing silently failed to apply: ' + JSON.stringify(taps.displaceInjected?.missed)
+	);
+	h.check(glsl.length === 0, 'no GLSL errors from any tap: ' + JSON.stringify(glsl.slice(0, 3)));
+
 	const errs = h.pageErrors ? h.pageErrors(peer) : [];
 	h.check(errs.length === 0, 'no page errors: ' + JSON.stringify(errs.slice(0, 2)));
 	await h.finish(browser);

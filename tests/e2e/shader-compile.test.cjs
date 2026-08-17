@@ -210,6 +210,108 @@ const edge = (from, to, targetHandle, sourceHandle = 'out') => ({
 	res = compileShaderGraphToIR({ nodes: [texA, s8], edges: [edge(texA, s8, 'albedo', 'rgb')] });
 	check(res.ir.defines.USE_UV !== undefined, 'USE_UV is requested: ' + JSON.stringify(res.ir.defines));
 
+
+	// ---- 14. the four extra surface taps ------------------------------------
+	const cN = node('color', { value: '#8080ff' });
+	const fO = node('float', { value: 0.4 });
+	const fA = node('float', { value: 0.3 });
+	const s11 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [cN, fO, fA, s11],
+		edges: [edge(cN, s11, 'normal'), edge(fO, s11, 'opacity'), edge(fA, s11, 'ao')]
+	});
+	check(res.ok, 'normal + opacity + ao compile together: ' + JSON.stringify(res.errors ?? []));
+	check(!!res.ir.normal && !!res.ir.opacity && !!res.ir.ao, 'and each lands in its own IR field');
+	check(
+		!res.ir.albedo && !res.ir.emissive,
+		'while the taps NOT wired stay absent, so three keeps its own values'
+	);
+
+	// ---- 15. VERTEX DISPLACEMENT is a second pass --------------------------
+	// It needs its own body and temps: the stages are separate programs, so a temp
+	// hoisted in one is out of scope in the other.
+	const nzV = node('noise', { scale: 3 });
+	const s12 = node('surface');
+	res = compileShaderGraphToIR({ nodes: [nzV, s12], edges: [edge(nzV, s12, 'position')] });
+	check(res.ok, 'a graph that only displaces compiles: ' + JSON.stringify(res.errors ?? []));
+	check(!!res.ir.vertex && !!res.ir.vertex.position, 'it produces a vertex section: ' + JSON.stringify(res.ir.vertex));
+	check(res.ir.body === '', 'with an EMPTY fragment body — nothing was asked of the surface: ' + JSON.stringify(res.ir.body));
+	check(
+		res.ir.vertex.body.includes('tpNoise'),
+		'the noise is computed in the VERTEX body: ' + JSON.stringify(res.ir.vertex.body)
+	);
+
+	// the screen inputs mean different things per stage, and getting this wrong is SILENT:
+	// vUv exists in the vertex shader as an out variable, so it would compile silently
+	check(
+		/\buv\b/.test(res.ir.vertex.body) && !/vUv/.test(res.ir.vertex.body),
+		'the vertex body reads the uv ATTRIBUTE, never the vUv varying: ' + JSON.stringify(res.ir.vertex.body)
+	);
+	// the counterfactual: the SAME node in the fragment stage does use vUv, so the
+	// translation is really stage-dependent and not just a renamed constant
+	const nzF = node('noise', { scale: 3 });
+	const s13 = node('surface');
+	const fragRes = compileShaderGraphToIR({ nodes: [nzF, s13], edges: [edge(nzF, s13, 'roughness')] });
+	check(
+		/vUv/.test(fragRes.ir.body),
+		'while the fragment stage uses vUv for the same node: ' + JSON.stringify(fragRes.ir.body)
+	);
+	check(
+		res.ir.defines.USE_UV === undefined && fragRes.ir.defines.USE_UV !== undefined,
+		'so USE_UV is requested for the fragment graph only: vertex ' +
+			JSON.stringify(res.ir.defines) + ' vs fragment ' + JSON.stringify(fragRes.ir.defines)
+	);
+
+	// a graph with nothing displaced must leave three's vertex shader alone entirely
+	check(fragRes.ir.vertex === undefined, 'a graph that displaces nothing emits NO vertex section');
+
+	// one node feeding BOTH stages: shared uniform, separate bodies
+	const tm = node('time', { speed: 2 });
+	const s14 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [tm, s14],
+		edges: [edge(tm, s14, 'roughness'), edge(tm, s14, 'position')]
+	});
+	check(res.ok, 'one node can feed both stages: ' + JSON.stringify(res.errors ?? []));
+	check(
+		res.ir.body.includes('uShaderTime') && res.ir.vertex.body.includes('uShaderTime'),
+		'each stage gets its own copy of the statement'
+	);
+	check(
+		res.ir.uniforms.filter((u) => u.name === 'uShaderTime').length === 1,
+		'but the clock uniform is declared ONCE, so both stages move together'
+	);
+
+	// ---- 16. a fragment-only node in the vertex stage is REFUSED ------------
+	// There is no view vector at <begin_vertex> and no dFdx anywhere in a vertex shader,
+	// so this has to be an explained refusal rather than GLSL that fails in the driver.
+	const frV = node('fresnel');
+	const s15 = node('surface');
+	res = compileShaderGraphToIR({ nodes: [frV, s15], edges: [edge(frV, s15, 'position')] });
+	check(!res.ok, 'wiring Fresnel into vertex displacement is refused');
+	check(
+		/only works in the surface stage/i.test((res.errors ?? []).join(' ')),
+		'and the message names both stages: ' + JSON.stringify(res.errors)
+	);
+	const nmV = node('normalMap');
+	const s16 = node('surface');
+	res = compileShaderGraphToIR({ nodes: [nmV, s16], edges: [edge(nmV, s16, 'position')] });
+	check(!res.ok, 'so is the Normal map node (it needs screen-space derivatives)');
+	// and it still works where it belongs
+	const texNM = node('texture', { hash: 'abc' });
+	const nm2 = node('normalMap', { strength: 1 });
+	const s17 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [texNM, nm2, s17],
+		edges: [edge(texNM, nm2, 'map', 'rgb'), edge(nm2, s17, 'normal')]
+	});
+	check(res.ok, 'a texture -> Normal map -> normal graph compiles: ' + JSON.stringify(res.errors ?? []));
+	check(res.ir.prelude.includes('tpNormalMap'), 'and hoists its TBN helper into the prelude');
+	check(
+		res.ir.prelude.includes('dFdx') && res.ir.prelude.includes('1e-9'),
+		'which builds the basis from derivatives and guards the degenerate face'
+	);
+
 	console.log(failures === 0 ? '\nALL PASS' : '\n' + failures + ' FAILURES');
 	process.exit(failures === 0 ? 0 : 1);
 })().catch((err) => {

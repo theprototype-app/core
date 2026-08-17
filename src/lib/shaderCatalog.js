@@ -16,6 +16,9 @@
 //            `uniform: true`, so a param edit is a value write and never a recompile
 //   inputs   sockets [{name, type, default}] — `default` is the GLSL used when unwired
 //   outputs  sockets [{name, type, suffix}] — `suffix` swizzles the node's temp
+//   stages   which shader STAGES the node works in (absent = both). uv/normal mean
+//            different things per stage and `emit` receives the stage; a node needing the
+//            view vector or dFdx is 'fragment' only
 //   nativeType the GLSL type `emit` actually returns, when that is not the FIRST output's
 //            type. Every multi-output node needs it: the compiler declares one temp per
 //            node and the swizzled outputs read it, so the temp's type must not depend on
@@ -38,6 +41,9 @@
  * @property {any[]} [inputs]
  * @property {any[]} [outputs]
  * @property {GlslType} [nativeType]
+ * @property {('fragment'|'vertex')[]} [stages] which shader stages the node works in.
+ *   Absent = both. A node needing the view vector or screen-space derivatives is
+ *   fragment-only, and the compiler refuses it in the vertex pass with an explanation.
  * @property {string[]} [requires]
  * @property {string} [prelude]
  * @property {(arg: any) => string} [emit]
@@ -110,7 +116,9 @@ const DEFS = [
 		group: 'Input',
 		requires: ['uv'],
 		outputs: [{ name: 'out', type: 'vec2' }],
-		emit: () => 'vUv'
+		// the varying in the fragment shader, the ATTRIBUTE in the vertex one (three's
+		// vertex prefix always declares `uv`, but `vUv` only exists behind USE_UV)
+		emit: (a) => (a.stage === 'vertex' ? 'uv' : 'vUv')
 	},
 	{
 		key: 'normal',
@@ -118,15 +126,20 @@ const DEFS = [
 		group: 'Input',
 		requires: ['normal'],
 		outputs: [{ name: 'out', type: 'vec3' }],
-		// the VARYING, not three's shaded `normal`: our body is emitted before
-		// <normal_fragment_begin>, so the shaded one is not in scope yet
-		emit: () => 'normalize(vNormal)'
+		// FRAGMENT: the VARYING, not three's shaded `normal` — our body is emitted before
+		// <normal_fragment_begin>, so the shaded one is not in scope yet.
+		// VERTEX: the OBJECT-space normal, which is what displacement wants (and the only
+		// one that exists at <begin_vertex>, courtesy of <beginnormal_vertex>).
+		emit: (a) => (a.stage === 'vertex' ? 'objectNormal' : 'normalize(vNormal)')
 	},
 	{
 		key: 'viewDirection',
 		label: 'View direction',
 		group: 'Input',
 		requires: ['viewDir'],
+		// there is no view vector at <begin_vertex>: the position has not been transformed
+		// yet, so this is genuinely fragment-only rather than merely awkward
+		stages: ['fragment'],
 		outputs: [{ name: 'out', type: 'vec3' }],
 		emit: () => 'normalize(vViewPosition)'
 	},
@@ -148,7 +161,7 @@ const DEFS = [
 		// the ASSET is referenced by content hash so assetShare's push/pull covers
 		// peers and late joiners (golden rule 9)
 		params: [{ name: 'hash', type: 'texture', default: '', uniform: true }],
-		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv', vertexDefault: 'uv' }],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
 		// texture2D returns a vec4 whatever output is read — see `nativeType` above
 		nativeType: 'vec4',
 		outputs: [
@@ -266,6 +279,7 @@ const DEFS = [
 		label: 'Fresnel',
 		group: 'Utility',
 		requires: ['normal', 'viewDir'],
+		stages: ['fragment'], // needs the view vector
 		params: [{ name: 'power', type: 'float', default: 3, uniform: true }],
 		outputs: [{ name: 'out', type: 'float' }],
 		emit: (a) =>
@@ -307,6 +321,47 @@ const DEFS = [
 			'(floor(' + a.in.a + ' * ' + a.params.steps + ') / max(' + a.params.steps + ', 1.0))'
 	},
 
+	{
+		key: 'normalMap',
+		label: 'Normal map',
+		group: 'Utility',
+		requires: ['uv', 'normal', 'viewDir'],
+		// dFdx/dFdy are FRAGMENT-only, so this cannot be used for displacement
+		stages: ['fragment'],
+		inputs: [
+			{ name: 'map', type: 'vec3', default: null },
+			{ name: 'uv', type: 'vec2', default: 'vUv' },
+			{ name: 'normal', type: 'vec3', default: 'normalize(vNormal)' }
+		],
+		params: [{ name: 'strength', type: 'float', default: 1, uniform: true }],
+		outputs: [{ name: 'out', type: 'vec3' }],
+		// The TBN is built from SCREEN-SPACE DERIVATIVES rather than a tangent attribute:
+		// meshes here are primitives, imports and edited soups, and most carry no tangents
+		// (three only builds a tangent basis behind its own USE_NORMALMAP_TANGENTSPACE +
+		// USE_TANGENT path, which a hand-injected shader does not get). This is three's own
+		// `perturbNormal2Arb` approach.
+		//
+		// `vViewPosition` is -viewPosition in three, hence the negation.
+		prelude:
+			'vec3 tpNormalMap(vec3 baseN, vec2 uvCoord, vec3 mapRgb, float strength) {\n' +
+			'  vec3 q0 = dFdx(-vViewPosition);\n' +
+			'  vec3 q1 = dFdy(-vViewPosition);\n' +
+			'  vec2 st0 = dFdx(uvCoord);\n' +
+			'  vec2 st1 = dFdy(uvCoord);\n' +
+			'  // a face with no uv variation gives a degenerate basis, and normalize(0) is\n' +
+			'  // NaN — which would paint the whole face black rather than leave it alone\n' +
+			'  if (length(st0) + length(st1) < 1e-9) return baseN;\n' +
+			'  vec3 S = normalize(q0 * st1.y - q1 * st0.y);\n' +
+			'  vec3 T = normalize(-q0 * st1.x + q1 * st0.x);\n' +
+			'  vec3 mapN = mapRgb * 2.0 - 1.0;\n' +
+			'  mapN.xy *= strength;\n' +
+			'  return normalize(mat3(S, T, baseN) * mapN);\n' +
+			'}\n',
+		emit: (a) =>
+			'tpNormalMap(normalize(' + a.in.normal + '), ' + a.in.uv + ', ' + a.in.map + ', ' +
+			a.params.strength + ')'
+	},
+
 	// ---- the escape hatch -------------------------------------------------------
 	{
 		key: 'glsl',
@@ -341,7 +396,12 @@ const DEFS = [
 			{ name: 'albedo', type: 'vec3', default: null },
 			{ name: 'emissive', type: 'vec3', default: null },
 			{ name: 'roughness', type: 'float', default: null },
-			{ name: 'metalness', type: 'float', default: null }
+			{ name: 'metalness', type: 'float', default: null },
+			{ name: 'normal', type: 'vec3', default: null },
+			{ name: 'opacity', type: 'float', default: null },
+			{ name: 'ao', type: 'float', default: null },
+			// the one VERTEX tap: displaces the position, so it compiles in its own pass
+			{ name: 'position', type: 'vec3', default: null }
 		],
 		outputs: []
 	}

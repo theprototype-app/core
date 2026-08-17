@@ -107,16 +107,43 @@ export function ensureInjectBackend() {
 }
 
 /**
- * The taps we expose, as [IR field, the three variable it writes].
- * `map_fragment` is where a texture would multiply albedo, so injecting there gives the
- * same semantics ShaderFrog's `diffuseColor *= sampledDiffuseColor` has.
+ * The FRAGMENT taps we expose, as [IR field, the write, the anchor it lands after].
+ *
+ * Each anchor is chosen so the variable being written is already in scope AND has not yet
+ * been consumed by three:
+ * - `map_fragment` is where a texture would multiply albedo, so injecting there gives the
+ *   same semantics ShaderFrog's `diffuseColor *= sampledDiffuseColor` has.
+ * - `alphamap_fragment` still precedes `<alphatest_fragment>`, so an authored opacity is
+ *   subject to three's own alpha test rather than bypassing it.
+ * - `normal_fragment_maps` is AFTER `<normal_fragment_begin>` declared `normal`, which is
+ *   the only point where overwriting it affects the lighting that follows.
+ * - `aomap_fragment` runs after `<lights_fragment_end>`, so `reflectedLight` exists and
+ *   its indirect terms can still be modulated before they are summed.
+ *
+ * ORDER MATTERS: the body is emitted at the FIRST anchor in this list that the shader
+ * actually contains, and every later tap references its temps. `map_fragment` is the
+ * earliest of these in three's meshphysical fragment shader.
  */
 const TAPS = [
 	['albedo', 'diffuseColor.rgb *= ', '#include <map_fragment>'],
-	['emissive', 'totalEmissiveRadiance += ', '#include <emissivemap_fragment>'],
+	['opacity', 'diffuseColor.a = ', '#include <alphamap_fragment>'],
 	['roughness', 'roughnessFactor = ', '#include <roughnessmap_fragment>'],
-	['metalness', 'metalnessFactor = ', '#include <metalnessmap_fragment>']
+	['metalness', 'metalnessFactor = ', '#include <metalnessmap_fragment>'],
+	['normal', 'normal = normalize', '#include <normal_fragment_maps>'],
+	['emissive', 'totalEmissiveRadiance += ', '#include <emissivemap_fragment>'],
+	['ao', 'reflectedLight.indirectDiffuse *= ', '#include <aomap_fragment>']
 ];
+
+/**
+ * The VERTEX tap. `<begin_vertex>` is `vec3 transformed = vec3( position );`, so adding to
+ * `transformed` is the displacement three's own displacementMap does at the same place.
+ *
+ * Two honest limitations, both shared with three's displacementMap: NORMALS are not
+ * recomputed (they were derived at `<beginnormal_vertex>`, before this), and the SHADOW
+ * pass uses a different depth material that this injection does not reach — so a
+ * displaced object casts its undisplaced silhouette.
+ */
+const VERTEX_TAPS = [['position', 'transformed += ', '#include <begin_vertex>']];
 
 /**
  * @param {any} ir
@@ -160,11 +187,43 @@ async function compileInject(ir, ctx) {
 		anchor,
 		anchor + '\n\t' + lines.join('\n\t')
 	]);
+
+	// the VERTEX stage, when the graph displaces anything. Its own body and its own temps
+	// (a fragment temp is out of scope here), but the SAME uniform records — one object,
+	// one set of values, so a param drag moves both stages together.
+	/** @type {[string,string][]} */
+	let vertexEdits = [];
+	if (ir?.vertex) {
+		// grouped per anchor exactly like the fragment path: two taps sharing one anchor
+		// must become ONE replacement, or the second `replace` re-injects the first
+		/** @type {Map<string, string[]>} */
+		const perVertexAnchor = new Map();
+		const pushV = (/** @type {string} */ anchor, /** @type {string} */ line) => {
+			const list = perVertexAnchor.get(anchor) ?? [];
+			list.push(line);
+			perVertexAnchor.set(anchor, list);
+		};
+		if (ir.vertex.body) pushV(VERTEX_TAPS[0][2], ir.vertex.body);
+		for (const [field, write, anchor] of VERTEX_TAPS) {
+			const expr = ir.vertex[field];
+			if (expr) pushV(anchor, write + '(' + expr + ');');
+		}
+		vertexEdits = [...perVertexAnchor.entries()].map(([anchor, lines]) => [
+			anchor,
+			anchor + '\n\t' + lines.join('\n\t')
+		]);
+	}
+
 	// a graph reading UV needs three to declare vUv, which it only does behind its own
 	// define — without this an untextured material fails to compile on `vUv`
 	if (ir?.defines) {
 		material.defines = { ...(material.defines ?? {}), ...ir.defines };
 	}
+	// An authored opacity only shows if the material BLENDS. This is a render-program
+	// change (and moves the object into the transparent pass), which is exactly why the
+	// backend works on a CLONE: the object's own material is left alone, so Detach and
+	// every serializer still see an opaque base.
+	if (ir?.opacity) material.transparent = true;
 	material.onBeforeCompile = (/** @type {any} */ shader) => {
 		Object.assign(shader.uniforms, uniforms);
 		/** @type {string[]} */
@@ -185,11 +244,29 @@ async function compileInject(ir, ctx) {
 				applied.push(anchor);
 			} else missed.push(anchor);
 		}
+		if (vertexEdits.length) {
+			// uniforms + prelude have to be declared in the VERTEX shader too, or its body
+			// references identifiers that only exist in the fragment one
+			if (prelude)
+				shader.vertexShader = shader.vertexShader.replace(
+					'#include <common>',
+					'#include <common>\n' + prelude
+				);
+			for (const [anchor, replacement] of vertexEdits) {
+				if (shader.vertexShader.includes(anchor)) {
+					shader.vertexShader = shader.vertexShader.replace(anchor, replacement);
+					applied.push('vertex:' + anchor);
+				} else missed.push('vertex:' + anchor);
+			}
+		}
 		material.userData.shaderInjected = { applied, missed };
 	};
 	// three caches PROGRAMS across materials, and two differently-injected materials would
-	// otherwise be handed the same one. Hash what we inject.
-	const key = hashString(prelude + '|' + edits.map((e) => e[1]).join('|'));
+	// otherwise be handed the same one. Hash what we inject — BOTH stages, or a graph that
+	// differs only in its displacement would be handed the other one's program.
+	const key = hashString(
+		prelude + '|' + edits.map((e) => e[1]).join('|') + '|' + vertexEdits.map((e) => e[1]).join('|')
+	);
 	material.customProgramCacheKey = () => 'inject:' + key;
 	material.needsUpdate = true;
 	return material;

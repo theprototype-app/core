@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup, globalScene, globalCamera, globalRenderer } from '../stores/sceneStore';
+import { objectsGroup, globalScene, globalCamera, globalRenderer, selectedObjects } from '../stores/sceneStore';
 
 // A dot for an object you can no longer see.
 //
@@ -22,7 +22,7 @@ import { objectsGroup, globalScene, globalCamera, globalRenderer } from '../stor
 
 /** projected DIAMETER (css px) below which an object gets a dot — the same
  * threshold scenePick uses to decide an object needs a proxy hit */
-const TINY_PX = 4;
+const TINY_PX = 8;
 const GROUP_NAME = 'tiny-object-markers';
 
 /** @type {any} */
@@ -42,9 +42,9 @@ function ensurePoints(scene) {
 	points = new THREE.Points(
 		geometry,
 		new THREE.PointsMaterial({
-			size: 9,
+			size: 14,
 			sizeAttenuation: false, // a screen-space dot: the object has no size left
-			color: 0xffc46b,
+			vertexColors: true, // amber normally, white while selected (set per frame below)
 			// NOT depthWrite:false-and-forget — these draw on top deliberately (the
 			// object is invisible, so there is nothing to be occluded BY), and they
 			// are excluded from the postprocessing passes by living at the scene root
@@ -77,8 +77,14 @@ export function updateTinyMarkers() {
 
 	/** @type {number[]} */
 	const spots = [];
+	/** @type {string[]} */
+	const tints = [];
 	for (const child of group.children) {
 		if (child.visible === false) continue;
+		// a CURRENT world matrix: the animation tick poses with updateMatrix and leaves
+		// matrixWorld to the render loop, so a just-scaled object would be measured at
+		// its previous size and get no dot until the next frame
+		child.updateWorldMatrix(true, false);
 		_box.setFromObject(child);
 		if (_box.isEmpty()) continue;
 		_box.getCenter(_centre);
@@ -89,6 +95,7 @@ export function updateTinyMarkers() {
 		_box.getSize(_size);
 		if (Math.max(_size.x, _size.y, _size.z) / perPixel > TINY_PX) continue;
 		spots.push(_centre.x, _centre.y, _centre.z);
+		tints.push(child.uuid);
 	}
 
 	if (!spots.length) {
@@ -103,6 +110,23 @@ export function updateTinyMarkers() {
 	} else {
 		attribute.array.set(spots);
 		attribute.needsUpdate = true;
+	}
+	// A SELECTED dot turns white. Without it there is no way to tell a click landed:
+	// the object has no size, so it draws no outline and nothing on screen changes —
+	// which reads exactly like "it still cannot be selected".
+	const chosen = new Set(get(selectedObjects) ?? []);
+	/** @type {number[]} */
+	const colours = [];
+	for (const uuid of tints) {
+		const on = chosen.has(uuid);
+		colours.push(on ? 1 : 1, on ? 1 : 0.77, on ? 1 : 0.42);
+	}
+	const colourAttribute = geometry.getAttribute('color');
+	if (!colourAttribute || colourAttribute.count !== tints.length) {
+		geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colours), 3));
+	} else {
+		colourAttribute.array.set(colours);
+		colourAttribute.needsUpdate = true;
 	}
 	geometry.computeBoundingSphere();
 }

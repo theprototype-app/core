@@ -65,9 +65,11 @@ export function sceneHits(raycaster, options = {}) {
 // their results stay byte-identical to before.
 
 /** below this projected DIAMETER (css px) an object is unhittable in practice */
-const TINY_PX = 4;
-/** the click target it gets instead, as a projected diameter */
-const PROXY_PX = 10;
+const TINY_PX = 8;
+/** The click target it gets instead, as a projected diameter. Generous on purpose:
+ * there is nothing on screen to aim at except the marker dot, and a 5px radius
+ * meant a near miss read as "it still cannot be selected". */
+const PROXY_PX = 28;
 
 const _proxyCentre = new THREE.Vector3();
 const _proxyBox = new THREE.Box3();
@@ -97,6 +99,11 @@ function tinyProxyHits(raycaster, targets, hits) {
 	}
 	for (const object of targets) {
 		if (already.has(object) || object.visible === false) continue;
+		// measure from a CURRENT world matrix: the animation tick poses with
+		// `updateMatrix` and leaves `matrixWorld` to the render loop, so a
+		// just-scaled object would otherwise be measured at its previous size and
+		// never qualify as tiny
+		object.updateWorldMatrix(true, false);
 		_proxyBox.setFromObject(object);
 		if (_proxyBox.isEmpty()) continue;
 		_proxyBox.getCenter(_proxyCentre);

@@ -136,6 +136,24 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **TEST THE FLOW THE USER DESCRIBED, not the tidy one.** The relative-motion suite
+  did move -> play and passed; the report was play -> stop -> MOVE -> play, which
+  still reverted, because the cached base only refreshes when there ISN'T one. A
+  suite that exercises the clean path proves the clean path. Write the user's
+  sequence down verbatim and run THAT.
+- **Sample the DOM to prove a panel updates.** "The properties panel follows
+  playback" cannot be checked from stores — the store changed and the rows did not.
+  Five reads of `.dn-input` across a running clip returned identical values, which
+  is what settled it (and got the feature removed rather than shipped broken).
+- **A flake accusation needs the same sample size on both sides.** `animation-markers`
+  failed on a branch and passed once on the base, which looked like a regression;
+  three runs each said 1/3 failing on the branch and **3/3 on the base** — machine
+  saturation, not the diff. One run is not evidence either way.
+- **When a visual bug is reported, measure the pixels' inputs before theorising.**
+  "Onion skin shows the full object" sounded like a transparency bug; the ghost
+  materials measured 0.28 and transparent in every case, which ruled out the whole
+  family and pointed at geometry (the ghosts coincided with the object). Probe the
+  values first, then form the theory.
 - **A WALL-CLOCK sleep is a lottery on a throttled page, so drive the state
   instead.** `animation-loop-pause` needs a pause that lands MID-LAP. Sleeping
   2.6 s into a 1 s loop looked deterministic and was not: a headless page ticks at

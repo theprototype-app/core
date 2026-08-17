@@ -753,6 +753,21 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A hook that READS state must know the caller's write ORDER.** Auto-key was
+  hooked at `recordMaterialChange`, the one funnel every material edit passes
+  through — and it keyed a colour edit correctly while keying nothing at all for
+  roughness. The two callers write in OPPOSITE orders: `setMaterialParam` records
+  the history entry BEFORE mutating the material, while the colour picker mutates
+  first and records at the end of its debounced gesture. A synchronous read is
+  therefore right half the time. `queueMicrotask` runs after the caller's current
+  block either way. Suspect this for anything that observes a funnel rather than
+  the action itself.
+- **An "immediately visible" edit belongs at the CHOKE POINT, not per control.**
+  Adding a channel, typing a key value, retiming, moving a marker — all land in
+  `editClip`, and none of them re-posed the object, so every one of them was
+  reported separately as "I have to click the timeline to see what changed". One
+  re-pose there covers the lot (skipped while playing, where the tick owns the
+  pose). Same shape as the material funnel above.
 - **A CACHED "starting pose" must notice the object moved under it.** The animation
   base is captured once per object and survives Stop, so play -> stop -> DRAG ->
   play restored the old pose and threw the drag away (measured: moved to [4,5,0],
@@ -783,7 +798,12 @@ loadable play content. Everything a user does must be visible to connected peers
   ghosts of a clip that drives only LOOK channels sit EXACTLY on the object, and
   two of them at 28% read as one slightly odd solid object ("onion skin shows the
   full object"). The ghost materials were innocent — measured faint in every case.
-  A ghost whose world transform matches the object's now hides itself.
+  A ghost whose world transform matches the object's now hides itself — and that
+  is only half of it, because an ALMOST-coplanar ghost (a small movement between
+  two keys) then z-fights instead, "like two planes in the same place". The fix
+  for that is a per-ghost `polygonOffset`, keeping `depthWrite: true` so the
+  postprocessing passes still work — a distinct rank per ghost, so two of them
+  cannot fight each other either.
 - **`node.material = x` gated on isMesh/isLine/isPoints misses Sprites**, which
   then keep a reference to the REAL material — so that part of a ghost/clone draws
   at full strength and no amount of re-asserting the override can dim it. Gate on
@@ -2041,7 +2061,11 @@ override for e2e — never share 5173 (the user's main-checkout server).
   `inspector-live-values.md`.
   KNOWN ENVIRONMENT RED: `animation-markers` fails on a saturated box for the base
   as well as any branch (3/3 on base, 1/3 on the branch) — re-run rested before a
-  release. `prefabs.test.cjs` is a standing red with its own prompt.
+  release. AND A STANDING CLUSTER, all proven pre-existing by A/B on a reverted
+  tree: `prefabs`, `mesh-edit-materials` and `uv-materials` all die on
+  `locator.click: Timeout` inside their own flows on clean release/next. Three
+  suites with one symptom is probably ONE cause — investigate them together, and
+  do not bisect a diff into them.
 - Status (2026-08-17): **v1.4.0 RELEASED + four follow-up PRs.** `main` @2d68fdb
   (tag `v1.4.0`, CHANGELOG "Move it"), release workflow green, cloud deployed at
   `CORE_REF=v1.4.0` (version.json 1.4.0 on both hosts), docs site deployed with the

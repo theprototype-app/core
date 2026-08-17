@@ -136,6 +136,20 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **A fixture missing a PRECONDITION makes a working fix look broken.** Auto-key
+  records INTO a clip: an object with none keys nothing, and `captureAutoKey`
+  returns before doing anything. The first material-auto-key suite built a bare
+  box, saw no channels, and read as a failed fix — the code was right and the
+  fixture was not a scene anyone has. Give the fixture the state the report
+  describes ("I had created a clip"), and say the precondition out loud in the
+  suite so the next reader does not re-learn it.
+- **When a third-party widget cannot be driven, test the SEAM you own.** Two runs
+  went into trying to drive the colour picker from the DOM: it exposes no hex
+  field to type into, and clicking the section header (already expanded) COLLAPSED
+  it and removed the widget entirely. The behaviour under test was never the
+  picker — it was "a material edit keys its channel", which is one exported
+  function call away. Drive the real path when the bug is IN the input path;
+  otherwise test where the logic lives.
 - **TEST THE FLOW THE USER DESCRIBED, not the tidy one.** The relative-motion suite
   did move -> play and passed; the report was play -> stop -> MOVE -> play, which
   still reverted, because the cached base only refreshes when there ISN'T one. A

@@ -39,7 +39,7 @@
 			<button
 				class="shader-palette-item"
 				draggable="true"
-				title={def.key}
+				title={def.doc ? def.label + ' — ' + def.doc : def.key}
 				ondragstart={(e) => onDragStart(e, def.key)}
 				onclick={() => onPick(def.key)}
 			>

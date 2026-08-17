@@ -46,6 +46,7 @@
  *   fragment-only, and the compiler refuses it in the vertex pass with an explanation.
  * @property {string[]} [requires]
  * @property {string} [prelude]
+ * @property {string} [doc] the manual line, merged in from DOCS below
  * @property {(arg: any) => string} [emit]
  */
 
@@ -598,6 +599,85 @@ const DEFS = [
 		outputs: []
 	}
 ];
+
+/**
+ * THE MANUAL, one line per node — the SINGLE SOURCE for the editor's info pane, the
+ * palette tooltips and the docs-site reference table. Kept as a map rather than a field on
+ * each def because several nodes are built by the fn1/fn2/fn1v helpers and have no literal
+ * to hang it on; merging below means a helper-made node is documented exactly like the
+ * others, and `shader-nodes` asserts every def has an entry so a new node cannot ship
+ * undocumented.
+ *
+ * Each line answers "what would I reach for this for", not "what GLSL does it emit".
+ * @type {Record<string, string>}
+ */
+const DOCS = {
+	// inputs
+	float: 'A single number you can dial, and drive from a Set Shader Uniform flow node.',
+	color: 'A colour you pick. Converted sRGB -> linear, so it matches what the picker shows.',
+	vector2: 'Two numbers — usually a UV offset, a tiling amount or a 2D direction.',
+	vector3: 'Three numbers — a direction, a position offset, or a colour you want as numbers.',
+	uv: "The surface's texture coordinates: 0..1 across the mesh's UV layout. The starting point for anything that varies across a surface.",
+	normal: 'Which way the surface faces. In the surface stage this is the shaded normal; wired into Position it is the object-space normal, which is what you displace along.',
+	viewDirection: 'The direction from the surface towards the camera. Surface stage only — there is no camera vector while vertices are being placed.',
+	time: 'Seconds from the SHARED clock, so anything animated is at the same point for every peer with no messages. Multiply by speed to go faster.',
+	texture: 'Samples an image from your Explorer library. The graph stores a content hash, so the picture travels to peers once and is reused, never re-sent on every edit.',
+
+	// maths
+	add: 'a + b. Brightening, offsetting, layering two patterns.',
+	subtract: 'a - b. Cutting one pattern out of another, or centring a 0..1 value on zero.',
+	multiply: 'a * b. Tinting, masking, scaling a pattern down.',
+	divide: 'a / b. Scaling a value down by an amount you can drive.',
+	sin: 'A smooth wave between -1 and 1. Feed it Time for a pulse, or UV for stripes.',
+	cos: 'Like Sin, a quarter-cycle ahead — the pair makes circular motion.',
+	fract: 'Keeps only the fractional part, so values wrap 0..1 repeatedly. The usual way to make something tile.',
+	abs: 'Drops the sign, mirroring a pattern about zero.',
+	oneMinus: '1 - a. Inverts a 0..1 mask.',
+	mix: 'Blends a and b by t: 0 gives a, 1 gives b. The workhorse for combining two looks.',
+	clamp: 'Holds a value between min and max.',
+	dot: 'How much two directions agree: 1 aligned, 0 perpendicular, -1 opposed. Lighting-style falloffs.',
+	power: 'Raises to an exponent, which sharpens a 0..1 falloff (higher = tighter).',
+	smoothstep: 'An eased 0..1 ramp between two edges — a soft-edged mask.',
+	remap: 'Rescales a range onto another, e.g. -1..1 into 0..1.',
+	floor: 'Rounds down. Quantises a smooth value into steps.',
+	ceil: 'Rounds up, so anything above zero becomes at least 1 — a quick "is this non-zero" mask.',
+	saturate: 'Clamps to 0..1 — a safety net before something is used as a mask.',
+	normalize: 'Rescales a direction to length 1. Do this before using a vector as a direction.',
+	min: 'The smaller of two values — an upper limit, or the intersection of two masks.',
+	max: 'The larger of two values — a lower limit, or the union of two masks.',
+	modulo: 'The remainder of a / b. Repeats a value every b, for bands and grids.',
+	step: '0 below the edge and 1 at or above it — a hard-edged mask.',
+	length: 'How long a vector is. Distance from the origin, for radial patterns.',
+	distance: 'How far apart two points are — glows and radial falloffs.',
+	cross: 'A direction perpendicular to two others. Building a basis from two directions.',
+
+	// channels
+	split: 'Breaks a colour or vector into its x, y, z and w parts, so one channel can drive something on its own.',
+	combine: 'Builds a colour or vector back up from separate numbers.',
+
+	// uv
+	tilingOffset: 'Repeats and shifts texture coordinates: tiling 3 means the image fits three times, offset slides it.',
+	panner: 'Scrolls texture coordinates over time on the shared clock — flowing water, conveyor belts, moving clouds. Every peer sees the same offset.',
+
+	// utility
+	fresnel: 'Bright at grazing angles, dark face-on — the rim light that reads as glass, water or a force field. Power tightens the rim.',
+	noise: 'A smooth random pattern from UV, identical on every peer (no texture needed). Clouds, grime, variation.',
+	posterize: 'Snaps values into a number of steps, for a banded or cel-shaded look.',
+	gradient: 'A three-colour ramp driven by one number. Feed it Noise, UV or Fresnel to colour-map anything; the midpoint biases where the middle colour sits.',
+	normalMap: 'Reads a normal map image and applies it as surface detail, building the tangent frame from screen-space derivatives so it works on meshes with no tangents.',
+	glsl: 'The escape hatch: write a GLSL expression using a, b and c as the wired inputs, and declare what type it returns.',
+
+	// output
+	[SURFACE_NODE]:
+		"The graph's output. Each input replaces one part of the material and anything left unconnected keeps the material's own value: albedo (base colour), emissive (glow), roughness, metalness, normal (surface detail), opacity (needs blending), ao (shades indirect light) and position (moves vertices — note it does not recompute normals or move the shadow)."
+};
+
+for (const def of DEFS) def.doc = DOCS[def.key] ?? '';
+
+/** The manual line for one node. @param {string} key @returns {string} */
+export function shaderNodeDoc(key) {
+	return DOCS[key] ?? '';
+}
 
 /** @type {Map<string, NodeDef>} */
 const byKey = new Map(DEFS.map((def) => [def.key, def]));

@@ -300,6 +300,19 @@ h.run(async () => {
 		tabs[0]?.click();
 	});
 	await page.waitForTimeout(600);
+	// the MANUAL line for the selected node renders here too — asserting the store has a
+	// doc string proves nothing about whether a user can read it
+	const docShown = await page.locator('#shader-node-doc').innerText().catch(() => '');
+	h.check(
+		docShown.trim().length > 20,
+		'the info pane shows the node manual line: "' + docShown.trim().slice(0, 60) + '..."'
+	);
+	const catalogDoc = await page.evaluate(() => window.__stores.shaderCatalog?.shaderNodeDoc?.('float') ?? '');
+	h.check(
+		!catalogDoc || docShown.trim() === catalogDoc.trim(),
+		'and it is the SAME text the catalog carries, so the pane cannot drift from the docs'
+	);
+
 	const names = await page.locator('#shader-editor .shader-uniform-name').allInnerTexts();
 	h.check(
 		names.some((n) => n.trim() === 'u_rgh_value'),

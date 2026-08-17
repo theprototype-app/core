@@ -475,6 +475,11 @@
 					{#if propsTab === 'info' && selectedNode && selectedDef}
 						<div class="shader-props-body" id="shader-props-node">
 							<div class="shader-props-title">{selectedDef.label}</div>
+							<!-- the MANUAL line for this node, straight from the catalog — the same text
+							     the docs-site reference table is built from, so the two cannot drift -->
+							{#if selectedDef.doc}
+								<p class="shader-doc" id="shader-node-doc">{selectedDef.doc}</p>
+							{/if}
 							<label class="shader-field">
 								<span>name</span>
 								<input
@@ -764,6 +769,15 @@
 		font-size: 9px;
 		line-height: 1.35;
 		color: #6b7280;
+	}
+	.shader-doc {
+		font-size: 10px;
+		line-height: 1.4;
+		color: #cbd5e1;
+		background: rgba(255, 255, 255, 0.04);
+		border-left: 2px solid rgba(255, 255, 255, 0.18);
+		border-radius: 0 3px 3px 0;
+		padding: 4px 6px;
 	}
 	.shader-uniform-name {
 		display: block;

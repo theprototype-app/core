@@ -11,7 +11,10 @@
 	import DragRow from '../ui/DragRow.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { Checkbox } from 'flowbite-svelte';
+	import { onMount } from 'svelte';
 	import { viewMode } from '../../stores/sceneStore';
+	import { explorerItems, loadExplorer, kindOf } from '$lib/explorer';
+	import { sendAsset } from '$lib/assetShare';
 	import {
 		scenePost,
 		postEnabledLocal,
@@ -79,6 +82,34 @@
 	function add() {
 		if (!addKind) return;
 		openId = addPostEffect(addKind);
+	}
+
+	// L5: the asset picker (a LUT today). The Explorer index has to be loaded or
+	// the list is empty for anyone who has not opened that panel yet; loadExplorer
+	// is idempotent.
+	onMount(() => {
+		loadExplorer();
+	});
+	/** files that could plausibly BE a lookup table: a .cube, or a strip image */
+	const assetItems = $derived([
+		{ value: '', name: '— none —' },
+		...$explorerItems
+			.filter((item) => /\.cube$/i.test(item.name ?? '') || kindOf(item.name ?? '') === 'image')
+			.map((item) => ({ value: item.hash, name: item.name }))
+	]);
+
+	/**
+	 * Assign an asset param and PUSH its bytes once.
+	 *
+	 * The hash is what travels in the stack, but a peer cannot grade with a hash it
+	 * has no bytes for — so the file goes out on assign (golden rule 9). A peer who
+	 * still misses it pulls on demand from postEffects' `requestAsset`, which is
+	 * what covers late joiners and session restores.
+	 * @param {string} id @param {string} key @param {string} hash
+	 */
+	function assignAsset(id, key, hash) {
+		setPostEffectParams(id, { [key]: hash });
+		if (hash) sendAsset(hash);
 	}
 
 	// ---- pointer reorder -----------------------------------------------------
@@ -230,6 +261,17 @@
 											items={(param.options ?? []).map((/** @type {any} */ o) => ({ value: o.value, name: o.label }))}
 											value={entry.params[param.key]}
 											onchange={(v) => setPostEffectParams(entry.id, { [param.key]: v })}
+										/>
+									</div>
+								{:else if param.type === 'asset'}
+									<div class="ui-row items-center gap-2">
+										<span class="w-24 shrink-0 text-xs text-gray-300">{param.label}</span>
+										<ThemedSelect
+											id={'post-param-' + entry.id + '-' + param.key}
+											items={assetItems}
+											value={entry.params[param.key] ?? ''}
+											placeholder="Pick a file…"
+											onchange={(v) => assignAsset(entry.id, param.key, String(v ?? ''))}
 										/>
 									</div>
 								{:else if param.type === 'bool'}

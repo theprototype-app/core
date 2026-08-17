@@ -1,7 +1,32 @@
-import { EffectPass, ToneMappingEffect, ToneMappingMode } from 'postprocessing';
+import {
+	BlendFunction,
+	BloomEffect,
+	BrightnessContrastEffect,
+	ChromaticAberrationEffect,
+	DotScreenEffect,
+	EffectPass,
+	HueSaturationEffect,
+	KernelSize,
+	LUT3DEffect,
+	LUTCubeLoader,
+	LookupTexture,
+	NoiseEffect,
+	PixelationEffect,
+	SMAAEffect,
+	SMAAPreset,
+	ScanlineEffect,
+	ToneMappingEffect,
+	ToneMappingMode,
+	VignetteEffect,
+	VignetteTechnique
+} from 'postprocessing';
 // @ts-ignore - n8ao ships no bundled type declarations
 import { N8AOPostPass } from 'n8ao';
 import { registerPostEffect, postEffectDef, planPostStack } from './scenePost';
+// L5: a LUT is an Explorer ASSET, so it must ride the content-hash push/pull or a
+// peer (and every late joiner) grades with a missing texture — golden rule 9.
+import { itemByHash, itemBlob, explorerItems } from './explorer';
+import { requestAsset } from './assetShare';
 
 // L1 — the built-in post effects and the COMPILER.
 //
@@ -210,3 +235,280 @@ function num(value, fallback) {
 	const n = Number(value);
 	return Number.isFinite(n) ? n : fallback;
 }
+
+// ---- L5: colour grading ----------------------------------------------------
+
+registerPostEffect('huesaturation', {
+	label: 'Hue / saturation',
+	group: 'grading',
+	params: [
+		{ key: 'hue', label: 'Hue', min: -Math.PI, max: Math.PI, step: 0.01, decimals: 3, default: 0,
+			hint: 'Rotates every colour around the wheel, in radians.' },
+		{ key: 'saturation', label: 'Saturation', min: -1, max: 1, step: 0.01, decimals: 2, default: 0 }
+	],
+	make: (params) =>
+		new HueSaturationEffect({ hue: num(params.hue, 0), saturation: num(params.saturation, 0) })
+});
+
+registerPostEffect('brightnesscontrast', {
+	label: 'Brightness / contrast',
+	group: 'grading',
+	params: [
+		{ key: 'brightness', label: 'Brightness', min: -1, max: 1, step: 0.01, decimals: 2, default: 0 },
+		{ key: 'contrast', label: 'Contrast', min: -1, max: 1, step: 0.01, decimals: 2, default: 0 }
+	],
+	make: (params) =>
+		new BrightnessContrastEffect({
+			brightness: num(params.brightness, 0),
+			contrast: num(params.contrast, 0)
+		})
+});
+
+/**
+ * A 3D LUT from an Explorer asset — the standard grading interchange.
+ *
+ * `make` is SYNCHRONOUS (the compiler cannot await one effect without stalling the
+ * whole chain), so it returns the effect with a NEUTRAL identity LUT and swaps the
+ * real one in when the bytes arrive. The frame is correct-but-ungraded for a beat
+ * instead of the viewport dropping a pass.
+ *
+ * The asset is addressed by content HASH, never by item id: ids are local to one
+ * device's Explorer. If the hash is not in our library we ask the mesh for it
+ * (`requestAsset`, golden rule 9) — without that a peer, and every late joiner,
+ * would grade with a missing texture. The pull lands the file in their 'Shared'
+ * folder and the next rebuild picks it up.
+ */
+registerPostEffect('lut', {
+	label: 'LUT (colour grade)',
+	group: 'grading',
+	params: [
+		{ key: 'lut', label: 'LUT file', type: 'asset', default: '',
+			hint: 'A .cube LUT or a strip image from the Explorer. Shared with peers automatically.' },
+		{ key: 'tetrahedral', label: 'Smooth interpolation', type: 'bool', default: false,
+			hint: 'Tetrahedral sampling — slower, avoids banding on small LUTs.' }
+	],
+	make: (params) => {
+		// 16 is a neutral identity: it changes nothing until the real LUT lands
+		const effect = new LUT3DEffect(LookupTexture.createNeutral(16), {
+			tetrahedralInterpolation: !!params.tetrahedral
+		});
+		loadLutInto(effect, String(params.lut ?? ''));
+		return effect;
+	},
+	dispose: (effect) => {
+		try {
+			effect.__lutWatch?.(); // stop watching for a pull that will never land now
+			effect.lut?.dispose?.();
+		} catch {}
+		effect.dispose?.();
+	}
+});
+
+/**
+ * Resolve a LUT hash to a texture and hand it to a live effect.
+ *
+ * The WAIT is the load-bearing part. A peer receiving a stack that grades through
+ * a LUT usually has no bytes for that hash, so it asks the mesh — but the pull is
+ * asynchronous and, critically, arriving bytes do NOT change the stack, so nothing
+ * rebuilds the chain and no second attempt would ever happen. Without watching the
+ * library, that peer grades through the neutral identity LUT forever while its
+ * stack looks perfectly correct. So: request, then watch `explorerItems` until the
+ * hash appears, and unsubscribe on dispose.
+ * @param {any} effect @param {string} hash
+ */
+async function loadLutInto(effect, hash) {
+	if (!hash) return;
+	const item = itemByHash(hash);
+	if (!item) {
+		requestAsset(hash);
+		effect.__lutWatch?.();
+		effect.__lutWatch = explorerItems.subscribe(() => {
+			if (!itemByHash(hash)) return;
+			effect.__lutWatch?.();
+			effect.__lutWatch = null;
+			loadLutInto(effect, hash);
+		});
+		return;
+	}
+	try {
+		const blob = await itemBlob(item.id);
+		if (!blob) return;
+		const name = String(item.name ?? '').toLowerCase();
+		let texture = null;
+		if (name.endsWith('.cube')) {
+			texture = new LUTCubeLoader().parse(await blob.text());
+		} else {
+			// a STRIP image, the other common form. LookupTexture.from unfolds the
+			// strip itself, but its wide-image path tests `image instanceof Image`, so
+			// it needs a real <img> — a canvas or an ImageBitmap silently takes the
+			// raw-data branch and comes out wrong.
+			const url = URL.createObjectURL(blob);
+			try {
+				const image = new Image();
+				await new Promise((resolve, reject) => {
+					image.onload = resolve;
+					image.onerror = reject;
+					image.src = url;
+				});
+				texture = LookupTexture.from(/** @type {any} */ ({ image }));
+			} finally {
+				URL.revokeObjectURL(url);
+			}
+		}
+		if (!texture) return;
+		const previous = effect.lut;
+		effect.lut = texture;
+		previous?.dispose?.();
+	} catch (error) {
+		console.warn('LUT failed to load: ' + hash, error);
+	}
+}
+
+// ---- L5: camera FX ---------------------------------------------------------
+
+registerPostEffect('bloom', {
+	label: 'Bloom',
+	group: 'camera',
+	params: [
+		{ key: 'intensity', label: 'Intensity', min: 0, max: 10, step: 0.05, decimals: 2, default: 1 },
+		{ key: 'luminanceThreshold', label: 'Threshold', min: 0, max: 1, step: 0.01, decimals: 2, default: 0.9,
+			hint: 'Only pixels brighter than this bloom.' },
+		{ key: 'luminanceSmoothing', label: 'Smoothing', min: 0, max: 1, step: 0.01, decimals: 2, default: 0.025 },
+		{ key: 'radius', label: 'Radius', min: 0, max: 1, step: 0.01, decimals: 2, default: 0.85 }
+	],
+	make: (params) =>
+		new BloomEffect({
+			intensity: num(params.intensity, 1),
+			luminanceThreshold: num(params.luminanceThreshold, 0.9),
+			luminanceSmoothing: num(params.luminanceSmoothing, 0.025),
+			radius: num(params.radius, 0.85),
+			mipmapBlur: true,
+			kernelSize: KernelSize.LARGE
+		})
+});
+
+registerPostEffect('vignette', {
+	label: 'Vignette',
+	group: 'camera',
+	params: [
+		{ key: 'offset', label: 'Offset', min: 0, max: 1, step: 0.01, decimals: 2, default: 0.5 },
+		{ key: 'darkness', label: 'Darkness', min: 0, max: 1, step: 0.01, decimals: 2, default: 0.5 },
+		{ key: 'technique', label: 'Falloff', type: 'select', default: 'DEFAULT',
+			options: [
+				{ value: 'DEFAULT', label: 'Default' },
+				{ value: 'ESKIL', label: 'Eskil' }
+			] }
+	],
+	make: (params) =>
+		new VignetteEffect({
+			offset: num(params.offset, 0.5),
+			darkness: num(params.darkness, 0.5),
+			technique:
+				/** @type {any} */ (VignetteTechnique)[params.technique] ?? VignetteTechnique.DEFAULT
+		})
+});
+
+registerPostEffect('grain', {
+	label: 'Film grain',
+	group: 'camera',
+	params: [
+		{ key: 'opacity', label: 'Amount', min: 0, max: 1, step: 0.01, decimals: 2, default: 0.25 },
+		{ key: 'premultiply', label: 'Multiply with the image', type: 'bool', default: false,
+			hint: 'On, grain follows the picture; off, it sits evenly over everything.' }
+	],
+	make: (params) => {
+		const effect = new NoiseEffect({
+			blendFunction: BlendFunction.SCREEN,
+			premultiply: !!params.premultiply
+		});
+		// NoiseEffect has no amount of its own — the blend opacity IS the amount
+		effect.blendMode.opacity.value = num(params.opacity, 0.25);
+		return effect;
+	}
+});
+
+registerPostEffect('chromaticaberration', {
+	label: 'Chromatic aberration',
+	group: 'camera',
+	params: [
+		{ key: 'offsetX', label: 'Offset X', min: 0, max: 0.02, step: 0.0002, decimals: 4, default: 0.001 },
+		{ key: 'offsetY', label: 'Offset Y', min: 0, max: 0.02, step: 0.0002, decimals: 4, default: 0.0005 },
+		{ key: 'radialModulation', label: 'Stronger at the edges', type: 'bool', default: false }
+	],
+	make: (params, ctx) => {
+		const effect = new ChromaticAberrationEffect({
+			radialModulation: !!params.radialModulation,
+			modulationOffset: 0.15
+		});
+		// the ctor takes a Vector2 we would have to import THREE for; the live
+		// uniform is the same thing and keeps this module three-free
+		effect.offset.set(num(params.offsetX, 0.001), num(params.offsetY, 0.0005));
+		return effect;
+	}
+});
+
+registerPostEffect('pixelation', {
+	label: 'Pixelation',
+	group: 'camera',
+	params: [
+		{ key: 'granularity', label: 'Pixel size', min: 1, max: 60, step: 1, decimals: 0, default: 12 }
+	],
+	make: (params) => new PixelationEffect(num(params.granularity, 12))
+});
+
+registerPostEffect('scanlines', {
+	label: 'Scanlines',
+	group: 'camera',
+	params: [
+		{ key: 'density', label: 'Density', min: 0.1, max: 4, step: 0.05, decimals: 2, default: 1.25 },
+		{ key: 'opacity', label: 'Amount', min: 0, max: 1, step: 0.01, decimals: 2, default: 0.5 },
+		{ key: 'scrollSpeed', label: 'Scroll speed', min: 0, max: 2, step: 0.01, decimals: 2, default: 0 }
+	],
+	make: (params) => {
+		const effect = new ScanlineEffect({ density: num(params.density, 1.25) });
+		// scrollSpeed exists on the effect but not in its bundled option TYPES —
+		// set it as a property rather than widening the ctor call
+		/** @type {any} */ (effect).scrollSpeed = num(params.scrollSpeed, 0);
+		effect.blendMode.opacity.value = num(params.opacity, 0.5);
+		return effect;
+	}
+});
+
+registerPostEffect('dotscreen', {
+	label: 'Dot screen',
+	group: 'stylize',
+	params: [
+		{ key: 'scale', label: 'Scale', min: 0.1, max: 8, step: 0.05, decimals: 2, default: 1 },
+		{ key: 'angle', label: 'Angle', min: 0, max: Math.PI, step: 0.01, decimals: 3, default: Math.PI * 0.5 },
+		{ key: 'opacity', label: 'Amount', min: 0, max: 1, step: 0.01, decimals: 2, default: 1 }
+	],
+	make: (params) => {
+		const effect = new DotScreenEffect({
+			scale: num(params.scale, 1),
+			angle: num(params.angle, Math.PI * 0.5)
+		});
+		effect.blendMode.opacity.value = num(params.opacity, 1);
+		return effect;
+	}
+});
+
+// ---- L5: anti-aliasing -----------------------------------------------------
+
+// It ships in the same drop as the stylize effects on purpose: posterise, dot
+// screen and edge detect make aliasing far more visible than a shaded frame does,
+// so the fix has to arrive with the thing that exposes the problem.
+registerPostEffect('smaa', {
+	label: 'Anti-aliasing (SMAA)',
+	group: 'aa',
+	params: [
+		{ key: 'preset', label: 'Quality', type: 'select', default: 'MEDIUM',
+			options: [
+				{ value: 'LOW', label: 'Low' },
+				{ value: 'MEDIUM', label: 'Medium' },
+				{ value: 'HIGH', label: 'High' },
+				{ value: 'ULTRA', label: 'Ultra' }
+			] }
+	],
+	make: (params) =>
+		new SMAAEffect({ preset: /** @type {any} */ (SMAAPreset)[params.preset] ?? SMAAPreset.MEDIUM })
+});

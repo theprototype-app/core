@@ -35,6 +35,22 @@ async function registerTestEffects(page) {
 	});
 }
 
+/**
+ * Close any open ThemedSelect popup.
+ *
+ * It closes on POINTERDOWN, not click — so `document.body.click()` leaves the
+ * portaled `.ts-list` mounted over the panel. That was harmless while the add menu
+ * had three entries and quietly fatal once L5 grew it to thirteen: the popup then
+ * covered the stack rows and the parameter pane, and two later sections' real mouse
+ * drags landed on it instead. Hence this, plus the premise check before the drag.
+ */
+async function closeSelect(page) {
+	await page.evaluate(() =>
+		document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+	);
+	await page.waitForTimeout(250);
+}
+
 /** Pick an item by visible text in a portaled ThemedSelect. */
 async function pickSelect(page, triggerId, textFragment) {
 	await page.evaluate((id) => document.querySelector(id).click(), '#' + triggerId);
@@ -159,11 +175,11 @@ h.run(async () => {
 		return new Promise((resolve) =>
 			setTimeout(() => {
 				const rows = [...document.querySelectorAll('.ts-list [role="option"]')].map((r) => r.textContent.trim());
-				document.body.click();
 				resolve(rows);
 			}, 250)
 		);
 	});
+	await closeSelect(page);
 	h.check(
 		grouped.some((r) => r.startsWith('Colour grading')) && grouped.some((r) => r.startsWith('Camera FX')),
 		'2.5 the add menu is grouped by family: ' + JSON.stringify(grouped)
@@ -218,6 +234,22 @@ h.run(async () => {
 
 	// a REAL pointer drag on the grip. Pointer events, not HTML5 drag-and-drop:
 	// touch has no DnD and this panel is a bottom sheet on a phone.
+	//
+	// PREMISE FIRST: no portaled dropdown may be left over the panel, and the pixel
+	// we are about to press must really be the grip. Without these two the drag
+	// lands on a stale popup and the check reads as a broken feature (it did).
+	await closeSelect(page);
+	const reachable = await page.evaluate((id) => {
+		const grip = document.querySelector('#post-grip-' + id);
+		grip.scrollIntoView({ block: 'center' });
+		const box = grip.getBoundingClientRect();
+		const at = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+		return { isGrip: at === grip, atId: at?.id ?? at?.tagName, popup: !!document.querySelector('.ts-list') };
+	}, stack[0].id);
+	h.check(
+		reachable.isGrip && !reachable.popup,
+		'3.4b premise: the grip pixel really is the grip and nothing covers it (' + reachable.atId + ')'
+	);
 	const gripBox = await page.evaluate((id) => {
 		const el = document.querySelector('#post-grip-' + id);
 		el.scrollIntoView({ block: 'center' });
@@ -290,6 +322,8 @@ h.run(async () => {
 
 	// A REAL SCRUB on the DragRow: this is what proves the onscrubstart/onscrubend
 	// wiring, i.e. that a slider drag collapses into ONE message and ONE undo step.
+	// The select opened by 4.6 has to go first, for the same reason as 3.4b.
+	await closeSelect(page);
 	const scrub = await page.evaluate((id) => {
 		const el = document.querySelector('#post-param-' + id + '-amount');
 		el.scrollIntoView({ block: 'center' });

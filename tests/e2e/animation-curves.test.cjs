@@ -67,11 +67,18 @@ h.run(async () => {
 		// over [0, duration) — the endpoint is where the old LOOP formula wrapped to
 		// the start, while scrubbing to the very end now shows the end (checked
 		// separately below, because showing the first pose there was never right).
+		// R1 (2026-08-17): position is RELATIVE now — a track is replayed from the pose
+		// the run starts at, as an offset from its FIRST key. The v1 formula still
+		// describes the MOVEMENT exactly; what changed is where it happens, so the
+		// expectation is the v1 world value re-based onto this object.
+		const baseY = obj.position.y;
+		const anchor = 1; // the v1 `from`, which migration makes the first key
 		const samples = [];
 		for (let i = 0; i < 10; i++) {
 			const seconds = (i / 10) * 2;
 			const phase = (seconds / 2) % 1;
-			const expected = 1 + (5 - 1) * ap.cubicBezierEase(bezier, phase);
+			const v1Absolute = 1 + (5 - 1) * ap.cubicBezierEase(bezier, phase);
+			const expected = baseY + (v1Absolute - anchor);
 			ap.scrub(obj.uuid, seconds);
 			samples.push([expected, obj.position.y]);
 		}
@@ -85,6 +92,7 @@ h.run(async () => {
 			trackId: clip.tracks[0].id,
 			worst: Math.max(...samples.map(([e, a]) => Math.abs(e - a))),
 			atEnd,
+			endExpected: baseY + (5 - anchor),
 			samples
 		};
 	});
@@ -98,8 +106,8 @@ h.run(async () => {
 	h.check(legacy.worst < 1e-6, `the migrated clip poses identically at 10 times (worst delta ${legacy.worst.toExponential(1)})`);
 	h.check(legacy.keys[0][1] !== legacy.keys[1][1], 'the migration is exact, not a reset to defaults');
 	h.check(
-		Math.abs(legacy.atEnd - 5) < 1e-6,
-		`and scrubbing to the very end shows the END pose (${legacy.atEnd}, not the wrapped start)`
+		Math.abs(legacy.atEnd - legacy.endExpected) < 1e-6,
+		`and scrubbing to the very end shows the END pose (${legacy.atEnd} = the v1 end re-based, not the wrapped start)`
 	);
 
 	// ---------- 2. easing is PER SEGMENT ----------

@@ -369,7 +369,10 @@
 	// the stock raycast path. (19-B P1 lifted the body there so Explorer drops and
 	// the snap engine pick exactly the same way.)
 	function pickSceneObjects() {
-		return sceneHits(selectionRaycaster);
+		// R2: selection (and only selection) also gets a minimum-size hit target for
+		// objects animated or scaled down to nothing — otherwise the object list is
+		// the only way to reach them again.
+		return sceneHits(selectionRaycaster, { tinyProxies: true });
 	}
 
 	function runModuleClickHandlers(hit) {

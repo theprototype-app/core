@@ -115,13 +115,28 @@ h.run(async () => {
 	);
 
 	// ---------- pause on B stops it on A, at the SAME frame ----------
-	await B.page.evaluate((id) => window.__stores.animationPreview.pause(id), uuid);
+	// The pause point is DRIVEN, not waited for. It used to pause after an
+	// unpredictable number of laps, and the check leaned on `y > 0.05` to prove the
+	// pose was "real" — which only ever passed because the pre-fold bug clamped a
+	// looped pause to the END of the clip. With pause telling the truth the frame
+	// can legitimately be near zero, so the run is restarted at a known offset and
+	// the assertion is the one this suite is actually about: both peers hold the
+	// SAME frame, and it is the frame the transport says.
+	await B.page.evaluate((id) => {
+		const ap = window.__stores.animationPreview;
+		ap.play(id, undefined, { from: 0.9 }); // mid-clip on a 2s clip
+		ap.pause(id);
+	}, uuid);
 	await B.page.waitForTimeout(900);
 	const [pausedA, pausedB] = await Promise.all([readAnim(A.page, uuid), readAnim(B.page, uuid)]);
 	h.check(!pausedA.playing && !pausedB.playing, 'either peer can pause it for everyone');
 	h.check(
-		pausedA.y > 0.05 && Math.abs(pausedA.y - pausedB.y) < 0.01,
+		Math.abs(pausedA.y - pausedB.y) < 0.01,
 		`and both hold the identical paused pose (A ${pausedA.y?.toFixed(4)} vs B ${pausedB.y?.toFixed(4)})`
+	);
+	h.check(
+		Math.abs(pausedA.y - pausedB.y) < 0.01 && pausedA.y !== 0,
+		`...and it is a real mid-clip frame, not the start (y=${pausedA.y?.toFixed(4)})`
 	);
 
 	// ---------- an edit on B reaches A (both directions) ----------

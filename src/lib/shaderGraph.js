@@ -451,6 +451,100 @@ export function setShaderParam(key, nodeId, param, value) {
 	return true;
 }
 
+// ---- persistence (plan SH4) -----------------------------------------------------
+//
+// A compiled material survives NONE of the four save paths, and each loses it
+// differently: the wire and autosave go through GLTF (which cannot carry a custom
+// shader at all), sessions/.tpscene go through toJSON (which would serialize our
+// injected material as if it were the object's own), and undo snapshots the tree. So
+// every serializer must read the BASE material, and the GRAPH rides beside the
+// snapshot — the `animated` / `multiMaterial` shape, keyed by uuid.
+
+/** parks nest (a serializer inside a serializer), so this is a DEPTH, not a flag */
+let materialParkDepth = 0;
+
+/** Is a serializer currently reading the scene without our materials? */
+export function shaderMaterialsParked() {
+	return materialParkDepth > 0;
+}
+
+/**
+ * Swap every shader-driven object back to its OWN material for the duration of a
+ * serialize, and return an idempotent restore. Hooked into `parkAnimatedAtBase`, the
+ * ritual every serializer already performs (the editOverlays precedent) — so the wire,
+ * autosave, sessions, .tpscene and the GLTF export are all covered by one call.
+ * Never disposes: the same material goes back on the same mesh afterwards.
+ * @returns {() => void}
+ */
+export function parkShaderMaterials() {
+	/** @type {{object: any, mine: any}[]} */
+	const parked = [];
+	const group = get(objectsGroup);
+	if (group)
+		group.traverse((/** @type {any} */ node) => {
+			const mine = installed.get(node.uuid);
+			if (mine && node.material === mine) {
+				const base = baseMaterials.get(node.uuid);
+				if (base) {
+					node.material = base;
+					parked.push({ object: node, mine });
+				}
+			}
+		});
+	materialParkDepth++;
+	let restored = false;
+	return () => {
+		if (restored) return;
+		restored = true;
+		materialParkDepth = Math.max(0, materialParkDepth - 1);
+		for (const entry of parked) entry.object.material = entry.mine;
+	};
+}
+
+/**
+ * Every graph document, for a save. Orphans (the owner object is gone) are pruned from
+ * the OUTPUT only — the live store keeps them, so undoing an object delete finds its
+ * shader intact (the `serializeGraphs` reasoning).
+ * @param {{pruneMissing?: (uuid: string) => boolean}} [opts]
+ * @returns {Record<string, any>}
+ */
+export function shaderGraphsSnapshot(opts = {}) {
+	const all = get(shaderGraphs);
+	/** @type {Record<string, any>} */
+	const out = {};
+	for (const [key, doc] of Object.entries(all)) {
+		if (key !== SCENE_GRAPH_KEY && opts.pruneMissing?.(key)) continue;
+		out[key] = normalizeShaderGraph(doc);
+	}
+	return out;
+}
+
+/**
+ * Reinstate saved documents. Compiling is left to the normal debounce + the
+ * objectsGroup reconcile, which is what makes the ORDER not matter: a restore that adds
+ * objects after the graphs still lands (SH2's late-joiner fix, reused).
+ * @param {Record<string, any>} map @param {boolean} [replace] wipe first (a scene LOAD
+ *   replaces the world; an autosave restore merges into it)
+ */
+export function shaderGraphsRestore(map, replace = false) {
+	if (replace) {
+		shaderGraphs.set({});
+		shaderErrors.set({});
+	}
+	if (!map || typeof map !== 'object') return;
+	for (const [key, doc] of Object.entries(map)) {
+		if (!doc) continue;
+		// silent: a restore is not an undo step and must not re-broadcast
+		setShaderGraphFor(key, normalizeShaderGraph(doc), { silent: true, stamp: Date.now() });
+	}
+	reconcileShaderGraphs();
+}
+
+/** How many objects are shader-driven right now (the GLTF export warning). */
+export function shaderDrivenCount() {
+	return installed.size;
+}
+
 /** Test/serializer seam: drop everything (a scene load replaces all documents). */
 export function clearShaderGraphs() {
 	for (const timer of timers.values()) clearTimeout(timer);

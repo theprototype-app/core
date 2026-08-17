@@ -8,6 +8,7 @@ import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
+import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
 import { stripEditOverlays } from './editOverlays';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
@@ -126,6 +127,12 @@ async function saveSnapshot() {
 		// same reason, different loss: a MATERIAL ARRAY cannot cross the GLTF round
 		// trip either (it comes back as a Group of single-material children)
 		multiMaterial: multiMaterialSnapshot(),
+		// SH4: a GLTF export cannot carry a custom shader at all, so the GRAPH rides
+		// beside the snapshot and is recompiled on restore (the same twin-replacement
+		// reasoning as the two fields above). Orphans are pruned from the OUTPUT only.
+		shaderGraphs: shaderGraphsSnapshot({
+			pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+		}),
 		animations: animationsSnapshot(),
 		nodes,
 		edges,
@@ -288,6 +295,10 @@ async function applyRestore(snapshot) {
 		// single-material children the GLTF export left behind (same twin-replacement
 		// shape as rigs below). Keyed by uuid, which the __uuid stamp above restored.
 		restoreMultiMaterial(snapshot.multiMaterial ?? []);
+		// shader graphs come back and recompile onto the restored objects, whose uuids
+		// the __uuid stamp above put back — order does not matter, the objectsGroup
+		// reconcile catches a graph whose target arrives later
+		shaderGraphsRestore(snapshot.shaderGraphs ?? {});
 		// rigs come back from their ORIGINAL bytes — this also replaces the static
 		// twin the GLTF export wrote — and authored tracks from the snapshot
 		await animatedImportsRestore(snapshot.animated ?? []);

@@ -12,6 +12,7 @@ import {
 	animatedImportsRestore
 } from './animatedImports';
 import { animationsSnapshot, animationsRestore } from './animationPreview';
+import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
@@ -129,6 +130,11 @@ export function buildSessionPayload(name) {
 			})),
 			nodes: graphs[SCENE_GRAPH]?.nodes ?? [],
 			edges: graphs[SCENE_GRAPH]?.edges ?? [],
+			// SH4: toJSON would write our injected material as the object's own, so the
+			// scene is saved PARKED (parkAnimatedAtBase, above) and the graphs ride here
+			shaderGraphs: shaderGraphsSnapshot({
+				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+			}),
 			annotations: annotationsSnapshot(),
 			joints: jointsSnapshot(),
 			camera: camera
@@ -431,6 +437,8 @@ export async function applySession(payload) {
 				edges: graphsPayload[SCENE_GRAPH]?.edges ?? []
 			});
 	}
+	// a scene LOAD replaces the world, so replace the documents too
+	shaderGraphsRestore(payload.shaderGraphs ?? {}, true);
 	annotationsRestore(payload.annotations ?? []);
 	// P-B: joints restore locally + replicate each def (receivers only apply)
 	jointsRestore(payload.joints ?? []);

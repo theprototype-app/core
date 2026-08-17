@@ -24,6 +24,7 @@ import { parkEditOverlays } from './editOverlays';
 // so a static edge here would close history -> flowRuntime -> animationPreview ->
 // history and TDZ-crash the SSR prerender.
 /** @type {any} */ let animRef = null;
+/** @type {any} */ let shaderRef = null;
 /** @type {any} */ let animImportsRef = null;
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
@@ -303,6 +304,10 @@ export function parkAnimatedAtBase() {
 	// (see editOverlays.js). Same reasoning as the two parks above: one ritual, and
 	// every serializer that already calls in here is covered.
 	const unpark2 = parkEditOverlays(sceneObjects);
+	// ...and any SHADER-DRIVEN material, which no save path can carry: GLTF drops a
+	// custom shader outright and toJSON would write our injected material as if it
+	// were the object's own. Same one-ritual reasoning as the parks above.
+	const unpark3 = shaderRef?.parkShaderMaterials?.() ?? null;
 	let restored = false;
 	return () => {
 		if (restored) return;
@@ -310,6 +315,7 @@ export function parkAnimatedAtBase() {
 		parked.forEach(resumeAnimation);
 		unpark?.();
 		unpark2();
+		unpark3?.();
 	};
 }
 
@@ -1257,6 +1263,9 @@ export function startFlowRuntime() {
 	});
 	// primed for the Play Animation node (see the TDZ note at the top)
 	import('./animationPreview').then((m) => (animRef = m));
+	// SH4: a compiled shader material must never reach a serializer — primed, like
+	// animationPreview, so flowRuntime keeps no static edge into it
+	import('./shaderGraph').then((m) => (shaderRef = m));
 	import('./animatedImports').then((m) => (animImportsRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();

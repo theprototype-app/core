@@ -411,10 +411,39 @@ loadable play content. Everything a user does must be visible to connected peers
   dynamic import — it can rewrite the whole program, so it stays as the "power"
   backend, and `fixShaderfrogArrayVaryings()` in vite.config.ts is what makes it
   work with shadows at all). `shaderCatalog` = curated node defs as pure DATA + a
-  GLSL emitter each (+ one raw-GLSL escape node). `shaderCompile` =
+  GLSL emitter each (+ one raw-GLSL escape node): 46 defs in groups Input/Math/Channel/
+  UV/Utility/Output. A def may declare `nativeType` (what `emit` RETURNS, required for
+  any MULTI-OUTPUT node -- the compiler declares one temp per node and the swizzled
+  outputs read it, so the temp cannot be typed by whichever output a graph wired first;
+  Texture read through `.a` used to emit `float t = texture2D(...)`) and `stages`
+  (absent = both; View direction / Fresnel / Normal map are fragment-only). `shaderCompile` =
   `compileShaderGraphToIR`: a memoised DFS from the Surface node's wired taps that
   hoists every node into a TEMP (a reused subgraph compiles ONCE), coerces types
   explicitly, guards cycles, and folds per-node `requires` into three's defines.
+  TWO PASSES since the tap round: the FRAGMENT taps (albedo/emissive/roughness/
+  metalness/normal/opacity/ao) and a VERTEX pass for `position` displacement, each with
+  its OWN body, temps and cycle guard (the stages are different programs) while uniforms
+  and preludes are SHARED. `emit` receives the `stage`, and an unwired socket's default
+  is translated through `VERTEX_EQUIVALENT` (vUv -> the `uv` attribute, normalize(vNormal)
+  -> objectNormal) as a CENTRAL rule, because forgetting a per-socket annotation fails
+  SILENTLY -- vUv exists in a vertex shader as an `out`, so it compiles and reads
+  nothing. The inject backend's anchors: albedo `<map_fragment>`, opacity
+  `<alphamap_fragment>` (still ahead of `<alphatest_fragment>`) + `transparent = true` on
+  the CLONE, roughness/metalness their own maps, normal `<normal_fragment_maps>` (after
+  `<normal_fragment_begin>` declared it), emissive `<emissivemap_fragment>`, ao
+  `<aomap_fragment>` (after `<lights_fragment_end>`, so `reflectedLight` exists), and
+  vertex `<begin_vertex>` as `transformed += expr`. `customProgramCacheKey` hashes BOTH
+  stages. Two limitations shared with three's own displacementMap, documented at the tap:
+  normals are not recomputed, and the SHADOW pass uses a separate depth material this
+  injection never reaches, so a displaced object casts its undisplaced silhouette.
+  `shaderTextures` = an Explorer content HASH resolved to a THREE.Texture, cached per
+  hash, with an `assetShare.requestAsset` pull + a listener-driven RETRY when the bytes
+  land (golden rule 9). Deliberately NOT an embedded dataURL the way material textures
+  work: a graph document replicates WHOLE on every edit, so an embedded image would
+  re-send the texture to every peer on each slider nudge. Wrap is REPEAT (Tiling/Panner
+  push uv outside 0..1 by design) and an unresolved hash holds a 1x1 WHITE placeholder,
+  because three substitutes its own empty texture for a null sampler and that samples to
+  ZERO -- a late joiner would sit looking at a black object while the pull ran.
   `shaderGraph` = the documents, keyed `'scene' | objectUuid | 'post:<id>'` (the
   flowGraphs precedent) with `graphKeyFor` = own -> scene default -> the object's
   real material; `setShaderGraphFor` is the SINGLE write path (setPhysicsFor
@@ -428,7 +457,15 @@ loadable play content. Everything a user does must be visible to connected peers
   instance so flowGraphs/nodesync stay byte-untouched; scope follows the SELECTION
   like the node editor's flow graphs, so there is no scope control) +
   `ShaderSidebar.svelte` + `nodes/ShaderNode.svelte` (ONE generic node for the whole
-  catalog). Plan + as-built: cloud `plans-core/pending/shader-graph-editor.md`; the
+  catalog) + `nodes/ShaderTexturePicker.svelte` (a file input that imports into the
+  Explorer, an Explorer drag-drop target, thumbnail, clear, and a "waiting for peer"
+  state; PUSHES the bytes on assign) + `nodes/ShaderVectorInput.svelte` (one number
+  field per component for a vec2/vec3/vec4 param -- without it such a param fell
+  through to the generic TEXT input, which wrote the string "1,1" back and
+  `uniformValue` read it as a COLOUR, so a vec2 became [1,1,1]; that shipped, and it
+  affected the Vector 2 / Vector 3 nodes too). Both pickers are shared by the node card
+  and the properties pane, and neither is wrapped in the card's `<label>` (a nested
+  label double-fires the click). Plan + as-built: cloud `plans-core/pending/shader-graph-editor.md`; the
   scene-wide half (post stack, layer 2) is `scene-look-post-processing.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
@@ -842,6 +879,35 @@ loadable play content. Everything a user does must be visible to connected peers
   base material's own IN THE SAME CHANNEL (letting each pick its own dominant channel
   compares a base's blue against a shader's red), and neutralise the base colour at
   setup — that took one metric from a 20-38 spread to a stable 82.3.
+- **A RAW NUL byte in a source file makes it BINARY to every text tool, and msys hides
+  it.** `shaderCompile.js` shipped with 6 of them inside string literals (Map-key
+  separators): `grep` answered "Binary file matches" instead of showing the line, git
+  diffed it as `Bin 11482 -> 11488 bytes`, and the Read tool renders NUL as a SPACE, so
+  the source looked normal and an exact-match Edit silently could not match. `cat -A`
+  shows `^@` -- but `sed`/`hexdump` under msys stripped the byte and reported clean LF,
+  so the check has to be a NODE read of the raw bytes. Write the two-character escape
+  instead; the runtime string is identical (verify against the old blob in a `.cjs` with
+  `execSync`, since a bash redirect mangles NULs and will tell you the files differ).
+- **A MULTI-OUTPUT node cannot be typed by the output that happens to be read first.**
+  The shader compiler declares one temp per node, so a Texture reached through its `.a`
+  output emitted `float t = texture2D(...)` -- a GLSL type error whose reachability
+  depended on EDGE ORDER. The temp takes the node's own `nativeType`; each output's type
+  comes from the catalog. Split exists only because of this rule.
+- **A stage-specific value that EXISTS in the other stage fails silently.** `vUv` is a
+  varying in the fragment shader and an `out` in the vertex one, so a vertex body reading
+  it COMPILES and samples nothing -- a wrong picture with no message, which is worse than
+  a refusal. Translate such defaults centrally (one table), not per socket, and refuse a
+  node that genuinely cannot work in a stage (no view vector and no `dFdx` in a vertex
+  shader) with a message naming both stages.
+- **A sampler with nothing in it is BLACK, not neutral.** three substitutes its own empty
+  texture for a null sampler and that samples to zero, so a Texture node wired to albedo
+  turned the object black before the user had picked anything, and a hash still being
+  pulled did the same to a late joiner. An unpicked node emits opaque white (the multiply
+  identity, no sampler at all) and an unresolved hash holds a 1x1 white placeholder.
+- **A plain Map read gives a `$derived` no signal.** The texture picker reported
+  "loading" forever for an image that HAD loaded: a decode finishing is not a store
+  write, and `shaderTextureFor` is a Map lookup. Notify on every resolve and let the
+  component depend on a tick -- the `$derived`-compares-with-=== family, one step out.
 - **A feature with no ENTRY POINT is invisible to a suite that supplies its own.** The
   Shader tab shipped with 20 green checks and no way for a user to open it: the suite
   set `shaderEditorClose` directly. Same family as "a component that crashed on mount
@@ -2044,6 +2110,22 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-17, later): **SHADER GRAPHS — the three OWED items EXECUTED** on the
+  same lane/branch (3 commits: `f63c4b4` textures, `5f81925` taps, `aedcc94` catalog).
+  (1) The Texture node LOADS a texture: `shaderTextures.js` resolves an Explorer content
+  hash to a THREE.Texture with an assetShare pull + retry, and `ShaderTexturePicker`
+  gives it a file input AND an Explorer drop target. (2) FOUR more taps -- normal (plus a
+  Normal map node building a TBN from screen-space derivatives, since these meshes carry
+  no tangents), opacity, ao, and VERTEX DISPLACEMENT, which needed a second compiler pass
+  with stage-aware emitters. (3) 16 catalog entries (30 -> 46 defs): Split/Combine,
+  Tiling & offset, Panner on the shared clock, 11 maths nodes, Gradient.
+  FOUR pre-existing bugs fell out: the multi-output temp type, `uniformValue` giving a
+  vec2 a 3-wide value, array params editing as TEXT (which broke the shipped Vector 2 /
+  Vector 3 nodes), and 6 raw NUL bytes making `shaderCompile.js` binary to grep. Guards
+  proven by breaking the code twice (the temp type reads `float t = texture2D(...)`; the
+  vector param reads 0 number fields). Baseline **391/62** at every commit, build green,
+  all five shader suites green. OWED: the user's own feel pass, then SH5 (Inspector
+  integration) / SH6 (the module SDK seam) and the PR.
 - Status (2026-08-17): **SHADER GRAPH EDITOR — SH0 through SH4 EXECUTED**, lane
   `../theprototype-lane-shader` @ port 5197, branch `feat/shader-graph-spike`, 9
   commits @be8cb0d off release/next @78e71d7 (merged in; the one conflict was

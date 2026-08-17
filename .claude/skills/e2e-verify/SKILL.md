@@ -33,11 +33,20 @@ with the counterfactual against the old 45000 cap); selection is `selection-extr
 (Ctrl+A + the configurable double-click, both through real input); the edit-overlay
 save paths are `edit-overlay-gaps`; the animation look channels and the loop-pause
 transport are `animation-look-channels` and `animation-loop-pause`.
-The shader graph editor has five: `shader-compile` (the graph->IR compiler, NO
+The shader graph editor has five (all five are the gate for any shader change, and
+two-peer `shader-sync` needs PEER_CONFIG): `shader-compile` (the graph->IR compiler, NO
 browser — it imports the ESM directly), `shader-graph` (the store/compile/install
 pipeline), `shader-sync` (replication + history, three peers), `shader-editor` (the
 dock tab, driving the real UI) and `shader-persist` (all four save paths, including a
-real save -> reload -> `restoreSnapshot()` cycle).
+real save -> reload -> `restoreSnapshot()` cycle). Three premise traps this round paid
+for, all in `shader-graph`: tiling or scrolling a SOLID-COLOUR texture cannot move a
+pixel, so those checks were unfalsifiable until the fixture got structure (and the
+metric became a count of CHANGED pixels, since a mean averages stripes away); with a
+two-halves image any WHOLE tiling maps the sample point back onto the same colour
+boundary, which is a property of the fixture and not of tiling (use 3.5); and texture
+resolution is LAZY -- triggered when a compile fills the sampler uniform -- so polling
+`shaderTextureFor` before anything asked for that hash waits forever. Only the premise
+check `the structured texture decoded` separated the last one from a real failure.
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass

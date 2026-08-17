@@ -49,19 +49,37 @@ let live = null;
  *
  * Each ghost gets its OWN material instance, so two ghosts cannot fight over a
  * shared one and an animated look channel tints only the ghost it belongs to.
- * @param {any} object @param {number} colour
+ * @param {any} object @param {number} colour @param {number} [bias] depth-sort rank
  */
-function buildGhost(object, colour) {
+function buildGhost(object, colour, bias = 0) {
 	const material = new THREE.MeshBasicMaterial({
 		color: colour,
 		transparent: true,
 		opacity: OPACITY,
 		depthWrite: true,
-		side: THREE.FrontSide
+		side: THREE.FrontSide,
+		// A ghost sits ON the object whenever the movement between two keys is small,
+		// and two almost-coplanar surfaces at equal depth SHIMMER — the classic
+		// z-fight, reported as "they glitch like two planes in the same place".
+		// Pushing the ghost's fragments slightly FURTHER in depth settles it: where
+		// the two coincide the real object simply wins, and where the ghost really is
+		// in front it still draws. The standard fix for coplanar overlay geometry,
+		// and it keeps `depthWrite: true` — turning that off would lose the
+		// postprocessing passes (the documented AO/outline trap above).
+		//
+		// Each ghost takes its OWN bias, so two ghosts cannot fight each other
+		// either: they layer in a fixed order instead of flickering between frames.
+		polygonOffset: true,
+		polygonOffsetFactor: 1 + bias,
+		polygonOffsetUnits: 1 + bias
 	});
 	const clone = object.clone(true);
 	clone.traverse((/** @type {any} */ node) => {
-		if (node.isMesh || node.isLine || node.isPoints) node.material = material;
+		// anything that HAS a material takes the ghost one. Listing types
+		// (isMesh/isLine/isPoints) missed Sprites, which then kept a reference to the
+		// REAL material — so that part of the ghost drew at full strength and no
+		// amount of re-asserting the ghost material could dim it.
+		if (node.material) node.material = material;
 		// a ghost is a picture, not an object: strip everything that would make it
 		// behave like one, but KEEP `origin` — poseAt turns a hinged door about it,
 		// so a ghost without it swings from the wrong point
@@ -146,8 +164,10 @@ export function updateOnionSkin() {
 		clearGhosts();
 		/** @type {{mesh: any, material: any, when: number}[]} */
 		const ghosts = [];
-		want.forEach((when) => {
-			const built = buildGhost(object, when < head ? PAST : FUTURE);
+		want.forEach((when, index) => {
+			// index = the depth-sort rank: every ghost sits behind the real object, and
+			// behind the ghost built before it, so nothing shimmers against anything
+			const built = buildGhost(object, when < head ? PAST : FUTURE, index);
 			ghostRoot.add(built.mesh);
 			ghosts.push({ ...built, when });
 		});
@@ -160,6 +180,8 @@ export function updateOnionSkin() {
 	const base = ghostBase(uuid, object);
 	const parent = object.parent;
 	if (parent) parent.updateMatrixWorld();
+	object.updateMatrixWorld();
+	object.matrixWorld.decompose(objectPos, objectQuat, objectScale);
 	for (const ghost of live.ghosts) {
 		if (!clip) break;
 		poseAt(ghost.mesh, clip, ghost.when, base);
@@ -171,10 +193,37 @@ export function updateOnionSkin() {
 		// poseAt may have driven look channels (opacity, colour) onto the ghost's own
 		// material — a ghost is meant to read as a ghost, so its faintness wins
 		ghost.material.opacity = OPACITY;
-		ghost.material.transparent = true;
+		if (!ghost.material.transparent) {
+			ghost.material.transparent = true;
+			ghost.material.needsUpdate = true; // transparency is a render-program change
+		}
 		ghost.material.color.setHex(ghost.when < head ? PAST : FUTURE);
-		ghost.mesh.visible = true;
+		// A ghost standing exactly where the object stands is not a ghost, it is a
+		// second copy of it — and two of those at 28% over the real thing read as one
+		// slightly odd SOLID object (reported as "onion skin shows the full object").
+		// That is what happens whenever the clip drives only LOOK channels, or the
+		// neighbouring keys hold the same pose: there is no motion to show. Onion
+		// skin is a motion aid, so a ghost with nothing to say hides itself.
+		ghost.mesh.visible = !sameTransform(ghost.mesh);
 	}
+}
+
+const objectPos = new THREE.Vector3();
+const objectQuat = new THREE.Quaternion();
+const objectScale = new THREE.Vector3();
+const ghostPos = new THREE.Vector3();
+const ghostQuat = new THREE.Quaternion();
+const ghostScale = new THREE.Vector3();
+
+/** Is this ghost sitting exactly on the object it copies? @param {any} mesh */
+function sameTransform(mesh) {
+	mesh.updateMatrixWorld();
+	mesh.matrixWorld.decompose(ghostPos, ghostQuat, ghostScale);
+	return (
+		ghostPos.distanceToSquared(objectPos) < 1e-8 &&
+		Math.abs(ghostQuat.dot(objectQuat)) > 1 - 1e-6 &&
+		ghostScale.distanceToSquared(objectScale) < 1e-8
+	);
 }
 
 const composed = new THREE.Matrix4();

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
-import { peers } from '../stores/appStore';
+import { peers, showToast } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import {
 	suspendAnimation,
@@ -397,7 +397,7 @@ export function channelLabel(channel) {
 			visible: 'Visible',
 			opacity: 'Opacity',
 			'color.r': 'Colour R', 'color.g': 'Colour G', 'color.b': 'Colour B',
-			metalness: 'Metalness', roughness: 'Roughness', emissive: 'Glow',
+			metalness: 'Metalness', roughness: 'Roughness', emissive: 'Emission',
 			'light.intensity': 'Light intensity'
 		}[channel] ?? channel
 	);
@@ -816,7 +816,7 @@ const POS_AXIS = { 'pos.x': 0, 'pos.y': 1, 'pos.z': 2 };
  */
 const anchorCache = new WeakMap();
 
-/** @param {Clip} clip @param {string} channel */
+/** @param {Clip|null} clip @param {string} channel */
 function channelAnchor(clip, channel) {
 	if (!clip) return 0;
 	let cached = anchorCache.get(clip);
@@ -838,7 +838,7 @@ function channelAnchor(clip, channel) {
 }
 
 /** The WORLD value a key means for an object whose run started at `basePos`.
- * @param {Clip} clip @param {string} channel @param {number} v @param {number[]} [basePos] */
+ * @param {Clip|null} clip @param {string} channel @param {number} v @param {number[]} [basePos] */
 export function worldValueOf(clip, channel, v, basePos) {
 	const axis = POS_AXIS[channel];
 	if (axis === undefined || !basePos) return v;
@@ -847,7 +847,7 @@ export function worldValueOf(clip, channel, v, basePos) {
 
 /** The KEY value that records an object currently at `current` — the inverse of
  * worldValueOf, and what every write path must use.
- * @param {Clip} clip @param {string} channel @param {number} current @param {number[]} [basePos] */
+ * @param {Clip|null} clip @param {string} channel @param {number} current @param {number[]} [basePos] */
 export function keyValueOf(clip, channel, current, basePos) {
 	const axis = POS_AXIS[channel];
 	if (axis === undefined || !basePos) return current;
@@ -1079,6 +1079,35 @@ function editClip(uuid, clipId, fn) {
 		set.clips[id] = next;
 		return set;
 	});
+	repose(uuid);
+}
+
+/**
+ * Show an edit IMMEDIATELY.
+ *
+ * Every clip mutation lands in `editClip` — a key value typed or dragged, a track
+ * added, a retime, a marker moved — and none of them re-posed the object, so the
+ * change only appeared once something else moved the playhead ("I have to click on
+ * the timeframe to see what changed"). One re-pose at the current parked position
+ * is what makes editing feel live, and it belongs at the single choke point rather
+ * than at each of a dozen call sites.
+ *
+ * Skipped while PLAYING (the tick owns the pose that frame) and when nothing is
+ * previewing this object (no base means the clip is not on screen at all, so there
+ * is nothing to refresh and no pose to disturb).
+ * @param {string} uuid
+ */
+function repose(uuid) {
+	const base = bases.get(uuid);
+	if (!base) return;
+	const p = get(playback)[uuid];
+	if (!p || p.playing) return;
+	const object = objectFor(uuid);
+	const clip = clipOf(uuid, p.clipId);
+	if (!object || !clip) return;
+	const seconds = parkedPosition(clip, p);
+	poseAt(object, clip, seconds, base);
+	playheads.update((map) => ({ ...map, [uuid]: seconds }));
 }
 
 /**
@@ -1873,14 +1902,16 @@ function watchableChannels(object) {
  */
 export function captureAutoKey(uuid, seconds) {
 	if (get(autoKeyFor) !== uuid) return 0;
-	const clip = activeClip(uuid);
+	// NOT bailing on a missing clip: with REC armed the first change CREATES one
+	// (below, once we know something actually changed)
+	let clip = activeClip(uuid);
 	const object = objectFor(uuid);
-	if (!clip || !object) return 0;
+	if (!object) return 0;
 	const at = Math.max(0, num(seconds));
 	const reference = autoKeyReference.get(uuid) ?? null;
 	/** @type {{trackId: string|null, channel: string, v: number, from: number|null}[]} */
 	const writes = [];
-	const byChannel = new Map(clip.tracks.map((track) => [track.channel, track]));
+	const byChannel = new Map((clip?.tracks ?? []).map((track) => [track.channel, track]));
 	// uniform scale is a legacy alias for the three axes; if a track already drives
 	// it, keep using that one rather than adding per-axis tracks beside it
 	const uniform = byChannel.get('scale');
@@ -1915,6 +1946,22 @@ export function captureAutoKey(uuid, seconds) {
 	}
 	if (!writes.length) return 0;
 	beginAnimGesture(uuid, 'Auto-key');
+	// REC with NO CLIP YET: the first change creates one. Arming alone deliberately
+	// creates nothing — a clip is replicated, saved data, and toggling REC on and off
+	// should not litter a scene with empty ones. But the change itself must not be
+	// silently dropped either, which is what used to happen (captureAutoKey returned
+	// at the top when `activeClip` was null, so the edit went nowhere).
+	//
+	// This is Blender's model: switching auto-keying on does nothing, and the first
+	// keyed change creates the Action. Inside the gesture, so ONE undo removes the
+	// clip and the keys together.
+	if (!clip) {
+		// No `createClip` here: `emptySet()` already carries a default clip and every
+		// write below goes through editSet, so the clip materialises with the first
+		// addTrack. Creating one explicitly as well produced TWO (the default plus the
+		// new one) — which the suite caught. Just say that it happened.
+		showToast('Started a new clip for this object (REC)');
+	}
 	for (const write of writes) {
 		let trackId = write.trackId;
 		if (!trackId) {
@@ -2349,6 +2396,7 @@ export function parkAuthoredAtBase() {
 /** @type {Map<string, {clipId: string, seconds: number}>} */
 const lastHead = new Map();
 
+
 /**
  * Every marker the playhead passed travelling `from` -> `to`, in travel order.
  * The DESTINATION end is inclusive and the origin exclusive: a marker exactly
@@ -2433,6 +2481,15 @@ export function tickAnimationPreview() {
 		for (const uuid of Object.keys(kept)) if (map[uuid]) next[uuid] = kept[uuid];
 		playheads.set(Object.assign(next, heads));
 	}
+	// A properties-panel poke lived here and DID NOT WORK, so it is gone rather than
+	// left as dead code. Poking `selectedObject` does re-run the component, but the
+	// transform rows read through a `$derived` that hands back the same mutated THREE
+	// object, and a derived compares with `===` — so nothing propagates. Measured
+	// from the DOM: the `.dn-input` values were identical across five samples of a
+	// running clip. The real fix is a fresh transform SNAPSHOT per poke, the shape
+	// the `material` derived already uses — written up in the plans, not guessed at
+	// here (panels updating during playback IS the DCC norm, so it is worth doing
+	// properly).
 	// a 'once' clip ends on its own on EVERY peer at the same elapsed time, so
 	// this is a local state change — never a broadcast.
 	for (const uuid of finished) {

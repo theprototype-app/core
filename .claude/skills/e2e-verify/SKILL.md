@@ -33,8 +33,13 @@ with the counterfactual against the old 45000 cap); selection is `selection-extr
 (Ctrl+A + the configurable double-click, both through real input); the edit-overlay
 save paths are `edit-overlay-gaps`; the animation look channels and the loop-pause
 transport are `animation-look-channels` and `animation-loop-pause`.
-The shader graph editor has five (all five are the gate for any shader change, and
-two-peer `shader-sync` needs PEER_CONFIG): `shader-compile` (the graph->IR compiler, NO
+The shader graph editor has eight (all of them are the gate for any shader change, and
+two-peer `shader-sync` needs PEER_CONFIG): `shader-inspector` (the shader-driven
+Material section + its guards + the context-menu entry), `shader-module-flow` (the
+module backend seam via `moduleSDK.initModules` with an INLINE module — the real api
+path, no zip needed — plus the Set Shader Uniform node), `shader-node-docs` (no
+browser: every node has a manual line, none merely restates its label, and the
+docs-site tables carry the SAME text), `shader-compile` (the graph->IR compiler, NO
 browser — it imports the ESM directly), `shader-graph` (the store/compile/install
 pipeline), `shader-sync` (replication + history, three peers), `shader-editor` (the
 dock tab, driving the real UI) and `shader-persist` (all four save paths, including a
@@ -47,6 +52,14 @@ boundary, which is a property of the fixture and not of tiling (use 3.5); and te
 resolution is LAZY -- triggered when a compile fills the sampler uniform -- so polling
 `shaderTextureFor` before anything asked for that hash waits forever. Only the premise
 check `the structured texture decoded` separated the last one from a real failure.
+Three more premise traps from the SH5-SH7 round: `buildObjectMenuItems` derives
+`multi` from opts.SELECTION and IGNORES an opts.multi flag, so a hand-passed flag
+makes the check vacuous; a WIRED flow input means editing that node's own `data` does
+nothing (the upstream node decides, which is correct behaviour); and a SYNTHETIC
+mousedown on an xyflow node card enters its drag handler, which reads `ownerDocument`
+off the target and throws — select a node with a real `page.mouse.click`. Also: two
+picks of the SAME bytes are the same content hash, so a second texture assignment is
+silently a no-op (vary the image, or the check measures the first one twice).
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass

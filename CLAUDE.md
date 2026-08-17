@@ -465,7 +465,32 @@ loadable play content. Everything a user does must be visible to connected peers
   `uniformValue` read it as a COLOUR, so a vec2 became [1,1,1]; that shipped, and it
   affected the Vector 2 / Vector 3 nodes too). Both pickers are shared by the node card
   and the properties pane, and neither is wrapped in the card's `<label>` (a nested
-  label double-fires the click). Plan + as-built: cloud `plans-core/pending/shader-graph-editor.md`; the
+  label double-fires the click). The picker's HOVER CARD is PORTALED to body (xyflow
+  transforms its pane, so a `position: fixed` child would be positioned against the
+  panned/zoomed pane) and GROWS UPWARD anchored by `bottom` — this editor is a bottom
+  dock, so the space above the swatch is the empty viewport while the space beside it
+  is the graph, and bottom-anchoring bottom-aligns it without knowing its height, so a
+  wrapped name cannot push it off screen. The node-card NAME is clamped (58px): xyflow
+  sizes a node to its content, so an unbounded filename stretched the card.
+  **SH5** the Inspector's Material section shows a shader-driven notice (Open in Shader
+  editor / Detach) and HIDES the material editors while the whole selection is driven —
+  they would write to the clone the next recompile discards; `fanMat` skips driven
+  members with a counted toast; cast/receive shadow stay (object flags, not material).
+  Detach DELETES the object's own graph, because restoring the base alone is undone by
+  the reconcile, and an object driven by the SCENE default gets an explanation instead
+  of a button that cannot work. `openShaderEditor()` is the seam the notice and the
+  objectMenu 'Edit shader' entry share. **SH6** `api.registerShaderBackend(key,label,
+  compile)` — namespaced `mod-<id>-<key>`, returns its PROMISE, teardown in the module
+  journal, and an UNKNOWN backend falls back to inject with `userData
+  .shaderBackendFallback` stamped (not just the disabled case: a peer that never had
+  the module receives a graph naming it). **SH7** the `setuniform` flow node writes a
+  live uniform LOCALLY per peer (the setcolor pattern — the value already arrives
+  through the replicated flow graph), reached through flowRuntime's primed `shaderRef`;
+  numbers only, and the editor's info pane lists the generated `u_<nodeId>_<param>`
+  names so a flow node has something to address. **The MANUAL is a `doc` line per def
+  in a DOCS map** (helper-made nodes have no literal to hang one on), feeding the info
+  pane, the palette tooltip AND the docs-site tables from one string; `shader-node-docs`
+  fails if a node ships without one. Plan + as-built: cloud `plans-core/pending/shader-graph-editor.md`; the
   scene-wide half (post stack, layer 2) is `scene-look-post-processing.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
@@ -879,6 +904,25 @@ loadable play content. Everything a user does must be visible to connected peers
   base material's own IN THE SAME CHANNEL (letting each pick its own dominant channel
   compares a base's blue against a shader's red), and neutralise the base colour at
   setup — that took one metric from a 20-38 spread to a stable 82.3.
+- **A CACHE that nothing pokes is invisible to every derived.** `applyMaterial` installed
+  a compiled shader material without `objectsGroup.update(v=>v)`, and THREE trees are not
+  reactive — so the Inspector's shader-driven notice never appeared and its own
+  `material` derived was equally blind. Any module keeping scene state in a Map beside
+  the tree has to poke the store the observers read.
+- **A RESTORE that leaves the SOURCE in place is undone by the thing that reconciles
+  them.** Shader Detach put the object back on its base material but left the graph
+  document, so the objectsGroup reconcile — which exists so a late joiner's graph
+  compiles when its object arrives — correctly saw "a graph whose target is not driven"
+  and re-installed it. Detach deletes the document instead. Adding the missing poke is
+  what made it instant rather than eventual, which is the only reason it was noticed;
+  and where there is nothing to delete (a SCENE-inherited graph) the honest move is to
+  explain rather than offer a button that undoes itself.
+- **A fallback belongs in the REGISTRY, not in the disable path.** A shader graph names
+  its backend, so a module being disabled is only one way to reach an unknown one — a
+  peer that never installed the module gets the same document, and refusing to compile
+  would leave that peer with an error it cannot act on. Fall back where the lookup
+  happens, stamp what you fell back FROM, and keep the document's original key so
+  re-enabling restores the intent instead of having rewritten the graph.
 - **A RAW NUL byte in a source file makes it BINARY to every text tool, and msys hides
   it.** `shaderCompile.js` shipped with 6 of them inside string literals (Map-key
   separators): `grep` answered "Binary file matches" instead of showing the line, git
@@ -2110,6 +2154,21 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-18): **SHADER GRAPHS — SH5/SH6/SH7 + the node MANUAL** (same lane,
+  4 commits `7da4c2d`/`9c34e5b`/`1bf9e28`/+docs, plus a docs-repo commit `92ba71e`).
+  The Texture node gained a portaled HOVER CARD (scaled preview, full name, dimensions,
+  size, wrap, id) and its node-card name is clamped so a long filename cannot widen the
+  node — 184 chars measures the same as 62. **SH5** Inspector integration + the guards.
+  **SH6** `api.registerShaderBackend` with journal teardown + a registry-level fallback.
+  **SH7** the `setuniform` flow node + the uniform names surfaced in the info pane.
+  **DOCS**: a `doc` line per node feeding the info pane, the palette tooltip and the
+  docs-site tables from ONE string, a generated `shader-nodes.md` reference grouped by
+  palette group (deliberately NOT 46 stub pages — 26 are Math one-liners), a
+  `shader-graph.md` guide, and `nodes/setuniform.md`. New suites: `shader-inspector`
+  (23), `shader-module-flow` (28), `shader-node-docs` (15, no browser). Three guards
+  proven by breaking the code (the vector-param branch reads 0 fields; a blanked doc
+  line goes red). Baseline **391/62** at every commit. STILL OPEN: SH6b layer-2
+  assignment, the post-domain (layer 1), and the user's feel pass, then the PR.
 - Status (2026-08-17, later): **SHADER GRAPHS — the three OWED items EXECUTED** on the
   same lane/branch (3 commits: `f63c4b4` textures, `5f81925` taps, `aedcc94` catalog).
   (1) The Texture node LOADS a texture: `shaderTextures.js` resolves an Explorer content

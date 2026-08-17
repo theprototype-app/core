@@ -13,7 +13,15 @@ import {
 	showSimControls
 } from '../stores/appStore';
 import { aiReady } from './ai/providers';
-import { focusObject, duplicateSelection, requestDeleteSelection, setTransformMode } from './objectActions';
+import {
+	focusObject,
+	duplicateSelection,
+	requestDeleteSelection,
+	setTransformMode,
+	selectAllObjects,
+	clearIsolation,
+	isIsolated
+} from './objectActions';
 import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
 import { faceEditObject, meshEditHotkeys } from './faceEdit';
@@ -25,7 +33,7 @@ import { selectedObject } from '../stores/sceneStore';
 // and renders the list in Settings -> Shortcuts. Other modules push entries via
 // registerShortcut() so their keys show up in the list automatically.
 
-/** @typedef {{ keys: string, group: string, label: string, action?: () => void }} Shortcut */
+/** @typedef {{ keys: string, group: string, label: string, action?: () => void, when?: () => boolean }} Shortcut */
 
 /**
  * Delete the viewport selection from the keyboard (154). The node editor owns
@@ -91,6 +99,27 @@ export const shortcuts = [
 		group: 'Objects',
 		label: 'Duplicate selection (whole set)',
 		action: () => duplicateSelection()
+	},
+	{
+		// Phase 85. A mesh session owns Ctrl+A for its own elements (and the UV
+		// editor claims it in capture phase on its canvas), so this stands down
+		// while one is open rather than selecting the whole scene behind it.
+		keys: 'Ctrl+A',
+		group: 'Objects',
+		label: 'Select all objects',
+		action: () => {
+			if (get(editingObject) || get(faceEditObject)) return;
+			selectAllObjects();
+		}
+	},
+	{
+		// 85: the way OUT of an isolation. `when` keeps the key untouched the rest
+		// of the time — Escape belongs to a dozen local handlers in this app.
+		keys: 'Escape',
+		group: 'Objects',
+		label: 'Leave isolation (double-click view)',
+		when: () => isIsolated(),
+		action: () => clearIsolation()
 	},
 	{
 		keys: 'Delete',
@@ -331,6 +360,11 @@ function handleKeydown(event) {
 	// (was Settings only, which is also why panel toggles couldn't fight the
 	// hidePanels snapshot). Ctrl+/ (help) stays live.
 	if (get(anyModalOpen) && shortcut.keys !== 'Ctrl+/') return;
+	// A binding may decline the key (85: Escape only means "leave isolation" WHILE
+	// something is isolated). Checked BEFORE preventDefault, so a declined key is
+	// left completely untouched for whoever else handles it — registering Escape
+	// would otherwise swallow the browser default on every press in the app.
+	if (shortcut.when && !shortcut.when()) return;
 
 	event.preventDefault();
 	shortcut.action();

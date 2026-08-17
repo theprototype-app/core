@@ -8,7 +8,19 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
-	import { selectObject, deselectObject, applySelectionSet, topLevelObjectOf } from '$lib/objectActions';
+	import {
+		selectObject,
+		deselectObject,
+		applySelectionSet,
+		topLevelObjectOf,
+		focusObject,
+		selectSameType,
+		isolateObjects,
+		clearIsolation,
+		isIsolated
+	} from '$lib/objectActions';
+	// 85: what a double-click does (a LOCAL pref; store-only leaf, no cycle)
+	import { doubleClickAction } from '$lib/selectionPrefs';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
@@ -24,7 +36,7 @@
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
 	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
+	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
@@ -398,7 +410,19 @@
 				const isDouble = !additive && lastPick.uuid === target.uuid && now - lastPick.t < 400;
 				lastPick = { uuid: target.uuid, t: now };
 				// shift-click toggles set membership (13)
-				selectObject(target.uuid, isDouble, additive);
+				// 85: WHAT a double-click does is a preference now. 'properties' is
+				// the default and the behaviour 15-O shipped; the other three exist
+				// because a modelling session wants something else from the same
+				// gesture. The SELECT happens either way — the action follows it
+				// rather than replacing it.
+				const action = $doubleClickAction;
+				selectObject(target.uuid, isDouble && action === 'properties', additive);
+				if (isDouble && action === 'meshedit') enterFaceEdit(target.uuid);
+				else if (isDouble && action === 'sametype') selectSameType(target.uuid);
+				else if (isDouble && action === 'isolate') {
+					focusObject(target.uuid);
+					isolateObjects([target.uuid]);
+				}
 				fireObjectClick(target.uuid); // 134: pulse any OnClick node targeting it
 				return true;
 			}
@@ -723,7 +747,12 @@
 					return;
 				}
 			}
-			if (!raycastSelect(event.shiftKey) && !event.shiftKey) deselectObject();
+			// 85: a click on nothing is also the way out of an isolation — the same
+			// "click the background to get back" instinct as deselecting.
+			if (!raycastSelect(event.shiftKey) && !event.shiftKey) {
+				if (isIsolated()) clearIsolation();
+				deselectObject();
+			}
 		};
 
 		// pointerdown on the canvas proves the gesture started in the viewport;

@@ -51,6 +51,7 @@
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
 	import { updateOnionSkin } from '$lib/onionSkin';
+	import { updateTinyMarkers } from '$lib/tinyMarkers';
 	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
@@ -286,6 +287,7 @@
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
 		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
+		updateTinyMarkers(); // R2: a dot to aim at when an object has no size left
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 	});
 

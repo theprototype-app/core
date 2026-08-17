@@ -261,15 +261,27 @@
 		if (!target) return;
 		selId = addTrack(target.uuid, newChannel, target);
 		selKeys = [];
+		// ...and SHOW it. The new track has a value at the playhead already, but
+		// nothing re-posed the object, so the pane sat there looking inert until the
+		// user nudged the playhead — reported as "I have to click the frame again".
+		scrub(target.uuid, curTime);
 	}
 	function togglePlay() {
 		if (!target) return;
 		if (isPlaying) pause(target.uuid);
 		else play(target.uuid, undefined, { from: Math.max(0, curTime - rangeIn), reverse: false });
 	}
-	/** play backwards from where the playhead stands */
+	/** Play backwards from where the playhead stands — and PAUSE on a second press,
+	 * so a reverse run can be stopped on an exact frame. The button keeps its own
+	 * look (a rewind glyph, lit while it is the thing playing): only the forward
+	 * button doubles as the play/pause face, and swapping this one's icon too would
+	 * leave no way to tell which direction is armed. */
 	function playBack() {
 		if (!target) return;
+		if (isPlaying && pb?.reverse) {
+			pause(target.uuid);
+			return;
+		}
 		play(target.uuid, undefined, { from: Math.max(0, rangeOut - curTime), reverse: true });
 	}
 	/** Step to the previous / next key time. In GRAPH view that means the keys of

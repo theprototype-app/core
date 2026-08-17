@@ -2712,33 +2712,6 @@
 						<SliderRow label="Metalness" min={0} max={1} step={0.05} value={material.metalness}
 							mixed={matMixed((o) => o.material.metalness)}
 							onchange={(v) => setMat('metalness', v)} />
-						<!-- GLOW. three multiplies emissiveIntensity by the emissive COLOUR, so
-						     with no colour set (black, the default on every material) the
-						     strength does nothing at all — which is why the animation Glow
-						     channel looked broken. Both halves are editable here now; the
-						     colour replicates + undoes through setMaterialParam, which has
-						     always handled Color-typed params. -->
-						<p class="ui-section-label">Glow</p>
-						<SliderRow label="Strength" min={0} max={5} step={0.05} value={material.emissiveIntensity ?? 1}
-							mixed={matMixed((o) => o.material.emissiveIntensity)}
-							onchange={(v) => setMat('emissiveIntensity', v)} />
-						<!-- a plain colour input, not the ColorPicker component: this row needs
-						     no palette, and the component fires onInput ON MOUNT (opening a
-						     panel would light every object you merely looked at) -->
-						<div id="inspector-emissive" class="ui-row items-center gap-1">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Colour</span>
-							<input
-								type="color"
-								id="emissive-color"
-								aria-label="Glow colour"
-								class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent"
-								value={'#' + (material.emissive?.getHexString?.() ?? '000000')}
-								oninput={(e) => setMat('emissive', e.currentTarget.value)}
-							/>
-						</div>
-						<p class="pb-1 text-[10px] italic text-gray-400">
-							Black means no glow. The Glow animation channel drives the strength.
-						</p>
 					{/if}
 					{#if material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Clearcoat" min={0} max={1} step={0.05} value={material.clearcoat}
@@ -2804,19 +2777,29 @@
 							/>
 						</div>
 					{/if}
+					<!-- EMISSION. One block, one name: this used to be "Emissive"/"Emissive
+					     int." here and a second "Glow" pair higher up, which is two controls
+					     for the same two properties. `Emission` with Color and Strength is
+					     what Blender and Unity both call it, and the animation channel uses
+					     the same word. Strength MULTIPLIES the colour, so black means no
+					     emission however high it goes — hence the note. -->
 					{#if material.emissive}
-						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Emissive</span>
+						<p class="ui-section-label">Emission</p>
+						<SliderRow label="Strength" min={0} max={5} step={0.05} value={material.emissiveIntensity ?? 1}
+							mixed={matMixed((o) => o.material.emissiveIntensity)}
+							onchange={(v) => setMat('emissiveIntensity', v)} />
+						<div id="inspector-emissive" class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
 							<input
 								type="color"
+								id="emissive-color"
+								aria-label="Emission colour"
 								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
 								value={'#' + material.emissive.getHexString()}
 								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
+							<span class="text-[10px] italic text-gray-400">black = no glow</span>
 						</div>
-						<SliderRow label="Emissive int." min={0} max={4} step={0.05} value={material.emissiveIntensity}
-							mixed={matMixed((o) => o.material.emissiveIntensity)}
-							onchange={(v) => setMat('emissiveIntensity', v)} />
 					{/if}
 
 					<p class="ui-section-label">Shadow</p>

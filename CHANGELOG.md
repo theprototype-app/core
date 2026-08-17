@@ -5,6 +5,62 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.5.0 — Move it, properly 🎬
+
+Animation you can trust: movements play from where the object actually is, pause
+stops where you pressed it, edits show up the moment you make them, and the
+channels that quietly did nothing now work.
+
+### 🎬 Animation
+
+- 📍 **Movements play from where the object is.** Move something after animating
+  it and the clip runs from its new home instead of snapping back to where you
+  first keyed it. *This changes clips you have already saved* — a door authored at
+  the origin now opens wherever it stands.
+- ⏸️ **Pause stops where you pressed it.** Pausing after the first loop used to
+  jump to the last frame (or the first, playing backwards) and the timeline lost
+  its place. Playing backwards pauses on a second press, too.
+- 👀 **Edits show immediately.** Adding a channel, typing a key value, retiming or
+  moving a marker re-poses the object there and then — no clicking the timeline to
+  find out what changed.
+- 🎨 **Recording catches colour and material edits as you make them.** With REC on,
+  changing a colour or roughness in the properties panel keys it straight away
+  instead of waiting until you clicked the object again.
+- 🔴 **REC with no clips does the sensible thing** — the first change you make
+  creates the clip, and says so.
+- 🌑 **Fade, roughness and colour channels actually move.** A new track's second
+  key was out of range for anything measured 0 to 1, so adding an Opacity channel
+  did nothing at all.
+- ✨ **Emission works, and it is yours to colour.** The glow channel had no colour
+  to light up; now it takes the object's own, and the properties panel has a single
+  **Emission** block — Strength and Colour — in place of the two overlapping ones.
+- 🧅 **Onion skin reads as onion skin.** Ghosts sitting exactly on the object used
+  to look like a second solid copy, and near-coplanar ones flickered against it.
+
+### 🖱️ Selection
+
+- ⌨️ **Ctrl+A** selects everything (and leaves mesh editing alone, where it still
+  means "select all elements").
+- 👆 **Double-click does what you choose** — open properties (the default), edit
+  the mesh, select everything of the same kind, or focus and isolate.
+- 🔍 **Tiny things stay clickable.** An object animated down to nothing gets a dot
+  to aim at, so it can be picked in the viewport instead of only from the object
+  list.
+
+### 🧊 Bigger meshes
+
+- 📈 **The mesh limits were measured, not guessed** — editing, unwrapping, UV
+  dragging and sculpting now work on models roughly thirty times denser than
+  before. Big edits still replicate; only the live preview of a gesture is kept
+  local so the session stays smooth for everyone else.
+- 🔧 **Edit Mesh opens on more models out of the box** (the limit moved from 1000
+  to 2500 triangles, and it is still yours to raise in Settings).
+
+### 🩹 Fixes
+
+- 🖼️ **The edit wireframe no longer leaks into prefabs, sleeve slots, shared
+  objects or imported files** — the last four paths it could be saved through.
+
 ## 1.4.0 — Move it 🎞️
 
 An animation release. Objects can be keyframed now — real clips with a timeline,

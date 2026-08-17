@@ -660,6 +660,9 @@
 				endHistoryBatch(`Colour (${befores.size})`);
 			}
 		}, 600);
+		// (auto-key for this picker is NOT wired here: the debounced commit above calls
+		// recordMaterialChange, and materialsHandler keys off that single funnel — so
+		// every material edit, present or future, behaves the same way.)
 	}
 
 	// ---- replication (identical messages to the retired panels) -------------
@@ -2777,19 +2780,29 @@
 							/>
 						</div>
 					{/if}
+					<!-- EMISSION. One block, one name: this used to be "Emissive"/"Emissive
+					     int." here and a second "Glow" pair higher up, which is two controls
+					     for the same two properties. `Emission` with Color and Strength is
+					     what Blender and Unity both call it, and the animation channel uses
+					     the same word. Strength MULTIPLIES the colour, so black means no
+					     emission however high it goes — hence the note. -->
 					{#if material.emissive}
-						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Emissive</span>
+						<p class="ui-section-label">Emission</p>
+						<SliderRow label="Strength" min={0} max={5} step={0.05} value={material.emissiveIntensity ?? 1}
+							mixed={matMixed((o) => o.material.emissiveIntensity)}
+							onchange={(v) => setMat('emissiveIntensity', v)} />
+						<div id="inspector-emissive" class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
 							<input
 								type="color"
+								id="emissive-color"
+								aria-label="Emission colour"
 								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
 								value={'#' + material.emissive.getHexString()}
 								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
+							<span class="text-[10px] italic text-gray-400">black = no glow</span>
 						</div>
-						<SliderRow label="Emissive int." min={0} max={4} step={0.05} value={material.emissiveIntensity}
-							mixed={matMixed((o) => o.material.emissiveIntensity)}
-							onchange={(v) => setMat('emissiveIntensity', v)} />
 					{/if}
 
 					<p class="ui-section-label">Shadow</p>

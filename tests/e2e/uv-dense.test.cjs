@@ -1,5 +1,5 @@
 // A GLB import showed no texture in the UV editor. Cause: the editor was gated on
-// the SNAPSHOT CAP (~5000 triangles), which exists because a GEOMETRY commit must
+// the SNAPSHOT CAP, which exists because a GEOMETRY commit must
 // fit one meshgeo message - and has nothing to do with viewing a UV map or with
 // PAINTING, which writes a texture and never touches geometry. Any real model is
 // over that cap, so the whole editor stayed blank.
@@ -27,7 +27,10 @@ h.run(async () => {
 		root.name = 'glbRoot';
 		const inner = new w.THREE.Group();
 		const skinned = new w.THREE.SkinnedMesh(
-			new w.THREE.SphereGeometry(1, 64, 48), // ~6000 tris, over the cap
+			// over the COMMIT ceiling (meshBudget.MAX_SNAPSHOT = 1.5M floats). It used to
+			// be a 6000-tri sphere, which the old 45000-float cap refused; that size is
+			// editable now, so the paint-only path needs a genuinely bigger model.
+			new w.THREE.SphereGeometry(1, 420, 220), // ~185k tris, ~1.66M floats
 			new w.THREE.MeshStandardMaterial({ map: new w.THREE.CanvasTexture(c) })
 		);
 		skinned.name = 'glbMesh';
@@ -39,7 +42,10 @@ h.run(async () => {
 		return { root: root.uuid, mesh: skinned.uuid, tris: w.faceEdit.triangleCount(skinned) };
 	});
 	await A.page.waitForTimeout(700);
-	h.check(built.tris > 5000, `PREMISE: the model is over the snapshot cap (${built.tris} tris)`);
+	h.check(
+		built.tris * 9 > 1500000,
+		`PREMISE: the model is over the COMMIT ceiling (${built.tris} tris, ${built.tris * 9} floats)`
+	);
 
 	const state = await A.page.evaluate(async ({ mesh }) => {
 		const w = window.__stores;
@@ -62,6 +68,35 @@ h.run(async () => {
 	h.check(state.hasImage, "...and its texture image is available for the backdrop");
 	h.check(state.paintOnlyNote, 'the topbar says "paint only" rather than silently ignoring drags');
 	h.check(/still paint/i.test(state.reason), `the reason tells the user what they CAN do (${state.reason})`);
+
+	// The ceiling MOVED (meshBudget.js): the 6000-tri sphere this suite used to
+	// build was refused by the old 45000-float cap and is comfortably editable now.
+	// Asserting that here is what stops the checks above from quietly re-testing a
+	// limit that no longer bites the models people actually import.
+	const midSized = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const mesh = new w.THREE.Mesh(
+			new w.THREE.SphereGeometry(1, 64, 48), // ~6000 tris = ~55k floats
+			new w.THREE.MeshStandardMaterial()
+		);
+		g.add(mesh);
+		w.objectsGroup.update((v) => v);
+		// a fresh SphereGeometry is INDEXED, and what the budget measures is the
+		// non-indexed SOUP that would ride the wire — position.count is 3185 here
+		// while the snapshot is 55296 floats
+		const geometry = mesh.geometry;
+		const floats = (geometry.index ? geometry.index.count : geometry.attributes.position.count) * 3;
+		return { floats, editable: w.uvEditor.uvEditable(mesh).ok };
+	});
+	h.check(
+		midSized.floats > 45000 && midSized.floats < 1500000,
+		`premise: a 6k-tri mesh sits between the old cap and the new one (${midSized.floats} floats)`
+	);
+	h.check(
+		midSized.editable,
+		'THE RAISED CEILING: the size that used to be refused is geometry-editable now'
+	);
 
 	// PAINTING must work on it - the whole point of the split - AND must paint ON
 	// TOP of the model's existing texture. Reported: painting a GLB replaced its

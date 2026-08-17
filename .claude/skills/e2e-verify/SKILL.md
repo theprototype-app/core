@@ -28,6 +28,11 @@ The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
 clicks) and `uv-unwrap-module` (a module supplying an unwrap backend, and wasm from a blob URL).
+The size ceilings are `mesh-budget` (commit vs live-PREVIEW vs undo-byte budget,
+with the counterfactual against the old 45000 cap); selection is `selection-extras`
+(Ctrl+A + the configurable double-click, both through real input); the edit-overlay
+save paths are `edit-overlay-gaps`; the animation look channels and the loop-pause
+transport are `animation-look-channels` and `animation-loop-pause`.
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
@@ -131,6 +136,65 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **A fixture missing a PRECONDITION makes a working fix look broken.** Auto-key
+  records INTO a clip: an object with none keys nothing, and `captureAutoKey`
+  returns before doing anything. The first material-auto-key suite built a bare
+  box, saw no channels, and read as a failed fix — the code was right and the
+  fixture was not a scene anyone has. Give the fixture the state the report
+  describes ("I had created a clip"), and say the precondition out loud in the
+  suite so the next reader does not re-learn it.
+- **When a third-party widget cannot be driven, test the SEAM you own.** Two runs
+  went into trying to drive the colour picker from the DOM: it exposes no hex
+  field to type into, and clicking the section header (already expanded) COLLAPSED
+  it and removed the widget entirely. The behaviour under test was never the
+  picker — it was "a material edit keys its channel", which is one exported
+  function call away. Drive the real path when the bug is IN the input path;
+  otherwise test where the logic lives.
+- **TEST THE FLOW THE USER DESCRIBED, not the tidy one.** The relative-motion suite
+  did move -> play and passed; the report was play -> stop -> MOVE -> play, which
+  still reverted, because the cached base only refreshes when there ISN'T one. A
+  suite that exercises the clean path proves the clean path. Write the user's
+  sequence down verbatim and run THAT.
+- **Sample the DOM to prove a panel updates.** "The properties panel follows
+  playback" cannot be checked from stores — the store changed and the rows did not.
+  Five reads of `.dn-input` across a running clip returned identical values, which
+  is what settled it (and got the feature removed rather than shipped broken).
+- **A flake accusation needs the same sample size on both sides.** `animation-markers`
+  failed on a branch and passed once on the base, which looked like a regression;
+  three runs each said 1/3 failing on the branch and **3/3 on the base** — machine
+  saturation, not the diff. One run is not evidence either way.
+- **When a visual bug is reported, measure the pixels' inputs before theorising.**
+  "Onion skin shows the full object" sounded like a transparency bug; the ghost
+  materials measured 0.28 and transparent in every case, which ruled out the whole
+  family and pointed at geometry (the ghosts coincided with the object). Probe the
+  values first, then form the theory.
+- **A WALL-CLOCK sleep is a lottery on a throttled page, so drive the state
+  instead.** `animation-loop-pause` needs a pause that lands MID-LAP. Sleeping
+  2.6 s into a 1 s loop looked deterministic and was not: a headless page ticks at
+  a few fps, so the same sleep produced 0.4, 0.17 and 0.005 on consecutive runs —
+  one of which is legitimately at a lap boundary, where the "did not jump to an
+  end" check must fail. Start the run at a known offset (`play(uuid, clip, {from:
+  2.4})`) and act IMMEDIATELY: 2.4 s of a 1 s loop folds to exactly 0.400 every
+  time. Same family as "measure the property, not the number" — if a check depends
+  on WHEN it ran, it is measuring the scheduler.
+- **A premise that silently fails makes every check after it pass VACUOUSLY.**
+  `mesh-budget` opens a face session on a dense sphere and asserts no live preview
+  is streamed. The first run reported a clean 0 previews — because `enterFaceEdit`
+  had been refused by `vrFaceCap` (1000 triangles) and the gesture never started.
+  The `beginFaceGrab` premise check is the only reason it was caught. Assert that
+  the thing you are measuring actually HAPPENED, especially when the expected
+  result is "nothing".
+- **Craft fixtures out of what the loader can actually rebuild.** A stale
+  edit-overlay fixture built with `WireframeGeometry` made `instantiatePrefab`
+  return null — `ObjectLoader` has no factory for that type — so the check read
+  -1 and looked like a broken fix. A plain `BufferGeometry` with a position
+  attribute round-trips.
+- **Prove a save-path guard by REMOVING one park.** Every check in
+  `edit-overlay-gaps` has the same shape (live before / absent in what is written /
+  still live after). Deleting `parkEditOverlays` from `savePrefab` turns exactly
+  one of them red with the wireframe back in the entry — that is what makes the
+  other five trustworthy. The same trick proved the mesh preview ceiling (6
+  previews leak) and the transport fold (pausedAt reads 2.400).
 - **A failing check is as often a wrong PREMISE as a wrong fix — verify which before
   changing code.** Every red in the M1-M6 batch was the test, not the feature: an
   indexed BoxGeometry counted as 8 triangles; a smooth-shading check used a SPHERE,
@@ -485,6 +549,41 @@ drops the P2P session.
 
 ## Known flakes / traps
 
+- **An assertion whose deadline is a `waitForTimeout` asserts the SCHEDULER as much
+  as the feature — and that is what a "flaky suite" almost always turns out to be.**
+  Every standing red cleared before the 1.5.0 tag (PR #142) was this one shape: a
+  fixed sleep racing something asynchronous, never a code defect. `animation-markers`
+  looked tick-rate sensitive for weeks; measured, the playhead tracks wall-clock TO
+  THE MILLISECOND, and what lags is the pulse reaching its Counter on the NEXT flow
+  tick — so a marker at 1.5s lands at ~1.59s and the suite read at a flat 1600ms,
+  about 10ms of margin. `explorer` slept 1200ms while a per-file import landed at
+  ~1.2s and ~2.0s. `view-mode` gave the shadow catcher 600ms when it comes back
+  through a dynamic import costing ~1.2s cold in dev.
+  The cure is never a bigger number. **Wait on the thing you actually mean** — the
+  playhead, the stored IndexedDB record, the item count — and add a PREMISE CHECK
+  pinning the window you waited into (`head >= 1.7 && head < 2`: past both markers,
+  short of the wrap). The premise check is what keeps the loosened wait honest, and
+  what tells you next time whether a failure is timing or behaviour.
+  Two sub-rules that fell out of it: a negative assertion ("the unsupported file is
+  skipped") still needs a bounded settle, so poll for ARRIVAL of what must appear and
+  then assert the FULL set on a finished state; and when the app fires and forgets a
+  write (`createFolder` does not await `persistIndex`), watch the RECORD rather than
+  sleeping — it is the thing the reload actually reads.
+- **Before believing any standing red, restart the dev server.** Three suites
+  (`prefabs`, `mesh-edit-materials`, `uv-materials`) were carried as a "known cluster"
+  with a shared cause. The shared cause was real but external: none of them contains a
+  `locator.click` of its own — their only clicks come from `h.connect` — and all three
+  are green on a freshly restarted server. The A/B that "proved pre-existing" ran both
+  sides against the same long-lived server, which lies identically to both.
+  `h.connect` self-diagnoses now (the peer, its collected page errors, whether the
+  connect chrome rendered) so this class names itself instead of surfacing as a bare
+  30s timeout. When a suite that touches no UI dies on a `locator.click`, the click is
+  in a HELPER — read the helper before reading your diff.
+- **A suite can die two thirds of the way through and nobody notices.** `explorer`
+  crashed on a null `#explorer-list` at its dock section; everything after it — folder
+  CRUD, cascade delete, the sidebar splitter, persistence — had not run in a long
+  time. A red you have learned to ignore is not one failing check, it is every check
+  BELOW it silently not running. Read how far the output got, not just its last line.
 - **A two-peer failure is signaling until proven otherwise.** The default PeerJS
   cloud goes flaky/rate-limited under a long verification run: `pong` failed
   with ZERO changes to it, then passed immediately under

@@ -22,6 +22,8 @@ import {
 } from './meshTopology';
 // 18-A: LOCAL viewport line colours (store-only module, imports nothing — no cycle)
 import { viewPrefs, editWireOverride } from './viewPrefs';
+// The size ceilings, and the measurement behind them. Another import-nothing leaf.
+import { MAX_SNAPSHOT, previewReplicable, tooLargeMessage } from './meshBudget';
 import { editOverlaysParked } from './editOverlays';
 // 19-A P3: the desktop pane's extrude/inset extras, read at BEGIN so a click-
 // extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
@@ -65,10 +67,32 @@ import {
 // commit ships a full `meshgeo` snapshot (positions array + uuid, size-capped);
 // receivers swap the geometry wholesale. History kind 'meshgeo' is undoable.
 
-/** Default VR face cap — D7 (roadmap 13): raised from 300 so the default
- * sphere (960 tris) edits out of the box; the LIVE limit is the user-editable
- * `vrFaceCap` setting below */
-export const VR_FACE_CAP = 1000;
+/**
+ * Default face-edit cap — the number of triangles a session will OPEN on.
+ *
+ * D7 (roadmap 13) raised it from 300 to 1000 so the default sphere (960 tris)
+ * edits out of the box. R3 (2026-08-17) is the first time it was MEASURED, on a
+ * headless page, against the cost that actually decides how it feels — the LIVE
+ * GRAB, which runs every frame:
+ *
+ *   tris     enterFaceEdit   grab step (per frame)
+ *   528      8.7 ms          6.2 ms
+ *   2 208    22 ms           12.3 ms
+ *   9 800    87 ms           49 ms
+ *   25 280   245 ms          151 ms
+ *   67 080   822 ms          363 ms
+ *
+ * Roughly 5.4 microseconds per triangle per frame, so 16 ms (60fps) buys about
+ * 3000 and 9800 already drags at 20fps. 2500 is the honest default: it opens
+ * every primitive and most props, and it is the largest round number the
+ * measurement supports. A headless page under load is the pessimistic end, so a
+ * real desktop has headroom — which is why raising this in Settings ▸ VR (up to a
+ * dense import) stays a supported thing to do rather than a warning.
+ *
+ * The SYNC ceilings are separate and much higher (meshBudget.js): this one is
+ * about interaction cost, not about what can be replicated.
+ */
+export const VR_FACE_CAP = 2500;
 /** D7: user-editable face-edit triangle limit (Settings ▸ VR, local pref)
  * @type {import('svelte/store').Writable<number>} */
 export const vrFaceCap = writable(
@@ -93,8 +117,8 @@ export function editCapToast(message) {
 		}
 	]);
 }
-/** hard ceiling on a snapshot message (floats) — ~5k tris */
-const MAX_SNAPSHOT = 45000;
+// MAX_SNAPSHOT now lives in meshBudget.js (imported above) — one number for every
+// module that used to keep its own copy of 45000.
 
 // Coplanarity thresholds. Two names for one number, because they answer
 // different questions: FACE_COPLANAR judges what a human calls ONE FLAT FACE
@@ -1209,7 +1233,7 @@ export function bridgeFaces(cuts = 0, twist = 0, invert = false) {
 	const next = result.tris;
 	const positions = trisToPositions(next);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That edit is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'edit'));
 		return false;
 	}
 	const groups = trisToGroups(next);
@@ -2399,7 +2423,7 @@ export function commitLoopCut(cuts = 1, position = 0.5) {
 
 	const positions = trisToPositions(next);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That edit is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'edit'));
 		return false;
 	}
 	const groups = trisToGroups(next);
@@ -3104,7 +3128,7 @@ export function bevelFaces(width = 0.15, segments = 1, profile = 1, direction = 
 	const tris = result.tris;
 	const positions = trisToPositions(tris);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That bevel is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'bevel'));
 		return false;
 	}
 	const groups = trisToGroups(tris);
@@ -3418,7 +3442,7 @@ export function bevelVertices(uuid, vertexKeys, options = {}) {
  */
 export function commitMeshGeoTriple(uuid, before, after) {
 	if (after.positions.length > MAX_SNAPSHOT) {
-		showToast('That edit is too large to sync');
+		showToast(tooLargeMessage(after.positions.length, 'edit'));
 		return false;
 	}
 	const packed = after.faces?.length ? packFaces(after.faces) : null;
@@ -3668,7 +3692,7 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
 	}
 	const positions = trisToPositions(tris);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That bevel is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'bevel'));
 		return false;
 	}
 	clearEdgeSelectionInner(); // the keys name vertices that no longer exist
@@ -4093,7 +4117,7 @@ export function knifeCut(from, to) {
 	}
 	const positions = trisToPositions(out);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That cut is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'cut'));
 		return false;
 	}
 	faceEditSelectedTris.set([]);
@@ -4284,7 +4308,7 @@ export function symmetrizeMesh(axis = 'x', keep = 1) {
 	}
 	const positions = trisToPositions(out);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That mirror is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'mirror'));
 		return false;
 	}
 	// the partition: a kept triangle keeps its face, and each mirrored triangle joins the
@@ -4717,7 +4741,7 @@ export function subdivideSelectedEdges() {
 	});
 	const positions = trisToPositions(out);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That edit is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'edit'));
 		return false;
 	}
 	const groups = trisToGroups(out);
@@ -5976,7 +6000,7 @@ export function commitFaceOp(op, amount) {
 	} else return false;
 	const positions = trisToPositions(next);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That edit is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'edit'));
 		return false;
 	}
 	// 15-G / M1: these ops change the triangle COUNT, so a multi-material mesh
@@ -6050,7 +6074,7 @@ export function duplicateSelectedFaces() {
 	const next = [...cloneTris(workingTris), ...cloneTris(sel.map((ti) => workingTris[ti]))];
 	const positions = trisToPositions(next);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That edit is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'edit'));
 		return false;
 	}
 	const priorFaces = currentPartition();
@@ -6178,7 +6202,7 @@ function broadcastMeshGeo(uuid, positions, groups, uvs) {
  */
 export function commitMeshGeoSnapshot(uuid, before, after) {
 	if (after.length > MAX_SNAPSHOT) {
-		showToast('That edit is too large to sync');
+		showToast(tooLargeMessage(after.length, 'edit'));
 		return false;
 	}
 	applyMeshGeo(uuid, after);
@@ -6299,7 +6323,13 @@ function liveGeometryUpdate() {
 	refreshFaceWireframe(); // B2: track the gesture live
 	objectsGroup.update((v) => v);
 	const now = Date.now();
-	if (now - lastFaceBroadcast > 200) {
+	// The PREVIEW is the one thing that must stay small. A gesture streams this
+	// ~5×/s, so a mesh at the commit ceiling would be ~60 MB/s at every peer —
+	// the session stops being interactive for people who are not even editing.
+	// Above the preview ceiling the gesture is LOCAL: peers see the committed
+	// result at the end (broadcastMeshGeo in the commit path), just not the
+	// rehearsal. That is the whole trade that makes big meshes editable.
+	if (now - lastFaceBroadcast > 200 && previewReplicable(positions.length)) {
 		lastFaceBroadcast = now;
 		broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	}
@@ -7480,7 +7510,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 	}
 	const positions = trisToPositions(result.tris);
 	if (positions.length > MAX_SNAPSHOT) {
-		showToast('That edit is too large to sync');
+		showToast(tooLargeMessage(positions.length, 'edit'));
 		return false;
 	}
 	// clear stale picks BEFORE the swap (applyGeometrySnapshot rebuilds the
@@ -7536,7 +7566,7 @@ export function reapplyOpAdjust(patch = {}) {
 	if (positions.length > MAX_SNAPSHOT) {
 		if (!a.capWarned) {
 			a.capWarned = true;
-			showToast('That edit is too large to sync');
+			showToast(tooLargeMessage(positions.length, 'edit'));
 		}
 		return false;
 	}

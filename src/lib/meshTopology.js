@@ -1,3 +1,5 @@
+import { MAX_FACE_TRIS } from './meshBudget';
+
 // STORED MESH TOPOLOGY (the half-edge/n-gon workstream, phase 1).
 //
 // The geometry in this app is a triangle SOUP: which triangles form one logical face
@@ -161,9 +163,11 @@ function toInts(data) {
 	return new Int32Array(data ?? []);
 }
 
-/** Corner budget, the integer sibling of MAX_SNAPSHOT. Kept separate rather than
- * folded into a float budget: these are indices, not coordinates. */
-export const MAX_FACE_TRIS = 45000;
+/** Corner budget, the integer sibling of MAX_SNAPSHOT — indices, not coordinates,
+ * so it stays a separate number. It lives in meshBudget.js now, with the rest of
+ * the ceilings and the measurement that set them; re-exported here because that is
+ * where callers already look for it. */
+export { MAX_FACE_TRIS };
 
 /**
  * The optional wire fields for a snapshot, or `{}` when there is nothing worth

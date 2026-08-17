@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
-import { peers } from '../stores/appStore';
+import { peers, showToast } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import {
 	suspendAnimation,
@@ -397,7 +397,7 @@ export function channelLabel(channel) {
 			visible: 'Visible',
 			opacity: 'Opacity',
 			'color.r': 'Colour R', 'color.g': 'Colour G', 'color.b': 'Colour B',
-			metalness: 'Metalness', roughness: 'Roughness', emissive: 'Glow',
+			metalness: 'Metalness', roughness: 'Roughness', emissive: 'Emission',
 			'light.intensity': 'Light intensity'
 		}[channel] ?? channel
 	);
@@ -576,7 +576,24 @@ function setChannel(obj, channel, v) {
 		}
 		case 'emissive': {
 			for (const material of materialsOf(obj)) {
-				if (material.emissiveIntensity !== undefined) material.emissiveIntensity = Math.max(0, v);
+				if (material.emissiveIntensity === undefined) continue;
+				material.emissiveIntensity = Math.max(0, v);
+				// three MULTIPLIES emissiveIntensity by the emissive COLOUR, and that
+				// colour is black on every default material — so animating Glow moved
+				// a number and changed no pixels ("glow channel not working").
+				//
+				// It needs something to scale. White was the first answer and it was
+				// wrong in use: the object simply turned white, losing the colour that
+				// made it that object. A glow with no colour of its own takes the
+				// material's OWN colour instead — a red box glows red, which is what
+				// "this thing is lit up" looks like. Set a Glow colour in the Inspector
+				// for anything else (a white object flaring green) and it is honoured
+				// here, because it is no longer black. captureBase/restoreBase carry
+				// the original, so Stop puts it back — the rule `transparent` follows.
+				if (material.emissive && material.emissive.getHex() === 0x000000 && v > 0) {
+					if (material.color) material.emissive.copy(material.color);
+					else material.emissive.setHex(0xffffff);
+				}
 			}
 			break;
 		}
@@ -599,7 +616,10 @@ function captureBase(object) {
 		color: material.color ? [material.color.r, material.color.g, material.color.b] : null,
 		metalness: material.metalness,
 		roughness: material.roughness,
-		emissiveIntensity: material.emissiveIntensity
+		emissiveIntensity: material.emissiveIntensity,
+		// the emissive COLOUR rides along because driving Glow lights a black
+		// emissive (setChannel says why) — Stop has to put the black back
+		emissive: material.emissive ? material.emissive.getHex() : null
 	}));
 	return {
 		pos: object.position.toArray(),
@@ -632,6 +652,7 @@ function restoreBase(object, base) {
 			if (saved.metalness !== undefined) material.metalness = saved.metalness;
 			if (saved.roughness !== undefined) material.roughness = saved.roughness;
 			if (saved.emissiveIntensity !== undefined) material.emissiveIntensity = saved.emissiveIntensity;
+			if (saved.emissive != null && material.emissive) material.emissive.setHex(saved.emissive);
 		}
 	}
 	object.updateMatrix(); // serializers read object.matrix, not the live pose (see flowRuntime)
@@ -647,6 +668,45 @@ function ensureBase(uuid, object) {
 	}
 	return base;
 }
+
+/**
+ * Re-take the base when the USER has moved the object since it was captured.
+ *
+ * The base is remembered per object and survives Stop, so this sequence threw the
+ * move away: play (base taken at A) -> stop -> drag the object to B -> play again,
+ * where `poseAt` starts with `restoreBase` and put it straight back at A. Under R1
+ * that is doubly wrong: the whole point is that a movement replays from where the
+ * object IS.
+ *
+ * "Moved" is decided by comparing the object with the position this module LAST
+ * WROTE, not with a recomputed expectation. Recomputing looked tidier and was
+ * wrong: `applyOriginPivot` legitimately moves a hinged object's position as part
+ * of posing its ROTATION, so a door read as "moved" on every play and re-anchored
+ * itself. Remembering what we set has no such blind spot — it covers the pivot, the
+ * look channels and anything added later, for free.
+ *
+ * Only consulted while the transport is NOT playing: mid-playback the object is
+ * posed by definition.
+ * @param {string} uuid @param {any} object @param {Clip} clip
+ */
+function rebaseIfMoved(uuid, object, clip) {
+	const base = bases.get(uuid);
+	const p = get(playback)[uuid];
+	if (!base || !clip || !p || p.playing) return;
+	const written = posedPositions.get(uuid);
+	if (!written) return; // nothing posed yet, so the base is already the live pose
+	const actual = object.position.toArray();
+	const moved = written.some((v, axis) => Math.abs(num(v) - num(actual[axis])) > 1e-4);
+	if (!moved) return;
+	// the user dragged it: this pose is the new anchor, and the offset it was
+	// showing goes with the old base (Stop and Clear preview would do the same)
+	bases.set(uuid, captureBase(object));
+	posedPositions.delete(uuid);
+}
+
+/** The position `poseAt` last wrote per object — the reference rebaseIfMoved
+ * compares against. @type {Map<string, number[]>} */
+const posedPositions = new Map();
 
 /**
  * F6: the base an ONION-SKIN ghost should be posed from — the stored base while a
@@ -676,6 +736,7 @@ function releaseBase(uuid) {
 	const object = objectFor(uuid);
 	if (object) restoreBase(object, base);
 	bases.delete(uuid);
+	posedPositions.delete(uuid); // nothing is posed any more (rebaseIfMoved)
 	resumeAnimation(uuid); // released pose becomes the new flow base (no-op if untracked)
 }
 
@@ -719,9 +780,84 @@ function applyOriginPivot(obj, base, values) {
 	obj.position.add(offsetBase).sub(offsetNow);
 }
 
+// --- R1: position is RELATIVE ------------------------------------------------
+//
+// Position keys used to be absolute world values, so moving an object and pressing
+// play snapped it back to wherever the clip had been authored. A movement is a
+// movement — it should happen from where the thing IS. So a position track is read
+// as an offset from its FIRST key, replayed on top of the pose the run started at:
+//
+//     world = base.pos[axis] + (key - firstKey)
+//
+// The stored data does not change shape, only its meaning, and clips saved before
+// this reinterpret the same way (the user's call — a door authored at the origin
+// and then moved now opens where it stands, which is what people expected it to do
+// all along). Rotation and scale stay absolute: an angle and a factor already mean
+// the same thing wherever the object sits.
+//
+// Every reader of a position key goes through these two functions, and the INVERSE
+// matters as much as the forward direction: auto-key records the object's current
+// WORLD value, so without `keyValueOf` it would bake the current base into the key
+// and the movement would double on the next run.
+
+/** @type {Record<string, number>} */
+const POS_AXIS = { 'pos.x': 0, 'pos.y': 1, 'pos.z': 2 };
+
+/**
+ * The anchor a relative replay measures from: the value of the channel's FIRST key.
+ *
+ * MEMOISED per clip. This runs for every position channel of every posed frame, and
+ * the naive version — find the track, then scan its keys — measurably thinned the
+ * per-frame tick on a throttled page, which upsets anything reasoning about the
+ * interval BETWEEN ticks (the marker-crossing checks started missing a marker).
+ * `editClip` builds a NEW clip object on every edit, so a WeakMap keyed by the clip
+ * invalidates itself for free.
+ * @type {WeakMap<any, Map<string, number>>}
+ */
+const anchorCache = new WeakMap();
+
+/** @param {Clip|null} clip @param {string} channel */
+function channelAnchor(clip, channel) {
+	if (!clip) return 0;
+	let cached = anchorCache.get(clip);
+	if (!cached) {
+		cached = new Map();
+		anchorCache.set(clip, cached);
+	}
+	const hit = cached.get(channel);
+	if (hit !== undefined) return hit;
+	const track = clip?.tracks?.find((entry) => entry.channel === channel);
+	let anchor = 0;
+	if (track?.keys?.length) {
+		let first = track.keys[0];
+		for (const key of track.keys) if (num(key.t) < num(first.t)) first = key;
+		anchor = num(first.v);
+	}
+	cached.set(channel, anchor);
+	return anchor;
+}
+
+/** The WORLD value a key means for an object whose run started at `basePos`.
+ * @param {Clip|null} clip @param {string} channel @param {number} v @param {number[]} [basePos] */
+export function worldValueOf(clip, channel, v, basePos) {
+	const axis = POS_AXIS[channel];
+	if (axis === undefined || !basePos) return v;
+	return num(basePos[axis]) + (num(v) - channelAnchor(clip, channel));
+}
+
+/** The KEY value that records an object currently at `current` — the inverse of
+ * worldValueOf, and what every write path must use.
+ * @param {Clip|null} clip @param {string} channel @param {number} current @param {number[]} [basePos] */
+export function keyValueOf(clip, channel, current, basePos) {
+	const axis = POS_AXIS[channel];
+	if (axis === undefined || !basePos) return current;
+	return channelAnchor(clip, channel) + (num(current) - num(basePos[axis]));
+}
+
 /**
  * Pose the object at `seconds` of clip time. Unkeyed channels return to the base
- * pose first, so a clip is an absolute statement about the channels it drives.
+ * pose first, so a clip is an absolute statement about the channels it drives —
+ * except position, which is relative to the base (see above).
  * @param {any} obj @param {Clip} clip @param {number} seconds @param {any} base
  */
 export function poseAt(obj, clip, seconds, base) {
@@ -731,9 +867,13 @@ export function poseAt(obj, clip, seconds, base) {
 	// choke point, so playback, a scrub and a bake all agree.
 	const at = clip.step ? Math.floor(seconds * clip.step + 1e-6) / clip.step : seconds;
 	const values = evaluateClip(clip, at);
-	for (const channel in values) setChannel(obj, channel, values[channel]);
+	for (const channel in values)
+		setChannel(obj, channel, worldValueOf(clip, channel, values[channel], base?.pos));
 	applyOriginPivot(obj, base, values);
 	obj.updateMatrix();
+	// remember what we wrote, so a later play/scrub can tell the difference between
+	// "the preview put it there" and "the user dragged it" (rebaseIfMoved)
+	posedPositions.set(obj.uuid, obj.position.toArray());
 }
 
 // --- replication -------------------------------------------------------------
@@ -939,13 +1079,58 @@ function editClip(uuid, clipId, fn) {
 		set.clips[id] = next;
 		return set;
 	});
+	repose(uuid);
 }
 
-/** A visible default for the second key of a fresh track. @param {string} channel @param {number} from */
+/**
+ * Show an edit IMMEDIATELY.
+ *
+ * Every clip mutation lands in `editClip` — a key value typed or dragged, a track
+ * added, a retime, a marker moved — and none of them re-posed the object, so the
+ * change only appeared once something else moved the playhead ("I have to click on
+ * the timeframe to see what changed"). One re-pose at the current parked position
+ * is what makes editing feel live, and it belongs at the single choke point rather
+ * than at each of a dozen call sites.
+ *
+ * Skipped while PLAYING (the tick owns the pose that frame) and when nothing is
+ * previewing this object (no base means the clip is not on screen at all, so there
+ * is nothing to refresh and no pose to disturb).
+ * @param {string} uuid
+ */
+function repose(uuid) {
+	const base = bases.get(uuid);
+	if (!base) return;
+	const p = get(playback)[uuid];
+	if (!p || p.playing) return;
+	const object = objectFor(uuid);
+	const clip = clipOf(uuid, p.clipId);
+	if (!object || !clip) return;
+	const seconds = parkedPosition(clip, p);
+	poseAt(object, clip, seconds, base);
+	playheads.update((map) => ({ ...map, [uuid]: seconds }));
+}
+
+/**
+ * A visible default for the second key of a fresh track.
+ *
+ * `from + 2` is right for a position or a light intensity, and WRONG for every
+ * channel `setChannel` CLAMPS to 0..1: opacity 1 -> 3 clamps straight back to 1,
+ * so a fresh Opacity track ran 1 -> 1 and adding the channel appeared to do
+ * nothing whatsoever. Roughness (default 1) and any colour component already at 1
+ * were dead the same way. Reported as "animations don't apply immediately" — it
+ * was never about timing, the track really was flat.
+ *
+ * The clamped channels therefore TOGGLE to the far end, whichever of 0/1 is
+ * further from where the object already is: the rule `visible` always used.
+ * @param {string} channel @param {number} from
+ */
 function defaultTo(channel, from) {
 	if (channel === 'visible') return from >= 0.5 ? 0 : 1;
 	if (channel.startsWith('scale')) return from * 1.5 || 1.5;
 	if (isRotChannel(channel)) return from + Math.PI / 2;
+	if (channel === 'opacity' || channel === 'metalness' || channel === 'roughness')
+		return from >= 0.5 ? 0 : 1;
+	if (channel.startsWith('color')) return from >= 0.5 ? 0 : 1;
 	return from + 2;
 }
 
@@ -1495,9 +1680,14 @@ export function clipToThreeClip(object, clip, opts = {}) {
 		// a STEPPED clip exports stepped: the look is part of the movement, so a
 		// baked copy that smoothed it would not be the same animation
 		const values = evaluateClip(clip, clip.step ? Math.floor(t * clip.step + 1e-6) / clip.step : t);
-		const px = values['pos.x'] ?? base.pos[0];
-		const py = values['pos.y'] ?? base.pos[1];
-		const pz = values['pos.z'] ?? base.pos[2];
+		// R1: position keys are relative, so the bake replays them from the object's
+		// CURRENT pose — the same mapping poseAt uses, or the exported clip would
+		// teleport the model back to wherever it was authored. Only a channel that
+		// HAS a value is mapped: an unkeyed one is already the base, and running it
+		// through the mapping would add the base to itself (its anchor is 0).
+		const px = 'pos.x' in values ? worldValueOf(clip, 'pos.x', values['pos.x'], base.pos) : base.pos[0];
+		const py = 'pos.y' in values ? worldValueOf(clip, 'pos.y', values['pos.y'], base.pos) : base.pos[1];
+		const pz = 'pos.z' in values ? worldValueOf(clip, 'pos.z', values['pos.z'], base.pos) : base.pos[2];
 		const rx = values['rot.x'] ?? base.rot[0];
 		const ry = values['rot.y'] ?? base.rot[1];
 		const rz = values['rot.z'] ?? base.rot[2];
@@ -1712,25 +1902,40 @@ function watchableChannels(object) {
  */
 export function captureAutoKey(uuid, seconds) {
 	if (get(autoKeyFor) !== uuid) return 0;
-	const clip = activeClip(uuid);
+	// NOT bailing on a missing clip: with REC armed the first change CREATES one
+	// (below, once we know something actually changed)
+	let clip = activeClip(uuid);
 	const object = objectFor(uuid);
-	if (!clip || !object) return 0;
+	if (!object) return 0;
 	const at = Math.max(0, num(seconds));
 	const reference = autoKeyReference.get(uuid) ?? null;
 	/** @type {{trackId: string|null, channel: string, v: number, from: number|null}[]} */
 	const writes = [];
-	const byChannel = new Map(clip.tracks.map((track) => [track.channel, track]));
+	const byChannel = new Map((clip?.tracks ?? []).map((track) => [track.channel, track]));
 	// uniform scale is a legacy alias for the three axes; if a track already drives
 	// it, keep using that one rather than adding per-axis tracks beside it
 	const uniform = byChannel.get('scale');
+	// R1: position keys are RELATIVE, so a recorded key is the INVERSE of the pose
+	// mapping — without this, auto-key stores the current world value, the next run
+	// adds the base to it again, and the movement doubles every time. The anchor is
+	// the base the preview posed from, or the reference taken when REC was armed.
+	const anchorPos = bases.get(uuid)?.pos ?? reference?.pos ?? null;
 	for (const channel of watchableChannels(object)) {
 		const current = channelValue(object, channel);
 		const epsilon = STEPPED.has(channel) ? 0.5 : 1e-4;
 		const track = byChannel.get(channel) ?? (channel.startsWith('scale.') ? uniform : undefined);
 		if (track) {
-			const existing = sampleTrack(track, at);
+			const sampled = sampleTrack(track, at);
+			// compare in WORLD space: `sampled` is a key value, `current` is where the
+			// object actually is
+			const existing = sampled === null ? null : worldValueOf(clip, channel, sampled, anchorPos);
 			if (existing !== null && Math.abs(existing - current) < epsilon) continue;
-			writes.push({ trackId: track.id, channel: track.channel, v: current, from: null });
+			writes.push({
+				trackId: track.id,
+				channel: track.channel,
+				v: keyValueOf(clip, channel, current, anchorPos),
+				from: null
+			});
 			continue;
 		}
 		// no track yet: only record a channel the user actually MOVED, which needs a
@@ -1741,6 +1946,22 @@ export function captureAutoKey(uuid, seconds) {
 	}
 	if (!writes.length) return 0;
 	beginAnimGesture(uuid, 'Auto-key');
+	// REC with NO CLIP YET: the first change creates one. Arming alone deliberately
+	// creates nothing — a clip is replicated, saved data, and toggling REC on and off
+	// should not litter a scene with empty ones. But the change itself must not be
+	// silently dropped either, which is what used to happen (captureAutoKey returned
+	// at the top when `activeClip` was null, so the edit went nowhere).
+	//
+	// This is Blender's model: switching auto-keying on does nothing, and the first
+	// keyed change creates the Action. Inside the gesture, so ONE undo removes the
+	// clip and the keys together.
+	if (!clip) {
+		// No `createClip` here: `emptySet()` already carries a default clip and every
+		// write below goes through editSet, so the clip materialises with the first
+		// addTrack. Creating one explicitly as well produced TWO (the default plus the
+		// new one) — which the suite caught. Just say that it happened.
+		showToast('Started a new clip for this object (REC)');
+	}
 	for (const write of writes) {
 		let trackId = write.trackId;
 		if (!trackId) {
@@ -1758,6 +1979,10 @@ export function captureAutoKey(uuid, seconds) {
 	endAnimGesture();
 	// the new pose becomes the reference, so the NEXT drag is measured from here
 	rememberAutoKeyReference(uuid);
+	// ...and the drag has just been ABSORBED into the clip, so it is no longer an
+	// unrecorded user move: without this the next scrub would treat it as one and
+	// re-anchor the whole clip onto it (rebaseIfMoved)
+	posedPositions.set(uuid, object.position.toArray());
 	return writes.length;
 }
 
@@ -1769,7 +1994,10 @@ export function rememberAutoKeyReference(uuid) {
 	/** @type {Record<string, number>} */
 	const values = {};
 	for (const channel of watchableChannels(object)) values[channel] = channelValue(object, channel);
-	autoKeyReference.set(uuid, { values });
+	// `pos` beside the values: R1 makes position keys relative, and a recorded key
+	// is measured from this pose when no preview base exists (the object was posed
+	// by hand rather than scrubbed to)
+	autoKeyReference.set(uuid, { values, pos: object.position.toArray() });
 }
 
 // --- saving ------------------------------------------------------------------
@@ -1859,10 +2087,40 @@ function elapsedOf(p, now) {
 }
 
 /**
+ * Fold a RAW elapsed time (which keeps counting past the clip on a loop) into the
+ * current pass, so that everything downstream reads the same frame.
+ *
+ * `elapsedOf` returns time since the run started — 7.3 s into a 2 s loop — and the
+ * playing path is fine with that because `clipSecondsFor` takes it modulo the span.
+ * `parkedPosition` does NOT: it adds the elapsed to the window start and clamps, so
+ * a pause after the first lap parked the playhead at the very END (forward) or the
+ * very START (reverse) while the object itself was posed mid-lap. That is the whole
+ * of the reported "pause doesn't pause" and "it jumps to the first or last frame".
+ *
+ * An elapsed landing EXACTLY on a boundary keeps its span rather than folding to 0,
+ * because parking at the end is a real position (the End button) — the same case
+ * `parkedPosition` was written for.
+ * @param {Clip} clip @param {number} elapsed @param {Play} [p] @returns {number}
+ */
+function foldElapsed(clip, elapsed, p) {
+	const { span } = rangeOf(clip, p);
+	if (!(span > 0)) return 0;
+	const value = Math.max(0, num(elapsed));
+	if (clip.loop === 'once') return Math.min(value, span);
+	// pingpong's cycle is TWO spans (out and back), and clipSecondsFor reads the
+	// direction from where in that cycle the phase sits — so fold to the cycle
+	const period = clip.loop === 'pingpong' ? span * 2 : span;
+	if (value <= period) return value;
+	const rest = value % period;
+	return rest === 0 ? period : rest;
+}
+
+/**
  * Where a PARKED playhead sits, read straight off the transport instead of through
  * the loop wrap: parking exactly at the end of a looping clip is a real thing to do
  * (the End button), and `(2/2) % 1` is 0, so it used to read back as the start —
  * which made "go to end" look like it did nothing and stepped the wrong way next.
+ * Callers must hand it a FOLDED `pausedAt` (see foldElapsed).
  * @param {Clip} clip @param {Play} [p]
  */
 function parkedPosition(clip, p) {
@@ -1956,6 +2214,7 @@ export function play(uuid, clipId, opts = {}) {
 	const clip = clipOf(uuid, id);
 	if (!clip) return;
 	ensureBase(uuid, obj);
+	rebaseIfMoved(uuid, obj, clip); // the object may have been dragged since Stop
 	const reverse = opts.reverse ?? false;
 	const { span } = rangeOf(clip, prev);
 	const from = opts.from ?? (prev.pausedAt >= span && clip.loop === 'once' ? 0 : prev.pausedAt);
@@ -1996,7 +2255,10 @@ export function pause(uuid) {
 	if (typeof uuid !== 'string') return pauseAll();
 	const p = get(playback)[uuid];
 	if (!p?.playing) return;
-	setPlay(uuid, { playing: false, pausedAt: elapsedOf(p, syncedNow()) }, true);
+	// FOLD before storing: pausedAt is read back as a position inside one pass
+	const clip = clipOf(uuid, p.clipId);
+	const elapsed = elapsedOf(p, syncedNow());
+	setPlay(uuid, { playing: false, pausedAt: clip ? foldElapsed(clip, elapsed, p) : elapsed }, true);
 	posePaused(uuid);
 }
 
@@ -2057,6 +2319,7 @@ export function scrub(uuid, seconds, clipId) {
 	const { from } = rangeOf(clip, p);
 	const position = Math.min(Math.max(num(seconds), 0), clip.duration);
 	const elapsed = Math.max(0, position - from);
+	rebaseIfMoved(uuid, obj, clip); // dragged since the last scrub? that pose is the anchor
 	const base = ensureBase(uuid, obj);
 	setPlay(uuid, {
 		clipId: clipId ?? (p.clipId || DEFAULT_CLIP),
@@ -2133,6 +2396,7 @@ export function parkAuthoredAtBase() {
 /** @type {Map<string, {clipId: string, seconds: number}>} */
 const lastHead = new Map();
 
+
 /**
  * Every marker the playhead passed travelling `from` -> `to`, in travel order.
  * The DESTINATION end is inclusive and the origin exclusive: a marker exactly
@@ -2204,7 +2468,28 @@ export function tickAnimationPreview() {
 		lastHead.set(uuid, { clipId: p.clipId ?? '', seconds });
 	}
 	for (const { uuid, name } of crossed) notifyMarker(uuid, name);
-	if (any || Object.keys(get(playheads)).length) playheads.set(heads);
+	if (any || Object.keys(get(playheads)).length) {
+		// `heads` only holds the objects that TICKED, i.e. the playing ones — so
+		// replacing the map outright deleted the readout of anything paused, one
+		// frame after `pause` wrote it. The pane then had no position to show for
+		// the object it had just paused, which is the other half of "it jumps to
+		// the first frame". Keep a paused object's head; drop only what no longer
+		// has a transport at all (stop/reset clear those explicitly).
+		const kept = get(playheads);
+		/** @type {Record<string, number>} */
+		const next = {};
+		for (const uuid of Object.keys(kept)) if (map[uuid]) next[uuid] = kept[uuid];
+		playheads.set(Object.assign(next, heads));
+	}
+	// A properties-panel poke lived here and DID NOT WORK, so it is gone rather than
+	// left as dead code. Poking `selectedObject` does re-run the component, but the
+	// transform rows read through a `$derived` that hands back the same mutated THREE
+	// object, and a derived compares with `===` — so nothing propagates. Measured
+	// from the DOM: the `.dn-input` values were identical across five samples of a
+	// running clip. The real fix is a fresh transform SNAPSHOT per poke, the shape
+	// the `material` derived already uses — written up in the plans, not guessed at
+	// here (panels updating during playback IS the DCC norm, so it is worth doing
+	// properly).
 	// a 'once' clip ends on its own on EVERY peer at the same elapsed time, so
 	// this is a local state change — never a broadcast.
 	for (const uuid of finished) {

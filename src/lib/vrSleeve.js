@@ -11,6 +11,7 @@ import {
 	vrSleeveEnabled
 } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
+import { parkEditOverlays } from './editOverlays';
 import { snapEnabled, snapSettings, dropToSurface } from './snapping';
 import { beginHistoryBatch, endHistoryBatch, recordTransform, recordObjectPresence } from './history';
 import { createGeometry } from './geometries.svelte';
@@ -469,10 +470,16 @@ export function captureSlotFromObject(object) {
 		return false;
 	}
 	let element;
+	// a slot is a prefab snapshot, so it carries whatever the tree carries: park
+	// the mesh-edit wireframe first or the slot spawns a permanently wireframed
+	// copy for everyone (editOverlays.js)
+	const unpark = parkEditOverlays(object);
 	try {
 		element = object.toJSON();
 	} catch {
 		return false;
+	} finally {
+		unpark();
 	}
 	if (JSON.stringify(element).length > 5_000_000) {
 		showToast('Object is too large for a sleeve slot (>5 MB)');

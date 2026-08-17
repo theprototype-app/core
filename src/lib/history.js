@@ -4,6 +4,7 @@ import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore';
 import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
+import { HISTORY_BYTES, entryBytes } from '$lib/meshBudget';
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
 // histories stay per-user.
@@ -76,6 +77,18 @@ export function recordEntry(entry) {
 			// start. Evict the oldest selection first, the oldest entry otherwise.
 			const i = next.findIndex((e) => e.kind === 'selection');
 			next.splice(i >= 0 ? i : 0, 1);
+		}
+		// A COUNT is not a budget once a single entry can be megabytes. The geometry
+		// ceiling was raised to 500k vertices, and a meshgeo entry holds a before AND
+		// an after — so fifty of them at the ceiling is gigabytes, and the tab dies
+		// holding undo steps nobody will reach for. Drop from the OLD end until the
+		// total fits: the far past is what a user has already stopped wanting.
+		// The NEWEST entry is never evicted, however big it is — an undo that cannot
+		// undo the thing you just did would be worse than the memory.
+		let bytes = next.reduce((sum, e) => sum + entryBytes(e), 0);
+		while (bytes > HISTORY_BYTES && next.length > 1) {
+			bytes -= entryBytes(next[0]);
+			next.splice(0, 1);
 		}
 		return next;
 	});

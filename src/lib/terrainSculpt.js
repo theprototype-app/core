@@ -4,6 +4,7 @@ import { writable, get } from 'svelte/store';
 import { objectsGroup, lockedObjects, globalScene, TControls, gizmoSuppressed } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { commitMeshGeoSnapshot } from './faceEdit';
+import { MAX_SNAPSHOT, previewReplicable } from './meshBudget';
 import { selectObject, deselectObject } from './objectActions';
 import { nameOf } from './lockControl';
 
@@ -240,8 +241,10 @@ export function rebuildSculptCaches(object) {
 	else rebuildWeldMap(object);
 }
 
-/** hard cap on a sculptable mesh — the meshgeo snapshot limit (floats) */
-const MESH_SCULPT_MAX_FLOATS = 45000;
+/** hard cap on a sculptable mesh — the meshgeo COMMIT limit (floats). It used to
+ * be the same 45000 as the preview, which refused to sculpt anything an artist
+ * would actually import; the two are separate numbers now (meshBudget.js). */
+const MESH_SCULPT_MAX_FLOATS = MAX_SNAPSHOT;
 
 /** Enter sculpt mode: Terrain gets the column brush, any other mesh the
  * normal brush (selects = locks it either way). @param {string} uuid */
@@ -408,16 +411,22 @@ export function strokeMove(uuid, x, z, dt = 0.016, y = 0) {
 	if (!changed) return;
 	const now = performance.now();
 	if (now - lastPreview > 200) {
-		lastPreview = now;
 		const object = objectOf(uuid);
 		/** @type {any} */
 		const peer = get(peers);
-		if (peer && object)
+		// The same preview trade the face tools make (see meshBudget.js): a stroke on
+		// a dense mesh would stream megabytes 5×/s to every peer. Above the preview
+		// ceiling the brush stays LOCAL and the stroke's ONE end-of-stroke commit
+		// carries the result — peers see where you got to, not every pass.
+		const floats = object?.geometry?.attributes?.position?.array?.length ?? 0;
+		if (peer && object && previewReplicable(floats)) {
+			lastPreview = now;
 			peer.send({
 				type: 'meshgeo',
 				uuid,
 				positions: new Float32Array(object.geometry.attributes.position.array).buffer
 			});
+		}
 	}
 	objectsGroup.update((v) => v);
 }

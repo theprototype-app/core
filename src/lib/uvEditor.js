@@ -9,6 +9,7 @@ import { recordEntry } from './history';
 import { applyMap, materialAt, recordMaterialChange, copyTextureParams } from './materialsHandler';
 // the unwrap REGISTRY: built-in projections, plus whatever a module registers
 import { unwrap } from './uvUnwrap';
+import { MAX_SNAPSHOT } from './meshBudget';
 // UV1: read-only reuse of the mesh snapshot pipeline. faceEdit owns the triangle
 // <-> geometry conversion AND the 'meshgeo' history kind (which already accepts a
 // {positions, groups, uvs} triple and re-broadcasts uvs on undo), so a UV commit
@@ -36,9 +37,10 @@ import {
 // Everything here is math + stores; the component owns the canvas and the pointer
 // gestures. No top-level DOM access (this module is imported during SSR prerender).
 
-/** hard ceiling on a snapshot message (floats) — mirrors faceEdit's MAX_SNAPSHOT,
- * which is module-private there. ~5k tris. */
-const MAX_SNAPSHOT = 45000;
+// The commit ceiling is shared with every other geometry path now (meshBudget.js).
+// It used to be a local copy of 45000 — which is why `uvEditable` refused to drag
+// the UVs of exactly the imported models this editor exists for.
+export { MAX_SNAPSHOT };
 
 /** quantization for "these two UV corners are the same point" (~1e-5) */
 const UV_EPSILON = 1e-5;

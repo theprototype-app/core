@@ -383,6 +383,135 @@ h.run(async () => {
 		'and three receives a 2-wide vec2 uniform: ' + JSON.stringify(uniformValue)
 	);
 
+
+	// ---- 11. the texture HOVER CARD, and the node card staying narrow --------
+	//
+	// A long filename must never widen the node (xyflow sizes a node to its content), so
+	// the name is CLAMPED on the card and the full one lives in the hover preview. Both
+	// halves of that trade are asserted here.
+	await page.evaluate((u) => {
+		window.__stores.shaderGraph.setShaderGraphFor(u, {
+			nodes: [
+				{ id: 'tx', type: 'texture', position: { x: 80, y: 60 }, data: {} },
+				{ id: 'sf', type: 'surface', position: { x: 420, y: 90 }, data: {} }
+			],
+			edges: [{ id: 'et', source: 'tx', sourceHandle: 'rgb', target: 'sf', targetHandle: 'albedo' }]
+		});
+	}, uuid);
+	await page.waitForTimeout(900);
+
+	const texNode = page.locator('#shader-editor .svelte-flow__node').filter({ hasText: 'Texture' }).first();
+
+	// A 24px two-colour image, with the corner colour VARIED per call. The bytes have to
+	// differ between the two picks: a texture is content-addressed, so two files with
+	// identical bytes are the same hash and the second pick would silently be a no-op
+	// (which made the width comparison pass while measuring the first image twice).
+	const makeBytes = (corner) =>
+		page.evaluate(async (rgb) => {
+			const c = document.createElement('canvas');
+			c.width = 24;
+			c.height = 24;
+			const ctx = c.getContext('2d');
+			ctx.fillStyle = 'rgb(40,180,90)';
+			ctx.fillRect(0, 0, 24, 24);
+			ctx.fillStyle = rgb;
+			ctx.fillRect(0, 0, 12, 12);
+			const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+			return Array.from(new Uint8Array(await blob.arrayBuffer()));
+		}, corner);
+	const pick = async (name, corner) => {
+		await page.locator('#shader-editor .shader-tex-file').first().setInputFiles({
+			name,
+			mimeType: 'image/png',
+			buffer: Buffer.from(await makeBytes(corner))
+		});
+		await page.waitForTimeout(2000);
+		return (await texNode.boundingBox())?.width ?? 0;
+	};
+
+	// The question is not "is the filled node wider than the empty one" — it is, and it
+	// should be (a thumbnail and a clear button appear). The requirement is that the width
+	// does not track the NAME LENGTH, so measure a short name against a long one.
+	// The property is BOUNDED, not constant: a short name legitimately gives a narrower
+	// node (the label is content-sized up to its cap). What must never happen is the width
+	// tracking the name — so compare a long name against a much longer one, where both are
+	// past the cap, and hold an absolute ceiling as well.
+	const longName = 'a-really-long-texture-filename-that-would-stretch-the-card.png';
+	const longWidth = await pick(longName, 'rgb(60,80,240)');
+	const absurdName = 'z'.repeat(180) + '.png';
+	const absurdWidth = await pick(absurdName, 'rgb(200,40,160)');
+	h.check(
+		longWidth > 0 && absurdWidth > 0,
+		'premise — the Texture node is measurable with both names: ' + longWidth.toFixed(0) + ' / ' + absurdWidth.toFixed(0)
+	);
+	h.check(
+		Math.abs(absurdWidth - longWidth) <= 2,
+		'a ' + absurdName.length + '-character filename is no wider than a ' + longName.length +
+			'-character one: ' + longWidth.toFixed(0) + 'px vs ' + absurdWidth.toFixed(0) + 'px'
+	);
+	h.check(
+		absurdWidth < 170,
+		'and the node stays compact whatever the name: ' + absurdWidth.toFixed(0) + 'px'
+	);
+	// and prove the clamp is what is doing it: the label really is overflowing its box.
+	// innerText cannot see this — it returns the full string whatever the CSS clips.
+	const clipped = await page.locator('#shader-editor .shader-tex-state').first().evaluate((el) => ({
+		scroll: el.scrollWidth,
+		client: el.clientWidth
+	}));
+	h.check(
+		clipped.scroll > clipped.client,
+		'the name is genuinely clipped by the card, not merely short: content ' +
+			clipped.scroll + 'px in a ' + clipped.client + 'px box'
+	);
+
+	// no card until you hover
+	h.check(
+		(await page.locator('[data-shader-tex-card]').count()) === 0,
+		'no hover card is mounted while nothing is hovered'
+	);
+
+	await page.locator('#shader-editor .shader-tex-slot').first().hover();
+	await page.waitForTimeout(500);
+	const card = page.locator('[data-shader-tex-card]');
+	h.check((await card.count()) === 1, 'hovering the swatch opens ONE preview card');
+	// portaled to <body>: xyflow transforms its pane, and a transform makes that element
+	// the containing block for position:fixed, so a card rendered in place would be
+	// positioned against the panned/zoomed pane and clipped by the node
+	const parentTag = await card.evaluate((el) => el.parentElement?.tagName ?? '');
+	h.check(parentTag === 'BODY', 'and it is portaled to <body>, clear of the transformed pane: ' + parentTag);
+
+	const cardText = await card.innerText();
+	h.check(
+		cardText.includes(absurdName),
+		'the card shows the FULL filename, wrapped rather than clipped: ' +
+			cardText.split('\n')[0].length + ' chars vs ' + absurdName.length + ' in the name'
+	);
+	h.check(/24\s*×\s*24\s*px/.test(cardText), 'with the pixel dimensions of the decoded image');
+	h.check(/\d+(\.\d+)?\s*(B|KB|MB)/.test(cardText), 'and the file size');
+	h.check(/repeat/i.test(cardText), 'and the wrap mode, which is what makes Tiling and Panner behave');
+
+	// the preview must be SCALED UP, not shown at its natural 24px
+	const previewBox = await card.locator('img').first().boundingBox();
+	h.check(
+		!!previewBox && previewBox.width > 80,
+		'the preview is scaled up rather than drawn at the image size: ' + (previewBox ? previewBox.width.toFixed(0) + 'px' : 'none')
+	);
+	const pixelated = await card.locator('img').first().evaluate((el) => getComputedStyle(el).imageRendering);
+	h.check(
+		pixelated === 'pixelated',
+		'a small (24px) source renders nearest-neighbour so it stays crisp when upscaled: ' + pixelated
+	);
+	h.check(
+		await card.evaluate((el) => getComputedStyle(el).pointerEvents === 'none'),
+		'the card is pointer-inert, so it cannot swallow the click that opens the file picker'
+	);
+
+	// and it goes away again
+	await page.mouse.move(4, 4);
+	await page.waitForTimeout(400);
+	h.check((await page.locator('[data-shader-tex-card]').count()) === 0, 'leaving the swatch closes the card');
+
 	const errs = h.pageErrors ? h.pageErrors(peer) : [];
 	h.check(errs.length === 0, 'no page errors (a mount crash would be invisible to store checks): ' + JSON.stringify(errs.slice(0, 3)));
 	await h.finish(browser);

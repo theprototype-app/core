@@ -63,6 +63,19 @@ export function shaderTextureFor(hash) {
 	return (hash && cache.get(hash)) ?? null;
 }
 
+/**
+ * What we know about a resolved texture, for the picker's hover card. Dimensions are not
+ * stored on the Explorer item, so they can only come from the decoded image — which means
+ * they are available exactly when the texture is resolved, and absent before that.
+ * @param {string} hash @returns {{width:number, height:number}|null}
+ */
+export function shaderTextureInfo(hash) {
+	const image = cache.get(hash)?.image;
+	const width = image?.width ?? image?.videoWidth ?? 0;
+	const height = image?.height ?? image?.videoHeight ?? 0;
+	return width && height ? { width, height } : null;
+}
+
 /** @type {any} */
 let placeholder = null;
 

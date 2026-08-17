@@ -138,11 +138,32 @@ async function compileInject(ir, ctx) {
 	for (const u of ir?.uniforms ?? []) uniforms[u.name] = { value: u.value };
 	material.userData.shaderUniforms = uniforms;
 	const prelude = [decls, ir?.prelude ?? ''].filter(Boolean).join('\n');
-	/** @type {[string,string][]} */
-	const edits = [];
+	// SH1: the compiler hoists reused sub-expressions into temps, so a graph arrives as
+	// `body` (statements) plus one EXPRESSION per tap. The body is emitted ONCE, at the
+	// earliest anchor we use, and the taps reference its temps — which is also why the
+	// compiler's Normal node reads the varying rather than three's shaded `normal`.
+	/** @type {Map<string, string[]>} */
+	const perAnchor = new Map();
+	const push = (/** @type {string} */ anchor, /** @type {string} */ line) => {
+		const list = perAnchor.get(anchor) ?? [];
+		list.push(line);
+		perAnchor.set(anchor, list);
+	};
+	const BODY_ANCHOR = TAPS[0][2];
+	if (ir?.body) push(BODY_ANCHOR, ir.body);
 	for (const [field, write, anchor] of TAPS) {
 		const expr = ir?.[field];
-		if (expr) edits.push([anchor, anchor + '\n\t' + write + '(' + expr + ');']);
+		if (expr) push(anchor, write + '(' + expr + ');');
+	}
+	/** @type {[string,string][]} */
+	const edits = [...perAnchor.entries()].map(([anchor, lines]) => [
+		anchor,
+		anchor + '\n\t' + lines.join('\n\t')
+	]);
+	// a graph reading UV needs three to declare vUv, which it only does behind its own
+	// define — without this an untextured material fails to compile on `vUv`
+	if (ir?.defines) {
+		material.defines = { ...(material.defines ?? {}), ...ir.defines };
 	}
 	material.onBeforeCompile = (/** @type {any} */ shader) => {
 		Object.assign(shader.uniforms, uniforms);

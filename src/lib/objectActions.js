@@ -988,3 +988,94 @@ export function focusObject(uuid) {
 	const endPosition = center.clone().add(direction.multiplyScalar(distance));
 	flyTo(endPosition, center);
 }
+
+// ---- Phase 85: selection extras --------------------------------------------
+
+/**
+ * Ctrl+A — select every unlocked TOP-LEVEL object. Top-level because that is what
+ * a selection means everywhere else in this app (the gizmo, the multi-pivot and
+ * the Inspector all act on whole objects); a group is one member, not its children.
+ * Peer-locked objects are skipped by `applySelectionSet` itself, so a locked
+ * object simply never joins the set.
+ * @returns {number} how many were selected
+ */
+export function selectAllObjects() {
+	const group = get(objectsGroup);
+	const uuids = (group?.children ?? [])
+		.filter((/** @type {any} */ child) => child?.uuid && child.visible !== false)
+		.map((/** @type {any} */ child) => child.uuid);
+	applySelectionSet(uuids);
+	if (!uuids.length) showToast('Nothing in the scene to select');
+	return get(selectedObjects).length;
+}
+
+/** Select every object sharing the given object's kind — the geometry type for a
+ * mesh ('BoxGeometry'), otherwise the object type ('PointLight', 'Group').
+ * @param {string} uuid @returns {number} how many were selected */
+export function selectSameType(uuid) {
+	const group = get(objectsGroup);
+	const source = group?.getObjectByProperty('uuid', uuid);
+	if (!source) return 0;
+	const kindOf = (/** @type {any} */ object) =>
+		object?.isMesh ? (object.geometry?.type ?? 'Mesh') : object?.type;
+	const kind = kindOf(source);
+	const uuids = (group?.children ?? [])
+		.filter((/** @type {any} */ child) => kindOf(child) === kind)
+		.map((/** @type {any} */ child) => child.uuid);
+	applySelectionSet(uuids);
+	showToast(uuids.length + ' × ' + kind);
+	return uuids.length;
+}
+
+// ISOLATION is LOCAL and reversible: it hides the other top-level objects rather
+// than fading them. Fading would mean writing `transparent`/`opacity` onto
+// materials that are frequently SHARED between objects (and re-uploading a render
+// program), so a restore could not be exact — while `visible` is per object, is
+// never serialized by a peer message, and puts back exactly what was there.
+// The snapshot remembers each object's OWN visibility, so restoring never reveals
+// something the user had deliberately hidden.
+/** @type {Map<string, boolean>|null} */
+let isolationSnapshot = null;
+
+/** Is something isolated right now? */
+export function isIsolated() {
+	return !!isolationSnapshot;
+}
+
+/** Frame `uuids` and hide every other top-level object until `clearIsolation`.
+ * @param {string[]} uuids @returns {number} how many objects were hidden */
+export function isolateObjects(uuids) {
+	const group = get(objectsGroup);
+	if (!group) return 0;
+	clearIsolation(); // never nest — the second isolate would snapshot hidden ones
+	const keep = new Set(uuids);
+	/** @type {Map<string, boolean>} */
+	const snapshot = new Map();
+	let hidden = 0;
+	for (const child of group.children) {
+		snapshot.set(child.uuid, child.visible !== false);
+		if (!keep.has(child.uuid) && child.visible !== false) {
+			child.visible = false;
+			hidden++;
+		}
+	}
+	isolationSnapshot = snapshot;
+	objectsGroup.update((v) => v);
+	if (hidden) showToast('Isolated — press Esc to bring the scene back');
+	return hidden;
+}
+
+/** Undo an isolation, restoring each object's own visibility. Safe to call when
+ * nothing is isolated. @returns {boolean} whether anything was restored */
+export function clearIsolation() {
+	if (!isolationSnapshot) return false;
+	const group = get(objectsGroup);
+	for (const [uuid, visible] of isolationSnapshot) {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		// only put back what WE hid: an object the user hid meanwhile stays hidden
+		if (object && visible && object.visible === false) object.visible = true;
+	}
+	isolationSnapshot = null;
+	objectsGroup.update((v) => v);
+	return true;
+}

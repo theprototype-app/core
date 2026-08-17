@@ -11,6 +11,7 @@
 	import { versionString } from '$lib/version.js';
 	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
+	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
@@ -725,6 +726,17 @@
 							<Checkbox id="auto-restore" bind:checked={$autoRestoreEnabled} />
 						</svelte:fragment>
 						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
+					</SettingRow>
+					<p class="ui-section-label">Selection</p>
+					<SettingRow name="Double-click action">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="double-click-action"
+								items={DOUBLE_CLICK_ACTIONS.map((a) => ({ value: a.value, name: a.label }))}
+								bind:value={$doubleClickAction}
+							/>
+						</svelte:fragment>
+						What a double-click on an object does in the viewport. A single click always just selects it; <kbd>Ctrl</kbd>+<kbd>A</kbd> selects everything
 					</SettingRow>
 					<p class="ui-section-label">Wireframe &amp; outline</p>
 					<SettingRow name="Wireframe color">

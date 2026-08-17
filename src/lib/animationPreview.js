@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
-import { peers } from '../stores/appStore';
+import { peers, showToast } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import {
 	suspendAnimation,
@@ -816,7 +816,7 @@ const POS_AXIS = { 'pos.x': 0, 'pos.y': 1, 'pos.z': 2 };
  */
 const anchorCache = new WeakMap();
 
-/** @param {Clip} clip @param {string} channel */
+/** @param {Clip|null} clip @param {string} channel */
 function channelAnchor(clip, channel) {
 	if (!clip) return 0;
 	let cached = anchorCache.get(clip);
@@ -838,7 +838,7 @@ function channelAnchor(clip, channel) {
 }
 
 /** The WORLD value a key means for an object whose run started at `basePos`.
- * @param {Clip} clip @param {string} channel @param {number} v @param {number[]} [basePos] */
+ * @param {Clip|null} clip @param {string} channel @param {number} v @param {number[]} [basePos] */
 export function worldValueOf(clip, channel, v, basePos) {
 	const axis = POS_AXIS[channel];
 	if (axis === undefined || !basePos) return v;
@@ -847,7 +847,7 @@ export function worldValueOf(clip, channel, v, basePos) {
 
 /** The KEY value that records an object currently at `current` — the inverse of
  * worldValueOf, and what every write path must use.
- * @param {Clip} clip @param {string} channel @param {number} current @param {number[]} [basePos] */
+ * @param {Clip|null} clip @param {string} channel @param {number} current @param {number[]} [basePos] */
 export function keyValueOf(clip, channel, current, basePos) {
 	const axis = POS_AXIS[channel];
 	if (axis === undefined || !basePos) return current;
@@ -1902,14 +1902,16 @@ function watchableChannels(object) {
  */
 export function captureAutoKey(uuid, seconds) {
 	if (get(autoKeyFor) !== uuid) return 0;
-	const clip = activeClip(uuid);
+	// NOT bailing on a missing clip: with REC armed the first change CREATES one
+	// (below, once we know something actually changed)
+	let clip = activeClip(uuid);
 	const object = objectFor(uuid);
-	if (!clip || !object) return 0;
+	if (!object) return 0;
 	const at = Math.max(0, num(seconds));
 	const reference = autoKeyReference.get(uuid) ?? null;
 	/** @type {{trackId: string|null, channel: string, v: number, from: number|null}[]} */
 	const writes = [];
-	const byChannel = new Map(clip.tracks.map((track) => [track.channel, track]));
+	const byChannel = new Map((clip?.tracks ?? []).map((track) => [track.channel, track]));
 	// uniform scale is a legacy alias for the three axes; if a track already drives
 	// it, keep using that one rather than adding per-axis tracks beside it
 	const uniform = byChannel.get('scale');
@@ -1944,6 +1946,22 @@ export function captureAutoKey(uuid, seconds) {
 	}
 	if (!writes.length) return 0;
 	beginAnimGesture(uuid, 'Auto-key');
+	// REC with NO CLIP YET: the first change creates one. Arming alone deliberately
+	// creates nothing — a clip is replicated, saved data, and toggling REC on and off
+	// should not litter a scene with empty ones. But the change itself must not be
+	// silently dropped either, which is what used to happen (captureAutoKey returned
+	// at the top when `activeClip` was null, so the edit went nowhere).
+	//
+	// This is Blender's model: switching auto-keying on does nothing, and the first
+	// keyed change creates the Action. Inside the gesture, so ONE undo removes the
+	// clip and the keys together.
+	if (!clip) {
+		// No `createClip` here: `emptySet()` already carries a default clip and every
+		// write below goes through editSet, so the clip materialises with the first
+		// addTrack. Creating one explicitly as well produced TWO (the default plus the
+		// new one) — which the suite caught. Just say that it happened.
+		showToast('Started a new clip for this object (REC)');
+	}
 	for (const write of writes) {
 		let trackId = write.trackId;
 		if (!trackId) {

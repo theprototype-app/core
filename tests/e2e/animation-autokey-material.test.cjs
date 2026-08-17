@@ -120,6 +120,56 @@ h.run(async () => {
 		`a roughness edit keys its channel the same way (${JSON.stringify(other)})`
 	);
 
+	// ---- REC with NO CLIP: the first change creates one -----------------------
+	// Arming REC creates nothing (a clip is replicated, saved data - toggling REC
+	// must not litter a scene with empty ones), but the first change must not vanish
+	// either, which is what used to happen. Blender's model: switching auto-keying on
+	// does nothing, and the first keyed change creates the Action.
+	const fresh = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const ap = w.animationPreview;
+		w.commandsHandler.sceneCommand('/create sphere');
+		await new Promise((r) => setTimeout(r, 700));
+		let g;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		const o = g.children[g.children.length - 1];
+		const clipsOf = () => {
+			let set;
+			ap.animations.subscribe((v) => (set = v))();
+			return Object.keys(set[o.uuid]?.clips ?? {}).length;
+		};
+		ap.setAutoKey(o.uuid);
+		await new Promise((r) => setTimeout(r, 200));
+		const afterArming = clipsOf();
+		// the first change: move it
+		o.position.y = 3;
+		ap.captureAutoKey(o.uuid, 0);
+		await new Promise((r) => setTimeout(r, 300));
+		let set;
+		ap.animations.subscribe((v) => (set = v))();
+		const s = set[o.uuid];
+		const clip = s ? s.clips[s.active] : null;
+		ap.setAutoKey(null);
+		return {
+			afterArming,
+			afterChange: clipsOf(),
+			channels: (clip?.tracks ?? []).map((t) => t.channel),
+			undoRemovesIt: (() => {
+				w.history.undo();
+				return clipsOf();
+			})()
+		};
+	});
+	h.check(fresh.afterArming === 0, `arming REC alone creates NO clip (${fresh.afterArming})`);
+	h.check(fresh.afterChange === 1, `the first change creates one (${fresh.afterChange})`);
+	h.check(
+		fresh.channels.includes('pos.y'),
+		`...and the change is keyed into it rather than lost (${JSON.stringify(fresh.channels)})`
+	);
+	h.check(
+		fresh.undoRemovesIt === 0,
+		`ONE undo takes the clip and its keys back together (${fresh.undoRemovesIt} clips)`
+	);
 	h.check(h.pageErrors(A).length === 0, `no page errors (${JSON.stringify(h.pageErrors(A))})`);
 	await h.finish(browser);
 });

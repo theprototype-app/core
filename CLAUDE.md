@@ -753,6 +753,51 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A number that keeps COUNTING must be folded before anything reads it as a
+  POSITION.** The animation transport stores `pausedAt`, and `elapsedOf` returns
+  time since the run STARTED — 7.3 s into a 2 s loop. The playing path is fine
+  because `clipSecondsFor` takes it modulo the span; `parkedPosition` instead ADDS
+  it to the window start and CLAMPS, so pausing after the first lap parked the
+  playhead on the LAST frame (or the FIRST in reverse) while the object sat
+  mid-lap. Two readers, two meanings, one field. Fold at the WRITE (`foldElapsed`)
+  so every reader agrees — and keep the exact-boundary case, because parking at
+  the end is a real position the End button produces.
+- **A per-frame map REBUILT from the active set silently deletes everything that
+  just left it.** `tickAnimationPreview` did `playheads.set(heads)` where `heads`
+  holds only the objects that ticked — so one frame after `pause` wrote a
+  position, it was gone, and the pane had no frame to show for the clip it had
+  just paused. Merge into the previous map and drop only what no longer has a
+  transport at all.
+- **A "make it visible" default can be out of RANGE.** A fresh animation track
+  seeded its second key with `from + 2` — right for a position, and dead for every
+  channel `setChannel` clamps to 0..1: opacity 1 -> 3 -> clamped back to 1, so
+  adding an Opacity channel did nothing at all (reported as "animations don't
+  apply immediately"; the track really was flat). Roughness and any colour
+  component near 1 were dead the same way, while metalness (default 0) worked —
+  which is what made it look intermittent. Clamped channels toggle to the far end.
+- **`emissiveIntensity` is a MULTIPLIER on the emissive COLOUR**, which is black on
+  every default material — so animating "Glow" moved a number every frame and
+  changed no pixels. Lighting it WHITE was the first fix and was wrong in use (the
+  object just turned white and lost its own colour); a glow with no colour of its
+  own takes `material.color`. The Inspector had no emissive row at ALL until
+  2026-08-17 — nothing in the app set that property except the selection tint.
+- **MEASURE THE LIMIT BEFORE BUILDING THE WORKAROUND.** The backlog asked for
+  chunked meshgeo to lift the 45000-float cap; two peers carried **3,000,000
+  floats (12 MB) intact in 4.9 s**, because peerjs already chunks binary itself.
+  The cap was a leftover from the plain-number-array era, and the protocol would
+  have been built for a phantom. What large geometry actually costs is a LIVE
+  PREVIEW streamed 5x/s and UNDO MEMORY — see `meshBudget.js`, which carries the
+  measurement as its comment.
+- **One cap can hide another.** Raising the commit ceiling did not make a dense
+  GLB face-editable: `vrFaceCap` (1000 triangles, Settings ▸ VR) gates
+  `enterFaceEdit` and was always the tighter gate. A suite that entered a session
+  on a 19k-triangle sphere silently did nothing, and the "no preview was streamed"
+  check after it passed VACUOUSLY — the premise check is what caught it.
+- **`ObjectLoader` cannot rebuild a `WireframeGeometry`**, so a fixture that crafts
+  a stale edit-overlay with one fails to parse for a reason that has nothing to do
+  with the thing under test (it returned null and the check read -1). Craft such
+  fixtures with a plain `BufferGeometry`.
+
 - **An SVG sibling drawn AFTER your hit target steals the press, and bubbling
   cannot save you.** The animation ruler's tick `<line>`s and labels are drawn over
   the ruler `<rect>` as SIBLINGS, so pressing a tick hit the line, and a line has
@@ -1931,6 +1976,31 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-17): **v1.4.0 RELEASED + four follow-up PRs.** `main` @2d68fdb
+  (tag `v1.4.0`, CHANGELOG "Move it"), release workflow green, cloud deployed at
+  `CORE_REF=v1.4.0` (version.json 1.4.0 on both hosts), docs site deployed with the
+  new animation/snapping pages + the 4 animation node pages. It shipped 17-E
+  animation, the UV transform tools, roadmap 18, 19-B snapping, 19-A, the
+  mesh-toolbox UX fixes and the pivot gizmo. MERGED after it: **#136 mesh size
+  ceilings** (`meshBudget.js` — commit 1.5M floats / live PREVIEW 45k / a 256 MB
+  undo byte budget; the wire measurement that killed the chunking plan lives in
+  that file), **#137 selection extras** (Ctrl+A over top-level objects, standing
+  down inside a mesh session; a configurable double-click whose default STAYS
+  "Open properties"; isolate HIDES rather than fades because fading writes to
+  SHARED materials; the shortcut registry gained a `when` predicate checked BEFORE
+  preventDefault) and the dependabot minor/patch group (**#126**, baseline
+  re-measured at 391/62 with svelte-check 4.7.5). OPEN: **#138** the four save
+  paths that still leaked the edit wireframe (prefab save/clone/instantiate, VR
+  sleeve capture, viewer Share, GLTF import) and **#139** the animation fixes —
+  the clamped-channel dead tracks, the glow that lit nothing, the loop-pause fold
+  and the playhead the tick deleted, plus the Inspector Glow block (Strength +
+  Colour) that never existed. New suites: `mesh-budget`, `selection-extras`,
+  `edit-overlay-gaps`, `animation-look-channels`, `animation-loop-pause`.
+  KNOWN PRE-EXISTING RED: `prefabs.test.cjs` (a locator.click timeout in its own
+  flow) fails on clean release/next too — proven by an A/B, needs its own ticket.
+  OWED: the user's repro for "the animation frame resets" (the autosave
+  park/unpark ritual was measured INNOCENT), a decision on RELATIVE position
+  channels, and the `vrFaceCap` measurement that would finish the #136 story.
 - Status (2026-08-16): **19-A READY TO PR — P0–P5b + P7a + P7b COMMITTED (12 commits,
   branch `feat/mesh-tool-interaction`, NOT pushed); P6 and P7c are PARKED by the user
   and execute later as their own branches.** Hashes: P0 `bf6f2df` · P1 `8b0352f` ·

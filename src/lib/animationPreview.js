@@ -576,7 +576,24 @@ function setChannel(obj, channel, v) {
 		}
 		case 'emissive': {
 			for (const material of materialsOf(obj)) {
-				if (material.emissiveIntensity !== undefined) material.emissiveIntensity = Math.max(0, v);
+				if (material.emissiveIntensity === undefined) continue;
+				material.emissiveIntensity = Math.max(0, v);
+				// three MULTIPLIES emissiveIntensity by the emissive COLOUR, and that
+				// colour is black on every default material — so animating Glow moved
+				// a number and changed no pixels ("glow channel not working").
+				//
+				// It needs something to scale. White was the first answer and it was
+				// wrong in use: the object simply turned white, losing the colour that
+				// made it that object. A glow with no colour of its own takes the
+				// material's OWN colour instead — a red box glows red, which is what
+				// "this thing is lit up" looks like. Set a Glow colour in the Inspector
+				// for anything else (a white object flaring green) and it is honoured
+				// here, because it is no longer black. captureBase/restoreBase carry
+				// the original, so Stop puts it back — the rule `transparent` follows.
+				if (material.emissive && material.emissive.getHex() === 0x000000 && v > 0) {
+					if (material.color) material.emissive.copy(material.color);
+					else material.emissive.setHex(0xffffff);
+				}
 			}
 			break;
 		}
@@ -599,7 +616,10 @@ function captureBase(object) {
 		color: material.color ? [material.color.r, material.color.g, material.color.b] : null,
 		metalness: material.metalness,
 		roughness: material.roughness,
-		emissiveIntensity: material.emissiveIntensity
+		emissiveIntensity: material.emissiveIntensity,
+		// the emissive COLOUR rides along because driving Glow lights a black
+		// emissive (setChannel says why) — Stop has to put the black back
+		emissive: material.emissive ? material.emissive.getHex() : null
 	}));
 	return {
 		pos: object.position.toArray(),
@@ -632,6 +652,7 @@ function restoreBase(object, base) {
 			if (saved.metalness !== undefined) material.metalness = saved.metalness;
 			if (saved.roughness !== undefined) material.roughness = saved.roughness;
 			if (saved.emissiveIntensity !== undefined) material.emissiveIntensity = saved.emissiveIntensity;
+			if (saved.emissive != null && material.emissive) material.emissive.setHex(saved.emissive);
 		}
 	}
 	object.updateMatrix(); // serializers read object.matrix, not the live pose (see flowRuntime)
@@ -941,11 +962,27 @@ function editClip(uuid, clipId, fn) {
 	});
 }
 
-/** A visible default for the second key of a fresh track. @param {string} channel @param {number} from */
+/**
+ * A visible default for the second key of a fresh track.
+ *
+ * `from + 2` is right for a position or a light intensity, and WRONG for every
+ * channel `setChannel` CLAMPS to 0..1: opacity 1 -> 3 clamps straight back to 1,
+ * so a fresh Opacity track ran 1 -> 1 and adding the channel appeared to do
+ * nothing whatsoever. Roughness (default 1) and any colour component already at 1
+ * were dead the same way. Reported as "animations don't apply immediately" — it
+ * was never about timing, the track really was flat.
+ *
+ * The clamped channels therefore TOGGLE to the far end, whichever of 0/1 is
+ * further from where the object already is: the rule `visible` always used.
+ * @param {string} channel @param {number} from
+ */
 function defaultTo(channel, from) {
 	if (channel === 'visible') return from >= 0.5 ? 0 : 1;
 	if (channel.startsWith('scale')) return from * 1.5 || 1.5;
 	if (isRotChannel(channel)) return from + Math.PI / 2;
+	if (channel === 'opacity' || channel === 'metalness' || channel === 'roughness')
+		return from >= 0.5 ? 0 : 1;
+	if (channel.startsWith('color')) return from >= 0.5 ? 0 : 1;
 	return from + 2;
 }
 
@@ -1859,10 +1896,40 @@ function elapsedOf(p, now) {
 }
 
 /**
+ * Fold a RAW elapsed time (which keeps counting past the clip on a loop) into the
+ * current pass, so that everything downstream reads the same frame.
+ *
+ * `elapsedOf` returns time since the run started — 7.3 s into a 2 s loop — and the
+ * playing path is fine with that because `clipSecondsFor` takes it modulo the span.
+ * `parkedPosition` does NOT: it adds the elapsed to the window start and clamps, so
+ * a pause after the first lap parked the playhead at the very END (forward) or the
+ * very START (reverse) while the object itself was posed mid-lap. That is the whole
+ * of the reported "pause doesn't pause" and "it jumps to the first or last frame".
+ *
+ * An elapsed landing EXACTLY on a boundary keeps its span rather than folding to 0,
+ * because parking at the end is a real position (the End button) — the same case
+ * `parkedPosition` was written for.
+ * @param {Clip} clip @param {number} elapsed @param {Play} [p] @returns {number}
+ */
+function foldElapsed(clip, elapsed, p) {
+	const { span } = rangeOf(clip, p);
+	if (!(span > 0)) return 0;
+	const value = Math.max(0, num(elapsed));
+	if (clip.loop === 'once') return Math.min(value, span);
+	// pingpong's cycle is TWO spans (out and back), and clipSecondsFor reads the
+	// direction from where in that cycle the phase sits — so fold to the cycle
+	const period = clip.loop === 'pingpong' ? span * 2 : span;
+	if (value <= period) return value;
+	const rest = value % period;
+	return rest === 0 ? period : rest;
+}
+
+/**
  * Where a PARKED playhead sits, read straight off the transport instead of through
  * the loop wrap: parking exactly at the end of a looping clip is a real thing to do
  * (the End button), and `(2/2) % 1` is 0, so it used to read back as the start —
  * which made "go to end" look like it did nothing and stepped the wrong way next.
+ * Callers must hand it a FOLDED `pausedAt` (see foldElapsed).
  * @param {Clip} clip @param {Play} [p]
  */
 function parkedPosition(clip, p) {
@@ -1996,7 +2063,10 @@ export function pause(uuid) {
 	if (typeof uuid !== 'string') return pauseAll();
 	const p = get(playback)[uuid];
 	if (!p?.playing) return;
-	setPlay(uuid, { playing: false, pausedAt: elapsedOf(p, syncedNow()) }, true);
+	// FOLD before storing: pausedAt is read back as a position inside one pass
+	const clip = clipOf(uuid, p.clipId);
+	const elapsed = elapsedOf(p, syncedNow());
+	setPlay(uuid, { playing: false, pausedAt: clip ? foldElapsed(clip, elapsed, p) : elapsed }, true);
 	posePaused(uuid);
 }
 
@@ -2204,7 +2274,19 @@ export function tickAnimationPreview() {
 		lastHead.set(uuid, { clipId: p.clipId ?? '', seconds });
 	}
 	for (const { uuid, name } of crossed) notifyMarker(uuid, name);
-	if (any || Object.keys(get(playheads)).length) playheads.set(heads);
+	if (any || Object.keys(get(playheads)).length) {
+		// `heads` only holds the objects that TICKED, i.e. the playing ones — so
+		// replacing the map outright deleted the readout of anything paused, one
+		// frame after `pause` wrote it. The pane then had no position to show for
+		// the object it had just paused, which is the other half of "it jumps to
+		// the first frame". Keep a paused object's head; drop only what no longer
+		// has a transport at all (stop/reset clear those explicitly).
+		const kept = get(playheads);
+		/** @type {Record<string, number>} */
+		const next = {};
+		for (const uuid of Object.keys(kept)) if (map[uuid]) next[uuid] = kept[uuid];
+		playheads.set(Object.assign(next, heads));
+	}
 	// a 'once' clip ends on its own on EVERY peer at the same elapsed time, so
 	// this is a local state change — never a broadcast.
 	for (const uuid of finished) {

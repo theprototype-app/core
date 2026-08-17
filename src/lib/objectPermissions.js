@@ -8,6 +8,7 @@
 //    never broadcast). Everything shared by other peers is read-only for them.
 import { get } from 'svelte/store';
 import { rolesInfo } from './cloudHooks';
+import { parkEditOverlays } from './editOverlays';
 import { showToast, showLocalObjects, peers } from '../stores/appStore';
 import { objectsGroup } from '../stores/sceneStore';
 
@@ -60,6 +61,9 @@ export function shareObject(object, groupUuid = null) {
 	clearLocalOnly(object);
 	/** @type {any} */
 	const peer = get(peers);
+	// Share is the one moment a local object becomes everyone's — it must not
+	// carry the mesh-edit wireframe across (editOverlays.js)
+	const unpark = parkEditOverlays(object);
 	try {
 		/** @type {any} */
 		const msg = { type: 'object', element: object.toJSON() };
@@ -67,6 +71,8 @@ export function shareObject(object, groupUuid = null) {
 		peer?.send(msg);
 	} catch (e) {
 		console.warn('share failed', e);
+	} finally {
+		unpark();
 	}
 	objectsGroup.update((v) => v);
 	return true;

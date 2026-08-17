@@ -28,6 +28,11 @@ The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
 clicks) and `uv-unwrap-module` (a module supplying an unwrap backend, and wasm from a blob URL).
+The size ceilings are `mesh-budget` (commit vs live-PREVIEW vs undo-byte budget,
+with the counterfactual against the old 45000 cap); selection is `selection-extras`
+(Ctrl+A + the configurable double-click, both through real input); the edit-overlay
+save paths are `edit-overlay-gaps`; the animation look channels and the loop-pause
+transport are `animation-look-channels` and `animation-loop-pause`.
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
@@ -131,6 +136,33 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **A WALL-CLOCK sleep is a lottery on a throttled page, so drive the state
+  instead.** `animation-loop-pause` needs a pause that lands MID-LAP. Sleeping
+  2.6 s into a 1 s loop looked deterministic and was not: a headless page ticks at
+  a few fps, so the same sleep produced 0.4, 0.17 and 0.005 on consecutive runs —
+  one of which is legitimately at a lap boundary, where the "did not jump to an
+  end" check must fail. Start the run at a known offset (`play(uuid, clip, {from:
+  2.4})`) and act IMMEDIATELY: 2.4 s of a 1 s loop folds to exactly 0.400 every
+  time. Same family as "measure the property, not the number" — if a check depends
+  on WHEN it ran, it is measuring the scheduler.
+- **A premise that silently fails makes every check after it pass VACUOUSLY.**
+  `mesh-budget` opens a face session on a dense sphere and asserts no live preview
+  is streamed. The first run reported a clean 0 previews — because `enterFaceEdit`
+  had been refused by `vrFaceCap` (1000 triangles) and the gesture never started.
+  The `beginFaceGrab` premise check is the only reason it was caught. Assert that
+  the thing you are measuring actually HAPPENED, especially when the expected
+  result is "nothing".
+- **Craft fixtures out of what the loader can actually rebuild.** A stale
+  edit-overlay fixture built with `WireframeGeometry` made `instantiatePrefab`
+  return null — `ObjectLoader` has no factory for that type — so the check read
+  -1 and looked like a broken fix. A plain `BufferGeometry` with a position
+  attribute round-trips.
+- **Prove a save-path guard by REMOVING one park.** Every check in
+  `edit-overlay-gaps` has the same shape (live before / absent in what is written /
+  still live after). Deleting `parkEditOverlays` from `savePrefab` turns exactly
+  one of them red with the wireframe back in the entry — that is what makes the
+  other five trustworthy. The same trick proved the mesh preview ceiling (6
+  previews leak) and the transport fold (pausedAt reads 2.400).
 - **A failing check is as often a wrong PREMISE as a wrong fix — verify which before
   changing code.** Every red in the M1-M6 batch was the test, not the feature: an
   indexed BoxGeometry counted as 8 triangles; a smooth-shading check used a SPHERE,

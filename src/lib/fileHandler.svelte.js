@@ -20,6 +20,7 @@ import { bakeAnimationsForExport } from '$lib/animationPreview';
 import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
+import { stripEditOverlays } from '$lib/editOverlays';
 import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 
 //Access objects Store
@@ -512,6 +513,10 @@ try {
 			(error) => reject(error)
 		);
 	});
+	// a file exported by an older build while a mesh-edit session was open carries
+	// the edit wireframe as a real object — drop it before it is added AND
+	// broadcast below (editOverlays.js)
+	stripEditOverlays(result.scene);
 
     if (file.name.split('.').pop() == 'gltf') {
     let uuids = []

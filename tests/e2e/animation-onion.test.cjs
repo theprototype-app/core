@@ -214,5 +214,37 @@ h.run(async () => {
 		`the real object is unharmed by the ghosts (x=${finalX.x.toFixed(2)}, opacity ${finalX.opacity})`
 	);
 
+	// ---- a ghost with nothing to show HIDES ---------------------------------
+	// Reported as "onion skin sometimes shows the full object". A clip that drives
+	// only LOOK channels moves the object nowhere, so both ghosts sit exactly on it
+	// - and two copies at 28% over the real thing read as one slightly odd SOLID
+	// object. Onion skin is a motion aid: a ghost that would coincide stays hidden.
+	const noMotion = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const ap = w.animationPreview;
+		w.commandsHandler.sceneCommand('/create sphere');
+		await new Promise((r) => setTimeout(r, 700));
+		let g;
+		w.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+		const object = g.children[g.children.length - 1];
+		object.position.set(6, 1, 0);
+		w.objectActions.selectObject(object.uuid);
+		ap.addTrack(object.uuid, 'opacity', object); // a LOOK-only clip: no motion
+		w.onionSkin.setOnionSkin(true);
+		ap.scrub(object.uuid, 1);
+		await new Promise((r) => setTimeout(r, 500));
+		let scene;
+		w.globalScene.subscribe((/** @type {any} */ v) => (scene = v))();
+		const root = scene.getObjectByName('onion-skin');
+		return {
+			built: root ? root.children.length : 0,
+			showing: root ? root.children.filter((/** @type {any} */ c) => c.visible).length : 0
+		};
+	});
+	h.check(noMotion.built === 2, `the ghosts are still BUILT for a look-only clip (${noMotion.built})`);
+	h.check(
+		noMotion.showing === 0,
+		`...and none of them DRAWS, because each would sit exactly on the object (${noMotion.showing} showing)`
+	);
 	await h.finish(browser);
 });

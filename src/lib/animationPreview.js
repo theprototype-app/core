@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, selectedObject } from '../stores/sceneStore';
+import { objectsGroup } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import {
@@ -2349,8 +2349,6 @@ export function parkAuthoredAtBase() {
 /** @type {Map<string, {clipId: string, seconds: number}>} */
 const lastHead = new Map();
 
-/** throttle for the properties-panel poke below (THREE objects are not reactive) */
-let lastInspectorPoke = 0;
 
 /**
  * Every marker the playhead passed travelling `from` -> `to`, in travel order.
@@ -2436,21 +2434,15 @@ export function tickAnimationPreview() {
 		for (const uuid of Object.keys(kept)) if (map[uuid]) next[uuid] = kept[uuid];
 		playheads.set(Object.assign(next, heads));
 	}
-	// The properties panel renders from a THREE object, and THREE objects are NOT
-	// reactive — so while a clip played, every row sat at the value it had when the
-	// panel opened. Poke the SELECTED object a few times a second: not per frame,
-	// and deliberately not `objectsGroup`, which the object list and half the
-	// deriveds in the app hang off.
-	if (any) {
-		const now = performance.now();
-		if (now - lastInspectorPoke > 100) {
-			const selected = get(selectedObject);
-			if (selected?.uuid && map[selected.uuid]) {
-				lastInspectorPoke = now;
-				selectedObject.update((value) => value);
-			}
-		}
-	}
+	// A properties-panel poke lived here and DID NOT WORK, so it is gone rather than
+	// left as dead code. Poking `selectedObject` does re-run the component, but the
+	// transform rows read through a `$derived` that hands back the same mutated THREE
+	// object, and a derived compares with `===` — so nothing propagates. Measured
+	// from the DOM: the `.dn-input` values were identical across five samples of a
+	// running clip. The real fix is a fresh transform SNAPSHOT per poke, the shape
+	// the `material` derived already uses — written up in the plans, not guessed at
+	// here (panels updating during playback IS the DCC norm, so it is worth doing
+	// properly).
 	// a 'once' clip ends on its own on EVERY peer at the same elapsed time, so
 	// this is a local state change — never a broadcast.
 	for (const uuid of finished) {

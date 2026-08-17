@@ -13,7 +13,7 @@
 		{ label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => { flowCodeClose.set(false); activateDock('flowcode'); } },
 		{ label: '＋ Animation', tooltip: 'Animate the selected object', action: () => { animationClose.set(false); activateDock('animation'); } },
 		{ label: '＋ UV editor', tooltip: 'Edit the selected mesh’s UV map and textures', action: () => { uvEditorClose.set(false); activateDock('uv'); } },
-		{ label: '＋ Shader', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } }
+		{ label: '＋ Shader editor', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } }
 	];
 	function openAdd(/** @type {MouseEvent} */ e) {
 		const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();
@@ -32,7 +32,7 @@
 	{/each}
 	<button
 		class="tab-note bg-gray-900/70 px-3 pb-0.5 pt-1 text-xs font-semibold text-gray-300 hover:text-white"
-		title="Add a view (Flow Code, Animation, UV editor, Shader)"
+		title="Add a view (Flow Code, Animation, UV editor, Shader editor)"
 		onclick={openAdd}>＋</button
 	>
 </div>

@@ -79,7 +79,7 @@
 		{ label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => { flowCodeClose.set(false); activateDock('flowcode'); } },
 		{ label: '＋ Animation', tooltip: 'Animate the selected object', action: () => { animationClose.set(false); activateDock('animation'); } },
 		{ label: '＋ UV editor', tooltip: 'Edit the selected mesh’s UV map and textures', action: () => { uvEditorClose.set(false); activateDock('uv'); } },
-		{ label: '＋ Shader', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } }
+		{ label: '＋ Shader editor', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } }
 	];
 	function openAddMenu(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -193,7 +193,7 @@
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span>Node editor</span>
 				<span class="flex-1"></span>
-				<button id="flow-add-view" class="ui-button-quiet" title="Add a view (Flow Code, Animation, UV editor, Shader)" onclick={openAddMenu}>＋</button>
+				<button id="flow-add-view" class="ui-button-quiet" title="Add a view (Flow Code, Animation, UV editor, Shader editor)" onclick={openAddMenu}>＋</button>
 				<button id="flow-dock" class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
 				<button class="ui-button-quiet" title="Close (N)" onclick={() => flowGraphClose.set(true)}>✕</button>
 			</div>

@@ -69,15 +69,15 @@ h.run(async () => {
 	h.check(await addBtn.count() === 1, 'premise — the dock tab strip has its + button');
 	await addBtn.click();
 	await page.waitForTimeout(500);
-	const shaderItem = page.getByRole('menuitem', { name: /Shader/ });
-	h.check(await shaderItem.count() >= 1, 'the + menu OFFERS Shader (this is what was missing)');
+	const shaderItem = page.getByRole('menuitem', { name: /Shader editor/ });
+	h.check(await shaderItem.count() >= 1, 'the + menu OFFERS Shader editor (this is what was missing)');
 	await shaderItem.first().click();
 	await page.waitForTimeout(1200);
 	await page.waitForTimeout(900);
 	h.check(await page.locator('#shader-editor').count() === 1, 'the Shader tab renders in the dock');
 	const scopeText = await page.locator('#shader-scope').innerText().catch(() => '');
 	h.check(/own material/i.test(scopeText), 'scope follows the SELECTION: "' + scopeText + '"');
-	h.check(await page.locator('#shader-empty').count() === 1, 'with no graph it explains itself rather than showing an empty canvas');
+	h.check(await page.locator('#shader-empty-state').count() === 1, 'with no graph it shows ONE centred call to action');
 	const occupant = await page.evaluate(
 		() => new Promise((r) => window.__stores.bottomDock.dockOccupants.subscribe((o) => r(!!o.shader?.present))())
 	);
@@ -85,9 +85,9 @@ h.run(async () => {
 
 	// ---- 2. Create shader, through the BUTTON ---------------------------------
 	const before = await page.evaluate(() => window.__e.sample().px);
-	await page.locator('#shader-create').click();
+	await page.locator('#shader-create-btn').click();
 	await page.waitForTimeout(1200);
-	h.check(await page.locator('#shader-empty').count() === 0, 'creating a graph replaces the empty state');
+	h.check(await page.locator('#shader-empty-state').count() === 0, 'creating a graph replaces the empty state');
 	const nodeCount = await page.locator('#shader-editor .svelte-flow__node').count();
 	h.check(nodeCount === 2, 'the starter graph RENDERS its two nodes: ' + nodeCount);
 	const edgeCount = await page.locator('#shader-editor .svelte-flow__edge').count();
@@ -111,16 +111,42 @@ h.run(async () => {
 			' -> ' + sA.r.toFixed(1) + '/' + sA.b.toFixed(1) + ' (blue-dominant)'
 	);
 
-	// ---- 4. the palette adds a node -----------------------------------------
-	await page.locator('#shader-add').click();
-	await page.waitForTimeout(400);
-	h.check(await page.locator('#shader-palette').count() === 1, 'Add node opens the palette');
+	// ---- 4. the LEFT PALETTE adds a node ------------------------------------
+	h.check(await page.locator('#shader-palette').count() === 1, 'the palette sidebar renders');
 	const groups = await page.locator('#shader-palette .shader-palette-group').count();
 	h.check(groups >= 3, 'grouped by catalog group: ' + groups + ' groups');
 	await page.locator('#shader-palette button', { hasText: 'Fresnel' }).first().click();
 	await page.waitForTimeout(900);
 	const afterAdd = await page.locator('#shader-editor .svelte-flow__node').count();
 	h.check(afterAdd === 3, 'clicking a palette entry adds a node to the canvas: ' + afterAdd);
+
+	// ---- 4b. RIGHT-CLICKING the pane opens the searchable add menu ----------
+	const pane = await page.locator('#shader-editor .svelte-flow__pane').first().boundingBox();
+	await page.mouse.click(pane.x + pane.width * 0.3, pane.y + pane.height * 0.75, { button: 'right' });
+	await page.waitForTimeout(500);
+	h.check((await page.locator('.ctx-filter-input').count()) >= 1, 'the pane menu carries the shared search filter');
+	const rows = await page.getByRole('menuitem').count();
+	h.check(rows >= 4, 'and the catalog GROUPS as submenu rows: ' + rows);
+	await page.locator('.ctx-filter-input').first().fill('poster');
+	await page.waitForTimeout(500);
+	const matches = await page.locator('.ctx-match').count();
+	h.check(matches >= 1, 'typing filters the flattened catalog: ' + matches + ' match(es) for poster');
+	await page.locator('.ctx-match').first().click();
+	await page.waitForTimeout(900);
+	const afterMenuAdd = await page.locator('#shader-editor .svelte-flow__node').count();
+	h.check(afterMenuAdd === 4, 'picking a match adds that node: ' + afterMenuAdd);
+
+	// ---- 4c. a WIRE can be removed (right-click -> Disconnect) --------------
+	const wiresBefore = await page.locator('#shader-editor .svelte-flow__edge').count();
+	const wireBox = await page.locator('#shader-editor .svelte-flow__edge').first().boundingBox();
+	await page.mouse.click(wireBox.x + wireBox.width / 2, wireBox.y + wireBox.height / 2, { button: 'right' });
+	await page.waitForTimeout(500);
+	const disconnect = page.getByRole('menuitem', { name: /Disconnect/ });
+	h.check((await disconnect.count()) >= 1, 'right-clicking a wire offers Disconnect');
+	await disconnect.first().click();
+	await page.waitForTimeout(900);
+	const wiresAfter = await page.locator('#shader-editor .svelte-flow__edge').count();
+	h.check(wiresAfter === wiresBefore - 1, 'and the wire is gone: ' + wiresBefore + ' -> ' + wiresAfter);
 
 	// ---- 5. a compile error is SHOWN, and the object keeps its material -----
 	const kept = await page.evaluate((u) => {
@@ -147,15 +173,35 @@ h.run(async () => {
 	// ---- 6. Detach puts it back --------------------------------------------
 	await page.locator('#shader-remove').click();
 	await page.waitForTimeout(900);
-	h.check(await page.locator('#shader-empty').count() === 1, 'Detach returns the tab to its empty state');
+	h.check(await page.locator('#shader-empty-state').count() === 1, 'Detach returns the tab to its empty state');
 	const afterDetach = await page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid);
 	h.check(!afterDetach, 'and the object is no longer shader-driven');
 
-	// ---- 7. the scene-default scope ---------------------------------------
-	await page.locator('#shader-scope-scene').click();
-	await page.waitForTimeout(500);
+	// ---- 7. scope follows the SELECTION, with no scope control -------------
+	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.waitForTimeout(800);
 	const sceneScope = await page.locator('#shader-scope').innerText();
-	h.check(/scene default/i.test(sceneScope), 'the Scene button switches scope: "' + sceneScope + '"');
+	h.check(/scene default/i.test(sceneScope), 'deselecting switches to the scene shader: "' + sceneScope + '"');
+	h.check(
+		(await page.locator('#shader-scope-scene').count()) === 0 &&
+			(await page.locator('#shader-scope-object').count()) === 0,
+		'and there is NO scope control to get wrong — the selection is the control'
+	);
+	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuid);
+	await page.waitForTimeout(800);
+	const backToObject = await page.locator('#shader-scope').innerText();
+	h.check(/own material/i.test(backToObject), 'reselecting the object switches back: "' + backToObject + '"');
+
+	// ---- 8. the properties sidebar ---------------------------------------
+	h.check((await page.locator('#shader-props').count()) === 1, 'the properties sidebar renders');
+	h.check(
+		(await page.locator('#shader-props-graph').count()) === 1,
+		'with NO node selected it shows the GRAPH settings (edges / background / grid / minimap)'
+	);
+	h.check(
+		(await page.locator('#shader-props-graph select').count()) >= 2,
+		'including the edge-style and background controls'
+	);
 
 	const errs = h.pageErrors ? h.pageErrors(peer) : [];
 	h.check(errs.length === 0, 'no page errors (a mount crash would be invisible to store checks): ' + JSON.stringify(errs.slice(0, 3)));

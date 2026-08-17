@@ -11,7 +11,7 @@ import { explorerClose } from '../stores/appStore';
 
 export const FLOW_FAMILY = ['flow', 'flowcode', 'animation', 'uv', 'shader'];
 /** @type {Record<string, string>} */
-export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader', explorer: 'Explorer' };
+export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', explorer: 'Explorer' };
 
 const ls = typeof localStorage !== 'undefined' ? localStorage : null;
 

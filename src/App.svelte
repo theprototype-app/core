@@ -9,6 +9,7 @@
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
   import UvEditor from './components/editors/UvEditor.svelte'
   import ShaderEditor from './components/editors/ShaderEditor.svelte'
+  import { SvelteFlowProvider } from '@xyflow/svelte'
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
   import ImagePreviewWindow from './components/editors/ImagePreviewWindow.svelte'
@@ -256,7 +257,7 @@
 <FlowCode />
 <AnimationWindow />
 <UvEditor />
-<ShaderEditor />
+<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>
 <Explorer />
 <TextEditorWindow />
 <ImagePreviewWindow />

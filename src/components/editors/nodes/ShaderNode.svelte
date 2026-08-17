@@ -1,15 +1,21 @@
 <script>
 	// ONE generic node for the whole shader catalog (plan SH3). Sockets and param
-	// widgets are rendered from `shaderNodeDef`, so adding a node type is a catalog
-	// entry and never a new component — the opposite of the flow editor, where each
-	// custom node is its own file because their UIs genuinely differ.
+	// widgets render from `shaderNodeDef`, so adding a node type is a catalog entry and
+	// never a new component — the flow editor's per-node files exist because those UIs
+	// genuinely differ; these do not.
 	//
-	// Handle placement follows the ObjectFlowNode reference: NodeWrapper's content box
-	// is `relative p-3`, so an absolutely-positioned Handle anchors to the PADDED box.
-	// Each socket row is its own relative wrapper with `-mx-3 px-3` to cancel that
-	// padding, which puts the handle ON the card edge, centred on its label.
+	// Chrome mirrors NodeWrapper.svelte (same `.node-card` shell, so flow.css styles the
+	// inputs and the selected/dragging states for free) with the header tinted by CATALOG
+	// GROUP. Both Unreal and Unity colour shader nodes by category because a shader graph
+	// gets dense fast and category is the quickest way to read one.
+	//
+	// Handles carry `socket-typed` and set `--socket-color` from the GLSL type, reusing
+	// the node editor's socket CSS — including the hover/connecting states and the RED
+	// invalid-target styling. Each socket row is its own relative wrapper with
+	// `-mx-3 px-3` to cancel the card's padding, so the handle sits ON the card edge
+	// centred on its label (the ObjectFlowNode recipe).
 	import { Handle, Position } from '@xyflow/svelte';
-	import { shaderNodeDef } from '$lib/shaderCatalog';
+	import { shaderNodeDef, SURFACE_NODE } from '$lib/shaderCatalog';
 	import { setShaderParam } from '$lib/shaderGraph';
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
 
@@ -18,6 +24,19 @@
 	const def = $derived(shaderNodeDef(type));
 	const graphKey = $derived(data?.__graphKey ?? null);
 
+	// group accents deliberately echo the node editor's language (flow's Input blue,
+	// Logic teal, Effects purple) so the two editors read as one app
+	/** @type {Record<string, string>} */
+	const GROUP_ACCENT = {
+		Input: '#38bdf8',
+		Math: '#2dd4bf',
+		Utility: '#c084fc',
+		Output: '#fb923c'
+	};
+	const accent = $derived(GROUP_ACCENT[def?.group ?? ''] ?? '#94a3b8');
+
+	// GLSL type -> socket colour. Distinct per width so a mis-wire is visible before
+	// the coercion silently reinterprets it.
 	/** @type {Record<string, string>} */
 	const TYPE_COLOUR = {
 		float: '#9ca3af',
@@ -28,123 +47,144 @@
 	};
 
 	/** @param {any} socket */
-	function colourOf(socket) {
-		return TYPE_COLOUR[socket?.type] ?? '#9ca3af';
+	function socketStyle(socket) {
+		return '--socket-color: ' + (TYPE_COLOUR[socket?.type] ?? '#9ca3af') + '; top: 50%;';
 	}
 
 	/** @param {string} name @param {any} value */
 	function writeParam(name, value) {
-		if (!graphKey) return;
-		setShaderParam(graphKey, id, name, value);
+		if (graphKey) setShaderParam(graphKey, id, name, value);
 	}
 
-	/** a slider/number drag is ONE undo entry, not one per frame */
-	function startDrag() {
+	/** a drag/scrub is ONE undo entry, not one per frame */
+	function startGesture() {
 		if (graphKey) beginShaderGesture(graphKey);
 	}
-	function endDrag() {
+	function endGesture() {
 		if (graphKey) endShaderGesture(graphKey);
 	}
 </script>
 
-<div class="shader-node flex w-full flex-col gap-1">
-	<div class="shader-node-title">{def?.label ?? type}</div>
+<div
+	class="node-card flex h-full flex-col rounded-lg border border-gray-600/70 bg-gray-800/95 text-gray-200 shadow-lg"
+	style={`--node-accent: ${accent}; border-top: 2px solid ${accent}`}
+>
+	<div
+		class="flex items-center gap-1.5 rounded-t-md border-b border-gray-700/60 bg-gray-900/50 px-3 py-1.5 font-mono text-xs font-semibold text-gray-100"
+	>
+		<span class="h-2 w-2 shrink-0 rounded-full" style="background: var(--node-accent)"></span>
+		<span class="overflow-hidden text-ellipsis whitespace-nowrap">
+			{data?.label || def?.label || type}
+		</span>
+	</div>
 
-	{#each def?.inputs ?? [] as socket (socket.name)}
-		<div class="relative -mx-3 px-3 py-[2px] text-[10px] text-gray-300">
-			<Handle
-				type="target"
-				position={Position.Left}
-				id={socket.name}
-				style="top:50%; background:{colourOf(socket)}"
-			/>
-			{socket.name}
-		</div>
-	{/each}
+	<div class="relative flex flex-col gap-1 rounded-b-lg p-3 text-xs text-gray-300">
+		{#each def?.inputs ?? [] as socket (socket.name)}
+			<div class="socket-row relative -mx-3 px-3">
+				<Handle
+					type="target"
+					position={Position.Left}
+					id={socket.name}
+					class="socket-typed"
+					style={socketStyle(socket)}
+				/>
+				<span class="socket-label">{socket.name}</span>
+			</div>
+		{/each}
 
-	{#each def?.params ?? [] as param (param.name)}
-		<label class="shader-param">
-			<span>{param.name}</span>
-			{#if param.type === 'vec3' && typeof (data?.[param.name] ?? param.default) === 'string'}
-				<input
-					type="color"
-					value={data?.[param.name] ?? param.default}
-					oninput={(e) => writeParam(param.name, e.currentTarget.value)}
-				/>
-			{:else if param.type === 'float'}
-				<input
-					type="number"
-					step="0.05"
-					value={data?.[param.name] ?? param.default}
-					onpointerdown={startDrag}
-					onpointerup={endDrag}
-					oninput={(e) => writeParam(param.name, Number(e.currentTarget.value))}
-				/>
-			{:else if param.type === 'enum'}
-				<select
-					value={data?.[param.name] ?? param.default}
-					onchange={(e) => writeParam(param.name, e.currentTarget.value)}
-				>
-					{#each param.options ?? [] as option (option)}
-						<option value={option}>{option}</option>
-					{/each}
-				</select>
-			{:else}
-				<input
-					type="text"
-					value={data?.[param.name] ?? param.default}
-					onchange={(e) => writeParam(param.name, e.currentTarget.value)}
-				/>
-			{/if}
-		</label>
-	{/each}
+		{#each def?.params ?? [] as param (param.name)}
+			<label class="shader-param">
+				<span class="socket-label">{param.name}</span>
+				{#if param.type === 'vec3' && typeof (data?.[param.name] ?? param.default) === 'string'}
+					<input
+						type="color"
+						value={data?.[param.name] ?? param.default}
+						oninput={(e) => writeParam(param.name, e.currentTarget.value)}
+					/>
+				{:else if param.type === 'float'}
+					<input
+						type="number"
+						step="0.05"
+						value={data?.[param.name] ?? param.default}
+						onpointerdown={startGesture}
+						onpointerup={endGesture}
+						oninput={(e) => writeParam(param.name, Number(e.currentTarget.value))}
+					/>
+				{:else if param.type === 'enum'}
+					<select
+						value={data?.[param.name] ?? param.default}
+						onchange={(e) => writeParam(param.name, e.currentTarget.value)}
+					>
+						{#each param.options ?? [] as option (option)}
+							<option value={option}>{option}</option>
+						{/each}
+					</select>
+				{:else}
+					<input
+						type="text"
+						value={data?.[param.name] ?? param.default}
+						onchange={(e) => writeParam(param.name, e.currentTarget.value)}
+					/>
+				{/if}
+			</label>
+		{/each}
 
-	{#each def?.outputs ?? [] as socket (socket.name)}
-		<div class="relative -mx-3 px-3 py-[2px] text-right text-[10px] text-gray-300">
-			{socket.name}
-			<Handle
-				type="source"
-				position={Position.Right}
-				id={socket.name}
-				style="top:50%; background:{colourOf(socket)}"
-			/>
-		</div>
-	{/each}
+		{#each def?.outputs ?? [] as socket (socket.name)}
+			<div class="socket-row relative -mx-3 px-3 text-right">
+				<span class="socket-label">{socket.name}</span>
+				<Handle
+					type="source"
+					position={Position.Right}
+					id={socket.name}
+					class="socket-typed"
+					style={socketStyle(socket)}
+				/>
+			</div>
+		{/each}
+
+		{#if type === SURFACE_NODE}
+			<p class="mt-1 text-[9px] leading-tight text-gray-500">
+				Unconnected inputs keep the material's own value
+			</p>
+		{/if}
+	</div>
 </div>
 
 <style>
-	.shader-node-title {
-		font-size: 11px;
-		font-weight: 600;
-		color: var(--text, #e5e7eb);
-		border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+	.socket-row {
+		padding-top: 2px;
 		padding-bottom: 2px;
-		margin-bottom: 2px;
+		min-height: 16px;
+	}
+	.socket-label {
+		font-size: 10px;
+		color: #d1d5db;
 	}
 	.shader-param {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 6px;
-		font-size: 10px;
-		color: #d1d5db;
 	}
-	.shader-param input[type='number'],
-	.shader-param input[type='text'],
-	.shader-param select {
-		width: 62px;
-		background: rgba(0, 0, 0, 0.35);
-		border: 1px solid rgba(255, 255, 255, 0.15);
-		border-radius: 3px;
-		padding: 1px 3px;
-		font-size: 10px;
-		color: #f3f4f6;
+	/* widths only — flow.css styles .node-card inputs, so they match the node editor */
+	.shader-param :global(input[type='number']),
+	.shader-param :global(input[type='text']),
+	.shader-param :global(select) {
+		width: 64px;
 	}
 	.shader-param input[type='color'] {
 		width: 34px;
 		height: 18px;
 		padding: 0;
 		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 3px;
 		background: transparent;
+	}
+	:global(.svelte-flow__node.selected) .node-card {
+		border-color: var(--node-accent);
+		box-shadow: 0 0 0 1px var(--node-accent), 0 8px 18px rgb(0 0 0 / 0.45);
+	}
+	:global(.svelte-flow__node.dragging) .node-card {
+		opacity: 0.85;
 	}
 </style>

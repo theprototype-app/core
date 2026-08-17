@@ -344,6 +344,128 @@ h.run(async () => {
 	h.check(refusal.single && !refusal.multi, 'a single-material object is supported, a multi-slot one is not');
 	h.check(/material slots/i.test(refusal.reason), 'and the refusal explains itself: "' + refusal.reason + '"');
 
+
+	// ---- 7. a Texture node resolves an EXPLORER ASSET and renders it ---------
+	//
+	// The reference on the wire is a content HASH, deliberately not an embedded dataURL:
+	// a graph document replicates WHOLE on every edit, so an embedded image would re-send
+	// the texture on every slider nudge. So the pipeline under test is
+	// hash -> explorer.itemByHash -> itemBlob -> THREE.Texture -> the sampler uniform.
+	//
+	// The image is generated in-page as a SOLID COLOUR png, which makes the render
+	// assertion a comparison of two of OUR OWN values on the same object (the palette.js
+	// lesson) rather than a bet on the base colour.
+	const madeTex = await page.evaluate(async () => {
+		const S = window.__stores;
+		/** paint a solid colour and hand back a real File, via a real png encode */
+		const pngFile = async (name, r, g, b) => {
+			const c = document.createElement('canvas');
+			c.width = 8;
+			c.height = 8;
+			const ctx = c.getContext('2d');
+			ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+			ctx.fillRect(0, 0, 8, 8);
+			const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+			return new File([blob], name, { type: 'image/png' });
+		};
+		await S.explorer.loadExplorer?.();
+		const red = await S.explorer.importFiles([await pngFile('red.png', 230, 20, 20)]);
+		const blue = await S.explorer.importFiles([await pngFile('blue.png', 20, 20, 230)]);
+		return {
+			redHash: red?.[0]?.hash ?? null,
+			blueHash: blue?.[0]?.hash ?? null,
+			kind: red?.[0]?.kind ?? null
+		};
+	});
+	h.check(!!madeTex.redHash && !!madeTex.blueHash, 'two solid-colour images import into the Explorer and get content hashes');
+	h.check(madeTex.redHash !== madeTex.blueHash, 'the two hashes differ, so the graph can name one of them specifically');
+	h.check(madeTex.kind === 'image', 'they are stored as image items: ' + madeTex.kind);
+
+	const textured = await page.evaluate(async (hashes) => {
+		const S = window.__stores.shaderGraph;
+		const T = window.__stores.shaderTextures;
+		const out = {};
+		const graphFor = (hash) => ({
+			nodes: [
+				{ id: 'tx', type: 'texture', data: { hash } },
+				{ id: 'sf', type: 'surface', data: {} }
+			],
+			edges: [{ id: 'et', source: 'tx', sourceHandle: 'rgb', target: 'sf', targetHandle: 'albedo' }]
+		});
+		const uuid = window.__g.mesh.uuid;
+
+		// (a) a hash we HOLD resolves to a real texture and reaches the uniform
+		S.setShaderGraphFor(uuid, graphFor(hashes.redHash));
+		await S.compileAndApply(uuid);
+		// resolution is async (idb read + decode), so wait for the module to report it
+		for (let i = 0; i < 60; i++) {
+			if (T.shaderTextureFor(hashes.redHash)) break;
+			await new Promise((r) => setTimeout(r, 100));
+		}
+		S.refillShaderTextures();
+		const slotName = Object.keys(window.__g.mesh.material.userData.shaderUniforms || {}).find((k) =>
+			k.endsWith('_hash')
+		);
+		const slot = window.__g.mesh.material.userData.shaderUniforms[slotName];
+		out.slotName = slotName ?? null;
+		out.uniformIsTexture = !!(slot && slot.value && slot.value.isTexture);
+		out.uniformIsString = typeof slot?.value === 'string';
+		out.refs = window.__g.mesh.material.userData.shaderTextureRefs ?? [];
+		out.red = window.__g.sample().px;
+
+		// (b) swap to the OTHER image: same graph shape, different bytes
+		S.setShaderGraphFor(uuid, graphFor(hashes.blueHash));
+		await S.compileAndApply(uuid);
+		for (let i = 0; i < 60; i++) {
+			if (T.shaderTextureFor(hashes.blueHash)) break;
+			await new Promise((r) => setTimeout(r, 100));
+		}
+		S.refillShaderTextures();
+		out.blue = window.__g.sample().px;
+
+		// (c) a hash NOBODY here has: the pull is asked for, and the object must NOT go
+		// black while it waits (three samples a null sampler as zero)
+		S.setShaderGraphFor(uuid, graphFor('0'.repeat(64)));
+		await S.compileAndApply(uuid);
+		const missSlotName = Object.keys(window.__g.mesh.material.userData.shaderUniforms || {}).find(
+			(k) => k.endsWith('_hash')
+		);
+		const missSlot = window.__g.mesh.material.userData.shaderUniforms[missSlotName];
+		out.missingIsPlaceholder = missSlot?.value === T.shaderPlaceholderTexture();
+		out.debug = T.shaderTextureDebug();
+		out.missing = window.__g.sample().px;
+		return out;
+	}, madeTex);
+
+	h.check(!!textured.slotName, 'the compiled material carries a sampler uniform for the texture param: ' + textured.slotName);
+	h.check(!textured.uniformIsString, 'the uniform value is NOT the hash string (that throws from inside the render loop)');
+	h.check(textured.uniformIsTexture, 'it holds a real THREE.Texture once the Explorer bytes are decoded');
+	h.check(
+		textured.refs.length === 1 && textured.refs[0].hash === madeTex.redHash,
+		'the material records its sampler REFERENCES (name + hash) so the retry can re-fill without the IR: ' +
+			JSON.stringify(textured.refs)
+	);
+	const texRed = stats(textured.red), texBlue = stats(textured.blue), texMiss = stats(textured.missing);
+	const rbT = (x) => x.r / Math.max(x.b, 1);
+	h.check(
+		rbT(texRed) > rbT(texBlue) * 1.5,
+		'the RENDER follows the image: r:b ' + rbT(texRed).toFixed(2) + ' (red png) vs ' + rbT(texBlue).toFixed(2) + ' (blue png)'
+	);
+	h.check(texRed.r > texRed.b, 'the red texture reads red-dominant on the object: r ' + texRed.r.toFixed(1) + ' b ' + texRed.b.toFixed(1));
+	h.check(texBlue.b > texBlue.r, 'the blue texture reads blue-dominant: r ' + texBlue.r.toFixed(1) + ' b ' + texBlue.b.toFixed(1));
+
+	// the missing-hash state
+	h.check(
+		textured.debug.awaiting.includes('0'.repeat(64)),
+		'an unknown hash is REQUESTED from the mesh and recorded as awaited: ' + JSON.stringify(textured.debug.awaiting)
+	);
+	h.check(textured.missingIsPlaceholder, 'and its uniform holds the neutral white placeholder, not null');
+	h.check(
+		texMiss.mean > 12,
+		'so the object is NOT black while it waits for the bytes: mean ' + texMiss.mean.toFixed(1)
+	);
+	h.check(glsl.length === 0, 'no GLSL errors from any texture state: ' + JSON.stringify(glsl.slice(0, 2)));
+
 	const errs = h.pageErrors ? h.pageErrors(peer) : [];
 	h.check(errs.length === 0, 'no page errors: ' + JSON.stringify(errs.slice(0, 2)));
 	await h.finish(browser);

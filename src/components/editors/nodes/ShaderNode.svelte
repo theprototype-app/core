@@ -18,6 +18,7 @@
 	import { shaderNodeDef, SURFACE_NODE } from '$lib/shaderCatalog';
 	import { setShaderParam } from '$lib/shaderGraph';
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
+	import ShaderTexturePicker from './ShaderTexturePicker.svelte';
 
 	let { id, data, type } = $props();
 
@@ -93,6 +94,18 @@
 		{/each}
 
 		{#each def?.params ?? [] as param (param.name)}
+			{#if param.type === 'texture'}
+				<!-- NOT a <label>: the picker owns one of its own around the file input, and
+				     nesting labels is invalid HTML that double-fires the click -->
+				<div class="shader-param">
+					<span class="socket-label">{param.name}</span>
+					<ShaderTexturePicker
+						compact
+						hash={data?.[param.name] ?? ''}
+						onpick={(/** @type {string} */ next) => writeParam(param.name, next)}
+					/>
+				</div>
+			{:else}
 			<label class="shader-param">
 				<span class="socket-label">{param.name}</span>
 				{#if param.type === 'vec3' && typeof (data?.[param.name] ?? param.default) === 'string'}
@@ -127,6 +140,7 @@
 					/>
 				{/if}
 			</label>
+			{/if}
 		{/each}
 
 		{#each def?.outputs ?? [] as socket (socket.name)}

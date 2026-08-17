@@ -16,6 +16,10 @@
 //            `uniform: true`, so a param edit is a value write and never a recompile
 //   inputs   sockets [{name, type, default}] — `default` is the GLSL used when unwired
 //   outputs  sockets [{name, type, suffix}] — `suffix` swizzles the node's temp
+//   nativeType the GLSL type `emit` actually returns, when that is not the FIRST output's
+//            type. Every multi-output node needs it: the compiler declares one temp per
+//            node and the swizzled outputs read it, so the temp's type must not depend on
+//            which output a graph happened to wire first
 //   requires which screen inputs the node needs ('uv' | 'normal' | 'viewDir'), so the
 //            compiler can ask three for the matching defines. three only declares vUv
 //            when USE_UV is set, so a graph using UV on an untextured material would
@@ -33,6 +37,7 @@
  * @property {any[]} [params]
  * @property {any[]} [inputs]
  * @property {any[]} [outputs]
+ * @property {GlslType} [nativeType]
  * @property {string[]} [requires]
  * @property {string} [prelude]
  * @property {(arg: any) => string} [emit]
@@ -143,14 +148,24 @@ const DEFS = [
 		// the ASSET is referenced by content hash so assetShare's push/pull covers
 		// peers and late joiners (golden rule 9)
 		params: [{ name: 'hash', type: 'texture', default: '', uniform: true }],
-		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv', vertexDefault: 'uv' }],
+		// texture2D returns a vec4 whatever output is read — see `nativeType` above
+		nativeType: 'vec4',
 		outputs: [
 			{ name: 'rgb', type: 'vec3', suffix: '.rgb' },
 			{ name: 'a', type: 'float', suffix: '.a' },
 			{ name: 'rgba', type: 'vec4' }
 		],
 		requires: ['uv'],
-		emit: (a) => 'texture2D(' + a.params.hash + ', ' + a.in.uv + ')'
+		// With NO image picked yet, emit opaque white rather than sampling. three substitutes
+		// its own empty texture for a null sampler, which samples to zero — so a fresh Texture
+		// node wired to albedo would turn the object BLACK before the user has chosen anything,
+		// and read as "the node is broken" rather than "the node is empty". White is the
+		// identity for the albedo multiply, and picking an image simply recompiles (0.4 ms).
+		emit: (a) =>
+			(a.node?.data?.hash ?? '')
+				? 'texture2D(' + a.params.hash + ', ' + a.in.uv + ')'
+				: 'vec4(1.0)'
 	},
 
 	// ---- maths ------------------------------------------------------------------

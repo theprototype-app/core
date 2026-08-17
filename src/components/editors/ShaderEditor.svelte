@@ -43,6 +43,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import ShaderNode from './nodes/ShaderNode.svelte';
 	import ShaderSidebar from './ShaderSidebar.svelte';
+	import ShaderTexturePicker from './nodes/ShaderTexturePicker.svelte';
 
 	const nodeTypes = Object.fromEntries(shaderNodeDefs().map((def) => [def.key, ShaderNode]));
 	const catalog = shaderNodeDefs().filter((def) => def.key !== SURFACE_NODE);
@@ -475,6 +476,16 @@
 								/>
 							</label>
 							{#each selectedDef.params ?? [] as param (param.name)}
+								{#if param.type === 'texture'}
+									<!-- a div, not a label: the picker has its own around the file input -->
+									<div class="shader-field">
+										<span>{param.name}</span>
+										<ShaderTexturePicker
+											hash={selectedNode.data?.[param.name] ?? ''}
+											onpick={(/** @type {string} */ next) => writeSelectedParam(param.name, next)}
+										/>
+									</div>
+								{:else}
 								<label class="shader-field">
 									<span>{param.name}</span>
 									{#if param.type === 'vec3' && typeof (selectedNode.data?.[param.name] ?? param.default) === 'string'}
@@ -509,6 +520,7 @@
 										/>
 									{/if}
 								</label>
+								{/if}
 							{/each}
 							<p class="shader-hint">
 								{(selectedDef.inputs ?? []).length} in · {(selectedDef.outputs ?? []).length} out

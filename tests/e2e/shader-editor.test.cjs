@@ -203,6 +203,120 @@ h.run(async () => {
 		'including the edge-style and background controls'
 	);
 
+
+	// ---- 9. the Texture node's PICKER, through the real UI -------------------
+	//
+	// The store-level pipeline is covered in shader-graph; what this section exists for is
+	// the entry point (the SH3 lesson: the Shader tab shipped with 20 green checks and no
+	// way for a user to open it). A Texture node with no picker is exactly that shape of
+	// bug — the hash could only be set by a test.
+	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuid);
+	await page.waitForTimeout(600);
+	// a fresh graph on this object, so the section does not inherit earlier wiring
+	await page.evaluate((u) => {
+		const S = window.__stores.shaderGraph;
+		S.setShaderGraphFor(u, {
+			nodes: [
+				{ id: 'tx', type: 'texture', position: { x: 80, y: 60 }, data: {} },
+				{ id: 'sf', type: 'surface', position: { x: 360, y: 90 }, data: {} }
+			],
+			edges: [{ id: 'et', source: 'tx', sourceHandle: 'rgb', target: 'sf', targetHandle: 'albedo' }]
+		});
+	}, uuid);
+	await page.waitForTimeout(900);
+
+	const picker = page.locator('#shader-editor .shader-tex').first();
+	h.check((await picker.count()) === 1, 'the Texture node card renders a picker');
+	h.check(
+		(await picker.getAttribute('data-state')) === 'empty',
+		'which starts EMPTY: ' + (await picker.getAttribute('data-state'))
+	);
+	const fileInput = page.locator('#shader-editor .shader-tex-file').first();
+	h.check((await fileInput.count()) === 1, 'with a real file input inside it');
+
+	// Build the png IN THE PAGE with canvas.toBlob and hand the bytes back to Node, so the
+	// file the input receives is a guaranteed-decodable image. A hand-assembled base64 can
+	// pass the PNG signature check and still not decode — Image tolerates a broken one,
+	// createImageBitmap and the texture upload do not.
+	const redBytes = await page.evaluate(async () => {
+		const c = document.createElement('canvas');
+		c.width = 8;
+		c.height = 8;
+		const ctx = c.getContext('2d');
+		ctx.fillStyle = 'rgb(230,20,20)';
+		ctx.fillRect(0, 0, 8, 8);
+		const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+		return Array.from(new Uint8Array(await blob.arrayBuffer()));
+	});
+	h.check(redBytes.length > 40 && redBytes[0] === 0x89, 'built a real png in-page: ' + redBytes.length + ' bytes');
+	await fileInput.setInputFiles({
+		name: 'picked-red.png',
+		mimeType: 'image/png',
+		buffer: Buffer.from(redBytes)
+	});
+	await page.waitForTimeout(2200);
+
+	const picked = await page.evaluate((u) => {
+		const S = window.__stores;
+		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
+		return read(S.shaderGraph.shaderGraphs).then(async (all) => {
+			const doc = all[u];
+			const tx = (doc?.nodes ?? []).find((n) => n.type === 'texture');
+			const items = await read(S.explorer.explorerItems);
+			return {
+				hash: tx?.data?.hash ?? null,
+				inExplorer: items.some((it) => it.hash === tx?.data?.hash && it.name === 'picked-red.png'),
+				resolved: !!(tx?.data?.hash && S.shaderTextures.shaderTextureFor(tx.data.hash))
+			};
+		});
+	}, uuid);
+	h.check(!!picked.hash, 'choosing a file writes a content HASH into the node: ' + String(picked.hash).slice(0, 12) + '…');
+	h.check(picked.inExplorer, 'and the image is IMPORTED into the Explorer, so it is reusable and shareable');
+	h.check(picked.resolved, 'the hash resolves to a decoded texture');
+	h.check(
+		(await picker.getAttribute('data-state')) === 'ready',
+		'the picker reports itself ready: ' + (await picker.getAttribute('data-state'))
+	);
+	const label = await picker.locator('.shader-tex-state').innerText();
+	h.check(/picked-red/i.test(label), 'and names the image it is using: "' + label.trim() + '"');
+
+	// DROPPING an Explorer card is the other way textures are assigned everywhere else
+	const dropped = await page.evaluate(async (uuid) => {
+		const S = window.__stores;
+		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
+		const c = document.createElement('canvas');
+		c.width = 8;
+		c.height = 8;
+		const ctx = c.getContext('2d');
+		ctx.fillStyle = 'rgb(20,20,230)';
+		ctx.fillRect(0, 0, 8, 8);
+		const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+		const made = await S.explorer.importFiles([new File([blob], 'dropped-blue.png', { type: 'image/png' })]);
+		const item = made[0];
+		const target = document.querySelector('#shader-editor .shader-tex');
+		const dt = new DataTransfer();
+		dt.setData('application/x-explorer-item', JSON.stringify({ id: item.id, kind: item.kind, name: item.name }));
+		target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+		target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+		await new Promise((r) => setTimeout(r, 1200));
+		const all = await read(S.shaderGraph.shaderGraphs);
+		const doc = all[uuid];
+		const tx = (doc?.nodes ?? []).find((n) => n.type === 'texture');
+		return { wanted: item.hash, got: tx?.data?.hash ?? null };
+	}, uuid);
+	h.check(
+		dropped.got === dropped.wanted,
+		'DRAGGING an Explorer image onto the picker assigns it too: ' + String(dropped.got).slice(0, 12) + '…'
+	);
+
+	// clearing it goes back to the neutral state rather than leaving a dead reference
+	await page.locator('#shader-editor .shader-tex-clear').first().click();
+	await page.waitForTimeout(900);
+	h.check(
+		(await picker.getAttribute('data-state')) === 'empty',
+		'and the ✕ clears it: ' + (await picker.getAttribute('data-state'))
+	);
+
 	const errs = h.pageErrors ? h.pageErrors(peer) : [];
 	h.check(errs.length === 0, 'no page errors (a mount crash would be invisible to store checks): ' + JSON.stringify(errs.slice(0, 3)));
 	await h.finish(browser);

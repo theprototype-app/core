@@ -17,6 +17,13 @@ import { writable, get } from 'svelte/store';
 import { objectsGroup, globalScene, globalCamera, globalRenderer } from '../stores/sceneStore.js';
 import { compileShaderGraphToIR } from './shaderCompile.js';
 import { compileShaderGraph, INJECT_SHADER_BACKEND, forgetShaderContext } from './shaderBackends.js';
+import {
+	resolveShaderTexture,
+	shaderTextureFor,
+	shaderPlaceholderTexture,
+	registerShaderTextureListener,
+	startShaderTextures
+} from './shaderTextures.js';
 
 /** The reserved key for the scene default material (layer 2). */
 export const SCENE_GRAPH_KEY = 'scene';
@@ -248,7 +255,14 @@ export async function compileAndApply(key) {
 				renderer: get(globalRenderer),
 				baseMaterial: base
 			}, doc.backend || INJECT_SHADER_BACKEND);
+			// stash the sampler REFERENCES so the retry path can re-fill without the IR. A
+			// backend need not know about content hashes at all, and this is the one place
+			// holding both the compiled material and the IR that named them.
+			material.userData.shaderTextureRefs = (result.ir.uniforms ?? [])
+				.filter((/** @type {any} */ u) => u.hash !== undefined)
+				.map((/** @type {any} */ u) => ({ name: u.name, hash: u.hash }));
 			applyMaterial(object, material);
+			fillTextureUniforms(material);
 		} catch (err) {
 			errors.push(String(err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err));
 		}
@@ -284,7 +298,15 @@ export function startShaderGraphs() {
 	if (!targetsHook) registerShaderTargets(defaultTargetsFor);
 	startShaderClock();
 	startReconcile();
+	// the retry half of golden rule 9: bytes pulled from a peer land as an Explorer item
+	// long after the compile that asked for them, and until something re-fills the uniform
+	// the object renders untextured with nothing to explain it
+	startShaderTextures();
+	if (!textureStop) textureStop = registerShaderTextureListener(refillShaderTextures);
 }
+
+/** @type {(()=>void)|null} */
+let textureStop = null;
 
 /** @type {(()=>void)|null} */
 let reconcileStop = null;
@@ -402,6 +424,51 @@ export function baseMaterialOf(uuid) {
 function applyMaterial(object, material) {
 	object.material = material;
 	installed.set(object.uuid, material);
+}
+
+// ---- texture uniforms ------------------------------------------------------------
+//
+// A sampler's uniform value starts NULL and is filled in once the bytes resolve: three
+// cannot upload a content hash, and a graph may legitimately name an image this peer has
+// never seen (a late joiner, a restored save). null is safe — three substitutes its own
+// empty texture — so the object renders untextured for exactly as long as the pull takes.
+
+/**
+ * Fill every sampler uniform of an installed material from its hash. Synchronous when the
+ * texture is already resolved (the common case), otherwise it lands in the `.then`, and
+ * `registerShaderTextureListener` covers the bytes arriving from a peer much later.
+ * @param {any} material
+ */
+function fillTextureUniforms(material) {
+	const refs = material?.userData?.shaderTextureRefs ?? [];
+	for (const ref of refs) {
+		const slot =
+			material?.userData?.shaderUniforms?.[ref.name] ?? material?.uniforms?.[ref.name] ?? null;
+		if (!slot) continue;
+		if (!ref.hash) {
+			slot.value = null;
+			continue;
+		}
+		const hit = shaderTextureFor(ref.hash);
+		if (hit) {
+			slot.value = hit;
+			continue;
+		}
+		// not resolved yet: hold a neutral WHITE placeholder rather than null, or the object
+		// renders black for the whole duration of the assetShare pull (see the function)
+		slot.value = shaderPlaceholderTexture();
+		// writing the slot late is safe even if a recompile replaced this material while we
+		// waited: the slot belongs to that material's own uniform record, so an orphaned
+		// one is simply never read again
+		void resolveShaderTexture(ref.hash).then((texture) => {
+			if (texture) slot.value = texture;
+		});
+	}
+}
+
+/** Re-fill every installed material — the retry when a pulled texture finally lands. */
+export function refillShaderTextures() {
+	for (const material of installed.values()) fillTextureUniforms(material);
 }
 
 /**

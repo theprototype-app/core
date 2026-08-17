@@ -24,7 +24,7 @@ const edge = (from, to, targetHandle, sourceHandle = 'out') => ({
 
 (async () => {
 	const { compileShaderGraphToIR, coerce, glslLiteral } = await import(src('shaderCompile.js'));
-	const { shaderNodeDefs, shaderNodeDef } = await import(src('shaderCatalog.js'));
+	const { shaderNodeDefs, shaderNodeDef, outputTypeOf } = await import(src('shaderCatalog.js'));
 
 	// ---- 1. coercion ----------------------------------------------------------
 	check(coerce('x', 'float', 'vec3') === 'vec3(x)', 'float -> vec3 broadcasts: ' + coerce('x', 'float', 'vec3'));
@@ -147,6 +147,68 @@ const edge = (from, to, targetHandle, sourceHandle = 'out') => ({
 		Array.isArray(colourUniform.value) && colourUniform.value[0] > colourUniform.value[1],
 		'the colour uniform is a LINEAR triple, red-dominant: ' + JSON.stringify(colourUniform.value)
 	);
+
+
+	// ---- 11. a MULTI-OUTPUT node's temp is typed by what emit() RETURNS -------
+	// The temp holds the raw texture2D() result, so it must be a vec4 no matter which
+	// output the graph reads. Reading only `.a` used to declare `float t = texture2D(...)`,
+	// a GLSL type error the user would see as a dead shader — and which output gets
+	// evaluated first is an accident of edge order, so this was live for any graph that
+	// wired alpha before colour.
+	const texA = node('texture', { hash: 'deadbeef' });
+	const s8 = node('surface');
+	res = compileShaderGraphToIR({ nodes: [texA, s8], edges: [edge(texA, s8, 'roughness', 'a')] });
+	check(res.ok, 'a texture read ONLY through its .a output compiles: ' + JSON.stringify(res.errors ?? []));
+	const declType = /(\w+) t_[A-Za-z0-9_]+ = texture2D/.exec(res.ir.body);
+	check(
+		!!declType && declType[1] === 'vec4',
+		'the temp is declared vec4 (what texture2D returns), not the .a output type: ' + JSON.stringify(res.ir.body)
+	);
+	// the COUNTERFACTUAL: the old rule declared the temp with the REQUESTED output's
+	// type, and the catalog still says that output is a float — so the two genuinely
+	// differ here and this check could not pass by accident
+	const texDef = shaderNodeDef('texture');
+	const aType = outputTypeOf(texDef, 'a', texA, () => null);
+	check(
+		aType === 'float' && declType[1] !== aType,
+		'and the requested output really is a narrower type (' + aType + '), which is what used to be emitted'
+	);
+	check(/t_[A-Za-z0-9_]+\.a/.test(res.ir.roughness), 'the tap swizzles that temp: ' + res.ir.roughness);
+
+	// two outputs of ONE texture share the single temp (sampled once, not twice)
+	const texB = node('texture', { hash: 'cafe' });
+	const s9 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [texB, s9],
+		edges: [edge(texB, s9, 'albedo', 'rgb'), edge(texB, s9, 'roughness', 'a')]
+	});
+	check(res.ok, 'one texture feeding albedo AND roughness compiles: ' + JSON.stringify(res.errors ?? []));
+	check(
+		(res.ir.body.match(/texture2D/g) || []).length === 1,
+		'and it samples the texture exactly ONCE: ' + JSON.stringify(res.ir.body)
+	);
+	check(
+		res.ir.uniforms.filter((u) => u.type === 'sampler2D').length === 1,
+		'with one sampler uniform, so both taps read the same image'
+	);
+
+	// ---- 12. an UNPICKED texture is a no-op, never black ---------------------
+	// three substitutes its own empty texture for a null sampler, which samples to
+	// ZERO — so sampling before the user has picked an image turns the object black and
+	// reads as a broken node. White is the identity for the albedo multiply.
+	const texEmpty = node('texture', { hash: '' });
+	const s10 = node('surface');
+	res = compileShaderGraphToIR({ nodes: [texEmpty, s10], edges: [edge(texEmpty, s10, 'albedo', 'rgb')] });
+	check(res.ok, 'a texture node with no image still compiles: ' + JSON.stringify(res.errors ?? []));
+	check(!/texture2D/.test(res.ir.body), 'it does NOT sample: ' + JSON.stringify(res.ir.body));
+	check(/vec4\(1\.0\)/.test(res.ir.body), 'it emits opaque white, the multiply identity: ' + JSON.stringify(res.ir.body));
+	check(!!res.ir.albedo, 'and the albedo tap is still wired, so picking an image needs no rewiring');
+
+	// ---- 13. a texture graph asks three for vUv ------------------------------
+	// three only declares vUv behind USE_UV, so an untextured material would fail to
+	// compile on the varying the sampler needs
+	res = compileShaderGraphToIR({ nodes: [texA, s8], edges: [edge(texA, s8, 'albedo', 'rgb')] });
+	check(res.ir.defines.USE_UV !== undefined, 'USE_UV is requested: ' + JSON.stringify(res.ir.defines));
 
 	console.log(failures === 0 ? '\nALL PASS' : '\n' + failures + ' FAILURES');
 	process.exit(failures === 0 ? 0 : 1);

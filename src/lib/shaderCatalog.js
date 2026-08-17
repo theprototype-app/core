@@ -75,6 +75,25 @@ const fn2 = (/** @type {string} */ key, /** @type {string} */ label, /** @type {
 	emit: (/** @type {any} */ a) => '(' + a.in.a + ' ' + op + ' ' + a.in.b + ')'
 });
 
+/**
+ * One TYPE-FOLLOWING input, one output of the same type — floor/ceil/saturate/normalize.
+ * `variadicType` makes the compiler adopt whatever is wired and coerce nothing, so
+ * `floor` of a vec3 stays a vec3 instead of collapsing to its x.
+ * @param {string} key @param {string} label
+ * @param {(arg:any)=>string} emit
+ * @param {GlslType} [type] the type when NOTHING is wired
+ */
+const fn1v = (key, label, emit, type = 'float') => ({
+	key,
+	label,
+	group: 'Math',
+	inputs: [
+		{ name: 'a', type, default: type === 'float' ? '0.0' : null, variadicType: true }
+	],
+	outputs: [{ name: 'out', type, followsInput: 'a' }],
+	emit
+});
+
 /** @type {NodeDef[]} */
 const DEFS = [
 	// ---- inputs -----------------------------------------------------------------
@@ -273,6 +292,154 @@ const DEFS = [
 			' - ' + a.params.inMin + ', 1e-5)))'
 	},
 
+	fn1v('floor', 'Floor', (a) => 'floor(' + a.in.a + ')'),
+	fn1v('ceil', 'Ceil', (a) => 'ceil(' + a.in.a + ')'),
+	// saturate is not a GLSL builtin (it is HLSL); clamp is the portable spelling
+	fn1v('saturate', 'Saturate', (a) => 'clamp(' + a.in.a + ', 0.0, 1.0)'),
+	fn1v('normalize', 'Normalize', (a) => 'normalize(' + a.in.a + ')', 'vec3'),
+	{
+		key: 'min',
+		label: 'Min',
+		group: 'Math',
+		inputs: [
+			{ name: 'a', type: 'float', default: '0.0', variadicType: true },
+			{ name: 'b', type: 'float', default: '0.0', variadicType: true }
+		],
+		outputs: [{ name: 'out', type: 'float', followsInput: 'a' }],
+		emit: (a) => 'min(' + a.in.a + ', ' + a.in.b + ')'
+	},
+	{
+		key: 'max',
+		label: 'Max',
+		group: 'Math',
+		inputs: [
+			{ name: 'a', type: 'float', default: '0.0', variadicType: true },
+			{ name: 'b', type: 'float', default: '0.0', variadicType: true }
+		],
+		outputs: [{ name: 'out', type: 'float', followsInput: 'a' }],
+		emit: (a) => 'max(' + a.in.a + ', ' + a.in.b + ')'
+	},
+	{
+		key: 'modulo',
+		label: 'Modulo',
+		group: 'Math',
+		inputs: [
+			{ name: 'a', type: 'float', default: '0.0', variadicType: true },
+			{ name: 'b', type: 'float', default: '1.0', variadicType: true }
+		],
+		outputs: [{ name: 'out', type: 'float', followsInput: 'a' }],
+		emit: (a) => 'mod(' + a.in.a + ', ' + a.in.b + ')'
+	},
+	{
+		key: 'step',
+		label: 'Step',
+		group: 'Math',
+		// GLSL is step(edge, x): 0 below the edge, 1 at or above it
+		inputs: [
+			{ name: 'a', type: 'float', default: '0.0' },
+			{ name: 'edge', type: 'float', default: '0.5' }
+		],
+		outputs: [{ name: 'out', type: 'float' }],
+		emit: (a) => 'step(' + a.in.edge + ', ' + a.in.a + ')'
+	},
+	{
+		key: 'length',
+		label: 'Length',
+		group: 'Math',
+		inputs: [{ name: 'a', type: 'vec3', default: null }],
+		outputs: [{ name: 'out', type: 'float' }],
+		emit: (a) => 'length(' + a.in.a + ')'
+	},
+	{
+		key: 'distance',
+		label: 'Distance',
+		group: 'Math',
+		inputs: [
+			{ name: 'a', type: 'vec3', default: null },
+			{ name: 'b', type: 'vec3', default: null }
+		],
+		outputs: [{ name: 'out', type: 'float' }],
+		emit: (a) => 'distance(' + a.in.a + ', ' + a.in.b + ')'
+	},
+	{
+		key: 'cross',
+		label: 'Cross product',
+		group: 'Math',
+		// cross is vec3-only in GLSL, so this one does NOT follow its input
+		inputs: [
+			{ name: 'a', type: 'vec3', default: null },
+			{ name: 'b', type: 'vec3', default: null }
+		],
+		outputs: [{ name: 'out', type: 'vec3' }],
+		emit: (a) => 'cross(' + a.in.a + ', ' + a.in.b + ')'
+	},
+
+	// ---- channels ---------------------------------------------------------------
+	// The compiler's `suffix` mechanism already does the swizzle, so these two are pure
+	// catalog data: Split declares four suffixed outputs over ONE temp, which is why it
+	// needed `nativeType` to exist (the temp cannot be typed by whichever output is read
+	// first).
+	{
+		key: 'split',
+		label: 'Split',
+		group: 'Channel',
+		// coerced UP to vec4 whatever arrives, so reading `.w` of a vec3 input is always
+		// valid GLSL (vec3 -> vec4 fills w with 1.0) rather than a compile error
+		inputs: [{ name: 'value', type: 'vec4', default: null }],
+		nativeType: 'vec4',
+		outputs: [
+			{ name: 'x', type: 'float', suffix: '.x' },
+			{ name: 'y', type: 'float', suffix: '.y' },
+			{ name: 'z', type: 'float', suffix: '.z' },
+			{ name: 'w', type: 'float', suffix: '.w' }
+		],
+		emit: (a) => a.in.value
+	},
+	{
+		key: 'combine',
+		label: 'Combine',
+		group: 'Channel',
+		inputs: [
+			{ name: 'x', type: 'float', default: '0.0' },
+			{ name: 'y', type: 'float', default: '0.0' },
+			{ name: 'z', type: 'float', default: '0.0' },
+			{ name: 'w', type: 'float', default: '1.0' }
+		],
+		nativeType: 'vec4',
+		outputs: [
+			{ name: 'xyz', type: 'vec3', suffix: '.xyz' },
+			{ name: 'xyzw', type: 'vec4' }
+		],
+		emit: (a) => 'vec4(' + a.in.x + ', ' + a.in.y + ', ' + a.in.z + ', ' + a.in.w + ')'
+	},
+
+	// ---- uv ---------------------------------------------------------------------
+	{
+		key: 'tilingOffset',
+		label: 'Tiling & offset',
+		group: 'UV',
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		params: [
+			{ name: 'tiling', type: 'vec2', default: [1, 1], uniform: true },
+			{ name: 'offset', type: 'vec2', default: [0, 0], uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'vec2' }],
+		requires: ['uv'],
+		emit: (a) => '(' + a.in.uv + ' * ' + a.params.tiling + ' + ' + a.params.offset + ')'
+	},
+	{
+		key: 'panner',
+		label: 'Panner',
+		group: 'UV',
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		params: [{ name: 'speed', type: 'vec2', default: [0.1, 0], uniform: true }],
+		outputs: [{ name: 'out', type: 'vec2' }],
+		// the SHARED clock, so a scrolling texture is at the same offset on every peer
+		// without a single message (determinism IS the netcode)
+		requires: ['uv', 'time'],
+		emit: (a) => '(' + a.in.uv + ' + uShaderTime * ' + a.params.speed + ')'
+	},
+
 	// ---- utility ----------------------------------------------------------------
 	{
 		key: 'fresnel',
@@ -321,6 +488,31 @@ const DEFS = [
 			'(floor(' + a.in.a + ' * ' + a.params.steps + ') / max(' + a.params.steps + ', 1.0))'
 	},
 
+	{
+		key: 'gradient',
+		label: 'Gradient',
+		group: 'Utility',
+		inputs: [{ name: 't', type: 'float', default: '0.0' }],
+		params: [
+			{ name: 'colorA', type: 'vec3', default: '#000000', uniform: true },
+			{ name: 'colorB', type: 'vec3', default: '#808080', uniform: true },
+			{ name: 'colorC', type: 'vec3', default: '#ffffff', uniform: true },
+			// where the middle colour sits, so a ramp can be biased without a second node
+			{ name: 'mid', type: 'float', default: 0.5, uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'vec3' }],
+		// `mid` is clamped away from the ends because the two halves divide by m and
+		// (1 - m); at exactly 0 or 1 one of them is a division by zero
+		prelude:
+			'vec3 tpRamp3(float t, vec3 a, vec3 b, vec3 c, float mid) {\n' +
+			'  float x = clamp(t, 0.0, 1.0);\n' +
+			'  float m = clamp(mid, 0.001, 0.999);\n' +
+			'  return x < m ? mix(a, b, x / m) : mix(b, c, (x - m) / (1.0 - m));\n' +
+			'}\n',
+		emit: (a) =>
+			'tpRamp3(' + a.in.t + ', ' + a.params.colorA + ', ' + a.params.colorB + ', ' +
+			a.params.colorC + ', ' + a.params.mid + ')'
+	},
 	{
 		key: 'normalMap',
 		label: 'Normal map',

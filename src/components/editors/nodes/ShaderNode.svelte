@@ -19,6 +19,7 @@
 	import { setShaderParam } from '$lib/shaderGraph';
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
 	import ShaderTexturePicker from './ShaderTexturePicker.svelte';
+	import ShaderVectorInput from './ShaderVectorInput.svelte';
 
 	let { id, data, type } = $props();
 
@@ -31,6 +32,8 @@
 	const GROUP_ACCENT = {
 		Input: '#38bdf8',
 		Math: '#2dd4bf',
+		Channel: '#facc15',
+		UV: '#4ade80',
 		Utility: '#c084fc',
 		Output: '#fb923c'
 	};
@@ -113,6 +116,14 @@
 						type="color"
 						value={data?.[param.name] ?? param.default}
 						oninput={(e) => writeParam(param.name, e.currentTarget.value)}
+					/>
+				{:else if param.type === 'vec2' || param.type === 'vec3' || param.type === 'vec4'}
+					<ShaderVectorInput
+						value={data?.[param.name] ?? param.default}
+						size={param.type === 'vec2' ? 2 : param.type === 'vec4' ? 4 : 3}
+						onchange={(/** @type {number[]} */ next) => writeParam(param.name, next)}
+						onstart={startGesture}
+						onend={endGesture}
 					/>
 				{:else if param.type === 'float'}
 					<input

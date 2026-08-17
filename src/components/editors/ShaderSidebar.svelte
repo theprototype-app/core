@@ -15,6 +15,8 @@
 	const GROUP_ACCENT = {
 		Input: '#38bdf8',
 		Math: '#2dd4bf',
+		Channel: '#facc15',
+		UV: '#4ade80',
 		Utility: '#c084fc',
 		Output: '#fb923c'
 	};

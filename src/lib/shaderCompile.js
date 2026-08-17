@@ -139,7 +139,15 @@ export function uniformValue(authored, type) {
 	if (type === 'texture' || type === 'sampler2D') return { value: null, hash: String(authored ?? '') };
 	if (type === 'float') return { value: Number(authored) || 0 };
 	const n = type === 'vec2' ? 2 : type === 'vec4' ? 4 : 3;
-	if (typeof authored === 'string') return { value: hexToRgb(authored) };
+	if (typeof authored === 'string') {
+		// A hex string is a COLOUR, and only a vec3 can be one. Handing a vec2 uniform the
+		// 3-wide result of hexToRgb is exactly the class of bug this function exists to
+		// prevent: three uploads it with uniform2fv and the extra component is a lie.
+		if (n === 3 && /^#?[0-9a-f]{6}$/i.test(authored.trim())) return { value: hexToRgb(authored) };
+		// otherwise read it as a list of numbers ("3, 4"), padded/truncated to the width
+		const parts = authored.split(/[\s,]+/).filter(Boolean).map(Number);
+		return { value: Array.from({ length: n }, (_, i) => (Number.isFinite(parts[i]) ? parts[i] : 0)) };
+	}
 	return { value: asArray(authored, n) };
 }
 

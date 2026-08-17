@@ -312,6 +312,186 @@ const edge = (from, to, targetHandle, sourceHandle = 'out') => ({
 		'which builds the basis from derivatives and guards the degenerate face'
 	);
 
+
+	// ---- 17. Split / Combine ------------------------------------------------
+	// These are pure catalog data: the compiler's suffix mechanism already does the
+	// swizzle. Split is also WHY nativeType had to exist - four suffixed outputs over one
+	// temp, so the temp cannot be typed by whichever output is read first.
+	const cSplit = node('color', { value: '#ff8800' });
+	const sp = node('split');
+	const s18 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [cSplit, sp, s18],
+		edges: [edge(cSplit, sp, 'value'), edge(sp, s18, 'roughness', 'w')]
+	});
+	check(res.ok, 'Split reached through .w of a vec3 input compiles: ' + JSON.stringify(res.errors ?? []));
+	check(
+		/vec4 t_split[A-Za-z0-9_]* = vec4\(t_color[A-Za-z0-9_]*, 1\.0\)/.test(res.ir.body),
+		'the vec3 is coerced UP to vec4, so .w is valid GLSL rather than an error: ' + JSON.stringify(res.ir.body)
+	);
+	check(/t_split[A-Za-z0-9_]*\.w/.test(res.ir.roughness), 'and the tap reads .w: ' + res.ir.roughness);
+
+	// a channel SWAP is the point of having both
+	const cSw = node('color', { value: '#ff0000' });
+	const sp2 = node('split');
+	const cb = node('combine');
+	const s19 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [cSw, sp2, cb, s19],
+		edges: [
+			edge(cSw, sp2, 'value'),
+			edge(sp2, cb, 'x', 'z'),
+			edge(sp2, cb, 'y', 'y'),
+			edge(sp2, cb, 'z', 'x'),
+			edge(cb, s19, 'albedo', 'xyz')
+		]
+	});
+	check(res.ok, 'Split -> Combine round trips: ' + JSON.stringify(res.errors ?? []));
+	const combineLine = res.ir.body.split('\n').find((l) => l.includes('t_combine'));
+	check(
+		/vec4\(t_split[A-Za-z0-9_]*\.z, t_split[A-Za-z0-9_]*\.y, t_split[A-Za-z0-9_]*\.x, 1\.0\)/.test(combineLine),
+		'with the channels genuinely swapped and w defaulted to 1.0: ' + JSON.stringify(combineLine)
+	);
+	check(/t_combine[A-Za-z0-9_]*\.xyz/.test(res.ir.albedo), 'and the xyz output swizzles it: ' + res.ir.albedo);
+	check(
+		(res.ir.body.match(/t_split[A-Za-z0-9_]* = /g) || []).length === 1,
+		'the split is computed ONCE even though three outputs read it'
+	);
+
+	// ---- 18. UV nodes -------------------------------------------------------
+	const tl = node('tilingOffset', { tiling: [3, 4], offset: [0.5, 0.25] });
+	const pn = node('panner', { speed: [0.2, 0] });
+	const txUv = node('texture', { hash: 'abc' });
+	const s20 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [tl, pn, txUv, s20],
+		edges: [edge(tl, pn, 'uv'), edge(pn, txUv, 'uv'), edge(txUv, s20, 'albedo', 'rgb')]
+	});
+	check(res.ok, 'tiling -> panner -> texture compiles: ' + JSON.stringify(res.errors ?? []));
+	// the vec2 params must arrive as real 2-arrays. A vec2 param used to fall through the
+	// editor's generic TEXT input, which wrote the string "3,4" - and uniformValue treats a
+	// string as a COLOUR, so it became [1,1,1].
+	const tiling = res.ir.uniforms.find((u) => u.param === 'tiling');
+	check(
+		Array.isArray(tiling.value) && tiling.value.length === 2 && tiling.value[0] === 3 && tiling.value[1] === 4,
+		'the tiling uniform is a real 2-array: ' + JSON.stringify(tiling.value)
+	);
+	check(
+		res.ir.uniforms.some((u) => u.name === 'uShaderTime'),
+		'the Panner pulls in the SHARED clock uniform, so peers scroll in step'
+	);
+	check(
+		/uShaderTime \* u_panner[A-Za-z0-9_]*_speed/.test(res.ir.body),
+		'and scrolls by it: ' + JSON.stringify(res.ir.body.split('\n').find((l) => l.includes('panner')))
+	);
+	// a string in a vec2 param is the shape of the old bug: assert it cannot pass silently
+	const tlBad = node('tilingOffset', { tiling: '3,4' });
+	const s21 = node('surface');
+	const badRes = compileShaderGraphToIR({
+		nodes: [tlBad, node('texture', { hash: 'a' }, 'txb'), s21],
+		edges: [
+			{ id: 'x1', source: tlBad.id, sourceHandle: 'out', target: 'txb', targetHandle: 'uv' },
+			{ id: 'x2', source: 'txb', sourceHandle: 'rgb', target: s21.id, targetHandle: 'albedo' }
+		]
+	});
+	const badTiling = badRes.ir.uniforms.find((u) => u.param === 'tiling');
+	check(
+		badTiling.value.length === 2,
+		'a vec2 uniform is ALWAYS 2 wide even if something hands it a string, so three can upload it: ' +
+			JSON.stringify(badTiling.value)
+	);
+
+	// ---- 19. the new maths keep their input's TYPE ---------------------------
+	// Floor of a colour should stay a colour. Without variadicType the output would be
+	// declared float and the value would silently collapse to its x channel.
+	const cV = node('color', { value: '#33cc66' });
+	const flr = node('floor');
+	const s22 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [cV, flr, s22],
+		edges: [edge(cV, flr, 'a'), edge(flr, s22, 'albedo')]
+	});
+	check(res.ok, 'floor of a vec3 compiles: ' + JSON.stringify(res.errors ?? []));
+	check(
+		/vec3 t_floor[A-Za-z0-9_]* = floor\(/.test(res.ir.body),
+		'and stays a vec3 rather than collapsing to one channel: ' + JSON.stringify(res.ir.body)
+	);
+	// unwired, the same node is a plain float
+	const flrAlone = node('floor');
+	const s23 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [flrAlone, s23],
+		edges: [edge(flrAlone, s23, 'roughness')]
+	});
+	check(
+		/float t_floor/.test(res.ir.body),
+		'while with nothing wired it is a float: ' + JSON.stringify(res.ir.body)
+	);
+
+	// every new maths node compiles in the shape a user would reach for
+	const mathCases = [
+		['min', 'roughness'],
+		['max', 'roughness'],
+		['modulo', 'roughness'],
+		['step', 'roughness'],
+		['saturate', 'roughness'],
+		['ceil', 'roughness']
+	];
+	const mathBad = [];
+	for (const [key, tap] of mathCases) {
+		const n1 = node('float', { value: 0.7 });
+		const n2 = node(key);
+		const out = node('surface');
+		const r = compileShaderGraphToIR({
+			nodes: [n1, n2, out],
+			edges: [edge(n1, n2, 'a'), edge(n2, out, tap)]
+		});
+		if (!r.ok) mathBad.push(key + ': ' + JSON.stringify(r.errors));
+	}
+	check(mathBad.length === 0, mathCases.length + ' scalar maths nodes compile: ' + JSON.stringify(mathBad));
+
+	// the vector maths take two vec3s and return the right widths
+	const vecCases = [
+		['length', 'float'],
+		['distance', 'float'],
+		['cross', 'vec3']
+	];
+	const vecBad = [];
+	for (const [key, want] of vecCases) {
+		const a1 = node('color', { value: '#ff0000' });
+		const b1 = node('color', { value: '#00ff00' });
+		const n2 = node(key);
+		const out = node('surface');
+		const wires = [edge(a1, n2, 'a'), edge(n2, out, want === 'float' ? 'roughness' : 'albedo')];
+		if (key !== 'length') wires.push(edge(b1, n2, 'b'));
+		const r = compileShaderGraphToIR({ nodes: [a1, b1, n2, out], edges: wires });
+		if (!r.ok) vecBad.push(key + ': ' + JSON.stringify(r.errors));
+		else if (!new RegExp(want + ' t_' + key).test(r.ir.body))
+			vecBad.push(key + ' emitted the wrong width: ' + r.ir.body);
+	}
+	check(vecBad.length === 0, 'length / distance / cross return float / float / vec3: ' + JSON.stringify(vecBad));
+
+	// ---- 20. Gradient -------------------------------------------------------
+	const grad = node('gradient', { colorA: '#000000', colorB: '#ff0000', colorC: '#ffffff', mid: 0.3 });
+	const nzG = node('noise', { scale: 5 });
+	const s24 = node('surface');
+	res = compileShaderGraphToIR({
+		nodes: [grad, nzG, s24],
+		edges: [edge(nzG, grad, 't'), edge(grad, s24, 'albedo')]
+	});
+	check(res.ok, 'a noise -> Gradient -> albedo ramp compiles: ' + JSON.stringify(res.errors ?? []));
+	check(res.ir.prelude.includes('tpRamp3'), 'it hoists the ramp helper');
+	check(
+		res.ir.prelude.includes('clamp(mid, 0.001, 0.999)'),
+		'and clamps the midpoint away from the ends, where the two halves would divide by zero'
+	);
+	const gradColours = res.ir.uniforms.filter((u) => u.nodeId === grad.id && u.type === 'vec3');
+	check(gradColours.length === 3, 'with all three stops as live colour uniforms: ' + gradColours.length);
+	check(
+		gradColours.every((u) => Array.isArray(u.value) && u.value.length === 3),
+		'each a linear triple three can upload: ' + JSON.stringify(gradColours.map((u) => u.value))
+	);
+
 	console.log(failures === 0 ? '\nALL PASS' : '\n' + failures + ' FAILURES');
 	process.exit(failures === 0 ? 0 : 1);
 })().catch((err) => {

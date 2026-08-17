@@ -44,6 +44,7 @@
 	import ShaderNode from './nodes/ShaderNode.svelte';
 	import ShaderSidebar from './ShaderSidebar.svelte';
 	import ShaderTexturePicker from './nodes/ShaderTexturePicker.svelte';
+	import ShaderVectorInput from './nodes/ShaderVectorInput.svelte';
 
 	const nodeTypes = Object.fromEntries(shaderNodeDefs().map((def) => [def.key, ShaderNode]));
 	const catalog = shaderNodeDefs().filter((def) => def.key !== SURFACE_NODE);
@@ -493,6 +494,14 @@
 											type="color"
 											value={selectedNode.data?.[param.name] ?? param.default}
 											oninput={(e) => writeSelectedParam(param.name, e.currentTarget.value)}
+										/>
+									{:else if param.type === 'vec2' || param.type === 'vec3' || param.type === 'vec4'}
+										<ShaderVectorInput
+											value={selectedNode.data?.[param.name] ?? param.default}
+											size={param.type === 'vec2' ? 2 : param.type === 'vec4' ? 4 : 3}
+											onchange={(/** @type {number[]} */ next) => writeSelectedParam(param.name, next)}
+											onstart={() => beginShaderGesture(scope)}
+											onend={() => endShaderGesture(scope)}
 										/>
 									{:else if param.type === 'float'}
 										<input

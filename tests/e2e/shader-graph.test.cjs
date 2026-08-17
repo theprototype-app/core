@@ -13,6 +13,20 @@ function stats(rgba) {
 	return { mean: sum / n, r: r / n, g: g / n, b: b / n };
 }
 
+// How many sampled pixels actually CHANGED. A mean over the window averages stripes
+// away, so it cannot tell a re-tiled texture from an unchanged one; counting moved pixels
+// measures the thing the uv transform is supposed to do.
+function diffCount(a, b, threshold = 30) {
+	if (!a || !b || a.length !== b.length) return -1;
+	let n = 0;
+	for (let i = 0; i < a.length; i += 4) {
+		const d =
+			Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+		if (d > threshold) n++;
+	}
+	return n;
+}
+
 h.run(async () => {
 	const browser = await h.launch({
 		args: ['--use-gl=angle', '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist']
@@ -661,6 +675,196 @@ h.run(async () => {
 		'with no missed anchors, so nothing silently failed to apply: ' + JSON.stringify(taps.displaceInjected?.missed)
 	);
 	h.check(glsl.length === 0, 'no GLSL errors from any tap: ' + JSON.stringify(glsl.slice(0, 3)));
+
+
+	// ---- 9. the new catalog nodes, on the real material ----------------------
+	const newNodes = await page.evaluate(async () => {
+		const S = window.__stores.shaderGraph;
+		const { mesh } = window.__g;
+		const uuid = mesh.uuid;
+		const out = {};
+		const apply = async (nodes, edges) => {
+			S.setShaderGraphFor(uuid, { nodes, edges });
+			await S.compileAndApply(uuid);
+		};
+		const readErrors = () =>
+			new Promise((r) => window.__stores.shaderGraph.shaderErrors.subscribe((e) => r(e[uuid] ?? []))());
+
+		// SPLIT: take only the RED channel of a colour and drive roughness with it, while
+		// albedo shows the whole colour. Two different widths off one node.
+		await apply(
+			[
+				{ id: 'c', type: 'color', data: { value: '#ff3311' } },
+				{ id: 'sp', type: 'split', data: {} },
+				{ id: 's', type: 'surface', data: {} }
+			],
+			[
+				{ id: 'e1', source: 'c', sourceHandle: 'out', target: 'sp', targetHandle: 'value' },
+				{ id: 'e2', source: 'sp', sourceHandle: 'x', target: 's', targetHandle: 'roughness' },
+				{ id: 'e3', source: 'c', sourceHandle: 'out', target: 's', targetHandle: 'albedo' }
+			]
+		);
+		out.splitErrors = await readErrors();
+		out.splitDriven = S.isShaderDriven(uuid);
+		out.splitPx = window.__g.sample().px;
+
+		// COMBINE: build a colour from three separate floats and read it back
+		await apply(
+			[
+				{ id: 'r', type: 'float', data: { value: 1 } },
+				{ id: 'g', type: 'float', data: { value: 0 } },
+				{ id: 'b', type: 'float', data: { value: 0 } },
+				{ id: 'cb', type: 'combine', data: {} },
+				{ id: 's', type: 'surface', data: {} }
+			],
+			[
+				{ id: 'e1', source: 'r', sourceHandle: 'out', target: 'cb', targetHandle: 'x' },
+				{ id: 'e2', source: 'g', sourceHandle: 'out', target: 'cb', targetHandle: 'y' },
+				{ id: 'e3', source: 'b', sourceHandle: 'out', target: 'cb', targetHandle: 'z' },
+				{ id: 'e4', source: 'cb', sourceHandle: 'xyz', target: 's', targetHandle: 'albedo' }
+			]
+		);
+		out.combineRed = window.__g.sample().px;
+		// swap the channels through the SAME graph: only the float values move
+		S.setShaderParam(uuid, 'r', 'value', 0);
+		S.setShaderParam(uuid, 'b', 'value', 1);
+		await S.compileAndApply(uuid);
+		out.combineBlue = window.__g.sample().px;
+		out.combineErrors = await readErrors();
+
+		// GRADIENT driven by UV.x: two different midpoints must render differently
+		const gradGraph = (mid) => [
+			[
+				{ id: 'uv', type: 'uv', data: {} },
+				{ id: 'sp', type: 'split', data: {} },
+				{ id: 'g', type: 'gradient', data: { colorA: '#000000', colorB: '#ff0000', colorC: '#ffffff', mid } },
+				{ id: 's', type: 'surface', data: {} }
+			],
+			[
+				{ id: 'e1', source: 'uv', sourceHandle: 'out', target: 'sp', targetHandle: 'value' },
+				{ id: 'e2', source: 'sp', sourceHandle: 'x', target: 'g', targetHandle: 't' },
+				{ id: 'e3', source: 'g', sourceHandle: 'out', target: 's', targetHandle: 'albedo' }
+			]
+		];
+		await apply(...gradGraph(0.15));
+		out.gradLow = window.__g.sample().px;
+		await apply(...gradGraph(0.9));
+		out.gradHigh = window.__g.sample().px;
+		out.gradErrors = await readErrors();
+
+		// TILING on a real texture. The image must have STRUCTURE: tiling or scrolling a
+		// solid colour changes nothing, so a flat png would make these checks unfalsifiable.
+		const quadHash = await (async () => {
+			const c = document.createElement('canvas');
+			c.width = 16;
+			c.height = 16;
+			const ctx = c.getContext('2d');
+			ctx.fillStyle = 'rgb(240,20,20)';
+			ctx.fillRect(0, 0, 8, 16);
+			ctx.fillStyle = 'rgb(20,20,240)';
+			ctx.fillRect(8, 0, 8, 16);
+			const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+			const made = await window.__stores.explorer.importFiles([
+				new File([blob], 'halves.png', { type: 'image/png' })
+			]);
+			return made[0].hash;
+		})();
+		// Resolution is LAZY — it happens when a compile fills the sampler uniform — so
+		// polling shaderTextureFor before anything has asked for this hash waits forever.
+		// Ask for it directly and await the promise the module hands back.
+		out.quadResolved = !!(await window.__stores.shaderTextures.resolveShaderTexture(quadHash));
+		const tiled = (t) => [
+			[
+				{ id: 'tl', type: 'tilingOffset', data: { tiling: [t, t], offset: [0, 0] } },
+				{ id: 'tx', type: 'texture', data: { hash: quadHash } },
+				{ id: 's', type: 'surface', data: {} }
+			],
+			[
+				{ id: 'e1', source: 'tl', sourceHandle: 'out', target: 'tx', targetHandle: 'uv' },
+				{ id: 'e2', source: 'tx', sourceHandle: 'rgb', target: 's', targetHandle: 'albedo' }
+			]
+		];
+		await apply(...tiled(1));
+		out.tile1 = window.__g.sample().px;
+		out.tileUniform = (() => {
+			const u = mesh.material.userData.shaderUniforms;
+			const k = Object.keys(u).find((x) => x.endsWith('_tiling'));
+			return k ? u[k].value : null;
+		})();
+		// 3.5, not an integer: this fixture is red for u < 0.5 and blue above, so ANY whole
+		// tiling maps the sample point (u = 0.5) straight back onto the same colour boundary
+		// and the window looks identical. That is a property of the fixture, not of tiling.
+		await apply(...tiled(3.5));
+		out.tile8 = window.__g.sample().px;
+		out.tileErrors = await readErrors();
+
+		// PANNER: the offset comes from the SHARED clock, so the same graph sampled at two
+		// clock values must differ. Drive the clock by hand rather than sleeping.
+		await apply(
+			[
+				{ id: 'pn', type: 'panner', data: { speed: [1, 0] } },
+				{ id: 'tx', type: 'texture', data: { hash: quadHash } },
+				{ id: 's', type: 'surface', data: {} }
+			],
+			[
+				{ id: 'e1', source: 'pn', sourceHandle: 'out', target: 'tx', targetHandle: 'uv' },
+				{ id: 'e2', source: 'tx', sourceHandle: 'rgb', target: 's', targetHandle: 'albedo' }
+			]
+		);
+		const clockSlot = mesh.material.userData.shaderUniforms.uShaderTime;
+		out.hasClock = !!clockSlot;
+		if (clockSlot) {
+			clockSlot.value = 0;
+			out.pan0 = window.__g.sample().px;
+			clockSlot.value = 0.37; // a third of the way across the tile
+			out.pan1 = window.__g.sample().px;
+		}
+		out.panErrors = await readErrors();
+		return out;
+	});
+
+	const noErr = (list) => Array.isArray(list) && list.length === 0;
+	h.check(noErr(newNodes.splitErrors), 'a Split feeding roughness compiles on the real material: ' + JSON.stringify(newNodes.splitErrors));
+	h.check(newNodes.splitDriven, 'and the object stays shader-driven through it');
+
+	const cRed = stats(newNodes.combineRed), cBlue = stats(newNodes.combineBlue);
+	h.check(noErr(newNodes.combineErrors), 'Combine compiles: ' + JSON.stringify(newNodes.combineErrors));
+	h.check(
+		cRed.r > cRed.b && cBlue.b > cBlue.r,
+		'Combine builds a colour from three floats, and swapping x with z swaps the RENDER: ' +
+			'r/b ' + cRed.r.toFixed(1) + '/' + cRed.b.toFixed(1) + ' -> ' + cBlue.r.toFixed(1) + '/' + cBlue.b.toFixed(1)
+	);
+
+	const gLow = stats(newNodes.gradLow), gHigh = stats(newNodes.gradHigh);
+	h.check(noErr(newNodes.gradErrors), 'a UV-driven Gradient compiles: ' + JSON.stringify(newNodes.gradErrors));
+	h.check(
+		Math.abs(gLow.mean - gHigh.mean) > 6,
+		'and its midpoint changes the ramp: mid 0.15 mean ' + gLow.mean.toFixed(1) + ' vs mid 0.9 ' + gHigh.mean.toFixed(1)
+	);
+
+	h.check(noErr(newNodes.tileErrors), 'Tiling & offset compiles on a textured object: ' + JSON.stringify(newNodes.tileErrors));
+	h.check(
+		Array.isArray(newNodes.tileUniform) && newNodes.tileUniform.length === 2,
+		'its tiling uniform reaches three as a 2-array, never a 3-wide colour: ' + JSON.stringify(newNodes.tileUniform)
+	);
+	h.check(newNodes.quadResolved, 'premise — the structured (two-halves) texture decoded');
+	const tileChanged = diffCount(newNodes.tile1, newNodes.tile8);
+	h.check(
+		tileChanged > 40,
+		'and re-tiling it changes the picture: ' + tileChanged + ' of 400 pixels moved by >30'
+	);
+
+	h.check(newNodes.hasClock, 'the Panner installs the shared clock uniform on the material');
+	if (newNodes.pan0 && newNodes.pan1) {
+		const panChanged = diffCount(newNodes.pan0, newNodes.pan1);
+		h.check(
+			panChanged > 40,
+			'and advancing that ONE clock value scrolls the texture — which is why peers agree without a message: ' +
+				panChanged + ' of 400 pixels moved by >30'
+		);
+	}
+	h.check(noErr(newNodes.panErrors), 'the Panner graph compiles: ' + JSON.stringify(newNodes.panErrors));
+	h.check(glsl.length === 0, 'no GLSL errors from any of the new nodes: ' + JSON.stringify(glsl.slice(0, 3)));
 
 	const errs = h.pageErrors ? h.pageErrors(peer) : [];
 	h.check(errs.length === 0, 'no page errors: ' + JSON.stringify(errs.slice(0, 2)));

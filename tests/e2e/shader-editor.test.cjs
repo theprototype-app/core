@@ -317,6 +317,72 @@ h.run(async () => {
 		'and the ✕ clears it: ' + (await picker.getAttribute('data-state'))
 	);
 
+
+	// ---- 10. a vec2/vec3 PARAM edits as numbers, not as text -----------------
+	//
+	// This is a regression guard on a bug that shipped with the tab: an array-valued param
+	// (Vector 2, Vector 3, and now Tiling and Panner) had no branch of its own, so it fell
+	// through to the generic TEXT input. That rendered [1,1] as "1,1" and wrote the string
+	// straight back - and uniformValue treats a string as a COLOUR, so a vec2 became
+	// [1,1,1], which is not something three can upload to a vec2.
+	await page.evaluate((u) => {
+		window.__stores.shaderGraph.setShaderGraphFor(u, {
+			nodes: [
+				{ id: 'tl', type: 'tilingOffset', position: { x: 70, y: 60 }, data: {} },
+				{ id: 'sf', type: 'surface', position: { x: 380, y: 90 }, data: {} }
+			],
+			// wired into albedo: an unconnected Surface is a compile ERROR, so without this
+			// no material installs and there is no uniform to inspect further down
+			edges: [{ id: 'e1', source: 'tl', sourceHandle: 'out', target: 'sf', targetHandle: 'albedo' }]
+		});
+	}, uuid);
+	await page.waitForTimeout(900);
+
+	const vecInputs = page.locator('#shader-editor .shader-vec input');
+	const vecCount = await vecInputs.count();
+	h.check(
+		vecCount === 4,
+		'a node with two vec2 params renders FOUR number fields (x/y each), not a text box: ' + vecCount
+	);
+	const firstType = await vecInputs.first().getAttribute('type');
+	h.check(firstType === 'number', 'and they are real number inputs: ' + firstType);
+
+	// type into the first component and check what the DOCUMENT stores
+	await vecInputs.first().fill('3');
+	await page.waitForTimeout(800);
+	const written = await page.evaluate((u) => {
+		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
+		return read(window.__stores.shaderGraph.shaderGraphs).then((all) => {
+			const node = (all[u]?.nodes ?? []).find((n) => n.type === 'tilingOffset');
+			return { tiling: node?.data?.tiling ?? null };
+		});
+	}, uuid);
+	h.check(
+		Array.isArray(written.tiling),
+		'editing one component writes an ARRAY, never a comma string: ' + JSON.stringify(written.tiling)
+	);
+	h.check(
+		written.tiling && written.tiling.length === 2 && written.tiling[0] === 3,
+		'with the edited component set and the other one preserved: ' + JSON.stringify(written.tiling)
+	);
+
+	// and it must reach three as a 2-wide uniform, which is the part the old bug broke
+	const uniformValue = await page.evaluate((u) => {
+		const mat = window.__stores.shaderGraph;
+		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
+		return read(window.__stores.objectsGroup).then(async (group) => {
+			const obj = group.getObjectByProperty('uuid', u);
+			await mat.compileAndApply(u);
+			const uniforms = obj?.material?.userData?.shaderUniforms ?? {};
+			const key = Object.keys(uniforms).find((k) => k.endsWith('_tiling'));
+			return key ? uniforms[key].value : null;
+		});
+	}, uuid);
+	h.check(
+		Array.isArray(uniformValue) && uniformValue.length === 2 && uniformValue[0] === 3,
+		'and three receives a 2-wide vec2 uniform: ' + JSON.stringify(uniformValue)
+	);
+
 	const errs = h.pageErrors ? h.pageErrors(peer) : [];
 	h.check(errs.length === 0, 'no page errors (a mount crash would be invisible to store checks): ' + JSON.stringify(errs.slice(0, 3)));
 	await h.finish(browser);

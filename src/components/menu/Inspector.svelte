@@ -660,18 +660,10 @@
 				endHistoryBatch(`Colour (${befores.size})`);
 			}
 		}, 600);
-		// 17-E: and with auto-key armed, the colour becomes a KEY. This picker writes
-		// the material directly rather than going through `fanOn`, so it was the one
-		// material control that never keyed what it changed — the channel only turned
-		// up later, when something else (clicking the object, a gizmo drag) happened to
-		// run captureAutoKey and noticed the difference. Keyed at the END of the
-		// gesture, beside the undo entry: a per-input key would write one per pointer
-		// move across a colour drag.
-		clearTimeout(colorKeyTimer);
-		colorKeyTimer = setTimeout(() => autoKeyAfterEdit(matTargets), 600);
+		// (auto-key for this picker is NOT wired here: the debounced commit above calls
+		// recordMaterialChange, and materialsHandler keys off that single funnel — so
+		// every material edit, present or future, behaves the same way.)
 	}
-	/** @type {any} */
-	let colorKeyTimer;
 
 	// ---- replication (identical messages to the retired panels) -------------
 	/** @param {any} object */

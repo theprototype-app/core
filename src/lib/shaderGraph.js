@@ -142,7 +142,11 @@ export function setShaderGraphFor(key, patch, opts = {}) {
 			after = normalizeShaderGraph({
 				...(all[key] ?? {}),
 				...patch,
-				changedAt: opts.stamp ?? Date.now()
+				// MONOTONIC per key. A fast gesture writes several times inside one
+				// millisecond, and with a bare Date.now() those edits share a stamp — the
+				// receiver's latest-wins guard then drops every one after the first, so a
+				// drag (and the undo that follows it) silently failed to replicate.
+				changedAt: opts.stamp ?? Math.max(Date.now(), (all[key]?.changedAt ?? 0) + 1)
 			});
 			next[key] = after;
 		}
@@ -265,6 +269,85 @@ export function defaultTargetsFor(key) {
 /** Install the default wiring. Idempotent; call once at boot. */
 export function startShaderGraphs() {
 	if (!targetsHook) registerShaderTargets(defaultTargetsFor);
+	startShaderClock();
+	startReconcile();
+}
+
+/** @type {(()=>void)|null} */
+let reconcileStop = null;
+/** @type {any} */
+let reconcileTimer = null;
+
+/**
+ * A graph can arrive BEFORE the object it targets — a late joiner's handshake requests
+ * objects and graphs together, and the graph reply is far smaller than a GLTF payload. The
+ * compile then finds no target and, without this, nothing ever retried: the joiner sat
+ * with the document and the plain material forever. Also covers undoing an object delete.
+ */
+function startReconcile() {
+	if (reconcileStop) return;
+	// objectsGroup pokes on every scene mutation, so debounce
+	reconcileStop = objectsGroup.subscribe(() => {
+		clearTimeout(reconcileTimer);
+		reconcileTimer = setTimeout(reconcileShaderGraphs, 120);
+	});
+}
+
+/** Compile any graph whose targets exist but are not driven yet. */
+export function reconcileShaderGraphs() {
+	const all = get(shaderGraphs);
+	for (const key of Object.keys(all)) {
+		const targets = targetsFor(key);
+		if (targets.some((/** @type {any} */ o) => o && !installed.has(o.uuid))) scheduleCompile(key, 0);
+	}
+}
+
+/** Test seam. */
+export function stopReconcile() {
+	if (reconcileStop) reconcileStop();
+	reconcileStop = null;
+	clearTimeout(reconcileTimer);
+}
+
+// ---- the shared clock -----------------------------------------------------------
+//
+// A Time node's value comes from the SAME wall-clock formula flowRuntime/soundRuntime/
+// animationPreview use, so every peer evaluates the same t and an animated shader agrees
+// across the mesh without a single message (determinism IS the netcode). Because the
+// value is derived from that shared clock rather than accumulated locally, it does not
+// matter that each peer reads it at a slightly different moment — which is why a plain
+// rAF is fine here, unlike a DOM overlay that must agree with a threlte frame.
+
+/** Wall clock wrapped daily to keep float precision. @returns {number} */
+export function shaderClockNow() {
+	return (Date.now() % 86400000) / 1000;
+}
+
+/** @type {number|null} */
+let clockFrame = null;
+
+/** Advance every installed material's `uShaderTime`. Safe to call by hand in a test. */
+export function tickShaderClock() {
+	const t = shaderClockNow();
+	for (const material of installed.values()) {
+		const slot = material?.userData?.shaderUniforms?.uShaderTime ?? material?.uniforms?.uShaderTime;
+		if (slot) slot.value = t;
+	}
+}
+
+function startShaderClock() {
+	if (clockFrame !== null || typeof requestAnimationFrame !== 'function') return;
+	const loop = () => {
+		tickShaderClock();
+		clockFrame = requestAnimationFrame(loop);
+	};
+	clockFrame = requestAnimationFrame(loop);
+}
+
+/** Test seam. */
+export function stopShaderClock() {
+	if (clockFrame !== null) cancelAnimationFrame(clockFrame);
+	clockFrame = null;
 }
 
 /** @param {string} key @returns {any[]} */

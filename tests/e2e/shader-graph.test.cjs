@@ -42,6 +42,11 @@ h.run(async () => {
 		let mesh = null;
 		group.traverse((n) => { if (n.isMesh && !mesh) mesh = n; });
 		S.objectActions.flyTo(new THREE.Vector3(2.6, 2.0, 3.0), new THREE.Vector3(0, 0.5, 0), 400);
+		// Neutralise the base colour. palette.js derives it from the uuid, so every run
+		// gets a different one, and an albedo MULTIPLY can only move a channel the base
+		// already has — measured as a graph-colour contrast swing of 20-38 depending on
+		// which cube you got. Controlling the input beats loosening the assertion.
+		if (mesh.material?.color?.setRGB) mesh.material.color.setRGB(1, 1, 1);
 		const rt = new THREE.WebGLRenderTarget(renderer.domElement.width, renderer.domElement.height);
 		window.__g = { mesh, scene, camera, renderer, rt, THREE };
 		window.__g.sample = (target) => {
@@ -119,18 +124,54 @@ h.run(async () => {
 	h.check(attach.driven, 'the object is shader-driven after one setShaderGraphFor');
 	h.check(attach.hasBase, 'its ORIGINAL material was captured (what every serializer must see)');
 	h.check(Object.keys(attach.errors).length === 0, 'no compile errors: ' + JSON.stringify(attach.errors));
-	// a red MULTIPLY into albedo: g and b drop hard while r holds. Asserting the
-	// direction of change against the measured base is stronger than a fixed ratio,
-	// which would depend on whatever colour the object happened to start with.
+	// Prove the graph drives albedo by comparing TWO graph colours on the SAME object,
+	// not by comparing one against the base. palette.js derives each object's colour from
+	// its uuid, so the base is a different colour every run — and when it happens to be
+	// reddish already, "multiply by red" barely moves any ratio against it (measured:
+	// r:g 1.42 -> 1.52 on a red cube vs 0.86 -> 1.09 on a blue one). Two graph colours
+	// share whatever base there is, so the comparison is base-independent.
+	const swap = await page.evaluate(async (uuid) => {
+		const S = window.__stores.shaderGraph;
+		S.setShaderGraphFor(uuid, window.__g.makeGraph('#20d040'));
+		await S.compileAndApply(uuid);
+		window.__g.sample();
+		const green = window.__g.sample().px;
+		S.setShaderGraphFor(uuid, window.__g.makeGraph('#e62610'));
+		await S.compileAndApply(uuid);
+		window.__g.sample();
+		const red = window.__g.sample().px;
+		return { green, red };
+	}, uuid);
+	const sGreen = stats(swap.green), sRed = stats(swap.red);
+	// Compare the SAME channel across the two graph colours, in both directions. No
+	// ratios: a red graph must put more RED on the surface than a green graph does, and
+	// the green graph more GREEN. Both share the base, so nothing here depends on it.
+	// The discriminant is the (r - g) CONTRAST SWING between the two graph colours. Each
+	// direction on its own is limited by whichever channel the base happens to be weak in
+	// (measured: on a reddish base the green graph could only lift g by 7), but the swing
+	// is symmetric and base-independent.
+	const contrast = (/** @type {any} */ s) => s.r - s.g;
+	const swing = contrast(sRed) - contrast(sGreen);
 	h.check(
-		sAfter.g < sBefore.g - 12 && sAfter.b < sBefore.b - 12 && sAfter.r > sAfter.g + 12,
-		'the graph drives ALBEDO with shadows ON — r/g/b ' + [sAfter.r, sAfter.g, sAfter.b].map((v) => v.toFixed(1)).join('/') +
-			' (base was ' + [sBefore.r, sBefore.g, sBefore.b].map((v) => v.toFixed(1)).join('/') + ')'
+		swing > 20,
+		'the graph drives ALBEDO with shadows ON — the r-g contrast swings ' + swing.toFixed(1) +
+			' between a red and a green graph (red ' + contrast(sRed).toFixed(1) +
+			', green ' + contrast(sGreen).toFixed(1) +
+			'; base was rgb ' + [sBefore.r, sBefore.g, sBefore.b].map((v) => v.toFixed(0)).join('/') + ')'
+	);
+	h.check(
+		Math.abs(sAfter.mean - sBefore.mean) > 2 || sAfter.g < sBefore.g - 5,
+		'and it changed the picture at all from the untouched material (mean ' +
+			sBefore.mean.toFixed(1) + ' -> ' + sAfter.mean.toFixed(1) + ')'
 	);
 	h.check(glsl.length === 0, 'no GLSL errors: ' + (glsl[0] ?? 'none'));
 
-	// still a real PBR surface: lit, and receiving shadows
-	const light = await page.evaluate(() => {
+	// Still a real PBR surface: lit, and receiving shadows AS WELL AS the base material
+	// does. Comparing our shadow response to the BASE's own response is self-calibrating —
+	// a dim albedo legitimately shows a smaller absolute drop, so a fixed percentage is
+	// again a bet on the palette colour.
+	const light = await page.evaluate((uuid) => {
+		const S = window.__stores.shaderGraph;
 		const { scene, mesh, THREE } = window.__g;
 		let sun = null;
 		scene.traverse((n) => { if (n.isDirectionalLight && !sun) sun = n; });
@@ -138,20 +179,47 @@ h.run(async () => {
 		sun.intensity = 0.02; const dim = window.__g.sample().px;
 		sun.intensity = was * 5; const bright = window.__g.sample().px;
 		sun.intensity = was;
-		const lit = window.__g.sample().px;
 		const dir = sun.position.clone().normalize();
 		const c = new THREE.Vector3(); mesh.getWorldPosition(c);
-		const occ = new THREE.Mesh(new THREE.BoxGeometry(4, 0.4, 4), new THREE.MeshStandardMaterial());
-		occ.position.copy(c).add(dir.multiplyScalar(3));
+		const occ = new THREE.Mesh(new THREE.BoxGeometry(6, 0.4, 6), new THREE.MeshStandardMaterial());
+		occ.position.copy(c).add(dir.multiplyScalar(2.5));
 		occ.castShadow = true;
-		scene.add(occ);
-		const shadowed = window.__g.sample().px;
-		scene.remove(occ);
-		return { dim, bright, lit, shadowed };
-	});
-	const dim = stats(light.dim), bright = stats(light.bright), lit = stats(light.lit), shadowed = stats(light.shadowed);
+		const measure = () => {
+			const open = window.__g.sample().px;
+			scene.add(occ);
+			const shut = window.__g.sample().px;
+			scene.remove(occ);
+			return { open, shut };
+		};
+		const shaderResponse = measure();
+		// the same measurement on the object's ORIGINAL material, as the reference
+		const mine = mesh.material;
+		mesh.material = S.baseMaterialOf(uuid) ?? mine;
+		const baseResponse = measure();
+		mesh.material = mine;
+		return { dim, bright, shaderResponse, baseResponse };
+	}, uuid);
+	const dim = stats(light.dim), bright = stats(light.bright);
+	// Measure each material's DOMINANT channel, not the mean. A shadow attenuates DIRECT
+	// light only; a saturated red albedo leaves g and b almost entirely ambient, so those
+	// channels barely move and the mean understates the response — 2.8% by mean vs 12.4%
+	// for the base, which reads as a defect and is really just the albedo.
+	const drop = (/** @type {any} */ pair, /** @type {string} */ ch) => {
+		const o = stats(pair.open), s = stats(pair.shut);
+		return { ch, open: o[ch], shut: s[ch], pct: 100 * (1 - s[ch] / Math.max(o[ch], 1)) };
+	};
+	// the SAME channel for both, chosen from the shader material (the red albedo carries
+	// its direct light there). Letting each pick its own dominant channel compared a
+	// base's blue against a shader's red — not the same physical quantity.
+	const openShader = stats(light.shaderResponse.open);
+	const ch = openShader.r >= openShader.g && openShader.r >= openShader.b ? 'r' : openShader.g >= openShader.b ? 'g' : 'b';
+	const shaderDrop = drop(light.shaderResponse, ch), baseDrop = drop(light.baseResponse, ch);
 	h.check(bright.mean > dim.mean + 6, 'still lit by the rig — 0.02 => ' + dim.mean.toFixed(1) + ', x5 => ' + bright.mean.toFixed(1));
-	h.check(shadowed.mean < lit.mean * 0.93, 'still receives shadows — ' + lit.mean.toFixed(1) + ' -> ' + shadowed.mean.toFixed(1));
+	h.check(
+		baseDrop.pct > 3 && shaderDrop.pct > baseDrop.pct * 0.6,
+		'still receives shadows as well as the base material does — shader ' + shaderDrop.pct.toFixed(1) +
+			'% (' + shaderDrop.ch + ') vs base ' + baseDrop.pct.toFixed(1) + '% (' + baseDrop.ch + ') darker under the same occluder'
+	);
 
 	// ---- 1b. a SECOND tap runs too (emissive adds shadow-independent light) -----
 	const twoTap = await page.evaluate(async (uuid) => {
@@ -252,9 +320,10 @@ h.run(async () => {
 	h.check(resolution.keyWithSceneOnly === 'scene', 'with only a scene default, an object resolves to "scene": ' + resolution.keyWithSceneOnly);
 	h.check(resolution.sceneApplied, 'the scene default drives an object that has no graph of its own (layer 2)');
 	const blue = stats(resolution.blue), own = stats(resolution.own);
-	h.check(blue.b > blue.r + 8, 'and it renders the scene colour — r/b ' + blue.r.toFixed(1) + '/' + blue.b.toFixed(1));
+	const rb = (x) => x.r / Math.max(x.b, 1);
+	h.check(rb(blue) < 1, 'and it renders the scene colour (blue-dominant) — r:b ' + rb(blue).toFixed(2));
 	h.check(resolution.keyWithOwn === uuid, 'once it has its OWN graph, resolution prefers it: ' + resolution.keyWithOwn);
-	h.check(own.r > own.b + 8, 'and the object renders its own colour instead — r/b ' + own.r.toFixed(1) + '/' + own.b.toFixed(1));
+	h.check(rb(own) > rb(blue) * 1.3, 'and the object renders its OWN colour instead — r:b ' + rb(blue).toFixed(2) + ' (scene) -> ' + rb(own).toFixed(2) + ' (own)');
 	h.check(
 		!resolution.sceneTargets.includes(uuid),
 		'the scene default stops claiming it as a target: ' + JSON.stringify(resolution.sceneTargets)

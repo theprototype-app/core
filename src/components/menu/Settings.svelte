@@ -12,6 +12,7 @@
 	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
+	import { lengthUnit, angleUnit, LENGTH_UNIT_KEYS } from '$lib/units';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
@@ -737,6 +738,34 @@
 							/>
 						</svelte:fragment>
 						What a double-click on an object does in the viewport. A single click always just selects it; <kbd>Ctrl</kbd>+<kbd>A</kbd> selects everything
+					</SettingRow>
+					<p class="ui-section-label">Units</p>
+					<SettingRow name="Length">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="length-unit"
+								items={LENGTH_UNIT_KEYS.map((u) => ({ value: u, name: u }))}
+								bind:value={$lengthUnit}
+							/>
+						</svelte:fragment>
+						How distances are shown and typed — positions, snapping steps, bevel widths. The
+						scene is always metres underneath, so this changes nothing but the display. You can
+						also type a unit into any of those fields directly (<kbd>12cm</kbd>,
+						<kbd>4in</kbd>, <kbd>1.5ft</kbd>) and it converts on entry
+					</SettingRow>
+					<SettingRow name="Angle">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="angle-unit"
+								items={[
+									{ value: 'deg', name: 'degrees' },
+									{ value: 'rad', name: 'radians' }
+								]}
+								bind:value={$angleUnit}
+							/>
+						</svelte:fragment>
+						The same for rotations and angular snapping. <kbd>90deg</kbd> and
+						<kbd>1.57rad</kbd> both parse whichever is on display
 					</SettingRow>
 					<p class="ui-section-label">Duplicate</p>
 					<SettingRow name="Carry animation clips">

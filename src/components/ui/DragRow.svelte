@@ -1,4 +1,13 @@
 <script>
+	import {
+		lengthUnit,
+		angleUnit,
+		factorFor,
+		labelFor,
+		displayDecimals,
+		parseValue
+	} from '$lib/units';
+
 	// THE numeric field (phase 64.2, rebuilt in 16-Q3). One control everywhere:
 	// transform rows, the boxes beside sliders, and the loose number inputs that
 	// used to be plain <input type="number">.
@@ -28,7 +37,7 @@
 	// (measured: the card jumped from (60,40) to (125,50) while the value scrubbed).
 	// node-drag-fields section 7 is that case; a suite that only drags a cold field
 	// passes with the class removed.
-	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, nodrag?: boolean, onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
+	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, nodrag?: boolean, unit?: 'length'|'angle'|'angleDeg'|'', onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
 	let {
 		label = '',
 		value = 0,
@@ -50,6 +59,10 @@
 		// no scrub, no typing, no arrow steps. Default off: ~40 call sites untouched.
 		disabled = false,
 		nodrag = false,
+		// #20 P3: what this field HOLDS - 'length' (metres), 'angle' (radians) or
+		// 'angleDeg' (degrees). Opts it into display units + typed suffixes; absent = a
+		// plain number. See $lib/units.js for why the two angle kinds are both needed.
+		unit = '',
 		onchange = () => {},
 		onscrubstart = () => {},
 		onscrubend = () => {}
@@ -57,10 +70,37 @@
 
 	/** @param {number} n */
 	const clamp = (n) => Math.min(max, Math.max(min, n));
+
+	// ---- #20 P3 units ---------------------------------------------------------
+	// `unit` opts a field into the display units. Everything below
+	// keeps working in the INTERNAL unit — `value`, `step`, `min`, `max` and every
+	// commit — and only the DISPLAYED number and the typed text cross the boundary.
+	// A field with no `unit` takes the identity path, which is what leaves ~40 existing
+	// call sites byte-identical.
+	const uKind = $derived(
+		unit === 'length' || unit === 'angle' || unit === 'angleDeg' ? unit : null
+	);
+	const uName = $derived(uKind === 'length' ? $lengthUnit : uKind ? $angleUnit : '');
+	/** internal units per ONE display unit (1 when unitless) */
+	const uFactor = $derived(uKind ? factorFor(uKind, uName) : 1);
+	/** decimals to SHOW: a field wanting mm precision in metres wants 0 in mm */
+	const dispDecimals = $derived(uKind ? displayDecimals(decimals, uKind, uName) : decimals);
+	const uLabel = $derived(uKind ? labelFor(uKind, uName) : '');
+
+	/** internal -> the string in the box */
 	/** @param {number} n */
-	const fmt = (n) => Number(n ?? 0).toFixed(decimals);
-	/** one minor unit for the keyboard: 0.01 at 2 decimals, 1 for integers */
-	const minorStep = $derived(decimals > 0 ? Number(Math.pow(10, -decimals).toFixed(decimals)) : 1);
+	const fmt = (n) => (Number(n ?? 0) / uFactor).toFixed(dispDecimals);
+	/** round an internal value to the precision the box can actually show */
+	/** @param {number} n */
+	const quantize = (n) => Number(Number((n ?? 0) / uFactor).toFixed(dispDecimals)) * uFactor;
+	/**
+	 * one minor unit for the keyboard, in INTERNAL units: 0.01 at 2 decimals, 1 for
+	 * integers — but measured against what is DISPLAYED, so one press moves the last
+	 * visible digit whatever the unit (otherwise ArrowUp in mm does nothing visible)
+	 */
+	const minorStep = $derived(
+		(dispDecimals > 0 ? Number(Math.pow(10, -dispDecimals).toFixed(dispDecimals)) : 1) * uFactor
+	);
 
 	let focused = $state(false);
 	let typed = $state('');
@@ -84,7 +124,10 @@
 	/** @param {any} event */
 	function onInput(event) {
 		typed = event.currentTarget.value;
-		const next = parseFloat(typed);
+		// P3: on a unit field the text may carry its OWN suffix — `12cm` in a metres
+		// field is 0.12 — so parsing goes through units.js, which falls back to "the
+		// unit on display" for a bare number. Unitless fields keep parseFloat exactly.
+		const next = uKind ? parseValue(typed, uKind, uName) : parseFloat(typed);
 		// LIVE: every keystroke that parses applies immediately (16-Q3 — it used to
 		// wait for Enter, so arrow keys inside the box looked like they did nothing)
 		if (Number.isFinite(next)) commit(next);
@@ -192,7 +235,10 @@
 		// 16-Q5: quantize to the field's own precision. A raw scrub produced values
 		// like 0.7999999999999999, which then leaked into menus and saved settings —
 		// what you SEE is what gets stored.
-		next = Number(clamp(next).toFixed(decimals));
+		// quantize to what the box can SHOW, which on a unit field is the display
+		// precision converted back — otherwise a metres field displayed in mm rounds
+		// the scrub to whole millimetres' worth of metres and stutters
+		next = quantize(clamp(next));
 		typed = fmt(next);
 		commit(next);
 	}
@@ -227,7 +273,10 @@
 		spellcheck="false"
 		class="dn-input tabular-nums"
 		aria-label={ariaLabel || label || 'value'}
-		title={title || 'Drag to scrub · type to set · ↑↓ steps (Ctrl ×10, Shift ×100) · Esc reverts'}
+		title={title ||
+			(uKind
+				? `Drag to scrub · type to set (a suffix wins: 12cm, 4in, 90deg) · ↑↓ steps (Ctrl ×10, Shift ×100) · Esc reverts`
+				: 'Drag to scrub · type to set · ↑↓ steps (Ctrl ×10, Shift ×100) · Esc reverts')}
 		value={display}
 		{disabled}
 		use:keys
@@ -236,6 +285,11 @@
 		onfocus={onFocus}
 		onblur={onBlur}
 	/>
+	<!-- P3: the unit on display, so a number is never ambiguous. Shown only on fields
+	     that opted in, which is why no existing row grows any chrome. -->
+	{#if uLabel}
+		<span class="dn-unit" aria-hidden="true">{uLabel}</span>
+	{/if}
 </div>
 
 <style>
@@ -270,6 +324,15 @@
 		font-size: 0.75rem;
 		font-weight: 600;
 		user-select: none;
+	}
+	/* the unit on display: quiet, never competing with the number it annotates */
+	.dn-unit {
+		flex: 0 0 auto;
+		font-size: 0.625rem;
+		line-height: 1;
+		color: rgb(156 163 175 / 0.9);
+		user-select: none;
+		pointer-events: none;
 	}
 	.dn-input {
 		min-width: 0;

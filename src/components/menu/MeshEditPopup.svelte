@@ -1308,6 +1308,7 @@
 					id="mesh-merge-dist"
 					label="merge dist"
 					value={$mergeDistance}
+					unit="length"
 					step={0.0005}
 					snap={0.01}
 					decimals={4}

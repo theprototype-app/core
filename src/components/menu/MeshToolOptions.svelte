@@ -232,6 +232,7 @@
 			id="bevel-width"
 			label="width"
 			value={$bevelWidth}
+			unit="length"
 			step={0.005}
 			snap={0.05}
 			decimals={3}

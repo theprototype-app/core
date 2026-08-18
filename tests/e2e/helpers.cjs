@@ -29,6 +29,26 @@ function check(ok, label) {
 // Only worth passing when a test actually cares about frame rate (net-stress).
 const GPU_ARGS = ['--use-gl=angle', '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'];
 
+// Headless Chromium HAS no audio device, but WebAudio still runs against a null
+// sink and an AnalyserNode still sees the samples — measured: a 0.5-amplitude
+// 440Hz sine reads peak RMS 0.355 against a theoretical 0.5/sqrt(2) = 0.3536, and
+// an OfflineAudioContext render of a unit sine reads 0.7071 against 1/sqrt(2).
+// So audio IS measurable here; what is NOT is whether it sounds good.
+//
+// The autoplay flag is what keeps the context out of 'suspended' without a real
+// gesture. Pass these for any suite that asserts on sound.
+//
+// GPU_ARGS IS PART OF IT, and not optionally. An AnalyserNode only reports the
+// instant you read it, so the metrics loop has to sample often — and on a
+// SwiftShader page the 3D render starves the main thread badly enough that the
+// loop barely runs. MEASURED on the same ping chime: 2 samples per 500ms reading
+// peak 0.0051 without the GPU args, 30 samples reading 0.1303 with them. The low
+// number is not quieter audio, it is the loop missing the attack and catching only
+// the decay tail — so a threshold tuned on one is meaningless on the other. Folded
+// in here rather than documented, because this is exactly the mistake a caller
+// makes silently. (Same family as the GPU_ARGS rate-assertion rule in the e2e skill.)
+const AUDIO_ARGS = ['--autoplay-policy=no-user-gesture-required', ...GPU_ARGS];
+
 /** @param {any=} options e.g. {args: ['--use-fake-device-for-media-stream']} */
 function launch(options = {}) {
 	// background pages must keep full-rate rAF — synced-clock phase checks
@@ -61,6 +81,11 @@ async function setupPage(browser, name, options = {}) {
 		localStorage.setItem('hasSeenWelcome', 'true');
 		if (peerConfig) localStorage.setItem('peerServerConfig', peerConfig);
 	}, PEER_CONFIG);
+	// options.audio installs the destination TAP before any app code runs, so
+	// everything the app plays can be measured. Opt-in on purpose: it inserts a
+	// gain node in front of ctx.destination, and `spatial-voice` asserts on the
+	// exact shape of its panner chains.
+	if (options.audio) await ctx.addInitScript(AUDIO_TAP_SOURCE);
 	// caller overrides last, so a test can replace any of the defaults above
 	if (options.storage) {
 		await ctx.addInitScript((extra) => {
@@ -401,4 +426,202 @@ function run(body) {
 	});
 }
 
-module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath, pageErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor };
+
+// ---- audio verification -------------------------------------------------------
+//
+// The audio analogue of the pixel four. Same discipline: the samples never cross
+// the CDP bridge, only the metrics — a 2s window at 48kHz is 96k floats per read.
+//
+// WHY A TAP AND NOT A DIRECT READ: today every source in the app connects straight
+// to `ctx.destination` (soundRuntime, sceneMusic, pingAudio, voiceChat all do), so
+// there is no one node to observe. Patching `AudioNode.prototype.connect` at INIT
+// time — before any app code runs — routes anything bound for the destination
+// through our own gain + analyser first. It keeps working unchanged once a master
+// bus exists, because the master itself connects to the destination.
+
+// An init script given a STRING is evaluated as SOURCE, so a bare function
+// expression is created and discarded — it has to be an IIFE to actually run.
+const AUDIO_TAP_SOURCE =
+	'(' +
+	function () {
+	const rawConnect = AudioNode.prototype.connect;
+	const rawDisconnect = AudioNode.prototype.disconnect;
+	/** @type {Map<any, any>} */
+	const taps = new Map();
+	function tapFor(context) {
+		let tap = taps.get(context);
+		if (!tap) {
+			const analyser = context.createAnalyser();
+			analyser.fftSize = 2048;
+			analyser.smoothingTimeConstant = 0;
+			const bus = context.createGain();
+			rawConnect.call(bus, analyser);
+			rawConnect.call(analyser, context.destination);
+			tap = { analyser, bus, context };
+			taps.set(context, tap);
+		}
+		return tap;
+	}
+	AudioNode.prototype.connect = function (target, ...rest) {
+		// only DIVERT a connection whose target is the raw destination, and never
+		// the tap's own two nodes (that would be a feedback loop)
+		if (target instanceof AudioDestinationNode && target.context) {
+			const tap = tapFor(target.context);
+			if (this !== tap.analyser && this !== tap.bus) return rawConnect.call(this, tap.bus, ...rest);
+		}
+		return rawConnect.call(this, target, ...rest);
+	};
+	AudioNode.prototype.disconnect = function (target, ...rest) {
+		if (target instanceof AudioDestinationNode && target.context) {
+			const tap = taps.get(target.context);
+			if (tap && this !== tap.analyser && this !== tap.bus)
+				return rawDisconnect.call(this, tap.bus, ...rest);
+		}
+		return rawDisconnect.apply(this, arguments.length ? [target, ...rest] : []);
+	};
+	window.__audioTap = {
+		/** every context that has been tapped (there should be exactly one) */
+		contexts: () => taps.size,
+		analyser: () => [...taps.values()][0]?.analyser ?? null,
+		context: () => [...taps.values()][0]?.context ?? null
+	};
+}.toString() +
+	')();';
+
+/**
+ * Sample the destination tap for `ms` and report what was heard.
+ *
+ * An AnalyserNode reports only the instant you read it, so a one-shot read of a
+ * decaying note is a lottery — this samples repeatedly and reports the PEAK as
+ * well as the mean. Assert on `peak` for "did this make a sound", on `silent`
+ * for "did it stop", and on `centroid` for "did the timbre move" (a filter sweep
+ * or a distortion changes the centroid while the RMS may not move at all).
+ *
+ * `centroid` is the magnitude-weighted mean frequency in Hz, taken at the loudest
+ * sample — reading it at a quiet moment measures the noise floor's shape.
+ *
+ * @param {any} peer @param {number} [ms] @param {number} [floor] RMS counted as silence
+ * @returns {Promise<{peak:number,mean:number,centroid:number,samples:number,silent:boolean,error?:string}>}
+ */
+async function audioMetrics(peer, ms = 600, floor = 0.001) {
+	return peer.page.evaluate(
+		async ({ ms, floor }) => {
+			const tap = window.__audioTap;
+			if (!tap) return { error: 'no audio tap — pass {audio:true} to setupPage', peak: 0, mean: 0, centroid: 0, samples: 0, silent: true };
+			const analyser = tap.analyser();
+			if (!analyser) return { error: 'nothing has connected to the destination yet', peak: 0, mean: 0, centroid: 0, samples: 0, silent: true };
+			const context = tap.context();
+			const time = new Float32Array(analyser.fftSize);
+			const freq = new Float32Array(analyser.frequencyBinCount);
+			const loudest = new Float32Array(analyser.frequencyBinCount);
+			let peak = 0;
+			let sum = 0;
+			let count = 0;
+			const deadline = performance.now() + ms;
+			while (performance.now() < deadline) {
+				await new Promise((r) => setTimeout(r, 16));
+				analyser.getFloatTimeDomainData(time);
+				let square = 0;
+				for (let i = 0; i < time.length; i++) square += time[i] * time[i];
+				const rms = Math.sqrt(square / time.length);
+				sum += rms;
+				count++;
+				if (rms > peak) {
+					peak = rms;
+					analyser.getFloatFrequencyData(freq);
+					loudest.set(freq);
+				}
+			}
+			// magnitude-weighted mean frequency at the loudest moment. getFloatFrequencyData
+			// is dB, so convert back to linear before weighting or quiet bins dominate.
+			const binHz = context.sampleRate / analyser.fftSize;
+			let weighted = 0;
+			let total = 0;
+			for (let i = 0; i < loudest.length; i++) {
+				const magnitude = Math.pow(10, loudest[i] / 20);
+				weighted += magnitude * i * binHz;
+				total += magnitude;
+			}
+			return {
+				peak,
+				mean: count ? sum / count : 0,
+				centroid: total ? weighted / total : 0,
+				samples: count,
+				// a read that sampled NOTHING is a broken harness, never silence — the
+				// vacuous-premise trap, caught by this suite passing with no tap installed
+				silent: count > 0 && peak < floor
+			};
+		},
+		{ ms, floor }
+	);
+}
+
+/**
+ * Render a graph deterministically in an OfflineAudioContext and report its
+ * envelope — the audio twin of a pixel screenshot, and the only way to compare
+ * two peers sample-for-sample without depending on when either one was sampled.
+ *
+ * `build` is stringified and run IN the page with `(ctx) => void`; connect your
+ * sources to `ctx.destination`. Returns per-slice RMS so a caller can compare
+ * SHAPE (an attack, a loop boundary, a gate) rather than one number.
+ *
+ * @param {any} peer @param {(ctx:any)=>void} build
+ * @param {{seconds?:number, slices?:number, rate?:number}} [opts]
+ * @returns {Promise<{rms:number, peak:number, slices:number[], rate:number}>}
+ */
+async function renderOffline(peer, build, opts = {}) {
+	const { seconds = 1, slices = 16, rate = 44100 } = opts;
+	return peer.page.evaluate(
+		async ({ source, seconds, slices, rate }) => {
+			const context = new OfflineAudioContext(1, Math.round(rate * seconds), rate);
+			// eslint-disable-next-line no-eval
+			(0, eval)('(' + source + ')')(context);
+			const rendered = await context.startRendering();
+			const data = rendered.getChannelData(0);
+			let square = 0;
+			let peak = 0;
+			for (let i = 0; i < data.length; i++) {
+				square += data[i] * data[i];
+				const magnitude = Math.abs(data[i]);
+				if (magnitude > peak) peak = magnitude;
+			}
+			const per = Math.floor(data.length / slices);
+			const envelope = [];
+			for (let s = 0; s < slices; s++) {
+				let slice = 0;
+				for (let i = s * per; i < (s + 1) * per; i++) slice += data[i] * data[i];
+				envelope.push(Math.sqrt(slice / per));
+			}
+			return { rms: Math.sqrt(square / data.length), peak, slices: envelope, rate };
+		},
+		{ source: build.toString(), seconds, slices, rate }
+	);
+}
+
+/**
+ * How far apart two envelopes are — the audio twin of `frameDelta`.
+ *
+ * Two peers running the same deterministic pattern must agree; `maxDelta` is the
+ * number to assert on, because a mean hides one slice being wrong (the same
+ * reason `frameDelta` counts changed pixels instead of averaging them).
+ *
+ * @param {number[]} a @param {number[]} b
+ * @returns {{maxDelta:number, meanDelta:number, worstSlice:number}}
+ */
+function envelopeDelta(a, b) {
+	let maxDelta = 0;
+	let sum = 0;
+	let worstSlice = -1;
+	const n = Math.min(a.length, b.length);
+	for (let i = 0; i < n; i++) {
+		const delta = Math.abs(a[i] - b[i]);
+		sum += delta;
+		if (delta > maxDelta) {
+			maxDelta = delta;
+			worstSlice = i;
+		}
+	}
+	return { maxDelta, meanDelta: n ? sum / n : 0, worstSlice };
+}
+
+module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath, pageErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };

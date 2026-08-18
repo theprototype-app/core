@@ -1740,9 +1740,9 @@ loadable play content. Everything a user does must be visible to connected peers
   (in-place-mutated) THREE object never propagates — return a fresh SNAPSHOT object
   per poke (the Inspector `material` derived is the reference; adding the store as a
   dependency alone does NOT fix it). svelte-check
-  baseline is **388 errors / 62 warnings** (2026-08-18; **387 on the 21-D lane**, where
-  retiring the HUD datalist plumbing took a pre-existing implicit-any with it — ratchet
-  the release.yml gate to 387 when that lands; 419 -> 417 B5 -> 391 when 17-A
+  baseline is **387 errors / 62 warnings** (2026-08-18, MEASURED on release/next after the
+  21-D merge — retiring the HUD datalist plumbing took a pre-existing implicit-any with it;
+  the release.yml gate moved with it; 419 -> 417 B5 -> 391 when 17-A
   moved the demo modules out -> 388 when #20 annotated Scene's `marqueeStart`, which was
   three implicit-anys) — hold it, and RATCHET IT DOWN when a change legitimately removes
   errors; the release.yml gate hardcodes the same numbers and must move with it. Svelte 5.5x added `state_referenced_locally` (intentional one-time
@@ -2482,8 +2482,8 @@ override for e2e — never share 5173 (the user's main-checkout server).
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
 - Status (2026-08-18, latest): **ROADMAP #21-D — HUD INTERACTION + THE GAME SHELL,
-  ALL EIGHT PHASES EXECUTED, not pushed and not PR'd.** Branch
-  `feat/21d-hud-interaction` off **`feat/21-hud`** (so 21-A must land first), worktree
+  ALL EIGHT PHASES EXECUTED AND MERGED — PR #151 to `release/next` @af62820** (after
+  #149 and #150 landed 21-A). Branch `feat/21d-hud-interaction` off `feat/21-hud`, worktree
   `../theprototype-lane-shader` @5201, 8 commits: D1+D2 `1adf06c` (the element registry
   + per-kind params + the sidebar palette with the GraphTree grip) · D5 `fe5c6c5` (the
   HUD hidden while authoring; a doc keyed by a CAMERA uuid) · D6 `23137ff` (the game
@@ -2517,14 +2517,13 @@ override for e2e — never share 5173 (the user's main-checkout server).
   HUD layer is DOM, desktop-only by design), and one judgement to confirm — an input
   value is LOCAL by default with `shared` as a per-element opt-in. Plan + as-built:
   cloud `plans-core/pending/21-d-hud-interaction-game-shell.md`.
-- Status (2026-08-18, later): **ROADMAP #21-A — lanes L1 and L2 EXECUTED, neither
-  pushed nor PR'd.** Plan: cloud `plans-core/pending/21-a-hud-and-sdk.md` (parent
-  `roadmap-21-games-hud-physics.md`). Both branch off `release/next` @803d040 and are
-  therefore **2 commits behind** (#147 + the 1.6.0 docs commit landed mid-session) —
-  merge `origin/release/next` before the PRs. **`git merge-tree` says the two lanes
-  conflict in EXACTLY ONE file, `App.svelte`'s debugStores lines**; flowRuntime,
-  flowSockets, nodeCatalog and AnimationNode all auto-merge despite both lanes touching
-  them. **L1 `feat/21-module-node-io`** (worktree `../theprototype-lane-flow` @5200,
+- Status (2026-08-18, later): **ROADMAP #21-A — lanes L1 and L2 MERGED, PRs #149 (L1) and
+  #150 (L2) to `release/next`.** The two lanes conflicted in exactly the ONE file
+  `git merge-tree` predicted — App.svelte's debugStores lines — resolved as a UNION with the
+  array/destructure/store-object counts asserted equal afterwards (141/141), which is the
+  whole point of that gotcha. Plan: cloud `plans-core/pending/21-a-hud-and-sdk.md` (parent
+  `roadmap-21-games-hud-physics.md`). flowRuntime, flowSockets, nodeCatalog and
+  AnimationNode all auto-merged despite both lanes touching them. **L1 `feat/21-module-node-io`** (worktree `../theprototype-lane-flow` @5200,
   3 commits): `c48d1bc` the `'text'` param kind as its own commit so L2 could
   cherry-pick it · `87ee0cc` **A1** module node I/O · `ff23502` **A5** the module toolbox
   seam. **L2 `feat/21-hud`** (worktree `../theprototype-lane-shader` @5201, 4 commits):

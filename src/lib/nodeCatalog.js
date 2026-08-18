@@ -9,7 +9,7 @@ import { particlePreset } from './particlePresets';
 
 /**
  * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle', min?: number, max?: number, step?: number, options?: string[] }} NodeParam
- * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[] }} NodeSpec
+ * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[] }} NodeSpec
  */
 
 /** @type {{ group: string, items: NodeSpec[] }[]} */
@@ -24,7 +24,15 @@ export const nodeCatalog = [
 			{ type: 'number', label: 'Number', defaults: { value: 1, step: 1 } },
 			{ type: 'vector3', label: 'Vector3', defaults: { x: 0, y: 0, z: 0 } },
 			{ type: 'toggle', label: 'Toggle', defaults: { on: false } },
-			{ type: 'random', label: 'Random', defaults: { min: 0, max: 1, interval: 0 } },
+			// B6: it was ALREADY deterministic across peers — mulberry32 over the node
+			// id and the synced clock — so a wired seed is the whole change
+			{
+				type: 'random',
+				label: 'Random',
+				defaults: { min: 0, max: 1, interval: 0, seed: 0, integer: false },
+				inputs: ['seed', 'reroll'],
+				params: [{ key: 'integer', kind: 'toggle' }]
+			},
 			{ type: 'time', label: 'Time', defaults: { mode: 'sin', rate: 1 } }
 		]
 	},
@@ -34,7 +42,16 @@ export const nodeCatalog = [
 			{ type: 'objectselector', label: 'Object Selector', defaults: { selected: '-None-' } },
 			// CL-C C3: live speed (m/s) of the wired object — LOCAL feed, exact on
 			// the sim initiator, ~10Hz move-delta approximation on other peers
-			{ type: 'velocity', label: 'Velocity', defaults: {} }
+			{ type: 'velocity', label: 'Velocity', defaults: {} },
+			// B6: the numbers a rule graph asks for — how tall is this, where is its
+			// top. From colliderSpecOf, the same spec physics builds the body from.
+			{
+				type: 'measure',
+				label: 'Measure',
+				defaults: { read: 'top' },
+				inputs: ['target'],
+				params: [{ key: 'read', kind: 'select', options: ['top', 'bottom', 'height', 'y', 'speed'] }]
+			}
 		]
 	},
 	{
@@ -103,6 +120,14 @@ export const nodeCatalog = [
 			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
 			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
 			{ type: 'onexit', label: 'On Exit', defaults: { pulse: 0.3 } },
+			// B6: fires once when a body settles, and re-arms when it moves again.
+			// Initiator-detected, replicated stamp — the On Impact shape.
+			{
+				type: 'onrest',
+				label: 'On Rest',
+				defaults: { pulse: 0.3, seconds: 0.5 },
+				params: [{ key: 'seconds', kind: 'range', min: 0.1, max: 5, step: 0.1 }]
+			},
 			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } }
 		]
 	},
@@ -250,8 +275,56 @@ export const nodeCatalog = [
 			{
 				type: 'motor',
 				label: 'Motor',
-				defaults: { vel: 3, maxForce: 100 },
+				// B6: `side` — one motor node used to drive EVERY revolute joint on the
+				// object identically, so differential steering could not be expressed
+				defaults: { vel: 3, maxForce: 100, side: 'all' },
 				params: [
+					{ key: 'vel', kind: 'range', min: -20, max: 20, step: 0.1 },
+					{ key: 'maxForce', kind: 'range', min: 0, max: 500, step: 5 },
+					{ key: 'side', kind: 'select', options: ['all', '+x', '-x', '+z', '-z'] }
+				]
+			},
+			// B6: THE single biggest hole in the catalog — nothing in a graph could
+			// push anything. api.physics.applyImpulse existed with no node at all.
+			// ONE card with a mode select (the animstate precedent), not two.
+			{
+				type: 'impulse',
+				label: 'Impulse',
+				defaults: { mode: 'impulse', space: 'world', x: 0, y: 5, z: 0 },
+				inputs: ['trigger', 'force', 'target'],
+				params: [
+					{ key: 'mode', kind: 'select', options: ['impulse', 'torque'] },
+					{ key: 'space', kind: 'select', options: ['world', 'local'] },
+					{ key: 'x', kind: 'range', min: -20, max: 20, step: 0.5 },
+					{ key: 'y', kind: 'range', min: -20, max: 20, step: 0.5 },
+					{ key: 'z', kind: 'range', min: -20, max: 20, step: 0.5 }
+				]
+			},
+			// B6: reset-to-grid, freeze, stop-a-topple. 'continuous' is a
+			// kinematic-ish override rather than a force — it REPLACES the velocity
+			// every frame the trigger is high.
+			{
+				type: 'setvelocity',
+				label: 'Set Velocity',
+				defaults: { mode: 'once', x: 0, y: 0, z: 0 },
+				inputs: ['trigger', 'linear', 'angular', 'target'],
+				params: [
+					{ key: 'mode', kind: 'select', options: ['once', 'continuous'] },
+					{ key: 'x', kind: 'range', min: -20, max: 20, step: 0.5 },
+					{ key: 'y', kind: 'range', min: -20, max: 20, step: 0.5 },
+					{ key: 'z', kind: 'range', min: -20, max: 20, step: 0.5 }
+				]
+			},
+			// B6: joints were scene data with no node. Reuses joints.createJoint, so
+			// the undo entry and the jointcreate message are the existing ones.
+			{
+				type: 'joint',
+				label: 'Joint',
+				defaults: { kind: 'revolute', axis: 'y', vel: 0, maxForce: 100 },
+				inputs: ['trigger', 'a', 'b'],
+				params: [
+					{ key: 'kind', kind: 'select', options: ['revolute', 'weld'] },
+					{ key: 'axis', kind: 'select', options: ['x', 'y', 'z'] },
 					{ key: 'vel', kind: 'range', min: -20, max: 20, step: 0.1 },
 					{ key: 'maxForce', kind: 'range', min: 0, max: 500, step: 5 }
 				]

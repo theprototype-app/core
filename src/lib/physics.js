@@ -13,6 +13,7 @@ import {
 	fireObjectImpact,
 	fireObjectEnter,
 	fireObjectExit,
+	fireObjectRest,
 	noteObjectPose
 } from './flowRuntime';
 import { colliderSpecOf } from './colliderSpec';
@@ -63,7 +64,7 @@ export const remoteSimulating = writable(null);
  *   lastWritten: {pos: THREE.Vector3, quat: THREE.Quaternion},
  *   lastSent?: {pos: THREE.Vector3, quat: THREE.Quaternion},
  *   colliders: any[], shapeKey: string,
- *   oob?: boolean,
+ *   oob?: boolean, restSince?: number | null,
  *   preVy?: number}} BodyEntry */
 /** @type {BodyEntry[]} */
 let bodies = [];
@@ -194,7 +195,11 @@ function collectParams(group) {
 		// C2: drives every revolute joint touching the selected object (the car
 		// recipe: select the body -> all wheel motors). Joints stay def-owned.
 		if (source.type === 'motor')
-			map[uuid].motor = { vel: source.data?.vel ?? 3, maxForce: source.data?.maxForce ?? 100 };
+			map[uuid].motor = {
+				vel: source.data?.vel ?? 3,
+				maxForce: source.data?.maxForce ?? 100,
+				side: source.data?.side ?? 'all' // B6
+			};
 		// CL-C C1: collider node — shape/sensor/scale WIN over the Inspector
 		// pick (flow-overrides-Inspector, the mass precedent); shape 'object'
 		// hulls the object wired into the node's `source` handle
@@ -262,11 +267,28 @@ function angvelWorld(object, angvel) {
 	return { x: v.x, y: v.y, z: v.z };
 }
 
-/** Apply a motor param to every live revolute joint touching the object (C2).
- * @param {string} uuid @param {{vel: number, maxForce: number}} motor */
+/**
+ * Apply a motor param to the live revolute joints touching the object (C2).
+ *
+ * B6: `side` narrows it. Until now ONE motor node drove EVERY revolute joint on
+ * an object with the same velocity, so differential steering — the thing a
+ * driving game is made of — could not be expressed at all. The side is read off
+ * the joint's own OBJECT-local anchor, which is how the car module already
+ * distinguishes its wheels.
+ * @param {string} uuid @param {{vel: number, maxForce: number, side?: string}} motor
+ */
 function applyMotorParam(uuid, motor) {
+	const side = motor.side ?? 'all';
 	get(sceneJoints).forEach((def) => {
 		if (def.kind !== 'revolute' || (def.a !== uuid && def.b !== uuid)) return;
+		if (side !== 'all') {
+			// the anchor on the side that is NOT this object is the wheel's offset
+			const anchor = def.a === uuid ? def.anchorA : def.anchorB;
+			const axis = side[1] === 'x' ? 0 : 2;
+			const wanted = side[0] === '-' ? -1 : 1;
+			const value = anchor?.[axis] ?? 0;
+			if (Math.sign(value) !== wanted || value === 0) return;
+		}
 		const joint = liveJoints.get(def.id);
 		joint?.configureMotorVelocity?.(motor.vel ?? 0, motor.maxForce ?? 100);
 	});
@@ -1235,6 +1257,7 @@ function step(now) {
 	const peer = get(peers);
 	const broadcast = now - lastBroadcast > 100;
 	if (broadcast) lastBroadcast = now;
+	const sceneCcd = !!get(scenePhysicsDefaults).ccd;
 	const boundsCfg = get(scenePhysicsBounds);
 	const oobLimit = boundsCfg.limit ?? -100;
 	const oobActionNow = boundsCfg.action ?? 'respawn';
@@ -1258,6 +1281,24 @@ function step(now) {
 		// ACTION runs after the loop: 'delete' splices the bodies array, and
 		// mutating the array a forEach is walking silently skips the next entry.
 		if (object.position.y < oobLimit && !entry.oob) pendingOob.push(entry);
+		// B6: REST detection. Initiator-detected and replicated as a shared trigger
+		// stamp, exactly like impacts — and deliberately NOT rapier's isSleeping(),
+		// because sleep is off by design (a kinematic platform moving under a
+		// sleeping body never wakes it).
+		const linear = body.linvel();
+		const spin = body.angvel();
+		const still =
+			Math.hypot(linear.x, linear.y, linear.z) < 0.05 &&
+			Math.hypot(spin.x, spin.y, spin.z) < 0.1;
+		if (still) {
+			entry.restSince ??= now;
+			// B4: a body that was thrown fast carries CCD until it settles
+			if (!sceneCcd && body.isCcdEnabled?.()) body.enableCcd(false);
+			fireObjectRest(object.uuid, (now - entry.restSince) / 1000);
+		} else if (entry.restSince != null) {
+			entry.restSince = null;
+			fireObjectRest(object.uuid, 0); // re-arm any On Rest node watching it
+		}
 		// CL-C C3: exact-ish speed feed on the initiator (velocity node)
 		noteObjectPose(object.uuid, object.position.x, object.position.y, object.position.z);
 		if (broadcast && peer) {
@@ -1468,6 +1509,24 @@ export function applyTorqueImpulse(uuid, torque) {
 	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic' && !e.hold);
 	if (!entry) return false;
 	entry.body.applyTorqueImpulse({ x: torque[0] ?? 0, y: torque[1] ?? 0, z: torque[2] ?? 0 }, true);
+	return true;
+}
+
+/**
+ * B6: set a dynamic body's velocity outright (the Set Velocity node) —
+ * initiator-only, mid-sim, and refused while something holds the body, exactly
+ * like applyImpulse. This is a KINEMATIC-ish override rather than a force: it
+ * replaces the velocity instead of adding to it.
+ * @param {string} uuid @param {number[]|null} linvel @param {number[]|null} angvel
+ */
+export function setBodyVelocity(uuid, linvel, angvel) {
+	if (!world || !get(simulating)) return false;
+	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic' && !e.hold);
+	if (!entry) return false;
+	if (linvel)
+		entry.body.setLinvel({ x: linvel[0] ?? 0, y: linvel[1] ?? 0, z: linvel[2] ?? 0 }, true);
+	if (angvel)
+		entry.body.setAngvel({ x: angvel[0] ?? 0, y: angvel[1] ?? 0, z: angvel[2] ?? 0 }, true);
 	return true;
 }
 

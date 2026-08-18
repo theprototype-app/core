@@ -31,9 +31,15 @@
 <NodeWrapper type={data.type} label={data.label}>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<!-- 133: a value input handle per numeric param (Number/Math/... drive it) -->
+	<!-- B6: NAMED target sockets declared by the catalog spec (trigger, force,
+	     target…). Absent `inputs` means no sockets and no offset, so every node
+	     that had only param sockets is unchanged. -->
+	{#each spec?.inputs ?? [] as key, i}
+		<Socket kind="target" nodeType={data.type} position={Position.Left} id={key} style={`top: ${34 + i * 22}px`} />
+	{/each}
 	{#if spec?.params}
 		{#each spec.params.filter((pr: any) => pr.kind === 'range') as param, i}
-			<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style={`top: ${34 + i * 38}px`} />
+			<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style={`top: ${34 + (spec?.inputs?.length ?? 0) * 22 + i * 38}px`} />
 		{/each}
 	{/if}
 	<div class="flex w-full flex-col gap-1">

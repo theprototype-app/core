@@ -76,7 +76,11 @@ export const nodeCatalog = [
 			{ type: 'proximity', label: 'Proximity', defaults: { radius: 3 } },
 			{ type: 'lookat', label: 'Look At', defaults: {} },
 			{ type: 'setcolor', label: 'Set Color', defaults: { color: '#ff4000' } },
-			{ type: 'visibility', label: 'Visibility', defaults: { on: true } }
+			{ type: 'visibility', label: 'Visibility', defaults: { on: true } },
+			// SH7: write a shader-graph uniform. `uniform` is the generated name the Shader
+			// editor shows beside a uniform-backed param; the value rides a number socket, so
+			// no recompile and no message of its own (the flow value is already replicated).
+			{ type: 'setuniform', label: 'Set Shader Uniform', defaults: { uniform: '', value: 0 } }
 		]
 	},
 	{
@@ -308,7 +312,7 @@ export const nodeCatalog = [
 // managed object actions: LookAt orients, Set Color paints, Visibility toggles)
 export const animationTypes = [
 	'shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol',
-	'lookat', 'setcolor', 'visibility'
+	'lookat', 'setcolor', 'visibility', 'setuniform'
 ];
 
 /**

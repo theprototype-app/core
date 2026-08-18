@@ -5,13 +5,14 @@
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
 	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
+	import { lengthUnit, angleUnit, LENGTH_UNIT_KEYS } from '$lib/units';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
@@ -587,6 +588,10 @@
 						</svelte:fragment>
 						Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI
 					</SettingRow>
+					<SettingRow name="Touch tools">
+						<svelte:fragment slot="control"><Toggle bind:checked={$touchTools} /></svelte:fragment>
+						Undo / Redo / Multi-select buttons beside the logo, for touch — no <kbd>Ctrl+Z</kbd> or <kbd>Shift</kbd> needed. Multi-select adds on tap and boxes on drag, for objects and for mesh vertices, edges and faces. On by default on phones
+					</SettingRow>
 					<SettingRow name="Allow undocking (touch)">
 						<svelte:fragment slot="control"><Toggle bind:checked={$mobileUndockAllowed} /></svelte:fragment>
 						On touch / small screens the Flow and Explorer panels stay docked and their "undock" buttons are hidden (floating windows are cramped on a phone). Turn this on to allow undocking them into floating windows anyway
@@ -736,7 +741,53 @@
 								bind:value={$doubleClickAction}
 							/>
 						</svelte:fragment>
-						What a double-click on an object does in the viewport. A single click always just selects it; <kbd>Ctrl</kbd>+<kbd>A</kbd> selects everything
+						What a double-click on an object does in the viewport. A single click always just selects it; <kbd>Ctrl+A</kbd> selects everything
+					</SettingRow>
+					<p class="ui-section-label">Units</p>
+					<SettingRow name="Length">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="length-unit"
+								items={LENGTH_UNIT_KEYS.map((u) => ({ value: u, name: u }))}
+								bind:value={$lengthUnit}
+							/>
+						</svelte:fragment>
+						How distances are shown and typed — positions, snapping steps, bevel widths. The
+						scene is always metres underneath, so this changes nothing but the display. You can
+						also type a unit into any of those fields directly (<kbd>12cm</kbd>,
+						<kbd>4in</kbd>, <kbd>1.5ft</kbd>) and it converts on entry
+					</SettingRow>
+					<SettingRow name="Angle">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="angle-unit"
+								items={[
+									{ value: 'deg', name: 'degrees' },
+									{ value: 'rad', name: 'radians' }
+								]}
+								bind:value={$angleUnit}
+							/>
+						</svelte:fragment>
+						The same for rotations and angular snapping. <kbd>90deg</kbd> and
+						<kbd>1.57rad</kbd> both parse whichever is on display
+					</SettingRow>
+					<p class="ui-section-label">Duplicate</p>
+					<SettingRow name="Carry animation clips">
+						<svelte:fragment slot="control"><Toggle bind:checked={$duplicateCarriesAnimation} /></svelte:fragment>
+						A duplicate gets its own copy of the object's animation clips, so the copy plays
+						independently. Off leaves the copy unanimated
+					</SettingRow>
+					<SettingRow name="Carry object flow">
+						<svelte:fragment slot="control"><Toggle bind:checked={$duplicateCarriesFlow} /></svelte:fragment>
+						A duplicate gets its own copy of the object's flow graph, with fresh node ids. An
+						embedded Object Flow node keeps pointing at the object it referenced — re-aiming it at
+						the copy is your call. Off leaves the copy without a graph
+					</SettingRow>
+					<SettingRow name="Carry shader graph">
+						<svelte:fragment slot="control"><Toggle bind:checked={$duplicateCarriesShader} /></svelte:fragment>
+						A duplicate of a shader-driven object gets its own copy of the graph. Off leaves the copy
+						with a frozen snapshot of the compiled material and nothing to edit. An object inheriting
+						the scene default keeps inheriting it either way
 					</SettingRow>
 					<p class="ui-section-label">Wireframe &amp; outline</p>
 					<SettingRow name="Wireframe color">

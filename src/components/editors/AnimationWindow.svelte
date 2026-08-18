@@ -41,6 +41,7 @@
 	import DockTabs from '../DockTabs.svelte';
 	import { createGesture } from '$lib/modalGrab';
 	import { dragWindow } from '$lib/dragWindow';
+	import DragRow from '../ui/DragRow.svelte';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
@@ -1714,21 +1715,25 @@
 			<div class="flex items-center gap-1.5">
 				<label class="flex items-center gap-1 text-[11px] text-gray-400" title="Clip length. Keys keep their times — use ＋ ▸ Retime to stretch the movement itself.">
 					<span>length</span>
-					<input
-						type="number" min="0.1" step="0.1"
-						class="w-14 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs tabular-nums"
+					<DragRow
+						id="animation-length"
+						step={0.01}
+						decimals={2}
+						min={0.1}
 						value={duration}
-						oninput={(e) => target && updateAnim(target.uuid, { duration: Math.max(0.1, parseFloat(e.currentTarget.value) || 0.1) })}
+						onchange={(/** @type {number} */ v) => target && updateAnim(target.uuid, { duration: Math.max(0.1, v) })}
 					/>
 				</label>
 				<label class="flex items-center gap-1 text-[11px] text-gray-400" title="Playback rate — how fast it runs, without changing any keys">
 					<span>speed</span>
-					<input
+					<DragRow
 						id="animation-speed"
-						type="number" min="0.1" max="8" step="0.1"
-						class="w-14 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs tabular-nums"
+						step={0.01}
+						decimals={2}
+						min={0.1}
+						max={8}
 						value={speed}
-						oninput={(e) => target && setSpeed(target.uuid, parseFloat(e.currentTarget.value) || 1)}
+						onchange={(/** @type {number} */ v) => target && setSpeed(target.uuid, v || 1)}
 					/>
 				</label>
 				<label
@@ -1736,15 +1741,14 @@
 					title="Frames per second for THIS clip — what its key times mean, and the grid the arrows and snapping use"
 				>
 					<span>fps</span>
-					<input
+					<DragRow
 						id="animation-fps"
-						type="number" min="1" max="240" step="1"
-						class="w-12 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs tabular-nums"
+						step={0.25}
+						decimals={0}
+						min={1}
+						max={240}
 						value={FPS}
-						oninput={(e) => {
-							const next = parseInt(e.currentTarget.value);
-							if (target && next >= 1 && next <= 240) updateAnim(target.uuid, { fps: next });
-						}}
+						onchange={(/** @type {number} */ v) => target && updateAnim(target.uuid, { fps: Math.round(v) })}
 					/>
 				</label>
 				<label
@@ -1752,13 +1756,15 @@
 					title="Sample the movement on a COARSER grid than its keys — the stepped 'on twos' look. 0 = smooth."
 				>
 					<span>step</span>
-					<input
+					<DragRow
 						id="animation-step"
-						type="number" min="0" max="240" step="1"
-						class="w-12 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-right text-xs tabular-nums"
+						step={0.25}
+						decimals={0}
+						min={0}
+						max={240}
 						value={anim?.step ?? 0}
-						oninput={(e) => {
-							const next = parseInt(e.currentTarget.value) || 0;
+						onchange={(/** @type {number} */ v) => {
+							const next = Math.round(v);
 							if (target) updateAnim(target.uuid, { step: next >= 1 ? next : 0 });
 						}}
 					/>
@@ -2340,20 +2346,27 @@
 						<div class="mb-2 grid grid-cols-2 gap-2">
 							<label class="text-[11px] text-gray-400">
 								Time (s)
-								<input
-									type="number" step="0.05" min="0"
-									class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs"
+								<DragRow
+									id="animation-key-time"
+									step={0.005}
+									decimals={3}
+									min={0}
 									value={Math.round(selKeyObj.t * 1000) / 1000}
-									oninput={(e) => selKey && setKeyTime(selKey[1], e.currentTarget.value)}
+									onscrubstart={() => target && beginAnimGesture(target.uuid, 'Key time')}
+									onscrubend={() => endAnimGesture()}
+									onchange={(/** @type {number} */ v) => selKey && setKeyTime(selKey[1], String(v))}
 								/>
 							</label>
 							<label class="text-[11px] text-gray-400">
 								Value{isRot(selTrack.channel) ? ' (deg)' : ''}
-								<input
-									type="number" step="0.1"
-									class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs"
+								<DragRow
+									id="animation-key-value"
+									step={0.01}
+									decimals={3}
 									value={dispVal(selKeyObj.v, selTrack.channel)}
-									oninput={(e) => selKey && setKeyVal(selKey[1], e.currentTarget.value)}
+									onscrubstart={() => target && beginAnimGesture(target.uuid, 'Key value')}
+									onscrubend={() => endAnimGesture()}
+									onchange={(/** @type {number} */ v) => selKey && setKeyVal(selKey[1], String(v))}
 								/>
 							</label>
 						</div>

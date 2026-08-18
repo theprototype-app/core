@@ -28,11 +28,48 @@ The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
 clicks) and `uv-unwrap-module` (a module supplying an unwrap backend, and wasm from a blob URL).
+Roadmap #20 added seven: `duplicate-parity` (what a copy carries, incl. two peers),
+`node-drag-fields` (DragRow inside xyflow cards, real mouse), `units` (the pure
+parse/convert table plus an Inspector row that must NOT move the object when the unit
+changes), `touch-tools` (the cluster, mobile multi-select, mesh-element BOX SELECT, the
+measured placement, and the SettingRow prose guard), `post-backends` (the registry
+fallback + both module seams, via an INLINE module), `workspace-restore` (layout local,
+selection + edit mode in the file) and `graph-tree` (the navigator + its resize grip).
 The size ceilings are `mesh-budget` (commit vs live-PREVIEW vs undo-byte budget,
 with the counterfactual against the old 45000 cap); selection is `selection-extras`
 (Ctrl+A + the configurable double-click, both through real input); the edit-overlay
 save paths are `edit-overlay-gaps`; the animation look channels and the loop-pause
 transport are `animation-look-channels` and `animation-loop-pause`.
+The shader graph editor has eight (all of them are the gate for any shader change, and
+two-peer `shader-sync` needs PEER_CONFIG): `shader-inspector` (the shader-driven
+Material section + its guards + the context-menu entry), `shader-module-flow` (the
+module backend seam via `moduleSDK.initModules` with an INLINE module — the real api
+path, no zip needed — plus the Set Shader Uniform node), `shader-node-docs` (no
+browser: every node has a manual line, none merely restates its label, and the
+docs-site tables carry the SAME text), `shader-scene-default` (the SCENE graph over 24
+objects — it also CARRIES THE MEASUREMENT that declined SH6b's compile-once
+optimisation, so a change making scene-wide compiles expensive turns it red),
+`shader-compile` (the graph->IR compiler, NO
+browser — it imports the ESM directly), `shader-graph` (the store/compile/install
+pipeline), `shader-sync` (replication + history, three peers), `shader-editor` (the
+dock tab, driving the real UI) and `shader-persist` (all four save paths, including a
+real save -> reload -> `restoreSnapshot()` cycle). Three premise traps this round paid
+for, all in `shader-graph`: tiling or scrolling a SOLID-COLOUR texture cannot move a
+pixel, so those checks were unfalsifiable until the fixture got structure (and the
+metric became a count of CHANGED pixels, since a mean averages stripes away); with a
+two-halves image any WHOLE tiling maps the sample point back onto the same colour
+boundary, which is a property of the fixture and not of tiling (use 3.5); and texture
+resolution is LAZY -- triggered when a compile fills the sampler uniform -- so polling
+`shaderTextureFor` before anything asked for that hash waits forever. Only the premise
+check `the structured texture decoded` separated the last one from a real failure.
+Three more premise traps from the SH5-SH7 round: `buildObjectMenuItems` derives
+`multi` from opts.SELECTION and IGNORES an opts.multi flag, so a hand-passed flag
+makes the check vacuous; a WIRED flow input means editing that node's own `data` does
+nothing (the upstream node decides, which is correct behaviour); and a SYNTHETIC
+mousedown on an xyflow node card enters its drag handler, which reads `ownerDocument`
+off the target and throws — select a node with a real `page.mouse.click`. Also: two
+picks of the SAME bytes are the same content hash, so a second texture assignment is
+silently a no-op (vary the image, or the check measures the first one twice).
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
@@ -46,9 +83,61 @@ while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE
 
 ## Assertion discipline (a check that cannot fail is not a check)
 
+PIXEL features have their own helpers now: `grabFrame`/`centeredClip`/`frameDelta`/
+`framePixelsOffColor` (screenshot -> back INTO the page -> 2D canvas -> RGBA, compared
+in the page so only metrics cross the bridge). Four rules came out of building them:
+
+- **Assert the CHANGED PIXEL COUNT, not a mean.** A mean is blind to a thin edge — a
+  one-pixel outline over 1280x720 moves it by ~0.1. But keep both metrics: AO on a lone
+  convex box is a small contact BAND with a large delta, where a count alone reads as
+  failure. Pick the threshold per effect: measured, SMAA moves 1351 px where a dot
+  screen moves all 129600, and one shared number would pass vacuously for the strong
+  ones and fail the subtle ones.
+- **`locator('canvas').first()` matches DungeonMinimap's HIDDEN canvas** (it renders
+  before threlte's `<Canvas>` in App.svelte) and waits 30s on an invisible element — the
+  same trap as never `waitForSelector('canvas')`, one tool over. `grabFrame` derives its
+  rect from the renderer's own `domElement`. And any COLOUR metric needs a chrome-free
+  clip: the Connect bar and the Controls HUD are composited over the canvas and land in
+  an element screenshot too.
+- **A "nothing is selected" CONTROL frame must deselect EXPLICITLY.** Creation paths
+  populate the selection SET (15-K), so the baseline carried the very outline it was the
+  baseline for and read 1880 px against 1880. With the deselect it is 0 vs 1880.
+- **A leftover portaled dropdown can cover the thing under test.** ThemedSelect closes on
+  POINTERDOWN, so `document.body.click()` leaves `.ts-list` mounted; harmless at three
+  menu entries and fatal at thirteen, when it covered the rows two later sections
+  dragged and both real-mouse checks reported broken features. Dismiss with a real
+  pointerdown and assert `elementFromPoint` is the intended target before any
+  synthesized drag.
+
+- **"One entry per gesture" needs BOTH halves asserted.** "One undo reverts the whole
+  drag" PASSES with the collapse removed, because the gesture's entry still sits on top
+  of the per-pointermove ones. Only the MESSAGE COUNT (12 instead of 0) and a check that
+  a SECOND undo skips PAST the drag catch it.
+- **An async pull that arrives later can be masked by any rebuild.** A check that a peer
+  applies a pulled asset passed with the retry logic REMOVED, because it flipped that
+  peer's view mode after the pull and the rebuild loaded the file anyway. Take the
+  baseline BEFORE the state arrives, and do not touch anything that would recompile.
+- **Never run `npm run build` while the lane's dev server watches the same worktree** —
+  it rewrites `.svelte-kit/output` under the server and kills it; the next ten suites
+  all report `ERR_CONNECTION_REFUSED`, which looks like a mass regression.
 The expensive failures in #16 were not broken code — they were assertions that
 passed while the user watched the feature misbehave:
 
+- **A pixel threshold measured against "the base" is a bet on which object the run
+  produced.** `palette.js` derives every object's colour from its uuid, so the same
+  red-multiply read r:g 1.42->1.52 on one cube and 0.86->1.09 on the next, and a
+  shadow check that let each material pick its own dominant channel compared a base's
+  BLUE against a shader's RED. Three fixes, in order of preference: control the input
+  (neutralise the base colour at setup), compare two of YOUR values on the same object
+  rather than against the base, and compare like with like. That took one metric from
+  a 20-38 spread to a stable 82.3 across three consecutive runs.
+- **A feature with no ENTRY POINT is invisible to a suite that supplies its own.** The
+  Shader tab passed 20 checks while no user could open it, because the suite set the
+  store directly. Same family as the mount-crash trap, one step earlier: drive the
+  real opener (click the panel, click "+", click the item), not the state it sets.
+- **After installing a material, RENDER TWICE before sampling.** The first render is
+  where three builds the program, so a probe reads the pre-injection picture —
+  intermittently, which reads as a flaky feature rather than a flaky measurement.
 - **An AGGREGATE health check cannot see a LOCAL loss.** `mesh-uv-preserve` asserted
   the uv attribute exists, `uv.count === position.count`, and a healthy global
   spread — all three stayed green while six corners of ONE face sat on texel (0,0)
@@ -136,6 +225,39 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **`h.eventually` returns the CHECK RESULT, not the value it polled.** Binding its
+  return (`const seen = await h.eventually(...)`) gave `undefined` to four follow-up reads
+  while delivery had actually worked — the poll passed and then everything downstream
+  reported nothing. Await it for the wait, then read the state again separately.
+- **A `boundingBox()` is not a hit test, and a pane's viewport is not yours to assume.**
+  node-drag-fields placed nodes at flow y=60/240 and BOTH fields turned out covered — one
+  by the 3D canvas (above the dock pane), one by the palette tab button — and one drag
+  still "passed", because pressing the palette toggle reflowed the pane and the later moves
+  landed on the real field. xyflow's `fitView` runs at MOUNT, so a suite that seeds nodes
+  afterwards cannot know where they landed: measured, the mount fit left a card at screen
+  x = -29.5 at zoom 0.5, and a real pane drag panned 3775px for a 200px gesture. Pin the
+  viewport through the `window.__flowViewport` debug hook and `elementFromPoint`-check
+  every synthesized grip.
+- **A nav button TOGGLES.** `p[title="Node editor (N)"]` opened the pane in section 1 and
+  CLOSED it in section 8, so the element under test was legitimately absent. Drive the
+  stores (`flowGraphClose.set(false)` + `activateDock`) when a later section needs a panel
+  that an earlier one already opened.
+- **Some panels cannot coexist BY DESIGN.** `bottomDock` closes the Explorer whenever a
+  Flow-family panel becomes the visible tab, so a check that opened both was measuring that
+  rule instead of its own. Pick a control that shares nothing with the thing under test.
+- **Rows only exist inside an EXPANDED accordion.** The Settings modal renders zero
+  `.setting-row`s until `settingsSection` names the section — `settingsOpen.set(true)`
+  alone finds nothing.
+- **A store-level probe cannot test a handler.** `pickFaceUnit(tri)` takes NO additive
+  argument (the additive path is `toggleFaceSelection`), so a probe passing one compared
+  two identical replaces and read "2 tris vs 2". And even a corrected probe would only
+  re-implement Scene's branch in the test, which cannot catch Scene failing to feed a flag
+  into it. When the bug lives in a handler, drive the real mouse.
+- **A fixture must be something the real code can consume.** post-backends registered a
+  module effect whose `make` returned an object literal; the LIVE composer then crashed
+  inside `EffectPass`, which looked like a broken feature and was a broken fixture — and
+  in the process exposed a real hole (that construction was unguarded), so the fixture
+  earned its keep. Build fixtures from the real types (`new Effect(...)`).
 - **A fixture missing a PRECONDITION makes a working fix look broken.** Auto-key
   records INTO a clip: an object with none keys nothing, and `captureAutoKey`
   returns before doing anything. The first material-auto-key suite built a bare
@@ -632,6 +754,13 @@ drops the P2P session.
   edit during a run, and treat a red run that started right after a save as
   unproven. When store reads disagree with what you see, add a COMPONENT-side debug
   hook and compare the two (below).
+- **#20: the tell for a stale server is a change that "fixes" things for no reason.**
+  Toggling a setting failed to render its component; adding an UNRELATED debug element
+  to that component made it work. Nothing about that element could matter, and that is
+  the signature — the edit forced a re-transform. On a freshly restarted server the
+  original code was correct at every width from 1280 to 400. So when a symptom vanishes
+  after a meaningless edit: do NOT commit the edit, restart, re-measure, and report
+  honestly that you could not reproduce rather than claiming a fix you cannot show.
 - **A DAY-LIVED server escalates that to stale DUAL MODULE INSTANCES** (19-A P0):
   `bind:checked={$faceAutoApply}` flipped the DOM checkbox while the app's real
   store never moved — the component was bound to a SECOND faceEdit instance from

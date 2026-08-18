@@ -3,6 +3,7 @@
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	// H3: keyboard trigger node. Click "capture", press a key — the node fires a
 	// replicated pulse whenever anyone presses that key (held keys keep it high).
@@ -34,14 +35,7 @@
 		</button>
 		<label class="flex w-full flex-col">
 			<span class="text-gray-400">pulse (s)</span>
-			<input
-				class="nodrag w-full"
-				type="number"
-				min="0.1"
-				step="0.1"
-				value={data.pulse ?? 0.3}
-				on:change={(e) => setNodeData(id, { pulse: +e.currentTarget.value })}
-			/>
+			<DragRow nodrag step={0.01} decimals={2} min={0.1} value={data.pulse ?? 0.3} onchange={(/** @type {number} */ v) => setNodeData(id, { pulse: v })} />
 		</label>
 	</div>
 </NodeWrapper>

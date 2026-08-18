@@ -4,6 +4,7 @@
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { flowValues } from '../../../stores/flowStore';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	// Phase 134: sensors between two object inputs (wire Object Selector nodes to
 	// a/b). Distance -> number; Proximity -> boolean when within radius.
@@ -26,8 +27,7 @@
 		<p class="text-[10px] text-gray-400">wire two Object Selectors to a/b</p>
 		{#if isProximity}
 			<label class="flex items-center gap-1"><span class="w-12 text-gray-400">radius</span>
-				<input class="nodrag w-full" type="number" step="0.1" min="0" value={data.radius ?? 3}
-					on:change={(e) => setNodeData(id, { radius: +e.currentTarget.value })} /></label>
+				<DragRow nodrag step={0.01} decimals={2} min={0} value={data.radius ?? 3} onchange={(/** @type {number} */ v) => setNodeData(id, { radius: v })} /></label>
 		{/if}
 	</div>
 </NodeWrapper>

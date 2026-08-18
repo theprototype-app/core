@@ -8,6 +8,7 @@ import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { get } from 'svelte/store';
+import { scenePost } from '$lib/scenePost';
 import { objectsGroup, TControls, selectedObject, selectedObjects } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
 import { recordObjectPresence } from '$lib/history';
@@ -15,6 +16,7 @@ import { recordObjectPresence } from '$lib/history';
 // STATIC on purpose — a lazy import of it from here never settled in dev, and
 // materialsHandler does not import fileHandler, so this closes no cycle.
 import { downscaleImage } from '$lib/materialsHandler';
+import { shaderDrivenCount } from '$lib/shaderGraph';
 import { originOf, bakeOriginForExport } from '$lib/objectOrigin';
 import { bakeAnimationsForExport } from '$lib/animationPreview';
 import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
@@ -86,6 +88,11 @@ function selectedRoots() {
 /** Run the GLTFExporter over a root (or array of roots) and download it.
  * @param {string} format @param {any} input */
 function exportGltf(format, input) {
+	// SH4: glTF has no way to express a node-graph shader, so an exported object
+	// carries its BASE material (parkAnimatedAtBase parks ours) and the graph is left
+	// behind. Say so rather than letting the file look complete — the same honesty as
+	// the animation bake skipping look channels.
+	const shaderDriven = shaderDrivenCount();
 	// saves store animation BASE poses, not the current swing (88)
 	const restore = parkAnimatedAtBase();
 	// 17-D: glTF nodes carry only TRS, so a per-object ORIGIN has to become real
@@ -121,6 +128,14 @@ function exportGltf(format, input) {
 			a.download = `ThePrototype-${date}UTC.${String(format).toLowerCase()}`;
 			a.click();
 			window.URL.revokeObjectURL(url);
+			// glTF cannot express a node-graph shader: the file carries each object's
+			// BASE material instead. Saying nothing would make the export look complete.
+			if (shaderDriven > 0)
+				showToast(
+					shaderDriven === 1
+						? 'One object’s shader graph was not exported — glTF has no node shaders, so it carries the plain material. Save a .tpscene to keep it.'
+						: shaderDriven + ' shader graphs were not exported — glTF has no node shaders, so objects carry their plain materials. Save a .tpscene to keep them.'
+				);
 		},
 		function (error) {
 			restore();
@@ -133,6 +148,12 @@ function exportGltf(format, input) {
 export function save(format) {
 	console.log('Saving...');
 	if (format === 'tpscene') return void saveTpScene(); // B3: Scene bundle path
+	// L2: glTF has nowhere to put a screen-space post stack, so a GLTF export
+	// silently loses the scene's look. Say so rather than let someone discover it
+	// downstream — the same honesty as the animation bake's look-channel skip.
+	// .tpscene (above) and sessions carry it; only this path cannot.
+	if (get(scenePost).effects.length)
+		showToast('Note: the scene look (post-processing) is not part of a GLTF file — save a Scene (.tpscene) to keep it.');
 	// B1.2: GLTF exports the SELECTION (it used to export the whole scene). No
 	// selection -> warn + offer the whole scene. JSON keeps its whole-scene behavior.
 	if (String(format).toLowerCase() === 'gltf') {

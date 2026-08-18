@@ -12,10 +12,16 @@ import {
 	animatedImportsRestore
 } from './animatedImports';
 import { animationsSnapshot, animationsRestore } from './animationPreview';
+import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
+// #20 P5: selection + any open edit session ride the file; PANEL LAYOUT does not (that
+// is a local preference, workspace.js). Its own module so this file keeps no static edge
+// into faceEdit/meshEdit/terrainSculpt.
+import { captureEditResume, applyEditResume } from './editResume';
 import { jointsSnapshot, jointsRestore } from './joints';
+import { scenePostSnapshot, scenePostRestore } from './scenePost';
 import { sceneCommand, sendObjects } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
@@ -129,11 +135,24 @@ export function buildSessionPayload(name) {
 			})),
 			nodes: graphs[SCENE_GRAPH]?.nodes ?? [],
 			edges: graphs[SCENE_GRAPH]?.edges ?? [],
+			// SH4: toJSON would write our injected material as the object's own, so the
+			// scene is saved PARKED (parkAnimatedAtBase, above) and the graphs ride here
+			shaderGraphs: shaderGraphsSnapshot({
+				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+			}),
 			annotations: annotationsSnapshot(),
 			joints: jointsSnapshot(),
+			// L2: the authored post stack rides BESIDE the objects like joints and
+			// annotations — it is scene data, not per-object data. Absent (null) when
+			// the scene has no look, so an older build reading this file sees no field.
+			post: scenePostSnapshot(),
 			camera: camera
 				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
-				: null
+				: null,
+			// P5: where the author left off — the selection and any open mesh-edit /
+			// sculpt session with its picks. NULL for an ordinary scene, so the field is
+			// absent and every existing file stays byte-identical.
+			workspace: captureEditResume()
 		};
 	} finally {
 		restore();
@@ -431,9 +450,14 @@ export async function applySession(payload) {
 				edges: graphsPayload[SCENE_GRAPH]?.edges ?? []
 			});
 	}
+	// a scene LOAD replaces the world, so replace the documents too
+	shaderGraphsRestore(payload.shaderGraphs ?? {}, true);
 	annotationsRestore(payload.annotations ?? []);
 	// P-B: joints restore locally + replicate each def (receivers only apply)
 	jointsRestore(payload.joints ?? []);
+	// the look replicates on restore too, so loading a scene into a live room
+	// brings its art direction along (the jointsRestore precedent below)
+	scenePostRestore(payload.post, true);
 	if (peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
 	/** @type {any} */
 	const camera = get(globalCamera);
@@ -446,6 +470,9 @@ export async function applySession(payload) {
 			controls.update();
 		}
 	}
+	// P5: last, once the objects exist and the camera is parked — a selection applied
+	// before the tree is populated selects nothing, and a session entry needs its object
+	if (payload.workspace) applyEditResume(payload.workspace);
 	showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
 }
 

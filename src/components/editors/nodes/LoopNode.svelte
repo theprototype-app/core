@@ -4,6 +4,7 @@
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { flowValues } from '../../../stores/flowStore';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	// Phase 134: THE loop primitive — cycles from..to at a rate on the synced
 	// clock. wrap (sawtooth) / pingpong (triangle) / once (clamp). Deterministic.
@@ -25,11 +26,9 @@
 			<option value="once">once</option>
 		</select>
 		<label class="flex items-center gap-1"><span class="w-10 text-gray-400">from</span>
-			<input class="nodrag w-full" type="number" step="0.1" value={data.from ?? 0}
-				on:change={(e) => setNodeData(id, { from: +e.currentTarget.value })} /></label>
+			<DragRow nodrag step={0.01} decimals={2} value={data.from ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { from: v })} /></label>
 		<label class="flex items-center gap-1"><span class="w-10 text-gray-400">to</span>
-			<input class="nodrag w-full" type="number" step="0.1" value={data.to ?? 1}
-				on:change={(e) => setNodeData(id, { to: +e.currentTarget.value })} /></label>
+			<DragRow nodrag step={0.01} decimals={2} value={data.to ?? 1} onchange={(/** @type {number} */ v) => setNodeData(id, { to: v })} /></label>
 		<label class="flex items-center gap-1"><span class="w-10 text-gray-400">rate</span>
 			<input class="nodrag w-full accent-[#ff4000]" type="range" min="0.1" max="5" step="0.1" value={data.rate ?? 1}
 				on:input={(e) => setNodeData(id, { rate: +e.currentTarget.value })} /></label>

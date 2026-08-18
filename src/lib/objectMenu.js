@@ -176,6 +176,28 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						action: () => renamingObject.set(uuid)
 					}
 				]),
+		// SH5: the Shader editor is scoped by the SELECTION, so this entry makes the object
+		// current and shows the tab. Single-object for the same reason Edit mesh is — with a
+		// set selected the editor scopes to the SCENE-wide graph, which is a different thing
+		// from "this object's material" and would silently be the wrong target.
+		...(multi
+			? []
+			: [
+					{
+						label: 'Edit shader',
+						icon: 'sparkles',
+						disabled: locked || !object?.material || Array.isArray(object?.material),
+						tooltip: locked
+							? lockedTooltip
+							: Array.isArray(object?.material)
+								? 'Shader graphs support single-material objects for now'
+								: 'Author this material as a node graph',
+						action: () => {
+							selectObject(uuid, false);
+							import('./shaderGraph').then((m) => m.openShaderEditor());
+						}
+					}
+				]),
 		// 15-B8: Edit mesh / Sculpt are SINGLE-object modes — with a set selected
 		// they'd silently act on the last-picked object only (the ViewportMenu path
 		// passes the sticky primary), so hide them rather than mislead.

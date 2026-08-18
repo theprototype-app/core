@@ -8,6 +8,11 @@ import { viewPrefs } from './viewPrefs';
 //  - 'shaded'      : normal
 //  - 'shaded-ao'   : normal + N8AO (the AO pass toggles itself off the store)
 //  - 'wireframe'   : scene.overrideMaterial = a wireframe MeshBasicMaterial.
+// A scene's authored LOOK (scenePost.js) is not one of these: it is scene data and
+// renders in every mode but wireframe, for everyone, the way the environment preset
+// does. The mode only decides this viewer's SHADING — and 'shaded-ao' yields when
+// the scene sets its own ambient occlusion. A legacy 'custom' value (from the
+// opt-in design this replaced) reads as 'shaded'.
 // Wireframe uses overrideMaterial (not a per-material sweep) so it stays LOCAL —
 // a sweep would set `wireframe` on REPLICATED materials and any subsequent
 // full-object resend would leak the local view mode to peers. VR never uses the
@@ -68,6 +73,19 @@ export function aoSupported() {
 	const major = chromiumMajor();
 	return major === 0 || major >= 151;
 }
+
+/**
+ * L4: the same gate, generalised to the WHOLE post stack.
+ *
+ * Deliberately CONSERVATIVE, and worth being honest about: the measured evidence
+ * above is AO-specific, because that is where we hit it. But the failure is a
+ * broken shader LINK on a driver we cannot interrogate, its symptom is a black or
+ * frozen viewport with nothing in the console, and there is no way to tell in
+ * advance which fullscreen pass will trip it. A viewer on such a build still sees
+ * the scene in `shaded`; rendering nothing and saying nothing would be worse than
+ * skipping the authored look and explaining once.
+ */
+export const postSupported = aoSupported;
 
 let started = false;
 export function startViewMode() {

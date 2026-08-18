@@ -8,12 +8,16 @@ import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
+import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
 import { stripEditOverlays } from './editOverlays';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
+import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
+// #20 P5: selection + edit session + panel layout, restored only on an EXPLICIT restore
+import { captureEditResume, applyEditResume } from './editResume';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
 // camera go to IndexedDB — debounced 30s after any change plus a 3-minute
@@ -126,11 +130,25 @@ async function saveSnapshot() {
 		// same reason, different loss: a MATERIAL ARRAY cannot cross the GLTF round
 		// trip either (it comes back as a Group of single-material children)
 		multiMaterial: multiMaterialSnapshot(),
+		// SH4: a GLTF export cannot carry a custom shader at all, so the GRAPH rides
+		// beside the snapshot and is recompiled on restore (the same twin-replacement
+		// reasoning as the two fields above). Orphans are pruned from the OUTPUT only.
+		shaderGraphs: shaderGraphsSnapshot({
+			pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+		}),
 		animations: animationsSnapshot(),
 		nodes,
 		edges,
 		graphs,
 		annotations: annotationsProvider ? annotationsProvider() : [],
+		// L2: the post stack is screen-space scene data with nowhere in a GLTF to
+		// live, so it rides beside the snapshot — the same shape rigs and material
+		// arrays use, for the same reason
+		post: scenePostSnapshot(),
+		// #20 P5: the selection, any open edit session, and the panel LAYOUT. This is the
+		// path that makes Restore (and the auto-restore setting) bring your windows back,
+		// while a plain reload stays a clean slate.
+		workspace: captureEditResume(),
 		camera: camera
 			? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 			: null
@@ -288,6 +306,10 @@ async function applyRestore(snapshot) {
 		// single-material children the GLTF export left behind (same twin-replacement
 		// shape as rigs below). Keyed by uuid, which the __uuid stamp above restored.
 		restoreMultiMaterial(snapshot.multiMaterial ?? []);
+		// shader graphs come back and recompile onto the restored objects, whose uuids
+		// the __uuid stamp above put back — order does not matter, the objectsGroup
+		// reconcile catches a graph whose target arrives later
+		shaderGraphsRestore(snapshot.shaderGraphs ?? {});
 		// rigs come back from their ORIGINAL bytes — this also replaces the static
 		// twin the GLTF export wrote — and authored tracks from the snapshot
 		await animatedImportsRestore(snapshot.animated ?? []);
@@ -298,6 +320,12 @@ async function applyRestore(snapshot) {
 			restoreGraphs({ [SCENE_GRAPH]: { nodes: snapshot.nodes ?? [], edges: snapshot.edges ?? [] } });
 		}
 		if (snapshot.annotations?.length && annotationsRestorer) annotationsRestorer(snapshot.annotations);
+		// the restored look replicates alongside the objects this function just
+		// re-broadcast, so a restore into a live room is consistent
+		scenePostRestore(snapshot.post, true);
+		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
+		// reload never reaches here, which is exactly the point.
+		if (snapshot.workspace) applyEditResume(snapshot.workspace);
 		/** @type {any} */
 		const camera = get(globalCamera);
 		/** @type {any} */
@@ -371,6 +399,10 @@ export function startAutosave() {
 	// snapshot, so watching the store here adds no import edge — and the edge must
 	// NOT go the other way: autosave <-> animationPreview would be a cycle.
 	animations.subscribe(() => markDirty());
+	// L2: same reasoning one more time — authoring a LOOK touches no object, so
+	// without this a scene's post stack would be in the snapshot and never trigger
+	// one being written ("my grading is gone after a reload")
+	scenePost.subscribe(() => markDirty());
 	setInterval(() => {
 		if (dirty) saveSnapshot();
 	}, INTERVAL_MS);

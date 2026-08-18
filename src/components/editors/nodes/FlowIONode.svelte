@@ -3,6 +3,7 @@
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	// H5: interface nodes — Flow Input / Flow Output DECLARE an object flow's
 	// public sockets. Inside the graph a Flow Input is a value source (fed by the
@@ -89,23 +90,23 @@
 				{:else if (data.vtype ?? 'number') === 'vector3'}
 					<div class="flex w-full gap-0.5">
 						{#each ['x', 'y', 'z'] as axis, i (axis)}
-							<input
-								class="nodrag min-w-0 flex-1"
-								type="number"
-								step="0.1"
+							<DragRow
+								nodrag
+								step={0.01}
+								decimals={2}
 								title={axis}
 								value={Array.isArray(data.fallback) ? data.fallback[i] ?? 0 : 0}
-								on:change={(e) => setVectorPart(i, +e.currentTarget.value)}
+								onchange={(/** @type {number} */ v) => setVectorPart(i, v)}
 							/>
 						{/each}
 					</div>
 				{:else}
-					<input
-						class="nodrag w-full"
-						type="number"
-						step="0.1"
+					<DragRow
+						nodrag
+						step={0.01}
+						decimals={2}
 						value={typeof data.fallback === 'number' ? data.fallback : 0}
-						on:change={(e) => setNodeData(id, { fallback: +e.currentTarget.value })}
+						onchange={(/** @type {number} */ v) => setNodeData(id, { fallback: v })}
 					/>
 				{/if}
 			</div>

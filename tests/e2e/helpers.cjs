@@ -193,6 +193,151 @@ function pageErrors(peer) {
 	return peer?.page?.__errors ?? [];
 }
 
+// ---- reading real composited PIXELS ---------------------------------------
+//
+// The only way this repo has to observe what the renderer actually PUT ON SCREEN
+// (post-processing, outlines, AO) is: screenshot in node -> push the PNG back
+// INTO the page -> decode it on a 2D canvas -> read getImageData. The detour
+// exists because node here has no PNG decoder and the page has a real one.
+//
+// The comparison itself runs IN THE PAGE and only the metrics cross the CDP
+// bridge: a 1280x720 frame is 3.7M numbers, which is not something to serialise
+// once, let alone per assertion.
+
+/** The in-page decoder, injected as source into every pixel evaluate. */
+const DECODE_FN = `async (b64) => {
+	const img = new Image();
+	await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = 'data:image/png;base64,' + b64; });
+	const canvas = document.createElement('canvas');
+	canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+	const ctx = canvas.getContext('2d', { willReadFrequently: true });
+	ctx.drawImage(img, 0, 0);
+	return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}`;
+
+/**
+ * Screenshot the WebGL canvas, or an explicit sub-rect of the page.
+ *
+ * With no clip it derives the rect from the RENDERER's own `domElement` rather
+ * than a `canvas` locator: `<DungeonMinimap />` renders a hidden canvas BEFORE
+ * threlte's in App.svelte, so `locator('canvas').first()` waits 30s on an
+ * invisible element (the same trap as never `waitForSelector('canvas')`).
+ *
+ * Pass a clip for any COLOUR measurement: DOM chrome (Connect bar, HUD, windows)
+ * is composited over the canvas and lands in an element screenshot too, so a
+ * "how many pixels are not X" metric has to look at a chrome-free region.
+ * @param {any} peer @param {any} [clip] {x, y, width, height}
+ */
+async function grabFrame(peer, clip) {
+	const rect =
+		clip ??
+		(await peer.page.evaluate(
+			() =>
+				new Promise((resolve) => {
+					window.__stores.globalRenderer.subscribe((renderer) => {
+						const element = renderer?.domElement;
+						if (!element) return resolve(null);
+						const box = element.getBoundingClientRect();
+						resolve({ x: box.x, y: box.y, width: box.width, height: box.height });
+					})();
+				})
+		));
+	return rect ? peer.page.screenshot({ clip: rect }) : peer.page.screenshot();
+}
+
+/** A chrome-free square of the viewport centred on a world point, for colour
+ * metrics. @param {any} peer @param {number[]} world @param {number} [size] */
+async function centeredClip(peer, world, size = 360) {
+	const point = await projectPoint(peer.page, world);
+	const view = await peer.page.viewportSize();
+	const half = size / 2;
+	return {
+		x: Math.max(0, Math.min(view.width - size, Math.round(point.x - half))),
+		y: Math.max(0, Math.min(view.height - size, Math.round(point.y - half))),
+		width: size,
+		height: size
+	};
+}
+
+/**
+ * How much two frames differ.
+ *
+ * `changed` — the PIXEL COUNT over `threshold` — is the metric to assert on, not
+ * `mean`: a mean is blind to a thin edge (a one-pixel outline over a 1280x720
+ * frame moves the mean by ~0.1 and is the whole point of the check). Keep `mean`
+ * and `max` for the opposite case, a small contact band with a large delta,
+ * where the count alone reads as failure.
+ *
+ * @param {any} page @param {Buffer} before @param {Buffer} after @param {number} [threshold]
+ * @returns {Promise<{changed: number, total: number, fraction: number, mean: number, max: number, width: number, height: number, error?: string}>}
+ */
+async function frameDelta(page, before, after, threshold = 6) {
+	return page.evaluate(
+		async ({ a, b, threshold, decodeSource }) => {
+			const decode = eval(decodeSource);
+			const A = await decode(a);
+			const B = await decode(b);
+			if (A.width !== B.width || A.height !== B.height)
+				return { error: 'size mismatch ' + A.width + 'x' + A.height + ' vs ' + B.width + 'x' + B.height };
+			let changed = 0;
+			let sum = 0;
+			let max = 0;
+			for (let i = 0; i < A.data.length; i += 4) {
+				const delta =
+					Math.abs(A.data[i] - B.data[i]) +
+					Math.abs(A.data[i + 1] - B.data[i + 1]) +
+					Math.abs(A.data[i + 2] - B.data[i + 2]);
+				if (delta > threshold) changed++;
+				sum += delta;
+				if (delta > max) max = delta;
+			}
+			const total = A.data.length / 4;
+			return {
+				changed,
+				total,
+				fraction: changed / total,
+				mean: sum / total,
+				max,
+				width: A.width,
+				height: A.height
+			};
+		},
+		{ a: before.toString('base64'), b: after.toString('base64'), threshold, decodeSource: DECODE_FN }
+	);
+}
+
+/**
+ * How many pixels of a frame are NOT within `tolerance` of `rgb`.
+ *
+ * Written as the negative on purpose: it is how "the outline survived a
+ * full-frame effect" is measured. A flat-fill effect makes every scene pixel one
+ * colour, so anything left over is what was composited AFTER it — zero means the
+ * effect ran last and painted over the outline.
+ *
+ * @param {any} page @param {Buffer} frame @param {number[]} rgb @param {number} [tolerance]
+ * @returns {Promise<{off: number, total: number, fraction: number}>}
+ */
+async function framePixelsOffColor(page, frame, rgb, tolerance = 24) {
+	return page.evaluate(
+		async ({ a, rgb, tolerance, decodeSource }) => {
+			const decode = eval(decodeSource);
+			const image = await decode(a);
+			let off = 0;
+			for (let i = 0; i < image.data.length; i += 4) {
+				if (
+					Math.abs(image.data[i] - rgb[0]) > tolerance ||
+					Math.abs(image.data[i + 1] - rgb[1]) > tolerance ||
+					Math.abs(image.data[i + 2] - rgb[2]) > tolerance
+				)
+					off++;
+			}
+			const total = image.data.length / 4;
+			return { off, total, fraction: off / total };
+		},
+		{ a: frame.toString('base64'), rgb, tolerance, decodeSource: DECODE_FN }
+	);
+}
+
 /** A RENDER crash is never acceptable, whatever the checks said: a component that
  * threw on mount is not there for the user at all. Anything else (a network hiccup,
  * a module's own console noise) still only prints. */
@@ -256,4 +401,4 @@ function run(body) {
 	});
 }
 
-module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath, pageErrors };
+module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath, pageErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor };

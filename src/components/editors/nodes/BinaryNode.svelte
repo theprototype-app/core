@@ -4,6 +4,7 @@
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { flowValues } from '../../../stores/flowStore';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	// Phase 133: a two-input operator — Math (add/sub/mul/div/min/max/mod),
 	// Compare (> < = >= <= !=), Gate (AND/OR/NOT/XOR). Inputs come from the a/b
@@ -52,13 +53,11 @@
 		{:else}
 			<label class="flex items-center gap-1">
 				<span class="w-3 text-gray-400">a</span>
-				<input class="nodrag w-full" type="number" step="0.1" value={data.a ?? 0}
-					on:change={(e) => setNodeData(id, { a: +e.currentTarget.value })} />
+				<DragRow nodrag step={0.01} decimals={2} value={data.a ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { a: v })} />
 			</label>
 			<label class="flex items-center gap-1">
 				<span class="w-3 text-gray-400">b</span>
-				<input class="nodrag w-full" type="number" step="0.1" value={data.b ?? 0}
-					on:change={(e) => setNodeData(id, { b: +e.currentTarget.value })} />
+				<DragRow nodrag step={0.01} decimals={2} value={data.b ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { b: v })} />
 			</label>
 		{/if}
 	</div>

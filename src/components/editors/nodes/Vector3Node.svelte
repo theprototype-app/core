@@ -3,6 +3,7 @@
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	// Phase 133: an x/y/z constant (feeds positions/offsets). Output is [x,y,z].
 	type $$Props = NodeProps;
@@ -17,13 +18,7 @@
 		{#each AXES as axis}
 			<label class="flex items-center gap-1">
 				<span class="w-3 text-gray-400">{axis}</span>
-				<input
-					class="nodrag w-full"
-					type="number"
-					step="0.1"
-					value={data[axis] ?? 0}
-					on:change={(e) => setNodeData(id, { [axis]: +e.currentTarget.value })}
-				/>
+				<DragRow nodrag step={0.01} decimals={2} value={data[axis] ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { [axis]: v })} />
 			</label>
 		{/each}
 	</div>

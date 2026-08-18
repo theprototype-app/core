@@ -300,7 +300,43 @@ loadable play content. Everything a user does must be visible to connected peers
   `shadowDefaults` (#12: objectsGroup-sweep sets cast/receiveShadow on every mesh;
   opt-out = userData.shadow=false) + `palette` (#12: paletteColorFor(uuid) deterministic
   default colors) + `viewMode` (#12: LOCAL Shaded/Shaded+AO/Wireframe;
-  wireframe = scene.overrideMaterial, never per-material),
+  wireframe = scene.overrideMaterial, never per-material; L1-L5 removed the
+  short-lived `custom` mode — a stored value reads as `shaded` — and `postSupported`
+  is the AO capability gate generalised to every fullscreen pass),
+  `scenePost` (L1-L5 THE SCENE POST STACK: the replicated latest-wins singleton on
+  the `scenePhysics` precedent — `{enabled, effects:[{id,kind,enabled,params}],
+  changedAt}` with ONE `normalizeScenePost` at every store boundary — plus the
+  `registerPostEffect` kind REGISTRY and the pure `planPostStack`. A deliberate LEAF
+  (stores only, no third-party imports) so the planner is testable with no GL context
+  and peerHandler/sessions/autosave can reach it. `isPass` is part of the registry
+  CONTRACT, because it is what makes the merge grouping computable before anything is
+  instantiated: consecutive `Effect`s fold into ONE `EffectPass`, a `Pass` (N8AO)
+  breaks the run, and an UNKNOWN kind contributes no shader so the effects either
+  side of it still merge. An unknown kind is PRESERVED VERBATIM through our editor
+  and back onto the wire (the `normalizeAnnotation` rule) and skipped at PLAN time,
+  where it is a rendering decision rather than a silent delete of a newer peer's
+  work. `beginLookGesture`/`endLookGesture` collapse a DragRow scrub into one
+  `'look'` history entry and one message. **THE VISIBILITY RULE, learned the hard
+  way: a scene's authored look is SCENE DATA and renders for EVERYONE by default,
+  exactly like the environment preset, fog and music — the first design gated it
+  behind a local mode the viewer had to find, so an author had to tell each peer
+  individually, and the auto-promotion latch (`viewModeChosen`, set by touching ANY
+  view chip) then excluded that person from every future scene permanently.** What
+  stays LOCAL is only the right to switch it off here. The personal Shaded+AO chip
+  YIELDS to a look that sets its own AO (`sceneProvidesAo`; the chip disables with
+  the reason — two AO passes double every contact shadow), and when it does apply,
+  personal AO runs FIRST: it is shading, not grading) +
+  `postEffects` (the COMPILER + the 12 built-ins; owns the postprocessing/n8ao
+  imports so scenePost stays a leaf. AO's `quality`/`halfRes` default to `'auto'` =
+  follow this viewer's shadowQuality, so a scene that pins neither behaves as it did;
+  the HiDPI sizing and N8AO's private camera reference are registry HOOKS
+  (`resize`/`retarget`/`applyLocal`) rather than special cases in the component. The
+  LUT is an Explorer asset addressed by content HASH riding assetfile/getasset) +
+  `viewportOverrides` (B: ONE keyed map for "the scene says X, but not on my screen".
+  It exists because the alternative does not scale — wireframe lived in the view
+  modes, the UV checker in the UV editor, post in its own checkbox, and layers 2/3
+  would each have earned another plus another round of "must my peers switch this
+  on?". `shaders` is already DECLARED and unread so L6/L7 add a key, not a concept),
   `environment` (presets + scene-root rig, latest-wins sync,
   `passthroughActive` local sky lift; #12: sun casts w/ scene-fit frustum +
   env-shadow-catcher ShadowMaterial disc), `animatedImports` (raw-bytes objectfile sync;
@@ -401,6 +437,97 @@ loadable play content. Everything a user does must be visible to connected peers
   needed NO new code — `snapping.apply()` writes the increments on the SHARED
   TControls the mesh proxy attaches to, so element drags always obeyed it; the
   toolbox just surfaces `snapEnabled`/`snapSettings`.
+  **SHADER GRAPHS** (branch `feat/shader-graph-spike`, SH0-SH4) — per-object and
+  scene-default node materials, four leaf-ish modules plus a dock tab:
+  `shaderBackends` = the `registerShaderBackend(key,label,compile)` REGISTRY (the
+  uvUnwrap shape; backends may be async) with TWO built-ins — `inject`
+  (onBeforeCompile, patching three's OWN shader at its chunk anchors; SH0.5 measured
+  it ~1000x faster than the alternative AND it is the only one that tracks a scene's
+  LIGHT SET, so it is the DEFAULT) and `shaderfrog` (@shaderfrog/core behind a
+  dynamic import — it can rewrite the whole program, so it stays as the "power"
+  backend, and `fixShaderfrogArrayVaryings()` in vite.config.ts is what makes it
+  work with shadows at all). `shaderCatalog` = curated node defs as pure DATA + a
+  GLSL emitter each (+ one raw-GLSL escape node): 46 defs in groups Input/Math/Channel/
+  UV/Utility/Output. A def may declare `nativeType` (what `emit` RETURNS, required for
+  any MULTI-OUTPUT node -- the compiler declares one temp per node and the swizzled
+  outputs read it, so the temp cannot be typed by whichever output a graph wired first;
+  Texture read through `.a` used to emit `float t = texture2D(...)`) and `stages`
+  (absent = both; View direction / Fresnel / Normal map are fragment-only). `shaderCompile` =
+  `compileShaderGraphToIR`: a memoised DFS from the Surface node's wired taps that
+  hoists every node into a TEMP (a reused subgraph compiles ONCE), coerces types
+  explicitly, guards cycles, and folds per-node `requires` into three's defines.
+  TWO PASSES since the tap round: the FRAGMENT taps (albedo/emissive/roughness/
+  metalness/normal/opacity/ao) and a VERTEX pass for `position` displacement, each with
+  its OWN body, temps and cycle guard (the stages are different programs) while uniforms
+  and preludes are SHARED. `emit` receives the `stage`, and an unwired socket's default
+  is translated through `VERTEX_EQUIVALENT` (vUv -> the `uv` attribute, normalize(vNormal)
+  -> objectNormal) as a CENTRAL rule, because forgetting a per-socket annotation fails
+  SILENTLY -- vUv exists in a vertex shader as an `out`, so it compiles and reads
+  nothing. The inject backend's anchors: albedo `<map_fragment>`, opacity
+  `<alphamap_fragment>` (still ahead of `<alphatest_fragment>`) + `transparent = true` on
+  the CLONE, roughness/metalness their own maps, normal `<normal_fragment_maps>` (after
+  `<normal_fragment_begin>` declared it), emissive `<emissivemap_fragment>`, ao
+  `<aomap_fragment>` (after `<lights_fragment_end>`, so `reflectedLight` exists), and
+  vertex `<begin_vertex>` as `transformed += expr`. `customProgramCacheKey` hashes BOTH
+  stages. Two limitations shared with three's own displacementMap, documented at the tap:
+  normals are not recomputed, and the SHADOW pass uses a separate depth material this
+  injection never reaches, so a displaced object casts its undisplaced silhouette.
+  `shaderTextures` = an Explorer content HASH resolved to a THREE.Texture, cached per
+  hash, with an `assetShare.requestAsset` pull + a listener-driven RETRY when the bytes
+  land (golden rule 9). Deliberately NOT an embedded dataURL the way material textures
+  work: a graph document replicates WHOLE on every edit, so an embedded image would
+  re-send the texture to every peer on each slider nudge. Wrap is REPEAT (Tiling/Panner
+  push uv outside 0..1 by design) and an unresolved hash holds a 1x1 WHITE placeholder,
+  because three substitutes its own empty texture for a null sampler and that samples to
+  ZERO -- a late joiner would sit looking at a black object while the pull ran.
+  `shaderGraph` = the documents, keyed `'scene' | objectUuid | 'post:<id>'` (the
+  flowGraphs precedent) with `graphKeyFor` = own -> scene default -> the object's
+  real material; `setShaderGraphFor` is the SINGLE write path (setPhysicsFor
+  precedent, `silent` for the applier); `captureBase`/`detachFrom`;
+  `parkShaderMaterials` hooked into `parkAnimatedAtBase`; a debounced compile that
+  KEEPS the last good material on failure. `shaderSync` = the wire + the
+  `'shadergraph'` history kind (it is the module whose BODY calls
+  registerHistoryKind, so nothing in history's import subtree may reach it).
+  Multi-slot objects are REFUSED, the switchMaterialType precedent. UI:
+  `components/editors/ShaderEditor.svelte` (a FLOW_FAMILY dock tab, its own xyflow
+  instance so flowGraphs/nodesync stay byte-untouched; scope follows the SELECTION
+  like the node editor's flow graphs, so there is no scope control) +
+  `ShaderSidebar.svelte` + `nodes/ShaderNode.svelte` (ONE generic node for the whole
+  catalog) + `nodes/ShaderTexturePicker.svelte` (a file input that imports into the
+  Explorer, an Explorer drag-drop target, thumbnail, clear, and a "waiting for peer"
+  state; PUSHES the bytes on assign) + `nodes/ShaderVectorInput.svelte` (one number
+  field per component for a vec2/vec3/vec4 param -- without it such a param fell
+  through to the generic TEXT input, which wrote the string "1,1" back and
+  `uniformValue` read it as a COLOUR, so a vec2 became [1,1,1]; that shipped, and it
+  affected the Vector 2 / Vector 3 nodes too). Both pickers are shared by the node card
+  and the properties pane, and neither is wrapped in the card's `<label>` (a nested
+  label double-fires the click). The picker's HOVER CARD is PORTALED to body (xyflow
+  transforms its pane, so a `position: fixed` child would be positioned against the
+  panned/zoomed pane) and GROWS UPWARD anchored by `bottom` — this editor is a bottom
+  dock, so the space above the swatch is the empty viewport while the space beside it
+  is the graph, and bottom-anchoring bottom-aligns it without knowing its height, so a
+  wrapped name cannot push it off screen. The node-card NAME is clamped (58px): xyflow
+  sizes a node to its content, so an unbounded filename stretched the card.
+  **SH5** the Inspector's Material section shows a shader-driven notice (Open in Shader
+  editor / Detach) and HIDES the material editors while the whole selection is driven —
+  they would write to the clone the next recompile discards; `fanMat` skips driven
+  members with a counted toast; cast/receive shadow stay (object flags, not material).
+  Detach DELETES the object's own graph, because restoring the base alone is undone by
+  the reconcile, and an object driven by the SCENE default gets an explanation instead
+  of a button that cannot work. `openShaderEditor()` is the seam the notice and the
+  objectMenu 'Edit shader' entry share. **SH6** `api.registerShaderBackend(key,label,
+  compile)` — namespaced `mod-<id>-<key>`, returns its PROMISE, teardown in the module
+  journal, and an UNKNOWN backend falls back to inject with `userData
+  .shaderBackendFallback` stamped (not just the disabled case: a peer that never had
+  the module receives a graph naming it). **SH7** the `setuniform` flow node writes a
+  live uniform LOCALLY per peer (the setcolor pattern — the value already arrives
+  through the replicated flow graph), reached through flowRuntime's primed `shaderRef`;
+  numbers only, and the editor's info pane lists the generated `u_<nodeId>_<param>`
+  names so a flow node has something to address. **The MANUAL is a `doc` line per def
+  in a DOCS map** (helper-made nodes have no literal to hang one on), feeding the info
+  pane, the palette tooltip AND the docs-site tables from one string; `shader-node-docs`
+  fails if a node ships without one. Plan + as-built: cloud `plans-core/pending/shader-graph-editor.md`; the
+  scene-wide half (post stack, layer 2) is `scene-look-post-processing.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
   serialized tree — a save taken mid-session wrote it into the file as a
@@ -499,6 +626,34 @@ loadable play content. Everything a user does must be visible to connected peers
   than by pinning floats. `normalizeAspect` never stretches per-axis (that shears the
   texture) and `unwrapSeam` shifts triangles that straddle the u wrap, or one face
   smears across the whole map),
+  `units` (#20 P3, LOCAL leaf: display units for numeric fields. THREE kinds, not two,
+  because the app is genuinely inconsistent about angles — 'length' internal METRES,
+  'angle' internal RADIANS (`object.rotation`, the Inspector rows), 'angleDeg' internal
+  DEGREES (`snapSettings.rotateDeg`, fov, the toolbox). Collapsing the two angle kinds
+  would be a silent 57x error at half the call sites, so every field DECLARES what it
+  holds via DragRow's `unit` prop. `displayDecimals` rounds with CEIL, never round: a
+  unit whose magnitude is not a round power of ten may only come out FINER than the field
+  asked for — log10(0.0254) is -1.59 and rounding gives WHOLE INCHES, 2.5cm steps on a row
+  with centimetre control in metres. Typed input takes a SUFFIX whatever is on display
+  (`12cm`, `4in`, `2'`, `90deg`), which is what makes one global setting enough. In the
+  DEFAULT units every field is byte-identical to before it existed),
+  `workspace` + `editResume` (#20 P5: which panels were open, plus the selection and any
+  mesh-edit/sculpt session with its element picks. WHEN it comes back is the design and it
+  is the user's call: a plain reload is a CLEAN SLATE, and the layout returns only on an
+  explicit Restore / the auto-restore setting / a file load — so it rides the SAVED PAYLOAD
+  (autosave + sessions + .tpscene) and there is NO localStorage copy and no boot-time
+  apply. `snapshotWorkspace` returns null when nothing is open, which keeps an ordinary
+  save unchanged AND stops a restore closing panels you have open ("restore less, never
+  more"). editResume imports NOTHING — the live modules are handed in through
+  `registerEditResumeSources` from Scene.svelte, the 15-D shape, because a static import
+  closes a cycle (sessions.js is reachable from peerHandler; faceEdit/meshEdit/objectActions
+  are in the history-cycle family)),
+  `postBackends` (#20 P6: a post SHADER DESCRIPTION -> a postprocessing `Effect`. NOT
+  shaderBackends, whose output is a MATERIAL — a different object with a different
+  lifecycle, and collapsing them would hide that difference at the one place it matters.
+  The FALLBACK lives in the REGISTRY, not the module-disable path: a peer who never had the
+  module reaches the same unknown key, so `compilePostShader` falls back to the built-in
+  and REPORTS `fellBackFrom` while the document keeps its original key),
   `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
   `networkQuality` (N6/D3: LOCAL per-peer getStats RTT + relay dot, median, NOT replicated),
   `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
@@ -753,6 +908,80 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **`renderer.toneMapping` NEVER REACHES A COMPOSED FRAME.** three applies it to a
+  material only when the current render target is the CANVAS or an XR target
+  (WebGLPrograms: `if (currentRenderTarget === null || isXRRenderTarget)`), and the
+  EffectComposer renders the scene into a TARGET — so while post-processing runs, the
+  renderer's own tone mapping and `toneMappingExposure` do nothing at all. MEASURED:
+  flipping it changes exactly 0 pixels. The plan's premise that a ToneMapping effect
+  would "grade the image twice" is therefore FALSE on the desktop; the only paths that
+  render straight to the canvas are WebXR and the camera PiP inset. So the
+  stand-down is scoped `stackTonemaps && !renderer.xr.isPresenting` — standing down
+  in VR would strip tone mapping there with NOTHING to replace it, since post is
+  skipped in a headset. environment.js learns this through a registration SEAM
+  (`registerToneMappingOwner`), never an import: environment reaching scenePost →
+  history → flowRuntime is exactly the edge that TDZ-crashes the SSR prerender.
+- **A registration seam whose `register()` re-applies SYNCHRONOUSLY must sit BELOW
+  the `let` its closure reads.** `registerToneMappingOwner(() => stackTonemaps)`
+  placed above `let stackTonemaps` calls the closure during component init and
+  TDZ-throws, taking the whole app down — every suite then dies in setupPage's
+  `waitForFunction`, which is the signature. Same family as the module-level
+  `store.subscribe` rule, one scope in.
+- **An asset that arrives LATER needs a WATCH, not a rebuild.** A LUT is pulled by
+  content hash, and arriving bytes do NOT change the stack — so nothing recompiles
+  the chain and no second load attempt happens. A peer then grades through the
+  neutral identity LUT forever while its stack, its Explorer and its pass count all
+  look perfectly correct. `loadLutInto` subscribes to `explorerItems` until the hash
+  appears and unsubscribes on dispose. TEST TRAP from the same place: the first
+  version of that check PASSED with the watch removed, because it flipped the peer's
+  view mode after the pull and the rebuild loaded the file anyway — take the baseline
+  BEFORE the state arrives and never touch the mode again.
+- **`LookupTexture.from` tests `image instanceof Image`**, so its strip-unfolding path
+  needs a real `<img>` from a blob URL; a canvas or an ImageBitmap silently takes the
+  raw-data branch and comes out wrong.
+- **A leftover portaled ThemedSelect popup can COVER the thing under test.** It closes
+  on POINTERDOWN, so `document.body.click()` does not dismiss it. Harmless while a
+  menu had three entries and quietly fatal at thirteen: the popup covered the rows two
+  later sections dragged, and both real-mouse checks read as broken features. Close it
+  with a real pointerdown and assert `elementFromPoint` is the intended target before
+  any synthesized drag.
+- **A `ThemedSelect` cannot shrink below its longest option**, so putting a group name
+  INSIDE each label ("Colour grading · LUT (colour grade)") pushes whatever sits
+  beside it off a narrow panel. For a list that grows, use the shared `ContextMenu`
+  with grouped submenus — it portals itself, clamps to the viewport and brings
+  type-to-filter for free. `ContextMenu` gained an optional `onclose` CALLBACK beside
+  its `close` event for this: a RUNES-mode consumer cannot use `on:close` without a
+  deprecation warning that counts against the baseline, and createEventDispatcher has
+  no attribute form.
+- **Never run `npm run build` while the lane's `vite dev` is watching the same
+  worktree** — the build rewrites `.svelte-kit/output` under the dev server and kills
+  it, and the next ten suites all report `ERR_CONNECTION_REFUSED`.
+- **In a FLEX container every element child is its own flex item, on its own line.**
+  `SettingRow`'s `.sr-desc` is a flex COLUMN (it centres the description vertically), so
+  a description mixing `<strong>`/`<kbd>` rendered one fragment per line — "Round / Undo /
+  , / Redo / and / Multi-select / beside the logo…". Reported twice as "too many carriage
+  returns", which sounds like a copy problem and is a layout one. Wrap slot content in ONE
+  block child; the cure applies to any flex cell that hosts prose.
+- **Placing chrome by a width BREAKPOINT is a guess; measure the neighbour instead.** The
+  touch-tools row stacked on an unfolded Oppo N8 that had room to spare. Three things the
+  measurement got wrong before it was right, all worth knowing: `.top-right-chrome` has
+  HEIGHT 0 (its children are positioned inside it) so a vertical-overlap test skipped the
+  notes/peers/profile cluster entirely — measure the concrete BUTTONS; measuring from the
+  LOGO's right edge was optimistic by 22px because the row actually starts at 78px; and
+  clearing a neighbour by 14px is "fits" arithmetically and "touching" visually. Re-measure
+  on a ResizeObserver over the neighbours too — the Connect pill's width changes with its
+  own state (a peer connects, the drawer opens) with no window resize and no re-dock.
+- **A gizmo seated by the CLICK path is not seated by a new selection path.** Box-selecting
+  faces left them with no gizmo while vertices had one, because `attachFaceGizmo` is called
+  explicitly from the click handler and vertices get theirs free from `setAnchor`. Any new
+  way to change a selection has to re-run whatever the click path does afterwards.
+- **`edgeKey` takes two welded VERTEX KEYS, not two positions** (`edgeKey(keyOf(...),
+  keyOf(...))` — the `pickEdgeAt` idiom). Handing it positions builds keys that match
+  nothing in `realEdgeMap`, so an edge box-select returned exactly ZERO while the face one
+  worked perfectly — which made it look like an edge-mode problem rather than a key problem.
+- **`faceEditObject`, `editingObject` and `sculptObject` all hold a UUID STRING**, not an
+  object. Reading `.uuid` off them captured no session while one was visibly open (and the
+  same wrong assumption sat in the test, which is why it took two rounds).
 - **A hook that READS state must know the caller's write ORDER.** Auto-key was
   hooked at `recordMaterialChange`, the one funnel every material edit passes
   through — and it keyed a colour edit correctly while keying nothing at all for
@@ -855,6 +1084,102 @@ loadable play content. Everything a user does must be visible to connected peers
   `enterFaceEdit` and was always the tighter gate. A suite that entered a session
   on a 19k-triangle sphere silently did nothing, and the "no preview was streamed"
   check after it passed VACUOUSLY — the premise check is what caught it.
+- **A uniform's VALUE must be runtime-ready, not the authored form.** A colour param
+  authored as `'#e62610'` handed to three throws `uniform3fv ... cannot be converted
+  to a sequence` from INSIDE the render loop, every frame. Literals were converted
+  sRGB->linear and uniform values were not; a sampler's value must start `null` with
+  the asset reference carried alongside, since three cannot upload a hash string.
+- **three's varyings are CONDITIONAL, so a generated shader must ask for them.** A
+  graph reading UV needs `USE_UV` in `material.defines` or `vUv` is not declared at
+  all on an untextured material. And an injected body that runs BEFORE
+  `<normal_fragment_begin>` must read the varying `vNormal`, not three's shaded
+  `normal`, which does not exist yet at that point.
+- **The FIRST render after installing a material is where three builds its program**,
+  so a pixel probe must render TWICE (or discard a warm-up sample) or it reads the
+  pre-injection picture — intermittently, which is worse than never.
+- **`palette.js` derives each object's colour from its uuid, so any pixel threshold
+  measured against "the base" is a bet on which cube the run produced.** Measured: a
+  red-multiply's r:g swing was 1.42->1.52 on a reddish cube and 0.86->1.09 on a blue
+  one. Compare two GRAPH colours on the SAME object, compare a shadow response to the
+  base material's own IN THE SAME CHANNEL (letting each pick its own dominant channel
+  compares a base's blue against a shader's red), and neutralise the base colour at
+  setup — that took one metric from a 20-38 spread to a stable 82.3.
+- **Two things a planned optimisation was FOR can already be true.** SH6b specified
+  compile-once-and-clone-per-object for scene-wide shader graphs, to make three's program
+  cache dedupe. Measured: **0.73-0.88 ms per object** for the whole compile-and-install
+  (24 objects in 17-21 ms), programs already **22 -> 23 for 24 objects** because
+  `customProgramCacheKey` hashes the injected code, and per-object base colours already
+  survive *because* each object gets its own `base.clone()`. Sharing one material would
+  have saved under a millisecond while introducing the colour flattening the plan itself
+  warned about. Declined on evidence and the number kept as an assertion (the
+  chunked-meshgeo precedent, where a protocol was nearly built for a phantom).
+- **A CACHE that nothing pokes is invisible to every derived.** `applyMaterial` installed
+  a compiled shader material without `objectsGroup.update(v=>v)`, and THREE trees are not
+  reactive — so the Inspector's shader-driven notice never appeared and its own
+  `material` derived was equally blind. Any module keeping scene state in a Map beside
+  the tree has to poke the store the observers read.
+- **A RESTORE that leaves the SOURCE in place is undone by the thing that reconciles
+  them.** Shader Detach put the object back on its base material but left the graph
+  document, so the objectsGroup reconcile — which exists so a late joiner's graph
+  compiles when its object arrives — correctly saw "a graph whose target is not driven"
+  and re-installed it. Detach deletes the document instead. Adding the missing poke is
+  what made it instant rather than eventual, which is the only reason it was noticed;
+  and where there is nothing to delete (a SCENE-inherited graph) the honest move is to
+  explain rather than offer a button that undoes itself.
+- **A fallback belongs in the REGISTRY, not in the disable path.** A shader graph names
+  its backend, so a module being disabled is only one way to reach an unknown one — a
+  peer that never installed the module gets the same document, and refusing to compile
+  would leave that peer with an error it cannot act on. Fall back where the lookup
+  happens, stamp what you fell back FROM, and keep the document's original key so
+  re-enabling restores the intent instead of having rewritten the graph.
+- **A RAW NUL byte in a source file makes it BINARY to every text tool, and msys hides
+  it.** `shaderCompile.js` shipped with 6 of them inside string literals (Map-key
+  separators): `grep` answered "Binary file matches" instead of showing the line, git
+  diffed it as `Bin 11482 -> 11488 bytes`, and the Read tool renders NUL as a SPACE, so
+  the source looked normal and an exact-match Edit silently could not match. `cat -A`
+  shows `^@` -- but `sed`/`hexdump` under msys stripped the byte and reported clean LF,
+  so the check has to be a NODE read of the raw bytes. Write the two-character escape
+  instead; the runtime string is identical (verify against the old blob in a `.cjs` with
+  `execSync`, since a bash redirect mangles NULs and will tell you the files differ).
+- **A MULTI-OUTPUT node cannot be typed by the output that happens to be read first.**
+  The shader compiler declares one temp per node, so a Texture reached through its `.a`
+  output emitted `float t = texture2D(...)` -- a GLSL type error whose reachability
+  depended on EDGE ORDER. The temp takes the node's own `nativeType`; each output's type
+  comes from the catalog. Split exists only because of this rule.
+- **A stage-specific value that EXISTS in the other stage fails silently.** `vUv` is a
+  varying in the fragment shader and an `out` in the vertex one, so a vertex body reading
+  it COMPILES and samples nothing -- a wrong picture with no message, which is worse than
+  a refusal. Translate such defaults centrally (one table), not per socket, and refuse a
+  node that genuinely cannot work in a stage (no view vector and no `dFdx` in a vertex
+  shader) with a message naming both stages.
+- **A sampler with nothing in it is BLACK, not neutral.** three substitutes its own empty
+  texture for a null sampler and that samples to zero, so a Texture node wired to albedo
+  turned the object black before the user had picked anything, and a hash still being
+  pulled did the same to a late joiner. An unpicked node emits opaque white (the multiply
+  identity, no sampler at all) and an unresolved hash holds a 1x1 white placeholder.
+- **A plain Map read gives a `$derived` no signal.** The texture picker reported
+  "loading" forever for an image that HAD loaded: a decode finishing is not a store
+  write, and `shaderTextureFor` is a Map lookup. Notify on every resolve and let the
+  component depend on a tick -- the `$derived`-compares-with-=== family, one step out.
+- **A feature with no ENTRY POINT is invisible to a suite that supplies its own.** The
+  Shader tab shipped with 20 green checks and no way for a user to open it: the suite
+  set `shaderEditorClose` directly. Same family as "a component that crashed on mount
+  is invisible to store-reading checks", one step earlier. Drive the real opener. Note
+  the two "+" add-menus (DockTabs.svelte AND Flow.svelte) keep SEPARATE item lists.
+- **xyflow dereferences `node.position` while adopting nodes**, so a graph document
+  without positions — created programmatically, arriving from a peer, or written by a
+  tool that ignored layout — crashes the whole editor on mount. Fill it in at
+  normalize time, on a DETERMINISTIC grid so two peers still agree byte for byte.
+- **A latest-wins stamp must be MONOTONIC per key.** A gesture writes several times
+  inside one millisecond, so those edits share a `Date.now()` and a `>=` guard drops
+  every one after the first — the drag AND the undo after it silently fail to
+  replicate. Bump past the previous stamp, and refuse only a STRICTLY older document
+  (an ordered DataConnection means an equal stamp arrived later).
+- **A document can arrive BEFORE the object it targets.** The handshake requests
+  objects and per-object records together and the small reply wins the race, so the
+  apply finds no target and nothing ever retries — a late joiner sat with the data and
+  a plain material forever. Reconcile off `objectsGroup` (debounced); it also covers
+  undoing an object delete.
 - **`ObjectLoader` cannot rebuild a `WireframeGeometry`**, so a fixture that crafts
   a stale edit-overlay with one fails to parse for a reason that has nothing to do
   with the thing under test (it returned null and the check read -1). Craft such
@@ -1182,8 +1507,10 @@ loadable play content. Everything a user does must be visible to connected peers
   (in-place-mutated) THREE object never propagates — return a fresh SNAPSHOT object
   per poke (the Inspector `material` derived is the reference; adding the store as a
   dependency alone does NOT fix it). svelte-check
-  baseline is **419 errors / 62 warnings** (2026-08-02, after #15 C's one-way
-  pickers −14 and K's outline rework −2) — hold it; the release.yml gate matches. Svelte 5.5x added `state_referenced_locally` (intentional one-time
+  baseline is **388 errors / 62 warnings** (2026-08-18; 419 -> 417 B5 -> 391 when 17-A
+  moved the demo modules out -> 388 when #20 annotated Scene's `marqueeStart`, which was
+  three implicit-anys) — hold it, and RATCHET IT DOWN when a change legitimately removes
+  errors; the release.yml gate hardcodes the same numbers and must move with it. Svelte 5.5x added `state_referenced_locally` (intentional one-time
   prop reads take a `// svelte-ignore state_referenced_locally` line — WindowShell is
   the reference) and deprecated `<svelte:self>` (use a self-import).
 - **Connection "connected" state = `$peers.openedPeers`, NOT `userdata.length`**:
@@ -1858,6 +2185,18 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Verification (mandatory before commit)
 
+PIXEL features (post-processing, outlines, AO) are asserted through the helpers
+promoted into `helpers.cjs`: `grabFrame`/`centeredClip`/`frameDelta`/
+`framePixelsOffColor` — screenshot in node, push the PNG BACK INTO the page,
+decode on a 2D canvas, and compare IN the page so only the metrics cross the CDP
+bridge (a 1280x720 frame is 3.7M numbers). Assert the CHANGED PIXEL COUNT, not a
+mean: a mean is blind to a thin edge, which is exactly what the outline-ordering
+check turns on. `grabFrame` derives its rect from the RENDERER's own `domElement`
+because DungeonMinimap renders a hidden canvas BEFORE threlte's, so
+`locator('canvas').first()` waits 30s on an invisible element; and any COLOUR
+metric needs a chrome-free `centeredClip`, since the Connect bar and HUD are
+composited over the canvas and land in an element screenshot too.
+
 Follow `.claude/skills/e2e-verify/SKILL.md`. #17-A: suites that need a module
 which MOVED OUT of core use `h.installModule(peer, id)` + `h.moduleZipPath(id)`
 (skip, never fail, when the sibling `theprototype.app-modules` checkout has no
@@ -1907,6 +2246,30 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-18): **ROADMAP #20 MERGED + v1.6.0 — PRs #146 and #147 to
+  `release/next` @944eb8d.** Editor ergonomics, units, workspace restore, the graph
+  tree. Plan + as-built: cloud `plans-core/roadmap-20-editor-ergonomics-units.md`.
+  Baseline **388/62** (391 -> 388: annotating Scene's `marqueeStart` fixed three
+  pre-existing implicit-anys; the release.yml gate was ratcheted to match).
+  **P1** duplicate carries animation clips, object flows AND shader graphs (the last
+  one is a gap the plan predates: `detachMaterials` hands the clone a copy of the
+  COMPILED ShaderMaterial and no document, so the copy renders FROZEN and the Inspector
+  has nothing to edit; only an OWN graph is copied, an inherited scene default keeps
+  inheriting). No carrier records its own history entry — the object's create entry owns
+  the copy's lifecycle, and a second entry would make one Ctrl+Z strip the clips off an
+  object that stayed. **P2** DragRow in 16 node/shader/animation fields (+`nodrag`,
+  +`window.__flowViewport` debug hook). **P3** `$lib/units.js` — see the units gotcha.
+  **P4** touch tools + a sticky multi-select MODE. **P5** `$lib/workspace.js` +
+  `$lib/editResume.js` — see the restore gotcha. **P6** `$lib/postBackends.js` (an
+  EFFECT output, deliberately NOT shaderBackends, whose output is a Material) +
+  `api.registerPostEffect`/`registerPostBackend`. **P7a** `GraphTree.svelte` in both
+  editors. New suites: duplicate-parity(27) node-drag-fields(22) units(39)
+  touch-tools(41) post-backends(20) workspace-restore(19) graph-tree(25).
+  **P7b IS THE ONE PLANNED PHASE NOT DONE** — the `</>` code views (tab/detached/SPLIT)
+  + the shader GLSL-read-only/Graph-JSON tabs; spec + implementation note in the plan
+  (extract `FlowCodePane` so the three shells share one body; `tab` mode for the shader
+  code view needs a `FLOW_FAMILY` member). OWED: the user's on-device pass — the touch
+  cluster on a real phone folded and unfolded, and the unit display in non-dark themes.
 - Status (2026-08-14, later): **UV TRANSFORM TOOLS — branch `feat/uv-transform-tools`**
   (lane `../theprototype-lane-uv` @ port 5193, 2 commits, NOT PR'd yet; **branched off
   `feat/17e-animation-curves`**, because U1 re-points the TIMELINE at the extracted
@@ -2038,6 +2401,90 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-18): **SCENE LOOK / POST-PROCESSING — branch `feat/scene-post-stack`
+  (lane `../theprototype-lane-post` @ port 5198), 8 commits, release/next merged in
+  CLEAN, baseline 391/62 at every commit, NOT PR'd.** Plan: cloud
+  `plans-core/pending/scene-look-post-processing.md` (L1-L5 marked EXECUTED there).
+  **L1** the stack core (see the `scenePost`/`postEffects` architecture entries) ·
+  **L2** `scenepost`/`getscenepost` + sessions/.tpscene/autosave + the `'look'` history
+  kind · **L3** Configure Scene ▸ Post-processing (`PostStack.svelte`, params from the
+  registry SCHEMA, pointer reorder, the "Effects: N, passes: M" cost line) · **L4** AO's
+  knobs exposed at last + the gate generalised + the tone-mapping finding (see the
+  gotcha — the plan's double-grade premise was measurably FALSE) · **L5** 12 built-ins
+  incl. the LUT on assetfile/getasset · then TWO user-reported rounds: the add control
+  overflowing a narrow panel (now the shared ContextMenu with grouped submenus) and
+  **the visibility model corrected — the look is DEFAULT-ON for everyone, with
+  `viewportOverrides` as the one local opt-out**. Suites `scene-post` (94),
+  `scene-post-ui` (45), `scene-post-effects` (46); the pixel readers are in helpers.cjs.
+  **LEFT BEFORE THE PR: the user's visual/feel pass, and a decision on L8** (the
+  `api.registerPostEffect` SDK seam + docs-site pages). **L6** (the Post DOMAIN in the
+  shader editor) and **L7** (the scene default material) are BLOCKED on the shader lane
+  landing and move to the follow-up plan, together with the user's per-CAMERA looks and
+  Watch-adopts-look: cloud `plans-core/pending/post-camera-looks-and-shader-integration.md`.
+  The two lanes conflict in exactly TWO files (`App.svelte` debugStores,
+  `peerHandler` dispatch) — measured with `git merge-tree`; everything else auto-merges.
+- Status (2026-08-18, later): **SH6b CLOSED BY MEASUREMENT** — `shader-scene-default`
+  (17 checks) covers the scene default at 24 objects and records why the planned
+  compile-once-and-clone is NOT built: 0.73-0.88 ms per object, programs already deduped
+  22 -> 23, per-object base colours already preserved by the per-object clone. The rest of
+  SH6b (the reserved 'scene' key, `graphKeyFor`, `defaultTargetsFor`, own-graph precedence,
+  delete-detaches-everything) was in place from SH1 and is now covered end to end.
+  Branch `feat/shader-graph-spike` = 21 commits, baseline 391/62. What is left is NOT
+  shader-graph work: the POST domain is layer 1 in `scene-look-post-processing.md`.
+  OWED: the user's feel pass, then merge release/next in and PR.
+- Status (2026-08-18): **SHADER GRAPHS — SH5/SH6/SH7 + the node MANUAL** (same lane,
+  4 commits `7da4c2d`/`9c34e5b`/`1bf9e28`/+docs, plus a docs-repo commit `92ba71e`).
+  The Texture node gained a portaled HOVER CARD (scaled preview, full name, dimensions,
+  size, wrap, id) and its node-card name is clamped so a long filename cannot widen the
+  node — 184 chars measures the same as 62. **SH5** Inspector integration + the guards.
+  **SH6** `api.registerShaderBackend` with journal teardown + a registry-level fallback.
+  **SH7** the `setuniform` flow node + the uniform names surfaced in the info pane.
+  **DOCS**: a `doc` line per node feeding the info pane, the palette tooltip and the
+  docs-site tables from ONE string, a generated `shader-nodes.md` reference grouped by
+  palette group (deliberately NOT 46 stub pages — 26 are Math one-liners), a
+  `shader-graph.md` guide, and `nodes/setuniform.md`. New suites: `shader-inspector`
+  (23), `shader-module-flow` (28), `shader-node-docs` (15, no browser). Three guards
+  proven by breaking the code (the vector-param branch reads 0 fields; a blanked doc
+  line goes red). Baseline **391/62** at every commit. STILL OPEN: SH6b layer-2
+  assignment, the post-domain (layer 1), and the user's feel pass, then the PR.
+- Status (2026-08-17, later): **SHADER GRAPHS — the three OWED items EXECUTED** on the
+  same lane/branch (3 commits: `f63c4b4` textures, `5f81925` taps, `aedcc94` catalog).
+  (1) The Texture node LOADS a texture: `shaderTextures.js` resolves an Explorer content
+  hash to a THREE.Texture with an assetShare pull + retry, and `ShaderTexturePicker`
+  gives it a file input AND an Explorer drop target. (2) FOUR more taps -- normal (plus a
+  Normal map node building a TBN from screen-space derivatives, since these meshes carry
+  no tangents), opacity, ao, and VERTEX DISPLACEMENT, which needed a second compiler pass
+  with stage-aware emitters. (3) 16 catalog entries (30 -> 46 defs): Split/Combine,
+  Tiling & offset, Panner on the shared clock, 11 maths nodes, Gradient.
+  FOUR pre-existing bugs fell out: the multi-output temp type, `uniformValue` giving a
+  vec2 a 3-wide value, array params editing as TEXT (which broke the shipped Vector 2 /
+  Vector 3 nodes), and 6 raw NUL bytes making `shaderCompile.js` binary to grep. Guards
+  proven by breaking the code twice (the temp type reads `float t = texture2D(...)`; the
+  vector param reads 0 number fields). Baseline **391/62** at every commit, build green,
+  all five shader suites green. OWED: the user's own feel pass, then SH5 (Inspector
+  integration) / SH6 (the module SDK seam) and the PR.
+- Status (2026-08-17): **SHADER GRAPH EDITOR — SH0 through SH4 EXECUTED**, lane
+  `../theprototype-lane-shader` @ port 5197, branch `feat/shader-graph-spike`, 9
+  commits @be8cb0d off release/next @78e71d7 (merged in; the one conflict was
+  App.svelte's debugStores, as `git merge-tree` predicted). NOT PR'd. Baseline
+  **391/62** at every commit. Plan + as-built: cloud
+  `plans-core/pending/shader-graph-editor.md`. SH0 spike (all four gates measured) ->
+  the ShaderFrog array-varying vite patch -> **SH0.5, which flipped the backend
+  choice on CORRECTNESS**: adding a light to a scene leaves ShaderFrog-driven objects
+  byte-identically unchanged (it bakes three's light set into the source) while the
+  inject backend responds, and it compiles ~1000x faster -> SH1 (catalog + compiler +
+  documents) -> SH2 (replication + history + the shared clock) -> SH3 (+3b redesign:
+  scope follows the SELECTION, flow-style node cards with category-tinted headers,
+  typed sockets, wire removal, a searchable pane menu, both sidebars) -> SH4 (all
+  four save paths, proven by removing the park and watching the injected material
+  leak into the GLTF snapshot and the session toJSON). Suites: `shader-compile`(33,
+  NO browser), `shader-graph`(26), `shader-sync`(20, three peers), `shader-editor`(33,
+  real UI), `shader-persist`(19). **OWED, agreed with the user and NOT started**: the
+  Texture node cannot load a texture (it shows the hash — needs Explorer-reference
+  resolution + a real picker), four more Surface taps (normal / opacity / AO / vertex
+  displacement — the last needs a VERTEX-stage injection and a second compiler pass),
+  and the missing catalog nodes (Split/Combine, Tiling & offset, Panner, more maths,
+  Gradient). Then SH5 (Inspector integration) and SH6 (the SDK seam).
 - Status (2026-08-17, later): **v1.5.0 CYCLE — the R-line MERGED, two PRs open.**
   `release/next` @261c9ed carries #136/#137/#126/#138/#139 plus **#140 the R-line**:
   R1 position channels are RELATIVE (a movement replays from where the object is;

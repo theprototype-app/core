@@ -5,7 +5,7 @@
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand, useHand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
-	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast } from '../stores/appStore';
+	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
 	import {
@@ -24,7 +24,7 @@
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
-	import { sculptObject, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
+	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
@@ -35,8 +35,8 @@
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
-	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
+	import { editingObject, enterEditMode, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit, selectVerticesInRect } from '$lib/meshEdit';
+	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, faceEditSelectedTris, setFaceSubmode, selectElementsInRect, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
@@ -46,6 +46,7 @@
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
 	import { setParticleRoot } from '$lib/particleRuntime';
+	import { registerEditResumeSources } from '$lib/editResume';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
@@ -441,6 +442,56 @@
 		startCameraHelpers();
 		startEditorNavigation();
 		startSnapEngine(); // 19-B: wires the element-snap candidate marker
+		// #20 P5: hand editResume the LIVE session modules. It imports nothing itself
+		// (a static import would close a cycle through history; a dynamic one binds a
+		// SECOND instance once vite HMR-stamps the app's copy, which is exactly how the
+		// first attempt saved "no session" while a session was visibly open). This
+		// component already imports all five for real — the 15-D registration shape.
+		const offEditResume = registerEditResumeSources({
+			selection: () => get(selectedObjects) ?? [],
+			exists: (uuid) => !!get(objectsGroup)?.getObjectByProperty?.('uuid', uuid),
+			// all three session stores hold a UUID STRING, not an object — the first version
+			// read `.uuid` off them and so captured nothing while a session was visibly open
+			faceSession: () => {
+				const uuid = get(faceEditObject);
+				if (!uuid) return null;
+				return {
+					uuid,
+					submode: get(faceEditSubmode) ?? 'faces',
+					tris: (get(faceEditSelectedTris) ?? []).slice()
+				};
+			},
+			vertexSession: () => {
+				const uuid = get(editingObject);
+				return uuid ? { uuid } : null;
+			},
+			sculptSession: () => {
+				const uuid = get(sculptObject);
+				return uuid ? { uuid } : null;
+			},
+			applySelection: (uuids) => applySelectionSet(uuids),
+			enterFace: (uuid, submode, tris) => {
+				enterFaceEdit(uuid);
+				// enterFaceEdit can REFUSE (the triangle cap) — a legitimate outcome on a
+				// machine that is not the author's; the scene stays loaded and unedited
+				if (!get(faceEditObject)) return null;
+				// the submode switch refreshes BOTH overlays and re-seats the gizmo, so it
+				// has to run BEFORE the picks or it wipes them
+				// only 'edges' can reach here: 'vertices' returned above and 'faces' is the
+				// session's own entry submode (lang="ts", so the literal has to be narrowed)
+				if (submode === 'edges') setFaceSubmode('edges');
+				else if (tris.length) faceEditSelectedTris.set(tris);
+				return submode;
+			},
+			enterVertex: (uuid) => {
+				enterEditMode(uuid);
+				return !!get(editingObject);
+			},
+			enterSculpt: (uuid) => {
+				enterSculpt(uuid);
+				return !!get(sculptObject);
+			}
+		});
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
 			exitEditMode(); // leave vertex edit mode cleanly (113)
@@ -463,9 +514,14 @@
 		let downPosition = null;
 		let downTime = 0;
 		let strokeActive = false;
+		// #20: is the marquee in progress selecting mesh ELEMENTS rather than objects?
+		let elementMarquee = false;
 		let sculptActive = false; // T-2 brush drag in progress
 		let lastSculptAt = 0;
-		let marqueeStart = null; // shift-drag box select (13)
+		// shift-drag box select (13). Annotated because this file is lang="ts" and the
+		// #20 element-marquee branch is a second assignment site — without a type the
+		// inference goes implicit-any at every one of them.
+		let marqueeStart: number[] | null = null;
 		let rightDown = null; // right-click TAP opens the Add/object menu (77)
 		let lastPointerXY: number[] | null = null; // last cursor position, for keyboard-opened menus
 
@@ -508,7 +564,27 @@
 				return;
 			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
-			if (event.shiftKey && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
+			// #20: inside a MESH SESSION the same gesture boxes ELEMENTS instead of objects.
+			// A separate branch, not a loosened gate: the object marquee must never run in a
+			// session and vice versa, and `elementMarquee` tells pointerup which it was.
+			if (
+				(event.shiftKey || event.ctrlKey || event.metaKey || $multiSelectMode) &&
+				!$isLocked &&
+				!$isVRMode &&
+				!$specatorMode &&
+				($editingObject || $faceEditObject) &&
+				!$TControls?.dragging
+			) {
+				marqueeStart = [event.clientX, event.clientY];
+				elementMarquee = true;
+				setOrbitEnabled(false);
+				downPosition = [event.clientX, event.clientY];
+				downTime = Date.now();
+				return;
+			}
+			// #20 P4: the touch Multi-select mode stands in for Shift, since a finger
+			// cannot hold a modifier. Same code path, so there is exactly one marquee.
+			if ((event.shiftKey || $multiSelectMode) && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
 				marqueeStart = [event.clientX, event.clientY];
 				setOrbitEnabled(false);
 			}
@@ -576,6 +652,46 @@
 		};
 
 		const onPointerUp = (event) => {
+			// #20: an ELEMENT box — vertices, edges or faces, whichever mode is open
+			if (marqueeStart && elementMarquee && event.button === 0) {
+				const start = marqueeStart;
+				marqueeStart = null;
+				elementMarquee = false;
+				setOrbitEnabled(true);
+				const moved = Math.hypot(event.clientX - start[0], event.clientY - start[1]);
+				$marqueeRect = null;
+				if (moved > 8) {
+					const box = element.getBoundingClientRect();
+					// the gesture is in CLIENT pixels and the projection wants CANVAS-relative
+					// ones — the canvas is not at the window origin (chrome sits above it)
+					const local = {
+						x1: start[0] - box.left,
+						y1: start[1] - box.top,
+						x2: event.clientX - box.left,
+						y2: event.clientY - box.top
+					};
+					const size = { width: box.width, height: box.height };
+					// a box ADDS: it already needs Shift/Ctrl or the Multi-select mode to start
+					if ($editingObject) {
+						// vertices seat their own gizmo through setAnchor
+						selectVerticesInRect(local, camera.current, size, true);
+					} else {
+						selectElementsInRect(local, camera.current, size, true);
+						// FACES need the gizmo seated explicitly, exactly as the click path
+						// does it — an edge selection re-seats itself through
+						// withSelectionHistory, and attachFaceGizmo refuses in edge mode
+						// anyway. Without this a boxed face selection had no gizmo, which is
+						// what the user hit: it worked in vertices and not in faces.
+						if ($faceEditSubmode !== 'edges') {
+							if ($faceEditOp === 'move') attachFaceGizmo();
+							else detachFaceGizmo();
+						}
+					}
+					downPosition = null;
+					return;
+				}
+				// too short to be a box: fall through, so a modified CLICK still toggles
+			}
 			if (marqueeStart && event.button === 0) {
 				const start = marqueeStart;
 				marqueeStart = null;
@@ -664,7 +780,7 @@
 			if ($editingObject) {
 				// D2: a miss deselects all vertices (parking the gizmo, D5) — the
 				// session and the object selection stay (deliberate)
-				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey))
+				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode))
 					clearVertexSelection();
 				return;
 			}
@@ -696,18 +812,18 @@
 				// instead of a face unit (every click picks one, so no threshold)
 				if ($faceEditSubmode === 'edges') {
 					if (tri < 0 || !hit || !edited) {
-						if (!(event.ctrlKey || event.shiftKey || event.metaKey)) clearEdgeSelection();
+						if (!(event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode)) clearEdgeSelection();
 						return;
 					}
 					const local = edited.worldToLocal(hit.point.clone());
-					pickEdge(pickEdgeAt(tri, local), event.ctrlKey || event.shiftKey || event.metaKey);
+					pickEdge(pickEdgeAt(tri, local), event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
 					return;
 				}
 				// E10: ctrl/shift-click ADDS to the selection (never auto-applies); a
 				// plain click REPLACES it with the unit under the cursor. The heal
 				// flag is off for additive clicks — the heal would wipe the very
 				// selection they are adding to.
-				const additive = event.ctrlKey || event.shiftKey || event.metaKey || $faceEditMulti;
+				const additive = event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode || $faceEditMulti;
 				highlightFaceByTriangle(tri, !additive);
 				if (tri >= 0) {
 					if (additive) {
@@ -754,7 +870,8 @@
 			}
 			// 85: a click on nothing is also the way out of an isolation — the same
 			// "click the background to get back" instinct as deselecting.
-			if (!raycastSelect(event.shiftKey) && !event.shiftKey) {
+			const additive = event.shiftKey || $multiSelectMode;
+			if (!raycastSelect(additive) && !additive) {
 				if (isIsolated()) clearIsolation();
 				deselectObject();
 			}
@@ -1026,6 +1143,7 @@
 		});
 
 		return () => {
+			offEditResume(); // #20 P5
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
 			window.removeEventListener('pointerup', onPointerUp);

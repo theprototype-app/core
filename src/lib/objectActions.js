@@ -34,6 +34,35 @@ import {
 } from '../stores/appStore';
 import { canEditObject, warnViewerReadOnly } from './objectPermissions';
 import { stripEditOverlays } from './editOverlays';
+import {
+	duplicateCarriesAnimation,
+	duplicateCarriesFlow,
+	duplicateCarriesShader
+} from '../stores/appStore';
+
+// #20 P1: what a duplicate carries beyond the clone itself. PRIMED dynamic
+// imports (the moduleSDK precedent) — a static edge into either module closes a
+// cycle back through history, and both are resolved long before a user can
+// press Ctrl+D.
+/** @type {any} */ let animModule = null;
+/** @type {any} */ let graphModule = null;
+/** @type {any} */ let shaderModule = null;
+import('./animationPreview').then((m) => (animModule = m));
+import('./flowGraphs').then((m) => (graphModule = m));
+import('./shaderGraph').then((m) => (shaderModule = m));
+
+/**
+ * Copy the per-uuid state that BELONGS to an object onto its fresh clone.
+ * Initiator-only: each carrier broadcasts through its own existing message, so a
+ * peer that copied locally as well would double the work. Ordering on the wire
+ * does not matter — both stores are keyed by uuid and tolerate arriving first.
+ * @param {string} fromUuid @param {string} toUuid
+ */
+function carryObjectState(fromUuid, toUuid) {
+	if (get(duplicateCarriesAnimation)) animModule?.copyAnimationsTo(fromUuid, toUuid);
+	if (get(duplicateCarriesFlow)) graphModule?.copyGraphTo(fromUuid, toUuid);
+	if (get(duplicateCarriesShader)) shaderModule?.copyShaderGraphTo(fromUuid, toUuid);
+}
 
 // Shared object selection used by the object list, viewport clicks and VR rays.
 // Mirrors the original Objects.svelte behavior: selecting an unlocked object
@@ -376,6 +405,11 @@ export function duplicateObject(uuid, options = {}) {
 			name: clone.name,
 			pos: clone.position.toArray()
 		});
+
+	// after the clone exists and its uuid is known, and after the `duplicate`
+	// message so a peer has the object before its clips/graph arrive (not
+	// required — both stores tolerate either order — but it keeps a trace readable)
+	carryObjectState(source.uuid, clone.uuid);
 
 	if (options.select !== false) selectObject(clone.uuid);
 	recordObjectPresence('create', clone);

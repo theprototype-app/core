@@ -31,21 +31,35 @@
 <NodeWrapper type={data.type} label={data.label}>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<!-- 133: a value input handle per numeric param (Number/Math/... drive it) -->
-	<!-- B6: NAMED target sockets declared by the catalog spec (trigger, force,
-	     target…). Absent `inputs` means no sockets and no offset, so every node
-	     that had only param sockets is unchanged. -->
-	{#each spec?.inputs ?? [] as key, i}
-		<Socket kind="target" nodeType={data.type} position={Position.Left} id={key} style={`top: ${34 + i * 22}px`} />
-	{/each}
-	{#if spec?.params}
-		{#each spec.params.filter((pr: any) => pr.kind === 'range') as param, i}
-			<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style={`top: ${34 + (spec?.inputs?.length ?? 0) * 22 + i * 38}px`} />
-		{/each}
+	{#if !spec?.inputs}
+		{#if spec?.params}
+			{#each spec.params.filter((pr: any) => pr.kind === 'range') as param, i}
+				<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style={`top: ${34 + i * 38}px`} />
+			{/each}
+		{/if}
 	{/if}
 	<div class="flex w-full flex-col gap-1">
+		<!-- B6: NAMED sockets declared by the catalog spec (trigger, force, target…)
+		     as LABELLED ROWS, the ObjectFlowNode pattern: the handle sits in a
+		     relative wrapper whose `-mx-3 px-3` cancels the card padding, so the dot
+		     lands ON the card edge, centred on its own label. A bare dot at a
+		     computed offset said nothing about what to wire into it, and two stacks
+		     of absolute handles on one card stopped lining up with their rows. -->
+		{#each spec?.inputs ?? [] as key (key)}
+			<div class="relative -mx-3 flex h-5 items-center px-3">
+				<Socket kind="target" nodeType={data.type} position={Position.Left} id={key} style="top: 50%;" />
+				<span class="max-w-full truncate text-[10px] text-gray-300" title={key}>
+					{spec?.inputLabels?.[key] ?? key}
+				</span>
+			</div>
+		{/each}
 		{#if spec?.params}
 			{#each spec.params as param}
-				<label class="flex flex-col">
+				<label class="relative flex flex-col" class:-mx-3={!!spec?.inputs} class:px-3={!!spec?.inputs}>
+					{#if spec?.inputs && param.kind === 'range'}
+						<!-- the row owns its handle here, so it cannot drift from its label -->
+						<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style="top: 10px;" />
+					{/if}
 					<span class="flex justify-between">
 						<span>{param.key}</span>
 						{#if param.kind === 'range' && !wiredSource(param.key)}

@@ -9,7 +9,7 @@ import { particlePreset } from './particlePresets';
 
 /**
  * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle', min?: number, max?: number, step?: number, options?: string[] }} NodeParam
- * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[] }} NodeSpec
+ * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string> }} NodeSpec
  */
 
 /** @type {{ group: string, items: NodeSpec[] }[]} */
@@ -50,6 +50,7 @@ export const nodeCatalog = [
 				label: 'Measure',
 				defaults: { read: 'top' },
 				inputs: ['target'],
+				inputLabels: { target: 'target object' },
 				params: [{ key: 'read', kind: 'select', options: ['top', 'bottom', 'height', 'y', 'speed'] }]
 			}
 		]
@@ -292,6 +293,7 @@ export const nodeCatalog = [
 				label: 'Impulse',
 				defaults: { mode: 'impulse', space: 'world', x: 0, y: 5, z: 0 },
 				inputs: ['trigger', 'force', 'target'],
+				inputLabels: { force: 'force (or x/y/z below)', target: 'target object' },
 				params: [
 					{ key: 'mode', kind: 'select', options: ['impulse', 'torque'] },
 					{ key: 'space', kind: 'select', options: ['world', 'local'] },
@@ -308,6 +310,11 @@ export const nodeCatalog = [
 				label: 'Set Velocity',
 				defaults: { mode: 'once', x: 0, y: 0, z: 0 },
 				inputs: ['trigger', 'linear', 'angular', 'target'],
+				inputLabels: {
+					linear: 'linear (or x/y/z below)',
+					angular: 'angular',
+					target: 'target object'
+				},
 				params: [
 					{ key: 'mode', kind: 'select', options: ['once', 'continuous'] },
 					{ key: 'x', kind: 'range', min: -20, max: 20, step: 0.5 },
@@ -322,6 +329,9 @@ export const nodeCatalog = [
 				label: 'Joint',
 				defaults: { kind: 'revolute', axis: 'y', vel: 0, maxForce: 100 },
 				inputs: ['trigger', 'a', 'b'],
+				// the handle IDS stay a/b (the wire and the docs call them that); the CARD
+				// says which end of the joint each one is
+				inputLabels: { a: 'a — anchor', b: 'b — attached' },
 				params: [
 					{ key: 'kind', kind: 'select', options: ['revolute', 'weld'] },
 					{ key: 'axis', kind: 'select', options: ['x', 'y', 'z'] },

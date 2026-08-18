@@ -643,6 +643,53 @@ loadable play content. Everything a user does must be visible to connected peers
   InstancedMeshes, gizmo on an `isSplineProxy` for position, vertical drag on the
   amber dot for per-point radius, span-marker click inserts, right-click deletes;
   VR rides the GENERIC vrControls hook registries — no vrControls edits at all),
+  `noise` (21-C1, imports NOTHING: `hash2i`/`valueNoise2`/`fbm2`. VALUE noise with a
+  smoothstep polynomial, so every number comes out of `+ - * / Math.floor Math.imul`
+  and integer bit ops and there is NO TRANSCENDENTAL anywhere — IEEE-754 does not pin
+  sin/cos/exp/pow across JS engines, which is dungeon-realms' own rule and what makes
+  a terrain built from {seed, params} bit-exact on every peer. fbm normalises by the
+  amplitude sum, so `octaves` buys DETAIL and not height) + PROCEDURAL TERRAIN
+  (21-C1: `terrainGeometry` in customGeometries + a `Terrain` entry in
+  GEOMETRY_PARAMS carrying an optional **`build` HOOK**, which is the whole
+  replication story — the existing `{type:'geometry', uuid, gtype, params}` message
+  (~240 bytes), the `'geometry'` history kind and `userData.geometryParams` riding
+  toJSON + GLTF extras mean NO new message type, no new history kind, and a late
+  joiner rebuilding from the object's own stamp. A PlaneGeometry rotated flat then
+  displaced in Y ONLY, so `amplitude: 0` is byte-identical to the flat plane it used
+  to be, epsilons included — the loop is skipped, not fed zeros. Segments cap 48
+  because 18·seg² = 41,472 floats is under the 45,000 meshgeo LIVE-PREVIEW budget a
+  sculpt stroke streams (meshBudget raised the COMMIT ceiling, not that one); bigger
+  worlds TILE on a shared seed plus per-tile `offsetX/offsetZ`, which are PARAMS and
+  not a transform because a moved tile samples the noise in its own frame and seams.
+  `geometryParamsOf` reads `userData.terrain` BEFORE the `geometry.type` fallback and
+  DERIVES size/segments from the mesh — createGeometry bakes every custom builder
+  into a plain BufferGeometry so toJSON carries real vertices, which means the type
+  fallback resolved NOTHING and a terrain had no Geometry section at all) +
+  `terrainCarve` (21-C3, a leaf: THREE + splineTube. `carveAlongSpline` is PURE and
+  the CALLER commits — the uvUnwrap backend shape, which is what makes it
+  property-testable with no GL and no scene. Arc-length `getSpacedPoints` bucketed
+  into an XZ hash grid (cell = width/2 + shoulder) so each vertex tests O(1) samples,
+  with the sample count floored at two per reach: coarser than that and a vertex sits
+  between two samples, so its distance to the nearest SAMPLE overstates its distance
+  to the CURVE and the road grows unflattened bites. flatten/lower/raise, clearance,
+  and a curvature bank clamped to a quarter of the width. `splineInFrameOf` is
+  load-bearing: a spline's record lives in the SPLINE MESH's frame (finishSpline
+  re-seats it on the centroid), so carving the raw record flattens a strip at the
+  origin — a plausible road in the wrong place) + `roadGates` (21-C4, a leaf:
+  splineTube only. `checkpointsFor` samples with `getPointAt`, which is ARC-LENGTH
+  parameterised, so gates space along the TARMAC — measured, parameter spacing on an
+  uneven spline is 12.3x uneven. DERIVED, never authored: every peer computes the
+  identical list from the replicated `userData.spline` with ZERO messages, so moving a
+  control point moves the gates. `progressAlong`/`trackLap` are the authority half,
+  because GATES ALONE CANNOT COUNT A LAP — a lap needs the arc-length parameter to
+  WRAP with all four quadrant flags set, or reversing over the line farms crossings
+  (the animation loop-wrap lesson, one domain over)) + `roadActions` (21-C3/C4 THE
+  CALLER, and the only half that touches the scene, the wire, undo or a toast:
+  `carveRoadInto` commits ONE `commitMeshGeoSnapshot` — positions-only is right since
+  the vertex count never changes — and `createLapGates` emits REAL sensor boxes so the
+  EXISTING `onenter` + `counter` nodes give a wireable lap system with ZERO new node
+  types. Reached by a dynamic import from objectMenu's Road submenu, which keeps both
+  leaves out of history's import subtree),
   `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
   (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
   world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
@@ -1667,6 +1714,19 @@ loadable play content. Everything a user does must be visible to connected peers
 - Anything drawn with **`depthWrite: false` loses the postprocessing passes**: the
   outline and N8AO effects read the depth buffer, so the AO and selection edges of
   whatever sits BEHIND a non-depth-writing sprite get painted across its face.
+- **`toJSON` ALWAYS writes the vertex buffer, so "ship it parametric" does not make a
+  scene file small.** Measured on a 48-segment terrain tile in a `.tpscene` (which is
+  a zip): a PARAMETRIC, uncarved tile is 330.6 KB raw / **116.5 KB zipped**, and the
+  same tile CARVED is 142.5 KB raw / **32.9 KB zipped** — the carved one is 3.5x
+  SMALLER, because the carve goes through `applyMeshGeo`, which rebuilds the geometry
+  from Float32 positions whose numbers stringify shorter and compress better. The plan
+  had it backwards in both directions. The only route to a few-KB template is to ship
+  no geometry at all: `{geometryParams, spline}` is **220 bytes zipped per tile** (2.1
+  KB for ten) and a node re-runs `/create Terrain` + `applyGeometry` + the carve at
+  load, since all three are pure functions of those numbers.
+- **A CARVE is a mesh edit, so it LOCKS the parametric rows** (`applyMeshGeo` stamps
+  `faceEdited`) — which is correct and worth knowing before designing a flow around it:
+  after carving you cannot nudge the seed without Regenerate discarding the carve.
 - Grid/pattern FOLLOW must snap by the **section period** (`cell × sectionEvery`),
   not by one cell: a cell-step translation maps the thin lines onto themselves but
   hops every THICK line one cell per step (15-H13).

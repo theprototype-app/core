@@ -4,6 +4,7 @@
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { flowValues } from '../../../stores/flowStore';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	// Phase 133: a SEEDED random value in [min,max]. Seed = node id, so every
 	// peer computes the same number; an optional re-roll interval ticks on the
@@ -23,18 +24,15 @@
 		</div>
 		<label class="flex items-center gap-1">
 			<span class="w-12 text-gray-400">min</span>
-			<input class="nodrag w-full" type="number" step="0.1" value={data.min ?? 0}
-				on:change={(e) => setNodeData(id, { min: +e.currentTarget.value })} />
+			<DragRow nodrag step={0.01} decimals={2} value={data.min ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { min: v })} />
 		</label>
 		<label class="flex items-center gap-1">
 			<span class="w-12 text-gray-400">max</span>
-			<input class="nodrag w-full" type="number" step="0.1" value={data.max ?? 1}
-				on:change={(e) => setNodeData(id, { max: +e.currentTarget.value })} />
+			<DragRow nodrag step={0.01} decimals={2} value={data.max ?? 1} onchange={(/** @type {number} */ v) => setNodeData(id, { max: v })} />
 		</label>
 		<label class="flex items-center gap-1">
 			<span class="w-12 text-gray-400">every</span>
-			<input class="nodrag w-full" type="number" step="0.5" min="0" value={data.interval ?? 0}
-				on:change={(e) => setNodeData(id, { interval: +e.currentTarget.value })} />
+			<DragRow nodrag step={0.01} decimals={2} min={0} value={data.interval ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { interval: v })} />
 			<span class="text-gray-400">s</span>
 		</label>
 	</div>

@@ -16,6 +16,8 @@ import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
+// #20 P5: selection + edit session + panel layout, restored only on an EXPLICIT restore
+import { captureEditResume, applyEditResume } from './editResume';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
 // camera go to IndexedDB — debounced 30s after any change plus a 3-minute
@@ -143,6 +145,10 @@ async function saveSnapshot() {
 		// live, so it rides beside the snapshot — the same shape rigs and material
 		// arrays use, for the same reason
 		post: scenePostSnapshot(),
+		// #20 P5: the selection, any open edit session, and the panel LAYOUT. This is the
+		// path that makes Restore (and the auto-restore setting) bring your windows back,
+		// while a plain reload stays a clean slate.
+		workspace: captureEditResume(),
 		camera: camera
 			? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 			: null
@@ -317,6 +323,9 @@ async function applyRestore(snapshot) {
 		// the restored look replicates alongside the objects this function just
 		// re-broadcast, so a restore into a live room is consistent
 		scenePostRestore(snapshot.post, true);
+		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
+		// reload never reaches here, which is exactly the point.
+		if (snapshot.workspace) applyEditResume(snapshot.workspace);
 		/** @type {any} */
 		const camera = get(globalCamera);
 		/** @type {any} */

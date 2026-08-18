@@ -528,6 +528,33 @@ export function isShaderDriven(uuid) {
 }
 
 /**
+ * #20 P1 (duplicate parity): give `to` its OWN copy of `from`'s shader graph.
+ *
+ * Without this a duplicate keeps `detachMaterials`' clone of the COMPILED
+ * ShaderMaterial and no document — so the copy renders frozen (nothing ticks its
+ * uniforms) and the Inspector offers it no graph to edit. The same gap the clips
+ * and the flow graph had, found after the shader lane merged.
+ *
+ * Writes through the ONE path with `silent` (no history — the object's own create
+ * entry owns the copy's lifecycle, exactly as `copyAnimationsTo` argues) and then
+ * broadcasts by hand, because `silent` suppresses both. `scheduleCompile` runs
+ * either way, which is what installs the material on the clone.
+ * @param {string} fromUuid @param {string} toUuid
+ * @returns {boolean} true when a graph was copied
+ */
+export function copyShaderGraphTo(fromUuid, toUuid) {
+	if (!fromUuid || !toUuid || fromUuid === toUuid || toUuid === SCENE_GRAPH_KEY) return false;
+	const all = get(shaderGraphs);
+	// only an OWN graph is copied: an object inheriting the scene default already
+	// inherits it as the clone too, and copying would pin a private snapshot of it
+	if (!all[fromUuid] || all[toUuid]) return false;
+	const doc = structuredClone(normalizeShaderGraph(all[fromUuid]));
+	const after = setShaderGraphFor(toUuid, doc, { silent: true });
+	if (after && broadcastHook) broadcastHook(toUuid, /** @type {any} */ (after));
+	return !!after;
+}
+
+/**
  * Does this object have (or inherit) a graph AT ALL? `isShaderDriven` answers "is a
  * compiled material installed right now", which is false for a graph whose compile has
  * not run yet — so the Inspector needs this one to decide what to OFFER.

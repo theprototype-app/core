@@ -20,6 +20,7 @@
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
 	import ShaderTexturePicker from './ShaderTexturePicker.svelte';
 	import ShaderVectorInput from './ShaderVectorInput.svelte';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	let { id, data, type } = $props();
 
@@ -126,13 +127,14 @@
 						onend={endGesture}
 					/>
 				{:else if param.type === 'float'}
-					<input
-						type="number"
-						step="0.05"
+					<DragRow
+						nodrag
+						step={0.005}
+						decimals={3}
 						value={data?.[param.name] ?? param.default}
-						onpointerdown={startGesture}
-						onpointerup={endGesture}
-						oninput={(e) => writeParam(param.name, Number(e.currentTarget.value))}
+						onscrubstart={startGesture}
+						onscrubend={endGesture}
+						onchange={(/** @type {number} */ v) => writeParam(param.name, v)}
 					/>
 				{:else if param.type === 'enum'}
 					<select

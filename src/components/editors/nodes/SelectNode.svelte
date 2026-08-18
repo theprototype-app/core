@@ -4,6 +4,7 @@
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { flowValues } from '../../../stores/flowStore';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	// B4.6: Select — outputs `a` when index < 0.5, else `b`. Pairs with the
 	// switcher (which outputs an index) and compare/gate booleans; the only other
@@ -26,8 +27,7 @@
 		{#each [['index', 'idx'], ['a', 'a'], ['b', 'b']] as [key, label]}
 			<label class="flex items-center gap-1">
 				<span class="w-6 text-gray-400">{label}</span>
-				<input class="nodrag w-full" type="number" step="0.1" value={data[key] ?? 0}
-					on:change={(e) => setNodeData(id, { [key]: +e.currentTarget.value })} />
+				<DragRow nodrag step={0.01} decimals={2} value={data[key] ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { [key]: v })} />
 			</label>
 		{/each}
 	</div>

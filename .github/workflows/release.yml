@@ -22,7 +22,8 @@ jobs:
       # svelte-check exits non-zero at the legacy baseline; fail ONLY when the
       # counts grow past it (baseline 391 errors / 62 warnings, 2026-08-10 — 435 ->
       # 421 #15 C's one-way pickers -> 419 K's outline rework -> 417 B5's fixes ->
-      # 391 when 17-A moved piano/avatar/essentials/car out to the modules repo)
+      # 391 when 17-A moved piano/avatar/essentials/car out to the modules repo ->
+      # 388 when #20 annotated Scene's marqueeStart, which was three implicit-anys)
       - name: svelte-check baseline gate
         run: |
           npm run check 2>&1 | tee check.log || true
@@ -36,9 +37,9 @@ jobs:
             ERRORS=$(echo "$LINE" | awk '{print $2}')
             WARNINGS=$(echo "$LINE" | awk '{print $5}')
           fi
-          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 391/62)"
+          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 388/62)"
           if [ -z "$ERRORS" ]; then echo "could not parse svelte-check output"; exit 1; fi
-          if [ "$ERRORS" -gt 391 ] || [ "$WARNINGS" -gt 62 ]; then
+          if [ "$ERRORS" -gt 388 ] || [ "$WARNINGS" -gt 62 ]; then
             echo "baseline exceeded"; exit 1
           fi
       - name: zip the build

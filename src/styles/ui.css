@@ -251,3 +251,21 @@ dialog.tp-modal-frame::before {
 		padding-left: 62px !important;
 	}
 }
+
+/* #20: inline SHORTCUT and literal tokens in panel prose — a markdown `code` look.
+   An ELEMENT selector, deliberately: it redeclares no Tailwind utility name, so it
+   cannot beat one from outside a layer (the documented `.hidden` trap). One <kbd> per
+   token, chords included — `<kbd>Ctrl+Z</kbd>`, not three boxes and two plus signs,
+   which wrapped mid-chord and read as noise. */
+kbd {
+	display: inline-block;
+	padding: 0 4px;
+	border-radius: 4px;
+	border: 1px solid rgb(255 255 255 / 0.14);
+	background: rgb(0 0 0 / 0.3);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 0.85em;
+	line-height: 1.45;
+	white-space: nowrap;
+	color: inherit;
+}

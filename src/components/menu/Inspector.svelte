@@ -1731,6 +1731,7 @@
 						<DragRow
 							id="snap-translate"
 							value={$snapSettings.translate}
+							unit="length"
 							decimals={2}
 							min={0.01}
 							step={0.005}
@@ -1757,6 +1758,7 @@
 						<DragRow
 							id="snap-rotate"
 							value={$snapSettings.rotateDeg}
+							unit="angleDeg"
 							decimals={1}
 							min={0.1}
 							step={0.2}
@@ -2332,26 +2334,26 @@
 				<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
 					<span class="text-[11px] text-gray-400">{multiCount ? 'Origin' : 'Position'}</span>
 					<div id="inspector-position" class="grid grid-cols-3 gap-1">
-						<DragRow label="X" accent="text-red-400" step={0.02}
+						<DragRow label="X" accent="text-red-400" step={0.02} unit="length"
 							value={multiCount ? ($pivotPose?.pos?.[0] ?? 0) : $selectedObject.position.x}
 							onchange={(v) => setTransform('position', 'x', v)} />
-						<DragRow label="Y" accent="text-green-400" step={0.02}
+						<DragRow label="Y" accent="text-green-400" step={0.02} unit="length"
 							value={multiCount ? ($pivotPose?.pos?.[1] ?? 0) : $selectedObject.position.y}
 							onchange={(v) => setTransform('position', 'y', v)} />
-						<DragRow label="Z" accent="text-blue-400" step={0.02}
+						<DragRow label="Z" accent="text-blue-400" step={0.02} unit="length"
 							value={multiCount ? ($pivotPose?.pos?.[2] ?? 0) : $selectedObject.position.z}
 							onchange={(v) => setTransform('position', 'z', v)} />
 					</div>
 					{#if !isLight && !$pivotOnly}
 						<span class="text-[11px] text-gray-400">Rotation</span>
 						<div id="inspector-rotation" class="grid grid-cols-3 gap-1">
-							<DragRow label="X" accent="text-red-400" step={0.01} snap={RAD_SNAP}
+							<DragRow label="X" accent="text-red-400" step={0.01} snap={RAD_SNAP} unit="angle"
 								value={multiCount ? ($pivotPose?.rot?.[0] ?? 0) : $selectedObject.rotation.x}
 								onchange={(v) => setTransform('rotation', 'x', v)} />
-							<DragRow label="Y" accent="text-green-400" step={0.01} snap={RAD_SNAP}
+							<DragRow label="Y" accent="text-green-400" step={0.01} snap={RAD_SNAP} unit="angle"
 								value={multiCount ? ($pivotPose?.rot?.[1] ?? 0) : $selectedObject.rotation.y}
 								onchange={(v) => setTransform('rotation', 'y', v)} />
-							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={RAD_SNAP}
+							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={RAD_SNAP} unit="angle"
 								value={multiCount ? ($pivotPose?.rot?.[2] ?? 0) : $selectedObject.rotation.z}
 								onchange={(v) => setTransform('rotation', 'z', v)} />
 						</div>
@@ -2399,11 +2401,11 @@
 						<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
 							<span class="text-[11px] text-gray-400">World</span>
 							<div id="inspector-origin" class="grid grid-cols-3 gap-1">
-								<DragRow label="X" accent="text-red-400" step={0.02} value={originPos[0]}
+								<DragRow label="X" accent="text-red-400" step={0.02} unit="length" value={originPos[0]}
 									onchange={(v) => setOriginAxis('x', v)} />
-								<DragRow label="Y" accent="text-green-400" step={0.02} value={originPos[1]}
+								<DragRow label="Y" accent="text-green-400" step={0.02} unit="length" value={originPos[1]}
 									onchange={(v) => setOriginAxis('y', v)} />
-								<DragRow label="Z" accent="text-blue-400" step={0.02} value={originPos[2]}
+								<DragRow label="Z" accent="text-blue-400" step={0.02} unit="length" value={originPos[2]}
 									onchange={(v) => setOriginAxis('z', v)} />
 							</div>
 						</div>

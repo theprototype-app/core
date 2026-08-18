@@ -43,8 +43,10 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import ShaderNode from './nodes/ShaderNode.svelte';
 	import ShaderSidebar from './ShaderSidebar.svelte';
+	import GraphTree from './GraphTree.svelte';
 	import ShaderTexturePicker from './nodes/ShaderTexturePicker.svelte';
 	import ShaderVectorInput from './nodes/ShaderVectorInput.svelte';
+	import DragRow from '../ui/DragRow.svelte';
 
 	const nodeTypes = Object.fromEntries(shaderNodeDefs().map((def) => [def.key, ShaderNode]));
 	const catalog = shaderNodeDefs().filter((def) => def.key !== SURFACE_NODE);
@@ -71,6 +73,8 @@
 	let propsOpen = $state(LS?.getItem('shaderPropsOpen') !== 'false');
 	let paletteOpen = $state(LS?.getItem('shaderPaletteOpen') !== 'false');
 	let propsTab = $state(LS?.getItem('shaderPropsTab') || 'settings');
+	// #20 P7: the left column's own height, measured — the graph tree's resize ceiling
+	let paletteColH = $state(0);
 	let edgeStyle = $state(LS?.getItem('shaderEdgeStyle') ?? 'bezier');
 	let bgPattern = $state(LS?.getItem('shaderBg') ?? 'dots');
 	let showMinimap = $state(LS?.getItem('shaderMinimap') === 'true');
@@ -386,8 +390,18 @@
 
 		<div class="shader-body">
 			{#if paletteOpen}
-				<div class="shader-side shader-side-left">
-					<ShaderSidebar onPick={addNodeAtCentre} />
+				<div class="shader-side shader-side-left" bind:clientHeight={paletteColH}>
+					<!-- #20 P7: the graph navigator sits ABOVE the palette in the same pane -->
+					<GraphTree
+						kind="shader"
+						documents={$shaderGraphs}
+						sceneKey={SCENE_GRAPH_KEY}
+						label="Shaders"
+						paneHeight={paletteColH}
+					/>
+					<div class="shader-side-scroll">
+						<ShaderSidebar onPick={addNodeAtCentre} />
+					</div>
 				</div>
 			{/if}
 			<button
@@ -517,13 +531,13 @@
 											onend={() => endShaderGesture(scope)}
 										/>
 									{:else if param.type === 'float'}
-										<input
-											type="number"
-											step="0.05"
+										<DragRow
+											step={0.005}
+											decimals={3}
 											value={selectedNode.data?.[param.name] ?? param.default}
-											onpointerdown={() => beginShaderGesture(scope)}
-											onpointerup={() => endShaderGesture(scope)}
-											oninput={(e) => writeSelectedParam(param.name, Number(e.currentTarget.value))}
+											onscrubstart={() => beginShaderGesture(scope)}
+											onscrubend={() => endShaderGesture(scope)}
+											onchange={(/** @type {number} */ v) => writeSelectedParam(param.name, v)}
 										/>
 									{:else if param.type === 'enum'}
 										<select
@@ -661,6 +675,16 @@
 	}
 	.shader-side-left {
 		border-right: 1px solid rgba(255, 255, 255, 0.07);
+		/* #20 P7: the tree is a fixed-height section and the palette scrolls under it,
+		   so the COLUMN owns the layout and the palette owns the scrolling */
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.shader-side-scroll {
+		min-height: 0;
+		flex: 1 1 auto;
+		overflow-y: auto;
 	}
 	.shader-side-right {
 		flex-basis: 172px;
@@ -748,8 +772,7 @@
 		color: #d1d5db;
 	}
 	.shader-field input[type='text'],
-	.shader-field input[type='number'],
-	.shader-field select {
+		.shader-field select {
 		width: 88px;
 		background: rgba(0, 0, 0, 0.35);
 		border: 1px solid rgba(255, 255, 255, 0.15);

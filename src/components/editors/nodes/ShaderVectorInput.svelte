@@ -10,6 +10,8 @@
 	//
 	// A colour is still a colour: those params carry a '#rrggbb' STRING and keep the
 	// picker, which is why the caller branches on the value's type rather than on vec3.
+	import DragRow from '../../ui/DragRow.svelte';
+
 	let { value = [], size = 2, onchange, onstart, onend } = $props();
 
 	const LABELS = ['x', 'y', 'z', 'w'];
@@ -24,7 +26,7 @@
 
 	const parts = $derived(asNumbers(value));
 
-	/** @param {number} index @param {string} raw */
+	/** @param {number} index @param {number} raw */
 	function write(index, raw) {
 		const next = [...parts];
 		const n = Number(raw);
@@ -37,14 +39,15 @@
 	{#each parts as part, i (i)}
 		<label class="shader-vec-part" title={LABELS[i]}>
 			<span aria-hidden="true">{LABELS[i]}</span>
-			<input
-				type="number"
-				step="0.05"
-				aria-label={LABELS[i]}
+			<DragRow
+				nodrag
+				step={0.005}
+				decimals={3}
+				ariaLabel={LABELS[i]}
 				value={part}
-				onpointerdown={() => onstart?.()}
-				onpointerup={() => onend?.()}
-				oninput={(e) => write(i, e.currentTarget.value)}
+				onscrubstart={() => onstart?.()}
+				onscrubend={() => onend?.()}
+				onchange={(/** @type {number} */ v) => write(i, v)}
 			/>
 		</label>
 	{/each}
@@ -66,10 +69,14 @@
 		font-size: 8px;
 		color: #6b7280;
 	}
-	/* narrow enough that three of them still fit a ~150px node card */
-	.shader-vec-part :global(input),
-	.shader-vec-part input {
-		width: 34px;
+	/* narrow enough that three of them still fit a ~150px node card. DragRow adds
+	   its own border + padding, so the FIELD is narrower than the old bare input. */
+	.shader-vec-part :global(.dn-wrap) {
+		padding: 0 2px;
+		flex: 0 0 auto;
+	}
+	.shader-vec-part :global(input) {
+		width: 28px;
 		min-width: 0;
 	}
 </style>

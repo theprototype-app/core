@@ -87,9 +87,33 @@ export function compilePostStack(entries, ctx) {
 			passes.push(made[0]);
 			plan.push({ type: 'pass', kinds: group.entries.map((/** @type {any} */ e) => e.kind) });
 		} else {
-			// THE MERGE: one EffectPass for the whole consecutive run of Effects
-			passes.push(new EffectPass(ctx.camera, ...made));
-			plan.push({ type: 'effects', kinds: group.entries.map((/** @type {any} */ e) => e.kind) });
+			// THE MERGE: one EffectPass for the whole consecutive run of Effects.
+			//
+			// Guarded for the same reason `make` is, and #20 P6 is why it needed to be: a
+			// `make` that RETURNS successfully can still return something that is not an
+			// Effect (a module author's honest mistake — an object literal, a Material, a
+			// promise), and postprocessing only finds out inside the EffectPass
+			// constructor. Unguarded, that throw escapes into Outline's $effect and takes
+			// the whole viewport down for one bad entry, which is exactly the outcome the
+			// `make` guard exists to prevent.
+			try {
+				passes.push(new EffectPass(ctx.camera, ...made));
+				plan.push({ type: 'effects', kinds: group.entries.map((/** @type {any} */ e) => e.kind) });
+			} catch (error) {
+				console.warn(
+					'post effect group failed to build a pass: ' +
+						group.entries.map((/** @type {any} */ e) => e.kind).join(', '),
+					error
+				);
+				// drop the instances this group contributed — nothing owns them now, and
+				// leaving them in would have `disposePostStack` free objects the composer
+				// never took
+				for (const object of made) {
+					const at = instances.findIndex((entry) => entry.object === object);
+					if (at >= 0) instances.splice(at, 1);
+				}
+				for (const entry of group.entries) skipped.push(entry);
+			}
 		}
 	}
 	return { passes, instances, skipped, plan };

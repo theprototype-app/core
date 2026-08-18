@@ -10,6 +10,7 @@
 	import Controls from './menu/Controls.svelte';
 	import Inspector from './menu/Inspector.svelte';
 	import MenuSidebar from './menu/Sidebar.svelte';
+	import TouchTools from './menu/TouchTools.svelte';
 	import MenuSettings from './menu/Settings.svelte';
 	import SessionsManager from './menu/SessionsManager.svelte';
 	import TemplatesModal from './menu/TemplatesModal.svelte';
@@ -47,6 +48,7 @@
 <Controls />
 <Inspector />
 <MenuSidebar />
+<TouchTools />
 <MenuSettings />
 <SessionsManager />
 <TemplatesModal />

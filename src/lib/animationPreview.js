@@ -2046,6 +2046,34 @@ export function animationsRestore(saved, replicate = false) {
 // clearSceneLocal, so broadcasting here would be a second delete. Deleting one
 // OBJECT deliberately keeps its animation (undo needs it) — the serializer prunes.
 
+/**
+ * #20 P1 (duplicate parity): give `to` its OWN copy of `from`'s authored clips.
+ * A duplicate is a working copy of everything that belongs to the object, and the
+ * clips are keyed by uuid in their own store, so a clone otherwise has none.
+ *
+ * Deliberately NOT a history entry of its own: the object's `create` presence
+ * entry already owns the copy's lifecycle, and a second entry would make one
+ * Ctrl+Z undo the clips while leaving the object standing. Deleting an object
+ * keeps its animation for exactly the same reason (the serializer prunes), so an
+ * undo->redo of the duplicate finds these clips intact.
+ *
+ * Called on the INITIATOR only — `animdata` carries it to peers, which must not
+ * copy locally or the work would double.
+ * @param {string} fromUuid @param {string} toUuid
+ * @returns {boolean} true when something was copied
+ */
+export function copyAnimationsTo(fromUuid, toUuid) {
+	if (!fromUuid || !toUuid || fromUuid === toUuid) return false;
+	const set = normalizeAnimSet(get(animations)[fromUuid]);
+	if (!set || !Object.keys(set.clips).length) return false;
+	// clip ids are per object, so they can stay as they are
+	const copy = normalizeAnimSet(structuredClone(set));
+	if (!copy) return false;
+	animations.update((map) => ({ ...map, [toUuid]: { ...copy, changedAt: Date.now() } }));
+	broadcastAnim(toUuid);
+	return true;
+}
+
 /** Forget an object's animation (scene wipe). @param {string} uuid */
 export function dropAnimation(uuid) {
 	stop(uuid);

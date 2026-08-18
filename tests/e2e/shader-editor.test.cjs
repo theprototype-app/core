@@ -344,8 +344,27 @@ h.run(async () => {
 		vecCount === 4,
 		'a node with two vec2 params renders FOUR number fields (x/y each), not a text box: ' + vecCount
 	);
-	const firstType = await vecInputs.first().getAttribute('type');
-	h.check(firstType === 'number', 'and they are real number inputs: ' + firstType);
+	// #20 P2 made these DragRows, THE numeric field, and DragRow is `type="text"` ON
+	// PURPOSE — the native number spinner fights its own arrow-key steps. The contract
+	// this check defends is "a NUMERIC field per component, not the generic text fallback
+	// that rendered the array as 1,1 and wrote that string back", so it now asserts the
+	// things that actually carry it: a DragRow wrapper and a decimal inputmode (which is
+	// also what gives touch a numeric keypad).
+	const vecShape = await page.evaluate(() => {
+		const first = document.querySelector('#shader-editor .shader-vec input');
+		return {
+			inDragRow: !!first?.closest('.dn-wrap'),
+			inputmode: first?.getAttribute('inputmode') ?? null,
+			// and it must be a scrub-safe field inside an xyflow card
+			nodrag: !!first?.closest('.dn-wrap.nodrag')
+		};
+	});
+	h.check(vecShape.inDragRow, 'each component is a DragRow, the app-wide numeric field');
+	h.check(
+		vecShape.inputmode === 'decimal',
+		'with a decimal inputmode, so it is numeric and touch gets a number pad: ' + vecShape.inputmode
+	);
+	h.check(vecShape.nodrag, 'and carries nodrag, so scrubbing it cannot drag the node card');
 
 	// type into the first component and check what the DOCUMENT stores
 	await vecInputs.first().fill('3');

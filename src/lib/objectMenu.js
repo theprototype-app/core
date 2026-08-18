@@ -16,6 +16,12 @@ import {
 	selectionUuids
 } from './objectActions';
 import { requestControl, nameOf } from './lockControl';
+
+/** 21-C3: the terrains a road could be carved into. Keyed off userData.terrain,
+ * the same creation-time marker geometryParamsOf resolves through. */
+function terrainsInScene() {
+	return (get(objectsGroup)?.children ?? []).filter((/** @type {any} */ o) => o?.userData?.terrain);
+}
 import { createJoint, detachJoints, jointsFor } from './joints';
 import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
@@ -223,6 +229,23 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					disabled: locked,
 					tooltip: locked ? lockedTooltip : 'Move control points, set thickness, insert or delete points',
 					action: () => import('./splineEdit').then((m) => m.enterSplineEdit(uuid))
+				},
+				// 21-C3: what a spline is FOR once it is a road. The carve is a pure function
+				// of (terrain params, spline) committed as ONE meshgeo, so moving a control
+				// point and carving again is the whole authoring loop.
+				{
+					label: 'Road',
+					icon: 'route',
+					children: [
+						...terrainsInScene().map((/** @type {any} */ terrain) => ({
+							label: `Carve into ${terrain.name || 'Terrain'}`,
+							tooltip: 'Flatten a road bed along this spline — one undoable geometry commit',
+							action: () => import('./roadActions').then((m) => m.carveRoadInto(uuid, terrain.uuid))
+						})),
+						...(terrainsInScene().length
+							? []
+							: [{ label: 'Carve into terrain', disabled: true, tooltip: 'No terrain in the scene — add one with Add ▸ Terrain' }])
+					]
 				}
 			]),
 		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh

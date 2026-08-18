@@ -2481,6 +2481,37 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-19): **ROADMAP #21-A IS COMPLETE — A6+A7 (PR #152) and A8 (PR #153)
+  merged to `release/next` @f289f79**, closing the batch #149/#150 opened. Both phases were
+  already IMPLEMENTED on their lanes when this session went looking, so the work was
+  LANDING them: merge `origin/release/next` in, re-gate at the new 387/62, run their suites,
+  PR. **A6** (`feat/21-scene-data-games`, with A7 + 21-C's C5, which A7's game cards read):
+  a `.tpscene` now carries the scene's LOOK and RULES — environment/physics/music/hud/
+  modules, each null-when-default and OMITTED rather than written as null, so a plain
+  scene's session.json is byte-identical to a pre-A6 one and `SESSION_FORMAT` stays 1;
+  `moduleRequirements.js` derives the needed modules from what the scene USES (walk
+  allNodes -> moduleNodeGroups) in the handshake's own `{id,version}` shape; the import
+  prompt runs before any restore loop so a cancel mutates nothing; and A6.4's
+  `UnknownNode` + ONE rewrite of Nodes.svelte's type map fixed three bugs at once (a
+  NON-REACTIVE `get(moduleNodeGroups)` read, so a module installed after the dock mounted
+  rendered as xyflow's bare card — which broke the GOOD case and is exactly what a game
+  template does; module types spread LAST, so a module silently SHADOWED a core type; and
+  no explanation for a type nothing defines). **A8** was CHERRY-PICKED out of the 21-B
+  stack onto its own branch (`feat/21-a8-post-play-mode`) so 21-A could close without
+  waiting on 21-B: the composer mounts in play mode, both editor outlines stand DOWN while
+  playing, and with no stack passes and no outlines there is nothing to composite so the
+  frame goes DIRECT (which also restores the renderer's own tone mapping — the composer
+  path is measurably where it stops applying). Suites: session-scene-data, template-modules,
+  flow-unknown-node, templates-modal, post-play-mode (pixel: 921600 changed pixels, 0 off
+  the effect's fill), plus hud-persist/hud-nodes/game-state re-run because the merge
+  touched Nodes.svelte/sessions/autosave. Baseline **387/62**, build green. THE MERGE
+  RESOLUTION worth remembering: sessions/autosave/App.svelte were pure unions, but
+  `Nodes.svelte` was a REAL merge — A6.4 had restructured the very map 21-D extended, so
+  the HUD/game types fold into `CORE_NODE_TYPES` and 21-D's `...moduleTypes` spread is
+  DROPPED from it, because A6.4 moved that spread out on purpose and leaving it would
+  restore the shadowing bug. What is left of roadmap 21: **21-B** (`feat/21-physics-play`,
+  actively in flight elsewhere), **21-C** (C1-C4 on `feat/21-terrain-road`; C6-C9 unstarted
+  and living in the modules/scenes repos).
 - Status (2026-08-18, latest): **ROADMAP #21-D — HUD INTERACTION + THE GAME SHELL,
   ALL EIGHT PHASES EXECUTED AND MERGED — PR #151 to `release/next` @af62820** (after
   #149 and #150 landed 21-A). Branch `feat/21d-hud-interaction` off `feat/21-hud`, worktree

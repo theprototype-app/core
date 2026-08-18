@@ -904,6 +904,15 @@ loadable play content. Everything a user does must be visible to connected peers
   base material's own IN THE SAME CHANNEL (letting each pick its own dominant channel
   compares a base's blue against a shader's red), and neutralise the base colour at
   setup — that took one metric from a 20-38 spread to a stable 82.3.
+- **Two things a planned optimisation was FOR can already be true.** SH6b specified
+  compile-once-and-clone-per-object for scene-wide shader graphs, to make three's program
+  cache dedupe. Measured: **0.73-0.88 ms per object** for the whole compile-and-install
+  (24 objects in 17-21 ms), programs already **22 -> 23 for 24 objects** because
+  `customProgramCacheKey` hashes the injected code, and per-object base colours already
+  survive *because* each object gets its own `base.clone()`. Sharing one material would
+  have saved under a millisecond while introducing the colour flattening the plan itself
+  warned about. Declined on evidence and the number kept as an assertion (the
+  chunked-meshgeo precedent, where a protocol was nearly built for a phantom).
 - **A CACHE that nothing pokes is invisible to every derived.** `applyMaterial` installed
   a compiled shader material without `objectsGroup.update(v=>v)`, and THREE trees are not
   reactive — so the Inspector's shader-driven notice never appeared and its own
@@ -2154,6 +2163,15 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-18, later): **SH6b CLOSED BY MEASUREMENT** — `shader-scene-default`
+  (17 checks) covers the scene default at 24 objects and records why the planned
+  compile-once-and-clone is NOT built: 0.73-0.88 ms per object, programs already deduped
+  22 -> 23, per-object base colours already preserved by the per-object clone. The rest of
+  SH6b (the reserved 'scene' key, `graphKeyFor`, `defaultTargetsFor`, own-graph precedence,
+  delete-detaches-everything) was in place from SH1 and is now covered end to end.
+  Branch `feat/shader-graph-spike` = 21 commits, baseline 391/62. What is left is NOT
+  shader-graph work: the POST domain is layer 1 in `scene-look-post-processing.md`.
+  OWED: the user's feel pass, then merge release/next in and PR.
 - Status (2026-08-18): **SHADER GRAPHS — SH5/SH6/SH7 + the node MANUAL** (same lane,
   4 commits `7da4c2d`/`9c34e5b`/`1bf9e28`/+docs, plus a docs-repo commit `92ba71e`).
   The Texture node gained a portaled HOVER CARD (scaled preview, full name, dimensions,

@@ -39,7 +39,10 @@ Material section + its guards + the context-menu entry), `shader-module-flow` (t
 module backend seam via `moduleSDK.initModules` with an INLINE module — the real api
 path, no zip needed — plus the Set Shader Uniform node), `shader-node-docs` (no
 browser: every node has a manual line, none merely restates its label, and the
-docs-site tables carry the SAME text), `shader-compile` (the graph->IR compiler, NO
+docs-site tables carry the SAME text), `shader-scene-default` (the SCENE graph over 24
+objects — it also CARRIES THE MEASUREMENT that declined SH6b's compile-once
+optimisation, so a change making scene-wide compiles expensive turns it red),
+`shader-compile` (the graph->IR compiler, NO
 browser — it imports the ESM directly), `shader-graph` (the store/compile/install
 pipeline), `shader-sync` (replication + history, three peers), `shader-editor` (the
 dock tab, driving the real UI) and `shader-persist` (all four save paths, including a

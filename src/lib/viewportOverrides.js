@@ -79,3 +79,19 @@ export function setRenderLayer(key, on) {
 export function viewportOverridesDebug() {
 	return { ...get(viewportOverrides) };
 }
+
+/**
+ * 21-A A8: run the post stack in VR. OFF by default and deliberately so — the
+ * composer's passes target canvas-sized buffers, not the XR framebuffer, so
+ * blitting them mismatches sizes and nothing reaches the headset (a dark
+ * viewport, with no error). This is the opt-in for a device where it works,
+ * not a promise that it does. LOCAL, like every other override here.
+ */
+export const vrPostEnabled = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('vrPostEnabled') === 'true'
+);
+vrPostEnabled.subscribe((value) => {
+	try {
+		localStorage.setItem('vrPostEnabled', String(value));
+	} catch {}
+});

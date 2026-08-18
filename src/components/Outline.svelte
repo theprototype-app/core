@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { objectsGroup, selectedObjects, lockedObjects, viewMode, TControls } from '../stores/sceneStore.js';
+	import { objectsGroup, selectedObjects, lockedObjects, viewMode, TControls, isLocked } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
 	import { chromiumMajor, postSupported } from '$lib/viewMode';
@@ -296,10 +296,24 @@
 			// (GL_INVALID_FRAMEBUFFER_OPERATION) and nothing reaches the headset (dark
 			// viewport). Render the scene DIRECTLY through the XR cameras while presenting;
 			// the composer (AO/outline) takes over again on the desktop.
-			if (renderer.xr.isPresenting) renderer.render(scene, camera.current);
+			// A8: with no stack passes AND both outlines stood down (play mode), the
+			// composer would render the scene into a target and blit it back
+			// unchanged — a full-screen copy per frame for nothing. Render straight
+			// to the canvas instead, which also gives play mode the renderer's own
+			// tone mapping back (the composer path is where it stops applying).
+			const nothingToCompose =
+				stackPasses.length === 0 &&
+				outlineEffectSelected?.selection.size === 0 &&
+				outlineEffectLocked?.selection.size === 0;
+			// the warm-up counts FRAMES, not composer frames. Counting only composed
+			// ones deadlocks the moment the direct path exists: nothing to compose ->
+			// no composer frame -> postWarm never flips -> effectivePostStack stays
+			// empty -> still nothing to compose. Measured as a stack that could never
+			// compile a pass in play mode.
+			if (!postWarm && ++warmupFrames > 10) postWarm = true;
+			if (renderer.xr.isPresenting || nothingToCompose) renderer.render(scene, camera.current);
 			else {
 				composer.render(delta);
-				if (!postWarm && ++warmupFrames > 10) postWarm = true;
 				renderPip();
 			}
 		},
@@ -368,10 +382,15 @@
 		// on top of the geometry) and hides exactly what you are selecting. The
 		// Display section of the mesh toolbox turns it back on.
 		const editing = !!($editingObject || $faceEditObject) && !$meshEditOutline;
-		if ($objectsGroup && !editing)
+		// A8: both outline passes stand down in PLAY mode. They are editor
+		// information — who has what selected, what a peer has locked — and in play
+		// mode they are glare over the thing you are playing with, which is the same
+		// argument the mesh-edit session already makes one line up.
+		const playing = $isLocked;
+		if ($objectsGroup && !editing && !playing)
 			for (const uuid of $selectedObjects) addMeshes(outlineEffectSelected.selection, uuid);
-		if ($lockedObjects && $objectsGroup) {
-			outlineEffectLocked.selection.clear();
+		outlineEffectLocked.selection.clear();
+		if ($lockedObjects && $objectsGroup && !playing) {
 			for (let i = 0; i < $lockedObjects.length; i++)
 				addMeshes(outlineEffectLocked.selection, $lockedObjects[i][1]);
 		}
@@ -399,6 +418,8 @@
 					return index >= 0 ? 'stack:' + (stackPlan[index]?.kinds ?? []).join('+') : 'other';
 				}),
 				composerPasses: ((composer as any).passes ?? []).length,
+				outlinedSelected: outlineEffectSelected?.selection.size ?? 0,
+				outlinedLocked: outlineEffectLocked?.selection.size ?? 0,
 				stackPasses: stackPasses.length,
 				plan: stackPlan,
 				skipped: stackSkipped.map((entry: any) => entry.kind),

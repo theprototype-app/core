@@ -5,6 +5,7 @@ import { objectsGroup } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
+import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
 import { runScript } from './scriptRuntime';
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
@@ -996,8 +997,23 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// the embedded node exposes the target flow's outputs as named handles,
 			// computed at the END of the previous tick (one-frame latency)
 			return { __handles: graphOutputs[d.flowUuid] ?? {} };
-		default:
-			return undefined;
+		default: {
+			// A1: a module VALUE node. Pure function of (data, time) — the script-node
+			// rule — so every peer computes the same value from the replicated node data
+			// and the shared clock, and nothing is sent. The PATH-based `seen` guard in
+			// evalNode already covers cycles through it.
+			if (!moduleValueNodes[node.type]) return undefined;
+			// resolve the module's DECLARED inputs the way a core node resolves its own,
+			// so data.<handle> is the wired value when wired and the node's param when not
+			const data = { ...d };
+			const declared = moduleNodeInputs[node.type];
+			if (declared)
+				for (const handle of Object.keys(declared)) data[handle] = input(handle, d[handle]);
+			return evalModuleValueNode(node.type, data, time, {
+				id: node.id,
+				graphId: node.__graph ?? SCENE_GRAPH
+			});
+		}
 	}
 }
 
@@ -1013,7 +1029,14 @@ export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 		if (edge.target !== node.id || !edge.targetHandle) return;
 		const source = allNodes.find((n) => n.id === edge.source);
 		if (!source) return;
-		if (!valueTypes.includes(source.type) && !sourceValueTypes.includes(source.type)) return;
+		// A1: a module value node is a third kind of source — without this a module
+		// value could never reach a consumer's named input, only a card readout
+		if (
+			!valueTypes.includes(source.type) &&
+			!sourceValueTypes.includes(source.type) &&
+			!moduleValueNodes[source.type]
+		)
+			return;
 		const value = unwrapHandle(evalNode(source, allNodes, allEdges, time, new Set(), ctx), edge);
 		if (value !== undefined) data[edge.targetHandle] = value;
 	});
@@ -1159,6 +1182,27 @@ export function fireAnimMarker(uuid, name) {
 	});
 }
 
+/**
+ * A1: a module fired one of its own EVENT nodes. `fireObjectClick`'s body with the
+ * target filter swapped for a caller-supplied match, ending in the same replicated
+ * applyNodeTrigger — a module event is a real event on ONE peer, not a derivation,
+ * so it replicates exactly like a click and every peer computes the identical pulse
+ * from the shared stamp.
+ * @param {string} type the module's node type
+ * @param {(data: any, id: string) => boolean} [match] which instances fire (all when absent)
+ * @returns {number} how many nodes were pulsed
+ */
+export function fireModuleTrigger(type, match) {
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== type) return;
+		if (typeof match === 'function' && !match(node.data ?? {}, node.id)) return;
+		applyNodeTrigger(node.id, syncedNow(), true);
+		fired++;
+	});
+	return fired;
+}
+
 export function fireObjectClick(uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
@@ -1245,7 +1289,13 @@ function applyAnimation(object, base, anim, time, ctx) {
 	}
 	if (moduleEffects[anim.type]) {
 		try {
-			moduleEffects[anim.type](object, base, data, time);
+			// A1: the 5th arg is ADDITIVE — every shipped module takes four params and
+			// stays byte-unchanged; a new one can learn its own node id and graph, which
+			// is what lets one module host several instances of the same node type.
+			moduleEffects[anim.type](object, base, data, time, {
+				id: anim.id,
+				graphId: anim.__graph ?? SCENE_GRAPH
+			});
 		} catch (error) {
 			console.log('module effect ' + anim.type + ' failed', error);
 		}
@@ -1539,7 +1589,11 @@ function runTick(now) {
 		const values = {};
 		for (const node of nodes) {
 			// H5: objectflow returns a handle MAP, not a scalar — no card readout
-			if (valueTypes.includes(node.type) && node.type !== 'objectflow')
+			// A1: a module value node gets the same on-card live readout for free
+			if (
+				(valueTypes.includes(node.type) || moduleValueNodes[node.type]) &&
+				node.type !== 'objectflow'
+			)
 				values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}
 		flowValues.set(values);

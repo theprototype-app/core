@@ -339,6 +339,32 @@ h.run(async () => {
 	await pointer(page, 'pointerup');
 	await page.evaluate(() => window.__stores.lockedObjects.set([]));
 
+	// with NO simulation there is no body to hold, so a grab is inert — which is
+	// what bounds the blast radius of shipping 'grab' as the default: in an
+	// ordinary shared scene nobody is simulating until someone presses P
+	await sp(page, 'sp.setScenePhysics({ play: { interaction: "grab" } })');
+	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await placeInFront(page, ids.crate, 3);
+	await page.waitForTimeout(500);
+	const aimNoSim = await page.evaluate(() => {
+		let value = null;
+		window.__stores.playInteract.playInteractState.subscribe((v) => (value = v))();
+		return value;
+	});
+	await pointer(page, 'pointerdown');
+	await page.waitForTimeout(300);
+	h.check(
+		(await play(page, 'return pi.playInteractDebug()')).carrying === null,
+		'5.4 with no simulation running the grab is INERT (nothing to hold)'
+	);
+	h.check(
+		aimNoSim.mode !== 'aiming',
+		'5.5 ...and the crosshair does not even offer it (' + aimNoSim.mode + ')'
+	);
+	await pointer(page, 'pointerup');
+	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.waitForTimeout(600);
+
 	// interaction: 'off'
 	await sp(page, 'sp.setScenePhysics({ play: { interaction: "off" } })');
 	await page.waitForTimeout(300);
@@ -346,7 +372,7 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	h.check(
 		(await play(page, 'return pi.playInteractDebug()')).carrying === null,
-		'5.3 interaction "off" disables the grab entirely'
+		'5.6 interaction "off" disables the grab entirely'
 	);
 	await pointer(page, 'pointerup');
 

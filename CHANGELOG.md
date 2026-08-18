@@ -5,6 +5,62 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.6.0 — Measure twice 📐
+
+Numbers you can drag and type in your own units, copies that bring their behaviour
+with them, a workspace that comes back when you ask for it, and a proper way to
+select more than one thing — including on a phone.
+
+### 📐 Units
+
+- 📏 **Work in cm, mm, inches or feet.** Settings ▸ Scene ▸ Units picks how
+  distances and angles are shown — positions, snapping steps, bevel widths,
+  rotations. The scene itself is unchanged underneath; this is how you read it.
+- ⌨️ **Or just type the unit.** `12cm`, `4in`, `1.5ft`, `2'`, `6"`, `90deg`,
+  `1.57rad` — any numeric field takes a suffix and converts it, whichever unit is
+  currently on display.
+
+### 🖱️ One numeric field, everywhere
+
+- 🎚️ **Drag to scrub, type to set** in node editor cards, shader nodes and the
+  animation window — the same control the properties panel already had, with
+  <kbd>Ctrl</kbd>/<kbd>Shift</kbd> for bigger and smaller steps and <kbd>Esc</kbd>
+  to put it back.
+- ↩️ **Scrubbing an animation key or a shader value is ONE undo step**, not one per
+  pixel.
+
+### 📋 Duplicate brings its behaviour
+
+- 🧬 **A copy gets its own animation clips, object flow and shader graph.** Duplicate
+  an animated, flow-driven, shader-driven object and the copy plays, runs and renders
+  on its own — a copy of a shader-driven object used to come out frozen. Each carrier
+  can be switched off in Settings ▸ Scene ▸ Duplicate.
+
+### 👆 Selecting more than one thing
+
+- 🔲 **Box-select mesh vertices, edges and faces.** Hold <kbd>Shift</kbd> or
+  <kbd>Ctrl</kbd> and drag inside Edit Mesh — the same gesture that boxes objects in
+  the viewport now boxes elements, in all three modes.
+- 📱 **Touch tools.** Round Undo, Redo and Multi-select buttons beside the logo, on
+  by default on phones. With Multi-select on, a tap ADDS to the selection and a drag
+  on empty space boxes — for objects and for mesh elements, no keyboard needed.
+
+### 🗂️ Your workspace, when you ask for it
+
+- 🪟 **Restore brings your windows back.** Restoring a session — or loading a scene
+  file — reopens the panels you had open and reselects what you had selected, and
+  resumes an open Edit Mesh or Sculpt session with the elements you had picked. A
+  plain page reload still starts clean.
+- 🌳 **A Graphs list in the node and shader editors.** The objects that actually have
+  a flow or a shader, with Scene at the root — click one to jump to its graph. Drag
+  the bar under it to give the list more room.
+
+### 🛠️ Also
+
+- 🎨 Modules can add their own post-processing effects and shader compilers.
+- 🧹 Settings descriptions read as sentences again instead of one word per line.
+
+
 ## 1.5.0 — Move it, properly 🎬
 
 Animation you can trust: movements play from where the object actually is, pause

@@ -325,6 +325,33 @@ enableShiftAdd.subscribe((on) => {
  * pure navigation, with no card in the way. LOCAL pref, OFF by default so the
  * click behaviour everyone already knows is unchanged.
  */
+// #20 P1: what a duplicate CARRIES. A duplicate is a working copy of everything
+// that belongs to the object (the DCC convention: Blender copies the action,
+// Maya copies the inputs), so both default ON — these exist because the user
+// asked for an opt-out, not because sharing is the sane default. LOCAL prefs:
+// what MY copy command does is not scene data.
+export const duplicateCarriesAnimation = writable(
+	typeof localStorage === 'undefined' ||
+		localStorage.getItem('duplicateCarriesAnimation') !== 'false'
+);
+duplicateCarriesAnimation.subscribe((on) => {
+	if (typeof localStorage !== 'undefined')
+		localStorage.setItem('duplicateCarriesAnimation', String(on));
+});
+export const duplicateCarriesFlow = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('duplicateCarriesFlow') !== 'false'
+);
+duplicateCarriesFlow.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('duplicateCarriesFlow', String(on));
+});
+export const duplicateCarriesShader = writable(
+	typeof localStorage === 'undefined' || localStorage.getItem('duplicateCarriesShader') !== 'false'
+);
+duplicateCarriesShader.subscribe((on) => {
+	if (typeof localStorage !== 'undefined')
+		localStorage.setItem('duplicateCarriesShader', String(on));
+});
+
 export const noteDoubleClickToOpen = writable(
 	typeof localStorage !== 'undefined' && localStorage.getItem('noteDoubleClickToOpen') === 'true'
 );

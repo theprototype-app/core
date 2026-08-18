@@ -15,7 +15,9 @@ import {
 	createFlowEdge,
 	deleteFlowNodes,
 	deleteFlowEdges,
-	updateFlowNodeData
+	updateFlowNodeData,
+	serializeNode,
+	serializeEdge
 } from './nodesHandler';
 
 // H1 (flow v2): object-flow lifecycle -- create/delete graph documents,
@@ -43,6 +45,69 @@ export function createObjectGraph(uuid, opts = {}) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (replicate && peer) peer.send({ type: 'graphcreate', uuid });
+}
+
+/**
+ * #20 P1 (duplicate parity): give `to` its OWN copy of `from`'s flow document.
+ *
+ * Node ids are REGENERATED (a node id is global to the app, not scoped to its
+ * graph) and the edges remap onto them, rebuilding each edge id in the editor's
+ * handle-qualified format — a divergent id breaks peer dedupe (the AI flow
+ * tools carry the same note).
+ *
+ * An embedded `objectflow` node keeps pointing at the object it referenced.
+ * Re-pointing it at the copy is a user decision, and leaving the reference alone
+ * is the safe default.
+ *
+ * Not a history entry of its own, for the reason `copyAnimationsTo` documents:
+ * the object's create entry owns the lifecycle, and a deleted object keeps its
+ * graph so undo->redo finds it (serializeGraphs prunes at output only).
+ *
+ * Replication reuses the pair the 'flowgraph' undo path already sends —
+ * `graphcreate` then a whole-document `nodes` — so there is no new wire type.
+ * @param {string} fromUuid @param {string} toUuid
+ * @returns {boolean} true when a graph was copied
+ */
+export function copyGraphTo(fromUuid, toUuid) {
+	if (!fromUuid || !toUuid || fromUuid === toUuid || toUuid === SCENE_GRAPH) return false;
+	const graph = graphOf(fromUuid);
+	if (!graph || (!graph.nodes.length && !graph.edges.length)) return false;
+	if (graphExists(toUuid)) return false; // a fresh clone never has one; never clobber
+
+	/** @type {Record<string, string>} old node id -> new */
+	const idMap = {};
+	const nodes = graph.nodes.map((/** @type {any} */ node) => {
+		const id = crypto.randomUUID();
+		idMap[node.id] = id;
+		return { ...node, id, position: { ...node.position }, data: { ...node.data } };
+	});
+	const edges = graph.edges
+		.map((/** @type {any} */ edge) => {
+			const source = idMap[edge.source];
+			const target = idMap[edge.target];
+			if (!source || !target) return null; // an edge to a node we did not copy
+			return {
+				...edge,
+				id:
+					'e-' + source + (edge.sourceHandle ? '.' + edge.sourceHandle : '') +
+					'-' + target + (edge.targetHandle ? '.' + edge.targetHandle : ''),
+				source,
+				target
+			};
+		})
+		.filter(Boolean);
+
+	updateGraph(toUuid, () => ({ nodes, edges }));
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) {
+		peer.send({ type: 'graphcreate', uuid: toUuid });
+		peer.send({
+			type: 'nodes',
+			graphs: { [toUuid]: { nodes: nodes.map(serializeNode), edges: edges.map(serializeEdge) } }
+		});
+	}
+	return true;
 }
 
 /** @param {string} uuid @param {{replicate?: boolean, record?: boolean}} [opts] */

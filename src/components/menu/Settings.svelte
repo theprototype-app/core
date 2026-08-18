@@ -5,7 +5,7 @@
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -737,6 +737,24 @@
 							/>
 						</svelte:fragment>
 						What a double-click on an object does in the viewport. A single click always just selects it; <kbd>Ctrl</kbd>+<kbd>A</kbd> selects everything
+					</SettingRow>
+					<p class="ui-section-label">Duplicate</p>
+					<SettingRow name="Carry animation clips">
+						<svelte:fragment slot="control"><Toggle bind:checked={$duplicateCarriesAnimation} /></svelte:fragment>
+						A duplicate gets its own copy of the object's animation clips, so the copy plays
+						independently. Off leaves the copy unanimated
+					</SettingRow>
+					<SettingRow name="Carry object flow">
+						<svelte:fragment slot="control"><Toggle bind:checked={$duplicateCarriesFlow} /></svelte:fragment>
+						A duplicate gets its own copy of the object's flow graph, with fresh node ids. An
+						embedded Object Flow node keeps pointing at the object it referenced — re-aiming it at
+						the copy is your call. Off leaves the copy without a graph
+					</SettingRow>
+					<SettingRow name="Carry shader graph">
+						<svelte:fragment slot="control"><Toggle bind:checked={$duplicateCarriesShader} /></svelte:fragment>
+						A duplicate of a shader-driven object gets its own copy of the graph. Off leaves the copy
+						with a frozen snapshot of the compiled material and nothing to edit. An object inheriting
+						the scene default keeps inheriting it either way
 					</SettingRow>
 					<p class="ui-section-label">Wireframe &amp; outline</p>
 					<SettingRow name="Wireframe color">

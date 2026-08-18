@@ -48,8 +48,13 @@ export const HUD_ANCHORS = [
 export const HUD_KINDS = REGISTERED_KINDS;
 
 /**
+ * The fields below are the ones EVERY kind has. The rest are PER KIND and declared in
+ * `hudKinds.js` (a bar's min/max, an image's src, an input's shared flag), so the type is
+ * deliberately open - a closed type would have to list the whole registry here and would
+ * go stale the first time a kind is added, which is the drift the registry exists to stop.
  * @typedef {{id: string, kind: string, anchor: string, x: number, y: number, w: number,
- *   h: number, z: number, label: string, bind?: string, style?: any, at?: number}} HudElement
+ *   h: number, z: number, label: string, bind?: string, style?: any, at?: number,
+ *   [key: string]: any}} HudElement
  * @typedef {{id: string, name: string, showWhile: string, elements: HudElement[]}} HudScreen
  * @typedef {{screens: HudScreen[], active: string, changedAt: number}} HudDoc
  */
@@ -98,6 +103,100 @@ if (typeof localStorage !== 'undefined')
  * every peer computes the same thing from the same data (golden rule 8, deterministic).
  * @type {import('svelte/store').Writable<Record<string, any>>} */
 export const hudRuntime = writable({});
+
+// ---- 21-D4: INPUT VALUES -------------------------------------------------------
+//
+// What a slider/toggle/dropdown/text field currently HOLDS. This is a THIRD kind of state
+// beside the authored document and the derived runtime, and it needed to be, because it is
+// neither: it is authored by the PLAYER, at play time, and it is not derivable from
+// anything already replicated.
+//
+// LOCAL BY DEFAULT, and that default is the whole design. A volume slider is mine; a
+// difficulty setting is the host's. Making everything shared would mean my own volume
+// changed everyone else's - the failure nobody would file as a sync bug, because it looks
+// like the feature working. So the element carries a `shared` flag and only those values
+// leave this machine.
+//
+// The shared half is latest-wins PER ELEMENT with a MONOTONIC stamp, the hudDocs rule one
+// level down: two peers dragging the same slider inside one millisecond would otherwise
+// have every write after the first dropped.
+/** @type {import('svelte/store').Writable<Record<string, any>>} */
+export const hudValues = writable({});
+
+/** per-element stamps for the SHARED entries only; a local value needs no ordering */
+/** @type {Record<string, number>} */
+const valueStamps = {};
+
+/** @type {((id: string, value: any, at: number) => void)|null} */
+let valueBroadcastHook = null;
+
+/** hudSync fills this; hudDocs stays a leaf. @param {(id: string, value: any, at: number) => void} fn */
+export function registerHudValueBroadcast(fn) {
+	valueBroadcastHook = fn;
+	return () => {
+		if (valueBroadcastHook === fn) valueBroadcastHook = null;
+	};
+}
+
+/** @param {string} id @param {any} fallback */
+export function hudValueOf(id, fallback = undefined) {
+	const key = String(id ?? '').trim();
+	if (!key) return fallback;
+	const held = get(hudValues)[key];
+	return held === undefined ? fallback : held;
+}
+
+/**
+ * The ONE write path for an input's value (the setHudDocFor precedent).
+ * @param {string} id @param {any} value
+ * @param {{shared?: boolean, silent?: boolean, at?: number}} [opts] `silent` = an applier,
+ *   which must not echo; `at` carries a remote stamp.
+ */
+export function setHudValue(id, value, opts = {}) {
+	const key = String(id ?? '').trim();
+	if (!key) return;
+	if (opts.at !== undefined) {
+		// REFUSE only a STRICTLY older write: an ordered DataConnection means an equal stamp
+		// arrived later, so it wins (the hudDocs / shaderGraph rule).
+		const held = valueStamps[key] ?? 0;
+		if (opts.at < held) return;
+		valueStamps[key] = opts.at;
+	} else if (opts.shared) {
+		valueStamps[key] = Math.max(Date.now(), (valueStamps[key] ?? 0) + 1);
+	}
+	hudValues.update((all) => (all[key] === value ? all : { ...all, [key]: value }));
+	if (opts.shared && !opts.silent) valueBroadcastHook?.(key, value, valueStamps[key]);
+}
+
+/** Everything a late joiner needs: the SHARED values only, with their stamps. Local values
+ * are nobody else's business, which is the point of the flag. */
+export function sharedHudValues() {
+	const all = get(hudValues);
+	/** @type {Record<string, {value: any, at: number}>} */
+	const out = {};
+	for (const [id, at] of Object.entries(valueStamps)) out[id] = { value: all[id], at };
+	return out;
+}
+
+/** @param {Record<string, {value: any, at: number}>} map */
+export function applyHudValues(map) {
+	for (const [id, entry] of Object.entries(map ?? {}))
+		setHudValue(id, entry?.value, { at: Number(entry?.at) || 1, silent: true });
+}
+
+/** Session/autosave restore and leaveSession: a value is play-time state, so a fresh scene
+ * starts from the AUTHORED defaults rather than inheriting the last game's. */
+export function clearHudValues() {
+	for (const k of Object.keys(valueStamps)) delete valueStamps[k];
+	hudValues.set({});
+}
+
+/** The value an element STARTS from, before anyone touches it: its authored `value`. Kept
+ * here so the renderer, the flow node and a reset all agree. @param {any} el */
+export function startValueOf(el) {
+	if (!el) return undefined;
+	return el.value;
+}
 
 let elementSeq = 0;
 
@@ -490,6 +589,10 @@ export function hudDocsRestore(map, replace = false, replicate = false) {
 		hudDocs.set({});
 		hudScreenOverride.set({});
 		hudSelection.set({});
+		// 21-D4: input values are PLAY-TIME state, not scene data - a loaded scene starts
+		// from its authored defaults rather than inheriting the last game's settings, which
+		// is also why they are not in the snapshot.
+		clearHudValues();
 	}
 	if (!map || typeof map !== 'object') return;
 	const stamp = Date.now();

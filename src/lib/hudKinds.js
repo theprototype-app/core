@@ -189,6 +189,99 @@ export const HUD_KIND_DEFS = [
 			{ key: 'dot', kind: 'toggle', label: 'centre dot' }
 		],
 		style: [STYLE.color, STYLE.opacity]
+	},
+	// ---- 21-D4: the INPUTS. A HUD with no input cannot be a settings menu, and the four
+	// below are what a menu is made of. Each HOLDS A VALUE, which is the new thing: an
+	// element that is read as well as rendered.
+	//
+	// The value is LOCAL per peer by default and `shared` promotes it. That default is the
+	// interesting decision and it is deliberate: a volume slider is mine, a difficulty
+	// setting is the host's, and the wrong default is the one that makes my own volume
+	// change everyone else's. The flag is per element, so one menu can hold both.
+	{
+		key: 'slider',
+		label: 'Slider',
+		group: 'Input',
+		icon: 'sliders-horizontal',
+		interactive: true,
+		valued: true,
+		defaultSize: { w: 220, h: 28 },
+		summary: 'Drag for a number. Read it with a HUD Input node.',
+		defaults: { label: '', min: 0, max: 100, step: 1, value: 50, shared: false, enabled: true },
+		styleDefaults: { size: 12, color: '#e5e7eb' },
+		fields: [
+			{ key: 'label', kind: 'text', label: 'label', placeholder: '(none)' },
+			{ key: 'min', kind: 'number', label: 'min', step: 1 },
+			{ key: 'max', kind: 'number', label: 'max', step: 1 },
+			{ key: 'step', kind: 'number', label: 'step', min: 0, step: 0.01 },
+			{ key: 'value', kind: 'number', label: 'start value', step: 1, hint: 'Where it sits before anyone touches it.' },
+			{ key: 'enabled', kind: 'toggle', label: 'enabled' },
+		{ key: 'shared', kind: 'toggle', label: 'shared', hint: 'OFF: this value is yours alone (a volume slider). ON: every peer sees the same value (a host setting).' }
+		],
+		style: [...TEXT_STYLE, STYLE.bg, STYLE.radius]
+	},
+	{
+		key: 'toggle',
+		label: 'Toggle',
+		group: 'Input',
+		icon: 'toggle-left',
+		interactive: true,
+		valued: true,
+		defaultSize: { w: 180, h: 28 },
+		summary: 'On or off. Reads as 1 or 0 through a HUD Input node.',
+		defaults: { label: 'Toggle', value: false, shared: false, enabled: true },
+		styleDefaults: { size: 13, color: '#e5e7eb' },
+		fields: [
+			{ key: 'label', kind: 'text', label: 'label', placeholder: 'Toggle' },
+			{ key: 'value', kind: 'toggle', label: 'starts on' },
+			{ key: 'enabled', kind: 'toggle', label: 'enabled' },
+		{ key: 'shared', kind: 'toggle', label: 'shared', hint: 'OFF: this value is yours alone (a volume slider). ON: every peer sees the same value (a host setting).' }
+		],
+		style: [...TEXT_STYLE, STYLE.bg, STYLE.radius, STYLE.pad]
+	},
+	{
+		key: 'dropdown',
+		label: 'Dropdown',
+		group: 'Input',
+		icon: 'chevron-down',
+		interactive: true,
+		valued: true,
+		defaultSize: { w: 200, h: 30 },
+		summary: 'One of a list. A HUD Input node reads its INDEX, or its text.',
+		// options as ONE comma-separated string: a document field has to survive
+		// normalize/replicate/undo, and a list of short words is exactly what a text field
+		// is good at (the `text` param kind commits on change, never per keystroke)
+		defaults: { label: '', options: 'Easy, Normal, Hard', value: 'Normal', shared: false, enabled: true },
+		styleDefaults: { size: 13, color: '#e5e7eb', bg: 'rgb(17 24 39 / 0.72)', radius: 4, pad: 4 },
+		fields: [
+			{ key: 'label', kind: 'text', label: 'label', placeholder: '(none)' },
+			{ key: 'options', kind: 'text', label: 'options', placeholder: 'One, Two, Three', hint: 'Comma separated.' },
+			{ key: 'value', kind: 'text', label: 'start value' },
+			{ key: 'enabled', kind: 'toggle', label: 'enabled' },
+		{ key: 'shared', kind: 'toggle', label: 'shared', hint: 'OFF: this value is yours alone (a volume slider). ON: every peer sees the same value (a host setting).' }
+		],
+		style: [...TEXT_STYLE, STYLE.bg, STYLE.border, STYLE.radius, STYLE.pad]
+	},
+	{
+		key: 'textfield',
+		label: 'Text field',
+		group: 'Input',
+		icon: 'type',
+		interactive: true,
+		valued: true,
+		defaultSize: { w: 220, h: 30 },
+		summary: 'Typed text - a player name, a room code. Commits on Enter or blur.',
+		defaults: { label: '', value: '', placeholder: 'type here', maxLength: 64, shared: false, enabled: true },
+		styleDefaults: { size: 13, color: '#e5e7eb', bg: 'rgb(17 24 39 / 0.72)', border: 'rgb(75 85 99 / 0.7)', radius: 4, pad: 4 },
+		fields: [
+			{ key: 'label', kind: 'text', label: 'label', placeholder: '(none)' },
+			{ key: 'value', kind: 'text', label: 'start text' },
+			{ key: 'placeholder', kind: 'text', label: 'placeholder' },
+			{ key: 'maxLength', kind: 'number', label: 'max length', min: 1, max: 512, step: 1 },
+			{ key: 'enabled', kind: 'toggle', label: 'enabled' },
+		{ key: 'shared', kind: 'toggle', label: 'shared', hint: 'OFF: this value is yours alone (a volume slider). ON: every peer sees the same value (a host setting).' }
+		],
+		style: [...TEXT_STYLE, STYLE.bg, STYLE.border, STYLE.radius, STYLE.pad]
 	}
 ];
 

@@ -188,6 +188,30 @@ export const nodeCatalog = [
 					{ key: 'title', kind: 'text', placeholder: 'optional title', maxLength: 80 },
 					{ key: 'rows', kind: 'range', min: 1, max: 20, step: 1 }
 				]
+			},
+			// 21-D4: the INPUT pair. Everything else in this group WRITES to the HUD;
+			// these are the direction that did not exist - the HUD as a SOURCE.
+			//
+			// `read` is what a graph wants from one control: a slider gives a number, a
+			// dropdown gives its index (for a Switcher) or its text, a toggle gives 1/0.
+			// Deriving all of them from one field beats four node types.
+			{
+				type: 'hudinput',
+				label: 'HUD Input',
+				defaults: { element: '', read: 'value', fallback: 0 },
+				params: [
+					{ key: 'read', kind: 'select', options: ['value', 'index', 'text', 'on'] },
+					{ key: 'fallback', kind: 'range', min: -1000, max: 1000, step: 1 }
+				]
+			},
+			// the other direction: a graph MOVES a control (a Reset button putting the
+			// volume back, a difficulty the host sets). Effect in, so it fires on a
+			// trigger edge rather than every frame.
+			{
+				type: 'hudset',
+				label: 'HUD Set Input',
+				defaults: { element: '', value: 0 },
+				params: [{ key: 'value', kind: 'range', min: -1000, max: 1000, step: 1 }]
 			}
 		]
 	},

@@ -30,6 +30,10 @@ const OUTPUT = {
 	// the effect channel.
 	hudbutton: 'event',
 	hudtimer: 'number',
+	// 21-D4: the HUD as a SOURCE. `read` decides what the number MEANS (a slider's
+	// value, a dropdown's index, a toggle as 1/0) but the socket is a number either
+	// way, so one type covers all four input kinds.
+	hudinput: 'number',
 	// 21-D6 game shell: the event half and the two readable ones
 	ongamestate: 'event',
 	getvariable: 'number',
@@ -72,6 +76,8 @@ const INPUT = {
 	hudscreen: { trigger: 'event' },
 	hudtimer: { start: 'event', duration: 'number' },
 	hudlist: { trigger: 'event' },
+	hudinput: {},
+	hudset: { trigger: 'event', value: 'number' },
 	// 21-D6: every game ACTION is driven by an event, and takes its value wired or typed
 	setgamestate: { trigger: 'event' },
 	setcamera: { trigger: 'event', camera: 'object' },

@@ -29,7 +29,11 @@ import {
 	setHudDocFor,
 	normalizeHudDoc,
 	registerHudBroadcast,
-	registerHudHistory
+	registerHudHistory,
+	registerHudValueBroadcast,
+	setHudValue,
+	sharedHudValues,
+	applyHudValues
 } from './hudDocs';
 
 /** @param {any} doc */
@@ -108,6 +112,51 @@ export function applyRemoteHuds(data) {
 	for (const [key, doc] of Object.entries(huds)) applyRemoteHud({ key, doc });
 }
 
+// ---- 21-D4: the SHARED INPUT VALUE channel -------------------------------------
+//
+// The one runtime message this whole HUD line adds, and it exists because a player-set
+// value is the one piece of HUD state that is NOT derivable from the replicated graph: a
+// peer cannot compute what I dragged. Only elements flagged `shared` travel.
+//
+// PER ELEMENT rather than whole-map: unlike a document (one author, whole-doc, gesture
+// collapsed) these are touched by DIFFERENT PEOPLE AT ONCE - that is what a settings menu
+// in a shared session is - so each carries its own monotonic stamp and latest-wins alone.
+
+/** @param {string} id @param {any} value @param {number} at */
+function broadcastValue(id, value, at) {
+	/** @type {any} */
+	const peer = get(peers);
+	peer?.send({ type: 'hudvalue', id, value, at });
+}
+
+/** @param {any} data */
+export function applyRemoteHudValue(data) {
+	const id = String(data?.id ?? '').trim();
+	if (!id) return;
+	// `silent`, or the applier echoes it straight back and two peers ping-pong
+	setHudValue(id, data.value, { at: Number(data.at) || 1, silent: true });
+}
+
+/** Full-state reply for a late joiner (golden rule 3), retried until the conn is OPEN.
+ * @param {string} peerId @param {number} [tries] */
+export function sendHudValues(peerId, tries = 0) {
+	/** @type {any} */
+	const peer = get(peers);
+	const conn = peer?.peer?.connections?.[peerId]?.[0];
+	const values = sharedHudValues();
+	if (!Object.keys(values).length) return;
+	if (!conn || !conn.open) {
+		if (tries < 20) setTimeout(() => sendHudValues(peerId, tries + 1), 250);
+		return;
+	}
+	conn.send({ type: 'hudvalues', values });
+}
+
+/** @param {any} data */
+export function applyRemoteHudValues(data) {
+	applyHudValues(data?.values ?? {});
+}
+
 // ---- history --------------------------------------------------------------------
 
 // A drag writes many times a second; ONE undo step should cover the whole gesture (the
@@ -167,6 +216,7 @@ export function startHudSync() {
 			broadcast(key, doc);
 		})
 	);
+	disposers.push(registerHudValueBroadcast(broadcastValue));
 	disposers.push(
 		registerHudHistory((key, before, after) => {
 			// inside a gesture the entry is deferred to endHudGesture

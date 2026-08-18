@@ -161,6 +161,8 @@
 		hudbutton: HudNode,
 		hudtimer: HudNode,
 		hudlist: HudNode,
+		hudinput: HudNode,
+		hudset: HudNode,
 		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
 		// setcamera/gamestart get their own card for the camera picker (see GameNode).
 		setgamestate: AnimationNode,

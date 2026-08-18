@@ -14,6 +14,7 @@
 	// always wins through `runtime`. So a bar with `value: 40` previews in the editor AND is
 	// the runtime fallback; it is not a second source of truth.
 	import { hudImageFor, resolveHudImage, registerHudImageListener } from '$lib/hudImages';
+	import { hudValues, setHudValue } from '$lib/hudDocs';
 	import { onDestroy } from 'svelte';
 
 	/** @type {{ element: any, runtime?: any, editor?: boolean, onpress?: (id: string) => void }} */
@@ -54,6 +55,29 @@
 	const pct = $derived(max - min > 1e-9 ? Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100)) : 0);
 	const rows = $derived(Array.isArray(runtime?.rows) ? runtime.rows : []);
 	const vertical = $derived(element?.orientation === 'vertical');
+
+	// ---- 21-D4: the INPUT kinds -----------------------------------------------------
+	// An input holds a value that the PLAYER set, which is neither authored document nor
+	// derived runtime — so it lives in `hudValues`, local unless the element says shared.
+	// Read order: what the player set -> what a node drives -> what the author set. The
+	// player comes first on purpose: once you have moved a slider, a node's fallback
+	// must not pull it back.
+	const held = $derived($hudValues[element?.id]);
+	const inputValue = $derived(held !== undefined ? held : (runtime?.value ?? element?.value));
+	const optionList = $derived(
+		String(element?.options ?? '')
+			.split(',')
+			.map((o) => o.trim())
+			.filter(Boolean)
+	);
+	const editable = $derived(!editor && element?.enabled !== false);
+
+	/** The ONE write. In the EDITOR it is inert: dragging a slider while laying out a
+	 *  menu must not set the game's difficulty. @param {any} next */
+	function write(next) {
+		if (!editable) return;
+		setHudValue(element.id, next, { shared: !!element?.shared });
+	}
 
 	// ---- 21-D1: the image kind ------------------------------------------------------
 	// A hash landing is not a store write and `hudImageFor` is a plain Map read, so a
@@ -144,6 +168,75 @@
 			<span class="hud-cross-dot" style="background: {paint(style.color, '#f3f4f6')}; width: {Number(element?.thickness ?? 2)}px; height: {Number(element?.thickness ?? 2)}px"></span>
 		{/if}
 	</div>
+{:else if kind === 'slider'}
+	<!-- like the button, an input opts INTO pointer events; the layer is pointer-events:
+	     none so the viewport keeps every click it does not want. -->
+	<div class="hud-el hud-input" style={boxStyle}>
+		{#if element?.label}<span class="hud-in-label">{element.label}</span>{/if}
+		<input
+			class="hud-in-range"
+			type="range"
+			min={element?.min ?? 0}
+			max={element?.max ?? 100}
+			step={element?.step || 1}
+			value={Number(inputValue ?? 0)}
+			disabled={!editable}
+			tabindex={editor ? -1 : 0}
+			aria-label={element?.label || 'slider'}
+			oninput={(/** @type {any} */ e) => write(Number(e.currentTarget.value))}
+		/>
+		<span class="hud-in-read">{Number(inputValue ?? 0)}</span>
+	</div>
+{:else if kind === 'toggle'}
+	<button
+		class="hud-el hud-toggle"
+		class:hud-toggle-on={!!inputValue}
+		style={boxStyle}
+		disabled={!editable}
+		tabindex={editor ? -1 : 0}
+		aria-pressed={!!inputValue}
+		onclick={(e) => {
+			e.stopPropagation();
+			write(!inputValue);
+		}}
+	>
+		<span class="hud-toggle-box" aria-hidden="true"></span>
+		<span class="hud-in-label">{element?.label ?? ''}</span>
+	</button>
+{:else if kind === 'dropdown'}
+	<div class="hud-el hud-input" style={boxStyle}>
+		{#if element?.label}<span class="hud-in-label">{element.label}</span>{/if}
+		<select
+			class="hud-in-select"
+			value={String(inputValue ?? '')}
+			disabled={!editable}
+			tabindex={editor ? -1 : 0}
+			aria-label={element?.label || 'dropdown'}
+			onchange={(/** @type {any} */ e) => write(e.currentTarget.value)}
+		>
+			{#each optionList as option (option)}
+				<option value={option}>{option}</option>
+			{/each}
+		</select>
+	</div>
+{:else if kind === 'textfield'}
+	<div class="hud-el hud-input" style={boxStyle}>
+		{#if element?.label}<span class="hud-in-label">{element.label}</span>{/if}
+		<!-- COMMITS on change/blur, never per keystroke: a shared value would otherwise
+		     broadcast a message per letter, and the `text` node param kind made the same
+		     call for the same reason. -->
+		<input
+			class="hud-in-text"
+			type="text"
+			value={String(inputValue ?? '')}
+			placeholder={element?.placeholder ?? ''}
+			maxlength={element?.maxLength ?? 64}
+			disabled={!editable}
+			tabindex={editor ? -1 : 0}
+			aria-label={element?.label || 'text field'}
+			onchange={(/** @type {any} */ e) => write(e.currentTarget.value)}
+		/>
+	</div>
 {:else if kind === 'image'}
 	<!-- the src is an Explorer content HASH resolved to an object URL, never an embedded
 	     dataURL: a document replicates WHOLE on every edit, so an inline image would
@@ -160,6 +253,58 @@
 {/if}
 
 <style>
+	.hud-input {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		pointer-events: auto;
+	}
+	.hud-in-label {
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
+	.hud-in-range {
+		min-width: 0;
+		flex: 1;
+		accent-color: var(--accent, #38bdf8);
+	}
+	.hud-in-read {
+		flex-shrink: 0;
+		min-width: 2.5em;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.8;
+	}
+	.hud-in-select,
+	.hud-in-text {
+		min-width: 0;
+		flex: 1;
+		border: 0;
+		border-radius: 3px;
+		background: rgb(0 0 0 / 0.25);
+		color: inherit;
+		font: inherit;
+		padding: 1px 4px;
+	}
+	.hud-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		pointer-events: auto;
+	}
+	.hud-toggle-box {
+		flex-shrink: 0;
+		width: 1.1em;
+		height: 1.1em;
+		border: 1px solid currentColor;
+		border-radius: 3px;
+		opacity: 0.7;
+	}
+	.hud-toggle-on .hud-toggle-box {
+		background: var(--accent, #38bdf8);
+		border-color: var(--accent, #38bdf8);
+		opacity: 1;
+	}
 	.hud-el {
 		box-sizing: border-box;
 		width: 100%;

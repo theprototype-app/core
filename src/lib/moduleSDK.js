@@ -172,11 +172,17 @@ function makeApi(moduleId) {
 		 * @param {Record<string, any>=} components
 		 */
 		registerNodeGroup(group, components) {
+			// A6: TAG each item with its module, the way registerPrimitive already
+			// does — moduleRequirements() answers "which modules does this scene
+			// need" by walking the graphs' node types back to their owner, and an
+			// untagged item makes that underivable. Tagged copies are built ONCE so
+			// the onDispose filter below can still match them by identity.
+			const items = group.items.map((/** @type {any} */ item) => ({ ...item, moduleId }));
 			moduleNodeGroups.update((list) => {
 				const existing = list.find((g) => g.group === group.group);
 				if (existing)
-					return list.map((g) => (g === existing ? { ...g, items: [...g.items, ...group.items] } : g));
-				return [...list, group];
+					return list.map((g) => (g === existing ? { ...g, items: [...g.items, ...items] } : g));
+				return [...list, { ...group, items }];
 			});
 			if (components) Object.assign(moduleNodeComponents, components);
 			onDispose(() => {
@@ -184,7 +190,7 @@ function makeApi(moduleId) {
 					list
 						.map((g) =>
 							g.group === group.group
-								? { ...g, items: g.items.filter((/** @type {any} */ item) => !group.items.includes(item)) }
+								? { ...g, items: g.items.filter((/** @type {any} */ item) => !items.includes(item)) }
 								: g
 						)
 						.filter((g) => g.items.length > 0)

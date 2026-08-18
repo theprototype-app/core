@@ -13,6 +13,8 @@ import { stripEditOverlays } from './editOverlays';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
+import { environment, environmentSnapshot, environmentRestore } from './environment';
+import { scenePhysicsState_, scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
@@ -145,6 +147,15 @@ async function saveSnapshot() {
 		// live, so it rides beside the snapshot — the same shape rigs and material
 		// arrays use, for the same reason
 		post: scenePostSnapshot(),
+		// A6.1: the sky and the gravity ride here for the same reason. GRAVITY had
+		// nowhere else at all — scenePhysics keeps no localStorage — so an edited
+		// gravity was simply lost on reload. The environment also persists locally,
+		// but carrying it makes the snapshot self-contained (another device, or a
+		// cleared localStorage, still gets the scene's own sky). MUSIC deliberately
+		// does NOT ride: it is the one field that would start audio on reload, and
+		// the module itself documents the shared track as not persisted.
+		environment: environmentSnapshot(),
+		physics: scenePhysicsSnapshot(),
 		// #20 P5: the selection, any open edit session, and the panel LAYOUT. This is the
 		// path that makes Restore (and the auto-restore setting) bring your windows back,
 		// while a plain reload stays a clean slate.
@@ -323,6 +334,10 @@ async function applyRestore(snapshot) {
 		// the restored look replicates alongside the objects this function just
 		// re-broadcast, so a restore into a live room is consistent
 		scenePostRestore(snapshot.post, true);
+		// A6.1: and so do the sky and the gravity (absent = the scene's default, which
+		// is what an older snapshot without these fields means)
+		environmentRestore(snapshot.environment, true);
+		scenePhysicsRestore(snapshot.physics, true);
 		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
 		// reload never reaches here, which is exactly the point.
 		if (snapshot.workspace) applyEditResume(snapshot.workspace);
@@ -403,6 +418,11 @@ export function startAutosave() {
 	// without this a scene's post stack would be in the snapshot and never trigger
 	// one being written ("my grading is gone after a reload")
 	scenePost.subscribe(() => markDirty());
+	// A6.1: and again for the sky and the gravity — the scenePost lesson is that
+	// without the subscription the field sits in the snapshot and nothing ever
+	// triggers one being written
+	environment.subscribe(() => markDirty());
+	scenePhysicsState_.subscribe(() => markDirty());
 	setInterval(() => {
 		if (dirty) saveSnapshot();
 	}, INTERVAL_MS);

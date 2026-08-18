@@ -543,6 +543,53 @@ export function applyRemoteEnvironment(data) {
 	applyEnvironment();
 }
 
+/** A6: the authored sky/fog/lighting as SAVE data, or NULL when it is the stock
+ * studio look — so a default scene saves byte-identical and an older reader sees
+ * no field (the scenePostSnapshot precedent). Fog rides inside the preset payload,
+ * which is why there is no separate fog field: a custom sky IS a customPreset. */
+export function environmentSnapshot() {
+	const state = get(environment);
+	const stock =
+		(state.preset ?? 'studio') === 'studio' &&
+		(state.exposure ?? 1) === 1 &&
+		!state.customPreset &&
+		!(state.lights ?? []).length;
+	if (stock) return null;
+	return {
+		preset: state.preset,
+		exposure: state.exposure ?? 1,
+		customPreset: state.customPreset ?? null,
+		lights: state.lights ?? [],
+		changedAt: state.changedAt ?? 0
+	};
+}
+
+/** Restore from a save. `replicate` re-broadcasts, so loading a scene into a live
+ * room brings its sky along (the jointsRestore precedent).
+ * An ABSENT field RESETS to the stock studio look rather than leaving the room's
+ * sky alone — a scene load is a whole-world replace, so "the file says nothing"
+ * means "the author was at the default", not "keep yours" (see A6).
+ * @param {any} payload @param {boolean} [replicate] */
+export function environmentRestore(payload, replicate = false) {
+	// a restore is an authoritative local write, so it must WIN over whatever
+	// changedAt the file happens to carry (an old save's stamp is in the past)
+	const state = payload?.preset
+		? {
+				preset: payload.preset,
+				exposure: payload.exposure ?? 1,
+				customPreset: payload.customPreset ?? null,
+				lights: payload.lights ?? [],
+				changedAt: Date.now()
+			}
+		: { ...DEFAULT_STATE, changedAt: Date.now() };
+	environment.set(state);
+	applyEnvironment();
+	if (!replicate) return;
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) peer.send({ type: 'environment', ...state });
+}
+
 /** Handshake payload */
 export function environmentState() {
 	return { type: 'environment', ...get(environment) };

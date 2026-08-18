@@ -181,6 +181,38 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **A fixture missing a PRECONDITION makes a working fix look broken.** Auto-key
+  records INTO a clip: an object with none keys nothing, and `captureAutoKey`
+  returns before doing anything. The first material-auto-key suite built a bare
+  box, saw no channels, and read as a failed fix — the code was right and the
+  fixture was not a scene anyone has. Give the fixture the state the report
+  describes ("I had created a clip"), and say the precondition out loud in the
+  suite so the next reader does not re-learn it.
+- **When a third-party widget cannot be driven, test the SEAM you own.** Two runs
+  went into trying to drive the colour picker from the DOM: it exposes no hex
+  field to type into, and clicking the section header (already expanded) COLLAPSED
+  it and removed the widget entirely. The behaviour under test was never the
+  picker — it was "a material edit keys its channel", which is one exported
+  function call away. Drive the real path when the bug is IN the input path;
+  otherwise test where the logic lives.
+- **TEST THE FLOW THE USER DESCRIBED, not the tidy one.** The relative-motion suite
+  did move -> play and passed; the report was play -> stop -> MOVE -> play, which
+  still reverted, because the cached base only refreshes when there ISN'T one. A
+  suite that exercises the clean path proves the clean path. Write the user's
+  sequence down verbatim and run THAT.
+- **Sample the DOM to prove a panel updates.** "The properties panel follows
+  playback" cannot be checked from stores — the store changed and the rows did not.
+  Five reads of `.dn-input` across a running clip returned identical values, which
+  is what settled it (and got the feature removed rather than shipped broken).
+- **A flake accusation needs the same sample size on both sides.** `animation-markers`
+  failed on a branch and passed once on the base, which looked like a regression;
+  three runs each said 1/3 failing on the branch and **3/3 on the base** — machine
+  saturation, not the diff. One run is not evidence either way.
+- **When a visual bug is reported, measure the pixels' inputs before theorising.**
+  "Onion skin shows the full object" sounded like a transparency bug; the ghost
+  materials measured 0.28 and transparent in every case, which ruled out the whole
+  family and pointed at geometry (the ghosts coincided with the object). Probe the
+  values first, then form the theory.
 - **A WALL-CLOCK sleep is a lottery on a throttled page, so drive the state
   instead.** `animation-loop-pause` needs a pause that lands MID-LAP. Sleeping
   2.6 s into a 1 s loop looked deterministic and was not: a headless page ticks at
@@ -562,6 +594,41 @@ drops the P2P session.
 
 ## Known flakes / traps
 
+- **An assertion whose deadline is a `waitForTimeout` asserts the SCHEDULER as much
+  as the feature — and that is what a "flaky suite" almost always turns out to be.**
+  Every standing red cleared before the 1.5.0 tag (PR #142) was this one shape: a
+  fixed sleep racing something asynchronous, never a code defect. `animation-markers`
+  looked tick-rate sensitive for weeks; measured, the playhead tracks wall-clock TO
+  THE MILLISECOND, and what lags is the pulse reaching its Counter on the NEXT flow
+  tick — so a marker at 1.5s lands at ~1.59s and the suite read at a flat 1600ms,
+  about 10ms of margin. `explorer` slept 1200ms while a per-file import landed at
+  ~1.2s and ~2.0s. `view-mode` gave the shadow catcher 600ms when it comes back
+  through a dynamic import costing ~1.2s cold in dev.
+  The cure is never a bigger number. **Wait on the thing you actually mean** — the
+  playhead, the stored IndexedDB record, the item count — and add a PREMISE CHECK
+  pinning the window you waited into (`head >= 1.7 && head < 2`: past both markers,
+  short of the wrap). The premise check is what keeps the loosened wait honest, and
+  what tells you next time whether a failure is timing or behaviour.
+  Two sub-rules that fell out of it: a negative assertion ("the unsupported file is
+  skipped") still needs a bounded settle, so poll for ARRIVAL of what must appear and
+  then assert the FULL set on a finished state; and when the app fires and forgets a
+  write (`createFolder` does not await `persistIndex`), watch the RECORD rather than
+  sleeping — it is the thing the reload actually reads.
+- **Before believing any standing red, restart the dev server.** Three suites
+  (`prefabs`, `mesh-edit-materials`, `uv-materials`) were carried as a "known cluster"
+  with a shared cause. The shared cause was real but external: none of them contains a
+  `locator.click` of its own — their only clicks come from `h.connect` — and all three
+  are green on a freshly restarted server. The A/B that "proved pre-existing" ran both
+  sides against the same long-lived server, which lies identically to both.
+  `h.connect` self-diagnoses now (the peer, its collected page errors, whether the
+  connect chrome rendered) so this class names itself instead of surfacing as a bare
+  30s timeout. When a suite that touches no UI dies on a `locator.click`, the click is
+  in a HELPER — read the helper before reading your diff.
+- **A suite can die two thirds of the way through and nobody notices.** `explorer`
+  crashed on a null `#explorer-list` at its dock section; everything after it — folder
+  CRUD, cascade delete, the sidebar splitter, persistence — had not run in a long
+  time. A red you have learned to ignore is not one failing check, it is every check
+  BELOW it silently not running. Read how far the output got, not just its last line.
 - **A two-peer failure is signaling until proven otherwise.** The default PeerJS
   cloud goes flaky/rate-limited under a long verification run: `pong` failed
   with ZERO changes to it, then passed immediately under

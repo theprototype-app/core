@@ -141,15 +141,38 @@ h.run(async () => {
 		`a scrub is not playback, so nothing has crossed yet (${parked.left})`
 	);
 
-	// play the loop for a bit over one lap: each marker must be crossed once per lap
+	// Play into the lap far enough to be clear of both markers, and stop before the
+	// wrap. This used to be a flat 1600ms sleep, which is a coin flip: the playhead
+	// tracks wall-clock exactly (measured, to the millisecond), but a marker's pulse
+	// reaches its Counter on the NEXT flow tick — RightFoot at 1.5 was landing at
+	// ~1.59, about 10ms from the deadline the sleep read at. That is what made this
+	// suite look tick-rate sensitive.
+	//
+	// Waiting on the PLAYHEAD instead removes the wall clock from the assertion
+	// without loosening it: 1.7 is 0.2s past the last marker and 0.3s short of the
+	// wrap, and the premise check below fails loudly if either bound is missed.
 	await A.page.evaluate((id) => {
 		const ap = window.__stores.animationPreview;
 		ap.resetPreview(id);
 		ap.play(id, undefined, { from: 0, reverse: false });
 	}, uuid);
-	await A.page.waitForTimeout(1600); // ~0.8 of a 2s lap: past both markers, no wrap
+	const lapHead = await A.page.evaluate(async (id) => {
+		const ap = window.__stores.animationPreview;
+		const started = performance.now();
+		let head = 0;
+		while (performance.now() - started < 6000) {
+			head = ap.playheadOf(id);
+			if (head >= 1.7) break;
+			await new Promise((r) => requestAnimationFrame(r));
+		}
+		return head;
+	}, uuid);
 	const oneLap = await counts();
 	await A.page.evaluate((id) => window.__stores.animationPreview.stop(id), uuid);
+	h.check(
+		lapHead >= 1.7 && lapHead < 2,
+		`premise: the playhead is past both markers and has not wrapped (${lapHead.toFixed(3)})`
+	);
 	h.check(
 		oneLap.left === 1 && oneLap.right === 1,
 		`playing past both markers pulses each ONCE (left ${oneLap.left}, right ${oneLap.right})`
@@ -236,9 +259,28 @@ h.run(async () => {
 		// so the playhead cannot legitimately reach Middle on the new lap.
 		window.__stores.animationPreview.play(id, undefined, { from: 1.6, reverse: false });
 	}, uuid);
-	await A.page.waitForTimeout(700); // 1.6 -> 2.0, wrap, -> ~0.3
+	// Wait on the PLAYHEAD, not the wall clock — same reason as the one-lap section
+	// above: a pulse reaches its Counter on the next flow tick, and this read used to
+	// sit right on top of that. Starting at 1.6 the head only grows to 2.0, so the
+	// first moment it is in [0.4, 1.0) is AFTER the wrap: 0.3s clear of Early, and
+	// still a full 1.0s short of Middle, which must not fire at all.
+	const wrapHead = await A.page.evaluate(async (id) => {
+		const ap = window.__stores.animationPreview;
+		const started = performance.now();
+		let head = 0;
+		while (performance.now() - started < 6000) {
+			head = ap.playheadOf(id);
+			if (head >= 0.4 && head < 1) break;
+			await new Promise((r) => requestAnimationFrame(r));
+		}
+		return head;
+	}, uuid);
 	const wrapped = await wrapCounts();
 	await A.page.evaluate((id) => window.__stores.animationPreview.stop(id), uuid);
+	h.check(
+		wrapHead >= 0.4 && wrapHead < 1,
+		`premise: the playhead wrapped and stopped short of Middle (${wrapHead.toFixed(3)})`
+	);
 	h.check(
 		wrapped.late === 1 && wrapped.early === 1,
 		`a wrap fires the marker before the end AND the one after the start (late ${wrapped.late}, early ${wrapped.early})`

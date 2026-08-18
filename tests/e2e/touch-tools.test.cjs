@@ -529,6 +529,46 @@ h.run(async () => {
 	});
 	h.check(edgesPicked > 1, `a box in EDGE mode selected several edges (${edgesPicked})`);
 
+	// ---- 15. the settings DESCRIPTION flows as prose ----------------------------
+	// Reported twice as "too many carriage returns". `.sr-desc` is a flex COLUMN (it
+	// centres the text vertically), and in a flex container every ELEMENT child becomes
+	// its own flex item on its own line — so any description mixing inline markup came
+	// out one fragment per line ("Round / Undo / , / Redo / and / Multi-select / …").
+	// A single block wrapper gives the cell ONE flex item and the inline content flows.
+	// This is a SettingRow bug, not a copy problem: every row with markup had it.
+	const desc = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.settingsSection.set('interface'); // rows only render inside an EXPANDED accordion
+		w.settingsOpen.set(true);
+		await new Promise((r) => setTimeout(r, 1800));
+		const rows = [...document.querySelectorAll('.setting-row')];
+		const row = rows.find((r) => r.textContent.includes('Touch tools'));
+		if (!row) return { found: false, rows: rows.length };
+		const body = row.querySelector('.sr-desc-body');
+		if (!body) return { found: true, wrapper: false };
+		const rect = body.getBoundingClientRect();
+		const lh = parseFloat(getComputedStyle(body).lineHeight) || 16;
+		// how many INLINE fragments the description is built from — the count that used to
+		// become the line count
+		const fragments = body.querySelectorAll("strong, kbd, em, code").length;
+		w.settingsOpen.set(false);
+		return {
+			found: true,
+			wrapper: true,
+			items: body.parentElement.childElementCount,
+			lines: Math.round(rect.height / lh),
+			width: Math.round(rect.width),
+			fragments
+		};
+	});
+	h.check(desc.found && desc.wrapper, `the description is wrapped in one block (${JSON.stringify(desc)})`);
+	h.check(desc.items === 1, `so the flex cell has exactly ONE item (${desc.items})`);
+	h.check(desc.fragments >= 2, `and the row really does mix inline markup (premise: ${desc.fragments})`);
+	h.check(
+		desc.lines <= 4,
+		`it wraps as prose, not one fragment per line (${desc.lines} lines at ${desc.width}px)`
+	);
+
 	const errs = h.pageErrors(A);
 	h.check(errs.length === 0, `no page errors (${JSON.stringify(errs.slice(0, 2))})`);
 

@@ -16,7 +16,7 @@
 	// snapshot (the compounding lesson), with start/end = begin/endHudGesture so a whole
 	// drag is ONE undo entry and ONE broadcast.
 	import { untrack } from 'svelte';
-	import { Copy, Crosshair, Plus, SquareDashed, Trash2, Type } from '@lucide/svelte';
+	import { Camera, Copy, Crosshair, Eye, EyeOff, Plus, SquareDashed, Trash2, Type } from '@lucide/svelte';
 	import { hudEditorClose, showToast } from '../../stores/appStore.js';
 	import {
 		hudDocs, hudRuntime, hudSelection, hudScreenOverride, HUD_ANCHORS, HUD_KINDS, HUD_SCENE_KEY,
@@ -24,6 +24,9 @@
 		addHudScreen, removeHudScreen, setActiveHudScreen, visibleScreen, normalizeHudElement
 	} from '$lib/hudDocs';
 	import { beginHudGesture, endHudGesture } from '$lib/hudSync';
+	import { hudPreviewInViewport } from '$lib/hudDocs';
+	import { listCameraObjects, cameraSpec, aspectRatio } from '$lib/cameraObjects';
+	import { objectsGroup } from '../../stores/sceneStore';
 	import { createGesture } from '$lib/modalGrab';
 	import HudElement from '../hud/HudElement.svelte';
 	import HudFieldRow from '../hud/HudFieldRow.svelte';
@@ -41,9 +44,24 @@
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
 
-	// v1 authors the SCENE HUD. The document store is keyed, so an object-scoped HUD is a
-	// later addition rather than a migration, but there is no UI to create one yet.
-	const docKey = HUD_SCENE_KEY;
+	// 21-D5: WHICH document is being authored. `hudDocs` was already keyed
+	// `'scene' | objectUuid`, so "attach this HUD to a camera" is simply authoring the
+	// document keyed by that camera marker's uuid — and it then renders only while you look
+	// through that camera. No new field, no new concept, and replication/undo/saves came
+	// for free.
+	let docKey = $state(HUD_SCENE_KEY);
+	// $objectsGroup is the dependency: THREE trees are not reactive, so the poke after a
+	// create is the only signal a camera list gets.
+	const camerasOf = (/** @type {any} */ _group) => listCameraObjects();
+	const cameras = $derived(camerasOf($objectsGroup));
+	const attachedCamera = $derived(
+		docKey === HUD_SCENE_KEY ? null : cameras.find((c) => c.uuid === docKey) ?? null
+	);
+	// when attached to a camera, the artboard borrows THAT camera's framing, so what you
+	// lay out matches what the camera actually frames
+	const stageAspect = $derived(
+		attachedCamera ? aspectRatio(cameraSpec(attachedCamera).aspect) || 16 / 9 : 16 / 9
+	);
 	const doc = $derived($hudDocs[docKey] ? hudDocOf(docKey) : null);
 	const screens = $derived(doc?.screens ?? []);
 
@@ -151,7 +169,8 @@
 	// It is a fixed 16:9 stage scaled to fit, so what you lay out matches the viewport's
 	// proportions. Pixel offsets are authored against THIS stage and used verbatim at
 	// runtime, which is why the stage width is the reference the numbers mean.
-	const STAGE = { w: 1280, h: 720 };
+	const STAGE_W = 1280;
+	const STAGE = $derived({ w: STAGE_W, h: Math.round(STAGE_W / stageAspect) });
 	let boardEl = $state(/** @type {HTMLElement|null} */ (null));
 	let boardW = $state(640);
 	let boardH = $state(360);
@@ -534,6 +553,17 @@
 				<span class="hud-sep"></span>
 				<label class="hud-check"><input type="checkbox" checked={snapOn} onchange={(/** @type {any} */ e) => (snapOn = e.currentTarget.checked)} /> Snap</label>
 				<span class="flex-1"></span>
+				<!-- 21-D5: the HUD is NOT painted over the viewport while you author it — you work
+				     on the artboard. This shows it there as well, for a final look. -->
+				<button
+					id="hud-preview-toggle"
+					class="hud-btn"
+					aria-pressed={$hudPreviewInViewport}
+					title={$hudPreviewInViewport ? 'Hide the HUD in the viewport while editing' : 'Also show the HUD in the viewport'}
+					onclick={() => hudPreviewInViewport.set(!$hudPreviewInViewport)}
+				>
+					{#if $hudPreviewInViewport}<Eye size={14} aria-hidden="true" />{:else}<EyeOff size={14} aria-hidden="true" />{/if}
+				</button>
 				<span class="hud-hint">{elements.length} element{elements.length === 1 ? '' : 's'}</span>
 			</div>
 		{/snippet}
@@ -544,6 +574,25 @@
 			     `h-full overflow-hidden` here the bounded screens list double-scrolls
 			     (Explorer's primary snippet is the working precedent). -->
 			<div class="hud-side" bind:clientHeight={paneH}>
+			<!-- 21-D5: which DOCUMENT — the scene HUD, or one attached to a camera. A
+			     camera-attached HUD shows only while that camera is being looked through. -->
+			<label class="hud-doc-pick" title="A camera HUD shows only while you look through that camera">
+				<Camera size={12} aria-hidden="true" />
+				<select
+					id="hud-doc-key"
+					class="hud-input"
+					value={docKey}
+					onchange={(/** @type {any} */ e) => {
+						docKey = e.currentTarget.value;
+						setPicks([]);
+					}}
+				>
+					<option value={HUD_SCENE_KEY}>Scene HUD</option>
+					{#each cameras as cam (cam.uuid)}
+						<option value={cam.uuid}>{cam.name || 'Camera'}</option>
+					{/each}
+				</select>
+			</label>
 			<div class="hud-screens" style="max-height: {screensH}px">
 				{#each screens as s (s.id)}
 					<div class="hud-screen-row" class:hud-screen-on={s.id === screenId}>
@@ -785,6 +834,14 @@
 		height: 100%;
 		flex-direction: column;
 		overflow: hidden;
+	}
+	.hud-doc-pick {
+		display: flex;
+		flex: 0 0 auto;
+		align-items: center;
+		gap: 0.3rem;
+		border-bottom: 1px solid rgb(75 85 99 / 0.5);
+		padding: 0.3rem 0.375rem;
 	}
 	.hud-screens {
 		display: flex;

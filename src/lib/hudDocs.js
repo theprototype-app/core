@@ -69,6 +69,23 @@ export const hudScreenOverride = writable({});
  * @type {import('svelte/store').Writable<Record<string, string[]>>} */
 export const hudSelection = writable({});
 
+/** 21-D5: paint the HUD over the VIEWPORT while the HUD editor is open?
+ *
+ * Default FALSE, which is the answer to "why do I immediately see the HUD while I am
+ * building it": you author on the artboard, and the viewport stays yours. This is only
+ * about the AUTHORING session — with the editor closed the HUD renders normally, and
+ * `viewportOverrides.hud` is the separate, persistent local kill switch.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const hudPreviewInViewport = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('hudPreviewInViewport') === 'true'
+);
+if (typeof localStorage !== 'undefined')
+	hudPreviewInViewport.subscribe((on) => {
+		try {
+			localStorage.setItem('hudPreviewInViewport', String(!!on));
+		} catch {}
+	});
+
 /** What each element currently SAYS, keyed by element id. Written by A3's one collection
  * pass in flowRuntime's tick, THROTTLED to ~10Hz and only on change — `flowValues`
  * throttles to 150ms for exactly this reason, and a per-frame store write re-renders the
@@ -161,9 +178,27 @@ export function hudDocOf(key) {
 	return doc ? normalizeHudDoc(doc) : null;
 }
 
-/** Which HUD applies to this scene right now. Own-before-scene resolution is reserved
- * for the object-keyed case; v1 answers 'scene'. @returns {string[]} */
-export function activeHudKeys() {
+/**
+ * 21-D5: WHICH documents are on screen right now.
+ *
+ * The scene HUD always, plus the document keyed by the camera you are LOOKING THROUGH —
+ * which needs no new concept at all, because `hudDocs` was already keyed
+ * `'scene' | objectUuid`. Attaching a HUD to a camera IS keying it by that camera's uuid,
+ * so replication, undo, sessions and autosave came for free.
+ * @param {string|null} [throughCamera] the camera object uuid being viewed, if any
+ * @returns {string[]}
+ */
+export function activeHudKeys(throughCamera = null) {
+	const all = get(hudDocs);
+	/** @type {string[]} */
+	const keys = [];
+	if (all[HUD_SCENE_KEY]) keys.push(HUD_SCENE_KEY);
+	if (throughCamera && all[throughCamera]) keys.push(throughCamera);
+	return keys;
+}
+
+/** Every key that has a document, for the editor's own picker. @returns {string[]} */
+export function hudDocKeys() {
 	return Object.keys(get(hudDocs));
 }
 

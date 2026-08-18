@@ -26,15 +26,24 @@ h.run(async () => {
 			.querySelector('#explorer-list')
 			.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }));
 	}, TINY_PNG);
-	await A.page.waitForTimeout(1200);
-	const imported = await A.page.evaluate(
-		() =>
-			new Promise((resolve) => {
-				window.__stores.explorer.explorerItems.subscribe((items) =>
-					resolve(items.map((i) => ({ name: i.name, kind: i.kind, thumb: !!i.thumbnail, hash: i.hash.length })))
-				)();
-			})
-	);
+	// Importing a dropped file is ASYNC per file (content hash, then the time-boxed
+	// thumbnail, then the IndexedDB write), so a fixed settle RACES it: measured here,
+	// the two supported files landed ~1.2s and ~2.0s after the drop, and the suite's
+	// old 1200ms sleep read the store between them. Poll for their arrival, then let
+	// the queue drain and assert the FULL set — so "skips the unsupported file" is
+	// still asserted on a finished state, not mid-flight.
+	const readItems = () =>
+		A.page.evaluate(
+			() =>
+				new Promise((resolve) => {
+					window.__stores.explorer.explorerItems.subscribe((items) =>
+						resolve(items.map((i) => ({ name: i.name, kind: i.kind, thumb: !!i.thumbnail, hash: i.hash.length })))
+					)();
+				})
+		);
+	await h.eventually(readItems, (list) => list.length >= 2, 'the drop imports both supported files');
+	await A.page.waitForTimeout(1500); // the unsupported file gets its chance to (not) arrive
+	const imported = await readItems();
 	h.check(
 		imported.length === 2 && imported.some((i) => i.name === 'tiny.png') && imported.some((i) => i.name === 'notes.txt'),
 		`drop imports supported files, skips unsupported (${imported.map((i) => i.name).join(',')})`
@@ -76,22 +85,39 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	h.check(await A.page.locator('#explorer-list').isVisible(), 'docks back to the bottom');
 
-	// shared dock with the Flow editor: tabs appear, switching swaps panels
+	// The shared dock has ONE slot, and the contract changed in 5651aaa ("tabbed bottom
+	// dock"): the FLOW FAMILY (Node editor / Flow Code / Animation / UV) are notebook
+	// tabs in it, and the Explorer is a separate panel MUTUALLY EXCLUSIVE with them —
+	// activating a Flow tab CLOSES the Explorer, and the Explorer is not a tab. This
+	// section used to assert the older both-mounted-one-hidden model.
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(600);
-	const flowTabs = A.page.locator('#flow-list button', { hasText: 'Explorer' });
-	h.check((await flowTabs.count()) === 1, 'shared dock shows notebook tabs');
-	const explorerHidden = await A.page.evaluate(
-		() => getComputedStyle(document.querySelector('#explorer-list')).display === 'none'
-	);
-	h.check(explorerHidden, 'Flow owns the dock while its tab is active');
-	await flowTabs.click();
-	await A.page.waitForTimeout(400);
-	const swapped = await A.page.evaluate(() => ({
-		explorer: getComputedStyle(document.querySelector('#explorer-list')).display !== 'none',
-		flow: getComputedStyle(document.querySelector('#flow-list')).display === 'none'
+	const dock = await A.page.evaluate(() => ({
+		flow: !!document.querySelector('#flow-list'),
+		explorer: !!document.querySelector('#explorer-list'),
+		tabs: [...document.querySelectorAll('.tab-note')].map((b) => (b.textContent || '').trim())
 	}));
-	h.check(swapped.explorer && swapped.flow, 'Explorer tab takes the dock, Flow hides');
+	h.check(dock.flow && !dock.explorer, `a Flow tab takes the dock and closes the Explorer (${JSON.stringify(dock)})`);
+	h.check(dock.tabs.includes('Node editor'), 'the dock tab strip names the visible Flow panel');
+	h.check(!dock.tabs.some((t) => /Explorer/i.test(t)), 'the Explorer is not a Flow-family tab');
+
+	// ...and re-opening the Explorer takes the dock back. The two directions are NOT
+	// symmetric, deliberately: a Flow tab CLOSES the Explorer (it unmounts, above),
+	// while the Explorer merely becomes the visible panel and leaves the Flow tab
+	// open-but-hidden — so this half is a visibility question, not a presence one.
+	await A.page.locator('#explorer-slot').click();
+	await A.page.waitForTimeout(600);
+	const backAgain = await A.page.evaluate(() => {
+		const shown = (/** @type {string} */ sel) => {
+			const el = document.querySelector(sel);
+			return !!el && el.getBoundingClientRect().height > 0;
+		};
+		return { flow: shown('#flow-list'), explorer: shown('#explorer-list') };
+	});
+	h.check(
+		backAgain.explorer && !backAgain.flow,
+		`the Explorer takes the dock back and the Flow tab hides (${JSON.stringify(backAgain)})`
+	);
 
 	// --- 106: tree v2 ---
 	// inline create: the button spawns an input, Enter creates, Esc cancels
@@ -211,8 +237,28 @@ h.run(async () => {
 		`primary sidebar resizes and persists (${Math.round(widened.width)}, saved ${widened.saved})`
 	);
 
-	// persistence: items + folders survive a reload
+	// persistence: items + folders survive a reload.
+	// `createFolder` updates the store and fires `persistIndex()` WITHOUT awaiting it,
+	// so reloading in the next statement can outrun the IndexedDB write. Watch the
+	// stored record itself rather than sleeping — that is the thing the reload reads.
 	await A.page.evaluate(() => window.__stores.explorer.createFolder('Keep', null));
+	await h.eventually(
+		() =>
+			A.page.evaluate(
+				() =>
+					new Promise((resolve) => {
+						const request = indexedDB.open('theprototype', 1);
+						request.onsuccess = () => {
+							const get = request.result.transaction('snapshots').objectStore('snapshots').get('explorer:index');
+							get.onsuccess = () => resolve((get.result?.folders ?? []).map((/** @type {any} */ f) => f.name));
+							get.onerror = () => resolve([]);
+						};
+						request.onerror = () => resolve([]);
+					})
+			),
+		(names) => names.includes('Keep'),
+		'the folder reaches IndexedDB before the reload'
+	);
 	await A.page.reload();
 	await A.page.waitForTimeout(2500);
 	const persisted = await A.page.evaluate(async () => {

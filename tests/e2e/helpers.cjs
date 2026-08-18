@@ -92,10 +92,50 @@ async function setupPage(browser, name, options = {}) {
 
 /** Connect `from` to `to` (approve on `to`), then let the mesh settle. */
 async function connect(from, to, settleMs = 9000) {
-	await from.page.locator('input[placeholder="Enter peer ID to connect"]').fill(to.id);
-	await from.page.getByRole('button', { name: 'Connect', exact: true }).click();
-	await to.page.getByRole('button', { name: 'Approve' }).click({ timeout: 30000 });
+	await step(from, 'fill the peer id', () =>
+		from.page.locator('input[placeholder="Enter peer ID to connect"]').fill(to.id)
+	);
+	await step(from, 'press Connect', () =>
+		from.page.getByRole('button', { name: 'Connect', exact: true }).click()
+	);
+	await step(to, 'approve the request', () =>
+		to.page.getByRole('button', { name: 'Approve' }).click({ timeout: 30000 })
+	);
 	await from.page.waitForTimeout(settleMs);
+}
+
+/**
+ * Run one connect action and, if it fails, say WHY before rethrowing.
+ *
+ * A bare `locator.click: Timeout` here is the least informative failure in the
+ * suite: every two-peer test funnels through this helper, so a page that crashed
+ * on mount (or a dev server serving a stale half-transformed module — the
+ * documented long-lived-server trap) surfaces as "prefabs is red" with nothing
+ * pointing at the cause. This does NOT swallow anything: the original error is
+ * rethrown unchanged, with the page's collected errors and whether the connect
+ * chrome rendered at all attached to it.
+ */
+async function step(peer, what, run) {
+	try {
+		return await run();
+	} catch (error) {
+		let chrome = 'unreadable';
+		try {
+			chrome = JSON.stringify(
+				await peer.page.evaluate(() => ({
+					input: !!document.querySelector('input[placeholder="Enter peer ID to connect"]'),
+					buttons: [...document.querySelectorAll('button')]
+						.map((b) => (b.textContent || '').trim())
+						.filter(Boolean)
+						.slice(0, 20),
+					booted: !!window.__stores
+				}))
+			);
+		} catch {}
+		const errors = peer.page.__errors?.length ? peer.page.__errors.join(' | ') : 'none';
+		error.message = `connect: could not ${what} on ${peer.id}\n  page errors: ${errors}\n  chrome: ${chrome}\n${error.message}`;
+		throw error;
+	}
 }
 
 /** Poll `fn` until `predicate` holds; records a PASS/FAIL check. */

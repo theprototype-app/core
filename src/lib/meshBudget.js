@@ -33,8 +33,23 @@
 // commandsHandler, history) sits in a different corner of the import graph, and a
 // leaf can be reached from all of them without closing a cycle.
 
-/** Ceiling for a COMMITTED geometry snapshot, in floats (3 per vertex).
- * 1.5M floats = 500k vertices ≈ 166k triangles — a dense imported GLB. */
+/**
+ * Ceiling for a COMMITTED geometry snapshot, in floats (3 per vertex).
+ * 1.5M floats = 500k vertices ≈ 166k triangles — a dense imported GLB.
+ *
+ * R4 (2026-08-17) measured the LOCAL cost the wire table above does not cover,
+ * on the same headless page:
+ *
+ *   vertices   commit    undo     redo
+ *   50 000     8.9 ms    8.5 ms   7.3 ms
+ *   150 000    42 ms     26 ms    22 ms
+ *   500 000    66 ms     67 ms    83 ms
+ *
+ * At the ceiling that is a visible hitch — and it is a ONE-SHOT: a commit happens
+ * when a gesture ENDS, never per frame (the per-frame costs are what
+ * MAX_LIVE_PREVIEW and faceEdit's VR_FACE_CAP bound, and those were measured too).
+ * ~80 ms once is worth being able to edit the model at all, so the ceiling stands.
+ */
 export const MAX_SNAPSHOT = 1_500_000;
 
 /** Ceiling for a snapshot that is streamed as a LIVE PREVIEW during a gesture,
@@ -47,10 +62,19 @@ export const MAX_LIVE_PREVIEW = 45_000;
  * ~500k corners; the headroom covers n-gon partitions). */
 export const MAX_FACE_TRIS = 1_500_000;
 
-/** Total bytes of geometry snapshots the undo stack may hold. Beyond it the OLDEST
+/**
+ * Total bytes of geometry snapshots the undo stack may hold. Beyond it the OLDEST
  * geometry entry is dropped — losing the far end of the history, never the recent
- * steps a user is actually reaching for. 256 MB is roughly twenty edits at the
- * commit ceiling, or thousands of ordinary ones. */
+ * steps a user is actually reaching for.
+ *
+ * R5 (2026-08-17) VALIDATED the number instead of leaving it a guess. A snapshot
+ * at the commit ceiling measures **11.4 MB** as a history entry (before AND after,
+ * 1.5M floats each), and a deliberately heavy probe session — three ceiling-sized
+ * commits plus five sealed mesh sessions — held 11 entries totalling 16 MB, i.e.
+ * 6% of the budget. So 256 MB buys about 22 edits at the very top of the range and
+ * effectively unlimited ordinary ones, which is the right shape: the cap exists to
+ * stop a pathological session eating the tab, not to ration normal work.
+ */
 export const HISTORY_BYTES = 256 * 1024 * 1024;
 
 /** Is this snapshot too large to COMMIT at all? @param {number} floats */

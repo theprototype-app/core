@@ -279,6 +279,49 @@ export function recordMaterialChange(uuid, param, key, before, after, slot = 0) 
 		before: { value: before },
 		after: { value: after }
 	});
+	autoKeyMaterial(uuid);
+}
+
+// 17-E: with REC armed, a material edit KEYS the channel it changed, the same as
+// posing the object with the gizmo does.
+//
+// It hooks in HERE, at the one funnel every material edit already passes through on
+// its way to the undo stack, rather than control by control. The Inspector's rows
+// go through `fanOn`, which keys them; the object COLOUR picker writes the material
+// inline instead (it owns a debounced gesture, so a drag is ONE undo entry rather
+// than one per pointer move) — which made picking a colour the single edit that
+// never keyed, with the channel only turning up later when clicking the object
+// happened to run a capture. Anything added later that records a material change
+// now gets this for free.
+//
+// PRIMED DYNAMIC import: a static edge to animationPreview would close a cycle back
+// through history -> flowRuntime (the moduleSDK pattern).
+/** @type {any} */
+let animRef = null;
+import('./animationPreview')
+	.then((module) => (animRef = module))
+	.catch(() => {});
+
+/**
+ * @param {string} uuid
+ *
+ * Deferred by a microtask, because the two callers write in OPPOSITE orders:
+ * `setMaterialParam` records the history entry BEFORE mutating the material, while
+ * the colour picker mutates first and records at the end of its gesture. Reading
+ * the material synchronously here would therefore see the OLD value half the time —
+ * measured: a roughness edit keyed nothing while a colour edit keyed correctly.
+ * A microtask runs after the caller's current block either way, so what auto-key
+ * reads is always the value that was actually applied.
+ */
+function autoKeyMaterial(uuid) {
+	if (!animRef?.captureAutoKey || !uuid) return;
+	queueMicrotask(() => {
+		try {
+			animRef.captureAutoKey(uuid, animRef.playheadOf?.(uuid) ?? 0);
+		} catch (error) {
+			console.log('auto-key after a material change failed', error);
+		}
+	});
 }
 
 /**

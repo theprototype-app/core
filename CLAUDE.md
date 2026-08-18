@@ -753,6 +753,68 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A hook that READS state must know the caller's write ORDER.** Auto-key was
+  hooked at `recordMaterialChange`, the one funnel every material edit passes
+  through — and it keyed a colour edit correctly while keying nothing at all for
+  roughness. The two callers write in OPPOSITE orders: `setMaterialParam` records
+  the history entry BEFORE mutating the material, while the colour picker mutates
+  first and records at the end of its debounced gesture. A synchronous read is
+  therefore right half the time. `queueMicrotask` runs after the caller's current
+  block either way. Suspect this for anything that observes a funnel rather than
+  the action itself.
+- **An "immediately visible" edit belongs at the CHOKE POINT, not per control.**
+  Adding a channel, typing a key value, retiming, moving a marker — all land in
+  `editClip`, and none of them re-posed the object, so every one of them was
+  reported separately as "I have to click the timeline to see what changed". One
+  re-pose there covers the lot (skipped while playing, where the tick owns the
+  pose). Same shape as the material funnel above.
+- **A CACHED "starting pose" must notice the object moved under it.** The animation
+  base is captured once per object and survives Stop, so play -> stop -> DRAG ->
+  play restored the old pose and threw the drag away (measured: moved to [4,5,0],
+  replayed at [0,0.63,0]). The fix compares the object against the position the
+  module LAST WROTE, not against a recomputed expectation — recomputing looked
+  tidier and was wrong, because `applyOriginPivot` legitimately moves a hinged
+  object while posing its ROTATION, so every door read as "moved" and re-anchored
+  itself. Remembering what you set has no such blind spot. And whatever ABSORBS a
+  manual pose into the data (auto-key) must update that memory, or the next scrub
+  treats the absorbed drag as a fresh one.
+- **A relative-value system needs the INVERSE at every write.** R1 made position
+  keys offsets from the first key; auto-key records the object's current WORLD
+  value, so without the inverse mapping it bakes the current base into the key and
+  the movement DOUBLES on the next run. The comparison that decides "did this
+  channel move" has to happen in the same space as well.
+- **A per-frame hot path cannot afford a find-then-scan.** `channelAnchor` looked
+  up a track and walked its keys for every position channel of every posed frame;
+  on a throttled page that thinned the tick enough to upset anything reasoning
+  about the interval BETWEEN ticks (marker crossings started missing markers).
+  Memoised per clip in a WeakMap — `editClip` builds a new clip object per edit,
+  so it invalidates itself.
+- **A minimum-size CLICK target is not a fix if nobody can find it.** An object
+  scaled to nothing got a 10px hit proxy at its centre, and the report came back
+  unchanged: a user clicks where the shape USED to be, which at any real zoom is
+  nowhere near. Draw the target (`tinyMarkers.js`, Blender's origin dot) so what
+  you aim at and what you hit are the same point.
+- **An overlay that coincides with the real thing is not an overlay.** Onion-skin
+  ghosts of a clip that drives only LOOK channels sit EXACTLY on the object, and
+  two of them at 28% read as one slightly odd solid object ("onion skin shows the
+  full object"). The ghost materials were innocent — measured faint in every case.
+  A ghost whose world transform matches the object's now hides itself — and that
+  is only half of it, because an ALMOST-coplanar ghost (a small movement between
+  two keys) then z-fights instead, "like two planes in the same place". The fix
+  for that is a per-ghost `polygonOffset`, keeping `depthWrite: true` so the
+  postprocessing passes still work — a distinct rank per ghost, so two of them
+  cannot fight each other either.
+- **`node.material = x` gated on isMesh/isLine/isPoints misses Sprites**, which
+  then keep a reference to the REAL material — so that part of a ghost/clone draws
+  at full strength and no amount of re-asserting the override can dim it. Gate on
+  `node.material` instead.
+- **Poking a store does not help a `$derived` that returns the same object.** The
+  properties panel stayed frozen during playback even with a 10Hz poke on
+  `selectedObject`: the transform rows read through a derived that hands back the
+  same mutated THREE object, and a derived compares with `===`. Either return a
+  fresh SNAPSHOT per poke (what the `material` derived does) or do not bother —
+  half of it is dead code that looks like a feature.
+
 - **A number that keeps COUNTING must be folded before anything reads it as a
   POSITION.** The animation transport stores `pausedAt`, and `elapsedOf` returns
   time since the run STARTED — 7.3 s into a 2 s loop. The playing path is fine
@@ -1976,6 +2038,34 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-17, later): **v1.5.0 CYCLE — the R-line MERGED, two PRs open.**
+  `release/next` @261c9ed carries #136/#137/#126/#138/#139 plus **#140 the R-line**:
+  R1 position channels are RELATIVE (a movement replays from where the object is;
+  clips already saved reinterpret, the user's call), R2 a screen-space hit proxy
+  for objects with no size left, R3 `VR_FACE_CAP` 1000 -> **2500** from a real
+  measurement (~5.4us/triangle/frame for a live grab, so 16ms buys ~3000), R4 the
+  commit ceiling documented (500k verts = 66ms, one-shot), R5 the 256 MB undo
+  budget validated (11.4 MB per ceiling-sized entry, ~22 of them).
+  OPEN: **#141** the animation polish round — `tinyMarkers.js` (a dot to aim at,
+  because the proxy alone was unfindable), play-backwards pauses on a second press,
+  ONE **Emission** block (Strength + Color) replacing the duplicate
+  Emissive/Glow pairs, a new channel poses immediately, the onion-skin
+  coincident-ghost fix, and the properties-panel poke REMOVED as unworkable.
+  New suites: `animation-relative-motion`, `pick-tiny-objects`, `animation-loop-pause`,
+  `animation-look-channels`, `edit-overlay-gaps`, `mesh-budget`, `selection-extras`.
+  Release plan + CHANGELOG draft: cloud `plans-core/pending/1.5.0-release-prep.md`.
+  PENDING plans from this round: `animation-relative-and-136-followups.md` (done),
+  `duplicate-parity-and-material-sharing.md` (duplicate must carry clips + object
+  flows; shared materials WAIT for the shader lane, because every material change
+  is broadcast per OBJECT and sharing needs a material identity on the wire),
+  `inspector-live-values.md`.
+  KNOWN ENVIRONMENT RED: `animation-markers` fails on a saturated box for the base
+  as well as any branch (3/3 on base, 1/3 on the branch) — re-run rested before a
+  release. AND A STANDING CLUSTER, all proven pre-existing by A/B on a reverted
+  tree: `prefabs`, `mesh-edit-materials` and `uv-materials` all die on
+  `locator.click: Timeout` inside their own flows on clean release/next. Three
+  suites with one symptom is probably ONE cause — investigate them together, and
+  do not bisect a diff into them.
 - Status (2026-08-17): **v1.4.0 RELEASED + four follow-up PRs.** `main` @2d68fdb
   (tag `v1.4.0`, CHANGELOG "Move it"), release workflow green, cloud deployed at
   `CORE_REF=v1.4.0` (version.json 1.4.0 on both hosts), docs site deployed with the
@@ -1996,11 +2086,32 @@ override for e2e — never share 5173 (the user's main-checkout server).
   and the playhead the tick deleted, plus the Inspector Glow block (Strength +
   Colour) that never existed. New suites: `mesh-budget`, `selection-extras`,
   `edit-overlay-gaps`, `animation-look-channels`, `animation-loop-pause`.
-  KNOWN PRE-EXISTING RED: `prefabs.test.cjs` (a locator.click timeout in its own
-  flow) fails on clean release/next too — proven by an A/B, needs its own ticket.
+  The KNOWN PRE-EXISTING RED noted here (`prefabs` + its cluster) is CLEARED — see
+  the 2026-08-17 PR #142 entry below; the A/B that "proved" it was invalid.
   OWED: the user's repro for "the animation frame resets" (the autosave
   park/unpark ritual was measured INNOCENT), a decision on RELATIVE position
   channels, and the `vrFaceCap` measurement that would finish the #136 story.
+- Status (2026-08-17, before the 1.5.0 tag): **PR #141 MERGED (animation polish) and
+  PR #142 OPEN — every standing e2e red cleared, and NONE of them was a code
+  defect.** The `prefabs`/`mesh-edit-materials`/`uv-materials` "cluster" was a stale
+  long-lived dev server: those suites contain no `locator.click` of their own (their
+  only clicks come from `h.connect`), and all three are green on a fresh server — the
+  earlier A/B ran both sides against the same lying server. `h.connect` self-diagnoses
+  now instead of surfacing a bare 30s timeout. The other four were all ONE shape: a
+  fixed `waitForTimeout` racing something async — `animation-markers` (the playhead
+  tracks wall-clock to the millisecond; the PULSE reaches its Counter a flow tick
+  later, so a 1.5s marker lands at ~1.59s against a 1600ms read), `explorer` (a
+  per-file import landing at ~1.2s/~2.0s against a 1200ms sleep, PLUS a dock section
+  asserting the contract 5651aaa replaced, PLUS a reload racing `persistIndex`'s
+  un-awaited write), `view-mode` (a dynamic import ~1.2s cold vs a 600ms settle) and
+  `ui-fixes-15lmno` (looking for `input[type=number]` after 16-Q3 made every number
+  box a DragRow, which is `type="text"` on purpose). Each now waits on the THING —
+  playhead, stored record, item count — with a premise check pinning the window; the
+  wrap guard was re-proven by removing the branch. Also found: `explorer` had been
+  dying two thirds through, so its last third had not run in a long time. Baseline
+  **391/62**, build green. Full method notes in the e2e skill's flakes section.
+  DEFERRED to the next release by the user: scale-0 selection, duplicate carrying
+  clips + object flows, material sharing (cloud `pending/1.5.0-loose-ends.md`).
 - Status (2026-08-16): **19-A READY TO PR — P0–P5b + P7a + P7b COMMITTED (12 commits,
   branch `feat/mesh-tool-interaction`, NOT pushed); P6 and P7c are PARKED by the user
   and execute later as their own branches.** Hashes: P0 `bf6f2df` · P1 `8b0352f` ·

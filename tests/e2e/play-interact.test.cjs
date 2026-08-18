@@ -381,15 +381,21 @@ h.run(async () => {
 
 	await sp(page, 'sp.setScenePhysics({ play: { interaction: "click" } })');
 	await page.evaluate((uuid) => {
-		window.__stores.flowNodes.set([
+		// write BOTH halves: flowGraphs is what the RUNTIME reads, flowNodes is the
+		// editor VIEW, and the mirror runs both ways — writing one leaves the other
+		// stale (this check flaked exactly that way, then failed 3/3)
+		const nodes = [
 			{ id: 'clk1', type: 'onclick', position: { x: 0, y: 0 }, data: { type: 'onclick', pulse: 0.3 }, class: 'w-[150px]' },
 			{ id: 'selC', type: 'objectselector', position: { x: 300, y: 0 }, data: { type: 'objectselector', selected: uuid }, class: 'w-[150px]' },
 			{ id: 'cnt1', type: 'counter', position: { x: 0, y: 200 }, data: { type: 'counter', op: 'up', step: 1 }, class: 'w-[150px]' }
-		]);
-		window.__stores.flowEdges.set([
+		];
+		const edges = [
 			{ id: 'e-clk1-selC', source: 'clk1', target: 'selC' },
 			{ id: 'e-clk1-cnt1', source: 'clk1', target: 'cnt1' }
-		]);
+		];
+		window.__stores.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
+		window.__stores.flowNodes.set(nodes);
+		window.__stores.flowEdges.set(edges);
 	}, ids.crate);
 	await placeInFront(page, ids.crate, 3);
 	await page.waitForTimeout(500);
@@ -398,9 +404,19 @@ h.run(async () => {
 		window.__stores.flowTriggers.subscribe((v) => (map = v))();
 		return map.cnt1?.count ?? 0;
 	});
-	await pointer(page, 'pointerdown');
-	await page.waitForTimeout(60);
-	await pointer(page, 'pointerup');
+	// ONE in-page gesture: a tap is defined by the gap between down and up (180
+	// ms), and two CDP round-trips can exceed that under load — the check flaked
+	// exactly that way
+	await page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				window.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }));
+				setTimeout(() => {
+					window.dispatchEvent(new PointerEvent('pointerup', { button: 0, bubbles: true }));
+					resolve(true);
+				}, 120);
+			})
+	);
 	await page.waitForTimeout(400);
 	const countAfter = await page.evaluate(() => {
 		let map = {};

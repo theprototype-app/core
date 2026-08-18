@@ -54,7 +54,7 @@ const CARRY_STEP = 0.25;
 const SPRING_K = 14; // 1/s, scaled by 1/sqrt(mass) and clamped
 const SPRING_K_MIN = 4;
 const SPRING_K_MAX = 20;
-const TAP_MS = 180;
+const TAP_MS = 400; // matches the editor's own short-click window (raycastSelect)
 const MOVE_HZ = 20; // carry broadcasts (the car module's cadence; the floor is
 // 8 Hz, because EXTERNAL_HOLD_MS is 250)
 
@@ -84,6 +84,8 @@ let carryDistance = CARRY_DEFAULT;
 let started = false;
 /** @type {((object: any) => boolean)|null} */ let moduleHitTest = null;
 /** @type {any} */ let activeCamera = null;
+/** why the last pointerup ended the way it did (debug hook only) */
+let lastUp = 'none';
 
 /** the scene's effective interaction mode right now */
 function interactionMode() {
@@ -242,14 +244,33 @@ function onPointerUp(event) {
 		endGrab(true);
 		return;
 	}
-	if (!wasPress || interactionMode() === 'off') return;
+	if (!wasPress || interactionMode() === 'off') {
+		lastUp = wasPress ? 'mode-off' : 'no-press';
+		return;
+	}
 	// a short press with nothing carried is a TAP. Play mode had no clicking at
 	// all before this, so it is the first time an On Click node or a module
 	// button (a piano key, a keypad) works in play mode — which is also why
 	// `interaction` is grab | click | off rather than a boolean.
-	if (performance.now() - wasPress.t > TAP_MS) return;
-	if (moduleTap()) return;
-	if (wasPress.hit && moduleHitTest && moduleHitTest(wasPress.hit.object)) return;
+	// A tap is a press-release where NO GRAB happened. The duration only
+	// distinguishes "I held it deliberately" from "I clicked", and it only means
+	// anything in GRAB mode — in click mode there is nothing else a press can be.
+	// The window is the editor's own 400 ms, because a click on a busy frame takes
+	// longer than you think: a deliberate 120 ms tap measured over 180 ms here, and
+	// silently did nothing.
+	if (interactionMode() === 'grab' && performance.now() - wasPress.t > TAP_MS) {
+		lastUp = 'too-long';
+		return;
+	}
+	if (moduleTap()) {
+		lastUp = 'module-group';
+		return;
+	}
+	if (wasPress.hit && moduleHitTest && moduleHitTest(wasPress.hit.object)) {
+		lastUp = 'module-handler';
+		return;
+	}
+	lastUp = wasPress.uuid ? 'click' : 'no-target';
 	if (wasPress.uuid) fireObjectClick(wasPress.uuid);
 }
 
@@ -390,6 +411,7 @@ export function playInteractDebug() {
 		carrying: grab?.object?.uuid ?? null,
 		held: !!grab?.held,
 		distance: carryDistance,
+		lastUp,
 		samples: grab?.samples.length ?? 0
 	};
 }

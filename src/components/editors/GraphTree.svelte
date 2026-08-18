@@ -17,8 +17,10 @@
 	import { objectsGroup, selectedObjects } from '../../stores/sceneStore';
 	import { applySelectionSet, deselectObject } from '$lib/objectActions';
 
-	/** @type {{ kind: 'flow'|'shader', documents: Record<string, any>, sceneKey: string, label?: string }} */
-	let { kind, documents, sceneKey, label = 'Graphs' } = $props();
+	/** `paneHeight` is the LEFT COLUMN's measured height — see the resize ceiling below.
+	 * @type {{ kind: 'flow'|'shader', documents: Record<string, any>, sceneKey: string,
+	 *   label?: string, paneHeight?: number }} */
+	let { kind, documents, sceneKey, label = 'Graphs', paneHeight = 0 } = $props();
 
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
 	// a ONE-TIME read of `kind` on purpose: an editor never changes which kind it shows,
@@ -28,6 +30,38 @@
 	function toggle() {
 		open = !open;
 		LS?.setItem('graphTree:' + kind, String(open));
+	}
+
+	// ---- the resize grip, the animation clip list's shape exactly ---------------
+	// That list's cap used to be a FLAT 360px with no relation to its pane, so on a short
+	// dock the grip was pushed clean off the bottom of the window with no way back. So the
+	// ceiling is derived from the MEASURED column, less the room the palette below needs
+	// (a group header plus a few entries), and the floor keeps the grip grabbable.
+	const TREE_RESERVE = 132;
+	// svelte-ignore state_referenced_locally
+	let treeH = $state(parseInt(LS?.getItem('graphTree:h:' + kind) ?? '120') || 120);
+	let resizing = $state(false);
+	const treeMax = $derived(Math.max(56, (paneHeight || 320) - TREE_RESERVE));
+	// re-clamp whenever the pane SHRINKS (dock resize, window resize, undock, or a stored
+	// height from a taller pane): a height that was legal before must not strand the grip
+	$effect(() => {
+		const max = treeMax;
+		if (treeH > max) treeH = max;
+	});
+	function startResize(/** @type {any} */ e) {
+		resizing = true;
+		e.currentTarget.setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+	function doResize(/** @type {any} */ e) {
+		if (!resizing) return;
+		treeH = Math.min(Math.max(56, treeH + e.movementY), treeMax);
+	}
+	function endResize(/** @type {any} */ e) {
+		if (!resizing) return;
+		resizing = false;
+		e.currentTarget.releasePointerCapture?.(e.pointerId);
+		LS?.setItem('graphTree:h:' + kind, String(treeH));
 	}
 
 	// $objectsGroup is READ here on purpose: a derived that only watched `documents`
@@ -66,7 +100,7 @@
 		<span class="gt-count">{rows.length + (sceneNodes ? 1 : 0)}</span>
 	</button>
 	{#if open}
-		<div class="gt-body" role="tree" aria-label={label}>
+		<div class="gt-body" role="tree" aria-label={label} style="max-height: {treeH}px">
 			<!-- Scene is ALWAYS the root, whether or not it owns a document: it is where a
 			     deselect takes you, so it must be reachable even when empty -->
 			<button
@@ -103,6 +137,18 @@
 				</p>
 			{/if}
 		</div>
+		<!-- drag to give the tree more (or less) room, the animation clip list's grip -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			id={'graph-tree-' + kind + '-resize'}
+			class="gt-grip"
+			class:gt-grip-on={resizing}
+			style="touch-action: none"
+			title="Drag to resize the list"
+			onpointerdown={startResize}
+			onpointermove={doResize}
+			onpointerup={endResize}
+		></div>
 	{/if}
 </div>
 
@@ -127,9 +173,19 @@
 		color: rgb(229 231 235);
 	}
 	.gt-body {
-		/* bounded: a scene with fifty flows must not push the palette off the pane */
-		max-height: 40%;
+		/* bounded by the grip's height (inline), so a scene with fifty flows can never
+		   push the palette off the pane */
 		overflow-y: auto;
+	}
+	.gt-grip {
+		height: 6px;
+		cursor: ns-resize;
+		border-top: 1px solid rgb(75 85 99 / 0.6);
+		background: rgb(31 41 55 / 0.4);
+	}
+	.gt-grip:hover,
+	.gt-grip-on {
+		background: var(--accent, rgb(29 78 216 / 0.4));
 	}
 	.gt-row {
 		display: flex;

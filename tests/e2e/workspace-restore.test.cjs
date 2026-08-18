@@ -13,54 +13,71 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// ---- 1. panel layout survives a reload -------------------------------------
+	// ---- 1. a plain reload is a CLEAN SLATE ------------------------------------
+	// The user's call, revising the original fork: reloading must NOT bring windows back.
+	// The layout returns only on an explicit Restore, the auto-restore setting, or a file
+	// load — so it rides the SAVED PAYLOAD, with no localStorage copy and no boot apply.
 	const opened = await A.page.evaluate(async () => {
 		const w = window.__stores;
 		w.flowGraphClose.set(false);
 		w.animationClose.set(false);
 		w.inspectorClose.set(false);
 		w.bottomDock.bottomDockActive.set('animation');
-		// the save is debounced, so give it its window rather than racing the write
-		await new Promise((r) => setTimeout(r, 700));
-		return JSON.parse(localStorage.getItem('workspaceLayout') ?? 'null');
+		await new Promise((r) => setTimeout(r, 500));
+		return {
+			snapshot: w.workspace.snapshotWorkspace(),
+			stored: localStorage.getItem('workspaceLayout')
+		};
 	});
 	h.check(
-		!!opened && opened.open.flow === true && opened.open.animation === true,
-		`the record stores panels as OPEN, not as the inverted *Close flag (${JSON.stringify(opened?.open)})`
+		opened.snapshot.open.flow === true && opened.snapshot.open.animation === true,
+		`the snapshot records panels as OPEN, not as the inverted *Close flag (${JSON.stringify(opened.snapshot.open)})`
 	);
-	h.check(opened?.dockTab === 'animation', `and the active dock tab (${opened?.dockTab})`);
+	h.check(opened.snapshot.dockTab === 'animation', `and the active dock tab (${opened.snapshot.dockTab})`);
+	h.check(
+		opened.stored === null,
+		`nothing is written to localStorage — the layout is not a boot-time preference (${opened.stored})`
+	);
 
 	await h.freshReload(A);
-	const restored = await A.page.evaluate(() => {
+	const afterReload = await A.page.evaluate(() => {
 		const w = window.__stores;
-		let flow, anim, inspector, tab;
+		let flow, anim, inspector;
 		w.flowGraphClose.subscribe((v) => (flow = v))();
 		w.animationClose.subscribe((v) => (anim = v))();
 		w.inspectorClose.subscribe((v) => (inspector = v))();
-		w.bottomDock.bottomDockActive.subscribe((v) => (tab = v))();
-		return { flowOpen: !flow, animOpen: !anim, inspectorOpen: !inspector, tab };
+		return { flowOpen: !flow, animOpen: !anim, inspectorOpen: !inspector };
 	});
 	h.check(
-		restored.flowOpen && restored.animOpen && restored.inspectorOpen,
-		`all three panels came back open after a reload (${JSON.stringify(restored)})`
+		!afterReload.flowOpen && !afterReload.animOpen && !afterReload.inspectorOpen,
+		`a plain reload comes up with everything CLOSED (${JSON.stringify(afterReload)})`
 	);
-	h.check(restored.tab === 'animation', `and the dock reopened on its tab (${restored.tab})`);
 
-	// ---- 2. an unknown field is left ALONE, never defaulted --------------------
-	// A record from an older or newer build must only ever restore LESS — it must not
+	// ---- 2. applying a record opens what it names, and only that ---------------
+	// A record from an older or newer build must only ever restore LESS — it must never
 	// close a panel it has never heard of.
-	const partial = await A.page.evaluate(() => {
+	const partial = await A.page.evaluate(async () => {
 		const w = window.__stores;
-		w.explorerClose.set(false); // open, and absent from the record below
-		w.workspace.applyWorkspace({ open: { flow: false }, dockTab: 'flow' });
-		let flow, explorer;
+		// NOT the Explorer: bottomDock closes it whenever a Flow-family panel becomes the
+		// visible dock tab, so it could never stay open beside `flow` and the check would be
+		// measuring that rule instead of this one. The object list shares nothing with the dock.
+		w.objectListClose.set(false); // open, and absent from the record below
+		await new Promise((r) => setTimeout(r, 200));
+		w.workspace.applyWorkspace({ open: { flow: true }, dockTab: 'flow' });
+		await new Promise((r) => setTimeout(r, 300));
+		let flow, explorer, tab;
 		w.flowGraphClose.subscribe((v) => (flow = v))();
-		w.explorerClose.subscribe((v) => (explorer = v))();
-		return { flowOpen: !flow, explorerOpen: !explorer };
+		w.objectListClose.subscribe((v) => (explorer = v))();
+		w.bottomDock.bottomDockActive.subscribe((v) => (tab = v))();
+		return { flowOpen: !flow, listOpen: !explorer, tab };
 	});
 	h.check(
-		partial.flowOpen === false && partial.explorerOpen === true,
-		`a partial record closes what it names and leaves the rest (${JSON.stringify(partial)})`
+		partial.flowOpen === true && partial.tab === 'flow',
+		`applying a record opens what it names (${JSON.stringify(partial)})`
+	);
+	h.check(
+		partial.listOpen === true,
+		`and leaves a panel it does not mention alone (${JSON.stringify(partial)})`
 	);
 
 	// ---- 3. a scene with nothing to resume carries NO workspace field ----------
@@ -69,6 +86,9 @@ h.run(async () => {
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 900));
 		w.objectActions.deselectObject();
+		await new Promise((r) => setTimeout(r, 400));
+		// close everything, so there is genuinely nothing to resume
+		w.workspace.closeWorkspace();
 		await new Promise((r) => setTimeout(r, 400));
 		const payload = w.sessions.buildSessionPayload('bare');
 		return { has: 'workspace' in payload, value: payload.workspace };
@@ -81,6 +101,10 @@ h.run(async () => {
 	// ---- 4. the SELECTION rides the file ---------------------------------------
 	const withSelection = await A.page.evaluate(async () => {
 		const w = window.__stores;
+		// section 3 closed everything to prove the empty case, so open something again —
+		// a layout is only recorded when there IS one
+		w.objectListClose.set(false);
+		await new Promise((r) => setTimeout(r, 300));
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 800));
 		let g;
@@ -96,9 +120,11 @@ h.run(async () => {
 		withSelection.saved?.selection?.length === 2,
 		`a two-object selection is saved (${JSON.stringify(withSelection.saved?.selection?.length)})`
 	);
+	// the layout rides the payload now (the user revision) - under its own layout key,
+	// so selection / edit / layout stay separable rather than one flat blob
 	h.check(
-		!('open' in (withSelection.saved ?? {})) && !('dockTab' in (withSelection.saved ?? {})),
-		`and the file carries NO panel layout (${JSON.stringify(Object.keys(withSelection.saved ?? {}))})`
+		!!withSelection.saved?.layout && typeof withSelection.saved.layout.open === "object",
+		`and the payload carries the panel layout (${JSON.stringify(Object.keys(withSelection.saved ?? {}))})`
 	);
 
 	// ---- 5. the EDIT SESSION and its picks ride the file ----------------------

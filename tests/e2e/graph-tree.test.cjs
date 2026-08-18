@@ -174,6 +174,86 @@ h.run(async () => {
 	h.check(collapsed.bodyGone, 'collapsing the section removes its rows from the DOM');
 	h.check(collapsed.stored === 'false', `and the state persists (${collapsed.stored})`);
 
+	// ---- 8. the resize grip, the animation clip list's shape -------------------
+	// Its ceiling is derived from the MEASURED column, not a constant: the clip list's cap
+	// used to be a flat 360px with no relation to its pane, so on a short dock the grip was
+	// pushed off the bottom of the window with no way back.
+	// NOT the nav button: it TOGGLES, so clicking it again here closed the node editor
+	// that section 1 opened and the grip was legitimately absent. Drive the stores.
+	await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.flowGraphClose.set(false);
+		w.bottomDock.activateDock('flow');
+		await new Promise((r) => setTimeout(r, 900));
+		// and make sure the flow tree itself is expanded
+		if (!document.querySelector('#graph-tree-flow .gt-body'))
+			document.querySelector('#graph-tree-flow .gt-head')?.click();
+		await new Promise((r) => setTimeout(r, 400));
+	});
+	const grip = await A.page.evaluate(() => {
+		const el = document.querySelector('#graph-tree-flow-resize');
+		const body = document.querySelector('#graph-tree-flow .gt-body');
+		if (!el || !body) return { present: false };
+		const r = el.getBoundingClientRect();
+		const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+		return {
+			present: true,
+			onTop: at === el,
+			x: r.x + r.width / 2,
+			y: r.y + r.height / 2,
+			height: body.getBoundingClientRect().height,
+			maxHeight: body.style.maxHeight
+		};
+	});
+	h.check(grip.present, 'the tree has a resize grip');
+	h.check(grip.onTop, 'and it is the top element at its own centre (premise)');
+	h.check(
+		/^\d+px$/.test(grip.maxHeight ?? ''),
+		`the body is bounded by an explicit height, not a percentage (${grip.maxHeight})`
+	);
+
+	// drag it DOWN: the list gets taller
+	await A.page.mouse.move(grip.x, grip.y);
+	await A.page.mouse.down();
+	for (let dy = 8; dy <= 64; dy += 8) await A.page.mouse.move(grip.x, grip.y + dy, { steps: 2 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(400);
+	const grown = await A.page.evaluate(() => ({
+		maxHeight: parseInt(document.querySelector('#graph-tree-flow .gt-body').style.maxHeight),
+		stored: parseInt(localStorage.getItem('graphTree:h:flow') ?? '0')
+	}));
+	const before = parseInt(grip.maxHeight);
+	h.check(grown.maxHeight > before, `dragging down grew the list (${before} -> ${grown.maxHeight})`);
+	h.check(
+		grown.stored === grown.maxHeight,
+		`and the height persisted on release (stored ${grown.stored})`
+	);
+
+	// the CEILING follows the pane: a stored height taller than a short pane must be
+	// clamped, or the grip ends up unreachable
+	const clamped = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.bottomDock.dockHeight.set(200);
+		await new Promise((r) => setTimeout(r, 600));
+		const body = document.querySelector('#graph-tree-flow .gt-body');
+		const col = document.querySelector('#graph-tree-flow')?.parentElement;
+		return {
+			bodyH: parseInt(body?.style.maxHeight ?? '0'),
+			colH: col ? Math.round(col.getBoundingClientRect().height) : 0
+		};
+	});
+	h.check(
+		clamped.bodyH < clamped.colH,
+		`shrinking the dock re-clamps the list inside its column (${clamped.bodyH} within ${clamped.colH})`
+	);
+	// and the grip is still reachable, which is the thing that actually went wrong before
+	const reachable = await A.page.evaluate(() => {
+		const el = document.querySelector('#graph-tree-flow-resize');
+		const r = el.getBoundingClientRect();
+		return r.bottom <= window.innerHeight && r.top >= 0;
+	});
+	h.check(reachable, 'and its grip is still on screen');
+
 	const errs = h.pageErrors(A);
 	h.check(errs.length === 0, `no page errors (${JSON.stringify(errs.slice(0, 2))})`);
 

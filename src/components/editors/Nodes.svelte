@@ -154,6 +154,8 @@
 		)
 	}: { paletteOpen?: boolean } = $props();
 	let paletteSide = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteSide') ?? 'left' : 'left');
+	// #20 P7: the left column's own height, measured — the graph tree's resize ceiling
+	let paletteColH = $state(0);
 
 	// --- xyflow v1 bridge -------------------------------------------------------
 	// SvelteFlow 1.x binds PLAIN $state.raw arrays (immutable-style updates), not
@@ -505,9 +507,19 @@
 
 <div class="flex h-full w-full">
 	{#if paletteOpen}
-		<div class="flex h-full w-40 shrink-0 flex-col overflow-hidden" style="order: {paletteSide === 'right' ? 3 : 1}">
+		<div
+			class="flex h-full w-40 shrink-0 flex-col overflow-hidden"
+			style="order: {paletteSide === 'right' ? 3 : 1}"
+			bind:clientHeight={paletteColH}
+		>
 			<!-- #20 P7: the graph navigator sits ABOVE the palette in the same pane -->
-			<GraphTree kind="flow" documents={$flowGraphs} sceneKey={SCENE_GRAPH} label="Flows" />
+			<GraphTree
+				kind="flow"
+				documents={$flowGraphs}
+				sceneKey={SCENE_GRAPH}
+				label="Flows"
+				paneHeight={paletteColH}
+			/>
 			<div class="min-h-0 flex-1 overflow-y-auto">
 				<Sidebar onPick={addNodeAtCenter} onPlaceAt={addNodeAtScreen} />
 			</div>

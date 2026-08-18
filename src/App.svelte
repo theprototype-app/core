@@ -43,7 +43,6 @@
   import { startCloudPlugin } from '$lib/cloudPlugin'
   import { startShaderGraphs } from '$lib/shaderGraph'
   import { startShaderSync } from '$lib/shaderSync'
-  import { startWorkspace } from '$lib/workspace'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast } from './stores/appStore'
   import { get } from 'svelte/store'
@@ -92,9 +91,10 @@
     // shader graphs: the compile/target wiring + the replication and history seams
     startShaderGraphs()
     startShaderSync()
-    // #20 P5: restore which panels were open, then keep persisting it. Runs here rather
-    // than at module scope so the panels' own components have mounted and will react.
-    startWorkspace()
+    // #20 P5: deliberately NOTHING to start here. A plain reload comes up in the DEFAULT
+    // state — all windows closed — and the layout is restored only by an explicit
+    // Restore, by the auto-restore setting, or by loading a file, because it rides the
+    // saved payload rather than localStorage.
     // store access for automated tests, opt-in via localStorage
     if (localStorage.getItem('debugStores')) {
       Promise.all([

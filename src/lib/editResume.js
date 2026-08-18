@@ -15,11 +15,14 @@
 //   attempt here — that was reading `.uuid` off stores that hold a uuid STRING — but it
 //   is why the registration seam is the right shape rather than a lucky one.)
 //
-// Same cure as 15-D's `registerVertexSessionRefresher`.
+// Same cure as 15-D's `registerVertexSessionRefresher`. The one exception is
+// `workspace.js`, imported statically below: it is store-only (appStore + bottomDock,
+// both leaves), so it closes no cycle.
+import { snapshotWorkspace, applyWorkspace } from './workspace';
 //
-// Scope, deliberately: selection + mode + picks, never panel layout. Layout is a personal
-// preference and lives in workspace.js — a scene must not rearrange somebody else's
-// screen. Re-picking eleven quads to resume a bevel is the annoying part.
+// Scope: selection, edit mode with its picks, and the panel LAYOUT. The layout is here
+// rather than in localStorage because of when the user wants it back — only on an explicit
+// Restore / auto-restore / file load, never on a plain reload (see workspace.js).
 //
 // EVERYTHING here is best-effort. A scene can legitimately be loaded where the object is
 // gone, where the caps that gate a session refuse it (vrFaceCap is a real ceiling), or by
@@ -62,6 +65,7 @@ export function editResumeReady() {
  * @typedef {object} EditResume
  * @property {string[]} selection object uuids
  * @property {{kind: 'mesh'|'sculpt', uuid: string, submode?: string, tris?: number[]}} [edit]
+ * @property {any} [layout] which panels/windows were open — see workspace.js
  */
 
 /**
@@ -94,8 +98,9 @@ export function captureEditResume() {
 		} else if (sculpt?.uuid) {
 			edit = { kind: 'sculpt', uuid: sculpt.uuid };
 		}
-		if (!selection.length && !edit) return null;
-		return { selection, ...(edit ? { edit } : {}) };
+		const layout = snapshotWorkspace();
+		if (!selection.length && !edit && !layout) return null;
+		return { selection, ...(edit ? { edit } : {}), ...(layout ? { layout } : {}) };
 	} catch {
 		return null;
 	}
@@ -104,12 +109,17 @@ export function captureEditResume() {
 /**
  * Re-apply a resume record after a scene has loaded.
  * @param {any} record
- * @returns {{selection: number, edit: string|null}} what was actually restored
+ * @returns {{selection: number, edit: string|null, layout: boolean}} what was restored
  */
 export function applyEditResume(record) {
-	/** @type {{selection: number, edit: string|null}} */
-	const done = { selection: 0, edit: null };
-	if (!record || typeof record !== 'object' || !sources) return done;
+	/** @type {{selection: number, edit: string|null, layout: boolean}} */
+	const done = { selection: 0, edit: null, layout: false };
+	if (!record || typeof record !== 'object') return done;
+	// the LAYOUT needs no registered sources (it is store-only), so it is restored even
+	// if the scene wiring is not up yet — and FIRST, so a panel that shows the selection
+	// is already mounted when the selection lands in it
+	if (record.layout) done.layout = applyWorkspace(record.layout);
+	if (!sources) return done;
 	try {
 		const wanted = Array.isArray(record.selection) ? record.selection : [];
 		const alive = wanted.filter((/** @type {string} */ uuid) => sources?.exists(uuid));

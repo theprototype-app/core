@@ -590,11 +590,7 @@
 					</SettingRow>
 					<SettingRow name="Touch tools">
 						<svelte:fragment slot="control"><Toggle bind:checked={$touchTools} /></svelte:fragment>
-						Round <strong>Undo</strong>, <strong>Redo</strong> and <strong>Multi-select</strong>
-						buttons beside the logo. Useful on touch devices, where there is no
-						<kbd>Ctrl</kbd>+<kbd>Z</kbd> and no <kbd>Shift</kbd> to hold: with Multi-select on, a
-						tap adds to the selection and a drag on empty space boxes several objects. On by
-						default on phones and narrow windows
+						Round <strong>Undo</strong>, <strong>Redo</strong> and <strong>Multi-select</strong> beside the logo, for touch — where there is no <kbd>Ctrl+Z</kbd> and no <kbd>Shift</kbd> to hold. Multi-select makes a tap add to the selection and a drag on empty space box-select, in the viewport and on mesh vertices, edges and faces. On by default on phones
 					</SettingRow>
 					<SettingRow name="Allow undocking (touch)">
 						<svelte:fragment slot="control"><Toggle bind:checked={$mobileUndockAllowed} /></svelte:fragment>
@@ -745,7 +741,7 @@
 								bind:value={$doubleClickAction}
 							/>
 						</svelte:fragment>
-						What a double-click on an object does in the viewport. A single click always just selects it; <kbd>Ctrl</kbd>+<kbd>A</kbd> selects everything
+						What a double-click on an object does in the viewport. A single click always just selects it; <kbd>Ctrl+A</kbd> selects everything
 					</SettingRow>
 					<p class="ui-section-label">Units</p>
 					<SettingRow name="Length">

@@ -228,6 +228,104 @@ h.run(async () => {
 	);
 	await phone.close();
 
+	// ---- 9. Multi-select works on mesh ELEMENTS too -----------------------------
+	// Reported by the user: the mode did nothing inside Edit Mesh. P4 wired it into the two
+	// OBJECT selection paths and stopped, but the mesh editor reads its own additive flag
+	// from the modifiers — so vertices, edges and faces ignored it entirely.
+	const elements = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.commandsHandler.sceneCommand('/create box 1 1 1');
+		await new Promise((r) => setTimeout(r, 900));
+		let g;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		const object = g.children[g.children.length - 1];
+		w.objectActions.applySelectionSet([object.uuid]);
+		await new Promise((r) => setTimeout(r, 300));
+		w.faceEdit.enterFaceEdit(object.uuid);
+		await new Promise((r) => setTimeout(r, 600));
+		let entered;
+		w.faceEdit.faceEditObject.subscribe((v) => (entered = v))();
+		return { entered: !!entered, uuid: object.uuid };
+	});
+	h.check(elements.entered, 'a face session opened for the element check (premise)');
+
+	// Two REAL clicks on two different faces, no modifier held. The bug lives in
+	// Scene.svelte's additive flag, so a store-level probe cannot see it: `pickFaceUnit`
+	// takes no additive argument at all (the additive path is `toggleFaceSelection`), and
+	// re-implementing that branch in the test would assert the test's own logic.
+	const faceA = await h.projectPoint(A.page, [0, 0.5, 0]); // top
+	const faceB = await h.projectPoint(A.page, [0, 0, 0.5]); // front
+
+	const pickTwice = async (mode) => {
+		await A.page.evaluate(async (on) => {
+			const w = window.__stores;
+			w.multiSelectMode.set(on);
+			w.faceEdit.clearFaceSelection();
+			await new Promise((r) => setTimeout(r, 250));
+		}, mode);
+		await A.page.mouse.click(faceA.x, faceA.y);
+		await A.page.waitForTimeout(450);
+		await A.page.mouse.click(faceB.x, faceB.y);
+		await A.page.waitForTimeout(500);
+		return A.page.evaluate(() => {
+			let tris;
+			window.__stores.faceEdit.faceEditSelectedTris.subscribe((v) => (tris = v))();
+			return (tris ?? []).length;
+		});
+	};
+
+	const withMode = await pickTwice(true);
+	const withoutMode = await pickTwice(false);
+	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	h.check(
+		withoutMode > 0,
+		`a plain face click selects something at all (premise: ${withoutMode} tris)`
+	);
+	h.check(
+		withMode > withoutMode,
+		`with Multi-select on, two face clicks ADD instead of replacing (${withMode} tris vs ${withoutMode})`
+	);
+
+	// ---- 10. the cluster never covers the logo ---------------------------------
+	// Reported by the user: with Connect docked the cluster landed on the logo, because the
+	// docked `top` was written straight onto the element and overrode the stacked position.
+	const layout = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const rect = (sel) => {
+			const el = document.querySelector(sel);
+			if (!el) return null;
+			const r = el.getBoundingClientRect();
+			return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, w: r.width, h: r.height };
+		};
+		const overlaps = (a, b) =>
+			!!a && !!b && a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
+
+		w.connectDocked.set(false);
+		await new Promise((r) => setTimeout(r, 300));
+		const wide = { logo: rect('#logo-menu'), tools: rect('#touch-tools') };
+		w.connectDocked.set(true);
+		w.connectBarHeight.set(56);
+		await new Promise((r) => setTimeout(r, 400));
+		const docked = { logo: rect('#logo-menu'), tools: rect('#touch-tools') };
+		w.connectDocked.set(false);
+		return {
+			wideOverlap: overlaps(wide.logo, wide.tools),
+			dockedOverlap: overlaps(docked.logo, docked.tools),
+			// stacked = a COLUMN below the logo, so it is taller than it is wide
+			dockedStacked: !!docked.tools && docked.tools.h > docked.tools.w,
+			dockedBelow: !!docked.tools && !!docked.logo && docked.tools.y >= docked.logo.bottom,
+			wideBeside: !!wide.tools && !!wide.logo && wide.tools.x >= wide.logo.right
+		};
+	});
+	h.check(!layout.wideOverlap, 'with room, the cluster sits beside the logo and does not overlap it');
+	h.check(layout.wideBeside, 'and is genuinely to its right');
+	h.check(
+		!layout.dockedOverlap,
+		'with Connect docked it still does not overlap the logo (the reported bug)'
+	);
+	h.check(layout.dockedBelow, 'it drops BELOW the logo instead');
+	h.check(layout.dockedStacked, 'stacked vertically, not as a row');
+
 	const errs = h.pageErrors(A);
 	h.check(errs.length === 0, `no page errors (${JSON.stringify(errs.slice(0, 2))})`);
 

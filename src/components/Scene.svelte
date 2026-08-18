@@ -717,7 +717,7 @@
 			if ($editingObject) {
 				// D2: a miss deselects all vertices (parking the gizmo, D5) — the
 				// session and the object selection stay (deliberate)
-				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey))
+				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode))
 					clearVertexSelection();
 				return;
 			}
@@ -749,18 +749,18 @@
 				// instead of a face unit (every click picks one, so no threshold)
 				if ($faceEditSubmode === 'edges') {
 					if (tri < 0 || !hit || !edited) {
-						if (!(event.ctrlKey || event.shiftKey || event.metaKey)) clearEdgeSelection();
+						if (!(event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode)) clearEdgeSelection();
 						return;
 					}
 					const local = edited.worldToLocal(hit.point.clone());
-					pickEdge(pickEdgeAt(tri, local), event.ctrlKey || event.shiftKey || event.metaKey);
+					pickEdge(pickEdgeAt(tri, local), event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
 					return;
 				}
 				// E10: ctrl/shift-click ADDS to the selection (never auto-applies); a
 				// plain click REPLACES it with the unit under the cursor. The heal
 				// flag is off for additive clicks — the heal would wipe the very
 				// selection they are adding to.
-				const additive = event.ctrlKey || event.shiftKey || event.metaKey || $faceEditMulti;
+				const additive = event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode || $faceEditMulti;
 				highlightFaceByTriangle(tri, !additive);
 				if (tri >= 0) {
 					if (additive) {

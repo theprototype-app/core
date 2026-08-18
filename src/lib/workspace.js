@@ -15,28 +15,28 @@ import {
 } from '../stores/appStore';
 import { bottomDockActive } from './bottomDock';
 
-// #20 P5: the WORKSPACE — which panels are open, restored across a reload.
+// #20 P5: the WORKSPACE — which panels, windows and drawers were open.
 //
-// Two halves with deliberately different scopes, and the split is the whole design:
+// WHEN IT COMES BACK is the whole design, and it is the user's call (2026-08-18, revising
+// the original fork): a plain page reload comes up in the DEFAULT state, everything
+// closed. The layout is restored ONLY by an explicit act —
 //
-//   LAYOUT is personal and LOCAL. Which panels you keep open is a preference, like a
-//   theme, so it lives in localStorage and never rides a scene. Opening somebody
-//   else's .tpscene must not rearrange your screen.
+//   * clicking Restore on the session prompt,
+//   * the auto-restore setting doing that for you,
+//   * or loading a scene from a file.
 //
-//   SELECTION and the EDIT SESSION are part of "where the author left off", so those
-//   DO ride a .tpscene — see sessions.js. Re-picking eleven quads to resume a bevel is
-//   the annoying part; re-opening a panel is not.
+// So the snapshot rides the SAVED PAYLOAD (autosave + sessions + .tpscene) next to the
+// selection and the edit session, and there is deliberately NO localStorage copy and no
+// boot-time apply. A reload is a clean slate unless you asked for your scene back — and
+// if you did, you get the windows you had with it.
 //
-// Everything here is store-only: no THREE, no scene, no wire. One localStorage record
-// rather than a key per panel, so a partial write cannot leave half a workspace.
-
-const KEY = 'workspaceLayout';
-const ls = typeof localStorage !== 'undefined' ? localStorage : null;
+// This module is store-only: no THREE, no scene, no wire. It stays a leaf so `editResume`
+// can reach it without pulling anything into sessions.js's import subtree.
 
 /**
- * The panel stores, by the name they persist under. Note the `*Close` ones are
- * INVERTED (true = closed) — a bug factory if each site re-derives it, so the sense is
- * recorded ONCE here and `open` in the record always means open.
+ * The panel stores, by the name they persist under. The `*Close` ones are INVERTED
+ * (true = closed) — a bug factory if each site re-derives it, so the sense is recorded
+ * ONCE here and `open` in the record always means open.
  * @type {{name: string, store: any, closed: boolean}[]}
  */
 const PANELS = [
@@ -52,11 +52,26 @@ const PANELS = [
 	{ name: 'notes', store: notesDrawerOpen, closed: false }
 ];
 
-/** Read the live workspace. @returns {any} */
+/**
+ * Read the live workspace, for a save payload.
+ *
+ * Returns NULL when nothing is open, and that is deliberate on two counts: a scene with
+ * no windows open adds no field to its file (so an ordinary save stays as small and as
+ * comparable as it was), and restoring such a scene does not go and CLOSE the panels you
+ * happen to have open. "Restore less, never more" is this module's rule, and closing
+ * somebody's windows because the author had none is the aggressive reading of it.
+ * @returns {any|null}
+ */
 export function snapshotWorkspace() {
 	/** @type {any} */
 	const open = {};
-	for (const panel of PANELS) open[panel.name] = panel.closed ? !get(panel.store) : !!get(panel.store);
+	let any = false;
+	for (const panel of PANELS) {
+		const isOpen = panel.closed ? !get(panel.store) : !!get(panel.store);
+		open[panel.name] = isOpen;
+		if (isOpen) any = true;
+	}
+	if (!any) return null;
 	return {
 		open,
 		dockTab: get(bottomDockActive),
@@ -65,9 +80,11 @@ export function snapshotWorkspace() {
 }
 
 /**
- * Apply a workspace record. Unknown or missing fields are LEFT ALONE rather than
- * defaulted, so a record written by an older build (or a newer one) can only ever
- * restore less, never close something it has never heard of.
+ * Apply a workspace record.
+ *
+ * Unknown or missing fields are LEFT ALONE rather than defaulted, so a record written by
+ * an older build (or a newer one) can only ever restore less — it can never close
+ * something it has never heard of.
  * @param {any} record
  */
 export function applyWorkspace(record) {
@@ -86,61 +103,8 @@ export function applyWorkspace(record) {
 	return true;
 }
 
-/** @returns {any|null} */
-export function storedWorkspace() {
-	if (!ls) return null;
-	try {
-		const raw = ls.getItem(KEY);
-		return raw ? JSON.parse(raw) : null;
-	} catch {
-		return null;
-	}
-}
-
-export function saveWorkspace() {
-	if (!ls) return;
-	try {
-		ls.setItem(KEY, JSON.stringify(snapshotWorkspace()));
-	} catch {
-		// a full quota must never break the editor over a layout preference
-	}
-}
-
-/** @type {any} */
-let saveTimer = null;
-/** @type {(() => void)[]} */
-let unsubscribes = [];
-let restored = false;
-
-/**
- * Start persisting, and restore what was stored.
- *
- * The RESTORE runs first and synchronously, before any subscription is wired, for two
- * reasons: a panel bound to the selection would otherwise mount against nothing, and
- * subscribing first means every `set` below re-triggers the save with a half-applied
- * record.
- */
-export function startWorkspace() {
-	if (restored) return;
-	restored = true;
-	applyWorkspace(storedWorkspace());
-
-	const schedule = () => {
-		if (saveTimer) clearTimeout(saveTimer);
-		// debounced: opening a dock tab writes several of these stores in one flush
-		saveTimer = setTimeout(saveWorkspace, 400);
-	};
-	for (const panel of PANELS) unsubscribes.push(panel.store.subscribe(schedule));
-	unsubscribes.push(bottomDockActive.subscribe(schedule));
-	unsubscribes.push(inspectorKind.subscribe(schedule));
-	unsubscribes.push(inspectorPinned.subscribe(schedule));
-}
-
-/** Test/teardown seam. */
-export function stopWorkspace() {
-	for (const off of unsubscribes) off();
-	unsubscribes = [];
-	if (saveTimer) clearTimeout(saveTimer);
-	saveTimer = null;
-	restored = false;
+/** Close every panel this module knows about — the state a plain reload lands in, and
+ *  what a restore of a scene that had nothing open should produce. */
+export function closeWorkspace() {
+	for (const panel of PANELS) panel.store.set(panel.closed ? true : false);
 }

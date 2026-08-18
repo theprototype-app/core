@@ -73,6 +73,8 @@
 	let propsOpen = $state(LS?.getItem('shaderPropsOpen') !== 'false');
 	let paletteOpen = $state(LS?.getItem('shaderPaletteOpen') !== 'false');
 	let propsTab = $state(LS?.getItem('shaderPropsTab') || 'settings');
+	// #20 P7: the left column's own height, measured — the graph tree's resize ceiling
+	let paletteColH = $state(0);
 	let edgeStyle = $state(LS?.getItem('shaderEdgeStyle') ?? 'bezier');
 	let bgPattern = $state(LS?.getItem('shaderBg') ?? 'dots');
 	let showMinimap = $state(LS?.getItem('shaderMinimap') === 'true');
@@ -388,13 +390,14 @@
 
 		<div class="shader-body">
 			{#if paletteOpen}
-				<div class="shader-side shader-side-left">
+				<div class="shader-side shader-side-left" bind:clientHeight={paletteColH}>
 					<!-- #20 P7: the graph navigator sits ABOVE the palette in the same pane -->
 					<GraphTree
 						kind="shader"
 						documents={$shaderGraphs}
 						sceneKey={SCENE_GRAPH_KEY}
 						label="Shaders"
+						paneHeight={paletteColH}
 					/>
 					<div class="shader-side-scroll">
 						<ShaderSidebar onPick={addNodeAtCentre} />

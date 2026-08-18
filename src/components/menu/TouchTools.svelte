@@ -17,10 +17,16 @@
 </script>
 
 {#if $touchTools}
+	<!-- The logo's own top is published as a CUSTOM PROPERTY rather than written straight
+	     to `top`, because the narrow layout needs to place itself BELOW that anchor. The
+	     first version set `top` directly, which overrode the media query's stacked
+	     position and put the cluster back on top of the logo whenever Connect was
+	     docked — both landed at the same top and the same 20px inset. -->
 	<div
 		id="touch-tools"
 		class="touch-tools"
-		style={$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}
+		class:tt-stacked={$connectDocked}
+		style="--tt-anchor: {$connectDocked ? $connectBarHeight + 8 : 20}px"
 		aria-label="Touch tools"
 	>
 		<button
@@ -63,13 +69,27 @@
 	/* sits to the RIGHT of the 48px logo at the same inset, so the two read as one
 	   cluster; fixed like every other piece of chrome (an absolute element off an edge
 	   grows the document and drags the centred Connect pill sideways) */
+	/* Beside the logo when there is room: same top, one 48px button's width clear of it.
+	   Fixed, never absolute — an absolute element off an edge grows the document and drags
+	   the centred Connect pill sideways. */
 	.touch-tools {
 		position: fixed;
-		top: 20px;
+		top: var(--tt-anchor, 20px);
 		left: 78px;
 		z-index: var(--z-hud);
 		display: flex;
+		flex-direction: row;
 		gap: 6px;
+	}
+	/* No room for a row beside the logo: stack VERTICALLY BELOW it instead of over it.
+	   `connectDocked` is the app's own JS-measured "the centred pill would overlap the
+	   corner chrome" signal, which is exactly the condition where the top strip is tight —
+	   so it drives this as well, rather than a second guessed breakpoint. 56px = the
+	   logo's 48px plus the 8px gutter. */
+	.touch-tools.tt-stacked {
+		top: calc(var(--tt-anchor, 20px) + 56px);
+		left: 20px;
+		flex-direction: column;
 	}
 	.tt-btn {
 		display: flex;
@@ -104,10 +124,14 @@
 
 	/* on a narrow screen the logo keeps its inset but the cluster must not run into
 	   the centred Connect pill — wrap under the logo instead */
-	@media (max-width: 480px) {
+	/* the same stack for a genuinely narrow window, whether or not Connect has docked:
+	   three 48px buttons plus the logo need ~240px of top strip, and below that the row
+	   would run into the centred pill */
+	@media (max-width: 560px) {
 		.touch-tools {
+			top: calc(var(--tt-anchor, 20px) + 56px);
 			left: 20px;
-			top: 76px;
+			flex-direction: column;
 		}
 	}
 </style>

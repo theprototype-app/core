@@ -46,6 +46,43 @@ while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE
 
 ## Assertion discipline (a check that cannot fail is not a check)
 
+PIXEL features have their own helpers now: `grabFrame`/`centeredClip`/`frameDelta`/
+`framePixelsOffColor` (screenshot -> back INTO the page -> 2D canvas -> RGBA, compared
+in the page so only metrics cross the bridge). Four rules came out of building them:
+
+- **Assert the CHANGED PIXEL COUNT, not a mean.** A mean is blind to a thin edge — a
+  one-pixel outline over 1280x720 moves it by ~0.1. But keep both metrics: AO on a lone
+  convex box is a small contact BAND with a large delta, where a count alone reads as
+  failure. Pick the threshold per effect: measured, SMAA moves 1351 px where a dot
+  screen moves all 129600, and one shared number would pass vacuously for the strong
+  ones and fail the subtle ones.
+- **`locator('canvas').first()` matches DungeonMinimap's HIDDEN canvas** (it renders
+  before threlte's `<Canvas>` in App.svelte) and waits 30s on an invisible element — the
+  same trap as never `waitForSelector('canvas')`, one tool over. `grabFrame` derives its
+  rect from the renderer's own `domElement`. And any COLOUR metric needs a chrome-free
+  clip: the Connect bar and the Controls HUD are composited over the canvas and land in
+  an element screenshot too.
+- **A "nothing is selected" CONTROL frame must deselect EXPLICITLY.** Creation paths
+  populate the selection SET (15-K), so the baseline carried the very outline it was the
+  baseline for and read 1880 px against 1880. With the deselect it is 0 vs 1880.
+- **A leftover portaled dropdown can cover the thing under test.** ThemedSelect closes on
+  POINTERDOWN, so `document.body.click()` leaves `.ts-list` mounted; harmless at three
+  menu entries and fatal at thirteen, when it covered the rows two later sections
+  dragged and both real-mouse checks reported broken features. Dismiss with a real
+  pointerdown and assert `elementFromPoint` is the intended target before any
+  synthesized drag.
+
+- **"One entry per gesture" needs BOTH halves asserted.** "One undo reverts the whole
+  drag" PASSES with the collapse removed, because the gesture's entry still sits on top
+  of the per-pointermove ones. Only the MESSAGE COUNT (12 instead of 0) and a check that
+  a SECOND undo skips PAST the drag catch it.
+- **An async pull that arrives later can be masked by any rebuild.** A check that a peer
+  applies a pulled asset passed with the retry logic REMOVED, because it flipped that
+  peer's view mode after the pull and the rebuild loaded the file anyway. Take the
+  baseline BEFORE the state arrives, and do not touch anything that would recompile.
+- **Never run `npm run build` while the lane's dev server watches the same worktree** —
+  it rewrites `.svelte-kit/output` under the server and kills it; the next ten suites
+  all report `ERR_CONNECTION_REFUSED`, which looks like a mass regression.
 The expensive failures in #16 were not broken code — they were assertions that
 passed while the user watched the feature misbehave:
 

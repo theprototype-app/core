@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { flowGraphs, allNodes } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { itemByHash } from './explorer';
+import { music } from './sceneMusic';
 
 // Scene asset manifest (108, quiz: DERIVED): the Explorer's 'Scene' folder is
 // a live VIEW computed from what the replicated scene references — sound-node
@@ -43,6 +44,23 @@ function compute() {
 			});
 		}
 	}
+	// A6: the scene MUSIC track is scene data referencing an Explorer content hash,
+	// exactly like a sound node's — it was missing here, so a .tpscene carried the
+	// hash in session.json with no bytes in assets/ and a loaded scene stayed silent
+	// until some peer happened to have the file.
+	const musicHash = get(music).hash;
+	if (musicHash && !seenAudio.has(musicHash)) {
+		seenAudio.add(musicHash);
+		out.push({
+			id: 'audio:' + musicHash,
+			group: 'audio',
+			name: get(music).name || 'music',
+			kind: 'audio',
+			hash: musicHash,
+			itemId: itemByHash(musicHash)?.id ?? null,
+			derived: false
+		});
+	}
 	get(objectsGroup)?.traverse?.((/** @type {any} */ object) => {
 		// UV2: one entry per TEXTURED SLOT. A multi-material mesh (imported
 		// .obj/.mtl, a merged mesh) used to be skipped entirely, so its textures
@@ -83,6 +101,7 @@ export function startSceneAssets() {
 	started = true;
 	flowGraphs.subscribe(schedule); // H1: any graph document change
 	objectsGroup.subscribe(schedule);
+	music.subscribe(schedule); // A6: the shared track is a scene asset too
 	// texture changes mutate materials without an objectsGroup identity change
 	// in some paths — a slow safety tick keeps the view honest
 	setInterval(schedule, 5000);

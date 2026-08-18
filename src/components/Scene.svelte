@@ -7,6 +7,7 @@
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
+	import { vrPostEnabled } from '$lib/viewportOverrides';
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
 	import {
 		selectObject,
@@ -1289,7 +1290,14 @@
 
 {#if !$isLocked && !$isVRMode}
 <TransformControls bind:controls={$TControls} {onchange} {oncreate} />
+{/if}
 
+<!-- 21-A A8: the composer renders in PLAY mode too. A game's authored look is
+     scene data, and until now entering play mode threw it away along with the
+     outlines — the component was inside the editor-only block above. It keeps
+     its own VR branch (direct render), and stands the selection/lock outlines
+     down while playing. -->
+{#if !$isVRMode || $vrPostEnabled}
 <Outline />
 {/if}
 

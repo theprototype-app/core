@@ -5,12 +5,28 @@ import { objectsGroup } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
+import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
 import { runScript } from './scriptRuntime';
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { updateParticles } from './particleRuntime';
 import { startObjectFlowWatcher } from './objectFlow';
 import { parkEditOverlays } from './editOverlays';
+// A3: hudDocs is a LEAF (svelte/store only), so a static edge to it closes no cycle
+import {
+	hudRuntime,
+	hudDocs,
+	showHudScreen,
+	visibleScreen,
+	hudScreenOverride,
+	hudDocOf,
+	resolveScreen,
+	hudValueOf,
+	setHudValue
+} from './hudDocs';
+// 21-D6: gameState is a LEAF for exactly this reason — history imports THIS module, so a
+// gameState that imported history would close the cycle.
+import { gameState, setGameState, setGameVar, gameVar, gameElapsed, commitGameState } from './gameState';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -170,6 +186,270 @@ function updatePlayAnim(pairs, ctx) {
 	}
 	// forget nodes that no longer exist, so a rebuilt node starts fresh
 	for (const id of [...playAnimEdge.keys()]) if (!seen.has(id)) playAnimEdge.delete(id);
+}
+
+// --- A3: the HUD runtime -----------------------------------------------------
+// THROTTLED to ~10Hz and written ONLY ON CHANGE. `flowValues` throttles to 150ms for
+// exactly this reason: a per-frame store write re-renders the whole layer 60 times a
+// second, and the layer is real DOM.
+let lastHudAt = 0;
+/** the last map we published, so an unchanged frame writes nothing @type {string} */
+let lastHudJson = '';
+/** screen ids we have already acted on, keyed by node — a `show` must fire on the
+ * trigger's EDGE, not on every frame while the pulse is alive @type {Map<string, number>} */
+const hudScreenActed = new Map();
+
+/** Format a number into an element's label. `{v}` is the wired value, so 'Gems: {v}'
+ * needs no string node and no string socket type.
+ * @param {string} format @param {number} value @param {number} decimals */
+function hudFormat(format, value, decimals) {
+	const text = Number(value).toFixed(Math.max(0, Math.min(6, Math.round(decimals || 0))));
+	const pattern = String(format ?? '{v}');
+	return pattern.includes('{v}') ? pattern.split('{v}').join(text) : pattern || text;
+}
+
+/** Rows a module pushed into a list element, keyed by element id.
+ * @type {Map<string, any[]>} */
+const hudListRows = new Map();
+
+/** Push rows into a HUD List element. A list is an element WRITTEN INTO, never a value
+ * that flows — the socket system has no arrays. Call it on EVERY peer from replicated
+ * state (a module's own registerStateSync), never on one and hope.
+ * @param {string} elementId @param {any[]} rows */
+export function setHudRows(elementId, rows) {
+	hudListRows.set(String(elementId), Array.isArray(rows) ? rows.slice(0, 64) : []);
+}
+
+/** `now` comes from runTick: it is a LOCAL const there, not module scope.
+ * @param {number} time @param {any} ctx @param {number} now */
+function updateHudRuntime(time, ctx, now) {
+	// the screen nodes act on a trigger EDGE, so they are checked every frame; only the
+	// published value map is throttled
+	const hudNodes = nodes.filter((/** @type {any} */ n) => String(n.type ?? '').startsWith('hud'));
+	if (!hudNodes.length) {
+		if (lastHudJson !== '') {
+			lastHudJson = '';
+			hudRuntime.set({});
+		}
+		return;
+	}
+
+	for (const node of hudNodes) {
+		if (node.type !== 'hudscreen') continue;
+		const stamp = triggerStampFor(node.id, ctx);
+		if (stamp === null) continue;
+		// only on a NEW stamp: while a pulse is alive the trigger reads the same time,
+		// and re-acting every frame would make 'toggle' flicker at 60Hz
+		if (hudScreenActed.get(node.id) === stamp) continue;
+		hudScreenActed.set(node.id, stamp);
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		const key = node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : 'scene';
+		const wanted = String(data.screen ?? '').trim();
+		if (!wanted) continue;
+		const action = data.action ?? 'show';
+		// compare against the RESOLVED id: the node's field may hold a NAME, and a toggle
+		// that compared a name to an id would never see itself as already shown
+		const wantedId = resolveScreen(hudDocOf(key), wanted)?.id ?? wanted;
+		const current = visibleScreen(key)?.id ?? null;
+		// LOCAL on every peer: showHudScreen writes the per-peer override, so one player
+		// can be on the menu while another plays. Each peer receives the same replicated
+		// pulse and makes the same local decision.
+		if (action === 'hide') showHudScreen(key, null);
+		else if (action === 'toggle') showHudScreen(key, current === wantedId ? null : wanted);
+		else showHudScreen(key, wanted);
+	}
+	for (const id of [...hudScreenActed.keys()])
+		if (!nodes.some((/** @type {any} */ n) => n.id === id)) hudScreenActed.delete(id);
+
+	if (now - lastHudAt < 100) return; // ~10Hz
+	lastHudAt = now;
+	/** @type {Record<string, any>} */
+	const next = {};
+	for (const node of hudNodes) {
+		if (node.type === 'hudscreen') continue;
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		const element = String(data.element ?? '').trim();
+		if (!element) continue;
+		if (node.type === 'hudtext') {
+			next[element] = { text: hudFormat(data.format, num(data.value), num(data.decimals)) };
+		} else if (node.type === 'hudbar') {
+			next[element] = {
+				value: num(data.value),
+				min: num(data.min),
+				max: num(data.max),
+				text: data.format ? hudFormat(data.format, num(data.value), 0) : ''
+			};
+		} else if (node.type === 'hudtimer') {
+			next[element] = {
+				text: hudFormat(data.format, hudTimerRemaining(node, data, time, ctx), num(data.decimals))
+			};
+		} else if (node.type === 'hudlist') {
+			next[element] = {
+				text: String(data.title ?? ''),
+				rows: (hudListRows.get(element) ?? []).slice(0, Math.max(1, num(data.rows) || 5))
+			};
+		}
+		// hudbutton contributes no runtime value — its label is authored on the element
+	}
+	const json = JSON.stringify(next);
+	if (json === lastHudJson) return; // ON CHANGE ONLY
+	lastHudJson = json;
+	hudRuntime.set(next);
+}
+
+/** Seconds left on a HUD Timer. DERIVED from the shared trigger stamp, so every peer
+ * reads the same number with no clock and no message of its own — the same reasoning
+ * as a looping sound's phase. An `autostart` timer with nothing wired counts from the
+ * runtime's own clock origin.
+ * @param {any} node @param {any} data @param {number} time @param {any} ctx */
+function hudTimerRemaining(node, data, time, ctx) {
+	const duration = Math.max(0, num(data.duration));
+	const stamp = triggerStampFor(node.id, ctx);
+	if (stamp === null) return data.autostart === false ? duration : Math.max(0, duration - time);
+	// a synced stamp can sit AHEAD of `time` by a frame; clamp both ends
+	return Math.max(0, Math.min(duration, duration - (time - stamp)));
+}
+
+// --- 21-D6: the game shell's ACTION half -------------------------------------
+// Every action here fires on the trigger's STAMP EDGE, never per frame: while a pulse is
+// alive the trigger reads the same time, so acting every frame would re-enter `playing`
+// (and re-stamp startedAt) sixty times a second.
+/** node id -> the stamp we last acted on @type {Map<string, number>} */
+const gameActed = new Map();
+/** the game state we last SAW, so `ongamestate` can detect a transition @type {string} */
+let lastGameState = '';
+/** the camera a `gamestart`/`setcamera` node last pointed us at, so we do not re-enter it
+ * every frame @type {string} */
+let cameraShown = '';
+
+/** Look through a camera object LOCALLY. Replicating this is deliberately not done: the
+ * house rule is that a peer's graph must never move another peer's viewpoint, so every
+ * peer acts on the REPLICATED state/trigger itself and the views converge.
+ * Reached through a dynamic import — cameraPreview pulls in scene/UI modules that must
+ * not enter this module's static subtree. @param {string} uuid */
+function lookThroughCamera(uuid) {
+	if (!uuid || cameraShown === uuid) return;
+	import('./cameraPreview')
+		// THE LATCH IS SET ON SUCCESS, NEVER ON INTENT. startCameraPreview builds a real
+		// camera FROM the marker object and REFUSES (false) when it cannot find one — which
+		// is the normal case for a LATE JOINER, whose game state arrives before the scene
+		// does. Stamping the uuid up front made that failure permanent: the transition
+		// consumed the only attempt, and syncGameCameraNow — the one-shot that exists
+		// precisely for a peer that witnessed no transition — then early-returned on its own
+		// latch and the joiner sat in the editor view for the rest of the game.
+		.then((m) => {
+			if (m.startCameraPreview(uuid)) cameraShown = uuid;
+		})
+		.catch(() => {});
+}
+
+/** 21-D4: a graph MOVING a control (a Reset button, a difficulty the host sets).
+ * On the trigger STAMP EDGE, never per frame: a live pulse reads the same time, so a
+ * per-frame write would fight the player's own pointer at 60Hz - the hudscreen rule.
+ * @param {number} time @param {any} ctx */
+function updateHudSetNodes(time, ctx) {
+	for (const node of nodes) {
+		if (node.type !== 'hudset') continue;
+		const stamp = triggerStampFor(node.id, ctx);
+		if (stamp === null) continue;
+		if (hudSetActed.get(node.id) === stamp) continue;
+		hudSetActed.set(node.id, stamp);
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		const element = String(data.element ?? '').trim();
+		if (!element) continue;
+		// the element decides whether the write travels, exactly as a player's own drag
+		// does - one write path, one rule about sharing
+		const el = findHudElement(element);
+		setHudValue(element, data.value, { shared: !!el?.shared });
+	}
+	for (const id of [...hudSetActed.keys()])
+		if (!nodes.some((/** @type {any} */ n) => n.id === id)) hudSetActed.delete(id);
+}
+
+/** @type {Map<string, number>} */
+const hudSetActed = new Map();
+
+/** The element behind an id, across every HUD document. An input's OPTIONS and its
+ * `shared` flag live on the element, and a node names only the id. @param {string} id */
+function findHudElement(id) {
+	const all = get(hudDocs);
+	for (const doc of Object.values(all ?? {}))
+		for (const screen of doc?.screens ?? []) {
+			const hit = screen.elements.find((/** @type {any} */ el) => el.id === id);
+			if (hit) return hit;
+		}
+	return null;
+}
+
+/** @param {number} time @param {any} ctx */
+function updateGameNodes(time, ctx) {
+	const game = get(gameState);
+
+	// 1. the ACTIONS, on a fresh trigger stamp only
+	for (const node of nodes) {
+		const type = node.type;
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable') continue;
+		const stamp = triggerStampFor(node.id, ctx);
+		if (stamp === null) continue;
+		if (gameActed.get(node.id) === stamp) continue;
+		gameActed.set(node.id, stamp);
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		if (type === 'setgamestate') {
+			// EVERY peer runs this from the same replicated stamp, so the write is
+			// idempotent-by-latest-wins rather than needing an authority
+			setGameState(String(data.state ?? 'playing'), { outcome: String(data.outcome ?? '') });
+		} else if (type === 'setcamera') {
+			const uuid = typeof data.camera === 'string' ? data.camera : '';
+			if (uuid) lookThroughCamera(uuid);
+		} else {
+			const name = String(data.name ?? '');
+			if (!name) continue;
+			const v = num(data.value ?? 0);
+			const op = data.op ?? 'set';
+			const current = num(gameVar(name, 0));
+			setGameVar(name, op === 'add' ? current + v : op === 'subtract' ? current - v : v);
+		}
+	}
+	for (const id of [...gameActed.keys()])
+		if (!nodes.some((/** @type {any} */ n) => n.id === id)) gameActed.delete(id);
+
+	// 2. the TRANSITION: pulse On Game State, and let Game Start pick the camera. Both
+	// are LOCAL reactions to REPLICATED state, which is why neither sends anything.
+	if (game.state !== lastGameState) {
+		const from = lastGameState;
+		lastGameState = game.state;
+		for (const node of nodes) {
+			if (node.type !== 'ongamestate') continue;
+			const wanted = String(node.data?.state ?? 'playing');
+			const edge = node.data?.edge ?? 'enter';
+			const hit = edge === 'exit' ? from === wanted : game.state === wanted;
+			// replicate: false — every peer reaches this transition itself from the
+			// already-replicated state, so a broadcast would count the pulse N times
+			if (hit) applyNodeTrigger(node.id, syncedNow(), false);
+		}
+		if (from && game.state !== 'playing') cameraShown = '';
+		for (const node of nodes) {
+			if (node.type !== 'gamestart') continue;
+			if (game.state !== String(node.data?.state ?? 'playing')) continue;
+			const data = resolveInputs(node, nodes, edges, time, ctx);
+			const uuid = typeof data.camera === 'string' ? data.camera : '';
+			if (uuid) lookThroughCamera(uuid);
+		}
+	}
+}
+
+/** A late joiner arrives with the state ALREADY set, so there is no transition to react
+ * to — this is the one-shot catch-up the `gamestart` node needs to work for them too.
+ * Called once the graph and the game state have both landed. */
+export function syncGameCameraNow() {
+	const game = get(gameState);
+	for (const node of nodes) {
+		if (node.type !== 'gamestart') continue;
+		if (game.state !== String(node.data?.state ?? 'playing')) continue;
+		const uuid = typeof node.data?.camera === 'string' ? node.data.camera : '';
+		if (uuid) lookThroughCamera(uuid);
+	}
+	lastGameState = game.state;
 }
 
 /** The shared timestamp of whatever event is wired into this node's `trigger`
@@ -345,7 +625,12 @@ export const valueTypes = [
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
 	'animstate', // 17-E F3: the readable half of animfinished
-	'animmarker' // 17-E F5: the playhead crossed a named point in a clip
+	'animmarker', // 17-E F5: the playhead crossed a named point in a clip
+	'hudtimer', // A3: the remaining seconds, derived from the shared trigger stamp
+	'hudbutton', // A3: an event source, pulsed by fireHudButton
+	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
+	// 21-D6 the game shell
+	'ongamestate', 'getvariable', 'gametime'
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -647,6 +932,57 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		}
 		case 'counter':
 			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;
+		// --- 21-D4: the HUD as a SOURCE ---
+		case 'hudinput': {
+			// LOCAL read. A local value is per-peer BY DESIGN (my volume), and a shared one
+			// is already replicated, so in both cases every peer reads its own store and
+			// nothing about the read goes on the wire.
+			const held = hudValueOf(String(d.element ?? ''), undefined);
+			const fallback = d.fallback ?? 0;
+			if (held === undefined) return num(fallback);
+			switch (d.read ?? 'value') {
+				case 'on':
+					// a toggle as 1/0, so it can gate a Compare or scale a number
+					return held === true || held === 'true' || num(held) > 0 ? 1 : 0;
+				case 'text':
+					return String(held);
+				case 'index': {
+					// a dropdown's POSITION in its own option list, which is what a Switcher
+					// wants. The options live on the ELEMENT, not on this node - the node
+					// names an element and nothing more.
+					const el = findHudElement(String(d.element ?? ''));
+					const options = String(el?.options ?? '')
+						.split(',')
+						.map((/** @type {string} */ o) => o.trim())
+						.filter(Boolean);
+					const at = options.indexOf(String(held));
+					return at < 0 ? num(fallback) : at;
+				}
+				default:
+					return typeof held === 'boolean' ? (held ? 1 : 0) : num(held);
+			}
+		}
+		// --- 21-D6: the game shell's readable half ---
+		case 'getvariable':
+			// LOCAL read of REPLICATED state, so every peer computes the same number and
+			// nothing about the read goes on the wire
+			return num(gameVar(String(d.name ?? ''), d.fallback ?? 0));
+		case 'gametime': {
+			// derived from the shared `startedAt` stamp — no clock of its own, so two peers
+			// mid-round agree, and a late joiner converges the moment the state arrives
+			const g = get(gameState);
+			const elapsed = gameElapsed();
+			switch (d.read ?? 'elapsed') {
+				case 'remaining':
+					return Math.max(0, num(d.length ?? 60) - elapsed);
+				case 'round':
+					return g.round;
+				case 'playing':
+					return g.state === 'playing' ? 1 : 0;
+				default:
+					return elapsed;
+			}
+		}
 		// --- H5: object-flow composition ---
 		case 'flowinput': {
 			// value injected by the scene graph's embedded Object Flow node this
@@ -661,8 +997,23 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// the embedded node exposes the target flow's outputs as named handles,
 			// computed at the END of the previous tick (one-frame latency)
 			return { __handles: graphOutputs[d.flowUuid] ?? {} };
-		default:
-			return undefined;
+		default: {
+			// A1: a module VALUE node. Pure function of (data, time) — the script-node
+			// rule — so every peer computes the same value from the replicated node data
+			// and the shared clock, and nothing is sent. The PATH-based `seen` guard in
+			// evalNode already covers cycles through it.
+			if (!moduleValueNodes[node.type]) return undefined;
+			// resolve the module's DECLARED inputs the way a core node resolves its own,
+			// so data.<handle> is the wired value when wired and the node's param when not
+			const data = { ...d };
+			const declared = moduleNodeInputs[node.type];
+			if (declared)
+				for (const handle of Object.keys(declared)) data[handle] = input(handle, d[handle]);
+			return evalModuleValueNode(node.type, data, time, {
+				id: node.id,
+				graphId: node.__graph ?? SCENE_GRAPH
+			});
+		}
 	}
 }
 
@@ -678,7 +1029,14 @@ export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 		if (edge.target !== node.id || !edge.targetHandle) return;
 		const source = allNodes.find((n) => n.id === edge.source);
 		if (!source) return;
-		if (!valueTypes.includes(source.type) && !sourceValueTypes.includes(source.type)) return;
+		// A1: a module value node is a third kind of source — without this a module
+		// value could never reach a consumer's named input, only a card readout
+		if (
+			!valueTypes.includes(source.type) &&
+			!sourceValueTypes.includes(source.type) &&
+			!moduleValueNodes[source.type]
+		)
+			return;
 		const value = unwrapHandle(evalNode(source, allNodes, allEdges, time, new Set(), ctx), edge);
 		if (value !== undefined) data[edge.targetHandle] = value;
 	});
@@ -824,6 +1182,27 @@ export function fireAnimMarker(uuid, name) {
 	});
 }
 
+/**
+ * A1: a module fired one of its own EVENT nodes. `fireObjectClick`'s body with the
+ * target filter swapped for a caller-supplied match, ending in the same replicated
+ * applyNodeTrigger — a module event is a real event on ONE peer, not a derivation,
+ * so it replicates exactly like a click and every peer computes the identical pulse
+ * from the shared stamp.
+ * @param {string} type the module's node type
+ * @param {(data: any, id: string) => boolean} [match] which instances fire (all when absent)
+ * @returns {number} how many nodes were pulsed
+ */
+export function fireModuleTrigger(type, match) {
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== type) return;
+		if (typeof match === 'function' && !match(node.data ?? {}, node.id)) return;
+		applyNodeTrigger(node.id, syncedNow(), true);
+		fired++;
+	});
+	return fired;
+}
+
 export function fireObjectClick(uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
@@ -848,6 +1227,26 @@ export function fireObjectImpact(uuid, strength) {
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
 			applyNodeTrigger(node.id, syncedNow(), true);
 	});
+}
+
+/**
+ * A3/A2: a HUD button was pressed on THIS peer — pulse the `hudbutton` node bound to
+ * that element id. REPLICATED, like fireObjectClick: a press is a real event on one
+ * peer, not a derivation, so the stamp travels on the existing `nodetrigger` message
+ * and every peer then computes the identical pulse. The pulse formula is the one
+ * onclick/keypress use, so event->number coercion, Counter fan-in and triggerStampFor
+ * all work on it unchanged — and this batch adds NO new runtime message type.
+ * @param {string} elementId @returns {number} how many nodes were pulsed
+ */
+export function fireHudButton(elementId) {
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== 'hudbutton') return;
+		if (String(node.data?.element ?? '') !== String(elementId)) return;
+		applyNodeTrigger(node.id, syncedNow(), true);
+		fired++;
+	});
+	return fired;
 }
 
 /**
@@ -890,7 +1289,13 @@ function applyAnimation(object, base, anim, time, ctx) {
 	}
 	if (moduleEffects[anim.type]) {
 		try {
-			moduleEffects[anim.type](object, base, data, time);
+			// A1: the 5th arg is ADDITIVE — every shipped module takes four params and
+			// stays byte-unchanged; a new one can learn its own node id and graph, which
+			// is what lets one module host several instances of the same node type.
+			moduleEffects[anim.type](object, base, data, time, {
+				id: anim.id,
+				graphId: anim.__graph ?? SCENE_GRAPH
+			});
 		} catch (error) {
 			console.log('module effect ' + anim.type + ' failed', error);
 		}
@@ -1168,6 +1573,15 @@ function runTick(now) {
 	});
 	updatePlayAnim(animPairs, ctx);
 
+	// A3: ONE HUD collection pass, on the sound/particle/playanim shape. What every
+	// element SAYS is computed here from the already-replicated graph, which is why the
+	// runtime half needs no message of its own (golden rule 8, deterministic).
+	updateHudRuntime(time, ctx, now);
+	// 21-D6: the game shell. Runs BEFORE the HUD pass would matter next frame, and reads
+	// the same replicated trigger stamps, so every peer takes the same decisions.
+	updateGameNodes(time, ctx);
+	updateHudSetNodes(time, ctx);
+
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
 	if (now - lastValuesAt > 150) {
 		lastValuesAt = now;
@@ -1175,7 +1589,11 @@ function runTick(now) {
 		const values = {};
 		for (const node of nodes) {
 			// H5: objectflow returns a handle MAP, not a scalar — no card readout
-			if (valueTypes.includes(node.type) && node.type !== 'objectflow')
+			// A1: a module value node gets the same on-card live readout for free
+			if (
+				(valueTypes.includes(node.type) || moduleValueNodes[node.type]) &&
+				node.type !== 'objectflow'
+			)
 				values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}
 		flowValues.set(values);

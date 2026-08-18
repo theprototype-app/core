@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, orbitControls, TControls } from '../stores/sceneStore';
-import { restoreGraphs, clearGraphs, SCENE_GRAPH } from '../stores/flowStore';
-import { serializeGraphs } from './flowGraphs';
+import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
+import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
@@ -11,9 +11,9 @@ import {
 	animatedImportsSnapshot,
 	animatedImportsRestore
 } from './animatedImports';
-import { animationsSnapshot, animationsRestore } from './animationPreview';
-import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
-import { peers, showToast, showInfoToast } from '../stores/appStore';
+import { animationsSnapshot, animationsRestore, copyAnimationsFrom } from './animationPreview';
+import { shaderGraphsSnapshot, shaderGraphsRestore, copyShaderGraphFrom } from './shaderGraph';
+import { peers, showToast, showInfoToast, dismissToastById, modulesOpen } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
 // #20 P5: selection + any open edit session ride the file; PANEL LAYOUT does not (that
@@ -22,10 +22,27 @@ import { annotationsSnapshot, annotationsRestore } from './autosave';
 import { captureEditResume, applyEditResume } from './editResume';
 import { jointsSnapshot, jointsRestore } from './joints';
 import { scenePostSnapshot, scenePostRestore } from './scenePost';
+// A6.1: the scene's LOOK and RULES ride the file beside its objects. They were
+// missing, so a template loaded into whatever sky and gravity the room happened to
+// have — and a physics scene is unplayable at a peer's edited gravity. Each pair
+// follows scenePost exactly: null when default, and restore stamps a fresh
+// changedAt because a restore is an authoritative local write.
+import { environmentSnapshot, environmentRestore } from './environment';
+import { scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
+import { musicSnapshot, musicRestore } from './sceneMusic';
+import {
+	moduleRequirements,
+	classifyRequirements,
+	rememberSceneModules
+} from './moduleRequirements';
+import { disabledModules } from './moduleSDK';
+import { findNodeSpec } from './nodeCatalog';
+import { hudDocsSnapshot, hudDocsRestore } from './hudDocs';
+import { gameStateSnapshot, gameStateRestore } from './gameState';
 import { sceneCommand, sendObjects } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
-import { showConfirm } from './confirmDialog';
+import { showConfirm, showChoice } from './confirmDialog';
 import { APP_VERSION } from './version.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
@@ -109,6 +126,12 @@ export function buildSessionPayload(name) {
 	const animatedUuids = animatedImportUuids(group);
 	/** @type {any} */
 	let graphs;
+	// A6.1/A6.2: none of these read the object graph, so they are taken before the
+	// serialization block and folded in with a conditional spread below
+	const env = environmentSnapshot();
+	const gravity = scenePhysicsSnapshot();
+	const track = musicSnapshot();
+	const mods = moduleRequirements();
 	try {
 		return {
 			id: crypto.randomUUID(),
@@ -146,6 +169,25 @@ export function buildSessionPayload(name) {
 			// annotations — it is scene data, not per-object data. Absent (null) when
 			// the scene has no look, so an older build reading this file sees no field.
 			post: scenePostSnapshot(),
+			// A6.1: sky/fog/exposure + extra lights, scene gravity, the shared music
+			// track, and which MODULES the flow needs. Each snapshot is NULL when it
+			// is the default, and a null one is OMITTED rather than written as
+			// `"environment":null` — so a plain scene's session.json is byte-identical
+			// to what a pre-A6 build wrote, and absent already means default on the
+			// way back in. (`post` predates this and keeps its explicit null.)
+			...(env ? { environment: env } : {}),
+			...(gravity ? { physics: gravity } : {}),
+			...(track ? { music: track } : {}),
+			// A6.2: {id, version} — the handshake's shape, so there is one shape for
+			// "which modules" in the whole system.
+			...(mods.length ? { modules: mods } : {}),
+			// A2: the HUD, on the same reasoning and the same terms — scene data beside the
+			// objects, null when nothing is authored so a default scene saves byte-identical
+			hud: hudDocsSnapshot({
+				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+			}),
+			// 21-D6: the game shell, null when pristine so a scene with no game is unchanged
+			game: gameStateSnapshot(),
 			camera: camera
 				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 				: null,
@@ -228,6 +270,105 @@ async function confirmSessionFormat(payload) {
 	});
 }
 
+
+/**
+ * A6.2: the module-requirement prompt. A scene's `modules` field names what its
+ * FLOW needs; this is where a player finds out before the scene lands looking
+ * broken.
+ *
+ * Runs where `confirmSessionFormat` runs — after the format check and BEFORE any
+ * restore or asset loop — because a cancelled import must not mutate anything.
+ * Returns false only for an explicit Cancel; every other answer proceeds, because
+ * this is ADVISORY by design (so is `checkModuleVersions`) and a scene the player
+ * wants to look at should never be un-openable.
+ *
+ * The one sentence it must say out loud is that installing here installs for THIS
+ * player: modules do not travel over the wire, so each peer needs their own copy.
+ * @param {any} payload @returns {Promise<boolean>} false = cancel the import
+ */
+async function confirmModuleRequirements(payload) {
+	const { missing, disabled } = classifyRequirements(payload?.modules);
+	if (!missing.length && !disabled.length) return true;
+	const name = (/** @type {any} */ entry) => entry.id + (entry.version ? ' v' + entry.version : '');
+	const lines = [];
+	if (missing.length) lines.push('Not installed: ' + missing.map(name).join(', '));
+	if (disabled.length) lines.push('Switched off: ' + disabled.map(name).join(', '));
+	/** @type {{value: string, label: string, color?: string}[]} */
+	const choices = [];
+	if (missing.length) choices.push({ value: 'install', label: 'Install (' + missing.length + ')' });
+	if (disabled.length) choices.push({ value: 'enable', label: 'Enable (' + disabled.length + ')' });
+	choices.push({ value: 'anyway', label: 'Load anyway', color: 'alternative' });
+	const answer = await showChoice({
+		title: 'This scene uses modules',
+		message:
+			lines.join('\n') +
+			'\n\nEach player needs this module — installing it here installs it for you only.',
+		choices
+	});
+	if (!answer) return false; // Cancel / Esc / outside-close: nothing has been touched
+	if (answer === 'enable') enableRequired(disabled);
+	if (answer === 'install') await installRequired(missing);
+	return true;
+}
+
+/** Switch requested modules back on (they are already installed).
+ * @param {{id: string}[]} entries */
+function enableRequired(entries) {
+	const ids = entries.map((entry) => entry.id);
+	disabledModules.update((list) => list.filter((id) => !ids.includes(id)));
+	showToast(
+		'Enabled ' + ids.join(', ') + ' — reload if a node still shows as missing'
+	);
+}
+
+/**
+ * Install the missing modules from the gallery. Reuses the Browse tab's own
+ * machinery (`loadModuleGallery` + `galleryInstallUrl` + `installUrl`), so there
+ * is no second install path to keep correct — and a module the gallery does not
+ * list is REPORTED rather than silently skipped.
+ * @param {{id: string}[]} entries
+ */
+async function installRequired(entries) {
+	const { loadModuleGallery, galleryModules, galleryInstallUrl } = await import('./moduleGallery');
+	const { installUrl } = await import('./userModules');
+	await loadModuleGallery();
+	const listed = get(galleryModules);
+	const absent = [];
+	let installed = 0;
+	for (const entry of entries) {
+		const found = listed.find((/** @type {any} */ item) => item.id === entry.id);
+		if (!found) {
+			absent.push(entry.id);
+			continue;
+		}
+		if (await installUrl(galleryInstallUrl(found))) installed++;
+		else absent.push(entry.id);
+	}
+	if (installed)
+		showToast(
+			'Installed ' + installed + ' module' + (installed === 1 ? '' : 's') +
+				' — every player needs their own copy'
+		);
+	if (absent.length)
+		showInfoToast(
+			'scene-modules-missing',
+			'Could not install: ' + absent.join(', ') + '. The scene loads without ' +
+				(absent.length === 1 ? 'it' : 'them') + ' — nodes from ' +
+				(absent.length === 1 ? 'that module' : 'those modules') + ' will show as missing.',
+			[
+				{
+					label: 'Open Modules',
+					// a sticky info toast is only removed by its id, so the action clears
+					// its own prompt on the way out (the share-or-stash precedent)
+					action: () => {
+						dismissToastById('scene-modules-missing');
+						modulesOpen.set(true);
+					}
+				}
+			]
+		);
+}
+
 /** Store an imported payload as a fresh slot. @param {any} payload */
 async function finishImport(payload) {
 	payload.id = crypto.randomUUID(); // never collide with an existing slot
@@ -244,6 +385,8 @@ async function finishImport(payload) {
 export async function importSession(json) {
 	const payload = parseSessionJson(json);
 	if (!(await confirmSessionFormat(payload))) return null;
+	// A6.2: BEFORE finishImport writes the slot — a cancelled import must not mutate
+	if (!(await confirmModuleRequirements(payload))) return null;
 	return finishImport(payload);
 }
 
@@ -261,7 +404,15 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 	const { itemByHash, itemBlob } = await import('./explorer');
 	// B3 (.tpscene): the include-checkboxes — flow strips nodes/edges, assets
 	// toggles the hash bundle, packs adds the imported-pack section below
-	if (opts.flow === false) payload = { ...payload, nodes: [], edges: [] };
+	// A6.3 (bug): this stripped the LEGACY nodes/edges fields and left `graphs`
+	// untouched, so "don't include the flow" exported every graph document anyway —
+	// including per-object ones the legacy fields never carried. `modules` goes with
+	// it, because the requirement is DERIVED from the flow: keeping it would prompt
+	// for a module the exported file no longer uses.
+	if (opts.flow === false) {
+		payload = { ...payload, nodes: [], edges: [], graphs: {} };
+		delete payload.modules;
+	}
 	/** @type {Record<string, any>} */
 	const files = { 'session.json': strToU8(JSON.stringify(payload)) };
 	/** @type {Array<{hash: string, name: string, kind: string, file: string}>} */
@@ -316,6 +467,9 @@ export async function importSessionZip(buffer) {
 	// cancelled import must not mutate the Explorer library
 	const payload = parseSessionJson(strFromU8(sessionBytes));
 	if (!(await confirmSessionFormat(payload))) return null;
+	// A6.2: and the module prompt sits right beside it, above the asset/pack loops
+	// for the same reason — a cancelled import must not touch the Explorer either
+	if (!(await confirmModuleRequirements(payload))) return null;
 	let index = [];
 	try {
 		if (entries['assets/index.json']) index = JSON.parse(strFromU8(entries['assets/index.json']));
@@ -379,6 +533,8 @@ export function importObjects(payload, indices) {
 	if (!group) return 0;
 	/** @type {any} */
 	const peer = get(peers);
+	/** @type {Map<string, string>} saved uuid -> the fresh one we gave it */
+	const uuidMap = new Map();
 	let added = 0;
 	for (const index of indices) {
 		const element = payload.objects?.[index];
@@ -390,15 +546,84 @@ export function importObjects(payload, indices) {
 			continue;
 		}
 		stripEditOverlays(object); // a stale wireframe saved by an older build
-		object.traverse((/** @type {any} */ node) => (node.uuid = crypto.randomUUID()));
+		// A6.3 (bug): every uuid is REASSIGNED here (a merge must not collide with
+		// what is already in the scene), and the payload's per-object documents are
+		// keyed by the OLD uuid — so a merge import used to drop this object's flow
+		// graph, its shader graph and its clips on the floor, silently. Remember the
+		// mapping and carry them across afterwards.
+		object.traverse((/** @type {any} */ node) => {
+			const fresh = crypto.randomUUID();
+			uuidMap.set(node.uuid, fresh);
+			node.uuid = fresh;
+		});
 		group.add(object);
 		recordObjectPresence('create', object);
 		if (peer) peer.send({ type: 'object', element: object.toJSON() });
 		added++;
 	}
 	objectsGroup.update((value) => value);
+	carryObjectDocuments(payload, uuidMap);
 	showToast('Imported ' + added + ' object' + (added === 1 ? '' : 's') + ' from the session');
 	return added;
+}
+
+/**
+ * A6.3: carry a merge-imported object's PER-OBJECT documents across the uuid
+ * reassignment `importObjects` performs — its flow graph, its shader graph and its
+ * authored clips. Each rides the copy-from-a-document helper its own module owns,
+ * so replication and the never-clobber rule are theirs, not this file's.
+ *
+ * Only objects we actually imported are remapped: a payload graph keyed by a uuid
+ * outside the map belongs to an object the user did not tick.
+ * @param {any} payload @param {Map<string, string>} uuidMap
+ */
+function carryObjectDocuments(payload, uuidMap) {
+	if (!uuidMap.size) return;
+	for (const [from, to] of uuidMap) {
+		const graph = payload.graphs?.[from];
+		if (graph) copyGraphFrom(graph, to);
+		const shader = payload.shaderGraphs?.[from];
+		if (shader) copyShaderGraphFrom(shader, to);
+		const clips = payload.animations?.[from];
+		if (clips) copyAnimationsFrom(clips, to);
+	}
+}
+
+/**
+ * A6.4: after a scene load, say ONCE how many nodes cannot be rendered and why.
+ *
+ * The flow editor grows a badge for this, but the dock is closed for most players
+ * loading a game, so the Notification Center is the channel that always reaches
+ * them. Counted from the LIVE graphs (post-restore), never from the payload, so it
+ * agrees with what the editor would show.
+ * @param {any} payload
+ */
+function reportUnknownNodes(payload) {
+	// remembered first: the unknown-node card names its provider from this
+	rememberSceneModules(payload?.modules);
+	const missing = allNodes().filter(
+		(/** @type {any} */ node) => node.type && !findNodeSpec(node.type)
+	);
+	if (!missing.length) return;
+	const kinds = [...new Set(missing.map((/** @type {any} */ node) => node.type))];
+	const provider = classifyRequirements(payload?.modules).missing.map((entry) => entry.id);
+	showInfoToast(
+		'scene-unknown-nodes',
+		missing.length + ' node' + (missing.length === 1 ? '' : 's') + ' in this scene need a module' +
+			(provider.length ? ' (' + provider.join(', ') + ')' : '') + ': ' + kinds.join(', ') +
+			'. They are kept exactly as saved — install the module and they come back to life.',
+		[
+			{
+				label: 'Open Modules',
+				// a sticky info toast is only removed by its id, so the action clears its
+				// own prompt on the way out (the share-or-stash precedent)
+				action: () => {
+					dismissToastById('scene-unknown-nodes');
+					modulesOpen.set(true);
+				}
+			}
+		]
+	);
 }
 
 /** Replace the scene with a session (safety-stash first). Replicates through
@@ -458,6 +683,16 @@ export async function applySession(payload) {
 	// the look replicates on restore too, so loading a scene into a live room
 	// brings its art direction along (the jointsRestore precedent below)
 	scenePostRestore(payload.post, true);
+	// A6.1: and so do the sky, the gravity and the music — a game template that
+	// loaded into the room's own sky and gravity was the reason this phase exists.
+	// Each is a no-op when the field is absent (= the scene wants the defaults).
+	environmentRestore(payload.environment, true);
+	scenePhysicsRestore(payload.physics, true);
+	musicRestore(payload.music, true);
+	// and the HUD with it: loading a game scene into a live room must bring its overlay
+	hudDocsRestore(payload.hud ?? null, true, true);
+	// and the game with it: loading a game scene into a live room must bring its state
+	gameStateRestore(payload.game ?? null, true);
 	if (peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
 	/** @type {any} */
 	const camera = get(globalCamera);
@@ -473,6 +708,10 @@ export async function applySession(payload) {
 	// P5: last, once the objects exist and the camera is parked — a selection applied
 	// before the tree is populated selects nothing, and a session entry needs its object
 	if (payload.workspace) applyEditResume(payload.workspace);
+	// A6.4: ONE Notification Center entry naming the unrenderable nodes, because the
+	// flow editor's badge is invisible when the dock is closed — which it is for most
+	// players loading a game. Runs after restoreGraphs, so the count is the real one.
+	reportUnknownNodes(payload);
 	showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
 }
 

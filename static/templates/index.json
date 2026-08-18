@@ -7,6 +7,10 @@
 			"description": "Greybox kit: floor, ramp to a platform, steps, walls and cover blocks",
 			"author": "theprototype",
 			"license": "CC0-1.0",
+			"tags": [
+				"greybox",
+				"level design"
+			],
 			"bytes": 3279,
 			"scene": "/templates/level-blockout/scene.tpscene",
 			"thumb": "/templates/level-blockout/thumb.webp"
@@ -17,6 +21,10 @@
 			"description": "Static floor and ramp, a dynamic cube pyramid, dominos and a bouncy ball — press P to simulate",
 			"author": "theprototype",
 			"license": "CC0-1.0",
+			"tags": [
+				"physics",
+				"sandbox"
+			],
 			"bytes": 3542,
 			"scene": "/templates/physics-playground/scene.tpscene",
 			"thumb": "/templates/physics-playground/thumb.webp"
@@ -27,6 +35,10 @@
 			"description": "Room shell with a door and window opening, columns and a half roof to block out interiors",
 			"author": "theprototype",
 			"license": "CC0-1.0",
+			"tags": [
+				"greybox",
+				"architecture"
+			],
 			"bytes": 3720,
 			"scene": "/templates/architecture-shell/scene.tpscene",
 			"thumb": "/templates/architecture-shell/thumb.webp"

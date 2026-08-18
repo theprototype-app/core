@@ -2,7 +2,7 @@
 	// Flow host: the Node editor. DOCKED mode is a Flow-family TAB in the shared bottom
 	// dock (DockTabs strip; shares dockHeight with Flow Code + Animation; only the
 	// visible tab renders). UNDOCKED mode is a floating, resizable window. Both persist.
-	import { flowGraphClose, flowCodeClose, animationClose, uvEditorClose, mobileUndockAllowed, shaderEditorClose } from '../stores/appStore.js';
+	import { flowGraphClose, flowCodeClose, animationClose, uvEditorClose, mobileUndockAllowed, shaderEditorClose, hudEditorClose } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
@@ -79,7 +79,8 @@
 		{ label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => { flowCodeClose.set(false); activateDock('flowcode'); } },
 		{ label: '＋ Animation', tooltip: 'Animate the selected object', action: () => { animationClose.set(false); activateDock('animation'); } },
 		{ label: '＋ UV editor', tooltip: 'Edit the selected mesh’s UV map and textures', action: () => { uvEditorClose.set(false); activateDock('uv'); } },
-		{ label: '＋ Shader editor', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } }
+		{ label: '＋ Shader editor', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } },
+		{ label: '＋ HUD editor', tooltip: 'Lay out the on-screen HUD its nodes drive', action: () => { hudEditorClose.set(false); activateDock('hud'); } }
 	];
 	function openAddMenu(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();

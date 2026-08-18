@@ -30,10 +30,44 @@ export function showConfirm(opts) {
 	});
 }
 
-/** Settle the active dialog (ConfirmModal buttons + outside-close). @param {boolean} answer */
+/** Settle the active dialog. A boolean dialog gets true/false; a `choices` dialog
+ * gets the chosen value STRING (its own resolve wrapper normalizes anything else
+ * to null), which is why this no longer coerces with `!!`.
+ * @param {boolean|string} answer */
 export function resolveConfirm(answer) {
 	confirmDialog.update((current) => {
-		if (current?.resolve) current.resolve(!!answer);
+		if (current?.resolve) current.resolve(typeof answer === 'string' ? answer : !!answer);
 		return null;
+	});
+}
+
+/**
+ * A6.2: the same dialog with MORE THAN TWO answers — the module-requirement prompt
+ * needs Install / Enable / Load anyway / Cancel, and a boolean cannot carry that.
+ *
+ * Resolves the chosen entry's `value`, or `null` for cancel / Esc / outside-close,
+ * so a caller can `if (!choice) return` exactly like the boolean form. The boolean
+ * `showConfirm` above is untouched: it is the same store with no `choices` field,
+ * which is what ConfirmModal branches on.
+ * @param {{title?: string, message: string, choices: {value: string, label: string,
+ *   color?: string}[], cancelLabel?: string}} opts
+ * @returns {Promise<string|null>}
+ */
+export function showChoice(opts) {
+	return new Promise((resolve) => {
+		confirmDialog.update((previous) => {
+			if (previous?.resolve) previous.resolve(false);
+			return {
+				title: opts.title || 'Choose',
+				message: opts.message || '',
+				choices: opts.choices ?? [],
+				cancelLabel: opts.cancelLabel || 'Cancel',
+				// ConfirmModal calls resolveConfirm(value) for a choice and
+				// resolveConfirm(false) for cancel; normalize both here so the caller
+				// only ever sees a string or null
+				resolve: (/** @type {any} */ answer) =>
+					resolve(typeof answer === 'string' && answer ? answer : null)
+			};
+		});
 	});
 }

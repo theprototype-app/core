@@ -4,12 +4,39 @@
 	import { modulesOpen, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { modulePrimitiveGroups } from '$lib/moduleSDK';
+	import { MODULE_CATEGORIES } from '$lib/moduleGallery';
+	import { tagUnion, matchesTags } from '$lib/sceneTemplates';
 
 	// like Settings: side panels hide while the manager is open, restore after
 	$: if ($modulesOpen) {
 		hidePanels();
 	} else if ($modulesOpen === false) {
 		restorePanels();
+	}
+
+	// C5.1: Browse filters. LEGACY-mode file, so these are `let` + `$:`, never runes —
+	// one $state here would flip the whole component and break the build.
+	let galleryCategory = 'all';
+	/** @type {string[]} */
+	let galleryTags = [];
+	$: galleryByCategory =
+		galleryCategory === 'all'
+			? $galleryModules
+			: $galleryModules.filter((/** @type {any} */ e) => (e.category ?? 'tool') === galleryCategory);
+	// chips come from the entries the category left, so they can never offer a tag that
+	// filters to nothing; ONE chip component's behaviour, shared with the Templates modal
+	$: galleryChips = tagUnion(galleryByCategory);
+	$: galleryShown = galleryByCategory.filter((/** @type {any} */ e) => matchesTags(e, galleryTags));
+	// a category that no longer contains the picked tags would show an empty list with
+	// no way back, so switching category drops them (the Templates-modal tab rule)
+	/** @param {string} next */
+	function pickGalleryCategory(next) {
+		galleryCategory = next;
+		galleryTags = [];
+	}
+	/** @param {string} tag */
+	function toggleGalleryTag(tag) {
+		galleryTags = galleryTags.includes(tag) ? galleryTags.filter((t) => t !== tag) : [...galleryTags, tag];
 	}
 
 	// primitives registered by a module spawn from its card (not the sidebar)
@@ -201,7 +228,45 @@
 					User tab still work.
 				</p>
 			{:else}
-				{#each $galleryModules as entry (entry.id)}
+				<!-- C5.1: category filter + tag chips. A game and a tool are different
+				     things to go looking for, and the list is long enough now that
+				     "which of these is a game" was guesswork. -->
+				<div id="gallery-filters" class="flex flex-wrap items-center gap-1.5">
+					<button
+						class="gal-chip"
+						class:active={galleryCategory === 'all'}
+						data-gal-cat="all"
+						aria-pressed={galleryCategory === 'all'}
+						on:click={() => pickGalleryCategory('all')}>All</button
+					>
+					{#each MODULE_CATEGORIES as cat (cat)}
+						<button
+							class="gal-chip"
+							class:active={galleryCategory === cat}
+							data-gal-cat={cat}
+							aria-pressed={galleryCategory === cat}
+							on:click={() => pickGalleryCategory(cat)}>{cat}s</button
+						>
+					{/each}
+					{#if galleryChips.length}
+						<span class="px-1 text-gray-600">|</span>
+						{#each galleryChips as tag (tag)}
+							<button
+								class="gal-chip gal-chip-tag"
+								class:active={galleryTags.includes(tag)}
+								data-gal-tag={tag}
+								aria-pressed={galleryTags.includes(tag)}
+								on:click={() => toggleGalleryTag(tag)}>{tag}</button
+							>
+						{/each}
+					{/if}
+				</div>
+				{#if galleryShown.length === 0}
+					<p id="gallery-filtered-empty" class="text-sm italic text-gray-500 dark:text-gray-400">
+						Nothing matches that filter.
+					</p>
+				{/if}
+				{#each galleryShown as entry (entry.id)}
 					{@const installed = installedById[entry.id]}
 					<div
 						id={'gallery-card-' + entry.id}
@@ -238,6 +303,23 @@
 							{/if}
 						</div>
 						<p class="pt-1 text-sm text-gray-500 dark:text-gray-300">{entry.description}</p>
+						{#if entry.category === 'game' || entry.tags?.length}
+							<div class="flex flex-wrap items-center gap-1 pt-1.5">
+								{#if entry.category === 'game'}
+									<span class="gal-badge gal-badge-game" data-gal-badge={entry.id}>game</span>
+								{/if}
+								{#each entry.tags ?? [] as tag (tag)}
+									<span class="gal-badge">{tag}</span>
+								{/each}
+								{#if entry.template}
+									<!-- a game ships a scene too: point at it rather than leaving the
+									     player to guess which template goes with the module -->
+									<span class="gal-badge gal-badge-scene" title={'Scene: ' + entry.template}>
+										+ scene
+									</span>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				{/each}
 			{/if}
@@ -456,6 +538,48 @@
 </Modal>
 
 <style>
+	/* C5.1 Browse filter chips. Every colour ends in a LITERAL fallback — no theme
+	   defines every token, and a bare var() leaves an unstyled control. */
+	.gal-chip {
+		padding: 0.1rem 0.55rem;
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: capitalize;
+		color: rgb(156 163 175);
+		background: rgb(55 65 81 / 0.5);
+		border: 1px solid rgb(75 85 99 / 0.6);
+		border-radius: 999px;
+		cursor: pointer;
+	}
+	.gal-chip:hover {
+		color: rgb(229 231 235);
+		border-color: var(--color-primary-600, #2563eb);
+	}
+	.gal-chip.active {
+		color: #fff;
+		background: var(--color-primary-600, #2563eb);
+		border-color: var(--color-primary-600, #2563eb);
+	}
+	.gal-chip-tag {
+		text-transform: none;
+	}
+	.gal-badge {
+		padding: 0.02rem 0.4rem;
+		font-size: 0.62rem;
+		font-weight: 600;
+		color: rgb(156 163 175);
+		background: rgb(55 65 81 / 0.45);
+		border-radius: 999px;
+	}
+	.gal-badge-game {
+		color: rgb(196 181 253);
+		background: rgb(76 29 149 / 0.35);
+	}
+	.gal-badge-scene {
+		color: rgb(147 197 253);
+		background: rgb(30 58 138 / 0.35);
+	}
+
 	/* Core / User / Browse read as real tabs (underline the active one) instead
 	   of buttons. STICKY: the modal body is the scroller, so the tab bar stays
 	   put while a long module list scrolls under it — it needs an opaque

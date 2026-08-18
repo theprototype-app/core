@@ -4,6 +4,15 @@ import { globalScene, objectsGroup, selectedObject, globalCamera, isVRMode, isLo
 import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
+// A1: moduleNodeIO imports NOTHING, so a static edge to it closes no cycle
+import {
+	registerModuleValueNode,
+	unregisterModuleValueNode,
+	registerModuleNodeInputs,
+	unregisterModuleNodeInputs
+} from './moduleNodeIO';
+// A5: moduleToolboxes is store-only, same reasoning
+import { registerModuleToolbox, unregisterModuleToolbox } from './moduleToolboxes';
 import { APP_VERSION } from './version.js';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
@@ -25,7 +34,9 @@ export const modulePrimitiveGroups = writable([]);
 export const moduleMenuItems = writable([]);
 
 // plain registries (hot runtime paths)
-/** @type {Record<string, (object: any, base: any, data: any, time: number) => void>} */
+/** A1: the 5th arg ({id, graphId}) is OPTIONAL — a four-parameter effect, which is
+ * every shipped module, is byte-unchanged.
+ * @type {Record<string, (object: any, base: any, data: any, time: number, ctx?: any) => void>} */
 export const moduleEffects = {};
 /** @type {Record<string, any>} node type -> Svelte component */
 export const moduleNodeComponents = {};
@@ -172,11 +183,17 @@ function makeApi(moduleId) {
 		 * @param {Record<string, any>=} components
 		 */
 		registerNodeGroup(group, components) {
+			// A6: TAG each item with its module, the way registerPrimitive already
+			// does — moduleRequirements() answers "which modules does this scene
+			// need" by walking the graphs' node types back to their owner, and an
+			// untagged item makes that underivable. Tagged copies are built ONCE so
+			// the onDispose filter below can still match them by identity.
+			const items = group.items.map((/** @type {any} */ item) => ({ ...item, moduleId }));
 			moduleNodeGroups.update((list) => {
 				const existing = list.find((g) => g.group === group.group);
 				if (existing)
-					return list.map((g) => (g === existing ? { ...g, items: [...g.items, ...group.items] } : g));
-				return [...list, group];
+					return list.map((g) => (g === existing ? { ...g, items: [...g.items, ...items] } : g));
+				return [...list, { ...group, items }];
 			});
 			if (components) Object.assign(moduleNodeComponents, components);
 			onDispose(() => {
@@ -184,7 +201,7 @@ function makeApi(moduleId) {
 					list
 						.map((g) =>
 							g.group === group.group
-								? { ...g, items: g.items.filter((/** @type {any} */ item) => !group.items.includes(item)) }
+								? { ...g, items: g.items.filter((/** @type {any} */ item) => !items.includes(item)) }
 								: g
 						)
 						.filter((g) => g.items.length > 0)
@@ -195,12 +212,51 @@ function makeApi(moduleId) {
 		/**
 		 * Per-frame effect for edges `your-node -> objectselector`. The runtime
 		 * restores `base` before every frame; apply offsets relative to it.
-		 * @param {string} type @param {(object: any, base: any, data: any, time: number) => void} fn
+		 *
+		 * A1: `fn` receives a 5th arg `{id, graphId}` — its own node id and the graph
+		 * it sits in, so one module can host many instances of the same node type. The
+		 * arg is ADDITIVE: a four-parameter effect is byte-unchanged.
+		 *
+		 * A1: `opts.inputs` declares typed named inputs ({handle: socketType}). Without
+		 * them every handle reads as 'number', which REFUSES an Object Selector wire
+		 * (object -> number is not a coercion) and renders no target socket on the card.
+		 * @param {string} type
+		 * @param {(object: any, base: any, data: any, time: number, ctx?: any) => void} fn
+		 * @param {{inputs?: Record<string, string>}=} opts
 		 */
-		registerEffect(type, fn) {
+		registerEffect(type, fn, opts) {
 			moduleEffects[type] = fn;
+			if (opts?.inputs) registerModuleNodeInputs(type, opts.inputs);
 			onDispose(() => {
 				if (moduleEffects[type] === fn) delete moduleEffects[type];
+				if (opts?.inputs) unregisterModuleNodeInputs(type, opts.inputs);
+			});
+		},
+		/**
+		 * A1 (DEVX #9): a node that OUTPUTS a value, so module state can drive core
+		 * nodes — a score into a HUD Text, a level into Map Range, a flag into a Gate.
+		 *
+		 * `fn(data, time, {id, graphId})` MUST be a pure function of its arguments (the
+		 * script-node rule): values are never sent, every peer evaluates the node from
+		 * the replicated node data and the shared clock. Reading unreplicated local
+		 * state here desyncs every downstream consumer with no error anywhere — keep
+		 * mutable module state in a replicated store (registerStateSync / api.send) and
+		 * read THAT, or let the value ride the node's own data.
+		 *
+		 * `vtype` is the output socket type ('number' by default; also 'boolean',
+		 * 'vector3', 'color', 'object', 'event'). `inputs` declares typed named inputs
+		 * the same way registerEffect does; each is resolved before `fn` runs, so
+		 * `data.<handle>` is the wired value when wired and the node's param when not.
+		 * @param {string} type
+		 * @param {(data: any, time: number, ctx: any) => any} fn
+		 * @param {{vtype?: string, inputs?: Record<string, string>}=} opts
+		 */
+		registerValueNode(type, fn, opts) {
+			registerModuleValueNode(type, fn, opts?.vtype ?? 'number');
+			if (opts?.inputs) registerModuleNodeInputs(type, opts.inputs);
+			onDispose(() => {
+				unregisterModuleValueNode(type, fn);
+				if (opts?.inputs) unregisterModuleNodeInputs(type, opts.inputs);
 			});
 		},
 		/**
@@ -351,6 +407,58 @@ function makeApi(moduleId) {
 			const item = { moduleId, label, action };
 			moduleMenuItems.update((list) => [...list, item]);
 			onDispose(() => moduleMenuItems.update((list) => list.filter((entry) => entry !== item)));
+		},
+		/**
+		 * A5: a real UI surface — a floating TOOLBOX on the app's own shared shell.
+		 *
+		 * Before this, module controls could only live behind `registerMenu`: two clicks
+		 * deep inside the Modules MODAL, which then has to be CLOSED before the module's
+		 * own overlay is usable. So modules hand-rolled fixed overlays at z-indexes they
+		 * do not own. Write plain DOM into the node `mount` receives and you inherit
+		 * dragWindow position persistence, focusStack z-banding, the <=640px bottom sheet
+		 * and the whole `.tbx-*` CSS contract (`.tbx-label`, `.tbx-row`, `.tbx-btn`,
+		 * `.tbx-primary`, `.tbx-check`, …) with no CSS of your own.
+		 *
+		 * `mount` returns its cleanup, and re-registering re-runs it, so 17-A2's dev-mode
+		 * live reload rebuilds the contents in place.
+		 *
+		 * The user opens it from the sidebar's Modules section AND the viewport menu
+		 * (one builder, two hosts), plus `shortcut` if you name one — which also lists it
+		 * in Settings > Shortcuts. It is CLOSED at first: a palette that appears
+		 * uninvited is the thing registerMenu was avoiding.
+		 *
+		 * LOCAL, always: a toolbox is this viewer's window. Nothing about it replicates
+		 * or is saved with the scene, so what it CHANGES must still go through the
+		 * replicated paths (api.send / api.create / api.physics.set).
+		 *
+		 * `playMode: true` keeps it visible in Play mode (host settings for a game);
+		 * the default hides it, because a tool palette over a running game is in the way.
+		 * @param {{id: string, title: string, key?: string, width?: number, minW?: number,
+		 *   defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
+		 *   mount: (el: HTMLElement) => (() => void) | void,
+		 *   onOpen?: () => void, onClose?: () => void,
+		 *   playMode?: boolean, shortcut?: string}} box
+		 * @returns {string} the namespaced toolbox id (open/close it with this)
+		 */
+		registerToolbox(box) {
+			const id = registerModuleToolbox({ ...box, moduleId });
+			// hoisted: the `if` narrowing does not reach inside the closure below
+			const keys = box.shortcut;
+			if (keys) {
+				// dynamic: shortcuts' subtree reaches history, the TDZ cycle family
+				import('./shortcuts').then((m) =>
+					m.registerShortcut({
+						keys,
+						group: 'Modules',
+						label: box.title,
+						action: () => import('./moduleToolboxes').then((t) => t.toggleModuleToolbox(id))
+					})
+				);
+			}
+			// force-close + unregister, so disable / update / dev-reload never leave a
+			// window on screen backed by a mount fn that no longer exists
+			onDispose(() => unregisterModuleToolbox(id));
+			return id;
 		},
 		/**
 		 * Add a sector to the VR radial menu (74). group 'root' extends the base
@@ -560,6 +668,20 @@ function makeApi(moduleId) {
 		fireObjectClick(uuid) {
 			// dynamic: flowRuntime statically imports moduleSDK (cycle rule)
 			import('./flowRuntime').then((m) => m.fireObjectClick(uuid));
+		},
+		/**
+		 * A1 (DEVX #9): pulse your module's own EVENT nodes — a level cleared, a goal
+		 * scored, a wave spawned. REPLICATED like a click (the pulse rides the existing
+		 * `nodetrigger` message from ONE peer's stamp), so call it on the peer where the
+		 * event happened and NOT on all of them, or a Counter counts it once per peer.
+		 *
+		 * `match(data, id)` picks which instances fire; all of them when it is absent.
+		 * Register the node type's output as `{vtype: 'event'}` so it can be wired to a
+		 * Counter or an Object Selector.
+		 * @param {string} type @param {(data: any, id: string) => boolean=} match
+		 */
+		fireNodeTrigger(type, match) {
+			import('./flowRuntime').then((m) => m.fireModuleTrigger(type, match));
 		},
 		/**
 		 * Possess an object: WASD/arrows or the VR left stick drive it (tank

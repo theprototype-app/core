@@ -18,9 +18,13 @@ import { isViewer, warnViewerReadOnly } from './objectPermissions';
 // requestLoadSession): format confirm, "Backup before <name>" stash, replicated
 // clear+rebuild, and the sessionproposal peer-consent flow all come for free.
 
-/** Off-bundle base for curated templates/examples. Bump the tag when content
- * changes — jsDelivr caches tags aggressively, so released builds stay stable. */
-export const SCENES_BASE = 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v1';
+/** Off-bundle base for curated templates/examples/games. Bump the tag when content
+ * changes — jsDelivr caches tags aggressively, so released builds stay stable.
+ *
+ * C5.2: @v2 is a NEW tag, never a reused one, so a deployed older build cannot be
+ * handed an index whose `games` section it has no tab for. (Reusing @v1 would push
+ * v2 content at every build already in the wild.) */
+export const SCENES_BASE = 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v2';
 /** Community manifest (raw = fresh + CORS; see header note). */
 export const GALLERY_JSON_URL =
 	'https://raw.githubusercontent.com/theprototype-app/community-gallery/main/gallery.json';
@@ -33,6 +37,12 @@ export const SUBMIT_URL = 'https://github.com/theprototype-app/community-gallery
 export const templates = writable([]);
 /** normalized Examples-tab entries @type {import('svelte/store').Writable<any[]>} */
 export const examples = writable([]);
+/** A7: normalized Games-tab entries. A game is a module PLUS a scene, so its rows
+ * carry `modules` — the A6.2 requirement list, which the card shows and the load
+ * path prompts about. Absent `games` in a v1 index leaves this empty, which is the
+ * absent-means-absent rule and what keeps a deployed older index loading.
+ * @type {import('svelte/store').Writable<any[]>} */
+export const games = writable([]);
 /** 'idle' | 'loading' | 'ready' (remote) | 'fallback' (bundled seed) | 'error'
  * @type {import('svelte/store').Writable<string>} */
 export const templatesState = writable('idle');
@@ -67,10 +77,43 @@ function normalizeEntry(entry, base) {
 		author: entry.author || '',
 		license: entry.license || '',
 		tags: Array.isArray(entry.tags) ? entry.tags : [],
+		// A7: {id, version}[] — the SAME shape moduleRequirements() derives and the
+		// handshake sends, so the card, the prompt and the save all speak one language
+		modules: Array.isArray(entry.modules)
+			? entry.modules
+					.filter((/** @type {any} */ m) => m && (typeof m === 'string' || m.id))
+					.map((/** @type {any} */ m) =>
+						typeof m === 'string' ? { id: m, version: '' } : { id: String(m.id), version: String(m.version ?? '') }
+					)
+			: [],
 		bytes: entry.bytes || 0,
 		sceneUrl: resolveUrl(entry.scene, base),
 		thumbUrl: resolveUrl(entry.thumb, base)
 	};
+}
+
+/**
+ * A7: the union of tags across a tab's entries, for the chip row. Sorted so the
+ * chips do not reshuffle between fetches, and DERIVED rather than a curated list —
+ * a new tag in the index appears without a core release.
+ * @param {any[]} entries @returns {string[]}
+ */
+export function tagUnion(entries) {
+	/** @type {Set<string>} */
+	const all = new Set();
+	for (const entry of entries ?? []) for (const tag of entry.tags ?? []) if (tag) all.add(String(tag));
+	return [...all].sort();
+}
+
+/**
+ * Does an entry match the active chips? OR within the facet: picking `vr` and
+ * `co-op` shows anything that is either, which is what a browsing user means by
+ * ticking two interests (an AND would empty the grid on the second click).
+ * @param {any} entry @param {string[]} active @returns {boolean}
+ */
+export function matchesTags(entry, active) {
+	if (!active?.length) return true;
+	return (entry.tags ?? []).some((/** @type {string} */ tag) => active.includes(tag));
 }
 
 /** Load the General/Examples index: remote CDN first, the bundled
@@ -86,6 +129,9 @@ export async function loadTemplatesIndex(force = false) {
 			const data = await res.json();
 			templates.set((data.templates || []).map((/** @type {any} */ e) => normalizeEntry(e, SCENES_BASE)));
 			examples.set((data.examples || []).map((/** @type {any} */ e) => normalizeEntry(e, SCENES_BASE)));
+			// A7: a v1 index has no `games` key at all — an absent section is an EMPTY
+			// tab, never an error, so a deployed older index keeps loading
+			games.set((data.games || []).map((/** @type {any} */ e) => normalizeEntry(e, SCENES_BASE)));
 			templatesState.set('ready');
 			return;
 		}
@@ -98,6 +144,9 @@ export async function loadTemplatesIndex(force = false) {
 			const data = await res.json();
 			templates.set((data.templates || []).map((/** @type {any} */ e) => normalizeEntry(e, '')));
 			examples.set((data.examples || []).map((/** @type {any} */ e) => normalizeEntry(e, '')));
+			// the bundled seed carries TEMPLATES only, by design: a game needs a module
+			// download anyway, so a bundled offline game would be a broken promise
+			games.set([]);
 			templatesState.set('fallback');
 			return;
 		}
@@ -106,6 +155,7 @@ export async function loadTemplatesIndex(force = false) {
 	}
 	templates.set([]);
 	examples.set([]);
+	games.set([]);
 	templatesState.set('error');
 }
 

@@ -3,43 +3,13 @@
 	// core a MOUNT FUNCTION `(el) => cleanup` via cloudHooks' connectSlot/usersSlot
 	// stores, so a separately-built plugin owns its own rendering — core just gives
 	// it a DOM node. Nothing renders in the OSS build (the slot store is null).
+	//
+	// A5: the action itself now lives in $lib/cloudMount, because a module TOOLBOX
+	// hosts foreign DOM through exactly the same contract.
+	import { cloudMount } from '$lib/cloudMount';
+
 	/** @type {{ mount?: any }} */
 	let { mount = null } = $props();
-
-	/** Svelte action: run the plugin mount fn on attach, its cleanup on detach.
-	 * @param {HTMLElement} node
-	 * @param {any} fn */
-	function cloudMount(node, fn) {
-		/** @type {(() => void) | void} */
-		let cleanup;
-		const run = (/** @type {any} */ f) => {
-			try {
-				if (typeof f === 'function') cleanup = f(node);
-			} catch (e) {
-				console.error('cloud slot mount failed:', e);
-			}
-		};
-		run(fn);
-		return {
-			/** @param {any} f */
-			update(f) {
-				try {
-					if (typeof cleanup === 'function') cleanup();
-				} catch {
-					/* ignore */
-				}
-				node.replaceChildren();
-				run(f);
-			},
-			destroy() {
-				try {
-					if (typeof cleanup === 'function') cleanup();
-				} catch {
-					/* ignore */
-				}
-			}
-		};
-	}
 </script>
 
 {#if mount}

@@ -5,7 +5,7 @@
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -587,6 +587,14 @@
 							<button id="reset-windows" class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset</button>
 						</svelte:fragment>
 						Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI
+					</SettingRow>
+					<SettingRow name="Touch tools">
+						<svelte:fragment slot="control"><Toggle bind:checked={$touchTools} /></svelte:fragment>
+						Round <strong>Undo</strong>, <strong>Redo</strong> and <strong>Multi-select</strong>
+						buttons beside the logo. Useful on touch devices, where there is no
+						<kbd>Ctrl</kbd>+<kbd>Z</kbd> and no <kbd>Shift</kbd> to hold: with Multi-select on, a
+						tap adds to the selection and a drag on empty space boxes several objects. On by
+						default on phones and narrow windows
 					</SettingRow>
 					<SettingRow name="Allow undocking (touch)">
 						<svelte:fragment slot="control"><Toggle bind:checked={$mobileUndockAllowed} /></svelte:fragment>

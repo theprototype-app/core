@@ -325,6 +325,35 @@ enableShiftAdd.subscribe((on) => {
  * pure navigation, with no card in the way. LOCAL pref, OFF by default so the
  * click behaviour everyone already knows is unchanged.
  */
+// #20 P4: TOUCH TOOLS — a round Undo / Redo / Multi-select cluster beside the logo.
+//
+// Touch has no keyboard and no right-click, so the two things a desktop user reaches
+// for reflexively (Ctrl+Z and Shift-click) have no equivalent at all on a phone or a
+// tablet. DEFAULT ON where that is true — a coarse primary pointer or a narrow
+// viewport — and resolved ONCE, then remembered, so a desktop user who switches it on
+// keeps it and a phone user who switches it off keeps that too.
+export const touchTools = writable(
+	(() => {
+		if (typeof localStorage === 'undefined') return false;
+		const stored = localStorage.getItem('touchTools');
+		if (stored !== null) return stored === 'true';
+		const coarse =
+			typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+		const narrow = typeof window !== 'undefined' && window.innerWidth <= 820;
+		return coarse || narrow;
+	})()
+);
+touchTools.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('touchTools', String(on));
+});
+
+// The sticky additive-selection MODE the cluster toggles. Touch cannot hold a modifier,
+// so the standard tablet answer is a mode rather than a chord: while it is on, a tap
+// ADDS to the selection and a drag on empty space draws the marquee that Shift-drag
+// draws on desktop. Session-only on purpose — a selection mode that survived a reload
+// would silently change what the next tap does.
+export const multiSelectMode = writable(false);
+
 // #20 P1: what a duplicate CARRIES. A duplicate is a working copy of everything
 // that belongs to the object (the DCC convention: Blender copies the action,
 // Maya copies the inputs), so both default ON — these exist because the user

@@ -5,7 +5,7 @@
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand, useHand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
-	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast } from '../stores/appStore';
+	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
 	import {
@@ -508,7 +508,9 @@
 				return;
 			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
-			if (event.shiftKey && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
+			// #20 P4: the touch Multi-select mode stands in for Shift, since a finger
+			// cannot hold a modifier. Same code path, so there is exactly one marquee.
+			if ((event.shiftKey || $multiSelectMode) && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
 				marqueeStart = [event.clientX, event.clientY];
 				setOrbitEnabled(false);
 			}
@@ -754,7 +756,8 @@
 			}
 			// 85: a click on nothing is also the way out of an isolation — the same
 			// "click the background to get back" instinct as deselecting.
-			if (!raycastSelect(event.shiftKey) && !event.shiftKey) {
+			const additive = event.shiftKey || $multiSelectMode;
+			if (!raycastSelect(additive) && !additive) {
 				if (isIsolated()) clearIsolation();
 				deselectObject();
 			}

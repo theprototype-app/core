@@ -70,6 +70,17 @@
 								on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.checked })}
 							/>
 						</span>
+					{:else if param.kind === 'text'}
+						<!-- A1: free text. `change` (commit/blur), NOT `input` — setNodeData
+						     replicates the whole node, so per-keystroke = one message each. -->
+						<input
+							class="nodrag w-full rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px]"
+							type="text"
+							placeholder={param.placeholder ?? ''}
+							maxlength={param.maxLength ?? null}
+							value={data[param.key] ?? spec.defaults[param.key] ?? ''}
+							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
+						/>
 					{:else if param.kind === 'select'}
 						<select
 							class="nodrag"

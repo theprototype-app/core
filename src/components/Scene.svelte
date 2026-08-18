@@ -35,8 +35,8 @@
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
-	import { editingObject, enterEditMode, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, faceEditSelectedTris, setFaceSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
+	import { editingObject, enterEditMode, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit, selectVerticesInRect } from '$lib/meshEdit';
+	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, faceEditSelectedTris, setFaceSubmode, selectElementsInRect, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
@@ -514,9 +514,14 @@
 		let downPosition = null;
 		let downTime = 0;
 		let strokeActive = false;
+		// #20: is the marquee in progress selecting mesh ELEMENTS rather than objects?
+		let elementMarquee = false;
 		let sculptActive = false; // T-2 brush drag in progress
 		let lastSculptAt = 0;
-		let marqueeStart = null; // shift-drag box select (13)
+		// shift-drag box select (13). Annotated because this file is lang="ts" and the
+		// #20 element-marquee branch is a second assignment site — without a type the
+		// inference goes implicit-any at every one of them.
+		let marqueeStart: number[] | null = null;
 		let rightDown = null; // right-click TAP opens the Add/object menu (77)
 		let lastPointerXY: number[] | null = null; // last cursor position, for keyboard-opened menus
 
@@ -559,6 +564,24 @@
 				return;
 			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
+			// #20: inside a MESH SESSION the same gesture boxes ELEMENTS instead of objects.
+			// A separate branch, not a loosened gate: the object marquee must never run in a
+			// session and vice versa, and `elementMarquee` tells pointerup which it was.
+			if (
+				(event.shiftKey || event.ctrlKey || event.metaKey || $multiSelectMode) &&
+				!$isLocked &&
+				!$isVRMode &&
+				!$specatorMode &&
+				($editingObject || $faceEditObject) &&
+				!$TControls?.dragging
+			) {
+				marqueeStart = [event.clientX, event.clientY];
+				elementMarquee = true;
+				setOrbitEnabled(false);
+				downPosition = [event.clientX, event.clientY];
+				downTime = Date.now();
+				return;
+			}
 			// #20 P4: the touch Multi-select mode stands in for Shift, since a finger
 			// cannot hold a modifier. Same code path, so there is exactly one marquee.
 			if ((event.shiftKey || $multiSelectMode) && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
@@ -629,6 +652,46 @@
 		};
 
 		const onPointerUp = (event) => {
+			// #20: an ELEMENT box — vertices, edges or faces, whichever mode is open
+			if (marqueeStart && elementMarquee && event.button === 0) {
+				const start = marqueeStart;
+				marqueeStart = null;
+				elementMarquee = false;
+				setOrbitEnabled(true);
+				const moved = Math.hypot(event.clientX - start[0], event.clientY - start[1]);
+				$marqueeRect = null;
+				if (moved > 8) {
+					const box = element.getBoundingClientRect();
+					// the gesture is in CLIENT pixels and the projection wants CANVAS-relative
+					// ones — the canvas is not at the window origin (chrome sits above it)
+					const local = {
+						x1: start[0] - box.left,
+						y1: start[1] - box.top,
+						x2: event.clientX - box.left,
+						y2: event.clientY - box.top
+					};
+					const size = { width: box.width, height: box.height };
+					// a box ADDS: it already needs Shift/Ctrl or the Multi-select mode to start
+					if ($editingObject) {
+						// vertices seat their own gizmo through setAnchor
+						selectVerticesInRect(local, camera.current, size, true);
+					} else {
+						selectElementsInRect(local, camera.current, size, true);
+						// FACES need the gizmo seated explicitly, exactly as the click path
+						// does it — an edge selection re-seats itself through
+						// withSelectionHistory, and attachFaceGizmo refuses in edge mode
+						// anyway. Without this a boxed face selection had no gizmo, which is
+						// what the user hit: it worked in vertices and not in faces.
+						if ($faceEditSubmode !== 'edges') {
+							if ($faceEditOp === 'move') attachFaceGizmo();
+							else detachFaceGizmo();
+						}
+					}
+					downPosition = null;
+					return;
+				}
+				// too short to be a box: fall through, so a modified CLICK still toggles
+			}
 			if (marqueeStart && event.button === 0) {
 				const start = marqueeStart;
 				marqueeStart = null;

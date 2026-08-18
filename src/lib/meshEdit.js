@@ -734,6 +734,61 @@ function selectAllVertsInner() {
 	return true;
 }
 
+/**
+ * #20: BOX SELECT for vertex handles — every handle whose screen position falls inside
+ * `rect` joins the selection.
+ *
+ * The gap the user reported: a Shift/Ctrl drag has always marquee-selected OBJECTS, and
+ * inside a mesh session there was no drag-select of any kind, so several elements could
+ * only ever be picked one click at a time.
+ *
+ * SCREEN space, not world: the box is drawn on the screen, so the test belongs where it
+ * was drawn. Handles behind the camera are dropped rather than mirrored into the frustum,
+ * which is what a naive `project()` test does with them.
+ *
+ * @param {{x1:number,y1:number,x2:number,y2:number}} rect CSS pixels, any corner order
+ * @param {any} camera @param {{width:number,height:number}} size the canvas' CSS size
+ * @param {boolean} [additive] add to the current pick instead of replacing it
+ * @returns {number} how many handles are selected afterwards
+ */
+function selectVerticesInRectInner(rect, camera, size, additive = false) {
+	if (!edited || !handles.length || !camera || !size?.width || !size?.height) return 0;
+	const minX = Math.min(rect.x1, rect.x2);
+	const maxX = Math.max(rect.x1, rect.x2);
+	const minY = Math.min(rect.y1, rect.y2);
+	const maxY = Math.max(rect.y1, rect.y2);
+	const next = additive ? new Set(vertexSelection) : new Set();
+	let last = -1;
+	for (let i = 0; i < handles.length; i++) {
+		handleWorldPosition(i, tempVector);
+		tempVector.project(camera);
+		// behind the camera: project() mirrors such a point back into the frustum, so a
+		// vertex behind your head would otherwise land inside the box
+		if (tempVector.z > 1) continue;
+		const sx = ((tempVector.x + 1) / 2) * size.width;
+		const sy = ((1 - tempVector.y) / 2) * size.height;
+		if (sx < minX || sx > maxX || sy < minY || sy > maxY) continue;
+		next.add(i);
+		last = i;
+	}
+	// an empty box REPLACING the pick would make a stray drag wipe the work; an empty
+	// additive box is simply a no-op
+	if (!next.size) return vertexSelection.size;
+	vertexSelection = next;
+	if (last >= 0) setAnchor(last);
+	syncVertexSelection();
+	return vertexSelection.size;
+}
+
+/** One undo step per box, like every other selection command.
+ * @param {{x1:number,y1:number,x2:number,y2:number}} rect
+ * @param {any} camera @param {{width:number,height:number}} size @param {boolean} [additive] */
+export function selectVerticesInRect(rect, camera, size, additive = false) {
+	return withSelectionHistory('vertices', () =>
+		selectVerticesInRectInner(rect, camera, size, additive)
+	);
+}
+
 /** Invert the vertex selection — Ctrl+I in vertices mode. @returns {boolean} */
 function invertVertexSelectionInner() {
 	if (!handles.length) return false;

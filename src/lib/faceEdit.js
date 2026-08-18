@@ -5388,6 +5388,108 @@ function selectAllFacesInner() {
 	return true;
 }
 
+/**
+ * #20: BOX SELECT for faces and edges — everything whose screen position falls inside
+ * `rect` joins the pick.
+ *
+ * The gap the user reported: a Shift/Ctrl drag has always marquee-selected OBJECTS, and
+ * inside a mesh session there was no drag-select at all, so several elements could only
+ * be picked one click at a time.
+ *
+ * Two decisions worth knowing:
+ *
+ * - A face is tested by its CENTROID and then EXPANDED through `pickFaceUnitTris`, the
+ *   same resolver a click goes through. Testing raw triangles instead would let a box
+ *   take half a quad, which no other path in this file can produce and which every
+ *   granularity above `triangle` would then have to cope with.
+ * - Behind-camera points are dropped rather than mirrored into the frustum, which is
+ *   what a naive `project()` does with them.
+ *
+ * @param {{x1:number,y1:number,x2:number,y2:number}} rect CSS pixels, any corner order
+ * @param {any} camera @param {{width:number,height:number}} size the canvas' CSS size
+ * @param {boolean} [additive] add to the current pick instead of replacing it
+ * @returns {number} how many elements are picked afterwards
+ */
+function selectElementsInRectInner(rect, camera, size, additive = false) {
+	if (!faceEdited || !workingTris.length || !camera || !size?.width || !size?.height) return 0;
+	const minX = Math.min(rect.x1, rect.x2);
+	const maxX = Math.max(rect.x1, rect.x2);
+	const minY = Math.min(rect.y1, rect.y2);
+	const maxY = Math.max(rect.y1, rect.y2);
+	const probe = new THREE.Vector3();
+	/** local point -> is it inside the box on screen */
+	const inside = (/** @type {any} */ p) => {
+		probe.set(p.x, p.y, p.z);
+		faceEdited.localToWorld(probe);
+		probe.project(camera);
+		if (probe.z > 1) return false;
+		const sx = ((probe.x + 1) / 2) * size.width;
+		const sy = ((1 - probe.y) / 2) * size.height;
+		return sx >= minX && sx <= maxX && sy >= minY && sy <= maxY;
+	};
+
+	if (get(faceEditSubmode) === 'edges') {
+		// build key -> midpoint from the triangles, the same way `pickEdgeAt` does:
+		// `edgeKey` takes two WELDED VERTEX KEYS, not two positions — passing positions
+		// produced keys that matched nothing in `realEdgeMap`, so an edge box selected
+		// exactly zero edges while the face box worked fine.
+		const real = new Set(realEdgeMap().keys());
+		/** @type {Set<string>} */
+		const hit = new Set();
+		for (const t of workingTris) {
+			if (!t) continue;
+			for (let e = 0; e < 3; e++) {
+				const p0 = t[e];
+				const p1 = t[(e + 1) % 3];
+				const key = edgeKey(keyOf(p0.x, p0.y, p0.z), keyOf(p1.x, p1.y, p1.z));
+				if (!real.has(key) || hit.has(key)) continue;
+				const mid = {
+					x: (p0.x + p1.x) / 2,
+					y: (p0.y + p1.y) / 2,
+					z: (p0.z + p1.z) / 2
+				};
+				if (inside(mid)) hit.add(key);
+			}
+		}
+		if (!hit.size) return get(edgeEditSelected).length;
+		const next = additive ? new Set([...get(edgeEditSelected), ...hit]) : hit;
+		edgeEditSelected.set([...next]);
+		refreshEdgeOverlay();
+		return next.size;
+	}
+
+	// faces (and vertices are meshEdit's own box select)
+	/** @type {Set<number>} */
+	const tris = new Set();
+	for (let ti = 0; ti < workingTris.length; ti++) {
+		const t = workingTris[ti];
+		if (!t) continue;
+		const centroid = {
+			x: (t[0].x + t[1].x + t[2].x) / 3,
+			y: (t[0].y + t[1].y + t[2].y) / 3,
+			z: (t[0].z + t[1].z + t[2].z) / 3
+		};
+		if (!inside(centroid)) continue;
+		// expand to the pick UNIT, so a box can never take half a quad
+		for (const member of pickFaceUnitTris(ti)) tris.add(member);
+	}
+	if (!tris.size) return get(faceEditSelectedTris).length;
+	const next = additive ? new Set([...get(faceEditSelectedTris), ...tris]) : tris;
+	faceEditSelectedTris.set([...next]);
+	refreshFaceOverlay();
+	return next.size;
+}
+
+/** One undo step per box, like every other selection command here.
+ * @param {{x1:number,y1:number,x2:number,y2:number}} rect
+ * @param {any} camera @param {{width:number,height:number}} size @param {boolean} [additive] */
+export function selectElementsInRect(rect, camera, size, additive = false) {
+	const mode = get(faceEditSubmode) === 'edges' ? 'edges' : 'faces';
+	return withSelectionHistory(mode, () =>
+		selectElementsInRectInner(rect, camera, size, additive)
+	);
+}
+
 /** M6: invert the selection (by pick UNIT, so quads stay whole) */
 function invertFaceSelectionInner() {
 	if (!faceEdited) return false;

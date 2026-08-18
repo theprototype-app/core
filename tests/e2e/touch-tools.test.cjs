@@ -323,8 +323,211 @@ h.run(async () => {
 		!layout.dockedOverlap,
 		'with Connect docked it still does not overlap the logo (the reported bug)'
 	);
-	h.check(layout.dockedBelow, 'it drops BELOW the logo instead');
-	h.check(layout.dockedStacked, 'stacked vertically, not as a row');
+	// NOT "docked means stacked" any more: docking is no longer the trigger, a measured
+	// collision is — and a docked Connect bar sits entirely ABOVE the logo, so the row
+	// beside the logo is free. What matters here is only that it never covers the logo.
+	h.check(
+		layout.dockedBelow || layout.wideBeside,
+		"docked, it is either beside the logo or below it — never on top of it"
+	);
+
+	// ---- 11. BOX SELECT for mesh elements ---------------------------------------
+	// The gap behind the second report: a Shift/Ctrl drag has always marquee-selected
+	// OBJECTS, and inside a mesh session there was no drag-select of ANY kind — several
+	// elements could only be picked one click at a time. The object marquee deliberately
+	// excludes a session, so this is its own branch and its own selector.
+	const boxSetup = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.commandsHandler.sceneCommand('/create box 2 2 2');
+		await new Promise((r) => setTimeout(r, 900));
+		let g;
+		w.objectsGroup.subscribe((v) => (g = v))();
+		const object = g.children[g.children.length - 1];
+		object.position.set(0, 1, 0);
+		w.objectsGroup.update((v) => v);
+		w.objectActions.applySelectionSet([object.uuid]);
+		await new Promise((r) => setTimeout(r, 300));
+		w.faceEdit.enterFaceEdit(object.uuid);
+		await new Promise((r) => setTimeout(r, 700));
+		w.faceEdit.clearFaceSelection();
+		w.multiSelectMode.set(false);
+		await new Promise((r) => setTimeout(r, 300));
+		let entered, tris;
+		w.faceEdit.faceEditObject.subscribe((v) => (entered = v))();
+		w.faceEdit.faceEditSelectedTris.subscribe((v) => (tris = v))();
+		return { entered: !!entered, uuid: object.uuid, picked: (tris ?? []).length };
+	});
+	h.check(boxSetup.entered && boxSetup.picked === 0,
+		`a face session on a 2m box with nothing picked (premise: ${boxSetup.picked})`);
+
+	// sweep a Shift-drag across the whole box: several faces must come in at once
+	const centre = await h.projectPoint(A.page, [0, 1, 0]);
+	await A.page.keyboard.down("Shift");
+	await A.page.mouse.move(centre.x - 130, centre.y - 130);
+	await A.page.mouse.down();
+	for (let i = 1; i <= 8; i++)
+		await A.page.mouse.move(centre.x - 130 + (260 * i) / 8, centre.y - 130 + (260 * i) / 8, { steps: 2 });
+	await A.page.mouse.up();
+	await A.page.keyboard.up("Shift");
+	await A.page.waitForTimeout(600);
+	const boxed2 = await A.page.evaluate(() => {
+		let tris;
+		window.__stores.faceEdit.faceEditSelectedTris.subscribe((v) => (tris = v))();
+		return (tris ?? []).length;
+	});
+	h.check(boxed2 > 2, `a Shift-drag box selected several FACES at once (${boxed2} tris)`);
+	// and whole pick UNITS, never half a quad — a box goes through the same resolver a
+	// click does, so an odd count would mean it took half of one
+	h.check(boxed2 % 2 === 0, `in whole quads, not half of one (${boxed2} tris)`);
+
+	// the same gesture in VERTEX mode, which is a different module and a different pick
+	const vertBox = await A.page.evaluate(async (uuid) => {
+		const w = window.__stores;
+		w.faceEdit.exitFaceEdit();
+		await new Promise((r) => setTimeout(r, 400));
+		w.objectActions.applySelectionSet([uuid]);
+		w.meshEdit.enterEditMode(uuid);
+		await new Promise((r) => setTimeout(r, 700));
+		let editing, size;
+		w.meshEdit.editingObject.subscribe((v) => (editing = v))();
+		w.meshEdit.vertexSelectionSize.subscribe((v) => (size = v))();
+		return { editing: !!editing, before: size };
+	}, boxSetup.uuid);
+	h.check(vertBox.editing, `vertex mode opened (premise: ${vertBox.before} picked)`);
+
+	await A.page.keyboard.down("Shift");
+	await A.page.mouse.move(centre.x - 130, centre.y - 130);
+	await A.page.mouse.down();
+	for (let i = 1; i <= 8; i++)
+		await A.page.mouse.move(centre.x - 130 + (260 * i) / 8, centre.y - 130 + (260 * i) / 8, { steps: 2 });
+	await A.page.mouse.up();
+	await A.page.keyboard.up("Shift");
+	await A.page.waitForTimeout(600);
+	const vertAfter = await A.page.evaluate(() => {
+		let size;
+		window.__stores.meshEdit.vertexSelectionSize.subscribe((v) => (size = v))();
+		window.__stores.meshEdit.exitEditMode();
+		return size;
+	});
+	h.check(vertAfter > 1, `and box-selected several VERTICES (${vertAfter})`);
+
+	// ---- 12. the stack is MEASURED, and aligns with the bottom-left HUD ---------
+	// A width breakpoint stacked on an unfolded phone that had room to spare, so the
+	// decision is a measurement now. And when it does stack, its button CENTRES line up
+	// with the bottom-left cluster (44px at a 16px inset vs these 48px).
+	const placement = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		const read = () => {
+			const el = document.querySelector('#touch-tools');
+			if (!el) return null;
+			const r = el.getBoundingClientRect();
+			return { x: r.x, y: r.y, w: r.width, h: r.height, centre: r.x + 24 };
+		};
+		w.connectDocked.set(false);
+		await new Promise((r) => setTimeout(r, 400));
+		return { wide: read() };
+	});
+	h.check(
+		!!placement.wide && placement.wide.w > placement.wide.h,
+		`with room on a 1280px window it stays a ROW (${JSON.stringify(placement.wide)})`
+	);
+
+	// shrink the window until there is genuinely no room, and check it stacks + aligns
+	await A.page.setViewportSize({ width: 420, height: 800 });
+	await A.page.waitForTimeout(700);
+	const narrow = await A.page.evaluate(() => {
+		const tools = document.querySelector('#touch-tools')?.getBoundingClientRect();
+		const logo = document.querySelector('#logo-menu')?.getBoundingClientRect();
+		return tools && logo
+			? {
+					stacked: tools.height > tools.width,
+					belowLogo: tools.y >= logo.bottom,
+					// centres of a 48px button at this inset vs the 44px HUD button at 16px
+					centre: tools.x + 24,
+					hudCentre: 16 + 22
+				}
+			: null;
+	});
+	h.check(!!narrow?.stacked, `with no room it stacks vertically (${JSON.stringify(narrow)})`);
+	h.check(!!narrow?.belowLogo, "below the logo, not over it");
+	h.check(
+		!!narrow && Math.abs(narrow.centre - narrow.hudCentre) <= 1,
+		`and its centres line up with the bottom-left HUD (${narrow?.centre} vs ${narrow?.hudCentre})`
+	);
+	await A.page.setViewportSize({ width: 1280, height: 720 });
+	await A.page.waitForTimeout(500);
+
+	// ---- 13. a boxed FACE selection seats the GIZMO ----------------------------
+	// Reported: multi-select showed no gizmo in faces while it did in vertices. The click
+	// path seats it explicitly and the box path never did; vertices got one for free
+	// because their own `setAnchor` seats it. Move is the default armed op, so a boxed
+	// selection should come up ready to drag.
+	const gizmo = await A.page.evaluate(async (uuid) => {
+		const w = window.__stores;
+		w.objectActions.applySelectionSet([uuid]);
+		w.faceEdit.enterFaceEdit(uuid);
+		await new Promise((r) => setTimeout(r, 700));
+		w.faceEdit.setFaceSubmode('faces');
+		w.faceEdit.clearFaceSelection();
+		await new Promise((r) => setTimeout(r, 400));
+		let op, controls;
+		w.faceEdit.faceEditOp.subscribe((v) => (op = v))();
+		w.TControls.subscribe((v) => (controls = v))();
+		return { op, attachedBefore: !!controls?.object };
+	}, boxSetup.uuid);
+	h.check(gizmo.op === 'move', `Move is the armed op, so a gizmo is expected (premise: ${gizmo.op})`);
+
+	await A.page.keyboard.down("Shift");
+	await A.page.mouse.move(centre.x - 130, centre.y - 130);
+	await A.page.mouse.down();
+	for (let i = 1; i <= 8; i++)
+		await A.page.mouse.move(centre.x - 130 + (260 * i) / 8, centre.y - 130 + (260 * i) / 8, { steps: 2 });
+	await A.page.mouse.up();
+	await A.page.keyboard.up("Shift");
+	await A.page.waitForTimeout(700);
+	const seated = await A.page.evaluate(() => {
+		const w = window.__stores;
+		let controls, tris;
+		w.TControls.subscribe((v) => (controls = v))();
+		w.faceEdit.faceEditSelectedTris.subscribe((v) => (tris = v))();
+		return { attached: !!controls?.object, picked: (tris ?? []).length };
+	});
+	h.check(seated.picked > 2, `the box picked several faces (premise: ${seated.picked} tris)`);
+	h.check(seated.attached, `and the gizmo is seated on them (${JSON.stringify(seated)})`);
+
+	// ---- 14. EDGES box-select too -----------------------------------------------
+	// Reported as "for edges multiselect does not work". Ctrl-clicking edges was fine; the
+	// BOX returned zero, because `edgeKey` takes two welded VERTEX KEYS and it was being
+	// handed two positions, so every key it built matched nothing in the real-edge map.
+	const edgeBox = await A.page.evaluate(async () => {
+		const w = window.__stores;
+		w.faceEdit.setFaceSubmode('edges');
+		await new Promise((r) => setTimeout(r, 500));
+		w.faceEdit.clearEdgeSelection();
+		await new Promise((r) => setTimeout(r, 300));
+		let sel, sub;
+		w.faceEdit.edgeEditSelected.subscribe((v) => (sel = v))();
+		w.faceEdit.faceEditSubmode.subscribe((v) => (sub = v))();
+		return { sub, before: (sel ?? []).length };
+	});
+	h.check(edgeBox.sub === 'edges' && edgeBox.before === 0,
+		`edge mode with nothing picked (premise: ${JSON.stringify(edgeBox)})`);
+
+	await A.page.keyboard.down("Shift");
+	await A.page.mouse.move(centre.x - 130, centre.y - 130);
+	await A.page.mouse.down();
+	for (let i = 1; i <= 8; i++)
+		await A.page.mouse.move(centre.x - 130 + (260 * i) / 8, centre.y - 130 + (260 * i) / 8, { steps: 2 });
+	await A.page.mouse.up();
+	await A.page.keyboard.up("Shift");
+	await A.page.waitForTimeout(700);
+	const edgesPicked = await A.page.evaluate(() => {
+		let sel;
+		window.__stores.faceEdit.edgeEditSelected.subscribe((v) => (sel = v))();
+		window.__stores.faceEdit.exitFaceEdit();
+		return (sel ?? []).length;
+	});
+	h.check(edgesPicked > 1, `a box in EDGE mode selected several edges (${edgesPicked})`);
 
 	const errs = h.pageErrors(A);
 	h.check(errs.length === 0, `no page errors (${JSON.stringify(errs.slice(0, 2))})`);

@@ -530,6 +530,18 @@
 	});
 	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);
 
+	// 21-C1: the parametric LOCK has to notice a poke. Every meshgeo commit stamps
+	// userData.faceEdited (so every sculpt stroke does), and a THREE tree is not
+	// reactive — reading the flag straight off $selectedObject in the template left
+	// the panel offering live parametric rows over a mesh that had just been
+	// sculpted, until you deselected and reselected it. Derived through
+	// $objectsGroup, which applyMeshGeo and applyVerts both poke.
+	const meshEditedLock = $derived.by(() => {
+		$objectsGroup;
+		geoTick;
+		return !!($selectedObject?.userData?.vertexEdited || $selectedObject?.userData?.faceEdited);
+	});
+
 	// 17-D1 follow-up: geometry rows fan too, but ONLY across one primitive type —
 	// a Box's params mean nothing to a Sphere. Members whose mesh was edited are
 	// left out: rebuilding their primitive would discard those edits.
@@ -579,6 +591,29 @@
 		}
 		run();
 	}
+
+	/** 21-C1: rebuild a SCULPTED terrain from its parameters, throwing the sculpt
+	 * away. Confirmed first, because that is the destructive direction. It records
+	 * one 'geometry' entry, and that kind carries PARAMS, not a mesh — so undo walks
+	 * back past the sculpt rather than restoring it, and the sculpt is reached by
+	 * redoing forward. Same as changing a param on any vertex-edited primitive; the
+	 * confirm text therefore promises no one-key rescue. */
+	function regenerateTerrain() {
+		const uuid = $selectedObject?.uuid;
+		const params = geoParams?.params;
+		if (!uuid || !params) return;
+		showToast('Rebuild this terrain from its parameters? The sculpted shape is discarded.', [
+			{
+				label: 'Rebuild',
+				action: () => {
+					applyGeometry(uuid, { ...params });
+					geoTick++;
+				}
+			},
+			{ label: 'Keep sculpt', action: () => {} }
+		]);
+	}
+
 	/**
 	 * 15-O1: a SNAPSHOT of the selected material, not the material itself.
 	 * `setMaterialParam` mutates the material IN PLACE and pokes `objectsGroup`
@@ -2531,12 +2566,26 @@
 							{geoOtherTypes.length === 1 ? 'has' : 'have'} different parameters.
 						</p>
 					{/if}
-					{#if $selectedObject.userData?.vertexEdited || $selectedObject.userData?.faceEdited}
+					{#if meshEditedLock}
 						<!-- 164: once the mesh is edited, the parametric controls are LOCKED
 						     (changing one rebuilds the primitive + discards the edits) -->
 						<p id="geometry-locked" class="rounded-sm bg-yellow-900/40 px-2 py-1 text-[10px] text-yellow-200">
 							Mesh edited — geometry parameters are locked (changing them would rebuild the shape and discard your edits).
 						</p>
+						{#if $selectedObject.userData?.terrain}
+							<!-- 21-C1: the sculpt handoff is a ONE-WAY DOOR, and a one-way door needs a
+							     handle on the far side. A sculpt stroke commits meshgeo, which stamps
+							     faceEdited and locks these rows on purpose — silently discarding a sculpt
+							     because someone nudged the seed is the bug that lock prevents. So the way
+							     back is ASKED FOR (the switchMaterialType REFUSES precedent), and it is
+							     one undoable geometry rebuild. -->
+							<Button
+								id="terrain-regenerate"
+								size="xs"
+								color="alternative"
+								onclick={() => regenerateTerrain()}>Regenerate (discards the sculpt)</Button
+							>
+						{/if}
 					{:else}
 						<div id="inspector-geometry" class="flex flex-col gap-1">
 							{#each geoSpec.params as spec (spec.key)}
@@ -2547,6 +2596,25 @@
 									>
 										{spec.label}
 									</Checkbox>
+								{:else if spec.kind === 'choice'}
+									<!-- 21-C1: a param whose value is one of a NAMED set (a terrain's edge
+									     profile). Chips rather than a ThemedSelect: three short words fit, and
+									     a select cannot shrink below its longest option. -->
+									<div class="ui-row items-center gap-2">
+										<span class="w-20 shrink-0 text-xs text-gray-400">{spec.label}</span>
+										<div class="flex flex-wrap gap-1">
+											{#each spec.options ?? [] as option (option)}
+												<button
+													id={`geo-choice-${spec.key}-${option}`}
+													class={'ui-chip ' +
+														(String(geoParams.params[spec.key] ?? spec.def) === option
+															? 'bg-primary-600 text-white'
+															: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+													onclick={() => editGeometry(spec.key, option)}>{option}</button
+												>
+											{/each}
+										</div>
+									</div>
 								{:else}
 									<SliderRow
 										label={spec.label}

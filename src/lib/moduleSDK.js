@@ -4,6 +4,13 @@ import { globalScene, objectsGroup, selectedObject, globalCamera, isVRMode, isLo
 import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
+// A1: moduleNodeIO imports NOTHING, so a static edge to it closes no cycle
+import {
+	registerModuleValueNode,
+	unregisterModuleValueNode,
+	registerModuleNodeInputs,
+	unregisterModuleNodeInputs
+} from './moduleNodeIO';
 import { APP_VERSION } from './version.js';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
@@ -25,7 +32,9 @@ export const modulePrimitiveGroups = writable([]);
 export const moduleMenuItems = writable([]);
 
 // plain registries (hot runtime paths)
-/** @type {Record<string, (object: any, base: any, data: any, time: number) => void>} */
+/** A1: the 5th arg ({id, graphId}) is OPTIONAL — a four-parameter effect, which is
+ * every shipped module, is byte-unchanged.
+ * @type {Record<string, (object: any, base: any, data: any, time: number, ctx?: any) => void>} */
 export const moduleEffects = {};
 /** @type {Record<string, any>} node type -> Svelte component */
 export const moduleNodeComponents = {};
@@ -195,12 +204,51 @@ function makeApi(moduleId) {
 		/**
 		 * Per-frame effect for edges `your-node -> objectselector`. The runtime
 		 * restores `base` before every frame; apply offsets relative to it.
-		 * @param {string} type @param {(object: any, base: any, data: any, time: number) => void} fn
+		 *
+		 * A1: `fn` receives a 5th arg `{id, graphId}` — its own node id and the graph
+		 * it sits in, so one module can host many instances of the same node type. The
+		 * arg is ADDITIVE: a four-parameter effect is byte-unchanged.
+		 *
+		 * A1: `opts.inputs` declares typed named inputs ({handle: socketType}). Without
+		 * them every handle reads as 'number', which REFUSES an Object Selector wire
+		 * (object -> number is not a coercion) and renders no target socket on the card.
+		 * @param {string} type
+		 * @param {(object: any, base: any, data: any, time: number, ctx?: any) => void} fn
+		 * @param {{inputs?: Record<string, string>}=} opts
 		 */
-		registerEffect(type, fn) {
+		registerEffect(type, fn, opts) {
 			moduleEffects[type] = fn;
+			if (opts?.inputs) registerModuleNodeInputs(type, opts.inputs);
 			onDispose(() => {
 				if (moduleEffects[type] === fn) delete moduleEffects[type];
+				if (opts?.inputs) unregisterModuleNodeInputs(type, opts.inputs);
+			});
+		},
+		/**
+		 * A1 (DEVX #9): a node that OUTPUTS a value, so module state can drive core
+		 * nodes — a score into a HUD Text, a level into Map Range, a flag into a Gate.
+		 *
+		 * `fn(data, time, {id, graphId})` MUST be a pure function of its arguments (the
+		 * script-node rule): values are never sent, every peer evaluates the node from
+		 * the replicated node data and the shared clock. Reading unreplicated local
+		 * state here desyncs every downstream consumer with no error anywhere — keep
+		 * mutable module state in a replicated store (registerStateSync / api.send) and
+		 * read THAT, or let the value ride the node's own data.
+		 *
+		 * `vtype` is the output socket type ('number' by default; also 'boolean',
+		 * 'vector3', 'color', 'object', 'event'). `inputs` declares typed named inputs
+		 * the same way registerEffect does; each is resolved before `fn` runs, so
+		 * `data.<handle>` is the wired value when wired and the node's param when not.
+		 * @param {string} type
+		 * @param {(data: any, time: number, ctx: any) => any} fn
+		 * @param {{vtype?: string, inputs?: Record<string, string>}=} opts
+		 */
+		registerValueNode(type, fn, opts) {
+			registerModuleValueNode(type, fn, opts?.vtype ?? 'number');
+			if (opts?.inputs) registerModuleNodeInputs(type, opts.inputs);
+			onDispose(() => {
+				unregisterModuleValueNode(type, fn);
+				if (opts?.inputs) unregisterModuleNodeInputs(type, opts.inputs);
 			});
 		},
 		/**
@@ -560,6 +608,20 @@ function makeApi(moduleId) {
 		fireObjectClick(uuid) {
 			// dynamic: flowRuntime statically imports moduleSDK (cycle rule)
 			import('./flowRuntime').then((m) => m.fireObjectClick(uuid));
+		},
+		/**
+		 * A1 (DEVX #9): pulse your module's own EVENT nodes — a level cleared, a goal
+		 * scored, a wave spawned. REPLICATED like a click (the pulse rides the existing
+		 * `nodetrigger` message from ONE peer's stamp), so call it on the peer where the
+		 * event happened and NOT on all of them, or a Counter counts it once per peer.
+		 *
+		 * `match(data, id)` picks which instances fire; all of them when it is absent.
+		 * Register the node type's output as `{vtype: 'event'}` so it can be wired to a
+		 * Counter or an Object Selector.
+		 * @param {string} type @param {(data: any, id: string) => boolean=} match
+		 */
+		fireNodeTrigger(type, match) {
+			import('./flowRuntime').then((m) => m.fireModuleTrigger(type, match));
 		},
 		/**
 		 * Possess an object: WASD/arrows or the VR left stick drive it (tank

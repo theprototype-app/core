@@ -26,6 +26,7 @@
 	import SwitcherNode from './nodes/SwitcherNode.svelte';
 	import ObjectSelectorNode from './nodes/ObjectSelectorNode.svelte';
 	import AnimationNode from './nodes/AnimationNode.svelte';
+	import HudNode from './nodes/HudNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
@@ -125,6 +126,13 @@
 		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
 		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip
 		animstate: AnimStateNode, // 17-E F3: the readable half of it
+		// A3: ONE generic card for the whole HUD group (the ShaderNode precedent)
+		hudscreen: HudNode,
+		hudtext: HudNode,
+		hudbar: HudNode,
+		hudbutton: HudNode,
+		hudtimer: HudNode,
+		hudlist: HudNode,
 		...moduleTypes
 	};
 

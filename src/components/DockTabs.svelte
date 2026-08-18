@@ -5,7 +5,7 @@
 	// "+" opens Flow Code / Animation / UV editor / Shader (docked). The Explorer is NOT here (it is a
 	// separate, exclusive panel with no tabs).
 	import { flowTabs, bottomDockActive, activateDock } from '$lib/bottomDock';
-	import { flowCodeClose, animationClose, uvEditorClose, shaderEditorClose } from '../stores/appStore.js';
+	import { flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose } from '../stores/appStore.js';
 	import ContextMenu from './ContextMenu.svelte';
 
 	let addMenu = $state(/** @type {{x:number,y:number}|null} */ (null));
@@ -13,7 +13,8 @@
 		{ label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => { flowCodeClose.set(false); activateDock('flowcode'); } },
 		{ label: '＋ Animation', tooltip: 'Animate the selected object', action: () => { animationClose.set(false); activateDock('animation'); } },
 		{ label: '＋ UV editor', tooltip: 'Edit the selected mesh’s UV map and textures', action: () => { uvEditorClose.set(false); activateDock('uv'); } },
-		{ label: '＋ Shader editor', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } }
+		{ label: '＋ Shader editor', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } },
+		{ label: '＋ HUD editor', tooltip: 'Lay out the on-screen HUD its nodes drive', action: () => { hudEditorClose.set(false); activateDock('hud'); } }
 	];
 	function openAdd(/** @type {MouseEvent} */ e) {
 		const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();

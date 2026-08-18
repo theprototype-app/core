@@ -52,6 +52,82 @@ export const nodeCatalog = [
 		]
 	},
 	{
+		// A3: the core HUD group. Nodes supply DATA and receive EVENTS; the HUD
+		// DOCUMENT owns WHERE things are, so every node here names an element by id
+		// rather than carrying a position.
+		//
+		// The most useful thing to know about this group: THE SCORE DISPLAY IS
+		// `counter -> hudtext` AND NEEDS NO NODE OF ITS OWN. Counter already counts
+		// replicated pulses, and Math / Number / Map Range / Animation State already
+		// feed a number socket through resolveInputs.
+		group: 'HUD',
+		items: [
+			// show / hide / toggle a screen. LOCAL and per-peer BY DESIGN: one player can
+			// sit on the start menu while another plays. Say so on the card, or it gets
+			// reported as "my peer doesn't see the menu".
+			{
+				type: 'hudscreen',
+				label: 'HUD Screen',
+				defaults: { screen: '', action: 'show' },
+				params: [
+					{ key: 'screen', kind: 'text', placeholder: 'screen id', maxLength: 64 },
+					{ key: 'action', kind: 'select', options: ['show', 'hide', 'toggle'] }
+				]
+			},
+			// `format` is where the score actually gets rendered: '{v}' is the wired
+			// number, so 'Gems: {v}' needs no string node and there is no string socket
+			// type to invent.
+			{
+				type: 'hudtext',
+				label: 'HUD Text',
+				defaults: { element: '', format: '{v}', decimals: 0, value: 0 },
+				params: [
+					{ key: 'format', kind: 'text', placeholder: 'Gems: {v}', maxLength: 120 },
+					{ key: 'decimals', kind: 'range', min: 0, max: 4, step: 1 }
+				]
+			},
+			{
+				type: 'hudbar',
+				label: 'HUD Bar',
+				defaults: { element: '', min: 0, max: 100, value: 0, format: '' },
+				params: [
+					{ key: 'min', kind: 'range', min: -1000, max: 1000, step: 1 },
+					{ key: 'max', kind: 'range', min: -1000, max: 1000, step: 1 },
+					{ key: 'format', kind: 'text', placeholder: 'optional label', maxLength: 80 }
+				]
+			},
+			// EVENT out. A press goes through the existing replicated nodetrigger path
+			// (fireHudButton), exactly like fireObjectClick — so event->number coercion,
+			// Counter fan-in and triggerStampFor all work on it unchanged.
+			{ type: 'hudbutton', label: 'HUD Button', defaults: { element: '' } },
+			// counts DOWN from `duration` off the shared trigger stamp, so every peer
+			// reads the same remaining time with no clock of its own
+			{
+				type: 'hudtimer',
+				label: 'HUD Timer',
+				defaults: { element: '', duration: 60, format: '{v}', decimals: 0, autostart: true },
+				params: [
+					{ key: 'duration', kind: 'range', min: 1, max: 600, step: 1 },
+					{ key: 'format', kind: 'text', placeholder: '{v}s', maxLength: 80 },
+					{ key: 'decimals', kind: 'range', min: 0, max: 2, step: 1 },
+					{ key: 'autostart', kind: 'toggle' }
+				]
+			},
+			// A LIST is an element WRITTEN INTO by id, never a value that flows: the
+			// socket system has no arrays, and every game wants a leaderboard. A module
+			// pushes rows through hudRows(); this node names the element and its title.
+			{
+				type: 'hudlist',
+				label: 'HUD List',
+				defaults: { element: '', title: '', rows: 5 },
+				params: [
+					{ key: 'title', kind: 'text', placeholder: 'optional title', maxLength: 80 },
+					{ key: 'rows', kind: 'range', min: 1, max: 20, step: 1 }
+				]
+			}
+		]
+	},
+	{
 		group: 'Logic',
 		items: [
 			{

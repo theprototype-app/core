@@ -36,6 +36,7 @@ import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
 import { applyRemoteScenePost, scenePostState, sendScenePost } from '$lib/scenePost';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
+import { applyRemoteHud, applyRemoteHudDelete, applyRemoteHuds, sendHuds } from '$lib/hudSync';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
@@ -425,6 +426,17 @@ export class PeerConnection {
 					applyRemoteShaderGraphs(data);
 				} else if(data.type == 'getshadergraphs') {
 					sendShaderGraphs(data.sender);
+				} else if(data.type == 'hud') {
+					// A2: the authored HUD document, latest-wins on changedAt. An element KIND
+					// we don't know is kept and skipped at render, never dropped. The RUNTIME
+					// half is derived from the replicated flow graph and never sent.
+					applyRemoteHud(data);
+				} else if(data.type == 'huddelete') {
+					applyRemoteHudDelete(data);
+				} else if(data.type == 'huds') {
+					applyRemoteHuds(data);
+				} else if(data.type == 'gethuds') {
+					sendHuds(data.sender);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
@@ -613,6 +625,7 @@ export class PeerConnection {
 		if (getobjects) conn.send({type: 'getanim', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getscenepost', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getshadergraphs', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'gethuds', sender: this.peer.id})
 		// module state is the one PER-PEER payload in the get* family (each peer
 		// answers with its OWN states — e.g. campreview presence), so it can't be
 		// deduped down to the host like the shared-scene requests above (B5)

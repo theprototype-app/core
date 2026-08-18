@@ -11,6 +11,8 @@ import { updateSounds } from './soundRuntime';
 import { updateParticles } from './particleRuntime';
 import { startObjectFlowWatcher } from './objectFlow';
 import { parkEditOverlays } from './editOverlays';
+// A3: hudDocs is a LEAF (svelte/store only), so a static edge to it closes no cycle
+import { hudRuntime, hudDocs, showHudScreen, visibleScreen, hudScreenOverride } from './hudDocs';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -170,6 +172,125 @@ function updatePlayAnim(pairs, ctx) {
 	}
 	// forget nodes that no longer exist, so a rebuilt node starts fresh
 	for (const id of [...playAnimEdge.keys()]) if (!seen.has(id)) playAnimEdge.delete(id);
+}
+
+// --- A3: the HUD runtime -----------------------------------------------------
+// THROTTLED to ~10Hz and written ONLY ON CHANGE. `flowValues` throttles to 150ms for
+// exactly this reason: a per-frame store write re-renders the whole layer 60 times a
+// second, and the layer is real DOM.
+let lastHudAt = 0;
+/** the last map we published, so an unchanged frame writes nothing @type {string} */
+let lastHudJson = '';
+/** screen ids we have already acted on, keyed by node — a `show` must fire on the
+ * trigger's EDGE, not on every frame while the pulse is alive @type {Map<string, number>} */
+const hudScreenActed = new Map();
+
+/** Format a number into an element's label. `{v}` is the wired value, so 'Gems: {v}'
+ * needs no string node and no string socket type.
+ * @param {string} format @param {number} value @param {number} decimals */
+function hudFormat(format, value, decimals) {
+	const text = Number(value).toFixed(Math.max(0, Math.min(6, Math.round(decimals || 0))));
+	const pattern = String(format ?? '{v}');
+	return pattern.includes('{v}') ? pattern.split('{v}').join(text) : pattern || text;
+}
+
+/** Rows a module pushed into a list element, keyed by element id.
+ * @type {Map<string, any[]>} */
+const hudListRows = new Map();
+
+/** Push rows into a HUD List element. A list is an element WRITTEN INTO, never a value
+ * that flows — the socket system has no arrays. Call it on EVERY peer from replicated
+ * state (a module's own registerStateSync), never on one and hope.
+ * @param {string} elementId @param {any[]} rows */
+export function setHudRows(elementId, rows) {
+	hudListRows.set(String(elementId), Array.isArray(rows) ? rows.slice(0, 64) : []);
+}
+
+/** `now` comes from runTick: it is a LOCAL const there, not module scope.
+ * @param {number} time @param {any} ctx @param {number} now */
+function updateHudRuntime(time, ctx, now) {
+	// the screen nodes act on a trigger EDGE, so they are checked every frame; only the
+	// published value map is throttled
+	const hudNodes = nodes.filter((/** @type {any} */ n) => String(n.type ?? '').startsWith('hud'));
+	if (!hudNodes.length) {
+		if (lastHudJson !== '') {
+			lastHudJson = '';
+			hudRuntime.set({});
+		}
+		return;
+	}
+
+	for (const node of hudNodes) {
+		if (node.type !== 'hudscreen') continue;
+		const stamp = triggerStampFor(node.id, ctx);
+		if (stamp === null) continue;
+		// only on a NEW stamp: while a pulse is alive the trigger reads the same time,
+		// and re-acting every frame would make 'toggle' flicker at 60Hz
+		if (hudScreenActed.get(node.id) === stamp) continue;
+		hudScreenActed.set(node.id, stamp);
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		const key = node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : 'scene';
+		const wanted = String(data.screen ?? '').trim();
+		if (!wanted) continue;
+		const action = data.action ?? 'show';
+		const current = visibleScreen(key)?.id ?? null;
+		// LOCAL on every peer: showHudScreen writes the per-peer override, so one player
+		// can be on the menu while another plays. Each peer receives the same replicated
+		// pulse and makes the same local decision.
+		if (action === 'hide') showHudScreen(key, null);
+		else if (action === 'toggle') showHudScreen(key, current === wanted ? null : wanted);
+		else showHudScreen(key, wanted);
+	}
+	for (const id of [...hudScreenActed.keys()])
+		if (!nodes.some((/** @type {any} */ n) => n.id === id)) hudScreenActed.delete(id);
+
+	if (now - lastHudAt < 100) return; // ~10Hz
+	lastHudAt = now;
+	/** @type {Record<string, any>} */
+	const next = {};
+	for (const node of hudNodes) {
+		if (node.type === 'hudscreen') continue;
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		const element = String(data.element ?? '').trim();
+		if (!element) continue;
+		if (node.type === 'hudtext') {
+			next[element] = { text: hudFormat(data.format, num(data.value), num(data.decimals)) };
+		} else if (node.type === 'hudbar') {
+			next[element] = {
+				value: num(data.value),
+				min: num(data.min),
+				max: num(data.max),
+				text: data.format ? hudFormat(data.format, num(data.value), 0) : ''
+			};
+		} else if (node.type === 'hudtimer') {
+			next[element] = {
+				text: hudFormat(data.format, hudTimerRemaining(node, data, time, ctx), num(data.decimals))
+			};
+		} else if (node.type === 'hudlist') {
+			next[element] = {
+				text: String(data.title ?? ''),
+				rows: (hudListRows.get(element) ?? []).slice(0, Math.max(1, num(data.rows) || 5))
+			};
+		}
+		// hudbutton contributes no runtime value — its label is authored on the element
+	}
+	const json = JSON.stringify(next);
+	if (json === lastHudJson) return; // ON CHANGE ONLY
+	lastHudJson = json;
+	hudRuntime.set(next);
+}
+
+/** Seconds left on a HUD Timer. DERIVED from the shared trigger stamp, so every peer
+ * reads the same number with no clock and no message of its own — the same reasoning
+ * as a looping sound's phase. An `autostart` timer with nothing wired counts from the
+ * runtime's own clock origin.
+ * @param {any} node @param {any} data @param {number} time @param {any} ctx */
+function hudTimerRemaining(node, data, time, ctx) {
+	const duration = Math.max(0, num(data.duration));
+	const stamp = triggerStampFor(node.id, ctx);
+	if (stamp === null) return data.autostart === false ? duration : Math.max(0, duration - time);
+	// a synced stamp can sit AHEAD of `time` by a frame; clamp both ends
+	return Math.max(0, Math.min(duration, duration - (time - stamp)));
 }
 
 /** The shared timestamp of whatever event is wired into this node's `trigger`
@@ -345,7 +466,9 @@ export const valueTypes = [
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
 	'animstate', // 17-E F3: the readable half of animfinished
-	'animmarker' // 17-E F5: the playhead crossed a named point in a clip
+	'animmarker', // 17-E F5: the playhead crossed a named point in a clip
+	'hudtimer', // A3: the remaining seconds, derived from the shared trigger stamp
+	'hudbutton' // A3: an event source, pulsed by fireHudButton
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -1187,6 +1310,11 @@ function runTick(now) {
 		if (uuid) animPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
 	});
 	updatePlayAnim(animPairs, ctx);
+
+	// A3: ONE HUD collection pass, on the sound/particle/playanim shape. What every
+	// element SAYS is computed here from the already-replicated graph, which is why the
+	// runtime half needs no message of its own (golden rule 8, deterministic).
+	updateHudRuntime(time, ctx, now);
 
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
 	if (now - lastValuesAt > 150) {

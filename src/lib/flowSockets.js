@@ -24,7 +24,12 @@ const OUTPUT = {
 	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip
 	animstate: 'number', // 17-E F3: progress / playing / position, one at a time
 	velocity: 'number', // CL-C: live speed readout
-	flowinput: 'number' // H5 fallback; the live check reads data.vtype
+	flowinput: 'number', // H5 fallback; the live check reads data.vtype
+	// A3 HUD: only the button and the timer produce anything. hudtext/hudbar/
+	// hudscreen/hudlist are SINKS — they write into an element, so their output stays
+	// the effect channel.
+	hudbutton: 'event',
+	hudtimer: 'number'
 };
 
 /** typed named inputs; `_default` covers an unnamed target handle @type {Record<string,Record<string,string>>} */
@@ -54,7 +59,15 @@ const INPUT = {
 	playanim: { trigger: 'event', speed: 'number' },
 	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
 	// a burst fired from any event (On Click / Key Press / On Impact)
-	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' }
+	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' },
+	// A3 HUD. `value` is the whole point: counter -> hudtext is a live score with no
+	// new code, because Counter already counts replicated pulses and every number
+	// source already reaches a named input through resolveInputs.
+	hudtext: { value: 'number' },
+	hudbar: { value: 'number', min: 'number', max: 'number' },
+	hudscreen: { trigger: 'event' },
+	hudtimer: { start: 'event', duration: 'number' },
+	hudlist: { trigger: 'event' }
 };
 
 // what an OUTPUT type may feed into a differently-typed INPUT

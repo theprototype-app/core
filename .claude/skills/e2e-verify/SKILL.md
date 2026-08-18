@@ -629,6 +629,34 @@ dual-module-instance split collapsed, `freshReload(peer)` BEFORE `connect` and
 re-read the id (`peer.id = await …peers.subscribe…peer.id`) — a reload mid-mesh
 drops the P2P session.
 
+## 21-B traps (2026-08-19)
+
+- **A synthesized wheel dispatched ON `window` cannot test a capture-phase
+  claim.** At the TARGET, capture and bubble listeners run in REGISTRATION
+  order, so a handler that wins by being registered in the capture phase never
+  gets to be first. Dispatch on the CANVAS, where a real wheel starts. Measured:
+  41 events leaked into walking speed as a 6.4x faster walk when dispatched on
+  window, and zero when dispatched on the canvas.
+- **Author a graph through `flowGraphs` AND `flowNodes`.** They mirror both
+  ways; writing one leaves the other stale and the stale side can be pushed back
+  over it (an earlier section's nodes returned while the new edges stayed).
+  Build edge ids the canonical way too —
+  `e-<source>[.<sourceHandle>]-<target>[.<targetHandle>]` — or they do not
+  survive a reconcile once a peer joins.
+- **A BACKGROUND page is rAF-throttled to a few frames a second**, and
+  `bringToFront()` does not always help with three contexts open (measured 5
+  samples in 1.24 s either way). Anything that lives in the frame loop —
+  interpolation, per-frame overlays — cannot be measured by sampling a watching
+  peer. Assert the MECHANISM instead and leave the look to a real machine.
+- **A fixed `waitForTimeout` after a key press is a race once a peer is
+  connected**: the same read saw 0.50 at ~700 ms and 3.36 at ~850 ms. Wait for
+  the thing.
+- **Creating an object SELECTS it, and `selectedObject` is sticky**, so the
+  handshake pushes it to a joiner as a LOCK — a fixture that then tries to grab
+  it is correctly refused. Deselect AFTER connecting.
+- **A two-peer suite cannot `h.connect(A, B2)` when A is already in a session**
+  (its connect input is gone). Dial from the newcomer.
+
 ## Known flakes / traps
 
 - **An assertion whose deadline is a `waitForTimeout` asserts the SCHEDULER as much

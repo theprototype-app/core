@@ -263,6 +263,36 @@ loadable play content. Everything a user does must be visible to connected peers
   it); SENSORS = trigger volumes (pass-through; pairs collected BOTH directions,
   per-frame dedupe → `fireObjectEnter/Exit` replicated stamps); `PHYSICS_MATERIALS`
   presets (ice/rubber/wood/metal); freeze axes via setEnabledRotations/Translations;
+  21-B WIDENED the scene singleton and added the play/throw layer:
+  `scenePhysics.js` is now the WHOLE shared physics config —
+  `{gravity, ground{enabled,height,friction,restitution}, bounds{limit,action},
+  material, damping, ccd, timeScale, play{interaction,grounded,simOnPlay}}` —
+  with the message `type` UNCHANGED, which is the entire argument for housing
+  the play block there rather than minting a second singleton: no dispatch case,
+  no canApply entry, no handshake work, no handleDisconnected cleanup.
+  `normalizeScenePhysics` is the ONE boundary and holds every clamp;
+  `setScenePhysics` merges nested blocks and stamps MONOTONICALLY (a gesture
+  writes several times per millisecond); `scenePhysicsSnapshot/Restore` return
+  null at defaults so a default scene writes no key (L5 wires sessions.js).
+  · `throwVelocity.js` (THREE only) = `velocityFromSamples`/`clampThrow`, shared
+  by the gizmo release, play mode and the `throw` applier: a QUATERNION delta
+  (Euler differencing is wrong across a wrap and wrong in general — YXZ couples
+  the axes) and a MAGNITUDE clamp (per-component clamping ROTATES the throw;
+  measured 4.6 degrees off on a skewed vector).
+  · `playInteract.js` = play mode's own input path, deliberately NOT a lift of
+  Scene's pick (the editor's select branch is a short STATIONARY click, its
+  `$isLocked` bails guard six editor modes, and play mode's ray is NDC (0,0)
+  every frame). The hold is a SMOOTHED KINEMATIC TARGET: kinematicTargetOf plus
+  the SLERPed substep feed are already the other half of that spring, so
+  smoothing the target costs no rapier surface and makes mass legible. A tap
+  under 180ms fires `fireObjectClick` — play mode had no clicking at all.
+  · `playSettings.js` = `resolvePlaySettings(scene)`, the shared block overridden
+  field-by-field by scene-root `userData.play` publishers in a DETERMINISTICALLY
+  SORTED scan (children order is per-peer, so an unsorted scan resolves
+  DIFFERENTLY on two peers). DEVX #13; `grounded` in PointerLockControls is #14;
+  `playMarkers` generalises the minimap's two hardcoded object names.
+  · `moveSmoothing.js` = receiver-side interpolation of a remote physics stream
+  (see the gotcha). · `PlayReticle.svelte` = the crosshair, presentation only.
   scene GRAVITY from `scenePhysics.js` (a sceneMusic-style latest-wins
   `scenephysics` singleton, applied at world create AND live); CUSTOM colliders are
   COMPOUND — one convexHull per SHELL, verts+pieces stored on userData.physics
@@ -870,7 +900,20 @@ loadable play content. Everything a user does must be visible to connected peers
    `parkAnimatedAtBase()` first or receivers bake mid-swing poses as animation base;
    `restoreBase` calls `updateMatrix()` because toJSON/GLTF read the matrix
    the last RENDER composed.
-11. **Viewer object permissions** (#14, cloud-roles only) go through
+11. **A ~10Hz stream is smooth on the SENDER and stepped on every receiver.**
+   Physics broadcasts `move` on a 100ms gate, and `moveGeometry` snaps — fine at
+   walking pace, a slideshow on a 20 m/s throw. The fix belongs on the RECEIVER
+   (`moveSmoothing.js`: rewind to the previous pose and ease to the new one over
+   the cadence MEASURED for that object), never on the send rate: raising it
+   costs bandwidth for every body in every scene and is still a step function
+   between packets. Gate on what is OBSERVED — an object with physics params
+   whose moves arrive as a STREAM — not on `remoteSimulating`, which a LATE
+   JOINER is never told about, so the peer needing it most would be the one peer
+   without it. A jump over 3m snaps (a teleport must not smear), and a per-object
+   TIMER lands the exact target because the frame loop that advances the ease can
+   stall (a backgrounded tab is throttled to a few frames a second; measured 1.8m
+   short). Interpolation may change WHEN a pose is reached, never WHICH.
+12. **Viewer object permissions** (#14, cloud-roles only) go through
    `objectPermissions.js` — INERT unless a plugin publishes `rolesInfo`. A viewer's
    object-creation is not sent; the object is marked `__localOnly` (rides toJSON/GLTF
    extras like `__uuid`) and stays local until Share broadcasts its toJSON + clears the
@@ -880,6 +923,56 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A HELD body's `lastWritten` is stale by definition, so every release must
+  refresh it.** The write-back skips a held body, so `lastWritten` still
+  describes the pose it had when it was GRABBED — and the deviation detector
+  exists precisely to notice that the object moved. Without a refresh in
+  `releaseHold`, the very next step reads a phantom external write and
+  re-engages a kinematic hold ONE FRAME after every release: measured
+  `hold:'external'` on a body that had just been thrown. `applyThrow` owes the
+  same refresh for the same reason (writing an object pose from a message is
+  exactly what the detector is built to catch).
+- **A warm-up that counts COMPOSER frames deadlocks the moment a direct render
+  path exists.** `postWarm` flips after N composer frames, and A8 skips the
+  composer when there is nothing to composite — so nothing to compose meant no
+  composer frame, so postWarm never flipped, so `effectivePostStack` stayed
+  empty, so there was still nothing to compose. Count FRAMES, not composed ones.
+  The signature is a stack that can never compile a pass in one mode.
+- **`flowGraphs` and `flowNodes` are mirrored BOTH ways, so a writer that sets
+  one leaves the other stale — and the stale one can be pushed back over it.**
+  flowGraphs is the document the runtime reads (`allNodes`/`allEdges`);
+  flowNodes is the ACTIVE graph's editor view. A suite that wrote only
+  flowGraphs had an EARLIER section's nodes restored while its new edges stayed,
+  which reads exactly like "the trigger fires and nothing happens". Write both.
+- **An edge id that is not the canonical shape does not survive a reconcile.**
+  Nodes.svelte builds `e-<source>[.<sourceHandle>]-<target>[.<targetHandle>]`;
+  a hand-made id in any other shape was dropped once a peer joined, leaving the
+  nodes in place and the WIRING gone — the trigger still fired, nothing acted.
+- **An action node must resolve its TARGET before it touches the rising-edge
+  map.** One node can appear in the pair list twice (an Object Selector edge AND
+  an implicit owner), and a pair with no target that consumed the edge left the
+  real pair looking like a repeat.
+- **A physics write with no simulation running is a silent no-op, and silence
+  reads as "broken".** Everything in physics.js is gated on `get(simulating)`,
+  so a correctly wired graph in a stopped scene does exactly nothing. Reported
+  as "I connect everything, press the key and nothing happens". Say so (throttled,
+  naming the node), and only when NOTHING is simulating anywhere — a
+  non-initiator doing nothing is correct and must stay quiet.
+- **The Object Selector had no OUTPUT handle for 200 phases.** flowSockets has
+  declared `OUTPUT.objectselector = 'object'` since 165 and the catalog is full
+  of object INPUTS (velocity.target, distance.a/b, proximity.a/b, lookat.target,
+  collider.source) — but the card never rendered a source handle, so not one of
+  them was reachable and every such node silently fell back to the implicit
+  owner. Two wiring styles exist and both are needed: node -> Object Selector is
+  "apply this TO that" (the effect channel, one target), Object Selector -> an
+  `object` input is "which object" as DATA (many consumers, and the only way to
+  express a node with TWO object operands — Joint's a/b, Distance's a/b).
+- **A named socket needs a LABELLED ROW, not a computed offset.** Two stacks of
+  absolutely-positioned handles on one card stop agreeing with the rows they
+  name. AnimationNode renders `spec.inputs` the ObjectFlowNode way (a relative
+  wrapper whose `-mx-3 px-3` cancels the card padding, `top: 50%`), with an
+  optional `inputLabels` map because a socket id is what the WIRE calls it and
+  not always what a person needs to read.
 - **`renderer.toneMapping` NEVER REACHES A COMPOSED FRAME.** three applies it to a
   material only when the current render target is the CANVAS or an XR target
   (WebGLPrograms: `if (currentRenderTarget === null || isXRRenderTarget)`), and the
@@ -2343,6 +2436,41 @@ override for e2e — never share 5173 (the user's main-checkout server).
   Watch-adopts-look: cloud `plans-core/pending/post-camera-looks-and-shader-integration.md`.
   The two lanes conflict in exactly TWO files (`App.svelte` debugStores,
   `peerHandler` dispatch) — measured with `git merge-tree`; everything else auto-merges.
+- Status (2026-08-19): **21-B PHYSICS PLAY — B1-B6 + A8 EXECUTED**, lane
+  `../theprototype-lane-post` @ port 5202, branch `feat/21-physics-play` off
+  release/next @803d040, 13 commits, NOT PR'd. Plan: cloud
+  `plans-core/pending/21-b-physics-play.md`. Baseline **388/62** at every commit
+  (roadmap 20 dropped it from 391 — re-measure on a pristine worktree, do not
+  trust the number in an older plan). B1 scenePhysics v2 · B2 the throw-velocity
+  leaf + the Euler/clamp fixes · B4 ground + out-of-bounds + the parameter
+  shortlist + the Inspector's ONE Physics section · B3 play mode becomes INTERACT
+  mode (`playInteract`/`playSettings`/PlayReticle, DEVX #13+#14) · B5 the
+  `{type:'throw'}` message + the grab claim · B6 five core physics nodes
+  (impulse/setvelocity/onrest/measure/joint) + `random` seed + `motor` side ·
+  A8 the composer in Play mode. Then four user-reported rounds: the node cards
+  said nothing about their sockets, the Object Selector had NO OUTPUT HANDLE (a
+  200-phase gap — see the gotcha), a stopped simulation failed silently, and a
+  peer-to-peer throw looked like 10 fps on the watching peer (`moveSmoothing`).
+  Suites: scene-physics-state(30) · throw-velocity(24, mostly no browser) ·
+  physics-ground-bounds(29) · play-interact(38) · throw-peer(20+, two peers) ·
+  flow-physics-actions(26, two peers) · post-play-mode(15, pixel). Docs: five new
+  node pages + random/motor/physics.md updated. B7 (spawner) and B8 (Towers) are
+  NOT started — B8 executes in L6. **OWED: the user's feel pass** (carry weight,
+  throw calibration, VR) and a decision on `play.interaction` defaulting to
+  'grab' (it is inert unless a simulation runs — asserted) and on
+  `damping.angular` defaulting to 0.05.
+  **STANDING PRE-EXISTING REDS, A/B'd against base 803d040 and NOT from this
+  work**: flow-physics-nodes, physics-discoverability, physics-kinematic (base
+  fails one MORE), flow-customnode-io and dungeon-play (identical 16 passes then
+  the same click timeout on both sides). collider-live is NOT one of them — it
+  only fails on a stale dev server.
+  **ONE UNEXPLAINED, reproducible**: a literal KEY PRESS in the seconds after a
+  peer joins does not drive a physics action, while the trigger stamp is fresh,
+  the graph keeps its nodes AND edges, the selector still names the object, the
+  body is dynamic and unheld, a nodetrigger goes out, and a direct applyImpulse
+  hops the same body. flow-physics-actions section 6 drives the trigger through
+  `applyNodeTrigger` (the same entry point) and says so; the same key press works
+  before the join and in every single-peer section. Deserves its own ticket.
 - Status (2026-08-18, later): **SH6b CLOSED BY MEASUREMENT** — `shader-scene-default`
   (17 checks) covers the scene default at 24 objects and records why the planned
   compile-once-and-clone is NOT built: 0.73-0.88 ms per object, programs already deduped

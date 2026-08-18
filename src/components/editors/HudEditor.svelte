@@ -25,12 +25,16 @@
 	} from '$lib/hudDocs';
 	import { beginHudGesture, endHudGesture } from '$lib/hudSync';
 	import { hudPreviewInViewport } from '$lib/hudDocs';
+	import { GAME_STATES } from '$lib/gameState';
 	import { listCameraObjects, cameraSpec, aspectRatio } from '$lib/cameraObjects';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { createGesture } from '$lib/modalGrab';
 	import HudElement from '../hud/HudElement.svelte';
 	import HudFieldRow from '../hud/HudFieldRow.svelte';
 	import HudPalette from '../hud/HudPalette.svelte';
+	import HudActionsSection from '../hud/HudActionsSection.svelte';
+	import { wiredElementIds, registerHudKindLookup } from '$lib/hudActions';
+	import { flowGraphs as flowGraphDocs } from '../../stores/flowStore';
 	import {
 		kindDef, fieldsForKind, styleFieldsForKind, newElementOfKind, HUD_KIND_DEFS
 	} from '$lib/hudKinds';
@@ -395,6 +399,25 @@
 	}
 
 	// --- commands ---------------------------------------------------------------
+	// 21-D7: hudActions needs an element's KIND to pick the right display node, and it must
+	// not import hudDocs (that would make its imports two-directional). The editor already
+	// holds the document, so it supplies the lookup.
+	$effect(() =>
+		registerHudKindLookup((/** @type {string} */ id) => {
+			const doc = hudDocOf(docKey);
+			for (const screen of doc?.screens ?? []) {
+				const hit = screen.elements.find((/** @type {any} */ el) => el.id === id);
+				if (hit) return hit.kind;
+			}
+			return 'text';
+		})
+	);
+
+	// which elements have something wired to them, so a dead button is visible at a glance.
+	// $flowGraphDocs is the dependency (wiredElementIds reads it through get()).
+	const wiredOf = (/** @type {any} */ _graphs) => wiredElementIds();
+	const wired = $derived(wiredOf($flowGraphDocs));
+
 	/** Read a schema field off the element. A JSDoc cast in the TEMPLATE is not honoured,
 	 * so the indexing lives here. @param {any} el @param {string} key */
 	const fieldValue = (el, key) => el?.[key];
@@ -425,6 +448,16 @@
 			.map((el) => addHudElement(docKey, screenId, { ...el, id: undefined, x: el.x + 12, y: el.y + 12 }));
 		setPicks(copies.map((c) => c.id));
 	}
+	/** @param {string} sid @param {string} state */
+	function setScreenShowWhile(sid, state) {
+		const doc = hudDocOf(docKey);
+		if (!doc) return;
+		setHudDocFor(docKey, {
+			...doc,
+			screens: doc.screens.map((sc) => (sc.id === sid ? { ...sc, showWhile: state } : sc))
+		});
+	}
+
 	function addScreen() {
 		ensureDoc();
 		const id = addHudScreen(docKey, 'Screen ' + (screens.length + 1));
@@ -608,6 +641,22 @@
 						>
 						<button class="hud-mini hud-danger" title="Delete screen" onclick={() => dropScreen(s.id)}>✕</button>
 					</div>
+					{#if s.id === screenId}
+						<!-- 21-D6: bind the screen to a GAME STATE and it follows the game with no
+						     wiring at all - including for someone who joins mid-game and never saw
+						     the transition everyone else did. -->
+						<label class="hud-showwhile" title="Show this screen automatically while the game is in this state">
+							<span>while</span>
+							<select
+								class="hud-input"
+								value={s.showWhile ?? ''}
+								onchange={(/** @type {any} */ e) => setScreenShowWhile(s.id, e.currentTarget.value)}
+							>
+								<option value="">only when asked</option>
+								{#each GAME_STATES as g (g)}<option value={g}>{g}</option>{/each}
+							</select>
+						</label>
+					{/if}
 				{/each}
 				<button class="hud-add-screen" onclick={addScreen}>＋ Screen</button>
 				<p class="hud-note">
@@ -677,6 +726,10 @@
 							{:else}
 								<span class="hud-unknown-tag">{el.kind}?</span>
 							{/if}
+							<!-- 21-D7: wired or dead, at a glance -->
+							{#if wired.has(el.id)}
+								<span class="hud-wired" title="Something is wired to this element"></span>
+							{/if}
 						</div>
 					{/each}
 					{#if one}
@@ -716,6 +769,10 @@
 					{#if kindDef(one.kind)?.summary}
 						<p class="hud-note">{kindDef(one.kind)?.summary}</p>
 					{/if}
+					<!-- 21-D7: the closed loop. A VIEW on the flow graph — it lists what is bound
+					     and can create+wire the nodes for you, so the element never has to be
+					     typed into a node by hand. -->
+					<HudActionsSection element={one} />
 					<label class="hud-field">
 						<span>anchor</span>
 						<select class="hud-input" value={one.anchor} onchange={(/** @type {any} */ e) => setOne('anchor', e.currentTarget.value)}>
@@ -835,6 +892,17 @@
 		flex-direction: column;
 		overflow: hidden;
 	}
+	.hud-showwhile {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0 0.2rem 0.2rem 1.1rem;
+		font-size: 10px;
+		opacity: 0.7;
+	}
+	.hud-showwhile > span {
+		flex-shrink: 0;
+	}
 	.hud-doc-pick {
 		display: flex;
 		flex: 0 0 auto;
@@ -914,6 +982,16 @@
 	.hud-unknown-tag {
 		font-size: 10px;
 		color: #facc15;
+	}
+	/* the wired badge: a small dot in the corner, so a dead button reads as dead */
+	.hud-wired {
+		position: absolute;
+		top: -3px;
+		right: -3px;
+		height: 6px;
+		width: 6px;
+		border-radius: 999px;
+		background: #34d399;
 	}
 	.hud-size-grip {
 		position: absolute;

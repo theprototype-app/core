@@ -64,7 +64,7 @@
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { isValidFlowConnection, typeColor, replaceableInputEdges } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
-	import { peers, username } from '../../stores/appStore';
+	import { peers, username, flowFocus } from '../../stores/appStore';
 
 	// module node types default to the spec-driven AnimationNode unless the
 	// module registered its own component
@@ -73,6 +73,33 @@
 			.flatMap((group) => group.items)
 			.map((item) => [item.type, moduleNodeComponents[item.type] ?? AnimationNode])
 	);
+	// 21-D7: DEEP LINK — 'show me the node that drives this HUD element'. A write-once
+	// request that we act on and CLEAR, the inspectorScrollTo shape, so it cannot re-fire
+	// on an unrelated render. fitView over one node centres it without changing the zoom
+	// the user chose.
+	// runes mode: $effect, never $: . untrack, because focusRequested writes flowFocus and
+	// reads flowNodes - an effect that tracked its own write would loop.
+	$effect(() => {
+		const id = $flowFocus;
+		if (id) untrack(() => focusRequested(id));
+	});
+	function focusRequested(id: string) {
+		// CLEAR FIRST: a write-once request, so it cannot re-fire on the next unrelated
+		// render (inspectorScrollTo's rule).
+		flowFocus.set(null);
+		if (!($flowNodesStore as any[]).some((n) => n.id === id)) return;
+		// fitView only — the xyflow instance owns `selected` through its own binding, and
+		// writing it from here fights that binding for no gain. Centring IS the answer to
+		// "where is the node that drives this element".
+		setTimeout(() => {
+			try {
+				fitView({ nodes: [{ id }], duration: 200, maxZoom: 1.2 });
+			} catch {
+				/* the pane is not up yet */
+			}
+		}, 60);
+	}
+
 	const nodeTypes: any = {
 		colorpicker: ColorPickerNode,
 		slider: SliderNode,

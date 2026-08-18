@@ -626,6 +626,34 @@ loadable play content. Everything a user does must be visible to connected peers
   than by pinning floats. `normalizeAspect` never stretches per-axis (that shears the
   texture) and `unwrapSeam` shifts triangles that straddle the u wrap, or one face
   smears across the whole map),
+  `units` (#20 P3, LOCAL leaf: display units for numeric fields. THREE kinds, not two,
+  because the app is genuinely inconsistent about angles — 'length' internal METRES,
+  'angle' internal RADIANS (`object.rotation`, the Inspector rows), 'angleDeg' internal
+  DEGREES (`snapSettings.rotateDeg`, fov, the toolbox). Collapsing the two angle kinds
+  would be a silent 57x error at half the call sites, so every field DECLARES what it
+  holds via DragRow's `unit` prop. `displayDecimals` rounds with CEIL, never round: a
+  unit whose magnitude is not a round power of ten may only come out FINER than the field
+  asked for — log10(0.0254) is -1.59 and rounding gives WHOLE INCHES, 2.5cm steps on a row
+  with centimetre control in metres. Typed input takes a SUFFIX whatever is on display
+  (`12cm`, `4in`, `2'`, `90deg`), which is what makes one global setting enough. In the
+  DEFAULT units every field is byte-identical to before it existed),
+  `workspace` + `editResume` (#20 P5: which panels were open, plus the selection and any
+  mesh-edit/sculpt session with its element picks. WHEN it comes back is the design and it
+  is the user's call: a plain reload is a CLEAN SLATE, and the layout returns only on an
+  explicit Restore / the auto-restore setting / a file load — so it rides the SAVED PAYLOAD
+  (autosave + sessions + .tpscene) and there is NO localStorage copy and no boot-time
+  apply. `snapshotWorkspace` returns null when nothing is open, which keeps an ordinary
+  save unchanged AND stops a restore closing panels you have open ("restore less, never
+  more"). editResume imports NOTHING — the live modules are handed in through
+  `registerEditResumeSources` from Scene.svelte, the 15-D shape, because a static import
+  closes a cycle (sessions.js is reachable from peerHandler; faceEdit/meshEdit/objectActions
+  are in the history-cycle family)),
+  `postBackends` (#20 P6: a post SHADER DESCRIPTION -> a postprocessing `Effect`. NOT
+  shaderBackends, whose output is a MATERIAL — a different object with a different
+  lifecycle, and collapsing them would hide that difference at the one place it matters.
+  The FALLBACK lives in the REGISTRY, not the module-disable path: a peer who never had the
+  module reaches the same unknown key, so `compilePostShader` falls back to the built-in
+  and REPORTS `fellBackFrom` while the document keeps its original key),
   `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
   `networkQuality` (N6/D3: LOCAL per-peer getStats RTT + relay dot, median, NOT replicated),
   `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
@@ -928,6 +956,32 @@ loadable play content. Everything a user does must be visible to connected peers
 - **Never run `npm run build` while the lane's `vite dev` is watching the same
   worktree** — the build rewrites `.svelte-kit/output` under the dev server and kills
   it, and the next ten suites all report `ERR_CONNECTION_REFUSED`.
+- **In a FLEX container every element child is its own flex item, on its own line.**
+  `SettingRow`'s `.sr-desc` is a flex COLUMN (it centres the description vertically), so
+  a description mixing `<strong>`/`<kbd>` rendered one fragment per line — "Round / Undo /
+  , / Redo / and / Multi-select / beside the logo…". Reported twice as "too many carriage
+  returns", which sounds like a copy problem and is a layout one. Wrap slot content in ONE
+  block child; the cure applies to any flex cell that hosts prose.
+- **Placing chrome by a width BREAKPOINT is a guess; measure the neighbour instead.** The
+  touch-tools row stacked on an unfolded Oppo N8 that had room to spare. Three things the
+  measurement got wrong before it was right, all worth knowing: `.top-right-chrome` has
+  HEIGHT 0 (its children are positioned inside it) so a vertical-overlap test skipped the
+  notes/peers/profile cluster entirely — measure the concrete BUTTONS; measuring from the
+  LOGO's right edge was optimistic by 22px because the row actually starts at 78px; and
+  clearing a neighbour by 14px is "fits" arithmetically and "touching" visually. Re-measure
+  on a ResizeObserver over the neighbours too — the Connect pill's width changes with its
+  own state (a peer connects, the drawer opens) with no window resize and no re-dock.
+- **A gizmo seated by the CLICK path is not seated by a new selection path.** Box-selecting
+  faces left them with no gizmo while vertices had one, because `attachFaceGizmo` is called
+  explicitly from the click handler and vertices get theirs free from `setAnchor`. Any new
+  way to change a selection has to re-run whatever the click path does afterwards.
+- **`edgeKey` takes two welded VERTEX KEYS, not two positions** (`edgeKey(keyOf(...),
+  keyOf(...))` — the `pickEdgeAt` idiom). Handing it positions builds keys that match
+  nothing in `realEdgeMap`, so an edge box-select returned exactly ZERO while the face one
+  worked perfectly — which made it look like an edge-mode problem rather than a key problem.
+- **`faceEditObject`, `editingObject` and `sculptObject` all hold a UUID STRING**, not an
+  object. Reading `.uuid` off them captured no session while one was visibly open (and the
+  same wrong assumption sat in the test, which is why it took two rounds).
 - **A hook that READS state must know the caller's write ORDER.** Auto-key was
   hooked at `recordMaterialChange`, the one funnel every material edit passes
   through — and it keyed a colour edit correctly while keying nothing at all for
@@ -1453,8 +1507,10 @@ loadable play content. Everything a user does must be visible to connected peers
   (in-place-mutated) THREE object never propagates — return a fresh SNAPSHOT object
   per poke (the Inspector `material` derived is the reference; adding the store as a
   dependency alone does NOT fix it). svelte-check
-  baseline is **419 errors / 62 warnings** (2026-08-02, after #15 C's one-way
-  pickers −14 and K's outline rework −2) — hold it; the release.yml gate matches. Svelte 5.5x added `state_referenced_locally` (intentional one-time
+  baseline is **388 errors / 62 warnings** (2026-08-18; 419 -> 417 B5 -> 391 when 17-A
+  moved the demo modules out -> 388 when #20 annotated Scene's `marqueeStart`, which was
+  three implicit-anys) — hold it, and RATCHET IT DOWN when a change legitimately removes
+  errors; the release.yml gate hardcodes the same numbers and must move with it. Svelte 5.5x added `state_referenced_locally` (intentional one-time
   prop reads take a `// svelte-ignore state_referenced_locally` line — WindowShell is
   the reference) and deprecated `<svelte:self>` (use a self-import).
 - **Connection "connected" state = `$peers.openedPeers`, NOT `userdata.length`**:
@@ -2190,6 +2246,30 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-18): **ROADMAP #20 MERGED + v1.6.0 — PRs #146 and #147 to
+  `release/next` @944eb8d.** Editor ergonomics, units, workspace restore, the graph
+  tree. Plan + as-built: cloud `plans-core/roadmap-20-editor-ergonomics-units.md`.
+  Baseline **388/62** (391 -> 388: annotating Scene's `marqueeStart` fixed three
+  pre-existing implicit-anys; the release.yml gate was ratcheted to match).
+  **P1** duplicate carries animation clips, object flows AND shader graphs (the last
+  one is a gap the plan predates: `detachMaterials` hands the clone a copy of the
+  COMPILED ShaderMaterial and no document, so the copy renders FROZEN and the Inspector
+  has nothing to edit; only an OWN graph is copied, an inherited scene default keeps
+  inheriting). No carrier records its own history entry — the object's create entry owns
+  the copy's lifecycle, and a second entry would make one Ctrl+Z strip the clips off an
+  object that stayed. **P2** DragRow in 16 node/shader/animation fields (+`nodrag`,
+  +`window.__flowViewport` debug hook). **P3** `$lib/units.js` — see the units gotcha.
+  **P4** touch tools + a sticky multi-select MODE. **P5** `$lib/workspace.js` +
+  `$lib/editResume.js` — see the restore gotcha. **P6** `$lib/postBackends.js` (an
+  EFFECT output, deliberately NOT shaderBackends, whose output is a Material) +
+  `api.registerPostEffect`/`registerPostBackend`. **P7a** `GraphTree.svelte` in both
+  editors. New suites: duplicate-parity(27) node-drag-fields(22) units(39)
+  touch-tools(41) post-backends(20) workspace-restore(19) graph-tree(25).
+  **P7b IS THE ONE PLANNED PHASE NOT DONE** — the `</>` code views (tab/detached/SPLIT)
+  + the shader GLSL-read-only/Graph-JSON tabs; spec + implementation note in the plan
+  (extract `FlowCodePane` so the three shells share one body; `tab` mode for the shader
+  code view needs a `FLOW_FAMILY` member). OWED: the user's on-device pass — the touch
+  cluster on a real phone folded and unfolded, and the unit display in non-dark themes.
 - Status (2026-08-14, later): **UV TRANSFORM TOOLS — branch `feat/uv-transform-tools`**
   (lane `../theprototype-lane-uv` @ port 5193, 2 commits, NOT PR'd yet; **branched off
   `feat/17e-animation-curves`**, because U1 re-points the TIMELINE at the extracted

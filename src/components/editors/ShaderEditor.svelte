@@ -43,6 +43,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import ShaderNode from './nodes/ShaderNode.svelte';
 	import ShaderSidebar from './ShaderSidebar.svelte';
+	import GraphTree from './GraphTree.svelte';
 	import ShaderTexturePicker from './nodes/ShaderTexturePicker.svelte';
 	import ShaderVectorInput from './nodes/ShaderVectorInput.svelte';
 	import DragRow from '../ui/DragRow.svelte';
@@ -388,7 +389,16 @@
 		<div class="shader-body">
 			{#if paletteOpen}
 				<div class="shader-side shader-side-left">
-					<ShaderSidebar onPick={addNodeAtCentre} />
+					<!-- #20 P7: the graph navigator sits ABOVE the palette in the same pane -->
+					<GraphTree
+						kind="shader"
+						documents={$shaderGraphs}
+						sceneKey={SCENE_GRAPH_KEY}
+						label="Shaders"
+					/>
+					<div class="shader-side-scroll">
+						<ShaderSidebar onPick={addNodeAtCentre} />
+					</div>
 				</div>
 			{/if}
 			<button
@@ -662,6 +672,16 @@
 	}
 	.shader-side-left {
 		border-right: 1px solid rgba(255, 255, 255, 0.07);
+		/* #20 P7: the tree is a fixed-height section and the palette scrolls under it,
+		   so the COLUMN owns the layout and the palette owns the scrolling */
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.shader-side-scroll {
+		min-height: 0;
+		flex: 1 1 auto;
+		overflow-y: auto;
 	}
 	.shader-side-right {
 		flex-basis: 172px;

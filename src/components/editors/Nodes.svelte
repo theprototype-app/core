@@ -18,6 +18,7 @@
 	import '../../styles/flow.css';
 	import { get } from 'svelte/store';
 	import Sidebar from './Sidebar.svelte';
+	import GraphTree from './GraphTree.svelte';
 	import PeerCursors from './PeerCursors.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ColorPickerNode from './nodes/ColorPickerNode.svelte';
@@ -504,8 +505,12 @@
 
 <div class="flex h-full w-full">
 	{#if paletteOpen}
-		<div class="h-full w-40 shrink-0 overflow-y-auto" style="order: {paletteSide === 'right' ? 3 : 1}">
-			<Sidebar onPick={addNodeAtCenter} onPlaceAt={addNodeAtScreen} />
+		<div class="flex h-full w-40 shrink-0 flex-col overflow-hidden" style="order: {paletteSide === 'right' ? 3 : 1}">
+			<!-- #20 P7: the graph navigator sits ABOVE the palette in the same pane -->
+			<GraphTree kind="flow" documents={$flowGraphs} sceneKey={SCENE_GRAPH} label="Flows" />
+			<div class="min-h-0 flex-1 overflow-y-auto">
+				<Sidebar onPick={addNodeAtCenter} onPlaceAt={addNodeAtScreen} />
+			</div>
 		</div>
 	{/if}
 	<!-- palette collapse/side controls: notebook-tab buttons on the divider (82) -->

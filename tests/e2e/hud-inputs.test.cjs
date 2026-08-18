@@ -279,6 +279,71 @@ h.run(async () => {
 		`so laying out a menu cannot set the game's own values (${inert.before} -> ${inert.after})`
 	);
 
+	// ---- 9. the Actions pane knows what an input can do ----------------------
+	// This is the user's question - 'where would a slider place actions' - and the answer
+	// is not 'the same list as a button': a slider emits no press, so offering it 'Start
+	// the game' would build a binding that can never fire.
+	const offers = await page.evaluate(() => {
+		const a = window.__stores.hudActions;
+		const keys = (kind) => a.actionsForKind(kind).map((x) => x.key);
+		return { button: keys('button'), slider: keys('slider'), toggle: keys('toggle'), text: keys('text') };
+	});
+	h.check(
+		offers.slider.includes('readvalue') && !offers.slider.includes('start'),
+		`a slider is offered VALUE actions and no press actions (${JSON.stringify(offers.slider)})`
+	);
+	h.check(
+		offers.button.includes('start') && !offers.button.includes('readvalue'),
+		'a button keeps its press actions and is offered no value to read'
+	);
+	h.check(
+		offers.toggle.includes('start') && offers.toggle.includes('readvalue'),
+		`a TOGGLE gets both - it holds a value AND fires (${offers.toggle.length} actions)`
+	);
+	h.check(offers.text.includes('showvar'), 'and a display kind still gets its drives actions');
+
+	const bound = await page.evaluate(async (ids) => {
+		const s = window.__stores;
+		// ids.slider already has a reader from section 6, so use the one with none
+		const first = s.hudActions.addBinding(ids.shared, 'readvalue');
+		await new Promise((r) => setTimeout(r, 700));
+		const again = s.hudActions.addBinding(ids.shared, 'readvalue');
+		const rows = s.hudActions.bindingsFor(ids.shared).map((b) => b.role + ': ' + b.label);
+		return { first: first.ok, again: again.ok, rows };
+	}, built.ids);
+	h.check(bound.first === true, 'adding a value action creates the reader');
+	h.check(bound.again === false, 'and a second identical one is refused, not duplicated');
+	h.check(
+		bound.rows.some((r) => /^value: /.test(r)),
+		`the pane lists it as a value row (${JSON.stringify(bound.rows)})`
+	);
+
+	// a toggle really does pulse, or 'toggle a screen' from a toggle would be dead
+	const pulsed = await page.evaluate(async (ids) => {
+		const s = window.__stores;
+		s.hudActions.addBinding(ids.toggle, 'count');
+		await new Promise((r) => setTimeout(r, 800));
+		let g;
+		s.flowGraphs.subscribe((v) => (g = v))();
+		const counter = g.scene.nodes.find((n) => n.type === 'counter');
+		const read = () => {
+			let v;
+			s.flowValues.subscribe((x) => (v = x))();
+			return v[counter?.id];
+		};
+		const before = read();
+		const was = s.hudDocs.hudValueOf(ids.toggle);
+		const el = document.querySelector(`#hud-layer [data-hud-id="${ids.toggle}"] button`);
+		el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		await new Promise((r) => setTimeout(r, 900));
+		return { before, after: read(), was, value: s.hudDocs.hudValueOf(ids.toggle) };
+	}, built.ids);
+	h.check(pulsed.after > (pulsed.before ?? 0), `pressing a toggle FIRES (${pulsed.before} -> ${pulsed.after})`);
+	h.check(
+		pulsed.value !== pulsed.was,
+		`and flips its value in the same press (${pulsed.was} -> ${pulsed.value})`
+	);
+
 	h.check(h.pageErrors(A).length === 0, `no render crash on A (${JSON.stringify(h.pageErrors(A))})`);
 	h.check(h.pageErrors(B).length === 0, `nor on the peer (${JSON.stringify(h.pageErrors(B))})`);
 	await h.finish(browser);

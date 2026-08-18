@@ -198,6 +198,9 @@
 		onclick={(e) => {
 			e.stopPropagation();
 			write(!inputValue);
+			// a toggle BOTH holds a value and fires: 'Sound: on/off' wants the value, while
+			// 'toggle a HUD screen' wants the pulse, and one control can carry either
+			if (editable) onpress?.(element.id);
 		}}
 	>
 		<span class="hud-toggle-box" aria-hidden="true"></span>

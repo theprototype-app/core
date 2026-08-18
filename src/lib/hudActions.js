@@ -27,7 +27,7 @@ import { SCENE_GRAPH, flowGraphs, allNodes, allEdges } from '../stores/flowStore
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge } from './nodesHandler';
 import { recordFlowNodesEntry } from './flowGraphs';
 import { findNodeSpec } from './nodeCatalog';
-import { isInteractiveKind } from './hudKinds';
+import { isInteractiveKind, isValuedKind } from './hudKinds';
 
 /** The HUD node types that READ an element (a display binding), by element kind. */
 const DISPLAY_NODE = { text: 'hudtext', bar: 'hudbar', timer: 'hudtimer', list: 'hudlist' };
@@ -35,13 +35,22 @@ const DISPLAY_NODE = { text: 'hudtext', bar: 'hudbar', timer: 'hudtimer', list: 
 /** The HUD node type that a press comes FROM. */
 const PRESS_NODE = 'hudbutton';
 
+/** 21-D4: the kinds that actually FIRE a press. Not the same as `interactive`, which now
+ * also covers the inputs - a slider is interactive and emits no press, so offering it
+ * 'Start the game' would build a binding that can never fire. A TOGGLE does pulse (it
+ * writes its value AND fires), which is exactly what a 'Sound: on/off' control wants. */
+const PRESSABLE = ['button', 'toggle'];
+
+/** The node that READS a valued element (21-D4). */
+const VALUE_NODE = 'hudinput';
+
 /** Every HUD node type that names an element, so a scan knows what to look at. */
-export const HUD_BOUND_TYPES = [PRESS_NODE, 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudscreen'];
+export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudscreen'];
 
 /**
  * @typedef {{
  *   key: string, label: string, group: string, hint?: string,
- *   role: 'press' | 'drives',
+ *   role: 'press' | 'drives' | 'value',
  *   node: string, data?: Record<string, any>,
  *   handle?: string,
  *   via?: { node: string, data?: Record<string, any>, handle: string }
@@ -74,14 +83,27 @@ export const HUD_ACTIONS = [
 	{ key: 'showvar', label: 'Show a variable', group: 'Data', role: 'drives', node: '', via: { node: 'getvariable', data: { name: 'score' }, handle: 'value' }, hint: 'A shared number — a score, lives, a level.' },
 	{ key: 'showtime', label: 'Show the round time', group: 'Data', role: 'drives', node: '', via: { node: 'gametime', data: { read: 'remaining', length: 60 }, handle: 'value' }, hint: 'Derived from the shared start stamp, so every peer agrees.' },
 	{ key: 'showcount', label: 'Show a counter', group: 'Data', role: 'drives', node: '', via: { node: 'counter', data: { step: 1, op: 'up' }, handle: 'value' }, hint: 'Wire anything that pulses into the Counter to make it a score.' },
-	{ key: 'showplain', label: 'Just show text', group: 'Data', role: 'drives', node: '', hint: 'A HUD Text node with no source, so a graph can drive it later.' }
+	{ key: 'showplain', label: 'Just show text', group: 'Data', role: 'drives', node: '', hint: 'A HUD Text node with no source, so a graph can drive it later.' },
+
+	// --- 21-D4: what an INPUT's value can do -------------------------------------
+	// These create the SOURCE node and stop there, deliberately. A slider's value is
+	// wanted in a hundred places (a Map Range into a volume, a Compare, a Set
+	// Variable's value) and no short list would cover them, so the honest thing is to
+	// put the reader in the graph, name it in this pane, and let the graph do graph
+	// work. The pane still answers 'is this control wired to anything'.
+	{ key: 'readvalue', label: 'Read its value', group: 'Data', role: 'value', node: '', data: { read: 'value' }, hint: 'A HUD Input node you can wire into anything - a Map Range, a Compare, a variable.' },
+	{ key: 'readindex', label: 'Read which option', group: 'Data', role: 'value', node: '', data: { read: 'index' }, hint: 'The position in the option list - what a Switcher wants.' },
+	{ key: 'readtext', label: 'Read its text', group: 'Data', role: 'value', node: '', data: { read: 'text' }, hint: 'The typed text, for a name or a room code.' }
 ];
 
 /** @param {string} kind @returns {HudActionDef[]} */
 export function actionsForKind(kind) {
-	const wantsPress = isInteractiveKind(kind);
+	const wantsPress = PRESSABLE.includes(kind) && isInteractiveKind(kind);
 	const displayNode = /** @type {any} */ (DISPLAY_NODE)[kind];
-	return HUD_ACTIONS.filter((a) => (a.role === 'press' ? wantsPress : !!displayNode));
+	const valued = isValuedKind(kind);
+	return HUD_ACTIONS.filter((a) =>
+		a.role === 'press' ? wantsPress : a.role === 'value' ? valued : !!displayNode
+	);
 }
 
 /** Grouped for the picker menu, in catalog order. @param {string} kind */
@@ -132,6 +154,10 @@ export function describeNode(node) {
 			return 'Timer';
 		case 'hudlist':
 			return 'List';
+		case 'hudinput':
+			return 'Reads its ' + (d.read ?? 'value');
+		case 'hudset':
+			return 'Sets it to ' + (d.value ?? 0);
 		default:
 			return findNodeSpec(node?.type)?.label ?? String(node?.type ?? 'node');
 	}
@@ -151,14 +177,25 @@ export function bindingsFor(elementId) {
 	for (const node of nodes) {
 		if (!HUD_BOUND_TYPES.includes(node.type)) continue;
 		if (String(node.data?.element ?? '') !== String(elementId)) continue;
-		if (node.type === PRESS_NODE) {
+		if (node.type === PRESS_NODE || node.type === VALUE_NODE) {
+			// both READ OUT of the element: a press pulses, a value flows, so both are
+			// described by what they REACH - and an unwired one is worth saying out loud,
+			// since a dead control is exactly what this pane exists to make visible
 			// outgoing: one row per action the press reaches
 			const targets = edges.filter((e) => e.source === node.id);
-			if (!targets.length) out.push({ role: 'press', hudNodeId: node.id, actionNodeId: null, label: 'Nothing yet', source: '' });
+			const role = node.type === VALUE_NODE ? 'value' : 'press';
+			if (!targets.length)
+				out.push({
+					role,
+					hudNodeId: node.id,
+					actionNodeId: null,
+					label: role === 'value' ? 'Read, not wired yet' : 'Nothing yet',
+					source: ''
+				});
 			for (const edge of targets) {
 				const target = nodes.find((n) => n.id === edge.target);
 				out.push({
-					role: 'press',
+					role,
 					hudNodeId: node.id,
 					actionNodeId: target?.id ?? null,
 					label: target ? describeNode(target) : 'a deleted node',
@@ -255,7 +292,19 @@ export function addBinding(elementId, actionKey) {
 	const baseX = nodes.reduce((max, n) => Math.max(max, Number(n.position?.x) || 0), 0) + 220;
 	const baseY = 40 + bindingsFor(elementId).length * 150;
 
-	if (action.role === 'press') {
+	if (action.role === 'value') {
+		// ONE reader per (element, read) - a second identical HUD Input would be two nodes
+		// computing the same number, and the pane would list the control twice
+		const want = String(action.data?.read ?? 'value');
+		const existing = nodes.find(
+			(n) =>
+				n.type === VALUE_NODE &&
+				String(n.data?.element ?? '') === String(elementId) &&
+				String(n.data?.read ?? 'value') === want
+		);
+		if (existing) return { ok: false, reason: 'that value is already read', nodes: [] };
+		created.push(makeNode(VALUE_NODE, baseX, baseY, { element: elementId, ...action.data }));
+	} else if (action.role === 'press') {
 		// reuse the element's EXISTING press node when it has one — a second `hudbutton` on
 		// the same element would fire the action twice
 		let press = nodes.find((n) => n.type === PRESS_NODE && String(n.data?.element ?? '') === String(elementId));

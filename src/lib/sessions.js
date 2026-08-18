@@ -16,6 +16,10 @@ import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
+// #20 P5: selection + any open edit session ride the file; PANEL LAYOUT does not (that
+// is a local preference, workspace.js). Its own module so this file keeps no static edge
+// into faceEdit/meshEdit/terrainSculpt.
+import { captureEditResume, applyEditResume } from './editResume';
 import { jointsSnapshot, jointsRestore } from './joints';
 import { scenePostSnapshot, scenePostRestore } from './scenePost';
 import { sceneCommand, sendObjects } from './commandsHandler.svelte';
@@ -144,7 +148,11 @@ export function buildSessionPayload(name) {
 			post: scenePostSnapshot(),
 			camera: camera
 				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
-				: null
+				: null,
+			// P5: where the author left off — the selection and any open mesh-edit /
+			// sculpt session with its picks. NULL for an ordinary scene, so the field is
+			// absent and every existing file stays byte-identical.
+			workspace: captureEditResume()
 		};
 	} finally {
 		restore();
@@ -462,6 +470,9 @@ export async function applySession(payload) {
 			controls.update();
 		}
 	}
+	// P5: last, once the objects exist and the camera is parked — a selection applied
+	// before the tree is populated selects nothing, and a session entry needs its object
+	if (payload.workspace) applyEditResume(payload.workspace);
 	showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
 }
 

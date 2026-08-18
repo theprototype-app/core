@@ -24,7 +24,7 @@
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
-	import { sculptObject, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
+	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
@@ -35,8 +35,8 @@
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
-	import { editingObject, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
-	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
+	import { editingObject, enterEditMode, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit } from '$lib/meshEdit';
+	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, faceEditSelectedTris, setFaceSubmode, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
@@ -46,6 +46,7 @@
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
 	import { setParticleRoot } from '$lib/particleRuntime';
+	import { registerEditResumeSources } from '$lib/editResume';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
@@ -441,6 +442,56 @@
 		startCameraHelpers();
 		startEditorNavigation();
 		startSnapEngine(); // 19-B: wires the element-snap candidate marker
+		// #20 P5: hand editResume the LIVE session modules. It imports nothing itself
+		// (a static import would close a cycle through history; a dynamic one binds a
+		// SECOND instance once vite HMR-stamps the app's copy, which is exactly how the
+		// first attempt saved "no session" while a session was visibly open). This
+		// component already imports all five for real — the 15-D registration shape.
+		const offEditResume = registerEditResumeSources({
+			selection: () => get(selectedObjects) ?? [],
+			exists: (uuid) => !!get(objectsGroup)?.getObjectByProperty?.('uuid', uuid),
+			// all three session stores hold a UUID STRING, not an object — the first version
+			// read `.uuid` off them and so captured nothing while a session was visibly open
+			faceSession: () => {
+				const uuid = get(faceEditObject);
+				if (!uuid) return null;
+				return {
+					uuid,
+					submode: get(faceEditSubmode) ?? 'faces',
+					tris: (get(faceEditSelectedTris) ?? []).slice()
+				};
+			},
+			vertexSession: () => {
+				const uuid = get(editingObject);
+				return uuid ? { uuid } : null;
+			},
+			sculptSession: () => {
+				const uuid = get(sculptObject);
+				return uuid ? { uuid } : null;
+			},
+			applySelection: (uuids) => applySelectionSet(uuids),
+			enterFace: (uuid, submode, tris) => {
+				enterFaceEdit(uuid);
+				// enterFaceEdit can REFUSE (the triangle cap) — a legitimate outcome on a
+				// machine that is not the author's; the scene stays loaded and unedited
+				if (!get(faceEditObject)) return null;
+				// the submode switch refreshes BOTH overlays and re-seats the gizmo, so it
+				// has to run BEFORE the picks or it wipes them
+				// only 'edges' can reach here: 'vertices' returned above and 'faces' is the
+				// session's own entry submode (lang="ts", so the literal has to be narrowed)
+				if (submode === 'edges') setFaceSubmode('edges');
+				else if (tris.length) faceEditSelectedTris.set(tris);
+				return submode;
+			},
+			enterVertex: (uuid) => {
+				enterEditMode(uuid);
+				return !!get(editingObject);
+			},
+			enterSculpt: (uuid) => {
+				enterSculpt(uuid);
+				return !!get(sculptObject);
+			}
+		});
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
 			exitEditMode(); // leave vertex edit mode cleanly (113)
@@ -1029,6 +1080,7 @@
 		});
 
 		return () => {
+			offEditResume(); // #20 P5
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
 			window.removeEventListener('pointerup', onPointerUp);

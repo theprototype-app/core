@@ -12,6 +12,7 @@ import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
 import { stripEditOverlays } from './editOverlays';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
+import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
@@ -138,6 +139,10 @@ async function saveSnapshot() {
 		edges,
 		graphs,
 		annotations: annotationsProvider ? annotationsProvider() : [],
+		// L2: the post stack is screen-space scene data with nowhere in a GLTF to
+		// live, so it rides beside the snapshot — the same shape rigs and material
+		// arrays use, for the same reason
+		post: scenePostSnapshot(),
 		camera: camera
 			? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 			: null
@@ -309,6 +314,9 @@ async function applyRestore(snapshot) {
 			restoreGraphs({ [SCENE_GRAPH]: { nodes: snapshot.nodes ?? [], edges: snapshot.edges ?? [] } });
 		}
 		if (snapshot.annotations?.length && annotationsRestorer) annotationsRestorer(snapshot.annotations);
+		// the restored look replicates alongside the objects this function just
+		// re-broadcast, so a restore into a live room is consistent
+		scenePostRestore(snapshot.post, true);
 		/** @type {any} */
 		const camera = get(globalCamera);
 		/** @type {any} */
@@ -382,6 +390,10 @@ export function startAutosave() {
 	// snapshot, so watching the store here adds no import edge — and the edge must
 	// NOT go the other way: autosave <-> animationPreview would be a cycle.
 	animations.subscribe(() => markDirty());
+	// L2: same reasoning one more time — authoring a LOOK touches no object, so
+	// without this a scene's post stack would be in the snapshot and never trigger
+	// one being written ("my grading is gone after a reload")
+	scenePost.subscribe(() => markDirty());
 	setInterval(() => {
 		if (dirty) saveSnapshot();
 	}, INTERVAL_MS);

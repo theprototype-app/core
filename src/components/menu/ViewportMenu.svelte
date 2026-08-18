@@ -258,6 +258,14 @@
 					tooltip: 'Cell size, colours, fade and the origin axes (Configure Scene ▸ Grid)',
 					action: () => openSceneSection('Grid')
 				},
+				{
+					// L3: the scene's authored look — AO, grading, camera FX
+					label: 'Post-processing…',
+					icon: 'sliders-horizontal',
+					tooltip:
+						'Ambient occlusion, colour grading and camera effects (Configure Scene ▸ Post-processing)',
+					action: () => openSceneSection('Post-processing')
+				},
 				{ label: 'Screenshot', icon: 'camera', action: screenshot }
 			]
 		},

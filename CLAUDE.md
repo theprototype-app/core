@@ -300,7 +300,43 @@ loadable play content. Everything a user does must be visible to connected peers
   `shadowDefaults` (#12: objectsGroup-sweep sets cast/receiveShadow on every mesh;
   opt-out = userData.shadow=false) + `palette` (#12: paletteColorFor(uuid) deterministic
   default colors) + `viewMode` (#12: LOCAL Shaded/Shaded+AO/Wireframe;
-  wireframe = scene.overrideMaterial, never per-material),
+  wireframe = scene.overrideMaterial, never per-material; L1-L5 removed the
+  short-lived `custom` mode — a stored value reads as `shaded` — and `postSupported`
+  is the AO capability gate generalised to every fullscreen pass),
+  `scenePost` (L1-L5 THE SCENE POST STACK: the replicated latest-wins singleton on
+  the `scenePhysics` precedent — `{enabled, effects:[{id,kind,enabled,params}],
+  changedAt}` with ONE `normalizeScenePost` at every store boundary — plus the
+  `registerPostEffect` kind REGISTRY and the pure `planPostStack`. A deliberate LEAF
+  (stores only, no third-party imports) so the planner is testable with no GL context
+  and peerHandler/sessions/autosave can reach it. `isPass` is part of the registry
+  CONTRACT, because it is what makes the merge grouping computable before anything is
+  instantiated: consecutive `Effect`s fold into ONE `EffectPass`, a `Pass` (N8AO)
+  breaks the run, and an UNKNOWN kind contributes no shader so the effects either
+  side of it still merge. An unknown kind is PRESERVED VERBATIM through our editor
+  and back onto the wire (the `normalizeAnnotation` rule) and skipped at PLAN time,
+  where it is a rendering decision rather than a silent delete of a newer peer's
+  work. `beginLookGesture`/`endLookGesture` collapse a DragRow scrub into one
+  `'look'` history entry and one message. **THE VISIBILITY RULE, learned the hard
+  way: a scene's authored look is SCENE DATA and renders for EVERYONE by default,
+  exactly like the environment preset, fog and music — the first design gated it
+  behind a local mode the viewer had to find, so an author had to tell each peer
+  individually, and the auto-promotion latch (`viewModeChosen`, set by touching ANY
+  view chip) then excluded that person from every future scene permanently.** What
+  stays LOCAL is only the right to switch it off here. The personal Shaded+AO chip
+  YIELDS to a look that sets its own AO (`sceneProvidesAo`; the chip disables with
+  the reason — two AO passes double every contact shadow), and when it does apply,
+  personal AO runs FIRST: it is shading, not grading) +
+  `postEffects` (the COMPILER + the 12 built-ins; owns the postprocessing/n8ao
+  imports so scenePost stays a leaf. AO's `quality`/`halfRes` default to `'auto'` =
+  follow this viewer's shadowQuality, so a scene that pins neither behaves as it did;
+  the HiDPI sizing and N8AO's private camera reference are registry HOOKS
+  (`resize`/`retarget`/`applyLocal`) rather than special cases in the component. The
+  LUT is an Explorer asset addressed by content HASH riding assetfile/getasset) +
+  `viewportOverrides` (B: ONE keyed map for "the scene says X, but not on my screen".
+  It exists because the alternative does not scale — wireframe lived in the view
+  modes, the UV checker in the UV editor, post in its own checkbox, and layers 2/3
+  would each have earned another plus another round of "must my peers switch this
+  on?". `shaders` is already DECLARED and unread so L6/L7 add a key, not a concept),
   `environment` (presets + scene-root rig, latest-wins sync,
   `passthroughActive` local sky lift; #12: sun casts w/ scene-fit frustum +
   env-shadow-catcher ShadowMaterial disc), `animatedImports` (raw-bytes objectfile sync;
@@ -844,6 +880,54 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **`renderer.toneMapping` NEVER REACHES A COMPOSED FRAME.** three applies it to a
+  material only when the current render target is the CANVAS or an XR target
+  (WebGLPrograms: `if (currentRenderTarget === null || isXRRenderTarget)`), and the
+  EffectComposer renders the scene into a TARGET — so while post-processing runs, the
+  renderer's own tone mapping and `toneMappingExposure` do nothing at all. MEASURED:
+  flipping it changes exactly 0 pixels. The plan's premise that a ToneMapping effect
+  would "grade the image twice" is therefore FALSE on the desktop; the only paths that
+  render straight to the canvas are WebXR and the camera PiP inset. So the
+  stand-down is scoped `stackTonemaps && !renderer.xr.isPresenting` — standing down
+  in VR would strip tone mapping there with NOTHING to replace it, since post is
+  skipped in a headset. environment.js learns this through a registration SEAM
+  (`registerToneMappingOwner`), never an import: environment reaching scenePost →
+  history → flowRuntime is exactly the edge that TDZ-crashes the SSR prerender.
+- **A registration seam whose `register()` re-applies SYNCHRONOUSLY must sit BELOW
+  the `let` its closure reads.** `registerToneMappingOwner(() => stackTonemaps)`
+  placed above `let stackTonemaps` calls the closure during component init and
+  TDZ-throws, taking the whole app down — every suite then dies in setupPage's
+  `waitForFunction`, which is the signature. Same family as the module-level
+  `store.subscribe` rule, one scope in.
+- **An asset that arrives LATER needs a WATCH, not a rebuild.** A LUT is pulled by
+  content hash, and arriving bytes do NOT change the stack — so nothing recompiles
+  the chain and no second load attempt happens. A peer then grades through the
+  neutral identity LUT forever while its stack, its Explorer and its pass count all
+  look perfectly correct. `loadLutInto` subscribes to `explorerItems` until the hash
+  appears and unsubscribes on dispose. TEST TRAP from the same place: the first
+  version of that check PASSED with the watch removed, because it flipped the peer's
+  view mode after the pull and the rebuild loaded the file anyway — take the baseline
+  BEFORE the state arrives and never touch the mode again.
+- **`LookupTexture.from` tests `image instanceof Image`**, so its strip-unfolding path
+  needs a real `<img>` from a blob URL; a canvas or an ImageBitmap silently takes the
+  raw-data branch and comes out wrong.
+- **A leftover portaled ThemedSelect popup can COVER the thing under test.** It closes
+  on POINTERDOWN, so `document.body.click()` does not dismiss it. Harmless while a
+  menu had three entries and quietly fatal at thirteen: the popup covered the rows two
+  later sections dragged, and both real-mouse checks read as broken features. Close it
+  with a real pointerdown and assert `elementFromPoint` is the intended target before
+  any synthesized drag.
+- **A `ThemedSelect` cannot shrink below its longest option**, so putting a group name
+  INSIDE each label ("Colour grading · LUT (colour grade)") pushes whatever sits
+  beside it off a narrow panel. For a list that grows, use the shared `ContextMenu`
+  with grouped submenus — it portals itself, clamps to the viewport and brings
+  type-to-filter for free. `ContextMenu` gained an optional `onclose` CALLBACK beside
+  its `close` event for this: a RUNES-mode consumer cannot use `on:close` without a
+  deprecation warning that counts against the baseline, and createEventDispatcher has
+  no attribute form.
+- **Never run `npm run build` while the lane's `vite dev` is watching the same
+  worktree** — the build rewrites `.svelte-kit/output` under the dev server and kills
+  it, and the next ten suites all report `ERR_CONNECTION_REFUSED`.
 - **A hook that READS state must know the caller's write ORDER.** Auto-key was
   hooked at `recordMaterialChange`, the one funnel every material edit passes
   through — and it keyed a colour edit correctly while keying nothing at all for
@@ -2045,6 +2129,18 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Verification (mandatory before commit)
 
+PIXEL features (post-processing, outlines, AO) are asserted through the helpers
+promoted into `helpers.cjs`: `grabFrame`/`centeredClip`/`frameDelta`/
+`framePixelsOffColor` — screenshot in node, push the PNG BACK INTO the page,
+decode on a 2D canvas, and compare IN the page so only the metrics cross the CDP
+bridge (a 1280x720 frame is 3.7M numbers). Assert the CHANGED PIXEL COUNT, not a
+mean: a mean is blind to a thin edge, which is exactly what the outline-ordering
+check turns on. `grabFrame` derives its rect from the RENDERER's own `domElement`
+because DungeonMinimap renders a hidden canvas BEFORE threlte's, so
+`locator('canvas').first()` waits 30s on an invisible element; and any COLOUR
+metric needs a chrome-free `centeredClip`, since the Connect bar and HUD are
+composited over the canvas and land in an element screenshot too.
+
 Follow `.claude/skills/e2e-verify/SKILL.md`. #17-A: suites that need a module
 which MOVED OUT of core use `h.installModule(peer, id)` + `h.moduleZipPath(id)`
 (skip, never fail, when the sibling `theprototype.app-modules` checkout has no
@@ -2225,6 +2321,28 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-18): **SCENE LOOK / POST-PROCESSING — branch `feat/scene-post-stack`
+  (lane `../theprototype-lane-post` @ port 5198), 8 commits, release/next merged in
+  CLEAN, baseline 391/62 at every commit, NOT PR'd.** Plan: cloud
+  `plans-core/pending/scene-look-post-processing.md` (L1-L5 marked EXECUTED there).
+  **L1** the stack core (see the `scenePost`/`postEffects` architecture entries) ·
+  **L2** `scenepost`/`getscenepost` + sessions/.tpscene/autosave + the `'look'` history
+  kind · **L3** Configure Scene ▸ Post-processing (`PostStack.svelte`, params from the
+  registry SCHEMA, pointer reorder, the "Effects: N, passes: M" cost line) · **L4** AO's
+  knobs exposed at last + the gate generalised + the tone-mapping finding (see the
+  gotcha — the plan's double-grade premise was measurably FALSE) · **L5** 12 built-ins
+  incl. the LUT on assetfile/getasset · then TWO user-reported rounds: the add control
+  overflowing a narrow panel (now the shared ContextMenu with grouped submenus) and
+  **the visibility model corrected — the look is DEFAULT-ON for everyone, with
+  `viewportOverrides` as the one local opt-out**. Suites `scene-post` (94),
+  `scene-post-ui` (45), `scene-post-effects` (46); the pixel readers are in helpers.cjs.
+  **LEFT BEFORE THE PR: the user's visual/feel pass, and a decision on L8** (the
+  `api.registerPostEffect` SDK seam + docs-site pages). **L6** (the Post DOMAIN in the
+  shader editor) and **L7** (the scene default material) are BLOCKED on the shader lane
+  landing and move to the follow-up plan, together with the user's per-CAMERA looks and
+  Watch-adopts-look: cloud `plans-core/pending/post-camera-looks-and-shader-integration.md`.
+  The two lanes conflict in exactly TWO files (`App.svelte` debugStores,
+  `peerHandler` dispatch) — measured with `git merge-tree`; everything else auto-merges.
 - Status (2026-08-18, later): **SH6b CLOSED BY MEASUREMENT** — `shader-scene-default`
   (17 checks) covers the scene default at 24 objects and records why the planned
   compile-once-and-clone is NOT built: 0.73-0.88 ms per object, programs already deduped

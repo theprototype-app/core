@@ -21,8 +21,21 @@
 	/** 16-Q6: which menu this is, so the search list REMEMBERS the height you drag
 	 *  it to — per kind ('viewport', 'nodes', 'object'…), persisted locally. */
 	export let sizeKey: string = 'menu';
+	/**
+	 * Optional close CALLBACK, alongside the `close` event.
+	 *
+	 * A RUNES-mode consumer cannot listen with `on:close` without earning a
+	 * deprecation warning (which counts against the svelte-check baseline), and
+	 * createEventDispatcher has no attribute form. The event stays for the existing
+	 * consumers; this is the runes-friendly door onto the same moment.
+	 */
+	export let onclose: (() => void) | null = null;
 
-	const dispatch = createEventDispatcher();
+	const rawDispatch = createEventDispatcher();
+	const dispatch = (name: string) => {
+		if (name === 'close') onclose?.();
+		rawDispatch(name);
+	};
 
 	// The menu positions via left/top only — NO transform (a transform makes it the
 	// containing block for its position:fixed submenus, which mis-placed them, 124).

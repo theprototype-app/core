@@ -8,6 +8,7 @@ import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { get } from 'svelte/store';
+import { scenePost } from '$lib/scenePost';
 import { objectsGroup, TControls, selectedObject, selectedObjects } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
 import { recordObjectPresence } from '$lib/history';
@@ -147,6 +148,12 @@ function exportGltf(format, input) {
 export function save(format) {
 	console.log('Saving...');
 	if (format === 'tpscene') return void saveTpScene(); // B3: Scene bundle path
+	// L2: glTF has nowhere to put a screen-space post stack, so a GLTF export
+	// silently loses the scene's look. Say so rather than let someone discover it
+	// downstream — the same honesty as the animation bake's look-channel skip.
+	// .tpscene (above) and sessions carry it; only this path cannot.
+	if (get(scenePost).effects.length)
+		showToast('Note: the scene look (post-processing) is not part of a GLTF file — save a Scene (.tpscene) to keep it.');
 	// B1.2: GLTF exports the SELECTION (it used to export the whole scene). No
 	// selection -> warn + offer the whole scene. JSON keeps its whole-scene behavior.
 	if (String(format).toLowerCase() === 'gltf') {

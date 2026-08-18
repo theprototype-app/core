@@ -34,6 +34,7 @@ import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handMode
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
+import { applyRemoteScenePost, scenePostState, sendScenePost } from '$lib/scenePost';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
@@ -410,6 +411,12 @@ export class PeerConnection {
 					applyRemoteMusic(data);
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
+				} else if(data.type == 'scenepost') {
+					// L1/L2: the authored post stack, latest-wins on changedAt. An effect
+					// KIND we don't know is kept and skipped at render time, never dropped.
+					applyRemoteScenePost(data);
+				} else if(data.type == 'getscenepost') {
+					sendScenePost(data.sender);
 				} else if(data.type == 'shadergraph') {
 					applyRemoteShaderGraph(data);
 				} else if(data.type == 'shadergraphdelete') {
@@ -596,6 +603,7 @@ export class PeerConnection {
 		conn.send(environmentState())
 		conn.send(musicState())
 		conn.send(scenePhysicsState())
+		conn.send(scenePostState())
 		conn.send(handModelState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
@@ -603,6 +611,7 @@ export class PeerConnection {
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getanim', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'getscenepost', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getshadergraphs', sender: this.peer.id})
 		// module state is the one PER-PEER payload in the get* family (each peer
 		// answers with its OWN states — e.g. campreview presence), so it can't be

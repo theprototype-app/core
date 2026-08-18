@@ -144,7 +144,13 @@ peerHandStyle.subscribe((v) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('peerHandStyle', String(v));
 });
 // Viewport render mode (V-2): LOCAL per-viewer, never replicated —
-// 'shaded' | 'shaded-ao' (default on desktop) | 'wireframe'
+// 'shaded' | 'shaded-ao' (default on desktop) | 'wireframe' | 'custom'
+//
+// 'custom' (L1) renders the SCENE's authored post stack. It is never the BOOT
+// default — at module eval no scene has arrived yet, so there is no stack to
+// judge. The promotion happens when a stack does arrive, in
+// scenePost.adoptCustomView(), which only ever promotes a viewer who has not
+// explicitly picked a mode (see chooseViewMode).
 function defaultViewMode() {
 	const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('viewMode') : null;
 	if (stored) return stored;

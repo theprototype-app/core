@@ -27,7 +27,7 @@ import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVe
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate, physicsExternalMove } from '$lib/physics';
+import { applySimulate, physicsExternalMove, applyThrow } from '$lib/physics';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
@@ -380,8 +380,14 @@ export class PeerConnection {
 				} else if(data.type == 'move') {
 					moveGeometry(data.uuid, data.pos, data.rot, data.scale);
 					// P-A: mid-sim, a peer's move stream on a dynamic body becomes a
-					// kinematic hold (drops back to dynamic after 250ms of silence)
-					physicsExternalMove(data.uuid);
+					// kinematic hold (drops back to dynamic after 250ms of silence).
+					// B5: the sending peer is the CLAIM, so two carry streams cannot
+					// fight over one crate.
+					physicsExternalMove(data.uuid, conn.peer);
+				} else if(data.type == 'throw') {
+					// B5: a peer's EXACT release. Initiator-only, never re-broadcast —
+					// the flight itself replicates through the existing move stream.
+					applyThrow(data);
 				} else if(data.type == 'simulate') {
 					applySimulate(data);
 				} else if(data.type == 'jointcreate') {

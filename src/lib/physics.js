@@ -1057,16 +1057,71 @@ export function releaseBody(uuid, velocity = null) {
  * with a (coarse, ~10Hz-sampled) velocity estimate. Returns true if consumed.
  * @param {string} uuid
  */
-export function physicsExternalMove(uuid) {
+export function physicsExternalMove(uuid, peerId = null) {
 	if (!world || !get(simulating)) return false;
 	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic');
 	if (!entry || entry.hold === 'user') return false;
+	// B5: the minimum arbitration that stops two 20 Hz streams fighting over one
+	// crate — FIRST CLAIM holds it until the hold expires. Deliberately not a hard
+	// lock: two people wrestling a crate is a feature in a party game, and the
+	// claim only keeps it from becoming jitter.
+	if (peerId && entry.hold === 'external' && entry.holdPeer && entry.holdPeer !== peerId)
+		return false;
 	if (entry.hold !== 'external') {
 		entry.hold = 'external';
 		entry.samples = [];
 		entry.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
 	}
+	if (peerId) entry.holdPeer = peerId;
 	entry.holdUntil = performance.now() + EXTERNAL_HOLD_MS;
+	return true;
+}
+
+/**
+ * B5: a peer released something they were carrying, and told us EXACTLY how.
+ *
+ * Applied by the INITIATOR only (rule 8: two peers authoring one flight is
+ * mixing sync models) and never re-broadcast — the flight replicates through
+ * the existing movement-gated move stream, so peers converge with zero new
+ * state on the wire. A throw is an EVENT like nodetrigger/ping, so there is no
+ * full-state reply to owe either.
+ *
+ * The incoming vectors go through the SAME clampThrow as the local path, so a
+ * hostile linvel is bounded without a line of validation here.
+ * @param {any} data {uuid, pos, rot, linvel, angvel}
+ */
+export function applyThrow(data) {
+	if (!world || !get(simulating)) return false;
+	const entry = bodies.find((e) => e.object.uuid === data?.uuid && e.mode === 'dynamic');
+	if (!entry) return false;
+	const object = entry.object;
+	// pos/rot ride along so the handler is independent of message ORDER: a
+	// DataConnection is ordered, so the last carry move precedes this, but the
+	// 20 Hz gate may have dropped the final one
+	if (Array.isArray(data.pos)) object.position.fromArray(data.pos);
+	if (Array.isArray(data.rot)) object.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
+	object.updateMatrixWorld();
+	const target = kinematicTargetOf(entry);
+	entry.body.setTranslation({ x: target.pos.x, y: target.pos.y, z: target.pos.z }, true);
+	entry.body.setRotation(
+		{ x: target.quat.x, y: target.quat.y, z: target.quat.z, w: target.quat.w },
+		true
+	);
+	entry.hold = null;
+	entry.holdUntil = 0;
+	entry.holdPeer = null;
+	entry.samples = [];
+	entry.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+	const v = clampThrow(data.linvel, data.angvel);
+	entry.body.setLinvel({ x: v.linvel.x, y: v.linvel.y, z: v.linvel.z }, true);
+	entry.body.setAngvel({ x: v.angvel.x, y: v.angvel.y, z: v.angvel.z }, true);
+	if (v.linvel.length() > 5) entry.body.enableCcd(true); // B4
+	// writing the object pose from a message is EXACTLY what the deviation
+	// detector exists to catch, so without this the very next step re-engages an
+	// external kinematic hold and EATS the throw
+	entry.lastWritten.pos.copy(object.position);
+	entry.lastWritten.quat.copy(object.quaternion);
+	objectsGroup.update((value) => value);
 	return true;
 }
 
@@ -1425,6 +1480,10 @@ export function applySimulate(data) {
 /** @param {string} peerId */
 export function physicsPeerDisconnected(peerId) {
 	if (get(remoteSimulating) === peerId) remoteSimulating.set(null);
+	// B5: drop that peer's grab claim, or their crate stays theirs forever
+	bodies.forEach((entry) => {
+		if (entry.holdPeer === peerId) entry.holdPeer = null;
+	});
 }
 
 /** B4: test/debug view of the world-level state (ground, bounds, timing) */
@@ -1452,6 +1511,7 @@ export function physicsDebug() {
 		linvel: entry.body?.linvel?.() ?? null,
 		angvel: entry.body?.angvel?.() ?? null,
 		oob: !!entry.oob,
+		holdPeer: entry.holdPeer ?? null,
 		colliders: entry.colliders.map((/** @type {any} */ c) => c.handle),
 		ccd: entry.body?.isCcdEnabled?.() ?? null,
 		bodyRot: entry.body?.rotation?.() ?? null

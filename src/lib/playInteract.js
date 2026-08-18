@@ -170,8 +170,43 @@ export function endGrab(throwIt) {
 	grab = null;
 	resumeAnimation(object.uuid);
 	if (held) releaseBody(object.uuid, velocity);
+	else sendThrow(object, velocity, throwIt);
 	playInteractState.update((s) => ({ ...s, mode: 'idle', uuid: null }));
 	return { uuid: object.uuid, velocity };
+}
+
+/**
+ * B5: we were carrying but we are NOT the peer stepping the world, so the
+ * initiator has been reconstructing our release from a ~10 Hz move stream after
+ * 250 ms of silence — late, slow, and in the wrong direction. Send it exactly,
+ * once, as an EVENT.
+ *
+ * Not sent when nothing is simulating (there is no body to throw) or when the
+ * release is a place-down: |v| under 5 cm/s saves the message entirely.
+ * @param {any} object @param {any} velocity @param {boolean} throwIt
+ */
+function sendThrow(object, velocity, throwIt) {
+	if (!throwIt || !simRunning()) return false;
+	const linvel = velocity.linvel?.toArray?.() ?? velocity.linvel ?? [0, 0, 0];
+	const angvel = velocity.angvel?.toArray?.() ?? velocity.angvel ?? [0, 0, 0];
+	if (Math.hypot(linvel[0], linvel[1], linvel[2]) < 0.05) return false;
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer) return false;
+	// twelve plain numbers, so the raw-bytes rule does not apply: it exists
+	// because binarypack recurses per element and a ~40k-number array throws
+	// inside broadcast()'s swallowing catch. the rot field stays EULER, matching move /
+	// duplicate / the history appliers — and the Euler bug cannot come back,
+	// because the ANGULAR VELOCITY travels as a vector.
+	peer.send({
+		type: 'throw',
+		uuid: object.uuid,
+		pos: object.position.toArray(),
+		rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+		linvel,
+		angvel
+	});
+	return true;
 }
 
 /** @param {PointerEvent} event */

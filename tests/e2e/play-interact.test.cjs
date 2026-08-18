@@ -82,6 +82,26 @@ const rigY = (page) =>
 		return cam?.parent ? cam.parent.position.y : null;
 	});
 
+/** dispatch a wheel the way the browser does: on the CANVAS, bubbling to
+  * window. Dispatching ON window collapses the capture and bubble phases into
+  * registration order, so the capture-phase claim cannot win — an artefact of
+  * the test, not of the app. */
+const wheel = (page, deltaY, times = 1) =>
+	page.evaluate(
+		([deltaY, times]) => {
+			let renderer = null;
+			window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+			const target = renderer?.domElement ?? document.body;
+			let prevented = false;
+			for (let i = 0; i < times; i++) {
+				const event = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true });
+				target.dispatchEvent(event);
+				prevented = event.defaultPrevented;
+			}
+			return prevented;
+		},
+		[deltaY, times]
+	);
 const pointer = (page, type, button = 0) =>
 	page.evaluate(
 		([type, button]) => {
@@ -201,11 +221,7 @@ h.run(async () => {
 		});
 	const walkBefore = await walk();
 	const distBefore = (await play(page, 'return pi.playInteractDebug()')).distance;
-	const prevented = await page.evaluate(() => {
-		const event = new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true });
-		window.dispatchEvent(event);
-		return event.defaultPrevented;
-	});
+	const prevented = await wheel(page, -100);
 	await page.waitForTimeout(200);
 	const distAfter = (await play(page, 'return pi.playInteractDebug()')).distance;
 	h.check(distAfter > distBefore, '3.1 the wheel pushes the crate further away (' + distBefore + ' -> ' + distAfter + ')');
@@ -213,25 +229,24 @@ h.run(async () => {
 		prevented,
 		'3.2 ...and the event is marked handled, which is how PointerLockControls knows to stand down'
 	);
+	// and the clamp
+	await wheel(page, -100, 40);
+	await page.waitForTimeout(200);
+	const clamped = (await play(page, 'return pi.playInteractDebug()')).distance;
 	// moveSpeed is a component local, so measure what it DOES rather than reading
-	// it: PointerLockControls spends the wheel on walking speed, and standing down
-	// is the whole point of the defaultPrevented handshake above
+	// it. Measured AFTER the 41-event burst, and against a threshold the real
+	// failure mode would blow through: PointerLockControls moves moveSpeed by 0.01
+	// per wheel event from a base of 0.1, so a leaked burst is a TENFOLD walk —
+	// while a 500 ms sample of the same speed varies ~40% on frame timing alone.
 	const walkAfter = await walk();
 	h.check(
-		walkBefore > 0 && Math.abs(walkAfter - walkBefore) / walkBefore < 0.25,
-		'3.3 walking speed is untouched by a carry wheel (' +
+		walkBefore > 0 && walkAfter < walkBefore * 2,
+		'3.3 a carry wheel does not leak into walking speed — 41 events would be 10x (' +
 			(walkBefore ?? 0).toFixed(2) +
 			' m -> ' +
 			(walkAfter ?? 0).toFixed(2) +
 			' m per 0.5 s)'
 	);
-	// and the clamp
-	await page.evaluate(() => {
-		for (let i = 0; i < 40; i++)
-			window.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
-	});
-	await page.waitForTimeout(200);
-	const clamped = (await play(page, 'return pi.playInteractDebug()')).distance;
 	h.check(clamped <= 6.0001, '3.4 carry distance clamps at 6 m (got ' + clamped + ')');
 	await page.waitForTimeout(900);
 	const pushedTo = await rangeOf(page, ids.crate);
@@ -245,10 +260,7 @@ h.run(async () => {
 
 	// the flick: yank the carry point from 6 m back to 0.8 m, so the crate is
 	// travelling hard toward the camera at the moment of release
-	await page.evaluate(() => {
-		for (let i = 0; i < 40; i++)
-			window.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }));
-	});
+	await wheel(page, 100, 40);
 	await page.waitForTimeout(120);
 	await pointer(page, 'pointerup');
 	await page.waitForTimeout(150);

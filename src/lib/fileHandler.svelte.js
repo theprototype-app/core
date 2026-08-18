@@ -15,6 +15,7 @@ import { recordObjectPresence } from '$lib/history';
 // STATIC on purpose — a lazy import of it from here never settled in dev, and
 // materialsHandler does not import fileHandler, so this closes no cycle.
 import { downscaleImage } from '$lib/materialsHandler';
+import { shaderDrivenCount } from '$lib/shaderGraph';
 import { originOf, bakeOriginForExport } from '$lib/objectOrigin';
 import { bakeAnimationsForExport } from '$lib/animationPreview';
 import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
@@ -86,6 +87,11 @@ function selectedRoots() {
 /** Run the GLTFExporter over a root (or array of roots) and download it.
  * @param {string} format @param {any} input */
 function exportGltf(format, input) {
+	// SH4: glTF has no way to express a node-graph shader, so an exported object
+	// carries its BASE material (parkAnimatedAtBase parks ours) and the graph is left
+	// behind. Say so rather than letting the file look complete — the same honesty as
+	// the animation bake skipping look channels.
+	const shaderDriven = shaderDrivenCount();
 	// saves store animation BASE poses, not the current swing (88)
 	const restore = parkAnimatedAtBase();
 	// 17-D: glTF nodes carry only TRS, so a per-object ORIGIN has to become real
@@ -121,6 +127,14 @@ function exportGltf(format, input) {
 			a.download = `ThePrototype-${date}UTC.${String(format).toLowerCase()}`;
 			a.click();
 			window.URL.revokeObjectURL(url);
+			// glTF cannot express a node-graph shader: the file carries each object's
+			// BASE material instead. Saying nothing would make the export look complete.
+			if (shaderDriven > 0)
+				showToast(
+					shaderDriven === 1
+						? 'One object’s shader graph was not exported — glTF has no node shaders, so it carries the plain material. Save a .tpscene to keep it.'
+						: shaderDriven + ' shader graphs were not exported — glTF has no node shaders, so objects carry their plain materials. Save a .tpscene to keep them.'
+				);
 		},
 		function (error) {
 			restore();

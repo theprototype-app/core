@@ -33,6 +33,36 @@ with the counterfactual against the old 45000 cap); selection is `selection-extr
 (Ctrl+A + the configurable double-click, both through real input); the edit-overlay
 save paths are `edit-overlay-gaps`; the animation look channels and the loop-pause
 transport are `animation-look-channels` and `animation-loop-pause`.
+The shader graph editor has eight (all of them are the gate for any shader change, and
+two-peer `shader-sync` needs PEER_CONFIG): `shader-inspector` (the shader-driven
+Material section + its guards + the context-menu entry), `shader-module-flow` (the
+module backend seam via `moduleSDK.initModules` with an INLINE module — the real api
+path, no zip needed — plus the Set Shader Uniform node), `shader-node-docs` (no
+browser: every node has a manual line, none merely restates its label, and the
+docs-site tables carry the SAME text), `shader-scene-default` (the SCENE graph over 24
+objects — it also CARRIES THE MEASUREMENT that declined SH6b's compile-once
+optimisation, so a change making scene-wide compiles expensive turns it red),
+`shader-compile` (the graph->IR compiler, NO
+browser — it imports the ESM directly), `shader-graph` (the store/compile/install
+pipeline), `shader-sync` (replication + history, three peers), `shader-editor` (the
+dock tab, driving the real UI) and `shader-persist` (all four save paths, including a
+real save -> reload -> `restoreSnapshot()` cycle). Three premise traps this round paid
+for, all in `shader-graph`: tiling or scrolling a SOLID-COLOUR texture cannot move a
+pixel, so those checks were unfalsifiable until the fixture got structure (and the
+metric became a count of CHANGED pixels, since a mean averages stripes away); with a
+two-halves image any WHOLE tiling maps the sample point back onto the same colour
+boundary, which is a property of the fixture and not of tiling (use 3.5); and texture
+resolution is LAZY -- triggered when a compile fills the sampler uniform -- so polling
+`shaderTextureFor` before anything asked for that hash waits forever. Only the premise
+check `the structured texture decoded` separated the last one from a real failure.
+Three more premise traps from the SH5-SH7 round: `buildObjectMenuItems` derives
+`multi` from opts.SELECTION and IGNORES an opts.multi flag, so a hand-passed flag
+makes the check vacuous; a WIRED flow input means editing that node's own `data` does
+nothing (the upstream node decides, which is correct behaviour); and a SYNTHETIC
+mousedown on an xyflow node card enters its drag handler, which reads `ownerDocument`
+off the target and throws — select a node with a real `page.mouse.click`. Also: two
+picks of the SAME bytes are the same content hash, so a second texture assignment is
+silently a no-op (vary the image, or the check measures the first one twice).
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
@@ -49,6 +79,21 @@ while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE
 The expensive failures in #16 were not broken code — they were assertions that
 passed while the user watched the feature misbehave:
 
+- **A pixel threshold measured against "the base" is a bet on which object the run
+  produced.** `palette.js` derives every object's colour from its uuid, so the same
+  red-multiply read r:g 1.42->1.52 on one cube and 0.86->1.09 on the next, and a
+  shadow check that let each material pick its own dominant channel compared a base's
+  BLUE against a shader's RED. Three fixes, in order of preference: control the input
+  (neutralise the base colour at setup), compare two of YOUR values on the same object
+  rather than against the base, and compare like with like. That took one metric from
+  a 20-38 spread to a stable 82.3 across three consecutive runs.
+- **A feature with no ENTRY POINT is invisible to a suite that supplies its own.** The
+  Shader tab passed 20 checks while no user could open it, because the suite set the
+  store directly. Same family as the mount-crash trap, one step earlier: drive the
+  real opener (click the panel, click "+", click the item), not the state it sets.
+- **After installing a material, RENDER TWICE before sampling.** The first render is
+  where three builds the program, so a probe reads the pre-injection picture —
+  intermittently, which reads as a flaky feature rather than a flaky measurement.
 - **An AGGREGATE health check cannot see a LOCAL loss.** `mesh-uv-preserve` asserted
   the uv attribute exists, `uv.count === position.count`, and a healthy global
   spread — all three stayed green while six corners of ONE face sat on texel (0,0)

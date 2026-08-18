@@ -617,7 +617,41 @@ function makeApi(moduleId) {
 			// graph (the cycle guard)
 			import('./uvUnwrap').then((m) =>
 				m.registerUnwrapBackend(`mod-${moduleId}-${key}`, label, run)
-			)
+			),
+
+		/**
+		 * SH6: supply a shader-graph COMPILE BACKEND. `compile(ir, ctx)` receives the same IR
+		 * the built-ins get — `{uniforms, prelude, body, defines, albedo?, emissive?,
+		 * roughness?, metalness?, normal?, opacity?, ao?, vertex?}` — plus `{object, scene,
+		 * camera, renderer, baseMaterial}`, and returns a three Material (async allowed).
+		 * That is how a module ships a different lighting model, a TSL path or a wasm
+		 * compiler without core carrying any of it.
+		 *
+		 * A graph names its backend in its own document, so one authored against a module's
+		 * backend keeps working for peers that have the module, and a peer without it falls
+		 * back to the built-in with the reason surfaced per graph.
+		 *
+		 * RETURNS THE PROMISE, like registerUnwrapBackend — await it rather than sleeping on
+		 * it (the documented uv-unwrap-module lesson).
+		 * @param {string} key @param {string} label
+		 * @param {(ir: any, ctx: any) => any} compile
+		 * @returns {Promise<void>}
+		 */
+		registerShaderBackend: (key, label, compile) => {
+			const full = `mod-${moduleId}-${key}`;
+			// dynamic for the same cycle reason as every other late import here
+			const job = import('./shaderBackends').then((m) => {
+				const off = m.registerShaderBackend(full, label, compile);
+				// same-module import promises resolve in .then order, so the disposer is
+				// recorded even when teardown fires immediately after registration
+				onDispose(() => off());
+			});
+			// a graph still naming this backend must not be left compiling against nothing:
+			// once the registration is gone, re-compile those graphs so they fall back to the
+			// built-in rather than silently keeping a stale material
+			onDispose(() => import('./shaderGraph').then((m) => m.fallBackFromBackend(full, label)));
+			return job;
+		}
 	};
 }
 

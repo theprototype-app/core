@@ -24,6 +24,42 @@ function commitSha(): string {
 // input handling was rewritten (setupInputSources keyed map) and the unguarded
 // handedness indexing no longer exists anywhere in the dist.
 
+// SH0 COSTING PROBE — @shaderfrog/core 3.2.0 drops the ARRAY DIMENSION when it
+// re-emits a varying. `dedupeQualifiedStatements` (graph/shader-sections.js) rebuilds
+// every in/out statement from a TEMPLATE STRING using only the type token and bare
+// identifier names that `extractDeclarationNameAndType` returns — each declarator's
+// `quantifier` is structurally discarded. So three's
+// `varying vec4 vDirectionalShadowCoord[ NUM_DIR_LIGHT_SHADOWS ]` comes back as
+// `out vec4 vDirectionalShadowCoord;`, and `vDirectionalShadowCoord[0] = mat4 * vec4`
+// then assigns a vec4 to a float -> the VERTEX shader never links and the mesh is
+// invisible whenever shadows are on. Uniforms are unaffected because dedupeUniforms
+// manipulates AST nodes instead of re-printing them.
+// The declarators carry `quantifier: ArraySpecifierNode[]` and `generate` is already
+// imported in that module, so appending the generated quantifier to each name is
+// enough — mixing `out vec4 a, b[2];` in one list is valid GLSL.
+function fixShaderfrogArrayVaryings(): Plugin {
+	const TARGET = 'shader-sections.js';
+	const FROM =
+		'var _b = extractDeclarationNameAndType(stmt), type = _b.type, names = _b.names;';
+	const TO =
+		'var _b = extractDeclarationNameAndType(stmt), type = _b.type, names = ' +
+		'(stmt.declaration.declarations || []).map(function (d) { return ' +
+		'd.identifier.identifier + (d.quantifier && d.quantifier.length ? generate(d.quantifier) : ""); });';
+	return {
+		name: 'fix-shaderfrog-array-varyings',
+		enforce: 'pre',
+		transform(code, id) {
+			if (!id.includes('@shaderfrog') || !id.includes(TARGET)) return null;
+			if (!code.includes(FROM)) {
+				// fail LOUDLY on a version bump rather than silently shipping the bug
+				console.warn('[fix-shaderfrog-array-varyings] anchor not found in ' + id);
+				return null;
+			}
+			return { code: code.replace(FROM, TO), map: null };
+		}
+	};
+}
+
 // Dev-only CORS relay for generated-asset CDNs (mirror of the peerjs box's /proxy
 // route — infra repo server.js): Meshy's assets.meshy.ai serves finished GLBs with
 // no Access-Control-Allow-Origin, so the browser can't fetch them directly. In dev
@@ -94,7 +130,23 @@ export default defineConfig({
 	// tailwind 4 runs as a vite plugin since vite 8: the old @tailwindcss/postcss route
 	// broke because vite 8's internal postcss-import resolves `@import 'tailwindcss'`
 	// as a file before the postcss plugin can claim it (build-time ENOENT).
-	plugins: [tailwindcss(), devAssetProxy(), emitVersionJson(), sveltekit()],
+	plugins: [
+			fixShaderfrogArrayVaryings(),
+			tailwindcss(),
+			devAssetProxy(),
+			emitVersionJson(),
+			sveltekit()
+		],
+		// the transform above only reaches @shaderfrog/core if it is served as SOURCE:
+		// vite pre-bundles deps with esbuild, which a Rollup-style transform hook never
+		// sees (the guardThrelteXr lesson).
+		optimizeDeps: {
+			exclude: ['@shaderfrog/core'],
+			// ...but excluding it stops vite pre-bundling its CJS dep too, and
+			// `import groupBy from 'lodash.groupby'` then has no default export. Pre-bundle
+			// that one explicitly so the interop wrapper still exists.
+			include: ['lodash.groupby']
+		},
 	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
 	// certs/ was already how CI-less https worked before mkcert)
 	server: {

@@ -169,6 +169,13 @@
 		saveSnapAnchorAsOrigin
 	} from '$lib/snapEngine';
 	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
+	import {
+		isShaderDriven,
+		openShaderEditor,
+		detachFrom,
+		shaderGraphOf,
+		setShaderGraphFor
+	} from '$lib/shaderGraph';
 
 	// (15-L3 dropped the standalone hex textboxes under each colour picker — the
 	// picker's own hex/rgb/hsv field from 15-C2 replaced them, so the validating
@@ -305,6 +312,50 @@
 	);
 	const matCount = $derived(matTargets.length > 1 ? matTargets.length : 0);
 
+	// SH5: a shader-driven object's material is COMPILED from a graph. The rows below would
+	// be editing the clone the compile installed, which the next recompile throws away — an
+	// edit that silently vanishes — and `switchMaterialType` would replace the material
+	// outright and tear the shader off. So they are hidden, the switchMaterialType
+	// precedent: decline with an explanation rather than half-support it.
+	// `objectsGroup` is a dependency because being shader-driven is not a store; the
+	// install pokes that one, and it is the only signal this derived gets.
+	const shaderDriven = $derived.by(() => {
+		$objectsGroup;
+		return matTargets.filter((/** @type {any} */ o) => isShaderDriven(o.uuid));
+	});
+	/** the members a material write may still touch */
+	const shaderFree = $derived.by(() => {
+		$objectsGroup;
+		return matTargets.filter((/** @type {any} */ o) => !isShaderDriven(o.uuid));
+	});
+	const allShaderDriven = $derived(matTargets.length > 0 && shaderFree.length === 0);
+	/**
+	 * Driven members that own their graph — the only ones Detach can honestly act on.
+	 * An object driven by the SCENE default has no document of its own to remove, and
+	 * restoring its base material would not stick: the graph still resolves to it, so the
+	 * objectsGroup reconcile re-installs the shader on the next scene change. Offering a
+	 * Detach button there would be a button that undoes itself.
+	 */
+	const shaderOwn = $derived.by(() => {
+		$objectsGroup;
+		return shaderDriven.filter((/** @type {any} */ o) => !!shaderGraphOf(o.uuid));
+	});
+
+	/** Remove the graph these objects own, which is what actually detaches them. */
+	function detachShader() {
+		const own = shaderOwn;
+		if (!own.length) return;
+		for (const object of own) {
+			// deleting the document IS the detach: compileAndApply's no-doc path restores
+			// each target's own material. If a SCENE graph exists it then takes over, which
+			// is the documented own -> scene -> material resolution order.
+			setShaderGraphFor(object.uuid, null);
+			detachFrom(object);
+		}
+		objectsGroup.update((v) => v);
+		showToast(own.length === 1 ? 'Shader removed from this object' : 'Shader removed from ' + own.length + ' objects');
+	}
+
 	/** Run a per-object write across `list`; N>1 collapses into ONE undo entry.
 	 * @param {any[]} list @param {string} label @param {(object:any)=>void} fn */
 	function fanOn(list, label, fn) {
@@ -339,9 +390,22 @@
 	function fan(label, fn) {
 		fanOn(insTargets, label, fn);
 	}
-	/** material-only fan (skips lights/groups in the set) @param {string} label @param {(object:any)=>void} fn */
+	/**
+	 * Material-only fan: skips lights/groups in the set, and since SH5 also skips
+	 * SHADER-DRIVEN members — their material is compiled from a graph, so a write here
+	 * would land on a clone the next recompile discards. Skipping SILENTLY would be worse
+	 * than not offering it, so the count is reported (the 17-D1 counted-note convention).
+	 * @param {string} label @param {(object:any)=>void} fn
+	 */
 	function fanMat(label, fn) {
-		fanOn(matTargets, label, fn);
+		const skipped = matTargets.length - shaderFree.length;
+		fanOn(shaderFree, label, fn);
+		if (skipped)
+			showToast(
+				skipped +
+					(skipped === 1 ? ' object was' : ' objects were') +
+					' skipped — a shader graph drives its material. Detach it, or edit the graph.'
+			);
 	}
 
 	/** true when the selection disagrees on a value → the row renders a dash.
@@ -2596,6 +2660,47 @@
 					<Checkbox bind:checked={$selectedObject.visible} onchange={() => sendParam('visible')}>
 						Visible
 					</Checkbox>
+
+					<!-- SH5: a shader graph OWNS this material, so say so and offer the two things
+					     that make sense here. The editors below are hidden rather than disabled:
+					     they would write to the clone the compile installed, and the next
+					     recompile would throw the edit away. -->
+					{#if shaderDriven.length}
+						<div id="material-shader-note" class="shader-driven">
+							<p class="shader-driven-text">
+								{allShaderDriven
+									? shaderDriven.length > 1
+										? `A shader graph drives all ${shaderDriven.length} selected materials.`
+										: 'A shader graph drives this material.'
+									: `A shader graph drives ${shaderDriven.length} of ${matTargets.length} selected materials — edits below skip those.`}
+							</p>
+							<div class="shader-driven-actions">
+								<button
+									id="material-open-shader"
+									class="ui-button-quiet"
+									onclick={() => openShaderEditor()}
+								>
+									Open in Shader editor
+								</button>
+								{#if shaderOwn.length}
+									<button
+										id="material-detach-shader"
+										class="ui-button-quiet"
+										title="Remove the graph and put these objects back on their own material"
+										onclick={detachShader}
+									>
+										Detach
+									</button>
+								{:else}
+									<!-- driven by the SCENE default: there is no per-object graph to
+									     remove, and restoring the base would not stick -->
+									<span class="shader-driven-text">Inherited from the scene shader.</span>
+								{/if}
+							</div>
+						</div>
+					{/if}
+
+					{#if !allShaderDriven}
 					<ThemedSelect
 						id="select-material"
 						items={materials}
@@ -2805,6 +2910,10 @@
 						</div>
 					{/if}
 
+					{/if}
+
+					<!-- OUTSIDE the shader guard: cast/receive are OBJECT flags, not material
+					     properties, so they stay editable on a shader-driven object -->
 					<p class="ui-section-label">Shadow</p>
 					<div class="flex gap-4 px-1">
 						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => setCastShadow()}>
@@ -3239,5 +3348,32 @@
 	.snap-status-picked .snap-status-text {
 		color: #34d399;
 		margin-right: auto;
+	}
+
+	/* SH5: the shader-driven notice. Purple echoes the shader editor's Utility accent, and
+	   it reads as informative rather than as an error. */
+	.shader-driven {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+		margin: 2px 0;
+		padding: 6px 7px;
+		border: 1px solid rgb(168 85 247 / 0.4);
+		border-radius: 5px;
+		background: rgb(168 85 247 / 0.1);
+	}
+	.shader-driven-text {
+		font-size: 10px;
+		line-height: 1.35;
+		color: #d8b4fe;
+	}
+	.shader-driven-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+	}
+	.shader-driven-actions button {
+		font-size: 10px;
+		padding: 2px 7px;
 	}
 </style>

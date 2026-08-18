@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { flowGraphs, allNodes, allEdges, SCENE_GRAPH } from '../stores/flowStore';
 import { objectsGroup, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, openSceneSection } from '../stores/appStore';
 import { recordTransformSet, recordEntry } from './history';
 import {
 	notifyExternalMove,
@@ -16,7 +16,12 @@ import {
 	noteObjectPose
 } from './flowRuntime';
 import { colliderSpecOf } from './colliderSpec';
-import { sceneGravity } from './scenePhysics';
+import {
+	sceneGravity,
+	scenePhysicsGround,
+	scenePhysicsBounds,
+	scenePhysicsDefaults
+} from './scenePhysics';
 import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throwVelocity';
 import { burstObjectParticles } from './particleActions';
 import { hasImpactEmitter } from './particleRuntime';
@@ -58,6 +63,7 @@ export const remoteSimulating = writable(null);
  *   lastWritten: {pos: THREE.Vector3, quat: THREE.Quaternion},
  *   lastSent?: {pos: THREE.Vector3, quat: THREE.Quaternion},
  *   colliders: any[], shapeKey: string,
+ *   oob?: boolean,
  *   preVy?: number}} BodyEntry */
 /** @type {BodyEntry[]} */
 let bodies = [];
@@ -80,6 +86,16 @@ let accumulator = 0; // fixed-timestep leftover (see step)
 /** @type {Map<number, {uuid: string, entry: BodyEntry | null, sensor: boolean}>} collider handle -> owner */
 let colliderOwner = new Map();
 let groundHandle = -1;
+/** B4: the live ground collider, so a config change can swap it mid-sim */
+/** @type {any} */ let groundCollider = null;
+/** B4: a store subscription fires on subscribe; the world was just built with
+ * that same value, so the first emission is skipped rather than re-applied */
+let groundSubPrimed = false;
+let defaultsSubPrimed = false;
+/** B4: out-of-bounds bodies handled this run, coalesced into ONE toast */
+let oobCount = 0;
+/** @type {any} */ let oobTimer = null;
+/** @type {string} */ let oobAction = 'respawn';
 /** @type {Map<string, number>} uuid -> last impact stamp (step-now ms) */
 let lastImpactAt = new Map();
 /** @type {{uuid: string, strength: number}[]} contacts collected inside the substep loop */
@@ -475,9 +491,13 @@ function shapeKeyOf(p, object) {
 	const vertsKey = Array.isArray(verts)
 		? verts.length + ':' + verts.reduce((/** @type {number} */ a, /** @type {number} */ b) => a + b, 0).toFixed(2)
 		: null;
+	// B4: the scene default is part of what a collider was BUILT with, so a change
+	// to it has to read as drift here or applyLiveParams never rebuilds
+	const sceneMaterial = get(scenePhysicsDefaults).material;
 	return JSON.stringify({
 		c: p?.collider ?? null,
 		v: vertsKey,
+		sm: [sceneMaterial.friction, sceneMaterial.restitution],
 		s: !!p?.sensor,
 		f: p?.freeze ?? null,
 		r: p?.restitution ?? null,
@@ -557,9 +577,15 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 	}
 	/** @type {any[]} */
 	const colliders = [];
+	// B4: the SCENE default material fills in wherever the object says nothing —
+	// "make this whole scene rubber" as ONE control. The per-object value still
+	// wins, so every existing scene is byte-identical (its default is null/null).
+	const sceneMaterial = get(scenePhysicsDefaults).material;
 	descs.forEach((desc) => {
-		if (p?.restitution != null) desc.setRestitution(p.restitution);
-		if (p?.friction != null) desc.setFriction(p.friction);
+		const restitution = p?.restitution ?? sceneMaterial.restitution;
+		const friction = p?.friction ?? sceneMaterial.friction;
+		if (restitution != null) desc.setRestitution(restitution);
+		if (friction != null) desc.setFriction(friction);
 		if (dynamic) desc.setMass((p.mass ?? 1) / descs.length);
 		// PFX-C: dynamics report contact starts; CL-A: sensors need events too
 		if (dynamic || p?.sensor) desc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
@@ -614,9 +640,9 @@ async function startSimulation() {
 	// CL-A A6: scene gravity is a replicated singleton (scenePhysics.js); the
 	// live subscription below applies mid-sim changes on the stepping peer
 	world = new RAPIER.World({ x: 0, y: get(sceneGravity), z: 0 });
-	groundHandle = world.createCollider(
-		RAPIER.ColliderDesc.cuboid(500, 0.1, 500).setTranslation(0, -0.1, 0)
-	).handle;
+	groundCollider = null;
+	groundHandle = -1;
+	buildGround(get(scenePhysicsGround));
 	eventQueue = new RAPIER.EventQueue(true);
 	colliderOwner = new Map();
 	lastImpactAt = new Map();
@@ -657,7 +683,18 @@ async function startSimulation() {
 				? RAPIER.RigidBodyDesc.kinematicPositionBased()
 				: RAPIER.RigidBodyDesc.fixed()
 		).setTranslation(at.x, at.y, at.z);
+		// B4: scene damping defaults — the knob that turns a jittery tower stable
+		// and stops crates sliding forever. Dynamics only: a kinematic body's motion
+		// is prescribed and a fixed one has none.
+		if (dynamic) {
+			const defaults = get(scenePhysicsDefaults);
+			bodyDesc.setLinearDamping(defaults.damping.linear ?? 0);
+			bodyDesc.setAngularDamping(defaults.damping.angular ?? 0);
+		}
 		const body = world.createRigidBody(bodyDesc);
+		// B4: no CCD exists today, and a 20 m/s throw moves 0.33 m per step — thin
+		// walls tunnel, which is precisely the new gesture's failure mode
+		if (dynamic && get(scenePhysicsDefaults).ccd) body.enableCcd(true);
 		/** @type {BodyEntry} */
 		const entry = {
 			object,
@@ -754,6 +791,8 @@ async function startSimulation() {
 	// (local slider drag or a peer's replicated nodechange) re-applies on the
 	// stepping peer. Change-detected on the physics params only, so node drags
 	// (position updates also fire flowNodes) never touch the world.
+	groundSubPrimed = false;
+	defaultsSubPrimed = false;
 	liveSnapshot = liveParamsJson();
 	const onGraphChange = () => {
 		if (!world) return;
@@ -768,6 +807,36 @@ async function startSimulation() {
 		// never sleep, so they notice immediately)
 		sceneGravity.subscribe((g) => {
 			if (world) world.gravity = { x: 0, y: g, z: 0 };
+		}),
+		// B4: the ground swaps mid-sim (joints, velocities and resting contacts all
+		// survive — a resting body can drop up to 0.1 m for one frame, which is the
+		// documented cost of not restarting the run)
+		scenePhysicsGround.subscribe((cfg) => {
+			// a store subscription fires immediately, and world create just built the
+			// ground with this very config — skip that one, then track every change
+			if (!groundSubPrimed) {
+				groundSubPrimed = true;
+				return;
+			}
+			if (world) buildGround(cfg);
+		}),
+		// B4: damping/CCD/material apply to the live bodies. timeScale needs no
+		// hook at all — step() reads it per frame.
+		scenePhysicsDefaults.subscribe((defaults) => {
+			if (!world) return;
+			if (!defaultsSubPrimed) {
+				defaultsSubPrimed = true;
+				return; // the bodies were just built with these values
+			}
+			bodies.forEach((entry) => {
+				if (entry.mode !== 'dynamic') return;
+				entry.body.setLinearDamping(defaults.damping.linear ?? 0);
+				entry.body.setAngularDamping(defaults.damping.angular ?? 0);
+				entry.body.enableCcd(!!defaults.ccd);
+			});
+			// a material change is collider state, so it rides the shapeKey drift
+			// path that already exists for the per-object values
+			applyLiveParams();
 		})
 	];
 
@@ -777,6 +846,115 @@ async function startSimulation() {
 	lastStep = performance.now();
 	accumulator = 0;
 	setPostTick(step); // steps at the end of every flowRuntime tick
+}
+
+/**
+ * B4: the scene ground, as an OWNED unit — build, swap and remove all go through
+ * here, at world create and from the live subscription.
+ *
+ * groundHandle is compared BY VALUE in queueContact and rapier reuses small
+ * integer handles, so leaving a stale one behind when the ground is disabled can
+ * ALIAS a real collider and silently swallow that body's impacts. The disabled
+ * path sets it to -1 explicitly, which no live handle can equal.
+ *
+ * The collider is a 0.2 m thick slab translated so its TOP FACE lands exactly on
+ * cfg.height (rapier cuboids measure half-extents from their centre). It stays
+ * out of colliderOwner, so both event paths keep skipping it as they always did.
+ * @param {any} cfg scenePhysicsGround
+ */
+function buildGround(cfg) {
+	if (!world || !RAPIER) return false;
+	if (groundCollider) {
+		world.removeCollider(groundCollider, true);
+		groundCollider = null;
+	}
+	groundHandle = -1;
+	if (!cfg?.enabled) return false;
+	const desc = RAPIER.ColliderDesc.cuboid(500, 0.1, 500).setTranslation(0, (cfg.height ?? 0) - 0.1, 0);
+	if (cfg.friction != null) desc.setFriction(cfg.friction);
+	if (cfg.restitution != null) desc.setRestitution(cfg.restitution);
+	groundCollider = world.createCollider(desc);
+	groundHandle = groundCollider.handle;
+	return true;
+}
+
+/**
+ * B4: a body leaves the world. Delete needs it now; B7's spawner gets its
+ * inverse for free. Leaves the OBJECT alone — the caller decides whether the
+ * scene keeps it. @param {string} uuid
+ */
+export function physicsRemoveBody(uuid) {
+	if (!world) return false;
+	const index = bodies.findIndex((e) => e.object.uuid === uuid);
+	if (index === -1) return false;
+	const entry = bodies[index];
+	entry.colliders.forEach((c) => colliderOwner.delete(c.handle));
+	world.removeRigidBody(entry.body);
+	bodies.splice(index, 1);
+	beforeStates = beforeStates.filter((b) => b.uuid !== uuid);
+	return true;
+}
+
+/**
+ * B4: a dynamic body fell past the scene's out-of-bounds limit. ONE toast per
+ * burst rather than per body: a collapsing stack drops several in the same
+ * frame, and plain-string toasts dedupe but would still emit one per distinct
+ * count. @param {BodyEntry} entry @param {string} action
+ */
+function handleOutOfBounds(entry, action) {
+	const uuid = entry.object.uuid;
+	entry.oob = true;
+	if (action === 'freeze') {
+		entry.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+		entry.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+		entry.body.setBodyType(RAPIER.RigidBodyType.Fixed, true);
+		// a frozen body produces no movement, so the broadcast gate already
+		// silences it — no extra bookkeeping needed
+	} else if (action === 'delete') {
+		physicsRemoveBody(uuid);
+		// objectActions imports joints/geometries/flowRuntime/history, so a STATIC
+		// edge from here is the cycle shape CLAUDE.md warns about
+		import('./objectActions')
+			.then((m) => m.deleteObjectsByUuid([uuid]))
+			.catch(() => {});
+	} else {
+		// respawn: beforeStates already holds the sim-start transform per dynamic
+		// uuid, which is exactly the right answer for a pad-spawned crate
+		const before = beforeStates.find((b) => b.uuid === uuid)?.before;
+		if (!before) return;
+		entry.object.position.fromArray(before.pos);
+		entry.object.rotation.set(before.rot[0], before.rot[1], before.rot[2]);
+		const target = kinematicTargetOf(entry);
+		entry.body.setTranslation({ x: target.pos.x, y: target.pos.y, z: target.pos.z }, true);
+		entry.body.setRotation(
+			{ x: target.quat.x, y: target.quat.y, z: target.quat.z, w: target.quat.w },
+			true
+		);
+		entry.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+		entry.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+		entry.lastWritten.pos.copy(entry.object.position);
+		entry.lastWritten.quat.copy(entry.object.quaternion);
+		entry.oob = false; // it is back in play
+	}
+	oobCount++;
+	oobAction = action;
+	clearTimeout(oobTimer);
+	oobTimer = setTimeout(flushOutOfBoundsToast, 400);
+}
+
+function flushOutOfBoundsToast() {
+	if (oobCount === 0) return;
+	const what = oobCount === 1 ? '1 object fell' : oobCount + ' objects fell';
+	const fate =
+		oobAction === 'freeze'
+			? 'frozen in place'
+			: oobAction === 'delete'
+				? 'removed'
+				: 'returned to spawn';
+	oobCount = 0;
+	showToast(what + ' out of bounds — ' + fate, [
+		{ label: 'Physics settings', action: () => openSceneSection('Physics') }
+	]);
 }
 
 const bodyQuat = new THREE.Quaternion();
@@ -831,6 +1009,10 @@ function releaseHold(entry, velocity = null) {
 	if (v) {
 		entry.body.setLinvel({ x: v.linvel.x, y: v.linvel.y, z: v.linvel.z }, true);
 		entry.body.setAngvel({ x: v.angvel.x, y: v.angvel.y, z: v.angvel.z }, true);
+		// B4: CCD unconditionally for a FAST release, whatever the scene toggle
+		// says — a 20 m/s throw travels 0.33 m per step and would tunnel a wall.
+		// B6's rest detector clears it again.
+		if (v.linvel.length() > 5) entry.body.enableCcd(true);
 	}
 	entry.samples = [];
 	return v;
@@ -894,7 +1076,10 @@ function step(now) {
 	// fixed-timestep accumulator: sim time tracks REAL time even when rAF is
 	// throttled (background/headless tabs) — the old per-frame 1/30 clamp made
 	// the sim run in slow motion below 30fps. Backlog is capped (spiral guard).
-	accumulator += Math.min((now - lastStep) / 1000, 0.25);
+	// B4: global time scale. Scale the accumulator FEED, never world.timestep —
+	// changing the timestep changes solver behaviour, i.e. makes the sim
+	// differently wrong rather than slower.
+	accumulator += Math.min((now - lastStep) / 1000, 0.25) * (get(scenePhysicsDefaults).timeScale ?? 1);
 	lastStep = now;
 	const substeps = Math.min(Math.floor(accumulator / FIXED_DT), MAX_SUBSTEPS);
 	if (substeps === 0) return; // sub-frame remainder — step next frame
@@ -987,6 +1172,11 @@ function step(now) {
 	const peer = get(peers);
 	const broadcast = now - lastBroadcast > 100;
 	if (broadcast) lastBroadcast = now;
+	const boundsCfg = get(scenePhysicsBounds);
+	const oobLimit = boundsCfg.limit ?? -100;
+	const oobActionNow = boundsCfg.action ?? 'respawn';
+	/** @type {BodyEntry[]} */
+	const pendingOob = [];
 
 	bodies.forEach((entry) => {
 		const { object, body, offset, initialQuat, mode, hold } = entry;
@@ -1000,6 +1190,11 @@ function step(now) {
 		object.quaternion.copy(bodyQuat).multiply(initialQuat);
 		entry.lastWritten.pos.copy(object.position);
 		entry.lastWritten.quat.copy(object.quaternion);
+		// B4: out of bounds. Inside the write-back loop the object pose is already
+		// in hand, so this costs one comparison per dynamic body per frame. The
+		// ACTION runs after the loop: 'delete' splices the bodies array, and
+		// mutating the array a forEach is walking silently skips the next entry.
+		if (object.position.y < oobLimit && !entry.oob) pendingOob.push(entry);
 		// CL-C C3: exact-ish speed feed on the initiator (velocity node)
 		noteObjectPose(object.uuid, object.position.x, object.position.y, object.position.z);
 		if (broadcast && peer) {
@@ -1023,6 +1218,7 @@ function step(now) {
 			}
 		}
 	});
+	pendingOob.forEach((entry) => handleOutOfBounds(entry, oobActionNow));
 	objectsGroup.update((value) => value);
 }
 
@@ -1145,6 +1341,11 @@ export function stopSimulation(opts = {}) {
 	suspendedForRun.forEach((uuid) => resumeAnimation(uuid));
 	suspendedForRun = [];
 
+	clearTimeout(oobTimer);
+	oobTimer = null;
+	oobCount = 0;
+	groundCollider = null;
+	groundHandle = -1;
 	world?.free?.();
 	world = null;
 	eventQueue?.free?.();
@@ -1218,6 +1419,19 @@ export function physicsPeerDisconnected(peerId) {
 	if (get(remoteSimulating) === peerId) remoteSimulating.set(null);
 }
 
+/** B4: test/debug view of the world-level state (ground, bounds, timing) */
+export function physicsWorldDebug() {
+	return {
+		running: !!world,
+		groundHandle,
+		groundEnabled: !!groundCollider,
+		groundTop: groundCollider ? (get(scenePhysicsGround).height ?? 0) : null,
+		bodies: bodies.length,
+		ownerHandles: [...colliderOwner.keys()],
+		oobPending: oobCount
+	};
+}
+
 /** test/debug view of the live bodies */
 export function physicsDebug() {
 	return bodies.map((entry) => ({
@@ -1229,6 +1443,9 @@ export function physicsDebug() {
 		sleeping: entry.body?.isSleeping?.() ?? null,
 		linvel: entry.body?.linvel?.() ?? null,
 		angvel: entry.body?.angvel?.() ?? null,
+		oob: !!entry.oob,
+		colliders: entry.colliders.map((/** @type {any} */ c) => c.handle),
+		ccd: entry.body?.isCcdEnabled?.() ?? null,
 		bodyRot: entry.body?.rotation?.() ?? null
 	}));
 }

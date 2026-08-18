@@ -5,6 +5,7 @@ import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
 import { colliderSpecOf } from './colliderSpec';
 import { wireframeActive } from './viewMode';
+import { scenePhysicsGround } from './scenePhysics';
 
 // CL-A A7: collider visualization (the lightHelpers pattern). Per tracked
 // object a wireframe built FROM colliderSpecOf — the SAME spec physics
@@ -23,6 +24,11 @@ export const colliderVizObjects = writable(new Set());
 /** @type {Map<string, {object: any, group: any, key: string, localCenter: any}>} */
 const entries = new Map();
 /** @type {any} */ let proxyRoot = null;
+/** B4: the scene ground plane's own proxy — the ground IS a collider, so this is
+ * where it is shown. Deliberately NOT drawn by moving Grid.svelte: grid settings
+ * are LOCAL prefs while the ground is SHARED scene state, and coupling them
+ * would make one peer's grid pref look like scene data. @type {any} */
+let groundProxy = null;
 let started = false;
 
 const COLLIDER_COLOR = 0x22c55e; // green
@@ -134,6 +140,52 @@ function disposeEntry(uuid, entry) {
 	entries.delete(uuid);
 }
 
+/** B4: a translucent quad + outline at the ground height, rebuilt on change. */
+function syncGround() {
+	if (!proxyRoot) return;
+	const cfg = get(scenePhysicsGround);
+	const wanted = get(showColliders) && cfg.enabled;
+	if (groundProxy && (!wanted || groundProxy.userData.groundHeight !== cfg.height)) {
+		proxyRoot.remove(groundProxy);
+		groundProxy.children.forEach((/** @type {any} */ child) => {
+			child.geometry.dispose();
+			child.material.dispose();
+		});
+		groundProxy = null;
+	}
+	if (!wanted || groundProxy) return;
+	const group = new THREE.Group();
+	group.name = 'collider-ground';
+	// 40 m of it, not the collider's real 1000 m: this is an affordance for
+	// "the floor is here", and a kilometre-wide translucent sheet is a fog bank
+	const size = 40;
+	const plane = new THREE.Mesh(
+		new THREE.PlaneGeometry(size, size),
+		new THREE.MeshBasicMaterial({
+			color: COLLIDER_COLOR,
+			transparent: true,
+			opacity: 0.08,
+			side: THREE.DoubleSide,
+			// depthWrite stays TRUE (the documented postprocessing trap): the AO and
+			// outline passes read the depth buffer, so a non-depth-writing surface gets
+			// the shading of whatever is behind it painted across its face. The low
+			// opacity is what keeps it out of the way instead.
+			depthWrite: true
+		})
+	);
+	plane.rotation.x = -Math.PI / 2;
+	const outline = new THREE.LineSegments(
+		new THREE.EdgesGeometry(new THREE.PlaneGeometry(size, size)),
+		lineMaterial(COLLIDER_COLOR)
+	);
+	outline.rotation.x = -Math.PI / 2;
+	group.add(plane, outline);
+	group.position.y = cfg.height ?? 0;
+	group.userData.groundHeight = cfg.height;
+	proxyRoot.add(group);
+	groundProxy = group;
+}
+
 function sync() {
 	const scene = get(globalScene);
 	const group = get(objectsGroup);
@@ -169,6 +221,7 @@ function sync() {
 	[...entries.entries()].forEach(([uuid, entry]) => {
 		if (!tracked.has(uuid) || !group.getObjectByProperty('uuid', uuid)) disposeEntry(uuid, entry);
 	});
+	syncGround();
 }
 
 const followPos = new THREE.Vector3();
@@ -179,7 +232,7 @@ const followQuat = new THREE.Quaternion();
  * entirely in wireframe view mode (they'd render as junk). */
 export function updateColliderHelpers() {
 	if (!proxyRoot) return;
-	proxyRoot.visible = entries.size > 0 && !wireframeActive();
+	proxyRoot.visible = (entries.size > 0 || !!groundProxy) && !wireframeActive();
 	if (!proxyRoot.visible) return;
 	entries.forEach((entry) => {
 		entry.object.updateMatrixWorld();
@@ -216,6 +269,8 @@ export function startColliderHelpers() {
 		sync();
 	});
 	colliderVizObjects.subscribe(() => sync());
+	// B4: the ground proxy follows the shared config, not an object
+	scenePhysicsGround.subscribe(() => syncGround());
 }
 
 /** test/debug view of the live proxies */
@@ -226,4 +281,9 @@ export function colliderHelpersDebug() {
 		pieces: entry.group.children.length,
 		visible: !!proxyRoot?.visible
 	}));
+}
+
+/** B4: test/debug view of the ground affordance */
+export function groundHelperDebug() {
+	return groundProxy ? { y: groundProxy.position.y, visible: !!proxyRoot?.visible } : null;
 }

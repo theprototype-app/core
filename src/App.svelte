@@ -45,6 +45,7 @@
   import { startShaderSync } from '$lib/shaderSync'
   import { startHudSync } from '$lib/hudSync'
   import HudLayer from './components/hud/HudLayer.svelte'
+  import HudEditor from './components/editors/HudEditor.svelte'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast } from './stores/appStore'
   import { get } from 'svelte/store'
@@ -278,6 +279,7 @@
 <AnimationWindow />
 <UvEditor />
 <SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>
+<HudEditor />
 <Explorer />
 <TextEditorWindow />
 <ImagePreviewWindow />

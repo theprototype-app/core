@@ -36,6 +36,8 @@ export const animationClose = writable(true);
 // UV editor (see and edit the selected mesh's texture coordinates) — Flow "+" menu.
 export const uvEditorClose = writable(true);
 export const shaderEditorClose = writable(true);
+// A4: the HUD editor, the 6th FLOW_FAMILY dock tab
+export const hudEditorClose = writable(true);
 // Explorer asset browser (95) — folder hud button toggles it
 export const explorerClose = writable(true);
 export const objectListClose = writable(true);

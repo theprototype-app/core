@@ -8,7 +8,10 @@ import { moduleNodeGroups } from './moduleSDK';
 import { particlePreset } from './particlePresets';
 
 /**
- * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle', min?: number, max?: number, step?: number, options?: string[] }} NodeParam
+ * A1: `kind: 'text'` is a free-text param. It writes on COMMIT (change/blur),
+ * never per keystroke — a node edit replicates the whole node, so an input-time
+ * write is one broadcast per character. `placeholder`/`maxLength` are hints for it.
+ * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text', min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
  * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[] }} NodeSpec
  */
 

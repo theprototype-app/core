@@ -27,6 +27,7 @@
 	import ObjectSelectorNode from './nodes/ObjectSelectorNode.svelte';
 	import AnimationNode from './nodes/AnimationNode.svelte';
 	import HudNode from './nodes/HudNode.svelte';
+	import GameCameraNode from './nodes/GameCameraNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
@@ -133,6 +134,15 @@
 		hudbutton: HudNode,
 		hudtimer: HudNode,
 		hudlist: HudNode,
+		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
+		// setcamera/gamestart get their own card for the camera picker (see GameNode).
+		setgamestate: AnimationNode,
+		ongamestate: AnimationNode,
+		setvariable: AnimationNode,
+		getvariable: AnimationNode,
+		gametime: AnimationNode,
+		setcamera: GameCameraNode,
+		gamestart: GameCameraNode,
 		...moduleTypes
 	};
 

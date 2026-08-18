@@ -52,6 +52,70 @@ export const nodeCatalog = [
 		]
 	},
 	{
+		// 21-D6: THE GAME SHELL — the things a HUD action can target. Core had no notion
+		// of a game running at all (play mode is per-viewer and unreplicated), so a Start
+		// button had nothing to write to.
+		group: 'Game',
+		items: [
+			// the action a Start button wires to. Acts on the trigger's STAMP EDGE.
+			{
+				type: 'setgamestate',
+				label: 'Set Game State',
+				defaults: { state: 'playing', outcome: '' },
+				params: [
+					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
+					{ key: 'outcome', kind: 'text', placeholder: 'won / lost', maxLength: 40 }
+				]
+			},
+			// the event half: pulses when the game ENTERS (or leaves) a state, so screens and
+			// logic can react without polling
+			{
+				type: 'ongamestate',
+				label: 'On Game State',
+				defaults: { state: 'playing', edge: 'enter', pulse: 0.3 },
+				params: [
+					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
+					{ key: 'edge', kind: 'select', options: ['enter', 'exit'] }
+				]
+			},
+			// LOCAL on every peer, from a replicated trigger — the house rule. A peer's node
+			// must never move another peer's camera, so each one decides for itself and the
+			// views converge because the TRIGGER replicated, not the camera.
+			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '', restore: false } },
+			// "which camera does the game start from" — placed in the SCENE graph. Every peer
+			// acts on it when the state enters `playing`, including a late joiner, which is
+			// what makes it the answer rather than a one-shot button action.
+			{ type: 'gamestart', label: 'Game Start', defaults: { camera: '', state: 'playing' } },
+			// variables: the shared numbers a game keeps (score, lives, difficulty). They
+			// ride the same singleton, so there is one latest-wins rule for all game state.
+			{
+				type: 'setvariable',
+				label: 'Set Variable',
+				defaults: { name: 'score', value: 0, op: 'set' },
+				params: [
+					{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 },
+					{ key: 'op', kind: 'select', options: ['set', 'add', 'subtract'] }
+				]
+			},
+			{
+				type: 'getvariable',
+				label: 'Get Variable',
+				defaults: { name: 'score', fallback: 0 },
+				params: [{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 }]
+			},
+			// the round clock, derived from the shared startedAt stamp — no clock of its own
+			{
+				type: 'gametime',
+				label: 'Game Time',
+				defaults: { read: 'elapsed', length: 60 },
+				params: [
+					{ key: 'read', kind: 'select', options: ['elapsed', 'remaining', 'round', 'playing'] },
+					{ key: 'length', kind: 'range', min: 1, max: 3600, step: 1 }
+				]
+			}
+		]
+	},
+	{
 		// A3: the core HUD group. Nodes supply DATA and receive EVENTS; the HUD
 		// DOCUMENT owns WHERE things are, so every node here names an element by id
 		// rather than carrying a position.

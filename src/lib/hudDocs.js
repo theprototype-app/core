@@ -24,6 +24,9 @@
 import { writable, get } from 'svelte/store';
 // 21-D1: the kind REGISTRY. hudKinds imports nothing, so this stays a leaf.
 import { HUD_KINDS as REGISTERED_KINDS, defaultsForKind, styleDefaultsForKind, kindDef } from './hudKinds';
+// 21-D6: a screen can follow the GAME STATE. gameState is a leaf too, so this closes no
+// cycle — and it is what lets a menu hide itself when the game starts, with no wiring.
+import { gameState } from './gameState';
 
 /** The scene-wide HUD, and the only key the v1 UI creates. */
 export const HUD_SCENE_KEY = 'scene';
@@ -47,7 +50,7 @@ export const HUD_KINDS = REGISTERED_KINDS;
 /**
  * @typedef {{id: string, kind: string, anchor: string, x: number, y: number, w: number,
  *   h: number, z: number, label: string, bind?: string, style?: any, at?: number}} HudElement
- * @typedef {{id: string, name: string, elements: HudElement[]}} HudScreen
+ * @typedef {{id: string, name: string, showWhile: string, elements: HudElement[]}} HudScreen
  * @typedef {{screens: HudScreen[], active: string, changedAt: number}} HudDoc
  */
 
@@ -160,6 +163,10 @@ export function normalizeHudScreen(screen, i = 0) {
 		...(screen ?? {}),
 		id,
 		name: typeof screen?.name === 'string' && screen.name ? screen.name : id,
+		// 21-D6: "show this screen while the game is X". Absent means "only when asked", so
+		// every existing document is byte-unchanged. This is what makes a late joiner see
+		// the right screen: it never witnessed the transition that switched everyone else.
+		showWhile: typeof screen?.showWhile === 'string' ? screen.showWhile : '',
 		elements: (Array.isArray(screen?.elements) ? screen.elements : []).map(normalizeHudElement)
 	};
 }
@@ -170,6 +177,26 @@ export function normalizeHudDoc(doc) {
 	const list = screens.length ? screens : [normalizeHudScreen({ id: 'main', name: 'Main' }, 0)];
 	const active = list.some((/** @type {HudScreen} */ s) => s.id === doc?.active) ? doc.active : list[0].id;
 	return { ...(doc ?? {}), screens: list, active, changedAt: num(doc?.changedAt, 0) };
+}
+
+/**
+ * Find a screen by its ID **or its NAME**.
+ *
+ * Users think in names — the picker shows names, and a node authored by hand or by a
+ * template will carry whichever the author had in front of them. Accepting both is the
+ * difference between a screen switch that works and one that silently renders NOTHING
+ * (which is exactly what a name in an id field did).
+ * @param {HudDoc|null} doc @param {string|null|undefined} idOrName @returns {HudScreen|null}
+ */
+export function resolveScreen(doc, idOrName) {
+	if (!doc || idOrName === null || idOrName === undefined || idOrName === '') return null;
+	const wanted = String(idOrName);
+	return (
+		doc.screens.find((s) => s.id === wanted) ??
+		doc.screens.find((s) => s.name === wanted) ??
+		doc.screens.find((s) => s.name.toLowerCase() === wanted.toLowerCase()) ??
+		null
+	);
 }
 
 /** @param {string} key @returns {HudDoc|null} */
@@ -207,16 +234,25 @@ export function hudDocKeys() {
 export function visibleScreen(key) {
 	const doc = hudDocOf(key);
 	if (!doc) return null;
+	// 1. an explicit LOCAL choice always wins — that is the per-peer half.
 	const override = get(hudScreenOverride)[key];
-	const id = override === undefined || override === null ? doc.active : override;
-	return doc.screens.find((s) => s.id === id) ?? null;
+	if (override !== undefined && override !== null) return resolveScreen(doc, override);
+	// 2. a screen bound to the current GAME STATE. No wiring, and it is what makes a late
+	// joiner land on the right screen — it never saw the transition everyone else did.
+	const state = get(gameState).state;
+	const byState = doc.screens.find((s) => s.showWhile && s.showWhile === state);
+	if (byState) return byState;
+	// 3. otherwise the document's own default.
+	return resolveScreen(doc, doc.active);
 }
 
 /** Show a screen, LOCALLY. A3's `hudscreen` node calls this on every peer from the
  * replicated flow graph, which is why it needs no message.
  * @param {string} key @param {string|null} screenId */
 export function showHudScreen(key, screenId) {
-	hudScreenOverride.update((all) => ({ ...all, [key]: screenId }));
+	// resolve to an ID here, so nothing downstream has to know a name was given
+	const resolved = screenId === null ? null : resolveScreen(hudDocOf(key), screenId)?.id ?? screenId;
+	hudScreenOverride.update((all) => ({ ...all, [key]: resolved }));
 }
 
 /** @param {string} key @param {string} elementId @returns {HudElement|null} */

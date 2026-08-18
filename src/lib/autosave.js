@@ -14,6 +14,7 @@ import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImpor
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
 import { hudDocs, hudDocsSnapshot, hudDocsRestore } from './hudDocs';
+import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
@@ -152,6 +153,8 @@ async function saveSnapshot() {
 		// would need re-keying through the userData.__uuid stamp like multiMaterial does.
 		// The v1 UI only creates the 'scene' key, which is unaffected.
 		hud: hudDocsSnapshot(),
+		// 21-D6: same reasoning - session state with nowhere in a GLTF to live
+		game: gameStateSnapshot(),
 		// #20 P5: the selection, any open edit session, and the panel LAYOUT. This is the
 		// path that makes Restore (and the auto-restore setting) bring your windows back,
 		// while a plain reload stays a clean slate.
@@ -332,6 +335,7 @@ async function applyRestore(snapshot) {
 		scenePostRestore(snapshot.post, true);
 		// same reasoning: replicate, so a restore into a live room brings the HUD too
 		hudDocsRestore(snapshot.hud, true, true);
+		gameStateRestore(snapshot.game, true);
 		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
 		// reload never reaches here, which is exactly the point.
 		if (snapshot.workspace) applyEditResume(snapshot.workspace);
@@ -416,6 +420,8 @@ export function startAutosave() {
 	// document would sit in the snapshot with nothing ever triggering one being
 	// written (the scenePost lesson, and the notes-disappear-on-reload one before it)
 	hudDocs.subscribe(() => markDirty());
+	// and once more: a game's state changes touch no object either
+	gameState.subscribe(() => markDirty());
 	setInterval(() => {
 		if (dirty) saveSnapshot();
 	}, INTERVAL_MS);

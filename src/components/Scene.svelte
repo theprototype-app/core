@@ -28,6 +28,7 @@
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
 	import { startPlayInteract, tickPlayInteract, stopPlayInteract } from '$lib/playInteract';
+	import { tickMoveSmoothing } from '$lib/moveSmoothing';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
@@ -246,6 +247,9 @@
 		// 21-B B3: play-mode grab/carry. The ray is NDC (0,0) every frame, so it
 		// belongs in the frame loop rather than on a pointer event.
 		tickPlayInteract(delta, camera.current);
+		// 21-B: ease between a remote peer's ~10 Hz physics poses (no-op unless a
+		// remote peer is simulating and something is mid-ease)
+		tickMoveSmoothing();
 		// PFX-C follow-up: while presenting, window.rAF is suspended — pump the
 		// flow tick (animations + particle sweep + the physics postTick) from
 		// threlte's XR-aware loop or everything freezes the moment VR starts

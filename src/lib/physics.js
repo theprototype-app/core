@@ -1533,12 +1533,17 @@ export function setBodyVelocity(uuid, linvel, angvel) {
 /** @param {any} data */
 export function applySimulate(data) {
 	remoteSimulating.set(data.running ? data.peerId : null);
+	// a finished run must not leave an interpolation half-applied
+	if (!data.running) import('./moveSmoothing').then((m) => m.clearMoveSmoothing()).catch(() => {});
 	if (data.running && !data.paused) showToast('▶ ' + nameOf(data.peerId) + ' is simulating physics');
 }
 
 /** @param {string} peerId */
 export function physicsPeerDisconnected(peerId) {
-	if (get(remoteSimulating) === peerId) remoteSimulating.set(null);
+	if (get(remoteSimulating) === peerId) {
+		remoteSimulating.set(null);
+		import('./moveSmoothing').then((m) => m.clearMoveSmoothing()).catch(() => {});
+	}
 	// B5: drop that peer's grab claim, or their crate stays theirs forever
 	bodies.forEach((entry) => {
 		if (entry.holdPeer === peerId) entry.holdPeer = null;

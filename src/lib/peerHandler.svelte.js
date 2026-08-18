@@ -28,6 +28,7 @@ import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate, physicsExternalMove, applyThrow } from '$lib/physics';
+import { noteRemoteMove } from '$lib/moveSmoothing';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
@@ -40,7 +41,7 @@ import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localS
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
-import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
+import { lockedObjects, selectedObject, peerHands, objectsGroup } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
 
@@ -378,7 +379,15 @@ export class PeerConnection {
 				} else if(data.type == 'name') {
 					changeName(data.uuid, data.name);
 				} else if(data.type == 'move') {
+					// the pose BEFORE the write, so a remote physics stream can be eased
+					// across rather than stepped through (moveSmoothing; ~10 Hz on the wire
+					// looked like 10 fps on the watching peer)
+					const movedObject = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
+					const movedFrom = movedObject
+						? { pos: movedObject.position.clone(), quat: movedObject.quaternion.clone() }
+						: null;
 					moveGeometry(data.uuid, data.pos, data.rot, data.scale);
+					if (movedFrom) noteRemoteMove(data.uuid, movedObject, movedFrom);
 					// P-A: mid-sim, a peer's move stream on a dynamic body becomes a
 					// kinematic hold (drops back to dynamic after 250ms of silence).
 					// B5: the sending peer is the CLAIM, so two carry streams cannot

@@ -215,15 +215,24 @@ h.run(async () => {
 	void sentSpeed;
 
 	// the crate flies the way it was thrown, and both peers agree where it lands
+	// wait for AGREEMENT rather than a fixed sleep: the watching peer interpolates
+	// the 10 Hz stream now, so mid-settle it is legitimately up to one interval
+	// behind. At rest the two converge exactly.
 	await A.page.waitForTimeout(2500);
+	await h.eventually(
+		async () => {
+			const a = await posOf(A.page, crate);
+			const b = await posOf(B.page, crate);
+			return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+		},
+		(gap) => gap < 0.6,
+		'2.8 A and B agree where it landed, over the ordinary move stream (no new state on the wire)'
+	);
 	const restA = await posOf(A.page, crate);
 	const restB = await posOf(B.page, crate);
 	const travelled = Math.hypot(restA[0] - message.pos[0], restA[2] - message.pos[2]);
 	h.check(travelled > 0.5, '2.7 it actually travelled (' + travelled.toFixed(2) + ' m in XZ)');
-	h.check(
-		Math.hypot(restA[0] - restB[0], restA[1] - restB[1], restA[2] - restB[2]) < 0.6,
-		'2.8 A and B agree where it landed, over the ordinary move stream (no new state on the wire)'
-	);
+
 
 	// ---------------------------------------------------------------- section 3
 	console.log('\n=== 3. what applyThrow refuses ===');
@@ -295,6 +304,73 @@ h.run(async () => {
 			')'
 	);
 	h.check(afterDrop?.holdPeer === null, '4.4 ...and the grab claim is dropped, not left hostage');
+
+	// ---------------------------------------------------------------- section 5
+	console.log('\n=== 5. the flight is SMOOTH on the peer watching it ===');
+
+	// The initiator broadcasts `move` on a 100 ms gate, so a watching peer used to
+	// receive ~10 poses a second and SNAP to each one — a 20 m/s throw arrived as a
+	// slideshow. The metric is how many DISTINCT poses that peer's scene actually
+	// passes through per second: a stepped stream can only produce as many as it
+	// receives, however fast the sampler runs.
+	const B2 = await h.setupPage(browser, 'B2');
+	// B2 DIALS: A is already in a session, so its connect input is gone
+	await h.connect(B2, A);
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await phys(
+		A.page,
+		'return p.applyThrow({ uuid: "' + crate + '", pos: [0, 6, 0], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] })'
+	);
+	await A.page.waitForTimeout(2500);
+
+	/** sample as fast as rAF allows for ~1.2 s and count the distinct poses */
+	// The VISUAL property — how many distinct poses a viewer passes through per
+	// second — is bound by that page's own frame rate, and a headless peer here
+	// renders at ~4 fps (measured: 5 rAF samples in 1.24 s, fronted or not). So
+	// this asserts the MECHANISM, which is frame-rate independent, and leaves the
+	// look itself to the user's machine.
+	await B2.page.bringToFront();
+	await B2.page.waitForTimeout(400);
+	await phys(
+		A.page,
+		'return p.applyThrow({ uuid: "' +
+			crate +
+			'", pos: [0, 6, 0], rot: [0, 0, 0], linvel: [7, 3, 0], angvel: [0, 0, 0] })'
+	);
+	await A.page.waitForTimeout(900);
+	const smoothing = await B2.page.evaluate(() => window.__stores.moveSmoothing.moveSmoothingDebug());
+	h.check(
+		Array.isArray(smoothing?.intervals) && smoothing.intervals.length > 0,
+		'5.1 the watching peer interpolates the move stream instead of snapping to each pose (' + JSON.stringify(smoothing) + ')'
+	);
+	const measured = smoothing.intervals[0] ?? 0;
+	h.check(
+		measured >= 50 && measured <= 250,
+		'5.2 ...across the sender cadence it MEASURED rather than one it assumed (' + measured + ' ms)'
+	);
+
+	// Interpolation may change WHEN a pose is reached; it must never change WHICH.
+	// Comparing the two peers mid-settle measures the 100 ms broadcast gate rather
+	// than this module (A rolls on between packets), so park the crate on a known
+	// pose with no velocity and let both sides come to rest on it.
+	await phys(
+		A.page,
+		'return p.applyThrow({ uuid: "' +
+			crate +
+			'", pos: [3, 0.5, 0], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] })'
+	);
+	await A.page.waitForTimeout(2500);
+	const parkedOnA = await posOf(A.page, crate);
+	const parkedOnB2 = await posOf(B2.page, crate);
+	const drift = Math.hypot(
+		parkedOnA[0] - parkedOnB2[0],
+		parkedOnA[1] - parkedOnB2[1],
+		parkedOnA[2] - parkedOnB2[2]
+	);
+	h.check(
+		drift < 0.05,
+		'5.3 interpolation adds no drift — a parked crate lands on the SAME pose on both peers (' + drift.toFixed(4) + ' m apart)'
+	);
 
 	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
 	await h.finish(browser);

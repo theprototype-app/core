@@ -78,6 +78,20 @@
 		const t = setTimeout(measure, 120);
 		return () => clearTimeout(t);
 	});
+
+	// ...and on the neighbours RESIZING, which the triggers above miss entirely: the
+	// Connect pill's width changes with its own state (a peer connects, the host name
+	// appears, the drawer opens) without the window resizing or Connect re-docking, and
+	// every one of those moves the wall this row measures itself against.
+	$effect(() => {
+		if (typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver(() => measure());
+		for (const selector of ['#logo-menu', ...NEIGHBOURS]) {
+			const el = document.querySelector(selector);
+			if (el) observer.observe(el);
+		}
+		return () => observer.disconnect();
+	});
 </script>
 
 <svelte:window onresize={measure} />

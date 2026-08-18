@@ -15,6 +15,8 @@ import { animations, animationsSnapshot, animationsRestore } from './animationPr
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
 import { environment, environmentSnapshot, environmentRestore } from './environment';
 import { scenePhysicsState_, scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
+import { hudDocs, hudDocsSnapshot, hudDocsRestore } from './hudDocs';
+import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
@@ -156,6 +158,14 @@ async function saveSnapshot() {
 		// the module itself documents the shared track as not persisted.
 		environment: environmentSnapshot(),
 		physics: scenePhysicsSnapshot(),
+		// A2: a HUD is screen-space scene data with nowhere in a GLTF to live, so it
+		// rides beside the snapshot for the same reason the post stack does. NOTE the
+		// GLTF re-uuid trap: an OBJECT-keyed document would orphan on every reload and
+		// would need re-keying through the userData.__uuid stamp like multiMaterial does.
+		// The v1 UI only creates the 'scene' key, which is unaffected.
+		hud: hudDocsSnapshot(),
+		// 21-D6: same reasoning - session state with nowhere in a GLTF to live
+		game: gameStateSnapshot(),
 		// #20 P5: the selection, any open edit session, and the panel LAYOUT. This is the
 		// path that makes Restore (and the auto-restore setting) bring your windows back,
 		// while a plain reload stays a clean slate.
@@ -338,6 +348,9 @@ async function applyRestore(snapshot) {
 		// is what an older snapshot without these fields means)
 		environmentRestore(snapshot.environment, true);
 		scenePhysicsRestore(snapshot.physics, true);
+		// same reasoning: replicate, so a restore into a live room brings the HUD too
+		hudDocsRestore(snapshot.hud, true, true);
+		gameStateRestore(snapshot.game, true);
 		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
 		// reload never reaches here, which is exactly the point.
 		if (snapshot.workspace) applyEditResume(snapshot.workspace);
@@ -423,6 +436,12 @@ export function startAutosave() {
 	// triggers one being written
 	environment.subscribe(() => markDirty());
 	scenePhysicsState_.subscribe(() => markDirty());
+	// A2: and once more — authoring a HUD touches no object, so without this the
+	// document would sit in the snapshot with nothing ever triggering one being
+	// written (the scenePost lesson, and the notes-disappear-on-reload one before it)
+	hudDocs.subscribe(() => markDirty());
+	// and once more: a game's state changes touch no object either
+	gameState.subscribe(() => markDirty());
 	setInterval(() => {
 		if (dirty) saveSnapshot();
 	}, INTERVAL_MS);

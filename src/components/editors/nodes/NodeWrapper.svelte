@@ -17,7 +17,12 @@
 		Effects: '#c084fc', // purple
 		Physics: '#f87171', // red
 		Logic: '#2dd4bf', // teal
-		Triggers: '#facc15' // yellow
+		Triggers: '#facc15', // yellow
+		HUD: '#f0abfc', // A3: pink-violet, distinct from Effects' purple
+		Game: '#34d399', // 21-D6: emerald — the game shell
+		// 'Object Flow' was MISSING, so flowinput/flowoutput/objectflow fell through to
+		// the module-node gray and read as third-party cards. Fixed while adding HUD.
+		'Object Flow': '#818cf8' // indigo
 	};
 	$: group = groupOf(type);
 	// module groups → gray, user-designed custom nodes → user accent

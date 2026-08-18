@@ -52,6 +52,42 @@ And when two handlers can claim the same KEY (two Escape listeners, in faceEdit 
 toolbox), let them agree through the EVENT (`defaultPrevented`) — a one-shot store flag is
 consumed by whichever runs first and the other acts anyway.
 
+## A THIRD kind of state: PLAYER-SET values (21-D4)
+
+Before this batch every piece of state was one of two things: AUTHORED (a document,
+replicated, saved, undoable) or DERIVED (computed by every peer from replicated data,
+never sent — golden rule 8). A HUD slider is neither. It is set by the PLAYER at play
+time and nothing already on the wire lets a peer compute it.
+
+The rule that came out of it: **default such a value to LOCAL, and make sharing an
+explicit per-element opt-in.** A volume slider is mine; a difficulty setting is the
+host's. Sharing everything means my own volume changes everyone else's — a failure
+nobody files as a sync bug, because it looks like the feature working.
+
+When it does travel, it is latest-wins **PER ITEM**, not whole-map, and that is the
+difference from a document: a document has ONE author per gesture (so whole-doc +
+gesture collapse is right), while player-set values are touched by DIFFERENT PEOPLE AT
+ONCE — that is what a shared settings menu IS. So each item carries its own monotonic
+stamp and refuses only a STRICTLY older write. And they are PLAY-TIME state: a restore
+clears them, and no snapshot holds them, or a loaded scene inherits the last game's
+settings.
+
+`hudDocs.js`'s `hudValues`/`setHudValue`/`sharedHudValues` + `hudSync`'s
+`hudvalue`/`hudvalues`/`gethudvalues` are the worked example.
+
+## Replicate the DATA, decide the VIEW locally (21-D6)
+
+"Press Start and everyone's camera moves to the play camera" needs NO camera message.
+The press already replicates; the game STATE already replicates; so every peer reads
+the same state and calls `startCameraPreview` **itself**. Nobody's viewpoint is ever
+forced from another machine, which is the same house rule as "a peer's module must
+never move your camera" and `nodetrigger`.
+
+The one thing this model always needs is a CATCH-UP for the peer that saw no
+transition: a late joiner arrives with the state already set, so there is no edge to
+react to (`syncGameCameraNow`). And whatever latch stops that catch-up from repeating
+must be set on SUCCESS, not on intent — see the CLAUDE.md gotcha.
+
 ## The cheapest replicated feature: put it on `userData`
 
 Before designing messages, ask whether the feature is really "extra settings on an
@@ -118,6 +154,27 @@ and the `__localOnly`/`__uuid` markers all ride this. The recipe:
    (a camera follow session, a marker overlay, click-mode prefs) stays LOCAL: the
    editor camera belongs to whoever is driving it, and a peer's data must never yank
    another viewer's viewpoint.
+   **A KEYED DOCUMENT is a solved shape — copy `shaderGraph.js` + `shaderSync.js`
+   rather than inventing one** (`flowGraphs`, `animations`, `shaderGraphs`, `hudDocs`
+   are all this): the DATA module is a LEAF (svelte/store only) with `normalize*` at
+   every boundary, a SINGLE write path, and `registerXBroadcast`/`registerXHistory`
+   SEAMS; a second module closes the loop with the wire + the history kind, and it is
+   the one whose BODY calls `registerHistoryKind`, so nothing in history's import
+   subtree may reach it. Key it `'scene' | objectUuid` even when the v1 UI only ever
+   creates `'scene'` — it costs nothing now and retrofitting a key later is a
+   migration. Two rules that shape carries and a fresh implementation forgets: the
+   stamp must be **MONOTONIC per key** (`max(Date.now(), prev + 1)`, because a drag
+   writes several times inside one millisecond and a latest-wins guard then drops all
+   but the first) and the receiver must refuse only a **STRICTLY older** document (an
+   ordered DataConnection means an EQUAL stamp arrived later).
+   **Split the AUTHORED document from its DERIVED runtime half, and only replicate the
+   first.** A HUD document says where things are and rides the wire; what each element
+   SAYS is computed from the already-replicated flow graph, so every peer derives the
+   same string and the whole feature adds ZERO new runtime message types — the golden
+   rule 8 "deterministic" branch, applied to UI. Anything a viewer alone should feel
+   stays a third, LOCAL store: which HUD screen you are looking at is per-peer ON
+   PURPOSE (one player on the start menu while another plays), which means the node
+   card has to SAY SO, or it is filed as "my peer doesn't see the menu".
 5. **Where does it live in the scene?** `objectsGroup` children = replicated, listed,
    GLTF-synced, anyone edits. Scene-root groups (fixed `name`) = local/derived —
    helpers, env rig, module content; rebuild them from state; they need
@@ -176,7 +233,15 @@ and the `__localOnly`/`__uuid` markers all ride this. The recipe:
    history applies, so replays can't re-record. Object presence uses
    `recordObjectPresence('create'|'delete', object)` (ObjectLoader snapshot, 5 MB cap);
    batches use `recordTransformSet(items)`; bytes-backed content has its own kind
-   (`animimport`). An entry whose replay RE-BROADCASTS content that peers hash for
+   (`animimport`).
+   **Your applier learns the DIRECTION by identity, not from a flag.** `applyState`
+   passes `entry.before` or `entry.after` AS the `state` argument, so the idiom is
+   `state === entry.before` (`look`, `anim`, `flowgraph` all do this). Reading a
+   `state.present` flag that does not exist makes it ALWAYS falsy, so UNDO works
+   perfectly and REDO silently restores `before` — shader graphs shipped that way and
+   it took cloning the module to notice (measured: 2 nodes -> undo 1 -> redo 1). Any
+   new kind's suite should undo AND redo, and check the value after each.
+   An entry whose replay RE-BROADCASTS content that peers hash for
    drift detection (flow nodes/edges → nodesync) must store SERIALIZED copies
    (`serializeNode`/`serializeEdge` shapes), never live editor objects — runtime-only
    fields would make the replayed broadcast hash differently (`'flownodes'` kind,

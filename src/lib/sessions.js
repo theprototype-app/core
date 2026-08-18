@@ -37,6 +37,8 @@ import {
 } from './moduleRequirements';
 import { disabledModules } from './moduleSDK';
 import { findNodeSpec } from './nodeCatalog';
+import { hudDocsSnapshot, hudDocsRestore } from './hudDocs';
+import { gameStateSnapshot, gameStateRestore } from './gameState';
 import { sceneCommand, sendObjects } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
@@ -179,6 +181,13 @@ export function buildSessionPayload(name) {
 			// A6.2: {id, version} — the handshake's shape, so there is one shape for
 			// "which modules" in the whole system.
 			...(mods.length ? { modules: mods } : {}),
+			// A2: the HUD, on the same reasoning and the same terms — scene data beside the
+			// objects, null when nothing is authored so a default scene saves byte-identical
+			hud: hudDocsSnapshot({
+				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+			}),
+			// 21-D6: the game shell, null when pristine so a scene with no game is unchanged
+			game: gameStateSnapshot(),
 			camera: camera
 				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 				: null,
@@ -680,6 +689,10 @@ export async function applySession(payload) {
 	environmentRestore(payload.environment, true);
 	scenePhysicsRestore(payload.physics, true);
 	musicRestore(payload.music, true);
+	// and the HUD with it: loading a game scene into a live room must bring its overlay
+	hudDocsRestore(payload.hud ?? null, true, true);
+	// and the game with it: loading a game scene into a live room must bring its state
+	gameStateRestore(payload.game ?? null, true);
 	if (peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
 	/** @type {any} */
 	const camera = get(globalCamera);

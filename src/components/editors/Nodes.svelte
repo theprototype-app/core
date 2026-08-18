@@ -26,6 +26,8 @@
 	import SwitcherNode from './nodes/SwitcherNode.svelte';
 	import ObjectSelectorNode from './nodes/ObjectSelectorNode.svelte';
 	import AnimationNode from './nodes/AnimationNode.svelte';
+	import HudNode from './nodes/HudNode.svelte';
+	import GameCameraNode from './nodes/GameCameraNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
@@ -63,7 +65,35 @@
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { isValidFlowConnection, typeColor, replaceableInputEdges } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
-	import { peers, username, modulesOpen } from '../../stores/appStore';
+	import { peers, username, modulesOpen, flowFocus } from '../../stores/appStore';
+
+	// 21-D7: DEEP LINK — 'show me the node that drives this HUD element'. A write-once
+	// request that we act on and CLEAR, the inspectorScrollTo shape, so it cannot re-fire
+	// on an unrelated render. fitView over one node centres it without changing the zoom
+	// the user chose.
+	// runes mode: $effect, never $: . untrack, because focusRequested writes flowFocus and
+	// reads flowNodes - an effect that tracked its own write would loop.
+	$effect(() => {
+		const id = $flowFocus;
+		if (id) untrack(() => focusRequested(id));
+	});
+	function focusRequested(id: string) {
+		// CLEAR FIRST: a write-once request, so it cannot re-fire on the next unrelated
+		// render (inspectorScrollTo's rule).
+		flowFocus.set(null);
+		if (!($flowNodesStore as any[]).some((n) => n.id === id)) return;
+		// fitView only — the xyflow instance owns `selected` through its own binding, and
+		// writing it from here fights that binding for no gain. Centring IS the answer to
+		// "where is the node that drives this element".
+		setTimeout(() => {
+			try {
+				fitView({ nodes: [{ id }], duration: 200, maxZoom: 1.2 });
+			} catch {
+				/* the pane is not up yet */
+			}
+		}, 60);
+	}
+
 	// A6.4: ONE rewrite fixes three bugs that lived in this map.
 	//
 	// (1) It was `get(moduleNodeGroups)` — a NON-REACTIVE init-time read, so a module
@@ -127,7 +157,25 @@
 		playanim: PlayAnimNode, // 17-E A5
 		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
 		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip
-		animstate: AnimStateNode // 17-E F3: the readable half of it
+		animstate: AnimStateNode, // 17-E F3: the readable half of it
+		// A3: ONE generic card for the whole HUD group (the ShaderNode precedent)
+		hudscreen: HudNode,
+		hudtext: HudNode,
+		hudbar: HudNode,
+		hudbutton: HudNode,
+		hudtimer: HudNode,
+		hudlist: HudNode,
+		hudinput: HudNode,
+		hudset: HudNode,
+		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
+		// setcamera/gamestart get their own card for the camera picker (see GameNode).
+		setgamestate: AnimationNode,
+		ongamestate: AnimationNode,
+		setvariable: AnimationNode,
+		getvariable: AnimationNode,
+		gametime: AnimationNode,
+		setcamera: GameCameraNode,
+		gamestart: GameCameraNode,
 	};
 
 	// module node types default to the spec-driven AnimationNode unless the

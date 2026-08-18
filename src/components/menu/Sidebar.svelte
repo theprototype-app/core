@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { Archive, BookOpen, FileInput, FolderOpen, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2 } from '@lucide/svelte';
+	import { Archive, BookOpen, FileInput, FolderOpen, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
 	import '../../app.css';
+	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
 	import '../../styles/menu.css';
 	import { tick } from 'svelte';
 	import { fade } from 'svelte/transition';
@@ -164,6 +165,23 @@
 		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Puzzle size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Modules</span>
 		</button>
+		<!-- A5: a module's own toolbox, one row each, indented under Modules. This is
+		     what makes moduleSDK's JSDoc true — it already CLAIMED a sidebar Modules
+		     section that did not exist. Deliberately not a Controls HUD button: the
+		     corner HUD already reflows four buttons at <=600px and does not scale to N
+		     modules. The rows come from the SAME builder the viewport menu uses. -->
+		{#each buildToolboxItems($moduleToolboxes, $openToolboxes) as box (box.id)}
+			<button
+				id="open-toolbox-{box.id}"
+				class="side-row side-sub"
+				class:active={box.checked}
+				onclick={() => { box.action(); closeMenu.set(true); }}
+			>
+				<span class="side-ico"><Wrench size={14} aria-hidden="true" /></span>
+				<span class="flex-1 whitespace-nowrap">{box.label}</span>
+				{#if box.shortcut}<span class="side-hint">{box.shortcut}</span>{/if}
+			</button>
+		{/each}
 		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Archive size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
 		</button>
@@ -308,6 +326,17 @@
 		width: 1.25rem;
 		flex-shrink: 0;
 		text-align: center;
+	}
+	/* A5: a module toolbox row sits under the Modules row it belongs to */
+	.side-sub {
+		padding-left: 1.25rem;
+		font-size: 0.8125rem;
+	}
+	.side-hint {
+		margin-left: auto;
+		opacity: 0.55;
+		font-family: ui-monospace, monospace;
+		font-size: 0.6875rem;
 	}
 	.side-div {
 		margin: 0.35rem 0.25rem;

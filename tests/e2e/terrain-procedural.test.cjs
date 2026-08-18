@@ -401,14 +401,24 @@ h.run(async () => {
 		localStorage.setItem('inspector:sec:Geometry', 'open');
 		window.__stores.objectActions.selectObject(uuid, true);
 	}, flat.uuid);
-	await A.page.waitForTimeout(900);
-	const beforeSculpt = await A.page.evaluate(() => ({
-		rows: !!document.querySelector('#inspector-geometry'),
-		locked: !!document.querySelector('#geometry-locked'),
-		regen: !!document.querySelector('#terrain-regenerate'),
-		choice: !!document.querySelector('#geo-choice-falloff-island')
-	}));
-	h.check(beforeSculpt.rows && !beforeSculpt.locked, 'the Inspector shows the parametric Terrain rows');
+	// WAIT ON THE PANEL, never on a clock: a fixed sleep here asserts the scheduler,
+	// and on a loaded box (this suite after another) the section legitimately takes
+	// longer than a second to mount — measured, exactly these two checks went red in
+	// a battery and green alone.
+	const inspectorDom = () =>
+		A.page.evaluate(() => ({
+			rows: !!document.querySelector('#inspector-geometry'),
+			locked: !!document.querySelector('#geometry-locked'),
+			regen: !!document.querySelector('#terrain-regenerate'),
+			choice: !!document.querySelector('#geo-choice-falloff-island')
+		}));
+	await h.eventually(
+		inspectorDom,
+		(d) => d.rows && !d.locked,
+		'the Inspector shows the parametric Terrain rows',
+		20000
+	);
+	const beforeSculpt = await inspectorDom();
 	h.check(beforeSculpt.choice, 'the falloff param renders as named CHOICE chips (a new spec kind)');
 
 	// PIN the panel first: the point of the check below is that the lock appears
@@ -434,15 +444,13 @@ h.run(async () => {
 		`PREMISE: a sculpt session index-EXPANDS the mesh (${reseeded.verts} indexed -> ${sculpted.verts} soup) over the same ${sculpted.columns} columns, which is why the checks below compare the height FIELD and not the buffer`
 	);
 	h.check(sculpted.faceEdited, 'the stroke stamps faceEdited (the meshgeo commit does it) — the parametric rows LOCK');
-	const liveLock = await A.page.evaluate(() => ({
-		rows: !!document.querySelector('#inspector-geometry'),
-		locked: !!document.querySelector('#geometry-locked'),
-		regen: !!document.querySelector('#terrain-regenerate')
-	}));
-	h.check(
-		liveLock.locked && !liveLock.rows,
-		'the open Inspector says so and hides the rows, with no reselect'
+	await h.eventually(
+		inspectorDom,
+		(d) => d.locked && !d.rows,
+		'the open Inspector says so and hides the rows, with no reselect',
+		15000
 	);
+	const liveLock = await inspectorDom();
 	h.check(liveLock.regen, 'and offers an explicit way back: Regenerate (discards the sculpt)');
 
 	// and the same after the natural flow — leave sculpt (which deselects) and
@@ -451,15 +459,11 @@ h.run(async () => {
 		window.__stores.terrainSculpt.exitSculpt();
 		window.__stores.objectActions.selectObject(uuid, true);
 	}, flat.uuid);
-	await A.page.waitForTimeout(800);
-	const afterSculpt = await A.page.evaluate(() => ({
-		rows: !!document.querySelector('#inspector-geometry'),
-		locked: !!document.querySelector('#geometry-locked'),
-		regen: !!document.querySelector('#terrain-regenerate')
-	}));
-	h.check(
-		afterSculpt.locked && !afterSculpt.rows && afterSculpt.regen,
-		'leaving sculpt and reselecting shows the same locked state'
+	await h.eventually(
+		inspectorDom,
+		(d) => d.locked && !d.rows && d.regen,
+		'leaving sculpt and reselecting shows the same locked state',
+		15000
 	);
 
 	// the way back is CONFIRMED, then one geometry rebuild
@@ -479,8 +483,12 @@ h.run(async () => {
 	// the panel kept showing "Mesh edited" over a freshly parametric terrain, with
 	// no rows and no way back except reselecting. Verified by putting the old
 	// condition back: exactly this check goes red.
-	const rowsBack = await A.page.evaluate(() => !!document.querySelector('#inspector-geometry'));
-	h.check(rowsBack, 'the parametric rows come BACK — the panel notices the lock being cleared, not just set');
+	await h.eventually(
+		inspectorDom,
+		(d) => d.rows && !d.locked,
+		'the parametric rows come BACK — the panel notices the lock being cleared, not just set',
+		15000
+	);
 
 	// What the history really does here, stated rather than glossed, because it is a
 	// genuine limitation of the machinery and not what "undoable" would suggest: the

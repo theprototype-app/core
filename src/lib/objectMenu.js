@@ -230,9 +230,10 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					tooltip: locked ? lockedTooltip : 'Move control points, set thickness, insert or delete points',
 					action: () => import('./splineEdit').then((m) => m.enterSplineEdit(uuid))
 				},
-				// 21-C3: what a spline is FOR once it is a road. The carve is a pure function
-				// of (terrain params, spline) committed as ONE meshgeo, so moving a control
-				// point and carving again is the whole authoring loop.
+				// 21-C3/C4: what a spline is FOR once it is a road. Both entries are
+				// derived work: the carve is a pure function of (terrain params, spline)
+				// committed as one meshgeo, and the gates are recomputed from the same
+				// record by every peer, so moving a control point moves both.
 				{
 					label: 'Road',
 					icon: 'route',
@@ -244,7 +245,13 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						})),
 						...(terrainsInScene().length
 							? []
-							: [{ label: 'Carve into terrain', disabled: true, tooltip: 'No terrain in the scene — add one with Add ▸ Terrain' }])
+							: [{ label: 'Carve into terrain', disabled: true, tooltip: 'No terrain in the scene — add one with Add ▸ Terrain' }]),
+						{ section: 'Lap gates' },
+						...[4, 6, 8, 12].map((count) => ({
+							label: `${count} checkpoint gates`,
+							tooltip: 'Sensor boxes spaced along the tarmac — wire one to an On Enter node and a Counter',
+							action: () => import('./roadActions').then((m) => m.createLapGates(uuid, count))
+						}))
 					]
 				}
 			]),

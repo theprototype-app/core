@@ -45,6 +45,7 @@
 	import ShaderSidebar from './ShaderSidebar.svelte';
 	import ShaderTexturePicker from './nodes/ShaderTexturePicker.svelte';
 	import ShaderVectorInput from './nodes/ShaderVectorInput.svelte';
+	import DragRow from '../ui/DragRow.svelte';
 
 	const nodeTypes = Object.fromEntries(shaderNodeDefs().map((def) => [def.key, ShaderNode]));
 	const catalog = shaderNodeDefs().filter((def) => def.key !== SURFACE_NODE);
@@ -517,13 +518,13 @@
 											onend={() => endShaderGesture(scope)}
 										/>
 									{:else if param.type === 'float'}
-										<input
-											type="number"
-											step="0.05"
+										<DragRow
+											step={0.005}
+											decimals={3}
 											value={selectedNode.data?.[param.name] ?? param.default}
-											onpointerdown={() => beginShaderGesture(scope)}
-											onpointerup={() => endShaderGesture(scope)}
-											oninput={(e) => writeSelectedParam(param.name, Number(e.currentTarget.value))}
+											onscrubstart={() => beginShaderGesture(scope)}
+											onscrubend={() => endShaderGesture(scope)}
+											onchange={(/** @type {number} */ v) => writeSelectedParam(param.name, v)}
 										/>
 									{:else if param.type === 'enum'}
 										<select
@@ -748,8 +749,7 @@
 		color: #d1d5db;
 	}
 	.shader-field input[type='text'],
-	.shader-field input[type='number'],
-	.shader-field select {
+		.shader-field select {
 		width: 88px;
 		background: rgba(0, 0, 0, 0.35);
 		border: 1px solid rgba(255, 255, 255, 0.15);

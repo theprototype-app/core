@@ -18,7 +18,17 @@
 	// scrub's pointer is released. Typed input and arrow steps do NOT fire either
 	// (there is no gesture to bracket); consumers that need those debounce
 	// `onchange` instead.
-	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
+	// #20 P2: `nodrag` puts the class xyflow looks for on the WRAPPER. Its drag filter
+	// tests `.nodrag, .nodrag *`, so one class on the wrapper covers the input inside.
+	// WHEN IT MATTERS is narrower than it looks, and worth knowing before anyone
+	// "simplifies" it away: `onPointerDown` below calls `preventDefault()` only
+	// `if (!focused)`, which is already enough to keep xyflow off a drag that starts on
+	// a COLD field. The class earns its place on the SECOND drag — the field now has
+	// focus, nothing is prevented, and without it the node card moves instead
+	// (measured: the card jumped from (60,40) to (125,50) while the value scrubbed).
+	// node-drag-fields section 7 is that case; a suite that only drags a cold field
+	// passes with the class removed.
+	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, nodrag?: boolean, onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
 	let {
 		label = '',
 		value = 0,
@@ -39,6 +49,7 @@
 		// position at cuts > 1). The value still SHOWS and the title says why —
 		// no scrub, no typing, no arrow steps. Default off: ~40 call sites untouched.
 		disabled = false,
+		nodrag = false,
 		onchange = () => {},
 		onscrubstart = () => {},
 		onscrubend = () => {}
@@ -203,7 +214,7 @@
 	}
 </script>
 
-<div class="dn-wrap" class:dn-scrub={scrubbing} class:dn-focus={focused} class:dn-disabled={disabled} use:drag>
+<div class="dn-wrap" class:nodrag class:dn-scrub={scrubbing} class:dn-focus={focused} class:dn-disabled={disabled} use:drag>
 	{#if label}
 		<span class={'dn-label ' + accent}>{label}</span>
 	{/if}

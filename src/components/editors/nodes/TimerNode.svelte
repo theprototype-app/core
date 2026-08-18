@@ -4,6 +4,7 @@
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { flowValues } from '../../../stores/flowStore';
+	import DragRow from '../../ui/DragRow.svelte';
 
 	// Phase 134: a delay line — passes its wired input re-evaluated at a
 	// clock-shifted time (deterministic phase delay). Wire a Time/Loop into 'a'.
@@ -21,8 +22,7 @@
 			<span>delayed</span><span class="font-mono">{typeof live === 'number' ? live.toFixed(2) : '—'}</span>
 		</div>
 		<label class="flex items-center gap-1"><span class="w-12 text-gray-400">delay</span>
-			<input class="nodrag w-full" type="number" step="0.1" min="0" value={data.delay ?? 1}
-				on:change={(e) => setNodeData(id, { delay: +e.currentTarget.value })} />
+			<DragRow nodrag step={0.01} decimals={2} min={0} value={data.delay ?? 1} onchange={(/** @type {number} */ v) => setNodeData(id, { delay: v })} />
 			<span class="text-gray-400">s</span></label>
 	</div>
 </NodeWrapper>

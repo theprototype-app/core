@@ -129,6 +129,22 @@
 
 	const { screenToFlowPosition, fitView, setViewport } = useSvelteFlow();
 
+	// e2e hook (debugStores opt-in), the Outline/CameraPreview pattern: the pane's
+	// viewport belongs to xyflow, not to any store, and `fitView` runs at MOUNT — so a
+	// suite that seeds nodes afterwards has no way to know, or choose, where they
+	// landed on screen. Measured while building node-drag-fields: the mount fit left a
+	// card at x = -29.5 (off the pane) at zoom 0.5, and a real pane drag panned by
+	// 3775px for a 200px gesture. A test that needs to press a field needs this.
+	$effect(() => {
+		if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+		if (localStorage.getItem('debugStores') !== 'true') return;
+		// TS syntax, not a JSDoc cast: this file is lang="ts", where JSDoc @type is IGNORED
+		(window as any).__flowViewport = { setViewport, fitView };
+		return () => {
+			delete (window as any).__flowViewport;
+		};
+	});
+
 	// palette collapse + side (82), persisted. Exported so the docked host (Flow) can
 	// inset its content above the Controls HUD only when the palette is actually shown.
 	let {

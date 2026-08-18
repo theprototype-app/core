@@ -1714,6 +1714,38 @@ loadable play content. Everything a user does must be visible to connected peers
 - Anything drawn with **`depthWrite: false` loses the postprocessing passes**: the
   outline and N8AO effects read the depth buffer, so the AO and selection edges of
   whatever sits BEHIND a non-depth-writing sprite get painted across its face.
+- **THE MESHGEO CHANNEL CARRIES A TRIANGLE SOUP, so any op committing through it must
+  go NON-INDEXED first** — `applyMeshGeo` builds a fresh BufferGeometry with no index.
+  The carve handed it a fresh Terrain's 625 positions and left a non-indexed mesh with
+  625 vertices, which is not divisible by 3: three drew 208 arbitrary triangles plus a
+  fragment and the terrain shattered on screen. `enterSculpt` had the answer already
+  (`toNonIndexed()` before its first stroke, syncing the representation), and the
+  expanded count then matches the previous index count, which is the case `preserveUVs`
+  handles, so the uvs survive.
+- **A BUFFER-LEVEL check cannot see a shattered mesh, and this one shipped.** Every
+  metric the carve suite had stayed green while the mesh was garbage: vertex count
+  "unchanged" (that WAS the symptom), both peers agreeing (equally broken), one
+  message, one undo entry. The e2e skill says it plainly and it was not applied here —
+  **for any op that rebuilds geometry, assert the TRIANGLES**: count divisible by 3,
+  and no edge longer than the lattice it came from (measured 24.04m on a 1m grid with
+  the fix out, 1.62m with it in).
+- **Two different situations both produce "nothing moved", and reporting the wrong one
+  is worse than silence.** A carve that finds no terrain under the road and a carve
+  whose bed is already flat are indistinguishable if you only look at movement, so
+  `carveAlongSpline` reports the count of vertices it REACHED (tagged on the returned
+  array, the `withSlot` idiom) and the caller picks the message.
+- **A repeat carve is NOT idempotent, and a test that claims it is passes vacuously.**
+  The shoulder is a partial lerp toward the bed, so a second pass pulls it further
+  (251 columns moved, then 152): the property is CONVERGENCE, not no-op. Measure both
+  passes in the SAME unit — the first pass counted columns pre-expansion and the
+  toast counts vertices post-expansion, so 251 vs 876 read as divergence when nothing
+  had diverged.
+- **A first click that loads its module dynamically feels broken.** Both carve entry
+  points import `roadActions` on demand (to keep a static edge out of history's
+  subtree) and a cold fetch of it plus its dependency graph measured ~1.2s in dev —
+  long enough to look like a dead button, and long enough to make a 900ms test wait
+  pass while nothing had run. The Inspector PRIMES the import while a road is merely
+  selected (the moduleSDK idiom).
 - **`toJSON` ALWAYS writes the vertex buffer, so "ship it parametric" does not make a
   scene file small.** Measured on a 48-segment terrain tile in a `.tpscene` (which is
   a zip): a PARAMETRIC, uncarved tile is 330.6 KB raw / **116.5 KB zipped**, and the

@@ -509,9 +509,29 @@
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
 	// 57.5: the live spline record. Derived through $objectsGroup because the
 	// appliers mutate userData in place and poke THAT store (the material trap).
+	// 21-C3 follow-up (user report): the carve was ONLY on the right-click menu, and
+	// the first place anyone looks for "what can this road do" is its Properties. The
+	// list derives through $objectsGroup because a THREE tree is not reactive — a
+	// terrain added after the panel opened has to appear.
+	const carveTargets = $derived.by(() => {
+		return ($objectsGroup?.children ?? [])
+			.filter((/** @type {any} */ object) => object?.userData?.terrain)
+			.map((/** @type {any} */ object) => ({ uuid: object.uuid, name: object.name || 'Terrain' }));
+	});
+
 	const spline = $derived.by(() => {
 		$objectsGroup;
 		return $selectedObject ? splineDataOf($selectedObject) : null;
+	});
+
+	// ...and PRIME the module the carve buttons reach for. Both entry points (this
+	// panel and the Road context menu) load roadActions dynamically to keep a static
+	// edge out of history's import subtree, and a cold fetch of it plus its
+	// dependency graph measured ~1.2s in dev — long enough that the first click
+	// looked like it did nothing. Warming it while a road is merely SELECTED is the
+	// moduleSDK primed-dynamic-import idiom, and it costs nothing when no road is.
+	$effect(() => {
+		if (spline) import('$lib/roadActions').catch(() => {});
 	});
 	/** the shared radius when every point agrees, else null (mixed taper) */
 	const splineRadius = $derived.by(() => {
@@ -3262,6 +3282,29 @@
 						<p class="text-[10px] text-gray-500">
 							Per-point thickness lives on the handles — open the editor and drag the amber dot above a point.
 						</p>
+						<span class="px-1 text-[10px] uppercase tracking-wider text-gray-500">Carve into terrain</span>
+						{#if carveTargets.length}
+							<div class="flex flex-wrap gap-1">
+								{#each carveTargets as target, index (target.uuid)}
+									<Button
+										id={`spline-carve-${index}`}
+										size="xs"
+										color="alternative"
+										onclick={() =>
+											import('$lib/roadActions').then((m) => m.carveRoadInto($selectedObject.uuid, target.uuid))}
+									>
+										{target.name}
+									</Button>
+								{/each}
+							</div>
+							<p class="text-[10px] text-gray-500">
+								Flattens a bed along this road, blended into the slope either side. One undo step.
+							</p>
+						{:else}
+							<p id="spline-carve-none" class="text-[10px] text-gray-500">
+								No terrain in the scene — add one with Add ▸ Terrain, then carve this road into it.
+							</p>
+						{/if}
 					</Section>
 				{/if}
 

@@ -304,6 +304,38 @@ h.run(async () => {
 	await A.page.waitForTimeout(1200);
 	h.check(!!built.terrain && !!built.road, 'PREMISE: a hilly terrain and a road across it');
 
+	const surfaceOf = (page, uuid) =>
+		page.evaluate(
+			(id) =>
+				new Promise((r) =>
+					window.__stores.objectsGroup.subscribe((g) => {
+						const mesh = g.getObjectByProperty('uuid', id);
+						if (!mesh) return r(null);
+						const p = mesh.geometry.attributes.position;
+						let hash = 2166136261;
+						for (let i = 0; i < p.count; i++)
+							for (const v of [p.getX(i), p.getY(i), p.getZ(i)]) {
+								const bits = new Uint32Array(new Float32Array([v]).buffer)[0];
+								hash = Math.imul(hash ^ (bits & 0xffff), 16777619);
+								hash = Math.imul(hash ^ (bits >>> 16), 16777619);
+							}
+						const idx = mesh.geometry.index;
+						const tris = Math.floor((idx ? idx.count : p.count) / 3);
+						let worstEdge = 0;
+						for (let t = 0; t < tris; t++) {
+							const c = [0, 1, 2].map((k) => (idx ? idx.getX(t * 3 + k) : t * 3 + k));
+							for (const [i, j] of [[c[0], c[1]], [c[1], c[2]], [c[2], c[0]]])
+								worstEdge = Math.max(
+									worstEdge,
+									Math.hypot(p.getX(i) - p.getX(j), p.getY(i) - p.getY(j), p.getZ(i) - p.getZ(j))
+								);
+						}
+						r({ hash: hash >>> 0, verts: p.count, indexed: !!idx, worstEdge });
+					})()
+				),
+			uuid
+		);
+
 	// the objectMenu offers the carve on a spline, naming the terrain
 	const menu = await A.page.evaluate((uuid) => {
 		// (uuid FIRST, opts second — passing one object silently builds a menu for
@@ -340,13 +372,55 @@ h.run(async () => {
 			peer.send = send;
 			await new Promise((r) => setTimeout(r, 300));
 			const after = Array.from(terrain.geometry.attributes.position.array);
+			// count by COLUMN, not by buffer index: the commit changes the terrain from
+			// an indexed grid to a triangle soup, so comparing arrays position-by-position
+			// compares different vertices (and reads past the end of the shorter one).
+			const columns = (arr) => {
+				const map = new Map();
+				for (let i = 0; i < arr.length; i += 3) map.set(arr[i] + ',' + arr[i + 2], arr[i + 1]);
+				return map;
+			};
+			const wasCol = columns(before);
+			const isCol = columns(after);
 			let moved = 0;
-			for (let i = 1; i < after.length; i += 3) if (Math.abs(after[i] - before[i]) > 1e-6) moved++;
+			for (const [key, y] of isCol) if (Math.abs((wasCol.get(key) ?? y) - y) > 1e-6) moved++;
+			// TRIANGLE SANITY, which is the check this suite shipped without and paid
+			// for: the meshgeo channel carries a triangle SOUP, so a carve that hands
+			// applyMeshGeo an INDEXED terrain's positions leaves a non-indexed mesh
+			// with the indexed count — 625 vertices, not even divisible by 3 — and
+			// three draws 208 arbitrary triangles plus a fragment. The mesh shatters
+			// on screen while every buffer-level metric (count unchanged, both peers
+			// agreeing, one message, one undo entry) stays perfectly green.
+			// On a 24-segment 24m tile the lattice pitch is 1m, so no triangle edge
+			// may exceed the diagonal by much; a shattered soup joins vertices metres
+			// apart. (The e2e skill says it plainly: watertightness/edge sanity is the
+			// best check for any op that rebuilds geometry.)
+			const worstEdge = (geo) => {
+				const p = geo.attributes.position;
+				const idx = geo.index;
+				const tris = Math.floor((idx ? idx.count : p.count) / 3);
+				let worst = 0;
+				for (let t = 0; t < tris; t++) {
+					const corners = [0, 1, 2].map((k) => (idx ? idx.getX(t * 3 + k) : t * 3 + k));
+					for (const [i, j] of [
+						[corners[0], corners[1]],
+						[corners[1], corners[2]],
+						[corners[2], corners[0]]
+					])
+						worst = Math.max(
+							worst,
+							Math.hypot(p.getX(i) - p.getX(j), p.getY(i) - p.getY(j), p.getZ(i) - p.getZ(j))
+						);
+				}
+				return worst;
+			};
 			return {
 				ok,
 				moved,
 				verts: terrain.geometry.attributes.position.count,
 				beforeVerts: before.length / 3,
+				indexed: !!terrain.geometry.index,
+				worstEdge: worstEdge(terrain.geometry),
 				meshgeo: seen.filter((t) => t === 'meshgeo').length,
 				entries: (await new Promise((r) => w.history.undoStack.subscribe((s) => r(s.length))())) - depth,
 				kind: await new Promise((r) => w.history.undoStack.subscribe((s) => r(s[s.length - 1]?.kind))())
@@ -356,8 +430,12 @@ h.run(async () => {
 	);
 	h.check(commit.ok && commit.moved > 20, `the carve commits and moves the bed (${commit.moved} vertices)`);
 	h.check(
-		commit.verts === commit.beforeVerts,
-		`the vertex COUNT is unchanged (${commit.verts}) — which is why positions-only is the right commit`
+		commit.verts % 3 === 0 && commit.verts === 24 * 24 * 2 * 3,
+		`the terrain comes out as a proper triangle SOUP — 2 tris per cell, 3 vertices each (${commit.verts} vertices, divisible by 3: ${commit.verts % 3 === 0})`
+	);
+	h.check(
+		Number.isFinite(commit.worstEdge) && commit.worstEdge < 3,
+		`and it is still a SURFACE: no triangle edge exceeds the 1m lattice by much (worst ${commit.worstEdge?.toFixed?.(2) ?? commit.worstEdge}m — a shattered soup reads tens of metres, or NaN on the trailing fragment)`
 	);
 	h.check(commit.meshgeo === 1, `ONE meshgeo message (${commit.meshgeo})`);
 	h.check(
@@ -365,26 +443,110 @@ h.run(async () => {
 		`and ONE undo entry, of the existing meshgeo kind (${commit.entries} x ${commit.kind})`
 	);
 
-	const surfaceOf = (page, uuid) =>
+	// THE ENTRY POINT the user actually reached for (reported): a road's Properties.
+	// The context menu is not the only place someone looks for "what can this road
+	// do", so the Spline section carries the same carve — driven here through the
+	// real button, not the store behind it.
+	await A.page.evaluate((uuid) => {
+		localStorage.setItem('inspector:sec:Spline', 'open');
+		window.__stores.objectActions.selectObject(uuid, true);
+	}, built.road);
+	await h.eventually(
+		() =>
+			A.page.evaluate(() => ({
+				button: !!document.querySelector('#spline-carve-0'),
+				label: document.querySelector('#spline-carve-0')?.textContent?.trim() ?? '',
+				none: !!document.querySelector('#spline-carve-none')
+			})),
+		(d) => d.button && !d.none,
+		'the road Properties offer Carve into terrain, naming the terrain',
+		20000
+	);
+	const beforeProps = await surfaceOf(A.page, built.terrain);
+	const depthBefore = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+	);
+	// the toast text, which is the only thing that distinguishes "this click did
+	// nothing yet" from "this click found the bed already flat" — without it the
+	// idempotence check below passes VACUOUSLY, which is exactly what it did while
+	// racing a ~1.2s cold dynamic import of roadActions
+	// scan the WHOLE stack, never just the last entry: this box emits peer-server
+	// toasts ("Lost connection… reconnecting") throughout a run, so the newest toast
+	// is regularly not the one the click produced
+	const carveToast = () =>
+		A.page.evaluate(
+			() =>
+				new Promise((r) =>
+					window.__stores.toastStore.subscribe((t) => {
+						const texts = t.map((entry) => (typeof entry === 'string' ? entry : (entry?.text ?? '')));
+						r(texts.filter((text) => /Carved \d+ vertices|already carved|not under this road/i.test(text)).pop() ?? '');
+					})()
+				)
+		);
+	// clear the stack first: the earlier carve left its own "Carved N vertices" toast,
+	// which would satisfy the wait below without the button ever running
+	await A.page.evaluate(() => window.__stores.toastStore.set([]));
+	// stash the height FIELD too, because the second pass has to be measured the same
+	// way the first was: the toast counts VERTICES, and the first commit turned 625
+	// indexed vertices into a 3456 soup, so comparing its 876 against the first pass's
+	// 251 COLUMNS compares two units and reads as divergence when nothing diverged.
+	const columnDiff = (page, uuid, stash) =>
 		page.evaluate(
-			(id) =>
+			([id, store]) =>
 				new Promise((r) =>
 					window.__stores.objectsGroup.subscribe((g) => {
-						const mesh = g.getObjectByProperty('uuid', id);
-						if (!mesh) return r(null);
-						const p = mesh.geometry.attributes.position;
-						let hash = 2166136261;
-						for (let i = 0; i < p.count; i++)
-							for (const v of [p.getX(i), p.getY(i), p.getZ(i)]) {
-								const bits = new Uint32Array(new Float32Array([v]).buffer)[0];
-								hash = Math.imul(hash ^ (bits & 0xffff), 16777619);
-								hash = Math.imul(hash ^ (bits >>> 16), 16777619);
-							}
-						r({ hash: hash >>> 0, verts: p.count });
+						const p = g.getObjectByProperty('uuid', id).geometry.attributes.position;
+						const field = new Map();
+						for (let i = 0; i < p.count; i++) field.set(p.getX(i) + ',' + p.getZ(i), p.getY(i));
+						const previous = window[store];
+						window[store] = field;
+						if (!previous) return r({ columns: field.size, changed: null });
+						let changed = 0;
+						for (const [key, y] of field) if (Math.abs((previous.get(key) ?? y) - y) > 1e-6) changed++;
+						r({ columns: field.size, changed });
 					})()
 				),
-			uuid
+			[uuid, stash]
 		);
+	await columnDiff(A.page, built.terrain, '__carveField'); // seeds the stash
+	await A.page.evaluate(() => document.querySelector('#spline-carve-0').click());
+	// wait on the OUTCOME, not a clock: the first click through either entry point
+	// pays a cold dynamic import of roadActions (~1.2s in dev), and a fixed sleep here
+	// let this whole section pass while nothing had run yet
+	await h.eventually(
+		carveToast,
+		(text) => /Carved \d+ vertices|already carved/i.test(text),
+		'the Properties button really carves (its own toast reports the commit)',
+		25000
+	);
+	const secondToast = await carveToast();
+	const afterProps = await surfaceOf(A.page, built.terrain);
+	const depthAfter = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+	);
+	h.check(
+		afterProps.verts % 3 === 0 && afterProps.worstEdge < 3,
+		`and leaves the surface intact (${afterProps.verts} vertices, worst edge ${afterProps.worstEdge.toFixed(2)}m)`
+	);
+	// A REPEAT CARVE IS NOT A NO-OP, and it should not claim to be: the road bed is
+	// already at the curve, but the shoulder is a partial blend, so carving again
+	// pulls it FURTHER toward the bed. What must hold is CONVERGENCE — each pass moves
+	// strictly fewer columns than the last, by a smaller amount — and that the pass is
+	// honestly recorded as its own edit rather than a silent no-op entry.
+	const secondPass = await columnDiff(A.page, built.terrain, '__carveField');
+	h.check(
+		!!secondToast,
+		`the carve reported itself to the user ("${secondToast.slice(0, 48)}")`
+	);
+	h.check(
+		secondPass.changed > 0 && secondPass.changed < commit.moved,
+		`a repeat carve CONVERGES rather than diverging — measured in the same unit both times (${commit.moved} columns first, ${secondPass.changed} the second time)`
+	);
+	h.check(
+		depthAfter === depthBefore + 1 && beforeProps.hash !== afterProps.hash,
+		`and it is recorded as one real edit, not a phantom no-op (${depthAfter - depthBefore} entry)`
+	);
+
 	const carvedA = await surfaceOf(A.page, built.terrain);
 	await h.eventually(
 		() => surfaceOf(B.page, built.terrain),

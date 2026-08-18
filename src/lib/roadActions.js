@@ -20,8 +20,10 @@ const objectOf = (uuid) => get(objectsGroup)?.getObjectByProperty('uuid', uuid) 
 
 /**
  * Carve a road bed into a terrain along a spline. ONE meshgeo message and ONE
- * undo entry: positions-only is correct because the vertex count never changes,
- * so groups and uvs carry over (commitMeshGeoTriple is for count-changing ops).
+ * undo entry, positions-only: the carve moves Y and never adds or removes a
+ * vertex, so groups and uvs carry over (commitMeshGeoTriple is for the ops that
+ * change the triangle COUNT). What it does change is the REPRESENTATION — see the
+ * toNonIndexed note in the body, which is not optional.
  *
  * @param {string} splineUuid @param {string} terrainUuid
  * @param {any=} options width / shoulder / mode / bankToCurve / clearance
@@ -43,6 +45,22 @@ export function carveRoadInto(splineUuid, terrainUuid, options = {}) {
 	const local = splineInFrameOf(road, terrain);
 	if (!local) return false;
 	const width = options.width ?? roadWidthOf(road);
+
+	// THE MESHGEO CHANNEL CARRIES A TRIANGLE SOUP, NOT AN INDEXED MESH.
+	// `applyMeshGeo` builds a fresh BufferGeometry with NO index, so handing it a
+	// fresh Terrain's positions (2401 for 48 segments, 625 for 24) leaves three
+	// drawing arbitrary triangles from consecutive triples — and 625 is not even
+	// divisible by 3, so the last one is a fragment. The mesh shatters. Go
+	// non-indexed FIRST, which is exactly what `enterSculpt` does before its own
+	// first stroke, and then the count matches the previous index count, which is
+	// the expansion case `preserveUVs` handles: the uvs come across intact.
+	// (No separate representation message is needed the way enterSculpt needs one —
+	// the commit below carries the whole soup, so peers rebuild the same one.)
+	if (terrain.geometry.index) {
+		const soup = terrain.geometry.toNonIndexed(); // carries uv + normal along
+		terrain.geometry.dispose();
+		terrain.geometry = soup;
+	}
 	const before = Array.from(terrain.geometry.attributes.position.array);
 	const after = carveAlongSpline(terrain, local, { ...CARVE_DEFAULTS, ...options, width });
 	if (!after) {
@@ -52,8 +70,17 @@ export function carveRoadInto(splineUuid, terrainUuid, options = {}) {
 	let moved = 0;
 	for (let i = 1; i < after.length; i += 3) if (Math.abs(after[i] - before[i]) > 1e-6) moved++;
 	if (!moved) {
-		// the honest failure: the road is over there somewhere, not on this tile
-		showToast(`${terrain.name || 'That terrain'} is not under this road — nothing changed`);
+		// TWO very different situations produce zero MOVEMENT, and telling someone the
+		// wrong one is worse than saying nothing: the road may not be over this tile at
+		// all, or the bed may already be carved (carving twice is idempotent by
+		// construction). `touched` — the count of vertices the road REACHED — is what
+		// separates them, and it is why carveAlongSpline reports it.
+		const reached = /** @type {any} */ (after).touched ?? 0;
+		showToast(
+			reached
+				? `${terrain.name || 'That terrain'} is already carved along this road — nothing to change`
+				: `${terrain.name || 'That terrain'} is not under this road — nothing changed`
+		);
 		return false;
 	}
 	const ok = commitMeshGeoSnapshot(terrainUuid, before, Array.from(after));

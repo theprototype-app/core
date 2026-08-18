@@ -145,6 +145,7 @@ export function carveAlongSpline(terrain, spline, options = {}) {
 
 	const out = new Float32Array(position.array.length);
 	out.set(position.array);
+	let touched = 0; // vertices the road reached at all, whether or not they moved
 
 	for (let i = 0; i < position.count; i++) {
 		const x = position.getX(i);
@@ -173,6 +174,7 @@ export function carveAlongSpline(terrain, spline, options = {}) {
 		const distance = Math.sqrt(bestDistSq);
 		const weight = 1 - smoothstep(half, reach, distance);
 		if (weight <= 0) continue;
+		touched++;
 
 		const sample = samples[best];
 		let target = sample.y - clearance;
@@ -205,5 +207,9 @@ export function carveAlongSpline(terrain, spline, options = {}) {
 		else if (mode === 'raise') target = Math.max(current, target);
 		out[i * 3 + 1] = current + (target - current) * weight;
 	}
+	// tagged on the ARRAY rather than changing the return shape (the withSlot
+	// idiom): a caller needs to tell "the road is not over this tile" from "the bed
+	// is already flat", and those are the same zero once you only look at movement.
+	/** @type {any} */ (out).touched = touched;
 	return out;
 }

@@ -26,6 +26,7 @@
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
+	import { startPlayInteract, tickPlayInteract, stopPlayInteract } from '$lib/playInteract';
 	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
@@ -241,6 +242,9 @@
 
 	useTask((delta) => {
 		rotation += 0.25 * delta;
+		// 21-B B3: play-mode grab/carry. The ray is NDC (0,0) every frame, so it
+		// belongs in the frame loop rather than on a pointer event.
+		tickPlayInteract(delta, camera.current);
 		// PFX-C follow-up: while presenting, window.rAF is suspended — pump the
 		// flow tick (animations + particle sweep + the physics postTick) from
 		// threlte's XR-aware loop or everything freezes the moment VR starts
@@ -1134,6 +1138,10 @@
 		// resolving a controller by hand (radial, menus) survives a reorder
 		const onConn = (e: any) => { e.target.userData.handedness = e.data?.handedness ?? null; };
 		const onDisc = (e: any) => { e.target.userData.handedness = null; };
+		// 21-B B3: play mode's own input path. Registered HERE, below every `let`
+		// its closure reads (runModuleClickHandlers among them) — the TDZ rule.
+		startPlayInteract({ moduleHitTest: runModuleClickHandlers });
+
 		xrControllers.forEach((controller) => {
 			controller.addEventListener('select', onXRSelect);
 			controller.addEventListener('selectstart', onXRSelectStart);
@@ -1144,6 +1152,7 @@
 
 		return () => {
 			offEditResume(); // #20 P5
+			stopPlayInteract(); // 21-B B3 (releases any carried body with zero velocity)
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
 			window.removeEventListener('pointerup', onPointerUp);

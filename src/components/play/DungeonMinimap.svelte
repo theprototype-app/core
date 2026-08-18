@@ -4,6 +4,7 @@
 	import { userdata, peers } from '../../stores/appStore';
 	import { peerColor } from '$lib/lockControl';
 	import { dungeonData } from '$lib/dungeonPlay';
+	import { playMarkers } from '$lib/playSettings';
 	// @ts-ignore - no bundled three type declarations (project-wide)
 	import * as THREE from 'three';
 
@@ -13,6 +14,13 @@
 
 	let canvas: HTMLCanvasElement | undefined = $state();
 	let visible = $state(false);
+	// B3: marker colours by KIND — a publisher names the kind, core picks the paint
+	const MARKER_COLORS: Record<string, string> = {
+		key: '#ffc93d',
+		door: '#39d0ff',
+		goal: '#f472b6',
+		spawn: '#4ade80'
+	};
 	const SCALE = 3;
 	const worldPos = new THREE.Vector3();
 
@@ -38,12 +46,17 @@
 		for (let y = 0; y < height; y++)
 			for (let x = 0; x < width; x++)
 				if (grid[y * width + x] === floorValue) ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
-		// the key + door landmarks
+		// the key + door landmarks. Kept as the FALLBACK, because the dungeon module
+		// still names its objects that way; 21-B B3 generalises it so any publisher
+		// of the play contract can put markers here (DEVX #13).
 		const group = $globalScene?.getObjectByName('dungeon-module');
 		const key = group?.getObjectByName('dungeon-key');
 		if (key?.visible) dot(ctx, data, key.position.x, key.position.z, '#ffc93d');
 		const door = group?.getObjectByName('dungeon-door');
 		if (door) dot(ctx, data, door.position.x, door.position.z, '#39d0ff');
+		for (const marker of playMarkers($globalScene)) {
+			dot(ctx, data, marker.x, marker.z, MARKER_COLORS[marker.kind] ?? '#ffffff');
+		}
 		// me
 		if ($playerCam) {
 			($playerCam as any).getWorldPosition(worldPos);

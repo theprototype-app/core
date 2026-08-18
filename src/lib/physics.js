@@ -1014,6 +1014,14 @@ function releaseHold(entry, velocity = null) {
 		// B6's rest detector clears it again.
 		if (v.linvel.length() > 5) entry.body.enableCcd(true);
 	}
+	// Whoever held this body moved the OBJECT while the write-back was skipping
+	// it, so lastWritten still describes the pose at grab time. Refresh it here or
+	// the very next step reads that as a phantom EXTERNAL write, re-engages a
+	// kinematic hold, and eats the throw — measured: a released crate came back
+	// hold:'external', bodyType kinematic, one frame later. (The same trap B5's
+	// applyThrow has to answer for an incoming message.)
+	entry.lastWritten.pos.copy(entry.object.position);
+	entry.lastWritten.quat.copy(entry.object.quaternion);
 	entry.samples = [];
 	return v;
 }

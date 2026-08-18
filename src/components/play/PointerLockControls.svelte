@@ -5,6 +5,7 @@
     import { isLocked, playerCam, editorCam, globalScene } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
+    import { resolvePlaySettings } from '$lib/playSettings'
     import { inputClaims } from '$lib/inputRuntime'
 
     const { renderer, camera, invalidate } = useThrelte()
@@ -95,12 +96,21 @@
         $cameraParent.translateX(moveSpeed);
       }
 
-      if (moveState.up === 1) {
+      // 21-B B3 (DEVX #14): a GROUNDED scene has no Q/E flight and pins the rig
+      // to eye height, so a module no longer has to swallow those keys itself.
+      const play = resolvePlaySettings($globalScene)
+
+      if (!play.grounded && moveState.up === 1) {
         $cameraParent.translateY(-moveSpeed);
       }
 
-      if (moveState.down === 1) {
+      if (!play.grounded && moveState.down === 1) {
         $cameraParent.translateY(moveSpeed);
+      }
+
+      if (play.grounded && $isLocked && $cameraParent) {
+        const grounded: any = $cameraParent
+        grounded.position.y = play.eyeHeight
       }
 
       // dungeon collision (58.1): slide the XZ step along the raster walls
@@ -142,6 +152,10 @@
     function onScroll( event ) {
       if (!$isLocked) return
       if (!$cameraParent) return
+      // 21-B B3: playInteract claims the wheel in CAPTURE phase while carrying
+      // something, and says so on the event — never through a one-shot store
+      // flag (the twin-Escape lesson)
+      if (event.defaultPrevented) return
       moveSpeed = Math.min(1, Math.max(0.01, moveSpeed + (event.deltaY > 0 ? -0.01 : 0.01)))
     }
 

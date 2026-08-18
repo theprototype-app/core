@@ -28,6 +28,13 @@ The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
 clicks) and `uv-unwrap-module` (a module supplying an unwrap backend, and wasm from a blob URL).
+Roadmap #20 added seven: `duplicate-parity` (what a copy carries, incl. two peers),
+`node-drag-fields` (DragRow inside xyflow cards, real mouse), `units` (the pure
+parse/convert table plus an Inspector row that must NOT move the object when the unit
+changes), `touch-tools` (the cluster, mobile multi-select, mesh-element BOX SELECT, the
+measured placement, and the SettingRow prose guard), `post-backends` (the registry
+fallback + both module seams, via an INLINE module), `workspace-restore` (layout local,
+selection + edit mode in the file) and `graph-tree` (the navigator + its resize grip).
 The size ceilings are `mesh-budget` (commit vs live-PREVIEW vs undo-byte budget,
 with the counterfactual against the old 45000 cap); selection is `selection-extras`
 (Ctrl+A + the configurable double-click, both through real input); the edit-overlay
@@ -218,6 +225,39 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **`h.eventually` returns the CHECK RESULT, not the value it polled.** Binding its
+  return (`const seen = await h.eventually(...)`) gave `undefined` to four follow-up reads
+  while delivery had actually worked — the poll passed and then everything downstream
+  reported nothing. Await it for the wait, then read the state again separately.
+- **A `boundingBox()` is not a hit test, and a pane's viewport is not yours to assume.**
+  node-drag-fields placed nodes at flow y=60/240 and BOTH fields turned out covered — one
+  by the 3D canvas (above the dock pane), one by the palette tab button — and one drag
+  still "passed", because pressing the palette toggle reflowed the pane and the later moves
+  landed on the real field. xyflow's `fitView` runs at MOUNT, so a suite that seeds nodes
+  afterwards cannot know where they landed: measured, the mount fit left a card at screen
+  x = -29.5 at zoom 0.5, and a real pane drag panned 3775px for a 200px gesture. Pin the
+  viewport through the `window.__flowViewport` debug hook and `elementFromPoint`-check
+  every synthesized grip.
+- **A nav button TOGGLES.** `p[title="Node editor (N)"]` opened the pane in section 1 and
+  CLOSED it in section 8, so the element under test was legitimately absent. Drive the
+  stores (`flowGraphClose.set(false)` + `activateDock`) when a later section needs a panel
+  that an earlier one already opened.
+- **Some panels cannot coexist BY DESIGN.** `bottomDock` closes the Explorer whenever a
+  Flow-family panel becomes the visible tab, so a check that opened both was measuring that
+  rule instead of its own. Pick a control that shares nothing with the thing under test.
+- **Rows only exist inside an EXPANDED accordion.** The Settings modal renders zero
+  `.setting-row`s until `settingsSection` names the section — `settingsOpen.set(true)`
+  alone finds nothing.
+- **A store-level probe cannot test a handler.** `pickFaceUnit(tri)` takes NO additive
+  argument (the additive path is `toggleFaceSelection`), so a probe passing one compared
+  two identical replaces and read "2 tris vs 2". And even a corrected probe would only
+  re-implement Scene's branch in the test, which cannot catch Scene failing to feed a flag
+  into it. When the bug lives in a handler, drive the real mouse.
+- **A fixture must be something the real code can consume.** post-backends registered a
+  module effect whose `make` returned an object literal; the LIVE composer then crashed
+  inside `EffectPass`, which looked like a broken feature and was a broken fixture — and
+  in the process exposed a real hole (that construction was unguarded), so the fixture
+  earned its keep. Build fixtures from the real types (`new Effect(...)`).
 - **A fixture missing a PRECONDITION makes a working fix look broken.** Auto-key
   records INTO a clip: an object with none keys nothing, and `captureAutoKey`
   returns before doing anything. The first material-auto-key suite built a bare
@@ -714,6 +754,13 @@ drops the P2P session.
   edit during a run, and treat a red run that started right after a save as
   unproven. When store reads disagree with what you see, add a COMPONENT-side debug
   hook and compare the two (below).
+- **#20: the tell for a stale server is a change that "fixes" things for no reason.**
+  Toggling a setting failed to render its component; adding an UNRELATED debug element
+  to that component made it work. Nothing about that element could matter, and that is
+  the signature — the edit forced a re-transform. On a freshly restarted server the
+  original code was correct at every width from 1280 to 400. So when a symptom vanishes
+  after a meaningless edit: do NOT commit the edit, restart, re-measure, and report
+  honestly that you could not reproduce rather than claiming a fix you cannot show.
 - **A DAY-LIVED server escalates that to stale DUAL MODULE INSTANCES** (19-A P0):
   `bind:checked={$faceAutoApply}` flipped the DOM checkbox while the app's real
   store never moved — the component was bound to a SECOND faceEdit instance from

@@ -15,6 +15,7 @@ import { applyMeshGeo } from '$lib/faceEdit';
 // registers no history kind at module eval and its own imports (faceEdit,
 // materialsHandler, history) are already in this file's subtree.
 import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
+import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride } from '$lib/peerServer';
 import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState';
@@ -604,6 +605,9 @@ export class PeerConnection {
 					applyUvPaint(data);
 				} else if(data.type == 'uvpaintend') {
 					applyUvPaintEnd(data);
+				} else if(data.type == 'splineedit') {
+					// 57.3: only the RECORD travels — the receiver rebuilds the tube
+					applySplineEdit(data.uuid, data.spline);
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,

@@ -31,7 +31,10 @@
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
-	import { drawMode, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
+	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
+	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
+	import { flattenPicking, flattenPickClick } from '$lib/flattenActions';
+	import { splineEditObject, splineEditClick, splineEditRightClick, exitSplineEdit, beginRadiusDrag, radiusDragMove, endRadiusDrag, radiusDragActive, onSplineProxyMoved, onSplineProxyDragChanged, tickSplineEdit } from '$lib/splineEdit';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
@@ -284,6 +287,7 @@
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
 		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)
+		tickSplineEdit(); // 57.3: spline handles do the same (scene-root, world space)
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
@@ -325,6 +329,11 @@
 				onFaceGizmoDragChanged(event.value);
 				return;
 			}
+			// 57.3: a spline control point — ONE spline undo entry per drag
+			if (object.userData?.isSplineProxy) {
+				onSplineProxyDragChanged(event.value);
+				return;
+			}
 			// the multi-select pivot records per-member entries (multiTransform)
 			if (object.userData?.isMultiPivot) return;
 			if (event.value) {
@@ -359,7 +368,7 @@
 
 	// 132: never show the transform gizmo without a real selection — a fresh
 	// reload used to leave it attached/visible at the origin with nothing to edit
-	$: if ($TControls && !$editingObject && !$faceEditObject && !$selectedObject?.uuid) {
+	$: if ($TControls && !$editingObject && !$faceEditObject && !$splineEditObject && !$selectedObject?.uuid) {
 		$TControls.visible = false;
 		if ($TControls.object && !$TControls.object.userData?.isMultiPivot) $TControls.detach();
 	}
@@ -497,6 +506,7 @@
 		const onSessionEnd = () => {
 			exitEditMode(); // leave vertex edit mode cleanly (113)
 			exitFaceEdit(); // and face edit mode (118)
+			exitSplineEdit(); // and any spline session (57.4)
 			$isVRMode = false; // back to the editor whichever way the session ended
 			resetWorldRig(); // the grabbed world snaps back to 1:1 (least surprise)
 			$peers?.send({ type: 'vrhands', peerId: $peers.peer.id, left: null, right: null, active: false });
@@ -524,6 +534,7 @@
 		// inference goes implicit-any at every one of them.
 		let marqueeStart: number[] | null = null;
 		let rightDown = null; // right-click TAP opens the Add/object menu (77)
+		let lastSplineClick = 0; // 57.2: a second click here finishes the spline
 		let lastPointerXY: number[] | null = null; // last cursor position, for keyboard-opened menus
 
 		const setRayFromEvent = (event) => {
@@ -541,8 +552,18 @@
 				return;
 			}
 			if (event.button !== 0) return;
-			// draw mode: dragging paints a stroke instead of orbiting
-			if ($drawMode && !$isLocked && !$isVRMode) {
+			// 57.3: a spline radius dot drags vertically for thickness — grabbed on
+			// pointerdown (like the sculpt brush) so orbit pauses for the gesture
+			if ($splineEditObject && !$isLocked && !$isVRMode) {
+				setRayFromEvent(event);
+				if (beginRadiusDrag(selectionRaycaster, event.clientY)) {
+					setOrbitEnabled(false);
+					return;
+				}
+			}
+			// draw mode: dragging paints a FREEHAND stroke instead of orbiting; the
+			// spline tool places its points on pointerUP instead (57.2)
+			if ($drawMode && $drawTool !== 'spline' && !$isLocked && !$isVRMode) {
 				strokeActive = true;
 				setOrbitEnabled(false);
 				setRayFromEvent(event);
@@ -585,7 +606,7 @@
 			}
 			// #20 P4: the touch Multi-select mode stands in for Shift, since a finger
 			// cannot hold a modifier. Same code path, so there is exactly one marquee.
-			if ((event.shiftKey || $multiSelectMode) && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject) {
+			if ((event.shiftKey || $multiSelectMode) && !$isLocked && !$isVRMode && !$specatorMode && !$editingObject && !$faceEditObject && !$splineEditObject) {
 				marqueeStart = [event.clientX, event.clientY];
 				setOrbitEnabled(false);
 			}
@@ -594,6 +615,11 @@
 		};
 
 		const onPointerMove = (event) => {
+			// 57.3: a radius drag owns the gesture (thickness, not the camera)
+			if (radiusDragActive()) {
+				radiusDragMove(event.clientY);
+				return;
+			}
 			// remember where the cursor is so keyboard commands (Shift+A) can anchor to
 			// it and spawn under it — null until the pointer has moved at least once
 			lastPointerXY = [event.clientX, event.clientY];
@@ -653,6 +679,12 @@
 		};
 
 		const onPointerUp = (event) => {
+			if (radiusDragActive() && event.button === 0) {
+				endRadiusDrag(); // final broadcast + one undo entry
+				setOrbitEnabled(true);
+				downPosition = null;
+				return;
+			}
 			// #20: an ELEMENT box — vertices, edges or faces, whichever mode is open
 			if (marqueeStart && elementMarquee && event.button === 0) {
 				const start = marqueeStart;
@@ -729,6 +761,13 @@
 			// only a short, stationary click selects — dragging orbits the camera
 			if (moved > 5 || Date.now() - downTime > 400) return;
 			if ($isLocked || $isVRMode || $specatorMode) return;
+			// 21-C3: the FLATTEN pick captures one click the same way — it is aimed at
+			// another OBJECT rather than a point, so it must also sit ahead of the
+			// selection path below, which would otherwise just select the terrain
+			if ($flattenPicking) {
+				setRayFromEvent(event);
+				if (flattenPickClick(selectionRaycaster)) return;
+			}
 			// 19-B P3: snap-anchor pick mode captures ONE click (the measure shape) —
 			// BEFORE the gizmo guard, because the attached gizmo's hover (axis set)
 			// would swallow a pick click anywhere near the object's centre
@@ -769,6 +808,18 @@
 				if (point) sendPing(point);
 				return;
 			}
+			// 57.2: the spline tool places a control point per click; a second click
+			// in the same spot (double-click) finishes, like Enter/Finish do
+			if (splineToolActive()) {
+				const now = Date.now();
+				if (now - lastSplineClick < 400) finishSpline();
+				else splinePlaceFromRay(selectionRaycaster);
+				lastSplineClick = now;
+				return;
+			}
+			// 57.3: while editing a spline, clicks pick its handles (move a point /
+			// insert one on a span marker) instead of selecting objects
+			if ($splineEditObject && splineEditClick(selectionRaycaster)) return;
 			// a Path patrol node capturing waypoints takes the click
 			if (capturePathClick(selectionRaycaster)) return;
 			// measure mode captures clicks entirely
@@ -896,6 +947,13 @@
 		// itself by passing its own rect.
 		const openViewportMenuAt = (clientX = 0, clientY = 0, forceEmpty = false, menuX = clientX, menuY = clientY) => {
 			if ($isLocked || $isVRMode || $specatorMode || $drawMode || $editingObject || $faceEditObject || $measureMode) return;
+			// 57.3: right-click deletes the control point under the cursor — and never
+			// opens the object menu on top of an open session
+			if ($splineEditObject) {
+				setRayFromEvent({ clientX, clientY });
+				splineEditRightClick(selectionRaycaster);
+				return;
+			}
 			setRayFromEvent({ clientX, clientY });
 			const hits = pickSceneObjects();
 			const top = !forceEmpty && hits.length ? topLevelObjectOf(hits[0].object) : null;
@@ -1104,6 +1162,15 @@
 				vrVertexTrigger(xrControllers.indexOf(controller));
 				return;
 			}
+			// 57.2: the spline tool places a control point per trigger; freehand
+			// keeps feeding the stroke poll instead
+			if (splineToolActive()) {
+				tempMatrix.identity().extractRotation(controller.matrixWorld);
+				selectionRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+				selectionRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+				splinePlaceFromRay(selectionRaycaster);
+				return;
+			}
 			if ($drawMode) return; // VR trigger feeds the stroke poll instead
 			// 214: in Box Select mode the marquee (selectstart/selectend) owns the
 			// trigger — the click never falls through to a single ray pick
@@ -1173,6 +1240,13 @@
 		if ($TControls.object?.userData?.isFaceProxy) {
 			$TControls.visible = true;
 			onFaceGizmoMoved();
+			return;
+		}
+		// 57.3: spline control-point proxy — the move rebuilds the tube from the
+		// record; the spline OBJECT itself never moves
+		if ($TControls.object?.userData?.isSplineProxy) {
+			$TControls.visible = true;
+			onSplineProxyMoved();
 			return;
 		}
 		// multi-select pivot: multiTransform drives + broadcasts the members,

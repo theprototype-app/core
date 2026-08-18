@@ -62,6 +62,19 @@
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
+	// 57.5: a spline's record is editable right here — same write path the
+	// viewport handles use (apply + broadcast + one 'spline' undo entry)
+	import {
+		splineDataOf,
+		setSplineColor,
+		setSplineRadiusAll,
+		scaleSplineRadii,
+		setSplineClosed,
+		setSplineSides,
+		setSplineSmoothness
+	} from '$lib/splineTool';
+	import { enterSplineEdit, splineEditObject, exitSplineEdit } from '$lib/splineEdit';
+	import { flattenPicking } from '$lib/flattenActions';
 	import { addParticlesPreset, updateObjectParticles, removeObjectParticles, burstObjectParticles } from '$lib/particleActions';
 	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
@@ -495,6 +508,30 @@
 	}
 
 	const isLight = $derived($selectedObject?.type?.endsWith?.('Light') ?? false);
+	// 57.5: the live spline record. Derived through $objectsGroup because the
+	// appliers mutate userData in place and poke THAT store (the material trap).
+	const spline = $derived.by(() => {
+		$objectsGroup;
+		return $selectedObject ? splineDataOf($selectedObject) : null;
+	});
+
+	// ...and PRIME the module the carve buttons reach for. Both entry points (this
+	// panel and the object context menu) load flattenActions dynamically to keep a static
+	// edge out of history's import subtree, and a cold fetch of it plus its
+	// dependency graph measured ~1.2s in dev — long enough that the first click
+	// looked like it did nothing. Warming it while a road is merely SELECTED is the
+	// moduleSDK primed-dynamic-import idiom, and it costs nothing when no road is.
+	$effect(() => {
+		if (spline) import('$lib/flattenActions').catch(() => {});
+	});
+	/** the shared radius when every point agrees, else null (mixed taper) */
+	const splineRadius = $derived.by(() => {
+		if (!spline?.points.length) return null;
+		const first = spline.points[0].radius;
+		return spline.points.every((/** @type {any} */ p) => Math.abs(p.radius - first) < 1e-6)
+			? first
+			: null;
+	});
 	const isGroup = $derived($selectedObject?.type === 'Group');
 	// live geometry params (78): registry-driven rows; geoTick refreshes after edits
 	let geoTick = $state(0);
@@ -503,6 +540,18 @@
 		return !isLight && !isGroup && $selectedObject ? geometryParamsOf($selectedObject) : null;
 	});
 	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);
+
+	// 21-C1: the parametric LOCK has to notice a poke. Every meshgeo commit stamps
+	// userData.faceEdited (so every sculpt stroke does), and a THREE tree is not
+	// reactive — reading the flag straight off $selectedObject in the template left
+	// the panel offering live parametric rows over a mesh that had just been
+	// sculpted, until you deselected and reselected it. Derived through
+	// $objectsGroup, which applyMeshGeo and applyVerts both poke.
+	const meshEditedLock = $derived.by(() => {
+		$objectsGroup;
+		geoTick;
+		return !!($selectedObject?.userData?.vertexEdited || $selectedObject?.userData?.faceEdited);
+	});
 
 	// 17-D1 follow-up: geometry rows fan too, but ONLY across one primitive type —
 	// a Box's params mean nothing to a Sphere. Members whose mesh was edited are
@@ -553,6 +602,29 @@
 		}
 		run();
 	}
+
+	/** 21-C1: rebuild a SCULPTED terrain from its parameters, throwing the sculpt
+	 * away. Confirmed first, because that is the destructive direction. It records
+	 * one 'geometry' entry, and that kind carries PARAMS, not a mesh — so undo walks
+	 * back past the sculpt rather than restoring it, and the sculpt is reached by
+	 * redoing forward. Same as changing a param on any vertex-edited primitive; the
+	 * confirm text therefore promises no one-key rescue. */
+	function regenerateTerrain() {
+		const uuid = $selectedObject?.uuid;
+		const params = geoParams?.params;
+		if (!uuid || !params) return;
+		showToast('Rebuild this terrain from its parameters? The sculpted shape is discarded.', [
+			{
+				label: 'Rebuild',
+				action: () => {
+					applyGeometry(uuid, { ...params });
+					geoTick++;
+				}
+			},
+			{ label: 'Keep sculpt', action: () => {} }
+		]);
+	}
+
 	/**
 	 * 15-O1: a SNAPSHOT of the selected material, not the material itself.
 	 * `setMaterialParam` mutates the material IN PLACE and pokes `objectsGroup`
@@ -2505,12 +2577,26 @@
 							{geoOtherTypes.length === 1 ? 'has' : 'have'} different parameters.
 						</p>
 					{/if}
-					{#if $selectedObject.userData?.vertexEdited || $selectedObject.userData?.faceEdited}
+					{#if meshEditedLock}
 						<!-- 164: once the mesh is edited, the parametric controls are LOCKED
 						     (changing one rebuilds the primitive + discards the edits) -->
 						<p id="geometry-locked" class="rounded-sm bg-yellow-900/40 px-2 py-1 text-[10px] text-yellow-200">
 							Mesh edited — geometry parameters are locked (changing them would rebuild the shape and discard your edits).
 						</p>
+						{#if $selectedObject.userData?.terrain}
+							<!-- 21-C1: the sculpt handoff is a ONE-WAY DOOR, and a one-way door needs a
+							     handle on the far side. A sculpt stroke commits meshgeo, which stamps
+							     faceEdited and locks these rows on purpose — silently discarding a sculpt
+							     because someone nudged the seed is the bug that lock prevents. So the way
+							     back is ASKED FOR (the switchMaterialType REFUSES precedent), and it is
+							     one undoable geometry rebuild. -->
+							<Button
+								id="terrain-regenerate"
+								size="xs"
+								color="alternative"
+								onclick={() => regenerateTerrain()}>Regenerate (discards the sculpt)</Button
+							>
+						{/if}
 					{:else}
 						<div id="inspector-geometry" class="flex flex-col gap-1">
 							{#each geoSpec.params as spec (spec.key)}
@@ -2521,6 +2607,25 @@
 									>
 										{spec.label}
 									</Checkbox>
+								{:else if spec.kind === 'choice'}
+									<!-- 21-C1: a param whose value is one of a NAMED set (a terrain's edge
+									     profile). Chips rather than a ThemedSelect: three short words fit, and
+									     a select cannot shrink below its longest option. -->
+									<div class="ui-row items-center gap-2">
+										<span class="w-20 shrink-0 text-xs text-gray-400">{spec.label}</span>
+										<div class="flex flex-wrap gap-1">
+											{#each spec.options ?? [] as option (option)}
+												<button
+													id={`geo-choice-${spec.key}-${option}`}
+													class={'ui-chip ' +
+														(String(geoParams.params[spec.key] ?? spec.def) === option
+															? 'bg-primary-600 text-white'
+															: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+													onclick={() => editGeometry(spec.key, option)}>{option}</button
+												>
+											{/each}
+										</div>
+									</div>
 								{:else}
 									<SliderRow
 										label={spec.label}
@@ -3088,6 +3193,125 @@
 						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
 					</p>
 				</Section>
+
+				<!-- 57.5: SPLINE — the record is the source of truth, so these rows edit
+				     it and let every peer rebuild the tube (never the geometry directly) -->
+				{#if spline}
+					<Section label="Spline">
+						<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
+							{spline.points.length} control points
+						</p>
+						<div class="ui-row items-center gap-2">
+							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
+							<input
+								id="spline-color"
+								type="color"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent"
+								aria-label="Spline color"
+								value={spline.color}
+								onchange={(/** @type {any} */ e) => setSplineColor($selectedObject.uuid, e.currentTarget.value)}
+							/>
+						</div>
+						<SliderRow
+							id="spline-thickness"
+							label="Thickness"
+							min={0.005}
+							max={1}
+							step={0.005}
+							decimals={3}
+							value={splineRadius ?? spline.points[0].radius}
+							onchange={(v) => setSplineRadiusAll($selectedObject.uuid, v)}
+						/>
+						{#if splineRadius === null}
+							<div class="ui-row items-center gap-2">
+								<span class="flex-1 text-[10px] text-yellow-200/80"
+									>Points have different radii — Thickness flattens them.</span
+								>
+								<Button size="xs" color="alternative" onclick={() => scaleSplineRadii($selectedObject.uuid, 1.25)}
+									>Thicker</Button
+								>
+								<Button size="xs" color="alternative" onclick={() => scaleSplineRadii($selectedObject.uuid, 0.8)}
+									>Thinner</Button
+								>
+							</div>
+						{/if}
+						<SliderRow
+							id="spline-sides-row"
+							label="Sides"
+							min={3}
+							max={32}
+							step={1}
+							decimals={0}
+							value={spline.radialSegments}
+							onchange={(v) => setSplineSides($selectedObject.uuid, Math.round(v))}
+						/>
+						<SliderRow
+							id="spline-smoothness"
+							label="Smoothness"
+							min={2}
+							max={48}
+							step={1}
+							decimals={0}
+							value={spline.segmentsPerSpan}
+							onchange={(v) => setSplineSmoothness($selectedObject.uuid, Math.round(v))}
+						/>
+						<Checkbox
+							checked={spline.closed}
+							onchange={(/** @type {any} */ e) => setSplineClosed($selectedObject.uuid, e.target.checked)}
+						>
+							Closed loop
+						</Checkbox>
+						<Button
+							id="spline-edit-open"
+							size="xs"
+							color="alternative"
+							onclick={() =>
+								$splineEditObject === $selectedObject.uuid ? exitSplineEdit() : enterSplineEdit($selectedObject.uuid)}
+						>
+							{$splineEditObject === $selectedObject.uuid ? 'Close spline editor' : 'Edit control points'}
+						</Button>
+						<p class="text-[10px] text-gray-500">
+							Per-point thickness lives on the handles — open the editor and drag the amber dot above a point.
+						</p>
+						<!-- the same two directions the context menu offers, and the same
+						     interaction: press, then click the partner in the viewport. A
+						     list of terrain NAMES was the first version and it does not
+						     survive a scene with a ring of tiles. -->
+						<span class="px-1 text-[10px] uppercase tracking-wider text-gray-500">Flatten</span>
+						<div class="flex flex-wrap gap-1">
+							<Button
+								id="spline-carve-pick"
+								size="xs"
+								color="alternative"
+								onclick={() =>
+									import('$lib/flattenActions').then((m) =>
+										m.startFlattenPick('carve', $selectedObject.uuid)
+									)}
+							>
+								Terrain to this…
+							</Button>
+							<Button
+								id="spline-drape-pick"
+								size="xs"
+								color="alternative"
+								onclick={() =>
+									import('$lib/flattenActions').then((m) =>
+										m.startFlattenPick('drape', $selectedObject.uuid)
+									)}
+							>
+								This onto a surface…
+							</Button>
+						</div>
+						<p class="text-[10px] text-gray-500">
+							{#if $flattenPicking}
+								Click the {$flattenPicking.kind === 'carve' ? 'terrain' : 'surface'} in the viewport — Esc cancels.
+							{:else}
+								Either level a strip of ground under this spline, or drop this spline onto a surface and
+								leave the surface alone. One undo step each.
+							{/if}
+						</p>
+					</Section>
+				{/if}
 
 				<!-- PFX-A: particle emitter — config on userData.particles, every edit
 				     replicates + records a props undo entry (setParticles).

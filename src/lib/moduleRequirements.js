@@ -95,12 +95,30 @@ export function classifyRequirements(list) {
 	const missing = [];
 	const disabled = [];
 	const ready = [];
+	// C5: installed, but NOT the version the scene was authored against. This matters
+	// more than it looks: module code runs the simulation on every peer, so two players
+	// on different versions of the same game module diverge with nothing to point at
+	// (golden rule 4 — peers assume identical catalogs/builders/modules). The gallery
+	// index deliberately floats on @main so new modules can be listed without a core
+	// release, which means the delta has to be VISIBLE rather than prevented.
+	const mismatched = [];
 	for (const entry of wanted) {
+		const local = loadedModules.find((m) => m.id === entry.id);
 		if (off.includes(entry.id)) disabled.push(entry);
-		else if (loadedModules.some((m) => m.id === entry.id)) ready.push(entry);
-		else missing.push(entry);
+		else if (local) {
+			ready.push(entry);
+			if (entry.version && local.version && entry.version !== local.version)
+				mismatched.push({ id: entry.id, want: entry.version, have: local.version });
+		} else missing.push(entry);
 	}
-	return { wanted, missing, disabled, ready, satisfied: !missing.length && !disabled.length };
+	return {
+		wanted,
+		missing,
+		disabled,
+		ready,
+		mismatched,
+		satisfied: !missing.length && !disabled.length
+	};
 }
 
 /** test/debug view */

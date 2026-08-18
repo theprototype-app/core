@@ -18,9 +18,13 @@ import { isViewer, warnViewerReadOnly } from './objectPermissions';
 // requestLoadSession): format confirm, "Backup before <name>" stash, replicated
 // clear+rebuild, and the sessionproposal peer-consent flow all come for free.
 
-/** Off-bundle base for curated templates/examples. Bump the tag when content
- * changes — jsDelivr caches tags aggressively, so released builds stay stable. */
-export const SCENES_BASE = 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v1';
+/** Off-bundle base for curated templates/examples/games. Bump the tag when content
+ * changes — jsDelivr caches tags aggressively, so released builds stay stable.
+ *
+ * C5.2: @v2 is a NEW tag, never a reused one, so a deployed older build cannot be
+ * handed an index whose `games` section it has no tab for. (Reusing @v1 would push
+ * v2 content at every build already in the wild.) */
+export const SCENES_BASE = 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v2';
 /** Community manifest (raw = fresh + CORS; see header note). */
 export const GALLERY_JSON_URL =
 	'https://raw.githubusercontent.com/theprototype-app/community-gallery/main/gallery.json';

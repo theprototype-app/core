@@ -54,10 +54,18 @@
 	 * surprised by a dialog. @param {any} entry */
 	function needs(entry) {
 		if (!entry.modules?.length) return null;
-		const { missing, disabled } = classifyRequirements(entry.modules);
+		const { missing, disabled, mismatched } = classifyRequirements(entry.modules);
 		const short = entry.modules.map((/** @type {any} */ m) => m.id).join(', ');
 		if (missing.length) return { text: 'Needs ' + short, ok: false };
 		if (disabled.length) return { text: 'Enable ' + short, ok: false };
+		// C5: the gallery index floats on @main while a scene is pinned, so a player can
+		// end up on a different module version than the game was built against — and
+		// module code runs the simulation, so that is a desync nobody could diagnose.
+		// Made VISIBLE rather than prevented (see classifyRequirements).
+		if (mismatched.length) {
+			const m = mismatched[0];
+			return { text: m.id + ' v' + m.want + ' (you have ' + m.have + ')', ok: false, skew: true };
+		}
 		return { text: short, ok: true };
 	}
 
@@ -141,7 +149,9 @@
 					data-needs={entry.slug}
 					title={req?.ok
 						? 'Installed — every player needs their own copy'
-						: 'Each player needs this module; loading will offer to install it'}
+						: req?.skew
+							? 'You have a different version than this scene was built against — every player must run the same one, or the game will drift'
+							: 'Each player needs this module; loading will offer to install it'}
 				>
 					<Puzzle size={11} aria-hidden="true" />{req?.text}
 				</span>

@@ -2063,11 +2063,24 @@ export function animationsRestore(saved, replicate = false) {
  * @returns {boolean} true when something was copied
  */
 export function copyAnimationsTo(fromUuid, toUuid) {
-	if (!fromUuid || !toUuid || fromUuid === toUuid) return false;
-	const set = normalizeAnimSet(get(animations)[fromUuid]);
-	if (!set || !Object.keys(set.clips).length) return false;
+	if (!fromUuid || fromUuid === toUuid) return false;
+	return copyAnimationsFrom(get(animations)[fromUuid], toUuid);
+}
+
+/**
+ * A6.3: the same copy, from a saved SET rather than from the live store — what a
+ * MERGE import needs, because `importObjects` re-uuids every object it parses and
+ * the payload's clips are keyed by the OLD uuid, so an imported object arrived
+ * without the movement it was saved with.
+ * @param {any} set an `animations[uuid]` document @param {string} toUuid
+ * @returns {boolean} true when something was copied
+ */
+export function copyAnimationsFrom(set, toUuid) {
+	if (!toUuid) return false;
+	const source = normalizeAnimSet(set);
+	if (!source || !Object.keys(source.clips).length) return false;
 	// clip ids are per object, so they can stay as they are
-	const copy = normalizeAnimSet(structuredClone(set));
+	const copy = normalizeAnimSet(structuredClone(source));
 	if (!copy) return false;
 	animations.update((map) => ({ ...map, [toUuid]: { ...copy, changedAt: Date.now() } }));
 	broadcastAnim(toUuid);

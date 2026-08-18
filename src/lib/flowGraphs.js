@@ -69,19 +69,48 @@ export function createObjectGraph(uuid, opts = {}) {
  * @returns {boolean} true when a graph was copied
  */
 export function copyGraphTo(fromUuid, toUuid) {
-	if (!fromUuid || !toUuid || fromUuid === toUuid || toUuid === SCENE_GRAPH) return false;
-	const graph = graphOf(fromUuid);
-	if (!graph || (!graph.nodes.length && !graph.edges.length)) return false;
+	if (!fromUuid || fromUuid === toUuid) return false;
+	return copyGraphFrom(graphOf(fromUuid), toUuid);
+}
+
+/** Deterministic fallback layout for a node with no authored position.
+ * @param {number} index */
+export function gridPosition(index) {
+	return { x: 40 + (index % 4) * 220, y: 40 + Math.floor(index / 4) * 140 };
+}
+
+/**
+ * A6.3: the same install, from a DOCUMENT rather than from the live store — what a
+ * MERGE import needs, because `importObjects` re-uuids every object it parses and
+ * the payload's graphs are keyed by the OLD uuids, so they were silently dropped.
+ * `copyGraphTo` cannot serve that case: the source graph is in a file, not loaded.
+ * @param {any} doc `{nodes, edges}` @param {string} toUuid
+ * @returns {boolean} true when a graph was installed
+ */
+export function copyGraphFrom(doc, toUuid) {
+	if (!toUuid || toUuid === SCENE_GRAPH) return false;
+	const nodesIn = doc?.nodes ?? [];
+	const edgesIn = doc?.edges ?? [];
+	if (!nodesIn.length && !edgesIn.length) return false;
 	if (graphExists(toUuid)) return false; // a fresh clone never has one; never clobber
 
 	/** @type {Record<string, string>} old node id -> new */
 	const idMap = {};
-	const nodes = graph.nodes.map((/** @type {any} */ node) => {
+	const nodes = nodesIn.map((/** @type {any} */ node, /** @type {number} */ index) => {
 		const id = crypto.randomUUID();
 		idMap[node.id] = id;
-		return { ...node, id, position: { ...node.position }, data: { ...node.data } };
+		return {
+			...node,
+			id,
+			// xyflow dereferences node.position while ADOPTING nodes, so a document
+			// that never had one (written programmatically, or by a tool that ignored
+			// layout) crashes the editor on mount. Fill it in on a DETERMINISTIC grid,
+			// so two peers installing the same document still agree byte for byte.
+			position: node.position ? { ...node.position } : gridPosition(index),
+			data: { ...node.data }
+		};
 	});
-	const edges = graph.edges
+	const edges = edgesIn
 		.map((/** @type {any} */ edge) => {
 			const source = idMap[edge.source];
 			const target = idMap[edge.target];

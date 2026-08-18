@@ -56,8 +56,8 @@
 	import { moveObjectToGroup, selectObject, flyTo } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
 	import { sceneGravity, setSceneGravity, resetSceneGravity, DEFAULT_GRAVITY } from '$lib/scenePhysics';
-	import { postEnabledLocal } from '$lib/scenePost';
-	import { chooseViewMode } from '$lib/viewMode';
+	import { scenePost, sceneProvidesAo } from '$lib/scenePost';
+	import { viewportOverrides, setRenderLayer, OVERRIDES } from '$lib/viewportOverrides';
 	import PostStack from './PostStack.svelte';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
@@ -1288,22 +1288,47 @@
 			<Section label="View">
 				<p class="ui-section-label">Viewport — this device</p>
 				<div id="view-mode-switch" class="flex flex-wrap gap-1">
-					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['custom', 'Scene look'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
+					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
+						{@const aoTaken = mode === 'shaded-ao' && sceneProvidesAo($scenePost)}
 						<button
+							id={'view-mode-' + mode}
 							class={'ui-chip ' +
-								($viewMode === mode ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
-							onclick={() => chooseViewMode(mode)}
+								($viewMode === mode ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500') +
+								(aoTaken ? ' cursor-not-allowed opacity-40' : '')}
+							disabled={aoTaken}
+							title={aoTaken
+								? 'This scene sets its own ambient occlusion, so your personal setting does not apply'
+								: ''}
+							onclick={() => viewMode.set(mode)}
 						>
 							{label}
 						</button>
 					{/each}
 				</div>
 				<p class="mb-1 text-xs text-gray-400">
-					Local render mode (ambient occlusion + wireframe are desktop-only; not shown to peers).
-					"Scene look" renders the post-processing stack saved with the scene — post-processing
-					does not run in VR.
+					How YOUR viewport shades the scene — not shown to peers. The scene's own look
+					(post-processing) renders for everyone regardless; switch it off below if you need to.
 				</p>
-				<Checkbox bind:checked={$postEnabledLocal}>Render the scene look on this device</Checkbox>
+				{#if sceneProvidesAo($scenePost)}
+					<p class="mb-1 text-[10px] text-gray-400">
+						This scene sets its own ambient occlusion, so it is used instead of your personal
+						setting.
+					</p>
+				{/if}
+				<!-- B: ONE place for "the scene says X, but not on my screen". Layers 2 and 3
+					 add a key here rather than each inventing their own checkbox and their own
+					 "do my peers need to switch this on?" question. -->
+				<p class="ui-section-label" data-anchor="Overrides">Overrides — this device</p>
+				{#each OVERRIDES.filter((o) => o.key !== 'shaders') as override (override.key)}
+					<Checkbox
+						id={'override-' + override.key}
+						checked={$viewportOverrides[override.key] !== false}
+						onchange={(e) => setRenderLayer(override.key, e.currentTarget.checked)}
+					>
+						{override.label}
+					</Checkbox>
+					<p class="mb-1 text-[10px] italic text-gray-400">{override.hint}</p>
+				{/each}
 				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
 				<Checkbox bind:checked={$showColliders}>Show colliders — this device</Checkbox>
 			</Section>

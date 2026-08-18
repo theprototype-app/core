@@ -361,17 +361,18 @@
 {/if}
 
 <p class="text-[10px] italic text-gray-400">
-	The stack is part of the scene: everyone sees it and it is saved with the file. Whether YOUR
-	viewport renders it is local — pick "Scene look" in View.
+	The stack is part of the scene: everyone in the session sees it as soon as you change it, and it
+	is saved with the file. Nobody has to switch anything on.
 </p>
-{#if $scenePost.effects.length && $viewMode !== 'custom'}
+{#if $scenePost.effects.length && $viewMode === 'wireframe'}
 	<p class="text-[10px] text-amber-400">
-		This scene has a look, but your viewport is showing "{$viewMode}" — switch View to Scene look to
-		see it.
+		Your viewport is in Wireframe, which skips post-processing — the look is still there for
+		everyone else.
 	</p>
-{/if}
-{#if $scenePost.effects.length && !$postEnabledLocal}
-	<p class="text-[10px] text-amber-400">Scene look rendering is switched off on this device (View).</p>
+{:else if $scenePost.effects.length && !$postEnabledLocal}
+	<p class="text-[10px] text-amber-400">
+		You have switched the scene look off on this device (View ▸ Overrides). Peers still see it.
+	</p>
 {/if}
 <p class="text-[10px] italic text-gray-400">
 	Post-processing does not run in VR — the effects are skipped in a headset, and objects still look

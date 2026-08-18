@@ -1,8 +1,6 @@
-import { writable, get } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { peers } from '../stores/appStore';
-import { viewMode } from '../stores/sceneStore';
-// dependency-free helper (sceneStore imports it too), so this stays a leaf
-import { coarsePointer } from './inputDevice';
+import { viewportOverrides } from './viewportOverrides';
 // L2: the 'look' history kind. Safe as a static import — history's own subtree is
 // three/stores/flowRuntime/editOverlays/meshBudget, and nothing in it reaches this
 // module, so the registerHistoryKind-in-the-body rule is not violated.
@@ -143,13 +141,13 @@ export function normalizeScenePost(raw) {
 /** @type {import('svelte/store').Writable<PostStack>} the replicated stack */
 export const scenePost = writable(normalizeScenePost(null));
 
-/** LOCAL kill switch: render the authored stack on THIS device at all. */
-export const postEnabledLocal = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('postEnabledLocal') !== 'false' : true
-);
-postEnabledLocal.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('postEnabledLocal', value ? 'true' : 'false');
-});
+/**
+ * LOCAL kill switch, kept as a convenience VIEW of `viewportOverrides.post` so
+ * consumers do not each learn the override key. B moved the state itself there —
+ * one concept, so L6/L7 add a key instead of another checkbox with its own story.
+ * @type {import('svelte/store').Readable<boolean>}
+ */
+export const postEnabledLocal = derived(viewportOverrides, (state) => state.post !== false);
 
 // ---- the PLAN (pure) ------------------------------------------------------
 
@@ -159,20 +157,34 @@ postEnabledLocal.subscribe((value) => {
 export const BUILTIN_AO = Object.freeze({ id: 'builtin-ao', kind: 'ao', enabled: true, params: {} });
 
 /**
- * Which entries this viewer should actually render, given the scene stack and
- * the LOCAL view state. Pure, so the view-mode matrix is a table test.
+ * Which entries this viewer should actually render.
  *
- *  - `wireframe`  skips the stack entirely: it is a DIAGNOSTIC view that already
- *                 replaces every material via scene.overrideMaterial.
- *  - `shaded`     no post at all.
- *  - `shaded-ao`  the built-in AO only — today's chain, unchanged.
- *  - `custom`     the scene's authored stack.
+ * THE MODEL (corrected): a scene's authored look is SCENE DATA and renders for
+ * everyone, the way its environment preset, fog and background music already do.
+ * Nobody opts in to seeing the scene. The earlier design made the look visible
+ * only in a `'custom'` view mode the viewer had to find and pick, which meant an
+ * author had to tell each peer, one at a time, to go and switch it on — and once
+ * anyone touched the view-mode chips at all, a "they have chosen" latch excluded
+ * them from every future scene's look permanently.
  *
- * L4 generalised the capability gate from AO to the WHOLE stack: `postOk` is the
- * engine gate (viewMode.postSupported) and `postWarm` the boot-compile warm-up.
- * Both now empty the entire effective stack rather than dropping the AO entry
- * alone — the boot-compile window and the broken-link driver bug are properties of
- * running ANY fullscreen pass, and AO was simply where we met them.
+ * What stays LOCAL is the right to switch it off here: `localEnabled`, from
+ * `viewportOverrides` (see that module for why there is one concept rather than
+ * one flag per layer).
+ *
+ * The view MODE is what it says: a shading choice.
+ *  - `wireframe`   skips post entirely — a DIAGNOSTIC view that already replaces
+ *                  every material through scene.overrideMaterial.
+ *  - `shaded`      no personal ambient occlusion.
+ *  - `shaded-ao`   personal ambient occlusion, which applies ONLY when the scene
+ *                  does not set its own. An authored look wins: two AO passes
+ *                  would double every contact shadow and cost a second pass, and
+ *                  it should never be ambiguous whose settings are on screen. The
+ *                  UI disables that chip and says why.
+ *  - `'custom'`    a legacy value from the opt-in design; treated as `shaded`.
+ * Personal AO goes FIRST, before any grading — it is scene shading, not a look.
+ *
+ * L4's capability gate (`postOk`) and boot-compile warm-up (`postWarm`) empty the
+ * whole thing: both are properties of running ANY fullscreen pass.
  *
  * @param {{stack: PostStack, mode: string, localEnabled?: boolean, postOk?: boolean, postWarm?: boolean}} input
  * @returns {PostEntry[]}
@@ -180,16 +192,21 @@ export const BUILTIN_AO = Object.freeze({ id: 'builtin-ao', kind: 'ao', enabled:
 export function effectivePostStack({ stack, mode, localEnabled = true, postOk = true, postWarm = true }) {
 	if (mode === 'wireframe') return [];
 	if (!postOk || !postWarm) return [];
-	if (mode === 'shaded-ao') {
-		// deliberately NOT gated on localEnabled: this mode is not the authored
-		// look, it is the viewer's own choice of viewport shading
-		return [{ ...BUILTIN_AO, params: defaultPostParams('ao') }];
-	}
-	if (mode !== 'custom') return [];
 	if (!localEnabled) return [];
 	const state = normalizeScenePost(stack);
-	if (!state.enabled) return [];
-	return state.effects.filter((entry) => entry.enabled);
+	const authored = state.enabled ? state.effects.filter((entry) => entry.enabled) : [];
+	const personalAo = mode === 'shaded-ao' && !authored.some((entry) => entry.kind === 'ao');
+	return personalAo ? [{ ...BUILTIN_AO, params: defaultPostParams('ao') }, ...authored] : authored;
+}
+
+/**
+ * Does the scene's own look already provide ambient occlusion? The View section
+ * asks, so it can disable the personal chip and explain instead of quietly
+ * ignoring it. @param {PostStack} stack
+ */
+export function sceneProvidesAo(stack) {
+	const state = normalizeScenePost(stack);
+	return state.enabled && state.effects.some((entry) => entry.enabled && entry.kind === 'ao');
 }
 
 /**
@@ -428,7 +445,6 @@ export function applyRemoteScenePost(data) {
 	const incoming = normalizeScenePost(data);
 	if (incoming.changedAt <= (get(scenePost).changedAt || 0)) return false;
 	scenePost.set(incoming);
-	adoptCustomView();
 	return true;
 }
 
@@ -466,28 +482,6 @@ export function sendScenePost(peerId, attempt = 0) {
 // scene's look and stays, the same way their objects do. When L5 adds LUT
 // textures those ride the content-hash push/pull, which has its own lifecycle.
 
-/**
- * A scene that ARRIVES carrying a look should be seen as its author intended, so
- * the view mode is promoted to 'custom' — the mobile-AO default one level up.
- *
- * It only ever promotes a viewer who has never PICKED a mode (`chooseViewMode`
- * records that): `viewMode` persists to localStorage on every write, so the
- * stored value cannot by itself distinguish a choice from a default. And it never
- * overrides 'wireframe', which is a diagnostic view someone is actively using.
- */
-export function adoptCustomView() {
-	if (typeof localStorage !== 'undefined' && localStorage.getItem('viewModeChosen') === 'true') return;
-	// L4: never promote a COARSE-POINTER device into a full post stack. The whole
-	// stack is fullscreen passes; AO alone was already a poor default on a phone
-	// GPU (defaultViewMode starts those devices in plain 'shaded') and several
-	// mobile drivers mis-compile such passes — the viewport then keeps showing a
-	// STALE frame with nothing in the console. They can still pick Scene look.
-	if (coarsePointer()) return;
-	const state = get(scenePost);
-	if (!state.enabled || !state.effects.some((entry) => entry.enabled)) return;
-	if (get(viewMode) === 'wireframe') return;
-	viewMode.set('custom');
-}
 
 // ---- persistence ---------------------------------------------------------
 
@@ -509,7 +503,6 @@ export function scenePostRestore(payload, replicate = false) {
 	// changedAt the save happens to carry (an old file's stamp is in the past)
 	next.changedAt = Date.now();
 	scenePost.set(next);
-	adoptCustomView();
 	if (replicate) broadcastScenePost();
 }
 

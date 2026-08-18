@@ -119,52 +119,72 @@ h.run(async () => {
 			]
 		});
 		const kindsOf = (options) => effectivePostStack({ stack, ...options }).map((e) => e.kind);
+		// a look WITHOUT ao, to test the personal-AO interaction
+		const noAo = normalizeScenePost({ enabled: true, effects: [{ id: 'a', kind: 'test-fill' }] });
+		const empty = normalizeScenePost({ enabled: true, effects: [] });
 		return {
 			shaded: kindsOf({ mode: 'shaded' }),
-			shadedAo: effectivePostStack({ stack, mode: 'shaded-ao' }),
+			shadedAo: kindsOf({ mode: 'shaded-ao' }),
+			legacyCustom: kindsOf({ mode: 'custom' }),
 			wireframe: kindsOf({ mode: 'wireframe' }),
-			custom: kindsOf({ mode: 'custom' }),
-			customLocalOff: kindsOf({ mode: 'custom', localEnabled: false }),
-			customStackOff: effectivePostStack({
+			localOff: kindsOf({ mode: 'shaded', localEnabled: false }),
+			stackOff: effectivePostStack({
 				stack: normalizeScenePost({ enabled: false, effects: [{ id: 'a', kind: 'test-fill' }] }),
-				mode: 'custom'
+				mode: 'shaded'
 			}).map((e) => e.kind),
-			// L4 GENERALISED the gate: it empties the WHOLE stack now, not just AO
-			customGated: kindsOf({ mode: 'custom', postOk: false }),
-			customNotWarm: kindsOf({ mode: 'custom', postWarm: false }),
-			aoModeGated: kindsOf({ mode: 'shaded-ao', postOk: false }),
-			// a disabled entry is skipped but a disabled AO is not the same thing as a gate
-			customEntryOff: effectivePostStack({
+			gated: kindsOf({ mode: 'shaded', postOk: false }),
+			notWarm: kindsOf({ mode: 'shaded', postWarm: false }),
+			entryOff: effectivePostStack({
 				stack: normalizeScenePost({ effects: [{ id: 'a', kind: 'test-fill', enabled: false }, { id: 'b', kind: 'ao' }] }),
-				mode: 'custom'
-			}).map((e) => e.kind)
+				mode: 'shaded'
+			}).map((e) => e.kind),
+			// personal AO: added when the look has none, refused when it has
+			noAoShaded: effectivePostStack({ stack: noAo, mode: 'shaded' }).map((e) => e.kind),
+			noAoWithChip: effectivePostStack({ stack: noAo, mode: 'shaded-ao' }).map((e) => e.kind),
+			emptyWithChip: effectivePostStack({ stack: empty, mode: 'shaded-ao' }),
+			emptyPlain: effectivePostStack({ stack: empty, mode: 'shaded' }).map((e) => e.kind)
 		};
 	});
-	h.check(matrix.shaded.length === 0, '1.10 `shaded` runs no stack passes at all');
+	// THE CORRECTED MODEL: a scene's look is scene data and renders for everyone,
+	// in every shading mode but wireframe. There is no mode to find and pick.
 	h.check(
-		matrix.shadedAo.length === 1 &&
-			matrix.shadedAo[0].kind === 'ao' &&
-			matrix.shadedAo[0].params.aoRadius === 1.5 &&
-			matrix.shadedAo[0].params.intensity === 2.5 &&
-			matrix.shadedAo[0].params.distanceFalloff === 1.0,
-		'1.11 `shaded-ao` runs ONLY the built-in AO, at the numbers Outline.svelte used to hardcode'
+		matrix.shaded.join(',') === 'test-fill,ao',
+		'1.10 the authored look renders in plain `shaded` — nobody opts in to seeing the scene'
 	);
-	h.check(matrix.wireframe.length === 0, '1.12 `wireframe` skips the stack (a diagnostic view owning overrideMaterial)');
 	h.check(
-		matrix.custom.join(',') === 'test-fill,ao',
-		'1.13 `custom` runs the scene stack IN STACK ORDER (the order is the user\'s, not the pipeline\'s)'
+		matrix.legacyCustom.join(',') === 'test-fill,ao',
+		'1.11 a legacy `custom` value still works, reading as `shaded`'
 	);
-	h.check(matrix.customLocalOff.length === 0, '1.14 the LOCAL kill switch empties the stack in `custom`');
-	h.check(matrix.customStackOff.length === 0, '1.15 the scene-level `enabled: false` empties the stack');
-	// L4 deliberately CHANGED this contract: the engine gate and the boot warm-up
-	// are properties of running any fullscreen pass, so they empty the whole stack
-	// rather than dropping the AO entry and rendering the rest.
+	h.check(matrix.wireframe.length === 0, '1.12 `wireframe` still skips it (a diagnostic view owning overrideMaterial)');
 	h.check(
-		matrix.customGated.length === 0 && matrix.customNotWarm.length === 0,
-		'1.16 the capability gate and the warm-up empty the WHOLE stack, not just AO'
+		matrix.shaded.join(',') === 'test-fill,ao',
+		'1.13 ...IN STACK ORDER (the order is the author\'s, not the pipeline\'s)'
 	);
-	h.check(matrix.aoModeGated.length === 0, '1.16b ...and the legacy shaded-ao mode with it');
-	h.check(matrix.customEntryOff.join(',') === 'ao', '1.17 a per-entry disable drops just that entry');
+	h.check(matrix.localOff.length === 0, '1.14 the LOCAL override switches it off on this device only');
+	h.check(matrix.stackOff.length === 0, '1.15 the scene-level `enabled: false` empties the stack');
+	h.check(
+		matrix.gated.length === 0 && matrix.notWarm.length === 0,
+		'1.16 the capability gate and the warm-up empty the WHOLE stack'
+	);
+	h.check(matrix.entryOff.join(',') === 'ao', '1.16b a per-entry disable drops just that entry');
+	// the AO-conflict rule: the scene wins
+	h.check(
+		matrix.shadedAo.join(',') === 'test-fill,ao',
+		'1.17 a look that SETS ao means the personal AO chip adds nothing (no doubled contact shadows)'
+	);
+	h.check(
+		matrix.noAoWithChip.join(',') === 'ao,test-fill' && matrix.noAoShaded.join(',') === 'test-fill',
+		'1.17b a look with NO ao still honours the personal chip, and AO runs FIRST (shading before grading)'
+	);
+	h.check(
+		matrix.emptyWithChip.length === 1 &&
+			matrix.emptyWithChip[0].kind === 'ao' &&
+			matrix.emptyWithChip[0].params.aoRadius === 1.5 &&
+			matrix.emptyWithChip[0].params.intensity === 2.5 &&
+			matrix.emptyWithChip[0].params.distanceFalloff === 1.0 &&
+			matrix.emptyPlain.length === 0,
+		'1.18 a scene with NO look behaves exactly as before: shaded-ao = the built-in AO, shaded = nothing'
+	);
 
 	// ---------------------------------------------------------------- section 2
 	// the MERGE rule, with its counterfactual computed in-test
@@ -254,7 +274,7 @@ h.run(async () => {
 		post.addPostEffect('ao');
 		post.addPostEffect('test-noop');
 	});
-	await page.evaluate(() => window.__stores.viewMode.set('custom'));
+	await page.evaluate(() => window.__stores.viewMode.set('shaded'));
 	await page.waitForTimeout(900);
 	chain = await page.evaluate(() => window.__postDebug());
 	h.check(
@@ -330,7 +350,7 @@ h.run(async () => {
 	await page.evaluate(() => {
 		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 2 });
 		window.__stores.scenePost.addPostEffect('test-fill');
-		window.__stores.viewMode.set('custom');
+		window.__stores.viewMode.set('shaded');
 	});
 	await page.waitForTimeout(1500);
 	const frameFill = await h.grabFrame(A, clip);
@@ -393,45 +413,50 @@ h.run(async () => {
 	h.check(!!selected, '4.8 premise: an object was selected for 4.7');
 
 	// ---------------------------------------------------------------- section 5
-	// the 'custom' promotion rule
-	console.log('\n=== 5. adopting `custom` when a scene arrives with a look ===');
+	// the look renders WITHOUT the viewer doing anything — and the local override
+	console.log('\n=== 5. default-on, with a local opt-out ===');
 
-	const adopt = await page.evaluate(async () => {
+	// no mode picking, no promotion: put a look on the scene while the viewer sits
+	// in the ordinary desktop default and demand the chain builds it
+	const defaultOn = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
-		const viewMode = window.__stores.viewMode;
-		const read = () => {
-			let value = '';
-			viewMode.subscribe((v) => (value = v))();
-			return value;
-		};
-		// a viewer who has never PICKED a mode
-		localStorage.removeItem('viewModeChosen');
-		viewMode.set('shaded');
-		post.scenePostRestore({ enabled: true, effects: [{ id: 'a', kind: 'test-fill' }], changedAt: 10 });
-		const promoted = read();
-
-		// a viewer who HAS picked: their choice must stand
-		window.__stores.viewModeCtl.chooseViewMode('shaded');
-		post.scenePostRestore({ enabled: true, effects: [{ id: 'b', kind: 'test-fill' }], changedAt: 11 });
-		const respected = read();
-
-		// wireframe is a diagnostic view someone is actively using
-		localStorage.removeItem('viewModeChosen');
-		viewMode.set('wireframe');
-		post.scenePostRestore({ enabled: true, effects: [{ id: 'c', kind: 'test-fill' }], changedAt: 12 });
-		const wireKept = read();
-
-		// an EMPTY look is not a look
-		localStorage.removeItem('viewModeChosen');
-		viewMode.set('shaded');
-		post.scenePostRestore({ enabled: true, effects: [], changedAt: 13 });
-		const emptyKept = read();
-		return { promoted, respected, wireKept, emptyKept };
+		window.__stores.viewMode.set('shaded');
+		window.__stores.viewportOverrides.setRenderLayer('post', true);
+		post.scenePost.set({ enabled: true, effects: [], changedAt: 30 });
+		post.addPostEffect('test-noop');
+		await new Promise((r) => setTimeout(r, 1000));
+		return window.__postDebug();
 	});
-	h.check(adopt.promoted === 'custom', '5.1 a scene arriving with a look promotes an unchosen viewer to `custom`');
-	h.check(adopt.respected === 'shaded', '5.2 a viewer who PICKED a mode is never overridden');
-	h.check(adopt.wireKept === 'wireframe', '5.3 wireframe is never overridden (an active diagnostic view)');
-	h.check(adopt.emptyKept === 'shaded', '5.4 an empty stack promotes nobody');
+	h.check(
+		defaultOn.kinds.includes('test-noop'),
+		'5.1 a look renders in the plain default mode, with no opt-in anywhere: ' + JSON.stringify(defaultOn.chain)
+	);
+
+	const overrideOff = await page.evaluate(async () => {
+		window.__stores.viewportOverrides.setRenderLayer('post', false);
+		await new Promise((r) => setTimeout(r, 900));
+		const off = window.__postDebug();
+		window.__stores.viewportOverrides.setRenderLayer('post', true);
+		await new Promise((r) => setTimeout(r, 900));
+		return { off, back: window.__postDebug() };
+	});
+	h.check(
+		overrideOff.off.stackPasses === 0 && overrideOff.off.outlinesLast === true,
+		'5.2 the LOCAL override switches it off here (and the outlines survive)'
+	);
+	h.check(overrideOff.back.kinds.includes('test-noop'), '5.3 ...and back on again');
+
+	// the override survives a reload, since it is a device preference
+	const persisted = await page.evaluate(() => {
+		window.__stores.viewportOverrides.setRenderLayer('post', false);
+		const raw = localStorage.getItem('viewportOverrides');
+		window.__stores.viewportOverrides.setRenderLayer('post', true);
+		return raw;
+	});
+	h.check(
+		/"post":\s*false/.test(persisted ?? ''),
+		'5.4 the override is persisted per device (' + persisted + ')'
+	);
 
 	// ---------------------------------------------------------------- section 6
 	// undo: ONE entry and ONE message per gesture
@@ -564,19 +589,36 @@ h.run(async () => {
 		'7.2 ...every param, not just the first (aoRadius ' + stackB.effects[0]?.params?.aoRadius + ')'
 	);
 
-	// B RENDERS it: switching B to `custom` runs A's authored AO and the pixels move
+	// B RENDERS it, WITHOUT having chosen anything. Note what this can no longer be
+	// measured against: a view-mode switch, because the look now renders in every
+	// shading mode — both frames would be identical and the check would read 0. The
+	// thing that toggles rendering is B's own local override, so that is the A/B.
 	const clipB = await h.centeredClip(B, [0, 0, 0], 360);
-	await B.page.evaluate(() => window.__stores.viewMode.set('shaded'));
+	const bMode = await B.page.evaluate(() => {
+		let mode = '';
+		window.__stores.viewMode.subscribe((v) => (mode = v))();
+		return mode;
+	});
+	h.check(
+		bMode !== 'wireframe',
+		'7.3 premise: B is in an ordinary shading mode it never picked (' + bMode + ')'
+	);
 	await B.page.waitForTimeout(1500);
-	const bShaded = await h.grabFrame(B, clipB);
-	await B.page.evaluate(() => window.__stores.viewMode.set('custom'));
-	await B.page.waitForTimeout(1800);
-	const bCustom = await h.grabFrame(B, clipB);
-	const bDelta = await h.frameDelta(B.page, bShaded, bCustom);
+	const bWithLook = await h.grabFrame(B, clipB);
+	await B.page.evaluate(async () => {
+		window.__stores.viewportOverrides.setRenderLayer('post', false);
+		await new Promise((r) => setTimeout(r, 1600));
+	});
+	const bWithout = await h.grabFrame(B, clipB);
+	const bDelta = await h.frameDelta(B.page, bWithLook, bWithout);
 	h.check(
 		bDelta.changed > 300 && bDelta.max > 15,
-		'7.3 B RENDERS the stack it received: ' + bDelta.changed + ' px changed, max delta ' + bDelta.max
+		'7.3b B RENDERS the received stack by default: ' + bDelta.changed + ' px change when B switches it off'
 	);
+	await B.page.evaluate(async () => {
+		window.__stores.viewportOverrides.setRenderLayer('post', true);
+		await new Promise((r) => setTimeout(r, 1200));
+	});
 
 	// a live edit on A follows to B
 	await page.evaluate(() => {
@@ -758,7 +800,7 @@ h.run(async () => {
 	// `shaded`, so reading it in any other mode would report nothing skipped and
 	// pass whatever happened.
 	const afterReload = await page.evaluate(async () => {
-		window.__stores.viewMode.set('custom');
+		window.__stores.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 900));
 		return window.__postDebug();
 	});
@@ -780,7 +822,7 @@ h.run(async () => {
 					{ blendFunction: BlendFunction.SET }
 				)
 		});
-		window.__stores.viewMode.set('custom');
+		window.__stores.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 900));
 		return window.__postDebug();
 	});
@@ -813,7 +855,7 @@ h.run(async () => {
 		post.scenePost.set({ enabled: true, effects: [], changedAt: 21 });
 		const id = post.addPostEffect('ao');
 		post.setPostEffectParams(id, { aoRadius: 4.25, intensity: 0.75, distanceFalloff: 2.5 });
-		window.__stores.viewMode.set('custom');
+		window.__stores.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 1200));
 		return window.__postDebug().ao;
 	});
@@ -870,7 +912,7 @@ h.run(async () => {
 	const tone = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
 		post.scenePost.set({ enabled: true, effects: [], changedAt: 22 });
-		window.__stores.viewMode.set('custom');
+		window.__stores.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 900));
 		const before = window.__postDebug();
 		post.addPostEffect('tonemapping');
@@ -909,7 +951,7 @@ h.run(async () => {
 		const post = window.__stores.scenePost;
 		post.scenePost.set({ enabled: true, effects: [], changedAt: 23 });
 		window.__stores.commandsHandler.sceneCommand('/create sphere');
-		window.__stores.viewMode.set('custom');
+		window.__stores.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 1600));
 		return window.__postDebug();
 	});
@@ -956,30 +998,37 @@ h.run(async () => {
 		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 24 });
 	});
 
-	// a COARSE-POINTER device is never auto-promoted into a full post stack — the
-	// mobile-AO default one level up. `(pointer: coarse)` really is emulable with a
-	// hasTouch context (unlike the mobile VIEWPORT, which needs isMobile too).
+	// A TOUCH DEVICE gets the scene's look too. That is a deliberate reversal: the
+	// opt-in design refused to promote a coarse-pointer device, which in the
+	// default-on model would mean phone users silently never see the art direction
+	// of a scene everyone else is looking at. They get it, and they get the same
+	// one-switch escape hatch if their driver cannot cope. `(pointer: coarse)` is
+	// emulable with a hasTouch context (unlike the mobile VIEWPORT, which needs
+	// isMobile too).
 	const T = await h.setupPage(browser, 'Touch', { context: { hasTouch: true } });
-	const touch = await T.page.evaluate(() => {
-		const read = () => {
-			let value = '';
-			window.__stores.viewMode.subscribe((v) => (value = v))();
-			return value;
-		};
-		localStorage.removeItem('viewModeChosen');
+	const touch = await T.page.evaluate(async () => {
 		window.__stores.viewMode.set('shaded');
 		window.__stores.scenePost.scenePostRestore({
 			enabled: true,
 			effects: [{ id: 'a', kind: 'ao' }],
 			changedAt: 99
 		});
-		return { coarse: window.__stores.inputDevice.coarsePointer(), mode: read() };
+		await new Promise((r) => setTimeout(r, 1400));
+		const on = window.__postDebug();
+		window.__stores.viewportOverrides.setRenderLayer('post', false);
+		await new Promise((r) => setTimeout(r, 900));
+		return {
+			coarse: window.__stores.inputDevice.coarsePointer(),
+			kinds: on.kinds,
+			afterOff: window.__postDebug().stackPasses
+		};
 	});
 	h.check(touch.coarse === true, '9.11 premise: the touch context really reports a coarse pointer');
 	h.check(
-		touch.mode === 'shaded',
-		'9.12 a scene arriving with a look does NOT promote a touch device to Scene look (' + touch.mode + ')'
+		touch.kinds.includes('ao'),
+		'9.12 a touch device renders the scene look too — no silent second class of viewer'
 	);
+	h.check(touch.afterOff === 0, '9.12b ...and the same one-switch escape hatch works there');
 
 	h.check(
 		h.pageErrors(A).concat(h.pageErrors(B)).filter((m) => /scenePost|postEffects|Outline/.test(m)).length === 0,

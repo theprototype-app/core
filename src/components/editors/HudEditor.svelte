@@ -26,6 +26,11 @@
 	import { beginHudGesture, endHudGesture } from '$lib/hudSync';
 	import { createGesture } from '$lib/modalGrab';
 	import HudElement from '../hud/HudElement.svelte';
+	import HudFieldRow from '../hud/HudFieldRow.svelte';
+	import HudPalette from '../hud/HudPalette.svelte';
+	import {
+		kindDef, fieldsForKind, styleFieldsForKind, newElementOfKind, HUD_KIND_DEFS
+	} from '$lib/hudKinds';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
@@ -99,6 +104,48 @@
 		hudScreenOverride.update((all) => ({ ...all, [docKey]: screenId }));
 		return () => hudScreenOverride.update((all) => ({ ...all, [docKey]: null }));
 	});
+
+	// Selecting ONE element opens the properties pane, so its parameters are reachable
+	// without hunting for the tab — WindowShell.showSecondary is exactly this seam, and an
+	// auto-open stays UNPINNED so it does not fight a user who closed it.
+	let shell = $state(/** @type {any} */ (null));
+	$effect(() => {
+		if (one) untrack(() => shell?.showSecondary('props'));
+	});
+
+	// --- D2: the left column, split between the screens list and the palette ------
+	// GraphTree.svelte's grip, verbatim reasoning: the ceiling is derived from the
+	// MEASURED column less the room the palette below needs, and it re-clamps whenever
+	// the pane SHRINKS — a flat cap pushes the grip off the bottom of a short dock with
+	// no way back.
+	const SCREENS_RESERVE = 148;
+	let paneH = $state(0);
+	let screensH = $state(
+		parseInt((typeof localStorage !== 'undefined' && localStorage.getItem('hudScreens:h')) || '132') || 132
+	);
+	let screensResizing = $state(false);
+	const screensMax = $derived(Math.max(56, (paneH || 320) - SCREENS_RESERVE));
+	$effect(() => {
+		const max = screensMax;
+		if (screensH > max) screensH = max;
+	});
+	function startScreensResize(/** @type {any} */ e) {
+		screensResizing = true;
+		e.currentTarget.setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+	function doScreensResize(/** @type {any} */ e) {
+		if (!screensResizing) return;
+		screensH = Math.min(Math.max(56, screensH + e.movementY), screensMax);
+	}
+	function endScreensResize(/** @type {any} */ e) {
+		if (!screensResizing) return;
+		screensResizing = false;
+		e.currentTarget.releasePointerCapture?.(e.pointerId);
+		try {
+			localStorage.setItem('hudScreens:h', String(screensH));
+		} catch {}
+	}
 
 	// --- the artboard ------------------------------------------------------------
 	// It is a fixed 16:9 stage scaled to fit, so what you lay out matches the viewport's
@@ -329,6 +376,10 @@
 	}
 
 	// --- commands ---------------------------------------------------------------
+	/** Read a schema field off the element. A JSDoc cast in the TEMPLATE is not honoured,
+	 * so the indexing lives here. @param {any} el @param {string} key */
+	const fieldValue = (el, key) => el?.[key];
+
 	function ensureDoc() {
 		if (!doc) setHudDocFor(docKey, {});
 	}
@@ -337,14 +388,13 @@
 		ensureDoc();
 		const sid = screenId || hudDocOf(docKey)?.screens[0].id;
 		if (!sid) return;
+		// 21-D1: size, label and every other param come from the REGISTRY, so adding a
+		// kind never means editing a ternary here again
 		const el = addHudElement(docKey, sid, {
-			kind,
+			...newElementOfKind(kind),
 			anchor: 'top-left',
 			x: 24 + (elements.length % 6) * 16,
-			y: 24 + (elements.length % 6) * 16,
-			w: kind === 'bar' ? 200 : kind === 'list' ? 180 : kind === 'crosshair' ? 20 : 140,
-			h: kind === 'bar' ? 16 : kind === 'list' ? 120 : kind === 'crosshair' ? 20 : 28,
-			label: kind === 'button' ? 'Button' : kind === 'text' ? 'Text' : ''
+			y: 24 + (elements.length % 6) * 16
 		});
 		screenId = sid;
 		setPicks([el.id]);
@@ -463,7 +513,7 @@
 <svelte:window onresize={fitToViewport} />
 
 {#snippet body()}
-	<WindowShell key="hud" primaryLabel="Screens" secondaryModes={[{ key: 'props', icon: '⚙', label: 'Properties' }]}>
+	<WindowShell bind:this={shell} key="hud" primaryLabel="Screens" secondaryModes={[{ key: 'props', icon: '⚙', label: 'Properties' }]}>
 		{#snippet topbar()}
 			<div class="flex flex-wrap items-center gap-1.5">
 				<button class="hud-btn" title="Add text" onclick={() => add('text')}><Type size={14} aria-hidden="true" /></button>
@@ -489,7 +539,12 @@
 		{/snippet}
 
 		{#snippet primary()}
-			<div class="flex flex-col gap-1 p-1.5">
+			<!-- D2: the COLUMN owns the layout and the palette owns the scrolling. WindowShell
+			     renders this snippet into an `overflow-y-auto` wrapper, so without
+			     `h-full overflow-hidden` here the bounded screens list double-scrolls
+			     (Explorer's primary snippet is the working precedent). -->
+			<div class="hud-side" bind:clientHeight={paneH}>
+			<div class="hud-screens" style="max-height: {screensH}px">
 				{#each screens as s (s.id)}
 					<div class="hud-screen-row" class:hud-screen-on={s.id === screenId}>
 						<button class="hud-screen-name" onclick={() => { screenId = s.id; setPicks(picks[s.id] ?? []); }}>
@@ -510,6 +565,23 @@
 					A screen shows per PEER: one player can sit on the menu while another plays. ★ marks
 					the one everyone starts on.
 				</p>
+			</div>
+			<!-- drag to give the screens list more (or less) room -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				id="hud-screens-resize"
+				class="hud-grip"
+				class:hud-grip-on={screensResizing}
+				style="touch-action: none"
+				title="Drag to resize the screens list"
+				onpointerdown={startScreensResize}
+				onpointermove={doScreensResize}
+				onpointerup={endScreensResize}
+			></div>
+			<!-- D2: the ADD palette, below the screens like the shader/node editors' -->
+			<div class="hud-side-scroll">
+				<HudPalette onPick={add} />
+			</div>
 			</div>
 		{/snippet}
 
@@ -589,13 +661,12 @@
 					<label class="hud-field">
 						<span>kind</span>
 						<select class="hud-input" value={one.kind} onchange={(/** @type {any} */ e) => setOne('kind', e.currentTarget.value)}>
-							{#each HUD_KINDS as kind (kind)}<option value={kind}>{kind}</option>{/each}
+							{#each HUD_KIND_DEFS as def (def.key)}<option value={def.key}>{def.label}</option>{/each}
 						</select>
 					</label>
-					<label class="hud-field">
-						<span>label</span>
-						<input class="hud-input" value={one.label ?? ''} onchange={(/** @type {any} */ e) => setOne('label', e.currentTarget.value)} />
-					</label>
+					{#if kindDef(one.kind)?.summary}
+						<p class="hud-note">{kindDef(one.kind)?.summary}</p>
+					{/if}
 					<label class="hud-field">
 						<span>anchor</span>
 						<select class="hud-input" value={one.anchor} onchange={(/** @type {any} */ e) => setOne('anchor', e.currentTarget.value)}>
@@ -607,24 +678,29 @@
 					<DragRow label="w" value={one.w} step={1} decimals={0} min={8} onchange={(/** @type {number} */ v) => setOne('w', Math.round(v))} />
 					<DragRow label="h" value={one.h} step={1} decimals={0} min={8} onchange={(/** @type {number} */ v) => setOne('h', Math.round(v))} />
 					<DragRow label="z" value={one.z} step={1} decimals={0} onchange={(/** @type {number} */ v) => setOne('z', Math.round(v))} />
-					<p class="hud-sec-head">Style</p>
-					<DragRow label="size" value={one.style?.size ?? 14} step={1} decimals={0} min={6} onchange={(/** @type {number} */ v) => setStyle('size', Math.round(v))} />
-					<label class="hud-field">
-						<span>color</span>
-						<input class="hud-input" placeholder="#f3f4f6 or a token" value={one.style?.color ?? ''} onchange={(/** @type {any} */ e) => setStyle('color', e.currentTarget.value)} />
-					</label>
-					<label class="hud-field">
-						<span>bg</span>
-						<input class="hud-input" placeholder="transparent" value={one.style?.bg ?? ''} onchange={(/** @type {any} */ e) => setStyle('bg', e.currentTarget.value)} />
-					</label>
-					<label class="hud-field">
-						<span>align</span>
-						<select class="hud-input" value={one.style?.align ?? 'left'} onchange={(/** @type {any} */ e) => setStyle('align', e.currentTarget.value)}>
-							<option value="left">left</option>
-							<option value="center">center</option>
-							<option value="right">right</option>
-						</select>
-					</label>
+					<!-- 21-D1: from here down the pane is SCHEMA-DRIVEN — it walks the kind's own
+					     fields, so `image` gets a picker and `bar` gets min/max/orientation without
+					     this component knowing either kind exists. -->
+					{#if fieldsForKind(one.kind).length}
+						<p class="hud-sec-head">{kindDef(one.kind)?.label ?? one.kind}</p>
+						{#each fieldsForKind(one.kind) as field (field.key)}
+							<HudFieldRow
+								{field}
+								value={fieldValue(one, field.key)}
+								onchange={(/** @type {any} */ next) => setOne(field.key, next)}
+							/>
+						{/each}
+					{/if}
+					{#if styleFieldsForKind(one.kind).length}
+						<p class="hud-sec-head">Style</p>
+						{#each styleFieldsForKind(one.kind) as field (field.key)}
+							<HudFieldRow
+								{field}
+								value={one.style?.[field.key]}
+								onchange={(/** @type {any} */ next) => setStyle(field.key, next)}
+							/>
+						{/each}
+					{/if}
 					<p class="hud-note">
 						A colour may be a theme token name (accent, surface) or a literal. Tokens fall back
 						to a literal, so a custom theme cannot leave it unpainted.
@@ -702,6 +778,39 @@
 {/if}
 
 <style>
+	/* D2: the sidebar column — the screens list is a fixed-height section and the palette
+	   scrolls under it, so the COLUMN owns the layout (the ShaderEditor contract). */
+	.hud-side {
+		display: flex;
+		height: 100%;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.hud-screens {
+		display: flex;
+		flex: 0 0 auto;
+		flex-direction: column;
+		gap: 0.25rem;
+		overflow-y: auto;
+		padding: 0.375rem;
+	}
+	.hud-side-scroll {
+		min-height: 0;
+		flex: 1 1 auto;
+		overflow-y: auto;
+	}
+	.hud-grip {
+		height: 6px;
+		flex: 0 0 auto;
+		cursor: ns-resize;
+		border-top: 1px solid rgb(75 85 99 / 0.6);
+		border-bottom: 1px solid rgb(75 85 99 / 0.6);
+		background: rgb(31 41 55 / 0.4);
+	}
+	.hud-grip:hover,
+	.hud-grip-on {
+		background: var(--accent, rgb(29 78 216 / 0.4));
+	}
 	.hud-board-wrap {
 		position: relative;
 		display: block;

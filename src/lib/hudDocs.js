@@ -22,6 +22,8 @@
 // PURPOSE — one player on the start menu while another plays.
 
 import { writable, get } from 'svelte/store';
+// 21-D1: the kind REGISTRY. hudKinds imports nothing, so this stays a leaf.
+import { HUD_KINDS as REGISTERED_KINDS, defaultsForKind, styleDefaultsForKind, kindDef } from './hudKinds';
 
 /** The scene-wide HUD, and the only key the v1 UI creates. */
 export const HUD_SCENE_KEY = 'scene';
@@ -36,10 +38,11 @@ export const HUD_ANCHORS = [
 	'bottom-left', 'bottom-center', 'bottom-right'
 ];
 
-/** Element kinds A3 gives flow nodes. An UNKNOWN kind is preserved verbatim and skipped
- * at render (the normalizeAnnotation / scenePost rule) — a newer peer's element must
- * never be deleted by our editor. */
-export const HUD_KINDS = ['text', 'button', 'bar', 'image', 'panel', 'timer', 'list', 'crosshair'];
+/** Element kinds this build can RENDER, from the registry (21-D1) so a kind is declared
+ * ONCE. An UNKNOWN kind is preserved verbatim and skipped at render (the
+ * normalizeAnnotation / scenePost rule) — a newer peer's element must never be deleted
+ * by our editor, so this is a render capability and never a validation whitelist. */
+export const HUD_KINDS = REGISTERED_KINDS;
 
 /**
  * @typedef {{id: string, kind: string, anchor: string, x: number, y: number, w: number,
@@ -100,7 +103,16 @@ function num(v, fallback) {
  */
 export function normalizeHudElement(el, i = 0) {
 	const kind = typeof el?.kind === 'string' && el.kind ? el.kind : 'text';
+	// hoisted, because the explicit fields below must fall back to the KIND's default and
+	// not to a literal — they are written AFTER the spread, so a literal there would
+	// silently beat the registry (a text element's 'Text' became '' exactly that way).
+	const kd = defaultsForKind(kind);
+	const size = kindDef(kind)?.defaultSize;
 	return {
+		// 21-D1: the kind's own params, merged UNDERNEATH the authored element — an absent
+		// param gains its default and an authored one is untouched. An UNKNOWN kind answers
+		// {} here, so it still passes through byte-unchanged.
+		...kd,
 		...(el ?? {}),
 		id: typeof el?.id === 'string' && el.id ? el.id : kind + '-' + i,
 		// NOT clamped to HUD_KINDS: an unknown kind is kept and skipped at RENDER, which
@@ -109,14 +121,14 @@ export function normalizeHudElement(el, i = 0) {
 		anchor: HUD_ANCHORS.includes(el?.anchor) ? el.anchor : 'top-left',
 		x: num(el?.x, 16),
 		y: num(el?.y, 16),
-		w: Math.max(8, num(el?.w, 120)),
-		h: Math.max(8, num(el?.h, 28)),
+		w: Math.max(8, num(el?.w, size?.w ?? 120)),
+		h: Math.max(8, num(el?.h, size?.h ?? 28)),
 		z: num(el?.z, 0),
-		label: typeof el?.label === 'string' ? el.label : '',
+		label: typeof el?.label === 'string' ? el.label : kd.label ?? '',
 		// style values may be THEME TOKEN names, resolved at render with a literal
 		// fallback (the ToolboxWindow rule: every var() must end in a literal, because
 		// neither dark nor light defines --surface)
-		style: el?.style && typeof el.style === 'object' ? { ...el.style } : {},
+		style: { ...styleDefaultsForKind(kind), ...(el?.style && typeof el.style === 'object' ? el.style : {}) },
 		// `at` is a per-element stamp, DECLARED NOW AND UNREAD (the viewportOverrides
 		// trick): the document replicates whole today, and a future per-element merge is
 		// then additive rather than a redesign.

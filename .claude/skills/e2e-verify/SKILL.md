@@ -63,6 +63,13 @@ mousedown on an xyflow node card enters its drag handler, which reads `ownerDocu
 off the target and throws — select a node with a real `page.mouse.click`. Also: two
 picks of the SAME bytes are the same content hash, so a second texture assignment is
 silently a no-op (vary the image, or the check measures the first one twice).
+21-C terrain and splines have three: `terrain-procedural` (noise determinism imported
+DIRECTLY in node, plus two peers on a bit-identical position hash, the tiling seam and
+the sculpt lock with its Regenerate escape), `terrain-carve` (the pure carve with no
+browser, then both Flatten directions driven by real viewport clicks) and the ported
+`spline-tool`. Their traps are below and they generalise: a projected world point may
+not be ON the surface, a buffer-level metric cannot see a shattered mesh, and an
+idempotent op leaves later sections nothing to measure.
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
@@ -80,6 +87,39 @@ PIXEL features have their own helpers now: `grabFrame`/`centeredClip`/`frameDelt
 `framePixelsOffColor` (screenshot -> back INTO the page -> 2D canvas -> RGBA, compared
 in the page so only metrics cross the bridge). Four rules came out of building them:
 
+- **A BUFFER-LEVEL metric cannot see a shattered mesh, and one shipped.** The carve
+  suite asserted the vertex count was "unchanged", both peers agreed, one message, one
+  undo entry — all green over a terrain that drew 208 arbitrary triangles plus a
+  fragment, because `applyMeshGeo` builds a NON-indexed geometry and it had been handed
+  an indexed terrain's 625 positions (not divisible by 3). The count being unchanged
+  WAS the symptom, and the assertion said so in as many words. For anything that
+  rebuilds geometry, assert the TRIANGLES: count divisible by 3, and no edge longer
+  than the lattice it came from (24.04m on a 1m grid with the bug in, 1.62m with it
+  out). Watertightness is the same rule for closed meshes.
+- **A projected world point is not necessarily ON the surface you meant to click.**
+  `projectPoint([-7, 0, -7])` over a hilly terrain gives a pixel whose ray the app
+  resolves to NOTHING (measured: `hits []`), because y=0 is underneath the hills — so
+  every click-driven check of an armed pick mode failed while the feature was perfect.
+  Cast DOWN onto the target first, project the SURFACE point, and verify both that
+  `elementFromPoint` is the canvas and that the app resolves that pixel to the intended
+  object. The second half matters just as much: selecting anything opens the properties
+  drawer over the right of the viewport, and the first round of aims landed on a drawer
+  DIV. `aimAtSurfaceOf` in terrain-carve is the reusable shape.
+- **An IDEMPOTENT operation leaves later sections nothing to measure.** Three checks in
+  the carve suite read a legitimate zero because earlier sections had already flattened
+  the bed. Re-seed the input at the top of each section that measures CHANGE, and take
+  the undo-depth baseline immediately BEFORE the gesture rather than before setup that
+  also records entries (that read +3 for one click).
+- **Measure both sides of a comparison in the SAME unit.** "A repeat carve converges"
+  compared 251 COLUMNS (before the commit expanded the mesh) against a toast's 876
+  VERTICES (after), and read as divergence when nothing had diverged. The same class of
+  mistake as the bug it was testing, one layer up: when a commit changes the mesh
+  REPRESENTATION, compare a representation-independent quantity (the (x,z)->y height
+  field, or a canonical soup) instead of buffer indices.
+- **Scan the WHOLE toast stack, never just the last entry.** This box emits peer-server
+  toasts ("Lost connection… reconnecting") throughout a run, so the newest toast is
+  regularly not the one your click produced — and clear the stack before the gesture,
+  or an earlier identical message satisfies the wait without anything having run.
 - **Assert the CHANGED PIXEL COUNT, not a mean.** A mean is blind to a thin edge — a
   one-pixel outline over 1280x720 moves it by ~0.1. But keep both metrics: AO on a lone
   convex box is a small contact BAND with a large delta, where a count alone reads as
@@ -651,6 +691,11 @@ drops the P2P session.
   then assert the FULL set on a finished state; and when the app fires and forgets a
   write (`createFolder` does not await `persistIndex`), watch the RECORD rather than
   sleeping — it is the thing the reload actually reads.
+- **A first click that loads its module dynamically pays ~1.2s in dev**, which is long
+  enough to make a 900ms wait pass while nothing has happened — and long enough that a
+  real user thinks the button is dead. Wait on the OUTCOME (the toast, the geometry,
+  the store), and if the feature is user-facing consider PRIMING the import where the
+  affordance appears (the Inspector does it while a spline is selected).
 - **Before believing any standing red, restart the dev server.** Three suites
   (`prefabs`, `mesh-edit-materials`, `uv-materials`) were carried as a "known cluster"
   with a shared cause. The shared cause was real but external: none of them contains a

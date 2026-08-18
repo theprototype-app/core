@@ -2470,6 +2470,38 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-19): **21-C1..C4 TERRAIN + SPLINES — branch `feat/21-terrain-road`
+  (lane `../theprototype-lane-spline` @ port 5203), 8 commits, MERGED to release/next.**
+  Plan: cloud `plans-core/pending/21-c-games-content.md` (C1-C4). **C2** is the PORT of
+  phase 57 (`feat/spline-tool` @6be9f8a cherry-picked, three conflicts, all in the
+  places the plan predicted) with the post-1.2.0 adaptations: SplineToolbar on the
+  shared ToolboxWindow, DragRow numbers, and the plan's registerEditProxy /
+  editOverlays worries MEASURED as not applicable (every handle is scene-root, so a
+  save taken mid-session carries none of them). **C1** procedural terrain: `noise.js`
+  (value-noise fBm, NO transcendentals) + a `build` HOOK on GEOMETRY_PARAMS, which is
+  the whole replication story — the existing geometry message (~240 bytes), the
+  existing history kind, and userData riding toJSON + GLTF extras. **C3** the carve.
+  **C4** shipped derived lap gates and then **the lap half was REMOVED from core** at
+  the user's prompting: a "Road" menu on every spline served one game, and an
+  installable module cannot import core anyway, so the race module owns that maths
+  (code at 233c707). What core keeps is FLATTEN, a category with both directions —
+  ground-to-spline and spline-to-ground — each choosing its partner by a viewport
+  CLICK (the snapAnchorPicking shape, one Scene intercept for both).
+  Suites: terrain-procedural (49), terrain-carve (45), spline-tool (57). Baseline
+  **387/62** at every commit (release/next ratcheted its gate to 387 the same day);
+  build green. Docs: `splines.md` (new) + a rewritten `terrain.md` in
+  theprototype-docs — NO new flow nodes in this lane, which is why there are no new
+  node pages. Four findings worth not re-deriving, all in the gotchas above: the
+  meshgeo channel carries a triangle SOUP (an indexed terrain handed to it shatters,
+  and every buffer-level check stayed green over the wreckage); `toJSON` always writes
+  the vertex buffer, so a PARAMETRIC tile costs 116.5 KB zipped against a CARVED
+  tile's 32.9 KB and the only few-KB route is to ship 220 bytes of seed and rebuild at
+  load; a carve stamps faceEdited, so it locks the parametric rows on purpose; and a
+  repeat carve is not idempotent but CONVERGENT (251 columns, then 152).
+  OWED: the user's on-device VR pass on spline editing, the 21-C plan write-up (C1-C4
+  as-built + the parked lap spec for C8), a "flatten into all terrains" pass for the
+  Race ring, and the parametric-vs-carved decision for the Race template, which the
+  measurement above answers but the user has not yet ruled on.
 - Status (2026-08-18): **SCENE LOOK / POST-PROCESSING — branch `feat/scene-post-stack`
   (lane `../theprototype-lane-post` @ port 5198), 8 commits, release/next merged in
   CLEAN, baseline 391/62 at every commit, NOT PR'd.** Plan: cloud

@@ -14,6 +14,7 @@
 	import { buildAddChildren } from '$lib/addObjects';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import { sendPing } from '$lib/ping';
+	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
 
 	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
 	// the clicked ground point; an object under the cursor → its own context
@@ -269,6 +270,23 @@
 				{ label: 'Screenshot', icon: 'camera', action: screenshot }
 			]
 		},
+		// A5: module toolboxes — the SAME rows the sidebar's Modules section renders,
+		// off one builder (the buildObjectMenuItems "one menu, two hosts" precedent).
+		// The whole entry disappears when no module registered one.
+		...($moduleToolboxes.length
+			? [
+					{
+						label: 'Module tools',
+						icon: 'wrench',
+						children: buildToolboxItems($moduleToolboxes, $openToolboxes).map((box) => ({
+							label: box.label,
+							checked: box.checked,
+							hint: box.shortcut ?? '',
+							action: box.action
+						}))
+					}
+			  ]
+			: []),
 		{
 			// 16-P4: bookmarks are NAMED now (and unlimited) — list them by name with
 			// the Shift+N hint on the first five; managing them lives in the panel

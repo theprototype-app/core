@@ -11,6 +11,8 @@ import {
 	registerModuleNodeInputs,
 	unregisterModuleNodeInputs
 } from './moduleNodeIO';
+// A5: moduleToolboxes is store-only, same reasoning
+import { registerModuleToolbox, unregisterModuleToolbox } from './moduleToolboxes';
 import { APP_VERSION } from './version.js';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
@@ -399,6 +401,58 @@ function makeApi(moduleId) {
 			const item = { moduleId, label, action };
 			moduleMenuItems.update((list) => [...list, item]);
 			onDispose(() => moduleMenuItems.update((list) => list.filter((entry) => entry !== item)));
+		},
+		/**
+		 * A5: a real UI surface — a floating TOOLBOX on the app's own shared shell.
+		 *
+		 * Before this, module controls could only live behind `registerMenu`: two clicks
+		 * deep inside the Modules MODAL, which then has to be CLOSED before the module's
+		 * own overlay is usable. So modules hand-rolled fixed overlays at z-indexes they
+		 * do not own. Write plain DOM into the node `mount` receives and you inherit
+		 * dragWindow position persistence, focusStack z-banding, the <=640px bottom sheet
+		 * and the whole `.tbx-*` CSS contract (`.tbx-label`, `.tbx-row`, `.tbx-btn`,
+		 * `.tbx-primary`, `.tbx-check`, …) with no CSS of your own.
+		 *
+		 * `mount` returns its cleanup, and re-registering re-runs it, so 17-A2's dev-mode
+		 * live reload rebuilds the contents in place.
+		 *
+		 * The user opens it from the sidebar's Modules section AND the viewport menu
+		 * (one builder, two hosts), plus `shortcut` if you name one — which also lists it
+		 * in Settings > Shortcuts. It is CLOSED at first: a palette that appears
+		 * uninvited is the thing registerMenu was avoiding.
+		 *
+		 * LOCAL, always: a toolbox is this viewer's window. Nothing about it replicates
+		 * or is saved with the scene, so what it CHANGES must still go through the
+		 * replicated paths (api.send / api.create / api.physics.set).
+		 *
+		 * `playMode: true` keeps it visible in Play mode (host settings for a game);
+		 * the default hides it, because a tool palette over a running game is in the way.
+		 * @param {{id: string, title: string, key?: string, width?: number, minW?: number,
+		 *   defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
+		 *   mount: (el: HTMLElement) => (() => void) | void,
+		 *   onOpen?: () => void, onClose?: () => void,
+		 *   playMode?: boolean, shortcut?: string}} box
+		 * @returns {string} the namespaced toolbox id (open/close it with this)
+		 */
+		registerToolbox(box) {
+			const id = registerModuleToolbox({ ...box, moduleId });
+			// hoisted: the `if` narrowing does not reach inside the closure below
+			const keys = box.shortcut;
+			if (keys) {
+				// dynamic: shortcuts' subtree reaches history, the TDZ cycle family
+				import('./shortcuts').then((m) =>
+					m.registerShortcut({
+						keys,
+						group: 'Modules',
+						label: box.title,
+						action: () => import('./moduleToolboxes').then((t) => t.toggleModuleToolbox(id))
+					})
+				);
+			}
+			// force-close + unregister, so disable / update / dev-reload never leave a
+			// window on screen backed by a mount fn that no longer exists
+			onDispose(() => unregisterModuleToolbox(id));
+			return id;
 		},
 		/**
 		 * Add a sector to the VR radial menu (74). group 'root' extends the base

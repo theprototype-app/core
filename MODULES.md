@@ -195,6 +195,50 @@ api.registerFrameTask((time) => { /* runs every frame, synced time */ });
 api.registerInteractiveGroup('pong-module');
 ```
 
+### Toolboxes: a real UI surface (A5)
+
+```js
+const id = api.registerToolbox({
+	id: 'settings',              // namespaced to mod-<moduleId>-settings
+	title: 'Dungeon Kit',
+	width: 240,
+	shortcut: 'Ctrl+Shift+D',    // optional; also lists in Settings > Shortcuts
+	playMode: false,             // default: hidden in Play mode
+	mount(el) {
+		const label = document.createElement('div');
+		label.className = 'tbx-label';        // the shell styles this for you
+		label.textContent = 'Rooms';
+		const go = document.createElement('button');
+		go.className = 'tbx-primary';
+		go.textContent = 'Generate';
+		go.onclick = () => regenerate();
+		el.append(label, go);
+		return () => { /* your cleanup */ };
+	}
+});
+```
+
+Write plain DOM into the node `mount` receives and you inherit the app's own
+tool-palette treatment: header drag with position persistence, the width grip, z-band
+focus, the bottom SHEET at <=640px, and the whole `.tbx-*` CSS contract (`.tbx-label`,
+`.tbx-row`, `.tbx-btn`, `.tbx-seg`, `.tbx-primary`, `.tbx-check`, `.tbx-danger`) with
+no CSS of your own. That is the point — before this seam, module controls could only
+live behind `registerMenu`, two clicks deep inside the Modules *modal*, which then had
+to be closed before the module's own overlay was usable.
+
+The user opens it from the **sidebar's Modules section** and the **viewport menu**
+(both from one builder, so they cannot drift), plus your `shortcut` if you name one. It
+starts CLOSED: a palette that appears uninvited is the thing `registerMenu` was
+avoiding. `onOpen`/`onClose` fire on each transition; the header ✕ closes it.
+
+`mount` returns its cleanup and a re-registration re-runs it, so dev-mode live reload
+rebuilds the contents in place. Disabling or removing the module force-closes and
+unregisters the toolbox — it never leaves a window behind a dead mount fn.
+
+A toolbox is **LOCAL**: it is this viewer's window, and nothing about it replicates or
+is saved with the scene. What it *changes* must still go through the replicated paths
+(`api.send`, `api.create`, `api.physics.set`).
+
 ### Messages and state
 
 ```js

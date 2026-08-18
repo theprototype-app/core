@@ -17,6 +17,7 @@ import {
 } from './flowRuntime';
 import { colliderSpecOf } from './colliderSpec';
 import { sceneGravity } from './scenePhysics';
+import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throwVelocity';
 import { burstObjectParticles } from './particleActions';
 import { hasImpactEmitter } from './particleRuntime';
 import { nameOf } from './lockControl';
@@ -52,7 +53,8 @@ export const remoteSimulating = writable(null);
 /** @type {any} */ let world = null;
 /** @typedef {{object: any, body: any, offset: THREE.Vector3, initialQuat: THREE.Quaternion,
  *   mode: 'dynamic'|'kinematic', hull: boolean, hold: 'user'|'external'|null, holdUntil: number,
- *   samples: {t: number, pos: THREE.Vector3, rot: THREE.Euler}[],
+ *   holdPeer?: string | null,
+ *   samples: {t: number, pos: THREE.Vector3, quat: THREE.Quaternion}[],
  *   lastWritten: {pos: THREE.Vector3, quat: THREE.Quaternion},
  *   lastSent?: {pos: THREE.Vector3, quat: THREE.Quaternion},
  *   colliders: any[], shapeKey: string,
@@ -107,8 +109,9 @@ export const PHYSICS_MATERIALS = {
 	wood: { friction: 0.55, restitution: 0.25 },
 	metal: { friction: 0.3, restitution: 0.1 }
 };
-const MAX_LINVEL = 20; // m/s clamp on release-velocity estimates
-const MAX_ANGVEL = 20; // rad/s
+// B2: MAX_LINVEL / MAX_ANGVEL and the estimator itself live in throwVelocity.js
+// now — the same numbers have to bound a peer's throw on the receive side, and
+// two copies of a clamp is how they drift apart
 const EXTERNAL_HOLD_MS = 250; // peer-move silence before a held body drops
 const IMPACT_COOLDOWN_MS = 300; // per-body: a roll/settle can't machine-gun impacts
 const IMPACT_MIN_DOWN_VY = 1.2; // m/s downward (pre-step) for a contact to count
@@ -793,46 +796,44 @@ function kinematicTargetOf(entry) {
 	return { pos: targetPos.clone(), quat: targetQuat.clone() };
 }
 
-/** Ring buffer of recent held poses -> a release-velocity estimate. @param {any} entry @param {number} now */
+/** Ring buffer of recent held poses -> a release-velocity estimate. B2 stores
+ * the QUATERNION, not the Euler: differencing Euler components is wrong across a
+ * wrap and wrong in general (YXZ couples the axes).
+ * @param {any} entry @param {number} now */
 function recordHoldSample(entry, now) {
 	entry.samples.push({
 		t: now,
 		pos: entry.object.position.clone(),
-		rot: entry.object.rotation.clone()
+		quat: entry.object.quaternion.clone()
 	});
 	if (entry.samples.length > 4) entry.samples.shift();
 }
 
 /** Flip a held body back to dynamic, imparting the estimated velocity (throw).
- * @param {any} entry */
-function releaseHold(entry) {
+ * `velocity` lets a caller hand over a value it measured itself (play-mode
+ * release, B5's `throw` message); both paths end in clampThrow, which is the
+ * whole reason the receive side needs no validation of its own.
+ * @param {any} entry
+ * @param {{linvel: any, angvel: any} | null} [velocity]
+ */
+function releaseHold(entry, velocity = null) {
 	entry.hold = null;
 	entry.holdUntil = 0;
+	entry.holdPeer = null;
 	entry.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
-	const s = entry.samples;
-	if (s.length >= 2) {
-		const a = s[0];
-		const b = s[s.length - 1];
-		const dt = Math.max((b.t - a.t) / 1000, 1e-3);
-		const clamp = (/** @type {number} */ v, /** @type {number} */ m) => Math.max(-m, Math.min(m, v));
-		entry.body.setLinvel(
-			{
-				x: clamp((b.pos.x - a.pos.x) / dt, MAX_LINVEL),
-				y: clamp((b.pos.y - a.pos.y) / dt, MAX_LINVEL),
-				z: clamp((b.pos.z - a.pos.z) / dt, MAX_LINVEL)
-			},
-			true
-		);
-		entry.body.setAngvel(
-			{
-				x: clamp((b.rot.x - a.rot.x) / dt, MAX_ANGVEL),
-				y: clamp((b.rot.y - a.rot.y) / dt, MAX_ANGVEL),
-				z: clamp((b.rot.z - a.rot.z) / dt, MAX_ANGVEL)
-			},
-			true
-		);
+	// no measurement and fewer than two samples: leave the body's own velocity
+	// alone, exactly as before — an instant release is not a throw of zero
+	const v = velocity
+		? clampThrow(velocity.linvel, velocity.angvel)
+		: entry.samples.length >= 2
+			? velocityFromSamples(entry.samples)
+			: null;
+	if (v) {
+		entry.body.setLinvel({ x: v.linvel.x, y: v.linvel.y, z: v.linvel.z }, true);
+		entry.body.setAngvel({ x: v.angvel.x, y: v.angvel.y, z: v.angvel.z }, true);
 	}
 	entry.samples = [];
+	return v;
 }
 
 /**
@@ -848,11 +849,14 @@ export function holdBody(uuid) {
 	return true;
 }
 
-/** Drag ended: back to dynamic + throw velocity. @param {string} uuid */
-export function releaseBody(uuid) {
+/** Drag ended: back to dynamic + throw velocity. `velocity` overrides the
+ * sample-derived estimate (play-mode measures its own; a cancel passes zeros —
+ * a cancel is not a throw). @param {string} uuid
+ * @param {{linvel: any, angvel: any} | null} [velocity] */
+export function releaseBody(uuid, velocity = null) {
 	const entry = bodies.find((e) => e.object.uuid === uuid && e.hold === 'user');
 	if (!entry || !world) return false;
-	releaseHold(entry);
+	releaseHold(entry, velocity);
 	return true;
 }
 

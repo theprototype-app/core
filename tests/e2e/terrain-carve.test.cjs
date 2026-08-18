@@ -222,6 +222,91 @@ h.run(async () => {
 	await A.page.waitForTimeout(1200);
 	h.check(!!built.terrain && !!built.road, 'PREMISE: a hilly terrain and a road across it');
 
+	/**
+	 * A viewport pixel that really hits `uuid`'s SURFACE — for any check that clicks the
+	 * scene. Two traps are rolled into this one helper, and each cost a red run:
+	 *
+	 *  - selecting an object opens the properties drawer over the right of the viewport,
+	 *    so a projected pixel can land on panel chrome (measured: elementFromPoint
+	 *    returned a DIV from the drawer, and every pick "failed" while the feature was
+	 *    fine);
+	 *  - a world point at y = 0 is UNDERNEATH a hilly terrain, so the ray back through
+	 *    its pixel can miss the mesh altogether (measured: the app's own raycast at that
+	 *    pixel returned no hits at all). The same "aim at a point that EXISTS" lesson the
+	 *    UV suite paid for.
+	 *
+	 * So: cast DOWN onto the object to find real surface points, project those, and take
+	 * the first whose pixel is the canvas AND whose ray the app resolves to this object.
+	 */
+	const aimAtSurfaceOf = async (uuid) => {
+		const spots = await A.page.evaluate(
+			(id) =>
+				new Promise((r) =>
+					window.__stores.objectsGroup.subscribe((g) => {
+						const THREE = window.__stores.THREE;
+						const object = g.getObjectByProperty('uuid', id);
+						if (!object) return r([]);
+						object.updateMatrixWorld(true);
+						const ray = new THREE.Raycaster();
+						const out = [];
+						for (const [x, z] of [
+							[-7, -7],
+							[-7, 7],
+							[0, 8],
+							[7, -7],
+							[8, 0],
+							[0, 0]
+						]) {
+							ray.set(new THREE.Vector3(x, 200, z), new THREE.Vector3(0, -1, 0));
+							const hit = ray.intersectObject(object, true)[0];
+							if (hit) out.push([hit.point.x, hit.point.y, hit.point.z]);
+						}
+						r(out);
+					})()
+				),
+			uuid
+		);
+		for (const world of spots) {
+			const px = await h.projectPoint(A.page, world);
+			const ok = await A.page.evaluate(
+				([x, y, id]) =>
+					new Promise((r) => {
+						if (document.elementFromPoint(x, y)?.tagName !== 'CANVAS') return r(false);
+						window.__stores.globalRenderer.subscribe((rend) => {
+							window.__stores.globalCamera.subscribe((cam) => {
+								window.__stores.objectsGroup.subscribe((g) => {
+									const THREE = window.__stores.THREE;
+									const rect = rend.domElement.getBoundingClientRect();
+									const ndc = new THREE.Vector2(
+										((x - rect.left) / rect.width) * 2 - 1,
+										-((y - rect.top) / rect.height) * 2 + 1
+									);
+									const ray = new THREE.Raycaster();
+									ray.setFromCamera(ndc, cam);
+									let node = ray.intersectObjects(g.children, true)[0]?.object;
+									while (node?.parent && node.parent !== g) node = node.parent;
+									r(node?.uuid === id);
+								})();
+							})();
+						})();
+					}),
+				[px.x, px.y, uuid]
+			);
+			if (ok) return px;
+		}
+		return null;
+	};
+
+	/** put the hills back, so a section that measures CHANGE starts from something to
+	 * change — earlier sections legitimately flatten the bed, and a carve is idempotent */
+	const reseedHills = async (seed) => {
+		await A.page.evaluate(
+			([uuid, s]) => window.__stores.geometryEdit.applyGeometry(uuid, { amplitude: 5, seed: s, frequency: 0.07 }),
+			[built.terrain, seed]
+		);
+		await A.page.waitForTimeout(600);
+	};
+
 	const surfaceOf = (page, uuid) =>
 		page.evaluate(
 			(id) =>
@@ -254,27 +339,38 @@ h.run(async () => {
 			uuid
 		);
 
-	// the objectMenu offers the carve on a spline, in TERRAIN vocabulary
+	// the objectMenu offers FLATTEN as a category with both directions, in terrain
+	// vocabulary, and neither side lists targets by name
 	const menu = await A.page.evaluate((uuid) => {
 		// (uuid FIRST, opts second — passing one object silently builds a menu for
-		// "no object", which has no carve entry and would read as a green check)
+		// "no object", which has no Flatten entry and would read as a green check)
 		const items = window.__stores.objectMenu.buildObjectMenuItems(uuid, { selection: [uuid] });
 		const labels = items.map((i) => i.label ?? '');
-		const carve = items.find((i) => /Flatten terrain/i.test(i.label ?? ''));
+		const flatten = items.find((i) => i.label === 'Flatten');
+		const children = (flatten?.children ?? []).map((c) => c.label ?? '');
 		return {
-			hasCarve: !!carve,
-			flat: !!carve && !carve.children,
+			hasFlatten: !!flatten,
+			children,
+			// no target NAMES in either direction: both arm a viewport pick, so a scene
+			// with a ring of ten tiles does not turn the menu into a list
+			namesTerrain: children.some((l) => /^Terrain$/i.test(l)),
 			// the SCOPE decision, asserted rather than trusted: a spline in a scene with
 			// no racing game must not sprout racing vocabulary. Core owns the terrain
-			// operation; laps and checkpoints belong to the race module.
+			// operations; laps and checkpoints belong to the race module.
 			gameWords: labels.filter((l) => /road|lap|checkpoint|gate/i.test(l))
 		};
 	}, built.road);
-	h.check(menu.hasCarve, 'the shared object menu offers the carve on a spline');
-	h.check(menu.flat, 'one terrain in the scene means ONE flat entry, not a submenu to open');
+	h.check(menu.hasFlatten, 'the shared object menu offers a Flatten category on a spline');
+	h.check(
+		menu.children.length === 2 &&
+			menu.children.some((l) => /^Terrain to this/i.test(l)) &&
+			menu.children.some((l) => /onto a surface/i.test(l)),
+		`with BOTH directions in it, each naming what moves (${menu.children.join(' | ')})`
+	);
+	h.check(!menu.namesTerrain, 'and neither direction lists targets by name — both arm a viewport pick');
 	h.check(
 		menu.gameWords.length === 0,
-		`and no game vocabulary rides along in core (${menu.gameWords.join(', ') || 'none'})`
+		`no game vocabulary rides along in core (${menu.gameWords.join(', ') || 'none'})`
 	);
 
 	const commit = await A.page.evaluate(
@@ -292,7 +388,7 @@ h.run(async () => {
 				seen.push(typeof m === 'string' ? 'command' : m?.type);
 				return send(m);
 			};
-			const ok = w.carveActions.carveTerrainAlong(roadUuid, terrainUuid);
+			const ok = w.flattenActions.carveTerrainAlong(roadUuid, terrainUuid);
 			peer.send = send;
 			await new Promise((r) => setTimeout(r, 300));
 			const after = Array.from(terrain.geometry.attributes.position.array);
@@ -378,22 +474,17 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			A.page.evaluate(() => ({
-				button: !!document.querySelector('#spline-carve-0'),
-				label: document.querySelector('#spline-carve-0')?.textContent?.trim() ?? '',
-				none: !!document.querySelector('#spline-carve-none')
+				carve: !!document.querySelector('#spline-carve-pick'),
+				drape: !!document.querySelector('#spline-drape-pick')
 			})),
-		(d) => d.button && !d.none,
-		'the spline Properties offer the same carve, naming the terrain',
+		(d) => d.carve && d.drape,
+		'the spline Properties offer BOTH flatten directions, same as the menu',
 		20000
-	);
-	const beforeProps = await surfaceOf(A.page, built.terrain);
-	const depthBefore = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
 	);
 	// the toast text, which is the only thing that distinguishes "this click did
 	// nothing yet" from "this click found the bed already flat" — without it the
 	// idempotence check below passes VACUOUSLY, which is exactly what it did while
-	// racing a ~1.2s cold dynamic import of carveActions
+	// racing a ~1.2s cold dynamic import of flattenActions
 	// scan the WHOLE stack, never just the last entry: this box emits peer-server
 	// toasts ("Lost connection… reconnecting") throughout a run, so the newest toast
 	// is regularly not the one the click produced
@@ -403,7 +494,7 @@ h.run(async () => {
 				new Promise((r) =>
 					window.__stores.toastStore.subscribe((t) => {
 						const texts = t.map((entry) => (typeof entry === 'string' ? entry : (entry?.text ?? '')));
-						r(texts.filter((text) => /Carved \d+ vertices|already carved|not under this road/i.test(text)).pop() ?? '');
+						r(texts.filter((text) => /Carved \d+ vertices|already carved|not under this spline/i.test(text)).pop() ?? '');
 					})()
 				)
 		);
@@ -432,15 +523,39 @@ h.run(async () => {
 				),
 			[uuid, stash]
 		);
+	// the section below measures how much a SECOND pass moves, so start it from
+	// hills: the first carve legitimately flattened the bed and a carve is
+	// idempotent, which would leave nothing to measure
+	await reseedHills(21);
+	await A.page.evaluate(
+		(b) => window.__stores.flattenActions.carveTerrainAlong(b.road, b.terrain),
+		built
+	);
+	await A.page.waitForTimeout(600);
 	await columnDiff(A.page, built.terrain, '__carveField'); // seeds the stash
-	await A.page.evaluate(() => document.querySelector('#spline-carve-0').click());
+	// the FULL real path from Properties: press the button (which arms the pick), then
+	// click the terrain in the viewport
+	const beforeProps = await surfaceOf(A.page, built.terrain);
+	const depthBefore = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+	);
+	await A.page.evaluate(() => document.querySelector('#spline-carve-pick').click());
+	await h.eventually(
+		() => A.page.evaluate(() => new Promise((r) => window.__stores.flattenActions.flattenPicking.subscribe(r)())),
+		(armed) => armed?.kind === 'carve',
+		'pressing it arms the pick rather than guessing a terrain',
+		20000
+	);
+	const aimPx = await aimAtSurfaceOf(built.terrain);
+	h.check(!!aimPx, 'PREMISE: found a pixel that hits the terrain and is clear of panel chrome');
+	await A.page.mouse.click(aimPx.x, aimPx.y);
 	// wait on the OUTCOME, not a clock: the first click through either entry point
-	// pays a cold dynamic import of carveActions (~1.2s in dev), and a fixed sleep here
+	// pays a cold dynamic import of flattenActions (~1.2s in dev), and a fixed sleep here
 	// let this whole section pass while nothing had run yet
 	await h.eventually(
 		carveToast,
-		(text) => /Carved \d+ vertices|already carved/i.test(text),
-		'the Properties button really carves (its own toast reports the commit)',
+		(text) => /Carved \d+ vertices|already flat/i.test(text),
+		'and the viewport click carries out the carve (its own toast reports the commit)',
 		25000
 	);
 	const secondToast = await carveToast();
@@ -489,6 +604,138 @@ h.run(async () => {
 	);
 	await A.page.keyboard.press('Control+y');
 	await A.page.waitForTimeout(900);
+
+	// ---- the PICK mode, driven by real viewport clicks --------------------
+	// Both directions choose their partner by clicking it, so the thing worth
+	// testing is the click PATH: an armed mode has to beat the selection code that
+	// would otherwise just select the terrain, and it has to survive a mis-aim.
+	const armed = () =>
+		A.page.evaluate(
+			() => new Promise((r) => window.__stores.flattenActions.flattenPicking.subscribe(r)())
+		);
+
+	await A.page.evaluate(
+		(uuid) => window.__stores.flattenActions.startFlattenPick('carve', uuid),
+		built.road
+	);
+	h.check(!!(await armed()), 'PREMISE: the carve pick is armed');
+	// Escape must leave it, and through a DIRECT capture listener — a delegated key
+	// handler is swallowed by panel chrome (the documented Svelte 5 trap)
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(300);
+	h.check(!(await armed()), 'Escape cancels the pick');
+
+	// arm again and click the TERRAIN in the viewport
+	await A.page.evaluate(
+		(uuid) => window.__stores.flattenActions.startFlattenPick('carve', uuid),
+		built.road
+	);
+	// fresh hills, so "did the click carve" is a question with a visible answer
+	await reseedHills(33);
+	const before = await surfaceOf(A.page, built.terrain);
+	const px = await aimAtSurfaceOf(built.terrain);
+	h.check(!!px, 'PREMISE: the aim pixel hits the terrain surface, not chrome and not thin air');
+	await A.page.mouse.click(px.x, px.y);
+	await h.eventually(
+		() => surfaceOf(A.page, built.terrain),
+		(t) => t && t.hash !== before.hash,
+		'clicking the terrain while armed carves it — the pick beats the plain selection path',
+		20000
+	);
+	h.check(!(await armed()), 'and the mode disarms once it has run');
+
+	// ---- direction two: the spline drops onto a surface --------------------
+	// The road sits at y=3 over a hilly terrain, so a drape must MOVE it, and the
+	// terrain must not move at all: that asymmetry is the whole point of having two
+	// directions rather than one.
+	const roadHeights = () =>
+		A.page.evaluate(
+			(uuid) =>
+				new Promise((r) =>
+					window.__stores.objectsGroup.subscribe((g) => {
+						const road = g.getObjectByProperty('uuid', uuid);
+						const record = road?.userData?.spline;
+						r(record ? record.points.map((/** @type {any} */ p) => p.pos[1]) : null);
+					})()
+				),
+			built.road
+		);
+	const terrainBefore = await surfaceOf(A.page, built.terrain);
+	const heightsBefore = await roadHeights();
+	await A.page.evaluate(
+		(uuid) => window.__stores.flattenActions.startFlattenPick('drape', uuid),
+		built.road
+	);
+	const px2 = await aimAtSurfaceOf(built.terrain);
+	h.check(!!px2, 'PREMISE: the drape aim pixel hits the surface too');
+	await A.page.mouse.click(px2.x, px2.y);
+	await h.eventually(
+		roadHeights,
+		(hs) => !!hs && hs.some((y, i) => Math.abs(y - heightsBefore[i]) > 0.01),
+		'clicking a surface with the other direction armed lays the SPLINE down instead',
+		20000
+	);
+	const terrainAfter = await surfaceOf(A.page, built.terrain);
+	h.check(
+		terrainAfter.hash === terrainBefore.hash,
+		'and the surface it was laid on is untouched — the two directions really are opposites'
+	);
+	// each control point should rest ON the terrain: its own radius above the ground
+	const resting = await A.page.evaluate(
+		([roadUuid, terrainUuid]) =>
+			new Promise((r) => {
+				window.__stores.objectsGroup.subscribe((g) => {
+					const THREE = window.__stores.THREE;
+					const road = g.getObjectByProperty('uuid', roadUuid);
+					const terrain = g.getObjectByProperty('uuid', terrainUuid);
+					road.updateMatrixWorld(true);
+					terrain.updateMatrixWorld(true);
+					const box = new THREE.Box3().setFromObject(terrain);
+					const ray = new THREE.Raycaster();
+					const out = [];
+					for (const p of road.userData.spline.points) {
+						const v = new THREE.Vector3(p.pos[0], p.pos[1], p.pos[2]);
+						road.localToWorld(v);
+						ray.set(new THREE.Vector3(v.x, box.max.y + 1, v.z), new THREE.Vector3(0, -1, 0));
+						const hit = ray.intersectObject(terrain, true)[0];
+						// the gap between the point and the ground under it, less the radius:
+						// zero means the tube's BOTTOM is exactly on the surface
+						out.push(hit ? v.y - hit.point.y - p.radius : null);
+					}
+					r(out);
+				})();
+			}),
+		[built.road, built.terrain]
+	);
+	const landed = resting.filter((v) => v !== null);
+	h.check(landed.length >= 2, `PREMISE: at least two points had ground under them (${landed.length})`);
+	h.check(
+		landed.every((v) => Math.abs(v) < 0.05),
+		`every landed point rests with its tube bottom ON the surface (worst gap ${Math.max(...landed.map(Math.abs)).toFixed(4)}m)`
+	);
+
+	// it goes through the EXISTING spline channel, so B follows and one undo reverts
+	await h.eventually(
+		() =>
+			B.page.evaluate(
+				(uuid) =>
+					new Promise((r) =>
+						window.__stores.objectsGroup.subscribe((g) => {
+							const road = g.getObjectByProperty('uuid', uuid);
+							r(road?.userData?.spline?.points?.map((/** @type {any} */ p) => p.pos[1]) ?? null);
+						})()
+					),
+				built.road
+			),
+		(hs) => !!hs && hs.some((y, i) => Math.abs(y - heightsBefore[i]) > 0.01),
+		'B receives the draped spline (the existing splineedit message, nothing new)'
+	);
+	await A.page.keyboard.press('Control+z');
+	await h.eventually(
+		roadHeights,
+		(hs) => !!hs && hs.every((y, i) => Math.abs(y - heightsBefore[i]) < 1e-6),
+		'ONE undo puts the spline back where it was'
+	);
 
 	await h.finish(browser);
 });

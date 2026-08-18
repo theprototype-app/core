@@ -675,12 +675,28 @@ loadable play content. Everything a user does must be visible to connected peers
   and a curvature bank clamped to a quarter of the width. `splineInFrameOf` is
   load-bearing: a spline's record lives in the SPLINE MESH's frame (finishSpline
   re-seats it on the centroid), so carving the raw record flattens a strip at the
-  origin — a plausible road in the wrong place) + `carveActions` (21-C3 THE CALLER,
+  origin — a plausible road in the wrong place) + `flattenActions` (21-C3 THE CALLERS,
   and the only half that touches the scene, the wire, undo or a toast:
-  `carveTerrainAlong` commits ONE `commitMeshGeoSnapshot`, positions-only because the
-  carve moves Y and never changes the vertex COUNT. Reached by a dynamic import from
-  objectMenu (primed by the Inspector while a spline is selected), which keeps the
-  leaf out of history's import subtree.
+  BOTH DIRECTIONS of Flatten, which is one menu CATEGORY: `carveTerrainAlong` (the
+  ground conforms to the spline — ONE `commitMeshGeoSnapshot`, positions-only because
+  the carve moves Y and never changes the vertex COUNT) and `drapeSplineOnto` (the
+  SPLINE conforms to the ground — each control point drops onto the target and rests
+  with the tube BOTTOM on it, hit + that point's radius, casting UPWARD for a point
+  that started underground; commits through the existing `commitSplineEdit`, so the
+  `splineedit` message and the `'spline'` history kind carry it). They are NOT
+  variants of one op: one writes geometry, the other writes the record, so they
+  replicate and undo through entirely different existing channels and neither needs
+  anything new on the wire.
+  Both choose their partner by a viewport CLICK, not a menu of names — `flattenPicking`
+  + `startFlattenPick`/`flattenPickClick`/`cancelFlattenPick`, the `snapAnchorPicking`
+  shape, with ONE Scene intercept for both because the interaction is identical. Two
+  deliberate differences from the snap/pivot picks: the armed spline is held in the
+  STORE rather than read from the selection (the partner click changes the selection on
+  its way through, so a later read flattens the wrong pair), and a hit on the WRONG
+  KIND of object keeps the mode armed with an explanation — those picks aim at a point
+  on an object already known to be right, while this one can genuinely be pointed at
+  the wrong thing. Reached by a dynamic import from objectMenu (primed by the Inspector
+  while a spline is selected), which keeps the leaves out of history's import subtree.
   **SCOPE, settled after C4 shipped and worth not re-litigating:** conforming a
   heightfield to a curve is a GENERAL world-building operation (roads, rivers,
   footpaths, trenches, ledges, building pads), so it lives in core and reads in
@@ -1718,6 +1734,21 @@ loadable play content. Everything a user does must be visible to connected peers
 - Anything drawn with **`depthWrite: false` loses the postprocessing passes**: the
   outline and N8AO effects read the depth buffer, so the AO and selection edges of
   whatever sits BEHIND a non-depth-writing sprite get painted across its face.
+- **A projected world point at y = 0 is UNDER a terrain, so the ray through its pixel
+  can miss the mesh entirely.** Every click-driven check of the flatten picks failed
+  this way while the feature was perfect: `projectPoint([-7, 0, -7])` gave a pixel the
+  app's own raycast resolved to NOTHING (measured: `hits []`), and a pick that hits
+  nothing exits by design. Cast DOWN onto the target first, project the SURFACE point,
+  and verify both that `elementFromPoint` is the canvas and that the app resolves that
+  pixel to the intended object — the properties drawer covers the right of the viewport
+  whenever anything is selected, which is the other half of the same helper
+  (`aimAtSurfaceOf` in terrain-carve). Same family as the UV suite's "a grip must be a
+  point that EXISTS".
+- **A section that measures CHANGE must re-seed what earlier sections consumed.** The
+  carve is idempotent, so by the third section there was nothing left to flatten and
+  three checks read zero — correctly. Re-apply the noise (`reseedHills`) at the top of
+  each such section, and take the undo-depth baseline immediately BEFORE the gesture,
+  not before the setup that also records entries.
 - **THE MESHGEO CHANNEL CARRIES A TRIANGLE SOUP, so any op committing through it must
   go NON-INDEXED first** — `applyMeshGeo` builds a fresh BufferGeometry with no index.
   The carve handed it a fresh Terrain's 625 positions and left a non-indexed mesh with

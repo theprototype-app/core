@@ -16,12 +16,6 @@ import {
 	selectionUuids
 } from './objectActions';
 import { requestControl, nameOf } from './lockControl';
-
-/** 21-C3: the terrains a spline could be carved into. Keyed off userData.terrain,
- * the same creation-time marker geometryParamsOf resolves through. */
-function terrainsInScene() {
-	return (get(objectsGroup)?.children ?? []).filter((/** @type {any} */ o) => o?.userData?.terrain);
-}
 import { createJoint, detachJoints, jointsFor } from './joints';
 import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
@@ -230,42 +224,39 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					tooltip: locked ? lockedTooltip : 'Move control points, set thickness, insert or delete points',
 					action: () => import('./splineEdit').then((m) => m.enterSplineEdit(uuid))
 				},
-				// 21-C3: conform the ground to a curve. A GENERAL terrain operation (roads,
-				// rivers, paths, trenches), so it reads in terrain vocabulary and not one
-				// game's: a pure function of (terrain params, spline) committed as ONE
-				// meshgeo, which makes "move a control point, carve again" the whole loop.
-				// One flat entry for the common single-terrain scene; a submenu only when
-				// there is genuinely a choice to make.
-				...(terrainsInScene().length === 1
-					? [
-							{
-								label: 'Flatten terrain along this',
-								icon: 'mountain',
-								disabled: locked,
-								tooltip: locked
-									? lockedTooltip
-									: 'Levels a strip under this spline, blended into the slope either side — one undo step',
-								action: () =>
-									import('./carveActions').then((m) =>
-										m.carveTerrainAlong(uuid, terrainsInScene()[0].uuid)
-									)
-							}
-						]
-					: terrainsInScene().length
-						? [
-								{
-									label: 'Flatten terrain along this',
-									icon: 'mountain',
-									disabled: locked,
-									children: terrainsInScene().map((/** @type {any} */ terrain) => ({
-										label: terrain.name || 'Terrain',
-										tooltip: 'Levels a strip of this terrain under the spline — one undo step',
-										action: () =>
-											import('./carveActions').then((m) => m.carveTerrainAlong(uuid, terrain.uuid))
-									}))
-								}
-							]
-						: []),
+				// 21-C3: FLATTEN is two operations, not one. Once a scene holds a spline
+				// AND some ground, "flatten" is ambiguous, and the two readings are
+				// genuinely different jobs: cut a bed for the path, or lay the path over
+				// ground you want left exactly as it is. So it is a CATEGORY, and each
+				// side names which of the two things moves.
+				//
+				// Neither lists its targets by NAME: you click the partner in the viewport
+				// (the snapAnchorPicking shape), because the thing you mean is under the
+				// cursor and a ring of ten terrain tiles makes a list of names useless.
+				{
+					label: 'Flatten',
+					icon: 'mountain',
+					children: [
+						{
+							label: 'Terrain to this spline…',
+							icon: 'mountain',
+							disabled: locked,
+							tooltip: locked
+								? lockedTooltip
+								: 'Then click a terrain: levels a strip under this spline, blended into the slope either side',
+							action: () => import('./flattenActions').then((m) => m.startFlattenPick('carve', uuid))
+						},
+						{
+							label: 'This spline onto a surface…',
+							icon: 'spline',
+							disabled: locked,
+							tooltip: locked
+								? lockedTooltip
+								: 'Then click an object: drops every control point onto it, so the spline comes to rest on the surface and the surface is untouched',
+							action: () => import('./flattenActions').then((m) => m.startFlattenPick('drape', uuid))
+						}
+					]
+				}
 			]),
 		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh
 		// gets the normal-brush MESH sculpt (same toolbar + replication)

@@ -32,6 +32,7 @@
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
+	import { flattenPicking, flattenPickClick } from '$lib/flattenActions';
 	import { splineEditObject, splineEditClick, splineEditRightClick, exitSplineEdit, beginRadiusDrag, radiusDragMove, endRadiusDrag, radiusDragActive, onSplineProxyMoved, onSplineProxyDragChanged, tickSplineEdit } from '$lib/splineEdit';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
@@ -759,6 +760,13 @@
 			// only a short, stationary click selects — dragging orbits the camera
 			if (moved > 5 || Date.now() - downTime > 400) return;
 			if ($isLocked || $isVRMode || $specatorMode) return;
+			// 21-C3: the FLATTEN pick captures one click the same way — it is aimed at
+			// another OBJECT rather than a point, so it must also sit ahead of the
+			// selection path below, which would otherwise just select the terrain
+			if ($flattenPicking) {
+				setRayFromEvent(event);
+				if (flattenPickClick(selectionRaycaster)) return;
+			}
 			// 19-B P3: snap-anchor pick mode captures ONE click (the measure shape) —
 			// BEFORE the gizmo guard, because the attached gizmo's hover (axis set)
 			// would swallow a pick click anywhere near the object's centre

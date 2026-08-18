@@ -293,13 +293,13 @@ export const nodeCatalog = [
 				label: 'Impulse',
 				defaults: { mode: 'impulse', space: 'world', x: 0, y: 5, z: 0 },
 				inputs: ['trigger', 'force', 'target'],
-				inputLabels: { force: 'force (or x/y/z below)', target: 'target object' },
+				inputLabels: { force: 'force — wire a Vector 3', target: 'target object' },
+				// no x/y/z dials: a vector belongs in a Vector 3 node, and carrying both
+				// only raises the question of which one wins. `defaults` still holds
+				// (0, 5, 0), so an unwired Impulse hops rather than doing nothing.
 				params: [
 					{ key: 'mode', kind: 'select', options: ['impulse', 'torque'] },
-					{ key: 'space', kind: 'select', options: ['world', 'local'] },
-					{ key: 'x', kind: 'range', min: -20, max: 20, step: 0.5 },
-					{ key: 'y', kind: 'range', min: -20, max: 20, step: 0.5 },
-					{ key: 'z', kind: 'range', min: -20, max: 20, step: 0.5 }
+					{ key: 'space', kind: 'select', options: ['world', 'local'] }
 				]
 			},
 			// B6: reset-to-grid, freeze, stop-a-topple. 'continuous' is a
@@ -311,16 +311,11 @@ export const nodeCatalog = [
 				defaults: { mode: 'once', x: 0, y: 0, z: 0 },
 				inputs: ['trigger', 'linear', 'angular', 'target'],
 				inputLabels: {
-					linear: 'linear (or x/y/z below)',
-					angular: 'angular',
+					linear: 'linear — wire a Vector 3',
+					angular: 'angular — wire a Vector 3',
 					target: 'target object'
 				},
-				params: [
-					{ key: 'mode', kind: 'select', options: ['once', 'continuous'] },
-					{ key: 'x', kind: 'range', min: -20, max: 20, step: 0.5 },
-					{ key: 'y', kind: 'range', min: -20, max: 20, step: 0.5 },
-					{ key: 'z', kind: 'range', min: -20, max: 20, step: 0.5 }
-				]
+				params: [{ key: 'mode', kind: 'select', options: ['once', 'continuous'] }]
 			},
 			// B6: joints were scene data with no node. Reuses joints.createJoint, so
 			// the undo entry and the jointcreate message are the existing ones.

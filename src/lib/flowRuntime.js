@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
-import { peers } from '../stores/appStore';
+import { peers, showToast } from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { runScript } from './scriptRuntime';
@@ -209,6 +209,17 @@ function updatePhysicsActions(pairs, ctx) {
 		const continuous = node.type === 'setvelocity' && (data.mode ?? 'once') === 'continuous';
 		if (!continuous && (!high || was)) continue;
 		if (continuous && !high) continue;
+		// a physics action in a scene that is not simulating is a no-op, and used to
+		// be a SILENT one — the graph is right, the key fires, nothing moves
+		// initiator-gated by design, so a NON-initiator doing nothing here is correct
+		// and silent; only warn when nothing is simulating anywhere
+		const simRunning =
+			!!physicsRef?.isInitiator?.() ||
+			!!(physicsRef?.remoteSimulating && get(physicsRef.remoteSimulating));
+		if (!simRunning) {
+			warnNoSimulation(node.type);
+			continue;
+		}
 		if (node.type === 'impulse') {
 			const vector = vectorFrom(data.force, [data.x, data.y, data.z]);
 			const world = (data.space ?? 'world') === 'local' ? toWorldVector(target, vector) : vector;
@@ -236,7 +247,19 @@ function updatePhysicsActions(pairs, ctx) {
 	for (const id of [...physicsActionEdge.keys()]) if (!seen.has(id)) physicsActionEdge.delete(id);
 }
 
-/** a wired vector3 wins over the node's own x/y/z dials.
+let lastNoSimWarn = 0;
+/** The physics writes are all initiator-gated, so a correct graph in a stopped
+ * scene does nothing at all. Say so, once every few seconds, naming the node.
+ * @param {string} type */
+function warnNoSimulation(type) {
+	const now = Date.now();
+	if (now - lastNoSimWarn < 5000) return;
+	lastNoSimWarn = now;
+	const label = type === 'setvelocity' ? 'Set Velocity' : type === 'joint' ? 'Joint' : 'Impulse';
+	showToast(label + ' fired, but no simulation is running — press P (or the play button) to start physics');
+}
+
+/** a wired vector3 wins over the node's own dialled fallback.
  * @param {any} wired @param {any[]} dialled */
 function vectorFrom(wired, dialled) {
 	if (Array.isArray(wired)) return [num(wired[0]), num(wired[1]), num(wired[2])];

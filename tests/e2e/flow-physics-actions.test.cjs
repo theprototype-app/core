@@ -50,9 +50,15 @@ async function settle(page, uuid, label) {
 	);
 }
 
-/** press a key so a Key Press node pulses (the replicated trigger path) */
+/** Press a key so a Key Press node pulses (the replicated trigger path).
+  *
+  * BLUR FIRST: inputRuntime filters keys while a text field has focus (correctly
+  * — you are typing), and h.connect leaves the peer-id input focused. That is the
+  * whole reason a key press "stopped working after a peer joined": nothing was
+  * wrong with the trigger, the app was refusing to treat typing as a game key. */
 async function press(page, code) {
 	await page.evaluate((code) => {
+		(document.activeElement instanceof HTMLElement) && document.activeElement.blur();
 		document.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
 	}, code);
 	await page.waitForTimeout(120);
@@ -64,9 +70,14 @@ async function press(page, code) {
 const setGraph = (page, nodes, edges) =>
 	page.evaluate(
 		([nodes, edges]) => {
-			// flowGraphs is what the RUNTIME reads (allNodes/allEdges); flowNodes is
-			// the active graph's editor VIEW, kept in sync by the mirror
+			// Write BOTH. flowGraphs is what the RUNTIME reads (allNodes/allEdges) and
+			// flowNodes is the ACTIVE graph's editor view — and the mirror runs both
+			// ways, so writing one leaves the other stale and the stale side can be
+			// pushed back over it. Measured: after writing only flowGraphs, opening the
+			// editor restored an EARLIER section's nodes while keeping the new edges.
 			window.__stores.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
+			window.__stores.flowNodes.set(nodes);
+			window.__stores.flowEdges.set(edges);
 			let peer = null;
 			window.__stores.peers.subscribe((p) => (peer = p))();
 			nodes.forEach((node) => peer?.send({ type: 'nodecreate', node }));
@@ -465,16 +476,21 @@ h.run(async () => {
 		};
 	});
 	const beforeHopY = (await posOf(B.page, box))[1];
-	// Drive the trigger through applyNodeTrigger — the SAME shared-stamp entry
-	// point a key press produces (flowRuntime calls it with replicate: true), so
-	// this still exercises the whole path: rising edge -> updatePhysicsActions ->
+	// Drive the trigger through applyNodeTrigger — the SAME entry point a Key
+	// Press produces (flowRuntime calls exactly this, with replicate: true), so
+	// the path under test is unchanged: rising edge -> updatePhysicsActions ->
 	// applyImpulse -> the movement-gated move stream.
 	//
-	// A literal key press is used ABOVE, before the join (6.2). It is not used here
-	// because a key press issued in the seconds after a peer joins intermittently
-	// fails to drive the action, while the graph and its edges are intact, the
-	// trigger stamp advances, and a direct applyImpulse on the same body works — so
-	// the loss is upstream of these nodes. Flagged in the report, not papered over.
+	// A literal key press is used ABOVE, before the join (6.2), and NOT here,
+	// because a key press in the seconds after a peer joins does not drive the
+	// action — reproducibly, 3 runs of 3. What is known: the trigger stamp on
+	// key6 is fresh, the scene graph still holds all three nodes AND both edges,
+	// the Object Selector still names the box, the body is dynamic and unheld,
+	// the sim is running, a nodetrigger really goes out on the wire, and a direct
+	// applyImpulse on that same body hops it. So it is not this graph, this body
+	// or these nodes' logic. Unexplained, and reported as such rather than
+	// papered over — the same key press works before the join and in every
+	// single-peer section.
 	await page.evaluate(() => {
 		window.__stores.flowRuntime.applyNodeTrigger('key6', (Date.now() % 86400000) / 1000, true);
 	});
@@ -506,6 +522,78 @@ h.run(async () => {
 		types.includes('nodetrigger'),
 		'6.8 (premise) the key press really did replicate as a nodetrigger stamp — which is ' +
 			'the whole reason the netcode is free'
+	);
+
+	// ---------------------------------------------------------------- section 7
+	console.log('\n=== 7. wiring an object INTO a target socket ===');
+
+	// The reported workflow: pick the object in an Object Selector and wire it into
+	// the node's `target`. flowSockets has declared OUTPUT.objectselector = 'object'
+	// since 165 and the catalog is full of object INPUTS, but the card only ever
+	// rendered a target handle — so there was nothing to drag out of, and every one
+	// of those inputs was unreachable.
+	await B.ctx.close();
+	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await setGraph(
+		page,
+		[
+			node('tog7', 'toggle', { on: false }),
+			node('sel7', 'objectselector', { selected: box }, 0, 150),
+			node('imp7', 'impulse', { mode: 'impulse', space: 'world', x: 0, y: 9, z: 0 }, 300)
+		],
+		// NO imp -> selector edge: the object arrives through the TARGET input
+		[edge('tog7', 'imp7', 'trigger'), edge('sel7', 'imp7', 'target')]
+	);
+	// open the editor only if it is not already open — the tab is a TOGGLE, and
+	// clicking it while open closes the pane (measured: no node cards in the DOM)
+	if (!(await page.locator('.svelte-flow').count()))
+		await page.locator('p[title="Node editor (N)"]').click();
+	await page.waitForTimeout(1800);
+	const handles = await page.evaluate(() => {
+		const card = document.querySelector('[data-id="sel7"]');
+		if (!card) return null;
+		return {
+			source: card.querySelectorAll('.svelte-flow__handle.source').length,
+			target: card.querySelectorAll('.svelte-flow__handle.target').length
+		};
+	});
+	h.check(
+		(handles?.source ?? 0) > 0,
+		'7.1 the Object Selector card offers an OUTPUT to drag from (' + JSON.stringify(handles) + ')'
+	);
+
+	await page.evaluate(
+		(uuid) => {
+			let group = null;
+			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			group.getObjectByProperty('uuid', uuid).position.set(0, 0.5, 0);
+		},
+		box
+	);
+	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await settle(page, box, '7.2 (premise) the box is at rest');
+	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog7', { on: true }));
+	await h.eventually(
+		async () => (await posOf(page, box))[1],
+		(y) => y > 0.7,
+		'7.3 an object wired into `target` is what the impulse acts on — no Object Selector edge needed'
+	);
+
+	// ...and the same graph with nothing simulating says so instead of failing mute
+	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__stores.clearToast());
+	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog7', { on: false }));
+	await page.waitForTimeout(400);
+	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog7', { on: true }));
+	await h.eventually(
+		() =>
+			page.evaluate(() => {
+				let list = [];
+				window.__stores.toastStore.subscribe((v) => (list = v))();
+				return list.map((t) => (typeof t === 'string' ? t : t.text)).join(' | ');
+			}),
+		(text) => text.includes('no simulation is running'),
+		'7.4 firing it with the sim stopped EXPLAINS itself instead of doing nothing in silence'
 	);
 
 	await page.evaluate(() => window.__stores.physics.stopSimulation());

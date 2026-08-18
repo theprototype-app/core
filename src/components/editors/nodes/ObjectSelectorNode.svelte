@@ -33,4 +33,8 @@
 		</select>
 	</div>
 	<Socket kind="target" nodeType={data.type} position={Position.Left} />
+	<!-- the chosen object, as a value: this is what every `object` input in the
+	     catalog wires from. Declared in flowSockets since 165; the card simply
+	     never offered the handle, so those inputs were unreachable. -->
+	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 </NodeWrapper>

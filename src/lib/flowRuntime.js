@@ -851,6 +851,26 @@ export function fireObjectImpact(uuid, strength) {
 }
 
 /**
+ * A3/A2: a HUD button was pressed on THIS peer — pulse the `hudbutton` node bound to
+ * that element id. REPLICATED, like fireObjectClick: a press is a real event on one
+ * peer, not a derivation, so the stamp travels on the existing `nodetrigger` message
+ * and every peer then computes the identical pulse. The pulse formula is the one
+ * onclick/keypress use, so event->number coercion, Counter fan-in and triggerStampFor
+ * all work on it unchanged — and this batch adds NO new runtime message type.
+ * @param {string} elementId @returns {number} how many nodes were pulsed
+ */
+export function fireHudButton(elementId) {
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== 'hudbutton') return;
+		if (String(node.data?.element ?? '') !== String(elementId)) return;
+		applyNodeTrigger(node.id, syncedNow(), true);
+		fired++;
+	});
+	return fired;
+}
+
+/**
  * CL-A A3: the physics INITIATOR saw a sensor pair start/stop intersecting —
  * pulse the matching On Enter / On Exit nodes targeting `uuid`. Physics fires
  * this once per DIRECTION of the pair (uuid/otherUuid swapped), so matching

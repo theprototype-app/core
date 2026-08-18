@@ -22,6 +22,7 @@ import { annotationsSnapshot, annotationsRestore } from './autosave';
 import { captureEditResume, applyEditResume } from './editResume';
 import { jointsSnapshot, jointsRestore } from './joints';
 import { scenePostSnapshot, scenePostRestore } from './scenePost';
+import { hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { sceneCommand, sendObjects } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
@@ -146,6 +147,11 @@ export function buildSessionPayload(name) {
 			// annotations — it is scene data, not per-object data. Absent (null) when
 			// the scene has no look, so an older build reading this file sees no field.
 			post: scenePostSnapshot(),
+			// A2: the HUD, on the same reasoning and the same terms — scene data beside the
+			// objects, null when nothing is authored so a default scene saves byte-identical
+			hud: hudDocsSnapshot({
+				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+			}),
 			camera: camera
 				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 				: null,
@@ -458,6 +464,8 @@ export async function applySession(payload) {
 	// the look replicates on restore too, so loading a scene into a live room
 	// brings its art direction along (the jointsRestore precedent below)
 	scenePostRestore(payload.post, true);
+	// and the HUD with it: loading a game scene into a live room must bring its overlay
+	hudDocsRestore(payload.hud ?? null, true, true);
 	if (peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
 	/** @type {any} */
 	const camera = get(globalCamera);

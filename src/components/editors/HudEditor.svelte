@@ -21,7 +21,8 @@
 	import {
 		hudDocs, hudRuntime, hudSelection, hudScreenOverride, HUD_ANCHORS, HUD_KINDS, HUD_SCENE_KEY,
 		hudDocOf, setHudDocFor, addHudElement, updateHudElement, removeHudElements,
-		addHudScreen, removeHudScreen, setActiveHudScreen, visibleScreen, normalizeHudElement
+		addHudScreen, removeHudScreen, setActiveHudScreen, visibleScreen, normalizeHudElement,
+		hudPickArm, deliverHudPick
 	} from '$lib/hudDocs';
 	import { beginHudGesture, endHudGesture } from '$lib/hudSync';
 	import { hudPreviewInViewport } from '$lib/hudDocs';
@@ -310,6 +311,10 @@
 	function onElementDown(e, el) {
 		if (e.button !== 0) return;
 		e.stopPropagation();
+		// 21-D3: an armed EYEDROPPER takes this click and nothing else happens - no
+		// selection change and no drag. Picking a reference is not editing the layout, and a
+		// pick that also moved the element by a pixel would be its own bug report.
+		if (deliverHudPick(el.id)) return;
 		const additive = e.shiftKey || e.ctrlKey || e.metaKey;
 		if (additive) setPicks(selected.includes(el.id) ? selected.filter((i) => i !== el.id) : [...selected, el.id]);
 		else if (!selected.includes(el.id)) setPicks([el.id]);
@@ -329,6 +334,13 @@
 		if (e.code === 'Escape') {
 			e.preventDefault();
 			e.stopPropagation();
+			// 21-D3: an armed eyedropper is the OUTERMOST modal thing here, so it answers
+			// Escape first - the same order as the mesh editor's pending cut before its
+			// session. Cancelling a pick must not also drop the selection.
+			if ($hudPickArm) {
+				hudPickArm.set(null);
+				return;
+			}
 			if (drag.active() || sizeGrab.active()) {
 				drag.cancel();
 				sizeGrab.cancel();
@@ -752,6 +764,9 @@
 
 		{#snippet secondary(mode)}
 			<div class="flex flex-col gap-1.5 p-2 text-xs">
+				{#if $hudPickArm}
+					<p class="hud-arm">Click an element on the artboard to bind it. Esc cancels.</p>
+				{/if}
 				{#if !one}
 					<p class="hud-note">
 						{selected.length > 1
@@ -1067,6 +1082,12 @@
 		padding: 0.2rem;
 		font-size: 11px;
 		opacity: 0.8;
+	}
+	.hud-arm {
+		border-radius: 4px;
+		background: rgb(56 189 248 / 0.15);
+		padding: 4px 6px;
+		color: #7dd3fc;
 	}
 	.hud-note {
 		font-size: 10px;

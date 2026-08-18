@@ -266,15 +266,64 @@ export function elementById(key, elementId) {
 	return null;
 }
 
-/** Every element id in a document, so a node's element picker can offer them (the
- * `<input list>` + `<datalist>` shape PlayAnimNode uses for clips).
- * @param {string} key @returns {{id: string, kind: string, screen: string}[]} */
+/** Every element in a document, so a picker can offer them. `label` rides along because
+ * that is what a user recognises - an id is for the wire, a label is for a person.
+ * @param {string} key
+ * @returns {{id: string, kind: string, screen: string, label: string}[]} */
 export function elementChoices(key) {
 	const doc = hudDocOf(key);
 	if (!doc) return [];
 	return doc.screens.flatMap((screen) =>
-		screen.elements.map((el) => ({ id: el.id, kind: el.kind, screen: screen.name }))
+		screen.elements.map((el) => ({ id: el.id, kind: el.kind, screen: screen.name, label: el.label }))
 	);
+}
+
+/** Every screen of a document, as {id, name} — the picker's other half. @param {string} key */
+export function screenChoices(key) {
+	const doc = hudDocOf(key);
+	return doc ? doc.screens.map((s) => ({ id: s.id, name: s.name })) : [];
+}
+
+/**
+ * Resolve what a node's `element` field POINTS AT, for display.
+ *
+ * A field that shows the raw id cannot tell 'this names a real button' from 'this names
+ * nothing' — which is precisely what made the old `<input list>` read as a filter. The
+ * picker renders this instead, and paints the unresolved case amber.
+ * @param {string} key @param {string|null|undefined} id
+ * @returns {{id: string, kind: string, screen: string, label: string}|null}
+ */
+export function resolveElement(key, id) {
+	const wanted = String(id ?? '').trim();
+	if (!wanted) return null;
+	return elementChoices(key).find((c) => c.id === wanted) ?? null;
+}
+
+// ---- 21-D3: the EYEDROPPER seam ------------------------------------------------
+//
+// 'arm this field, then click the element on the artboard'. Two write-once stores rather
+// than a store holding a CALLBACK: the picker lives in the node editor and the artboard
+// in the HUD editor, so the value has to survive the trip between two panels, and a
+// token keeps a second armed field from consuming the first one's answer (the
+// inspectorScrollTo shape, one seam wider).
+/** @type {import('svelte/store').Writable<string|null>} */
+export const hudPickArm = writable(null);
+/** @type {import('svelte/store').Writable<{token: string, id: string}|null>} */
+export const hudPickResult = writable(null);
+
+/** @param {string} token */
+export function armHudPick(token) {
+	hudPickResult.set(null);
+	hudPickArm.set(token);
+}
+
+/** The artboard answering an armed field. @param {string} id @returns {boolean} consumed */
+export function deliverHudPick(id) {
+	const token = get(hudPickArm);
+	if (!token) return false;
+	hudPickArm.set(null);
+	hudPickResult.set({ token, id });
+	return true;
 }
 
 // ---- the single write path -----------------------------------------------------

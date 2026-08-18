@@ -162,7 +162,9 @@
 		($flowNodesStore as any[]).filter((node) => unknownTypes.includes(node.type)).length
 	);
 	// what the map resolved to at MOUNT — kept only so a suite can compute the
-	// counterfactual of the reactivity fix (see the debug hook below)
+	// counterfactual of the reactivity fix (see the debug hook below). Capturing the
+	// initial value is the WHOLE POINT here, so the warning is silenced deliberately.
+	// svelte-ignore state_referenced_locally
 	const mountedTypes: string[] = Object.keys(nodeTypes);
 
 	const { screenToFlowPosition, fitView, setViewport } = useSvelteFlow();

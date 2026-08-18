@@ -9,6 +9,7 @@
 	import {
 		templates,
 		examples,
+		games,
 		templatesState,
 		communityEntries,
 		communityState,
@@ -17,11 +18,48 @@
 		loadCommunityGallery,
 		loadRemoteScene,
 		confirmClearScene,
+		tagUnion,
+		matchesTags,
 		SUBMIT_URL
 	} from '$lib/sceneTemplates';
 	import { licenseLabel } from '$lib/packs';
+	import { classifyRequirements } from '$lib/moduleRequirements';
+	import { Gamepad2, Puzzle } from '@lucide/svelte';
 
 	let tab = $state('general');
+	/** A7: active tag chips, PER TAB — a filter that survived a tab switch would
+	 * silently empty the next grid ("the Examples tab is broken"). @type {string[]} */
+	let activeTags = $state(/** @type {string[]} */ ([]));
+
+	// the entries the visible tab is showing, before chips
+	const tabEntries = $derived(
+		tab === 'general' ? $templates : tab === 'examples' ? $examples : tab === 'games' ? $games : $communityEntries
+	);
+	// chips are DERIVED from the tab's own tags, so a new tag in the index appears
+	// without a core release, and a tab with no tags grows no chip row at all
+	const chips = $derived(tagUnion(tabEntries));
+	const shown = $derived(tabEntries.filter((/** @type {any} */ e) => matchesTags(e, activeTags)));
+
+	/** @param {string} tag */
+	function toggleTag(tag) {
+		activeTags = activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag];
+	}
+	/** @param {string} next */
+	function pickTab(next) {
+		tab = next;
+		activeTags = [];
+	}
+	/** A7: what this game needs that this device has not got. Advisory on the card —
+	 * the load path prompts properly (A6.2); the badge exists so a player is not
+	 * surprised by a dialog. @param {any} entry */
+	function needs(entry) {
+		if (!entry.modules?.length) return null;
+		const { missing, disabled } = classifyRequirements(entry.modules);
+		const short = entry.modules.map((/** @type {any} */ m) => m.id).join(', ');
+		if (missing.length) return { text: 'Needs ' + short, ok: false };
+		if (disabled.length) return { text: 'Enable ' + short, ok: false };
+		return { text: short, ok: true };
+	}
 
 	// panel-hide lifecycle + index fetch on open. Side reads go through untrack so
 	// hidePanels' store reads can't retrigger the effect (effect-depth gotcha).
@@ -91,6 +129,23 @@
 			{#if entry.description}
 				<p class="tpl-desc text-xs text-gray-400">{entry.description}</p>
 			{/if}
+			<!-- A7: a game is a module PLUS a scene, so the card says which module up
+			     front. Amber when this device has not got it: the load still works and
+			     prompts (A6.2 is advisory by design), but nobody should meet that dialog
+			     without warning. -->
+			{#if needs(entry)}
+				{@const req = needs(entry)}
+				<span
+					class="tpl-needs"
+					class:tpl-needs-ok={req?.ok}
+					data-needs={entry.slug}
+					title={req?.ok
+						? 'Installed — every player needs their own copy'
+						: 'Each player needs this module; loading will offer to install it'}
+				>
+					<Puzzle size={11} aria-hidden="true" />{req?.text}
+				</span>
+			{/if}
 			<p class="mt-auto text-[10px] text-gray-500">
 				{#if entry.author}{entry.author}{/if}
 				{#if entry.author && entry.license}·{/if}
@@ -129,7 +184,7 @@
 				class:active={tab === 'general'}
 				role="tab"
 				aria-selected={tab === 'general'}
-				onclick={() => (tab = 'general')}>General</button
+				onclick={() => pickTab('general')}>General</button
 			>
 			<button
 				id="templates-tab-examples"
@@ -137,17 +192,49 @@
 				class:active={tab === 'examples'}
 				role="tab"
 				aria-selected={tab === 'examples'}
-				onclick={() => (tab = 'examples')}>Examples</button
+				onclick={() => pickTab('examples')}>Examples</button
 			>
+			<button
+				id="templates-tab-games"
+				class="tpl-tab"
+				class:active={tab === 'games'}
+				role="tab"
+				aria-selected={tab === 'games'}
+				onclick={() => pickTab('games')}
+			>
+				<Gamepad2 size={14} aria-hidden="true" /> Games
+			</button>
 			<button
 				id="templates-tab-community"
 				class="tpl-tab"
 				class:active={tab === 'community'}
 				role="tab"
 				aria-selected={tab === 'community'}
-				onclick={() => (tab = 'community')}>Community</button
+				onclick={() => pickTab('community')}>Community</button
 			>
 		</div>
+
+		<!-- A7: tag chips, shared by all four tabs and derived from the ACTIVE tab's own
+		     tags. OR within the facet (see matchesTags) — an AND would empty the grid on
+		     the second click, which reads as a broken filter. VR is just a chip. -->
+		{#if chips.length}
+			<div id="templates-chips" class="tpl-chips">
+				{#each chips as tag (tag)}
+					<button
+						class="tpl-chip"
+						class:active={activeTags.includes(tag)}
+						data-chip={tag}
+						aria-pressed={activeTags.includes(tag)}
+						onclick={() => toggleTag(tag)}>{tag}</button
+					>
+				{/each}
+				{#if activeTags.length}
+					<button id="templates-chips-clear" class="tpl-chip tpl-chip-clear" onclick={() => (activeTags = [])}>
+						Clear
+					</button>
+				{/if}
+			</div>
+		{/if}
 
 		{#if tab === 'general'}
 			{#if $templatesState === 'loading' || $templatesState === 'idle'}
@@ -169,7 +256,7 @@
 						<span class="text-sm font-semibold">Blank scene</span>
 						<span class="text-[10px] text-gray-500">Start from nothing</span>
 					</button>
-					{#each $templates as entry (entry.slug)}
+					{#each shown as entry (entry.slug)}
 						{@render card(entry)}
 					{/each}
 				</div>
@@ -192,7 +279,7 @@
 					</p>
 				{/if}
 				<div class="grid grid-cols-2 gap-3 md:grid-cols-3">
-					{#each $examples as entry (entry.slug)}
+					{#each shown as entry (entry.slug)}
 						{@render card(entry)}
 					{/each}
 				</div>
@@ -210,12 +297,48 @@
 					{/if}
 				</div>
 			{/if}
+		{:else if tab === 'games'}
+			{#if $templatesState === 'loading' || $templatesState === 'idle'}
+				{@render skeletons()}
+			{:else if $games.length}
+				<div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+					{#each shown as entry (entry.slug)}
+						{@render card(entry)}
+					{/each}
+				</div>
+				{#if !shown.length}
+					<p id="games-filtered-empty" class="mt-3 text-xs italic text-gray-500">
+						No games match those tags.
+					</p>
+				{/if}
+				<p class="mt-3 text-xs text-gray-500">
+					A game is a scene plus a module. Loading one offers to install what it needs —
+					<span class="text-gray-400">every player needs their own copy</span>.
+				</p>
+			{:else}
+				<div
+					id="games-empty"
+					class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-600 p-6 text-center"
+				>
+					<Gamepad2 size={22} aria-hidden="true" />
+					<p class="text-sm text-gray-400">
+						{$templatesState === 'ready'
+							? 'No games published yet — check back after the next content release.'
+							: 'Games are curated online content — reconnect to browse them.'}
+					</p>
+					{#if $templatesState !== 'ready'}
+						<button id="games-retry" class="ui-button-quiet" onclick={() => loadTemplatesIndex(true)}>
+							<RefreshCw size={14} aria-hidden="true" /> Retry
+						</button>
+					{/if}
+				</div>
+			{/if}
 		{:else}
 			{#if $communityState === 'loading' || $communityState === 'idle'}
 				{@render skeletons()}
 			{:else if $communityState === 'ready'}
 				<div class="grid grid-cols-2 gap-3 md:grid-cols-3">
-					{#each $communityEntries as entry (entry.slug)}
+					{#each shown as entry (entry.slug)}
 						{@render card(entry)}
 					{/each}
 				</div>
@@ -279,6 +402,66 @@
 	.tpl-tab.active {
 		color: #fff;
 		border-bottom-color: var(--color-primary-600, #2563eb);
+	}
+	/* the Games tab carries an icon, so its label needs to sit beside it */
+	.tpl-tab {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	/* A7 tag chips. Every colour ends in a LITERAL fallback: neither the dark nor the
+	   light theme defines every token, and a bare var() leaves an unstyled control. */
+	.tpl-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+		margin-bottom: 0.7rem;
+	}
+	.tpl-chip {
+		padding: 0.15rem 0.6rem;
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: rgb(156 163 175);
+		background: rgb(55 65 81 / 0.5);
+		border: 1px solid rgb(75 85 99 / 0.6);
+		border-radius: 999px;
+		cursor: pointer;
+	}
+	.tpl-chip:hover {
+		color: rgb(229 231 235);
+		border-color: var(--color-primary-600, #2563eb);
+	}
+	.tpl-chip.active {
+		color: #fff;
+		background: var(--color-primary-600, #2563eb);
+		border-color: var(--color-primary-600, #2563eb);
+	}
+	.tpl-chip-clear {
+		font-weight: 500;
+		font-style: italic;
+	}
+	/* the module a game needs: amber when this device has not got it */
+	.tpl-needs {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2rem;
+		align-self: flex-start;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		padding: 0.05rem 0.4rem;
+		font-size: 0.62rem;
+		font-weight: 600;
+		color: #fcd34d;
+		background: rgb(120 53 15 / 0.35);
+		border: 1px solid rgb(180 83 9 / 0.5);
+		border-radius: 999px;
+	}
+	.tpl-needs-ok {
+		color: rgb(134 239 172);
+		background: rgb(20 83 45 / 0.3);
+		border-color: rgb(22 101 52 / 0.5);
 	}
 	.tpl-card {
 		cursor: pointer;

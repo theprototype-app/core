@@ -33,6 +33,7 @@ const DEFS = [
 		description: 'Greybox kit: floor, ramp to a platform, steps, walls and cover blocks',
 		license: 'CC0-1.0',
 		author: 'theprototype',
+		tags: ['greybox', 'level design'],
 		objects: [
 			{ type: 'box', name: 'Floor', color: gray.floor, size: [24, 0.5, 24], pos: [0, -0.25, 0] },
 			{ type: 'box', name: 'Platform', color: gray.block, size: [6, 0.5, 6], pos: [8, 2, -6] },
@@ -53,6 +54,7 @@ const DEFS = [
 		description: 'Static floor and ramp, a dynamic cube pyramid, dominos and a bouncy ball — press P to simulate',
 		license: 'CC0-1.0',
 		author: 'theprototype',
+		tags: ['physics', 'sandbox'],
 		objects: [
 			{
 				type: 'box', name: 'Floor', color: 0x7e8a97, size: [20, 0.5, 20], pos: [0, -0.25, 0],
@@ -87,6 +89,7 @@ const DEFS = [
 		description: 'Room shell with a door and window opening, columns and a half roof to block out interiors',
 		license: 'CC0-1.0',
 		author: 'theprototype',
+		tags: ['greybox', 'architecture'],
 		objects: [
 			{ type: 'box', name: 'Slab', color: 0x9aa3ad, size: [14, 0.3, 10], pos: [0, -0.15, 0] },
 			{ type: 'box', name: 'Wall back', color: 0xb8bfc7, size: [14, 3, 0.3], pos: [0, 1.5, -5] },
@@ -112,6 +115,7 @@ const DEFS = [
 		description: 'A small primitive-built lighthouse on an island — an example of composing simple shapes',
 		license: 'CC0-1.0',
 		author: 'theprototype',
+		tags: ['showcase', 'primitives'],
 		objects: [
 			{ type: 'cylinder', name: 'Island', color: 0x8a9a7b, r: 7, r2: 8.5, h: 1.2, pos: [0, -0.6, 0] },
 			{ type: 'cylinder', name: 'Tower base', color: 0xe8e2d6, r: 1.5, r2: 1.9, h: 3, pos: [0, 1.5, 0] },
@@ -228,6 +232,9 @@ const DEFS = [
 			description: def.description,
 			author: def.author,
 			license: def.license,
+			// A7: the chip row is derived from these — a def without tags gets an
+			// empty array rather than an absent key, so every row has the same shape
+			tags: def.tags ?? [],
 			bytes: built[def.slug].bytes.length
 		};
 	};

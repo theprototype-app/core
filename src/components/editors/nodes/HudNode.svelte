@@ -3,17 +3,21 @@
 	// node names an ELEMENT by id and takes its parameters from the catalog spec, so the
 	// only thing this card adds over AnimationNode is the element picker.
 	//
-	// The picker is an `<input list>` + `<datalist>`, NOT a select param (the PlayAnimNode
-	// clip-field precedent): a node authored in the scene graph, or naming an element this
-	// editor cannot enumerate — one a module creates, one on another screen — must still
-	// work. Suggestions are a convenience, never the allowed set.
+	// 21-D3: the picker is HudElementPicker - a resolved NAME, a grouped searchable list, a
+	// clear X, an amber unresolved state and an artboard eyedropper. It replaced an
+	// `<input list>` + `<datalist>`, which reads as a FILTER rather than a reference and
+	// shows a raw id, so a field naming nothing looked exactly like one naming a real
+	// element. The constraint that control got right survives inside the picker: a typed id
+	// this editor cannot enumerate still works, so suggestions stay a convenience and never
+	// become the allowed set.
 	import { Position, type NodeProps } from '@xyflow/svelte';
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeSpec } from '$lib/nodeCatalog';
 	import { flowEdges, flowValues, activeGraphId, SCENE_GRAPH } from '../../../stores/flowStore';
-	import { hudDocs, hudRuntime, elementChoices } from '$lib/hudDocs';
+	import { hudRuntime } from '$lib/hudDocs';
+	import HudElementPicker from '../../hud/HudElementPicker.svelte';
 
 	type $$Props = NodeProps;
 	export let id: string;
@@ -23,14 +27,9 @@
 	// which HUD document this node addresses: an object graph's id IS its owner uuid, and
 	// the scene graph addresses the scene HUD
 	$: docKey = $activeGraphId && $activeGraphId !== SCENE_GRAPH ? $activeGraphId : 'scene';
-	// $hudDocs is read purely as the DEPENDENCY (elementChoices does a plain get()), and
-	// it is passed as an unused argument rather than through a comma operator.
-	const choicesFor = (key: string, _docs: any) => elementChoices(key);
-	const screensOf = (key: string, docs: any) => (key ? (docs?.[key]?.screens ?? []) : []);
-	$: choices = choicesFor(docKey, $hudDocs);
-	// a screen node picks a SCREEN, everything else picks an ELEMENT
+	// a screen node picks a SCREEN, everything else picks an ELEMENT. The picker owns the
+	// enumeration and the reactivity now, so this card just says which mode it is in.
 	$: isScreenNode = data.type === 'hudscreen';
-	$: screenChoices = screensOf(docKey, $hudDocs);
 
 	// the target sockets this node type declares, in a fixed order so the offsets are
 	// stable as params come and go
@@ -61,41 +60,28 @@
 	{/each}
 	<div class="flex w-full flex-col gap-1">
 		{#if isScreenNode}
-			<label class="flex flex-col">
+			<div class="flex flex-col">
 				<span>screen</span>
-				<input
-					class="nodrag"
-					list="hud-screens-{id}"
-					placeholder="screen id"
+				<HudElementPicker
+					mode="screen"
+					{docKey}
 					value={data.screen ?? ''}
-					on:change={(e) => setNodeData(id, { screen: e.currentTarget.value.trim() })}
+					onpick={(next) => setNodeData(id, { screen: next })}
 				/>
-				<datalist id="hud-screens-{id}">
-					{#each screenChoices as screen (screen.id)}
-						<option value={screen.id}>{screen.name}</option>
-					{/each}
-				</datalist>
-			</label>
+			</div>
 			<!-- The thing that would otherwise be filed as a bug. Screen visibility is
 			     deliberately per-peer: one player sits on the start menu while another
 			     plays, which is the whole point of a menu in a shared session. -->
 			<span class="hud-note">Shows on THIS peer only — each player has their own screen.</span>
 		{:else}
-			<label class="flex flex-col">
+			<div class="flex flex-col">
 				<span>element</span>
-				<input
-					class="nodrag"
-					list="hud-elements-{id}"
-					placeholder="element id"
+				<HudElementPicker
+					{docKey}
 					value={data.element ?? ''}
-					on:change={(e) => setNodeData(id, { element: e.currentTarget.value.trim() })}
+					onpick={(next) => setNodeData(id, { element: next })}
 				/>
-				<datalist id="hud-elements-{id}">
-					{#each choices as choice (choice.id)}
-						<option value={choice.id}>{choice.kind} · {choice.screen}</option>
-					{/each}
-				</datalist>
-			</label>
+			</div>
 		{/if}
 
 		{#if spec?.params}

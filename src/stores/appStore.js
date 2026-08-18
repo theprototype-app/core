@@ -38,6 +38,24 @@ export const uvEditorClose = writable(true);
 export const shaderEditorClose = writable(true);
 // A4: the HUD editor, the 6th FLOW_FAMILY dock tab
 export const hudEditorClose = writable(true);
+
+/**
+ * 21-D7: DEEP LINK into a flow node — "show me the node that drives this HUD element".
+ * The inspectorScrollTo shape: a write-once request that the consumer (Nodes.svelte)
+ * acts on and CLEARS, so it cannot re-fire on the next unrelated render. Holds a node id.
+ * @type {import('svelte/store').Writable<string|null>}
+ */
+export const flowFocus = writable(null);
+
+/** Open the node editor and centre a node. The openShaderEditor seam, one domain over:
+ * dynamic imports, so a store module never pulls in UI chrome. @param {string} nodeId */
+export async function focusFlowNode(nodeId) {
+	const dock = await import('$lib/bottomDock');
+	flowGraphClose.set(false);
+	dock.activateDock('flow');
+	// after the dock has had a frame to mount, or fitView measures a pane that is not there
+	setTimeout(() => flowFocus.set(nodeId), 160);
+}
 // Explorer asset browser (95) — folder hud button toggles it
 export const explorerClose = writable(true);
 export const objectListClose = writable(true);

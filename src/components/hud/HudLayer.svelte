@@ -12,13 +12,34 @@
 	// phase (the AnnotationPins / AnnotationMarkers split).
 	import { onMount } from 'svelte';
 	import HudElement from './HudElement.svelte';
-	import { hudDocs, hudRuntime, hudScreenOverride, visibleScreen, HUD_KINDS } from '$lib/hudDocs';
+	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, visibleScreen, activeHudKeys, HUD_KINDS } from '$lib/hudDocs';
 	import { isVRMode } from '../../stores/sceneStore';
+	import { hudEditorClose } from '../../stores/appStore.js';
+	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
+	import { cameraPreview } from '$lib/cameraPreview';
 	import { claimInput, releaseInput } from '$lib/inputRuntime';
 	import { fireHudButton } from '$lib/flowRuntime';
 
-	// The visible screen of every document, flattened.
+	// 21-D5: WHICH documents are on screen — the scene HUD, plus the one keyed by the
+	// camera being looked through (attaching a HUD to a camera IS keying it by that
+	// camera's uuid, so there is no new concept here).
+	const throughCamera = $derived($cameraPreview?.uuid ?? null);
+
+	// 21-D5: is the HUD painted over the viewport at all?
 	//
+	// TWO separate switches, deliberately. `viewportOverrides.hud` is the persistent LOCAL
+	// kill switch every authored layer gets ("the scene says X, but not on my screen") —
+	// this is renderLayer()'s first real consumer. `hudPreviewInViewport` is about the
+	// AUTHORING SESSION: while the HUD editor is open you work on the artboard and the
+	// viewport stays clean, which is the answer to "why do I immediately see the HUD while
+	// I am building it". $viewportOverrides is read as the dependency, since renderLayer
+	// reaches the store through get().
+	// the store is the DEPENDENCY, passed as an unused argument: renderLayer reaches it
+	// through get(), and the comma-operator form is an error under svelte-check
+	const allowed = (/** @type {any} */ _overrides) => renderLayer('hud');
+	const layerAllowed = $derived(allowed($viewportOverrides));
+	const authoringHidden = $derived(!$hudEditorClose && !$hudPreviewInViewport);
+
 	// BOTH stores are read as dependencies. `visibleScreen` reaches the override through
 	// `get()`, and a `get()` inside a $derived registers NOTHING — so with only $hudDocs
 	// here, showing a screen wrote the store and the layer never re-rendered. It looked
@@ -26,11 +47,11 @@
 	// too. (The `$derived`-cannot-see-a-plain-read family.)
 	// `_override` is the DEPENDENCY, not an argument: visibleScreen reads the override
 	// store through get(), which registers nothing.
-	const screensFor = (/** @type {any} */ _override) =>
-		Object.keys($hudDocs)
+	const screensFor = (/** @type {any} */ _override, /** @type {string|null} */ cam, /** @type {any} */ _docs) =>
+		activeHudKeys(cam)
 			.map((key) => ({ key, screen: visibleScreen(key) }))
 			.filter((entry) => !!entry.screen);
-	const screens = $derived(screensFor($hudScreenOverride));
+	const screens = $derived(screensFor($hudScreenOverride, throughCamera, $hudDocs));
 
 	// Unknown kinds are SKIPPED at render, never dropped from the document.
 	const elements = $derived(
@@ -41,7 +62,7 @@
 		)
 	);
 	const focusables = $derived(elements.filter((el) => el.kind === 'button'));
-	const anyVisible = $derived(elements.length > 0 && !$isVRMode);
+	const anyVisible = $derived(elements.length > 0 && !$isVRMode && layerAllowed && !authoringHidden);
 
 	// ---- the keyboard, under pointer lock -----------------------------------------
 	// The dungeon-realms menu done properly. Claiming through inputRuntime is strictly

@@ -89,6 +89,10 @@ h.run(async () => {
 	// canvas. Compared as FRACTIONS of their stage, since the artboard is scaled to fit.
 	const agree = await page.evaluate(async () => {
 		const H = window.__stores.hudDocs;
+		// 21-D5 hides the HUD in the VIEWPORT while the editor is open (a user asked why they
+		// were seeing it twice), so this comparison - artboard rect vs RUNTIME rect - needs
+		// the preview on. That is the eye toggle's own store, not a test-only door.
+		H.hudPreviewInViewport.set(true);
 		const doc = H.hudDocOf('scene');
 		const id = doc.screens[0].elements[0].id;
 		H.updateHudElement('scene', doc.screens[0].id, id, {

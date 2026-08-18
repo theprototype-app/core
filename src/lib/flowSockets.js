@@ -48,6 +48,7 @@ const INPUT = {
 	lookat: { target: 'object' },
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
+	setuniform: { value: 'number' },
 	counter: { pulse: 'event' },
 	// 17-E A5: the trigger that starts/stops an authored clip, plus a wired speed
 	playanim: { trigger: 'event', speed: 'number' },

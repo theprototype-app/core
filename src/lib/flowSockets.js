@@ -5,6 +5,7 @@
 // Selector. Existing saved edges are NOT re-validated — only new drags.
 
 import { graphOf } from '../stores/flowStore';
+import { moduleValueTypes, moduleNodeInputs } from './moduleNodeIO';
 
 /** output type of a node's source handle @type {Record<string,string>} */
 const OUTPUT = {
@@ -82,6 +83,11 @@ const COERCE = {
 
 /** @param {string} nodeType */
 export function outputType(nodeType) {
+	// A1: a module VALUE node declares its own output type. Without this read the
+	// fallback below answered 'effect' for every module type, and an effect output
+	// may only reach an effect input — so a module value could not be wired to
+	// ANYTHING. That refusal is why module state could not reach a HUD.
+	if (moduleValueTypes[nodeType]) return moduleValueTypes[nodeType];
 	// anim / effect / action / script / sound / module nodes drive an Object
 	// Selector, so their output is the special 'effect' channel
 	return OUTPUT[nodeType] ?? 'effect';
@@ -89,6 +95,14 @@ export function outputType(nodeType) {
 
 /** @param {string} nodeType @param {string|null|undefined} handleId */
 export function inputType(nodeType, handleId) {
+	// A1: a module may declare its node's typed inputs. Checked FIRST, because the
+	// static table has no entry for a module type and the fallback is 'number' —
+	// which refuses an Object Selector (object -> number is not a coercion).
+	const modIn = moduleNodeInputs[nodeType];
+	if (modIn) {
+		if (handleId && modIn[handleId]) return modIn[handleId];
+		if (modIn._default) return modIn._default;
+	}
 	const map = INPUT[nodeType];
 	if (!map) return 'number'; // e.g. anim range params (spin.speed) are numeric
 	return (handleId && map[handleId]) || map._default || 'number';

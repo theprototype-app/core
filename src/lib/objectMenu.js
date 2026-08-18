@@ -17,7 +17,7 @@ import {
 } from './objectActions';
 import { requestControl, nameOf } from './lockControl';
 
-/** 21-C3: the terrains a road could be carved into. Keyed off userData.terrain,
+/** 21-C3: the terrains a spline could be carved into. Keyed off userData.terrain,
  * the same creation-time marker geometryParamsOf resolves through. */
 function terrainsInScene() {
 	return (get(objectsGroup)?.children ?? []).filter((/** @type {any} */ o) => o?.userData?.terrain);
@@ -230,30 +230,42 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					tooltip: locked ? lockedTooltip : 'Move control points, set thickness, insert or delete points',
 					action: () => import('./splineEdit').then((m) => m.enterSplineEdit(uuid))
 				},
-				// 21-C3/C4: what a spline is FOR once it is a road. Both entries are
-				// derived work: the carve is a pure function of (terrain params, spline)
-				// committed as one meshgeo, and the gates are recomputed from the same
-				// record by every peer, so moving a control point moves both.
-				{
-					label: 'Road',
-					icon: 'route',
-					children: [
-						...terrainsInScene().map((/** @type {any} */ terrain) => ({
-							label: `Carve into ${terrain.name || 'Terrain'}`,
-							tooltip: 'Flatten a road bed along this spline — one undoable geometry commit',
-							action: () => import('./roadActions').then((m) => m.carveRoadInto(uuid, terrain.uuid))
-						})),
-						...(terrainsInScene().length
-							? []
-							: [{ label: 'Carve into terrain', disabled: true, tooltip: 'No terrain in the scene — add one with Add ▸ Terrain' }]),
-						{ section: 'Lap gates' },
-						...[4, 6, 8, 12].map((count) => ({
-							label: `${count} checkpoint gates`,
-							tooltip: 'Sensor boxes spaced along the tarmac — wire one to an On Enter node and a Counter',
-							action: () => import('./roadActions').then((m) => m.createLapGates(uuid, count))
-						}))
-					]
-				}
+				// 21-C3: conform the ground to a curve. A GENERAL terrain operation (roads,
+				// rivers, paths, trenches), so it reads in terrain vocabulary and not one
+				// game's: a pure function of (terrain params, spline) committed as ONE
+				// meshgeo, which makes "move a control point, carve again" the whole loop.
+				// One flat entry for the common single-terrain scene; a submenu only when
+				// there is genuinely a choice to make.
+				...(terrainsInScene().length === 1
+					? [
+							{
+								label: 'Flatten terrain along this',
+								icon: 'mountain',
+								disabled: locked,
+								tooltip: locked
+									? lockedTooltip
+									: 'Levels a strip under this spline, blended into the slope either side — one undo step',
+								action: () =>
+									import('./carveActions').then((m) =>
+										m.carveTerrainAlong(uuid, terrainsInScene()[0].uuid)
+									)
+							}
+						]
+					: terrainsInScene().length
+						? [
+								{
+									label: 'Flatten terrain along this',
+									icon: 'mountain',
+									disabled: locked,
+									children: terrainsInScene().map((/** @type {any} */ terrain) => ({
+										label: terrain.name || 'Terrain',
+										tooltip: 'Levels a strip of this terrain under the spline — one undo step',
+										action: () =>
+											import('./carveActions').then((m) => m.carveTerrainAlong(uuid, terrain.uuid))
+									}))
+								}
+							]
+						: []),
 			]),
 		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh
 		// gets the normal-brush MESH sculpt (same toolbar + replication)

@@ -525,13 +525,13 @@
 	});
 
 	// ...and PRIME the module the carve buttons reach for. Both entry points (this
-	// panel and the Road context menu) load roadActions dynamically to keep a static
+	// panel and the object context menu) load carveActions dynamically to keep a static
 	// edge out of history's import subtree, and a cold fetch of it plus its
 	// dependency graph measured ~1.2s in dev — long enough that the first click
 	// looked like it did nothing. Warming it while a road is merely SELECTED is the
 	// moduleSDK primed-dynamic-import idiom, and it costs nothing when no road is.
 	$effect(() => {
-		if (spline) import('$lib/roadActions').catch(() => {});
+		if (spline) import('$lib/carveActions').catch(() => {});
 	});
 	/** the shared radius when every point agrees, else null (mixed taper) */
 	const splineRadius = $derived.by(() => {
@@ -3291,14 +3291,14 @@
 										size="xs"
 										color="alternative"
 										onclick={() =>
-											import('$lib/roadActions').then((m) => m.carveRoadInto($selectedObject.uuid, target.uuid))}
+											import('$lib/carveActions').then((m) => m.carveTerrainAlong($selectedObject.uuid, target.uuid))}
 									>
 										{target.name}
 									</Button>
 								{/each}
 							</div>
 							<p class="text-[10px] text-gray-500">
-								Flattens a bed along this road, blended into the slope either side. One undo step.
+								Levels a strip of ground under this spline, blended into the slope either side. One undo step.
 							</p>
 						{:else}
 							<p id="spline-carve-none" class="text-[10px] text-gray-500">

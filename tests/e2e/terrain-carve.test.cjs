@@ -1,16 +1,18 @@
-// 21-C3/C4 — CARVE A ROAD BED, and the gates derived from the same spline.
+// 21-C3 — CONFORM A TERRAIN TO A SPLINE (the carve).
 //
 // `carveAlongSpline` is PURE and the CALLER commits (the uvUnwrap backend shape),
 // so the first half runs with NO browser at all: build a terrain grid and a spline
 // record by hand, call the function, and assert the geometry. Every interesting
-// claim about a carve is geometric — "inside the road lands on the curve", "beyond
+// claim about a carve is geometric — "inside the width lands on the curve", "beyond
 // the shoulder is unchanged BIT FOR BIT", "the vertex order cannot matter" — and
 // none of it needs a GL context.
 //
-// The second half is the app: the objectMenu entry, the single meshgeo commit, one
-// undo, and a peer rebuilding the same bed. Plus C4's gates, whose whole point is
-// that they are DERIVED — so the check that matters is that every peer computes
-// the same list from the replicated record with nothing sent.
+// The second half is the app: both entry points, the single meshgeo commit, one undo,
+// a peer rebuilding the same bed, and the triangle-sanity checks that the first
+// version of this suite went without (see the commit that added them).
+//
+// The lap/checkpoint coverage that used to live here went with roadGates.js to the
+// race module: checkpoints and a quadrant anti-cheat are racing rules, not core.
 const path = require('path');
 const { pathToFileURL } = require('url');
 const h = require('./helpers.cjs');
@@ -21,7 +23,6 @@ h.run(async () => {
 	// ============================================ 1. the pure carve (no browser)
 	const THREE = await import('three');
 	const carve = await import(pathToFileURL(libPath('terrainCarve.js')).href);
-	const gates = await import(pathToFileURL(libPath('roadGates.js')).href);
 
 	/** a flat terrain grid, exactly as terrainGeometry builds one */
 	const makeTerrain = (size, segments, height = 0) => {
@@ -187,89 +188,6 @@ h.run(async () => {
 		`COUNTERFACTUAL: the converted record carves the band at z=8 (mean ${meanZOfMoved(shifted).toFixed(2)}) where the raw one carves at the origin (mean ${meanZOfMoved(rawFrame).toFixed(2)})`
 	);
 
-	// ------------------------------------------------ C4, still without a browser
-	const loop = {
-		points: [
-			{ pos: [10, 1, 0], radius: 2 },
-			{ pos: [0, 1, 10], radius: 2 },
-			{ pos: [-10, 1, 0], radius: 2 },
-			{ pos: [0, 1, -10], radius: 2 }
-		],
-		closed: true
-	};
-	const road = { userData: { spline: loop } };
-	const six = gates.checkpointsFor(road, 6);
-	h.check(six.length === 6, `checkpointsFor returns the count asked for (${six.length})`);
-	h.check(
-		six.every((g) => g.width === 4),
-		'each gate spans the road (the tube diameter at that point)'
-	);
-	// ARC LENGTH is the claim, and it needs the counterfactual to mean anything: on
-	// a spline with UNEVEN spans, `getPointAt` spaces gates evenly along the tarmac
-	// while `getPoint` (parameter-spaced, which is what a naive implementation
-	// reaches for) crowds them into the short spans. Two short spans and one long
-	// one is the adversarial input; on the smooth loop above BOTH would look fine.
-	const splineTube = await import(pathToFileURL(libPath('splineTube.js')).href);
-	const uneven = {
-		points: [
-			{ pos: [0, 1, 0], radius: 2 },
-			{ pos: [2, 1, 0], radius: 2 },
-			{ pos: [20, 1, 0], radius: 2 },
-			{ pos: [22, 1, 0], radius: 2 }
-		],
-		closed: false
-	};
-	const unevenCurve = splineTube.splineCurve(uneven);
-	const N = 8;
-	const chordsOf = (/** @type {number[][]} */ pts) =>
-		pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[2] - pts[i][2]));
-	const arcChords = chordsOf(gates.checkpointsFor({ userData: { spline: uneven } }, N).map((g) => g.position));
-	const paramChords = chordsOf(
-		Array.from({ length: N }, (_, i) => unevenCurve.getPoint(i / (N - 1))).map((p) => [p.x, p.y, p.z])
-	);
-	const ratio = (/** @type {number[]} */ c) => Math.max(...c) / Math.max(Math.min(...c), 1e-9);
-	h.check(
-		ratio(arcChords) < 1.3,
-		`gates are evenly spaced ALONG THE TARMAC on an uneven spline (longest/shortest gap ${ratio(arcChords).toFixed(2)})`
-	);
-	h.check(
-		ratio(paramChords) > 3,
-		`COUNTERFACTUAL: parameter spacing on the same spline is ${ratio(paramChords).toFixed(1)}x uneven — which is the bug getPointAt avoids`
-	);
-	h.check(
-		gates.checkpointsFor(road, 6).every((g, i) => g.u === six[i].u),
-		'the list is DERIVED: the same record gives the same gates every time (no messages needed)'
-	);
-
-	// lap counting: progress plus quadrant flags, never gate order
-	const lap = gates.newLapState();
-	let lapped = 0;
-	for (let step = 0; step <= 40; step++) {
-		const u = (step % 40) / 40;
-		const point = { u, quadrant: Math.min(Math.floor(u * 4), 3) };
-		if (gates.trackLap(lap, point).lapped) lapped++;
-	}
-	h.check(lapped === 1 && lap.laps === 1, `one full circuit counts one lap (${lap.laps})`);
-
-	// the anti-cheat: nudging back and forth over the line must never count
-	const cheat = gates.newLapState();
-	let cheated = 0;
-	for (let i = 0; i < 30; i++) {
-		const u = i % 2 ? 0.99 : 0.01;
-		if (gates.trackLap(cheat, { u, quadrant: u > 0.5 ? 3 : 0 }).lapped) cheated++;
-	}
-	h.check(
-		cheated === 0 && cheat.laps === 0,
-		`reversing over the finish line farms nothing (${cheat.laps} laps from 30 crossings)`
-	);
-	// and the honest half: a real lap after the cheating still counts
-	const after = gates.newLapState();
-	for (let step = 0; step <= 40; step++) {
-		const u = (step % 40) / 40;
-		gates.trackLap(after, { u, quadrant: Math.min(Math.floor(u * 4), 3) });
-	}
-	h.check(after.laps === 1, 'PREMISE: the tracker does count a legitimate lap, so the check above is not vacuous');
-
 	// ==================================================== 2. the app: commit + peers
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
@@ -336,21 +254,27 @@ h.run(async () => {
 			uuid
 		);
 
-	// the objectMenu offers the carve on a spline, naming the terrain
+	// the objectMenu offers the carve on a spline, in TERRAIN vocabulary
 	const menu = await A.page.evaluate((uuid) => {
 		// (uuid FIRST, opts second — passing one object silently builds a menu for
-		// "no object", which is a menu with no Road entry and a green-looking check)
+		// "no object", which has no carve entry and would read as a green check)
 		const items = window.__stores.objectMenu.buildObjectMenuItems(uuid, { selection: [uuid] });
-		const road = items.find((i) => i.label === 'Road');
+		const labels = items.map((i) => i.label ?? '');
+		const carve = items.find((i) => /Flatten terrain/i.test(i.label ?? ''));
 		return {
-			hasRoad: !!road,
-			children: (road?.children ?? []).map((c) => c.label ?? '(' + (c.section ?? '?') + ')')
+			hasCarve: !!carve,
+			flat: !!carve && !carve.children,
+			// the SCOPE decision, asserted rather than trusted: a spline in a scene with
+			// no racing game must not sprout racing vocabulary. Core owns the terrain
+			// operation; laps and checkpoints belong to the race module.
+			gameWords: labels.filter((l) => /road|lap|checkpoint|gate/i.test(l))
 		};
 	}, built.road);
-	h.check(menu.hasRoad, 'the shared object menu grows a Road submenu on a spline');
+	h.check(menu.hasCarve, 'the shared object menu offers the carve on a spline');
+	h.check(menu.flat, 'one terrain in the scene means ONE flat entry, not a submenu to open');
 	h.check(
-		menu.children.some((l) => /^Carve into/.test(l)) && menu.children.some((l) => /checkpoint gates$/.test(l)),
-		`with the carve and the gate counts in it (${menu.children.join(', ')})`
+		menu.gameWords.length === 0,
+		`and no game vocabulary rides along in core (${menu.gameWords.join(', ') || 'none'})`
 	);
 
 	const commit = await A.page.evaluate(
@@ -368,7 +292,7 @@ h.run(async () => {
 				seen.push(typeof m === 'string' ? 'command' : m?.type);
 				return send(m);
 			};
-			const ok = w.roadActions.carveRoadInto(roadUuid, terrainUuid);
+			const ok = w.carveActions.carveTerrainAlong(roadUuid, terrainUuid);
 			peer.send = send;
 			await new Promise((r) => setTimeout(r, 300));
 			const after = Array.from(terrain.geometry.attributes.position.array);
@@ -459,7 +383,7 @@ h.run(async () => {
 				none: !!document.querySelector('#spline-carve-none')
 			})),
 		(d) => d.button && !d.none,
-		'the road Properties offer Carve into terrain, naming the terrain',
+		'the spline Properties offer the same carve, naming the terrain',
 		20000
 	);
 	const beforeProps = await surfaceOf(A.page, built.terrain);
@@ -469,7 +393,7 @@ h.run(async () => {
 	// the toast text, which is the only thing that distinguishes "this click did
 	// nothing yet" from "this click found the bed already flat" — without it the
 	// idempotence check below passes VACUOUSLY, which is exactly what it did while
-	// racing a ~1.2s cold dynamic import of roadActions
+	// racing a ~1.2s cold dynamic import of carveActions
 	// scan the WHOLE stack, never just the last entry: this box emits peer-server
 	// toasts ("Lost connection… reconnecting") throughout a run, so the newest toast
 	// is regularly not the one the click produced
@@ -511,7 +435,7 @@ h.run(async () => {
 	await columnDiff(A.page, built.terrain, '__carveField'); // seeds the stash
 	await A.page.evaluate(() => document.querySelector('#spline-carve-0').click());
 	// wait on the OUTCOME, not a clock: the first click through either entry point
-	// pays a cold dynamic import of roadActions (~1.2s in dev), and a fixed sleep here
+	// pays a cold dynamic import of carveActions (~1.2s in dev), and a fixed sleep here
 	// let this whole section pass while nothing had run yet
 	await h.eventually(
 		carveToast,
@@ -565,95 +489,6 @@ h.run(async () => {
 	);
 	await A.page.keyboard.press('Control+y');
 	await A.page.waitForTimeout(900);
-
-	// ---- C4 in the app: real sensor gates, and both peers derive the same list
-	const made = await A.page.evaluate(async (roadUuid) => {
-		const uuids = await window.__stores.roadActions.createLapGates(roadUuid, 4);
-		await new Promise((r) => setTimeout(r, 600));
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
-		return uuids.map((uuid) => {
-			const gate = group.getObjectByProperty('uuid', uuid);
-			return {
-				uuid,
-				name: gate?.name,
-				sensor: !!gate?.userData?.physics?.sensor,
-				collider: gate?.userData?.physics?.collider,
-				pos: gate ? [gate.position.x, gate.position.y, gate.position.z] : null
-			};
-		});
-	}, built.road);
-	h.check(made.length === 4, `four gates created (${made.length})`);
-	h.check(
-		made.every((g) => g.sensor && g.collider === 'box'),
-		'each is a SENSOR box — so the existing onenter node fires on it, with no new node type'
-	);
-	h.check(
-		made.every((g, i) => g.name === `Gate ${i + 1}`),
-		`and they are named in road order (${made.map((g) => g.name).join(', ')})`
-	);
-	const spacingApp = made
-		.map((g, i) => {
-			const next = made[(i + 1) % made.length];
-			return Math.hypot(next.pos[0] - g.pos[0], next.pos[2] - g.pos[2]);
-		})
-		.slice(0, 3);
-	h.check(
-		Math.max(...spacingApp) - Math.min(...spacingApp) < 2,
-		`spaced along the road (${spacingApp.map((v) => v.toFixed(1)).join(', ')}m apart)`
-	);
-
-	// THE POINT of emitting real objects instead of keeping the gates as module
-	// data: the EXISTING nodes already work on them. An On Enter node pointed at a
-	// gate plus a Counter IS a lap counter, with no new node type — so drive that
-	// seam directly (fireObjectEnter is what the physics sensor pass calls) rather
-	// than waiting on a car to drive through, which is a different feature's test.
-	const wired = await A.page.evaluate(async (gateUuid) => {
-		const s = window.__stores;
-		s.flowNodes.set([
-			{ id: 'oe-gate', type: 'onenter', position: { x: 0, y: 0 }, data: { label: 'On Enter', pulse: 0.3 } },
-			{
-				id: 'sel-gate',
-				type: 'objectselector',
-				position: { x: 220, y: 0 },
-				data: { label: 'Object', selected: gateUuid }
-			},
-			{ id: 'lap-count', type: 'counter', position: { x: 0, y: 140 }, data: { label: 'Counter', step: 1, value: 0 } }
-		]);
-		s.flowEdges.set([
-			{ id: 'w1', source: 'oe-gate', target: 'sel-gate' },
-			{ id: 'w2', source: 'oe-gate', target: 'lap-count' }
-		]);
-		await new Promise((r) => setTimeout(r, 400));
-		const before = await new Promise((r) => s.flowTriggers.subscribe(r)());
-		s.flowRuntime.fireObjectEnter(gateUuid, 'some-car');
-		await new Promise((r) => setTimeout(r, 400));
-		const after = await new Promise((r) => s.flowTriggers.subscribe(r)());
-		return { before: before?.['oe-gate']?.lastT ?? null, after: after?.['oe-gate']?.lastT ?? null };
-	}, made[0].uuid);
-	h.check(!wired.before, 'PREMISE: the On Enter node has not pulsed before the gate reports anything');
-	h.check(
-		!!wired.after,
-		'a gate crossing pulses the EXISTING On Enter node — a wireable lap counter with zero new node types'
-	);
-
-	// the derivation is the sync: B computes the same gate list from the replicated
-	// record without any gate-specific message
-	const derivedB = await B.page.evaluate(async (roadUuid) => {
-		const gatesLib = window.__stores.roadGates;
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
-		const road = group.getObjectByProperty('uuid', roadUuid);
-		return road ? gatesLib.checkpointsFor(road, 4).map((g) => g.position) : null;
-	}, built.road);
-	const derivedA = await A.page.evaluate(async (roadUuid) => {
-		const gatesLib = window.__stores.roadGates;
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
-		const road = group.getObjectByProperty('uuid', roadUuid);
-		return road ? gatesLib.checkpointsFor(road, 4).map((g) => g.position) : null;
-	}, built.road);
-	h.check(
-		!!derivedB && JSON.stringify(derivedA) === JSON.stringify(derivedB),
-		'B derives the identical checkpoint list from the replicated record — zero messages, determinism is the netcode'
-	);
 
 	await h.finish(browser);
 });

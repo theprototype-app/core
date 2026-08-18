@@ -675,21 +675,25 @@ loadable play content. Everything a user does must be visible to connected peers
   and a curvature bank clamped to a quarter of the width. `splineInFrameOf` is
   load-bearing: a spline's record lives in the SPLINE MESH's frame (finishSpline
   re-seats it on the centroid), so carving the raw record flattens a strip at the
-  origin — a plausible road in the wrong place) + `roadGates` (21-C4, a leaf:
-  splineTube only. `checkpointsFor` samples with `getPointAt`, which is ARC-LENGTH
-  parameterised, so gates space along the TARMAC — measured, parameter spacing on an
-  uneven spline is 12.3x uneven. DERIVED, never authored: every peer computes the
-  identical list from the replicated `userData.spline` with ZERO messages, so moving a
-  control point moves the gates. `progressAlong`/`trackLap` are the authority half,
-  because GATES ALONE CANNOT COUNT A LAP — a lap needs the arc-length parameter to
-  WRAP with all four quadrant flags set, or reversing over the line farms crossings
-  (the animation loop-wrap lesson, one domain over)) + `roadActions` (21-C3/C4 THE
-  CALLER, and the only half that touches the scene, the wire, undo or a toast:
-  `carveRoadInto` commits ONE `commitMeshGeoSnapshot` — positions-only is right since
-  the vertex count never changes — and `createLapGates` emits REAL sensor boxes so the
-  EXISTING `onenter` + `counter` nodes give a wireable lap system with ZERO new node
-  types. Reached by a dynamic import from objectMenu's Road submenu, which keeps both
-  leaves out of history's import subtree),
+  origin — a plausible road in the wrong place) + `carveActions` (21-C3 THE CALLER,
+  and the only half that touches the scene, the wire, undo or a toast:
+  `carveTerrainAlong` commits ONE `commitMeshGeoSnapshot`, positions-only because the
+  carve moves Y and never changes the vertex COUNT. Reached by a dynamic import from
+  objectMenu (primed by the Inspector while a spline is selected), which keeps the
+  leaf out of history's import subtree.
+  **SCOPE, settled after C4 shipped and worth not re-litigating:** conforming a
+  heightfield to a curve is a GENERAL world-building operation (roads, rivers,
+  footpaths, trenches, ledges, building pads), so it lives in core and reads in
+  TERRAIN vocabulary — "Flatten terrain along this", never "Road". The lap half that
+  shipped beside it in C4 (`roadGates.js`: `checkpointsFor` on arc length,
+  `progressAlong`, and a quadrant anti-cheat so a driver cannot farm laps by reversing
+  over the line) was racing RULES, and it made every spline in every scene sprout a
+  Road menu for the benefit of one game. It was REMOVED from core — the race module
+  owns it, and has to own it anyway since an installable module cannot import core.
+  The code is commit 233c707; the reasoning worth carrying over is in the 21-C plan.
+  Two constraints that shaped that call: a module cannot add object-menu entries at
+  all today (`registerMenu` is a sidebar button), and there is no `api.commitGeometry`,
+  so making the CARVE a module too would mean designing both seams first),
   `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
   (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
   world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
@@ -1741,7 +1745,7 @@ loadable play content. Everything a user does must be visible to connected peers
   toast counts vertices post-expansion, so 251 vs 876 read as divergence when nothing
   had diverged.
 - **A first click that loads its module dynamically feels broken.** Both carve entry
-  points import `roadActions` on demand (to keep a static edge out of history's
+  points import `carveActions` on demand (to keep a static edge out of history's
   subtree) and a cold fetch of it plus its dependency graph measured ~1.2s in dev —
   long enough to look like a dead button, and long enough to make a 900ms test wait
   pass while nothing had run. The Inspector PRIMES the import while a road is merely

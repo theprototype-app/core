@@ -15,6 +15,17 @@ import { GEOMETRY_PARAMS, geometrySpec } from './geometryParams';
 export function buildGeometry(gtype, params) {
 	const spec = geometrySpec(gtype);
 	if (!spec) return null;
+	// 21-C1: a spec may BUILD itself. Without this, buildGeometry can only make a
+	// geometry three has a constructor for, so a custom one (Terrain) could not be
+	// parametric at all — its params had nothing to rebuild them with.
+	if (spec.build) {
+		try {
+			return spec.build(params);
+		} catch (error) {
+			console.log('buildGeometry (custom) failed', gtype, error);
+			return null;
+		}
+	}
 	const args = spec.order.map((key) =>
 		key === 'points' || key === 'path' ? undefined : params[key]
 	);
@@ -26,10 +37,41 @@ export function buildGeometry(gtype, params) {
 	}
 }
 
+/** Defaults-plus-measurements for an UNSTAMPED terrain. A flat terrain grid is
+ * indexed with (segments + 1)² vertices and spans `size` in X and Z, so both are
+ * readable off the mesh; anything that does not match that shape (a sculpted or
+ * re-imported mesh) keeps the registry defaults, and its rows are locked by the
+ * meshgeo stamp anyway. @param {any} object */
+function terrainParamsOf(object) {
+	const spec = geometrySpec('Terrain');
+	/** @type {any} */
+	const params = {};
+	for (const p of spec?.params ?? []) params[p.key] = p.def;
+	const position = object?.geometry?.attributes?.position;
+	if (position && object.geometry.index) {
+		const side = Math.round(Math.sqrt(position.count)) - 1;
+		if (side >= 2 && side <= 48 && (side + 1) * (side + 1) === position.count) {
+			params.segments = side;
+			object.geometry.computeBoundingBox();
+			const box = object.geometry.boundingBox;
+			const width = box ? box.max.x - box.min.x : 0;
+			if (width > 0) params.size = width;
+		}
+	}
+	return { gtype: 'Terrain', params };
+}
+
 /** Current editable params for a mesh (userData first, live geometry second)
  * @param {any} object */
 export function geometryParamsOf(object) {
 	if (object?.userData?.geometryParams?.gtype) return object.userData.geometryParams;
+	// 21-C1: userData.terrain is a creation-time marker (the userData.colliderHint
+	// precedent), and it must be read BEFORE the geometry.type fallback below —
+	// otherwise a terrain resolves to whatever three type its baked geometry
+	// reports and the Inspector offers the wrong primitive's rows. Params are
+	// derived from the mesh so a terrain built before this existed (or by an older
+	// peer, which stamped nothing) resolves to what it IS rather than to defaults.
+	if (object?.userData?.terrain) return terrainParamsOf(object);
 	const gtype = object?.geometry?.type?.replace('Geometry', '');
 	const spec = gtype && geometrySpec(gtype);
 	if (!spec || !object.geometry.parameters) return null;
@@ -65,8 +107,12 @@ export function applyGeometry(uuid, patch, options = {}) {
 	object.geometry.dispose();
 	object.geometry = fresh;
 	object.userData.geometryParams = { gtype: current.gtype, params };
-	// a rebuild discards any recorded vertex edits — the flag resets
+	// a rebuild discards any recorded vertex edits — the flag resets. faceEdited
+	// (which every meshgeo commit stamps, so every sculpt stroke too) goes with
+	// it: it is the same lock, and leaving it set means the parametric rows stay
+	// disabled after a rebuild that just threw those edits away.
 	delete object.userData.vertexEdited;
+	delete object.userData.faceEdited;
 	objectsGroup.update((value) => value);
 	if (record)
 		recordEntry({ kind: 'geometry', uuid, before, after: { gtype: current.gtype, params } });
@@ -90,6 +136,7 @@ export function applyRemoteGeometry(data) {
 	object.geometry = fresh;
 	object.userData.geometryParams = { gtype: data.gtype, params: { ...data.params } };
 	delete object.userData.vertexEdited;
+	delete object.userData.faceEdited; // same lock, same reset as the local path
 	objectsGroup.update((value) => value);
 }
 

@@ -285,6 +285,36 @@ loadable play content. Everything a user does must be visible to connected peers
   it); SENSORS = trigger volumes (pass-through; pairs collected BOTH directions,
   per-frame dedupe → `fireObjectEnter/Exit` replicated stamps); `PHYSICS_MATERIALS`
   presets (ice/rubber/wood/metal); freeze axes via setEnabledRotations/Translations;
+  21-B WIDENED the scene singleton and added the play/throw layer:
+  `scenePhysics.js` is now the WHOLE shared physics config —
+  `{gravity, ground{enabled,height,friction,restitution}, bounds{limit,action},
+  material, damping, ccd, timeScale, play{interaction,grounded,simOnPlay}}` —
+  with the message `type` UNCHANGED, which is the entire argument for housing
+  the play block there rather than minting a second singleton: no dispatch case,
+  no canApply entry, no handshake work, no handleDisconnected cleanup.
+  `normalizeScenePhysics` is the ONE boundary and holds every clamp;
+  `setScenePhysics` merges nested blocks and stamps MONOTONICALLY (a gesture
+  writes several times per millisecond); `scenePhysicsSnapshot/Restore` return
+  null at defaults so a default scene writes no key (L5 wires sessions.js).
+  · `throwVelocity.js` (THREE only) = `velocityFromSamples`/`clampThrow`, shared
+  by the gizmo release, play mode and the `throw` applier: a QUATERNION delta
+  (Euler differencing is wrong across a wrap and wrong in general — YXZ couples
+  the axes) and a MAGNITUDE clamp (per-component clamping ROTATES the throw;
+  measured 4.6 degrees off on a skewed vector).
+  · `playInteract.js` = play mode's own input path, deliberately NOT a lift of
+  Scene's pick (the editor's select branch is a short STATIONARY click, its
+  `$isLocked` bails guard six editor modes, and play mode's ray is NDC (0,0)
+  every frame). The hold is a SMOOTHED KINEMATIC TARGET: kinematicTargetOf plus
+  the SLERPed substep feed are already the other half of that spring, so
+  smoothing the target costs no rapier surface and makes mass legible. A tap
+  under 180ms fires `fireObjectClick` — play mode had no clicking at all.
+  · `playSettings.js` = `resolvePlaySettings(scene)`, the shared block overridden
+  field-by-field by scene-root `userData.play` publishers in a DETERMINISTICALLY
+  SORTED scan (children order is per-peer, so an unsorted scan resolves
+  DIFFERENTLY on two peers). DEVX #13; `grounded` in PointerLockControls is #14;
+  `playMarkers` generalises the minimap's two hardcoded object names.
+  · `moveSmoothing.js` = receiver-side interpolation of a remote physics stream
+  (see the gotcha). · `PlayReticle.svelte` = the crosshair, presentation only.
   scene GRAVITY from `scenePhysics.js` (a sceneMusic-style latest-wins
   `scenephysics` singleton, applied at world create AND live); CUSTOM colliders are
   COMPOUND — one convexHull per SHELL, verts+pieces stored on userData.physics
@@ -799,7 +829,89 @@ loadable play content. Everything a user does must be visible to connected peers
   and REPORTS `fellBackFrom` while the document keeps its original key),
   `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
   `networkQuality` (N6/D3: LOCAL per-peer getStats RTT + relay dot, median, NOT replicated),
-  `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
+  `drawMode` (+`drawTool` 'freehand'|'spline' — the toolbar tool switch, phase 57) +
+  the SPLINE trio: `splineTube` (PURE variable-radius tube builder — TubeGeometry
+  sweeps ONE radius, so the sweep is hand-rolled; radiusAt reuses
+  CatmullRomCurve3's own `(n-(closed?0:1))*t` segment mapping and every arc-length
+  sample converts u→t through getUtoTmapping, plus normal-tested end caps,
+  insert/remove point, `radiusFromDrag` multiplicative response) + `splineTool`
+  (click placement w/ live tube preview, "Spline" mesh carrying its record on
+  `userData.spline` — rides toJSON AND GLTF extras like `__uuid`, so late joiners
+  edit it too; ONE write path: applySplineEdit / streamSplineEdit (throttled) /
+  commitSplineEdit (+ the `'spline'` history kind), `splineedit` message = the
+  RECORD only, receivers rebuild deterministically; Properties setters) +
+  `splineEdit` (the session: scene-root handle group = point/radius/insert-marker
+  InstancedMeshes, gizmo on an `isSplineProxy` for position, vertical drag on the
+  amber dot for per-point radius, span-marker click inserts, right-click deletes;
+  VR rides the GENERIC vrControls hook registries — no vrControls edits at all),
+  `noise` (21-C1, imports NOTHING: `hash2i`/`valueNoise2`/`fbm2`. VALUE noise with a
+  smoothstep polynomial, so every number comes out of `+ - * / Math.floor Math.imul`
+  and integer bit ops and there is NO TRANSCENDENTAL anywhere — IEEE-754 does not pin
+  sin/cos/exp/pow across JS engines, which is dungeon-realms' own rule and what makes
+  a terrain built from {seed, params} bit-exact on every peer. fbm normalises by the
+  amplitude sum, so `octaves` buys DETAIL and not height) + PROCEDURAL TERRAIN
+  (21-C1: `terrainGeometry` in customGeometries + a `Terrain` entry in
+  GEOMETRY_PARAMS carrying an optional **`build` HOOK**, which is the whole
+  replication story — the existing `{type:'geometry', uuid, gtype, params}` message
+  (~240 bytes), the `'geometry'` history kind and `userData.geometryParams` riding
+  toJSON + GLTF extras mean NO new message type, no new history kind, and a late
+  joiner rebuilding from the object's own stamp. A PlaneGeometry rotated flat then
+  displaced in Y ONLY, so `amplitude: 0` is byte-identical to the flat plane it used
+  to be, epsilons included — the loop is skipped, not fed zeros. Segments cap 48
+  because 18·seg² = 41,472 floats is under the 45,000 meshgeo LIVE-PREVIEW budget a
+  sculpt stroke streams (meshBudget raised the COMMIT ceiling, not that one); bigger
+  worlds TILE on a shared seed plus per-tile `offsetX/offsetZ`, which are PARAMS and
+  not a transform because a moved tile samples the noise in its own frame and seams.
+  `geometryParamsOf` reads `userData.terrain` BEFORE the `geometry.type` fallback and
+  DERIVES size/segments from the mesh — createGeometry bakes every custom builder
+  into a plain BufferGeometry so toJSON carries real vertices, which means the type
+  fallback resolved NOTHING and a terrain had no Geometry section at all) +
+  `terrainCarve` (21-C3, a leaf: THREE + splineTube. `carveAlongSpline` is PURE and
+  the CALLER commits — the uvUnwrap backend shape, which is what makes it
+  property-testable with no GL and no scene. Arc-length `getSpacedPoints` bucketed
+  into an XZ hash grid (cell = width/2 + shoulder) so each vertex tests O(1) samples,
+  with the sample count floored at two per reach: coarser than that and a vertex sits
+  between two samples, so its distance to the nearest SAMPLE overstates its distance
+  to the CURVE and the road grows unflattened bites. flatten/lower/raise, clearance,
+  and a curvature bank clamped to a quarter of the width. `splineInFrameOf` is
+  load-bearing: a spline's record lives in the SPLINE MESH's frame (finishSpline
+  re-seats it on the centroid), so carving the raw record flattens a strip at the
+  origin — a plausible road in the wrong place) + `flattenActions` (21-C3 THE CALLERS,
+  and the only half that touches the scene, the wire, undo or a toast:
+  BOTH DIRECTIONS of Flatten, which is one menu CATEGORY: `carveTerrainAlong` (the
+  ground conforms to the spline — ONE `commitMeshGeoSnapshot`, positions-only because
+  the carve moves Y and never changes the vertex COUNT) and `drapeSplineOnto` (the
+  SPLINE conforms to the ground — each control point drops onto the target and rests
+  with the tube BOTTOM on it, hit + that point's radius, casting UPWARD for a point
+  that started underground; commits through the existing `commitSplineEdit`, so the
+  `splineedit` message and the `'spline'` history kind carry it). They are NOT
+  variants of one op: one writes geometry, the other writes the record, so they
+  replicate and undo through entirely different existing channels and neither needs
+  anything new on the wire.
+  Both choose their partner by a viewport CLICK, not a menu of names — `flattenPicking`
+  + `startFlattenPick`/`flattenPickClick`/`cancelFlattenPick`, the `snapAnchorPicking`
+  shape, with ONE Scene intercept for both because the interaction is identical. Two
+  deliberate differences from the snap/pivot picks: the armed spline is held in the
+  STORE rather than read from the selection (the partner click changes the selection on
+  its way through, so a later read flattens the wrong pair), and a hit on the WRONG
+  KIND of object keeps the mode armed with an explanation — those picks aim at a point
+  on an object already known to be right, while this one can genuinely be pointed at
+  the wrong thing. Reached by a dynamic import from objectMenu (primed by the Inspector
+  while a spline is selected), which keeps the leaves out of history's import subtree.
+  **SCOPE, settled after C4 shipped and worth not re-litigating:** conforming a
+  heightfield to a curve is a GENERAL world-building operation (roads, rivers,
+  footpaths, trenches, ledges, building pads), so it lives in core and reads in
+  TERRAIN vocabulary — "Flatten terrain along this", never "Road". The lap half that
+  shipped beside it in C4 (`roadGates.js`: `checkpointsFor` on arc length,
+  `progressAlong`, and a quadrant anti-cheat so a driver cannot farm laps by reversing
+  over the line) was racing RULES, and it made every spline in every scene sprout a
+  Road menu for the benefit of one game. It was REMOVED from core — the race module
+  owns it, and has to own it anyway since an installable module cannot import core.
+  The code is commit 233c707; the reasoning worth carrying over is in the 21-C plan.
+  Two constraints that shaped that call: a module cannot add object-menu entries at
+  all today (`registerMenu` is a sidebar button), and there is no `api.commitGeometry`,
+  so making the CARVE a module too would mean designing both seams first),
+  `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
   (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
   world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
   dispatcher — namespaces panel:/props:/prefabs:/chat:/kbd:/face:) + `vrRadialMenu`
@@ -1041,7 +1153,20 @@ loadable play content. Everything a user does must be visible to connected peers
    `parkAnimatedAtBase()` first or receivers bake mid-swing poses as animation base;
    `restoreBase` calls `updateMatrix()` because toJSON/GLTF read the matrix
    the last RENDER composed.
-11. **Viewer object permissions** (#14, cloud-roles only) go through
+11. **A ~10Hz stream is smooth on the SENDER and stepped on every receiver.**
+   Physics broadcasts `move` on a 100ms gate, and `moveGeometry` snaps — fine at
+   walking pace, a slideshow on a 20 m/s throw. The fix belongs on the RECEIVER
+   (`moveSmoothing.js`: rewind to the previous pose and ease to the new one over
+   the cadence MEASURED for that object), never on the send rate: raising it
+   costs bandwidth for every body in every scene and is still a step function
+   between packets. Gate on what is OBSERVED — an object with physics params
+   whose moves arrive as a STREAM — not on `remoteSimulating`, which a LATE
+   JOINER is never told about, so the peer needing it most would be the one peer
+   without it. A jump over 3m snaps (a teleport must not smear), and a per-object
+   TIMER lands the exact target because the frame loop that advances the ease can
+   stall (a backgrounded tab is throttled to a few frames a second; measured 1.8m
+   short). Interpolation may change WHEN a pose is reached, never WHICH.
+12. **Viewer object permissions** (#14, cloud-roles only) go through
    `objectPermissions.js` — INERT unless a plugin publishes `rolesInfo`. A viewer's
    object-creation is not sent; the object is marked `__localOnly` (rides toJSON/GLTF
    extras like `__uuid`) and stays local until Share broadcasts its toJSON + clears the
@@ -1051,6 +1176,56 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A HELD body's `lastWritten` is stale by definition, so every release must
+  refresh it.** The write-back skips a held body, so `lastWritten` still
+  describes the pose it had when it was GRABBED — and the deviation detector
+  exists precisely to notice that the object moved. Without a refresh in
+  `releaseHold`, the very next step reads a phantom external write and
+  re-engages a kinematic hold ONE FRAME after every release: measured
+  `hold:'external'` on a body that had just been thrown. `applyThrow` owes the
+  same refresh for the same reason (writing an object pose from a message is
+  exactly what the detector is built to catch).
+- **A warm-up that counts COMPOSER frames deadlocks the moment a direct render
+  path exists.** `postWarm` flips after N composer frames, and A8 skips the
+  composer when there is nothing to composite — so nothing to compose meant no
+  composer frame, so postWarm never flipped, so `effectivePostStack` stayed
+  empty, so there was still nothing to compose. Count FRAMES, not composed ones.
+  The signature is a stack that can never compile a pass in one mode.
+- **`flowGraphs` and `flowNodes` are mirrored BOTH ways, so a writer that sets
+  one leaves the other stale — and the stale one can be pushed back over it.**
+  flowGraphs is the document the runtime reads (`allNodes`/`allEdges`);
+  flowNodes is the ACTIVE graph's editor view. A suite that wrote only
+  flowGraphs had an EARLIER section's nodes restored while its new edges stayed,
+  which reads exactly like "the trigger fires and nothing happens". Write both.
+- **An edge id that is not the canonical shape does not survive a reconcile.**
+  Nodes.svelte builds `e-<source>[.<sourceHandle>]-<target>[.<targetHandle>]`;
+  a hand-made id in any other shape was dropped once a peer joined, leaving the
+  nodes in place and the WIRING gone — the trigger still fired, nothing acted.
+- **An action node must resolve its TARGET before it touches the rising-edge
+  map.** One node can appear in the pair list twice (an Object Selector edge AND
+  an implicit owner), and a pair with no target that consumed the edge left the
+  real pair looking like a repeat.
+- **A physics write with no simulation running is a silent no-op, and silence
+  reads as "broken".** Everything in physics.js is gated on `get(simulating)`,
+  so a correctly wired graph in a stopped scene does exactly nothing. Reported
+  as "I connect everything, press the key and nothing happens". Say so (throttled,
+  naming the node), and only when NOTHING is simulating anywhere — a
+  non-initiator doing nothing is correct and must stay quiet.
+- **The Object Selector had no OUTPUT handle for 200 phases.** flowSockets has
+  declared `OUTPUT.objectselector = 'object'` since 165 and the catalog is full
+  of object INPUTS (velocity.target, distance.a/b, proximity.a/b, lookat.target,
+  collider.source) — but the card never rendered a source handle, so not one of
+  them was reachable and every such node silently fell back to the implicit
+  owner. Two wiring styles exist and both are needed: node -> Object Selector is
+  "apply this TO that" (the effect channel, one target), Object Selector -> an
+  `object` input is "which object" as DATA (many consumers, and the only way to
+  express a node with TWO object operands — Joint's a/b, Distance's a/b).
+- **A named socket needs a LABELLED ROW, not a computed offset.** Two stacks of
+  absolutely-positioned handles on one card stop agreeing with the rows they
+  name. AnimationNode renders `spec.inputs` the ObjectFlowNode way (a relative
+  wrapper whose `-mx-3 px-3` cancels the card padding, `top: 50%`), with an
+  optional `inputLabels` map because a socket id is what the WIRE calls it and
+  not always what a person needs to read.
 - **`GLTFExporter` OPTIONS ARE THE FOURTH ARGUMENT OF `parse()`, NOT THE CONSTRUCTOR** —
   three's constructor takes none, so `new GLTFExporter({...})` silently discards them.
   `commandsHandler`'s long-standing `{outputEncoding: 'json'}` had therefore never done
@@ -1943,9 +2118,76 @@ loadable play content. Everything a user does must be visible to connected peers
 - Anything drawn with **`depthWrite: false` loses the postprocessing passes**: the
   outline and N8AO effects read the depth buffer, so the AO and selection edges of
   whatever sits BEHIND a non-depth-writing sprite get painted across its face.
+- **A projected world point at y = 0 is UNDER a terrain, so the ray through its pixel
+  can miss the mesh entirely.** Every click-driven check of the flatten picks failed
+  this way while the feature was perfect: `projectPoint([-7, 0, -7])` gave a pixel the
+  app's own raycast resolved to NOTHING (measured: `hits []`), and a pick that hits
+  nothing exits by design. Cast DOWN onto the target first, project the SURFACE point,
+  and verify both that `elementFromPoint` is the canvas and that the app resolves that
+  pixel to the intended object — the properties drawer covers the right of the viewport
+  whenever anything is selected, which is the other half of the same helper
+  (`aimAtSurfaceOf` in terrain-carve). Same family as the UV suite's "a grip must be a
+  point that EXISTS".
+- **A section that measures CHANGE must re-seed what earlier sections consumed.** The
+  carve is idempotent, so by the third section there was nothing left to flatten and
+  three checks read zero — correctly. Re-apply the noise (`reseedHills`) at the top of
+  each such section, and take the undo-depth baseline immediately BEFORE the gesture,
+  not before the setup that also records entries.
+- **THE MESHGEO CHANNEL CARRIES A TRIANGLE SOUP, so any op committing through it must
+  go NON-INDEXED first** — `applyMeshGeo` builds a fresh BufferGeometry with no index.
+  The carve handed it a fresh Terrain's 625 positions and left a non-indexed mesh with
+  625 vertices, which is not divisible by 3: three drew 208 arbitrary triangles plus a
+  fragment and the terrain shattered on screen. `enterSculpt` had the answer already
+  (`toNonIndexed()` before its first stroke, syncing the representation), and the
+  expanded count then matches the previous index count, which is the case `preserveUVs`
+  handles, so the uvs survive.
+- **A BUFFER-LEVEL check cannot see a shattered mesh, and this one shipped.** Every
+  metric the carve suite had stayed green while the mesh was garbage: vertex count
+  "unchanged" (that WAS the symptom), both peers agreeing (equally broken), one
+  message, one undo entry. The e2e skill says it plainly and it was not applied here —
+  **for any op that rebuilds geometry, assert the TRIANGLES**: count divisible by 3,
+  and no edge longer than the lattice it came from (measured 24.04m on a 1m grid with
+  the fix out, 1.62m with it in).
+- **Two different situations both produce "nothing moved", and reporting the wrong one
+  is worse than silence.** A carve that finds no terrain under the road and a carve
+  whose bed is already flat are indistinguishable if you only look at movement, so
+  `carveAlongSpline` reports the count of vertices it REACHED (tagged on the returned
+  array, the `withSlot` idiom) and the caller picks the message.
+- **A repeat carve is NOT idempotent, and a test that claims it is passes vacuously.**
+  The shoulder is a partial lerp toward the bed, so a second pass pulls it further
+  (251 columns moved, then 152): the property is CONVERGENCE, not no-op. Measure both
+  passes in the SAME unit — the first pass counted columns pre-expansion and the
+  toast counts vertices post-expansion, so 251 vs 876 read as divergence when nothing
+  had diverged.
+- **A first click that loads its module dynamically feels broken.** Both carve entry
+  points import `carveActions` on demand (to keep a static edge out of history's
+  subtree) and a cold fetch of it plus its dependency graph measured ~1.2s in dev —
+  long enough to look like a dead button, and long enough to make a 900ms test wait
+  pass while nothing had run. The Inspector PRIMES the import while a road is merely
+  selected (the moduleSDK idiom).
+- **`toJSON` ALWAYS writes the vertex buffer, so "ship it parametric" does not make a
+  scene file small.** Measured on a 48-segment terrain tile in a `.tpscene` (which is
+  a zip): a PARAMETRIC, uncarved tile is 330.6 KB raw / **116.5 KB zipped**, and the
+  same tile CARVED is 142.5 KB raw / **32.9 KB zipped** — the carved one is 3.5x
+  SMALLER, because the carve goes through `applyMeshGeo`, which rebuilds the geometry
+  from Float32 positions whose numbers stringify shorter and compress better. The plan
+  had it backwards in both directions. The only route to a few-KB template is to ship
+  no geometry at all: `{geometryParams, spline}` is **220 bytes zipped per tile** (2.1
+  KB for ten) and a node re-runs `/create Terrain` + `applyGeometry` + the carve at
+  load, since all three are pure functions of those numbers.
+- **A CARVE is a mesh edit, so it LOCKS the parametric rows** (`applyMeshGeo` stamps
+  `faceEdited`) — which is correct and worth knowing before designing a flow around it:
+  after carving you cannot nudge the seed without Regenerate discarding the carve.
 - Grid/pattern FOLLOW must snap by the **section period** (`cell × sectionEvery`),
   not by one cell: a cell-step translation maps the thin lines onto themselves but
   hops every THICK line one cell per step (15-H13).
+- **A three.js XR controller cannot be hand-posed in a test**: `renderer.xr
+  .getController(i)` returns the target-ray Group with **`matrixAutoUpdate = false`**
+  (WebXRManager writes its matrix per frame), so setting `.position`/`.quaternion`
+  and calling `updateMatrixWorld(true)` leaves `matrixWorld` at the IDENTITY —
+  every controller-ray pick then fires from the origin and misses. Set
+  `controller.matrixAutoUpdate = true` first (phase 57's VR spline checks; the app
+  path is unaffected).
 - WebXR hand joints: read them from threlte's `useHand('left'/'right')` store
   (`.current?.hand.joints[name]` — the SAME XRHand space it renders), keyed by
   HANDEDNESS. Raw `renderer.xr.getHand(SLOT).joints` by app slot index is unreliable (the
@@ -2737,6 +2979,38 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-19): **21-C1..C4 TERRAIN + SPLINES — branch `feat/21-terrain-road`
+  (lane `../theprototype-lane-spline` @ port 5203), 8 commits, MERGED to release/next.**
+  Plan: cloud `plans-core/pending/21-c-games-content.md` (C1-C4). **C2** is the PORT of
+  phase 57 (`feat/spline-tool` @6be9f8a cherry-picked, three conflicts, all in the
+  places the plan predicted) with the post-1.2.0 adaptations: SplineToolbar on the
+  shared ToolboxWindow, DragRow numbers, and the plan's registerEditProxy /
+  editOverlays worries MEASURED as not applicable (every handle is scene-root, so a
+  save taken mid-session carries none of them). **C1** procedural terrain: `noise.js`
+  (value-noise fBm, NO transcendentals) + a `build` HOOK on GEOMETRY_PARAMS, which is
+  the whole replication story — the existing geometry message (~240 bytes), the
+  existing history kind, and userData riding toJSON + GLTF extras. **C3** the carve.
+  **C4** shipped derived lap gates and then **the lap half was REMOVED from core** at
+  the user's prompting: a "Road" menu on every spline served one game, and an
+  installable module cannot import core anyway, so the race module owns that maths
+  (code at 233c707). What core keeps is FLATTEN, a category with both directions —
+  ground-to-spline and spline-to-ground — each choosing its partner by a viewport
+  CLICK (the snapAnchorPicking shape, one Scene intercept for both).
+  Suites: terrain-procedural (49), terrain-carve (45), spline-tool (57). Baseline
+  **387/62** at every commit (release/next ratcheted its gate to 387 the same day);
+  build green. Docs: `splines.md` (new) + a rewritten `terrain.md` in
+  theprototype-docs — NO new flow nodes in this lane, which is why there are no new
+  node pages. Four findings worth not re-deriving, all in the gotchas above: the
+  meshgeo channel carries a triangle SOUP (an indexed terrain handed to it shatters,
+  and every buffer-level check stayed green over the wreckage); `toJSON` always writes
+  the vertex buffer, so a PARAMETRIC tile costs 116.5 KB zipped against a CARVED
+  tile's 32.9 KB and the only few-KB route is to ship 220 bytes of seed and rebuild at
+  load; a carve stamps faceEdited, so it locks the parametric rows on purpose; and a
+  repeat carve is not idempotent but CONVERGENT (251 columns, then 152).
+  OWED: the user's on-device VR pass on spline editing, the 21-C plan write-up (C1-C4
+  as-built + the parked lap spec for C8), a "flatten into all terrains" pass for the
+  Race ring, and the parametric-vs-carved decision for the Race template, which the
+  measurement above answers but the user has not yet ruled on.
 - Status (2026-08-18): **SCENE LOOK / POST-PROCESSING — branch `feat/scene-post-stack`
   (lane `../theprototype-lane-post` @ port 5198), 8 commits, release/next merged in
   CLEAN, baseline 391/62 at every commit, NOT PR'd.** Plan: cloud
@@ -2759,6 +3033,41 @@ override for e2e — never share 5173 (the user's main-checkout server).
   Watch-adopts-look: cloud `plans-core/pending/post-camera-looks-and-shader-integration.md`.
   The two lanes conflict in exactly TWO files (`App.svelte` debugStores,
   `peerHandler` dispatch) — measured with `git merge-tree`; everything else auto-merges.
+- Status (2026-08-19): **21-B PHYSICS PLAY — B1-B6 + A8 EXECUTED**, lane
+  `../theprototype-lane-post` @ port 5202, branch `feat/21-physics-play` off
+  release/next @803d040, 13 commits, NOT PR'd. Plan: cloud
+  `plans-core/pending/21-b-physics-play.md`. Baseline **388/62** at every commit
+  (roadmap 20 dropped it from 391 — re-measure on a pristine worktree, do not
+  trust the number in an older plan). B1 scenePhysics v2 · B2 the throw-velocity
+  leaf + the Euler/clamp fixes · B4 ground + out-of-bounds + the parameter
+  shortlist + the Inspector's ONE Physics section · B3 play mode becomes INTERACT
+  mode (`playInteract`/`playSettings`/PlayReticle, DEVX #13+#14) · B5 the
+  `{type:'throw'}` message + the grab claim · B6 five core physics nodes
+  (impulse/setvelocity/onrest/measure/joint) + `random` seed + `motor` side ·
+  A8 the composer in Play mode. Then four user-reported rounds: the node cards
+  said nothing about their sockets, the Object Selector had NO OUTPUT HANDLE (a
+  200-phase gap — see the gotcha), a stopped simulation failed silently, and a
+  peer-to-peer throw looked like 10 fps on the watching peer (`moveSmoothing`).
+  Suites: scene-physics-state(30) · throw-velocity(24, mostly no browser) ·
+  physics-ground-bounds(29) · play-interact(38) · throw-peer(20+, two peers) ·
+  flow-physics-actions(26, two peers) · post-play-mode(15, pixel). Docs: five new
+  node pages + random/motor/physics.md updated. B7 (spawner) and B8 (Towers) are
+  NOT started — B8 executes in L6. **OWED: the user's feel pass** (carry weight,
+  throw calibration, VR) and a decision on `play.interaction` defaulting to
+  'grab' (it is inert unless a simulation runs — asserted) and on
+  `damping.angular` defaulting to 0.05.
+  **STANDING PRE-EXISTING REDS, A/B'd against base 803d040 and NOT from this
+  work**: flow-physics-nodes, physics-discoverability, physics-kinematic (base
+  fails one MORE), flow-customnode-io and dungeon-play (identical 16 passes then
+  the same click timeout on both sides). collider-live is NOT one of them — it
+  only fails on a stale dev server.
+  **ONE UNEXPLAINED, reproducible**: a literal KEY PRESS in the seconds after a
+  peer joins does not drive a physics action, while the trigger stamp is fresh,
+  the graph keeps its nodes AND edges, the selector still names the object, the
+  body is dynamic and unheld, a nodetrigger goes out, and a direct applyImpulse
+  hops the same body. flow-physics-actions section 6 drives the trigger through
+  `applyNodeTrigger` (the same entry point) and says so; the same key press works
+  before the join and in every single-peer section. Deserves its own ticket.
 - Status (2026-08-18, later): **SH6b CLOSED BY MEASUREMENT** — `shader-scene-default`
   (17 checks) covers the scene default at 24 objects and records why the planned
   compile-once-and-clone is NOT built: 0.73-0.88 ms per object, programs already deduped

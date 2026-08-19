@@ -2,13 +2,14 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
-import { peers } from '../stores/appStore';
+import { peers, showToast } from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
 import { runScript } from './scriptRuntime';
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
+import { colliderSpecOf } from './colliderSpec'; // B6: pure THREE leaf
 import { updateParticles } from './particleRuntime';
 import { startObjectFlowWatcher } from './objectFlow';
 import { parkEditOverlays } from './editOverlays';
@@ -40,6 +41,14 @@ import { gameState, setGameState, setGameVar, gameVar, gameElapsed, commitGameSt
 // so a static edge here would close history -> flowRuntime -> animationPreview ->
 // history and TDZ-crash the SSR prerender.
 /** @type {any} */ let animRef = null;
+/** @type {any} */ let physicsRef = null;
+/** @type {any} */ let jointsRef = null;
+/** B6: which On Rest nodes have already fired for the current rest episode
+ * @type {Map<string, boolean>} */
+const restFired = new Map();
+/** B6: rising-edge map for the physics ACTION nodes (a pulse is high ~0.3 s, so
+ * an action must run once per pulse, not once per frame) @type {Map<string, boolean>} */
+const physicsActionEdge = new Map();
 /** @type {any} */ let shaderRef = null;
 /** @type {any} */ let animImportsRef = null;
 
@@ -186,6 +195,100 @@ function updatePlayAnim(pairs, ctx) {
 	}
 	// forget nodes that no longer exist, so a rebuilt node starts fresh
 	for (const id of [...playAnimEdge.keys()]) if (!seen.has(id)) playAnimEdge.delete(id);
+}
+
+/**
+ * B6: the physics ACTION nodes (Impulse, Set Velocity, Joint). Modelled on
+ * updatePlayAnim: the same pair collection, the same resolveInputs, and the same
+ * RISING-EDGE map so a 0.3 s pulse acts once.
+ *
+ * THE NETCODE IS FREE, and that is the design. An event trigger already
+ * replicates as a shared `nodetrigger` stamp, so every peer runs the same rising
+ * edge from the same synced timestamp — and applyImpulse / setBodyVelocity are
+ * already initiator-gated. NO new message type for any of these.
+ * @param {{node: any, uuid: string}[]} pairs @param {any} ctx
+ */
+function updatePhysicsActions(pairs, ctx) {
+	const seen = new Set();
+	for (const { node, uuid } of pairs) {
+		seen.add(node.id);
+		const data = node.data ?? {};
+		const high = !!data.trigger;
+		const target = typeof data.target === 'string' && data.target !== '-None-' ? data.target : uuid;
+		// resolve the target BEFORE touching the edge state. One node can appear in
+		// the pair list twice (an Object Selector edge AND an implicit owner), and a
+		// pair with no target that consumed the rising edge would leave the real one
+		// looking like a repeat — the trigger fires, the edge is spent, nothing moves.
+		if (!target) continue;
+		const was = physicsActionEdge.get(node.id) ?? false;
+		physicsActionEdge.set(node.id, high);
+		const continuous = node.type === 'setvelocity' && (data.mode ?? 'once') === 'continuous';
+		if (!continuous && (!high || was)) continue;
+		if (continuous && !high) continue;
+		// a physics action in a scene that is not simulating is a no-op, and used to
+		// be a SILENT one — the graph is right, the key fires, nothing moves
+		// initiator-gated by design, so a NON-initiator doing nothing here is correct
+		// and silent; only warn when nothing is simulating anywhere
+		const simRunning =
+			!!physicsRef?.isInitiator?.() ||
+			!!(physicsRef?.remoteSimulating && get(physicsRef.remoteSimulating));
+		if (!simRunning) {
+			warnNoSimulation(node.type);
+			continue;
+		}
+		if (node.type === 'impulse') {
+			const vector = vectorFrom(data.force, [data.x, data.y, data.z]);
+			const world = (data.space ?? 'world') === 'local' ? toWorldVector(target, vector) : vector;
+			if ((data.mode ?? 'impulse') === 'torque') physicsRef?.applyTorqueImpulse?.(target, world);
+			else physicsRef?.applyImpulse?.(target, world);
+		} else if (node.type === 'setvelocity') {
+			const linear = vectorFrom(data.linear, [data.x, data.y, data.z]);
+			const angular = Array.isArray(data.angular) ? data.angular.map(num) : null;
+			physicsRef?.setBodyVelocity?.(target, linear, angular);
+		} else if (node.type === 'joint') {
+			const a = typeof data.a === 'string' && data.a !== '-None-' ? data.a : target;
+			const b = typeof data.b === 'string' && data.b !== '-None-' ? data.b : null;
+			if (!b || a === b) continue;
+			// joints are SCENE DATA (sceneJoints / jointcreate), so this goes through
+			// the same createJoint every other path uses — one undo entry, one message
+			jointsRef?.createJoint?.(
+				data.kind ?? 'revolute',
+				a,
+				b,
+				data.axis ?? 'y',
+				data.vel ? { vel: num(data.vel), maxForce: num(data.maxForce ?? 100) } : null
+			);
+		}
+	}
+	for (const id of [...physicsActionEdge.keys()]) if (!seen.has(id)) physicsActionEdge.delete(id);
+}
+
+let lastNoSimWarn = 0;
+/** The physics writes are all initiator-gated, so a correct graph in a stopped
+ * scene does nothing at all. Say so, once every few seconds, naming the node.
+ * @param {string} type */
+function warnNoSimulation(type) {
+	const now = Date.now();
+	if (now - lastNoSimWarn < 5000) return;
+	lastNoSimWarn = now;
+	const label = type === 'setvelocity' ? 'Set Velocity' : type === 'joint' ? 'Joint' : 'Impulse';
+	showToast(label + ' fired, but no simulation is running — press P (or the play button) to start physics');
+}
+
+/** a wired vector3 wins over the node's own dialled fallback.
+ * @param {any} wired @param {any[]} dialled */
+function vectorFrom(wired, dialled) {
+	if (Array.isArray(wired)) return [num(wired[0]), num(wired[1]), num(wired[2])];
+	return [num(dialled[0] ?? 0), num(dialled[1] ?? 0), num(dialled[2] ?? 0)];
+}
+
+/** LOCAL space -> world, by the object's own rotation (the angvelWorld pattern).
+ * @param {string} uuid @param {number[]} vector */
+function toWorldVector(uuid, vector) {
+	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
+	if (!object) return vector;
+	const v = new THREE.Vector3(vector[0], vector[1], vector[2]).applyQuaternion(object.quaternion);
+	return [v.x, v.y, v.z];
 }
 
 // --- A3: the HUD runtime -----------------------------------------------------
@@ -624,6 +727,7 @@ export const valueTypes = [
 	'onimpact', // PFX-C: physics impact trigger
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
+	'measure', // B6: an object's top / bottom / height / y / speed
 	'animstate', // 17-E F3: the readable half of animfinished
 	'animmarker', // 17-E F5: the playhead crossed a named point in a clip
 	'hudtimer', // A3: the remaining seconds, derived from the shared trigger stamp
@@ -779,7 +883,15 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const hi = num(d.max ?? 1);
 			const interval = num(d.interval ?? 0);
 			const roll = interval > 0 ? Math.floor(time / interval) : 0;
-			return lo + mulberry32(hashString(node.id) + roll) * (hi - lo);
+			// B6: it was ALREADY deterministic across peers (mulberry32 over the node
+			// id and the synced clock) — a wired SEED is all seeded procedural
+			// generation needed. A `reroll` event advances the sequence, so a graph
+			// can ask for a new value without waiting for an interval to elapse.
+			const seed = num(input('seed', d.seed ?? 0));
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const rerolls = trig ? trig.count ?? 0 : 0;
+			const value = lo + mulberry32(hashString(node.id) + roll + seed + rerolls) * (hi - lo);
+			return d.integer ? Math.floor(value) : value;
 		}
 		case 'math': {
 			const a = num(input('a', d.a ?? 0));
@@ -887,6 +999,25 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
+		case 'measure': {
+			// B6: the numbers a rule graph actually asks for — how tall is the
+			// stack, where is its top. Read from colliderSpecOf, the same spec
+			// physics builds the body from, rather than a per-frame Box3.
+			const target = input('target', null) || implicitOwnerOf(node);
+			if (typeof target !== 'string') return 0;
+			const read = d.read ?? 'top';
+			if (read === 'speed') return ctx && ctx.speed ? ctx.speed(target) : 0;
+			const object = sceneObjects?.getObjectByProperty('uuid', target);
+			if (!object) return 0;
+			if (read === 'y') return object.position.y;
+			const spec = colliderSpecOf(object, object.userData?.physics?.collider);
+			if (!spec) return object.position.y;
+			const half = spec.halfExtents?.y ?? 0;
+			const centre = spec.center?.y ?? object.position.y;
+			if (read === 'bottom') return centre - half;
+			if (read === 'height') return half * 2;
+			return centre + half; // 'top'
 		}
 		case 'velocity': {
 			// CL-C: live speed (m/s) of the wired object (or the graph owner).
@@ -1226,6 +1357,36 @@ export function fireObjectImpact(uuid, strength) {
 		if (strength < num(data.minStrength ?? 0)) return;
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
 			applyNodeTrigger(node.id, syncedNow(), true);
+	});
+}
+
+/**
+ * B6: the physics INITIATOR reports how long a dynamic body has been still
+ * (0 = it is moving). Same shape as fireObjectImpact: initiator-detected,
+ * dispatched as a REPLICATED trigger stamp, so every peer's On Rest node pulses
+ * from one shared timestamp. Deliberately not rapier's isSleeping() — sleep is
+ * off by design.
+ *
+ * The per-node threshold is applied HERE rather than in physics, because
+ * `seconds` belongs to the node: physics reports the fact, the graph decides
+ * what counts as settled.
+ * @param {string} uuid @param {number} resting seconds
+ */
+export function fireObjectRest(uuid, resting) {
+	const ctx = runtimeCtx();
+	nodes.forEach((node) => {
+		if (node.type !== 'onrest') return;
+		if (!(reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)) return;
+		const key = node.id + '|' + uuid;
+		if (resting <= 0) {
+			restFired.delete(key); // moving again — re-arm
+			return;
+		}
+		if (restFired.get(key)) return;
+		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
+		if (resting < num(data.seconds ?? 0.5)) return;
+		restFired.set(key, true);
+		applyNodeTrigger(node.id, syncedNow(), true);
 	});
 }
 
@@ -1573,6 +1734,30 @@ function runTick(now) {
 	});
 	updatePlayAnim(animPairs, ctx);
 
+	// B6: physics ACTIONS, collected exactly like the animation pairs. Called
+	// here — after the flow poses, before the physics post-tick hook — so an
+	// impulse fired this frame integrates this frame.
+	/** @type {{node: any, uuid: string}[]} */
+	const physicsPairs = [];
+	const PHYSICS_ACTIONS = ['impulse', 'setvelocity', 'joint'];
+	edges.forEach((edge) => {
+		const source = nodes.find((n) => n.id === edge.source);
+		if (!source || !PHYSICS_ACTIONS.includes(source.type)) return;
+		const uuid = targetUuidOf(edge);
+		if (uuid)
+			physicsPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+	});
+	nodes.forEach((node) => {
+		if (!PHYSICS_ACTIONS.includes(node.type)) return;
+		const uuid = implicitOwnerOf(node);
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		// an explicit `target` input is a valid owner too, so a scene-graph node
+		// needs no Object Selector edge at all
+		if (uuid || typeof data.target === 'string')
+			physicsPairs.push({ node: { ...node, data }, uuid: uuid ?? '' });
+	});
+	updatePhysicsActions(physicsPairs, ctx);
+
 	// A3: ONE HUD collection pass, on the sound/particle/playanim shape. What every
 	// element SAYS is computed here from the already-replicated graph, which is why the
 	// runtime half needs no message of its own (golden rule 8, deterministic).
@@ -1694,6 +1879,12 @@ export function startFlowRuntime() {
 	});
 	// primed for the Play Animation node (see the TDZ note at the top)
 	import('./animationPreview').then((m) => (animRef = m));
+	// B6: physics + joints are reached through PRIMED dynamic imports. A static
+	// edge from here closes history -> flowRuntime -> physics -> history, and
+	// joints.js calls registerHistoryKind in its module BODY, so it may never be
+	// reachable from history's own import subtree.
+	import('./physics').then((m) => (physicsRef = m));
+	import('./joints').then((m) => (jointsRef = m));
 	// SH4: a compiled shader material must never reach a serializer — primed, like
 	// animationPreview, so flowRuntime keeps no static edge into it
 	import('./shaderGraph').then((m) => (shaderRef = m));

@@ -212,6 +212,52 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						action: () => enterEditMode(uuid)
 					}
 				]),
+		// 57.3: a spline carries its authoring record, so it gets its OWN editor
+		// (control-point + radius handles) instead of the raw vertex tools
+		...(multi || !object?.userData?.spline?.points?.length
+			? []
+			: [
+				{
+					label: 'Edit spline',
+					icon: 'spline',
+					disabled: locked,
+					tooltip: locked ? lockedTooltip : 'Move control points, set thickness, insert or delete points',
+					action: () => import('./splineEdit').then((m) => m.enterSplineEdit(uuid))
+				},
+				// 21-C3: FLATTEN is two operations, not one. Once a scene holds a spline
+				// AND some ground, "flatten" is ambiguous, and the two readings are
+				// genuinely different jobs: cut a bed for the path, or lay the path over
+				// ground you want left exactly as it is. So it is a CATEGORY, and each
+				// side names which of the two things moves.
+				//
+				// Neither lists its targets by NAME: you click the partner in the viewport
+				// (the snapAnchorPicking shape), because the thing you mean is under the
+				// cursor and a ring of ten terrain tiles makes a list of names useless.
+				{
+					label: 'Flatten',
+					icon: 'mountain',
+					children: [
+						{
+							label: 'Terrain to this spline…',
+							icon: 'mountain',
+							disabled: locked,
+							tooltip: locked
+								? lockedTooltip
+								: 'Then click a terrain: levels a strip under this spline, blended into the slope either side',
+							action: () => import('./flattenActions').then((m) => m.startFlattenPick('carve', uuid))
+						},
+						{
+							label: 'This spline onto a surface…',
+							icon: 'spline',
+							disabled: locked,
+							tooltip: locked
+								? lockedTooltip
+								: 'Then click an object: drops every control point onto it, so the spline comes to rest on the surface and the surface is untouched',
+							action: () => import('./flattenActions').then((m) => m.startFlattenPick('drape', uuid))
+						}
+					]
+				}
+			]),
 		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh
 		// gets the normal-brush MESH sculpt (same toolbar + replication)
 		...(multi

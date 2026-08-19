@@ -149,6 +149,11 @@
 		onexit: OnClickNode,
 		collider: ColliderNode, // CL-C
 		velocity: VelocityNode, // CL-C
+		measure: AnimationNode, // B6
+		onrest: AnimationNode, // B6 (the onimpact precedent: a trigger with params)
+		impulse: AnimationNode, // B6
+		setvelocity: AnimationNode, // B6
+		joint: AnimationNode, // B6
 		counter: CounterNode,
 		flowinput: FlowIONode,
 		flowoutput: FlowIONode,

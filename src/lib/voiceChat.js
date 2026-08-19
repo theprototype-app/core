@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { userdata, showToast } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
+import { ensureAudioContext as engineContext, bus, updateListener, resumeAudio } from './audioEngine';
 
 // Voice chat over the existing peerjs mesh (MediaConnection).
 // - mic toggle transmits continuously; while OFF, holding V is push-to-talk
@@ -30,13 +31,16 @@ export const mutedPeers = writable([]);
 let pttHeld = false;
 /** @type {Record<string, any>} */ const outgoingCalls = {};
 /** @type {Record<string, any>} */ const incomingCalls = {};
-/** @type {any} */ let audioContext = null;
 /** @type {Record<string, {analyser: any, data: Uint8Array}>} */ const analysers = {};
 
-/** Shared AudioContext (ping chimes ride the same spatial listener, 87) */
+/**
+ * The shared AudioContext. #22 A1 moved OWNERSHIP into `audioEngine` — the whole
+ * audio architecture used to hang off this module, which is the wrong place for it
+ * — and this stays as a thin re-export so every existing caller is unchanged.
+ * @returns {any}
+ */
 export function ensureAudioContext() {
-	audioContext ??= new (window.AudioContext || /** @type {any} */ (window).webkitAudioContext)();
-	return audioContext;
+	return engineContext();
 }
 
 /** @param {any} call @param {'in'|'out'} direction */
@@ -61,7 +65,7 @@ const spatialChains = {};
 function buildSpatialChain(peerId, stream) {
 	if (spatialChains[peerId]) return;
 	try {
-		audioContext ??= new (window.AudioContext || /** @type {any} */ (window).webkitAudioContext)();
+		const audioContext = engineContext();
 		const source = audioContext.createMediaStreamSource(stream);
 		const panner = audioContext.createPanner();
 		panner.panningModel = 'HRTF';
@@ -71,7 +75,7 @@ function buildSpatialChain(peerId, stream) {
 		panner.rolloffFactor = 1;
 		const gain = audioContext.createGain();
 		gain.gain.value = get(mutedPeers).includes(peerId) ? 0 : 1;
-		source.connect(panner).connect(gain).connect(audioContext.destination);
+		source.connect(panner).connect(gain).connect(bus('voice'));
 		spatialChains[peerId] = { source, panner, gain };
 	} catch (error) {
 		console.log('spatial chain failed', error);
@@ -108,32 +112,17 @@ let lastSpatialUpdate = 0;
  * @param {any} camera @param {any} scene
  */
 export function updateSpatialAudio(camera, scene) {
-	if (!audioContext || !get(spatialVoice) || !camera || !scene) return;
+	// THE LISTENER IS NOT GATED ON `spatialVoice` (#22 A1, finding 2). That store
+	// gates whether VOICES are positional, which is what the rest of this function
+	// does — but it used to gate the only AudioListener updater in the app as a side
+	// effect, so switching spatial voice off froze the listener and every positioned
+	// sound in the app panned from wherever the camera had been. Measured before the
+	// fix: 0.00 movement across a 33-unit camera flight, finishing 35.3 units out.
+	updateListener(camera);
+	if (!get(spatialVoice) || !camera || !scene) return;
 	const now = performance.now();
 	if (now - lastSpatialUpdate < 100) return;
 	lastSpatialUpdate = now;
-
-	const listener = audioContext.listener;
-	// matrix columns instead of three helpers, so this module stays three-free
-	const world = camera.matrixWorld?.elements;
-	if (!world) return;
-	const px = world[12], py = world[13], pz = world[14];
-	const fx = -world[8], fy = -world[9], fz = -world[10]; // -Z column = forward
-	const ux = world[4], uy = world[5], uz = world[6];
-	if (listener.positionX) {
-		listener.positionX.value = px;
-		listener.positionY.value = py;
-		listener.positionZ.value = pz;
-		listener.forwardX.value = fx;
-		listener.forwardY.value = fy;
-		listener.forwardZ.value = fz;
-		listener.upX.value = ux;
-		listener.upY.value = uy;
-		listener.upZ.value = uz;
-	} else {
-		listener.setPosition(px, py, pz);
-		listener.setOrientation(fx, fy, fz, ux, uy, uz);
-	}
 
 	Object.entries(spatialChains).forEach(([peerId, chain]) => {
 		const avatar = scene.getObjectByName(peerId);
@@ -279,7 +268,7 @@ function onKeyup(event) {
 /** @param {string} id @param {MediaStream} stream */
 function watchStream(id, stream) {
 	try {
-		audioContext ??= new (window.AudioContext || /** @type {any} */ (window).webkitAudioContext)();
+		const audioContext = engineContext();
 		const source = audioContext.createMediaStreamSource(stream);
 		const analyser = audioContext.createAnalyser();
 		analyser.fftSize = 256;
@@ -347,7 +336,7 @@ export function initVoiceChat(/** @type {any} */ pc) {
 	window.addEventListener('keydown', onKeydown);
 	window.addEventListener('keyup', onKeyup);
 	// AudioContext starts suspended until a user gesture
-	window.addEventListener('pointerdown', () => audioContext?.resume(), { once: false });
+	window.addEventListener('pointerdown', () => resumeAudio(), { once: false });
 	setInterval(pollSpeaking, 150);
 }
 

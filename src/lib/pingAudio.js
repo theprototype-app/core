@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
-import { ensureAudioContext, spatialVoice } from './voiceChat';
+import { spatialVoice } from './voiceChat';
+import { ensureAudioContext, bus } from './audioEngine';
 
 // Ping chimes (phase 87): a bundled set of synthesized sounds — no audio
 // assets, deterministic on every client. With spatial voice on, the chime
@@ -38,7 +39,7 @@ export function playPing(sound = 'ding', pos = null) {
 		return;
 	}
 	if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-	let dest = ctx.destination;
+	let dest = bus('sfx');
 	if (pos && get(spatialVoice)) {
 		const panner = ctx.createPanner();
 		panner.panningModel = 'HRTF';
@@ -49,7 +50,7 @@ export function playPing(sound = 'ding', pos = null) {
 			panner.positionY.value = pos[1];
 			panner.positionZ.value = pos[2];
 		} else panner.setPosition(pos[0], pos[1], pos[2]);
-		panner.connect(ctx.destination);
+		panner.connect(bus('sfx'));
 		dest = panner;
 	}
 	const t = ctx.currentTime;

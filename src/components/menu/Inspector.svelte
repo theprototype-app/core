@@ -17,6 +17,7 @@
 	import { sineIn } from 'svelte/easing';
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import { explorerItems, explorerFolders, inspectedFile, itemBlob, renameItem, deleteItem, updateItemBytes } from '$lib/explorer';
+	import { decodeMeta } from '$lib/audioEngine';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
 	import {
 		removeObjectTexture,
@@ -736,10 +737,8 @@
 				} else if (item.kind === 'text') {
 					fileDetails = (await blob.text()).split('\n').length + ' lines';
 				} else if (item.kind === 'audio') {
-					const ctx = new AudioContext();
-					const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
-					fileDetails = decoded.duration.toFixed(2) + ' s · ' + decoded.numberOfChannels + ' ch';
-					ctx.close();
+					const meta = await decodeMeta(blob);
+					fileDetails = meta.duration.toFixed(2) + ' s · ' + meta.channels + ' ch';
 				}
 			} catch {}
 		});

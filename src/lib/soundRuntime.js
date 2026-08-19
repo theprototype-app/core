@@ -1,6 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
-import { ensureAudioContext } from './voiceChat';
+import { ensureAudioContext, bus } from './audioEngine';
 import { itemByHash, itemBlob } from './explorer';
 import { requestAsset } from './assetShare';
 
@@ -71,7 +71,7 @@ function startSource(entry, data, time) {
 		entry.panner = ctx.createPanner();
 		entry.panner.panningModel = 'HRTF';
 		entry.panner.distanceModel = 'inverse';
-		entry.gain.connect(entry.panner).connect(ctx.destination);
+		entry.gain.connect(entry.panner).connect(bus('sfx'));
 	}
 	entry.gain.gain.value = data.volume ?? 0.8;
 	entry.panner.refDistance = data.radius ?? 5;
@@ -109,9 +109,18 @@ export function updateSounds(pairs, sceneObjects, time) {
 			if (!entry.failed) loadBuffer(entry, data.hash);
 			continue;
 		}
-		const key = [!!data.playing, data.loop !== false, data.volume ?? 0.8, data.radius ?? 5, data.rolloff ?? 1].join('|');
+		// #22 A1 finding 4: volume/radius/rolloff are NOT in the key. They were, and a
+		// key change tears the source down and restarts it — so every fader drag clicked
+		// and every one-shot restarted from zero. They are live params; set them below.
+		const key = [!!data.playing, data.loop !== false].join('|');
 		if (data.playing && (!entry.src || entry.key !== key)) startSource(entry, data, time);
 		else if (!data.playing && entry.src) stopSource(entry);
+		// live, without a restart — the sceneMusic.reconcile precedent
+		if (entry.gain) entry.gain.gain.value = data.volume ?? 0.8;
+		if (entry.panner) {
+			entry.panner.refDistance = data.radius ?? 5;
+			entry.panner.rolloffFactor = data.rolloff ?? 1;
+		}
 		entry.key = key;
 		const object = sceneObjects?.getObjectByProperty('uuid', uuid);
 		if (object && entry.panner) {

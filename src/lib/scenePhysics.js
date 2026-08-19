@@ -226,7 +226,7 @@ export function scenePhysicsState() {
 
 /** Save payload — null when the scene is at defaults, so a default scene writes
  * no `physics` key at all and an older build sees the file it always saw.
- * (The scenePostSnapshot precedent; L5 wires the sessions.js call site.) */
+ * (The scenePostSnapshot precedent; sessions.js wires the call site.) */
 export function scenePhysicsSnapshot() {
 	const state = get(scenePhysicsState_);
 	const { changedAt: _stamp, ...rest } = state;
@@ -237,9 +237,17 @@ export function scenePhysicsSnapshot() {
 
 /** Restore from a save. `replicate` re-broadcasts, so loading a scene into a
  * live room brings its physics config along (the jointsRestore precedent).
+ *
+ * A6: an ABSENT field RESETS to its default rather than leaving the room's value
+ * alone, and that is the point — a scene load is a whole-world replace, so a
+ * template must play identically in a room somebody had set to -2 gravity. "The
+ * file says nothing" means "the author was at the default", not "keep yours".
+ * normalizeScenePhysics gives every field that behaviour, not just gravity.
  * @param {any} payload @param {boolean} [replicate] */
 export function scenePhysicsRestore(payload, replicate = false) {
-	if (!payload) return;
+	// NO early return on an absent payload: normalizeScenePhysics turns null into a
+	// full DEFAULT state, which is exactly what A6 asks for — a file that says
+	// nothing means "the author was at the defaults", so the room resets to them.
 	const next = normalizeScenePhysics(payload);
 	// a restore is an authoritative local write, so it must WIN over whatever
 	// changedAt the save happens to carry (an old file's stamp is in the past).
@@ -259,38 +267,4 @@ export function scenePhysicsDebug() {
 	return JSON.parse(JSON.stringify(get(scenePhysicsState_)));
 }
 
-/**
- * A6: the scene's gravity as SAVE data, or NULL when it is the default — so a
- * default scene's .tpscene is byte-identical to what earlier builds wrote and an
- * older reader simply sees no field (the scenePostSnapshot precedent).
- */
-export function scenePhysicsSnapshot() {
-	const state = get(scenePhysicsState_);
-	if ((state.gravity ?? DEFAULT_GRAVITY) === DEFAULT_GRAVITY) return null;
-	return { gravity: state.gravity, changedAt: state.changedAt ?? 0 };
-}
 
-/** Restore from a save. `replicate` re-broadcasts, so loading a scene into a live
- * room brings its rules along (the jointsRestore precedent).
- *
- * An ABSENT field RESETS to earth gravity rather than leaving the room's value
- * alone. This is the whole point of A6: a scene load is a whole-world replace, so
- * a physics template must play identically in a room somebody had set to -2 —
- * "the file says nothing" means "the author was at the default", not "keep yours".
- * @param {any} payload @param {boolean} [replicate] */
-export function scenePhysicsRestore(payload, replicate = false) {
-	// a restore is an authoritative local write, so it must WIN over whatever
-	// changedAt the file happens to carry (an old save's stamp is in the past)
-	const state = {
-		gravity:
-			typeof payload?.gravity === 'number'
-				? Math.max(-20, Math.min(5, payload.gravity))
-				: DEFAULT_GRAVITY,
-		changedAt: Date.now()
-	};
-	scenePhysicsState_.set(state);
-	if (!replicate) return;
-	/** @type {any} */
-	const peer = get(peers);
-	if (peer) peer.send({ type: 'scenephysics', ...state });
-}

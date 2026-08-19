@@ -166,6 +166,41 @@ export const scenePost = derived(postStacks, (map) => map[POST_SCENE_KEY] ?? EMP
 /** one frozen empty document, so the derived above never allocates per read */
 const EMPTY_STACK = normalizeScenePost(null);
 
+/**
+ * A per-peer RUNTIME override of whether a look renders: true/false, or absent for
+ * "whatever the document says".
+ *
+ * A SEPARATE store rather than a write into the document, which is the mistake it
+ * exists to avoid: the document is authored, replicated scene data, so a game node
+ * flipping `enabled` inside it would turn a runtime state into authored state the
+ * next edit broadcasts. This is exactly `hudScreenOverride`, which is local and
+ * per-peer "ON PURPOSE" for the same reason — one player on the start menu while
+ * another plays. Never replicated (the flow trigger already is) and never saved.
+ * @type {import('svelte/store').Writable<Record<string, boolean>>} */
+export const lookOverride = writable(/** @type {Record<string, boolean>} */ ({}));
+
+/** @param {string} key @param {boolean} on */
+export function setLookOverride(key, on) {
+	lookOverride.update((map) => ({ ...map, [key || POST_SCENE_KEY]: !!on }));
+}
+
+/** Hand a document back to its own `enabled`. @param {string} key */
+export function clearLookOverride(key) {
+	lookOverride.update((map) => {
+		const next = { ...map };
+		delete next[key || POST_SCENE_KEY];
+		return next;
+	});
+}
+
+/** A document with any runtime override folded in — what the renderer should use.
+ * @param {string} [key] */
+export function resolvedDoc(key) {
+	const doc = postStackFor(key);
+	const over = get(lookOverride)[key || POST_SCENE_KEY];
+	return typeof over === 'boolean' && over !== doc.enabled ? { ...doc, enabled: over } : doc;
+}
+
 /** @param {string} [key] */
 export function postStackFor(key) {
 	return get(postStacks)[key || POST_SCENE_KEY] ?? EMPTY_STACK;

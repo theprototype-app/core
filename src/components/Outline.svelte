@@ -11,6 +11,9 @@
 	import {
 		scenePost,
 		postStacks,
+		lookOverride,
+		resolvedDoc,
+		POST_SCENE_KEY,
 		postEnabledLocal,
 		effectivePostStack,
 		postStackSignature,
@@ -229,9 +232,14 @@
 	// `postWarm` flipping after 10 frames is one extra rebuild, once.
 	$effect(() => {
 		const throughCamera = $cameraPreview?.uuid ?? null;
+		// resolvedDoc reads the stores with get(), which registers NO svelte dependency —
+		// so BOTH have to be touched here or this effect stops re-running when a document
+		// changes (measured: setting a camera to No files replaced rendered nothing new).
+		void $postStacks;
+		void $lookOverride;
 		const entries = effectivePostStack({
-			stack: $scenePost,
-			cameraStack: /** @type {any} */ (throughCamera ? $postStacks[throughCamera] ?? null : null),
+			stack: resolvedDoc(POST_SCENE_KEY),
+			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera) : null),
 			mode: $viewMode,
 			localEnabled: $postEnabledLocal,
 			postOk,

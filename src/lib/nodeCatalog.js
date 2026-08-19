@@ -104,6 +104,11 @@ export const nodeCatalog = [
 			// must never move another peer's camera, so each one decides for itself and the
 			// views converge because the TRIGGER replicated, not the camera.
 			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '', restore: false } },
+			// L-C: switch a LOOK on or off. The camera input picks WHOSE look (empty = the
+			// scene's); the switch is a per-peer runtime override, not an edit to the
+			// authored document, so it needs no message of its own — the trigger already
+			// replicated, the hudScreenOverride rule.
+			{ type: 'setlook', label: 'Set Look', defaults: { camera: '', on: true } },
 			// "which camera does the game start from" — placed in the SCENE graph. Every peer
 			// acts on it when the state enters `playing`, including a late joiner, which is
 			// what makes it the answer rather than a one-shot button action.

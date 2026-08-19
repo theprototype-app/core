@@ -94,6 +94,7 @@ const INPUT = {
 	// 21-D6: every game ACTION is driven by an event, and takes its value wired or typed
 	setgamestate: { trigger: 'event' },
 	setcamera: { trigger: 'event', camera: 'object' },
+	setlook: { trigger: 'event', camera: 'object', on: 'boolean' },
 	setvariable: { trigger: 'event', value: 'number' },
 	gamestart: { camera: 'object' }
 };

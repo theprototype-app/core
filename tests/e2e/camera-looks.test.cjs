@@ -273,6 +273,57 @@ h.run(async () => {
 			bChain.after.join(',')
 	);
 
+	// ---------------------------------------------------------------- section 5
+	console.log('\n=== 5. the Set Look node ===');
+
+	// The node is a TRIGGER action, like Set Active Camera: it flips a per-peer runtime
+	// OVERRIDE rather than editing the authored document, so a game can turn a look on
+	// without that ending up in what the next edit broadcasts.
+	const nodeRun = await page.evaluate(async (cam) => {
+		const post = window.__stores.scenePost;
+		const read = () => window.__postDebug().kinds;
+		const docEnabled = () => {
+			let m = null;
+			post.postStacks.subscribe((x) => (m = x))();
+			return m[cam].enabled;
+		};
+		post.clearLookOverride(cam);
+		post.setCameraLookMode(cam, 'append');
+		window.__stores.cameraPreview.startCameraPreview(cam);
+		await new Promise((r) => setTimeout(r, 1600));
+		const on = read();
+		post.setLookOverride(cam, false);
+		await new Promise((r) => setTimeout(r, 1200));
+		const off = read();
+		const docStillOn = docEnabled();
+		post.setLookOverride(cam, true);
+		await new Promise((r) => setTimeout(r, 1200));
+		const backOn = read();
+		post.clearLookOverride(cam);
+		await new Promise((r) => setTimeout(r, 1000));
+		return { on, off, backOn, docStillOn, cleared: read() };
+	}, camUuid);
+	h.check(nodeRun.on.join(',') === 'fill-red,fill-blue', '5.1 premise: the camera look is rendering');
+	h.check(
+		nodeRun.off.join(',') === 'fill-red',
+		'5.2 the override switches that look off and leaves the scene look: ' + nodeRun.off.join(',')
+	);
+	h.check(
+		nodeRun.docStillOn === true,
+		'5.3 ...WITHOUT touching the authored document — a runtime state never becomes authored state'
+	);
+	h.check(nodeRun.backOn.join(',') === 'fill-red,fill-blue', '5.4 and back on again');
+	h.check(nodeRun.cleared.join(',') === 'fill-red,fill-blue', '5.5 clearing hands the document back its own say');
+
+	// the node is REGISTERED, and drives the same seam the runtime calls
+	const nodeDef = await page.evaluate(() => {
+		const groups = window.__stores.nodeCatalog.nodeCatalog ?? [];
+		const all = groups.flatMap((g) => g.items ?? []);
+		const def = all.find((n) => n.type === 'setlook');
+		return { found: !!def, defaults: def?.defaults ?? null };
+	});
+	h.check(nodeDef.found, '5.6 the Set Look node is in the catalog: ' + JSON.stringify(nodeDef.defaults));
+
 	h.check(
 		h.pageErrors(A).concat(h.pageErrors(B)).filter((m) => /scenePost|postEffects/.test(m)).length === 0,
 		'4.6 no page errors'

@@ -21,7 +21,13 @@
 		<div class="sr-control"><slot name="control" /></div>
 	{/if}
 	<div class="sr-name">{name}</div>
-	<div class="sr-desc"><slot /></div>
+	<!-- the slot is wrapped in ONE block child. `.sr-desc` is a flex column (it centres
+	     the text vertically), and in a flex container every ELEMENT child becomes its own
+	     flex item on its own line — so a description mixing inline markup came out as
+	     "Round / Undo / , / Redo / and / Multi-select / beside the logo…", one fragment per
+	     line. With a single wrapper there is one flex item and the inline content flows
+	     normally again. -->
+	<div class="sr-desc"><div class="sr-desc-body"><slot /></div></div>
 </div>
 
 <style>
@@ -94,6 +100,11 @@
 		justify-content: center;
 		color: rgb(75 85 99);
 		line-height: 1.35;
+	}
+	/* a plain block, so inline markup inside a description flows as prose */
+	.sr-desc-body {
+		min-width: 0;
+		width: 100%;
 	}
 	:global(.dark) .sr-control,
 	:global(.dark) .sr-name {

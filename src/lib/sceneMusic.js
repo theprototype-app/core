@@ -176,6 +176,54 @@ export function applyRemoteMusic(data) {
 	reconcile();
 }
 
+/** A6: the shared track as SAVE data, or NULL when the scene has no music — so a
+ * default scene saves byte-identical and an older reader sees no field (the
+ * scenePostSnapshot precedent). The `hash` is an Explorer CONTENT HASH, which is
+ * why sceneAssets lists it: exportSessionZip bundles it into assets/ and peers
+ * that lack it pull through assetfile/getasset, so a loaded scene is not silent. */
+export function musicSnapshot() {
+	const state = get(music);
+	if (!state.hash) return null;
+	return {
+		hash: state.hash,
+		name: state.name ?? '',
+		volume: state.volume ?? 0.8,
+		playing: !!state.playing,
+		changedAt: state.changedAt ?? 0
+	};
+}
+
+/** Restore from a save. `replicate` re-broadcasts, so loading a scene into a live
+ * room brings its music along (the jointsRestore precedent). The loop PHASE
+ * restarts from now: a saved startedAt is in the past, and every peer takes the
+ * same re-broadcast stamp, so the synced phase still agrees.
+ * An ABSENT field STOPS whatever the room was playing rather than leaving it — a
+ * scene load is a whole-world replace, so a scene with no music is silent (see A6).
+ * @param {any} payload @param {boolean} [replicate] */
+export function musicRestore(payload, replicate = false) {
+	// a restore is an authoritative local write, so it must WIN over whatever
+	// changedAt the file happens to carry (an old save's stamp is in the past)
+	const state = payload?.hash
+		? {
+				hash: payload.hash,
+				name: payload.name ?? '',
+				volume: payload.volume ?? 0.8,
+				playing: !!payload.playing,
+				startedAt: payload.playing ? Date.now() : 0,
+				changedAt: Date.now()
+			}
+		: { ...DEFAULT, changedAt: Date.now() };
+	music.set(state);
+	reconcile();
+	if (!replicate) return;
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) peer.send({ type: 'music', ...state });
+	// push the bytes so a peer without the track can play it (setMusicTrack does
+	// the same on assign; a restore is the other way a hash reaches the room)
+	if (state.hash) sendAsset(state.hash);
+}
+
 /** Handshake payload (singleton: like environmentState). */
 export function musicState() {
 	return { type: 'music', ...get(music) };

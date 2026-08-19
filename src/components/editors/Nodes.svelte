@@ -26,6 +26,8 @@
 	import SwitcherNode from './nodes/SwitcherNode.svelte';
 	import ObjectSelectorNode from './nodes/ObjectSelectorNode.svelte';
 	import AnimationNode from './nodes/AnimationNode.svelte';
+	import HudNode from './nodes/HudNode.svelte';
+	import GameCameraNode from './nodes/GameCameraNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
@@ -52,6 +54,7 @@
 	import KeyPressNode from './nodes/KeyPressNode.svelte';
 	import PlayAnimNode from './nodes/PlayAnimNode.svelte';
 	import AnimStateNode from './nodes/AnimStateNode.svelte';
+	import UnknownNode from './nodes/UnknownNode.svelte';
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
 	import { deselectObject } from '$lib/objectActions';
@@ -62,16 +65,46 @@
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { isValidFlowConnection, typeColor, replaceableInputEdges } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
-	import { peers, username } from '../../stores/appStore';
+	import { peers, username, modulesOpen, flowFocus } from '../../stores/appStore';
 
-	// module node types default to the spec-driven AnimationNode unless the
-	// module registered its own component
-	const moduleTypes = Object.fromEntries(
-		get(moduleNodeGroups)
-			.flatMap((group) => group.items)
-			.map((item) => [item.type, moduleNodeComponents[item.type] ?? AnimationNode])
-	);
-	const nodeTypes: any = {
+	// 21-D7: DEEP LINK — 'show me the node that drives this HUD element'. A write-once
+	// request that we act on and CLEAR, the inspectorScrollTo shape, so it cannot re-fire
+	// on an unrelated render. fitView over one node centres it without changing the zoom
+	// the user chose.
+	// runes mode: $effect, never $: . untrack, because focusRequested writes flowFocus and
+	// reads flowNodes - an effect that tracked its own write would loop.
+	$effect(() => {
+		const id = $flowFocus;
+		if (id) untrack(() => focusRequested(id));
+	});
+	function focusRequested(id: string) {
+		// CLEAR FIRST: a write-once request, so it cannot re-fire on the next unrelated
+		// render (inspectorScrollTo's rule).
+		flowFocus.set(null);
+		if (!($flowNodesStore as any[]).some((n) => n.id === id)) return;
+		// fitView only — the xyflow instance owns `selected` through its own binding, and
+		// writing it from here fights that binding for no gain. Centring IS the answer to
+		// "where is the node that drives this element".
+		setTimeout(() => {
+			try {
+				fitView({ nodes: [{ id }], duration: 200, maxZoom: 1.2 });
+			} catch {
+				/* the pane is not up yet */
+			}
+		}, 60);
+	}
+
+	// A6.4: ONE rewrite fixes three bugs that lived in this map.
+	//
+	// (1) It was `get(moduleNodeGroups)` — a NON-REACTIVE init-time read, so a module
+	//     installed after the Flow dock mounted rendered as xyflow's bare default
+	//     card. That broke the GOOD case, and it is exactly what a game template
+	//     does: install the module, then load the scene.
+	// (2) Module types were spread LAST, so a module could silently SHADOW a core
+	//     node type. Core wins now, and a collision warns instead of vanishing.
+	// (3) A type nothing defines got xyflow's default card with no explanation.
+	//     UnknownNode says what is missing and offers to install it.
+	const CORE_NODE_TYPES: any = {
 		colorpicker: ColorPickerNode,
 		slider: SliderNode,
 		switcher: SwitcherNode,
@@ -130,8 +163,62 @@
 		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
 		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip
 		animstate: AnimStateNode, // 17-E F3: the readable half of it
-		...moduleTypes
+		// A3: ONE generic card for the whole HUD group (the ShaderNode precedent)
+		hudscreen: HudNode,
+		hudtext: HudNode,
+		hudbar: HudNode,
+		hudbutton: HudNode,
+		hudtimer: HudNode,
+		hudlist: HudNode,
+		hudinput: HudNode,
+		hudset: HudNode,
+		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
+		// setcamera/gamestart get their own card for the camera picker (see GameNode).
+		setgamestate: AnimationNode,
+		ongamestate: AnimationNode,
+		setvariable: AnimationNode,
+		getvariable: AnimationNode,
+		gametime: AnimationNode,
+		setcamera: GameCameraNode,
+		gamestart: GameCameraNode,
 	};
+
+	// module node types default to the spec-driven AnimationNode unless the
+	// module registered its own component
+	const moduleTypes = $derived(
+		Object.fromEntries(
+			$moduleNodeGroups
+				.flatMap((group) => group.items)
+				.map((item) => [item.type, moduleNodeComponents[item.type] ?? AnimationNode])
+		)
+	);
+	// a module type that collides with a core one loses — and says so, because the
+	// old silent shadowing left the core node unreachable with no clue why
+	$effect(() => {
+		const clash = Object.keys(moduleTypes).filter((type) => type in CORE_NODE_TYPES);
+		if (clash.length)
+			console.log('module node type(s) shadow core types and were ignored:', clash.join(', '));
+	});
+
+	// every type present in ANY graph document that nothing can render
+	const unknownTypes = $derived(
+		[...new Set($flowGraphs ? Object.values($flowGraphs).flatMap((g: any) => (g.nodes ?? []).map((n: any) => n.type)) : [])]
+			.filter((type): type is string => !!type && !(type in CORE_NODE_TYPES) && !(type in moduleTypes))
+	);
+	const nodeTypes: any = $derived({
+		...moduleTypes,
+		...CORE_NODE_TYPES,
+		...Object.fromEntries(unknownTypes.map((type) => [type, UnknownNode]))
+	});
+	// how many nodes of the VISIBLE graph are unrenderable (the topbar badge)
+	const unknownHere = $derived(
+		($flowNodesStore as any[]).filter((node) => unknownTypes.includes(node.type)).length
+	);
+	// what the map resolved to at MOUNT — kept only so a suite can compute the
+	// counterfactual of the reactivity fix (see the debug hook below). Capturing the
+	// initial value is the WHOLE POINT here, so the warning is silenced deliberately.
+	// svelte-ignore state_referenced_locally
+	const mountedTypes: string[] = Object.keys(nodeTypes);
 
 	const { screenToFlowPosition, fitView, setViewport } = useSvelteFlow();
 
@@ -146,8 +233,19 @@
 		if (localStorage.getItem('debugStores') !== 'true') return;
 		// TS syntax, not a JSDoc cast: this file is lang="ts", where JSDoc @type is IGNORED
 		(window as any).__flowViewport = { setViewport, fitView };
+		// A6.4: which types this MOUNTED pane can actually render, plus the snapshot it
+		// resolved at mount. A suite proves the reactivity fix by comparing the two:
+		// with the old non-reactive `get(moduleNodeGroups)` read they were identical,
+		// so a module installed after the dock opened rendered as xyflow's bare card.
+		(window as any).__flowNodeTypes = {
+			live: () => Object.keys(nodeTypes),
+			atMount: mountedTypes,
+			unknown: () => [...unknownTypes],
+			unknownHere: () => unknownHere
+		};
 		return () => {
 			delete (window as any).__flowViewport;
+			delete (window as any).__flowNodeTypes;
 		};
 	});
 
@@ -594,6 +692,20 @@
 					onclick={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 				>
 					<Trash2 size={16} aria-hidden="true" />
+				</button>
+			{/if}
+			<!-- A6.4: how many nodes in THIS graph cannot be rendered. Counted per
+			     graph, because that is the graph the user is looking at; the
+			     Notification Center entry on scene load covers the case where the
+			     editor is closed entirely. -->
+			{#if unknownHere}
+				<button
+					id="flow-unknown-badge"
+					class="pointer-events-auto rounded-full border border-yellow-600/60 bg-yellow-900/40 px-2.5 py-0.5 text-xs font-semibold text-yellow-300 backdrop-blur-sm hover:bg-yellow-900/70"
+					title="These nodes come from a module that isn't installed — click to open Modules"
+					onclick={() => modulesOpen.set(true)}
+				>
+					⚠ {unknownHere} node{unknownHere === 1 ? ' needs' : 's need'} modules
 				</button>
 			{/if}
 		</div>

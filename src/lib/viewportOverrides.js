@@ -39,6 +39,14 @@ export const OVERRIDES = [
 		key: 'shaders',
 		label: 'Scene shaders',
 		hint: 'Materials driven by the scene’s shader graphs. Reserved for the shader work; nothing reads it yet.'
+	},
+	// 21-D5: the first REAL consumer of renderLayer(). A HUD is scene data and renders for
+	// everyone by default, exactly like the look above - this is only the right to switch it
+	// off on this screen.
+	{
+		key: 'hud',
+		label: 'Scene HUD',
+		hint: 'On-screen panels, scores and menus the scene author built. Turning this off is local — it changes nothing for anyone else.'
 	}
 ];
 

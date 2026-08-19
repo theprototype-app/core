@@ -435,7 +435,12 @@ export function listPhysicsObjects() {
  * when the object doesn't exist.
  * @param {string} uuid
  * @param {{mode?: 'auto'|'static'|'dynamic', mass?: number, restitution?: number,
- *   friction?: number, collider?: string}} patch
+ *   friction?: number, collider?: string, sensor?: boolean|null,
+ *   freeze?: any, material?: string}} patch — 21-C4: sensor/freeze/material were
+ *   missing from this type while the Inspector had been writing all three since
+ *   CL-A (its collider row, its Sensor checkbox and its material presets), so any
+ *   NEW caller passing them failed the type check for a param the function has
+ *   always merged.
  * @returns {any|null}
  */
 export function setPhysicsFor(uuid, patch) {

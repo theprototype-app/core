@@ -18,9 +18,21 @@ export const galleryModules = writable([]);
  * state @type {import('svelte/store').Writable<string>} */
 export const galleryState = writable('idle');
 
-/** @param {any} entry */
+/** The categories the Browse filter offers. A row may carry another one — it is kept
+ * and simply groups under itself. Declared ABOVE its use: a module-level const read
+ * during eval is the TDZ family this codebase has been bitten by. */
+export const MODULE_CATEGORIES = ['game', 'tool', 'example'];
+
+/** C5.1: what a gallery row may declare. `category`/`tags`/`template` were DROPPED
+ * here, so a module could not say it is a game or which scene goes with it.
+ *
+ * These are GALLERY metadata, deliberately not manifest.json fields: the two schemas
+ * are already separate, and pack.cjs validates the manifest a player installs while
+ * this describes how the module is presented in Browse.
+ * @param {any} entry */
 function normalizeEntry(entry) {
 	if (!entry?.id || !entry?.name) return null;
+	const category = String(entry.category ?? '');
 	return {
 		id: String(entry.id),
 		name: String(entry.name),
@@ -28,9 +40,19 @@ function normalizeEntry(entry) {
 		description: String(entry.description ?? ''),
 		author: String(entry.author ?? ''),
 		source: entry.source ? String(entry.source) : '',
-		zip: entry.zip ? String(entry.zip) : ''
+		zip: entry.zip ? String(entry.zip) : '',
+		// 'tool' is the default, so every existing row keeps working unchanged; an
+		// UNKNOWN category is preserved verbatim rather than coerced (the
+		// normalizeAnnotation rule — a newer repo's value must survive our reader)
+		category: MODULE_CATEGORIES.includes(category) ? category : category || 'tool',
+		tags: Array.isArray(entry.tags) ? entry.tags.filter(Boolean).map(String) : [],
+		// the scenes-repo path of the game scene that goes with this module, so the
+		// Browse card can point at it (e.g. 'games/dungeon-realms')
+		template: entry.template ? String(entry.template) : ''
 	};
 }
+
+
 
 let loaded = false;
 /** Fetch + normalize the gallery index (once per session; force re-fetches).

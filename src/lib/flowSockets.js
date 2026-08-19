@@ -5,6 +5,7 @@
 // Selector. Existing saved edges are NOT re-validated — only new drags.
 
 import { graphOf } from '../stores/flowStore';
+import { moduleValueTypes, moduleNodeInputs } from './moduleNodeIO';
 
 /** output type of a node's source handle @type {Record<string,string>} */
 const OUTPUT = {
@@ -29,7 +30,20 @@ const OUTPUT = {
 	impulse: 'effect', // B6: the physics ACTION nodes feed an Object Selector
 	setvelocity: 'effect',
 	joint: 'effect',
-	flowinput: 'number' // H5 fallback; the live check reads data.vtype
+	flowinput: 'number', // H5 fallback; the live check reads data.vtype
+	// A3 HUD: only the button and the timer produce anything. hudtext/hudbar/
+	// hudscreen/hudlist are SINKS — they write into an element, so their output stays
+	// the effect channel.
+	hudbutton: 'event',
+	hudtimer: 'number',
+	// 21-D4: the HUD as a SOURCE. `read` decides what the number MEANS (a slider's
+	// value, a dropdown's index, a toggle as 1/0) but the socket is a number either
+	// way, so one type covers all four input kinds.
+	hudinput: 'number',
+	// 21-D6 game shell: the event half and the two readable ones
+	ongamestate: 'event',
+	getvariable: 'number',
+	gametime: 'number'
 };
 
 /** typed named inputs; `_default` covers an unnamed target handle @type {Record<string,Record<string,string>>} */
@@ -66,7 +80,22 @@ const INPUT = {
 	playanim: { trigger: 'event', speed: 'number' },
 	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
 	// a burst fired from any event (On Click / Key Press / On Impact)
-	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' }
+	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' },
+	// A3 HUD. `value` is the whole point: counter -> hudtext is a live score with no
+	// new code, because Counter already counts replicated pulses and every number
+	// source already reaches a named input through resolveInputs.
+	hudtext: { value: 'number' },
+	hudbar: { value: 'number', min: 'number', max: 'number' },
+	hudscreen: { trigger: 'event' },
+	hudtimer: { start: 'event', duration: 'number' },
+	hudlist: { trigger: 'event' },
+	hudinput: {},
+	hudset: { trigger: 'event', value: 'number' },
+	// 21-D6: every game ACTION is driven by an event, and takes its value wired or typed
+	setgamestate: { trigger: 'event' },
+	setcamera: { trigger: 'event', camera: 'object' },
+	setvariable: { trigger: 'event', value: 'number' },
+	gamestart: { camera: 'object' }
 };
 
 // what an OUTPUT type may feed into a differently-typed INPUT
@@ -81,6 +110,11 @@ const COERCE = {
 
 /** @param {string} nodeType */
 export function outputType(nodeType) {
+	// A1: a module VALUE node declares its own output type. Without this read the
+	// fallback below answered 'effect' for every module type, and an effect output
+	// may only reach an effect input — so a module value could not be wired to
+	// ANYTHING. That refusal is why module state could not reach a HUD.
+	if (moduleValueTypes[nodeType]) return moduleValueTypes[nodeType];
 	// anim / effect / action / script / sound / module nodes drive an Object
 	// Selector, so their output is the special 'effect' channel
 	return OUTPUT[nodeType] ?? 'effect';
@@ -88,6 +122,14 @@ export function outputType(nodeType) {
 
 /** @param {string} nodeType @param {string|null|undefined} handleId */
 export function inputType(nodeType, handleId) {
+	// A1: a module may declare its node's typed inputs. Checked FIRST, because the
+	// static table has no entry for a module type and the fallback is 'number' —
+	// which refuses an Object Selector (object -> number is not a coercion).
+	const modIn = moduleNodeInputs[nodeType];
+	if (modIn) {
+		if (handleId && modIn[handleId]) return modIn[handleId];
+		if (modIn._default) return modIn._default;
+	}
 	const map = INPUT[nodeType];
 	if (!map) return 'number'; // e.g. anim range params (spin.speed) are numeric
 	return (handleId && map[handleId]) || map._default || 'number';

@@ -5,6 +5,8 @@
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeSpec } from '$lib/nodeCatalog';
 	import { flowEdges, flowValues } from '../../../stores/flowStore';
+	import { moduleInputHandles } from '$lib/moduleNodeIO';
+	import { moduleNodeGroups } from '$lib/moduleSDK';
 
 	type $$Props = NodeProps;
 	export let id: string;
@@ -13,6 +15,20 @@
 	// Controls are described by the catalog spec for this node type
 	$: spec = findNodeSpec(data.type);
 	// One-way flow: render from data, write through setNodeData (replicates to peers)
+
+	// A1: range params keep their sockets exactly where they were; a module's
+	// declared inputs follow. Without a socket a declared input is unwirable.
+	// $moduleNodeGroups is read purely as a DEPENDENCY: moduleInputHandles is a
+	// plain object lookup, so a module installed AFTER this card mounted would
+	// otherwise never grow its sockets (the non-reactive-registry family).
+	$: rangeKeys = (spec?.params ?? []).filter((pr: any) => pr.kind === 'range').map((pr: any) => pr.key);
+	// `_groups` is the dependency, not an argument: the registry is a plain object,
+	// so the store read is the only thing that can re-run this.
+	const declaredHandles = (type: string, _groups: any[]): string[] => moduleInputHandles(type);
+	$: targetHandles = [
+		...rangeKeys,
+		...declaredHandles(data.type, $moduleNodeGroups).filter((h: string) => !rangeKeys.includes(h))
+	];
 
 	// A WIRED param shows the incoming live value instead of its slider — the
 	// manual value is overridden anyway (resolveInputs). Free to render: the
@@ -30,13 +46,17 @@
 
 <NodeWrapper type={data.type} label={data.label}>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
-	<!-- 133: a value input handle per numeric param (Number/Math/... drive it) -->
+	<!-- 133: a value input handle per numeric param (Number/Math/... drive it)
+	     A1: plus one per input a MODULE declared that has no range param of its own
+	     (an event trigger, an object target) — appended AFTER the range sockets so
+	     every existing node's handle positions are byte-unchanged.
+	     21-B B6: a spec that declares `inputs` opts out of the whole pixel-offset
+	     scheme and renders LABELLED ROWS below instead — two stacks of absolutely
+	     positioned handles on one card stop agreeing with the rows they name. -->
 	{#if !spec?.inputs}
-		{#if spec?.params}
-			{#each spec.params.filter((pr: any) => pr.kind === 'range') as param, i}
-				<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style={`top: ${34 + i * 38}px`} />
-			{/each}
-		{/if}
+		{#each targetHandles as handle, i}
+			<Socket kind="target" nodeType={data.type} position={Position.Left} id={handle} style={`top: ${34 + i * 38}px`} />
+		{/each}
 	{/if}
 	<div class="flex w-full flex-col gap-1">
 		<!-- B6: NAMED sockets declared by the catalog spec (trigger, force, target…)
@@ -90,6 +110,17 @@
 								on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.checked })}
 							/>
 						</span>
+					{:else if param.kind === 'text'}
+						<!-- A1: free text. `change` (commit/blur), NOT `input` — setNodeData
+						     replicates the whole node, so per-keystroke = one message each. -->
+						<input
+							class="nodrag w-full rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px]"
+							type="text"
+							placeholder={param.placeholder ?? ''}
+							maxlength={param.maxLength ?? null}
+							value={data[param.key] ?? spec.defaults[param.key] ?? ''}
+							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
+						/>
 					{:else if param.kind === 'select'}
 						<select
 							class="nodrag"

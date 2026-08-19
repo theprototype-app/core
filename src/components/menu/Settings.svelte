@@ -590,7 +590,7 @@
 					</SettingRow>
 					<SettingRow name="Touch tools">
 						<svelte:fragment slot="control"><Toggle bind:checked={$touchTools} /></svelte:fragment>
-						Round <strong>Undo</strong>, <strong>Redo</strong> and <strong>Multi-select</strong> beside the logo, for touch — where there is no <kbd>Ctrl+Z</kbd> and no <kbd>Shift</kbd> to hold. Multi-select makes a tap add to the selection and a drag on empty space box-select, in the viewport and on mesh vertices, edges and faces. On by default on phones
+						Undo / Redo / Multi-select buttons beside the logo, for touch — no <kbd>Ctrl+Z</kbd> or <kbd>Shift</kbd> needed. Multi-select adds on tap and boxes on drag, for objects and for mesh vertices, edges and faces. On by default on phones
 					</SettingRow>
 					<SettingRow name="Allow undocking (touch)">
 						<svelte:fragment slot="control"><Toggle bind:checked={$mobileUndockAllowed} /></svelte:fragment>

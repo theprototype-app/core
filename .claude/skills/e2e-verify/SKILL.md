@@ -28,6 +28,13 @@ The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
 clicks) and `uv-unwrap-module` (a module supplying an unwrap backend, and wasm from a blob URL).
+Roadmap #20 added seven: `duplicate-parity` (what a copy carries, incl. two peers),
+`node-drag-fields` (DragRow inside xyflow cards, real mouse), `units` (the pure
+parse/convert table plus an Inspector row that must NOT move the object when the unit
+changes), `touch-tools` (the cluster, mobile multi-select, mesh-element BOX SELECT, the
+measured placement, and the SettingRow prose guard), `post-backends` (the registry
+fallback + both module seams, via an INLINE module), `workspace-restore` (layout local,
+selection + edit mode in the file) and `graph-tree` (the navigator + its resize grip).
 The size ceilings are `mesh-budget` (commit vs live-PREVIEW vs undo-byte budget,
 with the counterfactual against the old 45000 cap); selection is `selection-extras`
 (Ctrl+A + the configurable double-click, both through real input); the edit-overlay
@@ -63,13 +70,37 @@ mousedown on an xyflow node card enters its drag handler, which reads `ownerDocu
 off the target and throws — select a node with a real `page.mouse.click`. Also: two
 picks of the SAME bytes are the same content hash, so a second texture assignment is
 silently a no-op (vary the image, or the check measures the first one twice).
+21-C terrain and splines have three: `terrain-procedural` (noise determinism imported
+DIRECTLY in node, plus two peers on a bit-identical position hash, the tiling seam and
+the sculpt lock with its Regenerate escape), `terrain-carve` (the pure carve with no
+browser, then both Flatten directions driven by real viewport clicks) and the ported
+`spline-tool`. Their traps are below and they generalise: a projected world point may
+not be ON the surface, a buffer-level metric cannot see a shattered mesh, and an
+idempotent op leaves later sections nothing to measure.
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
-`mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
+`mesh-loop-hardening` section 3b is where the twisted-band criterion lives.
+
+helpers.cjs exports: `launch(options)` (pass
 `{args:[...]}` for fake media), `setupPage(browser, name)` (init script + hydration +
 peer id), `connect(from, to, settleMs=9000)`, `check(ok, label)`,
 `eventually(fn, predicate, label, timeout)`, `projectPoint(page, [x,y,z])` (world →
-screen pixel for real clicks), `finish(browser)` (exit code), `run(body)`.
+screen pixel for real clicks), `finish(browser)` (exit code), `run(body)`,
+`freshReload(peer)`, `pageErrors(peer)`, `installModule(peer, id)` +
+`moduleZipPath(id)`, the pixel four (`grabFrame`/`centeredClip`/`frameDelta`/
+`framePixelsOffColor`), `URL`, and **`GPU_ARGS`**.
+
+**`GPU_ARGS` is not only for pixels — it is required for anything TIME-based.** A
+software-rendered headless page runs at about **2.5 fps** (measured 2026-08-18 by
+counting `requestAnimationFrame` callbacks over a 2s window: 5 frames). Any per-frame
+runtime is therefore ticking ~24x slower than a user's, so a throttle in the 10Hz range
+CANNOT ENGAGE and reads as "throttled" while doing nothing at all — a HUD store capped
+at 100ms measured 5-6 writes/2s either way, which passed a ceiling assertion vacuously.
+With `h.launch({ args: h.GPU_ARGS })` the same page runs **120 frames / 2s** and the cap
+shows as **19 writes against 120 frames**, which is the throttle actually being proven.
+Corollary for the assertion itself: state a rate claim RELATIVE to a frame count
+measured in the SAME window, never as an absolute Hz — an absolute floor is asserting
+the host's rAF cadence, not your code.
 
 Rules: never run suites in parallel AGAINST THE SAME dev server, never edit sources
 while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE").
@@ -80,6 +111,39 @@ PIXEL features have their own helpers now: `grabFrame`/`centeredClip`/`frameDelt
 `framePixelsOffColor` (screenshot -> back INTO the page -> 2D canvas -> RGBA, compared
 in the page so only metrics cross the bridge). Four rules came out of building them:
 
+- **A BUFFER-LEVEL metric cannot see a shattered mesh, and one shipped.** The carve
+  suite asserted the vertex count was "unchanged", both peers agreed, one message, one
+  undo entry — all green over a terrain that drew 208 arbitrary triangles plus a
+  fragment, because `applyMeshGeo` builds a NON-indexed geometry and it had been handed
+  an indexed terrain's 625 positions (not divisible by 3). The count being unchanged
+  WAS the symptom, and the assertion said so in as many words. For anything that
+  rebuilds geometry, assert the TRIANGLES: count divisible by 3, and no edge longer
+  than the lattice it came from (24.04m on a 1m grid with the bug in, 1.62m with it
+  out). Watertightness is the same rule for closed meshes.
+- **A projected world point is not necessarily ON the surface you meant to click.**
+  `projectPoint([-7, 0, -7])` over a hilly terrain gives a pixel whose ray the app
+  resolves to NOTHING (measured: `hits []`), because y=0 is underneath the hills — so
+  every click-driven check of an armed pick mode failed while the feature was perfect.
+  Cast DOWN onto the target first, project the SURFACE point, and verify both that
+  `elementFromPoint` is the canvas and that the app resolves that pixel to the intended
+  object. The second half matters just as much: selecting anything opens the properties
+  drawer over the right of the viewport, and the first round of aims landed on a drawer
+  DIV. `aimAtSurfaceOf` in terrain-carve is the reusable shape.
+- **An IDEMPOTENT operation leaves later sections nothing to measure.** Three checks in
+  the carve suite read a legitimate zero because earlier sections had already flattened
+  the bed. Re-seed the input at the top of each section that measures CHANGE, and take
+  the undo-depth baseline immediately BEFORE the gesture rather than before setup that
+  also records entries (that read +3 for one click).
+- **Measure both sides of a comparison in the SAME unit.** "A repeat carve converges"
+  compared 251 COLUMNS (before the commit expanded the mesh) against a toast's 876
+  VERTICES (after), and read as divergence when nothing had diverged. The same class of
+  mistake as the bug it was testing, one layer up: when a commit changes the mesh
+  REPRESENTATION, compare a representation-independent quantity (the (x,z)->y height
+  field, or a canonical soup) instead of buffer indices.
+- **Scan the WHOLE toast stack, never just the last entry.** This box emits peer-server
+  toasts ("Lost connection… reconnecting") throughout a run, so the newest toast is
+  regularly not the one your click produced — and clear the stack before the gesture,
+  or an earlier identical message satisfies the wait without anything having run.
 - **Assert the CHANGED PIXEL COUNT, not a mean.** A mean is blind to a thin edge — a
   one-pixel outline over 1280x720 moves it by ~0.1. But keep both metrics: AO on a lone
   convex box is a small contact BAND with a large delta, where a count alone reads as
@@ -218,6 +282,39 @@ passed while the user watched the feature misbehave:
   rotation.
 - When a check reports success but the user reports failure, re-read the check
   before re-reading the code: ask what state would make it fail.
+- **`h.eventually` returns the CHECK RESULT, not the value it polled.** Binding its
+  return (`const seen = await h.eventually(...)`) gave `undefined` to four follow-up reads
+  while delivery had actually worked — the poll passed and then everything downstream
+  reported nothing. Await it for the wait, then read the state again separately.
+- **A `boundingBox()` is not a hit test, and a pane's viewport is not yours to assume.**
+  node-drag-fields placed nodes at flow y=60/240 and BOTH fields turned out covered — one
+  by the 3D canvas (above the dock pane), one by the palette tab button — and one drag
+  still "passed", because pressing the palette toggle reflowed the pane and the later moves
+  landed on the real field. xyflow's `fitView` runs at MOUNT, so a suite that seeds nodes
+  afterwards cannot know where they landed: measured, the mount fit left a card at screen
+  x = -29.5 at zoom 0.5, and a real pane drag panned 3775px for a 200px gesture. Pin the
+  viewport through the `window.__flowViewport` debug hook and `elementFromPoint`-check
+  every synthesized grip.
+- **A nav button TOGGLES.** `p[title="Node editor (N)"]` opened the pane in section 1 and
+  CLOSED it in section 8, so the element under test was legitimately absent. Drive the
+  stores (`flowGraphClose.set(false)` + `activateDock`) when a later section needs a panel
+  that an earlier one already opened.
+- **Some panels cannot coexist BY DESIGN.** `bottomDock` closes the Explorer whenever a
+  Flow-family panel becomes the visible tab, so a check that opened both was measuring that
+  rule instead of its own. Pick a control that shares nothing with the thing under test.
+- **Rows only exist inside an EXPANDED accordion.** The Settings modal renders zero
+  `.setting-row`s until `settingsSection` names the section — `settingsOpen.set(true)`
+  alone finds nothing.
+- **A store-level probe cannot test a handler.** `pickFaceUnit(tri)` takes NO additive
+  argument (the additive path is `toggleFaceSelection`), so a probe passing one compared
+  two identical replaces and read "2 tris vs 2". And even a corrected probe would only
+  re-implement Scene's branch in the test, which cannot catch Scene failing to feed a flag
+  into it. When the bug lives in a handler, drive the real mouse.
+- **A fixture must be something the real code can consume.** post-backends registered a
+  module effect whose `make` returned an object literal; the LIVE composer then crashed
+  inside `EffectPass`, which looked like a broken feature and was a broken fixture — and
+  in the process exposed a real hole (that construction was unguarded), so the fixture
+  earned its keep. Build fixtures from the real types (`new Effect(...)`).
 - **A fixture missing a PRECONDITION makes a working fix look broken.** Auto-key
   records INTO a clip: an object with none keys nothing, and `captureAutoKey`
   returns before doing anything. The first material-auto-key suite built a bare
@@ -619,6 +716,18 @@ makes peerjs use the **public cloud** (localhost tries ws://localhost:9001 and f
 OUT in `etc/hosts`, so two-peer suites are env-gated locally — re-enable the mapping
 (or gate the block behind an env flag, as `connect-states.test.cjs` does with
 `TWO_PEER=1`) to run them.
+**Still commented out as of 2026-08-18, and you do not need it**: point `APP_URL` at
+`https://localhost:PORT/` and pass `PEER_CONFIG` for the self-hosted box, and
+three-peer suites connect fine. Reaching for the `.app` hostname while that line is
+commented resolves the REAL public IP and every page load dies on
+`net::ERR_CONNECTION_TIMED_OUT` — which looks like a dead dev server, not a DNS
+answer, so check the hosts file before restarting anything:
+
+```powershell
+$env:APP_URL='https://localhost:5201/'
+$env:PEER_CONFIG='{"mode":"custom","custom":{"host":"peerjs.theprototype.app","port":443,"path":"/peerjs","secure":true}}'
+npm run e2e -- hud-sync
+```
 `helpers.connect(B, A)` does: fill peer id → Connect → Approve on A → ~9s settle.
 Late joiners: connect a third context AFTER mutations, assert handshake state arrived
 (objects/nodes/annotations/joints/module state/env/music/handmodel/custom defs).
@@ -679,6 +788,11 @@ drops the P2P session.
   then assert the FULL set on a finished state; and when the app fires and forgets a
   write (`createFolder` does not await `persistIndex`), watch the RECORD rather than
   sleeping — it is the thing the reload actually reads.
+- **A first click that loads its module dynamically pays ~1.2s in dev**, which is long
+  enough to make a 900ms wait pass while nothing has happened — and long enough that a
+  real user thinks the button is dead. Wait on the OUTCOME (the toast, the geometry,
+  the store), and if the feature is user-facing consider PRIMING the import where the
+  affordance appears (the Inspector does it while a spline is selected).
 - **Before believing any standing red, restart the dev server.** Three suites
   (`prefabs`, `mesh-edit-materials`, `uv-materials`) were carried as a "known cluster"
   with a shared cause. The shared cause was real but external: none of them contains a
@@ -742,6 +856,13 @@ drops the P2P session.
   edit during a run, and treat a red run that started right after a save as
   unproven. When store reads disagree with what you see, add a COMPONENT-side debug
   hook and compare the two (below).
+- **#20: the tell for a stale server is a change that "fixes" things for no reason.**
+  Toggling a setting failed to render its component; adding an UNRELATED debug element
+  to that component made it work. Nothing about that element could matter, and that is
+  the signature — the edit forced a re-transform. On a freshly restarted server the
+  original code was correct at every width from 1280 to 400. So when a symptom vanishes
+  after a meaningless edit: do NOT commit the edit, restart, re-measure, and report
+  honestly that you could not reproduce rather than claiming a fix you cannot show.
 - **A DAY-LIVED server escalates that to stale DUAL MODULE INSTANCES** (19-A P0):
   `bind:checked={$faceAutoApply}` flipped the DOM checkbox while the app's real
   store never moved — the component was bound to a SECOND faceEdit instance from
@@ -771,6 +892,27 @@ drops the P2P session.
   SWALLOWS it, so the message silently never leaves. Send raw bytes instead
   (`new Float32Array(arr).buffer`) and normalize on receive (meshgeo/terrain do this).
   If a big payload "never arrives" in a test, suspect this before the network.
+- **The definitive worktree A/B, when a red might be yours.** `git stash` is unsafe
+  in this repo (see the never-stash-pop rule) and the same-server A/B lies. Instead:
+  `git worktree add ../theprototype-ab origin/release/next --detach`, `npm install`,
+  start it on a spare port, and run the suspect suite there. Two notes from doing it:
+  the worktree has no `certs/` (gitignored), so it serves **http**, not https — use
+  `APP_URL=http://localhost:<port>/`; and the FIRST run on a cold server can fail at
+  `page.goto` for no other reason, so take a second reading before you conclude
+  anything. Remove it with `rm -rf` + `git worktree prune` when done. Used 21-D to
+  attribute `script-nodes` and `flow-object-embed` — both fail IDENTICALLY on base.
+- **A suite that compares an editor against its RUNTIME breaks the day the runtime is
+  deliberately hidden.** 21-D5 stopped painting the HUD in the viewport while the HUD
+  editor is open, which invalidated `hud-editor`'s artboard-vs-live rect comparison
+  and `hud-inputs`' control queries — neither was a regression, both were suites
+  asserting the old contract. Reach the state you need through the USER's own control
+  (there, `hudPreviewInViewport`, which the eye toggle writes), never a test-only door.
+- **Check what your own earlier sections already did to the fixture.** Two 21-D reds
+  were pure test premises: a "creates the reader" check failed because an earlier
+  section had already created that reader (the refusal was CORRECT), and a "sets its
+  value" check failed because an earlier section had already set it, so the press
+  flipped it back. Assert the CHANGE, or use a fixture the earlier sections did not
+  touch.
 - Pre-existing flakes (reproduce on a clean base — don't chase them into your diff):
   add-menu search-Enter + right-tap, sound-node Play overlap, connect-overlay
   querySelector, scene-music byte-push timing. To PROVE a failure is pre-existing:
@@ -794,6 +936,14 @@ drops the P2P session.
 - `add-menu` documents its own flake in a comment at the failing line (a right-tap
   that does not open the viewport menu) — the fastest proof that a failure is not
   yours is still `git stash push -u` → run → `git stash pop`.
+- **Added to the dirty baseline 2026-08-18** (21-A), each proven by running the SAME
+  suite in a PRISTINE sibling worktree on its OWN freshly started server and diffing the
+  PASS/FAIL lines — the only A/B that means anything (see the day-lived-server trap):
+  `flow-customnode-io` (1 check — "a stale snapshot cannot resurrect the pruned edge"),
+  `flow-object-embed` (`locator.dblclick` timeout). `open-core-m1`'s single drawer check
+  was re-confirmed on that same pair: 18 identical PASS/FAIL lines both sides. Two
+  worktrees is what makes this cheap — you never touch the tree under test, so there is
+  no stash to pop and no chance of the "restart fixed it" confound.
 - Long full-suite runs: the Bash tool caps at 10 min — launch the runner DETACHED
   (PowerShell `Start-Process node -ArgumentList 'tests\e2e\run.cjs ...'` with
   output redirects) and poll/Monitor the log. A dev server started via the Bash
@@ -881,10 +1031,18 @@ drops the P2P session.
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-08-02 = **419 errors / 62 warnings** (node 24; #15-C's one-way
-  pickers dropped 14, #15-K's outline rework 2 more) (drifts down as flowbite/typed
-  code is removed — hold whatever it currently is; add no NEW; the release.yml gate
-  hardcodes the numbers — update it when the baseline moves). Note: in the big
+  baseline 2026-08-18 = **388 errors / 62 warnings** (419 -> 417 at B5 -> 391 when 17-A
+  moved the demo modules out -> 388 when #20 annotated Scene's `marqueeStart`) (drifts
+  down as flowbite/typed code is removed — hold whatever it currently is, RATCHET IT
+  DOWN when a change legitimately removes errors; add no NEW; the release.yml gate
+  hardcodes the numbers — update it when the baseline moves). **RE-MEASURE ON A PRISTINE
+  WORKTREE before gating anything on the number in a plan** — a plan written a week
+  earlier said 391/62 while the tree was already at 388, and "held the baseline" would
+  have been a lie in both directions. To attribute a delta, diff PER-FILE counts against
+  a pristine sibling worktree rather than eyeballing the total:
+  `npx svelte-check --output machine | grep 'ERROR "' | sed 's/.*ERROR "\([^"]*\)".*/\1/' |
+  sort | uniq -c` on both, then `diff` — that is what found a +1 hiding inside a file
+  that already had pre-existing errors. Note: in the big
   JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —
   give the param a default (`slot = 0`) to force the type, and prefer explicit locals
   over dynamic string-indexing of a typed object (both tripped the baseline in N5). Runes-mode `.svelte` files
@@ -897,6 +1055,39 @@ drops the P2P session.
   `page.locator('#explorer-list').screenshot({ path: <scratchpad>/x.png })`. Read the PNG
   to eyeball it, then DELETE the throwaway (never commit a machine-specific scratchpad
   path). The runner only matches `*.test.cjs`.
+
+- **A suite that BUILDS a graph with `flowNodes.set()` has not sent anything.** Only the
+  `nodesHandler` entry points broadcast; the store mirror writes `flowGraphs` locally.
+  The peer DOES catch up through nodesync's periodic hash compare, which is what makes
+  this so nasty: the assertion fails by a LITTLE and intermittently (a Counter pulsed
+  before the peer held the graph read 2 where the author read 3), so it reads as a real
+  off-by-one in the feature. Push explicitly and WAIT for the peer to hold it:
+  `sendNodes(peerId)`, then poll the peer's `flowNodes` for your ids before doing
+  anything else, and keep that as a `premise:` check so the next reader sees why.
+- **Do not drive a rate test with `setNodeData`.** It is not throttled, but the chain
+  behind it (mirror -> flowGraphs -> autosave markDirty -> serializeGraphs) is heavy
+  enough that only about **5 of 50 calls at 40ms** landed inside 2s. A "the store only
+  wrote 5 times" reading was measuring setNodeData's cost, not the throttle under test.
+  Drive something that changes ON ITS OWN every frame (a `time` node) instead.
+- **`saveSnapshot` refuses to write an EMPTY snapshot** ("never overwrite a good
+  snapshot with emptiness"), so on a scene with no objects and no nodes autosave never
+  writes, `isDirty()` never settles, and a dirty-subscription test fails on its own
+  premise. Create one real object first — that is the premise, not decoration. And
+  `idbGet('latest')` returns the snapshot ITSELF, not a wrapper.
+- **The node editor's scope FOLLOWS THE SELECTION, so creating an object before opening
+  the dock shows that object's (empty) OBJECT graph.** Every DOM read then comes back
+  empty and it looks like the editor failed to render. `deselectObject()` first and
+  assert `activeGraphId === 'scene'` as a premise.
+- **A window-level BUBBLE listener cannot observe an event your own handler
+  `stopPropagation`'d** — and stopping it is often part of the contract, so the check
+  "the browser menu was prevented" came back with an EMPTY event list while the feature
+  worked perfectly. Register at window **CAPTURE**, keep the event OBJECT, and read
+  `defaultPrevented` after the dispatch has finished (it is a live property, so a
+  `preventDefault` called downstream still shows). Assert the propagation stop
+  separately with a bubble-phase counter that must read 0.
+- **`h.launch()` gives you a ~2.5fps page; `h.launch({ args: h.GPU_ARGS })` gives you 60.**
+  See the GPU_ARGS note in the first section — anything asserting a rate, a throttle, an
+  interval or "per frame" behaviour needs the GPU args or it measures nothing.
 
 ## Two ways a green suite lies (both cost a user-visible bug in 17-E)
 

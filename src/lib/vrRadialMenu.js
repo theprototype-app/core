@@ -20,6 +20,11 @@ import { savePrefab, savePrefabSelection } from './prefabs';
 function selCount() {
 	return selectionUuids().length;
 }
+/** 57.4: does the lone selection carry a spline record? */
+function isSplineSelection() {
+	const object = /** @type {any} */ (get(selectedObject));
+	return !!object?.userData?.spline?.points?.length;
+}
 function countSuffix() {
 	const n = selCount();
 	return n > 1 ? ` (${n})` : '';
@@ -383,7 +388,27 @@ function registerBuiltins() {
 		// 216: a GROUP selection can't be mesh-edited; it shows Ungroup instead.
 		// D4: a MULTI-selection shows Make Group instead
 		visible: () =>
-			selCount() <= 1 && /** @type {any} */ (get(selectedObject))?.type !== 'Group'
+			selCount() <= 1 &&
+			/** @type {any} */ (get(selectedObject))?.type !== 'Group' &&
+			!isSplineSelection()
+	});
+	// 57.4: a SPLINE gets its own editor — this entry replaces Edit Mesh for
+	// spline objects (the raw vertex tools would fight its record). The
+	// session itself registers the generic VR trigger/frame hooks.
+	registerVRMenuEntry({
+		id: 'obj:editspline',
+		group: 'object',
+		label: 'Edit Spline',
+		order: 7,
+		closes: true,
+		visible: () => selCount() <= 1 && isSplineSelection(),
+		action: () =>
+			import('./splineEdit').then((m) => {
+				const uuid = /** @type {any} */ (get(selectedObject))?.uuid;
+				if (!uuid) return;
+				if (get(m.splineEditObject)) m.exitSplineEdit();
+				else m.enterSplineEdit(uuid);
+			})
 	});
 	// 216: Ungroup (dissolve the group, move children up) — replaces Edit Mesh
 	// when the selection is a Group

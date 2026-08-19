@@ -11,6 +11,11 @@ import { recordObjectPresence } from './history';
 // movable, undoable, autosaved and replicated (one toJSON message per stroke).
 
 export const drawMode = writable(false);
+/** 57.2: which tool draw mode is armed with — 'freehand' paints while you drag,
+ * 'spline' places control points and stays editable afterwards (splineTool.js).
+ * A LOCAL choice: it only decides what YOUR next gesture builds.
+ * @type {import('svelte/store').Writable<'freehand' | 'spline'>} */
+export const drawTool = writable('freehand');
 export const drawColor = writable('#ff4000');
 export const drawSize = writable(0.04);
 // stream the stroke to peers while drawing (temp line, replaced by the mesh)
@@ -34,6 +39,8 @@ export function setDrawScene(s) {
 export function toggleDrawMode() {
 	drawMode.update((on) => {
 		if (on) endStroke();
+		else if (get(drawTool) === 'spline')
+			showToast('Spline tool: click to place control points, Enter or Done to finish.');
 		else showToast('Draw mode: drag on surfaces to draw (VR: hold the trigger). Esc or Done to finish.');
 		return !on;
 	});

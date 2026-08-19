@@ -671,7 +671,7 @@ export function sendObject(conn, element, groupuuid) {
             const pos = element.position.toArray();
             const rot = element.rotation.toArray();
             const scale = element.scale.toArray();
-            const exporter = new GLTFExporter({outputEncoding: 'json'});
+            const exporter = new GLTFExporter();
             exporter.parse(
                 element,
                 function (result) {
@@ -690,7 +690,20 @@ export function sendObject(conn, element, groupuuid) {
                     // nothing said so, leaving a hole in the receiver's scene
                     console.log(error);
                     showToast('Could not share "' + (element.name || element.type) + '" with peers');
-                }
+                },
+                // OPTIONS ARE THE FOURTH ARGUMENT OF parse(), not the constructor. three's
+                // GLTFExporter constructor takes none, so `new GLTFExporter({...})` silently
+                // discarded them — which is why the long-standing `{outputEncoding: 'json'}`
+                // here never did anything either.
+                //
+                // onlyVisible: FALSE matters because three DEFAULTS IT TO TRUE, so any object
+                // hidden locally is omitted from the export and the peer never receives it at
+                // all — a local hide becomes a DELETE for every late joiner. Found through the
+                // camera preview, which hides the marker it is looking through: a peer joining
+                // mid-game then had no such camera and could not follow the game to it
+                // (measured: the box arrived, the previewed camera did not). A hidden object
+                // must replicate; the receiver simply shows it.
+                { onlyVisible: false }
             );
         }
     })

@@ -8,7 +8,14 @@ import { moduleNodeGroups } from './moduleSDK';
 import { particlePreset } from './particlePresets';
 
 /**
- * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle', min?: number, max?: number, step?: number, options?: string[] }} NodeParam
+ * A1: `kind: 'text'` is a free-text param. It writes on COMMIT (change/blur),
+ * never per keystroke — a node edit replicates the whole node, so an input-time
+ * write is one broadcast per character. `placeholder`/`maxLength` are hints for it.
+ *
+ * 21-B B6: `inputs` declares NAMED target sockets (trigger, force, target…) and
+ * `inputLabels` gives one a friendlier label than its wire name. A spec with
+ * `inputs` renders its sockets as labelled ROWS instead of by pixel offset.
+ * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text', min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
  * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string> }} NodeSpec
  */
 
@@ -64,6 +71,170 @@ export const nodeCatalog = [
 			{ type: 'flowinput', label: 'Flow Input', defaults: { name: 'value', vtype: 'number', fallback: 0 } },
 			{ type: 'flowoutput', label: 'Flow Output', defaults: { name: 'out', fallback: 0 } },
 			{ type: 'objectflow', label: 'Object Flow', defaults: { flowUuid: '' } }
+		]
+	},
+	{
+		// 21-D6: THE GAME SHELL — the things a HUD action can target. Core had no notion
+		// of a game running at all (play mode is per-viewer and unreplicated), so a Start
+		// button had nothing to write to.
+		group: 'Game',
+		items: [
+			// the action a Start button wires to. Acts on the trigger's STAMP EDGE.
+			{
+				type: 'setgamestate',
+				label: 'Set Game State',
+				defaults: { state: 'playing', outcome: '' },
+				params: [
+					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
+					{ key: 'outcome', kind: 'text', placeholder: 'won / lost', maxLength: 40 }
+				]
+			},
+			// the event half: pulses when the game ENTERS (or leaves) a state, so screens and
+			// logic can react without polling
+			{
+				type: 'ongamestate',
+				label: 'On Game State',
+				defaults: { state: 'playing', edge: 'enter', pulse: 0.3 },
+				params: [
+					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
+					{ key: 'edge', kind: 'select', options: ['enter', 'exit'] }
+				]
+			},
+			// LOCAL on every peer, from a replicated trigger — the house rule. A peer's node
+			// must never move another peer's camera, so each one decides for itself and the
+			// views converge because the TRIGGER replicated, not the camera.
+			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '', restore: false } },
+			// "which camera does the game start from" — placed in the SCENE graph. Every peer
+			// acts on it when the state enters `playing`, including a late joiner, which is
+			// what makes it the answer rather than a one-shot button action.
+			{ type: 'gamestart', label: 'Game Start', defaults: { camera: '', state: 'playing' } },
+			// variables: the shared numbers a game keeps (score, lives, difficulty). They
+			// ride the same singleton, so there is one latest-wins rule for all game state.
+			{
+				type: 'setvariable',
+				label: 'Set Variable',
+				defaults: { name: 'score', value: 0, op: 'set' },
+				params: [
+					{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 },
+					{ key: 'op', kind: 'select', options: ['set', 'add', 'subtract'] }
+				]
+			},
+			{
+				type: 'getvariable',
+				label: 'Get Variable',
+				defaults: { name: 'score', fallback: 0 },
+				params: [{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 }]
+			},
+			// the round clock, derived from the shared startedAt stamp — no clock of its own
+			{
+				type: 'gametime',
+				label: 'Game Time',
+				defaults: { read: 'elapsed', length: 60 },
+				params: [
+					{ key: 'read', kind: 'select', options: ['elapsed', 'remaining', 'round', 'playing'] },
+					{ key: 'length', kind: 'range', min: 1, max: 3600, step: 1 }
+				]
+			}
+		]
+	},
+	{
+		// A3: the core HUD group. Nodes supply DATA and receive EVENTS; the HUD
+		// DOCUMENT owns WHERE things are, so every node here names an element by id
+		// rather than carrying a position.
+		//
+		// The most useful thing to know about this group: THE SCORE DISPLAY IS
+		// `counter -> hudtext` AND NEEDS NO NODE OF ITS OWN. Counter already counts
+		// replicated pulses, and Math / Number / Map Range / Animation State already
+		// feed a number socket through resolveInputs.
+		group: 'HUD',
+		items: [
+			// show / hide / toggle a screen. LOCAL and per-peer BY DESIGN: one player can
+			// sit on the start menu while another plays. Say so on the card, or it gets
+			// reported as "my peer doesn't see the menu".
+			{
+				type: 'hudscreen',
+				label: 'HUD Screen',
+				defaults: { screen: '', action: 'show' },
+				params: [
+					{ key: 'screen', kind: 'text', placeholder: 'screen id', maxLength: 64 },
+					{ key: 'action', kind: 'select', options: ['show', 'hide', 'toggle'] }
+				]
+			},
+			// `format` is where the score actually gets rendered: '{v}' is the wired
+			// number, so 'Gems: {v}' needs no string node and there is no string socket
+			// type to invent.
+			{
+				type: 'hudtext',
+				label: 'HUD Text',
+				defaults: { element: '', format: '{v}', decimals: 0, value: 0 },
+				params: [
+					{ key: 'format', kind: 'text', placeholder: 'Gems: {v}', maxLength: 120 },
+					{ key: 'decimals', kind: 'range', min: 0, max: 4, step: 1 }
+				]
+			},
+			{
+				type: 'hudbar',
+				label: 'HUD Bar',
+				defaults: { element: '', min: 0, max: 100, value: 0, format: '' },
+				params: [
+					{ key: 'min', kind: 'range', min: -1000, max: 1000, step: 1 },
+					{ key: 'max', kind: 'range', min: -1000, max: 1000, step: 1 },
+					{ key: 'format', kind: 'text', placeholder: 'optional label', maxLength: 80 }
+				]
+			},
+			// EVENT out. A press goes through the existing replicated nodetrigger path
+			// (fireHudButton), exactly like fireObjectClick — so event->number coercion,
+			// Counter fan-in and triggerStampFor all work on it unchanged.
+			{ type: 'hudbutton', label: 'HUD Button', defaults: { element: '' } },
+			// counts DOWN from `duration` off the shared trigger stamp, so every peer
+			// reads the same remaining time with no clock of its own
+			{
+				type: 'hudtimer',
+				label: 'HUD Timer',
+				defaults: { element: '', duration: 60, format: '{v}', decimals: 0, autostart: true },
+				params: [
+					{ key: 'duration', kind: 'range', min: 1, max: 600, step: 1 },
+					{ key: 'format', kind: 'text', placeholder: '{v}s', maxLength: 80 },
+					{ key: 'decimals', kind: 'range', min: 0, max: 2, step: 1 },
+					{ key: 'autostart', kind: 'toggle' }
+				]
+			},
+			// A LIST is an element WRITTEN INTO by id, never a value that flows: the
+			// socket system has no arrays, and every game wants a leaderboard. A module
+			// pushes rows through hudRows(); this node names the element and its title.
+			{
+				type: 'hudlist',
+				label: 'HUD List',
+				defaults: { element: '', title: '', rows: 5 },
+				params: [
+					{ key: 'title', kind: 'text', placeholder: 'optional title', maxLength: 80 },
+					{ key: 'rows', kind: 'range', min: 1, max: 20, step: 1 }
+				]
+			},
+			// 21-D4: the INPUT pair. Everything else in this group WRITES to the HUD;
+			// these are the direction that did not exist - the HUD as a SOURCE.
+			//
+			// `read` is what a graph wants from one control: a slider gives a number, a
+			// dropdown gives its index (for a Switcher) or its text, a toggle gives 1/0.
+			// Deriving all of them from one field beats four node types.
+			{
+				type: 'hudinput',
+				label: 'HUD Input',
+				defaults: { element: '', read: 'value', fallback: 0 },
+				params: [
+					{ key: 'read', kind: 'select', options: ['value', 'index', 'text', 'on'] },
+					{ key: 'fallback', kind: 'range', min: -1000, max: 1000, step: 1 }
+				]
+			},
+			// the other direction: a graph MOVES a control (a Reset button putting the
+			// volume back, a difficulty the host sets). Effect in, so it fires on a
+			// trigger edge rather than every frame.
+			{
+				type: 'hudset',
+				label: 'HUD Set Input',
+				defaults: { element: '', value: 0 },
+				params: [{ key: 'value', kind: 'range', min: -1000, max: 1000, step: 1 }]
+			}
 		]
 	},
 	{

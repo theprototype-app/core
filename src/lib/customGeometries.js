@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { fbm2, valueNoise2 } from './noise';
 
 // Architectural building-block geometries. All builders return a BufferGeometry
 // centered on X/Z and resting on y=0 (bbox bottom at the floor), so surface
@@ -86,17 +87,103 @@ function corner(a, b, c) {
 	return geometry;
 }
 
-/** Flat sculptable ground: size (metres) x segments per side. Segments are
- * clamped to 48 so a sculpted terrain's non-indexed snapshot (18*seg^2 floats =
- * 41,472 at 48) stays under the meshgeo cap (45,000) — see terrainSculpt / T-2.
- * A PlaneGeometry in XY rotated flat so up is +Y, resting at y=0.
+/** any finite number (`num` above insists on > 0, which would reject a zero
+ * amplitude, a zero seed and every negative tile offset).
+ * @param {any} a @param {number} fallback */
+const anyNum = (a, fallback) => {
+	const value = parseFloat(a);
+	return Number.isFinite(value) ? value : fallback;
+};
+
+/** @param {any} a @param {number} lo @param {number} hi @param {number} fallback */
+const clampInt = (a, lo, hi, fallback) =>
+	Math.min(Math.max(Math.round(anyNum(a, fallback)), lo), hi);
+
+/** the three edge profiles. A tile's falloff is measured in its OWN local
+ * coordinates, never the noise's offset frame, so 'bowl' gives every tile of a
+ * tiled world its own raised rim — which is what a ring of mountains around a
+ * flat middle is made of. @type {string[]} */
+export const TERRAIN_FALLOFFS = ['flat', 'island', 'bowl'];
+
+/** Edge weight for a vertex at LOCAL (x, z) on a tile of half-extent `half`.
+ * Math.sqrt is safe here where sin/cos would not be: IEEE-754 requires sqrt to
+ * be correctly rounded, so it is bit-identical across engines.
+ * @param {number} x @param {number} z @param {number} half @param {string} kind */
+function falloffWeight(x, z, half, kind) {
+	if (kind !== 'island' && kind !== 'bowl') return 1;
+	const d = Math.min(Math.sqrt(x * x + z * z) / half, 1);
+	const s = d * d * (3 - 2 * d);
+	return kind === 'bowl' ? s : 1 - s;
+}
+
+/**
+ * 21-C1: PROCEDURAL ground — the parametric terrain every peer rebuilds from
+ * ~11 numbers. Deterministic by construction (see noise.js on why value noise),
+ * so a terrain never travels as geometry: the `geometry` message carries the
+ * params and each peer runs this.
+ *
+ * Built as a PlaneGeometry rotated flat and then displaced in Y only, which is
+ * what makes `amplitude: 0` BYTE-IDENTICAL to the flat plane this used to be —
+ * including the ±7.3e-16 the rotation leaves in Y, since the displacement loop
+ * is skipped entirely rather than writing zeros over it.
+ *
+ * Segments stay capped at 48: 18·seg² = 41,472 floats at 48, under the 45,000
+ * meshgeo LIVE-PREVIEW budget a sculpt stroke streams (meshBudget.js raised the
+ * COMMIT ceiling, not that one). Bigger worlds TILE — a shared `seed` plus
+ * per-tile `offsetX/offsetZ` samples one continuous field, which is exactly why
+ * the offsets are PARAMS and not a transform: a moved tile would sample the
+ * noise in its own frame and seam at the join.
+ *
+ * @param {any=} params {size, segments, seed, amplitude, frequency, octaves,
+ *   ridged, warp, falloff, offsetX, offsetZ}
+ */
+export function terrainGeometry(params = {}) {
+	const size = num(params.size, 24);
+	const segments = clampInt(params.segments, 2, 48, 48);
+	const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+	// a PlaneGeometry lies in XY; stand it flat so up is +Y, resting at y=0
+	geometry.rotateX(-Math.PI / 2);
+
+	const amplitude = anyNum(params.amplitude, 0);
+	const frequency = num(params.frequency, 0.06);
+	if (amplitude === 0) return geometry; // the flat plane, unchanged
+
+	const seed = Math.round(anyNum(params.seed, 1)) | 0;
+	const octaves = clampInt(params.octaves, 1, 6, 4);
+	const ridged = !!params.ridged;
+	const warp = anyNum(params.warp, 0);
+	const falloff = TERRAIN_FALLOFFS.includes(params.falloff) ? params.falloff : 'flat';
+	const offsetX = anyNum(params.offsetX, 0);
+	const offsetZ = anyNum(params.offsetZ, 0);
+	const half = size / 2;
+
+	const position = geometry.attributes.position;
+	for (let i = 0; i < position.count; i++) {
+		const lx = position.getX(i);
+		const lz = position.getZ(i);
+		// sample in the SHARED world field, so neighbouring tiles line up
+		let sx = (lx + offsetX) * frequency;
+		let sz = (lz + offsetZ) * frequency;
+		if (warp !== 0) {
+			// domain warp: bend the sample point with a second, coarser field.
+			// Measured in NOISE cells (no division by frequency, which would blow
+			// up as frequency -> 0), so warp: 1 means "up to one cell of bend".
+			sx += (valueNoise2(sx * 0.5 + 31.7, sz * 0.5 - 11.3, seed + 7717) * 2 - 1) * warp;
+			sz += (valueNoise2(sx * 0.5 - 17.1, sz * 0.5 + 5.9, seed + 3313) * 2 - 1) * warp;
+		}
+		const h = fbm2(sx, sz, { seed, octaves, ridged, frequency: 1 });
+		position.setY(i, position.getY(i) + h * amplitude * falloffWeight(lx, lz, half, falloff));
+	}
+	geometry.computeVertexNormals();
+	return geometry;
+}
+
+/** The 2-arg creation shim: `/create Terrain 24 48` keeps working exactly as it
+ * did (primitivesCatalog untouched), and amplitude 0 makes it the same flat
+ * sculptable ground it has always been — the noise is opt-in from the Inspector.
  * @param {any=} a @param {any=} b */
 function terrain(a, b) {
-	const size = num(a, 24);
-	const segments = Math.min(Math.max(Math.round(num(b, 48)), 2), 48);
-	const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
-	geometry.rotateX(-Math.PI / 2);
-	return geometry;
+	return terrainGeometry({ size: num(a, 24), segments: clampInt(b, 2, 48, 48), amplitude: 0 });
 }
 
 /**

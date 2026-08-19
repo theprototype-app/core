@@ -22,7 +22,7 @@ import { registerHistoryKind, recordEntry } from './history';
 
 /**
  * @typedef {{id: string, kind: string, enabled: boolean, params: Record<string, any>}} PostEntry
- * @typedef {{enabled: boolean, effects: PostEntry[], changedAt: number}} PostStack
+ * @typedef {{enabled: boolean, effects: PostEntry[], changedAt: number, mode?: 'append'|'replace'}} PostStack
  * @typedef {{key: string, label: string, type?: 'number'|'select'|'bool'|'asset', min?: number, max?: number, step?: number, decimals?: number, default: any, hint?: string, options?: {value: any, label: string}[]}} PostParam
  */
 
@@ -56,10 +56,10 @@ export function registerPostEffect(kind, def) {
 	// a kind arriving after a stack was loaded (a module registering late) means
 	// entries that were being SKIPPED are now renderable — poke the stack so the
 	// chain rebuilds. Cheap: a stamp-free update, so it never looks like an edit.
-	scenePost.update((state) => ({ ...state }));
+	postStacks.update((map) => ({ ...map }));
 	return () => {
 		delete postKinds[kind];
-		scenePost.update((state) => ({ ...state }));
+		postStacks.update((map) => ({ ...map }));
 	};
 }
 
@@ -138,8 +138,38 @@ export function normalizeScenePost(raw) {
 	};
 }
 
-/** @type {import('svelte/store').Writable<PostStack>} the replicated stack */
-export const scenePost = writable(normalizeScenePost(null));
+/** The scene-wide look, and the key the panel opens on. */
+export const POST_SCENE_KEY = 'scene';
+
+/**
+ * Every post document, keyed `'scene' | cameraUuid`.
+ *
+ * KEYED, retrofitted — `hudDocs` predicted this exact migration when it chose to be
+ * keyed from day one ("a HUD is scene data like the post stack, but ... retrofitting a
+ * key later is a migration"). It is the flowGraphs / shaderGraphs / hudDocs shape, and
+ * copying it means the monotonic-stamp rule, normalize-at-every-boundary and
+ * preserve-a-newer-peer's-fields all come pre-solved.
+ *
+ * A CAMERA key is how a look attaches to a camera: no new concept, exactly as attaching
+ * a HUD to a camera is keying `hudDocs` by that camera's uuid.
+ * @type {import('svelte/store').Writable<Record<string, PostStack>>} */
+export const postStacks = writable(/** @type {Record<string, PostStack>} */ ({}));
+
+/**
+ * The scene document, as a READ-ONLY view.
+ *
+ * Kept because ~20 call sites and 185 checks read it, and because "the scene look" is
+ * still a real single thing. Writes go through the mutators below, which take a KEY.
+ * @type {import('svelte/store').Readable<PostStack>} */
+export const scenePost = derived(postStacks, (map) => map[POST_SCENE_KEY] ?? EMPTY_STACK);
+
+/** one frozen empty document, so the derived above never allocates per read */
+const EMPTY_STACK = normalizeScenePost(null);
+
+/** @param {string} [key] */
+export function postStackFor(key) {
+	return get(postStacks)[key || POST_SCENE_KEY] ?? EMPTY_STACK;
+}
 
 /**
  * LOCAL kill switch, kept as a convenience VIEW of `viewportOverrides.post` so
@@ -155,6 +185,26 @@ export const postEnabledLocal = derived(viewportOverrides, (state) => state.post
  * parameters `Outline.svelte` hardcoded before the stack existed — that is what
  * makes that mode byte-compatible with the pre-stack chain. */
 export const BUILTIN_AO = Object.freeze({ id: 'builtin-ao', kind: 'ao', enabled: true, params: {} });
+
+/**
+ * The look a CAMERA adds when you are looking through it.
+ *
+ * `mode` is the camera document's own field, defaulted so an absent one behaves as
+ * `append`: the scene look plus this camera's, which is what HudLayer does with HUD
+ * documents (it COMPOSES the scene HUD with the active camera's rather than replacing
+ * one with the other). `replace` exists for the camera that is deliberately NOT the
+ * house look - a security-monitor feed, a stylised inset.
+ * @param {PostStack} scene @param {PostStack|null} camera @returns {PostEntry[]}
+ */
+export function composeLook(scene, camera) {
+	const sceneOn = scene.enabled ? scene.effects.filter((entry) => entry.enabled) : [];
+	if (!camera) return sceneOn;
+	const cameraOn = camera.enabled ? camera.effects.filter((entry) => entry.enabled) : [];
+	if (camera.mode === 'replace') return cameraOn;
+	// the camera's effects run AFTER the scene's: a grade on the hero camera should
+	// grade the finished house look, not be graded by it
+	return [...sceneOn, ...cameraOn];
+}
 
 /**
  * Which entries this viewer should actually render.
@@ -186,15 +236,24 @@ export const BUILTIN_AO = Object.freeze({ id: 'builtin-ao', kind: 'ao', enabled:
  * L4's capability gate (`postOk`) and boot-compile warm-up (`postWarm`) empty the
  * whole thing: both are properties of running ANY fullscreen pass.
  *
- * @param {{stack: PostStack, mode: string, localEnabled?: boolean, postOk?: boolean, postWarm?: boolean}} input
+ * @param {{stack: PostStack, cameraStack?: PostStack|null, mode: string, localEnabled?: boolean, postOk?: boolean, postWarm?: boolean}} input
  * @returns {PostEntry[]}
  */
-export function effectivePostStack({ stack, mode, localEnabled = true, postOk = true, postWarm = true }) {
+
+export function effectivePostStack({
+	stack,
+	cameraStack = null,
+	mode,
+	localEnabled = true,
+	postOk = true,
+	postWarm = true
+}) {
 	if (mode === 'wireframe') return [];
 	if (!postOk || !postWarm) return [];
 	if (!localEnabled) return [];
-	const state = normalizeScenePost(stack);
-	const authored = state.enabled ? state.effects.filter((entry) => entry.enabled) : [];
+	// the look you see is the scene's COMPOSED with the camera you are looking through
+	// (null when that is the editor camera, which is the ordinary case)
+	const authored = composeLook(normalizeScenePost(stack), cameraStack ? normalizeScenePost(cameraStack) : null);
 	const personalAo = mode === 'shaded-ao' && !authored.some((entry) => entry.kind === 'ao');
 	return personalAo ? [{ ...BUILTIN_AO, params: defaultPostParams('ao') }, ...authored] : authored;
 }
@@ -300,8 +359,8 @@ export function postStackSignature(entries) {
 
 // ---- editing (local + replicate) ------------------------------------------
 
-/** the open gesture: {before} while a slider drag is collecting */
-/** @type {{before: PostStack} | null} */
+/** the open gesture: which document, and its state when the drag began */
+/** @type {{key: string, before: PostStack} | null} */
 let gesture = null;
 /** true while a history replay is writing, so the replay records nothing */
 let applyingHistory = false;
@@ -315,23 +374,27 @@ let applyingHistory = false;
  * wire. The beginAnimGesture/endAnimGesture precedent exactly.
  * @param {(state: PostStack) => PostStack} fn
  */
-function commit(fn) {
-	const before = gesture || applyingHistory ? null : structuredClone(get(scenePost));
-	const next = normalizeScenePost(fn(get(scenePost)));
-	next.changedAt = Date.now();
-	scenePost.set(next);
+function commit(fn, key = POST_SCENE_KEY) {
+	const before = gesture || applyingHistory ? null : structuredClone(postStackFor(key));
+	const next = normalizeScenePost(fn(postStackFor(key)));
+	// MONOTONIC per key (the shaderGraph lesson): a gesture writes several times in one
+	// millisecond, so a bare Date.now() gives those edits the SAME stamp and a receiver
+	// guarding with <= drops all but the first.
+	next.changedAt = Math.max(Date.now(), (postStackFor(key).changedAt || 0) + 1);
+	postStacks.update((map) => ({ ...map, [key]: next }));
 	if (gesture) return next; // the gesture owns the entry and the broadcast
-	if (before) recordLookEntry(before, next);
-	broadcastScenePost();
+	if (before) recordLookEntry(before, next, key);
+	broadcastScenePost(key);
 	return next;
 }
 
 /** @param {PostStack} before @param {PostStack} after */
-function recordLookEntry(before, after) {
+function recordLookEntry(before, after, key = POST_SCENE_KEY) {
 	if (applyingHistory) return;
 	if (JSON.stringify(before.effects) === JSON.stringify(after.effects) && before.enabled === after.enabled) return;
 	recordEntry({
 		kind: 'look',
+		postKey: key,
 		beforeStack: before,
 		afterStack: after,
 		before: 'before',
@@ -345,9 +408,11 @@ function recordLookEntry(before, after) {
  * fire only once the 3px dead zone is crossed, so a plain click never opens a
  * gesture it would have to close again.
  */
-export function beginLookGesture() {
+export function beginLookGesture(key = POST_SCENE_KEY) {
 	if (gesture) endLookGesture();
-	gesture = { before: structuredClone(get(scenePost)) };
+	// the KEY is part of the gesture: a scrub on a camera document must not commit
+	// its entry against the scene's
+	gesture = { key, before: structuredClone(postStackFor(key)) };
 }
 
 /** Commit the open gesture (no-op when nothing changed). */
@@ -355,20 +420,22 @@ export function endLookGesture() {
 	const open = gesture;
 	gesture = null;
 	if (!open) return;
-	recordLookEntry(open.before, get(scenePost));
-	broadcastScenePost();
+	recordLookEntry(open.before, postStackFor(open.key), open.key);
+	broadcastScenePost(open.key);
 }
 
 // Replaying writes the stored stack locally AND replicates it, so peers follow an
 // undo like any other edit (the 'joint'/'anim' presence-kind precedent).
 registerHistoryKind('look', (entry, state) => {
 	const target = state === entry.before ? entry.beforeStack : entry.afterStack;
+	// an entry recorded before the key existed replays into the scene document
+	const key = entry.postKey || POST_SCENE_KEY;
 	applyingHistory = true;
 	try {
 		const next = normalizeScenePost(target);
-		next.changedAt = Date.now();
-		scenePost.set(next);
-		broadcastScenePost();
+		next.changedAt = Math.max(Date.now(), (postStackFor(key).changedAt || 0) + 1);
+		postStacks.update((map) => ({ ...map, [key]: next }));
+		broadcastScenePost(key);
 	} finally {
 		applyingHistory = false;
 	}
@@ -376,32 +443,32 @@ registerHistoryKind('look', (entry, state) => {
 });
 
 /** Send the current stack to every peer. */
-export function broadcastScenePost() {
+export function broadcastScenePost(key = POST_SCENE_KEY) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send(scenePostState());
+	if (peer) peer.send(scenePostState(key));
 }
 
 /** Add an effect of `kind` at the end (or at `index`). @param {string} kind @param {number} [index] */
-export function addPostEffect(kind, index) {
+export function addPostEffect(kind, index, key = POST_SCENE_KEY) {
 	let id = '';
 	commit((state) => {
 		const entry = { id: (id = newId()), kind, enabled: true, params: defaultPostParams(kind) };
 		const effects = [...state.effects];
 		effects.splice(index == null ? effects.length : index, 0, entry);
 		return { ...state, effects };
-	});
+	}, key);
 	return id;
 }
 
 /** @param {string} id */
-export function removePostEffect(id) {
-	commit((state) => ({ ...state, effects: state.effects.filter((entry) => entry.id !== id) }));
+export function removePostEffect(id, key = POST_SCENE_KEY) {
+	commit((state) => ({ ...state, effects: state.effects.filter((entry) => entry.id !== id) }), key);
 }
 
 /** Move an entry to `index` (the stack IS the order — an artist expects a stack).
  * @param {string} id @param {number} index */
-export function movePostEffect(id, index) {
+export function movePostEffect(id, index, key = POST_SCENE_KEY) {
 	commit((state) => {
 		const from = state.effects.findIndex((entry) => entry.id === id);
 		if (from < 0) return state;
@@ -409,32 +476,44 @@ export function movePostEffect(id, index) {
 		const [entry] = effects.splice(from, 1);
 		effects.splice(Math.max(0, Math.min(effects.length, index)), 0, entry);
 		return { ...state, effects };
-	});
+	}, key);
 }
 
 /** @param {string} id @param {boolean} enabled */
-export function setPostEffectEnabled(id, enabled) {
+export function setPostEffectEnabled(id, enabled, key = POST_SCENE_KEY) {
 	commit((state) => ({
 		...state,
 		// SPREAD the base record: a newer peer's fields on this entry survive our edit
 		effects: state.effects.map((entry) => (entry.id === id ? { ...entry, enabled: !!enabled } : entry))
-	}));
+	}), key);
 }
 
 /** Patch one entry's params. @param {string} id @param {Record<string, any>} patch */
-export function setPostEffectParams(id, patch) {
+export function setPostEffectParams(id, patch, key = POST_SCENE_KEY) {
 	commit((state) => ({
 		...state,
 		effects: state.effects.map((entry) =>
 			entry.id === id ? { ...entry, params: { ...entry.params, ...patch } } : entry
 		)
-	}));
+	}), key);
+}
+
+/**
+ * How a CAMERA document combines with the scene look: 'append' (default) or
+ * 'replace'. Stored on the document itself, so it replicates, saves and undoes with
+ * the rest of it and needs no field of its own anywhere else.
+ * @param {string} key @param {string} mode
+ */
+export function setCameraLookMode(key, mode) {
+	const next = mode === 'replace' ? 'replace' : 'append';
+	commit((state) => ({ ...state, mode: next }), key);
 }
 
 /** The whole stack on/off (still scene data — "this scene has no look right now").
  * @param {boolean} enabled */
-export function setScenePostEnabled(enabled) {
-	commit((state) => ({ ...state, enabled: !!enabled }));
+
+export function setScenePostEnabled(enabled, key = POST_SCENE_KEY) {
+	commit((state) => ({ ...state, enabled: !!enabled }), key);
 }
 
 // ---- replication ----------------------------------------------------------
@@ -442,16 +521,36 @@ export function setScenePostEnabled(enabled) {
 /** Remote/handshake apply: newest change wins (the environment/scenePhysics
  * pattern). @param {any} data */
 export function applyRemoteScenePost(data) {
+	// a message with NO key is the scene document — which is every message a peer on
+	// a pre-camera-looks build sends, so this line is the whole of their interop story
+	const key = data && typeof data.key === "string" && data.key ? data.key : POST_SCENE_KEY;
 	const incoming = normalizeScenePost(data);
-	if (incoming.changedAt <= (get(scenePost).changedAt || 0)) return false;
-	scenePost.set(incoming);
+	if (incoming.changedAt <= (postStackFor(key).changedAt || 0)) return false;
+	postStacks.update((map) => ({ ...map, [key]: incoming }));
 	return true;
 }
 
 /** Handshake payload (singleton push, like environmentState/scenePhysicsState). */
-export function scenePostState() {
-	const state = get(scenePost);
-	return { type: 'scenepost', enabled: state.enabled, effects: state.effects, changedAt: state.changedAt };
+export function scenePostState(key = POST_SCENE_KEY) {
+	const state = postStackFor(key);
+	return {
+		type: 'scenepost',
+		// SPREAD the whole document rather than listing its fields. Hand-listing dropped
+		// a camera document's `mode` on the wire — the peer got the effects and composed
+		// them when the author had asked for `replace` — and it is the same mistake the
+		// normalizer avoids by spreading: a field this build does not know about must
+		// still reach the next peer.
+		...state,
+		// the key rides as an OPTIONAL field, ABSENT for the scene document, so a peer
+		// on the older build reads our scene look exactly as it did and simply never
+		// hears about a camera one — which it could not render anyway
+		...(key === POST_SCENE_KEY ? {} : { key })
+	};
+}
+
+/** Every document, for the handshake full-state reply. */
+export function scenePostStates() {
+	return Object.keys(get(postStacks)).map((key) => scenePostState(key));
 }
 
 /**
@@ -465,13 +564,15 @@ export function sendScenePost(peerId, attempt = 0) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (!peer) return;
-	if (!get(scenePost).effects.length) return; // nothing authored, nothing to say
+	const states = scenePostStates().filter((state) => state.effects.length);
+	if (!states.length) return; // nothing authored, nothing to say
 	const conn = peer.connections[peerId];
 	if (!conn || !conn.open) {
 		if (attempt < 20) setTimeout(() => sendScenePost(peerId, attempt + 1), 500);
 		return;
 	}
-	conn.send(scenePostState());
+	// one message PER DOCUMENT: the scene look and every camera look a joiner needs
+	for (const state of states) conn.send(state);
 }
 
 // NO per-peer teardown, deliberately. Golden rule 3 asks for cleanup in
@@ -488,9 +589,19 @@ export function sendScenePost(peerId, attempt = 0) {
 /** Snapshot for sessions/.tpscene/autosave. Returns null for an EMPTY stack so a
  * scene that has no look adds no field (old readers unaffected). */
 export function scenePostSnapshot() {
-	const state = get(scenePost);
-	if (!state.effects.length) return null;
-	return { enabled: state.enabled, effects: state.effects, changedAt: state.changedAt };
+	const map = get(postStacks);
+	const keys = Object.keys(map).filter((key) => map[key]?.effects?.length);
+	if (!keys.length) return null;
+	const scene = map[POST_SCENE_KEY];
+	return {
+		// the SCENE document stays at the TOP LEVEL so a build predating camera looks
+		// reads this file and gets the scene look rather than nothing — the `nodes`
+		// message precedent, where a `graphs` map rides beside the legacy fields
+		enabled: scene?.enabled ?? true,
+		effects: scene?.effects ?? [],
+		changedAt: scene?.changedAt ?? 0,
+		stacks: Object.fromEntries(keys.map((key) => [key, map[key]]))
+	};
 }
 
 /** Restore from a save. `replicate` re-broadcasts, so loading a scene into a live
@@ -498,12 +609,25 @@ export function scenePostSnapshot() {
  * @param {any} payload @param {boolean} [replicate] */
 export function scenePostRestore(payload, replicate = false) {
 	if (!payload) return;
-	const next = normalizeScenePost(payload);
-	// a restore is an authoritative local write, so it must WIN over whatever
-	// changedAt the save happens to carry (an old file's stamp is in the past)
-	next.changedAt = Date.now();
-	scenePost.set(next);
-	if (replicate) broadcastScenePost();
+	// `stacks` is the keyed map; a payload without it is a pre-camera save whose top
+	// level IS the scene document
+	const source =
+		payload.stacks && typeof payload.stacks === "object"
+			? payload.stacks
+			: { [POST_SCENE_KEY]: payload };
+	/** @type {Record<string, PostStack>} */
+	const next = {};
+	let stamp = Date.now();
+	for (const key of Object.keys(source)) {
+		const doc = normalizeScenePost(source[key]);
+		// a restore is an authoritative local write, so it must WIN over whatever
+		// changedAt the save happens to carry (an old file's stamp is in the past);
+		// stamps stay DISTINCT per key so a receiver never drops one as a duplicate
+		doc.changedAt = stamp++;
+		next[key] = doc;
+	}
+	postStacks.set(next);
+	if (replicate) for (const key of Object.keys(next)) broadcastScenePost(key);
 }
 
 /** test/debug view */

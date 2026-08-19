@@ -15,9 +15,15 @@
 	import { onMount } from 'svelte';
 	import { viewMode } from '../../stores/sceneStore';
 	import { explorerItems, loadExplorer, kindOf } from '$lib/explorer';
+	import { listCameraObjects } from '$lib/cameraObjects';
+	import { objectsGroup } from '../../stores/sceneStore';
 	import { sendAsset } from '$lib/assetShare';
 	import {
 		scenePost,
+		postStacks,
+		postStackFor,
+		POST_SCENE_KEY,
+		setCameraLookMode,
 		postEnabledLocal,
 		postEffectKinds,
 		postEffectDef,
@@ -34,6 +40,25 @@
 
 	/** which entry has its parameters open (one at a time — the stack is the subject,
 	 * a single entry's knobs are the detail) */
+	/** which post DOCUMENT is being edited: the scene look, or a camera's.
+	 * The same shape as the HUD editor's document picker — attaching a look to a
+	 * camera IS keying the document by that camera's uuid. */
+	let docKey = $state(POST_SCENE_KEY);
+	// THREE trees are not reactive, so the list derives from the poked store
+	// THREE trees are not reactive, so these derive from the POKED store. The
+	// comma-operator dependency trick fails svelte-check ("left side is unused"), so
+	// the repo idiom is a helper with an unused parameter.
+	/** @param {any} _poke */
+	const camerasOf = (_poke) => listCameraObjects();
+	const cameras = $derived(camerasOf($objectsGroup));
+	/** @param {any} _poke @param {string} key */
+	const docOf = (_poke, key) => postStackFor(key);
+	const doc = $derived(docOf($postStacks, docKey));
+	const onCamera = $derived(docKey !== POST_SCENE_KEY);
+	// a camera that has been deleted must not leave the panel editing a ghost
+	$effect(() => {
+		if (docKey !== POST_SCENE_KEY && !cameras.some((c) => c.uuid === docKey)) docKey = POST_SCENE_KEY;
+	});
 	let openId = $state('');
 	/** the add menu's anchor while it is open: {x, y} | null */
 	/** @type {any} */
@@ -44,7 +69,7 @@
 	/** @type {any} */
 	let listEl = $state(null);
 
-	const counts = $derived(stackCounts($scenePost));
+	const counts = $derived(stackCounts(doc));
 	// grouped for the add menu, so 'Colour grading' and 'Camera FX' do not
 	// interleave in one flat list of a dozen entries
 	const GROUP_ORDER = ['ao', 'grading', 'stylize', 'camera', 'aa', 'test', 'other'];
@@ -102,7 +127,7 @@
 	/** @param {string} kind */
 	function add(kind) {
 		menu = null;
-		openId = addPostEffect(kind);
+		openId = addPostEffect(kind, undefined, docKey);
 	}
 
 	/** @param {any} event */
@@ -137,7 +162,7 @@
 	 * @param {string} id @param {string} key @param {string} hash
 	 */
 	function assignAsset(id, key, hash) {
-		setPostEffectParams(id, { [key]: hash });
+		setPostEffectParams(id, { [key]: hash }, docKey);
 		if (hash) sendAsset(hash);
 	}
 
@@ -178,7 +203,7 @@
 			window.removeEventListener('pointerup', up);
 			const pending = drag;
 			drag = null;
-			if (pending && pending.to !== pending.from) movePostEffect(pending.id, pending.to);
+			if (pending && pending.to !== pending.from) movePostEffect(pending.id, pending.to, docKey);
 		};
 		node.addEventListener('pointerdown', down);
 		return {
@@ -195,8 +220,48 @@
 	}
 </script>
 
-<Checkbox id="post-enabled" checked={$scenePost.enabled} onchange={(e) => setScenePostEnabled(e.currentTarget.checked)}>
-	Scene look enabled (shared)
+<!-- WHICH LOOK. The scene look is what everyone sees; a CAMERA look composes on
+	 top of it while you are looking through that camera, so switching cameras
+	 switches the grade. Same picker shape as the HUD editor, because it is the same
+	 idea: the document is keyed 'scene' | cameraUuid. -->
+<div class="ui-row items-center gap-2">
+	<span class="w-20 shrink-0 text-xs text-gray-300">Look for</span>
+	<ThemedSelect
+		id="post-doc-key"
+		class="min-w-0 flex-1"
+		items={[
+			{ value: POST_SCENE_KEY, name: 'The scene (everyone)' },
+			...cameras.map((cam) => ({ value: cam.uuid, name: (cam.name || 'Camera') + ' — camera' }))
+		]}
+		value={docKey}
+		onchange={(v) => {
+			docKey = String(v);
+			openId = '';
+		}}
+	/>
+</div>
+{#if onCamera}
+	<div class="ui-row items-center gap-2">
+		<span class="w-20 shrink-0 text-xs text-gray-300">Combine</span>
+		<ThemedSelect
+			id="post-doc-mode"
+			class="min-w-0 flex-1"
+			items={[
+				{ value: 'append', name: 'Add to the scene look' },
+				{ value: 'replace', name: 'Replace the scene look' }
+			]}
+			value={doc.mode === 'replace' ? 'replace' : 'append'}
+			onchange={(v) => setCameraLookMode(docKey, String(v))}
+		/>
+	</div>
+	<p class="text-[10px] italic text-gray-400">
+		This look applies while anyone is looking through that camera — switch camera (a Set
+		Active Camera node, or Control on the camera) and the grade switches with it.
+	</p>
+{/if}
+
+<Checkbox id="post-enabled" checked={doc.enabled} onchange={(e) => setScenePostEnabled(e.currentTarget.checked, docKey)}>
+	{onCamera ? 'This camera’s look enabled' : 'Scene look enabled'} (shared)
 </Checkbox>
 
 <!-- the cost model, visible: the gap between enabled entries and PASSES is the
@@ -208,14 +273,14 @@
 		: ''}
 </p>
 
-{#if $scenePost.effects.length === 0}
+{#if doc.effects.length === 0}
 	<p class="text-xs text-gray-400">
 		No look yet. Add ambient occlusion, colour grading or a camera effect below — the stack runs top
 		to bottom over the finished frame, and everyone in the session sees it.
 	</p>
 {:else}
 	<div id="post-stack" class="flex flex-col gap-0.5" bind:this={listEl}>
-		{#each $scenePost.effects as entry, index (entry.id)}
+		{#each doc.effects as entry, index (entry.id)}
 			<div data-post-row class:post-drop={drag && drag.to === index && drag.from !== index}>
 				<div
 					id={'post-row-' + entry.id}
@@ -235,7 +300,7 @@
 						checked={entry.enabled}
 						title="Render this effect"
 						aria-label={'Enable ' + labelOf(entry)}
-						onchange={(e) => setPostEffectEnabled(entry.id, e.currentTarget.checked)}
+						onchange={(e) => setPostEffectEnabled(entry.id, e.currentTarget.checked, docKey)}
 					/>
 					<button
 						id={'post-open-' + entry.id}
@@ -254,22 +319,22 @@
 						title="Move earlier in the stack"
 						aria-label="Move up"
 						disabled={index === 0}
-						onclick={() => movePostEffect(entry.id, index - 1)}>↑</button
+						onclick={() => movePostEffect(entry.id, index - 1, docKey)}>↑</button
 					>
 					<button
 						id={'post-down-' + entry.id}
 						class="px-1 text-[10px] text-gray-400 hover:text-gray-100 disabled:opacity-30"
 						title="Move later in the stack"
 						aria-label="Move down"
-						disabled={index === $scenePost.effects.length - 1}
-						onclick={() => movePostEffect(entry.id, index + 1)}>↓</button
+						disabled={index === doc.effects.length - 1}
+						onclick={() => movePostEffect(entry.id, index + 1, docKey)}>↓</button
 					>
 					<button
 						id={'post-remove-' + entry.id}
 						class="px-1 text-[10px] text-gray-400 hover:text-red-400"
 						title="Remove from the stack"
 						aria-label={'Remove ' + labelOf(entry)}
-						onclick={() => removePostEffect(entry.id)}>✕</button
+						onclick={() => removePostEffect(entry.id, docKey)}>✕</button
 					>
 				</div>
 				{#if openId === entry.id}
@@ -292,7 +357,7 @@
 											class="min-w-0 flex-1"
 											items={(param.options ?? []).map((/** @type {any} */ o) => ({ value: o.value, name: o.label }))}
 											value={entry.params[param.key]}
-											onchange={(v) => setPostEffectParams(entry.id, { [param.key]: v })}
+											onchange={(v) => setPostEffectParams(entry.id, { [param.key]: v }, docKey)}
 										/>
 									</div>
 								{:else if param.type === 'asset'}
@@ -311,7 +376,7 @@
 									<Checkbox
 										id={'post-param-' + entry.id + '-' + param.key}
 										checked={!!entry.params[param.key]}
-										onchange={(e) => setPostEffectParams(entry.id, { [param.key]: e.currentTarget.checked })}
+										onchange={(e) => setPostEffectParams(entry.id, { [param.key]: e.currentTarget.checked }, docKey)}
 									>
 										{param.label}
 									</Checkbox>
@@ -325,8 +390,8 @@
 										step={param.step ?? 0.01}
 										decimals={param.decimals ?? 2}
 										title={param.hint ?? ''}
-										onchange={(v) => setPostEffectParams(entry.id, { [param.key]: v })}
-										onscrubstart={beginLookGesture}
+										onchange={(v) => setPostEffectParams(entry.id, { [param.key]: v }, docKey)}
+										onscrubstart={() => beginLookGesture(docKey)}
 										onscrubend={endLookGesture}
 									/>
 								{/if}

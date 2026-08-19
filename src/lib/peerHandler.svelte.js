@@ -36,7 +36,7 @@ import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handMode
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
-import { applyRemoteScenePost, scenePostState, sendScenePost } from '$lib/scenePost';
+import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
 import {
 	applyRemoteHud,
@@ -659,7 +659,8 @@ export class PeerConnection {
 		conn.send(environmentState())
 		conn.send(musicState())
 		conn.send(scenePhysicsState())
-		conn.send(scenePostState())
+		// L-C: one per post DOCUMENT — the scene look and any camera looks
+		for (const state of scenePostStates()) conn.send(state)
 		conn.send(handModelState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})

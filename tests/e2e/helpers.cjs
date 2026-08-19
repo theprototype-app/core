@@ -465,7 +465,13 @@ const AUDIO_TAP_SOURCE =
 	AudioNode.prototype.connect = function (target, ...rest) {
 		// only DIVERT a connection whose target is the raw destination, and never
 		// the tap's own two nodes (that would be a feedback loop)
-		if (target instanceof AudioDestinationNode && target.context) {
+		// NEVER tap an OfflineAudioContext. renderOffline makes one per call, and a
+		// rendered analyser LINGERS holding its result — measured: after three offline
+		// renders the live read returned 5 contexts and reported the 440Hz render at
+		// peak 0.708 instead of the 880Hz tone actually playing. An offline render is
+		// measured from its returned buffer; it has no business in the live tap.
+		const offline = typeof OfflineAudioContext !== 'undefined' && target?.context instanceof OfflineAudioContext;
+		if (target instanceof AudioDestinationNode && target.context && !offline) {
 			const tap = tapFor(target.context);
 			if (this !== tap.analyser && this !== tap.bus) return rawConnect.call(this, tap.bus, ...rest);
 		}
@@ -480,8 +486,10 @@ const AUDIO_TAP_SOURCE =
 		return rawDisconnect.apply(this, arguments.length ? [target, ...rest] : []);
 	};
 	window.__audioTap = {
-		/** every context that has been tapped (there should be exactly one) */
+		/** how many AudioContexts have been tapped — see the note on audioMetrics */
 		contexts: () => taps.size,
+		/** every tapped context's analyser, paired with its context */
+		all: () => [...taps.values()].map((t) => ({ analyser: t.analyser, context: t.context })),
 		analyser: () => [...taps.values()][0]?.analyser ?? null,
 		context: () => [...taps.values()][0]?.context ?? null
 	};
@@ -498,55 +506,85 @@ const AUDIO_TAP_SOURCE =
  * or a distortion changes the centroid while the RMS may not move at all).
  *
  * `centroid` is the magnitude-weighted mean frequency in Hz, taken at the loudest
- * sample — reading it at a quiet moment measures the noise floor's shape.
+ * sample — reading it at a quiet moment measures the noise floor's shape (on this
+ * box that reads ~11988Hz, which is the tell that nothing was playing).
+ *
+ * EVERY tapped AudioContext is sampled and the loudest wins, because a module is
+ * free to make its OWN context and most of them do — untangle, sabers,
+ * door-keypad, dungeon-realms and piano each call `new AudioContext()` rather than
+ * going through the app's shared one. Reading only the first tapped context made a
+ * module's audio measure as SILENCE, which is the worst possible failure: a suite
+ * asserting "the game makes a sound" fails inexplicably, and one asserting "it is
+ * quiet" passes while lying. `contexts` is reported so a suite can assert on how
+ * many were in play.
  *
  * @param {any} peer @param {number} [ms] @param {number} [floor] RMS counted as silence
- * @returns {Promise<{peak:number,mean:number,centroid:number,samples:number,silent:boolean,error?:string}>}
+ * @returns {Promise<{peak:number,mean:number,centroid:number,samples:number,contexts:number,silent:boolean,error?:string}>}
  */
 async function audioMetrics(peer, ms = 600, floor = 0.001) {
 	return peer.page.evaluate(
 		async ({ ms, floor }) => {
 			const tap = window.__audioTap;
-			if (!tap) return { error: 'no audio tap — pass {audio:true} to setupPage', peak: 0, mean: 0, centroid: 0, samples: 0, silent: true };
-			const analyser = tap.analyser();
-			if (!analyser) return { error: 'nothing has connected to the destination yet', peak: 0, mean: 0, centroid: 0, samples: 0, silent: true };
-			const context = tap.context();
-			const time = new Float32Array(analyser.fftSize);
-			const freq = new Float32Array(analyser.frequencyBinCount);
-			const loudest = new Float32Array(analyser.frequencyBinCount);
+			if (!tap) return { error: 'no audio tap — pass {audio:true} to setupPage', peak: 0, mean: 0, centroid: 0, samples: 0, contexts: 0, silent: true };
+			const tapped = tap.all();
+			if (!tapped.length)
+				return { error: 'nothing has connected to any destination yet', peak: 0, mean: 0, centroid: 0, samples: 0, contexts: 0, silent: true };
+			const scratch = tapped.map((t) => ({
+				analyser: t.analyser,
+				context: t.context,
+				time: new Float32Array(t.analyser.fftSize),
+				freq: new Float32Array(t.analyser.frequencyBinCount)
+			}));
 			let peak = 0;
 			let sum = 0;
 			let count = 0;
+			/** the frequency frame of whichever context was loudest, and its bin width */
+			let loudest = null;
+			let loudestBinHz = 0;
 			const deadline = performance.now() + ms;
 			while (performance.now() < deadline) {
 				await new Promise((r) => setTimeout(r, 16));
-				analyser.getFloatTimeDomainData(time);
-				let square = 0;
-				for (let i = 0; i < time.length; i++) square += time[i] * time[i];
-				const rms = Math.sqrt(square / time.length);
-				sum += rms;
+				// the LOUDEST context this tick. A module playing into its OWN context must
+				// not be averaged away by the app's silent one — and taking a max rather
+				// than a sum keeps a single-context reading byte-identical to before.
+				let tickPeak = 0;
+				let tickWinner = null;
+				for (const entry of scratch) {
+					entry.analyser.getFloatTimeDomainData(entry.time);
+					let square = 0;
+					for (let i = 0; i < entry.time.length; i++) square += entry.time[i] * entry.time[i];
+					const rms = Math.sqrt(square / entry.time.length);
+					if (rms > tickPeak) {
+						tickPeak = rms;
+						tickWinner = entry;
+					}
+				}
+				sum += tickPeak;
 				count++;
-				if (rms > peak) {
-					peak = rms;
-					analyser.getFloatFrequencyData(freq);
-					loudest.set(freq);
+				if (tickPeak > peak && tickWinner) {
+					peak = tickPeak;
+					tickWinner.analyser.getFloatFrequencyData(tickWinner.freq);
+					loudest = tickWinner.freq.slice();
+					loudestBinHz = tickWinner.context.sampleRate / tickWinner.analyser.fftSize;
 				}
 			}
 			// magnitude-weighted mean frequency at the loudest moment. getFloatFrequencyData
 			// is dB, so convert back to linear before weighting or quiet bins dominate.
-			const binHz = context.sampleRate / analyser.fftSize;
 			let weighted = 0;
 			let total = 0;
-			for (let i = 0; i < loudest.length; i++) {
-				const magnitude = Math.pow(10, loudest[i] / 20);
-				weighted += magnitude * i * binHz;
-				total += magnitude;
+			if (loudest) {
+				for (let i = 0; i < loudest.length; i++) {
+					const magnitude = Math.pow(10, loudest[i] / 20);
+					weighted += magnitude * i * loudestBinHz;
+					total += magnitude;
+				}
 			}
 			return {
 				peak,
 				mean: count ? sum / count : 0,
 				centroid: total ? weighted / total : 0,
 				samples: count,
+				contexts: tapped.length,
 				// a read that sampled NOTHING is a broken harness, never silence — the
 				// vacuous-premise trap, caught by this suite passing with no tap installed
 				silent: count > 0 && peak < floor

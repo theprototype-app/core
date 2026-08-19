@@ -171,5 +171,41 @@ h.run(async () => {
 	});
 	h.check(chain.ok, 'soundRuntime still reports its chains with the tap installed');
 
+
+	// ---- 9. a MODULE's PRIVATE AudioContext ------------------------------------
+	// Not an edge case: every audio-using module in theprototype-app/modules makes
+	// its own context rather than using the app's shared one — untangle, sabers,
+	// door-keypad, dungeon-realms and piano all call new AudioContext(). Reading only
+	// the FIRST tapped context measured all of that as SILENCE (peak 0.0000), which
+	// is the worst failure shape available: "the game makes a sound" fails
+	// inexplicably and "it is quiet" passes while lying.
+	await A.page.evaluate(async () => {
+		const own = new (window.AudioContext || window.webkitAudioContext)();
+		if (own.state === 'suspended') await own.resume().catch(() => {});
+		const osc = own.createOscillator();
+		const gain = own.createGain();
+		osc.frequency.value = 880;
+		gain.gain.value = 0.6;
+		osc.connect(gain);
+		gain.connect(own.destination);
+		osc.start();
+		window.__ownCtx = { own, osc };
+	});
+	const privateCtx = await h.audioMetrics(A, 500);
+	h.check(privateCtx.contexts === 2, 'the tap follows a module into its OWN context (' + privateCtx.contexts + ' tapped)');
+	h.check(
+		!privateCtx.silent,
+		"a module's private-context audio is measurable (peak " + privateCtx.peak.toFixed(4) + ')'
+	);
+	h.check(
+		Math.abs(privateCtx.centroid - 880) < 120,
+		'and its centroid identifies the RIGHT source: 880Hz played, ' + Math.round(privateCtx.centroid) + 'Hz measured'
+	);
+	await A.page.evaluate(() => {
+		window.__ownCtx?.osc?.stop();
+		window.__ownCtx?.own?.close();
+		window.__ownCtx = null;
+	});
+
 	await h.finish(browser);
 });

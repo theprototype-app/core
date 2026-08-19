@@ -1,5 +1,8 @@
 <script lang="ts">
-	// 21-D6 — the card for `setcamera` and `gamestart`, the two nodes that name a CAMERA.
+	// 21-D6 — the card for the nodes that name a CAMERA: `setcamera`, `gamestart` and
+	// (L-C) `setlook`. A third case rather than a third component, because the camera
+	// picker, the missing-camera handling and the "this is LOCAL per peer" note are the
+	// whole card and all three need them.
 	//
 	// A camera is picked from the scene's camera MARKERS, so this is a real list rather than
 	// a typed uuid — but it stays a `<select>` with an explicit "— none —" sentinel (the
@@ -29,6 +32,10 @@
 	$: chosen = String(data.camera ?? '');
 	$: missing = !!chosen && !cameras.some((c: any) => c.uuid === chosen);
 	$: isStart = data.type === 'gamestart';
+	$: isLook = data.type === 'setlook';
+	// for setlook an empty camera is MEANINGFUL — it targets the scene look — so the
+	// sentinel says so instead of reading as "unset"
+	$: noneLabel = isLook ? '— the scene look —' : '— none —';
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
@@ -38,6 +45,9 @@
 	{:else}
 		<Socket kind="target" nodeType={data.type} position={Position.Left} id="trigger" style="top: 34px" />
 		<Socket kind="target" nodeType={data.type} position={Position.Left} id="camera" style="top: 72px" />
+		{#if isLook}
+			<Socket kind="target" nodeType={data.type} position={Position.Left} id="on" style="top: 110px" />
+		{/if}
 	{/if}
 	<div class="flex w-full flex-col gap-1">
 		<label class="flex flex-col">
@@ -47,7 +57,7 @@
 				value={chosen}
 				on:change={(e) => setNodeData(id, { camera: e.currentTarget.value })}
 			>
-				<option value="">— none —</option>
+				<option value="">{noneLabel}</option>
 				{#each cameras as cam (cam.uuid)}
 					<option value={cam.uuid}>{cam.name || 'Camera'}</option>
 				{/each}
@@ -73,13 +83,33 @@
 				Every peer looks here when the game reaches this state — including someone who
 				joins later.
 			</span>
+		{:else if isLook}
+			<label class="flex flex-col">
+				<span>look</span>
+				<select
+					class="nodrag"
+					value={data.on === false ? 'off' : 'on'}
+					on:change={(e) => setNodeData(id, { on: e.currentTarget.value === 'on' })}
+				>
+					<option value="on">on</option>
+					<option value="off">off</option>
+				</select>
+			</label>
+			<span class="gc-note">
+				Switches that look for each peer when the trigger fires. It does not edit the saved
+				look, so turning it off here never changes what anyone has authored.
+			</span>
 		{:else}
 			<span class="gc-note">Moves each peer's own view. Nothing is sent; the trigger already was.</span>
 		{/if}
 		{#if missing}
 			<span class="gc-warn">That camera is not in the scene.</span>
 		{/if}
-		<span class="gc-state">state: {$gameState.state}</span>
+		{#if !isLook}
+			<!-- the game-state readout belongs to the two game nodes; a look switch is not
+			     tied to the game state at all -->
+			<span class="gc-state">state: {$gameState.state}</span>
+		{/if}
 	</div>
 </NodeWrapper>
 

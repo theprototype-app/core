@@ -324,6 +324,28 @@ h.run(async () => {
 	});
 	h.check(nodeDef.found, '5.6 the Set Look node is in the catalog: ' + JSON.stringify(nodeDef.defaults));
 
+	// ---------------------------------------------------------------- section 6
+	console.log('\n=== 6. the node renders as a real card ===');
+
+	// It was added to nodeCatalog (so the palette offered it) but NOT to
+	// Nodes.svelte's CORE_NODE_TYPES, whose fallback is UnknownNode — so a node dragged
+	// out of the CORE palette announced "This node comes from a module that isn't
+	// installed". The whole-catalog version of this guard lives in `flow-unknown-node`,
+	// which is the suite about that map; this is just the node this branch added.
+	// The dock is opened through the REAL opener, not a store.
+	await page.locator('p[title="Node editor (N)"]').click();
+	await page.waitForTimeout(1400);
+	const lookCard = await page.evaluate(() => {
+		const hook = window.__flowNodeTypes;
+		if (!hook) return { hook: false };
+		return { hook: true, renderable: hook.live().includes('setlook'), unknown: hook.unknown().includes('setlook') };
+	});
+	h.check(lookCard.hook === true, '6.1 premise: the Flow pane mounted and published its type map');
+	h.check(
+		lookCard.renderable === true && lookCard.unknown === false,
+		'6.2 Set Look resolves to a real card, NOT a missing-module node'
+	);
+
 	h.check(
 		h.pageErrors(A).concat(h.pageErrors(B)).filter((m) => /scenePost|postEffects/.test(m)).length === 0,
 		'4.6 no page errors'

@@ -173,7 +173,7 @@
 		hudinput: HudNode,
 		hudset: HudNode,
 		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
-		// setcamera/gamestart get their own card for the camera picker (see GameNode).
+		// setcamera/gamestart/setlook get their own card for the camera picker.
 		setgamestate: AnimationNode,
 		ongamestate: AnimationNode,
 		setvariable: AnimationNode,
@@ -181,6 +181,7 @@
 		gametime: AnimationNode,
 		setcamera: GameCameraNode,
 		gamestart: GameCameraNode,
+		setlook: GameCameraNode,
 	};
 
 	// module node types default to the spec-driven AnimationNode unless the

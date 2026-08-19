@@ -355,7 +355,21 @@ loadable play content. Everything a user does must be visible to connected peers
   wireframe = scene.overrideMaterial, never per-material; L1-L5 removed the
   short-lived `custom` mode — a stored value reads as `shaded` — and `postSupported`
   is the AO capability gate generalised to every fullscreen pass),
-  `scenePost` (L1-L5 THE SCENE POST STACK: the replicated latest-wins singleton on
+  `scenePost` (L1-L5 + L-C THE SCENE POST STACK. **KEYED `'scene' | cameraUuid`** since
+  L-C, the flowGraphs/shaderGraphs/hudDocs shape — `hudDocs` predicted this exact
+  migration and named the post stack as the thing that would need it. A look ATTACHES
+  to a camera by being keyed to its uuid; no new concept, the same way a HUD attaches.
+  `scenePost` survives as a READ-ONLY derived view of the scene document (~20 readers),
+  and every mutator takes the key LAST with a default, so pre-L-C call sites are
+  untouched. `composeLook` APPENDS a camera document to the scene's — what HudLayer
+  does with HUDs — with the camera's effects running AFTER, since a grade on the hero
+  camera should grade the finished house look; `mode: 'replace'` is for the camera that
+  is deliberately not the house look. `mode` lives ON the document so it replicates,
+  saves and undoes with it. `lookOverride` is a SEPARATE per-peer runtime store
+  (`hudScreenOverride`'s shape) that the `setlook` node writes: a game must never flip
+  `enabled` INSIDE an authored document, or a runtime state becomes authored state the
+  next edit broadcasts. Which camera is "active" comes from `cameraPreview.uuid`, the
+  same source HudLayer uses. The original singleton was:
   the `scenePhysics` precedent — `{enabled, effects:[{id,kind,enabled,params}],
   changedAt}` with ONE `normalizeScenePost` at every store boundary — plus the
   `registerPostEffect` kind REGISTRY and the pure `planPostStack`. A deliberate LEAF
@@ -1176,6 +1190,32 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A NEW NODE TYPE HAS TWO REGISTRIES, AND ONLY ONE COMPLAINS.** `nodeCatalog` fills
+  the palette; `CORE_NODE_TYPES` in `Nodes.svelte` maps a type to its CARD, and its
+  fallback for an unrecognised type is `UnknownNode` — "This node comes from a module
+  that isn't installed". Add to one and not the other and a node dragged out of the
+  CORE palette tells the user to go and install something. `flow-unknown-node` now
+  asserts the WHOLE catalog resolves to a real card, which costs the same line as
+  checking one type and covers every node added from here on.
+- **A field that HAND-LISTS what it sends will drop the next field somebody adds.**
+  `scenePostState` listed `{enabled, effects, changedAt}`, so a camera document's
+  `mode` never left the machine: the peer got the effects and COMPOSED them when the
+  author had asked for `replace`. It spreads the document now — the same reason every
+  `normalize*` spreads, one layer out.
+- **A helper that reads stores with `get()` registers NO svelte dependency.** Swapping
+  an `$effect`'s `$postStacks[...]` for a tidy `resolvedDoc()` call silently stopped
+  the composer chain re-running, so setting a camera to `replace` rendered nothing
+  new. If an effect must react to a store a helper reads internally, touch the store
+  in the effect (`void $store;`) and say why.
+- **A per-camera or per-viewpoint feature does nothing until that viewpoint is ACTIVE,
+  and that silence looks like a broken feature.** A camera's look only composes while
+  `cameraPreview.uuid` is that camera — which in play mode is null unless a
+  `setcamera` node put you there. Any node that targets such a document should say so
+  ON THE CARD; two silent no-ops (a switch that is already on, and a target that is
+  not active) are indistinguishable from a dead wire.
+- **Never run `npm run build` while the lane's `vite dev` watches the same worktree** —
+  it rewrites `.svelte-kit/output` under the server and kills it; the next ten suites
+  report `ERR_CONNECTION_REFUSED`, which reads as a mass regression.
 - **A HELD body's `lastWritten` is stale by definition, so every release must
   refresh it.** The write-back skips a held body, so `lastWritten` still
   describes the pose it had when it was GRABBED — and the deviation detector
@@ -3011,6 +3051,23 @@ override for e2e — never share 5173 (the user's main-checkout server).
   as-built + the parked lap spec for C8), a "flatten into all terrains" pass for the
   Race ring, and the parametric-vs-carved decision for the Race template, which the
   measurement above answers but the user has not yet ruled on.
+- Status (2026-08-19): **PER-CAMERA LOOKS — branch `feat/camera-looks` (lane
+  `../theprototype-lane-post` @ port 5198) off release/next @1cbfeec, 3 commits, NOT
+  pushed.** `b3de92e` keyed the post documents so a look can belong to a camera (see
+  the `scenePost` entry); `8f93e49` added the **Set Look** node; `a9391fe` fixed it
+  announcing itself as a missing module (the two-registry gotcha above). Suite
+  `camera-looks` (28 checks: keyed documents, composition following the active camera,
+  append/replace, undo keyed to its document, a session round trip, two peers, and the
+  node). **Baseline on this release/next is 386/62, NOT 391** — release.yml gates
+  `-gt 387`. Roadmap 21 had already shipped several things this plan listed as future
+  work: `postBackends.js`, `api.registerPostEffect`, `api.registerPostBackend`, the
+  composer running in PLAY mode, and `viewportOverrides` gaining a `hud` key (the
+  "add a key, not a concept" design used as intended). L6's only contact point is
+  confirmed: `FLOW_FAMILY` is `['flow','flowcode','animation','uv','shader']`, so the
+  post domain appends `'post'` plus a DockTabs entry. OWED: the user's feel pass, a
+  decision on the Set Look design fork (see below), CLAUDE-adjacent docs-site pages,
+  and a node that drives an effect PARAM per frame — which needs a live `applyParams`
+  seam per kind first (the `applyLocal` shape), or the composer rebuilds 60x/s.
 - Status (2026-08-18): **SCENE LOOK / POST-PROCESSING — branch `feat/scene-post-stack`
   (lane `../theprototype-lane-post` @ port 5198), 8 commits, release/next merged in
   CLEAN, baseline 391/62 at every commit, NOT PR'd.** Plan: cloud

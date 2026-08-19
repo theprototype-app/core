@@ -25,6 +25,11 @@ const OUTPUT = {
 	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip
 	animstate: 'number', // 17-E F3: progress / playing / position, one at a time
 	velocity: 'number', // CL-C: live speed readout
+	measure: 'number', // B6: top / bottom / height / y / speed
+	onrest: 'event', // B6: a body settled
+	impulse: 'effect', // B6: the physics ACTION nodes feed an Object Selector
+	setvelocity: 'effect',
+	joint: 'effect',
 	flowinput: 'number', // H5 fallback; the live check reads data.vtype
 	// A3 HUD: only the button and the timer produce anything. hudtext/hudbar/
 	// hudscreen/hudlist are SINKS — they write into an element, so their output stays
@@ -48,6 +53,13 @@ const INPUT = {
 	// velocity reads the wired object's live speed
 	collider: { source: 'object', scale: 'number' },
 	velocity: { target: 'object' },
+	// B6: the physics action nodes. `target` is an alternative to wiring the node
+	// into an Object Selector, exactly like velocity's.
+	measure: { target: 'object' },
+	impulse: { trigger: 'event', force: 'vector3', target: 'object' },
+	setvelocity: { trigger: 'event', linear: 'vector3', angular: 'vector3', target: 'object' },
+	joint: { trigger: 'event', a: 'object', b: 'object' },
+	random: { seed: 'number', reroll: 'event' }, // B6
 	animstate: { target: 'object' }, // 17-E F3: whose clip to read (or the graph owner)
 	math: { a: 'number', b: 'number' },
 	compare: { a: 'number', b: 'number' },

@@ -346,6 +346,123 @@ h.run(async () => {
 		'6.2 Set Look resolves to a real card, NOT a missing-module node'
 	);
 
+	// ---------------------------------------------------------------- section 7
+	console.log('\n=== 7. the reported scenario: two keys, two camera looks ===');
+
+	// THE BUG REPORT, as a test. "Key Press R -> Set Look (Object Selector -> camera A),
+	// Key Press U -> Set Look (Object Selector -> camera B), press play, hit R/U —
+	// nothing happens." The nodes fired perfectly; nothing changed because a camera look
+	// only composes while its camera is the ACTIVE one, and in play mode nothing was.
+	// `activate` (default on) is the fix, so this section drives the WHOLE chain through
+	// real key presses and asserts the picture actually changes.
+	const scenario = await page.evaluate(async () => {
+		const s = window.__stores;
+		s.commandsHandler.sceneCommand('/create Camera');
+		await new Promise((r) => setTimeout(r, 900));
+		const cams = s.cameraObjects.listCameraObjects();
+		const c1 = cams[0].uuid;
+		const c2 = cams[cams.length - 1].uuid;
+		if (c1 === c2) return { distinct: false };
+
+		const post = s.scenePost;
+		post.postStacks.set({});
+		post.addPostEffect('fill-red'); // the scene look
+		post.addPostEffect('fill-blue', undefined, c1);
+		post.addPostEffect('fill-blue', undefined, c2);
+		post.setCameraLookMode(c1, 'replace');
+		post.setCameraLookMode(c2, 'replace');
+		s.cameraPreview.stopCameraPreview();
+		s.objectActions.deselectObject();
+
+		s.updateGraph(s.SCENE_GRAPH, () => ({
+			nodes: [
+				{ id: 'kR', type: 'keypress', position: { x: 0, y: 0 }, data: { type: 'keypress', label: 'Key Press', code: 'KeyR', pulse: 0.3 } },
+				{ id: 'kU', type: 'keypress', position: { x: 0, y: 120 }, data: { type: 'keypress', label: 'Key Press', code: 'KeyU', pulse: 0.3 } },
+				{ id: 'oR', type: 'objectselector', position: { x: 0, y: 240 }, data: { type: 'objectselector', label: 'Object Selector', selected: c1 } },
+				{ id: 'oU', type: 'objectselector', position: { x: 0, y: 360 }, data: { type: 'objectselector', label: 'Object Selector', selected: c2 } },
+				{ id: 'sR', type: 'setlook', position: { x: 300, y: 0 }, data: { type: 'setlook', label: 'Set Look', camera: '', on: true, activate: true } },
+				{ id: 'sU', type: 'setlook', position: { x: 300, y: 200 }, data: { type: 'setlook', label: 'Set Look', camera: '', on: true, activate: true } }
+			],
+			edges: [
+				{ id: 'e1', source: 'kR', target: 'sR', targetHandle: 'trigger' },
+				{ id: 'e2', source: 'oR', target: 'sR', targetHandle: 'camera' },
+				{ id: 'e3', source: 'kU', target: 'sU', targetHandle: 'trigger' },
+				{ id: 'e4', source: 'oU', target: 'sU', targetHandle: 'camera' }
+			]
+		}));
+		await new Promise((r) => setTimeout(r, 1400));
+		return { distinct: true, c1, c2, chain: window.__postDebug().kinds };
+	});
+	h.check(scenario.distinct === true, '7.1 premise: two distinct cameras to switch between');
+	h.check(
+		scenario.chain.join(',') === 'fill-red',
+		'7.2 premise: before any key, the editor view shows the SCENE look (' + scenario.chain.join(',') + ')'
+	);
+
+	const through = () =>
+		page.evaluate(() => {
+			let p = null;
+			window.__stores.cameraPreview.cameraPreview.subscribe((x) => (p = x))();
+			return { uuid: p?.uuid ?? null, chain: window.__postDebug().kinds };
+		});
+
+	// press play, then the keys — exactly the reported sequence
+	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.waitForTimeout(900);
+	await page.keyboard.press('r');
+	await page.waitForTimeout(1800);
+	const afterR = await through();
+	h.check(
+		afterR.uuid === scenario.c1,
+		'7.3 R looks through the first camera (' + String(afterR.uuid).slice(0, 8) + ')'
+	);
+	h.check(
+		afterR.chain.join(',') === 'fill-blue',
+		'7.4 ...and ITS look is what renders, replacing the scene look: ' + afterR.chain.join(',')
+	);
+
+	await page.keyboard.press('u');
+	await page.waitForTimeout(1800);
+	const afterU = await through();
+	h.check(
+		afterU.uuid === scenario.c2 && afterU.uuid !== afterR.uuid,
+		'7.5 U switches to the OTHER camera (' + String(afterU.uuid).slice(0, 8) + ')'
+	);
+
+	// and the silent case still explains itself rather than doing nothing quietly
+	const silent = await page.evaluate(async (c1) => {
+		const s = window.__stores;
+		s.cameraPreview.stopCameraPreview();
+		s.updateGraph(s.SCENE_GRAPH, (g) => ({
+			...g,
+			nodes: g.nodes.map((n) =>
+				n.id === 'sR' ? { ...n, data: { ...n.data, activate: false } } : n
+			)
+		}));
+		await new Promise((r) => setTimeout(r, 900));
+		let before = null;
+		s.toastStore.subscribe((t) => (before = t.length))();
+		return { before };
+	}, scenario.c1);
+	await page.keyboard.press('r');
+	await page.waitForTimeout(1500);
+	const explained = await page.evaluate(() => {
+		let list = [];
+		window.__stores.toastStore.subscribe((t) => (list = t))();
+		return {
+			said: list.some((t) => /looking through that camera/i.test(typeof t === 'string' ? t : (t?.text ?? ''))),
+			chain: window.__postDebug().kinds
+		};
+	});
+	h.check(
+		explained.chain.join(',') === 'fill-red',
+		'7.6 premise: with "look through it too" off and no active camera, the picture is unchanged'
+	);
+	h.check(
+		explained.said === true,
+		'7.7 ...and the node EXPLAINS that instead of failing silently (the reported experience)'
+	);
+
 	h.check(
 		h.pageErrors(A).concat(h.pageErrors(B)).filter((m) => /scenePost|postEffects/.test(m)).length === 0,
 		'4.6 no page errors'

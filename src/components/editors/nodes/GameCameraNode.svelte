@@ -20,6 +20,7 @@
 	import { objectsGroup } from '../../../stores/sceneStore';
 	import { listCameraObjects } from '$lib/cameraObjects';
 	import { gameState } from '$lib/gameState';
+	import { cameraPreview } from '$lib/cameraPreview';
 
 	type $$Props = NodeProps;
 	export let id: string;
@@ -36,6 +37,12 @@
 	// for setlook an empty camera is MEANINGFUL — it targets the scene look — so the
 	// sentinel says so instead of reading as "unset"
 	$: noneLabel = isLook ? '— the scene look —' : '— none —';
+	// A camera look only composes while its camera is the ACTIVE one. With "look
+	// through it too" on, this node makes that true itself; with it off, and nothing
+	// looking through that camera, firing the node changes nothing on screen — which is
+	// how it was first reported, so the card says so rather than failing silently.
+	$: activates = isLook && data.activate !== false && !!chosen;
+	$: willBeSilent = isLook && !activates && !!chosen && $cameraPreview?.uuid !== chosen;
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
@@ -95,10 +102,27 @@
 					<option value="off">off</option>
 				</select>
 			</label>
+			<label class="flex flex-col">
+				<span>look through it too</span>
+				<select
+					class="nodrag"
+					value={data.activate === false ? 'no' : 'yes'}
+					on:change={(e) => setNodeData(id, { activate: e.currentTarget.value === 'yes' })}
+				>
+					<option value="yes">yes</option>
+					<option value="no">no</option>
+				</select>
+			</label>
 			<span class="gc-note">
 				Switches that look for each peer when the trigger fires. It does not edit the saved
 				look, so turning it off here never changes what anyone has authored.
 			</span>
+			{#if willBeSilent}
+				<span class="gc-warn">
+					Nothing is looking through that camera, so this will not change the picture. Turn
+					"look through it too" on, or use a Set Active Camera node.
+				</span>
+			{/if}
 		{:else}
 			<span class="gc-note">Moves each peer's own view. Nothing is sent; the trigger already was.</span>
 		{/if}

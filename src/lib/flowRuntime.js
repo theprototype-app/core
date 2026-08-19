@@ -54,6 +54,12 @@ const physicsActionEdge = new Map();
  * history, and history imports THIS module, so a static edge closes the cycle that
  * TDZ-crashes the SSR prerender. @type {any} */
 let postRef = null;
+/** primed too, only to READ which camera is active — lookThroughCamera keeps its own
+ * per-call import and its success-only latch, which must not be disturbed. @type {any} */
+let previewRef = null;
+/** the Set Look explain-once flag: a node that cannot take effect says so ONCE, not
+ * on every keypress (the physics-not-running toast precedent above) */
+let lookSilentToasted = false;
 /** @type {any} */ let animImportsRef = null;
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
@@ -517,6 +523,25 @@ function updateGameNodes(time, ctx) {
 			// views converge without a message. It writes the OVERRIDE, never the authored
 			// document, so nothing here can leak into what the next edit broadcasts.
 			if (postRef?.setLookOverride) postRef.setLookOverride(target, data.on !== false);
+			// ...and unless told otherwise, LOOK THROUGH that camera, because a camera look
+			// composes only while its camera is the active one. Without this the node is a
+			// no-op for the thing its name promises, which is exactly how it was reported.
+			const activate = data.activate !== false && target !== 'scene';
+			if (activate) lookThroughCamera(target);
+			else if (target !== 'scene' && !lookSilentToasted) {
+				// the remaining silent case, explained ONCE: a look set on a camera nobody is
+				// looking through changes nothing on screen
+				let active = null;
+				try {
+					active = previewRef ? get(previewRef.cameraPreview)?.uuid ?? null : null;
+				} catch {}
+				if (active !== target) {
+					lookSilentToasted = true;
+					showToast(
+						'Set Look changed a camera look, but nothing is looking through that camera — turn on "look through it too", or use a Set Active Camera node.'
+					);
+				}
+			}
 		} else {
 			const name = String(data.name ?? '');
 			if (!name) continue;
@@ -1902,6 +1927,7 @@ export function startFlowRuntime() {
 	// animationPreview, so flowRuntime keeps no static edge into it
 	import('./shaderGraph').then((m) => (shaderRef = m));
 	import('./scenePost').then((m) => (postRef = m));
+	import('./cameraPreview').then((m) => (previewRef = m));
 	import('./animatedImports').then((m) => (animImportsRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();

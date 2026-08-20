@@ -22,7 +22,7 @@
 		hudDocs, hudRuntime, hudSelection, hudScreenOverride, HUD_ANCHORS, HUD_KINDS, HUD_SCENE_KEY,
 		hudDocOf, setHudDocFor, addHudElement, updateHudElement, removeHudElements,
 		addHudScreen, removeHudScreen, setActiveHudScreen, visibleScreen, normalizeHudElement,
-		hudPickArm, deliverHudPick
+		hudPickArm, deliverHudPick, rectInFrame, offsetsInFrame
 	} from '$lib/hudDocs';
 	import { beginHudGesture, endHudGesture } from '$lib/hudSync';
 	import { hudPreviewInViewport } from '$lib/hudDocs';
@@ -214,32 +214,18 @@
 		return () => ro.disconnect();
 	});
 
-	/** Where an element sits ON THE STAGE, in stage pixels. The 9-grid, same maths the
-	 * runtime layer uses — kept here rather than imported because the layer answers in CSS
-	 * and the artboard needs numbers to draw handles with. @param {any} el */
+	// 21-E2.4: the 9-grid maths lives in `hudDocs` now (`rectInFrame`/`offsetsInFrame`),
+	// because the VIEWPORT drag needs the identical arithmetic against the real window
+	// rather than against this stage. Two copies of an anchor frame is exactly the kind of
+	// duplication that drifts silently — one of them gains a case and the other does not.
+	// These two wrappers just bind the frame to the stage.
+	/** @param {any} el */
 	function stageRect(el) {
-		const anchor = String(el.anchor ?? 'top-left');
-		const { v, h } = anchor === 'center' ? { v: 'middle', h: 'center' } : (() => {
-			const [a, b] = anchor.split('-');
-			return { v: a || 'top', h: b || 'left' };
-		})();
-		const left = h === 'left' ? el.x : h === 'right' ? STAGE.w - el.x - el.w : STAGE.w / 2 - el.w / 2 + el.x;
-		const top = v === 'top' ? el.y : v === 'bottom' ? STAGE.h - el.y - el.h : STAGE.h / 2 - el.h / 2 + el.y;
-		return { left, top, w: el.w, h: el.h };
+		return rectInFrame(el, STAGE.w, STAGE.h);
 	}
-
-	/** The inverse: a stage-space left/top back into this element's anchored x/y, so a drag
-	 * writes the offset its OWN anchor means. Without this, dragging a bottom-right element
-	 * would move it the wrong way. @param {any} el @param {number} left @param {number} top */
+	/** @param {any} el @param {number} left @param {number} top */
 	function offsetsFrom(el, left, top) {
-		const anchor = String(el.anchor ?? 'top-left');
-		const { v, h } = anchor === 'center' ? { v: 'middle', h: 'center' } : (() => {
-			const [a, b] = anchor.split('-');
-			return { v: a || 'top', h: b || 'left' };
-		})();
-		const x = h === 'left' ? left : h === 'right' ? STAGE.w - left - el.w : left + el.w / 2 - STAGE.w / 2;
-		const y = v === 'top' ? top : v === 'bottom' ? STAGE.h - top - el.h : top + el.h / 2 - STAGE.h / 2;
-		return { x: Math.round(x), y: Math.round(y) };
+		return offsetsInFrame(el, left, top, STAGE.w, STAGE.h);
 	}
 
 	// --- snapping ---------------------------------------------------------------
@@ -771,8 +757,11 @@
 					class="hud-hint"
 					title="Positions are pixels against this reference stage. Your window is {viewW}×{viewH}; the dashed outline on the board is its shape."
 				>
+					<!-- 21-E2.5: which document you are authoring, in words. A camera HUD renders
+											   only while that camera is being looked through, so the name is the
+											   difference between "nothing shows" and "nothing shows YET". -->
+					{#if attachedCamera}📷 {attachedCamera.name || 'Camera'} ·{/if}
 					{STAGE.w}×{STAGE.h}
-					{#if attachedCamera}· {attachedCamera.name || 'Camera'} aspect{/if}
 				</span>
 				<span class="hud-hint">{elements.length} element{elements.length === 1 ? '' : 's'}</span>
 			</div>
@@ -810,11 +799,18 @@
 							{s.name}
 							<span class="hud-hint">{s.elements.length}</span>
 						</button>
+						<!-- 21-E2.1: a TOGGLE. Clicking the starred screen un-stars it, which is the
+											 only way to say "no default screen" — and without that state the active
+											 screen rendered unconditionally, so "only when asked" could not be
+											 expressed for it at all. -->
 						<button
 							class="hud-mini"
-							title={doc?.active === s.id ? 'The default screen everyone starts on' : 'Make this the default screen'}
+							data-hud-star={s.id}
+							title={doc?.active === s.id
+								? 'The default screen everyone starts on — click to un-star it, and then nothing shows until a node, a game state or a peer asks for a screen'
+								: 'Make this the default screen everyone starts on'}
 							aria-pressed={doc?.active === s.id}
-							onclick={() => setActiveHudScreen(docKey, s.id)}>★</button
+							onclick={() => setActiveHudScreen(docKey, doc?.active === s.id ? '' : s.id)}>★</button
 						>
 						<button class="hud-mini hud-danger" title="Delete screen" onclick={() => dropScreen(s.id)}>✕</button>
 					</div>
@@ -838,7 +834,8 @@
 				<button class="hud-add-screen" onclick={addScreen}>＋ Screen</button>
 				<p class="hud-note">
 					A screen shows per PEER: one player can sit on the menu while another plays. ★ marks
-					the one everyone starts on.
+					the one everyone starts on — un-star it and nothing shows until a node, a game state
+					or this peer asks for a screen.
 				</p>
 			</div>
 			<!-- drag to give the screens list more (or less) room -->

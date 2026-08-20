@@ -21,6 +21,7 @@ import {
 	visibleScreen,
 	hudScreenOverride,
 	hudDocOf,
+	hudDocKeyFor,
 	resolveScreen,
 	hudValueOf,
 	setHudValue
@@ -356,7 +357,10 @@ function updateHudRuntime(time, ctx, now) {
 		if (hudScreenActed.get(node.id) === stamp) continue;
 		hudScreenActed.set(node.id, stamp);
 		const data = resolveInputs(node, nodes, edges, time, ctx);
-		const key = node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : 'scene';
+		// 21-E2.2: the SAME resolution the node card uses. Inline it was the graph id, which
+		// in an object graph is the object uuid — so `showHudScreen` wrote a per-peer override
+		// for a document that cannot exist and the node silently did nothing at all.
+		const key = hudDocKeyFor(node.__graph);
 		const wanted = String(data.screen ?? '').trim();
 		if (!wanted) continue;
 		const action = data.action ?? 'show';

@@ -15,8 +15,8 @@
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeSpec } from '$lib/nodeCatalog';
-	import { flowEdges, flowValues, activeGraphId, SCENE_GRAPH } from '../../../stores/flowStore';
-	import { hudRuntime } from '$lib/hudDocs';
+	import { flowEdges, flowValues, activeGraphId } from '../../../stores/flowStore';
+	import { hudRuntime, hudDocs, hudDocKeyFor } from '$lib/hudDocs';
 	import HudElementPicker from '../../hud/HudElementPicker.svelte';
 
 	type $$Props = NodeProps;
@@ -24,9 +24,15 @@
 	export let data: any;
 
 	$: spec = findNodeSpec(data.type);
-	// which HUD document this node addresses: an object graph's id IS its owner uuid, and
-	// the scene graph addresses the scene HUD
-	$: docKey = $activeGraphId && $activeGraphId !== SCENE_GRAPH ? $activeGraphId : 'scene';
+	// 21-E2.2: which HUD document this node addresses. This used to be "the graph id unless
+	// it is the scene graph", i.e. the OBJECT UUID inside an object graph — and almost no
+	// object has a HUD document, so the picker enumerated nothing and offered "nothing on
+	// any screen yet" with a full scene HUD right there. `hudDocKeyFor` answers the owner's
+	// own document when one exists (a camera HUD) and the scene HUD otherwise. `$hudDocs`
+	// is the DEPENDENCY: the helper reads the store through get(), so without it the key
+	// would never re-derive when a camera HUD is created.
+	const keyFor = (graphId: string, _docs: any) => hudDocKeyFor(graphId);
+	$: docKey = keyFor($activeGraphId, $hudDocs);
 	// a screen node picks a SCREEN, everything else picks an ELEMENT. The picker owns the
 	// enumeration and the reactivity now, so this card just says which mode it is in.
 	$: isScreenNode = data.type === 'hudscreen';

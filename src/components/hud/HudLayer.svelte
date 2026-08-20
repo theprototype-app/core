@@ -190,7 +190,9 @@
 		{#each elements as el (el.__key + ':' + el.id)}
 			<div
 				class="hud-slot"
-				class:hud-focused={el.kind === 'button' && focusables[focused % Math.max(1, focusables.length)]?.id === el.id}
+				class:hud-focused={playing &&
+				el.kind === 'button' &&
+				focusables[focused % Math.max(1, focusables.length)]?.id === el.id}
 				data-hud-id={el.id}
 				data-hud-kind={el.kind}
 				style="{place(el)}; {centering(el)}"

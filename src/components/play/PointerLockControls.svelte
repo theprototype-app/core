@@ -7,6 +7,18 @@
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
     import { resolvePlaySettings } from '$lib/playSettings'
     import { inputClaims } from '$lib/inputRuntime'
+    // 21-E6: the character controller as nodes. A NULL charControl means no
+    // charcontroller node exists in any graph, and every branch below then falls
+    // through to the code that was always here — that is the parity contract, which is
+    // why these reads are guards rather than a rewrite of the movement code.
+    import {
+      charControl,
+      playMoveSpeed,
+      setPlayMoveSpeed,
+      setJumpRequested,
+      tickWalker,
+      walkStep
+    } from '$lib/charController'
 
     const { renderer, camera, invalidate } = useThrelte()
   
@@ -77,23 +89,39 @@
       // K-C: a module claimed the keys (possession) — WASD drives IT, not the camera
       if ($inputClaims.includes('keys')) return
 
+      // 21-E6: what the graph declared, and the speed actually in force. With no
+      // controller node `ctrl` is null and `speed` is this component's own moveSpeed,
+      // so the whole block below is byte-for-byte the old behaviour.
+      const ctrl = $charControl
+      const speed = $playMoveSpeed ?? ctrl?.speed ?? moveSpeed
+
+      // WALK: the node owns Y (gravity, jump, eye height) and resolves the horizontal
+      // step against whatever ground tier can answer — including the dungeon raster,
+      // so the slide below is its job too and this path returns early.
+      if (ctrl?.mode === 'walk') {
+        const walker: any = $cameraParent
+        if (walker && $isLocked)
+          tickWalker(walker, ctrl, delta, walkStep(walker, moveState, speed, delta))
+        return
+      }
+
       const beforeX = $cameraParent?.position.x ?? 0
       const beforeZ = $cameraParent?.position.z ?? 0
 
       if (moveState.forward === 1) {
-        $cameraParent.translateZ(-moveSpeed);
+        $cameraParent.translateZ(-speed);
       }
 
       if (moveState.backward === 1) {
-        $cameraParent.translateZ(moveSpeed);
+        $cameraParent.translateZ(speed);
       }
 
       if (moveState.left === 1) {
-        $cameraParent.translateX(-moveSpeed);
+        $cameraParent.translateX(-speed);
       }
 
       if (moveState.right === 1) {
-        $cameraParent.translateX(moveSpeed);
+        $cameraParent.translateX(speed);
       }
 
       // 21-B B3 (DEVX #14): a GROUNDED scene has no Q/E flight and pins the rig
@@ -101,11 +129,11 @@
       const play = resolvePlaySettings($globalScene)
 
       if (!play.grounded && moveState.up === 1) {
-        $cameraParent.translateY(-moveSpeed);
+        $cameraParent.translateY(-speed);
       }
 
       if (!play.grounded && moveState.down === 1) {
-        $cameraParent.translateY(moveSpeed);
+        $cameraParent.translateY(speed);
       }
 
       if (play.grounded && $isLocked && $cameraParent) {
@@ -156,7 +184,17 @@
       // something, and says so on the event — never through a one-shot store
       // flag (the twin-Escape lesson)
       if (event.defaultPrevented) return
-      moveSpeed = Math.min(1, Math.max(0.01, moveSpeed + (event.deltaY > 0 ? -0.01 : 0.01)))
+      const step = event.deltaY > 0 ? -0.01 : 0.01
+      // 21-E6: while a controller is declared the wheel writes THROUGH the store, so
+      // scroll still adjusts speed AND the graph can read it (a Move Speed node) or
+      // overwrite it (a keypress -> Move Speed(set)). With no controller it stays this
+      // component's own local number, exactly as before — the parity contract.
+      if ($charControl) {
+        const current = $playMoveSpeed ?? $charControl.speed ?? moveSpeed
+        setPlayMoveSpeed(Math.min(1, Math.max(0.01, current + step)))
+        return
+      }
+      moveSpeed = Math.min(1, Math.max(0.01, moveSpeed + step))
     }
 
     function onKeyDown( event ) {
@@ -167,6 +205,16 @@
         case 'KeyD': moveState.right = 1; break;
         case 'KeyQ': moveState.up = 1; break;
         case 'KeyE': moveState.down = 1; break;
+        case 'Space':
+          // 21-E6: jump. The EDGE is taken inside charController (a browser repeats
+          // keydown while a key is held, so a held Space must still be one jump).
+          //
+          // Deliberately NOT preventDefault'd, and the collision is already arbitrated:
+          // a HUD screen claims keys through its own play-only window-CAPTURE handler,
+          // which stopImmediatePropagation()s while a screen is up — so a menu wins over
+          // a jump, which is the right precedence. Nothing here consumes Escape either.
+          if ($charControl?.mode === 'walk') setJumpRequested(true)
+          break;
         case 'Escape':
           // native pointer-lock Esc handles the normal case; this also rescues
           // the stuck state where play mode engaged but the lock never did
@@ -186,6 +234,9 @@
         case 'KeyD': moveState.right = 0; break;
         case 'KeyQ': moveState.up = 0; break;
         case 'KeyE': moveState.down = 0; break;
+        // released UNCONDITIONALLY, whatever the mode is now — the push-to-talk lesson:
+        // a mode switch or a modifier mid-hold must never strand the flag down
+        case 'Space': setJumpRequested(false); break;
       }
     }
   

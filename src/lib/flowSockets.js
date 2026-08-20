@@ -52,7 +52,17 @@ const OUTPUT = {
 	latch: 'boolean',
 	delay: 'event',
 	sequence: 'event', // all four step handles; outputType is per-NODE, not per-handle
-	once: 'event'
+	once: 'event',
+	// 21-E6 the character controller. Only two of these produce a value: Move Speed
+	// reads the live speed and Move Input reads this peer's own WASD. Both of Move
+	// Input's handles are numbers, so ONE per-NODE entry covers them (the sequence
+	// rule). The other three are DECLARATIONS/ACTIONS and keep the effect channel the
+	// fallback would have handed them anyway — listed so the table says so out loud.
+	movespeed: 'number',
+	moveinput: 'number',
+	charcontroller: 'effect',
+	possessnode: 'effect',
+	camerafollow: 'effect'
 };
 
 /** typed named inputs; `_default` covers an unnamed target handle @type {Record<string,Record<string,string>>} */
@@ -117,7 +127,15 @@ const INPUT = {
 	setcamera: { trigger: 'event', camera: 'object' },
 	setlook: { trigger: 'event', camera: 'object', on: 'boolean' },
 	setvariable: { trigger: 'event', value: 'number' },
-	gamestart: { camera: 'object' }
+	gamestart: { camera: 'object' },
+	// 21-E6 the character controller. `target` is the alternative to wiring the node
+	// into an Object Selector (velocity's precedent), and every range param keeps the
+	// numeric fallback, so only the EVENT and OBJECT handles need declaring here — an
+	// undeclared handle types as 'number', which would refuse an Object Selector.
+	charcontroller: { speed: 'number' },
+	possessnode: { trigger: 'event', release: 'event', target: 'object' },
+	camerafollow: { trigger: 'event', stop: 'event', target: 'object' },
+	movespeed: { set: 'event', value: 'number' }
 };
 
 // what an OUTPUT type may feed into a differently-typed INPUT

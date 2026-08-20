@@ -28,6 +28,16 @@ import {
 // 21-D6: gameState is a LEAF for exactly this reason — history imports THIS module, so a
 // gameState that imported history would close the cycle.
 import { gameState, setGameState, setGameVar, gameVar, gameElapsed, commitGameState } from './gameState';
+// 21-E6: charController is a LEAF for the same reason gameState is (svelte stores,
+// THREE, and two store-only modules), so a static edge closes nothing. It reaches
+// physics itself through its own primed dynamic import.
+import {
+	charControl,
+	playMoveSpeed,
+	setCharControl,
+	setPlayMoveSpeed,
+	DEFAULT_FLY_SPEED
+} from './charController';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -61,6 +71,9 @@ let previewRef = null;
  * on every keypress (the physics-not-running toast precedent above) */
 let lookSilentToasted = false;
 /** @type {any} */ let animImportsRef = null;
+/** 21-E6: possess.js, primed. It imports history (recordTransform) AND this module
+ * (suspendAnimation), so a static edge closes the cycle twice over. @type {any} */
+let possessRef = null;
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
@@ -593,6 +606,155 @@ export function syncGameCameraNow() {
 	lastGameState = game.state;
 }
 
+// --- 21-E6: the character controller as nodes ---------------------------------
+// Play mode shipped ONE movement model, hardcoded in PointerLockControls: fly, WASD,
+// scroll for speed. A game could not have a walker, could not jump and could not read
+// or write its own speed. These five nodes expose it — and the parity contract is the
+// whole design: with NO charcontroller node anywhere, `charControl` stays null and
+// PointerLockControls runs the code it always ran, untouched.
+//
+// NOTHING HERE GOES ON THE WIRE, and each node has its own reason.
+//   charcontroller  the DOCUMENT already replicated, so every peer declares the same
+//                   controller from the same graph. The controller then drives THAT
+//                   peer's own camera, which is per-peer by nature.
+//   possessnode     possess() is reached from a replicated trigger STAMP, and its own
+//                   movement already broadcasts plain `move`s — the K-D contract.
+//   camerafollow    LOCAL, and deliberately so: the setcamera house rule. A peer's
+//                   graph must never move another peer's camera, so each one reacts to
+//                   the shared trigger itself and the views converge with no message.
+//   movespeed       a local speed override; the trigger that wrote it replicated.
+//   moveinput       every peer reads its OWN keys (see the value case).
+
+/** stamp-edge memory for the character ACTION nodes, keyed `nodeId|handle` — one per
+ * handle, because Possess Object's trigger and release are independent edges on the
+ * same node @type {Map<string, number>} */
+const charActed = new Map();
+/** when each character ACTION node was first seen, in synced seconds — the cutoff a
+ * stamp has to beat to count as a pulse this node witnessed @type {Map<string, number>} */
+const charSeenAt = new Map();
+/** the several-controllers warning is explained ONCE, not once a frame */
+let charMultipleWarned = false;
+
+/**
+ * The object a character action acts on: an explicit `target` input first, then an
+ * Object Selector this node feeds, then the owner of an object graph (H1's implicit
+ * rule). Same precedence as the physics actions.
+ * @param {any} node @param {any} data @returns {string | null}
+ */
+function charTargetOf(node, data) {
+	if (typeof data?.target === 'string' && data.target && data.target !== '-None-') return data.target;
+	for (const edge of edges) {
+		if (edge.source !== node.id) continue;
+		const uuid = targetUuidOf(edge);
+		if (uuid) return uuid;
+	}
+	return implicitOwnerOf(node);
+}
+
+/** @param {number} time @param {any} ctx */
+function updateCharNodes(time, ctx) {
+	// 1. THE DECLARATION. charcontroller is not an action and has no trigger: it is
+	// simply PRESENT, so it is read every tick and written only on change (setCharControl
+	// owns that comparison — a per-tick store write would be 60 notifications a second
+	// to a threlte task and a subscribed component).
+	const declarations = nodes.filter((/** @type {any} */ n) => n.type === 'charcontroller');
+	if (!declarations.length) {
+		setCharControl(null);
+		charMultipleWarned = false;
+	} else {
+		// which one wins has to be DECIDED THE SAME WAY ON EVERY PEER or two players get
+		// different movement from one scene. Node order inside a graph document is the
+		// order the author created them (and the order `nodecreate` replicated them), so
+		// the LAST one is the newest; sorting by graph id first makes the cross-graph case
+		// deterministic too, since Object.keys order is per-peer insertion order.
+		// Array.sort is stable, so within one graph the authored order survives.
+		const sorted = [...declarations].sort((/** @type {any} */ a, /** @type {any} */ b) =>
+			String(a.__graph ?? '').localeCompare(String(b.__graph ?? ''))
+		);
+		const winner = sorted[sorted.length - 1];
+		if (declarations.length > 1 && !charMultipleWarned) {
+			charMultipleWarned = true;
+			showToast(
+				declarations.length +
+					' Character Controller nodes are in this scene — the last one wins. Delete the others.'
+			);
+		}
+		const d = resolveInputs(winner, nodes, edges, time, ctx);
+		setCharControl({
+			mode: d.mode === 'walk' ? 'walk' : 'fly',
+			speed: num(d.speed ?? DEFAULT_FLY_SPEED),
+			jumpHeight: num(d.jumpHeight ?? 1.2),
+			eyeHeight: num(d.eyeHeight ?? 1.7),
+			gravity: d.gravity !== false,
+			sourceNodeId: winner.id
+		});
+	}
+
+	// 2. THE ACTIONS, each on a fresh stamp for its OWN handle
+	/**
+	 * Did THIS handle just receive a fresh pulse? Per handle, because Possess Object's
+	 * trigger and release are independent edges on one node.
+	 *
+	 * A stamp that PREDATES the node is not a pulse this node witnessed, and is refused.
+	 * That case is not hypothetical: the trigger log is keyed by node id and OUTLIVES the
+	 * node, so a graph arriving from a peer, an undo restoring a deleted node, or a node
+	 * id reused by a template all present an old stamp — and acting on it fires the
+	 * action the moment the node appears. Measured: swapping a Possess graph for a Camera
+	 * Follow graph started the chase cam before anything was pressed.
+	 *
+	 * The cutoff is WHEN THE NODE WAS FIRST SEEN, not "have we recorded a stamp yet" —
+	 * that first version swallowed the genuine first pulse of a node whose source had
+	 * never fired, which is the common case and broke Possess outright.
+	 * @param {any} node @param {string} handle @returns {boolean}
+	 */
+	const fired = (node, handle) => {
+		const stamp = handleStamp(node, handle, ctx);
+		if (stamp === null) return false;
+		const key = node.id + '|' + handle;
+		if (charActed.get(key) === stamp) return false;
+		charActed.set(key, stamp);
+		const seenAt = charSeenAt.get(node.id);
+		return seenAt === undefined || stamp >= seenAt;
+	};
+	const seen = new Set();
+	for (const node of nodes) {
+		const type = node.type;
+		if (type !== 'possessnode' && type !== 'camerafollow' && type !== 'movespeed') continue;
+		seen.add(node.id);
+		if (!charSeenAt.has(node.id)) charSeenAt.set(node.id, time);
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		if (type === 'movespeed') {
+			// the value rides a number socket, so a keypress -> Number -> Move Speed(set)
+			// chain is "a button that changes my flying speed"
+			if (fired(node, 'set')) setPlayMoveSpeed(num(d.value ?? DEFAULT_FLY_SPEED));
+			continue;
+		}
+		const uuid = charTargetOf(node, d);
+		if (type === 'possessnode') {
+			// release FIRST: a graph that pulses both in one frame means "hand it back",
+			// and possess() itself releases any current ride before taking a new one
+			if (fired(node, 'release')) possessRef?.release?.();
+			if (fired(node, 'trigger') && uuid)
+				possessRef?.possess?.(uuid, {
+					camera: ['chase', 'orbit', 'first', 'none'].includes(d.camera) ? d.camera : 'chase',
+					speed: num(d.speed ?? 4),
+					turnSpeed: num(d.turnSpeed ?? 2.5),
+					eyeHeight: num(d.eyeHeight ?? 1.7),
+					mouseLook: d.mouseLook === true
+				});
+		} else {
+			if (fired(node, 'stop')) possessRef?.stopFollowCam?.();
+			if (fired(node, 'trigger') && uuid) possessRef?.startFollowCam?.(uuid);
+		}
+	}
+	// forget nodes that no longer exist, so a rebuilt node starts fresh — and takes a
+	// NEW first-seen cutoff with it, which is what makes the refusal above hold for a
+	// node id that comes back
+	for (const key of [...charActed.keys()])
+		if (!seen.has(key.slice(0, key.lastIndexOf('|')))) charActed.delete(key);
+	for (const id of [...charSeenAt.keys()]) if (!seen.has(id)) charSeenAt.delete(id);
+}
+
 // --- 21-E4: the logic nodes' shared derivation --------------------------------
 // Latch / Delay / Sequence / Once turn pulses into state and into other pulses.
 // TWO OF THEM ARE PURE: a Delay's or a Sequence step's moment is `input stamp +
@@ -929,7 +1091,10 @@ export const valueTypes = [
 	'ongamestate', 'getvariable', 'gametime',
 	// 21-E4: the logic a game LOOP is made of. Sequence's value is a handle MAP,
 	// like objectflow's - unwrapHandle resolves it per reading edge.
-	'latch', 'delay', 'sequence', 'once'
+	'latch', 'delay', 'sequence', 'once',
+	// 21-E6: the readable halves of the character controller. moveinput's value is a
+	// handle MAP, like sequence's — unwrapHandle resolves it per reading edge.
+	'movespeed', 'moveinput'
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -1148,6 +1313,29 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 				case 'xor': return a !== b;
 				default: return a && b;
 			}
+		}
+		// --- 21-E6: the two readable halves of the character controller ---
+		case 'movespeed':
+			// the speed that is ACTUALLY in force, by the same precedence
+			// PointerLockControls uses: the live override, else the Character Controller's
+			// own param, else the built-in default. A readout that used a different order
+			// would show a number that does not move you.
+			// DOC: with no Character Controller node, the scroll wheel adjusts
+			// PointerLockControls' own local variable, which nothing exposes — so the
+			// readout stays at the default until something writes the store. `set` works
+			// either way, because PointerLockControls prefers the store when it is set.
+			return get(playMoveSpeed) ?? get(charControl)?.speed ?? num(d.value ?? DEFAULT_FLY_SPEED);
+		case 'moveinput': {
+			// LOCAL, and that is the design rather than a limitation: every peer reads its
+			// OWN keys, so a peer pressing nothing reads 0 and always will. Streaming a
+			// movement axis would be a 60Hz message AND wrong — two players are meant to
+			// move independently. Two number handles, the Sequence handle-map shape.
+			const codes = inputRuntimeRef ? inputRuntimeRef.getInput().codes : new Set();
+			// E5 owns the gamepad and the VR stick; when it lands it feeds these two axes
+			// here, so a graph wired to Move Input keeps working with a controller in hand.
+			const x = (codes.has('KeyD') ? 1 : 0) - (codes.has('KeyA') ? 1 : 0);
+			const y = (codes.has('KeyW') ? 1 : 0) - (codes.has('KeyS') ? 1 : 0);
+			return { __handles: { x, y } };
 		}
 		// --- 21-E4: pulses become STATE, and other pulses ---
 		case 'latch': {
@@ -2090,6 +2278,10 @@ function runTick(now) {
 	// 21-D6: the game shell. Runs BEFORE the HUD pass would matter next frame, and reads
 	// the same replicated trigger stamps, so every peer takes the same decisions.
 	updateGameNodes(time, ctx);
+	// 21-E6: the character controller, beside the game shell and for the same reason —
+	// it reads the already-replicated graph and the same trigger stamps, so every peer
+	// declares the same controller and reacts to the same pulses with no message.
+	updateCharNodes(time, ctx);
 	updateHudSetNodes(time, ctx);
 	// 21-E4: Delay / Sequence / Once moments reach the PUSH consumers (Counter, a
 	// Latch toggle, another Once). `ctx.triggers` is this tick's snapshot, so those see
@@ -2221,6 +2413,9 @@ export function startFlowRuntime() {
 	import('./scenePost').then((m) => (postRef = m));
 	import('./cameraPreview').then((m) => (previewRef = m));
 	import('./animatedImports').then((m) => (animImportsRef = m));
+	// 21-E6: possess, for the Possess Object / Camera Follow nodes (see the TDZ note
+	// beside its ref above)
+	import('./possess').then((m) => (possessRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

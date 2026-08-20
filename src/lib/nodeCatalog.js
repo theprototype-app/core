@@ -147,6 +147,97 @@ export const nodeCatalog = [
 		]
 	},
 	{
+		// 21-E6: THE CHARACTER CONTROLLER, as nodes. Play mode shipped ONE movement
+		// model — fly, WASD, scroll to change speed — hardcoded in
+		// PointerLockControls, so a game could not have a walker, could not have a
+		// jump, and could not read or write its own speed from a graph.
+		//
+		// THE PARITY CONTRACT gates the whole group: with NO Character Controller node
+		// in any graph, `charControl` stays null and PointerLockControls runs the code
+		// it always ran. The default is therefore reproducible with nodes — a
+		// Character Controller on `fly` at speed 0.1 IS the default — which is both the
+		// regression fixture and the "recreate today's camera with nodes" exercise.
+		group: 'Character',
+		items: [
+			// ONE card for the movement model. Deliberately a DECLARATION rather than an
+			// action: it is not triggered, it is simply PRESENT, and the newest one in
+			// the scene wins (with a toast when there is more than one — the
+			// playSettings.playPublishers precedent).
+			{
+				type: 'charcontroller',
+				label: 'Character Controller',
+				defaults: { mode: 'fly', speed: 0.1, jumpHeight: 1.2, eyeHeight: 1.7, gravity: true },
+				// `inputs: []` is not an oversight: an EMPTY list still opts this card into
+				// the B6 labelled-row socket layout, so each range param owns the handle in
+				// its own row. With `inputs` absent the sockets are placed by pixel offset
+				// instead, which drifts away from its labels the moment a select or a
+				// toggle sits between two ranges — and this card has both.
+				inputs: [],
+				params: [
+					{ key: 'mode', kind: 'select', options: ['fly', 'walk'] },
+					// per-FRAME units: this IS PointerLockControls' own moveSpeed, the number
+					// the scroll wheel has always adjusted, and 0.1 is what parity pins it to
+					{ key: 'speed', kind: 'range', min: 0.01, max: 1, step: 0.01 },
+					// metres — jump and eye height describe the WORLD, not the input
+					{ key: 'jumpHeight', kind: 'range', min: 0, max: 5, step: 0.1 },
+					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 3, step: 0.05 },
+					{ key: 'gravity', kind: 'toggle' }
+				]
+			},
+			// the player's own WASD as a VALUE, so it can drive anything a number can.
+			// LOCAL by nature: every peer reads ITS OWN keys, which is why it has no card
+			// params at all — there is nothing to author.
+			{ type: 'moveinput', label: 'Move Input', defaults: {} },
+			// possess.js as a node pair on one card. `release` is its own event input
+			// rather than a second node, because a release with no matching possession is
+			// harmless and one card keeps the pairing visible.
+			{
+				type: 'possessnode',
+				label: 'Possess Object',
+				defaults: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false },
+				inputs: ['trigger', 'release', 'target'],
+				inputLabels: {
+					trigger: 'trigger - take control',
+					release: 'release - hand it back',
+					target: 'target object'
+				},
+				params: [
+					{ key: 'camera', kind: 'select', options: ['chase', 'orbit', 'first', 'none'] },
+					{ key: 'speed', kind: 'range', min: 0.1, max: 30, step: 0.1 },
+					{ key: 'turnSpeed', kind: 'range', min: 0.1, max: 10, step: 0.1 },
+					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 3, step: 0.05 },
+					{ key: 'mouseLook', kind: 'toggle' }
+				]
+			},
+			// the camera half of possess WITHOUT the movement half — something else owns
+			// the object's transform (the sim, a clip, a peer) and we only fly behind it.
+			// No framing knobs: the chase offset is possess's SHARED one, so a distance
+			// slider here would silently re-frame the car module's camera too.
+			{
+				type: 'camerafollow',
+				label: 'Camera Follow',
+				defaults: {},
+				inputs: ['trigger', 'stop', 'target'],
+				inputLabels: {
+					trigger: 'trigger - start following',
+					stop: 'stop - let go',
+					target: 'target object'
+				}
+			},
+			// read AND write the movement speed, which is what closes the user's named
+			// ask: keypress -> movespeed(set) is "buttons adjust flying speed", and the
+			// scroll wheel writes the same store while a controller is active.
+			{
+				type: 'movespeed',
+				label: 'Move Speed',
+				defaults: { value: 0.1 },
+				inputs: ['set'],
+				inputLabels: { set: 'set - write the speed' },
+				params: [{ key: 'value', kind: 'range', min: 0.01, max: 1, step: 0.01 }]
+			}
+		]
+	},
+	{
 		// A3: the core HUD group. Nodes supply DATA and receive EVENTS; the HUD
 		// DOCUMENT owns WHERE things are, so every node here names an element by id
 		// rather than carrying a position.

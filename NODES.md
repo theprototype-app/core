@@ -53,6 +53,79 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | sequence | Logic | event (step1…step4) | trigger | NEW (21-E4): chained steps off ONE pulse — four ordered event outputs at CUMULATIVE offsets from the input stamp, so each `delayN` field reads as "wait this long, then step N" and step1's default 0 fires immediately. Derived exactly like Delay (pure, nothing scheduled, nothing sent). Its value is a HANDLE MAP (`{__handles}`, the objectflow shape) that `unwrapHandle` resolves per reading edge; `outputType` is per-NODE, so all four handles paint as the event channel. Its own card, being the only node in the group with several outputs. |
 | once | Logic | event | trigger rearm | NEW (21-E4): one-shot doors, first-visit triggers. The counter precedent, and unavoidably so: the trigger log keeps only the LAST stamp per node, so a FIRST stamp is not derivable from it. `applyNodeTrigger` therefore writes this node's own entry on the first pulse and FREEZES it at count 1 — which is precisely what a downstream stamp-edge consumer needs in order to act exactly once, and `updateDerivedPulses` forwards that frozen moment ONCE into the PUSH consumers (a Counter, a Latch toggle). Without that forward `once -> counter` was a silent no-op, because `applyNodeTrigger` walks the edges of the node that FIRED and a Once firing is a side effect of its trigger's walk rather than a walk of its own — caught by the suite, not by review. `rearm` DELETES the entry rather than restamping it, because a live stamp on a disarmed Once reads as a fresh pulse to every consumer downstream (`triggerStampFor` sees `lastT` and knows nothing of `count`). DOC — the late-joiner cost, same as Counter's: a joiner's log starts empty, so a Once that already fired for everyone else is still armed for them and will fire on the next pulse they witness. Pair it with a `latch` (which DOES converge) when a late joiner must agree. |
 | velocity | Scene | number | target | NEW (CL-C): live speed (m/s) of the wired object (or the graph owner unwired in an object graph). LOCAL feed — exact-ish on the sim initiator (per-step write-back deltas), an ~10Hz move-delta APPROXIMATION on other peers (broadcast-gated; documented on the card); 0 at rest / feed quiet >400ms. Never replicated: peers derive their own estimate. |
+| charcontroller | Character | effect (a DECLARATION — wire it to nothing) | speed | NEW (21-E6): **THE MOVEMENT MODEL, as data.** Play mode shipped exactly one, hardcoded in `PointerLockControls`: fly, WASD, scroll for speed — so a game could not have a walker, could not jump, and could not read or write its own speed. This node is deliberately NOT an action: it has no trigger, it is simply PRESENT, read every tick and written to the `charControl` store only ON CHANGE (a per-tick write would be 60 notifications a second to a threlte task and a subscribed component). `mode` fly/walk, `speed`, `jumpHeight`, `eyeHeight`, `gravity`. **THE PARITY CONTRACT: with no charcontroller node in ANY graph, `charControl` is null and PointerLockControls runs the code it always ran** — so this node at its defaults IS the default, which the suite asserts as an A/B over a 1.2s scripted W: measured **7.300 units built-in vs 7.300 with the node, 0.0% apart**, and 7.300 again after DELETING it. The guard was proven able to fail by pinning the node's speed to 0.15 (52.1% apart). Nothing goes on the wire: the DOCUMENT already replicated, so every peer declares the same controller and then drives its OWN camera, which is per-peer by nature. Several controllers in one scene resolve DETERMINISTICALLY (sorted by graph id, last one wins — node order inside a document is the order the author created them, which is the order `nodecreate` replicated them) plus a toast, the `playSettings.playPublishers` precedent. UNITS are deliberately not uniform, and the reason is the parity contract: `speed` IS PointerLockControls' own `moveSpeed`, per-FRAME translate units and the number the scroll wheel has always adjusted (walk mode scales it by `dt * 60`, identical at 60fps and stable when frames drop), while `jumpHeight`/`eyeHeight`/gravity are metres and seconds because they describe the WORLD rather than the input. `eyeHeight` is the eye above the ground in WORLD metres (1.7 = a person) — note `playSettings.eyeHeight` means something else, a LOCAL offset for a camera living in a group at y = 0.9, so its 0.8 default is that same 1.7 world eye; the walker converts through the rig's parent. |
+| moveinput | Character | number (x, y) | — | NEW (21-E6): the player's own WASD as a value, so movement input can drive anything a number can. **LOCAL BY NATURE, which is the design and not a limitation**: every peer reads its OWN keys, so a peer pressing nothing reads 0 and always will (asserted two-peer). Streaming a movement axis would be a 60Hz message AND wrong — two players are meant to move independently. Two handles (`x` = A/D, `y` = S/W) as a HANDLE MAP, the Sequence shape, resolved per reading edge by `unwrapHandle`; `outputType` is per-NODE, both being numbers. Its own card, being the only node in the group with several outputs, and the card SAYS it is local — otherwise that is discoverable only as a bug. E5 owns the gamepad/VR stick and feeds these same two axes when it lands, so a graph wired here keeps working with a controller in hand. |
+| possessnode | Character | effect | trigger release target | NEW (21-E6): `possess.js` as a trigger-edge node — drive an object with the keys, with its chase/orbit/first/none camera, `speed`/`turnSpeed`/`eyeHeight`/`mouseLook`. Targets an explicit `target` input, else an Object Selector this node feeds, else the owner of an object graph (the physics-action precedence). `release` is a second event input on the SAME card rather than its own node, because a release with no ride is harmless and one card keeps the pairing visible; release is processed FIRST, so a graph pulsing both in one frame means "hand it back". Needs no netcode: the trigger already replicates as a shared stamp, and possess's own movement already broadcasts plain `move`s (the K-D contract), including the mid-sim external-hold path. Possessing = SELECTING, so peers see the usual lock highlight; possess locks `document.body` deliberately (not the canvas) and PointerLockControls' `held` guard already ignores a lock it does not own. |
+| camerafollow | Character | effect | trigger stop target | NEW (21-E6): the CAMERA half of possess without the movement half — something else owns the object's transform (the sim, a clip, a peer) and we only fly behind it. No input claim, no selection, no history. **LOCAL, per the `setcamera` house rule**: a peer's graph must never move another peer's camera, so each peer reacts to the shared trigger itself and the views converge with no message. DOC — no framing knobs on purpose: the chase offset lives in possess's SHARED `chaseCamera`, so a distance/offset slider here would silently re-frame the car module's camera too. If per-node framing is wanted, `chaseCamera` has to take it as an argument first. |
+| movespeed | Character | number | set value | NEW (21-E6): the movement speed, READABLE and WRITABLE from the graph — which is what closes the user's named ask. `keypress -> Move Speed(set)` is "buttons adjust flying speed", and while a controller is declared the scroll wheel writes the same store, so scroll keeps working AND the graph can see it. The value output reports what is ACTUALLY in force, by the same precedence PointerLockControls uses (live override → the Character Controller's own param → the built-in 0.1); a readout on a different order would show a number that does not move you. Editing a Character Controller's `speed` CLEARS the override, because the author has just said what they want — without that, one scroll would pin the speed for ever and the param would look broken. DOC: with NO Character Controller node the wheel adjusts PointerLockControls' own local variable, which nothing exposes, so the readout sits at the default until something writes the store — `set` works either way, because PointerLockControls prefers the store whenever it is set. LOCAL: speed is per-peer, and the trigger that wrote it already replicated. |
+
+## 21-E6 — the character controller: what it does NOT do, and the parity template
+
+**Ground resolution is TIERED, and the tiering is the honest part.** Full collision needs
+a RUNNING SIMULATION, because the rapier world — and every collider in it — exists only
+while one runs (`physics.js` creates the world in `startSimulation` and nulls it in
+`stopSimulation`). `charController.js` therefore answers "what is under me" in three
+tiers, and publishes which one answered on `walkerState.source`:
+
+1. **`rapier`** — a sim is running: a `KinematicCharacterController` with a capsule
+   (radius 0.3, half-height derived from `eyeHeight`), resolving the XZ+Y step in ONE
+   `computeColliderMovement` call, so walls stop you, slopes and steps work, and you can
+   stand on a box. The capsule is **never a scene collider**: it is created straight onto
+   the world through the new `physics.physicsRuntime()` getter, so it holds no
+   `colliderOwner` entry, is invisible to physics.js's own body list and write-back, and
+   can never enter GLTF sync (the scene-root/local rule). Both the impact and sensor paths
+   already look every handle up in `colliderOwner` and bail on an unknown one. World
+   IDENTITY invalidates the capsule, not a flag someone has to clear — a new simulation is
+   a new world object.
+2. **`dungeon`** — no world, but a dungeon module published its raster: the EXISTING walk
+   (`dungeonPlay.slideMove`), so the dungeon contract is unchanged.
+3. **`plane`** — no world, no raster: the scene's ground plane height as a flat floor
+   (y = 0 when the ground is switched off). A light scene still walks and still lands; it
+   just cannot walk into things. A walker that can fall for ever is not a feature.
+
+**Jump** is Space, edge-triggered inside `charController` because a browser REPEATS
+keydown while a key is held: a held Space is exactly one jump, and landing with the key
+still down produces none. A press in mid-air is DROPPED rather than queued — a queued one
+fires on landing, which reads as an unrequested second jump. Initial velocity is
+`sqrt(2 * g * jumpHeight)` with `g` from the scene's own gravity, so a low-gravity scene
+jumps higher for free. Space is deliberately NOT `preventDefault`ed and the collision is
+already arbitrated: `HudLayer`'s window-CAPTURE handler `stopImmediatePropagation()`s
+Space while a HUD screen with focusables is up, so **a menu wins over a jump** — the right
+precedence. Nothing in this path consumes Escape.
+
+**Not here:** the gamepad/VR stick (E5 owns it, and feeds `moveinput`'s two axes when it
+lands) and per-node chase framing (see `camerafollow` above).
+
+### The parity template — today's default, recreated with nodes
+
+This is both the regression fixture and the "recreate the current camera behaviour with
+nodes" exercise. The Character Controller alone reproduces the default; the keypress pair
+is the user's "adjust flying speed with buttons" on top of it. Drop it into the scene
+graph:
+
+```json
+{
+  "nodes": [
+    { "id": "cc", "type": "charcontroller", "position": { "x": 0, "y": 0 },
+      "data": { "type": "charcontroller", "mode": "fly", "speed": 0.1,
+                "jumpHeight": 1.2, "eyeHeight": 1.7, "gravity": true } },
+    { "id": "faster", "type": "keypress", "position": { "x": 0, "y": 240 },
+      "data": { "type": "keypress", "code": "BracketRight", "pulse": 0.3 } },
+    { "id": "boost", "type": "movespeed", "position": { "x": 220, "y": 240 },
+      "data": { "type": "movespeed", "value": 0.3 } },
+    { "id": "readout", "type": "movespeed", "position": { "x": 220, "y": 400 },
+      "data": { "type": "movespeed", "value": 0.1 } }
+  ],
+  "edges": [
+    { "id": "e-faster-boost.set", "source": "faster", "target": "boost",
+      "targetHandle": "set" }
+  ]
+}
+```
+
+`boost` WRITES the speed when `]` is pressed; `readout` READS whatever is in force
+(including a scroll change), which is why its own `value` param is ignored. Swap
+`mode: "walk"` on `cc` for a grounded walker with gravity and a jump.
 
 ## Correctness fixes shipped in 4.1
 - **Edge-id collision (divergence bug)**: ids were `e-<src>-<tgt>` WITHOUT handles, so

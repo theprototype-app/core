@@ -29,6 +29,7 @@
 	import HudNode from './nodes/HudNode.svelte';
 	import GameCameraNode from './nodes/GameCameraNode.svelte';
 	import SequenceNode from './nodes/SequenceNode.svelte';
+	import MoveInputNode from './nodes/MoveInputNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
@@ -189,6 +190,13 @@
 		delay: AnimationNode,
 		once: AnimationNode,
 		sequence: SequenceNode,
+		// 21-E6: the character controller. All spec-driven except Move Input, which is
+		// the only one with several OUTPUTS and so needs its own labelled rows.
+		charcontroller: AnimationNode,
+		possessnode: AnimationNode,
+		camerafollow: AnimationNode,
+		movespeed: AnimationNode,
+		moveinput: MoveInputNode,
 	};
 
 	// module node types default to the spec-driven AnimationNode unless the

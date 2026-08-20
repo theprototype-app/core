@@ -652,7 +652,143 @@ h.run(async () => {
 	await pulse(A, 'bang');
 	await h.eventually(entries, (e) => e[0]?.fired === 2, 'a second pulse fires a second shot');
 
-	// ---- 11. TWO PEERS: one stamp, the same state ---------------------------
+	// ---- 11. RANDOM's `reroll` — the dead input, and why the seed is a STAMP -
+	// Shipped in 21-B B6 and never worked: the roll reads `ctx.triggers[<this node>]`,
+	// and nothing wrote an entry for a random node. A count bump would have revived it
+	// but could not converge for a late joiner, so the reroll term is the STAMP.
+	await setGraph(
+		A,
+		[
+			{ id: 'rr', type: 'onclick', position: { x: 0, y: 0 } },
+			{
+				id: 'dice',
+				type: 'random',
+				position: { x: 240, y: 0 },
+				// interval 0 so NOTHING but a reroll can change it — otherwise "holds
+				// between pulses" would be measuring the interval clock instead
+				data: { min: 0, max: 1000, interval: 0, seed: 0, integer: true }
+			}
+		],
+		[wire('rr', 'dice', 'reroll')]
+	);
+	await A.page.waitForTimeout(1000);
+	const roll0 = await valueOf(A, 'dice');
+	await A.page.waitForTimeout(900);
+	const roll0b = await valueOf(A, 'dice');
+	h.check(
+		typeof roll0 === 'number' && roll0 === roll0b,
+		`premise: an unrerolled Random holds one value at interval 0 (${roll0} / ${roll0b})`
+	);
+	await pulse(A, 'rr');
+	await h.eventually(
+		() => valueOf(A, 'dice'),
+		(v) => typeof v === 'number' && v !== roll0,
+		'a `reroll` pulse CHANGES the value — the input was a silent no-op before this',
+	);
+	const roll1 = await valueOf(A, 'dice');
+	await A.page.waitForTimeout(1100);
+	h.check(
+		(await valueOf(A, 'dice')) === roll1,
+		`and HOLDS between pulses — a reroll, not a per-frame shuffle (${roll1})`
+	);
+	await pulse(A, 'rr');
+	await h.eventually(
+		() => valueOf(A, 'dice'),
+		(v) => typeof v === 'number' && v !== roll1,
+		'a second reroll moves it again',
+	);
+	const rrTrig = await triggers(A);
+	h.check(
+		(rrTrig.dice?.count ?? 0) === 2 && typeof rrTrig.dice?.lastT === 'number',
+		`the node now HAS a trigger entry — count as a readout, lastT as the seed (${JSON.stringify(rrTrig.dice)})`
+	);
+
+	// ---- 12. the AI's curated node vocabulary -------------------------------
+	// The enum is DERIVED from nodeCatalog (aiNodeTypes = catalog minus editor-only,
+	// minus gated physics), so the four arrived in it with the catalog entry. What
+	// needed writing was the aliases and the prompt guidance — and what needs
+	// asserting is the enum the model actually SEES plus the executor accepting it.
+	const aiView = await A.page.evaluate(() => {
+		const tools = window.__stores.aiTools.getAiTools();
+		const flow = tools.find((t) => t.function?.name === 'create_flow_nodes');
+		const enumTypes = flow?.function?.parameters?.properties?.nodes?.items?.properties?.type?.enum ?? [];
+		const prompt = window.__stores.aiTools.buildSystemPrompt();
+		return {
+			enumHas: ['latch', 'delay', 'sequence', 'once'].filter((t) => enumTypes.includes(t)),
+			dataHint: flow?.function?.parameters?.properties?.nodes?.items?.properties?.data?.description ?? '',
+			promptNames: ['latch', 'delay', 'sequence', 'once'].filter((t) => prompt.includes(t)),
+			promptWarnsUnwired: prompt.includes('do nothing unwired')
+		};
+	});
+	h.check(
+		aiView.enumHas.length === 4,
+		`all four are in the enum the model is handed (${JSON.stringify(aiView.enumHas)})`
+	);
+	h.check(
+		aiView.dataHint.includes('latch {initial') && aiView.dataHint.includes('delay {seconds'),
+		'and the param hint names their data keys',
+	);
+	h.check(
+		aiView.promptNames.length === 4 && aiView.promptWarnsUnwired,
+		`the system prompt names them AND warns they do nothing unwired — the "usually OMIT edges" rule is actively wrong for these (${JSON.stringify(aiView.promptNames)})`
+	);
+
+	// the executor, through the real dispatcher: a latch wired from an On Click
+	const built = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		s.setActiveGraph(s.SCENE_GRAPH);
+		s.flowNodes.set([]);
+		s.flowEdges.set([]);
+		await new Promise((r) => setTimeout(r, 400));
+		const res = await s.aiTools.executeAiTool('create_flow_nodes', {
+			graph: 'scene',
+			nodes: [
+				{ ref: 'c', type: 'onclick' },
+				{ ref: 'l', type: 'latch', data: { initial: false } }
+			],
+			edges: [{ from: 'c', to: 'l', toHandle: 'set' }]
+		});
+		await new Promise((r) => setTimeout(r, 600));
+		let nodes, edges;
+		s.flowNodes.subscribe((v) => (nodes = v))();
+		s.flowEdges.subscribe((v) => (edges = v))();
+		return {
+			res,
+			types: nodes.map((n) => n.type),
+			edge: edges[0] ? { target: edges[0].targetHandle, has: true } : null
+		};
+	});
+	h.check(
+		!built.res?.error && built.types.includes('latch'),
+		`create_flow_nodes accepts "latch" and builds it (${JSON.stringify(built.res)})`
+	);
+	h.check(
+		built.edge?.target === 'set',
+		`with an edge onto its "set" handle — the editor-identical construction path (${JSON.stringify(built.edge)})`
+	);
+
+	// the aliases: a small model reaches for these by function, not by name
+	const aliased = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		s.setActiveGraph(s.SCENE_GRAPH);
+		s.flowNodes.set([]);
+		s.flowEdges.set([]);
+		await new Promise((r) => setTimeout(r, 400));
+		const res = await s.aiTools.executeAiTool('create_flow_nodes', {
+			graph: 'scene',
+			nodes: [{ type: 'flipflop' }, { type: 'wait' }, { type: 'one shot' }, { type: 'steps' }]
+		});
+		await new Promise((r) => setTimeout(r, 500));
+		let nodes;
+		s.flowNodes.subscribe((v) => (nodes = v))();
+		return { res, types: nodes.map((n) => n.type) };
+	});
+	h.check(
+		['latch', 'delay', 'once', 'sequence'].every((t) => aliased.types.includes(t)),
+		`flipflop/wait/"one shot"/steps all normalize home — including the whitespace flattening (${JSON.stringify(aliased.types)})`
+	);
+
+	// ---- 13. TWO PEERS: one stamp, the same state ---------------------------
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(A, B);
 	await setGraph(
@@ -664,18 +800,26 @@ h.run(async () => {
 			{ id: 'pLatch', type: 'latch', position: { x: 240, y: 60 }, data: { initial: false } },
 			{ id: 'pTrig', type: 'onclick', position: { x: 0, y: 260 } },
 			{ id: 'pDelay', type: 'delay', position: { x: 240, y: 260 }, data: { seconds: 1, pulse: 0.5 } },
-			{ id: 'pCount', type: 'counter', position: { x: 480, y: 260 }, data: { step: 1, op: 'up' } }
+			{ id: 'pCount', type: 'counter', position: { x: 480, y: 260 }, data: { step: 1, op: 'up' } },
+			{ id: 'pRr', type: 'onclick', position: { x: 0, y: 360 } },
+			{
+				id: 'pDice',
+				type: 'random',
+				position: { x: 240, y: 360 },
+				data: { min: 0, max: 1000000, interval: 0, seed: 0, integer: true }
+			}
 		],
 		[
 			wire('pSet', 'pLatch', 'set'),
 			wire('pReset', 'pLatch', 'reset'),
 			wire('pTog', 'pLatch', 'toggle'),
 			wire('pTrig', 'pDelay', 'trigger'),
-			wire('pDelay', 'pCount', 'pulse')
+			wire('pDelay', 'pCount', 'pulse'),
+			wire('pRr', 'pDice', 'reroll')
 		]
 	);
 	await A.page.waitForTimeout(1000);
-	const synced = await pushGraph(A, B, ['pLatch', 'pDelay', 'pCount']);
+	const synced = await pushGraph(A, B, ['pLatch', 'pDelay', 'pCount', 'pDice']);
 	h.check(!!synced, `premise: the peer holds the graph before anything is pulsed (${JSON.stringify(synced)})`);
 
 	await pulse(A, 'pSet');
@@ -724,10 +868,25 @@ h.run(async () => {
 		`and both peers derived the SAME fire moment with no message of its own (${derived[0].pDelay?.lastT} / ${derived[1].pDelay?.lastT})`
 	);
 
+	// the reroll: the STAMP replicates, and each peer seeds its own mulberry32 from
+	// it — so agreement here is what a count-based reroll could not have delivered
+	const diceBefore = [await valueOf(A, 'pDice'), await valueOf(B, 'pDice')];
+	h.check(
+		diceBefore[0] === diceBefore[1],
+		`premise: an unrerolled Random already agreed (seeded by node id) (${JSON.stringify(diceBefore)})`
+	);
+	await pulse(A, 'pRr');
+	await A.page.waitForTimeout(1600);
+	const diceAfter = [await valueOf(A, 'pDice'), await valueOf(B, 'pDice')];
+	h.check(
+		diceAfter[0] !== diceBefore[0] && diceAfter[0] === diceAfter[1],
+		`a replicated reroll moves BOTH peers to the same new number (${JSON.stringify(diceBefore)} -> ${JSON.stringify(diceAfter)})`
+	);
+
 	// ---- 12. a LATE JOINER: what converges, and what is documented not to ---
 	const C = await h.setupPage(browser, 'C');
 	await h.connect(C, A);
-	const syncedC = await pushGraph(A, C, ['pLatch', 'pDelay', 'pCount']);
+	const syncedC = await pushGraph(A, C, ['pLatch', 'pDelay', 'pCount', 'pDice']);
 	h.check(!!syncedC, `premise: the late joiner holds the graph (${JSON.stringify(syncedC)})`);
 	// its trigger log starts EMPTY (it is not part of the handshake), so it reads
 	// `initial` while A/B hold the state the toggles left
@@ -768,6 +927,21 @@ h.run(async () => {
 			delayStamps.every((t) => t.pDelay?.lastT === delayStamps[0].pDelay?.lastT) &&
 			delayStamps[0].pDelay?.lastT !== undefined,
 		`a Delay needs no catch-up at all — the joiner derives the same moment from the next stamp (${delayStamps.map((t) => t.pDelay?.lastT).join(' / ')})`
+	);
+
+	// and the reroll converges for the joiner too, which is the whole reason its seed
+	// is the stamp: a COUNT would leave C one reroll behind A/B for ever, so the two
+	// would keep picking different "random spawn points" with nothing to heal it.
+	await pulse(A, 'pRr');
+	await A.page.waitForTimeout(1800);
+	const diceAll = [
+		await valueOf(A, 'pDice'),
+		await valueOf(B, 'pDice'),
+		await valueOf(C, 'pDice')
+	];
+	h.check(
+		diceAll.every((v) => v === diceAll[0]) && typeof diceAll[0] === 'number',
+		`a late joiner CONVERGES on the next reroll — the stamp is replicated, a count would not be (${JSON.stringify(diceAll)})`
 	);
 
 	await h.finish(browser);

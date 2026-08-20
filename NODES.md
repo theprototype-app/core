@@ -14,7 +14,7 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | number | Input | number | — | FIX: `step` gets an editor (ⓘ); it was stored + used as the input's step attr but uneditable. |
 | vector3 | Input | vector3 | — | OK |
 | toggle | Input | boolean | — | OK |
-| random | Input | number | — | OK (min/max/interval on card; deterministic per interval) |
+| random | Input | number | seed reroll | OK (min/max/interval on card; deterministic per interval). FIX (21-E4 follow-up): **`reroll` was a DEAD input** — shipped in B6, but the roll reads `ctx.triggers[<this node>]` and nothing ever wrote an entry for a random node (`applyNodeTrigger` stamps the SOURCE and, before 21-E4, only a Counter target), so the term was 0 for the node's whole life and pulsing `reroll` did nothing at all. The stateful-target chain now stamps it. The reroll term is **the stamp in ms, not a count of rerolls**: a count is local, so a late joiner's would run N behind for ever and its rolls would never re-converge (two peers picking a "random spawn point" in different places permanently); a stamp is replicated, so every peer holding the same last-reroll stamp computes the same number and a joiner converges exactly on the next reroll. Absent = 0, so every graph saved before the input worked is byte-identical. |
 | time | Input | number | — | OK (sin/cos/linear × rate) |
 | objectselector | Scene | — (sink) | effect | OK — THE effect sink; anything not ending here is silently inert (DOC). |
 | script | Logic | effect (drives a Selector; value readable) | a b c | OK (side panel editor; deterministic pure fn) |

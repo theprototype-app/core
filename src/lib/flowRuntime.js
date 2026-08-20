@@ -1099,8 +1099,18 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// generation needed. A `reroll` event advances the sequence, so a graph
 			// can ask for a new value without waiting for an interval to elapse.
 			const seed = num(input('seed', d.seed ?? 0));
+			// 21-E4 follow-up: the reroll term is THE STAMP (in ms), not a count of
+			// rerolls, and the difference is the whole determinism story. A count is
+			// local: a LATE JOINER's log starts empty, so its count runs N behind for
+			// ever and its rolls never re-converge - two peers spawning a "random spawn
+			// point" in different places permanently, with nothing to heal it. The stamp
+			// is replicated, so every peer that holds the same last-reroll stamp computes
+			// the same number, and a joiner converges EXACTLY on the next reroll (the
+			// latch set/reset property rather than the latch toggle-parity one).
+			// Absent = 0, which is byte-identical to every graph saved before the input
+			// worked at all.
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const rerolls = trig ? trig.count ?? 0 : 0;
+			const rerolls = typeof trig?.lastT === 'number' ? Math.round(trig.lastT * 1000) >>> 0 : 0;
 			const value = lo + mulberry32(hashString(node.id) + roll + seed + rerolls) * (hi - lo);
 			return d.integer ? Math.floor(value) : value;
 		}
@@ -1525,6 +1535,19 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 					next[target.id] = { count: (next[target.id]?.count ?? 0) + 1, lastT: t };
 				else if (handle === 'set' || handle === 'reset')
 					next[target.id] = { count: 0, lastT: t };
+			} else if (target.type === 'random') {
+				// B6 shipped `reroll` as a DEAD input, and this is where it died: the roll
+				// reads `ctx.triggers[<the random node>]`, and NOTHING ever wrote an entry
+				// for a random node - applyNodeTrigger stamps the SOURCE and, before this
+				// batch, only a Counter target. So `rerolls` was 0 for the node's whole
+				// life and the input was a silent no-op.
+				//
+				// The count is bumped because "how many times was this rerolled" is a real
+				// readout, but THE SEED READS `lastT`, NOT THE COUNT - see the random case
+				// in evalNodeBody for why: a count cannot converge for a late joiner, and a
+				// stamp can.
+				if (handle === 'reroll')
+					next[target.id] = { count: (next[target.id]?.count ?? 0) + 1, lastT: t };
 			} else if (target.type === 'once') {
 				// `rearm` DELETES the entry instead of restamping it: a live stamp on a
 				// disarmed Once reads as a fresh pulse to every stamp-edge consumer

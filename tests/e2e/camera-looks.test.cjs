@@ -463,6 +463,66 @@ h.run(async () => {
 		'7.7 ...and the node EXPLAINS that instead of failing silently (the reported experience)'
 	);
 
+	// ---------------------------------------------------------------- section 8
+	console.log('\n=== 8. a real .tpscene round trip ===');
+
+	// Section 3 checked the session PAYLOAD in-process, which is not the same thing as a
+	// file: `.tpscene` is that payload zipped, and the multiMaterial lesson is that "it
+	// still looks right" is not "it survived". So this goes through the real
+	// exportSessionZip -> importSessionZip pair and asserts the SHAPE on the far side.
+	const zipTrip = await page.evaluate(async () => {
+		const s = window.__stores;
+		const S = s.sessions;
+		const post = s.scenePost;
+		const cams = s.cameraObjects.listCameraObjects();
+		const cam = cams[0].uuid;
+
+		post.postStacks.set({});
+		post.addPostEffect('vignette');
+		const camId = post.addPostEffect('pixelation', undefined, cam);
+		post.setPostEffectParams(camId, { granularity: 37 }, cam);
+		post.setCameraLookMode(cam, 'replace');
+		await new Promise((r) => setTimeout(r, 300));
+
+		const payload = S.buildSessionPayload('camera looks zip');
+		const zipBytes = await S.exportSessionZip(payload);
+		const imported = await S.importSessionZip(zipBytes.buffer);
+
+		// wipe the live state, then restore from what came OUT of the file
+		post.postStacks.set({});
+		post.scenePostRestore(imported.post);
+		await new Promise((r) => setTimeout(r, 300));
+		let map = null;
+		post.postStacks.subscribe((m) => (map = m))();
+		return {
+			cam,
+			bytes: zipBytes.byteLength ?? zipBytes.length ?? 0,
+			keys: Object.keys(imported.post?.stacks ?? {}).sort(),
+			legacyTop: (imported.post?.effects ?? []).map((e) => e.kind),
+			restoredScene: (map['scene']?.effects ?? []).map((e) => e.kind),
+			restoredCam: (map[cam]?.effects ?? []).map((e) => e.kind),
+			mode: map[cam]?.mode ?? null,
+			granularity: map[cam]?.effects?.[0]?.params?.granularity ?? null
+		};
+	});
+	h.check(zipTrip.bytes > 500, '8.1 premise: a real zip was produced (' + zipTrip.bytes + ' bytes)');
+	h.check(
+		zipTrip.keys.length === 2 && zipTrip.keys.includes('scene') && zipTrip.keys.includes(zipTrip.cam),
+		'8.2 the file carries BOTH documents: ' + JSON.stringify(zipTrip.keys.map((k) => k.slice(0, 8)))
+	);
+	h.check(
+		zipTrip.legacyTop.join(',') === 'vignette',
+		'8.3 ...with the scene document still at the top level, so an older build reads it'
+	);
+	h.check(
+		zipTrip.restoredScene.join(',') === 'vignette' && zipTrip.restoredCam.join(',') === 'pixelation',
+		'8.4 a restore from the FILE puts each effect back on its own document'
+	);
+	h.check(
+		zipTrip.mode === 'replace' && zipTrip.granularity === 37,
+		'8.5 ...including the camera mode and an authored param (' + zipTrip.mode + ', ' + zipTrip.granularity + ')'
+	);
+
 	h.check(
 		h.pageErrors(A).concat(h.pageErrors(B)).filter((m) => /scenePost|postEffects/.test(m)).length === 0,
 		'4.6 no page errors'

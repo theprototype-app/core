@@ -3056,9 +3056,9 @@ override for e2e — never share 5173 (the user's main-checkout server).
   pushed.** `b3de92e` keyed the post documents so a look can belong to a camera (see
   the `scenePost` entry); `8f93e49` added the **Set Look** node; `a9391fe` fixed it
   announcing itself as a missing module (the two-registry gotcha above). Suite
-  `camera-looks` (28 checks: keyed documents, composition following the active camera,
-  append/replace, undo keyed to its document, a session round trip, two peers, and the
-  node). **Baseline on this release/next is 386/62, NOT 391** — release.yml gates
+  `camera-looks` (41 checks: keyed documents, composition following the active camera,
+  append/replace, undo keyed to its own document, a REAL .tpscene zip round trip, two
+  peers, the node, and the two user reports as regression tests). **Baseline on this release/next is 386/62, NOT 391** — release.yml gates
   `-gt 387`. Roadmap 21 had already shipped several things this plan listed as future
   work: `postBackends.js`, `api.registerPostEffect`, `api.registerPostBackend`, the
   composer running in PLAY mode, and `viewportOverrides` gaining a `hud` key (the

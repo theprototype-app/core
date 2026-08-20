@@ -266,7 +266,61 @@ export const nodeCatalog = [
 			{ type: 'gate', label: 'Gate', defaults: { op: 'and', a: false, b: false } },
 			// 4.6: loop-closers from the NODES.md audit
 			{ type: 'maprange', label: 'Map Range', defaults: { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: true, a: 0 } },
+			// 4.6 -> 21-E4: Select grew N-WAY. a/b keep their handle ids, so every saved
+			// 2-input graph is byte-identical (see the clamp note in evalNodeBody).
 			{ type: 'select', label: 'Select', defaults: { index: 0, a: 0, b: 0 } },
+			// --- 21-E4: the logic a game LOOP is made of. Every trigger in this app is a
+			// ~0.3s pulse and, before these, NOTHING turned a pulse into persistent state:
+			// `counter` was the only stateful node and its op was a param, not an input. That
+			// one gap blocked hide-on-collect, hold-to-show, one-shot doors and cooldowns at
+			// the same time.
+			//
+			// THE UNBLOCK: a pulse becomes a boolean that HOLDS. Deterministic with no new
+			// message - `set`/`reset` compare the replicated trigger STAMPS every peer
+			// already has (most recent wins), which is strictly better than counting for a
+			// late joiner: it converges on the very next pulse of either kind. `toggle` is
+			// the one half that cannot be pure (a stamp is not a count) and takes the
+			// counter precedent instead - counted in applyNodeTrigger, which every peer runs
+			// from the same replicated stamp.
+			{
+				type: 'latch',
+				label: 'Latch',
+				defaults: { initial: false },
+				inputs: ['set', 'reset', 'toggle'],
+				inputLabels: { set: 'set - turn on', reset: 'reset - turn off', toggle: 'toggle - flip' },
+				params: [{ key: 'initial', kind: 'toggle' }]
+			},
+			// "3 seconds after the door opens, close it", and every cooldown. PURE: the
+			// output fires at stamp + seconds, which each peer reaches on its own clock from
+			// the one shared stamp, so nothing is scheduled and nothing is sent.
+			{
+				type: 'delay',
+				label: 'Delay',
+				defaults: { seconds: 1, pulse: 0.3 },
+				inputs: ['trigger', 'cancel'],
+				inputLabels: { trigger: 'trigger', cancel: 'cancel - drop a pending pulse' },
+				params: [{ key: 'seconds', kind: 'range', min: 0, max: 60, step: 0.1 }]
+			},
+			// chained steps off ONE pulse. Four fixed outputs, each at its CUMULATIVE offset
+			// from the input stamp - derived exactly like Delay, so a step is a pure
+			// function of (stamp, params, synced time). Its own card: four source handles.
+			{
+				type: 'sequence',
+				label: 'Sequence',
+				defaults: { delay1: 0, delay2: 0.5, delay3: 0.5, delay4: 0.5, pulse: 0.3 },
+				inputs: ['trigger']
+			},
+			// one-shot doors, first-visit triggers. The FIRST stamp is not derivable from a
+			// trigger log that keeps only the LAST one, so this is the counter precedent:
+			// applyNodeTrigger freezes the first stamp on the node's own entry and `rearm`
+			// clears it.
+			{
+				type: 'once',
+				label: 'Once',
+				defaults: { pulse: 0.3 },
+				inputs: ['trigger', 'rearm'],
+				inputLabels: { trigger: 'trigger', rearm: 'rearm - allow it again' }
+			},
 			// 134: loops, timers, sensors + object actions (all deterministic)
 			{ type: 'loop', label: 'Loop', defaults: { from: 0, to: 1, rate: 1, mode: 'wrap' } },
 			{ type: 'timer', label: 'Timer', defaults: { delay: 1, a: 0 } },

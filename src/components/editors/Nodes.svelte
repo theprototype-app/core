@@ -28,6 +28,7 @@
 	import AnimationNode from './nodes/AnimationNode.svelte';
 	import HudNode from './nodes/HudNode.svelte';
 	import GameCameraNode from './nodes/GameCameraNode.svelte';
+	import SequenceNode from './nodes/SequenceNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
@@ -182,6 +183,12 @@
 		setcamera: GameCameraNode,
 		gamestart: GameCameraNode,
 		setlook: GameCameraNode,
+		// 21-E4: the logic a game loop is made of. All spec-driven except Sequence,
+		// which is the only one with several OUTPUTS and so needs its own four rows.
+		latch: AnimationNode,
+		delay: AnimationNode,
+		once: AnimationNode,
+		sequence: SequenceNode,
 	};
 
 	// module node types default to the spec-driven AnimationNode unless the

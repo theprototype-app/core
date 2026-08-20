@@ -593,6 +593,157 @@ export function syncGameCameraNow() {
 	lastGameState = game.state;
 }
 
+// --- 21-E4: the logic nodes' shared derivation --------------------------------
+// Latch / Delay / Sequence / Once turn pulses into state and into other pulses.
+// TWO OF THEM ARE PURE: a Delay's or a Sequence step's moment is `input stamp +
+// offset`, which every peer computes from the ONE replicated stamp on its own
+// clock - so nothing is scheduled, nothing is stored and nothing new goes on the
+// wire. The other two keep a scrap of state a stamp cannot express (a Latch
+// toggle's PARITY, a Once's FIRST stamp) and take the counter precedent instead:
+// maintained in applyNodeTrigger, which every peer runs from the same stamp.
+
+/** node types whose output stamp is DERIVED rather than logged @type {string[]} */
+const SCHEDULED_TYPES = ['delay', 'sequence'];
+/** Sequence's fixed output handles, in order @type {string[]} */
+const SEQUENCE_STEPS = ['step1', 'step2', 'step3', 'step4'];
+
+/**
+ * The effective stamp behind one edge's SOURCE: a derived fire time for a
+ * scheduled node, the plain trigger log for everything else. `seen` cuts a chain
+ * that loops back on itself (Delay -> Delay -> Delay is legal and useful).
+ * @param {any} edge @param {any} ctx @param {Set<string>} seen @returns {number|null}
+ */
+function stampOfSource(edge, ctx, seen) {
+	const source = nodes.find((n) => n.id === edge.source);
+	if (source && SCHEDULED_TYPES.includes(source.type))
+		return scheduledFireAt(source, edge.sourceHandle, ctx, seen);
+	return ctx?.triggers?.[edge.source]?.lastT ?? null;
+}
+
+/**
+ * The newest stamp arriving on ONE NAMED input handle. `set`/`reset`/`toggle`/
+ * `cancel` each need their own answer, which is why this sits beside
+ * triggerStampFor - that one deliberately folds every trigger-ish handle into a
+ * single number.
+ * @param {any} node @param {string} handle @param {any} ctx @param {Set<string>} [seen]
+ * @returns {number|null}
+ */
+function handleStamp(node, handle, ctx, seen = new Set()) {
+	if (!ctx?.triggers || !node) return null;
+	let newest = null;
+	for (const edge of edges) {
+		if (edge.target !== node.id) continue;
+		if ((edge.targetHandle ?? null) !== handle) continue;
+		const stamp = stampOfSource(edge, ctx, seen);
+		if (typeof stamp === 'number' && (newest === null || stamp > newest)) newest = stamp;
+	}
+	return newest;
+}
+
+/**
+ * When a scheduled node's output pulse FIRES - and null until that moment has
+ * actually passed.
+ *
+ * The second half is load-bearing rather than a nicety. Every consumer of an
+ * event acts on a STAMP EDGE (`gameActed.get(id) === stamp`), comparing stamps
+ * and not times, so handing out `stamp + seconds` up front would make a Delay
+ * fire its consumer INSTANTLY and look delayed only on the card.
+ * @param {any} node @param {string|null|undefined} handle @param {any} ctx @param {Set<string>} [seen]
+ * @returns {number|null}
+ */
+function scheduledFireAt(node, handle, ctx, seen = new Set()) {
+	if (!node || seen.has(node.id)) return null;
+	seen.add(node.id);
+	const at = scheduledMoment(node, handle, ctx, seen);
+	seen.delete(node.id);
+	return at !== null && at <= syncedNow() ? at : null;
+}
+
+/** @param {any} node @param {string|null|undefined} handle @param {any} ctx @param {Set<string>} seen */
+function scheduledMoment(node, handle, ctx, seen) {
+	const inT = handleStamp(node, 'trigger', ctx, seen);
+	if (inT === null) return null;
+	const d = node.data ?? {};
+	if (node.type === 'delay') {
+		// a cancel AT or AFTER the trigger drops the pending pulse; one BEFORE it is
+		// history, so cancel-then-trigger still fires - which is what a cooldown wants
+		const cancelT = handleStamp(node, 'cancel', ctx, seen);
+		if (cancelT !== null && cancelT >= inT) return null;
+		return inT + Math.max(0, num(d.seconds ?? 1));
+	}
+	// Sequence: CUMULATIVE offsets, so each field reads as "wait this long before
+	// this step" and step1's default 0 fires it immediately
+	const step = SEQUENCE_STEPS.indexOf(String(handle ?? SEQUENCE_STEPS[0]));
+	if (step < 0) return null;
+	let at = inT;
+	for (let i = 0; i <= step; i++) at += Math.max(0, num(d['delay' + (i + 1)] ?? 0));
+	return at;
+}
+
+/** The 0/1 window of an event moment - the onclick pulse formula, over a stamp
+ * that may be derived. @param {number|null} at @param {number} time @param {number} pulse */
+function pulseAt(at, time, pulse) {
+	if (at === null) return 0;
+	const dt = time - at;
+	return dt >= 0 && dt < pulse ? 1 : 0;
+}
+
+/** derived moments already pushed, keyed `nodeId|handle` @type {Map<string, number>} */
+const scheduledFired = new Map();
+
+/** A Once's moment is the stamp applyNodeTrigger FROZE on it - null while it is
+ * still armed, or after a rearm deleted the entry. @param {any} node @param {any} ctx */
+function onceMoment(node, ctx) {
+	const entry = ctx?.triggers?.[node.id];
+	return entry && entry.count === 1 && typeof entry.lastT === 'number' ? entry.lastT : null;
+}
+
+/**
+ * 21-E4: hand a Delay's / a Sequence step's / a Once's own moment to the PUSH half
+ * of the event system.
+ *
+ * The consumers of an event fall into two camps, and this is the seam between
+ * them. Some PULL - triggerStampFor, and any value input reading the pulse - and a
+ * derived moment reaches those for free. The rest are PUSH: a Counter's count, a
+ * Latch's toggle parity and a Once's freeze all happen INSIDE applyNodeTrigger,
+ * because none of them is derivable from a log that keeps one stamp per node.
+ * Leaving the derivation to the pullers alone makes `delay -> counter` and
+ * `once -> counter` - both obvious things to author - SILENT no-ops, which is the
+ * worst outcome on offer. (Both were: the suite caught the Once half, because
+ * applyNodeTrigger walks the edges of the node that FIRED and a Once firing is a
+ * side effect of its own trigger's walk, not a walk of its own.)
+ *
+ * `replicate: false` is the whole determinism story: every peer computes the same
+ * moment from the same already-replicated input stamp, so broadcasting it would
+ * count the pulse once per peer (the animfinished / ongamestate precedent). The
+ * map is local, holds one number per handle and is rebuilt from the graph, so a
+ * late joiner needs nothing out of it.
+ * @param {any} ctx
+ */
+function updateDerivedPulses(ctx) {
+	for (const node of nodes) {
+		const scheduled = SCHEDULED_TYPES.includes(node.type);
+		if (!scheduled && node.type !== 'once') continue;
+		const handles = node.type === 'sequence' ? SEQUENCE_STEPS : [null];
+		for (const handle of handles) {
+			const key = node.id + '|' + (handle ?? '');
+			const at = scheduled ? scheduledFireAt(node, handle, ctx) : onceMoment(node, ctx);
+			// a cancel, a rearm, or a trigger that has not come round again retires the
+			// moment - so firing later happens afresh instead of being deduped forever
+			if (at === null) {
+				scheduledFired.delete(key);
+				continue;
+			}
+			if (scheduledFired.get(key) === at) continue;
+			scheduledFired.set(key, at);
+			applyNodeTrigger(node.id, at, false, handle);
+		}
+	}
+	for (const key of [...scheduledFired.keys()])
+		if (!nodes.some((/** @type {any} */ n) => n.id === key.slice(0, key.lastIndexOf('|'))))
+			scheduledFired.delete(key);
+}
+
 /** The shared timestamp of whatever event is wired into this node's `trigger`
  * (the newest, with several sources fanned in). @param {string} nodeId @param {any} ctx */
 function triggerStampFor(nodeId, ctx) {
@@ -601,7 +752,10 @@ function triggerStampFor(nodeId, ctx) {
 	for (const edge of edges) {
 		if (edge.target !== nodeId) continue;
 		if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
-		const stamp = ctx.triggers[edge.source]?.lastT;
+		// 21-E4: a Delay/Sequence source has NO entry in the trigger log - its stamp is
+		// derived - so reading the log directly here left those nodes unable to drive
+		// anything that acts on a trigger edge (hudscreen, setgamestate, playanim).
+		const stamp = stampOfSource(edge, ctx, new Set());
 		if (typeof stamp === 'number' && (newest === null || stamp > newest)) newest = stamp;
 	}
 	return newest;
@@ -772,7 +926,10 @@ export const valueTypes = [
 	'hudbutton', // A3: an event source, pulsed by fireHudButton
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
-	'ongamestate', 'getvariable', 'gametime'
+	'ongamestate', 'getvariable', 'gametime',
+	// 21-E4: the logic a game LOOP is made of. Sequence's value is a handle MAP,
+	// like objectflow's - unwrapHandle resolves it per reading edge.
+	'latch', 'delay', 'sequence', 'once'
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -897,9 +1054,25 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			if (d.clamp ?? true) t = Math.min(Math.max(t, 0), 1);
 			return outMin + t * (outMax - outMin);
 		}
-		case 'select':
-			// 4.6: pick a or b by a wired index/boolean (switcher/compare pair-up)
-			return num(input('index', d.index ?? 0)) < 0.5 ? input('a', d.a ?? 0) : input('b', d.b ?? 0);
+		case 'select': {
+			// 4.6: pick a or b by a wired index/boolean (switcher/compare pair-up).
+			// 21-E4: N-WAY. The index is ROUNDED, which reproduces the old `< 0.5 ? a : b`
+			// split exactly over the 0/1 range, and CLAMPED to the highest slot this node
+			// actually uses - so a saved 2-input Select handed an out-of-range index still
+			// lands on `b` the way it always did, while a graph that wires or sets c/d gets
+			// four. That pair of rules is what keeps every existing Select byte-identical
+			// (random -> select over four spawn points is the case it was grown for).
+			const keys = ['a', 'b', 'c', 'd'];
+			let last = 1;
+			for (let i = 2; i < keys.length; i++)
+				if (
+					d[keys[i]] !== undefined ||
+					allEdges.some((e) => e.target === node.id && e.targetHandle === keys[i])
+				)
+					last = i;
+			const at = Math.min(last, Math.max(0, Math.round(num(input('index', d.index ?? 0)))));
+			return input(keys[at], d[keys[at]] ?? 0);
+		}
 		case 'toggle':
 			return !!d.on;
 		case 'vector3':
@@ -965,6 +1138,46 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 				case 'xor': return a !== b;
 				default: return a && b;
 			}
+		}
+		// --- 21-E4: pulses become STATE, and other pulses ---
+		case 'latch': {
+			// set/reset are a PURE most-recent-stamp-wins read of the replicated trigger
+			// log, so two peers holding the same stamps cannot disagree - and a late joiner,
+			// which arrives with an EMPTY log (the log is not part of the handshake),
+			// converges on the very next set or reset it sees. That is strictly better than
+			// counting, which would leave it permanently offset.
+			const setT = handleStamp(node, 'set', ctx);
+			const resetT = handleStamp(node, 'reset', ctx);
+			const base =
+				setT === null && resetT === null
+					? !!d.initial
+					: (setT ?? -Infinity) >= (resetT ?? -Infinity); // a same-millisecond tie reads as SET
+			// toggle PARITY is the half a stamp cannot carry (a stamp is not a count), so it
+			// is counted in applyNodeTrigger - the counter precedent - and CLEARED there by
+			// any set/reset, which is what lets the two halves compose instead of fighting.
+			const flips = ctx?.triggers?.[node.id]?.count ?? 0;
+			return flips % 2 === 0 ? base : !base;
+		}
+		case 'delay':
+			// PURE, and it needs no state at all: the moment is stamp + seconds, the output
+			// is a pulse window around it, and `cancel` is a stamp comparison.
+			return pulseAt(scheduledFireAt(node, null, ctx), time, num(d.pulse ?? 0.3));
+		case 'sequence': {
+			// four outputs, so the value is a HANDLE MAP (the objectflow shape) that
+			// unwrapHandle picks apart by the reading edge's sourceHandle
+			/** @type {Record<string, number>} */
+			const handles = {};
+			for (const step of SEQUENCE_STEPS)
+				handles[step] = pulseAt(scheduledFireAt(node, step, ctx), time, num(d.pulse ?? 0.3));
+			return { __handles: handles };
+		}
+		case 'once': {
+			// the counter precedent: applyNodeTrigger writes this node's OWN entry on the
+			// first pulse and freezes it at count 1, and `rearm` deletes it. A frozen stamp
+			// is exactly what a downstream stamp-edge consumer needs in order to act once.
+			const entry = ctx?.triggers?.[node.id];
+			if (!entry || entry.count !== 1) return 0;
+			return pulseAt(entry.lastT, time, num(d.pulse ?? 0.3));
 		}
 		// --- 134: object reference, loops, timers, events ---
 		case 'objectselector':
@@ -1265,23 +1478,60 @@ function syncedNow() {
 /**
  * Apply an event trigger (134): stamp the source node's pulse time and bump any
  * Counter wired from it, all keyed by the SHARED synced time so peers agree.
+ *
+ * 21-E4: `sourceHandle` narrows the edge walk to ONE of a multi-output source's
+ * handles - which Sequence needs and nothing else does, its four steps being four
+ * separate events on one node id. Absent (the default) walks every outgoing edge,
+ * so every existing caller is byte-unchanged.
  * @param {string} nodeId @param {number} t @param {boolean} replicate
+ * @param {string|null} [sourceHandle]
  */
-export function applyNodeTrigger(nodeId, t, replicate = true) {
+export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null) {
 	flowTriggers.update((map) => {
 		const next = { ...map };
 		next[nodeId] = { count: next[nodeId]?.count ?? 0, lastT: t };
+		// 21-E4: the counting a stamp cannot express happens HERE, for every stateful
+		// node and not just Counter - which is the counter precedent stated properly:
+		// this function runs on every peer from the SAME replicated stamp, so the
+		// derived state agrees without being sent. What it costs is a late joiner,
+		// whose trigger log starts empty; each case below says what that means for it.
 		edges.forEach((edge) => {
 			if (edge.source !== nodeId) return;
-			const counter = nodes.find((n) => n.id === edge.target && n.type === 'counter');
-			if (!counter) return;
-			const prev = next[counter.id]?.count ?? 0;
-			const step = counter.data?.step ?? 1;
-			const op = counter.data?.op ?? 'up';
-			next[counter.id] = {
-				count: op === 'reset' ? 0 : op === 'down' ? prev - step : prev + step,
-				lastT: t
-			};
+			if (sourceHandle !== null && (edge.sourceHandle ?? null) !== sourceHandle) return;
+			const target = nodes.find((n) => n.id === edge.target);
+			if (!target) return;
+			const handle = edge.targetHandle ?? null;
+			if (target.type === 'counter') {
+				// a wired `reset` zeroes it. Handle-aware now, so the `op` param keeps
+				// meaning exactly what it did for every counter with only a pulse wired.
+				if (handle === 'reset') {
+					next[target.id] = { count: 0, lastT: t };
+					return;
+				}
+				const prev = next[target.id]?.count ?? 0;
+				const step = target.data?.step ?? 1;
+				const op = target.data?.op ?? 'up';
+				next[target.id] = {
+					count: op === 'reset' ? 0 : op === 'down' ? prev - step : prev + step,
+					lastT: t
+				};
+			} else if (target.type === 'latch') {
+				// ONLY the toggle parity lives here; set/reset are read straight off the
+				// stamps in evalNodeBody, which is why they CLEAR this rather than writing a
+				// state of their own - an accumulated odd count would otherwise invert a
+				// fresh `set`. A late joiner is exact for set/reset and can differ in toggle
+				// parity until the next set/reset re-bases it.
+				if (handle === 'toggle')
+					next[target.id] = { count: (next[target.id]?.count ?? 0) + 1, lastT: t };
+				else if (handle === 'set' || handle === 'reset')
+					next[target.id] = { count: 0, lastT: t };
+			} else if (target.type === 'once') {
+				// `rearm` DELETES the entry instead of restamping it: a live stamp on a
+				// disarmed Once reads as a fresh pulse to every stamp-edge consumer
+				// downstream, because triggerStampFor sees lastT and knows nothing of count.
+				if (handle === 'rearm') delete next[target.id];
+				else if ((next[target.id]?.count ?? 0) === 0) next[target.id] = { count: 1, lastT: t };
+			}
 		});
 		return next;
 	});
@@ -1720,20 +1970,34 @@ function runTick(now) {
 	});
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs
-	/** @type {{node: any, uuid: string}[]} */
+	// 21-E4: `trigger` is the wired event's STAMP (null when nothing is wired)
+	/** @type {{node: any, uuid: string, trigger?: number|null}[]} */
 	const soundPairs = [];
 	edges.forEach((edge) => {
 		const source = nodes.find((n) => n.id === edge.source);
 		if (source?.type !== 'sound') return;
 		const uuid = targetUuidOf(edge);
 		// resolve input-driven volume/radius (133) without touching soundRuntime
-		if (uuid) soundPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+		// 21-E4: `trigger` rides the pair as the STAMP, not as the pulse's 0/1 value -
+		// soundRuntime plays one shot per NEW stamp, and a pulse is high for ~0.3s, which
+		// at 60fps is eighteen copies of the same sound.
+		if (uuid)
+			soundPairs.push({
+				node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) },
+				uuid,
+				trigger: triggerStampFor(source.id, ctx)
+			});
 	});
 	// H1: sound nodes in object graphs attach to their owner when unwired
 	nodes.forEach((node) => {
 		if (node.type !== 'sound') return;
 		const uuid = implicitOwnerOf(node);
-		if (uuid) soundPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
+		if (uuid)
+			soundPairs.push({
+				node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) },
+				uuid,
+				trigger: triggerStampFor(node.id, ctx)
+			});
 	});
 	updateSounds(soundPairs, sceneObjects, time);
 
@@ -1804,6 +2068,11 @@ function runTick(now) {
 	// the same replicated trigger stamps, so every peer takes the same decisions.
 	updateGameNodes(time, ctx);
 	updateHudSetNodes(time, ctx);
+	// 21-E4: Delay / Sequence / Once moments reach the PUSH consumers (Counter, a
+	// Latch toggle, another Once). `ctx.triggers` is this tick's snapshot, so those see
+	// the bump on the NEXT tick - one frame, the same latency every derived reaction
+	// in this file has.
+	updateDerivedPulses(ctx);
 
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
 	if (now - lastValuesAt > 150) {

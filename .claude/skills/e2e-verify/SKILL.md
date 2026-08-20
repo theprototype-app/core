@@ -913,6 +913,43 @@ drops the P2P session.
   SWALLOWS it, so the message silently never leaves. Send raw bytes instead
   (`new Float32Array(arr).buffer`) and normalize on receive (meshgeo/terrain do this).
   If a big payload "never arrives" in a test, suspect this before the network.
+- **A capability headless does not have is asserted by SPYing the browser API, not
+  by skipping.** Pointer lock never engages in headless (requestPointerLock rejects,
+  pointerlockchange never fires), so 21-E3 patched `HTMLCanvasElement.prototype
+  .requestPointerLock` and `document.exitPointerLock` to COUNT calls: the machine is
+  then asserted by its ATTEMPTS plus its store transitions. Two traps inside that:
+  spy the PROTOTYPE, never `querySelector("canvas")` (DungeonMinimap renders a hidden
+  canvas first — the grabFrame trap), and do not assert a call that cannot happen
+  (with no lock ever HELD, a correct machine must NOT call exitPointerLock — the
+  first version of that check asserted the opposite and went red on working code).
+  Same recipe for gamepads: `Object.defineProperty(navigator, "getGamepads", …)`
+  returning a fake pad the test mutates.
+- **A svelte store emits its CURRENT value on subscribe**, so a log that means "what
+  happened during the cycle" must subscribe AFTER the state that starts it. 21-E3's
+  "isLocked never left true" check read `["null","true"]` and failed on correct code
+  because the subscribe itself replayed the pre-play value.
+- **A tolerance must be sized to the BUG, not to the noise.** The "resume does not
+  jump the pause gap" check first used 0.35 rad, which 200ms of legitimate motion
+  already exceeds; the bug it guards replays the whole ~1.5s span (~3 rad). Pick the
+  band from the failure magnitude, then confirm a correct run sits well inside it.
+- **A contract with two halves needs both pinned.** 21-E3 made Tab drive the HUD ring
+  ONLY under a held lock; the suite asserts bare Tab does NOT cycle AND that it does
+  with `document.pointerLockElement` stubbed to the renderer canvas. Pinning one half
+  lets the other regress silently.
+- **Clean a shared fixture on EVERY peer.** `flowNodes.set([])` does not broadcast, so
+  nodesync sees the emptier peer and pulls the graph BACK a few seconds later — a
+  section that wiped only peer A found C's old nodes reappearing mid-run (and with a
+  guard removed, that alone reproduced the bug the section was built to test, from a
+  route it never set up). Wipe every peer, push after each write, and assert the node
+  list as a premise.
+- **A held key keeps acting.** A `down`-edge keypress re-stamps ~3/s while held, so a
+  synthesized keydown never released keeps re-applying its action (one un-released
+  KeyP overwrote a Resume AND the game ending). Release what you press.
+- **`/create box` re-seats the object after the call returns and stamps
+  `userData.physics = {mode:"dynamic", mass:1}`** — a box used as a "floor" falls,
+  which reads exactly like the feature under test being broken.
+- **A peer cannot approve a connection request while in play mode** — the Approve
+  button renders and the click times out. Approve first, then press play.
 - **The definitive worktree A/B, when a red might be yours.** `git stash` is unsafe
   in this repo (see the never-stash-pop rule) and the same-server A/B lies. Instead:
   `git worktree add ../theprototype-ab origin/release/next --detach`, `npm install`,

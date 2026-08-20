@@ -25,6 +25,8 @@ jobs:
       # 391 when 17-A moved piano/avatar/essentials/car out to the modules repo ->
       # 388 when #20 annotated Scene's marqueeStart, which was three implicit-anys)
       # -> 387 when 21-D retired the HUD datalist plumbing, taking one with it)
+      # -> 386 with the per-camera looks round, -> 385 when 21-E consolidated
+      # PointerLockControls' camera swap into one effect)
       - name: svelte-check baseline gate
         run: |
           npm run check 2>&1 | tee check.log || true
@@ -38,9 +40,9 @@ jobs:
             ERRORS=$(echo "$LINE" | awk '{print $2}')
             WARNINGS=$(echo "$LINE" | awk '{print $5}')
           fi
-          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 387/62)"
+          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 385/62)"
           if [ -z "$ERRORS" ]; then echo "could not parse svelte-check output"; exit 1; fi
-          if [ "$ERRORS" -gt 387 ] || [ "$WARNINGS" -gt 62 ]; then
+          if [ "$ERRORS" -gt 385 ] || [ "$WARNINGS" -gt 62 ]; then
             echo "baseline exceeded"; exit 1
           fi
       - name: zip the build

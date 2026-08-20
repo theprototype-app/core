@@ -2046,9 +2046,10 @@ loadable play content. Everything a user does must be visible to connected peers
   (in-place-mutated) THREE object never propagates — return a fresh SNAPSHOT object
   per poke (the Inspector `material` derived is the reference; adding the store as a
   dependency alone does NOT fix it). svelte-check
-  baseline is **387 errors / 62 warnings** (2026-08-18, MEASURED on release/next after the
-  21-D merge — retiring the HUD datalist plumbing took a pre-existing implicit-any with it;
-  the release.yml gate moved with it; 419 -> 417 B5 -> 391 when 17-A
+  baseline is **385 errors / 62 warnings** (2026-08-21, MEASURED on release/next after the
+  21-E merge — consolidating PointerLockControls' two camera.set calls into one
+  camera-follows-isLocked effect removed a pre-existing error, and the per-camera-looks
+  round removed another; the release.yml gate moved with it; 419 -> 417 B5 -> 391 when 17-A
   moved the demo modules out -> 388 when #20 annotated Scene's `marqueeStart`, which was
   three implicit-anys) — hold it, and RATCHET IT DOWN when a change legitimately removes
   errors; the release.yml gate hardcodes the same numbers and must move with it. Svelte 5.5x added `state_referenced_locally` (intentional one-time
@@ -2854,9 +2855,14 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
-- Status (2026-08-20): **ROADMAP 21-E — GAME HARDENING, ALL EIGHT PHASES EXECUTED**
+- Status (2026-08-21): **ROADMAP 21-E — GAME HARDENING, ALL EIGHT PHASES EXECUTED AND
+  MERGED — PRs #158/#159/#160 to `release/next` @2d8af51.** Baseline **385/62** measured
+  on the merged head; the release.yml gate ratcheted with it. Each lane PR took a
+  release/next merge before landing; the PLC conflict resolved ONCE and reused (a
+  `git checkout feat/21e-content -- PointerLockControls.svelte` — the same three-way
+  resolution, not a second attempt at it). Built
   across three stacked lanes off release/next @9be9ecd (post #156/#157; baseline
-  re-measured 386/62, and the branches sit at 385/62 — consolidating PLC's camera
+  re-measured 386/62 there — consolidating PLC's camera
   swap removed a pre-existing error). Lanes: `feat/21e-editor` (E1 9f2a9c9 + E2
   1c7e156) → `feat/21e-input-menu` (E3 b46e477 + E5 395b646) → `feat/21e-content`
   (merge c27d214 + E7 ea46a7d + E8); parallel `feat/21e-logic-nodes` (E4 5f302e7 +

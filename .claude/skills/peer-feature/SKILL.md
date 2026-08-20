@@ -88,6 +88,57 @@ transition: a late joiner arrives with the state already set, so there is no edg
 react to (`syncGameCameraNow`). And whatever latch stops that catch-up from repeating
 must be set on SUCCESS, not on intent — see the CLAUDE.md gotcha.
 
+## DERIVED-FROM-STAMPS state, and its two flavours (21-E4)
+
+A trigger pulse is ~0.3s wide; persistent state derived from it must be rebuildable
+by a peer that was not listening. Two mechanisms, and the difference decides
+late-joiner behaviour:
+
+* **A STAMP COMPARISON converges.** "Most recent set vs reset wins" needs no history:
+  a joiner is exact the moment either fires. Prefer it wherever the question can be
+  phrased as *which happened last*.
+* **A COUNT does not.** The trigger log keeps one stamp per node, so a joiner starts
+  empty and a count runs N behind FOREVER. Measured on `random.reroll`: a count seed
+  left one peer rolling different numbers permanently ([651721, 651721, 186302]);
+  the same node seeded from the replicated STAMP read 932539 on all three.
+  Counts are legitimate only where the question is inherently ordinal (a Counter
+  node, a toggle parity) — and then SAY so in a comment, because the drift is real.
+
+Two more rules from the same batch:
+
+* **Withhold a derived moment until it passes.** A Delay whose output stamp is
+  published as `stamp + seconds` up front fires its consumers INSTANTLY: they act on
+  a stamp EDGE, not on a time. Publish nothing until the moment arrives.
+* **Event consumers split into PULL and PUSH halves.** Pulling readers (a value
+  input, `triggerStampFor`) see a derived stamp for free; pushing state (a Counter's
+  count, a latch's parity) lives inside the apply function and does NOT. Bridge them
+  explicitly (`updateDerivedPulses`, `replicate: false`) or `delay -> counter` is a
+  silent no-op — the worst outcome on offer.
+* **A fresh action node must refuse a STALE stamp.** A node created while an old
+  pulse is still live ADOPTS it and fires on creation (wire a minute-old On Click
+  into a new Set Game State and the game starts as the edge connects). Register every
+  trigger-edge family in the shared `actionSeenAt` map. The over-aggressive fix is
+  equally wrong: refuse-everything swallows a just-built binding's first press.
+
+## A play-mode SUBSTATE, and why menus are not pauses (21-E3)
+
+`isLocked` is tri-state and its loss was WELDED to leaving play (one branch did both,
+plus a camera swap). A menu needs the pointer free while play continues, so
+`playPointerFree` is a SUBSTATE with ONE writer, `isLocked` is never written by the
+menu loop (which keeps the exit debounce structurally unreachable), and the camera
+follows the STATE through one effect — the lock event does not fire on the exit path
+that matters. Two design rules that generalise:
+
+* **Visibility IS the state.** Keying the substate off "is a menu-marked screen
+  visible" means every path that hides it (a node, a state binding, undo) restores
+  gameplay for free, and it is per-peer correct because both inputs are local. A flow
+  NODE writing the substate would replicate a per-peer fact and strand pointers.
+* **A pause is a GAME RULE, not a UI mode.** Freezing a shared simulation locally
+  desyncs by construction, so `paused` replicates and freezes everyone (physics, the
+  effect clock, the round clock — with the pause span banked IN the replicated
+  singleton so a late joiner's clock agrees). Menus do not pause by themselves; a
+  game that wants that wires menu-open to the pause action.
+
 ## The cheapest replicated feature: put it on `userData`
 
 Before designing messages, ask whether the feature is really "extra settings on an

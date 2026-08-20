@@ -499,6 +499,26 @@ function findHudElement(id) {
 }
 
 /** @param {number} time @param {any} ctx */
+/** 21-E3: is the game PAUSED right now? One reader, because four places act on it
+ * (the effect clock, physics, the transition pass, the suite). */
+// the flow-effect clock while paused: `pauseFrozeAt` marks the freeze, and on
+// resume the span joins `pauseOffset`, which is SUBTRACTED from the time every
+// EFFECT evaluates at - a spinning cube holds still and resumes where it froze
+// instead of jumping the gap. Value/HUD/game nodes keep the real clock.
+/** @type {number|null} */
+let pauseFrozeAt = null;
+let pauseOffset = 0;
+
+/** the clock EFFECTS evaluate at @param {number} time */
+export function effectTime(time) {
+	return (pauseFrozeAt !== null ? pauseFrozeAt : time) - pauseOffset;
+}
+
+export function gamePausedNow() {
+	return get(gameState).state === 'paused';
+}
+
+/** @param {number} time @param {any} ctx */
 function updateGameNodes(time, ctx) {
 	const game = get(gameState);
 
@@ -560,7 +580,22 @@ function updateGameNodes(time, ctx) {
 
 	// 2. the TRANSITION: pulse On Game State, and let Game Start pick the camera. Both
 	// are LOCAL reactions to REPLICATED state, which is why neither sends anything.
+	// 21-E3: PAUSE PAUSES. Physics holds through its own simPaused (the SimControls
+	// path - idempotent, so a manual pause is not fought); the flow EFFECT clock
+	// freezes through pauseOffset below; flow/HUD/game nodes keep ticking so menus
+	// stay alive. Every peer runs this from the same replicated state, so nothing
+	// about the pause is sent beyond the state itself.
 	if (game.state !== lastGameState) {
+		const pausedNow = game.state === 'paused';
+		const pausedBefore = lastGameState === 'paused';
+		if (pausedNow !== pausedBefore) {
+			import('./physics').then((m) => m.pauseSimulation?.(pausedNow)).catch(() => {});
+			if (pausedNow) pauseFrozeAt = time;
+			else if (pauseFrozeAt !== null) {
+				pauseOffset += time - pauseFrozeAt;
+				pauseFrozeAt = null;
+			}
+		}
 		const from = lastGameState;
 		lastGameState = game.state;
 		for (const node of nodes) {
@@ -1022,8 +1057,12 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
 		}
 		case 'keypress': {
-			// H3: same pulse semantics as onclick — LOCAL keys arrive as replicated
-			// trigger stamps (held keys re-pulse, so this stays 1 while held)
+			// H3 + 21-E3: LOCAL keys arrive as replicated trigger stamps. `edge` picks the
+			// moment: 'down' pulses on press (held keys re-pulse, so it reads 1 while held -
+			// the original behavior, byte-identical for saved graphs); 'up' pulses on
+			// release; 'held' is the same window read but SAYS level - the re-stamp is its
+			// implementation, so a peer derives the level from stamp freshness with no new
+			// wire. All three are one window over one replicated stamp channel.
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
@@ -1720,7 +1759,10 @@ function runTick(now) {
 		const base = baseState.get(uuid);
 		// reset to base, then let each animation add its offset
 		restoreBase(object, base);
-		anims.forEach((/** @type {any} */ anim) => applyAnimation(object, base, anim, time, ctx));
+		// 21-E3: EFFECTS evaluate on the pause-folded clock, so a paused world holds its
+		// pose and resumes where it froze instead of jumping the gap. Sounds/particles
+		// take the same clock below; value/HUD/game nodes keep the real one.
+		anims.forEach((/** @type {any} */ anim) => applyAnimation(object, base, anim, effectTime(time), ctx));
 	});
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs
@@ -1739,7 +1781,7 @@ function runTick(now) {
 		const uuid = implicitOwnerOf(node);
 		if (uuid) soundPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
 	});
-	updateSounds(soundPairs, sceneObjects, time);
+	updateSounds(soundPairs, sceneObjects, effectTime(time));
 
 	// PFX-A: particle emitters — same keyed-runtime lifecycle as sound. Node
 	// pairs (the `particle` node ships in PFX-B) plus the runtime's own sweep
@@ -1757,7 +1799,7 @@ function runTick(now) {
 		const uuid = implicitOwnerOf(node);
 		if (uuid) particlePairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
 	});
-	updateParticles(particlePairs, sceneObjects, time);
+	updateParticles(particlePairs, sceneObjects, effectTime(time));
 
 	// 17-E A5: Play Animation. Same pair collection as sound/particles, then a
 	// RISING-EDGE read of the wired event (the pulse is high ~0.3s; act once).
@@ -1835,6 +1877,9 @@ function runTick(now) {
 			const trigs = get(flowTriggers);
 			nodes.forEach((node) => {
 				if (node.type !== 'keypress' || !held.has(node.data?.code)) return;
+				// 21-E3: an 'up' node must stay silent while the key is held - its moment
+				// is the release.
+				if ((node.data?.edge ?? 'down') === 'up') return;
 				const pulse = node.data?.pulse ?? 0.3;
 				const last = trigs[node.id]?.lastT ?? -Infinity;
 				if (time - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), true);
@@ -1918,10 +1963,14 @@ export function startFlowRuntime() {
 		// first press was up to ~200ms late and a short TAP could be missed entirely.
 		// (The DEVX #8 family: a subscriber whose signature drifted from its publisher.)
 		m.onInput((/** @type {'down'|'up'} */ kind, /** @type {string} */ code) => {
-			if (kind !== 'down') return;
+			// 21-E3: a node fires on ITS edge. down|held stamp on press (held keeps its
+			// level through the re-stamp below); up stamps on release - the missing
+			// falling edge, and the other half of hold-to-show.
 			nodes.forEach((node) => {
-				if (node.type === 'keypress' && node.data?.code === code)
-					applyNodeTrigger(node.id, syncedNow(), true);
+				if (node.type !== 'keypress' || node.data?.code !== code) return;
+				const edge = node.data?.edge ?? 'down';
+				const fires = kind === 'up' ? edge === 'up' : edge !== 'up';
+				if (fires) applyNodeTrigger(node.id, syncedNow(), true);
 			});
 		});
 	});

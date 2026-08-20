@@ -34,6 +34,18 @@
 			{capturing ? 'press a key…' : data.code ?? 'KeyR'}
 		</button>
 		<label class="flex w-full flex-col">
+			<span class="text-gray-400">edge</span>
+			<!-- 21-E3: down = the original pulse (held keys keep it high); up = the falling
+			     edge, the other half of hold-to-show; held = the same read, said as a level -->
+			<select
+				class="nodrag rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
+				value={data.edge ?? 'down'}
+				on:change={(e) => setNodeData(id, { edge: e.currentTarget.value })}
+			>
+				{#each ['down', 'up', 'held'] as opt (opt)}<option value={opt}>{opt}</option>{/each}
+			</select>
+		</label>
+		<label class="flex w-full flex-col">
 			<span class="text-gray-400">pulse (s)</span>
 			<DragRow nodrag step={0.01} decimals={2} min={0.1} value={data.pulse ?? 0.3} onchange={(/** @type {number} */ v) => setNodeData(id, { pulse: v })} />
 		</label>

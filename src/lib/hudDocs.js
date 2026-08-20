@@ -55,7 +55,7 @@ export const HUD_KINDS = REGISTERED_KINDS;
  * @typedef {{id: string, kind: string, anchor: string, x: number, y: number, w: number,
  *   h: number, z: number, label: string, bind?: string, style?: any, at?: number,
  *   [key: string]: any}} HudElement
- * @typedef {{id: string, name: string, showWhile: string, elements: HudElement[]}} HudScreen
+ * @typedef {{id: string, name: string, showWhile: string, input: string, elements: HudElement[]}} HudScreen
  * @typedef {{screens: HudScreen[], active: string, changedAt: number}} HudDoc
  */
 
@@ -266,6 +266,11 @@ export function normalizeHudScreen(screen, i = 0) {
 		// every existing document is byte-unchanged. This is what makes a late joiner see
 		// the right screen: it never witnessed the transition that switched everyone else.
 		showWhile: typeof screen?.showWhile === 'string' ? screen.showWhile : '',
+		// 21-E3: 'menu' frees the pointer while this screen is visible in play mode
+		// (movement pauses, the mouse clicks the HUD; hiding the screen re-locks).
+		// Absent/unknown = 'game', so every existing document is byte-identical and an
+		// older peer simply ignores the field (the showWhile rule).
+		input: screen?.input === 'menu' ? 'menu' : 'game',
 		elements: (Array.isArray(screen?.elements) ? screen.elements : []).map(normalizeHudElement)
 	};
 }

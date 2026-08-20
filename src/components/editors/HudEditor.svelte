@@ -596,6 +596,16 @@
 			.map((el) => addHudElement(docKey, screenId, { ...el, id: undefined, x: el.x + 12, y: el.y + 12 }));
 		setPicks(copies.map((c) => c.id));
 	}
+	/** 21-E3: 'menu' frees the pointer while this screen is up in play mode.
+	 * @param {string} sid @param {string} input */
+	function setScreenInput(sid, input) {
+		const doc = hudDocOf(docKey);
+		if (!doc) return;
+		setHudDocFor(docKey, {
+			...doc,
+			screens: doc.screens.map((sc) => (sc.id === sid ? { ...sc, input } : sc))
+		});
+	}
 	/** @param {string} sid @param {string} state */
 	function setScreenShowWhile(sid, state) {
 		const doc = hudDocOf(docKey);
@@ -827,6 +837,22 @@
 							>
 								<option value="">only when asked</option>
 								{#each GAME_STATES as g (g)}<option value={g}>{g}</option>{/each}
+							</select>
+						</label>
+						<!-- 21-E3: a MENU screen frees the pointer while it is up in play mode -->
+						<label
+							class="hud-showwhile"
+							title="Game: the pointer stays locked and this screen is a readout. Menu: while this screen is visible in play mode the pointer is FREED and movement pauses, so the player can click it; hiding it re-locks."
+						>
+							<span>input</span>
+							<select
+								class="hud-input"
+								id="hud-screen-input-{s.id}"
+								value={s.input ?? 'game'}
+								onchange={(/** @type {any} */ e) => setScreenInput(s.id, e.currentTarget.value)}
+							>
+								<option value="game">game</option>
+								<option value="menu">menu</option>
 							</select>
 						</label>
 					{/if}

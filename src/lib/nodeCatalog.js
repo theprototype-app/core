@@ -296,7 +296,18 @@ export const nodeCatalog = [
 			// H3: keyboard trigger — LOCAL key presses replicate as trigger pulses
 			// (golden rule: never stream local state); held keys re-pulse so the
 			// output stays high while held
-			{ type: 'keypress', label: 'Key Press', defaults: { code: 'KeyR', pulse: 0.3 } },
+			// 21-E3: `edge` picks WHICH moment fires. 'down' is the original pulse (held
+			// keys re-pulse, so the output stays high while held - byte-identical for
+			// every saved graph, absent = down). 'up' is the missing falling edge, the
+			// other half of hold-to-show ("keypress(down) -> show, keypress(up) -> hide").
+			// 'held' reads as a steady 1 while the key is down WITHOUT a toggle fighting
+			// the re-stamp - the re-stamp stays its implementation, so it costs no wire.
+			{
+				type: 'keypress',
+				label: 'Key Press',
+				defaults: { code: 'KeyR', pulse: 0.3, edge: 'down' },
+				params: [{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }]
+			},
 			// PFX-C: fires when the physics sim lands this object on the ground /
 			// another object (initiator-detected, replicated trigger stamp)
 			{

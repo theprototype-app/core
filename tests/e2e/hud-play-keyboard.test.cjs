@@ -115,11 +115,27 @@ h.run(async () => {
 		`and only that one (start stayed ${afterEnter.start})`
 	);
 
-	// Tab cycles too, and Space activates
+	// 21-E3: Tab drives the ring ONLY UNDER A HELD LOCK - pointer-free (the menu substate)
+	// native DOM tabbing over the opted-in controls takes over, and a game binding
+	// "hold Tab for the map" needs the key to reach keypress. Headless never holds a lock,
+	// so both halves are pinned: bare Tab does NOT cycle; with pointerLockElement stubbed
+	// to the renderer canvas it does.
+	await page.keyboard.press('Tab');
+	await page.waitForTimeout(200);
+	const tabUnlocked = await focusedLabel();
+	h.check(tabUnlocked === 'Quit', `without a held lock Tab leaves the ring alone (${tabUnlocked})`);
+	await page.evaluate(() => {
+		const canvases = [...document.querySelectorAll('canvas')];
+		const target = canvases[canvases.length - 1]; // threlte's, not DungeonMinimap's hidden one
+		Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => target });
+	});
 	await page.keyboard.press('Tab');
 	await page.waitForTimeout(200);
 	const afterTab = await focusedLabel();
-	h.check(afterTab === 'Start', `Tab cycles (${afterTab})`);
+	await page.evaluate(() => {
+		Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => null });
+	});
+	h.check(afterTab === 'Start', `under a held lock Tab cycles (${afterTab})`);
 	await page.keyboard.press('Space');
 	await page.waitForTimeout(700);
 	const afterSpace = await counts();

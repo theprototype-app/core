@@ -30,17 +30,36 @@ export function isClaimed(scope) {
 }
 
 /** @param {'keys'|'locomotion'} scope */
+// 21-E3: REFCOUNTED. The claim set used to be a plain membership list, so two
+// claimers of the same scope (a HUD menu + a module possess) dropped each other:
+// the first release removed the scope for both. editorNavigation refused to claim
+// at all for exactly this reason. Counts fix it with the SDK signatures and the
+// `includes('keys')` consumer contract byte-identical: the store gains the scope
+// on 0 -> 1 and loses it on 1 -> 0.
+/** @type {Map<string, number>} */
+const claimCounts = new Map();
+
+/** @param {string} scope */
 export function claimInput(scope) {
-	inputClaims.update((list) => (list.includes(scope) ? list : [...list, scope]));
+	const next = (claimCounts.get(scope) ?? 0) + 1;
+	claimCounts.set(scope, next);
+	if (next === 1) inputClaims.update((list) => (list.includes(scope) ? list : [...list, scope]));
 }
 
 /** @param {'keys'|'locomotion'} scope */
+/** @param {string} scope */
 export function releaseInput(scope) {
-	inputClaims.update((list) => list.filter((s) => s !== scope));
+	const next = Math.max(0, (claimCounts.get(scope) ?? 0) - 1);
+	if (next === 0) claimCounts.delete(scope);
+	else claimCounts.set(scope, next);
+	if (next === 0) inputClaims.update((list) => list.filter((s) => s !== scope));
 }
 
 /** Release everything a module might have left claimed (module error/disable). */
 export function releaseAllInput() {
+	// the module-error path. KNOWN WART, carried from the pre-refcount code: this
+	// drops every claimer including a live one that was not the failing module.
+	claimCounts.clear();
 	inputClaims.set([]);
 }
 

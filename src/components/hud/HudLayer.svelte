@@ -12,10 +12,11 @@
 	// phase (the AnnotationPins / AnnotationMarkers split).
 	import { onMount } from 'svelte';
 	import HudElement from './HudElement.svelte';
-	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, visibleScreen, activeHudKeys, HUD_KINDS } from '$lib/hudDocs';
-	import { isVRMode, isLocked } from '../../stores/sceneStore';
+	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, visibleScreen, activeHudKeys, HUD_KINDS , setHudValue, hudValueOf } from '$lib/hudDocs';
+	import { isVRMode, isLocked, playPointerFree } from '../../stores/sceneStore';
 	import { hudEditorClose } from '../../stores/appStore.js';
 	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
+	import { isInteractiveKind } from '$lib/hudKinds';
 	import { cameraPreview } from '$lib/cameraPreview';
 	import { claimInput, releaseInput } from '$lib/inputRuntime';
 	import { fireHudButton } from '$lib/flowRuntime';
@@ -69,15 +70,34 @@
 	const screens = $derived(screensFor($hudScreenOverride, throughCamera, $hudDocs));
 
 	// Unknown kinds are SKIPPED at render, never dropped from the document.
+	// any[]: an element carries PER-KIND fields beyond the base typedef (enabled, min/max,
+	// options, shared - declared open in hudKinds, the registry rule), and this component
+	// reads several of them for the ring. The cast says so once instead of nine times.
 	const elements = $derived(
-		screens.flatMap((entry) =>
+		/** @type {any[]} */ (screens.flatMap((entry) =>
 			(entry.screen?.elements ?? [])
 				.filter((el) => HUD_KINDS.includes(el.kind))
 				.map((el) => ({ ...el, __key: entry.key }))
-		)
+		))
 	);
-	const focusables = $derived(elements.filter((el) => el.kind === 'button'));
+	// 21-E3: every INTERACTIVE kind, not buttons alone - a settings menu is sliders and
+	// dropdowns, and under pointer lock the ring is the only hand a player has. A
+	// disabled control is skipped the way it ignores presses.
+	const focusables = $derived(elements.filter((el) => isInteractiveKind(el.kind) && el.enabled !== false));
 	const anyVisible = $derived(elements.length > 0 && !$isVRMode && layerAllowed && !authoringHidden);
+
+	// ---- 21-E3: the MENU SUBSTATE - this component is the SINGLE WRITER ------------
+	// Visibility IS the state: any visible screen marked input:'menu' while playing
+	// frees the pointer, and a menu hidden by ANY path (a node, showWhile, undo, a doc
+	// edit) restores gameplay by construction. Per-peer correct, because isLocked and
+	// the screen override are both local. An `inputmode` flow node was rejected for
+	// exactly this: replicated pulses vs a per-peer pointer is a desync, and a second
+	// source of truth strands the pointer free when the screen goes away.
+	const menuWanted = $derived(screens.some((entry) => entry.screen?.input === 'menu') && anyVisible && playing);
+	$effect(() => {
+		playPointerFree.set(menuWanted);
+		return () => playPointerFree.set(false);
+	});
 
 	// ---- the keyboard, under pointer lock -----------------------------------------
 	// The dungeon-realms menu done properly. Claiming through inputRuntime is strictly
@@ -98,6 +118,9 @@
 	/** @param {KeyboardEvent} event */
 	function onKeyDown(event) {
 		if (!anyVisible || focusables.length === 0) return;
+		// 21-E3: pointer-free, a control the player has natively focused gets native
+		// semantics - our Space on top of the browser's Space would double-fire it.
+		if (!document.pointerLockElement && /** @type {any} */ (event.target)?.closest?.('#hud-layer')) return;
 		// 21-E1.5: PLAY MODE ONLY. This is a window-CAPTURE listener that preventDefaults
 		// and stopImmediatePropagations Tab / the arrows / Space, so while a screen with a
 		// button was merely being PREVIEWED it took those keys off every panel in the app —
@@ -117,14 +140,52 @@
 		// ESCAPE IS NEVER OURS. See the note above — swallowing it here is how a player
 		// gets stuck inside a HUD screen with no way back to the editor.
 		if (event.code === 'Escape') return;
+		// 21-E3: Tab drives the ring only UNDER LOCK. Pointer-free (the menu substate)
+		// native DOM tabbing over the opted-in controls is strictly better - and a game
+		// binding "hold Tab for the map" through keypress needs the key to reach it.
+		if (event.code === 'Tab' && !document.pointerLockElement) return;
 		if (!NAV.has(event.code)) return;
 		event.preventDefault();
 		// capture phase + stopImmediatePropagation, so the gizmo/nav digits and the flow
 		// editor's own capture listeners do not also act on the same press
 		event.stopImmediatePropagation();
+		const el = focusables[focused % focusables.length];
 		if (event.code === 'Enter' || event.code === 'NumpadEnter' || event.code === 'Space') {
-			const el = focusables[focused % focusables.length];
-			if (el) fireHudButton(el.id);
+			if (!el) return;
+			// 21-E3: activation is PER KIND now that the ring reaches every input.
+			if (el.kind === 'button') fireHudButton(el.id);
+			else if (el.kind === 'toggle') {
+				// the same pair a pointer click writes: flip the value, then the pulse
+				setHudValue(el.id, !hudValueOf(el.id, el.value), { shared: !!el.shared });
+				fireHudButton(el.id);
+			}
+			// slider/dropdown/textfield have no press semantics; Left/Right below adjust
+			return;
+		}
+		const horizontal = event.code === 'ArrowLeft' || event.code === 'ArrowRight';
+		if (horizontal && el && (el.kind === 'slider' || el.kind === 'dropdown')) {
+			// 21-E3: a focused slider/dropdown takes Left/Right for its VALUE; Up/Down
+			// still walk the ring, so a menu of sliders stays navigable.
+			const dir = event.code === 'ArrowRight' ? 1 : -1;
+			if (el.kind === 'slider') {
+				const min = Number(el.min ?? 0);
+				const max = Number(el.max ?? 100);
+				const step = Number(el.step || 1);
+				const held = Number(hudValueOf(el.id, el.value ?? min));
+				const next = Math.min(max, Math.max(min, held + dir * step));
+				setHudValue(el.id, next, { shared: !!el.shared });
+			} else {
+				const options = String(el.options ?? '')
+					.split(',')
+					.map((o) => o.trim())
+					.filter(Boolean);
+				if (options.length) {
+					const held = String(hudValueOf(el.id, el.value ?? options[0]));
+					const at = Math.max(0, options.indexOf(held));
+					const next = options[(at + dir + options.length) % options.length];
+					setHudValue(el.id, next, { shared: !!el.shared });
+				}
+			}
 			return;
 		}
 		const forward = event.code === 'ArrowDown' || event.code === 'ArrowRight' || event.code === 'Tab';
@@ -191,7 +252,7 @@
 			<div
 				class="hud-slot"
 				class:hud-focused={playing &&
-				el.kind === 'button' &&
+				isInteractiveKind(el.kind) &&
 				focusables[focused % Math.max(1, focusables.length)]?.id === el.id}
 				data-hud-id={el.id}
 				data-hud-kind={el.kind}

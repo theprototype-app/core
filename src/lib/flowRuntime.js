@@ -1907,10 +1907,16 @@ export function startFlowRuntime() {
 	// inputRuntime; held keys re-pulse from the tick below.
 	import('./inputRuntime').then((m) => {
 		inputRuntimeRef = m;
-		m.onInput((/** @type {any} */ event) => {
-			if (event.type !== 'down') return;
+		// 21-E1.8: inputRuntime calls its listeners POSITIONALLY — `fn(kind, code)` — and
+		// this read them off one event OBJECT, so `event.type` was undefined on every press
+		// and the handler returned before it could pulse anything. The only thing that ever
+		// fired a Key Press node was the held-key re-stamp in the tick below (~3/s), so a
+		// first press was up to ~200ms late and a short TAP could be missed entirely.
+		// (The DEVX #8 family: a subscriber whose signature drifted from its publisher.)
+		m.onInput((/** @type {'down'|'up'} */ kind, /** @type {string} */ code) => {
+			if (kind !== 'down') return;
 			nodes.forEach((node) => {
-				if (node.type === 'keypress' && node.data?.code === event.code)
+				if (node.type === 'keypress' && node.data?.code === code)
 					applyNodeTrigger(node.id, syncedNow(), true);
 			});
 		});

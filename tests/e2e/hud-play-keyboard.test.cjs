@@ -54,6 +54,19 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(900);
 
+	// 21-E1.5: PLAY MODE, up front. The HUD keyboard is scoped to `$isLocked === true`
+	// now — outside play, Tab/arrows/Space belong to the editor and its panels (the ring
+	// handler is window-CAPTURE and preventDefaults, so it took them from everyone). This
+	// suite always MEANT play mode; section 5 used to be the first place it said so.
+	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.waitForTimeout(800);
+	const inPlay = await page.evaluate(() => {
+		let v;
+		window.__stores.isLocked.subscribe((x) => (v = x))();
+		return v;
+	});
+	h.check(inPlay === true, `premise: play mode is engaged, so the HUD owns its keys (${inPlay})`);
+
 	const counts = () =>
 		page.evaluate(() => {
 			let t;
@@ -161,7 +174,8 @@ h.run(async () => {
 	// ---- 5. THE CANNOT-SHIP RISK: Escape still leaves play mode -------------
 	const escape = await page.evaluate(async () => {
 		const s = window.__stores;
-		// enter play mode with the HUD screen up
+		// already in play mode from the top of the suite; kept so this section still
+		// stands alone if it is ever run on its own
 		s.isLocked.set(true);
 		await new Promise((r) => setTimeout(r, 700));
 		return {

@@ -6,6 +6,10 @@
 import { get } from 'svelte/store';
 import { moduleNodeGroups } from './moduleSDK';
 import { particlePreset } from './particlePresets';
+// 21-E1.8: the four game states were spelled out here TWICE and once more in
+// GameCameraNode, while `gameState` exported GAME_STATES that nobody imported. It is a
+// LEAF (svelte/store only), so importing it closes no cycle.
+import { GAME_STATES } from './gameState';
 
 /**
  * A1: `kind: 'text'` is a free-text param. It writes on COMMIT (change/blur),
@@ -85,7 +89,7 @@ export const nodeCatalog = [
 				label: 'Set Game State',
 				defaults: { state: 'playing', outcome: '' },
 				params: [
-					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
+					{ key: 'state', kind: 'select', options: [...GAME_STATES] },
 					{ key: 'outcome', kind: 'text', placeholder: 'won / lost', maxLength: 40 }
 				]
 			},
@@ -96,14 +100,17 @@ export const nodeCatalog = [
 				label: 'On Game State',
 				defaults: { state: 'playing', edge: 'enter', pulse: 0.3 },
 				params: [
-					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
+					{ key: 'state', kind: 'select', options: [...GAME_STATES] },
 					{ key: 'edge', kind: 'select', options: ['enter', 'exit'] }
 				]
 			},
 			// LOCAL on every peer, from a replicated trigger — the house rule. A peer's node
 			// must never move another peer's camera, so each one decides for itself and the
 			// views converge because the TRIGGER replicated, not the camera.
-			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '', restore: false } },
+			// 21-E1.8: `restore` was declared here and READ NOWHERE — the runtime only ever
+			// looks at `camera`. A default nothing consumes is a promise the node cannot keep,
+			// and `gamestart` already covers "put every peer back on the game camera".
+			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '' } },
 			// L-C: switch a LOOK on or off. The camera input picks WHOSE look (empty = the
 			// scene's); the switch is a per-peer runtime override, not an edit to the
 			// authored document, so it needs no message of its own — the trigger already

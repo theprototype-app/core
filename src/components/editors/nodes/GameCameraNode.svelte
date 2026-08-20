@@ -19,7 +19,7 @@
 	import { setNodeData } from '$lib/nodesHandler';
 	import { objectsGroup } from '../../../stores/sceneStore';
 	import { listCameraObjects } from '$lib/cameraObjects';
-	import { gameState } from '$lib/gameState';
+	import { gameState, GAME_STATES } from '$lib/gameState';
 	import { cameraPreview } from '$lib/cameraPreview';
 
 	type $$Props = NodeProps;
@@ -83,7 +83,7 @@
 					value={data.state ?? 'playing'}
 					on:change={(e) => setNodeData(id, { state: e.currentTarget.value })}
 				>
-					{#each ['menu', 'playing', 'paused', 'over'] as s (s)}<option value={s}>{s}</option>{/each}
+					{#each GAME_STATES as s (s)}<option value={s}>{s}</option>{/each}
 				</select>
 			</label>
 			<span class="gc-note">

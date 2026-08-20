@@ -13,7 +13,7 @@
 	import { onMount } from 'svelte';
 	import HudElement from './HudElement.svelte';
 	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, visibleScreen, activeHudKeys, HUD_KINDS } from '$lib/hudDocs';
-	import { isVRMode } from '../../stores/sceneStore';
+	import { isVRMode, isLocked } from '../../stores/sceneStore';
 	import { hudEditorClose } from '../../stores/appStore.js';
 	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
 	import { cameraPreview } from '$lib/cameraPreview';
@@ -39,6 +39,21 @@
 	const allowed = (/** @type {any} */ _overrides) => renderLayer('hud');
 	const layerAllowed = $derived(allowed($viewportOverrides));
 	const authoringHidden = $derived(!$hudEditorClose && !$hudPreviewInViewport);
+
+	// 21-E1.5: WHICH Z-TIER, and it depends on what you are doing.
+	//
+	// --z-hud (45) is right in PLAY: a HUD must beat the camera PiP and lose to
+	// modal/toast/menu (the 21-A rule, unchanged — an approval toast covers a game HUD).
+	// It is wrong while AUTHORING, where floating windows sit at 40 and the docked
+	// editors at 35: a previewed HUD painted straight over the editor you were using to
+	// build it, and an interactive kind (`pointer-events: auto`) SWALLOWED the clicks
+	// meant for the window underneath. So the layer drops to 38 — under every window,
+	// still over the viewport.
+	//
+	// `isLocked` is THREE-state (null = editor, true = playing, false = just exited, which
+	// Controls turns back to null), so playing is `=== true` and everything else is
+	// authoring. `=== false` would read the transient value and flip back a moment later.
+	const playing = $derived($isLocked === true);
 
 	// BOTH stores are read as dependencies. `visibleScreen` reaches the override through
 	// `get()`, and a `get()` inside a $derived registers NOTHING — so with only $hudDocs
@@ -83,6 +98,12 @@
 	/** @param {KeyboardEvent} event */
 	function onKeyDown(event) {
 		if (!anyVisible || focusables.length === 0) return;
+		// 21-E1.5: PLAY MODE ONLY. This is a window-CAPTURE listener that preventDefaults
+		// and stopImmediatePropagations Tab / the arrows / Space, so while a screen with a
+		// button was merely being PREVIEWED it took those keys off every panel in the app —
+		// including the HUD editor whose own Tab cycles the selection. A menu ring is for a
+		// player, and a player is someone who pressed play.
+		if (!playing) return;
 		// never steal keys from text entry (the inputRuntime / shortcuts guard)
 		const target = /** @type {any} */ (event.target);
 		if (
@@ -165,7 +186,7 @@
 </script>
 
 {#if anyVisible}
-	<div id="hud-layer" class="hud-layer">
+	<div id="hud-layer" class="hud-layer" class:hud-authoring={!playing} data-authoring={!playing}>
 		{#each elements as el (el.__key + ':' + el.id)}
 			<div
 				class="hud-slot"
@@ -190,6 +211,11 @@
 		/* the viewport keeps every click; only buttons opt back in */
 		pointer-events: none;
 		overflow: hidden;
+	}
+	/* 21-E1.5: while authoring, BELOW every window (--z-window 40, docked 35) and still
+	   above the viewport. Not a new tier — the same band, one step down. */
+	.hud-authoring {
+		z-index: 38;
 	}
 	.hud-slot {
 		position: absolute;

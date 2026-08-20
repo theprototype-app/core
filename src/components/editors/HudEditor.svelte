@@ -177,9 +177,32 @@
 	const STAGE_W = 1280;
 	const STAGE = $derived({ w: STAGE_W, h: Math.round(STAGE_W / stageAspect) });
 	let boardEl = $state(/** @type {HTMLElement|null} */ (null));
+	// E1.1: the STAGE box itself, as opposed to the wrap `boardEl` measures. A drop has
+	// to convert client coords against the board's own rect, so it needs the element.
+	let boardBox = $state(/** @type {HTMLElement|null} */ (null));
 	let boardW = $state(640);
 	let boardH = $state(360);
 	const scale = $derived(Math.min(boardW / STAGE.w, boardH / STAGE.h) || 0.5);
+	// E1.4: the stage is a FIXED reference and the runtime is the real window. Rather
+	// than let that be a surprise ("it fits in the editor and clips in the game"), the
+	// difference is drawn: the topbar names both, and a ghost outline puts THIS
+	// viewport's aspect on the stage. bind: on svelte:window keeps them live.
+	let viewW = $state(1280);
+	let viewH = $state(720);
+	const viewAspect = $derived(viewW / Math.max(1, viewH));
+	const ghost = $derived.by(() => {
+		const fit =
+			viewAspect >= stageAspect
+				? { w: STAGE.w, h: STAGE.w / viewAspect }
+				: { w: STAGE.h * viewAspect, h: STAGE.h };
+		return {
+			left: (STAGE.w - fit.w) / 2,
+			top: (STAGE.h - fit.h) / 2,
+			w: fit.w,
+			h: fit.h,
+			same: Math.abs(viewAspect - stageAspect) < 0.01
+		};
+	});
 	$effect(() => {
 		if (!boardEl || typeof ResizeObserver === 'undefined') return;
 		const ro = new ResizeObserver(() => {
@@ -220,22 +243,56 @@
 	}
 
 	// --- snapping ---------------------------------------------------------------
-	let snapOn = $state(true);
-	const GRID = 8;
-	/** Snap a stage-space edge to the 8px grid, the 9 anchor lines, and sibling edges.
+	// E1.7: the logic was all here already and none of it was reachable — `snapOn` was
+	// not persisted, the grid and the 12px threshold were constants, and the lines a
+	// drag landed on were never DRAWN, so snapping felt like the element sticking for no
+	// reason. All three are settings now (LOCAL, the viewPrefs/gridSettings family) and
+	// a snap reports the line it took so the drag can show it.
+	const SNAP_DEFAULTS = { on: true, grid: 8, threshold: 12 };
+	/** @param {string} key @param {number} fallback */
+	function snapPref(key, fallback) {
+		if (typeof localStorage === 'undefined') return fallback;
+		const raw = localStorage.getItem(key);
+		const n = raw === null ? NaN : parseFloat(raw);
+		return Number.isFinite(n) ? n : fallback;
+	}
+	let snapOn = $state(
+		typeof localStorage === 'undefined' ? SNAP_DEFAULTS.on : localStorage.getItem('hud:snapOn') !== 'false'
+	);
+	let snapGrid = $state(Math.max(1, snapPref('hud:snapGrid', SNAP_DEFAULTS.grid)));
+	let snapThreshold = $state(Math.max(0, snapPref('hud:snapThreshold', SNAP_DEFAULTS.threshold)));
+	$effect(() => {
+		try {
+			localStorage.setItem('hud:snapOn', String(snapOn));
+			localStorage.setItem('hud:snapGrid', String(snapGrid));
+			localStorage.setItem('hud:snapThreshold', String(snapThreshold));
+		} catch {}
+	});
+	// the lines the LIVE gesture is actually sitting on, drawn as 1px overlays. Cleared
+	// in the gesture's `end`, which modalGrab runs for a commit AND a cancel alike.
+	let activeGuides = $state(/** @type {{xs: number[], ys: number[]}} */ ({ xs: [], ys: [] }));
+	/** Snap a stage-space edge to the grid, the 9 anchor lines and sibling edges, and say
+	 * WHICH line it took (null = the grid, which needs no guide drawn).
 	 * @param {number} value @param {number[]} lines */
-	function snapTo(value, lines) {
-		if (!snapOn) return value;
-		let best = Math.round(value / GRID) * GRID;
+	function snapAxis(value, lines) {
+		if (!snapOn) return { value, line: /** @type {number|null} */ (null) };
+		let best = Math.round(value / snapGrid) * snapGrid;
 		let dist = Math.abs(value - best);
-		for (const line of lines) {
-			const d = Math.abs(value - line);
-			if (d < dist && d < 12) {
-				best = line;
+		/** @type {number|null} */
+		let line = null;
+		for (const candidate of lines) {
+			const d = Math.abs(value - candidate);
+			if (d < dist && d < snapThreshold) {
+				best = candidate;
 				dist = d;
+				line = candidate;
 			}
 		}
-		return best;
+		return { value: best, line };
+	}
+	/** @param {number} value @param {number[]} lines */
+	function snapTo(value, lines) {
+		return snapAxis(value, lines).value;
 	}
 	/** the guide lines a drag can land on: the stage's own thirds/centre plus every
 	 * OTHER element's edges @param {string} exceptId */
@@ -266,15 +323,22 @@
 		},
 		apply: (/** @type {any} */ ctx) => {
 			const gx = guides(ctx.snapshot.ids.length === 1 ? ctx.snapshot.ids[0] : '');
+			/** @type {number[]} */
+			const hitX = [];
+			/** @type {number[]} */
+			const hitY = [];
 			for (const id of ctx.snapshot.ids) {
 				const el = elements.find((e) => e.id === id);
 				const from = ctx.snapshot.rects[id];
 				if (!el || !from) continue;
 				// ABSOLUTE from the drag-start rect every move: a per-move delta COMPOUNDS
-				const left = snapTo(from.left + ctx.dx / scale, gx.xs);
-				const top = snapTo(from.top + ctx.dy / scale, gx.ys);
-				updateHudElement(docKey, screenId, id, offsetsFrom(el, left, top));
+				const sx = snapAxis(from.left + ctx.dx / scale, gx.xs);
+				const sy = snapAxis(from.top + ctx.dy / scale, gx.ys);
+				if (sx.line !== null) hitX.push(sx.line);
+				if (sy.line !== null) hitY.push(sy.line);
+				updateHudElement(docKey, screenId, id, offsetsFrom(el, sx.value, sy.value));
 			}
+			activeGuides = { xs: [...new Set(hitX)], ys: [...new Set(hitY)] };
 		},
 		revert: (/** @type {any} */ ctx) => {
 			for (const id of ctx.snapshot.ids) {
@@ -283,7 +347,10 @@
 				if (el && from) updateHudElement(docKey, screenId, id, offsetsFrom(el, from.left, from.top));
 			}
 		},
-		end: () => endHudGesture(docKey)
+		end: () => {
+			activeGuides = { xs: [], ys: [] };
+			endHudGesture(docKey);
+		}
 	});
 
 	const sizeGrab = createGesture({
@@ -296,15 +363,28 @@
 		apply: (/** @type {any} */ ctx) => {
 			const from = ctx.snapshot.rect;
 			if (!from) return;
-			const w = Math.max(8, snapTo(from.w + ctx.dx / scale, []));
-			const h = Math.max(8, snapTo(from.h + ctx.dy / scale, []));
+			// E1.7: resize snapped to the GRID only, so an element could never be sized to
+			// line up with its neighbour. It is the moving EDGE (right/bottom) that has to
+			// meet a guide, not the width — those are different numbers.
+			const gx = guides(ctx.snapshot.id);
+			const right = snapAxis(from.left + from.w + ctx.dx / scale, gx.xs);
+			const bottom = snapAxis(from.top + from.h + ctx.dy / scale, gx.ys);
+			const w = Math.max(8, right.value - from.left);
+			const h = Math.max(8, bottom.value - from.top);
+			activeGuides = {
+				xs: right.line === null ? [] : [right.line],
+				ys: bottom.line === null ? [] : [bottom.line]
+			};
 			updateHudElement(docKey, screenId, ctx.snapshot.id, { w, h });
 		},
 		revert: (/** @type {any} */ ctx) => {
 			const from = ctx.snapshot.rect;
 			if (from) updateHudElement(docKey, screenId, ctx.snapshot.id, { w: from.w, h: from.h });
 		},
-		end: () => endHudGesture(docKey)
+		end: () => {
+			activeGuides = { xs: [], ys: [] };
+			endHudGesture(docKey);
+		}
 	});
 
 	/** @param {PointerEvent} e @param {any} el */
@@ -437,21 +517,91 @@
 	function ensureDoc() {
 		if (!doc) setHudDocFor(docKey, {});
 	}
-	/** @param {string} kind */
-	function add(kind) {
+	/** The size grip in SCREEN space, kept inside the board. @param {any} r */
+	function gripAt(r) {
+		return {
+			left: Math.min(Math.max(0, (r.left + r.w) * scale - 5), STAGE.w * scale - 10),
+			top: Math.min(Math.max(0, (r.top + r.h) * scale - 5), STAGE.h * scale - 10)
+		};
+	}
+
+	/** client coords -> STAGE coords. The board is scaled to fit, so a screen pixel is
+	 * `1 / scale` stage pixels — the same conversion the drag already does with its
+	 * pointer deltas. @param {{clientX: number, clientY: number}} e */
+	function stagePointOf(e) {
+		const box = boardBox?.getBoundingClientRect();
+		if (!box) return { x: STAGE.w / 2, y: STAGE.h / 2 };
+		return { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale };
+	}
+
+	/** Add an element, CENTRED on `at` in stage coords — a drop point, a right-click
+	 * point, or (with `at` absent) the middle of the artboard.
+	 *
+	 * E1.2: every position source used to be ignored. The offset was
+	 * `24 + (n % 6) * 16`, which WRAPS: the 7th element landed exactly on the 1st, and a
+	 * right-click in the far corner put the new element in the opposite one.
+	 * @param {string} kind @param {{x: number, y: number}} [at] */
+	function add(kind, at) {
 		ensureDoc();
 		const sid = screenId || hudDocOf(docKey)?.screens[0].id;
-		if (!sid) return;
+		if (!sid) return null;
 		// 21-D1: size, label and every other param come from the REGISTRY, so adding a
 		// kind never means editing a ternary here again
+		const body = newElementOfKind(kind);
+		const anchor = String(body.anchor ?? 'top-left');
+		const point = at ?? { x: STAGE.w / 2, y: STAGE.h / 2 };
+		// clamped INTO the stage, so a drop near an edge cannot leave half the element
+		// outside the board it was dropped on
+		const left = Math.min(Math.max(0, Math.round(point.x - body.w / 2)), Math.max(0, STAGE.w - body.w));
+		const top = Math.min(Math.max(0, Math.round(point.y - body.h / 2)), Math.max(0, STAGE.h - body.h));
+		// through offsetsFrom, so the x/y written are in the element's OWN anchor frame —
+		// a kind that ever defaults to a corner other than top-left needs no change here
 		const el = addHudElement(docKey, sid, {
-			...newElementOfKind(kind),
-			anchor: 'top-left',
-			x: 24 + (elements.length % 6) * 16,
-			y: 24 + (elements.length % 6) * 16
+			...body,
+			anchor,
+			...offsetsFrom({ ...body, anchor }, left, top)
 		});
 		screenId = sid;
 		setPicks([el.id]);
+		return el;
+	}
+
+	/** where the drop cue sits, in stage coords. Declared ABOVE the handlers that write
+	 * it — the declare-before-the-closure rule this repo has paid for three times.
+	 * @type {{x: number, y: number}|null} */
+	let dropAt = $state(/** @type {{x: number, y: number}|null} */ (null));
+
+	// E1.1: THE PALETTE DRAG HAD NO CONSUMER. `HudPalette` set
+	// `application/x-hud-kind` in ondragstart and nothing anywhere read it, while
+	// App.svelte's window-level `on:dragover|preventDefault` made every surface LOOK
+	// droppable — so the drop the palette hint promises did nothing at all. The
+	// ShaderEditor recipe: preventDefault the dragover we recognise, convert the drop
+	// point, and let anything else (an Explorer item, a file) bubble to App.
+	/** @param {DragEvent} event */
+	function onBoardDragOver(event) {
+		if (!isHudDrag(event)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+		dropAt = stagePointOf(event);
+	}
+	/** @param {DragEvent} event */
+	function onBoardDragLeave(event) {
+		if (isHudDrag(event)) dropAt = null;
+	}
+	/** @param {DragEvent} event */
+	function onBoardDrop(event) {
+		const kind = event.dataTransfer?.getData('application/x-hud-kind');
+		dropAt = null;
+		if (!kind) return;
+		event.preventDefault();
+		event.stopPropagation();
+		add(kind, stagePointOf(event));
+	}
+	/** getData() is empty during a dragover (the drag is in protected mode), so the
+	 * TYPE list is the only thing readable then. @param {DragEvent} event */
+	function isHudDrag(event) {
+		return [...(event.dataTransfer?.types ?? [])].includes('application/x-hud-kind');
 	}
 	function duplicate() {
 		if (!selected.length) return;
@@ -500,9 +650,13 @@
 	function onContextMenu(e) {
 		e.preventDefault(); // ours, not the browser's
 		e.stopPropagation();
+		// E1.2: WHERE the click landed, in stage coords, so an Add from the menu appears
+		// under the cursor. And the LABELS come from the registry — they were the raw
+		// registry keys ('textfield', 'crosshair'), never the kind's own label.
+		const at = stagePointOf(e);
 		const items = [
 			{ section: 'Add' },
-			...HUD_KINDS.map((kind) => ({ label: kind, action: () => add(kind) })),
+			...HUD_KIND_DEFS.map((def) => ({ label: def.label, action: () => add(def.key, at) })),
 			{ section: ' ' },
 			{ label: 'Duplicate', hint: 'Ctrl+D', disabled: !selected.length, action: duplicate },
 			{
@@ -574,7 +728,7 @@
 	});
 </script>
 
-<svelte:window onresize={fitToViewport} />
+<svelte:window onresize={fitToViewport} bind:innerWidth={viewW} bind:innerHeight={viewH} />
 
 {#snippet body()}
 	<WindowShell bind:this={shell} key="hud" primaryLabel="Screens" secondaryModes={[{ key: 'props', icon: '⚙', label: 'Properties' }]}>
@@ -609,6 +763,17 @@
 				>
 					{#if $hudPreviewInViewport}<Eye size={14} aria-hidden="true" />{:else}<EyeOff size={14} aria-hidden="true" />{/if}
 				</button>
+				<!-- E1.4: the stage is a fixed REFERENCE and the numbers you type are px against
+				     it, while the runtime is the real window. Saying both out loud is the whole
+				     fix — the alternative is a coordinate migration nobody asked for. -->
+				<span
+					id="hud-stage-ref"
+					class="hud-hint"
+					title="Positions are pixels against this reference stage. Your window is {viewW}×{viewH}; the dashed outline on the board is its shape."
+				>
+					{STAGE.w}×{STAGE.h}
+					{#if attachedCamera}· {attachedCamera.name || 'Camera'} aspect{/if}
+				</span>
 				<span class="hud-hint">{elements.length} element{elements.length === 1 ? '' : 's'}</span>
 			</div>
 		{/snippet}
@@ -719,38 +884,85 @@
 				<div
 					id="hud-board"
 					class="hud-board"
+					class:hud-board-drop={!!dropAt}
+					bind:this={boardBox}
 					style="width: {STAGE.w * scale}px; height: {STAGE.h * scale}px"
+					ondragover={onBoardDragOver}
+					ondragleave={onBoardDragLeave}
+					ondrop={onBoardDrop}
 				>
-					{#each elements as el (el.id)}
-						{@const r = stageRect(el)}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div
-							class="hud-item"
-							class:hud-item-on={selected.includes(el.id)}
-							class:hud-item-unknown={!HUD_KINDS.includes(el.kind)}
-							data-hud-item={el.id}
-							style="left: {r.left * scale}px; top: {r.top * scale}px; width: {r.w * scale}px; height: {r.h * scale}px"
-							onpointerdown={(e) => onElementDown(e, el)}
-						>
-							<!-- the SAME renderer the runtime layer uses, so the artboard cannot drift -->
-							{#if HUD_KINDS.includes(el.kind)}
-								<HudElement element={el} runtime={$hudRuntime[el.id]} editor={true} />
-							{:else}
-								<span class="hud-unknown-tag">{el.kind}?</span>
-							{/if}
-							<!-- 21-D7: wired or dead, at a glance -->
-							{#if wired.has(el.id)}
-								<span class="hud-wired" title="Something is wired to this element"></span>
-							{/if}
-						</div>
+					<!-- E1.3: THE CONTENT RENDERS AT 1:1 AND THE WHOLE STAGE IS TRANSFORM-SCALED.
+					     It used to multiply every BOX rect by the scale while HudElement emitted its
+					     font-size in absolute px — so on a 0.3-scaled artboard the boxes shrank and the
+					     text did not, and a label that fits at runtime was clipped here (reported as
+					     "drag to resize differs on what parts are shown"). A transform scales the
+					     LAYOUT, so text, padding, borders and radii all come down with the box and the
+					     artboard is honest at every zoom. Handles and guides stay OUTSIDE it, in screen
+					     space, so a 1px guide is 1px and a 10px grip stays grabbable.
+					     `--hud-inv` is 1/scale: the item outlines are editor chrome drawn INSIDE the
+					     scaled stage, so they multiply by it to keep their screen thickness. -->
+					<div
+						id="hud-stage"
+						class="hud-stage"
+						style="width: {STAGE.w}px; height: {STAGE.h}px; transform: scale({scale}); --hud-inv: {1 / scale}"
+					>
+						{#each elements as el (el.id)}
+							{@const r = stageRect(el)}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="hud-item"
+								class:hud-item-on={selected.includes(el.id)}
+								class:hud-item-unknown={!HUD_KINDS.includes(el.kind)}
+								data-hud-item={el.id}
+								style="left: {r.left}px; top: {r.top}px; width: {r.w}px; height: {r.h}px"
+								onpointerdown={(e) => onElementDown(e, el)}
+							>
+								<!-- the SAME renderer the runtime layer uses, so the artboard cannot drift -->
+								{#if HUD_KINDS.includes(el.kind)}
+									<HudElement element={el} runtime={$hudRuntime[el.id]} editor={true} />
+								{:else}
+									<span class="hud-unknown-tag">{el.kind}?</span>
+								{/if}
+								<!-- 21-D7: wired or dead, at a glance -->
+								{#if wired.has(el.id)}
+									<span class="hud-wired" title="Something is wired to this element"></span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+					<!-- E1.4: the CURRENT viewport aspect, drawn on the reference stage. Anything
+					     outside it is outside the shape of the window you are actually looking at. -->
+					<div
+						id="hud-viewport-ghost"
+						class="hud-ghost"
+						class:hud-ghost-same={ghost.same}
+						title="Your window is {viewW}×{viewH} ({viewAspect.toFixed(2)}:1); the stage is {STAGE.w}×{STAGE.h}"
+						style="left: {ghost.left * scale}px; top: {ghost.top * scale}px; width: {ghost.w * scale}px; height: {ghost.h * scale}px"
+					></div>
+					<!-- E1.7: the lines this gesture is actually sitting on. 1px overlays OUTSIDE the
+					     scaled stage, so they stay 1px at every zoom. -->
+					{#each activeGuides.xs as gx}
+						<div class="hud-guide hud-guide-v" data-hud-guide="x" style="left: {gx * scale}px"></div>
 					{/each}
+					{#each activeGuides.ys as gy}
+						<div class="hud-guide hud-guide-h" data-hud-guide="y" style="top: {gy * scale}px"></div>
+					{/each}
+					{#if dropAt}
+						<!-- where a palette drop will land -->
+						<div
+							id="hud-drop-cue"
+							class="hud-drop-cue"
+							style="left: {dropAt.x * scale}px; top: {dropAt.y * scale}px"
+						></div>
+					{/if}
 					{#if one}
 						{@const r = stageRect(one)}
+						{@const grip = gripAt(r)}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							class="hud-size-grip"
 							title="Drag to resize"
-							style="left: {(r.left + r.w) * scale - 5}px; top: {(r.top + r.h) * scale - 5}px"
+							style="left: {grip.left}px; top: {grip.top}px"
 							onpointerdown={(/** @type {any} */ e) => {
 								e.stopPropagation();
 								if (e.button === 0) sizeGrab.begin(e);
@@ -772,6 +984,54 @@
 						{selected.length > 1
 							? selected.length + ' elements selected — drag them together, or pick one to edit.'
 							: 'Select an element to edit it.'}
+					</p>
+					<!-- E1.7: with nothing selected this pane was ONE line of prose, while the snap
+					     logic it should have exposed was all constants — so the grid could not be
+					     changed, the threshold was invisible, and the on/off did not survive a
+					     reload. LOCAL prefs, the gridSettings/viewPrefs family. -->
+					<p class="hud-sec-head">Snapping</p>
+					<label class="hud-field" title="Snap to the grid, the stage centre lines and other elements' edges">
+						<span>snap</span>
+						<span class="hud-field-ctl">
+							<input
+								id="hud-snap-on"
+								type="checkbox"
+								checked={snapOn}
+								onchange={(/** @type {any} */ e) => (snapOn = e.currentTarget.checked)}
+							/>
+						</span>
+					</label>
+					<DragRow
+						id="hud-snap-grid"
+						label="grid"
+						value={snapGrid}
+						step={1}
+						decimals={0}
+						min={1}
+						max={128}
+						title="Stage pixels between grid stops"
+						onchange={(/** @type {number} */ v) => (snapGrid = Math.max(1, Math.round(v)))}
+					/>
+					<DragRow
+						id="hud-snap-threshold"
+						label="pull"
+						value={snapThreshold}
+						step={1}
+						decimals={0}
+						min={0}
+						max={64}
+						title="How close an edge has to be before a guide takes it"
+						onchange={(/** @type {number} */ v) => (snapThreshold = Math.max(0, Math.round(v)))}
+					/>
+					<p class="hud-sec-head">This HUD</p>
+					<p class="hud-note" id="hud-doc-readout">
+						{attachedCamera ? 'Camera: ' + (attachedCamera.name || 'Camera') : 'Scene HUD'} ▸
+						{screen ? screen.name : 'no screen'} · {elements.length} element{elements.length === 1 ? '' : 's'}
+					</p>
+					<p class="hud-note">
+						Positions are pixels against a {STAGE.w}×{STAGE.h} reference. Your window is
+						{viewW}×{viewH}{ghost.same ? ' — the same shape' : ', a different shape'}; the dashed
+						outline on the board is where that window ends.
 					</p>
 				{:else}
 					<label class="hud-field"><span>id</span><input class="hud-input" readonly value={one.id} /></label>
@@ -977,22 +1237,36 @@
 		position: relative;
 		background: rgb(17 24 39 / 0.85);
 		box-shadow: 0 0 0 1px rgb(75 85 99 / 0.7);
+		/* E1.3: the runtime layer clips at the WINDOW, so the artboard clips at the stage.
+		   Without this an element dragged past the edge spilled across the whole wrap, which
+		   is the one thing the artboard is supposed to predict. */
+		overflow: hidden;
+	}
+	/* E1.3: 1:1 layout, scaled as a whole. transform-origin top-left, so the box maths
+	   above (left/top in stage px) needs no offset. */
+	.hud-stage {
+		position: absolute;
+		left: 0;
+		top: 0;
+		transform-origin: top left;
 	}
 	.hud-item {
 		position: absolute;
 		cursor: move;
-		outline: 1px dashed rgb(148 163 184 / 0.45);
+		/* editor chrome inside a scaled stage: * var(--hud-inv) keeps its SCREEN thickness,
+		   so a selection outline does not fade to a third of a pixel on a small dock */
+		outline: calc(1px * var(--hud-inv, 1)) dashed rgb(148 163 184 / 0.45);
 	}
 	.hud-item-on {
-		outline: 2px solid var(--accent, #ef562f);
-		outline-offset: 1px;
+		outline: calc(2px * var(--hud-inv, 1)) solid var(--accent, #ef562f);
+		outline-offset: calc(1px * var(--hud-inv, 1));
 	}
 	.hud-item-unknown {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		background: rgb(250 204 21 / 0.12);
-		outline: 1px dashed rgb(250 204 21 / 0.8);
+		outline: calc(1px * var(--hud-inv, 1)) dashed rgb(250 204 21 / 0.8);
 	}
 	.hud-unknown-tag {
 		font-size: 10px;
@@ -1015,6 +1289,47 @@
 		cursor: se-resize;
 		border-radius: 2px;
 		background: var(--accent, #ef562f);
+	}
+	/* E1.7: the guide the gesture is sitting on. Outside the scaled stage, so 1px is 1px. */
+	.hud-guide {
+		position: absolute;
+		pointer-events: none;
+		background: #38bdf8;
+		opacity: 0.85;
+	}
+	.hud-guide-v {
+		top: 0;
+		bottom: 0;
+		width: 1px;
+	}
+	.hud-guide-h {
+		left: 0;
+		right: 0;
+		height: 1px;
+	}
+	/* E1.4: the real window's shape on the reference stage. Faint on purpose — it is a
+	   fact about your screen, not part of the design. */
+	.hud-ghost {
+		position: absolute;
+		pointer-events: none;
+		border: 1px dashed rgb(148 163 184 / 0.5);
+	}
+	.hud-ghost-same {
+		border-color: rgb(148 163 184 / 0.22);
+	}
+	/* E1.1: where a palette drop will land */
+	.hud-drop-cue {
+		position: absolute;
+		margin: -5px 0 0 -5px;
+		height: 10px;
+		width: 10px;
+		border-radius: 999px;
+		pointer-events: none;
+		background: var(--accent, #ef562f);
+		box-shadow: 0 0 0 3px rgb(239 86 47 / 0.25);
+	}
+	.hud-board-drop {
+		box-shadow: 0 0 0 2px var(--accent, #ef562f);
 	}
 	.hud-btn {
 		display: inline-flex;

@@ -29,6 +29,16 @@ import {
 // 21-D6: gameState is a LEAF for exactly this reason — history imports THIS module, so a
 // gameState that imported history would close the cycle.
 import { gameState, setGameState, setGameVar, gameVar, gameElapsed, commitGameState } from './gameState';
+// 21-E6: charController is a LEAF for the same reason gameState is (svelte stores,
+// THREE, and two store-only modules), so a static edge closes nothing. It reaches
+// physics itself through its own primed dynamic import.
+import {
+	charControl,
+	playMoveSpeed,
+	setCharControl,
+	setPlayMoveSpeed,
+	DEFAULT_FLY_SPEED
+} from './charController';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -50,6 +60,58 @@ const restFired = new Map();
 /** B6: rising-edge map for the physics ACTION nodes (a pulse is high ~0.3 s, so
  * an action must run once per pulse, not once per frame) @type {Map<string, boolean>} */
 const physicsActionEdge = new Map();
+
+// --- 21-E6 follow-up: THE STALE-STAMP GUARD, shared by every trigger-edge family ----
+//
+// The trigger log is keyed by NODE ID and outlives the node, so a node that appears while
+// an old stamp is still in the log ADOPTS it and acts once on creation. Wire an On Click
+// that was pulsed a minute ago into a fresh Set Game State and the game starts the moment
+// the edge connects; the same wiring into a fresh Impulse throws the box.
+//
+// The three families expressed their edge three different ways — the game nodes compare
+// STAMPS, the physics nodes a rising VALUE, the character nodes stamps per HANDLE — so
+// each carried the flaw with a different exposure (a stamp from any time in the past for
+// the game family, only a live ~0.3s pulse for the physics one). ONE MAP AND ONE RULE for
+// all three, because they ask the identical question and three copies is how a rule
+// drifts apart. Node ids are `crypto.randomUUID()`, so one map cannot collide across
+// families, and one prune against the whole node list beats three per-family prunes.
+/** action node id -> the synced second we FIRST saw it @type {Map<string, number>} */
+const actionSeenAt = new Map();
+
+/**
+ * Register an action node's first-seen moment. Called for EVERY action node on EVERY
+ * tick, whether or not a stamp exists — the cutoff has to be set by mere PRESENCE. The
+ * first version keyed it on "have we recorded a stamp yet" instead, which swallowed the
+ * genuine first pulse of a node whose source had never fired: the common case, and it
+ * broke Possess Object outright.
+ * @param {any} node @param {number} time
+ */
+function seeActionNode(node, time) {
+	if (!actionSeenAt.has(node.id)) actionSeenAt.set(node.id, time);
+}
+
+/**
+ * Should this trigger stamp be REFUSED as older than the node that would act on it?
+ * A null stamp is never stale — there is nothing to refuse, and a boolean wired into a
+ * `trigger` handle produces a live pulse with no log entry at all.
+ * @param {any} node @param {number|null|undefined} stamp @returns {boolean}
+ */
+function staleTrigger(node, stamp) {
+	if (stamp === null || stamp === undefined) return false;
+	const seenAt = actionSeenAt.get(node.id);
+	return seenAt !== undefined && stamp < seenAt;
+}
+
+/** Forget nodes that no longer exist, so a node id that comes back takes a NEW cutoff —
+ * which is what makes the refusal hold for an undo that restores a deleted node. Skipped
+ * on an EMPTY node list: that is the graph mirror mid-swap rather than a deletion, and
+ * wiping every cutoff there would refuse the next live pulse for no reason. */
+function pruneActionSeenAt() {
+	if (!actionSeenAt.size || !nodes.length) return;
+	const live = new Set(nodes.map((/** @type {any} */ n) => n.id));
+	for (const id of [...actionSeenAt.keys()]) if (!live.has(id)) actionSeenAt.delete(id);
+}
+
 /** @type {any} */ let shaderRef = null;
 /** L-C: reached by PRIMED dynamic import, never statically — scenePost imports
  * history, and history imports THIS module, so a static edge closes the cycle that
@@ -62,6 +124,9 @@ let previewRef = null;
  * on every keypress (the physics-not-running toast precedent above) */
 let lookSilentToasted = false;
 /** @type {any} */ let animImportsRef = null;
+/** 21-E6: possess.js, primed. It imports history (recordTransform) AND this module
+ * (suspendAnimation), so a static edge closes the cycle twice over. @type {any} */
+let possessRef = null;
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
 // and drives animation/effect nodes with a requestAnimationFrame loop.
@@ -217,12 +282,16 @@ function updatePlayAnim(pairs, ctx) {
  * replicates as a shared `nodetrigger` stamp, so every peer runs the same rising
  * edge from the same synced timestamp — and applyImpulse / setBodyVelocity are
  * already initiator-gated. NO new message type for any of these.
- * @param {{node: any, uuid: string}[]} pairs @param {any} ctx
+ * @param {{node: any, uuid: string}[]} pairs @param {any} ctx @param {number} time
  */
-function updatePhysicsActions(pairs, ctx) {
+function updatePhysicsActions(pairs, ctx, time) {
 	const seen = new Set();
 	for (const { node, uuid } of pairs) {
 		seen.add(node.id);
+		// register the cutoff before ANY `continue` below, so a node that is skipped this
+		// tick (no target yet) still gets one — a node can also appear in `pairs` twice,
+		// and seeActionNode is idempotent
+		seeActionNode(node, time);
 		const data = node.data ?? {};
 		const high = !!data.trigger;
 		const target = typeof data.target === 'string' && data.target !== '-None-' ? data.target : uuid;
@@ -236,6 +305,14 @@ function updatePhysicsActions(pairs, ctx) {
 		const continuous = node.type === 'setvelocity' && (data.mode ?? 'once') === 'continuous';
 		if (!continuous && (!high || was)) continue;
 		if (continuous && !high) continue;
+		// ...and the pulse that made us high may PREDATE this node. This family reads a
+		// rising VALUE rather than a stamp, so its exposure was only the ~0.3s a pulse
+		// stays high — narrower than the game family's, and the same bug: a fresh Impulse
+		// wired to an On Click pressed a moment ago threw the box on connect. The stamp
+		// behind the pulse is what answers it. A pulse with NO stamp (a Toggle wired into
+		// `trigger`) is never refused, and a continuous Set Velocity keeps running,
+		// because after its first tick every live stamp is newer than the cutoff.
+		if (staleTrigger(node, triggerStampFor(node.id, ctx))) continue;
 		// a physics action in a scene that is not simulating is a no-op, and used to
 		// be a SILENT one — the graph is right, the key fires, nothing moves
 		// initiator-gated by design, so a NON-initiator doing nothing here is correct
@@ -527,10 +604,18 @@ function updateGameNodes(time, ctx) {
 		const type = node.type;
 		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook')
 			continue;
+		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
 		if (stamp === null) continue;
 		if (gameActed.get(node.id) === stamp) continue;
 		gameActed.set(node.id, stamp);
+		// CONSUMED first, then refused: a stamp older than the node is not a pulse this
+		// node witnessed, and recording it keeps the refusal from being re-tested every
+		// frame for as long as that stamp is the newest one. Without this, wiring a
+		// previously-pressed On Click into a fresh Set Game State STARTED THE GAME on
+		// connect. A binding built by hudActions is unaffected: it creates its press node
+		// and its action node together, so the first press comes after both cutoffs.
+		if (staleTrigger(node, stamp)) continue;
 		const data = resolveInputs(node, nodes, edges, time, ctx);
 		if (type === 'setgamestate') {
 			// EVERY peer runs this from the same replicated stamp, so the write is
@@ -632,6 +717,295 @@ export function syncGameCameraNow() {
 	lastGameState = game.state;
 }
 
+// --- 21-E6: the character controller as nodes ---------------------------------
+// Play mode shipped ONE movement model, hardcoded in PointerLockControls: fly, WASD,
+// scroll for speed. A game could not have a walker, could not jump and could not read
+// or write its own speed. These five nodes expose it — and the parity contract is the
+// whole design: with NO charcontroller node anywhere, `charControl` stays null and
+// PointerLockControls runs the code it always ran, untouched.
+//
+// NOTHING HERE GOES ON THE WIRE, and each node has its own reason.
+//   charcontroller  the DOCUMENT already replicated, so every peer declares the same
+//                   controller from the same graph. The controller then drives THAT
+//                   peer's own camera, which is per-peer by nature.
+//   possessnode     possess() is reached from a replicated trigger STAMP, and its own
+//                   movement already broadcasts plain `move`s — the K-D contract.
+//   camerafollow    LOCAL, and deliberately so: the setcamera house rule. A peer's
+//                   graph must never move another peer's camera, so each one reacts to
+//                   the shared trigger itself and the views converge with no message.
+//   movespeed       a local speed override; the trigger that wrote it replicated.
+//   moveinput       every peer reads its OWN keys (see the value case).
+
+/** stamp-edge memory for the character ACTION nodes, keyed `nodeId|handle` — one per
+ * handle, because Possess Object's trigger and release are independent edges on the
+ * same node @type {Map<string, number>} */
+const charActed = new Map();
+/** the several-controllers warning is explained ONCE, not once a frame */
+let charMultipleWarned = false;
+
+/**
+ * The object a character action acts on: an explicit `target` input first, then an
+ * Object Selector this node feeds, then the owner of an object graph (H1's implicit
+ * rule). Same precedence as the physics actions.
+ * @param {any} node @param {any} data @returns {string | null}
+ */
+function charTargetOf(node, data) {
+	if (typeof data?.target === 'string' && data.target && data.target !== '-None-') return data.target;
+	for (const edge of edges) {
+		if (edge.source !== node.id) continue;
+		const uuid = targetUuidOf(edge);
+		if (uuid) return uuid;
+	}
+	return implicitOwnerOf(node);
+}
+
+/** @param {number} time @param {any} ctx */
+function updateCharNodes(time, ctx) {
+	// 1. THE DECLARATION. charcontroller is not an action and has no trigger: it is
+	// simply PRESENT, so it is read every tick and written only on change (setCharControl
+	// owns that comparison — a per-tick store write would be 60 notifications a second
+	// to a threlte task and a subscribed component).
+	const declarations = nodes.filter((/** @type {any} */ n) => n.type === 'charcontroller');
+	if (!declarations.length) {
+		setCharControl(null);
+		charMultipleWarned = false;
+	} else {
+		// which one wins has to be DECIDED THE SAME WAY ON EVERY PEER or two players get
+		// different movement from one scene. Node order inside a graph document is the
+		// order the author created them (and the order `nodecreate` replicated them), so
+		// the LAST one is the newest; sorting by graph id first makes the cross-graph case
+		// deterministic too, since Object.keys order is per-peer insertion order.
+		// Array.sort is stable, so within one graph the authored order survives.
+		const sorted = [...declarations].sort((/** @type {any} */ a, /** @type {any} */ b) =>
+			String(a.__graph ?? '').localeCompare(String(b.__graph ?? ''))
+		);
+		const winner = sorted[sorted.length - 1];
+		if (declarations.length > 1 && !charMultipleWarned) {
+			charMultipleWarned = true;
+			showToast(
+				declarations.length +
+					' Character Controller nodes are in this scene — the last one wins. Delete the others.'
+			);
+		}
+		const d = resolveInputs(winner, nodes, edges, time, ctx);
+		setCharControl({
+			mode: d.mode === 'walk' ? 'walk' : 'fly',
+			speed: num(d.speed ?? DEFAULT_FLY_SPEED),
+			jumpHeight: num(d.jumpHeight ?? 1.2),
+			eyeHeight: num(d.eyeHeight ?? 1.7),
+			gravity: d.gravity !== false,
+			sourceNodeId: winner.id
+		});
+	}
+
+	// 2. THE ACTIONS, each on a fresh stamp for its OWN handle
+	/**
+	 * Did THIS handle just receive a fresh pulse? Per handle, because Possess Object's
+	 * trigger and release are independent edges on one node.
+	 *
+	 * A stamp that PREDATES the node is refused through the SHARED `staleTrigger` rule at
+	 * the top of this file — the same one the game and physics action families use, since
+	 * all three ask the identical question. Measured here first: swapping a Possess graph
+	 * for a Camera Follow graph started the chase cam before anything was pressed.
+	 * @param {any} node @param {string} handle @returns {boolean}
+	 */
+	const fired = (node, handle) => {
+		const stamp = handleStamp(node, handle, ctx);
+		if (stamp === null) return false;
+		const key = node.id + '|' + handle;
+		if (charActed.get(key) === stamp) return false;
+		charActed.set(key, stamp);
+		return !staleTrigger(node, stamp);
+	};
+	const seen = new Set();
+	for (const node of nodes) {
+		const type = node.type;
+		if (type !== 'possessnode' && type !== 'camerafollow' && type !== 'movespeed') continue;
+		seen.add(node.id);
+		seeActionNode(node, time);
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		if (type === 'movespeed') {
+			// the value rides a number socket, so a keypress -> Number -> Move Speed(set)
+			// chain is "a button that changes my flying speed"
+			if (fired(node, 'set')) setPlayMoveSpeed(num(d.value ?? DEFAULT_FLY_SPEED));
+			continue;
+		}
+		const uuid = charTargetOf(node, d);
+		if (type === 'possessnode') {
+			// release FIRST: a graph that pulses both in one frame means "hand it back",
+			// and possess() itself releases any current ride before taking a new one
+			if (fired(node, 'release')) possessRef?.release?.();
+			if (fired(node, 'trigger') && uuid)
+				possessRef?.possess?.(uuid, {
+					camera: ['chase', 'orbit', 'first', 'none'].includes(d.camera) ? d.camera : 'chase',
+					speed: num(d.speed ?? 4),
+					turnSpeed: num(d.turnSpeed ?? 2.5),
+					eyeHeight: num(d.eyeHeight ?? 1.7),
+					mouseLook: d.mouseLook === true
+				});
+		} else {
+			if (fired(node, 'stop')) possessRef?.stopFollowCam?.();
+			if (fired(node, 'trigger') && uuid) possessRef?.startFollowCam?.(uuid);
+		}
+	}
+	// forget nodes that no longer exist, so a rebuilt node starts fresh — and takes a
+	// NEW first-seen cutoff with it, which is what makes the refusal above hold for a
+	// node id that comes back
+	for (const key of [...charActed.keys()])
+		if (!seen.has(key.slice(0, key.lastIndexOf('|')))) charActed.delete(key);
+}
+
+// --- 21-E4: the logic nodes' shared derivation --------------------------------
+// Latch / Delay / Sequence / Once turn pulses into state and into other pulses.
+// TWO OF THEM ARE PURE: a Delay's or a Sequence step's moment is `input stamp +
+// offset`, which every peer computes from the ONE replicated stamp on its own
+// clock - so nothing is scheduled, nothing is stored and nothing new goes on the
+// wire. The other two keep a scrap of state a stamp cannot express (a Latch
+// toggle's PARITY, a Once's FIRST stamp) and take the counter precedent instead:
+// maintained in applyNodeTrigger, which every peer runs from the same stamp.
+
+/** node types whose output stamp is DERIVED rather than logged @type {string[]} */
+const SCHEDULED_TYPES = ['delay', 'sequence'];
+/** Sequence's fixed output handles, in order @type {string[]} */
+const SEQUENCE_STEPS = ['step1', 'step2', 'step3', 'step4'];
+
+/**
+ * The effective stamp behind one edge's SOURCE: a derived fire time for a
+ * scheduled node, the plain trigger log for everything else. `seen` cuts a chain
+ * that loops back on itself (Delay -> Delay -> Delay is legal and useful).
+ * @param {any} edge @param {any} ctx @param {Set<string>} seen @returns {number|null}
+ */
+function stampOfSource(edge, ctx, seen) {
+	const source = nodes.find((n) => n.id === edge.source);
+	if (source && SCHEDULED_TYPES.includes(source.type))
+		return scheduledFireAt(source, edge.sourceHandle, ctx, seen);
+	return ctx?.triggers?.[edge.source]?.lastT ?? null;
+}
+
+/**
+ * The newest stamp arriving on ONE NAMED input handle. `set`/`reset`/`toggle`/
+ * `cancel` each need their own answer, which is why this sits beside
+ * triggerStampFor - that one deliberately folds every trigger-ish handle into a
+ * single number.
+ * @param {any} node @param {string} handle @param {any} ctx @param {Set<string>} [seen]
+ * @returns {number|null}
+ */
+function handleStamp(node, handle, ctx, seen = new Set()) {
+	if (!ctx?.triggers || !node) return null;
+	let newest = null;
+	for (const edge of edges) {
+		if (edge.target !== node.id) continue;
+		if ((edge.targetHandle ?? null) !== handle) continue;
+		const stamp = stampOfSource(edge, ctx, seen);
+		if (typeof stamp === 'number' && (newest === null || stamp > newest)) newest = stamp;
+	}
+	return newest;
+}
+
+/**
+ * When a scheduled node's output pulse FIRES - and null until that moment has
+ * actually passed.
+ *
+ * The second half is load-bearing rather than a nicety. Every consumer of an
+ * event acts on a STAMP EDGE (`gameActed.get(id) === stamp`), comparing stamps
+ * and not times, so handing out `stamp + seconds` up front would make a Delay
+ * fire its consumer INSTANTLY and look delayed only on the card.
+ * @param {any} node @param {string|null|undefined} handle @param {any} ctx @param {Set<string>} [seen]
+ * @returns {number|null}
+ */
+function scheduledFireAt(node, handle, ctx, seen = new Set()) {
+	if (!node || seen.has(node.id)) return null;
+	seen.add(node.id);
+	const at = scheduledMoment(node, handle, ctx, seen);
+	seen.delete(node.id);
+	return at !== null && at <= syncedNow() ? at : null;
+}
+
+/** @param {any} node @param {string|null|undefined} handle @param {any} ctx @param {Set<string>} seen */
+function scheduledMoment(node, handle, ctx, seen) {
+	const inT = handleStamp(node, 'trigger', ctx, seen);
+	if (inT === null) return null;
+	const d = node.data ?? {};
+	if (node.type === 'delay') {
+		// a cancel AT or AFTER the trigger drops the pending pulse; one BEFORE it is
+		// history, so cancel-then-trigger still fires - which is what a cooldown wants
+		const cancelT = handleStamp(node, 'cancel', ctx, seen);
+		if (cancelT !== null && cancelT >= inT) return null;
+		return inT + Math.max(0, num(d.seconds ?? 1));
+	}
+	// Sequence: CUMULATIVE offsets, so each field reads as "wait this long before
+	// this step" and step1's default 0 fires it immediately
+	const step = SEQUENCE_STEPS.indexOf(String(handle ?? SEQUENCE_STEPS[0]));
+	if (step < 0) return null;
+	let at = inT;
+	for (let i = 0; i <= step; i++) at += Math.max(0, num(d['delay' + (i + 1)] ?? 0));
+	return at;
+}
+
+/** The 0/1 window of an event moment - the onclick pulse formula, over a stamp
+ * that may be derived. @param {number|null} at @param {number} time @param {number} pulse */
+function pulseAt(at, time, pulse) {
+	if (at === null) return 0;
+	const dt = time - at;
+	return dt >= 0 && dt < pulse ? 1 : 0;
+}
+
+/** derived moments already pushed, keyed `nodeId|handle` @type {Map<string, number>} */
+const scheduledFired = new Map();
+
+/** A Once's moment is the stamp applyNodeTrigger FROZE on it - null while it is
+ * still armed, or after a rearm deleted the entry. @param {any} node @param {any} ctx */
+function onceMoment(node, ctx) {
+	const entry = ctx?.triggers?.[node.id];
+	return entry && entry.count === 1 && typeof entry.lastT === 'number' ? entry.lastT : null;
+}
+
+/**
+ * 21-E4: hand a Delay's / a Sequence step's / a Once's own moment to the PUSH half
+ * of the event system.
+ *
+ * The consumers of an event fall into two camps, and this is the seam between
+ * them. Some PULL - triggerStampFor, and any value input reading the pulse - and a
+ * derived moment reaches those for free. The rest are PUSH: a Counter's count, a
+ * Latch's toggle parity and a Once's freeze all happen INSIDE applyNodeTrigger,
+ * because none of them is derivable from a log that keeps one stamp per node.
+ * Leaving the derivation to the pullers alone makes `delay -> counter` and
+ * `once -> counter` - both obvious things to author - SILENT no-ops, which is the
+ * worst outcome on offer. (Both were: the suite caught the Once half, because
+ * applyNodeTrigger walks the edges of the node that FIRED and a Once firing is a
+ * side effect of its own trigger's walk, not a walk of its own.)
+ *
+ * `replicate: false` is the whole determinism story: every peer computes the same
+ * moment from the same already-replicated input stamp, so broadcasting it would
+ * count the pulse once per peer (the animfinished / ongamestate precedent). The
+ * map is local, holds one number per handle and is rebuilt from the graph, so a
+ * late joiner needs nothing out of it.
+ * @param {any} ctx
+ */
+function updateDerivedPulses(ctx) {
+	for (const node of nodes) {
+		const scheduled = SCHEDULED_TYPES.includes(node.type);
+		if (!scheduled && node.type !== 'once') continue;
+		const handles = node.type === 'sequence' ? SEQUENCE_STEPS : [null];
+		for (const handle of handles) {
+			const key = node.id + '|' + (handle ?? '');
+			const at = scheduled ? scheduledFireAt(node, handle, ctx) : onceMoment(node, ctx);
+			// a cancel, a rearm, or a trigger that has not come round again retires the
+			// moment - so firing later happens afresh instead of being deduped forever
+			if (at === null) {
+				scheduledFired.delete(key);
+				continue;
+			}
+			if (scheduledFired.get(key) === at) continue;
+			scheduledFired.set(key, at);
+			applyNodeTrigger(node.id, at, false, handle);
+		}
+	}
+	for (const key of [...scheduledFired.keys()])
+		if (!nodes.some((/** @type {any} */ n) => n.id === key.slice(0, key.lastIndexOf('|'))))
+			scheduledFired.delete(key);
+}
+
 /** The shared timestamp of whatever event is wired into this node's `trigger`
  * (the newest, with several sources fanned in). @param {string} nodeId @param {any} ctx */
 function triggerStampFor(nodeId, ctx) {
@@ -640,7 +1014,10 @@ function triggerStampFor(nodeId, ctx) {
 	for (const edge of edges) {
 		if (edge.target !== nodeId) continue;
 		if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
-		const stamp = ctx.triggers[edge.source]?.lastT;
+		// 21-E4: a Delay/Sequence source has NO entry in the trigger log - its stamp is
+		// derived - so reading the log directly here left those nodes unable to drive
+		// anything that acts on a trigger edge (hudscreen, setgamestate, playanim).
+		const stamp = stampOfSource(edge, ctx, new Set());
 		if (typeof stamp === 'number' && (newest === null || stamp > newest)) newest = stamp;
 	}
 	return newest;
@@ -813,7 +1190,13 @@ export const valueTypes = [
 	'hudbutton', // A3: an event source, pulsed by fireHudButton
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
-	'ongamestate', 'getvariable', 'gametime'
+	'ongamestate', 'getvariable', 'gametime',
+	// 21-E4: the logic a game LOOP is made of. Sequence's value is a handle MAP,
+	// like objectflow's - unwrapHandle resolves it per reading edge.
+	'latch', 'delay', 'sequence', 'once',
+	// 21-E6: the readable halves of the character controller. moveinput's value is a
+	// handle MAP, like sequence's — unwrapHandle resolves it per reading edge.
+	'movespeed', 'moveinput'
 ];
 
 // --- H5: object flows embedded in the scene graph -----------------------------
@@ -938,9 +1321,25 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			if (d.clamp ?? true) t = Math.min(Math.max(t, 0), 1);
 			return outMin + t * (outMax - outMin);
 		}
-		case 'select':
-			// 4.6: pick a or b by a wired index/boolean (switcher/compare pair-up)
-			return num(input('index', d.index ?? 0)) < 0.5 ? input('a', d.a ?? 0) : input('b', d.b ?? 0);
+		case 'select': {
+			// 4.6: pick a or b by a wired index/boolean (switcher/compare pair-up).
+			// 21-E4: N-WAY. The index is ROUNDED, which reproduces the old `< 0.5 ? a : b`
+			// split exactly over the 0/1 range, and CLAMPED to the highest slot this node
+			// actually uses - so a saved 2-input Select handed an out-of-range index still
+			// lands on `b` the way it always did, while a graph that wires or sets c/d gets
+			// four. That pair of rules is what keeps every existing Select byte-identical
+			// (random -> select over four spawn points is the case it was grown for).
+			const keys = ['a', 'b', 'c', 'd'];
+			let last = 1;
+			for (let i = 2; i < keys.length; i++)
+				if (
+					d[keys[i]] !== undefined ||
+					allEdges.some((e) => e.target === node.id && e.targetHandle === keys[i])
+				)
+					last = i;
+			const at = Math.min(last, Math.max(0, Math.round(num(input('index', d.index ?? 0)))));
+			return input(keys[at], d[keys[at]] ?? 0);
+		}
 		case 'toggle':
 			return !!d.on;
 		case 'vector3':
@@ -967,8 +1366,18 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// generation needed. A `reroll` event advances the sequence, so a graph
 			// can ask for a new value without waiting for an interval to elapse.
 			const seed = num(input('seed', d.seed ?? 0));
+			// 21-E4 follow-up: the reroll term is THE STAMP (in ms), not a count of
+			// rerolls, and the difference is the whole determinism story. A count is
+			// local: a LATE JOINER's log starts empty, so its count runs N behind for
+			// ever and its rolls never re-converge - two peers spawning a "random spawn
+			// point" in different places permanently, with nothing to heal it. The stamp
+			// is replicated, so every peer that holds the same last-reroll stamp computes
+			// the same number, and a joiner converges EXACTLY on the next reroll (the
+			// latch set/reset property rather than the latch toggle-parity one).
+			// Absent = 0, which is byte-identical to every graph saved before the input
+			// worked at all.
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const rerolls = trig ? trig.count ?? 0 : 0;
+			const rerolls = typeof trig?.lastT === 'number' ? Math.round(trig.lastT * 1000) >>> 0 : 0;
 			const value = lo + mulberry32(hashString(node.id) + roll + seed + rerolls) * (hi - lo);
 			return d.integer ? Math.floor(value) : value;
 		}
@@ -1006,6 +1415,69 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 				case 'xor': return a !== b;
 				default: return a && b;
 			}
+		}
+		// --- 21-E6: the two readable halves of the character controller ---
+		case 'movespeed':
+			// the speed that is ACTUALLY in force, by the same precedence
+			// PointerLockControls uses: the live override, else the Character Controller's
+			// own param, else the built-in default. A readout that used a different order
+			// would show a number that does not move you.
+			// DOC: with no Character Controller node, the scroll wheel adjusts
+			// PointerLockControls' own local variable, which nothing exposes — so the
+			// readout stays at the default until something writes the store. `set` works
+			// either way, because PointerLockControls prefers the store when it is set.
+			return get(playMoveSpeed) ?? get(charControl)?.speed ?? num(d.value ?? DEFAULT_FLY_SPEED);
+		case 'moveinput': {
+			// LOCAL, and that is the design rather than a limitation: every peer reads its
+			// OWN keys, so a peer pressing nothing reads 0 and always will. Streaming a
+			// movement axis would be a 60Hz message AND wrong — two players are meant to
+			// move independently. Two number handles, the Sequence handle-map shape.
+			const codes = inputRuntimeRef ? inputRuntimeRef.getInput().codes : new Set();
+			// E5 owns the gamepad and the VR stick; when it lands it feeds these two axes
+			// here, so a graph wired to Move Input keeps working with a controller in hand.
+			const x = (codes.has('KeyD') ? 1 : 0) - (codes.has('KeyA') ? 1 : 0);
+			const y = (codes.has('KeyW') ? 1 : 0) - (codes.has('KeyS') ? 1 : 0);
+			return { __handles: { x, y } };
+		}
+		// --- 21-E4: pulses become STATE, and other pulses ---
+		case 'latch': {
+			// set/reset are a PURE most-recent-stamp-wins read of the replicated trigger
+			// log, so two peers holding the same stamps cannot disagree - and a late joiner,
+			// which arrives with an EMPTY log (the log is not part of the handshake),
+			// converges on the very next set or reset it sees. That is strictly better than
+			// counting, which would leave it permanently offset.
+			const setT = handleStamp(node, 'set', ctx);
+			const resetT = handleStamp(node, 'reset', ctx);
+			const base =
+				setT === null && resetT === null
+					? !!d.initial
+					: (setT ?? -Infinity) >= (resetT ?? -Infinity); // a same-millisecond tie reads as SET
+			// toggle PARITY is the half a stamp cannot carry (a stamp is not a count), so it
+			// is counted in applyNodeTrigger - the counter precedent - and CLEARED there by
+			// any set/reset, which is what lets the two halves compose instead of fighting.
+			const flips = ctx?.triggers?.[node.id]?.count ?? 0;
+			return flips % 2 === 0 ? base : !base;
+		}
+		case 'delay':
+			// PURE, and it needs no state at all: the moment is stamp + seconds, the output
+			// is a pulse window around it, and `cancel` is a stamp comparison.
+			return pulseAt(scheduledFireAt(node, null, ctx), time, num(d.pulse ?? 0.3));
+		case 'sequence': {
+			// four outputs, so the value is a HANDLE MAP (the objectflow shape) that
+			// unwrapHandle picks apart by the reading edge's sourceHandle
+			/** @type {Record<string, number>} */
+			const handles = {};
+			for (const step of SEQUENCE_STEPS)
+				handles[step] = pulseAt(scheduledFireAt(node, step, ctx), time, num(d.pulse ?? 0.3));
+			return { __handles: handles };
+		}
+		case 'once': {
+			// the counter precedent: applyNodeTrigger writes this node's OWN entry on the
+			// first pulse and freezes it at count 1, and `rearm` deletes it. A frozen stamp
+			// is exactly what a downstream stamp-edge consumer needs in order to act once.
+			const entry = ctx?.triggers?.[node.id];
+			if (!entry || entry.count !== 1) return 0;
+			return pulseAt(entry.lastT, time, num(d.pulse ?? 0.3));
 		}
 		// --- 134: object reference, loops, timers, events ---
 		case 'objectselector':
@@ -1345,23 +1817,73 @@ function syncedNow() {
 /**
  * Apply an event trigger (134): stamp the source node's pulse time and bump any
  * Counter wired from it, all keyed by the SHARED synced time so peers agree.
+ *
+ * 21-E4: `sourceHandle` narrows the edge walk to ONE of a multi-output source's
+ * handles - which Sequence needs and nothing else does, its four steps being four
+ * separate events on one node id. Absent (the default) walks every outgoing edge,
+ * so every existing caller is byte-unchanged.
  * @param {string} nodeId @param {number} t @param {boolean} replicate
+ * @param {string|null} [sourceHandle]
  */
-export function applyNodeTrigger(nodeId, t, replicate = true) {
+export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null) {
 	flowTriggers.update((map) => {
 		const next = { ...map };
 		next[nodeId] = { count: next[nodeId]?.count ?? 0, lastT: t };
+		// 21-E4: the counting a stamp cannot express happens HERE, for every stateful
+		// node and not just Counter - which is the counter precedent stated properly:
+		// this function runs on every peer from the SAME replicated stamp, so the
+		// derived state agrees without being sent. What it costs is a late joiner,
+		// whose trigger log starts empty; each case below says what that means for it.
 		edges.forEach((edge) => {
 			if (edge.source !== nodeId) return;
-			const counter = nodes.find((n) => n.id === edge.target && n.type === 'counter');
-			if (!counter) return;
-			const prev = next[counter.id]?.count ?? 0;
-			const step = counter.data?.step ?? 1;
-			const op = counter.data?.op ?? 'up';
-			next[counter.id] = {
-				count: op === 'reset' ? 0 : op === 'down' ? prev - step : prev + step,
-				lastT: t
-			};
+			if (sourceHandle !== null && (edge.sourceHandle ?? null) !== sourceHandle) return;
+			const target = nodes.find((n) => n.id === edge.target);
+			if (!target) return;
+			const handle = edge.targetHandle ?? null;
+			if (target.type === 'counter') {
+				// a wired `reset` zeroes it. Handle-aware now, so the `op` param keeps
+				// meaning exactly what it did for every counter with only a pulse wired.
+				if (handle === 'reset') {
+					next[target.id] = { count: 0, lastT: t };
+					return;
+				}
+				const prev = next[target.id]?.count ?? 0;
+				const step = target.data?.step ?? 1;
+				const op = target.data?.op ?? 'up';
+				next[target.id] = {
+					count: op === 'reset' ? 0 : op === 'down' ? prev - step : prev + step,
+					lastT: t
+				};
+			} else if (target.type === 'latch') {
+				// ONLY the toggle parity lives here; set/reset are read straight off the
+				// stamps in evalNodeBody, which is why they CLEAR this rather than writing a
+				// state of their own - an accumulated odd count would otherwise invert a
+				// fresh `set`. A late joiner is exact for set/reset and can differ in toggle
+				// parity until the next set/reset re-bases it.
+				if (handle === 'toggle')
+					next[target.id] = { count: (next[target.id]?.count ?? 0) + 1, lastT: t };
+				else if (handle === 'set' || handle === 'reset')
+					next[target.id] = { count: 0, lastT: t };
+			} else if (target.type === 'random') {
+				// B6 shipped `reroll` as a DEAD input, and this is where it died: the roll
+				// reads `ctx.triggers[<the random node>]`, and NOTHING ever wrote an entry
+				// for a random node - applyNodeTrigger stamps the SOURCE and, before this
+				// batch, only a Counter target. So `rerolls` was 0 for the node's whole
+				// life and the input was a silent no-op.
+				//
+				// The count is bumped because "how many times was this rerolled" is a real
+				// readout, but THE SEED READS `lastT`, NOT THE COUNT - see the random case
+				// in evalNodeBody for why: a count cannot converge for a late joiner, and a
+				// stamp can.
+				if (handle === 'reroll')
+					next[target.id] = { count: (next[target.id]?.count ?? 0) + 1, lastT: t };
+			} else if (target.type === 'once') {
+				// `rearm` DELETES the entry instead of restamping it: a live stamp on a
+				// disarmed Once reads as a fresh pulse to every stamp-edge consumer
+				// downstream, because triggerStampFor sees lastT and knows nothing of count.
+				if (handle === 'rearm') delete next[target.id];
+				else if ((next[target.id]?.count ?? 0) === 0) next[target.id] = { count: 1, lastT: t };
+			}
 		});
 		return next;
 	});
@@ -1811,20 +2333,34 @@ function runTick(now) {
 	});
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs
-	/** @type {{node: any, uuid: string}[]} */
+	// 21-E4: `trigger` is the wired event's STAMP (null when nothing is wired)
+	/** @type {{node: any, uuid: string, trigger?: number|null}[]} */
 	const soundPairs = [];
 	edges.forEach((edge) => {
 		const source = nodes.find((n) => n.id === edge.source);
 		if (source?.type !== 'sound') return;
 		const uuid = targetUuidOf(edge);
 		// resolve input-driven volume/radius (133) without touching soundRuntime
-		if (uuid) soundPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+		// 21-E4: `trigger` rides the pair as the STAMP, not as the pulse's 0/1 value -
+		// soundRuntime plays one shot per NEW stamp, and a pulse is high for ~0.3s, which
+		// at 60fps is eighteen copies of the same sound.
+		if (uuid)
+			soundPairs.push({
+				node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) },
+				uuid,
+				trigger: triggerStampFor(source.id, ctx)
+			});
 	});
 	// H1: sound nodes in object graphs attach to their owner when unwired
 	nodes.forEach((node) => {
 		if (node.type !== 'sound') return;
 		const uuid = implicitOwnerOf(node);
-		if (uuid) soundPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
+		if (uuid)
+			soundPairs.push({
+				node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) },
+				uuid,
+				trigger: triggerStampFor(node.id, ctx)
+			});
 	});
 	updateSounds(soundPairs, sceneObjects, effectTime(time));
 
@@ -1885,7 +2421,7 @@ function runTick(now) {
 		if (uuid || typeof data.target === 'string')
 			physicsPairs.push({ node: { ...node, data }, uuid: uuid ?? '' });
 	});
-	updatePhysicsActions(physicsPairs, ctx);
+	updatePhysicsActions(physicsPairs, ctx, time);
 
 	// A3: ONE HUD collection pass, on the sound/particle/playanim shape. What every
 	// element SAYS is computed here from the already-replicated graph, which is why the
@@ -1894,7 +2430,19 @@ function runTick(now) {
 	// 21-D6: the game shell. Runs BEFORE the HUD pass would matter next frame, and reads
 	// the same replicated trigger stamps, so every peer takes the same decisions.
 	updateGameNodes(time, ctx);
+	// 21-E6: the character controller, beside the game shell and for the same reason —
+	// it reads the already-replicated graph and the same trigger stamps, so every peer
+	// declares the same controller and reacts to the same pulses with no message.
+	updateCharNodes(time, ctx);
 	updateHudSetNodes(time, ctx);
+	// 21-E4: Delay / Sequence / Once moments reach the PUSH consumers (Counter, a
+	// Latch toggle, another Once). `ctx.triggers` is this tick's snapshot, so those see
+	// the bump on the NEXT tick - one frame, the same latency every derived reaction
+	// in this file has.
+	updateDerivedPulses(ctx);
+	// ONE prune for the shared stale-stamp cutoffs, after every family has had its turn
+	// to register this tick's nodes (physics runs first, then game, then character)
+	pruneActionSeenAt();
 
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
 	if (now - lastValuesAt > 150) {
@@ -2047,6 +2595,9 @@ export function startFlowRuntime() {
 	import('./scenePost').then((m) => (postRef = m));
 	import('./cameraPreview').then((m) => (previewRef = m));
 	import('./animatedImports').then((m) => (animImportsRef = m));
+	// 21-E6: possess, for the Possess Object / Camera Follow nodes (see the TDZ note
+	// beside its ref above)
+	import('./possess').then((m) => (possessRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

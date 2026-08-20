@@ -9,6 +9,9 @@
 	// B4.6: Select — outputs `a` when index < 0.5, else `b`. Pairs with the
 	// switcher (which outputs an index) and compare/gate booleans; the only other
 	// way to CHOOSE between two wired values was a script node.
+	// 21-E4: N-WAY (a..d), for random-spawn-point / random-taunt. a/b keep their
+	// handle ids and the runtime clamps to the highest slot a node actually uses, so
+	// every saved 2-input Select behaves exactly as it did.
 	type $$Props = NodeProps;
 	export let id: string;
 	export let data;
@@ -21,12 +24,14 @@
 	<Socket kind="target" nodeType={data.type} position={Position.Left} id="index" style="top: 30px" />
 	<Socket kind="target" nodeType={data.type} position={Position.Left} id="a" style="top: 54px" />
 	<Socket kind="target" nodeType={data.type} position={Position.Left} id="b" style="top: 78px" />
+	<Socket kind="target" nodeType={data.type} position={Position.Left} id="c" style="top: 102px" />
+	<Socket kind="target" nodeType={data.type} position={Position.Left} id="d" style="top: 126px" />
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<div class="flex w-full flex-col gap-1">
 		<div class="flex justify-between"><span>out</span><span class="font-mono">{readout}</span></div>
-		{#each [['index', 'idx'], ['a', 'a'], ['b', 'b']] as [key, label]}
+		{#each [['index', 'idx'], ['a', '0 a'], ['b', '1 b'], ['c', '2 c'], ['d', '3 d']] as [key, label]}
 			<label class="flex items-center gap-1">
-				<span class="w-6 text-gray-400">{label}</span>
+				<span class="w-8 whitespace-nowrap text-gray-400">{label}</span>
 				<DragRow nodrag step={0.01} decimals={2} value={data[key] ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { [key]: v })} />
 			</label>
 		{/each}

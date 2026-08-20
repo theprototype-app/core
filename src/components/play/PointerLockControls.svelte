@@ -8,6 +8,18 @@
     import { resolvePlaySettings } from '$lib/playSettings'
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
     import { gamepadPrefs } from '$lib/gamepadPrefs'
+    // 21-E6: the character controller as nodes. A NULL charControl means no
+    // charcontroller node exists in any graph, and every branch below then falls
+    // through to the code that was always here — that is the parity contract, which is
+    // why these reads are guards rather than a rewrite of the movement code.
+    import {
+      charControl,
+      playMoveSpeed,
+      setPlayMoveSpeed,
+      setJumpRequested,
+      tickWalker,
+      walkStep
+    } from '$lib/charController'
 
     const { renderer, camera, invalidate } = useThrelte()
   
@@ -113,23 +125,66 @@
       // no focusables, so nothing claims, and the pause must hold anyway.
       if ($playPointerFree) return
 
+      // 21-E6: what the graph declared, and the speed actually in force. With no
+      // controller node `ctrl` is null and `speed` is this component's own moveSpeed,
+      // so the whole block below is byte-for-byte the old behaviour.
+      const ctrl = $charControl
+      const speed = $playMoveSpeed ?? ctrl?.speed ?? moveSpeed
+
+      // WALK: the node owns Y (gravity, jump, eye height) and resolves the horizontal
+      // step against whatever ground tier can answer — including the dungeon raster,
+      // so the slide below is its job too and this path returns early.
+      //
+      // MERGE NOTE (E5 x E6): the walk return sits ABOVE the stick mapping below, so
+      // walk mode consumes the pad itself — the MOVE stick folds into the walkStep
+      // input and the LOOK stick applies here, or a controller player could not walk
+      // or look in the very mode built for them.
+      if (ctrl?.mode === 'walk') {
+        const walker: any = $cameraParent
+        if (walker && $isLocked) {
+          const prefs = $gamepadPrefs
+          const pad = prefs.enabled ? getGamepadAxes() : { lx: 0, ly: 0, rx: 0, ry: 0 }
+          const mX = prefs.swapSticks ? pad.rx : pad.lx
+          const mY = prefs.swapSticks ? pad.ry : pad.ly
+          const padWalkInput = {
+            forward: moveState.forward || (mY < -0.01 ? 1 : 0),
+            backward: moveState.backward || (mY > 0.01 ? 1 : 0),
+            left: moveState.left || (mX < -0.01 ? 1 : 0),
+            right: moveState.right || (mX > 0.01 ? 1 : 0)
+          }
+          tickWalker(walker, ctrl, delta, walkStep(walker, padWalkInput, speed, delta))
+          const lX = prefs.swapSticks ? pad.lx : pad.rx
+          const lY = prefs.swapSticks ? pad.ly : pad.ry
+          if (lX || lY) {
+            const rate = PAD_LOOK_RATE * pointerSpeed * prefs.lookSensitivity * delta
+            _euler.setFromQuaternion(walker.quaternion)
+            _euler.y -= lX * rate
+            _euler.x -= (prefs.invertY ? -lY : lY) * rate
+            _euler.x = Math.max(_PI_2 - maxPolarAngle, Math.min(_PI_2 - minPolarAngle, _euler.x))
+            walker.quaternion.setFromEuler(_euler)
+            onChange()
+          }
+        }
+        return
+      }
+
       const beforeX = $cameraParent?.position.x ?? 0
       const beforeZ = $cameraParent?.position.z ?? 0
 
       if (moveState.forward === 1) {
-        $cameraParent.translateZ(-moveSpeed);
+        $cameraParent.translateZ(-speed);
       }
 
       if (moveState.backward === 1) {
-        $cameraParent.translateZ(moveSpeed);
+        $cameraParent.translateZ(speed);
       }
 
       if (moveState.left === 1) {
-        $cameraParent.translateX(-moveSpeed);
+        $cameraParent.translateX(-speed);
       }
 
       if (moveState.right === 1) {
-        $cameraParent.translateX(moveSpeed);
+        $cameraParent.translateX(speed);
       }
 
       // 21-E5: THE DEFAULT PAD MAPPING - left stick moves, right stick looks. On with NO
@@ -178,11 +233,11 @@
       const play = resolvePlaySettings($globalScene)
 
       if (!play.grounded && moveState.up === 1) {
-        $cameraParent.translateY(-moveSpeed);
+        $cameraParent.translateY(-speed);
       }
 
       if (!play.grounded && moveState.down === 1) {
-        $cameraParent.translateY(moveSpeed);
+        $cameraParent.translateY(speed);
       }
 
       if (play.grounded && $isLocked && $cameraParent) {
@@ -236,7 +291,17 @@
       // something, and says so on the event — never through a one-shot store
       // flag (the twin-Escape lesson)
       if (event.defaultPrevented) return
-      moveSpeed = Math.min(1, Math.max(0.01, moveSpeed + (event.deltaY > 0 ? -0.01 : 0.01)))
+      const step = event.deltaY > 0 ? -0.01 : 0.01
+      // 21-E6: while a controller is declared the wheel writes THROUGH the store, so
+      // scroll still adjusts speed AND the graph can read it (a Move Speed node) or
+      // overwrite it (a keypress -> Move Speed(set)). With no controller it stays this
+      // component's own local number, exactly as before — the parity contract.
+      if ($charControl) {
+        const current = $playMoveSpeed ?? $charControl.speed ?? moveSpeed
+        setPlayMoveSpeed(Math.min(1, Math.max(0.01, current + step)))
+        return
+      }
+      moveSpeed = Math.min(1, Math.max(0.01, moveSpeed + step))
     }
 
     function onKeyDown( event ) {
@@ -254,6 +319,16 @@
         case 'KeyD': moveState.right = 1; break;
         case 'KeyQ': moveState.up = 1; break;
         case 'KeyE': moveState.down = 1; break;
+        case 'Space':
+          // 21-E6: jump. The EDGE is taken inside charController (a browser repeats
+          // keydown while a key is held, so a held Space must still be one jump).
+          //
+          // Deliberately NOT preventDefault'd, and the collision is already arbitrated:
+          // a HUD screen claims keys through its own play-only window-CAPTURE handler,
+          // which stopImmediatePropagation()s while a screen is up — so a menu wins over
+          // a jump, which is the right precedence. Nothing here consumes Escape either.
+          if ($charControl?.mode === 'walk') setJumpRequested(true)
+          break;
         case 'Escape':
           // native pointer-lock Esc handles the normal case; this also rescues
           // the stuck state where play mode engaged but the lock never did
@@ -276,6 +351,9 @@
         case 'KeyD': moveState.right = 0; break;
         case 'KeyQ': moveState.up = 0; break;
         case 'KeyE': moveState.down = 0; break;
+        // released UNCONDITIONALLY, whatever the mode is now — the push-to-talk lesson:
+        // a mode switch or a modifier mid-hold must never strand the flag down
+        case 'Space': setJumpRequested(false); break;
       }
     }
   

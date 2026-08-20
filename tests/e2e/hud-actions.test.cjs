@@ -320,5 +320,45 @@ h.run(async () => {
 		`and the request was CLEARED after being acted on, so it cannot re-fire (${deepLink.pending})`
 	);
 
+
+	// ---- 11. a JUST-BUILT binding still fires (the 21-E6 stale-stamp guard) --
+	// The game actions now refuse a trigger stamp OLDER than the node that would act on
+	// it, because the trigger log is keyed by node id and outlives the node — wiring a
+	// previously-pressed On Click into a fresh Set Game State used to start the game on
+	// connect. addBinding is the one path that creates press node, action node and edge in
+	// ONE entry, so it is exactly the case that guard must not break: the press comes
+	// AFTER both nodes exist. Asserted here rather than reasoned about.
+	const justBuilt = await page.evaluate(async () => {
+		const s = window.__stores;
+		// a clean slate: no graph, and a game parked at menu
+		s.flowNodes.set([]);
+		s.flowEdges.set([]);
+		s.gameState.clearGameState();
+		s.gameState.setGameState('menu');
+		await new Promise((r) => setTimeout(r, 900));
+		let before;
+		s.gameState.gameState.subscribe((v) => (before = v))();
+		// build the binding, then press the button the ordinary way
+		const result = s.hudActions.addBinding('start', 'start');
+		await new Promise((r) => setTimeout(r, 900));
+		let mid;
+		s.gameState.gameState.subscribe((v) => (mid = v))();
+		const pressId = result.nodes.find((n) => n.type === 'hudbutton')?.id;
+		s.flowRuntime.fireHudButton('start');
+		await new Promise((r) => setTimeout(r, 1400));
+		let after;
+		s.gameState.gameState.subscribe((v) => (after = v))();
+		return { ok: result.ok, before: before.state, mid: mid.state, after: after.state, pressId };
+	});
+	h.check(justBuilt.ok && !!justBuilt.pressId, 'premise: a fresh binding was built (press node + action node + edge)');
+	h.check(justBuilt.before === 'menu', `premise: the game starts at menu (${justBuilt.before})`);
+	h.check(
+		justBuilt.mid === 'menu',
+		`building the binding does NOT start the game by itself (${justBuilt.mid})`
+	);
+	h.check(
+		justBuilt.after === 'playing',
+		`and the FIRST press of a just-built button starts it — the guard refuses stale stamps, not new bindings (${justBuilt.after})`
+	);
 	await h.finish(browser);
 });

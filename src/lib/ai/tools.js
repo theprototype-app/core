@@ -820,7 +820,7 @@ function flowToolSchemas(physics) {
 									data: {
 										type: 'object',
 										description:
-											'node params, e.g. spin {axis:"y",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {points:[[x,y,z],…] (>=2 world waypoints), speed:1, mode:"loop"|"pingpong"}; setcolor {color:"#ff0000"}. Omit for defaults.'
+											'node params, e.g. spin {axis:"y",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {points:[[x,y,z],…] (>=2 world waypoints), speed:1, mode:"loop"|"pingpong"}; setcolor {color:"#ff0000"}; latch {initial:false}; delay {seconds:3}; sequence {delay1:0,delay2:0.5,delay3:0.5,delay4:0.5} (delays are CUMULATIVE). Omit for defaults.'
 									}
 								},
 								required: ['type']
@@ -983,6 +983,14 @@ export function buildSystemPrompt() {
 		"in an OBJECT's graph with no edges drives that object — one node, zero edges is the",
 		'normal case, so usually OMIT edges. Node types: ' + aiNodeTypes(physics).join(', ') + '.',
 		'pathpatrol walks world waypoints: data.points = [[x,y,z],…] (at least 2).',
+		'Logic + timing (latch, delay, sequence, once, counter) are THE EXCEPTION to that',
+		'rule: they do nothing unwired, so they always need edges with toHandle. latch',
+		'toHandle "set"/"reset"/"toggle" turns a ~0.3s pulse into a boolean that HOLDS',
+		'(onclick -> latch.reset -> visibility.on hides a collected object for good);',
+		'delay {seconds} re-fires a pulse later (a door that shuts itself), cancel drops a',
+		'pending one; once fires only the first time (rearm allows it again); sequence fans',
+		'one pulse into step1..step4 by fromHandle; counter toHandle "pulse" counts and',
+		'"reset" zeroes it.',
 		'Moving-creature recipe (e.g. "a moving spider"): create the body parts, group them, put',
 		"ONE pathpatrol node on the GROUP's graph, and a bounce node on each leg's graph.",
 		'Existing node ids/data appear in the scene summary ("flow"/"sceneFlow") — tune or remove',

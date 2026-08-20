@@ -1555,6 +1555,24 @@ export function physicsPeerDisconnected(peerId) {
 	});
 }
 
+/**
+ * 21-E6: the LIVE world + the rapier module, or null when nothing is simulating.
+ *
+ * This is the whole seam the character walker needs, and it is a getter rather than an
+ * export of `world` because `world` is reassigned on every start and NULLED on stop —
+ * a binding captured once would be stale for the rest of the session. Returning null
+ * IS the contract, not a failure: the world exists only while a sim runs, which is why
+ * the walker's ground resolution is tiered rather than assuming rapier is there.
+ *
+ * A caller building a collider through this owns it entirely: it gets no `colliderOwner`
+ * entry, so physics.js's own body list, write-back, impact and sensor paths all skip it
+ * (both already look every handle up and bail on an unknown one).
+ * @returns {{world: any, RAPIER: any} | null}
+ */
+export function physicsRuntime() {
+	return world && RAPIER ? { world, RAPIER } : null;
+}
+
 /** B4: test/debug view of the world-level state (ground, bounds, timing) */
 export function physicsWorldDebug() {
 	return {

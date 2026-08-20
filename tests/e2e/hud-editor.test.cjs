@@ -344,7 +344,7 @@ h.run(async () => {
 		return { x, y, hit: at?.id || at?.className || at?.tagName };
 	});
 	h.check(
-		/hud-board|hud-item/.test(String(boardPoint.hit)),
+		/hud-board|hud-stage|hud-item/.test(String(boardPoint.hit)),
 		`premise: the right-click point is ON the artboard (${boardPoint.hit})`
 	);
 	await page.mouse.click(boardPoint.x, boardPoint.y, { button: 'right' });

@@ -7,6 +7,7 @@
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
+	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
 	const appVersionString = versionString();
@@ -73,6 +74,7 @@
 	let vrExpanded = false; // D7: edit-cap toasts deep-link here ('vr')
 	let interfaceExpanded = false;
 	let controlsExpanded = false;
+	let inputExpanded = false; // 21-E5: gamepad (the shortcuts-registry precedent: LOCAL prefs)
 
 	// D7: sanitize a cap edit — an empty/garbage field falls back to the default
 	function setCap(store: any, raw: string, fallback: number) {
@@ -333,6 +335,7 @@
 		vrExpanded = $settingsSection === 'vr';
 		interfaceExpanded = $settingsSection === 'interface';
 		controlsExpanded = $settingsSection === 'controls';
+		inputExpanded = $settingsSection === 'input';
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
@@ -365,6 +368,7 @@
 				sceneExpanded,
 				interfaceExpanded,
 				controlsExpanded,
+				inputExpanded,
 				connectionExpanded,
 				vrExpanded,
 				aboutExpanded
@@ -374,6 +378,7 @@
 			sceneExpanded = true;
 			interfaceExpanded = true;
 			controlsExpanded = true;
+			inputExpanded = true;
 			connectionExpanded = true;
 			vrExpanded = true;
 			aboutExpanded = true;
@@ -384,6 +389,7 @@
 				sceneExpanded,
 				interfaceExpanded,
 				controlsExpanded,
+				inputExpanded,
 				connectionExpanded,
 				vrExpanded,
 				aboutExpanded
@@ -654,6 +660,73 @@
 					<SettingRow name="Allow browser pinch zoom">
 						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>
 						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
+					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={inputExpanded}>
+					{#snippet header()}Input{/snippet}
+					<p class="ui-section-label">Gamepad</p>
+					<!-- 21-E5: LOCAL prefs (the shortcuts-registry / viewPrefs precedent) - never
+					     replicated and never saved into a scene. Which stick I hold in which hand is a
+					     fact about MY hardware. What they configure is the DEFAULT mapping, i.e. the
+					     no-nodes case; a game that binds its own controls overrides it. -->
+					<SettingRow name="Gamepad">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="gamepad-enabled"
+								checked={$gamepadPrefs.enabled}
+								onchange={(e) => setGamepadPrefs({ enabled: e.currentTarget.checked })} />
+						</svelte:fragment>
+						<span>A connected controller drives the game with no setup: the left stick walks, the right stick looks, and the d-pad + <strong>A</strong> work a HUD menu. Off ignores the pad entirely</span>
+					</SettingRow>
+					<SettingRow name="Swap sticks">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="gamepad-swap"
+								checked={$gamepadPrefs.swapSticks}
+								onchange={(e) => setGamepadPrefs({ swapSticks: e.currentTarget.checked })} />
+						</svelte:fragment>
+						<span>Move with the RIGHT stick and look with the left — the southpaw layout</span>
+					</SettingRow>
+					<SettingRow name="Invert look Y">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="gamepad-invert-y"
+								checked={$gamepadPrefs.invertY}
+								onchange={(e) => setGamepadPrefs({ invertY: e.currentTarget.checked })} />
+						</svelte:fragment>
+						<span>Push the look stick up to look DOWN (the flight-stick convention)</span>
+					</SettingRow>
+					<SettingRow name="Stick deadzone">
+						<svelte:fragment slot="control">
+							<input
+								id="gamepad-deadzone"
+								type="number"
+								min={DEADZONE_RANGE.min}
+								max={DEADZONE_RANGE.max}
+								step="0.01"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$gamepadPrefs.deadzone}
+								on:change={(e: any) => setGamepadPrefs({ deadzone: parseFloat(e.target.value) })} />
+						</svelte:fragment>
+						<span>How far a stick may drift at rest before it counts as pushed ({DEADZONE_RANGE.min}–{DEADZONE_RANGE.max}). Raise it if the camera creeps with your hands off the pad; the range beyond it is rescaled, so nothing jumps</span>
+					</SettingRow>
+					<SettingRow name="Look sensitivity">
+						<svelte:fragment slot="control">
+							<input
+								id="gamepad-sensitivity"
+								type="number"
+								min={SENSITIVITY_RANGE.min}
+								max={SENSITIVITY_RANGE.max}
+								step="0.1"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$gamepadPrefs.lookSensitivity}
+								on:change={(e: any) => setGamepadPrefs({ lookSensitivity: parseFloat(e.target.value) })} />
+						</svelte:fragment>
+						<span>How fast the look stick turns ({SENSITIVITY_RANGE.min}–{SENSITIVITY_RANGE.max}×). Mouse look has its own speed and is unaffected</span>
+					</SettingRow>
+					<p class="ui-section-label">Bindings</p>
+					<SettingRow name="Per-game controls" noControl={true}>
+						<span>A scene can bind the pad itself with the <strong>Gamepad Button</strong> and <strong>Gamepad Axis</strong> nodes in the node editor (Input group) — button presses replicate like a key press, while a stick value stays local to the player holding it. Module bindings are listed under Shortcuts</span>
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={sceneExpanded}>

@@ -7,7 +7,15 @@
 const h = require('./helpers.cjs');
 
 h.run(async () => {
-	const browser = await h.launch();
+	// GPU_ARGS IS LOAD-BEARING for H3, and this suite went without it for a long time.
+	// The held-key output is kept high by a re-stamp that fires once per flow tick when
+	// `time - last > pulse * 0.66` (0.264s for this node). MEASURED on a software-rendered
+	// page: 6 rAF frames/s, so the re-stamp lands every 0.43-0.51s against a 0.4s pulse
+	// window — the read is a COIN FLIP, and it came up both ways on two different trees
+	// with byte-identical numbers. With the GPU args: 61 frames/s, a 0.267s gap, and 15 of
+	// 15 samples read 1. An assertion about a rate must run at a real frame rate or it is
+	// measuring the host scheduler.
+	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 
 	// --- H2: module def seeded -------------------------------------------------

@@ -29,6 +29,17 @@ export const worldRig = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const backgroundColor = writable('#ffffff');
 export const isLocked = writable(null);
+
+/**
+ * 21-E3: 'in play, pointer free' - the MENU SUBSTATE of `isLocked === true`, never
+ * meaningful otherwise. True while a visible HUD screen with `input: 'menu'` has
+ * released the pointer so the player can click it; the camera stays the player cam
+ * and `isLocked` is NEVER written by the menu loop, which is what keeps the exit
+ * debounce (Controls' false -> null + the 2s allowPlay lockout) structurally
+ * unreachable from opening a menu. SINGLE WRITER: HudLayer. Everyone else reads.
+ * @type {import("svelte/store").Writable<boolean>}
+ */
+export const playPointerFree = writable(false);
 export const isVRMode = writable(false);
 export const vrOverride = writable(false);
 export const playerCam = writable(false);

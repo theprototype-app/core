@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { isLocked, isVRMode, objectsGroup, globalScene, lockedObjects } from '../stores/sceneStore';
+import { isLocked, isVRMode, playPointerFree, objectsGroup, globalScene, lockedObjects } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneHits } from './scenePick';
 import { topLevelObjectOf } from './objectActions';
@@ -90,6 +90,10 @@ let lastUp = 'none';
 /** the scene's effective interaction mode right now */
 function interactionMode() {
 	if (!get(isLocked) || get(isVRMode)) return 'off';
+	// 21-E3: the MENU SUBSTATE - pointer free, mouse on the HUD. isLocked stays true
+	// there by design, so this needs its own check: a live grab cancels through the
+	// existing 'off' discipline (zero-velocity release) and taps/wheel cascade off.
+	if (get(playPointerFree)) return 'off';
 	return resolvePlaySettings(get(globalScene)).interaction;
 }
 

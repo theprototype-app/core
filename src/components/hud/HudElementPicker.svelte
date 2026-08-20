@@ -26,8 +26,13 @@
 		hudDocOf,
 		hudPickArm,
 		hudPickResult,
-		armHudPick
+		armHudPick,
+		addHudScreen,
+		openHudEditor,
+		HUD_SCENE_KEY
 	} from '$lib/hudDocs';
+	import { beginHudGesture, endHudGesture } from '$lib/hudSync';
+	import { listCameraObjects } from '$lib/cameraObjects';
 
 	/**
 	 * @type {{ value?: string, docKey?: string, mode?: 'element'|'screen',
@@ -49,6 +54,29 @@
 	/** @type {(key: string, docs: any) => any[]} */
 	const listOf = (key, _docs) => (mode === 'screen' ? screenChoices(key) : elementChoices(key));
 	const choices = $derived(listOf(docKey, $hudDocs));
+
+	// 21-E2.3: the list has to say WHOSE screens it is showing. A picker in an object
+	// graph enumerates the SCENE HUD (`hudDocKeyFor`), and without a header that reads as
+	// "these are my object's screens" — which they are not.
+	const docLabel = $derived.by(() => {
+		void $hudDocs;
+		if (docKey === HUD_SCENE_KEY) return 'Scene HUD';
+		const cam = listCameraObjects().find((/** @type {any} */ c) => c.uuid === docKey);
+		return cam ? (cam.name || 'Camera') + ' HUD' : 'HUD ' + docKey.slice(-4);
+	});
+
+	/** 21-E2.3: create a screen and select it, from the picker — the empty state used to be
+	 * a dead disabled row saying "nothing on any screen yet", which is true and useless: the
+	 * thing you need next is a screen. ONE undo entry, because `addHudScreen` is a single
+	 * `setHudDocFor`; the gesture brackets it so that stays true if it ever stops being. The
+	 * name is a default and the rename lives in the editor — a prompt here would be a modal
+	 * inside a context menu inside a node card. */
+	function newScreen() {
+		beginHudGesture(docKey);
+		const id = addHudScreen(docKey, '');
+		endHudGesture(docKey);
+		onpick?.(id);
+	}
 
 	/** The two modes resolve to DIFFERENT shapes ({kind, screen} vs {name}), so the reads
 	 *  below cast rather than narrow - `mode` is a prop and no control-flow analysis can
@@ -91,6 +119,8 @@
 		const r = el.getBoundingClientRect();
 		/** @type {any[]} */
 		const items = [];
+		// names the document being enumerated, which in an object graph is NOT this object
+		items.push({ section: docLabel });
 		if (choices.length > 6) items.push({ label: 'Search...', icon: 'search', revealFilter: true });
 		if (mode === 'screen') {
 			for (const c of choices)
@@ -112,8 +142,24 @@
 					});
 			}
 		}
-		if (!choices.length) items.push({ label: 'nothing on any screen yet', disabled: true });
+		if (!choices.length)
+			items.push({
+				label: mode === 'screen' ? 'no screens yet' : 'nothing on any screen yet',
+				disabled: true
+			});
 		items.push({ section: '' });
+		// 21-E2.3: the two things you actually want from an empty list — a screen to point at,
+		// or the editor where you would make one. Offered in BOTH modes: an element picker with
+		// nothing to pick needs the editor just as much.
+		if (mode === 'screen')
+			items.push({ label: 'New screen...', icon: 'plus', action: newScreen });
+		items.push({
+			label: 'Open HUD editor',
+			icon: 'layout-dashboard',
+			action: () => {
+				void openHudEditor();
+			}
+		});
 		items.push({ label: 'Enter id manually...', icon: 'pencil', action: () => (manual = true) });
 		menu = { x: r.left, y: r.bottom + 2, items };
 	}

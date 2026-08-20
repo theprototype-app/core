@@ -21,6 +21,7 @@ import {
 	visibleScreen,
 	hudScreenOverride,
 	hudDocOf,
+	hudDocKeyFor,
 	resolveScreen,
 	hudValueOf,
 	setHudValue
@@ -433,7 +434,10 @@ function updateHudRuntime(time, ctx, now) {
 		if (hudScreenActed.get(node.id) === stamp) continue;
 		hudScreenActed.set(node.id, stamp);
 		const data = resolveInputs(node, nodes, edges, time, ctx);
-		const key = node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : 'scene';
+		// 21-E2.2: the SAME resolution the node card uses. Inline it was the graph id, which
+		// in an object graph is the object uuid — so `showHudScreen` wrote a per-peer override
+		// for a document that cannot exist and the node silently did nothing at all.
+		const key = hudDocKeyFor(node.__graph);
 		const wanted = String(data.screen ?? '').trim();
 		if (!wanted) continue;
 		const action = data.action ?? 'show';
@@ -572,6 +576,26 @@ function findHudElement(id) {
 }
 
 /** @param {number} time @param {any} ctx */
+/** 21-E3: is the game PAUSED right now? One reader, because four places act on it
+ * (the effect clock, physics, the transition pass, the suite). */
+// the flow-effect clock while paused: `pauseFrozeAt` marks the freeze, and on
+// resume the span joins `pauseOffset`, which is SUBTRACTED from the time every
+// EFFECT evaluates at - a spinning cube holds still and resumes where it froze
+// instead of jumping the gap. Value/HUD/game nodes keep the real clock.
+/** @type {number|null} */
+let pauseFrozeAt = null;
+let pauseOffset = 0;
+
+/** the clock EFFECTS evaluate at @param {number} time */
+export function effectTime(time) {
+	return (pauseFrozeAt !== null ? pauseFrozeAt : time) - pauseOffset;
+}
+
+export function gamePausedNow() {
+	return get(gameState).state === 'paused';
+}
+
+/** @param {number} time @param {any} ctx */
 function updateGameNodes(time, ctx) {
 	const game = get(gameState);
 
@@ -641,7 +665,22 @@ function updateGameNodes(time, ctx) {
 
 	// 2. the TRANSITION: pulse On Game State, and let Game Start pick the camera. Both
 	// are LOCAL reactions to REPLICATED state, which is why neither sends anything.
+	// 21-E3: PAUSE PAUSES. Physics holds through its own simPaused (the SimControls
+	// path - idempotent, so a manual pause is not fought); the flow EFFECT clock
+	// freezes through pauseOffset below; flow/HUD/game nodes keep ticking so menus
+	// stay alive. Every peer runs this from the same replicated state, so nothing
+	// about the pause is sent beyond the state itself.
 	if (game.state !== lastGameState) {
+		const pausedNow = game.state === 'paused';
+		const pausedBefore = lastGameState === 'paused';
+		if (pausedNow !== pausedBefore) {
+			import('./physics').then((m) => m.pauseSimulation?.(pausedNow)).catch(() => {});
+			if (pausedNow) pauseFrozeAt = time;
+			else if (pauseFrozeAt !== null) {
+				pauseOffset += time - pauseFrozeAt;
+				pauseFrozeAt = null;
+			}
+		}
 		const from = lastGameState;
 		lastGameState = game.state;
 		for (const node of nodes) {
@@ -1139,6 +1178,8 @@ export const valueTypes = [
 	'maprange', 'select', // 4.6
 	'flowinput', 'flowoutput', 'objectflow', // H5: object-flow composition
 	'keypress', // H3: keyboard trigger
+	'gamepadbutton', // 21-E5: pad trigger — the keypress model verbatim
+	'gamepadaxis', // 21-E5: a stick, read LOCALLY (never streamed)
 	'onimpact', // PFX-C: physics impact trigger
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
@@ -1490,11 +1531,50 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
 		}
 		case 'keypress': {
-			// H3: same pulse semantics as onclick — LOCAL keys arrive as replicated
-			// trigger stamps (held keys re-pulse, so this stays 1 while held)
+			// H3 + 21-E3: LOCAL keys arrive as replicated trigger stamps. `edge` picks the
+			// moment: 'down' pulses on press (held keys re-pulse, so it reads 1 while held -
+			// the original behavior, byte-identical for saved graphs); 'up' pulses on
+			// release; 'held' is the same window read but SAYS level - the re-stamp is its
+			// implementation, so a peer derives the level from stamp freshness with no new
+			// wire. All three are one window over one replicated stamp channel.
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
+		case 'gamepadbutton': {
+			// 21-E5: the KEYPRESS MODEL VERBATIM, and that is the whole design. A pad press is
+			// local hardware, so it publishes a replicated trigger STAMP and every peer reads the
+			// same pulse window off the shared clock — no new message type, no streamed level.
+			// 'down' pulses on press (the re-stamp below keeps it high while held), 'up' pulses on
+			// release, 'held' is the same window SAID as a level.
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
+		case 'gamepadaxis': {
+			// 21-E5: LOCAL, and NEVER streamed. My stick is not your stick — the value comes from
+			// hardware only this peer has, so each peer evaluates its OWN pad and a graph that
+			// reads this node computes a DIFFERENT number per peer BY DESIGN (the hudinput /
+			// velocity rule; golden rule 8 — never stream local state). A game that needs a
+			// SHARED axis routes it through the E6 controller/possess authority, which is an
+			// authoritative channel by construction. The node card says so out loud, because
+			// otherwise this gets filed as a sync bug.
+			if (!inputRuntimeRef) return 0;
+			const axes = inputRuntimeRef.getGamepadAxes();
+			// explicit locals rather than axes[d.axis]: dynamic string-indexing of a typed
+			// object is a standing svelte-check baseline trap in this repo
+			const which = String(d.axis ?? 'lx');
+			const raw = num(
+				which === 'ly' ? axes.ly : which === 'rx' ? axes.rx : which === 'ry' ? axes.ry : axes.lx
+			);
+			// the node's deadzone is the GAME's threshold ON TOP of the device's dead centre
+			// (Settings ▸ Input, already applied in the snapshot) — which is why it defaults to
+			// 0, so by default exactly one deadzone is in play. A hard gate, not a rescale: a
+			// game asking for "past half" means past half.
+			const dz = Math.min(0.95, Math.max(0, num(d.deadzone ?? 0)));
+			const gated = Math.abs(raw) <= dz ? 0 : raw;
+			const scaled = gated * num(d.scale ?? 1);
+			return d.invert ? -scaled : scaled;
 		}
 		case 'onimpact': {
 			// PFX-C: physics impacts arrive as replicated trigger stamps too
@@ -2169,6 +2249,14 @@ function runTick(now) {
 	if (now - lastRunAt < 3) return;
 	lastRunAt = now;
 	// wall clock (wrapped daily to keep float noise low) -> same phase on every peer
+	// 21-E5: POLL THE GAMEPAD FIRST, ahead of runtimeCtx(). There is no event for a
+	// stick, so a pad must be polled — and doing it HERE rather than from a loop of
+	// inputRuntime's own is deliberate: a second requestAnimationFrame is a second
+	// callback queue, and whichever ran first would decide whether this frame's press
+	// reached this frame's graph. Doing it before runtimeCtx() means an edge published
+	// now lands in THIS tick's trigger snapshot, exactly as a keydown arriving between
+	// frames would. (It also rides pumpFlowTick, so a pad works in a headset for free.)
+	inputRuntimeRef?.pollGamepads();
 	const time = synced ? (Date.now() % 86400000) / 1000 : now / 1000;
 	const ctx = runtimeCtx(); // 134: scene + trigger state for the evaluators
 
@@ -2238,7 +2326,10 @@ function runTick(now) {
 		const base = baseState.get(uuid);
 		// reset to base, then let each animation add its offset
 		restoreBase(object, base);
-		anims.forEach((/** @type {any} */ anim) => applyAnimation(object, base, anim, time, ctx));
+		// 21-E3: EFFECTS evaluate on the pause-folded clock, so a paused world holds its
+		// pose and resumes where it froze instead of jumping the gap. Sounds/particles
+		// take the same clock below; value/HUD/game nodes keep the real one.
+		anims.forEach((/** @type {any} */ anim) => applyAnimation(object, base, anim, effectTime(time), ctx));
 	});
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs
@@ -2271,7 +2362,7 @@ function runTick(now) {
 				trigger: triggerStampFor(node.id, ctx)
 			});
 	});
-	updateSounds(soundPairs, sceneObjects, time);
+	updateSounds(soundPairs, sceneObjects, effectTime(time));
 
 	// PFX-A: particle emitters — same keyed-runtime lifecycle as sound. Node
 	// pairs (the `particle` node ships in PFX-B) plus the runtime's own sweep
@@ -2289,7 +2380,7 @@ function runTick(now) {
 		const uuid = implicitOwnerOf(node);
 		if (uuid) particlePairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
 	});
-	updateParticles(particlePairs, sceneObjects, time);
+	updateParticles(particlePairs, sceneObjects, effectTime(time));
 
 	// 17-E A5: Play Animation. Same pair collection as sound/particles, then a
 	// RISING-EDGE read of the wired event (the pulse is high ~0.3s; act once).
@@ -2374,11 +2465,20 @@ function runTick(now) {
 	// before the pulse expires so the output stays 1 (bounded re-broadcast,
 	// ~3/s per held node)
 	{
+		// 21-E5: pad buttons re-stamp on the SAME rule and through the same code — a held
+		// button is a held key as far as a graph is concerned. The two devices are read from
+		// separate sets, so a Key Press node can never be kept high by a pad, nor the reverse.
 		const held = inputRuntimeRef ? inputRuntimeRef.getInput().codes : new Set();
-		if (held.size) {
+		const padHeld = inputRuntimeRef ? inputRuntimeRef.getGamepadButtons() : new Set();
+		if (held.size || padHeld.size) {
 			const trigs = get(flowTriggers);
 			nodes.forEach((node) => {
-				if (node.type !== 'keypress' || !held.has(node.data?.code)) return;
+				const isPad = node.type === 'gamepadbutton';
+				if (!isPad && node.type !== 'keypress') return;
+				if (!(isPad ? padHeld.has(node.data?.button) : held.has(node.data?.code))) return;
+				// 21-E3: an 'up' node must stay silent while the key is held - its moment
+				// is the release.
+				if ((node.data?.edge ?? 'down') === 'up') return;
 				const pulse = node.data?.pulse ?? 0.3;
 				const last = trigs[node.id]?.lastT ?? -Infinity;
 				if (time - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), true);
@@ -2455,11 +2555,29 @@ export function startFlowRuntime() {
 	// inputRuntime; held keys re-pulse from the tick below.
 	import('./inputRuntime').then((m) => {
 		inputRuntimeRef = m;
-		m.onInput((/** @type {any} */ event) => {
-			if (event.type !== 'down') return;
+		// 21-E1.8: inputRuntime calls its listeners POSITIONALLY — `fn(kind, code)` — and
+		// this read them off one event OBJECT, so `event.type` was undefined on every press
+		// and the handler returned before it could pulse anything. The only thing that ever
+		// fired a Key Press node was the held-key re-stamp in the tick below (~3/s), so a
+		// first press was up to ~200ms late and a short TAP could be missed entirely.
+		// (The DEVX #8 family: a subscriber whose signature drifted from its publisher.)
+		m.onInput((/** @type {'down'|'up'} */ kind, /** @type {string} */ code) => {
+			// 21-E3: a node fires on ITS edge. down|held stamp on press (held keeps its
+			// level through the re-stamp below); up stamps on release - the missing
+			// falling edge, and the other half of hold-to-show.
 			nodes.forEach((node) => {
-				if (node.type === 'keypress' && node.data?.code === event.code)
-					applyNodeTrigger(node.id, syncedNow(), true);
+				// 21-E5: ONE routing rule, two devices. A pad button node matches on `data.button`
+				// against a 'Gamepad*' code and a Key Press node on `data.code` against a
+				// KeyboardEvent code, so neither can ever be fired by the other's hardware — that
+				// is the whole reason pad codes are namespaced and share this channel.
+				const matches =
+					node.type === 'keypress'
+						? node.data?.code === code
+						: node.type === 'gamepadbutton' && node.data?.button === code;
+				if (!matches) return;
+				const edge = node.data?.edge ?? 'down';
+				const fires = kind === 'up' ? edge === 'up' : edge !== 'up';
+				if (fires) applyNodeTrigger(node.id, syncedNow(), true);
 			});
 		});
 	});

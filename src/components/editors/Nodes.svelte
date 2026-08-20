@@ -54,6 +54,7 @@
 	import FlowIONode from './nodes/FlowIONode.svelte';
 	import ObjectFlowNode from './nodes/ObjectFlowNode.svelte';
 	import KeyPressNode from './nodes/KeyPressNode.svelte';
+	import GamepadNode from './nodes/GamepadNode.svelte';
 	import PlayAnimNode from './nodes/PlayAnimNode.svelte';
 	import AnimStateNode from './nodes/AnimStateNode.svelte';
 	import UnknownNode from './nodes/UnknownNode.svelte';
@@ -161,6 +162,9 @@
 		flowoutput: FlowIONode,
 		objectflow: ObjectFlowNode,
 		keypress: KeyPressNode,
+		// 21-E5: ONE card for the pad group (the HudNode precedent)
+		gamepadbutton: GamepadNode,
+		gamepadaxis: GamepadNode,
 		playanim: PlayAnimNode, // 17-E A5
 		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
 		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip

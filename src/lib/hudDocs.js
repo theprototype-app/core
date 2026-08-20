@@ -55,7 +55,7 @@ export const HUD_KINDS = REGISTERED_KINDS;
  * @typedef {{id: string, kind: string, anchor: string, x: number, y: number, w: number,
  *   h: number, z: number, label: string, bind?: string, style?: any, at?: number,
  *   [key: string]: any}} HudElement
- * @typedef {{id: string, name: string, showWhile: string, elements: HudElement[]}} HudScreen
+ * @typedef {{id: string, name: string, showWhile: string, input: string, elements: HudElement[]}} HudScreen
  * @typedef {{screens: HudScreen[], active: string, changedAt: number}} HudDoc
  */
 
@@ -266,6 +266,11 @@ export function normalizeHudScreen(screen, i = 0) {
 		// every existing document is byte-unchanged. This is what makes a late joiner see
 		// the right screen: it never witnessed the transition that switched everyone else.
 		showWhile: typeof screen?.showWhile === 'string' ? screen.showWhile : '',
+		// 21-E3: 'menu' frees the pointer while this screen is visible in play mode
+		// (movement pauses, the mouse clicks the HUD; hiding the screen re-locks).
+		// Absent/unknown = 'game', so every existing document is byte-identical and an
+		// older peer simply ignores the field (the showWhile rule).
+		input: screen?.input === 'menu' ? 'menu' : 'game',
 		elements: (Array.isArray(screen?.elements) ? screen.elements : []).map(normalizeHudElement)
 	};
 }
@@ -274,7 +279,18 @@ export function normalizeHudScreen(screen, i = 0) {
 export function normalizeHudDoc(doc) {
 	const screens = (Array.isArray(doc?.screens) ? doc.screens : []).map(normalizeHudScreen);
 	const list = screens.length ? screens : [normalizeHudScreen({ id: 'main', name: 'Main' }, 0)];
-	const active = list.some((/** @type {HudScreen} */ s) => s.id === doc?.active) ? doc.active : list[0].id;
+	// 21-E2.1: AN EMPTY `active` IS A LEGAL VALUE — "no default screen".
+	//
+	// `showWhile: ''` already meant "only when asked" for a screen, but there was no way
+	// to say it for the DOCUMENT: this line forced `active` onto an existing screen, so
+	// one screen always rendered and "only when asked" was unimplementable for it.
+	//
+	// The migration rule is the important half: an ABSENT `active` (every document written
+	// before this) still resolves to the first screen, byte-identically. Only the NEW
+	// explicit empty string opts out, which is a state nothing can have saved by accident.
+	const wanted = doc?.active;
+	const active =
+		wanted === '' ? '' : list.some((/** @type {HudScreen} */ s) => s.id === wanted) ? wanted : list[0].id;
 	return { ...(doc ?? {}), screens: list, active, changedAt: num(doc?.changedAt, 0) };
 }
 
@@ -328,6 +344,84 @@ export function hudDocKeys() {
 	return Object.keys(get(hudDocs));
 }
 
+/**
+ * 21-E2.2: WHICH HUD DOCUMENT A FLOW GRAPH ADDRESSES — one helper, two callers.
+ *
+ * The node card and the runtime each worked it out inline as "the graph id, unless it is
+ * the scene graph" — and in an OBJECT graph that id is the object's uuid. Almost no
+ * object has a HUD document of its own, so `hudDocOf(uuid)` was null: the picker offered
+ * "nothing on any screen yet" with a full scene HUD sitting right there, and `hudscreen`
+ * wrote a per-peer override for a document that cannot exist (the editor authors only
+ * `'scene'` and camera uuids). A cube's graph could not reach the HUD at all.
+ *
+ * So: the graph owner's OWN document when one EXISTS — which is what keeps a
+ * camera-attached HUD reachable from that camera's graph — and the scene HUD otherwise.
+ * @param {string|null|undefined} graphId @returns {string}
+ */
+export function hudDocKeyFor(graphId) {
+	const id = String(graphId ?? '');
+	// flowStore's SCENE_GRAPH and HUD_SCENE_KEY are the same string, so this covers both
+	// without importing the store (this module is a leaf and stays one)
+	if (!id || id === HUD_SCENE_KEY) return HUD_SCENE_KEY;
+	return get(hudDocs)[id] ? id : HUD_SCENE_KEY;
+}
+
+/** Split an anchor into its vertical and horizontal halves. `'center'` is a SINGLE
+ * token, so a naive split gives ['center', undefined] and the horizontal half is lost.
+ * @param {string|undefined|null} anchor @returns {{v: string, h: string}} */
+export function anchorAxes(anchor) {
+	if (anchor === 'center') return { v: 'middle', h: 'center' };
+	const [v, h] = String(anchor ?? 'top-left').split('-');
+	return { v: v || 'top', h: h || 'left' };
+}
+
+/**
+ * The 9-grid as NUMBERS: where an element sits inside a frame of `frameW × frameH`.
+ *
+ * It takes the FRAME rather than assuming one because two callers need the identical
+ * maths in different spaces: the editor artboard against its 1280-wide reference STAGE,
+ * and the 21-E2.4 viewport drag against the real WINDOW. The runtime layer answers in
+ * CSS instead (`left`/`right`/`translate`), because a browser resolves those per frame
+ * for free — the same rule with a different output.
+ * @param {any} el @param {number} frameW @param {number} frameH
+ * @returns {{left: number, top: number, w: number, h: number}}
+ */
+export function rectInFrame(el, frameW, frameH) {
+	const { v, h } = anchorAxes(el?.anchor);
+	const w = num(el?.w, 0);
+	const hh = num(el?.h, 0);
+	const x = num(el?.x, 0);
+	const y = num(el?.y, 0);
+	const left = h === 'left' ? x : h === 'right' ? frameW - x - w : frameW / 2 - w / 2 + x;
+	const top = v === 'top' ? y : v === 'bottom' ? frameH - y - hh : frameH / 2 - hh / 2 + y;
+	return { left, top, w, h: hh };
+}
+
+/** The inverse: a frame-space left/top back into this element's own anchored x/y, so a
+ * drag writes the offset ITS anchor means — without this, dragging a bottom-right
+ * element moves it the wrong way. @param {any} el @param {number} left
+ * @param {number} top @param {number} frameW @param {number} frameH
+ * @returns {{x: number, y: number}} */
+export function offsetsInFrame(el, left, top, frameW, frameH) {
+	const { v, h } = anchorAxes(el?.anchor);
+	const w = num(el?.w, 0);
+	const hh = num(el?.h, 0);
+	const x = h === 'left' ? left : h === 'right' ? frameW - left - w : left + w / 2 - frameW / 2;
+	const y = v === 'top' ? top : v === 'bottom' ? frameH - top - hh : top + hh / 2 - frameH / 2;
+	return { x: Math.round(x), y: Math.round(y) };
+}
+
+/** 21-E2.3: open the HUD editor — the `openShaderEditor` deep-link shape, through
+ * dynamic imports so this leaf keeps no static edge into the dock or the UI stores. */
+export async function openHudEditor() {
+	const [appStore, dock] = await Promise.all([
+		import('../stores/appStore.js'),
+		import('./bottomDock.js')
+	]);
+	appStore.hudEditorClose.set(false);
+	dock.activateDock('hud');
+}
+
 /** The screen a viewer is LOOKING at for one document — their local override first, the
  * document's own `active` otherwise. @param {string} key @returns {HudScreen|null} */
 export function visibleScreen(key) {
@@ -341,7 +435,11 @@ export function visibleScreen(key) {
 	const state = get(gameState).state;
 	const byState = doc.screens.find((s) => s.showWhile && s.showWhile === state);
 	if (byState) return byState;
-	// 3. otherwise the document's own default.
+	// 3. otherwise the document's own default — WHEN ONE IS SET. `resolveScreen` answers
+	// null for an empty `active` (21-E2.1's "no default screen"), which is what makes a
+	// document render nothing at all until a node, a game state or this peer asks for a
+	// screen. An ABSENT `active` never arrives here empty: normalize fills it in, so every
+	// document written before E2.1 behaves exactly as it did.
 	return resolveScreen(doc, doc.active);
 }
 
@@ -546,11 +644,15 @@ export function removeHudScreen(key, screenId) {
 }
 
 /** The AUTHORED default screen — replicated document data, unlike the local override.
- * @param {string} key @param {string} screenId */
+ * 21-E2.1: an EMPTY id (or null) CLEARS it — "no default screen", so nothing renders
+ * until something asks for a screen. That is the un-star half of the editor toggle.
+ * @param {string} key @param {string|null} screenId */
 export function setActiveHudScreen(key, screenId) {
 	const doc = hudDocOf(key);
-	if (!doc || !doc.screens.some((s) => s.id === screenId)) return false;
-	setHudDocFor(key, { ...doc, active: screenId });
+	if (!doc) return false;
+	const wanted = screenId === null ? '' : String(screenId);
+	if (wanted !== '' && !doc.screens.some((s) => s.id === wanted)) return false;
+	setHudDocFor(key, { ...doc, active: wanted });
 	return true;
 }
 

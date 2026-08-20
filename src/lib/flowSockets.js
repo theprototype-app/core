@@ -19,6 +19,10 @@ const OUTPUT = {
 	objectselector: 'object',
 	onclick: 'event',
 	keypress: 'event', // H3
+	// 21-E5: a pad button is an EVENT (the keypress channel), a stick is a NUMBER. Both
+	// therefore reach every existing consumer with no coercion of their own.
+	gamepadbutton: 'event',
+	gamepadaxis: 'number',
 	onimpact: 'event', // PFX-C
 	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
 	animfinished: 'event', // 17-E: a clip reached its end

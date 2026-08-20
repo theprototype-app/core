@@ -2,11 +2,12 @@
     import { onDestroy, untrack } from 'svelte'
     import { Euler, Camera } from 'three'
     import { useThrelte, useParent, useTask } from '@threlte/core'
-    import { isLocked, playerCam, editorCam, globalScene } from '../../stores/sceneStore'
+    import { isLocked, playPointerFree, playerCam, editorCam, globalScene } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
     import { resolvePlaySettings } from '$lib/playSettings'
-    import { inputClaims } from '$lib/inputRuntime'
+    import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
+    import { gamepadPrefs } from '$lib/gamepadPrefs'
     // 21-E6: the character controller as nodes. A NULL charControl means no
     // charcontroller node exists in any graph, and every branch below then falls
     // through to the code that was always here — that is the parity contract, which is
@@ -35,6 +36,9 @@
 
     const _euler = new Euler(0, 0, 0, 'YXZ')
     const _PI_2 = Math.PI / 2
+    // 21-E5: pad look, radians PER SECOND at sensitivity 1. A stick is a RATE (unlike a
+    // mouse delta, which is already a displacement), so it is delta-scaled below.
+    const PAD_LOOK_RATE = 2.5
   
     if (!renderer) {
       throw new Error('Threlte Context missing: Is <PointerLockControls> a child of <Canvas>?')
@@ -52,6 +56,32 @@
       invalidate()
     }
   
+    // 21-E3: THE MENU SUBSTATE. Edge-triggered on purpose (a `wasFree` local), so the
+    // play-entry effect below stays exactly as it was. Rising edge: zero the movement
+    // state (or the W held when the menu opened resumes the instant it closes) and
+    // release the lock PROGRAMMATICALLY - a programmatic exit carries no browser
+    // cooldown, unlike Esc. Falling edge while still playing: re-lock. The keydown that
+    // closed the menu is a real user gesture inside the transient-activation window;
+    // where an engine still refuses (Firefox without a fresh gesture), the pointerdown
+    // fallback below recaptures on the next canvas click.
+    let wasFree = false
+    $effect(() => {
+      const free = $playPointerFree
+      untrack(() => {
+        if (free && !wasFree) {
+          wasFree = true
+          moveState = { forward: 0, backward: 0, left: 0, right: 0, up: 0, down: 0 }
+          if (document.pointerLockElement === domElement) document.exitPointerLock()
+        } else if (!free && wasFree) {
+          wasFree = false
+          if ($isLocked === true && document.pointerLockElement !== domElement) {
+            const again: any = domElement.requestPointerLock({ unadjustedMovement: true })
+            again?.catch?.(() => {})
+          }
+        }
+      })
+    })
+
         $effect(() => {
       if ($isLocked) {
         // returns a promise in newer Chrome; rejection (headless, unsupported
@@ -60,6 +90,9 @@
           unadjustedMovement: true
         })
         request?.catch?.(() => {})
+        // 21-E3: entering play with a menu ALREADY visible (a late joiner whose
+        // showWhile-bound menu came with the state) - take the lock and let the menu
+        // effect release it; the brief flicker is the honest order of events.
         // dungeon spawn (58.2): entering play with a dungeon present drops you
         // in your seed-deterministic room (peers take consecutive rooms).
         // untracked: the effect must only depend on $isLocked.
@@ -88,6 +121,9 @@
 
       // K-C: a module claimed the keys (possession) — WASD drives IT, not the camera
       if ($inputClaims.includes('keys')) return
+      // 21-E3: the menu pause does NOT ride the claim - a text-only PAUSED screen has
+      // no focusables, so nothing claims, and the pause must hold anyway.
+      if ($playPointerFree) return
 
       // 21-E6: what the graph declared, and the speed actually in force. With no
       // controller node `ctrl` is null and `speed` is this component's own moveSpeed,
@@ -98,10 +134,37 @@
       // WALK: the node owns Y (gravity, jump, eye height) and resolves the horizontal
       // step against whatever ground tier can answer — including the dungeon raster,
       // so the slide below is its job too and this path returns early.
+      //
+      // MERGE NOTE (E5 x E6): the walk return sits ABOVE the stick mapping below, so
+      // walk mode consumes the pad itself — the MOVE stick folds into the walkStep
+      // input and the LOOK stick applies here, or a controller player could not walk
+      // or look in the very mode built for them.
       if (ctrl?.mode === 'walk') {
         const walker: any = $cameraParent
-        if (walker && $isLocked)
-          tickWalker(walker, ctrl, delta, walkStep(walker, moveState, speed, delta))
+        if (walker && $isLocked) {
+          const prefs = $gamepadPrefs
+          const pad = prefs.enabled ? getGamepadAxes() : { lx: 0, ly: 0, rx: 0, ry: 0 }
+          const mX = prefs.swapSticks ? pad.rx : pad.lx
+          const mY = prefs.swapSticks ? pad.ry : pad.ly
+          const padWalkInput = {
+            forward: moveState.forward || (mY < -0.01 ? 1 : 0),
+            backward: moveState.backward || (mY > 0.01 ? 1 : 0),
+            left: moveState.left || (mX < -0.01 ? 1 : 0),
+            right: moveState.right || (mX > 0.01 ? 1 : 0)
+          }
+          tickWalker(walker, ctrl, delta, walkStep(walker, padWalkInput, speed, delta))
+          const lX = prefs.swapSticks ? pad.lx : pad.rx
+          const lY = prefs.swapSticks ? pad.ly : pad.ry
+          if (lX || lY) {
+            const rate = PAD_LOOK_RATE * pointerSpeed * prefs.lookSensitivity * delta
+            _euler.setFromQuaternion(walker.quaternion)
+            _euler.y -= lX * rate
+            _euler.x -= (prefs.invertY ? -lY : lY) * rate
+            _euler.x = Math.max(_PI_2 - maxPolarAngle, Math.min(_PI_2 - minPolarAngle, _euler.x))
+            walker.quaternion.setFromEuler(_euler)
+            onChange()
+          }
+        }
         return
       }
 
@@ -122,6 +185,47 @@
 
       if (moveState.right === 1) {
         $cameraParent.translateX(speed);
+      }
+
+      // 21-E5: THE DEFAULT PAD MAPPING - left stick moves, right stick looks. On with NO
+      // nodes at all, which is the whole point: a pad should work in a scene nobody
+      // authored for a pad. E6's controller nodes are what override this per game.
+      //
+      // The two gates it needs are already at the top of this task, and both are right:
+      // the 'keys' claim (a module driving movement owns the sticks too - same role, and
+      // a possessed vehicle must not also walk the camera) and playPointerFree (a menu
+      // open means the sticks are DEAD, so a player cannot stroll out of their own menu).
+      // What it deliberately does NOT require is document.pointerLockElement: a pad has
+      // no pointer to lock, and a controller player may be holding no lock at all.
+      // Placed BEFORE the grounded pin and the dungeon slide below, so stick movement
+      // inherits eye height and wall collision without a second implementation.
+      const padPrefs = $gamepadPrefs
+      if (padPrefs.enabled && $isLocked === true && $cameraParent) {
+        // the deadzone is already applied in the snapshot - that one is the DEVICE's dead
+        // centre (Settings > Input), not a game threshold
+        const pad = getGamepadAxes()
+        const moveX = padPrefs.swapSticks ? pad.rx : pad.lx
+        const moveY = padPrefs.swapSticks ? pad.ry : pad.ly
+        const lookX = padPrefs.swapSticks ? pad.lx : pad.rx
+        const lookY = padPrefs.swapSticks ? pad.ly : pad.ry
+        if (moveX || moveY) {
+          // stick forward reads NEGATIVE on the standard mapping and forward is -Z, so the
+          // vertical axis feeds translateZ directly. Scaled by moveSpeed PER FRAME exactly
+          // like the WASD steps above: delta-scaling the stick but not the keys would make
+          // the same scene move at two different speeds depending on the device.
+          $cameraParent.translateX(moveX * moveSpeed)
+          $cameraParent.translateZ(moveY * moveSpeed)
+        }
+        if (lookX || lookY) {
+          const rate = PAD_LOOK_RATE * pointerSpeed * padPrefs.lookSensitivity * delta
+          _euler.setFromQuaternion($cameraParent.quaternion)
+          _euler.y -= lookX * rate
+          // push the stick UP (negative) to look UP, the console default; invertY flips it
+          _euler.x -= (padPrefs.invertY ? -lookY : lookY) * rate
+          _euler.x = Math.max(_PI_2 - maxPolarAngle, Math.min(_PI_2 - minPolarAngle, _euler.x))
+          $cameraParent.quaternion.setFromEuler(_euler)
+        }
+        if (moveX || moveY || lookX || lookY) onChange()
       }
 
       // 21-B B3 (DEVX #14): a GROUNDED scene has no Q/E flight and pins the rig
@@ -162,6 +266,7 @@
     export const unlock = () => document.exitPointerLock()
   
     domElement.addEventListener('pointermove', onMouseMove)
+    domElement.addEventListener('pointerdown', onCanvasPointerDown)
     domElement.ownerDocument.addEventListener('pointerlockchange', onPointerlockChange)
     domElement.ownerDocument.addEventListener('pointerlockerror', onPointerlockError)
     domElement.ownerDocument.addEventListener( 'keydown', onKeyDown );
@@ -170,6 +275,7 @@
 
     onDestroy(() => {
       domElement.removeEventListener('pointermove', onMouseMove)
+      domElement.removeEventListener('pointerdown', onCanvasPointerDown)
       domElement.ownerDocument.removeEventListener('pointerlockchange', onPointerlockChange)
       domElement.ownerDocument.removeEventListener('pointerlockerror', onPointerlockError)
       domElement.ownerDocument.removeEventListener( 'keydown', onKeyDown );
@@ -179,6 +285,7 @@
 
     function onScroll( event ) {
       if (!$isLocked) return
+      if ($playPointerFree) return // 21-E3: scrolling a menu is not a speed change
       if (!$cameraParent) return
       // 21-B B3: playInteract claims the wheel in CAPTURE phase while carrying
       // something, and says so on the event — never through a one-shot store
@@ -198,6 +305,13 @@
     }
 
     function onKeyDown( event ) {
+      // 21-E3: keys pressed OVER the menu must not arm movement (the claim gates the
+      // task, not this listener, so a held W would resume the instant the menu closed).
+      // Escape stays exempt - it is the guaranteed way out, and it EXITS PLAY even with
+      // a menu open: Esc is not an activation-triggering event, so an Esc-driven re-lock
+      // can be refused by the browser, and "close" is not even expressible for a
+      // showWhile-bound screen. Games author a Resume button.
+      if ($playPointerFree && event.code !== 'Escape') return
       switch ( event.code ) {
         case 'KeyW': moveState.forward = 1; break;
         case 'KeyS': moveState.backward = 1; break;
@@ -220,6 +334,9 @@
           // the stuck state where play mode engaged but the lock never did
           if ($isLocked) {
             if (document.pointerLockElement) document.exitPointerLock()
+            // 21-E3: with the pointer FREE (menu mode) there is no lock to exit, so this
+            // branch is the whole exit path - no pointerlockchange will fire; the camera
+            // swap is the camera-follows-isLocked effect, not this handler.
             else $isLocked = false
           }
           break;
@@ -242,6 +359,12 @@
   
     function onMouseMove(event: MouseEvent) {
       if (!$isLocked) return
+      // 21-E3: THE OWNERSHIP GATE this handler always needed. It was gated on $isLocked
+      // alone, and movementX/Y are nonzero for ordinary unlocked moves - so with the
+      // menu open (pointer free, still playing) mousing over a button would have SPUN
+      // THE CAMERA under the menu. Also the correct fence against a lock somebody else
+      // owns (module possess locks document.body).
+      if (document.pointerLockElement !== domElement) return
       if (!$cameraParent) return
   
       const { movementX, movementY } = event
@@ -267,15 +390,39 @@
     // mouseLook) used to yank $isLocked and the camera with it.
     let held = false
 
+    // 21-E3: THE CAMERA FOLLOWS THE STATE, not the lock event. The two camera.set()
+    // calls lived inside onPointerlockChange, which is exactly the path that does NOT
+    // fire when play exits from the menu substate (Esc with no lock held, or an external
+    // stop) - the editor camera never came back. One effect, every exit path covered.
+    $effect(() => {
+      camera.set($isLocked === true ? $playerCam : $editorCam)
+    })
+
     function onPointerlockChange() {
       if (document.pointerLockElement === domElement) {
         held = true
         $isLocked = true
-        camera.set($playerCam)
+        // a menu was already up when the lock landed (entering play with a visible
+        // menu): hand the release to the menu effect by keeping the substate the boss
+        if ($playPointerFree) document.exitPointerLock()
       } else if (held) {
         held = false
+        // 21-E3: a lock loss is only an EXIT when the menu substate does not own it.
+        // The weld between "lost the lock" and "left play mode" is the single line
+        // this branch used to be.
+        if ($playPointerFree) return
         $isLocked = false
-        camera.set($editorCam)
+      }
+    }
+
+    // 21-E3: the Firefox fallback - a re-lock without a fresh gesture can be refused,
+    // leaving play mode with a visible cursor and no menu. The next click on the canvas
+    // IS a gesture, so recapture there. (Chromium allows the gesture-free re-lock after
+    // a programmatic exit, so this stays idle.)
+    function onCanvasPointerDown() {
+      if ($isLocked === true && !$playPointerFree && document.pointerLockElement !== domElement) {
+        const again: any = domElement.requestPointerLock({ unadjustedMovement: true })
+        again?.catch?.(() => {})
       }
     }
   

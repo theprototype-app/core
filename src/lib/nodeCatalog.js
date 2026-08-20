@@ -6,6 +6,14 @@
 import { get } from 'svelte/store';
 import { moduleNodeGroups } from './moduleSDK';
 import { particlePreset } from './particlePresets';
+// 21-E1.8: the four game states were spelled out here TWICE and once more in
+// GameCameraNode, while `gameState` exported GAME_STATES that nobody imported. It is a
+// LEAF (svelte/store only), so importing it closes no cycle.
+import { GAME_STATES } from './gameState';
+// 21-E5: the pad's button names + axis keys live in gamepadPrefs, a true LEAF (only
+// svelte/store). Reaching them through inputRuntime instead would close a cycle:
+// inputRuntime imports shortcuts, which reaches history.
+import { GAMEPAD_BUTTONS, GAMEPAD_AXES } from './gamepadPrefs';
 
 /**
  * A1: `kind: 'text'` is a free-text param. It writes on COMMIT (change/blur),
@@ -40,7 +48,37 @@ export const nodeCatalog = [
 				inputs: ['seed', 'reroll'],
 				params: [{ key: 'integer', kind: 'toggle' }]
 			},
-			{ type: 'time', label: 'Time', defaults: { mode: 'sin', rate: 1 } }
+			{ type: 'time', label: 'Time', defaults: { mode: 'sin', rate: 1 } },
+			// 21-E5: THE GAMEPAD. `gamepadbutton` is the Key Press model verbatim — the edges
+			// replicate as trigger stamps and the held level is derived per peer — so a pad
+			// press drives a game exactly the way a key does, with no new message type.
+			// A DEFAULT MAPPING is already on (left stick moves, right stick looks, d-pad + A
+			// drive the HUD ring), so these nodes are for a game that wants its OWN bindings;
+			// E6's controller nodes are what override the default per game.
+			{
+				type: 'gamepadbutton',
+				label: 'Gamepad Button',
+				defaults: { button: 'GamepadA', pulse: 0.3, edge: 'down' },
+				params: [
+					{ key: 'button', kind: 'select', options: GAMEPAD_BUTTONS },
+					{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }
+				]
+			},
+			// a stick is LOCAL: every peer reads its OWN pad, so this node evaluates to a
+			// different number on each of them BY DESIGN (never streamed — golden rule 8).
+			// `deadzone` here is the GAME's threshold on top of the device's dead centre in
+			// Settings ▸ Input, hence the 0 default: one deadzone unless you ask for two.
+			{
+				type: 'gamepadaxis',
+				label: 'Gamepad Axis',
+				defaults: { axis: 'lx', deadzone: 0, invert: false, scale: 1 },
+				params: [
+					{ key: 'axis', kind: 'select', options: GAMEPAD_AXES },
+					{ key: 'deadzone', kind: 'range', min: 0, max: 0.9, step: 0.05 },
+					{ key: 'scale', kind: 'range', min: -4, max: 4, step: 0.1 },
+					{ key: 'invert', kind: 'toggle' }
+				]
+			}
 		]
 	},
 	{
@@ -85,7 +123,7 @@ export const nodeCatalog = [
 				label: 'Set Game State',
 				defaults: { state: 'playing', outcome: '' },
 				params: [
-					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
+					{ key: 'state', kind: 'select', options: [...GAME_STATES] },
 					{ key: 'outcome', kind: 'text', placeholder: 'won / lost', maxLength: 40 }
 				]
 			},
@@ -96,14 +134,17 @@ export const nodeCatalog = [
 				label: 'On Game State',
 				defaults: { state: 'playing', edge: 'enter', pulse: 0.3 },
 				params: [
-					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
+					{ key: 'state', kind: 'select', options: [...GAME_STATES] },
 					{ key: 'edge', kind: 'select', options: ['enter', 'exit'] }
 				]
 			},
 			// LOCAL on every peer, from a replicated trigger — the house rule. A peer's node
 			// must never move another peer's camera, so each one decides for itself and the
 			// views converge because the TRIGGER replicated, not the camera.
-			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '', restore: false } },
+			// 21-E1.8: `restore` was declared here and READ NOWHERE — the runtime only ever
+			// looks at `camera`. A default nothing consumes is a promise the node cannot keep,
+			// and `gamestart` already covers "put every peer back on the game camera".
+			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '' } },
 			// L-C: switch a LOOK on or off. The camera input picks WHOSE look (empty = the
 			// scene's); the switch is a per-peer runtime override, not an edit to the
 			// authored document, so it needs no message of its own — the trigger already
@@ -434,7 +475,18 @@ export const nodeCatalog = [
 			// H3: keyboard trigger — LOCAL key presses replicate as trigger pulses
 			// (golden rule: never stream local state); held keys re-pulse so the
 			// output stays high while held
-			{ type: 'keypress', label: 'Key Press', defaults: { code: 'KeyR', pulse: 0.3 } },
+			// 21-E3: `edge` picks WHICH moment fires. 'down' is the original pulse (held
+			// keys re-pulse, so the output stays high while held - byte-identical for
+			// every saved graph, absent = down). 'up' is the missing falling edge, the
+			// other half of hold-to-show ("keypress(down) -> show, keypress(up) -> hide").
+			// 'held' reads as a steady 1 while the key is down WITHOUT a toggle fighting
+			// the re-stamp - the re-stamp stays its implementation, so it costs no wire.
+			{
+				type: 'keypress',
+				label: 'Key Press',
+				defaults: { code: 'KeyR', pulse: 0.3, edge: 'down' },
+				params: [{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }]
+			},
 			// PFX-C: fires when the physics sim lands this object on the ground /
 			// another object (initiator-detected, replicated trigger stamp)
 			{

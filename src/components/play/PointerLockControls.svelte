@@ -6,7 +6,8 @@
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
     import { resolvePlaySettings } from '$lib/playSettings'
-    import { inputClaims } from '$lib/inputRuntime'
+    import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
+    import { gamepadPrefs } from '$lib/gamepadPrefs'
 
     const { renderer, camera, invalidate } = useThrelte()
   
@@ -23,6 +24,9 @@
 
     const _euler = new Euler(0, 0, 0, 'YXZ')
     const _PI_2 = Math.PI / 2
+    // 21-E5: pad look, radians PER SECOND at sensitivity 1. A stick is a RATE (unlike a
+    // mouse delta, which is already a displacement), so it is delta-scaled below.
+    const PAD_LOOK_RATE = 2.5
   
     if (!renderer) {
       throw new Error('Threlte Context missing: Is <PointerLockControls> a child of <Canvas>?')
@@ -126,6 +130,47 @@
 
       if (moveState.right === 1) {
         $cameraParent.translateX(moveSpeed);
+      }
+
+      // 21-E5: THE DEFAULT PAD MAPPING - left stick moves, right stick looks. On with NO
+      // nodes at all, which is the whole point: a pad should work in a scene nobody
+      // authored for a pad. E6's controller nodes are what override this per game.
+      //
+      // The two gates it needs are already at the top of this task, and both are right:
+      // the 'keys' claim (a module driving movement owns the sticks too - same role, and
+      // a possessed vehicle must not also walk the camera) and playPointerFree (a menu
+      // open means the sticks are DEAD, so a player cannot stroll out of their own menu).
+      // What it deliberately does NOT require is document.pointerLockElement: a pad has
+      // no pointer to lock, and a controller player may be holding no lock at all.
+      // Placed BEFORE the grounded pin and the dungeon slide below, so stick movement
+      // inherits eye height and wall collision without a second implementation.
+      const padPrefs = $gamepadPrefs
+      if (padPrefs.enabled && $isLocked === true && $cameraParent) {
+        // the deadzone is already applied in the snapshot - that one is the DEVICE's dead
+        // centre (Settings > Input), not a game threshold
+        const pad = getGamepadAxes()
+        const moveX = padPrefs.swapSticks ? pad.rx : pad.lx
+        const moveY = padPrefs.swapSticks ? pad.ry : pad.ly
+        const lookX = padPrefs.swapSticks ? pad.lx : pad.rx
+        const lookY = padPrefs.swapSticks ? pad.ly : pad.ry
+        if (moveX || moveY) {
+          // stick forward reads NEGATIVE on the standard mapping and forward is -Z, so the
+          // vertical axis feeds translateZ directly. Scaled by moveSpeed PER FRAME exactly
+          // like the WASD steps above: delta-scaling the stick but not the keys would make
+          // the same scene move at two different speeds depending on the device.
+          $cameraParent.translateX(moveX * moveSpeed)
+          $cameraParent.translateZ(moveY * moveSpeed)
+        }
+        if (lookX || lookY) {
+          const rate = PAD_LOOK_RATE * pointerSpeed * padPrefs.lookSensitivity * delta
+          _euler.setFromQuaternion($cameraParent.quaternion)
+          _euler.y -= lookX * rate
+          // push the stick UP (negative) to look UP, the console default; invertY flips it
+          _euler.x -= (padPrefs.invertY ? -lookY : lookY) * rate
+          _euler.x = Math.max(_PI_2 - maxPolarAngle, Math.min(_PI_2 - minPolarAngle, _euler.x))
+          $cameraParent.quaternion.setFromEuler(_euler)
+        }
+        if (moveX || moveY || lookX || lookY) onChange()
       }
 
       // 21-B B3 (DEVX #14): a GROUNDED scene has no Q/E flight and pins the rig

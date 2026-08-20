@@ -10,6 +10,10 @@ import { particlePreset } from './particlePresets';
 // GameCameraNode, while `gameState` exported GAME_STATES that nobody imported. It is a
 // LEAF (svelte/store only), so importing it closes no cycle.
 import { GAME_STATES } from './gameState';
+// 21-E5: the pad's button names + axis keys live in gamepadPrefs, a true LEAF (only
+// svelte/store). Reaching them through inputRuntime instead would close a cycle:
+// inputRuntime imports shortcuts, which reaches history.
+import { GAMEPAD_BUTTONS, GAMEPAD_AXES } from './gamepadPrefs';
 
 /**
  * A1: `kind: 'text'` is a free-text param. It writes on COMMIT (change/blur),
@@ -44,7 +48,37 @@ export const nodeCatalog = [
 				inputs: ['seed', 'reroll'],
 				params: [{ key: 'integer', kind: 'toggle' }]
 			},
-			{ type: 'time', label: 'Time', defaults: { mode: 'sin', rate: 1 } }
+			{ type: 'time', label: 'Time', defaults: { mode: 'sin', rate: 1 } },
+			// 21-E5: THE GAMEPAD. `gamepadbutton` is the Key Press model verbatim — the edges
+			// replicate as trigger stamps and the held level is derived per peer — so a pad
+			// press drives a game exactly the way a key does, with no new message type.
+			// A DEFAULT MAPPING is already on (left stick moves, right stick looks, d-pad + A
+			// drive the HUD ring), so these nodes are for a game that wants its OWN bindings;
+			// E6's controller nodes are what override the default per game.
+			{
+				type: 'gamepadbutton',
+				label: 'Gamepad Button',
+				defaults: { button: 'GamepadA', pulse: 0.3, edge: 'down' },
+				params: [
+					{ key: 'button', kind: 'select', options: GAMEPAD_BUTTONS },
+					{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }
+				]
+			},
+			// a stick is LOCAL: every peer reads its OWN pad, so this node evaluates to a
+			// different number on each of them BY DESIGN (never streamed — golden rule 8).
+			// `deadzone` here is the GAME's threshold on top of the device's dead centre in
+			// Settings ▸ Input, hence the 0 default: one deadzone unless you ask for two.
+			{
+				type: 'gamepadaxis',
+				label: 'Gamepad Axis',
+				defaults: { axis: 'lx', deadzone: 0, invert: false, scale: 1 },
+				params: [
+					{ key: 'axis', kind: 'select', options: GAMEPAD_AXES },
+					{ key: 'deadzone', kind: 'range', min: 0, max: 0.9, step: 0.05 },
+					{ key: 'scale', kind: 'range', min: -4, max: 4, step: 0.1 },
+					{ key: 'invert', kind: 'toggle' }
+				]
+			}
 		]
 	},
 	{

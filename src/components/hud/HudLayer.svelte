@@ -18,7 +18,8 @@
 	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
 	import { isInteractiveKind } from '$lib/hudKinds';
 	import { cameraPreview } from '$lib/cameraPreview';
-	import { claimInput, releaseInput } from '$lib/inputRuntime';
+	import { claimInput, releaseInput, onInput } from '$lib/inputRuntime';
+	import { gamepadPrefs } from '$lib/gamepadPrefs';
 	import { fireHudButton } from '$lib/flowRuntime';
 
 	// 21-D5: WHICH documents are on screen — the scene HUD, plus the one keyed by the
@@ -149,8 +150,29 @@
 		// capture phase + stopImmediatePropagation, so the gizmo/nav digits and the flow
 		// editor's own capture listeners do not also act on the same press
 		event.stopImmediatePropagation();
+		// 21-E5: the codes map to ring ACTIONS and the ring itself lives in one place
+		// (ringAction), because a gamepad drives exactly the same five moves. Tab walks
+		// FORWARD, which is what 'down' means here.
+		const action =
+			event.code === 'Enter' || event.code === 'NumpadEnter' || event.code === 'Space'
+				? 'activate'
+				: event.code === 'ArrowUp'
+					? 'up'
+					: event.code === 'ArrowDown' || event.code === 'Tab'
+						? 'down'
+						: event.code === 'ArrowLeft'
+							? 'left'
+							: 'right';
+		ringAction(/** @type {'up'|'down'|'left'|'right'|'activate'} */ (action));
+	}
+
+	/** WHAT THE RING DOES, once. The keyboard handler above translates its codes into
+	 * these five actions and the gamepad channel below maps its d-pad and A onto the same
+	 * five — so there is one implementation, and a pad cannot drift from the keyboard.
+	 * @param {'up'|'down'|'left'|'right'|'activate'} action */
+	function ringAction(action) {
 		const el = focusables[focused % focusables.length];
-		if (event.code === 'Enter' || event.code === 'NumpadEnter' || event.code === 'Space') {
+		if (action === 'activate') {
 			if (!el) return;
 			// 21-E3: activation is PER KIND now that the ring reaches every input.
 			if (el.kind === 'button') fireHudButton(el.id);
@@ -159,14 +181,14 @@
 				setHudValue(el.id, !hudValueOf(el.id, el.value), { shared: !!el.shared });
 				fireHudButton(el.id);
 			}
-			// slider/dropdown/textfield have no press semantics; Left/Right below adjust
+			// slider/dropdown/textfield have no press semantics; left/right below adjust
 			return;
 		}
-		const horizontal = event.code === 'ArrowLeft' || event.code === 'ArrowRight';
+		const horizontal = action === 'left' || action === 'right';
 		if (horizontal && el && (el.kind === 'slider' || el.kind === 'dropdown')) {
 			// 21-E3: a focused slider/dropdown takes Left/Right for its VALUE; Up/Down
 			// still walk the ring, so a menu of sliders stays navigable.
-			const dir = event.code === 'ArrowRight' ? 1 : -1;
+			const dir = action === 'right' ? 1 : -1;
 			if (el.kind === 'slider') {
 				const min = Number(el.min ?? 0);
 				const max = Number(el.max ?? 100);
@@ -188,14 +210,52 @@
 			}
 			return;
 		}
-		const forward = event.code === 'ArrowDown' || event.code === 'ArrowRight' || event.code === 'Tab';
+		const forward = action === 'down' || action === 'right';
 		const n = focusables.length;
 		focused = (focused + (forward ? 1 : n - 1)) % n;
 	}
 
+	// ---- 21-E5: the same ring, from a gamepad --------------------------------------
+	// The d-pad walks and A activates, through inputRuntime's OWN channel rather than
+	// synthesized KeyboardEvents. Two reasons: a synthetic event does not travel the path
+	// a real one does (svelte delegates key handlers, and this one is a window-CAPTURE
+	// listener that preventDefaults), so faking a press would be fragile in exactly the
+	// way this repo has been bitten before; and the ring is already factored, so there is
+	// nothing to gain by pretending to be a keyboard.
+	//
+	// B IS DELIBERATELY UNBOUND. "Back" is a screen-STACK concern and this HUD has no
+	// stack yet; wiring it to "hide the screen" would strand a player whose menu is
+	// showWhile-bound and therefore cannot be hidden, and Escape already owns the
+	// guaranteed way out. It becomes meaningful when screens gain history.
+	/** @type {Record<string, 'up'|'down'|'left'|'right'|'activate'>} */
+	const PAD_RING = {
+		GamepadUp: 'up',
+		GamepadDown: 'down',
+		GamepadLeft: 'left',
+		GamepadRight: 'right',
+		GamepadA: 'activate'
+	};
+
+	/** @param {'down'|'up'} kind @param {string} code */
+	function onPadInput(kind, code) {
+		if (kind !== 'down') return; // the ring acts on the press, like the keyboard
+		const action = PAD_RING[code];
+		if (!action || !$gamepadPrefs.enabled) return;
+		// the same premise the keyboard needs: a visible screen with something to focus,
+		// while playing. No text-entry guard and no lock check - a pad edge has no target
+		// element and no pointer, and this ring is precisely what a controller player has
+		// INSTEAD of a pointer, free or locked.
+		if (!anyVisible || focusables.length === 0 || !playing) return;
+		ringAction(action);
+	}
+
 	onMount(() => {
 		window.addEventListener('keydown', onKeyDown, true);
-		return () => window.removeEventListener('keydown', onKeyDown, true);
+		const stopPad = onInput(onPadInput);
+		return () => {
+			window.removeEventListener('keydown', onKeyDown, true);
+			stopPad();
+		};
 	});
 
 	// Claim only while a screen with focusables is actually up, and release the moment it

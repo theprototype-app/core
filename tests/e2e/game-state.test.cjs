@@ -352,5 +352,149 @@ h.run(async () => {
 	);
 	h.check(saved.stamped, 'and stamps FRESH, so the restore wins over a peer holding an older state');
 
+
+	// ---- 9. THE STALE-STAMP GUARD (21-E6 follow-up) ------------------------
+	// The trigger log is keyed by NODE ID and OUTLIVES the node, so a Set Game State that
+	// appears while an old On Click stamp is still in the log used to ADOPT it and act on
+	// creation: wire a button pressed a minute ago into a fresh action and the game starts
+	// the moment the edge connects. BOTH directions are asserted, because a guard that only
+	// refuses is indistinguishable from one that refuses everything.
+	//
+	// THE GRAPH IS CLEARED ON EVERY PEER FIRST, and that is not tidiness. nodesync's
+	// periodic hash compare re-pushes whichever peer holds MORE nodes, and by this point
+	// the suite has three of them — so C's copy of section 4's graph reappears on A
+	// mid-section, bringing a `setgamestate` node with it. With the guard removed that
+	// alone started the game, i.e. the bug arriving by a route this section never set up;
+	// with the guard in place it made the PREMISE read 'playing' and the whole proof
+	// meaningless. Hence a premise check on the node list, not just on the state.
+	const PEERS = [A, B, C];
+	const clearAll = async () => {
+		for (const peer of PEERS)
+			await peer.page.evaluate(() => {
+				window.__stores.setActiveGraph(window.__stores.SCENE_GRAPH);
+				window.__stores.flowNodes.set([]);
+				window.__stores.flowEdges.set([]);
+			});
+		await A.page.waitForTimeout(1000);
+	};
+	/** keep every peer's graph identical to A's, so nodesync has nothing to restore */
+	const pushAll = async () => {
+		for (const peer of PEERS.slice(1))
+			await A.page.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), peer.id);
+		await A.page.waitForTimeout(1000);
+	};
+	const sceneTypes = (peer) =>
+		peer.page.evaluate(() => {
+			let g;
+			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			return (g.scene?.nodes ?? []).map((n) => n.type + ':' + n.id).sort();
+		});
+
+	await clearAll();
+	const stale = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		s.gameState.setGameState('menu');
+		// ONE old node, pulsed, then left alone long enough for the pulse to expire
+		s.flowNodes.set([
+			{ id: 'oldpress', type: 'onclick', position: { x: 0, y: 0 }, data: { type: 'onclick', pulse: 0.3 } }
+		]);
+		s.flowEdges.set([]);
+		await new Promise((r) => setTimeout(r, 600));
+		s.flowRuntime.applyNodeTrigger('oldpress', (Date.now() % 86400000) / 1000, false);
+		await new Promise((r) => setTimeout(r, 1500));
+		let g, trigs;
+		s.gameState.gameState.subscribe((v) => (g = v))();
+		s.flowTriggers.subscribe((v) => (trigs = v))();
+		return { state: g.state, stamp: trigs?.oldpress?.lastT ?? null };
+	});
+	await pushAll();
+	const only = await sceneTypes(A);
+	h.check(
+		only.length === 1 && only[0] === 'onclick:oldpress',
+		`premise: the scene graph holds ONLY the old press node (${JSON.stringify(only)})`
+	);
+	h.check(
+		stale.state === 'menu',
+		`premise: the game sits at menu and an unwired press changed nothing (${stale.state})`
+	);
+	h.check(stale.stamp !== null, `premise: the old press really is in the trigger log (${stale.stamp})`);
+
+	// (1) a FRESH action node wired to that STALE stamp must NOT fire
+	const wired = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		let nodes;
+		s.flowNodes.subscribe((v) => (nodes = v))();
+		s.flowNodes.set([
+			...nodes,
+			{
+				id: 'freshplay',
+				type: 'setgamestate',
+				position: { x: 220, y: 0 },
+				data: { type: 'setgamestate', state: 'playing' }
+			}
+		]);
+		s.flowEdges.set([
+			{ id: 'e-oldpress-freshplay.trigger', source: 'oldpress', target: 'freshplay', targetHandle: 'trigger' }
+		]);
+		await new Promise((r) => setTimeout(r, 1800));
+		let g;
+		s.gameState.gameState.subscribe((v) => (g = v))();
+		return g.state;
+	});
+	h.check(
+		wired === 'menu',
+		`a fresh Set Game State wired to a STALE stamp does NOT fire - the game stays at menu (${wired})`
+	);
+	await pushAll();
+
+	// (2) ...and the very next GENUINE press does, so the guard is not simply a mute
+	const genuine = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		let before;
+		s.gameState.gameState.subscribe((v) => (before = v))();
+		s.flowRuntime.applyNodeTrigger('oldpress', (Date.now() % 86400000) / 1000, false);
+		await new Promise((r) => setTimeout(r, 1600));
+		let after;
+		s.gameState.gameState.subscribe((v) => (after = v))();
+		return { before: before.state, after: after.state };
+	});
+	h.check(genuine.before === 'menu', `premise: still at menu immediately before the real press (${genuine.before})`);
+	h.check(
+		genuine.after === 'playing',
+		`and the very NEXT press DOES start the game (${genuine.before} -> ${genuine.after})`
+	);
+
+	// (3) a node id that comes BACK takes a NEW cutoff - which is what makes an undo, or a
+	// peer's graph arriving, safe rather than re-firing whatever is in the log
+	const readopted = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		s.gameState.setGameState('menu');
+		let nodes;
+		s.flowNodes.subscribe((v) => (nodes = v))();
+		const without = nodes.filter((n) => n.id !== 'freshplay');
+		s.flowNodes.set(without);
+		s.flowEdges.set([]);
+		await new Promise((r) => setTimeout(r, 1000));
+		s.flowNodes.set([
+			...without,
+			{
+				id: 'freshplay',
+				type: 'setgamestate',
+				position: { x: 220, y: 0 },
+				data: { type: 'setgamestate', state: 'playing' }
+			}
+		]);
+		s.flowEdges.set([
+			{ id: 'e-oldpress-freshplay.trigger', source: 'oldpress', target: 'freshplay', targetHandle: 'trigger' }
+		]);
+		await new Promise((r) => setTimeout(r, 1800));
+		let g;
+		s.gameState.gameState.subscribe((v) => (g = v))();
+		return g.state;
+	});
+	h.check(
+		readopted === 'menu',
+		`a node id brought BACK takes a new cutoff, so the same old stamp is refused again (${readopted})`
+	);
 	await h.finish(browser);
 });

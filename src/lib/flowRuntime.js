@@ -59,6 +59,58 @@ const restFired = new Map();
 /** B6: rising-edge map for the physics ACTION nodes (a pulse is high ~0.3 s, so
  * an action must run once per pulse, not once per frame) @type {Map<string, boolean>} */
 const physicsActionEdge = new Map();
+
+// --- 21-E6 follow-up: THE STALE-STAMP GUARD, shared by every trigger-edge family ----
+//
+// The trigger log is keyed by NODE ID and outlives the node, so a node that appears while
+// an old stamp is still in the log ADOPTS it and acts once on creation. Wire an On Click
+// that was pulsed a minute ago into a fresh Set Game State and the game starts the moment
+// the edge connects; the same wiring into a fresh Impulse throws the box.
+//
+// The three families expressed their edge three different ways — the game nodes compare
+// STAMPS, the physics nodes a rising VALUE, the character nodes stamps per HANDLE — so
+// each carried the flaw with a different exposure (a stamp from any time in the past for
+// the game family, only a live ~0.3s pulse for the physics one). ONE MAP AND ONE RULE for
+// all three, because they ask the identical question and three copies is how a rule
+// drifts apart. Node ids are `crypto.randomUUID()`, so one map cannot collide across
+// families, and one prune against the whole node list beats three per-family prunes.
+/** action node id -> the synced second we FIRST saw it @type {Map<string, number>} */
+const actionSeenAt = new Map();
+
+/**
+ * Register an action node's first-seen moment. Called for EVERY action node on EVERY
+ * tick, whether or not a stamp exists — the cutoff has to be set by mere PRESENCE. The
+ * first version keyed it on "have we recorded a stamp yet" instead, which swallowed the
+ * genuine first pulse of a node whose source had never fired: the common case, and it
+ * broke Possess Object outright.
+ * @param {any} node @param {number} time
+ */
+function seeActionNode(node, time) {
+	if (!actionSeenAt.has(node.id)) actionSeenAt.set(node.id, time);
+}
+
+/**
+ * Should this trigger stamp be REFUSED as older than the node that would act on it?
+ * A null stamp is never stale — there is nothing to refuse, and a boolean wired into a
+ * `trigger` handle produces a live pulse with no log entry at all.
+ * @param {any} node @param {number|null|undefined} stamp @returns {boolean}
+ */
+function staleTrigger(node, stamp) {
+	if (stamp === null || stamp === undefined) return false;
+	const seenAt = actionSeenAt.get(node.id);
+	return seenAt !== undefined && stamp < seenAt;
+}
+
+/** Forget nodes that no longer exist, so a node id that comes back takes a NEW cutoff —
+ * which is what makes the refusal hold for an undo that restores a deleted node. Skipped
+ * on an EMPTY node list: that is the graph mirror mid-swap rather than a deletion, and
+ * wiping every cutoff there would refuse the next live pulse for no reason. */
+function pruneActionSeenAt() {
+	if (!actionSeenAt.size || !nodes.length) return;
+	const live = new Set(nodes.map((/** @type {any} */ n) => n.id));
+	for (const id of [...actionSeenAt.keys()]) if (!live.has(id)) actionSeenAt.delete(id);
+}
+
 /** @type {any} */ let shaderRef = null;
 /** L-C: reached by PRIMED dynamic import, never statically — scenePost imports
  * history, and history imports THIS module, so a static edge closes the cycle that
@@ -229,12 +281,16 @@ function updatePlayAnim(pairs, ctx) {
  * replicates as a shared `nodetrigger` stamp, so every peer runs the same rising
  * edge from the same synced timestamp — and applyImpulse / setBodyVelocity are
  * already initiator-gated. NO new message type for any of these.
- * @param {{node: any, uuid: string}[]} pairs @param {any} ctx
+ * @param {{node: any, uuid: string}[]} pairs @param {any} ctx @param {number} time
  */
-function updatePhysicsActions(pairs, ctx) {
+function updatePhysicsActions(pairs, ctx, time) {
 	const seen = new Set();
 	for (const { node, uuid } of pairs) {
 		seen.add(node.id);
+		// register the cutoff before ANY `continue` below, so a node that is skipped this
+		// tick (no target yet) still gets one — a node can also appear in `pairs` twice,
+		// and seeActionNode is idempotent
+		seeActionNode(node, time);
 		const data = node.data ?? {};
 		const high = !!data.trigger;
 		const target = typeof data.target === 'string' && data.target !== '-None-' ? data.target : uuid;
@@ -248,6 +304,14 @@ function updatePhysicsActions(pairs, ctx) {
 		const continuous = node.type === 'setvelocity' && (data.mode ?? 'once') === 'continuous';
 		if (!continuous && (!high || was)) continue;
 		if (continuous && !high) continue;
+		// ...and the pulse that made us high may PREDATE this node. This family reads a
+		// rising VALUE rather than a stamp, so its exposure was only the ~0.3s a pulse
+		// stays high — narrower than the game family's, and the same bug: a fresh Impulse
+		// wired to an On Click pressed a moment ago threw the box on connect. The stamp
+		// behind the pulse is what answers it. A pulse with NO stamp (a Toggle wired into
+		// `trigger`) is never refused, and a continuous Set Velocity keeps running,
+		// because after its first tick every live stamp is newer than the cutoff.
+		if (staleTrigger(node, triggerStampFor(node.id, ctx))) continue;
 		// a physics action in a scene that is not simulating is a no-op, and used to
 		// be a SILENT one — the graph is right, the key fires, nothing moves
 		// initiator-gated by design, so a NON-initiator doing nothing here is correct
@@ -516,10 +580,18 @@ function updateGameNodes(time, ctx) {
 		const type = node.type;
 		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook')
 			continue;
+		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
 		if (stamp === null) continue;
 		if (gameActed.get(node.id) === stamp) continue;
 		gameActed.set(node.id, stamp);
+		// CONSUMED first, then refused: a stamp older than the node is not a pulse this
+		// node witnessed, and recording it keeps the refusal from being re-tested every
+		// frame for as long as that stamp is the newest one. Without this, wiring a
+		// previously-pressed On Click into a fresh Set Game State STARTED THE GAME on
+		// connect. A binding built by hudActions is unaffected: it creates its press node
+		// and its action node together, so the first press comes after both cutoffs.
+		if (staleTrigger(node, stamp)) continue;
 		const data = resolveInputs(node, nodes, edges, time, ctx);
 		if (type === 'setgamestate') {
 			// EVERY peer runs this from the same replicated stamp, so the write is
@@ -629,9 +701,6 @@ export function syncGameCameraNow() {
  * handle, because Possess Object's trigger and release are independent edges on the
  * same node @type {Map<string, number>} */
 const charActed = new Map();
-/** when each character ACTION node was first seen, in synced seconds — the cutoff a
- * stamp has to beat to count as a pulse this node witnessed @type {Map<string, number>} */
-const charSeenAt = new Map();
 /** the several-controllers warning is explained ONCE, not once a frame */
 let charMultipleWarned = false;
 
@@ -695,16 +764,10 @@ function updateCharNodes(time, ctx) {
 	 * Did THIS handle just receive a fresh pulse? Per handle, because Possess Object's
 	 * trigger and release are independent edges on one node.
 	 *
-	 * A stamp that PREDATES the node is not a pulse this node witnessed, and is refused.
-	 * That case is not hypothetical: the trigger log is keyed by node id and OUTLIVES the
-	 * node, so a graph arriving from a peer, an undo restoring a deleted node, or a node
-	 * id reused by a template all present an old stamp — and acting on it fires the
-	 * action the moment the node appears. Measured: swapping a Possess graph for a Camera
-	 * Follow graph started the chase cam before anything was pressed.
-	 *
-	 * The cutoff is WHEN THE NODE WAS FIRST SEEN, not "have we recorded a stamp yet" —
-	 * that first version swallowed the genuine first pulse of a node whose source had
-	 * never fired, which is the common case and broke Possess outright.
+	 * A stamp that PREDATES the node is refused through the SHARED `staleTrigger` rule at
+	 * the top of this file — the same one the game and physics action families use, since
+	 * all three ask the identical question. Measured here first: swapping a Possess graph
+	 * for a Camera Follow graph started the chase cam before anything was pressed.
 	 * @param {any} node @param {string} handle @returns {boolean}
 	 */
 	const fired = (node, handle) => {
@@ -713,15 +776,14 @@ function updateCharNodes(time, ctx) {
 		const key = node.id + '|' + handle;
 		if (charActed.get(key) === stamp) return false;
 		charActed.set(key, stamp);
-		const seenAt = charSeenAt.get(node.id);
-		return seenAt === undefined || stamp >= seenAt;
+		return !staleTrigger(node, stamp);
 	};
 	const seen = new Set();
 	for (const node of nodes) {
 		const type = node.type;
 		if (type !== 'possessnode' && type !== 'camerafollow' && type !== 'movespeed') continue;
 		seen.add(node.id);
-		if (!charSeenAt.has(node.id)) charSeenAt.set(node.id, time);
+		seeActionNode(node, time);
 		const d = resolveInputs(node, nodes, edges, time, ctx);
 		if (type === 'movespeed') {
 			// the value rides a number socket, so a keypress -> Number -> Move Speed(set)
@@ -752,7 +814,6 @@ function updateCharNodes(time, ctx) {
 	// node id that comes back
 	for (const key of [...charActed.keys()])
 		if (!seen.has(key.slice(0, key.lastIndexOf('|')))) charActed.delete(key);
-	for (const id of [...charSeenAt.keys()]) if (!seen.has(id)) charSeenAt.delete(id);
 }
 
 // --- 21-E4: the logic nodes' shared derivation --------------------------------
@@ -2269,7 +2330,7 @@ function runTick(now) {
 		if (uuid || typeof data.target === 'string')
 			physicsPairs.push({ node: { ...node, data }, uuid: uuid ?? '' });
 	});
-	updatePhysicsActions(physicsPairs, ctx);
+	updatePhysicsActions(physicsPairs, ctx, time);
 
 	// A3: ONE HUD collection pass, on the sound/particle/playanim shape. What every
 	// element SAYS is computed here from the already-replicated graph, which is why the
@@ -2288,6 +2349,9 @@ function runTick(now) {
 	// the bump on the NEXT tick - one frame, the same latency every derived reaction
 	// in this file has.
 	updateDerivedPulses(ctx);
+	// ONE prune for the shared stale-stamp cutoffs, after every family has had its turn
+	// to register this tick's nodes (physics runs first, then game, then character)
+	pruneActionSeenAt();
 
 	// live value/logic readouts (133): recompute ~6/s and publish for the cards
 	if (now - lastValuesAt > 150) {

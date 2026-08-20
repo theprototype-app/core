@@ -596,6 +596,89 @@ h.run(async () => {
 		'7.4 firing it with the sim stopped EXPLAINS itself instead of doing nothing in silence'
 	);
 
+
+	// ---------------------------------------------------------------- section 8
+	console.log('\n=== 8. the STALE-STAMP guard: a fresh action node must not adopt an old pulse ===');
+	// The trigger log is keyed by NODE ID and outlives the node. This family reads a rising
+	// VALUE rather than a stamp, so its exposure was narrower than the game family's — only
+	// the ~0.3s a pulse stays high — and exactly as wrong: wire an On Click pressed a moment
+	// ago into a FRESH Impulse and the box jumps the instant the edge connects. BOTH
+	// directions are asserted, because a guard that only refuses is indistinguishable from
+	// one that refuses everything.
+	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.waitForTimeout(500);
+	await setGraph(
+		page,
+		[node('press8', 'onclick', { pulse: 3 }), node('sel8', 'objectselector', { selected: box }, 400)],
+		[]
+	);
+	await page.waitForTimeout(600);
+	// park the box, restart the sim, and let it settle so the height below means something
+	await page.evaluate((uuid) => {
+		let group = null;
+		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		const o = group.getObjectByProperty('uuid', uuid);
+		o.position.set(0, 0.5, 0);
+		window.__stores.objectsGroup.update((v) => v);
+	}, box);
+	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await h.eventually(
+		() => phys(page, 'return p.physicsDebug().length'),
+		(n) => n > 0,
+		'8.1 (premise) the simulation is running again'
+	);
+	await settle(page, box, '8.2 (premise) the box is at rest');
+
+	// a LONG pulse (3s) so it is still HIGH when the Impulse node appears — that window is
+	// precisely the exposure this family had
+	await page.evaluate(() =>
+		window.__stores.flowRuntime.applyNodeTrigger('press8', (Date.now() % 86400000) / 1000, false)
+	);
+	await page.waitForTimeout(500);
+	const restY = (await posOf(page, box))[1];
+
+	// (1) the fresh Impulse is created and wired WHILE the pulse is high — it must not fire
+	await page.evaluate((b) => {
+		const s = window.__stores;
+		let g;
+		s.flowGraphs.subscribe((v) => (g = v))();
+		const nodes = [
+			...g.scene.nodes,
+			{
+				id: 'imp8',
+				type: 'impulse',
+				position: { x: 200, y: 0 },
+				data: { type: 'impulse', mode: 'impulse', space: 'world', x: 0, y: 12, z: 0 },
+				class: 'w-[150px]'
+			}
+		];
+		const edges = [
+			{ id: 'e-press8-imp8.trigger', source: 'press8', target: 'imp8', targetHandle: 'trigger' },
+			{ id: 'e-imp8-sel8', source: 'imp8', target: 'sel8' }
+		];
+		s.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
+		s.flowNodes.set(nodes);
+		s.flowEdges.set(edges);
+		return b;
+	}, box);
+	await page.waitForTimeout(1600);
+	const afterWiring = (await posOf(page, box))[1];
+	h.check(
+		afterWiring < restY + 0.25,
+		`8.3 a fresh Impulse wired to a still-HIGH stale pulse does NOT fire (y ${restY.toFixed(3)} -> ${afterWiring.toFixed(3)})`
+	);
+
+	// (2) the very next GENUINE press does fire, so the guard is not simply a mute
+	await settle(page, box, '8.4 (premise) still at rest before the real press');
+	const beforePress = (await posOf(page, box))[1];
+	await page.evaluate(() =>
+		window.__stores.flowRuntime.applyNodeTrigger('press8', (Date.now() % 86400000) / 1000, false)
+	);
+	await h.eventually(
+		async () => (await posOf(page, box))[1],
+		(y) => y > beforePress + 0.4,
+		'8.5 and the very NEXT press throws the box, so the guard refuses only what is stale'
+	);
 	await page.evaluate(() => window.__stores.physics.stopSimulation());
 	await h.finish(browser);
 });

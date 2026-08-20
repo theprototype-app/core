@@ -715,6 +715,67 @@ loadable play content. Everything a user does must be visible to connected peers
   (`viewportOverrides` gains a `hud` key — its first real `renderLayer` caller — with
   `hudPreviewInViewport` as the eye toggle). Plan + as-built: cloud
   `plans-core/pending/21-d-hud-interaction-game-shell.md`.
+  **21-E — GAME HARDENING** (roadmap 21-E, all eight phases): the layer between "the
+  pieces exist" and "press Play and a game works". E1/E2 made the HUD editor WYSIWYG
+  (content at 1:1 inside a transform-scaled stage — it used to scale boxes and not
+  text; drag-drop finally had a consumer; adds land at the cursor; the layer drops to
+  z 38 while authoring so it cannot cover windows) and the screen model sane (nullable
+  `active` so "only when asked" is real; `hudDocKeyFor(graphId)` = own doc if it
+  EXISTS else scene, which un-strands every object graph; `hudViewportDrag.js` =
+  right-drag an element in the live viewport, found by RECT because a
+  pointer-events:none box is invisible to elementsFromPoint). **E3 THE MENU INPUT
+  MODE**: `playPointerFree` in sceneStore is a SUBSTATE of `isLocked === true` with
+  ONE WRITER (HudLayer — any visible screen with `input: 'menu'` while playing);
+  PLC releases the lock WITHOUT the exit path (the held-branch returns early on
+  pointerFree), the camera FOLLOWS `$isLocked` through one $effect (the old two
+  camera.set calls lived in onPointerlockChange, which never fires on a menu-substate
+  exit), moveState zeroes on menu-open AND the keydown listener is gated (the claim
+  gates the TASK, not the listener — a held W used to resume the instant a menu
+  closed), onMouseMove gained the `pointerLockElement !== domElement` ownership gate
+  it always needed, and Esc EXITS PLAY even with a menu open (Esc is not an
+  activation-triggering event, so Esc-driven re-lock can be refused; games author a
+  Resume button). `inputClaims` are REFCOUNTED (counts; contract byte-identical).
+  keypress gained `edge: down|up|held` — up is the falling edge hold-to-show needed;
+  the ~5/s held re-stamp skips `up` nodes. PAUSE PAUSES and is a GAME RULE (shared):
+  physics via simPaused, flow EFFECTS via a pause-folded `effectTime` (a spin holds
+  still and resumes with NO jump), flow/HUD/game nodes keep ticking so menus work,
+  `gameElapsed` excludes banked+live pause spans carried IN the replicated singleton
+  (pausedAt/pausedMs). Local per-peer pause deliberately does not exist: the world is
+  a shared simulation. **E4 the logic nodes**: `latch` (set/reset PURE off the stamp
+  log, toggle parity via the counter precedent, set/reset CLEARS parity so the halves
+  compose), `delay`/`sequence` (fully pure: moment = stamp + offset, WITHHELD until it
+  passes or stamp-edge consumers fire instantly; a cycle never fires), `once` (rearm
+  DELETES the entry — a restamp reads as a fresh pulse), counter `reset` input,
+  4-way `select`, `sound` trigger input. THE SEAM: event consumers split into PULL
+  (triggerStampFor/value reads) and PUSH (counter/latch/once inside applyNodeTrigger)
+  — `updateDerivedPulses` bridges them with replicate:false or delay→counter is a
+  silent no-op. **E5 gamepad**: polling rides runTick (works in VR via pumpFlowTick),
+  `gamepadPrefs.js` leaf (button/axis tables + rescaled deadzone), gamepadbutton/
+  gamepadaxis nodes on the keypress model (axis = LOCAL value, peers read 0), the
+  default left-move/right-look mapping behind the same claims/pointerFree gates,
+  D-pad+A drive the HUD ring through the onInput channel, Settings ▸ Input. **E6 the
+  character controller**: `charController.js` leaf — `charControl` null = NO
+  controller = the built-in behavior BYTE-IDENTICAL (the parity contract, asserted at
+  0.0%); walk mode hands Y to `tickWalker` with THREE-TIER ground resolution (rapier
+  KinematicCharacterController capsule when a sim RUNS — never a scene collider; the
+  dungeon raster; the ground plane), jump edge-triggered in the leaf; nodes
+  charcontroller/possessnode/camerafollow/movespeed/moveinput; the wheel writes
+  THROUGH `playMoveSpeed` while a controller is active so graphs can read/set speed.
+  **E7 HUD content**: hudlist authorable three ways (pane rowsText, the `hudrows`
+  node on stamp edges — rows DERIVE per peer, no message — and `api.hud.rows` with
+  journalled restore) + `api.peerNames()` (DEVX #15's name half); dropdown options
+  drivable via an optional `options` input on hudset; `hudRichText.js` renders a
+  token tree through {#each} so a hostile string is never markup;
+  `api.registerHudElement` (module kinds, cloudMount shape + {update,destroy}) and a
+  user-scripted `custom` kind (code in the document, the script-node trust model,
+  error chip on throw); the game pack (minimap = a top-down 2D PLOT, not a render
+  target; iconrow/progressradial/hotbar/damageflash off a `pulse` runtime channel) +
+  the menu pack (keyhint/tabs/scrollpanel/confirm with declared subPress sub-ids);
+  style presets applied as ONE gesture. **E8**: the action catalog reaches
+  playanim/sound/particles/impulse/reset-counter/toggle-visibility (chain actions),
+  the objectMenu "Make collectible" recipe (onclick→latch→not→visibility + setvariable
+  add, ONE flownodes entry per object), and the docs-site `build-a-game.md`
+  walkthrough. Plan + as-built: cloud `plans-core/roadmap-21e-game-hardening.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
   serialized tree — a save taken mid-session wrote it into the file as a
@@ -1276,6 +1337,36 @@ loadable play content. Everything a user does must be visible to connected peers
   joining mid-game had the box and not the camera, so it could not follow the game to it
   (measured: `"cameras": 0` -> `1`). A hidden object must replicate; the receiver simply
   shows it.
+- **A fresh trigger-edge action node ADOPTS a stale stamp and fires on creation.**
+  Wire an On Click that was pulsed a minute ago into a fresh Set Game State and the
+  game starts the moment the edge connects (measured: menu→playing on connect; a fresh
+  Impulse on a still-high pulse threw the box). Every action family now refuses a
+  stamp OLDER than the node through ONE shared map (`actionSeenAt` in flowRuntime) —
+  when adding a trigger-edge family, register in it. The over-aggressive version is
+  as wrong as the bug: refuse-everything swallows a just-built HUD binding's first
+  press (proven red on hud-actions).
+- **A count cannot converge for a late joiner; a stamp can.** random's reroll seed
+  read a local count → a joiner's rolls ran N behind FOREVER ([651721, 651721,
+  186302]); seeding from the replicated stamp converges every peer on the next reroll.
+  The general rule for derived-from-triggers state: prefer stamp comparisons (latch
+  set/reset) over counters (latch toggle parity) wherever expressible — the suite
+  pins which property each node has.
+- **Two lanes can each be correct and compose wrong.** E6's walk mode returned from
+  useTask ABOVE E5's gamepad mapping, so after a textually clean auto-merge a pad
+  could not walk in the very mode built for pads. Both suites stayed green — only
+  reading the merged control flow caught it. After any auto-merge of two features in
+  ONE function, re-read the merged ORDER, not the diffs.
+- **A registry that renders {#each} rows must assert key uniqueness over itself.**
+  `progressradial` listed a style field its TEXT_STYLE base already carried →
+  duplicate {#each} key → svelte THROWS and the whole properties pane died (the
+  animation-window crash family). The hud-content suite asserts the invariant across
+  the registry so no future kind can reintroduce it.
+- **`/create box` re-seats the object after the call returns AND stamps
+  `userData.physics = {mode:'dynamic', mass:1}`** — a test fixture using one as a
+  "floor" watches it fall, which reads exactly like the feature under test being
+  broken. Park it kinematic/static or move it after the re-seat settles.
+- **A peer cannot approve a connection request while in play mode** — the Approve
+  button renders but the click times out. Approve first, then enter play.
 - **A LATCH guarding an idempotent call must be set on SUCCESS, never on intent.**
   `startCameraPreview` builds a camera FROM the marker object and REFUSES when there is
   none, which is the normal case for a LATE JOINER (state arrives before the scene).
@@ -2763,6 +2854,25 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-20): **ROADMAP 21-E — GAME HARDENING, ALL EIGHT PHASES EXECUTED**
+  across three stacked lanes off release/next @9be9ecd (post #156/#157; baseline
+  re-measured 386/62, and the branches sit at 385/62 — consolidating PLC's camera
+  swap removed a pre-existing error). Lanes: `feat/21e-editor` (E1 9f2a9c9 + E2
+  1c7e156) → `feat/21e-input-menu` (E3 b46e477 + E5 395b646) → `feat/21e-content`
+  (merge c27d214 + E7 ea46a7d + E8); parallel `feat/21e-logic-nodes` (E4 5f302e7 +
+  22ef9c1) → `feat/21e-controller` (E6 a297118 + the stamp guard 5fb18e2), merged
+  into content. THE MERGE captured a composition gap both suites missed (walk-vs-pad,
+  now a gotcha). Suites: hud-editor-wysiwyg(51) hud-screen-model(46)
+  play-menu-mode(32) logic-nodes(77) gamepad-input(61) char-controller(58)
+  hud-content(132) + extended hud-actions/game-state/flow-physics-actions/
+  hud-play-keyboard and the game-loop-v2 acceptance. Review-loop finds fixed along
+  the way: the DEAD keypress key-down handler (DEVX #8 family), random.reroll
+  (count→stamp seed), the stale-stamp adoption family, three E7 bugs (duplicate
+  {#each} key downing the pane; loadedModules naming race; number-coercion on text
+  channels). OWED: the user's on-device pass per docs-site `build-a-game.md`'s
+  "what to feel for" list (re-lock in Chromium+Firefox, real gamepad, pack kinds in
+  non-dark themes, jump-vs-menu precedence under a real lock).
+
 - Status (2026-08-19): **ROADMAP #21-A IS COMPLETE — A6+A7 (PR #152) and A8 (PR #153)
   merged to `release/next` @f289f79**, closing the batch #149/#150 opened. Both phases were
   already IMPLEMENTED on their lanes when this session went looking, so the work was

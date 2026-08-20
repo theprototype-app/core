@@ -13,6 +13,8 @@ import {
 } from './moduleNodeIO';
 // A5: moduleToolboxes is store-only, same reasoning
 import { registerModuleToolbox, unregisterModuleToolbox } from './moduleToolboxes';
+// 21-E7.4: store-only leaf, the moduleToolboxes precedent
+import { registerModuleHudKind, unregisterModuleHudKind } from './moduleHudKinds';
 import { APP_VERSION } from './version.js';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
@@ -113,6 +115,9 @@ function removeSceneRootGroup(name) {
 /** @type {any} */ let jointsRef = null;
 /** @type {any} */ let objectActionsRef = null;
 /** @type {any} */ let pingAudioRef = null;
+/** 21-E7.1: primed for api.hud.rows — a fresh import().then() per push drops the first
+ * seconds of them (the DEVX #8 family). @type {any} */
+let flowRuntimeRef = null;
 if (typeof window !== 'undefined') {
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
 	import('./physics').then((m) => (physicsRef = m));
@@ -122,6 +127,7 @@ if (typeof window !== 'undefined') {
 	import('./joints').then((m) => (jointsRef = m));
 	import('./objectActions').then((m) => (objectActionsRef = m));
 	import('./pingAudio').then((m) => (pingAudioRef = m));
+	import('./flowRuntime').then((m) => (flowRuntimeRef = m));
 }
 
 // --- api.pointerRay (190): where the user is POINTING, as a world ray --------
@@ -158,8 +164,11 @@ function physicsApi() {
 	return physicsRef;
 }
 
-/** @param {string} moduleId */
-function makeApi(moduleId) {
+/** @param {string} moduleId @param {string} [moduleName] the DISPLAY name, needed while
+ * register() runs: loadedModules is not appended until it RETURNS, so anything reading the
+ * name from there during registration gets the raw id (which is how a module HUD kind was
+ * filed under 'hudmod' instead of 'HUD extras'). */
+function makeApi(moduleId, moduleName = moduleId) {
 	const disposals = (moduleDisposals[moduleId] ??= []);
 	/** record an undo thunk deactivateModule runs at teardown (A2) @param {() => void} fn */
 	const onDispose = (fn) => disposals.push(fn);
@@ -167,6 +176,9 @@ function makeApi(moduleId) {
 	 * @type {Set<'keys'|'locomotion'>} */
 	const claimedScopes = new Set();
 	let possessing = false;
+	/** list elements this module has pushed rows into, so teardown clears exactly those and
+	 * one disposer is journalled per element rather than one per push @type {Set<string>} */
+	const hudRowsOwned = new Set();
 	onDispose(() => {
 		claimedScopes.forEach((scope) => import('./inputRuntime').then((m) => m.releaseInput(scope)));
 		claimedScopes.clear();
@@ -590,6 +602,28 @@ function makeApi(moduleId) {
 			return (/** @type {any[]} */ (get(userdata)) ?? []).map((entry) => entry[0]);
 		},
 		/**
+		 * 21-E7.1 (DEVX #15's other half): the roster WITH NICKNAMES. `peerIds` answers who is
+		 * here and nothing a player would recognise, which is what a leaderboard is blocked on -
+		 * a table of peer ids is not a scoreboard.
+		 *
+		 * The name is the roster row's slot 1, replicated through the existing `userdata`
+		 * message, so this is a READ of already-shared state and adds nothing to the wire. A
+		 * peer who has not set one has an empty name; the id is offered as `label` so a caller
+		 * never has to decide how to fall back.
+		 * @returns {{id: string, name: string, label: string, me: boolean}[]}
+		 */
+		peerNames() {
+			const myId = /** @type {any} */ (get(peers))?.peer?.id ?? '';
+			return (/** @type {any[]} */ (get(userdata)) ?? [])
+				.filter((entry) => !!entry?.[0])
+				.map((entry) => {
+					const id = String(entry[0]);
+					const name = String(entry[1] ?? '');
+					// a short id tail is far more use than the whole 36-character peer id
+					return { id, name, label: name || 'peer ' + id.slice(0, 4), me: id === myId };
+				});
+		},
+		/**
 		 * DEVX #5: create objects in the SHARED scene, replicated exactly like a
 		 * user typing the command. Returns the uuids that appeared, so you can
 		 * position them (api.moveObject) or joint them together.
@@ -837,6 +871,80 @@ function makeApi(moduleId) {
 				off = m.registerPostBackend(full, label, compile);
 				if (disposed) off();
 			});
+		},
+
+		/**
+		 * 21-E7.1: WRITE ROWS INTO A HUD LIST. The third door onto one store, beside the
+		 * element's own authored rows and the HUD Rows node.
+		 *
+		 * `setHudRows` has existed since 21-A and lived in `flowRuntime`, which a module cannot
+		 * reach — so the List kind shipped with its summary promising an API that did not exist.
+		 * A leaderboard was the worked example and it was the one thing you could not build.
+		 *
+		 * CALL IT ON EVERY PEER from replicated state (your own `registerStateSync`, or a value
+		 * every peer derives). Rows are never sent: like a module VALUE NODE, this writes local
+		 * state that each peer is expected to compute identically, so calling it on one peer
+		 * shows the rows to one person.
+		 *
+		 * The element's rows are cleared at teardown, so disabling the module puts the AUTHORED
+		 * rows back rather than freezing the last thing you pushed.
+		 */
+		hud: {
+			/** @param {string} elementId @param {any[]} rows */
+			rows(elementId, rows) {
+				const id = String(elementId ?? '').trim();
+				if (!id) return;
+				// primed ref, not a fresh import().then(): a module pushing rows from a frame task
+				// would otherwise drop every push until the promise settled (DEVX #8)
+				if (flowRuntimeRef) flowRuntimeRef.setHudRows(id, rows);
+				else import('./flowRuntime').then((m) => m.setHudRows(id, rows));
+				if (!hudRowsOwned.has(id)) {
+					hudRowsOwned.add(id);
+					onDispose(() =>
+						flowRuntimeRef
+							? flowRuntimeRef.clearHudRows(id)
+							: import('./flowRuntime').then((m) => m.clearHudRows(id))
+					);
+				}
+			},
+			/** Drop the rows again, putting the element's authored ones back. @param {string} elementId */
+			clearRows(elementId) {
+				const id = String(elementId ?? '').trim();
+				if (!id) return;
+				if (flowRuntimeRef) flowRuntimeRef.clearHudRows(id);
+				else import('./flowRuntime').then((m) => m.clearHudRows(id));
+			}
+		},
+
+		/**
+		 * 21-E7.4: SHIP YOUR OWN HUD ELEMENT KIND.
+		 *
+		 * `registerToolbox`'s contract, one layer in: you hand over a `(container, element,
+		 * runtime) => cleanup` mount fn and core hands you a DOM node inside a real HUD element
+		 * — so you inherit the layer's z-tier, the 9-grid anchoring, the document, replication,
+		 * undo and all four save paths without writing any of it. `fields` are the properties
+		 * pane's rows (the `hudKinds` schema: {key, kind, label, min, max, step, options,
+		 * placeholder, hint}), `defaults` their starting values.
+		 *
+		 * Return `{update(element, runtime), destroy()}` instead of a bare cleanup and a runtime
+		 * change calls `update` rather than rebuilding your DOM — which is what you want if you
+		 * are drawing to a canvas.
+		 *
+		 * The kind is NAMESPACED `mod-<moduleId>-<kind>`, and the name is written into a
+		 * replicated, saved document. A peer without the module reaches an unknown kind, which
+		 * the HUD already PRESERVES verbatim and skips at render — so their layout survives and
+		 * installing the module makes the element appear. Same story after a disable, which is
+		 * the point: the fallback belongs to the format, not to the disable path.
+		 * @param {string} kind @param {any} def
+		 * @returns {string} the namespaced kind name
+		 */
+		registerHudElement(kind, def) {
+			const full = registerModuleHudKind(moduleId, kind, {
+				moduleName: def?.moduleName || moduleName,
+				...(def ?? {})
+			});
+			onDispose(() => unregisterModuleHudKind(full));
+			return full;
 		}
 	};
 }
@@ -867,7 +975,7 @@ export function initModules(modules) {
 	modules.forEach((mod) => {
 		if (loadedModules.some((m) => m.id === mod.id)) return;
 		try {
-			mod.register(makeApi(mod.id));
+			mod.register(makeApi(mod.id, mod.name || mod.id));
 			loadedModules.push({ id: mod.id, name: mod.name, version: mod.version, description: mod.description });
 			console.log('module loaded: ' + mod.id + ' v' + mod.version);
 		} catch (error) {

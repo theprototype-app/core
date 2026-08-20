@@ -352,6 +352,38 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					: [])
 			]
 		},
+		// 21-E8: RECIPES - a whole authored behaviour in one click. "Make collectible" is
+		// five nodes and four wires a user would otherwise draw ONCE PER GEM, and every
+		// piece of it already existed (E4 latch/gate, the game variables, the replicated
+		// click) - assembling it was the only thing missing. What it leaves behind is an
+		// ORDINARY graph, so it replicates, undoes and can be taken apart afterwards.
+		//
+		// Reached by dynamic import like physics/terrainSculpt: this builder stays lean and
+		// a recipe writes to the flow graph and records history.
+		{
+			label: 'Game',
+			icon: 'gamepad-2',
+			children: [
+				{
+					label: 'Make collectible' + suffix,
+					disabled: locked,
+					tooltip: locked
+						? lockedTooltip
+						: multi
+							? 'Each one hides itself for everyone when clicked and adds 1 to the shared “gems” variable'
+							: 'Clicking it hides it for everyone and adds 1 to the shared “gems” variable - and it stays collected',
+					action: () => import('./gameRecipes').then((m) => m.makeCollectible(targets))
+				},
+				// listed rather than hidden, so the shape of the feature is visible: a
+				// respawning pickup needs something to spawn it back, which is a different
+				// batch. A greyed row with the reason beats a missing one.
+				{
+					label: 'Collectible (respawns)' + suffix,
+					disabled: true,
+					tooltip: '21-B B7 (spawn) ships this'
+				}
+			]
+		},
 		{
 			label: (muted ? 'Enable flow effects' : 'Disable flow effects') + suffix,
 			icon: 'workflow',

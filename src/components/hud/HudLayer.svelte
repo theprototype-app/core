@@ -12,11 +12,15 @@
 	// phase (the AnnotationPins / AnnotationMarkers split).
 	import { onMount } from 'svelte';
 	import HudElement from './HudElement.svelte';
-	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, visibleScreen, activeHudKeys, HUD_KINDS , setHudValue, hudValueOf } from '$lib/hudDocs';
+	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, visibleScreen, activeHudKeys, setHudValue, hudValueOf } from '$lib/hudDocs';
 	import { isVRMode, isLocked, playPointerFree } from '../../stores/sceneStore';
 	import { hudEditorClose } from '../../stores/appStore.js';
 	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
-	import { isInteractiveKind } from '$lib/hudKinds';
+	// 21-E7.4: RENDERABLE is no longer the same list as HUD_KINDS - a module kind is
+	// renderable and is not in it, so every render-time filter reads the registry instead.
+	import { isInteractiveKind, isRenderableKind } from '$lib/hudKinds';
+	import { moduleHudKinds } from '$lib/moduleHudKinds';
+	import { hudOptionsOf } from '$lib/flowRuntime';
 	import { cameraPreview } from '$lib/cameraPreview';
 	import { claimInput, releaseInput, onInput } from '$lib/inputRuntime';
 	import { gamepadPrefs } from '$lib/gamepadPrefs';
@@ -74,11 +78,15 @@
 	// any[]: an element carries PER-KIND fields beyond the base typedef (enabled, min/max,
 	// options, shared - declared open in hudKinds, the registry rule), and this component
 	// reads several of them for the ring. The cast says so once instead of nine times.
+	// $moduleHudKinds is the DEPENDENCY: isRenderableKind reads a plain map, which a
+	// $derived cannot see, so installing a module would otherwise not make its elements
+	// appear until something else happened to flush this (the non-reactive-registry family).
+	const renderableOf = (/** @type {any} */ _registry, /** @type {any[]} */ list) => list;
 	const elements = $derived(
-		/** @type {any[]} */ (screens.flatMap((entry) =>
+		/** @type {any[]} */ (renderableOf($moduleHudKinds, screens).flatMap((entry) =>
 			(entry.screen?.elements ?? [])
-				.filter((el) => HUD_KINDS.includes(el.kind))
-				.map((el) => ({ ...el, __key: entry.key }))
+				.filter((/** @type {any} */ el) => isRenderableKind(el.kind))
+				.map((/** @type {any} */ el) => ({ ...el, __key: entry.key }))
 		))
 	);
 	// 21-E3: every INTERACTIVE kind, not buttons alone - a settings menu is sliders and
@@ -185,11 +193,19 @@
 			return;
 		}
 		const horizontal = action === 'left' || action === 'right';
-		if (horizontal && el && (el.kind === 'slider' || el.kind === 'dropdown')) {
+		if (horizontal && el && (el.kind === 'slider' || el.kind === 'dropdown' || el.kind === 'tabs')) {
 			// 21-E3: a focused slider/dropdown takes Left/Right for its VALUE; Up/Down
 			// still walk the ring, so a menu of sliders stays navigable.
 			const dir = action === 'right' ? 1 : -1;
-			if (el.kind === 'slider') {
+			if (el.kind === 'tabs') {
+				// 21-E7.6: a tabs element HOLDS the index, so the ring steps the number and
+				// wraps - the dropdown branch below steps through option TEXT instead.
+				const options = hudOptionsOf(el.id, el);
+				if (options.length) {
+					const at = Math.max(0, Math.round(Number(hudValueOf(el.id, el.value ?? 0))));
+					setHudValue(el.id, (at + dir + options.length) % options.length, { shared: !!el.shared });
+				}
+			} else if (el.kind === 'slider') {
 				const min = Number(el.min ?? 0);
 				const max = Number(el.max ?? 100);
 				const step = Number(el.step || 1);
@@ -197,10 +213,9 @@
 				const next = Math.min(max, Math.max(min, held + dir * step));
 				setHudValue(el.id, next, { shared: !!el.shared });
 			} else {
-				const options = String(el.options ?? '')
-					.split(',')
-					.map((o) => o.trim())
-					.filter(Boolean);
+				// 21-E7.2: the LIVE list. A node feeding the options must move the ring's idea of
+				// 'the next option' with them, or a pad player cycles through a stale list.
+				const options = hudOptionsOf(el.id, el);
 				if (options.length) {
 					const held = String(hudValueOf(el.id, el.value ?? options[0]));
 					const at = Math.max(0, options.indexOf(held));

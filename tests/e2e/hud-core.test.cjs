@@ -78,7 +78,7 @@ h.run(async () => {
 							futureField: 'from a newer build',
 							elements: [
 								...s.elements,
-								{ id: 'future-1', kind: 'minimap', label: 'Map', someNewProp: 42, anchor: 'bottom-left' }
+								{ id: 'future-1', kind: 'holotable', label: 'Map', someNewProp: 42, anchor: 'bottom-left' }
 							]
 						}
 					: s
@@ -93,11 +93,11 @@ h.run(async () => {
 			screenExtra: back.screens[0].futureField,
 			// a bad anchor is CLAMPED (a rendering decision), unlike a kind
 			clampedAnchor: H.normalizeHudElement({ anchor: 'nowhere' }).anchor,
-			renderable: window.__stores.hudDocs.HUD_KINDS.includes('minimap')
+			renderable: window.__stores.hudDocs.HUD_KINDS.includes('holotable')
 		};
 	});
 	h.check(unknown.kept, 'an element of an UNKNOWN kind is preserved verbatim, never deleted');
-	h.check(unknown.kind === 'minimap', `its kind is kept as authored (${unknown.kind})`);
+	h.check(unknown.kind === 'holotable', `its kind is kept as authored (${unknown.kind})`);
 	h.check(unknown.extraProp === 42, `and so is a property we have never heard of (${unknown.extraProp})`);
 	h.check(unknown.screenExtra === 'from a newer build', 'a spread preserves unknown SCREEN fields too');
 	h.check(!unknown.renderable, 'it is not in HUD_KINDS, so the layer skips it at RENDER — a rendering decision');
@@ -170,7 +170,7 @@ h.run(async () => {
 	});
 	h.check(playZ === '45', `and in PLAY it is --z-hud with NO new tier (z=${playZ})`);
 	h.check(
-		layer.slots.includes('text') && !layer.slots.includes('minimap'),
+		layer.slots.includes('text') && !layer.slots.includes('holotable'),
 		`known kinds render and the unknown one is skipped (${JSON.stringify(layer.slots)})`
 	);
 

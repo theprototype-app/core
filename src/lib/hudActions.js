@@ -23,6 +23,10 @@
 
 import { get } from 'svelte/store';
 import { peers } from '../stores/appStore';
+// 21-E8: a chain action can end in an Object Selector, and the object it should name is
+// the one the user has in front of them. The SET is authoritative (never the sticky
+// `selectedObject`), and sceneStore is store-only, so this closes no cycle.
+import { selectedObjects } from '../stores/sceneStore';
 import { SCENE_GRAPH, flowGraphs, allNodes, allEdges } from '../stores/flowStore';
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge } from './nodesHandler';
 import { recordFlowNodesEntry } from './flowGraphs';
@@ -30,7 +34,26 @@ import { findNodeSpec } from './nodeCatalog';
 import { isInteractiveKind, isValuedKind } from './hudKinds';
 
 /** The HUD node types that READ an element (a display binding), by element kind. */
-const DISPLAY_NODE = { text: 'hudtext', bar: 'hudbar', timer: 'hudtimer', list: 'hudlist' };
+// 21-E7.6: the PACK kinds map onto the SAME four display nodes rather than earning nodes
+// of their own — an icon row, a radial and a hotbar are all 'a number between min and max'
+// (a HUD Bar node), and rich text, a key hint and a scroll panel are all 'a string' (a HUD
+// Text node). Without these entries the Actions section offered a pack element NOTHING,
+// which is the same 'the loop exists and is undiscoverable' problem 21-D7 was built to fix.
+const DISPLAY_NODE = {
+	text: 'hudtext',
+	bar: 'hudbar',
+	timer: 'hudtimer',
+	list: 'hudlist',
+	iconrow: 'hudbar',
+	progressradial: 'hudbar',
+	hotbar: 'hudbar',
+	richtext: 'hudtext',
+	keyhint: 'hudtext',
+	scrollpanel: 'hudtext',
+	// a custom or module element reads its whole runtime, and `text` is the channel every
+	// value source already reaches, so HUD Text is the honest default there too
+	custom: 'hudtext'
+};
 
 /** The HUD node type that a press comes FROM. */
 const PRESS_NODE = 'hudbutton';
@@ -45,7 +68,9 @@ const PRESSABLE = ['button', 'toggle'];
 const VALUE_NODE = 'hudinput';
 
 /** Every HUD node type that names an element, so a scan knows what to look at. */
-export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudscreen'];
+// 21-E7.1: `hudrows` names an element too, so the artboard's wired badge must see it — a
+// list filled by a HUD Rows node would otherwise read as dead at a glance.
+export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudrows', 'hudscreen'];
 
 /**
  * @typedef {{
@@ -53,7 +78,8 @@ export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hu
  *   role: 'press' | 'drives' | 'value',
  *   node: string, data?: Record<string, any>,
  *   handle?: string,
- *   via?: { node: string, data?: Record<string, any>, handle: string }
+ *   via?: { node: string, data?: Record<string, any>, handle: string },
+ *   chain?: { node: string, data?: Record<string, any>, handle?: string }[]
  * }} HudActionDef
  */
 
@@ -78,6 +104,46 @@ export const HUD_ACTIONS = [
 	{ key: 'hidescreen', label: 'Hide a HUD screen', group: 'HUD', role: 'press', node: 'hudscreen', data: { action: 'hide' }, handle: 'trigger' },
 	{ key: 'togglescreen', label: 'Toggle a HUD screen', group: 'HUD', role: 'press', node: 'hudscreen', data: { action: 'toggle' }, handle: 'trigger' },
 	{ key: 'count', label: 'Count the presses', group: 'Scene', role: 'press', node: 'counter', data: { step: 1, op: 'up' }, handle: 'pulse', hint: 'A Counter you can then show in a HUD Text.' },
+	// 21-E8: the actions a GAME wants, now that the nodes behind them exist. Each one is
+	// still just a node and an edge - the catalog stays a curated shortlist over the same
+	// palette - but these are the verbs a menu or a HUD button reaches for first, and every
+	// one of them was two trips through the node editor before.
+	{ key: 'playanim', label: 'Play an animation', group: 'Scene', role: 'press', node: 'playanim', data: { action: 'toggle', speed: 1 }, handle: 'trigger', hint: 'Toggle plays the clip and plays it BACKWARDS to close - wire an Object Selector or put it in the object\u2019s own graph.' },
+	// E4 gave Sound a `trigger` input, which is the whole reason play-a-sound-on-press was
+	// not authorable by ANY means before: the node had `playing`, a continuous state, and
+	// nothing to pulse.
+	{ key: 'sound', label: 'Play a sound', group: 'Scene', role: 'press', node: 'sound', data: {}, handle: 'trigger', hint: 'One shot per press (E4 gave sound a trigger input).' },
+	// `mode: 'burst'` is NOT decoration: particleRuntime fires a trigger only for an
+	// emitter that is not continuous (`cfg.mode !== 'continuous' && cfg.trigger`), and the
+	// `sparkles` preset this node is seeded from IS continuous - so the catalog default
+	// would have built a 'Fire particles' binding that can never fire, which is exactly the
+	// failure PRESSABLE exists to prevent one domain over.
+	{ key: 'particles', label: 'Fire particles', group: 'Scene', role: 'press', node: 'particle', data: { mode: 'burst' }, handle: 'trigger' },
+	{ key: 'impulse', label: 'Apply an impulse', group: 'Scene', role: 'press', node: 'impulse', data: { mode: 'impulse', space: 'world' }, handle: 'trigger', hint: 'Needs a running physics sim and a wired target object.' },
+	{ key: 'resetcounter', label: 'Reset a counter', group: 'Game', role: 'press', node: 'counter', data: { op: 'up', step: 1 }, handle: 'reset', hint: 'Zeroes the counter this press reaches - round 2 starts clean.' },
+	// the one CHAIN action in the catalog, and the reason chains exist at all: 'hide it, and
+	// show it again next press' is not ONE node. Every trigger in this app is a ~0.3s pulse,
+	// so a Latch is what makes the state PERSIST after that pulse has expired - which is
+	// exactly what E4 added it for.
+	{
+		key: 'togglevis',
+		label: "Toggle an object's visibility",
+		group: 'Scene',
+		role: 'press',
+		node: '',
+		chain: [
+			// `initial: true` = VISIBLE before the first press, which is two things at once:
+			// it makes the hint literally true (press to hide, press to show) and it stops
+			// ASSIGNING the action from hiding the object on the spot, which is what the
+			// node's own default would have done the moment the chain existed.
+			{ node: 'latch', handle: 'toggle', data: { initial: true } },
+			{ node: 'visibility', handle: 'on' },
+			// no handle: an Object Selector takes the UNNAMED target handle (its `_default`
+			// socket), which is what every effect node in the app already wires into
+			{ node: 'objectselector' }
+		],
+		hint: 'Uses a Latch, so the state persists - press to hide, press to show.'
+	},
 
 	// --- what DRIVES a display element -------------------------------------------
 	{ key: 'showvar', label: 'Show a variable', group: 'Data', role: 'drives', node: '', via: { node: 'getvariable', data: { name: 'score' }, handle: 'value' }, hint: 'A shared number — a score, lives, a level.' },
@@ -128,10 +194,19 @@ function sceneGraph() {
 }
 
 /** A short human sentence for one action node, so the list reads like the thing it does
- * rather than like a node type. @param {any} node */
-export function describeNode(node) {
+ * rather than like a node type.
+ *
+ * 21-E8: `handle` is the TARGET handle the edge landed on, and it exists for ONE reason -
+ * a Counter reached through `reset` does the OPPOSITE of a Counter reached through
+ * `pulse`, and the row called both of them "Count it". Everything else here reads the
+ * same whichever socket fed it, so nothing else consults it; absent = the old wording.
+ * @param {any} node @param {string|null} [handle] */
+export function describeNode(node, handle = null) {
 	const d = node?.data ?? {};
 	switch (node?.type) {
+		case 'hudrows':
+			// 21-E7.1
+			return (d.op === 'clear' ? 'Clear the rows of ' : d.op === 'set' ? 'Set the rows of ' : 'Add a row to ') + (d.element || 'an element');
 		case 'setgamestate':
 			return 'Set game state → ' + (d.state ?? 'playing') + (d.outcome ? ' (' + d.outcome + ')' : '');
 		case 'setcamera':
@@ -139,9 +214,33 @@ export function describeNode(node) {
 		case 'setvariable':
 			return (d.op === 'add' ? 'Add to' : d.op === 'subtract' ? 'Subtract from' : 'Set') + ' “' + (d.name ?? '') + '”';
 		case 'hudscreen':
-			return (d.action ?? 'show') + ' screen “' + (d.screen ?? '') + '”';
+			// 21-E8: `hide` names no screen (it drops this peer’s override, whatever it is), so
+			// the row said 'hide screen “”' - empty quotes reading as an unfinished field.
+			return (d.action ?? 'show') === 'hide' && !d.screen
+				? 'Hide the current screen'
+				: (d.action ?? 'show') + ' screen “' + (d.screen ?? '') + '”';
 		case 'counter':
-			return 'Count it';
+			return handle === 'reset' ? 'Reset counter' : 'Count it';
+		// 21-E8: the game verbs. Each says what HAPPENS, not which node does it - a row
+		// reading 'Play Animation' would just be the palette label with extra steps.
+		case 'playanim':
+			return 'Play animation (' + (d.action ?? 'toggle') + ')';
+		case 'sound':
+			return 'Play a sound';
+		case 'particle':
+			return 'Fire particles';
+		case 'impulse':
+			return 'Apply an impulse';
+		case 'latch':
+			return 'Latch (persistent on/off)';
+		case 'visibility':
+			return 'Show/hide an object';
+		case 'delay':
+			return 'After ' + (d.seconds ?? 1) + 's';
+		case 'sequence':
+			return 'Step sequence';
+		case 'once':
+			return 'Only once';
 		case 'getvariable':
 			return 'Variable “' + (d.name ?? '') + '”';
 		case 'gametime':
@@ -198,7 +297,8 @@ export function bindingsFor(elementId) {
 					role,
 					hudNodeId: node.id,
 					actionNodeId: target?.id ?? null,
-					label: target ? describeNode(target) : 'a deleted node',
+					// the HANDLE, not just the node: a Counter on `reset` is not a Counter on `pulse`
+					label: target ? describeNode(target, edge.targetHandle ?? null) : 'a deleted node',
 					source: ''
 				});
 			}
@@ -312,9 +412,39 @@ export function addBinding(elementId, actionKey) {
 			press = makeNode(PRESS_NODE, baseX, baseY, { element: elementId });
 			created.push(press);
 		}
-		const actionNode = makeNode(action.node, baseX + 220, baseY, action.data);
-		created.push(actionNode);
-		createdEdges.push(makeEdge(press, actionNode, action.handle));
+		if (action.chain?.length) {
+			// 21-E8: a CHAIN action. Some verbs are genuinely more than one node (hide-and-show
+			// needs a Latch to hold the state and an Object Selector to say WHOSE), and building
+			// them by hand is precisely the trip through the node editor this pane exists to
+			// remove. It rides the SAME path as a single-node action from here on - one
+			// recordFlowNodesEntry, one broadcast batch, one undo step - so a chain is a longer
+			// binding and not a new concept. A single-node action never enters this branch, so
+			// every existing key is byte-identical.
+			let prev = press;
+			let col = 1;
+			for (const step of action.chain) {
+				/** @type {Record<string, any>} */
+				const data = { ...(step.data ?? {}) };
+				// an Object Selector the def did not pin takes the CURRENT selection: the action
+				// means "this object", the HUD editor has no scene-object picker of its own, and
+				// the selection is what the user has in front of them. With nothing selected it
+				// keeps the spec default ('-None-'), so the chain is built and inert rather than
+				// refused - the node card is then the one obvious place to name a target.
+				if (step.node === 'objectselector' && !data.selected) {
+					const picked = get(selectedObjects)[0];
+					if (picked) data.selected = picked;
+				}
+				const node = makeNode(step.node, baseX + col * 220, baseY, data);
+				created.push(node);
+				createdEdges.push(makeEdge(prev, node, step.handle));
+				prev = node;
+				col++;
+			}
+		} else {
+			const actionNode = makeNode(action.node, baseX + 220, baseY, action.data);
+			created.push(actionNode);
+			createdEdges.push(makeEdge(press, actionNode, action.handle));
+		}
 	} else {
 		const displayType = /** @type {any} */ (DISPLAY_NODE)[String(action.role === 'drives' ? currentKindOf(elementId) : '')] ?? 'hudtext';
 		let display = nodes.find((n) => n.type === displayType && String(n.data?.element ?? '') === String(elementId));

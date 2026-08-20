@@ -4,6 +4,8 @@ import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTrigger
 import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
+// 21-E7.6: hudKinds is a leaf (it reads only moduleHudKinds, itself svelte/store-only)
+import { isIndexValuedKind } from './hudKinds';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
 import { runScript } from './scriptRuntime';
@@ -24,7 +26,8 @@ import {
 	hudDocKeyFor,
 	resolveScreen,
 	hudValueOf,
-	setHudValue
+	setHudValue,
+	registerHudRowsReset
 } from './hudDocs';
 // 21-D6: gameState is a LEAF for exactly this reason — history imports THIS module, so a
 // gameState that imported history would close the cycle.
@@ -399,16 +402,91 @@ function hudFormat(format, value, decimals) {
 	return pattern.includes('{v}') ? pattern.split('{v}').join(text) : pattern || text;
 }
 
-/** Rows a module pushed into a list element, keyed by element id.
+/** Rows pushed into a list element, keyed by element id.
  * @type {Map<string, any[]>} */
 const hudListRows = new Map();
+
+/** the most rows one element may hold — a leaderboard, not a log file */
+const HUD_ROW_LIMIT = 64;
 
 /** Push rows into a HUD List element. A list is an element WRITTEN INTO, never a value
  * that flows — the socket system has no arrays. Call it on EVERY peer from replicated
  * state (a module's own registerStateSync), never on one and hope.
  * @param {string} elementId @param {any[]} rows */
 export function setHudRows(elementId, rows) {
-	hudListRows.set(String(elementId), Array.isArray(rows) ? rows.slice(0, 64) : []);
+	hudListRows.set(String(elementId), Array.isArray(rows) ? rows.slice(0, HUD_ROW_LIMIT) : []);
+}
+
+/**
+ * 21-E7.1: the row store's three OPS, which is what the `hudrows` node drives and what
+ * `api.hud.rows` writes through.
+ *
+ * GOLDEN RULE 8, and it is the whole reason this needs NO message of its own: the rows a
+ * peer holds are DERIVED. `append` runs on the trigger's replicated STAMP EDGE and the row
+ * it appends is resolved from the replicated graph, so every peer sees the same sequence of
+ * edges carrying the same values and accumulates the same list — the Counter argument, one
+ * domain over. (And the same caveat: a peer who joined after an append never saw that edge,
+ * so it starts from the authored rows. A leaderboard that must survive a late join should be
+ * rebuilt with `set` from replicated state, which is what a module's registerStateSync is
+ * for.)
+ * @param {string} elementId @param {'set'|'append'|'clear'} op @param {any} row
+ */
+export function pushHudRows(elementId, op, row) {
+	const key = String(elementId);
+	if (op === 'clear') {
+		hudListRows.set(key, []);
+		return;
+	}
+	const text = row === undefined || row === null ? '' : String(row);
+	if (op === 'append') {
+		const held = hudListRows.get(key) ?? [];
+		hudListRows.set(key, [...held, text].slice(-HUD_ROW_LIMIT));
+		return;
+	}
+	hudListRows.set(key, [text]);
+}
+
+/** Forget an element's pushed rows entirely, so the AUTHORED rows show again. What a
+ * module's teardown calls (`api.hud.rows` journals this), and what a scene restore wants:
+ * pushed rows are play-time state. @param {string} [elementId] */
+export function clearHudRows(elementId) {
+	if (elementId === undefined) hudListRows.clear();
+	else hudListRows.delete(String(elementId));
+}
+
+/** test/debug read @param {string} elementId */
+export function hudRowsOf(elementId) {
+	return [...(hudListRows.get(String(elementId)) ?? [])];
+}
+
+/** 21-E7.6: the last stamp a HUD trigger aimed at each element, so an element can react to
+ * being POKED rather than to a value. `damageflash` is the reason it exists — a tint that
+ * spikes and fades needs an EDGE, and every HUD trigger already has one — but nothing about
+ * it is flash-specific, so a future kind gets it free. Never replicated: the stamps come
+ * from the replicated trigger, so each peer computes its own identical copy.
+ * @type {Map<string, number>} */
+const hudPulses = new Map();
+
+/** @param {string} elementId @param {number} stamp */
+function pulseHudElement(elementId, stamp) {
+	const key = String(elementId ?? '').trim();
+	if (key) hudPulses.set(key, stamp);
+}
+
+/** 21-E7.2: a LIVE option list for an element, when a node is feeding one. Written by the
+ * collection pass below and read by `hudinput`'s `index` and by the renderer, so all three
+ * agree on what "option 2" means the moment the list changes.
+ * @type {Map<string, string>} */
+const hudOptionLists = new Map();
+
+/** The options an element currently offers: a node's wired list if there is one, else the
+ * element's own authored field. @param {string} elementId @param {any} el @returns {string[]} */
+export function hudOptionsOf(elementId, el) {
+	const source = hudOptionLists.get(String(elementId)) ?? el?.options ?? '';
+	return String(source)
+		.split(',')
+		.map((/** @type {string} */ o) => o.trim())
+		.filter(Boolean);
 }
 
 /** `now` comes from runTick: it is a LOCAL const there, not module scope.
@@ -417,7 +495,10 @@ function updateHudRuntime(time, ctx, now) {
 	// the screen nodes act on a trigger EDGE, so they are checked every frame; only the
 	// published value map is throttled
 	const hudNodes = nodes.filter((/** @type {any} */ n) => String(n.type ?? '').startsWith('hud'));
-	if (!hudNodes.length) {
+	// 21-E7.1: rows and pulses are element state that no NODE has to exist for —
+	// `api.hud.rows` writes rows with nothing wired at all, and the early return used to
+	// throw them away before they could ever be published.
+	if (!hudNodes.length && !hudListRows.size && !hudPulses.size) {
 		if (lastHudJson !== '') {
 			lastHudJson = '';
 			hudRuntime.set({});
@@ -438,18 +519,28 @@ function updateHudRuntime(time, ctx, now) {
 		// in an object graph is the object uuid — so `showHudScreen` wrote a per-peer override
 		// for a document that cannot exist and the node silently did nothing at all.
 		const key = hudDocKeyFor(node.__graph);
+		const action = data.action ?? 'show';
+		// LOCAL on every peer: showHudScreen writes the per-peer override, so one player
+		// can be on the menu while another plays. Each peer receives the same replicated
+		// pulse and makes the same local decision.
+		//
+		// 21-E8: `hide` is checked BEFORE the empty-screen guard, because it does not name a
+		// screen at all - `showHudScreen(key, null)` drops whatever override this peer holds,
+		// and the field was never read on this branch. With the guard first, the Actions
+		// section’s "Hide a HUD screen" built a node that could never do anything until you
+		// typed an id the code then ignored, which is how a Resume button silently left the
+		// pause menu on screen (measured: state went back to `playing` and the menu stayed).
+		if (action === 'hide') {
+			showHudScreen(key, null);
+			continue;
+		}
 		const wanted = String(data.screen ?? '').trim();
 		if (!wanted) continue;
-		const action = data.action ?? 'show';
 		// compare against the RESOLVED id: the node's field may hold a NAME, and a toggle
 		// that compared a name to an id would never see itself as already shown
 		const wantedId = resolveScreen(hudDocOf(key), wanted)?.id ?? wanted;
 		const current = visibleScreen(key)?.id ?? null;
-		// LOCAL on every peer: showHudScreen writes the per-peer override, so one player
-		// can be on the menu while another plays. Each peer receives the same replicated
-		// pulse and makes the same local decision.
-		if (action === 'hide') showHudScreen(key, null);
-		else if (action === 'toggle') showHudScreen(key, current === wantedId ? null : wanted);
+		if (action === 'toggle') showHudScreen(key, current === wantedId ? null : wanted);
 		else showHudScreen(key, wanted);
 	}
 	for (const id of [...hudScreenActed.keys()])
@@ -482,9 +573,30 @@ function updateHudRuntime(time, ctx, now) {
 				text: String(data.title ?? ''),
 				rows: (hudListRows.get(element) ?? []).slice(0, Math.max(1, num(data.rows) || 5))
 			};
+		} else if (node.type === 'hudset' && data.options !== undefined && data.options !== null) {
+			// 21-E7.2: the OPTIONS channel, beside `value`. A dropdown's list was authored-only,
+			// so "the difficulties this game offers" or "the peers in this room" could not be
+			// offered at all. Published only when something is WIRED into the handle — the node's
+			// defaults deliberately carry no `options`, so an untouched Set Input node is
+			// byte-identical to before and the authored list stays in charge.
+			hudOptionLists.set(element, String(data.options));
+			next[element] = { ...(next[element] ?? {}), options: String(data.options) };
 		}
 		// hudbutton contributes no runtime value — its label is authored on the element
 	}
+	// rows pushed in with no `hudlist` node naming them (`api.hud.rows`, or a HUD Rows node
+	// on its own). The node path above wins where both exist: its own `rows` param is the cap
+	// the author set on that node.
+	for (const [element, rows] of hudListRows) {
+		if (next[element]?.rows !== undefined) continue;
+		const cap = Math.max(1, num(findHudElement(element)?.rows) || 8);
+		next[element] = { ...(next[element] ?? {}), rows: rows.slice(0, cap) };
+	}
+	// and the pulse stamps, merged onto whatever else the element says
+	for (const [element, stamp] of hudPulses) next[element] = { ...(next[element] ?? {}), pulse: stamp };
+	for (const element of [...hudOptionLists.keys()])
+		if (!hudNodes.some((/** @type {any} */ n) => n.type === 'hudset' && String(n.data?.element ?? '') === element))
+			hudOptionLists.delete(element);
 	const json = JSON.stringify(next);
 	if (json === lastHudJson) return; // ON CHANGE ONLY
 	lastHudJson = json;
@@ -555,9 +667,48 @@ function updateHudSetNodes(time, ctx) {
 		// does - one write path, one rule about sharing
 		const el = findHudElement(element);
 		setHudValue(element, data.value, { shared: !!el?.shared });
+		// 21-E7.6: the same edge POKES the element, which is what a damage flash reads. A
+		// value write and a poke are the same gesture from the graph's side, so this costs
+		// one line rather than a node.
+		pulseHudElement(element, stamp);
 	}
 	for (const id of [...hudSetActed.keys()])
 		if (!nodes.some((/** @type {any} */ n) => n.id === id)) hudSetActed.delete(id);
+}
+
+/** @type {Map<string, number>} */
+const hudRowsActed = new Map();
+
+/**
+ * 21-E7.1: THE `hudrows` NODE — set / append / clear a list element's rows on a trigger
+ * edge, with the row itself coming from a wired value (a variable, a counter, a module
+ * value node, a peer name).
+ *
+ * On the STAMP EDGE, never per frame: `append` on a live pulse would add the same row sixty
+ * times a second, which is the hudscreen/hudset rule and here it is the difference between
+ * a leaderboard and a memory leak.
+ *
+ * NO NEW MESSAGE TYPE. See `pushHudRows` for the derivation argument.
+ * @param {number} time @param {any} ctx
+ */
+function updateHudRowsNodes(time, ctx) {
+	for (const node of nodes) {
+		if (node.type !== 'hudrows') continue;
+		const stamp = triggerStampFor(node.id, ctx);
+		if (stamp === null) continue;
+		if (hudRowsActed.get(node.id) === stamp) continue;
+		hudRowsActed.set(node.id, stamp);
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		const element = String(data.element ?? '').trim();
+		if (!element) continue;
+		const op = data.op === 'append' || data.op === 'clear' ? data.op : 'set';
+		// `text` is the wired row. An unwired node falls back to its own `text` param, so a
+		// fixed row ('GAME OVER') needs nothing wired.
+		pushHudRows(element, op, data.text);
+		pulseHudElement(element, stamp);
+	}
+	for (const id of [...hudRowsActed.keys()])
+		if (!nodes.some((/** @type {any} */ n) => n.id === id)) hudRowsActed.delete(id);
 }
 
 /** @type {Map<string, number>} */
@@ -1671,11 +1822,15 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 					// a dropdown's POSITION in its own option list, which is what a Switcher
 					// wants. The options live on the ELEMENT, not on this node - the node
 					// names an element and nothing more.
-					const el = findHudElement(String(d.element ?? ''));
-					const options = String(el?.options ?? '')
-						.split(',')
-						.map((/** @type {string} */ o) => o.trim())
-						.filter(Boolean);
+					const id = String(d.element ?? '');
+					const el = findHudElement(id);
+					// 21-E7.6: a `tabs` element HOLDS the index, so looking a number up in a list
+					// of words would answer the fallback forever. The registry says which kinds
+					// are index-valued, so this is one read and not a kind list here.
+					if (isIndexValuedKind(String(el?.kind ?? ''))) return num(held);
+					// 21-E7.2: the LIVE list, not the authored one — a node feeding the options
+					// must move the index with them, or a Switcher reads a stale position.
+					const options = hudOptionsOf(id, el);
 					const at = options.indexOf(String(held));
 					return at < 0 ? num(fallback) : at;
 				}
@@ -2041,6 +2196,9 @@ export function fireObjectRest(uuid, resting) {
  */
 export function fireHudButton(elementId) {
 	let fired = 0;
+	// 21-E7.6: the press POKES the element as well as pulsing its nodes, so a damage flash
+	// (or any future kind that reacts to an edge) works off a button with nothing wired.
+	pulseHudElement(elementId, syncedNow());
 	nodes.forEach((node) => {
 		if (node.type !== 'hudbutton') return;
 		if (String(node.data?.element ?? '') !== String(elementId)) return;
@@ -2435,6 +2593,7 @@ function runTick(now) {
 	// declares the same controller and reacts to the same pulses with no message.
 	updateCharNodes(time, ctx);
 	updateHudSetNodes(time, ctx);
+	updateHudRowsNodes(time, ctx);
 	// 21-E4: Delay / Sequence / Once moments reach the PUSH consumers (Counter, a
 	// Latch toggle, another Once). `ctx.triggers` is this tick's snapshot, so those see
 	// the bump on the NEXT tick - one frame, the same latency every derived reaction
@@ -2549,6 +2708,10 @@ export function startFlowRuntime() {
 	// implicit-owner targeting. The mirror keeps the editor view in sync.
 	startGraphMirror();
 	startObjectFlowWatcher(); // H5: embed-socket pruning on interface changes
+	// 21-E7.1: let a scene load clear the pushed rows. Registered HERE rather than at
+	// module scope, because a module-level call that a store subscriber could reach is the
+	// documented TDZ trap - and this is exactly where every other one-time wiring lives.
+	registerHudRowsReset(clearHudRows);
 	// H3: LOCAL key presses pulse matching Key Press nodes — applyNodeTrigger
 	// REPLICATES the stamp (button-module pattern), so every peer computes the
 	// same pulse from the shared timestamp. Text fields are already filtered by

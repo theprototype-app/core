@@ -6,6 +6,7 @@
 	// shape). A new kind is one registry entry and no UI change at all.
 	import DragRow from '../ui/DragRow.svelte';
 	import HudImagePicker from './HudImagePicker.svelte';
+	import { openTextEditor } from '$lib/fileWindows';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import ColorWrapperRaw from '$lib/ColorWrapper.svelte';
 	// The always-open inline wrapper (the Inspector uses the same one). Cast because a
@@ -248,6 +249,65 @@
 		</div>
 	</div>
 {/if}
+{:else if field.kind === 'list'}
+	<!-- 21-E7.1/E7.3: THE MISSING BRANCH. `hudKinds` has declared a 'list' field kind since
+	     21-D1 and nothing rendered it, so it fell through to the single-line text input at the
+	     bottom - which cannot hold a newline, which is the entire point of the kind. One
+	     textarea serves both consumers: for a `list` element each LINE is a row, and for rich
+	     text a line is a line break.
+
+	     Commits on CHANGE (blur / Ctrl+Enter), never per keystroke: the whole document
+	     replicates on every edit, so a keystroke-per-message here is the same mistake the
+	     `text` node param kind already declined. -->
+	<div class="hud-field">
+		<span>{label}</span>
+	</div>
+	<div class="hud-field hud-field-wide">
+		<textarea
+			class="hud-input hud-area"
+			data-hud-list={field.key}
+			rows="4"
+			placeholder={field.placeholder ?? ''}
+			title={field.hint ?? ''}
+			value={String(value ?? '')}
+			onchange={(/** @type {any} */ e) => onchange(e.currentTarget.value)}
+			onkeydown={(/** @type {any} */ e) => {
+				// Ctrl/Cmd+Enter commits without leaving the field, and Escape gives the field
+				// back so the editor's own keys work again. Both stopped, or the artboard's
+				// CAPTURE-phase keydown reads them as element commands.
+				if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+					e.preventDefault();
+					e.stopPropagation();
+					onchange(e.currentTarget.value);
+					return;
+				}
+				if (e.key === 'Escape') e.currentTarget.blur();
+				e.stopPropagation();
+			}}
+		></textarea>
+	</div>
+{:else if field.kind === 'code'}
+	<!-- 21-E7.5: the code lives in the SHARED text-editor window (`fileWindows`), which is
+	     already where both the Explorer's text files and the custom-node definition editor
+	     go. Picked over the NodeDesigner shape deliberately: that one is a whole modal with
+	     a param designer around it, while this is one string with a save callback - so the
+	     lighter seam is the one that already exists, and it brings CodeMirror with it. -->
+	<div class="hud-field" title={field.hint ?? ''}>
+		<span>{label}</span>
+		<span class="hud-field-ctl">
+			<button
+				class="hud-cp-cmd"
+				data-hud-code={field.key}
+				onclick={() =>
+					openTextEditor({
+						title: 'HUD element code',
+						code: String(value ?? ''),
+						onSave: (/** @type {string} */ next) => onchange(next)
+					})}>Edit code…</button
+			>
+			<span class="hud-code-len">{String(value ?? '').length} chars</span>
+		</span>
+	</div>
 {:else if field.kind === 'image'}
 	<!-- a <span> caption, not a <label>: HudImagePicker owns a <label> of its own around
 	     its file input, and nesting labels double-fires the click -->
@@ -298,6 +358,17 @@
 		background: rgb(17 24 39 / 0.6);
 		padding: 0.1rem 0.3rem;
 		font-size: 11px;
+	}
+	.hud-area {
+		width: 100%;
+		resize: vertical;
+		font-family: ui-monospace, monospace;
+		line-height: 1.35;
+	}
+	.hud-code-len {
+		flex-shrink: 0;
+		font-size: 10px;
+		opacity: 0.5;
 	}
 	.hud-swatch {
 		height: 12px;

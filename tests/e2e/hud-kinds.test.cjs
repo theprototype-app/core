@@ -28,8 +28,8 @@ h.run(async () => {
 			complete: K.HUD_KIND_DEFS.every(
 				(d) => d.key && d.label && d.group && d.icon && d.summary && d.defaultSize && Array.isArray(d.fields) && Array.isArray(d.style)
 			),
-			unknownDefaults: JSON.stringify(K.defaultsForKind('minimap')),
-			unknownFields: K.fieldsForKind('minimap').length
+			unknownDefaults: JSON.stringify(K.defaultsForKind('holotable')),
+			unknownFields: K.fieldsForKind('holotable').length
 		};
 	});
 	h.check(reg.same, 'hudDocs.HUD_KINDS IS the registry list — a kind is declared once');
@@ -251,7 +251,9 @@ h.run(async () => {
 	// the filter narrows the palette
 	const filtered = await page.evaluate(async () => {
 		const input = document.querySelector('#hud-palette-filter');
-		input.value = 'bar';
+		// 'bar' now also matches the Hotbar pack kind, so the unique term is the one that
+		// still proves the filter narrows (a term matching two kinds proves the opposite)
+		input.value = 'crosshair';
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 400));
 		const shown = [...document.querySelectorAll('#hud-palette [data-hud-kind]')].map((b) => b.getAttribute('data-hud-kind'));
@@ -261,7 +263,7 @@ h.run(async () => {
 		return { shown, restored: document.querySelectorAll('#hud-palette [data-hud-kind]').length };
 	});
 	h.check(
-		filtered.shown.length === 1 && filtered.shown[0] === 'bar',
+		filtered.shown.length === 1 && filtered.shown[0] === 'crosshair',
 		`the filter narrows it (${JSON.stringify(filtered.shown)})`
 	);
 	h.check(filtered.restored === reg.kinds.length, `and clearing it restores every kind (${filtered.restored})`);
@@ -317,7 +319,7 @@ h.run(async () => {
 		H.setHudDocFor('scene', {
 			...doc,
 			screens: doc.screens.map((s, i) =>
-				i === 0 ? { ...s, elements: [...s.elements, { id: 'future', kind: 'minimap', label: 'Map', zoom: 3 }] } : s
+				i === 0 ? { ...s, elements: [...s.elements, { id: 'future', kind: 'holotable', label: 'Map', zoom: 3 }] } : s
 			)
 		});
 		await new Promise((r) => setTimeout(r, 500));
@@ -330,7 +332,7 @@ h.run(async () => {
 			rendered: !!document.querySelector('#hud-layer [data-hud-id="future"]')
 		};
 	});
-	h.check(unknown.kept && unknown.kind === 'minimap' && unknown.extra === 3, `an unknown kind survives the registry untouched (${JSON.stringify(unknown)})`);
+	h.check(unknown.kept && unknown.kind === 'holotable' && unknown.extra === 3, `an unknown kind survives the registry untouched (${JSON.stringify(unknown)})`);
 	h.check(!unknown.rendered, 'and is skipped at render, never deleted');
 
 	await h.finish(browser);

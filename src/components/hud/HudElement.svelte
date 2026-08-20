@@ -15,6 +15,11 @@
 	// the runtime fallback; it is not a second source of truth.
 	import { hudImageFor, resolveHudImage, registerHudImageListener } from '$lib/hudImages';
 	import { hudValues, setHudValue } from '$lib/hudDocs';
+	import { parseHudRichText } from '$lib/hudRichText';
+	import { moduleHudKindDef, moduleHudKinds } from '$lib/moduleHudKinds';
+	import { subPressIds } from '$lib/hudKinds';
+	import { drawHudMinimap, MINIMAP_REFRESH_MS } from '$lib/hudMinimap';
+	import Icon from '../ui/Icon.svelte';
 	import { onDestroy } from 'svelte';
 
 	/** @type {{ element: any, runtime?: any, editor?: boolean, onpress?: (id: string) => void }} */
@@ -53,7 +58,17 @@
 	const min = $derived(Number(runtime?.min ?? element?.min ?? 0));
 	const max = $derived(Number(runtime?.max ?? element?.max ?? 1));
 	const pct = $derived(max - min > 1e-9 ? Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100)) : 0);
-	const rows = $derived(Array.isArray(runtime?.rows) ? runtime.rows : []);
+	// 21-E7.1: the AUTHORED rows are the fallback, exactly like every other param — one
+	// row per line of `rowsText`. Before this the only way to fill a list was `setHudRows`,
+	// which no editor and no module could reach, so the kind had no authoring path at all.
+	const rows = $derived(
+		Array.isArray(runtime?.rows) && runtime.rows.length
+			? runtime.rows
+			: String(element?.rowsText ?? '')
+					.split('\n')
+					.map((/** @type {string} */ line) => line.trim())
+					.filter(Boolean)
+	);
 	const vertical = $derived(element?.orientation === 'vertical');
 
 	// ---- 21-D4: the INPUT kinds -----------------------------------------------------
@@ -64,10 +79,14 @@
 	// must not pull it back.
 	const held = $derived($hudValues[element?.id]);
 	const inputValue = $derived(held !== undefined ? held : (runtime?.value ?? element?.value));
+	// 21-E7.2: a node feeding the OPTIONS channel replaces the authored list, so the same
+	// read order as every other channel — what a node says, then what the author set. The
+	// `hudinput` node's `index` read goes through the same live list, or the position it
+	// reports would mean something different from what is on screen.
 	const optionList = $derived(
-		String(element?.options ?? '')
+		String(runtime?.options ?? element?.options ?? '')
 			.split(',')
-			.map((o) => o.trim())
+			.map((/** @type {string} */ o) => o.trim())
 			.filter(Boolean)
 	);
 	const editable = $derived(!editor && element?.enabled !== false);
@@ -95,6 +114,149 @@
 		// retry watch notifies us when they land
 		if (!hit) void resolveHudImage(hash);
 		return hit;
+	});
+
+	// ---- 21-E7.3: RICH TEXT ---------------------------------------------------------
+	// Parsed to RUNS and rendered with svelte text interpolation. There is no innerHTML in
+	// this component and no sanitizer: a hostile string is not cleaned up, it simply never
+	// matches any token and comes out as the characters that were typed.
+	const richRuns = $derived(kind === 'richtext' || kind === 'scrollpanel' ? parseHudRichText(text) : []);
+
+	// ---- 21-E7.6: the icon row / hotbar / radial ------------------------------------
+	const slotCount = $derived(Math.max(1, Math.min(20, Math.round(Number(element?.max ?? element?.slots ?? 5)))));
+	const filled = $derived(Math.max(0, Math.min(slotCount, Math.round(Number(runtime?.value ?? element?.value ?? 0)))));
+	const hotbarLabels = $derived(
+		String(element?.labels ?? '')
+			.split(',')
+			.map((/** @type {string} */ o) => o.trim())
+	);
+	// the ring: a circle stroked from its top, dash-offset by the fill fraction
+	const RADIAL_R = 42;
+	const RADIAL_C = 2 * Math.PI * RADIAL_R;
+
+	// ---- 21-E7.6: the damage FLASH ---------------------------------------------------
+	// Driven by the element's PULSE stamp (any HUD trigger aimed at it), and the decay is a
+	// pure CSS animation restarted by an {#key} block. No rAF, no timer, no store write per
+	// frame — and `prefers-reduced-motion` cannot strand it, because nothing here listens
+	// for `animationend` (the documented trap); the element simply rests at opacity 0.
+	const pulse = $derived(Number(runtime?.pulse ?? 0));
+
+	// ---- 21-E7.5: the USER-SCRIPTED element ------------------------------------------
+	// The script-node trust model: replicated code, run by every peer, compiled once per
+	// distinct source. A THROW renders an inert chip — it must never propagate, or one bad
+	// character in one element takes the whole HUD layer down with it.
+	/** @type {any} */
+	let codeError = $state('');
+	const compiled = $derived.by(() => {
+		if (kind !== 'custom') return null;
+		const source = String(element?.code ?? '');
+		try {
+			// eslint-disable-next-line no-new-func
+			return new Function('el', 'runtime', 'container', source);
+		} catch (error) {
+			return /** @type {any} */ ({ __error: String(/** @type {any} */ (error)?.message ?? error) });
+		}
+	});
+	/** the div a custom or module element draws into @type {HTMLElement|null} */
+	let slotEl = $state(/** @type {HTMLElement|null} */ (null));
+
+	// HOT-APPLIES: the effect depends on the compiled fn, the element and the runtime, so
+	// editing the code re-runs it with no remount — which is what makes the code editor
+	// usable at all.
+	$effect(() => {
+		const host = slotEl;
+		const fn = compiled;
+		if (!host || !fn) return;
+		host.replaceChildren();
+		if (typeof fn !== 'function') {
+			codeError = fn.__error ?? 'could not compile';
+			return;
+		}
+		try {
+			fn(element, runtime, host);
+			codeError = '';
+		} catch (error) {
+			codeError = String(/** @type {any} */ (error)?.message ?? error);
+		}
+	});
+
+	// ---- 21-E7.4: a MODULE-supplied kind ---------------------------------------------
+	// `$moduleHudKinds` is the DEPENDENCY (the def lookup is a plain map read, which a
+	// $derived cannot see — the non-reactive-registry family), so installing a module makes
+	// its elements appear without a reload.
+	const modKindOf = (/** @type {any} */ _registry, /** @type {string} */ k) => moduleHudKindDef(k);
+	const modDef = $derived(modKindOf($moduleHudKinds, kind));
+
+	/**
+	 * The mount action for a module kind. `cloudMount`'s `(el) => cleanup` SHAPE, with one
+	 * addition that a toolbox does not need and a HUD element does: a mount may instead
+	 * return `{update, destroy}` (the svelte-action contract), and then a runtime change
+	 * calls `update` rather than tearing the DOM down and rebuilding it. Without that, an
+	 * element drawing a canvas would be remounted every time its runtime value moved.
+	 * @param {HTMLElement} node @param {any} args {def, element, runtime}
+	 */
+	function hudMount(node, args) {
+		/** @type {any} */
+		let handle = null;
+		/** @param {any} a */
+		const run = (a) => {
+			try {
+				handle = a?.def?.mount?.(node, a.element, a.runtime) ?? null;
+			} catch (error) {
+				console.log('module HUD element mount failed', error);
+				handle = null;
+			}
+		};
+		const stop = () => {
+			try {
+				if (typeof handle === 'function') handle();
+				else if (handle && typeof handle.destroy === 'function') handle.destroy();
+			} catch (error) {
+				console.log('module HUD element cleanup failed', error);
+			}
+			handle = null;
+		};
+		run(args);
+		return {
+			/** @param {any} a */
+			update(a) {
+				if (handle && typeof handle.update === 'function') {
+					try {
+						handle.update(a.element, a.runtime);
+						return;
+					} catch (error) {
+						console.log('module HUD element update failed', error);
+					}
+				}
+				stop();
+				node.replaceChildren();
+				run(a);
+			},
+			destroy: stop
+		};
+	}
+
+	// ---- 21-E7.6: the MINIMAP --------------------------------------------------------
+	// ~2Hz, the hudRuntime discipline: this is the one kind that does per-frame-shaped work,
+	// and the layer is real DOM. See hudMinimap.js for why it plots rather than renders.
+	let mapEl = $state(/** @type {HTMLCanvasElement|null} */ (null));
+	$effect(() => {
+		const canvas = mapEl;
+		if (kind !== 'minimap' || !canvas) return;
+		const el = element;
+		const tint = paint(style.color, '#4ade80');
+		const tick = () => {
+			// the canvas is laid out by CSS; match its backing store to its box so the plot is
+			// not stretched (and so a resized element redraws at the right scale)
+			const w = Math.max(1, Math.round(canvas.clientWidth));
+			const h = Math.max(1, Math.round(canvas.clientHeight));
+			if (canvas.width !== w) canvas.width = w;
+			if (canvas.height !== h) canvas.height = h;
+			drawHudMinimap(canvas, el, tint.startsWith('var(') ? '#4ade80' : tint);
+		};
+		tick();
+		const timer = setInterval(tick, MINIMAP_REFRESH_MS);
+		return () => clearInterval(timer);
 	});
 
 	const boxStyle = $derived(
@@ -240,6 +402,166 @@
 			onchange={(/** @type {any} */ e) => write(e.currentTarget.value)}
 		/>
 	</div>
+{:else if kind === 'richtext'}
+	<!-- 21-E7.3: RUNS, not HTML. Every fragment below is svelte text interpolation, so a
+	     hostile string renders as characters and there is nothing to sanitize. -->
+	<div class="hud-el hud-rich" style={boxStyle}>
+		{#each richRuns as run, i (i)}{#if run.kind === 'br'}<br />{:else if run.kind === 'icon'}<span
+					class="hud-rich-icon"
+					style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} /></span
+				>{:else}<span
+					class="hud-rich-run"
+					class:hud-rich-b={run.bold}
+					class:hud-rich-i={run.italic}
+					style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}>{run.text}</span
+				>{/if}{/each}
+	</div>
+{:else if kind === 'scrollpanel'}
+	<!-- the same runs, in a box that scrolls. `pointer-events: auto` on purpose: a panel you
+	     cannot scroll is not a scroll panel, and the layer is pointer-events: none. -->
+	<div class="hud-el hud-scroll" style={boxStyle}>
+		{#if element?.title}<div class="hud-list-title">{element.title}</div>{/if}
+		<div class="hud-scroll-body">
+			{#each richRuns as run, i (i)}{#if run.kind === 'br'}<br />{:else if run.kind === 'icon'}<span
+						class="hud-rich-icon"
+						style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} /></span
+					>{:else}<span
+						class="hud-rich-run"
+						class:hud-rich-b={run.bold}
+						class:hud-rich-i={run.italic}
+						style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}>{run.text}</span
+					>{/if}{/each}
+		</div>
+	</div>
+{:else if kind === 'minimap'}
+	<!-- 21-E7.6: a top-down PLOT (see hudMinimap.js for why that, not a render target) -->
+	<div class="hud-el hud-map" style={boxStyle}>
+		<canvas class="hud-map-canvas" bind:this={mapEl}></canvas>
+	</div>
+{:else if kind === 'iconrow'}
+	<!-- hearts / ammo / keys: N repeats of one glyph off a number -->
+	<div class="hud-el hud-iconrow" style={boxStyle}>
+		{#each Array(slotCount) as _, i (i)}
+			{#if i < filled || element?.empty !== false}
+				<span class="hud-icon-slot" class:hud-icon-empty={i >= filled}
+					><Icon name={String(element?.icon ?? 'heart')} size={Number(style.size ?? 18)} /></span
+				>
+			{/if}
+		{/each}
+	</div>
+{:else if kind === 'progressradial'}
+	<!-- a stroked circle, offset by the fill fraction. An <svg> is a REPLACED element, so it
+	     takes explicit width/height or it sits at its 300x150 intrinsic box. -->
+	<div class="hud-el hud-radial" style={boxStyle}>
+		<svg class="hud-radial-svg" viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
+			<circle
+				cx="50"
+				cy="50"
+				r={RADIAL_R}
+				fill="none"
+				stroke={paint(style.bg, 'rgb(17 24 39 / 0.55)')}
+				stroke-width={Number(element?.thickness ?? 6)}
+			/>
+			<circle
+				cx="50"
+				cy="50"
+				r={RADIAL_R}
+				fill="none"
+				stroke={paint(style.color, 'var(--accent, #ef562f)')}
+				stroke-width={Number(element?.thickness ?? 6)}
+				stroke-linecap="round"
+				stroke-dasharray={RADIAL_C}
+				stroke-dashoffset={RADIAL_C * (1 - pct / 100)}
+				transform={element?.clockwise === false ? 'rotate(-90 50 50) scale(1 -1) translate(0 -100)' : 'rotate(-90 50 50)'}
+			/>
+		</svg>
+		{#if element?.showPercent !== false}<span class="hud-radial-label">{Math.round(pct)}%</span>{/if}
+	</div>
+{:else if kind === 'hotbar'}
+	<div class="hud-el hud-hotbar" style={boxStyle}>
+		{#each Array(Math.max(1, Math.min(12, Math.round(Number(element?.slots ?? 6))))) as _, i (i)}
+			<div class="hud-hot-slot" class:hud-hot-on={i === filled}>
+				{#if element?.numbers !== false}<span class="hud-hot-num">{i + 1}</span>{/if}
+				<span class="hud-hot-label">{hotbarLabels[i] ?? ''}</span>
+			</div>
+		{/each}
+	</div>
+{:else if kind === 'damageflash'}
+	<!-- the {#key} is the mechanism: a new pulse stamp REMOUNTS the inner div, which restarts
+	     its CSS animation. That is the whole decay — no rAF, no timer, no per-frame store. -->
+	<div class="hud-el hud-flash" aria-hidden="true">
+		{#key pulse}
+			{#if pulse > 0}
+				<div
+					class="hud-flash-run"
+					style="background: {paint(style.bg, '#ef4444')}; --hud-flash-peak: {Number(style.opacity ?? 0.45)}; --hud-flash-fade: {Math.max(0.05, Number(element?.fade ?? 0.45))}s"
+				></div>
+			{/if}
+		{/key}
+	</div>
+{:else if kind === 'keyhint'}
+	<div class="hud-el hud-keyhint" style={boxStyle}>
+		<kbd class="hud-kbd">{element?.keyName ?? ''}</kbd>
+		<span class="hud-in-label">{text}</span>
+	</div>
+{:else if kind === 'tabs'}
+	<!-- 21-E7.6: its VALUE is the selected INDEX. Deliberately NOT a screen switch: a screen
+	     is per-peer visibility with its own model (showWhile, the menu input mode), while this
+	     is a number another node reads with HUD Input (read: index) and switches on. -->
+	<div class="hud-el hud-tabs" style={boxStyle} role="tablist">
+		{#each optionList as option, i (option + i)}
+			<button
+				class="hud-tab"
+				class:hud-tab-on={Math.round(Number(inputValue ?? 0)) === i}
+				role="tab"
+				aria-selected={Math.round(Number(inputValue ?? 0)) === i}
+				disabled={!editable}
+				tabindex={editor ? -1 : 0}
+				onclick={(e) => {
+					e.stopPropagation();
+					write(i);
+				}}>{option}</button
+			>
+		{/each}
+	</div>
+{:else if kind === 'confirm'}
+	<!-- its OWN id never fires; the two buttons fire `<id>-yes` / `<id>-no`, derived from the
+	     registry's `subPress` so a HUD Button node binds to exactly what the summary says. -->
+	<div class="hud-el hud-confirm" style={boxStyle}>
+		<span class="hud-confirm-q">{text}</span>
+		<span class="hud-confirm-row">
+			{#each subPressIds(kind) as sub (sub)}
+				<button
+					class="hud-button hud-confirm-btn"
+					class:hud-confirm-yes={sub === 'yes'}
+					data-hud-sub={element.id + '-' + sub}
+					disabled={!editable}
+					tabindex={editor ? -1 : 0}
+					onclick={(e) => {
+						if (!editable) return;
+						e.stopPropagation();
+						onpress?.(element.id + '-' + sub);
+					}}>{element?.[sub] ?? sub}</button
+				>
+			{/each}
+		</span>
+	</div>
+{:else if kind === 'custom'}
+	<!-- 21-E7.5: the user's own render function draws into this div. A compile or run error
+	     renders an inert chip and NOTHING propagates — one bad character must not take the
+	     layer down. -->
+	<div class="hud-el hud-custom" style={boxStyle}>
+		<div class="hud-custom-slot" bind:this={slotEl}></div>
+		{#if codeError}<span class="hud-code-error" title={codeError}>code error</span>{/if}
+	</div>
+{:else if modDef}
+	<!-- 21-E7.4: a MODULE's own kind. Same `(el) => cleanup` shape a toolbox mount uses, so
+	     a module writes plain DOM and inherits the layer, the 9-grid, the document, undo and
+	     all four save paths. With the module gone this branch is not reached and the element
+	     is preserved-and-skipped, exactly as a peer without the module sees it. -->
+	<div class="hud-el hud-modkind" style={boxStyle} data-hud-module={modDef.moduleId}>
+		<div class="hud-custom-slot" use:hudMount={{ def: modDef, element, runtime }}></div>
+	</div>
 {:else if kind === 'image'}
 	<!-- the src is an Explorer content HASH resolved to an object URL, never an embedded
 	     dataURL: a document replicates WHOLE on every edit, so an inline image would
@@ -256,6 +578,218 @@
 {/if}
 
 <style>
+	/* ---- 21-E7.3 rich text -------------------------------------------------------- */
+	.hud-rich {
+		display: block;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	.hud-rich-b {
+		font-weight: 700;
+	}
+	.hud-rich-i {
+		font-style: italic;
+	}
+	.hud-rich-icon {
+		display: inline-flex;
+		vertical-align: -0.15em;
+	}
+	.hud-scroll {
+		display: flex;
+		flex-direction: column;
+		/* a panel you cannot scroll is not a scroll panel; the LAYER stays none */
+		pointer-events: auto;
+	}
+	.hud-scroll-body {
+		min-height: 0;
+		flex: 1;
+		overflow-y: auto;
+		overflow-x: hidden;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	/* ---- 21-E7.6 the game pack ---------------------------------------------------- */
+	.hud-map {
+		padding: 0;
+		overflow: hidden;
+	}
+	.hud-map-canvas {
+		display: block;
+		width: 100%;
+		height: 100%;
+	}
+	.hud-iconrow {
+		display: flex;
+		align-items: center;
+		gap: 0.15em;
+	}
+	.hud-icon-slot {
+		display: inline-flex;
+	}
+	.hud-icon-empty {
+		opacity: 0.25;
+	}
+	.hud-radial {
+		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+	}
+	.hud-radial-svg {
+		position: absolute;
+		inset: 0;
+	}
+	.hud-radial-label {
+		position: relative;
+		font-variant-numeric: tabular-nums;
+	}
+	.hud-hotbar {
+		display: flex;
+		align-items: stretch;
+		gap: 3px;
+	}
+	.hud-hot-slot {
+		position: relative;
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid rgb(148 163 184 / 0.35);
+		border-radius: 4px;
+		background: rgb(0 0 0 / 0.25);
+		overflow: hidden;
+	}
+	.hud-hot-on {
+		border-color: var(--accent, #ef562f);
+		background: rgb(255 255 255 / 0.12);
+	}
+	.hud-hot-num {
+		position: absolute;
+		top: 1px;
+		left: 2px;
+		font-size: 0.7em;
+		opacity: 0.6;
+	}
+	.hud-hot-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		padding: 0 2px;
+	}
+	.hud-flash {
+		padding: 0;
+		background: transparent;
+		border: 0;
+	}
+	.hud-flash-run {
+		width: 100%;
+		height: 100%;
+		opacity: 0;
+		/* the decay, and all of it. Nothing listens for animationend, so
+		   prefers-reduced-motion cannot leave this stuck on (the documented trap) — it
+		   simply rests at the final keyframe. */
+		animation: hud-flash var(--hud-flash-fade, 0.45s) ease-out 1 both;
+	}
+	@keyframes hud-flash {
+		0% {
+			opacity: var(--hud-flash-peak, 0.45);
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+	/* ---- 21-E7.6 the menu pack ---------------------------------------------------- */
+	.hud-keyhint {
+		display: flex;
+		align-items: center;
+		gap: 0.4em;
+	}
+	.hud-kbd {
+		flex-shrink: 0;
+		border: 1px solid currentColor;
+		border-bottom-width: 2px;
+		border-radius: 3px;
+		padding: 0 0.35em;
+		font-family: ui-monospace, monospace;
+		font-size: 0.9em;
+		line-height: 1.4;
+		opacity: 0.9;
+	}
+	.hud-tabs {
+		display: flex;
+		align-items: stretch;
+		gap: 2px;
+		pointer-events: auto;
+	}
+	.hud-tab {
+		min-width: 0;
+		flex: 1;
+		cursor: pointer;
+		overflow: hidden;
+		border-radius: 3px;
+		background: rgb(0 0 0 / 0.2);
+		color: inherit;
+		font: inherit;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.hud-tab-on {
+		background: var(--accent, #38bdf8);
+		color: #0b1220;
+	}
+	.hud-tab:disabled {
+		cursor: not-allowed;
+	}
+	.hud-confirm {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		justify-content: center;
+		gap: 5px;
+	}
+	.hud-confirm-q {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.hud-confirm-row {
+		display: flex;
+		gap: 5px;
+	}
+	.hud-confirm-btn {
+		flex: 1;
+		border: 1px solid rgb(148 163 184 / 0.45);
+		border-radius: 4px;
+		background: rgb(0 0 0 / 0.25);
+		padding: 1px 4px;
+	}
+	.hud-confirm-yes {
+		border-color: var(--accent, #ef562f);
+	}
+	/* ---- 21-E7.4 / E7.5 the hosted kinds ------------------------------------------ */
+	.hud-custom,
+	.hud-modkind {
+		position: relative;
+		display: flex;
+		align-items: stretch;
+	}
+	.hud-custom-slot {
+		min-width: 0;
+		flex: 1;
+		overflow: hidden;
+	}
+	.hud-code-error {
+		position: absolute;
+		right: 2px;
+		bottom: 1px;
+		border-radius: 3px;
+		background: rgb(127 29 29 / 0.85);
+		padding: 0 4px;
+		font-size: 9px;
+		color: #fecaca;
+	}
 	.hud-input {
 		display: flex;
 		align-items: center;

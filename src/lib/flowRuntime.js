@@ -519,18 +519,28 @@ function updateHudRuntime(time, ctx, now) {
 		// in an object graph is the object uuid — so `showHudScreen` wrote a per-peer override
 		// for a document that cannot exist and the node silently did nothing at all.
 		const key = hudDocKeyFor(node.__graph);
+		const action = data.action ?? 'show';
+		// LOCAL on every peer: showHudScreen writes the per-peer override, so one player
+		// can be on the menu while another plays. Each peer receives the same replicated
+		// pulse and makes the same local decision.
+		//
+		// 21-E8: `hide` is checked BEFORE the empty-screen guard, because it does not name a
+		// screen at all - `showHudScreen(key, null)` drops whatever override this peer holds,
+		// and the field was never read on this branch. With the guard first, the Actions
+		// section’s "Hide a HUD screen" built a node that could never do anything until you
+		// typed an id the code then ignored, which is how a Resume button silently left the
+		// pause menu on screen (measured: state went back to `playing` and the menu stayed).
+		if (action === 'hide') {
+			showHudScreen(key, null);
+			continue;
+		}
 		const wanted = String(data.screen ?? '').trim();
 		if (!wanted) continue;
-		const action = data.action ?? 'show';
 		// compare against the RESOLVED id: the node's field may hold a NAME, and a toggle
 		// that compared a name to an id would never see itself as already shown
 		const wantedId = resolveScreen(hudDocOf(key), wanted)?.id ?? wanted;
 		const current = visibleScreen(key)?.id ?? null;
-		// LOCAL on every peer: showHudScreen writes the per-peer override, so one player
-		// can be on the menu while another plays. Each peer receives the same replicated
-		// pulse and makes the same local decision.
-		if (action === 'hide') showHudScreen(key, null);
-		else if (action === 'toggle') showHudScreen(key, current === wantedId ? null : wanted);
+		if (action === 'toggle') showHudScreen(key, current === wantedId ? null : wanted);
 		else showHudScreen(key, wanted);
 	}
 	for (const id of [...hudScreenActed.keys()])

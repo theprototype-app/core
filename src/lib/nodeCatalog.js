@@ -188,6 +188,97 @@ export const nodeCatalog = [
 		]
 	},
 	{
+		// 21-E6: THE CHARACTER CONTROLLER, as nodes. Play mode shipped ONE movement
+		// model — fly, WASD, scroll to change speed — hardcoded in
+		// PointerLockControls, so a game could not have a walker, could not have a
+		// jump, and could not read or write its own speed from a graph.
+		//
+		// THE PARITY CONTRACT gates the whole group: with NO Character Controller node
+		// in any graph, `charControl` stays null and PointerLockControls runs the code
+		// it always ran. The default is therefore reproducible with nodes — a
+		// Character Controller on `fly` at speed 0.1 IS the default — which is both the
+		// regression fixture and the "recreate today's camera with nodes" exercise.
+		group: 'Character',
+		items: [
+			// ONE card for the movement model. Deliberately a DECLARATION rather than an
+			// action: it is not triggered, it is simply PRESENT, and the newest one in
+			// the scene wins (with a toast when there is more than one — the
+			// playSettings.playPublishers precedent).
+			{
+				type: 'charcontroller',
+				label: 'Character Controller',
+				defaults: { mode: 'fly', speed: 0.1, jumpHeight: 1.2, eyeHeight: 1.7, gravity: true },
+				// `inputs: []` is not an oversight: an EMPTY list still opts this card into
+				// the B6 labelled-row socket layout, so each range param owns the handle in
+				// its own row. With `inputs` absent the sockets are placed by pixel offset
+				// instead, which drifts away from its labels the moment a select or a
+				// toggle sits between two ranges — and this card has both.
+				inputs: [],
+				params: [
+					{ key: 'mode', kind: 'select', options: ['fly', 'walk'] },
+					// per-FRAME units: this IS PointerLockControls' own moveSpeed, the number
+					// the scroll wheel has always adjusted, and 0.1 is what parity pins it to
+					{ key: 'speed', kind: 'range', min: 0.01, max: 1, step: 0.01 },
+					// metres — jump and eye height describe the WORLD, not the input
+					{ key: 'jumpHeight', kind: 'range', min: 0, max: 5, step: 0.1 },
+					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 3, step: 0.05 },
+					{ key: 'gravity', kind: 'toggle' }
+				]
+			},
+			// the player's own WASD as a VALUE, so it can drive anything a number can.
+			// LOCAL by nature: every peer reads ITS OWN keys, which is why it has no card
+			// params at all — there is nothing to author.
+			{ type: 'moveinput', label: 'Move Input', defaults: {} },
+			// possess.js as a node pair on one card. `release` is its own event input
+			// rather than a second node, because a release with no matching possession is
+			// harmless and one card keeps the pairing visible.
+			{
+				type: 'possessnode',
+				label: 'Possess Object',
+				defaults: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false },
+				inputs: ['trigger', 'release', 'target'],
+				inputLabels: {
+					trigger: 'trigger - take control',
+					release: 'release - hand it back',
+					target: 'target object'
+				},
+				params: [
+					{ key: 'camera', kind: 'select', options: ['chase', 'orbit', 'first', 'none'] },
+					{ key: 'speed', kind: 'range', min: 0.1, max: 30, step: 0.1 },
+					{ key: 'turnSpeed', kind: 'range', min: 0.1, max: 10, step: 0.1 },
+					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 3, step: 0.05 },
+					{ key: 'mouseLook', kind: 'toggle' }
+				]
+			},
+			// the camera half of possess WITHOUT the movement half — something else owns
+			// the object's transform (the sim, a clip, a peer) and we only fly behind it.
+			// No framing knobs: the chase offset is possess's SHARED one, so a distance
+			// slider here would silently re-frame the car module's camera too.
+			{
+				type: 'camerafollow',
+				label: 'Camera Follow',
+				defaults: {},
+				inputs: ['trigger', 'stop', 'target'],
+				inputLabels: {
+					trigger: 'trigger - start following',
+					stop: 'stop - let go',
+					target: 'target object'
+				}
+			},
+			// read AND write the movement speed, which is what closes the user's named
+			// ask: keypress -> movespeed(set) is "buttons adjust flying speed", and the
+			// scroll wheel writes the same store while a controller is active.
+			{
+				type: 'movespeed',
+				label: 'Move Speed',
+				defaults: { value: 0.1 },
+				inputs: ['set'],
+				inputLabels: { set: 'set - write the speed' },
+				params: [{ key: 'value', kind: 'range', min: 0.01, max: 1, step: 0.01 }]
+			}
+		]
+	},
+	{
 		// A3: the core HUD group. Nodes supply DATA and receive EVENTS; the HUD
 		// DOCUMENT owns WHERE things are, so every node here names an element by id
 		// rather than carrying a position.
@@ -307,7 +398,61 @@ export const nodeCatalog = [
 			{ type: 'gate', label: 'Gate', defaults: { op: 'and', a: false, b: false } },
 			// 4.6: loop-closers from the NODES.md audit
 			{ type: 'maprange', label: 'Map Range', defaults: { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: true, a: 0 } },
+			// 4.6 -> 21-E4: Select grew N-WAY. a/b keep their handle ids, so every saved
+			// 2-input graph is byte-identical (see the clamp note in evalNodeBody).
 			{ type: 'select', label: 'Select', defaults: { index: 0, a: 0, b: 0 } },
+			// --- 21-E4: the logic a game LOOP is made of. Every trigger in this app is a
+			// ~0.3s pulse and, before these, NOTHING turned a pulse into persistent state:
+			// `counter` was the only stateful node and its op was a param, not an input. That
+			// one gap blocked hide-on-collect, hold-to-show, one-shot doors and cooldowns at
+			// the same time.
+			//
+			// THE UNBLOCK: a pulse becomes a boolean that HOLDS. Deterministic with no new
+			// message - `set`/`reset` compare the replicated trigger STAMPS every peer
+			// already has (most recent wins), which is strictly better than counting for a
+			// late joiner: it converges on the very next pulse of either kind. `toggle` is
+			// the one half that cannot be pure (a stamp is not a count) and takes the
+			// counter precedent instead - counted in applyNodeTrigger, which every peer runs
+			// from the same replicated stamp.
+			{
+				type: 'latch',
+				label: 'Latch',
+				defaults: { initial: false },
+				inputs: ['set', 'reset', 'toggle'],
+				inputLabels: { set: 'set - turn on', reset: 'reset - turn off', toggle: 'toggle - flip' },
+				params: [{ key: 'initial', kind: 'toggle' }]
+			},
+			// "3 seconds after the door opens, close it", and every cooldown. PURE: the
+			// output fires at stamp + seconds, which each peer reaches on its own clock from
+			// the one shared stamp, so nothing is scheduled and nothing is sent.
+			{
+				type: 'delay',
+				label: 'Delay',
+				defaults: { seconds: 1, pulse: 0.3 },
+				inputs: ['trigger', 'cancel'],
+				inputLabels: { trigger: 'trigger', cancel: 'cancel - drop a pending pulse' },
+				params: [{ key: 'seconds', kind: 'range', min: 0, max: 60, step: 0.1 }]
+			},
+			// chained steps off ONE pulse. Four fixed outputs, each at its CUMULATIVE offset
+			// from the input stamp - derived exactly like Delay, so a step is a pure
+			// function of (stamp, params, synced time). Its own card: four source handles.
+			{
+				type: 'sequence',
+				label: 'Sequence',
+				defaults: { delay1: 0, delay2: 0.5, delay3: 0.5, delay4: 0.5, pulse: 0.3 },
+				inputs: ['trigger']
+			},
+			// one-shot doors, first-visit triggers. The FIRST stamp is not derivable from a
+			// trigger log that keeps only the LAST one, so this is the counter precedent:
+			// applyNodeTrigger freezes the first stamp on the node's own entry and `rearm`
+			// clears it.
+			{
+				type: 'once',
+				label: 'Once',
+				defaults: { pulse: 0.3 },
+				inputs: ['trigger', 'rearm'],
+				inputLabels: { trigger: 'trigger', rearm: 'rearm - allow it again' }
+			},
 			// 134: loops, timers, sensors + object actions (all deterministic)
 			{ type: 'loop', label: 'Loop', defaults: { from: 0, to: 1, rate: 1, mode: 'wrap' } },
 			{ type: 'timer', label: 'Timer', defaults: { delay: 1, a: 0 } },

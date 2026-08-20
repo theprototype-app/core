@@ -61,11 +61,10 @@ async function loadBuffer(entry, hash) {
 	entry.decoding = false;
 }
 
-/** @param {any} entry @param {any} data @param {number} time */
-function startSource(entry, data, time) {
+/** Build the gain -> HRTF panner chain once per entry. @param {any} entry @param {any} data */
+function ensureChain(entry, data) {
 	const ctx = context();
-	if (!ctx) return;
-	stopSource(entry);
+	if (!ctx) return null;
 	if (!entry.gain) {
 		entry.gain = ctx.createGain();
 		entry.panner = ctx.createPanner();
@@ -76,6 +75,35 @@ function startSource(entry, data, time) {
 	entry.gain.gain.value = data.volume ?? 0.8;
 	entry.panner.refDistance = data.radius ?? 5;
 	entry.panner.rolloffFactor = data.rolloff ?? 1; // how fast it fades with distance
+	return ctx;
+}
+
+/**
+ * 21-E4: play the buffer ONCE, on a flow event.
+ *
+ * A separate, fire-and-forget source rather than `entry.src`: that slot belongs to
+ * the `playing` state and its key comparison, so borrowing it would make a
+ * one-shot look like a stopped loop (and stop a loop that was running). Nothing
+ * about this replicates - the trigger STAMP already did, so every peer reaches
+ * this line itself, which is the same reasoning as the looped phase below.
+ * @param {any} entry @param {any} data
+ */
+function playOnce(entry, data) {
+	const ctx = ensureChain(entry, data);
+	if (!ctx || !entry.buffer) return;
+	const src = ctx.createBufferSource();
+	src.buffer = entry.buffer;
+	src.loop = false;
+	src.connect(entry.gain);
+	src.start(0);
+	entry.fired = (entry.fired ?? 0) + 1;
+}
+
+/** @param {any} entry @param {any} data @param {number} time */
+function startSource(entry, data, time) {
+	stopSource(entry);
+	const ctx = ensureChain(entry, data);
+	if (!ctx) return;
 	const src = ctx.createBufferSource();
 	src.buffer = entry.buffer;
 	src.loop = data.loop !== false;
@@ -91,23 +119,41 @@ function startSource(entry, data, time) {
 
 /**
  * Called by flowRuntime each tick with the live sound edges.
- * @param {{node: any, uuid: string}[]} pairs @param {any} sceneObjects @param {number} time
+ * @param {{node: any, uuid: string, trigger?: number|null}[]} pairs @param {any} sceneObjects @param {number} time
  */
 export function updateSounds(pairs, sceneObjects, time) {
 	const wanted = new Set();
-	for (const { node, uuid } of pairs) {
+	for (const { node, uuid, trigger } of pairs) {
 		const data = node.data ?? {};
 		if (!data.hash) continue;
 		wanted.add(node.id);
 		let entry = entries.get(node.id);
 		if (!entry || entry.hash !== data.hash) {
 			dropEntry(entry);
-			entry = { hash: data.hash, buffer: null, src: null, gain: null, panner: null, key: '' };
+			// 21-E4: `firedAt` starts at whatever stamp is ALREADY standing, not null - a
+			// chain built while an old pulse is on the wire must not replay history the
+			// moment it decodes.
+			entry = {
+				hash: data.hash,
+				buffer: null,
+				src: null,
+				gain: null,
+				panner: null,
+				key: '',
+				firedAt: typeof trigger === 'number' ? trigger : null,
+				fired: 0
+			};
 			entries.set(node.id, entry);
 		}
 		if (!entry.buffer) {
 			if (!entry.failed) loadBuffer(entry, data.hash);
 			continue;
+		}
+		// 21-E4: one shot per NEW stamp. Stamp-edge, never per frame: a pulse is high
+		// for ~0.3s, which at 60fps is eighteen copies of the same sound.
+		if (typeof trigger === 'number' && entry.firedAt !== trigger) {
+			entry.firedAt = trigger;
+			playOnce(entry, data);
 		}
 		const key = [!!data.playing, data.loop !== false, data.volume ?? 0.8, data.radius ?? 5, data.rolloff ?? 1].join('|');
 		if (data.playing && (!entry.src || entry.key !== key)) startSource(entry, data, time);
@@ -137,6 +183,10 @@ export function soundEntries() {
 		hash: entry.hash,
 		buffered: !!entry.buffer,
 		playing: !!entry.src,
+		// 21-E4: how many one-shots the trigger input has fired, and the stamp it last
+		// acted on - the only way a suite can see a fire-and-forget source at all
+		fired: entry.fired ?? 0,
+		firedAt: entry.firedAt ?? null,
 		panner: entry.panner ? [entry.panner.positionX?.value ?? 0, entry.panner.positionY?.value ?? 0, entry.panner.positionZ?.value ?? 0] : null
 	}));
 }

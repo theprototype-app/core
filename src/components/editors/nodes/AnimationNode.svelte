@@ -40,6 +40,15 @@
 		if (v === undefined || v === null) return '…';
 		if (typeof v === 'number') return (+v).toFixed(2);
 		if (Array.isArray(v)) return v.map((n) => (+n).toFixed(1)).join(', ');
+		// 21-E4: a multi-output source (Sequence, the objectflow shape) publishes a
+		// HANDLE MAP — name whichever handles are live, or String() renders the
+		// unmistakable "[object Object]" into the wired-value readout
+		if (typeof v === 'object' && v.__handles)
+			return (
+				Object.keys(v.__handles)
+					.filter((k) => v.__handles[k])
+					.join(' ') || '—'
+			);
 		return String(v);
 	}
 </script>

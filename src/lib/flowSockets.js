@@ -47,7 +47,26 @@ const OUTPUT = {
 	// 21-D6 game shell: the event half and the two readable ones
 	ongamestate: 'event',
 	getvariable: 'number',
-	gametime: 'number'
+	gametime: 'number',
+	// 21-E4: the logic a game loop is made of. Latch is the only STATE node here -
+	// a boolean that holds after the pulse that set it has expired. The other three
+	// are event RESHAPERS, so they carry the event channel onward and everything
+	// already wired to an event (Object Selector, Counter, a trigger input) accepts
+	// them with no coercion table change.
+	latch: 'boolean',
+	delay: 'event',
+	sequence: 'event', // all four step handles; outputType is per-NODE, not per-handle
+	once: 'event',
+	// 21-E6 the character controller. Only two of these produce a value: Move Speed
+	// reads the live speed and Move Input reads this peer's own WASD. Both of Move
+	// Input's handles are numbers, so ONE per-NODE entry covers them (the sequence
+	// rule). The other three are DECLARATIONS/ACTIONS and keep the effect channel the
+	// fallback would have handed them anyway — listed so the table says so out loud.
+	movespeed: 'number',
+	moveinput: 'number',
+	charcontroller: 'effect',
+	possessnode: 'effect',
+	camerafollow: 'effect'
 };
 
 /** typed named inputs; `_default` covers an unnamed target handle @type {Record<string,Record<string,string>>} */
@@ -68,10 +87,13 @@ const INPUT = {
 	math: { a: 'number', b: 'number' },
 	compare: { a: 'number', b: 'number' },
 	gate: { a: 'boolean', b: 'boolean' },
-	sound: { volume: 'number' },
+	// 21-E4: `trigger` was the whole reason play-a-sound-on-press was not authorable
+	// by ANY means - the node had `playing` (a continuous state) and nothing else.
+	sound: { volume: 'number', trigger: 'event' },
 	timer: { a: 'number' },
 	maprange: { a: 'number' },
-	select: { index: 'number', a: 'number', b: 'number' },
+	// 21-E4: c/d are ADDITIVE - a/b keep their ids, so no saved edge moves
+	select: { index: 'number', a: 'number', b: 'number', c: 'number', d: 'number' },
 	script: { a: 'number', b: 'number', c: 'number' },
 	distance: { a: 'object', b: 'object' },
 	proximity: { a: 'object', b: 'object' },
@@ -79,7 +101,16 @@ const INPUT = {
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	setuniform: { value: 'number' },
-	counter: { pulse: 'event' },
+	// 21-E4: `reset` joins `pulse` on the SAME path - the counting lives inside
+	// applyNodeTrigger, so the reset is one more handle it reads there (the `op`
+	// param stays for a counter nobody wires a reset into).
+	counter: { pulse: 'event', reset: 'event' },
+	// 21-E4 logic nodes. Every socket here is an EVENT except delay's wired seconds:
+	// these turn pulses into state and into other pulses, they never take values.
+	latch: { set: 'event', reset: 'event', toggle: 'event' },
+	delay: { trigger: 'event', cancel: 'event', seconds: 'number' },
+	sequence: { trigger: 'event' },
+	once: { trigger: 'event', rearm: 'event' },
 	// 17-E A5: the trigger that starts/stops an authored clip, plus a wired speed
 	playanim: { trigger: 'event', speed: 'number' },
 	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
@@ -100,7 +131,15 @@ const INPUT = {
 	setcamera: { trigger: 'event', camera: 'object' },
 	setlook: { trigger: 'event', camera: 'object', on: 'boolean' },
 	setvariable: { trigger: 'event', value: 'number' },
-	gamestart: { camera: 'object' }
+	gamestart: { camera: 'object' },
+	// 21-E6 the character controller. `target` is the alternative to wiring the node
+	// into an Object Selector (velocity's precedent), and every range param keeps the
+	// numeric fallback, so only the EVENT and OBJECT handles need declaring here — an
+	// undeclared handle types as 'number', which would refuse an Object Selector.
+	charcontroller: { speed: 'number' },
+	possessnode: { trigger: 'event', release: 'event', target: 'object' },
+	camerafollow: { trigger: 'event', stop: 'event', target: 'object' },
+	movespeed: { set: 'event', value: 'number' }
 };
 
 // what an OUTPUT type may feed into a differently-typed INPUT

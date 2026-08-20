@@ -30,6 +30,25 @@ h.run(async () => {
 		'premise: the Flow pane mounted and exposes its resolved node types'
 	);
 
+	// ---- 0b. EVERY palette node has a renderer -------------------------------
+	// The gap this file exists to describe has a second, quieter form: a node added to
+	// `nodeCatalog` (so the palette offers it, and a user can place it) but NOT to
+	// CORE_NODE_TYPES, whose fallback is the very warning card below. The user then
+	// drags a CORE node out of the core palette and is told to install a module.
+	// Measured once, on `setlook`. Checking the whole catalog costs the same line as
+	// checking one type, and covers every node added from here on.
+	const gap = await page.evaluate(() => {
+		const groups = window.__stores.nodeCatalog.nodeCatalog ?? [];
+		const catalog = groups.flatMap((g) => (g.items ?? []).map((n) => n.type)).filter(Boolean);
+		const renderable = new Set(window.__flowNodeTypes.live());
+		return { count: catalog.length, missing: catalog.filter((t) => !renderable.has(t)) };
+	});
+	h.check(gap.count > 40, `premise: the whole catalog was read (${gap.count} types)`);
+	h.check(
+		gap.missing.length === 0,
+		`every catalog node type resolves to a real card: ${JSON.stringify(gap.missing)}`
+	);
+
 	// ---- 1. an unknown type gets the warning card ----------------------------
 	// Seed the SCENE graph with a node whose type no core entry and no installed
 	// module defines - which is what a .tpscene authored against a module produces on

@@ -276,6 +276,12 @@ async function centeredClip(peer, world, size = 360) {
 	const point = await projectPoint(peer.page, world);
 	const view = await peer.page.viewportSize();
 	const half = size / 2;
+	// A point BEHIND the active camera projects to a non-finite value, and NaN survives
+	// a Math.min/max clamp — Playwright then rejects the clip as "empty or outside the
+	// resulting image", which reads as a broken feature. Fall back to the viewport
+	// centre, which is canvas in every layout this helper is used in.
+	if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y))
+		return { x: Math.round(view.width / 2 - half), y: Math.round(view.height / 2 - half), width: size, height: size };
 	return {
 		x: Math.max(0, Math.min(view.width - size, Math.round(point.x - half))),
 		y: Math.max(0, Math.min(view.height - size, Math.round(point.y - half))),

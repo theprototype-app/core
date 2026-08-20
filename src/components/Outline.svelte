@@ -4,8 +4,16 @@
 	import { get } from 'svelte/store';
 	import { chromiumMajor, postSupported } from '$lib/viewMode';
 	import { registerToneMappingOwner, applyEnvironment } from '$lib/environment';
+	// 21/L-C: which camera we are LOOKING THROUGH, so its own look composes on top of
+	// the scene's. Exactly how HudLayer resolves an attached HUD — a look on a camera IS
+	// a post document keyed by that camera's uuid, so there is no new concept here.
+	import { cameraPreview } from '$lib/cameraPreview';
 	import {
 		scenePost,
+		postStacks,
+		lookOverride,
+		resolvedDoc,
+		POST_SCENE_KEY,
 		postEnabledLocal,
 		effectivePostStack,
 		postStackSignature,
@@ -223,8 +231,15 @@
 	// mode, the local kill switch, the capability gate and the warm-up).
 	// `postWarm` flipping after 10 frames is one extra rebuild, once.
 	$effect(() => {
+		const throughCamera = $cameraPreview?.uuid ?? null;
+		// resolvedDoc reads the stores with get(), which registers NO svelte dependency —
+		// so BOTH have to be touched here or this effect stops re-running when a document
+		// changes (measured: setting a camera to No files replaced rendered nothing new).
+		void $postStacks;
+		void $lookOverride;
 		const entries = effectivePostStack({
-			stack: $scenePost,
+			stack: resolvedDoc(POST_SCENE_KEY),
+			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera) : null),
 			mode: $viewMode,
 			localEnabled: $postEnabledLocal,
 			postOk,
@@ -252,8 +267,10 @@
 		lastMode = mode;
 		if (!justChosen) return;
 		untrack(() => {
+			const through = get(cameraPreview)?.uuid ?? null;
 			const wanted = effectivePostStack({
 				stack: get(scenePost),
+				cameraStack: /** @type {any} */ (through ? get(postStacks)[through] ?? null : null),
 				mode,
 				localEnabled: get(postEnabledLocal),
 				postOk: true,

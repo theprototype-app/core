@@ -50,6 +50,16 @@ const restFired = new Map();
  * an action must run once per pulse, not once per frame) @type {Map<string, boolean>} */
 const physicsActionEdge = new Map();
 /** @type {any} */ let shaderRef = null;
+/** L-C: reached by PRIMED dynamic import, never statically — scenePost imports
+ * history, and history imports THIS module, so a static edge closes the cycle that
+ * TDZ-crashes the SSR prerender. @type {any} */
+let postRef = null;
+/** primed too, only to READ which camera is active — lookThroughCamera keeps its own
+ * per-call import and its success-only latch, which must not be disturbed. @type {any} */
+let previewRef = null;
+/** the Set Look explain-once flag: a node that cannot take effect says so ONCE, not
+ * on every keypress (the physics-not-running toast precedent above) */
+let lookSilentToasted = false;
 /** @type {any} */ let animImportsRef = null;
 
 // Runs the node graph: applies colorpicker->objectselector colors on graph changes
@@ -491,7 +501,8 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable') continue;
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook')
+			continue;
 		const stamp = triggerStampFor(node.id, ctx);
 		if (stamp === null) continue;
 		if (gameActed.get(node.id) === stamp) continue;
@@ -504,6 +515,33 @@ function updateGameNodes(time, ctx) {
 		} else if (type === 'setcamera') {
 			const uuid = typeof data.camera === 'string' ? data.camera : '';
 			if (uuid) lookThroughCamera(uuid);
+		} else if (type === 'setlook') {
+			// which document: the wired camera's, or the scene's when nothing is wired
+			const target = typeof data.camera === 'string' && data.camera ? data.camera : 'scene';
+			// LOCAL per peer, exactly like setcamera above and for the same reason: the
+			// trigger is already replicated, so every peer flips its own override and the
+			// views converge without a message. It writes the OVERRIDE, never the authored
+			// document, so nothing here can leak into what the next edit broadcasts.
+			if (postRef?.setLookOverride) postRef.setLookOverride(target, data.on !== false);
+			// ...and unless told otherwise, LOOK THROUGH that camera, because a camera look
+			// composes only while its camera is the active one. Without this the node is a
+			// no-op for the thing its name promises, which is exactly how it was reported.
+			const activate = data.activate !== false && target !== 'scene';
+			if (activate) lookThroughCamera(target);
+			else if (target !== 'scene' && !lookSilentToasted) {
+				// the remaining silent case, explained ONCE: a look set on a camera nobody is
+				// looking through changes nothing on screen
+				let active = null;
+				try {
+					active = previewRef ? get(previewRef.cameraPreview)?.uuid ?? null : null;
+				} catch {}
+				if (active !== target) {
+					lookSilentToasted = true;
+					showToast(
+						'Set Look changed a camera look, but nothing is looking through that camera — turn on "look through it too", or use a Set Active Camera node.'
+					);
+				}
+			}
 		} else {
 			const name = String(data.name ?? '');
 			if (!name) continue;
@@ -1888,6 +1926,8 @@ export function startFlowRuntime() {
 	// SH4: a compiled shader material must never reach a serializer — primed, like
 	// animationPreview, so flowRuntime keeps no static edge into it
 	import('./shaderGraph').then((m) => (shaderRef = m));
+	import('./scenePost').then((m) => (postRef = m));
+	import('./cameraPreview').then((m) => (previewRef = m));
 	import('./animatedImports').then((m) => (animImportsRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();

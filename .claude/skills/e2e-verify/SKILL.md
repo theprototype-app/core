@@ -107,6 +107,27 @@ while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE
 
 ## Assertion discipline (a check that cannot fail is not a check)
 
+- **A REPRO THAT DOES NOT REPRODUCE gives the most confidently wrong answer there is.**
+  Rebuilding a user's "pressing R does nothing" graph, the Key Press node was seeded
+  with `key: 'r'` — its field is `code: 'KeyR'` — so it never pulsed and the probe
+  reported "the node never fires". One field wrong turned a UX problem into a phantom
+  runtime bug. Before believing a repro, assert the FIRST link fired (here: the
+  trigger stamp / the override map), not just the last effect.
+- **Distinguish "did not fire" from "fired and did nothing".** They have completely
+  different fixes, and only one of them is a bug. The cheap way is to read the
+  smallest piece of state the action writes — the override map showed the node firing
+  perfectly while the screen stayed identical, which pointed straight at the design
+  rather than the wiring.
+- **Opening the Flow pane needs the REAL opener**: `p[title="Node editor (N)"]`.
+  `bottomDock.activateDock('flow')` alone leaves `.svelte-flow` unmounted, so a
+  pane-geometry or node-card check silently has nothing to look at. And the pane's
+  scope FOLLOWS THE SELECTION — creating an object selects it, so a suite that seeds
+  the SCENE graph then opens the pane sees that object's object-flow instead.
+  Deselect first.
+- **`centeredClip` falls back to the viewport centre** because a world point BEHIND the
+  active camera projects non-finite, and NaN survives a Math.min/max clamp —
+  Playwright then rejects the clip as "empty or outside the resulting image", which
+  reads as a broken feature rather than a bad measurement.
 PIXEL features have their own helpers now: `grabFrame`/`centeredClip`/`frameDelta`/
 `framePixelsOffColor` (screenshot -> back INTO the page -> 2D canvas -> RGBA, compared
 in the page so only metrics cross the bridge). Four rules came out of building them:

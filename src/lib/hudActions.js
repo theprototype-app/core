@@ -30,7 +30,26 @@ import { findNodeSpec } from './nodeCatalog';
 import { isInteractiveKind, isValuedKind } from './hudKinds';
 
 /** The HUD node types that READ an element (a display binding), by element kind. */
-const DISPLAY_NODE = { text: 'hudtext', bar: 'hudbar', timer: 'hudtimer', list: 'hudlist' };
+// 21-E7.6: the PACK kinds map onto the SAME four display nodes rather than earning nodes
+// of their own — an icon row, a radial and a hotbar are all 'a number between min and max'
+// (a HUD Bar node), and rich text, a key hint and a scroll panel are all 'a string' (a HUD
+// Text node). Without these entries the Actions section offered a pack element NOTHING,
+// which is the same 'the loop exists and is undiscoverable' problem 21-D7 was built to fix.
+const DISPLAY_NODE = {
+	text: 'hudtext',
+	bar: 'hudbar',
+	timer: 'hudtimer',
+	list: 'hudlist',
+	iconrow: 'hudbar',
+	progressradial: 'hudbar',
+	hotbar: 'hudbar',
+	richtext: 'hudtext',
+	keyhint: 'hudtext',
+	scrollpanel: 'hudtext',
+	// a custom or module element reads its whole runtime, and `text` is the channel every
+	// value source already reaches, so HUD Text is the honest default there too
+	custom: 'hudtext'
+};
 
 /** The HUD node type that a press comes FROM. */
 const PRESS_NODE = 'hudbutton';
@@ -45,7 +64,9 @@ const PRESSABLE = ['button', 'toggle'];
 const VALUE_NODE = 'hudinput';
 
 /** Every HUD node type that names an element, so a scan knows what to look at. */
-export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudscreen'];
+// 21-E7.1: `hudrows` names an element too, so the artboard's wired badge must see it — a
+// list filled by a HUD Rows node would otherwise read as dead at a glance.
+export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudrows', 'hudscreen'];
 
 /**
  * @typedef {{
@@ -132,6 +153,9 @@ function sceneGraph() {
 export function describeNode(node) {
 	const d = node?.data ?? {};
 	switch (node?.type) {
+		case 'hudrows':
+			// 21-E7.1
+			return (d.op === 'clear' ? 'Clear the rows of ' : d.op === 'set' ? 'Set the rows of ' : 'Add a row to ') + (d.element || 'an element');
 		case 'setgamestate':
 			return 'Set game state → ' + (d.state ?? 'playing') + (d.outcome ? ' (' + d.outcome + ')' : '');
 		case 'setcamera':

@@ -239,6 +239,68 @@ A toolbox is **LOCAL**: it is this viewer's window, and nothing about it replica
 is saved with the scene. What it *changes* must still go through the replicated paths
 (`api.send`, `api.create`, `api.physics.set`).
 
+### HUD elements: rows, and your own element kind (21-E7)
+
+```js
+// fill a HUD List element (kind `list`) by id
+api.hud.rows('leaderboard', ['1. Ada 12', '2. Grace 9']);
+api.hud.clearRows('leaderboard');       // back to the element's authored rows
+
+// the roster WITH NICKNAMES - what a leaderboard actually needs
+api.peerNames();  // [{id, name, label, me}]  `label` falls back to 'peer abcd'
+```
+
+`api.hud.rows` is one of three doors onto the same store: the element's own **authored**
+rows (typed into the properties pane, one per line), a **HUD Rows** flow node
+(set / append / clear on a trigger edge), and this. A node or a module always wins over
+the authored rows, and clearing puts them back — the authored value is the fallback, not
+a second source of truth.
+
+**CALL IT ON EVERY PEER.** Rows are never sent. Like a value node, this writes LOCAL
+state that every peer is expected to compute identically, so calling it on one peer
+shows the rows to one person. Drive it from your own `registerStateSync` state, or from
+something every peer already derives (`api.peerNames()` is exactly that — the roster is
+already replicated). Your rows are cleared at teardown, so disabling the module shows
+the authored rows again rather than freezing the last thing you pushed.
+
+```js
+// YOUR OWN ELEMENT KIND: the registerToolbox contract, one layer in
+const kind = api.registerHudElement('gauge', {
+	label: 'Fuel gauge',            // palette + properties-pane heading
+	icon: 'gauge',                  // a lucide name
+	summary: 'A dial that reads a wired number.',
+	defaultSize: { w: 150, h: 40 },
+	defaults: { caption: 'Fuel' },  // your params' starting values
+	fields: [                       // the pane renders these; same schema as core kinds
+		{ key: 'caption', kind: 'text', label: 'caption' },
+		{ key: 'redline', kind: 'number', label: 'redline', min: 0, max: 100, step: 1 }
+	],
+	mount(container, el, runtime) {
+		const span = document.createElement('span');
+		span.textContent = el.caption;
+		container.append(span);
+		// return a bare cleanup fn, OR this pair to avoid a rebuild on every change:
+		return {
+			update(nextEl, nextRuntime) { span.textContent = nextEl.caption; },
+			destroy() { /* your cleanup */ }
+		};
+	}
+});
+// kind === 'mod-<moduleId>-gauge'
+```
+
+You write plain DOM and inherit the whole HUD system: the layer's z-tier, the 9-grid
+anchoring with pixel offsets, the properties pane, the palette, replication, undo and all
+four save paths. `runtime` is what a flow node is currently driving into the element
+(`{text, value, min, max, rows, options, pulse}`), so a HUD Text or HUD Bar node pointed
+at your element feeds it with no extra wiring.
+
+The kind name is **namespaced** and gets written into a replicated, saved document. A peer
+without your module — or the same scene opened after it is gone — reaches an unknown kind,
+which the HUD PRESERVES verbatim and skips at render. So nobody's layout is destroyed,
+installing the module makes the element appear, and a disable is the same story rather
+than a special case. Everything is unregistered and unmounted from the teardown journal.
+
 ### Messages and state
 
 ```js

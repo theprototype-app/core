@@ -184,6 +184,26 @@ export function applyHudValues(map) {
 		setHudValue(id, entry?.value, { at: Number(entry?.at) || 1, silent: true });
 }
 
+// 21-E7.1: rows pushed into a list element are play-time state too, and they live in
+// flowRuntime (which imports THIS module, so the edge cannot go the other way). A SEAM,
+// the registerHudBroadcast pattern - hudDocs stays a leaf and a restore still clears
+// them, so a loaded scene shows its AUTHORED rows and not the last game's leaderboard.
+/** @type {((elementId?: string) => void)|null} */
+let rowsResetHook = null;
+
+/** @param {(elementId?: string) => void} fn */
+export function registerHudRowsReset(fn) {
+	rowsResetHook = fn;
+	return () => {
+		if (rowsResetHook === fn) rowsResetHook = null;
+	};
+}
+
+/** Drop every pushed row (a scene load / leaveSession). No-op before flowRuntime starts. */
+export function clearHudRuntimeRows() {
+	rowsResetHook?.();
+}
+
 /** Session/autosave restore and leaveSession: a value is play-time state, so a fresh scene
  * starts from the AUTHORED defaults rather than inheriting the last game's. */
 export function clearHudValues() {
@@ -695,6 +715,7 @@ export function hudDocsRestore(map, replace = false, replicate = false) {
 		// from its authored defaults rather than inheriting the last game's settings, which
 		// is also why they are not in the snapshot.
 		clearHudValues();
+		clearHudRuntimeRows();
 	}
 	if (!map || typeof map !== 'object') return;
 	const stamp = Date.now();
@@ -715,4 +736,5 @@ export function clearHudDocs() {
 	hudScreenOverride.set({});
 	hudSelection.set({});
 	activeHudDoc.set(null);
+	clearHudRuntimeRows();
 }

@@ -40,6 +40,10 @@ const OUTPUT = {
 	// the effect channel.
 	hudbutton: 'event',
 	hudtimer: 'number',
+	// 21-E7.1: HUD Rows is a SINK like hudtext/hudlist - it writes into an element - so its
+	// output stays the effect channel. Listed rather than left to the fallback, so the table
+	// says so out loud (the movespeed/charcontroller precedent).
+	hudrows: 'effect',
 	// 21-D4: the HUD as a SOURCE. `read` decides what the number MEANS (a slider's
 	// value, a dropdown's index, a toggle as 1/0) but the socket is a number either
 	// way, so one type covers all four input kinds.
@@ -124,8 +128,16 @@ const INPUT = {
 	hudscreen: { trigger: 'event' },
 	hudtimer: { start: 'event', duration: 'number' },
 	hudlist: { trigger: 'event' },
+	// 21-E7.1: `text` is the ROW. There is no string socket type in this system, so it is
+	// declared numeric like every other value handle - which accepts a number, an event and
+	// a boolean through the coercion table, and a module value node declaring 'number' that
+	// happens to return a string (a peer name). resolveInputs does not coerce the value, so
+	// the row is whatever the source produced.
+	hudrows: { trigger: 'event', text: 'number' },
 	hudinput: {},
-	hudset: { trigger: 'event', value: 'number' },
+	// 21-E7.2: `options` joins it - same reasoning as hudrows' `text` about the missing
+	// string type, and additive, so no saved edge moves.
+	hudset: { trigger: 'event', value: 'number', options: 'number' },
 	// 21-D6: every game ACTION is driven by an event, and takes its value wired or typed
 	setgamestate: { trigger: 'event' },
 	setcamera: { trigger: 'event', camera: 'object' },

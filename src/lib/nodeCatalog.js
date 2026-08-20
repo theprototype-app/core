@@ -341,8 +341,9 @@ export const nodeCatalog = [
 				]
 			},
 			// A LIST is an element WRITTEN INTO by id, never a value that flows: the
-			// socket system has no arrays, and every game wants a leaderboard. A module
-			// pushes rows through hudRows(); this node names the element and its title.
+			// socket system has no arrays, and every game wants a leaderboard. This node
+			// names the element and its title; HUD Rows below fills it, as does the
+			// element's own authored row list and `api.hud.rows`.
 			{
 				type: 'hudlist',
 				label: 'HUD List',
@@ -350,6 +351,23 @@ export const nodeCatalog = [
 				params: [
 					{ key: 'title', kind: 'text', placeholder: 'optional title', maxLength: 80 },
 					{ key: 'rows', kind: 'range', min: 1, max: 20, step: 1 }
+				]
+			},
+			// 21-E7.1: the WRITER for a list. Set replaces the rows, Append adds one, Clear
+			// empties it - all on the trigger's EDGE, because appending per frame would add
+			// the same row sixty times a second.
+			//
+			// NOTHING IS SENT. The trigger stamp is already replicated and `text` is resolved
+			// from the already-replicated graph, so every peer runs the same ops in the same
+			// order and holds the same rows - the Counter argument. (A peer who joins later
+			// never saw those edges, so rebuild from state with Set if that matters.)
+			{
+				type: 'hudrows',
+				label: 'HUD Rows',
+				defaults: { element: '', op: 'append', text: '' },
+				params: [
+					{ key: 'op', kind: 'select', options: ['set', 'append', 'clear'] },
+					{ key: 'text', kind: 'text', placeholder: 'the row', maxLength: 120 }
 				]
 			},
 			// 21-D4: the INPUT pair. Everything else in this group WRITES to the HUD;
@@ -370,6 +388,11 @@ export const nodeCatalog = [
 			// the other direction: a graph MOVES a control (a Reset button putting the
 			// volume back, a difficulty the host sets). Effect in, so it fires on a
 			// trigger edge rather than every frame.
+			// 21-E7.2: it also carries the OPTIONS channel. Wire a list into `options` and it
+			// REPLACES the dropdown's authored one live - which is how 'the peers in this
+			// room' or 'the difficulties this scene ships' become a menu. Deliberately not a
+			// node param: with nothing wired the handle resolves to undefined, nothing is
+			// published, and the authored list stays in charge byte-for-byte.
 			{
 				type: 'hudset',
 				label: 'HUD Set Input',

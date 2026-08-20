@@ -19,7 +19,7 @@
 	import { Camera, Copy, Crosshair, Eye, EyeOff, Plus, SquareDashed, Trash2, Type } from '@lucide/svelte';
 	import { hudEditorClose, showToast } from '../../stores/appStore.js';
 	import {
-		hudDocs, hudRuntime, hudSelection, hudScreenOverride, HUD_ANCHORS, HUD_KINDS, HUD_SCENE_KEY,
+		hudDocs, hudRuntime, hudSelection, hudScreenOverride, HUD_ANCHORS, HUD_SCENE_KEY,
 		hudDocOf, setHudDocFor, addHudElement, updateHudElement, removeHudElements,
 		addHudScreen, removeHudScreen, setActiveHudScreen, visibleScreen, normalizeHudElement,
 		hudPickArm, deliverHudPick, rectInFrame, offsetsInFrame
@@ -35,6 +35,13 @@
 	import HudPalette from '../hud/HudPalette.svelte';
 	import HudActionsSection from '../hud/HudActionsSection.svelte';
 	import { wiredElementIds, registerHudKindLookup } from '$lib/hudActions';
+	// 21-E7: the registry grew three more sources of a kind (packs, `custom`, and a
+	// module's own), so the artboard's render test is `isRenderableKind` rather than the
+	// built-in list, the kind dropdown offers module kinds, and the topbar can apply a style
+	// preset across a screen.
+	import { isRenderableKind, HUD_STYLE_PRESETS, presetStyleFor } from '$lib/hudKinds';
+	import { moduleHudKinds } from '$lib/moduleHudKinds';
+	import { openTextEditor } from '$lib/fileWindows';
 	import { flowGraphs as flowGraphDocs } from '../../stores/flowStore';
 	import {
 		kindDef, fieldsForKind, styleFieldsForKind, newElementOfKind, HUD_KIND_DEFS
@@ -635,6 +642,50 @@
 		if (!one) return;
 		updateHudElement(docKey, screenId, one.id, { [key]: value });
 	}
+
+	/** 21-E7.5: DOUBLE-CLICK a `custom` element to edit its render code — the artboard is
+	 * where you are looking at it, so that is where the gesture belongs (the
+	 * dblclick-opens-the-flow precedent from the Object Flow card). Routed through the
+	 * SHARED text-editor window rather than a new one; the properties pane's `code` row opens
+	 * exactly the same editor, so there is one code path and not two.
+	 * @param {any} el */
+	function editElementCode(el) {
+		if (!el || el.kind !== 'custom') return;
+		const sid = screenId;
+		openTextEditor({
+			title: 'HUD code · ' + el.id,
+			code: String(el.code ?? ''),
+			// writes through the SAME single path every other element edit uses, so it
+			// replicates, undoes and saves with no special case
+			onSave: (/** @type {string} */ next) => updateHudElement(docKey, sid, el.id, { code: next })
+		});
+	}
+
+	/**
+	 * 21-E7.7: apply a style PRESET to every element on this screen, as ONE undo entry.
+	 *
+	 * Through `presetStyleFor`, which intersects the preset with each KIND's own declared
+	 * style fields — so a crosshair does not silently gain a background it cannot draw and a
+	 * kind added later needs no edit here. One gesture round the whole loop, so a screen-wide
+	 * restyle is a single Ctrl+Z and a single broadcast.
+	 * @param {string} presetKey
+	 */
+	function applyStylePreset(presetKey) {
+		if (!screen) return;
+		const targets = selected.length ? elements.filter((el) => selected.includes(el.id)) : elements;
+		if (!targets.length) return;
+		beginHudGesture(docKey);
+		for (const el of targets) {
+			const patch = presetStyleFor(el.kind, presetKey);
+			if (!Object.keys(patch).length) continue;
+			updateHudElement(docKey, screenId, el.id, { style: { ...(el.style ?? {}), ...patch } });
+		}
+		endHudGesture(docKey);
+		showToast(
+			(selected.length ? targets.length + ' element' + (targets.length === 1 ? '' : 's') : 'This screen') +
+				' restyled — Ctrl+Z puts it back'
+		);
+	}
 	/** @param {string} key @param {any} value */
 	function setStyle(key, value) {
 		if (!one) return;
@@ -666,6 +717,18 @@
 				}
 			},
 			{ label: 'Select all', hint: 'Ctrl+A', action: () => setPicks(elements.map((el) => el.id)) },
+			{ section: ' ' },
+			{
+				// 21-E7.7: a coordinated look in one click, over the SELECTION when there is one
+				// and the whole screen when there is not — which is the rule every other counted
+				// command in this app follows.
+				label: selected.length ? 'Apply style to ' + selected.length + ' selected…' : 'Apply style to this screen…',
+				children: HUD_STYLE_PRESETS.map((preset) => ({
+					label: preset.label,
+					hint: preset.hint,
+					action: () => applyStylePreset(preset.key)
+				}))
+			},
 			{ section: ' ' },
 			{ label: snapOn ? 'Snapping on' : 'Snapping off', checked: snapOn, action: () => (snapOn = !snapOn) }
 		];
@@ -935,13 +998,14 @@
 							<div
 								class="hud-item"
 								class:hud-item-on={selected.includes(el.id)}
-								class:hud-item-unknown={!HUD_KINDS.includes(el.kind)}
+								class:hud-item-unknown={!isRenderableKind(el.kind)}
 								data-hud-item={el.id}
+								ondblclick={() => editElementCode(el)}
 								style="left: {r.left}px; top: {r.top}px; width: {r.w}px; height: {r.h}px"
 								onpointerdown={(e) => onElementDown(e, el)}
 							>
 								<!-- the SAME renderer the runtime layer uses, so the artboard cannot drift -->
-								{#if HUD_KINDS.includes(el.kind)}
+								{#if isRenderableKind(el.kind)}
 									<HudElement element={el} runtime={$hudRuntime[el.id]} editor={true} />
 								{:else}
 									<span class="hud-unknown-tag">{el.kind}?</span>
@@ -1062,6 +1126,9 @@
 						<span>kind</span>
 						<select class="hud-input" value={one.kind} onchange={(/** @type {any} */ e) => setOne('kind', e.currentTarget.value)}>
 							{#each HUD_KIND_DEFS as def (def.key)}<option value={def.key}>{def.label}</option>{/each}
+							<!-- 21-E7.4: a module's kinds, so an element can be CHANGED into one and not
+							     only created as one -->
+							{#each $moduleHudKinds as def (def.kind)}<option value={def.kind}>{def.label} · {def.moduleName ?? def.moduleId}</option>{/each}
 						</select>
 					</label>
 					{#if kindDef(one.kind)?.summary}

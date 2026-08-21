@@ -776,6 +776,65 @@ loadable play content. Everything a user does must be visible to connected peers
   the objectMenu "Make collectible" recipe (onclick→latch→not→visibility + setvariable
   add, ONE flownodes entry per object), and the docs-site `build-a-game.md`
   walkthrough. Plan + as-built: cloud `plans-core/roadmap-21e-game-hardening.md`.
+  **21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR POLISH** (roadmap 21-F): `levels.js` —
+  a LEVEL is an ordinary content-hashed .tpscene in a `Levels` Explorer folder BY NAME
+  CONVENTION (a dragged-in file counts). `saveSceneAsLevel` strips the workspace,
+  `newLevel` captures NOTHING, and `travelToLevel` is a LOCAL SILENT scene replace:
+  the replicated trigger IS the netcode, so `applySession` gained
+  `{backup, replicate, game, workspace}` opts (every default byte-identical) — no
+  backup stash per hop, nothing sent (N peers broadcasting the same scene at each
+  other otherwise), the file's `game` EXCLUDED and the live state re-asserted after
+  the load (fork 3, campaign semantics; collectible latches are per-scene FREE
+  because the latch nodes live in the level's own graph). A missing hash pulls via
+  assetfile/getasset and WATCHES until the bytes land (the LUT rule); levels.js is
+  reached from flowRuntime via PRIMED import only (sessions is history-family). The
+  `travel` node acts on the stamp edge INSIDE the actionSeenAt family (a fresh node
+  adopting a stale stamp would load a level on connect); a double-fire is
+  SELF-LIMITING — the load replaces the graph containing the firing node.
+  `allplayers` = the group-travel gate: each player answers the wired condition for
+  THEMSELVES, the verdict rides the `playmode` presence message ADDITIVELY
+  (latest-wins per peer, dropped with the mode), and every peer derives "everyone in
+  play says yes" from the same replicated map, firing LOCALLY on the rising edge (the
+  ongamestate pattern) — editor peers are spectators and do not count, nobody playing
+  is not ready. `gamePresence.js` (F3, the campreview shape — NOT the userdata
+  roster, which is a whole-array whitelist): `playmode` sent ONLY while playing
+  (absent = editor, older peers unaffected), the late-joiner reply rides
+  getmodulestate, drops at all three disconnect sites; the ABANDON WATCH (arms per
+  round only once a real player was witnessed, one forward-only `lastPlayingAt`,
+  HOST-only writer — `sessionHost === null`) is what makes "the game resets only when
+  everyone has left play" real; `canResetGame` = admins under `rolesInfo`, else the
+  host or anyone alone (inert without a plugin); REJOIN = a play press inside the 2s
+  exit cooldown is QUEUED and replayed through checkPlay (it used to be silently
+  eaten). COLLECTIBLES v2 (F2): the recipe stamps `whilePlaying` on its Visibility
+  node — a marked node is DROPPED from the effect set outside
+  `isLocked === true && roundUnderway()`, so the restore loop hands the object back
+  and FORGETS it (manual visibility wins; the reported collect→Esc→invisible bug) —
+  and `perRound` on Latch/Once, derived from `roundCutoff()` (null = shell unused /
+  the round's `startedAt` while playing-or-paused / Infinity in menu-or-over). THE
+  CUTOFF HAS A PULL AND A PUSH RULE: reads honour Infinity (a latch reads
+  un-collected in menu — the locked fork) but `applyNodeTrigger`'s re-arm and
+  parity-zero act on a FINITE cutoff only. Respawn is BUILT into the graph — a Delay
+  off the CLICK (never the Once: rearm DELETES the entry a Once-sourced Delay
+  re-derives its moment from) → latch.reset + once.rearm. Groups = every child MESH,
+  ONE flownodes entry per group; `makeCollectiblePrompt` + CollectibleDialog (chips,
+  not a datalist — the 21-D3 finding). `collectcount` (F3) derives
+  total/collected/left by WALKING the recipe shape backwards from the counter (the
+  variable is a score that only goes up and lies after a respawn);
+  `collectibleCountsFor` is the same derivation exported for the `debug` HUD kind —
+  a collapsed pill (state/round/elapsed/vars/counts/per-player mode chips/fps,
+  click-to-expand LOCAL, a 500ms sampler because half its sources have no store
+  signal). F1: `hudArrange.js` (imports NOTHING) — 9 align/distribute/equalize ops
+  as DATA over ABSOLUTE stage rects, written back through each element's OWN anchor
+  (`offsetsFrom`, size first in the same patch), each op ONE hud gesture; the
+  select/marquee tool pair (a MODE, not a modifier — a plain drag already means
+  deselect); the artboard context menu's Add submenu categorized from the SAME
+  `paletteGroups()` the palette renders. F5: `minimapDotColor` = ONE exported colour
+  rule (SELF = the theme accent resolved to a literal, every OTHER peer =
+  `peerColor(id)` — the old code fell back to a hardcoded green self while peers
+  drew the id hash, so two screens disagreed about one person) + `showFacing`
+  heading wedges (`facingAngle` = one atan2(z, x): canvas +y IS world +z). F7
+  (cross-scene presence on the rooms layer) deliberately slipped to 21-G. Plan +
+  as-built: cloud `plans-core/roadmap-21f-levels-and-polish.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
   serialized tree — a save taken mid-session wrote it into the file as a
@@ -1367,6 +1426,47 @@ loadable play content. Everything a user does must be visible to connected peers
   broken. Park it kinematic/static or move it after the re-seat settles.
 - **A peer cannot approve a connection request while in play mode** — the Approve
   button renders but the click times out. Approve first, then enter play.
+- **A derived cutoff consulted on both the READ and the MUTATE side needs TWO rules.**
+  21-F2's round cutoff returns Infinity in menu/over so latches READ as un-collected
+  there (the locked fork) — but `applyNodeTrigger`'s re-arm honoured it too, so in menu
+  a spent perRound Once re-armed on EVERY click and banked the variable unboundedly
+  (surfaced as a 1-in-3 suite flake: a stale singleton racing a wipe). "We are not in a
+  round" is a statement about how stamps read, never a licence to mutate: the push side
+  acts on a FINITE cutoff (a real new round) only.
+- **Never source a Delay from a node whose consumption DELETES the log entry.** A Delay
+  has no state — `stampOfSource` re-derives its fire moment from its trigger's stamp on
+  every read — and a Once's `rearm` deletes the Once's entry. A respawn chain wired
+  Delay-from-Once therefore erased its own trigger at the instant it fired: the gem
+  counted twice and never came back. Source from the CLICK, whose entry persists (and a
+  re-click during the wait then restarts the timer instead of stacking a return).
+- **A stamp minted between a node's arrival on a peer and that peer's NEXT TICK is
+  refused as stale.** `actionSeenAt` records first-seen at TICK time, so a suite that
+  waits for the peer to hold the graph and pulses immediately loses the race (measured:
+  stamp 21618.485 vs seenAt 21618.489 — a 4ms refusal, and the guard then CONSUMES the
+  stamp). Settle ~600ms after the hold-premise before pulsing; a human press comes
+  seconds after wiring, so the guard is doing its 21-E job. Related travel property:
+  a double-fire is self-limiting because the load REPLACES the graph containing the
+  firing node.
+- **A layout artboard full of TEXT needs `user-select: none`.** Dragging across the HUD
+  artboard selected the labels it swept, and the NEXT press over that selection started
+  a native HTML5 text DRAG — after which Chromium delivers dragstart/drag/dragend and
+  NO pointermove or pointerup, so the gesture hung with its box on screen and its
+  window listeners attached (Escape never reached it either). `user-select: none` on
+  the board + preventDefault on the gesture's pointerdown.
+- **A canvas `fillStyle` cannot take a `var()` chain, so a colour rule split between
+  DOM and canvas WILL drift.** The minimap's self dot fell back to a hardcoded green
+  whenever the authored colour was a token (always), while every other screen drew that
+  peer as `hsl(hash(id))` — two screens, two answers for one person. Resolve tokens to
+  literals where the canvas is (`getComputedStyle` on the root) and export ONE rule
+  both dot paths call (`minimapDotColor`).
+- **`h.connect(from, to)` dials FROM the first arg — and a connected peer's pill has no
+  dial input.** A late joiner must dial the host (`h.connect(C, A)`), or the fill times
+  out on the disabled "Connected to <host>" input.
+- **`setvariable` `add` is a per-peer read-modify-write** — every peer computes
+  `current + 1` off its own tick, so two peers with skewed flow ticks can bank one
+  pickup twice (F3 measured gems=2 for a single click). PRE-EXISTING (21-D6's
+  accumulator); assert the WORLD (hidden/collected), not the score, until it gets an
+  authoritative writer or per-stamp dedupe.
 - **A LATCH guarding an idempotent call must be set on SUCCESS, never on intent.**
   `startCameraPreview` builds a camera FROM the marker object and REFUSES when there is
   none, which is the normal case for a LATE JOINER (state arrives before the scene).
@@ -2855,6 +2955,37 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-21, later): **ROADMAP 21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR
+  POLISH: F1-F6 EXECUTED across three lanes; F7 (cross-scene presence on the rooms
+  layer) deliberately slipped to 21-G per the plan.** Baseline re-measured 385/62 on a
+  pristine worktree at c44f84f before anything started (the gate was already
+  ratcheted), and held at EVERY commit. Lanes off c44f84f: **L-A
+  `feat/21f-hud-editor`** (F1 `6096a25` the toolbar/marquee/arrange + F5 `60cee2e` the
+  minimap colour rule + facing) · **L-B `feat/21f-collectibles`** (F2 `7aea87e`
+  collectibles v2 + F3 `1bab3a2` counts/presence/rejoin/admin-reset) · **L-C
+  `feat/21f-levels`** off F2's commit (F4a `05600d1` the level assets + local travel ·
+  the two lane merges with the App.svelte debugStores UNION — the count assertion
+  CAUGHT a mis-fold, 160/161, exactly what it exists for · F4b `c8060af` the travel
+  node / allplayers / debug element · F6 `f4cc0f9` the game-loop-v3 acceptance).
+  Suites: hud-editor-tools(57) collectibles-v2(76) game-presence(66) scene-levels(41)
+  game-loop-v3(26) + hud-content grown to 160; re-run green around every touch:
+  hud-editor family(143), hud-kinds(40), hud-actions(65), logic-nodes, game-state,
+  game-loop-v2(63), session-scene-data(27), workspace-restore(20). REVIEW-LOOP FINDS,
+  each fixed before its commit: the Infinity push/pull cutoff split (a 1-in-3 flake
+  root-caused to a real unbounded-banking bug), the Delay-sourced-from-Once respawn
+  trap (a red suite found it), the artboard native text-drag hang, the minimap's
+  hardcoded-green self dot, the eaten rejoin press, and the 4ms stale-stamp suite
+  race (the guard was RIGHT — the suite settles now). The must-not-regress fixture
+  (collect → Esc → visible again + object-list hide works) is collectibles-v2 section
+  1, proven by breaking the gate. KNOWN pre-existing, ticket-worthy: `setvariable`
+  `add` is a per-peer read-modify-write (see the gotcha). PRs open against
+  release/next, landing order L-A → L-B (App.svelte union at landing) → L-C; NOT
+  merged without the user's word. OWED, because headless cannot judge it: the guide's
+  playthrough incl. travel on real peers, minimap colours on three-plus peers, the
+  debug element and the new toolbar/dialog in non-dark themes, the marquee's feel on
+  a real pointer, and the confirmation that "equalize takes the FIRST pick's size" is
+  the right reference. Plan + as-built: cloud
+  `plans-core/roadmap-21f-levels-and-polish.md`.
 - Status (2026-08-21): **ROADMAP 21-E — GAME HARDENING, ALL EIGHT PHASES EXECUTED AND
   MERGED — PRs #158/#159/#160 to `release/next` @2d8af51.** Baseline **385/62** measured
   on the merged head; the release.yml gate ratcheted with it. Each lane PR took a

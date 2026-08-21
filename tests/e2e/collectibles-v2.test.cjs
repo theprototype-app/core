@@ -516,24 +516,32 @@ h.run(async () => {
 		`the picker offers the names already in play (${JSON.stringify(suggestions)})`
 	);
 
-	// ---- the real entry point: the object menu's second Game item ---------------
-	const menu = await A.page.evaluate((id) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(id);
-		const game = items.find((i) => i.label === 'Game');
-		return (game?.children ?? []).map((i) => ({ label: i.label, disabled: !!i.disabled }));
-	}, keyBox);
-	h.check(
-		menu.some((i) => i.label === 'Make collectible') && menu.some((i) => i.label.startsWith('Make collectible into')),
-		`the object menu offers both entries (${JSON.stringify(menu.map((i) => i.label))})`
+	// ---- the real entry point ---------------------------------------------------
+	// 21-G1 MOVED IT: the object menu's `Game ▸` submenu is gone, and the recipe lives in
+	// the node editor's Game category, acting on the SELECTION rather than on the
+	// right-clicked object. (`scene-folders` owns the menu-shape contract, including the
+	// absence of the old submenu; here it is just the way in.)
+	await A.page.evaluate((id) => window.__stores.objectActions.applySelectionSet([id]), keyBox);
+	await A.page.waitForTimeout(300);
+	const menu = await A.page.evaluate(() =>
+		window.__stores.gameRecipes
+			.recipeMenuItems()
+			.filter((i) => i.label)
+			.map((i) => ({ label: i.label, disabled: !!i.disabled }))
 	);
-	h.check(!menu.find((i) => i.label.startsWith('Make collectible into'))?.disabled, 'and the new one is live, not a greyed placeholder');
+	h.check(
+		menu.some((i) => i.label.startsWith('Make selected collectible')),
+		`the node editor's Game category offers the recipe (${JSON.stringify(menu.map((i) => i.label))})`
+	);
+	h.check(!menu[0]?.disabled, 'and with something selected it is live, not a greyed placeholder');
 
 	// open it for real and answer it with real clicks
-	await A.page.evaluate((id) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(id);
-		const game = items.find((i) => i.label === 'Game');
-		game.children.find((i) => i.label.startsWith('Make collectible into')).action();
-	}, keyBox);
+	await A.page.evaluate(() => {
+		window.__stores.gameRecipes
+			.recipeMenuItems()
+			.find((i) => i.label?.startsWith('Make selected collectible'))
+			.action();
+	});
 	await A.page.waitForSelector('#collectible-variable', { timeout: 8000 });
 	h.check(true, 'the dialog opens from the menu entry');
 	h.check(
@@ -551,11 +559,14 @@ h.run(async () => {
 
 	// cancel builds NOTHING — the prompt runs before any node is created
 	const beforeCancel = await nodeCount(A, 'latch');
-	await A.page.evaluate((id) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(id);
-		const game = items.find((i) => i.label === 'Game');
-		game.children.find((i) => i.label.startsWith('Make collectible into')).action();
-	}, gemBox);
+	await A.page.evaluate((id) => window.__stores.objectActions.applySelectionSet([id]), gemBox);
+	await A.page.waitForTimeout(300);
+	await A.page.evaluate(() => {
+		window.__stores.gameRecipes
+			.recipeMenuItems()
+			.find((i) => i.label?.startsWith('Make selected collectible'))
+			.action();
+	});
 	await A.page.waitForSelector('#collectible-cancel', { timeout: 8000 });
 	await A.page.click('#collectible-cancel');
 	await A.page.waitForTimeout(700);

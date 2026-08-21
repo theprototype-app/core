@@ -1,4 +1,11 @@
-// 21-E8 — GAME RECIPES: a whole authored behaviour, built from the object menu.
+// 21-E8 — GAME RECIPES: a whole authored behaviour in one click.
+//
+// 21-G1 MOVED THE ENTRY POINT. It used to be a `Game ▸` submenu on every object's
+// right-click; it is now the node editor's Game category (`recipeMenuItems()` at the
+// bottom of this file), acting on the viewport SELECTION. What a recipe builds is a
+// flow graph, so the node editor is where it can be found, understood and taken apart —
+// and the object menu stops advertising a game feature to a scene that is not a game
+// (21-C3's Road-menu lesson, one domain over).
 //
 // THE PROBLEM THIS SOLVES. E4 shipped the logic a game loop is made of, E6 the character
 // controller and 21-D7 the HUD actions — so by now every PIECE of "collect the gems"
@@ -13,16 +20,16 @@
 // So it replicates, saves, undoes and can be TAKEN APART afterwards, because what it leaves
 // behind is an ordinary graph.
 //
-// WHY IT IS NOT IN `objectMenu.js`: that module is a lean builder of menu descriptors and
-// reaches its heavy collaborators (physics, terrainSculpt, cameraPreview…) through dynamic
-// `import()`. A recipe writes to the flow graph and records history, so it belongs on the
-// other side of that seam — the same reason `hudActions.js` is not inside
+// WHY THE BEHAVIOUR IS NOT IN A MENU MODULE: `objectMenu.js` is a lean builder of menu
+// descriptors and reaches its heavy collaborators (physics, terrainSculpt, cameraPreview…)
+// through dynamic `import()`. A recipe writes to the flow graph and records history, so it
+// belongs on the other side of that seam — the same reason `hudActions.js` is not inside
 // `HudActionsSection.svelte`.
 
 import { get } from 'svelte/store';
 import { peers, showToast } from '../stores/appStore';
 import { SCENE_GRAPH, flowGraphs, allNodes } from '../stores/flowStore';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, selectedObjects } from '../stores/sceneStore';
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge } from './nodesHandler';
 import { recordFlowNodesEntry } from './flowGraphs';
 import { findNodeSpec } from './nodeCatalog';
@@ -312,6 +319,42 @@ export function makeCollectible(uuids, opts = {}) {
 			);
 	}
 	return { built, skipped, variable, respawn, entries };
+}
+
+/**
+ * 21-G1: the recipes as MENU DESCRIPTORS, for the node editor's Game category.
+ *
+ * WHY HERE AND NOT IN `Nodes.svelte`: `buildObjectMenuItems`'s precedent — a menu is
+ * data, and the module that owns the behaviour owns the labels, the wording of the
+ * refusal and the counted plural. The component only renders what it is handed.
+ *
+ * WHY IT READS `selectedObjects` AND NOT `selectionUuids()`: the sticky-primary
+ * fallback is exactly wrong for a menu that lives somewhere else. `selectedObject`
+ * KEEPS the last object after a deselect (the open inspector binds to it), so the
+ * fallback would offer "make the selected object collectible" over an empty viewport
+ * and quietly build a chain for whatever was picked last. The SET is emptied by
+ * `deselectObject`, so it is the only honest answer to "what is selected right now".
+ *
+ * A leading `{ section }` is what keeps this readable next to the node rows above it:
+ * every other row in that submenu ADDS A NODE, and this one runs seven of them.
+ * @returns {any[]}
+ */
+export function recipeMenuItems() {
+	const targets = [...(get(selectedObjects) ?? [])];
+	const count = targets.length;
+	return [
+		{ section: 'Recipes' },
+		{
+			label: count > 1 ? `Make selected collectible… (${count})` : 'Make selected collectible…',
+			icon: 'gamepad-2',
+			disabled: count === 0,
+			tooltip:
+				count === 0
+					? 'Select one or more objects in the viewport first — a recipe acts on the selection'
+					: 'Builds the pickup graph: clicking it hides it for everyone and adds 1 to a shared variable. A Group becomes every mesh in it; pick the variable and the respawn in the dialog.',
+			action: () => makeCollectiblePrompt(targets)
+		}
+	];
 }
 
 /**

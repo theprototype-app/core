@@ -352,43 +352,16 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					: [])
 			]
 		},
-		// 21-E8: RECIPES - a whole authored behaviour in one click. "Make collectible" is
-		// five nodes and four wires a user would otherwise draw ONCE PER GEM, and every
-		// piece of it already existed (E4 latch/gate, the game variables, the replicated
-		// click) - assembling it was the only thing missing. What it leaves behind is an
-		// ORDINARY graph, so it replicates, undoes and can be taken apart afterwards.
+		// 21-G1: THE GAME SUBMENU IS GONE FROM HERE. It held exactly the two collectible
+		// recipe entries, and they have moved to the NODE EDITOR's Game category, where a
+		// recipe belongs: what it builds IS a flow graph, and the object menu is the wrong
+		// place to teach that. The spline precedent decided it — 21-C3 pulled the lap gates
+		// out of core for making every spline in every scene sprout a Road menu for the
+		// benefit of one game. This project is not only for games, so a game recipe does
+		// not get a permanent shelf on every object's right-click.
 		//
-		// Reached by dynamic import like physics/terrainSculpt: this builder stays lean and
-		// a recipe writes to the flow graph and records history.
-		{
-			label: 'Game',
-			icon: 'gamepad-2',
-			children: [
-				{
-					label: 'Make collectible' + suffix,
-					disabled: locked,
-					tooltip: locked
-						? lockedTooltip
-						: isGroup
-							? 'Every mesh in the group hides itself for everyone when clicked and adds 1 to the shared “gems” variable'
-							: multi
-								? 'Each one hides itself for everyone when clicked and adds 1 to the shared “gems” variable'
-								: 'Clicking it hides it for everyone and adds 1 to the shared “gems” variable - and it stays collected',
-					action: () => import('./gameRecipes').then((m) => m.makeCollectible(targets))
-				},
-				// 21-F2: the same recipe with its two questions asked. The plain entry above
-				// stays a ONE-CLICK answer - that is what a recipe is for - so the choices
-				// live behind the ellipsis, the way every other "…" entry in this app reads.
-				{
-					label: 'Make collectible into…' + suffix,
-					disabled: locked,
-					tooltip: locked
-						? lockedTooltip
-						: 'Pick which variable it counts into, and whether it comes back after a few seconds',
-					action: () => import('./gameRecipes').then((m) => m.makeCollectiblePrompt(targets))
-				}
-			]
-		},
+		// The entry point is `gameRecipes.recipeMenuItems()`, which acts on the SELECTION —
+		// so the gesture is unchanged (select the gems, then run it), only its address is.
 		{
 			label: (muted ? 'Enable flow effects' : 'Disable flow effects') + suffix,
 			icon: 'workflow',

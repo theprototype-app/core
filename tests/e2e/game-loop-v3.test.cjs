@@ -141,7 +141,7 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(1400);
 	const pill = await A.page.evaluate(() => document.querySelector('.hud-debug')?.textContent ?? '');
-	h.check(pill.includes('playing') && pill.includes('1/2 left'), `the debug element reads the live game (${pill.split('level:')[0].trim()})`);
+	h.check(pill.includes('playing') && pill.includes('1/2 left'), `the debug element reads the live game (${pill.split('scene:')[0].trim()})`);
 	h.check((pill.match(/playing/g) || []).length >= 2, 'and shows both players in play mode');
 
 	// =====================================================================

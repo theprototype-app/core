@@ -39,7 +39,7 @@ import { disabledModules } from './moduleSDK';
 import { findNodeSpec } from './nodeCatalog';
 import { hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { gameStateSnapshot, gameStateRestore } from './gameState';
-import { sceneCommand, sendObjects } from './commandsHandler.svelte';
+import { sceneCommand, sendObjects, clearSceneLocal } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { showConfirm, showChoice } from './confirmDialog';
@@ -199,6 +199,37 @@ export function buildSessionPayload(name) {
 	} finally {
 		restore();
 	}
+}
+
+/**
+ * 21-F4: a payload with NOTHING in it — what "New scene…" saves as a fresh level asset.
+ * The same shape buildSessionPayload writes, minus every capture: an empty level must not
+ * inherit whatever scene happens to be open when it is created.
+ * @param {string} name
+ */
+export function emptySessionPayload(name) {
+	return {
+		id: crypto.randomUUID(),
+		name: name || 'New level',
+		createdAt: Date.now(),
+		format: SESSION_FORMAT,
+		appVersion: APP_VERSION,
+		count: 0,
+		thumbnail: null,
+		objects: [],
+		animated: [],
+		animations: {},
+		graphs: {},
+		nodes: [],
+		edges: [],
+		shaderGraphs: {},
+		annotations: [],
+		joints: [],
+		post: null,
+		hud: null,
+		game: null,
+		camera: null
+	};
 }
 
 /** Persist a payload as a slot @param {any} payload */
@@ -453,6 +484,50 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 	return zipSync(files, { level: 6 });
 }
 
+/** The zip's bundled assets into the Explorer (hash-deduped) so sound/texture hashes
+ * resolve. Shared by importSessionZip and 21-F4's readSessionZip.
+ * @param {Record<string, Uint8Array>} entries @param {(bytes: Uint8Array) => string} strFromU8 */
+async function restoreZipAssets(entries, strFromU8) {
+	let index = [];
+	try {
+		if (entries['assets/index.json']) index = JSON.parse(strFromU8(entries['assets/index.json']));
+	} catch {
+		index = [];
+	}
+	if (!index.length) return;
+	const { applyAssetFile } = await import('./assetShare');
+	for (const entry of index) {
+		const bytes = entries[entry.file];
+		if (!bytes) continue;
+		// pass the Uint8Array VIEW — applyAssetFile slices byteOffset..length
+		// so fflate's shared buffers don't corrupt the content hash
+		await applyAssetFile({ hash: entry.hash, name: entry.name, buffer: bytes });
+	}
+}
+
+/**
+ * 21-F4: read a session zip WITHOUT importing it — no slot written, no dialogs. LEVEL
+ * TRAVEL runs on every peer at once off a replicated trigger, so a confirm dialog has
+ * nobody to answer it and a cancel could not be honoured anyway (the others already
+ * left). A NEWER format is REFUSED with a toast instead of asked about; assets are
+ * restored (hash-deduped) so the level's textures and sounds resolve.
+ * @param {ArrayBuffer} buffer @returns {Promise<any|null>} the payload, or null
+ */
+export async function readSessionZip(buffer) {
+	const { unzipSync, strFromU8 } = await import('fflate');
+	const entries = unzipSync(new Uint8Array(buffer));
+	const sessionBytes = entries['session.json'];
+	if (!sessionBytes) return null;
+	const payload = parseSessionJson(strFromU8(sessionBytes));
+	const format = Number(payload?.format ?? 0);
+	if (!payload || format > SESSION_FORMAT) {
+		showToast('This level needs a newer app version (format ' + format + ' > ' + SESSION_FORMAT + ')');
+		return null;
+	}
+	await restoreZipAssets(entries, strFromU8);
+	return payload;
+}
+
 /**
  * Import a session .zip: restore its bundled assets into the Explorer (Shared,
  * hash-deduped) FIRST so sound/texture hashes resolve, then the session.json.
@@ -470,22 +545,7 @@ export async function importSessionZip(buffer) {
 	// A6.2: and the module prompt sits right beside it, above the asset/pack loops
 	// for the same reason — a cancelled import must not touch the Explorer either
 	if (!(await confirmModuleRequirements(payload))) return null;
-	let index = [];
-	try {
-		if (entries['assets/index.json']) index = JSON.parse(strFromU8(entries['assets/index.json']));
-	} catch {
-		index = [];
-	}
-	if (index.length) {
-		const { applyAssetFile } = await import('./assetShare');
-		for (const entry of index) {
-			const bytes = entries[entry.file];
-			if (!bytes) continue;
-			// pass the Uint8Array VIEW — applyAssetFile slices byteOffset..length
-			// so fflate's shared buffers don't corrupt the content hash
-			await applyAssetFile({ hash: entry.hash, name: entry.name, buffer: bytes });
-		}
-	}
+	await restoreZipAssets(entries, strFromU8);
 	// B3: restore bundled packs — re-store each item blob (content-hash deduped;
 	// ids can CHANGE, so remap the pack's item ids), then re-register the pack
 	if (entries['packs/index.json']) {
@@ -627,11 +687,28 @@ function reportUnknownNodes(payload) {
 }
 
 /** Replace the scene with a session (safety-stash first). Replicates through
- * the normal clearscene/object/node messages. @param {any} payload */
-export async function applySession(payload) {
+ * the normal clearscene/object/node messages.
+ *
+ * 21-F4 opts, every default preserving today's behaviour byte-identically:
+ *   backup     false skips the safety-stash session — LEVEL TRAVEL runs this on every
+ *              peer at once, and N peers each stashing a backup per hop is noise
+ *   replicate  false applies LOCALLY with nothing sent — the deterministic model: a
+ *              travel trigger already replicated, so EVERY peer runs this itself, and
+ *              a replicating apply would be N peers broadcasting the same scene at
+ *              each other (clear storms included)
+ *   game       false EXCLUDES payload.game — fork 3: game state CARRIES across scene
+ *              travel, so the traveller re-asserts the live state after the load
+ *   workspace  false skips the edit-resume — a level hop mid-game must not reopen the
+ *              author's mesh-edit session
+ * @param {any} payload
+ * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean}} [opts]
+ */
+export async function applySession(payload, opts = {}) {
+	const { backup = true, replicate = true, game = true, workspace = true } = opts;
 	const group = get(objectsGroup);
-	if (group?.children.length) await saveSession('Backup before "' + payload.name + '"');
-	sceneCommand('/clear all'); // replicated clear (objects + module content)
+	if (backup && group?.children.length) await saveSession('Backup before "' + payload.name + '"');
+	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
+	else clearSceneLocal();
 	/** @type {any} */
 	const peer = get(peers);
 	for (const element of payload.objects ?? []) {
@@ -648,15 +725,15 @@ export async function applySession(payload) {
 		// on the way in; the peers do the same in `createObject`.
 		stripEditOverlays(object);
 		group.add(object); // keep original uuids — every peer converges on them
-		if (peer) peer.send({ type: 'object', element });
+		if (replicate && peer) peer.send({ type: 'object', element });
 	}
 	objectsGroup.update((value) => value);
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload
-	await animatedImportsRestore(payload.animated ?? []);
+	await animatedImportsRestore(payload.animated ?? [], replicate);
 	// replicate: a loaded scene's movements reach the peers already in the room,
 	// the way each restored joint is re-broadcast below
-	animationsRestore(payload.animations ?? {}, true);
+	animationsRestore(payload.animations ?? {}, replicate);
 	// H1: new format restores EVERY graph document; legacy payloads carry the
 	// scene graph only. One 'nodes' snapshot replicates the whole map.
 	const graphsPayload =
@@ -667,7 +744,7 @@ export async function applySession(payload) {
 				: null;
 	if (graphsPayload) {
 		restoreGraphs(graphsPayload);
-		if (peer)
+		if (replicate && peer)
 			peer.send({
 				type: 'nodes',
 				graphs: graphsPayload,
@@ -676,24 +753,26 @@ export async function applySession(payload) {
 			});
 	}
 	// a scene LOAD replaces the world, so replace the documents too
-	shaderGraphsRestore(payload.shaderGraphs ?? {}, true);
+	shaderGraphsRestore(payload.shaderGraphs ?? {}, replicate);
 	annotationsRestore(payload.annotations ?? []);
 	// P-B: joints restore locally + replicate each def (receivers only apply)
 	jointsRestore(payload.joints ?? []);
 	// the look replicates on restore too, so loading a scene into a live room
 	// brings its art direction along (the jointsRestore precedent below)
-	scenePostRestore(payload.post, true);
+	scenePostRestore(payload.post, replicate);
 	// A6.1: and so do the sky, the gravity and the music — a game template that
 	// loaded into the room's own sky and gravity was the reason this phase exists.
 	// Each is a no-op when the field is absent (= the scene wants the defaults).
-	environmentRestore(payload.environment, true);
-	scenePhysicsRestore(payload.physics, true);
-	musicRestore(payload.music, true);
+	environmentRestore(payload.environment, replicate);
+	scenePhysicsRestore(payload.physics, replicate);
+	musicRestore(payload.music, replicate);
 	// and the HUD with it: loading a game scene into a live room must bring its overlay
-	hudDocsRestore(payload.hud ?? null, true, true);
-	// and the game with it: loading a game scene into a live room must bring its state
-	gameStateRestore(payload.game ?? null, true);
-	if (peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
+	hudDocsRestore(payload.hud ?? null, true, replicate);
+	// and the game with it: loading a game scene into a live room must bring its state.
+	// 21-F4 fork 3: LEVEL TRAVEL passes game:false — state/round/vars CARRY across the
+	// hop (campaign semantics), so the traveller re-asserts the live state after this.
+	if (game) gameStateRestore(payload.game ?? null, replicate);
+	if (replicate && peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
 	/** @type {any} */
 	const camera = get(globalCamera);
 	/** @type {any} */
@@ -707,7 +786,7 @@ export async function applySession(payload) {
 	}
 	// P5: last, once the objects exist and the camera is parked — a selection applied
 	// before the tree is populated selects nothing, and a session entry needs its object
-	if (payload.workspace) applyEditResume(payload.workspace);
+	if (workspace && payload.workspace) applyEditResume(payload.workspace);
 	// A6.4: ONE Notification Center entry naming the unrenderable nodes, because the
 	// flow editor's badge is invisible when the dock is closed — which it is for most
 	// players loading a game. Runs after restoreGraphs, so the count is the real one.

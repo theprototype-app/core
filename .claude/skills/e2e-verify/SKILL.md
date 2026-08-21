@@ -789,6 +789,23 @@ drops the P2P session.
 
 ## Known flakes / traps
 
+- **A trigger-edge action suite must SETTLE between "the peer holds the node" and the
+  pulse** (21-F4). `actionSeenAt` records a node's first-seen at TICK time, so a stamp
+  minted in the gap between the nodecreate landing and the peer's next tick is refused
+  as stale AND consumed (measured: stamp 21618.485 vs seenAt 21618.489 — a 4ms race).
+  Wait for the hold-premise, then `waitForTimeout(600)` before pulsing; a human press
+  comes seconds after wiring, so the guard is correct and the suite adapts.
+- **`h.connect(from, to)` dials FROM the first argument — and a connected peer's pill
+  has no dial input** (it becomes the disabled "Connected to <host>" box). A late
+  joiner must dial the host: `h.connect(C, A)`, never `h.connect(A, C)` — the wrong
+  direction surfaces as `connect: could not fill the peer id`.
+- **Who is the session host in a suite**: `h.connect(A, B)` has A dial and B approve,
+  so B holds `sessionHost === null` — B is the writer/admin for anything host-gated
+  (the abandon watch, Reset game). Assert gates against the right peer.
+- **The shared game singleton can race a test's wipe** (21-F2's 1-in-3 flake): a stale
+  `game` message landing after a reset changes what later checks MEAN. Pin the
+  game-state premise (assert or explicitly set it) before any section whose
+  assertions depend on it — the racing write must not be able to reinterpret them.
 - **An assertion whose deadline is a `waitForTimeout` asserts the SCHEDULER as much
   as the feature — and that is what a "flaky suite" almost always turns out to be.**
   Every standing red cleared before the 1.5.0 tag (PR #142) was this one shape: a

@@ -76,6 +76,58 @@ export function rememberThumb(packName, itemName, url) {
 		localStorage.setItem(THUMB_KEY, JSON.stringify(c));
 	} catch {}
 }
+// 21-G1: PACK RENAME. The report was "the Audio Essentials folder can't be renamed", and
+// the thing that cannot be renamed is not a folder: the LIBRARY folder a pack install
+// creates is an ordinary folder and renames fine (measured). What carries the same name
+// one section down is the PACK ROW, a view of a registry entry, and `packRowMenu` never
+// offered a rename.
+//
+// So this renames the TITLE and never the `name`. `name` IS the identity — packByName,
+// itemCache, the installed-list dedupe, the thumbnail-cache prefix, `activeFolder`'s
+// 'pack:<name>', the hidden set, and the rule that an installed pack SHADOWS its
+// default-list row all key off it — while `title` is display only. A DEFAULT pack's title
+// is rebuilt from the CDN index on every load, so the override has to live beside the
+// pack list rather than in it; that is also what makes the rename survive a reload for a
+// built-in, instead of silently reverting. LOCAL, like every other pack preference here.
+const TITLE_KEY = 'packTitles';
+/** @returns {Record<string, string>} */
+function getTitleOverrides() {
+	try {
+		return JSON.parse(localStorage.getItem(TITLE_KEY) || '{}');
+	} catch {
+		return {};
+	}
+}
+/** Apply this user's display name, if they gave the pack one. @param {any} pack */
+function withTitle(pack) {
+	const title = getTitleOverrides()[pack?.name];
+	return title ? { ...pack, title } : pack;
+}
+/**
+ * Rename a pack for THIS user (display only — see the note above).
+ * @param {string} name the pack's stable id @param {string} title
+ */
+export function renamePack(name, title) {
+	const clean = String(title ?? '').trim();
+	if (!name || !clean) return false;
+	const map = getTitleOverrides();
+	map[name] = clean;
+	try {
+		localStorage.setItem(TITLE_KEY, JSON.stringify(map));
+	} catch {}
+	packs.update((list) => list.map((/** @type {any} */ p) => (p.name === name ? { ...p, title: clean } : p)));
+	return true;
+}
+/** @param {string} packName */
+function dropTitleOverride(packName) {
+	const map = getTitleOverrides();
+	if (!(packName in map)) return;
+	delete map[packName];
+	try {
+		localStorage.setItem(TITLE_KEY, JSON.stringify(map));
+	} catch {}
+}
+
 /** @param {string} packName */
 function dropPackThumbs(packName) {
 	const c = getThumbCache();
@@ -156,7 +208,12 @@ export async function loadPacks() {
 	// this, installing audio-essentials listed the pack twice after a reload
 	const installed = getInstalled();
 	const installedNames = new Set(installed.map((/** @type {any} */ p) => p.name));
-	packs.set([...defaults.filter((/** @type {any} */ d) => !installedNames.has(d.name)), ...installed]);
+	// 21-G1: the user's own display names ride over BOTH sources — a default pack's title
+	// comes back from the index on every load, so applying the override here is the only
+	// place that makes a built-in's rename stick
+	packs.set(
+		[...defaults.filter((/** @type {any} */ d) => !installedNames.has(d.name)), ...installed].map(withTitle)
+	);
 }
 
 /** Ordered thumbnail URL candidates for a default-pack item. An ABSOLUTE
@@ -306,7 +363,7 @@ export async function importPackZip(file) {
 	installed.push(pack);
 	setInstalled(installed);
 	delete itemCache[id];
-	packs.update((list) => [...list.filter((/** @type {any} */ p) => p.name !== id), pack]);
+	packs.update((list) => [...list.filter((/** @type {any} */ p) => p.name !== id), withTitle(pack)]);
 	return pack;
 }
 
@@ -341,7 +398,10 @@ export function registerImportedPack(pack) {
 	installed.push({ ...pack, source: 'imported' });
 	setInstalled(installed);
 	delete itemCache[pack.name];
-	packs.update((list) => [...list.filter((/** @type {any} */ p) => p.name !== pack.name), { ...pack, source: 'imported' }]);
+	packs.update((list) => [
+		...list.filter((/** @type {any} */ p) => p.name !== pack.name),
+		withTitle({ ...pack, source: 'imported' })
+	]);
 }
 
 /** Remove an imported pack (its item blobs stay in the Explorer library). @param {string} name */
@@ -349,6 +409,7 @@ export function removeImportedPack(name) {
 	setInstalled(getInstalled().filter((/** @type {any} */ p) => p.name !== name));
 	delete itemCache[name];
 	dropPackThumbs(name); // P2: forget cached thumbnails so a re-import re-resolves
+	dropTitleOverride(name); // …and the display name, so a re-import comes back as itself
 	packs.update((list) => list.filter((/** @type {any} */ p) => p.name !== name));
 }
 

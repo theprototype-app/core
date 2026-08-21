@@ -67,6 +67,9 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
+	// 21-G1: the collectible recipe, re-homed from the object context menu into the
+	// Game category of this editor's pane menu (see the injection in onPaneContextMenu)
+	import { recipeMenuItems } from '$lib/gameRecipes';
 	import { isValidFlowConnection, typeColor, replaceableInputEdges } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus } from '../../stores/appStore';
@@ -178,6 +181,11 @@
 		hudtimer: HudNode,
 		hudlist: HudNode,
 		hudinput: HudNode,
+		// 21-G1 fix, PRE-EXISTING since 21-E7 (ea46a7d): `hudrows` reached `nodeCatalog`
+		// and never this map, so a node dragged out of the CORE HUD palette rendered as
+		// UnknownNode — "this node comes from a module that isn't installed". Exactly the
+		// two-registry gotcha, and `flow-unknown-node` was red on release/next for it.
+		hudrows: HudNode,
 		hudset: HudNode,
 		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
 		// setcamera/gamestart/setlook get their own card for the camera picker.
@@ -574,10 +582,20 @@
 				{ label: 'Search nodes…', revealFilter: true },
 				...[...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
 					label: group.group,
-					children: group.items.map((item) => ({
-						label: item.label,
-						action: () => addNode(item.type, item.label, flowPos)
-					}))
+					children: [
+						...group.items.map((item) => ({
+							label: item.label,
+							action: () => addNode(item.type, item.label, flowPos)
+						})),
+						// 21-G1: GAME RECIPES land here, and ONLY here — deliberately not in
+						// `nodeCatalog`, because the palette renders that list as DRAGGABLE
+						// NODE CARDS and a recipe is an action, not a node type. In this menu
+						// they sit under their own `Recipes` section rule, below every node
+						// row, so the one thing that behaves differently also reads
+						// differently. They act on the viewport selection (see
+						// `recipeMenuItems`), which is why nothing here passes `flowPos`.
+						...(group.group === 'Game' ? recipeMenuItems() : [])
+					]
 				})),
 				{
 					label: 'Custom',
@@ -736,11 +754,18 @@
 			{/if}
 		</div>
 
-		<!-- H1: empty state — the selected object has no flow document yet -->
+		<!-- H1: empty state — the selected object has no flow document yet.
+		     21-G1: it covers the pane, so a RIGHT-CLICK has to be forwarded or the pane
+		     menu is unreachable in exactly the state where an object is selected — which
+		     is the state the collectible recipe is FOR. (`addNode` already creates the
+		     object's flow implicitly from here, for the palette; this gives the menu the
+		     same courtesy.) An explanation must not behave like a modal. -->
 		{#if activeId !== SCENE_GRAPH && !hasActiveGraph}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				id="flow-empty-state"
 				class="absolute inset-0 z-5 flex flex-col items-center justify-center gap-3 bg-gray-900/60 backdrop-blur-[2px]"
+				oncontextmenu={(event) => onPaneContextMenu({ event })}
 			>
 				<p class="text-sm text-gray-300">
 					<span class="font-semibold text-gray-100">{activeOwnerName}</span> has no flow yet

@@ -529,7 +529,9 @@
 				>{debugInfo.state} · r{debugInfo.round} · {debugInfo.elapsed}s · {debugInfo.counts.left}/{debugInfo.counts.total} left · {debugInfo.fps}fps</span
 			>
 			{#if debugOpen}
-				<span class="hud-debug-row">level: {debugInfo.level}</span>
+				<!-- 21-G1: "scene", not "level" — the store keeps its name, the label follows
+				     the vocabulary the rest of the app now uses -->
+				<span class="hud-debug-row">scene: {debugInfo.level}</span>
 				<span class="hud-debug-row"
 					>vars: {Object.keys(debugInfo.vars).length
 						? Object.entries(debugInfo.vars)

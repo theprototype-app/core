@@ -2,7 +2,9 @@
 // element are F4b, on top of this):
 //
 //   levels.saveSceneAsLevel   the current scene as a content-hashed .tpscene in a
-//                             `Levels` Explorer folder (workspace stripped)
+//                             `Scenes` Explorer folder (workspace stripped; 21-G1
+//                             renamed the folder and made discovery kind-based —
+//                             `scene-folders` owns that contract)
 //   levels.newLevel           an empty level asset that captures NOTHING
 //   levels.travelToLevel      a LOCAL, silent scene replace: no backup stash, no
 //                             replication (the deterministic model — the trigger is
@@ -79,10 +81,10 @@ h.run(async () => {
 		)
 	);
 	h.check(
-		rows.some((r) => r?.includes('Save scene as level')) && rows.some((r) => r?.includes('New scene')),
-		`the grid menu offers both level entries (${JSON.stringify(rows)})`
+		rows.some((r) => r?.includes('Save scene…')) && rows.some((r) => r?.includes('New scene')),
+		`the grid menu offers both scene entries (${JSON.stringify(rows)})`
 	);
-	await A.page.getByText('Save scene as level…', { exact: false }).click();
+	await A.page.getByText('Save scene…', { exact: false }).click();
 	await h.eventually(
 		() => levelItemsOf(A),
 		(items) => items.some((i) => i.name.includes('UI Level')),
@@ -100,7 +102,9 @@ h.run(async () => {
 		window.__stores.explorer.explorerFolders.subscribe((v) => (f = v))();
 		return f.map((x) => x.name);
 	});
-	h.check(foldersA.includes('Levels'), `the Levels folder exists by convention (${JSON.stringify(foldersA)})`);
+	// 21-G1: the folder is `Scenes` and is only where a save LANDS — discovery is by kind
+	// (scene-folders owns that contract; this is the "a save premakes it" half)
+	h.check(foldersA.includes('Scenes'), `the Scenes folder is premade by the save (${JSON.stringify(foldersA)})`);
 	const items2 = await levelItemsOf(A);
 	h.check(
 		items2.some((i) => i.name === 'Level One.tpscene'),
@@ -375,7 +379,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(800);
 	const expanded = await A.page.evaluate(() => document.querySelector('.hud-debug')?.textContent ?? '');
 	h.check(expanded.includes('gems=7'), `expanding shows the vars map (${expanded.includes('gems=7')})`);
-	h.check(expanded.includes('Level Three'), 'and the level name');
+	h.check(expanded.includes('Level Three'), 'and the scene name');
 	h.check(
 		(expanded.match(/editor|playing/g) || []).length >= 2,
 		'and a mode chip per player'

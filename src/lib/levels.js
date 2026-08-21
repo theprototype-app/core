@@ -1,6 +1,9 @@
-// 21-F4 — SCENES AS LEVELS.
+// 21-F4 — SCENES AS LEVELS. 21-G1 renamed the vocabulary: what this module moves between
+// is a SCENE, and the folder they land in is `Scenes`. The exported function names keep
+// their `level` spelling on purpose — they are load-bearing in saved graphs, the debug
+// hook and every suite, and a rename would be churn for a word.
 //
-// A LEVEL is a .tpscene living in the Explorer as an ordinary content-hashed item, which
+// A SCENE ASSET is a .tpscene living in the Explorer as an ordinary content-hashed item, which
 // is the whole design: the Explorer already gives us content addressing, thumbnails,
 // folders, and — through assetfile/getasset — a pull path for a peer who does not hold
 // the bytes yet. Nothing new travels on the wire for a level EXCEPT the travel trigger,
@@ -43,9 +46,15 @@ import {
 import { requestAsset } from './assetShare';
 import { gameState, gameStateRestore } from './gameState';
 
-/** The folder levels live in, BY NAME CONVENTION — the plan's rule. A convention rather
- * than a flag on the item, so a user can drag a .tpscene in and it simply counts. */
-export const LEVELS_FOLDER = 'Levels';
+/** 21-G1: the folder a SAVED SCENE lands in when there is nowhere else to put it —
+ * premade on the first save, and nothing more than that. It is freely renamable and
+ * deletable, because it is NOT how a scene is found: `levelItems()` discovers by KIND
+ * (see below), so the folder is a tidy default and never a registry.
+ *
+ * Renamed from `Levels` in 21-G1 — the project is not only for games, and "level" is a
+ * game word. An existing `Levels` folder keeps working BY CONSTRUCTION: its items are
+ * ordinary kind-'scene' items, which is the only thing discovery looks at. */
+export const SCENES_FOLDER = 'Scenes';
 
 /** Where we are: `{hash, name}` after a travel or a save-as-level, null before either.
  * LOCAL on purpose — a late joiner converges on the level's CONTENT through the ordinary
@@ -58,34 +67,37 @@ export const currentLevel = writable(null);
  * @type {Set<string>} */
 const inFlight = new Set();
 
-/** The Levels folder's id, created at the root on first use. */
-export async function ensureLevelsFolder() {
+/** The `Scenes` folder's id, created at the root on first use. A save that finds an
+ * existing one reuses it; a user who renamed or deleted it simply gets a fresh one on
+ * the next save, and every scene they already had stays discoverable regardless. */
+export async function ensureScenesFolder() {
 	await loadExplorer();
 	const existing = get(explorerFolders).find(
-		(/** @type {any} */ f) => f.name === LEVELS_FOLDER && !f.parentId
+		(/** @type {any} */ f) => f.name === SCENES_FOLDER && !f.parentId
 	);
 	if (existing) return existing.id;
-	const folder = createFolder(LEVELS_FOLDER, null);
+	const folder = createFolder(SCENES_FOLDER, null);
 	return folder?.id ?? null;
 }
 
-/** Every level on offer: the Levels folder's items plus any .tpscene elsewhere (a level
- * someone dragged in counts — the convention, not a registry). */
+/**
+ * 21-G1: every scene on offer, discovered BY KIND — an item of kind 'scene' (a
+ * .tpscene), wherever in the library it happens to live. There is deliberately NO
+ * folder filter: the folder-name convention made the folder load-bearing, so renaming
+ * it (or dragging a scene into `Prototypes/`) silently emptied the travel picker. The
+ * extension test is the fallback for an item stored before the 'scene' kind existed —
+ * both answer the same question, "is this file a scene".
+ */
 export function levelItems() {
-	const folderIds = new Set(
-		get(explorerFolders)
-			.filter((/** @type {any} */ f) => f.name === LEVELS_FOLDER)
-			.map((/** @type {any} */ f) => f.id)
-	);
 	return get(explorerItems).filter(
 		(/** @type {any} */ item) =>
-			folderIds.has(item.folderId) || /\.tpscene$/i.test(String(item.name ?? ''))
+			item.kind === 'scene' || /\.tpscene$/i.test(String(item.name ?? ''))
 	);
 }
 
-/** @param {string} name a level name, filesystem-safe enough for an item name */
+/** @param {string} name a scene name, filesystem-safe enough for an item name */
 function levelFileName(name) {
-	const base = String(name ?? '').trim() || 'Level';
+	const base = String(name ?? '').trim() || 'Scene';
 	return /\.tpscene$/i.test(base) ? base : base + '.tpscene';
 }
 
@@ -97,8 +109,8 @@ function levelFileName(name) {
  * @param {string} name @returns {Promise<{id: string, hash: string, name: string}|null>}
  */
 export async function saveSceneAsLevel(name) {
-	const folderId = await ensureLevelsFolder();
-	const payload = /** @type {any} */ (buildSessionPayload(String(name ?? '').trim() || 'Level'));
+	const folderId = await ensureScenesFolder();
+	const payload = /** @type {any} */ (buildSessionPayload(String(name ?? '').trim() || 'Scene'));
 	delete payload.workspace;
 	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });
 	const item = await addItemFromBytes(
@@ -108,24 +120,24 @@ export async function saveSceneAsLevel(name) {
 	);
 	if (!item) return null;
 	currentLevel.set({ hash: item.hash, name: payload.name });
-	showToast('Level saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
+	showToast('Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
 	return item;
 }
 
 /**
- * A brand-new EMPTY level asset — it deliberately captures nothing from the open scene.
+ * A brand-new EMPTY scene asset — it deliberately captures nothing from the open scene.
  * @param {string} name
  */
 export async function newLevel(name) {
-	const folderId = await ensureLevelsFolder();
-	const payload = emptySessionPayload(String(name ?? '').trim() || 'New level');
+	const folderId = await ensureScenesFolder();
+	const payload = emptySessionPayload(String(name ?? '').trim() || 'New scene');
 	const bytes = await exportSessionZip(payload, { assets: false, packs: false, flow: true });
 	const item = await addItemFromBytes(
 		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
 		levelFileName(payload.name),
 		folderId
 	);
-	if (item) showToast('Level created: ' + payload.name);
+	if (item) showToast('Scene created: ' + payload.name);
 	return item;
 }
 
@@ -139,7 +151,7 @@ function resolveLevelItem(hash) {
 	const item = itemByHash(hash);
 	if (item) return Promise.resolve(item);
 	requestAsset(hash);
-	showToast('Pulling the level from your peers…');
+	showToast('Pulling the scene from your peers…');
 	return new Promise((resolve) => {
 		const unsub = explorerItems.subscribe(() => {
 			const found = itemByHash(hash);
@@ -181,7 +193,7 @@ export async function travelToLevel(hash, name = '') {
 			payload = null;
 		}
 		if (!payload) {
-			showToast('That level could not be read.');
+			showToast('That scene could not be read.');
 			return false;
 		}
 		// fork 3: capture the LIVE game before the world is replaced…

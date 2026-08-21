@@ -28,6 +28,7 @@
 	import AnimationNode from './nodes/AnimationNode.svelte';
 	import HudNode from './nodes/HudNode.svelte';
 	import GameCameraNode from './nodes/GameCameraNode.svelte';
+	import TravelNode from './nodes/TravelNode.svelte';
 	import SequenceNode from './nodes/SequenceNode.svelte';
 	import MoveInputNode from './nodes/MoveInputNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
@@ -190,6 +191,9 @@
 		setcamera: GameCameraNode,
 		gamestart: GameCameraNode,
 		setlook: GameCameraNode,
+		// 21-F4: travel gets its own card for the level picker; allplayers is spec-driven
+		travel: TravelNode,
+		allplayers: AnimationNode,
 		// 21-E4: the logic a game loop is made of. All spec-driven except Sequence,
 		// which is the only one with several OUTPUTS and so needs its own four rows.
 		latch: AnimationNode,

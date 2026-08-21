@@ -274,9 +274,11 @@ export function animatedImportsSnapshot(group) {
  * and push each one to peers. Any static twin a save format wrote anyway (the
  * autosave GLTF cannot exclude it) is removed first, since applyObjectFile
  * declines a uuid that already exists.
- * @param {any[]} entries
+ * 21-F4: `replicate` false restores locally with nothing sent — level travel runs the
+ * restore on EVERY peer at once, so pushing would broadcast the same raw bytes N ways.
+ * @param {any[]} entries @param {boolean} [replicate]
  */
-export async function animatedImportsRestore(entries) {
+export async function animatedImportsRestore(entries, replicate = true) {
 	if (!entries?.length) return 0;
 	const group = get(objectsGroup);
 	/** @type {any} */
@@ -298,7 +300,7 @@ export async function animatedImportsRestore(entries) {
 				anim: entry.anim
 			});
 			const root = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
-			if (root && peer) sendAnimatedImport(peer, root); // peers reparse the same file
+			if (root && replicate && peer) sendAnimatedImport(peer, root); // peers reparse the same file
 			if (root) restored++;
 		} catch (error) {
 			console.log('animated import restore failed', error);

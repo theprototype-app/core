@@ -19,6 +19,14 @@
 	import { moduleHudKindDef, moduleHudKinds } from '$lib/moduleHudKinds';
 	import { subPressIds } from '$lib/hudKinds';
 	import { drawHudMinimap, MINIMAP_REFRESH_MS } from '$lib/hudMinimap';
+	// 21-F4: the DEBUG element's sources. All leaves or already-loaded singletons; a
+	// component import closes no history-family cycle (nothing imports components back).
+	import { get } from 'svelte/store';
+	import { gameState, gameElapsed } from '$lib/gameState';
+	import { currentLevel } from '$lib/levels';
+	import { peerPlayModes, myPlayMode } from '$lib/gamePresence';
+	import { collectibleCountsFor } from '$lib/flowRuntime';
+	import { userdata, peers } from '../../stores/appStore';
 	import Icon from '../ui/Icon.svelte';
 	import { onDestroy } from 'svelte';
 
@@ -121,6 +129,68 @@
 	// this component and no sanitizer: a hostile string is not cleaned up, it simply never
 	// matches any token and comes out as the characters that were typed.
 	const richRuns = $derived(kind === 'richtext' || kind === 'scrollpanel' ? parseHudRichText(text) : []);
+
+	// ---- 21-F4: the DEBUG element -----------------------------------------------------
+	// A SAMPLER on a 500ms clock, not a $derived: half its sources are plain function
+	// calls with no store signal (gameElapsed, the collectible derivation, fps), and the
+	// layer is real DOM (the hudRuntime throttle rule). Expand/collapse is LOCAL $state —
+	// scaffolding you peek at, nothing replicates.
+	let debugOpen = $state(false);
+	let debugSeeded = $state(false);
+	/** @type {any} */
+	let debugInfo = $state(null);
+	let fpsFrames = 0;
+	let fpsAt = 0;
+	let fps = 0;
+	$effect(() => {
+		if (kind !== 'debug') return;
+		if (!debugSeeded) {
+			debugSeeded = true;
+			debugOpen = element?.compact === false;
+		}
+		let raf = requestAnimationFrame(function pump(t) {
+			fpsFrames++;
+			if (t - fpsAt >= 1000) {
+				fps = Math.round((fpsFrames * 1000) / (t - fpsAt || 1));
+				fpsFrames = 0;
+				fpsAt = t;
+			}
+			raf = requestAnimationFrame(pump);
+		});
+		const sample = () => {
+			const g = get(gameState);
+			const modes = get(peerPlayModes);
+			const users = /** @type {any[]} */ (get(userdata) ?? []);
+			/** @type {any} */
+			const peer = get(peers);
+			const myId = peer?.peer?.id ?? null;
+			let counts = { total: 0, collected: 0, left: 0 };
+			try {
+				counts = collectibleCountsFor(String(element?.variable || 'gems'));
+			} catch {}
+			debugInfo = {
+				level: get(currentLevel)?.name ?? '—',
+				state: g.state,
+				round: g.round,
+				elapsed: Math.round(gameElapsed()),
+				vars: { ...g.vars },
+				counts,
+				players: users.map((u, i) => ({
+					id: u[0],
+					name: u[1] || (i === 0 ? 'Me' : String(u[0] ?? '').slice(0, 6)),
+					mode: u[0] === myId || (i === 0 && !myId) ? myPlayMode() : modes[u[0]] === 'playing' ? 'playing' : 'editor',
+					me: u[0] === myId || (i === 0 && !myId)
+				})),
+				fps
+			};
+		};
+		sample();
+		const timer = setInterval(sample, 500);
+		return () => {
+			clearInterval(timer);
+			cancelAnimationFrame(raf);
+		};
+	});
 
 	// ---- 21-E7.6: the icon row / hotbar / radial ------------------------------------
 	const slotCount = $derived(Math.max(1, Math.min(20, Math.round(Number(element?.max ?? element?.slots ?? 5)))));
@@ -440,6 +510,46 @@
 	<div class="hud-el hud-map" style={boxStyle}>
 		<canvas class="hud-map-canvas" bind:this={mapEl}></canvas>
 	</div>
+{:else if kind === 'debug'}
+	<!-- 21-F4: the builder's readout. The pill opts INTO pointer events (the button rule)
+	     only to expand/collapse — a LOCAL flip; in the editor it stays as authored. -->
+	<button
+		class="hud-el hud-debug"
+		style={boxStyle}
+		tabindex={editor ? -1 : 0}
+		aria-expanded={debugOpen}
+		onclick={(e) => {
+			if (editor) return;
+			e.stopPropagation();
+			debugOpen = !debugOpen;
+		}}
+	>
+		{#if debugInfo}
+			<span class="hud-debug-head"
+				>{debugInfo.state} · r{debugInfo.round} · {debugInfo.elapsed}s · {debugInfo.counts.left}/{debugInfo.counts.total} left · {debugInfo.fps}fps</span
+			>
+			{#if debugOpen}
+				<span class="hud-debug-row">level: {debugInfo.level}</span>
+				<span class="hud-debug-row"
+					>vars: {Object.keys(debugInfo.vars).length
+						? Object.entries(debugInfo.vars)
+								.map(([k, v]) => k + '=' + v)
+								.join(' ')
+						: '—'}</span
+				>
+				<span class="hud-debug-row"
+					>collectibles ({String(element?.variable || 'gems')}): {debugInfo.counts.collected} collected, {debugInfo.counts.left} left of {debugInfo.counts.total}</span
+				>
+				{#each debugInfo.players as p (p.id ?? p.name)}
+					<span class="hud-debug-row"
+						>{p.me ? '● ' : '○ '}{p.name}<span class="hud-debug-chip" class:hud-debug-playing={p.mode === 'playing'}>{p.mode}</span></span
+					>
+				{/each}
+			{/if}
+		{:else}
+			<span class="hud-debug-head">debug</span>
+		{/if}
+	</button>
 {:else if kind === 'iconrow'}
 	<!-- hearts / ammo / keys: N repeats of one glyph off a number -->
 	<div class="hud-el hud-iconrow" style={boxStyle}>
@@ -609,6 +719,37 @@
 		overflow-x: hidden;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
+	}
+	/* ---- 21-F4 the debug pill ------------------------------------------------------ */
+	.hud-debug {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		width: 100%;
+		font-family: ui-monospace, monospace;
+		text-align: left;
+		cursor: pointer;
+		/* the button rule: the layer is pointer-events none, the pill opts in */
+		pointer-events: auto;
+		overflow: hidden;
+	}
+	.hud-debug-head {
+		white-space: nowrap;
+	}
+	.hud-debug-row {
+		white-space: nowrap;
+		opacity: 0.85;
+	}
+	.hud-debug-chip {
+		margin-left: 6px;
+		padding: 0 4px;
+		border-radius: 4px;
+		background: rgb(75 85 99 / 0.5);
+		font-size: 0.85em;
+	}
+	.hud-debug-playing {
+		background: rgb(34 197 94 / 0.35);
 	}
 	/* ---- 21-E7.6 the game pack ---------------------------------------------------- */
 	.hud-map {

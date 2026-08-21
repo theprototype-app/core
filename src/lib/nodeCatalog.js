@@ -167,6 +167,21 @@ export const nodeCatalog = [
 			// acts on it when the state enters `playing`, including a late joiner, which is
 			// what makes it the answer rather than a one-shot button action.
 			{ type: 'gamestart', label: 'Game Start', defaults: { camera: '', state: 'playing' } },
+			// 21-F4: LEVEL TRAVEL. Acts on the trigger's STAMP EDGE like Set Game State;
+			// every peer loads the level ITSELF (a peer missing the bytes pulls them
+			// first), the game state CARRIES across the hop, and the level is picked by
+			// Explorer content HASH — its own card (TravelNode) lists the Levels folder.
+			{ type: 'travel', label: 'Travel', defaults: { level: '', levelName: '' } },
+			// 21-F4: the group-travel gate. Wire a condition each PLAYER answers for
+			// themselves ("I am at the portal"); the node fires once EVERY peer in play
+			// answers yes. Editor peers are spectators and do not count.
+			{
+				type: 'allplayers',
+				label: 'All Players',
+				defaults: { pulse: 0.3 },
+				inputs: ['condition'],
+				inputLabels: { condition: 'condition - each player answers for themselves' }
+			},
 			// variables: the shared numbers a game keeps (score, lives, difficulty). They
 			// ride the same singleton, so there is one latest-wins rule for all game state.
 			{

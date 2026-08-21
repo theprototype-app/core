@@ -29,6 +29,8 @@
 		updateItemBytes
 	} from '$lib/explorer';
 	import { openTextEditor, openImagePreview, openModelPreview } from '$lib/fileWindows';
+	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
+	import { saveSceneAsLevel, newLevel, travelToLevel } from '$lib/levels';
 	import ModelPreview from './ModelPreview.svelte';
 	import {
 		packs,
@@ -402,7 +404,8 @@
 		audio: 'music',
 		text: 'file-text',
 		object: 'box',
-		prefab: 'boxes'
+		prefab: 'boxes',
+		scene: 'map' // 21-F4: a level (.tpscene)
 	};
 	// semantic icon colors (ui.css classes over the --icon-* theme tokens)
 	const KIND_COLORS: Record<string, string> = {
@@ -410,7 +413,8 @@
 		audio: 'ico-audio',
 		text: 'ico-doc',
 		object: 'ico-object',
-		prefab: 'ico-prefab'
+		prefab: 'ico-prefab',
+		scene: 'ico-prefab' // 21-F4: levels share the prefab tint
 	};
 
 	// folders as a flat indented tree, respecting expansion (106.6)
@@ -692,6 +696,17 @@
 			x: e.clientX,
 			y: e.clientY,
 			items: [
+				// 21-F4: a level loads LOCALLY from here (authoring convenience) — the
+				// travel NODE is how a game moves everyone together
+				...(item.kind === 'scene'
+					? [
+							{
+								label: 'Travel here (this screen)',
+								tooltip: 'Load this level locally — use a Travel node to move every player together',
+								action: () => travelToLevel(item.hash, item.name)
+							}
+						]
+					: []),
 				...(item.kind === 'text'
 					? [
 							{
@@ -730,7 +745,25 @@
 						{ label: '＋ Import pack (.zip)', action: () => packZipInput?.click() },
 						{ label: 'Load pack from URL', action: loadPackFromUrl }
 					]
-				: [{ label: 'New folder', action: () => startCreate($activeFolder ?? null) }]
+				: [
+						{ label: 'New folder', action: () => startCreate($activeFolder ?? null) },
+						// 21-F4: levels are ordinary content-hashed .tpscene items in a
+						// `Levels` folder — the travel node loads them by hash
+						{
+							label: 'Save scene as level…',
+							action: () => {
+								const name = prompt('Level name:', 'Level');
+								if (name) saveSceneAsLevel(name);
+							}
+						},
+						{
+							label: 'New scene…',
+							action: () => {
+								const name = prompt('Level name:', 'New level');
+								if (name) newLevel(name);
+							}
+						}
+					]
 		};
 	}
 	// P6: load a pack from a .zip URL (or a GitHub repo link -> codeload .zip). Remote

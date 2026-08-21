@@ -103,6 +103,12 @@ export const HUD_ACTIONS = [
 	// entry calls, so the two ways a game is reset are one function.
 	{ key: 'resetgame', label: 'Reset the game', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'menu', reset: true }, handle: 'trigger', hint: 'Back to the menu AND the round clock to zero — collectibles read un-collected again.' },
 	{ key: 'setvar', label: 'Set a variable', group: 'Game', role: 'press', node: 'setvariable', data: { name: 'score', op: 'add', value: 1 }, handle: 'trigger', hint: 'Add to, subtract from or set a shared number.' },
+	// 21-F4: LEVEL COMPLETE — travel to a level. The destination is the AUTHOR'S PICK
+	// on the Travel card, deliberately not a "next by folder order": the Explorer
+	// library is LOCAL, so two peers can hold different orders and a computed "next"
+	// would send them to different levels. A hash in the replicated graph is the only
+	// shared truth about where "next" is.
+	{ key: 'travel', label: 'Level complete — travel to a level', group: 'Game', role: 'press', node: 'travel', handle: 'trigger', hint: 'Everyone travels together, the game state carries — pick the destination on the Travel card.' },
 	{ key: 'camera', label: 'Look through a camera', group: 'Camera', role: 'press', node: 'setcamera', handle: 'trigger', hint: 'Moves each peer`s own view — nothing is sent, the press already was.' },
 	{ key: 'showscreen', label: 'Show a HUD screen', group: 'HUD', role: 'press', node: 'hudscreen', data: { action: 'show' }, handle: 'trigger' },
 	{ key: 'hidescreen', label: 'Hide a HUD screen', group: 'HUD', role: 'press', node: 'hudscreen', data: { action: 'hide' }, handle: 'trigger' },

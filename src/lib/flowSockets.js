@@ -64,6 +64,9 @@ const OUTPUT = {
 	delay: 'event',
 	sequence: 'event', // all four step handles; outputType is per-NODE, not per-handle
 	once: 'event',
+	// 21-F4: the group-travel gate pulses when every player answers yes — an event,
+	// so it wires into a Travel trigger (or anything else a pulse drives)
+	allplayers: 'event',
 	// 21-E6 the character controller. Only two of these produce a value: Move Speed
 	// reads the live speed and Move Input reads this peer's own WASD. Both of Move
 	// Input's handles are numbers, so ONE per-NODE entry covers them (the sequence
@@ -147,6 +150,10 @@ const INPUT = {
 	setlook: { trigger: 'event', camera: 'object', on: 'boolean' },
 	setvariable: { trigger: 'event', value: 'number' },
 	gamestart: { camera: 'object' },
+	// 21-F4: travel fires on its trigger edge; allplayers takes each player's own
+	// boolean answer (a Latch, a Gate, a Compare — anything true/false)
+	travel: { trigger: 'event' },
+	allplayers: { condition: 'boolean' },
 	// 21-E6 the character controller. `target` is the alternative to wiring the node
 	// into an Object Selector (velocity's precedent), and every range param keeps the
 	// numeric fallback, so only the EVENT and OBJECT handles need declaring here — an

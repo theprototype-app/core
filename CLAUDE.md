@@ -870,6 +870,51 @@ loadable play content. Everything a user does must be visible to connected peers
   `packTitles` override map applied in `loadPacks` — a DEFAULT pack's title is rebuilt
   from the index on every load, so an in-list edit would silently revert on reload.
   Suite: `scene-folders` (44).
+  **21-G2..G5 — PROJECTS, PER-PLAYER PROGRESS, CROSS-SCENE PRESENCE.**
+  `projectManifest.js` (G2a, a LEAF: stores + idb + isViewer/peers) = THE ONE MUTABLE
+  THING IN A PROJECT: `{scenes: {name -> {history[], pinned[]}}, assets[], changedAt}`,
+  latest-wins on a monotonic stamp, ONE normalize (unknown fields preserved), the
+  `manifest` message + `getproject` handshake reply, idb-persisted so a solo project
+  survives reload. History is APPEND-ONLY and restore-previous RE-APPENDS (the pointer
+  moves back, nothing is destroyed); `staleSceneHash` = the Explorer's amber update
+  dot; `keepableHashes` = newest 10 + pinned (pruning is LOCAL BYTES, never history);
+  editors publish, viewers never (inert without a plugin). G2b, THE REPORTED
+  disappearing-object BUG: travel-away AUTO-PUBLISHES the departing scene —
+  WRITER-ONLY (`sessionHost === null`; a .tpscene embeds a fresh uuid/createdAt/
+  thumbnail per save, so N peers saving identical content would mint N ghost hashes),
+  SIGNATURE-GATED (`sceneSignature` = the meaningful payload fields in fixed order,
+  volatiles + the game field excluded — the zip hash cannot tell idle from edited;
+  proven stable across a real load->serialize round trip: idle hops mint NOTHING) and
+  NAMED-ONLY (an unnamed scene is not opted in). `travelToScene(name)` resolves the
+  manifest pointer AT FIRE TIME — deterministic across peers, which no local folder
+  order is; the travel card lists project scenes (latest) and library files (frozen
+  hash) as two optgroups making two different promises. `projectFile.js` (G3):
+  the `.tp` = project.json (PROJECT_FORMAT 1, V4-gated with a DIALOG — an import is
+  one person at a file dialog, unlike travel) + scenes/<hash>.tpscene (kept versions)
+  + assets; a pruned hash stays in history and is COUNTED, never silently dropped;
+  import furnishes the library + manifest and LOADS NOTHING. `peerVars.js` (G4, a
+  leaf): PEER-OWNED variables — `peervars {peerId, vars, at}`, whole-map, OWNER-ONLY
+  writer (immune to the setvariable-add race by construction: one writer per row),
+  monotonic per-sender stamp, getmodulestate reply, dropped only on DISCONNECT (a row
+  survives its owner's Esc — a different lifetime from playmode, so a different
+  message); NO automatic round reset (vars already outlive rounds; a game authors
+  `On Game State -> Set Variable scope:player set 0`, each peer zeroing its OWN row).
+  `perPlayer` chains: ONE helper (`replicatesPulse`) gates every fire* site, so a
+  marked click stays in this peer's log and latch/visibility/count are per-peer free
+  — the gem hides only for its collector. `setvariable` gains `scope: shared|player`;
+  `peervariable` (mine/sum/max/peer) + the `leaderboard` sink node (derived rows,
+  roster names, deterministic id tie-break); hudActions gains the `writes` role.
+  G5 (F7): `cloudHooks.scenePresence` — the rolesInfo bridge one domain over; the
+  rooms plugin publishes the project's OTHER rooms `{id, name, scene, hostPeerId,
+  members: [{peerId, name, mode}]}` + an `invite` transport; Users renders per-room
+  groups with mode chips, Watch DISABLED with the reason (it cannot reach outside the
+  mesh), Invite only when the plugin provides it — and the popover host now ALSO
+  opens on cross-scene presence alone (being alone in your scene is when "where is
+  everyone" matters). cloudApi v2.4: setScenePresence/currentScene/playModes/
+  peerRoster. Plugin half (cloud repo): rooms records carry {scene, members, invites}
+  (PB fields in pocketbase-setup.md), a 30s presence POLL, invites riding MY room
+  record (self-expiring ~2min; Join = connectToPeer — the ordinary join sync lands
+  them in the scene). Plan: cloud `plans-core/roadmap-21g-projects-presence.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
   serialized tree — a save taken mid-session wrote it into the file as a
@@ -2990,6 +3035,33 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-21, latest): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
+  PER-PLAYER PROGRESS: G1-G6 EXECUTED same-day off the 21-F merge (release/next
+  @fdfbe39); PRs open, NOT merged without the user's word.** The user's four fork
+  answers locked in the plan (per-player mode + peer-owned vars; recipes into the
+  node editor's Game category with the object Game submenu REMOVED; the folder is
+  `Scenes` with kind-based discovery; file sharing stays manifest-scoped). Lanes:
+  **feat/21g-editor** (G1 `554128c`, Opus — Scenes rename, Download, the pack-ROW
+  rename root cause, recipe re-homing incl. the empty-flow-overlay contextmenu
+  forward, + a pre-existing fix: `hudrows` missing from CORE_NODE_TYPES, red on
+  release/next) · **feat/21g-manifest** (G2a `06fec6c` the manifest core · G2b the
+  travel-away auto-save/travel-by-name/update dot/prune — THE REPORTED
+  disappearing-object bug dead, idle hops mint nothing · G3 `a0e2455` the .tp file,
+  Opus · G5-core `38277b4` + peerRoster — the scenePresence bridge · G6 game-loop-v4)
+  · **feat/21g-peervars** (G4 `f5934d7`, Opus — peerVars/perPlayer/leaderboard),
+  merged into the manifest lane (peerHandler + App.svelte unions; the count
+  assertion caught a POSITIONAL miss — the destructure is positional, a missing
+  binding shifts every later one). Cloud repo: the rooms plugin publishes
+  {scene, members, invites} + the 30s presence poll (`bd95237`); **USER must add PB
+  fields rooms.scene/members/invites** (pocketbase-setup.md). Suites:
+  project-manifest(26) project-file(48) peer-variables(74) scene-folders(44)
+  scene-presence(11) game-loop-v4(18, first-run green). Baseline 385/62 at every
+  commit. KNOWN: the setvariable-add race flaked collectibles-v2 once (75/76,
+  76/76 twice on re-run) — the standing ticket; G4's peer-owned rows are the fix
+  for the per-player case. OWED on-device: the project round-trip feel, cross-scene
+  presence + invites on real cloud rooms (after the PB fields land), a 3+ player
+  leaderboard, the Scenes/Download/recipe UI in non-dark themes. Plan + as-built:
+  cloud `plans-core/roadmap-21g-projects-presence.md`.
 - Status (2026-08-21, later): **ROADMAP 21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR
   POLISH: F1-F6 EXECUTED across three lanes; F7 (cross-scene presence on the rooms
   layer) deliberately slipped to 21-G per the plan.** Baseline re-measured 385/62 on a

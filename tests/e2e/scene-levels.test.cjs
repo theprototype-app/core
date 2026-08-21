@@ -198,7 +198,192 @@ h.run(async () => {
 	);
 	h.check((await sessionCount(B)) === bSessionsBefore, 'and B stashed no backup either');
 
-	h.check((await h.pageErrors(A)).length === 0, `no page errors on A (${JSON.stringify(await h.pageErrors(A))})`);
-	h.check((await h.pageErrors(B)).length === 0, `no page errors on B (${JSON.stringify(await h.pageErrors(B))})`);
+	// =====================================================================
+	// 5. THE TRAVEL NODE: one replicated pulse moves EVERYONE
+	// =====================================================================
+	// A is on Level Three's content, B on Level One's — the node must converge them.
+	const built = await A.page.evaluate(
+		({ hash, name }) => {
+			const s = window.__stores;
+			let p;
+			s.peers.subscribe((v) => (p = v))();
+			const mk = (type, data, x) => ({
+				id: crypto.randomUUID(),
+				type,
+				position: { x, y: 40 },
+				data: { label: type, type, ...data },
+				class: 'w-[150px]'
+			});
+			const click = mk('onclick', {}, 40);
+			const travel = mk('travel', { level: hash, levelName: name }, 260);
+			for (const node of [click, travel]) {
+				s.nodesHandler.createFlowNode(node, s.SCENE_GRAPH);
+				if (p) p.send({ type: 'nodecreate', node: s.nodesHandler.serializeNode(node), graphId: s.SCENE_GRAPH });
+			}
+			const edge = { id: 'e-' + click.id + '-' + travel.id + '.trigger', source: click.id, target: travel.id, targetHandle: 'trigger' };
+			s.nodesHandler.createFlowEdge(edge, s.SCENE_GRAPH);
+			if (p) p.send({ type: 'edgecreate', edge: s.nodesHandler.serializeEdge(edge), graphId: s.SCENE_GRAPH });
+			return { click: click.id, travel: travel.id };
+		},
+		{ hash: savedThree.hash, name: 'Level Three' }
+	);
+	// the peer must HOLD the graph before the pulse (flowNodes.set does not broadcast —
+	// the documented slow-raily nodesync trap — so wait on the sends we just made)
+	await h.eventually(
+		() => B.page.evaluate((id) => window.__stores.allNodes().some((n) => n.id === id), built.travel),
+		(v) => v === true,
+		'premise: the peer holds the travel node'
+	);
+	// SETTLE past the stale-stamp cutoff: B's actionSeenAt records the node on its next
+	// TICK, milliseconds after the premise above — a stamp minted inside that window is
+	// correctly refused (measured: stamp 21618.485 vs seenAt 21618.489). A human press
+	// comes seconds after wiring; the guard is doing its 21-E job, so the suite waits.
+	await A.page.waitForTimeout(600);
+	await A.page.evaluate((id) => window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true), built.click);
+	await h.eventually(
+		() => childUuids(B),
+		(ids) => JSON.stringify(ids) === JSON.stringify([...three].sort()),
+		'the pulse replicated and B loaded the level ITSELF (no scene bytes on the wire)',
+		30000
+	);
+	h.check(
+		JSON.stringify(await childUuids(A)) === JSON.stringify([...three].sort()),
+		'A landed on the same level from the same stamp'
+	);
+	h.check((await gstate(B)).vars.gems === 7, `fork 3 on the peer too: B's carried score survived the hop (${(await gstate(B)).vars.gems})`);
+
+	// =====================================================================
+	// 6. A LATE JOINER lands in the CURRENT level with the carried state
+	// =====================================================================
+	const C = await h.setupPage(browser, 'C');
+	// the JOINER dials — A's Connect pill is already in its connected state and has no
+	// dial input to fill
+	await h.connect(C, A);
+	await h.eventually(
+		() => childUuids(C),
+		(ids) => JSON.stringify(ids) === JSON.stringify([...three].sort()),
+		'the late joiner receives the current level through the ordinary handshake',
+		30000
+	);
+	const cState = await gstate(C);
+	const aState = await gstate(A);
+	h.check(
+		cState.state === aState.state && cState.round === aState.round && cState.vars.gems === 7,
+		`and the carried game state with it (${cState.state}, round ${cState.round}, gems ${cState.vars.gems})`
+	);
+
+	// =====================================================================
+	// 7. ALLPLAYERS: the group gate — every peer IN PLAY answers for themselves
+	// =====================================================================
+	// A and B play; C stays in the EDITOR and must not block (a spectator is not a
+	// player). Each player's answer is a LOCAL latch (replicate:false pulses), which is
+	// exactly the per-peer shape the condition input means.
+	const gate = await A.page.evaluate(() => {
+		const s = window.__stores;
+		let p;
+		s.peers.subscribe((v) => (p = v))();
+		const mk = (type, data, x, y) => ({
+			id: crypto.randomUUID(),
+			type,
+			position: { x, y },
+			data: { label: type, type, ...data },
+			class: 'w-[150px]'
+		});
+		// a latch is set/reset through edges FROM a pulsed source, so the per-peer answer
+		// is two locally-pulsed buttons — the same graph a real ready-up menu builds
+		const yes = mk('onclick', {}, 40, 160);
+		const no = mk('onclick', {}, 40, 280);
+		const ready = mk('latch', {}, 260, 220);
+		const all = mk('allplayers', {}, 480, 220);
+		for (const node of [yes, no, ready, all]) {
+			s.nodesHandler.createFlowNode(node, s.SCENE_GRAPH);
+			if (p) p.send({ type: 'nodecreate', node: s.nodesHandler.serializeNode(node), graphId: s.SCENE_GRAPH });
+		}
+		const edges = [
+			{ id: 'e-' + yes.id + '-' + ready.id + '.set', source: yes.id, target: ready.id, targetHandle: 'set' },
+			{ id: 'e-' + no.id + '-' + ready.id + '.reset', source: no.id, target: ready.id, targetHandle: 'reset' },
+			{ id: 'e-' + ready.id + '-' + all.id + '.condition', source: ready.id, target: all.id, targetHandle: 'condition' }
+		];
+		for (const edge of edges) {
+			s.nodesHandler.createFlowEdge(edge, s.SCENE_GRAPH);
+			if (p) p.send({ type: 'edgecreate', edge: s.nodesHandler.serializeEdge(edge), graphId: s.SCENE_GRAPH });
+		}
+		return { yes: yes.id, no: no.id, all: all.id };
+	});
+	await h.eventually(
+		() => B.page.evaluate((id) => window.__stores.allNodes().some((n) => n.id === id), gate.all),
+		(v) => v === true,
+		'premise: the peer holds the gate'
+	);
+	const firedAt = (peer) =>
+		peer.page.evaluate((id) => {
+			let t;
+			window.__stores.flowTriggers.subscribe((v) => (t = v))();
+			return t[id]?.lastT ?? null;
+		}, gate.all);
+	// LOCAL pulses (replicate false) — this player's own answer, nobody else's
+	const setReady = (peer, on) =>
+		peer.page.evaluate(
+			({ id }) => window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, false),
+			{ id: on ? gate.yes : gate.no }
+		);
+	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.waitForTimeout(900);
+	await setReady(A, true);
+	await A.page.waitForTimeout(900);
+	h.check((await firedAt(A)) === null, 'one ready player out of two fires NOTHING');
+	await setReady(B, true);
+	await h.eventually(() => firedAt(A), (t) => typeof t === 'number', 'both ready — the gate fires on A', 15000);
+	const t1 = await firedAt(A);
+	await h.eventually(() => firedAt(B), (t) => typeof t === 'number', 'and on B, derived from the same replicated verdicts', 15000);
+	h.check(true, `C sat in the editor the whole time and did not block (spectators are not players)`);
+	// falling then rising fires AGAIN (an edge, not a level)
+	await setReady(A, false);
+	await A.page.waitForTimeout(900);
+	await setReady(A, true);
+	await h.eventually(() => firedAt(A), (t) => typeof t === 'number' && t !== t1, 're-satisfying the gate fires a fresh edge', 15000);
+	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(null));
+
+	// =====================================================================
+	// 8. THE DEBUG ELEMENT renders the truth
+	// =====================================================================
+	// settle the shared state FIRST: everybody just left play, so F3's abandon watch is
+	// ~10s from writing menu itself — a race that would land mid-assertion. resetGame
+	// keeps vars (gems stays 7), which is also what the expanded pill asserts.
+	await A.page.evaluate(() => window.__stores.gameState.resetGame());
+	await A.page.waitForTimeout(400);
+	await A.page.evaluate(() => {
+		window.__stores.hudDocs.setHudDocFor('scene', {
+			screens: [
+				{
+					id: 'main',
+					name: 'Main',
+					elements: [
+						{ id: 'dbg', kind: 'debug', anchor: 'top-left', x: 12, y: 12, w: 280, h: 26, compact: true, variable: 'gems' }
+					]
+				}
+			],
+			active: 'main'
+		});
+	});
+	await A.page.waitForTimeout(1200); // two sampler beats
+	const pill = await A.page.evaluate(() => document.querySelector('.hud-debug')?.textContent ?? '');
+	const liveA = await gstate(A);
+	h.check(pill.includes(liveA.state) && pill.includes('r' + liveA.round), `the pill reads the live state (${pill.trim()})`);
+	h.check(/\d+fps/.test(pill), 'and a real fps number');
+	await A.page.click('.hud-debug');
+	await A.page.waitForTimeout(800);
+	const expanded = await A.page.evaluate(() => document.querySelector('.hud-debug')?.textContent ?? '');
+	h.check(expanded.includes('gems=7'), `expanding shows the vars map (${expanded.includes('gems=7')})`);
+	h.check(expanded.includes('Level Three'), 'and the level name');
+	h.check(
+		(expanded.match(/editor|playing/g) || []).length >= 2,
+		'and a mode chip per player'
+	);
+
+	for (const p of [A, B, C]) {
+		const errs = await h.pageErrors(p);
+		h.check(errs.length === 0, `no page errors on ${p === A ? 'A' : p === B ? 'B' : 'C'} (${JSON.stringify(errs)})`);
+	}
 	await h.finish(browser);
 });

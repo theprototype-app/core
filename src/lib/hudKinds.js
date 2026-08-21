@@ -213,6 +213,26 @@ export const HUD_KIND_DEFS = [
 		],
 		style: [STYLE.color, STYLE.opacity]
 	},
+	{
+		// 21-F4: the builder's readout — everything a game session knows about itself,
+		// in one place: level, game state + round + elapsed, the vars map, collectibles
+		// left/total, who is here and whether they are playing, fps. A collapsed PILL by
+		// default (click to expand, a LOCAL flip that replicates nothing), because it is
+		// scaffolding you leave on a screen while building, not part of the game's face.
+		key: 'debug',
+		label: 'Debug',
+		group: 'Display',
+		icon: 'bug',
+		defaultSize: { w: 250, h: 26 },
+		summary: 'Level, game state, round, variables, collectibles, players and fps — a pill that expands on click.',
+		defaults: { compact: true, variable: 'gems' },
+		styleDefaults: { size: 11, bg: 'rgb(10 12 16 / 0.85)', border: 'rgb(75 85 99 / 0.7)', radius: 6 },
+		fields: [
+			{ key: 'compact', kind: 'toggle', label: 'start collapsed' },
+			{ key: 'variable', kind: 'text', label: 'collectible variable', placeholder: 'gems', hint: 'Whose left/total counts to show.' }
+		],
+		style: [STYLE.size, STYLE.color, STYLE.bg, STYLE.border, STYLE.radius, STYLE.opacity]
+	},
 	// ---- 21-D4: the INPUTS. A HUD with no input cannot be a settings menu, and the four
 	// below are what a menu is made of. Each HOLDS A VALUE, which is the new thing: an
 	// element that is read as well as rendered.

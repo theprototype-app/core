@@ -93,7 +93,12 @@ let sentMode = 'editor';
 function broadcast(mode) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer?.peer?.id) peer.send({ type: 'playmode', peerId: peer.peer.id, mode });
+	if (!peer?.peer?.id) return;
+	// 21-F4: the condition verdicts ride the SAME message, additively — absent when the
+	// map is empty, so an F3-only peer's messages are byte-identical and an F3-only
+	// READER simply ignores a field it never looks at.
+	const conds = mode === 'playing' && Object.keys(myConds).length ? { conds: { ...myConds } } : {};
+	peer.send({ type: 'playmode', peerId: peer.peer.id, mode, ...conds });
 }
 
 /** Publish our mode when it CHANGES. @param {boolean} [force] send even if unchanged */
@@ -132,6 +137,17 @@ export function applyRemotePlayMode(data) {
 		}
 		return { ...map, [data.peerId]: mode };
 	});
+	// 21-F4: the per-node condition verdicts, keyed by peer. Leaving play drops them —
+	// a peer who is not playing has no verdicts, the same absence rule as the mode.
+	peerPlayConds.update((map) => {
+		if (mode === 'editor') {
+			if (!(data.peerId in map)) return map;
+			const next = { ...map };
+			delete next[data.peerId];
+			return next;
+		}
+		return { ...map, [data.peerId]: { ...(data.conds ?? {}) } };
+	});
 	return true;
 }
 
@@ -143,6 +159,72 @@ export function dropPeerPlayMode(peerId) {
 		delete next[peerId];
 		return next;
 	});
+	peerPlayConds.update((map) => {
+		if (!(peerId in map)) return map;
+		const next = { ...map };
+		delete next[peerId];
+		return next;
+	});
+}
+
+// ---- 21-F4: per-node CONDITION verdicts (the `allplayers` node) -------------------
+//
+// "All peers in play satisfy a wired condition" needs each player's OWN answer on the
+// wire — a flow VALUE is never sent (golden rule 8), but a player's verdict about
+// THEMSELVES ("I am at the portal") is presence, not a value: it rides the same
+// `playmode` message additively, latest-wins per peer, dropped with the mode. Every
+// peer then derives "everyone is ready" from the same replicated map and fires the
+// node LOCALLY (the ongamestate pattern) — no new message type, nothing to converge.
+
+/** REMOTE peers' verdicts, `peerId -> {nodeId -> boolean}`. Absent peer = not playing.
+ * @type {import('svelte/store').Writable<Record<string, Record<string, boolean>>>} */
+export const peerPlayConds = writable({});
+
+/** OUR verdicts, `nodeId -> boolean` — module-local, broadcast with the mode.
+ * @type {Record<string, boolean>} */
+let myConds = {};
+
+/**
+ * Record this player's verdict for one allplayers node, broadcasting on CHANGE only
+ * (the sentMode rule, per node). flowRuntime calls this every tick; the wire sees an
+ * edge, not a stream.
+ * @param {string} nodeId @param {boolean} verdict
+ */
+export function publishPlayCondition(nodeId, verdict) {
+	const held = myConds[nodeId];
+	if (held === verdict) return false;
+	myConds[nodeId] = verdict;
+	if (myPlayMode() === 'playing') broadcast('playing');
+	return true;
+}
+
+/** Forget verdicts for nodes that no longer exist (the actionSeenAt sweep, one map
+ * over). @param {Set<string>} liveIds */
+export function sweepPlayConditions(liveIds) {
+	for (const id of Object.keys(myConds)) if (!liveIds.has(id)) delete myConds[id];
+}
+
+/**
+ * ARE ALL PLAYERS READY? True only when somebody is actually playing, and every playing
+ * peer — me included when I am one — answers true for this node. An editor peer is not
+ * a player and does not count (fork 4's presence rule): a spectator in the editor must
+ * not hold four players at a portal forever.
+ * @param {string} nodeId @param {boolean} myVerdict this peer's own answer
+ */
+export function allPlayersSatisfied(nodeId, myVerdict) {
+	const conds = get(peerPlayConds);
+	const modes = get(peerPlayModes);
+	let players = 0;
+	if (myPlayMode() === 'playing') {
+		players++;
+		if (!myVerdict) return false;
+	}
+	for (const id of livePeers()) {
+		if (modes[id] !== 'playing') continue;
+		players++;
+		if (conds[id]?.[nodeId] !== true) return false;
+	}
+	return players > 0;
 }
 
 // ---- THE ABANDON WATCH ----------------------------------------------------------

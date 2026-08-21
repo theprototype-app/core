@@ -231,6 +231,14 @@ let postRef = null;
 /** primed too, only to READ which camera is active — lookThroughCamera keeps its own
  * per-call import and its success-only latch, which must not be disturbed. @type {any} */
 let previewRef = null;
+/** 21-F4: levels.js, PRIMED — it imports sessions.js, which sits beside the
+ * history-family serializers, so a static edge from here would close the TDZ cycle.
+ * @type {any} */
+let levelsRef = null;
+/** 21-F4: gamePresence, primed for symmetry with the rule above (it is store-only
+ * today, but it reaches peerHandler's collaborators through appStore and the primed
+ * shape is what every optional runtime dependency here uses). @type {any} */
+let presenceRef = null;
 /** the Set Look explain-once flag: a node that cannot take effect says so ONCE, not
  * on every keypress (the physics-not-running toast precedent above) */
 let lookSilentToasted = false;
@@ -730,6 +738,9 @@ function hudTimerRemaining(node, data, time, ctx) {
 // (and re-stamp startedAt) sixty times a second.
 /** node id -> the stamp we last acted on @type {Map<string, number>} */
 const gameActed = new Map();
+/** 21-F4: each allplayers gate's last derived answer, for the rising edge.
+ * @type {Map<string, boolean>} */
+const allplayersWas = new Map();
 /** the game state we last SAW, so `ongamestate` can detect a transition @type {string} */
 let lastGameState = '';
 /** the camera a `gamestart`/`setcamera` node last pointed us at, so we do not re-enter it
@@ -861,7 +872,7 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook')
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel')
 			continue;
 		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
@@ -887,6 +898,17 @@ function updateGameNodes(time, ctx) {
 			// byte-identical.
 			if (data.reset) resetGame();
 			else setGameState(String(data.state ?? 'playing'), { outcome: String(data.outcome ?? '') });
+		} else if (type === 'travel') {
+			// 21-F4: LEVEL TRAVEL — every peer loads the level ITSELF from the replicated
+			// stamp (the deterministic model; the setcamera reasoning one scene over): the
+			// apply is local and silent, a peer missing the bytes pulls-then-loads inside
+			// travelToLevel, and the carried game state is re-asserted there. This branch
+			// sits inside the actionSeenAt family ON PURPOSE (seeActionNode/staleTrigger
+			// above): a fresh Travel node adopting a stale stamp would load a level on
+			// CONNECT, the exact 21-E gotcha. A double-fire is self-limiting — the load
+			// REPLACES the graph that contains this node, so a second stamp finds no node.
+			const hash = typeof data.level === 'string' ? data.level : '';
+			if (hash && levelsRef) levelsRef.travelToLevel(hash, String(data.levelName ?? ''));
 		} else if (type === 'setcamera') {
 			const uuid = typeof data.camera === 'string' ? data.camera : '';
 			if (uuid) lookThroughCamera(uuid);
@@ -928,6 +950,30 @@ function updateGameNodes(time, ctx) {
 	}
 	for (const id of [...gameActed.keys()])
 		if (!nodes.some((/** @type {any} */ n) => n.id === id)) gameActed.delete(id);
+
+	// 1b. 21-F4 ALLPLAYERS — the group-travel gate. Each peer evaluates the wired
+	// condition for ITSELF (my answer about my player), publishes the verdict through
+	// the presence channel ON CHANGE, and derives "everyone in play says yes" from the
+	// same replicated map every other peer holds — so the node fires LOCALLY on the
+	// rising edge (the ongamestate pattern: replicate false, every peer reaches the
+	// same edge itself). Editor peers are spectators and do not count; nobody playing
+	// means nobody is ready.
+	if (presenceRef) {
+		/** @type {Set<string>} */ const liveGates = new Set();
+		for (const node of nodes) {
+			if (node.type !== 'allplayers') continue;
+			liveGates.add(node.id);
+			const data = resolveInputs(node, nodes, edges, time, ctx);
+			const mine = !!data.condition;
+			presenceRef.publishPlayCondition(node.id, mine);
+			const all = presenceRef.allPlayersSatisfied(node.id, mine);
+			const was = allplayersWas.get(node.id) === true;
+			allplayersWas.set(node.id, all);
+			if (all && !was) applyNodeTrigger(node.id, syncedNow(), false);
+		}
+		presenceRef.sweepPlayConditions(liveGates);
+		for (const id of [...allplayersWas.keys()]) if (!liveGates.has(id)) allplayersWas.delete(id);
+	}
 
 	// 2. the TRANSITION: pulse On Game State, and let Game Start pick the camera. Both
 	// are LOCAL reactions to REPLICATED state, which is why neither sends anything.
@@ -1619,6 +1665,23 @@ function collectibleStats(variable, allNodes, allEdges, time, seen, ctx) {
 		else left++;
 	}
 	return { total: latches.length, collected, left };
+}
+
+/**
+ * 21-F4: the debug HUD element's read — the SAME derivation the collectcount node
+ * uses (one implementation, two consumers, the registry rule), with the runtime's
+ * own graph and clock supplied. A latch eval needs only the trigger log for ctx.
+ * @param {string} variable @returns {{total: number, collected: number, left: number}}
+ */
+export function collectibleCountsFor(variable) {
+	return collectibleStats(
+		String(variable || 'gems'),
+		nodes,
+		edges,
+		syncedNow(),
+		new Set(),
+		{ triggers: get(flowTriggers) }
+	);
 }
 
 /**
@@ -3018,6 +3081,9 @@ export function startFlowRuntime() {
 	// 21-E6: possess, for the Possess Object / Camera Follow nodes (see the TDZ note
 	// beside its ref above)
 	import('./possess').then((m) => (possessRef = m));
+	// 21-F4: the travel node's loader + the allplayers verdict channel
+	import('./levels').then((m) => (levelsRef = m));
+	import('./gamePresence').then((m) => (presenceRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

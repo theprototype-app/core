@@ -154,3 +154,18 @@ export const CLOUD_HOOKS_VERSION = 2;
  * Settings ▸ About renders it as a "Cloud plugin x.y.z" row. Null without a plugin.
  * @type {import('svelte/store').Writable<{name: string, version: string} | null>} */
 export const cloudPluginInfo = writable(null);
+
+/**
+ * 21-G5 (F7): CROSS-SCENE PRESENCE, the rolesInfo-bridge shape one domain over. The
+ * rooms plugin publishes who is in the project's OTHER rooms/scenes and core renders
+ * it in the Users popover — chips, a Watch that says WHY it cannot reach them (a peer
+ * outside your mesh is unreachable by design), and an Invite whose transport belongs
+ * entirely to the plugin. NULL without a plugin, and every reader treats null as
+ * "render nothing" — the OSS build is byte-identical (the open-core rule).
+ *
+ * Shape (loose on purpose; core reads defensively):
+ *   { myRoomId: string|null,
+ *     rooms: [{ id, name, scene, hostPeerId, members: [{peerId, name, mode}] }],
+ *     invite?: (peerId, room) => void }
+ * @type {import('svelte/store').Writable<any>} */
+export const scenePresence = writable(null);

@@ -244,7 +244,6 @@
 		const canvas = mapEl;
 		if (kind !== 'minimap' || !canvas) return;
 		const el = element;
-		const tint = paint(style.color, '#4ade80');
 		const tick = () => {
 			// the canvas is laid out by CSS; match its backing store to its box so the plot is
 			// not stretched (and so a resized element redraws at the right scale)
@@ -252,7 +251,10 @@
 			const h = Math.max(1, Math.round(canvas.clientHeight));
 			if (canvas.width !== w) canvas.width = w;
 			if (canvas.height !== h) canvas.height = h;
-			drawHudMinimap(canvas, el, tint.startsWith('var(') ? '#4ade80' : tint);
+			// F5: the colour rule lives in hudMinimap — a canvas cannot take a `var()` chain,
+			// so the token resolution has to happen there anyway, and splitting it left the
+			// self dot on a hardcoded green whenever the authored colour was a token.
+			drawHudMinimap(canvas, el);
 		};
 		tick();
 		const timer = setInterval(tick, MINIMAP_REFRESH_MS);

@@ -42,6 +42,37 @@ async function boardPoint(page, fx, fy) {
 	);
 }
 
+/** every VISIBLE context-menu row label (a row's own label span, never its submenu's) */
+async function menuLabels(page) {
+	return page.evaluate(() =>
+		[...document.querySelectorAll('[role="menuitem"]')]
+			.map((el) => (el.querySelector(':scope > span > span.flex-1')?.textContent ?? '').trim())
+			.filter(Boolean)
+	);
+}
+
+/** hover a context-menu row with a REAL mouse and wait out the 120ms open intent —
+ * a submenu opens on mouseenter and nothing else, so this is the only honest path. */
+async function hoverMenuRow(page, label) {
+	const at = await page.evaluate((want) => {
+		const row = [...document.querySelectorAll('[role="menuitem"]')].find(
+			(el) => (el.querySelector(':scope > span > span.flex-1')?.textContent ?? '').trim() === want
+		);
+		if (!row) return null;
+		const r = row.getBoundingClientRect();
+		return { x: Math.round(r.x + Math.min(28, r.width / 2)), y: Math.round(r.y + r.height / 2) };
+	}, label);
+	if (!at) return false;
+	await page.mouse.move(at.x, at.y);
+	await page.waitForTimeout(450);
+	return page.evaluate((want) => {
+		const row = [...document.querySelectorAll('[role="menuitem"]')].find(
+			(el) => (el.querySelector(':scope > span > span.flex-1')?.textContent ?? '').trim() === want
+		);
+		return !!row && row.classList.contains('ctx-open');
+	}, label);
+}
+
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
@@ -185,23 +216,28 @@ h.run(async () => {
 	const menuPt = await boardPoint(page, 0.22, 0.28);
 	await page.mouse.click(menuPt.x, menuPt.y, { button: 'right' });
 	await page.waitForTimeout(700);
-	const menuRows = await page.evaluate(() =>
-		[...document.querySelectorAll('[role="menu"] *')]
-			.filter((el) => el.children.length === 0)
-			.map((el) => (el.textContent ?? '').trim())
-			.filter(Boolean)
-	);
-	h.check(menuRows.length > 0, `premise: the Add menu is open (${menuRows.length} rows)`);
-	// LABELS, not registry keys: 'Text field' rather than 'textfield'
+	// 21-F1 CATEGORIZED the Add menu, so the kinds live one level deeper: Add ▸ <group> ▸
+	// <kind>. Hovered with a REAL mouse, because that is the only way a submenu opens.
+	const topRows = await menuLabels(page);
+	h.check(topRows.includes('Add'), `premise: the artboard menu is open with an Add submenu (${topRows.join(', ')})`);
+	h.check(await hoverMenuRow(page, 'Add'), 'hovering Add opens its submenu');
+	const groupRows = await menuLabels(page);
 	h.check(
-		menuRows.includes('Text field') && !menuRows.includes('textfield'),
-		`the menu shows the kind's own LABEL, not its key (has "Text field": ${menuRows.includes('Text field')}, has "textfield": ${menuRows.includes('textfield')})`
+		groupRows.includes('Display') && groupRows.includes('Input'),
+		`and it is grouped by the registry's palette groups (${groupRows.join(', ')})`
+	);
+	h.check(await hoverMenuRow(page, 'Display'), 'hovering a group opens its kinds');
+	const kindRows = await menuLabels(page);
+	// LABELS, not registry keys: 'Rich text' rather than 'richtext'
+	h.check(
+		kindRows.includes('Rich text') && !kindRows.includes('richtext'),
+		`the menu shows the kind's own LABEL, not its key (has "Rich text": ${kindRows.includes('Rich text')}, has "richtext": ${kindRows.includes('richtext')})`
 	);
 	await page.evaluate(() => {
-		const row = [...document.querySelectorAll('[role="menu"] *')].find(
-			(el) => el.children.length === 0 && (el.textContent ?? '').trim() === 'Crosshair'
+		const row = [...document.querySelectorAll('[role="menuitem"]')].find(
+			(el) => (el.querySelector('span > span.flex-1')?.textContent ?? '').trim() === 'Crosshair'
 		);
-		row?.click();
+		/** @type {any} */ (row)?.click();
 	});
 	await page.waitForTimeout(700);
 	const fromMenu = await page.evaluate((pt) => {

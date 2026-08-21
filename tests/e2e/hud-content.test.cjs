@@ -733,6 +733,206 @@ h.run(async () => {
 	h.check(packActions.bound, 'and a HUD Rows node counts as WIRED, so a filled list is not badged dead');
 
 	// =====================================================================
+	// 7b. 21-F5 — MINIMAP v2: the colour RULE and the FACING math
+	// =====================================================================
+	// Two things could pass vacuously here, so neither is asserted by eyeballing a hex.
+	//
+	// * THE COLOUR. The rule is "self = the accent, every other peer = their peerColor",
+	//   and what makes it a rule rather than a coincidence is that it is ONE function every
+	//   screen calls. Section 12 proves the cross-peer half on two real peers; here the
+	//   local half is proven by the COUNTERFACTUAL — self must NOT come out as
+	//   `peerColor(myId)`, which is what a "just use peerColor for everyone" fix would give.
+	// * THE FACING. A 90-degree error is invisible on a symmetric scene, so the angle is
+	//   compared against one computed IN-TEST from the stated convention (canvas +x = world
+	//   +x, canvas +y = world +z, so the rotation is atan2(fz, fx) with no flip), and then
+	//   against the two absolute readings that convention has to produce: a heading of
+	//   world +Z points DOWN the screen and world -X points LEFT.
+	const facingMath = await page.evaluate(() => {
+		const M = window.__stores.hudMinimap;
+		const THREE = window.__stores.THREE;
+		// four yaws, each read two ways: through the module, and re-derived here
+		const cases = [0, Math.PI / 2, Math.PI, -Math.PI / 2].map((yaw) => {
+			const object = new THREE.Object3D();
+			object.rotation.set(0, yaw, 0);
+			object.updateMatrixWorld(true);
+			// a camera looks down its own -Z; that vector in world space is the heading
+			const f = new THREE.Vector3(0, 0, -1).applyQuaternion(object.quaternion);
+			return { yaw, got: M.mapAngleOf(object), want: Math.atan2(f.z, f.x), fx: f.x, fz: f.z };
+		});
+		// straight down has no heading on a top-down map
+		const down = new THREE.Object3D();
+		down.rotation.set(-Math.PI / 2, 0, 0);
+		return {
+			cases,
+			straightDown: M.mapAngleOf(down),
+			// the two absolute readings the convention must produce
+			plusZ: M.facingAngle(0, 1),
+			minusX: M.facingAngle(-1, 0)
+		};
+	});
+	for (const c of facingMath.cases)
+		h.check(
+			c.got !== null && Math.abs(c.got - c.want) < 1e-6,
+			`yaw ${c.yaw.toFixed(3)}: forward (${c.fx.toFixed(3)}, ${c.fz.toFixed(3)}) -> canvas angle ${c.got?.toFixed(4)} (in-test ${c.want.toFixed(4)})`
+		);
+	h.check(
+		Math.abs(Math.sin(facingMath.plusZ) - 1) < 1e-9,
+		`a heading of world +Z points straight DOWN the screen, since canvas y grows downward and maps to +z (sin=${Math.sin(facingMath.plusZ).toFixed(4)})`
+	);
+	h.check(
+		Math.abs(Math.cos(facingMath.minusX) + 1) < 1e-9,
+		`and world -X points LEFT (cos=${Math.cos(facingMath.minusX).toFixed(4)})`
+	);
+	h.check(
+		facingMath.straightDown === null,
+		`a camera looking straight down has no map heading, so no wedge is drawn (${facingMath.straightDown})`
+	);
+
+	// the colour rule, and the counterfactual that separates it from "everyone gets peerColor"
+	const colourRule = await page.evaluate(() => {
+		const M = window.__stores.hudMinimap;
+		const L = window.__stores.lockControl;
+		const me = 'peer-me';
+		const them = 'peer-them';
+		return {
+			accent: M.accentColor(),
+			selfDot: M.minimapDotColor(me, me),
+			selfAsPeer: L.peerColor(me),
+			peerDot: M.minimapDotColor(them, me),
+			peerHash: L.peerColor(them),
+			offline: M.minimapDotColor(null, null)
+		};
+	});
+	h.check(
+		/^#|^rgb|^hsl/.test(colourRule.accent),
+		`the accent resolves to a LITERAL a canvas can paint, never a var() chain (${colourRule.accent})`
+	);
+	h.check(colourRule.selfDot === colourRule.accent, `SELF is the accent (${colourRule.selfDot})`);
+	h.check(
+		colourRule.selfDot !== colourRule.selfAsPeer,
+		`and NOT my own peerColor — the counterfactual, since that is what a one-rule-for-all fix would give (${colourRule.selfAsPeer})`
+	);
+	h.check(
+		colourRule.peerDot === colourRule.peerHash,
+		`another peer is exactly their lockControl peerColor (${colourRule.peerDot})`
+	);
+	h.check(
+		colourRule.offline === colourRule.accent,
+		`with no session at all the one dot is still mine, not hsl(hash(undefined)) which is RED (${colourRule.offline})`
+	);
+
+	// the REGISTRY entry — the drift rule: the pane renders the new param with no per-kind
+	// branch, so its presence in `fields` is the whole integration
+	const facingField = await page.evaluate(() => {
+		const K = window.__stores.hudKinds;
+		const field = K.fieldsForKind('minimap').find((f) => f.key === 'showFacing');
+		return { kind: field?.kind ?? null, defaulted: K.newElementOfKind('minimap').showFacing };
+	});
+	h.check(
+		facingField.kind === 'toggle' && facingField.defaulted === true,
+		`showFacing is a toggle in the minimap's own fields, default ON (${JSON.stringify(facingField)})`
+	);
+
+	// ---- and now the RENDER: a synthetic peer with a known pose, plotted for real -------
+	// The avatar a minimap reads is the AvatarRig group NAMED by the peer id, posed by
+	// `moveCamera` off that peer's broadcast camera euler — so a roster row plus that same
+	// write stages one exactly. (Adding a hand-made Object3D of the same name instead does
+	// NOT work: the rig mounts too, `getObjectByName` finds whichever comes first in the
+	// traversal, and the rig parks at y=1000 where the minimap correctly skips it.)
+	const staged = await page.evaluate(async () => {
+		const s = window.__stores;
+		s.userdata.update((u) => [...u, ['ghost-peer', 'Ghost']]);
+		await new Promise((r) => setTimeout(r, 900)); // let the rig mount
+		let scene = null;
+		s.globalScene.subscribe((sc) => (scene = sc))();
+		const rig = scene?.getObjectByName('ghost-peer');
+		if (!rig) return false;
+		// verbatim what geometries.moveCamera does on a `camera` message
+		rig.position.set(4, 0, 0);
+		rig.rotation.set(0, Math.PI, 0); // a camera yawed by PI looks along world +Z
+		return true;
+	});
+	h.check(staged, 'premise: a staged peer rig exists and is posed off a camera euler');
+
+	const plotted = await page.evaluate(async () => {
+		const s = window.__stores;
+		s.hudDocs.setHudDocFor('scene', {
+			screens: [
+				{
+					id: 'map',
+					name: 'Map',
+					elements: [
+						{
+							...s.hudKinds.newElementOfKind('minimap'),
+							id: 'mm',
+							anchor: 'top-left',
+							x: 20,
+							y: 20,
+							w: 180,
+							h: 180,
+							shapes: false,
+							follow: false
+						}
+					]
+				}
+			],
+			active: 'map'
+		});
+		// MINIMAP_REFRESH_MS is 500; wait past two ticks so the staged avatar cannot miss one
+		await new Promise((r) => setTimeout(r, 1400));
+		const painted = () => {
+			const canvas = document.querySelector('[data-hud-id="mm"] .hud-map-canvas');
+			if (!canvas) return -1;
+			const d = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+			let n = 0;
+			for (let i = 3; i < d.length; i += 4) if (d[i] > 8) n++;
+			return n;
+		};
+		const withFacing = { frame: s.hudMinimap.lastMinimapFrame(), pixels: painted() };
+		// the counterfactual for the WEDGE itself: turn the param off and the same dots
+		// must paint strictly fewer pixels
+		s.hudDocs.updateHudElement('scene', 'map', 'mm', { showFacing: false });
+		await new Promise((r) => setTimeout(r, 1400));
+		const without = { frame: s.hudMinimap.lastMinimapFrame(), pixels: painted() };
+		return {
+			withFacing,
+			without,
+			ghostColor: s.lockControl.peerColor('ghost-peer'),
+			accent: s.hudMinimap.accentColor()
+		};
+	});
+	const ghostDot = plotted.withFacing.frame.peers.find((p) => p.id === 'ghost-peer');
+	h.check(
+		!!ghostDot,
+		`the staged peer is plotted (${JSON.stringify(plotted.withFacing.frame.peers.map((p) => p.id))})`
+	);
+	h.check(
+		ghostDot?.color === plotted.ghostColor,
+		`and RENDERS in their peerColor, not the tint (${ghostDot?.color} vs ${plotted.ghostColor})`
+	);
+	h.check(
+		plotted.withFacing.frame.self?.color === plotted.accent,
+		`while my own dot renders in the accent (${plotted.withFacing.frame.self?.color})`
+	);
+	h.check(
+		!!ghostDot && Math.abs(Math.sin(ghostDot.angle) - 1) < 1e-6,
+		`the rendered wedge for a peer facing world +Z points DOWN the screen (angle ${ghostDot?.angle?.toFixed(4)}, sin ${Math.sin(ghostDot?.angle ?? 0).toFixed(4)})`
+	);
+	h.check(
+		plotted.without.frame.peers.find((p) => p.id === 'ghost-peer')?.angle === null,
+		'turning showFacing off drops the heading from the plot'
+	);
+	h.check(
+		plotted.withFacing.pixels > plotted.without.pixels && plotted.without.pixels > 0,
+		`and the wedge is really DRAWN — the same dots paint fewer pixels without it (${plotted.withFacing.pixels} -> ${plotted.without.pixels})`
+	);
+
+	// leave no ghost behind for the sections that follow
+	await page.evaluate(() =>
+		window.__stores.userdata.update((u) => u.filter((row) => row[0] !== 'ghost-peer'))
+	);
+
+	// =====================================================================
 	// 8. E7.5 — the USER-SCRIPTED element
 	// =====================================================================
 	const custom = await page.evaluate(async () => {
@@ -1191,6 +1391,109 @@ h.run(async () => {
 	h.check(
 		theirs.join('|') === mine.join('|'),
 		`and the PEER derived the identical list from the replicated stamps (${JSON.stringify(theirs)})`
+	);
+
+	// =====================================================================
+	// 11b. 21-F5 — MINIMAP COLOUR SYMMETRY, on two real peers
+	// =====================================================================
+	// The bug this closes is a DISAGREEMENT between screens, so nothing here compares
+	// against a hardcoded hex: every reading is taken on BOTH peers and compared with the
+	// other peer's. The property is that for any id that is not YOURS, the two screens
+	// compute the same colour — which holds because the rule is a pure hash of the id and
+	// the SAME function on both sides — while your own dot is the accent wherever you look.
+	const idA = await page.evaluate(() => {
+		let p;
+		window.__stores.peers.subscribe((v) => (p = v))();
+		return p?.peer?.id ?? null;
+	});
+	const idB = await B.page.evaluate(() => {
+		let p;
+		window.__stores.peers.subscribe((v) => (p = v))();
+		return p?.peer?.id ?? null;
+	});
+	h.check(!!idA && !!idB && idA !== idB, `premise: two distinct peer ids (${idA} / ${idB})`);
+
+	/** what one peer computes for a given id, through the minimap's own rule */
+	const colourOn = (peer, target, self) =>
+		peer.page.evaluate(
+			([t, s]) => ({
+				dot: window.__stores.hudMinimap.minimapDotColor(t, s),
+				hash: window.__stores.lockControl.peerColor(t),
+				accent: window.__stores.hudMinimap.accentColor()
+			}),
+			[target, self]
+		);
+
+	const bOnA = await colourOn(A, idB, idA); // A drawing B
+	const bOnB = await colourOn(B, idB, idB); // B drawing itself
+	const aOnB = await colourOn(B, idA, idB); // B drawing A
+	const aOnA = await colourOn(A, idA, idA); // A drawing itself
+
+	h.check(
+		bOnA.dot === bOnB.hash,
+		`A's dot for B is exactly B's own peerColor as B computes it (${bOnA.dot} == ${bOnB.hash})`
+	);
+	h.check(
+		aOnB.dot === aOnA.hash,
+		`and symmetrically, B's dot for A is A's own peerColor as A computes it (${aOnB.dot} == ${aOnA.hash})`
+	);
+	h.check(
+		bOnA.hash === bOnB.hash && aOnB.hash === aOnA.hash,
+		'the per-peer colour is a pure hash of the id, so both machines derive it identically'
+	);
+	h.check(
+		aOnA.dot === aOnA.accent && bOnB.dot === bOnB.accent,
+		`each peer's OWN dot is the accent on its own screen (${aOnA.dot} / ${bOnB.dot})`
+	);
+	h.check(
+		aOnA.dot !== aOnB.dot && bOnB.dot !== bOnA.dot,
+		'which is the one asymmetry left, and it is the deliberate one: "me" reads differently from "them"'
+	);
+	// the OLD behaviour, kept as the thing that must not come back: self was drawn with a
+	// hardcoded green whenever the authored colour was a token, so two peers on the default
+	// theme both drew themselves #4ade80 and neither matched what the other drew for them
+	h.check(
+		aOnA.dot !== '#4ade80' || aOnA.accent === '#4ade80',
+		`self is no longer pinned to the old hardcoded green (${aOnA.dot}, accent ${aOnA.accent})`
+	);
+
+	// and a REAL frame on each peer agrees with the rule — the plot, not just the function
+	const framesAgree = await (async () => {
+		for (const peer of [A, B])
+			await peer.page.evaluate(() => {
+				window.__stores.hudDocs.setHudDocFor('scene', {
+					screens: [
+						{
+							id: 'map2',
+							name: 'Map',
+							elements: [
+								{
+									...window.__stores.hudKinds.newElementOfKind('minimap'),
+									id: 'mm2',
+									anchor: 'top-left',
+									x: 20,
+									y: 20,
+									w: 180,
+									h: 180,
+									shapes: false
+								}
+							]
+						}
+					],
+					active: 'map2'
+				});
+			});
+		await page.waitForTimeout(1600);
+		const read = (peer) =>
+			peer.page.evaluate(() => {
+				const f = window.__stores.hudMinimap.lastMinimapFrame();
+				return { self: f.self?.color ?? null, accent: window.__stores.hudMinimap.accentColor() };
+			});
+		return { a: await read(A), b: await read(B) };
+	})();
+	h.check(
+		framesAgree.a.self === framesAgree.a.accent && framesAgree.b.self === framesAgree.b.accent,
+		`and the frame each peer actually PLOTS paints self in the accent (${framesAgree.a.self} / ${framesAgree.b.self})`
 	);
 
 	// and a document naming an unknown MODULE kind round-trips through a bare peer, which

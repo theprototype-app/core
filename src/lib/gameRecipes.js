@@ -21,11 +21,14 @@
 
 import { get } from 'svelte/store';
 import { peers, showToast } from '../stores/appStore';
-import { SCENE_GRAPH, flowGraphs } from '../stores/flowStore';
+import { SCENE_GRAPH, flowGraphs, allNodes } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge } from './nodesHandler';
 import { recordFlowNodesEntry } from './flowGraphs';
 import { findNodeSpec } from './nodeCatalog';
+// 21-F2: both LEAVES (svelte stores only), so neither closes a cycle back into history
+import { gameState } from './gameState';
+import { showCollectibleOptions } from './recipeDialog';
 
 /** The variable a collectible counts into with nothing else said. A recipe needs a default
  * that is a real answer rather than an empty field, and the toast names it out loud so the
@@ -38,6 +41,8 @@ const ROW = 190;
 /** the counting branch hangs UNDER the chain rather than extending it — it is a second
  * thing the click does, not a later step in the same one */
 const BRANCH_Y = 92;
+/** 21-F2: and the respawn branch hangs under THAT one, for the same reason */
+const RESPAWN_Y = 184;
 
 /** A fresh uuid, flowTools' helper verbatim. @returns {string} */
 function genUuid() {
@@ -98,6 +103,93 @@ function alreadyCollectible(uuid) {
 }
 
 /**
+ * 21-F2: every MESH under a group, the group itself excluded. Running the recipe on a
+ * Group means "make the things in it collectible" — a Group has no geometry to click,
+ * so the alternative is a menu entry that silently does nothing.
+ * @param {any} object @returns {string[]}
+ */
+function meshDescendants(object) {
+	/** @type {string[]} */
+	const out = [];
+	object?.traverse?.((/** @type {any} */ child) => {
+		if (child !== object && child.isMesh) out.push(child.uuid);
+	});
+	return out;
+}
+
+/**
+ * 21-F2: every variable name a collectible could sensibly count into — what the game
+ * already HOLDS plus every name any Set/Get Variable node in any graph mentions. The
+ * picker offers these and still takes free text: a name that exists nowhere yet is the
+ * normal case for the first pickup of a new kind.
+ * @returns {string[]}
+ */
+export function collectibleVariables() {
+	const names = new Set([COLLECT_VAR, ...Object.keys(get(gameState).vars ?? {})]);
+	for (const node of allNodes()) {
+		if (node.type !== 'setvariable' && node.type !== 'getvariable') continue;
+		const name = String(node.data?.name ?? '').trim();
+		if (name) names.add(name);
+	}
+	return [...names].sort();
+}
+
+/**
+ * ONE collectible's nodes and edges, unrecorded and unsent — the caller decides how they
+ * are BATCHED into undo entries, which is the only thing that differs between a lone
+ * object and a group.
+ * @param {string} uuid @param {number} y @param {string} variable @param {number} respawn
+ */
+function buildChain(uuid, y, variable, respawn) {
+	const click = makeNode('onclick', 60, y);
+	// 21-F2: `perRound` is what makes a collected gem come back when a new round starts
+	// or the game returns to its menu — a param on the card, derived from the replicated
+	// round, with no reset edge to draw and nothing sent
+	const latch = makeNode('latch', 60 + COL, y, { perRound: true });
+	const gate = makeNode('gate', 60 + COL * 2, y, { op: 'not' });
+	// and `whilePlaying` is what stops it holding the object hidden once you leave play
+	const vis = makeNode('visibility', 60 + COL * 3, y, { whilePlaying: true });
+	const selector = makeNode('objectselector', 60 + COL * 4, y, { selected: uuid });
+	const once = makeNode('once', 60 + COL, y + BRANCH_Y, { perRound: true });
+	const count = makeNode('setvariable', 60 + COL * 2, y + BRANCH_Y, {
+		name: variable,
+		op: 'add',
+		value: 1
+	});
+	const nodes = [click, latch, gate, vis, selector, once, count];
+	const edges = [
+		makeEdge(click, latch, 'set'),
+		makeEdge(latch, gate, 'a'),
+		makeEdge(gate, vis, 'on'),
+		// an Object Selector takes the UNNAMED target handle, like every effect node
+		makeEdge(vis, selector),
+		makeEdge(click, once, 'trigger'),
+		makeEdge(once, count, 'trigger')
+	];
+
+	// 21-F2 RESPAWN, and it is BUILT rather than hidden: the seam the Once comment named.
+	// A Delay off the click resets the Latch — which brings the object back — and rearms
+	// the Once, which is what lets the return be counted again. Every peer derives the
+	// same moment from the same replicated click stamp, so the return needs no message.
+	//
+	// THE SOURCE HAS TO BE THE CLICK, NOT THE ONCE, and it took a red suite to see why: a
+	// Delay has no state, so `stampOfSource` RE-DERIVES its fire moment from its trigger's
+	// stamp every single time the Latch reads it — and the rearm DELETES the Once's entry.
+	// Wired to the Once, the Delay therefore erased its own trigger at the exact moment it
+	// fired, so the reset stamp existed for one tick and then could not be read at all:
+	// the gem counted a second time (proving the rearm landed) and never came back.
+	// Sourcing it from the click, whose log entry persists until the next click, keeps the
+	// reset readable — and gives the right behaviour for a re-click during the wait, which
+	// restarts the timer rather than stacking a second return.
+	if (respawn > 0) {
+		const back = makeNode('delay', 60 + COL * 3, y + RESPAWN_Y, { seconds: respawn });
+		nodes.push(back);
+		edges.push(makeEdge(click, back, 'trigger'), makeEdge(back, latch, 'reset'), makeEdge(back, once, 'rearm'));
+	}
+	return { nodes, edges };
+}
+
+/**
  * MAKE COLLECTIBLE: clicking the object hides it for everyone and adds one to a shared
  * variable, and it stays collected.
  *
@@ -128,11 +220,19 @@ function alreadyCollectible(uuid) {
  * per object on purpose, so undoing a mis-click on a ring of ten gems does not throw the
  * other nine away.
  *
- * @param {string[]} uuids @param {{variable?: string, quiet?: boolean}} [opts]
- * @returns {{built: string[], skipped: string[], variable: string}}
+ * 21-F2 GROUPS: a Group expands to its child MESHES, all sharing the group's variable and
+ * landing as ONE undo entry — a group is ONE thing the user acted on. Separate objects
+ * keep one entry EACH, which is the original reasoning above and still right. Re-running
+ * it after adding a member skips the children that already have a chain, so growing a
+ * group is a repeat of the same click.
+ *
+ * @param {string[]} uuids
+ * @param {{variable?: string, respawn?: number, quiet?: boolean}} [opts]
+ * @returns {{built: string[], skipped: string[], variable: string, respawn: number, entries: number}}
  */
 export function makeCollectible(uuids, opts = {}) {
 	const variable = String(opts.variable ?? COLLECT_VAR).trim() || COLLECT_VAR;
+	const respawn = Math.max(0, Number(opts.respawn) || 0);
 	const targets = (Array.isArray(uuids) ? uuids : [uuids]).filter(Boolean);
 	/** @type {any} */
 	const peer = get(peers);
@@ -144,38 +244,34 @@ export function makeCollectible(uuids, opts = {}) {
 	// nodes a user placed by hand
 	const existing = sceneGraph().nodes;
 	const baseY = existing.reduce((max, n) => Math.max(max, Number(n.position?.y) || 0), 0) + (existing.length ? ROW : 40);
+	// a respawning chain is one row taller, so rows cannot be a fixed stride
+	const rowHeight = respawn > 0 ? RESPAWN_Y + 96 : ROW;
 
-	targets.forEach((uuid, index) => {
-		if (!group?.getObjectByProperty('uuid', uuid)) {
-			skipped.push(uuid);
-			return;
+	// ONE batch per thing the user acted on: a mesh is itself, a group is its meshes
+	/** @type {string[][]} */
+	const batches = targets.map((uuid) => {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		if (!object) return [uuid]; // resolved (and skipped) below, where the reason is one place
+		return object.type === 'Group' ? meshDescendants(object) : [uuid];
+	});
+
+	let row = 0;
+	let entries = 0;
+	for (const batch of batches) {
+		/** @type {any[]} */ const created = [];
+		/** @type {any[]} */ const createdEdges = [];
+		for (const uuid of batch) {
+			if (!group?.getObjectByProperty('uuid', uuid) || alreadyCollectible(uuid)) {
+				skipped.push(uuid);
+				continue;
+			}
+			const chain = buildChain(uuid, baseY + row * rowHeight, variable, respawn);
+			row++;
+			created.push(...chain.nodes);
+			createdEdges.push(...chain.edges);
+			built.push(uuid);
 		}
-		if (alreadyCollectible(uuid)) {
-			skipped.push(uuid);
-			return;
-		}
-		const y = baseY + index * ROW;
-		const click = makeNode('onclick', 60, y);
-		const latch = makeNode('latch', 60 + COL, y);
-		const gate = makeNode('gate', 60 + COL * 2, y, { op: 'not' });
-		const vis = makeNode('visibility', 60 + COL * 3, y);
-		const selector = makeNode('objectselector', 60 + COL * 4, y, { selected: uuid });
-		const once = makeNode('once', 60 + COL, y + BRANCH_Y);
-		const count = makeNode('setvariable', 60 + COL * 2, y + BRANCH_Y, {
-			name: variable,
-			op: 'add',
-			value: 1
-		});
-		const created = [click, latch, gate, vis, selector, once, count];
-		const createdEdges = [
-			makeEdge(click, latch, 'set'),
-			makeEdge(latch, gate, 'a'),
-			makeEdge(gate, vis, 'on'),
-			// an Object Selector takes the UNNAMED target handle, like every effect node
-			makeEdge(vis, selector),
-			makeEdge(click, once, 'trigger'),
-			makeEdge(once, count, 'trigger')
-		];
+		if (!created.length) continue;
 
 		// nodes before edges, the editor's own order
 		for (const node of created) {
@@ -193,8 +289,8 @@ export function makeCollectible(uuids, opts = {}) {
 			nodes: created.map(serializeNode),
 			edges: createdEdges.map(serializeEdge)
 		});
-		built.push(uuid);
-	});
+		entries++;
+	}
 
 	if (!opts.quiet) {
 		if (!built.length)
@@ -205,11 +301,33 @@ export function makeCollectible(uuids, opts = {}) {
 			);
 		else
 			showToast(
-				(built.length === 1 ? 'Collectible' : built.length + ' collectibles') +
-					' created. Counting into the variable "' +
+				(built.length === 1 ? '1 collectible' : built.length + ' collectibles') +
+					' added' +
+					(skipped.length ? ', ' + skipped.length + ' skipped (already collectible)' : '') +
+					'. Counting into the variable "' +
 					variable +
-					'" — show it with a HUD Text (Show a variable).'
+					'"' +
+					(respawn > 0 ? ', back after ' + respawn + 's' : '') +
+					' — show it with a HUD Text (Show a variable).'
 			);
 	}
-	return { built, skipped, variable };
+	return { built, skipped, variable, respawn, entries };
+}
+
+/**
+ * The same recipe, ASKED FOR: which variable, and does it come back. Resolves what
+ * `makeCollectible` returned, or null if the dialog was cancelled — a cancel must build
+ * nothing at all, which is why the prompt runs BEFORE any node is created.
+ * @param {string[]} uuids @param {{variable?: string, respawn?: number}} [opts]
+ */
+export async function makeCollectiblePrompt(uuids, opts = {}) {
+	const targets = (Array.isArray(uuids) ? uuids : [uuids]).filter(Boolean);
+	const answer = await showCollectibleOptions({
+		variables: collectibleVariables(),
+		variable: opts.variable ?? COLLECT_VAR,
+		respawn: opts.respawn ?? 0,
+		count: targets.length
+	});
+	if (!answer) return null;
+	return makeCollectible(targets, { variable: answer.variable, respawn: answer.respawn });
 }

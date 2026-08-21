@@ -23,7 +23,11 @@ import { GAMEPAD_BUTTONS, GAMEPAD_AXES } from './gamepadPrefs';
  * 21-B B6: `inputs` declares NAMED target sockets (trigger, force, target…) and
  * `inputLabels` gives one a friendlier label than its wire name. A spec with
  * `inputs` renders its sockets as labelled ROWS instead of by pixel offset.
- * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text', min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
+ * 21-F2: `label` is optional and the KEY is still the default, because a key like
+ * `initial` or `invert` reads perfectly well on a card. It exists for the ones that do
+ * not — a flag whose meaning is a sentence ("reset each round") cannot be a camelCase
+ * identifier without becoming a riddle.
+ * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text', label?: string, min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
  * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string> }} NodeSpec
  */
 
@@ -443,7 +447,16 @@ export const nodeCatalog = [
 				defaults: { initial: false },
 				inputs: ['set', 'reset', 'toggle'],
 				inputLabels: { set: 'set - turn on', reset: 'reset - turn off', toggle: 'toggle - flip' },
-				params: [{ key: 'initial', kind: 'toggle' }]
+				// 21-F2: `perRound` is the collectible RESET, opt-in per node. With it on, a
+				// set/reset stamp from a previous round did not happen, so the latch falls
+				// back to `initial` — which is how a collected gem comes back when the round
+				// bumps or the game returns to its menu, with no reset edge to draw and
+				// nothing sent. Off by default: a Latch in a graph with no game must not
+				// change behaviour because somebody pressed Start.
+				params: [
+					{ key: 'initial', kind: 'toggle' },
+					{ key: 'perRound', kind: 'toggle', label: 'reset each round' }
+				]
 			},
 			// "3 seconds after the door opens, close it", and every cooldown. PURE: the
 			// output fires at stamp + seconds, which each peer reaches on its own clock from
@@ -474,7 +487,10 @@ export const nodeCatalog = [
 				label: 'Once',
 				defaults: { pulse: 0.3 },
 				inputs: ['trigger', 'rearm'],
-				inputLabels: { trigger: 'trigger', rearm: 'rearm - allow it again' }
+				inputLabels: { trigger: 'trigger', rearm: 'rearm - allow it again' },
+				// 21-F2: the Latch's flag, same rule — a Once frozen in a previous round
+				// reads as armed again, so a collectible counts once PER ROUND
+				params: [{ key: 'perRound', kind: 'toggle', label: 'reset each round' }]
 			},
 			// 134: loops, timers, sensors + object actions (all deterministic)
 			{ type: 'loop', label: 'Loop', defaults: { from: 0, to: 1, rate: 1, mode: 'wrap' } },

@@ -369,14 +369,18 @@ export const HUD_KIND_DEFS = [
 		group: 'Display',
 		icon: 'map',
 		defaultSize: { w: 180, h: 180 },
-		summary: 'A top-down plot of the scene, you and your peers as dots, plus any userData.play markers.',
-		defaults: { range: 40, follow: true, dots: true, shapes: true },
+		summary: 'A top-down plot of the scene, you and your peers as dots, plus any userData.play markers. Your dot is the theme accent on every screen; a peer keeps their own colour.',
+		defaults: { range: 40, follow: true, dots: true, shapes: true, showFacing: true },
 		styleDefaults: { bg: 'rgb(10 12 16 / 0.85)', border: 'rgb(75 85 99 / 0.7)', radius: 6 },
 		fields: [
 			{ key: 'range', kind: 'number', label: 'range', min: 5, max: 500, step: 5, hint: 'World units across the whole map.' },
 			{ key: 'follow', kind: 'toggle', label: 'follow me', hint: 'OFF centres on the world origin instead.' },
 			{ key: 'shapes', kind: 'toggle', label: 'show scene' },
-			{ key: 'dots', kind: 'toggle', label: 'show players' }
+			{ key: 'dots', kind: 'toggle', label: 'show players' },
+			// F5: default ON, and an ABSENT key reads as on — a minimap without headings is
+			// a map of where everyone stands and not of where anyone is going, and the wedge
+			// is 5px, so an existing document gains it rather than needing to be re-authored.
+			{ key: 'showFacing', kind: 'toggle', label: 'show facing', hint: 'A heading wedge on each dot.' }
 		],
 		style: [STYLE.color, STYLE.bg, STYLE.border, STYLE.radius, STYLE.opacity]
 	},

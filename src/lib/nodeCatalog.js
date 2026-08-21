@@ -128,7 +128,12 @@ export const nodeCatalog = [
 				defaults: { state: 'playing', outcome: '' },
 				params: [
 					{ key: 'state', kind: 'select', options: [...GAME_STATES] },
-					{ key: 'outcome', kind: 'text', placeholder: 'won / lost', maxLength: 40 }
+					{ key: 'outcome', kind: 'text', placeholder: 'won / lost', maxLength: 40 },
+					// 21-F3: the FULL reset (back to the menu AND the round clock zeroed) —
+					// the same `resetGame()` the Users popover's admin entry calls, so the
+					// button and the node cannot drift. Absent by default, so every node
+					// authored before this behaves exactly as it did.
+					{ key: 'reset', kind: 'toggle', label: 'full reset' }
 				]
 			},
 			// the event half: pulses when the game ENTERS (or leaves) a state, so screens and
@@ -187,6 +192,20 @@ export const nodeCatalog = [
 				params: [
 					{ key: 'read', kind: 'select', options: ['elapsed', 'remaining', 'round', 'playing'] },
 					{ key: 'length', kind: 'range', min: 1, max: 3600, step: 1 }
+				]
+			},
+			// 21-F3: how many collectibles are left. COUNTED FROM THE GRAPH — every
+			// collectible chain counting into this variable is found and its Latch read —
+			// and NOT from the variable, which is a score that only ever goes up and would
+			// make `left` go negative the first time something respawned. Because the
+			// latches are `perRound`, all three readings self-heal when a round starts.
+			{
+				type: 'collectcount',
+				label: 'Collectibles',
+				defaults: { variable: 'gems', read: 'left' },
+				params: [
+					{ key: 'variable', kind: 'text', placeholder: 'gems', maxLength: 40 },
+					{ key: 'read', kind: 'select', options: ['left', 'collected', 'total'] }
 				]
 			}
 		]

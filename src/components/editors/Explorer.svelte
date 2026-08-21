@@ -34,8 +34,10 @@
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
 	// (the documented rule), so the badge would otherwise never appear live.
-	import { projectManifest, staleSceneHash } from '$lib/projectManifest';
+	import { projectManifest, staleSceneHash, manifestInUse } from '$lib/projectManifest';
 	const staleScene = (_manifest: any, hash: string) => staleSceneHash(hash);
+	// 21-G3: the whole project as ONE .tp file (manifest + scenes + assets).
+	import { downloadProject } from '$lib/projectFile';
 	import ModelPreview from './ModelPreview.svelte';
 	import {
 		packs,
@@ -834,7 +836,21 @@
 								const name = prompt('Scene name:', 'New scene');
 								if (name) newLevel(name);
 							}
-						}
+						},
+						// 21-G3: the whole project as ONE file. Offered only once there IS
+						// a project — a pristine manifest would export an empty zip, and an
+						// entry that can only produce nothing is worse than no entry.
+						// Importing one rides the Sidebar's Open (a .tp in the file dialog).
+						...(manifestInUse()
+							? [
+									{
+										label: 'Export project (.tp)',
+										tooltip:
+											'The project manifest, every scene version still stored here, and the assets it uses — as one file',
+										action: () => downloadProject()
+									}
+								]
+							: [])
 					]
 		};
 	}

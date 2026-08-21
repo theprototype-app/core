@@ -518,6 +518,17 @@ try {
 		await requestLoadSession(payload.id);
 		return;
 	}
+	// 21-G3: a .tp is the same idea ONE LEVEL UP — a whole PROJECT (manifest +
+	// scenes + assets). It rides this same switch because it is the same
+	// affordance (the Sidebar's Open), and it deliberately loads NOTHING into the
+	// scene: it furnishes the library and installs the manifest, and the user
+	// travels when they are ready. ('.tpscene'.endsWith('.tp') is false, so the
+	// order of these two branches is a readability choice, not a dependency.)
+	if (file.name?.toLowerCase().endsWith('.tp')) {
+		const { importProject } = await import('./projectFile');
+		await importProject(await file.arrayBuffer());
+		return;
+	}
 	const reader = new FileReader();
 	reader.readAsText(file);
 	await new Promise((resolve, reject) => {

@@ -40,7 +40,8 @@ import {
 	gameElapsed,
 	commitGameState,
 	roundUnderway,
-	roundCutoff
+	roundCutoff,
+	resetGame
 } from './gameState';
 // 21-E6: charController is a LEAF for the same reason gameState is (svelte stores,
 // THREE, and two store-only modules), so a static edge closes nothing. It reaches
@@ -877,8 +878,15 @@ function updateGameNodes(time, ctx) {
 		const data = resolveInputs(node, nodes, edges, time, ctx);
 		if (type === 'setgamestate') {
 			// EVERY peer runs this from the same replicated stamp, so the write is
-			// idempotent-by-latest-wins rather than needing an authority
-			setGameState(String(data.state ?? 'playing'), { outcome: String(data.outcome ?? '') });
+			// idempotent-by-latest-wins rather than needing an authority.
+			// 21-F3: `reset` is the FULL reset — it calls the very `resetGame()` the Users
+			// popover's admin entry calls, so the button and the node cannot drift. It is
+			// not the same as `state: 'menu'`: a reset also zeroes `startedAt`, so a Game
+			// Time readout on the menu screen shows 0 instead of the last round's elapsed.
+			// ABSENT/false by default, so every Set Game State written before this is
+			// byte-identical.
+			if (data.reset) resetGame();
+			else setGameState(String(data.state ?? 'playing'), { outcome: String(data.outcome ?? '') });
 		} else if (type === 'setcamera') {
 			const uuid = typeof data.camera === 'string' ? data.camera : '';
 			if (uuid) lookThroughCamera(uuid);
@@ -1459,6 +1467,8 @@ export const valueTypes = [
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
 	'ongamestate', 'getvariable', 'gametime',
+	// 21-F3: how many collectibles are left, counted off the graph's own latches
+	'collectcount',
 	// 21-E4: the logic a game LOOP is made of. Sequence's value is a handle MAP,
 	// like objectflow's - unwrapHandle resolves it per reading edge.
 	'latch', 'delay', 'sequence', 'once',
@@ -1527,6 +1537,88 @@ function pointOf(v, ctx) {
 	if (Array.isArray(v) && v.length >= 3) return new THREE.Vector3(num(v[0]), num(v[1]), num(v[2]));
 	if (ctx && typeof v === 'string') return ctx.pos(v);
 	return null;
+}
+
+// --- 21-F3: HOW MANY COLLECTIBLES ARE LEFT ------------------------------------------
+//
+// THE VARIABLE CANNOT ANSWER THIS, which is the whole reason this reads the graph. The
+// recipe counts pickups INTO a variable, so the variable is a SCORE: it only goes up, it
+// keeps its value through a round bump (nothing resets `vars`), and with F2's respawn it
+// passes the number of objects in the scene. Deriving `left` as `total - variable` would
+// therefore go negative on a respawning scene and stay wrong for the whole of round 2.
+//
+// The LATCHES are the truth. Each collectible's Latch IS "this one is collected", it is
+// already `perRound`, and it is already read by the same pure evaluator every peer runs
+// — so counting the latches gives an answer that self-heals on a round bump, tracks a
+// respawn back down, and needs nothing sent. `collected` is counted the same way, not
+// taken from the variable, so `collected + left === total` by construction rather than
+// by two sources agreeing.
+//
+// WHAT COUNTS AS A COLLECTIBLE CHAIN: the shape `makeCollectible` builds, walked BACK
+// from the counter — SetVariable(name) <-trigger- Once <-trigger- (the pickup event)
+// -set-> Latch. The pickup event is deliberately unconstrained (an On Click today, an On
+// Enter sensor tomorrow); what identifies the chain is the Once feeding this variable
+// and a Latch armed by the same event.
+/** index the edges once — the walk is three hops and a graph can hold hundreds
+ * @param {any[]} allEdges */
+function edgeIndex(allEdges) {
+	/** @type {Map<string, any[]>} */ const bySource = new Map();
+	/** @type {Map<string, any[]>} */ const byTarget = new Map();
+	for (const edge of allEdges) {
+		if (!bySource.has(edge.source)) bySource.set(edge.source, []);
+		bySource.get(edge.source)?.push(edge);
+		if (!byTarget.has(edge.target)) byTarget.set(edge.target, []);
+		byTarget.get(edge.target)?.push(edge);
+	}
+	return { bySource, byTarget };
+}
+
+/** Every collectible Latch counting into `variable`, deduped.
+ * @param {string} variable @param {any[]} allNodes @param {any[]} allEdges @returns {any[]} */
+export function collectibleLatches(variable, allNodes, allEdges) {
+	const name = String(variable ?? '').trim();
+	if (!name) return [];
+	const { bySource, byTarget } = edgeIndex(allEdges);
+	const byId = new Map(allNodes.map((/** @type {any} */ n) => [n.id, n]));
+	/** @type {Map<string, any>} */
+	const latches = new Map();
+	const into = (/** @type {string} */ id, /** @type {string} */ handle) =>
+		(byTarget.get(id) ?? []).filter((/** @type {any} */ e) => (e.targetHandle ?? null) === handle);
+	for (const counter of allNodes) {
+		if (counter.type !== 'setvariable') continue;
+		if (String(counter.data?.name ?? '').trim() !== name) continue;
+		for (const toCounter of into(counter.id, 'trigger')) {
+			const once = byId.get(toCounter.source);
+			if (once?.type !== 'once') continue;
+			for (const toOnce of into(once.id, 'trigger')) {
+				// the pickup event arms the Latch through its own `set` edge
+				for (const fromEvent of bySource.get(toOnce.source) ?? []) {
+					if ((fromEvent.targetHandle ?? null) !== 'set') continue;
+					const latch = byId.get(fromEvent.target);
+					if (latch?.type === 'latch') latches.set(latch.id, latch);
+				}
+			}
+		}
+	}
+	return [...latches.values()];
+}
+
+/**
+ * `{total, collected, left}` for one collectible variable.
+ * @param {string} variable @param {any[]} allNodes @param {any[]} allEdges
+ * @param {number} time @param {Set<string>} seen @param {any} ctx
+ */
+function collectibleStats(variable, allNodes, allEdges, time, seen, ctx) {
+	const latches = collectibleLatches(variable, allNodes, allEdges);
+	let collected = 0;
+	let left = 0;
+	for (const latch of latches) {
+		// the Latch's own eval already applies `perRound` against the replicated round,
+		// so a latch set in a previous round reads UN-collected here with no work of ours
+		if (bool(evalNode(latch, allNodes, allEdges, time, seen, ctx))) collected++;
+		else left++;
+	}
+	return { total: latches.length, collected, left };
 }
 
 /**
@@ -1980,6 +2072,21 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 					return g.state === 'playing' ? 1 : 0;
 				default:
 					return elapsed;
+			}
+		}
+		case 'collectcount': {
+			// 21-F3: DERIVED FROM THE GRAPH, never from the variable — see the long note
+			// above `collectibleLatches`. Pure and local like every other value node: each
+			// peer walks the same replicated graph and reads the same replicated latches,
+			// so nothing about this reading goes on the wire.
+			const stats = collectibleStats(String(d.variable ?? 'gems'), allNodes, allEdges, time, seen, ctx);
+			switch (d.read ?? 'left') {
+				case 'collected':
+					return stats.collected;
+				case 'total':
+					return stats.total;
+				default:
+					return stats.left;
 			}
 		}
 		// --- H5: object-flow composition ---

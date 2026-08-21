@@ -185,6 +185,8 @@
 		setvariable: AnimationNode,
 		getvariable: AnimationNode,
 		gametime: AnimationNode,
+		// 21-F3: spec-driven too — a variable field and a `read` select, no picker
+		collectcount: AnimationNode,
 		setcamera: GameCameraNode,
 		gamestart: GameCameraNode,
 		setlook: GameCameraNode,

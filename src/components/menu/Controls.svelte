@@ -120,6 +120,13 @@
 	}
 
 	let allowPlay = true;
+	// 21-F3 REJOIN: a play press that landed inside the exit cooldown, replayed when it
+	// expires. The cooldown itself has to stay — it exists because the browser refuses a
+	// pointer-lock request for about a second after a user-initiated Esc — but DROPPING
+	// the press was never part of that: the button simply did nothing, with no feedback,
+	// which is precisely the "I left play and could not get back in" report. Deferring is
+	// the whole fix, and it costs one flag.
+	let playQueued = false;
 	let resizing = $state(false);
 	// 132: toolbar icons tint when their panel is open / the transform mode is
 	// active. Move/Rotate/Scale only tint with a real selection. 151: the mode
@@ -569,8 +576,16 @@
 			$isVRMode = true;
 			vrButton.click();
 		} else {
-			if ($isLocked === null && allowPlay === true)
-			$isLocked	= true
+			// already in play — a second press is not a re-entry
+			if ($isLocked === true) return;
+			// 21-F3: inside the exit cooldown, REMEMBER the press instead of eating it.
+			// `isLocked === false` is the transient Controls itself writes on the way out
+			// (the effect below settles it to null), so both non-null values land here.
+			if (allowPlay !== true || $isLocked === false) {
+				playQueued = true;
+				return;
+			}
+			if ($isLocked === null) $isLocked = true;
 		}
 	}
 
@@ -582,6 +597,12 @@
 		allowPlay = false;
 		setTimeout(() => {
 			allowPlay = true;
+			// 21-F3: honour a press made during the cooldown. Through checkPlay, not a
+			// bare store write, so the VR branch and the guards above still decide.
+			if (playQueued) {
+				playQueued = false;
+				checkPlay();
+			}
 		}, 2000)
 	}
 	});

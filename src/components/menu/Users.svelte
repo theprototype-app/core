@@ -25,9 +25,14 @@
 		notesDrawerOpen,
 		cloudIdentity,
 		connectDocked,
-		connectBarHeight
+		connectBarHeight,
+		showToast
 	} from '../../stores/appStore.js';
-	import { globalScene, globalCamera, camSave, peerHands } from '../../stores/sceneStore.js';
+	import { globalScene, globalCamera, camSave, peerHands, isLocked } from '../../stores/sceneStore.js';
+	// 21-F3: who is in play mode, and who may end the round
+	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
+	import { gameState } from '$lib/gameState';
+	import { sessionHost } from '$lib/connectionState';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
 	import { peerQuality } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -105,6 +110,27 @@
 	const effAvatar = $derived(avatarImage || ls('avatar') || cid?.avatar || '');
 	/** cloud roles bridge (null without the cloud plugin) */
 	const ri = $derived($rolesInfo);
+
+	// --- 21-F3: play-mode presence + the admin reset -------------------------------
+	/** A chip only appears when it SAYS something: a peer who is PLAYING, or — while a
+	 * round is actually running — a peer who is not, which is the moment "who is still
+	 * in the editor" becomes worth knowing. In a scene with no game every row would
+	 * otherwise carry a permanent "editor" badge that means nothing at all. */
+	const roundRunning = $derived($gameState.state === 'playing' || $gameState.state === 'paused');
+	/** the stores come in as ARGUMENTS so the read is tracked where the template calls
+	 * it — a helper reaching a store through `get()` registers no dependency, and the
+	 * `($store, expr)` workaround fails svelte-check */
+	const modeOf = (modes: Record<string, string>, locked: any, id: string, self: boolean) =>
+		self ? (locked === true ? 'playing' : 'editor') : modes[id] === 'playing' ? 'playing' : 'editor';
+	/** Is there a game to reset at all? A pristine shell has nothing to say. */
+	const gameInUse = $derived($gameState.round > 0 || $gameState.state !== 'menu');
+	/** INERT without a cloud plugin: falls back to the session host (see canResetGame) */
+	const canReset = $derived(resetAllowed(ri, $sessionHost, $peers));
+	function doResetGame() {
+		const result = requestResetGame();
+		if (!result.ok && result.reason) showToast(result.reason);
+		peersOpen = false;
+	}
 	/** peerId whose role dropdown is open (null = none) */
 	let roleMenuFor: string | null = $state(null);
 	/** fixed-position anchor for the (portaled) role dropdown */
@@ -269,6 +295,17 @@
 								<span class="truncate">{shortId(user[0])}</span>
 								{#if $mutedPeers.includes(user[0])}<span title="Muted"><VolumeX size={16} aria-hidden="true" /></span>{/if}
 								{#if $peerHands[user[0]]?.active}<span title="In VR"><Glasses size={16} aria-hidden="true" /></span>{/if}
+								<!-- 21-F3: play-mode presence. `{@const}` may only be the IMMEDIATE
+									 child of a block, so the mode is resolved in the `{#if}` and
+									 named inside it. -->
+								{#if modeOf($peerPlayModes, $isLocked, user[0], i === 0) === 'playing' || roundRunning}
+									{@const pmode = modeOf($peerPlayModes, $isLocked, user[0], i === 0)}
+									<span
+										class="mode-chip"
+										data-mode={pmode}
+										title={pmode === 'playing' ? 'In play mode' : 'In the editor, not playing'}>{pmode}</span
+									>
+								{/if}
 								{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
 								{#if i > 0 && $peerQuality[user[0]]}
 									{@const q = $peerQuality[user[0]]}
@@ -314,6 +351,29 @@
 					</div>
 				{/each}
 				</div>
+				<!-- 21-F3: the ADMIN half of "the game resets only when everyone has left
+					 play, or an admin resets it". Offered only when there is a game to
+					 reset, and DISABLED (with the reason in its tooltip) for anyone who is
+					 not entitled — an admin where a roles plugin says so, the session host
+					 otherwise. The flow node behind "Reset the game" is deliberately NOT
+					 gated: a node in a replicated graph is the author's intent, not an
+					 administrative act. -->
+				{#if gameInUse}
+					<div class="mt-1 border-t border-gray-700/60 pt-1">
+						<button
+							id="reset-game"
+							type="button"
+							class="reset-game-btn"
+							disabled={!canReset}
+							title={canReset
+								? 'Send everyone back to the game menu'
+								: ri
+									? 'Only an admin can reset the game'
+									: 'Only the session host can reset the game'}
+							onclick={doResetGame}>Reset game</button
+						>
+					</div>
+				{/if}
 				<!-- open-core (M1d): cloud plugin roles section. Empty in the OSS
 					 build; the cloud plugin fills it via cloudApi.mountUsersSection(). -->
 				{#if $usersSlot}
@@ -529,6 +589,14 @@
 	.role-badge[data-role='admin'] { background: #7c3aed; }
 	/* keep the peers list scrollable so it never spills off a short/narrow screen */
 	.peers-scroll { max-height: 264px; overflow-y: auto; }
+	/* 21-F3 play-mode chip. Deliberately quieter than the role badge beside it: a role
+	   is an authority and a mode is a passing fact. */
+	.mode-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 0 6px; border-radius: 9999px; text-transform: capitalize; line-height: 1.5; border: 1px solid transparent; }
+	.mode-chip[data-mode='playing'] { color: #86efac; background: rgb(34 197 94 / 0.16); border-color: rgb(34 197 94 / 0.35); }
+	.mode-chip[data-mode='editor'] { color: #cbd5e1; background: rgb(148 163 184 / 0.14); border-color: rgb(148 163 184 / 0.3); }
+	.reset-game-btn { width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: #e5e7eb; font-size: 11px; text-align: left; cursor: pointer; }
+	.reset-game-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.09); }
+	.reset-game-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 	/* PROFILE PANEL, horizontal edge only. floating-ui places this from the trigger, and
 	   under a MOBILE viewport (page scale != 1) its math drifts right by exactly the
 	   trigger's inset: on a phone the panel landed flush with the window edge while the

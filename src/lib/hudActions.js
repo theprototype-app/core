@@ -98,6 +98,10 @@ export const HUD_ACTIONS = [
 	{ key: 'resume', label: 'Resume', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'playing' }, handle: 'trigger' },
 	{ key: 'gameover', label: 'End the game', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'over' }, handle: 'trigger' },
 	{ key: 'menu', label: 'Back to the menu', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'menu' }, handle: 'trigger' },
+	// 21-F3: the FULL reset. Not a duplicate of "Back to the menu": it also zeroes the
+	// round clock, and it goes through the very `resetGame()` the Users popover's admin
+	// entry calls, so the two ways a game is reset are one function.
+	{ key: 'resetgame', label: 'Reset the game', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'menu', reset: true }, handle: 'trigger', hint: 'Back to the menu AND the round clock to zero — collectibles read un-collected again.' },
 	{ key: 'setvar', label: 'Set a variable', group: 'Game', role: 'press', node: 'setvariable', data: { name: 'score', op: 'add', value: 1 }, handle: 'trigger', hint: 'Add to, subtract from or set a shared number.' },
 	{ key: 'camera', label: 'Look through a camera', group: 'Camera', role: 'press', node: 'setcamera', handle: 'trigger', hint: 'Moves each peer`s own view — nothing is sent, the press already was.' },
 	{ key: 'showscreen', label: 'Show a HUD screen', group: 'HUD', role: 'press', node: 'hudscreen', data: { action: 'show' }, handle: 'trigger' },
@@ -149,6 +153,10 @@ export const HUD_ACTIONS = [
 	{ key: 'showvar', label: 'Show a variable', group: 'Data', role: 'drives', node: '', via: { node: 'getvariable', data: { name: 'score' }, handle: 'value' }, hint: 'A shared number — a score, lives, a level.' },
 	{ key: 'showtime', label: 'Show the round time', group: 'Data', role: 'drives', node: '', via: { node: 'gametime', data: { read: 'remaining', length: 60 }, handle: 'value' }, hint: 'Derived from the shared start stamp, so every peer agrees.' },
 	{ key: 'showcount', label: 'Show a counter', group: 'Data', role: 'drives', node: '', via: { node: 'counter', data: { step: 1, op: 'up' }, handle: 'value' }, hint: 'Wire anything that pulses into the Counter to make it a score.' },
+	// 21-F3: the readout a collect-the-gems game asks for first. It is NOT "Show a
+	// variable" with subtraction: the count comes from the collectible chains in the
+	// graph, so it survives a respawn and self-heals when a new round starts.
+	{ key: 'showleft', label: 'Show collectibles left', group: 'Data', role: 'drives', node: '', via: { node: 'collectcount', data: { variable: 'gems', read: 'left' }, handle: 'value' }, hint: 'Counted from the collectible chains in the graph, not from the score — so it is right after a respawn and after a round reset.' },
 	{ key: 'showplain', label: 'Just show text', group: 'Data', role: 'drives', node: '', hint: 'A HUD Text node with no source, so a graph can drive it later.' },
 
 	// --- 21-D4: what an INPUT's value can do -------------------------------------
@@ -208,6 +216,9 @@ export function describeNode(node, handle = null) {
 			// 21-E7.1
 			return (d.op === 'clear' ? 'Clear the rows of ' : d.op === 'set' ? 'Set the rows of ' : 'Add a row to ') + (d.element || 'an element');
 		case 'setgamestate':
+			// 21-F3: a full reset does something a state change does not, so it must not
+			// read as "Set game state -> menu" (the Counter reset/pulse lesson, verbatim)
+			if (d.reset) return 'Reset the game';
 			return 'Set game state → ' + (d.state ?? 'playing') + (d.outcome ? ' (' + d.outcome + ')' : '');
 		case 'setcamera':
 			return 'Look through a camera' + (d.camera ? '' : ' (none picked)');
@@ -245,6 +256,12 @@ export function describeNode(node, handle = null) {
 			return 'Variable “' + (d.name ?? '') + '”';
 		case 'gametime':
 			return 'Round time (' + (d.read ?? 'elapsed') + ')';
+		case 'collectcount':
+			// 21-F3: says WHAT it counts and WHERE from, because "left" alone reads like
+			// arithmetic on the score, which is exactly what it is not
+			return (
+				'Collectibles ' + (d.read ?? 'left') + ' “' + (d.variable ?? 'gems') + '” (counted from the graph)'
+			);
 		case 'hudtext':
 			return 'Text' + (d.format && d.format !== '{v}' ? ' “' + d.format + '”' : '');
 		case 'hudbar':

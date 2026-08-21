@@ -52,6 +52,9 @@ const OUTPUT = {
 	ongamestate: 'event',
 	getvariable: 'number',
 	gametime: 'number',
+	// 21-F3: how many collectibles are left / collected / there are. A count, so a
+	// number socket — it wires into a HUD Text exactly like Get Variable does.
+	collectcount: 'number',
 	// 21-E4: the logic a game loop is made of. Latch is the only STATE node here -
 	// a boolean that holds after the pulse that set it has expired. The other three
 	// are event RESHAPERS, so they carry the event channel onward and everything

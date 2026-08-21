@@ -15,8 +15,19 @@
 	// Drag/resize go through modalGrab.createGesture, applying ABSOLUTE from the drag-start
 	// snapshot (the compounding lesson), with start/end = begin/endHudGesture so a whole
 	// drag is ONE undo entry and ONE broadcast.
+	// 21-F1: the topbar is a TOOLBAR now, not four add shortcuts — the palette is the add
+	// path (and the only one that lists every kind), so the space belongs to the things a
+	// layout editor does to a MULTI-SELECTION: a marquee tool to build one, and align /
+	// distribute / equalize to tidy it. The ops themselves live in `$lib/hudArrange` as pure
+	// geometry over absolute rects, because the anchor conversion is the whole difficulty
+	// and it belongs on this side of the seam.
 	import { untrack } from 'svelte';
-	import { Camera, Copy, Crosshair, Eye, EyeOff, Plus, SquareDashed, Trash2, Type } from '@lucide/svelte';
+	import {
+		AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
+		AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical,
+		AlignVerticalSpaceAround, BoxSelect, Camera, Copy, Eye, EyeOff, MousePointer2,
+		Proportions, Trash2
+	} from '@lucide/svelte';
 	import { hudEditorClose, showToast } from '../../stores/appStore.js';
 	import {
 		hudDocs, hudRuntime, hudSelection, hudScreenOverride, HUD_ANCHORS, HUD_SCENE_KEY,
@@ -44,8 +55,9 @@
 	import { openTextEditor } from '$lib/fileWindows';
 	import { flowGraphs as flowGraphDocs } from '../../stores/flowStore';
 	import {
-		kindDef, fieldsForKind, styleFieldsForKind, newElementOfKind, HUD_KIND_DEFS
+		kindDef, fieldsForKind, styleFieldsForKind, newElementOfKind, HUD_KIND_DEFS, paletteGroups
 	} from '$lib/hudKinds';
+	import { HUD_ARRANGE_OPS, HUD_ARRANGE_GROUPS, arrangeOp, arrangeRects, rectHitsBox } from '$lib/hudArrange';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
@@ -394,6 +406,142 @@
 		drag.begin(e);
 	}
 
+	// --- F1: the marquee tool ----------------------------------------------------
+	// UvEditor's box-select recipe, adapted from canvas px to the artboard's STAGE space:
+	// the box is kept in stage coords (so the hit test is the same arithmetic every rect
+	// already uses) and DRAWN outside the scaled stage, so its 1px border stays 1px at any
+	// zoom — exactly what the snap guides do.
+	//
+	// It is a MODE rather than a modifier because a plain drag on the board is already
+	// taken: pressing empty space deselects, and a drag that started on an element moves
+	// it. Two tools say which of those a drag on nothing means, and the button says which
+	// one is armed.
+	let tool = $state(/** @type {'select'|'marquee'} */ ('select'));
+	/** the live box, in STAGE coords. @type {{x0: number, y0: number, x1: number, y1: number}|null} */
+	let marquee = $state(/** @type {{x0: number, y0: number, x1: number, y1: number}|null} */ (null));
+	/** modifier read at press time — plain drag REPLACES the selection, Shift/Ctrl adds */
+	let marqueeAdd = false;
+	/** did the press travel? a press that does not is a CLICK on empty space, which
+	 * deselects — the same rule the select tool follows */
+	let marqueeMoved = false;
+
+	/** @param {PointerEvent} e */
+	function beginMarquee(e) {
+		// THE ARTBOARD IS FULL OF TEXT, AND A DRAG OVER TEXT IS A SELECTION. Measured: the
+		// first box drag selected the labels it swept ("Text\nText"), and the NEXT press
+		// over that selection started a native HTML5 text drag — after which Chromium
+		// delivers `dragstart`/`drag`/`dragend` and NO pointermove or pointerup at all, so
+		// the gesture hung with its box on screen and its listeners still attached. The
+		// preventDefault here suppresses the compatibility mousedown that starts both, and
+		// `user-select: none` on the board keeps a selection from forming in the first
+		// place. (The wrap is focused explicitly by the caller, so nothing is lost.)
+		e.preventDefault();
+		const p = stagePointOf(e);
+		marqueeAdd = e.shiftKey || e.ctrlKey || e.metaKey;
+		marqueeMoved = false;
+		marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+		// window listeners, not the board's: a drag that leaves the board must keep
+		// tracking, and the release regularly lands somewhere else entirely
+		window.addEventListener('pointermove', onMarqueeMove);
+		window.addEventListener('pointerup', onMarqueeUp);
+	}
+	/** @param {PointerEvent} e */
+	function onMarqueeMove(e) {
+		if (!marquee) return;
+		const p = stagePointOf(e);
+		// the threshold is in SCREEN px, so a small artboard does not make every click a drag
+		if (Math.abs(p.x - marquee.x0) * scale > 3 || Math.abs(p.y - marquee.y0) * scale > 3) marqueeMoved = true;
+		marquee = { ...marquee, x1: p.x, y1: p.y };
+	}
+	function onMarqueeUp() {
+		const box = marquee;
+		endMarquee();
+		if (!box) return;
+		if (!marqueeMoved) {
+			if (!marqueeAdd) setPicks([]); // a click on empty space still deselects
+			return;
+		}
+		const hits = elements.filter((el) => rectHitsBox(stageRect(el), box)).map((el) => el.id);
+		setPicks(marqueeAdd ? [...new Set([...selected, ...hits])] : hits);
+	}
+	function endMarquee() {
+		marquee = null;
+		window.removeEventListener('pointermove', onMarqueeMove);
+		window.removeEventListener('pointerup', onMarqueeUp);
+	}
+
+	// --- F1: align / distribute / equalize ---------------------------------------
+	/**
+	 * Run one arrange op over the selection, as ONE gesture — so it is ONE undo entry and
+	 * ONE broadcast whatever it touches.
+	 *
+	 * THE ANCHOR RULE: `hudArrange` works in ABSOLUTE stage px and knows nothing about the
+	 * 9-grid, and every write goes back out through `offsetsFrom`, which converts a stage
+	 * left/top into the offset THAT element's own anchor means. Without that, aligning a
+	 * `top-right` element to a `top-left` one would set two x values that mean opposite
+	 * directions and the two would end up further apart than they started.
+	 * @param {string} opKey
+	 */
+	function runArrange(opKey) {
+		const op = arrangeOp(opKey);
+		if (!op) return;
+		// snapshot the elements AND their rects up front: the writes below re-derive
+		// `elements`, so reading it mid-loop would mix pre- and post-op state
+		const members = selected
+			.map((id) => elements.find((el) => el.id === id))
+			.filter((el) => !!el)
+			.map((el) => ({ id: el.id, el, rect: stageRect(el) }));
+		if (members.length < op.min) {
+			showToast(op.label + ' needs ' + op.min + ' selected elements');
+			return;
+		}
+		const next = arrangeRects(opKey, members);
+		const ids = Object.keys(next);
+		if (!ids.length) {
+			showToast('Nothing to do — they are already arranged that way');
+			return;
+		}
+		beginHudGesture(docKey);
+		for (const member of members) {
+			const rect = next[member.id];
+			if (!rect) continue;
+			// size FIRST in the same patch, then the offsets its anchor means at that size —
+			// a right-anchored element's x depends on its width, so the two cannot be split
+			const sized = { ...member.el, w: rect.w, h: rect.h };
+			updateHudElement(docKey, screenId, member.id, {
+				w: rect.w,
+				h: rect.h,
+				...offsetsFrom(sized, rect.left, rect.top)
+			});
+		}
+		endHudGesture(docKey);
+	}
+
+	/** ONE list, two consumers (the topbar and the context menu) — the `buildObjectMenuItems`
+	 * rule, so a new op cannot appear in one and not the other. @param {string} group */
+	function arrangeMenuItems(group) {
+		return HUD_ARRANGE_OPS.filter((op) => op.group === group).map((op) => ({
+			label: op.label,
+			tooltip: op.hint,
+			disabled: selected.length < op.min,
+			action: () => runArrange(op.key)
+		}));
+	}
+
+	/** the topbar's glyphs. Presentation, so it lives here and not in the data module. */
+	/** @type {Record<string, any>} */
+	const ARRANGE_ICONS = {
+		'align-left': AlignStartVertical,
+		'align-hcenter': AlignCenterVertical,
+		'align-right': AlignEndVertical,
+		'align-top': AlignStartHorizontal,
+		'align-vcenter': AlignCenterHorizontal,
+		'align-bottom': AlignEndHorizontal,
+		'distribute-h': AlignHorizontalSpaceAround,
+		'distribute-v': AlignVerticalSpaceAround,
+		equalize: Proportions
+	};
+
 	// --- keys ------------------------------------------------------------------
 	// Claimed in CAPTURE phase on the wrap, the UvEditor recipe. Delete is SWALLOWED:
 	// unhandled it deletes the OBJECT, which is the exact trap the UV editor documented.
@@ -412,6 +560,12 @@
 			// session. Cancelling a pick must not also drop the selection.
 			if ($hudPickArm) {
 				hudPickArm.set(null);
+				return;
+			}
+			// F1: a live marquee is the next-outermost thing — dropping the box must not
+			// also drop the selection it was going to replace
+			if (marquee) {
+				endMarquee();
 				return;
 			}
 			if (drag.active() || sizeGrab.active()) {
@@ -702,8 +856,23 @@
 		// registry keys ('textfield', 'crosshair'), never the kind's own label.
 		const at = stagePointOf(e);
 		const items = [
-			{ section: 'Add' },
-			...HUD_KIND_DEFS.map((def) => ({ label: def.label, action: () => add(def.key, at) })),
+			{
+				// 21-F1: CATEGORIZED, from the SAME `paletteGroups()` the sidebar palette
+				// renders — a flat list of 22 kinds was already unreadable, and a second
+				// hand-written list here would have drifted from the registry the first time
+				// a pack or a module added a kind (both of which `paletteGroups` folds in).
+				label: 'Add',
+				children: paletteGroups().map((entry) => ({
+					label: entry.group,
+					children: entry.items.map((def) => ({
+						label: def.label,
+						tooltip: def.summary,
+						action: () => add(def.key, at)
+					}))
+				}))
+			},
+			{ section: ' ' },
+			...HUD_ARRANGE_GROUPS.map((group) => ({ label: group, children: arrangeMenuItems(group) })),
 			{ section: ' ' },
 			{ label: 'Duplicate', hint: 'Ctrl+D', disabled: !selected.length, action: duplicate },
 			{
@@ -793,10 +962,47 @@
 	<WindowShell bind:this={shell} key="hud" primaryLabel="Screens" secondaryModes={[{ key: 'props', icon: '⚙', label: 'Properties' }]}>
 		{#snippet topbar()}
 			<div class="flex flex-wrap items-center gap-1.5">
-				<button class="hud-btn" title="Add text" onclick={() => add('text')}><Type size={14} aria-hidden="true" /></button>
-				<button class="hud-btn" title="Add button" onclick={() => add('button')}><Plus size={14} aria-hidden="true" /></button>
-				<button class="hud-btn" title="Add bar" onclick={() => add('bar')}><SquareDashed size={14} aria-hidden="true" /></button>
-				<button class="hud-btn" title="Add crosshair" onclick={() => add('crosshair')}><Crosshair size={14} aria-hidden="true" /></button>
+				<!-- 21-F1: the four Add shortcuts are gone. The palette in the left column is the
+				     add path and it lists EVERY kind, packs and module kinds included, so four
+				     hardcoded favourites were both redundant and a list that drifts. What earns
+				     the space instead is the multi-selection: a marquee to build one, then align
+				     and distribute to tidy it. -->
+				<button
+					id="hud-tool-select"
+					class="hud-btn"
+					aria-pressed={tool === 'select'}
+					aria-label="Select tool"
+					title="Select — click an element to pick it, drag it to move it, Shift to add"
+					onclick={() => (tool = 'select')}><MousePointer2 size={14} aria-hidden="true" /></button
+				>
+				<button
+					id="hud-tool-marquee"
+					class="hud-btn"
+					aria-pressed={tool === 'marquee'}
+					aria-label="Multi-select tool"
+					title="Multi-select — drag a box on the board to select everything it touches (Shift adds to the selection)"
+					onclick={() => (tool = 'marquee')}><BoxSelect size={14} aria-hidden="true" /></button
+				>
+				<span class="hud-sep"></span>
+				<!-- ONE list drives these AND the context menu (`$lib/hudArrange`), so a new op
+				     cannot land in one and be missing from the other. -->
+				{#each HUD_ARRANGE_OPS as op, i (op.key)}
+					{#if i > 0 && HUD_ARRANGE_OPS[i - 1].group !== op.group}
+						<span class="hud-sep"></span>
+					{/if}
+					{@const Glyph = ARRANGE_ICONS[op.key]}
+					<button
+						id="hud-arrange-{op.key}"
+						class="hud-btn"
+						data-hud-arrange={op.key}
+						disabled={selected.length < op.min}
+						aria-label={op.label}
+						title="{op.label} — {op.hint}{selected.length < op.min
+							? ' (needs ' + op.min + ' selected)'
+							: ''}"
+						onclick={() => runArrange(op.key)}><Glyph size={14} aria-hidden="true" /></button
+					>
+				{/each}
 				<span class="hud-sep"></span>
 				<button class="hud-btn" title="Duplicate (Ctrl+D)" disabled={!selected.length} onclick={duplicate}><Copy size={14} aria-hidden="true" /></button>
 				<button
@@ -955,7 +1161,11 @@
 				use:hudSurface
 				onpointerdown={(/** @type {any} */ e) => {
 					/** @type {HTMLElement} */ (e.currentTarget).focus();
-					if (e.button === 0) setPicks([]);
+					if (e.button !== 0) return;
+					// F1: which tool is armed decides what a press on nothing means — a box
+					// drag, or the deselect it has always been
+					if (tool === 'marquee') beginMarquee(e);
+					else setPicks([]);
 				}}
 				bind:this={boardEl}
 			>
@@ -1034,6 +1244,15 @@
 					{#each activeGuides.ys as gy}
 						<div class="hud-guide hud-guide-h" data-hud-guide="y" style="top: {gy * scale}px"></div>
 					{/each}
+					<!-- F1: the live marquee. OUTSIDE the scaled stage, like the guides, so its
+					     border is 1px at every zoom. -->
+					{#if marquee}
+						<div
+							id="hud-marquee"
+							class="hud-marquee"
+							style="left: {Math.min(marquee.x0, marquee.x1) * scale}px; top: {Math.min(marquee.y0, marquee.y1) * scale}px; width: {Math.abs(marquee.x1 - marquee.x0) * scale}px; height: {Math.abs(marquee.y1 - marquee.y0) * scale}px"
+						></div>
+					{/if}
 					{#if dropAt}
 						<!-- where a palette drop will land -->
 						<div
@@ -1325,6 +1544,12 @@
 	/* the stage is 16:9, so what you lay out matches the viewport's proportions */
 	.hud-board {
 		position: relative;
+		/* F1: a layout artboard has no selectable text. Without this, dragging anything
+		   across it selects the labels it sweeps, and the NEXT press over that selection
+		   starts a native text DRAG — which eats every pointermove and the pointerup with
+		   it, leaving the gesture hung. */
+		user-select: none;
+		-webkit-user-select: none;
 		background: rgb(17 24 39 / 0.85);
 		box-shadow: 0 0 0 1px rgb(75 85 99 / 0.7);
 		/* E1.3: the runtime layer clips at the WINDOW, so the artboard clips at the stage.
@@ -1397,6 +1622,13 @@
 		right: 0;
 		height: 1px;
 	}
+	/* F1: the marquee box. Outside the scaled stage, so the border stays 1px. */
+	.hud-marquee {
+		position: absolute;
+		pointer-events: none;
+		border: 1px solid var(--accent, #ef562f);
+		background: rgb(239 86 47 / 0.12);
+	}
 	/* E1.4: the real window's shape on the reference stage. Faint on purpose — it is a
 	   fact about your screen, not part of the design. */
 	.hud-ghost {
@@ -1436,6 +1668,13 @@
 	}
 	.hud-btn:disabled {
 		opacity: 0.4;
+	}
+	/* F1: an ARMED tool. The scoped `.hud-btn` background above beats any utility class
+	   (unlayered component CSS does), which is the toolbox lesson — so the armed fill is
+	   declared here too rather than added as a class. */
+	.hud-btn[aria-pressed='true'] {
+		background: var(--accent, #ef562f);
+		color: #fff;
 	}
 	.hud-danger {
 		color: #f87171;

@@ -68,9 +68,12 @@ h.run(async () => {
 	h.check(opened.visible === 'hud', `and makes it the visible dock panel (${opened.visible})`);
 	h.check(opened.docCreated, 'and a document exists to author into');
 
-	// ---- 2. add an element through the toolbar ------------------------------
+	// ---- 2. add an element through the PALETTE ------------------------------
+	// 21-F1 retired the topbar's four Add shortcuts: the palette is the add path (and the
+	// only one that lists every kind, packs and module kinds included), and the topbar is a
+	// selection/arrange toolbar now.
 	const added = await page.evaluate(async () => {
-		const btn = document.querySelector('#hud-dock button[title="Add text"]');
+		const btn = document.querySelector('#hud-palette [data-hud-kind="text"]');
 		/** @type {any} */ (btn)?.click();
 		await new Promise((r) => setTimeout(r, 600));
 		const doc = window.__stores.hudDocs.hudDocOf('scene');
@@ -80,7 +83,7 @@ h.run(async () => {
 			selected: document.querySelectorAll('#hud-board .hud-item-on').length
 		};
 	});
-	h.check(added.count === 1, `the toolbar adds an element (${added.count})`);
+	h.check(added.count === 1, `the palette adds an element (${added.count})`);
 	h.check(added.items === 1, `the artboard renders it (${added.items})`);
 	h.check(added.selected === 1, `and selects it, so the properties pane has a target (${added.selected})`);
 

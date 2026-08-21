@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { showToast, appNotice, peers, cloudIdentity } from '../stores/appStore';
+import { showToast, appNotice, peers, cloudIdentity, userdata } from '../stores/appStore';
 import { globalScene, globalCamera, globalRenderer } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
 import { sessionHost } from './connectionState';
@@ -150,6 +150,9 @@ function makeCloudApi() {
 		/** who is playing: my own mode plus every peer's (absent = editor) — what a
 		 *  room's heartbeat publishes as its members' `mode` chips */
 		playModes: () => ({ mine: myPlayMode(), peers: { ...get(peerPlayModes) } }),
+		/** the display roster `[[peerId, name], …]` (self first, the userdata shape) —
+		 *  what a room's heartbeat publishes as its members' names */
+		peerRoster: () => (/** @type {any[]} */ (get(userdata)) ?? []).map((u) => [u[0], u[1] || '']),
 		/** capture a downscaled JPEG Blob of the current viewport (room thumbnails) —
 		 *  renders a fresh frame then reads the canvas synchronously so it works without
 		 *  preserveDrawingBuffer. Returns null in VR / before the renderer exists. v2.2 */

@@ -187,13 +187,19 @@ export const nodeCatalog = [
 			},
 			// variables: the shared numbers a game keeps (score, lives, difficulty). They
 			// ride the same singleton, so there is one latest-wins rule for all game state.
+			// 21-G4: ...and `scope` says WHOSE number. 'shared' is the game singleton this
+			// node has always written; 'player' writes THIS peer's own row, which no other
+			// peer can write — the immunity to the documented `add` read-modify-write race.
+			// An absent scope reads as 'shared', so every node saved before this is
+			// unchanged in meaning.
 			{
 				type: 'setvariable',
 				label: 'Set Variable',
-				defaults: { name: 'score', value: 0, op: 'set' },
+				defaults: { name: 'score', value: 0, op: 'set', scope: 'shared' },
 				params: [
 					{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 },
-					{ key: 'op', kind: 'select', options: ['set', 'add', 'subtract'] }
+					{ key: 'op', kind: 'select', options: ['set', 'add', 'subtract'] },
+					{ key: 'scope', kind: 'select', options: ['shared', 'player'] }
 				]
 			},
 			{
@@ -212,11 +218,29 @@ export const nodeCatalog = [
 					{ key: 'length', kind: 'range', min: 1, max: 3600, step: 1 }
 				]
 			},
+			// 21-G4: the PER-PLAYER read. `mine` is my own number — the one reading in this
+			// whole group that is ALLOWED to differ per peer, which is the point of it —
+			// `sum` is the team total, `max` is who is winning, and `peer` names one row.
+			{
+				type: 'peervariable',
+				label: 'Player Variable',
+				defaults: { name: 'laps', read: 'mine', peer: '', fallback: 0 },
+				params: [
+					{ key: 'name', kind: 'text', placeholder: 'laps', maxLength: 40 },
+					{ key: 'read', kind: 'select', options: ['mine', 'sum', 'max', 'peer'] },
+					{ key: 'peer', kind: 'text', placeholder: 'peer id (read: peer)', maxLength: 64 }
+				]
+			},
 			// 21-F3: how many collectibles are left. COUNTED FROM THE GRAPH — every
 			// collectible chain counting into this variable is found and its Latch read —
 			// and NOT from the variable, which is a score that only ever goes up and would
 			// make `left` go negative the first time something respawned. Because the
 			// latches are `perRound`, all three readings self-heal when a round starts.
+			//
+			// 21-G4: on a PER-PLAYER chain it reads MY progress with no extra machinery, and
+			// that falls out of the design rather than being a case here — the latches it
+			// counts are set by a pulse that never left this peer, so "how many have I
+			// collected" is simply what counting my own latches means.
 			{
 				type: 'collectcount',
 				label: 'Collectibles',
@@ -409,6 +433,24 @@ export const nodeCatalog = [
 				params: [
 					{ key: 'op', kind: 'select', options: ['set', 'append', 'clear'] },
 					{ key: 'text', kind: 'text', placeholder: 'the row', maxLength: 120 }
+				]
+			},
+			// 21-G4: THE LEADERBOARD, and it is the DERIVED counterpart to HUD Rows above.
+			// That node is edge-driven because appending per frame is a memory leak; a
+			// scoreboard has no events at all — it is a pure function of every peer's own
+			// row plus the roster, both already replicated — so it runs every tick, writes
+			// on CHANGE, and is right for a late joiner who witnessed no edges. `{name}`,
+			// `{v}` and `{rank}` are the format tokens.
+			{
+				type: 'leaderboard',
+				label: 'Leaderboard',
+				defaults: { element: '', variable: 'laps', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 10 },
+				params: [
+					{ key: 'variable', kind: 'text', placeholder: 'laps', maxLength: 40 },
+					{ key: 'order', kind: 'select', options: ['desc', 'asc'] },
+					{ key: 'format', kind: 'text', placeholder: '{name} — {v}', maxLength: 80 },
+					{ key: 'decimals', kind: 'range', min: 0, max: 3, step: 1 },
+					{ key: 'limit', kind: 'range', min: 1, max: 20, step: 1 }
 				]
 			},
 			// 21-D4: the INPUT pair. Everything else in this group WRITES to the HUD;

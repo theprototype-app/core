@@ -13,7 +13,7 @@
 import { writable } from 'svelte/store';
 
 /**
- * @typedef {{ variable: string, respawn: number }} CollectibleOptions
+ * @typedef {{ variable: string, respawn: number, perPlayer: boolean }} CollectibleOptions
  */
 
 /** The active recipe dialog, or null. Rendered by `menu/CollectibleDialog.svelte`.
@@ -27,7 +27,8 @@ export const recipeDialog = writable(null);
  * A second dialog replaces the first and resolves it null — a dangling promise is how a
  * recipe would silently never run (read-then-set, never write a store from its own
  * subscriber).
- * @param {{ variables?: string[], variable?: string, respawn?: number, count?: number }} opts
+ * @param {{ variables?: string[], variable?: string, respawn?: number, perPlayer?: boolean,
+ *   count?: number }} opts
  * @returns {Promise<CollectibleOptions|null>}
  */
 export function showCollectibleOptions(opts = {}) {
@@ -39,6 +40,9 @@ export function showCollectibleOptions(opts = {}) {
 				variables: opts.variables ?? [],
 				variable: opts.variable ?? '',
 				respawn: Number(opts.respawn) || 0,
+				// 21-G4: shared is the DEFAULT because it is the ordinary meaning of a pickup
+				// — one gem, one person gets it — and per-player is the deliberate choice
+				perPlayer: !!opts.perPlayer,
 				count: opts.count ?? 1,
 				resolve
 			};
@@ -50,7 +54,8 @@ export function showCollectibleOptions(opts = {}) {
  * @param {CollectibleOptions|null} answer */
 export function resolveRecipeDialog(answer) {
 	recipeDialog.update((current) => {
-		if (current?.resolve) current.resolve(answer && answer.variable ? answer : null);
+		if (current?.resolve)
+			current.resolve(answer && answer.variable ? { ...answer, perPlayer: !!answer.perPlayer } : null);
 		return null;
 	});
 }

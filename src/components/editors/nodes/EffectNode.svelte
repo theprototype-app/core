@@ -47,6 +47,15 @@
 					on:change={(e) => setNodeData(id, { on: e.currentTarget.checked })} />
 				<span>{data.on !== false ? 'visible' : 'hidden'}</span>
 			</label>
+			<!-- 21-F2: the collectible recipe sets this. Outside play the node stands down
+			     entirely, so the object renders and the object list can hide/show it by
+			     hand — a plain param on the card, not a hidden rule about recipe nodes. -->
+			<label class="flex items-center gap-2"
+				title="Outside play mode this node leaves the object alone, so you can hide and show it by hand">
+				<input class="nodrag" type="checkbox" checked={!!data.whilePlaying}
+					on:change={(e) => setNodeData(id, { whilePlaying: e.currentTarget.checked })} />
+				<span class="text-[10px] text-gray-400">only while playing</span>
+			</label>
 		{/if}
 	</div>
 </NodeWrapper>

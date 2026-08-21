@@ -24,6 +24,9 @@ import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
 import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } from '$lib/cameraPreview';
+// 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
+// riding the getmodulestate request, and a drop on disconnect (golden rule 3).
+import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVersion, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
@@ -543,6 +546,7 @@ export class PeerConnection {
 						// Honoring these evicted live peers meshwide during formation (B5).
 					} else {
 						handleDisconnected(data.peerId);
+						dropPeerPlayMode(data.peerId); // 21-F3
 						dropPeerEnvPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
 					}
@@ -601,6 +605,12 @@ export class PeerConnection {
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
+					sendPlayModeState(); // 21-F3: ...and so does play-mode presence
+				} else if(data.type == 'playmode') {
+					// 21-F3: presence only — "X is in play mode". ADDITIVE: the message goes out
+					// only while PLAYING, so an absent peer (or one on an older build that never
+					// sends it) reads as an editor, which is what it is.
+					applyRemotePlayMode(data);
 				} else if(data.type == 'modulestate') {
 					applyModuleStates(data.states);
 				} else if(data.type == 'campreview') {
@@ -899,6 +909,7 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
+		dropPeerPlayMode(peerId); // 21-F3
 		dropPeerEnvPresets(peerId);
 		dropPeerHandModel(peerId);
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
@@ -929,6 +940,7 @@ export class PeerConnection {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
 				clearPeerPreview(peerId); // 16-P5
+				dropPeerPlayMode(peerId); // 21-F3
 				dropPeerEnvPresets(peerId);
 				dropPeerHandModel(peerId);
 			}

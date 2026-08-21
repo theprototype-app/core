@@ -364,6 +364,13 @@ h.run(async () => {
 		if (!peerHasGems) await B.page.waitForTimeout(300);
 	}
 	h.check(peerHasGems, 'premise: the peer holds all three chains AND all three boxes');
+	// 21-F2: THE SECOND PLAYER HAS TO BE PLAYING. The recipe's Visibility node now stands
+	// down unless that peer is in play mode (`whilePlaying`), which is what lets a player
+	// press Esc and get their own scene back — so a peer parked in the EDITOR deliberately
+	// keeps seeing the gems, and "it vanished for everyone" is a claim about the people in
+	// the game. Two players is what this section always meant anyway.
+	await B.page.evaluate(() => window.__stores.isLocked.set(true));
+	await B.page.waitForTimeout(700);
 	h.check(
 		(await visibleOf(B, gems.uuids)).every((v) => v === true),
 		'premise: all three are visible on the peer to begin with'
@@ -568,7 +575,8 @@ h.run(async () => {
 	// ---- a LATE JOINER walks in on the finished round ----------------------
 	// out of play mode first: the approval prompt is editor chrome, and a real user is not
 	// asked to click it from inside a pointer-locked game either
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	// 21-F2: BOTH players leave — the round is over, and B has been playing since section 3
+	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(null));
 	await page.waitForTimeout(900);
 	const C = await h.setupPage(browser, 'C');
 	await C.page.waitForFunction(() => !!window.__stores?.gameState, { timeout: 30000 });

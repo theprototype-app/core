@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges } from '../stores/flowStore';
-import { objectsGroup } from '../stores/sceneStore';
+// 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
+import { objectsGroup, isLocked } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
 // 21-E7.6: hudKinds is a leaf (it reads only moduleHudKinds, itself svelte/store-only)
@@ -31,7 +32,17 @@ import {
 } from './hudDocs';
 // 21-D6: gameState is a LEAF for exactly this reason — history imports THIS module, so a
 // gameState that imported history would close the cycle.
-import { gameState, setGameState, setGameVar, gameVar, gameElapsed, commitGameState } from './gameState';
+import {
+	gameState,
+	setGameState,
+	setGameVar,
+	gameVar,
+	gameElapsed,
+	commitGameState,
+	roundUnderway,
+	roundCutoff,
+	resetGame
+} from './gameState';
 // 21-E6: charController is a LEAF for the same reason gameState is (svelte stores,
 // THREE, and two store-only modules), so a static edge closes nothing. It reaches
 // physics itself through its own primed dynamic import.
@@ -103,6 +114,103 @@ function staleTrigger(node, stamp) {
 	if (stamp === null || stamp === undefined) return false;
 	const seenAt = actionSeenAt.get(node.id);
 	return seenAt !== undefined && stamp < seenAt;
+}
+
+// --- 21-F2: THE TWO RECIPE RULES, and they are deliberately separate ----------------
+//
+// A collectible is an ordinary graph, so both rules are OPT-IN PER NODE through a param
+// the recipe stamps and the card shows (`whilePlaying` on Visibility, `perRound` on
+// Latch and Once). Nothing here can surprise a hand-built chain in a graph that has
+// never heard of a game, which is the whole reason they are params and not behaviour.
+
+/**
+ * MAY A RECIPE-DRIVEN EFFECT ACT RIGHT NOW? Two halves, both load-bearing.
+ *
+ * LOCAL (`isLocked === true`) is the reported bug: a collected object stayed invisible
+ * after Esc and could not be un-hidden from the object list, because the Visibility
+ * effect re-applies every frame and wins forever. Leaving play has to hand the object
+ * straight back to its owner, whatever the rest of the room is still doing — a peer's
+ * own Esc changes nothing SHARED. `isLocked` is THREE-state (null = editor, true =
+ * playing, false = just exited, settled back to null by Controls), hence `=== true`.
+ *
+ * SHARED (`roundUnderway`) is the other half: outside a round nobody is playing, so the
+ * scene shows what it was AUTHORED as and manual visibility wins there too. This is
+ * 21-D5's rule one domain over — the HUD is not painted in the viewport while you are
+ * authoring it.
+ *
+ * The consequence worth stating out loud: a peer sitting in the EDITOR while others play
+ * keeps seeing the gems. That is the same decision, not a side effect — objects vanishing
+ * out of a scene you are editing, with no way to get them back, is the reported bug wearing
+ * a different hat.
+ */
+export function gamePlayActive() {
+	return get(isLocked) === true && roundUnderway();
+}
+
+/** The game singleton keeps EPOCH MS; the trigger log keeps seconds-of-the-day
+ * (`syncedNow`). @param {number} ms */
+function toSyncedStamp(ms) {
+	return (ms % 86400000) / 1000;
+}
+
+/**
+ * The round cutoff that applies to THIS node's stamp, or null when nothing here can be
+ * stale (not round-scoped, no stamp, or an unsynced runtime). The cutoff itself is
+ * `roundCutoff()` in gameState — replicated, so every peer including a late joiner
+ * computes the same answer with nothing sent.
+ * @param {any} node @param {number|null|undefined} stamp @returns {number|null}
+ */
+function roundCutoffFor(node, stamp) {
+	if (typeof stamp !== 'number' || !node?.data?.perRound) return null;
+	// an UNSYNCED runtime runs on performance.now(), which has no relation to the
+	// singleton's epoch stamps — there is nothing to compare, so nothing is stale
+	if (!synced) return null;
+	return roundCutoff();
+}
+
+/** Did a FINITE cutoff — a real round start — retire this stamp?
+ * @param {any} node @param {number|null|undefined} stamp @param {number|null} cutoff */
+function retiredByRound(node, stamp, cutoff) {
+	if (cutoff === null || cutoff === Infinity || typeof stamp !== 'number') return false;
+	const start = toSyncedStamp(cutoff);
+	// the trigger clock WRAPS at midnight, so a stamp that looks more than twelve hours
+	// old is really the far side of the wrap (the modular-comparison guard)
+	return stamp < start && start - stamp < 43200;
+}
+
+/**
+ * THE PULL RULE: should a round-scoped READ treat this stamp as never having happened?
+ * `Infinity` (menu / over — we are not in a round at all) counts as stale here, which is
+ * the "latches read un-collected on return to menu" half of the reset rule.
+ * @param {any} node @param {number|null|undefined} stamp @returns {boolean}
+ */
+function roundStale(node, stamp) {
+	const cutoff = roundCutoffFor(node, stamp);
+	if (cutoff === null) return false;
+	if (cutoff === Infinity) return true;
+	return retiredByRound(node, stamp, cutoff);
+}
+
+/**
+ * THE PUSH RULE, for the state-mutating branches of `applyNodeTrigger` ONLY: has a NEW
+ * ROUND retired this stamp? A FINITE cutoff means re-arm/reset is right — a round bump
+ * un-collects everything. `Infinity` deliberately does NOT count: while the shell sits
+ * in menu/over a spent Once stays SPENT and toggle parity stays PUT, because "not in a
+ * round" is a statement about how stamps READ, not a licence to mutate. Reading Infinity
+ * as stale here meant every menu click RE-ARMED a spent `perRound` Once — a fresh
+ * `lastT`, a fresh stamp edge, and the downstream Set Variable banked on every click,
+ * unboundedly (the "shell used, back at menu, player clicks a gem N times → variable
+ * += N" bug, and the collectibles-v2 flake).
+ * @param {any} node @param {number|null|undefined} stamp @returns {boolean}
+ */
+function roundRetired(node, stamp) {
+	const cutoff = roundCutoffFor(node, stamp);
+	return retiredByRound(node, stamp, cutoff);
+}
+
+/** `stamp` unless a round bump has retired it. @param {any} node @param {number|null} stamp */
+function freshStamp(node, stamp) {
+	return roundStale(node, stamp) ? null : stamp;
 }
 
 /** Forget nodes that no longer exist, so a node id that comes back takes a NEW cutoff —
@@ -770,8 +878,15 @@ function updateGameNodes(time, ctx) {
 		const data = resolveInputs(node, nodes, edges, time, ctx);
 		if (type === 'setgamestate') {
 			// EVERY peer runs this from the same replicated stamp, so the write is
-			// idempotent-by-latest-wins rather than needing an authority
-			setGameState(String(data.state ?? 'playing'), { outcome: String(data.outcome ?? '') });
+			// idempotent-by-latest-wins rather than needing an authority.
+			// 21-F3: `reset` is the FULL reset — it calls the very `resetGame()` the Users
+			// popover's admin entry calls, so the button and the node cannot drift. It is
+			// not the same as `state: 'menu'`: a reset also zeroes `startedAt`, so a Game
+			// Time readout on the menu screen shows 0 instead of the last round's elapsed.
+			// ABSENT/false by default, so every Set Game State written before this is
+			// byte-identical.
+			if (data.reset) resetGame();
+			else setGameState(String(data.state ?? 'playing'), { outcome: String(data.outcome ?? '') });
 		} else if (type === 'setcamera') {
 			const uuid = typeof data.camera === 'string' ? data.camera : '';
 			if (uuid) lookThroughCamera(uuid);
@@ -1108,7 +1223,17 @@ const scheduledFired = new Map();
  * still armed, or after a rearm deleted the entry. @param {any} node @param {any} ctx */
 function onceMoment(node, ctx) {
 	const entry = ctx?.triggers?.[node.id];
-	return entry && entry.count === 1 && typeof entry.lastT === 'number' ? entry.lastT : null;
+	if (!entry || entry.count !== 1 || typeof entry.lastT !== 'number') return null;
+	// 21-F2: a round bump retires the moment exactly like a rearm does, so the derived
+	// push is re-armed rather than deduped against last round's fire. This is the PULL
+	// rule (Infinity counts as stale) even though it FEEDS the push half, and on purpose:
+	// it derives "does this Once have a live moment", and the dedupe map below is LOCAL —
+	// a late joiner's `scheduledFired` starts empty, so answering with a stale-round stamp
+	// under Infinity would fire the Once's downstream push once on arrival in menu, a
+	// desync. Null is fail-safe: a moment withheld in menu simply never fires
+	// (updateDerivedPulses deletes the dedupe key and does nothing, tick after tick), and
+	// a new round's finite cutoff re-arms it through applyNodeTrigger's own branch.
+	return roundStale(node, entry.lastT) ? null : entry.lastT;
 }
 
 /**
@@ -1342,6 +1467,8 @@ export const valueTypes = [
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
 	'ongamestate', 'getvariable', 'gametime',
+	// 21-F3: how many collectibles are left, counted off the graph's own latches
+	'collectcount',
 	// 21-E4: the logic a game LOOP is made of. Sequence's value is a handle MAP,
 	// like objectflow's - unwrapHandle resolves it per reading edge.
 	'latch', 'delay', 'sequence', 'once',
@@ -1410,6 +1537,88 @@ function pointOf(v, ctx) {
 	if (Array.isArray(v) && v.length >= 3) return new THREE.Vector3(num(v[0]), num(v[1]), num(v[2]));
 	if (ctx && typeof v === 'string') return ctx.pos(v);
 	return null;
+}
+
+// --- 21-F3: HOW MANY COLLECTIBLES ARE LEFT ------------------------------------------
+//
+// THE VARIABLE CANNOT ANSWER THIS, which is the whole reason this reads the graph. The
+// recipe counts pickups INTO a variable, so the variable is a SCORE: it only goes up, it
+// keeps its value through a round bump (nothing resets `vars`), and with F2's respawn it
+// passes the number of objects in the scene. Deriving `left` as `total - variable` would
+// therefore go negative on a respawning scene and stay wrong for the whole of round 2.
+//
+// The LATCHES are the truth. Each collectible's Latch IS "this one is collected", it is
+// already `perRound`, and it is already read by the same pure evaluator every peer runs
+// — so counting the latches gives an answer that self-heals on a round bump, tracks a
+// respawn back down, and needs nothing sent. `collected` is counted the same way, not
+// taken from the variable, so `collected + left === total` by construction rather than
+// by two sources agreeing.
+//
+// WHAT COUNTS AS A COLLECTIBLE CHAIN: the shape `makeCollectible` builds, walked BACK
+// from the counter — SetVariable(name) <-trigger- Once <-trigger- (the pickup event)
+// -set-> Latch. The pickup event is deliberately unconstrained (an On Click today, an On
+// Enter sensor tomorrow); what identifies the chain is the Once feeding this variable
+// and a Latch armed by the same event.
+/** index the edges once — the walk is three hops and a graph can hold hundreds
+ * @param {any[]} allEdges */
+function edgeIndex(allEdges) {
+	/** @type {Map<string, any[]>} */ const bySource = new Map();
+	/** @type {Map<string, any[]>} */ const byTarget = new Map();
+	for (const edge of allEdges) {
+		if (!bySource.has(edge.source)) bySource.set(edge.source, []);
+		bySource.get(edge.source)?.push(edge);
+		if (!byTarget.has(edge.target)) byTarget.set(edge.target, []);
+		byTarget.get(edge.target)?.push(edge);
+	}
+	return { bySource, byTarget };
+}
+
+/** Every collectible Latch counting into `variable`, deduped.
+ * @param {string} variable @param {any[]} allNodes @param {any[]} allEdges @returns {any[]} */
+export function collectibleLatches(variable, allNodes, allEdges) {
+	const name = String(variable ?? '').trim();
+	if (!name) return [];
+	const { bySource, byTarget } = edgeIndex(allEdges);
+	const byId = new Map(allNodes.map((/** @type {any} */ n) => [n.id, n]));
+	/** @type {Map<string, any>} */
+	const latches = new Map();
+	const into = (/** @type {string} */ id, /** @type {string} */ handle) =>
+		(byTarget.get(id) ?? []).filter((/** @type {any} */ e) => (e.targetHandle ?? null) === handle);
+	for (const counter of allNodes) {
+		if (counter.type !== 'setvariable') continue;
+		if (String(counter.data?.name ?? '').trim() !== name) continue;
+		for (const toCounter of into(counter.id, 'trigger')) {
+			const once = byId.get(toCounter.source);
+			if (once?.type !== 'once') continue;
+			for (const toOnce of into(once.id, 'trigger')) {
+				// the pickup event arms the Latch through its own `set` edge
+				for (const fromEvent of bySource.get(toOnce.source) ?? []) {
+					if ((fromEvent.targetHandle ?? null) !== 'set') continue;
+					const latch = byId.get(fromEvent.target);
+					if (latch?.type === 'latch') latches.set(latch.id, latch);
+				}
+			}
+		}
+	}
+	return [...latches.values()];
+}
+
+/**
+ * `{total, collected, left}` for one collectible variable.
+ * @param {string} variable @param {any[]} allNodes @param {any[]} allEdges
+ * @param {number} time @param {Set<string>} seen @param {any} ctx
+ */
+function collectibleStats(variable, allNodes, allEdges, time, seen, ctx) {
+	const latches = collectibleLatches(variable, allNodes, allEdges);
+	let collected = 0;
+	let left = 0;
+	for (const latch of latches) {
+		// the Latch's own eval already applies `perRound` against the replicated round,
+		// so a latch set in a previous round reads UN-collected here with no work of ours
+		if (bool(evalNode(latch, allNodes, allEdges, time, seen, ctx))) collected++;
+		else left++;
+	}
+	return { total: latches.length, collected, left };
 }
 
 /**
@@ -1597,8 +1806,12 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// which arrives with an EMPTY log (the log is not part of the handshake),
 			// converges on the very next set or reset it sees. That is strictly better than
 			// counting, which would leave it permanently offset.
-			const setT = handleStamp(node, 'set', ctx);
-			const resetT = handleStamp(node, 'reset', ctx);
+			// 21-F2: with `perRound` on, a stamp from a PREVIOUS round did not happen, so
+			// the latch falls back to `initial` - which is what un-collects a collectible
+			// when the round bumps or the game returns to its menu. Purity is untouched:
+			// the extra input is the replicated round, not a state of our own.
+			const setT = freshStamp(node, handleStamp(node, 'set', ctx));
+			const resetT = freshStamp(node, handleStamp(node, 'reset', ctx));
 			const base =
 				setT === null && resetT === null
 					? !!d.initial
@@ -1606,7 +1819,8 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// toggle PARITY is the half a stamp cannot carry (a stamp is not a count), so it
 			// is counted in applyNodeTrigger - the counter precedent - and CLEARED there by
 			// any set/reset, which is what lets the two halves compose instead of fighting.
-			const flips = ctx?.triggers?.[node.id]?.count ?? 0;
+			const own = ctx?.triggers?.[node.id];
+			const flips = roundStale(node, own?.lastT) ? 0 : (own?.count ?? 0);
 			return flips % 2 === 0 ? base : !base;
 		}
 		case 'delay':
@@ -1626,8 +1840,9 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// the counter precedent: applyNodeTrigger writes this node's OWN entry on the
 			// first pulse and freezes it at count 1, and `rearm` deletes it. A frozen stamp
 			// is exactly what a downstream stamp-edge consumer needs in order to act once.
+			// 21-F2: a `perRound` Once frozen in a previous round reads as ARMED again
 			const entry = ctx?.triggers?.[node.id];
-			if (!entry || entry.count !== 1) return 0;
+			if (!entry || entry.count !== 1 || roundStale(node, entry.lastT)) return 0;
 			return pulseAt(entry.lastT, time, num(d.pulse ?? 0.3));
 		}
 		// --- 134: object reference, loops, timers, events ---
@@ -1859,6 +2074,21 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 					return elapsed;
 			}
 		}
+		case 'collectcount': {
+			// 21-F3: DERIVED FROM THE GRAPH, never from the variable — see the long note
+			// above `collectibleLatches`. Pure and local like every other value node: each
+			// peer walks the same replicated graph and reads the same replicated latches,
+			// so nothing about this reading goes on the wire.
+			const stats = collectibleStats(String(d.variable ?? 'gems'), allNodes, allEdges, time, seen, ctx);
+			switch (d.read ?? 'left') {
+				case 'collected':
+					return stats.collected;
+				case 'total':
+					return stats.total;
+				default:
+					return stats.left;
+			}
+		}
 		// --- H5: object-flow composition ---
 		case 'flowinput': {
 			// value injected by the scene graph's embedded Object Flow node this
@@ -2015,9 +2245,14 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 				// state of their own - an accumulated odd count would otherwise invert a
 				// fresh `set`. A late joiner is exact for set/reset and can differ in toggle
 				// parity until the next set/reset re-bases it.
-				if (handle === 'toggle')
-					next[target.id] = { count: (next[target.id]?.count ?? 0) + 1, lastT: t };
-				else if (handle === 'set' || handle === 'reset')
+				if (handle === 'toggle') {
+					// 21-F2: parity from a PREVIOUS round is not parity any more. The PUSH
+					// rule (finite cutoff only): in menu/over the parity stays put — the pull
+					// side already reads it as 0 there, and the next round retires it anyway.
+					const held = next[target.id];
+					const flips = roundRetired(target, held?.lastT) ? 0 : (held?.count ?? 0);
+					next[target.id] = { count: flips + 1, lastT: t };
+				} else if (handle === 'set' || handle === 'reset')
 					next[target.id] = { count: 0, lastT: t };
 			} else if (target.type === 'random') {
 				// B6 shipped `reroll` as a DEAD input, and this is where it died: the roll
@@ -2037,7 +2272,16 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 				// disarmed Once reads as a fresh pulse to every stamp-edge consumer
 				// downstream, because triggerStampFor sees lastT and knows nothing of count.
 				if (handle === 'rearm') delete next[target.id];
-				else if ((next[target.id]?.count ?? 0) === 0) next[target.id] = { count: 1, lastT: t };
+				else {
+					// 21-F2: a `perRound` Once frozen in a PREVIOUS round is spent, not armed
+					// — without this it never fires again after a round bump, and a respawned
+					// gem would stop counting the second time it is picked up. The PUSH rule
+					// (finite cutoff only): in menu/over a spent Once stays SPENT, or every
+					// menu click re-arms it and banks the variable again, unboundedly.
+					const held = next[target.id];
+					if ((held?.count ?? 0) === 0 || roundRetired(target, held?.lastT))
+						next[target.id] = { count: 1, lastT: t };
+				}
 			}
 		});
 		return next;
@@ -2439,12 +2683,25 @@ function runTick(now) {
 	graphInputs = nextInputs;
 
 	const active = new Map(); // uuid -> anim nodes
+	// 21-F2: read the gate ONCE per tick, not once per node
+	const playActive = gamePlayActive();
+	/**
+	 * 21-F2: a Visibility node the recipe marked `whilePlaying` STANDS DOWN outside play.
+	 * Dropping it out of `active` (rather than skipping its apply) is the whole fix: the
+	 * restore loop below then hands the object back to its base and FORGETS it, so nothing
+	 * writes `object.visible` again and the object list can hide and show it normally. A
+	 * gate inside applyAnimation would have left restoreBase re-asserting the base every
+	 * frame, which is the same bug with one more step.
+	 * @param {any} node
+	 */
+	const dormant = (node) => node.type === 'visibility' && !!node.data?.whilePlaying && !playActive;
 	/** @param {any} node */
 	const isEffectNode = (node) =>
-		animationTypes.includes(node.type) ||
-		!!moduleEffects[node.type] ||
-		node.type === 'script' ||
-		node.type === 'customnode';
+		(animationTypes.includes(node.type) ||
+			!!moduleEffects[node.type] ||
+			node.type === 'script' ||
+			node.type === 'customnode') &&
+		!dormant(node);
 	if (sceneObjects) {
 		edges.forEach((edge) => {
 			const source = nodes.find((n) => n.id === edge.source);

@@ -174,6 +174,53 @@ export function gameElapsed() {
 	return Math.max(0, (Date.now() - startedAt - pausedMs - live) / 1000);
 }
 
+// ---- 21-F2: what "a round" means to everything derived from it -------------------
+
+/**
+ * Has this scene's game shell ever been USED? A scene that never presses Start sits in
+ * the DEFAULT `menu` with round 0 forever, and 21-E8's collectibles worked there on play
+ * mode alone — so both rules below defer entirely to play mode until a round exists.
+ * @param {GameState} g
+ */
+function shellInUse(g) {
+	return (g.round ?? 0) > 0 || (g.startedAt ?? 0) > 0;
+}
+
+/**
+ * 21-F2: is a ROUND underway right now? `paused` counts — pause is a shared game RULE
+ * (21-E3) and the world holds its state through it — and a shell nobody has started
+ * answers true, which is what keeps a Start-button-less scene behaving as it did.
+ */
+export function roundUnderway() {
+	const g = get(gameState);
+	if (!shellInUse(g)) return true;
+	return g.state === 'playing' || g.state === 'paused';
+}
+
+/**
+ * 21-F2 THE RESET RULE, DERIVED rather than wired. A round-scoped node (a collectible's
+ * Latch and Once) treats every trigger stamp OLDER than this as never having happened:
+ *
+ *   null       no cutoff — the shell is not in use, so nothing is round-scoped
+ *   a stamp    the current round's `startedAt`: a NEW round un-collects everything
+ *   Infinity   menu / over — we are not in a round at all, so nothing before now counts.
+ *              That is the "reset on return to menu" half of the same one rule.
+ *
+ * WHY DERIVED, and not a hidden reset edge or an imperative clear: both of those need
+ * SOMEBODY to run them, so whoever pressed Start would have to broadcast a reset and a
+ * late joiner would witness nothing at all. This reads the replicated singleton every
+ * peer already agrees on, which means two peers cannot disagree and a joiner is right on
+ * arrival. It also keeps latch/once PURE (E4): they gain one more replicated INPUT, not
+ * a state of their own.
+ * @returns {number|null} an epoch ms stamp, `Infinity`, or null
+ */
+export function roundCutoff() {
+	const g = get(gameState);
+	if (!shellInUse(g)) return null;
+	if (g.state === 'playing' || g.state === 'paused') return g.startedAt || null;
+	return Infinity;
+}
+
 /** @param {string} name @param {any} value */
 export function setGameVar(name, value) {
 	if (!name) return get(gameState);

@@ -90,7 +90,7 @@
 						<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style="top: 10px;" />
 					{/if}
 					<span class="flex justify-between">
-						<span>{param.key}</span>
+						<span title={param.key}>{param.label ?? param.key}</span>
 						{#if param.kind === 'range' && !wiredSource(param.key)}
 							<span>{data[param.key] ?? spec.defaults[param.key]}</span>
 						{/if}

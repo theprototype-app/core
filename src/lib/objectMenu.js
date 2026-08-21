@@ -369,18 +369,23 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					disabled: locked,
 					tooltip: locked
 						? lockedTooltip
-						: multi
-							? 'Each one hides itself for everyone when clicked and adds 1 to the shared “gems” variable'
-							: 'Clicking it hides it for everyone and adds 1 to the shared “gems” variable - and it stays collected',
+						: isGroup
+							? 'Every mesh in the group hides itself for everyone when clicked and adds 1 to the shared “gems” variable'
+							: multi
+								? 'Each one hides itself for everyone when clicked and adds 1 to the shared “gems” variable'
+								: 'Clicking it hides it for everyone and adds 1 to the shared “gems” variable - and it stays collected',
 					action: () => import('./gameRecipes').then((m) => m.makeCollectible(targets))
 				},
-				// listed rather than hidden, so the shape of the feature is visible: a
-				// respawning pickup needs something to spawn it back, which is a different
-				// batch. A greyed row with the reason beats a missing one.
+				// 21-F2: the same recipe with its two questions asked. The plain entry above
+				// stays a ONE-CLICK answer - that is what a recipe is for - so the choices
+				// live behind the ellipsis, the way every other "…" entry in this app reads.
 				{
-					label: 'Collectible (respawns)' + suffix,
-					disabled: true,
-					tooltip: '21-B B7 (spawn) ships this'
+					label: 'Make collectible into…' + suffix,
+					disabled: locked,
+					tooltip: locked
+						? lockedTooltip
+						: 'Pick which variable it counts into, and whether it comes back after a few seconds',
+					action: () => import('./gameRecipes').then((m) => m.makeCollectiblePrompt(targets))
 				}
 			]
 		},

@@ -5,9 +5,11 @@
 	// scene is MISSING says so instead of looking empty — the authored hash is kept
 	// selectable so opening the card cannot silently rewrite the graph).
 	//
-	// The card stores the scene's content HASH (what every peer can pull) AND its NAME
-	// (display + the toast), because a peer that does not hold the bytes cannot resolve
-	// the hash to a name at all — the name has to ride the graph.
+	// 21-G2 adds the NAME mode: the manifest's scene names come FIRST in the picker, and
+	// choosing one stores {sceneName} — resolved to the scene's CURRENT pointer at fire
+	// time through the replicated manifest, so "the latest of Arena" is the same hash on
+	// every peer. Choosing a library FILE stores {level: hash} — a specific version,
+	// frozen forever. Two different promises, so the optgroups say which is which.
 	//
 	// What the card must explain, because it will otherwise be reported: travel happens
 	// for EVERYONE. The trigger replicates; each peer loads the scene itself, pulling
@@ -19,22 +21,33 @@
 	import { setNodeData } from '$lib/nodesHandler';
 	import { explorerItems } from '$lib/explorer';
 	import { levelItems } from '$lib/levels';
+	import { projectManifest, manifestSceneNames } from '$lib/projectManifest';
 
 	type $$Props = NodeProps;
 	export let id: string;
 	export let data: any;
 
 	// explorerItems IS reactive (unlike a THREE tree), so passing it keeps the list
-	// live as scenes are saved, pulled or renamed
+	// live as scenes are saved, pulled or renamed — and the manifest store likewise
 	const levelsOf = (_items: any) => levelItems();
+	const namesOf = (_manifest: any) => manifestSceneNames();
 	$: levels = levelsOf($explorerItems);
-	$: chosen = String(data.level ?? '');
-	$: missing = !!chosen && !levels.some((l: any) => l.hash === chosen);
+	$: names = namesOf($projectManifest);
+	$: chosenName = String(data.sceneName ?? '');
+	$: chosen = chosenName ? 'name:' + chosenName : String(data.level ?? '');
+	$: missing =
+		!chosenName && !!chosen && !levels.some((l: any) => l.hash === chosen);
+	$: nameGone = !!chosenName && !names.includes(chosenName);
 
-	function pick(hash: string) {
-		const item = levels.find((l: any) => l.hash === hash);
+	function pick(value: string) {
+		if (value.startsWith('name:')) {
+			// name mode: the manifest resolves it at fire time — no hash is frozen
+			setNodeData(id, { sceneName: value.slice(5), level: '', levelName: '' });
+			return;
+		}
+		const item = levels.find((l: any) => l.hash === value);
 		const name = item ? String(item.name ?? '').replace(/\.tpscene$/i, '') : String(data.levelName ?? '');
-		setNodeData(id, { level: hash, levelName: name });
+		setNodeData(id, { level: value, levelName: name, sceneName: '' });
 	}
 </script>
 
@@ -46,13 +59,25 @@
 			<span>scene</span>
 			<select class="nodrag" value={chosen} on:change={(e) => pick(e.currentTarget.value)}>
 				<option value="">— none —</option>
-				{#each levels as level (level.hash)}
-					<option value={level.hash}>{level.name.replace(/\.tpscene$/i, '')}</option>
-				{/each}
+				{#if names.length}
+					<optgroup label="Project scenes (latest version)">
+						{#each names as name (name)}
+							<option value={'name:' + name}>{name}</option>
+						{/each}
+					</optgroup>
+				{/if}
+				<optgroup label="Library files (that exact version)">
+					{#each levels as level (level.hash)}
+						<option value={level.hash}>{level.name.replace(/\.tpscene$/i, '')}</option>
+					{/each}
+				</optgroup>
 				{#if missing}
 					<!-- a scene saved by a peer we have not pulled yet, or one deleted locally:
 					     the AUTHORED value stays selectable and named, never silently dropped -->
 					<option value={chosen}>({data.levelName || 'missing scene'})</option>
+				{/if}
+				{#if nameGone}
+					<option value={chosen}>({chosenName} — not in the project yet)</option>
 				{/if}
 			</select>
 		</label>

@@ -41,10 +41,20 @@ import {
 	addItemFromBytes,
 	itemByHash,
 	itemBlob,
+	deleteItem,
 	loadExplorer
 } from './explorer';
 import { requestAsset } from './assetShare';
 import { gameState, gameStateRestore } from './gameState';
+// 21-G2: the manifest is the project's one mutable document; travel-away publishes
+// the departing scene into it. connectionState answers "are we the writer".
+import {
+	publishSceneVersion,
+	latestSceneHash,
+	keepableHashes,
+	projectManifest
+} from './projectManifest';
+import { sessionHost } from './connectionState';
 
 /** 21-G1: the folder a SAVED SCENE lands in when there is nowhere else to put it —
  * premade on the first save, and nothing more than that. It is freely renamable and
@@ -56,11 +66,40 @@ import { gameState, gameStateRestore } from './gameState';
  * ordinary kind-'scene' items, which is the only thing discovery looks at. */
 export const SCENES_FOLDER = 'Scenes';
 
-/** Where we are: `{hash, name}` after a travel or a save-as-level, null before either.
- * LOCAL on purpose — a late joiner converges on the level's CONTENT through the ordinary
- * handshake sync and simply shows no name until the next travel names one.
- * @type {import('svelte/store').Writable<{hash: string, name: string} | null>} */
+/** Where we are: `{hash, name, signature}` after a travel or a save, null before
+ * either. LOCAL on purpose — a late joiner converges on the level's CONTENT through the
+ * ordinary handshake sync and simply shows no name until the next travel names one.
+ * `signature` is the content identity the auto-save compares against (see sceneSignature).
+ * @type {import('svelte/store').Writable<{hash: string, name: string, signature?: string} | null>} */
 export const currentLevel = writable(null);
+
+/**
+ * 21-G2: the CONTENT identity of a scene payload — what "has this scene changed" means.
+ * The zip's own hash cannot answer it: a .tpscene embeds a fresh uuid, createdAt and a
+ * re-rendered THUMBNAIL on every save, so two saves of an untouched scene hash apart.
+ * This stringifies only the MEANINGFUL fields, in a fixed order. `game` is excluded on
+ * purpose — travel already excludes it on load (fork 3), so a round ticking over must
+ * not mint a scene version.
+ * @param {any} payload @returns {string}
+ */
+export function sceneSignature(payload) {
+	if (!payload) return '';
+	const pick = {
+		objects: payload.objects ?? [],
+		animated: payload.animated ?? [],
+		animations: payload.animations ?? {},
+		graphs: payload.graphs ?? {},
+		shaderGraphs: payload.shaderGraphs ?? {},
+		annotations: payload.annotations ?? [],
+		joints: payload.joints ?? [],
+		post: payload.post ?? null,
+		environment: payload.environment ?? null,
+		physics: payload.physics ?? null,
+		music: payload.music ?? null,
+		hud: payload.hud ?? null
+	};
+	return JSON.stringify(pick);
+}
 
 /** Travels currently waiting on bytes or applying, keyed by hash — a re-stamped trigger
  * while a pull is in flight must not stack a second load of the same level.
@@ -119,9 +158,103 @@ export async function saveSceneAsLevel(name) {
 		folderId
 	);
 	if (!item) return null;
-	currentLevel.set({ hash: item.hash, name: payload.name });
+	currentLevel.set({ hash: item.hash, name: payload.name, signature: sceneSignature(payload) });
+	// 21-G2: a manual save IS a version — the manifest pointer moves with it (refused
+	// for viewers inside publishSceneVersion; the local item exists either way)
+	publishSceneVersion(payload.name, item.hash);
+	pruneSceneVersions(payload.name);
 	showToast('Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
 	return item;
+}
+
+/**
+ * 21-G2 THE TRAVEL-AWAY AUTO-SAVE (fork 9): leaving a scene publishes the departing
+ * scene to a NEW hash so edits survive round trips — the reported case: build in a new
+ * scene, hop away and back, the objects were gone, because file-based travel had no
+ * write-back. Three deliberate rules:
+ *
+ *   WRITER-ONLY. Every peer runs travel, but a .tpscene embeds a fresh uuid/createdAt/
+ *   thumbnail per save, so N peers saving identical CONTENT would mint N different
+ *   HASHES and spam the history with ghosts. One peer speaks for the session — the
+ *   HOST (`sessionHost === null`, the F3 abandon-watch rule), which is also every solo
+ *   user. Other peers pull the new hash by content when they travel back.
+ *
+ *   SIGNATURE-GATED. An idle hop must not mint versions, and the zip hash cannot tell
+ *   idle from edited (see sceneSignature). Compare content identity, not bytes.
+ *
+ *   NAMED-ONLY. A scene that has never been saved or travelled to has no name to file
+ *   a version under — inventing one would opt the user into the project machinery
+ *   uninvited. The ordinary autosave still protects that scene locally.
+ * @returns {Promise<boolean>} did a version get published
+ */
+async function autoSavePublishDeparting() {
+	const at = get(currentLevel);
+	if (!at?.name) return false;
+	if (get(sessionHost) !== null) return false; // not the writer
+	/** @type {any} */
+	let payload = null;
+	try {
+		payload = buildSessionPayload(at.name);
+	} catch {
+		return false;
+	}
+	delete payload.workspace;
+	const signature = sceneSignature(payload);
+	if (signature === at.signature) return false; // untouched since its hash — no ghost versions
+	const folderId = await ensureScenesFolder();
+	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });
+	const item = await addItemFromBytes(
+		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+		levelFileName(at.name),
+		folderId
+	);
+	if (!item) return false;
+	const published = publishSceneVersion(at.name, item.hash);
+	if (published) pruneSceneVersions(at.name);
+	return published;
+}
+
+/**
+ * 21-G2 fork 4: prune LOCAL BYTES of old versions — the newest KEEP_VERSIONS plus every
+ * pin stay; a hash that another scene's history still wants to keep is left alone. The
+ * MANIFEST keeps the full list either way: pruning is about disk, never history.
+ * @param {string} name
+ */
+export function pruneSceneVersions(name) {
+	const m = get(projectManifest);
+	const entry = m.scenes[String(name ?? '').trim()];
+	if (!entry) return 0;
+	const keep = keepableHashes(name);
+	// a hash may appear in ANOTHER scene's keep set (a duplicated level) — respect it
+	const keptElsewhere = new Set();
+	for (const other of Object.keys(m.scenes))
+		if (other !== name) for (const h of keepableHashes(other)) keptElsewhere.add(h);
+	let dropped = 0;
+	for (const hash of entry.history) {
+		if (keep.has(hash) || keptElsewhere.has(hash)) continue;
+		const item = itemByHash(hash);
+		if (!item) continue;
+		void deleteItem(item.id);
+		dropped++;
+	}
+	return dropped;
+}
+
+/**
+ * 21-G2 TRAVEL BY NAME: resolve a scene NAME through the replicated manifest to its
+ * CURRENT pointer at fire time. Deterministic across peers — the manifest is the one
+ * shared truth about where "the latest of Arena" is, unlike any local folder order.
+ * @param {string} name @returns {Promise<boolean>}
+ */
+export async function travelToScene(name) {
+	const scene = String(name ?? '').trim();
+	if (!scene) return false;
+	const hash = latestSceneHash(scene);
+	if (!hash) {
+		showToast('No scene called "' + scene + '" in this project yet.');
+		return false;
+	}
+	return travelToLevel(hash, scene);
 }
 
 /**
@@ -181,6 +314,11 @@ export async function travelToLevel(hash, name = '') {
 	if (inFlight.has(key)) return false;
 	inFlight.add(key);
 	try {
+		// 21-G2 fork 9: the departing scene's edits are PUBLISHED before the world is
+		// replaced (writer-only, signature-gated — see autoSavePublishDeparting)
+		try {
+			await autoSavePublishDeparting();
+		} catch {}
 		const item = await resolveLevelItem(key);
 		if (!item) return false;
 		const blob = await itemBlob(item.id);
@@ -201,7 +339,12 @@ export async function travelToLevel(hash, name = '') {
 		await applySession(payload, { backup: false, replicate: false, game: false, workspace: false });
 		// …and put it back. The level's own `game` field never applied (game: false).
 		gameStateRestore(carried, false);
-		currentLevel.set({ hash: key, name: name || payload.name || item.name });
+		// the signature of what we LOADED, so an untouched stay here publishes nothing
+		currentLevel.set({
+			hash: key,
+			name: name || payload.name || item.name,
+			signature: sceneSignature(payload)
+		});
 		return true;
 	} finally {
 		inFlight.delete(key);

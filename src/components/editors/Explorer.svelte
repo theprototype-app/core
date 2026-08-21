@@ -31,6 +31,11 @@
 	import { openTextEditor, openImagePreview, openModelPreview } from '$lib/fileWindows';
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
 	import { saveSceneAsLevel, newLevel, travelToLevel } from '$lib/levels';
+	// 21-G2: the "update available" dot on old scene versions. The manifest store is
+	// passed as the reactive dependency — a helper reading through get() registers none
+	// (the documented rule), so the badge would otherwise never appear live.
+	import { projectManifest, staleSceneHash } from '$lib/projectManifest';
+	const staleScene = (_manifest: any, hash: string) => staleSceneHash(hash);
 	import ModelPreview from './ModelPreview.svelte';
 	import {
 		packs,
@@ -1351,7 +1356,7 @@
 					{/if}
 					{#each gridItems as item (item.id)}
 						<div
-							class="explorer-card group flex cursor-grab flex-col items-center gap-1 rounded border p-1.5 {$inspectedFile === item.id
+							class="explorer-card group relative flex cursor-grab flex-col items-center gap-1 rounded border p-1.5 {$inspectedFile === item.id
 								? 'border-primary-600 bg-primary-600/10'
 								: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'}"
 							draggable="true"
@@ -1366,6 +1371,15 @@
 							onclick={() => onCardClick(item)}
 							ondblclick={() => openItem(item)}
 						>
+							{#if item.kind === 'scene' && staleScene($projectManifest, item.hash)}
+								<!-- 21-G2: this file is an OLD version — the project's pointer for its
+								     scene moved past it. The manifest keeps every hash, so it still
+								     opens; the dot just says "not the latest". -->
+								<span
+									class="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-amber-400"
+									title={'An update of "' + staleScene($projectManifest, item.hash) + '" exists — this file is an older version'}
+								></span>
+							{/if}
 							{#if item.packEntry}
 								{#if packThumb(item)}
 									<!-- N6: lazily resolve webp -> png -> screenshot via onerror; P2: cache the winner -->

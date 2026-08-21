@@ -116,6 +116,90 @@ h.run(async () => {
 		30000
 	);
 
+	// =====================================================================
+	// 7. THE TRAVEL-AWAY AUTO-SAVE (fork 9) — the reported disappearing-object
+	//    case, dead. Solo on C: alone = the session writer.
+	// =====================================================================
+	const historyOf = (peer, name) =>
+		peer.page.evaluate((n) => {
+			let m;
+			window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+			return m.scenes[n]?.history ?? [];
+		}, name);
+	const childCount = (peer) =>
+		peer.page.evaluate(() => {
+			let g;
+			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			return g?.children.length ?? 0;
+		});
+	// C is still connected to B — B is C's host, so C is NOT the writer. Disconnect
+	// first: the auto-save is writer-only and this section needs C writing.
+	await C.page.evaluate(() => {
+		const s = window.__stores;
+		let p; s.peers.subscribe((v) => (p = v))();
+		p?.leaveSession?.();
+		s.commandsHandler.clearSceneLocal();
+	});
+	await C.page.waitForTimeout(600);
+	const writerC = await C.page.evaluate(() => {
+		let host; window.__stores.connectionState.sessionHost.subscribe((v) => (host = v))();
+		return host === null;
+	});
+	h.check(writerC, 'premise: C left the session and is its own writer');
+
+	// scene Alpha: one box, saved (publishes v1)
+	await C.page.evaluate(async () => {
+		window.__stores.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 1100));
+	});
+	const alpha1 = await C.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Alpha'));
+	h.check(!!alpha1?.hash, 'Alpha v1 saved and published');
+	const beta1 = await C.page.evaluate(() => window.__stores.levels.newLevel('Beta'));
+	// newLevel makes the ASSET only — publish it so name-travel can find it
+	await C.page.evaluate(({ hash }) => window.__stores.projectManifest.publishSceneVersion('Beta', hash), { hash: beta1.hash });
+
+	// go to Beta, BUILD there (the reported case), hop to Alpha, come back BY NAME
+	await C.page.evaluate(() => window.__stores.levels.travelToScene('Beta'));
+	await h.eventually(() => childCount(C), (n) => n === 0, 'premise: Beta is empty');
+	await C.page.evaluate(async () => {
+		window.__stores.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 1100));
+	});
+	const betaHistBefore = (await historyOf(C, 'Beta')).length;
+	await C.page.evaluate(() => window.__stores.levels.travelToScene('Alpha'));
+	await h.eventually(() => childCount(C), (n) => n === 1, 'arrived on Alpha (its one box)');
+	h.check(
+		(await historyOf(C, 'Beta')).length === betaHistBefore + 1,
+		'leaving Beta AUTO-PUBLISHED the edit as a new version'
+	);
+	await C.page.evaluate(() => window.__stores.levels.travelToScene('Beta'));
+	await h.eventually(
+		() => childCount(C),
+		(n) => n === 1,
+		'THE REPORTED BUG IS DEAD: the object built in Beta is there when you come back'
+	);
+
+	// =====================================================================
+	// 8. AN IDLE HOP MINTS NOTHING — the signature gate across a real
+	//    load -> serialize round trip
+	// =====================================================================
+	const alphaHist = (await historyOf(C, 'Alpha')).length;
+	const betaHist = (await historyOf(C, 'Beta')).length;
+	await C.page.evaluate(() => window.__stores.levels.travelToScene('Alpha'));
+	await h.eventually(() => childCount(C), (n) => n === 1, 'on Alpha');
+	await C.page.evaluate(() => window.__stores.levels.travelToScene('Beta'));
+	await h.eventually(() => childCount(C), (n) => n === 1, 'back on Beta');
+	h.check(
+		(await historyOf(C, 'Alpha')).length === alphaHist && (await historyOf(C, 'Beta')).length === betaHist,
+		`idle hops minted NOTHING (Alpha ${(await historyOf(C, 'Alpha')).length}/${alphaHist}, Beta ${(await historyOf(C, 'Beta')).length}/${betaHist})`
+	);
+
+	// =====================================================================
+	// 9. the "update available" dot: the OLD Beta version is stale
+	// =====================================================================
+	const staleBeta = await C.page.evaluate(({ hash }) => window.__stores.projectManifest.staleSceneHash(hash), { hash: beta1.hash });
+	h.check(staleBeta === 'Beta', `the first Beta file reads as an older version of "${staleBeta}"`);
+
 	for (const p of [A, B, C]) {
 		const errs = await h.pageErrors(p);
 		h.check(errs.length === 0, `no page errors (${JSON.stringify(errs)})`);

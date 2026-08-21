@@ -187,6 +187,8 @@
 		// two-registry gotcha, and `flow-unknown-node` was red on release/next for it.
 		hudrows: HudNode,
 		hudset: HudNode,
+		// 21-G4: the derived scoreboard names an element like every other HUD node
+		leaderboard: HudNode,
 		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
 		// setcamera/gamestart/setlook get their own card for the camera picker.
 		setgamestate: AnimationNode,
@@ -196,6 +198,8 @@
 		gametime: AnimationNode,
 		// 21-F3: spec-driven too — a variable field and a `read` select, no picker
 		collectcount: AnimationNode,
+		// 21-G4: the per-player read, same shape
+		peervariable: AnimationNode,
 		setcamera: GameCameraNode,
 		gamestart: GameCameraNode,
 		setlook: GameCameraNode,

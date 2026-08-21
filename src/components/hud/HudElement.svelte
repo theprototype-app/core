@@ -26,6 +26,10 @@
 	import { currentLevel } from '$lib/levels';
 	import { peerPlayModes, myPlayMode } from '$lib/gamePresence';
 	import { collectibleCountsFor } from '$lib/flowRuntime';
+	// 21-G4: the per-player rows. A scoreboard that disagrees between two screens is the
+	// hardest thing to notice and the worst to debug, so the pill shows every peer's own
+	// numbers as this peer holds them — put two screens side by side and read them off.
+	import { peerVarsAll, peerVarNames } from '$lib/peerVars';
 	import { userdata, peers } from '../../stores/appStore';
 	import Icon from '../ui/Icon.svelte';
 	import { onDestroy } from 'svelte';
@@ -168,19 +172,34 @@
 			try {
 				counts = collectibleCountsFor(String(element?.variable || 'gems'));
 			} catch {}
+			const rows = get(peerVarsAll);
+			const varNames = peerVarNames();
 			debugInfo = {
 				level: get(currentLevel)?.name ?? '—',
+				// 21-G4: `peerId -> "name a=1 b=2"`, resolved against the roster below
+				peerVarNames: varNames,
+				peerVars: rows,
 				state: g.state,
 				round: g.round,
 				elapsed: Math.round(gameElapsed()),
 				vars: { ...g.vars },
 				counts,
-				players: users.map((u, i) => ({
-					id: u[0],
-					name: u[1] || (i === 0 ? 'Me' : String(u[0] ?? '').slice(0, 6)),
-					mode: u[0] === myId || (i === 0 && !myId) ? myPlayMode() : modes[u[0]] === 'playing' ? 'playing' : 'editor',
-					me: u[0] === myId || (i === 0 && !myId)
-				})),
+				players: users.map((u, i) => {
+					const me = u[0] === myId || (i === 0 && !myId);
+					const own = rows[u[0]] ?? (me ? rows.me : null);
+					return {
+						id: u[0],
+						name: u[1] || (i === 0 ? 'Me' : String(u[0] ?? '').slice(0, 6)),
+						mode: me ? myPlayMode() : modes[u[0]] === 'playing' ? 'playing' : 'editor',
+						me,
+						// 21-G4: this peer's OWN numbers, as we hold them
+						pvars: own
+							? Object.entries(own)
+									.map(([k, v]) => k + '=' + v)
+									.join(' ')
+							: ''
+					};
+				}),
 				fps
 			};
 		};
@@ -539,12 +558,18 @@
 								.join(' ')
 						: '—'}</span
 				>
+				<!-- 21-G4: which names are PER PLAYER at all. The values sit on each player's
+				     own row below, where they can be read against the person who owns them. -->
+				<span class="hud-debug-row"
+					>player vars: {debugInfo.peerVarNames.length ? debugInfo.peerVarNames.join(', ') : '—'}</span
+				>
 				<span class="hud-debug-row"
 					>collectibles ({String(element?.variable || 'gems')}): {debugInfo.counts.collected} collected, {debugInfo.counts.left} left of {debugInfo.counts.total}</span
 				>
 				{#each debugInfo.players as p (p.id ?? p.name)}
 					<span class="hud-debug-row"
-						>{p.me ? '● ' : '○ '}{p.name}<span class="hud-debug-chip" class:hud-debug-playing={p.mode === 'playing'}>{p.mode}</span></span
+						>{p.me ? '● ' : '○ '}{p.name}<span class="hud-debug-chip" class:hud-debug-playing={p.mode === 'playing'}>{p.mode}</span
+						>{#if p.pvars}<span class="hud-debug-chip">{p.pvars}</span>{/if}</span
 					>
 				{/each}
 			{/if}

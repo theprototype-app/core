@@ -777,8 +777,18 @@ loadable play content. Everything a user does must be visible to connected peers
   add, ONE flownodes entry per object), and the docs-site `build-a-game.md`
   walkthrough. Plan + as-built: cloud `plans-core/roadmap-21e-game-hardening.md`.
   **21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR POLISH** (roadmap 21-F): `levels.js` —
-  a LEVEL is an ordinary content-hashed .tpscene in a `Levels` Explorer folder BY NAME
-  CONVENTION (a dragged-in file counts). `saveSceneAsLevel` strips the workspace,
+  a SCENE ASSET is an ordinary content-hashed .tpscene in the Explorer. **21-G1 renamed
+  the folder to `Scenes` and DEMOTED it**: `SCENES_FOLDER`/`ensureScenesFolder` premake it
+  on the first save and that is all it is, because `levelItems()` discovers BY KIND (every
+  item of kind 'scene', wherever it lives) with NO folder filter at all — so the folder
+  renames, moves and deletes freely, a scene dragged into any folder still counts, and a
+  PNG sitting inside `Scenes` is no longer offered as a travel destination. An existing
+  `Levels` folder keeps working by construction. The exported names keep their `level`
+  spelling (saveSceneAsLevel/newLevel/travelToLevel/levelItems/currentLevel) and the travel
+  node's DATA keys stay `level`/`levelName` — both are in saved graphs and on the wire, so
+  renaming them would be a migration for a word; the USER-VISIBLE copy is "scene"
+  everywhere (Explorer's Save scene… / New scene… / Open here, the node card, the debug
+  pill). `saveSceneAsLevel` strips the workspace,
   `newLevel` captures NOTHING, and `travelToLevel` is a LOCAL SILENT scene replace:
   the replicated trigger IS the netcode, so `applySession` gained
   `{backup, replicate, game, workspace}` opts (every default byte-identical) — no
@@ -835,6 +845,31 @@ loadable play content. Everything a user does must be visible to connected peers
   heading wedges (`facingAngle` = one atan2(z, x): canvas +y IS world +z). F7
   (cross-scene presence on the rooms layer) deliberately slipped to 21-G. Plan +
   as-built: cloud `plans-core/roadmap-21f-levels-and-polish.md`.
+  **21-G1 — SCENES NOT LEVELS; RECIPE RE-HOMING** (see the levels entry above for the
+  discovery change). Three more pieces. (1) **The object menu's `Game ▸` submenu is
+  GONE** — its only entries were the two collectible recipes, and they moved to the NODE
+  EDITOR's Game category via `gameRecipes.recipeMenuItems()`, injected by `Nodes.svelte`
+  into the PANE menu (never `nodeCatalog`, whose list the palette renders as DRAGGABLE
+  NODE CARDS — a recipe is an action) under its own `Recipes` section rule. It acts on
+  the `selectedObjects` SET, never `selectionUuids()`: the sticky-primary fallback would
+  offer the recipe over an empty viewport. THE TRAP IT FORCED: the editor's scope FOLLOWS
+  the selection, so having something selected — the state the recipe is FOR — puts the
+  editor on that object's empty flow, whose `#flow-empty-state` overlay covered the pane;
+  it forwards `oncontextmenu` to the pane menu now (an explanation is not a modal, and
+  `addNode` already created the object's flow implicitly from there). The removal follows
+  21-C3's Road-menu ruling: this project is not only for games. (2) An Explorer item's
+  menu gained **Download** (every library kind, `Download (.tpscene)` for a scene;
+  fileHandler's anchor+objectURL path, excluded for pack-view cards which have no stored
+  blob), and a PACK CARD in the Packs grid now routes to the pack menu instead of falling
+  through to item CRUD on an id that does not exist. (3) **Pack rename**: the reported
+  "the Audio Essentials folder can't be renamed" was never the folder — that library
+  folder always renamed (measured) — it was the PACK ROW beside it, which had no rename
+  at all. `packs.renamePack` writes the display TITLE only (`name` is the identity for
+  packByName / itemCache / the installed-list dedupe / thumb-cache prefix /
+  `activeFolder`'s `pack:<name>` / the default-row shadowing), through a LOCAL
+  `packTitles` override map applied in `loadPacks` — a DEFAULT pack's title is rebuilt
+  from the index on every load, so an in-list edit would silently revert on reload.
+  Suite: `scene-folders` (44).
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
   serialized tree — a save taken mid-session wrote it into the file as a

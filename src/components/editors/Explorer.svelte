@@ -41,6 +41,7 @@
 		importPackZip,
 		installDefaultPackZip,
 		removeImportedPack,
+		renamePack,
 		licenseLabel,
 		rememberThumb,
 		openPackLoading
@@ -351,7 +352,20 @@
 	}
 	function packRowMenu(e: MouseEvent, pack: any) {
 		e.preventDefault();
-		const items: any[] = [{ label: 'Attribution / license', action: () => showPackAttribution(pack) }];
+		const items: any[] = [
+			// 21-G1: the missing entry. A pack row LOOKS like a folder row and carries the
+			// same name as the library folder its install created — that folder always
+			// renamed; this row had no rename at all, which is what got reported.
+			{
+				label: 'Rename',
+				tooltip: 'Your name for this pack — local to you, and it survives a reload',
+				action: () => {
+					packsExpanded = true;
+					startRenamePack(pack);
+				}
+			},
+			{ label: 'Attribution / license', action: () => showPackAttribution(pack) }
+		];
 		if (packSourceUrl(pack))
 			items.push({ label: 'Open source', action: () => window.open(packSourceUrl(pack), '_blank', 'noopener') });
 		// M-2: a default-list .zip pack (e.g. audio/SFX) installs on demand
@@ -616,10 +630,17 @@
 	function startRenameItem(item: any) {
 		editing = { mode: 'rename-item', itemId: item.id, value: item.name };
 	}
+	// 21-G1: a PACK row renames too — same inline editor, and it writes the pack's
+	// display TITLE only (its `name` is the identity every cache and view key uses;
+	// packs.js carries the reasoning)
+	function startRenamePack(pack: any) {
+		editing = { mode: 'rename-pack', packName: pack.name, value: pack.title || pack.name };
+	}
 	function commitEdit() {
 		if (!editing || !isValidName(editing.value)) return;
 		if (editing.mode === 'create') createFolder(editing.value, editing.parentId);
 		else if (editing.mode === 'rename-item') renameItem(editing.itemId, editing.value);
+		else if (editing.mode === 'rename-pack') renamePack(editing.packName, editing.value);
 		else renameFolder(editing.folderId, editing.value);
 		editing = null;
 	}
@@ -688,21 +709,48 @@
 		};
 	}
 
+	// 21-G1: hand a library item back to the user as a file. fileHandler's own save
+	// path verbatim (anchor + object URL + revoke) — there is no other way to start a
+	// download from a page, and copying eight lines beats exporting a helper that would
+	// pull fileHandler's whole export machinery into the Explorer.
+	async function downloadItem(item: any) {
+		const blob = await itemBlob(item.id);
+		if (!blob) return showToast('That file has no stored bytes to download');
+		const a = document.createElement('a');
+		document.body.appendChild(a);
+		a.style.display = 'none';
+		const url = URL.createObjectURL(blob);
+		a.href = url;
+		a.download = item.name || 'download';
+		a.click();
+		URL.revokeObjectURL(url);
+		a.remove();
+	}
+
 	function itemMenu(e: MouseEvent, item: any) {
 		e.preventDefault();
 		e.stopPropagation();
+		// 21-G1: a PACK CARD in the Packs grid is not an item at all — it is the same
+		// registry row the tree draws, so it gets the same menu. Without this it fell
+		// through to Properties/Rename/Delete, every one of which addressed an item id
+		// ('packfolder:<name>') that does not exist.
+		if (item.kind === 'pack-folder') {
+			const pack = packByName(item.packName);
+			if (pack) packRowMenu(e, pack);
+			return;
+		}
 		if (item.kind === 'prefab' || item.sceneEntry) return; // derived views have no CRUD
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
 			items: [
-				// 21-F4: a level loads LOCALLY from here (authoring convenience) — the
+				// 21-F4: a scene loads LOCALLY from here (authoring convenience) — the
 				// travel NODE is how a game moves everyone together
 				...(item.kind === 'scene'
 					? [
 							{
-								label: 'Travel here (this screen)',
-								tooltip: 'Load this level locally — use a Travel node to move every player together',
+								label: 'Open here (this screen)',
+								tooltip: 'Load this scene locally — use a Travel node to move every player together',
 								action: () => travelToLevel(item.hash, item.name)
 							}
 						]
@@ -719,6 +767,21 @@
 							}
 						]
 					: []),
+				// 21-G1: get the bytes back OUT. Offered for every library kind, not just
+				// scenes — the library already holds the only copy of an imported model or
+				// a painted texture, and the code is identical whatever the kind, so
+				// restricting it would be a decision with nothing behind it. A PACK-view
+				// entry is excluded: a default pack's card is a remote URL with no stored
+				// blob (its library copy, which does have one, offers this normally).
+				...(item.packEntry
+					? []
+					: [
+							{
+								label: item.kind === 'scene' ? 'Download (.tpscene)' : 'Download',
+								tooltip: 'Save this file to your computer',
+								action: () => downloadItem(item)
+							}
+						]),
 				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
 				{
 					label: 'Rename',
@@ -747,19 +810,23 @@
 					]
 				: [
 						{ label: 'New folder', action: () => startCreate($activeFolder ?? null) },
-						// 21-F4: levels are ordinary content-hashed .tpscene items in a
-						// `Levels` folder — the travel node loads them by hash
+						// 21-F4: a saved scene is an ordinary content-hashed .tpscene item —
+						// a Travel node loads it by hash. 21-G1: the `Scenes` folder is only
+						// where a save LANDS; discovery is BY KIND, so that folder can be
+						// renamed, moved or deleted without stranding a single scene.
 						{
-							label: 'Save scene as level…',
+							label: 'Save scene…',
+							tooltip: 'Save this scene as a .tpscene asset a Travel node can load',
 							action: () => {
-								const name = prompt('Level name:', 'Level');
+								const name = prompt('Scene name:', 'Scene');
 								if (name) saveSceneAsLevel(name);
 							}
 						},
 						{
 							label: 'New scene…',
+							tooltip: 'An EMPTY scene asset — it captures nothing from what is open',
 							action: () => {
-								const name = prompt('Level name:', 'New level');
+								const name = prompt('Scene name:', 'New scene');
 								if (name) newLevel(name);
 							}
 						}
@@ -1159,6 +1226,9 @@
 				>
 				{#if packsExpanded}
 					{#each shownPacks as pack (pack.name)}
+						{#if editing?.mode === 'rename-pack' && editing.packName === pack.name}
+							{@render editRow(1)}
+						{:else}
 						<button
 							data-pack={pack.name}
 							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'pack:' + pack.name
@@ -1171,6 +1241,7 @@
 						>
 							<PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{pack.title}
 						</button>
+						{/if}
 					{/each}
 					{#if shownPacks.length === 0}
 						<span class="px-2 py-1 text-[10px] italic text-gray-500" style="padding-left: 22px">No packs</span>

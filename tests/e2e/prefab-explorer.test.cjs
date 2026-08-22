@@ -35,6 +35,12 @@ const childNames = (page) =>
 
 const clearToasts = (page) => page.evaluate(() => window.__stores.clearToast());
 
+/** 21-I3: the SCENE undo stack's depth — locked answer 6 turns on this number. */
+const undoDepth = (page) =>
+	page.evaluate(
+		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+	);
+
 /** Create a primitive and return its uuid (the newest child). */
 const createObject = (page, command) =>
 	page.evaluate((command) => {
@@ -62,6 +68,22 @@ async function closeCtxMenu(A) {
 		backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 	});
 	await A.page.waitForTimeout(250);
+}
+
+/**
+ * Right-click empty GRID space and wait for the background menu (21-I3).
+ *
+ * `#explorer-grid`, never `#explorer-list`: the list is the whole WindowShell, and once
+ * the Properties pane is open it owns the right-hand side — so a click aimed at the
+ * list's bottom-right corner lands on that pane, whose ancestors carry no `gridMenu`
+ * handler, and the menu simply never opens. That read as "the new menu is broken" for one
+ * round; the grid is the element the handler is actually on.
+ */
+async function openGridMenu(A) {
+	await closeCtxMenu(A);
+	const box = await A.page.locator('#explorer-grid').boundingBox();
+	await A.page.mouse.click(box.x + box.width - 24, box.y + box.height - 24, { button: 'right' });
+	await A.page.waitForSelector('[role="menu"]', { timeout: 5000 });
 }
 
 /** Right-click the one prefab card and wait for its menu. */
@@ -107,17 +129,25 @@ h.run(async () => {
 	const prefabId = saved[0]?.id;
 	h.check(!!prefabId && saved[0].name === 'Fab', 'premise: one prefab named Fab');
 
-	// ---- 1. the card has a real menu (and the derived views still do not) -------------
-	// The counterfactual for "a prefab card had no menu" is the rule it used to share:
-	// the prefabs GRID BACKGROUND still opens nothing (gridMenu refuses this view), so a
-	// menu appearing here can only be the prefab card's own — not a generic fallback.
-	const grid = await A.page.locator('#explorer-list').boundingBox();
-	await A.page.mouse.click(grid.x + grid.width - 24, grid.y + grid.height - 24, { button: 'right' });
-	await A.page.waitForTimeout(300);
+	// ---- 1. the card has a real menu, and so does the grid BACKGROUND now -------------
+	// 21-I3 FLIPS THE OLD CONTRACT HERE. H2's check asserted the prefabs grid background
+	// opens NOTHING — `gridMenu` early-returned for this view, on the same "derived views
+	// have no CRUD" rule the card menu had already outgrown. A prefab library is not a
+	// derived view: prefabs are stored things you MAKE, and this surface offered no way to
+	// make one. The contrast is kept as SHAPE instead of absence: the menu that opens here
+	// is small and prefab-specific, carrying none of the New folder / Save scene / Export
+	// project entries an ordinary folder's background offers. Section 13 drives the entry.
+	await openGridMenu(A);
+	const bgLabels = (await A.page.locator('[role="menuitem"]').allTextContents()).map((t) => t.trim());
 	h.check(
-		(await A.page.locator('[role="menu"]').count()) === 0,
-		'contrast: right-clicking the prefabs grid BACKGROUND still opens no menu'
+		bgLabels.includes('Create from selection'),
+		`the prefabs grid BACKGROUND offers "Create from selection" (${bgLabels.join(' | ') || 'no menu'})`
 	);
+	h.check(
+		!bgLabels.some((l) => /New folder|Save scene|New scene|Export project|Import project/.test(l)),
+		'and none of the folder/project entries, which mean nothing in a virtual folder'
+	);
+	await closeCtxMenu(A);
 
 	await openPrefabMenu(A);
 	const labels = await A.page.locator('[role="menuitem"]').allTextContents();
@@ -125,12 +155,13 @@ h.run(async () => {
 	for (const wanted of ['Add to scene', 'Export', 'Update from selection', 'Properties', 'Rename', 'Delete'])
 		h.check(flat.includes(wanted), `prefab menu offers "${wanted}"`);
 
-	// Export is a SUBMENU with both formats
+	// Export is a SUBMENU with all THREE formats (21-I3 adds the scene)
 	await menuItem(A, 'Export').hover();
 	await A.page.waitForTimeout(300);
 	const afterHover = (await A.page.locator('[role="menuitem"]').allTextContents()).map((t) => t.trim());
 	h.check(afterHover.includes('GLTF'), 'Export ▸ GLTF');
 	h.check(afterHover.includes('prefab (.json)'), 'Export ▸ prefab (.json)');
+	h.check(afterHover.includes('scene (.tpscene)'), 'Export ▸ scene (.tpscene)');
 	await closeCtxMenu(A);
 
 	// ---- 2. Add to scene -------------------------------------------------------------
@@ -182,21 +213,77 @@ h.run(async () => {
 		'GLTF export carries real vertex bytes'
 	);
 
-	// ---- 5. Update from selection ----------------------------------------------------
-	// The prefab is a box; re-save it from a SPHERE and the stored bytes have to change
-	// in place — same id, same name, one entry, not a second one beside it.
+	// ---- 4b. Export ▸ scene (.tpscene), asserted on the REAL DOWNLOADED BYTES ---------
+	// 21-I3: a scene containing JUST this prefab. Two things have to be true and the
+	// second is the interesting one: it is a real .tpscene zip, and it is NOT a capture of
+	// the live scene — which by now holds TWO objects (the box from section 0 and the Fab
+	// instance section 2 added), so an `objects` length of 1 is a discriminator and not a
+	// coincidence. `buildSessionPayload` would have written both, plus this author's
+	// environment, flow, HUD and game state.
+	const liveChildren = (await childNames(A.page)).length;
+	const sceneDownload = A.page.waitForEvent('download', { timeout: 30000 });
+	await openPrefabMenu(A);
+	await menuItem(A, 'Export').hover();
+	await A.page.waitForTimeout(250);
+	await menuItem(A, 'scene (.tpscene)', true).click();
+	dl = await sceneDownload;
+	h.check(dl.suggestedFilename() === 'Fab.tpscene', `.tpscene export names the file (${dl.suggestedFilename()})`);
+	const { unzipSync, strFromU8 } = require('fflate');
+	const zipBytes = require('fs').readFileSync(await dl.path());
+	let zipEntries = null;
+	try {
+		zipEntries = unzipSync(new Uint8Array(zipBytes));
+	} catch (error) {
+		console.log('unzip failed', error.message);
+	}
+	h.check(
+		!!zipEntries && !!zipEntries['session.json'],
+		`the .tpscene is a real zip carrying session.json (${zipEntries ? Object.keys(zipEntries).join(', ') : 'unreadable'})`
+	);
+	let session = null;
+	try {
+		session = JSON.parse(strFromU8(zipEntries['session.json']));
+	} catch {}
+	h.check(session?.format === 1 && session?.name === 'Fab', `session.json is a format-1 payload named Fab (${session?.name})`);
+	h.check(
+		(session?.objects?.length ?? 0) === 1 && liveChildren > 1,
+		`objects holds the prefab ALONE, not the ${liveChildren}-object live scene (${session?.objects?.length})`
+	);
+	h.check(
+		session?.objects?.[0]?.object?.name === 'Fab' && (session?.objects?.[0]?.geometries?.length ?? 0) >= 1,
+		`the object is the prefab, with real geometry (${session?.objects?.[0]?.object?.name}, ${session?.objects?.[0]?.geometries?.length} geometries)`
+	);
+	h.check(session?.count === 1, `count matches what is in the file (${session?.count})`);
+	// nothing of the author's OPEN scene rode along: the empty payload's own nulls
+	h.check(
+		session?.game === null && session?.post === null && !session?.environment && !session?.workspace,
+		'and none of the open scene came with it (game/post/environment/workspace)'
+	);
+
+	// ---- 5. Update from selection: INSTANT, with an Undo that is the toast's alone ----
+	// 21-I3 (locked answer 6). H2 put a confirm toast in front of every update; the
+	// replace happens straight away now and reports with an Undo. THE CONSTRAINT: that
+	// Undo must never enter the scene history — Ctrl+Z is for viewport changes — so the
+	// undo-stack depth is measured across the whole gesture.
 	const boxFacts = await facts(A.page, prefabId);
 	const sphereUuid = await createObject(A.page, '/create sphere');
 	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), sphereUuid);
 	await A.page.waitForTimeout(300);
 	await clearToasts(A.page);
+	// baseline taken IMMEDIATELY before the gesture — creating the sphere records an entry
+	const depthBefore = await undoDepth(A.page);
 	await openPrefabMenu(A);
 	await menuItem(A, 'Update from selection').click();
-	await A.page.getByRole('button', { name: 'Update', exact: true }).click({ timeout: 8000 });
 	await h.eventually(
 		() => facts(A.page, prefabId),
 		(f) => f && f.tris !== boxFacts.tris,
-		'Update from selection re-saves the prefab bytes'
+		'Update from selection re-saves the prefab bytes with NO dialog in the way'
+	);
+	// the spy for "no dialog": the confirm's own button. It never appears — and this
+	// cannot pass vacuously, because section 5b turns the prompt back on and finds it.
+	h.check(
+		(await A.page.getByRole('button', { name: 'Update', exact: true }).count()) === 0,
+		'no confirm prompt was raised (default is instant)'
 	);
 	const updated = await prefabList(A.page);
 	const newFacts = await facts(A.page, prefabId);
@@ -207,6 +294,75 @@ h.run(async () => {
 		newFacts.tris > boxFacts.tris,
 		`the prefab now holds the sphere (${boxFacts.tris} -> ${newFacts.tris} tris)`
 	);
+
+	// the report carries Undo, and Undo puts the OLD BYTES back
+	const undoButton = A.page.getByRole('button', { name: 'Undo', exact: true });
+	h.check((await undoButton.count()) > 0, 'the report toast carries an Undo');
+	await undoButton.first().click({ timeout: 8000 });
+	await h.eventually(
+		() => facts(A.page, prefabId),
+		(f) => f && f.tris === boxFacts.tris,
+		`Undo restores the previous bytes (back to ${boxFacts.tris} tris)`
+	);
+	const depthAfter = await undoDepth(A.page);
+	h.check(
+		depthAfter === depthBefore,
+		`THE CONSTRAINT: neither the update nor its Undo touched the scene history (${depthBefore} -> ${depthAfter})`
+	);
+	// ...and the user's own Ctrl+Z acts on the SCENE, never on the prefab. The scene
+	// child count is the premise: without it, "the prefab did not change" would read the
+	// same whether Ctrl+Z did something or nothing at all.
+	const sceneBeforeUndo = (await childNames(A.page)).length;
+	await A.page.keyboard.press('Control+z');
+	await A.page.waitForTimeout(600);
+	const sceneAfterUndo = (await childNames(A.page)).length;
+	const afterCtrlZ = await facts(A.page, prefabId);
+	h.check(
+		sceneAfterUndo === sceneBeforeUndo - 1,
+		`premise: Ctrl+Z really undid a SCENE step (${sceneBeforeUndo} -> ${sceneAfterUndo} objects)`
+	);
+	h.check(
+		afterCtrlZ.tris === boxFacts.tris,
+		`Ctrl+Z reaches the scene and never the prefab library (${afterCtrlZ.tris} tris)`
+	);
+
+	// ---- 5b. the opt-in confirm restores the prompt -----------------------------------
+	// `confirmPrefabUpdate` is OFF by default (asserted), and turning it on brings back
+	// exactly the dialog H2 always showed.
+	h.check(
+		(await A.page.evaluate(
+			() => new Promise((r) => window.__stores.confirmPrefabUpdate.subscribe((v) => r(v))())
+		)) === false,
+		'confirmPrefabUpdate defaults to OFF'
+	);
+	await A.page.evaluate(() => window.__stores.confirmPrefabUpdate.set(true));
+	// a FRESH sphere: the Ctrl+Z above removed the first one from the scene
+	const sphere2 = await createObject(A.page, '/create sphere');
+	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), sphere2);
+	await A.page.waitForTimeout(300);
+	await clearToasts(A.page);
+	const beforePrompt = await facts(A.page, prefabId);
+	await openPrefabMenu(A);
+	await menuItem(A, 'Update from selection').click();
+	await A.page.waitForTimeout(600);
+	const prompt = A.page.getByRole('button', { name: 'Update', exact: true });
+	h.check((await prompt.count()) > 0, 'with the setting ON, the confirm prompt is back');
+	h.check(
+		(await facts(A.page, prefabId)).tris === beforePrompt.tris,
+		'and nothing was replaced while it waited for an answer'
+	);
+	await prompt.first().click({ timeout: 8000 });
+	await h.eventually(
+		() => facts(A.page, prefabId),
+		(f) => f && f.tris !== beforePrompt.tris,
+		'confirming it goes through the same replace'
+	);
+	h.check(
+		(await A.page.getByRole('button', { name: 'Undo', exact: true }).count()) > 0,
+		'the confirmed route reports with an Undo too'
+	);
+	await A.page.evaluate(() => window.__stores.confirmPrefabUpdate.set(false));
+	await clearToasts(A.page);
 
 	// ---- 6. inline rename (never window.prompt — that is what the Library used) -------
 	await A.page.evaluate(() => {
@@ -268,6 +424,136 @@ h.run(async () => {
 	h.check(
 		await A.page.locator('#preview-suspended').isVisible(),
 		'the Properties pane says where the preview went'
+	);
+	// 21-I3: it says so with the item's STILL, at the live preview's own size — not H2's
+	// dashed text note. The size is what makes the pane keep its shape when the live
+	// viewport hands off, so it is asserted, not assumed.
+	h.check(
+		await A.page.locator('#preview-suspended-thumb').isVisible(),
+		'and it shows the item THUMBNAIL rather than a text note'
+	);
+	const thumbSrc = await A.page.locator('#preview-suspended-thumb').getAttribute('src');
+	h.check(
+		(thumbSrc ?? '').startsWith('data:image'),
+		`the still is this prefab's own rendered thumbnail (${(thumbSrc ?? '').slice(0, 24)}…)`
+	);
+	const suspendedBox = await A.page.locator('#preview-suspended').boundingBox();
+	h.check(
+		Math.abs((suspendedBox?.height ?? 0) - 150) <= 2,
+		`the still occupies the live preview's own 150px slot (${Math.round(suspendedBox?.height ?? 0)}px)`
+	);
+	h.check(
+		/previewing in its own window/i.test(await A.page.locator('#preview-suspended').textContent()),
+		'with a hint saying where the live one went'
+	);
+
+	// ---- 8b. A REPEAT CLICK RAISES THE WINDOW — the reported "hang" -------------------
+	// THE PROBE FINDING (21-I3): driving `#prefab-preview` twice produced no wedge at all
+	// — no page errors, a responsive app, clickable cards. The second click simply did
+	// NOTHING, because `modelPreviewTarget` was re-set to an equal target: the `{#key}`
+	// did not change and neither did the window. A window behind the Explorer or shoved
+	// off-screen is then indistinguishable from a dead button.
+	//
+	// The premise is built the way a user builds it: the window is DRAGGED nearly off the
+	// right edge (dragWindow deliberately allows that, keeping a 52px strip), so the
+	// stored rect really is off-screen — moving it with CSS would leave the action's own
+	// rect on-screen and the check would pass on a lie.
+	const winBefore = await A.page.locator('#model-preview-window').boundingBox();
+	const handle = A.page.locator('#model-preview-window .move-handle');
+	const hb = await handle.boundingBox();
+	// grab at 40% across: the header's centre can land on its own buttons, which
+	// dragWindow rightly refuses to start a drag from
+	const grabX = hb.x + hb.width * 0.4;
+	const grabY = hb.y + hb.height / 2;
+	await A.page.mouse.move(grabX, grabY);
+	await A.page.mouse.down();
+	for (let i = 1; i <= 12; i++) await A.page.mouse.move(grabX + i * 90, grabY + i * 20);
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	const shoved = await A.page.locator('#model-preview-window').boundingBox();
+	const viewport = A.page.viewportSize();
+	h.check(
+		shoved.x + shoved.width > viewport.width + 100,
+		`premise: the window really is off the right edge (right ${Math.round(shoved.x + shoved.width)} vs ${viewport.width})`
+	);
+
+	// remember the canvas NODE: a raise must not remount the preview (that would build a
+	// second WebGL context for a picture that is already on screen)
+	await A.page.evaluate(() => {
+		window.__popCanvas = document.querySelector('#model-preview-window canvas');
+	});
+	// a competitor window, so "raise" is a claim about ORDER and not about a lone window
+	await A.page.evaluate(() =>
+		window.__stores.fileWindows.openImagePreview({
+			title: 'probe',
+			url:
+				'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+		})
+	);
+	await A.page.waitForTimeout(500);
+	const rival = A.page.locator('#image-preview-window');
+	await rival.locator('.move-handle').click(); // pointerdown raises it to the front
+	await A.page.waitForTimeout(300);
+	const zRivalBefore = await rival.evaluate((el) => Number(getComputedStyle(el).zIndex));
+	const zPreviewBefore = await A.page
+		.locator('#model-preview-window')
+		.evaluate((el) => Number(getComputedStyle(el).zIndex));
+	h.check(
+		zRivalBefore > zPreviewBefore,
+		`premise: another window is in front of the preview (${zPreviewBefore} vs ${zRivalBefore})`
+	);
+
+	await A.page.locator('#prefab-preview').click();
+	await A.page.waitForTimeout(600);
+	const raised = await A.page.locator('#model-preview-window').boundingBox();
+	h.check(
+		raised.x >= -1 && raised.x + raised.width <= viewport.width + 1,
+		`THE FIX: a repeat click brings the window fully back on-screen (x ${Math.round(shoved.x)} -> ${Math.round(raised.x)})`
+	);
+	h.check(
+		raised.y >= -1 && raised.y + raised.height <= viewport.height + 1,
+		`...vertically too (y ${Math.round(raised.y)}, h ${Math.round(raised.height)})`
+	);
+	const zPreviewAfter = await A.page
+		.locator('#model-preview-window')
+		.evaluate((el) => Number(getComputedStyle(el).zIndex));
+	const zRivalAfter = await rival.evaluate((el) => Number(getComputedStyle(el).zIndex));
+	h.check(
+		zPreviewAfter >= zRivalAfter,
+		`and to the FRONT of the window stack (${zPreviewAfter} vs the rival's ${zRivalAfter})`
+	);
+	h.check(
+		await A.page.evaluate(() => document.activeElement?.id === 'model-preview-window'),
+		'and it takes the keyboard, so Esc closes what you just asked for'
+	);
+	h.check(
+		await A.page.evaluate(() => window.__popCanvas === document.querySelector('#model-preview-window canvas')),
+		'a raise REUSES the running preview — no remount, no second GL context'
+	);
+	// the window is still showing the same source, and the pane still shows its still
+	h.check(
+		await A.page.locator('#preview-suspended-thumb').isVisible(),
+		'the Properties still stays put through a raise'
+	);
+	// Esc now reaches it (that is what the focus was for)
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(500);
+	h.check(
+		(await A.page.locator('#model-preview-window').count()) === 0,
+		'Escape closes the raised window'
+	);
+	await rival.locator('button[title="Close"]').click();
+	await A.page.waitForTimeout(400);
+	// leave section 9 the state it expects: the pop-out open again on this prefab
+	h.check(
+		winBefore.width > 0,
+		`premise: the window had a measurable box to begin with (${Math.round(winBefore.width)}x${Math.round(winBefore.height)})`
+	);
+	await A.page.locator('#prefab-preview').click();
+	await A.page.waitForTimeout(800);
+	h.check(
+		await A.page.locator('#model-preview-window').isVisible(),
+		'and it opens again afterwards (a raise did not consume the opener)'
 	);
 	h.check(
 		await A.page.evaluate(
@@ -384,6 +670,127 @@ h.run(async () => {
 		(await A.page.locator('#explorer-list .explorer-card').count()) === 0,
 		'the card goes with it'
 	);
+
+	// ---- 10b. "Create from selection" on the Prefabs background ----------------------
+	// 21-I3: the Prefabs view had no background menu at all, so the surface that owns
+	// prefabs had no way to make one. Section 10 just deleted the only prefab, which
+	// makes this the cleanest place to build one from nothing.
+	// the REFUSAL first: nothing selected must say so, never silently save the last thing
+	// that was clicked. This is only expressible because the entry reads the selection SET
+	// — `$selectedObject` is sticky and never goes back to empty (21-I3 note in Explorer).
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.waitForTimeout(300);
+	await clearToasts(A.page);
+	await openGridMenu(A);
+	await menuItem(A, 'Create from selection').click();
+	await A.page.waitForTimeout(700);
+	const refusal = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.toastStore.subscribe((t) => r(JSON.stringify(t)))())
+	);
+	h.check(
+		/save as a prefab first/i.test(refusal),
+		`with nothing selected it refuses WITH THE REASON (${refusal.slice(0, 90)})`
+	);
+	h.check((await prefabList(A.page)).length === 0, 'and it made nothing');
+
+	// now with a real selection
+	const freshUuid = await createObject(A.page, '/create cone');
+	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), freshUuid);
+	await A.page.waitForTimeout(300);
+	await clearToasts(A.page);
+	await openGridMenu(A);
+	await menuItem(A, 'Create from selection').click();
+	await h.eventually(
+		() => prefabList(A.page),
+		(list) => list.length === 1,
+		'Create from selection saves the selected object as a prefab'
+	);
+	await A.page.waitForTimeout(600);
+	h.check(
+		(await A.page.locator('#explorer-list .explorer-card').count()) === 1,
+		'and the card appears in the view you made it from'
+	);
+
+	// ---- 10c. WEBGL CONTEXT DISPOSAL over many open/close cycles ---------------------
+	// The one cause the probe could NOT rule out: a browser caps live WebGL contexts, and
+	// ModelPreview builds one per mount. Over a long real session that would present as
+	// exactly the reported symptom — a preview button that stops doing anything (the
+	// renderer constructor throws, ModelPreview catches it and returns, and the canvas
+	// stays blank). Contexts are counted at `getContext` time and tagged by WHERE their
+	// canvas lives, so the pop-out's own contexts can be separated from the viewport's.
+	await A.page.evaluate(() => {
+		window.__gl = { made: [] };
+		const orig = HTMLCanvasElement.prototype.getContext;
+		HTMLCanvasElement.prototype.getContext = function (kind, ...rest) {
+			const ctx = orig.call(this, kind, ...rest);
+			if (ctx && /webgl/i.test(String(kind)))
+				window.__gl.made.push({
+					where: this.closest?.('#model-preview-window')
+						? 'popout'
+						: this.closest?.('#inline-preview')
+							? 'inline'
+							: 'other',
+					ctx
+				});
+			return ctx;
+		};
+	});
+	const CYCLES = 22;
+	const errorsBeforeCycles = h.pageErrors(A).length;
+	for (let i = 0; i < CYCLES; i++) {
+		await A.page.locator('#explorer-list .explorer-card').first().dblclick();
+		await A.page.waitForTimeout(320);
+		const closeBtn = A.page.locator('#model-preview-window button[title="Close"]');
+		if ((await closeBtn.count()) === 0) break; // the window stopped opening — recorded below
+		await closeBtn.click();
+		await A.page.waitForTimeout(220);
+	}
+	const gl = await A.page.evaluate(() => {
+		const bucket = (where) => {
+			const list = window.__gl.made.filter((e) => e.where === where);
+			return { made: list.length, live: list.filter((e) => !e.ctx.isContextLost()).length };
+		};
+		return { popout: bucket('popout'), inline: bucket('inline'), other: bucket('other') };
+	});
+	h.check(
+		gl.popout.made >= CYCLES - 2,
+		`premise: every cycle really built a pop-out GL context (${gl.popout.made} over ${CYCLES} cycles)`
+	);
+	h.check(
+		gl.popout.live === 0,
+		`DISPOSAL HOLDS: every closed pop-out released its context (${gl.popout.live} of ${gl.popout.made} still live)`
+	);
+	// the INLINE preview mounts and unmounts on the same rhythm (it stands down while the
+	// pop-out is up), so it is a second, free reading of the same question
+	h.check(
+		gl.inline.live <= 1,
+		`the inline preview releases its own too (${gl.inline.live} live of ${gl.inline.made} made)`
+	);
+	// the spy is installed AFTER the app is up, so `other` counts only contexts created
+	// DURING the cycles — which is the useful reading: nothing outside the two previews
+	// should be minting one per open (measured 0 made, 0 live).
+	h.check(
+		gl.other.live <= 6,
+		`nothing outside the previews minted contexts during the cycles (${gl.other.live} live of ${gl.other.made} made)`
+	);
+	// the user-facing half of the same question: the NEXT preview still works
+	await A.page.locator('#explorer-list .explorer-card').first().dblclick();
+	await A.page.waitForTimeout(900);
+	h.check(
+		await A.page.locator('#model-preview-window canvas').isVisible(),
+		`the preview still opens after ${CYCLES} cycles (context exhaustion would blank it)`
+	);
+	await h.eventually(
+		() => A.page.locator('#model-preview-stats').textContent().catch(() => ''),
+		(text) => /tris/.test(text ?? ''),
+		'and still renders a real tree (poly stats reported)'
+	);
+	h.check(
+		h.pageErrors(A).length === errorsBeforeCycles,
+		`no page errors across the cycles (${h.pageErrors(A).length - errorsBeforeCycles})`
+	);
+	await A.page.locator('#model-preview-window button[title="Close"]').click();
+	await A.page.waitForTimeout(400);
 
 	// ---- 11. the Library modal is GONE -----------------------------------------------
 	// `libraryClose` survives in appStore (hidePanels/restorePanels still snapshot it),

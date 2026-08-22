@@ -359,6 +359,18 @@ stackOnDrop.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('explorerStackOnDrop', String(on));
 });
 
+// 21-I3 (locked answer 6): "Update from selection" REPLACES a prefab's bytes instantly
+// and reports with an Undo toast. This restores the old confirm prompt for people who
+// want to be asked. Default OFF — the whole point of the change is that a replace you
+// can undo does not need a dialog in front of it, and the Undo is the safety net. A
+// LOCAL pref like every other Explorer setting; nothing about it goes on the wire.
+export const confirmPrefabUpdate = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('confirmPrefabUpdate') === 'true'
+);
+confirmPrefabUpdate.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('confirmPrefabUpdate', String(on));
+});
+
 // Shift+A quick-add (the cursor-anchored Add popover). Opt-in, persisted; OFF by
 // default — Shift is a camera-strafe modifier in fly mode, so the shortcut only
 // exists for users who ask for it in Settings.

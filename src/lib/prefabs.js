@@ -161,8 +161,10 @@ export async function savePrefabSelection(uuids, name) {
  * has to write through it rather than mint a second entry beside the first (which is
  * what calling savePrefabSelection again would do).
  * @param {string} id @param {string[]} uuids
+ * @param {{toast?: boolean}} [opts] `toast: false` when the CALLER reports it — 21-I3's
+ *   instant update reports with an Undo action, and two toasts for one act is noise.
  */
-export async function updatePrefab(id, uuids) {
+export async function updatePrefab(id, uuids, opts = {}) {
 	const entry = get(prefabs).find((p) => p.id === id);
 	if (!entry) return null;
 	const snap = buildPrefabElement(uuids, entry.name);
@@ -175,7 +177,51 @@ export async function updatePrefab(id, uuids) {
 	};
 	prefabs.update((list) => list.map((p) => (p.id === id ? next : p)));
 	await persist();
-	showToast(`Updated "${entry.name}" from the selection`);
+	if (opts.toast !== false) showToast(`Updated "${entry.name}" from the selection`);
+	return next;
+}
+
+/**
+ * 21-I3 — THE BYTES OF ONE PREFAB, captured so a caller can put them back.
+ *
+ * Locked answer 6: an instant "Update from selection" reports with an **Undo** that
+ * belongs to the TOAST and must never enter the scene history stack, because Ctrl+Z is
+ * expected to undo viewport changes and nothing else. So this is deliberately NOT a
+ * history kind and there is no `recordEntry` anywhere near it — the caller holds the
+ * snapshot in a closure for as long as its toast lives, and when the toast goes so does
+ * the ability to undo. That is the honest lifetime for a library edit that is not part
+ * of the scene.
+ *
+ * `element` is plain JSON and `thumbnail` a dataURL string, so the snapshot is a value:
+ * nothing it points at can be mutated out from under it.
+ * @param {string} id
+ * @returns {{id: string, element: any, thumbnail: string|null, updatedAt: number|null}|null}
+ */
+export function prefabSnapshot(id) {
+	const entry = prefabById(id);
+	if (!entry?.element) return null;
+	return {
+		id,
+		element: entry.element,
+		thumbnail: entry.thumbnail ?? null,
+		updatedAt: entry.updatedAt ?? null
+	};
+}
+
+/**
+ * Put a `prefabSnapshot` back — the Undo half. Keeps the entry's CURRENT name (a rename
+ * between the update and the undo is a different edit, and reverting it too would be
+ * undoing something nobody asked about).
+ * @param {{id: string, element: any, thumbnail: string|null, updatedAt: number|null}|null} snap
+ */
+export async function restorePrefabBytes(snap) {
+	if (!snap?.id || !snap.element) return null;
+	const entry = prefabById(snap.id);
+	if (!entry) return null; // deleted in the meantime — nothing to restore into
+	const next = { ...entry, element: snap.element, thumbnail: snap.thumbnail, updatedAt: snap.updatedAt };
+	if (next.updatedAt === null) delete next.updatedAt; // it had never been updated
+	prefabs.update((list) => list.map((p) => (p.id === snap.id ? next : p)));
+	await persist();
 	return next;
 }
 

@@ -38,6 +38,7 @@
 	import { roomAlignment } from '$lib/colocation';
 	import { colocatedGhostHands } from '$lib/colocationPresence';
 	import { colocateHereFromView, stopColocation } from '$lib/colocationCalibrate';
+	import { anchorRecords, forgetRoom, forgetCandidate } from '$lib/colocationAnchors';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { shortcuts } from '$lib/shortcuts';
 	import {
@@ -362,6 +363,10 @@
 	/** @type {any} */
 	let savedExpansion: any = null;
 	$: syncSearchExpansion(settingsQuery);
+
+	// CO3: which stored room anchor the Forget button offers — the current room when
+	// aligned (only if it has a record), else the newest record (the LAST room)
+	$: forgetKey = forgetCandidate($anchorRecords, $roomAlignment);
 	/** @param {string} query */
 	function syncSearchExpansion(query: string) {
 		const searching = !!(query || '').trim();
@@ -1211,6 +1216,14 @@
 									disabled={!$roomAlignment}
 									on:click={() => stopColocation()}>Stop</button
 								>
+								{#if forgetKey}
+									<button
+										id="colocate-forget"
+										class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+										title={'Forget the saved room anchor for ' + forgetKey + ' — the next visit needs the ritual again. Stop does NOT forget.'}
+										on:click={() => forgetRoom(forgetKey)}>Forget {forgetKey}</button
+									>
+								{/if}
 							</span>
 						</svelte:fragment>
 						<span class="font-semibold" id="colocation-state"
@@ -1220,7 +1233,9 @@
 						viewpoint (both of you stand on the agreed spot facing the agreed way and press it); in VR the
 						radial menu's Scene ▸ Colocate offers the more accurate point + aim ritual. While colocated the
 						world stays 1:1 and a world-grab moves the SHARED room anchor, so your partner sees the scene
-						move too. Expect ~1–3 cm of agreement, not millimetres
+						move too. Expect ~1–3 cm of agreement, not millimetres. A calibration made in-headset is
+							REMEMBERED per room (a persistent anchor): the next VR/AR session in that room re-aligns
+							with no ritual. <em>Stop</em> keeps that memory; <em>Forget</em> drops it
 					</SettingRow>
 					<SettingRow name="Ghost hands">
 						<svelte:fragment slot="control"

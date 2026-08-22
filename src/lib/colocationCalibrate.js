@@ -103,6 +103,9 @@ let markerGroup = null;
 let handledAt = 0;
 /** one toast per stretch attempt burst, not one per frame */
 let scaleToastAt = 0;
+/** CO3: stamped every frame a colocated world-grab is consumed — the drift correction
+ * reads it through `worldGrabActive` so it never fights the user's hands mid-gesture */
+let grabStampAt = 0;
 let registered = false;
 
 // A remote roomAnchor arriving while THIS device is aligned must re-seat the rig —
@@ -390,6 +393,7 @@ export function anchorFromRig(rig, alignment) {
 export function colocatedWorldGrab(grab) {
 	const alignment = get(roomAlignment);
 	if (!alignment) return false;
+	grabStampAt = Date.now();
 	const next = colocatedGrabRig(grab.start, grab.now, grab.rig0);
 	if (Math.abs(next.stretch - 1) > 0.2 && Date.now() - scaleToastAt > 8000) {
 		scaleToastAt = Date.now();
@@ -398,6 +402,20 @@ export function colocatedWorldGrab(grab) {
 	const anchor = anchorFromRig(next, alignment);
 	if (anchor) setRoomAnchor(anchor);
 	return true;
+}
+
+/**
+ * CO3's grab-suspension signal: is a colocated world-grab mid-gesture RIGHT NOW? The
+ * divert has no begin/end events — `colocatedWorldGrab` simply runs per frame while
+ * both grips are held — so "active" is a recent stamp, the `calibrateSwallowSelect`
+ * idiom one function up. Only the COLOCATED grab matters to a consumer: the ordinary
+ * (non-colocated) grab bends the rig directly, but then no alignment exists and no
+ * drift correction is running to fight it.
+ * @param {number} [withinMs]
+ * @returns {boolean}
+ */
+export function worldGrabActive(withinMs = 400) {
+	return Date.now() - grabStampAt < withinMs;
 }
 
 // ---- VR wiring (through the GENERIC vrControls hook registries — the vrsleeve

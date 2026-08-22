@@ -96,17 +96,24 @@ h.run(async () => {
 	// =====================================================================
 	await makeBox(A);
 	const arenaWorld = await childUuids(A);
-	const arenaHash = await A.page.evaluate(async () => {
-		const item = await window.__stores.levels.saveSceneAsLevel('Arena');
+	// 21-H1 (locked answer 6): the app no longer invents a folder for a save, so the one
+	// these scenes live in is a folder the USER made. That also makes the v2 folder-tree
+	// round trip below a real test rather than a test of our own former default.
+	const sceneFolder = await A.page.evaluate(
+		() => window.__stores.explorer.createFolder('Scenes', null)?.id ?? null
+	);
+	h.check(!!sceneFolder, 'premise: a user-made folder to save the scenes into');
+	const arenaHash = await A.page.evaluate(async (folderId) => {
+		const item = await window.__stores.levels.saveSceneAsLevel('Arena', folderId);
 		return item?.hash ?? null;
-	});
+	}, sceneFolder);
 	h.check(!!arenaHash, `Arena saved as a scene asset (${String(arenaHash).slice(0, 8)})`);
 
 	await makeBox(A); // the scene is now different from what Arena holds
-	const pitV1 = await A.page.evaluate(async () => {
-		const item = await window.__stores.levels.saveSceneAsLevel('Pit');
+	const pitV1 = await A.page.evaluate(async (folderId) => {
+		const item = await window.__stores.levels.saveSceneAsLevel('Pit', folderId);
 		return item?.hash ?? null;
-	});
+	}, sceneFolder);
 	h.check(!!pitV1 && pitV1 !== arenaHash, 'Pit saved as a second scene, its own content hash');
 
 	// the EDIT, then a travel away — G2b's auto-save publishes the departing scene, so
@@ -293,9 +300,11 @@ h.run(async () => {
 		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
 		return folders.find((f) => f.name === 'Scenes' && !f.parentId)?.id ?? null;
 	});
+	// 21-H1: the folder is one A's user MADE, so this is the folder tree round-tripping
+	// — the placement travelled with the items, not a default either end reinvented
 	h.check(
 		!!scenesFolder && libB.filter((i) => i.folderId === scenesFolder).length === 2,
-		'the scenes landed in the Scenes folder'
+		"the scenes landed back in the folder A had them in, rebuilt from the file's own tree"
 	);
 	h.check(
 		JSON.stringify(await childUuids(B)) === '[]',

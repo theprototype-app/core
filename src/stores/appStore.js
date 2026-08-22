@@ -58,6 +58,25 @@ export async function focusFlowNode(nodeId) {
 }
 // Explorer asset browser (95) — folder hud button toggles it
 export const explorerClose = writable(true);
+/**
+ * 21-H1 (locked answer 5) — the ARM seam for "open the Explorer and start naming a
+ * scene". The Explorer's inline editor is component state inside a panel, so a lib
+ * module (projectFile's empty-library bootstrap) cannot reach it directly; a write-once
+ * store is the seam that needs nothing handed back — the `hudPickArm`/`hudPickResult`
+ * shape, one domain over. The Explorer CONSUMES it (clears it) as it acts, so a stale
+ * request can never re-open an input the next time the panel mounts.
+ *
+ * `{ token, folderId }`: the token makes two consecutive requests distinguishable (two
+ * identical objects are `===` different, but a number bumped per arm is what a `$effect`
+ * can key on); `folderId` is where the save should land, or null for the root.
+ * @type {import('svelte/store').Writable<{token: number, folderId: string|null}|null>}
+ */
+export const explorerSceneSaveArm = writable(null);
+let sceneSaveArmToken = 0;
+/** @param {string|null} folderId */
+export function armExplorerSceneSave(folderId = null) {
+	explorerSceneSaveArm.set({ token: ++sceneSaveArmToken, folderId: folderId ?? null });
+}
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 // AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).

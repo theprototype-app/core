@@ -26,6 +26,13 @@
 //                            that the tree does NOT mount a second input for it.
 //   6. rename-item           already inline; re-asserted from the grid card because the
 //                            commit path was rewritten around it (it is now async).
+//   6b. blur COMMITS         21-H1, locked answer 7 — THE ASSERTION THAT FLIPPED.
+//                            Clicking away used to throw the typed name away; it commits
+//                            now, across the whole inline family (folder create, item
+//                            rename, the project name), with Escape the only cancel. The
+//                            ordering hazard has its own check: Escape THEN a click away
+//                            must still create nothing, or the blur handler would commit
+//                            what Escape just cancelled.
 //   7. the resizer           the roots section below "New folder". Dragging DOWN gives
 //                            the folder list the room (the grip sits ABOVE what it
 //                            sizes), the height persists, and it SURVIVES A RELOAD.
@@ -157,9 +164,13 @@ h.run(async () => {
 		(await cardInputState(A)).present === false,
 		'and the card is gone once the name is committed'
 	);
+	// 21-H1 (locked answer 6) FLIPPED THIS: a save used to premake a `Scenes` folder,
+	// and now lands where the user is looking — here, the library root. The only path
+	// left that invents that folder is the empty-library bootstrap button
+	// (`files-format-row` owns it); `scene-folders` owns the landing rule in full.
 	h.check(
-		(await folderNames(A)).includes('Scenes'),
-		'the save premade the Scenes folder (the 21-G1 landing rule still holds)'
+		!(await folderNames(A)).includes('Scenes'),
+		`the save invents NO folder — it landed where the user was looking (${JSON.stringify(await folderNames(A))})`
 	);
 	h.check((await itemNames(A)).length === before2 + 1, 'exactly one item was created');
 
@@ -285,6 +296,89 @@ h.run(async () => {
 		() => itemNames(A),
 		(names) => names.includes('typed-name.png'),
 		'and Enter renames it (the async commit did not break the sync modes)'
+	);
+
+	// =====================================================================
+	// 6b. CLICKING AWAY COMMITS (21-H1, locked answer 7)
+	// =====================================================================
+	// This is the assertion that FLIPPED. Blur used to throw the name away, which is the
+	// opposite of what every file browser does and of what "type a name, then reach for
+	// the mouse" means. Escape is the only cancel now — and the ordering hazard has its
+	// own check below, because unmounting a focused input can deliver a blur, and a
+	// blur handler that ran after Escape would commit the very thing Escape cancelled.
+	const beforeBlur = (await folderNames(A)).length;
+	await openGridMenu(A);
+	await clickMenuRow(A, 'New folder');
+	h.check((await cardInputState(A)).present, 'premise: the folder card is up for the blur');
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('Blurred Folder');
+	// a REAL click elsewhere, not input.blur() — the bug would live in the handler
+	const away = await gridBlankPoint(A);
+	if (!away.ok) h.check(false, 'found blank grid to click away to: ' + away.why);
+	await A.page.mouse.click(away.x, away.y);
+	await h.eventually(
+		() => folderNames(A),
+		(names) => names.includes('Blurred Folder'),
+		'clicking away COMMITS the typed folder name (it used to be thrown away)'
+	);
+	h.check(
+		(await cardInputState(A)).present === false,
+		'and the card closes with it'
+	);
+
+	// ESCAPE FIRST, THEN BLUR: cancelling must survive losing focus
+	const afterBlur = (await folderNames(A)).length;
+	h.check(afterBlur === beforeBlur + 1, `premise: exactly one folder came from that (${beforeBlur} -> ${afterBlur})`);
+	await openGridMenu(A);
+	await clickMenuRow(A, 'New folder');
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('Cancelled By Escape');
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+	const away2 = await gridBlankPoint(A);
+	if (away2.ok) await A.page.mouse.click(away2.x, away2.y);
+	await A.page.waitForTimeout(700);
+	const escNames = await folderNames(A);
+	h.check(
+		!escNames.includes('Cancelled By Escape') && escNames.length === afterBlur,
+		`Escape then a click away still creates NOTHING (${escNames.length} folders, unchanged)`
+	);
+
+	// the item rename half of the same family
+	await A.page.locator('#explorer-list .explorer-card', { hasText: 'typed-name.png' }).click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	await A.page.getByText('Rename', { exact: true }).click();
+	await A.page.waitForTimeout(300);
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('blur-renamed.png');
+	const away3 = await gridBlankPoint(A);
+	if (away3.ok) await A.page.mouse.click(away3.x, away3.y);
+	await h.eventually(
+		() => itemNames(A),
+		(names) => names.includes('blur-renamed.png'),
+		'a rename commits on blur too — the whole inline family, not just the scene modes'
+	);
+
+	// …and the PROJECT name, which lives in its own editor with its own handlers
+	await A.page.locator('#explorer-project').click();
+	await A.page.waitForTimeout(300);
+	h.check(
+		(await A.page.locator('#explorer-project-input').count()) === 1,
+		'premise: the project-name input opened'
+	);
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('Named By Blur');
+	const away4 = await gridBlankPoint(A);
+	if (away4.ok) await A.page.mouse.click(away4.x, away4.y);
+	await h.eventually(
+		() =>
+			A.page.evaluate(() => {
+				let m;
+				window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+				return m.name ?? '';
+			}),
+		(name) => name === 'Named By Blur',
+		'the project name commits on blur as well'
 	);
 
 	// =====================================================================

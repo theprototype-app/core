@@ -23,6 +23,7 @@ import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAni
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { stripEditOverlays } from '$lib/editOverlays';
+import { saveFileBase } from '$lib/saveName';
 import { peers, fixLight, loadingFile, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 
 //Access objects Store
@@ -41,6 +42,22 @@ peers.subscribe(value => { peer = value });
 let loadingNames = $state();
 loadingFile.subscribe(value => { loadingNames = value });
 
+// 21-I5: which scene is on screen, for the `[name]` token. A PRIMED DYNAMIC import (the
+// moduleSDK idiom) rather than a static one: levels.js imports sessions.js, which sits
+// deep in the history family, and this module already reaches sessions dynamically for
+// exactly that reason. Resolved once at boot, read synchronously afterwards — exportGltf
+// is a callback, not an async function.
+let sceneName = '';
+import('./levels')
+	.then((m) => m.currentLevel.subscribe((/** @type {any} */ at) => { sceneName = at?.name ?? ''; }))
+	.catch(() => {});
+
+/** The name a scene save goes out under: the open scene's, or '' for an unsaved one
+ * (which `saveFileBase` turns into the old timestamp shape). */
+export function currentSceneName() {
+	return sceneName;
+}
+
 // B3: .tpscene export prefs (set from the Sidebar export-settings cog)
 export function tpsceneOptions() {
 	const read = (/** @type {string} */ k, /** @type {boolean} */ dflt) => {
@@ -50,7 +67,10 @@ export function tpsceneOptions() {
 	return {
 		assets: read('tpsceneAssets', true),
 		packs: read('tpscenePacks', false),
-		flow: read('tpsceneFlow', true)
+		flow: read('tpsceneFlow', true),
+		// 21-I5: DEFAULT OFF — a handoff artifact is not what most saves are, and the
+		// bytes are the scene's whole past
+		versions: read('tpsceneVersions', false)
 	};
 }
 
@@ -58,17 +78,30 @@ export function tpsceneOptions() {
 async function saveTpScene() {
 	const { buildSessionPayload, exportSessionZip } = await import('./sessions');
 	const payload = buildSessionPayload('Scene export');
-	const zip = await exportSessionZip(payload, tpsceneOptions());
+	// 21-I5: the manifest keys history by SCENE NAME, and the payload's name is the
+	// slot label ('Scene export') — so the scene we are standing in has to be named
+	// explicitly or the bundle would look for the history of a scene nobody has.
+	const zip = /** @type {any} */ (
+		await exportSessionZip(payload, { ...tpsceneOptions(), sceneName })
+	);
 	const blob = new Blob([zip], { type: 'application/zip' });
 	const a = document.createElement('a');
 	document.body.appendChild(a);
 	a.style.display = 'none';
 	const url = window.URL.createObjectURL(blob);
 	a.href = url;
-	const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
-	a.download = `ThePrototype-${date}UTC.tpscene`;
+	a.download = `${saveFileBase(sceneName)}.tpscene`;
 	a.click();
 	window.URL.revokeObjectURL(url);
+	const bundled = zip.versions ?? 0;
+	const missing = zip.skippedVersions ?? 0;
+	if (bundled || missing)
+		showToast(
+			'Scene saved with ' + bundled + ' version' + (bundled === 1 ? '' : 's') + ' inside' +
+				(missing
+					? ' — ' + missing + ' whose bytes are not on this machine were left out'
+					: '')
+		);
 }
 
 /** The selected objects (union of the primary selection + the multi-select set),
@@ -135,8 +168,10 @@ function exportGltf(format, input, opts = {}) {
 			a.style.display = 'none';
 			const url = window.URL.createObjectURL(blob);
 			a.href = url;
-			const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
-			a.download = opts.filename || `ThePrototype-${date}UTC.${String(format).toLowerCase()}`;
+			// 21-I5: the save-name template names a scene export too; an explicit
+			// `filename` (the prefab path) still wins, since that tree has its own identity
+			a.download =
+				opts.filename || `${saveFileBase(sceneName)}.${String(format).toLowerCase()}`;
 			a.click();
 			window.URL.revokeObjectURL(url);
 			// glTF cannot express a node-graph shader: the file carries each object's

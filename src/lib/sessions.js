@@ -424,10 +424,53 @@ export async function importSession(json) {
 // ---- session ZIP: session.json + the scene's binary assets (127) ----
 
 /**
+ * 21-I5: the name of ONE bundled version inside `versions/`. The date is the version's
+ * OWN `createdAt`, never "now" — stamping the export time would make every version in
+ * the file claim to be from the moment it was handed over, which is the one fact the
+ * section exists to carry. A colon is illegal in a Windows filename, so the ISO string
+ * loses its two; everything else about it stays readable at a glance.
+ * @param {number} createdAt @param {string} hash
+ */
+function versionEntryName(createdAt, hash) {
+	const at = Number(createdAt);
+	const iso = new Date(Number.isFinite(at) && at > 0 ? at : Date.now()).toISOString();
+	return 'versions/' + iso.replace(/:/g, '-') + '-' + hash + '.tpscene';
+}
+
+/**
+ * 21-I5 — THE HONESTY TOAST. The bundle is EXPORT-ONLY: nothing in the app reads
+ * `versions/` back, because a second door into the library is exactly what would let a
+ * content-addressed item be created from a fat file whose hash is not its content's.
+ * So the load path says what it is NOT doing, rather than silently ignoring a section
+ * the user asked to be written.
+ * @param {Record<string, Uint8Array>} entries @returns {number} versions in the file
+ */
+function noteBundledVersions(entries) {
+	const n = Object.keys(entries).filter((k) => k.startsWith('versions/')).length;
+	if (!n) return 0;
+	showToast(
+		'This scene file also carries ' + n + ' saved version' + (n === 1 ? '' : 's') +
+			' of the scene. ' + (n === 1 ? 'It is' : 'They are') +
+			' not loaded — unzip the file to open ' + (n === 1 ? 'it' : 'one') + '.'
+	);
+	return n;
+}
+
+/**
  * Build a .zip Uint8Array for a session: session.json + assets/<hash>.<ext>
  * (the 108 scene manifest's audio/config/textures) + an assets/index.json map.
  * Portable — re-importing on a fresh machine restores the assets too.
+ *
+ * 21-I5 adds an optional `versions/` section (`opts.versions`, default OFF): the scene's
+ * own past, for handing someone a scene WITH its history. It is a fourth include-option
+ * exactly like the other three, and the returned bytes carry `versions`/`skippedVersions`
+ * counts as properties (the `carveAlongSpline` tagging idiom) so the caller can report
+ * them without this function growing a second return shape every existing call site
+ * would have to learn.
+ *
  * @param {any} payload
+ * @param {{assets?: boolean, packs?: boolean, flow?: boolean, versions?: boolean,
+ *   sceneName?: string}} [opts]
  */
 export async function exportSessionZip(payload, opts = { assets: true, packs: false, flow: true }) {
 	const { zipSync, strToU8 } = await import('fflate');
@@ -481,7 +524,43 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		}
 		files['packs/index.json'] = strToU8(JSON.stringify({ packs, items: packIndex }));
 	}
-	return zipSync(files, { level: 6 });
+	// 21-I5 — VERSIONS INSIDE THE FILE (the ruling: inside the file for TRANSPORT,
+	// outside it in the content-addressed store). The versions to carry are the ones
+	// this machine still HOLDS for that scene name; `itemByHash` searches the hidden
+	// shelf too (21-G7), so folded-away older versions resolve with no change here.
+	// A hash whose bytes were pruned is COUNTED, never silently missing — the
+	// exportProject rule, because a lossy export you are not told about is how a gap
+	// gets discovered a month later.
+	//
+	// NOTE what is deliberately absent: an index. Nothing reads this section, so an
+	// index would be a manifest for a reader that must never exist; the entry names
+	// carry the date and the hash for the human who unzips it.
+	let versions = 0;
+	let skippedVersions = 0;
+	if (opts.versions) {
+		const scene = String(opts.sceneName ?? payload?.name ?? '').trim();
+		const { sceneEntry } = await import('./projectManifest');
+		const entry = scene ? sceneEntry(scene) : null;
+		const seenVersion = new Set();
+		for (const hash of entry?.history ?? []) {
+			// a restore RE-APPENDS a hash it already had (the manifest's own rule), so one
+			// history can name the same version twice — it is one file either way
+			if (!hash || seenVersion.has(hash)) continue;
+			seenVersion.add(hash);
+			const item = /** @type {any} */ (itemByHash(hash));
+			const blob = item ? await itemBlob(item.id) : null;
+			if (!blob) {
+				skippedVersions++;
+				continue;
+			}
+			files[versionEntryName(item.createdAt, hash)] = new Uint8Array(await blob.arrayBuffer());
+			versions++;
+		}
+	}
+	const bytes = zipSync(files, { level: 6 });
+	/** @type {any} */ (bytes).versions = versions;
+	/** @type {any} */ (bytes).skippedVersions = skippedVersions;
+	return bytes;
 }
 
 /** The zip's bundled assets into the Explorer (hash-deduped) so sound/texture hashes
@@ -525,6 +604,8 @@ export async function readSessionZip(buffer) {
 		return null;
 	}
 	await restoreZipAssets(entries, strFromU8);
+	// 21-I5: `versions/` is read by NOTHING — say so rather than ignore it silently
+	noteBundledVersions(entries);
 	return payload;
 }
 
@@ -545,6 +626,9 @@ export async function importSessionZip(buffer) {
 	// A6.2: and the module prompt sits right beside it, above the asset/pack loops
 	// for the same reason — a cancelled import must not touch the Explorer either
 	if (!(await confirmModuleRequirements(payload))) return null;
+	// 21-I5: after the confirms (a cancelled import must not talk about the file it did
+	// not read) and before the restore loops, which never touch `versions/`
+	noteBundledVersions(entries);
 	await restoreZipAssets(entries, strFromU8);
 	// B3: restore bundled packs — re-store each item blob (content-hash deduped;
 	// ids can CHANGE, so remap the pack's item ids), then re-register the pack

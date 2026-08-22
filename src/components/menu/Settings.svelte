@@ -33,6 +33,8 @@
 	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
 	// 21-G7: how many past versions of each scene keep their bytes on this machine (0 = off)
 	import { keepVersionsSetting } from '$lib/projectManifest';
+	// 21-I5 (locked answer 5): the save-name template — one rule for every download
+	import { saveNameTemplate } from '$lib/saveName';
 	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
@@ -826,6 +828,25 @@
 						versions are always kept. <strong>0 turns auto-versioning off</strong>: leaving a
 						scene stops cutting one behind your back, and only the current version plus your
 						pins keep their bytes — saving a scene and <kbd>Save version…</kbd> still work
+					</SettingRow>
+					<SettingRow name="Save name">
+						<svelte:fragment slot="control">
+							<input
+								id="save-name-template"
+								type="text"
+								class="w-40 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$saveNameTemplate}
+								on:change={(e: any) => saveNameTemplate.set(String(e.target.value ?? ''))} />
+						</svelte:fragment>
+						<span>
+							What a downloaded scene, project or GLTF file is called. <kbd>[name]</kbd> is
+							the scene's name (the project's, for a <kbd>.tp</kbd>); the date parts are
+							<kbd>[YYYY]</kbd> <kbd>[YY]</kbd> <kbd>[MM]</kbd> <kbd>[DD]</kbd>
+							<kbd>[HH]</kbd> <kbd>[mm]</kbd> <kbd>[ss]</kbd> <kbd>[ms]</kbd>, in UTC — so
+							<kbd>[name]-[DD]-[MM]-[YY]</kbd> gives <strong>Arena-22-08-26</strong>.
+							Something with no name yet falls back to a timestamp, so a save is never
+							nameless
+						</span>
 					</SettingRow>
 					<p class="ui-section-label">Selection</p>
 					<SettingRow name="Double-click action">

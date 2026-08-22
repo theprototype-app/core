@@ -40,12 +40,14 @@ import {
 	loadExplorer
 } from './explorer';
 import { applyAssetFile } from './assetShare';
+import { fileNameBase, saveFileBase } from './saveName';
 import {
 	projectManifest,
 	normalizeManifest,
 	manifestInUse,
 	manifestRestore,
 	keepableHashes,
+	latestSceneHash,
 	projectName
 } from './projectManifest';
 import { ensureScenesFolder, currentLevel } from './levels';
@@ -92,11 +94,22 @@ async function bytesOf(hash) {
  * the project has 10 versions is information, and a silent cap is how a lossy export
  * gets discovered a month later.
  *
+ * 21-I5 (locked answer 2) adds a GATE, not machinery: "Include scene version history",
+ * DEFAULT ON, because carrying history is what a .tp has done since 21-G3 and turning
+ * that off silently would make an existing behaviour vanish. With it OFF the file
+ * carries each scene's POINTER version only — the project still opens, every scene is
+ * there, and the history in `project.json` is untouched (a manifest hash whose bytes are
+ * absent is the pruned case, which this format already handles). What was left out is
+ * COUNTED separately from the pruned ones: "we chose not to" and "we could not" are
+ * different facts and the toast says which.
+ *
+ * @param {{versions?: boolean}} [opts] `versions` overrides the stored preference
  * @returns {Promise<{bytes: Uint8Array, scenes: number, assets: number, items: number,
- *   skippedScenes: number, skippedAssets: number}>}
+ *   skippedScenes: number, skippedAssets: number, omittedVersions: number}>}
  */
-export async function exportProject() {
+export async function exportProject(opts = {}) {
 	const { zipSync, strToU8 } = await import('fflate');
+	const withVersions = opts.versions ?? projectVersionsEnabled();
 	// normalize at the boundary, like every other read of this document
 	const manifest = normalizeManifest(get(projectManifest));
 	/** @type {Record<string, Uint8Array>} */
@@ -107,10 +120,17 @@ export async function exportProject() {
 	const assets = [];
 	let skippedScenes = 0;
 	let skippedAssets = 0;
+	let omittedVersions = 0;
 
 	const seen = new Set();
 	for (const name of Object.keys(manifest.scenes)) {
-		for (const hash of keepableHashes(name)) {
+		const keep = keepableHashes(name);
+		// the GATE: pointer-only when history is switched off. The pointer is what the
+		// project's own travel resolves, so a gated file is still a whole project.
+		const pointer = latestSceneHash(name);
+		const wanted = withVersions ? keep : new Set(pointer ? [pointer] : []);
+		if (!withVersions) omittedVersions += [...keep].filter((h) => !wanted.has(h)).length;
+		for (const hash of wanted) {
 			if (seen.has(hash)) continue; // two scenes may keep the same version
 			seen.add(hash);
 			const found = await bytesOf(hash);
@@ -182,8 +202,11 @@ export async function exportProject() {
 			assets,
 			folders,
 			items,
-			// what this file could NOT carry, so the other end can say so too
-			skipped: { scenes: skippedScenes, assets: skippedAssets }
+			// what this file could NOT carry, so the other end can say so too.
+			// 21-I5: `omittedVersions` is the other kind — versions this file could carry
+			// and was told not to. Additive; a reader that does not know the key sees the
+			// pruned counts exactly as before.
+			skipped: { scenes: skippedScenes, assets: skippedAssets, omittedVersions }
 		})
 	);
 	return {
@@ -192,8 +215,20 @@ export async function exportProject() {
 		assets: assets.length,
 		items: items.length,
 		skippedScenes,
-		skippedAssets
+		skippedAssets,
+		omittedVersions
 	};
+}
+
+/** 21-I5: the .tp half of the export-settings cog. DEFAULT ON (locked answer 2) — a
+ * project file has carried its scene history since 21-G3. LOCAL, like every other
+ * export preference. */
+export function projectVersionsEnabled() {
+	try {
+		return localStorage.getItem('tpProjectVersions') !== 'false';
+	} catch {
+		return true;
+	}
 }
 
 /**
@@ -201,14 +236,13 @@ export async function exportProject() {
  * place that name has to survive a filesystem. Everything Windows, macOS and the shell
  * dislike becomes a dash; a name that sanitizes to nothing falls back to the timestamp,
  * which is what an unnamed project gets anyway.
+ * 21-I5: the implementation moved to `saveName.fileNameBase` so the save-name template
+ * and this share ONE sanitiser. The name stays — it is what the suites and call sites
+ * know it as, and the contract is unchanged.
  * @param {string} name @returns {string} a safe basename, or '' when nothing survives
  */
 export function projectFileBase(name) {
-	return String(name ?? '')
-		.replace(/[\\/:*?"<>|\x00-\x1f]+/g, '-')
-		.replace(/\s+/g, ' ')
-		.slice(0, 80)
-		.replace(/^[-. ]+|[-. ]+$/g, '');
+	return fileNameBase(name);
 }
 
 /**
@@ -257,13 +291,12 @@ export async function downloadProject() {
 	a.style.display = 'none';
 	const url = URL.createObjectURL(blob);
 	a.href = url;
-	const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
 	// 21-G9: a named project comes out as `<Name>.tp` — someone who called it "Dungeon
 	// Crawl" should not have to recognise it by timestamp in their Downloads folder.
-	// The timestamp remains the fallback for a project with no name (or one whose name
-	// sanitizes away entirely), so the old behaviour is intact wherever it applied.
-	const base = projectFileBase(projectName());
-	a.download = base ? `${base}.tp` : `ThePrototype-${date}UTC.tp`;
+	// 21-I5: through the save-name template, whose DEFAULT is `[name]` and whose no-name
+	// fallback is the old timestamp shape verbatim — so the behaviour above is intact and
+	// a user who wants a date in the filename can now say so once, for every save path.
+	a.download = `${saveFileBase(projectName())}.tp`;
 	a.click();
 	URL.revokeObjectURL(url);
 	a.remove();
@@ -271,7 +304,12 @@ export async function downloadProject() {
 	showToast(
 		'Project exported: ' + result.scenes + ' scene version' + (result.scenes === 1 ? '' : 's') +
 			', ' + result.assets + ' asset' + (result.assets === 1 ? '' : 's') +
-			(skipped ? ' — ' + skipped + ' whose bytes are not on this machine were left out' : '')
+			(skipped ? ' — ' + skipped + ' whose bytes are not on this machine were left out' : '') +
+			(result.omittedVersions
+				? ' — ' + result.omittedVersions + ' older version' +
+					(result.omittedVersions === 1 ? '' : 's') +
+					' left out (scene version history is off in Export settings)'
+				: '')
 	);
 	return result;
 }

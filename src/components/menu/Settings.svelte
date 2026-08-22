@@ -35,6 +35,8 @@
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
 	import { probeFindings, probeRunning, probeSupport, runArProbe, clearProbeState } from '$lib/arProbe';
+	import { roomAlignment } from '$lib/colocation';
+	import { colocateHereFromView, stopColocation } from '$lib/colocationCalibrate';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { shortcuts } from '$lib/shortcuts';
 	import {
@@ -1194,6 +1196,31 @@
 							</div>
 						</SettingRow>
 					{/if}
+					<SettingRow name="Colocation">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<button
+									id="colocate-here"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+									on:click={() => colocateHereFromView()}>Colocate here</button
+								>
+								<button
+									id="colocate-stop"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+									disabled={!$roomAlignment}
+									on:click={() => stopColocation()}>Stop</button
+								>
+							</span>
+						</svelte:fragment>
+						<span class="font-semibold" id="colocation-state"
+							>{$roomAlignment ? 'Colocated · ' + ($roomAlignment.roomKey ?? 'room') : 'Not colocated'}</span
+						>
+						— share one physical room with a co-present peer. <em>Colocate here</em> uses the current
+						viewpoint (both of you stand on the agreed spot facing the agreed way and press it); in VR the
+						radial menu's Scene ▸ Colocate offers the more accurate point + aim ritual. While colocated the
+						world stays 1:1 and a world-grab moves the SHARED room anchor, so your partner sees the scene
+						move too. Expect ~1–3 cm of agreement, not millimetres
+					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>
 					{#snippet header()}AI{/snippet}

@@ -46,6 +46,53 @@ loadable play content. Everything a user does must be visible to connected peers
   role controls + gates viewer actions) + `setRolesInfo`; `sessionHost()` accessor;
   `captureThumbnail(maxW)` (renders a fresh frame + reads the canvas synchronously →
   downscaled JPEG blob, null in VR — for cloud room thumbnails).
+- `src/lib/triggerSync.js` (DEVX #18, the gameSync/hudSync shape — data in the leaf
+  store, wire out here, NO history kind because the log is RUNTIME state): the flow
+  TRIGGER LOG finally has a handshake reply. `flowTriggers` is what every stateful node
+  derives from (latch set/reset, once, counter, random's reroll seed, a module's
+  `ctx.trigger`) and `sendHandshake` asked eleven domains for full state and nothing for
+  it, while nodesync's hash compare covers the GRAPH — so a joiner started empty and saw
+  every collected object back on the table. `gettriggers` is on the ALWAYS_ALLOWED floor
+  (the getnodes precedent: a request is floor, its reply is content and stays gateable);
+  the payload is PRUNED to nodes that still exist (applyNodeTrigger never prunes, so the
+  log accumulates every deleted id — and the prune is also what stops us answering with
+  a scene we just STASHED); MEASURED at 559 bytes for a whole played round, so a plain
+  object is right and golden rule 6's raw-bytes rule (about ~40k-element arrays) does not
+  apply. THE MERGE: per node the entry with the newer `lastT` wins, ties keep ours, and
+  the count travels WITH the stamp — right for Counter (re-stamps per bump), Latch
+  set/reset (count zeroed, state in the stamp), Once (0-or-1 same instant) and random
+  (ignores it). Exactly ONE thing stays approximate: a Latch's TOGGLE parity, already
+  documented as re-basing on the next set/reset. **ARRIVING HISTORY MUST FIRE NOTHING**,
+  and that is ONE number (`triggerHistoryAt`, 0 unless a restore happens) folded into the
+  shared `staleTrigger` so every action family inherits it, plus three explicit calls
+  where no cutoff exists (hudscreen/hudset/hudrows predate the shared one). Why the epoch
+  and not just `actionSeenAt`: a joiner's nodes take their cutoff on the first tick, but a
+  peer that LOADED THE SCENE AND SAT IN THE EDITOR before dialling has nodes first-seen at
+  load time, so a pulse made in between is NEWER than the cutoff and would act.
+  `updateDerivedPulses` is the one place a restored log could desync the NUMBERS (a joiner
+  re-derives every past Delay/Once moment and pushes it into a Counter that already
+  carries the bump) — it seeds the dedupe key and refuses, while a moment still in the
+  FUTURE completes normally. No `handleDisconnected` cleanup, deliberately: the log is
+  keyed by NODE, not peer.
+- `src/lib/spawner.js` + `src/lib/transientObjects.js` (21-B B7): mid-sim body creation,
+  which did not exist at all before — `startSimulation` walked `group.children` once, so
+  an object created during a run was INERT. `createBodyFor` was extracted VERBATIM and is
+  shared with `physicsAddBody` (the block encodes world-aligned starts with initialQuat
+  compensating, hull-at-origin vs primitive-at-AABB-centre, sleep-off, and
+  animated-becomes-kinematic — four conventions a second copy would drift on, which is
+  why the extraction was gated on a byte-identical `physicsDebug` parity check).
+  `transientObjects` is the LEAF holding `userData.transient` and, in ONE place, all four
+  paths per-object state travels on: the wire (an additive field on the existing
+  `duplicate`), sessions, autosave (a park/restore ritual — the GLTF export has no
+  per-child filter and hiding instead would lean on `onlyVisible`, the documented trap in
+  reverse) and undo (nothing recorded). The sweep runs BEFORE stopSimulation's
+  beforeStates loop, or the copies land in the transformSet undo entry and broadcast a
+  `move` for an object that no longer exists. CAPS are enforced in the spawner and not
+  trusted to node params: per-node maxAlive 32, a GLOBAL 200 across every spawner, 20 per
+  fire, and a 100ms floor under the authored interval (a trigger EDGE is not a rate limit
+  — a held key re-stamps several times a second). The `spawn` node acts on the stamp edge
+  inside the actionSeenAt family; the INITIATOR spawns and peers receive the ordinary
+  `duplicate`, so there is no new message type.
 - `src/lib/objectPermissions.js` (#14, store-only) — viewer object permissions, ONLY
   active when a roles plugin publishes `rolesInfo` (OSS byte-unchanged): `canEditObject`
   (a viewer edits ONLY their own `__localOnly` objects), `markLocalOnly`/`clearLocalOnly`,
@@ -1404,6 +1451,48 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **THE PALETTE HAS A RULE NOW, and it is two halves.** A user filed "Key Press is in
+  Triggers, it should be in Input" — and reading the palette against the socket types the
+  catalog already declares showed it was almost perfectly sorted with exactly two nodes
+  on the wrong side, NEITHER of them the one reported: `gamepadbutton` (an `event` among
+  Input's value widgets) and `counter` (a `number` with pulse/reset INPUTS among the event
+  sources). **Input holds no `event` outputs; Triggers holds only SOURCES (nothing with
+  declared inputs).** `gamepadaxis` proves those are the right halves — it outputs a
+  number, so a pure value/event rule would keep it in Input, but a stick is the player's
+  thumb and it belongs with its button. DOMAIN groups (Physics, HUD, Game, Animation…) are
+  organised by subject and legitimately hold both kinds, so the rule governs only the two
+  generic buckets. `palette-groups` asserts it from the declarations, so it cannot drift
+  back; a group is palette-only (the row plus the card accent), so a move changes no wire,
+  saved graph or message.
+- **A PORT CAN BE SHADOWED BY A LANE THAT DID NOT ASK FOR IT.** `vite dev --port N` without
+  `--strictPort` takes N+1 when N is busy, so a second lane started later can end up
+  answering on the port you MEANT to give a third — and the suite then verifies committed
+  HEAD with none of your edits, which is the "mid-session HMR lies" family with a cleaner
+  cause and no HMR involved. Two lanes in this session both had it (5185 answered from the
+  5184 lane; the real server was on 5186). Before trusting a lane server, curl one of YOUR
+  new symbols from it, and map ports to pids with `netstat -ano | grep :PORT` rather than
+  assuming the number you passed is the number it bound.
+- **KILLING A BACKGROUND `npm run dev` DOES NOT KILL VITE.** `TaskStop` reaped npm and left
+  the vite CHILD listening, so the port still answered 200 and the `npm run build` that
+  followed ran against a live server — the never-build-under-a-dev-server trap, entered by
+  way of a kill that looked successful. Find the pid with netstat and `taskkill //PID n
+  //F`; a 200 after a kill means the child outlived its parent.
+- **A CHECK THAT PINS A LITERAL PINS A SECOND, SILENT PREMISE.** Flipping the collectible
+  suite's DEVX #18 limitation to its counterfactual, an asserted `=== 1` went red because
+  the true collected count depends on what earlier sections left behind and on where the
+  round clock is — nothing to do with the feature. Assert the PROPERTY (the joiner agrees
+  with the HOST) and read the reference value at run time. The same pass produced the
+  sibling lesson: a "shared collect" check picked a gem an earlier section had put on
+  `scope: player`, where the pulse staying local IS the feature — so select the fixture by
+  reading its state, never by guessing which one it is.
+- **A MODULE THAT COUNTS ON A STAMP EDGE MUST HAVE ITS OWN FIRST-SIGHT RULE.** The moment
+  core learned to hand a joiner the trigger log, the collectible module's seed (which
+  recorded whatever stamp it saw first) became a bug: on a joiner the seed happens while
+  the log is still EMPTY, history lands a moment later, and the next sweep reads a stamp
+  where there was none and banks a point per already-collected object. Record WHEN you
+  first saw the node and treat anything older as history — `actionSeenAt`'s rule,
+  module-side. Any consumer deriving state from stamps inherits this the day the log
+  starts arriving.
 - **A SURFACE WHOSE OWN DOCS PROMISE AN API THAT DOES NOT EXIST.** `registerToolbox` has
   returned its id documented as "open/close it with this" since A5, and nothing could
   open it — the first module to want a button of its own (the collectible manager) found
@@ -3074,6 +3163,30 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-22, later): **B7 SPAWNER MERGED; DEVX #18, THE PALETTE RULE AND THE
+  COLLECTIBLE TOOLBOX v2 ARE OPEN PRs.** `release/next` @19a8a3c carries R3a (#170) and
+  B7 (#172, the spawner — see the architecture entry). OPEN: core **#176** DEVX #18 (the
+  trigger-log handshake reply; `trigger-log-sync` 56 checks on three peers, three guards
+  proven by breaking the code, and `logic-nodes` §12 flipped in-commit because it
+  RECORDED the limitation), core **fix/palette-groups** (the two-half palette rule +
+  `palette-groups` 12 checks + `flowSockets.inputHandles`), and modules
+  **feat/collectible-toolbox-v2** (collapsible groups with group-wide trigger/scope and
+  a disabled-and-refused em-dash for mixed values, one-line rows, plus the first-sight
+  fix DEVX #18 forced — `module-collectible` 78 -> 125). **LANDING ORDER: #176 before the
+  module branch**, whose suite now asserts the joiner converges. Baseline 385/62
+  throughout. Docs: `nodes/spawn.md` + the build-a-game collectible rewrite pushed to the
+  docs repo (the pending Splines/terrain/controls edits there belong to 21-C and were
+  left alone). NEW PENDING PLANS: `health-damage-and-wave-survival.md` (both are
+  MECHANICS, so both are modules; the fork is who owns a number several peers can lower,
+  and wave survival's whole size question is whether a module can author a core `spawn`
+  node through `api.flow.addNodes` and pulse it) and `sdk-polish-module-authoring.md`
+  (DEVX #16/#17, a batch setNodeData held pending evidence, and a recorded ruling that
+  `api.spawn` should NOT exist). B8 Towers deliberately NOT started — the user verifies
+  this batch first. MEASURED and worth keeping: a bulk group edit over 20 collectibles is
+  2.8ms and 20 `nodedata` messages (autosave.markDirty is debounced, so a synchronous
+  loop pays ONE serialize), so no batch seam is needed for performance — but
+  `setNodeData` records no undo entry, so one press can touch sixty nodes with no way
+  back, which is the real reason to want the batch.
 - Status (2026-08-22, latest): **21-G ROUND 3 — COLLECTIBLES v3 IS A MODULE. R3a (core
   seams + the extraction) and R3b (the module) BOTH SHIPPED**: core PR #170 on
   `feat/sdk-game-seams` (`6e994d1` the seams + migration, `78899d2` the toolbox

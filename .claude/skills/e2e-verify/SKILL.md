@@ -732,6 +732,27 @@ await h.installModule(B, 'dungeon');   // EVERY peer — see below
 - flowbite `Toggle` renders an **sr-only** checkbox: click the wrapping
   `label`, and give the toggle an id when a card carries more than one.
 
+**Two ways a lane server lies about which code it serves, both hit in one session.**
+`vite dev --port N` has no `--strictPort`, so a lane started while N is busy silently
+binds N+1 — and a later lane can then answer on the port you meant for a third. A suite
+pointed at it verifies committed HEAD with none of the edits under test. Separately,
+`TaskStop` on a backgrounded `npm run dev` reaps npm and leaves the vite CHILD listening,
+so the port answers 200 after a "successful" kill and the build that follows runs against
+a live server. Before trusting a lane: `netstat -ano | grep :PORT` to map port -> pid, and
+`curl -sk https://localhost:PORT/src/lib/<file>.js | grep <your new symbol>` to prove it
+serves YOUR code. Kill with `taskkill //PID n //F`.
+
+**Flipping a check that RECORDED a limitation is where wrong premises hide.** When core
+fixed DEVX #18, three collectible checks had to invert — and the first attempt went red
+for reasons unrelated to the feature: an asserted `=== 1` collided with whatever earlier
+sections had left collected and with where the round clock was, and a "shared collect"
+check picked a gem an earlier section had put on `scope: player`, where the pulse staying
+local IS the feature. Two rules came out of it: assert the PROPERTY (the joiner agrees
+with the HOST) and read the reference value at run time rather than pinning a literal, and
+SELECT a fixture by reading its state rather than by guessing which one it is. Flip, never
+delete — a deleted section is a silent regression, an inverted one fails loudly if the
+limitation comes back.
+
 **R3a: a MECHANIC that leaves core takes its suite coverage with it, and the split is
 not at the click.** When collectibles v3 became a module, the collectible RECIPE went
 with it — but the chain it built stood on core PRIMITIVES (perRound/whilePlaying/

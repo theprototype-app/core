@@ -1,7 +1,8 @@
 // 21-G8 — THE FILES MENU + OPEN/IMPORT SEMANTICS (fork 12: "Open replaces, Import
 // furnishes"). What this suite pins, each proven by driving the real path:
 //
-//   · the Sidebar Files picker is [ TP | Scene | GLTF | cog ] with TP the default
+//   · the Sidebar Files picker is [ Project | Scene | cog ] with Project the default,
+//     and an enabled optional format (GLTF/JSON) on a second row — 21-H1 reshaped it
 //   · OPEN .tp warns; DECLINING the warning mutates NOTHING; accepting WIPES the
 //     library and restores the file's whole Explorer + manifest, and forgets
 //     currentLevel (the NAMED-ONLY travel-away gate must not see the old name)
@@ -86,37 +87,67 @@ h.run(async () => {
 	await A.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
 
 	// =====================================================================
-	// 1. THE SIDEBAR PICKER — [ TP | Scene | GLTF | cog ], TP default
+	// 1. THE SIDEBAR PICKER — [ Project | Scene | cog ], Project default
 	// =====================================================================
+	// 21-H1 (locked answer 1) reworded and reshaped this row: the TP segment reads
+	// "Project" — the KEY and the element id stay `tp`, because the id addresses the
+	// FORMAT and not the word — and GLTF moved behind the cog beside JSON, appearing on
+	// a SECOND row when enabled. `files-format-row` owns that contract in full; what
+	// this suite needs from it is that the picker is there and Project is the default.
 	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
 	await A.page.waitForTimeout(400);
 	h.check(
 		(await A.page.locator('#format-tp').count()) === 1,
-		'the TP segment exists in the Files picker'
+		'the Project segment exists in the Files picker'
 	);
 	h.check(
 		((await A.page.getAttribute('#format-tp', 'class')) ?? '').includes('on'),
-		'TP is the DEFAULT selected format on a fresh profile (no stored preference)'
+		'Project is the DEFAULT selected format on a fresh profile (no stored preference)'
 	);
 	h.check(
 		((await A.page.getAttribute('#format-tp', 'title')) ?? '').toLowerCase().includes('whole project'),
-		'the TP segment says what it saves (the whole project)'
+		'the Project segment says what it saves (the whole project)'
 	);
-	// segment ORDER: TP, Scene, GLTF
-	const segOrder = await A.page.evaluate(() => {
-		const row = document.getElementById('format-tp')?.parentElement;
-		return [...(row?.querySelectorAll('button') ?? [])].map((b) => b.textContent?.trim()).slice(0, 3);
-	});
+	const segOrder = await A.page.evaluate(() =>
+		[...(document.getElementById('format-row')?.querySelectorAll('button') ?? [])]
+			.map((b) => b.textContent?.trim())
+			.filter((t) => !!t)
+	);
 	h.check(
-		JSON.stringify(segOrder) === JSON.stringify(['TP', 'Scene', 'GLTF']),
-		`segment order is [ TP | Scene | GLTF ] (${JSON.stringify(segOrder)})`
+		JSON.stringify(segOrder) === JSON.stringify(['Project', 'Scene']),
+		`the primary row is [ Project | Scene ] (${JSON.stringify(segOrder)})`
 	);
-	// Save with TP and NO project: the honest refusal, not an empty zip
+	h.check(
+		(await A.page.locator('#format-gltf').count()) === 0 &&
+			(await A.page.locator('#format-row-optional').count()) === 0,
+		'GLTF is not on it — optional and OFF by default, with no second row until it is enabled'
+	);
+	// enabling it through the cog puts it on the SECOND row, and only there
+	await A.page.locator('#export-settings-cog').click();
+	await A.page.waitForTimeout(250);
+	await A.page.locator('#show-gltf-format').click();
+	await A.page.waitForTimeout(300);
+	const optional = await A.page.evaluate(() =>
+		[...(document.getElementById('format-row-optional')?.querySelectorAll('button') ?? [])].map((b) =>
+			b.textContent?.trim()
+		)
+	);
+	h.check(
+		JSON.stringify(optional) === JSON.stringify(['GLTF']),
+		`enabling Show GLTF puts it on the optional row (${JSON.stringify(optional)})`
+	);
+	await A.page.locator('#show-gltf-format').click(); // back off — later sections expect the default
+	await A.page.waitForTimeout(250);
+	await A.page.locator('#export-settings-modal button', { hasText: 'Close' }).last().click();
+	await A.page.waitForTimeout(200);
+	// Save with Project and NOTHING AT ALL: the honest refusal, not an empty zip.
+	// 21-H1 widened that gate — a library holding anything is a real project now — so
+	// this refuses only because the profile is genuinely brand new.
 	await A.page.evaluate(() => window.__stores.fileHandler.save('tp'));
 	await h.eventually(
 		() => toastsOf(A),
-		(t) => t.some((x) => x.text.includes('no project yet')),
-		'Save (TP) with no project refuses honestly instead of downloading an empty zip'
+		(t) => t.some((x) => /nothing here yet/i.test(x.text)),
+		'Save (Project) with nothing at all refuses honestly instead of downloading an empty zip'
 	);
 	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
 
@@ -289,11 +320,17 @@ h.run(async () => {
 	const v1Counts = await v1Pending;
 	h.check(!!v1Counts && v1Counts.scenes === 1, 'the v1 scenes loop ran (additive read: missing v2 keys are empty lists)');
 	const dFolders = await foldersOf(D);
-	const dScenes = dFolders.find((f) => f.name === 'Scenes' && f.parentId === null);
 	const dLib = await libraryOf(D);
+	// 21-H1 (locked answer 6): a v1 file carries no folder tree, and its scenes land at
+	// the library ROOT. They used to be swept into a `Scenes` folder invented for them —
+	// the same invented folder the save path just retired, one door over.
 	h.check(
-		!!dScenes && dLib.some((i) => i.hash === sceneHash && i.folderId === dScenes.id),
-		'v1 scenes land in a premade Scenes folder (the v1 behavior, preserved)'
+		dLib.some((i) => i.hash === sceneHash && i.folderId === null),
+		`v1 scenes land at the library root (${JSON.stringify(dLib.map((i) => i.folderId))})`
+	);
+	h.check(
+		!dFolders.some((f) => f.name === 'Scenes'),
+		`and no folder is invented to hold them (${JSON.stringify(dFolders.map((f) => f.name))})`
 	);
 	h.check(
 		Object.keys((await manifestOf(D)).scenes).join() === 'Legacy',

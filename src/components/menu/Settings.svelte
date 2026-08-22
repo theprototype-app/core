@@ -1244,11 +1244,11 @@
 									</div>
 								{/if}
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input type="checkbox" bind:checked={aiFormStream} />
+									<input class="tp-check" type="checkbox" bind:checked={aiFormStream} />
 									Stream responses
 								</label>
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input id="ai-physics-tools" type="checkbox" bind:checked={aiFormPhysics} />
+									<input id="ai-physics-tools" class="tp-check" type="checkbox" bind:checked={aiFormPhysics} />
 									Physics tools (advanced)
 								</label>
 								<span class="text-[11px] leading-snug text-gray-400">

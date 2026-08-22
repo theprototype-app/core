@@ -6,6 +6,11 @@
 //                              discovery is BY KIND now, so `levelItems()` finds a
 //                              .tpscene wherever it lives and stops offering a PNG
 //                              that happens to sit in the scenes folder. Sections 1-3.
+//                              21-H1 (locked answer 6) finished the job: NO folder is
+//                              invented at all any more — a scene lands in the folder
+//                              you are browsing, else at the library root — so section
+//                              1 asserts the absence, and the `Scenes` folder the later
+//                              sections rename and delete is one a user MADE.
 //   Download                   the library holds the only copy of an imported model or
 //                              a painted texture; there was no way to get bytes back
 //                              out. Asserted by HASHING the downloaded file against the
@@ -84,8 +89,12 @@ h.run(async () => {
 	await A.page.waitForFunction(() => !!window.__stores?.levels, { timeout: 30000 });
 
 	// =====================================================================
-	// 1. THE GRID MENU SAYS "SCENE", AND A SAVE LANDS IN `Scenes`
+	// 1. THE GRID MENU SAYS "SCENE", AND A SAVE LANDS WHERE YOU ARE LOOKING
 	// =====================================================================
+	// 21-H1 (locked answer 6) FINISHED the demotion 21-G1 started: the app no longer
+	// invents a `Scenes` folder at all. A scene lands in the folder you are browsing, or
+	// at the library ROOT — and the only path that still premakes the folder is the
+	// empty-library bootstrap button (`files-format-row` owns that one).
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(700);
 	await A.page.locator('#explorer-list [role="region"]').first()
@@ -109,41 +118,86 @@ h.run(async () => {
 	await A.page.keyboard.type('Alpha');
 	await A.page.keyboard.press('Enter');
 	await h.eventually(
-		() => folderNames(A),
-		(names) => names.includes('Scenes'),
-		'the first save premakes the `Scenes` folder'
-	);
-	h.check(!(await folderNames(A)).includes('Levels'), 'and nothing is called Levels any more');
-	await h.eventually(
 		() => travelChoices(A),
 		(list) => list.includes('Alpha.tpscene'),
 		'the saved scene is on offer to a Travel node'
 	);
+	const afterFirst = await folderNames(A);
+	h.check(
+		afterFirst.length === 0,
+		`the first save invents NO folder at all — not Scenes, not Levels (${JSON.stringify(afterFirst)})`
+	);
+	h.check(
+		await A.page.evaluate(() => {
+			let items;
+			window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+			return (items.find((i) => i.name === 'Alpha.tpscene')?.folderId ?? null) === null;
+		}),
+		'it landed at the library ROOT, which is where the user was looking'
+	);
+
+	// the other half of the same rule: browsing a folder lands the save THERE
+	const looking = await A.page.evaluate(
+		() => window.__stores.explorer.createFolder('Where I am looking', null)?.id ?? null
+	);
+	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), looking);
+	await A.page.waitForTimeout(500);
+	await A.page.locator('#explorer-list [role="region"]').first()
+		.click({ button: 'right', position: { x: 200, y: 140 } });
+	await A.page.waitForTimeout(300);
+	await A.page.getByText('Save scene…', { exact: false }).click();
+	await A.page.waitForTimeout(350);
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('Delta');
+	await A.page.keyboard.press('Enter');
+	await h.eventually(
+		() =>
+			A.page.evaluate(() => {
+				let items;
+				window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+				return items.find((i) => i.name === 'Delta.tpscene')?.folderId ?? null;
+			}),
+		(folderId) => folderId === looking,
+		'a save made while browsing a folder lands in THAT folder'
+	);
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.waitForTimeout(400);
 
 	// =====================================================================
-	// 2. DISCOVERY IS BY KIND — the folder is a place, not a registry
+	// 2. DISCOVERY IS BY KIND — a folder is a place, not a registry
 	// =====================================================================
-	// a second scene, then DRAGGED somewhere else entirely
-	const beta = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Beta'));
+	// a scenes folder now exists only because someone MADE one — which is the state the
+	// rest of this suite is about, and it is a user's folder like any other
+	const scenesId = await A.page.evaluate(
+		() => window.__stores.explorer.createFolder('Scenes', null)?.id ?? null
+	);
+	h.check(!!scenesId, 'premise: a user-made `Scenes` folder');
+	await A.page.evaluate(
+		(folderId) => window.__stores.levels.saveSceneAsLevel('Beta', folderId),
+		scenesId
+	);
+	// and Alpha (saved at the root) DRAGGED somewhere else entirely
 	const elsewhere = await A.page.evaluate(() => {
 		const s = window.__stores;
 		const folder = s.explorer.createFolder('Prototypes', null);
 		return folder?.id ?? null;
 	});
-	await A.page.evaluate(
-		({ id, folderId }) => window.__stores.explorer.moveItem(id, folderId),
-		{ id: beta.id, folderId: elsewhere }
-	);
+	await A.page.evaluate((folderId) => {
+		const s = window.__stores;
+		let items;
+		s.explorer.explorerItems.subscribe((v) => (items = v))();
+		const alpha = items.find((i) => i.name === 'Alpha.tpscene');
+		if (alpha) s.explorer.moveItem(alpha.id, folderId);
+	}, elsewhere);
 	await A.page.waitForTimeout(400);
 	h.check(
-		(await travelChoices(A)).includes('Beta.tpscene'),
-		'a .tpscene moved OUT of Scenes is still discoverable — the folder filter is gone'
+		(await travelChoices(A)).includes('Alpha.tpscene'),
+		'a .tpscene living outside any scenes folder is still discoverable — the folder filter is gone'
 	);
 
 	// the counterfactual for the same change, in the other direction: the OLD rule
 	// counted anything sitting in the folder, so a texture dropped there was offered as
 	// a travel destination. Kind-based discovery cannot make that mistake.
-	const scenesId = await folderIdNamed(A, 'Scenes');
 	await A.page.evaluate(async (folderId) => {
 		const bytes = new TextEncoder().encode('not a scene');
 		await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'readme.txt', folderId);
@@ -165,29 +219,36 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	h.check((await folderNames(A)).includes('Old scenes'), 'the Scenes folder renames');
 	h.check(
-		(await travelChoices(A)).includes('Alpha.tpscene'),
+		(await travelChoices(A)).includes('Beta.tpscene'),
 		'and every scene it holds is STILL discoverable under the new name'
 	);
 
 	// delete it: the cascade takes its contents with it (ordinary folder semantics —
-	// Alpha lived there), and the scene stored elsewhere is untouched
+	// Beta lived there), and the scene stored elsewhere is untouched
 	await A.page.evaluate(({ id }) => window.__stores.explorer.deleteFolder(id), { id: scenesId });
 	await A.page.waitForTimeout(500);
 	const afterDelete = await travelChoices(A);
-	h.check(!afterDelete.includes('Alpha.tpscene'), 'deleting the folder deletes the scenes inside it');
+	h.check(!afterDelete.includes('Beta.tpscene'), 'deleting the folder deletes the scenes inside it');
 	h.check(
-		afterDelete.includes('Beta.tpscene'),
+		afterDelete.includes('Alpha.tpscene'),
 		`a scene living elsewhere survives the folder's deletion (${JSON.stringify(afterDelete)})`
 	);
+	const foldersBeforeGamma = (await folderNames(A)).length;
 	const remade = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Gamma'));
 	h.check(!!remade?.hash, 'a save after the delete still works');
-	h.check((await folderNames(A)).includes('Scenes'), 'and premakes `Scenes` again');
+	// 21-H1: and it does NOT put the folder back — that was the pre-H1 behaviour, and
+	// re-creating a folder the user has just deleted is the shape of the whole complaint
+	h.check(
+		(await folderNames(A)).length === foldersBeforeGamma &&
+			!(await folderNames(A)).includes('Scenes'),
+		`…without re-creating the folder the user deleted (${JSON.stringify(await folderNames(A))})`
+	);
 
 	// =====================================================================
 	// 4. DOWNLOAD: the bytes that come out are the bytes that went in
 	// =====================================================================
-	const gammaFolder = await folderIdNamed(A, 'Scenes');
-	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), gammaFolder);
+	// Gamma went to the ROOT (nothing was being browsed), so that is where to find it
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(500);
 	const card = A.page.locator('.explorer-card[title="Gamma.tpscene"]');
 	h.check((await card.count()) === 1, 'premise: the scene has a card in the grid');
@@ -220,10 +281,10 @@ h.run(async () => {
 	);
 
 	// offered for every library kind, not only scenes
-	await A.page.evaluate(async (folderId) => {
+	await A.page.evaluate(async () => {
 		const bytes = new TextEncoder().encode('hello from the library');
-		await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'note.txt', folderId);
-	}, gammaFolder);
+		await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'note.txt', null);
+	});
 	await A.page.waitForTimeout(500);
 	await A.page.locator('.explorer-card[title="note.txt"]').click({ button: 'right' });
 	await A.page.waitForTimeout(300);

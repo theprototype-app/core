@@ -15,7 +15,8 @@
 //     user-triggered file dialog would put the zip machinery on the travel path.
 //   · This module is only ever reached from UI (the Explorer menu, fileHandler's open
 //     switch, the debug hook), so a static edge to levels.js from HERE closes no cycle
-//     and lets the export reuse `ensureScenesFolder` rather than re-deriving it.
+//     and lets the rule-5 bootstrap reuse `ensureScenesFolder` rather than re-deriving
+//     it — it is that function's one remaining caller (21-H1).
 //
 // WHAT IT DOES NOT DO: neither path here loads a scene into the viewport. OPEN
 // (fork 12) replaces the PROJECT — library, folders, manifest — and IMPORT merges the
@@ -24,7 +25,8 @@
 // auto-loading one would replace the world someone is standing in.
 
 import { get } from 'svelte/store';
-import { showToast } from '../stores/appStore';
+import { showToast, explorerClose, armExplorerSceneSave } from '../stores/appStore';
+import { bottomDockActive } from './bottomDock';
 import { APP_VERSION } from './version.js';
 import { showConfirm } from './confirmDialog';
 import {
@@ -209,11 +211,42 @@ export function projectFileBase(name) {
 		.replace(/^[-. ]+|[-. ]+$/g, '');
 }
 
+/**
+ * 21-H1 (locked answer 5): the BOOTSTRAP out of a completely empty library. The old
+ * refusal DESCRIBED the thing to do next; this does it — open the Explorer, make a
+ * `Scenes` folder the place you are looking at, and start the inline name input there.
+ *
+ * This is the ONE caller of `ensureScenesFolder` left in the app, and deliberately so:
+ * every other save now lands where the user is looking or at the root (locked answer 6),
+ * but a first-time user with nothing at all is better served by a starting structure
+ * than by the purity of that rule — "the root" is not a place they recognise yet.
+ *
+ * The Explorer is reached through a write-once ARM store rather than a callback (the
+ * `hudPickArm`/`hudPickResult` shape): the inline editor is component state in a panel
+ * this module must not import, and a store is the seam that needs nothing back.
+ */
+async function startSceneSaveBootstrap() {
+	const folderId = await ensureScenesFolder();
+	explorerClose.set(false);
+	bottomDockActive.set('explorer'); // if it is docked, make it the visible panel
+	armExplorerSceneSave(folderId);
+}
+
 /** Hand the project to the user as a file — the Explorer's `downloadItem` mechanism,
- * one level up (a Blob, an anchor, a revoked object URL). */
+ * one level up (a Blob, an anchor, a revoked object URL).
+ *
+ * 21-H1 (locked answer 5 + the design note beside it): the gate is "is there anything
+ * here", not "is the manifest in use". Fork 11 made a .tp the WHOLE Explorer, so a
+ * library of models with no scene in it is a legitimate project export and not an empty
+ * zip — refusing it was the first of the two things wrong with this refusal. The second
+ * was that it only described what to do; it carries the action now. */
 export async function downloadProject() {
-	if (!manifestInUse()) {
-		showToast('There is no project yet — save a scene first and it becomes one.');
+	await loadExplorer();
+	const hasLibrary = get(explorerItems).length > 0 || get(explorerFolders).length > 0;
+	if (!manifestInUse() && !hasLibrary) {
+		showToast('There is nothing here yet — save a scene and this becomes a project.', [
+			{ label: 'Save a scene', action: () => void startSceneSaveBootstrap() }
+		]);
 		return null;
 	}
 	const result = await exportProject();
@@ -414,10 +447,10 @@ export async function openProject(buffer) {
 
 	await loadExplorer();
 	await clearLibrary();
-	// a v2 file's own folder tree usually carries a Scenes folder — premaking ours
-	// would duplicate it. Only a v1 file (no item rows) needs the fallback target.
-	const sceneFolderId = doc.items?.length ? null : await ensureScenesFolder();
-	const counts = await restoreProjectContents(doc, entries, null, sceneFolderId);
+	// 21-H1 (locked answer 6): a v1 file carries no folder tree, and its scenes land at
+	// the library ROOT rather than in a `Scenes` folder we invent for them. A v2 file's
+	// own tree places its items itself, exactly as before.
+	const counts = await restoreProjectContents(doc, entries, null, null);
 	manifestRestore(doc.manifest, true);
 	// the open scene belongs to no scene of THIS project — a named currentLevel would
 	// let travel-away publish the old world into the new project's history

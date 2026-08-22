@@ -205,12 +205,18 @@ h.run(async () => {
 	// =====================================================================
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(700);
-	const scenesFolder = await A.page.evaluate(() => {
-		let f;
-		window.__stores.explorer.explorerFolders.subscribe((x) => (f = x))();
-		return f.find((x) => x.name === 'Scenes')?.id ?? null;
-	});
-	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), scenesFolder);
+	// 21-H1 (locked answer 6): a save invents no folder any more, so these landed at the
+	// library ROOT — nothing was being browsed when they were made. That is where the
+	// card is; `scene-folders` owns the landing rule itself.
+	h.check(
+		(await A.page.evaluate(() => {
+			let f;
+			window.__stores.explorer.explorerFolders.subscribe((x) => (f = x))();
+			return f.length;
+		})) === 0,
+		'premise: the saves created no folders at all — every card is at the root'
+	);
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(500);
 	const card = A.page.locator('.explorer-card[title="Arena.tpscene"]');
 	h.check((await card.count()) === 1, `premise: exactly one Arena card is in the grid (${await card.count()})`);

@@ -8,7 +8,7 @@
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { explorerClose, mobileUndockAllowed } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
@@ -518,11 +518,14 @@
 	// ---- 21-G9: IDENTITY (who am I / where am I), above the LOCATION crumbs -----------
 	// Two different questions, deliberately two rows: the crumbs below say which FOLDER
 	// you are browsing, this one says which PROJECT and SCENE you are in. The project
-	// name is editable in place (the file's own inline-rename convention: Enter commits,
-	// Escape and blur cancel) — never a window.prompt (fork 14).
+	// name is editable in place (the file's own inline-rename convention: Enter and blur
+	// commit, Escape cancels) — never a window.prompt (fork 14).
 	// The scene half reads `currentLevel`, the manifest's authoritative NAME, and not
 	// the item's filename: `renameItem` can rename the file under it, and travel-by-name
 	// resolves the name, so the filename is not the identity.
+	// 21-H1 (locked answer 7): blur COMMITS here too — `commitProjectEdit` is the blur
+	// handler, and Escape nulls the state before any blur can read it, so cancelling and
+	// then losing focus cannot re-commit the name Escape just dropped.
 	let projectEdit: string | null = $state(null);
 	const projectLabel = $derived($projectManifest.name || 'Untitled project');
 	const openSceneHash = $derived($currentLevel?.hash ?? null);
@@ -856,6 +859,27 @@
 	function startSceneName(mode: 'save-scene' | 'new-scene') {
 		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true };
 	}
+	// 21-H1 (locked answer 7): CLICKING AWAY COMMITS. Every inline name in this panel —
+	// scene save/new, folder create, item/folder/pack rename, and the project name —
+	// used to be thrown away by its own blur, which is the opposite of what every file
+	// browser does and of what typing a name then reaching for the mouse means. ESCAPE
+	// is the only cancel now.
+	//
+	// The ordering hazard, and why Escape clears the state FIRST: unmounting the input
+	// can deliver a blur, and `commitEdit`/`commitProjectEdit` are the same functions
+	// that blur calls — so both bail on null state, and Escape nulls it before anything
+	// else can read it. That also makes Enter safe, since it closes before awaiting.
+	// An INVALID name (empty, or carrying `* \ /`) is the one thing blur cannot commit,
+	// and leaving the input mounted after focus has gone would strand it on screen with
+	// no way back to it. Clicking away from a name that cannot exist discards it.
+	function blurCommit() {
+		if (!editing) return;
+		if (!isValidName(editing.value)) {
+			editing = null;
+			return;
+		}
+		void commitEdit();
+	}
 	async function commitEdit() {
 		if (!editing || !isValidName(editing.value)) return;
 		// snapshot and CLOSE first: the scene modes await, and an input still mounted over
@@ -881,6 +905,22 @@
 		node.focus();
 		node.select();
 	}
+	// 21-H1 (locked answer 5): CONSUME the arm store. projectFile's empty-library
+	// bootstrap ("Save a scene" on the export refusal) opens this panel and asks for the
+	// inline save input, in a folder it premade. A write-once store rather than a
+	// callback, because that module must not import a component — and it is consumed
+	// (cleared) as it is acted on, so a stale request cannot re-open the input the next
+	// time this panel mounts.
+	$effect(() => {
+		const arm = $explorerSceneSaveArm;
+		if (!arm) return;
+		explorerSceneSaveArm.set(null);
+		untrack(() => {
+			openFolder(arm.folderId);
+			startSceneName('save-scene');
+		});
+	});
+
 	// 21-G10: which inline edit the GRID hosts, rendered as a placeholder CARD sitting
 	// where the thing being named will land. A `create` qualifies only when it was
 	// started from the grid — the tree keeps its own row editor for its own button.
@@ -1443,11 +1483,14 @@
 							action: () => startSceneName('new-scene')
 						},
 						// 21-G3: the whole project as ONE file. Offered only once there IS
-						// a project — a pristine manifest would export an empty zip, and an
-						// entry that can only produce nothing is worse than no entry.
+						// something to export — an entry that can only produce nothing is
+						// worse than no entry.
 						// 21-G8: OPENING one (replace everything) rides the Sidebar's Load;
 						// this menu's import MERGES the file in as a folder (fork 12).
-						...(manifestInUse()
+						// 21-H1: the same widened gate `downloadProject` now uses — fork 11
+						// made a .tp the WHOLE Explorer, so a library of models with no scene
+						// in it is a real project. Only a genuinely empty one hides this.
+						...(manifestInUse() || $explorerItems.length > 0 || $explorerFolders.length > 0
 							? [
 									{
 										label: 'Export project (.tp)',
@@ -1895,7 +1938,7 @@
 			use:focusSelect
 			oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
 			onkeydown={editKeydown}
-			onblur={() => (editing = null)}
+			onblur={blurCommit}
 		/>
 		{#if !isValidName(editing.value)}
 			<span class="text-[10px] text-red-400">names can't contain * \ /</span>
@@ -1914,7 +1957,7 @@
 		oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
 		onkeydown={editKeydown}
 		onclick={(e) => e.stopPropagation()}
-		onblur={() => (editing = null)}
+		onblur={blurCommit}
 	/>
 {/snippet}
 
@@ -1945,7 +1988,7 @@
 						use:focusSelect
 						oninput={(e) => (projectEdit = e.currentTarget.value)}
 						onkeydown={projectKeydown}
-						onblur={() => (projectEdit = null)}
+						onblur={commitProjectEdit}
 					/>
 				{:else}
 					<button
@@ -2482,6 +2525,7 @@
 			<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
 				<label class="flex items-center gap-2">
 					<input
+						class="tp-check"
 						type="checkbox"
 						checked={singleClickOpen}
 						onchange={(e) => {
@@ -2493,6 +2537,7 @@
 				</label>
 				<label class="flex items-center gap-2">
 					<input
+						class="tp-check"
 						type="checkbox"
 						checked={showBreadcrumb}
 						onchange={(e) => {
@@ -2504,6 +2549,7 @@
 				</label>
 				<label class="flex items-center gap-2" title="Show a rotatable 3D preview for model items in Properties + on open">
 					<input
+						class="tp-check"
 						type="checkbox"
 						checked={$enable3dPreview}
 						onchange={(e) => enable3dPreview.set(e.currentTarget.checked)}
@@ -2525,6 +2571,7 @@
 				</label>
 				<label class="flex items-center gap-2" title="Hide the bundled packs, showing only your imported ones">
 					<input
+						class="tp-check"
 						type="checkbox"
 						checked={hideBuiltinPacks}
 						onchange={(e) => {

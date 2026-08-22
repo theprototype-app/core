@@ -18,8 +18,9 @@
 //   the HIGHLIGHT        the open scene's own card wears an accent. Keyed by HASH, which
 //                        section 7 proves by renaming the file underneath it.
 //   the ACTIVE FOLDER    "Save scene…" lands where the user is looking, and falls back
-//                        to `Scenes` for every pseudo location (prefabs/packs/scene…)
-//                        and for an id that no longer exists.
+//                        for every pseudo location (prefabs/packs/scene…) and for an id
+//                        that no longer exists. 21-H1 (locked answer 6) changed what it
+//                        falls back TO: the library ROOT, never an invented `Scenes`.
 //
 // Section 7 is the phase's real design claim: the manifest scene NAME is authoritative
 // and the item FILENAME is not, so renaming the file must leave travel-by-name, the
@@ -348,10 +349,14 @@ h.run(async () => {
 	// =====================================================================
 	// 5. THE OPEN SCENE'S CARD WEARS AN ACCENT
 	// =====================================================================
-	const scenesFolder = await folderIdNamed(A, 'Scenes');
-	h.check(!!scenesFolder, 'premise: the saves landed in Scenes');
+	// 21-H1 (locked answer 6): a save invents no folder, so everything saved so far is at
+	// the library ROOT — which is where these cards are
+	h.check(
+		(await folderIdNamed(A, 'Scenes')) === null,
+		'premise: no `Scenes` folder was invented — the saves went to the root'
+	);
 	await A.page.evaluate(() => window.__stores.levels.newLevel('Bystander'));
-	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), scenesFolder);
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(600);
 	const highlighted = await A.page.evaluate(() =>
 		[...document.querySelectorAll('.explorer-open-scene')].map((el) => el.getAttribute('title'))
@@ -382,7 +387,7 @@ h.run(async () => {
 	);
 	h.check(
 		(await itemsOf(A)).find((i) => i.id === bunker.id)?.folderId === proto,
-		'a save with a real folder lands in it, not in Scenes'
+		'a save with a real folder lands in it, not at the root'
 	);
 	const fresh = await A.page.evaluate(
 		(id) => window.__stores.levels.newLevel('Blank', id),
@@ -392,7 +397,8 @@ h.run(async () => {
 		(await itemsOf(A)).find((i) => i.id === fresh.id)?.folderId === proto,
 		'…and so does a New scene'
 	);
-	// pseudo locations and dead ids both fall back, which is the pre-G9 behaviour
+	// pseudo locations and dead ids both fall back — 21-H1 (locked answer 6) changed WHAT
+	// to: the library ROOT, never a folder the app invents on the user's behalf
 	const fallbacks = await A.page.evaluate(async () => {
 		const l = window.__stores.levels;
 		const a = await l.saveSceneAsLevel('Pseudo', 'prefabs');
@@ -401,8 +407,12 @@ h.run(async () => {
 	});
 	const after = await itemsOf(A);
 	h.check(
-		fallbacks.every((id) => after.find((i) => i.id === id)?.folderId === scenesFolder),
-		'a pseudo location (prefabs) and a deleted folder id both fall back to Scenes'
+		fallbacks.every((id) => (after.find((i) => i.id === id)?.folderId ?? null) === null),
+		'a pseudo location (prefabs) and a deleted folder id both fall back to the ROOT'
+	);
+	h.check(
+		(await folderIdNamed(A, 'Scenes')) === null,
+		'…and neither of them invented a `Scenes` folder on the way'
 	);
 
 	// and through the REAL menu, where activeLibraryFolder() decides
@@ -457,7 +467,7 @@ h.run(async () => {
 		(await crumb()).scene === 'Arena',
 		'and so does the breadcrumb — both read the manifest name'
 	);
-	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), scenesFolder);
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(600);
 	const nowHighlighted = await A.page.evaluate(() =>
 		[...document.querySelectorAll('.explorer-open-scene')].map((el) => el.getAttribute('title'))

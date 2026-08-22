@@ -145,10 +145,18 @@ export function collectibleVariables() {
  * ONE collectible's nodes and edges, unrecorded and unsent — the caller decides how they
  * are BATCHED into undo entries, which is the only thing that differs between a lone
  * object and a group.
+ * 21-G4: `perPlayer` puts TWO flags on this same chain and changes nothing else about it
+ * — `perPlayer` on the On Click, so its pulse never leaves this peer, and
+ * `scope: 'player'` on the Set Variable, so the count lands in this peer's own row. The
+ * Latch, the Gate, the Visibility (`whilePlaying`), the Once (`perRound`) and the
+ * respawn Delay are all BYTE-IDENTICAL to the shared recipe and become per-player purely
+ * because the pulse driving them is local. That is the measure of whether the mechanism
+ * was the right one: the recipe needed no per-player branch.
  * @param {string} uuid @param {number} y @param {string} variable @param {number} respawn
+ * @param {boolean} [perPlayer]
  */
-function buildChain(uuid, y, variable, respawn) {
-	const click = makeNode('onclick', 60, y);
+function buildChain(uuid, y, variable, respawn, perPlayer = false) {
+	const click = makeNode('onclick', 60, y, perPlayer ? { perPlayer: true } : undefined);
 	// 21-F2: `perRound` is what makes a collected gem come back when a new round starts
 	// or the game returns to its menu — a param on the card, derived from the replicated
 	// round, with no reset edge to draw and nothing sent
@@ -161,7 +169,8 @@ function buildChain(uuid, y, variable, respawn) {
 	const count = makeNode('setvariable', 60 + COL * 2, y + BRANCH_Y, {
 		name: variable,
 		op: 'add',
-		value: 1
+		value: 1,
+		...(perPlayer ? { scope: 'player' } : {})
 	});
 	const nodes = [click, latch, gate, vis, selector, once, count];
 	const edges = [
@@ -233,13 +242,20 @@ function buildChain(uuid, y, variable, respawn) {
  * it after adding a member skips the children that already have a chain, so growing a
  * group is a repeat of the same click.
  *
+ * 21-G4 PER PLAYER: the same recipe with two flags (see `buildChain`), and the semantics
+ * a racing game and a co-op scavenger hunt both want — the object hides only for the
+ * player who took it, everyone else can still take their own, and each player's count is
+ * a row nobody else writes. It is not a different recipe and does not build a different
+ * shape; it is the shared one with a LOCAL pulse.
+ *
  * @param {string[]} uuids
- * @param {{variable?: string, respawn?: number, quiet?: boolean}} [opts]
- * @returns {{built: string[], skipped: string[], variable: string, respawn: number, entries: number}}
+ * @param {{variable?: string, respawn?: number, perPlayer?: boolean, quiet?: boolean}} [opts]
+ * @returns {{built: string[], skipped: string[], variable: string, respawn: number, perPlayer: boolean, entries: number}}
  */
 export function makeCollectible(uuids, opts = {}) {
 	const variable = String(opts.variable ?? COLLECT_VAR).trim() || COLLECT_VAR;
 	const respawn = Math.max(0, Number(opts.respawn) || 0);
+	const perPlayer = !!opts.perPlayer;
 	const targets = (Array.isArray(uuids) ? uuids : [uuids]).filter(Boolean);
 	/** @type {any} */
 	const peer = get(peers);
@@ -272,7 +288,7 @@ export function makeCollectible(uuids, opts = {}) {
 				skipped.push(uuid);
 				continue;
 			}
-			const chain = buildChain(uuid, baseY + row * rowHeight, variable, respawn);
+			const chain = buildChain(uuid, baseY + row * rowHeight, variable, respawn, perPlayer);
 			row++;
 			created.push(...chain.nodes);
 			createdEdges.push(...chain.edges);
@@ -311,14 +327,18 @@ export function makeCollectible(uuids, opts = {}) {
 				(built.length === 1 ? '1 collectible' : built.length + ' collectibles') +
 					' added' +
 					(skipped.length ? ', ' + skipped.length + ' skipped (already collectible)' : '') +
-					'. Counting into the variable "' +
+					'. Counting into the ' +
+					(perPlayer ? 'per-player' : 'shared') +
+					' variable "' +
 					variable +
 					'"' +
 					(respawn > 0 ? ', back after ' + respawn + 's' : '') +
-					' — show it with a HUD Text (Show a variable).'
+					(perPlayer
+						? ' — each player collects their own; show everyone with a HUD List (Show a leaderboard).'
+						: ' — show it with a HUD Text (Show a variable).')
 			);
 	}
-	return { built, skipped, variable, respawn, entries };
+	return { built, skipped, variable, respawn, perPlayer, entries };
 }
 
 /**
@@ -361,7 +381,7 @@ export function recipeMenuItems() {
  * The same recipe, ASKED FOR: which variable, and does it come back. Resolves what
  * `makeCollectible` returned, or null if the dialog was cancelled — a cancel must build
  * nothing at all, which is why the prompt runs BEFORE any node is created.
- * @param {string[]} uuids @param {{variable?: string, respawn?: number}} [opts]
+ * @param {string[]} uuids @param {{variable?: string, respawn?: number, perPlayer?: boolean}} [opts]
  */
 export async function makeCollectiblePrompt(uuids, opts = {}) {
 	const targets = (Array.isArray(uuids) ? uuids : [uuids]).filter(Boolean);
@@ -369,8 +389,13 @@ export async function makeCollectiblePrompt(uuids, opts = {}) {
 		variables: collectibleVariables(),
 		variable: opts.variable ?? COLLECT_VAR,
 		respawn: opts.respawn ?? 0,
+		perPlayer: !!opts.perPlayer,
 		count: targets.length
 	});
 	if (!answer) return null;
-	return makeCollectible(targets, { variable: answer.variable, respawn: answer.respawn });
+	return makeCollectible(targets, {
+		variable: answer.variable,
+		respawn: answer.respawn,
+		perPlayer: answer.perPlayer
+	});
 }

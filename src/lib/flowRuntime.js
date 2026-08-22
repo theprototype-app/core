@@ -43,6 +43,16 @@ import {
 	roundCutoff,
 	resetGame
 } from './gameState';
+// 21-G4: peerVars is a LEAF too (svelte stores + the store-only appStore), so the same
+// argument applies — a static edge closes nothing.
+import {
+	setPeerVar,
+	myPeerVar,
+	peerVarOf,
+	peerVarSum,
+	peerVarMax,
+	leaderboardText
+} from './peerVars';
 // 21-E6: charController is a LEAF for the same reason gameState is (svelte stores,
 // THREE, and two store-only modules), so a static edge closes nothing. It reaches
 // physics itself through its own primed dynamic import.
@@ -114,6 +124,31 @@ function staleTrigger(node, stamp) {
 	if (stamp === null || stamp === undefined) return false;
 	const seenAt = actionSeenAt.get(node.id);
 	return seenAt !== undefined && stamp < seenAt;
+}
+
+/**
+ * 21-G4: DOES THIS EVENT NODE'S PULSE GO ON THE WIRE?
+ *
+ * A `perPlayer` event node's pulse stays in THIS peer's trigger log, and that ONE bit is
+ * the whole per-player mechanism. Everything downstream is then per-peer for free: the
+ * Latch holds only MY collect, `whilePlaying` hides the object only for ME, `perRound`
+ * still reads MY local stamps against the SHARED round, and a `scope: 'player'`
+ * Set Variable banks into MY own row. No per-peer attribution on a shared trigger log,
+ * no second event channel, no new message type — the absence of one message.
+ *
+ * ONE helper for every `fire*` site rather than a flag threaded through each, because
+ * three copies of a rule is how a rule drifts (the `actionSeenAt` argument, one section up).
+ *
+ * THE CAVEAT, and it is real: the sensor/impact/rest events are detected ONLY by the
+ * physics INITIATOR, so a `perPlayer` node of those types pulses only on that peer. That
+ * is honest — the initiator is the only peer that witnessed the event — but it means
+ * `perPlayer` is meaningful on the events every peer raises for itself (a click, a HUD
+ * press, a key) and close to meaningless on the ones one peer raises for everybody. The
+ * recipe only ever stamps On Click.
+ * @param {any} node @returns {boolean}
+ */
+function replicatesPulse(node) {
+	return !node?.data?.perPlayer;
 }
 
 // --- 21-F2: THE TWO RECIPE RULES, and they are deliberately separate ----------------
@@ -830,6 +865,46 @@ function updateHudRowsNodes(time, ctx) {
 		if (!nodes.some((/** @type {any} */ n) => n.id === id)) hudRowsActed.delete(id);
 }
 
+/** the rows each Leaderboard node last wrote, so an unchanged board writes nothing
+ * @type {Map<string, string>} */
+const boardWrote = new Map();
+
+/**
+ * 21-G4: THE `leaderboard` NODE — a HUD List whose rows are DERIVED, not pushed.
+ *
+ * Every other writer for a list is EDGE-driven (`hudrows` on a trigger stamp,
+ * `api.hud.rows` from a module) because appending per frame is how you build a memory
+ * leak. A scoreboard is the opposite shape: it has no events of its own, it is a pure
+ * function of state that is ALREADY replicated (each peer's own row + the `userdata`
+ * roster), and it must be right for a late joiner who witnessed no edges at all — which
+ * is precisely the caveat `pushHudRows` documents about its own append model.
+ *
+ * So it runs every tick and writes ON CHANGE, which is the `hudRuntime` throttle rule
+ * one module over: the layer is real DOM. Nothing is sent — every peer derives the same
+ * list from the same numbers, golden rule 8.
+ * @param {number} time @param {any} ctx
+ */
+function updateLeaderboardNodes(time, ctx) {
+	for (const node of nodes) {
+		if (node.type !== 'leaderboard') continue;
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		const element = String(data.element ?? '').trim();
+		if (!element) continue;
+		const rows = leaderboardText(String(data.variable ?? '').trim(), {
+			order: data.order === 'asc' ? 'asc' : 'desc',
+			format: String(data.format ?? '{name} — {v}'),
+			decimals: num(data.decimals ?? 0),
+			limit: num(data.limit ?? 10)
+		});
+		const json = JSON.stringify(rows);
+		if (boardWrote.get(node.id) === json) continue;
+		boardWrote.set(node.id, json);
+		setHudRows(element, rows);
+	}
+	for (const id of [...boardWrote.keys()])
+		if (!nodes.some((/** @type {any} */ n) => n.id === id)) boardWrote.delete(id);
+}
+
 /** @type {Map<string, number>} */
 const hudSetActed = new Map();
 
@@ -944,8 +1019,23 @@ function updateGameNodes(time, ctx) {
 			if (!name) continue;
 			const v = num(data.value ?? 0);
 			const op = data.op ?? 'set';
-			const current = num(gameVar(name, 0));
-			setGameVar(name, op === 'add' ? current + v : op === 'subtract' ? current - v : v);
+			// 21-G4: SCOPE. Absent (and anything unrecognised) is 'shared' — the game
+			// singleton this node has always written, byte-identical. 'player' writes MY
+			// OWN peervars row and nobody else's, which is the whole ownership rule.
+			//
+			// Worth stating because it COMPOSES rather than special-cases: every peer runs
+			// this node from the same replicated stamp, so a SHARED trigger into a
+			// scope:'player' Set Variable increments EVERYBODY's own row ("everyone scores
+			// when the boss dies"), while a LOCAL one — a perPlayer On Click, whose stamp
+			// never left this machine — increments only mine. The trigger decides WHO acts,
+			// the scope decides WHOSE row.
+			if (data.scope === 'player') {
+				const held = num(myPeerVar(name, 0));
+				setPeerVar(name, op === 'add' ? held + v : op === 'subtract' ? held - v : v);
+			} else {
+				const current = num(gameVar(name, 0));
+				setGameVar(name, op === 'add' ? current + v : op === 'subtract' ? current - v : v);
+			}
 		}
 	}
 	for (const id of [...gameActed.keys()])
@@ -2121,6 +2211,26 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// LOCAL read of REPLICATED state, so every peer computes the same number and
 			// nothing about the read goes on the wire
 			return num(gameVar(String(d.name ?? ''), d.fallback ?? 0));
+		// --- 21-G4: the PER-PLAYER half of the same idea ---
+		case 'peervariable': {
+			// Also a LOCAL read of REPLICATED state — every peer holds every peer's row —
+			// so the only difference from Get Variable is WHICH replicated map it reads.
+			// `mine` is the reading that differs per peer BY DESIGN: it is the one number a
+			// player's own HUD wants, and it is the only value node in this file whose
+			// answer is legitimately allowed to disagree across peers.
+			const name = String(d.name ?? '').trim();
+			const fallback = num(d.fallback ?? 0);
+			switch (d.read ?? 'mine') {
+				case 'sum':
+					return peerVarSum(name);
+				case 'max':
+					return peerVarMax(name);
+				case 'peer':
+					return num(peerVarOf(String(d.peer ?? ''), name, fallback));
+				default:
+					return num(myPeerVar(name, fallback));
+			}
+		}
 		case 'gametime': {
 			// derived from the shared `startedAt` stamp — no clock of its own, so two peers
 			// mid-round agree, and a late joiner converges the moment the state arrives
@@ -2430,7 +2540,7 @@ export function fireModuleTrigger(type, match) {
 	nodes.forEach((node) => {
 		if (node.type !== type) return;
 		if (typeof match === 'function' && !match(node.data ?? {}, node.id)) return;
-		applyNodeTrigger(node.id, syncedNow(), true);
+		applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 		fired++;
 	});
 	return fired;
@@ -2441,7 +2551,9 @@ export function fireObjectClick(uuid) {
 		if (node.type !== 'onclick') return;
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
-			applyNodeTrigger(node.id, syncedNow(), true);
+			// 21-G4: a perPlayer On Click keeps its pulse LOCAL — that one bit is the
+			// whole per-player collectible (see replicatesPulse)
+			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 	});
 }
 
@@ -2458,7 +2570,7 @@ export function fireObjectImpact(uuid, strength) {
 		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
 		if (strength < num(data.minStrength ?? 0)) return;
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
-			applyNodeTrigger(node.id, syncedNow(), true);
+			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 	});
 }
 
@@ -2488,7 +2600,7 @@ export function fireObjectRest(uuid, resting) {
 		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
 		if (resting < num(data.seconds ?? 0.5)) return;
 		restFired.set(key, true);
-		applyNodeTrigger(node.id, syncedNow(), true);
+		applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 	});
 }
 
@@ -2509,7 +2621,7 @@ export function fireHudButton(elementId) {
 	nodes.forEach((node) => {
 		if (node.type !== 'hudbutton') return;
 		if (String(node.data?.element ?? '') !== String(elementId)) return;
-		applyNodeTrigger(node.id, syncedNow(), true);
+		applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 		fired++;
 	});
 	return fired;
@@ -2527,7 +2639,7 @@ function fireSensorEdge(type, uuid, otherUuid) {
 	nodes.forEach((node) => {
 		if (node.type !== type) return;
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
-			applyNodeTrigger(node.id, syncedNow(), true);
+			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 	});
 }
 
@@ -2914,6 +3026,9 @@ function runTick(now) {
 	updateCharNodes(time, ctx);
 	updateHudSetNodes(time, ctx);
 	updateHudRowsNodes(time, ctx);
+	// 21-G4: ...and the DERIVED list, after the edge-driven one — a scoreboard owns its
+	// element outright, so it must have the last word on the rows in it.
+	updateLeaderboardNodes(time, ctx);
 	// 21-E4: Delay / Sequence / Once moments reach the PUSH consumers (Counter, a
 	// Latch toggle, another Once). `ctx.triggers` is this tick's snapshot, so those see
 	// the bump on the NEXT tick - one frame, the same latency every derived reaction
@@ -2960,7 +3075,7 @@ function runTick(now) {
 				if ((node.data?.edge ?? 'down') === 'up') return;
 				const pulse = node.data?.pulse ?? 0.3;
 				const last = trigs[node.id]?.lastT ?? -Infinity;
-				if (time - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), true);
+				if (time - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 			});
 		}
 	}
@@ -3060,7 +3175,7 @@ export function startFlowRuntime() {
 				if (!matches) return;
 				const edge = node.data?.edge ?? 'down';
 				const fires = kind === 'up' ? edge === 'up' : edge !== 'up';
-				if (fires) applyNodeTrigger(node.id, syncedNow(), true);
+				if (fires) applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 			});
 		});
 	});

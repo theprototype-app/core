@@ -27,6 +27,10 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
+// 21-G4: PEER-OWNED variables. The same three obligations as the mode above (dispatch,
+// late-joiner reply, drop on disconnect) and a DIFFERENT lifetime on purpose — a row
+// survives its owner leaving PLAY and is dropped only when they leave the SESSION.
+import { applyRemotePeerVars, dropPeerVars, sendPeerVarsState } from '$lib/peerVars';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVersion, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
@@ -547,6 +551,7 @@ export class PeerConnection {
 					} else {
 						handleDisconnected(data.peerId);
 						dropPeerPlayMode(data.peerId); // 21-F3
+						dropPeerVars(data.peerId); // 21-G4
 						dropPeerEnvPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
 					}
@@ -606,6 +611,11 @@ export class PeerConnection {
 					sendModuleStates(data.sender);
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
 					sendPlayModeState(); // 21-F3: ...and so does play-mode presence
+					sendPeerVarsState(); // 21-G4: ...and our own per-player row, if we hold one
+				} else if(data.type == 'peervars') {
+					// 21-G4: ONE peer's OWN numbers, whole-map latest-wins. Owner-only writer,
+					// so this applier can never be the thing that clobbers somebody's score.
+					applyRemotePeerVars(data);
 				} else if(data.type == 'playmode') {
 					// 21-F3: presence only — "X is in play mode". ADDITIVE: the message goes out
 					// only while PLAYING, so an absent peer (or one on an older build that never
@@ -910,6 +920,7 @@ export class PeerConnection {
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
 		dropPeerPlayMode(peerId); // 21-F3
+		dropPeerVars(peerId); // 21-G4
 		dropPeerEnvPresets(peerId);
 		dropPeerHandModel(peerId);
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
@@ -941,6 +952,7 @@ export class PeerConnection {
 				handleDisconnected(peerId);
 				clearPeerPreview(peerId); // 16-P5
 				dropPeerPlayMode(peerId); // 21-F3
+				dropPeerVars(peerId); // 21-G4
 				dropPeerEnvPresets(peerId);
 				dropPeerHandModel(peerId);
 			}

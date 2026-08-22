@@ -70,12 +70,18 @@ const VALUE_NODE = 'hudinput';
 /** Every HUD node type that names an element, so a scan knows what to look at. */
 // 21-E7.1: `hudrows` names an element too, so the artboard's wired badge must see it — a
 // list filled by a HUD Rows node would otherwise read as dead at a glance.
-export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudrows', 'hudscreen'];
+// 21-G4: `leaderboard` names one too — and it is the only WRITER a list may have that is
+// not edge-driven, so a board with no HUD List node beside it must still read as wired.
+export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudrows', 'hudscreen', 'leaderboard'];
+
+/** 21-G4: the kinds a `role: 'writes'` action is offered for. A LIST is the only element
+ * whose content is rows, and a scoreboard is rows. */
+const ROWED = ['list'];
 
 /**
  * @typedef {{
  *   key: string, label: string, group: string, hint?: string,
- *   role: 'press' | 'drives' | 'value',
+ *   role: 'press' | 'drives' | 'value' | 'writes',
  *   node: string, data?: Record<string, any>,
  *   handle?: string,
  *   via?: { node: string, data?: Record<string, any>, handle: string },
@@ -164,6 +170,12 @@ export const HUD_ACTIONS = [
 	// graph, so it survives a respawn and self-heals when a new round starts.
 	{ key: 'showleft', label: 'Show collectibles left', group: 'Data', role: 'drives', node: '', via: { node: 'collectcount', data: { variable: 'gems', read: 'left' }, handle: 'value' }, hint: 'Counted from the collectible chains in the graph, not from the score — so it is right after a respawn and after a round reset.' },
 	{ key: 'showplain', label: 'Just show text', group: 'Data', role: 'drives', node: '', hint: 'A HUD Text node with no source, so a graph can drive it later.' },
+	// 21-G4: THE LEADERBOARD, and it needed a fourth role. Every 'drives' action wires a
+	// value source into a display node's `value` handle, and a list has no such handle —
+	// a list is WRITTEN INTO by id (the socket system has no arrays). So `writes` creates
+	// ONE node that names the element and fills it, which is what `hudrows` already does
+	// on an edge and what a scoreboard does continuously.
+	{ key: 'leaderboard', label: 'Show a leaderboard', group: 'Data', role: 'writes', node: 'leaderboard', data: { variable: 'laps', order: 'desc' }, hint: 'One row per player, from their own per-player variable — derived on every peer, so nothing is sent.' },
 
 	// --- 21-D4: what an INPUT's value can do -------------------------------------
 	// These create the SOURCE node and stop there, deliberately. A slider's value is
@@ -182,7 +194,13 @@ export function actionsForKind(kind) {
 	const displayNode = /** @type {any} */ (DISPLAY_NODE)[kind];
 	const valued = isValuedKind(kind);
 	return HUD_ACTIONS.filter((a) =>
-		a.role === 'press' ? wantsPress : a.role === 'value' ? valued : !!displayNode
+		a.role === 'press'
+			? wantsPress
+			: a.role === 'value'
+				? valued
+				: a.role === 'writes'
+					? ROWED.includes(kind)
+					: !!displayNode
 	);
 }
 
@@ -229,7 +247,25 @@ export function describeNode(node, handle = null) {
 		case 'setcamera':
 			return 'Look through a camera' + (d.camera ? '' : ' (none picked)');
 		case 'setvariable':
-			return (d.op === 'add' ? 'Add to' : d.op === 'subtract' ? 'Subtract from' : 'Set') + ' “' + (d.name ?? '') + '”';
+			// 21-G4: WHOSE number it writes is the difference between a score and a
+			// scoreboard row, so the row has to say it (the Counter reset/pulse lesson)
+			return (
+				(d.op === 'add' ? 'Add to' : d.op === 'subtract' ? 'Subtract from' : 'Set') +
+				' “' +
+				(d.name ?? '') +
+				'”' +
+				(d.scope === 'player' ? ' (this player’s own)' : '')
+			);
+		case 'peervariable':
+			return (
+				'Player variable “' +
+				(d.name ?? '') +
+				'” (' +
+				(d.read === 'sum' ? 'everyone’s total' : d.read === 'max' ? 'the highest' : d.read === 'peer' ? 'one peer' : 'mine') +
+				')'
+			);
+		case 'leaderboard':
+			return 'Leaderboard of “' + (d.variable ?? '') + '”';
 		case 'hudscreen':
 			// 21-E8: `hide` names no screen (it drops this peer’s override, whatever it is), so
 			// the row said 'hide screen “”' - empty quotes reading as an unfinished field.
@@ -427,6 +463,14 @@ export function addBinding(elementId, actionKey) {
 		);
 		if (existing) return { ok: false, reason: 'that value is already read', nodes: [] };
 		created.push(makeNode(VALUE_NODE, baseX, baseY, { element: elementId, ...action.data }));
+	} else if (action.role === 'writes') {
+		// ONE writer per (element, node type) — a second Leaderboard on the same list would
+		// be two derivations racing to own the same rows every tick
+		const existing = nodes.find(
+			(n) => n.type === action.node && String(n.data?.element ?? '') === String(elementId)
+		);
+		if (existing) return { ok: false, reason: 'that element already has one', nodes: [] };
+		created.push(makeNode(action.node, baseX, baseY, { element: elementId, ...action.data }));
 	} else if (action.role === 'press') {
 		// reuse the element's EXISTING press node when it has one — a second `hudbutton` on
 		// the same element would fire the action twice

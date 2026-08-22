@@ -44,6 +44,9 @@ const OUTPUT = {
 	// output stays the effect channel. Listed rather than left to the fallback, so the table
 	// says so out loud (the movespeed/charcontroller precedent).
 	hudrows: 'effect',
+	// 21-G4: the derived scoreboard is a SINK for the same reason — it writes rows INTO a
+	// list element and produces nothing a wire could carry.
+	leaderboard: 'effect',
 	// 21-D4: the HUD as a SOURCE. `read` decides what the number MEANS (a slider's
 	// value, a dropdown's index, a toggle as 1/0) but the socket is a number either
 	// way, so one type covers all four input kinds.
@@ -55,6 +58,8 @@ const OUTPUT = {
 	// 21-F3: how many collectibles are left / collected / there are. A count, so a
 	// number socket — it wires into a HUD Text exactly like Get Variable does.
 	collectcount: 'number',
+	// 21-G4: one player's own number (mine / a named peer / the sum / the max)
+	peervariable: 'number',
 	// 21-E4: the logic a game loop is made of. Latch is the only STATE node here -
 	// a boolean that holds after the pulse that set it has expired. The other three
 	// are event RESHAPERS, so they carry the event channel onward and everything

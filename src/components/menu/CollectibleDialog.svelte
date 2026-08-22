@@ -11,6 +11,8 @@
 	/** @type {string} */ let variable = '';
 	/** @type {boolean} */ let respawns = false;
 	/** @type {number} */ let seconds = 5;
+	/** 21-G4: shared (off) or per player (on) */
+	/** @type {boolean} */ let perPlayer = false;
 	/** the dialog instance these fields were seeded from — reseeding on every store tick
 	 * would fight the user's own typing */
 	/** @type {any} */ let seeded = null;
@@ -22,6 +24,7 @@
 		variable = $recipeDialog.variable ?? '';
 		respawns = ($recipeDialog.respawn ?? 0) > 0;
 		seconds = ($recipeDialog.respawn ?? 0) > 0 ? $recipeDialog.respawn : 5;
+		perPlayer = !!$recipeDialog.perPlayer;
 	}
 	// outside-close (backdrop / Esc) with a dialog still pending = cancel
 	$: if (!open && $recipeDialog) resolveRecipeDialog(null);
@@ -29,7 +32,11 @@
 	function create() {
 		const name = String(variable ?? '').trim();
 		if (!name) return; // validate on CLICK and say why inline, never a stale disabled
-		resolveRecipeDialog({ variable: name, respawn: respawns ? Math.max(0.1, Number(seconds) || 0) : 0 });
+		resolveRecipeDialog({
+			variable: name,
+			respawn: respawns ? Math.max(0.1, Number(seconds) || 0) : 0,
+			perPlayer
+		});
 	}
 </script>
 
@@ -39,8 +46,10 @@
 			<div>
 				<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Make collectible</h3>
 				<p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
-					{$recipeDialog.count > 1 ? $recipeDialog.count + ' objects' : 'This object'} will hide for everyone
-					when clicked and add 1 to a shared variable.
+					{$recipeDialog.count > 1 ? $recipeDialog.count + ' objects' : 'This object'}
+					{perPlayer
+						? ' will hide for whoever clicks it, and add 1 to that player’s own count.'
+						: ' will hide for everyone when clicked and add 1 to a shared variable.'}
 				</p>
 			</div>
 
@@ -74,6 +83,21 @@
 			{#if !String(variable ?? '').trim()}
 				<p class="-mt-2 text-xs text-red-500">A collectible has to count into something — name a variable.</p>
 			{/if}
+
+			<!-- 21-G4: WHOSE pickup is it. One sentence, because the difference is not
+			     obvious from the words "per player" alone and it changes what every peer
+			     sees in the scene. -->
+			<div class="flex flex-col gap-1">
+				<label class="flex items-center gap-2 text-sm text-gray-900 dark:text-gray-200">
+					<input id="collectible-per-player" type="checkbox" bind:checked={perPlayer} />
+					<span>Per player</span>
+				</label>
+				<p class="text-xs text-gray-500 dark:text-gray-400">
+					Off: one pickup, the first person to click it takes it for everyone. On: everyone has their
+					own — it hides only for whoever collected it, and each player’s count is theirs alone
+					(show them all with a HUD List ▸ Show a leaderboard).
+				</p>
+			</div>
 
 			<div class="flex flex-col gap-1">
 				<label class="flex items-center gap-2 text-sm text-gray-900 dark:text-gray-200">

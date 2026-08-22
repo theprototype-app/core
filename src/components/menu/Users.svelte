@@ -38,7 +38,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import NotificationCenter from './NotificationCenter.svelte';
 	import CloudSlot from '../CloudSlot.svelte';
-	import { usersSlot, profileSlot, rolesInfo } from '$lib/cloudHooks';
+	import { usersSlot, profileSlot, rolesInfo, scenePresence } from '$lib/cloudHooks';
 
 	// N3: latency-band dot color for a peer's network-quality indicator
 	const qColor = (level: string) =>
@@ -110,6 +110,13 @@
 	const effAvatar = $derived(avatarImage || ls('avatar') || cid?.avatar || '');
 	/** cloud roles bridge (null without the cloud plugin) */
 	const ri = $derived($rolesInfo);
+	// 21-G5 (F7): the project's OTHER rooms — mine is excluded, and a room with no
+	// members to show is skipped rather than rendering an empty header
+	const crossRooms = $derived(
+		(($scenePresence?.rooms as any[]) ?? []).filter(
+			(room) => room && room.id !== $scenePresence?.myRoomId && (room.members?.length ?? 0) > 0
+		)
+	);
 
 	// --- 21-F3: play-mode presence + the admin reset -------------------------------
 	/** A chip only appears when it SAYS something: a peer who is PLAYING, or — while a
@@ -256,8 +263,11 @@
 	<NotificationCenter />
 <!-- CN: gate on LIVE connections (openedPeers), not the roster — userdata is
 	 populated optimistically at dial time, which showed a phantom peer while an
-	 outbound request was still pending. -->
-{#if $userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0}
+	 outbound request was still pending.
+	 21-G5: OR on cross-scene presence — being alone in YOUR scene is exactly when
+	 "where is everyone" matters, and a popover that only exists once somebody is
+	 already in your mesh could never show you the people who are not. -->
+{#if ($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0}
 	<div class="relative">
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
@@ -372,6 +382,44 @@
 									: 'Only the session host can reset the game'}
 							onclick={doResetGame}>Reset game</button
 						>
+					</div>
+				{/if}
+				<!-- 21-G5 (F7): CROSS-SCENE PRESENCE — who is in the project's OTHER
+					 rooms/scenes, published by the rooms plugin (null in OSS = nothing
+					 renders). Watch is DISABLED with the reason, not hidden: it cannot
+					 reach a peer outside this mesh, and a dead button with no explanation
+					 is how that gets filed as a bug. Invite's transport belongs to the
+					 plugin; the button renders only when it provides one. -->
+				{#if crossRooms.length}
+					<div class="mt-1 border-t border-gray-700/60 pt-1" id="cross-scene-presence">
+						{#each crossRooms as room (room.id)}
+							<div class="px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500">
+								in {room.scene || room.name || 'another scene'}
+							</div>
+							{#each room.members ?? [] as m (m.peerId)}
+								<div class="peers-row flex items-center gap-2 rounded px-1.5 py-1">
+									<span class="min-w-0 flex-1 truncate text-sm" title={m.name || m.peerId}
+										>{m.name || String(m.peerId ?? '').slice(0, 6)}</span
+									>
+									<span class="mode-chip" data-mode={m.mode === 'playing' ? 'playing' : 'editor'}
+										>{m.mode === 'playing' ? 'playing' : 'editor'}</span
+									>
+									<button
+										class="rounded px-1.5 py-0.5 text-xs text-gray-500"
+										disabled
+										title="In another scene — Watch cannot reach a peer outside your session. Join their room to watch."
+										>Watch</button
+									>
+									{#if typeof $scenePresence?.invite === 'function'}
+										<button
+											class="cross-scene-invite rounded bg-primary-600/80 px-1.5 py-0.5 text-xs text-white hover:bg-primary-500"
+											title="Ask them to join your scene — they get a toast; accepting connects them to your session"
+											onclick={() => $scenePresence.invite(m.peerId, room)}>Invite</button
+										>
+									{/if}
+								</div>
+							{/each}
+						{/each}
 					</div>
 				{/if}
 				<!-- open-core (M1d): cloud plugin roles section. Empty in the OSS

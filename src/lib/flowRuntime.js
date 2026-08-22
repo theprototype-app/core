@@ -982,8 +982,14 @@ function updateGameNodes(time, ctx) {
 			// above): a fresh Travel node adopting a stale stamp would load a level on
 			// CONNECT, the exact 21-E gotcha. A double-fire is self-limiting — the load
 			// REPLACES the graph that contains this node, so a second stamp finds no node.
+			// 21-G2: a scene NAME resolves through the replicated manifest to its CURRENT
+			// pointer at fire time — "the latest of Arena" is deterministic across peers
+			// because the manifest is, unlike any local folder order. A frozen HASH stays
+			// the other mode (a specific version, forever that version).
+			const sceneName = typeof data.sceneName === 'string' ? data.sceneName : '';
 			const hash = typeof data.level === 'string' ? data.level : '';
-			if (hash && levelsRef) levelsRef.travelToLevel(hash, String(data.levelName ?? ''));
+			if (sceneName && levelsRef?.travelToScene) levelsRef.travelToScene(sceneName);
+			else if (hash && levelsRef) levelsRef.travelToLevel(hash, String(data.levelName ?? ''));
 		} else if (type === 'setcamera') {
 			const uuid = typeof data.camera === 'string' ? data.camera : '';
 			if (uuid) lookThroughCamera(uuid);

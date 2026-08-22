@@ -121,7 +121,7 @@
 		<!-- multiple + the companion types so an .obj can be picked TOGETHER with its
 		     .mtl and textures (17-D2); a lone model file behaves exactly as before -->
 		<input type="file" id="import-file" multiple style="display: none" oninput={(e: any) => importModelFiles(e.target.files)} accept=".gltf, .glb, .obj, .stl, .fbx, .mtl, .png, .jpg, .jpeg, .webp" />
-		<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .tpscene" />
+		<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .tpscene, .tp" />
 
 		<!-- New scene from a starting point (General / Examples / Community tabs) -->
 		<button id="open-templates" class="side-row" onclick={() => { templatesModalOpen.set(true); closeMenu.set(true); }}>

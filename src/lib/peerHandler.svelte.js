@@ -27,6 +27,8 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
+// 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
+import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
 // 21-G4: PEER-OWNED variables. The same three obligations as the mode above (dispatch,
 // late-joiner reply, drop on disconnect) and a DIFFERENT lifetime on purpose — a row
 // survives its owner leaving PLAY and is dropped only when they leave the SESSION.
@@ -444,6 +446,11 @@ export class PeerConnection {
 					applyRemoteMusic(data);
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
+				} else if(data.type == 'manifest') {
+					// 21-G2: the project manifest, latest-wins on changedAt
+					applyRemoteManifest(data);
+				} else if(data.type == 'getproject') {
+					sendProjectManifest(data.sender);
 				} else if(data.type == 'scenepost') {
 					// L1/L2: the authored post stack, latest-wins on changedAt. An effect
 					// KIND we don't know is kept and skipped at render time, never dropped.
@@ -698,6 +705,8 @@ export class PeerConnection {
 		// answers with its OWN states — e.g. campreview presence), so it can't be
 		// deduped down to the host like the shared-scene requests above (B5)
 		conn.send({type: 'getmodulestate', sender: this.peer.id})
+		// 21-G2: the project manifest (scene histories + asset list) for late joiners
+		conn.send({type: 'getproject', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);

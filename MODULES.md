@@ -158,6 +158,52 @@ the identical pulse. So call it on the peer where the event happened and **not o
 of them**, or a Counter counts it once per peer. `api.peerIds()` and
 `api.physics.isInitiator()` are the usual ways to pick that peer.
 
+R3a: pass `{replicate: false}` as the third argument to keep the pulse in **this
+peer's own trigger log** — the per-player mechanism (a per-player pickup hides only
+for its collector because the pulse never left their machine). Your effect/value
+node then reads its own pulse through `ctx.trigger` (`{stamp, age}` or null), which
+core has ALREADY folded through the round rules: stamp a `perRound: true` flag on
+your node's data and a round bump (or a return to the menu) retires the read with no
+round math of your own. That is the whole latch story — never rebuild it.
+
+### The game shell, per-player rows, and the graph (R3a)
+
+```js
+api.game.roundCutoff();            // null (shell unused) | Infinity (menu/over) | startedAt
+api.game.roundUnderway();          // true while playing/paused (and when the shell is unused)
+api.game.playActive();             // THIS peer plays inside a running round
+api.game.getVar('score', 0);       // the shared game variable (replicated singleton)
+api.game.setVar('score', 7);
+
+api.peerVars.setMine('laps', 3);   // MY replicated row — one writer per row, by construction
+api.peerVars.mine('laps', 0);
+api.peerVars.all('laps');          // [{id, name, value, me, rank}] — the leaderboard shape
+
+api.playerPosition();              // [x, y, z] of the viewer — a touch trigger's read
+api.selectObject(uuid);            // the manager-row click
+api.selectedUuids();               // the selection SET (never the sticky primary)
+
+api.flow.nodes('mytype');          // [{id, type, graphId, data}] across every graph
+api.flow.edges();                  // [{id, source, target, sourceHandle, targetHandle, graphId}]
+api.flow.nodeValue(latchId);       // a node's evaluated output (a core Latch's round-aware state)
+api.flow.triggerStamp(nodeId);     // {stamp, age} | null — a node's own round-aware pulse
+api.flow.setNodeData(nodeId, { respawn: 5 });   // replicated MERGE (the editor's nodedata path)
+api.flow.addNodes({                // replicated, ONE undo entry for the batch
+	nodes: [{ type: 'mytype', x: 60, y: 40, data: {} }, { type: 'objectselector', x: 280, y: 40, data: { selected: uuid } }],
+	edges: [{ from: 0, to: 1 }]     // indices into nodes, or existing node id strings
+});
+
+api.hud.registerDebugLine(() => 'mymod: 3 left');   // a line on the debug HUD pill
+api.hud.registerAction({ key: 'showleft', label: 'Show it', group: 'Data',
+	role: 'drives', node: '', via: { node: 'mytype', data: {}, handle: 'value' } });
+```
+
+Graph reads are deterministic because the graph is replicated — treat them exactly
+like replicated state (the value-node rule). Two per-node data flags core honours on
+YOUR nodes: `perRound` (the trigger reads retire on a round bump) and `whilePlaying`
+(an effect node stands down outside play and the restore loop hands its object back —
+how a module hides an object without owning the give-back).
+
 ### Primitives
 
 ```js

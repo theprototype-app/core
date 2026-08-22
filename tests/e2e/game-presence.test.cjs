@@ -15,9 +15,10 @@
 //        it, so counting the writes per peer is the only way to assert "exactly one
 //        peer wrote it, and it was the host".
 //  * §5b the variable and the count DISAGREE after a round bump (score 1, collected 0).
-//        That is the whole reason `collectcount` reads the graph instead of doing
-//        `total - variable`, and it is the check that would go red if anyone ever
-//        "simplified" it back.
+//        That is the whole reason a collectible count is read off the LATCHES rather than
+//        as `total - variable`, and it is the check that would go red if anyone ever
+//        "simplified" it back. (R3a moved the `collectcount` NODE into the collectible
+//        module; the latch semantics it read are core, and §5 reads them directly.)
 //
 // TIMING: `h.GPU_ARGS`, because §2 races a 2s cooldown and §3 waits out a real 10s
 // window — a software-rendered page runs at ~2.5 fps and every per-frame path with it.
@@ -95,45 +96,49 @@ const makeBoxes = (peer, count) =>
 		return uuids;
 	}, count);
 
-const recipe = (peer, uuids, opts = {}) =>
-	peer.page.evaluate(
-		({ uuids, opts }) => window.__stores.gameRecipes.makeCollectible(uuids, { quiet: true, ...opts }),
-		{ uuids, opts }
-	);
+// 21-G R3a moved the RECIPE out of core into the collectible module, so the builder is a
+// test FIXTURE now. The chain it assembles — latch/once `perRound`, visibility
+// `whilePlaying` — is core and unchanged, which is what every check below reads.
+// `chainsByVar` remembers the node ids per variable so the counts can be derived.
+/** @type {Record<string, any[]>} */
+const chainsByVar = {};
+const recipe = async (peer, uuids, opts = {}) => {
+	const result = await h.makeCollectibleChains(peer, uuids, opts);
+	chainsByVar[result.variable] = (chainsByVar[result.variable] ?? []).concat(result.chains);
+	return result;
+};
 
 const collect = async (peer, uuid, settle = 800) => {
 	await peer.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
 	await peer.page.waitForTimeout(settle);
 };
 
-/** Add a Collectibles node reading `variable` in mode `read`, and return its id. Nodes
- * are created AND broadcast the way the editor does it (the flow-graph rule). */
-const addCount = (peer, variable, read) =>
+/**
+ * The three readings the `collectcount` node used to publish — 'total' | 'collected' |
+ * 'left' — derived straight off the chains instead. R3a moved that node into the
+ * collectible module (it registers its own through the SDK), but what it read is core: a
+ * collectible is COLLECTED when its Latch reads truthy, and a Latch is a value node, so
+ * its live output sits in `flowValues` (~6/s, which is what the settles below wait for).
+ *
+ * The latch ids are FILTERED against the live graph on every read, so a `wipe` or a scene
+ * swap drops those chains from the total the way deleting the nodes really does — which is
+ * also what keeps a variable no chain counts into reading 0.
+ */
+const countOf = (peer, variable, read) =>
 	peer.page.evaluate(
-		({ variable, read }) => {
+		({ latches, read }) => {
 			const s = window.__stores;
-			const node = {
-				id: crypto.randomUUID(),
-				type: 'collectcount',
-				position: { x: 900, y: 40 + Math.floor(Math.random() * 400) },
-				data: { label: 'Collectibles', type: 'collectcount', variable, read },
-				class: 'w-[150px]'
-			};
-			s.nodesHandler.createFlowNode(node, s.SCENE_GRAPH);
-			let p;
-			s.peers.subscribe((v) => (p = v))();
-			if (p) p.send({ type: 'nodecreate', node: s.nodesHandler.serializeNode(node), graphId: s.SCENE_GRAPH });
-			return node.id;
+			let g;
+			s.flowGraphs.subscribe((x) => (g = x))();
+			const live = new Set((g.scene?.nodes ?? []).map((n) => n.id));
+			const present = latches.filter((id) => live.has(id));
+			let v;
+			s.flowValues.subscribe((x) => (v = x))();
+			const collected = present.filter((id) => !!v[id]).length;
+			return read === 'total' ? present.length : read === 'collected' ? collected : present.length - collected;
 		},
-		{ variable, read }
+		{ latches: (chainsByVar[variable] ?? []).map((c) => c.ids.latch), read }
 	);
-
-const valueOf = (peer, id) =>
-	peer.page.evaluate((nid) => {
-		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
-		return v[nid];
-	}, id);
 
 /** Every peers-popover row as `{text, chip}`. `textContent`, never `innerText` — the
  * chip is `text-transform: capitalize` in CSS and innerText reflects that. */
@@ -166,9 +171,10 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
-		await p.page.waitForFunction(() => !!window.__stores?.gamePresence && !!window.__stores?.gameRecipes, {
-			timeout: 30000
-		});
+		await p.page.waitForFunction(
+			() => !!window.__stores?.gamePresence && !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler,
+			{ timeout: 30000 }
+		);
 	// connect FIRST: a peer cannot approve a connection request while in play mode.
 	// B DIALS A, so B's outbound request is the one approved — which makes A the HOST
 	// (`sessionHost === null`) and B the joiner. The direction is load-bearing here:
@@ -258,7 +264,7 @@ h.run(async () => {
 	// peer compute `current + 1`, so two peers whose flow ticks are skewed can bank a
 	// pickup twice (measured, 2 for one click, with the peer's page in the foreground).
 	// That is 21-D6's accumulator, not this phase — and §5b is precisely the check that
-	// says why `collectcount` must not be derived from it.
+	// says why a collectible count must not be derived from it.
 	h.check(hidden === false && (await varOf(A, 'gems')) >= 1, `premise: A collected the gem (hidden=${hidden}, gems=${await varOf(A, 'gems')})`);
 
 	await leavePlay(A);
@@ -454,31 +460,33 @@ h.run(async () => {
 	const gems = await makeBoxes(A, 3);
 	const built = await recipe(A, gems, { variable: 'gems' });
 	h.check(built.built.length === 3, `premise: three collectibles built (${built.built.length})`);
-	const nLeft = await addCount(A, 'gems', 'left');
-	const nGot = await addCount(A, 'gems', 'collected');
-	const nAll = await addCount(A, 'gems', 'total');
-	const nNone = await addCount(A, 'nothingcountsintothis', 'left');
 	await A.page.waitForTimeout(1200);
 
 	await setState(A, 'playing');
 	await pressPlay(A);
 	await A.page.waitForTimeout(900);
 	h.check(
-		(await valueOf(A, nAll)) === 3 && (await valueOf(A, nLeft)) === 3 && (await valueOf(A, nGot)) === 0,
-		`a fresh round reads 3 total / 3 left / 0 collected (${await valueOf(A, nAll)}/${await valueOf(A, nLeft)}/${await valueOf(A, nGot)})`
+		(await countOf(A, 'gems', 'total')) === 3 &&
+			(await countOf(A, 'gems', 'left')) === 3 &&
+			(await countOf(A, 'gems', 'collected')) === 0,
+		`a fresh round reads 3 total / 3 left / 0 collected (${await countOf(A, 'gems', 'total')}/${await countOf(A, 'gems', 'left')}/${await countOf(A, 'gems', 'collected')})`
 	);
-	h.check((await valueOf(A, nNone)) === 0, 'a variable no chain counts into reads 0 — the walk found nothing, and says so');
+	// (the old "a variable no chain counts into reads 0" check went with the node: derived
+	// from the chains it is a tautology of this suite's own bookkeeping, and a check that
+	// cannot fail is worse than no check. The module's suite owns that reading now.)
 
 	await collect(A, gems[0]);
 	h.check(
-		(await valueOf(A, nLeft)) === 2 && (await valueOf(A, nGot)) === 1 && (await valueOf(A, nAll)) === 3,
-		`collecting one moves left/collected and never total (${await valueOf(A, nLeft)}/${await valueOf(A, nGot)}/${await valueOf(A, nAll)})`
+		(await countOf(A, 'gems', 'left')) === 2 &&
+			(await countOf(A, 'gems', 'collected')) === 1 &&
+			(await countOf(A, 'gems', 'total')) === 3,
+		`collecting one moves left/collected and never total (${await countOf(A, 'gems', 'left')}/${await countOf(A, 'gems', 'collected')}/${await countOf(A, 'gems', 'total')})`
 	);
 	// every peer derives it: the latches are replicated, the reading is not sent
 	await B.page.waitForTimeout(700);
 	h.check(
-		(await valueOf(B, nLeft)) === 2 && (await valueOf(B, nGot)) === 1,
-		`and the PEER derives the same numbers with nothing sent about the count (${await valueOf(B, nLeft)}/${await valueOf(B, nGot)})`
+		(await countOf(B, 'gems', 'left')) === 2 && (await countOf(B, 'gems', 'collected')) === 1,
+		`and the PEER derives the same numbers with nothing sent about the count (${await countOf(B, 'gems', 'left')}/${await countOf(B, 'gems', 'collected')})`
 	);
 
 	// 5b. THE CHECK THAT DEFINES THE FEATURE: a round bump un-collects the latches
@@ -490,14 +498,17 @@ h.run(async () => {
 	// computes for itself, so two peers with skewed flow ticks can bank one pickup
 	// twice. That fuzziness is exactly the point being made — the SCORE is not a
 	// statement about how many collectibles are outstanding.
-	h.check(scoreBefore >= 2 && (await valueOf(A, nGot)) === 2, `premise: two collected (score ${scoreBefore}, collected ${await valueOf(A, nGot)})`);
+	h.check(
+		scoreBefore >= 2 && (await countOf(A, 'gems', 'collected')) === 2,
+		`premise: two collected (score ${scoreBefore}, collected ${await countOf(A, 'gems', 'collected')})`
+	);
 	await setState(A, 'menu');
 	await A.page.waitForTimeout(400);
 	await setState(A, 'playing');
 	await A.page.waitForTimeout(1000);
 	const scoreAfter = await varOf(A, 'gems');
-	const gotAfter = await valueOf(A, nGot);
-	const leftAfter = await valueOf(A, nLeft);
+	const gotAfter = await countOf(A, 'gems', 'collected');
+	const leftAfter = await countOf(A, 'gems', 'left');
 	h.check(
 		scoreAfter === scoreBefore && gotAfter === 0 && leftAfter === 3,
 		`a new round: the SCORE still reads ${scoreAfter} while collected reads ${gotAfter} and left reads ${leftAfter} — inverse math off the variable would have said "left = ${3 - scoreAfter}"`
@@ -505,15 +516,19 @@ h.run(async () => {
 
 	// and in the menu, where no round is underway, everything reads un-collected
 	await collect(A, gems[2]);
-	h.check((await valueOf(A, nGot)) === 1, 'premise: one collected again in the new round');
+	h.check((await countOf(A, 'gems', 'collected')) === 1, 'premise: one collected again in the new round');
 	await setState(A, 'menu');
 	await A.page.waitForTimeout(900);
 	h.check(
-		(await valueOf(A, nLeft)) === 3 && (await valueOf(A, nGot)) === 0,
-		`back in the menu everything reads un-collected (${await valueOf(A, nLeft)} left) — F2's Infinity cutoff, for free`
+		(await countOf(A, 'gems', 'left')) === 3 && (await countOf(A, 'gems', 'collected')) === 0,
+		`back in the menu everything reads un-collected (${await countOf(A, 'gems', 'left')} left) — F2's Infinity cutoff, for free`
 	);
 
-	// 5c. the HUD action builds it
+	// 5c. the HUD action is NOT core's any more — R3a took the whole collectible line
+	// (the recipe, the `collectcount` node and this action) into the collectible module,
+	// which registers its own through `api.hud.registerAction`. This section is now the
+	// counterfactual: core offers no such action, and asking for it by key is refused
+	// rather than half-built. (The module's own suite owns the positive case.)
 	const bound = await A.page.evaluate(() => {
 		const s = window.__stores;
 		s.hudDocs.setHudDocFor('scene', {
@@ -529,23 +544,22 @@ h.run(async () => {
 		});
 		const offered = s.hudActions.actionsForKind('text').map((a) => a.key);
 		const result = s.hudActions.addBinding('left-readout', 'showleft');
-		const rows = s.hudActions.bindingsFor('left-readout');
 		let graphs;
 		s.flowGraphs.subscribe((v) => (graphs = v))();
-		const made = (graphs.scene?.nodes ?? []).filter((n) => n.type === 'collectcount');
 		return {
-			offered: offered.includes('showleft'),
+			offered,
 			ok: result.ok,
-			counts: made.length,
-			data: made[made.length - 1]?.data ?? null,
-			source: rows.map((r) => r.source)
+			reason: result.reason ?? null,
+			nodes: (graphs.scene?.nodes ?? []).length
 		};
 	});
-	h.check(bound.offered, 'a HUD Text is offered "Show collectibles left"');
-	h.check(bound.ok && bound.data?.read === 'left', `and assigning it builds a Collectibles node reading "${bound.data?.read}"`);
 	h.check(
-		bound.source.some((s) => /collectibles left/i.test(s)),
-		`the Actions pane describes what drives it: "${bound.source.filter(Boolean).join(' | ')}"`
+		!bound.offered.includes('showleft'),
+		`core's HUD Text is no longer offered "Show collectibles left" — the module registers it (${JSON.stringify(bound.offered)})`
+	);
+	h.check(
+		bound.ok === false && bound.reason === 'unknown action',
+		`and binding it by key is refused outright, not half-built (ok=${bound.ok}, reason="${bound.reason}")`
 	);
 
 	const errs = [...h.pageErrors(A), ...h.pageErrors(B)];

@@ -87,11 +87,13 @@ const makeBoxes = (peer, count) =>
 		return uuids;
 	}, count);
 
-const recipe = (peer, uuids, opts = {}) =>
-	peer.page.evaluate(
-		({ uuids, opts }) => window.__stores.gameRecipes.makeCollectible(uuids, { quiet: true, ...opts }),
-		{ uuids, opts }
-	);
+// 21-G R3a MOVED THE RECIPE OUT OF CORE: `gameRecipes.makeCollectible` is gone, and the
+// collectible module owns the authoring half now. What is under test here is the CHAIN
+// SEMANTICS — latch/once `perRound`, visibility `whilePlaying`, setvariable scope — every
+// one of which is still core and unchanged. So the builder becomes a test FIXTURE
+// (`h.makeCollectibleChains`) that assembles the identical 7-node chain through the same
+// replicated nodesHandler path, and every check below reads exactly as it did.
+const recipe = (peer, uuids, opts = {}) => h.makeCollectibleChains(peer, uuids, opts);
 
 /** Walk the chain the recipe built for ONE object, back from its Object Selector — the
  * recipe returns uuids, not node ids, and every assertion below needs the nodes. */
@@ -152,7 +154,8 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.gameRecipes, { timeout: 30000 });
+	for (const p of [A, B])
+		await p.page.waitForFunction(() => !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler, { timeout: 30000 });
 	// connect FIRST: a peer cannot approve a connection request while in play mode
 	await h.connect(A, B);
 
@@ -420,7 +423,7 @@ h.run(async () => {
 	h.check(undo.redone === 3, `and redo brings all three back (${undo.redone})`);
 
 	// a fourth member arrives and the recipe is run again
-	const grown = await A.page.evaluate(async (gid) => {
+	await A.page.evaluate(async (gid) => {
 		const s = window.__stores;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
@@ -433,8 +436,8 @@ h.run(async () => {
 		s.objectActions.deselectObject();
 		s.setActiveGraph(s.SCENE_GRAPH);
 		await new Promise((r) => setTimeout(r, 400));
-		return s.gameRecipes.makeCollectible([gid], { variable: 'crystals', quiet: true });
 	}, groupUuid);
+	const grown = await recipe(A, [groupUuid], { variable: 'crystals' });
 	h.check(grown.built.length === 1, `re-running after adding a member builds only the NEW one (${grown.built.length} added)`);
 	h.check(grown.skipped.length === 3, `and reports the rest skipped (${grown.skipped.length} skipped)`);
 	h.check((await nodeCount(A, 'latch')) === 4, `four chains in total (${await nodeCount(A, 'latch')})`);
@@ -484,7 +487,7 @@ h.run(async () => {
 	// 6. PER-VARIABLE: two collectibles, two counters, and the picker
 	// =====================================================================
 	await wipe([A, B]);
-	const [gemBox, coinBox, keyBox] = await makeBoxes(A, 3);
+	const [gemBox, coinBox] = await makeBoxes(A, 2);
 	await recipe(A, [gemBox], { variable: 'gems' });
 	await recipe(A, [coinBox], { variable: 'coins' });
 	// THE PREMISE MUST BE DETERMINISTIC: `wipe` does not broadcast, so a replicated `game`
@@ -509,70 +512,24 @@ h.run(async () => {
 	await setPlay(A, null);
 	await A.page.waitForTimeout(400);
 
-	// the suggestions are what a user would recognise: the game's own vars + the graph's
-	const suggestions = await A.page.evaluate(() => window.__stores.gameRecipes.collectibleVariables());
+	// ---- the entry point LEFT CORE ----------------------------------------------
+	// 21-G1 moved the recipe from the object menu into the node editor's Game category;
+	// 21-G R3a moved it out of core ALTOGETHER, into the collectible module. So the
+	// authoring half — the menu entry, the variable-suggestion chips, the dialog and its
+	// cancel-builds-nothing rule — is the MODULE's contract now (its own suite owns it),
+	// and what this suite pins is that core carries none of it any more. Everything above
+	// still holds: the chain primitives are core and are what the module assembles.
+	const leftCore = await A.page.evaluate(() => ({
+		recipes: !!window.__stores.gameRecipes,
+		dialog: !!window.__stores.recipeDialog
+	}));
 	h.check(
-		suggestions.includes('gems') && suggestions.includes('coins'),
-		`the picker offers the names already in play (${JSON.stringify(suggestions)})`
-	);
-
-	// ---- the real entry point ---------------------------------------------------
-	// 21-G1 MOVED IT: the object menu's `Game ▸` submenu is gone, and the recipe lives in
-	// the node editor's Game category, acting on the SELECTION rather than on the
-	// right-clicked object. (`scene-folders` owns the menu-shape contract, including the
-	// absence of the old submenu; here it is just the way in.)
-	await A.page.evaluate((id) => window.__stores.objectActions.applySelectionSet([id]), keyBox);
-	await A.page.waitForTimeout(300);
-	const menu = await A.page.evaluate(() =>
-		window.__stores.gameRecipes
-			.recipeMenuItems()
-			.filter((i) => i.label)
-			.map((i) => ({ label: i.label, disabled: !!i.disabled }))
+		!leftCore.recipes && !leftCore.dialog,
+		`the recipe left core — it lives in the collectible module now (gameRecipes=${leftCore.recipes}, recipeDialog=${leftCore.dialog})`
 	);
 	h.check(
-		menu.some((i) => i.label.startsWith('Make selected collectible')),
-		`the node editor's Game category offers the recipe (${JSON.stringify(menu.map((i) => i.label))})`
-	);
-	h.check(!menu[0]?.disabled, 'and with something selected it is live, not a greyed placeholder');
-
-	// open it for real and answer it with real clicks
-	await A.page.evaluate(() => {
-		window.__stores.gameRecipes
-			.recipeMenuItems()
-			.find((i) => i.label?.startsWith('Make selected collectible'))
-			.action();
-	});
-	await A.page.waitForSelector('#collectible-variable', { timeout: 8000 });
-	h.check(true, 'the dialog opens from the menu entry');
-	h.check(
-		(await A.page.locator('[data-var-suggestion="coins"]').count()) === 1,
-		'with the existing variables offered as chips (no datalist to type blind into)'
-	);
-	await A.page.click('[data-var-suggestion="coins"]');
-	await A.page.click('#collectible-respawn-on');
-	await A.page.fill('#collectible-respawn', '3');
-	await A.page.click('#collectible-create');
-	await A.page.waitForTimeout(900);
-	const picked = await chainOf(A, keyBox);
-	h.check(picked?.variable === 'coins', `the picked variable is what got built ("${picked?.variable}")`);
-	h.check(picked?.delaySeconds === 3, `and the respawn came with it (${picked?.delaySeconds}s)`);
-
-	// cancel builds NOTHING — the prompt runs before any node is created
-	const beforeCancel = await nodeCount(A, 'latch');
-	await A.page.evaluate((id) => window.__stores.objectActions.applySelectionSet([id]), gemBox);
-	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => {
-		window.__stores.gameRecipes
-			.recipeMenuItems()
-			.find((i) => i.label?.startsWith('Make selected collectible'))
-			.action();
-	});
-	await A.page.waitForSelector('#collectible-cancel', { timeout: 8000 });
-	await A.page.click('#collectible-cancel');
-	await A.page.waitForTimeout(700);
-	h.check(
-		(await nodeCount(A, 'latch')) === beforeCancel,
-		`cancelling the dialog builds nothing at all (${beforeCancel} chains before and after)`
+		(await A.page.locator('#collectible-variable').count()) === 0,
+		'and core ships no collectible dialog to open'
 	);
 
 	// =====================================================================

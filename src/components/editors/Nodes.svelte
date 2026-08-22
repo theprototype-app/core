@@ -67,9 +67,6 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
-	// 21-G1: the collectible recipe, re-homed from the object context menu into the
-	// Game category of this editor's pane menu (see the injection in onPaneContextMenu)
-	import { recipeMenuItems } from '$lib/gameRecipes';
 	import { isValidFlowConnection, typeColor, replaceableInputEdges } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus } from '../../stores/appStore';
@@ -196,8 +193,8 @@
 		setvariable: AnimationNode,
 		getvariable: AnimationNode,
 		gametime: AnimationNode,
-		// 21-F3: spec-driven too — a variable field and a `read` select, no picker
-		collectcount: AnimationNode,
+		// 21-F3's `collectcount` card MOVED to the collectible module (R3a) — an old
+		// scene's node renders as UnknownNode until the module is installed, honestly
 		// 21-G4: the per-player read, same shape
 		peervariable: AnimationNode,
 		setcamera: GameCameraNode,
@@ -584,22 +581,15 @@
 				// anywhere in the menu does the same thing (the filter input is always
 				// focused), so this row is just the discoverable way in.
 				{ label: 'Search nodes…', revealFilter: true },
+				// 21-G1 put the collectible RECIPE under the Game group here; R3a moved it to
+				// the collectible module, whose manager toolbox owns "make selection
+				// collectible" now (Modules ▸ Browse) — so every group renders plain node rows
 				...[...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
 					label: group.group,
-					children: [
-						...group.items.map((item) => ({
-							label: item.label,
-							action: () => addNode(item.type, item.label, flowPos)
-						})),
-						// 21-G1: GAME RECIPES land here, and ONLY here — deliberately not in
-						// `nodeCatalog`, because the palette renders that list as DRAGGABLE
-						// NODE CARDS and a recipe is an action, not a node type. In this menu
-						// they sit under their own `Recipes` section rule, below every node
-						// row, so the one thing that behaves differently also reads
-						// differently. They act on the viewport selection (see
-						// `recipeMenuItems`), which is why nothing here passes `flowPos`.
-						...(group.group === 'Game' ? recipeMenuItems() : [])
-					]
+					children: group.items.map((item) => ({
+						label: item.label,
+						action: () => addNode(item.type, item.label, flowPos)
+					}))
 				})),
 				{
 					label: 'Custom',

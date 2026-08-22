@@ -32,6 +32,10 @@ import { createFlowNode, createFlowEdge, serializeNode, serializeEdge } from './
 import { recordFlowNodesEntry } from './flowGraphs';
 import { findNodeSpec } from './nodeCatalog';
 import { isInteractiveKind, isValuedKind } from './hudKinds';
+// R3a: module-contributed catalog entries live in the moduleHudKinds LEAF (this module
+// reaches nodesHandler/flowGraphs — the history family — so moduleSDK cannot import it;
+// the leaf is where both sides can meet, the moduleToolboxes rule)
+import { moduleHudActionList } from './moduleHudKinds';
 
 /** The HUD node types that READ an element (a display binding), by element kind. */
 // 21-E7.6: the PACK kinds map onto the SAME four display nodes rather than earning nodes
@@ -165,10 +169,9 @@ export const HUD_ACTIONS = [
 	{ key: 'showvar', label: 'Show a variable', group: 'Data', role: 'drives', node: '', via: { node: 'getvariable', data: { name: 'score' }, handle: 'value' }, hint: 'A shared number — a score, lives, a level.' },
 	{ key: 'showtime', label: 'Show the round time', group: 'Data', role: 'drives', node: '', via: { node: 'gametime', data: { read: 'remaining', length: 60 }, handle: 'value' }, hint: 'Derived from the shared start stamp, so every peer agrees.' },
 	{ key: 'showcount', label: 'Show a counter', group: 'Data', role: 'drives', node: '', via: { node: 'counter', data: { step: 1, op: 'up' }, handle: 'value' }, hint: 'Wire anything that pulses into the Counter to make it a score.' },
-	// 21-F3: the readout a collect-the-gems game asks for first. It is NOT "Show a
-	// variable" with subtraction: the count comes from the collectible chains in the
-	// graph, so it survives a respawn and self-heals when a new round starts.
-	{ key: 'showleft', label: 'Show collectibles left', group: 'Data', role: 'drives', node: '', via: { node: 'collectcount', data: { variable: 'gems', read: 'left' }, handle: 'value' }, hint: 'Counted from the collectible chains in the graph, not from the score — so it is right after a respawn and after a round reset.' },
+	// 21-F3's "Show collectibles left" MOVED to the collectible module (R3a): its via-node
+	// was `collectcount`, which moved with the chain shape. A module contributes catalog
+	// entries through `api.hud.registerAction` (merged in `actionsForKind` below).
 	{ key: 'showplain', label: 'Just show text', group: 'Data', role: 'drives', node: '', hint: 'A HUD Text node with no source, so a graph can drive it later.' },
 	// 21-G4: THE LEADERBOARD, and it needed a fourth role. Every 'drives' action wires a
 	// value source into a display node's `value` handle, and a list has no such handle —
@@ -188,12 +191,20 @@ export const HUD_ACTIONS = [
 	{ key: 'readtext', label: 'Read its text', group: 'Data', role: 'value', node: '', data: { read: 'text' }, hint: 'The typed text, for a name or a room code.' }
 ];
 
+/** The catalog plus whatever modules registered (R3a — `api.hud.registerAction`, held
+ * in the moduleHudKinds leaf because this module reaches the history family).
+ * @returns {HudActionDef[]} */
+function fullCatalog() {
+	const moduleActions = /** @type {HudActionDef[]} */ (moduleHudActionList());
+	return moduleActions.length ? [...HUD_ACTIONS, ...moduleActions] : HUD_ACTIONS;
+}
+
 /** @param {string} kind @returns {HudActionDef[]} */
 export function actionsForKind(kind) {
 	const wantsPress = PRESSABLE.includes(kind) && isInteractiveKind(kind);
 	const displayNode = /** @type {any} */ (DISPLAY_NODE)[kind];
 	const valued = isValuedKind(kind);
-	return HUD_ACTIONS.filter((a) =>
+	return fullCatalog().filter((a) =>
 		a.role === 'press'
 			? wantsPress
 			: a.role === 'value'
@@ -298,12 +309,6 @@ export function describeNode(node, handle = null) {
 			return 'Variable “' + (d.name ?? '') + '”';
 		case 'gametime':
 			return 'Round time (' + (d.read ?? 'elapsed') + ')';
-		case 'collectcount':
-			// 21-F3: says WHAT it counts and WHERE from, because "left" alone reads like
-			// arithmetic on the score, which is exactly what it is not
-			return (
-				'Collectibles ' + (d.read ?? 'left') + ' “' + (d.variable ?? 'gems') + '” (counted from the graph)'
-			);
 		case 'hudtext':
 			return 'Text' + (d.format && d.format !== '{v}' ? ' “' + d.format + '”' : '');
 		case 'hudbar':
@@ -317,7 +322,9 @@ export function describeNode(node, handle = null) {
 		case 'hudset':
 			return 'Sets it to ' + (d.value ?? 0);
 		default:
-			return findNodeSpec(node?.type)?.label ?? String(node?.type ?? 'node');
+			// R3a: a MODULE node has no case here and no core spec — its own label (the
+			// palette card's) is the honest description
+			return findNodeSpec(node?.type)?.label ?? d.label ?? String(node?.type ?? 'node');
 	}
 }
 
@@ -437,7 +444,7 @@ function makeEdge(source, target, handle) {
  * @returns {{ok: boolean, reason?: string, nodes: any[]}}
  */
 export function addBinding(elementId, actionKey) {
-	const action = HUD_ACTIONS.find((a) => a.key === actionKey);
+	const action = fullCatalog().find((a) => a.key === actionKey);
 	if (!action || !elementId) return { ok: false, reason: 'unknown action', nodes: [] };
 	const { nodes } = sceneGraph();
 	/** @type {any} */

@@ -43,16 +43,20 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+	for (const p of [A, B])
+		await p.page.waitForFunction(
+			() => !!window.__stores?.projectManifest && !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler,
+			{ timeout: 30000 }
+		);
 	await h.connect(A, B); // B approves -> B is the session host / writer
 
 	// ---- 1. the HUNT scene: two per-player gems + a leaderboard ------------------------
 	const gem1 = await makeBox(A);
 	const gem2 = await makeBox(A);
-	const built = await A.page.evaluate(
-		({ uuids }) => window.__stores.gameRecipes.makeCollectible(uuids, { quiet: true, variable: 'gems', perPlayer: true }),
-		{ uuids: [gem1, gem2] }
-	);
+	// 21-G R3a moved the RECIPE out of core into the collectible module; the chain it builds
+	// — including the `perPlayer` marks this section is about — is core, so the builder is a
+	// test fixture now and every check below reads unchanged.
+	const built = await h.makeCollectibleChains(A, [gem1, gem2], { variable: 'gems', perPlayer: true });
 	h.check(built.built.length === 2, 'two per-player collectibles built');
 	// B (the host/writer) saves the scene into the project
 	await B.page.waitForTimeout(1200);

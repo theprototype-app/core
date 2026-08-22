@@ -198,6 +198,20 @@ export function outputType(nodeType) {
 	return OUTPUT[nodeType] ?? 'effect';
 }
 
+/**
+ * The named input handles a node type DECLARES — module inputs first, then the static
+ * table, with the `_default` catch-all excluded because it names no socket. Added for
+ * the palette-group check (`moduleInputHandles` is the same one line, one module over):
+ * the Triggers group means "arriving from OUTSIDE the graph", and the machine-checkable
+ * half of that is "it is a SOURCE" — nothing wired into it. A Counter has pulse/reset,
+ * which is exactly why it belongs with the stateful Logic nodes instead.
+ * @param {string} nodeType @returns {string[]}
+ */
+export function inputHandles(nodeType) {
+	const declared = { ...(moduleNodeInputs[nodeType] ?? {}), ...(INPUT[nodeType] ?? {}) };
+	return Object.keys(declared).filter((handle) => handle !== '_default');
+}
+
 /** @param {string} nodeType @param {string|null|undefined} handleId */
 export function inputType(nodeType, handleId) {
 	// A1: a module may declare its node's typed inputs. Checked FIRST, because the

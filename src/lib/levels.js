@@ -37,11 +37,13 @@ import {
 import {
 	explorerFolders,
 	explorerItems,
+	hiddenItems,
 	createFolder,
 	addItemFromBytes,
 	itemByHash,
 	itemBlob,
 	deleteItem,
+	setItemHidden,
 	loadExplorer
 } from './explorer';
 import { requestAsset } from './assetShare';
@@ -52,6 +54,8 @@ import {
 	publishSceneVersion,
 	latestSceneHash,
 	keepableHashes,
+	autoVersionsOff,
+	setVersionLabel,
 	projectManifest
 } from './projectManifest';
 import { sessionHost } from './connectionState';
@@ -134,6 +138,50 @@ export function levelItems() {
 	);
 }
 
+/**
+ * 21-G7 fork 10 — FOLD one scene's old versions onto the hidden shelf. After a publish
+ * the manifest names the whole history; everything in it except the POINTER stops being
+ * a card in the library and becomes a row in Version history instead. The bytes and the
+ * blobs are untouched, so travel-by-hash, the .tp export and a peer's assetShare pull
+ * all still find them (itemByHash searches both shelves).
+ *
+ * The G2 behaviour minted one visible .tpscene per save, so a scene edited five times
+ * showed five identical-looking cards and no way to tell which one the project meant —
+ * which is the whole reason this exists.
+ *
+ * It reconciles BOTH directions, because the pointer moves BACKWARDS as well: restoring
+ * an older version makes a hidden record the current one, and a scene whose only card
+ * sits on the hidden shelf is a scene that has vanished from the library.
+ * @param {string} name @returns {number} how many items changed shelf
+ */
+export function hideOldVersions(name) {
+	const scene = String(name ?? '').trim();
+	const entry = get(projectManifest).scenes[scene];
+	if (!entry) return 0;
+	const pointer = entry.history[entry.history.length - 1];
+	const older = new Set(entry.history.filter((h) => h !== pointer));
+	let moved = 0;
+	for (const item of [...get(explorerItems)])
+		if (older.has(item.hash) && setItemHidden(item.id, true)) moved++;
+	for (const item of [...get(hiddenItems)])
+		if (item.hash === pointer && setItemHidden(item.id, false)) moved++;
+	return moved;
+}
+
+/**
+ * THE MIGRATION (and the ongoing invariant): fold every manifest scene at once. Run
+ * after boot, and again whenever a manifest lands from a peer or a .tp import — a
+ * project that arrives with five versions of one scene must not unfold five cards.
+ * Idempotent and cheap: it only ever moves items that are visible and stale.
+ * @returns {Promise<number>} how many items were folded away
+ */
+export async function foldSceneVersions() {
+	await loadExplorer();
+	let folded = 0;
+	for (const name of Object.keys(get(projectManifest).scenes)) folded += hideOldVersions(name);
+	return folded;
+}
+
 /** @param {string} name a scene name, filesystem-safe enough for an item name */
 function levelFileName(name) {
 	const base = String(name ?? '').trim() || 'Scene';
@@ -145,9 +193,11 @@ function levelFileName(name) {
  * the scene's binary assets), content-hashed into the Levels folder. The author's
  * workspace (open edit session, selection) is STRIPPED — a level is a place to travel
  * to, not a resume point.
- * @param {string} name @returns {Promise<{id: string, hash: string, name: string}|null>}
+ * @param {string} name @param {{label?: string}} [opts] 21-G7: `label` NAMES this
+ *   version in the history panel (the manual "Save version…" path); absent = "Auto"
+ * @returns {Promise<{id: string, hash: string, name: string}|null>}
  */
-export async function saveSceneAsLevel(name) {
+export async function saveSceneAsLevel(name, opts = {}) {
 	const folderId = await ensureScenesFolder();
 	const payload = /** @type {any} */ (buildSessionPayload(String(name ?? '').trim() || 'Scene'));
 	delete payload.workspace;
@@ -162,9 +212,22 @@ export async function saveSceneAsLevel(name) {
 	// 21-G2: a manual save IS a version — the manifest pointer moves with it (refused
 	// for viewers inside publishSceneVersion; the local item exists either way)
 	publishSceneVersion(payload.name, item.hash);
+	if (opts.label) setVersionLabel(payload.name, item.hash, opts.label);
+	// 21-G7: one visible card per scene name — the pointer we just wrote
+	hideOldVersions(payload.name);
 	pruneSceneVersions(payload.name);
 	showToast('Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
 	return item;
+}
+
+/**
+ * 21-G7 fork 13 — the MANUAL "Save version…": an ordinary save that carries a name you
+ * chose. It is deliberately the same write path (there is no second kind of version),
+ * and it works even with auto-versions switched off, because it is the user asking.
+ * @param {string} name @param {string} label
+ */
+export async function saveSceneVersion(name, label) {
+	return saveSceneAsLevel(name, { label: String(label ?? '').trim() });
 }
 
 /**
@@ -185,12 +248,21 @@ export async function saveSceneAsLevel(name) {
  *   NAMED-ONLY. A scene that has never been saved or travelled to has no name to file
  *   a version under — inventing one would opt the user into the project machinery
  *   uninvited. The ordinary autosave still protects that scene locally.
+ *
+ * 21-G7 extracted this out of the travel path so RESTORE can share it verbatim: taking
+ * a checkpoint before loading an older version is the same act, under the same three
+ * rules, and re-deriving them at a second call site is how they drift apart. It also
+ * gained a fourth gate — `keepVersionsSetting === 0` means "don't cut versions behind
+ * my back", and this is the only place that cuts one unasked.
+ * @param {{force?: boolean}} [opts] `force` = the user asked (a restore checkpoint),
+ *   so the auto-versions-off gate does not apply
  * @returns {Promise<boolean>} did a version get published
  */
-async function autoSavePublishDeparting() {
+export async function publishCurrentIfChanged(opts = {}) {
 	const at = get(currentLevel);
 	if (!at?.name) return false;
 	if (get(sessionHost) !== null) return false; // not the writer
+	if (!opts.force && autoVersionsOff()) return false; // fork 10: auto-versions off
 	/** @type {any} */
 	let payload = null;
 	try {
@@ -210,8 +282,42 @@ async function autoSavePublishDeparting() {
 	);
 	if (!item) return false;
 	const published = publishSceneVersion(at.name, item.hash);
-	if (published) pruneSceneVersions(at.name);
+	if (published) {
+		// where we ARE is now this hash and this content — so a second call (travel runs
+		// this too, right after a restore checkpoint) has nothing left to publish
+		currentLevel.set({ hash: item.hash, name: at.name, signature });
+		hideOldVersions(at.name);
+		pruneSceneVersions(at.name);
+	}
 	return published;
+}
+
+/**
+ * 21-G7 fork 13 — RESTORE an older version, DCC-standard: nothing is ever destroyed by
+ * going back.
+ *   1. CHECKPOINT the current scene (forced — you asked, so the auto-versions setting
+ *      does not get to lose your unsaved work),
+ *   2. RE-APPEND the old hash so the pointer moves TO it (the G2a rule: history is
+ *      append-only, and "we went back to v3" is itself an event worth recording),
+ *   3. load it here.
+ * There is no new message: the manifest replicates, so every peer already knows where
+ * the scene's pointer went and can travel to it. Saying so in the toast is the whole
+ * "offer travel for the session" half of the fork.
+ * @param {string} name @param {string} hash @returns {Promise<boolean>}
+ */
+export async function restoreSceneVersion(name, hash) {
+	const scene = String(name ?? '').trim();
+	const key = String(hash ?? '').trim();
+	if (!scene || !key) return false;
+	try {
+		await publishCurrentIfChanged({ force: true });
+	} catch {}
+	publishSceneVersion(scene, key);
+	const loaded = await travelToLevel(key, scene);
+	if (!loaded) return false;
+	hideOldVersions(scene);
+	showToast('Restored an earlier version of ' + scene + ' — peers can travel to it too.');
+	return true;
 }
 
 /**
@@ -315,9 +421,9 @@ export async function travelToLevel(hash, name = '') {
 	inFlight.add(key);
 	try {
 		// 21-G2 fork 9: the departing scene's edits are PUBLISHED before the world is
-		// replaced (writer-only, signature-gated — see autoSavePublishDeparting)
+		// replaced (writer-only, signature-gated — see publishCurrentIfChanged)
 		try {
-			await autoSavePublishDeparting();
+			await publishCurrentIfChanged();
 		} catch {}
 		const item = await resolveLevelItem(key);
 		if (!item) return false;
@@ -350,3 +456,23 @@ export async function travelToLevel(hash, name = '') {
 		inFlight.delete(key);
 	}
 }
+
+// ---- 21-G7: keeping the one-visible-item invariant true -------------------------------
+//
+// Every publish folds its own scene, so this only has to cover the manifests we did NOT
+// write: the idb load at boot (a project built before G7 has a card per save), a peer's
+// `manifest` message and a .tp import. The document is the trigger because the document
+// is the thing that says which hash is the pointer.
+//
+// Coalesced through a microtask: a commit writes the store once, but a restore writes it
+// twice in a row (checkpoint, then re-append) and there is no sense sweeping between them.
+// This lives HERE and not in projectManifest.js, which is a leaf and must stay one.
+let foldQueued = false;
+projectManifest.subscribe(() => {
+	if (foldQueued) return;
+	foldQueued = true;
+	queueMicrotask(() => {
+		foldQueued = false;
+		foldSceneVersions().catch(() => {});
+	});
+});

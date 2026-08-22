@@ -31,6 +31,8 @@
 		removeCustomTheme
 	} from '$lib/themes';
 	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
+	// 21-G7: how many past versions of each scene keep their bytes on this machine (0 = off)
+	import { keepVersionsSetting } from '$lib/projectManifest';
 	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
@@ -804,6 +806,26 @@
 							<Checkbox id="auto-restore" bind:checked={$autoRestoreEnabled} />
 						</svelte:fragment>
 						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
+					</SettingRow>
+					<p class="ui-section-label">Files</p>
+					<SettingRow name="Keep versions per scene">
+						<svelte:fragment slot="control">
+							<input
+								id="keep-versions"
+								type="number"
+								min="0"
+								max="200"
+								step="1"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$keepVersionsSetting}
+								on:change={(e: any) =>
+									keepVersionsSetting.set(Math.max(0, Math.floor(Number(e.target.value) || 0)))} />
+						</svelte:fragment>
+						How many past versions of each scene keep their bytes on this machine — browse
+						them under <strong>Version history</strong> in a scene file's properties. Pinned
+						versions are always kept. <strong>0 turns auto-versioning off</strong>: leaving a
+						scene stops cutting one behind your back, and only the current version plus your
+						pins keep their bytes — saving a scene and <kbd>Save version…</kbd> still work
 					</SettingRow>
 					<p class="ui-section-label">Selection</p>
 					<SettingRow name="Double-click action">

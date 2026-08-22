@@ -113,7 +113,10 @@
     // 21-F3: publish our play mode when it changes, and watch for an abandoned round
     startGamePresence()
     // 21-G2: the local project (scene histories + asset list) survives a reload
-    loadProjectManifest()
+    // 21-G7: and once it is in, fold every scene's older versions onto the hidden shelf —
+    // the migration for a library built before G7 (which minted a card per save) and the
+    // one-visible-item invariant for every project that arrives afterwards
+    loadProjectManifest().then(() => import('$lib/levels').then((m) => m.foldSceneVersions()))
     // #20 P5: deliberately NOTHING to start here. A plain reload comes up in the DEFAULT
     // state — all windows closed — and the layout is restored only by an explicit
     // Restore, by the auto-restore setting, or by loading a file, because it rides the

@@ -57,6 +57,7 @@ import {
 	sendHudValues
 } from '$lib/hudSync';
 import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
+import { applyRemoteTriggers, sendTriggers } from '$lib/triggerSync';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
@@ -595,6 +596,17 @@ export class PeerConnection {
 					deleteFlowEdges(data.ids, data.graphId);
 				} else if(data.type == 'nodetrigger') {
 						applyNodeTrigger(data.id, data.t, false); // 134: shared-timestamp pulse
+					} else if(data.type == 'gettriggers') {
+						// DEVX #18: the trigger LOG for a late joiner. Deliberately NOT behind
+						// share-or-stash like getobjects/getnodes: there is nothing here for a
+						// user to choose about — the log is runtime state, not their authored
+						// work — and the payload prunes to live nodes, so after a stash we
+						// answer with nothing at all.
+						sendTriggers(data.sender);
+					} else if(data.type == 'triggers') {
+						// merged per node (newer stamp wins), and the merge marks the history
+						// epoch so nothing in it can be ACTED on — see triggerSync
+						applyRemoteTriggers(data);
 					} else if(data.type == 'particleburst') {
 						// PFX-A: shared-timestamp burst — every peer seeds the identical
 						// particle burst from t (no re-broadcast)
@@ -692,6 +704,17 @@ export class PeerConnection {
 		conn.send(handModelState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
+		// DEVX #18: the flow TRIGGER LOG - without it a joiner's latches/counters/Once
+		// nodes all read "never happened", so every collected object is back on the
+		// table. Rides the same getobjects gate as getnodes: the log is only meaningful
+		// beside the graph whose node ids it keys into.
+		// AHEAD of getnodes ON PURPOSE, so a node lands in a COMPLETE history rather than
+		// history landing on top of a node that has already been ticking. Nothing in core
+		// needs it - the epoch and the merge are both order-independent, and getnodes can
+		// be deferred behind share-or-stash for minutes anyway - but a CONSUMER with a
+		// first-sight rule of its own (the collectible module seeds each node's stamp
+		// without counting) is racy in the other order and correct in this one.
+		if (getobjects) conn.send({type: 'gettriggers', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})

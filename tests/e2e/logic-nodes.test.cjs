@@ -888,12 +888,18 @@ h.run(async () => {
 	await h.connect(C, A);
 	const syncedC = await pushGraph(A, C, ['pLatch', 'pDelay', 'pCount', 'pDice']);
 	h.check(!!syncedC, `premise: the late joiner holds the graph (${JSON.stringify(syncedC)})`);
-	// its trigger log starts EMPTY (it is not part of the handshake), so it reads
-	// `initial` while A/B hold the state the toggles left
+	// FLIPPED BY DEVX #18 (`gettriggers`/`triggers`). This check used to assert
+	// `joinRead[1] === false` — "the joiner starts from `initial`, the trigger log is not
+	// handshaked" — which was the documented cost of the log being a stream of messages
+	// rather than a document. It has a full-state reply now, so the joiner ARRIVES on the
+	// state the toggles left. Kept as an assertion rather than deleted, so losing that
+	// reply fails loudly right here. Note the log lands BEFORE the graph in this section
+	// (C connects, THEN `pushGraph` sends the nodes), which is the ordering the epoch and
+	// the merge both have to survive.
 	const joinRead = [await valueOf(A, 'pLatch'), await valueOf(C, 'pLatch')];
 	h.check(
-		joinRead[1] === false,
-		`the joiner starts from \`initial\` — the trigger log is not handshaked (A=${joinRead[0]} C=${joinRead[1]})`
+		joinRead[1] === joinRead[0] && joinRead[1] === true,
+		`the joiner arrives on the SAME Latch state as A — the trigger log IS handshaked now (A=${joinRead[0]} C=${joinRead[1]})`
 	);
 	await pulse(A, 'pSet');
 	await A.page.waitForTimeout(1800);

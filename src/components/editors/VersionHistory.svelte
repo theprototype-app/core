@@ -15,19 +15,29 @@
 	import { History, Pin, RotateCcw, Trash2 } from '@lucide/svelte';
 	import { explorerItems, hiddenItems, deleteItem } from '$lib/explorer';
 	import { projectManifest, sceneOfHash, pinSceneVersion } from '$lib/projectManifest';
-	import { restoreSceneVersion, saveSceneVersion } from '$lib/levels';
+	import { restoreSceneVersion, saveSceneVersion, currentLevel, levelSceneName } from '$lib/levels';
 
 	let { item = null }: { item: any } = $props();
 
 	// `sceneOfHash` reads the manifest with get(), which registers NO dependency — the
 	// document is passed in as an unused argument so the derived stays reactive without
 	// the comma-operator svelte-check rejects (the documented $derived/get trap).
-	const sceneNameOfHash = (_manifest: any, hash: string) => sceneOfHash(hash);
+	//
+	// 21-I1: the FALLBACK is the file name. A scene the manifest has no entry for yet — a
+	// New scene…, a viewer's save, anything saved before the manifest existed — used to
+	// resolve to null here, so the whole panel rendered nothing and there was no way to
+	// take a first version of it. A .tpscene card is a scene whether or not the project
+	// document has heard of it.
+	const sceneNameOfHash = (_manifest: any, it: any) =>
+		sceneOfHash(it.hash) ?? levelSceneName(it.name);
 	const scene = $derived(
-		item && item.kind === 'scene' && !item.packEntry
-			? sceneNameOfHash($projectManifest, item.hash)
-			: null
+		item && item.kind === 'scene' && !item.packEntry ? sceneNameOfHash($projectManifest, item) : null
 	);
+
+	// "Save version…" versions THE OPEN SCENE. On a card you have merely selected it would
+	// silently file the current scene's contents under that other scene's name, so the row
+	// is offered only when this card IS the scene you are in — and says why when it is not.
+	const isOpenScene = $derived(!!scene && $currentLevel?.name === scene);
 
 	const rows = $derived.by(() => {
 		if (!scene) return [];
@@ -38,6 +48,10 @@
 		const held = new Map<string, any>();
 		for (const it of [...$explorerItems, ...$hiddenItems]) if (!held.has(it.hash)) held.set(it.hash, it);
 		const pointer = entry.history[entry.history.length - 1];
+		// 21-I1: the one BEFORE the pointer. After a restore that row is the checkpoint the
+		// restore just took of the scene you were in — the row a user goes looking for, and
+		// the one that was indistinguishable from every other "Auto" until now.
+		const previous = entry.history.length > 1 ? entry.history[entry.history.length - 2] : null;
 		const seen = new Set<string>();
 		const out: any[] = [];
 		// newest first, and ONE row per hash: a restore RE-APPENDS, so a hash legitimately
@@ -52,6 +66,7 @@
 				item: held_,
 				label: entry.labels?.[hash] ?? 'Auto',
 				pointer: hash === pointer,
+				previous: hash !== pointer && hash === previous,
 				pinned: entry.pinned.includes(hash),
 				// no local bytes is a real state, and the row says so rather than inventing
 				// a date it does not have — travel can still pull it from a peer
@@ -92,24 +107,31 @@
 			<span class="flex-1">Version history</span>
 			<span class="vh-count">{rows.length}</span>
 		</div>
-		<div class="vh-save">
-			<input
-				id="version-label"
-				class="vh-input"
-				placeholder="Name this version…"
-				bind:value={label}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') saveNamed();
-				}}
-			/>
-			<button
-				id="version-save"
-				class="ui-button-quiet shrink-0"
-				disabled={busy}
-				title={'Save the current scene as a new version of ' + scene}
-				onclick={() => saveNamed()}>Save version…</button
-			>
-		</div>
+		{#if isOpenScene}
+			<div class="vh-save">
+				<input
+					id="version-label"
+					class="vh-input"
+					placeholder="Name this version…"
+					bind:value={label}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') saveNamed();
+					}}
+				/>
+				<button
+					id="version-save"
+					class="ui-button-quiet shrink-0"
+					disabled={busy}
+					title={'Save the current scene as a new version of ' + scene}
+					onclick={() => saveNamed()}>Save version…</button
+				>
+			</div>
+		{:else}
+			<p id="version-save-hint" class="vh-hint">Open this scene to save a version of it.</p>
+		{/if}
+		{#if !rows.length}
+			<p id="version-empty" class="vh-hint">No versions recorded yet.</p>
+		{/if}
 		{#each rows as row (row.hash)}
 			<div class="vh-row" data-hash={row.hash} data-pointer={row.pointer ? '1' : '0'}>
 				{#if row.item?.thumbnail}
@@ -122,6 +144,7 @@
 					<span class="vh-when">{row.when}</span>
 				</span>
 				{#if row.pointer}<span class="vh-badge">Current</span>{/if}
+				{#if row.previous}<span class="vh-badge vh-badge-prev">Previous</span>{/if}
 				{#if !row.item}<span class="vh-badge vh-badge-away">Not held</span>{/if}
 				<button
 					class="ui-button-quiet vh-pin shrink-0"
@@ -230,6 +253,14 @@
 		padding: 1px 5px;
 		font-size: 0.58rem;
 		color: #fff;
+	}
+	.vh-hint {
+		font-size: 0.68rem;
+		opacity: 0.65;
+	}
+	.vh-badge-prev {
+		background: rgba(255, 255, 255, 0.22);
+		color: inherit;
 	}
 	.vh-badge-away {
 		background: rgba(255, 255, 255, 0.16);

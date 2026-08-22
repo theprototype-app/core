@@ -59,6 +59,7 @@ import {
 	keepableHashes,
 	autoVersionsOff,
 	setVersionLabel,
+	adoptSceneVersions,
 	projectManifest
 } from './projectManifest';
 import { sessionHost } from './connectionState';
@@ -189,6 +190,20 @@ export function levelItems() {
  * It reconciles BOTH directions, because the pointer moves BACKWARDS as well: restoring
  * an older version makes a hidden record the current one, and a scene whose only card
  * sits on the hidden shelf is a scene that has vanished from the library.
+ *
+ * 21-I1 — THE REPORTED BUG: this used to fold only hashes the HISTORY names, so an item
+ * the manifest never recorded stayed a visible card FOREVER — a save from before the
+ * manifest existed, a viewer's save (publishSceneVersion refuses those), anything where
+ * the publish returned false. A clean profile keeps one card through three saves and a
+ * reload; a long-lived one grows a shelf of twins. So the fold is by NAME as well:
+ * an item CALLED `<scene>.tpscene` which is not the pointer is an old version of that
+ * scene, whether or not the document ever heard of its hash.
+ *
+ * And folding alone would be worse than the bug — it would hide bytes into a place with
+ * no door, since Version history lists the HISTORY. So every such orphan is ADOPTED into
+ * the history first (see adoptSceneVersions for where it lands and why the pointer may
+ * not move), and only then folded. Both shelves are scanned: an orphan already hidden by
+ * an earlier build of this sweep is exactly the doorless case.
  * @param {string} name @returns {number} how many items changed shelf
  */
 export function hideOldVersions(name) {
@@ -196,7 +211,43 @@ export function hideOldVersions(name) {
 	const entry = get(projectManifest).scenes[scene];
 	if (!entry) return 0;
 	const pointer = entry.history[entry.history.length - 1];
-	const older = new Set(entry.history.filter((h) => h !== pointer));
+	const fileName = levelFileName(scene);
+	const known = new Set(entry.history);
+	// orphans on EITHER shelf, oldest first — `createdAt` is the only ordering signal an
+	// item the document never recorded can offer (deterministic tie-break on the hash,
+	// because two saves inside one millisecond must not order differently on two peers)
+	// THE WHOLE NAME-BASED SWEEP IS WRITER-ONLY, and the gate lives HERE because
+	// projectManifest is a leaf that may not import connectionState.
+	//
+	// Matching by NAME is a migration of YOUR OWN library against YOUR OWN project. It is
+	// not evidence that two machines' files are the same scene, and on a joiner it gets
+	// both halves wrong at once. ADOPTION would file your unrelated `Arena.tpscene` into
+	// the HOST's Arena history and broadcast it, so travelling to that version loads a
+	// world nobody in the room has seen. And FOLDING is no safer: a joiner that has not
+	// pulled the host's Arena bytes holds only its OWN file, so the sweep hides the one
+	// copy it has — measured, and it left the library with zero Arena cards. Local data
+	// must never disappear because a REMOTE document happened to name a scene the same.
+	//
+	// So a joiner does exactly what it did before 21-I1: the HISTORY-based fold below,
+	// which only ever touches hashes the shared document itself names. The by-name
+	// migration runs when you are the writer — which is every solo user, and the case the
+	// reported bug actually came from.
+	const writer = get(sessionHost) === null;
+	const orphans = writer
+		? [...get(explorerItems), ...get(hiddenItems)]
+				.filter((it) => it.name === fileName && it.hash !== pointer && !known.has(it.hash))
+				.sort(
+					(a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0) || String(a.hash).localeCompare(b.hash)
+				)
+		: [];
+	if (orphans.length) adoptSceneVersions(scene, orphans.map((it) => it.hash));
+	// re-read: adoption committed a new document, and `older` must reflect it
+	const after = get(projectManifest).scenes[scene] ?? entry;
+	const older = new Set(after.history.filter((h) => h !== pointer));
+	// an adoption that was REFUSED — a viewer (fork 3), or a joiner under the gate above —
+	// would leave its orphans unfolding on every sweep, so fold them by NAME regardless:
+	// one card per scene is a local truth even when the document write is not ours
+	for (const it of orphans) older.add(it.hash);
 	let moved = 0;
 	for (const item of [...get(explorerItems)])
 		if (older.has(item.hash) && setItemHidden(item.id, true)) moved++;
@@ -223,6 +274,19 @@ export async function foldSceneVersions() {
 function levelFileName(name) {
 	const base = String(name ?? '').trim() || 'Scene';
 	return /\.tpscene$/i.test(base) ? base : base + '.tpscene';
+}
+
+/**
+ * 21-I1 — the inverse: the scene NAME an item file name stands for. The Version history
+ * panel needs it for a scene the manifest has no entry for yet (a New scene…, a viewer's
+ * save): without it the panel derived its name only from `sceneOfHash` and rendered
+ * NOTHING at all, which is an empty pane where "Save version…" belongs.
+ * @param {string} fileName @returns {string}
+ */
+export function levelSceneName(fileName) {
+	return String(fileName ?? '')
+		.trim()
+		.replace(/\.tpscene$/i, '');
 }
 
 /**

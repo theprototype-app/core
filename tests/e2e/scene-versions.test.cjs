@@ -20,6 +20,12 @@
 //   the setting       keep-0 stops the travel-away auto-version and nothing else (§7),
 //                     and the prune obeys the count (§8)
 //   the round trip    a .tp carries hidden versions out and folds them back in (§9)
+//   21-I1, the bug   an item the history NEVER named folds by NAME and is ADOPTED, so
+//                     the bytes get a door and the pointer does not move (§10)
+//   21-I1 badges      Previous sits beside Current, and after a restore it is the
+//                     checkpoint the restore just took (§11)
+//   21-I1 gating      "Save version…" only on the scene you are IN, both directions (§12)
+//   21-I1 no history  a scene the manifest has no entry for still gets a panel (§13)
 //
 // SINGLE PEER for §1-§9 on purpose: every writer here is gated on being the session
 // writer (`sessionHost === null`), which a solo peer is. A second peer joins in §10,
@@ -80,6 +86,65 @@ const addBox = (peer) =>
 
 const saveScene = (peer, name) =>
 	peer.page.evaluate((n) => window.__stores.levels.saveSceneAsLevel(n), name);
+
+/** the scene we are IN (21-I1: what gates the save row) */
+const currentLevelName = (peer) =>
+	peer.page.evaluate(() => {
+		let v;
+		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		return v?.name ?? null;
+	});
+
+/**
+ * 21-I1 — craft the thing the reported bug is made of: a real .tpscene of a scene,
+ * stored in the library, that NOTHING ever published. That is a save from before the
+ * manifest existed, a viewer's save (publishSceneVersion refuses those) or any publish
+ * that returned false. `createdAt` is stamped explicitly because it is the ONLY ordering
+ * signal such an item carries, and the adoption order is what this suite asserts.
+ */
+const craftOrphan = (peer, sceneName, createdAt) =>
+	peer.page.evaluate(
+		async ({ n, at }) => {
+			const s = window.__stores;
+			const payload = s.sessions.emptySessionPayload(n);
+			const bytes = await s.sessions.exportSessionZip(payload, {
+				assets: false,
+				packs: false,
+				flow: true
+			});
+			const item = await s.explorer.addItemFromBytes(
+				bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+				n + '.tpscene',
+				null
+			);
+			s.explorer.explorerItems.update((list) =>
+				list.map((i) => (i.id === item.id ? { ...i, createdAt: at } : i))
+			);
+			return item.hash;
+		},
+		{ n: sceneName, at: createdAt }
+	);
+
+/** open the Version history panel for one card THROUGH THE REAL UI — right-click ▸
+ * Version history, which is the only route a user has to it */
+const openPanel = async (peer, fileName) => {
+	if (await peer.page.locator('[role="menu"]').first().isVisible().catch(() => false))
+		await peer.page.keyboard.press('Escape');
+	await peer.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await peer.page.waitForTimeout(400);
+	const card = peer.page.locator(`.explorer-card[title="${fileName}"]`).first();
+	await card.waitFor({ state: 'visible', timeout: 15000 });
+	await card.click({ button: 'right' });
+	await peer.page.waitForTimeout(350);
+	await peer.page
+		.locator('[role="menu"]')
+		.getByText('Version history', { exact: false })
+		.first()
+		.click();
+	await peer.page.waitForTimeout(500);
+};
+
+const countOf = (peer, sel) => peer.page.locator(sel).count();
 
 const menuRows = (peer) =>
 	peer.page.evaluate(() =>
@@ -545,7 +610,221 @@ h.run(async () => {
 	);
 
 	// =====================================================================
-	// 10. A PEER — a label is ordinary manifest data
+	// 10. THE NAME FOLD — 21-I1, THE REPORTED BUG.
+	//     §2 folds cards whose hashes the HISTORY names. This is the other
+	//     case, and it is the one users hit: an item the manifest NEVER
+	//     recorded stayed a visible card forever, so a long-lived profile grew
+	//     a shelf of twins while a clean one looked perfect. Folding it alone
+	//     would be worse than the bug — hidden bytes with no door — so it is
+	//     ADOPTED into the history first, and the POINTER may not move.
+	// =====================================================================
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	const depotPointer = (await saveScene(A, 'Depot'))?.hash;
+	h.check(!!depotPointer, 'premise: Depot saved once, so its history is exactly one hash');
+	// three files nothing ever published: two BACKDATED (the pre-manifest case) and one
+	// stamped AFTER the pointer (a viewer's save). The future one is the interesting one:
+	// it proves the rule is about ORDER, not about time.
+	const orphanOld = await craftOrphan(A, 'Depot', 1000000);
+	const orphanMid = await craftOrphan(A, 'Depot', 2000000);
+	const orphanNew = await craftOrphan(A, 'Depot', Date.now() + 10000000);
+	h.check(
+		new Set([depotPointer, orphanOld, orphanMid, orphanNew]).size === 4,
+		'premise: four distinct .tpscene files of one scene exist'
+	);
+	let depotShelf = await shelves(A, 'Depot.tpscene');
+	h.check(
+		depotShelf.visible.length === 4,
+		`premise: THE BUG STATE reproduced — four cards for one scene (${depotShelf.visible.length})`
+	);
+	h.check(
+		JSON.stringify(await historyOf(A, 'Depot')) === JSON.stringify([depotPointer]),
+		'premise: and the manifest has never heard of three of them — which is exactly why the' +
+			' hash-only fold could never touch them'
+	);
+	const foldedByName = await A.page.evaluate(() => window.__stores.levels.foldSceneVersions());
+	h.check(
+		foldedByName >= 3,
+		`the sweep folded the three orphans (${foldedByName} items moved shelf)`
+	);
+	const depotHist = await historyOf(A, 'Depot');
+	h.check(
+		JSON.stringify(depotHist) === JSON.stringify([orphanOld, orphanMid, orphanNew, depotPointer]),
+		`ADOPTED oldest-first by createdAt, every one of them BEFORE the pointer (${JSON.stringify(depotHist.map((x) => x.slice(0, 6)))})`
+	);
+	h.check(
+		depotHist[depotHist.length - 1] === depotPointer,
+		'THE POINTER DID NOT MOVE — including for the orphan minted AFTER it, because a' +
+			' migration may not change which version the project means'
+	);
+	depotShelf = await shelves(A, 'Depot.tpscene');
+	h.check(
+		depotShelf.visible.length === 1 && depotShelf.visible[0] === depotPointer,
+		`ONE card again, and it is the pointer (${depotShelf.visible.length} visible)`
+	);
+	h.check(
+		depotShelf.hidden.length === 3,
+		`the three orphans went to the hidden shelf, not to the bin (${depotShelf.hidden.length})`
+	);
+	h.check(
+		(await heldByHash(A, [orphanOld, orphanMid, orphanNew, depotPointer])).every(Boolean),
+		'and every one of the four still resolves by hash — folding moved records, never bytes'
+	);
+	// IDEMPOTENT: adoption writes the manifest, and a manifest write re-runs this sweep.
+	// A second pass must find nothing, or the two would feed each other forever.
+	const stampBefore = (await manifestOf(A)).changedAt;
+	await A.page.evaluate(() => window.__stores.levels.foldSceneVersions());
+	await A.page.waitForTimeout(400);
+	h.check(
+		(await manifestOf(A)).changedAt === stampBefore &&
+			JSON.stringify(await historyOf(A, 'Depot')) === JSON.stringify(depotHist),
+		'a second sweep writes NOTHING — the adoption terminates instead of re-appending forever'
+	);
+	// the whole point of adopting rather than merely hiding: the panel can offer them
+	await openPanel(A, 'Depot.tpscene');
+	shown = await panelRows(A);
+	h.check(
+		shown.length === 4 &&
+			shown.map((r) => r.hash).join() === [depotPointer, orphanNew, orphanMid, orphanOld].join(),
+		`the panel lists all four, newest first — the folded bytes now have a DOOR (${shown.length} rows)`
+	);
+	h.check(
+		shown.slice(1).every((r) => r.restore),
+		'and every adopted version can be restored, which is the only thing that makes hiding it honest'
+	);
+
+	// =====================================================================
+	// 11. THE `Previous` BADGE — history[length - 2]
+	// =====================================================================
+	h.check(
+		shown[1].badges.includes('Previous') &&
+			!shown[0].badges.includes('Previous') &&
+			!shown[2].badges.includes('Previous'),
+		`exactly ONE row carries Previous, and it is the one behind the pointer (${JSON.stringify(shown.map((r) => r.badges))})`
+	);
+	h.check(
+		shown[0].badges.includes('Current') && !shown[0].badges.includes('Previous'),
+		'the pointer is Current and never both'
+	);
+	// after a RESTORE the previous row is the checkpoint the restore just took — the row a
+	// user goes looking for, and until now indistinguishable from every other "Auto"
+	await addBox(A); // unsaved work, so there is something for the checkpoint to catch
+	const depotLenBefore = (await historyOf(A, 'Depot')).length;
+	await A.page.locator(`#version-history .vh-row[data-hash="${orphanOld}"] .vh-restore`).click();
+	await h.eventually(
+		() => historyOf(A, 'Depot'),
+		(hist) => hist.length === depotLenBefore + 2,
+		'the restore checkpointed the open scene and re-appended the old version'
+	);
+	const depotAfter = await historyOf(A, 'Depot');
+	await openPanel(A, 'Depot.tpscene');
+	shown = await panelRows(A);
+	h.check(
+		shown[0].hash === orphanOld && shown[0].badges.includes('Current'),
+		'the restored version is Current'
+	);
+	h.check(
+		shown[1].hash === depotAfter[depotAfter.length - 2] && shown[1].badges.includes('Previous'),
+		'and Previous is the CHECKPOINT the restore just took — the row the badge exists for'
+	);
+
+	// =====================================================================
+	// 12. "Save version…" ONLY FOR THE OPEN SCENE — both directions, real UI.
+	//     It versions the CURRENT scene, so on a card you have merely selected
+	//     it would file this scene's contents under that one's name.
+	// =====================================================================
+	h.check(
+		(await currentLevelName(A)) === 'Depot',
+		`premise: the restore left us IN Depot (${await currentLevelName(A)})`
+	);
+	h.check(
+		(await countOf(A, '#version-save')) === 1 && (await countOf(A, '#version-save-hint')) === 0,
+		'the save row is offered on the scene you are in'
+	);
+	await saveScene(A, 'Foyer'); // a SECOND scene — saving it is also how we leave Depot
+	h.check(
+		(await currentLevelName(A)) === 'Foyer',
+		`premise: we are now in Foyer, and Depot is merely a card (${await currentLevelName(A)})`
+	);
+	await openPanel(A, 'Depot.tpscene');
+	h.check(
+		(await countOf(A, '#version-save')) === 0,
+		'on a scene you have only SELECTED the button is gone — it would have saved Foyer under the name Depot'
+	);
+	h.check(
+		(((await A.page.locator('#version-save-hint').first().textContent()) ?? '')
+			.toLowerCase()
+			.includes('open this scene')),
+		'and it SAYS why, rather than leaving a gap where a button was'
+	);
+	h.check(
+		(await panelRows(A)).length > 1,
+		'the history itself is still fully readable there — only the WRITE is gated'
+	);
+	await openPanel(A, 'Foyer.tpscene');
+	h.check(
+		(await countOf(A, '#version-save')) === 1 && (await countOf(A, '#version-save-hint')) === 0,
+		'COUNTERFACTUAL: the same panel on the OPEN scene still offers it'
+	);
+
+	// =====================================================================
+	// 13. A SCENE WITH NO HISTORY still gets a panel. A New scene… publishes
+	//     nothing, so the manifest has no entry — which used to render the
+	//     whole component away, leaving no way to take a first version of it.
+	// =====================================================================
+	await A.page.evaluate(() => window.__stores.levels.newLevel('Draft'));
+	const draftHash = await A.page.evaluate(() => {
+		let items;
+		window.__stores.explorer.explorerItems.subscribe((v2) => (items = v2))();
+		return items.find((i) => i.name === 'Draft.tpscene')?.hash ?? null;
+	});
+	h.check(
+		!!draftHash && (await historyOf(A, 'Draft')).length === 0,
+		'premise: the draft exists as a file and the manifest has no entry for it at all'
+	);
+	await openPanel(A, 'Draft.tpscene');
+	h.check(
+		await A.page.locator('#version-history').isVisible(),
+		'the panel renders anyway — a .tpscene card is a scene whether or not the document knows it'
+	);
+	h.check(
+		(await countOf(A, '#version-empty')) === 1 && (await panelRows(A)).length === 0,
+		'with an honest empty state instead of a bare header'
+	);
+	h.check(
+		(await countOf(A, '#version-save')) === 0,
+		'and no save row, because the draft is not the scene we are in'
+	);
+	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Draft'), draftHash);
+	await h.eventually(() => currentLevelName(A), (n) => n === 'Draft', 'opened the draft');
+	await openPanel(A, 'Draft.tpscene');
+	h.check(
+		(await countOf(A, '#version-save')) === 1 && (await countOf(A, '#version-empty')) === 1,
+		'now it IS the open scene: "Save version…" over a history of nothing — the point of the gap'
+	);
+	await A.page.locator('#version-save').click();
+	await h.eventually(
+		() => historyOf(A, 'Draft'),
+		(hist) => hist.length === 2,
+		'the first version published — and the original file landed BESIDE it, not under it'
+	);
+	const draftHist = await historyOf(A, 'Draft');
+	h.check(
+		draftHist[0] === draftHash,
+		'the New-scene file is history[0]: adopted by NAME in the same breath as the save that' +
+			' would otherwise have made it a permanent twin'
+	);
+	h.check(
+		(await shelves(A, 'Draft.tpscene')).visible.length === 1,
+		`ONE card for the draft, though two .tpscene files of it exist (${(await shelves(A, 'Draft.tpscene')).visible.length})`
+	);
+	shown = await panelRows(A);
+	h.check(
+		shown.length === 2 && shown[0].badges.includes('Current') && shown[1].badges.includes('Previous'),
+		`two rows, Current over Previous (${JSON.stringify(shown.map((r) => r.badges))})`
+	);
+
+	// =====================================================================
+	// 14. A PEER — a label is ordinary manifest data
 	// =====================================================================
 	const B = await h.setupPage(browser, 'B');
 	await B.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
@@ -559,6 +838,49 @@ h.run(async () => {
 		(labels) => !!labels && Object.values(labels).includes('Client review'),
 		'the peer receives the version labels with the rest of the document — no new message type',
 		30000
+	);
+
+	// ---- ADOPTION IS WRITER-ONLY -----------------------------------------------------
+	// The fold is a local display truth and runs everywhere; ADOPTION writes the SHARED
+	// document, so a joiner must not file its own unrelated files into somebody else's
+	// project. B holds an `Arena.tpscene` of its OWN — same name, different bytes, a
+	// different project entirely — which is precisely the case a name-match cannot tell
+	// apart from a real older version. B must fold it to one card and adopt NOTHING.
+	const historyBefore = await B.page.evaluate(() => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((v2) => (m = v2))();
+		return [...(m.scenes?.Arena?.history ?? [])];
+	});
+	const strayHash = await B.page.evaluate(async () => {
+		const bytes = new TextEncoder().encode('B’s own unrelated Arena, from another project');
+		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'Arena.tpscene', null);
+		await window.__stores.levels.foldSceneVersions();
+		await new Promise((r) => setTimeout(r, 400));
+		return item.hash;
+	});
+	const historyAfter = await B.page.evaluate(() => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((v2) => (m = v2))();
+		return [...(m.scenes?.Arena?.history ?? [])];
+	});
+	h.check(
+		!historyAfter.includes(strayHash) &&
+			JSON.stringify(historyAfter) === JSON.stringify(historyBefore),
+		`a JOINER adopts nothing — its stray Arena stayed out of the shared history (${historyBefore.length} -> ${historyAfter.length})`
+	);
+	// …and it does not FOLD it either. B never pulled the host's Arena bytes, so its own
+	// file is the only Arena copy it holds — a name-fold against somebody else's document
+	// would hide it and leave B with NO Arena card at all (measured, before the gate
+	// covered both halves). Local data may not vanish because a remote document reuses a
+	// name, so the whole by-name sweep is writer-only and B's file stays exactly where it is.
+	h.check(
+		(await shelves(B, 'Arena.tpscene')).visible.includes(strayHash),
+		"…and its own file is untouched — a joiner does not fold by name against a document it did not write"
+	);
+	await h.eventually(
+		() => historyOf(A, 'Arena'),
+		(hist) => !hist.includes(strayHash),
+		"…and the HOST's history never heard of it (nothing was broadcast)"
 	);
 
 	for (const p of [A, B]) {

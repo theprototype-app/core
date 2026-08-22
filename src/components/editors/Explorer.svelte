@@ -28,7 +28,7 @@
 		inspectedFile,
 		updateItemBytes
 	} from '$lib/explorer';
-	import { openTextEditor, openImagePreview, openModelPreview } from '$lib/fileWindows';
+	import { openTextEditor, openImagePreview, openModelPreview, previewSuspended } from '$lib/fileWindows';
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
 	// 21-G9: `currentLevel` is WHERE WE ARE — the header breadcrumb's scene half and
 	// the accent on the open scene's own card.
@@ -56,8 +56,22 @@
 		rememberThumb,
 		openPackLoading
 	} from '$lib/packs';
-	import { importFile } from '$lib/fileHandler.svelte';
-	import { prefabs, loadPrefabs } from '$lib/prefabs';
+	import { importFile, exportObjectsAsGltf } from '$lib/fileHandler.svelte';
+	// 21-H2: the Explorer is the prefab HOME (the Library modal is gone), so it owns
+	// their whole CRUD — add, export both ways, update, rename, properties, delete.
+	import {
+		prefabs,
+		loadPrefabs,
+		prefabById,
+		prefabObject,
+		prefabFacts,
+		instantiatePrefab,
+		removePrefab,
+		renamePrefab,
+		updatePrefab,
+		exportPrefab
+	} from '$lib/prefabs';
+	import { selectedObject, selectedObjects } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
@@ -583,11 +597,18 @@
 		}
 		return 'Library' + (parts.length ? ' / ' + parts.join(' / ') : '');
 	});
+	// 21-H2: a prefab's facts. `$prefabs` is passed as an UNUSED first argument for the
+	// same reason `staleScene` above takes the manifest — a helper reading a store
+	// through get() registers no dependency, and the comma-operator workaround does not
+	// typecheck (the documented rule). So the pane re-reads after a rename or an update.
+	const factsFor = (_list: any, id: string) => prefabFacts(id);
+	const selPrefab = $derived(selItem?.kind === 'prefab' ? factsFor($prefabs, selItem.prefabId) : null);
 	let itemDetails = $state('');
 	$effect(() => {
 		const item = selItem;
 		itemDetails = '';
 		if (!item) return;
+		if (item.kind === 'prefab') return; // 21-H2: no stored blob — its facts come from prefabFacts
 		itemBlob(item.id).then(async (blob: any) => {
 			if (!blob || selItem?.id !== item.id) return;
 			try {
@@ -684,6 +705,12 @@
 	function startRenameItem(item: any) {
 		editing = { mode: 'rename-item', itemId: item.id, value: item.name };
 	}
+	// 21-H2: a PREFAB renames through the SAME inline editor — never window.prompt(),
+	// which is what the deleted Library modal used (fork 14's rule, one surface over).
+	// Its own mode because the id addresses the prefab library, not `explorerItems`.
+	function startRenamePrefab(item: any) {
+		editing = { mode: 'rename-prefab', prefabId: item.prefabId, value: item.name };
+	}
 	// 21-G1: a PACK row renames too — same inline editor, and it writes the pack's
 	// display TITLE only (its `name` is the identity every cache and view key uses;
 	// packs.js carries the reasoning)
@@ -706,6 +733,7 @@
 		editing = null;
 		if (edit.mode === 'create') createFolder(edit.value, edit.parentId);
 		else if (edit.mode === 'rename-item') renameItem(edit.itemId, edit.value);
+		else if (edit.mode === 'rename-prefab') renamePrefab(edit.prefabId, edit.value);
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
 		// 21-G9 (union): land the scene where the user is looking — Scenes when the
 		// active folder is a pseudo view or a stale id
@@ -851,6 +879,110 @@
 		a.remove();
 	}
 
+	// ---- 21-H2: prefab CRUD ----------------------------------------------------------
+	// A prefab card used to have NO menu at all (`itemMenu` early-returned on the kind,
+	// "derived views have no CRUD") while a second surface — the Library modal, which
+	// nothing could open — carried export/delete/rename for the same prefabs. The kind is
+	// derived, but a prefab is not: it is a real stored asset, and this is its home.
+
+	/** The current selection as uuids — the SET, with the sticky primary folded in
+	 *  (the `selectedRoots` rule in fileHandler, which is what a prefab save reads). */
+	function selectionUuids(): string[] {
+		const uuids = new Set<string>($selectedObjects ?? []);
+		const primary: any = $selectedObject;
+		if (primary?.uuid) uuids.add(primary.uuid);
+		return [...uuids];
+	}
+
+	/** A filename stem safe on every OS, matching the old Library download */
+	const fileStem = (name: string) => String(name || 'prefab').replace(/[^\w-]+/g, '_');
+
+	/** Export ▸ prefab (.json): the same bytes `importPrefab` reads back */
+	function downloadPrefabJson(prefab: any) {
+		const blob = new Blob([exportPrefab(prefab)], { type: 'application/json' });
+		const a = document.createElement('a');
+		document.body.appendChild(a);
+		a.style.display = 'none';
+		const url = URL.createObjectURL(blob);
+		a.href = url;
+		a.download = fileStem(prefab.name) + '.prefab.json';
+		a.click();
+		URL.revokeObjectURL(url);
+		a.remove();
+	}
+
+	/** Export ▸ GLTF: the parsed tree through fileHandler's own exporter (park + origin
+	 *  bake + animation bake), never a second copy of that ritual here. */
+	function downloadPrefabGltf(prefab: any) {
+		const object = prefabObject(prefab.id);
+		if (!object) return showToast('This prefab could not be loaded');
+		exportObjectsAsGltf(object, fileStem(prefab.name) + '.gltf');
+	}
+
+	/** Re-save an existing prefab from what is selected. Confirmed, because it replaces
+	 *  bytes that may be the only copy — and refused with the REASON when there is no
+	 *  selection, which is otherwise indistinguishable from a dead menu entry. */
+	function updatePrefabFromSelection(prefab: any) {
+		const uuids = selectionUuids();
+		if (!uuids.length)
+			return showToast('Select the object (or objects) to save into this prefab first');
+		showToast(
+			`Replace "${prefab.name}" with ${uuids.length === 1 ? 'the selected object' : uuids.length + ' selected objects'}?`,
+			[
+				{ label: 'Update', action: () => void updatePrefab(prefab.id, uuids) },
+				{ label: 'Cancel', action: () => {} }
+			]
+		);
+	}
+
+	function confirmDeletePrefab(prefab: any) {
+		showToast(`Delete the prefab "${prefab.name}"?`, [
+			{ label: 'Delete', action: () => void removePrefab(prefab.id) },
+			{ label: 'Cancel', action: () => {} }
+		]);
+	}
+
+	function prefabMenu(e: MouseEvent, item: any) {
+		const prefab = prefabById(item.prefabId);
+		if (!prefab) return;
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{
+					label: 'Add to scene',
+					icon: 'boxes',
+					tooltip: 'Place a copy of this prefab in the scene (every peer gets it)',
+					action: () => instantiatePrefab(prefab)
+				},
+				{
+					label: 'Export',
+					icon: 'arrow-down-to-line', // Icon.svelte's MAP falls back to a plain Box for an unknown name
+					children: [
+						{
+							label: 'GLTF',
+							tooltip: 'A .gltf model file other tools can open',
+							action: () => downloadPrefabGltf(prefab)
+						},
+						{
+							label: 'prefab (.json)',
+							tooltip: 'This prefab as a file — import it back on any machine',
+							action: () => downloadPrefabJson(prefab)
+						}
+					]
+				},
+				{
+					label: 'Update from selection',
+					tooltip: 'Re-save this prefab from the objects selected in the scene',
+					action: () => updatePrefabFromSelection(prefab)
+				},
+				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
+				{ label: 'Rename', action: () => startRenamePrefab(item) },
+				{ label: 'Delete', danger: true, action: () => confirmDeletePrefab(prefab) }
+			]
+		};
+	}
+
 	function itemMenu(e: MouseEvent, item: any) {
 		e.preventDefault();
 		e.stopPropagation();
@@ -863,7 +995,12 @@
 			if (pack) packRowMenu(e, pack);
 			return;
 		}
-		if (item.kind === 'prefab' || item.sceneEntry) return; // derived views have no CRUD
+		// 21-H2: a PREFAB has its own menu — it is a stored asset, not a derived view.
+		if (item.kind === 'prefab') {
+			prefabMenu(e, item);
+			return;
+		}
+		if (item.sceneEntry) return; // the Scene manifest IS a derived view — no CRUD
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -1160,7 +1297,13 @@
 	// 197b: single-click = select + show properties in the ⓘ panel; double-click
 	// opens/previews (openItem). Right-click Properties routes here too.
 	function inspectItem(item: any) {
-		if (item.kind === 'prefab') return;
+		if (item.kind === 'prefab') {
+			// 21-H2: a prefab inspects like any other card — the highlight reads off
+			// `inspectedFile`, so it takes the card's own ('prefab:<id>') id
+			inspectedFile.set(item.id);
+			selected = { kind: 'item', item };
+			return;
+		}
 		if (item.kind === 'pack-folder') {
 			openFolder('pack:' + item.packName); // P4: single-click a pack card opens it
 			return;
@@ -1212,6 +1355,17 @@
 	async function openItem(item: any) {
 		if (item.kind === 'pack-folder') {
 			openFolder('pack:' + item.packName);
+			return;
+		}
+		if (item.kind === 'prefab') {
+			// 21-H2: full model parity — double-click opens the POP-OUT preview. The
+			// inline one in Properties stands down while it is open (previewSuspended).
+			openModelPreview({
+				title: item.name,
+				prefabId: item.prefabId,
+				name: item.name,
+				onClose: () => gridEl?.focus()
+			});
 			return;
 		}
 		if (item.packEntry && item.glbUrl) {
@@ -1647,7 +1801,7 @@
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
 								</span>
 							{/if}
-							{#if editing?.mode === 'rename-item' && editing.itemId === item.id}
+							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId)}
 								{@render cardEdit()}
 							{:else}
 								<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
@@ -1699,6 +1853,37 @@
 						{/if}
 						<span class="min-w-0 flex-1 wrap-break-word font-semibold">{selItem.name}</span>
 					</div>
+					{#if selItem.kind === 'prefab'}
+						<!-- 21-H2: a prefab's own facts. Size/Folder/Hash say nothing about it (it
+						     is not a file in a folder), so it gets the numbers that do: what it
+						     holds, and when it was last saved. -->
+						<div id="prefab-facts" class="flex flex-col gap-1">
+							<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Kind</span><span>prefab</span></div>
+							<div class="flex gap-2">
+								<span class="w-14 shrink-0 text-gray-500">Objects</span>
+								<span id="prefab-objects">{selPrefab?.objects ?? 0}</span>
+							</div>
+							<div class="flex gap-2">
+								<span class="w-14 shrink-0 text-gray-500">Mesh</span>
+								<span id="prefab-tris"
+									>{(selPrefab?.tris ?? 0).toLocaleString()} tris · {(selPrefab?.verts ?? 0).toLocaleString()} verts
+									· {selPrefab?.meshes ?? 0} mesh{selPrefab?.meshes === 1 ? '' : 'es'}</span
+								>
+							</div>
+							{#if selPrefab?.createdAt}
+								<div class="flex gap-2">
+									<span class="w-14 shrink-0 text-gray-500">Saved</span>
+									<span id="prefab-saved">{new Date(selPrefab.createdAt).toLocaleString()}</span>
+								</div>
+							{/if}
+							{#if selPrefab?.updatedAt}
+								<div class="flex gap-2">
+									<span class="w-14 shrink-0 text-gray-500">Updated</span>
+									<span id="prefab-updated">{new Date(selPrefab.updatedAt).toLocaleString()}</span>
+								</div>
+							{/if}
+						</div>
+					{:else}
 					<div class="flex flex-col gap-1">
 						<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Kind</span><span>{selItem.kind}</span></div>
 						<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Size</span><span>{fmtSize(selItem.size)}</span></div>
@@ -1723,11 +1908,26 @@
 							<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Details</span><span>{itemDetails}</span></div>
 						{/if}
 					</div>
-					<!-- N4: rotatable inline 3D preview + poly stats (behind the global toggle) -->
-					{#if selItem.kind === 'object' && $enable3dPreview && !selItem.packEntry}
-						<div class="mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
+					{/if}
+					<!-- N4: rotatable inline 3D preview + poly stats (behind the global toggle).
+					     21-H2: prefabs render here too (the `prefabId` source), and the whole
+					     block stands down while the POP-OUT window is open — two WebGL contexts
+					     on the same tree is the reported double-click hang. `previewSuspended` is
+					     RUNTIME state; `enable3dPreview` is the user's stored preference and is
+					     never written here (fileWindows.js carries the reasoning). -->
+					{#if (selItem.kind === 'object' || selItem.kind === 'prefab') && $enable3dPreview && !selItem.packEntry && $previewSuspended}
+						<div id="preview-suspended" class="mt-1 rounded-sm border border-dashed border-gray-600 p-2 text-center text-[11px] italic text-gray-400">
+							Showing in its own preview window.
+						</div>
+					{:else if (selItem.kind === 'object' || selItem.kind === 'prefab') && $enable3dPreview && !selItem.packEntry}
+						<div id="inline-preview" class="mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
 							{#key selItem.id}
-								<ModelPreview itemId={selItem.id} name={selItem.name} onStats={(s) => (inlineStats = s)} />
+								<ModelPreview
+									itemId={selItem.kind === 'prefab' ? '' : selItem.id}
+									prefabId={selItem.kind === 'prefab' ? selItem.prefabId : ''}
+									name={selItem.name}
+									onStats={(s) => (inlineStats = s)}
+								/>
 							{/key}
 						</div>
 						{#if inlineStats}
@@ -1740,8 +1940,23 @@
 							</div>
 						{/if}
 					{/if}
-					<div class="mt-1 flex gap-2">
-						{#if selItem.packEntry}
+					<div class="mt-1 flex flex-wrap gap-2">
+						{#if selItem.kind === 'prefab'}
+							<!-- 21-H2: the two things you actually do with a prefab, one click away;
+							     the rest live on the card's right-click menu -->
+							<button
+								id="prefab-add"
+								class="ui-button-quiet"
+								onclick={() => {
+									const p = prefabById(selItem.prefabId);
+									if (p) instantiatePrefab(p);
+								}}>Add to scene</button
+							>
+							<button id="prefab-rename" class="ui-button-quiet" onclick={() => startRenamePrefab(selItem)}>Rename</button>
+							{#if $enable3dPreview}
+								<button id="prefab-preview" class="ui-button-quiet" onclick={() => openItem(selItem)}>3D preview</button>
+							{/if}
+						{:else if selItem.packEntry}
 							<button class="ui-button-quiet" onclick={() => openItem(selItem)}>Place in scene</button>
 						{:else}
 							<button class="ui-button-quiet" onclick={() => startRenameItem(selItem)}>Rename</button>

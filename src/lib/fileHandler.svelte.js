@@ -86,13 +86,20 @@ function selectedRoots() {
 }
 
 /** Run the GLTFExporter over a root (or array of roots) and download it.
- * @param {string} format @param {any} input */
-function exportGltf(format, input) {
+ * @param {string} format @param {any} input
+ * @param {{filename?: string, onlyVisible?: boolean, shaderNote?: boolean}=} opts
+ *   21-H2 (all three default to the pre-existing behaviour, so every old call site is
+ *   byte-identical): `filename` names the download, `onlyVisible` reaches GLTFExporter,
+ *   `shaderNote:false` suppresses the scene-wide shader warning for a tree that is not
+ *   in the scene. */
+function exportGltf(format, input, opts = {}) {
 	// SH4: glTF has no way to express a node-graph shader, so an exported object
 	// carries its BASE material (parkAnimatedAtBase parks ours) and the graph is left
 	// behind. Say so rather than letting the file look complete — the same honesty as
 	// the animation bake skipping look channels.
-	const shaderDriven = shaderDrivenCount();
+	// `shaderDrivenCount` counts the SCENE's graphs, which says nothing about a detached
+	// tree, so the prefab path opts out rather than warning about somebody else's object.
+	const shaderDriven = opts.shaderNote === false ? 0 : shaderDrivenCount();
 	// saves store animation BASE poses, not the current swing (88)
 	const restore = parkAnimatedAtBase();
 	// 17-D: glTF nodes carry only TRS, so a per-object ORIGIN has to become real
@@ -113,6 +120,10 @@ function exportGltf(format, input) {
 	// with the model. Baked from the LIVE roots (the origin clones have the pivot
 	// folded into their geometry already, and the bake reads the same origin).
 	const animations = roots.flatMap((root) => bakeAnimationsForExport(root));
+	/** @type {any} */
+	const parseOptions = {};
+	if (animations.length) parseOptions.animations = animations;
+	if (opts.onlyVisible === false) parseOptions.onlyVisible = false;
 	const exporter = new GLTFExporter();
 	exporter.parse(
 		payload,
@@ -125,7 +136,7 @@ function exportGltf(format, input) {
 			const url = window.URL.createObjectURL(blob);
 			a.href = url;
 			const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
-			a.download = `ThePrototype-${date}UTC.${String(format).toLowerCase()}`;
+			a.download = opts.filename || `ThePrototype-${date}UTC.${String(format).toLowerCase()}`;
 			a.click();
 			window.URL.revokeObjectURL(url);
 			// glTF cannot express a node-graph shader: the file carries each object's
@@ -141,8 +152,30 @@ function exportGltf(format, input) {
 			restore();
 			console.log(error);
 		},
-		animations.length ? { animations } : undefined
+		// THE TRAP: GLTFExporter takes its options as parse()'s FOURTH argument (the
+		// constructor takes none and silently discards them), and `onlyVisible` DEFAULTS
+		// TO TRUE — so anything hidden is missing from the file entirely.
+		// Stays `undefined` when nothing asked for an option, so the old call sites are
+		// byte-identical.
+		Object.keys(parseOptions).length ? parseOptions : undefined
 	);
+}
+
+/**
+ * 21-H2: export an arbitrary object TREE as GLTF — a prefab parsed by `prefabObject`,
+ * which is never in the scene. The seam exists so the prefab path reuses this module's
+ * whole ritual (parkAnimatedAtBase, the `userData.origin` bake on CLONES, the animation
+ * bake) instead of growing a second copy of it that would drift.
+ * `onlyVisible: false` because a prefab captured with a hidden child still contains it —
+ * dropping it silently is the documented GLTFExporter trap.
+ * @param {any} roots one root or an array of them @param {string=} filename
+ * @returns {boolean} false when there was nothing to export
+ */
+export function exportObjectsAsGltf(roots, filename) {
+	const list = (Array.isArray(roots) ? roots : [roots]).filter(Boolean);
+	if (!list.length) return false;
+	exportGltf('gltf', list, { filename, onlyVisible: false, shaderNote: false });
+	return true;
 }
 
 export function save(format) {

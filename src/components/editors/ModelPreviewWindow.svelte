@@ -17,7 +17,8 @@
 		const t = $modelPreviewTarget
 		if (t && t !== openedFor) {
 			openedFor = t
-			stats = null
+			// 21-H2: the stats reset moved INTO ModelPreview (one writer — see the note
+			// there). Clearing it from here raced a synchronous source and blanked the box.
 			setTimeout(() => winEl?.focus(), 0) // focus so Esc closes the preview
 		}
 	})
@@ -52,9 +53,12 @@
 			<button class="ui-button-quiet" title="Close" onclick={close}>✕</button>
 		</div>
 		<div class="relative min-h-0 flex-1 bg-[#0d1117]">
-			{#key $modelPreviewTarget.itemId}
+			<!-- 21-H2: keyed on BOTH sources — an item id and a prefab id are different
+			     things, so re-keying on one alone leaves the canvas showing the other -->
+			{#key ($modelPreviewTarget.itemId ?? '') + '|' + ($modelPreviewTarget.prefabId ?? '')}
 				<ModelPreview
-					itemId={$modelPreviewTarget.itemId}
+					itemId={$modelPreviewTarget.itemId ?? ''}
+					prefabId={$modelPreviewTarget.prefabId ?? ''}
 					name={$modelPreviewTarget.name}
 					onStats={(s) => (stats = s)}
 				/>

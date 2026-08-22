@@ -2206,7 +2206,7 @@ loadable play content. Everything a user does must be visible to connected peers
 - **Backticks inside a double-quoted bash string are COMMAND SUBSTITUTION** and
   silently eat the identifiers (mangled a commit message and CLAUDE.md prose
   three times in one session). Same cure as the PowerShell/emoji rule: write a
-  scratch `.cjs` and run it with node for any text containing backticks.
+  scratch `.cjs` and run it with node for any text containing backticks. COMMIT MESSAGES GO THROUGH A FILE (git commit -F), always - inline multi-line messages ate backticked words twice in one day.
 - **flowbite `Button disabled` styling can go stale until the component
   remounts** — reported three times as a blocked cursor with the field filled,
   cured by closing and reopening the modal, and NEVER reproducible headlessly.
@@ -3037,7 +3037,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   MAINTAINING.md).
 - Status (2026-08-21, latest): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
   PER-PLAYER PROGRESS: G1-G6 EXECUTED same-day off the 21-F merge (release/next
-  @fdfbe39); PRs open, NOT merged without the user's word.** The user's four fork
+  @fdfbe39); MERGED 2026-08-22: PRs #164 -> #165 -> #166 to release/next @f126b85 (both lane merges landed CLEAN - G1 was already both branches' base - and the App.svelte hook counts held 164/164). ROUND 2 (G7-G10, DCC-standard projects: hidden version history + panel, the TP|Scene|GLTF menu with open-replaces vs import-furnishes, project/scene identity, inline naming) and ROUND 3 (the collectible NODE + manager toolbox) are PLANNED with locked forks 10-20 in the same plan doc, executing in parallel windows.** The user's four fork
   answers locked in the plan (per-player mode + peer-owned vars; recipes into the
   node editor's Game category with the object Game submenu REMOVED; the folder is
   `Scenes` with kind-based discovery; file sharing stays manifest-scoped). Lanes:

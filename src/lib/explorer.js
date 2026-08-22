@@ -129,6 +129,20 @@ export function moveFolder(id, parentId) {
 	return true;
 }
 
+/**
+ * 21-G8: wipe the whole user library — every item's blob, every folder, the index.
+ * The destructive half of "Open project" (fork 12: open REPLACES); the caller owns
+ * the warning dialog. Prefabs and packs live in their own stores and are untouched.
+ */
+export async function clearLibrary() {
+	const doomed = get(explorerItems);
+	explorerItems.set([]);
+	explorerFolders.set([]);
+	activeFolder.set(null);
+	for (const item of doomed) await idbDelete(BLOB_KEY + item.id);
+	await persistIndex();
+}
+
 /** @param {string} itemId @param {string | null} folderId */
 export function moveItem(itemId, folderId) {
 	explorerItems.update((list) =>

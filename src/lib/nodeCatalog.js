@@ -57,37 +57,7 @@ export const nodeCatalog = [
 				inputs: ['seed', 'reroll'],
 				params: [{ key: 'integer', kind: 'toggle' }]
 			},
-			{ type: 'time', label: 'Time', defaults: { mode: 'sin', rate: 1 } },
-			// 21-E5: THE GAMEPAD. `gamepadbutton` is the Key Press model verbatim — the edges
-			// replicate as trigger stamps and the held level is derived per peer — so a pad
-			// press drives a game exactly the way a key does, with no new message type.
-			// A DEFAULT MAPPING is already on (left stick moves, right stick looks, d-pad + A
-			// drive the HUD ring), so these nodes are for a game that wants its OWN bindings;
-			// E6's controller nodes are what override the default per game.
-			{
-				type: 'gamepadbutton',
-				label: 'Gamepad Button',
-				defaults: { button: 'GamepadA', pulse: 0.3, edge: 'down' },
-				params: [
-					{ key: 'button', kind: 'select', options: GAMEPAD_BUTTONS },
-					{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }
-				]
-			},
-			// a stick is LOCAL: every peer reads its OWN pad, so this node evaluates to a
-			// different number on each of them BY DESIGN (never streamed — golden rule 8).
-			// `deadzone` here is the GAME's threshold on top of the device's dead centre in
-			// Settings ▸ Input, hence the 0 default: one deadzone unless you ask for two.
-			{
-				type: 'gamepadaxis',
-				label: 'Gamepad Axis',
-				defaults: { axis: 'lx', deadzone: 0, invert: false, scale: 1 },
-				params: [
-					{ key: 'axis', kind: 'select', options: GAMEPAD_AXES },
-					{ key: 'deadzone', kind: 'range', min: 0, max: 0.9, step: 0.05 },
-					{ key: 'scale', kind: 'range', min: -4, max: 4, step: 0.1 },
-					{ key: 'invert', kind: 'toggle' }
-				]
-			}
+			{ type: 'time', label: 'Time', defaults: { mode: 'sin', rate: 1 } }
 		]
 	},
 	{
@@ -591,6 +561,11 @@ export const nodeCatalog = [
 				// reads as armed again, so a collectible counts once PER ROUND
 				params: [{ key: 'perRound', kind: 'toggle', label: 'reset each round' }]
 			},
+			// 21-E5-era placement fix (2026-08-22): a Counter is not a trigger, it COUNTS
+			// them — it is the only node in the old Triggers group with inputs of its own
+			// (pulse/reset) and it outputs a number, so it belongs with the other stateful
+			// logic (Latch/Delay/Sequence/Once) rather than among the event SOURCES.
+			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } },
 			// 134: loops, timers, sensors + object actions (all deterministic)
 			{ type: 'loop', label: 'Loop', defaults: { from: 0, to: 1, rate: 1, mode: 'wrap' } },
 			{ type: 'timer', label: 'Timer', defaults: { delay: 1, a: 0 } },
@@ -644,7 +619,38 @@ export const nodeCatalog = [
 				defaults: { pulse: 0.3, seconds: 0.5 },
 				params: [{ key: 'seconds', kind: 'range', min: 0.1, max: 5, step: 0.1 }]
 			},
-			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } }
+			// 21-E5 THE GAMEPAD, moved here from Input (2026-08-22): both are things arriving
+			// from OUTSIDE the graph — the player’s thumb — which is what this group means, and
+			// what Input does NOT: everything left there is a value the AUTHOR dials or the app
+			// computes. A pad button is the Key Press model verbatim (edges replicate as trigger
+			// stamps, the held level is derived per peer), so a pad press drives a game exactly
+			// the way a key does with no new message type. A DEFAULT MAPPING is already on (left
+			// stick moves, right stick looks, d-pad + A drive the HUD ring), so these nodes are
+			// for a game that wants its OWN bindings; E6's controller nodes override the default.
+			{
+				type: 'gamepadbutton',
+				label: 'Gamepad Button',
+				defaults: { button: 'GamepadA', pulse: 0.3, edge: 'down' },
+				params: [
+					{ key: 'button', kind: 'select', options: GAMEPAD_BUTTONS },
+					{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }
+				]
+			},
+			// a stick is LOCAL: every peer reads its OWN pad, so this node evaluates to a
+			// different number on each of them BY DESIGN (never streamed — golden rule 8).
+			// `deadzone` here is the GAME's threshold on top of the device's dead centre in
+			// Settings ▸ Input, hence the 0 default: one deadzone unless you ask for two.
+			{
+				type: 'gamepadaxis',
+				label: 'Gamepad Axis',
+				defaults: { axis: 'lx', deadzone: 0, invert: false, scale: 1 },
+				params: [
+					{ key: 'axis', kind: 'select', options: GAMEPAD_AXES },
+					{ key: 'deadzone', kind: 'range', min: 0, max: 0.9, step: 0.05 },
+					{ key: 'scale', kind: 'range', min: -4, max: 4, step: 0.1 },
+					{ key: 'invert', kind: 'toggle' }
+				]
+			}
 		]
 	},
 	{

@@ -499,10 +499,25 @@ h.run(async () => {
 		(await shelves(A, 'Tower.tpscene')).visible.length === 0,
 		'premise: the library is empty before the import'
 	);
-	const imported = await A.page.evaluate(
-		(bytes) => window.__stores.projectFile.importProject(new Uint8Array(bytes).buffer),
-		exported.bytes
-	);
+	// 21-G8 renames the whole-project restore to openProject (fork 12: it replaces and
+	// WARNS) — take whichever this build has, answering the warning when it exists, so
+	// this suite is green on the G7 branch alone AND after G8 lands under it
+	const importPending = A.page.evaluate((bytes) => {
+		const pf = window.__stores.projectFile;
+		const buffer = new Uint8Array(bytes).buffer;
+		return pf.openProject ? pf.openProject(buffer) : pf.importProject(buffer);
+	}, exported.bytes);
+	await A.page.evaluate(async () => {
+		if (!window.__stores.projectFile.openProject) return; // pre-G8: no warning to answer
+		const cd = window.__stores.confirmDialog;
+		for (let i = 0; i < 100; i++) {
+			let d;
+			cd.confirmDialog.subscribe((v) => (d = v))();
+			if (d?.title?.startsWith('Open project')) return cd.resolveConfirm(true);
+			await new Promise((r) => setTimeout(r, 100));
+		}
+	});
+	const imported = await importPending;
 	h.check(!!imported, 'the project imported');
 	await h.eventually(
 		() => shelves(A, 'Tower.tpscene'),

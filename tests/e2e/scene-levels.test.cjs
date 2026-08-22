@@ -71,7 +71,6 @@ h.run(async () => {
 	// =====================================================================
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(600);
-	A.page.once('dialog', (d) => d.accept('UI Level'));
 	await A.page.locator('#explorer-list [role="region"]').first()
 		.click({ button: 'right', position: { x: 200, y: 140 } });
 	await A.page.waitForTimeout(300);
@@ -85,6 +84,12 @@ h.run(async () => {
 		`the grid menu offers both scene entries (${JSON.stringify(rows)})`
 	);
 	await A.page.getByText('Save scene…', { exact: false }).click();
+	// 21-G10 (fork 14): the name is typed INLINE in the grid now — the browser
+	// prompt this used to accept is gone (explorer-inline-input owns that contract)
+	await A.page.waitForTimeout(350);
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('UI Level');
+	await A.page.keyboard.press('Enter');
 	await h.eventually(
 		() => levelItemsOf(A),
 		(items) => items.some((i) => i.name.includes('UI Level')),

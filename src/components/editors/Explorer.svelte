@@ -7,8 +7,9 @@
 	// + items), drag files in to import. Shares the bottom dock with the Flow
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
+	import { untrack } from 'svelte';
 	import { explorerClose, mobileUndockAllowed } from '../../stores/appStore.js';
-	import { showToast, enable3dPreview } from '../../stores/appStore.js';
+	import { showToast, enable3dPreview, stackOnDrop } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
 		explorerItems,
@@ -26,7 +27,8 @@
 		isValidName,
 		itemBlob,
 		inspectedFile,
-		updateItemBytes
+		updateItemBytes,
+		parseObjectFile
 	} from '$lib/explorer';
 	import { openTextEditor, openImagePreview, openModelPreview, previewSuspended } from '$lib/fileWindows';
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
@@ -644,6 +646,106 @@
 			: []),
 		...gridItems.map((it: any) => ({ kind: 'item', item: it }))
 	]);
+
+	// ---- 21-H3: MULTI-SELECT ---------------------------------------------------------
+	// `selected` (the single anchor) is UNCHANGED: it still drives the Properties pane,
+	// and it is the Shift-range anchor. `selectedIds` is the SET beside it, keyed by the
+	// card's own id — which already exists and is already unique for every kind the grid
+	// can draw (library item / 'prefab:<id>' / 'pack:<pack>:<name>' / 'packfolder:<name>'
+	// / a folder's uuid), so nothing had to be minted for this.
+	//
+	// THE RULE: a Set mutated in place gives a `$derived` (and this component's own
+	// template reads) no signal at all — everything compares with `===`. Every write
+	// therefore REPLACES it, which is what `setSel` is for.
+	let selectedIds = $state(new Set<string>());
+	/** the card id of a grid ENTRY — the one place the two kinds are folded together */
+	const entryId = (entry: any): string =>
+		entry.kind === 'folder' ? entry.folder.id : entry.item.id;
+	function setSel(ids: Iterable<string>) {
+		selectedIds = new Set(ids);
+	}
+	/** read through a helper so the template's `selectedIds` argument is the dependency */
+	const inSel = (ids: Set<string>, id: string) => ids.has(id);
+	/** the anchor as a card id (the Shift range's fixed end) */
+	function anchorId(): string | null {
+		if (!selected) return null;
+		return (selected.kind === 'folder' ? selected.folder?.id : selected.item?.id) ?? null;
+	}
+	/**
+	 * The ids between the anchor and `toId` in the CURRENT VISUAL ORDER. That order is
+	 * read off `gridEntries` — the ONE array the grid is built from — rather than
+	 * reasoned about across the two `{#each}` blocks that render it, which is how a
+	 * range silently starts skipping the folder row at the top.
+	 */
+	function rangeIds(fromId: string | null, toId: string): string[] {
+		const order = gridEntries.map(entryId);
+		const b = order.indexOf(toId);
+		if (b < 0) return [toId];
+		const a = fromId ? order.indexOf(fromId) : -1;
+		if (a < 0) return [toId];
+		return a <= b ? order.slice(a, b + 1) : order.slice(b, a + 1);
+	}
+	/**
+	 * The selection half of a MODIFIED card click. Ctrl/Cmd toggles and MOVES the anchor
+	 * (so the next Shift range starts where you last clicked); Shift ranges and leaves
+	 * the anchor where it is, because a second Shift-click has to be able to re-range
+	 * from the same card rather than from its own previous end.
+	 */
+	function modifierSelect(e: MouseEvent, id: string, moveAnchor: () => void) {
+		if (e.shiftKey) {
+			const range = rangeIds(anchorId(), id);
+			setSel(e.ctrlKey || e.metaKey ? [...selectedIds, ...range] : range);
+			return;
+		}
+		const next = new Set(selectedIds);
+		next.has(id) ? next.delete(id) : next.add(id);
+		selectedIds = next;
+		moveAnchor();
+	}
+	/** the selected grid entries, in visual order (stale ids simply do not match) */
+	function selectedEntries(): any[] {
+		return gridEntries.filter((entry: any) => selectedIds.has(entryId(entry)));
+	}
+	/**
+	 * A view change wipes the set. Ctrl+A in one folder followed by Delete in another
+	 * would otherwise act on cards nobody can see — and a search narrows the grid the
+	 * same way a folder does, so both are the trigger.
+	 */
+	$effect(() => {
+		void $activeFolder;
+		void search;
+		untrack(() => {
+			if (selectedIds.size) selectedIds = new Set();
+		});
+	});
+
+	/**
+	 * THREE states have to stay apart on one card: the INSPECTED card (whose facts the
+	 * Properties pane is showing), the OPEN SCENE's emerald ring (21-G9, drawn as a ring
+	 * so it composes with either), and now a multi-selected member. The anchor keeps the
+	 * primary treatment it has always had — a single selection is therefore byte-identical
+	 * to before this phase — and the rest of the set takes the sky tint.
+	 */
+	function cardClass(ids: Set<string>, inspected: string | null, sel: any, id: string): string {
+		const picked = ids.has(id);
+		const isAnchor =
+			inspected === id || (sel?.kind === 'item' ? sel.item?.id : sel?.folder?.id) === id;
+		// The anchor keeps the primary treatment it has always had — but only while it is
+		// PART of the set, or while nothing is selected at all (the pre-21-H3 "this is what
+		// Properties is showing" state, which the tree's own menu still reaches). A card
+		// Ctrl-clicked OUT of a set must stop looking picked even though the anchor stays
+		// on it, or the highlight and the set disagree about what Delete would take.
+		const tint =
+			isAnchor && (ids.size === 0 || picked)
+				? 'border-primary-600 bg-primary-600/10'
+				: picked
+					? 'border-sky-400 bg-sky-400/20'
+					: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60';
+		// `explorer-selected` marks MEMBERSHIP independently of which of the two tints the
+		// card ended up with, so nothing has to infer the set from a colour
+		return picked ? 'explorer-selected ' + tint : tint;
+	}
+
 	function gridIndex() {
 		if (!selected) return -1;
 		return gridEntries.findIndex((e: any) =>
@@ -659,6 +761,10 @@
 		let i = gridIndex();
 		i = i < 0 ? (delta > 0 ? 0 : gridEntries.length - 1) : Math.min(Math.max(i + delta, 0), gridEntries.length - 1);
 		const e: any = gridEntries[i];
+		// 21-H3: an arrow step is a fresh single selection, so the SET follows the
+		// anchor — leaving it behind would make Delete act on the card you walked away
+		// from while the highlight sits somewhere else
+		setSel([entryId(e)]);
 		if (e.kind === 'folder') selectFolder(e.folder);
 		else inspectItem(e.item);
 	}
@@ -674,7 +780,32 @@
 	function gridKeydown(e: KeyboardEvent) {
 		const tag = (e.target as HTMLElement)?.tagName;
 		if (tag === 'INPUT' || tag === 'TEXTAREA') return; // don't hijack typing
-		if (e.key === 'ArrowRight' || e.key === 'ArrowDown') (e.preventDefault(), moveSel(1));
+		// 21-H3: the selection keys. `stopPropagation` as well as `preventDefault`,
+		// because shortcuts.js listens on WINDOW — svelte delegates this handler to the
+		// app root, which is BELOW window, so stopping here is what keeps Ctrl+A from
+		// ALSO selecting every object in the scene behind the panel.
+		const mod = e.ctrlKey || e.metaKey;
+		if (mod && e.code === 'KeyA') {
+			e.preventDefault();
+			e.stopPropagation();
+			setSel(gridEntries.map(entryId));
+		} else if (mod && e.code === 'KeyI') {
+			e.preventDefault();
+			e.stopPropagation();
+			setSel(gridEntries.map(entryId).filter((id: string) => !selectedIds.has(id)));
+		} else if (e.key === 'Escape') {
+			// only when there IS a selection: Escape belongs to a dozen local handlers in
+			// this app, and swallowing it while nothing is selected steals it from them
+			if (!selectedIds.size) return;
+			e.preventDefault();
+			e.stopPropagation();
+			setSel([]);
+		} else if (e.key === 'Delete') {
+			if (!selectedIds.size) return;
+			e.preventDefault();
+			e.stopPropagation();
+			deleteSelection();
+		} else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') (e.preventDefault(), moveSel(1));
 		else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') (e.preventDefault(), moveSel(-1));
 		else if (e.key === 'Enter') {
 			e.preventDefault();
@@ -848,6 +979,12 @@
 
 	function folderMenu(e: MouseEvent, folder: any, inTree = true) {
 		e.preventDefault();
+		// 21-H3: the grid's folder cards join the selection like any other card (the TREE
+		// row is a different surface — it is a navigator, and it always means one folder)
+		if (!inTree) {
+			if (!selectedIds.has(folder.id)) setSel([folder.id]);
+			if (selectedIds.size > 1) return batchMenu(e);
+		}
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -877,6 +1014,209 @@
 		a.click();
 		URL.revokeObjectURL(url);
 		a.remove();
+	}
+
+	/** the anchor + object-URL download, factored out of `downloadItem` for the zip */
+	function saveBlob(blob: Blob, filename: string) {
+		const a = document.createElement('a');
+		document.body.appendChild(a);
+		a.style.display = 'none';
+		const url = URL.createObjectURL(blob);
+		a.href = url;
+		a.download = filename;
+		a.click();
+		URL.revokeObjectURL(url);
+		a.remove();
+	}
+
+	// ---- 21-H3: BATCH OPERATIONS -----------------------------------------------------
+	// Everything here answers the same two questions: which of the selected cards can
+	// this actually act on, and what happens to the rest. A pack card and a Scene-manifest
+	// entry are VIEWS of something else — a pack item is a remote URL with no stored blob,
+	// a Scene entry is derived from the live scene — so they are skipped and SAID to be
+	// skipped, never quietly dropped from a count the user is reading.
+
+	const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+	/** a real, deletable library thing: a stored item, a prefab, or a folder */
+	const isOwnedItem = (item: any) =>
+		!!item && !item.packEntry && !item.sceneEntry && item.kind !== 'pack-folder';
+
+	/** what the selection breaks down into, once and for every batch entry point */
+	function selectionParts() {
+		const entries = selectedEntries();
+		const folders = entries.filter((e: any) => e.kind === 'folder').map((e: any) => e.folder);
+		const items = entries
+			.filter((e: any) => e.kind === 'item' && isOwnedItem(e.item))
+			.map((e: any) => e.item);
+		return { entries, folders, items, skipped: entries.length - folders.length - items.length };
+	}
+
+	/**
+	 * ONE confirm naming the count. A folder brings its subtree with it, so its existing
+	 * `folderCounts` numbers go into the same sentence — otherwise "delete 2 folders"
+	 * hides however many files that is.
+	 */
+	function deleteSelection() {
+		const { folders, items, skipped } = selectionParts();
+		if (!folders.length && !items.length)
+			return showToast(
+				skipped
+					? `Nothing to delete — ${plural(skipped, 'card')} here ${skipped === 1 ? 'is a view' : 'are views'} of something else (pack or scene contents)`
+					: 'Nothing selected'
+			);
+		let subFolders = 0;
+		let subItems = 0;
+		for (const folder of folders) {
+			const counts = folderCounts(folder.id);
+			subFolders += counts.folders - 1; // folderCounts includes the folder itself
+			subItems += counts.items;
+		}
+		const parts: string[] = [];
+		if (items.length) parts.push(plural(items.length, 'item'));
+		if (folders.length) parts.push(plural(folders.length, 'folder'));
+		const cascade =
+			subFolders || subItems
+				? ` — with ${plural(subFolders, 'subfolder')} and ${plural(subItems, 'item')} inside`
+				: '';
+		const note = skipped ? ` (${plural(skipped, 'pack/scene card')} will be skipped)` : '';
+		showToast(`Delete ${parts.join(' and ')}${cascade}?${note}`, [
+			{ label: 'Delete', action: () => void runDeleteSelection(folders, items) },
+			{ label: 'Cancel', action: () => {} }
+		]);
+	}
+	async function runDeleteSelection(folders: any[], items: any[]) {
+		for (const item of items) {
+			if (item.kind === 'prefab') await removePrefab(item.prefabId);
+			else await deleteItem(item.id);
+		}
+		for (const folder of folders) await deleteFolder(folder.id);
+		setSel([]);
+		deselect();
+	}
+
+	/** a name no other entry in the zip has yet ("a.png" -> "a (2).png") */
+	function uniqueZipName(taken: Record<string, any>, name: string) {
+		if (!taken[name]) return name;
+		const dot = name.lastIndexOf('.');
+		const stem = dot > 0 ? name.slice(0, dot) : name;
+		const ext = dot > 0 ? name.slice(dot) : '';
+		let n = 2;
+		while (taken[`${stem} (${n})${ext}`]) n++;
+		return `${stem} (${n})${ext}`;
+	}
+
+	/** the name a batch download takes — the folder you are looking at */
+	function currentFolderName() {
+		const id = activeLibraryFolder();
+		return (id && $explorerFolders.find((f: any) => f.id === id)?.name) || 'Library';
+	}
+
+	/**
+	 * ONE item = today's direct download, byte for byte. N = ONE .zip, because N
+	 * simultaneous anchor clicks are a download prompt storm in every browser and an
+	 * outright block in some. fflate is already a dependency (the .tpscene / .tp
+	 * precedent), and the menu LABEL says .zip so nobody wonders where their files went.
+	 */
+	async function downloadSelection() {
+		const files = selectionParts().items.filter((item: any) => item.kind !== 'prefab' && item.id);
+		if (!files.length) return showToast('Nothing in this selection has stored bytes to download');
+		if (files.length === 1) return downloadItem(files[0]);
+		const { zipSync } = await import('fflate');
+		/** @type {Record<string, Uint8Array>} */
+		const entries: Record<string, Uint8Array> = {};
+		let missing = 0;
+		for (const item of files) {
+			const blob = await itemBlob(item.id);
+			if (!blob) {
+				missing++;
+				continue;
+			}
+			entries[uniqueZipName(entries, item.name || 'file')] = new Uint8Array(
+				await blob.arrayBuffer()
+			);
+		}
+		const count = Object.keys(entries).length;
+		if (!count) return showToast('None of those files still have stored bytes');
+		saveBlob(
+			new Blob([zipSync(entries, { level: 6 })], { type: 'application/zip' }),
+			fileStem(currentFolderName()) + '.zip'
+		);
+		showToast(
+			`Downloaded ${plural(count, 'file')} as a .zip` + (missing ? ` (${missing} had no bytes)` : '')
+		);
+	}
+
+	/**
+	 * N prefabs / 3D objects as ONE file. `exportGltf` has always taken an ARRAY of roots
+	 * (that is how the viewport's multi-selection export works), so this reuses 21-H2's
+	 * `exportObjectsAsGltf` seam — with its park, its origin bake and its animation bake —
+	 * rather than growing a second exporter here.
+	 */
+	async function exportSelectionGltf() {
+		const roots: any[] = [];
+		let failed = 0;
+		for (const item of selectionParts().items) {
+			if (item.kind === 'prefab') {
+				const object = prefabObject(item.prefabId);
+				object ? roots.push(object) : failed++;
+			} else if (item.kind === 'object') {
+				const blob = await itemBlob(item.id);
+				if (!blob) {
+					failed++;
+					continue;
+				}
+				try {
+					roots.push(
+						await parseObjectFile(await blob.arrayBuffer(), item.name.split('.').pop()?.toLowerCase() ?? 'glb')
+					);
+				} catch {
+					failed++;
+				}
+			}
+		}
+		if (!roots.length) return showToast('Select prefabs or 3D objects to export as GLTF');
+		exportObjectsAsGltf(roots, fileStem(currentFolderName()) + '.gltf');
+		showToast(`Exported ${plural(roots.length, 'object')} as one GLTF` + (failed ? ` (${failed} could not be read)` : ''));
+	}
+
+	/** how many of the selected cards each batch entry can actually act on */
+	function batchCounts() {
+		const { items, folders, skipped } = selectionParts();
+		return {
+			files: items.filter((item: any) => item.kind !== 'prefab' && item.id).length,
+			models: items.filter((item: any) => item.kind === 'prefab' || item.kind === 'object').length,
+			deletable: items.length + folders.length,
+			skipped
+		};
+	}
+
+	/** the menu a right-click gets while several cards are selected */
+	function batchMenu(e: MouseEvent) {
+		const n = selectedIds.size;
+		const counts = batchCounts();
+		const items: any[] = [];
+		if (counts.files)
+			items.push({
+				label: counts.files === 1 ? 'Download' : `Download ${plural(counts.files, 'file')} as .zip`,
+				icon: 'arrow-down-to-line',
+				tooltip: 'Save them to your computer — several files come down as one .zip',
+				action: () => void downloadSelection()
+			});
+		if (counts.models)
+			items.push({
+				label: `Export ${plural(counts.models, 'object')} as GLTF`,
+				tooltip: 'One .gltf file containing every selected prefab and 3D object',
+				action: () => void exportSelectionGltf()
+			});
+		if (counts.deletable)
+			items.push({
+				label: `Delete ${plural(counts.deletable, 'item')}`,
+				danger: true,
+				action: deleteSelection
+			});
+		items.push({ label: `Clear selection (${n})`, action: () => setSel([]) });
+		menu = { x: e.clientX, y: e.clientY, items };
 	}
 
 	// ---- 21-H2: prefab CRUD ----------------------------------------------------------
@@ -986,6 +1326,12 @@
 	function itemMenu(e: MouseEvent, item: any) {
 		e.preventDefault();
 		e.stopPropagation();
+		// 21-H3: right-clicking a card OUTSIDE the selection replaces the selection with
+		// it — every file manager does this, and the alternative is a batch menu acting
+		// on cards nowhere near the one you pointed at. Inside it, the whole set gets the
+		// BATCH menu instead of the single-card one.
+		if (!selectedIds.has(item.id)) setSel([item.id]);
+		if (selectedIds.size > 1) return batchMenu(e);
 		// 21-G1: a PACK CARD in the Packs grid is not an item at all — it is the same
 		// registry row the tree draws, so it gets the same menu. Without this it fell
 		// through to Properties/Rename/Delete, every one of which addressed an item id
@@ -1196,11 +1542,27 @@
 			url: item.glbUrl ?? null
 		};
 	}
+	/**
+	 * 21-H3: the payload for a drag STARTING on `item`. A single drag keeps EXACTLY its
+	 * old top-level shape and gains nothing, so `dropExplorerItem`, the Inspector's
+	 * texture target and every other consumer of this payload are byte-compatible; the
+	 * `items` array appears only when the dragged card is part of a multi-selection.
+	 * A card OUTSIDE the selection drags alone and leaves the selection untouched — it
+	 * is a drag, not a click, so it has no business changing what is picked.
+	 */
+	function dragPayloadFor(item: any) {
+		const base = itemDragPayload(item);
+		if (!selectedIds.has(item.id) || selectedIds.size < 2) return base;
+		const carried = selectedEntries()
+			.filter((entry: any) => entry.kind === 'item')
+			.map((entry: any) => itemDragPayload(entry.item));
+		return carried.length > 1 ? { ...base, items: carried } : base;
+	}
 	function onItemDragStart(e: DragEvent, item: any) {
 		// 96 consumes these payloads (viewport placement / texture drop). N6: a
 		// default-pack item carries a `url` so the drop can fetch+place it without
 		// first storing it in the Explorer library.
-		e.dataTransfer?.setData('application/x-explorer-item', JSON.stringify(itemDragPayload(item)));
+		e.dataTransfer?.setData('application/x-explorer-item', JSON.stringify(dragPayloadFor(item)));
 	}
 
 	// --- MOBILE drag-to-place (HTML5 DnD is desktop-only). On touch a LONG-PRESS on a
@@ -1222,8 +1584,12 @@
 		tStartY = e.clientY;
 		const target = e.currentTarget as HTMLElement;
 		const pid = e.pointerId;
-		const payload = itemDragPayload(item);
-		const label = item.name;
+		// 21-H3: the touch path carries the SET too, on the same rule as the HTML5 drag —
+		// press a card that is part of the selection and the whole set comes; press one
+		// outside it and only that card does
+		const payload: any = dragPayloadFor(item);
+		const carried = payload.items?.length ?? 1;
+		const label = carried > 1 ? `${item.name} + ${carried - 1} more` : item.name;
 		clearTimeout(tPressTimer);
 		tPressTimer = window.setTimeout(() => {
 			tDrag = { payload, label };
@@ -1266,12 +1632,29 @@
 		tDragging = false;
 		tDrag = null;
 	}
-	function onCardClick(item: any) {
+	function onCardClick(e: MouseEvent, item: any) {
 		if (tSuppressClick) {
 			tSuppressClick = false;
 			return;
 		}
+		// 21-H3: a MODIFIED click is a selection gesture and never an open — a pack card
+		// would otherwise navigate away from the set you are still building
+		if (e.shiftKey || e.ctrlKey || e.metaKey) {
+			modifierSelect(e, item.id, () => (selected = { kind: 'item', item }));
+			return;
+		}
+		setSel([item.id]);
 		inspectItem(item);
+	}
+	/** the folder card's twin of `onCardClick` (single-click-open stays a plain click) */
+	function onFolderCardClick(e: MouseEvent, folder: any) {
+		if (e.shiftKey || e.ctrlKey || e.metaKey) {
+			modifierSelect(e, folder.id, () => selectFolder(folder));
+			return;
+		}
+		setSel([folder.id]);
+		if (singleClickOpen) openFolder(folder.id);
+		else selectFolder(folder);
 	}
 
 	// N6: place a default-pack item into the scene (double-click / Enter) at origin
@@ -1338,9 +1721,92 @@
 		search = '';
 		activeFolder.set(id);
 	}
+	// ---- 21-H3: the MARQUEE ----------------------------------------------------------
+	// A rubber band over empty grid space. Three hazards, all of them already paid for
+	// elsewhere in this codebase, are called out at the line that answers them.
+	//
+	// MOUSE ONLY, and that is a decision rather than an oversight: on touch a drag
+	// across the background must keep SCROLLING the grid, and touch already has its own
+	// pick-up gesture (the long press below), so a marquee there would take both away.
+	let mq = $state<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+	let mqBase = new Set<string>();
+	let mqMoved = false;
+	let mqSuppressClick = false;
+	const MQ_SLOP = 4;
+
+	/** the band in the grid's own coordinates — CLIENT coords are what the gesture
+	 *  tracks (the list scrolls under it), converted only for drawing */
+	const mqRect = $derived.by(() => {
+		if (!mq || !gridEl) return null;
+		const box = gridEl.getBoundingClientRect();
+		return {
+			left: Math.min(mq.x0, mq.x1) - box.left + gridEl.scrollLeft,
+			top: Math.min(mq.y0, mq.y1) - box.top + gridEl.scrollTop,
+			width: Math.abs(mq.x1 - mq.x0),
+			height: Math.abs(mq.y1 - mq.y0)
+		};
+	});
+
+	/** every card the band touches, hit-tested where the cards actually are */
+	function cardsInBand(band: { x0: number; y0: number; x1: number; y1: number }): string[] {
+		const left = Math.min(band.x0, band.x1);
+		const right = Math.max(band.x0, band.x1);
+		const top = Math.min(band.y0, band.y1);
+		const bottom = Math.max(band.y0, band.y1);
+		const hit: string[] = [];
+		for (const el of gridEl?.querySelectorAll('[data-card-id]') ?? []) {
+			const box = (el as HTMLElement).getBoundingClientRect();
+			if (box.right >= left && box.left <= right && box.bottom >= top && box.top <= bottom)
+				hit.push((el as HTMLElement).dataset.cardId ?? '');
+		}
+		return hit.filter(Boolean);
+	}
+
+	function onGridPointerDown(e: PointerEvent) {
+		if (e.pointerType !== 'mouse' || e.button !== 0) return;
+		const target = e.target as HTMLElement;
+		if (target?.closest('.explorer-card, .explorer-folder-card, input, button, textarea')) return;
+		// HAZARD 1: without this, a sweep across the card LABELS starts a native text
+		// drag — after which Chromium delivers dragstart/drag/dragend and NO pointermove
+		// or pointerup at all, so the gesture hangs with its box on screen and its window
+		// listeners attached (the HUD artboard bug, verbatim). `select-none` on the grid
+		// is the other half of that cure.
+		e.preventDefault();
+		gridEl?.focus(); // preventDefault also suppresses the implicit focus
+		mqBase = e.ctrlKey || e.metaKey ? new Set(selectedIds) : new Set();
+		mqMoved = false;
+		mq = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
+		// HAZARD 2: on WINDOW for the duration, so a release outside the grid — or
+		// outside the panel entirely — still ends the gesture.
+		window.addEventListener('pointermove', onMarqueeMove);
+		window.addEventListener('pointerup', onMarqueeUp);
+		window.addEventListener('pointercancel', onMarqueeUp);
+	}
+	function onMarqueeMove(e: PointerEvent) {
+		if (!mq) return;
+		const band = { ...mq, x1: e.clientX, y1: e.clientY };
+		mq = band;
+		if (Math.abs(band.x1 - band.x0) > MQ_SLOP || Math.abs(band.y1 - band.y0) > MQ_SLOP)
+			mqMoved = true;
+		// a plain drag REPLACES the selection, Ctrl+drag ADDS to what was already there
+		if (mqMoved) setSel([...mqBase, ...cardsInBand(band)]);
+	}
+	function onMarqueeUp() {
+		window.removeEventListener('pointermove', onMarqueeMove);
+		window.removeEventListener('pointerup', onMarqueeUp);
+		window.removeEventListener('pointercancel', onMarqueeUp);
+		// HAZARD 3: `gridBackgroundClick` deselects, and a click follows every drag that
+		// began on the background — so a marquee that TRAVELLED would undo itself the
+		// instant it ended (the file's own `tSuppressClick` precedent, one gesture over).
+		if (mqMoved) mqSuppressClick = true;
+		mq = null;
+		mqMoved = false;
+	}
+
 	// 197b: single-click empty grid space clears the selection + closes the ⓘ panel
 	function deselect() {
 		selected = null;
+		setSel([]);
 		inspectedFile.set(null);
 		// keep the panel if the user pinned it (opened via the ⓘ tab) — just clear
 		// the selection; close it only if it auto-opened from a pick (197 note)
@@ -1350,6 +1816,11 @@
 	function gridBackgroundClick(e: MouseEvent) {
 		gridEl?.focus(); // focus the region so keyboard nav works after any grid click
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
+		// 21-H3 (hazard 3): the click that ENDS a marquee must not clear what it picked
+		if (mqSuppressClick) {
+			mqSuppressClick = false;
+			return;
+		}
 		deselect();
 	}
 	async function openItem(item: any) {
@@ -1434,8 +1905,10 @@
 
 <!-- 170: inline rename input sized for a thumbnail card (folders + items) -->
 {#snippet cardEdit()}
+	<!-- `select-text`: the grid is `select-none` (the marquee's text-drag cure), which
+	     would otherwise reach into the one input that lives inside it -->
 	<input
-		class="ui-input w-full py-0 text-center text-[10px] {isValidName(editing.value) ? '' : 'border-red-500'}"
+		class="ui-input w-full select-text py-0 text-center text-[10px] {isValidName(editing.value) ? '' : 'border-red-500'}"
 		value={editing.value}
 		use:focusSelect
 		oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
@@ -1652,13 +2125,16 @@
 		{#snippet main()}
 		<!-- item grid (+ subfolder cards, 106.7); click empty space to deselect (197b) -->
 		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex a11y_no_static_element_interactions -->
+		<!-- 21-H3: `select-none` is half the cure for the native text drag (see
+		     onGridPointerDown); the inline name inputs opt back in with `select-text`. -->
 		<div
 			bind:this={gridEl}
-			class="relative h-full min-w-0 overflow-y-auto p-1 outline-hidden"
+			class="relative h-full min-w-0 select-none overflow-y-auto p-1 outline-hidden"
 			style="scrollbar-gutter: stable"
 			tabindex="-1"
 			oncontextmenu={gridMenu}
 			onclick={gridBackgroundClick}
+			onpointerdown={onGridPointerDown}
 			onkeydown={gridKeydown}
 			role="region"
 		>
@@ -1715,11 +2191,10 @@
 					{#if !search && $activeFolder !== 'prefabs'}
 						{#each childFolders as folder (folder.id)}
 							<div
+								data-card-id={folder.id}
 								class="explorer-folder-card flex cursor-pointer flex-col items-center gap-1 rounded border p-1.5 {dropFolder === folder.id
 									? 'border-primary-500 bg-primary-500/10'
-									: selected?.kind === 'folder' && selected.folder?.id === folder.id
-										? 'border-primary-600 bg-primary-600/10'
-										: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'}"
+									: cardClass(selectedIds, null, selected, folder.id)}"
 								role="button"
 								tabindex="0"
 								draggable="true"
@@ -1729,7 +2204,7 @@
 								ondragleave={() => (dropFolder = null)}
 								ondrop={(e) => dropInto(e, folder.id)}
 								oncontextmenu={(e) => folderMenu(e, folder, false)}
-								onclick={() => (singleClickOpen ? openFolder(folder.id) : selectFolder(folder))}
+								onclick={(e) => onFolderCardClick(e, folder)}
 								ondblclick={() => openFolder(folder.id)}
 								onkeydown={(e) => e.key === 'Enter' && openFolder(folder.id)}
 							>
@@ -1746,10 +2221,13 @@
 					{/if}
 					{#each gridItems as item (item.id)}
 						<div
-							class="explorer-card group relative flex cursor-grab flex-col items-center gap-1 rounded border p-1.5 {$inspectedFile === item.id
-								? 'border-primary-600 bg-primary-600/10'
-								: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'} {openSceneHash &&
-							item.hash === openSceneHash
+							data-card-id={item.id}
+							class="explorer-card group relative flex cursor-grab flex-col items-center gap-1 rounded border p-1.5 {cardClass(
+								selectedIds,
+								$inspectedFile,
+								selected,
+								item.id
+							)} {openSceneHash && item.hash === openSceneHash
 								? 'explorer-open-scene ring-1 ring-emerald-400'
 								: ''}"
 							draggable="true"
@@ -1761,7 +2239,7 @@
 							onpointermove={onCardPointerMove}
 							onpointerup={onCardPointerUp}
 							oncontextmenu={(e) => itemMenu(e, item)}
-							onclick={() => onCardClick(item)}
+							onclick={(e) => onCardClick(e, item)}
 							ondblclick={() => openItem(item)}
 						>
 							{#if openSceneHash && item.hash === openSceneHash}
@@ -1811,6 +2289,15 @@
 						</div>
 					{/each}
 				</div>
+			{/if}
+			{#if mqRect}
+				<!-- 21-H3: the band. An absolutely-positioned child of the (already
+				     `relative`) grid, so it scrolls with the cards it is picking. -->
+				<div
+					id="explorer-marquee"
+					class="pointer-events-none absolute z-20 rounded-xs border border-sky-400 bg-sky-400/15"
+					style="left: {mqRect.left}px; top: {mqRect.top}px; width: {mqRect.width}px; height: {mqRect.height}px"
+				></div>
 			{/if}
 			{#if dropActive}
 				<div class="pointer-events-none absolute inset-1 rounded-lg border-2 border-dashed border-primary-500 bg-primary-500/10"></div>
@@ -2022,6 +2509,19 @@
 						onchange={(e) => enable3dPreview.set(e.currentTarget.checked)}
 					/>
 					3D model preview
+				</label>
+				<!-- 21-H3: what a MULTI-selection does when it lands in the viewport -->
+				<label
+					class="flex items-center gap-2"
+					title="Drop several selected cards on the same spot instead of spreading them out"
+				>
+					<input
+						id="explorer-stack-on-drop"
+						type="checkbox"
+						checked={$stackOnDrop}
+						onchange={(e) => stackOnDrop.set(e.currentTarget.checked)}
+					/>
+					Stack multiple drops on one spot
 				</label>
 				<label class="flex items-center gap-2" title="Hide the bundled packs, showing only your imported ones">
 					<input

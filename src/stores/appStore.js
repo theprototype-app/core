@@ -328,6 +328,18 @@ enable3dPreview.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('enable3dPreview', String(on));
 });
 
+// 21-H3: dropping a MULTI-selection into the viewport. OFF = the N objects SPREAD in
+// a small square grid at the drop point, which is the default because a drop you can
+// see is the one you meant; ON = every one lands on the same spot, for a deliberate
+// stack. A LOCAL pref like every other Explorer setting — `explorerDrop` reads it and
+// nothing about it goes on the wire (each placement replicates through its own path).
+export const stackOnDrop = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('explorerStackOnDrop') === 'true'
+);
+stackOnDrop.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('explorerStackOnDrop', String(on));
+});
+
 // Shift+A quick-add (the cursor-anchored Add popover). Opt-in, persisted; OFF by
 // default — Shift is a camera-strafe modifier in fly mode, so the shortcut only
 // exists for users who ask for it in Settings.

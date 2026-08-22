@@ -73,13 +73,18 @@ const openOnPage = (peer, b64) =>
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 		return await window.__stores.projectFile.openProject(bytes.buffer);
 	}, b64);
-const importFolderOnPage = (peer, b64) =>
-	peer.page.evaluate(async (b64) => {
-		const bin = atob(b64);
-		const bytes = new Uint8Array(bin.length);
-		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		return await window.__stores.projectFile.importProjectAsFolder(bytes.buffer);
-	}, b64);
+// 21-I: the import takes the FILE's name and the folder the command was started from,
+// so the page-side call carries both the way the Explorer does.
+const importFolderOnPage = (peer, b64, opts = {}) =>
+	peer.page.evaluate(
+		async ({ b64, opts }) => {
+			const bin = atob(b64);
+			const bytes = new Uint8Array(bin.length);
+			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+			return await window.__stores.projectFile.importProjectAsFolder(bytes.buffer, opts);
+		},
+		{ b64, opts }
+	);
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -257,12 +262,19 @@ h.run(async () => {
 	await makeBox(C);
 	await C.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('MyOwn'));
 	const mBefore = await manifestOf(C);
-	const importCounts = await importFolderOnPage(C, exported.b64);
+	// 21-I (user): the folder is named after the FILE, minus its extension — you picked
+	// `Dungeon v3.tp` off a disk, so `Dungeon v3` is what you look for afterwards, and two
+	// exports of one project would otherwise both land under the same name.
+	const importCounts = await importFolderOnPage(C, exported.b64, { fileName: 'Dungeon v3.tp' });
 	h.check(!!importCounts && importCounts.items === 3, `import restored 3 items (${JSON.stringify(importCounts)})`);
 	const cFolders = await foldersOf(C);
-	// the export had no project name (G9 owns the editor), so the folder takes the default
-	const projFolder = cFolders.find((f) => f.name === 'Imported project' && f.parentId === null);
-	h.check(!!projFolder, 'the .tp merged in as ONE root folder named after the project');
+	const projFolder = cFolders.find((f) => f.name === 'Dungeon v3' && f.parentId === null);
+	h.check(
+		!!projFolder,
+		`the .tp merged in as ONE folder named after the FILE, extension stripped (${JSON.stringify(
+			cFolders.map((f) => f.name)
+		)})`
+	);
 	const cLib = await libraryOf(C);
 	const insideIds = new Set(
 		cFolders.filter((f) => f.id === projFolder?.id || f.parentId === projFolder?.id || cFolders.find((p) => p.id === f.parentId)?.parentId === projFolder?.id).map((f) => f.id)
@@ -283,10 +295,32 @@ h.run(async () => {
 	// hash-dedupe: a second import adds no duplicate ITEMS (a second, empty folder is
 	// the honest residue of "merge what I do not already have")
 	const itemCount = cLib.length;
-	await importFolderOnPage(C, exported.b64);
+	await importFolderOnPage(C, exported.b64, { fileName: 'Dungeon v3.tp' });
 	h.check(
 		(await libraryOf(C)).length === itemCount,
 		're-importing the same .tp adds no duplicate items (hash-dedupe inside)'
+	);
+
+	// 21-I (user): IT LANDS WHERE THE COMMAND WAS STARTED — inside the folder you are
+	// browsing, not always at the root. A pseudo location (`prefabs`, `packs`, `scene…`)
+	// or a stale id is not a place a file can go, so those still mean the root.
+	const inbox = await C.page.evaluate(
+		() => window.__stores.explorer.createFolder('Inbox', null)?.id ?? null
+	);
+	h.check(!!inbox, 'premise: a real folder to start the command from');
+	await importFolderOnPage(C, exported.b64, { fileName: 'Nested.tp', parentId: inbox });
+	const nested = (await foldersOf(C)).find((f) => f.name === 'Nested');
+	h.check(
+		!!nested && nested.parentId === inbox,
+		`the import landed INSIDE the folder it was started from (parent ${
+			nested?.parentId === inbox ? 'Inbox' : String(nested?.parentId)
+		})`
+	);
+	await importFolderOnPage(C, exported.b64, { fileName: 'Pseudo.tp', parentId: 'prefabs' });
+	const pseudo = (await foldersOf(C)).find((f) => f.name === 'Pseudo');
+	h.check(
+		!!pseudo && pseudo.parentId === null,
+		'…and a pseudo location falls back to the library root rather than orphaning the import'
 	);
 
 	// =====================================================================

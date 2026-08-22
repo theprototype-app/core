@@ -1602,10 +1602,16 @@
 		if (rest.length) importFiles(rest, folder === 'prefabs' ? null : folder);
 	}
 
-	/** 21-G8: route a .tp file to the merge-as-folder import (never OPEN from a drop) */
+	/** 21-G8: route a .tp file to the merge-as-folder import (never OPEN from a drop).
+	 *  21-I (user): it lands WHERE THE COMMAND WAS STARTED, in a folder named after the
+	 *  FILE. Both facts are read HERE — "where I am" belongs to this component, and the
+	 *  filename only exists on the File the caller holds. */
 	async function importTpAsFolder(file: File) {
 		const { importProjectAsFolder } = await import('$lib/projectFile');
-		await importProjectAsFolder(await file.arrayBuffer());
+		await importProjectAsFolder(await file.arrayBuffer(), {
+			fileName: file.name,
+			parentId: activeLibraryFolder()
+		});
 	}
 	async function onImportTpFile(e: Event) {
 		const input = e.currentTarget as HTMLInputElement; // capture BEFORE any await

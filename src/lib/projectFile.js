@@ -627,17 +627,33 @@ export async function openProject(buffer) {
  * import needs no code here — it is an ordinary library item and the Explorer's drop
  * already lands it in the active folder.)
  * @param {ArrayBuffer} buffer
+ * @param {{fileName?: string, parentId?: string|null}} [opts] 21-I: `fileName` NAMES the
+ *   folder (minus its extension) and `parentId` is where the command was started — see
+ *   the two comments in the body for why each is the caller's fact to supply.
  * @returns {Promise<{scenes: number, assets: number, items: number}|null>}
  */
-export async function importProjectAsFolder(buffer) {
+export async function importProjectAsFolder(buffer, opts = {}) {
 	const read = await readProjectFile(buffer);
 	if (!read) return null;
 	const { entries, doc } = read;
 	if (!(await confirmProjectFormat(doc))) return null;
 	await loadExplorer();
-	const name = String(doc.name ?? '').trim() || 'Imported project';
+	// 21-I (user): the folder is named after the FILE, not after the project document
+	// inside it — you picked `Dungeon v3.tp` off a disk, so `Dungeon v3` is the name you
+	// will look for afterwards, and two exports of one project would otherwise both land
+	// under the same name. The document's own name is the fallback for a caller that has
+	// no filename to offer.
+	const fromFile = String(opts.fileName ?? '').replace(/\.tp$/i, '').trim();
+	const name = fromFile || String(doc.name ?? '').trim() || 'Imported project';
+	// …and it lands WHERE THE COMMAND WAS STARTED. `parentId` is honoured only when it is
+	// a real library folder that still exists: `activeFolder` also holds pseudo locations
+	// (`prefabs`, `packs`, `pack:<name>`, `scene…`) that hold no items of ours, and a
+	// stale id survives a folder being deleted. Anything else means the root, as before.
+	const wanted = typeof opts.parentId === 'string' ? opts.parentId.trim() : '';
+	const parentId =
+		wanted && get(explorerFolders).some((/** @type {any} */ f) => f.id === wanted) ? wanted : null;
 	// createFolder validates names — a name its rules refuse falls back to the default
-	const folder = createFolder(name, null) ?? createFolder('Imported project', null);
+	const folder = createFolder(name, parentId) ?? createFolder('Imported project', parentId);
 	const rootId = folder?.id ?? null;
 	const counts = await restoreProjectContents(doc, entries, rootId, rootId);
 	const total = counts.items || counts.scenes + counts.assets;

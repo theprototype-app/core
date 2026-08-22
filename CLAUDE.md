@@ -1506,6 +1506,10 @@ loadable play content. Everything a user does must be visible to connected peers
   broken. Park it kinematic/static or move it after the re-seat settles.
 - **A peer cannot approve a connection request while in play mode** — the Approve
   button renders but the click times out. Approve first, then enter play.
+- **The debugStores destructure is POSITIONAL.** A missing binding does not fail - it
+  SHIFTS every later one onto the wrong module, mis-wiring dozens of namespaces
+  silently. Fold new entries into all THREE tails at the same index and assert the
+  import/destructure counts equal (the assertion caught a mis-fold twice in 21-G).
 - **A derived cutoff consulted on both the READ and the MUTATE side needs TWO rules.**
   21-F2's round cutoff returns Infinity in menu/over so latches READ as un-collected
   there (the locked fork) — but `applyNodeTrigger`'s re-arm honoured it too, so in menu

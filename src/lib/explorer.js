@@ -25,6 +25,19 @@ export const MAX_ITEM_BYTES = 25 * 1024 * 1024;
 export const explorerFolders = writable([]);
 /** @type {import('svelte/store').Writable<{id: string, name: string, kind: string, folderId: string | null, size: number, hash: string, thumbnail: string | null, createdAt: number}[]>} */
 export const explorerItems = writable([]);
+/**
+ * 21-G7 — THE HIDDEN SHELF. Same record shape as `explorerItems`, same idb index
+ * record, same id-addressed blobs: an item MOVES between the two lists and nothing
+ * else about it changes. It exists because a scene's old versions are real files the
+ * project still owns (travel by hash, a .tp export, a peer's assetShare pull all want
+ * them) that must not each occupy a card — fork 10: ONE visible Explorer item per
+ * scene name, the pointer, and the rest browsed only through Version history.
+ *
+ * Every hash-addressed read (`itemByHash`) therefore searches BOTH lists, which is
+ * what keeps every existing call site working on a hidden version with no edit at all.
+ * @type {import('svelte/store').Writable<{id: string, name: string, kind: string, folderId: string | null, size: number, hash: string, thumbnail: string | null, createdAt: number}[]>}
+ */
+export const hiddenItems = writable([]);
 /** selected folder id, null = library root, 'prefabs' = the virtual prefab folder */
 /** @type {import('svelte/store').Writable<string | null>} */
 export const activeFolder = writable(null);
@@ -47,21 +60,37 @@ export function kindOf(name) {
 }
 
 let loaded = false;
+/** the in-flight load, so a second caller AWAITS it instead of racing past an
+ * already-flipped `loaded` flag with an empty store (21-G7: the version migration is
+ * one such second caller, and folding against an empty library is a silent no-op)
+ * @type {Promise<void> | null} */
+let loading = null;
 export async function loadExplorer() {
-	if (loaded || typeof indexedDB === 'undefined') return;
+	if (typeof indexedDB === 'undefined') return;
+	if (loaded) return loading ?? undefined;
 	loaded = true;
-	try {
-		const index = (await idbGet(INDEX_KEY)) ?? { folders: [], items: [] };
-		explorerFolders.set(index.folders ?? []);
-		explorerItems.set(index.items ?? []);
-	} catch (error) {
-		console.log('explorer load failed', error);
-	}
+	loading = (async () => {
+		try {
+			const index = (await idbGet(INDEX_KEY)) ?? { folders: [], items: [] };
+			explorerFolders.set(index.folders ?? []);
+			explorerItems.set(index.items ?? []);
+			// 21-G7: absent in a pre-G7 index, which is exactly right — nothing was hidden
+			// yet, and the migration (levels.foldSceneVersions) folds the duplicates on boot
+			hiddenItems.set(index.hidden ?? []);
+		} catch (error) {
+			console.log('explorer load failed', error);
+		}
+	})();
+	return loading;
 }
 
 async function persistIndex() {
 	try {
-		await idbPut(INDEX_KEY, { folders: get(explorerFolders), items: get(explorerItems) });
+		await idbPut(INDEX_KEY, {
+			folders: get(explorerFolders),
+			items: get(explorerItems),
+			hidden: get(hiddenItems)
+		});
 	} catch (error) {
 		console.log('explorer persist failed', error);
 	}
@@ -110,9 +139,15 @@ export function folderCounts(id) {
 /** Cascade delete (106): the folder, its subfolders AND their items @param {string} id */
 export async function deleteFolder(id) {
 	const subtree = folderSubtree(id);
-	const doomed = get(explorerItems).filter((item) => subtree.includes(item.folderId ?? ''));
+	// 21-G7: a hidden version lives in the same folder as the scene it belongs to, so a
+	// cascade delete has to take it too — otherwise the bytes outlive every way of
+	// reaching them
+	const doomed = [...get(explorerItems), ...get(hiddenItems)].filter((item) =>
+		subtree.includes(item.folderId ?? '')
+	);
 	explorerFolders.update((list) => list.filter((f) => !subtree.includes(f.id)));
 	explorerItems.update((list) => list.filter((item) => !subtree.includes(item.folderId ?? '')));
+	hiddenItems.update((list) => list.filter((item) => !subtree.includes(item.folderId ?? '')));
 	activeFolder.update((current) => (current && subtree.includes(current) ? null : current));
 	for (const item of doomed) await idbDelete(BLOB_KEY + item.id);
 	await persistIndex();
@@ -135,8 +170,11 @@ export function moveFolder(id, parentId) {
  * the warning dialog. Prefabs and packs live in their own stores and are untouched.
  */
 export async function clearLibrary() {
-	const doomed = get(explorerItems);
+	// 21-G7 (union): the hidden shelf is part of the library — old scene versions
+	// belong to the project being replaced, so their bytes go too
+	const doomed = [...get(explorerItems), ...get(hiddenItems)];
 	explorerItems.set([]);
+	hiddenItems.set([]);
 	explorerFolders.set([]);
 	activeFolder.set(null);
 	for (const item of doomed) await idbDelete(BLOB_KEY + item.id);
@@ -285,6 +323,16 @@ export async function addItemFromBytes(buffer, name, folderId = null) {
 	const hash = await sha256(buffer);
 	const existing = get(explorerItems).find((item) => item.hash === hash);
 	if (existing) return existing;
+	// 21-G7: we may already hold these exact bytes on the hidden shelf — a restored
+	// version being saved again, or a peer pushing back a hash we folded away. Bring
+	// the record back rather than minting a second item for one blob; the caller's
+	// publish then decides whether it stays visible (it is the pointer) or is folded
+	// straight back by the hide sweep.
+	const shelved = get(hiddenItems).find((item) => item.hash === hash);
+	if (shelved) {
+		setItemHidden(shelved.id, false);
+		return shelved;
+	}
 	const kind = kindOf(name) ?? 'text';
 	const blob = new Blob([buffer]);
 	// the thumbnail is DECORATIVE — never let a wedged loader/renderer block
@@ -310,11 +358,37 @@ export async function addItemFromBytes(buffer, name, folderId = null) {
 	return item;
 }
 
-/** @param {string} id */
+/** Delete an item and its bytes. 21-G7: the id may name a HIDDEN version (Version
+ * history ▸ Delete) — one filter over each list, so the caller never has to know which
+ * shelf it was on. @param {string} id */
 export async function deleteItem(id) {
 	explorerItems.update((list) => list.filter((item) => item.id !== id));
+	hiddenItems.update((list) => list.filter((item) => item.id !== id));
 	await idbDelete(BLOB_KEY + id);
 	await persistIndex();
+}
+
+/**
+ * 21-G7: move one item between the visible library and the hidden shelf. The record is
+ * carried across UNCHANGED and the blob is never touched (it is id-addressed), so
+ * hiding is reversible and costs nothing.
+ * @param {string} id @param {boolean} hidden @returns {boolean} did anything move
+ */
+export function setItemHidden(id, hidden = true) {
+	const from = hidden ? explorerItems : hiddenItems;
+	const to = hidden ? hiddenItems : explorerItems;
+	const record = get(from).find((item) => item.id === id);
+	if (!record) return false;
+	from.update((list) => list.filter((item) => item.id !== id));
+	to.update((list) => (list.some((item) => item.id === id) ? list : [...list, record]));
+	persistIndex();
+	return true;
+}
+
+/** Every item on either shelf — the hash-addressed reads and the .tp export walk this.
+ * @returns {any[]} */
+export function allItems() {
+	return [...get(explorerItems), ...get(hiddenItems)];
 }
 
 /** @param {string} id @param {string} name */
@@ -344,7 +418,16 @@ export function itemBlob(id) {
 	return idbGet(BLOB_KEY + id).then((blob) => blob ?? null);
 }
 
-/** Find an item by content hash (97 pull path) @param {string} hash */
+/**
+ * Find an item by content hash (97 pull path). 21-G7: VISIBLE first, then the hidden
+ * shelf — this one line is what keeps travel-by-hash, the .tp export and a peer's
+ * assetShare pull working on an old scene version with no call-site edits anywhere.
+ * @param {string} hash
+ */
 export function itemByHash(hash) {
-	return get(explorerItems).find((item) => item.hash === hash) ?? null;
+	return (
+		get(explorerItems).find((item) => item.hash === hash) ??
+		get(hiddenItems).find((item) => item.hash === hash) ??
+		null
+	);
 }

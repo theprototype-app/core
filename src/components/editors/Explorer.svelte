@@ -33,6 +33,7 @@
 	// 21-G9: `currentLevel` is WHERE WE ARE — the header breadcrumb's scene half and
 	// the accent on the open scene's own card.
 	import { saveSceneAsLevel, newLevel, travelToLevel, currentLevel } from '$lib/levels';
+	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
 	// (the documented rule), so the badge would otherwise never appear live.
@@ -875,6 +876,15 @@
 								label: 'Open here (this screen)',
 								tooltip: 'Load this scene locally — use a Travel node to move every player together',
 								action: () => travelToLevel(item.hash, item.name)
+							},
+							{
+								// 21-G7: the scene's past. It lives in the file PROPERTIES (that is where a
+								// file's facts are), so this entry is a signpost to it rather than a second
+								// place the history could drift into.
+								label: 'Version history',
+								icon: 'history',
+								tooltip: 'Earlier versions of this scene — restore, pin or free their bytes',
+								action: () => showProperties({ kind: 'item', item })
 							}
 						]
 					: []),
@@ -1742,6 +1752,9 @@
 							{/if}
 						{/if}
 					</div>
+					<!-- 21-G7: a scene file's PAST belongs with the rest of its facts. Renders
+					     itself away for every other kind, and for a pack card (no history to have). -->
+					<VersionHistory item={selItem} />
 				{:else if selected?.kind === 'folder'}
 					{@const counts = folderCounts(selected.folder.id)}
 					<div class="flex items-center gap-2">

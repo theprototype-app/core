@@ -30,14 +30,50 @@ import { isViewer } from './objectPermissions';
 import { idbGet, idbPut } from './idb';
 
 const IDB_KEY = 'project:manifest';
-/** versions of ONE scene kept locally beyond the pinned set (fork 4) */
+/** versions of ONE scene kept locally beyond the pinned set (fork 4) — the DEFAULT of
+ * the user-facing setting below, and the value every pre-G7 build used */
 export const KEEP_VERSIONS = 10;
 
 /**
- * @typedef {{history: string[], pinned: string[]}} SceneEntry  history newest-LAST;
- *   the pointer is the last element
+ * 21-G7 fork 10 — "Keep N versions per scene" (Settings ▸ Files). A LOCAL preference,
+ * never replicated: it is a statement about this machine's disk, exactly like the prune
+ * it feeds. **0 means OFF**, and off has a precise meaning: the travel-away auto-save
+ * publishes nothing (no versions get cut behind your back) and the prune keeps only the
+ * pointer plus your pins — while an explicit Save scene and a manual "Save version…"
+ * still publish, because those are things the user asked for.
+ * @type {import('svelte/store').Writable<number>}
+ */
+export const keepVersionsSetting = writable(readKeepVersions());
+
+function readKeepVersions() {
+	try {
+		const raw = localStorage.getItem('project:keepVersions');
+		if (raw === null) return KEEP_VERSIONS;
+		const n = Number(raw);
+		return Number.isFinite(n) && n >= 0 ? Math.floor(n) : KEEP_VERSIONS;
+	} catch {
+		return KEEP_VERSIONS;
+	}
+}
+
+keepVersionsSetting.subscribe((n) => {
+	try {
+		localStorage.setItem('project:keepVersions', String(n));
+	} catch {}
+});
+
+/** Are auto-cut versions switched off? (the travel-away publish asks) */
+export function autoVersionsOff() {
+	return (get(keepVersionsSetting) ?? KEEP_VERSIONS) <= 0;
+}
+
+/**
+ * @typedef {{history: string[], pinned: string[], labels?: Record<string, string>}} SceneEntry
+ *   history newest-LAST; the pointer is the last element. `labels` (21-G7) names a
+ *   version — absent means every version reads as "Auto", so an older manifest is
+ *   byte-unchanged.
  * @typedef {{name: string, scenes: Record<string, SceneEntry>, assets: string[],
- *   changedAt: number}} Manifest
+ *   changedAt: number}} Manifest  `name` (21-G9) is the project's identity
  */
 
 /** @returns {Manifest} */
@@ -67,7 +103,22 @@ export function normalizeManifest(data) {
 		const pinned = Array.isArray(/** @type {any} */ (entry)?.pinned)
 			? [.../** @type {any} */ (entry).pinned].map(String).filter((h) => history.includes(h))
 			: [];
-		scenes[clean] = { history, pinned };
+		// 21-G7: keep only labels whose hash is still in this history (the `pinned` rule
+		// one field over), and OMIT the key entirely when there are none — a project
+		// that never named a version serializes exactly as it did before G7.
+		/** @type {Record<string, string>} */
+		const labels = {};
+		const rawLabels = /** @type {any} */ (entry)?.labels;
+		if (rawLabels && typeof rawLabels === 'object')
+			for (const [hash, text] of Object.entries(rawLabels)) {
+				const name2 = String(text ?? '').trim();
+				if (name2 && history.includes(String(hash))) labels[String(hash)] = name2;
+			}
+		/** @type {any} */
+		const cleanEntry = { ...(/** @type {any} */ (entry)), history, pinned };
+		if (Object.keys(labels).length) cleanEntry.labels = labels;
+		else delete cleanEntry.labels;
+		scenes[clean] = cleanEntry;
 	}
 	return {
 		...data,
@@ -192,6 +243,29 @@ export function pinSceneVersion(name, hash, on = true) {
 	return true;
 }
 
+/**
+ * 21-G7: NAME a version. The label rides the manifest entry, so it replicates,
+ * persists, exports into a .tp and survives a round trip for free — there is nothing
+ * local about "this one is the one we showed the client". An empty label CLEARS it
+ * (a named version becomes "Auto" again), which is what a cleared text field means.
+ * @param {string} name @param {string} hash @param {string} label
+ */
+export function setVersionLabel(name, hash, label) {
+	const scene = String(name ?? '').trim();
+	const h = String(hash ?? '').trim();
+	if (!scene || !h) return false;
+	if (isViewer()) return false;
+	const m = get(projectManifest);
+	const entry = m.scenes[scene];
+	if (!entry || !entry.history.includes(h)) return false;
+	const text = String(label ?? '').trim();
+	const labels = { ...(entry.labels ?? {}) };
+	if (text) labels[h] = text;
+	else delete labels[h];
+	commitManifest({ ...m, scenes: { ...m.scenes, [scene]: { ...entry, labels } } });
+	return true;
+}
+
 /** Track an asset the project uses (fork 8: the DISCOVERY list — bytes stay lazy).
  * @param {string[]} hashes */
 export function recordProjectAssets(hashes) {
@@ -229,13 +303,32 @@ export function staleSceneHash(hash) {
 	return null;
 }
 
-/** The hashes the local prune must KEEP for one scene: the newest KEEP_VERSIONS plus
- * everything pinned. The manifest itself keeps the FULL list — pruning is a statement
+/** Which scene a hash belongs to, newest history first — what the Version history
+ * panel asks of the item it is looking at. @param {string} hash @returns {string|null} */
+export function sceneOfHash(hash) {
+	const h = String(hash ?? '').trim();
+	if (!h) return null;
+	for (const [name, entry] of Object.entries(get(projectManifest).scenes))
+		if (entry.history.includes(h)) return name;
+	return null;
+}
+
+/** The whole entry for one scene, or null. @param {string} name @returns {SceneEntry|null} */
+export function sceneEntry(name) {
+	return get(projectManifest).scenes[String(name ?? '').trim()] ?? null;
+}
+
+/** The hashes the local prune must KEEP for one scene: the newest N (the Settings ▸
+ * Files count, default KEEP_VERSIONS) plus everything pinned. At N = 0 that is the
+ * POINTER plus the pins — off means "stop keeping history", never "throw away the
+ * scene". The manifest itself keeps the FULL list either way: pruning is a statement
  * about local BYTES, never about history. @param {string} name @returns {Set<string>} */
 export function keepableHashes(name) {
 	const entry = get(projectManifest).scenes[String(name ?? '').trim()];
 	if (!entry) return new Set();
-	return new Set([...entry.history.slice(-KEEP_VERSIONS), ...entry.pinned]);
+	const n = get(keepVersionsSetting) ?? KEEP_VERSIONS;
+	const recent = n > 0 ? entry.history.slice(-n) : entry.history.slice(-1);
+	return new Set([...recent, ...entry.pinned]);
 }
 
 // ---- the wire ------------------------------------------------------------------------

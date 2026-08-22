@@ -114,7 +114,10 @@
     // 21-F3: publish our play mode when it changes, and watch for an abandoned round
     startGamePresence()
     // 21-G2: the local project (scene histories + asset list) survives a reload
-    loadProjectManifest()
+    // 21-G7: and once it is in, fold every scene's older versions onto the hidden shelf —
+    // the migration for a library built before G7 (which minted a card per save) and the
+    // one-visible-item invariant for every project that arrives afterwards
+    loadProjectManifest().then(() => import('$lib/levels').then((m) => m.foldSceneVersions()))
     // 21-G9: the window title says where you are — "Scene* - Project - theprototype".
     // The dirty asterisk rides autosave's own change signal, throttled: the check
     // serializes the whole scene, so it may never run per keystroke (see the module).
